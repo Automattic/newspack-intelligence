@@ -61,4 +61,26 @@ final class SettingsTest extends TestCase {
 		$this->assertSame( 'gpt-oss-120b', $by_key['ai_model']->register_args['default'] ?? null );
 		$this->assertSame( 'newspack-ai-newsletter', $by_key['ai_feature']->register_args['default'] ?? null );
 	}
+
+	public function test_get_returns_declared_default_when_option_unset(): void {
+		delete_option( 'newspack_ai_newsletter_ai_model' );
+		$this->assertSame( 'gpt-oss-120b', Settings::get( 'ai_model' ) );
+	}
+
+	public function test_get_returns_stored_option_over_default(): void {
+		update_option( 'newspack_ai_newsletter_ai_model', 'llama3-70b' );
+		$this->assertSame( 'llama3-70b', Settings::get( 'ai_model' ) );
+		delete_option( 'newspack_ai_newsletter_ai_model' );
+	}
+
+	public function test_llm_client_is_null_without_token(): void {
+		delete_option( 'newspack_ai_newsletter_ai_proxy_token' );
+		$this->assertNull( Settings::llm_client() );
+	}
+
+	public function test_llm_client_built_when_token_set(): void {
+		update_option( 'newspack_ai_newsletter_ai_proxy_token', 'SEKRET' );
+		$this->assertInstanceOf( \Newspack_AI_Newsletter\LLM_Client::class, Settings::llm_client() );
+		delete_option( 'newspack_ai_newsletter_ai_proxy_token' );
+	}
 }

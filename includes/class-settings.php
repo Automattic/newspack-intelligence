@@ -37,6 +37,38 @@ class Settings {
 	/** @var Schema|null Memoized — pure structure (values resolve inside callbacks). */
 	private static ?Schema $schema = null;
 
+	/** Declared defaults, keyed by field key — the SAME values the Field declarations use. */
+	private const DEFAULTS = [
+		'ai_proxy_base_url' => self::AI_PROXY_BASE_URL,
+		'ai_model'          => self::AI_MODEL,
+		'ai_feature'        => self::AI_FEATURE,
+	];
+
+	/** Runtime config read: stored option, else the declared default, else ''. */
+	public static function get( string $key ): mixed {
+		return \get_option( self::PREFIX . $key, self::DEFAULTS[ $key ] ?? '' );
+	}
+
+	/** Scalar config read coerced to string; non-scalar (e.g. the `feeds` array) becomes ''. */
+	public static function get_string( string $key ): string {
+		$value = self::get( $key );
+		return \is_scalar( $value ) ? (string) $value : '';
+	}
+
+	/** Build the proxy client from config; null when no token (callers fall back to heuristics). */
+	public static function llm_client(): ?LLM_Client {
+		$token = self::get_string( 'ai_proxy_token' );
+		if ( '' === $token ) {
+			return null;
+		}
+		return new Proxy_LLM_Client(
+			self::get_string( 'ai_proxy_base_url' ),
+			$token,
+			self::get_string( 'ai_model' ),
+			self::get_string( 'ai_feature' )
+		);
+	}
+
 	/**
 	 * The settings fields, in render order.
 	 *
