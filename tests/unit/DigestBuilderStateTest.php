@@ -31,9 +31,9 @@ final class DigestBuilderStateTest extends TestCase {
 	}
 
 	private function flush( Digest_Builder_Node $n ): void {
-		$r                  = Message::new_message();
-		$r[ Message::TYPE ] = Message::TM_REQUEST;
-		$r[ Message::KEY ]  = 'FLUSH';
+		$r                   = Message::new_message();
+		$r[ Message::TYPE ]  = Message::TM_REQUEST;
+		$r[ Message::VALUE ] = 'FLUSH';
 		$n->fill( $r );
 	}
 
@@ -97,7 +97,7 @@ final class DigestBuilderStateTest extends TestCase {
 			}
 		}
 		$this->assertNotNull( $nudge, 'FLUSH must nudge the scored partition' );
-		$this->assertSame( '.', $nudge[ Message::VALUE ] );
+		$this->assertSame( 'RESET', $nudge[ Message::VALUE ] );
 	}
 
 	public function test_no_nudge_when_no_partition_is_configured(): void {
@@ -129,20 +129,20 @@ final class DigestBuilderStateTest extends TestCase {
 		$n->fill( $m );
 	}
 
-	/** Fire a RESET request carrying the source total. */
-	private function reset( Digest_Builder_Node $n, int $total ): void {
+	/** Fire a RESET request (zeroes the progress counter; total comes from the node's args). */
+	private function reset( Digest_Builder_Node $n ): void {
 		$r                   = Message::new_message();
 		$r[ Message::TYPE ]  = Message::TM_REQUEST;
-		$r[ Message::KEY ]   = 'RESET';
-		$r[ Message::VALUE ] = $total;
+		$r[ Message::VALUE ] = 'RESET';
 		$n->fill( $r );
 	}
 
-	public function test_reset_sets_total_and_zeroes_done(): void {
+	public function test_total_comes_from_args_and_reset_zeroes_done(): void {
 		$node = new Digest_Builder_Node();
+		$node->arguments( 'scored:partition 3' );
 		$node->sink( new Capture_Sink_Node() );
 		$this->done( $node );
-		$this->reset( $node, 3 );
+		$this->reset( $node );
 		$state = $node->save_state();
 		$this->assertSame( 0, $state['done'] );
 		$this->assertSame( 3, $state['total'] );
@@ -151,7 +151,6 @@ final class DigestBuilderStateTest extends TestCase {
 	public function test_distinct_sources_advance_the_counter(): void {
 		$node = new Digest_Builder_Node();
 		$node->sink( new Capture_Sink_Node() );
-		$this->reset( $node, 3 );
 		$this->done( $node, 'github' );
 		$this->done( $node, 'linear' );
 		$this->assertSame( 2, $node->save_state()['done'] );
@@ -160,7 +159,6 @@ final class DigestBuilderStateTest extends TestCase {
 	public function test_a_repeated_source_counts_once(): void {
 		$node = new Digest_Builder_Node();
 		$node->sink( new Capture_Sink_Node() );
-		$this->reset( $node, 3 );
 		$this->done( $node, 'github' );
 		$this->done( $node, 'github' );
 		$this->assertSame( 1, $node->save_state()['done'], 'a re-ticked source must not double-count' );
@@ -176,13 +174,13 @@ final class DigestBuilderStateTest extends TestCase {
 	public function test_flush_resets_done_for_the_next_cycle(): void {
 		Digest_Builder_Node::$llm_factory = static fn (): ?LLM_Client => null;
 		$node                             = new Digest_Builder_Node();
+		$node->arguments( 'scored:partition 2' );
 		$node->sink( new Capture_Sink_Node() );
-		$this->reset( $node, 2 );
 		$this->done( $node );
 		$this->flush( $node );
 		$state = $node->save_state();
 		$this->assertSame( 0, $state['done'] );
-		// total is retained (last known) so the dashboard shows e.g. 0/2 post-flush.
+		// total comes from args and is retained across FLUSH so the dashboard shows e.g. 0/2.
 		$this->assertSame( 2, $state['total'] );
 	}
 

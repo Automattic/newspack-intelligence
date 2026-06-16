@@ -27,11 +27,11 @@ final class DigestComposeTest extends TestCase {
 		$n->fill( $m );
 	}
 
-	/** Fire a fire-and-forget FLUSH request (TM_REQUEST) — the runtime trigger. */
+	/** Fire a fire-and-forget FLUSH request (TM_REQUEST VALUE=FLUSH) — the runtime trigger. */
 	private function flush( Digest_Builder_Node $n ): void {
-		$r                  = Message::new_message();
-		$r[ Message::TYPE ] = Message::TM_REQUEST;
-		$r[ Message::KEY ]  = 'FLUSH';
+		$r                   = Message::new_message();
+		$r[ Message::TYPE ]  = Message::TM_REQUEST;
+		$r[ Message::VALUE ] = 'FLUSH';
 		$n->fill( $r );
 	}
 

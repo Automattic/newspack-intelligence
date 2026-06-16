@@ -16,20 +16,20 @@ final class FeedSourceTest extends TestCase {
 <?xml version="1.0"?>
 <rss version="2.0">
   <channel>
-    <title>Example Feed</title>
-    <item>
-      <title>First Post</title>
-      <link>https://example.com/first</link>
-      <description>First body</description>
-      <guid>guid-first</guid>
-      <pubDate>Mon, 10 Jun 2026 00:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>No Guid Post</title>
-      <link>https://example.com/second</link>
-      <description>Second body</description>
-      <pubDate>Tue, 11 Jun 2026 00:00:00 GMT</pubDate>
-    </item>
+	<title>Example Feed</title>
+	<item>
+	  <title>First Post</title>
+	  <link>https://example.com/first</link>
+	  <description>First body</description>
+	  <guid>guid-first</guid>
+	  <pubDate>Mon, 10 Jun 2026 00:00:00 GMT</pubDate>
+	</item>
+	<item>
+	  <title>No Guid Post</title>
+	  <link>https://example.com/second</link>
+	  <description>Second body</description>
+	  <pubDate>Tue, 11 Jun 2026 00:00:00 GMT</pubDate>
+	</item>
   </channel>
 </rss>
 XML;
@@ -39,11 +39,11 @@ XML;
 <feed xmlns="http://www.w3.org/2005/Atom">
   <title>Atom Feed</title>
   <entry>
-    <title>Atom Entry</title>
-    <link href="https://example.com/atom-entry"/>
-    <id>atom-id-1</id>
-    <summary>Atom summary</summary>
-    <updated>2026-06-12T00:00:00Z</updated>
+	<title>Atom Entry</title>
+	<link href="https://example.com/atom-entry"/>
+	<id>atom-id-1</id>
+	<summary>Atom summary</summary>
+	<updated>2026-06-12T00:00:00Z</updated>
   </entry>
 </feed>
 XML;
@@ -123,11 +123,11 @@ XML;
 <?xml version="1.0" encoding="utf-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
-    <title>Multi-link</title>
-    <link rel="self" href="https://example.com/self"/>
-    <link rel="alternate" href="https://example.com/alternate"/>
-    <id>atom-multi</id>
-    <updated>2026-06-12T00:00:00Z</updated>
+	<title>Multi-link</title>
+	<link rel="self" href="https://example.com/self"/>
+	<link rel="alternate" href="https://example.com/alternate"/>
+	<id>atom-multi</id>
+	<updated>2026-06-12T00:00:00Z</updated>
   </entry>
 </feed>
 XML;
@@ -143,14 +143,14 @@ XML;
 <?xml version="1.0"?>
 <rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
-    <title>DC Feed</title>
-    <item>
-      <title>DC Dated</title>
-      <link>https://example.com/dc</link>
-      <description>body</description>
-      <guid>dc-1</guid>
-      <dc:date>2026-06-09T00:00:00Z</dc:date>
-    </item>
+	<title>DC Feed</title>
+	<item>
+	  <title>DC Dated</title>
+	  <link>https://example.com/dc</link>
+	  <description>body</description>
+	  <guid>dc-1</guid>
+	  <dc:date>2026-06-09T00:00:00Z</dc:date>
+	</item>
   </channel>
 </rss>
 XML;

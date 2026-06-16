@@ -139,7 +139,7 @@ abstract class Source_Node extends Node implements Source {
 					'description' => $tick_description,
 				],
 			],
-            'accepts_fill' => false,
+			'accepts_fill' => false,
 		] );
 	}
 }

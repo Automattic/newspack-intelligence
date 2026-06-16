@@ -56,10 +56,10 @@ final class SpineTest extends TestCase {
 			$message = $this->struct( [ 'summary' => "item $i" ] );
 			$node->fill( $message );
 		}
-		// FLUSH is fire-and-forget: a TM_REQUEST handled in fill(), not a cmd verb.
-		$flush                  = Message::new_message();
-		$flush[ Message::TYPE ] = Message::TM_REQUEST;
-		$flush[ Message::KEY ]  = 'FLUSH';
+		// FLUSH is fire-and-forget: a TM_REQUEST (VALUE=FLUSH) handled in fill(), not a cmd verb.
+		$flush                   = Message::new_message();
+		$flush[ Message::TYPE ]  = Message::TM_REQUEST;
+		$flush[ Message::VALUE ] = 'FLUSH';
 		$node->fill( $flush );
 
 		$this->assertNotEmpty( $sink->captured );

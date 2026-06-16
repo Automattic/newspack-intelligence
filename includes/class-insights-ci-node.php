@@ -26,7 +26,7 @@ class Insights_CI_Node extends Service_CI_Node {
 	/** The worker topology whose sources Collect ticks; also the worker-id prefix. */
 	private const TOPOLOGY = 'newspack-ai-newsletter';
 
-	/** The source node names Collect ticks; their count is the digest's `total`. */
+	/** The source node names Collect ticks; their count MUST equal the digest's `total` make_node arg in newspack-ai-newsletter.tsl. */
 	private const SOURCE_NODES = [ 'github', 'linear', 'feed' ];
 
 	/** Coerce an untrusted (JSON-sourced) score to float; non-numeric → 0.0. */
@@ -106,8 +106,8 @@ class Insights_CI_Node extends Service_CI_Node {
 	}
 
 	/**
-	 * Trigger a collection cycle: reset the digest counter (total = the source count)
-	 * then TICK every source, all routed into each live worker's input IPC partition
+	 * Trigger a collection cycle: reset the digest's progress counter, then TICK every
+	 * source, all routed into each live worker's input IPC partition
 	 * (the only transport from the request graph to a worker's nodes — the same one
 	 * `wp nodes cli` uses). Fire-and-forget; the dashboard polls progress separately.
 	 *
@@ -127,9 +127,9 @@ class Insights_CI_Node extends Service_CI_Node {
 			if ( null === $out ) {
 				continue;
 			}
-			self::route_to_worker( $interpreter, $worker_id, 'digest', 'RESET', $total );
+			self::route_to_worker( $interpreter, $worker_id, 'digest', 'RESET' );
 			foreach ( self::SOURCE_NODES as $source ) {
-				self::route_to_worker( $interpreter, $worker_id, $source, 'TICK', '' );
+				self::route_to_worker( $interpreter, $worker_id, $source, 'TICK' );
 			}
 			$out->flush();
 		}
@@ -178,17 +178,17 @@ class Insights_CI_Node extends Service_CI_Node {
 	/**
 	 * Route a TM_REQUEST to a node inside a worker: TO=`{worker_id}/{node}` so the
 	 * request router peels the worker id to its IPC-out Partition (which appends the
-	 * message for the worker to read and re-route to `{node}`).
+	 * message for the worker to read and re-route to `{node}`). The verb rides in
+	 * VALUE — matching `request_node <path> <verb>` — so the digest reads it there.
 	 *
-	 * @param mixed $value The request VALUE (RESET's total, or '' for TICK).
+	 * @param string $verb The request verb in VALUE (e.g. RESET for the digest, TICK for a source).
 	 */
-	private static function route_to_worker( Command_Interpreter_Node $interpreter, string $worker_id, string $node, string $key, mixed $value ): void {
+	private static function route_to_worker( Command_Interpreter_Node $interpreter, string $worker_id, string $node, string $verb ): void {
 		$message                   = Message::new_message();
 		$message[ Message::TYPE ]  = Message::TM_REQUEST;
 		$message[ Message::FROM ]  = 'insights';
 		$message[ Message::TO ]    = $worker_id . '/' . $node;
-		$message[ Message::KEY ]   = $key;
-		$message[ Message::VALUE ] = $value;
+		$message[ Message::VALUE ] = $verb;
 		$interpreter->fill( $message );
 	}
 

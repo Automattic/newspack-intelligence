@@ -9,10 +9,12 @@ namespace Newspack_AI_Newsletter;
 
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Message;
+use Newspack_Nodes\Schema_Reflection;
 
 \defined( 'ABSPATH' ) || exit;
 
 class Digest_Builder_Node extends Node {
+	use Schema_Reflection;
 
 	/** @var array<int,array<array-key,mixed>> Accumulated summarized items (array-key: they round-trip through offsetlog JSON). */
 	private array $items = [];
@@ -21,7 +23,7 @@ class Digest_Builder_Node extends Node {
 	private array $seen = [];
 
 	/** Scored-partition node name to nudge on FLUSH (arg 0); '' disables the nudge. */
-	private string $nudge_target = '';
+	private string $scored_partition = '';
 
 	/** @var array<string,bool> Distinct sources that signalled DONE this cycle (keyed by source name). Counting distinct names — not raw signals — is idempotent across re-ticks, replays, and a stale cross-cycle DONE, so `done` can't overshoot the real source count. */
 	private array $reported = [];
@@ -55,13 +57,8 @@ class Digest_Builder_Node extends Node {
 			$this->handle_request( $message );
 			return;
 		}
-		// A source's DONE (TM_INFO VALUE=DONE); keyed by FROM (distinct + stable per source) so re-ticks/replays count distinct sources.
 		if ( $type & Message::TM_INFO ) {
-			$value = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
-			if ( 'DONE' === $value ) {
-				$from                    = \is_string( $message[ Message::FROM ] ?? null ) ? $message[ Message::FROM ] : '';
-				$this->reported[ $from ] = true;
-			}
+			$this->handle_info( $message );
 			return;
 		}
 		if ( ! ( $type & Message::TM_STRUCT ) ) {
@@ -90,43 +87,52 @@ class Digest_Builder_Node extends Node {
 	 * @param string|null $args Space-separated argument string, or null to read.
 	 */
 	public function arguments( ?string $args = null ): string {
-		if ( null !== $args ) {
-			$this->arguments    = $args;
-			$parts              = \preg_split( '/\s+/', \trim( $args ) ) ?: [];
-			$this->nudge_target = $parts[0] ?? '';
+		if ( null === $args ) {
+			return parent::arguments();
 		}
-		return $this->arguments;
+		$this->parse_schema_args( $args );
+		return $args;
 	}
 
 	/**
 	 * Runtime triggers. RESET (the dashboard's Collect, before it TICKs the sources)
-	 * zeroes the progress counter and sets `total` from the request VALUE — the number
-	 * of sources about to collect. FLUSH composes + emits the draft, clears items, and
+	 * zeroes the progress counter. FLUSH composes + emits the draft, clears items, and
 	 * resets progress. Fire-and-forget.
 	 *
 	 * @param array<int,mixed> $message Incoming request Message.
 	 */
 	private function handle_request( array $message ): void {
-		$key = \is_string( $message[ Message::KEY ] ?? null ) ? $message[ Message::KEY ] : '';
-		if ( 'RESET' === $key ) {
+		$value = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
+		if ( 'RESET' === $value ) {
 			$this->reported = [];
-			$this->total    = \is_numeric( $message[ Message::VALUE ] ) ? (int) $message[ Message::VALUE ] : 0;
-			return;
+		} elseif ( 'FLUSH' === $value ) {
+			$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
+			$draft  = Digest_Composer::compose( $this->items, $client, Settings::get_string( 'relevance_profile' ) );
+
+			$response                   = Message::new_message();
+			$response[ Message::TYPE ]  = Message::TM_BYTESTREAM;
+			$response[ Message::FROM ]  = $this->name;
+			$response[ Message::VALUE ] = $draft;
+			// parent::fill stamps TO from a connect_node-set target, then forwards to sink.
+			parent::fill( $response );
+			$this->items    = [];
+			$this->seen     = [];
+			$this->reported = [];
+			$this->nudge_scored_partition();
 		}
+	}
 
-		$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
-		$draft  = Digest_Composer::compose( $this->items, $client, Settings::get_string( 'relevance_profile' ) );
-
-		$response                   = Message::new_message();
-		$response[ Message::TYPE ]  = Message::TM_BYTESTREAM;
-		$response[ Message::FROM ]  = $this->name;
-		$response[ Message::VALUE ] = $draft;
-		// parent::fill stamps TO from a connect_node-set target, then forwards to sink.
-		parent::fill( $response );
-		$this->items    = [];
-		$this->seen     = [];
-		$this->reported = [];
-		$this->nudge_scored_partition();
+	/**
+	 * Runtime notifications. DONE signals from sources are tallied here.
+	 *
+	 * @param array<int,mixed> $message Incoming request Message.
+	 */
+	private function handle_info( array $message ): void {
+		$value = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
+		if ( 'DONE' === $value ) {
+			$from                    = \is_string( $message[ Message::FROM ] ?? null ) ? $message[ Message::FROM ] : '';
+			$this->reported[ $from ] = true;
+		}
 	}
 
 	/**
@@ -134,18 +140,18 @@ class Digest_Builder_Node extends Node {
 	 * scored:consumer advances its cursor and its next checkpoint co-commits this
 	 * node's now-emptied snapshot. Without it a FLUSH changes our state but not the
 	 * consumer cursor, so the offsetlog keeps the stale full items list and a worker
-	 * restart reloads it. The '.' is ignored downstream (neither TM_REQUEST nor
-	 * TM_STRUCT). TO is set explicitly because `target` is the draft sink (digest:tee).
+	 * restart reloads it. The 'RESET' is ignored downstream.
+	 * TO is set explicitly because `target` is the draft sink (digest:tee).
 	 */
 	private function nudge_scored_partition(): void {
-		if ( '' === $this->nudge_target ) {
+		if ( '' === $this->scored_partition ) {
 			return;
 		}
 		$nudge                   = Message::new_message();
-		$nudge[ Message::TYPE ]  = Message::TM_BYTESTREAM;
+		$nudge[ Message::TYPE ]  = Message::TM_INFO;
 		$nudge[ Message::FROM ]  = $this->name;
-		$nudge[ Message::TO ]    = $this->nudge_target;
-		$nudge[ Message::VALUE ] = '.';
+		$nudge[ Message::TO ]    = $this->scored_partition;
+		$nudge[ Message::VALUE ] = 'RESET';
 		parent::fill( $nudge );
 	}
 
@@ -212,7 +218,15 @@ class Digest_Builder_Node extends Node {
 			'arguments'    => [
 				[
 					'name'        => 'scored_partition',
+					'type'        => 'string',
+					'required'    => true,
 					'description' => 'Scored Partition node to nudge on FLUSH so the consumer persists the emptied snapshot.',
+				],
+				[
+					'name'        => 'total',
+					'type'        => 'int',
+					'default'     => 0,
+					'description' => 'Total number of sources about to collect.',
 				],
 			],
 			'requests'     => [
@@ -222,7 +236,7 @@ class Digest_Builder_Node extends Node {
 				],
 				[
 					'name'        => 'RESET',
-					'description' => 'Zero the collection counter and set total from the request value (the dashboard Collect sends this before TICKing sources).',
+					'description' => 'Zero the collection counter (the dashboard Collect sends this before TICKing sources). `total` comes from the make_node argument, not this request.',
 				],
 			],
 			'accepts_fill' => true,
