@@ -84,8 +84,7 @@ export class InsightsViewNode extends Node {
 		this.setState( 'view', this.model );
 	}
 
-	// Reject any in-flight awaited verb so a graph reinit / page unmount doesn't
-	// strand a caller awaiting a reply that will never land on this removed node.
+	// Reject in-flight awaited verbs on teardown so no caller is stranded awaiting a reply.
 	removeNode() {
 		this.replies.rejectAll( 'insights graph torn down' );
 		super.removeNode();

@@ -101,9 +101,7 @@ class Summarizer_Node extends Node {
 			]
 		);
 
-		// The body fed the summary above and nothing past here reads it (scorer,
-		// digest, insights use summary/score/title/url) — drop it so the durable
-		// scored log and the digest snapshot don't carry every release body.
+		// The body fed the summary; nothing downstream reads it — drop it to shrink the scored log + snapshot.
 		unset( $item['body'] );
 
 		$out                   = Message::new_message();

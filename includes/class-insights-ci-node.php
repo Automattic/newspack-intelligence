@@ -170,8 +170,7 @@ class Insights_CI_Node extends Service_CI_Node {
 		if ( ! $node instanceof Partition_Node ) {
 			return null;
 		}
-		// Unbuffered: a separate reader (the worker's input consumer) must see the
-		// appended TICK/RESET immediately, not only when this request process exits.
+		// Unbuffered so the worker's input consumer sees the appended TICK/RESET immediately, not only at request exit.
 		$node->void_warranty();
 		return $node;
 	}
