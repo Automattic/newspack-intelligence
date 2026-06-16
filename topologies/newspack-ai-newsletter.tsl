@@ -17,6 +17,7 @@
 # Connectors emit nothing until configured (github_repos/github_token, linear_token,
 # feeds in settings). FLUSH the digest with `request_node digest FLUSH`.
 var num_partitions = 1
+var stale_timeout = 600;
 
 make_node Github_Source  github
 make_node Linear_Source  linear
