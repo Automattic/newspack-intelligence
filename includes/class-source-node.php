@@ -33,15 +33,6 @@ abstract class Source_Node extends Node implements Source {
 	protected array $seen = [];
 
 	/**
-	 * Per-connector configuration (Settings reads) passed to fetch(). The base
-	 * keeps fetch() pure-ish — config resolution lives here so tests can drive
-	 * fetch() directly with a canned config + the HTTP seam.
-	 *
-	 * @return array<string,mixed>
-	 */
-	abstract protected function config(): array;
-
-	/**
 	 * TICK is a runtime trigger: a TM_REQUEST handled here in fill() (NOT a
 	 * TM_COMMAND verb). Any other type is ignored; a source mints, it doesn't
 	 * consume.
@@ -89,6 +80,15 @@ abstract class Source_Node extends Node implements Source {
 			parent::fill( $done );
 		}
 	}
+
+	/**
+	 * Per-connector configuration (Settings reads) passed to fetch(). The base
+	 * keeps fetch() pure-ish — config resolution lives here so tests can drive
+	 * fetch() directly with a canned config + the HTTP seam.
+	 *
+	 * @return array<string,mixed>
+	 */
+	abstract protected function config(): array;
 
 	/** Record an emitted id, evicting the oldest once the set exceeds MAX_SEEN. */
 	private function remember( string $id ): void {

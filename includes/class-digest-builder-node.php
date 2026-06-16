@@ -45,6 +45,20 @@ class Digest_Builder_Node extends Node {
 	public static ?\Closure $llm_factory = null;
 
 	/**
+	 * Parse the positional arguments: arg 0 is the scored Partition node name to
+	 * nudge on FLUSH (so scored:consumer persists the emptied snapshot).
+	 *
+	 * @param string|null $args Space-separated argument string, or null to read.
+	 */
+	public function arguments( ?string $args = null ): string {
+		if ( null === $args ) {
+			return parent::arguments();
+		}
+		$this->parse_schema_args( $args );
+		return $args;
+	}
+
+	/**
 	 * FLUSH is a runtime trigger: a TM_REQUEST handled here in fill() (NOT a
 	 * TM_COMMAND verb — that flag is for startup/admin). A TM_STRUCT message is
 	 * data to accumulate; everything else is ignored.
@@ -64,34 +78,24 @@ class Digest_Builder_Node extends Node {
 		if ( ! ( $type & Message::TM_STRUCT ) ) {
 			return;
 		}
-		$value = $message[ Message::VALUE ];
-		if ( ! \is_array( $value ) ) {
+		$item = $message[ Message::VALUE ];
+		if ( ! \is_array( $item ) ) {
 			return;
 		}
-		/** @var array<array-key,mixed> $value */
-		$id = isset( $value['id'] ) && \is_string( $value['id'] ) ? $value['id'] : '';
+		if ( ! \is_string( $item['title'] ?? null ) ) {
+			$item['title'] = '(untitled)';
+		}
+		/** @var array<array-key,mixed> $item */
+		$id = isset( $item['id'] ) && \is_string( $item['id'] ) ? $item['id'] : '';
 		if ( '' !== $id && isset( $this->seen[ $id ] ) ) {
 			return;
 		}
 		if ( '' !== $id ) {
 			$this->seen[ $id ] = true;
 		}
-		$this->items[] = $value;
+		$this->items[] = $item;
+		$this->set_state( 'RECEIVED', $item['title'] );
 		++$this->counter;
-	}
-
-	/**
-	 * Parse the positional arguments: arg 0 is the scored Partition node name to
-	 * nudge on FLUSH (so scored:consumer persists the emptied snapshot).
-	 *
-	 * @param string|null $args Space-separated argument string, or null to read.
-	 */
-	public function arguments( ?string $args = null ): string {
-		if ( null === $args ) {
-			return parent::arguments();
-		}
-		$this->parse_schema_args( $args );
-		return $args;
 	}
 
 	/**
@@ -108,6 +112,7 @@ class Digest_Builder_Node extends Node {
 		} elseif ( 'FLUSH' === $value ) {
 			$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
 			$draft  = Digest_Composer::compose( $this->items, $client, Settings::get_string( 'relevance_profile' ) );
+			$this->set_state( 'COMPOSED', \count( $this->items ) . ' items' );
 
 			$response                   = Message::new_message();
 			$response[ Message::TYPE ]  = Message::TM_BYTESTREAM;
@@ -119,19 +124,6 @@ class Digest_Builder_Node extends Node {
 			$this->seen     = [];
 			$this->reported = [];
 			$this->nudge_scored_partition();
-		}
-	}
-
-	/**
-	 * Runtime notifications. DONE signals from sources are tallied here.
-	 *
-	 * @param array<int,mixed> $message Incoming request Message.
-	 */
-	private function handle_info( array $message ): void {
-		$value = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
-		if ( 'DONE' === $value ) {
-			$from                    = \is_string( $message[ Message::FROM ] ?? null ) ? $message[ Message::FROM ] : '';
-			$this->reported[ $from ] = true;
 		}
 	}
 
@@ -153,6 +145,19 @@ class Digest_Builder_Node extends Node {
 		$nudge[ Message::TO ]    = $this->scored_partition;
 		$nudge[ Message::VALUE ] = 'RESET';
 		parent::fill( $nudge );
+	}
+
+	/**
+	 * Runtime notifications. DONE signals from sources are tallied here.
+	 *
+	 * @param array<int,mixed> $message Incoming request Message.
+	 */
+	private function handle_info( array $message ): void {
+		$value = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
+		if ( 'DONE' === $value ) {
+			$from                    = \is_string( $message[ Message::FROM ] ?? null ) ? $message[ Message::FROM ] : '';
+			$this->reported[ $from ] = true;
+		}
 	}
 
 	/**

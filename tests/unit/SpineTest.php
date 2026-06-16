@@ -47,6 +47,23 @@ final class SpineTest extends TestCase {
 		$this->assertGreaterThan( 0.0, $out[ Message::VALUE ]['score'] );
 	}
 
+	/**
+	 * On the LLM path (item carries a numeric relevance_score) the score is
+	 * relevance + recency only — there is no per-source prior, so two items that
+	 * differ only by source must score identically.
+	 */
+	public function test_scorer_blended_score_ignores_source(): void {
+		$score_for = function ( string $source ): float {
+			$sink = new Capture_Sink_Node();
+			$node = new Scorer_Node();
+			$node->sink( $sink );
+			$m = $this->struct( [ 'source' => $source, 'relevance_score' => 7, 'timestamp' => 1000 ] );
+			$node->fill( $m );
+			return $sink->captured[0][ Message::VALUE ]['score'];
+		};
+		$this->assertSame( $score_for( 'github' ), $score_for( 'releases' ) );
+	}
+
 	public function test_digest_builder_accumulates_and_flushes_markdown(): void {
 		$sink = new Capture_Sink_Node();
 		$node = new Digest_Builder_Node();

@@ -1,7 +1,7 @@
 <?php
 /**
- * Deterministic Scorer: relevance_score + recency + source when an item carries a numeric
- * relevance_score; the existing keyword/source heuristic when it doesn't.
+ * Deterministic Scorer: relevance_score + recency when an item carries a numeric
+ * relevance_score; the keyword heuristic when it doesn't. Source-agnostic.
  *
  * @package Newspack_AI_Newsletter
  */

@@ -1,6 +1,7 @@
 <?php
 /**
- * Summarizer_Node: turns one item into one summary. Knows nothing about sources.
+ * Summarizer_Node: enriches one item via the LLM (summary + relevance_score + reason),
+ * falling back to a deterministic summary template when no LLM is configured. Source-agnostic.
  *
  * @package Newspack_AI_Newsletter
  */
@@ -27,27 +28,6 @@ class Summarizer_Node extends Node {
 	 */
 	public static ?\Closure $llm_factory = null;
 
-	/**
-	 * The ONE seam a real summarizer replaces: item -> one-line summary. Heuristic = deterministic template.
-	 *
-	 * @param array<string,mixed> $item
-	 */
-	protected function summarize( array $item ): string {
-		$title = \is_string( $item['title'] ?? null ) ? $item['title'] : '(untitled)';
-		$body  = \is_string( $item['body'] ?? null ) ? $item['body'] : '';
-		return $title . ' — ' . \mb_substr( $body, 0, 80 );
-	}
-
-	/**
-	 * An item's id as a string ('' when absent/non-scalar) — for set_state payloads.
-	 *
-	 * @param array<string,mixed> $item
-	 */
-	private static function item_id( array $item ): string {
-		$id = $item['id'] ?? null;
-		return \is_scalar( $id ) ? (string) $id : '';
-	}
-
 	public function fill( array &$message ): void {
 		/** @var int $type */
 		$type = $message[ Message::TYPE ];
@@ -63,43 +43,31 @@ class Summarizer_Node extends Node {
 		if ( ! \is_array( $item ) ) {
 			return;
 		}
+		if ( ! \is_string( $item['title'] ?? null ) ) {
+			$item['title'] = '(untitled)';
+		}
 		/** @var array<string,mixed> $item */
 		$client   = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
 		$enriched = null;
 		if ( $client instanceof LLM_Client ) {
 			try {
-				$raw      = $client->chat(
+				$raw = $client->chat(
 					Prompts::enrich( $item, Settings::get_string( 'relevance_profile' ) ),
 					[ 'max_tokens' => 200, 'temperature' => 0.3 ]
 				);
 				$enriched = self::parse_enrich( $raw );
 			} catch ( \RuntimeException $e ) {
-				// Rate-limited; an LLM failure NEVER throws out of fill().
-				$this->print_less_often( 'AI enrich failed: ' . $e->getMessage() );
-				// Observability: a traced node streams this to the REPL (see Node::set_state).
-				$this->set_state( 'ENRICH_FAILED', [ 'id' => self::item_id( $item ), 'error' => $e->getMessage() ] );
+				$this->set_state( 'FAILED', $item['title'] );
 			}
 		}
 		if ( null !== $enriched ) {
 			$item['summary']         = $enriched['summary'];
 			$item['relevance_score'] = $enriched['relevance_score'];
 			$item['reason']          = $enriched['reason'];
+			$this->set_state( 'SUMMARIZED', $item['title'] );
 		} else {
 			$item['summary'] = $this->summarize( $item );
 		}
-
-		// Publish what we just did so a traced summarizer isn't a black box — id,
-		// the summary, the score, and whether the LLM or the heuristic produced it.
-		$this->set_state(
-			'SUMMARIZED',
-			[
-				'id'              => self::item_id( $item ),
-				'title'           => \is_string( $item['title'] ?? null ) ? $item['title'] : '',
-				'summary'         => $item['summary'],
-				'relevance_score' => $item['relevance_score'] ?? null,
-				'via'             => null !== $enriched ? 'llm' : 'heuristic',
-			]
-		);
 
 		// The body fed the summary; nothing downstream reads it — drop it to shrink the scored log + snapshot.
 		unset( $item['body'] );
@@ -132,6 +100,19 @@ class Summarizer_Node extends Node {
 			'relevance_score' => \max( 0, \min( 10, \is_numeric( $score ) ? (int) $score : 0 ) ),
 			'reason'          => \is_scalar( $reason ) ? (string) $reason : '',
 		];
+	}
+
+	/**
+	 * No-LLM fallback summary: a deterministic title + body-excerpt template, reached only
+	 * when no LLM client is configured (or its reply fails to parse). The live path is the
+	 * LLM enrich call in fill().
+	 *
+	 * @param array<string,mixed> $item
+	 */
+	private function summarize( array $item ): string {
+		$title = \is_string( $item['title'] ?? null ) ? $item['title'] : '(untitled)';
+		$body  = \is_string( $item['body'] ?? null ) ? $item['body'] : '';
+		return $title . ' — ' . \mb_substr( $body, 0, 80 );
 	}
 
 	public static function node_schema(): array {
