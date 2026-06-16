@@ -101,6 +101,11 @@ class Summarizer_Node extends Node {
 			]
 		);
 
+		// The body fed the summary above and nothing past here reads it (scorer,
+		// digest, insights use summary/score/title/url) — drop it so the durable
+		// scored log and the digest snapshot don't carry every release body.
+		unset( $item['body'] );
+
 		$out                   = Message::new_message();
 		$out[ Message::TYPE ]  = Message::TM_STRUCT;
 		$out[ Message::FROM ]  = $this->name;

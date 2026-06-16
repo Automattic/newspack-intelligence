@@ -153,4 +153,20 @@ final class SummarizerLlmTest extends TestCase {
 		$this->assertSame( 'DONE', $sink->captured[0][ Message::KEY ] );
 		$this->assertSame( Message::TM_INFO, $sink->captured[0][ Message::TYPE ] & Message::TM_INFO );
 	}
+
+	public function test_strips_the_body_after_summarizing_to_save_downstream_bytes(): void {
+		$sink = new Capture_Sink_Node();
+		$node = new Summarizer_Node();
+		$node->sink( $sink );
+
+		$body    = 'A long release body that nothing past the summarizer needs.';
+		$message = $this->struct( [ 'source' => 'github', 'id' => 'g#1', 'title' => 'Big release', 'body' => $body ] );
+		$node->fill( $message );
+
+		$out = $sink->captured[0][ Message::VALUE ];
+		// The summary was produced from the body, but the body itself is dropped.
+		$this->assertArrayNotHasKey( 'body', $out );
+		$this->assertArrayHasKey( 'summary', $out );
+		$this->assertStringContainsString( 'Big release', $out['summary'] );
+	}
 }
