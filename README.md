@@ -35,5 +35,4 @@ npx jest               # JS unit tests (local)
 
 ## Docs
 
-- Floorplan / architecture: `dndocker/docs/superpowers/specs/2026-06-15-newspack-ai-newsletter-floorplan-design.md`
 - Substrate: [`newspack-nodes`](../newspack-nodes)
