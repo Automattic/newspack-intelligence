@@ -38,6 +38,8 @@
 		"@babel/preset-react": "^7.28.5",
 		"@commitlint/cli": "^20.1.0",
 		"@commitlint/config-conventional": "^19.8.1",
+		"@testing-library/jest-dom": "^6.6.3",
+		"@testing-library/react": "^16.3.2",
 		"@wordpress/eslint-plugin": "^24.5.0",
 		"@wordpress/prettier-config": "^4.46.0",
 		"@wordpress/stylelint-config": "^23.38.0",

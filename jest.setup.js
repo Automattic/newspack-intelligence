@@ -1,4 +1,7 @@
 /* eslint-env jest */
+// jest-dom custom matchers (toBeInTheDocument, etc.) for the React dashboard tests.
+import '@testing-library/jest-dom';
+
 // Jest setup — FAIL any test that emits an unexpected console.warn or
 // console.error (mirrors the sibling newspack-nodes setup).
 //
