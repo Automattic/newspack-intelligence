@@ -52,10 +52,10 @@ function insightsErrorReply( id, payload ) {
 
 const sampleModel = {
 	sources: { releases: 2, community: 1 },
-	top: [
-		{ source: 'releases', title: 'A', score: 9.5 },
-		{ source: 'community', title: 'B', score: 4 },
-	],
+	top: {
+		releases: [ { title: 'A', score: 9.5 } ],
+		community: [ { title: 'B', score: 4 } ],
+	},
 	accumulated: 3,
 };
 

@@ -42,11 +42,11 @@ class Insights_CI_Node extends Service_CI_Node {
 
 	/**
 	 * Testable core: merge every `scored.p*` snapshot into { sources:{name:count},
-	 * top:[{source,title,score}], accumulated:N }, attach `digest` (the latest
-	 * rendered digest:log segment), and the collection progress `done`/`total`
+	 * top:{source:[{title,score}]} (per-source top-10), accumulated:N }, attach `digest`
+	 * (the latest rendered digest:log segment), and the collection progress `done`/`total`
 	 * (summed across partitions) the dashboard gates its buttons on.
 	 *
-	 * @return array{sources: array<string,int>, top: array<int,array<string,mixed>>, accumulated: int, digest: string, done: int, total: int}
+	 * @return array{sources: array<string,int>, top: array<string,array<int,array{title:string,score:float}>>, accumulated: int, digest: string, done: int, total: int}
 	 */
 	public static function read_insights_model( string $offsets_dir, string $digest_path ): array {
 		$digest = self::read_latest_digest( $digest_path );
@@ -73,20 +73,32 @@ class Insights_CI_Node extends Service_CI_Node {
 			$sources[ $source ] = ( $sources[ $source ] ?? 0 ) + 1;
 		}
 
-		\usort(
-			$items,
-			static fn ( array $a, array $b ): int => self::to_float( $b['score'] ?? null ) <=> self::to_float( $a['score'] ?? null )
-		);
-		$top = [];
-		foreach ( \array_slice( $items, 0, self::TOP_N ) as $item ) {
-			$top[] = [
-				'source' => $item['source'] ?? '?',
-				'title'  => $item['title'] ?? '',
-				'score'  => self::to_float( $item['score'] ?? null ),
+		return \array_merge( [ 'sources' => $sources, 'top' => self::top_by_source( $items ), 'accumulated' => \count( $items ) ], $progress );
+	}
+
+	/**
+	 * Group items into a per-source top-10, each source's list sorted by score desc — so the
+	 * dashboard shows the top github items, top linear items, etc. separately rather than one
+	 * global list a single high-scoring source can dominate. Keyed by source, first-seen order.
+	 *
+	 * @param array<int,array<array-key,mixed>> $items
+	 * @return array<string,array<int,array{title:string,score:float}>>
+	 */
+	public static function top_by_source( array $items ): array {
+		$by_source = [];
+		foreach ( $items as $item ) {
+			$source                = \is_string( $item['source'] ?? null ) ? $item['source'] : '?';
+			$by_source[ $source ][] = [
+				'title' => \is_string( $item['title'] ?? null ) ? $item['title'] : '',
+				'score' => self::to_float( $item['score'] ?? null ),
 			];
 		}
-
-		return \array_merge( [ 'sources' => $sources, 'top' => $top, 'accumulated' => \count( $items ) ], $progress );
+		foreach ( $by_source as &$list ) {
+			\usort( $list, static fn ( array $a, array $b ): int => $b['score'] <=> $a['score'] );
+			$list = \array_slice( $list, 0, self::TOP_N );
+		}
+		unset( $list );
+		return $by_source;
 	}
 
 	/**

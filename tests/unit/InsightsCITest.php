@@ -71,6 +71,28 @@ final class InsightsCITest extends TestCase {
 		$this->assertStringContainsString( '- shipped X', (string) $parsed['digest'] );
 	}
 
+	public function test_top_by_source_groups_into_per_source_top_10_sorted_by_score(): void {
+		$items = [];
+		// github: 12 items (scores 1..12) — its top 10 must be 12..3, desc.
+		for ( $i = 1; $i <= 12; $i++ ) {
+			$items[] = [ 'source' => 'github', 'title' => "g{$i}", 'score' => (float) $i ];
+		}
+		// linear: 2 items, out of order.
+		$items[] = [ 'source' => 'linear', 'title' => 'l-lo', 'score' => 3.0 ];
+		$items[] = [ 'source' => 'linear', 'title' => 'l-hi', 'score' => 9.0 ];
+
+		$top = Insights_CI_Node::top_by_source( $items );
+
+		// Keyed per source, first-seen order.
+		$this->assertSame( [ 'github', 'linear' ], \array_keys( $top ) );
+		// Capped at TOP_N (10), sorted by score desc.
+		$this->assertCount( 10, $top['github'] );
+		$this->assertSame( 12.0, $top['github'][0]['score'] );
+		$this->assertSame( 'g12', $top['github'][0]['title'] );
+		$this->assertSame( 3.0, $top['github'][9]['score'], '10th is score 3; scores 1-2 are cut' );
+		$this->assertSame( [ 'l-hi', 'l-lo' ], \array_column( $top['linear'], 'title' ) );
+	}
+
 	public function test_model_carries_collection_progress_keys(): void {
 		// No snapshots → progress is zeroed but always present (the dashboard gates on it).
 		$model = Insights_CI_Node::read_insights_model( $this->tmp, $this->tmp . '/none.md' );

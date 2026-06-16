@@ -40,10 +40,10 @@ const DIGEST =
 
 const model = {
 	sources: { releases: 2, community: 1 },
-	top: [
-		{ source: 'releases', title: 'Big release', score: 9.5 },
-		{ source: 'community', title: 'Hot thread', score: 4 },
-	],
+	top: {
+		releases: [ { title: 'Big release', score: 9.5 } ],
+		community: [ { title: 'Hot thread', score: 4 } ],
+	},
 	accumulated: 3,
 	digest: DIGEST,
 	// Collection complete (3/3) so the gated Generate button is enabled by default.
@@ -107,13 +107,21 @@ async function renderPopulated( props = {} ) {
 beforeEach( () => Core.reset() );
 
 describe( 'PublisherInsights', () => {
-	it( 'renders the per-source counts, the score-ranked table, and the accumulated count', async () => {
+	it( 'renders a per-source top table for each source, plus the accumulated count', async () => {
 		await renderPopulated();
+		// Each source gets its own ranked table + heading; items land under their source.
+		expect( screen.getByText( 'Big release' ) ).toBeInTheDocument();
 		expect( screen.getByText( 'Hot thread' ) ).toBeInTheDocument();
 		expect(
 			screen.getByText( /Accumulated items: 3/ )
 		).toBeInTheDocument();
-		expect( screen.getByRole( 'table' ) ).toBeInTheDocument();
+		expect( screen.getAllByRole( 'table' ) ).toHaveLength( 2 );
+		expect(
+			screen.getByRole( 'heading', { name: 'releases' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'heading', { name: 'community' } )
+		).toBeInTheDocument();
 	} );
 
 	it( 'shows KPI stat cards: total items, top score, and source count', async () => {
@@ -148,10 +156,11 @@ describe( 'PublisherInsights', () => {
 		await waitFor( () =>
 			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
 		);
-		expect( screen.getByText( '#1' ) ).toBeInTheDocument();
-		expect( screen.getByText( '#2' ) ).toBeInTheDocument();
+		// Each source's table ranks from #1 (the fixture has one item per source).
+		expect( screen.getAllByText( '#1' ) ).toHaveLength( 2 );
 		const bars = container.querySelectorAll( '.eai-insights__score-bar' );
 		expect( bars.length ).toBe( 2 );
+		// Bars are relative to the global top score (9.5), so the top item is full-width.
 		expect( bars[ 0 ].style.width ).toBe( '100%' );
 	} );
 
@@ -290,7 +299,7 @@ describe( 'PublisherInsights', () => {
 		).not.toBeInTheDocument();
 	} );
 
-	it( 'shows an empty state (no table, no generate button) until the pipeline has items', async () => {
+	it( 'shows an empty state (no table) until the pipeline has items', async () => {
 		render(
 			<PublisherInsights
 				refreshMs={ 4000 }
@@ -310,6 +319,33 @@ describe( 'PublisherInsights', () => {
 			).toBeInTheDocument()
 		);
 		expect( screen.queryByRole( 'table' ) ).not.toBeInTheDocument();
+	} );
+
+	it( 'still offers Collect in the empty state so a fresh pipeline can be driven from the UI', async () => {
+		render(
+			<PublisherInsights
+				refreshMs={ 4000 }
+				commandClient={ clientReturning(
+					JSON.stringify( {
+						sources: {},
+						top: [],
+						accumulated: 0,
+						digest: '',
+					} )
+				) }
+			/>
+		);
+		await waitFor( () =>
+			expect(
+				screen.getByText( /no scored items yet/i )
+			).toBeInTheDocument()
+		);
+		// Collect drives collection — it MUST be reachable when there is nothing
+		// yet (that is exactly when you need it). The downstream actions
+		// (Generate/Copy/Create) only appear once there is data to act on.
+		expect(
+			screen.getByRole( 'button', { name: /^collect$/i } )
+		).toBeEnabled();
 		expect(
 			screen.queryByRole( 'button', { name: /generate digest/i } )
 		).not.toBeInTheDocument();
@@ -377,6 +413,87 @@ describe( 'PublisherInsights', () => {
 				} ),
 			} ),
 		} );
+		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
+		expect( await screen.findByText( /no live/i ) ).toBeInTheDocument();
+	} );
+
+	it( 'gates Collect: disabled mid-collection (1/3)', async () => {
+		render(
+			<PublisherInsights
+				refreshMs={ 4000 }
+				commandClient={ clientReturning(
+					JSON.stringify( { ...model, done: 1, total: 3 } )
+				) }
+			/>
+		);
+		await waitFor( () =>
+			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
+		);
+		expect(
+			screen.getByRole( 'button', { name: /^collect$/i } )
+		).toBeDisabled();
+	} );
+
+	it( 'enables Collect when collection is complete (3/3)', async () => {
+		await renderPopulated(); // model is 3/3
+		expect(
+			screen.getByRole( 'button', { name: /^collect$/i } )
+		).toBeEnabled();
+	} );
+
+	it( 'shows 0/total immediately on click even when the prior cycle was complete', async () => {
+		await renderPopulated( {
+			commandClient: clientFor( {
+				insights: JSON.stringify( model ),
+				collect: JSON.stringify( { collecting: 3, workers: 1 } ),
+			} ),
+		} );
+		expect( screen.getByText( /collected 3\/3/i ) ).toBeInTheDocument();
+		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
+		expect(
+			await screen.findByText( /collected 0\/3/i )
+		).toBeInTheDocument();
+	} );
+
+	it( 'acknowledges a successful Collect and locks the button until the cycle completes', async () => {
+		await renderPopulated( {
+			commandClient: clientFor( {
+				insights: JSON.stringify( model ),
+				collect: JSON.stringify( { collecting: 3, workers: 2 } ),
+			} ),
+		} );
+		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
+		expect(
+			await screen.findByText( /collecting from 2/i )
+		).toBeInTheDocument();
+		// Stays locked after the (fast) verb returns — no double-fire while in flight.
+		expect(
+			screen.getByRole( 'button', { name: /collecting/i } )
+		).toBeDisabled();
+	} );
+
+	it( 'surfaces a Collect error in the empty state', async () => {
+		render(
+			<PublisherInsights
+				refreshMs={ 4000 }
+				commandClient={ clientFor( {
+					insights: JSON.stringify( {
+						sources: {},
+						top: [],
+						accumulated: 0,
+						digest: '',
+					} ),
+					collect: JSON.stringify( {
+						error: 'No live newspack-ai-newsletter worker',
+					} ),
+				} ) }
+			/>
+		);
+		await waitFor( () =>
+			expect(
+				screen.getByText( /no scored items yet/i )
+			).toBeInTheDocument()
+		);
 		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
 		expect( await screen.findByText( /no live/i ) ).toBeInTheDocument();
 	} );

@@ -8,7 +8,7 @@ import {
 // Exported as the canonical empty shape — the view's fallback reuses it.
 export const emptyModel = () => ( {
 	sources: {},
-	top: [],
+	top: {}, // per-source: { source: [{ title, score }] }
 	accumulated: 0,
 	digest: '',
 } );

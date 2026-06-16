@@ -45,18 +45,16 @@ final class GithubSourceTest extends TestCase {
 		return $out;
 	}
 
-	public function test_fetch_normalizes_releases_merged_prs_and_real_issues(): void {
+	public function test_fetch_normalizes_releases_and_merged_prs(): void {
 		$this->stub_github();
 		$by = $this->fetch_by_id( [ 'repos' => [ 'owner/repo' ], 'token' => '' ] );
 
 		$this->assertArrayHasKey( 'github:owner/repo#release-11', $by );
 		$this->assertArrayHasKey( 'github:owner/repo#pr-5', $by );
-		$this->assertArrayHasKey( 'github:owner/repo#issue-7', $by );
 
-		// Closed-not-merged PR is excluded; the PR that appears in the issues
-		// endpoint (pull_request key) is excluded too.
+		// Closed-not-merged PR is excluded; issues are no longer fetched (releases + merged PRs only).
 		$this->assertArrayNotHasKey( 'github:owner/repo#pr-6', $by );
-		$this->assertArrayNotHasKey( 'github:owner/repo#issue-5', $by );
+		$this->assertArrayNotHasKey( 'github:owner/repo#issue-7', $by );
 
 		$release = $by['github:owner/repo#release-11'];
 		$this->assertSame( 'github', $release['source'] );

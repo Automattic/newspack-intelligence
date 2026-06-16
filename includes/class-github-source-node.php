@@ -16,8 +16,8 @@ namespace Newspack_AI_Newsletter;
 
 class Github_Source_Node extends Source_Node {
 
-	private const API_BASE  = 'https://api.github.com';
-	private const PER_PAGE  = 20;
+	private const API_BASE   = 'https://api.github.com';
+	private const PER_PAGE   = 10;
 	private const USER_AGENT = 'newspack-ai-newsletter';
 
 	/**
@@ -61,7 +61,7 @@ class Github_Source_Node extends Source_Node {
 				$items,
 				$this->releases( $repo, $token ),
 				$this->merged_prs( $repo, $token ),
-				$this->issues( $repo, $token )
+				# $this->issues( $repo, $token )
 			);
 		}
 		return $items;
@@ -105,7 +105,11 @@ class Github_Source_Node extends Source_Node {
 		return $out;
 	}
 
-	/** @return array<int,array<string,mixed>> Issues only — the issues endpoint also lists PRs (pull_request key); those are dropped. */
+	/**
+	 * @return array<int,array<string,mixed>> Issues only — the issues endpoint also lists PRs (pull_request key); those are dropped.
+	 *
+	 * @phpstan-ignore method.unused (the fetch() call is commented out for now; keeping the method until we decide whether to re-enable issues)
+	 */
 	private function issues( string $repo, string $token ): array {
 		$out = [];
 		foreach ( $this->get_json( "/repos/$repo/issues?state=all&sort=updated&direction=desc&per_page=" . self::PER_PAGE, $token ) as $issue ) {

@@ -70,6 +70,12 @@ $font:
       color: $text;
       border: 1px solid $error;
     }
+
+    &--ok {
+      background: #f0f7f1;
+      color: $text;
+      border: 1px solid $success;
+    }
   }
 
   // --- Empty state ---
@@ -255,6 +261,23 @@ $font:
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
+  }
+
+  // Collection progress reads as secondary status text beside the control.
+  &__progress {
+    font-size: 14px;
+    color: $text-secondary;
+  }
+
+  // Space the status/feedback notice off the button row.
+  &__actions + &__notice {
+    margin-top: 12px;
+  }
+
+  // In the empty state the copy is centered, so center + space the Collect control too.
+  &__empty &__actions {
+    justify-content: center;
+    margin-top: 16px;
   }
 
   &__btn {

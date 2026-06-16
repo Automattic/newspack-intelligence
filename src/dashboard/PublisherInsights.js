@@ -1,5 +1,5 @@
 import apiFetch from '@wordpress/api-fetch';
-import { useState } from '@wordpress/element';
+import { useState, useEffect, useRef } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { useNodeState } from '@newspack-nodes/runtime';
 import { useInsightsGraph } from './hooks/useInsightsGraph';
@@ -49,7 +49,15 @@ export default function PublisherInsights( {
 	const model = useNodeState( 'insights:view', 'view' ) || emptyModel();
 	const [ generated, setGenerated ] = useState( null );
 	const [ generating, setGenerating ] = useState( false );
+	// `collecting` is the optimistic in-flight lock: set on click, it shows 0/total and keeps
+	// Collect disabled until the poll reflects the new cycle (done moves off its click-time
+	// value) or a timeout fires — the timeout is the anti-stick guard so a no-op collection
+	// (no live worker, nothing produced, total 0) can't latch the button forever. `startDone`
+	// is the click-time count the clear compares against. `collectNote` is the collect-specific
+	// feedback (success ack or error), shown wherever Collect is.
 	const [ collecting, setCollecting ] = useState( false );
+	const [ collectNote, setCollectNote ] = useState( null );
+	const startDone = useRef( 0 );
 	const [ copied, setCopied ] = useState( false );
 	const [ editLink, setEditLink ] = useState( null );
 	const [ draftError, setDraftError ] = useState( null );
@@ -59,8 +67,12 @@ export default function PublisherInsights( {
 	// Defensive ?? {}/[]: emptyModel + the CI guarantee these, but a malformed
 	// 200 reply could publish a partial object — never crash the page on it.
 	const sources = Object.entries( model.sources ?? {} );
-	const top = model.top ?? [];
-	const isEmpty = ! model.accumulated && 0 === top.length;
+	// `top` is per-source: { source: [{title, score}], … }. topBySource is its entries; the
+	// flattened list feeds the KPI top-score and the proportion bars (comparable across sources).
+	const top = model.top ?? {};
+	const topBySource = Object.entries( top );
+	const allTopItems = topBySource.flatMap( ( [ , items ] ) => items );
+	const isEmpty = ! model.accumulated && 0 === topBySource.length;
 	// The shown digest: a freshly generated one wins; else the durable digest:log
 	// content the poll delivered. Empty until a FLUSH/Generate has produced one.
 	const digest = null !== generated ? generated : model.digest || '';
@@ -69,8 +81,33 @@ export default function PublisherInsights( {
 	const done = model.done || 0;
 	const total = model.total || 0;
 	const collectComplete = total > 0 && done >= total;
+	// Optimistic display: while the lock is held, show 0 instead of the prior cycle's stale count.
+	const displayDone = collecting ? 0 : done;
+	// Clickable only when there's nothing in flight AND the pipeline is at a clean boundary —
+	// empty (0) or complete (>= total). Mid-collection (0 < done < total) it's locked by the
+	// boundary rule alone, so gating survives a page reload (which loses `collecting`).
+	const canCollect = ! collecting && ( 0 === done || collectComplete );
 
-	const topScore = top.reduce(
+	// Release the optimistic lock once the poll reflects the new cycle (done moved off its
+	// click-time value), or after a timeout — the timeout guarantees the button can't stay
+	// stuck if the collection never advances done (no worker, nothing produced, total 0).
+	useEffect( () => {
+		if ( ! collecting ) {
+			return;
+		}
+		if ( done !== startDone.current ) {
+			setCollecting( false );
+			setCollectNote( null );
+			return;
+		}
+		const timer = setTimeout(
+			() => setCollecting( false ),
+			Math.max( refreshMs * 2, 8000 )
+		);
+		return () => clearTimeout( timer );
+	}, [ collecting, done, refreshMs ] );
+
+	const topScore = allTopItems.reduce(
 		( max, item ) => Math.max( max, item.score || 0 ),
 		0
 	);
@@ -110,14 +147,15 @@ export default function PublisherInsights( {
 	};
 
 	const onCollect = () => {
+		// Capture the pre-click count so the effect can tell when the new cycle has landed
+		// (done moved), and show 0/total immediately rather than the prior cycle's stale number.
+		startDone.current = done;
 		setCollecting( true );
-		setDraftError( null );
+		setCollectNote( null );
 		collect()
 			.then( ( payload ) => {
-				setCollecting( false );
 				// The verb replies with JSON: { collecting, workers } on success or
 				// { error } (a normal reply, not a TM_ERROR) when no worker is live.
-				// Surface the error; on success the progress arrives via the poll.
 				let parsed = null;
 				try {
 					parsed = JSON.parse( payload );
@@ -125,28 +163,50 @@ export default function PublisherInsights( {
 					parsed = null;
 				}
 				if ( ! parsed || 'object' !== typeof parsed ) {
-					setDraftError(
-						__(
+					setCollecting( false );
+					setCollectNote( {
+						type: 'error',
+						text: __(
 							'Collection returned an unexpected response.',
 							'newspack-ai-newsletter'
-						)
-					);
+						),
+					} );
 					return;
 				}
 				if ( parsed.error ) {
-					setDraftError( String( parsed.error ) );
+					setCollecting( false );
+					setCollectNote( {
+						type: 'error',
+						text: String( parsed.error ),
+					} );
+					return;
 				}
+				// Success: acknowledge now; keep the lock — the effect releases it when the
+				// poll shows the cycle complete (done >= total).
+				setCollectNote( {
+					type: 'ok',
+					text: sprintf(
+						/* translators: %d: number of workers the collection was dispatched to. */
+						__(
+							'Collecting from %d worker(s)…',
+							'newspack-ai-newsletter'
+						),
+						Number( parsed.workers ) || 0
+					),
+				} );
 			} )
 			.catch( ( err ) => {
 				setCollecting( false );
-				setDraftError(
-					err && err.message
-						? err.message
-						: __(
-								'Could not start collection.',
-								'newspack-ai-newsletter'
-						  )
-				);
+				setCollectNote( {
+					type: 'error',
+					text:
+						err && err.message
+							? err.message
+							: __(
+									'Could not start collection.',
+									'newspack-ai-newsletter'
+							  ),
+				} );
 			} );
 	};
 
@@ -221,6 +281,47 @@ export default function PublisherInsights( {
 			} );
 	};
 
+	// Collect drives a collection cycle. The button + progress (collectButton) and the
+	// success/error note (collectFeedback) render in BOTH the empty and populated states —
+	// you need Collect most when there's nothing scored yet. collectButton is a bare
+	// fragment so the populated card can sit it inline with Generate/Copy/Create. Enabled
+	// only at a clean boundary (empty or complete); progress shows the optimistic count.
+	const collectButton = (
+		<>
+			<button
+				type="button"
+				className="eai-insights__btn"
+				onClick={ onCollect }
+				disabled={ ! canCollect }
+			>
+				{ collecting
+					? __( 'Collecting…', 'newspack-ai-newsletter' )
+					: __( 'Collect', 'newspack-ai-newsletter' ) }
+			</button>
+			{ total > 0 && (
+				<span className="eai-insights__progress" role="status">
+					{ sprintf(
+						/* translators: 1: sources done collecting, 2: total sources. */
+						__( 'Collected %1$d/%2$d', 'newspack-ai-newsletter' ),
+						displayDone,
+						total
+					) }
+				</span>
+			) }
+		</>
+	);
+
+	const collectFeedback = null !== collectNote && (
+		<div
+			className={ `eai-insights__notice eai-insights__notice--${
+				'error' === collectNote.type ? 'error' : 'ok'
+			}` }
+			role={ 'error' === collectNote.type ? 'alert' : 'status' }
+		>
+			{ collectNote.text }
+		</div>
+	);
+
 	// One branch wins: an error notice, the empty state, or the populated
 	// dashboard. (if/else, not a nested ternary — keeps each branch readable.)
 	let content;
@@ -241,10 +342,12 @@ export default function PublisherInsights( {
 				</p>
 				<p className="eai-insights__empty-hint">
 					{ __(
-						'Drive the pipeline — tick the sources — and this updates on the next poll.',
+						'Hit Collect to run the sources (or tick them from the REPL); this updates on the next poll.',
 						'newspack-ai-newsletter'
 					) }
 				</p>
+				<div className="eai-insights__actions">{ collectButton }</div>
+				{ collectFeedback }
 			</div>
 		);
 	} else {
@@ -312,97 +415,90 @@ export default function PublisherInsights( {
 				</section>
 
 				<section className="eai-insights__card eai-insights__top">
-					<h2>{ __( 'Top items', 'newspack-ai-newsletter' ) }</h2>
-					<table>
-						<thead>
-							<tr>
-								<th className="eai-insights__rank-col">
-									{ __( '#', 'newspack-ai-newsletter' ) }
-								</th>
-								<th>
-									{ __( 'Source', 'newspack-ai-newsletter' ) }
-								</th>
-								<th>
-									{ __( 'Title', 'newspack-ai-newsletter' ) }
-								</th>
-								<th>
-									{ __( 'Score', 'newspack-ai-newsletter' ) }
-								</th>
-							</tr>
-						</thead>
-						<tbody>
-							{ top.map( ( item, i ) => (
-								<tr key={ `${ item.source }-${ i }` }>
-									<td className="eai-insights__rank">
-										{ sprintf(
-											/* translators: %d: the item's rank in the score-ordered list. */
-											__(
-												'#%d',
+					<h2>
+						{ __(
+							'Top items by source',
+							'newspack-ai-newsletter'
+						) }
+					</h2>
+					{ topBySource.map( ( [ source, items ] ) => (
+						<div
+							className="eai-insights__source-top"
+							key={ source }
+						>
+							<h3>{ source }</h3>
+							<table>
+								<thead>
+									<tr>
+										<th className="eai-insights__rank-col">
+											{ __(
+												'#',
 												'newspack-ai-newsletter'
-											),
-											i + 1
-										) }
-									</td>
-									<td>{ item.source }</td>
-									<td>{ item.title }</td>
-									<td className="eai-insights__score-cell">
-										<div
-											className="eai-insights__score-bar-track"
-											aria-hidden="true"
-										>
-											<div
-												className="eai-insights__score-bar"
-												style={ {
-													width: `${
-														topScore
-															? ( ( item.score ||
-																	0 ) /
-																	topScore ) *
-															  100
-															: 0
-													}%`,
-												} }
-											/>
-										</div>
-										<span className="eai-insights__score-num">
-											{ item.score }
-										</span>
-									</td>
-								</tr>
-							) ) }
-						</tbody>
-					</table>
+											) }
+										</th>
+										<th>
+											{ __(
+												'Title',
+												'newspack-ai-newsletter'
+											) }
+										</th>
+										<th>
+											{ __(
+												'Score',
+												'newspack-ai-newsletter'
+											) }
+										</th>
+									</tr>
+								</thead>
+								<tbody>
+									{ items.map( ( item, i ) => (
+										<tr key={ `${ source }-${ i }` }>
+											<td className="eai-insights__rank">
+												{ sprintf(
+													/* translators: %d: the item's rank within its source. */
+													__(
+														'#%d',
+														'newspack-ai-newsletter'
+													),
+													i + 1
+												) }
+											</td>
+											<td>{ item.title }</td>
+											<td className="eai-insights__score-cell">
+												<div
+													className="eai-insights__score-bar-track"
+													aria-hidden="true"
+												>
+													<div
+														className="eai-insights__score-bar"
+														style={ {
+															width: `${
+																topScore
+																	? ( ( item.score ||
+																			0 ) /
+																			topScore ) *
+																	  100
+																	: 0
+															}%`,
+														} }
+													/>
+												</div>
+												<span className="eai-insights__score-num">
+													{ item.score }
+												</span>
+											</td>
+										</tr>
+									) ) }
+								</tbody>
+							</table>
+						</div>
+					) ) }
 				</section>
 
 				<section className="eai-insights__card eai-insights__draft">
 					<h2>{ __( 'Newsletter', 'newspack-ai-newsletter' ) }</h2>
 					<div className="eai-insights__actions">
-						<button
-							type="button"
-							className="eai-insights__btn"
-							onClick={ onCollect }
-							disabled={ collecting }
-						>
-							{ collecting
-								? __( 'Collecting…', 'newspack-ai-newsletter' )
-								: __( 'Collect', 'newspack-ai-newsletter' ) }
-						</button>
-						{ total > 0 && (
-							<span
-								className="eai-insights__progress"
-								role="status"
-							>
-								{ sprintf(
-									/* translators: 1: sources done collecting, 2: total sources. */
-									__(
-										'Collected %1$d/%2$d',
-										'newspack-ai-newsletter'
-									),
-									done,
-									total
-								) }
-							</span>
-						) }
+						{ collectButton }
 						<button
 							type="button"
 							className="eai-insights__btn"
@@ -444,6 +540,8 @@ export default function PublisherInsights( {
 							</span>
 						) }
 					</div>
+
+					{ collectFeedback }
 
 					{ null !== editLink && (
 						<p className="eai-insights__draft-result">
