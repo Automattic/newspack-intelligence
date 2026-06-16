@@ -24,9 +24,9 @@ make_node Digest_Builder digest
 make_node Tee            digest:tee
 make_node Log            digest:log /tmp/newspack-ai-newsletter/digest.md 1 7
 cmd digest:log:config void_warranty
-connect_node source           summarizer
-connect_node summarizer       scorer
-connect_node scorer           scored:partition
-connect_node scored:consumer  digest
-connect_node digest           digest:tee
-connect_node digest:tee       digest:log
+connect_node source          summarizer
+connect_node summarizer      scorer
+connect_node scorer          scored:partition
+connect_node scored:consumer digest
+connect_node digest          digest:tee
+connect_node digest:tee      digest:log

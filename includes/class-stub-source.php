@@ -1,8 +1,8 @@
 <?php
 /**
- * Stub_Source_Node: one canned source. Emits a fixed batch of normalized items on
- * `tick` until the real connectors land. Stands in for the live GitHub/Linear/feed
- * sources so the spine runs end-to-end immediately.
+ * Stub_Source_Node: one canned source. Emits a fixed batch of normalized items on a
+ * TICK request until the real connectors land. Stands in for the live
+ * GitHub/Linear/feed sources so the spine runs end-to-end immediately.
  *
  * @package Newspack_AI_Newsletter
  */
@@ -12,18 +12,10 @@ namespace Newspack_AI_Newsletter;
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Core;
-use Newspack_Nodes\Command_Interpreter_Node;
 
 \defined( 'ABSPATH' ) || exit;
 
 class Stub_Source_Node extends Node {
-	use \Newspack_Nodes\Schema_Reflection;
-
-	/** Wire the sibling {name}:config interpreter so the `tick` verb is dispatchable. */
-	public function __construct() {
-		parent::__construct();
-		$this->auto_wire_interpreter();
-	}
 
 	/**
 	 * The ONE seam a real source replaces: return normalized ingest items. Stub = canned.
@@ -41,40 +33,48 @@ class Stub_Source_Node extends Node {
 		];
 	}
 
-	/** `tick` handler: emit each item as a TM_STRUCT message. */
-	public function cmd_tick(): string {
-		$count = 0;
-		foreach ( $this->items() as $item ) {
-			$msg                   = Message::new_message();
-			$msg[ Message::TYPE ]  = Message::TM_STRUCT;
-			$msg[ Message::FROM ]  = $this->name;
-			$msg[ Message::VALUE ] = $item;
-			// parent::fill stamps TO from a connect_node-set target, then forwards to sink.
-			parent::fill( $msg );
-			++$count;
+	/**
+	 * TICK is a runtime trigger: a TM_REQUEST handled here in fill() (NOT a TM_COMMAND
+	 * verb — that flag is for startup/admin). Any other type is ignored; a source
+	 * mints, it doesn't consume.
+	 *
+	 * @param array<int,mixed> $message Incoming request Message.
+	 */
+	public function fill( array &$message ): void {
+		$type = \is_numeric( $message[ Message::TYPE ] ) ? (int) $message[ Message::TYPE ] : 0;
+		if ( $type & Message::TM_REQUEST ) {
+			$this->handle_request( $message );
 		}
-		return "emitted $count item(s)";
+	}
+
+	/**
+	 * TICK handler: emit each item as a TM_STRUCT message, fire-and-forget.
+	 *
+	 * @param array<int,mixed> $message Incoming request Message.
+	 */
+	private function handle_request( array $message ): void {
+		foreach ( $this->items() as $item ) {
+			$response                   = Message::new_message();
+			$response[ Message::TYPE ]  = Message::TM_STRUCT;
+			$response[ Message::FROM ]  = $this->name;
+			$response[ Message::VALUE ] = $item;
+			// parent::fill stamps TO from a connect_node-set target, then forwards to sink.
+			parent::fill( $response );
+		}
 	}
 
 	public static function node_schema(): array {
 		return \array_merge( parent::node_schema(), [
 			'category'     => 'Source',
-			'description'  => 'Emits a canned batch of normalized items on tick (stand-in for live sources).',
+			'description'  => 'Emits a canned batch of normalized items on a TICK request (stand-in for live sources).',
 			'arguments'    => [],
-			'commands'     => [
+			'requests'     => [
 				[
-					'name'        => 'tick',
-					'description' => 'Emit the current batch of items.',
-					'args'        => [],
-					// Dispatched via the {node}:config interpreter (auto_wire_interpreter() in __construct).
-					'handler'     => static function ( Command_Interpreter_Node $interpreter, string $args ): string {
-						/** @var self $patron */
-						$patron = $interpreter->patron();
-						return $patron->cmd_tick();
-					},
+					'name'        => 'TICK',
+					'description' => 'Emit the current batch of items. Trigger with `request_node source TICK`.',
 				],
 			],
-			'accepts_fill' => false,
+			'accepts_fill' => true,
 			'has_target'   => true,
 		] );
 	}

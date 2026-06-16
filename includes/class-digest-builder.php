@@ -9,12 +9,10 @@ namespace Newspack_AI_Newsletter;
 
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Message;
-use Newspack_Nodes\Command_Interpreter_Node;
 
 \defined( 'ABSPATH' ) || exit;
 
 class Digest_Builder_Node extends Node {
-	use \Newspack_Nodes\Schema_Reflection;
 
 	/** @var array<int,array<array-key,mixed>> Accumulated summarized items (array-key: they round-trip through offsetlog JSON). */
 	private array $items = [];
@@ -32,15 +30,19 @@ class Digest_Builder_Node extends Node {
 	 */
 	public static ?\Closure $llm_factory = null;
 
-	/** Wire the sibling {name}:config interpreter so the `flush` verb is dispatchable. */
-	public function __construct() {
-		parent::__construct();
-		$this->auto_wire_interpreter();
-	}
-
+	/**
+	 * FLUSH is a runtime trigger: a TM_REQUEST handled here in fill() (NOT a
+	 * TM_COMMAND verb — that flag is for startup/admin). A TM_STRUCT message is
+	 * data to accumulate; everything else is ignored.
+	 *
+	 * @param array<int,mixed> $message Message reference.
+	 */
 	public function fill( array &$message ): void {
-		/** @var int $type */
-		$type = $message[ Message::TYPE ];
+		$type = \is_numeric( $message[ Message::TYPE ] ) ? (int) $message[ Message::TYPE ] : 0;
+		if ( $type & Message::TM_REQUEST ) {
+			$this->handle_request( $message );
+			return;
+		}
 		if ( 0 === ( $type & Message::TM_STRUCT ) ) {
 			return;
 		}
@@ -53,8 +55,13 @@ class Digest_Builder_Node extends Node {
 		++$this->counter;
 	}
 
-	/** `flush` handler: compose an LLM briefing (ranked-list fallback), emit, clear. */
-	public function cmd_flush(): string {
+	/**
+	 * FLUSH handler: compose an LLM briefing (ranked-list fallback), emit, clear —
+	 * fire-and-forget.
+	 *
+	 * @param array<int,mixed> $message Incoming request Message.
+	 */
+	private function handle_request( array $message ): void {
 		$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
 		$draft  = null;
 		if ( $client instanceof LLM_Client ) {
@@ -72,16 +79,13 @@ class Digest_Builder_Node extends Node {
 			$draft = $this->render_ranked_list();
 		}
 
-		$msg                   = Message::new_message();
-		$msg[ Message::TYPE ]  = Message::TM_BYTESTREAM;
-		$msg[ Message::FROM ]  = $this->name;
-		$msg[ Message::VALUE ] = $draft;
+		$response                   = Message::new_message();
+		$response[ Message::TYPE ]  = Message::TM_BYTESTREAM;
+		$response[ Message::FROM ]  = $this->name;
+		$response[ Message::VALUE ] = $draft;
 		// parent::fill stamps TO from a connect_node-set target, then forwards to sink.
-		parent::fill( $msg );
-
-		$n           = \count( $this->items );
+		parent::fill( $response );
 		$this->items = [];
-		return "flushed $n item(s)";
 	}
 
 	/** Render the accumulated summaries to a markdown bullet list — the no-AI fallback. */
@@ -154,19 +158,12 @@ class Digest_Builder_Node extends Node {
 	public static function node_schema(): array {
 		return \array_merge( parent::node_schema(), [
 			'category'     => 'Transform',
-			'description'  => 'Accumulates summaries; flush emits a markdown newsletter draft.',
+			'description'  => 'Accumulates summaries; a FLUSH request emits a markdown newsletter draft (request_node digest FLUSH).',
 			'arguments'    => [],
-			'commands'     => [
+			'requests'     => [
 				[
-					'name'        => 'flush',
-					'description' => 'Emit the accumulated draft and clear.',
-					'args'        => [],
-					// Dispatched via the {node}:config interpreter (auto_wire_interpreter() in __construct).
-					'handler'     => static function ( Command_Interpreter_Node $interpreter, string $args ): string {
-						/** @var self $patron */
-						$patron = $interpreter->patron();
-						return $patron->cmd_flush();
-					},
+					'name'        => 'FLUSH',
+					'description' => 'Emit the accumulated draft and clear. Trigger with `request_node digest FLUSH`.',
 				],
 			],
 			'accepts_fill' => true,

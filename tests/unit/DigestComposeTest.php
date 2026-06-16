@@ -27,6 +27,14 @@ final class DigestComposeTest extends TestCase {
 		$n->fill( $m );
 	}
 
+	/** Fire a fire-and-forget FLUSH request (TM_REQUEST) — the runtime trigger. */
+	private function flush( Digest_Builder_Node $n ): void {
+		$r                  = Message::new_message();
+		$r[ Message::TYPE ] = Message::TM_REQUEST;
+		$r[ Message::KEY ]  = 'FLUSH';
+		$n->fill( $r );
+	}
+
 	public function test_llm_path_emits_composed_markdown(): void {
 		Proxy_LLM_Client::$http_post = static fn () => [
 			'response' => [ 'code' => 200 ],
@@ -41,7 +49,7 @@ final class DigestComposeTest extends TestCase {
 		$node->sink( $sink );
 
 		$this->feed( $node, [ 'summary' => 'sa', 'score' => 9.0, 'title' => 'A', 'source' => 'github', 'url' => 'http://a' ] );
-		$node->cmd_flush();
+		$this->flush( $node );
 
 		$this->assertStringContainsString( 'The big briefing.', $sink->captured[0][ Message::VALUE ] );
 	}
@@ -54,7 +62,7 @@ final class DigestComposeTest extends TestCase {
 		$node->sink( $sink );
 
 		$this->feed( $node, [ 'summary' => 'sa', 'score' => 9.0 ] );
-		$node->cmd_flush();
+		$this->flush( $node );
 
 		$this->assertStringContainsString( '- sa', $sink->captured[0][ Message::VALUE ] );
 	}

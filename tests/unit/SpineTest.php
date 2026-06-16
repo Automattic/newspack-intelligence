@@ -24,8 +24,8 @@ final class SpineTest extends TestCase {
 		$node = new Summarizer_Node();
 		$node->sink( $sink );
 
-		$msg = $this->struct( [ 'source' => 'github', 'id' => 'github:x#1', 'title' => 'Roundup ships', 'url' => 'u', 'body' => 'long body text here' ] );
-		$node->fill( $msg );
+		$message = $this->struct( [ 'source' => 'github', 'id' => 'github:x#1', 'title' => 'Roundup ships', 'url' => 'u', 'body' => 'long body text here' ] );
+		$node->fill( $message );
 
 		$this->assertCount( 1, $sink->captured );
 		$out = $sink->captured[0];
@@ -38,8 +38,8 @@ final class SpineTest extends TestCase {
 		$node = new Scorer_Node();
 		$node->sink( $sink );
 
-		$msg = $this->struct( [ 'source' => 'github', 'id' => 'github:x#2', 'title' => 'launch', 'url' => 'u', 'body' => 'b' ] );
-		$node->fill( $msg );
+		$message = $this->struct( [ 'source' => 'github', 'id' => 'github:x#2', 'title' => 'launch', 'url' => 'u', 'body' => 'b' ] );
+		$node->fill( $message );
 
 		$this->assertCount( 1, $sink->captured );
 		$out = $sink->captured[0];
@@ -53,10 +53,14 @@ final class SpineTest extends TestCase {
 		$node->sink( $sink );
 
 		foreach ( [ 'a', 'b' ] as $i ) {
-			$msg = $this->struct( [ 'summary' => "item $i" ] );
-			$node->fill( $msg );
+			$message = $this->struct( [ 'summary' => "item $i" ] );
+			$node->fill( $message );
 		}
-		$node->cmd_flush();
+		// FLUSH is fire-and-forget: a TM_REQUEST handled in fill(), not a cmd verb.
+		$flush                  = Message::new_message();
+		$flush[ Message::TYPE ] = Message::TM_REQUEST;
+		$flush[ Message::KEY ]  = 'FLUSH';
+		$node->fill( $flush );
 
 		$this->assertNotEmpty( $sink->captured );
 		$this->assertStringContainsString( '- item a', $sink->captured[0][ Message::VALUE ] );

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Runtime triggers are now fire-and-forget `TM_REQUEST`s, not `TM_COMMAND` verbs.**
+  The source's `tick` and the digest's `flush` were dispatched as `TM_COMMAND` verbs
+  through a sibling `{node}:config` interpreter (`Schema_Reflection` +
+  `auto_wire_interpreter`). Per the Tachikoma convention — `TM_COMMAND` is for
+  startup/administration, runtime triggers are `TM_REQUEST` — `Stub_Source` and
+  `Digest_Builder` now handle a `TM_REQUEST` directly in `fill()` (TICK / FLUSH),
+  emit downstream fire-and-forget, and declare the trigger under
+  `node_schema()['requests']` so the console renders a request button. Trigger from
+  the REPL with `request_node source TICK` / `request_node digest FLUSH`.
+
 ### Added
 
 - **AI core — the Summarizer now calls the LLM.** Each item makes one AI API Proxy

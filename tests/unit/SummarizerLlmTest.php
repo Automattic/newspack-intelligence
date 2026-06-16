@@ -41,8 +41,8 @@ final class SummarizerLlmTest extends TestCase {
 		$sink = new Capture_Sink_Node();
 		$node = new Summarizer_Node();
 		$node->sink( $sink );
-		$msg  = $this->struct( [ 'source' => 'github', 'id' => 'g#1', 'title' => 'T', 'body' => 'B' ] );
-		$node->fill( $msg );
+		$message  = $this->struct( [ 'source' => 'github', 'id' => 'g#1', 'title' => 'T', 'body' => 'B' ] );
+		$node->fill( $message );
 
 		$out = $sink->captured[0][ Message::VALUE ];
 		$this->assertSame( 'One line.', $out['summary'] );
@@ -56,8 +56,8 @@ final class SummarizerLlmTest extends TestCase {
 		$sink = new Capture_Sink_Node();
 		$node = new Summarizer_Node();
 		$node->sink( $sink );
-		$msg  = $this->struct( [ 'source' => 'github', 'id' => 'g#2', 'title' => 'Roundup', 'body' => 'body text' ] );
-		$node->fill( $msg );
+		$message  = $this->struct( [ 'source' => 'github', 'id' => 'g#2', 'title' => 'Roundup', 'body' => 'body text' ] );
+		$node->fill( $message );
 
 		$out = $sink->captured[0][ Message::VALUE ];
 		$this->assertArrayHasKey( 'summary', $out );
@@ -72,8 +72,8 @@ final class SummarizerLlmTest extends TestCase {
 		$sink = new Capture_Sink_Node();
 		$node = new Summarizer_Node();
 		$node->sink( $sink );
-		$msg  = $this->struct( [ 'source' => 'github', 'id' => 'g#3', 'title' => 'X', 'body' => 'b' ] );
-		$node->fill( $msg );
+		$message  = $this->struct( [ 'source' => 'github', 'id' => 'g#3', 'title' => 'X', 'body' => 'b' ] );
+		$node->fill( $message );
 
 		$out = $sink->captured[0][ Message::VALUE ];
 		$this->assertArrayHasKey( 'summary', $out );
