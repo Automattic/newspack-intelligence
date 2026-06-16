@@ -56,9 +56,7 @@ class Summarizer_Node extends Node {
 					[ 'max_tokens' => 200, 'temperature' => 0.3 ]
 				);
 				$enriched = self::parse_enrich( $raw );
-			} catch ( \RuntimeException $e ) {
-				$this->set_state( 'FAILED', $item['title'] );
-			}
+			} catch ( \RuntimeException $e ) {}
 		}
 		if ( null !== $enriched ) {
 			$item['summary']         = $enriched['summary'];
@@ -67,6 +65,7 @@ class Summarizer_Node extends Node {
 			$this->set_state( 'SUMMARIZED', $item['title'] );
 		} else {
 			$item['summary'] = $this->summarize( $item );
+			$this->set_state( 'FAILED', $item['title'] );
 		}
 
 		// The body fed the summary; nothing downstream reads it — drop it to shrink the scored log + snapshot.
