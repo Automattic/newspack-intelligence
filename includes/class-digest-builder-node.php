@@ -23,6 +23,12 @@ class Digest_Builder_Node extends Node {
 	/** Scored-partition node name to nudge on FLUSH (arg 0); '' disables the nudge. */
 	private string $nudge_target = '';
 
+	/** @var array<string,bool> Distinct sources that signalled DONE this cycle (keyed by source name). Counting distinct names — not raw signals — is idempotent across re-ticks, replays, and a stale cross-cycle DONE, so `done` can't overshoot the real source count. */
+	private array $reported = [];
+
+	/** Sources expected this cycle, set by a RESET (the dashboard's Collect). 0 until a collect. */
+	private int $total = 0;
+
 	/**
 	 * LLM-client factory seam. Lazily-defaulted at the call site to
 	 * `Settings::llm_client()` (null when no proxy token is configured). Tests
@@ -49,7 +55,18 @@ class Digest_Builder_Node extends Node {
 			$this->handle_request( $message );
 			return;
 		}
-		if ( 0 === ( $type & Message::TM_STRUCT ) ) {
+		// A source's DONE (TM_INFO) advances collection progress (X/total). The
+		// VALUE carries the source name; recording it by name dedups re-ticks and
+		// replays so the count tracks distinct sources, not raw signals.
+		if ( $type & Message::TM_INFO ) {
+			$key = \is_string( $message[ Message::KEY ] ?? null ) ? $message[ Message::KEY ] : '';
+			if ( 'DONE' === $key ) {
+				$source                    = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
+				$this->reported[ $source ] = true;
+			}
+			return;
+		}
+		if ( ! ( $type & Message::TM_STRUCT ) ) {
 			return;
 		}
 		$value = $message[ Message::VALUE ];
@@ -84,12 +101,21 @@ class Digest_Builder_Node extends Node {
 	}
 
 	/**
-	 * FLUSH handler: compose an LLM briefing (ranked-list fallback), emit, clear —
-	 * fire-and-forget.
+	 * Runtime triggers. RESET (the dashboard's Collect, before it TICKs the sources)
+	 * zeroes the progress counter and sets `total` from the request VALUE — the number
+	 * of sources about to collect. FLUSH composes + emits the draft, clears items, and
+	 * resets progress. Fire-and-forget.
 	 *
 	 * @param array<int,mixed> $message Incoming request Message.
 	 */
 	private function handle_request( array $message ): void {
+		$key = \is_string( $message[ Message::KEY ] ?? null ) ? $message[ Message::KEY ] : '';
+		if ( 'RESET' === $key ) {
+			$this->reported = [];
+			$this->total    = \is_numeric( $message[ Message::VALUE ] ) ? (int) $message[ Message::VALUE ] : 0;
+			return;
+		}
+
 		$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
 		$draft  = Digest_Composer::compose( $this->items, $client, Settings::get_string( 'relevance_profile' ) );
 
@@ -99,8 +125,9 @@ class Digest_Builder_Node extends Node {
 		$response[ Message::VALUE ] = $draft;
 		// parent::fill stamps TO from a connect_node-set target, then forwards to sink.
 		parent::fill( $response );
-		$this->items = [];
-		$this->seen  = [];
+		$this->items    = [];
+		$this->seen     = [];
+		$this->reported = [];
 		$this->nudge_scored_partition();
 	}
 
@@ -125,14 +152,20 @@ class Digest_Builder_Node extends Node {
 	}
 
 	/**
-	 * Snapshot contract: the accumulated items the Consumer co-commits into its
-	 * offsetlog (via `set_snapshot_node digest`), so a respawned worker restores
-	 * this in lockstep with the cursor. Bounded — keep the digest small.
+	 * Snapshot contract: items + collection progress, co-committed by the Consumer
+	 * into its offsetlog (via `set_snapshot_node digest`), so a respawned worker
+	 * restores this in lockstep with the cursor and the dashboard reads live
+	 * progress. Bounded — keep the digest small.
 	 *
-	 * @return array{items: array<int,array<array-key,mixed>>}
+	 * @return array{items: array<int,array<array-key,mixed>>, done: int, total: int, reported: array<int,string>}
 	 */
 	public function save_state(): array {
-		return [ 'items' => $this->items ];
+		return [
+			'items'    => $this->items,
+			'done'     => \count( $this->reported ),
+			'total'    => $this->total,
+			'reported' => \array_keys( $this->reported ),
+		];
 	}
 
 	/**
@@ -143,9 +176,19 @@ class Digest_Builder_Node extends Node {
 	 * @param array<string,mixed> $state
 	 */
 	public function restore_state( array $state ): void {
-		$this->items = [];
-		$this->seen  = [];
-		$items       = $state['items'] ?? null;
+		$this->items    = [];
+		$this->seen     = [];
+		$this->reported = [];
+		$this->total    = isset( $state['total'] ) && \is_numeric( $state['total'] ) ? (int) $state['total'] : 0;
+		$sources        = $state['reported'] ?? null;
+		if ( \is_array( $sources ) ) {
+			foreach ( $sources as $source ) {
+				if ( \is_string( $source ) ) {
+					$this->reported[ $source ] = true;
+				}
+			}
+		}
+		$items = $state['items'] ?? null;
 		if ( ! \is_array( $items ) ) {
 			return;
 		}
@@ -178,6 +221,10 @@ class Digest_Builder_Node extends Node {
 				[
 					'name'        => 'FLUSH',
 					'description' => 'Emit the accumulated draft and clear. Trigger with `request_node digest FLUSH`.',
+				],
+				[
+					'name'        => 'RESET',
+					'description' => 'Zero the collection counter and set total from the request value (the dashboard Collect sends this before TICKing sources).',
 				],
 			],
 			'accepts_fill' => true,

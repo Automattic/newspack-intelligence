@@ -261,4 +261,36 @@ describe( 'useInsightsGraph — generate (awaited verb)', () => {
 			);
 		} );
 	} );
+
+	test( 'collect() fires a `collect` command (FROM=view) and resolves to its payload', async () => {
+		const client = makeFakeClient( {
+			insights: JSON.stringify( {
+				sources: {},
+				top: [],
+				accumulated: 0,
+				digest: '',
+				done: 0,
+				total: 0,
+			} ),
+			collect: JSON.stringify( { collecting: 3, workers: 1 } ),
+		} );
+		const { result } = renderHook( () =>
+			useInsightsGraph( { commandClient: client } )
+		);
+		await act( async () => {} );
+
+		let resolved;
+		await act( async () => {
+			resolved = await result.current.collect();
+		} );
+		expect( resolved ).toBe(
+			JSON.stringify( { collecting: 3, workers: 1 } )
+		);
+
+		const collectMsgs = client.batches
+			.flat()
+			.filter( ( m ) => 'collect' === m[ VALUE ]?.name );
+		expect( collectMsgs.length ).toBe( 1 );
+		expect( collectMsgs[ 0 ][ FROM ] ).toBe( VIEW );
+	} );
 } );

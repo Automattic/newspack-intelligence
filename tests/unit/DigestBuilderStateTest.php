@@ -119,4 +119,89 @@ final class DigestBuilderStateTest extends TestCase {
 		$node->arguments( 'scored:partition' );
 		$this->assertSame( 'scored:partition', $node->arguments() );
 	}
+
+	/** Fire a TM_INFO DONE (what a source emits at the end of a TICK; VALUE = its name). */
+	private function done( Digest_Builder_Node $n, string $source = 'github' ): void {
+		$m                   = Message::new_message();
+		$m[ Message::TYPE ]  = Message::TM_INFO;
+		$m[ Message::KEY ]   = 'DONE';
+		$m[ Message::VALUE ] = $source;
+		$n->fill( $m );
+	}
+
+	/** Fire a RESET request carrying the source total. */
+	private function reset( Digest_Builder_Node $n, int $total ): void {
+		$r                   = Message::new_message();
+		$r[ Message::TYPE ]  = Message::TM_REQUEST;
+		$r[ Message::KEY ]   = 'RESET';
+		$r[ Message::VALUE ] = $total;
+		$n->fill( $r );
+	}
+
+	public function test_reset_sets_total_and_zeroes_done(): void {
+		$node = new Digest_Builder_Node();
+		$node->sink( new Capture_Sink_Node() );
+		$this->done( $node );
+		$this->reset( $node, 3 );
+		$state = $node->save_state();
+		$this->assertSame( 0, $state['done'] );
+		$this->assertSame( 3, $state['total'] );
+	}
+
+	public function test_distinct_sources_advance_the_counter(): void {
+		$node = new Digest_Builder_Node();
+		$node->sink( new Capture_Sink_Node() );
+		$this->reset( $node, 3 );
+		$this->done( $node, 'github' );
+		$this->done( $node, 'linear' );
+		$this->assertSame( 2, $node->save_state()['done'] );
+	}
+
+	public function test_a_repeated_source_counts_once(): void {
+		$node = new Digest_Builder_Node();
+		$node->sink( new Capture_Sink_Node() );
+		$this->reset( $node, 3 );
+		$this->done( $node, 'github' );
+		$this->done( $node, 'github' );
+		$this->assertSame( 1, $node->save_state()['done'], 'a re-ticked source must not double-count' );
+	}
+
+	public function test_done_is_not_counted_as_an_item(): void {
+		$node = new Digest_Builder_Node();
+		$node->sink( new Capture_Sink_Node() );
+		$this->done( $node );
+		$this->assertCount( 0, $node->save_state()['items'] );
+	}
+
+	public function test_flush_resets_done_for_the_next_cycle(): void {
+		Digest_Builder_Node::$llm_factory = static fn (): ?LLM_Client => null;
+		$node                             = new Digest_Builder_Node();
+		$node->sink( new Capture_Sink_Node() );
+		$this->reset( $node, 2 );
+		$this->done( $node );
+		$this->flush( $node );
+		$state = $node->save_state();
+		$this->assertSame( 0, $state['done'] );
+		// total is retained (last known) so the dashboard shows e.g. 0/2 post-flush.
+		$this->assertSame( 2, $state['total'] );
+	}
+
+	public function test_progress_round_trips_through_save_and_restore(): void {
+		$node = new Digest_Builder_Node();
+		$node->restore_state( [ 'items' => [], 'reported' => [ 'github', 'linear' ], 'total' => 3 ] );
+		$state = $node->save_state();
+		$this->assertSame( 2, $state['done'] );
+		$this->assertSame( 3, $state['total'] );
+	}
+
+	public function test_restored_sources_stay_deduped_across_a_restart(): void {
+		$node = new Digest_Builder_Node();
+		$node->sink( new Capture_Sink_Node() );
+		$node->restore_state( [ 'items' => [], 'reported' => [ 'github', 'linear' ], 'total' => 3 ] );
+		// A re-delivered DONE for an already-counted source doesn't advance; a new one does.
+		$this->done( $node, 'github' );
+		$this->assertSame( 2, $node->save_state()['done'] );
+		$this->done( $node, 'feed' );
+		$this->assertSame( 3, $node->save_state()['done'] );
+	}
 }

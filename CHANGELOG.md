@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Collect button + live collection progress.** The dashboard's Newsletter section gains a **Collect** button that drives a full collection cycle: it sends a `collect` command to `Insights_CI`, which (since the sources live in the worker, not the request graph) writes a RESET then a TICK to each source into the worker's input IPC partition — the same transport `wp nodes cli` uses. Each `Source_Node`, after its fetch, emits a `TM_INFO DONE` (always — even if the fetch throws); Summarizer and Scorer now forward `TM_INFO` so the DONE flows down to the `Digest_Builder`, which counts **distinct sources reported** into its snapshot as `done`/`total`. The dashboard shows "Collected X/total" and gates the buttons accordingly: **Generate digest** only enables once every source has reported (`done >= total`), and **Copy markdown** / **Create draft post** only once a digest exists. `collect` replies in JSON (`{collecting,workers}` or `{error}`) so the dashboard surfaces failures instead of guessing.
+
 ### Fixed
 
 - **Digest no longer reloads a stale, ever-growing items list after a worker restart.** On FLUSH the `Digest_Builder` empties its accumulated items, but `scored:consumer`'s cursor didn't move, so its checkpoint (which only writes the offsetlog when the cursor advances) never co-committed the emptied snapshot — a restarted worker reloaded the full pre-FLUSH list and appended new items to it forever. The digest now takes the scored Partition as an argument (`make_node Digest_Builder digest scored:partition`) and, on FLUSH, sends it a throwaway `.` message that advances the consumer so its next checkpoint persists the emptied snapshot (the `.` is ignored downstream). The `Digest_Builder` also **dedupes accumulated items by id** (cleared each FLUSH; a dirty restored snapshot is deduped too), so the same item can't appear twice in a digest.

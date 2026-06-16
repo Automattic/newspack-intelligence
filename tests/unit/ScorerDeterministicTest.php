@@ -48,4 +48,19 @@ final class ScorerDeterministicTest extends TestCase {
 		$this->assertIsFloat( $s );
 		$this->assertGreaterThan( 0.0, $s );
 	}
+
+	public function test_forwards_a_done_signal_unchanged(): void {
+		$sink = new Capture_Sink_Node();
+		$node = new Scorer_Node();
+		$node->sink( $sink );
+
+		$m                  = Message::new_message();
+		$m[ Message::TYPE ] = Message::TM_INFO;
+		$m[ Message::KEY ]  = 'DONE';
+		$node->fill( $m );
+
+		$this->assertCount( 1, $sink->captured );
+		$this->assertSame( 'DONE', $sink->captured[0][ Message::KEY ] );
+		$this->assertSame( Message::TM_INFO, $sink->captured[0][ Message::TYPE ] & Message::TM_INFO );
+	}
 }

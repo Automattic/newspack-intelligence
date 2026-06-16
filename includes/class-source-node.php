@@ -57,24 +57,37 @@ abstract class Source_Node extends Node implements Source {
 
 	/**
 	 * TICK handler: fetch, drop ids already emitted, emit each new item as a
-	 * TM_STRUCT, fire-and-forget. An item with no string `id` is skipped (no id =
-	 * can't dedup, and the contract requires one).
+	 * TM_STRUCT, then emit one TM_INFO DONE so the digest can count collection
+	 * progress. Fire-and-forget. An item with no string `id` is skipped (no id =
+	 * can't dedup, and the contract requires one). fetch() is synchronous, so DONE
+	 * is correctly ordered after every item from this tick.
 	 *
 	 * @param array<int,mixed> $message Incoming request Message.
 	 */
 	private function handle_request( array $message ): void {
-		foreach ( $this->fetch( $this->config() ) as $item ) {
-			$id = isset( $item['id'] ) && \is_string( $item['id'] ) ? $item['id'] : '';
-			if ( '' === $id || isset( $this->seen[ $id ] ) ) {
-				continue;
+		try {
+			foreach ( $this->fetch( $this->config() ) as $item ) {
+				$id = isset( $item['id'] ) && \is_string( $item['id'] ) ? $item['id'] : '';
+				if ( '' === $id || isset( $this->seen[ $id ] ) ) {
+					continue;
+				}
+				$this->remember( $id );
+				$response                   = Message::new_message();
+				$response[ Message::TYPE ]  = Message::TM_STRUCT;
+				$response[ Message::FROM ]  = $this->name;
+				$response[ Message::VALUE ] = $item;
+				// parent::fill stamps TO from a connect_node-set target, then forwards to sink.
+				parent::fill( $response );
 			}
-			$this->remember( $id );
-			$response                   = Message::new_message();
-			$response[ Message::TYPE ]  = Message::TM_STRUCT;
-			$response[ Message::FROM ]  = $this->name;
-			$response[ Message::VALUE ] = $item;
-			// parent::fill stamps TO from a connect_node-set target, then forwards to sink.
-			parent::fill( $response );
+		} finally {
+			// DONE always fires — even if fetch() throws — so one failing source
+			// can't stall the dashboard's collection progress at X/total forever.
+			$done                   = Message::new_message();
+			$done[ Message::TYPE ]  = Message::TM_INFO;
+			$done[ Message::KEY ]   = 'DONE';
+			$done[ Message::FROM ]  = $this->name;
+			$done[ Message::VALUE ] = $this->name;
+			parent::fill( $done );
 		}
 	}
 
@@ -127,6 +140,7 @@ abstract class Source_Node extends Node implements Source {
 					'description' => $tick_description,
 				],
 			],
+            'accepts_fill' => false,
 		] );
 	}
 }

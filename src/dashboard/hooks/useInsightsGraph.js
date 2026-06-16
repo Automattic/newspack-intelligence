@@ -85,7 +85,7 @@ function parseDigest( payload ) {
  * @param {Object} [opts]               Options (test seams).
  * @param {Object} [opts.commandClient] CommandClient seam assigned to `_http.client`.
  * @param {number} [opts.refreshMs]     Poll interval in ms (default 4000).
- * @return {{ generate: () => Promise<string> }} `generate()` recomposes the digest on demand.
+ * @return {{ generate: () => Promise<string>, collect: () => Promise<*> }} On-demand verbs.
  */
 export function useInsightsGraph( opts = {} ) {
 	const { commandClient, refreshMs = 4000 } = opts;
@@ -103,20 +103,37 @@ export function useInsightsGraph( opts = {} ) {
 		commandClient,
 	} );
 
-	// Awaited `generate`: stash a pending Promise under the command ID, fire it,
-	// and resolve to the recomposed digest markdown when the reply pivots back.
-	const generate = useCallback( () => {
-		const interpreter = interpreterRef.current;
-		const view = viewRef.current;
-		if ( ! interpreter || ! view ) {
-			return Promise.reject( new Error( 'insights graph not ready' ) );
-		}
-		const id = makeOpId( 'insights-gen' );
-		return new Promise( ( resolve, reject ) => {
-			view.replies.add( id, resolve, reject );
-			interpreter.fill( buildCommand( 'generate', id ) );
-		} ).then( parseDigest );
-	}, [ interpreterRef ] );
+	// Awaited verb: stash a pending Promise under the command ID, fire the verb,
+	// and resolve with the reply's payload when it pivots back to the view.
+	const awaitVerb = useCallback(
+		( verb, prefix ) => {
+			const interpreter = interpreterRef.current;
+			const view = viewRef.current;
+			if ( ! interpreter || ! view ) {
+				return Promise.reject(
+					new Error( 'insights graph not ready' )
+				);
+			}
+			const id = makeOpId( prefix );
+			return new Promise( ( resolve, reject ) => {
+				view.replies.add( id, resolve, reject );
+				interpreter.fill( buildCommand( verb, id ) );
+			} );
+		},
+		[ interpreterRef ]
+	);
 
-	return { generate };
+	// `generate` resolves to the recomposed digest markdown; `collect` resolves to
+	// the collect verb's raw payload (a `{collecting,workers}` JSON string, or an
+	// `error: …` string when no worker is live).
+	const generate = useCallback(
+		() => awaitVerb( 'generate', 'insights-gen' ).then( parseDigest ),
+		[ awaitVerb ]
+	);
+	const collect = useCallback(
+		() => awaitVerb( 'collect', 'insights-collect' ),
+		[ awaitVerb ]
+	);
+
+	return { generate, collect };
 }

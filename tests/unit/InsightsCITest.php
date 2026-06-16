@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Newspack_AI_Newsletter\Tests;
 
 use Newspack_AI_Newsletter\Insights_CI_Node;
+use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Tests\TestCase;
 
 /**
@@ -23,13 +24,19 @@ final class InsightsCITest extends TestCase {
 	}
 
 	protected function tearDown(): void {
-		foreach ( (array) \glob( $this->tmp . '/*' ) as $f ) {
-			\unlink( $f );
-		}
-		if ( \is_dir( $this->tmp ) ) {
-			\rmdir( $this->tmp );
-		}
+		self::rrmdir( $this->tmp );
 		parent::tearDown();
+	}
+
+	/** Recursively remove a temp dir (handles the nested lock dirs collect tests create). */
+	private static function rrmdir( string $dir ): void {
+		if ( ! \is_dir( $dir ) ) {
+			return;
+		}
+		foreach ( (array) \glob( $dir . '/*' ) as $path ) {
+			\is_dir( $path ) ? self::rrmdir( $path ) : \unlink( $path );
+		}
+		\rmdir( $dir );
 	}
 
 	public function test_read_latest_digest_returns_newest_segment(): void {
@@ -62,5 +69,32 @@ final class InsightsCITest extends TestCase {
 		$parsed = \json_decode( $json, true );
 		$this->assertIsArray( $parsed );
 		$this->assertStringContainsString( '- shipped X', (string) $parsed['digest'] );
+	}
+
+	public function test_model_carries_collection_progress_keys(): void {
+		// No snapshots → progress is zeroed but always present (the dashboard gates on it).
+		$model = Insights_CI_Node::read_insights_model( $this->tmp, $this->tmp . '/none.md' );
+		$this->assertSame( 0, $model['done'] );
+		$this->assertSame( 0, $model['total'] );
+	}
+
+	public function test_live_workers_lists_topology_workers_from_lock_dirs(): void {
+		\mkdir( $this->tmp . '/locks/newspack-ai-newsletter.p0.lock.d', 0777, true );
+		\mkdir( $this->tmp . '/locks/newspack-ai-newsletter.p1.lock.d', 0777, true );
+		\mkdir( $this->tmp . '/locks/other.p0.lock.d', 0777, true );
+
+		$workers = Insights_CI_Node::live_workers( $this->tmp );
+		\sort( $workers );
+		$this->assertSame(
+			[ 'newspack-ai-newsletter.p0', 'newspack-ai-newsletter.p1' ],
+			$workers
+		);
+	}
+
+	public function test_collect_errors_when_no_worker_is_live(): void {
+		$result = Insights_CI_Node::collect( new Command_Interpreter_Node(), $this->tmp );
+		$parsed = \json_decode( $result, true );
+		$this->assertIsArray( $parsed );
+		$this->assertStringContainsString( 'No live', (string) $parsed['error'] );
 	}
 }

@@ -40,12 +40,16 @@ export default function PublisherInsights( {
 	commandClient,
 	createDraft = defaultCreateDraft,
 } ) {
-	const { generate } = useInsightsGraph( { refreshMs, commandClient } );
+	const { generate, collect } = useInsightsGraph( {
+		refreshMs,
+		commandClient,
+	} );
 	// One fallback to the canonical empty shape; the node guarantees the data
 	// fields on every publish (model, error-model, or empty), so no per-field guards.
 	const model = useNodeState( 'insights:view', 'view' ) || emptyModel();
 	const [ generated, setGenerated ] = useState( null );
 	const [ generating, setGenerating ] = useState( false );
+	const [ collecting, setCollecting ] = useState( false );
 	const [ copied, setCopied ] = useState( false );
 	const [ editLink, setEditLink ] = useState( null );
 	const [ draftError, setDraftError ] = useState( null );
@@ -60,6 +64,11 @@ export default function PublisherInsights( {
 	// The shown digest: a freshly generated one wins; else the durable digest:log
 	// content the poll delivered. Empty until a FLUSH/Generate has produced one.
 	const digest = null !== generated ? generated : model.digest || '';
+	// Collection progress (X/total) the poll delivers; Generate only unlocks once
+	// every source has reported DONE.
+	const done = model.done || 0;
+	const total = model.total || 0;
+	const collectComplete = total > 0 && done >= total;
 
 	const topScore = top.reduce(
 		( max, item ) => Math.max( max, item.score || 0 ),
@@ -96,6 +105,47 @@ export default function PublisherInsights( {
 						'Could not copy to the clipboard.',
 						'newspack-ai-newsletter'
 					)
+				);
+			} );
+	};
+
+	const onCollect = () => {
+		setCollecting( true );
+		setDraftError( null );
+		collect()
+			.then( ( payload ) => {
+				setCollecting( false );
+				// The verb replies with JSON: { collecting, workers } on success or
+				// { error } (a normal reply, not a TM_ERROR) when no worker is live.
+				// Surface the error; on success the progress arrives via the poll.
+				let parsed = null;
+				try {
+					parsed = JSON.parse( payload );
+				} catch ( e ) {
+					parsed = null;
+				}
+				if ( ! parsed || 'object' !== typeof parsed ) {
+					setDraftError(
+						__(
+							'Collection returned an unexpected response.',
+							'newspack-ai-newsletter'
+						)
+					);
+					return;
+				}
+				if ( parsed.error ) {
+					setDraftError( String( parsed.error ) );
+				}
+			} )
+			.catch( ( err ) => {
+				setCollecting( false );
+				setDraftError(
+					err && err.message
+						? err.message
+						: __(
+								'Could not start collection.',
+								'newspack-ai-newsletter'
+						  )
 				);
 			} );
 	};
@@ -330,8 +380,34 @@ export default function PublisherInsights( {
 						<button
 							type="button"
 							className="eai-insights__btn"
+							onClick={ onCollect }
+							disabled={ collecting }
+						>
+							{ collecting
+								? __( 'Collecting…', 'newspack-ai-newsletter' )
+								: __( 'Collect', 'newspack-ai-newsletter' ) }
+						</button>
+						{ total > 0 && (
+							<span
+								className="eai-insights__progress"
+								role="status"
+							>
+								{ sprintf(
+									/* translators: 1: sources done collecting, 2: total sources. */
+									__(
+										'Collected %1$d/%2$d',
+										'newspack-ai-newsletter'
+									),
+									done,
+									total
+								) }
+							</span>
+						) }
+						<button
+							type="button"
+							className="eai-insights__btn"
 							onClick={ onGenerate }
-							disabled={ generating }
+							disabled={ generating || ! collectComplete }
 						>
 							{ generating
 								? __( 'Generating…', 'newspack-ai-newsletter' )

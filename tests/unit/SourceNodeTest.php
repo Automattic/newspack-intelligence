@@ -17,6 +17,19 @@ final class SourceNodeTest extends TestCase {
 		return $request;
 	}
 
+	/**
+	 * The emitted item structs (a TICK also emits a trailing TM_INFO DONE, which
+	 * these item-count assertions exclude).
+	 *
+	 * @param array<int,array<int,mixed>> $captured
+	 * @return array<int,array<int,mixed>>
+	 */
+	private function structs( array $captured ): array {
+		return \array_values(
+			\array_filter( $captured, static fn ( $m ) => 0 !== ( $m[ Message::TYPE ] & Message::TM_STRUCT ) )
+		);
+	}
+
 	public function test_tick_emits_each_fetched_item_as_struct(): void {
 		$sink = new Capture_Sink_Node();
 		$node = new Fake_Source_Node();
@@ -29,9 +42,23 @@ final class SourceNodeTest extends TestCase {
 		$req = $this->tick();
 		$node->fill( $req );
 
-		$this->assertCount( 2, $sink->captured );
-		$this->assertTrue( (bool) ( $sink->captured[0][ Message::TYPE ] & Message::TM_STRUCT ) );
-		$this->assertSame( 'fake:1', $sink->captured[0][ Message::VALUE ]['id'] );
+		$structs = $this->structs( $sink->captured );
+		$this->assertCount( 2, $structs );
+		$this->assertSame( 'fake:1', $structs[0][ Message::VALUE ]['id'] );
+	}
+
+	public function test_tick_emits_a_done_signal_after_the_items(): void {
+		$sink = new Capture_Sink_Node();
+		$node = new Fake_Source_Node();
+		$node->items = [ [ 'source' => 'fake', 'id' => 'fake:1', 'title' => 'A' ] ];
+		$node->sink( $sink );
+
+		$req = $this->tick();
+		$node->fill( $req );
+
+		$last = \end( $sink->captured );
+		$this->assertSame( Message::TM_INFO, $last[ Message::TYPE ] & Message::TM_INFO );
+		$this->assertSame( 'DONE', $last[ Message::KEY ] );
 	}
 
 	public function test_dedups_by_id_across_ticks(): void {
@@ -45,7 +72,7 @@ final class SourceNodeTest extends TestCase {
 		$b = $this->tick();
 		$node->fill( $b );
 
-		$this->assertCount( 1, $sink->captured, 'a seen id must not be re-emitted on a later tick' );
+		$this->assertCount( 1, $this->structs( $sink->captured ), 'a seen id must not be re-emitted on a later tick' );
 	}
 
 	public function test_skips_items_with_no_id(): void {
@@ -57,7 +84,7 @@ final class SourceNodeTest extends TestCase {
 		$req = $this->tick();
 		$node->fill( $req );
 
-		$this->assertCount( 0, $sink->captured );
+		$this->assertCount( 0, $this->structs( $sink->captured ) );
 	}
 
 	public function test_non_request_message_is_ignored(): void {

@@ -86,7 +86,12 @@ class Scorer_Node extends Node {
 	public function fill( array &$message ): void {
 		/** @var int $type */
 		$type = $message[ Message::TYPE ];
-		if ( 0 === ( $type & Message::TM_STRUCT ) ) {
+		// Forward control signals (e.g. a source's DONE) unchanged toward the digest.
+		if ( $type & Message::TM_INFO ) {
+			parent::fill( $message );
+			return;
+		}
+		if ( ! ( $type & Message::TM_STRUCT ) ) {
 			return;
 		}
 		$item = $message[ Message::VALUE ];

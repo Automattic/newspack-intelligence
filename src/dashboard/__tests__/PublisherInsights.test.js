@@ -46,6 +46,9 @@ const model = {
 	],
 	accumulated: 3,
 	digest: DIGEST,
+	// Collection complete (3/3) so the gated Generate button is enabled by default.
+	done: 3,
+	total: 3,
 };
 
 // A fake CommandClient whose reply payload is keyed by verb (the CI reply pivot):
@@ -325,5 +328,56 @@ describe( 'PublisherInsights', () => {
 		expect( screen.getByRole( 'alert' ).textContent ).toMatch(
 			/snapshot read failed/
 		);
+	} );
+
+	it( 'shows collection progress as X/total', async () => {
+		render(
+			<PublisherInsights
+				refreshMs={ 4000 }
+				commandClient={ clientReturning(
+					JSON.stringify( { ...model, done: 2, total: 3 } )
+				) }
+			/>
+		);
+		await waitFor( () =>
+			expect( screen.getByText( /collected 2\/3/i ) ).toBeInTheDocument()
+		);
+	} );
+
+	it( 'disables Generate until every source has reported done', async () => {
+		render(
+			<PublisherInsights
+				refreshMs={ 4000 }
+				commandClient={ clientReturning(
+					JSON.stringify( { ...model, done: 1, total: 3 } )
+				) }
+			/>
+		);
+		await waitFor( () =>
+			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
+		);
+		expect(
+			screen.getByRole( 'button', { name: /generate digest/i } )
+		).toBeDisabled();
+	} );
+
+	it( 'enables Generate once collection is complete (done >= total)', async () => {
+		await renderPopulated(); // model is 3/3
+		expect(
+			screen.getByRole( 'button', { name: /generate digest/i } )
+		).not.toBeDisabled();
+	} );
+
+	it( 'surfaces a no-worker error when Collect finds nothing live', async () => {
+		await renderPopulated( {
+			commandClient: clientFor( {
+				insights: JSON.stringify( model ),
+				collect: JSON.stringify( {
+					error: 'No live newspack-ai-newsletter worker',
+				} ),
+			} ),
+		} );
+		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
+		expect( await screen.findByText( /no live/i ) ).toBeInTheDocument();
 	} );
 } );
