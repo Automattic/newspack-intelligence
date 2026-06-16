@@ -35,4 +35,4 @@ npx jest               # JS unit tests (local)
 
 ## Docs
 
-- Substrate: [`newspack-nodes`](../newspack-nodes)
+- Substrate: [`newspack-nodes`](https://github.com/Automattic/newspack-nodes)
