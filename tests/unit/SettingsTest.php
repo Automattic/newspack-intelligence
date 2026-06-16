@@ -83,4 +83,40 @@ final class SettingsTest extends TestCase {
 		$this->assertInstanceOf( \Newspack_AI_Newsletter\LLM_Client::class, Settings::llm_client() );
 		delete_option( 'newspack_ai_newsletter_ai_proxy_token' );
 	}
+
+	/** @return array<string,Field> fields keyed by key */
+	private function by_key(): array {
+		$out = [];
+		foreach ( Settings::fields() as $f ) {
+			$out[ $f->key ] = $f;
+		}
+		return $out;
+	}
+
+	public function test_every_settings_field_is_renderable_and_sanitized(): void {
+		// A field without a render/sanitize callback is silently skipped by the
+		// Schema (no UI, no save) — that was the "no settings UI" bug.
+		foreach ( $this->by_key() as $key => $field ) {
+			$this->assertTrue( \is_callable( $field->render ), "field $key has no render callback" );
+			$this->assertTrue( \is_callable( $field->sanitize ), "field $key has no sanitize callback" );
+		}
+	}
+
+	public function test_text_field_sanitize_uses_sanitize_text_field(): void {
+		$sanitize = $this->by_key()['ai_model']->sanitize;
+		$this->assertSame( 'gpt-oss-120b', $sanitize( "  gpt-oss-120b\n" ) );
+		$this->assertSame( 'clean', $sanitize( "cle<script>an" ) );
+	}
+
+	public function test_array_strings_sanitize_splits_lines_dropping_blanks(): void {
+		$sanitize = $this->by_key()['github_repos']->sanitize;
+		$result   = $sanitize( "Automattic/wp-calypso\n\n  owner/repo  \n" );
+		$this->assertSame( [ 'Automattic/wp-calypso', 'owner/repo' ], $result );
+	}
+
+	public function test_array_strings_sanitize_handles_an_already_array_value(): void {
+		// options.php posts the textarea as a string, but be defensive.
+		$sanitize = $this->by_key()['feeds']->sanitize;
+		$this->assertSame( [ 'https://a.test/feed' ], $sanitize( [ 'https://a.test/feed', '' ] ) );
+	}
 }

@@ -78,15 +78,15 @@ function enqueue_insights_assets( string $hook = '' ): void {
 	);
 }
 
-const SETTINGS_GROUP = 'newspack_ai_newsletter';
+const SETTINGS_GROUP     = 'newspack_ai_newsletter';
+const SETTINGS_MENU_SLUG = 'newspack-ai-newsletter-settings';
 
 /**
  * Register the plugin's settings via the substrate Config_System Schema, the same
  * way newspack-event-logger-nodes' Admin::register_settings() does: register_options()
- * wires register_setting() for every rendered+sanitized Field, and
- * register_sections_and_fields() adds the sections/fields to the settings page.
- * Fields without a render/sanitize callback (the #1 scaffold state) are skipped by
- * the Schema until sub-projects #2/#3 add the AI/connector settings UI.
+ * wires register_setting() for every sanitized Field, and register_sections_and_fields()
+ * adds the rendered fields to the settings page (keyed by SETTINGS_MENU_SLUG, which
+ * render_settings_page() then echoes via do_settings_sections()).
  */
 function register_settings(): void {
 	if ( ! \class_exists( '\Newspack_Nodes\Config_System\Schema' ) ) {
@@ -94,11 +94,47 @@ function register_settings(): void {
 	}
 	$schema = Settings::schema();
 	$schema->register_options( SETTINGS_GROUP );
-	$schema->register_sections_and_fields( INSIGHTS_MENU_SLUG );
+	$schema->register_sections_and_fields( SETTINGS_MENU_SLUG );
+}
+
+/**
+ * Add the Settings submenu under Publisher Insights — a classic Settings-API form
+ * for the AI proxy + connector credentials (the React dashboard handles insights
+ * display separately). Honors the substrate access gate.
+ */
+function register_settings_admin_page(): void {
+	if ( ! \function_exists( 'add_submenu_page' ) || ! \class_exists( '\Newspack_Nodes\Admin\Admin' ) ) {
+		return;
+	}
+	if ( ! \Newspack_Nodes\Admin\Admin::current_user_allowed() ) {
+		return;
+	}
+	\add_submenu_page(
+		INSIGHTS_MENU_SLUG,
+		\__( 'AI Newsletter Settings', 'newspack-ai-newsletter' ),
+		\__( 'Settings', 'newspack-ai-newsletter' ),
+		'manage_options',
+		SETTINGS_MENU_SLUG,
+		__NAMESPACE__ . '\\render_settings_page'
+	);
+}
+
+/** Render the Settings-API form: the registered sections/fields + a save button. */
+function render_settings_page(): void {
+	if ( ! \current_user_can( 'manage_options' ) ) {
+		return;
+	}
+	echo '<div class="wrap"><h1>' . \esc_html__( 'AI Newsletter Settings', 'newspack-ai-newsletter' ) . '</h1>';
+	echo '<form method="post" action="options.php">';
+	\settings_fields( SETTINGS_GROUP );
+	\do_settings_sections( SETTINGS_MENU_SLUG );
+	\submit_button();
+	echo '</form></div>';
 }
 
 if ( \is_admin() ) {
 	\add_action( 'admin_menu', __NAMESPACE__ . '\\register_insights_admin_page', 11 );
+	\add_action( 'admin_menu', __NAMESPACE__ . '\\register_settings_admin_page', 12 );
 	\add_action( 'admin_enqueue_scripts', __NAMESPACE__ . '\\enqueue_insights_assets' );
 	\add_action( 'admin_init', __NAMESPACE__ . '\\register_settings' );
 }

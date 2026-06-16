@@ -106,6 +106,54 @@ class Settings {
 		return self::schema()->fields();
 	}
 
+	/** Render a single-line text (or password, for secrets) input bound to a setting. */
+	private static function text_render( string $key, bool $secret = false ): \Closure {
+		return static function () use ( $key, $secret ): void {
+			\printf(
+				'<input type="%s" name="%s" value="%s" class="regular-text" autocomplete="off" />',
+				$secret ? 'password' : 'text',
+				\esc_attr( self::PREFIX . $key ),
+				\esc_attr( self::get_string( $key ) )
+			);
+		};
+	}
+
+	/** Render an array_strings setting as a one-entry-per-line textarea. */
+	private static function list_render( string $key ): \Closure {
+		return static function () use ( $key ): void {
+			\printf(
+				'<textarea name="%s" rows="4" class="large-text code">%s</textarea>',
+				\esc_attr( self::PREFIX . $key ),
+				\esc_textarea( \implode( "\n", self::get_array( $key ) ) )
+			);
+		};
+	}
+
+	/** Sanitize a single text/secret value (trim + strip tags). */
+	private static function text_sanitize(): \Closure {
+		return static fn ( $value ): string => \sanitize_text_field( \is_scalar( $value ) ? (string) $value : '' );
+	}
+
+	/** Sanitize an array_strings value: a textarea (or array) → trimmed, non-empty list. */
+	private static function list_sanitize(): \Closure {
+		return static function ( $value ): array {
+			$lines = \is_array( $value )
+				? $value
+				: \preg_split( '/\r\n|\r|\n/', \is_scalar( $value ) ? (string) $value : '' );
+			$out = [];
+			foreach ( (array) $lines as $line ) {
+				if ( ! \is_scalar( $line ) ) {
+					continue;
+				}
+				$clean = \sanitize_text_field( (string) $line );
+				if ( '' !== $clean ) {
+					$out[] = $clean;
+				}
+			}
+			return $out;
+		};
+	}
+
 	/** The plugin settings schema (memoized). */
 	public static function schema(): Schema {
 		if ( null !== self::$schema ) {
@@ -121,6 +169,8 @@ class Settings {
 					type: 'text',
 					label: static fn(): string => \__( 'AI Proxy Base URL', 'newspack-ai-newsletter' ),
 					section: self::AI_SECTION,
+					sanitize: self::text_sanitize(),
+					render: self::text_render( 'ai_proxy_base_url' ),
 					register_args: [ 'default' => self::AI_PROXY_BASE_URL ],
 				),
 				new Field(
@@ -128,6 +178,8 @@ class Settings {
 					type: 'text',
 					label: static fn(): string => \__( 'AI Proxy Token', 'newspack-ai-newsletter' ),
 					section: self::AI_SECTION,
+					sanitize: self::text_sanitize(),
+					render: self::text_render( 'ai_proxy_token', true ),
 					register_args: [ 'secret' => true, 'autoload' => false ],
 				),
 				new Field(
@@ -135,6 +187,8 @@ class Settings {
 					type: 'text',
 					label: static fn(): string => \__( 'AI Model', 'newspack-ai-newsletter' ),
 					section: self::AI_SECTION,
+					sanitize: self::text_sanitize(),
+					render: self::text_render( 'ai_model' ),
 					register_args: [ 'default' => self::AI_MODEL ],
 				),
 				new Field(
@@ -142,15 +196,19 @@ class Settings {
 					type: 'text',
 					label: static fn(): string => \__( 'AI Feature', 'newspack-ai-newsletter' ),
 					section: self::AI_SECTION,
+					sanitize: self::text_sanitize(),
+					render: self::text_render( 'ai_feature' ),
 					register_args: [ 'default' => self::AI_FEATURE ],
 				),
 
-				// -- Connector secrets ---------------------------------------
+				// -- Connectors ----------------------------------------------
 				new Field(
 					key: 'github_repos',
 					type: 'array_strings',
-					label: static fn(): string => \__( 'GitHub Repos', 'newspack-ai-newsletter' ),
+					label: static fn(): string => \__( 'GitHub Repos (one owner/name per line)', 'newspack-ai-newsletter' ),
 					section: self::CONNECTORS_SECTION,
+					sanitize: self::list_sanitize(),
+					render: self::list_render( 'github_repos' ),
 					delete_on_blank: false,
 				),
 				new Field(
@@ -158,6 +216,8 @@ class Settings {
 					type: 'text',
 					label: static fn(): string => \__( 'GitHub Token', 'newspack-ai-newsletter' ),
 					section: self::CONNECTORS_SECTION,
+					sanitize: self::text_sanitize(),
+					render: self::text_render( 'github_token', true ),
 					register_args: [ 'secret' => true, 'autoload' => false ],
 				),
 				new Field(
@@ -165,13 +225,17 @@ class Settings {
 					type: 'text',
 					label: static fn(): string => \__( 'Linear Token', 'newspack-ai-newsletter' ),
 					section: self::CONNECTORS_SECTION,
+					sanitize: self::text_sanitize(),
+					render: self::text_render( 'linear_token', true ),
 					register_args: [ 'secret' => true, 'autoload' => false ],
 				),
 				new Field(
 					key: 'feeds',
 					type: 'array_strings',
-					label: static fn(): string => \__( 'Feeds', 'newspack-ai-newsletter' ),
+					label: static fn(): string => \__( 'Feeds (one RSS/Atom URL per line)', 'newspack-ai-newsletter' ),
 					section: self::CONNECTORS_SECTION,
+					sanitize: self::list_sanitize(),
+					render: self::list_render( 'feeds' ),
 					delete_on_blank: false,
 				),
 
@@ -181,12 +245,16 @@ class Settings {
 					type: 'text',
 					label: static fn(): string => \__( 'Digest Schedule', 'newspack-ai-newsletter' ),
 					section: self::DIGEST_SECTION,
+					sanitize: self::text_sanitize(),
+					render: self::text_render( 'digest_schedule' ),
 				),
 				new Field(
 					key: 'relevance_profile',
 					type: 'text',
 					label: static fn(): string => \__( 'Relevance Profile', 'newspack-ai-newsletter' ),
 					section: self::DIGEST_SECTION,
+					sanitize: self::text_sanitize(),
+					render: self::text_render( 'relevance_profile' ),
 					delete_on_blank: false,
 				),
 			],
