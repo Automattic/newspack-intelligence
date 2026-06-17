@@ -102,22 +102,6 @@ class Insights_CI_Node extends Service_CI_Node {
 	}
 
 	/**
-	 * Merge every `scored.p*` snapshot's accumulated items into one list (the full
-	 * item objects, not the trimmed top) — the input the `generate` recompose reads.
-	 *
-	 * @return array<int,array<array-key,mixed>>
-	 */
-	public static function read_snapshot_items( string $offsets_dir ): array {
-		$items = [];
-		foreach ( self::scored_dirs( $offsets_dir ) as $dir ) {
-			foreach ( self::cache_items( self::read_cache( $dir ) ) as $item ) {
-				$items[] = $item;
-			}
-		}
-		return $items;
-	}
-
-	/**
 	 * Trigger a collection cycle: reset the digest's progress counter, then TICK every
 	 * source, all routed into each live worker's input IPC partition
 	 * (the only transport from the request graph to a worker's nodes — the same one
@@ -146,6 +130,33 @@ class Insights_CI_Node extends Service_CI_Node {
 			$out->flush();
 		}
 		return (string) \wp_json_encode( [ 'collecting' => $total, 'workers' => \count( $workers ) ] );
+	}
+
+	/**
+	 * Ask the worker to recompose: route a single TM_REQUEST REGENERATE to its
+	 * `digest` node (the same request graph → worker IPC transport `collect` uses).
+	 * The worker's Digest_Builder composes from its live items and writes digest:log;
+	 * the dashboard's poll surfaces the new digest. Fire-and-forget — no markdown here.
+	 *
+	 * @param Command_Interpreter_Node $interpreter The request-graph interpreter (this CI).
+	 * @param string                   $base_dir    The substrate base directory (ipc/locks live under it).
+	 */
+	public static function regenerate( Command_Interpreter_Node $interpreter, string $base_dir ): string {
+		$workers = self::live_workers( $base_dir );
+		if ( [] === $workers ) {
+			return (string) \wp_json_encode(
+				[ 'error' => 'No live ' . self::TOPOLOGY . ' worker — start the workers first.' ]
+			);
+		}
+		foreach ( $workers as $worker_id ) {
+			$out = self::ipc_out( $interpreter, $worker_id, $base_dir );
+			if ( null === $out ) {
+				continue;
+			}
+			self::route_to_worker( $interpreter, $worker_id, 'digest', 'REGENERATE' );
+			$out->flush();
+		}
+		return (string) \wp_json_encode( [ 'regenerating' => true, 'workers' => \count( $workers ) ] );
 	}
 
 	/**
@@ -237,17 +248,6 @@ class Insights_CI_Node extends Service_CI_Node {
 	}
 
 	/**
-	 * Recompose a fresh digest from the given items via the shared composer (LLM,
-	 * ranked-list fallback) and return it as `{ digest: markdown }` JSON.
-	 *
-	 * @param array<int,array<array-key,mixed>> $items
-	 */
-	public static function generate_json( array $items ): string {
-		$draft = Digest_Composer::compose( $items, Settings::llm_client(), Settings::get_string( 'relevance_profile' ) );
-		return (string) \wp_json_encode( [ 'digest' => $draft ] );
-	}
-
-	/**
 	 * The `scored.p*` offset dirs under the offsets directory (empty on glob failure).
 	 *
 	 * @return array<int,string>
@@ -312,11 +312,11 @@ class Insights_CI_Node extends Service_CI_Node {
 				],
 				[
 					'name'        => 'generate',
-					'description' => 'Recompose a fresh digest from the current items via the LLM; returns its markdown.',
+					'description' => 'Ask the worker to recompose the digest (TM_REQUEST REGENERATE to its digest node); the dashboard polls for the result.',
 					'args'        => [],
 					'handler'     => static function ( Command_Interpreter_Node $interpreter, string $args ): string {
 						self::require_manage_options();
-						return self::generate_json( self::read_snapshot_items( Config::get_offsets_directory() ) );
+						return self::regenerate( $interpreter, Config::get_base_directory() );
 					},
 				],
 				[

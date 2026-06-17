@@ -19,9 +19,9 @@
  * defaults to the shared CommandClient over window.NewspackNodesData.
  *
  * Beyond the poll, the hook exposes `generate()` — an AWAITED `generate` verb the
- * "Generate digest" button calls to recompose a fresh digest on demand. It
- * stashes a pending Promise in the view's reply registry keyed by message[ID],
- * fires the command, and resolves to the digest markdown when the reply pivots back.
+ * "Regenerate digest" button calls. It no longer composes here: the verb asks the
+ * worker to recompose (TM_REQUEST REGENERATE) and resolves to the worker ack
+ * (`{regenerating,workers}` / `{error}`); the new digest arrives via the poll.
  */
 
 import { useCallback, useRef } from '@wordpress/element';
@@ -64,28 +64,10 @@ function buildCommand( verb, id ) {
 }
 
 /**
- * Parse a `generate` reply payload (`{"digest":"…"}` JSON string) to its markdown.
- *
- * @param {*} payload The reply's VALUE.payload.
- * @return {string} The digest markdown, or '' when absent/unparseable.
- */
-function parseDigest( payload ) {
-	if ( 'string' !== typeof payload ) {
-		return '';
-	}
-	try {
-		const parsed = JSON.parse( payload );
-		return parsed && 'string' === typeof parsed.digest ? parsed.digest : '';
-	} catch ( e ) {
-		return '';
-	}
-}
-
-/**
  * @param {Object} [opts]               Options (test seams).
  * @param {Object} [opts.commandClient] CommandClient seam assigned to `_http.client`.
  * @param {number} [opts.refreshMs]     Poll interval in ms (default 4000).
- * @return {{ generate: () => Promise<string>, collect: () => Promise<*> }} On-demand verbs.
+ * @return {{ generate: () => Promise<*>, collect: () => Promise<*> }} On-demand verbs.
  */
 export function useInsightsGraph( opts = {} ) {
 	const { commandClient, refreshMs = 4000 } = opts;
@@ -123,11 +105,11 @@ export function useInsightsGraph( opts = {} ) {
 		[ interpreterRef ]
 	);
 
-	// `generate` resolves to the recomposed digest markdown; `collect` resolves to
-	// the collect verb's raw payload (a `{collecting,workers}` JSON string, or an
-	// `error: …` string when no worker is live).
+	// Both resolve to the verb's raw ack payload: `generate` → `{regenerating,workers}`
+	// (or `{error}`), `collect` → `{collecting,workers}` (or `{error}`). The new digest
+	// from a regenerate arrives via the poll, not this reply.
 	const generate = useCallback(
-		() => awaitVerb( 'generate', 'insights-gen' ).then( parseDigest ),
+		() => awaitVerb( 'generate', 'insights-gen' ),
 		[ awaitVerb ]
 	);
 	const collect = useCallback(

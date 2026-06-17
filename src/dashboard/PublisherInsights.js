@@ -24,9 +24,10 @@ const defaultCreateDraft = ( { title, content } ) =>
  * reads via useNodeState. This component renders that model — an error notice,
  * an empty state, or the populated analytics dashboard (KPI stat cards,
  * proportion bars, a score-ranked table, and a newsletter section that shows the
- * REAL rendered digest — the latest digest:log content the poll delivers, or a
- * fresh recompose from the "Generate digest" button — then copies its markdown
- * or creates a WordPress draft from it as native blocks). Styling follows the
+ * REAL rendered digest — the latest digest:log content the poll delivers;
+ * "Regenerate digest" asks the worker to recompose and the next poll brings it
+ * in — then copies its markdown or creates a WordPress draft from it as native
+ * blocks). Styling follows the
  * Newspack in-product design system (docs/DESIGN.product.md): light surfaces, a
  * Cobalt accent, Inter, laid out in flow within wp-admin.
  *
@@ -47,8 +48,9 @@ export default function PublisherInsights( {
 	// One fallback to the canonical empty shape; the node guarantees the data
 	// fields on every publish (model, error-model, or empty), so no per-field guards.
 	const model = useNodeState( 'insights:view', 'view' ) || emptyModel();
-	const [ generated, setGenerated ] = useState( null );
 	const [ generating, setGenerating ] = useState( false );
+	// Regenerate ack note (the worker recomposes; the poll surfaces the result).
+	const [ regenNote, setRegenNote ] = useState( null );
 	// `collecting` is the optimistic in-flight lock: set on click, it shows 0/total and keeps
 	// Collect disabled until the poll reflects the new cycle (done moves off its click-time
 	// value) or a timeout fires — the timeout is the anti-stick guard so a no-op collection
@@ -73,9 +75,9 @@ export default function PublisherInsights( {
 	const topBySource = Object.entries( top );
 	const allTopItems = topBySource.flatMap( ( [ , items ] ) => items );
 	const isEmpty = ! model.accumulated && 0 === topBySource.length;
-	// The shown digest: a freshly generated one wins; else the durable digest:log
-	// content the poll delivered. Empty until a FLUSH/Generate has produced one.
-	const digest = null !== generated ? generated : model.digest || '';
+	// The shown digest is the durable digest:log content the poll delivers; a
+	// Regenerate recomposes it in the worker and the next poll brings it here.
+	const digest = model.digest || '';
 	// Collection progress (X/total) the poll delivers; Generate only unlocks once
 	// every source has reported DONE.
 	const done = model.done || 0;
@@ -213,23 +215,39 @@ export default function PublisherInsights( {
 	const onGenerate = () => {
 		setGenerating( true );
 		setDraftError( null );
+		setRegenNote( null );
 		setCopied( false );
 		generate()
-			.then( ( markdown ) => {
+			.then( ( payload ) => {
 				setGenerating( false );
-				// A successful-but-empty recompose (no scored items / empty LLM
-				// reply) must not wipe the digest already on screen — notify and
-				// keep what's shown.
-				if ( '' === markdown.trim() ) {
+				// The verb replies with JSON: { regenerating, workers } on success
+				// or { error } (a normal reply, not a TM_ERROR) when no worker is live.
+				let parsed = null;
+				try {
+					parsed = JSON.parse( payload );
+				} catch ( e ) {
+					parsed = null;
+				}
+				if ( ! parsed || 'object' !== typeof parsed ) {
 					setDraftError(
 						__(
-							'Nothing to generate yet — the pipeline has no scored items.',
+							'Regeneration returned an unexpected response.',
 							'newspack-ai-newsletter'
 						)
 					);
 					return;
 				}
-				setGenerated( markdown );
+				if ( parsed.error ) {
+					setDraftError( String( parsed.error ) );
+					return;
+				}
+				// The worker is recomposing; the durable digest lands on the next poll.
+				setRegenNote(
+					__(
+						'Regenerating… the draft updates on the next poll.',
+						'newspack-ai-newsletter'
+					)
+				);
 			} )
 			.catch( ( err ) => {
 				setGenerating( false );
@@ -237,7 +255,7 @@ export default function PublisherInsights( {
 					err && err.message
 						? err.message
 						: __(
-								'Could not generate the digest.',
+								'Could not regenerate the digest.',
 								'newspack-ai-newsletter'
 						  )
 				);
@@ -474,6 +492,15 @@ export default function PublisherInsights( {
 						</div>
 
 						{ collectFeedback }
+
+						{ null !== regenNote && (
+							<div
+								className="eai-insights__notice eai-insights__notice--ok"
+								role="status"
+							>
+								{ regenNote }
+							</div>
+						) }
 
 						{ null !== editLink && (
 							<p className="eai-insights__draft-result">

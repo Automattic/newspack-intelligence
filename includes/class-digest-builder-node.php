@@ -16,13 +16,27 @@ use Newspack_Nodes\Schema_Reflection;
 class Digest_Builder_Node extends Node {
 	use Schema_Reflection;
 
-	/** @var array<int,array<array-key,mixed>> Accumulated summarized items (array-key: they round-trip through offsetlog JSON). */
+	/**
+	 * Accumulated summarized items (array-key: they round-trip through offsetlog JSON).
+	 *
+	 * @var array<int,array<array-key,mixed>>
+	 */
 	private array $items = [];
 
-	/** @var array<string,bool> Seen item ids for in-cycle dedup; rebuilt from items on restore, cleared on RESET. */
+	/**
+	 * Seen item ids for in-cycle dedup; rebuilt from items on restore, cleared on RESET.
+	 *
+	 * @var array<string,bool>
+	 */
 	private array $seen = [];
 
-	/** @var array<string,bool> Distinct sources that signalled DONE this cycle (keyed by source name). Counting distinct names — not raw signals — is idempotent across re-ticks, replays, and a stale cross-cycle DONE, so `done` can't overshoot the real source count. */
+	/**
+	 * Distinct sources that signalled DONE this cycle (keyed by source name).
+	 * Counting distinct names — not raw signals — is idempotent across re-ticks, replays,
+	 * and a stale cross-cycle DONE, so `done` can't overshoot the real source count.
+	 *
+	 * @var array<string,bool>
+	 */
 	private array $reported = [];
 
 	/** Sources expected this cycle, set by a RESET (the dashboard's Collect). 0 until a collect. */
@@ -55,6 +69,8 @@ class Digest_Builder_Node extends Node {
 	}
 
 	/**
+	 * Accepts TM_REQUEST 'RESET' and 'REGENERATE', TM_INFO 'DONE', and TM_STRUCT messages.
+	 *
 	 * @param array<int,mixed> $message Message reference.
 	 */
 	public function fill( array &$message ): void {
@@ -101,6 +117,8 @@ class Digest_Builder_Node extends Node {
 			$this->items    = [];
 			$this->seen     = [];
 			$this->reported = [];
+		} elseif ( 'REGENERATE' === $value ) {
+			$this->compose_draft();
 		}
 	}
 
@@ -111,14 +129,16 @@ class Digest_Builder_Node extends Node {
 	 */
 	private function handle_info( array $message ): void {
 		$value = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
-		if ( 'DONE' !== $value ) {
-			return;
+		if ( 'DONE' === $value ) {
+			$from                    = \is_string( $message[ Message::FROM ] ?? null ) ? $message[ Message::FROM ] : '';
+			$this->reported[ $from ] = true;
+			if ( \count( $this->reported ) >= $this->total ) {
+				$this->compose_draft();
+			}
 		}
-		$from                    = \is_string( $message[ Message::FROM ] ?? null ) ? $message[ Message::FROM ] : '';
-		$this->reported[ $from ] = true;
-		if ( \count( $this->reported ) !== $this->total ) {
-			return;
-		}
+	}
+
+	private function compose_draft(): void {
 		$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
 		$draft  = Digest_Composer::compose( $this->items, $client, Settings::get_string( 'relevance_profile' ) );
 		$this->set_state( 'COMPOSED', \count( $this->items ) . ' items' );
@@ -201,6 +221,10 @@ class Digest_Builder_Node extends Node {
 				[
 					'name'        => 'RESET',
 					'description' => 'Zero the collection counter (the dashboard Collect sends this before TICKing sources). `total` comes from the make_node argument, not this request.',
+				],
+				[
+					'name'        => 'REGENERATE',
+					'description' => 'Compose a new draft based on the items already collected.',
 				],
 			],
 			'accepts_fill' => true,
