@@ -4,7 +4,7 @@
 // node_modules so a runtime hook called from an ELN render can't trip React's
 // "Invalid hook call" (two dispatchers), and d3 (installed only here) resolves
 // for the shared useTimeChart. d3 ships ESM-only, so its packages opt out of
-// transformIgnorePatterns.
+// transformIgnorePatterns; uuid (v14+, pulled by @wordpress/blocks) is ESM-only too.
 
 const path = require( 'node:path' );
 const {
@@ -18,6 +18,6 @@ module.exports = createJestConfig( {
 		'^d3$': path.resolve( __dirname, 'node_modules/d3' ),
 	},
 	transformIgnorePatterns: [
-		'node_modules/(?!(d3|d3-.*|internmap|delaunator|robust-predicates)/)',
+		'node_modules/(?!(d3|d3-.*|internmap|delaunator|robust-predicates|uuid)/)',
 	],
 } );
