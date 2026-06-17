@@ -91,7 +91,7 @@ final class DigestBuilderStateTest extends TestCase {
 		Digest_Builder_Node::$llm_factory = static fn (): ?LLM_Client => null;
 		$sink                             = new Capture_Sink_Node();
 		$node                             = new Digest_Builder_Node();
-		$node->arguments( '2' );
+		$node->arguments( 'scored:partition 2' );
 		$node->sink( $sink );
 
 		$this->feed( $node, [ 'summary' => 'shipped X', 'score' => 5.0 ] );
@@ -106,13 +106,13 @@ final class DigestBuilderStateTest extends TestCase {
 
 	public function test_arguments_round_trips_the_total(): void {
 		$node = new Digest_Builder_Node();
-		$node->arguments( '3' );
-		$this->assertSame( '3', $node->arguments() );
+		$node->arguments( 'scored:partition 3' );
+		$this->assertSame( 'scored:partition 3', $node->arguments() );
 	}
 
 	public function test_total_comes_from_args_and_reset_zeroes_done(): void {
 		$node = new Digest_Builder_Node();
-		$node->arguments( '3' );
+		$node->arguments( 'scored:partition 3' );
 		$node->sink( new Capture_Sink_Node() );
 		$this->done( $node );
 		$this->reset( $node );
@@ -146,7 +146,7 @@ final class DigestBuilderStateTest extends TestCase {
 
 	public function test_reset_zeroes_done_for_the_next_cycle(): void {
 		$node = new Digest_Builder_Node();
-		$node->arguments( '2' );
+		$node->arguments( 'scored:partition 2' );
 		$node->sink( new Capture_Sink_Node() );
 		$this->done( $node );
 		$this->reset( $node );

@@ -53,11 +53,11 @@ class Summarizer_Node extends Node {
 			try {
 				$raw = $client->chat(
 					Prompts::enrich( $item, Settings::get_string( 'relevance_profile' ) ),
-					[ 'max_tokens' => 200, 'temperature' => 0.3 ]
+					[ 'max_tokens' => 500, 'temperature' => 0.3 ]
 				);
 				$enriched = self::parse_enrich( $raw );
 			} catch ( \RuntimeException $e ) {
-				$this->print_less_often( $e->getMessage() );
+				$this->stderr( 'ERROR: ' . $e->getMessage() );
 			}
 		}
 		if ( null !== $enriched ) {

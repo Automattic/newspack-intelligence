@@ -61,6 +61,7 @@ class Github_Source_Node extends Source_Node {
 				$items,
 				$this->releases( $repo, $token ),
 				$this->merged_prs( $repo, $token ),
+				$this->issues( $repo, $token ),
 			);
 		}
 		return $items;
@@ -100,6 +101,23 @@ class Github_Source_Node extends Source_Node {
 				continue; // Closed but not merged.
 			}
 			$out[] = $this->normalize_item( 'github', "$repo#pr-$number", $pr['title'] ?? '', $pr['html_url'] ?? '', $pr['body'] ?? '', $merged_at );
+		}
+		return $out;
+	}
+
+	/** @return array<int,array<string,mixed>> Issues only — the issues endpoint also lists PRs (pull_request key); those are dropped. */
+	private function issues( string $repo, string $token ): array {
+		$out = [];
+		foreach ( $this->get_json( "/repos/$repo/issues?state=all&sort=updated&direction=desc&per_page=" . self::PER_PAGE, $token ) as $issue ) {
+			if ( ! \is_array( $issue ) || isset( $issue['pull_request'] ) ) {
+				continue;
+			}
+			$number = self::id_token( $issue['number'] ?? null );
+			if ( '' === $number ) {
+				continue;
+			}
+			$ts    = $issue['updated_at'] ?? ( $issue['created_at'] ?? '' );
+			$out[] = $this->normalize_item( 'github', "$repo#issue-$number", $issue['title'] ?? '', $issue['html_url'] ?? '', $issue['body'] ?? '', $ts );
 		}
 		return $out;
 	}

@@ -2,10 +2,10 @@
 /**
  * Digest_Composer: the shared "items → markdown digest" core.
  *
- * Used by both the worker's Digest_Builder FLUSH (writes digest:log) and the
- * dashboard's Insights_CI `generate` verb, so the two paths can't drift: the top
- * N items PER SOURCE (so no single source crowds the others out) go through the
- * LLM, with a ranked-list fallback when there's no client or the call fails / returns empty.
+ * Used by the worker's Digest_Builder: the top N items PER SOURCE
+ * (so no single source crowds the others out) go through the LLM,
+ * with a ranked-list fallback when there's no client or the call
+ * fails / returns empty.
  *
  * @package Newspack_AI_Newsletter
  */
@@ -21,7 +21,7 @@ class Digest_Composer {
 	// Per-source cap: the briefing draws the top N items FROM EACH SOURCE, so a
 	// high-volume source (e.g. github) can't crowd linear/feed out of the digest.
 	private const PER_SOURCE = 10;
-	private const MAX_TOKENS = 5000;
+	private const MAX_TOKENS = 32000;
 
 	/**
 	 * Compose a markdown digest from accumulated items.

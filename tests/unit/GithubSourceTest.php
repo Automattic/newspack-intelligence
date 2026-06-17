@@ -45,16 +45,18 @@ final class GithubSourceTest extends TestCase {
 		return $out;
 	}
 
-	public function test_fetch_normalizes_releases_and_merged_prs(): void {
+	public function test_fetch_normalizes_releases_merged_prs_and_issues(): void {
 		$this->stub_github();
 		$by = $this->fetch_by_id( [ 'repos' => [ 'owner/repo' ], 'token' => '' ] );
 
 		$this->assertArrayHasKey( 'github:owner/repo#release-11', $by );
 		$this->assertArrayHasKey( 'github:owner/repo#pr-5', $by );
+		$this->assertArrayHasKey( 'github:owner/repo#issue-7', $by );
 
-		// Closed-not-merged PR is excluded; issues are no longer fetched (releases + merged PRs only).
+		// Closed-not-merged PR is excluded; an issues-endpoint entry that's really a
+		// PR (has pull_request) is dropped, so it can't double up with the merged PR.
 		$this->assertArrayNotHasKey( 'github:owner/repo#pr-6', $by );
-		$this->assertArrayNotHasKey( 'github:owner/repo#issue-7', $by );
+		$this->assertArrayNotHasKey( 'github:owner/repo#issue-5', $by );
 
 		$release = $by['github:owner/repo#release-11'];
 		$this->assertSame( 'github', $release['source'] );
@@ -62,6 +64,10 @@ final class GithubSourceTest extends TestCase {
 		$this->assertSame( 'https://gh/r/releases/11', $release['url'] );
 		$this->assertSame( 'release notes', $release['body'] );
 		$this->assertSame( \strtotime( '2026-06-10T00:00:00Z' ), $release['timestamp'] );
+
+		$issue = $by['github:owner/repo#issue-7'];
+		$this->assertSame( 'Real issue', $issue['title'] );
+		$this->assertSame( \strtotime( '2026-06-12T00:00:00Z' ), $issue['timestamp'] );
 	}
 
 	public function test_fetch_sends_bearer_auth_and_useragent_when_token_set(): void {

@@ -43,7 +43,7 @@ cmd scored:consumer:config set_snapshot_node digest
 cmd scored:consumer:config set_line_mode
 # The digest auto-composes once every source has reported DONE. The sole arg is the
 # progress denominator (done/total) — it MUST equal count(Insights_CI_Node::SOURCE_NODES).
-make_node Digest_Builder digest 3
+make_node Digest_Builder digest scored:partition 3
 make_node Tee            digest:tee
 # digest:log path MUST match Settings::DIGEST_PATH (Insights_CI reads the latest segment from there).
 make_node Log            digest:log /tmp/newspack-ai-newsletter/digest.md 1 7

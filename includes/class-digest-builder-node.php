@@ -30,6 +30,9 @@ class Digest_Builder_Node extends Node {
 	 */
 	private array $seen = [];
 
+	/** Scored-partition node name to nudge on RESET (arg 0); '' disables the nudge. */
+	private string $scored_partition = '';
+
 	/**
 	 * Distinct sources that signalled DONE this cycle (keyed by source name).
 	 * Counting distinct names — not raw signals — is idempotent across re-ticks, replays,
@@ -117,6 +120,7 @@ class Digest_Builder_Node extends Node {
 			$this->items    = [];
 			$this->seen     = [];
 			$this->reported = [];
+			$this->nudge_scored_partition();
 		} elseif ( 'REGENERATE' === $value ) {
 			$this->compose_draft();
 		}
@@ -147,6 +151,26 @@ class Digest_Builder_Node extends Node {
 		$response[ Message::FROM ]  = $this->name;
 		$response[ Message::VALUE ] = $draft;
 		parent::fill( $response );
+	}
+
+ 	/**
+	 * Append a throwaway message to the scored Partition (if configured) so
+	 * scored:consumer advances its cursor and its next checkpoint co-commits this
+	 * node's now-emptied snapshot. Without it a RESET changes our state but not the
+	 * consumer cursor, so the offsetlog keeps the stale full items list and a worker
+	 * restart reloads it. The 'RESET' is ignored downstream.
+	 * TO is set explicitly because `target` is the draft sink (digest:tee).
+	 */
+	private function nudge_scored_partition(): void {
+		if ( '' === $this->scored_partition ) {
+			return;
+		}
+		$nudge                   = Message::new_message();
+		$nudge[ Message::TYPE ]  = Message::TM_INFO;
+		$nudge[ Message::FROM ]  = $this->name;
+		$nudge[ Message::TO ]    = $this->scored_partition;
+		$nudge[ Message::VALUE ] = 'RESET';
+		parent::fill( $nudge );
 	}
 
 	/**
@@ -210,6 +234,12 @@ class Digest_Builder_Node extends Node {
 			'category'     => 'Transform',
 			'description'  => 'Accumulates summaries',
 			'arguments'    => [
+				[
+					'name'        => 'scored_partition',
+					'type'        => 'string',
+					'required'    => true,
+					'description' => 'Scored Partition node to nudge on RESET so the consumer persists the emptied snapshot.',
+				],
 				[
 					'name'        => 'total',
 					'type'        => 'int',
