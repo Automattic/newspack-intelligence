@@ -10,10 +10,9 @@ use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
 
 /**
- * Digest_Builder state contracts: id-dedup on accumulate, and the FLUSH-time
- * "nudge" that advances scored:consumer so the emptied snapshot is persisted to
- * the offsetlog (otherwise a restart reloads the stale full items list and new
- * items append to it forever).
+ * Digest_Builder state contracts: id-dedup on accumulate, distinct-source progress
+ * counting, RESET clearing, and the auto-compose that fires once every source has
+ * reported DONE for the cycle (count(reported) === total, the make_node arg).
  */
 final class DigestBuilderStateTest extends TestCase {
 
@@ -30,10 +29,20 @@ final class DigestBuilderStateTest extends TestCase {
 		$n->fill( $m );
 	}
 
-	private function flush( Digest_Builder_Node $n ): void {
+	/** Fire a TM_INFO DONE (what a source emits at the end of a TICK; FROM = its name, VALUE = DONE). */
+	private function done( Digest_Builder_Node $n, string $source = 'github' ): void {
+		$m                   = Message::new_message();
+		$m[ Message::TYPE ]  = Message::TM_INFO;
+		$m[ Message::FROM ]  = $source;
+		$m[ Message::VALUE ] = 'DONE';
+		$n->fill( $m );
+	}
+
+	/** Fire a RESET request (clears items + dedup + progress; total comes from the node's args). */
+	private function reset( Digest_Builder_Node $n ): void {
 		$r                   = Message::new_message();
 		$r[ Message::TYPE ]  = Message::TM_REQUEST;
-		$r[ Message::VALUE ] = 'FLUSH';
+		$r[ Message::VALUE ] = 'RESET';
 		$n->fill( $r );
 	}
 
@@ -54,12 +63,11 @@ final class DigestBuilderStateTest extends TestCase {
 		$this->assertCount( 2, $node->save_state()['items'] );
 	}
 
-	public function test_flush_clears_dedup_so_the_next_cycle_re_accepts_the_id(): void {
-		Digest_Builder_Node::$llm_factory = static fn (): ?LLM_Client => null;
-		$node                             = new Digest_Builder_Node();
+	public function test_reset_clears_dedup_so_the_next_cycle_re_accepts_the_id(): void {
+		$node = new Digest_Builder_Node();
 		$node->sink( new Capture_Sink_Node() );
 		$this->feed( $node, [ 'id' => 'github:x#1', 'summary' => 'a' ] );
-		$this->flush( $node );
+		$this->reset( $node );
 		$this->assertCount( 0, $node->save_state()['items'] );
 		$this->feed( $node, [ 'id' => 'github:x#1', 'summary' => 'a' ] );
 		$this->assertCount( 1, $node->save_state()['items'] );
@@ -79,67 +87,32 @@ final class DigestBuilderStateTest extends TestCase {
 		$this->assertCount( 2, $node->save_state()['items'] );
 	}
 
-	public function test_flush_nudges_the_configured_scored_partition(): void {
+	public function test_composes_and_emits_the_draft_when_all_sources_report_done(): void {
 		Digest_Builder_Node::$llm_factory = static fn (): ?LLM_Client => null;
 		$sink                             = new Capture_Sink_Node();
 		$node                             = new Digest_Builder_Node();
-		$node->name( 'digest' );
-		$node->arguments( 'scored:partition' );
+		$node->arguments( '2' );
 		$node->sink( $sink );
 
-		$this->feed( $node, [ 'id' => 'a', 'summary' => 's' ] );
-		$this->flush( $node );
+		$this->feed( $node, [ 'summary' => 'shipped X', 'score' => 5.0 ] );
+		$this->done( $node, 'github' );
+		$this->assertCount( 0, $sink->captured, 'no compose until every source is in' );
 
-		$nudge = null;
-		foreach ( $sink->captured as $m ) {
-			if ( 'scored:partition' === $m[ Message::TO ] ) {
-				$nudge = $m;
-			}
-		}
-		$this->assertNotNull( $nudge, 'FLUSH must nudge the scored partition' );
-		$this->assertSame( 'RESET', $nudge[ Message::VALUE ] );
+		$this->done( $node, 'linear' );
+		$this->assertCount( 1, $sink->captured, 'composes once the last source reports' );
+		$this->assertSame( Message::TM_BYTESTREAM, $sink->captured[0][ Message::TYPE ] );
+		$this->assertStringContainsString( '- shipped X', $sink->captured[0][ Message::VALUE ] );
 	}
 
-	public function test_no_nudge_when_no_partition_is_configured(): void {
-		Digest_Builder_Node::$llm_factory = static fn (): ?LLM_Client => null;
-		$sink                             = new Capture_Sink_Node();
-		$node                             = new Digest_Builder_Node();
-		$node->sink( $sink );
-
-		$this->feed( $node, [ 'id' => 'a', 'summary' => 's' ] );
-		$this->flush( $node );
-
-		foreach ( $sink->captured as $m ) {
-			$this->assertNotSame( 'scored:partition', $m[ Message::TO ] );
-		}
-	}
-
-	public function test_arguments_round_trips_the_partition_name(): void {
+	public function test_arguments_round_trips_the_total(): void {
 		$node = new Digest_Builder_Node();
-		$node->arguments( 'scored:partition' );
-		$this->assertSame( 'scored:partition', $node->arguments() );
-	}
-
-	/** Fire a TM_INFO DONE (what a source emits at the end of a TICK; FROM = its name, VALUE = DONE). */
-	private function done( Digest_Builder_Node $n, string $source = 'github' ): void {
-		$m                   = Message::new_message();
-		$m[ Message::TYPE ]  = Message::TM_INFO;
-		$m[ Message::FROM ]  = $source;
-		$m[ Message::VALUE ] = 'DONE';
-		$n->fill( $m );
-	}
-
-	/** Fire a RESET request (zeroes the progress counter; total comes from the node's args). */
-	private function reset( Digest_Builder_Node $n ): void {
-		$r                   = Message::new_message();
-		$r[ Message::TYPE ]  = Message::TM_REQUEST;
-		$r[ Message::VALUE ] = 'RESET';
-		$n->fill( $r );
+		$node->arguments( '3' );
+		$this->assertSame( '3', $node->arguments() );
 	}
 
 	public function test_total_comes_from_args_and_reset_zeroes_done(): void {
 		$node = new Digest_Builder_Node();
-		$node->arguments( 'scored:partition 3' );
+		$node->arguments( '3' );
 		$node->sink( new Capture_Sink_Node() );
 		$this->done( $node );
 		$this->reset( $node );
@@ -171,16 +144,15 @@ final class DigestBuilderStateTest extends TestCase {
 		$this->assertCount( 0, $node->save_state()['items'] );
 	}
 
-	public function test_flush_resets_done_for_the_next_cycle(): void {
-		Digest_Builder_Node::$llm_factory = static fn (): ?LLM_Client => null;
-		$node                             = new Digest_Builder_Node();
-		$node->arguments( 'scored:partition 2' );
+	public function test_reset_zeroes_done_for_the_next_cycle(): void {
+		$node = new Digest_Builder_Node();
+		$node->arguments( '2' );
 		$node->sink( new Capture_Sink_Node() );
 		$this->done( $node );
-		$this->flush( $node );
+		$this->reset( $node );
 		$state = $node->save_state();
 		$this->assertSame( 0, $state['done'] );
-		// total comes from args and is retained across FLUSH so the dashboard shows e.g. 0/2.
+		// total comes from args and is retained across RESET so the dashboard shows e.g. 0/2.
 		$this->assertSame( 2, $state['total'] );
 	}
 

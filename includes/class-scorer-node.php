@@ -47,18 +47,16 @@ class Scorer_Node extends Node {
 		if ( ! \is_array( $item ) ) {
 			return;
 		}
+		/** @var array<string,mixed> $item */
+		$item['score'] = $this->compute_score( $item );
 		if ( ! \is_string( $item['title'] ?? null ) ) {
 			$item['title'] = '(untitled)';
 		}
-		/** @var array<string,mixed> $item */
-		$item['score'] = $this->compute_score( $item );
 		$this->set_state( 'SCORED', $item['title'] );
-
 		$out                   = Message::new_message();
 		$out[ Message::TYPE ]  = Message::TM_STRUCT;
 		$out[ Message::FROM ]  = $this->name;
 		$out[ Message::VALUE ] = $item;
-		// parent::fill (base, not $this — would recurse) stamps TO from target, increments the counter, and forwards to sink.
 		parent::fill( $out );
 	}
 

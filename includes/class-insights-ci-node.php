@@ -207,7 +207,7 @@ class Insights_CI_Node extends Service_CI_Node {
 	/**
 	 * The latest rendered digest: the newest `{path}.{seg}` segment the digest:log
 	 * Node writes (Log lays segments out as `{file}.0`, `{file}.1`, …; segment_size=1
-	 * gives one digest per segment, so the highest suffix is the most recent FLUSH).
+	 * gives one digest per segment, so the highest suffix is the most recent).
 	 * '' when nothing has been flushed yet.
 	 */
 	public static function read_latest_digest( string $path ): string {

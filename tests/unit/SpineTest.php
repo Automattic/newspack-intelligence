@@ -64,20 +64,23 @@ final class SpineTest extends TestCase {
 		$this->assertSame( $score_for( 'github' ), $score_for( 'releases' ) );
 	}
 
-	public function test_digest_builder_accumulates_and_flushes_markdown(): void {
+	public function test_digest_builder_accumulates_and_composes_markdown_on_completion(): void {
 		$sink = new Capture_Sink_Node();
 		$node = new Digest_Builder_Node();
+		$node->arguments( '1' );
 		$node->sink( $sink );
 
 		foreach ( [ 'a', 'b' ] as $i ) {
 			$message = $this->struct( [ 'summary' => "item $i" ] );
 			$node->fill( $message );
 		}
-		// FLUSH is fire-and-forget: a TM_REQUEST (VALUE=FLUSH) handled in fill(), not a cmd verb.
-		$flush                   = Message::new_message();
-		$flush[ Message::TYPE ]  = Message::TM_REQUEST;
-		$flush[ Message::VALUE ] = 'FLUSH';
-		$node->fill( $flush );
+		// The digest auto-composes when every source reports DONE (TM_INFO VALUE=DONE);
+		// total=1, so a single source completing the cycle triggers the compose + emit.
+		$done                   = Message::new_message();
+		$done[ Message::TYPE ]  = Message::TM_INFO;
+		$done[ Message::FROM ]  = 'src';
+		$done[ Message::VALUE ] = 'DONE';
+		$node->fill( $done );
 
 		$this->assertNotEmpty( $sink->captured );
 		$this->assertStringContainsString( '- item a', $sink->captured[0][ Message::VALUE ] );

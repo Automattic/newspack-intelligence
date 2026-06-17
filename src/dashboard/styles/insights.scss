@@ -25,7 +25,7 @@ $font:
   sans-serif;
 
 .eai-insights {
-  max-width: 880px;
+  max-width: 1600px;
   margin: 16px 20px 0 0;
   color: $text;
   font-family: $font;
@@ -101,12 +101,22 @@ $font:
     }
   }
 
-  // --- Cards: white surface, neutral border, rounded 8 ---
-  &__grid {
+  // --- Two-column layout: independent columns so the tall right column
+  // (Top items) doesn't stretch/space-out the stacked left items. ---
+  &__layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+
+  &__side {
     display: flex;
     flex-direction: column;
     gap: 24px;
   }
+
+  // --- Cards: white surface, neutral border, rounded 8 ---
 
   &__card {
     padding: 16px;
@@ -189,9 +199,30 @@ $font:
     border-radius: 4px;
   }
 
-  // --- Top items: ranked table with inline score bars ---
+  // --- Top items: per-source ranked tables, stacked in the narrow right column ---
+  &__source-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  &__source-top {
+    min-width: 0; // let a column shrink/wrap instead of overflowing the grid track.
+
+    h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      font-weight: 600;
+    }
+  }
+
   &__top table {
     width: 100%;
+    // Fixed layout: the title column takes the slack, the rank + score columns hold
+    // their set widths, and every row is one line tall — so rows stay uniform and the
+    // three source tables align, and the score bar keeps a real width (auto layout
+    // shrank it to nothing in the narrow grid columns).
+    table-layout: fixed;
     border-collapse: collapse;
     font-size: 14px;
 
@@ -200,6 +231,7 @@ $font:
       padding: 8px 12px;
       text-align: left;
       border-bottom: 1px solid $border;
+      vertical-align: middle;
     }
 
     th {
@@ -207,8 +239,7 @@ $font:
       font-weight: 600;
     }
 
-    // Score is the last column — right-align it via :last-child (higher
-    // specificity than the th,td rule above, so no !important needed).
+    // Score is the last column — right-align it (last-child beats the th,td rule).
     th:last-child,
     td:last-child {
       text-align: right;
@@ -217,6 +248,19 @@ $font:
     tbody tr:last-child td {
       border-bottom: 0;
     }
+  }
+
+  // Title: one line, ellipsis — full text on hover via the cell's title attr.
+  &__item-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  // Score column holds a fixed width so the inline bar survives the narrow layout.
+  &__top th:last-child,
+  &__top td:last-child {
+    width: 116px;
   }
 
   &__rank-col {

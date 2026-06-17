@@ -27,12 +27,17 @@ final class DigestComposeTest extends TestCase {
 		$n->fill( $m );
 	}
 
-	/** Fire a fire-and-forget FLUSH request (TM_REQUEST VALUE=FLUSH) — the runtime trigger. */
-	private function flush( Digest_Builder_Node $n ): void {
-		$r                   = Message::new_message();
-		$r[ Message::TYPE ]  = Message::TM_REQUEST;
-		$r[ Message::VALUE ] = 'FLUSH';
-		$n->fill( $r );
+	/**
+	 * Complete the cycle: the digest auto-composes once every source reports DONE.
+	 * Raise the total to one and fire a single DONE to trigger exactly one compose.
+	 */
+	private function complete( Digest_Builder_Node $n ): void {
+		$n->arguments( '1' );
+		$m                   = Message::new_message();
+		$m[ Message::TYPE ]  = Message::TM_INFO;
+		$m[ Message::FROM ]  = 'src';
+		$m[ Message::VALUE ] = 'DONE';
+		$n->fill( $m );
 	}
 
 	public function test_llm_path_emits_composed_markdown(): void {
@@ -49,7 +54,7 @@ final class DigestComposeTest extends TestCase {
 		$node->sink( $sink );
 
 		$this->feed( $node, [ 'summary' => 'sa', 'score' => 9.0, 'title' => 'A', 'source' => 'github', 'url' => 'http://a' ] );
-		$this->flush( $node );
+		$this->complete( $node );
 
 		$this->assertStringContainsString( 'The big briefing.', $sink->captured[0][ Message::VALUE ] );
 	}
@@ -62,7 +67,7 @@ final class DigestComposeTest extends TestCase {
 		$node->sink( $sink );
 
 		$this->feed( $node, [ 'summary' => 'sa', 'score' => 9.0 ] );
-		$this->flush( $node );
+		$this->complete( $node );
 
 		$this->assertStringContainsString( '- sa', $sink->captured[0][ Message::VALUE ] );
 	}

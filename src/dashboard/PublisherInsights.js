@@ -352,229 +352,257 @@ export default function PublisherInsights( {
 		);
 	} else {
 		content = (
-			<div className="eai-insights__grid">
-				<div className="eai-insights__stats">
-					<div className="eai-insights__stat">
-						<span className="eai-insights__stat-num">
-							{ model.accumulated }
-						</span>
-						<span className="eai-insights__stat-label">
-							{ __( 'Total items', 'newspack-ai-newsletter' ) }
-						</span>
+			<div className="eai-insights__layout">
+				<div className="eai-insights__side">
+					<div className="eai-insights__stats">
+						<div className="eai-insights__stat">
+							<span className="eai-insights__stat-num">
+								{ model.accumulated }
+							</span>
+							<span className="eai-insights__stat-label">
+								{ __(
+									'Total items',
+									'newspack-ai-newsletter'
+								) }
+							</span>
+						</div>
+						<div className="eai-insights__stat">
+							<span className="eai-insights__stat-num">
+								{ topScore }
+							</span>
+							<span className="eai-insights__stat-label">
+								{ __( 'Top score', 'newspack-ai-newsletter' ) }
+							</span>
+						</div>
+						<div className="eai-insights__stat">
+							<span className="eai-insights__stat-num">
+								{ sources.length }
+							</span>
+							<span className="eai-insights__stat-label">
+								{ __( 'Sources', 'newspack-ai-newsletter' ) }
+							</span>
+						</div>
 					</div>
-					<div className="eai-insights__stat">
-						<span className="eai-insights__stat-num">
-							{ topScore }
-						</span>
-						<span className="eai-insights__stat-label">
-							{ __( 'Top score', 'newspack-ai-newsletter' ) }
-						</span>
-					</div>
-					<div className="eai-insights__stat">
-						<span className="eai-insights__stat-num">
-							{ sources.length }
-						</span>
-						<span className="eai-insights__stat-label">
-							{ __( 'Sources', 'newspack-ai-newsletter' ) }
-						</span>
-					</div>
+
+					<section className="eai-insights__card eai-insights__sources">
+						<h2>{ __( 'By source', 'newspack-ai-newsletter' ) }</h2>
+						<ul>
+							{ sources.map( ( [ name, count ] ) => (
+								<li key={ name }>
+									<div className="eai-insights__bar-head">
+										<span className="eai-insights__source-name">
+											{ name }
+										</span>
+										<span className="eai-insights__source-count">
+											{ count }
+										</span>
+									</div>
+									<div
+										className="eai-insights__bar"
+										aria-hidden="true"
+									>
+										<div
+											className="eai-insights__bar-fill"
+											style={ {
+												width: `${
+													sourceTotal
+														? ( count /
+																sourceTotal ) *
+														  100
+														: 0
+												}%`,
+											} }
+										/>
+									</div>
+								</li>
+							) ) }
+						</ul>
+					</section>
+
+					<section className="eai-insights__card eai-insights__draft">
+						<h2>
+							{ __( 'Newsletter', 'newspack-ai-newsletter' ) }
+						</h2>
+						<div className="eai-insights__actions">
+							{ collectButton }
+							<button
+								type="button"
+								className="eai-insights__btn"
+								onClick={ onGenerate }
+								disabled={ generating || ! collectComplete }
+							>
+								{ generating
+									? __(
+											'Generating…',
+											'newspack-ai-newsletter'
+									  )
+									: __(
+											'Regenerate digest',
+											'newspack-ai-newsletter'
+									  ) }
+							</button>
+							<button
+								type="button"
+								className="eai-insights__btn eai-insights__btn--secondary"
+								onClick={ onCopy }
+								disabled={ '' === digest }
+							>
+								{ __(
+									'Copy markdown',
+									'newspack-ai-newsletter'
+								) }
+							</button>
+							<button
+								type="button"
+								className="eai-insights__btn eai-insights__btn--secondary"
+								onClick={ onCreateDraft }
+								disabled={ creating || '' === digest }
+							>
+								{ __(
+									'Create draft post',
+									'newspack-ai-newsletter'
+								) }
+							</button>
+							{ copied && (
+								<span
+									className="eai-insights__copied"
+									role="status"
+								>
+									{ __( 'Copied', 'newspack-ai-newsletter' ) }
+								</span>
+							) }
+						</div>
+
+						{ collectFeedback }
+
+						{ null !== editLink && (
+							<p className="eai-insights__draft-result">
+								<a href={ editLink }>
+									{ __(
+										'Edit draft',
+										'newspack-ai-newsletter'
+									) }
+								</a>
+							</p>
+						) }
+						{ null !== draftError && (
+							<div
+								className="eai-insights__notice eai-insights__notice--error"
+								role="alert"
+							>
+								{ draftError }
+							</div>
+						) }
+
+						{ '' !== digest ? (
+							<pre
+								className="eai-insights__preview"
+								data-testid="eai-insights-preview"
+							>
+								{ digest }
+							</pre>
+						) : (
+							<p className="eai-insights__preview-empty">
+								{ __(
+									'No digest yet.',
+									'newspack-ai-newsletter'
+								) }
+							</p>
+						) }
+					</section>
 				</div>
 
-				<section className="eai-insights__card eai-insights__sources">
-					<h2>{ __( 'By source', 'newspack-ai-newsletter' ) }</h2>
-					<ul>
-						{ sources.map( ( [ name, count ] ) => (
-							<li key={ name }>
-								<div className="eai-insights__bar-head">
-									<span className="eai-insights__source-name">
-										{ name }
-									</span>
-									<span className="eai-insights__source-count">
-										{ count }
-									</span>
-								</div>
+				<div className="eai-insights__main">
+					<section className="eai-insights__card eai-insights__top">
+						<h2>
+							{ __(
+								'Top items by source',
+								'newspack-ai-newsletter'
+							) }
+						</h2>
+						<div className="eai-insights__source-grid">
+							{ topBySource.map( ( [ source, items ] ) => (
 								<div
-									className="eai-insights__bar"
-									aria-hidden="true"
+									className="eai-insights__source-top"
+									key={ source }
 								>
-									<div
-										className="eai-insights__bar-fill"
-										style={ {
-											width: `${
-												sourceTotal
-													? ( count / sourceTotal ) *
-													  100
-													: 0
-											}%`,
-										} }
-									/>
-								</div>
-							</li>
-						) ) }
-					</ul>
-				</section>
-
-				<section className="eai-insights__card eai-insights__top">
-					<h2>
-						{ __(
-							'Top items by source',
-							'newspack-ai-newsletter'
-						) }
-					</h2>
-					{ topBySource.map( ( [ source, items ] ) => (
-						<div
-							className="eai-insights__source-top"
-							key={ source }
-						>
-							<h3>{ source }</h3>
-							<table>
-								<thead>
-									<tr>
-										<th className="eai-insights__rank-col">
-											{ __(
-												'#',
-												'newspack-ai-newsletter'
-											) }
-										</th>
-										<th>
-											{ __(
-												'Title',
-												'newspack-ai-newsletter'
-											) }
-										</th>
-										<th>
-											{ __(
-												'Score',
-												'newspack-ai-newsletter'
-											) }
-										</th>
-									</tr>
-								</thead>
-								<tbody>
-									{ items.map( ( item, i ) => (
-										<tr key={ `${ source }-${ i }` }>
-											<td className="eai-insights__rank">
-												{ sprintf(
-													/* translators: %d: the item's rank within its source. */
-													__(
-														'#%d',
+									<h3>{ source }</h3>
+									<table>
+										<thead>
+											<tr>
+												<th className="eai-insights__rank-col">
+													{ __(
+														'#',
 														'newspack-ai-newsletter'
-													),
-													i + 1
-												) }
-											</td>
-											<td>{ item.title }</td>
-											<td className="eai-insights__score-cell">
-												<div
-													className="eai-insights__score-bar-track"
-													aria-hidden="true"
+													) }
+												</th>
+												<th>
+													{ __(
+														'Title',
+														'newspack-ai-newsletter'
+													) }
+												</th>
+												<th>
+													{ __(
+														'Score',
+														'newspack-ai-newsletter'
+													) }
+												</th>
+											</tr>
+										</thead>
+										<tbody>
+											{ items.map( ( item, i ) => (
+												<tr
+													key={ `${ source }-${ i }` }
 												>
-													<div
-														className="eai-insights__score-bar"
-														style={ {
-															width: `${
-																topScore
-																	? ( ( item.score ||
-																			0 ) /
-																			topScore ) *
-																	  100
-																	: 0
-															}%`,
-														} }
-													/>
-												</div>
-												<span className="eai-insights__score-num">
-													{ item.score }
-												</span>
-											</td>
-										</tr>
-									) ) }
-								</tbody>
-							</table>
+													<td className="eai-insights__rank">
+														{ sprintf(
+															/* translators: %d: the item's rank within its source. */
+															__(
+																'#%d',
+																'newspack-ai-newsletter'
+															),
+															i + 1
+														) }
+													</td>
+													<td
+														className="eai-insights__item-title"
+														title={ item.title }
+													>
+														{ item.title }
+													</td>
+													<td className="eai-insights__score-cell">
+														<div
+															className="eai-insights__score-bar-track"
+															aria-hidden="true"
+														>
+															<div
+																className="eai-insights__score-bar"
+																style={ {
+																	width: `${
+																		topScore
+																			? ( ( item.score ||
+																					0 ) /
+																					topScore ) *
+																			  100
+																			: 0
+																	}%`,
+																} }
+															/>
+														</div>
+														<span className="eai-insights__score-num">
+															{ item.score }
+														</span>
+													</td>
+												</tr>
+											) ) }
+										</tbody>
+									</table>
+								</div>
+							) ) }
 						</div>
-					) ) }
-				</section>
-
-				<section className="eai-insights__card eai-insights__draft">
-					<h2>{ __( 'Newsletter', 'newspack-ai-newsletter' ) }</h2>
-					<div className="eai-insights__actions">
-						{ collectButton }
-						<button
-							type="button"
-							className="eai-insights__btn"
-							onClick={ onGenerate }
-							disabled={ generating || ! collectComplete }
-						>
-							{ generating
-								? __( 'Generating…', 'newspack-ai-newsletter' )
-								: __(
-										'Generate digest',
-										'newspack-ai-newsletter'
-								  ) }
-						</button>
-						<button
-							type="button"
-							className="eai-insights__btn eai-insights__btn--secondary"
-							onClick={ onCopy }
-							disabled={ '' === digest }
-						>
-							{ __( 'Copy markdown', 'newspack-ai-newsletter' ) }
-						</button>
-						<button
-							type="button"
-							className="eai-insights__btn eai-insights__btn--secondary"
-							onClick={ onCreateDraft }
-							disabled={ creating || '' === digest }
-						>
-							{ __(
-								'Create draft post',
-								'newspack-ai-newsletter'
-							) }
-						</button>
-						{ copied && (
-							<span
-								className="eai-insights__copied"
-								role="status"
-							>
-								{ __( 'Copied', 'newspack-ai-newsletter' ) }
-							</span>
-						) }
-					</div>
-
-					{ collectFeedback }
-
-					{ null !== editLink && (
-						<p className="eai-insights__draft-result">
-							<a href={ editLink }>
-								{ __( 'Edit draft', 'newspack-ai-newsletter' ) }
-							</a>
-						</p>
-					) }
-					{ null !== draftError && (
-						<div
-							className="eai-insights__notice eai-insights__notice--error"
-							role="alert"
-						>
-							{ draftError }
-						</div>
-					) }
-
-					{ '' !== digest ? (
-						<pre
-							className="eai-insights__preview"
-							data-testid="eai-insights-preview"
-						>
-							{ digest }
-						</pre>
-					) : (
-						<p className="eai-insights__preview-empty">
-							{ __(
-								'No digest yet — Generate one, or run a FLUSH from the REPL.',
-								'newspack-ai-newsletter'
-							) }
-						</p>
-					) }
-				</section>
+					</section>
+				</div>
 			</div>
 		);
 	}

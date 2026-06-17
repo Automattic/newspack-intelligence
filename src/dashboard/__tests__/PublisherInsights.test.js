@@ -187,7 +187,7 @@ describe( 'PublisherInsights', () => {
 		expect( preview.textContent ).toContain( 'Big news' );
 	} );
 
-	it( 'regenerates the digest via the `generate` verb when "Generate digest" is clicked', async () => {
+	it( 'regenerates the digest via the `generate` verb when "Regenerate digest" is clicked', async () => {
 		await renderPopulated( {
 			commandClient: clientFor( {
 				insights: JSON.stringify( model ),
@@ -195,7 +195,7 @@ describe( 'PublisherInsights', () => {
 			} ),
 		} );
 		fireEvent.click(
-			screen.getByRole( 'button', { name: /generate digest/i } )
+			screen.getByRole( 'button', { name: /regenerate digest/i } )
 		);
 		await waitFor( () =>
 			expect(
@@ -212,7 +212,7 @@ describe( 'PublisherInsights', () => {
 			} ),
 		} );
 		fireEvent.click(
-			screen.getByRole( 'button', { name: /generate digest/i } )
+			screen.getByRole( 'button', { name: /regenerate digest/i } )
 		);
 		await waitFor( () =>
 			expect( screen.getByRole( 'alert' ) ).toBeInTheDocument()
@@ -347,7 +347,7 @@ describe( 'PublisherInsights', () => {
 			screen.getByRole( 'button', { name: /^collect$/i } )
 		).toBeEnabled();
 		expect(
-			screen.queryByRole( 'button', { name: /generate digest/i } )
+			screen.queryByRole( 'button', { name: /regenerate digest/i } )
 		).not.toBeInTheDocument();
 	} );
 
@@ -393,14 +393,14 @@ describe( 'PublisherInsights', () => {
 			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
 		);
 		expect(
-			screen.getByRole( 'button', { name: /generate digest/i } )
+			screen.getByRole( 'button', { name: /regenerate digest/i } )
 		).toBeDisabled();
 	} );
 
 	it( 'enables Generate once collection is complete (done >= total)', async () => {
 		await renderPopulated(); // model is 3/3
 		expect(
-			screen.getByRole( 'button', { name: /generate digest/i } )
+			screen.getByRole( 'button', { name: /regenerate digest/i } )
 		).not.toBeDisabled();
 	} );
 
