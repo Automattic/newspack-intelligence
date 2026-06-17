@@ -10,6 +10,10 @@ import './styles/insights.scss';
 // How long a transient ack note stays before auto-dismissing.
 const NOTE_TTL_MS = 6000;
 
+// Safety net: release the Collect lock if a dispatched cycle never reports
+// completion (a source hung), so the button can't latch forever.
+const COLLECT_SAFETY_MS = 180000;
+
 // REST-call seam for the "Create draft post" action. Lazily defaulted to a
 // thin apiFetch wrapper; tests inject a fake so the suite never hits the
 // network but still exercises the success/failure rendering paths.
@@ -63,6 +67,9 @@ export default function PublisherInsights( {
 	const [ collecting, setCollecting ] = useState( false );
 	const [ collectNote, setCollectNote ] = useState( null );
 	const startDone = useRef( 0 );
+	// Latch: have we observed this cycle in-progress (done < total) since the click?
+	// Only then does a `complete` reading mean THIS cycle finished (not the pre-click one).
+	const sawIncomplete = useRef( false );
 	const [ copied, setCopied ] = useState( false );
 	const [ editLink, setEditLink ] = useState( null );
 	const [ draftError, setDraftError ] = useState( null );
@@ -86,31 +93,35 @@ export default function PublisherInsights( {
 	const done = model.done || 0;
 	const total = model.total || 0;
 	const collectComplete = total > 0 && done >= total;
-	// Optimistic display: while the lock is held, show 0 instead of the prior cycle's stale count.
-	const displayDone = collecting ? 0 : done;
+	// Optimistic display: show 0 right after the click (while `done` is still the
+	// stale pre-click value) instead of the prior cycle's count; show real progress once it moves.
+	const displayDone = collecting && done === startDone.current ? 0 : done;
 	// Clickable only when there's nothing in flight AND the pipeline is at a clean boundary —
 	// empty (0) or complete (>= total). Mid-collection (0 < done < total) it's locked by the
 	// boundary rule alone, so gating survives a page reload (which loses `collecting`).
 	const canCollect = ! collecting && ( 0 === done || collectComplete );
 
-	// Release the optimistic lock once the poll reflects the new cycle (done moved off its
-	// click-time value), or after a timeout — the timeout guarantees the button can't stay
-	// stuck if the collection never advances done (no worker, nothing produced, total 0).
+	// Hold the Collect lock for the WHOLE dispatched cycle: release only once THIS
+	// cycle finishes (a `complete` reading AFTER we've seen it in-progress — never the
+	// pre-click complete state), or a long safety timeout if a source never reports.
 	useEffect( () => {
 		if ( ! collecting ) {
-			return;
+			return undefined;
 		}
-		if ( done !== startDone.current ) {
+		if ( ! collectComplete ) {
+			sawIncomplete.current = true;
+		}
+		if ( sawIncomplete.current && collectComplete ) {
 			setCollecting( false );
 			setCollectNote( null );
-			return;
+			return undefined;
 		}
 		const timer = setTimeout(
 			() => setCollecting( false ),
-			Math.max( refreshMs * 2, 8000 )
+			COLLECT_SAFETY_MS
 		);
 		return () => clearTimeout( timer );
-	}, [ collecting, done, refreshMs ] );
+	}, [ collecting, collectComplete ] );
 
 	// Transient ack notes (collect dispatch, regenerate request) auto-dismiss so
 	// they don't linger on screen forever after the action has landed.
@@ -169,9 +180,10 @@ export default function PublisherInsights( {
 	};
 
 	const onCollect = () => {
-		// Capture the pre-click count so the effect can tell when the new cycle has landed
-		// (done moved), and show 0/total immediately rather than the prior cycle's stale number.
+		// Capture the pre-click count (for the optimistic 0/total display) and arm the
+		// latch: this cycle hasn't been seen in-progress yet.
 		startDone.current = done;
+		sawIncomplete.current = false;
 		setCollecting( true );
 		setCollectNote( null );
 		collect()

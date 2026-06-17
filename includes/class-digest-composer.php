@@ -3,9 +3,9 @@
  * Digest_Composer: the shared "items → markdown digest" core.
  *
  * Used by both the worker's Digest_Builder FLUSH (writes digest:log) and the
- * dashboard's Insights_CI `generate` verb, so the two paths can't drift: every
- * accumulated item — ranked by score — goes through the LLM, with a ranked-list
- * fallback when there's no client or the call fails / returns empty.
+ * dashboard's Insights_CI `generate` verb, so the two paths can't drift: the top
+ * N items PER SOURCE (so no single source crowds the others out) go through the
+ * LLM, with a ranked-list fallback when there's no client or the call fails / returns empty.
  *
  * @package Newspack_AI_Newsletter
  */
@@ -18,11 +18,10 @@ use Newspack_Nodes\Core;
 
 class Digest_Composer {
 
-	// No item cap by design — the briefing covers every accumulated item. The set
-	// is self-limiting, not enforced here: the builder resets each cycle and the
-	// sources page-cap their fetches (~10 each), so a few dozen items reach this at
-	// most; 3000 output tokens comfortably fits a briefing that size.
-	private const MAX_TOKENS = 3000;
+	// Per-source cap: the briefing draws the top N items FROM EACH SOURCE, so a
+	// high-volume source (e.g. github) can't crowd linear/feed out of the digest.
+	private const PER_SOURCE = 10;
+	private const MAX_TOKENS = 5000;
 
 	/**
 	 * Compose a markdown digest from accumulated items.
@@ -32,11 +31,14 @@ class Digest_Composer {
 	 * @param string                            $profile The relevance profile for the briefing prompt.
 	 */
 	public static function compose( array $items, ?LLM_Client $client, string $profile ): string {
-		$draft = null;
+		// Select the top N per source up front so the LLM path and the no-AI
+		// fallback both work from the same balanced set.
+		$selected = self::top_per_source( $items, self::PER_SOURCE );
+		$draft    = null;
 		if ( $client instanceof LLM_Client ) {
 			try {
 				$draft = $client->chat(
-					Prompts::digest( self::ranked_by_score( $items ), $profile ),
+					Prompts::digest( $selected, $profile ),
 					[ 'max_tokens' => self::MAX_TOKENS ]
 				);
 			} catch ( \RuntimeException $e ) {
@@ -46,7 +48,7 @@ class Digest_Composer {
 			}
 		}
 		if ( null === $draft || '' === \trim( $draft ) ) {
-			return self::render_ranked_list( $items );
+			return self::render_ranked_list( $selected );
 		}
 		return $draft;
 	}
@@ -66,17 +68,30 @@ class Digest_Composer {
 	}
 
 	/**
-	 * Every item, highest `score` first.
+	 * The top $n items PER SOURCE: grouped by `source` (first-seen order), each
+	 * group sorted by `score` desc and capped at $n, then flattened. Keeps every
+	 * source represented regardless of how many items a single source contributed.
 	 *
 	 * @param array<int,array<array-key,mixed>> $items Accumulated items.
 	 * @return array<int,array<array-key,mixed>>
 	 */
-	private static function ranked_by_score( array $items ): array {
-		\usort(
-			$items,
-			static fn ( array $a, array $b ): int => self::score_of( $b ) <=> self::score_of( $a )
-		);
-		return $items;
+	private static function top_per_source( array $items, int $n ): array {
+		$by_source = [];
+		foreach ( $items as $item ) {
+			$source                 = \is_string( $item['source'] ?? null ) ? $item['source'] : '?';
+			$by_source[ $source ][] = $item;
+		}
+		$out = [];
+		foreach ( $by_source as $list ) {
+			\usort(
+				$list,
+				static fn ( array $a, array $b ): int => self::score_of( $b ) <=> self::score_of( $a )
+			);
+			foreach ( \array_slice( $list, 0, $n ) as $item ) {
+				$out[] = $item;
+			}
+		}
+		return $out;
 	}
 
 	/**

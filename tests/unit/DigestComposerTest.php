@@ -57,19 +57,26 @@ final class DigestComposerTest extends TestCase {
 		$this->assertStringContainsString( '- sa', $draft );
 	}
 
-	public function test_every_item_by_score_is_sent_to_the_llm(): void {
+	public function test_sends_top_n_per_source_so_no_source_is_crowded_out(): void {
 		$items = [];
-		for ( $i = 0; $i < 15; $i++ ) {
-			$items[] = [ 'summary' => "s$i", 'score' => (float) $i, 'title' => "t$i", 'source' => 'x', 'url' => 'u' ];
+		// github: 12 high-scoring items — only its top 10 should reach the prompt.
+		for ( $i = 1; $i <= 12; $i++ ) {
+			$items[] = [ 'summary' => "g$i", 'score' => (float) $i, 'title' => "g$i", 'source' => 'github', 'url' => 'u' ];
 		}
+		// linear + feed: low-scoring, low-volume — must STILL appear (not crowded out).
+		$items[] = [ 'summary' => 'lin-a', 'score' => 0.5, 'title' => 'lin-a', 'source' => 'linear', 'url' => 'u' ];
+		$items[] = [ 'summary' => 'feed-x', 'score' => 0.1, 'title' => 'feed-x', 'source' => 'feed', 'url' => 'u' ];
+
 		$seen = null;
 		Digest_Composer::compose( $items, $this->client( 'ok', $seen ), 'p' );
-
-		// Every item lands in the prompt, ranked by score — the highest (t14) first
-		// down to the lowest (t0); none are cut.
 		$user = $seen[1]['content'] ?? '';
-		$this->assertStringContainsString( 't14 ', $user );
-		$this->assertStringContainsString( 't0 ', $user );
-		$this->assertLessThan( \strpos( $user, 't0 ' ), \strpos( $user, 't14 ' ) );
+
+		// Every source is represented despite github's volume + higher scores.
+		$this->assertStringContainsString( 'lin-a ', $user );
+		$this->assertStringContainsString( 'feed-x ', $user );
+		// github is capped at its top 10 — its two lowest (g1, g2) are dropped.
+		$this->assertStringContainsString( 'g12 ', $user );
+		$this->assertStringNotContainsString( 'g1 ', $user );
+		$this->assertStringNotContainsString( 'g2 ', $user );
 	}
 }

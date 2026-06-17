@@ -508,6 +508,28 @@ describe( 'PublisherInsights', () => {
 		).toBeDisabled();
 	} );
 
+	it( 'keeps Collect locked past the old short timeout while a cycle is still running', async () => {
+		await renderPopulated( {
+			commandClient: clientFor( {
+				insights: JSON.stringify( model ), // complete (3/3) → Collect enabled
+				collect: JSON.stringify( { collecting: 3, workers: 1 } ),
+			} ),
+		} );
+		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
+		jest.useFakeTimers();
+		try {
+			await act( async () => {} ); // flush the collect ack
+			// Past the old ~8s release timeout: the lock holds for the whole cycle,
+			// so the button can't re-enable mid-collection.
+			act( () => jest.advanceTimersByTime( 12000 ) );
+			expect(
+				screen.getByRole( 'button', { name: /collecting/i } )
+			).toBeDisabled();
+		} finally {
+			jest.useRealTimers();
+		}
+	} );
+
 	it( 'auto-dismisses the "Collecting from N…" note so it does not linger forever', async () => {
 		await renderPopulated( {
 			commandClient: clientFor( {
