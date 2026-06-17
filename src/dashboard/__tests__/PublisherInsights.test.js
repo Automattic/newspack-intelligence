@@ -275,18 +275,22 @@ describe( 'PublisherInsights', () => {
 		expect( await screen.findByText( /copied/i ) ).toBeInTheDocument();
 	} );
 
-	it( 'creates a draft post as native blocks and shows an "Edit draft" link on success', async () => {
+	it( 'creates a draft from the markdownToContent seam and shows an "Edit draft" link on success', async () => {
 		const createDraft = jest.fn( () => Promise.resolve( { id: 42 } ) );
-		await renderPopulated( { createDraft } );
+		// Inject a fake converter so the test never loads the heavy WP block deps;
+		// it just proves the digest markdown is run through markdownToContent and
+		// its output is what createDraft posts.
+		const markdownToContent = jest.fn( ( md ) => `BLOCKS:${ md }` );
+		await renderPopulated( { createDraft, markdownToContent } );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: /create draft post/i } )
 		);
 		await waitFor( () => expect( createDraft ).toHaveBeenCalledTimes( 1 ) );
 		const arg = createDraft.mock.calls[ 0 ][ 0 ];
 		expect( arg.title.length ).toBeGreaterThan( 0 );
-		// Block-delimited markup from the digest markdown, not a rebuilt item list.
-		expect( arg.content ).toContain( '<!-- wp:' );
-		expect( arg.content ).toContain( '<strong>Big news</strong>' );
+		// The digest markdown went through the converter, and its result is posted.
+		expect( markdownToContent ).toHaveBeenCalledWith( DIGEST );
+		expect( arg.content ).toBe( `BLOCKS:${ DIGEST }` );
 		const link = await screen.findByRole( 'link', { name: /edit draft/i } );
 		expect( link.getAttribute( 'href' ) ).toContain( 'post=42' );
 		expect( link.getAttribute( 'href' ) ).toContain( 'action=edit' );
@@ -296,7 +300,10 @@ describe( 'PublisherInsights', () => {
 		const createDraft = jest.fn( () =>
 			Promise.reject( new Error( 'rest blew up' ) )
 		);
-		await renderPopulated( { createDraft } );
+		await renderPopulated( {
+			createDraft,
+			markdownToContent: ( md ) => `BLOCKS:${ md }`,
+		} );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: /create draft post/i } )
 		);
@@ -324,7 +331,10 @@ describe( 'PublisherInsights', () => {
 
 	it( 'shows an error (not a dead post=undefined link) when the draft reply has no id', async () => {
 		const createDraft = jest.fn( () => Promise.resolve( {} ) );
-		await renderPopulated( { createDraft } );
+		await renderPopulated( {
+			createDraft,
+			markdownToContent: ( md ) => `BLOCKS:${ md }`,
+		} );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: /create draft post/i } )
 		);

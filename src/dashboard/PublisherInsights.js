@@ -4,7 +4,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import { useNodeState } from '@newspack-nodes/runtime';
 import { useInsightsGraph } from './hooks/useInsightsGraph';
 import { emptyModel } from './nodes/insightsView';
-import { markdownToBlocks } from './markdownToBlocks';
+import { markdownToBlockMarkup } from './markdownToBlockMarkup';
 import './styles/insights.scss';
 
 // How long a transient ack note stays before auto-dismissing.
@@ -39,14 +39,17 @@ const defaultCreateDraft = ( { title, content } ) =>
  * Cobalt accent, Inter, laid out in flow within wp-admin.
  *
  * @param {Object}   props
- * @param {number}   [props.refreshMs]     Poll interval in ms (default 4000).
- * @param {Object}   [props.commandClient] CommandClient seam forwarded to the hook (tests).
- * @param {Function} [props.createDraft]   REST-call seam: ({title,content}) => Promise (tests).
+ * @param {number}   [props.refreshMs]         Poll interval in ms (default 4000).
+ * @param {Object}   [props.commandClient]     CommandClient seam forwarded to the hook (tests).
+ * @param {Function} [props.createDraft]       REST-call seam: ({title,content}) => Promise (tests).
+ * @param {Function} [props.markdownToContent] Markdown→block-markup seam (tests inject a fake so
+ *                                             they don't load the heavy WP block deps).
  */
 export default function PublisherInsights( {
 	refreshMs = 4000,
 	commandClient,
 	createDraft = defaultCreateDraft,
+	markdownToContent = markdownToBlockMarkup,
 } ) {
 	const { generate, collect } = useInsightsGraph( {
 		refreshMs,
@@ -301,7 +304,7 @@ export default function PublisherInsights( {
 		setCopied( false );
 		createDraft( {
 			title: __( 'Publisher Newsletter', 'newspack-ai-newsletter' ),
-			content: markdownToBlocks( digest ),
+			content: markdownToContent( digest ),
 		} )
 			.then( ( post ) => {
 				setCreating( false );
