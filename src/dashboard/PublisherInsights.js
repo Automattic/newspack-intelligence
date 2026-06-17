@@ -7,6 +7,9 @@ import { emptyModel } from './nodes/insightsView';
 import { markdownToBlocks } from './markdownToBlocks';
 import './styles/insights.scss';
 
+// How long a transient ack note stays before auto-dismissing.
+const NOTE_TTL_MS = 6000;
+
 // REST-call seam for the "Create draft post" action. Lazily defaulted to a
 // thin apiFetch wrapper; tests inject a fake so the suite never hits the
 // network but still exercises the success/failure rendering paths.
@@ -108,6 +111,23 @@ export default function PublisherInsights( {
 		);
 		return () => clearTimeout( timer );
 	}, [ collecting, done, refreshMs ] );
+
+	// Transient ack notes (collect dispatch, regenerate request) auto-dismiss so
+	// they don't linger on screen forever after the action has landed.
+	useEffect( () => {
+		if ( null === collectNote ) {
+			return undefined;
+		}
+		const timer = setTimeout( () => setCollectNote( null ), NOTE_TTL_MS );
+		return () => clearTimeout( timer );
+	}, [ collectNote ] );
+	useEffect( () => {
+		if ( null === regenNote ) {
+			return undefined;
+		}
+		const timer = setTimeout( () => setRegenNote( null ), NOTE_TTL_MS );
+		return () => clearTimeout( timer );
+	}, [ regenNote ] );
 
 	const topScore = allTopItems.reduce(
 		( max, item ) => Math.max( max, item.score || 0 ),

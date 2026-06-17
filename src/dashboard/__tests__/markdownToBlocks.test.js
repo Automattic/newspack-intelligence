@@ -132,6 +132,42 @@ describe( 'markdownToBlocks', () => {
 		);
 	} );
 
+	it( 'converts a GFM table to a core/table block', () => {
+		const md = [
+			'| Release | Key changes |',
+			'|--------|-------------|',
+			'| **v6.43** | Access-control |',
+		].join( '\n' );
+		expect( markdownToBlocks( md ) ).toBe(
+			'<!-- wp:table -->\n' +
+				'<figure class="wp-block-table"><table>' +
+				'<thead><tr><th>Release</th><th>Key changes</th></tr></thead>' +
+				'<tbody><tr>' +
+				'<td><strong>v6.43</strong></td><td>Access-control</td>' +
+				'</tr></tbody>' +
+				'</table></figure>\n' +
+				'<!-- /wp:table -->'
+		);
+	} );
+
+	it( 'renders <br> as a real line break inside a table cell, with an autolink', () => {
+		const md = [
+			'| A | B |',
+			'|---|---|',
+			'| x | one<br><https://t.test/p> |',
+		].join( '\n' );
+		expect( markdownToBlocks( md ) ).toContain(
+			'<td>one<br><a href="https://t.test/p">https://t.test/p</a></td>'
+		);
+	} );
+
+	it( 'does not leave raw table pipes in a paragraph', () => {
+		const md = [ '| A | B |', '|---|---|', '| 1 | 2 |' ].join( '\n' );
+		const out = markdownToBlocks( md );
+		expect( out ).not.toContain( '<p>' );
+		expect( out ).not.toContain( '|' );
+	} );
+
 	it( 'handles the full real digest sample cleanly', () => {
 		const sample = [
 			'## What mattered for the past sprint (Engineers – Newspack & Nodes)',

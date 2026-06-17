@@ -40,6 +40,8 @@ function inline( text ) {
 		/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
 		( _match, label, url ) => `<a href="${ url }">${ label }</a>`
 	);
+	// <br> line breaks (table cells use them) — emit a real break, not escaped text.
+	html = html.replace( /&lt;br\s*\/?&gt;/gi, '<br>' );
 	// **bold**.
 	html = html.replace(
 		/\*\*([^*]+)\*\*/g,
@@ -104,18 +106,70 @@ function paragraphBlock( lines ) {
 	);
 }
 
+/**
+ * Split a GFM table row into trimmed cell texts (leading/trailing pipes dropped).
+ *
+ * @param {string} row A `| a | b |` row.
+ * @return {Array<string>} The cell texts.
+ */
+function tableCells( row ) {
+	return row
+		.replace( /^\|/, '' )
+		.replace( /\|$/, '' )
+		.split( '|' )
+		.map( ( cell ) => cell.trim() );
+}
+
+/**
+ * Serialize a GFM table as a core/table block (the markup WP stores), so a
+ * pasted-equivalent table opens natively instead of as a pipe-laden paragraph.
+ *
+ * @param {Array<string>}        header Header cell texts.
+ * @param {Array<Array<string>>} rows   Body rows of cell texts.
+ * @return {string} A serialized table block.
+ */
+function tableBlock( header, rows ) {
+	const th = header
+		.map( ( cell ) => `<th>${ inline( cell ) }</th>` )
+		.join( '' );
+	const body = rows
+		.map(
+			( cells ) =>
+				`<tr>${ cells
+					.map( ( cell ) => `<td>${ inline( cell ) }</td>` )
+					.join( '' ) }</tr>`
+		)
+		.join( '' );
+	return (
+		'<!-- wp:table -->\n' +
+		'<figure class="wp-block-table"><table>' +
+		`<thead><tr>${ th }</tr></thead>` +
+		`<tbody>${ body }</tbody>` +
+		'</table></figure>\n' +
+		'<!-- /wp:table -->'
+	);
+}
+
 const HEADING = /^(#{1,3})\s+(.*)$/;
 const LIST_ITEM = /^[-*]\s+(.*)$/;
 const SEPARATOR = /^-{3,}$/;
+// A table row is pipe-delimited; the delimiter row under the header is only
+// pipes/dashes/colons/space with at least one dash (distinct from a `---` rule,
+// which has no pipe).
+const TABLE_ROW = ( line ) =>
+	line.length > 1 && line.startsWith( '|' ) && line.endsWith( '|' );
+const TABLE_DELIM = ( line ) =>
+	line.includes( '|' ) && line.includes( '-' ) && /^[\s|:-]+$/.test( line );
 
 /**
  * Convert the digest's markdown subset into serialized Gutenberg block markup —
  * the block-comment-delimited HTML WordPress stores as post_content — so a
  * REST-created draft opens as native, editable blocks. Pure, dependency-free.
  *
- * Supported: # / ## / ### headings, `-`/`*` lists, `---` separators, paragraphs,
- * and inline **bold** / [text](url) / <autolink>. An indented continuation line
- * after a bullet folds into that bullet rather than starting a new block.
+ * Supported: # / ## / ### headings, `-`/`*` lists, `---` separators, GFM tables
+ * (→ core/table), paragraphs, and inline **bold** / [text](url) / <autolink> /
+ * <br>. An indented continuation line after a bullet folds into that bullet
+ * rather than starting a new block.
  *
  * @param {string} [markdown] The markdown source.
  * @return {string} Serialized Gutenberg block markup ('' for empty input).
@@ -139,7 +193,8 @@ export function markdownToBlocks( markdown = '' ) {
 		}
 	};
 
-	for ( const raw of lines ) {
+	for ( let i = 0; i < lines.length; i++ ) {
+		const raw = lines[ i ];
 		const line = raw.trim();
 
 		// A list-item continuation: an indented, non-special line under a bullet
@@ -159,6 +214,26 @@ export function markdownToBlocks( markdown = '' ) {
 		if ( '' === line ) {
 			flushPara();
 			flushList();
+			continue;
+		}
+
+		// A GFM table: a pipe row immediately followed by a delimiter row. Consume
+		// the header, the delimiter, and every following pipe row as one table.
+		if (
+			TABLE_ROW( line ) &&
+			TABLE_DELIM( ( lines[ i + 1 ] ?? '' ).trim() )
+		) {
+			flushPara();
+			flushList();
+			const header = tableCells( line );
+			const rows = [];
+			let j = i + 2;
+			while ( j < lines.length && TABLE_ROW( lines[ j ].trim() ) ) {
+				rows.push( tableCells( lines[ j ].trim() ) );
+				j++;
+			}
+			blocks.push( tableBlock( header, rows ) );
+			i = j - 1;
 			continue;
 		}
 

@@ -12,7 +12,13 @@
  * graph against the fake client.
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import {
+	render,
+	screen,
+	fireEvent,
+	waitFor,
+	act,
+} from '@testing-library/react';
 import {
 	newMessage,
 	TO,
@@ -206,6 +212,29 @@ describe( 'PublisherInsights', () => {
 		expect(
 			screen.getByTestId( 'eai-insights-preview' ).textContent
 		).toContain( 'Sprint digest' );
+	} );
+
+	it( 'auto-dismisses the "Regenerating…" note so it does not linger forever', async () => {
+		await renderPopulated( {
+			commandClient: clientFor( {
+				insights: JSON.stringify( model ),
+				generate: JSON.stringify( { regenerating: true, workers: 1 } ),
+			} ),
+		} );
+		jest.useFakeTimers();
+		try {
+			fireEvent.click(
+				screen.getByRole( 'button', { name: /regenerate digest/i } )
+			);
+			await act( async () => {} ); // flush the generate ack → sets the note
+			expect( screen.getByText( /regenerating/i ) ).toBeInTheDocument();
+			act( () => jest.advanceTimersByTime( 10000 ) );
+			expect(
+				screen.queryByText( /regenerating/i )
+			).not.toBeInTheDocument();
+		} finally {
+			jest.useRealTimers();
+		}
 	} );
 
 	it( 'surfaces an error (and keeps the shown digest) when Regenerate finds no live worker', async () => {
@@ -477,6 +506,31 @@ describe( 'PublisherInsights', () => {
 		expect(
 			screen.getByRole( 'button', { name: /collecting/i } )
 		).toBeDisabled();
+	} );
+
+	it( 'auto-dismisses the "Collecting from N…" note so it does not linger forever', async () => {
+		await renderPopulated( {
+			commandClient: clientFor( {
+				insights: JSON.stringify( model ),
+				collect: JSON.stringify( { collecting: 3, workers: 1 } ),
+			} ),
+		} );
+		jest.useFakeTimers();
+		try {
+			fireEvent.click(
+				screen.getByRole( 'button', { name: /^collect$/i } )
+			);
+			await act( async () => {} ); // flush the collect ack → sets the note
+			expect(
+				screen.getByText( /collecting from 1/i )
+			).toBeInTheDocument();
+			act( () => jest.advanceTimersByTime( 10000 ) );
+			expect(
+				screen.queryByText( /collecting from 1/i )
+			).not.toBeInTheDocument();
+		} finally {
+			jest.useRealTimers();
+		}
 	} );
 
 	it( 'surfaces a Collect error in the empty state', async () => {
