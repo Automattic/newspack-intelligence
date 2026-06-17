@@ -87,6 +87,5 @@ jobs:
         with:
           files: |
             release/newspack-ai-newsletter.zip
-            release/00-newspack-profiler.php
           body_path: RELEASE_NOTES.md
           fail_on_unmatched_files: true
