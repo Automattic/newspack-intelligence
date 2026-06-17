@@ -191,7 +191,7 @@ describe( 'useInsightsGraph — poll', () => {
 } );
 
 describe( 'useInsightsGraph — generate (awaited verb)', () => {
-	test( 'generate() fires a `generate` command (FROM=view) and resolves to the digest markdown', async () => {
+	test( 'generate() fires a `generate` command (FROM=view) and resolves to its ack payload', async () => {
 		const client = makeFakeClient( {
 			insights: JSON.stringify( {
 				sources: {},
@@ -199,7 +199,8 @@ describe( 'useInsightsGraph — generate (awaited verb)', () => {
 				accumulated: 0,
 				digest: '',
 			} ),
-			generate: JSON.stringify( { digest: '## Fresh digest' } ),
+			// The verb now delegates to the worker and returns an ack, not markdown.
+			generate: JSON.stringify( { regenerating: true, workers: 1 } ),
 		} );
 		const { result } = renderHook( () =>
 			useInsightsGraph( { commandClient: client } )
@@ -210,7 +211,9 @@ describe( 'useInsightsGraph — generate (awaited verb)', () => {
 		await act( async () => {
 			resolved = await result.current.generate();
 		} );
-		expect( resolved ).toBe( '## Fresh digest' );
+		expect( resolved ).toBe(
+			JSON.stringify( { regenerating: true, workers: 1 } )
+		);
 
 		const genMsgs = client.batches
 			.flat()

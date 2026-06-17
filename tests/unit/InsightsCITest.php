@@ -9,9 +9,9 @@ use Newspack_Nodes\Tests\TestCase;
 
 /**
  * Insights_CI is the dashboard's server read. Beyond the scored-pipeline model
- * (sources/top/accumulated) it now surfaces the REAL rendered digest — the
- * latest `digest:log` segment — and a `generate` core that recomposes a fresh
- * digest from the snapshot items via the shared Digest_Composer.
+ * (sources/top/accumulated) it surfaces the REAL rendered digest — the latest
+ * `digest:log` segment — and routes Collect / Regenerate to the worker's nodes
+ * over the input IPC partition (the request graph never composes itself).
  */
 final class InsightsCITest extends TestCase {
 
@@ -59,18 +59,6 @@ final class InsightsCITest extends TestCase {
 		$this->assertSame( 0, $model['accumulated'] );
 	}
 
-	public function test_read_snapshot_items_empty_when_no_dirs(): void {
-		$this->assertSame( [], Insights_CI_Node::read_snapshot_items( $this->tmp ) );
-	}
-
-	public function test_generate_json_composes_a_digest_from_items(): void {
-		// No ai_proxy_token configured → Settings::llm_client() is null → ranked-list fallback.
-		$json   = Insights_CI_Node::generate_json( [ [ 'summary' => 'shipped X', 'score' => 5.0 ] ] );
-		$parsed = \json_decode( $json, true );
-		$this->assertIsArray( $parsed );
-		$this->assertStringContainsString( '- shipped X', (string) $parsed['digest'] );
-	}
-
 	public function test_top_by_source_groups_into_per_source_top_10_sorted_by_score(): void {
 		$items = [];
 		// github: 12 items (scores 1..12) — its top 10 must be 12..3, desc.
@@ -115,6 +103,13 @@ final class InsightsCITest extends TestCase {
 
 	public function test_collect_errors_when_no_worker_is_live(): void {
 		$result = Insights_CI_Node::collect( new Command_Interpreter_Node(), $this->tmp );
+		$parsed = \json_decode( $result, true );
+		$this->assertIsArray( $parsed );
+		$this->assertStringContainsString( 'No live', (string) $parsed['error'] );
+	}
+
+	public function test_regenerate_errors_when_no_worker_is_live(): void {
+		$result = Insights_CI_Node::regenerate( new Command_Interpreter_Node(), $this->tmp );
 		$parsed = \json_decode( $result, true );
 		$this->assertIsArray( $parsed );
 		$this->assertStringContainsString( 'No live', (string) $parsed['error'] );

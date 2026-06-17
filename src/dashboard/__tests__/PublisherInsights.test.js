@@ -187,41 +187,48 @@ describe( 'PublisherInsights', () => {
 		expect( preview.textContent ).toContain( 'Big news' );
 	} );
 
-	it( 'regenerates the digest via the `generate` verb when "Regenerate digest" is clicked', async () => {
+	it( 'asks the worker to regenerate (the `generate` verb) and acknowledges; the poll surfaces the new digest', async () => {
 		await renderPopulated( {
 			commandClient: clientFor( {
 				insights: JSON.stringify( model ),
-				generate: JSON.stringify( { digest: '## Regenerated brief' } ),
+				// The verb now delegates to the worker and returns an ack, not markdown.
+				generate: JSON.stringify( { regenerating: true, workers: 1 } ),
 			} ),
 		} );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: /regenerate digest/i } )
 		);
+		// A status acknowledgement; the new draft itself lands on the next poll.
 		await waitFor( () =>
-			expect(
-				screen.getByTestId( 'eai-insights-preview' ).textContent
-			).toContain( 'Regenerated brief' )
+			expect( screen.getByText( /regenerating/i ) ).toBeInTheDocument()
 		);
-	} );
-
-	it( 'keeps the shown digest (and notifies) when a Generate returns empty — no wipe', async () => {
-		await renderPopulated( {
-			commandClient: clientFor( {
-				insights: JSON.stringify( model ),
-				generate: JSON.stringify( { digest: '' } ),
-			} ),
-		} );
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /regenerate digest/i } )
-		);
-		await waitFor( () =>
-			expect( screen.getByRole( 'alert' ) ).toBeInTheDocument()
-		);
-		// The previously-shown durable digest is NOT wiped by an empty recompose.
+		// The durable digest stays shown meanwhile (poll-driven, never wiped here).
 		expect(
 			screen.getByTestId( 'eai-insights-preview' ).textContent
 		).toContain( 'Sprint digest' );
-		// And the actions stay usable.
+	} );
+
+	it( 'surfaces an error (and keeps the shown digest) when Regenerate finds no live worker', async () => {
+		await renderPopulated( {
+			commandClient: clientFor( {
+				insights: JSON.stringify( model ),
+				generate: JSON.stringify( {
+					error: 'No live newspack-ai-newsletter worker',
+				} ),
+			} ),
+		} );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: /regenerate digest/i } )
+		);
+		await waitFor( () =>
+			expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
+				/no live/i
+			)
+		);
+		// The previously-shown durable digest is NOT wiped by a failed regenerate.
+		expect(
+			screen.getByTestId( 'eai-insights-preview' ).textContent
+		).toContain( 'Sprint digest' );
 		expect(
 			screen.getByRole( 'button', { name: /copy markdown/i } )
 		).not.toBeDisabled();
