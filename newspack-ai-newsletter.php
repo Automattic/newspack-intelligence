@@ -98,9 +98,9 @@ function register_settings(): void {
 }
 
 /**
- * Add the Settings submenu under Publisher Insights — a classic Settings-API form
- * for the AI proxy + connector credentials (the React dashboard handles insights
- * display separately). Honors the substrate access gate.
+ * Add the AI Newsletter settings page under the core WordPress "Settings" menu —
+ * a classic Settings-API form for the AI proxy + connector credentials (the React
+ * dashboard handles insights display separately). Honors the substrate access gate.
  */
 function register_settings_admin_page(): void {
 	if ( ! \function_exists( 'add_submenu_page' ) || ! \class_exists( '\Newspack_Nodes\Admin\Admin' ) ) {
@@ -110,9 +110,9 @@ function register_settings_admin_page(): void {
 		return;
 	}
 	\add_submenu_page(
-		INSIGHTS_MENU_SLUG,
+		'options-general.php',
 		\__( 'AI Newsletter Settings', 'newspack-ai-newsletter' ),
-		\__( 'Settings', 'newspack-ai-newsletter' ),
+		\__( 'AI Newsletter', 'newspack-ai-newsletter' ),
 		'manage_options',
 		SETTINGS_MENU_SLUG,
 		__NAMESPACE__ . '\\render_settings_page'

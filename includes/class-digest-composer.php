@@ -3,9 +3,9 @@
  * Digest_Composer: the shared "items → markdown digest" core.
  *
  * Used by both the worker's Digest_Builder FLUSH (writes digest:log) and the
- * dashboard's Insights_CI `generate` verb, so the two paths can't drift: the
- * top-N items by score go through the LLM, with a ranked-list fallback when
- * there's no client or the call fails / returns empty.
+ * dashboard's Insights_CI `generate` verb, so the two paths can't drift: every
+ * accumulated item — ranked by score — goes through the LLM, with a ranked-list
+ * fallback when there's no client or the call fails / returns empty.
  *
  * @package Newspack_AI_Newsletter
  */
@@ -18,8 +18,11 @@ use Newspack_Nodes\Core;
 
 class Digest_Composer {
 
-	private const TOP_N      = 10;
-	private const MAX_TOKENS = 1500;
+	// No item cap by design — the briefing covers every accumulated item. The set
+	// is self-limiting, not enforced here: the builder resets each cycle and the
+	// sources page-cap their fetches (~10 each), so a few dozen items reach this at
+	// most; 3000 output tokens comfortably fits a briefing that size.
+	private const MAX_TOKENS = 3000;
 
 	/**
 	 * Compose a markdown digest from accumulated items.
@@ -33,7 +36,7 @@ class Digest_Composer {
 		if ( $client instanceof LLM_Client ) {
 			try {
 				$draft = $client->chat(
-					Prompts::digest( self::top_items( $items, self::TOP_N ), $profile ),
+					Prompts::digest( self::ranked_by_score( $items ), $profile ),
 					[ 'max_tokens' => self::MAX_TOKENS ]
 				);
 			} catch ( \RuntimeException $e ) {
@@ -63,17 +66,17 @@ class Digest_Composer {
 	}
 
 	/**
-	 * The top $n items, highest `score` first.
+	 * Every item, highest `score` first.
 	 *
 	 * @param array<int,array<array-key,mixed>> $items Accumulated items.
 	 * @return array<int,array<array-key,mixed>>
 	 */
-	private static function top_items( array $items, int $n ): array {
+	private static function ranked_by_score( array $items ): array {
 		\usort(
 			$items,
 			static fn ( array $a, array $b ): int => self::score_of( $b ) <=> self::score_of( $a )
 		);
-		return \array_slice( $items, 0, $n );
+		return $items;
 	}
 
 	/**
