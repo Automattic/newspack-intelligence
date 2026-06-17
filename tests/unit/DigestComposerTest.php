@@ -10,7 +10,7 @@ use Newspack_Nodes\Tests\TestCase;
 /**
  * Digest_Composer is the shared compose core used by both the worker's
  * Digest_Builder FLUSH and the dashboard's `generate` verb, so the two can't
- * drift: top-N-by-score through the LLM, ranked-list fallback otherwise.
+ * drift: every item, ranked by score, through the LLM, ranked-list fallback otherwise.
  */
 final class DigestComposerTest extends TestCase {
 
@@ -57,7 +57,7 @@ final class DigestComposerTest extends TestCase {
 		$this->assertStringContainsString( '- sa', $draft );
 	}
 
-	public function test_only_top_ten_by_score_are_sent_to_the_llm(): void {
+	public function test_every_item_by_score_is_sent_to_the_llm(): void {
 		$items = [];
 		for ( $i = 0; $i < 15; $i++ ) {
 			$items[] = [ 'summary' => "s$i", 'score' => (float) $i, 'title' => "t$i", 'source' => 'x', 'url' => 'u' ];
@@ -65,10 +65,11 @@ final class DigestComposerTest extends TestCase {
 		$seen = null;
 		Digest_Composer::compose( $items, $this->client( 'ok', $seen ), 'p' );
 
-		// The user message lists the items; the highest-scoring (t14) must be present,
-		// the lowest (t0) must be cut by the TOP_N=10 window.
+		// Every item lands in the prompt, ranked by score — the highest (t14) first
+		// down to the lowest (t0); none are cut.
 		$user = $seen[1]['content'] ?? '';
-		$this->assertStringContainsString( 't14', $user );
-		$this->assertStringNotContainsString( 't0 ', $user );
+		$this->assertStringContainsString( 't14 ', $user );
+		$this->assertStringContainsString( 't0 ', $user );
+		$this->assertLessThan( \strpos( $user, 't0 ' ), \strpos( $user, 't14 ' ) );
 	}
 }
