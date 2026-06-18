@@ -68,6 +68,10 @@ export class InsightsViewNode extends Node {
 		}
 	}
 
+	_publish() {
+		this.setState( 'view', this.model );
+	}
+
 	_parse( payload ) {
 		if ( 'string' !== typeof payload ) {
 			return null;
@@ -78,10 +82,6 @@ export class InsightsViewNode extends Node {
 		} catch ( e ) {
 			return null;
 		}
-	}
-
-	_publish() {
-		this.setState( 'view', this.model );
 	}
 
 	// Reject in-flight awaited verbs on teardown so no caller is stranded awaiting a reply.
