@@ -31,7 +31,9 @@ import {
 	TM_ERROR,
 	Core,
 } from '@newspack-nodes/runtime';
+import apiFetch from '@wordpress/api-fetch';
 
+jest.mock( '@wordpress/api-fetch', () => jest.fn() );
 jest.mock( '@newspack-nodes/shared/hooks/usePageVisibility', () => ( {
 	__esModule: true,
 	default: () => true,
@@ -96,6 +98,33 @@ function clientFailing( errorText ) {
 	);
 }
 
+function clientErroringVerb( verb, errorText ) {
+	const base = clientFor( { insights: JSON.stringify( model ) } );
+	return {
+		...base,
+		postBatch( messages ) {
+			return Promise.resolve(
+				messages.map( ( m ) => {
+					const isTargetVerb = verb === m[ VALUE ]?.name;
+					const reply = newMessage();
+					reply[ TYPE ] = isTargetVerb
+						? TM_COMMAND | TM_RESPONSE | TM_ERROR
+						: TM_COMMAND | TM_RESPONSE;
+					reply[ TO ] = m[ FROM ];
+					reply[ ID ] = m[ ID ];
+					reply[ VALUE ] = {
+						name: m[ VALUE ]?.name,
+						payload: isTargetVerb
+							? errorText
+							: JSON.stringify( model ),
+					};
+					return reply;
+				} )
+			);
+		},
+	};
+}
+
 // Render the populated dashboard and wait until the live data has arrived.
 async function renderPopulated( props = {} ) {
 	render(
@@ -110,7 +139,10 @@ async function renderPopulated( props = {} ) {
 	);
 }
 
-beforeEach( () => Core.reset() );
+beforeEach( () => {
+	Core.reset();
+	apiFetch.mockReset();
+} );
 
 describe( 'PublisherInsights', () => {
 	it( 'renders a per-source top table for each source, plus the accumulated count', async () => {
@@ -275,6 +307,22 @@ describe( 'PublisherInsights', () => {
 		expect( await screen.findByText( /copied/i ) ).toBeInTheDocument();
 	} );
 
+	it( 'shows an inline error when the clipboard write is rejected', async () => {
+		const original = window.navigator.clipboard;
+		Object.assign( window.navigator, {
+			clipboard: { writeText: jest.fn( () => Promise.reject() ) },
+		} );
+		await renderPopulated();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: /copy markdown/i } )
+		);
+		expect(
+			await screen.findByText( /could not copy to the clipboard/i )
+		).toBeInTheDocument();
+		expect( screen.queryByText( /copied/i ) ).not.toBeInTheDocument();
+		Object.assign( window.navigator, { clipboard: original } );
+	} );
+
 	it( 'creates a draft from the markdownToContent seam and shows an "Edit draft" link on success', async () => {
 		const createDraft = jest.fn( () => Promise.resolve( { id: 42 } ) );
 		// Inject a fake converter so the test never loads the heavy WP block deps;
@@ -294,6 +342,28 @@ describe( 'PublisherInsights', () => {
 		const link = await screen.findByRole( 'link', { name: /edit draft/i } );
 		expect( link.getAttribute( 'href' ) ).toContain( 'post=42' );
 		expect( link.getAttribute( 'href' ) ).toContain( 'action=edit' );
+	} );
+
+	it( 'creates a draft through apiFetch when no draft seam is injected', async () => {
+		apiFetch.mockResolvedValue( { id: 77 } );
+		const markdownToContent = jest.fn( ( md ) => `BLOCKS:${ md }` );
+		await renderPopulated( { markdownToContent } );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: /create draft post/i } )
+		);
+		await waitFor( () => expect( apiFetch ).toHaveBeenCalledTimes( 1 ) );
+		expect( apiFetch ).toHaveBeenCalledWith( {
+			path: '/wp/v2/posts',
+			method: 'POST',
+			data: {
+				title: 'Publisher Newsletter',
+				content: `BLOCKS:${ DIGEST }`,
+				status: 'draft',
+			},
+		} );
+		expect(
+			await screen.findByRole( 'link', { name: /edit draft/i } )
+		).toHaveAttribute( 'href', expect.stringContaining( 'post=77' ) );
 	} );
 
 	it( 'shows an inline error notice when creating a draft post fails', async () => {
@@ -463,6 +533,31 @@ describe( 'PublisherInsights', () => {
 		expect( await screen.findByText( /no live/i ) ).toBeInTheDocument();
 	} );
 
+	it( 'surfaces an unexpected Collect response as an error', async () => {
+		await renderPopulated( {
+			commandClient: clientFor( {
+				insights: JSON.stringify( model ),
+				collect: 'not json',
+			} ),
+		} );
+		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
+		expect(
+			await screen.findByText(
+				/collection returned an unexpected response/i
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'surfaces a TM_ERROR Collect reply as an error', async () => {
+		await renderPopulated( {
+			commandClient: clientErroringVerb( 'collect', 'collect blew up' ),
+		} );
+		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
+		expect(
+			await screen.findByText( /collect blew up/i )
+		).toBeInTheDocument();
+	} );
+
 	it( 'gates Collect: disabled mid-collection (1/3)', async () => {
 		render(
 			<PublisherInsights
@@ -540,6 +635,32 @@ describe( 'PublisherInsights', () => {
 		}
 	} );
 
+	it( 'releases the Collect lock after the long safety timeout when progress never changes', async () => {
+		await renderPopulated( {
+			commandClient: clientFor( {
+				insights: JSON.stringify( model ),
+				collect: JSON.stringify( { collecting: 3, workers: 1 } ),
+			} ),
+		} );
+		jest.useFakeTimers();
+		try {
+			fireEvent.click(
+				screen.getByRole( 'button', { name: /^collect$/i } )
+			);
+			await act( async () => {} );
+			await act( async () => {
+				jest.advanceTimersByTime( 180000 );
+			} );
+			await waitFor( () =>
+				expect(
+					screen.getByRole( 'button', { name: /^collect$/i } )
+				).toBeEnabled()
+			);
+		} finally {
+			jest.useRealTimers();
+		}
+	} );
+
 	it( 'auto-dismisses the "Collecting from N…" note so it does not linger forever', async () => {
 		await renderPopulated( {
 			commandClient: clientFor( {
@@ -589,5 +710,34 @@ describe( 'PublisherInsights', () => {
 		);
 		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
 		expect( await screen.findByText( /no live/i ) ).toBeInTheDocument();
+	} );
+
+	it( 'surfaces an unexpected Regenerate response as an error', async () => {
+		await renderPopulated( {
+			commandClient: clientFor( {
+				insights: JSON.stringify( model ),
+				generate: 'not json',
+			} ),
+		} );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: /regenerate digest/i } )
+		);
+		expect(
+			await screen.findByText(
+				/regeneration returned an unexpected response/i
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'surfaces a TM_ERROR Regenerate reply as an error', async () => {
+		await renderPopulated( {
+			commandClient: clientErroringVerb( 'generate', 'generate blew up' ),
+		} );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: /regenerate digest/i } )
+		);
+		expect(
+			await screen.findByText( /generate blew up/i )
+		).toBeInTheDocument();
 	} );
 } );

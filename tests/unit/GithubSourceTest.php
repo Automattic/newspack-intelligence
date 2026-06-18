@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace Newspack_AI_Newsletter\Tests;
 
 use Newspack_AI_Newsletter\Github_Source_Node;
+use Newspack_Nodes\Message;
+use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
 
 final class GithubSourceTest extends TestCase {
@@ -114,5 +116,36 @@ final class GithubSourceTest extends TestCase {
 	public function test_fetch_returns_empty_when_no_repos_configured(): void {
 		$node = new Github_Source_Node();
 		$this->assertSame( [], $node->fetch( [ 'repos' => [], 'token' => '' ] ) );
+	}
+
+	public function test_tick_reads_repos_and_token_from_settings(): void {
+		update_option( 'newspack_ai_newsletter_github_repos', [ 'owner/repo' ] );
+		update_option( 'newspack_ai_newsletter_github_token', 'ghp_from_settings' );
+		$captured = [];
+		Github_Source_Node::$http_get = static function ( string $url, array $args ) use ( &$captured ): array {
+			$captured[] = [ 'url' => $url, 'args' => $args ];
+			return [ 'response' => [ 'code' => 200 ], 'body' => '[]' ];
+		};
+
+		$node = new Github_Source_Node();
+		$node->sink( new Capture_Sink_Node() );
+		$message                  = Message::new_message();
+		$message[ Message::TYPE ] = Message::TM_REQUEST;
+		$node->fill( $message );
+
+		$this->assertCount( 3, $captured );
+		$this->assertStringContainsString( '/repos/owner/repo/releases', $captured[0]['url'] );
+		$this->assertSame( 'Bearer ghp_from_settings', $captured[0]['args']['headers']['Authorization'] );
+		delete_option( 'newspack_ai_newsletter_github_repos' );
+		delete_option( 'newspack_ai_newsletter_github_token' );
+	}
+
+	public function test_node_schema_declares_github_source_contract(): void {
+		$schema = Github_Source_Node::node_schema();
+
+		$this->assertSame( 'Source', $schema['category'] );
+		$this->assertFalse( $schema['accepts_fill'] );
+		$this->assertSame( 'TICK', $schema['requests'][0]['name'] );
+		$this->assertStringContainsString( 'GitHub Releases', $schema['description'] );
 	}
 }

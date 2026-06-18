@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace Newspack_AI_Newsletter\Tests;
 
 use Newspack_AI_Newsletter\Feed_Source_Node;
+use Newspack_Nodes\Message;
+use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
 
 final class FeedSourceTest extends TestCase {
@@ -118,6 +120,12 @@ XML;
 		$this->assertSame( [], $node->fetch( [ 'feeds' => [] ] ) );
 	}
 
+	public function test_fetch_returns_empty_on_non_200(): void {
+		Feed_Source_Node::$http_get = static fn (): array => [ 'response' => [ 'code' => 503 ], 'body' => '' ];
+		$node = new Feed_Source_Node();
+		$this->assertSame( [], $node->fetch( [ 'feeds' => [ 'https://example.com/feed.xml' ] ] ) );
+	}
+
 	public function test_atom_entry_prefers_alternate_link_over_self(): void {
 		$xml = <<<XML
 <?xml version="1.0" encoding="utf-8"?>
@@ -136,6 +144,25 @@ XML;
 
 		$this->assertArrayHasKey( 'feed:atom-multi', $by );
 		$this->assertSame( 'https://example.com/alternate', $by['feed:atom-multi']['url'] );
+	}
+
+	public function test_atom_entry_falls_back_to_first_non_alternate_link(): void {
+		$xml = <<<XML
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <entry>
+	<title>Self only</title>
+	<link rel="self" href="https://example.com/self"/>
+	<id>atom-self</id>
+	<updated>2026-06-12T00:00:00Z</updated>
+  </entry>
+</feed>
+XML;
+		$this->stub_body( $xml );
+		$by = $this->fetch_by_id( [ 'feeds' => [ 'https://example.com/atom.xml' ] ] );
+
+		$this->assertArrayHasKey( 'feed:atom-self', $by );
+		$this->assertSame( 'https://example.com/self', $by['feed:atom-self']['url'] );
 	}
 
 	public function test_rss_item_uses_dc_date_when_pubdate_absent(): void {
@@ -159,5 +186,34 @@ XML;
 
 		$this->assertArrayHasKey( 'feed:dc-1', $by );
 		$this->assertSame( \strtotime( '2026-06-09T00:00:00Z' ), $by['feed:dc-1']['timestamp'] );
+	}
+
+	public function test_tick_reads_feeds_from_settings(): void {
+		update_option( 'newspack_ai_newsletter_feeds', [ 'https://example.com/feed.xml' ] );
+		$captured = [];
+		Feed_Source_Node::$http_get = static function ( string $url, array $args ) use ( &$captured ): array {
+			$captured[] = [ 'url' => $url, 'args' => $args ];
+			return [ 'response' => [ 'code' => 200 ], 'body' => self::RSS ];
+		};
+
+		$node = new Feed_Source_Node();
+		$node->sink( new Capture_Sink_Node() );
+		$message                  = Message::new_message();
+		$message[ Message::TYPE ] = Message::TM_REQUEST;
+		$node->fill( $message );
+
+		$this->assertCount( 1, $captured );
+		$this->assertSame( 'https://example.com/feed.xml', $captured[0]['url'] );
+		$this->assertSame( 'newspack-ai-newsletter', $captured[0]['args']['headers']['User-Agent'] );
+		delete_option( 'newspack_ai_newsletter_feeds' );
+	}
+
+	public function test_node_schema_declares_feed_source_contract(): void {
+		$schema = Feed_Source_Node::node_schema();
+
+		$this->assertSame( 'Source', $schema['category'] );
+		$this->assertFalse( $schema['accepts_fill'] );
+		$this->assertSame( 'TICK', $schema['requests'][0]['name'] );
+		$this->assertStringContainsString( 'RSS 2.0 / Atom', $schema['description'] );
 	}
 }

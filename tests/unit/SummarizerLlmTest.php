@@ -151,4 +151,15 @@ final class SummarizerLlmTest extends TestCase {
 		$this->assertArrayHasKey( 'summary', $out );
 		$this->assertStringContainsString( 'Big release', $out['summary'] );
 	}
+
+	public function test_node_schema_declares_transform_contract(): void {
+		$schema = Summarizer_Node::node_schema();
+
+		$this->assertSame( 'Transform', $schema['category'] );
+		$this->assertSame( [], $schema['arguments'] );
+		$this->assertSame( [], $schema['commands'] );
+		$this->assertTrue( $schema['accepts_fill'] );
+		$this->assertTrue( $schema['has_target'] );
+		$this->assertStringContainsString( 'Summarizes one item', $schema['description'] );
+	}
 }

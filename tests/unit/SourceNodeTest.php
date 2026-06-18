@@ -100,6 +100,35 @@ final class SourceNodeTest extends TestCase {
 		$this->assertCount( 0, $sink->captured );
 	}
 
+	public function test_seen_id_set_is_bounded_and_evicts_the_oldest_id(): void {
+		$sink = new Capture_Sink_Node();
+		$node = new Fake_Source_Node();
+		$node->sink( $sink );
+		for ( $i = 1; $i <= 2001; $i++ ) {
+			$node->items[] = [ 'source' => 'fake', 'id' => "fake:$i", 'title' => "Item $i" ];
+		}
+		$first = $this->tick();
+		$node->fill( $first );
+
+		$node->items = [ [ 'source' => 'fake', 'id' => 'fake:1', 'title' => 'Item 1 again' ] ];
+		$second = $this->tick();
+		$node->fill( $second );
+
+		$this->assertCount( 2002, $this->structs( $sink->captured ) );
+	}
+
+	public function test_source_schema_declares_the_shared_tick_contract(): void {
+		$schema = Fake_Source_Node::expose_source_schema();
+
+		$this->assertSame( 'Source', $schema['category'] );
+		$this->assertFalse( $schema['accepts_fill'] );
+		$this->assertSame( 'Fake source', $schema['description'] );
+		$this->assertSame(
+			[ [ 'name' => 'TICK', 'description' => 'Fetch fake items.' ] ],
+			$schema['requests']
+		);
+	}
+
 }
 
 /**
@@ -117,5 +146,9 @@ class Fake_Source_Node extends Source_Node {
 
 	public function fetch( array $config ): array {
 		return $this->items;
+	}
+
+	public static function expose_source_schema(): array {
+		return self::source_schema( 'Fake source', 'Fetch fake items.' );
 	}
 }

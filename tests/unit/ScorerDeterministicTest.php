@@ -63,4 +63,15 @@ final class ScorerDeterministicTest extends TestCase {
 		$this->assertSame( 'DONE', $sink->captured[0][ Message::VALUE ] );
 		$this->assertSame( Message::TM_INFO, $sink->captured[0][ Message::TYPE ] & Message::TM_INFO );
 	}
+
+	public function test_node_schema_declares_transform_contract(): void {
+		$schema = Scorer_Node::node_schema();
+
+		$this->assertSame( 'Transform', $schema['category'] );
+		$this->assertSame( [], $schema['arguments'] );
+		$this->assertSame( [], $schema['commands'] );
+		$this->assertTrue( $schema['accepts_fill'] );
+		$this->assertTrue( $schema['has_target'] );
+		$this->assertStringContainsString( 'priority score', $schema['description'] );
+	}
 }

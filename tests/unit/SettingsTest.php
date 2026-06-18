@@ -73,6 +73,21 @@ final class SettingsTest extends TestCase {
 		delete_option( 'newspack_ai_newsletter_ai_model' );
 	}
 
+	public function test_get_array_trims_scalar_and_array_values(): void {
+		update_option( 'newspack_ai_newsletter_feeds', " https://one.test/feed \n" );
+		$this->assertSame( [ 'https://one.test/feed' ], Settings::get_array( 'feeds' ) );
+
+		update_option(
+			'newspack_ai_newsletter_feeds',
+			[ ' https://two.test/feed ', '', [ 'not scalar' ], 42 ]
+		);
+		$this->assertSame( [ 'https://two.test/feed', '42' ], Settings::get_array( 'feeds' ) );
+
+		update_option( 'newspack_ai_newsletter_feeds', (object) [ 'not' => 'a list' ] );
+		$this->assertSame( [], Settings::get_array( 'feeds' ) );
+		delete_option( 'newspack_ai_newsletter_feeds' );
+	}
+
 	public function test_llm_client_is_null_without_token(): void {
 		delete_option( 'newspack_ai_newsletter_ai_proxy_token' );
 		$this->assertNull( Settings::llm_client() );
@@ -93,6 +108,12 @@ final class SettingsTest extends TestCase {
 		return $out;
 	}
 
+	private function render_field( Field $field ): string {
+		\ob_start();
+		( $field->render )();
+		return (string) \ob_get_clean();
+	}
+
 	public function test_every_settings_field_is_renderable_and_sanitized(): void {
 		// A field without a render/sanitize callback is silently skipped by the
 		// Schema (no UI, no save) — that was the "no settings UI" bug.
@@ -100,6 +121,37 @@ final class SettingsTest extends TestCase {
 			$this->assertTrue( \is_callable( $field->render ), "field $key has no render callback" );
 			$this->assertTrue( \is_callable( $field->sanitize ), "field $key has no sanitize callback" );
 		}
+	}
+
+	public function test_render_callbacks_emit_text_password_and_textarea_controls(): void {
+		update_option( 'newspack_ai_newsletter_ai_model', 'model "quoted"' );
+		update_option( 'newspack_ai_newsletter_github_token', 'secret-token' );
+		update_option( 'newspack_ai_newsletter_feeds', [ 'https://a.test/feed', 'https://b.test/feed' ] );
+		update_option( 'newspack_ai_newsletter_relevance_profile', "Line <one>\nLine two" );
+
+		$fields = $this->by_key();
+
+		$this->assertStringContainsString(
+			'type="text" name="newspack_ai_newsletter_ai_model" value="model &quot;quoted&quot;"',
+			$this->render_field( $fields['ai_model'] )
+		);
+		$this->assertStringContainsString(
+			'type="password" name="newspack_ai_newsletter_github_token" value="secret-token"',
+			$this->render_field( $fields['github_token'] )
+		);
+		$this->assertStringContainsString(
+			'<textarea name="newspack_ai_newsletter_feeds" rows="14" cols="60" class="code">https://a.test/feed' . "\n" . 'https://b.test/feed</textarea>',
+			$this->render_field( $fields['feeds'] )
+		);
+		$this->assertStringContainsString(
+			'<textarea name="newspack_ai_newsletter_relevance_profile" rows="5" cols="60">Line &lt;one&gt;' . "\n" . 'Line two</textarea>',
+			$this->render_field( $fields['relevance_profile'] )
+		);
+
+		delete_option( 'newspack_ai_newsletter_ai_model' );
+		delete_option( 'newspack_ai_newsletter_github_token' );
+		delete_option( 'newspack_ai_newsletter_feeds' );
+		delete_option( 'newspack_ai_newsletter_relevance_profile' );
 	}
 
 	public function test_text_field_sanitize_uses_sanitize_text_field(): void {

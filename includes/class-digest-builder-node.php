@@ -126,33 +126,6 @@ class Digest_Builder_Node extends Node {
 		}
 	}
 
-	/**
-	 * Runtime notifications. DONE signals from sources are tallied here.
-	 *
-	 * @param array<int,mixed> $message Incoming request Message.
-	 */
-	private function handle_info( array $message ): void {
-		$value = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
-		if ( 'DONE' === $value ) {
-			$from                    = \is_string( $message[ Message::FROM ] ?? null ) ? $message[ Message::FROM ] : '';
-			$this->reported[ $from ] = true;
-			if ( \count( $this->reported ) >= $this->total ) {
-				$this->compose_draft();
-			}
-		}
-	}
-
-	private function compose_draft(): void {
-		$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
-		$draft  = Digest_Composer::compose( $this->items, $client, Settings::get_string( 'relevance_profile' ) );
-		$this->set_state( 'COMPOSED', \count( $this->items ) . ' items' );
-		$response                   = Message::new_message();
-		$response[ Message::TYPE ]  = Message::TM_BYTESTREAM;
-		$response[ Message::FROM ]  = $this->name;
-		$response[ Message::VALUE ] = $draft;
-		parent::fill( $response );
-	}
-
  	/**
 	 * Append a throwaway message to the scored Partition (if configured) so
 	 * scored:consumer advances its cursor and its next checkpoint co-commits this
@@ -171,6 +144,33 @@ class Digest_Builder_Node extends Node {
 		$nudge[ Message::TO ]    = $this->scored_partition;
 		$nudge[ Message::VALUE ] = 'RESET';
 		parent::fill( $nudge );
+	}
+
+	private function compose_draft(): void {
+		$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
+		$draft  = Digest_Composer::compose( $this->items, $client, Settings::get_string( 'relevance_profile' ) );
+		$this->set_state( 'COMPOSED', \count( $this->items ) . ' items' );
+		$response                   = Message::new_message();
+		$response[ Message::TYPE ]  = Message::TM_BYTESTREAM;
+		$response[ Message::FROM ]  = $this->name;
+		$response[ Message::VALUE ] = $draft;
+		parent::fill( $response );
+	}
+
+	/**
+	 * Runtime notifications. DONE signals from sources are tallied here.
+	 *
+	 * @param array<int,mixed> $message Incoming request Message.
+	 */
+	private function handle_info( array $message ): void {
+		$value = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
+		if ( 'DONE' === $value ) {
+			$from                    = \is_string( $message[ Message::FROM ] ?? null ) ? $message[ Message::FROM ] : '';
+			$this->reported[ $from ] = true;
+			if ( \count( $this->reported ) >= $this->total ) {
+				$this->compose_draft();
+			}
+		}
 	}
 
 	/**

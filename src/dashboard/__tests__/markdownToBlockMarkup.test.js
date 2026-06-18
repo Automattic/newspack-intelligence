@@ -37,4 +37,43 @@ describe( 'markdownToBlockMarkup', () => {
 		expect( markdownToBlockMarkup( '' ) ).toBe( '' );
 		expect( markdownToBlockMarkup() ).toBe( '' );
 	} );
+
+	it( 'lazily registers core blocks once before pasting markdown', () => {
+		jest.resetModules();
+		const registerCoreBlocks = jest.fn();
+		const pasteHandler = jest.fn( () => [ { name: 'core/heading' } ] );
+		const serialize = jest.fn( () => '<!-- wp:heading -->Title' );
+		jest.doMock( '@wordpress/block-library', () => ( {
+			registerCoreBlocks,
+		} ) );
+		jest.doMock( '@wordpress/blocks', () => ( {
+			pasteHandler,
+			serialize,
+		} ) );
+
+		const {
+			markdownToBlockMarkup: isolatedMarkdownToBlockMarkup,
+		} = require( '../markdownToBlockMarkup' );
+
+		expect( isolatedMarkdownToBlockMarkup( '## Title' ) ).toBe(
+			'<!-- wp:heading -->Title'
+		);
+		expect( isolatedMarkdownToBlockMarkup( 123 ) ).toBe(
+			'<!-- wp:heading -->Title'
+		);
+		expect( registerCoreBlocks ).toHaveBeenCalledTimes( 1 );
+		expect( pasteHandler ).toHaveBeenNthCalledWith( 1, {
+			HTML: '',
+			plainText: '## Title',
+			mode: 'BLOCKS',
+		} );
+		expect( pasteHandler ).toHaveBeenNthCalledWith( 2, {
+			HTML: '',
+			plainText: '123',
+			mode: 'BLOCKS',
+		} );
+		expect( serialize ).toHaveBeenCalledWith( [
+			{ name: 'core/heading' },
+		] );
+	} );
 } );
