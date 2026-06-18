@@ -54,20 +54,6 @@ class Digest_Composer {
 	}
 
 	/**
-	 * Render the accumulated summaries to a markdown bullet list — the no-AI fallback.
-	 *
-	 * @param array<int,array<array-key,mixed>> $items Accumulated summarized items.
-	 */
-	private static function render_ranked_list( array $items ): string {
-		$lines = [ '# Newsletter draft', '' ];
-		foreach ( $items as $item ) {
-			$summary = $item['summary'] ?? '';
-			$lines[] = '- ' . ( \is_string( $summary ) ? $summary : '' );
-		}
-		return \implode( "\n", $lines ) . "\n";
-	}
-
-	/**
 	 * The top $n items PER SOURCE: grouped by `source` (first-seen order), each
 	 * group sorted by `score` desc and capped at $n, then flattened. Keeps every
 	 * source represented regardless of how many items a single source contributed.
@@ -102,5 +88,19 @@ class Digest_Composer {
 	private static function score_of( array $item ): float {
 		$score = $item['score'] ?? 0;
 		return \is_numeric( $score ) ? (float) $score : 0.0;
+	}
+
+	/**
+	 * Render the accumulated summaries to a markdown bullet list — the no-AI fallback.
+	 *
+	 * @param array<int,array<array-key,mixed>> $items Accumulated summarized items.
+	 */
+	private static function render_ranked_list( array $items ): string {
+		$lines = [ '# Newsletter draft', '' ];
+		foreach ( $items as $item ) {
+			$summary = $item['summary'] ?? '';
+			$lines[] = '- ' . ( \is_string( $summary ) ? $summary : '' );
+		}
+		return \implode( "\n", $lines ) . "\n";
 	}
 }

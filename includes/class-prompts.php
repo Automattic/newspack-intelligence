@@ -41,6 +41,16 @@ class Prompts {
 	}
 
 	/**
+	 * Read a scalar item field as a string; absent or non-scalar values become ''.
+	 *
+	 * @param array<array-key,mixed> $item The item array.
+	 */
+	private static function field( array $item, string $key ): string {
+		$value = $item[ $key ] ?? '';
+		return \is_scalar( $value ) ? (string) $value : '';
+	}
+
+	/**
 	 * Build the digest chat messages for the ranked item set.
 	 *
 	 * @param array<int,array<array-key,mixed>> $items             The ranked items (title/summary/source/score/url); JSON-sourced, so array-key.
@@ -74,15 +84,5 @@ class Prompts {
 			[ 'role' => 'system', 'content' => $system ],
 			[ 'role' => 'user', 'content' => $user ],
 		];
-	}
-
-	/**
-	 * Read a scalar item field as a string; absent or non-scalar values become ''.
-	 *
-	 * @param array<array-key,mixed> $item The item array.
-	 */
-	private static function field( array $item, string $key ): string {
-		$value = $item[ $key ] ?? '';
-		return \is_scalar( $value ) ? (string) $value : '';
 	}
 }

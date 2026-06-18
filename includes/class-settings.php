@@ -47,59 +47,6 @@ class Settings {
 		'ai_feature'        => self::AI_FEATURE,
 	];
 
-	/** Runtime config read: stored option, else the declared default, else ''. */
-	public static function get( string $key ): mixed {
-		return \get_option( self::PREFIX . $key, self::DEFAULTS[ $key ] ?? '' );
-	}
-
-	/** Scalar config read coerced to string; non-scalar (e.g. the `feeds` array) becomes ''. */
-	public static function get_string( string $key ): string {
-		$value = self::get( $key );
-		return \is_scalar( $value ) ? (string) $value : '';
-	}
-
-	/**
-	 * List config read (e.g. `feeds`, `github_repos`): the stored value as a list of
-	 * non-empty strings. A scalar option becomes a single-element list; anything
-	 * else becomes []. Entries are trimmed and blanks dropped.
-	 *
-	 * @return array<int,string>
-	 */
-	public static function get_array( string $key ): array {
-		$value = self::get( $key );
-		if ( \is_scalar( $value ) ) {
-			$value = [ (string) $value ];
-		}
-		if ( ! \is_array( $value ) ) {
-			return [];
-		}
-		$out = [];
-		foreach ( $value as $entry ) {
-			if ( ! \is_scalar( $entry ) ) {
-				continue;
-			}
-			$trimmed = \trim( (string) $entry );
-			if ( '' !== $trimmed ) {
-				$out[] = $trimmed;
-			}
-		}
-		return $out;
-	}
-
-	/** Build the proxy client from config; null when no token (callers fall back to heuristics). */
-	public static function llm_client(): ?LLM_Client {
-		$token = self::get_string( 'ai_proxy_token' );
-		if ( '' === $token ) {
-			return null;
-		}
-		return new Proxy_LLM_Client(
-			self::get_string( 'ai_proxy_base_url' ),
-			$token,
-			self::get_string( 'ai_model' ),
-			self::get_string( 'ai_feature' )
-		);
-	}
-
 	/**
 	 * The settings fields, in render order.
 	 *
@@ -107,72 +54,6 @@ class Settings {
 	 */
 	public static function fields(): array {
 		return self::schema()->fields();
-	}
-
-	/** Render a single-line text (or password, for secrets) input bound to a setting. */
-	private static function text_render( string $key, bool $secret = false ): \Closure {
-		return static function () use ( $key, $secret ): void {
-			\printf(
-				'<input type="%s" name="%s" value="%s" class="regular-text" autocomplete="off" />',
-				$secret ? 'password' : 'text',
-				\esc_attr( self::PREFIX . $key ),
-				\esc_attr( self::get_string( $key ) )
-			);
-		};
-	}
-
-	/** Render an array_strings setting as a one-entry-per-line textarea (fixed width). */
-	private static function list_render( string $key, int $rows = 14 ): \Closure {
-		return static function () use ( $key, $rows ): void {
-			\printf(
-				'<textarea name="%s" rows="%s" cols="60" class="code">%s</textarea>',
-				\esc_attr( self::PREFIX . $key ),
-				\esc_attr( (string) $rows ),
-				\esc_textarea( \implode( "\n", self::get_array( $key ) ) )
-			);
-		};
-	}
-
-	/** Render a multi-line text setting (a scalar string) as a fixed-width textarea. */
-	private static function string_textarea_render( string $key, int $rows = 5 ): \Closure {
-		return static function () use ( $key, $rows ): void {
-			\printf(
-				'<textarea name="%s" rows="%s" cols="60">%s</textarea>',
-				\esc_attr( self::PREFIX . $key ),
-				\esc_attr( (string) $rows ),
-				\esc_textarea( self::get_string( $key ) )
-			);
-		};
-	}
-
-	/** Sanitize a single text/secret value (trim + strip tags). */
-	private static function text_sanitize(): \Closure {
-		return static fn ( $value ): string => \sanitize_text_field( \is_scalar( $value ) ? (string) $value : '' );
-	}
-
-	/** Sanitize a multi-line text value: strip tags but PRESERVE newlines. */
-	private static function textarea_sanitize(): \Closure {
-		return static fn ( $value ): string => \sanitize_textarea_field( \is_scalar( $value ) ? (string) $value : '' );
-	}
-
-	/** Sanitize an array_strings value: a textarea (or array) → trimmed, non-empty list. */
-	private static function list_sanitize(): \Closure {
-		return static function ( $value ): array {
-			$lines = \is_array( $value )
-				? $value
-				: \preg_split( '/\r\n|\r|\n/', \is_scalar( $value ) ? (string) $value : '' );
-			$out = [];
-			foreach ( (array) $lines as $line ) {
-				if ( ! \is_scalar( $line ) ) {
-					continue;
-				}
-				$clean = \sanitize_text_field( (string) $line );
-				if ( '' !== $clean ) {
-					$out[] = $clean;
-				}
-			}
-			return $out;
-		};
 	}
 
 	/** The plugin settings schema (memoized). */
@@ -296,5 +177,124 @@ class Settings {
 		);
 
 		return self::$schema;
+	}
+
+	/** Sanitize a single text/secret value (trim + strip tags). */
+	private static function text_sanitize(): \Closure {
+		return static fn ( $value ): string => \sanitize_text_field( \is_scalar( $value ) ? (string) $value : '' );
+	}
+
+	/** Render a single-line text (or password, for secrets) input bound to a setting. */
+	private static function text_render( string $key, bool $secret = false ): \Closure {
+		return static function () use ( $key, $secret ): void {
+			\printf(
+				'<input type="%s" name="%s" value="%s" class="regular-text" autocomplete="off" />',
+				$secret ? 'password' : 'text',
+				\esc_attr( self::PREFIX . $key ),
+				\esc_attr( self::get_string( $key ) )
+			);
+		};
+	}
+
+	/** Scalar config read coerced to string; non-scalar (e.g. the `feeds` array) becomes ''. */
+	public static function get_string( string $key ): string {
+		$value = self::get( $key );
+		return \is_scalar( $value ) ? (string) $value : '';
+	}
+
+	/** Runtime config read: stored option, else the declared default, else ''. */
+	public static function get( string $key ): mixed {
+		return \get_option( self::PREFIX . $key, self::DEFAULTS[ $key ] ?? '' );
+	}
+
+	/** Sanitize an array_strings value: a textarea (or array) → trimmed, non-empty list. */
+	private static function list_sanitize(): \Closure {
+		return static function ( $value ): array {
+			$lines = \is_array( $value )
+				? $value
+				: \preg_split( '/\r\n|\r|\n/', \is_scalar( $value ) ? (string) $value : '' );
+			$out = [];
+			foreach ( (array) $lines as $line ) {
+				if ( ! \is_scalar( $line ) ) {
+					continue;
+				}
+				$clean = \sanitize_text_field( (string) $line );
+				if ( '' !== $clean ) {
+					$out[] = $clean;
+				}
+			}
+			return $out;
+		};
+	}
+
+	/** Render an array_strings setting as a one-entry-per-line textarea (fixed width). */
+	private static function list_render( string $key, int $rows = 14 ): \Closure {
+		return static function () use ( $key, $rows ): void {
+			\printf(
+				'<textarea name="%s" rows="%s" cols="60" class="code">%s</textarea>',
+				\esc_attr( self::PREFIX . $key ),
+				\esc_attr( (string) $rows ),
+				\esc_textarea( \implode( "\n", self::get_array( $key ) ) )
+			);
+		};
+	}
+
+	/**
+	 * List config read (e.g. `feeds`, `github_repos`): the stored value as a list of
+	 * non-empty strings. A scalar option becomes a single-element list; anything
+	 * else becomes []. Entries are trimmed and blanks dropped.
+	 *
+	 * @return array<int,string>
+	 */
+	public static function get_array( string $key ): array {
+		$value = self::get( $key );
+		if ( \is_scalar( $value ) ) {
+			$value = [ (string) $value ];
+		}
+		if ( ! \is_array( $value ) ) {
+			return [];
+		}
+		$out = [];
+		foreach ( $value as $entry ) {
+			if ( ! \is_scalar( $entry ) ) {
+				continue;
+			}
+			$trimmed = \trim( (string) $entry );
+			if ( '' !== $trimmed ) {
+				$out[] = $trimmed;
+			}
+		}
+		return $out;
+	}
+
+	/** Sanitize a multi-line text value: strip tags but PRESERVE newlines. */
+	private static function textarea_sanitize(): \Closure {
+		return static fn ( $value ): string => \sanitize_textarea_field( \is_scalar( $value ) ? (string) $value : '' );
+	}
+
+	/** Render a multi-line text setting (a scalar string) as a fixed-width textarea. */
+	private static function string_textarea_render( string $key, int $rows = 5 ): \Closure {
+		return static function () use ( $key, $rows ): void {
+			\printf(
+				'<textarea name="%s" rows="%s" cols="60">%s</textarea>',
+				\esc_attr( self::PREFIX . $key ),
+				\esc_attr( (string) $rows ),
+				\esc_textarea( self::get_string( $key ) )
+			);
+		};
+	}
+
+	/** Build the proxy client from config; null when no token (callers fall back to heuristics). */
+	public static function llm_client(): ?LLM_Client {
+		$token = self::get_string( 'ai_proxy_token' );
+		if ( '' === $token ) {
+			return null;
+		}
+		return new Proxy_LLM_Client(
+			self::get_string( 'ai_proxy_base_url' ),
+			$token,
+			self::get_string( 'ai_model' ),
+			self::get_string( 'ai_feature' )
+		);
 	}
 }
