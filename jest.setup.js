@@ -5,7 +5,7 @@ import '@testing-library/jest-dom';
 // Jest setup — FAIL any test that emits an unexpected console.warn or
 // console.error (mirrors the sibling newspack-nodes setup).
 //
-// The substrate's `Core.stderr()` / `printLessOften()` / `printLeastOften()`
+// The substrate's `Core.stderr()` and `printLessOften()`
 // (newspack-nodes/src/runtime/core.js) route node faults, rate-limited logs, and
 // dropped-message notices through console.warn (never console.error, to skip
 // devtools' error counter), each line stamped `YYYY-MM-DD HH:MM:SS UTC <argv0>: `.
