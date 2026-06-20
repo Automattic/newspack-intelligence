@@ -7,9 +7,60 @@ namespace Newspack_AI_Newsletter\Tests;
 
 use Newspack_AI_Newsletter\Settings;
 use Newspack_Nodes\Config_System\Field;
+use Newspack_Nodes\Vault;
 use PHPUnit\Framework\TestCase;
 
 final class SettingsTest extends TestCase {
+
+	protected function tearDown(): void {
+		delete_option( 'newspack_nodes_vault' );
+		delete_option( 'newspack_ai_newsletter_github_token' );
+		delete_option( 'newspack_ai_newsletter_ai_proxy_token' );
+		Vault::get_instance()->reset_cache();
+	}
+
+	/** Seed one vault entry and point a *_token setting at its id. */
+	private function seed_vault( string $entry_id, string $secret, string $setting_key ): void {
+		update_option(
+			'newspack_nodes_vault',
+			[ $entry_id => [ 'id' => $entry_id, 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => $secret ] ]
+		);
+		update_option( 'newspack_ai_newsletter_' . $setting_key, $entry_id );
+		Vault::get_instance()->reset_cache();
+	}
+
+	public function test_get_secret_resolves_vault_entry_password(): void {
+		$this->seed_vault( 'gh-creds', 'TOKEN123', 'github_token' );
+		$this->assertSame( 'TOKEN123', Settings::get_secret( 'github_token' ) );
+	}
+
+	public function test_get_secret_returns_empty_for_unset_setting(): void {
+		delete_option( 'newspack_ai_newsletter_github_token' );
+		$this->assertSame( '', Settings::get_secret( 'github_token' ) );
+	}
+
+	public function test_get_secret_returns_empty_for_unknown_vault_id(): void {
+		update_option( 'newspack_ai_newsletter_github_token', 'does-not-exist' );
+		Vault::get_instance()->reset_cache();
+		$this->assertSame( '', Settings::get_secret( 'github_token' ) );
+	}
+
+	public function test_vault_select_render_lists_entries_with_current_selected(): void {
+		$this->seed_vault( 'gh-creds', 'TOKEN123', 'github_token' );
+		$fields = $this->by_key();
+		$html   = $this->render_field( $fields['github_token'] );
+
+		$this->assertStringContainsString( '<select name="newspack_ai_newsletter_github_token"', $html );
+		$this->assertStringContainsString( '<option value="">', $html );
+		$this->assertStringContainsString( '<option value="gh-creds" selected>gh-creds</option>', $html );
+		// The raw secret never appears in the markup.
+		$this->assertStringNotContainsString( 'TOKEN123', $html );
+	}
+
+	public function test_llm_client_resolves_token_from_vault(): void {
+		$this->seed_vault( 'ai-creds', 'PROXY_SECRET', 'ai_proxy_token' );
+		$this->assertInstanceOf( \Newspack_AI_Newsletter\LLM_Client::class, Settings::llm_client() );
+	}
 	public function test_declares_ai_and_secret_fields(): void {
 		$keys = \array_map( static fn ( Field $f ): string => $f->key, Settings::fields() );
 		foreach (
@@ -93,12 +144,6 @@ final class SettingsTest extends TestCase {
 		$this->assertNull( Settings::llm_client() );
 	}
 
-	public function test_llm_client_built_when_token_set(): void {
-		update_option( 'newspack_ai_newsletter_ai_proxy_token', 'SEKRET' );
-		$this->assertInstanceOf( \Newspack_AI_Newsletter\LLM_Client::class, Settings::llm_client() );
-		delete_option( 'newspack_ai_newsletter_ai_proxy_token' );
-	}
-
 	/** @return array<string,Field> fields keyed by key */
 	private function by_key(): array {
 		$out = [];
@@ -123,9 +168,8 @@ final class SettingsTest extends TestCase {
 		}
 	}
 
-	public function test_render_callbacks_emit_text_password_and_textarea_controls(): void {
+	public function test_render_callbacks_emit_text_select_and_textarea_controls(): void {
 		update_option( 'newspack_ai_newsletter_ai_model', 'model "quoted"' );
-		update_option( 'newspack_ai_newsletter_github_token', 'secret-token' );
 		update_option( 'newspack_ai_newsletter_feeds', [ 'https://a.test/feed', 'https://b.test/feed' ] );
 		update_option( 'newspack_ai_newsletter_relevance_profile', "Line <one>\nLine two" );
 
@@ -136,7 +180,7 @@ final class SettingsTest extends TestCase {
 			$this->render_field( $fields['ai_model'] )
 		);
 		$this->assertStringContainsString(
-			'type="password" name="newspack_ai_newsletter_github_token" value="secret-token"',
+			'<select name="newspack_ai_newsletter_github_token"',
 			$this->render_field( $fields['github_token'] )
 		);
 		$this->assertStringContainsString(
@@ -149,7 +193,6 @@ final class SettingsTest extends TestCase {
 		);
 
 		delete_option( 'newspack_ai_newsletter_ai_model' );
-		delete_option( 'newspack_ai_newsletter_github_token' );
 		delete_option( 'newspack_ai_newsletter_feeds' );
 		delete_option( 'newspack_ai_newsletter_relevance_profile' );
 	}

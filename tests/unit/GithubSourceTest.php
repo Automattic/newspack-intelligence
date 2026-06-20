@@ -5,6 +5,7 @@ namespace Newspack_AI_Newsletter\Tests;
 
 use Newspack_AI_Newsletter\Github_Source_Node;
 use Newspack_Nodes\Message;
+use Newspack_Nodes\Vault;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
 
@@ -12,6 +13,8 @@ final class GithubSourceTest extends TestCase {
 
 	protected function tearDown(): void {
 		Github_Source_Node::$http_get = null;
+		delete_option( 'newspack_nodes_vault' );
+		Vault::get_instance()->reset_cache();
 	}
 
 	/** Route a canned JSON body by which GitHub endpoint the URL hits. */
@@ -120,7 +123,12 @@ final class GithubSourceTest extends TestCase {
 
 	public function test_tick_reads_repos_and_token_from_settings(): void {
 		update_option( 'newspack_ai_newsletter_github_repos', [ 'owner/repo' ] );
-		update_option( 'newspack_ai_newsletter_github_token', 'ghp_from_settings' );
+		update_option(
+			'newspack_nodes_vault',
+			[ 'gh-creds' => [ 'id' => 'gh-creds', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'ghp_from_settings' ] ]
+		);
+		update_option( 'newspack_ai_newsletter_github_token', 'gh-creds' );
+		Vault::get_instance()->reset_cache();
 		$captured = [];
 		Github_Source_Node::$http_get = static function ( string $url, array $args ) use ( &$captured ): array {
 			$captured[] = [ 'url' => $url, 'args' => $args ];

@@ -5,6 +5,7 @@ namespace Newspack_AI_Newsletter\Tests;
 
 use Newspack_AI_Newsletter\Linear_Source_Node;
 use Newspack_Nodes\Message;
+use Newspack_Nodes\Vault;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
 
@@ -12,6 +13,8 @@ final class LinearSourceTest extends TestCase {
 
 	protected function tearDown(): void {
 		Linear_Source_Node::$http_post = null;
+		delete_option( 'newspack_nodes_vault' );
+		Vault::get_instance()->reset_cache();
 	}
 
 	/** A canned 200 with two issue nodes in the GraphQL response shape. */
@@ -99,7 +102,12 @@ final class LinearSourceTest extends TestCase {
 	}
 
 	public function test_tick_reads_token_from_settings(): void {
-		update_option( 'newspack_ai_newsletter_linear_token', 'lin_from_settings' );
+		update_option(
+			'newspack_nodes_vault',
+			[ 'lin-creds' => [ 'id' => 'lin-creds', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'lin_from_settings' ] ]
+		);
+		update_option( 'newspack_ai_newsletter_linear_token', 'lin-creds' );
+		Vault::get_instance()->reset_cache();
 		$captured = [];
 		Linear_Source_Node::$http_post = static function ( string $url, array $args ) use ( &$captured ): array {
 			$captured[] = [ 'url' => $url, 'args' => $args ];

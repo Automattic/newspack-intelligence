@@ -37,7 +37,7 @@ class Github_Source_Node extends Source_Node {
 	protected function config(): array {
 		return [
 			'repos' => Settings::get_array( 'github_repos' ),
-			'token' => Settings::get_string( 'github_token' ),
+			'token' => Settings::get_secret( 'github_token' ),
 		];
 	}
 
