@@ -35,7 +35,7 @@ class Linear_Source_Node extends Source_Node {
 
 	/** @return array{token:string} */
 	protected function config(): array {
-		return [ 'token' => Settings::get_string( 'linear_token' ) ];
+		return [ 'token' => Settings::get_secret( 'linear_token' ) ];
 	}
 
 	/**

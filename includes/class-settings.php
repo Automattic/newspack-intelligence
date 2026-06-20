@@ -78,10 +78,10 @@ class Settings {
 				new Field(
 					key: 'ai_proxy_token',
 					type: 'text',
-					label: static fn(): string => \__( 'AI Proxy Token', 'newspack-ai-newsletter' ),
+					label: static fn(): string => \__( 'AI Proxy Token (Vault entry)', 'newspack-ai-newsletter' ),
 					section: self::AI_SECTION,
 					sanitize: self::text_sanitize(),
-					render: self::text_render( 'ai_proxy_token', true ),
+					render: self::vault_select_render( 'ai_proxy_token' ),
 					register_args: [ 'secret' => true, 'autoload' => false ],
 				),
 				new Field(
@@ -116,19 +116,19 @@ class Settings {
 				new Field(
 					key: 'github_token',
 					type: 'text',
-					label: static fn(): string => \__( 'GitHub Token', 'newspack-ai-newsletter' ),
+					label: static fn(): string => \__( 'GitHub Token (Vault entry)', 'newspack-ai-newsletter' ),
 					section: self::CONNECTORS_SECTION,
 					sanitize: self::text_sanitize(),
-					render: self::text_render( 'github_token', true ),
+					render: self::vault_select_render( 'github_token' ),
 					register_args: [ 'secret' => true, 'autoload' => false ],
 				),
 				new Field(
 					key: 'linear_token',
 					type: 'text',
-					label: static fn(): string => \__( 'Linear Token', 'newspack-ai-newsletter' ),
+					label: static fn(): string => \__( 'Linear Token (Vault entry)', 'newspack-ai-newsletter' ),
 					section: self::CONNECTORS_SECTION,
 					sanitize: self::text_sanitize(),
-					render: self::text_render( 'linear_token', true ),
+					render: self::vault_select_render( 'linear_token' ),
 					register_args: [ 'secret' => true, 'autoload' => false ],
 				),
 				new Field(
@@ -184,16 +184,62 @@ class Settings {
 		return static fn ( $value ): string => \sanitize_text_field( \is_scalar( $value ) ? (string) $value : '' );
 	}
 
-	/** Render a single-line text (or password, for secrets) input bound to a setting. */
-	private static function text_render( string $key, bool $secret = false ): \Closure {
-		return static function () use ( $key, $secret ): void {
+	/** Render a single-line text input bound to a setting. */
+	private static function text_render( string $key ): \Closure {
+		return static function () use ( $key ): void {
 			\printf(
-				'<input type="%s" name="%s" value="%s" class="regular-text" autocomplete="off" />',
-				$secret ? 'password' : 'text',
+				'<input type="text" name="%s" value="%s" class="regular-text" autocomplete="off" />',
 				\esc_attr( self::PREFIX . $key ),
 				\esc_attr( self::get_string( $key ) )
 			);
 		};
+	}
+
+	/**
+	 * Render a <select> of substrate Vault entry IDs bound to a credential setting.
+	 *
+	 * The stored value is a Vault entry ID — never the raw secret — which get_secret()
+	 * resolves to the real `auth_password` at use-time. The dropdown lists every Vault
+	 * entry (guarded on the substrate class being present) with the current selection
+	 * marked; a leading "— None —" clears it. The secret itself is never rendered.
+	 */
+	private static function vault_select_render( string $key ): \Closure {
+		return static function () use ( $key ): void {
+			$current = self::get_string( $key );
+			$entries = \class_exists( '\\Newspack_Nodes\\Vault' )
+				? \Newspack_Nodes\Vault::get_instance()->get_all()
+				: [];
+
+			\printf( '<select name="%s" id="%1$s">', \esc_attr( self::PREFIX . $key ) );
+			\printf( '<option value="">%s</option>', \esc_html( \__( '— None —', 'newspack-ai-newsletter' ) ) );
+			foreach ( \array_keys( $entries ) as $id ) {
+				$id = (string) $id;
+				\printf(
+					'<option value="%s"%s>%s</option>',
+					\esc_attr( $id ),
+					( $id === $current ) ? ' selected' : '',
+					\esc_html( $id )
+				);
+			}
+			echo '</select>';
+		};
+	}
+
+	/**
+	 * Resolve a credential setting to its real secret via the substrate Vault.
+	 *
+	 * The setting stores a Vault entry ID (set in the admin <select>), not the raw
+	 * secret. Returns the entry's `auth_password`, or '' when the setting is unset,
+	 * the Vault class is absent, the ID is unknown, or the entry has no password.
+	 */
+	public static function get_secret( string $key ): string {
+		$id = self::get_string( $key );
+		if ( '' === $id || ! \class_exists( '\\Newspack_Nodes\\Vault' ) ) {
+			return '';
+		}
+		$entry    = \Newspack_Nodes\Vault::get_instance()->get( $id );
+		$password = ( null !== $entry ) ? ( $entry['auth_password'] ?? null ) : null;
+		return ( \is_string( $password ) && '' !== $password ) ? $password : '';
 	}
 
 	/** Scalar config read coerced to string; non-scalar (e.g. the `feeds` array) becomes ''. */
@@ -286,7 +332,7 @@ class Settings {
 
 	/** Build the proxy client from config; null when no token (callers fall back to heuristics). */
 	public static function llm_client(): ?LLM_Client {
-		$token = self::get_string( 'ai_proxy_token' );
+		$token = self::get_secret( 'ai_proxy_token' );
 		if ( '' === $token ) {
 			return null;
 		}
