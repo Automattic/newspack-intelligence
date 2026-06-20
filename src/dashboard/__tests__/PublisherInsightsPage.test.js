@@ -10,6 +10,16 @@ jest.mock( '@newspack-nodes/shared/hooks/usePageVisibility', () => ( {
 	default: () => false,
 } ) );
 
+// Stub the substrate debug overlay so the page test asserts it's mounted with a
+// per-dashboard storage key, without exercising the overlay's own internals.
+jest.mock( '@newspack-nodes/debug-overlay', () => ( {
+	__esModule: true,
+	default: ( props ) => {
+		global.__debugOverlayProps = props;
+		return <div data-testid="debug-overlay" />;
+	},
+} ) );
+
 import PublisherInsightsPage from '../PublisherInsightsPage';
 
 beforeEach( () => Core.reset() );
@@ -28,5 +38,13 @@ describe( 'PublisherInsightsPage', () => {
 			screen.getByText( /no scored items yet/i )
 		).toBeInTheDocument();
 		expect( screen.queryByRole( 'table' ) ).not.toBeInTheDocument();
+	} );
+
+	it( 'mounts the substrate debug overlay with a per-dashboard storage key', () => {
+		render( <PublisherInsightsPage /> );
+		expect( screen.getByTestId( 'debug-overlay' ) ).toBeInTheDocument();
+		expect( global.__debugOverlayProps.storageKey ).toContain(
+			'publisher-insights'
+		);
 	} );
 } );
