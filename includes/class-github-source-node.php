@@ -33,14 +33,6 @@ class Github_Source_Node extends Source_Node {
 	 */
 	public static ?\Closure $http_get = null;
 
-	/** @return array{repos:array<int,string>,token:string} */
-	protected function config(): array {
-		return [
-			'repos' => Settings::get_array( 'github_repos' ),
-			'token' => Settings::get_secret( 'github_token' ),
-		];
-	}
-
 	/**
 	 * Fetch Releases + Merged PRs + Issues for every configured repo, normalized to
 	 * the item contract {source,id,title,url,body,timestamp}. A failed repo/endpoint
@@ -168,6 +160,14 @@ class Github_Source_Node extends Source_Node {
 			// phpcs:ignore WordPressVIPMinimum.Performance.RemoteRequestTimeout.timeout_timeout -- connector fetches run in a background worker, not a web request.
 			'timeout' => 15,
 			'headers' => $headers,
+		];
+	}
+
+	/** @return array{repos:array<int,string>,token:string} */
+	protected function config(): array {
+		return [
+			'repos' => Settings::get_array( 'github_repos' ),
+			'token' => Settings::get_secret( 'github_token' ),
 		];
 	}
 

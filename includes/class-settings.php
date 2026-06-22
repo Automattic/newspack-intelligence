@@ -195,6 +195,17 @@ class Settings {
 		};
 	}
 
+	/** Scalar config read coerced to string; non-scalar (e.g. the `feeds` array) becomes ''. */
+	public static function get_string( string $key ): string {
+		$value = self::get( $key );
+		return \is_scalar( $value ) ? (string) $value : '';
+	}
+
+	/** Runtime config read: stored option, else the declared default, else ''. */
+	public static function get( string $key ): mixed {
+		return \get_option( self::PREFIX . $key, self::DEFAULTS[ $key ] ?? '' );
+	}
+
 	/**
 	 * Render a <select> of substrate Vault entry IDs bound to a credential setting.
 	 *
@@ -223,34 +234,6 @@ class Settings {
 			}
 			echo '</select>';
 		};
-	}
-
-	/**
-	 * Resolve a credential setting to its real secret via the substrate Vault.
-	 *
-	 * The setting stores a Vault entry ID (set in the admin <select>), not the raw
-	 * secret. Returns the entry's `auth_password`, or '' when the setting is unset,
-	 * the Vault class is absent, the ID is unknown, or the entry has no password.
-	 */
-	public static function get_secret( string $key ): string {
-		$id = self::get_string( $key );
-		if ( '' === $id || ! \class_exists( '\\Newspack_Nodes\\Vault' ) ) {
-			return '';
-		}
-		$entry    = \Newspack_Nodes\Vault::get_instance()->get( $id );
-		$password = ( null !== $entry ) ? ( $entry['auth_password'] ?? null ) : null;
-		return ( \is_string( $password ) && '' !== $password ) ? $password : '';
-	}
-
-	/** Scalar config read coerced to string; non-scalar (e.g. the `feeds` array) becomes ''. */
-	public static function get_string( string $key ): string {
-		$value = self::get( $key );
-		return \is_scalar( $value ) ? (string) $value : '';
-	}
-
-	/** Runtime config read: stored option, else the declared default, else ''. */
-	public static function get( string $key ): mixed {
-		return \get_option( self::PREFIX . $key, self::DEFAULTS[ $key ] ?? '' );
 	}
 
 	/** Sanitize an array_strings value: a textarea (or array) → trimmed, non-empty list. */
@@ -342,5 +325,22 @@ class Settings {
 			self::get_string( 'ai_model' ),
 			self::get_string( 'ai_feature' )
 		);
+	}
+
+	/**
+	 * Resolve a credential setting to its real secret via the substrate Vault.
+	 *
+	 * The setting stores a Vault entry ID (set in the admin <select>), not the raw
+	 * secret. Returns the entry's `auth_password`, or '' when the setting is unset,
+	 * the Vault class is absent, the ID is unknown, or the entry has no password.
+	 */
+	public static function get_secret( string $key ): string {
+		$id = self::get_string( $key );
+		if ( '' === $id || ! \class_exists( '\\Newspack_Nodes\\Vault' ) ) {
+			return '';
+		}
+		$entry    = \Newspack_Nodes\Vault::get_instance()->get( $id );
+		$password = ( null !== $entry ) ? ( $entry['auth_password'] ?? null ) : null;
+		return ( \is_string( $password ) && '' !== $password ) ? $password : '';
 	}
 }

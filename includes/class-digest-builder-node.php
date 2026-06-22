@@ -146,17 +146,6 @@ class Digest_Builder_Node extends Node {
 		parent::fill( $nudge );
 	}
 
-	private function compose_draft(): void {
-		$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
-		$draft  = Digest_Composer::compose( $this->items, $client, Settings::get_string( 'relevance_profile' ) );
-		$this->set_state( 'COMPOSED', \count( $this->items ) . ' items' );
-		$response                   = Message::new_message();
-		$response[ Message::TYPE ]  = Message::TM_BYTESTREAM;
-		$response[ Message::FROM ]  = $this->name;
-		$response[ Message::VALUE ] = $draft;
-		parent::fill( $response );
-	}
-
 	/**
 	 * Runtime notifications. DONE signals from sources are tallied here.
 	 *
@@ -171,6 +160,17 @@ class Digest_Builder_Node extends Node {
 				$this->compose_draft();
 			}
 		}
+	}
+
+	private function compose_draft(): void {
+		$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
+		$draft  = Digest_Composer::compose( $this->items, $client, Settings::get_string( 'relevance_profile' ) );
+		$this->set_state( 'COMPOSED', \count( $this->items ) . ' items' );
+		$response                   = Message::new_message();
+		$response[ Message::TYPE ]  = Message::TM_BYTESTREAM;
+		$response[ Message::FROM ]  = $this->name;
+		$response[ Message::VALUE ] = $draft;
+		parent::fill( $response );
 	}
 
 	/**

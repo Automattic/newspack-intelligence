@@ -29,11 +29,6 @@ class Insights_CI_Node extends Service_CI_Node {
 	/** The source node names Collect ticks; their count MUST equal the digest's `total` make_node arg in newspack-ai-newsletter.tsl. */
 	private const SOURCE_NODES = [ 'github', 'linear', 'feed' ];
 
-	/** Coerce an untrusted (JSON-sourced) score to float; non-numeric → 0.0. */
-	private static function to_float( mixed $value ): float {
-		return \is_numeric( $value ) ? (float) $value : 0.0;
-	}
-
 	/** JSON model for the `insights` verb; resolves the live offsets dir + digest path. */
 	public function build_insights_json(): string {
 		$model = self::read_insights_model( Config::get_offsets_directory(), Settings::DIGEST_PATH );
@@ -99,6 +94,11 @@ class Insights_CI_Node extends Service_CI_Node {
 		}
 		unset( $list );
 		return $by_source;
+	}
+
+	/** Coerce an untrusted (JSON-sourced) score to float; non-numeric → 0.0. */
+	private static function to_float( mixed $value ): float {
+		return \is_numeric( $value ) ? (float) $value : 0.0;
 	}
 
 	/**

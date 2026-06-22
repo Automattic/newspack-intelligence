@@ -33,11 +33,6 @@ class Feed_Source_Node extends Source_Node {
 	 */
 	public static ?\Closure $http_get = null;
 
-	/** @return array{feeds:array<int,string>} */
-	protected function config(): array {
-		return [ 'feeds' => Settings::get_array( 'feeds' ) ];
-	}
-
 	/**
 	 * Fetch every configured feed, normalized to the item contract
 	 * {source,id,title,url,body,timestamp}. A failed or unparseable feed contributes
@@ -173,6 +168,11 @@ class Feed_Source_Node extends Source_Node {
 			}
 		}
 		return $fallback;
+	}
+
+	/** @return array{feeds:array<int,string>} */
+	protected function config(): array {
+		return [ 'feeds' => Settings::get_array( 'feeds' ) ];
 	}
 
 	public static function node_schema(): array {

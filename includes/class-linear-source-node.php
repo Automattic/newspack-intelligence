@@ -33,11 +33,6 @@ class Linear_Source_Node extends Source_Node {
 	 */
 	public static ?\Closure $http_post = null;
 
-	/** @return array{token:string} */
-	protected function config(): array {
-		return [ 'token' => Settings::get_secret( 'linear_token' ) ];
-	}
-
 	/**
 	 * Fetch recently-updated Linear issues, normalized to the item contract
 	 * {source,id,title,url,body,timestamp}. No token → skip (no creds). A transport
@@ -100,6 +95,11 @@ class Linear_Source_Node extends Source_Node {
 			$out[] = $this->normalize_item( 'linear', $identifier, $node['title'] ?? '', $node['url'] ?? '', $node['description'] ?? '', $node['updatedAt'] ?? '' );
 		}
 		return $out;
+	}
+
+	/** @return array{token:string} */
+	protected function config(): array {
+		return [ 'token' => Settings::get_secret( 'linear_token' ) ];
 	}
 
 	public static function node_schema(): array {
