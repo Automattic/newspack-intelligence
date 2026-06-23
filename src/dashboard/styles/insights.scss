@@ -16,384 +16,383 @@ $border: #ddd;
 $success: #007017;
 $error: #b32d2e;
 $error-subtle: #fcf0f1;
-$font:
-  "Inter",
-  -apple-system,
-  blinkmacsystemfont,
-  "Segoe UI",
-  roboto,
-  sans-serif;
+$font: "Inter",
+	-apple-system,
+	blinkmacsystemfont,
+	"Segoe UI",
+	roboto,
+	sans-serif;
 
 .eai-insights {
-  max-width: 1600px;
-  margin: 16px 20px 0 0;
-  color: $text;
-  font-family: $font;
-  font-size: 16px;
-  line-height: 24px;
+	max-width: 1600px;
+	margin: 16px 20px 0 0;
+	color: $text;
+	font-family: $font;
+	font-size: 16px;
+	line-height: 24px;
 
-  &__header {
-    margin-bottom: 24px;
-  }
+	&__header {
+		margin-bottom: 24px;
+	}
 
-  h1 {
-    margin: 0;
-    padding: 0;
-    // Standard WP admin page-title size, not an oversized custom heading.
-    font-size: 23px;
-    line-height: 1.3;
-    font-weight: 400;
-    color: $text;
-  }
+	h1 {
+		margin: 0;
+		padding: 0;
+		// Standard WP admin page-title size, not an oversized custom heading.
+		font-size: 23px;
+		line-height: 1.3;
+		font-weight: 400;
+		color: $text;
+	}
 
-  &__sub {
-    margin: 4px 0 0;
-    font-size: 14px;
-    line-height: 20px;
-    color: $text-secondary;
-  }
+	&__sub {
+		margin: 4px 0 0;
+		font-size: 14px;
+		line-height: 20px;
+		color: $text-secondary;
+	}
 
-  h2 {
-    margin: 0 0 16px;
-    font-size: 16px;
-    font-weight: 600;
-    color: $text;
-  }
+	h2 {
+		margin: 0 0 16px;
+		font-size: 16px;
+		font-weight: 600;
+		color: $text;
+	}
 
-  // --- Notice: subtle tinted background + dark text (functional only) ---
-  &__notice {
-    padding: 12px 16px;
-    border-radius: 8px;
-    font-size: 14px;
+	// --- Notice: subtle tinted background + dark text (functional only) ---
+	&__notice {
+		padding: 12px 16px;
+		border-radius: 8px;
+		font-size: 14px;
 
-    &--error {
-      background: $error-subtle;
-      color: $text;
-      border: 1px solid $error;
-    }
+		&--error {
+			background: $error-subtle;
+			color: $text;
+			border: 2px solid $error;
+		}
 
-    &--ok {
-      background: #f0f7f1;
-      color: $text;
-      border: 1px solid $success;
-    }
-  }
+		&--ok {
+			background: #f0f7f1;
+			color: $text;
+			border: 2px solid $success;
+		}
+	}
 
-  // --- Empty state ---
-  &__empty {
-    padding: 32px;
-    text-align: center;
-    background: $surface-subtle;
-    border: 1px solid $border;
-    border-radius: 16px;
+	// --- Empty state ---
+	&__empty {
+		padding: 32px;
+		text-align: center;
+		background: $surface-subtle;
+		border: 2px solid $border;
+		border-radius: 16px;
 
-    p {
-      margin: 0;
-    }
+		p {
+			margin: 0;
+		}
 
-    // Adjacent-sibling spacing beats an !important override of `p { margin: 0 }`.
-    p + p {
-      margin-top: 8px;
-    }
+		// Adjacent-sibling spacing beats an !important override of `p { margin: 0 }`.
+		p+p {
+			margin-top: 8px;
+		}
 
-    &-hint {
-      font-size: 14px;
-      color: $text-secondary;
-    }
-  }
+		&-hint {
+			font-size: 14px;
+			color: $text-secondary;
+		}
+	}
 
-  // --- Two-column layout: independent columns so the tall right column
-  // (Top items) doesn't stretch/space-out the stacked left items. ---
-  &__layout {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 24px;
-    align-items: start;
-  }
+	// --- Two-column layout: independent columns so the tall right column
+	// (Top items) doesn't stretch/space-out the stacked left items. ---
+	&__layout {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 24px;
+		align-items: start;
+	}
 
-  &__side {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
+	&__side {
+		display: flex;
+		flex-direction: column;
+		gap: 24px;
+	}
 
-  // --- Cards: white surface, neutral border, rounded 8 ---
+	// --- Cards: white surface, neutral border, rounded 8 ---
 
-  &__card {
-    padding: 16px;
-    background: $surface;
-    border: 1px solid $border;
-    border-radius: 8px;
-  }
+	&__card {
+		padding: 16px;
+		background: $surface;
+		border: 2px solid $border;
+		border-radius: 8px;
+	}
 
-  // --- KPI stat-card row ---
-  &__stats {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
+	// --- KPI stat-card row ---
+	&__stats {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 16px;
+	}
 
-  &__stat {
-    flex: 1 1 160px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 16px;
-    background: $surface;
-    border: 1px solid $border;
-    border-radius: 8px;
-  }
+	&__stat {
+		flex: 1 1 160px;
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		padding: 16px;
+		background: $surface;
+		border: 2px solid $border;
+		border-radius: 8px;
+	}
 
-  // text-xl from DESIGN.product.md: 32px / 600 / 44px line-height.
-  &__stat-num {
-    font-size: 32px;
-    line-height: 44px;
-    font-weight: 600;
-    color: $text;
-    font-variant-numeric: tabular-nums;
-  }
+	// text-xl from DESIGN.product.md: 32px / 600 / 44px line-height.
+	&__stat-num {
+		font-size: 32px;
+		line-height: 44px;
+		font-weight: 600;
+		color: $text;
+		font-variant-numeric: tabular-nums;
+	}
 
-  &__stat-label {
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: $text-secondary;
-  }
+	&__stat-label {
+		font-size: 12px;
+		font-weight: 600;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: $text-secondary;
+	}
 
-  // --- By source: labeled proportion bars ---
-  &__sources ul {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
+	// --- By source: labeled proportion bars ---
+	&__sources ul {
+		display: flex;
+		flex-direction: column;
+		gap: 16px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
 
-  &__bar-head {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 6px;
-    font-size: 14px;
-  }
+	&__bar-head {
+		display: flex;
+		justify-content: space-between;
+		margin-bottom: 6px;
+		font-size: 14px;
+	}
 
-  &__source-name {
-    text-transform: capitalize;
-  }
+	&__source-name {
+		text-transform: capitalize;
+	}
 
-  &__source-count {
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
+	&__source-count {
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+	}
 
-  &__bar {
-    height: 8px;
-    background: $surface-subtle;
-    border-radius: 4px;
-    overflow: hidden;
-  }
+	&__bar {
+		height: 8px;
+		background: $surface-subtle;
+		border-radius: 4px;
+		overflow: hidden;
+	}
 
-  &__bar-fill {
-    height: 100%;
-    background: $cobalt;
-    border-radius: 4px;
-  }
+	&__bar-fill {
+		height: 100%;
+		background: $cobalt;
+		border-radius: 4px;
+	}
 
-  // --- Top items: per-source ranked tables, stacked in the narrow right column ---
-  &__source-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
+	// --- Top items: per-source ranked tables, stacked in the narrow right column ---
+	&__source-grid {
+		display: flex;
+		flex-direction: column;
+		gap: 24px;
+	}
 
-  &__source-top {
-    min-width: 0; // let a column shrink/wrap instead of overflowing the grid track.
+	&__source-top {
+		min-width: 0; // let a column shrink/wrap instead of overflowing the grid track.
 
-    h3 {
-      margin: 0 0 8px;
-      font-size: 16px;
-      font-weight: 600;
-    }
-  }
+		h3 {
+			margin: 0 0 8px;
+			font-size: 16px;
+			font-weight: 600;
+		}
+	}
 
-  &__top table {
-    width: 100%;
-    // Fixed layout: the title column takes the slack, the rank + score columns hold
-    // their set widths, and every row is one line tall — so rows stay uniform and the
-    // three source tables align, and the score bar keeps a real width (auto layout
-    // shrank it to nothing in the narrow grid columns).
-    table-layout: fixed;
-    border-collapse: collapse;
-    font-size: 14px;
+	&__top table {
+		width: 100%;
+		// Fixed layout: the title column takes the slack, the rank + score columns hold
+		// their set widths, and every row is one line tall — so rows stay uniform and the
+		// three source tables align, and the score bar keeps a real width (auto layout
+		// shrank it to nothing in the narrow grid columns).
+		table-layout: fixed;
+		border-collapse: collapse;
+		font-size: 14px;
 
-    th,
-    td {
-      padding: 8px 12px;
-      text-align: left;
-      border-bottom: 1px solid $border;
-      vertical-align: middle;
-    }
+		th,
+		td {
+			padding: 8px 12px;
+			text-align: left;
+			border-bottom: 1px solid $border;
+			vertical-align: middle;
+		}
 
-    th {
-      color: $text-secondary;
-      font-weight: 600;
-    }
+		th {
+			color: $text-secondary;
+			font-weight: 600;
+		}
 
-    // Score is the last column — right-align it (last-child beats the th,td rule).
-    th:last-child,
-    td:last-child {
-      text-align: right;
-    }
+		// Score is the last column — right-align it (last-child beats the th,td rule).
+		th:last-child,
+		td:last-child {
+			text-align: right;
+		}
 
-    tbody tr:last-child td {
-      border-bottom: 0;
-    }
-  }
+		tbody tr:last-child td {
+			border-bottom: 0;
+		}
+	}
 
-  // Title: one line, ellipsis — full text on hover via the cell's title attr.
-  &__item-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+	// Title: one line, ellipsis — full text on hover via the cell's title attr.
+	&__item-title {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
 
-  // Score column holds a fixed width so the inline bar survives the narrow layout.
-  &__top th:last-child,
-  &__top td:last-child {
-    width: 116px;
-  }
+	// Score column holds a fixed width so the inline bar survives the narrow layout.
+	&__top th:last-child,
+	&__top td:last-child {
+		width: 116px;
+	}
 
-  &__rank-col {
-    width: 36px;
-  }
+	&__rank-col {
+		width: 36px;
+	}
 
-  &__rank {
-    color: $text-secondary;
-    font-variant-numeric: tabular-nums;
-  }
+	&__rank {
+		color: $text-secondary;
+		font-variant-numeric: tabular-nums;
+	}
 
-  // The score cell pairs an inline bar with the number, right-aligned.
-  &__score-cell {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-  }
+	// The score cell pairs an inline bar with the number, right-aligned.
+	&__score-cell {
+		display: flex;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 8px;
+	}
 
-  &__score-bar-track {
-    flex: 0 1 120px;
-    height: 8px;
-    background: $surface-subtle;
-    border-radius: 4px;
-    overflow: hidden;
-  }
+	&__score-bar-track {
+		flex: 0 1 120px;
+		height: 8px;
+		background: $surface-subtle;
+		border-radius: 4px;
+		overflow: hidden;
+	}
 
-  &__score-bar {
-    height: 100%;
-    background: $cobalt;
-    border-radius: 4px;
-  }
+	&__score-bar {
+		height: 100%;
+		background: $cobalt;
+		border-radius: 4px;
+	}
 
-  &__score-num {
-    min-width: 32px;
-    font-variant-numeric: tabular-nums;
-  }
+	&__score-num {
+		min-width: 32px;
+		font-variant-numeric: tabular-nums;
+	}
 
-  // --- Draft section ---
-  &__actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-  }
+	// --- Draft section ---
+	&__actions {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 8px;
+	}
 
-  // Collection progress reads as secondary status text beside the control.
-  &__progress {
-    font-size: 14px;
-    color: $text-secondary;
-  }
+	// Collection progress reads as secondary status text beside the control.
+	&__progress {
+		font-size: 14px;
+		color: $text-secondary;
+	}
 
-  // Space the status/feedback notice off the button row.
-  &__actions + &__notice {
-    margin-top: 12px;
-  }
+	// Space the status/feedback notice off the button row.
+	&__actions+&__notice {
+		margin-top: 12px;
+	}
 
-  // In the empty state the copy is centered, so center + space the Collect control too.
-  &__empty &__actions {
-    justify-content: center;
-    margin-top: 16px;
-  }
+	// In the empty state the copy is centered, so center + space the Collect control too.
+	&__empty &__actions {
+		justify-content: center;
+		margin-top: 16px;
+	}
 
-  &__btn {
-    padding: 12px 16px;
-    font-size: 16px;
-    font-family: $font;
-    color: #fff;
-    background: $cobalt;
-    border: 1px solid $cobalt;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.15s;
+	&__btn {
+		padding: 12px 16px;
+		font-size: 16px;
+		font-family: $font;
+		color: #fff;
+		background: $cobalt;
+		border: 2px solid $cobalt;
+		border-radius: 8px;
+		cursor: pointer;
+		transition: background 0.15s;
 
-    &:hover {
-      background: $cobalt-hover;
-      border-color: $cobalt-hover;
-    }
+		&:hover {
+			background: $cobalt-hover;
+			border-color: $cobalt-hover;
+		}
 
-    // Secondary: white surface, Cobalt text + border (DESIGN button-secondary).
-    &--secondary {
-      color: $cobalt;
-      background: $surface;
+		// Secondary: white surface, Cobalt text + border (DESIGN button-secondary).
+		&--secondary {
+			color: $cobalt;
+			background: $surface;
 
-      &:hover {
-        color: #fff;
-        background: $cobalt;
-      }
-    }
+			&:hover {
+				color: #fff;
+				background: $cobalt;
+			}
+		}
 
-    &:disabled {
-      cursor: default;
-      opacity: 0.6;
-    }
-  }
+		&:disabled {
+			cursor: default;
+			opacity: 0.6;
+		}
+	}
 
-  &__copied {
-    font-size: 14px;
-    font-weight: 600;
-    color: $success;
-  }
+	&__copied {
+		font-size: 14px;
+		font-weight: 600;
+		color: $success;
+	}
 
-  &__draft-result {
-    margin: 16px 0 0;
+	&__draft-result {
+		margin: 16px 0 0;
 
-    a {
-      color: $cobalt;
-    }
-  }
+		a {
+			color: $cobalt;
+		}
+	}
 
-  // --- Digest preview: the rendered markdown the publisher copies/drafts.
-  // pre-wrap + overflow-wrap so long lines and bare URLs wrap inside the card
-  // instead of overflowing; capped height with its own scroll.
-  &__preview {
-    margin: 16px 0 0;
-    padding: 12px 14px;
-    max-height: 720px;
-    overflow: auto;
-    border: 1px solid $border;
-    border-radius: 8px;
-    background: $surface-subtle;
-    color: $text;
-    font-family: ui-monospace, sfmono-regular, menlo, consolas, monospace;
-    font-size: 13px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
+	// --- Digest preview: the rendered markdown the publisher copies/drafts.
+	// pre-wrap + overflow-wrap so long lines and bare URLs wrap inside the card
+	// instead of overflowing; capped height with its own scroll.
+	&__preview {
+		margin: 16px 0 0;
+		padding: 12px 14px;
+		max-height: 720px;
+		overflow: auto;
+		border: 2px solid $border;
+		border-radius: 8px;
+		background: $surface-subtle;
+		color: $text;
+		font-family: ui-monospace, sfmono-regular, menlo, consolas, monospace;
+		font-size: 13px;
+		line-height: 1.5;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
 
-  &__preview-empty {
-    margin: 16px 0 0;
-    color: $text-secondary;
-    font-size: 14px;
-  }
+	&__preview-empty {
+		margin: 16px 0 0;
+		color: $text-secondary;
+		font-size: 14px;
+	}
 }
