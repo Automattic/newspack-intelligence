@@ -139,6 +139,14 @@ if ( \is_admin() ) {
 	\add_action( 'admin_init', __NAMESPACE__ . '\\register_settings' );
 }
 
+// The Publisher Insights page mounts the substrate debug overlay, so declare it
+// on the substrate's overlay-page registry — that's how ELN's "Request" overlay
+// tab loads here too. Harmless if the substrate/ELN aren't active.
+\add_filter(
+	'newspack_nodes/devtools_overlay_pages',
+	static fn ( $pages ): array => \array_merge( (array) $pages, [ INSIGHTS_MENU_SLUG ] )
+);
+
 /**
  * Mount the Publisher Insights service interpreter into the per-request graph, the
  * same way the substrate mounts its own CIs. Idempotent: a second call (same
