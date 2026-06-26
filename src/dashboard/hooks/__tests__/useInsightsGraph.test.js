@@ -1,10 +1,20 @@
 /**
- * useInsightsGraph tests — the Publisher Insights dashboard graph clipped onto
- * the substrate's exospine + `_http` I/O boundary plus the `insights:view`
- * view-model node. Mirrors useWorkerStatusGraph: the hook owns a setInterval
- * that fires a TM_COMMAND (FROM=`insights:view`) through the interpreter;
- * `_http.client` is injected so the hook never touches the network. NO SSE —
- * the repeated poll IS the live data, with a synchronous CI reply in the body.
+ * useInsightsGraph tests — the Publisher Insights dashboard as a GENUINE node
+ * graph built from the substrate's batched-poll toolkit (useBatchedPoll +
+ * addSliceFetcher), not a god object:
+ *
+ *   insights:timer (Timer) ─> insights:tee (Tee) ─> fetch-counts (Fetcher) ─┐
+ *                                                 ├> fetch-top    (Fetcher) ─┤  target = _shell/_http/insights
+ *                                                 └> fetch-acc    (Fetcher) ─┘
+ *   countsIn (Tee) ─> source-counts:view
+ *   topIn    (Tee) ─> top-table:view
+ *   accIn    (Tee) ─> accumulated:view
+ *
+ * The Timer hitchhikes the router tick; the router brackets each tick with
+ * `_http` lock/flush, so all three fetcher commands batch into ONE HttpOut POST.
+ * Beyond the poll, the hook exposes the awaited `generate`/`collect` action verbs
+ * the dashboard buttons call; their reply pivots straight back to accumulated:view,
+ * whose PendingReplies settles the Promise.
  */
 
 import { renderHook, act } from '@testing-library/react';
@@ -20,48 +30,39 @@ import {
 	TM_ERROR,
 	Core,
 } from '@newspack-nodes/runtime';
-
-// global (not a module-scoped var) so jest.mock's hoisted factory may read it.
-global.__pageVisible = true;
-jest.mock( '@newspack-nodes/shared/hooks/usePageVisibility', () => ( {
-	__esModule: true,
-	default: () => global.__pageVisible,
-} ) );
-
 import { useInsightsGraph } from '../useInsightsGraph';
 
 const INTERPRETER = '_command_interpreter';
 const ROUTER = '_router';
 const HTTP = '_http';
-const VIEW = 'insights:view';
+const SHELL = '_shell';
+const ACC_VIEW = 'accumulated:view';
 
-beforeEach( () => {
-	global.__pageVisible = true;
-	Core.reset();
-} );
+function setVisibility( state ) {
+	Object.defineProperty( document, 'visibilityState', {
+		configurable: true,
+		get: () => state,
+	} );
+	document.dispatchEvent( new Event( 'visibilitychange' ) );
+}
 
-// A fake CommandClient matching HttpOut's seam: postBatch echoes a reply
-// addressed back along FROM, payload keyed by verb (the server reply pivot).
-function makeFakeClient( payloadByVerb = {} ) {
+// A fake CommandClient matching HttpOut's seam: postBatch records each batch and
+// echoes a reply addressed back along FROM, payload keyed by the posted verb.
+function makeFakeClient( payloadByVerb = {}, replyTypeByVerb = {} ) {
 	const client = {
 		batches: [],
-		buildMessage( { to, verb, args = '' } ) {
-			const m = newMessage();
-			m[ TYPE ] = TM_COMMAND;
-			m[ TO ] = to;
-			m[ VALUE ] = { name: verb, arguments: args };
-			return m;
-		},
 		postBatch( messages ) {
 			client.batches.push( messages );
 			const replies = messages.map( ( m ) => {
+				const verb = m[ VALUE ]?.name;
 				const reply = newMessage();
-				reply[ TYPE ] = TM_COMMAND | TM_RESPONSE;
+				reply[ TYPE ] =
+					replyTypeByVerb[ verb ] ?? TM_COMMAND | TM_RESPONSE;
 				reply[ TO ] = m[ FROM ];
 				reply[ ID ] = m[ ID ];
 				reply[ VALUE ] = {
-					name: m[ VALUE ]?.name,
-					payload: payloadByVerb[ m[ VALUE ]?.name ] ?? null,
+					name: verb,
+					payload: payloadByVerb[ verb ] ?? null,
 				};
 				return reply;
 			} );
@@ -71,135 +72,160 @@ function makeFakeClient( payloadByVerb = {} ) {
 	return client;
 }
 
-const verbsOf = ( client ) =>
-	client.batches.flat().map( ( m ) => m[ VALUE ]?.name );
+const emptyPayloads = {
+	counts: JSON.stringify( { sources: {} } ),
+	top: JSON.stringify( { top: {} } ),
+	accumulated: JSON.stringify( {
+		accumulated: 0,
+		done: 0,
+		total: 0,
+		digest: '',
+	} ),
+};
+
+beforeEach( () => {
+	Core.reset();
+	Object.defineProperty( document, 'visibilityState', {
+		configurable: true,
+		get: () => 'visible',
+	} );
+} );
 
 describe( 'useInsightsGraph — graph wiring', () => {
-	test( 'mounts the backbone + `_http` + `insights:view`, each sinking into the interpreter', async () => {
-		const client = makeFakeClient();
+	test( 'mounts the backbone, `_http`, `_shell` tap, the timer/tee/fetchers, and three view nodes, each sinking into the interpreter', async () => {
+		const client = makeFakeClient( emptyPayloads );
 		renderHook( () => useInsightsGraph( { commandClient: client } ) );
 		await act( async () => {} );
 
 		const interpreter = Core.node( INTERPRETER );
 		expect( interpreter ).toBeTruthy();
 		expect( Core.node( ROUTER ) ).toBeTruthy();
-		for ( const name of [ HTTP, VIEW ] ) {
+
+		const names = [
+			HTTP,
+			SHELL,
+			'insights:timer',
+			'insights:tee',
+			'fetch-counts',
+			'fetch-top',
+			'fetch-acc',
+			'countsIn',
+			'topIn',
+			'accIn',
+			'source-counts:view',
+			'top-table:view',
+			ACC_VIEW,
+		];
+		for ( const name of names ) {
 			const node = Core.node( name );
 			expect( node ).toBeTruthy();
 			expect( node.sink ).toBe( interpreter );
 		}
 	} );
 
-	test( '`_http` has the injected CommandClient as its client', async () => {
-		const client = makeFakeClient();
+	test( 'each Fetcher is configured with its receiver + verb and targets `_shell/_http/insights`', async () => {
+		const client = makeFakeClient( emptyPayloads );
 		renderHook( () => useInsightsGraph( { commandClient: client } ) );
 		await act( async () => {} );
-		expect( Core.node( HTTP ).client ).toBe( client );
+		const path = `${ SHELL }/${ HTTP }/insights`;
+		expect( Core.node( 'fetch-counts' ).receiver ).toBe( 'countsIn' );
+		expect( Core.node( 'fetch-counts' ).command ).toBe( 'counts' );
+		expect( Core.node( 'fetch-counts' ).target ).toBe( path );
+		expect( Core.node( 'fetch-top' ).command ).toBe( 'top' );
+		expect( Core.node( 'fetch-acc' ).command ).toBe( 'accumulated' );
 	} );
 } );
 
-describe( 'useInsightsGraph — poll', () => {
-	test( 'fires one immediate, well-formed `insights` command on mount', async () => {
+describe( 'useInsightsGraph — batched poll', () => {
+	test( 'one router TIMER tick emits exactly three TM_COMMANDs (counts/top/accumulated, FROM=their receivers) batched into ONE HttpOut POST', async () => {
+		const client = makeFakeClient( emptyPayloads );
+		renderHook( () => useInsightsGraph( { commandClient: client } ) );
+		await act( async () => {} );
+		client.batches.length = 0;
+
+		await act( async () => {
+			Core.node( ROUTER ).fireCb();
+		} );
+
+		expect( client.batches.length ).toBe( 1 );
+		const batch = client.batches[ 0 ];
+		expect( batch.length ).toBe( 3 );
+
+		const byVerb = Object.fromEntries(
+			batch.map( ( m ) => [ m[ VALUE ].name, m ] )
+		);
+		expect( Object.keys( byVerb ).sort() ).toEqual( [
+			'accumulated',
+			'counts',
+			'top',
+		] );
+		expect( byVerb.counts[ TO ] ).toBe( 'insights' );
+		expect( byVerb.counts[ FROM ] ).toBe( 'countsIn' );
+		expect( byVerb.top[ FROM ] ).toBe( 'topIn' );
+		expect( byVerb.accumulated[ FROM ] ).toBe( 'accIn' );
+	} );
+
+	test( 'while the tab is HIDDEN no router tick posts; becoming visible resumes polling', async () => {
+		const client = makeFakeClient( emptyPayloads );
+		renderHook( () => useInsightsGraph( { commandClient: client } ) );
+		await act( async () => {} );
+		client.batches.length = 0;
+
+		await act( async () => {
+			setVisibility( 'hidden' );
+		} );
+		await act( async () => {
+			Core.node( ROUTER ).fireCb();
+		} );
+		expect( client.batches.length ).toBe( 0 );
+
+		await act( async () => {
+			setVisibility( 'visible' );
+		} );
+		await act( async () => {
+			Core.node( ROUTER ).fireCb();
+		} );
+		expect( client.batches.length ).toBe( 1 );
+		expect( client.batches[ 0 ].length ).toBe( 3 );
+	} );
+
+	test( 'each slice reply routes back to its own view node and lands in its slice', async () => {
 		const client = makeFakeClient( {
-			insights: JSON.stringify( {
-				sources: {},
-				top: [],
-				accumulated: 0,
+			counts: JSON.stringify( { sources: { github: 2 } } ),
+			top: JSON.stringify( {
+				top: { github: [ { title: 'X', score: 5 } ] },
+			} ),
+			accumulated: JSON.stringify( {
+				accumulated: 7,
+				done: 2,
+				total: 3,
+				digest: '# D',
 			} ),
 		} );
 		renderHook( () => useInsightsGraph( { commandClient: client } ) );
-		await act( async () => {} );
+		await act( async () => {
+			Core.node( ROUTER ).fireCb();
+		} );
 
-		expect( client.batches.length ).toBeGreaterThanOrEqual( 1 );
-		const msg = client.batches[ 0 ][ 0 ];
-		// HttpOut strips `_http/`, so it's the bare `insights` server-node
-		// target at postBatch time (the verb name stays `insights`).
-		expect( msg[ TO ] ).toBe( 'insights' );
-		expect( msg[ FROM ] ).toBe( VIEW );
-		expect( msg[ VALUE ].name ).toBe( 'insights' );
-		expect( msg[ VALUE ].arguments ).toBe( '' );
-		expect( msg[ ID ] ).toBeTruthy();
-	} );
-
-	test( 'the poll reply routes back to the view and lands in the model', async () => {
-		const model = {
-			sources: { releases: 1 },
-			top: [ { source: 'releases', title: 'X', score: 5 } ],
-			accumulated: 1,
-		};
-		const client = makeFakeClient( { insights: JSON.stringify( model ) } );
-		renderHook( () => useInsightsGraph( { commandClient: client } ) );
-		await act( async () => {} );
-		expect( Core.node( VIEW ).setStateCache.view ).toEqual( model );
-	} );
-
-	test( 'polls again on each interval tick while page-visible', async () => {
-		jest.useFakeTimers();
-		try {
-			const client = makeFakeClient( {
-				insights: JSON.stringify( {
-					sources: {},
-					top: [],
-					accumulated: 0,
-				} ),
-			} );
-			renderHook( () =>
-				useInsightsGraph( { commandClient: client, refreshMs: 4000 } )
-			);
-			await act( async () => {} );
-			const afterMount = verbsOf( client ).filter(
-				( v ) => 'insights' === v
-			).length;
-			expect( afterMount ).toBeGreaterThanOrEqual( 1 );
-			await act( async () => {
-				jest.advanceTimersByTime( 4000 );
-			} );
-			const afterTick = verbsOf( client ).filter(
-				( v ) => 'insights' === v
-			).length;
-			expect( afterTick ).toBe( afterMount + 1 );
-		} finally {
-			jest.useRealTimers();
-		}
-	} );
-
-	test( 'does not poll on interval while the page is hidden', async () => {
-		global.__pageVisible = false;
-		jest.useFakeTimers();
-		try {
-			const client = makeFakeClient( {
-				insights: JSON.stringify( {
-					sources: {},
-					top: [],
-					accumulated: 0,
-				} ),
-			} );
-			renderHook( () =>
-				useInsightsGraph( { commandClient: client, refreshMs: 4000 } )
-			);
-			await act( async () => {} );
-			const baseline = verbsOf( client ).length;
-			await act( async () => {
-				jest.advanceTimersByTime( 12000 );
-			} );
-			// Hidden: the interval effect bails, so no further polls.
-			expect( verbsOf( client ).length ).toBe( baseline );
-		} finally {
-			jest.useRealTimers();
-		}
+		expect( Core.node( 'source-counts:view' ).setStateCache.view ).toEqual(
+			{ sources: { github: 2 } }
+		);
+		expect( Core.node( 'top-table:view' ).setStateCache.view ).toEqual( {
+			top: { github: [ { title: 'X', score: 5 } ] },
+		} );
+		expect( Core.node( ACC_VIEW ).setStateCache.view ).toEqual( {
+			accumulated: 7,
+			done: 2,
+			total: 3,
+			digest: '# D',
+		} );
 	} );
 } );
 
-describe( 'useInsightsGraph — generate (awaited verb)', () => {
-	test( 'generate() fires a `generate` command (FROM=view) and resolves to its ack payload', async () => {
+describe( 'useInsightsGraph — awaited action verbs', () => {
+	test( 'generate() fires a `generate` command (FROM=accumulated:view) and resolves to its ack payload', async () => {
 		const client = makeFakeClient( {
-			insights: JSON.stringify( {
-				sources: {},
-				top: [],
-				accumulated: 0,
-				digest: '',
-			} ),
-			// The verb now delegates to the worker and returns an ack, not markdown.
+			...emptyPayloads,
 			generate: JSON.stringify( { regenerating: true, workers: 1 } ),
 		} );
 		const { result } = renderHook( () =>
@@ -219,42 +245,17 @@ describe( 'useInsightsGraph — generate (awaited verb)', () => {
 			.flat()
 			.filter( ( m ) => 'generate' === m[ VALUE ]?.name );
 		expect( genMsgs.length ).toBe( 1 );
-		expect( genMsgs[ 0 ][ FROM ] ).toBe( VIEW );
+		expect( genMsgs[ 0 ][ FROM ] ).toBe( ACC_VIEW );
 		expect( genMsgs[ 0 ][ ID ] ).toBeTruthy();
 	} );
 
 	test( 'generate() rejects when a TM_ERROR reply pivots back', async () => {
-		const failing = {
-			batches: [],
-			postBatch( messages ) {
-				failing.batches.push( messages );
-				return Promise.resolve(
-					messages.map( ( m ) => {
-						const reply = newMessage();
-						const isGen = 'generate' === m[ VALUE ]?.name;
-						reply[ TYPE ] = isGen
-							? TM_COMMAND | TM_RESPONSE | TM_ERROR
-							: TM_COMMAND | TM_RESPONSE;
-						reply[ TO ] = m[ FROM ];
-						reply[ ID ] = m[ ID ];
-						reply[ VALUE ] = {
-							name: m[ VALUE ]?.name,
-							payload: isGen
-								? 'compose failed'
-								: JSON.stringify( {
-										sources: {},
-										top: [],
-										accumulated: 0,
-										digest: '',
-								  } ),
-						};
-						return reply;
-					} )
-				);
-			},
-		};
+		const client = makeFakeClient(
+			{ ...emptyPayloads, generate: 'compose failed' },
+			{ generate: TM_COMMAND | TM_RESPONSE | TM_ERROR }
+		);
 		const { result } = renderHook( () =>
-			useInsightsGraph( { commandClient: failing } )
+			useInsightsGraph( { commandClient: client } )
 		);
 		await act( async () => {} );
 
@@ -265,16 +266,9 @@ describe( 'useInsightsGraph — generate (awaited verb)', () => {
 		} );
 	} );
 
-	test( 'collect() fires a `collect` command (FROM=view) and resolves to its payload', async () => {
+	test( 'collect() fires a `collect` command (FROM=accumulated:view) and resolves to its payload', async () => {
 		const client = makeFakeClient( {
-			insights: JSON.stringify( {
-				sources: {},
-				top: [],
-				accumulated: 0,
-				digest: '',
-				done: 0,
-				total: 0,
-			} ),
+			...emptyPayloads,
 			collect: JSON.stringify( { collecting: 3, workers: 1 } ),
 		} );
 		const { result } = renderHook( () =>
@@ -294,6 +288,6 @@ describe( 'useInsightsGraph — generate (awaited verb)', () => {
 			.flat()
 			.filter( ( m ) => 'collect' === m[ VALUE ]?.name );
 		expect( collectMsgs.length ).toBe( 1 );
-		expect( collectMsgs[ 0 ][ FROM ] ).toBe( VIEW );
+		expect( collectMsgs[ 0 ][ FROM ] ).toBe( ACC_VIEW );
 	} );
 } );

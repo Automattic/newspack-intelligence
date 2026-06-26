@@ -1,34 +1,24 @@
 /* eslint-env jest */
 /**
- * PublisherInsights — the thin view over the `insights:view` model. It mounts
- * the graph (useInsightsGraph) and reads the model via useNodeState. Here we
- * inject a fake CommandClient whose `insights` reply carries a known model (now
- * including the REAL rendered `digest`) and whose `generate` reply carries a
- * fresh digest, so the mounted graph fills the view and the component renders the
- * live analytics dashboard plus the digest-driven newsletter actions.
- *
- * The "Create draft post" action is exercised through the injected `createDraft`
- * prop seam (never the real network); "Generate digest" goes through the real
- * graph against the fake client.
+ * PublisherInsights — the orchestrator that mounts the GENUINE node graph
+ * (useInsightsGraph: Timer → Tee → three Fetchers, ONE batched POST per tick) and
+ * renders the three per-slice widgets (SourceCounts / TopTable / AccumulatedPanel),
+ * each reading ITS OWN view node via useNodeState. No god view node, no god
+ * `insights` command. Here we inject a fake CommandClient whose three slice replies
+ * carry a known model so the graph fills the three views and the dashboard renders.
  */
 
-import {
-	render,
-	screen,
-	fireEvent,
-	waitFor,
-	act,
-} from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act } from 'react';
 import {
 	newMessage,
+	ID,
 	TO,
 	FROM,
-	ID,
 	VALUE,
 	TYPE,
 	TM_COMMAND,
 	TM_RESPONSE,
-	TM_ERROR,
 	Core,
 } from '@newspack-nodes/runtime';
 import apiFetch from '@wordpress/api-fetch';
@@ -41,39 +31,17 @@ jest.mock( '@newspack-nodes/shared/hooks/usePageVisibility', () => ( {
 
 import PublisherInsights from '../PublisherInsights';
 
-// Distinct from the table titles, so a preview/copy/draft assertion can't be
-// satisfied by the top-items table.
-const DIGEST =
-	'# Sprint digest\n\n- **Big news** shipped\n- A hot thread heated up';
+const ROUTER = '_router';
+const DIGEST = '# Sprint digest\n\n- Big news shipped';
 
-const model = {
-	sources: { releases: 2, community: 1 },
-	top: {
-		releases: [ { title: 'Big release', score: 9.5 } ],
-		community: [ { title: 'Hot thread', score: 4 } ],
-	},
-	accumulated: 3,
-	digest: DIGEST,
-	// Collection complete (3/3) so the gated Generate button is enabled by default.
-	done: 3,
-	total: 3,
-};
-
-// A fake CommandClient whose reply payload is keyed by verb (the CI reply pivot):
-// the poll's `insights` and the awaited `generate` get their own payloads.
-function clientFor( payloadByVerb, replyType = TM_COMMAND | TM_RESPONSE ) {
+// A fake CommandClient: postBatch echoes a per-verb reply pivoted back along FROM.
+function makeClient( payloadByVerb ) {
 	return {
-		buildMessage( { to, verb, args = '' } ) {
-			const m = newMessage();
-			m[ TYPE ] = TM_COMMAND;
-			m[ VALUE ] = { name: verb, arguments: args, to };
-			return m;
-		},
 		postBatch( messages ) {
 			return Promise.resolve(
 				messages.map( ( m ) => {
 					const reply = newMessage();
-					reply[ TYPE ] = replyType;
+					reply[ TYPE ] = TM_COMMAND | TM_RESPONSE;
 					reply[ TO ] = m[ FROM ];
 					reply[ ID ] = m[ ID ];
 					reply[ VALUE ] = {
@@ -87,347 +55,83 @@ function clientFor( payloadByVerb, replyType = TM_COMMAND | TM_RESPONSE ) {
 	};
 }
 
-function clientReturning( jsonModel ) {
-	return clientFor( { insights: jsonModel } );
-}
-
-function clientFailing( errorText ) {
-	return clientFor(
-		{ insights: errorText },
-		TM_COMMAND | TM_RESPONSE | TM_ERROR
-	);
-}
-
-function clientErroringVerb( verb, errorText ) {
-	const base = clientFor( { insights: JSON.stringify( model ) } );
-	return {
-		...base,
-		postBatch( messages ) {
-			return Promise.resolve(
-				messages.map( ( m ) => {
-					const isTargetVerb = verb === m[ VALUE ]?.name;
-					const reply = newMessage();
-					reply[ TYPE ] = isTargetVerb
-						? TM_COMMAND | TM_RESPONSE | TM_ERROR
-						: TM_COMMAND | TM_RESPONSE;
-					reply[ TO ] = m[ FROM ];
-					reply[ ID ] = m[ ID ];
-					reply[ VALUE ] = {
-						name: m[ VALUE ]?.name,
-						payload: isTargetVerb
-							? errorText
-							: JSON.stringify( model ),
-					};
-					return reply;
-				} )
-			);
+const populated = {
+	counts: JSON.stringify( { sources: { github: 2, linear: 1 } } ),
+	top: JSON.stringify( {
+		top: {
+			github: [ { title: 'Big release', score: 9.5 } ],
+			linear: [ { title: 'Hot thread', score: 4 } ],
 		},
-	};
-}
-
-// Render the populated dashboard and wait until the live data has arrived.
-async function renderPopulated( props = {} ) {
-	render(
-		<PublisherInsights
-			refreshMs={ 4000 }
-			commandClient={ clientReturning( JSON.stringify( model ) ) }
-			{ ...props }
-		/>
-	);
-	await waitFor( () =>
-		expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
-	);
-}
+	} ),
+	accumulated: JSON.stringify( {
+		accumulated: 3,
+		done: 3,
+		total: 3,
+		digest: DIGEST,
+	} ),
+};
 
 beforeEach( () => {
 	Core.reset();
 	apiFetch.mockReset();
 } );
 
-describe( 'PublisherInsights', () => {
-	it( 'renders a per-source top table for each source, plus the accumulated count', async () => {
-		await renderPopulated();
-		// Each source gets its own ranked table + heading; items land under their source.
-		expect( screen.getByText( 'Big release' ) ).toBeInTheDocument();
+// Render the dashboard, drive one router tick to fill the views, await the replies.
+async function renderAndTick( client, props = {} ) {
+	const utils = render(
+		<PublisherInsights commandClient={ client } { ...props } />
+	);
+	await act( async () => {
+		Core.node( ROUTER ).fireCb();
+	} );
+	return utils;
+}
+
+describe( 'PublisherInsights — render', () => {
+	it( 'renders the heading', async () => {
+		await act( async () => {
+			render(
+				<PublisherInsights commandClient={ makeClient( populated ) } />
+			);
+		} );
+		expect(
+			screen.getByRole( 'heading', { name: 'Publisher Insights' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'fills all three slice widgets from their own view nodes after a tick', async () => {
+		const { container } = await renderAndTick( makeClient( populated ) );
+		await waitFor( () =>
+			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
+		);
+		// counts → SourceCounts proportion bars.
+		const barNames = [
+			...container.querySelectorAll( '.eai-insights__source-name' ),
+		].map( ( el ) => el.textContent );
+		expect( barNames ).toEqual( [ 'github', 'linear' ] );
+		// top → TopTable per-source ranked tables.
 		expect( screen.getByText( 'Hot thread' ) ).toBeInTheDocument();
 		expect(
-			screen.getByText( /Accumulated items: 3/ )
+			screen.getByRole( 'heading', { name: 'github' } )
 		).toBeInTheDocument();
-		expect( screen.getAllByRole( 'table' ) ).toHaveLength( 2 );
-		expect(
-			screen.getByRole( 'heading', { name: 'releases' } )
-		).toBeInTheDocument();
-		expect(
-			screen.getByRole( 'heading', { name: 'community' } )
-		).toBeInTheDocument();
-	} );
-
-	it( 'shows KPI stat cards: total items, top score, and source count', async () => {
-		const { container } = render(
-			<PublisherInsights
-				refreshMs={ 4000 }
-				commandClient={ clientReturning( JSON.stringify( model ) ) }
-			/>
-		);
-		await waitFor( () =>
-			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
-		);
-		expect( screen.getByText( /total items/i ) ).toBeInTheDocument();
-		expect( screen.getByText( /top score/i ) ).toBeInTheDocument();
-		expect( screen.getByText( /^sources$/i ) ).toBeInTheDocument();
-		const nums = [
-			...container.querySelectorAll( '.eai-insights__stat' ),
-		].map(
-			( card ) =>
-				card.querySelector( '.eai-insights__stat-num' ).textContent
-		);
-		expect( nums ).toEqual( [ '3', '9.5', '2' ] );
-	} );
-
-	it( 'renders each top item with a rank and a score bar sized by score', async () => {
-		const { container } = render(
-			<PublisherInsights
-				refreshMs={ 4000 }
-				commandClient={ clientReturning( JSON.stringify( model ) ) }
-			/>
-		);
-		await waitFor( () =>
-			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
-		);
-		// Each source's table ranks from #1 (the fixture has one item per source).
-		expect( screen.getAllByText( '#1' ) ).toHaveLength( 2 );
-		const bars = container.querySelectorAll( '.eai-insights__score-bar' );
-		expect( bars.length ).toBe( 2 );
-		// Bars are relative to the global top score (9.5), so the top item is full-width.
-		expect( bars[ 0 ].style.width ).toBe( '100%' );
-	} );
-
-	it( 'renders each source as a proportion bar with an inline width style', async () => {
-		const { container } = render(
-			<PublisherInsights
-				refreshMs={ 4000 }
-				commandClient={ clientReturning( JSON.stringify( model ) ) }
-			/>
-		);
-		await waitFor( () =>
-			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
-		);
-		const bars = container.querySelectorAll( '.eai-insights__bar-fill' );
-		expect( bars.length ).toBe( 2 );
-		expect( bars[ 0 ].style.width ).toContain( '66.6' );
-	} );
-
-	it( 'shows the REAL rendered digest (from the poll model) in the preview', async () => {
-		await renderPopulated();
-		const preview = await screen.findByTestId( 'eai-insights-preview' );
-		// The digest:log markdown, NOT a rebuilt list of item titles.
-		expect( preview.textContent ).toContain( 'Sprint digest' );
-		expect( preview.textContent ).toContain( 'Big news' );
-	} );
-
-	it( 'asks the worker to regenerate (the `generate` verb) and acknowledges; the poll surfaces the new digest', async () => {
-		await renderPopulated( {
-			commandClient: clientFor( {
-				insights: JSON.stringify( model ),
-				// The verb now delegates to the worker and returns an ack, not markdown.
-				generate: JSON.stringify( { regenerating: true, workers: 1 } ),
-			} ),
-		} );
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /regenerate digest/i } )
-		);
-		// A status acknowledgement; the new draft itself lands on the next poll.
-		await waitFor( () =>
-			expect( screen.getByText( /regenerating/i ) ).toBeInTheDocument()
-		);
-		// The durable digest stays shown meanwhile (poll-driven, never wiped here).
+		// accumulated → AccumulatedPanel digest preview.
 		expect(
 			screen.getByTestId( 'eai-insights-preview' ).textContent
 		).toContain( 'Sprint digest' );
 	} );
 
-	it( 'auto-dismisses the "Regenerating…" note so it does not linger forever', async () => {
-		await renderPopulated( {
-			commandClient: clientFor( {
-				insights: JSON.stringify( model ),
-				generate: JSON.stringify( { regenerating: true, workers: 1 } ),
-			} ),
-		} );
-		jest.useFakeTimers();
-		try {
-			fireEvent.click(
-				screen.getByRole( 'button', { name: /regenerate digest/i } )
-			);
-			await act( async () => {} ); // flush the generate ack → sets the note
-			expect( screen.getByText( /regenerating/i ) ).toBeInTheDocument();
-			act( () => jest.advanceTimersByTime( 10000 ) );
-			expect(
-				screen.queryByText( /regenerating/i )
-			).not.toBeInTheDocument();
-		} finally {
-			jest.useRealTimers();
-		}
-	} );
-
-	it( 'surfaces an error (and keeps the shown digest) when Regenerate finds no live worker', async () => {
-		await renderPopulated( {
-			commandClient: clientFor( {
-				insights: JSON.stringify( model ),
-				generate: JSON.stringify( {
-					error: 'No live newspack-ai-newsletter worker',
+	it( 'shows per-slice empty states from an empty server reply', async () => {
+		await renderAndTick(
+			makeClient( {
+				counts: JSON.stringify( { sources: {} } ),
+				top: JSON.stringify( { top: {} } ),
+				accumulated: JSON.stringify( {
+					accumulated: 0,
+					done: 0,
+					total: 0,
+					digest: '',
 				} ),
-			} ),
-		} );
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /regenerate digest/i } )
-		);
-		await waitFor( () =>
-			expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
-				/no live/i
-			)
-		);
-		// The previously-shown durable digest is NOT wiped by a failed regenerate.
-		expect(
-			screen.getByTestId( 'eai-insights-preview' ).textContent
-		).toContain( 'Sprint digest' );
-		expect(
-			screen.getByRole( 'button', { name: /copy markdown/i } )
-		).not.toBeDisabled();
-	} );
-
-	it( 'copies the REAL digest markdown to the clipboard when "Copy markdown" is clicked', async () => {
-		const writeText = jest.fn( () => Promise.resolve() );
-		Object.assign( window.navigator, { clipboard: { writeText } } );
-		await renderPopulated();
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /copy markdown/i } )
-		);
-		expect( writeText ).toHaveBeenCalledTimes( 1 );
-		expect( writeText.mock.calls[ 0 ][ 0 ] ).toContain( 'Sprint digest' );
-		expect( await screen.findByText( /copied/i ) ).toBeInTheDocument();
-	} );
-
-	it( 'shows an inline error when the clipboard write is rejected', async () => {
-		const original = window.navigator.clipboard;
-		Object.assign( window.navigator, {
-			clipboard: { writeText: jest.fn( () => Promise.reject() ) },
-		} );
-		await renderPopulated();
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /copy markdown/i } )
-		);
-		expect(
-			await screen.findByText( /could not copy to the clipboard/i )
-		).toBeInTheDocument();
-		expect( screen.queryByText( /copied/i ) ).not.toBeInTheDocument();
-		Object.assign( window.navigator, { clipboard: original } );
-	} );
-
-	it( 'creates a draft from the markdownToContent seam and shows an "Edit draft" link on success', async () => {
-		const createDraft = jest.fn( () => Promise.resolve( { id: 42 } ) );
-		// Inject a fake converter so the test never loads the heavy WP block deps;
-		// it just proves the digest markdown is run through markdownToContent and
-		// its output is what createDraft posts.
-		const markdownToContent = jest.fn( ( md ) => `BLOCKS:${ md }` );
-		await renderPopulated( { createDraft, markdownToContent } );
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /create draft post/i } )
-		);
-		await waitFor( () => expect( createDraft ).toHaveBeenCalledTimes( 1 ) );
-		const arg = createDraft.mock.calls[ 0 ][ 0 ];
-		expect( arg.title.length ).toBeGreaterThan( 0 );
-		// The digest markdown went through the converter, and its result is posted.
-		expect( markdownToContent ).toHaveBeenCalledWith( DIGEST );
-		expect( arg.content ).toBe( `BLOCKS:${ DIGEST }` );
-		const link = await screen.findByRole( 'link', { name: /edit draft/i } );
-		expect( link.getAttribute( 'href' ) ).toContain( 'post=42' );
-		expect( link.getAttribute( 'href' ) ).toContain( 'action=edit' );
-	} );
-
-	it( 'creates a draft through apiFetch when no draft seam is injected', async () => {
-		apiFetch.mockResolvedValue( { id: 77 } );
-		const markdownToContent = jest.fn( ( md ) => `BLOCKS:${ md }` );
-		await renderPopulated( { markdownToContent } );
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /create draft post/i } )
-		);
-		await waitFor( () => expect( apiFetch ).toHaveBeenCalledTimes( 1 ) );
-		expect( apiFetch ).toHaveBeenCalledWith( {
-			path: '/wp/v2/posts',
-			method: 'POST',
-			data: {
-				title: 'Publisher Newsletter',
-				content: `BLOCKS:${ DIGEST }`,
-				status: 'draft',
-			},
-		} );
-		expect(
-			await screen.findByRole( 'link', { name: /edit draft/i } )
-		).toHaveAttribute( 'href', expect.stringContaining( 'post=77' ) );
-	} );
-
-	it( 'shows an inline error notice when creating a draft post fails', async () => {
-		const createDraft = jest.fn( () =>
-			Promise.reject( new Error( 'rest blew up' ) )
-		);
-		await renderPopulated( {
-			createDraft,
-			markdownToContent: ( md ) => `BLOCKS:${ md }`,
-		} );
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /create draft post/i } )
-		);
-		await waitFor( () => expect( createDraft ).toHaveBeenCalledTimes( 1 ) );
-		expect(
-			await screen.findByText( /rest blew up/i )
-		).toBeInTheDocument();
-		expect(
-			screen.queryByRole( 'link', { name: /edit draft/i } )
-		).not.toBeInTheDocument();
-	} );
-
-	it( 'does not crash or show "Copied" when the clipboard API is unavailable', async () => {
-		const original = window.navigator.clipboard;
-		Object.assign( window.navigator, { clipboard: undefined } );
-		await renderPopulated();
-		expect( () =>
-			fireEvent.click(
-				screen.getByRole( 'button', { name: /copy markdown/i } )
-			)
-		).not.toThrow();
-		expect( screen.queryByText( /copied/i ) ).not.toBeInTheDocument();
-		Object.assign( window.navigator, { clipboard: original } );
-	} );
-
-	it( 'shows an error (not a dead post=undefined link) when the draft reply has no id', async () => {
-		const createDraft = jest.fn( () => Promise.resolve( {} ) );
-		await renderPopulated( {
-			createDraft,
-			markdownToContent: ( md ) => `BLOCKS:${ md }`,
-		} );
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /create draft post/i } )
-		);
-		await waitFor( () => expect( createDraft ).toHaveBeenCalledTimes( 1 ) );
-		expect( await screen.findByRole( 'alert' ) ).toBeInTheDocument();
-		expect(
-			screen.queryByRole( 'link', { name: /edit draft/i } )
-		).not.toBeInTheDocument();
-	} );
-
-	it( 'shows an empty state (no table) until the pipeline has items', async () => {
-		render(
-			<PublisherInsights
-				refreshMs={ 4000 }
-				commandClient={ clientReturning(
-					JSON.stringify( {
-						sources: {},
-						top: [],
-						accumulated: 0,
-						digest: '',
-					} )
-				) }
-			/>
+			} )
 		);
 		await waitFor( () =>
 			expect(
@@ -436,308 +140,40 @@ describe( 'PublisherInsights', () => {
 		);
 		expect( screen.queryByRole( 'table' ) ).not.toBeInTheDocument();
 	} );
+} );
 
-	it( 'still offers Collect in the empty state so a fresh pipeline can be driven from the UI', async () => {
-		render(
-			<PublisherInsights
-				refreshMs={ 4000 }
-				commandClient={ clientReturning(
-					JSON.stringify( {
-						sources: {},
-						top: [],
-						accumulated: 0,
-						digest: '',
-					} )
-				) }
-			/>
-		);
-		await waitFor( () =>
-			expect(
-				screen.getByText( /no scored items yet/i )
-			).toBeInTheDocument()
-		);
-		// Collect drives collection — it MUST be reachable when there is nothing
-		// yet (that is exactly when you need it). The downstream actions
-		// (Generate/Copy/Create) only appear once there is data to act on.
-		expect(
-			screen.getByRole( 'button', { name: /^collect$/i } )
-		).toBeEnabled();
-		expect(
-			screen.queryByRole( 'button', { name: /regenerate digest/i } )
-		).not.toBeInTheDocument();
-	} );
-
-	it( 'surfaces a failed poll as an error notice', async () => {
-		render(
-			<PublisherInsights
-				refreshMs={ 4000 }
-				commandClient={ clientFailing( 'snapshot read failed' ) }
-			/>
-		);
-		await waitFor( () =>
-			expect( screen.getByRole( 'alert' ) ).toBeInTheDocument()
-		);
-		expect( screen.getByRole( 'alert' ).textContent ).toMatch(
-			/snapshot read failed/
-		);
-	} );
-
-	it( 'shows collection progress as X/total', async () => {
-		render(
-			<PublisherInsights
-				refreshMs={ 4000 }
-				commandClient={ clientReturning(
-					JSON.stringify( { ...model, done: 2, total: 3 } )
-				) }
-			/>
-		);
-		await waitFor( () =>
-			expect( screen.getByText( /collected 2\/3/i ) ).toBeInTheDocument()
-		);
-	} );
-
-	it( 'disables Generate until every source has reported done', async () => {
-		render(
-			<PublisherInsights
-				refreshMs={ 4000 }
-				commandClient={ clientReturning(
-					JSON.stringify( { ...model, done: 1, total: 3 } )
-				) }
-			/>
+describe( 'PublisherInsights — actions flow through the real graph', () => {
+	it( 'asks the worker to regenerate via the graph and acknowledges', async () => {
+		await renderAndTick(
+			makeClient( {
+				...populated,
+				generate: JSON.stringify( { regenerating: true, workers: 1 } ),
+			} )
 		);
 		await waitFor( () =>
 			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
 		);
-		expect(
+		fireEvent.click(
 			screen.getByRole( 'button', { name: /regenerate digest/i } )
-		).toBeDisabled();
+		);
+		await waitFor( () =>
+			expect( screen.getByText( /regenerating/i ) ).toBeInTheDocument()
+		);
 	} );
 
-	it( 'enables Generate once collection is complete (done >= total)', async () => {
-		await renderPopulated(); // model is 3/3
-		expect(
-			screen.getByRole( 'button', { name: /regenerate digest/i } )
-		).not.toBeDisabled();
-	} );
-
-	it( 'surfaces a no-worker error when Collect finds nothing live', async () => {
-		await renderPopulated( {
-			commandClient: clientFor( {
-				insights: JSON.stringify( model ),
+	it( 'drives Collect via the graph and surfaces a no-worker error', async () => {
+		await renderAndTick(
+			makeClient( {
+				...populated,
 				collect: JSON.stringify( {
 					error: 'No live newspack-ai-newsletter worker',
 				} ),
-			} ),
-		} );
-		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
-		expect( await screen.findByText( /no live/i ) ).toBeInTheDocument();
-	} );
-
-	it( 'surfaces an unexpected Collect response as an error', async () => {
-		await renderPopulated( {
-			commandClient: clientFor( {
-				insights: JSON.stringify( model ),
-				collect: 'not json',
-			} ),
-		} );
-		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
-		expect(
-			await screen.findByText(
-				/collection returned an unexpected response/i
-			)
-		).toBeInTheDocument();
-	} );
-
-	it( 'surfaces a TM_ERROR Collect reply as an error', async () => {
-		await renderPopulated( {
-			commandClient: clientErroringVerb( 'collect', 'collect blew up' ),
-		} );
-		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
-		expect(
-			await screen.findByText( /collect blew up/i )
-		).toBeInTheDocument();
-	} );
-
-	it( 'gates Collect: disabled mid-collection (1/3)', async () => {
-		render(
-			<PublisherInsights
-				refreshMs={ 4000 }
-				commandClient={ clientReturning(
-					JSON.stringify( { ...model, done: 1, total: 3 } )
-				) }
-			/>
+			} )
 		);
 		await waitFor( () =>
 			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
 		);
-		expect(
-			screen.getByRole( 'button', { name: /^collect$/i } )
-		).toBeDisabled();
-	} );
-
-	it( 'enables Collect when collection is complete (3/3)', async () => {
-		await renderPopulated(); // model is 3/3
-		expect(
-			screen.getByRole( 'button', { name: /^collect$/i } )
-		).toBeEnabled();
-	} );
-
-	it( 'shows 0/total immediately on click even when the prior cycle was complete', async () => {
-		await renderPopulated( {
-			commandClient: clientFor( {
-				insights: JSON.stringify( model ),
-				collect: JSON.stringify( { collecting: 3, workers: 1 } ),
-			} ),
-		} );
-		expect( screen.getByText( /collected 3\/3/i ) ).toBeInTheDocument();
-		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
-		expect(
-			await screen.findByText( /collected 0\/3/i )
-		).toBeInTheDocument();
-	} );
-
-	it( 'acknowledges a successful Collect and locks the button until the cycle completes', async () => {
-		await renderPopulated( {
-			commandClient: clientFor( {
-				insights: JSON.stringify( model ),
-				collect: JSON.stringify( { collecting: 3, workers: 2 } ),
-			} ),
-		} );
-		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
-		expect(
-			await screen.findByText( /collecting from 2/i )
-		).toBeInTheDocument();
-		// Stays locked after the (fast) verb returns — no double-fire while in flight.
-		expect(
-			screen.getByRole( 'button', { name: /collecting/i } )
-		).toBeDisabled();
-	} );
-
-	it( 'keeps Collect locked past the old short timeout while a cycle is still running', async () => {
-		await renderPopulated( {
-			commandClient: clientFor( {
-				insights: JSON.stringify( model ), // complete (3/3) → Collect enabled
-				collect: JSON.stringify( { collecting: 3, workers: 1 } ),
-			} ),
-		} );
-		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
-		jest.useFakeTimers();
-		try {
-			await act( async () => {} ); // flush the collect ack
-			// Past the old ~8s release timeout: the lock holds for the whole cycle,
-			// so the button can't re-enable mid-collection.
-			act( () => jest.advanceTimersByTime( 12000 ) );
-			expect(
-				screen.getByRole( 'button', { name: /collecting/i } )
-			).toBeDisabled();
-		} finally {
-			jest.useRealTimers();
-		}
-	} );
-
-	it( 'releases the Collect lock after the long safety timeout when progress never changes', async () => {
-		await renderPopulated( {
-			commandClient: clientFor( {
-				insights: JSON.stringify( model ),
-				collect: JSON.stringify( { collecting: 3, workers: 1 } ),
-			} ),
-		} );
-		jest.useFakeTimers();
-		try {
-			fireEvent.click(
-				screen.getByRole( 'button', { name: /^collect$/i } )
-			);
-			await act( async () => {} );
-			await act( async () => {
-				jest.advanceTimersByTime( 180000 );
-			} );
-			await waitFor( () =>
-				expect(
-					screen.getByRole( 'button', { name: /^collect$/i } )
-				).toBeEnabled()
-			);
-		} finally {
-			jest.useRealTimers();
-		}
-	} );
-
-	it( 'auto-dismisses the "Collecting from N…" note so it does not linger forever', async () => {
-		await renderPopulated( {
-			commandClient: clientFor( {
-				insights: JSON.stringify( model ),
-				collect: JSON.stringify( { collecting: 3, workers: 1 } ),
-			} ),
-		} );
-		jest.useFakeTimers();
-		try {
-			fireEvent.click(
-				screen.getByRole( 'button', { name: /^collect$/i } )
-			);
-			await act( async () => {} ); // flush the collect ack → sets the note
-			expect(
-				screen.getByText( /collecting from 1/i )
-			).toBeInTheDocument();
-			act( () => jest.advanceTimersByTime( 10000 ) );
-			expect(
-				screen.queryByText( /collecting from 1/i )
-			).not.toBeInTheDocument();
-		} finally {
-			jest.useRealTimers();
-		}
-	} );
-
-	it( 'surfaces a Collect error in the empty state', async () => {
-		render(
-			<PublisherInsights
-				refreshMs={ 4000 }
-				commandClient={ clientFor( {
-					insights: JSON.stringify( {
-						sources: {},
-						top: [],
-						accumulated: 0,
-						digest: '',
-					} ),
-					collect: JSON.stringify( {
-						error: 'No live newspack-ai-newsletter worker',
-					} ),
-				} ) }
-			/>
-		);
-		await waitFor( () =>
-			expect(
-				screen.getByText( /no scored items yet/i )
-			).toBeInTheDocument()
-		);
 		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
 		expect( await screen.findByText( /no live/i ) ).toBeInTheDocument();
-	} );
-
-	it( 'surfaces an unexpected Regenerate response as an error', async () => {
-		await renderPopulated( {
-			commandClient: clientFor( {
-				insights: JSON.stringify( model ),
-				generate: 'not json',
-			} ),
-		} );
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /regenerate digest/i } )
-		);
-		expect(
-			await screen.findByText(
-				/regeneration returned an unexpected response/i
-			)
-		).toBeInTheDocument();
-	} );
-
-	it( 'surfaces a TM_ERROR Regenerate reply as an error', async () => {
-		await renderPopulated( {
-			commandClient: clientErroringVerb( 'generate', 'generate blew up' ),
-		} );
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /regenerate digest/i } )
-		);
-		expect(
-			await screen.findByText( /generate blew up/i )
-		).toBeInTheDocument();
 	} );
 } );

@@ -1,0 +1,432 @@
+import apiFetch from '@wordpress/api-fetch';
+import { useState, useEffect, useRef } from '@wordpress/element';
+import { __, sprintf } from '@wordpress/i18n';
+import { useNodeState } from '@newspack-nodes/runtime';
+import { markdownToBlockMarkup } from '../markdownToBlockMarkup';
+
+// How long a transient ack note stays before auto-dismissing.
+const NOTE_TTL_MS = 6000;
+
+// Safety net: release the Collect lock if a dispatched cycle never reports
+// completion (a source hung), so the button can't latch forever.
+const COLLECT_SAFETY_MS = 180000;
+
+// REST-call seam for the "Create draft post" action. Lazily defaulted to a thin
+// apiFetch wrapper; tests inject a fake so the suite never hits the network but
+// still exercises the success/failure rendering paths.
+const defaultCreateDraft = ( { title, content } ) =>
+	apiFetch( {
+		path: '/wp/v2/posts',
+		method: 'POST',
+		data: { title, content, status: 'draft' },
+	} );
+
+// Parse a verb ack: { … } | { error } on success/handled-failure, null on garbage.
+function parseAck( payload ) {
+	try {
+		const parsed = JSON.parse( payload );
+		return parsed && 'object' === typeof parsed ? parsed : null;
+	} catch ( e ) {
+		return null;
+	}
+}
+
+/**
+ * AccumulatedPanel — the Total items KPI + collection progress + digest/newsletter
+ * card. Reads ONLY the `accumulated:view` node's slice ({ accumulated, done, total,
+ * digest }) via useNodeState. The Collect / Regenerate action verbs arrive as the
+ * `collect` / `generate` props (the hook's awaited verbs that route to the worker);
+ * Copy / Create-draft act on the shown digest (the durable digest:log content the
+ * poll delivers) via the `createDraft` / `markdownToContent` seams.
+ *
+ * @param {Object}   props
+ * @param {Function} props.generate            Awaited `generate` verb → ack payload.
+ * @param {Function} props.collect             Awaited `collect` verb → ack payload.
+ * @param {Function} [props.createDraft]       REST-call seam: ({title,content}) => Promise (tests).
+ * @param {Function} [props.markdownToContent] Markdown→block-markup seam (tests inject a fake).
+ */
+export function AccumulatedPanel( {
+	generate,
+	collect,
+	createDraft = defaultCreateDraft,
+	markdownToContent = markdownToBlockMarkup,
+} ) {
+	const slice = useNodeState( 'accumulated:view', 'view' ) || {
+		accumulated: 0,
+		done: 0,
+		total: 0,
+		digest: '',
+	};
+	const error = slice.error || null;
+	const accumulated = slice.accumulated || 0;
+	const digest = slice.digest || '';
+	const done = slice.done || 0;
+	const total = slice.total || 0;
+	const collectComplete = total > 0 && done >= total;
+
+	const [ generating, setGenerating ] = useState( false );
+	const [ regenNote, setRegenNote ] = useState( null );
+	// `collecting` is the optimistic in-flight lock: set on click, it shows 0/total and keeps
+	// Collect disabled until the poll reflects the new cycle (done moves off its click-time
+	// value) or a timeout fires — the timeout is the anti-stick guard so a no-op collection
+	// can't latch the button forever. `startDone` is the click-time count the clear compares
+	// against; `collectNote` is the collect feedback (success ack or error).
+	const [ collecting, setCollecting ] = useState( false );
+	const [ collectNote, setCollectNote ] = useState( null );
+	const startDone = useRef( 0 );
+	// Latch: have we observed this cycle in-progress (done < total) since the click?
+	const sawIncomplete = useRef( false );
+	const [ copied, setCopied ] = useState( false );
+	const [ editLink, setEditLink ] = useState( null );
+	const [ draftError, setDraftError ] = useState( null );
+	const [ creating, setCreating ] = useState( false );
+
+	// Optimistic display: show 0 right after the click (while `done` is still the
+	// stale pre-click value); show real progress once it moves.
+	const displayDone = collecting && done === startDone.current ? 0 : done;
+	// Clickable only when nothing's in flight AND the pipeline is at a clean boundary —
+	// empty (0) or complete (>= total). Mid-collection it's locked by the boundary rule
+	// alone, so gating survives a page reload (which loses `collecting`).
+	const canCollect = ! collecting && ( 0 === done || collectComplete );
+
+	// Hold the Collect lock for the WHOLE dispatched cycle: release only once THIS
+	// cycle finishes (a `complete` reading AFTER we've seen it in-progress — never the
+	// pre-click complete state), or a long safety timeout if a source never reports.
+	useEffect( () => {
+		if ( ! collecting ) {
+			return undefined;
+		}
+		if ( ! collectComplete ) {
+			sawIncomplete.current = true;
+		}
+		if ( sawIncomplete.current && collectComplete ) {
+			setCollecting( false );
+			setCollectNote( null );
+			return undefined;
+		}
+		const timer = setTimeout(
+			() => setCollecting( false ),
+			COLLECT_SAFETY_MS
+		);
+		return () => clearTimeout( timer );
+	}, [ collecting, collectComplete ] );
+
+	// Transient ack notes auto-dismiss so they don't linger forever after the action lands.
+	useEffect( () => {
+		if ( null === collectNote ) {
+			return undefined;
+		}
+		const timer = setTimeout( () => setCollectNote( null ), NOTE_TTL_MS );
+		return () => clearTimeout( timer );
+	}, [ collectNote ] );
+	useEffect( () => {
+		if ( null === regenNote ) {
+			return undefined;
+		}
+		const timer = setTimeout( () => setRegenNote( null ), NOTE_TTL_MS );
+		return () => clearTimeout( timer );
+	}, [ regenNote ] );
+
+	const onCopy = () => {
+		setDraftError( null );
+		// navigator.clipboard is undefined on insecure (non-HTTPS) origins and older
+		// browsers — guard it, and only flag "Copied" once the write resolves.
+		const clipboard = window.navigator.clipboard;
+		if ( ! clipboard || ! clipboard.writeText ) {
+			setCopied( false );
+			setDraftError(
+				__(
+					'Clipboard unavailable here — copy from the preview instead.',
+					'newspack-ai-newsletter'
+				)
+			);
+			return;
+		}
+		clipboard
+			.writeText( digest )
+			.then( () => setCopied( true ) )
+			.catch( () => {
+				setCopied( false );
+				setDraftError(
+					__(
+						'Could not copy to the clipboard.',
+						'newspack-ai-newsletter'
+					)
+				);
+			} );
+	};
+
+	const onCollect = () => {
+		// Capture the pre-click count (for the optimistic 0/total display) and arm the
+		// latch: this cycle hasn't been seen in-progress yet.
+		startDone.current = done;
+		sawIncomplete.current = false;
+		setCollecting( true );
+		setCollectNote( null );
+		collect()
+			.then( ( payload ) => {
+				// { collecting, workers } on success or { error } (a normal reply, not a
+				// TM_ERROR) when no worker is live.
+				const parsed = parseAck( payload );
+				if ( ! parsed ) {
+					setCollecting( false );
+					setCollectNote( {
+						type: 'error',
+						text: __(
+							'Collection returned an unexpected response.',
+							'newspack-ai-newsletter'
+						),
+					} );
+					return;
+				}
+				if ( parsed.error ) {
+					setCollecting( false );
+					setCollectNote( {
+						type: 'error',
+						text: String( parsed.error ),
+					} );
+					return;
+				}
+				// Success: acknowledge now; keep the lock — the effect releases it when the
+				// poll shows the cycle complete (done >= total).
+				setCollectNote( {
+					type: 'ok',
+					text: sprintf(
+						/* translators: %d: number of workers the collection was dispatched to. */
+						__(
+							'Collecting from %d worker(s)…',
+							'newspack-ai-newsletter'
+						),
+						Number( parsed.workers ) || 0
+					),
+				} );
+			} )
+			.catch( ( err ) => {
+				setCollecting( false );
+				setCollectNote( {
+					type: 'error',
+					text:
+						err && err.message
+							? err.message
+							: __(
+									'Could not start collection.',
+									'newspack-ai-newsletter'
+							  ),
+				} );
+			} );
+	};
+
+	const onGenerate = () => {
+		setGenerating( true );
+		setDraftError( null );
+		setRegenNote( null );
+		setCopied( false );
+		generate()
+			.then( ( payload ) => {
+				setGenerating( false );
+				// { regenerating, workers } on success or { error } when no worker is live.
+				const parsed = parseAck( payload );
+				if ( ! parsed ) {
+					setDraftError(
+						__(
+							'Regeneration returned an unexpected response.',
+							'newspack-ai-newsletter'
+						)
+					);
+					return;
+				}
+				if ( parsed.error ) {
+					setDraftError( String( parsed.error ) );
+					return;
+				}
+				// The worker is recomposing; the durable digest lands on the next poll.
+				setRegenNote(
+					__(
+						'Regenerating… the draft updates on the next poll.',
+						'newspack-ai-newsletter'
+					)
+				);
+			} )
+			.catch( ( err ) => {
+				setGenerating( false );
+				setDraftError(
+					err && err.message
+						? err.message
+						: __(
+								'Could not regenerate the digest.',
+								'newspack-ai-newsletter'
+						  )
+				);
+			} );
+	};
+
+	const onCreateDraft = () => {
+		setCreating( true );
+		setDraftError( null );
+		setEditLink( null );
+		setCopied( false );
+		createDraft( {
+			title: __( 'Publisher Newsletter', 'newspack-ai-newsletter' ),
+			content: markdownToContent( digest ),
+		} )
+			.then( ( post ) => {
+				setCreating( false );
+				if ( ! post || ! post.id ) {
+					setDraftError(
+						__(
+							'Draft created, but no post id was returned.',
+							'newspack-ai-newsletter'
+						)
+					);
+					return;
+				}
+				setEditLink(
+					`${ window.location.origin }/wp-admin/post.php?post=${ post.id }&action=edit`
+				);
+			} )
+			.catch( ( err ) => {
+				setCreating( false );
+				setDraftError(
+					err && err.message
+						? err.message
+						: __(
+								'Could not create the draft.',
+								'newspack-ai-newsletter'
+						  )
+				);
+			} );
+	};
+
+	if ( error ) {
+		return (
+			<section className="eai-insights__card eai-insights__draft">
+				<div
+					className="eai-insights__notice eai-insights__notice--error"
+					role="alert"
+				>
+					{ error }
+				</div>
+			</section>
+		);
+	}
+
+	const collectFeedback = null !== collectNote && (
+		<div
+			className={ `eai-insights__notice eai-insights__notice--${
+				'error' === collectNote.type ? 'error' : 'ok'
+			}` }
+			role={ 'error' === collectNote.type ? 'alert' : 'status' }
+		>
+			{ collectNote.text }
+		</div>
+	);
+
+	return (
+		<section className="eai-insights__card eai-insights__draft">
+			<div className="eai-insights__stat">
+				<span className="eai-insights__stat-num">{ accumulated }</span>
+				<span className="eai-insights__stat-label">
+					{ __( 'Total items', 'newspack-ai-newsletter' ) }
+				</span>
+			</div>
+
+			<h2>{ __( 'Newsletter', 'newspack-ai-newsletter' ) }</h2>
+			<div className="eai-insights__actions">
+				<button
+					type="button"
+					className="eai-insights__btn"
+					onClick={ onCollect }
+					disabled={ ! canCollect }
+				>
+					{ collecting
+						? __( 'Collecting…', 'newspack-ai-newsletter' )
+						: __( 'Collect', 'newspack-ai-newsletter' ) }
+				</button>
+				{ total > 0 && (
+					<span className="eai-insights__progress" role="status">
+						{ sprintf(
+							/* translators: 1: sources done collecting, 2: total sources. */
+							__(
+								'Collected %1$d/%2$d',
+								'newspack-ai-newsletter'
+							),
+							displayDone,
+							total
+						) }
+					</span>
+				) }
+				<button
+					type="button"
+					className="eai-insights__btn"
+					onClick={ onGenerate }
+					disabled={ generating || ! collectComplete }
+				>
+					{ generating
+						? __( 'Generating…', 'newspack-ai-newsletter' )
+						: __( 'Regenerate digest', 'newspack-ai-newsletter' ) }
+				</button>
+				<button
+					type="button"
+					className="eai-insights__btn eai-insights__btn--secondary"
+					onClick={ onCopy }
+					disabled={ '' === digest }
+				>
+					{ __( 'Copy markdown', 'newspack-ai-newsletter' ) }
+				</button>
+				<button
+					type="button"
+					className="eai-insights__btn eai-insights__btn--secondary"
+					onClick={ onCreateDraft }
+					disabled={ creating || '' === digest }
+				>
+					{ __( 'Create draft post', 'newspack-ai-newsletter' ) }
+				</button>
+				{ copied && (
+					<span className="eai-insights__copied" role="status">
+						{ __( 'Copied', 'newspack-ai-newsletter' ) }
+					</span>
+				) }
+			</div>
+
+			{ collectFeedback }
+
+			{ null !== regenNote && (
+				<div
+					className="eai-insights__notice eai-insights__notice--ok"
+					role="status"
+				>
+					{ regenNote }
+				</div>
+			) }
+
+			{ null !== editLink && (
+				<p className="eai-insights__draft-result">
+					<a href={ editLink }>
+						{ __( 'Edit draft', 'newspack-ai-newsletter' ) }
+					</a>
+				</p>
+			) }
+			{ null !== draftError && (
+				<div
+					className="eai-insights__notice eai-insights__notice--error"
+					role="alert"
+				>
+					{ draftError }
+				</div>
+			) }
+
+			{ '' !== digest ? (
+				<pre
+					className="eai-insights__preview"
+					data-testid="eai-insights-preview"
+				>
+					{ digest }
+				</pre>
+			) : (
+				<p className="eai-insights__preview-empty">
+					{ __( 'No digest yet.', 'newspack-ai-newsletter' ) }
+				</p>
+			) }
+		</section>
+	);
+}

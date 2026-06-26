@@ -1,8 +1,12 @@
 <?php
 /**
- * Insights_CI_Node: the dashboard's server-side read. Its `insights` verb reads the
- * latest offsetlog snapshot the Consumer co-commits (the digest's save_state cache)
- * and returns a shaped model — durable, synchronous, no live-worker dependency.
+ * Insights_CI_Node: the dashboard's server-side read, decomposed into three slice
+ * verbs — `counts`/`top`/`accumulated` — built via Service_CI_Node::slice_verb()
+ * over ONE memoized scored-snapshot read (mirroring the de-godded teaching example).
+ * The `accumulated` slice also carries the rendered digest (latest `digest:log`
+ * segment) and collection progress (done/total). It keeps the action verbs
+ * `generate`/`collect`, which route Regenerate / Collect to the worker's nodes over
+ * the input IPC partition — durable, synchronous, no live-worker dependency on read.
  *
  * @package Newspack_AI_Newsletter
  */
@@ -29,46 +33,103 @@ class Insights_CI_Node extends Service_CI_Node {
 	/** The source node names Collect ticks; their count MUST equal the digest's `total` make_node arg in newspack-ai-newsletter.tsl. */
 	private const SOURCE_NODES = [ 'github', 'linear', 'feed' ];
 
-	/** JSON model for the `insights` verb; resolves the live offsets dir + digest path. */
-	public function build_insights_json(): string {
-		$model = self::read_insights_model( Config::get_offsets_directory(), Settings::DIGEST_PATH );
-		return (string) \wp_json_encode( $model );
+	/**
+	 * Scored-snapshot read seam. Lazily-defaulted to read_snapshot(); tests reassign it
+	 * to count reads without short-circuiting the real glob/merge path. The memoized
+	 * snapshot() resolves and invokes it at most once per request.
+	 *
+	 * Signature: `function ( string $offsets_dir ): array{items: array<int,array<array-key,mixed>>, done: int, total: int}`.
+	 *
+	 * @var \Closure|null
+	 */
+	public static ?\Closure $read_items = null;
+
+	/**
+	 * Per-request memo of the scored snapshot; null until snapshot() reads once.
+	 *
+	 * @var array{items: array<int,array<array-key,mixed>>, done: int, total: int}|null
+	 */
+	private ?array $snapshot_cache = null;
+
+	/**
+	 * Read the scored offsetlog snapshot ONCE per request and memoize it, so the three
+	 * batched slice verbs share a single glob + unpack instead of reading thrice.
+	 *
+	 * @return array{items: array<int,array<array-key,mixed>>, done: int, total: int}
+	 */
+	private function snapshot(): array {
+		if ( null !== $this->snapshot_cache ) {
+			return $this->snapshot_cache;
+		}
+		$read = self::$read_items ?? static fn ( string $dir ): array => self::read_snapshot( $dir );
+		$raw  = $read( Config::get_offsets_directory() );
+		$raw  = \is_array( $raw ) ? $raw : [];
+
+		$items = [];
+		foreach ( ( \is_array( $raw['items'] ?? null ) ? $raw['items'] : [] ) as $item ) {
+			if ( \is_array( $item ) ) {
+				$items[] = $item;
+			}
+		}
+		$this->snapshot_cache = [
+			'items' => $items,
+			'done'  => self::int_of( $raw['done'] ?? null ),
+			'total' => self::int_of( $raw['total'] ?? null ),
+		];
+		return $this->snapshot_cache;
 	}
 
 	/**
-	 * Testable core: merge every `scored.p*` snapshot into { sources:{name:count},
-	 * top:{source:[{title,score}]} (per-source top-10), accumulated:N }, attach `digest`
-	 * (the latest rendered digest:log segment), and the collection progress `done`/`total`
-	 * (summed across partitions) the dashboard gates its buttons on.
+	 * The memoized scored items (shared by every slice).
 	 *
-	 * @return array{sources: array<string,int>, top: array<string,array<int,array{title:string,score:float}>>, accumulated: int, digest: string, done: int, total: int}
+	 * @return array<int,array<array-key,mixed>>
 	 */
-	public static function read_insights_model( string $offsets_dir, string $digest_path ): array {
-		$digest = self::read_latest_digest( $digest_path );
-		$items  = [];
-		$done   = 0;
-		$total  = 0;
+	private function items(): array {
+		return $this->snapshot()['items'];
+	}
+
+	/**
+	 * Read every `scored.p*` offset dir's latest snapshot and merge into one
+	 * `{ items, done, total }`: items are flattened (the substrate's
+	 * Partition_Node::read_latest_snapshot_cache), done/total are summed across
+	 * partitions (the digest's save_state progress the dashboard gates buttons on).
+	 *
+	 * @return array{items: array<int,array<array-key,mixed>>, done: int, total: int}
+	 */
+	public static function read_snapshot( string $offsets_dir ): array {
+		$items = Partition_Node::read_latest_snapshot_cache( $offsets_dir, 'scored.p*' );
+		$done  = 0;
+		$total = 0;
 		foreach ( self::scored_dirs( $offsets_dir ) as $dir ) {
-			$cache = self::read_cache( $dir );
-			foreach ( self::cache_items( $cache ) as $item ) {
-				$items[] = $item;
-			}
+			$cache  = self::read_cache( $dir );
 			$done  += self::int_of( $cache['done'] ?? null );
 			$total += self::int_of( $cache['total'] ?? null );
 		}
-		$progress = [ 'digest' => $digest, 'done' => $done, 'total' => $total ];
+		return [ 'items' => $items, 'done' => $done, 'total' => $total ];
+	}
 
-		if ( [] === $items ) {
-			return \array_merge( [ 'sources' => [], 'top' => [], 'accumulated' => 0 ], $progress );
-		}
+	/**
+	 * Read only the flattened items (the `counts`/`top` slices don't need progress).
+	 *
+	 * @return array<int,array<array-key,mixed>>
+	 */
+	public static function read_snapshot_items( string $offsets_dir ): array {
+		return Partition_Node::read_latest_snapshot_cache( $offsets_dir, 'scored.p*' );
+	}
 
+	/**
+	 * Count items per source.
+	 *
+	 * @param array<int,array<array-key,mixed>> $items
+	 * @return array<string,int>
+	 */
+	private static function shape_sources( array $items ): array {
 		$sources = [];
 		foreach ( $items as $item ) {
 			$source             = \is_string( $item['source'] ?? null ) ? $item['source'] : '?';
 			$sources[ $source ] = ( $sources[ $source ] ?? 0 ) + 1;
 		}
-
-		return \array_merge( [ 'sources' => $sources, 'top' => self::top_by_source( $items ), 'accumulated' => \count( $items ) ], $progress );
+		return $sources;
 	}
 
 	/**
@@ -82,7 +143,7 @@ class Insights_CI_Node extends Service_CI_Node {
 	public static function top_by_source( array $items ): array {
 		$by_source = [];
 		foreach ( $items as $item ) {
-			$source                = \is_string( $item['source'] ?? null ) ? $item['source'] : '?';
+			$source                 = \is_string( $item['source'] ?? null ) ? $item['source'] : '?';
 			$by_source[ $source ][] = [
 				'title' => \is_string( $item['title'] ?? null ) ? $item['title'] : '',
 				'score' => self::to_float( $item['score'] ?? null ),
@@ -99,6 +160,11 @@ class Insights_CI_Node extends Service_CI_Node {
 	/** Coerce an untrusted (JSON-sourced) score to float; non-numeric → 0.0. */
 	private static function to_float( mixed $value ): float {
 		return \is_numeric( $value ) ? (float) $value : 0.0;
+	}
+
+	/** Coerce an untrusted (JSON-sourced) value to int; non-numeric → 0. */
+	private static function int_of( mixed $value ): int {
+		return \is_numeric( $value ) ? (int) $value : 0;
 	}
 
 	/**
@@ -268,47 +334,32 @@ class Insights_CI_Node extends Service_CI_Node {
 		return \is_array( $value ) && \is_array( $value['cache'] ?? null ) ? $value['cache'] : [];
 	}
 
-	/**
-	 * The array items of a snapshot cache (drops non-array entries).
-	 *
-	 * @param array<array-key,mixed> $cache
-	 * @return array<int,array<array-key,mixed>>
-	 */
-	private static function cache_items( array $cache ): array {
-		$items = $cache['items'] ?? null;
-		if ( ! \is_array( $items ) ) {
-			return [];
-		}
-		$out = [];
-		foreach ( $items as $item ) {
-			if ( \is_array( $item ) ) {
-				$out[] = $item;
-			}
-		}
-		return $out;
-	}
-
-	/** Coerce an untrusted (JSON-sourced) value to int; non-numeric → 0. */
-	private static function int_of( mixed $value ): int {
-		return \is_numeric( $value ) ? (int) $value : 0;
-	}
-
 	public static function node_schema(): array {
+		// Service_CI_Node::slice_verb() builds each slice handler: it passes this node (the
+		// interpreter IS the CI for a Service_CI verb) to the shape and JSON-encodes the
+		// result. commands_from_schema() wraps every handler with require_manage_options(),
+		// so the gate is centralized there — no per-slice gate needed.
 		return \array_merge( parent::node_schema(), [
 			'category'    => 'Service',
-			'description' => 'Reads the scored-pipeline snapshot + rendered digest; serves the dashboard insights model and recomposes on demand.',
+			'description' => 'Reads the scored-pipeline offsetlog snapshot + rendered digest; serves the dashboard insights slices and recomposes on demand.',
 			'commands'    => [
 				[
-					'name'        => 'insights',
-					'description' => 'Return the current Publisher Insights model (sources, top, accumulated, digest).',
+					'name'        => 'counts',
+					'description' => 'Return per-source item counts: { sources: { source: count } }.',
 					'args'        => [],
-					'handler'     => static function ( Command_Interpreter_Node $interpreter, string $args ): string {
-						self::require_manage_options();
-						// A Service_CI verb runs on the CI itself — the interpreter IS this node.
-						/** @var self $ci */
-						$ci = $interpreter;
-						return $ci->build_insights_json();
-					},
+					'handler'     => self::slice_verb( static fn ( self $ci ): array => [ 'sources' => self::shape_sources( $ci->items() ) ] ),
+				],
+				[
+					'name'        => 'top',
+					'description' => 'Return the per-source top-10 items by score: { top: { source: [ { title, score } ] } }.',
+					'args'        => [],
+					'handler'     => self::slice_verb( static fn ( self $ci ): array => [ 'top' => self::top_by_source( $ci->items() ) ] ),
+				],
+				[
+					'name'        => 'accumulated',
+					'description' => 'Return the total item count, collection progress, and rendered digest: { accumulated, done, total, digest }.',
+					'args'        => [],
+					'handler'     => self::slice_verb( static fn ( self $ci ): array => $ci->accumulated_slice() ),
 				],
 				[
 					'name'        => 'generate',
@@ -330,5 +381,22 @@ class Insights_CI_Node extends Service_CI_Node {
 				],
 			],
 		] );
+	}
+
+	/**
+	 * The accumulated slice: total item count, collection progress, and the rendered digest.
+	 * Reads the shared memoized snapshot for accumulated/done/total; the digest is a separate
+	 * file (only this slice needs it), read inline.
+	 *
+	 * @return array{accumulated:int, done:int, total:int, digest:string}
+	 */
+	private function accumulated_slice(): array {
+		$snapshot = $this->snapshot();
+		return [
+			'accumulated' => \count( $snapshot['items'] ),
+			'done'        => $snapshot['done'],
+			'total'       => $snapshot['total'],
+			'digest'      => self::read_latest_digest( Settings::DIGEST_PATH ),
+		];
 	}
 }
