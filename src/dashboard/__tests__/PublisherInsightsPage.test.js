@@ -1,10 +1,16 @@
 /* eslint-env jest */
+/**
+ * PublisherInsightsPage — mounts the genuine node graph (via PublisherInsights)
+ * and rides the substrate debug overlay alongside (debug-gated, its own storage
+ * key) so the live browser graph is inspectable like every other dashboard.
+ */
+
 import { render, screen } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 
-// Page-hidden so the mounted graph's poll interval never starts in this smoke
-// test; the one immediate mount-poll uses a default CommandClient whose fetch
-// rejects in jsdom and is swallowed (rate-limited) — no network, no crash.
+// Page-hidden so the mounted graph's poll never starts in this smoke test; the one
+// immediate mount-poll uses a default CommandClient whose fetch rejects in jsdom and
+// is swallowed (rate-limited) — no network, no crash.
 jest.mock( '@newspack-nodes/shared/hooks/usePageVisibility', () => ( {
 	__esModule: true,
 	default: () => false,

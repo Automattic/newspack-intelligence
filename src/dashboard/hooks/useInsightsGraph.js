@@ -1,30 +1,31 @@
 /**
- * useInsightsGraph — mounts the Publisher Insights dashboard graph clipped onto
- * the canonical rule-#2 backbone (`_command_interpreter → _router`) via the
- * substrate's `_http` I/O boundary, plus the application's view-model node:
+ * useInsightsGraph — the Publisher Insights dashboard as a GENUINE node graph,
+ * built from the substrate's batched-poll toolkit (mirrors the de-godded teaching
+ * example):
  *
- *   _http          (HttpOut — POST /command boundary; .client = CommandClient)
- *   insights:view  (the view-model node React reads + pending-Promise registry)
+ *   insights:timer (Timer) ─> insights:tee (Tee) ─> fetch-counts (Fetcher) ─┐
+ *                                                 ├> fetch-top    (Fetcher) ─┤  target = _shell/_http/insights
+ *                                                 └> fetch-acc    (Fetcher) ─┘
+ *   countsIn (Tee) ─> source-counts:view ─> <SourceCounts/>
+ *   topIn    (Tee) ─> top-table:view     ─> <TopTable/>
+ *   accIn    (Tee) ─> accumulated:view   ─> <AccumulatedPanel/>
  *
- * EVERY node sinks into the interpreter; the router routes by TO. The `insights`
- * Service_CI verb returns the FULLY-SHAPED model (sources, top, accumulated, and
- * the rendered `digest`) synchronously in the POST body, so there is NO transform
- * node and NO SSE — the page-visibility-gated poll IS the live data. The shared
- * `useDashboardGraph` owns the exospine mount, the `_http` boundary, the immediate
- * + interval poll, and the page-visibility gate; this hook supplies its view node
- * + poll command.
+ * `useBatchedPoll` owns ALL the poll boilerplate (the `_shell`-Tap + `_http`
+ * HttpOut, the fan-out Tee + router-hitchhike Timer, the lock/flush batch bracket,
+ * and the page-visibility gate); `addSliceFetcher` wires each Fetcher → its
+ * receiver Tee → its slice view. One batched POST per tick fans out three slice
+ * commands; each reply pivots back to its OWN view and lands in its OWN slice.
  *
- * The command boundary is injectable: tests pass `opts.commandClient` assigned
- * to `_http.client` so the hook never touches the network. Production lazily
- * defaults to the shared CommandClient over window.NewspackNodesData.
- *
- * Beyond the poll, the hook exposes `generate()` — an AWAITED `generate` verb the
- * "Regenerate digest" button calls. It no longer composes here: the verb asks the
- * worker to recompose (TM_REQUEST REGENERATE) and resolves to the worker ack
- * (`{regenerating,workers}` / `{error}`); the new digest arrives via the poll.
+ * Beyond the poll the hook exposes the awaited `generate`/`collect` action verbs
+ * the dashboard buttons call: each fires a TM_COMMAND (FROM=accumulated:view) and
+ * stashes a `{ resolve, reject }` under its message[ID] in that view's
+ * PendingReplies; the reply pivots straight back to accumulated:view, whose base
+ * SliceViewNode.fill() settles the matching Promise before the slice path. Both
+ * resolve to the verb's raw ack payload ({collecting,workers} / {regenerating,workers}
+ * / {error}); the new digest from a regenerate arrives via the poll, not the reply.
  */
 
-import { useCallback, useRef } from '@wordpress/element';
+import { useCallback } from '@wordpress/element';
 import {
 	newMessage,
 	TYPE,
@@ -33,31 +34,60 @@ import {
 	ID,
 	VALUE,
 	TM_COMMAND,
+	Core,
 } from '@newspack-nodes/runtime';
-import {
-	useDashboardGraph,
-	makeOpId,
-} from '@newspack-nodes/shared/hooks/useDashboardGraph';
+import { useBatchedPoll } from '@newspack-nodes/shared/hooks/useBatchedPoll';
+import { addSliceFetcher } from '@newspack-nodes/shared/helpers/addSliceFetcher';
+import { makeOpId } from '@newspack-nodes/shared/hooks/useDashboardGraph';
 import '../nodes/register';
 
-const HTTP = '_http';
-const VIEW = 'insights:view';
+// The server-side CI mount this plugin owns. The Fetchers (poll) and the action
+// verbs both target it through the substrate's `_shell/_http`.
+const SERVER = 'insights';
+const TARGET = `_shell/_http/${ SERVER }`;
+const ACC_VIEW = 'accumulated:view';
+
+// Per-slice fetcher config: the receiver Tee a reply pivots back to, the verb,
+// and the view node (+ its registered class) the reply lands on.
+const SLICES = [
+	{
+		fetcher: 'fetch-counts',
+		receiver: 'countsIn',
+		command: 'counts',
+		view: 'source-counts:view',
+		viewClass: 'SourceCountsView',
+	},
+	{
+		fetcher: 'fetch-top',
+		receiver: 'topIn',
+		command: 'top',
+		view: 'top-table:view',
+		viewClass: 'TopTableView',
+	},
+	{
+		fetcher: 'fetch-acc',
+		receiver: 'accIn',
+		command: 'accumulated',
+		view: ACC_VIEW,
+		viewClass: 'AccumulatedView',
+	},
+];
 
 /**
- * Build a TM_COMMAND for one of the view's verbs: TO=`_http/insights` so the
- * router peels `_http` and HttpOut POSTs the bare command to the `insights`
- * server node (this plugin's CI mount); FROM=`insights:view` is the reply pivot
- * (the CI replies TO=FROM, landing at the view).
+ * Build a TM_COMMAND for an action verb: TO=`_shell/_http/insights` so the router
+ * peels `_shell`/`_http` and HttpOut POSTs the bare command to the `insights`
+ * server node; FROM=`accumulated:view` is the reply pivot (the CI replies TO=FROM),
+ * landing the ack on the accumulated view that holds the PendingReplies registry.
  *
- * @param {string} verb The CI verb (`insights` poll, or `generate`).
+ * @param {string} verb The CI action verb (`generate` / `collect`).
  * @param {string} id   Correlator stamped into message[ID].
  * @return {Array} A 7-field positional Message.
  */
-function buildCommand( verb, id ) {
+function buildAction( verb, id ) {
 	const m = newMessage();
 	m[ TYPE ] = TM_COMMAND;
-	m[ FROM ] = VIEW;
-	m[ TO ] = `${ HTTP }/insights`;
+	m[ FROM ] = ACC_VIEW;
+	m[ TO ] = TARGET;
 	m[ ID ] = id;
 	m[ VALUE ] = { name: verb, arguments: '' };
 	return m;
@@ -66,32 +96,33 @@ function buildCommand( verb, id ) {
 /**
  * @param {Object} [opts]               Options (test seams).
  * @param {Object} [opts.commandClient] CommandClient seam assigned to `_http.client`.
- * @param {number} [opts.refreshMs]     Poll interval in ms (default 4000).
- * @return {{ generate: () => Promise<*>, collect: () => Promise<*> }} On-demand verbs.
+ * @param {number} [opts.intervalMs]    Poll cadence in ms (default: every router tick).
+ * @return {{ generate: () => Promise<*>, collect: () => Promise<*> }} On-demand action verbs.
  */
 export function useInsightsGraph( opts = {} ) {
-	const { commandClient, refreshMs = 4000 } = opts;
-	const viewRef = useRef( null );
-
-	const { interpreterRef } = useDashboardGraph( {
-		mountNodes: ( interpreter ) => {
-			viewRef.current = interpreter.makeNode( 'InsightsView', VIEW );
-		},
-		poll: ( interpreter ) =>
-			interpreter.fill(
-				buildCommand( 'insights', makeOpId( 'insights-op' ) )
+	const { interpreterRef } = useBatchedPoll( {
+		build: ( { interpreter, tee } ) =>
+			SLICES.forEach( ( slice ) =>
+				addSliceFetcher( interpreter, {
+					...slice,
+					tee,
+					target: TARGET,
+				} )
 			),
-		refreshMs,
-		commandClient,
+		timerName: 'insights:timer',
+		teeName: 'insights:tee',
+		commandClient: opts.commandClient,
+		intervalMs: opts.intervalMs,
 	} );
 
-	// Awaited verb: stash a pending Promise under the command ID, fire the verb,
-	// and resolve with the reply's payload when it pivots back to the view.
+	// Awaited verb: stash a pending Promise under the command ID on the accumulated
+	// view's registry, fire the verb, and resolve with the reply's payload when it
+	// pivots back to that view.
 	const awaitVerb = useCallback(
 		( verb, prefix ) => {
 			const interpreter = interpreterRef.current;
-			const view = viewRef.current;
-			if ( ! interpreter || ! view ) {
+			const view = Core.node( ACC_VIEW );
+			if ( ! interpreter || ! view || ! view.replies ) {
 				return Promise.reject(
 					new Error( 'insights graph not ready' )
 				);
@@ -99,15 +130,12 @@ export function useInsightsGraph( opts = {} ) {
 			const id = makeOpId( prefix );
 			return new Promise( ( resolve, reject ) => {
 				view.replies.add( id, resolve, reject );
-				interpreter.fill( buildCommand( verb, id ) );
+				interpreter.fill( buildAction( verb, id ) );
 			} );
 		},
 		[ interpreterRef ]
 	);
 
-	// Both resolve to the verb's raw ack payload: `generate` → `{regenerating,workers}`
-	// (or `{error}`), `collect` → `{collecting,workers}` (or `{error}`). The new digest
-	// from a regenerate arrives via the poll, not this reply.
 	const generate = useCallback(
 		() => awaitVerb( 'generate', 'insights-gen' ),
 		[ awaitVerb ]
