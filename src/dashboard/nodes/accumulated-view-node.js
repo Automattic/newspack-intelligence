@@ -1,4 +1,4 @@
-import { SliceViewNode } from '@newspack-nodes/shared/nodes/SliceViewNode';
+import { SliceViewNode } from '@newspack-nodes/shared/nodes/slice-view-node';
 import { PendingReplies } from '@newspack-nodes/shared/pendingReplies';
 
 /**

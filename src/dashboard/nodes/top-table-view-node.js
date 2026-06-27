@@ -1,4 +1,4 @@
-import { SliceViewNode } from '@newspack-nodes/shared/nodes/SliceViewNode';
+import { SliceViewNode } from '@newspack-nodes/shared/nodes/slice-view-node';
 
 // `top-table:view` — owns the per-source score-ranked top-items slice
 // ({ top:{ source:[{title,score}] } }). React reads it via
