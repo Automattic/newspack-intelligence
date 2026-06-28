@@ -208,7 +208,9 @@ describe( 'useInsightsGraph — batched poll', () => {
 		} );
 
 		expect( Core.node( 'source-counts:view' ).setStateCache.view ).toEqual(
-			{ sources: { github: 2 } }
+			{
+				sources: { github: 2 },
+			}
 		);
 		expect( Core.node( 'top-table:view' ).setStateCache.view ).toEqual( {
 			top: { github: [ { title: 'X', score: 5 } ] },

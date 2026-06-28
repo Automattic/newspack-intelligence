@@ -52,84 +52,12 @@ class Insights_CI_Node extends Service_CI_Node {
 	private ?array $snapshot_cache = null;
 
 	/**
-	 * Read the scored offsetlog snapshot ONCE per request and memoize it, so the three
-	 * batched slice verbs share a single glob + unpack instead of reading thrice.
-	 *
-	 * @return array{items: array<int,array<array-key,mixed>>, done: int, total: int}
-	 */
-	private function snapshot(): array {
-		if ( null !== $this->snapshot_cache ) {
-			return $this->snapshot_cache;
-		}
-		$read = self::$read_items ?? static fn ( string $dir ): array => self::read_snapshot( $dir );
-		$raw  = $read( Config::get_offsets_directory() );
-		$raw  = \is_array( $raw ) ? $raw : [];
-
-		$items = [];
-		foreach ( ( \is_array( $raw['items'] ?? null ) ? $raw['items'] : [] ) as $item ) {
-			if ( \is_array( $item ) ) {
-				$items[] = $item;
-			}
-		}
-		$this->snapshot_cache = [
-			'items' => $items,
-			'done'  => self::int_of( $raw['done'] ?? null ),
-			'total' => self::int_of( $raw['total'] ?? null ),
-		];
-		return $this->snapshot_cache;
-	}
-
-	/**
 	 * The memoized scored items (shared by every slice).
 	 *
 	 * @return array<int,array<array-key,mixed>>
 	 */
 	private function items(): array {
 		return $this->snapshot()['items'];
-	}
-
-	/**
-	 * Read every `scored.p*` offset dir's latest snapshot and merge into one
-	 * `{ items, done, total }`: items are flattened (the substrate's
-	 * Partition_Node::read_latest_snapshot_cache), done/total are summed across
-	 * partitions (the digest's save_state progress the dashboard gates buttons on).
-	 *
-	 * @return array{items: array<int,array<array-key,mixed>>, done: int, total: int}
-	 */
-	public static function read_snapshot( string $offsets_dir ): array {
-		$items = Partition_Node::read_latest_snapshot_cache( $offsets_dir, 'scored.p*' );
-		$done  = 0;
-		$total = 0;
-		foreach ( self::scored_dirs( $offsets_dir ) as $dir ) {
-			$cache  = self::read_cache( $dir );
-			$done  += self::int_of( $cache['done'] ?? null );
-			$total += self::int_of( $cache['total'] ?? null );
-		}
-		return [ 'items' => $items, 'done' => $done, 'total' => $total ];
-	}
-
-	/**
-	 * Read only the flattened items (the `counts`/`top` slices don't need progress).
-	 *
-	 * @return array<int,array<array-key,mixed>>
-	 */
-	public static function read_snapshot_items( string $offsets_dir ): array {
-		return Partition_Node::read_latest_snapshot_cache( $offsets_dir, 'scored.p*' );
-	}
-
-	/**
-	 * Count items per source.
-	 *
-	 * @param array<int,array<array-key,mixed>> $items
-	 * @return array<string,int>
-	 */
-	private static function shape_sources( array $items ): array {
-		$sources = [];
-		foreach ( $items as $item ) {
-			$source             = \is_string( $item['source'] ?? null ) ? $item['source'] : '?';
-			$sources[ $source ] = ( $sources[ $source ] ?? 0 ) + 1;
-		}
-		return $sources;
 	}
 
 	/**
@@ -160,11 +88,6 @@ class Insights_CI_Node extends Service_CI_Node {
 	/** Coerce an untrusted (JSON-sourced) score to float; non-numeric → 0.0. */
 	private static function to_float( mixed $value ): float {
 		return \is_numeric( $value ) ? (float) $value : 0.0;
-	}
-
-	/** Coerce an untrusted (JSON-sourced) value to int; non-numeric → 0. */
-	private static function int_of( mixed $value ): int {
-		return \is_numeric( $value ) ? (int) $value : 0;
 	}
 
 	/**
@@ -282,6 +205,76 @@ class Insights_CI_Node extends Service_CI_Node {
 	}
 
 	/**
+	 * The accumulated slice: total item count, collection progress, and the rendered digest.
+	 * Reads the shared memoized snapshot for accumulated/done/total; the digest is a separate
+	 * file (only this slice needs it), read inline.
+	 *
+	 * @return array{accumulated:int, done:int, total:int, digest:string}
+	 */
+	private function accumulated_slice(): array {
+		$snapshot = $this->snapshot();
+		return [
+			'accumulated' => \count( $snapshot['items'] ),
+			'done'        => $snapshot['done'],
+			'total'       => $snapshot['total'],
+			'digest'      => self::read_latest_digest( Settings::DIGEST_PATH ),
+		];
+	}
+
+	/**
+	 * Read the scored offsetlog snapshot ONCE per request and memoize it, so the three
+	 * batched slice verbs share a single glob + unpack instead of reading thrice.
+	 *
+	 * @return array{items: array<int,array<array-key,mixed>>, done: int, total: int}
+	 */
+	private function snapshot(): array {
+		if ( null !== $this->snapshot_cache ) {
+			return $this->snapshot_cache;
+		}
+		$read = self::$read_items ?? static fn ( string $dir ): array => self::read_snapshot( $dir );
+		$raw  = $read( Config::get_offsets_directory() );
+		$raw  = \is_array( $raw ) ? $raw : [];
+
+		$items = [];
+		foreach ( ( \is_array( $raw['items'] ?? null ) ? $raw['items'] : [] ) as $item ) {
+			if ( \is_array( $item ) ) {
+				$items[] = $item;
+			}
+		}
+		$this->snapshot_cache = [
+			'items' => $items,
+			'done'  => self::int_of( $raw['done'] ?? null ),
+			'total' => self::int_of( $raw['total'] ?? null ),
+		];
+		return $this->snapshot_cache;
+	}
+
+	/**
+	 * Read every `scored.p*` offset dir's latest snapshot and merge into one
+	 * `{ items, done, total }`: items are flattened (the substrate's
+	 * Partition_Node::read_latest_snapshot_cache), done/total are summed across
+	 * partitions (the digest's save_state progress the dashboard gates buttons on).
+	 *
+	 * @return array{items: array<int,array<array-key,mixed>>, done: int, total: int}
+	 */
+	public static function read_snapshot( string $offsets_dir ): array {
+		$items = Partition_Node::read_latest_snapshot_cache( $offsets_dir, 'scored.p*' );
+		$done  = 0;
+		$total = 0;
+		foreach ( self::scored_dirs( $offsets_dir ) as $dir ) {
+			$cache  = self::read_cache( $dir );
+			$done  += self::int_of( $cache['done'] ?? null );
+			$total += self::int_of( $cache['total'] ?? null );
+		}
+		return [ 'items' => $items, 'done' => $done, 'total' => $total ];
+	}
+
+	/** Coerce an untrusted (JSON-sourced) value to int; non-numeric → 0. */
+	private static function int_of( mixed $value ): int {
+		return \is_numeric( $value ) ? (int) $value : 0;
+	}
+
+	/**
 	 * The latest rendered digest: the newest `{path}.{seg}` segment the digest:log
 	 * Node writes (Log lays segments out as `{file}.0`, `{file}.1`, …; segment_size=1
 	 * gives one digest per segment, so the highest suffix is the most recent).
@@ -334,6 +327,30 @@ class Insights_CI_Node extends Service_CI_Node {
 		return \is_array( $value ) && \is_array( $value['cache'] ?? null ) ? $value['cache'] : [];
 	}
 
+	/**
+	 * Read only the flattened items (the `counts`/`top` slices don't need progress).
+	 *
+	 * @return array<int,array<array-key,mixed>>
+	 */
+	public static function read_snapshot_items( string $offsets_dir ): array {
+		return Partition_Node::read_latest_snapshot_cache( $offsets_dir, 'scored.p*' );
+	}
+
+	/**
+	 * Count items per source.
+	 *
+	 * @param array<int,array<array-key,mixed>> $items
+	 * @return array<string,int>
+	 */
+	private static function shape_sources( array $items ): array {
+		$sources = [];
+		foreach ( $items as $item ) {
+			$source             = \is_string( $item['source'] ?? null ) ? $item['source'] : '?';
+			$sources[ $source ] = ( $sources[ $source ] ?? 0 ) + 1;
+		}
+		return $sources;
+	}
+
 	public static function node_schema(): array {
 		// Service_CI_Node::slice_verb() builds each slice handler: it passes this node (the
 		// interpreter IS the CI for a Service_CI verb) to the shape and JSON-encodes the
@@ -381,22 +398,5 @@ class Insights_CI_Node extends Service_CI_Node {
 				],
 			],
 		] );
-	}
-
-	/**
-	 * The accumulated slice: total item count, collection progress, and the rendered digest.
-	 * Reads the shared memoized snapshot for accumulated/done/total; the digest is a separate
-	 * file (only this slice needs it), read inline.
-	 *
-	 * @return array{accumulated:int, done:int, total:int, digest:string}
-	 */
-	private function accumulated_slice(): array {
-		$snapshot = $this->snapshot();
-		return [
-			'accumulated' => \count( $snapshot['items'] ),
-			'done'        => $snapshot['done'],
-			'total'       => $snapshot['total'],
-			'digest'      => self::read_latest_digest( Settings::DIGEST_PATH ),
-		];
 	}
 }
