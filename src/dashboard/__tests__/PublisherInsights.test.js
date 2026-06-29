@@ -120,6 +120,30 @@ describe( 'PublisherInsights — render', () => {
 		).toContain( 'Sprint digest' );
 	} );
 
+	it( 'lays the widgets out in the two-column grid', async () => {
+		const { container } = await renderAndTick( makeClient( populated ) );
+		await waitFor( () =>
+			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
+		);
+		const layout = container.querySelector( '.eai-insights__layout' );
+		expect( layout ).toBeInTheDocument();
+		const columns = layout.querySelectorAll(
+			':scope > .eai-insights__side'
+		);
+		expect( columns ).toHaveLength( 2 );
+		// Left column stacks the accumulated digest over the source counts;
+		// the tall Top-items table gets the right column to itself.
+		expect(
+			columns[ 0 ].querySelector( '.eai-insights__draft' )
+		).toBeInTheDocument();
+		expect(
+			columns[ 0 ].querySelector( '.eai-insights__sources' )
+		).toBeInTheDocument();
+		expect(
+			columns[ 1 ].querySelector( '.eai-insights__top' )
+		).toBeInTheDocument();
+	} );
+
 	it( 'shows per-slice empty states from an empty server reply', async () => {
 		await renderAndTick(
 			makeClient( {

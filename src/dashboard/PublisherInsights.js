@@ -46,15 +46,19 @@ export default function PublisherInsights( {
 					) }
 				</p>
 			</header>
-			<div className="eai-insights__grid">
-				<AccumulatedPanel
-					generate={ generate }
-					collect={ collect }
-					createDraft={ createDraft }
-					markdownToContent={ markdownToContent }
-				/>
-				<SourceCounts />
-				<TopTable />
+			<div className="eai-insights__layout">
+				<div className="eai-insights__side">
+					<AccumulatedPanel
+						generate={ generate }
+						collect={ collect }
+						createDraft={ createDraft }
+						markdownToContent={ markdownToContent }
+					/>
+					<SourceCounts />
+				</div>
+				<div className="eai-insights__side">
+					<TopTable />
+				</div>
 			</div>
 		</div>
 	);
