@@ -322,8 +322,8 @@ class Insights_CI_Node extends Service_CI_Node {
 	 *
 	 * @return array<array-key,mixed>
 	 */
-	private static function read_cache( string $offset_dir ): array {
-		$value = Partition_Node::read_latest_value_at( $offset_dir );
+	private static function read_cache( string $offsetlog_dir ): array {
+		$value = Partition_Node::read_latest_value_at( $offsetlog_dir );
 		return \is_array( $value ) && \is_array( $value['cache'] ?? null ) ? $value['cache'] : [];
 	}
 
