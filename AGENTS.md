@@ -4,8 +4,10 @@ An AI-driven team intelligence digest built on the `newspack-nodes` substrate
 (sibling plugin; `Requires Plugins: newspack-nodes`). Ingests GitHub/Linear/feed
 items → LLM summarize+score → durable digest → markdown + WordPress draft post.
 
-> **Scaffold stage.** This file grows as the plugin does. The authoritative
-> design is the floorplan spec:
+> **Working pipeline + dashboard (v0.2.5).** The full ingest → summarize → score →
+> digest → WordPress-draft path runs end-to-end with the three live connectors, the
+> LLM enrich/score/compose stages, and the two-column Publisher Insights dashboard.
+> The authoritative design is the floorplan spec:
 > `dndocker/docs/superpowers/specs/2026-06-15-newspack-ai-newsletter-floorplan-design.md`,
 > executed by `dndocker/docs/superpowers/plans/2026-06-15-newspack-ai-newsletter-foundation.md`.
 
@@ -37,20 +39,26 @@ not build): `npm run release:archive` then
 
 ## Architecture (see the spec for detail)
 
-Fetches run as **jobs** (blocking HTTP isolated); items flow through an ingest log
-→ `Summarizer` → `Scorer` → `scored` Partition → `Consumer` → `Digest_Builder`
-→ `Tee` → (`Log` + `publish:wp-draft` job). `Insights_CI` serves the dashboard.
-LLM calls go through the AI API Proxy via `LLM_Client` (closure-HTTP test seam).
+Connector **Source nodes** (`github`/`linear`/`feed`) fetch on a `TICK` request
+inside the background worker and append normalized items to a durable `ingest`
+Partition; an `ingest:consumer` paces them through `Summarizer` → `Scorer` → the
+durable `scored` Partition; a `scored:consumer` feeds `Digest_Builder` → `Tee` →
+`Log` (`digest:log`). The blocking HTTP runs in the worker (not a per-fetch job);
+the ingest buffer + paced consumers keep the worker heartbeating during a collect.
+`Insights_CI` serves the dashboard slices and routes Collect/Regenerate to the
+worker; the WordPress draft is created browser-side from the digest markdown
+(`@wordpress/api-fetch`). LLM calls go through the AI API Proxy via `LLM_Client`
+(closure-HTTP test seam).
 
 ## Layout
 
 | Path | What |
 |------|------|
-| `newspack-ai-newsletter.php` | Bootstrap: topology registration, admin page, Insights_CI mount |
-| `includes/` | Nodes (`Summarizer`, `Scorer`, `Digest_Builder`, `Insights_CI`, sources), `LLM_Client`, `Source`, `Settings` |
+| `newspack-ai-newsletter.php` | Bootstrap: topology registration, Insights + Settings admin pages, Insights_CI mount |
+| `includes/` | Nodes (`Summarizer`, `Scorer`, `Digest_Builder`, `Insights_CI`, sources), `Digest_Composer`, `Prompts`, `LLM_Client` interface + `Proxy_LLM_Client`, `Source`, `Settings` |
 | `topologies/` | `.tsl` node-graph topologies |
-| `src/dashboard/` | React control panel (consumes `@newspack-nodes/*` via build alias) |
-| `tests/` | PHPUnit (`unit/`, `integration/`, `bootstrap.php`) |
+| `src/dashboard/` | Publisher Insights React panel — orchestrator + per-slice widgets/view nodes (consumes `@newspack-nodes/*` via build alias) |
+| `tests/` | PHPUnit (`unit/` + `bootstrap.php`; `integration/` exists but is empty/pending) |
 
 ## References
 

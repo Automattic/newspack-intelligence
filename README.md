@@ -4,23 +4,24 @@ An AI-driven **team intelligence digest** built on the
 [newspack-nodes](../newspack-nodes) substrate. It ingests items from real sources
 (GitHub, Linear, RSS/feeds), enriches them with an LLM (summarize + score),
 accumulates them into a durable digest, and publishes that digest as markdown +
-a WordPress draft post — on a schedule, with an admin control panel.
+a WordPress draft post, from an admin control panel.
 
-> **Status:** under construction. This plugin is being built sub-project by
-> sub-project per the floorplan. The teaching walkthrough lives in
-> `newspack-nodes/examples/example-ai-newsletter`.
+> **Status:** the ingest → summarize → score → digest → WordPress-draft pipeline
+> and the Publisher Insights dashboard are working (v0.2.5). The teaching
+> walkthrough lives in `newspack-nodes/examples/example-ai-newsletter`.
 
 ## How it works
 
-Fetches run as **jobs** (blocking HTTP is isolated there); normalized items flow
-into an ingest log; a **Summarizer → Scorer** stage (LLM, in a background worker)
-writes to a durable `scored` partition; a **Digest_Builder** accumulates and, on
-the digest cadence, flushes markdown → a `Log` + a `publish:wp-draft` job. An
-`Insights_CI` service serves the admin dashboard.
+Connector **Source nodes** (GitHub/Linear/feed) fetch inside a background worker
+and append normalized items to a durable `ingest` partition; a **Summarizer →
+Scorer** stage (LLM) paces through it into a durable `scored` partition; a
+**Digest_Builder** accumulates and, once every source reports in, composes the
+markdown digest → a `Log`. An `Insights_CI` service serves the admin dashboard;
+the WordPress draft is created from there via the block editor's markdown engine.
 
 AI calls go through the Automattic **AI API Proxy** (OpenAI-compatible), defaulting
-to a free internally-hosted model (`gpt-oss-120b`). The bearer token is a secret
-config field — never committed.
+to a free internally-hosted model (`gpt-oss-120b`). The bearer token is stored as a
+substrate Vault entry (the option holds only its id) and resolved at use-time.
 
 ## Develop
 
