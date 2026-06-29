@@ -33,14 +33,14 @@ make_node Feed_Source    feed
 make_node Partition      ingest:partition <config:logs_dir>/ingest.p<partition> <config:segment_size> <config:num_segments> <config:max_lifespan>
 cmd ingest:partition:config void_warranty
 make_node Consumer       ingest:consumer  <config:logs_dir>/ingest.p<partition> <config:offsets_dir>/ingest.p<partition>
-cmd ingest:consumer:config set_line_mode
+cmd ingest:consumer:config set_line_mode true
 make_node Summarizer     summarizer
 make_node Scorer         scorer
 make_node Partition      scored:partition <config:logs_dir>/scored.p<partition> <config:segment_size> <config:num_segments> <config:max_lifespan>
 cmd scored:partition:config void_warranty
 make_node Consumer       scored:consumer <config:logs_dir>/scored.p<partition> <config:offsets_dir>/scored.p<partition>
 cmd scored:consumer:config set_snapshot_node digest
-cmd scored:consumer:config set_line_mode
+cmd scored:consumer:config set_line_mode true
 # The digest auto-composes once every source has reported DONE. The sole arg is the
 # progress denominator (done/total) — it MUST equal count(Insights_CI_Node::SOURCE_NODES).
 make_node Digest_Builder digest scored:partition 3
