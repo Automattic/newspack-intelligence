@@ -83,7 +83,6 @@ final class SummarizerLlmTest extends TestCase {
 	/** Read a node's set_state cache (the substrate observability/notify cache). */
 	private function set_state_cache( Summarizer_Node $node ): array {
 		$ref = new \ReflectionProperty( \Newspack_Nodes\Node::class, 'set_state' );
-		$ref->setAccessible( true );
 		/** @var array<string,mixed> $cache */
 		$cache = $ref->getValue( $node );
 		return $cache;

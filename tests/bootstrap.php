@@ -532,7 +532,6 @@ if ( \file_exists( $plugin_file ) ) {
 		return;
 	}
 	$ref     = new \ReflectionProperty( \Newspack_Nodes\Config::class, 'allowed_config_dirs' );
-	$ref->setAccessible( true );
 	$dirs    = $ref->getValue();
 	$dirs[]  = \dirname( __DIR__ );
 	$ref->setValue( null, $dirs );
