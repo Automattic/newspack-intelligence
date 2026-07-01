@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-06-30
+
 ### Fixed
 
 - Stopped `esc_html()` over-escaping of `Proxy_LLM_Client` error messages. The thrown text is plain text for its log/CLI consumers (and React escapes on render), so runtime escaping only mangled quotes/markup in the logs. Escaping belongs to the view, not the runtime.
