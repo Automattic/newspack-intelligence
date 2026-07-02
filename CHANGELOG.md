@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add CSV_Parser for the Newspack clients list.
 - Add Publisher_Repository contract and Client_Importer reconciliation.
+- Register the newspack_publisher master-data CPT.
 
 ## [0.2.5] - 2026-06-29
 
