@@ -28,7 +28,7 @@ final class CSV_Parser {
 			$cols = \str_getcsv( (string) $line );
 			if ( $first ) {
 				$first = false;
-				if ( isset( $cols[0] ) && false !== \stripos( (string) $cols[0], 'atomic' ) ) {
+				if ( isset( $cols[0] ) && false !== \stripos( $cols[0], 'atomic' ) ) {
 					continue; // Header row.
 				}
 			}
