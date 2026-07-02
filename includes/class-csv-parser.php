@@ -25,7 +25,7 @@ final class CSV_Parser {
 			if ( '' === \trim( (string) $line ) ) {
 				continue;
 			}
-			$cols = \str_getcsv( (string) $line );
+			$cols = \str_getcsv( (string) $line, ',', '"', '\\' );
 			if ( $first ) {
 				$first = false;
 				if ( isset( $cols[0] ) && false !== \stripos( $cols[0], 'atomic' ) ) {
