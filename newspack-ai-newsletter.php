@@ -184,3 +184,7 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 	},
 	12
 );
+
+// Register the newspack_publisher master-data CPT. Must run on `init` (not
+// gated behind is_admin()) so it registers for web AND CLI/import requests.
+\add_action( 'init', [ '\\Newspack_AI_Newsletter\\Publisher_CPT', 'register' ] );
