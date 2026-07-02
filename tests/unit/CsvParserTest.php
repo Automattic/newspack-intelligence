@@ -1,0 +1,31 @@
+<?php
+declare(strict_types=1);
+
+namespace Newspack_AI_Newsletter\Tests;
+
+use Newspack_AI_Newsletter\CSV_Parser;
+use PHPUnit\Framework\TestCase;
+
+final class CsvParserTest extends TestCase {
+
+	private const CSV = <<<CSV
+	"Atomic site ID","Created","Domain name"
+	"149517526","2020-12-03 17:18:47","abq.news"
+	"150645193","2024-05-09 19:04:02","amarillotribune.org"
+	CSV;
+
+	public function test_parses_rows_and_skips_header(): void {
+		$rows = CSV_Parser::parse( self::CSV );
+		$this->assertCount( 2, $rows );
+		$this->assertSame(
+			[ 'atomic_site_id' => '149517526', 'domain_name' => 'abq.news', 'created' => '2020-12-03 17:18:47' ],
+			$rows[0]
+		);
+	}
+
+	public function test_skips_blank_lines_and_short_rows(): void {
+		$rows = CSV_Parser::parse( "\"Atomic site ID\",\"Created\",\"Domain name\"\n\n\"x\",\"y\"\n\"150792457\",\"2024-10-04 15:34:52\",\"enlace.org\"\n" );
+		$this->assertCount( 1, $rows );
+		$this->assertSame( '150792457', $rows[0]['atomic_site_id'] );
+	}
+}
