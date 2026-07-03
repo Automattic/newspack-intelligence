@@ -129,7 +129,9 @@ function render_settings_page(): void {
 	\settings_fields( SETTINGS_GROUP );
 	\do_settings_sections( SETTINGS_MENU_SLUG );
 	\submit_button();
-	echo '</form></div>';
+	echo '</form>';
+	( new Clients_Settings() )->render_upload_section();
+	echo '</div>';
 }
 
 if ( \is_admin() ) {
@@ -138,6 +140,13 @@ if ( \is_admin() ) {
 	\add_action( 'admin_enqueue_scripts', __NAMESPACE__ . '\\enqueue_insights_assets' );
 	\add_action( 'admin_init', __NAMESPACE__ . '\\register_settings' );
 }
+
+\add_action(
+	'admin_post_' . Clients_Settings::ADMIN_POST_ACTION,
+	static function (): void {
+		( new Clients_Settings() )->handle_admin_post();
+	}
+);
 
 // The Publisher Insights page mounts the substrate debug overlay, so declare it
 // on the substrate's overlay-page registry — that's how ELN's "Request" overlay

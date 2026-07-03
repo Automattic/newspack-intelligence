@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Register the newspack_publisher master-data CPT.
 - Add CPT-backed Publisher_Repository implementation.
 - Add `wp newspack-ai-newsletter clients import` WP-CLI command.
+- Add Settings-page CSV upload for the publisher master store.
 
 ## [0.2.5] - 2026-06-29
 
