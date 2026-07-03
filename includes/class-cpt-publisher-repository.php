@@ -22,6 +22,7 @@ final class CPT_Publisher_Repository implements Publisher_Repository {
 				'meta_value'       => $atomic_id,
 				'fields'           => 'ids',
 				'posts_per_page'   => 1,
+				// TODO(Gate): drop suppress_filters / add object-cache-backed lookup once the intake Gate queries this store per item.
 				// phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.SuppressFilters_suppress_filters -- internal admin-only lookup on a non-public CPT, not a front-end VIP request.
 				'suppress_filters' => true,
 			]
@@ -52,6 +53,7 @@ final class CPT_Publisher_Repository implements Publisher_Repository {
 				'post_status'      => 'any',
 				'fields'           => 'ids',
 				'posts_per_page'   => -1,
+				// TODO(Gate): drop suppress_filters / add object-cache-backed lookup once the intake Gate queries this store per item.
 				// phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.SuppressFilters_suppress_filters -- internal admin-only lookup on a non-public CPT, not a front-end VIP request.
 				'suppress_filters' => true,
 			]
