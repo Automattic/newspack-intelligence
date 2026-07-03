@@ -21,6 +21,17 @@ final class PublisherCptTest extends TestCase {
 		$this->assertTrue( $reg['args']['show_ui'] );
 	}
 
+	public function test_registers_manage_options_capabilities(): void {
+		\NPAINL_WP_Post_Store::reset();
+		Publisher_CPT::register();
+
+		$reg = \NPAINL_WP_Post_Store::$last_cpt;
+		$this->assertNotNull( $reg );
+		$this->assertTrue( $reg['args']['map_meta_cap'] );
+		$this->assertSame( 'manage_options', $reg['args']['capabilities']['edit_posts'] );
+		$this->assertSame( 'manage_options', $reg['args']['capabilities']['create_posts'] );
+	}
+
 	public function test_post_type_constant(): void {
 		$this->assertSame( 'newspack_publisher', Publisher_CPT::POST_TYPE );
 	}
