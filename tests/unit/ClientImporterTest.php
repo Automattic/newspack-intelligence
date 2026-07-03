@@ -58,6 +58,7 @@ final class ClientImporterTest extends TestCase {
 		$result           = ( new Client_Importer( $repo ) )->import( $this->rows( [ '9', 'gone.com', '2019-01-01' ] ), '2026-06-30' );
 
 		$this->assertSame( 1, $result['reactivated'] );
+		$this->assertSame( 0, $result['updated'] ); // Disjoint from `updated`: reactivation is not also counted as an update.
 		$this->assertSame( 'active', $repo->store['9']['status'] );
 		$this->assertSame( '', $repo->store['9']['churned_at'] );
 	}

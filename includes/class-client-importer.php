@@ -20,7 +20,9 @@ final class Client_Importer {
 	/**
 	 * @param array<int,array{atomic_site_id:string,domain_name:string,created:string}> $rows
 	 * @param string $today YYYY-MM-DD.
-	 * @return array{created:int,updated:int,reactivated:int,churned:int,total_in_csv:int}
+	 * @return array{created:int,updated:int,reactivated:int,churned:int,total_in_csv:int} Counts are
+	 *         disjoint: an existing row that was churned is counted only in `reactivated`, never
+	 *         also in `updated`.
 	 */
 	public function import( array $rows, string $today ): array {
 		$created     = 0;
@@ -39,10 +41,11 @@ final class Client_Importer {
 				continue;
 			}
 			$this->repo->update_atomic_fields( $id, $row, $today );
-			++$updated;
 			if ( 'churned' === ( $existing['status'] ?? '' ) ) {
 				$this->repo->set_active( $id );
 				++$reactivated;
+			} else {
+				++$updated;
 			}
 		}
 
