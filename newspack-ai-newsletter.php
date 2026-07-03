@@ -148,6 +148,13 @@ if ( \is_admin() ) {
 	}
 );
 
+\add_action(
+	'admin_notices',
+	static function (): void {
+		( new Clients_Settings() )->render_import_notice();
+	}
+);
+
 // The Publisher Insights page mounts the substrate debug overlay, so declare it
 // on the substrate's overlay-page registry — that's how ELN's "Request" overlay
 // tab loads here too. Harmless if the substrate/ELN aren't active.
