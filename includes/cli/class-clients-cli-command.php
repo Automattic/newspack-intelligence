@@ -38,14 +38,13 @@ class Clients_CLI_Command {
 	 */
 	public function import( array $args, array $assoc_args ): void {
 		$path = $args[0] ?? '';
-		if ( '' === $path || ! \is_readable( $path ) ) {
+		$rows = CSV_Parser::parse_file( $path );
+		if ( null === $rows ) {
 			if ( \class_exists( '\WP_CLI' ) ) {
 				\WP_CLI::error( "Cannot read CSV file: {$path}" );
 			}
 			return;
 		}
-		// phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- a local CSV path supplied to the WP-CLI command, not a remote fetch.
-		$rows   = CSV_Parser::parse( (string) \file_get_contents( $path ) );
 		$result = $this->importer->import( $rows, \gmdate( 'Y-m-d' ) );
 
 		if ( \class_exists( '\WP_CLI' ) ) {

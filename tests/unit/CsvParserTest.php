@@ -28,4 +28,21 @@ final class CsvParserTest extends TestCase {
 		$this->assertCount( 1, $rows );
 		$this->assertSame( '150792457', $rows[0]['atomic_site_id'] );
 	}
+
+	public function test_parse_file_returns_null_for_unreadable_path(): void {
+		$this->assertNull( CSV_Parser::parse_file( '/no/such/file.csv' ) );
+	}
+
+	public function test_parse_file_reads_and_parses_a_real_file(): void {
+		$tmp = \tempnam( \sys_get_temp_dir(), 'clients' );
+		\file_put_contents( $tmp, "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"1\",\"2020-01-01\",\"a.com\"\n" );
+
+		$rows = CSV_Parser::parse_file( $tmp );
+
+		\unlink( $tmp );
+
+		$this->assertIsArray( $rows );
+		$this->assertCount( 1, $rows );
+		$this->assertSame( '1', $rows[0]['atomic_site_id'] );
+	}
 }

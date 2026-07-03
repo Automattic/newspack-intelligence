@@ -26,7 +26,8 @@ class Clients_Settings {
 	 * @return array{created:int,updated:int,reactivated:int,churned:int,total_in_csv:int}
 	 */
 	public function import_path( string $path ): array {
-		if ( '' === $path || ! \is_readable( $path ) ) {
+		$rows = CSV_Parser::parse_file( $path );
+		if ( null === $rows ) {
 			return [
 				'created'      => 0,
 				'updated'      => 0,
@@ -35,8 +36,6 @@ class Clients_Settings {
 				'total_in_csv' => 0,
 			];
 		}
-		// phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- a local CSV path uploaded via the Settings page, not a remote fetch.
-		$rows = CSV_Parser::parse( (string) \file_get_contents( $path ) );
 		return $this->importer->import( $rows, \gmdate( 'Y-m-d' ) );
 	}
 
@@ -60,7 +59,18 @@ class Clients_Settings {
 		$file = isset( $_FILES['clients_csv'] ) && \is_array( $_FILES['clients_csv'] ) ? $_FILES['clients_csv'] : [];
 		$tmp  = isset( $file['tmp_name'] ) && \is_string( $file['tmp_name'] ) ? \sanitize_text_field( \wp_unslash( $file['tmp_name'] ) ) : '';
 		$this->import_path( $tmp );
-		\wp_safe_redirect( \add_query_arg( 'clients_imported', '1', \wp_get_referer() ?: \admin_url() ) );
+		$fallback = \admin_url( 'options-general.php?page=' . SETTINGS_MENU_SLUG );
+		\wp_safe_redirect( \add_query_arg( 'clients_imported', '1', \wp_get_referer() ?: $fallback ) );
 		exit;
+	}
+
+	/** admin_notices: a success notice after a completed CSV import. */
+	public function render_import_notice(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read-only display flag, no state change.
+		$flag = isset( $_GET['clients_imported'] ) && \is_string( $_GET['clients_imported'] ) ? \sanitize_text_field( \wp_unslash( $_GET['clients_imported'] ) ) : '';
+		if ( '1' !== $flag ) {
+			return;
+		}
+		echo '<div class="notice notice-success is-dismissible"><p>' . \esc_html__( 'Newspack clients imported.', 'newspack-ai-newsletter' ) . '</p></div>';
 	}
 }
