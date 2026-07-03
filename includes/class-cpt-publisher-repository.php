@@ -93,9 +93,19 @@ final class CPT_Publisher_Repository implements Publisher_Repository {
 		if ( null === $post_id ) {
 			return;
 		}
+		$previous_domain = \get_post_meta( $post_id, Publisher_CPT::META_DOMAIN, true );
 		\update_post_meta( $post_id, Publisher_CPT::META_DOMAIN, $atomic_fields['domain_name'] );
 		\update_post_meta( $post_id, Publisher_CPT::META_CREATED, $atomic_fields['created'] );
 		\update_post_meta( $post_id, Publisher_CPT::META_LAST_SEEN, $today );
+
+		if ( $previous_domain !== $atomic_fields['domain_name'] ) {
+			\wp_update_post(
+				[
+					'ID'         => $post_id,
+					'post_title' => $atomic_fields['domain_name'],
+				]
+			);
+		}
 	}
 
 	public function set_active( string $atomic_id ): void {

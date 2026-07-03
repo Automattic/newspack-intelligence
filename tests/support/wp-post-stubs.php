@@ -15,11 +15,13 @@ if ( ! class_exists( 'NPAINL_WP_Post_Store' ) ) {
 		public static int $next_id = 100;
 		/** @var array{type:string,args:array<string,mixed>}|null */
 		public static ?array $last_cpt = null;
+		public static int $update_calls = 0;
 		public static function reset(): void {
-			self::$posts    = [];
-			self::$meta     = [];
-			self::$next_id  = 100;
-			self::$last_cpt = null;
+			self::$posts        = [];
+			self::$meta         = [];
+			self::$next_id      = 100;
+			self::$last_cpt     = null;
+			self::$update_calls = 0;
 		}
 	}
 }
@@ -47,6 +49,16 @@ if ( ! function_exists( 'update_post_meta' ) ) {
 if ( ! function_exists( 'get_post_meta' ) ) {
 	function get_post_meta( int $post_id, string $key, bool $single = false ) {
 		return NPAINL_WP_Post_Store::$meta[ $post_id ][ $key ] ?? '';
+	}
+}
+if ( ! function_exists( 'wp_update_post' ) ) {
+	function wp_update_post( array $args ) {
+		$id = (int) $args['ID'];
+		if ( array_key_exists( 'post_title', $args ) ) {
+			NPAINL_WP_Post_Store::$posts[ $id ]['post_title'] = $args['post_title'];
+		}
+		++NPAINL_WP_Post_Store::$update_calls;
+		return $id;
 	}
 }
 if ( ! function_exists( 'get_posts' ) ) {
