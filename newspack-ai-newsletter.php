@@ -171,6 +171,10 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 		// Classes_CI scans, so their node_schema() verbs show up in the palette.
 		require_once __DIR__ . '/vendor/autoload.php';
 
+		if ( \defined( 'WP_CLI' ) && \WP_CLI ) {
+			\WP_CLI::add_command( 'newspack-ai-newsletter clients', '\\Newspack_AI_Newsletter\\CLI\\Clients_CLI_Command' );
+		}
+
 		// One call wires it all: the Newspack_AI_Newsletter\ namespace (so make_node
 		// resolves *_Node classes), the topologies/ stock dir + a catalog entry for
 		// every *.tsl in it, and a guarded spawn handler.
