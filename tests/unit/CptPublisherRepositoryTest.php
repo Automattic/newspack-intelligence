@@ -46,4 +46,28 @@ final class CptPublisherRepositoryTest extends TestCase {
 	public function test_find_returns_null_when_absent(): void {
 		$this->assertNull( ( new CPT_Publisher_Repository() )->find_by_atomic_id( 'nope' ) );
 	}
+
+	public function test_update_atomic_fields_syncs_post_title_when_domain_changes(): void {
+		$repo = new CPT_Publisher_Repository();
+		$repo->create( [ 'atomic_site_id' => '1', 'domain_name' => 'a.com', 'created' => '2020-01-01' ], '2026-06-30' );
+
+		$repo->update_atomic_fields( '1', [ 'atomic_site_id' => '1', 'domain_name' => 'b.com', 'created' => '2020-01-01' ], '2026-07-01' );
+
+		$post_id = null;
+		foreach ( \NPAINL_WP_Post_Store::$posts as $id => $post ) {
+			$post_id = $id;
+		}
+		$this->assertNotNull( $post_id );
+		$this->assertSame( 'b.com', \NPAINL_WP_Post_Store::$posts[ $post_id ]['post_title'] );
+		$this->assertSame( 1, \NPAINL_WP_Post_Store::$update_calls );
+	}
+
+	public function test_update_atomic_fields_skips_post_title_write_when_domain_unchanged(): void {
+		$repo = new CPT_Publisher_Repository();
+		$repo->create( [ 'atomic_site_id' => '1', 'domain_name' => 'a.com', 'created' => '2020-01-01' ], '2026-06-30' );
+
+		$repo->update_atomic_fields( '1', [ 'atomic_site_id' => '1', 'domain_name' => 'a.com', 'created' => '2020-01-01' ], '2026-07-01' );
+
+		$this->assertSame( 0, \NPAINL_WP_Post_Store::$update_calls );
+	}
 }
