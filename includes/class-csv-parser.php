@@ -12,6 +12,20 @@ namespace Newspack_AI_Newsletter;
 final class CSV_Parser {
 
 	/**
+	 * Read + parse a clients CSV file at $path.
+	 *
+	 * @param string $path Path to the CSV file.
+	 * @return array<int,array{atomic_site_id:string,domain_name:string,created:string}>|null Parsed rows, or null if the file cannot be read.
+	 */
+	public static function parse_file( string $path ): ?array {
+		if ( '' === $path || ! \is_readable( $path ) ) {
+			return null;
+		}
+		// phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- a local CSV path (WP-CLI arg or Settings-page upload), not a remote fetch.
+		return self::parse( (string) \file_get_contents( $path ) );
+	}
+
+	/**
 	 * Parse a clients CSV (columns: Atomic site ID, Created, Domain name).
 	 *
 	 * @param string $csv Raw CSV text.
