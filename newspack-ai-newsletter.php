@@ -215,3 +215,13 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 // Register the newspack_publisher master-data CPT. Must run on `init` (not
 // gated behind is_admin()) so it registers for web AND CLI/import requests.
 \add_action( 'init', [ '\\Newspack_AI_Newsletter\\Publisher_CPT', 'register' ] );
+
+// Publisher enrichment meta box (human-owner edit UI for newspack_publisher).
+// Both hooks use lazy STRING CALLABLES rather than referencing the class
+// constant directly at file scope — eagerly touching a class constant here
+// (e.g. via `'save_post_' . Publisher_CPT::POST_TYPE`) fatals before the
+// composer autoloader has run (see commit f8e54f8). Hooking the generic
+// `save_post` and letting Publisher_Meta_Box::save() check the post type
+// itself avoids that trap entirely.
+\add_action( 'add_meta_boxes', [ '\\Newspack_AI_Newsletter\\Publisher_Meta_Box', 'register' ] );
+\add_action( 'save_post', [ '\\Newspack_AI_Newsletter\\Publisher_Meta_Box', 'save' ] );
