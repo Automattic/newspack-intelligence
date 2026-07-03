@@ -141,19 +141,10 @@ if ( \is_admin() ) {
 	\add_action( 'admin_init', __NAMESPACE__ . '\\register_settings' );
 }
 
-\add_action(
-	'admin_post_' . Clients_Settings::ADMIN_POST_ACTION,
-	static function (): void {
-		( new Clients_Settings() )->handle_admin_post();
-	}
-);
-
-\add_action(
-	'admin_notices',
-	static function (): void {
-		( new Clients_Settings() )->render_import_notice();
-	}
-);
+// Publisher-CSV upload admin wiring (admin_post handler + import notice) is
+// registered inside the plugins_loaded:12 closure below — after the composer
+// autoloader is required — because referencing Clients_Settings at file-load
+// time (e.g. during activation) fatals before autoload is set up.
 
 // The Publisher Insights page mounts the substrate debug overlay, so declare it
 // on the substrate's overlay-page registry — that's how ELN's "Request" overlay
@@ -190,6 +181,22 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 		if ( \defined( 'WP_CLI' ) && \WP_CLI ) {
 			\WP_CLI::add_command( 'newspack-ai-newsletter clients', '\\Newspack_AI_Newsletter\\CLI\\Clients_CLI_Command' );
 		}
+
+		// Publisher-CSV upload wiring — registered here (not at file scope) so the
+		// composer autoloader required above has loaded Clients_Settings before we
+		// reference its constant / instantiate it.
+		\add_action(
+			'admin_post_' . Clients_Settings::ADMIN_POST_ACTION,
+			static function (): void {
+				( new Clients_Settings() )->handle_admin_post();
+			}
+		);
+		\add_action(
+			'admin_notices',
+			static function (): void {
+				( new Clients_Settings() )->render_import_notice();
+			}
+		);
 
 		// One call wires it all: the Newspack_AI_Newsletter\ namespace (so make_node
 		// resolves *_Node classes), the topologies/ stock dir + a catalog entry for
