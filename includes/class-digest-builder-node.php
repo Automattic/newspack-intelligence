@@ -15,6 +15,10 @@ use Newspack_Nodes\Schema_Reflection;
 
 class Digest_Builder_Node extends Node {
 	use Schema_Reflection;
+	use LLM_Config;
+
+	/** Where the digest:log Node writes the rendered newsletter. MUST match topologies/newspack-ai-newsletter.tsl. */
+	public const DIGEST_PATH = '/tmp/newspack-ai-newsletter/digest.md';
 
 	/**
 	 * Accumulated summarized items (array-key: they round-trip through offsetlog JSON).
@@ -46,9 +50,9 @@ class Digest_Builder_Node extends Node {
 	private int $total = 0;
 
 	/**
-	 * LLM-client factory seam. Lazily-defaulted at the call site to
-	 * `Settings::llm_client()` (null when no proxy token is configured). Tests
-	 * reassign in setUp to inject a real `Proxy_LLM_Client` — faking only its
+	 * LLM-client factory seam. Lazily-defaulted at the call site to this node's
+	 * own verb-configured `make_llm_client()` (null when no vault token resolves).
+	 * Tests reassign in setUp to inject a real `Proxy_LLM_Client` — faking only its
 	 * `$http_post` seam — so prompt assembly, the client, and the briefing compose
 	 * all run as real, covered production code; tearDown resets it to null.
 	 *
@@ -57,6 +61,12 @@ class Digest_Builder_Node extends Node {
 	 * @var (\Closure(): ?LLM_Client)|null
 	 */
 	public static ?\Closure $llm_factory = null;
+
+	/** Tachikoma-parity: no-arg ctor. Wires the sibling :config interpreter from node_schema()['commands']. */
+	public function __construct() {
+		parent::__construct();
+		$this->auto_wire_interpreter();
+	}
 
 	/**
 	 * Parse the positional arguments: arg 0 is the total number of sources.
@@ -163,8 +173,8 @@ class Digest_Builder_Node extends Node {
 	}
 
 	private function compose_draft(): void {
-		$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
-		$draft  = Digest_Composer::compose( $this->items, $client, Settings::get_string( 'relevance_profile' ) );
+		$client = self::$llm_factory ? ( self::$llm_factory )() : $this->make_llm_client();
+		$draft  = Digest_Composer::compose( $this->items, $client, $this->relevance_profile() );
 		$this->set_state( 'COMPOSED', \count( $this->items ) . ' items' );
 		$response                   = Message::new_message();
 		$response[ Message::TYPE ]  = Message::TM_BYTESTREAM;
@@ -257,6 +267,7 @@ class Digest_Builder_Node extends Node {
 					'description' => 'Compose a new draft based on the items already collected.',
 				],
 			],
+			'commands'     => self::llm_config_commands(),
 			'accepts_fill' => true,
 			'has_target'   => true,
 		] );

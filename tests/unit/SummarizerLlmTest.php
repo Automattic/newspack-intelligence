@@ -9,12 +9,15 @@ use Newspack_AI_Newsletter\LLM_Client;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
+use Newspack_Nodes\Vault;
 
 final class SummarizerLlmTest extends TestCase {
 
 	protected function tearDown(): void {
 		Summarizer_Node::$llm_factory = null;
 		Proxy_LLM_Client::$http_post  = null;
+		delete_option( Vault::OPTION_KEY );
+		Vault::get_instance()->reset_cache();
 		parent::tearDown();
 	}
 
@@ -156,9 +159,63 @@ final class SummarizerLlmTest extends TestCase {
 
 		$this->assertSame( 'Transform', $schema['category'] );
 		$this->assertSame( [], $schema['arguments'] );
-		$this->assertSame( [], $schema['commands'] );
+		$this->assertSame(
+			[ 'set_api_url', 'set_vault_id', 'set_model', 'set_feature', 'add_profile' ],
+			\array_column( $schema['commands'], 'name' )
+		);
 		$this->assertTrue( $schema['accepts_fill'] );
 		$this->assertTrue( $schema['has_target'] );
 		$this->assertStringContainsString( 'Summarizes one item', $schema['description'] );
+	}
+
+	public function test_uses_own_verb_configured_client_and_relevance_profile_when_factory_unset(): void {
+		update_option(
+			Vault::OPTION_KEY,
+			[ 'ai-vault' => [ 'id' => 'ai-vault', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'proxy-token' ] ]
+		);
+		Vault::get_instance()->reset_cache();
+
+		$captured = [];
+		Proxy_LLM_Client::$http_post = static function ( string $url, array $args ) use ( &$captured ): array {
+			$captured[] = $args;
+			return [
+				'response' => [ 'code' => 200 ],
+				'body'     => (string) \json_encode(
+					[ 'choices' => [ [ 'message' => [ 'content' => '{"summary":"One line.","relevance_score":8,"reason":"on-topic"}' ] ] ] ]
+				),
+			];
+		};
+
+		$node = new Summarizer_Node();
+		$node->name( 'summarizer' );
+		$node->set_vault_id( 'ai-vault' );
+		$node->set_model( 'own-model' );
+		$node->set_feature( 'own-feature' );
+		$node->add_profile( 'Engineering audience' );
+		$node->sink( new Capture_Sink_Node() );
+
+		$message  = $this->struct( [ 'source' => 'github', 'id' => 'g#1', 'title' => 'T', 'body' => 'B' ] );
+		$node->fill( $message );
+
+		$this->assertNotEmpty( $captured );
+		$this->assertSame( 'Bearer proxy-token', $captured[0]['headers']['Authorization'] );
+		$this->assertSame( 'own-feature', $captured[0]['headers']['X-WPCOM-AI-Feature'] );
+		$this->assertStringContainsString( '"model":"own-model"', $captured[0]['body'] );
+		$this->assertStringContainsString( 'Engineering audience', $captured[0]['body'] );
+	}
+
+	public function test_falls_back_to_heuristic_when_no_factory_and_no_vault_configured(): void {
+		$sink = new Capture_Sink_Node();
+		$node = new Summarizer_Node();
+		$node->name( 'summarizer' );
+		$node->sink( $sink );
+
+		$message = $this->struct( [ 'source' => 'github', 'id' => 'g#2', 'title' => 'Roundup', 'body' => 'body text' ] );
+		$node->fill( $message );
+
+		$out = $sink->captured[0][ Message::VALUE ];
+		$this->assertArrayHasKey( 'summary', $out );
+		$this->assertStringContainsString( 'Roundup', $out['summary'] );
+		$this->assertArrayNotHasKey( 'relevance_score', $out );
 	}
 }

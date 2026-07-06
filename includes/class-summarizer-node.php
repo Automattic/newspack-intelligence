@@ -10,15 +10,18 @@ namespace Newspack_AI_Newsletter;
 
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Message;
+use Newspack_Nodes\Schema_Reflection;
 
 \defined( 'ABSPATH' ) || exit;
 
 class Summarizer_Node extends Node {
+	use Schema_Reflection;
+	use LLM_Config;
 
 	/**
-	 * LLM-client factory seam. Lazily-defaulted at the call site to
-	 * `Settings::llm_client()` (null when no proxy token is configured). Tests
-	 * reassign in setUp to inject a real `Proxy_LLM_Client` — faking only its
+	 * LLM-client factory seam. Lazily-defaulted at the call site to this node's
+	 * own verb-configured `make_llm_client()` (null when no vault token resolves).
+	 * Tests reassign in setUp to inject a real `Proxy_LLM_Client` — faking only its
 	 * `$http_post` seam — so prompt assembly, the client, and the JSON parse all
 	 * run as real, covered production code; tearDown resets it to null.
 	 *
@@ -27,6 +30,12 @@ class Summarizer_Node extends Node {
 	 * @var (\Closure(): ?LLM_Client)|null
 	 */
 	public static ?\Closure $llm_factory = null;
+
+	/** Tachikoma-parity: no-arg ctor. Wires the sibling :config interpreter from node_schema()['commands']. */
+	public function __construct() {
+		parent::__construct();
+		$this->auto_wire_interpreter();
+	}
 
 	public function fill( array &$message ): void {
 		/** @var int $type */
@@ -47,12 +56,12 @@ class Summarizer_Node extends Node {
 			$item['title'] = '(untitled)';
 		}
 		/** @var array<string,mixed> $item */
-		$client   = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
+		$client   = self::$llm_factory ? ( self::$llm_factory )() : $this->make_llm_client();
 		$enriched = null;
 		if ( $client instanceof LLM_Client ) {
 			try {
 				$raw = $client->chat(
-					Prompts::enrich( $item, Settings::get_string( 'relevance_profile' ) ),
+					Prompts::enrich( $item, $this->relevance_profile() ),
 					[ 'max_tokens' => 500, 'temperature' => 0.3 ]
 				);
 				$enriched = self::parse_enrich( $raw );
@@ -121,7 +130,7 @@ class Summarizer_Node extends Node {
 			'category'     => 'Transform',
 			'description'  => 'Summarizes one item; emits the item plus a summary. Source-agnostic.',
 			'arguments'    => [],
-			'commands'     => [],
+			'commands'     => self::llm_config_commands(),
 			'accepts_fill' => true,
 			'has_target'   => true,
 		];

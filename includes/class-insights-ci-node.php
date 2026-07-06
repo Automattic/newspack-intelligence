@@ -217,7 +217,7 @@ class Insights_CI_Node extends Service_CI_Node {
 			'accumulated' => \count( $snapshot['items'] ),
 			'done'        => $snapshot['done'],
 			'total'       => $snapshot['total'],
-			'digest'      => self::read_latest_digest( Settings::DIGEST_PATH ),
+			'digest'      => self::read_latest_digest( Digest_Builder_Node::DIGEST_PATH ),
 		];
 	}
 
