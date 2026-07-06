@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: configuration moved from the Settings page into the topology.** The **Settings → AI Newsletter** page is removed; the five pipeline nodes now self-configure via topology `:config` verbs (set in the nodes console or the `.tsl`) instead of the global option store. GitHub/Linear/Summarizer/Digest take `set_vault_id` (a Vault-entry dropdown in the console); GitHub takes `add_repo`, Feed takes `add_url`, Summarizer/Digest take `add_profile` (+ optional `set_api_url`/`set_model`/`set_feature`, defaulting to the AI proxy / `gpt-oss-120b` / `newspack-ai-newsletter`). **Re-enter your connector repos/feeds, vault ids, and digest profile as node verbs** — existing `newspack_ai_newsletter_*` options are no longer read (they remain inert in the DB and are cleared on uninstall). The digest path constant moved from `Settings::DIGEST_PATH` to `Digest_Builder_Node::DIGEST_PATH`.
+
 ## [0.2.7] - 2026-07-02
 
 ### Added
