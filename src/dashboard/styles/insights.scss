@@ -69,13 +69,13 @@ $font:
     &--error {
       background: $error-subtle;
       color: $text;
-      border: 2px solid $error;
+      border: 1px solid $error;
     }
 
     &--ok {
       background: #f0f7f1;
       color: $text;
-      border: 2px solid $success;
+      border: 1px solid $success;
     }
   }
 
@@ -84,7 +84,7 @@ $font:
     padding: 32px;
     text-align: center;
     background: $surface-subtle;
-    border: 2px solid $border;
+    border: 1px solid $border;
     border-radius: 16px;
 
     p {
@@ -122,7 +122,7 @@ $font:
   &__card {
     padding: 16px;
     background: $surface;
-    border: 2px solid $border;
+    border: 1px solid $border;
     border-radius: 8px;
   }
 
@@ -140,7 +140,7 @@ $font:
     gap: 4px;
     padding: 16px;
     background: $surface;
-    border: 2px solid $border;
+    border: 1px solid $border;
     border-radius: 8px;
   }
 
@@ -331,7 +331,7 @@ $font:
     font-family: $font;
     color: #fff;
     background: $cobalt;
-    border: 2px solid $cobalt;
+    border: 1px solid $cobalt;
     border-radius: 8px;
     cursor: pointer;
     transition: background 0.15s;
@@ -380,7 +380,7 @@ $font:
     padding: 12px 14px;
     max-height: 720px;
     overflow: auto;
-    border: 2px solid $border;
+    border: 1px solid $border;
     border-radius: 8px;
     background: $surface-subtle;
     color: $text;
