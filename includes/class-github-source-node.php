@@ -12,13 +12,22 @@
 
 namespace Newspack_AI_Newsletter;
 
+use Newspack_Nodes\Command_Interpreter_Node;
+
 \defined( 'ABSPATH' ) || exit;
 
 class Github_Source_Node extends Source_Node {
+	use Vault_Secret;
 
 	private const API_BASE   = 'https://api.github.com';
 	private const PER_PAGE   = 10;
 	private const USER_AGENT = 'newspack-ai-newsletter';
+
+	/** @var array<int,string> Repos (owner/name) registered via the `add_repo` verb, in call order. */
+	protected array $repos = [];
+
+	/** @var string Vault entry ID registered via the `set_vault_id` verb; resolved to the raw token at config() time. */
+	protected string $vault_id = '';
 
 	/**
 	 * libcurl/wp_remote_get call seam. Null by default; the call site then invokes
@@ -166,15 +175,102 @@ class Github_Source_Node extends Source_Node {
 	/** @return array{repos:array<int,string>,token:string} */
 	protected function config(): array {
 		return [
-			'repos' => Settings::get_array( 'github_repos' ),
-			'token' => Settings::get_secret( 'github_token' ),
+			'repos' => $this->repos,
+			'token' => $this->resolve_vault_secret( $this->vault_id ),
 		];
 	}
 
+	/**
+	 * `add_repo` verb handler — appends one owner/name repo to the registered list.
+	 *
+	 * @param string $args The repo, `owner/name`.
+	 * @return string Result line.
+	 */
+	public function add_repo( string $args ): string {
+		$repo = \trim( $args );
+		if ( '' === $repo ) {
+			return 'error: add_repo requires <owner/name>';
+		}
+		$this->repos[] = $repo;
+		return 'ok';
+	}
+
+	/**
+	 * `add_repo` verb dispatch — resolves the patron node and delegates.
+	 *
+	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
+	 * @param string                   $args        The repo, `owner/name`.
+	 * @return string Result line.
+	 */
+	public static function cmd_add_repo( Command_Interpreter_Node $interpreter, string $args ): string {
+		/** @var self $patron */
+		$patron = $interpreter->patron();
+		return $patron->add_repo( $args );
+	}
+
+	/**
+	 * `set_vault_id` verb handler — last-write-wins.
+	 *
+	 * @param string $args The Vault entry ID.
+	 * @return string Result line.
+	 */
+	public function set_vault_id( string $args ): string {
+		$this->vault_id = \trim( $args );
+		return 'ok';
+	}
+
+	/**
+	 * `set_vault_id` verb dispatch — resolves the patron node and delegates.
+	 *
+	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
+	 * @param string                   $args        The Vault entry ID.
+	 * @return string Result line.
+	 */
+	public static function cmd_set_vault_id( Command_Interpreter_Node $interpreter, string $args ): string {
+		/** @var self $patron */
+		$patron = $interpreter->patron();
+		return $patron->set_vault_id( $args );
+	}
+
+	/** Emit the base config plus round-trippable `cmd {name}:config add_repo …` / `set_vault_id …` lines. */
+	public function dump_config(): string {
+		$out = parent::dump_config();
+		foreach ( $this->repos as $repo ) {
+			$out .= "cmd {$this->name}:config add_repo {$repo}\n";
+		}
+		if ( '' !== $this->vault_id ) {
+			$out .= "cmd {$this->name}:config set_vault_id {$this->vault_id}\n";
+		}
+		return $out;
+	}
+
 	public static function node_schema(): array {
-		return self::source_schema(
-			'Fetches GitHub Releases, Merged PRs, and Issues for the configured repos on a TICK request (request_node github TICK).',
-			'Fetch + emit new GitHub items. Trigger with `request_node github TICK`.'
+		return \array_merge(
+			self::source_schema(
+				'Fetches GitHub Releases, Merged PRs, and Issues for the configured repos on a TICK request (request_node github TICK).',
+				'Fetch + emit new GitHub items. Trigger with `request_node github TICK`.'
+			),
+			[
+				'commands' => [
+					[
+						'name'        => 'add_repo',
+						'description' => 'Register a repo to fetch on TICK: <owner/name>.',
+						'args'        => [
+							[ 'name' => 'repo', 'type' => 'string', 'required' => true ],
+						],
+						'handler'     => static fn ( Command_Interpreter_Node $interpreter, string $args ): string => self::cmd_add_repo( $interpreter, $args ),
+						'multiple'    => true,
+					],
+					[
+						'name'        => 'set_vault_id',
+						'description' => 'Set the Vault entry ID to resolve the GitHub token from: <vault_id>.',
+						'args'        => [
+							[ 'name' => 'vault_id', 'type' => 'vault_id', 'required' => true ],
+						],
+						'handler'     => static fn ( Command_Interpreter_Node $interpreter, string $args ): string => self::cmd_set_vault_id( $interpreter, $args ),
+					],
+				],
+			]
 		);
 	}
 }

@@ -21,16 +21,24 @@ namespace Newspack_AI_Newsletter;
 
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Message;
+use Newspack_Nodes\Schema_Reflection;
 
 \defined( 'ABSPATH' ) || exit;
 
 abstract class Source_Node extends Node implements Source {
+	use Schema_Reflection;
 
 	/** Cap on the remembered emitted-id set — bounds memory on a long-lived worker. */
 	private const MAX_SEEN = 2000;
 
 	/** @var array<string,bool> Emitted item ids (insertion-ordered), for cross-tick dedup. */
 	protected array $seen = [];
+
+	/** Tachikoma-parity: no-arg ctor. Wires the sibling `:config` interpreter from node_schema()['commands']. */
+	public function __construct() {
+		parent::__construct();
+		$this->auto_wire_interpreter();
+	}
 
 	/**
 	 * TICK is a runtime trigger: a TM_REQUEST handled here in fill() (NOT a
