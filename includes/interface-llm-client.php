@@ -7,6 +7,8 @@
 
 namespace Newspack_AI_Newsletter;
 
+\defined( 'ABSPATH' ) || exit;
+
 /**
  * A chat-completions client. Implementations target the Automattic AI API Proxy
  * (OpenAI `chat/completions` shape).
