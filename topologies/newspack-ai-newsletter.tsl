@@ -59,7 +59,8 @@ cmd summarizer:config set_vault_id AI-proxy
 cmd summarizer:config set_model    gpt-oss-120b
 cmd summarizer:config set_feature  newspack-ai-newsletter
 cmd summarizer:config add_profile  Engineers building WordPress publishing tools for Newspack.
-cmd summarizer:config add_profile  Prioritize shipped releases, merged PRs that change behavior or APIs, and runtime/infra changes or incidents; deprioritize dependency bumps, docs typos, and cosmetic tweaks.
+cmd summarizer:config add_profile  Prioritize shipped releases, merged PRs that change behavior or APIs, and runtime/infra changes or incidents.
+cmd summarizer:config add_profile  Deprioritize dependency bumps, docs typos, and cosmetic tweaks.
 
 make_node Scorer         scorer
 
@@ -78,7 +79,8 @@ cmd digest:config set_vault_id AI-proxy
 cmd digest:config set_model    gpt-oss-120b
 cmd digest:config set_feature  newspack-ai-newsletter
 cmd digest:config add_profile  Engineers building WordPress publishing tools for Newspack.
-cmd digest:config add_profile  Prioritize shipped releases, merged PRs that change behavior or APIs, and runtime/infra changes or incidents; deprioritize dependency bumps, docs typos, and cosmetic tweaks.
+cmd digest:config add_profile  Prioritize shipped releases, merged PRs that change behavior or APIs, and runtime/infra changes or incidents.
+cmd digest:config add_profile  Deprioritize dependency bumps, docs typos, and cosmetic tweaks.
 cmd digest:config add_profile  Do not produce tables.
 
 make_node Tee            digest:tee
