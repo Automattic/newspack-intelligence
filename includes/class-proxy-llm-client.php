@@ -7,6 +7,8 @@
 
 namespace Newspack_AI_Newsletter;
 
+\defined( 'ABSPATH' ) || exit;
+
 /**
  * Posts chat-completion requests to the Automattic AI API Proxy and returns the
  * assistant message content.
