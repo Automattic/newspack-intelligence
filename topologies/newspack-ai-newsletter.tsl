@@ -27,7 +27,6 @@
 # digest composes + writes digest:log automatically once all sources report DONE for the
 # cycle (the dashboard Collect RESETs then TICKs them).
 var num_partitions = 1
-var stale_timeout = 600;
 
 make_node Github_Source  github
 cmd github:config set_vault_id github
