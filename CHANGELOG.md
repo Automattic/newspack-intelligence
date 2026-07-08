@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The `DONE` completion sentinel now carries a trailing newline (`"DONE\n"`), so it flushes through a `Log` → `Tail` pipeline immediately.** Written to a `Log` (a line-buffered `Partition`) and read back over `Tail`, a `'DONE'` value with no terminator stalls as an incomplete final line — it only flushes once a later newline-bearing write arrives, so completion could hang indefinitely. Source nodes now emit `TM_INFO "DONE\n"` and `Digest_Builder_Node` matches it in lockstep.
+
 ## [0.2.9] - 2026-07-07
 
 ### Changed
