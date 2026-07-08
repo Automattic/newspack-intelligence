@@ -86,7 +86,7 @@ class Digest_Builder_Node extends Node {
 	 *
 	 * @param array<int,mixed> $message Message reference.
 	 */
-	public function fill( array &$message ): void {
+	public function fill( array $message ): void {
 		$type = \is_numeric( $message[ Message::TYPE ] ) ? (int) $message[ Message::TYPE ] : 0;
 		if ( $type & Message::TM_REQUEST ) {
 			$this->handle_request( $message );

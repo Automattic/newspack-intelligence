@@ -32,7 +32,7 @@ class Scorer_Node extends Node {
 	/** Recency half-life: 7 days, in seconds. */
 	private const RECENCY_HALF_LIFE = 604800;
 
-	public function fill( array &$message ): void {
+	public function fill( array $message ): void {
 		/** @var int $type */
 		$type = $message[ Message::TYPE ];
 		// Forward control signals (e.g. a source's DONE) unchanged toward the digest.

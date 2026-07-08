@@ -371,7 +371,7 @@ class Capturing_Interpreter extends Command_Interpreter_Node {
 		return $this->partition;
 	}
 
-	public function fill( array &$message ): void {
+	public function fill( array $message ): void {
 		$this->messages[] = $message;
 	}
 }

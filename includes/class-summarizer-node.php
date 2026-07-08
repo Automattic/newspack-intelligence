@@ -37,7 +37,7 @@ class Summarizer_Node extends Node {
 		$this->auto_wire_interpreter();
 	}
 
-	public function fill( array &$message ): void {
+	public function fill( array $message ): void {
 		/** @var int $type */
 		$type = $message[ Message::TYPE ];
 		// Forward control signals (e.g. a source's DONE) unchanged toward the digest.
