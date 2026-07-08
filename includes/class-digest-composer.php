@@ -17,11 +17,11 @@ use Newspack_Nodes\Core;
 \defined( 'ABSPATH' ) || exit;
 
 class Digest_Composer {
+	private const MAX_TOKENS = 32000;
 
 	// Per-source cap: the briefing draws the top N items FROM EACH SOURCE, so a
 	// high-volume source (e.g. github) can't crowd linear/feed out of the digest.
 	private const PER_SOURCE = 10;
-	private const MAX_TOKENS = 32000;
 
 	/**
 	 * Compose a markdown digest from accumulated items.

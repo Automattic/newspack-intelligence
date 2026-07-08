@@ -25,13 +25,13 @@ use Newspack_Nodes\Worker_Base;
 
 class Insights_CI_Node extends Service_CI_Node {
 
-	private const TOP_N = 10;
+	/** The source node names Collect ticks; their count MUST equal the digest's `total` make_node arg in newspack-ai-newsletter.tsl. */
+	private const SOURCE_NODES = [ 'github', 'linear', 'feed' ];
 
 	/** The worker topology whose sources Collect ticks; also the worker-id prefix. */
 	private const TOPOLOGY = 'newspack-ai-newsletter';
 
-	/** The source node names Collect ticks; their count MUST equal the digest's `total` make_node arg in newspack-ai-newsletter.tsl. */
-	private const SOURCE_NODES = [ 'github', 'linear', 'feed' ];
+	private const TOP_N = 10;
 
 	/**
 	 * Scored-snapshot read seam. Lazily-defaulted to read_snapshot(); tests reassign it

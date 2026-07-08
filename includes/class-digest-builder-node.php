@@ -21,35 +21,6 @@ class Digest_Builder_Node extends Node {
 	public const DIGEST_PATH = '/tmp/newspack-ai-newsletter/digest.md';
 
 	/**
-	 * Accumulated summarized items (array-key: they round-trip through offsetlog JSON).
-	 *
-	 * @var array<int,array<array-key,mixed>>
-	 */
-	private array $items = [];
-
-	/**
-	 * Seen item ids for in-cycle dedup; rebuilt from items on restore, cleared on RESET.
-	 *
-	 * @var array<string,bool>
-	 */
-	private array $seen = [];
-
-	/** Scored-partition node name to nudge on RESET (arg 0); '' disables the nudge. */
-	private string $scored_partition = '';
-
-	/**
-	 * Distinct sources that signalled DONE this cycle (keyed by source name).
-	 * Counting distinct names — not raw signals — is idempotent across re-ticks, replays,
-	 * and a stale cross-cycle DONE, so `done` can't overshoot the real source count.
-	 *
-	 * @var array<string,bool>
-	 */
-	private array $reported = [];
-
-	/** Sources expected this cycle, set by a RESET (the dashboard's Collect). 0 until a collect. */
-	private int $total = 0;
-
-	/**
 	 * LLM-client factory seam. Lazily-defaulted at the call site to this node's
 	 * own verb-configured `make_llm_client()` (null when no vault token resolves).
 	 * Tests reassign in setUp to inject a real `Proxy_LLM_Client` — faking only its
@@ -61,6 +32,35 @@ class Digest_Builder_Node extends Node {
 	 * @var (\Closure(): ?LLM_Client)|null
 	 */
 	public static ?\Closure $llm_factory = null;
+
+	/**
+	 * Accumulated summarized items (array-key: they round-trip through offsetlog JSON).
+	 *
+	 * @var array<int,array<array-key,mixed>>
+	 */
+	private array $items = [];
+
+	/**
+	 * Distinct sources that signalled DONE this cycle (keyed by source name).
+	 * Counting distinct names — not raw signals — is idempotent across re-ticks, replays,
+	 * and a stale cross-cycle DONE, so `done` can't overshoot the real source count.
+	 *
+	 * @var array<string,bool>
+	 */
+	private array $reported = [];
+
+	/** Scored-partition node name to nudge on RESET (arg 0); '' disables the nudge. */
+	private string $scored_partition = '';
+
+	/**
+	 * Seen item ids for in-cycle dedup; rebuilt from items on restore, cleared on RESET.
+	 *
+	 * @var array<string,bool>
+	 */
+	private array $seen = [];
+
+	/** Sources expected this cycle, set by a RESET (the dashboard's Collect). 0 until a collect. */
+	private int $total = 0;
 
 	/** Tachikoma-parity: no-arg ctor. Wires the sibling :config interpreter from node_schema()['commands']. */
 	public function __construct() {

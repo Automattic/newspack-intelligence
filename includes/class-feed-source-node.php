@@ -18,13 +18,10 @@ use Newspack_Nodes\Command_Interpreter_Node;
 \defined( 'ABSPATH' ) || exit;
 
 class Feed_Source_Node extends Source_Node {
-
-	private const USER_AGENT = 'newspack-ai-newsletter';
 	private const ATOM_NS    = 'http://www.w3.org/2005/Atom';
 	private const DC_NS      = 'http://purl.org/dc/elements/1.1/';
 
-	/** @var array<int,string> Feed URLs registered via the `add_url` verb, in call order. */
-	protected array $urls = [];
+	private const USER_AGENT = 'newspack-ai-newsletter';
 
 	/**
 	 * wp_remote_get call seam. Null by default; the call site then invokes the real
@@ -37,6 +34,9 @@ class Feed_Source_Node extends Source_Node {
 	 * @var (\Closure( string, array<string,mixed> ): (array<string,mixed>|\WP_Error))|null
 	 */
 	public static ?\Closure $http_get = null;
+
+	/** @var array<int,string> Feed URLs registered via the `add_url` verb, in call order. */
+	protected array $urls = [];
 
 	/**
 	 * Fetch every configured feed, normalized to the item contract

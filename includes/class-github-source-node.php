@@ -23,12 +23,6 @@ class Github_Source_Node extends Source_Node {
 	private const PER_PAGE   = 10;
 	private const USER_AGENT = 'newspack-ai-newsletter';
 
-	/** @var array<int,string> Repos (owner/name) registered via the `add_repo` verb, in call order. */
-	protected array $repos = [];
-
-	/** @var string Vault entry ID registered via the `set_vault_id` verb; resolved to the raw token at config() time. */
-	protected string $vault_id = '';
-
 	/**
 	 * libcurl/wp_remote_get call seam. Null by default; the call site then invokes
 	 * the real `wp_remote_get`. Tests reassign it (and reset to null in tearDown) to
@@ -41,6 +35,12 @@ class Github_Source_Node extends Source_Node {
 	 * @var (\Closure( string, array<string,mixed> ): (array<string,mixed>|\WP_Error))|null
 	 */
 	public static ?\Closure $http_get = null;
+
+	/** @var array<int,string> Repos (owner/name) registered via the `add_repo` verb, in call order. */
+	protected array $repos = [];
+
+	/** @var string Vault entry ID registered via the `set_vault_id` verb; resolved to the raw token at config() time. */
+	protected string $vault_id = '';
 
 	/**
 	 * Fetch Releases + Merged PRs + Issues for every configured repo, normalized to

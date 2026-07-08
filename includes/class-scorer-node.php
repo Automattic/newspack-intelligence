@@ -23,14 +23,14 @@ class Scorer_Node extends Node {
 	/** Title keywords that bump the fallback score, +1.0 each (case-insensitive). */
 	private const KEYWORDS = [ 'award', 'launch', 'ships', 'GA', 'million', '10k' ];
 
-	/** relevance_score (0-10) dominates the deterministic scale. */
-	private const RELEVANCE_WEIGHT = 1.0;
-
 	/** Max points a brand-new item earns from recency. */
 	private const RECENCY_BONUS_MAX = 2.0;
 
 	/** Recency half-life: 7 days, in seconds. */
 	private const RECENCY_HALF_LIFE = 604800;
+
+	/** relevance_score (0-10) dominates the deterministic scale. */
+	private const RELEVANCE_WEIGHT = 1.0;
 
 	public function fill( array $message ): void {
 		/** @var int $type */
