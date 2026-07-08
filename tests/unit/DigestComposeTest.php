@@ -39,7 +39,7 @@ final class DigestComposeTest extends TestCase {
 		$m                   = Message::new_message();
 		$m[ Message::TYPE ]  = Message::TM_INFO;
 		$m[ Message::FROM ]  = 'src';
-		$m[ Message::VALUE ] = 'DONE';
+		$m[ Message::VALUE ] = "DONE\n";
 		$n->fill( $m );
 	}
 

@@ -82,7 +82,7 @@ class Digest_Builder_Node extends Node {
 	}
 
 	/**
-	 * Accepts TM_REQUEST 'RESET' and 'REGENERATE', TM_INFO 'DONE', and TM_STRUCT messages.
+	 * Accepts TM_REQUEST 'RESET' and 'REGENERATE', TM_INFO "DONE\n", and TM_STRUCT messages.
 	 *
 	 * @param array<int,mixed> $message Message reference.
 	 */
@@ -163,7 +163,7 @@ class Digest_Builder_Node extends Node {
 	 */
 	private function handle_info( array $message ): void {
 		$value = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
-		if ( 'DONE' === $value ) {
+		if ( "DONE\n" === $value ) {
 			$from                    = \is_string( $message[ Message::FROM ] ?? null ) ? $message[ Message::FROM ] : '';
 			$this->reported[ $from ] = true;
 			if ( \count( $this->reported ) >= $this->total ) {

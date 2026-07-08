@@ -84,7 +84,7 @@ abstract class Source_Node extends Node implements Source {
 			$done                   = Message::new_message();
 			$done[ Message::TYPE ]  = Message::TM_INFO;
 			$done[ Message::FROM ]  = $this->name;
-			$done[ Message::VALUE ] = 'DONE';
+			$done[ Message::VALUE ] = "DONE\n";
 			parent::fill( $done );
 		}
 	}
