@@ -6,6 +6,7 @@ namespace Newspack_AI_Newsletter\Tests;
 use Newspack_AI_Newsletter\LLM_Client;
 use Newspack_AI_Newsletter\LLM_Config;
 use Newspack_AI_Newsletter\Proxy_LLM_Client;
+use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Tests\TestCase;
 use Newspack_Nodes\Vault;
@@ -166,6 +167,85 @@ final class LlmConfigTest extends TestCase {
 		$this->assertStringNotContainsString( 'set_feature', $dump );
 		$this->assertStringNotContainsString( 'set_vault_id', $dump );
 		$this->assertStringNotContainsString( 'add_profile', $dump );
+	}
+
+	/** Wire a `:config`-style interpreter whose patron is $node, matching the runtime dispatch shape. */
+	private function interpreter_for( Node $node ): Command_Interpreter_Node {
+		$interpreter = new Command_Interpreter_Node();
+		$interpreter->patron( $node );
+		return $interpreter;
+	}
+
+	public function test_cmd_set_api_url_delegates_to_patron(): void {
+		$node = $this->fixture();
+
+		$result = $node::cmd_set_api_url( $this->interpreter_for( $node ), 'https://proxy.test/v1' );
+
+		$this->assertSame( 'ok', $result );
+		$this->assertSame( 'https://proxy.test/v1', $node->api_url() );
+	}
+
+	public function test_cmd_set_vault_id_delegates_to_patron(): void {
+		$node = $this->fixture();
+
+		$result = $node::cmd_set_vault_id( $this->interpreter_for( $node ), 'ai-vault' );
+
+		$this->assertSame( 'ok', $result );
+		$this->assertSame( 'ai-vault', $node->vault_id() );
+	}
+
+	public function test_cmd_set_model_delegates_to_patron(): void {
+		$node = $this->fixture();
+
+		$result = $node::cmd_set_model( $this->interpreter_for( $node ), 'gpt-5' );
+
+		$this->assertSame( 'ok', $result );
+		$this->assertSame( 'gpt-5', $node->model() );
+	}
+
+	public function test_cmd_set_feature_delegates_to_patron(): void {
+		$node = $this->fixture();
+
+		$result = $node::cmd_set_feature( $this->interpreter_for( $node ), 'my-feature' );
+
+		$this->assertSame( 'ok', $result );
+		$this->assertSame( 'my-feature', $node->feature() );
+	}
+
+	public function test_cmd_add_profile_delegates_to_patron(): void {
+		$node = $this->fixture();
+
+		$result = $node::cmd_add_profile( $this->interpreter_for( $node ), 'Engineering' );
+
+		$this->assertSame( 'ok', $result );
+		$this->assertSame( 'Engineering', $node->profile() );
+	}
+
+	public function test_cmd_add_profile_propagates_blank_error_from_patron(): void {
+		$node = $this->fixture();
+
+		$result = $node::cmd_add_profile( $this->interpreter_for( $node ), '   ' );
+
+		$this->assertStringStartsWith( 'error:', $result );
+		$this->assertSame( '', $node->profile() );
+	}
+
+	public function test_llm_config_command_handlers_dispatch_through_to_patron_state(): void {
+		$node        = $this->fixture();
+		$interpreter = $this->interpreter_for( $node );
+		$handlers    = \array_column( $node::llm_config_commands(), 'handler', 'name' );
+
+		$this->assertSame( 'ok', $handlers['set_api_url']( $interpreter, 'https://proxy.test/v1' ) );
+		$this->assertSame( 'ok', $handlers['set_vault_id']( $interpreter, 'ai-vault' ) );
+		$this->assertSame( 'ok', $handlers['set_model']( $interpreter, 'gpt-5' ) );
+		$this->assertSame( 'ok', $handlers['set_feature']( $interpreter, 'my-feature' ) );
+		$this->assertSame( 'ok', $handlers['add_profile']( $interpreter, 'Engineering' ) );
+
+		$this->assertSame( 'https://proxy.test/v1', $node->api_url() );
+		$this->assertSame( 'ai-vault', $node->vault_id() );
+		$this->assertSame( 'gpt-5', $node->model() );
+		$this->assertSame( 'my-feature', $node->feature() );
+		$this->assertSame( 'Engineering', $node->profile() );
 	}
 
 	public function test_llm_config_commands_declares_all_five_verbs_and_the_vault_id_type(): void {
