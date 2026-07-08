@@ -58,7 +58,7 @@ final class SourceNodeTest extends TestCase {
 
 		$last = \end( $sink->captured );
 		$this->assertSame( Message::TM_INFO, $last[ Message::TYPE ] & Message::TM_INFO );
-		$this->assertSame( 'DONE', $last[ Message::VALUE ] );
+		$this->assertSame( "DONE\n", $last[ Message::VALUE ] );
 	}
 
 	public function test_dedups_by_id_across_ticks(): void {
