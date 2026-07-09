@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Newspack AI Newsletter
  * Description: AI-driven team intelligence digest built on the newspack-nodes substrate.
- * Version: 0.2.9
+ * Version: 0.2.10
  * Requires Plugins: newspack-nodes
  * Text Domain: newspack-ai-newsletter
  *
@@ -14,7 +14,7 @@ namespace Newspack_AI_Newsletter;
 \defined( 'ABSPATH' ) || exit;
 
 if ( ! \defined( 'NEWSPACK_AI_NEWSLETTER_VERSION' ) ) {
-	\define( 'NEWSPACK_AI_NEWSLETTER_VERSION', '0.2.9' );
+	\define( 'NEWSPACK_AI_NEWSLETTER_VERSION', '0.2.10' );
 }
 if ( ! \defined( 'NEWSPACK_AI_NEWSLETTER_DIR' ) ) {
 	\define( 'NEWSPACK_AI_NEWSLETTER_DIR', \plugin_dir_path( __FILE__ ) );
