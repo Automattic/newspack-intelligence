@@ -7,13 +7,18 @@ import { markdownToBlockMarkup } from '../markdownToBlockMarkup';
 // How long a transient ack note stays before auto-dismissing.
 const NOTE_TTL_MS = 6000;
 
-// Safety net: release the Collect lock if a dispatched cycle never reports
-// completion (a source hung), so the button can't latch forever.
+// Safety net: release the Collect lock if a cycle never reports completion.
 const COLLECT_SAFETY_MS = 180000;
 
-// REST-call seam for the "Create draft post" action. Lazily defaulted to a thin
-// apiFetch wrapper; tests inject a fake so the suite never hits the network but
-// still exercises the success/failure rendering paths.
+/**
+ * REST-call seam for the "Create draft post" action. Lazily defaulted to a thin
+ * apiFetch wrapper; tests inject a fake so the suite never hits the network but
+ * still exercises the success/failure rendering paths.
+ *
+ * @param {Object} draft         Draft fields.
+ * @param {string} draft.title   Post title.
+ * @param {string} draft.content Post body.
+ */
 const defaultCreateDraft = ( { title, content } ) =>
 	apiFetch( {
 		path: '/wp/v2/posts',
@@ -21,7 +26,7 @@ const defaultCreateDraft = ( { title, content } ) =>
 		data: { title, content, status: 'draft' },
 	} );
 
-// Parse a verb ack: { … } | { error } on success/handled-failure, null on garbage.
+// Parse a verb ack: {…} | {error} on success/handled-failure, null on garbage.
 function parseAck( payload ) {
 	try {
 		const parsed = JSON.parse( payload );
@@ -66,32 +71,23 @@ export function AccumulatedPanel( {
 
 	const [ generating, setGenerating ] = useState( false );
 	const [ regenNote, setRegenNote ] = useState( null );
-	// `collecting` is the optimistic in-flight lock: set on click, it shows 0/total and keeps
-	// Collect disabled until the poll reflects the new cycle (done moves off its click-time
-	// value) or a timeout fires — the timeout is the anti-stick guard so a no-op collection
-	// can't latch the button forever. `startDone` is the click-time count the clear compares
-	// against; `collectNote` is the collect feedback (success ack or error).
+	// `collecting`: in-flight lock; timeout un-sticks a no-op collect.
 	const [ collecting, setCollecting ] = useState( false );
 	const [ collectNote, setCollectNote ] = useState( null );
 	const startDone = useRef( 0 );
-	// Latch: have we observed this cycle in-progress (done < total) since the click?
+	// Latch: seen this cycle in-progress (done < total) since the click?
 	const sawIncomplete = useRef( false );
 	const [ copied, setCopied ] = useState( false );
 	const [ editLink, setEditLink ] = useState( null );
 	const [ draftError, setDraftError ] = useState( null );
 	const [ creating, setCreating ] = useState( false );
 
-	// Optimistic display: show 0 right after the click (while `done` is still the
-	// stale pre-click value); show real progress once it moves.
+	// Optimistic display: show 0 right after the click, real once done moves.
 	const displayDone = collecting && done === startDone.current ? 0 : done;
-	// Clickable only when nothing's in flight AND the pipeline is at a clean boundary —
-	// empty (0) or complete (>= total). Mid-collection it's locked by the boundary rule
-	// alone, so gating survives a page reload (which loses `collecting`).
+	// Clickable only at a boundary (empty or complete) — survives a reload.
 	const canCollect = ! collecting && ( 0 === done || collectComplete );
 
-	// Hold the Collect lock for the WHOLE dispatched cycle: release only once THIS
-	// cycle finishes (a `complete` reading AFTER we've seen it in-progress — never the
-	// pre-click complete state), or a long safety timeout if a source never reports.
+	// Hold the Collect lock until THIS cycle completes (seen in-progress).
 	useEffect( () => {
 		if ( ! collecting ) {
 			return undefined;
@@ -111,7 +107,7 @@ export function AccumulatedPanel( {
 		return () => clearTimeout( timer );
 	}, [ collecting, collectComplete ] );
 
-	// Transient ack notes auto-dismiss so they don't linger forever after the action lands.
+	// Transient ack notes auto-dismiss so they don't linger after the action.
 	useEffect( () => {
 		if ( null === collectNote ) {
 			return undefined;
@@ -129,8 +125,7 @@ export function AccumulatedPanel( {
 
 	const onCopy = () => {
 		setDraftError( null );
-		// navigator.clipboard is undefined on insecure (non-HTTPS) origins and older
-		// browsers — guard it, and only flag "Copied" once the write resolves.
+		// navigator.clipboard is undefined on insecure/old origins — guard it.
 		const clipboard = window.navigator.clipboard;
 		if ( ! clipboard || ! clipboard.writeText ) {
 			setCopied( false );
@@ -157,16 +152,14 @@ export function AccumulatedPanel( {
 	};
 
 	const onCollect = () => {
-		// Capture the pre-click count (for the optimistic 0/total display) and arm the
-		// latch: this cycle hasn't been seen in-progress yet.
+		// Capture pre-click count (optimistic 0/total) and arm the latch.
 		startDone.current = done;
 		sawIncomplete.current = false;
 		setCollecting( true );
 		setCollectNote( null );
 		collect()
 			.then( ( payload ) => {
-				// { collecting, workers } on success or { error } (a normal reply, not a
-				// TM_ERROR) when no worker is live.
+				// { collecting, workers } on success, { error } if no worker.
 				const parsed = parseAck( payload );
 				if ( ! parsed ) {
 					setCollecting( false );
@@ -187,8 +180,7 @@ export function AccumulatedPanel( {
 					} );
 					return;
 				}
-				// Success: acknowledge now; keep the lock — the effect releases it when the
-				// poll shows the cycle complete (done >= total).
+				// Success: ack now, keep the lock; effect frees it on complete.
 				setCollectNote( {
 					type: 'ok',
 					text: sprintf(
@@ -224,7 +216,7 @@ export function AccumulatedPanel( {
 		generate()
 			.then( ( payload ) => {
 				setGenerating( false );
-				// { regenerating, workers } on success or { error } when no worker is live.
+				// { regenerating, workers } on success, { error } if no worker.
 				const parsed = parseAck( payload );
 				if ( ! parsed ) {
 					setDraftError(
@@ -239,7 +231,7 @@ export function AccumulatedPanel( {
 					setDraftError( String( parsed.error ) );
 					return;
 				}
-				// The worker is recomposing; the durable digest lands on the next poll.
+				// Worker is recomposing; the digest lands on the next poll.
 				setRegenNote(
 					__(
 						'Regenerating… the draft updates on the next poll.',

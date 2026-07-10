@@ -19,8 +19,7 @@ use Newspack_Nodes\Core;
 class Digest_Composer {
 	private const MAX_TOKENS = 32000;
 
-	// Per-source cap: the briefing draws the top N items FROM EACH SOURCE, so a
-	// high-volume source (e.g. github) can't crowd linear/feed out of the digest.
+	// Per-source cap so one busy source can't crowd others out of the digest.
 	private const PER_SOURCE = 10;
 
 	/**
@@ -31,8 +30,7 @@ class Digest_Composer {
 	 * @param string                            $profile The relevance profile for the briefing prompt.
 	 */
 	public static function compose( array $items, ?LLM_Client $client, string $profile ): string {
-		// Select the top N per source up front so the LLM path and the no-AI
-		// fallback both work from the same balanced set.
+		// Top N per source up front; the LLM and no-AI paths share the set.
 		$selected = self::top_per_source( $items, self::PER_SOURCE );
 		$draft    = null;
 		if ( $client instanceof LLM_Client ) {
@@ -42,7 +40,7 @@ class Digest_Composer {
 					[ 'max_tokens' => self::MAX_TOKENS ]
 				);
 			} catch ( \RuntimeException $e ) {
-				// Rate-limited; an LLM failure NEVER throws out of compose — fall back to the ranked list.
+				// LLM failure never throws — fall back to the ranked list.
 				Core::print_less_often( 'AI digest compose failed: ' . $e->getMessage() );
 				$draft = null;
 			}

@@ -59,7 +59,8 @@ abstract class Source_Node extends Node implements Source {
 	 * TM_STRUCT, then emit one TM_INFO DONE so the digest can count collection
 	 * progress. Fire-and-forget. An item with no string `id` is skipped (no id =
 	 * can't dedup, and the contract requires one). fetch() is synchronous, so DONE
-	 * is correctly ordered after every item from this tick.
+	 * is correctly ordered after every item from this tick. DONE's FROM
+	 * (breadcrumbed downstream) is the digest's distinct-source key; VALUE the marker.
 	 *
 	 * @param array<int,mixed> $message Incoming request Message.
 	 */
@@ -75,12 +76,11 @@ abstract class Source_Node extends Node implements Source {
 				$response[ Message::TYPE ]  = Message::TM_STRUCT;
 				$response[ Message::FROM ]  = $this->name;
 				$response[ Message::VALUE ] = $item;
-				// parent::fill stamps TO from a connect_node-set target, then forwards to sink.
+				// parent::fill stamps TO from target, then forwards to sink.
 				parent::fill( $response );
 			}
 		} finally {
-			// DONE always fires (even if fetch() throws) so one failing source can't stall collection progress.
-			// FROM (the source name, breadcrumbed downstream) is the digest's distinct-source key; VALUE is the marker.
+			// DONE always fires even on throw, so progress can't stall.
 			$done                   = Message::new_message();
 			$done[ Message::TYPE ]  = Message::TM_INFO;
 			$done[ Message::FROM ]  = $this->name;

@@ -90,9 +90,7 @@ class Feed_Source_Node extends Source_Node {
 	 */
 	private function parse( string $body ): array {
 		$prev = \libxml_use_internal_errors( true );
-		// LIBXML_NONET: a third-party feed body is untrusted — never let a DTD/xinclude
-		// SYSTEM reference fetch a URL. (libxml 2.9+ already disables external entity
-		// substitution by default, since we don't pass LIBXML_NOENT.)
+		// LIBXML_NONET: untrusted feed body — no SYSTEM ref may fetch a URL.
 		$xml = \simplexml_load_string( $body, \SimpleXMLElement::class, LIBXML_NONET );
 		\libxml_clear_errors();
 		\libxml_use_internal_errors( $prev );
@@ -121,7 +119,7 @@ class Feed_Source_Node extends Source_Node {
 			if ( '' === $id ) {
 				continue;
 			}
-			// RSS 1.0 / RDF-bridged feeds date via Dublin Core <dc:date> rather than <pubDate>.
+			// RSS 1.0 / RDF feeds date via <dc:date>, not <pubDate>.
 			$when = (string) $item->pubDate;
 			if ( '' === $when ) {
 				$when = (string) $item->children( self::DC_NS )->date;

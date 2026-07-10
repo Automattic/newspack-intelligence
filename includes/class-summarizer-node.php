@@ -40,7 +40,7 @@ class Summarizer_Node extends Node {
 	public function fill( array $message ): void {
 		/** @var int $type */
 		$type = $message[ Message::TYPE ];
-		// Forward control signals (e.g. a source's DONE) unchanged toward the digest.
+		// Forward control signals (a source's DONE) unchanged to the digest.
 		if ( $type & Message::TM_INFO ) {
 			parent::fill( $message );
 			return;
@@ -79,14 +79,14 @@ class Summarizer_Node extends Node {
 			$this->set_state( 'FAILED', (string) ( \is_scalar( $item['title'] ) ? $item['title'] : '' ) );
 		}
 
-		// The body fed the summary; nothing downstream reads it — drop it to shrink the scored log + snapshot.
+		// Body fed the summary; drop it to shrink the scored log + snapshot.
 		unset( $item['body'] );
 
 		$out                   = Message::new_message();
 		$out[ Message::TYPE ]  = Message::TM_STRUCT;
 		$out[ Message::FROM ]  = $this->name;
 		$out[ Message::VALUE ] = $item;
-		// parent::fill (base, not $this — would recurse) stamps TO from target, increments the counter, and forwards to sink.
+		// parent::fill (base, not $this — would recurse) forwards to sink.
 		parent::fill( $out );
 	}
 

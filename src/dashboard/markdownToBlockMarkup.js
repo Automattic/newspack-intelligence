@@ -1,11 +1,13 @@
 import { pasteHandler, serialize } from '@wordpress/blocks';
 
-// Register core blocks exactly once per page load; pasteHandler needs the block
-// registry populated, but re-registering warns ("Block ... is already
-// registered") on every call. block-library is required lazily (only on the
-// first real conversion) so merely importing this module — which the dashboard
-// does at load — doesn't pull the whole block-library/block-editor tree.
 let registered = false;
+/**
+ * Register core blocks exactly once per page load. pasteHandler needs the block
+ * registry populated, but re-registering warns ("Block … is already registered")
+ * on every call, hence the `registered` guard. block-library is require()d lazily
+ * — only on the first real conversion — so merely importing this module (which the
+ * dashboard does at load) doesn't pull the whole block-library/block-editor tree.
+ */
 function ensureCoreBlocks() {
 	if ( registered ) {
 		return;

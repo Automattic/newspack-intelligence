@@ -29,11 +29,7 @@ describe( 'markdownToBlockMarkup', () => {
 	} );
 
 	it( 'returns an empty string for empty input (short-circuit, no paste)', () => {
-		// The short-circuit returns before touching the block registry, so this
-		// runs even though block-library cannot load under jsdom. The real
-		// markdown→blocks conversion (## → wp:heading, GFM table → wp:table) is
-		// browser-only here — see the file docblock for why and what to switch to
-		// if block-library ever becomes loadable under jest.
+		// Short-circuit runs without block-library; conversion is browser-only.
 		expect( markdownToBlockMarkup( '' ) ).toBe( '' );
 		expect( markdownToBlockMarkup() ).toBe( '' );
 	} );

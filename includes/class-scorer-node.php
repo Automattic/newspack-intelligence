@@ -35,7 +35,7 @@ class Scorer_Node extends Node {
 	public function fill( array $message ): void {
 		/** @var int $type */
 		$type = $message[ Message::TYPE ];
-		// Forward control signals (e.g. a source's DONE) unchanged toward the digest.
+		// Forward control signals (a source's DONE) unchanged to the digest.
 		if ( $type & Message::TM_INFO ) {
 			parent::fill( $message );
 			return;
@@ -87,7 +87,7 @@ class Scorer_Node extends Node {
 		$title = \is_string( $item['title'] ?? null ) ? $item['title'] : '';
 		$bump  = 0.0;
 		foreach ( self::KEYWORDS as $kw ) {
-			// Whole-word, case-insensitive — so 'GA' doesn't match "Garage" nor 'award' "awarded".
+			// Whole-word, case-insensitive: 'GA' must not match "Garage".
 			if ( 1 === \preg_match( '/\b' . \preg_quote( $kw, '/' ) . '\b/i', $title ) ) {
 				$bump += 1.0;
 			}

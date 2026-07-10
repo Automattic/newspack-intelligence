@@ -182,7 +182,7 @@ class Insights_CI_Node extends Service_CI_Node {
 		if ( ! $node instanceof Partition_Node ) {
 			return null;
 		}
-		// Unbuffered so the worker's input consumer sees the appended TICK/RESET immediately, not only at request exit.
+		// Unbuffered so the worker sees the appended TICK/RESET immediately.
 		$node->void_warranty();
 		return $node;
 	}
@@ -352,10 +352,7 @@ class Insights_CI_Node extends Service_CI_Node {
 	}
 
 	public static function node_schema(): array {
-		// Service_CI_Node::slice_verb() builds each slice handler: it passes this node (the
-		// interpreter IS the CI for a Service_CI verb) to the shape and JSON-encodes the
-		// result. commands_from_schema() wraps every handler with require_manage_options(),
-		// so the gate is centralized there — no per-slice gate needed.
+		// slice_verb wraps each slice; gate lives in commands_from_schema().
 		return \array_merge( parent::node_schema(), [
 			'category'    => 'Service',
 			'description' => 'Reads the scored-pipeline offsetlog snapshot + rendered digest; serves the dashboard insights slices and recomposes on demand.',
