@@ -74,7 +74,7 @@ class Insights_CI_Node extends Service_CI_Node {
 			$source                 = \is_string( $item['source'] ?? null ) ? $item['source'] : '?';
 			$by_source[ $source ][] = [
 				'title' => \is_string( $item['title'] ?? null ) ? $item['title'] : '',
-				'score' => self::to_float( $item['score'] ?? null ),
+				'score' => Core::num_float( $item['score'] ?? null ),
 			];
 		}
 		foreach ( $by_source as &$list ) {
@@ -83,11 +83,6 @@ class Insights_CI_Node extends Service_CI_Node {
 		}
 		unset( $list );
 		return $by_source;
-	}
-
-	/** Coerce an untrusted (JSON-sourced) score to float; non-numeric → 0.0. */
-	private static function to_float( mixed $value ): float {
-		return \is_numeric( $value ) ? (float) $value : 0.0;
 	}
 
 	/**
@@ -233,7 +228,7 @@ class Insights_CI_Node extends Service_CI_Node {
 		}
 		$read = self::$read_items ?? static fn ( string $dir ): array => self::read_snapshot( $dir );
 		$raw  = $read( Config::get_offsets_directory() );
-		$raw  = \is_array( $raw ) ? $raw : [];
+		$raw  = Core::arr( $raw );
 
 		$items = [];
 		foreach ( ( \is_array( $raw['items'] ?? null ) ? $raw['items'] : [] ) as $item ) {
@@ -243,8 +238,8 @@ class Insights_CI_Node extends Service_CI_Node {
 		}
 		$this->snapshot_cache = [
 			'items' => $items,
-			'done'  => self::int_of( $raw['done'] ?? null ),
-			'total' => self::int_of( $raw['total'] ?? null ),
+			'done'  => Core::num_int( $raw['done'] ?? null ),
+			'total' => Core::num_int( $raw['total'] ?? null ),
 		];
 		return $this->snapshot_cache;
 	}
@@ -263,15 +258,10 @@ class Insights_CI_Node extends Service_CI_Node {
 		$total = 0;
 		foreach ( self::scored_dirs( $offsets_dir ) as $dir ) {
 			$cache  = self::read_cache( $dir );
-			$done  += self::int_of( $cache['done'] ?? null );
-			$total += self::int_of( $cache['total'] ?? null );
+			$done  += Core::num_int( $cache['done'] ?? null );
+			$total += Core::num_int( $cache['total'] ?? null );
 		}
 		return [ 'items' => $items, 'done' => $done, 'total' => $total ];
-	}
-
-	/** Coerce an untrusted (JSON-sourced) value to int; non-numeric → 0. */
-	private static function int_of( mixed $value ): int {
-		return \is_numeric( $value ) ? (int) $value : 0;
 	}
 
 	/**
@@ -303,7 +293,7 @@ class Insights_CI_Node extends Service_CI_Node {
 		}
 		// phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- a local log segment, not a remote fetch.
 		$content = \file_get_contents( $newest );
-		return \is_string( $content ) ? $content : '';
+		return Core::str( $content );
 	}
 
 	/**

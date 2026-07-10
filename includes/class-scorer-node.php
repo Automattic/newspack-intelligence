@@ -73,7 +73,7 @@ class Scorer_Node extends Node {
 			return $this->score( $item );
 		}
 		$ts = $item['timestamp'] ?? 0;
-		$ts = \is_numeric( $ts ) ? (int) $ts : 0;
+		$ts = Core::num_int( $ts );
 		return \round( (float) $rel * self::RELEVANCE_WEIGHT + self::recency_bonus( $ts ), 2 );
 	}
 

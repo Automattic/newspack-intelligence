@@ -19,6 +19,7 @@
 
 namespace Newspack_AI_Newsletter;
 
+use Newspack_Nodes\Core;
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Schema_Reflection;
@@ -48,7 +49,7 @@ abstract class Source_Node extends Node implements Source {
 	 * @param array<int,mixed> $message Incoming request Message.
 	 */
 	public function fill( array $message ): void {
-		$type = \is_numeric( $message[ Message::TYPE ] ) ? (int) $message[ Message::TYPE ] : 0;
+		$type = Core::num_int( $message[ Message::TYPE ] );
 		if ( $type & Message::TM_REQUEST ) {
 			$this->handle_request( $message );
 		}
@@ -67,7 +68,7 @@ abstract class Source_Node extends Node implements Source {
 	private function handle_request( array $message ): void {
 		try {
 			foreach ( $this->fetch( $this->config() ) as $item ) {
-				$id = isset( $item['id'] ) && \is_string( $item['id'] ) ? $item['id'] : '';
+				$id = Core::str( $item['id'] ?? null );
 				if ( '' === $id || isset( $this->seen[ $id ] ) ) {
 					continue;
 				}
@@ -123,9 +124,9 @@ abstract class Source_Node extends Node implements Source {
 		return [
 			'source'    => $source,
 			'id'        => "$source:$id",
-			'title'     => \is_string( $title ) ? $title : '',
-			'url'       => \is_string( $url ) ? $url : '',
-			'body'      => \is_string( $body ) ? $body : '',
+			'title'     => Core::str( $title ),
+			'url'       => Core::str( $url ),
+			'body'      => Core::str( $body ),
 			'timestamp' => false !== $ts ? $ts : 0,
 		];
 	}

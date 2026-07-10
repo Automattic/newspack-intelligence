@@ -85,7 +85,7 @@ class Digest_Composer {
 	 */
 	private static function score_of( array $item ): float {
 		$score = $item['score'] ?? 0;
-		return \is_numeric( $score ) ? (float) $score : 0.0;
+		return Core::num_float( $score );
 	}
 
 	/**
@@ -97,7 +97,7 @@ class Digest_Composer {
 		$lines = [ '# Newsletter draft', '' ];
 		foreach ( $items as $item ) {
 			$summary = $item['summary'] ?? '';
-			$lines[] = '- ' . ( \is_string( $summary ) ? $summary : '' );
+			$lines[] = '- ' . Core::str( $summary );
 		}
 		return \implode( "\n", $lines ) . "\n";
 	}

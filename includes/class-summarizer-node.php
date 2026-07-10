@@ -8,6 +8,7 @@
 
 namespace Newspack_AI_Newsletter;
 
+use Newspack_Nodes\Core;
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Schema_Reflection;
@@ -73,10 +74,10 @@ class Summarizer_Node extends Node {
 			$item['summary']         = $enriched['summary'];
 			$item['relevance_score'] = $enriched['relevance_score'];
 			$item['reason']          = $enriched['reason'];
-			$this->set_state( 'SUMMARIZED', (string) ( \is_scalar( $item['title'] ) ? $item['title'] : '' ) );
+			$this->set_state( 'SUMMARIZED', Core::as_string( $item['title'] ) );
 		} else {
 			$item['summary'] = $this->summarize( $item );
-			$this->set_state( 'FAILED', (string) ( \is_scalar( $item['title'] ) ? $item['title'] : '' ) );
+			$this->set_state( 'FAILED', Core::as_string( $item['title'] ) );
 		}
 
 		// Body fed the summary; drop it to shrink the scored log + snapshot.
@@ -107,8 +108,8 @@ class Summarizer_Node extends Node {
 		$reason = $d['reason'] ?? '';
 		return [
 			'summary'         => $d['summary'],
-			'relevance_score' => \max( 0, \min( 10, \is_numeric( $score ) ? (int) $score : 0 ) ),
-			'reason'          => \is_scalar( $reason ) ? (string) $reason : '',
+			'relevance_score' => \max( 0, \min( 10, Core::num_int( $score ) ) ),
+			'reason'          => Core::as_string( $reason ),
 		];
 	}
 

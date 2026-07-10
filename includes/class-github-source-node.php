@@ -13,6 +13,7 @@
 namespace Newspack_AI_Newsletter;
 
 use Newspack_Nodes\Command_Interpreter_Node;
+use Newspack_Nodes\Core;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -148,7 +149,7 @@ class Github_Source_Node extends Source_Node {
 			return [];
 		}
 		$decoded = \json_decode( \wp_remote_retrieve_body( $response ), true );
-		return \is_array( $decoded ) ? $decoded : [];
+		return Core::arr( $decoded );
 	}
 
 	/**
