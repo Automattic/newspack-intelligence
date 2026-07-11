@@ -12,14 +12,10 @@
 \defined( 'ABSPATH' ) || exit;
 
 return [
-	// Per-application data root. The substrate derives logs/ and offsets/ under it.
+	// Per-application data root; substrate derives logs/ and offsets/ under it.
 	'base_directory' => '/tmp/newspack-ai-newsletter',
 
-	// `scored` partition retention (mirrors the teaching example):
-	//   num_segments: retained per partition (count cap).
-	//   segment_size: max bytes before rotation.
-	//   max_lifespan: minimum retention seconds; deletion requires BOTH over
-	//                 num_segments AND older than max_lifespan.
+	// scored retention: delete needs BOTH >num_segments AND >max_lifespan.
 	'num_partitions' => 1,
 	'num_segments'   => 2,
 	'segment_size'   => 64 * 1024 * 1024,

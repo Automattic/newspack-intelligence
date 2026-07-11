@@ -35,7 +35,7 @@ function register_insights_admin_page(): void {
 	if ( ! \function_exists( 'add_menu_page' ) || ! \class_exists( '\Newspack_Nodes\Admin\Admin' ) ) {
 		return;
 	}
-	// Honor the substrate's access gate (manage_options + allowed_users whitelist).
+	// Honor the substrate access gate (manage_options + allowed_users).
 	if ( ! \Newspack_Nodes\Admin\Admin::current_user_allowed() ) {
 		return;
 	}
@@ -83,9 +83,7 @@ if ( \is_admin() ) {
 	\add_action( 'admin_enqueue_scripts', __NAMESPACE__ . '\\enqueue_insights_assets' );
 }
 
-// The Publisher Insights page mounts the substrate debug overlay, so declare it
-// on the substrate's overlay-page registry — that's how ELN's "Request" overlay
-// tab loads here too. Harmless if the substrate/ELN aren't active.
+// Declare this page on the substrate overlay-page registry (ELN overlay tab).
 \add_filter(
 	'newspack_nodes/devtools_overlay_pages',
 	static fn ( $pages ): array => \array_merge( (array) $pages, [ INSIGHTS_MENU_SLUG ] )
@@ -103,27 +101,23 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 	$base_interpreter->make_node( 'Insights_CI', 'insights' );
 }
 
-// Load after newspack-nodes (its own deferred loader runs at plugins_loaded:11).
+// Load after newspack-nodes (its deferred loader runs at plugins_loaded:11).
 \add_action(
 	'plugins_loaded',
 	static function (): void {
 		if ( ! \class_exists( '\Newspack_Nodes\Topology_Registry' ) ) {
 			return;
 		}
-		// Composer classmap autoload (run `composer dump-autoload -o` after adding a
-		// node). This is also what puts the node classes in the classmap that
-		// Classes_CI scans, so their node_schema() verbs show up in the palette.
+		// Composer classmap autoload; dump-autoload -o after adding a node.
 		require_once __DIR__ . '/vendor/autoload.php';
 
-		// One call wires it all: the Newspack_AI_Newsletter\ namespace (so make_node
-		// resolves *_Node classes), the topologies/ stock dir + a catalog entry for
-		// every *.tsl in it, and a guarded spawn handler.
+		// register_plugin: namespace + topologies/ dir + catalog.
 		\Newspack_Nodes\Topology_Registry::register_plugin(
 			'Newspack_AI_Newsletter\\',
 			__DIR__ . '/topologies'
 		);
 
-		// Mount the Insights service CI into each request graph so the dashboard can poll it.
+		// Mount Insights CI into each request graph (dashboard polls it).
 		\add_action( 'newspack_nodes/request_graph_ready', __NAMESPACE__ . '\\mount_insights_ci' );
 	},
 	12
