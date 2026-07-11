@@ -61,31 +61,6 @@ class Insights_CI_Node extends Service_CI_Node {
 	}
 
 	/**
-	 * Group items into a per-source top-10, each source's list sorted by score desc — so the
-	 * dashboard shows the top github items, top linear items, etc. separately rather than one
-	 * global list a single high-scoring source can dominate. Keyed by source, first-seen order.
-	 *
-	 * @param array<int,array<array-key,mixed>> $items
-	 * @return array<string,array<int,array{title:string,score:float}>>
-	 */
-	public static function top_by_source( array $items ): array {
-		$by_source = [];
-		foreach ( $items as $item ) {
-			$source                 = \is_string( $item['source'] ?? null ) ? $item['source'] : '?';
-			$by_source[ $source ][] = [
-				'title' => \is_string( $item['title'] ?? null ) ? $item['title'] : '',
-				'score' => Core::num_float( $item['score'] ?? null ),
-			];
-		}
-		foreach ( $by_source as &$list ) {
-			\usort( $list, static fn ( array $a, array $b ): int => $b['score'] <=> $a['score'] );
-			$list = \array_slice( $list, 0, self::TOP_N );
-		}
-		unset( $list );
-		return $by_source;
-	}
-
-	/**
 	 * Trigger a collection cycle: reset the digest's progress counter, then TICK every
 	 * source, all routed into each live worker's input IPC partition
 	 * (the only transport from the request graph to a worker's nodes — the same one
@@ -315,6 +290,31 @@ class Insights_CI_Node extends Service_CI_Node {
 	private static function read_cache( string $offsetlog_dir ): array {
 		$value = Partition_Node::read_latest_value_at( $offsetlog_dir );
 		return \is_array( $value ) && \is_array( $value['cache'] ?? null ) ? $value['cache'] : [];
+	}
+
+	/**
+	 * Group items into a per-source top-10, each source's list sorted by score desc — so the
+	 * dashboard shows the top github items, top linear items, etc. separately rather than one
+	 * global list a single high-scoring source can dominate. Keyed by source, first-seen order.
+	 *
+	 * @param array<int,array<array-key,mixed>> $items
+	 * @return array<string,array<int,array{title:string,score:float}>>
+	 */
+	public static function top_by_source( array $items ): array {
+		$by_source = [];
+		foreach ( $items as $item ) {
+			$source                 = \is_string( $item['source'] ?? null ) ? $item['source'] : '?';
+			$by_source[ $source ][] = [
+				'title' => \is_string( $item['title'] ?? null ) ? $item['title'] : '',
+				'score' => Core::num_float( $item['score'] ?? null ),
+			];
+		}
+		foreach ( $by_source as &$list ) {
+			\usort( $list, static fn ( array $a, array $b ): int => $b['score'] <=> $a['score'] );
+			$list = \array_slice( $list, 0, self::TOP_N );
+		}
+		unset( $list );
+		return $by_source;
 	}
 
 	/**
