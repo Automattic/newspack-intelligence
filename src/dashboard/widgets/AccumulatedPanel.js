@@ -326,7 +326,7 @@ export function AccumulatedPanel( {
 			<div className="eai-insights__actions">
 				<button
 					type="button"
-					className="eai-insights__btn"
+					className="button button-primary"
 					onClick={ onCollect }
 					disabled={ ! canCollect }
 				>
@@ -349,7 +349,7 @@ export function AccumulatedPanel( {
 				) }
 				<button
 					type="button"
-					className="eai-insights__btn"
+					className="button button-primary"
 					onClick={ onGenerate }
 					disabled={ generating || ! collectComplete }
 				>
@@ -359,7 +359,7 @@ export function AccumulatedPanel( {
 				</button>
 				<button
 					type="button"
-					className="eai-insights__btn eai-insights__btn--secondary"
+					className="button"
 					onClick={ onCopy }
 					disabled={ '' === digest }
 				>
@@ -367,7 +367,7 @@ export function AccumulatedPanel( {
 				</button>
 				<button
 					type="button"
-					className="eai-insights__btn eai-insights__btn--secondary"
+					className="button"
 					onClick={ onCreateDraft }
 					disabled={ creating || '' === digest }
 				>

@@ -7,7 +7,6 @@
 
 // --- DESIGN.product.md tokens (subset used here) ---
 $cobalt: #003da5;
-$cobalt-hover: #00296e;
 $surface: #fff;
 $surface-subtle: #f7f7f7;
 $text: #1e1e1e;
@@ -323,39 +322,6 @@ $font:
   &__empty &__actions {
     justify-content: center;
     margin-top: 16px;
-  }
-
-  &__btn {
-    padding: 12px 16px;
-    font-size: 16px;
-    font-family: $font;
-    color: #fff;
-    background: $cobalt;
-    border: 1px solid $cobalt;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.15s;
-
-    &:hover {
-      background: $cobalt-hover;
-      border-color: $cobalt-hover;
-    }
-
-    // Secondary: white surface, Cobalt text + border (DESIGN button-secondary).
-    &--secondary {
-      color: $cobalt;
-      background: $surface;
-
-      &:hover {
-        color: #fff;
-        background: $cobalt;
-      }
-    }
-
-    &:disabled {
-      cursor: default;
-      opacity: 0.6;
-    }
   }
 
   &__copied {
