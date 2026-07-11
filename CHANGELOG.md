@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.11] - 2026-07-10
+
+**Requires newspack-nodes ≥ 0.34.0** (the release carrying the `Core` coercion-helper family).
+
 ### Changed
 
 - **Coercions fold onto the substrate's new `\Newspack_Nodes\Core` helper family** — `Insights_CI_Node`'s `to_float`/`int_of` onto the strict `num_float()`/`num_int()` (an untrusted JSON score that isn't numeric contributes exactly 0), and the `is_string`/`is_array`/`is_scalar` read idioms in the source nodes, summarizer, digest composer, and prompts onto `str()`/`arr()`/`as_string()` — same semantics, defined once in the substrate this plugin already depends on.
