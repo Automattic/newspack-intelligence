@@ -15,9 +15,11 @@ return [
 	// Per-application data root; substrate derives logs/ and offsets/ under it.
 	'base_directory' => '/tmp/newspack-ai-newsletter',
 
-	// scored retention: delete needs BOTH >num_segments AND >max_lifespan.
+	// scored retention: count-prune past max_segments; age rule off.
 	'num_partitions' => 1,
-	'num_segments'   => 2,
 	'segment_size'   => 64 * 1024 * 1024,
-	'max_lifespan'   => 86400,
+	'min_segments'   => 2,
+	'max_segments'   => 2,
+	'min_lifetime'   => 86400,
+	'max_lifetime'   => 0,
 ];
