@@ -15,7 +15,7 @@
 		"fix:scss": "stylelint --customSyntax postcss-scss --fix 'src/**/*.scss'",
 		"format": "prettier --write 'src/**/*.{js,jsx,scss,json}'",
 		"format:js": "prettier --write 'src/**/*.{js,jsx}'",
-		"lint:js": "eslint --no-error-on-unmatched-pattern 'src/**/*.{js,jsx}' 'scripts/**/*.mjs'",
+		"lint:js": "eslint --no-error-on-unmatched-pattern 'src/**/*.{js,jsx}' 'scripts/**/*.mjs' && node scripts/lint-comment-length.mjs src scripts",
 		"lint:php": "phpcs",
 		"lint:phpstan": "vendor/bin/phpstan analyse --memory-limit=2G --no-progress",
 		"lint:scss": "stylelint --customSyntax postcss-scss 'src/**/*.scss'",
