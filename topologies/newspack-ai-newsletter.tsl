@@ -46,7 +46,7 @@ cmd feed:config add_url https://automattic.com/blog/feed/
 
 # ingest: raw fetched items buffer between the (bursty) sources and the LLM summarizer,
 # so a TICK's fetch+write is fast and the per-item enrich is paced by the consumer.
-make_node Partition      ingest:partition <config:logs_dir>/ingest.p<partition> <config:segment_size> <config:num_segments> <config:max_lifespan>
+make_node Partition      ingest:partition <config:logs_dir>/ingest.p<partition> <config:segment_size> <config:min_segments> <config:max_segments> <config:min_lifetime> <config:max_lifetime>
 cmd ingest:partition:config void_warranty
 
 make_node Consumer       ingest:consumer  <config:logs_dir>/ingest.p<partition> <config:offsets_dir>/ingest.p<partition>
@@ -63,7 +63,7 @@ cmd summarizer:config add_profile  Deprioritize dependency bumps, docs typos, an
 
 make_node Scorer         scorer
 
-make_node Partition      scored:partition <config:logs_dir>/scored.p<partition> <config:segment_size> <config:num_segments> <config:max_lifespan>
+make_node Partition      scored:partition <config:logs_dir>/scored.p<partition> <config:segment_size> <config:min_segments> <config:max_segments> <config:min_lifetime> <config:max_lifetime>
 cmd scored:partition:config void_warranty
 
 make_node Consumer       scored:consumer <config:logs_dir>/scored.p<partition> <config:offsets_dir>/scored.p<partition>
@@ -85,7 +85,7 @@ cmd digest:config add_profile  Do not produce tables.
 make_node Tee            digest:tee
 
 # digest:log path MUST match Digest_Builder_Node::DIGEST_PATH (Insights_CI reads the latest segment from there).
-make_node Log            digest:log /tmp/newspack-ai-newsletter/digest.md 1 7
+make_node Log            digest:log /tmp/newspack-ai-newsletter/digest.md 1 2 7
 cmd digest:log:config void_warranty
 
 connect_node github          ingest:partition

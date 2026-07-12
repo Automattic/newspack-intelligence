@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Topology + config migrated to the substrate's four-knob retention split** (`newspack-nodes` `min_segments` / `max_segments` / `min_lifetime` / `max_lifetime`, replacing `num_segments` / `max_lifespan`). The `ingest`/`scored` `Partition` make_node lines now pass `<config:segment_size> <config:min_segments> <config:max_segments> <config:min_lifetime> <config:max_lifetime>`, and `digest:log`'s `Log` line inserts `min_segments=2` (`… digest.md 1 2 7`). Behavior-preserving mapping: old retained-count → `max_segments` (`min_segments` at the hard floor 2), old min-age → `min_lifetime`, `max_lifetime` 0. Without this the old count landed in `max_segments`'s slot, disabling count-pruning (unbounded disk growth). `newspack-ai-newsletter-config.php` (and the test config) split their keys to match. No stored-option migration is needed — these keys are config-file-only.
 - **Publisher Insights newsletter-card buttons use stock WordPress admin `.button` classes** instead of the bespoke `eai-insights__btn` re-theme. Collect / Regenerate digest are `button button-primary`; Copy markdown / Create draft post are `button`. The `&__btn` (+ `&__btn--secondary`) SCSS appearance block and the now-orphaned `$cobalt-hover` token are deleted; only the `&__actions` layout rules remain.
 
 ## [0.2.11] - 2026-07-10
