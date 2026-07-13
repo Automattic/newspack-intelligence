@@ -73,7 +73,7 @@ class Feed_Source_Node extends Source_Node {
 		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_get_wp_remote_get -- connector fetches run in a background worker, not a VIP web request; the closure seam covers tests.
 		$response = null !== self::$http_get ? ( self::$http_get )( $url, $args ) : \wp_remote_get( $url, $args );
 		if ( \is_wp_error( $response ) ) {
-			$this->print_less_often( 'Feed fetch failed: ' . $response->get_error_message() );
+			$this->print_less_often( 'Feed fetch failed: ', $response->get_error_message() );
 			return [];
 		}
 		if ( 200 !== (int) \wp_remote_retrieve_response_code( $response ) ) {

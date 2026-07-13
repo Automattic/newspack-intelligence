@@ -65,7 +65,7 @@ class Linear_Source_Node extends Source_Node {
 		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_post_wp_remote_post -- connector fetches run in a background worker, not a VIP web request; the closure seam covers tests.
 		$response = null !== self::$http_post ? ( self::$http_post )( self::API_URL, $args ) : \wp_remote_post( self::API_URL, $args );
 		if ( \is_wp_error( $response ) ) {
-			$this->print_less_often( 'Linear fetch failed: ' . $response->get_error_message() );
+			$this->print_less_often( 'Linear fetch failed: ', $response->get_error_message() );
 			return [];
 		}
 		if ( 200 !== (int) \wp_remote_retrieve_response_code( $response ) ) {

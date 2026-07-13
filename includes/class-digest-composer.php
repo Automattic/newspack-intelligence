@@ -41,7 +41,7 @@ class Digest_Composer {
 				);
 			} catch ( \RuntimeException $e ) {
 				// LLM failure never throws — fall back to the ranked list.
-				Core::print_less_often( 'AI digest compose failed: ' . $e->getMessage() );
+				Core::print_less_often( 'AI digest compose failed: ', $e->getMessage() );
 				$draft = null;
 			}
 		}
