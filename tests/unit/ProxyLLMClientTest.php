@@ -36,4 +36,17 @@ final class ProxyLLMClientTest extends TestCase {
 		$this->expectException( \RuntimeException::class );
 		$client->chat( [ [ 'role' => 'user', 'content' => 'x' ] ] );
 	}
+
+	public function test_wp_error_message_is_plain_text_not_html_escaped(): void {
+		Proxy_LLM_Client::$http_post = static fn () => new \WP_Error( 'http_request_failed', 'host \'proxy.test\' said <nope>' );
+		$client = new Proxy_LLM_Client( 'https://proxy.test/v1', 'SEKRET', 'gpt-oss-120b', 'newspack-ai-newsletter' );
+		try {
+			$client->chat( [ [ 'role' => 'user', 'content' => 'x' ] ] );
+			$this->fail( 'expected RuntimeException' );
+		} catch ( \RuntimeException $e ) {
+			$this->assertStringContainsString( "host 'proxy.test' said <nope>", $e->getMessage() );
+			$this->assertStringNotContainsString( '&#039;', $e->getMessage() );
+			$this->assertStringNotContainsString( '&lt;', $e->getMessage() );
+		}
+	}
 }

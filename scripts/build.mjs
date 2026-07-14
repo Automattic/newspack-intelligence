@@ -20,37 +20,31 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __dirname = path.dirname( fileURLToPath( import.meta.url ) );
 const ROOT = path.resolve( __dirname, '..' );
 
-// Kit path is ROOT-relative (like the aliases below) so it points at the
-// sibling newspack-nodes checkout; CI overrides it via NEWSPACK_NODES_BUILD_KIT.
+// Sibling newspack-nodes checkout; CI overrides via NEWSPACK_NODES_BUILD_KIT.
 const buildKit =
 	process.env.NEWSPACK_NODES_BUILD_KIT ||
 	path.resolve( ROOT, '../newspack-nodes/src/build-kit/index.mjs' );
 const { buildDashboards } = await import( pathToFileURL( buildKit ).href );
 
 const alias = {
-	// Substrate runtime: CI sets NEWSPACK_NODES_RUNTIME; local dev falls back to the sibling checkout.
+	// Substrate runtime: CI sets NEWSPACK_NODES_RUNTIME; else sibling checkout.
 	'@newspack-nodes/runtime':
 		process.env.NEWSPACK_NODES_RUNTIME ||
 		path.resolve( ROOT, '../newspack-nodes/src/runtime/index.js' ),
-	// Universal debugger overlay: CI sets NEWSPACK_NODES_DEBUG_OVERLAY;
-	// local dev falls back to the sibling checkout's DebugOverlay.
+	// Overlay: CI sets NEWSPACK_NODES_DEBUG_OVERLAY; else sibling checkout.
 	'@newspack-nodes/debug-overlay':
 		process.env.NEWSPACK_NODES_DEBUG_OVERLAY ||
 		path.resolve(
 			ROOT,
 			'../newspack-nodes/src/debug-overlay/DebugOverlay.js'
 		),
-	// Shared React hooks/utils/components: CI sets NEWSPACK_NODES_SHARED;
-	// local dev falls back to the sibling checkout's src/shared. We alias
-	// the canonical source instead of copying it (the retired sync-shared.sh).
+	// Shared React: CI sets NEWSPACK_NODES_SHARED; else sibling src/shared.
 	'@newspack-nodes/shared':
 		process.env.NEWSPACK_NODES_SHARED ||
 		path.resolve( ROOT, '../newspack-nodes/src/shared' ),
 };
 
-// Only build entries whose source actually exists. The dashboard ships in a
-// later sub-project; until then this list is empty and the build no-ops cleanly
-// (so the scaffold's release zip + deploy work before any React lands).
+// Only build entries whose source exists; empty list no-ops cleanly.
 const ENTRIES = [
 	{
 		entry: 'src/dashboard/index.js',

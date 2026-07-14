@@ -15,6 +15,23 @@ use Newspack_Nodes\Schema_Reflection;
 
 class Digest_Builder_Node extends Node {
 	use Schema_Reflection;
+	use LLM_Config;
+
+	/** Where the digest:log Node writes the rendered newsletter. MUST match topologies/newspack-ai-newsletter.tsl. */
+	public const DIGEST_PATH = '/tmp/newspack-ai-newsletter/digest.md';
+
+	/**
+	 * LLM-client factory seam. Lazily-defaulted at the call site to this node's
+	 * own verb-configured `make_llm_client()` (null when no vault token resolves).
+	 * Tests reassign in setUp to inject a real `Proxy_LLM_Client` — faking only its
+	 * `$http_post` seam — so prompt assembly, the client, and the briefing compose
+	 * all run as real, covered production code; tearDown resets it to null.
+	 *
+	 * Signature: `function (): ?LLM_Client`.
+	 *
+	 * @var (\Closure(): ?LLM_Client)|null
+	 */
+	public static ?\Closure $llm_factory = null;
 
 	/**
 	 * Accumulated summarized items (array-key: they round-trip through offsetlog JSON).
@@ -22,16 +39,6 @@ class Digest_Builder_Node extends Node {
 	 * @var array<int,array<array-key,mixed>>
 	 */
 	private array $items = [];
-
-	/**
-	 * Seen item ids for in-cycle dedup; rebuilt from items on restore, cleared on RESET.
-	 *
-	 * @var array<string,bool>
-	 */
-	private array $seen = [];
-
-	/** Scored-partition node name to nudge on RESET (arg 0); '' disables the nudge. */
-	private string $scored_partition = '';
 
 	/**
 	 * Distinct sources that signalled DONE this cycle (keyed by source name).
@@ -42,21 +49,24 @@ class Digest_Builder_Node extends Node {
 	 */
 	private array $reported = [];
 
+	/** Scored-partition node name to nudge on RESET (arg 0); '' disables the nudge. */
+	private string $scored_partition = '';
+
+	/**
+	 * Seen item ids for in-cycle dedup; rebuilt from items on restore, cleared on RESET.
+	 *
+	 * @var array<string,bool>
+	 */
+	private array $seen = [];
+
 	/** Sources expected this cycle, set by a RESET (the dashboard's Collect). 0 until a collect. */
 	private int $total = 0;
 
-	/**
-	 * LLM-client factory seam. Lazily-defaulted at the call site to
-	 * `Settings::llm_client()` (null when no proxy token is configured). Tests
-	 * reassign in setUp to inject a real `Proxy_LLM_Client` — faking only its
-	 * `$http_post` seam — so prompt assembly, the client, and the briefing compose
-	 * all run as real, covered production code; tearDown resets it to null.
-	 *
-	 * Signature: `function (): ?LLM_Client`.
-	 *
-	 * @var (\Closure(): ?LLM_Client)|null
-	 */
-	public static ?\Closure $llm_factory = null;
+	/** Tachikoma-parity: no-arg ctor. Wires the sibling :config interpreter from node_schema()['commands']. */
+	public function __construct() {
+		parent::__construct();
+		$this->auto_wire_interpreter();
+	}
 
 	/**
 	 * Parse the positional arguments: arg 0 is the total number of sources.
@@ -72,11 +82,11 @@ class Digest_Builder_Node extends Node {
 	}
 
 	/**
-	 * Accepts TM_REQUEST 'RESET' and 'REGENERATE', TM_INFO 'DONE', and TM_STRUCT messages.
+	 * Accepts TM_REQUEST 'RESET' and 'REGENERATE', TM_INFO "DONE\n", and TM_STRUCT messages.
 	 *
 	 * @param array<int,mixed> $message Message reference.
 	 */
-	public function fill( array &$message ): void {
+	public function fill( array $message ): void {
 		$type = \is_numeric( $message[ Message::TYPE ] ) ? (int) $message[ Message::TYPE ] : 0;
 		if ( $type & Message::TM_REQUEST ) {
 			$this->handle_request( $message );
@@ -153,7 +163,7 @@ class Digest_Builder_Node extends Node {
 	 */
 	private function handle_info( array $message ): void {
 		$value = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
-		if ( 'DONE' === $value ) {
+		if ( "DONE\n" === $value ) {
 			$from                    = \is_string( $message[ Message::FROM ] ?? null ) ? $message[ Message::FROM ] : '';
 			$this->reported[ $from ] = true;
 			if ( \count( $this->reported ) >= $this->total ) {
@@ -163,8 +173,8 @@ class Digest_Builder_Node extends Node {
 	}
 
 	private function compose_draft(): void {
-		$client = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
-		$draft  = Digest_Composer::compose( $this->items, $client, Settings::get_string( 'relevance_profile' ) );
+		$client = self::$llm_factory ? ( self::$llm_factory )() : $this->make_llm_client();
+		$draft  = Digest_Composer::compose( $this->items, $client, $this->relevance_profile() );
 		$this->set_state( 'COMPOSED', \count( $this->items ) . ' items' );
 		$response                   = Message::new_message();
 		$response[ Message::TYPE ]  = Message::TM_BYTESTREAM;
@@ -257,6 +267,7 @@ class Digest_Builder_Node extends Node {
 					'description' => 'Compose a new draft based on the items already collected.',
 				],
 			],
+			'commands'     => self::llm_config_commands(),
 			'accepts_fill' => true,
 			'has_target'   => true,
 		] );

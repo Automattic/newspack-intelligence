@@ -81,6 +81,30 @@ describe( 'AccumulatedPanel — render', () => {
 	} );
 } );
 
+describe( 'AccumulatedPanel — canonical button classes', () => {
+	it( 'uses stock .button classes, not eai-insights__btn', () => {
+		const { container } = renderPanel( COMPLETE );
+		expect( container.querySelector( '.eai-insights__btn' ) ).toBeNull();
+
+		expect(
+			screen.getByRole( 'button', { name: /^collect$/i } )
+		).toHaveClass( 'button', 'button-primary' );
+		expect(
+			screen.getByRole( 'button', { name: /regenerate digest/i } )
+		).toHaveClass( 'button', 'button-primary' );
+
+		const copy = screen.getByRole( 'button', { name: /copy markdown/i } );
+		expect( copy ).toHaveClass( 'button' );
+		expect( copy ).not.toHaveClass( 'button-primary' );
+
+		const draft = screen.getByRole( 'button', {
+			name: /create draft post/i,
+		} );
+		expect( draft ).toHaveClass( 'button' );
+		expect( draft ).not.toHaveClass( 'button-primary' );
+	} );
+} );
+
 describe( 'AccumulatedPanel — Collect gating', () => {
 	it( 'offers Collect even with nothing collected yet (empty pipeline)', () => {
 		renderPanel( { accumulated: 0, done: 0, total: 0, digest: '' } );

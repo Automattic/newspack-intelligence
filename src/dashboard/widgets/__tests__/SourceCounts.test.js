@@ -12,8 +12,7 @@ import { SourceCounts } from '../SourceCounts';
 
 beforeEach( () => Core.reset() );
 
-// Mount the view node under its canonical name and publish a slice, the way the
-// graph reply path does, so the widget's useNodeState reads real published state.
+// Mount the view node and publish a slice as the graph reply path does.
 function mountSlice( slice ) {
 	const node = new SourceCountsViewNode();
 	node.name = 'source-counts:view';

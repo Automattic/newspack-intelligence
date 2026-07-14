@@ -79,7 +79,7 @@ final class SpineTest extends TestCase {
 		$done                   = Message::new_message();
 		$done[ Message::TYPE ]  = Message::TM_INFO;
 		$done[ Message::FROM ]  = 'src';
-		$done[ Message::VALUE ] = 'DONE';
+		$done[ Message::VALUE ] = "DONE\n";
 		$node->fill( $done );
 
 		$this->assertNotEmpty( $sink->captured );

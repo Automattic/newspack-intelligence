@@ -11,6 +11,8 @@
 
 namespace Newspack_AI_Newsletter;
 
+use Newspack_Nodes\Core;
+
 \defined( 'ABSPATH' ) || exit;
 
 class Prompts {
@@ -47,7 +49,7 @@ class Prompts {
 	 */
 	private static function field( array $item, string $key ): string {
 		$value = $item[ $key ] ?? '';
-		return \is_scalar( $value ) ? (string) $value : '';
+		return Core::as_string( $value );
 	}
 
 	/**

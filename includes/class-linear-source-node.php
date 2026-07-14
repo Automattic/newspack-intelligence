@@ -12,9 +12,12 @@
 
 namespace Newspack_AI_Newsletter;
 
+use Newspack_Nodes\Command_Interpreter_Node;
+
 \defined( 'ABSPATH' ) || exit;
 
 class Linear_Source_Node extends Source_Node {
+	use Vault_Secret;
 
 	private const API_URL = 'https://api.linear.app/graphql';
 
@@ -32,6 +35,9 @@ class Linear_Source_Node extends Source_Node {
 	 * @var (\Closure( string, array<string,mixed> ): (array<string,mixed>|\WP_Error))|null
 	 */
 	public static ?\Closure $http_post = null;
+
+	/** @var string Vault entry ID registered via the `set_vault_id` verb; resolved to the raw token at config() time. */
+	protected string $vault_id = '';
 
 	/**
 	 * Fetch recently-updated Linear issues, normalized to the item contract
@@ -59,7 +65,7 @@ class Linear_Source_Node extends Source_Node {
 		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_post_wp_remote_post -- connector fetches run in a background worker, not a VIP web request; the closure seam covers tests.
 		$response = null !== self::$http_post ? ( self::$http_post )( self::API_URL, $args ) : \wp_remote_post( self::API_URL, $args );
 		if ( \is_wp_error( $response ) ) {
-			$this->print_less_often( 'Linear fetch failed: ' . $response->get_error_message() );
+			$this->print_less_often( 'Linear fetch failed: ', $response->get_error_message() );
 			return [];
 		}
 		if ( 200 !== (int) \wp_remote_retrieve_response_code( $response ) ) {
@@ -99,13 +105,60 @@ class Linear_Source_Node extends Source_Node {
 
 	/** @return array{token:string} */
 	protected function config(): array {
-		return [ 'token' => Settings::get_secret( 'linear_token' ) ];
+		return [ 'token' => $this->resolve_vault_secret( $this->vault_id ) ];
+	}
+
+	/**
+	 * `set_vault_id` verb handler — last-write-wins.
+	 *
+	 * @param string $args The Vault entry ID.
+	 * @return string Result line.
+	 */
+	public function set_vault_id( string $args ): string {
+		$this->vault_id = \trim( $args );
+		return 'ok';
+	}
+
+	/**
+	 * `set_vault_id` verb dispatch — resolves the patron node and delegates.
+	 *
+	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
+	 * @param string                   $args        The Vault entry ID.
+	 * @return string Result line.
+	 */
+	public static function cmd_set_vault_id( Command_Interpreter_Node $interpreter, string $args ): string {
+		/** @var self $patron */
+		$patron = $interpreter->patron();
+		return $patron->set_vault_id( $args );
+	}
+
+	/** Emit the base config plus a round-trippable `cmd {name}:config set_vault_id …` when set. */
+	public function dump_config(): string {
+		$out = parent::dump_config();
+		if ( '' !== $this->vault_id ) {
+			$out .= "cmd {$this->name}:config set_vault_id {$this->vault_id}\n";
+		}
+		return $out;
 	}
 
 	public static function node_schema(): array {
-		return self::source_schema(
-			'Fetches recently-updated Linear issues on a TICK request (request_node linear TICK).',
-			'Fetch + emit new Linear issues. Trigger with `request_node linear TICK`.'
+		return \array_merge(
+			self::source_schema(
+				'Fetches recently-updated Linear issues on a TICK request (request_node linear TICK).',
+				'Fetch + emit new Linear issues. Trigger with `request_node linear TICK`.'
+			),
+			[
+				'commands' => [
+					[
+						'name'        => 'set_vault_id',
+						'description' => 'Set the Vault entry ID to resolve the Linear API token from: <vault_id>.',
+						'args'        => [
+							[ 'name' => 'vault_id', 'type' => 'vault_id', 'required' => true ],
+						],
+						'handler'     => static fn ( Command_Interpreter_Node $interpreter, string $args ): string => self::cmd_set_vault_id( $interpreter, $args ),
+					],
+				],
+			]
 		);
 	}
 }

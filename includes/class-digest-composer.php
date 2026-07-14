@@ -17,11 +17,10 @@ use Newspack_Nodes\Core;
 \defined( 'ABSPATH' ) || exit;
 
 class Digest_Composer {
-
-	// Per-source cap: the briefing draws the top N items FROM EACH SOURCE, so a
-	// high-volume source (e.g. github) can't crowd linear/feed out of the digest.
-	private const PER_SOURCE = 10;
 	private const MAX_TOKENS = 32000;
+
+	// Per-source cap so one busy source can't crowd others out of the digest.
+	private const PER_SOURCE = 10;
 
 	/**
 	 * Compose a markdown digest from accumulated items.
@@ -31,8 +30,7 @@ class Digest_Composer {
 	 * @param string                            $profile The relevance profile for the briefing prompt.
 	 */
 	public static function compose( array $items, ?LLM_Client $client, string $profile ): string {
-		// Select the top N per source up front so the LLM path and the no-AI
-		// fallback both work from the same balanced set.
+		// Top N per source up front; the LLM and no-AI paths share the set.
 		$selected = self::top_per_source( $items, self::PER_SOURCE );
 		$draft    = null;
 		if ( $client instanceof LLM_Client ) {
@@ -42,8 +40,8 @@ class Digest_Composer {
 					[ 'max_tokens' => self::MAX_TOKENS ]
 				);
 			} catch ( \RuntimeException $e ) {
-				// Rate-limited; an LLM failure NEVER throws out of compose — fall back to the ranked list.
-				Core::print_less_often( 'AI digest compose failed: ' . $e->getMessage() );
+				// LLM failure never throws — fall back to the ranked list.
+				Core::print_less_often( 'AI digest compose failed: ', $e->getMessage() );
 				$draft = null;
 			}
 		}
@@ -87,7 +85,7 @@ class Digest_Composer {
 	 */
 	private static function score_of( array $item ): float {
 		$score = $item['score'] ?? 0;
-		return \is_numeric( $score ) ? (float) $score : 0.0;
+		return Core::num_float( $score );
 	}
 
 	/**
@@ -99,7 +97,7 @@ class Digest_Composer {
 		$lines = [ '# Newsletter draft', '' ];
 		foreach ( $items as $item ) {
 			$summary = $item['summary'] ?? '';
-			$lines[] = '- ' . ( \is_string( $summary ) ? $summary : '' );
+			$lines[] = '- ' . Core::str( $summary );
 		}
 		return \implode( "\n", $lines ) . "\n";
 	}

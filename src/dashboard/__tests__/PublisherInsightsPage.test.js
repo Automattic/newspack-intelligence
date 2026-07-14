@@ -8,16 +8,13 @@
 import { render, screen } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 
-// Page-hidden so the mounted graph's poll never starts in this smoke test; the one
-// immediate mount-poll uses a default CommandClient whose fetch rejects in jsdom and
-// is swallowed (rate-limited) — no network, no crash.
+// Page-hidden: no poll runs; mount-poll's fetch rejects in jsdom, swallowed.
 jest.mock( '@newspack-nodes/shared/hooks/usePageVisibility', () => ( {
 	__esModule: true,
 	default: () => false,
 } ) );
 
-// Stub the substrate debug overlay so the page test asserts it's mounted with a
-// per-dashboard storage key, without exercising the overlay's own internals.
+// Stub the debug overlay: assert it's mounted with a per-dashboard storage key.
 jest.mock( '@newspack-nodes/debug-overlay', () => ( {
 	__esModule: true,
 	default: ( props ) => {

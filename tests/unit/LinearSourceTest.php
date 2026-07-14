@@ -101,12 +101,11 @@ final class LinearSourceTest extends TestCase {
 		$this->assertSame( [], $node->fetch( [ 'token' => 'lin_secret' ] ) );
 	}
 
-	public function test_tick_reads_token_from_settings(): void {
+	public function test_tick_reads_token_from_verb_state(): void {
 		update_option(
 			'newspack_nodes_vault',
-			[ 'lin-creds' => [ 'id' => 'lin-creds', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'lin_from_settings' ] ]
+			[ 'lin-creds' => [ 'id' => 'lin-creds', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'lin_from_vault' ] ]
 		);
-		update_option( 'newspack_ai_newsletter_linear_token', 'lin-creds' );
 		Vault::get_instance()->reset_cache();
 		$captured = [];
 		Linear_Source_Node::$http_post = static function ( string $url, array $args ) use ( &$captured ): array {
@@ -115,6 +114,8 @@ final class LinearSourceTest extends TestCase {
 		};
 
 		$node = new Linear_Source_Node();
+		$node->name( 'linear' );
+		$node->set_vault_id( 'lin-creds' );
 		$node->sink( new Capture_Sink_Node() );
 		$message                  = Message::new_message();
 		$message[ Message::TYPE ] = Message::TM_REQUEST;
@@ -122,8 +123,54 @@ final class LinearSourceTest extends TestCase {
 
 		$this->assertCount( 1, $captured );
 		$this->assertSame( 'https://api.linear.app/graphql', $captured[0]['url'] );
-		$this->assertSame( 'lin_from_settings', $captured[0]['args']['headers']['Authorization'] );
-		delete_option( 'newspack_ai_newsletter_linear_token' );
+		$this->assertSame( 'lin_from_vault', $captured[0]['args']['headers']['Authorization'] );
+	}
+
+	public function test_set_vault_id_resolves_seeded_entry_into_config_token(): void {
+		update_option(
+			'newspack_nodes_vault',
+			[ 'lin-creds' => [ 'id' => 'lin-creds', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'lin_from_vault' ] ]
+		);
+		Vault::get_instance()->reset_cache();
+		$node = new Linear_Source_Node();
+		$node->name( 'linear' );
+
+		$this->assertSame( 'ok', $node->set_vault_id( 'lin-creds' ) );
+		$this->assertSame( 'lin_from_vault', $this->config_of( $node )['token'] );
+	}
+
+	public function test_set_vault_id_unknown_id_yields_empty_token(): void {
+		$node = new Linear_Source_Node();
+		$node->name( 'linear' );
+
+		$node->set_vault_id( 'no-such-id' );
+		$this->assertSame( '', $this->config_of( $node )['token'] );
+	}
+
+	public function test_set_vault_id_last_write_wins(): void {
+		update_option(
+			'newspack_nodes_vault',
+			[
+				'first'  => [ 'id' => 'first', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'first-secret' ],
+				'second' => [ 'id' => 'second', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'second-secret' ],
+			]
+		);
+		Vault::get_instance()->reset_cache();
+		$node = new Linear_Source_Node();
+		$node->name( 'linear' );
+
+		$node->set_vault_id( 'first' );
+		$node->set_vault_id( 'second' );
+
+		$this->assertSame( 'second-secret', $this->config_of( $node )['token'] );
+	}
+
+	public function test_dump_config_re_emits_set_vault_id(): void {
+		$node = new Linear_Source_Node();
+		$node->name( 'linear' );
+		$node->set_vault_id( 'lin-creds' );
+
+		$this->assertStringContainsString( 'cmd linear:config set_vault_id lin-creds', $node->dump_config() );
 	}
 
 	public function test_node_schema_declares_linear_source_contract(): void {
@@ -133,5 +180,16 @@ final class LinearSourceTest extends TestCase {
 		$this->assertFalse( $schema['accepts_fill'] );
 		$this->assertSame( 'TICK', $schema['requests'][0]['name'] );
 		$this->assertStringContainsString( 'Linear issues', $schema['description'] );
+		$verb_names = \array_column( $schema['commands'], 'name' );
+		$this->assertContains( 'set_vault_id', $verb_names );
+		$vault_id_verb = $schema['commands'][ \array_search( 'set_vault_id', $verb_names, true ) ];
+		$this->assertSame( 'vault_id', $vault_id_verb['args'][0]['type'] );
+	}
+
+	/** config() is protected — read it via reflection, matching SettingsSyncNodeTest's registry-access pattern. */
+	private function config_of( Linear_Source_Node $node ): array {
+		$method = new \ReflectionMethod( $node, 'config' );
+		$method->setAccessible( true );
+		return $method->invoke( $node );
 	}
 }

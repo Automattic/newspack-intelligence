@@ -188,8 +188,7 @@ XML;
 		$this->assertSame( \strtotime( '2026-06-09T00:00:00Z' ), $by['feed:dc-1']['timestamp'] );
 	}
 
-	public function test_tick_reads_feeds_from_settings(): void {
-		update_option( 'newspack_ai_newsletter_feeds', [ 'https://example.com/feed.xml' ] );
+	public function test_tick_reads_feeds_from_verb_state(): void {
 		$captured = [];
 		Feed_Source_Node::$http_get = static function ( string $url, array $args ) use ( &$captured ): array {
 			$captured[] = [ 'url' => $url, 'args' => $args ];
@@ -197,6 +196,8 @@ XML;
 		};
 
 		$node = new Feed_Source_Node();
+		$node->name( 'feed' );
+		$node->add_url( 'https://example.com/feed.xml' );
 		$node->sink( new Capture_Sink_Node() );
 		$message                  = Message::new_message();
 		$message[ Message::TYPE ] = Message::TM_REQUEST;
@@ -205,7 +206,43 @@ XML;
 		$this->assertCount( 1, $captured );
 		$this->assertSame( 'https://example.com/feed.xml', $captured[0]['url'] );
 		$this->assertSame( 'newspack-ai-newsletter', $captured[0]['args']['headers']['User-Agent'] );
-		delete_option( 'newspack_ai_newsletter_feeds' );
+	}
+
+	public function test_add_url_accumulates_ordered_urls_into_config(): void {
+		$node = new Feed_Source_Node();
+		$node->name( 'feed' );
+
+		$this->assertSame( 'ok', $node->add_url( 'https://example.com/a.xml' ) );
+		$this->assertSame( 'ok', $node->add_url( 'https://example.com/b.xml' ) );
+
+		$this->assertSame(
+			[ 'https://example.com/a.xml', 'https://example.com/b.xml' ],
+			$this->config_of( $node )['feeds']
+		);
+	}
+
+	public function test_dump_config_re_emits_add_url_lines_in_order(): void {
+		$node = new Feed_Source_Node();
+		$node->name( 'feed' );
+		$node->add_url( 'https://example.com/a.xml' );
+		$node->add_url( 'https://example.com/b.xml' );
+
+		$dump = $node->dump_config();
+		$this->assertStringContainsString( 'cmd feed:config add_url https://example.com/a.xml', $dump );
+		$this->assertStringContainsString( 'cmd feed:config add_url https://example.com/b.xml', $dump );
+	}
+
+	public function test_add_url_verb_dispatches_through_sibling_interpreter(): void {
+		$node = new Feed_Source_Node();
+		$node->name( 'feed' );
+
+		$sibling = \Newspack_Nodes\Core::node( 'feed:config' );
+		$this->assertNotNull( $sibling );
+
+		$result = $sibling->dispatch( 'add_url', 'https://example.com/c.xml' );
+
+		$this->assertSame( 'ok', $result );
+		$this->assertSame( [ 'https://example.com/c.xml' ], $this->config_of( $node )['feeds'] );
 	}
 
 	public function test_node_schema_declares_feed_source_contract(): void {
@@ -215,5 +252,13 @@ XML;
 		$this->assertFalse( $schema['accepts_fill'] );
 		$this->assertSame( 'TICK', $schema['requests'][0]['name'] );
 		$this->assertStringContainsString( 'RSS 2.0 / Atom', $schema['description'] );
+		$this->assertContains( 'add_url', \array_column( $schema['commands'], 'name' ) );
+	}
+
+	/** config() is protected — read it via reflection, matching SettingsSyncNodeTest's registry-access pattern. */
+	private function config_of( Feed_Source_Node $node ): array {
+		$method = new \ReflectionMethod( $node, 'config' );
+		$method->setAccessible( true );
+		return $method->invoke( $node );
 	}
 }

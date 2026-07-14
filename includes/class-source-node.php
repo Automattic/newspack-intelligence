@@ -19,18 +19,27 @@
 
 namespace Newspack_AI_Newsletter;
 
+use Newspack_Nodes\Core;
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Message;
+use Newspack_Nodes\Schema_Reflection;
 
 \defined( 'ABSPATH' ) || exit;
 
 abstract class Source_Node extends Node implements Source {
+	use Schema_Reflection;
 
 	/** Cap on the remembered emitted-id set — bounds memory on a long-lived worker. */
 	private const MAX_SEEN = 2000;
 
 	/** @var array<string,bool> Emitted item ids (insertion-ordered), for cross-tick dedup. */
 	protected array $seen = [];
+
+	/** Tachikoma-parity: no-arg ctor. Wires the sibling `:config` interpreter from node_schema()['commands']. */
+	public function __construct() {
+		parent::__construct();
+		$this->auto_wire_interpreter();
+	}
 
 	/**
 	 * TICK is a runtime trigger: a TM_REQUEST handled here in fill() (NOT a
@@ -39,8 +48,8 @@ abstract class Source_Node extends Node implements Source {
 	 *
 	 * @param array<int,mixed> $message Incoming request Message.
 	 */
-	public function fill( array &$message ): void {
-		$type = \is_numeric( $message[ Message::TYPE ] ) ? (int) $message[ Message::TYPE ] : 0;
+	public function fill( array $message ): void {
+		$type = Core::num_int( $message[ Message::TYPE ] );
 		if ( $type & Message::TM_REQUEST ) {
 			$this->handle_request( $message );
 		}
@@ -51,14 +60,15 @@ abstract class Source_Node extends Node implements Source {
 	 * TM_STRUCT, then emit one TM_INFO DONE so the digest can count collection
 	 * progress. Fire-and-forget. An item with no string `id` is skipped (no id =
 	 * can't dedup, and the contract requires one). fetch() is synchronous, so DONE
-	 * is correctly ordered after every item from this tick.
+	 * is correctly ordered after every item from this tick. DONE's FROM
+	 * (breadcrumbed downstream) is the digest's distinct-source key; VALUE the marker.
 	 *
 	 * @param array<int,mixed> $message Incoming request Message.
 	 */
 	private function handle_request( array $message ): void {
 		try {
 			foreach ( $this->fetch( $this->config() ) as $item ) {
-				$id = isset( $item['id'] ) && \is_string( $item['id'] ) ? $item['id'] : '';
+				$id = Core::str( $item['id'] ?? null );
 				if ( '' === $id || isset( $this->seen[ $id ] ) ) {
 					continue;
 				}
@@ -67,16 +77,15 @@ abstract class Source_Node extends Node implements Source {
 				$response[ Message::TYPE ]  = Message::TM_STRUCT;
 				$response[ Message::FROM ]  = $this->name;
 				$response[ Message::VALUE ] = $item;
-				// parent::fill stamps TO from a connect_node-set target, then forwards to sink.
+				// parent::fill stamps TO from target, then forwards to sink.
 				parent::fill( $response );
 			}
 		} finally {
-			// DONE always fires (even if fetch() throws) so one failing source can't stall collection progress.
-			// FROM (the source name, breadcrumbed downstream) is the digest's distinct-source key; VALUE is the marker.
+			// DONE always fires even on throw, so progress can't stall.
 			$done                   = Message::new_message();
 			$done[ Message::TYPE ]  = Message::TM_INFO;
 			$done[ Message::FROM ]  = $this->name;
-			$done[ Message::VALUE ] = 'DONE';
+			$done[ Message::VALUE ] = "DONE\n";
 			parent::fill( $done );
 		}
 	}
@@ -115,9 +124,9 @@ abstract class Source_Node extends Node implements Source {
 		return [
 			'source'    => $source,
 			'id'        => "$source:$id",
-			'title'     => \is_string( $title ) ? $title : '',
-			'url'       => \is_string( $url ) ? $url : '',
-			'body'      => \is_string( $body ) ? $body : '',
+			'title'     => Core::str( $title ),
+			'url'       => Core::str( $url ),
+			'body'      => Core::str( $body ),
 			'timestamp' => false !== $ts ? $ts : 0,
 		];
 	}

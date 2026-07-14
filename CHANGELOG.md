@@ -19,21 +19,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Render an `admin_notices` success notice ("Newspack clients imported.") after a completed Settings-page CSV import.
 - Add `Publisher_Meta_Box`, the "Publisher details" admin meta box on `newspack_publisher`: editable enrichment fields (publisher name, localities, GitHub org, LinkedIn company ID, X handle, aliases, beat tags) plus a read-only provenance section for the import-managed fields (atomic site ID, domain, created, status, first/last seen, churned at).
 
+### Changed
+
+- De-duplicated the CSV file-read between the WP-CLI command and the Settings handler by routing both through `CSV_Parser::parse_file()`; `Client_Importer` remains pure (no file I/O).
+- Documented the `Publisher_Repository` interface contract (each method now states its effect, e.g. `set_active()` clears `churned_at`, `create()` seeds `first_seen`/`last_seen`/`churned_at`).
+
 ### Fixed
 
 - Register the publisher-CSV `admin_post` handler and `admin_notices` inside the `plugins_loaded` bootstrap closure (after the composer autoloader is required) instead of at plugin-file scope. Referencing `Clients_Settings::ADMIN_POST_ACTION` at file-load time fataled with `Class "Newspack_AI_Newsletter\Clients_Settings" not found` on activation, before the autoloader was set up.
-
-### Fixed
-
 - `Client_Importer::import()` no longer double-counts a reactivated publisher in both `updated` and `reactivated`; the counts are now disjoint (a churned row that returns is counted only as `reactivated`).
 - The Settings-page CSV import's redirect fallback now points at the plugin's own Settings page (`options-general.php?page=newspack-ai-newsletter-settings`) instead of the generic admin dashboard.
 - Restrict the `newspack_publisher` CPT to `manage_options`: an explicit `capabilities` map now gates list/edit/delete/create, so roles with only `edit_posts` (Editors/Authors) can no longer view or modify publisher records via `capability_type => 'post'` defaults.
 - `CPT_Publisher_Repository::update_atomic_fields()` now syncs `post_title` to the new domain when a publisher's domain changes on re-import (previously only the `_npainl_domain_name` meta updated, leaving the admin list showing the stale domain); the title write is skipped when the domain is unchanged.
 
+## [0.2.13] - 2026-07-14
+
+### Fixed
+
+- **`ingest:consumer` and `scored:consumer` now declare a dead-letter dir.** Without it the substrate disables the DLQ, so a poison item was logged and dropped rather than quarantined.
+
+- **The insights IPC partition inherited a retention config that stopped it pruning.** It built its Partition from `IPC_SEGMENT_SIZE` + a bare segment count, leaving `min_lifetime` to fall back to `<config:min_lifetime>` (an hour) — which protects every freshly-written segment from the count rule, so the scratch dir grew without bound. It now uses the substrate's `Worker_Base::ipc_partition_args()`, which declares all four retention axes, so the geometry can't drift from the substrate's again.
+
+## [0.2.12] - 2026-07-13
+
+### Added
+
+- **`NodeSchemaArgumentDescriptionsTest` gate** — fails if any node's `node_schema` constructor argument lacks a `description` (the tooltip the topology console shows). `Digest_Builder`'s args already carry descriptions; `Scorer`/`Summarizer` take none. Guards future args.
+
 ### Changed
 
-- De-duplicated the CSV file-read between the WP-CLI command and the Settings handler by routing both through `CSV_Parser::parse_file()`; `Client_Importer` remains pure (no file I/O).
-- Documented the `Publisher_Repository` interface contract (each method now states its effect, e.g. `set_active()` clears `churned_at`, `create()` seeds `first_seen`/`last_seen`/`churned_at`).
+- **Topology + config migrated to the substrate's four-knob retention split** (`newspack-nodes` `min_segments` / `max_segments` / `min_lifetime` / `max_lifetime`, replacing `num_segments` / `max_lifespan`). The `ingest`/`scored` `Partition` make_node lines now pass `<config:segment_size> <config:min_segments> <config:max_segments> <config:min_lifetime> <config:max_lifetime>`, and `digest:log`'s `Log` line inserts `min_segments=2` (`… digest.md 1 2 7`). Behavior-preserving mapping: old retained-count → `max_segments` (`min_segments` at the hard floor 2), old min-age → `min_lifetime`, `max_lifetime` 0. Without this the old count landed in `max_segments`'s slot, disabling count-pruning (unbounded disk growth). `newspack-ai-newsletter-config.php` (and the test config) split their keys to match. No stored-option migration is needed — these keys are config-file-only.
+- **Publisher Insights newsletter-card buttons use stock WordPress admin `.button` classes** instead of the bespoke `eai-insights__btn` re-theme. Collect / Regenerate digest are `button button-primary`; Copy markdown / Create draft post are `button`. The `&__btn` (+ `&__btn--secondary`) SCSS appearance block and the now-orphaned `$cobalt-hover` token are deleted; only the `&__actions` layout rules remain.
+
+### Fixed
+
+- **`print_less_often()` call sites split throttle-key from varying payload (consumes the substrate's variadic port).** The four fire-and-forget connector/compose warnings that concatenated a per-call error message into the throttled string — `GitHub fetch failed`, `Linear fetch failed`, `Feed fetch failed`, and `AI digest compose failed` — now pass the stable category prefix as the throttle key with the `WP_Error` / exception message as a trailing `...$extra` payload arg. Previously the varying error text minted a fresh key every call, so a flapping source never throttled (it logged worst exactly when failing most); now one line per category per window. Emitted text is byte-for-byte unchanged.
+
+## [0.2.11] - 2026-07-10
+
+**Requires newspack-nodes ≥ 0.34.0** (the release carrying the `Core` coercion-helper family).
+
+### Changed
+
+- **Coercions fold onto the substrate's new `\Newspack_Nodes\Core` helper family** — `Insights_CI_Node`'s `to_float`/`int_of` onto the strict `num_float()`/`num_int()` (an untrusted JSON score that isn't numeric contributes exactly 0), and the `is_string`/`is_array`/`is_scalar` read idioms in the source nodes, summarizer, digest composer, and prompts onto `str()`/`arr()`/`as_string()` — same semantics, defined once in the substrate this plugin already depends on.
+
+## [0.2.10] - 2026-07-09
+
+### Changed
+
+- **The `DONE` completion sentinel now carries a trailing newline (`"DONE\n"`), so it flushes through a `Log` → `Tail` pipeline immediately.** Written to a `Log` (a line-buffered `Partition`) and read back over `Tail`, a `'DONE'` value with no terminator stalls as an incomplete final line — it only flushes once a later newline-bearing write arrives, so completion could hang indefinitely. Source nodes now emit `TM_INFO "DONE\n"` and `Digest_Builder_Node` matches it in lockstep.
+
+## [0.2.9] - 2026-07-07
+
+### Changed
+
+- **`fill()` takes the message by value** (`array $message`, was `array &$message`), propagating the newspack-nodes substrate contract: each Node subclass owns the message it is given and forwards a value to its sink. Requires newspack-nodes ≥ 0.29.0.
+
+## [0.2.8] - 2026-07-07
+
+### Security
+
+- **Direct-access guard on the first-party PHP files that lacked it.** Added `\defined( 'ABSPATH' ) || exit;` so no plugin PHP file runs on a direct web hit. (`uninstall.php` keeps its stricter `WP_UNINSTALL_PLUGIN` guard.)
+
+### Changed
+
+- **BREAKING: configuration moved from the Settings page into the topology.** The **Settings → AI Newsletter** page is removed; the five pipeline nodes now self-configure via topology `:config` verbs (set in the nodes console or the `.tsl`) instead of the global option store. GitHub/Linear/Summarizer/Digest take `set_vault_id` (a Vault-entry dropdown in the console); GitHub takes `add_repo`, Feed takes `add_url`, Summarizer/Digest take `add_profile` (+ optional `set_api_url`/`set_model`/`set_feature`, defaulting to the AI proxy / `gpt-oss-120b` / `newspack-ai-newsletter`). **Re-enter your connector repos/feeds, vault ids, and digest profile as node verbs** — existing `newspack_ai_newsletter_*` options are no longer read (they remain inert in the DB and are cleared on uninstall). The digest path constant moved from `Settings::DIGEST_PATH` to `Digest_Builder_Node::DIGEST_PATH`.
+
+## [0.2.7] - 2026-07-02
+
+### Added
+
+- **Uninstall cleanup.** Deleting the plugin now removes every `newspack_ai_newsletter_` option row it created (settings + runtime state) and their transient variants, via a prefix-based `uninstall.php`. It runs only on delete (`WP_UNINSTALL_PLUGIN`), never on deactivate, so a deactivate/reactivate keeps all settings; previously these options were orphaned in the database on uninstall. Prefix-based so it stays complete as options come and go and catches `autoload=off` rows a hardcoded list would miss.
+
+## [0.2.6] - 2026-06-30
+
+### Fixed
+
+- Stopped `esc_html()` over-escaping of `Proxy_LLM_Client` error messages. The thrown text is plain text for its log/CLI consumers (and React escapes on render), so runtime escaping only mangled quotes/markup in the logs. Escaping belongs to the view, not the runtime.
 
 ## [0.2.5] - 2026-06-29
 

@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 namespace Newspack_AI_Newsletter\Tests;
 
+use Newspack_AI_Newsletter\Digest_Builder_Node;
 use Newspack_AI_Newsletter\Insights_CI_Node;
-use Newspack_AI_Newsletter\Settings;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Message;
@@ -33,7 +33,7 @@ final class InsightsCITest extends TestCase {
 		// Service_CI verbs are gated by default; these tests dispatch them, so grant the cap.
 		$GLOBALS['_wp_test_current_user_can']['manage_options'] = true;
 		$GLOBALS['_current_user_can']                           = true;
-		// The accumulated slice reads the fixed Settings::DIGEST_PATH constant — clear any
+		// The accumulated slice reads the fixed Digest_Builder_Node::DIGEST_PATH constant — clear any
 		// leftover segments so an empty-snapshot test sees an empty digest.
 		$this->clear_digest_segments();
 	}
@@ -53,8 +53,8 @@ final class InsightsCITest extends TestCase {
 
 	/** Remove every `{DIGEST_PATH}.{seg}` segment so the fixed-path digest read is deterministic per test. */
 	private function clear_digest_segments(): void {
-		\is_dir( \dirname( Settings::DIGEST_PATH ) ) || \mkdir( \dirname( Settings::DIGEST_PATH ), 0777, true );
-		foreach ( (array) \glob( Settings::DIGEST_PATH . '.*' ) as $segment ) {
+		\is_dir( \dirname( Digest_Builder_Node::DIGEST_PATH ) ) || \mkdir( \dirname( Digest_Builder_Node::DIGEST_PATH ), 0777, true );
+		foreach ( (array) \glob( Digest_Builder_Node::DIGEST_PATH . '.*' ) as $segment ) {
 			\is_file( $segment ) && \unlink( $segment );
 		}
 	}
@@ -132,7 +132,7 @@ final class InsightsCITest extends TestCase {
 			0,
 			[ 'items' => self::SEED, 'done' => '2', 'total' => '3' ]
 		);
-		\file_put_contents( Settings::DIGEST_PATH . '.0', '## Real digest' );
+		\file_put_contents( Digest_Builder_Node::DIGEST_PATH . '.0', '## Real digest' );
 		$ci = new Insights_CI_Node();
 		$ci->name( 'insights' );
 
@@ -296,7 +296,12 @@ final class InsightsCITest extends TestCase {
 		$this->assertSame( 1, $interpreter->partition->flushes );
 		$this->assertSame( 'Partition', $interpreter->made_type );
 		$this->assertSame( 'newspack-ai-newsletter.p0', $interpreter->made_name );
-		$this->assertSame( $base . '/ipc/newspack-ai-newsletter.p0/input', $interpreter->made_args[0] );
+		// The substrate owns the IPC geometry — all four retention axes, so an
+		// inherited <config:min_lifetime> can't protect the scratch from pruning.
+		$this->assertSame(
+			\Newspack_Nodes\Worker_Base::ipc_partition_args( $base . '/ipc/newspack-ai-newsletter.p0/input' ),
+			$interpreter->made_args[0]
+		);
 		$this->assertSame(
 			[
 				'newspack-ai-newsletter.p0/digest',
@@ -341,6 +346,17 @@ final class InsightsCITest extends TestCase {
 		}
 		return $this->digest_dir . '/digest.md';
 	}
+
+	/**
+	 * DIGEST_PATH moved from the retired Settings singleton onto Digest_Builder_Node
+	 * (Task B of the topology-config migration). Structural guard: the production
+	 * source must read the relocated constant, not the old one.
+	 */
+	public function test_reads_digest_path_from_digest_builder_node_not_settings(): void {
+		$source = (string) \file_get_contents( \dirname( __DIR__, 2 ) . '/includes/class-insights-ci-node.php' );
+		$this->assertStringNotContainsString( 'Settings::DIGEST_PATH', $source );
+		$this->assertStringContainsString( 'Digest_Builder_Node::DIGEST_PATH', $source );
+	}
 }
 
 class Capturing_Interpreter extends Command_Interpreter_Node {
@@ -360,7 +376,7 @@ class Capturing_Interpreter extends Command_Interpreter_Node {
 		return $this->partition;
 	}
 
-	public function fill( array &$message ): void {
+	public function fill( array $message ): void {
 		$this->messages[] = $message;
 	}
 }
