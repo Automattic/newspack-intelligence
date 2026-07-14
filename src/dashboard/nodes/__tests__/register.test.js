@@ -5,8 +5,7 @@ import { TopTableViewNode } from '../top-table-view-node';
 import { AccumulatedViewNode } from '../accumulated-view-node';
 
 describe( 'dashboard node registration', () => {
-	// Each shell name must map to its OWN class — a copy-paste swap (e.g. pointing
-	// `TopTableView` at SourceCountsViewNode) must fail here, not just `.toBeDefined()`.
+	// Each shell name must map to its OWN class; a swap must fail here.
 	it.each( [
 		[ 'SourceCountsView', SourceCountsViewNode, { sources: {} } ],
 		[ 'TopTableView', TopTableViewNode, { top: {} } ],

@@ -7,7 +7,6 @@
 
 // --- DESIGN.product.md tokens (subset used here) ---
 $cobalt: #003da5;
-$cobalt-hover: #00296e;
 $surface: #fff;
 $surface-subtle: #f7f7f7;
 $text: #1e1e1e;
@@ -69,13 +68,13 @@ $font:
     &--error {
       background: $error-subtle;
       color: $text;
-      border: 2px solid $error;
+      border: 1px solid $error;
     }
 
     &--ok {
       background: #f0f7f1;
       color: $text;
-      border: 2px solid $success;
+      border: 1px solid $success;
     }
   }
 
@@ -84,7 +83,7 @@ $font:
     padding: 32px;
     text-align: center;
     background: $surface-subtle;
-    border: 2px solid $border;
+    border: 1px solid $border;
     border-radius: 16px;
 
     p {
@@ -122,7 +121,7 @@ $font:
   &__card {
     padding: 16px;
     background: $surface;
-    border: 2px solid $border;
+    border: 1px solid $border;
     border-radius: 8px;
   }
 
@@ -140,7 +139,7 @@ $font:
     gap: 4px;
     padding: 16px;
     background: $surface;
-    border: 2px solid $border;
+    border: 1px solid $border;
     border-radius: 8px;
   }
 
@@ -325,39 +324,6 @@ $font:
     margin-top: 16px;
   }
 
-  &__btn {
-    padding: 12px 16px;
-    font-size: 16px;
-    font-family: $font;
-    color: #fff;
-    background: $cobalt;
-    border: 2px solid $cobalt;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.15s;
-
-    &:hover {
-      background: $cobalt-hover;
-      border-color: $cobalt-hover;
-    }
-
-    // Secondary: white surface, Cobalt text + border (DESIGN button-secondary).
-    &--secondary {
-      color: $cobalt;
-      background: $surface;
-
-      &:hover {
-        color: #fff;
-        background: $cobalt;
-      }
-    }
-
-    &:disabled {
-      cursor: default;
-      opacity: 0.6;
-    }
-  }
-
   &__copied {
     font-size: 14px;
     font-weight: 600;
@@ -380,7 +346,7 @@ $font:
     padding: 12px 14px;
     max-height: 720px;
     overflow: auto;
-    border: 2px solid $border;
+    border: 1px solid $border;
     border-radius: 8px;
     background: $surface-subtle;
     color: $text;

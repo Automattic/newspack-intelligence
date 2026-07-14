@@ -13,7 +13,7 @@ import { PendingReplies } from '@newspack-nodes/shared/pendingReplies';
 export class AccumulatedViewNode extends SliceViewNode {
 	constructor() {
 		super();
-		// Hook-stamped ID → { resolve, reject }; settled by the base fill()'s replies.settle().
+		// Hook-stamped ID → { resolve, reject }; settled by the base fill().
 		this.replies = new PendingReplies();
 	}
 

@@ -8,17 +8,21 @@
 
 namespace Newspack_AI_Newsletter;
 
+use Newspack_Nodes\Core;
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Message;
+use Newspack_Nodes\Schema_Reflection;
 
 \defined( 'ABSPATH' ) || exit;
 
 class Summarizer_Node extends Node {
+	use Schema_Reflection;
+	use LLM_Config;
 
 	/**
-	 * LLM-client factory seam. Lazily-defaulted at the call site to
-	 * `Settings::llm_client()` (null when no proxy token is configured). Tests
-	 * reassign in setUp to inject a real `Proxy_LLM_Client` — faking only its
+	 * LLM-client factory seam. Lazily-defaulted at the call site to this node's
+	 * own verb-configured `make_llm_client()` (null when no vault token resolves).
+	 * Tests reassign in setUp to inject a real `Proxy_LLM_Client` — faking only its
 	 * `$http_post` seam — so prompt assembly, the client, and the JSON parse all
 	 * run as real, covered production code; tearDown resets it to null.
 	 *
@@ -28,10 +32,16 @@ class Summarizer_Node extends Node {
 	 */
 	public static ?\Closure $llm_factory = null;
 
-	public function fill( array &$message ): void {
+	/** Tachikoma-parity: no-arg ctor. Wires the sibling :config interpreter from node_schema()['commands']. */
+	public function __construct() {
+		parent::__construct();
+		$this->auto_wire_interpreter();
+	}
+
+	public function fill( array $message ): void {
 		/** @var int $type */
 		$type = $message[ Message::TYPE ];
-		// Forward control signals (e.g. a source's DONE) unchanged toward the digest.
+		// Forward control signals (a source's DONE) unchanged to the digest.
 		if ( $type & Message::TM_INFO ) {
 			parent::fill( $message );
 			return;
@@ -47,12 +57,12 @@ class Summarizer_Node extends Node {
 			$item['title'] = '(untitled)';
 		}
 		/** @var array<string,mixed> $item */
-		$client   = ( self::$llm_factory ?? static fn (): ?LLM_Client => Settings::llm_client() )();
+		$client   = self::$llm_factory ? ( self::$llm_factory )() : $this->make_llm_client();
 		$enriched = null;
 		if ( $client instanceof LLM_Client ) {
 			try {
 				$raw = $client->chat(
-					Prompts::enrich( $item, Settings::get_string( 'relevance_profile' ) ),
+					Prompts::enrich( $item, $this->relevance_profile() ),
 					[ 'max_tokens' => 500, 'temperature' => 0.3 ]
 				);
 				$enriched = self::parse_enrich( $raw );
@@ -64,20 +74,20 @@ class Summarizer_Node extends Node {
 			$item['summary']         = $enriched['summary'];
 			$item['relevance_score'] = $enriched['relevance_score'];
 			$item['reason']          = $enriched['reason'];
-			$this->set_state( 'SUMMARIZED', (string) ( \is_scalar( $item['title'] ) ? $item['title'] : '' ) );
+			$this->set_state( 'SUMMARIZED', Core::as_string( $item['title'] ) );
 		} else {
 			$item['summary'] = $this->summarize( $item );
-			$this->set_state( 'FAILED', (string) ( \is_scalar( $item['title'] ) ? $item['title'] : '' ) );
+			$this->set_state( 'FAILED', Core::as_string( $item['title'] ) );
 		}
 
-		// The body fed the summary; nothing downstream reads it — drop it to shrink the scored log + snapshot.
+		// Body fed the summary; drop it to shrink the scored log + snapshot.
 		unset( $item['body'] );
 
 		$out                   = Message::new_message();
 		$out[ Message::TYPE ]  = Message::TM_STRUCT;
 		$out[ Message::FROM ]  = $this->name;
 		$out[ Message::VALUE ] = $item;
-		// parent::fill (base, not $this — would recurse) stamps TO from target, increments the counter, and forwards to sink.
+		// parent::fill (base, not $this — would recurse) forwards to sink.
 		parent::fill( $out );
 	}
 
@@ -98,8 +108,8 @@ class Summarizer_Node extends Node {
 		$reason = $d['reason'] ?? '';
 		return [
 			'summary'         => $d['summary'],
-			'relevance_score' => \max( 0, \min( 10, \is_numeric( $score ) ? (int) $score : 0 ) ),
-			'reason'          => \is_scalar( $reason ) ? (string) $reason : '',
+			'relevance_score' => \max( 0, \min( 10, Core::num_int( $score ) ) ),
+			'reason'          => Core::as_string( $reason ),
 		];
 	}
 
@@ -121,7 +131,7 @@ class Summarizer_Node extends Node {
 			'category'     => 'Transform',
 			'description'  => 'Summarizes one item; emits the item plus a summary. Source-agnostic.',
 			'arguments'    => [],
-			'commands'     => [],
+			'commands'     => self::llm_config_commands(),
 			'accepts_fill' => true,
 			'has_target'   => true,
 		];

@@ -7,6 +7,8 @@
 
 namespace Newspack_AI_Newsletter;
 
+\defined( 'ABSPATH' ) || exit;
+
 /**
  * Posts chat-completion requests to the Automattic AI API Proxy and returns the
  * assistant message content.
@@ -55,11 +57,13 @@ final class Proxy_LLM_Client implements LLM_Client {
 			: \wp_remote_post( $url, $args );
 
 		if ( \is_wp_error( $response ) ) {
-			throw new \RuntimeException( \esc_html( 'AI proxy request failed: ' . $response->get_error_message() ) );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+			throw new \RuntimeException( 'AI proxy request failed: ' . $response->get_error_message() );
 		}
 		$code = (int) \wp_remote_retrieve_response_code( $response );
 		if ( 200 !== $code ) {
-			throw new \RuntimeException( \esc_html( "AI proxy returned HTTP $code" ) );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+			throw new \RuntimeException( "AI proxy returned HTTP $code" );
 		}
 		$decoded = \json_decode( \wp_remote_retrieve_body( $response ), true );
 		$content = self::extract_content( $decoded );

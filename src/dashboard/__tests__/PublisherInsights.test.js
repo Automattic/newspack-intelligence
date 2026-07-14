@@ -34,7 +34,7 @@ import PublisherInsights from '../PublisherInsights';
 const ROUTER = '_router';
 const DIGEST = '# Sprint digest\n\n- Big news shipped';
 
-// A fake CommandClient: postBatch echoes a per-verb reply pivoted back along FROM.
+// A fake CommandClient: postBatch echoes a per-verb reply pivoted via FROM.
 function makeClient( payloadByVerb ) {
 	return {
 		postBatch( messages ) {
@@ -76,7 +76,7 @@ beforeEach( () => {
 	apiFetch.mockReset();
 } );
 
-// Render the dashboard, drive one router tick to fill the views, await the replies.
+// Render the dashboard, tick the router to fill the views, await replies.
 async function renderAndTick( client, props = {} ) {
 	const utils = render(
 		<PublisherInsights commandClient={ client } { ...props } />
@@ -131,8 +131,7 @@ describe( 'PublisherInsights — render', () => {
 			':scope > .eai-insights__side'
 		);
 		expect( columns ).toHaveLength( 2 );
-		// Left column stacks the accumulated digest over the source counts;
-		// the tall Top-items table gets the right column to itself.
+		// Left column: digest over counts; the tall Top table gets the right.
 		expect(
 			columns[ 0 ].querySelector( '.eai-insights__draft' )
 		).toBeInTheDocument();

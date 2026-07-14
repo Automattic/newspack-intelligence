@@ -46,8 +46,7 @@ function setVisibility( state ) {
 	document.dispatchEvent( new Event( 'visibilitychange' ) );
 }
 
-// A fake CommandClient matching HttpOut's seam: postBatch records each batch and
-// echoes a reply addressed back along FROM, payload keyed by the posted verb.
+// Fake CommandClient: postBatch records each batch and echoes a reply via FROM.
 function makeFakeClient( payloadByVerb = {}, replyTypeByVerb = {} ) {
 	const client = {
 		batches: [],

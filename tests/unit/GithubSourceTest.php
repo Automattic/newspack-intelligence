@@ -121,13 +121,11 @@ final class GithubSourceTest extends TestCase {
 		$this->assertSame( [], $node->fetch( [ 'repos' => [], 'token' => '' ] ) );
 	}
 
-	public function test_tick_reads_repos_and_token_from_settings(): void {
-		update_option( 'newspack_ai_newsletter_github_repos', [ 'owner/repo' ] );
+	public function test_tick_reads_repos_and_token_from_verb_state(): void {
 		update_option(
 			'newspack_nodes_vault',
-			[ 'gh-creds' => [ 'id' => 'gh-creds', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'ghp_from_settings' ] ]
+			[ 'gh-creds' => [ 'id' => 'gh-creds', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'ghp_from_vault' ] ]
 		);
-		update_option( 'newspack_ai_newsletter_github_token', 'gh-creds' );
 		Vault::get_instance()->reset_cache();
 		$captured = [];
 		Github_Source_Node::$http_get = static function ( string $url, array $args ) use ( &$captured ): array {
@@ -136,6 +134,9 @@ final class GithubSourceTest extends TestCase {
 		};
 
 		$node = new Github_Source_Node();
+		$node->name( 'github' );
+		$node->add_repo( 'owner/repo' );
+		$node->set_vault_id( 'gh-creds' );
 		$node->sink( new Capture_Sink_Node() );
 		$message                  = Message::new_message();
 		$message[ Message::TYPE ] = Message::TM_REQUEST;
@@ -143,9 +144,51 @@ final class GithubSourceTest extends TestCase {
 
 		$this->assertCount( 3, $captured );
 		$this->assertStringContainsString( '/repos/owner/repo/releases', $captured[0]['url'] );
-		$this->assertSame( 'Bearer ghp_from_settings', $captured[0]['args']['headers']['Authorization'] );
-		delete_option( 'newspack_ai_newsletter_github_repos' );
-		delete_option( 'newspack_ai_newsletter_github_token' );
+		$this->assertSame( 'Bearer ghp_from_vault', $captured[0]['args']['headers']['Authorization'] );
+	}
+
+	public function test_add_repo_accumulates_ordered_repos_into_config(): void {
+		$node = new Github_Source_Node();
+		$node->name( 'github' );
+
+		$this->assertSame( 'ok', $node->add_repo( 'owner/repo-a' ) );
+		$this->assertSame( 'ok', $node->add_repo( 'owner/repo-b' ) );
+
+		$this->assertSame( [ 'owner/repo-a', 'owner/repo-b' ], $this->config_of( $node )['repos'] );
+	}
+
+	public function test_set_vault_id_resolves_seeded_entry_into_config_token(): void {
+		update_option(
+			'newspack_nodes_vault',
+			[ 'gh-creds' => [ 'id' => 'gh-creds', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'ghp_from_vault' ] ]
+		);
+		Vault::get_instance()->reset_cache();
+		$node = new Github_Source_Node();
+		$node->name( 'github' );
+
+		$node->set_vault_id( 'gh-creds' );
+		$this->assertSame( 'ghp_from_vault', $this->config_of( $node )['token'] );
+	}
+
+	public function test_set_vault_id_unknown_id_yields_empty_token(): void {
+		$node = new Github_Source_Node();
+		$node->name( 'github' );
+
+		$node->set_vault_id( 'no-such-id' );
+		$this->assertSame( '', $this->config_of( $node )['token'] );
+	}
+
+	public function test_dump_config_re_emits_add_repo_and_set_vault_id(): void {
+		$node = new Github_Source_Node();
+		$node->name( 'github' );
+		$node->add_repo( 'owner/repo-a' );
+		$node->add_repo( 'owner/repo-b' );
+		$node->set_vault_id( 'gh-creds' );
+
+		$dump = $node->dump_config();
+		$this->assertStringContainsString( 'cmd github:config add_repo owner/repo-a', $dump );
+		$this->assertStringContainsString( 'cmd github:config add_repo owner/repo-b', $dump );
+		$this->assertStringContainsString( 'cmd github:config set_vault_id gh-creds', $dump );
 	}
 
 	public function test_node_schema_declares_github_source_contract(): void {
@@ -155,5 +198,17 @@ final class GithubSourceTest extends TestCase {
 		$this->assertFalse( $schema['accepts_fill'] );
 		$this->assertSame( 'TICK', $schema['requests'][0]['name'] );
 		$this->assertStringContainsString( 'GitHub Releases', $schema['description'] );
+		$verb_names = \array_column( $schema['commands'], 'name' );
+		$this->assertContains( 'add_repo', $verb_names );
+		$this->assertContains( 'set_vault_id', $verb_names );
+		$vault_id_verb = $schema['commands'][ \array_search( 'set_vault_id', $verb_names, true ) ];
+		$this->assertSame( 'vault_id', $vault_id_verb['args'][0]['type'] );
+	}
+
+	/** config() is protected — read it via reflection, matching SettingsSyncNodeTest's registry-access pattern. */
+	private function config_of( Github_Source_Node $node ): array {
+		$method = new \ReflectionMethod( $node, 'config' );
+		$method->setAccessible( true );
+		return $method->invoke( $node );
 	}
 }

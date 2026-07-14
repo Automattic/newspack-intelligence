@@ -41,14 +41,12 @@ import { addSliceFetcher } from '@newspack-nodes/shared/helpers/addSliceFetcher'
 import { makeOpId } from '@newspack-nodes/shared/hooks/useDashboardGraph';
 import '../nodes/register';
 
-// The server-side CI mount this plugin owns. The Fetchers (poll) and the action
-// verbs both target it through the substrate's `_shell/_http`.
+// Server-side CI mount; Fetchers and action verbs target it via _shell/_http.
 const SERVER = 'insights';
 const TARGET = `_shell/_http/${ SERVER }`;
 const ACC_VIEW = 'accumulated:view';
 
-// Per-slice fetcher config: the receiver Tee a reply pivots back to, the verb,
-// and the view node (+ its registered class) the reply lands on.
+// Per-slice fetcher config: receiver Tee, verb, view node, and its class.
 const SLICES = [
 	{
 		fetcher: 'fetch-counts',
@@ -115,9 +113,7 @@ export function useInsightsGraph( opts = {} ) {
 		intervalMs: opts.intervalMs,
 	} );
 
-	// Awaited verb: stash a pending Promise under the command ID on the accumulated
-	// view's registry, fire the verb, and resolve with the reply's payload when it
-	// pivots back to that view.
+	// Awaited verb: stash pending Promise under the ID, fire, resolve on reply.
 	const awaitVerb = useCallback(
 		( verb, prefix ) => {
 			const interpreter = interpreterRef.current;

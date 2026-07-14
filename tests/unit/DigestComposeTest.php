@@ -9,12 +9,15 @@ use Newspack_AI_Newsletter\LLM_Client;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
+use Newspack_Nodes\Vault;
 
 final class DigestComposeTest extends TestCase {
 
 	protected function tearDown(): void {
 		Digest_Builder_Node::$llm_factory = null;
 		Proxy_LLM_Client::$http_post      = null;
+		delete_option( Vault::OPTION_KEY );
+		Vault::get_instance()->reset_cache();
 	}
 
 	/**
@@ -36,7 +39,7 @@ final class DigestComposeTest extends TestCase {
 		$m                   = Message::new_message();
 		$m[ Message::TYPE ]  = Message::TM_INFO;
 		$m[ Message::FROM ]  = 'src';
-		$m[ Message::VALUE ] = 'DONE';
+		$m[ Message::VALUE ] = "DONE\n";
 		$n->fill( $m );
 	}
 
@@ -64,6 +67,54 @@ final class DigestComposeTest extends TestCase {
 
 		$sink = new Capture_Sink_Node();
 		$node = new Digest_Builder_Node();
+		$node->sink( $sink );
+
+		$this->feed( $node, [ 'summary' => 'sa', 'score' => 9.0 ] );
+		$this->complete( $node );
+
+		$this->assertStringContainsString( '- sa', $sink->captured[0][ Message::VALUE ] );
+	}
+
+	public function test_uses_own_verb_configured_client_and_relevance_profile_when_factory_unset(): void {
+		update_option(
+			Vault::OPTION_KEY,
+			[ 'ai-vault' => [ 'id' => 'ai-vault', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'proxy-token' ] ]
+		);
+		Vault::get_instance()->reset_cache();
+
+		$captured = [];
+		Proxy_LLM_Client::$http_post = static function ( string $url, array $args ) use ( &$captured ): array {
+			$captured[] = $args;
+			return [
+				'response' => [ 'code' => 200 ],
+				'body'     => \json_encode(
+					[ 'choices' => [ [ 'message' => [ 'content' => '## What mattered' ] ] ] ]
+				),
+			];
+		};
+
+		$node = new Digest_Builder_Node();
+		$node->name( 'digest' );
+		$node->set_vault_id( 'ai-vault' );
+		$node->set_model( 'own-model' );
+		$node->set_feature( 'own-feature' );
+		$node->add_profile( 'Engineering audience' );
+		$node->sink( new Capture_Sink_Node() );
+
+		$this->feed( $node, [ 'summary' => 'sa', 'score' => 9.0, 'title' => 'A', 'source' => 'github', 'url' => 'http://a' ] );
+		$this->complete( $node );
+
+		$this->assertNotEmpty( $captured );
+		$this->assertSame( 'Bearer proxy-token', $captured[0]['headers']['Authorization'] );
+		$this->assertSame( 'own-feature', $captured[0]['headers']['X-WPCOM-AI-Feature'] );
+		$this->assertStringContainsString( '"model":"own-model"', $captured[0]['body'] );
+		$this->assertStringContainsString( 'Engineering audience', $captured[0]['body'] );
+	}
+
+	public function test_falls_back_to_ranked_list_when_no_factory_and_no_vault_configured(): void {
+		$sink = new Capture_Sink_Node();
+		$node = new Digest_Builder_Node();
+		$node->name( 'digest' );
 		$node->sink( $sink );
 
 		$this->feed( $node, [ 'summary' => 'sa', 'score' => 9.0 ] );

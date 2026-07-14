@@ -23,19 +23,19 @@ class Scorer_Node extends Node {
 	/** Title keywords that bump the fallback score, +1.0 each (case-insensitive). */
 	private const KEYWORDS = [ 'award', 'launch', 'ships', 'GA', 'million', '10k' ];
 
-	/** relevance_score (0-10) dominates the deterministic scale. */
-	private const RELEVANCE_WEIGHT = 1.0;
-
 	/** Max points a brand-new item earns from recency. */
 	private const RECENCY_BONUS_MAX = 2.0;
 
 	/** Recency half-life: 7 days, in seconds. */
 	private const RECENCY_HALF_LIFE = 604800;
 
-	public function fill( array &$message ): void {
+	/** relevance_score (0-10) dominates the deterministic scale. */
+	private const RELEVANCE_WEIGHT = 1.0;
+
+	public function fill( array $message ): void {
 		/** @var int $type */
 		$type = $message[ Message::TYPE ];
-		// Forward control signals (e.g. a source's DONE) unchanged toward the digest.
+		// Forward control signals (a source's DONE) unchanged to the digest.
 		if ( $type & Message::TM_INFO ) {
 			parent::fill( $message );
 			return;
@@ -73,7 +73,7 @@ class Scorer_Node extends Node {
 			return $this->score( $item );
 		}
 		$ts = $item['timestamp'] ?? 0;
-		$ts = \is_numeric( $ts ) ? (int) $ts : 0;
+		$ts = Core::num_int( $ts );
 		return \round( (float) $rel * self::RELEVANCE_WEIGHT + self::recency_bonus( $ts ), 2 );
 	}
 
@@ -87,7 +87,7 @@ class Scorer_Node extends Node {
 		$title = \is_string( $item['title'] ?? null ) ? $item['title'] : '';
 		$bump  = 0.0;
 		foreach ( self::KEYWORDS as $kw ) {
-			// Whole-word, case-insensitive — so 'GA' doesn't match "Garage" nor 'award' "awarded".
+			// Whole-word, case-insensitive: 'GA' must not match "Garage".
 			if ( 1 === \preg_match( '/\b' . \preg_quote( $kw, '/' ) . '\b/i', $title ) ) {
 				$bump += 1.0;
 			}

@@ -34,7 +34,7 @@ final class DigestBuilderStateTest extends TestCase {
 		$m                   = Message::new_message();
 		$m[ Message::TYPE ]  = Message::TM_INFO;
 		$m[ Message::FROM ]  = $source;
-		$m[ Message::VALUE ] = 'DONE';
+		$m[ Message::VALUE ] = "DONE\n";
 		$n->fill( $m );
 	}
 
