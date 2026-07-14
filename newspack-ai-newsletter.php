@@ -25,6 +25,7 @@ if ( ! \defined( 'NEWSPACK_AI_NEWSLETTER_URL' ) ) {
 
 const INSIGHTS_MENU_SLUG = 'newspack-ai-newsletter-insights';
 const INSIGHTS_MOUNT_ID  = 'newspack-ai-newsletter-insights';
+const SETTINGS_MENU_SLUG = 'newspack-ai-newsletter-settings';
 
 /**
  * Register the Publisher Insights dashboard as its own top-level admin menu. The
@@ -78,8 +79,37 @@ function enqueue_insights_assets( string $hook = '' ): void {
 	);
 }
 
+/** Register the publisher CSV importer under the core Settings menu. */
+function register_clients_admin_page(): void {
+	if ( ! \function_exists( 'add_submenu_page' ) || ! \class_exists( '\\Newspack_Nodes\\Admin\\Admin' ) ) {
+		return;
+	}
+	if ( ! \Newspack_Nodes\Admin\Admin::current_user_allowed() ) {
+		return;
+	}
+	\add_submenu_page(
+		'options-general.php',
+		\__( 'AI Newsletter Settings', 'newspack-ai-newsletter' ),
+		\__( 'AI Newsletter', 'newspack-ai-newsletter' ),
+		'manage_options',
+		SETTINGS_MENU_SLUG,
+		__NAMESPACE__ . '\\render_clients_page'
+	);
+}
+
+/** Render the publisher CSV import page. */
+function render_clients_page(): void {
+	if ( ! \current_user_can( 'manage_options' ) ) {
+		return;
+	}
+	echo '<div class="wrap"><h1>' . \esc_html__( 'AI Newsletter Settings', 'newspack-ai-newsletter' ) . '</h1>';
+	( new Clients_Settings() )->render_upload_section();
+	echo '</div>';
+}
+
 if ( \is_admin() ) {
 	\add_action( 'admin_menu', __NAMESPACE__ . '\\register_insights_admin_page', 11 );
+	\add_action( 'admin_menu', __NAMESPACE__ . '\\register_clients_admin_page', 12 );
 	\add_action( 'admin_enqueue_scripts', __NAMESPACE__ . '\\enqueue_insights_assets' );
 }
 
@@ -111,6 +141,24 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 		// Composer classmap autoload; dump-autoload -o after adding a node.
 		require_once __DIR__ . '/vendor/autoload.php';
 
+		if ( \defined( 'WP_CLI' ) && \WP_CLI ) {
+			\WP_CLI::add_command( 'newspack-ai-newsletter clients', '\\Newspack_AI_Newsletter\\CLI\\Clients_CLI_Command' );
+		}
+
+		// Register upload hooks only after Composer can load Clients_Settings.
+		\add_action(
+			'admin_post_' . Clients_Settings::ADMIN_POST_ACTION,
+			static function (): void {
+				( new Clients_Settings() )->handle_admin_post();
+			}
+		);
+		\add_action(
+			'admin_notices',
+			static function (): void {
+				( new Clients_Settings() )->render_import_notice();
+			}
+		);
+
 		// register_plugin: namespace + topologies/ dir + catalog.
 		\Newspack_Nodes\Topology_Registry::register_plugin(
 			'Newspack_AI_Newsletter\\',
@@ -121,4 +169,17 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 		\add_action( 'newspack_nodes/request_graph_ready', __NAMESPACE__ . '\\mount_insights_ci' );
 	},
 	12
+);
+
+// Register the publisher master-data CPT for web and CLI/import requests.
+\add_action( 'init', [ '\\Newspack_AI_Newsletter\\Publisher_CPT', 'register' ] );
+
+// Use lazy string callables because Composer loads after plugin-file scope.
+\add_action(
+	'add_meta_boxes',
+	[ '\\Newspack_AI_Newsletter\\Publisher_Meta_Box', 'register' ]
+);
+\add_action(
+	'save_post',
+	[ '\\Newspack_AI_Newsletter\\Publisher_Meta_Box', 'save' ]
 );
