@@ -148,7 +148,7 @@ class Insights_CI_Node extends Service_CI_Node {
 			return null;
 		}
 		$input = \rtrim( $base_dir, '/' ) . '/ipc/' . $worker_id . '/input';
-		$node  = $interpreter->make_node( 'Partition', $worker_id, $input, Worker_Base::IPC_SEGMENT_SIZE, Worker_Base::IPC_NUM_SEGMENTS );
+		$node  = $interpreter->make_node( 'Partition', $worker_id, Worker_Base::ipc_partition_args( $input ) );
 		if ( ! $node instanceof Partition_Node ) {
 			return null;
 		}

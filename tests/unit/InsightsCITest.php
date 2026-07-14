@@ -296,7 +296,12 @@ final class InsightsCITest extends TestCase {
 		$this->assertSame( 1, $interpreter->partition->flushes );
 		$this->assertSame( 'Partition', $interpreter->made_type );
 		$this->assertSame( 'newspack-ai-newsletter.p0', $interpreter->made_name );
-		$this->assertSame( $base . '/ipc/newspack-ai-newsletter.p0/input', $interpreter->made_args[0] );
+		// The substrate owns the IPC geometry — all four retention axes, so an
+		// inherited <config:min_lifetime> can't protect the scratch from pruning.
+		$this->assertSame(
+			\Newspack_Nodes\Worker_Base::ipc_partition_args( $base . '/ipc/newspack-ai-newsletter.p0/input' ),
+			$interpreter->made_args[0]
+		);
 		$this->assertSame(
 			[
 				'newspack-ai-newsletter.p0/digest',
