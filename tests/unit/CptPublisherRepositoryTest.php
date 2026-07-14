@@ -70,4 +70,30 @@ final class CptPublisherRepositoryTest extends TestCase {
 
 		$this->assertSame( 0, \NPAINL_WP_Post_Store::$update_calls );
 	}
+
+	public function test_all_with_enrichment_returns_matchable_fields(): void {
+		$repo = new CPT_Publisher_Repository();
+		$repo->create( [ 'atomic_site_id' => '1', 'domain_name' => 'client-43.example', 'created' => '2020-01-01' ], '2026-07-14' );
+
+		// Enrichment is human/HubSpot-owned; set it as the meta box would.
+		$post_id = \NPAINL_WP_Post_Store::$next_id - 1;
+		\update_post_meta( $post_id, \Newspack_AI_Newsletter\Publisher_CPT::META_PUBLISHER_NAME, 'ABQ News' );
+		\update_post_meta( $post_id, \Newspack_AI_Newsletter\Publisher_CPT::META_ALIASES, 'ABQ|Albuquerque News' );
+
+		$rows = $repo->all_with_enrichment();
+		$this->assertCount( 1, $rows );
+		$this->assertSame( '1', $rows[0]['atomic_site_id'] );
+		$this->assertSame( 'client-43.example', $rows[0]['domain_name'] );
+		$this->assertSame( 'active', $rows[0]['status'] );
+		$this->assertSame( 'ABQ News', $rows[0]['publisher_name'] );
+		$this->assertSame( 'ABQ|Albuquerque News', $rows[0]['aliases'] );
+	}
+
+	public function test_all_with_enrichment_defaults_missing_enrichment_to_empty(): void {
+		$repo = new CPT_Publisher_Repository();
+		$repo->create( [ 'atomic_site_id' => '2', 'domain_name' => 'b.com', 'created' => '2021-01-01' ], '2026-07-14' );
+		$rows = $repo->all_with_enrichment();
+		$this->assertSame( '', $rows[0]['publisher_name'] );
+		$this->assertSame( '', $rows[0]['aliases'] );
+	}
 }

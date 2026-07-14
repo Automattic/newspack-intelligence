@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `CSV_Parser::parse_file()`, the single owner of the CSV file-read (readability guard + `file_get_contents` + parse), used by both the CLI command and the Settings handler.
 - Render an `admin_notices` success notice ("Newspack clients imported.") after a completed Settings-page CSV import.
 - Add `Publisher_Meta_Box`, the "Publisher details" admin meta box on `newspack_publisher`: editable enrichment fields (publisher name, localities, GitHub org, LinkedIn company ID, X handle, aliases, beat tags) plus a read-only provenance section for the import-managed fields (atomic site ID, domain, created, status, first/last seen, churned at).
+- Add `Publisher_Repository::all_with_enrichment()`, exposing each publisher's matchable fields (domain, publisher name, aliases, status) for the intake Gate.
 
 ### Changed
 
