@@ -85,7 +85,7 @@ cmd digest:config add_profile  Do not produce tables.
 make_node Tee            digest:tee
 
 # digest:log path MUST match Digest_Builder_Node::DIGEST_PATH (Insights_CI reads the latest segment from there).
-make_node Log            digest:log /tmp/newspack-ai-newsletter/digest.md 1 2 7
+make_node Log            digest:log /tmp/newspack-ai-newsletter/digest.md 1 2 7 0 0
 cmd digest:log:config void_warranty
 
 connect_node github          ingest:partition
