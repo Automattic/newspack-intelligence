@@ -49,7 +49,7 @@ cmd feed:config add_url https://automattic.com/blog/feed/
 make_node Partition      ingest:partition <config:logs_dir>/ingest.p<partition> <config:segment_size> <config:min_segments> <config:max_segments> <config:min_lifetime> <config:max_lifetime>
 cmd ingest:partition:config void_warranty
 
-make_node Consumer       ingest:consumer  <config:logs_dir>/ingest.p<partition> <config:offsets_dir>/ingest.p<partition>
+make_node Consumer       ingest:consumer  <config:logs_dir>/ingest.p<partition> <config:offsets_dir>/ingest.p<partition> <config:deadletter_dir>/ingest.p<partition>
 cmd ingest:consumer:config set_line_mode true
 
 make_node Summarizer     summarizer
@@ -66,7 +66,7 @@ make_node Scorer         scorer
 make_node Partition      scored:partition <config:logs_dir>/scored.p<partition> <config:segment_size> <config:min_segments> <config:max_segments> <config:min_lifetime> <config:max_lifetime>
 cmd scored:partition:config void_warranty
 
-make_node Consumer       scored:consumer <config:logs_dir>/scored.p<partition> <config:offsets_dir>/scored.p<partition>
+make_node Consumer       scored:consumer <config:logs_dir>/scored.p<partition> <config:offsets_dir>/scored.p<partition> <config:deadletter_dir>/scored.p<partition>
 cmd scored:consumer:config set_snapshot_node digest
 cmd scored:consumer:config set_line_mode true
 

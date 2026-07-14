@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`ingest:consumer` and `scored:consumer` now declare a dead-letter dir.** Without it the substrate disables the DLQ, so a poison item was logged and dropped rather than quarantined.
+
 - **The insights IPC partition inherited a retention config that stopped it pruning.** It built its Partition from `IPC_SEGMENT_SIZE` + a bare segment count, leaving `min_lifetime` to fall back to `<config:min_lifetime>` (an hour) — which protects every freshly-written segment from the count rule, so the scratch dir grew without bound. It now uses the substrate's `Worker_Base::ipc_partition_args()`, which declares all four retention axes, so the geometry can't drift from the substrate's again.
 
 ## [0.2.12] - 2026-07-13
