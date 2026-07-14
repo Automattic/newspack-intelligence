@@ -27,7 +27,7 @@ parameters:
         - tests
         - build (?)
         - release (?)
-        - node_modules
+        - node_modules (?)
     bootstrapFiles:
         # Defines NEWSPACK_AI_NEWSLETTER_DIR / _URL / _VERSION via
         # define(). Loading it lets PHPStan see those constants inside includes/.
