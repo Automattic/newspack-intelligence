@@ -30,14 +30,17 @@ final class Publisher_Matcher {
 
 	public function __construct(
 		private Publisher_Repository $repo,
-		private string $config_version
+		private string $config_version,
+		private ?Entity_Extractor $extractor = null,
+		private float $ner_pass_threshold = 0.85,
+		private float $ner_ignore_threshold = 0.60
 	) {}
 
 	/**
 	 * Resolve one normalized item to a gate decision.
 	 *
 	 * @param array<string,mixed> $item Normalized item {source,id,title,url,body,timestamp}.
-	 * @return array{stage:string,item_id:string,decision:string,atomic_site_id:?string,matched_on:?string,reason:string,config_version:string}
+	 * @return array{stage:string,item_id:string,decision:string,atomic_site_id:?string,matched_on:?string,confidence:?float,reason:string,config_version:string}
 	 */
 	public function match( array $item ): array {
 		$source = \is_string( $item['source'] ?? null ) ? $item['source'] : '';
@@ -53,7 +56,7 @@ final class Publisher_Matcher {
 			foreach ( $this->active_publishers() as $pub ) {
 				$domain = $this->normalize_domain( $pub['domain_name'] );
 				if ( '' !== $domain && ( $host === $domain || \str_ends_with( $host, '.' . $domain ) ) ) {
-					return $this->decision( $id, 'pass', $pub['atomic_site_id'], 'domain', "domain:{$host}->{$domain}" );
+					return $this->decision( $id, 'pass', $pub['atomic_site_id'], 'domain', "domain:{$host}->{$domain}", 1.0 );
 				}
 			}
 		}
@@ -82,14 +85,96 @@ final class Publisher_Matcher {
 		if ( 1 === \count( $hits ) ) {
 			$aid = \array_key_first( $hits );
 			$hit = $hits[ $aid ];
-			return $this->decision( $id, 'pass', $aid, $hit['on'], "{$hit['on']}:{$hit['term']}" );
+			return $this->decision( $id, 'pass', $aid, $hit['on'], "{$hit['on']}:{$hit['term']}", 1.0 );
 		}
 		if ( \count( $hits ) > 1 ) {
 			$ids = \implode( ',', \array_keys( $hits ) );
 			return $this->decision( $id, 'hold', null, null, 'ambiguous: ' . \count( $hits ) . " candidates ({$ids})" );
 		}
 
-		return $this->decision( $id, 'hold', null, null, 'no deterministic signal' );
+		// 3. Inconclusive so far: cheap LLM NER + fuzzy DB match (or a plain hold when no extractor is wired).
+		return $this->resolve_via_ner( $id, $item );
+	}
+
+	/**
+	 * Step 2+3: extract subject orgs, fuzzy-match against active publishers, band the result.
+	 *
+	 * @param array<string,mixed> $item
+	 * @return array{stage:string,item_id:string,decision:string,atomic_site_id:?string,matched_on:?string,confidence:?float,reason:string,config_version:string}
+	 */
+	private function resolve_via_ner( string $id, array $item ): array {
+		if ( null === $this->extractor ) {
+			return $this->decision( $id, 'hold', null, null, 'no deterministic signal' );
+		}
+		$orgs = $this->extractor->extract( $item )['orgs'];
+		if ( [] === $orgs ) {
+			return $this->decision( $id, 'hold', null, null, 'ner: no entities' );
+		}
+
+		$best_score = 0.0;
+		$winners    = []; // atomic_site_id => score, for publishers at the running best.
+		foreach ( $this->active_publishers() as $pub ) {
+			$score = 0.0;
+			foreach ( $this->candidates_flat( $pub ) as $cand ) {
+				foreach ( $orgs as $org ) {
+					$score = \max( $score, $this->similarity( $org, $cand ) );
+				}
+			}
+			if ( $score > $best_score ) {
+				$best_score = $score;
+				$winners    = [ $pub['atomic_site_id'] => $score ];
+			} elseif ( $score === $best_score && $score > 0.0 ) {
+				$winners[ $pub['atomic_site_id'] ] = $score;
+			}
+		}
+
+		$conf = \round( $best_score, 4 );
+		if ( $best_score >= $this->ner_pass_threshold ) {
+			if ( 1 === \count( $winners ) ) {
+				$aid = \array_key_first( $winners );
+				return $this->decision( $id, 'pass', $aid, 'ner', "ner:{$conf}", $conf );
+			}
+			$ids = \implode( ',', \array_keys( $winners ) );
+			return $this->decision( $id, 'hold', null, null, "ner: ambiguous ({$ids})", $conf );
+		}
+		if ( $best_score < $this->ner_ignore_threshold ) {
+			return $this->decision( $id, 'ignore', null, null, "ner: no client match ({$conf})", $conf );
+		}
+		return $this->decision( $id, 'hold', null, null, "ner: low confidence ({$conf})", $conf );
+	}
+
+	/**
+	 * Flat candidate list (publisher_name + aliases) for fuzzy scoring.
+	 *
+	 * @param array{atomic_site_id:string,domain_name:string,status:string,publisher_name:string,aliases:string} $pub
+	 * @return array<int,string>
+	 */
+	private function candidates_flat( array $pub ): array {
+		$c = $this->candidates( $pub );
+		return \array_merge( $c['name'], $c['alias'] );
+	}
+
+	/** String similarity in [0,1]: normalized-equality short-circuit, else similar_text ratio. */
+	private function similarity( string $a, string $b ): float {
+		$na = $this->normalize_name( $a );
+		$nb = $this->normalize_name( $b );
+		if ( '' === $na || '' === $nb ) {
+			return 0.0;
+		}
+		if ( $na === $nb ) {
+			return 1.0;
+		}
+		$percent = 0.0;
+		\similar_text( $na, $nb, $percent );
+		return $percent / 100.0;
+	}
+
+	/** Normalize a name for fuzzy compare: lowercase, strip punctuation, drop leading "the", collapse ws. */
+	private function normalize_name( string $s ): string {
+		$s = \strtolower( \trim( $s ) );
+		$s = (string) \preg_replace( '/[^\p{L}\p{N}\s]+/u', ' ', $s );
+		$s = (string) \preg_replace( '/^the\s+/', '', $s );
+		return \trim( (string) \preg_replace( '/\s+/', ' ', $s ) );
 	}
 
 	/**
@@ -157,15 +242,16 @@ final class Publisher_Matcher {
 	}
 
 	/**
-	 * @return array{stage:string,item_id:string,decision:string,atomic_site_id:?string,matched_on:?string,reason:string,config_version:string}
+	 * @return array{stage:string,item_id:string,decision:string,atomic_site_id:?string,matched_on:?string,confidence:?float,reason:string,config_version:string}
 	 */
-	private function decision( string $item_id, string $decision, ?string $atomic_site_id, ?string $matched_on, string $reason ): array {
+	private function decision( string $item_id, string $decision, ?string $atomic_site_id, ?string $matched_on, string $reason, ?float $confidence = null ): array {
 		return [
 			'stage'          => 'gate',
 			'item_id'        => $item_id,
 			'decision'       => $decision,
 			'atomic_site_id' => $atomic_site_id,
 			'matched_on'     => $matched_on,
+			'confidence'     => $confidence,
 			'reason'         => $reason,
 			'config_version' => $this->config_version,
 		];
