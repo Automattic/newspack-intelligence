@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-15
+
 ### Fixed
 
 - **The publisher CPT no longer rewrites every `manage_options` check into a bare `delete_post` check.** Its fully explicit admin-only capability map assigned `manage_options` to all three singular post capabilities while also enabling `map_meta_cap`; WordPress consequently registered the global reverse mapping `manage_options => delete_post`, so ordinary admin-page permission checks emitted the “specific post” notice. Disabling post-type meta-cap registration keeps every publisher operation gated directly by `manage_options` without poisoning unrelated capability checks.
