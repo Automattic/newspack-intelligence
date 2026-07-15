@@ -35,7 +35,7 @@ if ( ! function_exists( 'do_action' ) ) {
 			$cb( ...$args );
 		}
 	}
-	function add_action( string $hook, callable $cb, int $priority = 10, int $accepted_args = 1 ): void {
+	function add_action( string $hook, $cb, int $priority = 10, int $accepted_args = 1 ): void {
 		$GLOBALS['_wp_actions'][ $hook ][] = $cb;
 	}
 	function apply_filters( string $hook, mixed $value, ...$args ): mixed {
@@ -44,7 +44,7 @@ if ( ! function_exists( 'do_action' ) ) {
 		}
 		return $value;
 	}
-	function add_filter( string $hook, callable $cb, int $priority = 10, int $accepted_args = 1 ): void {
+	function add_filter( string $hook, $cb, int $priority = 10, int $accepted_args = 1 ): void {
 		$GLOBALS['_wp_actions'][ $hook ][]                      = $cb;
 		$GLOBALS['_wp_test_filters'][ $hook ][ $priority ][]    = $cb;
 	}

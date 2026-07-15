@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Restrict the `newspack_publisher` CPT to `manage_options`: an explicit `capabilities` map now gates list/edit/delete/create, so roles with only `edit_posts` (Editors/Authors) can no longer view or modify publisher records via `capability_type => 'post'` defaults.
 - `CPT_Publisher_Repository::update_atomic_fields()` now syncs `post_title` to the new domain when a publisher's domain changes on re-import (previously only the `_npainl_domain_name` meta updated, leaving the admin list showing the stale domain); the title write is skipped when the domain is unchanged.
 - **The PHPUnit bootstrap no longer reflects the removed Nodes config allowlist.** Operator-selected config files are validated directly by the substrate, so the obsolete test-only widening seam now stays out of the consumer harness and the suite boots against the current Nodes API.
+- **The PHPUnit `add_action`/`add_filter` doubles accept lazy class-string callables, matching WordPress.** The stubs type-hinted `callable`, which rejects a `[ 'Class', 'method' ]` array for a class Composer autoloads after plugin-file scope — exactly the publisher CPT/meta-box registrations at plugin-file scope. That fataled the whole test bootstrap (`TypeError: add_action(): Argument #2 must be of type callable`). The doubles now mirror WordPress's untyped `$callback` and resolve it lazily at `do_action` time.
 
 ## [0.2.13] - 2026-07-14
 
