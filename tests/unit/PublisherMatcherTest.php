@@ -7,6 +7,7 @@ use Newspack_AI_Newsletter\Publisher_Matcher;
 use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../support/fake-publisher-repository.php';
+require_once __DIR__ . '/../support/fake-entity-extractor.php';
 
 final class PublisherMatcherTest extends TestCase {
 
@@ -102,5 +103,57 @@ final class PublisherMatcherTest extends TestCase {
 			$this->assertSame( 'bypass', $d['decision'], $src );
 			$this->assertNull( $d['atomic_site_id'] );
 		}
+	}
+
+	/**
+	 * @param array<string,string> $over
+	 * @return array<string,mixed>
+	 */
+	private function matchWith( Fake_Entity_Extractor $ex, array $over, float $pass = 0.85, float $ignore = 0.60 ): array {
+		return ( new Publisher_Matcher( $this->repo(), 'csv-2026-07-15', $ex, $pass, $ignore ) )->match( $this->item( $over ) );
+	}
+
+	public function test_ner_exact_org_passes(): void {
+		$d = $this->matchWith( new Fake_Entity_Extractor( [ 'The Texas Tribune' ] ), [ 'title' => 'Nonprofit newsrooms expand', 'url' => 'https://elsewhere.example/x' ] );
+		$this->assertSame( 'pass', $d['decision'] );
+		$this->assertSame( '2', $d['atomic_site_id'] );
+		$this->assertSame( 'ner', $d['matched_on'] );
+		$this->assertSame( 1.0, $d['confidence'] );
+	}
+
+	public function test_ner_close_variant_passes(): void {
+		// "Texas Tribune" vs stored "The Texas Tribune" — leading "the" dropped in normalization.
+		$d = $this->matchWith( new Fake_Entity_Extractor( [ 'Texas Tribune' ] ), [ 'title' => 'Coverage roundup', 'url' => 'https://elsewhere.example/x' ] );
+		$this->assertSame( 'pass', $d['decision'] );
+		$this->assertSame( '2', $d['atomic_site_id'] );
+	}
+
+	public function test_ner_unrelated_org_ignores(): void {
+		$d = $this->matchWith( new Fake_Entity_Extractor( [ 'Acme Widgets Corporation' ] ), [ 'title' => 'Factory opens', 'url' => 'https://elsewhere.example/x' ] );
+		$this->assertSame( 'ignore', $d['decision'] );
+		$this->assertNull( $d['atomic_site_id'] );
+	}
+
+	public function test_ner_midband_holds(): void {
+		// Pin a narrow band so a partial overlap lands in [ignore,pass).
+		$d = $this->matchWith( new Fake_Entity_Extractor( [ 'Texas Daily Chronicle' ] ), [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ], 0.99, 0.30 );
+		$this->assertSame( 'hold', $d['decision'] );
+	}
+
+	public function test_ner_no_orgs_holds(): void {
+		$d = $this->matchWith( new Fake_Entity_Extractor( [] ), [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] );
+		$this->assertSame( 'hold', $d['decision'] );
+	}
+
+	public function test_deterministic_hit_does_not_call_extractor(): void {
+		$ex = new Fake_Entity_Extractor( [ 'The Texas Tribune' ] );
+		( new Publisher_Matcher( $this->repo(), 'v', $ex ) )->match( $this->item( [ 'url' => 'https://abq.news/x' ] ) );
+		$this->assertSame( 0, $ex->calls );
+	}
+
+	public function test_no_extractor_falls_back_to_hold(): void {
+		// Slice-1 regression: a deterministic miss with no extractor still holds.
+		$d = $this->match( [ 'title' => 'A local bake sale', 'url' => 'https://random.example/x' ] );
+		$this->assertSame( 'hold', $d['decision'] );
 	}
 }
