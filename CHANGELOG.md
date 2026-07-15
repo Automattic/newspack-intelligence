@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-15
+
+### Fixed
+
+- **The publisher CPT/meta-box hooks no longer fatal the site when the substrate is briefly inactive.** `init`/`add_meta_boxes`/`save_post` were wired to `Publisher_CPT`/`Publisher_Meta_Box` class-string callables at plugin-file scope, but those classes only autoload after the substrate-gated bootstrap requires the Composer autoloader. Whenever `newspack-nodes` was momentarily deactivated (e.g. a nodes redeploy), the gate short-circuited, the autoloader never loaded, and the still-registered `init` callback raised `class "…\Publisher_CPT" not found` — a site-wide critical error. The three registrations now sit inside the gated bootstrap closure (like the Clients upload hooks), so they only wire when the plugin's own classes are loadable.
+
 ## [0.3.0] - 2026-07-15
 
 ### Added

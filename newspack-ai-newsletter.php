@@ -159,6 +159,11 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 			}
 		);
 
+		// Wire inside the gate; classes autoload only after the require above.
+		\add_action( 'init', [ Publisher_CPT::class, 'register' ] );
+		\add_action( 'add_meta_boxes', [ Publisher_Meta_Box::class, 'register' ] );
+		\add_action( 'save_post', [ Publisher_Meta_Box::class, 'save' ] );
+
 		// register_plugin: namespace + topologies/ dir + catalog.
 		\Newspack_Nodes\Topology_Registry::register_plugin(
 			'Newspack_AI_Newsletter\\',
@@ -169,17 +174,4 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 		\add_action( 'newspack_nodes/request_graph_ready', __NAMESPACE__ . '\\mount_insights_ci' );
 	},
 	12
-);
-
-// Register the publisher master-data CPT for web and CLI/import requests.
-\add_action( 'init', [ '\\Newspack_AI_Newsletter\\Publisher_CPT', 'register' ] );
-
-// Use lazy string callables because Composer loads after plugin-file scope.
-\add_action(
-	'add_meta_boxes',
-	[ '\\Newspack_AI_Newsletter\\Publisher_Meta_Box', 'register' ]
-);
-\add_action(
-	'save_post',
-	[ '\\Newspack_AI_Newsletter\\Publisher_Meta_Box', 'save' ]
 );
