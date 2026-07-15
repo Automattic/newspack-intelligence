@@ -44,7 +44,7 @@ final class Publisher_CPT {
 				'show_in_menu' => true,
 				'menu_icon'    => 'dashicons-groups',
 				'supports'     => [ 'title' ],
-				'map_meta_cap' => true,
+				'map_meta_cap' => false,
 				'capabilities' => [
 					'edit_post'           => 'manage_options',
 					'read_post'           => 'manage_options',
