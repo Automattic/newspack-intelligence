@@ -523,17 +523,3 @@ $plugin_file = \dirname( __DIR__ ) . '/newspack-ai-newsletter.php';
 if ( \file_exists( $plugin_file ) ) {
 	require_once $plugin_file;
 }
-
-// Widen the substrate Config's allowed_config_dirs so tests using
-// `LOCAL_NEWSPACK_NODES_CONF=...path-inside-this-plugin/tests/configs/...php`
-// validate. Runtime plugin/WordPress roots are covered by default; this is a
-// host-development-only nudge for arbitrary test scratch paths.
-( static function (): void {
-	if ( ! \class_exists( '\\Newspack_Nodes\\Config' ) ) {
-		return;
-	}
-	$ref     = new \ReflectionProperty( \Newspack_Nodes\Config::class, 'allowed_config_dirs' );
-	$dirs    = $ref->getValue();
-	$dirs[]  = \dirname( __DIR__ );
-	$ref->setValue( null, $dirs );
-} )();
