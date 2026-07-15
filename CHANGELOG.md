@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `Publisher_Meta_Box`, the "Publisher details" admin meta box on `newspack_publisher`: editable enrichment fields (publisher name, localities, GitHub org, LinkedIn company ID, X handle, aliases, beat tags) plus a read-only provenance section for the import-managed fields (atomic site ID, domain, created, status, first/last seen, churned at).
 - Add `Publisher_Repository::all_with_enrichment()`, exposing each publisher's matchable fields (domain, publisher name, aliases, status) for the intake Gate.
 - Add `Publisher_Matcher`, the intake Gate's deterministic hard-match layer: resolves a normalized item to a publisher by URL domain then exact name/alias (whole-word), emitting a `pass`/`hold`/`bypass` decision record. GitHub/Linear items bypass the Gate; deterministic misses `hold` (recall-biased, pending the later LLM NER layer).
+- Add `Prompts::extract_entities()` and `LLM_Entity_Extractor` (behind an `Entity_Extractor` seam) — the intake Gate's cheap-NER step: extract an item's subject organizations/people/locations as JSON, with a lenient parse that degrades to an empty result on any model/transport failure.
 
 ### Changed
 
