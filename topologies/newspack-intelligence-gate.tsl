@@ -1,0 +1,22 @@
+var num_partitions = 1
+# Intake Gate (observer). A second consumer tails the SAME ingest partition as the summary
+# stage, but with its OWN offsets, so gating neither moves the summarizer's cursor nor changes
+# the digest — this stage is purely additive. Every decision is appended as one JSON line to
+# gate:log (the design's append-only decision-log backbone: replayable, reviewable, the data
+# source for threshold tuning). The LLM verbs configure the cheap-NER extractor; with no
+# resolvable vault token the gate runs deterministic-only (domain + exact name/alias). Moving
+# the gate INLINE (to filter what reaches the digest) is a deliberate later step.
+make_node Consumer gate:consumer <config:logs_dir>/ingest.p<partition> <config:offsets_dir>/gate.p<partition> <config:deadletter_dir>/gate.p<partition>
+cmd gate:consumer:config set_line_mode true
+make_node Gate gate
+cmd gate:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1
+cmd gate:config set_vault_id AI-proxy
+cmd gate:config set_model gpt-oss-120b
+cmd gate:config set_feature newspack-ai-newsletter
+cmd gate:config set_config_version newspack_clients.csv
+make_node Struct_To_JSON gate:tojson
+make_node Log gate:log <config:logs_dir>/gate-decisions.jsonl 1 2 7 0 0
+cmd gate:log:config void_warranty
+connect_node gate:consumer gate
+connect_node gate gate:tojson
+connect_node gate:tojson gate:log
