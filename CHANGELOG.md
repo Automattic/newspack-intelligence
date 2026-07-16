@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A malformed clients CSV can no longer churn every publisher.** `CSV_Parser::parse()` now returns `null` (instead of `[]`) when the first non-blank line isn't the expected "Atomic…" header, or when zero valid data rows result; `Client_Importer::import()` refuses to reconcile an empty snapshot. Previously a readable-but-malformed file produced an empty snapshot whose reconciliation marked EVERY existing client churned.
+- **The Publisher Insights dashboard emits the token-array command form.** `useInsightsGraph` action verbs (`generate` / `collect`) now send `arguments: []` instead of the retired joined-string `''`.
+
 ### Changed
 
 - **Split the pipeline topology into `newspack-intelligence` and deleted the `newspack-ai-newsletter` monolith.** The one-file `newspack-ai-newsletter.tsl` is replaced by `newspack-intelligence.tsl`, which `include`s three composable stages (`newspack-intelligence-ingest`, `-summary`, `-digest`) that build the identical node graph. The worker topology identifier — and therefore the worker-id/lock-dir prefix `Insights_CI` globs — is now `newspack-intelligence` (was `newspack-ai-newsletter`). The plugin slug, plugin file, namespace, text domain, admin-menu slugs, AI-proxy feature name, and the `/tmp/newspack-ai-newsletter/` digest path are unchanged; only the topology name moved.

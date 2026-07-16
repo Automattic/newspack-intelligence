@@ -17,6 +17,22 @@ final class ClientImporterTest extends TestCase {
 		);
 	}
 
+	public function test_import_does_not_churn_on_empty_snapshot(): void {
+		// An empty rows[] must NOT reconcile — the churn loop would mark every
+		// stored client churned. Seed an ACTIVE client (id distinct from any
+		// fixture), import [], and assert it stays active with churned=0.
+		$repo               = new Fake_Publisher_Repository();
+		$repo->store['424242'] = [
+			'atomic_site_id' => '424242', 'domain_name' => 'stays.com', 'created' => '2020-01-01',
+			'status' => 'active', 'first_seen' => '2026-01-01', 'last_seen' => '2026-01-01', 'churned_at' => '',
+		];
+
+		$result = ( new Client_Importer( $repo ) )->import( [], '2026-07-16' );
+
+		$this->assertSame( 0, $result['churned'] );
+		$this->assertSame( 'active', $repo->store['424242']['status'] );
+	}
+
 	public function test_creates_new_publishers(): void {
 		$repo   = new Fake_Publisher_Repository();
 		$result = ( new Client_Importer( $repo ) )->import(

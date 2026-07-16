@@ -248,6 +248,12 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 		expect( genMsgs.length ).toBe( 1 );
 		expect( genMsgs[ 0 ][ FROM ] ).toBe( ACC_VIEW );
 		expect( genMsgs[ 0 ][ ID ] ).toBeTruthy();
+		// Token-array command contract: arguments is an argv list, never the
+		// retired joined-string form.
+		expect( genMsgs[ 0 ][ VALUE ] ).toEqual( {
+			name: 'generate',
+			arguments: [],
+		} );
 	} );
 
 	test( 'generate() rejects when a TM_ERROR reply pivots back', async () => {

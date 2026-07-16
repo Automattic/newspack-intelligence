@@ -87,7 +87,7 @@ function buildAction( verb, id ) {
 	m[ FROM ] = ACC_VIEW;
 	m[ TO ] = TARGET;
 	m[ ID ] = id;
-	m[ VALUE ] = { name: verb, arguments: '' };
+	m[ VALUE ] = { name: verb, arguments: [] };
 	return m;
 }
 

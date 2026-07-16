@@ -41,7 +41,7 @@ class Clients_CLI_Command {
 		$rows = CSV_Parser::parse_file( $path );
 		if ( null === $rows ) {
 			if ( \class_exists( '\WP_CLI' ) ) {
-				\WP_CLI::error( "Cannot read CSV file: {$path}" );
+				\WP_CLI::error( "Cannot read or parse clients CSV (missing header or no valid rows): {$path}" );
 			}
 			return;
 		}

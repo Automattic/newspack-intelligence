@@ -31,6 +31,11 @@ final class Client_Importer {
 		$churned     = 0;
 		$csv_ids     = [];
 
+		// Empty snapshot: the churn loop below would mark EVERY client churned.
+		if ( [] === $rows ) {
+			return [ 'created' => 0, 'updated' => 0, 'reactivated' => 0, 'churned' => 0, 'total_in_csv' => 0 ];
+		}
+
 		foreach ( $rows as $row ) {
 			$id             = $row['atomic_site_id'];
 			$csv_ids[ $id ] = true;
