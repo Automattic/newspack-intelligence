@@ -29,6 +29,30 @@ final class CsvParserTest extends TestCase {
 		$this->assertSame( '150792457', $rows[0]['atomic_site_id'] );
 	}
 
+	public function test_parse_returns_null_when_header_missing(): void {
+		// A file whose first non-blank line isn't the "Atomic..." header is not a
+		// clients export — reject it, don't silently treat row 1 as data.
+		$csv = "\"999888777\",\"2019-05-05\",\"notaheader.com\"\n\"111222333\",\"2020-01-01\",\"x.com\"\n";
+		$this->assertNull( CSV_Parser::parse( $csv ) );
+	}
+
+	public function test_parse_returns_null_when_no_valid_rows(): void {
+		// A valid header with zero data rows is an empty snapshot — importing it
+		// would (via reconciliation) churn every existing client. Reject it.
+		$this->assertNull( CSV_Parser::parse( "\"Atomic site ID\",\"Created\",\"Domain name\"\n" ) );
+	}
+
+	public function test_parse_file_returns_null_for_malformed_readable_file(): void {
+		$tmp = \tempnam( \sys_get_temp_dir(), 'clients' );
+		\file_put_contents( $tmp, "garbage,without,the,right,header\nmore,junk,rows\n" );
+
+		$rows = CSV_Parser::parse_file( $tmp );
+
+		\unlink( $tmp );
+
+		$this->assertNull( $rows );
+	}
+
 	public function test_parse_file_returns_null_for_unreadable_path(): void {
 		$this->assertNull( CSV_Parser::parse_file( '/no/such/file.csv' ) );
 	}
