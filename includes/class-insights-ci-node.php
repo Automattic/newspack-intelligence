@@ -25,11 +25,11 @@ use Newspack_Nodes\Worker_Base;
 
 class Insights_CI_Node extends Service_CI_Node {
 
-	/** The source node names Collect ticks; their count MUST equal the digest's `total` make_node arg in newspack-ai-newsletter.tsl. */
+	/** The source node names Collect ticks; their count MUST equal the digest's `total` make_node arg in newspack-intelligence-digest.tsl. */
 	private const SOURCE_NODES = [ 'github', 'linear', 'feed' ];
 
 	/** The worker topology whose sources Collect ticks; also the worker-id prefix. */
-	private const TOPOLOGY = 'newspack-ai-newsletter';
+	private const TOPOLOGY = 'newspack-intelligence';
 
 	private const TOP_N = 10;
 
@@ -315,15 +315,6 @@ class Insights_CI_Node extends Service_CI_Node {
 		}
 		unset( $list );
 		return $by_source;
-	}
-
-	/**
-	 * Read only the flattened items (the `counts`/`top` slices don't need progress).
-	 *
-	 * @return array<int,array<array-key,mixed>>
-	 */
-	public static function read_snapshot_items( string $offsets_dir ): array {
-		return Partition_Node::read_latest_snapshot_cache( $offsets_dir, 'scored.p*' );
 	}
 
 	/**

@@ -164,7 +164,7 @@ describe( 'AccumulatedPanel — Collect gating', () => {
 			collect: jest.fn( () =>
 				Promise.resolve(
 					JSON.stringify( {
-						error: 'No live newspack-ai-newsletter worker',
+						error: 'No live newspack-intelligence worker',
 					} )
 				)
 			),
@@ -290,7 +290,7 @@ describe( 'AccumulatedPanel — Regenerate', () => {
 			generate: jest.fn( () =>
 				Promise.resolve(
 					JSON.stringify( {
-						error: 'No live newspack-ai-newsletter worker',
+						error: 'No live newspack-intelligence worker',
 					} )
 				)
 			),

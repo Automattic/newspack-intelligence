@@ -3,12 +3,12 @@
  * LLM_Config: shared per-node LLM configuration verbs + client factory.
  *
  * Summarizer_Node and Digest_Builder_Node both need the same api_url/vault_id/
- * model/feature/profiles quintet, configured via topology verbs instead of the
- * retired global Settings singleton. This trait carries that state, the five
- * `set_*` / `add_profile` verbs (declared for node_schema()['commands'] via
- * llm_config_commands()), make_llm_client() (mirrors Settings::llm_client()),
- * and relevance_profile() (mirrors Settings::get_string('relevance_profile')).
- * Uses Vault_Secret for the same '' on blank/unknown/Vault-absent resolution.
+ * model/feature/profiles quintet, configured via per-node topology verbs. This
+ * trait carries that state, the five `set_*` / `add_profile` verbs (declared for
+ * node_schema()['commands'] via llm_config_commands()), make_llm_client() (builds
+ * the proxy client from the verb-configured state), and relevance_profile()
+ * (joins the configured profile lines for prompt assembly). Uses Vault_Secret for
+ * the same '' on blank/unknown/Vault-absent resolution.
  *
  * @package Newspack_AI_Newsletter
  */
@@ -45,7 +45,7 @@ trait LLM_Config {
 	/**
 	 * Build the proxy client from this node's own verb-configured state; null
 	 * when there's no api_url or no resolvable token (callers fall back to
-	 * heuristics), mirroring Settings::llm_client()'s no-token fallback.
+	 * heuristics).
 	 */
 	protected function make_llm_client(): ?LLM_Client {
 		if ( '' === $this->api_url ) {
@@ -58,7 +58,7 @@ trait LLM_Config {
 		return new Proxy_LLM_Client( $this->api_url, $token, $this->model, $this->feature );
 	}
 
-	/** The relevance-profile lines, joined for prompt assembly (mirrors Settings::get_string('relevance_profile')). */
+	/** The relevance-profile lines, joined for prompt assembly. */
 	protected function relevance_profile(): string {
 		return \implode( "\n", $this->profiles );
 	}

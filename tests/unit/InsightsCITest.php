@@ -169,7 +169,7 @@ final class InsightsCITest extends TestCase {
 		$ci    = $this->ci_with_items( self::SEED );
 		$reads = 0;
 		$default = Insights_CI_Node::$read_items
-			?? static fn ( string $dir ): array => Insights_CI_Node::read_snapshot_items( $dir );
+			?? static fn ( string $dir ): array => Insights_CI_Node::read_snapshot( $dir );
 		Insights_CI_Node::$read_items = static function ( string $dir ) use ( &$reads, $default ): array {
 			$reads++;
 			return $default( $dir );
@@ -260,14 +260,16 @@ final class InsightsCITest extends TestCase {
 	public function test_live_workers_lists_topology_workers_from_lock_dirs(): void {
 		$base            = $this->make_temp_dir( 'insights-ci-workers-' );
 		$this->created[] = $base;
+		\mkdir( $base . '/locks/newspack-intelligence.p0.lock.d', 0777, true );
+		\mkdir( $base . '/locks/newspack-intelligence.p1.lock.d', 0777, true );
+		// The pre-split topology name must NO LONGER be recognized as a live worker.
 		\mkdir( $base . '/locks/newspack-ai-newsletter.p0.lock.d', 0777, true );
-		\mkdir( $base . '/locks/newspack-ai-newsletter.p1.lock.d', 0777, true );
 		\mkdir( $base . '/locks/other.p0.lock.d', 0777, true );
 
 		$workers = Insights_CI_Node::live_workers( $base );
 		\sort( $workers );
 		$this->assertSame(
-			[ 'newspack-ai-newsletter.p0', 'newspack-ai-newsletter.p1' ],
+			[ 'newspack-intelligence.p0', 'newspack-intelligence.p1' ],
 			$workers
 		);
 	}
@@ -284,7 +286,7 @@ final class InsightsCITest extends TestCase {
 	public function test_collect_routes_reset_and_tick_requests_to_each_live_worker(): void {
 		$base            = $this->make_temp_dir( 'insights-ci-collect-' );
 		$this->created[] = $base;
-		\mkdir( $base . '/locks/newspack-ai-newsletter.p0.lock.d', 0777, true );
+		\mkdir( $base . '/locks/newspack-intelligence.p0.lock.d', 0777, true );
 		$interpreter = new Capturing_Interpreter();
 
 		$result = Insights_CI_Node::collect( $interpreter, $base );
@@ -295,19 +297,19 @@ final class InsightsCITest extends TestCase {
 		$this->assertTrue( $interpreter->partition->voided );
 		$this->assertSame( 1, $interpreter->partition->flushes );
 		$this->assertSame( 'Partition', $interpreter->made_type );
-		$this->assertSame( 'newspack-ai-newsletter.p0', $interpreter->made_name );
+		$this->assertSame( 'newspack-intelligence.p0', $interpreter->made_name );
 		// The substrate owns the IPC geometry — all four retention axes, so an
 		// inherited <config:min_lifetime> can't protect the scratch from pruning.
 		$this->assertSame(
-			\Newspack_Nodes\Worker_Base::ipc_partition_args( $base . '/ipc/newspack-ai-newsletter.p0/input' ),
+			\Newspack_Nodes\Worker_Base::ipc_partition_args( $base . '/ipc/newspack-intelligence.p0/input' ),
 			$interpreter->made_args
 		);
 		$this->assertSame(
 			[
-				'newspack-ai-newsletter.p0/digest',
-				'newspack-ai-newsletter.p0/github',
-				'newspack-ai-newsletter.p0/linear',
-				'newspack-ai-newsletter.p0/feed',
+				'newspack-intelligence.p0/digest',
+				'newspack-intelligence.p0/github',
+				'newspack-intelligence.p0/linear',
+				'newspack-intelligence.p0/feed',
 			],
 			\array_column( $interpreter->messages, Message::TO )
 		);
@@ -326,7 +328,7 @@ final class InsightsCITest extends TestCase {
 	public function test_regenerate_routes_one_request_to_the_digest_node(): void {
 		$base            = $this->make_temp_dir( 'insights-ci-regen-' );
 		$this->created[] = $base;
-		\mkdir( $base . '/locks/newspack-ai-newsletter.p0.lock.d', 0777, true );
+		\mkdir( $base . '/locks/newspack-intelligence.p0.lock.d', 0777, true );
 		$interpreter = new Capturing_Interpreter();
 
 		$result = Insights_CI_Node::regenerate( $interpreter, $base );
@@ -334,7 +336,7 @@ final class InsightsCITest extends TestCase {
 
 		$this->assertSame( [ 'regenerating' => true, 'workers' => 1 ], $parsed );
 		$this->assertCount( 1, $interpreter->messages );
-		$this->assertSame( 'newspack-ai-newsletter.p0/digest', $interpreter->messages[0][ Message::TO ] );
+		$this->assertSame( 'newspack-intelligence.p0/digest', $interpreter->messages[0][ Message::TO ] );
 		$this->assertSame( 'REGENERATE', $interpreter->messages[0][ Message::VALUE ] );
 	}
 
