@@ -52,15 +52,11 @@ function register_insights_admin_page(): void {
 }
 
 /**
- * Enqueue the Publisher Insights dashboard bundle on its own admin page. Guarded
- * behind the built bundle: the React dashboard ships in a later sub-project, so
- * this no-ops until `build/dashboard` exists.
+ * Enqueue the Publisher Insights dashboard bundle on its own admin page.
+ * `Admin::enqueue_react_page()` no-ops when `build/dashboard/index.js` is absent.
  */
 function enqueue_insights_assets( string $hook = '' ): void {
 	if ( ! \function_exists( 'wp_enqueue_script' ) || ! \class_exists( '\Newspack_Nodes\Admin\Admin' ) ) {
-		return;
-	}
-	if ( ! \is_dir( __DIR__ . '/build/dashboard' ) ) {
 		return;
 	}
 	if ( ! \Newspack_Nodes\Admin\Admin::current_user_allowed() ) {

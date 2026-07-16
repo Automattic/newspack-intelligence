@@ -14,7 +14,6 @@ import esbuild from 'esbuild';
 import * as sass from 'sass';
 import rtlcss from 'rtlcss';
 import path from 'node:path';
-import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = path.dirname( fileURLToPath( import.meta.url ) );
@@ -44,20 +43,12 @@ const alias = {
 		path.resolve( ROOT, '../newspack-nodes/src/shared' ),
 };
 
-// Only build entries whose source exists; empty list no-ops cleanly.
 const ENTRIES = [
 	{
 		entry: 'src/dashboard/index.js',
 		outDir: path.resolve( ROOT, 'build/dashboard' ),
 	},
-].filter( ( e ) => existsSync( path.resolve( ROOT, e.entry ) ) );
-
-if ( 0 === ENTRIES.length ) {
-	console.log(
-		'build.mjs: no dashboard entries present yet — nothing to build.'
-	);
-	process.exit( 0 );
-}
+];
 
 buildDashboards( {
 	esbuild,

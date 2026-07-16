@@ -5,7 +5,6 @@
 	<!-- Scan plugin source -->
 	<file>./includes</file>
 	<file>./newspack-ai-newsletter.php</file>
-	<file>./newspack-ai-newsletter-config.php</file>
 
 	<!-- Exclude build, vendor, and dependency directories -->
 	<exclude-pattern>*/build/*</exclude-pattern>

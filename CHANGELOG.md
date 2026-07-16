@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Removed the dead `Insights_CI_Node::read_snapshot_items()` — the parallel snapshot-read path retired when Regenerate moved to the worker; production reads through `read_snapshot()`.
+- **Removed the never-loaded `newspack-ai-newsletter-config.php` and its scaffold-era guards.** The plugin has no app `Config` class, so nothing loaded the bundled file; it runs on the `newspack-nodes` substrate config + option overlay (its retention values were identical to the substrate defaults, and the digest path is the hardcoded `Digest_Builder_Node::DIGEST_PATH`). Also dropped the redundant `is_dir( build/dashboard )` enqueue guard (the substrate's `Admin::enqueue_react_page()` already no-ops when `index.js` is absent), the build.mjs "entry may not exist yet" filter (the dashboard now always ships), and its stale `phpcs.xml.dist` scan entry. Behavior-neutral.
 
 ## [0.4.0] - 2026-07-16
 
