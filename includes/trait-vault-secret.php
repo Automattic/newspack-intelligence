@@ -3,10 +3,9 @@
  * Vault_Secret: resolves a substrate Vault entry ID to its stored auth_password.
  *
  * Shared by every node that stores a `vault_id` config verb (Linear_Source_Node,
- * Github_Source_Node, and the LLM_Config trait) instead of a raw secret. Mirrors
- * Settings::get_secret()'s resolution exactly: '' when the id is blank, the
- * substrate Vault class isn't loaded, the id is unknown, or the entry has no
- * password.
+ * Github_Source_Node, and the LLM_Config trait) instead of a raw secret. Resolves
+ * to '' when the id is blank, the substrate Vault class isn't loaded, the id is
+ * unknown, or the entry has no password.
  *
  * @package Newspack_AI_Newsletter
  */

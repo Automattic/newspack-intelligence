@@ -17,7 +17,7 @@ class Digest_Builder_Node extends Node {
 	use Schema_Reflection;
 	use LLM_Config;
 
-	/** Where the digest:log Node writes the rendered newsletter. MUST match topologies/newspack-ai-newsletter.tsl. */
+	/** Where the digest:log Node writes the rendered newsletter. MUST match topologies/newspack-intelligence-digest.tsl. */
 	public const DIGEST_PATH = '/tmp/newspack-ai-newsletter/digest.md';
 
 	/**

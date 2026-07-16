@@ -8,6 +8,7 @@ use Newspack_Nodes\Core;
 use Newspack_Nodes\Log_Node;
 use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Shell_Node;
+use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
 
@@ -34,9 +35,16 @@ final class TopologyRetentionTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		$this->tmp = $this->make_temp_dir( 'ai-newsletter-retention-' );
+		Topology_Registry::reset();
+		Topology_Registry::register_stock_dir( \dirname( __DIR__, 2 ) . '/topologies' );
 	}
 
-	/** Load the real topology file with sentinel <config:...> retention values. */
+	protected function tearDown(): void {
+		Topology_Registry::reset();
+		parent::tearDown();
+	}
+
+	/** Compose the real split topology (its three includes) with sentinel <config:...> retention values. */
 	private function load_topology(): void {
 		Core::register_config_namespace(
 			'config',
@@ -61,8 +69,7 @@ final class TopologyRetentionTest extends TestCase {
 		$shell->sink( $interpreter );
 		$shell->want_reply( false );
 
-		$tsl = \dirname( __DIR__, 2 ) . '/topologies/newspack-ai-newsletter.tsl';
-		$shell->eval_script( (string) \file_get_contents( $tsl ) );
+		$shell->eval_script( "include newspack-intelligence\n" );
 	}
 
 	/** Each durable Partition resolves the four split knobs into the right slots. */

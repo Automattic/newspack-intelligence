@@ -189,7 +189,7 @@ describe( 'PublisherInsights — actions flow through the real graph', () => {
 			makeClient( {
 				...populated,
 				collect: JSON.stringify( {
-					error: 'No live newspack-ai-newsletter worker',
+					error: 'No live newspack-intelligence worker',
 				} ),
 			} )
 		);
