@@ -1,0 +1,19 @@
+var num_partitions = 1
+make_node Consumer scored:consumer <config:logs_dir>/scored.p<partition> <config:offsets_dir>/scored.p<partition> <config:deadletter_dir>/scored.p<partition>
+cmd scored:consumer:config set_snapshot_node digest
+cmd scored:consumer:config set_line_mode true
+make_node Digest_Builder digest scored:partition 3
+cmd digest:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1
+cmd digest:config set_vault_id AI-proxy
+cmd digest:config set_model gpt-oss-120b
+cmd digest:config set_feature newspack-ai-newsletter
+cmd digest:config add_profile Engineers building WordPress publishing tools for Newspack.
+cmd digest:config add_profile Prioritize shipped releases, merged PRs that change behavior or APIs, and runtime/infra changes or incidents.
+cmd digest:config add_profile Deprioritize dependency bumps, docs typos, and cosmetic tweaks.
+cmd digest:config add_profile Do not produce tables.
+make_node Tee digest:tee
+make_node Log digest:log /tmp/newspack-ai-newsletter/digest.md 1 2 7 0 0
+cmd digest:log:config void_warranty
+connect_node scored:consumer digest
+connect_node digest digest:tee
+connect_node digest:tee digest:log

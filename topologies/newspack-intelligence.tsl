@@ -1,0 +1,3 @@
+include newspack-intelligence-ingest
+include newspack-intelligence-summary
+include newspack-intelligence-digest
