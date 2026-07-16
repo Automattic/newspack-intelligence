@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Migrated to the newspack-nodes token-array command contract.** TM_COMMAND `arguments` and node-constructor `arguments` are now a token array (`list<string>` argv) rather than a joined string, matching the substrate change. The source-node config verbs (`add_url`, `add_repo`, `set_vault_id`, `set_api_url`, `set_model`, `set_feature`, `add_profile`), `Digest_Builder_Node::arguments()`, the `Insights_CI` verbs, and the Publisher Insights dashboard read and produce token arrays; `Insights_CI` spreads the substrate IPC-partition argument tokens into `make_node`.
+
 ## [0.3.2] - 2026-07-15
 
 ### Fixed

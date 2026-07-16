@@ -69,7 +69,7 @@ final class InsightsCITest extends TestCase {
 	private function write_scored_cache( string $offsets, int $partition, array $cache ): void {
 		$ol = new Partition_Node();
 		$ol->name( "t:ol:$partition" );
-		$ol->arguments( "$offsets/scored.p$partition" );
+		$ol->arguments( [ "$offsets/scored.p$partition" ] );
 		$ol->void_warranty();
 		$m                   = Message::new_message();
 		$m[ Message::TYPE ]  = Message::TM_STRUCT;
@@ -300,7 +300,7 @@ final class InsightsCITest extends TestCase {
 		// inherited <config:min_lifetime> can't protect the scratch from pruning.
 		$this->assertSame(
 			\Newspack_Nodes\Worker_Base::ipc_partition_args( $base . '/ipc/newspack-ai-newsletter.p0/input' ),
-			$interpreter->made_args[0]
+			$interpreter->made_args
 		);
 		$this->assertSame(
 			[

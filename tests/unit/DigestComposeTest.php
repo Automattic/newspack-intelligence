@@ -35,7 +35,7 @@ final class DigestComposeTest extends TestCase {
 	 * Raise the total to one and fire a single DONE to trigger exactly one compose.
 	 */
 	private function complete( Digest_Builder_Node $n ): void {
-		$n->arguments( '1' );
+		$n->arguments( [ '1' ] );
 		$m                   = Message::new_message();
 		$m[ Message::TYPE ]  = Message::TM_INFO;
 		$m[ Message::FROM ]  = 'src';

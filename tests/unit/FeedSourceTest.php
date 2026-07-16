@@ -239,7 +239,7 @@ XML;
 		$sibling = \Newspack_Nodes\Core::node( 'feed:config' );
 		$this->assertNotNull( $sibling );
 
-		$result = $sibling->dispatch( 'add_url', 'https://example.com/c.xml' );
+		$result = $sibling->dispatch( 'add_url', [ 'https://example.com/c.xml' ] );
 
 		$this->assertSame( 'ok', $result );
 		$this->assertSame( [ 'https://example.com/c.xml' ], $this->config_of( $node )['feeds'] );
