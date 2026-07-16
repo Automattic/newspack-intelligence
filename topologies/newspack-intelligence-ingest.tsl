@@ -1,0 +1,19 @@
+var num_partitions = 1
+make_node Github_Source github
+cmd github:config set_vault_id github
+cmd github:config add_repo Automattic/newspack-ads
+cmd github:config add_repo Automattic/newspack-activecampaign
+cmd github:config add_repo Automattic/newspack-manager
+cmd github:config add_repo Automattic/newspack-network
+cmd github:config add_repo Automattic/newspack-plugin
+make_node Linear_Source linear
+cmd linear:config set_vault_id linear
+make_node Feed_Source feed
+cmd feed:config add_url https://make.wordpress.org/core/feed/
+cmd feed:config add_url https://wordpress.org/news/feed/
+cmd feed:config add_url https://automattic.com/blog/feed/
+make_node Partition ingest:partition <config:logs_dir>/ingest.p<partition> <config:segment_size> <config:min_segments> <config:max_segments> <config:min_lifetime> <config:max_lifetime>
+cmd ingest:partition:config void_warranty
+connect_node github ingest:partition
+connect_node linear ingest:partition
+connect_node feed ingest:partition
