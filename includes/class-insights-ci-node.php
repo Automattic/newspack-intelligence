@@ -148,7 +148,7 @@ class Insights_CI_Node extends Service_CI_Node {
 			return null;
 		}
 		$input = \rtrim( $base_dir, '/' ) . '/ipc/' . $worker_id . '/input';
-		$node  = $interpreter->make_node( 'Partition', $worker_id, Worker_Base::ipc_partition_args( $input ) );
+		$node  = $interpreter->make_node( 'Partition', $worker_id, ...Worker_Base::ipc_partition_args( $input ) );
 		if ( ! $node instanceof Partition_Node ) {
 			return null;
 		}
@@ -369,7 +369,7 @@ class Insights_CI_Node extends Service_CI_Node {
 					'name'        => 'generate',
 					'description' => 'Ask the worker to recompose the digest (TM_REQUEST REGENERATE to its digest node); the dashboard polls for the result.',
 					'args'        => [],
-					'handler'     => static function ( Command_Interpreter_Node $interpreter, string $args ): string {
+					'handler'     => static function ( Command_Interpreter_Node $interpreter, array $args ): string {
 						self::require_manage_options();
 						return self::regenerate( $interpreter, Config::get_base_directory() );
 					},
@@ -378,7 +378,7 @@ class Insights_CI_Node extends Service_CI_Node {
 					'name'        => 'collect',
 					'description' => 'Reset the digest counter and TICK every source to collect — the dashboard Collect button.',
 					'args'        => [],
-					'handler'     => static function ( Command_Interpreter_Node $interpreter, string $args ): string {
+					'handler'     => static function ( Command_Interpreter_Node $interpreter, array $args ): string {
 						self::require_manage_options();
 						return self::collect( $interpreter, Config::get_base_directory() );
 					},

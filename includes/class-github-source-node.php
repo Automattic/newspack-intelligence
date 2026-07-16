@@ -200,13 +200,13 @@ class Github_Source_Node extends Source_Node {
 	 * `add_repo` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param string                   $args        The repo, `owner/name`.
+	 * @param array<array-key, mixed> $args        The repo, `owner/name`.
 	 * @return string Result line.
 	 */
-	public static function cmd_add_repo( Command_Interpreter_Node $interpreter, string $args ): string {
+	public static function cmd_add_repo( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->add_repo( $args );
+		return $patron->add_repo( Core::as_string( $args[0] ?? '' ) );
 	}
 
 	/**
@@ -224,13 +224,13 @@ class Github_Source_Node extends Source_Node {
 	 * `set_vault_id` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param string                   $args        The Vault entry ID.
+	 * @param array<array-key, mixed> $args        The Vault entry ID.
 	 * @return string Result line.
 	 */
-	public static function cmd_set_vault_id( Command_Interpreter_Node $interpreter, string $args ): string {
+	public static function cmd_set_vault_id( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->set_vault_id( $args );
+		return $patron->set_vault_id( Core::as_string( $args[0] ?? '' ) );
 	}
 
 	/** Emit the base config plus round-trippable `cmd {name}:config add_repo …` / `set_vault_id …` lines. */
@@ -259,7 +259,7 @@ class Github_Source_Node extends Source_Node {
 						'args'        => [
 							[ 'name' => 'repo', 'type' => 'string', 'required' => true ],
 						],
-						'handler'     => static fn ( Command_Interpreter_Node $interpreter, string $args ): string => self::cmd_add_repo( $interpreter, $args ),
+						'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_add_repo( $interpreter, $args ),
 						'multiple'    => true,
 					],
 					[
@@ -268,7 +268,7 @@ class Github_Source_Node extends Source_Node {
 						'args'        => [
 							[ 'name' => 'vault_id', 'type' => 'vault_id', 'required' => true ],
 						],
-						'handler'     => static fn ( Command_Interpreter_Node $interpreter, string $args ): string => self::cmd_set_vault_id( $interpreter, $args ),
+						'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_set_vault_id( $interpreter, $args ),
 					],
 				],
 			]

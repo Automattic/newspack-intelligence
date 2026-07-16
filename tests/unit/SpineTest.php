@@ -67,7 +67,7 @@ final class SpineTest extends TestCase {
 	public function test_digest_builder_accumulates_and_composes_markdown_on_completion(): void {
 		$sink = new Capture_Sink_Node();
 		$node = new Digest_Builder_Node();
-		$node->arguments( '1' );
+		$node->arguments( [ '1' ] );
 		$node->sink( $sink );
 
 		foreach ( [ 'a', 'b' ] as $i ) {

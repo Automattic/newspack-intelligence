@@ -14,6 +14,7 @@
 namespace Newspack_AI_Newsletter;
 
 use Newspack_Nodes\Command_Interpreter_Node;
+use Newspack_Nodes\Core;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -197,13 +198,13 @@ class Feed_Source_Node extends Source_Node {
 	 * `add_url` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param string                   $args        The feed URL.
+	 * @param array<array-key, mixed> $args        The feed URL.
 	 * @return string Result line.
 	 */
-	public static function cmd_add_url( Command_Interpreter_Node $interpreter, string $args ): string {
+	public static function cmd_add_url( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->add_url( $args );
+		return $patron->add_url( Core::as_string( $args[0] ?? '' ) );
 	}
 
 	/** Emit the base config plus one round-trippable `cmd {name}:config add_url …` per registered URL. */
@@ -229,7 +230,7 @@ class Feed_Source_Node extends Source_Node {
 						'args'        => [
 							[ 'name' => 'url', 'type' => 'string', 'required' => true ],
 						],
-						'handler'     => static fn ( Command_Interpreter_Node $interpreter, string $args ): string => self::cmd_add_url( $interpreter, $args ),
+						'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_add_url( $interpreter, $args ),
 						'multiple'    => true,
 					],
 				],

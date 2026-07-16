@@ -71,9 +71,9 @@ class Digest_Builder_Node extends Node {
 	/**
 	 * Parse the positional arguments: arg 0 is the total number of sources.
 	 *
-	 * @param string|null $args Space-separated argument string, or null to read.
+	 * @param list<string>|null $args Positional argument tokens, or null to read.
 	 */
-	public function arguments( ?string $args = null ): string {
+	public function arguments( ?array $args = null ): array {
 		if ( null === $args ) {
 			return parent::arguments();
 		}

@@ -16,6 +16,7 @@
 namespace Newspack_AI_Newsletter;
 
 use Newspack_Nodes\Command_Interpreter_Node;
+use Newspack_Nodes\Core;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -72,13 +73,13 @@ trait LLM_Config {
 	 * `set_api_url` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param string                   $args        The AI API Proxy base URL.
+	 * @param array<array-key, mixed> $args        The AI API Proxy base URL.
 	 * @return string Result line.
 	 */
-	public static function cmd_set_api_url( Command_Interpreter_Node $interpreter, string $args ): string {
+	public static function cmd_set_api_url( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->set_api_url( $args );
+		return $patron->set_api_url( Core::as_string( $args[0] ?? '' ) );
 	}
 
 	/** `set_vault_id` verb handler — last-write-wins. */
@@ -91,13 +92,13 @@ trait LLM_Config {
 	 * `set_vault_id` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param string                   $args        The Vault entry ID.
+	 * @param array<array-key, mixed> $args        The Vault entry ID.
 	 * @return string Result line.
 	 */
-	public static function cmd_set_vault_id( Command_Interpreter_Node $interpreter, string $args ): string {
+	public static function cmd_set_vault_id( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->set_vault_id( $args );
+		return $patron->set_vault_id( Core::as_string( $args[0] ?? '' ) );
 	}
 
 	/** `set_model` verb handler — last-write-wins. */
@@ -110,13 +111,13 @@ trait LLM_Config {
 	 * `set_model` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param string                   $args        The LLM model id.
+	 * @param array<array-key, mixed> $args        The LLM model id.
 	 * @return string Result line.
 	 */
-	public static function cmd_set_model( Command_Interpreter_Node $interpreter, string $args ): string {
+	public static function cmd_set_model( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->set_model( $args );
+		return $patron->set_model( Core::as_string( $args[0] ?? '' ) );
 	}
 
 	/** `set_feature` verb handler — last-write-wins. */
@@ -129,13 +130,13 @@ trait LLM_Config {
 	 * `set_feature` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param string                   $args        The X-WPCOM-AI-Feature value.
+	 * @param array<array-key, mixed> $args        The X-WPCOM-AI-Feature value.
 	 * @return string Result line.
 	 */
-	public static function cmd_set_feature( Command_Interpreter_Node $interpreter, string $args ): string {
+	public static function cmd_set_feature( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->set_feature( $args );
+		return $patron->set_feature( Core::as_string( $args[0] ?? '' ) );
 	}
 
 	/**
@@ -157,13 +158,13 @@ trait LLM_Config {
 	 * `add_profile` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param string                   $args        The profile line text.
+	 * @param array<array-key, mixed> $args        The profile line text.
 	 * @return string Result line.
 	 */
-	public static function cmd_add_profile( Command_Interpreter_Node $interpreter, string $args ): string {
+	public static function cmd_add_profile( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->add_profile( $args );
+		return $patron->add_profile( Core::as_string( $args[0] ?? '' ) );
 	}
 
 	/** Emit the base config plus round-trippable `cmd {name}:config …` lines for every non-default verb. */
@@ -201,7 +202,7 @@ trait LLM_Config {
 				'args'        => [
 					[ 'name' => 'url', 'type' => 'string', 'required' => true ],
 				],
-				'handler'     => static fn ( Command_Interpreter_Node $interpreter, string $args ): string => self::cmd_set_api_url( $interpreter, $args ),
+				'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_set_api_url( $interpreter, $args ),
 			],
 			[
 				'name'        => 'set_vault_id',
@@ -209,7 +210,7 @@ trait LLM_Config {
 				'args'        => [
 					[ 'name' => 'vault_id', 'type' => 'vault_id', 'required' => true ],
 				],
-				'handler'     => static fn ( Command_Interpreter_Node $interpreter, string $args ): string => self::cmd_set_vault_id( $interpreter, $args ),
+				'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_set_vault_id( $interpreter, $args ),
 			],
 			[
 				'name'        => 'set_model',
@@ -217,7 +218,7 @@ trait LLM_Config {
 				'args'        => [
 					[ 'name' => 'model', 'type' => 'string', 'required' => true ],
 				],
-				'handler'     => static fn ( Command_Interpreter_Node $interpreter, string $args ): string => self::cmd_set_model( $interpreter, $args ),
+				'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_set_model( $interpreter, $args ),
 			],
 			[
 				'name'        => 'set_feature',
@@ -225,7 +226,7 @@ trait LLM_Config {
 				'args'        => [
 					[ 'name' => 'feature', 'type' => 'string', 'required' => true ],
 				],
-				'handler'     => static fn ( Command_Interpreter_Node $interpreter, string $args ): string => self::cmd_set_feature( $interpreter, $args ),
+				'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_set_feature( $interpreter, $args ),
 			],
 			[
 				'name'        => 'add_profile',
@@ -233,7 +234,7 @@ trait LLM_Config {
 				'args'        => [
 					[ 'name' => 'text', 'type' => 'string', 'required' => true ],
 				],
-				'handler'     => static fn ( Command_Interpreter_Node $interpreter, string $args ): string => self::cmd_add_profile( $interpreter, $args ),
+				'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_add_profile( $interpreter, $args ),
 				'multiple'    => true,
 			],
 		];
