@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Client_Importer;
-use Newspack_AI_Newsletter\Clients_Settings;
+use Newspack_Intelligence\Client_Importer;
+use Newspack_Intelligence\Clients_Settings;
 use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../support/fake-publisher-repository.php';

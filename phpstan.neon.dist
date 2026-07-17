@@ -20,7 +20,7 @@ parameters:
     # deployed to Eve / Atomic where PHP 8.4 is available.
     phpVersion: 80200
     paths:
-        - newspack-ai-newsletter.php
+        - newspack-intelligence.php
         - includes
     excludePaths:
         - vendor
@@ -29,9 +29,9 @@ parameters:
         - release (?)
         - node_modules (?)
     bootstrapFiles:
-        # Defines NEWSPACK_AI_NEWSLETTER_DIR / _URL / _VERSION via
+        # Defines NEWSPACK_INTELLIGENCE_DIR / _URL / _VERSION via
         # define(). Loading it lets PHPStan see those constants inside includes/.
-        - newspack-ai-newsletter.php
+        - newspack-intelligence.php
     scanFiles:
         # WP-CLI is loaded only when WP-CLI itself runs (defined('WP_CLI')).
         # szepeviktor/phpstan-wordpress doesn't ship WP-CLI stubs; supply them
@@ -44,7 +44,7 @@ parameters:
         - ../newspack-nodes/newspack-nodes.php
     scanDirectories:
         # Substrate plugin (newspack-nodes). Loaded at runtime by WordPress
-        # via the deferred-loader pattern in newspack-ai-newsletter.php
+        # via the deferred-loader pattern in newspack-intelligence.php
         # — its classes are NOT in this plugin's autoloader, but every
         # Node subclass / static call here references them. Point PHPStan
         # at the substrate sources so it can discover those symbols.

@@ -7,10 +7,10 @@
  * snapshot; this class supplies only the two seams: config() (Settings read) and
  * fetch() (the blocking GitHub REST calls, behind the $http_get closure seam).
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
@@ -22,7 +22,7 @@ class Github_Source_Node extends Source_Node {
 
 	private const API_BASE   = 'https://api.github.com';
 	private const PER_PAGE   = 10;
-	private const USER_AGENT = 'newspack-ai-newsletter';
+	private const USER_AGENT = 'newspack-intelligence';
 
 	/**
 	 * libcurl/wp_remote_get call seam. Null by default; the call site then invokes

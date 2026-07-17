@@ -12,7 +12,7 @@ make_node Gate gate
 cmd gate:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1
 cmd gate:config set_vault_id AI-proxy
 cmd gate:config set_model gpt-oss-120b
-cmd gate:config set_feature newspack-ai-newsletter
+cmd gate:config set_feature newspack-intelligence
 cmd gate:config set_config_version newspack_clients.csv
 make_node Struct_To_JSON gate:tojson
 make_node Log gate:log <config:logs_dir>/gate-decisions.jsonl 1 2 7 0 0

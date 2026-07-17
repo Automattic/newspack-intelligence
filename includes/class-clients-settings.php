@@ -2,16 +2,16 @@
 /**
  * Clients_Settings: CSV upload → publisher master import, on the Settings page.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 \defined( 'ABSPATH' ) || exit;
 
 class Clients_Settings {
 
-	public const ADMIN_POST_ACTION = 'newspack_ai_newsletter_import_clients';
+	public const ADMIN_POST_ACTION = 'newspack_intelligence_import_clients';
 
 	private Client_Importer $importer;
 
@@ -41,19 +41,19 @@ class Clients_Settings {
 
 	/** Render the upload form (called from the Settings page). */
 	public function render_upload_section(): void {
-		echo '<h2>' . \esc_html__( 'Import Newspack Clients', 'newspack-ai-newsletter' ) . '</h2>';
+		echo '<h2>' . \esc_html__( 'Import Newspack Clients', 'newspack-intelligence' ) . '</h2>';
 		echo '<form method="post" enctype="multipart/form-data" action="' . \esc_url( \admin_url( 'admin-post.php' ) ) . '">';
 		\wp_nonce_field( self::ADMIN_POST_ACTION );
 		echo '<input type="hidden" name="action" value="' . \esc_attr( self::ADMIN_POST_ACTION ) . '" />';
 		echo '<input type="file" name="clients_csv" accept=".csv" required /> ';
-		\submit_button( \__( 'Import CSV', 'newspack-ai-newsletter' ), 'secondary', 'submit', false );
+		\submit_button( \__( 'Import CSV', 'newspack-intelligence' ), 'secondary', 'submit', false );
 		echo '</form>';
 	}
 
 	/** admin-post handler: validate nonce/caps + $_FILES, then import_path(). */
 	public function handle_admin_post(): void {
 		if ( ! \current_user_can( 'manage_options' ) || ! \check_admin_referer( self::ADMIN_POST_ACTION ) ) {
-			\wp_die( \esc_html__( 'Not allowed.', 'newspack-ai-newsletter' ) );
+			\wp_die( \esc_html__( 'Not allowed.', 'newspack-intelligence' ) );
 		}
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized on the next line via sanitize_text_field( wp_unslash() ).
 		$file = isset( $_FILES['clients_csv'] ) && \is_array( $_FILES['clients_csv'] ) ? $_FILES['clients_csv'] : [];
@@ -71,6 +71,6 @@ class Clients_Settings {
 		if ( '1' !== $flag ) {
 			return;
 		}
-		echo '<div class="notice notice-success is-dismissible"><p>' . \esc_html__( 'Newspack clients imported.', 'newspack-ai-newsletter' ) . '</p></div>';
+		echo '<div class="notice notice-success is-dismissible"><p>' . \esc_html__( 'Newspack clients imported.', 'newspack-intelligence' ) . '</p></div>';
 	}
 }

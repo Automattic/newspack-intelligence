@@ -3,9 +3,9 @@
  * Newspack Nodes uninstall cleanup.
  *
  * Runs ONLY on plugin delete (WordPress defines WP_UNINSTALL_PLUGIN), never on
- * deactivate. Removes every `newspack_ai_newsletter_` option this plugin created.
+ * deactivate. Removes every `newspack_intelligence_` option this plugin created.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
 if ( ! \defined( 'WP_UNINSTALL_PLUGIN' ) ) {
@@ -14,4 +14,4 @@ if ( ! \defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 
 require __DIR__ . '/includes/uninstall-cleanup.php';
 
-\Newspack_AI_Newsletter\uninstall_cleanup( 'newspack_ai_newsletter_' );
+\Newspack_Intelligence\uninstall_cleanup( 'newspack_intelligence_' );

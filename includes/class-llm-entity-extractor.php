@@ -7,10 +7,10 @@
  * throws. The cross-referencing against the store is deterministic PHP in Publisher_Matcher, not
  * the model's job.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 \defined( 'ABSPATH' ) || exit;
 

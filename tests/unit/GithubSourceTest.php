@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Github_Source_Node;
+use Newspack_Intelligence\Github_Source_Node;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Vault;
 use Newspack_Nodes\Tests\Capture_Sink_Node;

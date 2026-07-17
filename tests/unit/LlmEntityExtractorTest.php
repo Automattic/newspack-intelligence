@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\LLM_Entity_Extractor;
-use Newspack_AI_Newsletter\Proxy_LLM_Client;
+use Newspack_Intelligence\LLM_Entity_Extractor;
+use Newspack_Intelligence\Proxy_LLM_Client;
 use PHPUnit\Framework\TestCase;
 
 final class LlmEntityExtractorTest extends TestCase {

@@ -2,10 +2,10 @@
 /**
  * Publisher_Meta_Box: the human-owner enrichment editor for `newspack_publisher`.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -14,7 +14,7 @@ namespace Newspack_AI_Newsletter;
  * edit screen: editable enrichment fields (human/HubSpot-owned) plus a
  * read-only provenance section for the import-managed fields. All methods
  * are static so hooks can register them as string callables (see the
- * bootstrap comment in newspack-ai-newsletter.php re: lazy autoload).
+ * bootstrap comment in newspack-intelligence.php re: lazy autoload).
  */
 final class Publisher_Meta_Box {
 
@@ -28,13 +28,13 @@ final class Publisher_Meta_Box {
 	 */
 	public static function enrichment_fields(): array {
 		return [
-			Publisher_CPT::META_PUBLISHER_NAME => \__( 'Publisher name', 'newspack-ai-newsletter' ),
-			Publisher_CPT::META_LOCALITIES     => \__( 'Localities (pipe-separated)', 'newspack-ai-newsletter' ),
-			Publisher_CPT::META_GITHUB_ORG     => \__( 'GitHub org', 'newspack-ai-newsletter' ),
-			Publisher_CPT::META_LINKEDIN_ID    => \__( 'LinkedIn company ID', 'newspack-ai-newsletter' ),
-			Publisher_CPT::META_X_HANDLE       => \__( 'X handle', 'newspack-ai-newsletter' ),
-			Publisher_CPT::META_ALIASES        => \__( 'Aliases (pipe-separated)', 'newspack-ai-newsletter' ),
-			Publisher_CPT::META_BEAT_TAGS      => \__( 'Beat tags (pipe-separated)', 'newspack-ai-newsletter' ),
+			Publisher_CPT::META_PUBLISHER_NAME => \__( 'Publisher name', 'newspack-intelligence' ),
+			Publisher_CPT::META_LOCALITIES     => \__( 'Localities (pipe-separated)', 'newspack-intelligence' ),
+			Publisher_CPT::META_GITHUB_ORG     => \__( 'GitHub org', 'newspack-intelligence' ),
+			Publisher_CPT::META_LINKEDIN_ID    => \__( 'LinkedIn company ID', 'newspack-intelligence' ),
+			Publisher_CPT::META_X_HANDLE       => \__( 'X handle', 'newspack-intelligence' ),
+			Publisher_CPT::META_ALIASES        => \__( 'Aliases (pipe-separated)', 'newspack-intelligence' ),
+			Publisher_CPT::META_BEAT_TAGS      => \__( 'Beat tags (pipe-separated)', 'newspack-intelligence' ),
 		];
 	}
 
@@ -45,13 +45,13 @@ final class Publisher_Meta_Box {
 	 */
 	public static function readonly_fields(): array {
 		return [
-			Publisher_CPT::META_ATOMIC_ID  => \__( 'Atomic site ID', 'newspack-ai-newsletter' ),
-			Publisher_CPT::META_DOMAIN     => \__( 'Domain', 'newspack-ai-newsletter' ),
-			Publisher_CPT::META_CREATED    => \__( 'Created', 'newspack-ai-newsletter' ),
-			Publisher_CPT::META_STATUS     => \__( 'Status', 'newspack-ai-newsletter' ),
-			Publisher_CPT::META_FIRST_SEEN => \__( 'First seen', 'newspack-ai-newsletter' ),
-			Publisher_CPT::META_LAST_SEEN  => \__( 'Last seen', 'newspack-ai-newsletter' ),
-			Publisher_CPT::META_CHURNED_AT => \__( 'Churned at', 'newspack-ai-newsletter' ),
+			Publisher_CPT::META_ATOMIC_ID  => \__( 'Atomic site ID', 'newspack-intelligence' ),
+			Publisher_CPT::META_DOMAIN     => \__( 'Domain', 'newspack-intelligence' ),
+			Publisher_CPT::META_CREATED    => \__( 'Created', 'newspack-intelligence' ),
+			Publisher_CPT::META_STATUS     => \__( 'Status', 'newspack-intelligence' ),
+			Publisher_CPT::META_FIRST_SEEN => \__( 'First seen', 'newspack-intelligence' ),
+			Publisher_CPT::META_LAST_SEEN  => \__( 'Last seen', 'newspack-intelligence' ),
+			Publisher_CPT::META_CHURNED_AT => \__( 'Churned at', 'newspack-intelligence' ),
 		];
 	}
 
@@ -59,7 +59,7 @@ final class Publisher_Meta_Box {
 	public static function register(): void {
 		\add_meta_box(
 			'newspack-publisher-enrichment',
-			\__( 'Publisher details', 'newspack-ai-newsletter' ),
+			\__( 'Publisher details', 'newspack-intelligence' ),
 			[ self::class, 'render' ],
 			Publisher_CPT::POST_TYPE,
 			'normal',
@@ -79,8 +79,8 @@ final class Publisher_Meta_Box {
 			echo '</p>';
 		}
 
-		echo '<h4>' . \esc_html__( 'Import-managed fields', 'newspack-ai-newsletter' ) . '</h4>';
-		echo '<p class="description">' . \esc_html__( 'These fields are managed by the CSV import and must not be hand-edited; a re-import remains the sole source of truth for them.', 'newspack-ai-newsletter' ) . '</p>';
+		echo '<h4>' . \esc_html__( 'Import-managed fields', 'newspack-intelligence' ) . '</h4>';
+		echo '<p class="description">' . \esc_html__( 'These fields are managed by the CSV import and must not be hand-edited; a re-import remains the sole source of truth for them.', 'newspack-intelligence' ) . '</p>';
 		echo '<dl>';
 		foreach ( self::readonly_fields() as $key => $label ) {
 			$value = self::meta_string( $post->ID, $key );
@@ -120,9 +120,7 @@ final class Publisher_Meta_Box {
 		}
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized per-field in persist() via sanitize_text_field( wp_unslash() ).
 		$post_data = $_POST;
-		// $_POST is documented as array<string,mixed> in practice (form field
-		// names are always strings); phpstan's superglobal stub widens the key
-		// type to mixed, so re-key defensively to satisfy persist()'s signature.
+		// Re-key to string keys: phpstan widens $_POST keys to mixed.
 		/** @var array<string,mixed> $post_data */
 		$post_data = \array_combine( \array_map( 'strval', \array_keys( $post_data ) ), \array_values( $post_data ) );
 		self::persist( $post_id, $post_data );

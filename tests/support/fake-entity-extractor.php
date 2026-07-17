@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Entity_Extractor;
+use Newspack_Intelligence\Entity_Extractor;
 
 /** Canned, call-counting Entity_Extractor for matcher tests. */
 final class Fake_Entity_Extractor implements Entity_Extractor {

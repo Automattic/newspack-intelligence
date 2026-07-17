@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Publisher_Matcher;
+use Newspack_Intelligence\Publisher_Matcher;
 use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../support/fake-publisher-repository.php';

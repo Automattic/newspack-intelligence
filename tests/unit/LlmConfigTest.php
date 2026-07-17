@@ -1,11 +1,11 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\LLM_Client;
-use Newspack_AI_Newsletter\LLM_Config;
-use Newspack_AI_Newsletter\Proxy_LLM_Client;
+use Newspack_Intelligence\LLM_Client;
+use Newspack_Intelligence\LLM_Config;
+use Newspack_Intelligence\Proxy_LLM_Client;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Tests\TestCase;
@@ -54,7 +54,7 @@ final class LlmConfigTest extends TestCase {
 
 		$this->assertSame( 'https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1', $node->api_url() );
 		$this->assertSame( 'gpt-oss-120b', $node->model() );
-		$this->assertSame( 'newspack-ai-newsletter', $node->feature() );
+		$this->assertSame( 'newspack-intelligence', $node->feature() );
 		$this->assertSame( '', $node->vault_id() );
 		$this->assertSame( '', $node->profile() );
 	}

@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Vault_Secret;
+use Newspack_Intelligence\Vault_Secret;
 use Newspack_Nodes\Tests\TestCase;
 use Newspack_Nodes\Vault;
 

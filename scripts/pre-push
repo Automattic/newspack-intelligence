@@ -22,7 +22,7 @@
 set -euo pipefail
 
 readonly HOST=$(hostname -s)
-readonly PLUGIN_SLUG="newspack-ai-newsletter"
+readonly PLUGIN_SLUG="newspack-intelligence"
 readonly DEPLOY_SCRIPT="/services/pyrobase/setup/${PLUGIN_SLUG}.sh"
 readonly CONTAINER="${HOST}-pyrobase1-1"
 # /services, not /usr/src: the nodes/eln deploy installs a release zip and never rsyncs into /usr/src (dndocker AGENTS.md: "run straight from /services").

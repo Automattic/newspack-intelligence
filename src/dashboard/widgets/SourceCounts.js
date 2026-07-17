@@ -17,7 +17,7 @@ export function SourceCounts() {
 	if ( slice.error ) {
 		return (
 			<section className="eai-insights__card eai-insights__sources">
-				<h2>{ __( 'By source', 'newspack-ai-newsletter' ) }</h2>
+				<h2>{ __( 'By source', 'newspack-intelligence' ) }</h2>
 				<div
 					className="eai-insights__notice eai-insights__notice--error"
 					role="alert"
@@ -35,13 +35,13 @@ export function SourceCounts() {
 					{ sources.length }
 				</span>
 				<span className="eai-insights__stat-label">
-					{ __( 'Sources', 'newspack-ai-newsletter' ) }
+					{ __( 'Sources', 'newspack-intelligence' ) }
 				</span>
 			</div>
-			<h2>{ __( 'By source', 'newspack-ai-newsletter' ) }</h2>
+			<h2>{ __( 'By source', 'newspack-intelligence' ) }</h2>
 			{ 0 === sources.length ? (
 				<p className="eai-insights__empty-hint">
-					{ __( 'No sources yet.', 'newspack-ai-newsletter' ) }
+					{ __( 'No sources yet.', 'newspack-intelligence' ) }
 				</p>
 			) : (
 				<ul>

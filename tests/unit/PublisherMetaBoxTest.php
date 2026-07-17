@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Publisher_CPT;
-use Newspack_AI_Newsletter\Publisher_Meta_Box;
+use Newspack_Intelligence\Publisher_CPT;
+use Newspack_Intelligence\Publisher_Meta_Box;
 use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../support/wp-post-stubs.php';

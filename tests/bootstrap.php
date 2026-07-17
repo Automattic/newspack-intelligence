@@ -1,8 +1,8 @@
 <?php
 /**
- * PHPUnit bootstrap for Newspack AI Newsletter tests.
+ * PHPUnit bootstrap for Newspack Intelligence tests.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
 if ( \function_exists( 'posix_getuid' ) && 0 === \posix_getuid() ) {
@@ -11,7 +11,7 @@ if ( \function_exists( 'posix_getuid' ) && 0 === \posix_getuid() ) {
 }
 
 \ini_set( 'error_log', '/dev/null' );
-\putenv( 'LOCAL_NEWSPACK_NODES_CONF=' . __DIR__ . '/newspack-ai-newsletter-test-config.php' );
+\putenv( 'LOCAL_NEWSPACK_NODES_CONF=' . __DIR__ . '/newspack-intelligence-test-config.php' );
 \define( 'NONCE_SALT', 'newspack-nodes-test-nonce-salt' );
 \define( 'ABSPATH', '/' );
 
@@ -519,7 +519,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 // The plugin bootstrap file lands in Task 3; load it once it exists so the
 // suite picks it up without a fatal during scaffold-only runs.
-$plugin_file = \dirname( __DIR__ ) . '/newspack-ai-newsletter.php';
+$plugin_file = \dirname( __DIR__ ) . '/newspack-intelligence.php';
 if ( \file_exists( $plugin_file ) ) {
 	require_once $plugin_file;
 }

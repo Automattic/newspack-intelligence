@@ -1,17 +1,17 @@
 <?php
 /**
- * Newspack AI Newsletter test configuration baseline.
+ * Newspack Intelligence test configuration baseline.
  *
  * Loaded via LOCAL_NEWSPACK_NODES_CONF environment variable (set in
  * phpunit.xml and bootstrap.php). Tests that need a different
  * base_directory write their own per-test config file in setUp and
  * point LOCAL_NEWSPACK_NODES_CONF at it.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
 return [
-	'base_directory'    => '/tmp/newspack-ai-newsletter',
+	'base_directory'    => '/tmp/newspack-intelligence',
 	'num_partitions'    => 1,
 	'segment_size'      => 1024,
 	'min_segments'      => 2,

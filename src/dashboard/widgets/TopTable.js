@@ -22,7 +22,7 @@ export function TopTable() {
 		return (
 			<section className="eai-insights__card eai-insights__top">
 				<h2>
-					{ __( 'Top items by source', 'newspack-ai-newsletter' ) }
+					{ __( 'Top items by source', 'newspack-intelligence' ) }
 				</h2>
 				<div
 					className="eai-insights__notice eai-insights__notice--error"
@@ -38,19 +38,19 @@ export function TopTable() {
 		return (
 			<section className="eai-insights__card eai-insights__top">
 				<h2>
-					{ __( 'Top items by source', 'newspack-ai-newsletter' ) }
+					{ __( 'Top items by source', 'newspack-intelligence' ) }
 				</h2>
 				<div className="eai-insights__empty">
 					<p>
 						{ __(
 							'No scored items yet.',
-							'newspack-ai-newsletter'
+							'newspack-intelligence'
 						) }
 					</p>
 					<p className="eai-insights__empty-hint">
 						{ __(
 							'Hit Collect to run the sources (or tick them from the REPL); this updates on the next poll.',
-							'newspack-ai-newsletter'
+							'newspack-intelligence'
 						) }
 					</p>
 				</div>
@@ -63,10 +63,10 @@ export function TopTable() {
 			<div className="eai-insights__stat">
 				<span className="eai-insights__stat-num">{ topScore }</span>
 				<span className="eai-insights__stat-label">
-					{ __( 'Top score', 'newspack-ai-newsletter' ) }
+					{ __( 'Top score', 'newspack-intelligence' ) }
 				</span>
 			</div>
-			<h2>{ __( 'Top items by source', 'newspack-ai-newsletter' ) }</h2>
+			<h2>{ __( 'Top items by source', 'newspack-intelligence' ) }</h2>
 			<div className="eai-insights__source-grid">
 				{ topBySource.map( ( [ source, items ] ) => (
 					<div className="eai-insights__source-top" key={ source }>
@@ -75,18 +75,18 @@ export function TopTable() {
 							<thead>
 								<tr>
 									<th className="eai-insights__rank-col">
-										{ __( '#', 'newspack-ai-newsletter' ) }
+										{ __( '#', 'newspack-intelligence' ) }
 									</th>
 									<th>
 										{ __(
 											'Title',
-											'newspack-ai-newsletter'
+											'newspack-intelligence'
 										) }
 									</th>
 									<th>
 										{ __(
 											'Score',
-											'newspack-ai-newsletter'
+											'newspack-intelligence'
 										) }
 									</th>
 								</tr>
@@ -99,7 +99,7 @@ export function TopTable() {
 												/* translators: %d: the item's rank within its source. */
 												__(
 													'#%d',
-													'newspack-ai-newsletter'
+													'newspack-intelligence'
 												),
 												i + 1
 											) }

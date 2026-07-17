@@ -3,10 +3,10 @@
  * Summarizer_Node: enriches one item via the LLM (summary + relevance_score + reason),
  * falling back to a deterministic summary template when no LLM is configured. Source-agnostic.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Node;

@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Digest_Composer;
-use Newspack_AI_Newsletter\LLM_Client;
+use Newspack_Intelligence\Digest_Composer;
+use Newspack_Intelligence\LLM_Client;
 use Newspack_Nodes\Tests\TestCase;
 
 /**

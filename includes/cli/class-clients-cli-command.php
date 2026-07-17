@@ -1,15 +1,15 @@
 <?php
 /**
- * Clients_CLI_Command: `wp newspack-ai-newsletter clients import <csv>`.
+ * Clients_CLI_Command: `wp newspack-intelligence clients import <csv>`.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter\CLI;
+namespace Newspack_Intelligence\CLI;
 
-use Newspack_AI_Newsletter\Client_Importer;
-use Newspack_AI_Newsletter\CPT_Publisher_Repository;
-use Newspack_AI_Newsletter\CSV_Parser;
+use Newspack_Intelligence\Client_Importer;
+use Newspack_Intelligence\CPT_Publisher_Repository;
+use Newspack_Intelligence\CSV_Parser;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -31,7 +31,7 @@ class Clients_CLI_Command {
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp newspack-ai-newsletter clients import newspack_clients.csv
+	 *     wp newspack-intelligence clients import newspack_clients.csv
 	 *
 	 * @param array<int,string>    $args       Positional args.
 	 * @param array<string,string> $assoc_args Flags.

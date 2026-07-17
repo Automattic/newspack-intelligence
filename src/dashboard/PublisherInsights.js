@@ -36,13 +36,11 @@ export default function PublisherInsights( {
 	return (
 		<div className="eai-insights">
 			<header className="eai-insights__header">
-				<h1>
-					{ __( 'Publisher Insights', 'newspack-ai-newsletter' ) }
-				</h1>
+				<h1>{ __( 'Publisher Insights', 'newspack-intelligence' ) }</h1>
 				<p className="eai-insights__sub">
 					{ __(
 						'Each card is its own node graph slice — counts, top items, and the accumulated digest.',
-						'newspack-ai-newsletter'
+						'newspack-intelligence'
 					) }
 				</p>
 			</header>

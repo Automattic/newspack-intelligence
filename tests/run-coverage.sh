@@ -7,7 +7,7 @@
 #   ./run-coverage.sh --filter X   # Run specific test
 #
 # Coverage report is written to ${TEST_TMP} or ${TMPDIR} or /tmp:
-#     newspack-ai-newsletter-coverage/
+#     newspack-intelligence-coverage/
 #
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -29,14 +29,14 @@ PHPUNIT="$SCRIPT_DIR/../vendor/bin/phpunit"
 export XDEBUG_MODE=coverage
 
 # Clean up any previous test artifacts
-rm -rf /tmp/newspack-ai-newsletter-test 2>/dev/null
+rm -rf /tmp/newspack-intelligence-test 2>/dev/null
 
 # Run PHPUnit with coverage
 "$PHPUNIT" --configuration phpunit.xml \
-    --coverage-clover ${OUT}/newspack-ai-newsletter-coverage/clover.xml \
-    --coverage-html ${OUT}/newspack-ai-newsletter-coverage \
+    --coverage-clover ${OUT}/newspack-intelligence-coverage/clover.xml \
+    --coverage-html ${OUT}/newspack-intelligence-coverage \
 	--enforce-time-limit \
     "$@"
 
 echo ""
-echo "Coverage report: ${OUT}/newspack-ai-newsletter-coverage/index.html"
+echo "Coverage report: ${OUT}/newspack-intelligence-coverage/index.html"

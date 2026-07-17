@@ -8,10 +8,10 @@
  * fetch() (the blocking feed GETs + XML parsing, behind the $http_get closure
  * seam).
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
@@ -22,7 +22,7 @@ class Feed_Source_Node extends Source_Node {
 	private const ATOM_NS    = 'http://www.w3.org/2005/Atom';
 	private const DC_NS      = 'http://purl.org/dc/elements/1.1/';
 
-	private const USER_AGENT = 'newspack-ai-newsletter';
+	private const USER_AGENT = 'newspack-intelligence';
 
 	/**
 	 * wp_remote_get call seam. Null by default; the call site then invokes the real

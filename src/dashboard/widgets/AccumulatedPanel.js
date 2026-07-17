@@ -132,7 +132,7 @@ export function AccumulatedPanel( {
 			setDraftError(
 				__(
 					'Clipboard unavailable here — copy from the preview instead.',
-					'newspack-ai-newsletter'
+					'newspack-intelligence'
 				)
 			);
 			return;
@@ -145,7 +145,7 @@ export function AccumulatedPanel( {
 				setDraftError(
 					__(
 						'Could not copy to the clipboard.',
-						'newspack-ai-newsletter'
+						'newspack-intelligence'
 					)
 				);
 			} );
@@ -167,7 +167,7 @@ export function AccumulatedPanel( {
 						type: 'error',
 						text: __(
 							'Collection returned an unexpected response.',
-							'newspack-ai-newsletter'
+							'newspack-intelligence'
 						),
 					} );
 					return;
@@ -187,7 +187,7 @@ export function AccumulatedPanel( {
 						/* translators: %d: number of workers the collection was dispatched to. */
 						__(
 							'Collecting from %d worker(s)…',
-							'newspack-ai-newsletter'
+							'newspack-intelligence'
 						),
 						Number( parsed.workers ) || 0
 					),
@@ -202,7 +202,7 @@ export function AccumulatedPanel( {
 							? err.message
 							: __(
 									'Could not start collection.',
-									'newspack-ai-newsletter'
+									'newspack-intelligence'
 							  ),
 				} );
 			} );
@@ -222,7 +222,7 @@ export function AccumulatedPanel( {
 					setDraftError(
 						__(
 							'Regeneration returned an unexpected response.',
-							'newspack-ai-newsletter'
+							'newspack-intelligence'
 						)
 					);
 					return;
@@ -235,7 +235,7 @@ export function AccumulatedPanel( {
 				setRegenNote(
 					__(
 						'Regenerating… the draft updates on the next poll.',
-						'newspack-ai-newsletter'
+						'newspack-intelligence'
 					)
 				);
 			} )
@@ -246,7 +246,7 @@ export function AccumulatedPanel( {
 						? err.message
 						: __(
 								'Could not regenerate the digest.',
-								'newspack-ai-newsletter'
+								'newspack-intelligence'
 						  )
 				);
 			} );
@@ -258,7 +258,7 @@ export function AccumulatedPanel( {
 		setEditLink( null );
 		setCopied( false );
 		createDraft( {
-			title: __( 'Publisher Newsletter', 'newspack-ai-newsletter' ),
+			title: __( 'Publisher Newsletter', 'newspack-intelligence' ),
 			content: markdownToContent( digest ),
 		} )
 			.then( ( post ) => {
@@ -267,7 +267,7 @@ export function AccumulatedPanel( {
 					setDraftError(
 						__(
 							'Draft created, but no post id was returned.',
-							'newspack-ai-newsletter'
+							'newspack-intelligence'
 						)
 					);
 					return;
@@ -283,7 +283,7 @@ export function AccumulatedPanel( {
 						? err.message
 						: __(
 								'Could not create the draft.',
-								'newspack-ai-newsletter'
+								'newspack-intelligence'
 						  )
 				);
 			} );
@@ -318,11 +318,11 @@ export function AccumulatedPanel( {
 			<div className="eai-insights__stat">
 				<span className="eai-insights__stat-num">{ accumulated }</span>
 				<span className="eai-insights__stat-label">
-					{ __( 'Total items', 'newspack-ai-newsletter' ) }
+					{ __( 'Total items', 'newspack-intelligence' ) }
 				</span>
 			</div>
 
-			<h2>{ __( 'Newsletter', 'newspack-ai-newsletter' ) }</h2>
+			<h2>{ __( 'Newsletter', 'newspack-intelligence' ) }</h2>
 			<div className="eai-insights__actions">
 				<button
 					type="button"
@@ -331,8 +331,8 @@ export function AccumulatedPanel( {
 					disabled={ ! canCollect }
 				>
 					{ collecting
-						? __( 'Collecting…', 'newspack-ai-newsletter' )
-						: __( 'Collect', 'newspack-ai-newsletter' ) }
+						? __( 'Collecting…', 'newspack-intelligence' )
+						: __( 'Collect', 'newspack-intelligence' ) }
 				</button>
 				{ total > 0 && (
 					<span className="eai-insights__progress" role="status">
@@ -340,7 +340,7 @@ export function AccumulatedPanel( {
 							/* translators: 1: sources done collecting, 2: total sources. */
 							__(
 								'Collected %1$d/%2$d',
-								'newspack-ai-newsletter'
+								'newspack-intelligence'
 							),
 							displayDone,
 							total
@@ -354,8 +354,8 @@ export function AccumulatedPanel( {
 					disabled={ generating || ! collectComplete }
 				>
 					{ generating
-						? __( 'Generating…', 'newspack-ai-newsletter' )
-						: __( 'Regenerate digest', 'newspack-ai-newsletter' ) }
+						? __( 'Generating…', 'newspack-intelligence' )
+						: __( 'Regenerate digest', 'newspack-intelligence' ) }
 				</button>
 				<button
 					type="button"
@@ -363,7 +363,7 @@ export function AccumulatedPanel( {
 					onClick={ onCopy }
 					disabled={ '' === digest }
 				>
-					{ __( 'Copy markdown', 'newspack-ai-newsletter' ) }
+					{ __( 'Copy markdown', 'newspack-intelligence' ) }
 				</button>
 				<button
 					type="button"
@@ -371,11 +371,11 @@ export function AccumulatedPanel( {
 					onClick={ onCreateDraft }
 					disabled={ creating || '' === digest }
 				>
-					{ __( 'Create draft post', 'newspack-ai-newsletter' ) }
+					{ __( 'Create draft post', 'newspack-intelligence' ) }
 				</button>
 				{ copied && (
 					<span className="eai-insights__copied" role="status">
-						{ __( 'Copied', 'newspack-ai-newsletter' ) }
+						{ __( 'Copied', 'newspack-intelligence' ) }
 					</span>
 				) }
 			</div>
@@ -394,7 +394,7 @@ export function AccumulatedPanel( {
 			{ null !== editLink && (
 				<p className="eai-insights__draft-result">
 					<a href={ editLink }>
-						{ __( 'Edit draft', 'newspack-ai-newsletter' ) }
+						{ __( 'Edit draft', 'newspack-intelligence' ) }
 					</a>
 				</p>
 			) }
@@ -416,7 +416,7 @@ export function AccumulatedPanel( {
 				</pre>
 			) : (
 				<p className="eai-insights__preview-empty">
-					{ __( 'No digest yet.', 'newspack-ai-newsletter' ) }
+					{ __( 'No digest yet.', 'newspack-intelligence' ) }
 				</p>
 			) }
 		</section>

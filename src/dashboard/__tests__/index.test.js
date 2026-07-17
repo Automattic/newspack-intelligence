@@ -22,13 +22,13 @@ describe( 'dashboard index', () => {
 
 	it( 'mounts the insights page on DOMContentLoaded when the mount exists', () => {
 		document.body.innerHTML =
-			'<div id="newspack-ai-newsletter-insights"></div>';
+			'<div id="newspack-intelligence-insights"></div>';
 		const { createRoot, render } = loadIndex();
 
 		document.dispatchEvent( new Event( 'DOMContentLoaded' ) );
 
 		expect( createRoot ).toHaveBeenCalledWith(
-			document.getElementById( 'newspack-ai-newsletter-insights' )
+			document.getElementById( 'newspack-intelligence-insights' )
 		);
 		expect( render ).toHaveBeenCalledTimes( 1 );
 		expect( render.mock.calls[ 0 ][ 0 ].type.name ).toBe(

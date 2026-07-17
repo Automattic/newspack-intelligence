@@ -9,10 +9,10 @@
  * depends only on a Publisher_Repository and returns a replayable decision
  * record (persistence is a later slice).
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -66,7 +66,7 @@ final class Publisher_Matcher {
 		$body  = \is_string( $item['body'] ?? null ) ? $item['body'] : '';
 		$text  = $title . ' ' . $body;
 
-		// Distinct matched publishers, keyed by atomic_site_id; each value records the winning signal and term.
+		// Matched publishers keyed by atomic_site_id; value = signal + term.
 		$hits = [];
 		foreach ( $this->active_publishers() as $pub ) {
 			foreach ( $this->candidates( $pub ) as $on => $terms ) {
@@ -74,7 +74,7 @@ final class Publisher_Matcher {
 					if ( ! $this->contains_word( $text, $term ) ) {
 						continue;
 					}
-					// Prefer a name hit over an alias hit for the same publisher.
+					// Name hit beats an alias hit for the same publisher.
 					if ( ! isset( $hits[ $pub['atomic_site_id'] ] ) || 'name' === $on ) {
 						$hits[ $pub['atomic_site_id'] ] = [ 'on' => $on, 'term' => $term ];
 					}
@@ -92,7 +92,7 @@ final class Publisher_Matcher {
 			return $this->decision( $id, 'hold', null, null, 'ambiguous: ' . \count( $hits ) . " candidates ({$ids})" );
 		}
 
-		// 3. Inconclusive so far: cheap LLM NER + fuzzy DB match (or a plain hold when no extractor is wired).
+		// 3. Inconclusive: LLM NER + fuzzy match, else hold if no extractor.
 		return $this->resolve_via_ner( $id, $item );
 	}
 

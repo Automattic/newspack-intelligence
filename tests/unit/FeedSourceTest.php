@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Feed_Source_Node;
+use Newspack_Intelligence\Feed_Source_Node;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
@@ -205,7 +205,7 @@ XML;
 
 		$this->assertCount( 1, $captured );
 		$this->assertSame( 'https://example.com/feed.xml', $captured[0]['url'] );
-		$this->assertSame( 'newspack-ai-newsletter', $captured[0]['args']['headers']['User-Agent'] );
+		$this->assertSame( 'newspack-intelligence', $captured[0]['args']['headers']['User-Agent'] );
 	}
 
 	public function test_add_url_accumulates_ordered_urls_into_config(): void {

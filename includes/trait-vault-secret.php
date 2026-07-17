@@ -7,10 +7,10 @@
  * to '' when the id is blank, the substrate Vault class isn't loaded, the id is
  * unknown, or the entry has no password.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 \defined( 'ABSPATH' ) || exit;
 

@@ -2,10 +2,10 @@
 /**
  * AI API Proxy LLM client (OpenAI chat/completions shape).
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 \defined( 'ABSPATH' ) || exit;
 

@@ -7,10 +7,10 @@
  * snapshot; this class supplies only the two seams: config() (Settings read) and
  * fetch() (the blocking GraphQL call, behind the $http_post closure seam).
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;

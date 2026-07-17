@@ -14,10 +14,10 @@
  * Abstract — never make_node'd directly (no node_schema here); each concrete
  * connector declares its own Source category + TICK request.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Node;

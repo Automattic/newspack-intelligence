@@ -1,8 +1,8 @@
 #!/bin/bash
 #
-# Build release zip for the newspack-ai-newsletter plugin.
+# Build release zip for the newspack-intelligence plugin.
 #
-# Output: release/newspack-ai-newsletter.zip — the plugin dir at the
+# Output: release/newspack-intelligence.zip — the plugin dir at the
 # archive root, ready for: wp plugin install --force --activate <url>.zip
 #
 
@@ -14,7 +14,7 @@ export COPYFILE_DISABLE=1
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RELEASE_DIR="${SCRIPT_DIR}/release"
 STAGING_DIR="${SCRIPT_DIR}/.release-staging"
-PLUGIN="newspack-ai-newsletter"
+PLUGIN="newspack-intelligence"
 
 rm -rf "${RELEASE_DIR}" "${STAGING_DIR}"
 mkdir -p "${RELEASE_DIR}"

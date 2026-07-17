@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\CSV_Parser;
+use Newspack_Intelligence\CSV_Parser;
 use PHPUnit\Framework\TestCase;
 
 final class CsvParserTest extends TestCase {
