@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Digest_Builder_Node;
-use Newspack_AI_Newsletter\Insights_CI_Node;
+use Newspack_Intelligence\Digest_Builder_Node;
+use Newspack_Intelligence\Insights_CI_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Message;
@@ -262,7 +262,8 @@ final class InsightsCITest extends TestCase {
 		$this->created[] = $base;
 		\mkdir( $base . '/locks/newspack-intelligence.p0.lock.d', 0777, true );
 		\mkdir( $base . '/locks/newspack-intelligence.p1.lock.d', 0777, true );
-		// The pre-split topology name must NO LONGER be recognized as a live worker.
+		// The pre-split topology name (`newspack-ai-newsletter`) must NO LONGER be
+		// recognized as a live worker — kept verbatim as a negative fixture.
 		\mkdir( $base . '/locks/newspack-ai-newsletter.p0.lock.d', 0777, true );
 		\mkdir( $base . '/locks/other.p0.lock.d', 0777, true );
 

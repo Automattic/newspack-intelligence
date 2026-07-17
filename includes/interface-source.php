@@ -2,10 +2,10 @@
 /**
  * Source: a connector that fetches normalized digest items.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 \defined( 'ABSPATH' ) || exit;
 

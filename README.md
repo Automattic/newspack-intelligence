@@ -1,4 +1,4 @@
-# Newspack AI Newsletter
+# Newspack Intelligence
 
 An AI-driven **team intelligence digest** built on the
 [newspack-nodes](../newspack-nodes) substrate. It ingests items from real sources
@@ -31,7 +31,7 @@ npm run build          # esbuild the dashboard
 npm run lint:js && npm run lint:php && npm run lint:phpstan && npm run lint:scss
 npx jest               # JS unit tests (local)
 # PHP tests run in the container, as bend, from /services:
-#   docker exec -u bend eve-pyrobase1-1 bash -c 'cd /services/pyrobase/sources/newspack-ai-newsletter/tests && ../vendor/bin/phpunit'
+#   docker exec -u bend eve-pyrobase1-1 bash -c 'cd /services/pyrobase/sources/newspack-intelligence/tests && ../vendor/bin/phpunit'
 ```
 
 ## Docs

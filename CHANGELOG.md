@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-17
+
 ### Added
 
 - Add `Publisher_Repository::all_with_enrichment()`, exposing each publisher's matchable fields (domain, publisher name, aliases, status) for the intake Gate.
@@ -15,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Publisher_Matcher`: on a deterministic miss, optionally run NER + fuzzy string-similarity match against the publisher store, banded by confidence into `pass` (≥0.85), `hold` (0.60–0.85 or ambiguous), or `ignore` (<0.60). The decision record now carries a `confidence` field. With no extractor injected, behavior is unchanged (miss ⇒ `hold`).
 - Add `Gate_Node`, a Transform node wrapping `Publisher_Matcher`: runs the Gate on each item and emits a decision record (stamped with a persist-time `ts`). Uses the `LLM_Config` verbs for the optional NER extractor (no token ⇒ deterministic-only) plus a `set_config_version` verb; builds its matcher once so the publisher-set memoization spans a collect.
 - Wire the intake Gate into the pipeline as an **observer** stage (`newspack-intelligence-gate`): a second consumer (`gate:consumer`) tails the same `ingest` partition with its own offsets, feeding `gate → gate:tojson → gate:log`, which appends every decision as one JSON line to `gate-decisions.jsonl` (the append-only decision-log backbone). Purely additive — the summary/digest stages are unchanged; moving the Gate inline to filter the digest is deferred.
+
+### Changed
+
+- **Renamed the plugin to Newspack Intelligence.** Slug `newspack-ai-newsletter` → `newspack-intelligence`; PHP namespace `Newspack_AI_Newsletter` → `Newspack_Intelligence`; constants (`NEWSPACK_INTELLIGENCE_*`), text domain, admin-menu slugs, WP option keys (`newspack_intelligence_*`), WP-CLI root (`wp newspack-intelligence clients`), AI-proxy feature (`X-WPCOM-AI-Feature: newspack-intelligence`), and the digest path (`/tmp/newspack-intelligence/digest.md`) all move. The GitHub repo and plugin directory are renamed to match. Clean break — no migration of old options/paths (local-only environment). The pipeline topologies were already `newspack-intelligence`; this finishes the rebrand of the plugin identity.
 
 ## [0.4.1] - 2026-07-16
 

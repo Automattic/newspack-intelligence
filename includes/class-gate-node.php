@@ -5,10 +5,10 @@
  * optional NER extractor's client (no client => deterministic-only gate); a static
  * matcher-factory seam lets tests inject an in-memory matcher.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;

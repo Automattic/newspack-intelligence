@@ -6,10 +6,10 @@
  * score + reason) and `digest()` (the ranked item set → one markdown briefing) —
  * each returning the OpenAI chat-messages shape the `LLM_Client` consumes. No I/O.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Core;
 

@@ -3,11 +3,11 @@
          xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.0/phpunit.xsd"
          bootstrap="bootstrap.php"
          colors="true"
-         cacheDirectory="/tmp/phpunit-cache-newspack-ai-newsletter"
+         cacheDirectory="/tmp/phpunit-cache-newspack-intelligence"
          failOnWarning="true"
          beStrictAboutOutputDuringTests="false">
     <php>
-        <env name="LOCAL_NEWSPACK_NODES_CONF" value="newspack-ai-newsletter-test-config.php"/>
+        <env name="LOCAL_NEWSPACK_NODES_CONF" value="newspack-intelligence-test-config.php"/>
     </php>
     <testsuites>
         <testsuite name="Unit Tests"><directory>unit</directory></testsuite>

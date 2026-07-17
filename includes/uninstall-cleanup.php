@@ -5,12 +5,12 @@
  * Loaded only from uninstall.php (plugin delete). Kept out of the autoloader so
  * it costs nothing at runtime.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
 declare( strict_types = 1 );
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -20,7 +20,7 @@ namespace Newspack_AI_Newsletter;
  * as options come and go and catches autoload=off rows a hardcoded list misses.
  *
  * @param \wpdb  $wpdb   WordPress database handle.
- * @param string $prefix Option-name prefix, e.g. `newspack_ai_newsletter_`.
+ * @param string $prefix Option-name prefix, e.g. `newspack_intelligence_`.
  * @return int Number of option rows deleted.
  */
 function delete_prefixed_options( $wpdb, string $prefix ): int {

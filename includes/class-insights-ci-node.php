@@ -8,10 +8,10 @@
  * `generate`/`collect`, which route Regenerate / Collect to the worker's nodes over
  * the input IPC partition — durable, synchronous, no live-worker dependency on read.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Service_CI_Node;
 use Newspack_Nodes\Command_Interpreter_Node;

@@ -3,12 +3,12 @@
  * Deterministic Scorer: relevance_score + recency when an item carries a numeric
  * relevance_score; the keyword heuristic when it doesn't. Source-agnostic.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Scorer_Node;
+use Newspack_Intelligence\Scorer_Node;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;

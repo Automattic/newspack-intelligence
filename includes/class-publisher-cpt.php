@@ -2,10 +2,10 @@
 /**
  * Publisher_CPT: the `newspack_publisher` master-data post type + meta keys.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -36,8 +36,8 @@ final class Publisher_CPT {
 			self::POST_TYPE,
 			[
 				'labels'       => [
-					'name'          => \__( 'Publishers', 'newspack-ai-newsletter' ),
-					'singular_name' => \__( 'Publisher', 'newspack-ai-newsletter' ),
+					'name'          => \__( 'Publishers', 'newspack-intelligence' ),
+					'singular_name' => \__( 'Publisher', 'newspack-intelligence' ),
 				],
 				'public'       => false,
 				'show_ui'      => true,

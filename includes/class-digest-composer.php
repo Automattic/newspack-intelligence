@@ -7,10 +7,10 @@
  * with a ranked-list fallback when there's no client or the call
  * fails / returns empty.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Core;
 

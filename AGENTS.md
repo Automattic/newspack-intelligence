@@ -1,4 +1,4 @@
-# AGENTS.md — Newspack AI Newsletter
+# AGENTS.md — Newspack Intelligence
 
 An AI-driven team intelligence digest built on the `newspack-nodes` substrate
 (sibling plugin; `Requires Plugins: newspack-nodes`). Ingests GitHub/Linear/feed
@@ -8,8 +8,8 @@ items → LLM summarize+score → durable digest → markdown + WordPress draft 
 > digest → WordPress-draft path runs end-to-end with the three live connectors, the
 > LLM enrich/score/compose stages, and the two-column Publisher Insights dashboard.
 > The authoritative design is the floorplan spec:
-> `dndocker/docs/superpowers/specs/2026-06-15-newspack-ai-newsletter-floorplan-design.md`,
-> executed by `dndocker/docs/superpowers/plans/2026-06-15-newspack-ai-newsletter-foundation.md`.
+> `dndocker/docs/superpowers/specs/2026-06-15-newspack-intelligence-floorplan-design.md`,
+> executed by `dndocker/docs/superpowers/plans/2026-06-15-newspack-intelligence-foundation.md`.
 
 ## Workflow discipline (mandatory)
 
@@ -18,7 +18,7 @@ items → LLM summarize+score → durable digest → markdown + WordPress draft 
   `superpowers:test-driven-development` BEFORE writing code.
 - **`/code-review` before every commit** (main Claude only; subagents never commit).
 - Conventional commits; update `CHANGELOG.md` `[Unreleased]` on every behavior change.
-- Never hand-edit version headers — use `dndocker/tools/bump-ai-newsletter-version.sh`.
+- Never hand-edit version headers — use `dndocker/tools/bump-intelligence-version.sh`.
 - Shared React lives in `newspack-nodes/src/shared` only, consumed via the
   `@newspack-nodes/shared` build alias — never a per-plugin `src/shared/` copy.
 
@@ -30,12 +30,12 @@ npm run build
 npm run lint:js && npm run lint:php && npm run lint:phpstan && npm run lint:scss
 npx jest                                  # JS (local)
 docker exec -u bend eve-pyrobase1-1 bash -c \
-  'cd /services/pyrobase/sources/newspack-ai-newsletter/tests && ../vendor/bin/phpunit'   # PHP (container, from /services)
+  'cd /services/pyrobase/sources/newspack-intelligence/tests && ../vendor/bin/phpunit'   # PHP (container, from /services)
 ```
 
 Deploy (build the zip first — the setup script installs the release zip, it does
 not build): `npm run release:archive` then
-`docker exec eve-pyrobase1-1 /services/pyrobase/setup/newspack-ai-newsletter.sh`.
+`docker exec eve-pyrobase1-1 /services/pyrobase/setup/newspack-intelligence.sh`.
 
 ## Architecture (see the spec for detail)
 
@@ -54,7 +54,7 @@ worker; the WordPress draft is created browser-side from the digest markdown
 
 | Path | What |
 |------|------|
-| `newspack-ai-newsletter.php` | Bootstrap: topology registration, Insights + Settings admin pages, Insights_CI mount |
+| `newspack-intelligence.php` | Bootstrap: topology registration, Insights + Settings admin pages, Insights_CI mount |
 | `includes/` | Nodes (`Summarizer`, `Scorer`, `Digest_Builder`, `Insights_CI`, sources), `Digest_Composer`, `Prompts`, `LLM_Client` interface + `Proxy_LLM_Client`, `Source`, `Settings` |
 | `topologies/` | `.tsl` node-graph topologies |
 | `src/dashboard/` | Publisher Insights React panel — orchestrator + per-slice widgets/view nodes (consumes `@newspack-nodes/*` via build alias) |

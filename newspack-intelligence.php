@@ -1,31 +1,31 @@
 <?php
 /**
- * Plugin Name: Newspack AI Newsletter
+ * Plugin Name: Newspack Intelligence
  * Description: AI-driven team intelligence digest built on the newspack-nodes substrate.
- * Version: 0.4.1
+ * Version: 0.5.0
  * Requires Plugins: newspack-nodes
- * Text Domain: newspack-ai-newsletter
+ * Text Domain: newspack-intelligence
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 \defined( 'ABSPATH' ) || exit;
 
-if ( ! \defined( 'NEWSPACK_AI_NEWSLETTER_VERSION' ) ) {
-	\define( 'NEWSPACK_AI_NEWSLETTER_VERSION', '0.4.1' );
+if ( ! \defined( 'NEWSPACK_INTELLIGENCE_VERSION' ) ) {
+	\define( 'NEWSPACK_INTELLIGENCE_VERSION', '0.5.0' );
 }
-if ( ! \defined( 'NEWSPACK_AI_NEWSLETTER_DIR' ) ) {
-	\define( 'NEWSPACK_AI_NEWSLETTER_DIR', \plugin_dir_path( __FILE__ ) );
+if ( ! \defined( 'NEWSPACK_INTELLIGENCE_DIR' ) ) {
+	\define( 'NEWSPACK_INTELLIGENCE_DIR', \plugin_dir_path( __FILE__ ) );
 }
-if ( ! \defined( 'NEWSPACK_AI_NEWSLETTER_URL' ) ) {
-	\define( 'NEWSPACK_AI_NEWSLETTER_URL', \plugin_dir_url( __FILE__ ) );
+if ( ! \defined( 'NEWSPACK_INTELLIGENCE_URL' ) ) {
+	\define( 'NEWSPACK_INTELLIGENCE_URL', \plugin_dir_url( __FILE__ ) );
 }
 
-const INSIGHTS_MENU_SLUG = 'newspack-ai-newsletter-insights';
-const INSIGHTS_MOUNT_ID  = 'newspack-ai-newsletter-insights';
-const SETTINGS_MENU_SLUG = 'newspack-ai-newsletter-settings';
+const INSIGHTS_MENU_SLUG = 'newspack-intelligence-insights';
+const INSIGHTS_MOUNT_ID  = 'newspack-intelligence-insights';
+const SETTINGS_MENU_SLUG = 'newspack-intelligence-settings';
 
 /**
  * Register the Publisher Insights dashboard as its own top-level admin menu. The
@@ -41,11 +41,11 @@ function register_insights_admin_page(): void {
 		return;
 	}
 	\add_menu_page(
-		\__( 'Publisher Insights', 'newspack-ai-newsletter' ),
-		\__( 'Publisher Insights', 'newspack-ai-newsletter' ),
+		\__( 'Publisher Insights', 'newspack-intelligence' ),
+		\__( 'Publisher Insights', 'newspack-intelligence' ),
 		'manage_options',
 		INSIGHTS_MENU_SLUG,
-		static fn () => print( '<div class="wrap"><div id="' . \esc_attr( INSIGHTS_MOUNT_ID ) . '" class="newspack-ai-newsletter-insights"></div></div>' ),
+		static fn () => print( '<div class="wrap"><div id="' . \esc_attr( INSIGHTS_MOUNT_ID ) . '" class="newspack-intelligence-insights"></div></div>' ),
 		'dashicons-email',
 		58.7
 	);
@@ -65,11 +65,11 @@ function enqueue_insights_assets( string $hook = '' ): void {
 
 	\Newspack_Nodes\Admin\Admin::enqueue_react_page(
 		[
-			'handle'           => 'newspack-ai-newsletter-insights',
+			'handle'           => 'newspack-intelligence-insights',
 			'page'             => INSIGHTS_MENU_SLUG,
 			'dir'              => __DIR__ . '/build/dashboard',
 			'url'              => \plugins_url( 'build/dashboard', __FILE__ ),
-			'version_fallback' => \NEWSPACK_AI_NEWSLETTER_VERSION,
+			'version_fallback' => \NEWSPACK_INTELLIGENCE_VERSION,
 			'style_deps'       => [],
 		]
 	);
@@ -85,8 +85,8 @@ function register_clients_admin_page(): void {
 	}
 	\add_submenu_page(
 		'options-general.php',
-		\__( 'AI Newsletter Settings', 'newspack-ai-newsletter' ),
-		\__( 'AI Newsletter', 'newspack-ai-newsletter' ),
+		\__( 'Newspack Intelligence Settings', 'newspack-intelligence' ),
+		\__( 'Newspack Intelligence', 'newspack-intelligence' ),
 		'manage_options',
 		SETTINGS_MENU_SLUG,
 		__NAMESPACE__ . '\\render_clients_page'
@@ -98,7 +98,7 @@ function render_clients_page(): void {
 	if ( ! \current_user_can( 'manage_options' ) ) {
 		return;
 	}
-	echo '<div class="wrap"><h1>' . \esc_html__( 'AI Newsletter Settings', 'newspack-ai-newsletter' ) . '</h1>';
+	echo '<div class="wrap"><h1>' . \esc_html__( 'Newspack Intelligence Settings', 'newspack-intelligence' ) . '</h1>';
 	( new Clients_Settings() )->render_upload_section();
 	echo '</div>';
 }
@@ -138,7 +138,7 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 		require_once __DIR__ . '/vendor/autoload.php';
 
 		if ( \defined( 'WP_CLI' ) && \WP_CLI ) {
-			\WP_CLI::add_command( 'newspack-ai-newsletter clients', '\\Newspack_AI_Newsletter\\CLI\\Clients_CLI_Command' );
+			\WP_CLI::add_command( 'newspack-intelligence clients', '\\Newspack_Intelligence\\CLI\\Clients_CLI_Command' );
 		}
 
 		// Register upload hooks only after Composer can load Clients_Settings.
@@ -162,7 +162,7 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 
 		// register_plugin: namespace + topologies/ dir + catalog.
 		\Newspack_Nodes\Topology_Registry::register_plugin(
-			'Newspack_AI_Newsletter\\',
+			'Newspack_Intelligence\\',
 			__DIR__ . '/topologies'
 		);
 

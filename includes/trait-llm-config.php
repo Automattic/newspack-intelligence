@@ -10,10 +10,10 @@
  * (joins the configured profile lines for prompt assembly). Uses Vault_Secret for
  * the same '' on blank/unknown/Vault-absent resolution.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
@@ -25,7 +25,7 @@ trait LLM_Config {
 
 	private const DEFAULT_API_URL = 'https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1';
 	private const DEFAULT_MODEL   = 'gpt-oss-120b';
-	private const DEFAULT_FEATURE = 'newspack-ai-newsletter';
+	private const DEFAULT_FEATURE = 'newspack-intelligence';
 
 	/** @var string AI API Proxy base URL, set via set_api_url. */
 	protected string $api_url = self::DEFAULT_API_URL;

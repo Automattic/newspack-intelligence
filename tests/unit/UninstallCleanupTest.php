@@ -2,12 +2,12 @@
 /**
  * Tests for the uninstall option-cleanup seam.
  *
- * @package Newspack_AI_Newsletter\Tests\Unit
+ * @package Newspack_Intelligence\Tests\Unit
  */
 
 declare( strict_types = 1 );
 
-namespace Newspack_AI_Newsletter\Tests\Unit;
+namespace Newspack_Intelligence\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
 
@@ -42,20 +42,20 @@ final class UninstallCleanupTest extends TestCase {
 
 	public function test_deletes_prefixed_options_and_their_transients_only(): void {
 		$GLOBALS['_wp_options'] = [
-			'newspack_ai_newsletter_topologies'                    => [ 't' ],
-			'newspack_ai_newsletter_base_directory'                => '/tmp',
-			'_transient_newspack_ai_newsletter_lock'               => 1,
-			'_transient_timeout_newspack_ai_newsletter_lock'       => 123,
+			'newspack_intelligence_topologies'                    => [ 't' ],
+			'newspack_intelligence_base_directory'                => '/tmp',
+			'_transient_newspack_intelligence_lock'               => 1,
+			'_transient_timeout_newspack_intelligence_lock'       => 123,
 			'other_plugin_option'                          => 'keep',
 			'siteurl'                                      => 'https://example.test',
 		];
 
-		$deleted = \Newspack_AI_Newsletter\delete_prefixed_options( $this->wpdb(), 'newspack_ai_newsletter_' );
+		$deleted = \Newspack_Intelligence\delete_prefixed_options( $this->wpdb(), 'newspack_intelligence_' );
 
 		$this->assertSame( 4, $deleted );
-		$this->assertArrayNotHasKey( 'newspack_ai_newsletter_topologies', $GLOBALS['_wp_options'] );
-		$this->assertArrayNotHasKey( '_transient_newspack_ai_newsletter_lock', $GLOBALS['_wp_options'] );
-		$this->assertArrayNotHasKey( '_transient_timeout_newspack_ai_newsletter_lock', $GLOBALS['_wp_options'] );
+		$this->assertArrayNotHasKey( 'newspack_intelligence_topologies', $GLOBALS['_wp_options'] );
+		$this->assertArrayNotHasKey( '_transient_newspack_intelligence_lock', $GLOBALS['_wp_options'] );
+		$this->assertArrayNotHasKey( '_transient_timeout_newspack_intelligence_lock', $GLOBALS['_wp_options'] );
 		$this->assertSame( 'keep', $GLOBALS['_wp_options']['other_plugin_option'] );
 		$this->assertSame( 'https://example.test', $GLOBALS['_wp_options']['siteurl'] );
 	}
@@ -63,7 +63,7 @@ final class UninstallCleanupTest extends TestCase {
 	public function test_returns_zero_when_nothing_matches(): void {
 		$GLOBALS['_wp_options'] = [ 'siteurl' => 'https://example.test' ];
 
-		$this->assertSame( 0, \Newspack_AI_Newsletter\delete_prefixed_options( $this->wpdb(), 'newspack_ai_newsletter_' ) );
+		$this->assertSame( 0, \Newspack_Intelligence\delete_prefixed_options( $this->wpdb(), 'newspack_intelligence_' ) );
 		$this->assertSame( 'https://example.test', $GLOBALS['_wp_options']['siteurl'] );
 	}
 }

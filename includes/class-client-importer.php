@@ -6,10 +6,10 @@
  * (never touches enrichment), marks churn for stored ids absent from the CSV,
  * and reactivates returning publishers.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 \defined( 'ABSPATH' ) || exit;
 

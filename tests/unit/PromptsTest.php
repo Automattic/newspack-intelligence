@@ -1,11 +1,11 @@
 <?php
 /**
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Prompts;
+use Newspack_Intelligence\Prompts;
 use PHPUnit\Framework\TestCase;
 
 final class PromptsTest extends TestCase {

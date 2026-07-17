@@ -10,10 +10,10 @@
  * The audit itself is the substrate's (it reads each node's own node_schema for the
  * argument positions); this pins THIS plugin's topologies to it.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter\Tests\Unit;
+namespace Newspack_Intelligence\Tests\Unit;
 
 use Newspack_Nodes\Tests\Helpers\TopologyDurability;
 use PHPUnit\Framework\TestCase;

@@ -1,11 +1,11 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Digest_Builder_Node;
-use Newspack_AI_Newsletter\Scorer_Node;
-use Newspack_AI_Newsletter\Summarizer_Node;
+use Newspack_Intelligence\Digest_Builder_Node;
+use Newspack_Intelligence\Scorer_Node;
+use Newspack_Intelligence\Summarizer_Node;
 use PHPUnit\Framework\TestCase;
 
 /**

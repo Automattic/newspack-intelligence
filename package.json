@@ -1,6 +1,6 @@
 {
-	"name": "newspack-ai-newsletter",
-	"version": "0.4.1",
+	"name": "newspack-intelligence",
+	"version": "0.5.0",
 	"private": true,
 	"description": "AI-driven team intelligence digest built on newspack-nodes.",
 	"author": "Automattic",
@@ -19,7 +19,7 @@
 		"lint:php": "phpcs",
 		"lint:phpstan": "vendor/bin/phpstan analyse --memory-limit=2G --no-progress",
 		"lint:scss": "stylelint --customSyntax postcss-scss 'src/**/*.scss'",
-		"make-pot": "wp i18n make-pot . languages/newspack-ai-newsletter.pot --domain=newspack-ai-newsletter --exclude=node_modules,build,vendor,tests,release",
+		"make-pot": "wp i18n make-pot . languages/newspack-intelligence.pot --domain=newspack-intelligence --exclude=node_modules,build,vendor,tests,release",
 		"test:js": "jest --passWithNoTests",
 		"test:js:coverage": "jest --passWithNoTests --coverage --collectCoverageFrom='src/**/*.{js,jsx}' --coverageReporters=json-summary --coverageReporters=text"
 	},

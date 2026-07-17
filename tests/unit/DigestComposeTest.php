@@ -1,11 +1,11 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Digest_Builder_Node;
-use Newspack_AI_Newsletter\Proxy_LLM_Client;
-use Newspack_AI_Newsletter\LLM_Client;
+use Newspack_Intelligence\Digest_Builder_Node;
+use Newspack_Intelligence\Proxy_LLM_Client;
+use Newspack_Intelligence\LLM_Client;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;

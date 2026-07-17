@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\CPT_Publisher_Repository;
+use Newspack_Intelligence\CPT_Publisher_Repository;
 use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../support/wp-post-stubs.php';
@@ -77,8 +77,8 @@ final class CptPublisherRepositoryTest extends TestCase {
 
 		// Enrichment is human/HubSpot-owned; set it as the meta box would.
 		$post_id = \NPAINL_WP_Post_Store::$next_id - 1;
-		\update_post_meta( $post_id, \Newspack_AI_Newsletter\Publisher_CPT::META_PUBLISHER_NAME, 'ABQ News' );
-		\update_post_meta( $post_id, \Newspack_AI_Newsletter\Publisher_CPT::META_ALIASES, 'ABQ|Albuquerque News' );
+		\update_post_meta( $post_id, \Newspack_Intelligence\Publisher_CPT::META_PUBLISHER_NAME, 'ABQ News' );
+		\update_post_meta( $post_id, \Newspack_Intelligence\Publisher_CPT::META_ALIASES, 'ABQ|Albuquerque News' );
 
 		$rows = $repo->all_with_enrichment();
 		$this->assertCount( 1, $rows );

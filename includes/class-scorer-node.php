@@ -4,10 +4,10 @@
  * the LLM relevance_score with a recency bonus; with no relevance_score it falls back to a
  * source-agnostic keyword heuristic.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Message;

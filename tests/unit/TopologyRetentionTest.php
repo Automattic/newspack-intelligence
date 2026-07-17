@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
@@ -34,7 +34,7 @@ final class TopologyRetentionTest extends TestCase {
 
 	protected function setUp(): void {
 		parent::setUp();
-		$this->tmp = $this->make_temp_dir( 'ai-newsletter-retention-' );
+		$this->tmp = $this->make_temp_dir( 'intelligence-retention-' );
 		Topology_Registry::reset();
 		Topology_Registry::register_stock_dir( \dirname( __DIR__, 2 ) . '/topologies' );
 	}

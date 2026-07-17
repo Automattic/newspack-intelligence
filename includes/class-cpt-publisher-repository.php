@@ -2,10 +2,10 @@
 /**
  * CPT_Publisher_Repository: Publisher_Repository over the newspack_publisher CPT.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -22,7 +22,7 @@ final class CPT_Publisher_Repository implements Publisher_Repository {
 				'meta_value'       => $atomic_id,
 				'fields'           => 'ids',
 				'posts_per_page'   => 1,
-				// TODO(Gate): drop suppress_filters / add object-cache-backed lookup once the intake Gate queries this store per item.
+				// TODO(Gate): object cache; drop suppress_filters someday.
 				// phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.SuppressFilters_suppress_filters -- internal admin-only lookup on a non-public CPT, not a front-end VIP request.
 				'suppress_filters' => true,
 			]
@@ -53,7 +53,7 @@ final class CPT_Publisher_Repository implements Publisher_Repository {
 				'post_status'      => 'any',
 				'fields'           => 'ids',
 				'posts_per_page'   => -1,
-				// TODO(Gate): drop suppress_filters / add object-cache-backed lookup once the intake Gate queries this store per item.
+				// TODO(Gate): object cache; drop suppress_filters someday.
 				// phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.SuppressFilters_suppress_filters -- internal admin-only lookup on a non-public CPT, not a front-end VIP request.
 				'suppress_filters' => true,
 			]
@@ -75,7 +75,7 @@ final class CPT_Publisher_Repository implements Publisher_Repository {
 				'post_status'      => 'any',
 				'fields'           => 'ids',
 				'posts_per_page'   => -1,
-				// TODO(Gate): reverse index (host/alias => publisher) + object cache once the Gate queries this per item under load.
+				// TODO(Gate): reverse index + object cache under load.
 				// phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.SuppressFilters_suppress_filters -- internal admin-only lookup on a non-public CPT, not a front-end VIP request.
 				'suppress_filters' => true,
 			]

@@ -1,10 +1,10 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Gate_Node;
-use Newspack_AI_Newsletter\Publisher_Matcher;
+use Newspack_Intelligence\Gate_Node;
+use Newspack_Intelligence\Publisher_Matcher;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;

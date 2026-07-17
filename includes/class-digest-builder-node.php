@@ -2,10 +2,10 @@
 /**
  * Digest_Builder_Node: accumulates summaries; `flush` emits a markdown draft.
  *
- * @package Newspack_AI_Newsletter
+ * @package Newspack_Intelligence
  */
 
-namespace Newspack_AI_Newsletter;
+namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Message;
@@ -18,7 +18,7 @@ class Digest_Builder_Node extends Node {
 	use LLM_Config;
 
 	/** Where the digest:log Node writes the rendered newsletter. MUST match topologies/newspack-intelligence-digest.tsl. */
-	public const DIGEST_PATH = '/tmp/newspack-ai-newsletter/digest.md';
+	public const DIGEST_PATH = '/tmp/newspack-intelligence/digest.md';
 
 	/**
 	 * LLM-client factory seam. Lazily-defaulted at the call site to this node's

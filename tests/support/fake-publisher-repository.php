@@ -1,9 +1,9 @@
 <?php
 declare(strict_types=1);
 
-namespace Newspack_AI_Newsletter\Tests;
+namespace Newspack_Intelligence\Tests;
 
-use Newspack_AI_Newsletter\Publisher_Repository;
+use Newspack_Intelligence\Publisher_Repository;
 
 /** In-memory Publisher_Repository for testing the pure reconciliation. */
 final class Fake_Publisher_Repository implements Publisher_Repository {
