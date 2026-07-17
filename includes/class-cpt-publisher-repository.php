@@ -68,6 +68,41 @@ final class CPT_Publisher_Repository implements Publisher_Repository {
 		return $out;
 	}
 
+	public function all_with_enrichment(): array {
+		$ids = \get_posts(
+			[
+				'post_type'        => Publisher_CPT::POST_TYPE,
+				'post_status'      => 'any',
+				'fields'           => 'ids',
+				'posts_per_page'   => -1,
+				// TODO(Gate): reverse index (host/alias => publisher) + object cache once the Gate queries this per item under load.
+				// phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.SuppressFilters_suppress_filters -- internal admin-only lookup on a non-public CPT, not a front-end VIP request.
+				'suppress_filters' => true,
+			]
+		);
+		$out = [];
+		foreach ( $ids as $post_id ) {
+			$atomic = \get_post_meta( $post_id, Publisher_CPT::META_ATOMIC_ID, true );
+			if ( ! \is_string( $atomic ) || '' === $atomic ) {
+				continue;
+			}
+			$out[] = [
+				'atomic_site_id' => $atomic,
+				'domain_name'    => $this->meta_string( $post_id, Publisher_CPT::META_DOMAIN ),
+				'status'         => $this->meta_string( $post_id, Publisher_CPT::META_STATUS ),
+				'publisher_name' => $this->meta_string( $post_id, Publisher_CPT::META_PUBLISHER_NAME ),
+				'aliases'        => $this->meta_string( $post_id, Publisher_CPT::META_ALIASES ),
+			];
+		}
+		return $out;
+	}
+
+	/** Type-safe single-meta read (get_post_meta returns mixed). */
+	private function meta_string( int $post_id, string $key ): string {
+		$value = \get_post_meta( $post_id, $key, true );
+		return \is_string( $value ) ? $value : '';
+	}
+
 	public function create( array $atomic_fields, string $today ): void {
 		$post_id = \wp_insert_post(
 			[

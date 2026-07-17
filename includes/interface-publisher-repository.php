@@ -26,6 +26,13 @@ interface Publisher_Repository {
 	public function all_atomic_ids(): array;
 
 	/**
+	 * Every stored publisher with the fields the intake Gate matches on.
+	 *
+	 * @return array<int,array{atomic_site_id:string,domain_name:string,status:string,publisher_name:string,aliases:string}>
+	 */
+	public function all_with_enrichment(): array;
+
+	/**
 	 * New record: status active, first_seen=last_seen=today, churned_at empty.
 	 *
 	 * @param array{atomic_site_id:string,domain_name:string,created:string} $atomic_fields

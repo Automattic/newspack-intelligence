@@ -21,6 +21,16 @@ final class PromptsTest extends TestCase {
 		$this->assertStringContainsString( 'engineering velocity', $user );
 	}
 
+	public function test_extract_entities_demands_json_orgs_people_locations(): void {
+		$m = Prompts::extract_entities( [ 'title' => 'City Council votes', 'body' => 'The Publication 1 reported the vote in Austin.' ] );
+		$this->assertSame( 'system', $m[0]['role'] );
+		$this->assertStringContainsStringIgnoringCase( 'json', $m[0]['content'] );
+		$this->assertStringContainsStringIgnoringCase( 'orgs', $m[0]['content'] );
+		$user = $m[1]['content'];
+		$this->assertStringContainsString( 'City Council votes', $user );
+		$this->assertStringContainsString( 'The Publication 1 reported', $user );
+	}
+
 	public function test_digest_lists_items_and_profile(): void {
 		$m = Prompts::digest(
 			[ [ 'title' => 'A', 'summary' => 'sa', 'source' => 'github', 'score' => 9.0, 'url' => 'http://a' ] ],

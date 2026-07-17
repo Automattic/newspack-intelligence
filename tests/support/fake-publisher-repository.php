@@ -16,6 +16,19 @@ final class Fake_Publisher_Repository implements Publisher_Repository {
 	public function all_atomic_ids(): array {
 		return \array_keys( $this->store );
 	}
+	public function all_with_enrichment(): array {
+		$out = [];
+		foreach ( $this->store as $id => $rec ) {
+			$out[] = [
+				'atomic_site_id' => (string) $id,
+				'domain_name'    => (string) ( $rec['domain_name'] ?? '' ),
+				'status'         => (string) ( $rec['status'] ?? '' ),
+				'publisher_name' => (string) ( $rec['publisher_name'] ?? '' ),
+				'aliases'        => (string) ( $rec['aliases'] ?? '' ),
+			];
+		}
+		return $out;
+	}
 	public function create( array $atomic_fields, string $today ): void {
 		$id                 = $atomic_fields['atomic_site_id'];
 		$this->store[ $id ] = $atomic_fields + [
