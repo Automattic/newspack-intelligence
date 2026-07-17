@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `Publisher_Repository::all_with_enrichment()`, exposing each publisher's matchable fields (domain, publisher name, aliases, status) for the intake Gate.
+- Add `Publisher_Matcher`, the intake Gate's deterministic hard-match layer: resolves a normalized item to a publisher by URL domain then exact name/alias (whole-word), emitting a `pass`/`hold`/`bypass` decision record. GitHub/Linear items bypass the Gate; deterministic misses `hold` (recall-biased, pending the LLM NER layer).
+- Add `Prompts::extract_entities()` and `LLM_Entity_Extractor` (behind an `Entity_Extractor` seam) — the intake Gate's cheap-NER step: extract an item's subject organizations/people/locations as JSON, with a lenient parse that degrades to an empty result on any model/transport failure.
+- `Publisher_Matcher`: on a deterministic miss, optionally run NER + fuzzy string-similarity match against the publisher store, banded by confidence into `pass` (≥0.85), `hold` (0.60–0.85 or ambiguous), or `ignore` (<0.60). The decision record now carries a `confidence` field. With no extractor injected, behavior is unchanged (miss ⇒ `hold`).
+- Add `Gate_Node`, a Transform node wrapping `Publisher_Matcher`: runs the Gate on each item and emits a decision record (stamped with a persist-time `ts`). Uses the `LLM_Config` verbs for the optional NER extractor (no token ⇒ deterministic-only) plus a `set_config_version` verb; builds its matcher once so the publisher-set memoization spans a collect.
+- Wire the intake Gate into the pipeline as an **observer** stage (`newspack-intelligence-gate`): a second consumer (`gate:consumer`) tails the same `ingest` partition with its own offsets, feeding `gate → gate:tojson → gate:log`, which appends every decision as one JSON line to `gate-decisions.jsonl` (the append-only decision-log backbone). Purely additive — the summary/digest stages are unchanged; moving the Gate inline to filter the digest is deferred.
+
 ## [0.4.1] - 2026-07-16
 
 ### Fixed
@@ -55,12 +64,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `CSV_Parser::parse_file()`, the single owner of the CSV file-read (readability guard + `file_get_contents` + parse), used by both the CLI command and the Settings handler.
 - Render an `admin_notices` success notice ("Newspack clients imported.") after a completed Settings-page CSV import.
 - Add `Publisher_Meta_Box`, the "Publisher details" admin meta box on `newspack_publisher`: editable enrichment fields (publisher name, localities, GitHub org, LinkedIn company ID, X handle, aliases, beat tags) plus a read-only provenance section for the import-managed fields (atomic site ID, domain, created, status, first/last seen, churned at).
-- Add `Publisher_Repository::all_with_enrichment()`, exposing each publisher's matchable fields (domain, publisher name, aliases, status) for the intake Gate.
-- Add `Publisher_Matcher`, the intake Gate's deterministic hard-match layer: resolves a normalized item to a publisher by URL domain then exact name/alias (whole-word), emitting a `pass`/`hold`/`bypass` decision record. GitHub/Linear items bypass the Gate; deterministic misses `hold` (recall-biased, pending the later LLM NER layer).
-- Add `Prompts::extract_entities()` and `LLM_Entity_Extractor` (behind an `Entity_Extractor` seam) — the intake Gate's cheap-NER step: extract an item's subject organizations/people/locations as JSON, with a lenient parse that degrades to an empty result on any model/transport failure.
-- `Publisher_Matcher`: on a deterministic miss, optionally run NER + fuzzy string-similarity match against the publisher store, banded by confidence into `pass` (≥0.85), `hold` (0.60–0.85 or ambiguous), or `ignore` (<0.60). The decision record now carries a `confidence` field. With no extractor injected, behavior is unchanged (miss ⇒ `hold`).
-- Add `Gate_Node`, a Transform node wrapping `Publisher_Matcher`: runs the Gate on each item and emits a decision record (stamped with a persist-time `ts`). Uses the `LLM_Config` verbs for the optional NER extractor (no token ⇒ deterministic-only) plus a `set_config_version` verb; builds its matcher once so the publisher-set memoization spans a collect.
-- Wire the intake Gate into the topology as an **observer**: a second consumer (`gate:consumer`) tails the same `ingest` partition with its own offsets, feeding `gate → gate:tojson → gate:log`, which appends every decision as one JSON line to `gate-decisions.jsonl` (the append-only decision-log backbone). Purely additive — the existing summarizer→digest path is unchanged; moving the Gate inline to filter the digest is deferred.
 
 ### Changed
 
