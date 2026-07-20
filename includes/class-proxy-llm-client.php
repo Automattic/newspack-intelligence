@@ -49,9 +49,14 @@ final class Proxy_LLM_Client implements LLM_Client {
 			],
 			$opts
 		) );
+		if ( false === $body ) {
+			// Fail loud; a false here would POST an empty body.
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+			throw new \RuntimeException( 'AI proxy request body could not be encoded: ' . \json_last_error_msg() );
+		}
 
 		$url      = \rtrim( $this->base_url, '/' ) . '/chat/completions';
-		$args     = $this->request_args( (string) $body );
+		$args     = $this->request_args( $body );
 		$response = null !== self::$http_post
 			? ( self::$http_post )( $url, $args )
 			: \wp_remote_post( $url, $args );

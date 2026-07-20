@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Proxy_LLM_Client::chat()` no longer silently POSTs an empty body to the AI proxy.** Ingested GitHub/Linear/feed content isn't guaranteed clean UTF-8; when `wp_json_encode()` on the chat-completions body failed, the bare `(string)` cast around it silently coerced the encode failure to `''`, sending an empty request body instead of a diagnosable error. `chat()` now throws a `RuntimeException` naming `json_last_error_msg()` before sending anything (mirrors the substrate `newspack-nodes` fix in `Message::packed()` for the same swallow-into-empty-string shape).
+
 ## [0.5.0] - 2026-07-17
 
 ### Added

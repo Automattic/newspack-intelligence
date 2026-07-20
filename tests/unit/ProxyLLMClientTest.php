@@ -37,6 +37,29 @@ final class ProxyLLMClientTest extends TestCase {
 		$client->chat( [ [ 'role' => 'user', 'content' => 'x' ] ] );
 	}
 
+	/**
+	 * Ingested content (GitHub/Linear/feed text) is not guaranteed clean UTF-8.
+	 * Before this fix, an unencodable message body made wp_json_encode() return
+	 * false, which the bare (string) cast silently swallowed to '' — an EMPTY
+	 * request body sent to the AI proxy instead of a loud, diagnosable failure.
+	 */
+	public function test_throws_instead_of_sending_empty_body_on_unencodable_message(): void {
+		$seen = null;
+		Proxy_LLM_Client::$http_post = static function ( string $url, array $args ) use ( &$seen ) {
+			$seen = $args;
+			return [ 'response' => [ 'code' => 200 ], 'body' => '{}' ];
+		};
+		$client = new Proxy_LLM_Client( 'https://proxy.test/v1', 'SEKRET', 'gpt-oss-120b', 'newspack-intelligence' );
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessageMatches( '/encod/i' );
+		try {
+			$client->chat( [ [ 'role' => 'user', 'content' => "bad byte \xE9" ] ] );
+		} finally {
+			$this->assertNull( $seen, 'no request may be sent when the body could not be encoded' );
+		}
+	}
+
 	public function test_wp_error_message_is_plain_text_not_html_escaped(): void {
 		Proxy_LLM_Client::$http_post = static fn () => new \WP_Error( 'http_request_failed', 'host \'proxy.test\' said <nope>' );
 		$client = new Proxy_LLM_Client( 'https://proxy.test/v1', 'SEKRET', 'gpt-oss-120b', 'newspack-intelligence' );
