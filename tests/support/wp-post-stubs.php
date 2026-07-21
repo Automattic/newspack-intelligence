@@ -16,12 +16,15 @@ if ( ! class_exists( 'NPAINL_WP_Post_Store' ) ) {
 		/** @var array{type:string,args:array<string,mixed>}|null */
 		public static ?array $last_cpt = null;
 		public static int $update_calls = 0;
+		/** @var array<string,array{title:string,callback:mixed,screen:mixed,context:string,priority:string}> */
+		public static array $meta_boxes = [];
 		public static function reset(): void {
 			self::$posts        = [];
 			self::$meta         = [];
 			self::$next_id      = 100;
 			self::$last_cpt     = null;
 			self::$update_calls = 0;
+			self::$meta_boxes   = [];
 		}
 	}
 }
@@ -59,6 +62,31 @@ if ( ! function_exists( 'wp_update_post' ) ) {
 		}
 		++NPAINL_WP_Post_Store::$update_calls;
 		return $id;
+	}
+}
+if ( ! function_exists( 'get_post_type' ) ) {
+	function get_post_type( int $post_id ) {
+		return NPAINL_WP_Post_Store::$posts[ $post_id ]['post_type'] ?? false;
+	}
+}
+if ( ! function_exists( 'add_meta_box' ) ) {
+	function add_meta_box( string $id, string $title, $callback, $screen = null, string $context = 'advanced', string $priority = 'default' ): void {
+		NPAINL_WP_Post_Store::$meta_boxes[ $id ] = [
+			'title'    => $title,
+			'callback' => $callback,
+			'screen'   => $screen,
+			'context'  => $context,
+			'priority' => $priority,
+		];
+	}
+}
+if ( ! class_exists( 'WP_Post' ) ) {
+	// Minimal WP_Post: production code only reads ->ID off it.
+	class WP_Post {
+		public int $ID = 0;
+		public function __construct( int $id = 0 ) {
+			$this->ID = $id;
+		}
 	}
 }
 if ( ! function_exists( 'get_posts' ) ) {

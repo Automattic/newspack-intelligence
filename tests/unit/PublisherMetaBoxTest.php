@@ -13,6 +13,123 @@ final class PublisherMetaBoxTest extends TestCase {
 
 	protected function setUp(): void {
 		\NPAINL_WP_Post_Store::reset();
+		$GLOBALS['_current_user_can'] = true;
+		unset( $_POST );
+	}
+
+	protected function tearDown(): void {
+		unset( $GLOBALS['_current_user_can'], $_POST );
+	}
+
+	/** Seed a publisher post of the correct type and return its id. */
+	private function seed_publisher(): int {
+		$id                                 = 501;
+		\NPAINL_WP_Post_Store::$posts[ $id ] = [ 'post_type' => Publisher_CPT::POST_TYPE, 'post_title' => 'x' ];
+		\NPAINL_WP_Post_Store::$meta[ $id ]  = [];
+		return $id;
+	}
+
+	public function test_save_persists_enrichment_fields_with_valid_nonce_and_caps(): void {
+		$post_id                     = $this->seed_publisher();
+		$GLOBALS['_current_user_can'] = true;
+		$_POST                       = [
+			Publisher_Meta_Box::NONCE_NAME     => \wp_create_nonce( Publisher_Meta_Box::NONCE_ACTION ),
+			Publisher_CPT::META_GITHUB_ORG     => 'santa-fe-reporter',
+			Publisher_CPT::META_LOCALITIES     => 'Santa Fe|Taos',
+		];
+
+		Publisher_Meta_Box::save( $post_id );
+
+		$this->assertSame( 'santa-fe-reporter', \get_post_meta( $post_id, Publisher_CPT::META_GITHUB_ORG, true ) );
+		$this->assertSame( 'Santa Fe|Taos', \get_post_meta( $post_id, Publisher_CPT::META_LOCALITIES, true ) );
+	}
+
+	public function test_save_bails_when_nonce_absent(): void {
+		$post_id = $this->seed_publisher();
+		$_POST   = [ Publisher_CPT::META_GITHUB_ORG => 'should-not-persist' ];
+
+		Publisher_Meta_Box::save( $post_id );
+
+		$this->assertSame( '', \get_post_meta( $post_id, Publisher_CPT::META_GITHUB_ORG, true ) );
+	}
+
+	public function test_save_bails_on_invalid_nonce(): void {
+		$post_id = $this->seed_publisher();
+		$_POST   = [
+			Publisher_Meta_Box::NONCE_NAME => 'forged-nonce-value',
+			Publisher_CPT::META_GITHUB_ORG => 'should-not-persist',
+		];
+
+		Publisher_Meta_Box::save( $post_id );
+
+		$this->assertSame( '', \get_post_meta( $post_id, Publisher_CPT::META_GITHUB_ORG, true ) );
+	}
+
+	public function test_save_bails_when_capability_missing(): void {
+		$post_id                     = $this->seed_publisher();
+		$GLOBALS['_current_user_can'] = false;
+		$_POST                       = [
+			Publisher_Meta_Box::NONCE_NAME => \wp_create_nonce( Publisher_Meta_Box::NONCE_ACTION ),
+			Publisher_CPT::META_GITHUB_ORG => 'should-not-persist',
+		];
+
+		Publisher_Meta_Box::save( $post_id );
+
+		$this->assertSame( '', \get_post_meta( $post_id, Publisher_CPT::META_GITHUB_ORG, true ) );
+	}
+
+	public function test_save_bails_when_post_type_mismatches(): void {
+		$post_id                             = 777;
+		\NPAINL_WP_Post_Store::$posts[ $post_id ] = [ 'post_type' => 'page', 'post_title' => 'x' ];
+		\NPAINL_WP_Post_Store::$meta[ $post_id ]  = [];
+		$_POST                               = [
+			Publisher_Meta_Box::NONCE_NAME => \wp_create_nonce( Publisher_Meta_Box::NONCE_ACTION ),
+			Publisher_CPT::META_GITHUB_ORG => 'should-not-persist',
+		];
+
+		Publisher_Meta_Box::save( $post_id );
+
+		$this->assertSame( '', \get_post_meta( $post_id, Publisher_CPT::META_GITHUB_ORG, true ) );
+	}
+
+	public function test_render_outputs_editable_and_readonly_fields(): void {
+		$post_id                                                                = $this->seed_publisher();
+		\NPAINL_WP_Post_Store::$meta[ $post_id ][ Publisher_CPT::META_GITHUB_ORG ] = 'roswell-daily';
+		\NPAINL_WP_Post_Store::$meta[ $post_id ][ Publisher_CPT::META_DOMAIN ]     = 'roswell.example';
+
+		\ob_start();
+		Publisher_Meta_Box::render( new \WP_Post( $post_id ) );
+		$html = (string) \ob_get_clean();
+
+		$this->assertStringContainsString( 'name="' . Publisher_CPT::META_GITHUB_ORG . '"', $html );
+		$this->assertStringContainsString( 'value="roswell-daily"', $html );
+		$this->assertStringContainsString( 'Import-managed fields', $html );
+		$this->assertStringContainsString( 'readonly="readonly"', $html );
+		$this->assertStringContainsString( 'value="roswell.example"', $html );
+	}
+
+	public function test_readonly_fields_returns_exactly_the_seven_import_managed_keys(): void {
+		$this->assertSame(
+			[
+				Publisher_CPT::META_ATOMIC_ID,
+				Publisher_CPT::META_DOMAIN,
+				Publisher_CPT::META_CREATED,
+				Publisher_CPT::META_STATUS,
+				Publisher_CPT::META_FIRST_SEEN,
+				Publisher_CPT::META_LAST_SEEN,
+				Publisher_CPT::META_CHURNED_AT,
+			],
+			\array_keys( Publisher_Meta_Box::readonly_fields() )
+		);
+	}
+
+	public function test_register_adds_the_publisher_enrichment_meta_box(): void {
+		Publisher_Meta_Box::register();
+
+		$this->assertArrayHasKey( 'newspack-publisher-enrichment', \NPAINL_WP_Post_Store::$meta_boxes );
+		$box = \NPAINL_WP_Post_Store::$meta_boxes['newspack-publisher-enrichment'];
+		$this->assertSame( Publisher_CPT::POST_TYPE, $box['screen'] );
+		$this->assertSame( [ Publisher_Meta_Box::class, 'render' ], $box['callback'] );
 	}
 
 	public function test_enrichment_fields_returns_exactly_the_seven_enrichment_keys(): void {

@@ -185,6 +185,61 @@ if ( ! function_exists( 'add_submenu_page' ) ) {
 	}
 }
 
+if ( ! function_exists( 'esc_url' ) ) {
+	function esc_url( string $url ): string {
+		return \htmlspecialchars( $url, ENT_QUOTES, 'UTF-8' );
+	}
+}
+
+if ( ! function_exists( 'admin_url' ) ) {
+	function admin_url( string $path = '' ): string {
+		return 'http://localhost/wp-admin/' . \ltrim( $path, '/' );
+	}
+}
+
+if ( ! function_exists( 'submit_button' ) ) {
+	function submit_button( string $text = 'Save', string $type = 'primary', string $name = 'submit', bool $wrap = true ): void {
+		echo '<input type="submit" value="' . \htmlspecialchars( $text, ENT_QUOTES, 'UTF-8' ) . '" />';
+	}
+}
+
+if ( ! function_exists( 'wp_nonce_field' ) ) {
+	function wp_nonce_field( string $action, string $name = '_wpnonce', bool $referer = true, bool $display = true ): string {
+		$field = '<input type="hidden" name="' . \htmlspecialchars( $name, ENT_QUOTES, 'UTF-8' ) . '" value="' . \wp_create_nonce( $action ) . '" />';
+		if ( $display ) {
+			echo $field; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- test stub, value already escaped.
+		}
+		return $field;
+	}
+}
+
+if ( ! function_exists( 'check_admin_referer' ) ) {
+	// Test seam: $GLOBALS['_check_admin_referer'] toggles the pass/fail branch.
+	function check_admin_referer( string $action = '-1', string $query_arg = '_wpnonce' ): bool {
+		return $GLOBALS['_check_admin_referer'] ?? true;
+	}
+}
+
+if ( ! function_exists( 'wp_die' ) ) {
+	function wp_die( string $message = '' ): void {
+		throw new \RuntimeException( 'wp_die: ' . $message );
+	}
+}
+
+if ( ! function_exists( 'wp_safe_redirect' ) ) {
+	// Record the target and throw so the caller's terminal exit() is not reached.
+	function wp_safe_redirect( string $url, int $status = 302 ): void {
+		$GLOBALS['_last_redirect'] = $url;
+		throw new \RuntimeException( 'wp_safe_redirect: ' . $url );
+	}
+}
+
+if ( ! function_exists( 'wp_get_referer' ) ) {
+	function wp_get_referer(): string|false {
+		return $GLOBALS['_wp_referer'] ?? false;
+	}
+}
+
 if ( ! function_exists( 'wp_enqueue_script' ) ) {
 	function wp_enqueue_script( ...$args ): void {
 		$GLOBALS['_enqueued_scripts'][] = $args;
