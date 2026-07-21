@@ -19,6 +19,20 @@ class Clients_Settings {
 		$this->importer = $importer ?? new Client_Importer( new CPT_Publisher_Repository() );
 	}
 
+	/** admin-post handler: validate nonce/caps + $_FILES, then import_path(). */
+	public function handle_admin_post(): void {
+		if ( ! \current_user_can( 'manage_options' ) || ! \check_admin_referer( self::ADMIN_POST_ACTION ) ) {
+			\wp_die( \esc_html__( 'Not allowed.', 'newspack-intelligence' ) );
+		}
+		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized on the next line via sanitize_text_field( wp_unslash() ).
+		$file = isset( $_FILES['clients_csv'] ) && \is_array( $_FILES['clients_csv'] ) ? $_FILES['clients_csv'] : [];
+		$tmp  = isset( $file['tmp_name'] ) && \is_string( $file['tmp_name'] ) ? \sanitize_text_field( \wp_unslash( $file['tmp_name'] ) ) : '';
+		$this->import_path( $tmp );
+		$fallback = \admin_url( 'options-general.php?page=' . SETTINGS_MENU_SLUG );
+		\wp_safe_redirect( \add_query_arg( 'clients_imported', '1', \wp_get_referer() ?: $fallback ) );
+		exit;
+	}
+
 	/**
 	 * Parse + import a CSV file at $path.
 	 *
@@ -48,20 +62,6 @@ class Clients_Settings {
 		echo '<input type="file" name="clients_csv" accept=".csv" required /> ';
 		\submit_button( \__( 'Import CSV', 'newspack-intelligence' ), 'secondary', 'submit', false );
 		echo '</form>';
-	}
-
-	/** admin-post handler: validate nonce/caps + $_FILES, then import_path(). */
-	public function handle_admin_post(): void {
-		if ( ! \current_user_can( 'manage_options' ) || ! \check_admin_referer( self::ADMIN_POST_ACTION ) ) {
-			\wp_die( \esc_html__( 'Not allowed.', 'newspack-intelligence' ) );
-		}
-		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized on the next line via sanitize_text_field( wp_unslash() ).
-		$file = isset( $_FILES['clients_csv'] ) && \is_array( $_FILES['clients_csv'] ) ? $_FILES['clients_csv'] : [];
-		$tmp  = isset( $file['tmp_name'] ) && \is_string( $file['tmp_name'] ) ? \sanitize_text_field( \wp_unslash( $file['tmp_name'] ) ) : '';
-		$this->import_path( $tmp );
-		$fallback = \admin_url( 'options-general.php?page=' . SETTINGS_MENU_SLUG );
-		\wp_safe_redirect( \add_query_arg( 'clients_imported', '1', \wp_get_referer() ?: $fallback ) );
-		exit;
 	}
 
 	/** admin_notices: a success notice after a completed CSV import. */

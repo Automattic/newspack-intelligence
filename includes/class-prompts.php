@@ -43,6 +43,16 @@ class Prompts {
 	}
 
 	/**
+	 * Read a scalar item field as a string; absent or non-scalar values become ''.
+	 *
+	 * @param array<array-key,mixed> $item The item array.
+	 */
+	private static function field( array $item, string $key ): string {
+		$value = $item[ $key ] ?? '';
+		return Core::as_string( $value );
+	}
+
+	/**
 	 * Build the NER chat messages: extract the item's SUBJECT entities as JSON.
 	 *
 	 * @param array<string,mixed> $item The ingested item (title/body).
@@ -66,16 +76,6 @@ class Prompts {
 			[ 'role' => 'system', 'content' => $system ],
 			[ 'role' => 'user', 'content' => $user ],
 		];
-	}
-
-	/**
-	 * Read a scalar item field as a string; absent or non-scalar values become ''.
-	 *
-	 * @param array<array-key,mixed> $item The item array.
-	 */
-	private static function field( array $item, string $key ): string {
-		$value = $item[ $key ] ?? '';
-		return Core::as_string( $value );
 	}
 
 	/**

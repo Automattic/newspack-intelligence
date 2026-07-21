@@ -97,6 +97,86 @@ final class Publisher_Matcher {
 	}
 
 	/**
+	 * @return array{stage:string,item_id:string,decision:string,atomic_site_id:?string,matched_on:?string,confidence:?float,reason:string,config_version:string}
+	 */
+	private function decision( string $item_id, string $decision, ?string $atomic_site_id, ?string $matched_on, string $reason, ?float $confidence = null ): array {
+		return [
+			'stage'          => 'gate',
+			'item_id'        => $item_id,
+			'decision'       => $decision,
+			'atomic_site_id' => $atomic_site_id,
+			'matched_on'     => $matched_on,
+			'confidence'     => $confidence,
+			'reason'         => $reason,
+			'config_version' => $this->config_version,
+		];
+	}
+
+	/** Normalize a URL to its bare host: lowercase, no leading "www.". '' when none. */
+	private function host( string $url ): string {
+		$host = \wp_parse_url( $url, \PHP_URL_HOST );
+		if ( ! \is_string( $host ) || '' === $host ) {
+			return '';
+		}
+		return $this->strip_www( \strtolower( $host ) );
+	}
+
+	private function strip_www( string $host ): string {
+		return \str_starts_with( $host, 'www.' ) ? \substr( $host, 4 ) : $host;
+	}
+
+	/**
+	 * Active-only enrichment set, memoized for the life of this matcher.
+	 *
+	 * @return array<int,array{atomic_site_id:string,domain_name:string,status:string,publisher_name:string,aliases:string}>
+	 */
+	private function active_publishers(): array {
+		if ( null === $this->publishers ) {
+			$this->publishers = \array_values(
+				\array_filter(
+					$this->repo->all_with_enrichment(),
+					static fn ( array $p ): bool => 'active' === $p['status']
+				)
+			);
+		}
+		return $this->publishers;
+	}
+
+	/** Normalize a stored domain the same way a host is normalized. */
+	private function normalize_domain( string $domain ): string {
+		return $this->strip_www( \strtolower( \trim( $domain ) ) );
+	}
+
+	/**
+	 * Name + alias candidates for a publisher, keyed by signal.
+	 *
+	 * @param array{publisher_name:string,aliases:string} $pub
+	 * @return array{name:array<int,string>,alias:array<int,string>}
+	 */
+	private function candidates( array $pub ): array {
+		$name  = \trim( $pub['publisher_name'] );
+		$alias = \array_values(
+			\array_filter(
+				\array_map( 'trim', \explode( '|', $pub['aliases'] ) ),
+				static fn ( string $a ): bool => '' !== $a
+			)
+		);
+		return [
+			'name'  => '' !== $name ? [ $name ] : [],
+			'alias' => $alias,
+		];
+	}
+
+	/** Whole-word (Unicode-aware) case-insensitive containment of $needle in $haystack. */
+	private function contains_word( string $haystack, string $needle ): bool {
+		if ( '' === $needle ) {
+			return false;
+		}
+		$pattern = '/(?<![\p{L}\p{N}])' . \preg_quote( $needle, '/' ) . '(?![\p{L}\p{N}])/iu';
+		return 1 === \preg_match( $pattern, $haystack );
+	}
+
+	/**
 	 * Step 2+3: extract subject orgs, fuzzy-match against active publishers, band the result.
 	 *
 	 * @param array<string,mixed> $item
@@ -175,85 +255,5 @@ final class Publisher_Matcher {
 		$s = (string) \preg_replace( '/[^\p{L}\p{N}\s]+/u', ' ', $s );
 		$s = (string) \preg_replace( '/^the\s+/', '', $s );
 		return \trim( (string) \preg_replace( '/\s+/', ' ', $s ) );
-	}
-
-	/**
-	 * Active-only enrichment set, memoized for the life of this matcher.
-	 *
-	 * @return array<int,array{atomic_site_id:string,domain_name:string,status:string,publisher_name:string,aliases:string}>
-	 */
-	private function active_publishers(): array {
-		if ( null === $this->publishers ) {
-			$this->publishers = \array_values(
-				\array_filter(
-					$this->repo->all_with_enrichment(),
-					static fn ( array $p ): bool => 'active' === $p['status']
-				)
-			);
-		}
-		return $this->publishers;
-	}
-
-	/**
-	 * Name + alias candidates for a publisher, keyed by signal.
-	 *
-	 * @param array{publisher_name:string,aliases:string} $pub
-	 * @return array{name:array<int,string>,alias:array<int,string>}
-	 */
-	private function candidates( array $pub ): array {
-		$name  = \trim( $pub['publisher_name'] );
-		$alias = \array_values(
-			\array_filter(
-				\array_map( 'trim', \explode( '|', $pub['aliases'] ) ),
-				static fn ( string $a ): bool => '' !== $a
-			)
-		);
-		return [
-			'name'  => '' !== $name ? [ $name ] : [],
-			'alias' => $alias,
-		];
-	}
-
-	/** Normalize a URL to its bare host: lowercase, no leading "www.". '' when none. */
-	private function host( string $url ): string {
-		$host = \wp_parse_url( $url, \PHP_URL_HOST );
-		if ( ! \is_string( $host ) || '' === $host ) {
-			return '';
-		}
-		return $this->strip_www( \strtolower( $host ) );
-	}
-
-	/** Normalize a stored domain the same way a host is normalized. */
-	private function normalize_domain( string $domain ): string {
-		return $this->strip_www( \strtolower( \trim( $domain ) ) );
-	}
-
-	private function strip_www( string $host ): string {
-		return \str_starts_with( $host, 'www.' ) ? \substr( $host, 4 ) : $host;
-	}
-
-	/** Whole-word (Unicode-aware) case-insensitive containment of $needle in $haystack. */
-	private function contains_word( string $haystack, string $needle ): bool {
-		if ( '' === $needle ) {
-			return false;
-		}
-		$pattern = '/(?<![\p{L}\p{N}])' . \preg_quote( $needle, '/' ) . '(?![\p{L}\p{N}])/iu';
-		return 1 === \preg_match( $pattern, $haystack );
-	}
-
-	/**
-	 * @return array{stage:string,item_id:string,decision:string,atomic_site_id:?string,matched_on:?string,confidence:?float,reason:string,config_version:string}
-	 */
-	private function decision( string $item_id, string $decision, ?string $atomic_site_id, ?string $matched_on, string $reason, ?float $confidence = null ): array {
-		return [
-			'stage'          => 'gate',
-			'item_id'        => $item_id,
-			'decision'       => $decision,
-			'atomic_site_id' => $atomic_site_id,
-			'matched_on'     => $matched_on,
-			'confidence'     => $confidence,
-			'reason'         => $reason,
-			'config_version' => $this->config_version,
-		];
 	}
 }
