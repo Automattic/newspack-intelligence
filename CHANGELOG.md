@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**Pairs with newspack-nodes > 0.50.0** (the `add_snapshot_node` verb and the
+## [0.5.3] - 2026-07-23
+
+**Pairs with newspack-nodes ≥ 0.51.0** (the `add_snapshot_node` verb and the
 name-keyed snapshot frame).
 
 ### Changed
