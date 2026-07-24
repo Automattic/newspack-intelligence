@@ -33,6 +33,10 @@ docker exec -u bend eve-pyrobase1-1 bash -c \
   'cd /services/pyrobase/sources/newspack-intelligence/tests && ../vendor/bin/phpunit'   # PHP (container, from /services)
 ```
 
+After adding/renaming a Node class, regenerate the classmap (`make_node` and
+the console palette read it): `composer build:autoloaders` (= `composer
+install --optimize-autoloader`) or `composer dump-autoload -o`.
+
 Deploy (build the zip first — the setup script installs the release zip, it does
 not build): `npm run release:archive` then
 `docker exec eve-pyrobase1-1 /services/pyrobase/setup/newspack-intelligence.sh`.
