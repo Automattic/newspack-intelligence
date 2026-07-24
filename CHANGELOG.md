@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Pairs with newspack-nodes > 0.50.0** (the `add_snapshot_node` verb and the
+name-keyed snapshot frame).
+
+### Changed
+- `newspack-intelligence-digest.tsl` migrates `set_snapshot_node` (deleted
+  upstream) to `add_snapshot_node`; `Insights_CI_Node` reads the digest state
+  from the frame's name-keyed `cache` map (`cache.digest`), including the
+  `read_latest_snapshot_cache( …, 'digest' )` node argument.
+
 ## [0.5.2] - 2026-07-23
 
 ### Fixed

@@ -228,7 +228,7 @@ class Insights_CI_Node extends Service_CI_Node {
 	 * @return array{items: array<int,array<array-key,mixed>>, done: int, total: int}
 	 */
 	public static function read_snapshot( string $offsets_dir ): array {
-		$items = Partition_Node::read_latest_snapshot_cache( $offsets_dir, 'scored.p*' );
+		$items = Partition_Node::read_latest_snapshot_cache( $offsets_dir, 'scored.p*', 'digest' );
 		$done  = 0;
 		$total = 0;
 		foreach ( self::scored_dirs( $offsets_dir ) as $dir ) {
@@ -289,7 +289,8 @@ class Insights_CI_Node extends Service_CI_Node {
 	 */
 	private static function read_cache( string $offsetlog_dir ): array {
 		$value = Partition_Node::read_latest_value_at( $offsetlog_dir );
-		return \is_array( $value ) && \is_array( $value['cache'] ?? null ) ? $value['cache'] : [];
+		$cache = \is_array( $value ) && \is_array( $value['cache'] ?? null ) ? $value['cache'] : [];
+		return \is_array( $cache['digest'] ?? null ) ? $cache['digest'] : [];
 	}
 
 	/**

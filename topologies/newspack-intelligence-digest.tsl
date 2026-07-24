@@ -1,7 +1,7 @@
 var num_partitions = 1
 include topic-probe
 make_node Consumer scored:consumer <config:logs_dir>/scored.p<partition> <config:offsets_dir>/scored.p<partition> <config:deadletter_dir>/scored.p<partition>
-cmd scored:consumer:config set_snapshot_node digest
+cmd scored:consumer:config add_snapshot_node digest
 cmd scored:consumer:config set_line_mode true
 make_node Digest_Builder digest scored:partition 3
 cmd digest:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1

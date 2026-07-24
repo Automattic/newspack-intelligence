@@ -185,7 +185,7 @@ class Digest_Builder_Node extends Node {
 
 	/**
 	 * Snapshot contract: items + collection progress, co-committed by the Consumer
-	 * into its offsetlog (via `set_snapshot_node digest`), so a respawned worker
+	 * into its offsetlog (via `add_snapshot_node digest`), so a respawned worker
 	 * restores this in lockstep with the cursor and the dashboard reads live
 	 * progress. Bounded — keep the digest small.
 	 *

@@ -73,7 +73,7 @@ final class InsightsCITest extends TestCase {
 		$ol->void_warranty();
 		$m                   = Message::new_message();
 		$m[ Message::TYPE ]  = Message::TM_STRUCT;
-		$m[ Message::VALUE ] = [ 'seg' => 0, 'off' => 0, 'cache' => $cache ];
+		$m[ Message::VALUE ] = [ 'seg' => 0, 'off' => 0, 'cache' => [ 'digest' => $cache ] ];
 		$ol->fill( $m );
 		$ol->flush();
 	}
