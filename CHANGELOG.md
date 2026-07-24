@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-07-23
+
 ### Fixed
 - **`add_profile` takes the whole line.** The verb dispatch was a stale port
   from the token-array migration reading only `$args[0]`, so an unquoted
