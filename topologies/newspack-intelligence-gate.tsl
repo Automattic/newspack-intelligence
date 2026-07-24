@@ -1,4 +1,3 @@
-var num_partitions = 1
 # Intake Gate (observer). A second consumer tails the SAME ingest partition as the summary
 # stage, but with its OWN offsets, so gating neither moves the summarizer's cursor nor changes
 # the digest — this stage is purely additive. Every decision is appended as one JSON line to
@@ -6,6 +5,8 @@ var num_partitions = 1
 # source for threshold tuning). The LLM verbs configure the cheap-NER extractor; with no
 # resolvable vault token the gate runs deterministic-only (domain + exact name/alias). Moving
 # the gate INLINE (to filter what reaches the digest) is a deliberate later step.
+var num_partitions = 1
+include topic-probe
 make_node Consumer gate:consumer <config:logs_dir>/ingest.p<partition> <config:offsets_dir>/gate.p<partition> <config:deadletter_dir>/gate.p<partition>
 cmd gate:consumer:config set_line_mode true
 make_node Gate gate
