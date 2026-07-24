@@ -11,7 +11,7 @@ cmd summarizer:config add_profile 'Engineers building WordPress publishing tools
 cmd summarizer:config add_profile 'Prioritize shipped releases, merged PRs that change behavior or APIs, and runtime/infra changes or incidents.'
 cmd summarizer:config add_profile 'Deprioritize dependency bumps, docs typos, and cosmetic tweaks.'
 make_node Scorer scorer
-make_node Partition scored:partition <config:logs_dir>/scored.p<partition> <config:segment_size> <config:min_segments> <config:max_segments> <config:min_lifetime> <config:max_lifetime>
+make_node Partition scored:partition <config:logs_dir>/scored.p<partition> <config:segment_size> <config:min_segments> <config:num_segments> <config:min_lifetime> <config:lifetime>
 cmd scored:partition:config void_warranty
 connect_node ingest:consumer summarizer
 connect_node summarizer scorer

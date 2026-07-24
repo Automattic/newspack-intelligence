@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Track the substrate's retention rename: `newspack-intelligence-ingest.tsl` and
+  `newspack-intelligence-summary.tsl` swap the durable Partition tails from
+  `<config:max_segments>` / `<config:max_lifetime>` to `<config:num_segments>` /
+  `<config:lifetime>` (count target and age rule under their new names). Test
+  config renames `max_segments`→`num_segments` and `max_lifetime`→`lifetime`.
+
 ## [0.5.3] - 2026-07-23
 
 **Pairs with newspack-nodes ≥ 0.51.0** (the `add_snapshot_node` verb and the
