@@ -221,6 +221,39 @@ final class LlmConfigTest extends TestCase {
 		$this->assertSame( 'Engineering', $node->profile() );
 	}
 
+	public function test_cmd_add_profile_joins_all_positional_tokens(): void {
+		$node = $this->fixture();
+		$node->name( 'llmnode' );
+		// An unquoted TSL line arrives as many tokens; the profile is all of them.
+		$result = $node::cmd_add_profile(
+			$this->interpreter_for( $node ),
+			[ 'Do', 'not', 'produce', 'tables.' ]
+		);
+		$this->assertSame( 'ok', $result );
+		$this->assertSame( 'Do not produce tables.', $node->profile() );
+	}
+
+	public function test_dump_config_keeps_an_explicit_set_even_at_the_default_value(): void {
+		$node = $this->fixture();
+		$node->name( 'llmnode' );
+		// Pinned to today's default: a future default bump must not move it.
+		$node->set_model( 'gpt-oss-120b' );
+		$node->set_feature( 'newspack-intelligence' );
+		$dump = $node->dump_config();
+		$this->assertStringContainsString( 'cmd llmnode:config set_model gpt-oss-120b', $dump );
+		$this->assertStringContainsString( 'cmd llmnode:config set_feature newspack-intelligence', $dump );
+	}
+
+	public function test_dump_config_quotes_a_multi_word_profile(): void {
+		$node = $this->fixture();
+		$node->name( 'llmnode' );
+		$node->add_profile( 'Do not produce tables.' );
+		$this->assertStringContainsString(
+			"cmd llmnode:config add_profile 'Do not produce tables.'",
+			$node->dump_config()
+		);
+	}
+
 	public function test_cmd_add_profile_propagates_blank_error_from_patron(): void {
 		$node = $this->fixture();
 

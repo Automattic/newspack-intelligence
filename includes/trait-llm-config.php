@@ -63,9 +63,18 @@ trait LLM_Config {
 		return \implode( "\n", $this->profiles );
 	}
 
+	/**
+	 * Verb-set keys. An explicit set dumps even at the default value, so a
+	 * pinned choice survives a future default bump on reload.
+	 *
+	 * @var array<string, true>
+	 */
+	private array $llm_set = [];
+
 	/** `set_api_url` verb handler — last-write-wins. */
 	public function set_api_url( string $args ): string {
-		$this->api_url = \trim( $args );
+		$this->api_url                = \trim( $args );
+		$this->llm_set['set_api_url'] = true;
 		return 'ok';
 	}
 
@@ -103,7 +112,8 @@ trait LLM_Config {
 
 	/** `set_model` verb handler — last-write-wins. */
 	public function set_model( string $args ): string {
-		$this->model = \trim( $args );
+		$this->model                = \trim( $args );
+		$this->llm_set['set_model'] = true;
 		return 'ok';
 	}
 
@@ -122,7 +132,8 @@ trait LLM_Config {
 
 	/** `set_feature` verb handler — last-write-wins. */
 	public function set_feature( string $args ): string {
-		$this->feature = \trim( $args );
+		$this->feature                = \trim( $args );
+		$this->llm_set['set_feature'] = true;
 		return 'ok';
 	}
 
@@ -156,34 +167,42 @@ trait LLM_Config {
 
 	/**
 	 * `add_profile` verb dispatch — resolves the patron node and delegates.
+	 * All positional tokens join into one line, so an unquoted multi-word
+	 * TSL statement reads naturally (like `echo`).
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key, mixed> $args        The profile line text.
+	 * @param array<array-key, mixed> $args        The profile line tokens.
 	 * @return string Result line.
 	 */
 	public static function cmd_add_profile( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->add_profile( Core::as_string( $args[0] ?? '' ) );
+		$tokens = \array_map( static fn ( $a ) => Core::as_string( $a ), $args );
+		return $patron->add_profile( \implode( ' ', $tokens ) );
 	}
 
-	/** Emit the base config plus round-trippable `cmd {name}:config …` lines for every non-default verb. */
+	/**
+	 * Emit the base config plus round-trippable `cmd {name}:config …` lines for
+	 * every explicitly-set or non-default verb (a pinned value survives a
+	 * future default bump). Args go through serialize_args (the serialization
+	 * anchor) so a multi-word profile re-tokenizes as ONE argument.
+	 */
 	public function dump_config(): string {
 		$out = parent::dump_config();
-		if ( '' !== $this->api_url && self::DEFAULT_API_URL !== $this->api_url ) {
-			$out .= "cmd {$this->name}:config set_api_url {$this->api_url}\n";
+		if ( isset( $this->llm_set['set_api_url'] ) || ( '' !== $this->api_url && self::DEFAULT_API_URL !== $this->api_url ) ) {
+			$out .= "cmd {$this->name}:config set_api_url " . self::serialize_args( [ $this->api_url ] ) . "\n";
 		}
 		if ( '' !== $this->vault_id ) {
-			$out .= "cmd {$this->name}:config set_vault_id {$this->vault_id}\n";
+			$out .= "cmd {$this->name}:config set_vault_id " . self::serialize_args( [ $this->vault_id ] ) . "\n";
 		}
-		if ( self::DEFAULT_MODEL !== $this->model ) {
-			$out .= "cmd {$this->name}:config set_model {$this->model}\n";
+		if ( isset( $this->llm_set['set_model'] ) || self::DEFAULT_MODEL !== $this->model ) {
+			$out .= "cmd {$this->name}:config set_model " . self::serialize_args( [ $this->model ] ) . "\n";
 		}
-		if ( self::DEFAULT_FEATURE !== $this->feature ) {
-			$out .= "cmd {$this->name}:config set_feature {$this->feature}\n";
+		if ( isset( $this->llm_set['set_feature'] ) || self::DEFAULT_FEATURE !== $this->feature ) {
+			$out .= "cmd {$this->name}:config set_feature " . self::serialize_args( [ $this->feature ] ) . "\n";
 		}
 		foreach ( $this->profiles as $profile ) {
-			$out .= "cmd {$this->name}:config add_profile {$profile}\n";
+			$out .= "cmd {$this->name}:config add_profile " . self::serialize_args( [ $profile ] ) . "\n";
 		}
 		return $out;
 	}

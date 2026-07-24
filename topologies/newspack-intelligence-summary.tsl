@@ -1,4 +1,5 @@
 var num_partitions = 1
+include topic-probe
 make_node Consumer ingest:consumer <config:logs_dir>/ingest.p<partition> <config:offsets_dir>/ingest.p<partition> <config:deadletter_dir>/ingest.p<partition>
 cmd ingest:consumer:config set_line_mode true
 make_node Summarizer summarizer
@@ -6,9 +7,9 @@ cmd summarizer:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-a
 cmd summarizer:config set_vault_id AI-proxy
 cmd summarizer:config set_model gpt-oss-120b
 cmd summarizer:config set_feature newspack-intelligence
-cmd summarizer:config add_profile Engineers building WordPress publishing tools for Newspack.
-cmd summarizer:config add_profile Prioritize shipped releases, merged PRs that change behavior or APIs, and runtime/infra changes or incidents.
-cmd summarizer:config add_profile Deprioritize dependency bumps, docs typos, and cosmetic tweaks.
+cmd summarizer:config add_profile 'Engineers building WordPress publishing tools for Newspack.'
+cmd summarizer:config add_profile 'Prioritize shipped releases, merged PRs that change behavior or APIs, and runtime/infra changes or incidents.'
+cmd summarizer:config add_profile 'Deprioritize dependency bumps, docs typos, and cosmetic tweaks.'
 make_node Scorer scorer
 make_node Partition scored:partition <config:logs_dir>/scored.p<partition> <config:segment_size> <config:min_segments> <config:max_segments> <config:min_lifetime> <config:max_lifetime>
 cmd scored:partition:config void_warranty

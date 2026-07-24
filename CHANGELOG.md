@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`add_profile` takes the whole line.** The verb dispatch was a stale port
+  from the token-array migration reading only `$args[0]`, so an unquoted
+  multi-word profile stored just its first word (`Don't produce tables.` →
+  `Do`). All positional tokens now join with spaces, like `echo`.
+- **`dump_config` round-trips.** LLM-config verb args emit through
+  `Node::serialize_args()` (multi-word profiles come back single-quoted as
+  one token), and an explicitly-set value dumps even when it equals the
+  trait default — a pinned `set_model gpt-oss-120b` survives a future
+  default bump instead of silently vanishing from the dump.
+- **Topology profile lines are properly quoted** (double quotes, so
+  apostrophes survive the tokenizer and `<…>` still interpolates).
+
 ## [0.5.1] - 2026-07-21
 
 ### Fixed

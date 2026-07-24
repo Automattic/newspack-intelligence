@@ -1,4 +1,5 @@
 var num_partitions = 1
+include topic-probe
 make_node Github_Source github
 cmd github:config set_vault_id github
 cmd github:config add_repo Automattic/newspack-ads
