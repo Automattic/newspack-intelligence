@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-24
+
 ### Added
 - Substrate version handshake at boot: on a substrate older than 0.54.0 the
   plugin goes dormant with an admin notice (via the substrate's
@@ -15,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plugin — the stack deploys as a unit, so a missing API means too old.
 
 ### Changed
-- The release workflow pins the newspack-nodes checkout to the `v0.53.0` tag
+- The release workflow pins the newspack-nodes checkout to the `v0.54.0` tag
   instead of tracking `main` — bump the pin when adopting a newer substrate.
 
 ## [0.6.0] - 2026-07-24
