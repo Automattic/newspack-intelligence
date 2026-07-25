@@ -189,7 +189,6 @@ final class LinearSourceTest extends TestCase {
 	/** config() is protected — read it via reflection, matching SettingsSyncNodeTest's registry-access pattern. */
 	private function config_of( Linear_Source_Node $node ): array {
 		$method = new \ReflectionMethod( $node, 'config' );
-		$method->setAccessible( true );
 		return $method->invoke( $node );
 	}
 }
