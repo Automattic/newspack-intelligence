@@ -134,6 +134,11 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 		if ( ! \class_exists( '\Newspack_Nodes\Topology_Registry' ) ) {
 			return;
 		}
+		// Substrate handshake: dormant + notice below the floor (API is 0.54+).
+		if ( \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
+			&& ! \Newspack_Nodes\Bootstrap::version_at_least( '0.54.0', 'Newspack Intelligence' ) ) {
+			return;
+		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.
 		require_once __DIR__ . '/vendor/autoload.php';
 
