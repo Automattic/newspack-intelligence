@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`useInsightsGraph` mints through `Node.command()`.** The hand-built builder
+  called `markLocal()`, which marks LOCAL but declines to sign with no session.
+  Minting through the accumulated view gates on the session instead.
 - **`useInsightsGraph` actions hold for the session.** A click during the
   `/auth` round trip minted UNSIGNED and was refused; the action now fires on
   `ensureSession()`, guarded against a teardown mid-round-trip. Requires the

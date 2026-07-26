@@ -26,18 +26,7 @@
  */
 
 import { useCallback } from '@wordpress/element';
-import {
-	newMessage,
-	TYPE,
-	FROM,
-	TO,
-	ID,
-	VALUE,
-	TM_COMMAND,
-	Core,
-	markLocal,
-	ensureSession,
-} from '@newspack-nodes/runtime';
+import { TO, ID, Core, ensureSession } from '@newspack-nodes/runtime';
 
 import { useBatchedPoll } from '@newspack-nodes/shared/hooks/useBatchedPoll';
 import { addSliceFetcher } from '@newspack-nodes/shared/helpers/addSliceFetcher';
@@ -85,13 +74,13 @@ const SLICES = [
  * @return {Array} A 7-field positional Message.
  */
 function buildAction( verb, id ) {
-	const m = newMessage();
-	m[ TYPE ] = TM_COMMAND;
-	m[ FROM ] = ACC_VIEW;
+	// The accumulated view mints; TO/ID after (neither is signed).
+	const m = Core.node( ACC_VIEW )?.command( verb, [] ) ?? null;
+	if ( null === m ) {
+		return null; // unauthenticated; re-auth is under way
+	}
 	m[ TO ] = TARGET;
 	m[ ID ] = id;
-	m[ VALUE ] = { name: verb, arguments: [] };
-	markLocal( m );
 	return m;
 }
 
