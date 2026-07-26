@@ -25,6 +25,7 @@
 		"test:js:coverage": "jest --passWithNoTests --coverage --collectCoverageFrom='src/**/*.{js,jsx}' --coverageReporters=json-summary --coverageReporters=text"
 	},
 	"dependencies": {
+		"@noble/hashes": "^2.2.0",
 		"@wordpress/api-fetch": "^7.0.0",
 		"@wordpress/block-library": "^9.48.1",
 		"@wordpress/blocks": "^15.21.1",
