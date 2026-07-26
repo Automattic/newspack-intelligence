@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`useInsightsGraph` actions hold for the session.** A click during the
+  `/auth` round trip minted UNSIGNED and was refused; the action now fires on
+  `ensureSession()`, guarded against a teardown mid-round-trip. Requires the
+  matching newspack-nodes change.
+
 ### Changed
 - **`useInsightsGraph`'s command mint completes.** It built commands without
   marking them, so every first poll shipped unsigned and was refused. The poller

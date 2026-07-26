@@ -36,6 +36,7 @@ import {
 	TM_COMMAND,
 	Core,
 	markLocal,
+	ensureSession,
 } from '@newspack-nodes/runtime';
 
 import { useBatchedPoll } from '@newspack-nodes/shared/hooks/useBatchedPoll';
@@ -129,7 +130,12 @@ export function useInsightsGraph( opts = {} ) {
 			const id = makeOpId( prefix );
 			return new Promise( ( resolve, reject ) => {
 				view.replies.add( id, resolve, reject );
-				interpreter.fill( buildAction( verb, id ) );
+				// After the session lands: a click can beat /auth.
+				ensureSession().then( () => {
+					if ( interpreterRef.current === interpreter ) {
+						interpreter.fill( buildAction( verb, id ) );
+					}
+				} );
 			} );
 		},
 		[ interpreterRef ]
