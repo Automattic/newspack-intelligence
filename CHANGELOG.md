@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-07-26
+
 ### Fixed
 - **`useInsightsGraph` mints through `Node.command()`.** The hand-built builder
   called `markLocal()`, which marks LOCAL but declines to sign with no session.
