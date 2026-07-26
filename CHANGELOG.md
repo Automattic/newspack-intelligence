@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Test harness authenticates, polyfills `TextEncoder`, and transforms
+  `@noble/hashes`.** The substrate's emitters hold until a command session
+  exists, and its signer is ESM-only and needs `TextEncoder`, which jsdom lacks.
+  This plugin inlines that runtime and needed all three. Requires the matching
+  newspack-nodes change.
+
 ## [0.7.1] - 2026-07-24
 
 ### Changed

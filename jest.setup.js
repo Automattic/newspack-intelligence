@@ -1,3 +1,12 @@
+/**
+ * jsdom ships no TextEncoder; @noble/hashes (the substrate's command signer)
+ * needs one. Node's real implementation, so the suite exercises what the
+ * browser will. Mirrors newspack-nodes/jest.setup.js.
+ */
+const { TextEncoder, TextDecoder } = require( 'util' );
+global.TextEncoder = global.TextEncoder || TextEncoder;
+global.TextDecoder = global.TextDecoder || TextDecoder;
+
 /* eslint-env jest */
 // jest-dom custom matchers (toBeInTheDocument, etc.) for the React dashboard tests.
 import '@testing-library/jest-dom';
@@ -64,3 +73,22 @@ afterEach( () => {
 		throw captured[ 0 ];
 	}
 } );
+
+// @longform
+// The substrate's emitters hold until authenticated, and this plugin inlines
+// that runtime — so the harness authenticates too, or every poll test asserts
+// silence. Guarded on `window`: node-environment suites must not pull in the
+// browser runtime graph. Mirrors newspack-nodes/jest.setup.js.
+if ( 'undefined' !== typeof window ) {
+	const auth = require( '@newspack-nodes/runtime' );
+	beforeEach( async () => {
+		auth.forgetSession();
+		auth.__setAuthFetch( async () => ( {
+			handle: 'e2e11111e2e22222e2e33333e2e44444',
+			key: 'jest-harness-session-key',
+			expires_in: 3600,
+			now: Math.floor( Date.now() / 1000 ),
+		} ) );
+		await auth.ensureSession();
+	} );
+}
