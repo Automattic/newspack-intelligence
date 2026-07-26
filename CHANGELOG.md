@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.7.2] - 2026-07-26
 
+### Changed
+- **Release builds against newspack-nodes 2.0.0.** The workflow pinned an older
+  substrate tag, so the archive was compiled against a runtime that predates the
+  command-session exports this version needs.
+
 ### Fixed
 - **`useInsightsGraph` mints through `Node.command()`.** The hand-built builder
   called `markLocal()`, which marks LOCAL but declines to sign with no session.
