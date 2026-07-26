@@ -35,7 +35,9 @@ import {
 	VALUE,
 	TM_COMMAND,
 	Core,
+	markLocal,
 } from '@newspack-nodes/runtime';
+
 import { useBatchedPoll } from '@newspack-nodes/shared/hooks/useBatchedPoll';
 import { addSliceFetcher } from '@newspack-nodes/shared/helpers/addSliceFetcher';
 import { makeOpId } from '@newspack-nodes/shared/hooks/useDashboardGraph';
@@ -88,6 +90,7 @@ function buildAction( verb, id ) {
 	m[ TO ] = TARGET;
 	m[ ID ] = id;
 	m[ VALUE ] = { name: verb, arguments: [] };
+	markLocal( m );
 	return m;
 }
 
