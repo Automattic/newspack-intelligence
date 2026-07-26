@@ -29,6 +29,8 @@ import {
 	TM_RESPONSE,
 	TM_ERROR,
 	Core,
+	forgetSession,
+	__setAuthFetch,
 } from '@newspack-nodes/runtime';
 import { useInsightsGraph } from '../useInsightsGraph';
 
@@ -254,6 +256,47 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 			name: 'generate',
 			arguments: [],
 		} );
+	} );
+
+	/**
+	 * An action fired before /auth resolves would mint UNSIGNED and be refused.
+	 * The dashboard mounts and the user can click immediately.
+	 */
+	test( 'signs generate() even when the session lands late', async () => {
+		forgetSession();
+		let landAuth;
+		const inFlight = new Promise( ( resolve ) => {
+			landAuth = resolve;
+		} );
+		__setAuthFetch( () =>
+			inFlight.then( () => ( {
+				handle: 'ffff6666ffff6666ffff6666ffff6666',
+				key: 'key-insights-late-auth',
+				expires_in: 3600,
+				now: 1771000000,
+			} ) )
+		);
+		const client = makeFakeClient( {
+			...emptyPayloads,
+			generate: JSON.stringify( { regenerating: true, workers: 1 } ),
+		} );
+		const { result } = renderHook( () =>
+			useInsightsGraph( { commandClient: client } )
+		);
+		await act( async () => {} );
+
+		// Click while /auth is still in flight — the real race.
+		await act( async () => {
+			const pending = result.current.generate();
+			landAuth();
+			await pending;
+		} );
+
+		const genMsgs = client.batches
+			.flat()
+			.filter( ( m ) => 'generate' === m[ VALUE ]?.name );
+		expect( genMsgs.length ).toBe( 1 );
+		expect( genMsgs[ 0 ][ VALUE ].auth ).toBeDefined();
 	} );
 
 	test( 'generate() rejects when a TM_ERROR reply pivots back', async () => {
