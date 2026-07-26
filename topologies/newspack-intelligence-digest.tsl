@@ -18,3 +18,4 @@ cmd digest:log:config void_warranty
 connect_node scored:consumer digest
 connect_node digest digest:tee
 connect_node digest:tee digest:log
+secure

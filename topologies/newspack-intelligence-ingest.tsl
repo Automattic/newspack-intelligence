@@ -18,3 +18,4 @@ cmd ingest:partition:config void_warranty
 connect_node github ingest:partition
 connect_node linear ingest:partition
 connect_node feed ingest:partition
+secure

@@ -21,3 +21,4 @@ cmd gate:log:config void_warranty
 connect_node gate:consumer gate
 connect_node gate gate:tojson
 connect_node gate:tojson gate:log
+secure

@@ -16,3 +16,4 @@ cmd scored:partition:config void_warranty
 connect_node ingest:consumer summarizer
 connect_node summarizer scorer
 connect_node scorer scored:partition
+secure

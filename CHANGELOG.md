@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Every topology declares `secure`.** The ratchet (newspack-nodes 2.1.0) drops
+  a class of verb per level; level 1 removes `make_node`, so a wire-arrived
+  command can no longer add nodes to a running graph. It sits on the LAST line
+  of each file because it disables the very verb the rest of the file uses —
+  declared any earlier it would refuse the graph it exists to protect. Each
+  sub-topology carries its own, since `include` strips the declaration from an
+  included file and the four are separately activatable.
+
 ## [0.7.2] - 2026-07-26
 
 ### Changed
