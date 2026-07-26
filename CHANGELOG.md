@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`useInsightsGraph`'s command mint completes.** It built commands without
+  marking them, so every first poll shipped unsigned and was refused. The poller
+  retries, so it self-healed once the session landed — noisy, not broken.
 - **Test harness authenticates, polyfills `TextEncoder`, and transforms
   `@noble/hashes`.** The substrate's emitters hold until a command session
   exists, and its signer is ESM-only and needs `TextEncoder`, which jsdom lacks.

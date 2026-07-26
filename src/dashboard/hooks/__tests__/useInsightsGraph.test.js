@@ -250,7 +250,7 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 		expect( genMsgs[ 0 ][ ID ] ).toBeTruthy();
 		// Token-array command contract: arguments is an argv list, never the
 		// retired joined-string form.
-		expect( genMsgs[ 0 ][ VALUE ] ).toEqual( {
+		expect( genMsgs[ 0 ][ VALUE ] ).toMatchObject( {
 			name: 'generate',
 			arguments: [],
 		} );
