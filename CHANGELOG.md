@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-07-27
+
+### Changed
+- **Release builds against newspack-nodes 2.2.3.** The pin sat at 2.0.0, which
+  predates the `secure` ratchet the topologies below now declare, and the shell
+  and command-session work in 2.1–2.2 that the inlined runtime carries.
+
 ### Security
 - **Every topology declares `secure`.** The ratchet (newspack-nodes 2.1.0) drops
   a class of verb per level; level 1 removes `make_node`, so a wire-arrived
