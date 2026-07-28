@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Release builds against newspack-nodes 2.2.4.** The inlined runtime now uses
+  ownership-fenced SSE slot leases and reports the endpoint's disconnect reason,
+  preventing a stale connection from releasing a successor's slot while making
+  future unexplained stream endings distinguishable from lease loss.
+
 ## [0.7.3] - 2026-07-27
 
 ### Changed
