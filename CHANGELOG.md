@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Bundles newspack-nodes v2.2.9.** Dashboard first polls now survive
   navigation-time authentication and visibility races instead of remaining
   stalled until a later reload or focus transition.
+- Updated the release workflow to checkout and Node setup Actions v7.
 
 ## [0.7.5] - 2026-07-28
 
