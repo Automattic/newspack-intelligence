@@ -18,7 +18,9 @@ module.exports = createJestConfig( {
 	extraMappers: {
 		'^d3$': path.resolve( __dirname, 'node_modules/d3' ),
 	},
+	// marked rides in via @wordpress/blocks' markdown-converter and ships
+	// ESM-only, so it joins the opt-out alongside d3/uuid/@noble.
 	transformIgnorePatterns: [
-		'node_modules/(?!(@noble/.*|d3|d3-.*|internmap|delaunator|robust-predicates|uuid)/)',
+		'node_modules/(?!(@noble/.*|d3|d3-.*|internmap|delaunator|robust-predicates|uuid|marked)/)',
 	],
 } );
