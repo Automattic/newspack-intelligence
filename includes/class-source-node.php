@@ -7,9 +7,13 @@
  * interface) and `config()` (the per-connector Settings read). On a TICK request
  * (TM_REQUEST — the runtime trigger, NOT a TM_COMMAND verb) the base fetches,
  * dedups by item `id` against the ids it has already emitted, and emits each NEW
- * item as a fire-and-forget TM_STRUCT. The emitted-id set is bounded and
- * round-trips through save_state/restore_state so a respawned worker doesn't
- * re-emit what the previous incarnation already sent.
+ * item as a fire-and-forget TM_STRUCT. The emitted-id set is bounded (MAX_SEEN,
+ * oldest evicted first) and in-memory only — it does not survive a respawn, so a
+ * fresh worker re-emits whatever its next fetch still returns. Digest_Builder_Node
+ * dedups on the same id, so the digest stays correct; the summarize and score
+ * stages sit upstream of that dedup and pay for the repeat. A TICK-driven source
+ * has no Consumer offsetlog to co-commit a snapshot into, which is why the
+ * `add_snapshot_node` route Digest_Builder uses is unavailable here.
  *
  * Abstract — never make_node'd directly (no node_schema here); each concrete
  * connector declares its own Source category + TICK request.
