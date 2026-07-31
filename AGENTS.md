@@ -18,7 +18,7 @@ items → LLM summarize+score → durable digest → markdown + WordPress draft 
   `superpowers:test-driven-development` BEFORE writing code.
 - **`/code-review` before every commit** (main Claude only; subagents never commit).
 - Conventional commits; update `CHANGELOG.md` `[Unreleased]` on every behavior change.
-- Never hand-edit version headers — use `dndocker/tools/bump-intelligence-version.sh`.
+- Never hand-edit version headers — use `./scripts/bump-version.sh`.
 - Shared React lives in `newspack-nodes/src/shared` only, consumed via the
   `@newspack-nodes/shared` build alias — never a per-plugin `src/shared/` copy.
 
@@ -40,6 +40,20 @@ install --optimize-autoloader`) or `composer dump-autoload -o`.
 Deploy (build the zip first — the setup script installs the release zip, it does
 not build): `npm run release:archive` then
 `docker exec eve-pyrobase1-1 /services/pyrobase/setup/newspack-intelligence.sh`.
+
+### Git hooks
+
+Hooks are the tracked files in `scripts/` (`pre-commit`, `commit-msg`, `pre-push`),
+reached via `core.hooksPath`, which `composer install` sets:
+
+```bash
+git config core.hooksPath scripts    # what composer's post-install-cmd runs
+```
+
+A clone that has never run `composer install` has no hooks at all. `pre-commit`
+first runs `scripts/sync-shared-scripts.sh`, which refreshes this plugin's copy
+of the shared tooling from `../newspack-nodes/scripts/` when that sibling is
+checked out — edit shared scripts THERE, not here.
 
 ## Architecture (see the spec for detail)
 
