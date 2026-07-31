@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-07-30
+
+### Fixed
+
+- **Bundles newspack-nodes v2.2.10.** The release workflow still pinned the
+  v2.2.9 substrate, so v0.7.7 shipped the pre-rewrite graph stylesheet — the
+  very styles that release set out to load.
+
 ## [0.7.7] - 2026-07-30
 
 ### Changed
