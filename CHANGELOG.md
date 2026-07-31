@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The embedded Publisher Insights graph/debug overlay declares its stylesheet
+  dependencies.** The dashboard asset now loads `wp-components` and
+  `newspack-nodes-graph` for that substrate surface.
+
 ## [0.7.6] - 2026-07-29
 
 ### Changed

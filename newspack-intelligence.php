@@ -70,7 +70,7 @@ function enqueue_insights_assets( string $hook = '' ): void {
 			'dir'              => __DIR__ . '/build/dashboard',
 			'url'              => \plugins_url( 'build/dashboard', __FILE__ ),
 			'version_fallback' => \NEWSPACK_INTELLIGENCE_VERSION,
-			'style_deps'       => [],
+			'style_deps'       => [ 'wp-components', 'newspack-nodes-graph' ],
 		]
 	);
 }
