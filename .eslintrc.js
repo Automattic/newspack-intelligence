@@ -49,7 +49,7 @@ module.exports = {
 		},
 		{
 			// Build/CLI scripts run under Node; console logging is fine.
-			files: [ 'scripts/**/*.mjs' ],
+			files: [ 'scripts/**/*.@(js|mjs)' ],
 			env: { node: true },
 			rules: {
 				'no-console': 'off',
