@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Source_Node`'s docblock promised a durability guarantee that does not exist.**
+  It claimed the emitted-id set round-trips through `save_state`/`restore_state`;
+  neither method is defined on that class, and `git log -S` shows neither ever was.
+  The set is in-memory and bounded, so a respawned worker re-emits whatever its
+  next fetch still returns. `Digest_Builder_Node` dedups on the same id, so the
+  digest stays correct — but the summarize and score stages sit upstream of that
+  dedup and pay for the repeat. A TICK-driven source has no Consumer offsetlog to
+  co-commit a snapshot into, which is why `add_snapshot_node` is unavailable here.
+
 ## [0.7.12] - 2026-07-31
 
 ### Changed
