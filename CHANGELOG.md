@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.14] - 2026-08-02
+
 ### Added
 
 - **`npm run lint:deadcode:js` — the JS half of the dead-code audit.** Mirrors
