@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-08-02
+
+### Fixed
+
+- **Rebuilt against substrate v2.4.2**, which keeps a `Request` node alive while
+  any hook still holds it. `useRequestNode` is inlined into this bundle, so
+  0.8.0 shipped the copy where one hook's unmount removed a node another still
+  held. No source change here; the pin is the fix.
+
 ## [0.8.0] - 2026-08-02
 
 ### Changed
