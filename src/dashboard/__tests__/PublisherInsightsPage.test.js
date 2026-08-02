@@ -8,7 +8,7 @@
 import { render, screen } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 
-// Page-hidden: no poll runs; mount-poll's fetch rejects in jsdom, swallowed.
+// Page-hidden: no poll runs beyond the mount one, which the wire answers.
 jest.mock( '@newspack-nodes/shared/hooks/usePageVisibility', () => ( {
 	__esModule: true,
 	default: () => false,
@@ -23,9 +23,15 @@ jest.mock( '@newspack-nodes/debug-overlay', () => ( {
 	},
 } ) );
 
+import { installFakeCommandWire } from '@newspack-nodes/shared/test-utils/fakeCommandWire';
 import PublisherInsightsPage from '../PublisherInsightsPage';
 
-beforeEach( () => Core.reset() );
+beforeEach( () => {
+	Core.reset();
+	// The mount poll reaches the wire; answer it rather than letting the POST
+	// fail, which now routes a TM_ERROR back and re-renders outside act().
+	installFakeCommandWire( () => null );
+} );
 
 describe( 'PublisherInsightsPage', () => {
 	it( 'renders the Publisher Insights heading', () => {

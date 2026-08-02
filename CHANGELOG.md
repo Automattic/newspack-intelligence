@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`generate` and `collect` each mint from their own `Request` node.** They used
+  to stamp an op-id into `message[ID]` and have `accumulated:view` settle the
+  match — routing that had already happened, since a command is minted FROM the
+  node that wants the answer and the server replies `TO = FROM`. Two nodes, two
+  replies, nothing to tell apart. `accumulated:view` is a slice publisher again.
+
 ## [0.7.14] - 2026-08-02
 
 ### Added
