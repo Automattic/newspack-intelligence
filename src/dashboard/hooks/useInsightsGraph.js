@@ -63,7 +63,7 @@ const SLICES = [
 
 /**
  * @param {Object} [opts]               Options (test seams).
- * @param {Object} [opts.commandClient] CommandClient seam assigned to `_http.client`.
+ * @param {Object} [opts.commandClient] transport seam assigned to `_http.client`.
  * @param {number} [opts.intervalMs]    Poll cadence in ms (default: every router tick).
  * @return {{ generate: () => Promise<*>, collect: () => Promise<*> }} On-demand action verbs.
  */

@@ -47,7 +47,7 @@ function setVisibility( state ) {
 	document.dispatchEvent( new Event( 'visibilitychange' ) );
 }
 
-// Fake CommandClient: postBatch records each batch and echoes a reply via FROM.
+// Fake transport: postBatch records each batch and echoes a reply via FROM.
 function makeFakeClient( payloadByVerb = {}, replyTypeByVerb = {} ) {
 	const client = {
 		batches: [],

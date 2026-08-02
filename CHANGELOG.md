@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`CommandClient` is gone from the substrate**, folded into `HttpOut`. The
+  `_http.client` seam is unchanged and duck-typed, so the dashboard's fake still
+  works; production no longer constructs one.
+
 - **`generate` and `collect` each mint from their own `Request` node.** They used
   to stamp an op-id into `message[ID]` and have `accumulated:view` settle the
   match — routing that had already happened, since a command is minted FROM the
