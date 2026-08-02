@@ -30,7 +30,7 @@ import { TO, ID, Core, ensureSession } from '@newspack-nodes/runtime';
 
 import { useBatchedPoll } from '@newspack-nodes/shared/hooks/useBatchedPoll';
 import { addSliceFetcher } from '@newspack-nodes/shared/helpers/addSliceFetcher';
-import { makeOpId } from '@newspack-nodes/shared/hooks/useDashboardGraph';
+import makeOpId from '@newspack-nodes/shared/utils/makeOpId';
 import '../nodes/register';
 
 // Server-side CI mount; Fetchers and action verbs target it via _shell/_http.
