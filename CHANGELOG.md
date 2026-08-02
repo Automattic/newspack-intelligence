@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`npm run lint:deadcode:js` — the JS half of the dead-code audit.** Mirrors
+  the substrate's `knip.json`: `__tests__` out of `project`, knip's jest plugin
+  off so a module reachable only from its own test reads as dead, and the
+  `@newspack-nodes/*` aliases resolved through the sibling checkout. Opt-in, not
+  in the push gate.
+
+- **`.prettierrc.js`.** Every sibling plugin loads `@wordpress/prettier-config`
+  through this file; this one had the dependency installed and nothing wiring it
+  up, so `npm run format` ran on wp-prettier's defaults and fought eslint. Found
+  by knip reporting the dependency as unused.
+
+### Removed
+
+- **`@xyflow/react` and `d3-flame-graph`.** Declared but imported nowhere in
+  this plugin or the substrate. Found by knip.
+
 ### Changed
 
 - **The build takes ONE substrate override, `NEWSPACK_NODES_SRC`.** It replaces
