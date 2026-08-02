@@ -14,7 +14,6 @@
  * `_http` lock/flush, so all three fetcher commands batch into ONE HttpOut POST.
  * Beyond the poll, the hook exposes the awaited `generate`/`collect` action verbs
  * the dashboard buttons call; their reply pivots straight back to accumulated:view,
- * whose PendingReplies settles the Promise.
  */
 
 import { renderHook, act } from '@testing-library/react';
@@ -226,7 +225,7 @@ describe( 'useInsightsGraph — batched poll', () => {
 } );
 
 describe( 'useInsightsGraph — awaited action verbs', () => {
-	test( 'generate() fires a `generate` command (FROM=accumulated:view) and resolves to its ack payload', async () => {
+	test( 'generate() mints from its own node and resolves to its ack payload', async () => {
 		const client = makeFakeClient( {
 			...emptyPayloads,
 			generate: JSON.stringify( { regenerating: true, workers: 1 } ),
@@ -248,8 +247,9 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 			.flat()
 			.filter( ( m ) => 'generate' === m[ VALUE ]?.name );
 		expect( genMsgs.length ).toBe( 1 );
-		expect( genMsgs[ 0 ][ FROM ] ).toBe( ACC_VIEW );
-		expect( genMsgs[ 0 ][ ID ] ).toBeTruthy();
+		expect( genMsgs[ 0 ][ FROM ] ).toBe( 'insights:generate' );
+		// Addressed, not correlated.
+		expect( genMsgs[ 0 ][ ID ] ).toBe( '' );
 		// Token-array command contract: arguments is an argv list, never the
 		// retired joined-string form.
 		expect( genMsgs[ 0 ][ VALUE ] ).toMatchObject( {
@@ -316,7 +316,7 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 		} );
 	} );
 
-	test( 'collect() fires a `collect` command (FROM=accumulated:view) and resolves to its payload', async () => {
+	test( 'collect() mints from its own node and resolves to its payload', async () => {
 		const client = makeFakeClient( {
 			...emptyPayloads,
 			collect: JSON.stringify( { collecting: 3, workers: 1 } ),
@@ -338,6 +338,8 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 			.flat()
 			.filter( ( m ) => 'collect' === m[ VALUE ]?.name );
 		expect( collectMsgs.length ).toBe( 1 );
-		expect( collectMsgs[ 0 ][ FROM ] ).toBe( ACC_VIEW );
+		expect( collectMsgs[ 0 ][ FROM ] ).toBe( 'insights:collect' );
+		// Addressed, not correlated.
+		expect( collectMsgs[ 0 ][ ID ] ).toBe( '' );
 	} );
 } );

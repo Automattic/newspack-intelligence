@@ -19,18 +19,16 @@
  * Beyond the poll the hook exposes the awaited `generate`/`collect` action verbs
  * the dashboard buttons call: each fires a TM_COMMAND (FROM=accumulated:view) and
  * stashes a `{ resolve, reject }` under its message[ID] in that view's
- * PendingReplies; the reply pivots straight back to accumulated:view, whose base
  * SliceViewNode.fill() settles the matching Promise before the slice path. Both
  * resolve to the verb's raw ack payload ({collecting,workers} / {regenerating,workers}
  * / {error}); the new digest from a regenerate arrives via the poll, not the reply.
  */
 
 import { useCallback } from '@wordpress/element';
-import { TO, ID, Core, ensureSession } from '@newspack-nodes/runtime';
 
 import { useBatchedPoll } from '@newspack-nodes/shared/hooks/useBatchedPoll';
 import { addSliceFetcher } from '@newspack-nodes/shared/helpers/addSliceFetcher';
-import makeOpId from '@newspack-nodes/shared/utils/makeOpId';
+import useRequestNode from '@newspack-nodes/shared/hooks/useRequestNode';
 import '../nodes/register';
 
 // Server-side CI mount; Fetchers and action verbs target it via _shell/_http.
@@ -64,34 +62,13 @@ const SLICES = [
 ];
 
 /**
- * Build a TM_COMMAND for an action verb: TO=`_shell/_http/insights` so the router
- * peels `_shell`/`_http` and HttpOut POSTs the bare command to the `insights`
- * server node; FROM=`accumulated:view` is the reply pivot (the CI replies TO=FROM),
- * landing the ack on the accumulated view that holds the PendingReplies registry.
- *
- * @param {string} verb The CI action verb (`generate` / `collect`).
- * @param {string} id   Correlator stamped into message[ID].
- * @return {Array} A 7-field positional Message.
- */
-function buildAction( verb, id ) {
-	// The accumulated view mints; TO/ID after (neither is signed).
-	const m = Core.node( ACC_VIEW )?.command( verb, [] ) ?? null;
-	if ( null === m ) {
-		return null; // unauthenticated; re-auth is under way
-	}
-	m[ TO ] = TARGET;
-	m[ ID ] = id;
-	return m;
-}
-
-/**
  * @param {Object} [opts]               Options (test seams).
  * @param {Object} [opts.commandClient] CommandClient seam assigned to `_http.client`.
  * @param {number} [opts.intervalMs]    Poll cadence in ms (default: every router tick).
  * @return {{ generate: () => Promise<*>, collect: () => Promise<*> }} On-demand action verbs.
  */
 export function useInsightsGraph( opts = {} ) {
-	const { interpreterRef } = useBatchedPoll( {
+	useBatchedPoll( {
 		build: ( { interpreter, tee } ) =>
 			SLICES.forEach( ( slice ) =>
 				addSliceFetcher( interpreter, {
@@ -106,37 +83,17 @@ export function useInsightsGraph( opts = {} ) {
 		intervalMs: opts.intervalMs,
 	} );
 
-	// Awaited verb: stash pending Promise under the ID, fire, resolve on reply.
-	const awaitVerb = useCallback(
-		( verb, prefix ) => {
-			const interpreter = interpreterRef.current;
-			const view = Core.node( ACC_VIEW );
-			if ( ! interpreter || ! view || ! view.replies ) {
-				return Promise.reject(
-					new Error( 'insights graph not ready' )
-				);
-			}
-			const id = makeOpId( prefix );
-			return new Promise( ( resolve, reject ) => {
-				view.replies.add( id, resolve, reject );
-				// After the session lands: a click can beat /auth.
-				ensureSession().then( () => {
-					if ( interpreterRef.current === interpreter ) {
-						interpreter.fill( buildAction( verb, id ) );
-					}
-				} );
-			} );
-		},
-		[ interpreterRef ]
-	);
+	// One node per awaited action; each reply is addressed back to it.
+	const generateNode = useRequestNode( `${ SERVER }:generate`, SERVER );
+	const collectNode = useRequestNode( `${ SERVER }:collect`, SERVER );
 
 	const generate = useCallback(
-		() => awaitVerb( 'generate', 'insights-gen' ),
-		[ awaitVerb ]
+		() => generateNode( 'generate' ),
+		[ generateNode ]
 	);
 	const collect = useCallback(
-		() => awaitVerb( 'collect', 'insights-collect' ),
-		[ awaitVerb ]
+		() => collectNode( 'collect' ),
+		[ collectNode ]
 	);
 
 	return { generate, collect };
