@@ -17,7 +17,7 @@ import './styles/insights.scss';
  * light surfaces, a Cobalt accent, Inter, laid out in flow within wp-admin.
  *
  * @param {Object}   props
- * @param {Object}   [props.commandClient]     CommandClient seam forwarded to the hook (tests).
+ * @param {Object}   [props.commandClient]     Transport seam forwarded to the hook (tests).
  * @param {number}   [props.intervalMs]        Poll cadence in ms forwarded to the hook.
  * @param {Function} [props.createDraft]       REST-call seam forwarded to AccumulatedPanel (tests).
  * @param {Function} [props.markdownToContent] Markdown→block-markup seam forwarded to AccumulatedPanel (tests).

@@ -4,7 +4,7 @@
  * (useInsightsGraph: Timer → Tee → three Fetchers, ONE batched POST per tick) and
  * renders the three per-slice widgets (SourceCounts / TopTable / AccumulatedPanel),
  * each reading ITS OWN view node via useNodeState. No god view node, no god
- * `insights` command. Here we inject a fake CommandClient whose three slice replies
+ * `insights` command. Here we inject a fake transport whose three slice replies
  * carry a known model so the graph fills the three views and the dashboard renders.
  */
 
@@ -34,7 +34,7 @@ import PublisherInsights from '../PublisherInsights';
 const ROUTER = '_router';
 const DIGEST = '# Sprint digest\n\n- Big news shipped';
 
-// A fake CommandClient: postBatch echoes a per-verb reply pivoted via FROM.
+// A fake transport: postBatch echoes a per-verb reply pivoted via FROM.
 function makeClient( payloadByVerb ) {
 	return {
 		postBatch( messages ) {
