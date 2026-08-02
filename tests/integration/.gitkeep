@@ -1,0 +1,3 @@
+Integration suite, declared in phpunit.xml and pending its first test.
+Git cannot track an empty directory, so without this file the suite fails
+to resolve and phpunit exits 2 on any fresh checkout.
