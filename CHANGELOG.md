@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The build takes ONE substrate override, `NEWSPACK_NODES_SRC`.** It replaces
+  four independent ones — `NEWSPACK_NODES_RUNTIME`, `_DEBUG_OVERLAY`, `_SHARED`,
+  `_BUILD_KIT` — which all named paths inside the same directory. Every alias and
+  the build-kit path now derive from that one base via the substrate's
+  `build-kit/alias-map.js`, so a new alias needs no workflow change.
+
+  That enumeration is what made `ERR_MODULE_NOT_FOUND` releases possible: omit
+  any single variable and the build fell back to a nonexistent sibling path.
+  Setting a retired name now fails immediately and names it, rather than being
+  silently ignored — a stale override that does nothing is how a release builds
+  against the wrong checkout and still goes green. `release.yml` updated to match.
+
+  Build output is byte-identical, verified by rebuilding with only `build.mjs`
+  varying.
+
 ## [0.7.13] - 2026-07-31
 
 ### Security
