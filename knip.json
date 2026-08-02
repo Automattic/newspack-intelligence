@@ -1,0 +1,34 @@
+{
+	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"entry": [ "src/*/index.js", "scripts/*.{js,mjs}" ],
+	"project": [
+		"src/**/*.js",
+		"!src/**/__tests__/**",
+		"!src/**/__mocks__/**",
+		"!src/test-helpers/**"
+	],
+	"paths": {
+		"@newspack-nodes/runtime": [ "../newspack-nodes/src/runtime/index.js" ],
+		"@newspack-nodes/shared/*": [ "../newspack-nodes/src/shared/*" ],
+		"@newspack-nodes/shared": [ "../newspack-nodes/src/shared/index.js" ],
+		"@newspack-nodes/debug-overlay": [
+			"../newspack-nodes/src/debug-overlay/DebugOverlay.js"
+		]
+	},
+	"ignoreBinaries": [ "php", "phpcs", "phpcbf", "shellcheck", "wp" ],
+	"ignoreDependencies": [
+		"@commitlint/cli",
+		"lint-staged",
+		"postcss-scss",
+		"babel-jest",
+		"jest-environment-jsdom",
+		"@testing-library/jest-dom",
+		"@testing-library/react",
+		"@wordpress/components",
+		"@wordpress/icons",
+		"d3",
+		"@noble/hashes",
+		"@babel/parser"
+	],
+	"jest": false
+}
