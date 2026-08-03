@@ -16,7 +16,7 @@ cmd gate:config set_model gpt-oss-120b
 cmd gate:config set_feature newspack-intelligence
 cmd gate:config set_config_version newspack_clients.csv
 make_node Struct_To_JSON gate:tojson
-make_node Log gate:log <config:logs_dir>/gate-decisions.jsonl 1 2 7 0 0
+make_node Log gate:log <config:logs_dir>/gate-decisions/gate-decisions.jsonl 1 2 7 0 0
 cmd gate:log:config void_warranty
 connect_node gate:consumer gate
 connect_node gate gate:tojson
