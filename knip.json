@@ -1,6 +1,9 @@
 {
 	"$schema": "https://unpkg.com/knip@6/schema.json",
-	"entry": [ "src/*/index.js", "scripts/*.{js,mjs}" ],
+	"entry": [
+		"src/*/index.js",
+		"scripts/*.{js,mjs}"
+	],
 	"project": [
 		"src/**/*.js",
 		"!src/**/__tests__/**",
@@ -8,14 +11,26 @@
 		"!src/test-helpers/**"
 	],
 	"paths": {
-		"@newspack-nodes/runtime": [ "../newspack-nodes/src/runtime/index.js" ],
-		"@newspack-nodes/shared/*": [ "../newspack-nodes/src/shared/*" ],
-		"@newspack-nodes/shared": [ "../newspack-nodes/src/shared/index.js" ],
+		"@newspack-nodes/runtime": [
+			"../newspack-nodes/src/runtime/index.js"
+		],
+		"@newspack-nodes/shared/*": [
+			"../newspack-nodes/src/shared/*"
+		],
+		"@newspack-nodes/shared": [
+			"../newspack-nodes/src/shared/index.js"
+		],
 		"@newspack-nodes/debug-overlay": [
 			"../newspack-nodes/src/debug-overlay/DebugOverlay.js"
 		]
 	},
-	"ignoreBinaries": [ "php", "phpcs", "phpcbf", "shellcheck", "wp" ],
+	"ignoreBinaries": [
+		"php",
+		"phpcs",
+		"phpcbf",
+		"shellcheck",
+		"wp"
+	],
 	"ignoreDependencies": [
 		"@commitlint/cli",
 		"lint-staged",
@@ -30,5 +45,8 @@
 		"@noble/hashes",
 		"@babel/parser"
 	],
-	"jest": false
+	"jest": false,
+	"tags": [
+		"-@testonly"
+	]
 }

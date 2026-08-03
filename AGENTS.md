@@ -28,7 +28,7 @@ items → LLM summarize+score → durable digest → markdown + WordPress draft 
 composer install && npm install
 npm run build
 npm run lint:js && npm run lint:php && npm run lint:phpstan && npm run lint:scss
-npm run lint:deadcode:js                  # opt-in knip audit (see caveat below)
+npm run lint:deadcode:js                  # knip; GATED in pre-commit (caveat below)
 npx jest                                  # JS (local)
 docker exec -u bend eve-pyrobase1-1 bash -c \
   'cd /services/pyrobase/sources/newspack-intelligence/tests && ../vendor/bin/phpunit'   # PHP (container, from /services)
@@ -38,7 +38,9 @@ After adding/renaming a Node class, regenerate the classmap (`make_node` and
 the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
-`lint:deadcode:js` (knip) is opt-in, not part of the gate. Most findings are
+`lint:deadcode:js` (knip) runs in pre-commit on staged JS. Tests are excluded
+as consumers, so an export only its test imports reads as unused — mark it
+`@testonly` in the docblock. Most findings are
 public API or test seams, not real dead code — verify every call path first.
 knip's jest plugin is off, so a module reachable only from its own test reads as
 dead, the same rule phpstan-deadcode applies on the PHP side. knip also cannot
