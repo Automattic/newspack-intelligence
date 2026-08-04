@@ -129,10 +129,10 @@ describe( 'useInsightsGraph — graph wiring', () => {
 		await act( async () => {} );
 		const path = `${ SHELL }/${ HTTP }/insights`;
 		expect( Core.node( 'fetch-counts' ).receiver ).toBe( 'countsIn' );
-		expect( Core.node( 'fetch-counts' ).command ).toBe( 'counts' );
+		expect( Core.node( 'fetch-counts' ).verb ).toBe( 'counts' );
 		expect( Core.node( 'fetch-counts' ).target ).toBe( path );
-		expect( Core.node( 'fetch-top' ).command ).toBe( 'top' );
-		expect( Core.node( 'fetch-acc' ).command ).toBe( 'accumulated' );
+		expect( Core.node( 'fetch-top' ).verb ).toBe( 'top' );
+		expect( Core.node( 'fetch-acc' ).verb ).toBe( 'accumulated' );
 	} );
 } );
 
