@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.6] - 2026-08-04
+
+### Changed
+
+- **Substrate pinned to newspack-nodes v2.8.0**, up from v2.4.6 — four minor
+  versions of shared code the bundle had been building against a stale tag.
+- The newspaper-order method gate (`reorder-node-methods --check`) runs in
+  lint-staged, matching the substrate.
+
+### Fixed
+
+- Followed the substrate's `Fetcher` field rename: the configured command name
+  is `verb`, because the old spelling shadowed the inherited `Node#command()`
+  minter and made `.command` a string on that one class.
+
 ## [0.8.5] - 2026-08-03
 
 ### Changed
