@@ -33,6 +33,9 @@ import '../nodes/register';
 
 // Server-side CI mount; Fetchers and action verbs target it via _shell/_http.
 const SERVER = 'insights';
+// Digest slices change slowly; the cadence is explicit, never inferred.
+const DEFAULT_INTERVAL_MS = 30000;
+
 const TARGET = `_shell/_http/${ SERVER }`;
 const ACC_VIEW = 'accumulated:view';
 
@@ -64,7 +67,7 @@ const SLICES = [
 /**
  * @param {Object} [opts]               Options (test seams).
  * @param {Object} [opts.commandClient] transport seam assigned to `_http.client`.
- * @param {number} [opts.intervalMs]    Poll cadence in ms (default: every router tick).
+ * @param {number} [opts.intervalMs]    Poll cadence in ms; defaults to DEFAULT_INTERVAL_MS. Never falls through to the router tick — that polled at 1Hz.
  * @return {{ generate: () => Promise<*>, collect: () => Promise<*> }} On-demand action verbs.
  */
 export function useInsightsGraph( opts = {} ) {
@@ -80,7 +83,7 @@ export function useInsightsGraph( opts = {} ) {
 		timerName: 'insights:timer',
 		teeName: 'insights:tee',
 		commandClient: opts.commandClient,
-		intervalMs: opts.intervalMs,
+		intervalMs: opts.intervalMs ?? DEFAULT_INTERVAL_MS,
 	} );
 
 	// One node per awaited action; each reply is addressed back to it.
