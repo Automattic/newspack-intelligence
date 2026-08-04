@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The insights poll declares its own cadence.** `useInsightsGraph` forwarded
+  `opts.intervalMs` straight through, so a caller that omitted it — which
+  `PublisherInsights` does unless its own prop is supplied — fell through to
+  `useBatchedPoll`'s silent default of every router tick, i.e. 1Hz for a digest
+  that changes on the order of minutes. It now defaults to 30s.
+
 ## [0.8.6] - 2026-08-04
 
 ### Changed
