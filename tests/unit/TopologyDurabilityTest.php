@@ -15,8 +15,8 @@
 
 namespace Newspack_Intelligence\Tests\Unit;
 
-use Newspack_Nodes\Tests\Helpers\TopologyDurability;
 use PHPUnit\Framework\TestCase;
+use Newspack_Nodes\Tests\Helpers\TopologyDurability;
 
 class TopologyDurabilityTest extends TestCase {
 

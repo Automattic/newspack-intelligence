@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
-use Newspack_Intelligence\Publisher_Matcher;
 use PHPUnit\Framework\TestCase;
+use Newspack_Intelligence\Publisher_Matcher;
 
 require_once __DIR__ . '/../support/fake-publisher-repository.php';
 require_once __DIR__ . '/../support/fake-entity-extractor.php';

@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
-use Newspack_Intelligence\Client_Importer;
 use PHPUnit\Framework\TestCase;
+use Newspack_Intelligence\Client_Importer;
 
 require_once __DIR__ . '/../support/fake-publisher-repository.php';
 

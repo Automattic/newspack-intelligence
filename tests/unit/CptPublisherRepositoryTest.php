@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
-use Newspack_Intelligence\CPT_Publisher_Repository;
 use PHPUnit\Framework\TestCase;
+use Newspack_Intelligence\CPT_Publisher_Repository;
 
 require_once __DIR__ . '/../support/wp-post-stubs.php';
 

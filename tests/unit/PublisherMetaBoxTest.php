@@ -3,9 +3,9 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use PHPUnit\Framework\TestCase;
 use Newspack_Intelligence\Publisher_CPT;
 use Newspack_Intelligence\Publisher_Meta_Box;
-use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../support/wp-post-stubs.php';
 
