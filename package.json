@@ -69,6 +69,12 @@
 			"node scripts/lint-comment-length.mjs",
 			"sh -c 'npm run lint:deadcode:js --silent'"
 		],
+		"includes/**/*.php": [
+			"php scripts/reorder-node-methods.php --all-classes --check"
+		],
+		"src/**/*.{js,jsx}": [
+			"node scripts/reorder-node-methods.js --all-classes --check"
+		],
 		"*.scss": "stylelint --customSyntax postcss-scss",
 		"*.php": [
 			"./vendor/bin/phpcs",
