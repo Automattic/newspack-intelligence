@@ -1,8 +1,8 @@
 <?php
 namespace Newspack_Intelligence\Tests;
 
-use Newspack_Intelligence\Proxy_LLM_Client;
 use PHPUnit\Framework\TestCase;
+use Newspack_Intelligence\Proxy_LLM_Client;
 
 final class ProxyLLMClientTest extends TestCase {
 	protected function tearDown(): void {

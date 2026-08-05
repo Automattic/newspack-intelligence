@@ -3,9 +3,9 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use PHPUnit\Framework\TestCase;
 use Newspack_Intelligence\LLM_Entity_Extractor;
 use Newspack_Intelligence\Proxy_LLM_Client;
-use PHPUnit\Framework\TestCase;
 
 final class LlmEntityExtractorTest extends TestCase {
 

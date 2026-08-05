@@ -3,10 +3,10 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use PHPUnit\Framework\TestCase;
 use Newspack_Intelligence\Digest_Builder_Node;
 use Newspack_Intelligence\Scorer_Node;
 use Newspack_Intelligence\Summarizer_Node;
-use PHPUnit\Framework\TestCase;
 
 /**
  * Every node_schema constructor argument must ship a description — it becomes the

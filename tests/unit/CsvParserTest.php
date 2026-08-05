@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
-use Newspack_Intelligence\CSV_Parser;
 use PHPUnit\Framework\TestCase;
+use Newspack_Intelligence\CSV_Parser;
 
 final class CsvParserTest extends TestCase {
 

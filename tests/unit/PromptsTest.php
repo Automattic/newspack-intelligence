@@ -5,8 +5,8 @@
 
 namespace Newspack_Intelligence\Tests;
 
-use Newspack_Intelligence\Prompts;
 use PHPUnit\Framework\TestCase;
+use Newspack_Intelligence\Prompts;
 
 final class PromptsTest extends TestCase {
 	public function test_enrich_includes_item_and_profile_and_demands_json(): void {

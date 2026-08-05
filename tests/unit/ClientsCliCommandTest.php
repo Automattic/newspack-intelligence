@@ -3,9 +3,9 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use PHPUnit\Framework\TestCase;
 use Newspack_Intelligence\Client_Importer;
 use Newspack_Intelligence\CLI\Clients_CLI_Command;
-use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../support/fake-publisher-repository.php';
 require_once __DIR__ . '/../support/wp-post-stubs.php';
