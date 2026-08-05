@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.8] - 2026-08-05
+
+### Changed
+
+- **Re-pinned to newspack-nodes v2.10.0.** No change of its own — the substrate
+  turned every command-interpreter refusal into a TM_ERROR reply, and the shared
+  runtime is inlined into this plugin's bundles at build time, so the old pin
+  would keep shipping an interpreter that answers a refusal with a plain string.
+
 ## [0.8.7] - 2026-08-04
 
 ### Fixed
