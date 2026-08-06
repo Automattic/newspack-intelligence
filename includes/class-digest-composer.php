@@ -19,7 +19,7 @@ use Newspack_Nodes\Core;
 class Digest_Composer {
 	private const MAX_TOKENS = 32000;
 
-	// Per-source cap so one busy source can't crowd others out of the digest.
+	/** Per-source cap so one busy source can't crowd others out of the digest. */
 	private const PER_SOURCE = 10;
 
 	/**
