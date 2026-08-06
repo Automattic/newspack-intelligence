@@ -13,7 +13,7 @@ final class Publisher_CPT {
 
 	public const POST_TYPE = 'newspack_publisher';
 
-	// Atomic-sourced + lifecycle meta (import-managed).
+	/** Atomic-sourced + lifecycle meta (import-managed). */
 	public const META_ATOMIC_ID  = '_npainl_atomic_site_id';
 	public const META_DOMAIN     = '_npainl_domain_name';
 	public const META_CREATED    = '_npainl_created';
@@ -22,7 +22,7 @@ final class Publisher_CPT {
 	public const META_LAST_SEEN  = '_npainl_last_seen';
 	public const META_CHURNED_AT = '_npainl_churned_at';
 
-	// Enrichment meta (human/HubSpot-owned; NEVER written by the importer).
+	/** Enrichment meta (human/HubSpot-owned; NEVER written by the importer). */
 	public const META_PUBLISHER_NAME = '_npainl_publisher_name';
 	public const META_LOCALITIES     = '_npainl_localities';
 	public const META_GITHUB_ORG     = '_npainl_github_org';
