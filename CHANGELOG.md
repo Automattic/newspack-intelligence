@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.13] - 2026-08-07
+
+### Changed
+
+- **Substrate pin moves to newspack-nodes v2.14.0**, which adds the
+  `wp nodes stop` / `wp nodes start` deploy hold. Digest runs are long-lived
+  LLM calls, so this fleet is among the most exposed to a plugin update landing
+  mid-job: swapping `includes/` under a live worker makes its autoloader fail
+  on this plugin's own classes, and the in-flight record is quarantined as
+  poison. Take the fleet down around the deploy:
+  `wp nodes stop && ./deploy.sh && wp nodes start`.
+
 ## [0.8.12] - 2026-08-07
 
 ## [0.8.11] - 2026-08-07
