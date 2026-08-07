@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.10] - 2026-08-07
+
 ### Changed
 
 - **Pinned resident with `var on_demand_idle = 0`.** newspack-nodes 2.13.0 lets
