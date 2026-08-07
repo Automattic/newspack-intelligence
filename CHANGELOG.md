@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.16] - 2026-08-07
+
+### Fixed
+
+- **Substrate pin moves to newspack-nodes v2.14.3**, which stops an on-demand
+  worker respawning itself at exit. A worker that both writes and tails a
+  partition marked a wake for itself every run, then woke on its own writes
+  once it had released its lock — so it cycled on an exact `on_demand_idle`
+  period instead of scaling to zero.
+
 ## [0.8.15] - 2026-08-07
 
 ### Fixed
