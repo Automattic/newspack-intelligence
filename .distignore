@@ -32,7 +32,9 @@ CHANGELOG.md
 CLAUDE.md
 commitlint.config.js
 jest.config.js
+jest.setup.js
 jest.style-mock.js
+knip.json
 node_modules
 package-lock.json
 package.json
