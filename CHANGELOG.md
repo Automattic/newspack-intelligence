@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.15] - 2026-08-07
+
+### Fixed
+
+- **Substrate pin moves to newspack-nodes v2.14.2**, which stops an on-demand
+  worker being pinned awake by a Consumer tailing a log that has never been
+  written. Any topology here that mounts a Consumer against a log a given
+  install never produces was scaling to zero only until the first message woke
+  it, then staying up indefinitely.
+
 ## [0.8.14] - 2026-08-07
 
 ### Changed
