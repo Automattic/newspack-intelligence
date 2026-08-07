@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Pinned resident with `var on_demand_idle = 0`.** newspack-nodes 2.13.0 lets
+  a topology scale to zero when every reporter goes idle, and an operator can
+  turn that on fleet-wide from config. This pipeline opts out explicitly rather
+  than inheriting that: it holds LLM work in flight that no Consumer's EOF
+  describes, so an idle window would be measuring the wrong thing.
+
+### Changed
+
 - **Blank-line runs are collapsed on commit.** `scripts/fix-blank-lines.php`
   joins the shared tooling and runs in `lint-staged` after the comment gate. It
   is token-aware: heredoc and string bodies keep their blank lines.
