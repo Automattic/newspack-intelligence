@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.14] - 2026-08-07
+
+### Changed
+
+- **Substrate pin moves to newspack-nodes v2.14.1**, a performance release on
+  paths the digest pipeline sits on: `Router_Node::fill()` (~1427ns → ~1020ns
+  per routed message) and `Message::packed()` (~754ns → ~593ns, on every
+  partition write). Figures measured in the arm64 dev container, whose PHP 8.4
+  build lacks the vectorized JSON escape scan present on x86 — read them as
+  ratios, not absolutes.
+
 ## [0.8.13] - 2026-08-07
 
 ### Changed
