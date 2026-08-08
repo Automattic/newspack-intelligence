@@ -69,23 +69,6 @@ final class Publisher_Meta_Box {
 		}
 	}
 
-	/**
-	 * Single source of truth: editable enrichment meta keys => labels.
-	 *
-	 * @return array<string,string>
-	 */
-	public static function enrichment_fields(): array {
-		return [
-			Publisher_CPT::META_PUBLISHER_NAME => \__( 'Publisher name', 'newspack-intelligence' ),
-			Publisher_CPT::META_LOCALITIES     => \__( 'Localities (pipe-separated)', 'newspack-intelligence' ),
-			Publisher_CPT::META_GITHUB_ORG     => \__( 'GitHub org', 'newspack-intelligence' ),
-			Publisher_CPT::META_LINKEDIN_ID    => \__( 'LinkedIn company ID', 'newspack-intelligence' ),
-			Publisher_CPT::META_X_HANDLE       => \__( 'X handle', 'newspack-intelligence' ),
-			Publisher_CPT::META_ALIASES        => \__( 'Aliases (pipe-separated)', 'newspack-intelligence' ),
-			Publisher_CPT::META_BEAT_TAGS      => \__( 'Beat tags (pipe-separated)', 'newspack-intelligence' ),
-		];
-	}
-
 	/** Render the meta box: editable enrichment fields + read-only provenance. */
 	public static function render( \WP_Post $post ): void {
 		\wp_nonce_field( self::NONCE_ACTION, self::NONCE_NAME );
@@ -109,12 +92,6 @@ final class Publisher_Meta_Box {
 		echo '</dl>';
 	}
 
-	/** Type-safe read of a single post meta value (get_post_meta's return is mixed). */
-	private static function meta_string( int $post_id, string $key ): string {
-		$value = \get_post_meta( $post_id, $key, true );
-		return \is_string( $value ) ? $value : '';
-	}
-
 	/**
 	 * Import-managed meta keys => labels, shown read-only for provenance.
 	 *
@@ -129,6 +106,29 @@ final class Publisher_Meta_Box {
 			Publisher_CPT::META_FIRST_SEEN => \__( 'First seen', 'newspack-intelligence' ),
 			Publisher_CPT::META_LAST_SEEN  => \__( 'Last seen', 'newspack-intelligence' ),
 			Publisher_CPT::META_CHURNED_AT => \__( 'Churned at', 'newspack-intelligence' ),
+		];
+	}
+
+	/** Type-safe read of a single post meta value (get_post_meta's return is mixed). */
+	private static function meta_string( int $post_id, string $key ): string {
+		$value = \get_post_meta( $post_id, $key, true );
+		return \is_string( $value ) ? $value : '';
+	}
+
+	/**
+	 * Single source of truth: editable enrichment meta keys => labels.
+	 *
+	 * @return array<string,string>
+	 */
+	public static function enrichment_fields(): array {
+		return [
+			Publisher_CPT::META_PUBLISHER_NAME => \__( 'Publisher name', 'newspack-intelligence' ),
+			Publisher_CPT::META_LOCALITIES     => \__( 'Localities (pipe-separated)', 'newspack-intelligence' ),
+			Publisher_CPT::META_GITHUB_ORG     => \__( 'GitHub org', 'newspack-intelligence' ),
+			Publisher_CPT::META_LINKEDIN_ID    => \__( 'LinkedIn company ID', 'newspack-intelligence' ),
+			Publisher_CPT::META_X_HANDLE       => \__( 'X handle', 'newspack-intelligence' ),
+			Publisher_CPT::META_ALIASES        => \__( 'Aliases (pipe-separated)', 'newspack-intelligence' ),
+			Publisher_CPT::META_BEAT_TAGS      => \__( 'Beat tags (pipe-separated)', 'newspack-intelligence' ),
 		];
 	}
 

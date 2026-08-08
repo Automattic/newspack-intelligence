@@ -30,11 +30,6 @@ final class LLM_Entity_Extractor implements Entity_Extractor {
 		return self::parse( $raw );
 	}
 
-	/** @return array{orgs:array<int,string>,people:array<int,string>,locations:array<int,string>} */
-	private static function empty_triple(): array {
-		return [ 'orgs' => [], 'people' => [], 'locations' => [] ];
-	}
-
 	/**
 	 * Lenient parse: pull the first {...} object, keep only string list entries.
 	 *
@@ -68,5 +63,10 @@ final class LLM_Entity_Extractor implements Entity_Extractor {
 			}
 		}
 		return $out;
+	}
+
+	/** @return array{orgs:array<int,string>,people:array<int,string>,locations:array<int,string>} */
+	private static function empty_triple(): array {
+		return [ 'orgs' => [], 'people' => [], 'locations' => [] ];
 	}
 }

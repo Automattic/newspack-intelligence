@@ -79,6 +79,19 @@ final class Proxy_LLM_Client implements LLM_Client {
 	}
 
 	/**
+	 * Pull `choices[0].message.content` out of a decoded chat-completions body.
+	 *
+	 * @param mixed $decoded Decoded JSON response body.
+	 */
+	private static function extract_content( mixed $decoded ): ?string {
+		$choices = \is_array( $decoded ) ? ( $decoded['choices'] ?? null ) : null;
+		$choice  = \is_array( $choices ) ? ( $choices[0] ?? null ) : null;
+		$message = \is_array( $choice ) ? ( $choice['message'] ?? null ) : null;
+		$content = \is_array( $message ) ? ( $message['content'] ?? null ) : null;
+		return \is_string( $content ) ? $content : null;
+	}
+
+	/**
 	 * Build the `wp_remote_post` request args for a chat-completions call.
 	 *
 	 * @return array{timeout:int,headers:array<string,string>,body:string}
@@ -94,18 +107,5 @@ final class Proxy_LLM_Client implements LLM_Client {
 			],
 			'body'    => $body,
 		];
-	}
-
-	/**
-	 * Pull `choices[0].message.content` out of a decoded chat-completions body.
-	 *
-	 * @param mixed $decoded Decoded JSON response body.
-	 */
-	private static function extract_content( mixed $decoded ): ?string {
-		$choices = \is_array( $decoded ) ? ( $decoded['choices'] ?? null ) : null;
-		$choice  = \is_array( $choices ) ? ( $choices[0] ?? null ) : null;
-		$message = \is_array( $choice ) ? ( $choice['message'] ?? null ) : null;
-		$content = \is_array( $message ) ? ( $message['content'] ?? null ) : null;
-		return \is_string( $content ) ? $content : null;
 	}
 }

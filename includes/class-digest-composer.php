@@ -52,6 +52,20 @@ class Digest_Composer {
 	}
 
 	/**
+	 * Render the accumulated summaries to a markdown bullet list — the no-AI fallback.
+	 *
+	 * @param array<int,array<array-key,mixed>> $items Accumulated summarized items.
+	 */
+	private static function render_ranked_list( array $items ): string {
+		$lines = [ '# Newsletter draft', '' ];
+		foreach ( $items as $item ) {
+			$summary = $item['summary'] ?? '';
+			$lines[] = '- ' . Core::str( $summary );
+		}
+		return \implode( "\n", $lines ) . "\n";
+	}
+
+	/**
 	 * The top $n items PER SOURCE: grouped by `source` (first-seen order), each
 	 * group sorted by `score` desc and capped at $n, then flattened. Keeps every
 	 * source represented regardless of how many items a single source contributed.
@@ -86,19 +100,5 @@ class Digest_Composer {
 	private static function score_of( array $item ): float {
 		$score = $item['score'] ?? 0;
 		return Core::num_float( $score );
-	}
-
-	/**
-	 * Render the accumulated summaries to a markdown bullet list — the no-AI fallback.
-	 *
-	 * @param array<int,array<array-key,mixed>> $items Accumulated summarized items.
-	 */
-	private static function render_ranked_list( array $items ): string {
-		$lines = [ '# Newsletter draft', '' ];
-		foreach ( $items as $item ) {
-			$summary = $item['summary'] ?? '';
-			$lines[] = '- ' . Core::str( $summary );
-		}
-		return \implode( "\n", $lines ) . "\n";
 	}
 }

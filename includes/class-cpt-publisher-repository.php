@@ -27,25 +27,6 @@ final class CPT_Publisher_Repository implements Publisher_Repository {
 		];
 	}
 
-	/** Locate the post id for an atomic id, or null. */
-	private function post_id( string $atomic_id ): ?int {
-		$ids = \get_posts(
-			[
-				'post_type'        => Publisher_CPT::POST_TYPE,
-				'post_status'      => 'any',
-				'meta_key'         => Publisher_CPT::META_ATOMIC_ID,
-				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- exact-match lookup keyed on the unique atomic_site_id meta; there is no faster path for this schema.
-				'meta_value'       => $atomic_id,
-				'fields'           => 'ids',
-				'posts_per_page'   => 1,
-				// TODO(Gate): object cache; drop suppress_filters someday.
-				// phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.SuppressFilters_suppress_filters -- internal admin-only lookup on a non-public CPT, not a front-end VIP request.
-				'suppress_filters' => true,
-			]
-		);
-		return empty( $ids ) ? null : $ids[0];
-	}
-
 	public function all_with_enrichment(): array {
 		$ids = \get_posts(
 			[
@@ -117,6 +98,25 @@ final class CPT_Publisher_Repository implements Publisher_Repository {
 		}
 		\update_post_meta( $post_id, Publisher_CPT::META_STATUS, 'churned' );
 		\update_post_meta( $post_id, Publisher_CPT::META_CHURNED_AT, $today );
+	}
+
+	/** Locate the post id for an atomic id, or null. */
+	private function post_id( string $atomic_id ): ?int {
+		$ids = \get_posts(
+			[
+				'post_type'        => Publisher_CPT::POST_TYPE,
+				'post_status'      => 'any',
+				'meta_key'         => Publisher_CPT::META_ATOMIC_ID,
+				// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- exact-match lookup keyed on the unique atomic_site_id meta; there is no faster path for this schema.
+				'meta_value'       => $atomic_id,
+				'fields'           => 'ids',
+				'posts_per_page'   => 1,
+				// TODO(Gate): object cache; drop suppress_filters someday.
+				// phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.SuppressFilters_suppress_filters -- internal admin-only lookup on a non-public CPT, not a front-end VIP request.
+				'suppress_filters' => true,
+			]
+		);
+		return empty( $ids ) ? null : $ids[0];
 	}
 
 	public function all_atomic_ids(): array {
