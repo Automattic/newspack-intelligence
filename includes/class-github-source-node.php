@@ -200,7 +200,7 @@ class Github_Source_Node extends Source_Node {
 	 * `add_repo` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key, mixed> $args        The repo, `owner/name`.
+	 * @param array<array-key,mixed> $args        The repo, `owner/name`.
 	 * @return string Result line.
 	 */
 	public static function cmd_add_repo( Command_Interpreter_Node $interpreter, array $args ): string {
@@ -224,7 +224,7 @@ class Github_Source_Node extends Source_Node {
 	 * `set_vault_id` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key, mixed> $args        The Vault entry ID.
+	 * @param array<array-key,mixed> $args        The Vault entry ID.
 	 * @return string Result line.
 	 */
 	public static function cmd_set_vault_id( Command_Interpreter_Node $interpreter, array $args ): string {
