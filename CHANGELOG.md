@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.19] - 2026-08-09
+
+### Changed
+
+- Shared tooling synced from newspack-nodes. `collapse_generics` rejected prose
+  whose angle brackets happen to balance (`a<b, see c>d`) and let an unbalanced
+  `<` earlier in a line hide a real generic from the gate; it validates each
+  candidate span and backtracks now. `--fix` also gates instead of always
+  exiting 0, and `lint-docs.sh` gains a rule keeping a documented substrate
+  version floor in step with the loader that enforces it.
+
 ## [0.8.18] - 2026-08-09
 
 ### Changed
