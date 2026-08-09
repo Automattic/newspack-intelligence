@@ -67,7 +67,7 @@ trait LLM_Config {
 	 * Verb-set keys. An explicit set dumps even at the default value, so a
 	 * pinned choice survives a future default bump on reload.
 	 *
-	 * @var array<string, true>
+	 * @var array<string,true>
 	 */
 	private array $llm_set = [];
 
@@ -82,7 +82,7 @@ trait LLM_Config {
 	 * `set_api_url` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key, mixed> $args        The AI API Proxy base URL.
+	 * @param array<array-key,mixed> $args        The AI API Proxy base URL.
 	 * @return string Result line.
 	 */
 	public static function cmd_set_api_url( Command_Interpreter_Node $interpreter, array $args ): string {
@@ -101,7 +101,7 @@ trait LLM_Config {
 	 * `set_vault_id` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key, mixed> $args        The Vault entry ID.
+	 * @param array<array-key,mixed> $args        The Vault entry ID.
 	 * @return string Result line.
 	 */
 	public static function cmd_set_vault_id( Command_Interpreter_Node $interpreter, array $args ): string {
@@ -121,7 +121,7 @@ trait LLM_Config {
 	 * `set_model` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key, mixed> $args        The LLM model id.
+	 * @param array<array-key,mixed> $args        The LLM model id.
 	 * @return string Result line.
 	 */
 	public static function cmd_set_model( Command_Interpreter_Node $interpreter, array $args ): string {
@@ -141,7 +141,7 @@ trait LLM_Config {
 	 * `set_feature` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key, mixed> $args        The X-WPCOM-AI-Feature value.
+	 * @param array<array-key,mixed> $args        The X-WPCOM-AI-Feature value.
 	 * @return string Result line.
 	 */
 	public static function cmd_set_feature( Command_Interpreter_Node $interpreter, array $args ): string {
@@ -171,7 +171,7 @@ trait LLM_Config {
 	 * TSL statement reads naturally (like `echo`).
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key, mixed> $args        The profile line tokens.
+	 * @param array<array-key,mixed> $args        The profile line tokens.
 	 * @return string Result line.
 	 */
 	public static function cmd_add_profile( Command_Interpreter_Node $interpreter, array $args ): string {

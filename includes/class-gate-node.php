@@ -98,7 +98,7 @@ class Gate_Node extends Node {
 	 * `set_config_version` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node   $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key, mixed>    $args        Token-array argv; the version is $args[0].
+	 * @param array<array-key,mixed>    $args        Token-array argv; the version is $args[0].
 	 * @return string Result line.
 	 */
 	public static function cmd_set_config_version( Command_Interpreter_Node $interpreter, array $args ): string {
