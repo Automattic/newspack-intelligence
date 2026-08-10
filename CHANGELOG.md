@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.20] - 2026-08-10
+
+### Added
+
+- **`lint:types` and the dead-code phpstan layer**, matching the substrate and
+  event-logger-nodes. The type-check found a real defect: `pasteHandler` widens
+  to `string` for `mode:'INLINE'`, so `serialize()` was handed a type it cannot
+  take. The dead-code detector needs the substrate really loaded rather than
+  merely scanned, so `.phpstan/load-substrate.php` mirrors the ELN bootstrap.
+
+### Changed
+
+- **Dependencies updated within range** — phpstan 2.2.8, vipwpcs 3.1.0, phpunit
+  10.5.64, esbuild, knip, babel presets.
+- **The `@wordpress/*` packages now follow the `wp-7.0` dist tag** rather than
+  npm `latest`: they are build externals mapped to `window.wp.*`, so core
+  supplies the code at runtime. `react`/`react-dom` are pinned to the major
+  WP 7.0 bundles.
+- Plugin header now carries the same fields, in the same order, as its siblings.
+
 ## [0.8.19] - 2026-08-09
 
 ### Changed
