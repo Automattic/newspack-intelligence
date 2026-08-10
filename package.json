@@ -17,13 +17,15 @@
 		"format:js": "prettier --write 'src/**/*.{js,jsx}'",
 		"lint:js": "eslint --no-error-on-unmatched-pattern 'src/**/*.{js,jsx}' 'scripts/**/*.mjs' && node scripts/lint-comments.mjs .",
 		"lint:php": "phpcs && php scripts/lint-comments.php .",
-		"lint:phpstan": "vendor/bin/phpstan analyse --memory-limit=2G --no-progress",
+		"lint:phpstan": "vendor/bin/phpstan analyse -c phpstan-deadcode.neon --memory-limit=2G --no-progress",
 		"lint:deadcode:js": "knip --no-progress",
 		"lint:scss": "stylelint --customSyntax postcss-scss 'src/**/*.scss'",
 		"lint:shell": "shellcheck scripts/pre-push scripts/*.sh",
 		"make-pot": "wp i18n make-pot . languages/newspack-intelligence.pot --domain=newspack-intelligence --exclude=node_modules,build,vendor,tests,release",
 		"test:js": "jest --passWithNoTests",
-		"test:js:coverage": "jest --passWithNoTests --coverage --collectCoverageFrom='src/**/*.{js,jsx}' --coverageReporters=json-summary --coverageReporters=text"
+		"test:js:coverage": "jest --passWithNoTests --coverage --collectCoverageFrom='src/**/*.{js,jsx}' --coverageReporters=json-summary --coverageReporters=text",
+		"lint:types": "tsc -p tsconfig.check.json --pretty false",
+		"lint:deadcode": "npm run lint:phpstan"
 	},
 	"dependencies": {
 		"@noble/hashes": "^2.2.0",
@@ -60,14 +62,16 @@
 		"react-dom": "^18.3.1",
 		"rtlcss": "^4.3.0",
 		"sass": "^1.99.0",
-		"stylelint": "^16.26.1"
+		"stylelint": "^16.26.1",
+		"typescript": "^6.0.3"
 	},
 	"lint-staged": {
 		"*.{js,jsx}": [
 			"eslint",
 			"node scripts/reorder-node-methods.js --check",
 			"node scripts/lint-comments.mjs",
-			"sh -c 'npm run lint:deadcode:js --silent'"
+			"sh -c 'npm run lint:deadcode:js --silent'",
+			"sh -c 'npm run lint:types --silent'"
 		],
 		"includes/**/*.php": [
 			"php scripts/reorder-node-methods.php --all-classes --check"
