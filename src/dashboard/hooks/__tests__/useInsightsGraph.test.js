@@ -17,16 +17,12 @@
  */
 
 import { renderHook, act } from '@testing-library/react';
+import { installFakeCommandWire } from '@newspack-nodes/shared/test-utils/fakeCommandWire';
 import {
-	newMessage,
 	ID,
 	TO,
 	FROM,
 	VALUE,
-	TYPE,
-	TM_COMMAND,
-	TM_RESPONSE,
-	TM_ERROR,
 	Core,
 	forgetSession,
 	__setAuthFetch,
@@ -48,30 +44,6 @@ function setVisibility( state ) {
 }
 
 // Fake transport: postBatch records each batch and echoes a reply via FROM.
-function makeFakeClient( payloadByVerb = {}, replyTypeByVerb = {} ) {
-	const client = {
-		batches: [],
-		postBatch( messages ) {
-			client.batches.push( messages );
-			const replies = messages.map( ( m ) => {
-				const verb = m[ VALUE ]?.name;
-				const reply = newMessage();
-				reply[ TYPE ] =
-					replyTypeByVerb[ verb ] ?? TM_COMMAND | TM_RESPONSE;
-				reply[ TO ] = m[ FROM ];
-				reply[ ID ] = m[ ID ];
-				reply[ VALUE ] = {
-					name: verb,
-					payload: payloadByVerb[ verb ] ?? null,
-				};
-				return reply;
-			} );
-			return Promise.resolve( replies );
-		},
-	};
-	return client;
-}
-
 const emptyPayloads = {
 	counts: JSON.stringify( { sources: {} } ),
 	top: JSON.stringify( { top: {} } ),
@@ -83,6 +55,19 @@ const emptyPayloads = {
 	} ),
 };
 
+// The seam is the WIRE: the graph packs, POSTs and unpacks for real, so
+// HttpOut, the router and the interpreter all run. `wire.batches` is what was
+// posted; a verb in `errorVerbs` answers TM_ERROR carrying its payload.
+function installWire( payloadByVerb = {}, errorVerbs = [] ) {
+	return installFakeCommandWire( ( m ) => {
+		const verb = m[ VALUE ]?.name;
+		const payload = payloadByVerb[ verb ] ?? null;
+		return errorVerbs.includes( verb )
+			? new Error( payload ?? verb )
+			: payload;
+	} );
+}
+
 beforeEach( () => {
 	Core.reset();
 	Object.defineProperty( document, 'visibilityState', {
@@ -93,8 +78,8 @@ beforeEach( () => {
 
 describe( 'useInsightsGraph — graph wiring', () => {
 	test( 'mounts the backbone, `_http`, `_shell` tap, the timer/tee/fetchers, and three view nodes, each sinking into the interpreter', async () => {
-		const client = makeFakeClient( emptyPayloads );
-		renderHook( () => useInsightsGraph( { commandClient: client } ) );
+		installWire( emptyPayloads );
+		renderHook( () => useInsightsGraph() );
 		await act( async () => {} );
 
 		const interpreter = Core.node( INTERPRETER );
@@ -124,8 +109,8 @@ describe( 'useInsightsGraph — graph wiring', () => {
 	} );
 
 	test( 'each Fetcher is configured with its receiver + verb and targets `_shell/_http/insights`', async () => {
-		const client = makeFakeClient( emptyPayloads );
-		renderHook( () => useInsightsGraph( { commandClient: client } ) );
+		installWire( emptyPayloads );
+		renderHook( () => useInsightsGraph() );
 		await act( async () => {} );
 		const path = `${ SHELL }/${ HTTP }/insights`;
 		expect( Core.node( 'fetch-counts' ).receiver ).toBe( 'countsIn' );
@@ -138,17 +123,17 @@ describe( 'useInsightsGraph — graph wiring', () => {
 
 describe( 'useInsightsGraph — batched poll', () => {
 	test( 'one router TIMER tick emits exactly three TM_COMMANDs (counts/top/accumulated, FROM=their receivers) batched into ONE HttpOut POST', async () => {
-		const client = makeFakeClient( emptyPayloads );
-		renderHook( () => useInsightsGraph( { commandClient: client } ) );
+		const wire = installWire( emptyPayloads );
+		renderHook( () => useInsightsGraph() );
 		await act( async () => {} );
-		client.batches.length = 0;
+		wire.batches.length = 0;
 
 		await act( async () => {
 			Core.node( ROUTER ).fireCb();
 		} );
 
-		expect( client.batches.length ).toBe( 1 );
-		const batch = client.batches[ 0 ];
+		expect( wire.batches.length ).toBe( 1 );
+		const batch = wire.batches[ 0 ];
 		expect( batch.length ).toBe( 3 );
 
 		const byVerb = Object.fromEntries(
@@ -166,10 +151,10 @@ describe( 'useInsightsGraph — batched poll', () => {
 	} );
 
 	test( 'while the tab is HIDDEN no router tick posts; becoming visible resumes polling', async () => {
-		const client = makeFakeClient( emptyPayloads );
-		renderHook( () => useInsightsGraph( { commandClient: client } ) );
+		const wire = installWire( emptyPayloads );
+		renderHook( () => useInsightsGraph() );
 		await act( async () => {} );
-		client.batches.length = 0;
+		wire.batches.length = 0;
 
 		await act( async () => {
 			setVisibility( 'hidden' );
@@ -177,7 +162,7 @@ describe( 'useInsightsGraph — batched poll', () => {
 		await act( async () => {
 			Core.node( ROUTER ).fireCb();
 		} );
-		expect( client.batches.length ).toBe( 0 );
+		expect( wire.batches.length ).toBe( 0 );
 
 		await act( async () => {
 			setVisibility( 'visible' );
@@ -185,12 +170,12 @@ describe( 'useInsightsGraph — batched poll', () => {
 		await act( async () => {
 			Core.node( ROUTER ).fireCb();
 		} );
-		expect( client.batches.length ).toBe( 1 );
-		expect( client.batches[ 0 ].length ).toBe( 3 );
+		expect( wire.batches.length ).toBe( 1 );
+		expect( wire.batches[ 0 ].length ).toBe( 3 );
 	} );
 
 	test( 'each slice reply routes back to its own view node and lands in its slice', async () => {
-		const client = makeFakeClient( {
+		installWire( {
 			counts: JSON.stringify( { sources: { github: 2 } } ),
 			top: JSON.stringify( {
 				top: { github: [ { title: 'X', score: 5 } ] },
@@ -202,7 +187,7 @@ describe( 'useInsightsGraph — batched poll', () => {
 				digest: '# D',
 			} ),
 		} );
-		renderHook( () => useInsightsGraph( { commandClient: client } ) );
+		renderHook( () => useInsightsGraph() );
 		await act( async () => {
 			Core.node( ROUTER ).fireCb();
 		} );
@@ -226,13 +211,11 @@ describe( 'useInsightsGraph — batched poll', () => {
 
 describe( 'useInsightsGraph — awaited action verbs', () => {
 	test( 'generate() mints from its own node and resolves to its ack payload', async () => {
-		const client = makeFakeClient( {
+		const wire = installWire( {
 			...emptyPayloads,
 			generate: JSON.stringify( { regenerating: true, workers: 1 } ),
 		} );
-		const { result } = renderHook( () =>
-			useInsightsGraph( { commandClient: client } )
-		);
+		const { result } = renderHook( () => useInsightsGraph() );
 		await act( async () => {} );
 
 		let resolved;
@@ -243,7 +226,7 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 			JSON.stringify( { regenerating: true, workers: 1 } )
 		);
 
-		const genMsgs = client.batches
+		const genMsgs = wire.batches
 			.flat()
 			.filter( ( m ) => 'generate' === m[ VALUE ]?.name );
 		expect( genMsgs.length ).toBe( 1 );
@@ -276,13 +259,11 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 				now: 1771000000,
 			} ) )
 		);
-		const client = makeFakeClient( {
+		const wire = installWire( {
 			...emptyPayloads,
 			generate: JSON.stringify( { regenerating: true, workers: 1 } ),
 		} );
-		const { result } = renderHook( () =>
-			useInsightsGraph( { commandClient: client } )
-		);
+		const { result } = renderHook( () => useInsightsGraph() );
 		await act( async () => {} );
 
 		// Click while /auth is still in flight — the real race.
@@ -292,7 +273,7 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 			await pending;
 		} );
 
-		const genMsgs = client.batches
+		const genMsgs = wire.batches
 			.flat()
 			.filter( ( m ) => 'generate' === m[ VALUE ]?.name );
 		expect( genMsgs.length ).toBe( 1 );
@@ -300,13 +281,10 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 	} );
 
 	test( 'generate() rejects when a TM_ERROR reply pivots back', async () => {
-		const client = makeFakeClient(
-			{ ...emptyPayloads, generate: 'compose failed' },
-			{ generate: TM_COMMAND | TM_RESPONSE | TM_ERROR }
-		);
-		const { result } = renderHook( () =>
-			useInsightsGraph( { commandClient: client } )
-		);
+		installWire( { ...emptyPayloads, generate: 'compose failed' }, [
+			'generate',
+		] );
+		const { result } = renderHook( () => useInsightsGraph() );
 		await act( async () => {} );
 
 		await act( async () => {
@@ -317,13 +295,11 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 	} );
 
 	test( 'collect() mints from its own node and resolves to its payload', async () => {
-		const client = makeFakeClient( {
+		const wire = installWire( {
 			...emptyPayloads,
 			collect: JSON.stringify( { collecting: 3, workers: 1 } ),
 		} );
-		const { result } = renderHook( () =>
-			useInsightsGraph( { commandClient: client } )
-		);
+		const { result } = renderHook( () => useInsightsGraph() );
 		await act( async () => {} );
 
 		let resolved;
@@ -334,7 +310,7 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 			JSON.stringify( { collecting: 3, workers: 1 } )
 		);
 
-		const collectMsgs = client.batches
+		const collectMsgs = wire.batches
 			.flat()
 			.filter( ( m ) => 'collect' === m[ VALUE ]?.name );
 		expect( collectMsgs.length ).toBe( 1 );

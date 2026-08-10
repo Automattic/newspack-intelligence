@@ -65,9 +65,8 @@ const SLICES = [
 ];
 
 /**
- * @param {Object} [opts]               Options (test seams).
- * @param {Object} [opts.commandClient] transport seam assigned to `_http.client`.
- * @param {number} [opts.intervalMs]    Poll cadence in ms; defaults to DEFAULT_INTERVAL_MS. Never falls through to the router tick — that polled at 1Hz.
+ * @param {Object} [opts]            Options (test seams).
+ * @param {number} [opts.intervalMs] Poll cadence in ms; defaults to DEFAULT_INTERVAL_MS. Never falls through to the router tick — that polled at 1Hz.
  * @return {{ generate: () => Promise<*>, collect: () => Promise<*> }} On-demand action verbs.
  */
 export function useInsightsGraph( opts = {} ) {
@@ -82,7 +81,6 @@ export function useInsightsGraph( opts = {} ) {
 			),
 		timerName: 'insights:timer',
 		teeName: 'insights:tee',
-		commandClient: opts.commandClient,
 		intervalMs: opts.intervalMs ?? DEFAULT_INTERVAL_MS,
 	} );
 
