@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The `commandClient` seam is gone.** `useInsightsGraph` and
+  `PublisherInsights` no longer take it. Injecting a transport replaced the
+  whole subsystem, so a hook test never ran HttpOut, pack/unpack, the router
+  or the interpreter; the suites seam at `fetch` via the substrate's
+  `installFakeCommandWire` instead. Requires the substrate release that
+  removes the seam.
+
 ## [0.8.20] - 2026-08-10
 
 ### Added

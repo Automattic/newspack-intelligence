@@ -9,18 +9,9 @@
  */
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { installFakeCommandWire } from '@newspack-nodes/shared/test-utils/fakeCommandWire';
 import { act } from 'react';
-import {
-	newMessage,
-	ID,
-	TO,
-	FROM,
-	VALUE,
-	TYPE,
-	TM_COMMAND,
-	TM_RESPONSE,
-	Core,
-} from '@newspack-nodes/runtime';
+import { VALUE, Core } from '@newspack-nodes/runtime';
 import apiFetch from '@wordpress/api-fetch';
 
 jest.mock( '@wordpress/api-fetch', () => jest.fn() );
@@ -35,26 +26,6 @@ const ROUTER = '_router';
 const DIGEST = '# Sprint digest\n\n- Big news shipped';
 
 // A fake transport: postBatch echoes a per-verb reply pivoted via FROM.
-function makeClient( payloadByVerb ) {
-	return {
-		postBatch( messages ) {
-			return Promise.resolve(
-				messages.map( ( m ) => {
-					const reply = newMessage();
-					reply[ TYPE ] = TM_COMMAND | TM_RESPONSE;
-					reply[ TO ] = m[ FROM ];
-					reply[ ID ] = m[ ID ];
-					reply[ VALUE ] = {
-						name: m[ VALUE ]?.name,
-						payload: payloadByVerb[ m[ VALUE ]?.name ] ?? null,
-					};
-					return reply;
-				} )
-			);
-		},
-	};
-}
-
 const populated = {
 	counts: JSON.stringify( { sources: { github: 2, linear: 1 } } ),
 	top: JSON.stringify( {
@@ -71,6 +42,13 @@ const populated = {
 	} ),
 };
 
+// The seam is the wire; the page's graph POSTs and unpacks for real.
+function installWire( payloadByVerb = {} ) {
+	return installFakeCommandWire(
+		( m ) => payloadByVerb[ m[ VALUE ]?.name ] ?? null
+	);
+}
+
 beforeEach( () => {
 	Core.reset();
 	apiFetch.mockReset();
@@ -78,9 +56,7 @@ beforeEach( () => {
 
 // Render the dashboard, tick the router to fill the views, await replies.
 async function renderAndTick( client, props = {} ) {
-	const utils = render(
-		<PublisherInsights commandClient={ client } { ...props } />
-	);
+	const utils = render( <PublisherInsights { ...props } /> );
 	await act( async () => {
 		Core.node( ROUTER ).fireCb();
 	} );
@@ -90,9 +66,7 @@ async function renderAndTick( client, props = {} ) {
 describe( 'PublisherInsights — render', () => {
 	it( 'renders the heading', async () => {
 		await act( async () => {
-			render(
-				<PublisherInsights commandClient={ makeClient( populated ) } />
-			);
+			render( <PublisherInsights /> );
 		} );
 		expect(
 			screen.getByRole( 'heading', { name: 'Publisher Insights' } )
@@ -100,7 +74,7 @@ describe( 'PublisherInsights — render', () => {
 	} );
 
 	it( 'fills all three slice widgets from their own view nodes after a tick', async () => {
-		const { container } = await renderAndTick( makeClient( populated ) );
+		const { container } = await renderAndTick( installWire( populated ) );
 		await waitFor( () =>
 			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
 		);
@@ -121,7 +95,7 @@ describe( 'PublisherInsights — render', () => {
 	} );
 
 	it( 'lays the widgets out in the two-column grid', async () => {
-		const { container } = await renderAndTick( makeClient( populated ) );
+		const { container } = await renderAndTick( installWire( populated ) );
 		await waitFor( () =>
 			expect( screen.getByText( 'Big release' ) ).toBeInTheDocument()
 		);
@@ -145,7 +119,7 @@ describe( 'PublisherInsights — render', () => {
 
 	it( 'shows per-slice empty states from an empty server reply', async () => {
 		await renderAndTick(
-			makeClient( {
+			installWire( {
 				counts: JSON.stringify( { sources: {} } ),
 				top: JSON.stringify( { top: {} } ),
 				accumulated: JSON.stringify( {
@@ -168,7 +142,7 @@ describe( 'PublisherInsights — render', () => {
 describe( 'PublisherInsights — actions flow through the real graph', () => {
 	it( 'asks the worker to regenerate via the graph and acknowledges', async () => {
 		await renderAndTick(
-			makeClient( {
+			installWire( {
 				...populated,
 				generate: JSON.stringify( { regenerating: true, workers: 1 } ),
 			} )
@@ -186,7 +160,7 @@ describe( 'PublisherInsights — actions flow through the real graph', () => {
 
 	it( 'drives Collect via the graph and surfaces a no-worker error', async () => {
 		await renderAndTick(
-			makeClient( {
+			installWire( {
 				...populated,
 				collect: JSON.stringify( {
 					error: 'No live newspack-intelligence worker',
