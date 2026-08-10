@@ -36,5 +36,6 @@ export function markdownToBlockMarkup( markdown = '' ) {
 	}
 	ensureCoreBlocks();
 	const blocks = pasteHandler( { HTML: '', plainText, mode: 'BLOCKS' } );
-	return serialize( blocks );
+	// mode:'BLOCKS' always yields blocks; the type widens only for 'INLINE'.
+	return Array.isArray( blocks ) ? serialize( blocks ) : '';
 }

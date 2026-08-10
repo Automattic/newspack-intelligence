@@ -33,6 +33,7 @@ class Clients_CLI_Command {
 	 *
 	 *     wp newspack-intelligence clients import newspack_clients.csv
 	 *
+	 * @api WP-CLI dispatches this by reflection; nothing here calls it.
 	 * @param array<int,string>    $args       Positional args.
 	 * @param array<string,string> $assoc_args Flags.
 	 */
