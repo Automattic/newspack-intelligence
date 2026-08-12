@@ -133,11 +133,11 @@ class Linear_Source_Node extends Source_Node {
 		return $patron->set_vault_id( Core::as_string( $args[0] ?? '' ) );
 	}
 
-	/** Emit the base config plus a round-trippable `cmd {name}:config set_vault_id …` when set. */
+	/** Emit the base config plus a round-trippable `command_node {name}:config set_vault_id …` when set. */
 	public function dump_config(): string {
 		$out = parent::dump_config();
 		if ( '' !== $this->vault_id ) {
-			$out .= "cmd {$this->name}:config set_vault_id {$this->vault_id}\n";
+			$out .= $this->config_line( 'set_vault_id', $this->vault_id );
 		}
 		return $out;
 	}

@@ -182,7 +182,7 @@ trait LLM_Config {
 	}
 
 	/**
-	 * Emit the base config plus round-trippable `cmd {name}:config …` lines for
+	 * Emit the base config plus round-trippable `command_node {name}:config …` lines for
 	 * every explicitly-set or non-default verb (a pinned value survives a
 	 * future default bump). Args go through serialize_args (the serialization
 	 * anchor) so a multi-word profile re-tokenizes as ONE argument.
@@ -190,19 +190,19 @@ trait LLM_Config {
 	public function dump_config(): string {
 		$out = parent::dump_config();
 		if ( isset( $this->llm_set['set_api_url'] ) || ( '' !== $this->api_url && self::DEFAULT_API_URL !== $this->api_url ) ) {
-			$out .= "cmd {$this->name}:config set_api_url " . self::serialize_args( [ $this->api_url ] ) . "\n";
+			$out .= $this->config_line( 'set_api_url', $this->api_url );
 		}
 		if ( '' !== $this->vault_id ) {
-			$out .= "cmd {$this->name}:config set_vault_id " . self::serialize_args( [ $this->vault_id ] ) . "\n";
+			$out .= $this->config_line( 'set_vault_id', $this->vault_id );
 		}
 		if ( isset( $this->llm_set['set_model'] ) || self::DEFAULT_MODEL !== $this->model ) {
-			$out .= "cmd {$this->name}:config set_model " . self::serialize_args( [ $this->model ] ) . "\n";
+			$out .= $this->config_line( 'set_model', $this->model );
 		}
 		if ( isset( $this->llm_set['set_feature'] ) || self::DEFAULT_FEATURE !== $this->feature ) {
-			$out .= "cmd {$this->name}:config set_feature " . self::serialize_args( [ $this->feature ] ) . "\n";
+			$out .= $this->config_line( 'set_feature', $this->feature );
 		}
 		foreach ( $this->profiles as $profile ) {
-			$out .= "cmd {$this->name}:config add_profile " . self::serialize_args( [ $profile ] ) . "\n";
+			$out .= $this->config_line( 'add_profile', $profile );
 		}
 		return $out;
 	}
