@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.23] - 2026-08-11
+
+### Changed
+
+- **Substrate pin moves to newspack-nodes v2.24.0.** The browser Shell now has
+  one entry point, `fill( message )`, and the debug overlay this plugin embeds
+  mounts a `_stdout` node for builtin output. Nothing here called the retired
+  `ShellNode.sendCommand()` / `parse()`+`dispatch()` pair, so no source change
+  was needed — but the shared code this plugin inlines is only rebuilt against
+  the new substrate by a release, which is what this one is for.
+
+
 ## [0.8.22] - 2026-08-11
 
 ### Fixed

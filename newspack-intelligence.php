@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Newspack Intelligence
  * Description: AI-driven team intelligence digest built on the newspack-nodes substrate.
- * Version: 0.8.22
+ * Version: 0.8.23
  * Author: Automattic
  * Author URI: https://newspack.com/
  * License: GPL-2.0-or-later
@@ -20,7 +20,7 @@ namespace Newspack_Intelligence;
 \defined( 'ABSPATH' ) || exit;
 
 if ( ! \defined( 'NEWSPACK_INTELLIGENCE_VERSION' ) ) {
-	\define( 'NEWSPACK_INTELLIGENCE_VERSION', '0.8.22' );
+	\define( 'NEWSPACK_INTELLIGENCE_VERSION', '0.8.23' );
 }
 if ( ! \defined( 'NEWSPACK_INTELLIGENCE_DIR' ) ) {
 	\define( 'NEWSPACK_INTELLIGENCE_DIR', \plugin_dir_path( __FILE__ ) );
