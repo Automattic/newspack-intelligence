@@ -13,7 +13,7 @@ cmd digest:config add_profile 'Prioritize shipped releases, merged PRs that chan
 cmd digest:config add_profile 'Deprioritize dependency bumps, docs typos, and cosmetic tweaks.'
 cmd digest:config add_profile 'Do not produce tables.'
 make_node Tee digest:tee
-make_node Log digest:log /tmp/newspack-intelligence/digest.md 1 2 7 0 0 0
+make_node Log digest:log <config:logs_dir>/digest.md 1 2 7 0 0 0
 cmd digest:log:config void_warranty
 connect_node scored:consumer digest
 connect_node digest digest:tee
