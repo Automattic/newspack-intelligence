@@ -207,11 +207,11 @@ class Feed_Source_Node extends Source_Node {
 		return $patron->add_url( Core::as_string( $args[0] ?? '' ) );
 	}
 
-	/** Emit the base config plus one round-trippable `cmd {name}:config add_url …` per registered URL. */
+	/** Emit the base config plus one round-trippable `command_node {name}:config add_url …` per registered URL. */
 	public function dump_config(): string {
 		$out = parent::dump_config();
 		foreach ( $this->urls as $url ) {
-			$out .= "cmd {$this->name}:config add_url {$url}\n";
+			$out .= $this->config_line( 'add_url', $url );
 		}
 		return $out;
 	}

@@ -148,12 +148,12 @@ final class LlmConfigTest extends TestCase {
 
 		$dump = $node->dump_config();
 
-		$this->assertStringContainsString( 'cmd llmnode:config set_api_url https://proxy.test/v1', $dump );
-		$this->assertStringContainsString( 'cmd llmnode:config set_vault_id ai-vault', $dump );
-		$this->assertStringContainsString( 'cmd llmnode:config set_model gpt-5', $dump );
-		$this->assertStringContainsString( 'cmd llmnode:config set_feature my-feature', $dump );
-		$this->assertStringContainsString( 'cmd llmnode:config add_profile Engineering', $dump );
-		$this->assertStringContainsString( 'cmd llmnode:config add_profile Product', $dump );
+		$this->assertStringContainsString( 'command_node llmnode:config set_api_url https://proxy.test/v1', $dump );
+		$this->assertStringContainsString( 'command_node llmnode:config set_vault_id ai-vault', $dump );
+		$this->assertStringContainsString( 'command_node llmnode:config set_model gpt-5', $dump );
+		$this->assertStringContainsString( 'command_node llmnode:config set_feature my-feature', $dump );
+		$this->assertStringContainsString( 'command_node llmnode:config add_profile Engineering', $dump );
+		$this->assertStringContainsString( 'command_node llmnode:config add_profile Product', $dump );
 	}
 
 	public function test_dump_config_omits_untouched_defaults(): void {
@@ -240,8 +240,8 @@ final class LlmConfigTest extends TestCase {
 		$node->set_model( 'gpt-oss-120b' );
 		$node->set_feature( 'newspack-intelligence' );
 		$dump = $node->dump_config();
-		$this->assertStringContainsString( 'cmd llmnode:config set_model gpt-oss-120b', $dump );
-		$this->assertStringContainsString( 'cmd llmnode:config set_feature newspack-intelligence', $dump );
+		$this->assertStringContainsString( 'command_node llmnode:config set_model gpt-oss-120b', $dump );
+		$this->assertStringContainsString( 'command_node llmnode:config set_feature newspack-intelligence', $dump );
 	}
 
 	public function test_dump_config_quotes_a_multi_word_profile(): void {
@@ -249,7 +249,7 @@ final class LlmConfigTest extends TestCase {
 		$node->name( 'llmnode' );
 		$node->add_profile( 'Do not produce tables.' );
 		$this->assertStringContainsString(
-			"cmd llmnode:config add_profile 'Do not produce tables.'",
+			"command_node llmnode:config add_profile 'Do not produce tables.'",
 			$node->dump_config()
 		);
 	}

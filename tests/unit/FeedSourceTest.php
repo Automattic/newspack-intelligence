@@ -228,8 +228,8 @@ XML;
 		$node->add_url( 'https://example.com/b.xml' );
 
 		$dump = $node->dump_config();
-		$this->assertStringContainsString( 'cmd feed:config add_url https://example.com/a.xml', $dump );
-		$this->assertStringContainsString( 'cmd feed:config add_url https://example.com/b.xml', $dump );
+		$this->assertStringContainsString( 'command_node feed:config add_url https://example.com/a.xml', $dump );
+		$this->assertStringContainsString( 'command_node feed:config add_url https://example.com/b.xml', $dump );
 	}
 
 	public function test_add_url_verb_dispatches_through_sibling_interpreter(): void {

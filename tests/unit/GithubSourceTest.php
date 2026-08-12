@@ -186,9 +186,9 @@ final class GithubSourceTest extends TestCase {
 		$node->set_vault_id( 'gh-creds' );
 
 		$dump = $node->dump_config();
-		$this->assertStringContainsString( 'cmd github:config add_repo owner/repo-a', $dump );
-		$this->assertStringContainsString( 'cmd github:config add_repo owner/repo-b', $dump );
-		$this->assertStringContainsString( 'cmd github:config set_vault_id gh-creds', $dump );
+		$this->assertStringContainsString( 'command_node github:config add_repo owner/repo-a', $dump );
+		$this->assertStringContainsString( 'command_node github:config add_repo owner/repo-b', $dump );
+		$this->assertStringContainsString( 'command_node github:config set_vault_id gh-creds', $dump );
 	}
 
 	public function test_node_schema_declares_github_source_contract(): void {

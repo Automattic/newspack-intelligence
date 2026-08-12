@@ -170,7 +170,7 @@ final class LinearSourceTest extends TestCase {
 		$node->name( 'linear' );
 		$node->set_vault_id( 'lin-creds' );
 
-		$this->assertStringContainsString( 'cmd linear:config set_vault_id lin-creds', $node->dump_config() );
+		$this->assertStringContainsString( 'command_node linear:config set_vault_id lin-creds', $node->dump_config() );
 	}
 
 	public function test_node_schema_declares_linear_source_contract(): void {
