@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The digest is written inside the runtime base.** `digest:log` and
+  `Digest_Builder_Node` both hardcoded `/tmp/newspack-intelligence/digest.md`, an
+  absolute path that ignored the configured base entirely — while the sibling
+  gate topology already used `<config:logs_dir>`. The substrate's Log guard
+  (which previously validated nothing for a `Log` node) now refuses a path
+  outside the base, and it was right to: the topology now writes
+  `<config:logs_dir>/digest.md`, and `DIGEST_PATH` becomes `digest_path()`,
+  derived from the same `logs_dir` token so the two cannot drift apart. The
+  digest moves from `/tmp/newspack-intelligence/digest.md` to
+  `{logs_dir}/digest.md`.
+
+### Fixed
+
 - **`dump_config` quotes every name it emits.** Each `command_node <name>:config`
   line was built by interpolating the node name raw, so a node whose name held a
   space emitted a line with one token too many and replayed as a different graph.

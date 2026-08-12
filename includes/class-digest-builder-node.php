@@ -17,8 +17,8 @@ class Digest_Builder_Node extends Node {
 	use Schema_Reflection;
 	use LLM_Config;
 
-	/** Where the digest:log Node writes the rendered newsletter. MUST match topologies/newspack-intelligence-digest.tsl. */
-	public const DIGEST_PATH = '/tmp/newspack-intelligence/digest.md';
+	/** Digest filename under the configured logs dir; the path itself is digest_path(). */
+	public const DIGEST_FILE = 'digest.md';
 
 	/**
 	 * LLM-client factory seam. Lazily-defaulted at the call site to this node's
@@ -181,6 +181,19 @@ class Digest_Builder_Node extends Node {
 		$response[ Message::FROM ]  = $this->name;
 		$response[ Message::VALUE ] = $draft;
 		parent::fill( $response );
+	}
+
+	/**
+	 * Where the digest:log Node writes the rendered newsletter — derived from the
+	 * substrate's configured `logs_dir`, so it lands INSIDE the runtime base.
+	 * MUST match `<config:logs_dir>/digest.md` in
+	 * topologies/newspack-intelligence-digest.tsl. It was a hardcoded absolute
+	 * /tmp path, which the substrate's Log path guard correctly refuses: a Log
+	 * outside the base is exactly what that guard exists to stop.
+	 */
+	public static function digest_path(): string {
+		$dir = \Newspack_Nodes\Core::resolve_config_token( 'config', 'logs_dir' );
+		return \rtrim( $dir, '/' ) . '/' . self::DIGEST_FILE;
 	}
 
 	/**
