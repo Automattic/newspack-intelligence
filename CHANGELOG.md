@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-12
+
 ### Fixed
 
 - **The digest is written inside the runtime base.** `digest:log` and
