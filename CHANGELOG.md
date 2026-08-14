@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-14
+
+### Fixed
+
+- **Bundles substrate 2.26.1** (the pin was two releases behind, at 2.25.0), which stops a
+  durable reader re-delivering the last record it read: the cursor was committed at each
+  record's START rather than past it, so every resume replayed that record.
+
 ## [0.9.0] - 2026-08-12
 
 ### Fixed
