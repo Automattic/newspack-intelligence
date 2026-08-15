@@ -16,7 +16,7 @@
  * the dashboard buttons call; their reply pivots straight back to accumulated:view,
  */
 
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { installFakeCommandWire } from '@newspack-nodes/shared/test-utils/fakeCommandWire';
 import {
 	ID,
@@ -128,9 +128,17 @@ describe( 'useInsightsGraph — batched poll', () => {
 		await act( async () => {} );
 		wire.batches.length = 0;
 
-		await act( async () => {
-			Core.node( ROUTER ).fireCb();
-		} );
+		// The mount asked for its own tick; step past the 30s cadence so the
+		// next one is not throttled away.
+		const realNow = Date.now;
+		Date.now = () => realNow() + 31000;
+		try {
+			await act( async () => {
+				Core.node( ROUTER ).fireCb();
+			} );
+		} finally {
+			Date.now = realNow;
+		}
 
 		expect( wire.batches.length ).toBe( 1 );
 		const batch = wire.batches[ 0 ];
@@ -218,9 +226,14 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 		const { result } = renderHook( () => useInsightsGraph() );
 		await act( async () => {} );
 
+		// The action rides the router tick: start it inside act, settle it
+		// outside one — awaiting inside act stops the clock that carries it.
 		let resolved;
-		await act( async () => {
-			resolved = await result.current.generate();
+		act( () => {
+			result.current.generate().then( ( v ) => ( resolved = v ) );
+		} );
+		await waitFor( () => expect( resolved ).toBeDefined(), {
+			timeout: 6000,
 		} );
 		expect( resolved ).toBe(
 			JSON.stringify( { regenerating: true, workers: 1 } )
@@ -230,7 +243,7 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 			.flat()
 			.filter( ( m ) => 'generate' === m[ VALUE ]?.name );
 		expect( genMsgs.length ).toBe( 1 );
-		expect( genMsgs[ 0 ][ FROM ] ).toBe( 'insights:generate' );
+		expect( genMsgs[ 0 ][ FROM ] ).toBe( 'insights:generate:in' );
 		// Addressed, not correlated.
 		expect( genMsgs[ 0 ][ ID ] ).toBe( '' );
 		// Token-array command contract: arguments is an argv list, never the
@@ -267,10 +280,13 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 		await act( async () => {} );
 
 		// Click while /auth is still in flight — the real race.
-		await act( async () => {
-			const pending = result.current.generate();
+		let settled = false;
+		act( () => {
+			result.current.generate().then( () => ( settled = true ) );
 			landAuth();
-			await pending;
+		} );
+		await waitFor( () => expect( settled ).toBe( true ), {
+			timeout: 6000,
 		} );
 
 		const genMsgs = wire.batches
@@ -287,11 +303,14 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 		const { result } = renderHook( () => useInsightsGraph() );
 		await act( async () => {} );
 
-		await act( async () => {
-			await expect( result.current.generate() ).rejects.toThrow(
-				/compose failed/i
-			);
+		let refusal;
+		act( () => {
+			result.current.generate().catch( ( e ) => ( refusal = e ) );
 		} );
+		await waitFor( () => expect( refusal ).toBeDefined(), {
+			timeout: 6000,
+		} );
+		expect( refusal.message ).toMatch( /compose failed/i );
 	} );
 
 	test( 'collect() mints from its own node and resolves to its payload', async () => {
@@ -303,8 +322,11 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 		await act( async () => {} );
 
 		let resolved;
-		await act( async () => {
-			resolved = await result.current.collect();
+		act( () => {
+			result.current.collect().then( ( v ) => ( resolved = v ) );
+		} );
+		await waitFor( () => expect( resolved ).toBeDefined(), {
+			timeout: 6000,
 		} );
 		expect( resolved ).toBe(
 			JSON.stringify( { collecting: 3, workers: 1 } )
@@ -314,7 +336,7 @@ describe( 'useInsightsGraph — awaited action verbs', () => {
 			.flat()
 			.filter( ( m ) => 'collect' === m[ VALUE ]?.name );
 		expect( collectMsgs.length ).toBe( 1 );
-		expect( collectMsgs[ 0 ][ FROM ] ).toBe( 'insights:collect' );
+		expect( collectMsgs[ 0 ][ FROM ] ).toBe( 'insights:collect:in' );
 		// Addressed, not correlated.
 		expect( collectMsgs[ 0 ][ ID ] ).toBe( '' );
 	} );

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `generate` and `collect` ride the batched router tick. The substrate retired `useRequestNode`, whose node minted a POST of its own from the click; both actions now go through `useAwaitableCommand` — one node per verb, the reply still addressed back to it, and the command batched with whatever else the tick was already sending.
+
 ## [0.9.1] - 2026-08-14
 
 ### Fixed
