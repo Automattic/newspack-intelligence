@@ -28,13 +28,14 @@ import { useBatchedPoll } from '@newspack-nodes/shared/hooks/useBatchedPoll';
 import { addSliceFetcher } from '@newspack-nodes/shared/helpers/addSliceFetcher';
 import { useAwaitableCommand } from '@newspack-nodes/shared/hooks/useAwaitableCommand';
 import '../nodes/register';
+import { egressPath } from '@newspack-nodes/shared/helpers/egressPath';
 
 // Server-side CI mount; Fetchers and action verbs target it via _shell/_http.
 const SERVER = 'insights';
 // Digest slices change slowly; the cadence is explicit, never inferred.
 const DEFAULT_INTERVAL_MS = 30000;
 
-const TARGET = `_shell/_http/${ SERVER }`;
+const TARGET = egressPath( SERVER );
 const ACC_VIEW = 'accumulated:view';
 
 // Per-slice fetcher config: receiver Tee, verb, view node, and its class.
@@ -85,16 +86,8 @@ export function useInsightsGraph( opts = {} ) {
 	} );
 
 	// One node per awaited action, each riding the same tick as the polls.
-	const generate = useAwaitableCommand( {
-		scope: `${ SERVER }:generate`,
-		target: TARGET,
-		command: 'generate',
-	} );
-	const collect = useAwaitableCommand( {
-		scope: `${ SERVER }:collect`,
-		target: TARGET,
-		command: 'collect',
-	} );
+	const generate = useAwaitableCommand( { ci: SERVER, command: 'generate' } );
+	const collect = useAwaitableCommand( { ci: SERVER, command: 'collect' } );
 
 	return { generate, collect };
 }
