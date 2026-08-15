@@ -24,11 +24,9 @@
  * / {error}); the new digest from a regenerate arrives via the poll, not the reply.
  */
 
-import { useCallback } from '@wordpress/element';
-
 import { useBatchedPoll } from '@newspack-nodes/shared/hooks/useBatchedPoll';
 import { addSliceFetcher } from '@newspack-nodes/shared/helpers/addSliceFetcher';
-import useRequestNode from '@newspack-nodes/shared/hooks/useRequestNode';
+import { useAwaitableCommand } from '@newspack-nodes/shared/hooks/useAwaitableCommand';
 import '../nodes/register';
 
 // Server-side CI mount; Fetchers and action verbs target it via _shell/_http.
@@ -67,7 +65,9 @@ const SLICES = [
 /**
  * @param {Object} [opts]            Options (test seams).
  * @param {number} [opts.intervalMs] Poll cadence in ms; defaults to DEFAULT_INTERVAL_MS. Never falls through to the router tick — that polled at 1Hz.
- * @return {{ generate: () => Promise<*>, collect: () => Promise<*> }} On-demand action verbs.
+ * @return {{ generate: ( args?: string[] ) => Promise<*>, collect: ( args?: string[] ) => Promise<*> }}
+ *   On-demand action verbs; each sends on the next tick and resolves with the
+ *   reply that lands on the node that asked.
  */
 export function useInsightsGraph( opts = {} ) {
 	useBatchedPoll( {
@@ -84,18 +84,17 @@ export function useInsightsGraph( opts = {} ) {
 		intervalMs: opts.intervalMs ?? DEFAULT_INTERVAL_MS,
 	} );
 
-	// One node per awaited action; each reply is addressed back to it.
-	const generateNode = useRequestNode( `${ SERVER }:generate`, SERVER );
-	const collectNode = useRequestNode( `${ SERVER }:collect`, SERVER );
-
-	const generate = useCallback(
-		() => generateNode( 'generate' ),
-		[ generateNode ]
-	);
-	const collect = useCallback(
-		() => collectNode( 'collect' ),
-		[ collectNode ]
-	);
+	// One node per awaited action, each riding the same tick as the polls.
+	const generate = useAwaitableCommand( {
+		scope: `${ SERVER }:generate`,
+		target: TARGET,
+		command: 'generate',
+	} );
+	const collect = useAwaitableCommand( {
+		scope: `${ SERVER }:collect`,
+		target: TARGET,
+		command: 'collect',
+	} );
 
 	return { generate, collect };
 }
