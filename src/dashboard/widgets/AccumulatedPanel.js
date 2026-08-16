@@ -2,6 +2,8 @@ import apiFetch from '@wordpress/api-fetch';
 import { useState, useEffect, useRef } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { useNodeState } from '@newspack-nodes/runtime';
+import { useCommandOnce } from '@newspack-nodes/shared/hooks/useCommandOnce';
+import { SERVER } from '../hooks/useInsightsGraph';
 import { markdownToBlockMarkup } from '../markdownToBlockMarkup';
 
 // How long a transient ack note stays before auto-dismissing.
@@ -39,20 +41,16 @@ function parseAck( payload ) {
 /**
  * AccumulatedPanel — the Total items KPI + collection progress + digest/newsletter
  * card. Reads ONLY the `accumulated:view` node's slice ({ accumulated, done, total,
- * digest }) via useNodeState. The Collect / Regenerate action verbs arrive as the
- * `collect` / `generate` props (the hook's awaited verbs that route to the worker);
- * Copy / Create-draft act on the shown digest (the durable digest:log content the
- * poll delivers) via the `createDraft` / `markdownToContent` seams.
+ * digest }) via useNodeState. Collect and Regenerate are its OWN one-shots, held
+ * here because the lock, the note and the latch each reply sets live here; Copy /
+ * Create-draft act on the shown digest (the durable digest:log content the poll
+ * delivers) via the `createDraft` / `markdownToContent` seams.
  *
  * @param {Object}   props
- * @param {Function} props.generate            Awaited `generate` verb → ack payload.
- * @param {Function} props.collect             Awaited `collect` verb → ack payload.
  * @param {Function} [props.createDraft]       REST-call seam: ({title,content}) => Promise (tests).
  * @param {Function} [props.markdownToContent] Markdown→block-markup seam (tests inject a fake).
  */
 export function AccumulatedPanel( {
-	generate,
-	collect,
 	createDraft = defaultCreateDraft,
 	markdownToContent = markdownToBlockMarkup,
 } ) {
@@ -151,36 +149,17 @@ export function AccumulatedPanel( {
 			} );
 	};
 
-	const onCollect = () => {
-		// Capture pre-click count (optimistic 0/total) and arm the latch.
-		startDone.current = done;
-		sawIncomplete.current = false;
-		setCollecting( true );
-		setCollectNote( null );
-		collect()
-			.then( ( payload ) => {
-				// { collecting, workers } on success, { error } if no worker.
-				const parsed = parseAck( payload );
-				if ( ! parsed ) {
-					setCollecting( false );
-					setCollectNote( {
-						type: 'error',
-						text: __(
-							'Collection returned an unexpected response.',
-							'newspack-intelligence'
-						),
-					} );
-					return;
-				}
-				if ( parsed.error ) {
-					setCollecting( false );
-					setCollectNote( {
-						type: 'error',
-						text: String( parsed.error ),
-					} );
-					return;
-				}
-				// Success: ack now, keep the lock; effect frees it on complete.
+	// @longform Each button's reply lands on its OWN node and sets the state
+	// that button owns — the lock, the note, the latch. Nothing pairs a reply
+	// to a click: the node it lands on is the one that asked (ADR-7).
+	const { run: collect } = useCommandOnce( {
+		ci: SERVER,
+		command: 'collect',
+		onDone: ( { result, error: refusal } ) => {
+			// { collecting, workers } on success, { error } if no worker.
+			const parsed = refusal ? null : parseAck( result );
+			if ( parsed && ! parsed.error ) {
+				// Ack now, keep the lock; the effect frees it on complete.
 				setCollectNote( {
 					type: 'ok',
 					text: sprintf(
@@ -192,20 +171,57 @@ export function AccumulatedPanel( {
 						Number( parsed.workers ) || 0
 					),
 				} );
-			} )
-			.catch( ( err ) => {
-				setCollecting( false );
-				setCollectNote( {
-					type: 'error',
-					text:
-						err && err.message
-							? err.message
-							: __(
-									'Could not start collection.',
-									'newspack-intelligence'
-							  ),
-				} );
+				return;
+			}
+			setCollecting( false );
+			setCollectNote( {
+				type: 'error',
+				text:
+					refusal ||
+					( parsed?.error && String( parsed.error ) ) ||
+					__(
+						'Collection returned an unexpected response.',
+						'newspack-intelligence'
+					),
 			} );
+		},
+	} );
+
+	const { run: generate } = useCommandOnce( {
+		ci: SERVER,
+		command: 'generate',
+		onDone: ( { result, error: refusal } ) => {
+			setGenerating( false );
+			// { regenerating, workers } on success, { error } if no worker.
+			const parsed = refusal ? null : parseAck( result );
+			if ( parsed && ! parsed.error ) {
+				// The worker is recomposing; the digest lands on the next poll.
+				setRegenNote(
+					__(
+						'Regenerating… the draft updates on the next poll.',
+						'newspack-intelligence'
+					)
+				);
+				return;
+			}
+			setDraftError(
+				refusal ||
+					( parsed?.error && String( parsed.error ) ) ||
+					__(
+						'Regeneration returned an unexpected response.',
+						'newspack-intelligence'
+					)
+			);
+		},
+	} );
+
+	const onCollect = () => {
+		// Capture pre-click count (optimistic 0/total) and arm the latch.
+		startDone.current = done;
+		sawIncomplete.current = false;
+		setCollecting( true );
+		setCollectNote( null );
+		collect( [] );
 	};
 
 	const onGenerate = () => {
@@ -213,43 +229,7 @@ export function AccumulatedPanel( {
 		setDraftError( null );
 		setRegenNote( null );
 		setCopied( false );
-		generate()
-			.then( ( payload ) => {
-				setGenerating( false );
-				// { regenerating, workers } on success, { error } if no worker.
-				const parsed = parseAck( payload );
-				if ( ! parsed ) {
-					setDraftError(
-						__(
-							'Regeneration returned an unexpected response.',
-							'newspack-intelligence'
-						)
-					);
-					return;
-				}
-				if ( parsed.error ) {
-					setDraftError( String( parsed.error ) );
-					return;
-				}
-				// Worker is recomposing; the digest lands on the next poll.
-				setRegenNote(
-					__(
-						'Regenerating… the draft updates on the next poll.',
-						'newspack-intelligence'
-					)
-				);
-			} )
-			.catch( ( err ) => {
-				setGenerating( false );
-				setDraftError(
-					err && err.message
-						? err.message
-						: __(
-								'Could not regenerate the digest.',
-								'newspack-intelligence'
-						  )
-				);
-			} );
+		generate( [] );
 	};
 
 	const onCreateDraft = () => {

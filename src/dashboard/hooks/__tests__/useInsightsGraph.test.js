@@ -16,17 +16,9 @@
  * the dashboard buttons call; their reply pivots straight back to accumulated:view,
  */
 
-import { renderHook, act, waitFor } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { installFakeCommandWire } from '@newspack-nodes/shared/test-utils/fakeCommandWire';
-import {
-	ID,
-	TO,
-	FROM,
-	VALUE,
-	Core,
-	forgetSession,
-	__setAuthFetch,
-} from '@newspack-nodes/runtime';
+import { TO, FROM, VALUE, Core } from '@newspack-nodes/runtime';
 import { useInsightsGraph } from '../useInsightsGraph';
 
 const INTERPRETER = '_command_interpreter';
@@ -214,130 +206,5 @@ describe( 'useInsightsGraph — batched poll', () => {
 			total: 3,
 			digest: '# D',
 		} );
-	} );
-} );
-
-describe( 'useInsightsGraph — awaited action verbs', () => {
-	test( 'generate() mints from its own node and resolves to its ack payload', async () => {
-		const wire = installWire( {
-			...emptyPayloads,
-			generate: JSON.stringify( { regenerating: true, workers: 1 } ),
-		} );
-		const { result } = renderHook( () => useInsightsGraph() );
-		await act( async () => {} );
-
-		// The action rides the router tick: start it inside act, settle it
-		// outside one — awaiting inside act stops the clock that carries it.
-		let resolved;
-		act( () => {
-			result.current.generate().then( ( v ) => ( resolved = v ) );
-		} );
-		await waitFor( () => expect( resolved ).toBeDefined(), {
-			timeout: 6000,
-		} );
-		expect( resolved ).toBe(
-			JSON.stringify( { regenerating: true, workers: 1 } )
-		);
-
-		const genMsgs = wire.batches
-			.flat()
-			.filter( ( m ) => 'generate' === m[ VALUE ]?.name );
-		expect( genMsgs.length ).toBe( 1 );
-		expect( genMsgs[ 0 ][ FROM ] ).toBe( 'insights:generate:in' );
-		// Addressed, not correlated.
-		expect( genMsgs[ 0 ][ ID ] ).toBe( '' );
-		// Token-array command contract: arguments is an argv list, never the
-		// retired joined-string form.
-		expect( genMsgs[ 0 ][ VALUE ] ).toMatchObject( {
-			name: 'generate',
-			arguments: [],
-		} );
-	} );
-
-	/**
-	 * An action fired before /auth resolves would mint UNSIGNED and be refused.
-	 * The dashboard mounts and the user can click immediately.
-	 */
-	test( 'signs generate() even when the session lands late', async () => {
-		forgetSession();
-		let landAuth;
-		const inFlight = new Promise( ( resolve ) => {
-			landAuth = resolve;
-		} );
-		__setAuthFetch( () =>
-			inFlight.then( () => ( {
-				handle: 'ffff6666ffff6666ffff6666ffff6666',
-				key: 'key-insights-late-auth',
-				expires_in: 3600,
-				now: 1771000000,
-			} ) )
-		);
-		const wire = installWire( {
-			...emptyPayloads,
-			generate: JSON.stringify( { regenerating: true, workers: 1 } ),
-		} );
-		const { result } = renderHook( () => useInsightsGraph() );
-		await act( async () => {} );
-
-		// Click while /auth is still in flight — the real race.
-		let settled = false;
-		act( () => {
-			result.current.generate().then( () => ( settled = true ) );
-			landAuth();
-		} );
-		await waitFor( () => expect( settled ).toBe( true ), {
-			timeout: 6000,
-		} );
-
-		const genMsgs = wire.batches
-			.flat()
-			.filter( ( m ) => 'generate' === m[ VALUE ]?.name );
-		expect( genMsgs.length ).toBe( 1 );
-		expect( genMsgs[ 0 ][ VALUE ].auth ).toBeDefined();
-	} );
-
-	test( 'generate() rejects when a TM_ERROR reply pivots back', async () => {
-		installWire( { ...emptyPayloads, generate: 'compose failed' }, [
-			'generate',
-		] );
-		const { result } = renderHook( () => useInsightsGraph() );
-		await act( async () => {} );
-
-		let refusal;
-		act( () => {
-			result.current.generate().catch( ( e ) => ( refusal = e ) );
-		} );
-		await waitFor( () => expect( refusal ).toBeDefined(), {
-			timeout: 6000,
-		} );
-		expect( refusal.message ).toMatch( /compose failed/i );
-	} );
-
-	test( 'collect() mints from its own node and resolves to its payload', async () => {
-		const wire = installWire( {
-			...emptyPayloads,
-			collect: JSON.stringify( { collecting: 3, workers: 1 } ),
-		} );
-		const { result } = renderHook( () => useInsightsGraph() );
-		await act( async () => {} );
-
-		let resolved;
-		act( () => {
-			result.current.collect().then( ( v ) => ( resolved = v ) );
-		} );
-		await waitFor( () => expect( resolved ).toBeDefined(), {
-			timeout: 6000,
-		} );
-		expect( resolved ).toBe(
-			JSON.stringify( { collecting: 3, workers: 1 } )
-		);
-
-		const collectMsgs = wire.batches
-			.flat()
-			.filter( ( m ) => 'collect' === m[ VALUE ]?.name );
-		expect( collectMsgs.length ).toBe( 1 );
-		expect( collectMsgs[ 0 ][ FROM ] ).toBe( 'insights:collect:in' );
-		// Addressed, not correlated.
-		expect( collectMsgs[ 0 ][ ID ] ).toBe( '' );
 	} );
 } );

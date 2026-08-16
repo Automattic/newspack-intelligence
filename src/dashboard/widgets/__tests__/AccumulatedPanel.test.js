@@ -2,8 +2,9 @@
 /**
  * AccumulatedPanel — the total-items KPI + collection progress + digest/newsletter
  * card. Reads ONLY the accumulated:view slice ({ accumulated, done, total, digest })
- * via useNodeState. The Collect / Regenerate action verbs come in as the `collect`
- * / `generate` props (the hook's awaited verbs); Copy / Create-draft act on the
+ * via useNodeState. Collect and Regenerate are the panel's OWN one-shots, so they
+ * go over a fake command wire here rather than arriving as promise props — which
+ * is also what makes the wiring itself covered. Copy / Create-draft act on the
  * shown digest via the `createDraft` / `markdownToContent` seams.
  */
 
@@ -14,11 +15,35 @@ import {
 	waitFor,
 	act,
 } from '@testing-library/react';
-import { Core } from '@newspack-nodes/runtime';
+import {
+	Core,
+	VALUE,
+	FROM,
+	ID,
+	forgetSession,
+	__setAuthFetch,
+} from '@newspack-nodes/runtime';
+import { installFakeCommandWire } from '@newspack-nodes/shared/test-utils/fakeCommandWire';
 import { AccumulatedViewNode } from '../../nodes/accumulated-view-node';
 import { AccumulatedPanel } from '../AccumulatedPanel';
 
-beforeEach( () => Core.reset() );
+// What the server answers, by verb; a test sets the one it exercises.
+let replyByVerb;
+let wire;
+
+beforeEach( () => {
+	Core.reset();
+	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+	replyByVerb = {};
+	wire = installFakeCommandWire( ( m ) => {
+		const answer = replyByVerb[ m[ VALUE ]?.name ];
+		return 'function' === typeof answer ? answer() : answer;
+	} );
+} );
+
+// Every command of a given verb that actually went on the wire.
+const sent = ( verb ) =>
+	wire.batches.flat().filter( ( m ) => verb === m[ VALUE ]?.name );
 
 function mountSlice( slice ) {
 	const node = new AccumulatedViewNode();
@@ -27,18 +52,19 @@ function mountSlice( slice ) {
 	return node;
 }
 
+// Real-clock sleep, captured before any faking: the reply rides the router's
+// setInterval, which stays real, so waiting for it needs the real clock too.
+const realSetTimeout = setTimeout;
+const sleep = ( ms ) => new Promise( ( r ) => realSetTimeout( r, ms ) );
+
 const DIGEST = '# Sprint digest\n\n- Big news shipped';
 const COMPLETE = { accumulated: 3, done: 3, total: 3, digest: DIGEST };
 
 // Render with sane action defaults; tests override the bits they exercise.
 function renderPanel( slice, props = {} ) {
 	mountSlice( slice );
-	const generate = props.generate || jest.fn( () => Promise.resolve( '{}' ) );
-	const collect = props.collect || jest.fn( () => Promise.resolve( '{}' ) );
 	return render(
 		<AccumulatedPanel
-			generate={ generate }
-			collect={ collect }
 			createDraft={ jest.fn( () => Promise.resolve( { id: 1 } ) ) }
 			markdownToContent={ ( md ) => `BLOCKS:${ md }` }
 			{ ...props }
@@ -128,13 +154,8 @@ describe( 'AccumulatedPanel — Collect gating', () => {
 	} );
 
 	it( 'shows 0/total immediately on click even when the prior cycle was complete', async () => {
-		renderPanel( COMPLETE, {
-			collect: jest.fn( () =>
-				Promise.resolve(
-					JSON.stringify( { collecting: 3, workers: 1 } )
-				)
-			),
-		} );
+		replyByVerb.collect = JSON.stringify( { collecting: 3, workers: 1 } );
+		renderPanel( COMPLETE );
 		expect( screen.getByText( /collected 3\/3/i ) ).toBeInTheDocument();
 		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
 		expect(
@@ -143,13 +164,8 @@ describe( 'AccumulatedPanel — Collect gating', () => {
 	} );
 
 	it( 'acknowledges a successful Collect and locks the button until the cycle completes', async () => {
-		renderPanel( COMPLETE, {
-			collect: jest.fn( () =>
-				Promise.resolve(
-					JSON.stringify( { collecting: 3, workers: 2 } )
-				)
-			),
-		} );
+		replyByVerb.collect = JSON.stringify( { collecting: 3, workers: 2 } );
+		renderPanel( COMPLETE );
 		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
 		expect(
 			await screen.findByText( /collecting from 2/i )
@@ -160,23 +176,17 @@ describe( 'AccumulatedPanel — Collect gating', () => {
 	} );
 
 	it( 'surfaces a no-worker error when Collect finds nothing live', async () => {
-		renderPanel( COMPLETE, {
-			collect: jest.fn( () =>
-				Promise.resolve(
-					JSON.stringify( {
-						error: 'No live newspack-intelligence worker',
-					} )
-				)
-			),
+		replyByVerb.collect = JSON.stringify( {
+			error: 'No live newspack-intelligence worker',
 		} );
+		renderPanel( COMPLETE );
 		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
 		expect( await screen.findByText( /no live/i ) ).toBeInTheDocument();
 	} );
 
 	it( 'surfaces an unexpected Collect response as an error', async () => {
-		renderPanel( COMPLETE, {
-			collect: jest.fn( () => Promise.resolve( 'not json' ) ),
-		} );
+		replyByVerb.collect = 'not json';
+		renderPanel( COMPLETE );
 		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
 		expect(
 			await screen.findByText(
@@ -185,12 +195,10 @@ describe( 'AccumulatedPanel — Collect gating', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'surfaces a rejected Collect verb as an error', async () => {
-		renderPanel( COMPLETE, {
-			collect: jest.fn( () =>
-				Promise.reject( new Error( 'collect blew up' ) )
-			),
-		} );
+	// A REFUSAL is a reply too: the verb answered, and it answered no.
+	it( 'surfaces a refused Collect verb as an error', async () => {
+		replyByVerb.collect = () => new Error( 'collect blew up' );
+		renderPanel( COMPLETE );
 		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
 		expect(
 			await screen.findByText( /collect blew up/i )
@@ -198,46 +206,45 @@ describe( 'AccumulatedPanel — Collect gating', () => {
 	} );
 
 	it( 'releases the Collect lock after the long safety timeout when progress never changes', async () => {
-		renderPanel( COMPLETE, {
-			collect: jest.fn( () =>
-				Promise.resolve(
-					JSON.stringify( { collecting: 3, workers: 1 } )
-				)
-			),
+		replyByVerb.collect = JSON.stringify( { collecting: 3, workers: 1 } );
+		// Fake the safety timeout ONLY. setInterval stays real so the graph
+		// keeps ticking and the ack actually arrives; faking it would stop the
+		// graph and pass this test for the wrong reason.
+		jest.useFakeTimers( {
+			doNotFake: [ 'setInterval', 'requestAnimationFrame' ],
 		} );
-		jest.useFakeTimers();
 		try {
+			renderPanel( COMPLETE );
 			fireEvent.click(
 				screen.getByRole( 'button', { name: /^collect$/i } )
 			);
-			await act( async () => {} );
+			await act( async () => sleep( 2500 ) );
+			expect(
+				screen.getByText( /collecting from 1/i )
+			).toBeInTheDocument();
 			await act( async () => {
 				jest.advanceTimersByTime( 180000 );
 			} );
-			await waitFor( () =>
-				expect(
-					screen.getByRole( 'button', { name: /^collect$/i } )
-				).toBeEnabled()
-			);
+			expect(
+				screen.getByRole( 'button', { name: /^collect$/i } )
+			).toBeEnabled();
 		} finally {
 			jest.useRealTimers();
 		}
-	} );
+	}, 20000 );
 
 	it( 'auto-dismisses the "Collecting from N…" note so it does not linger forever', async () => {
-		renderPanel( COMPLETE, {
-			collect: jest.fn( () =>
-				Promise.resolve(
-					JSON.stringify( { collecting: 3, workers: 1 } )
-				)
-			),
+		replyByVerb.collect = JSON.stringify( { collecting: 3, workers: 1 } );
+		// Fake the dismissal ONLY; setInterval stays real so the ack arrives.
+		jest.useFakeTimers( {
+			doNotFake: [ 'setInterval', 'requestAnimationFrame' ],
 		} );
-		jest.useFakeTimers();
 		try {
+			renderPanel( COMPLETE );
 			fireEvent.click(
 				screen.getByRole( 'button', { name: /^collect$/i } )
 			);
-			await act( async () => {} );
+			await act( async () => sleep( 2500 ) );
 			expect(
 				screen.getByText( /collecting from 1/i )
 			).toBeInTheDocument();
@@ -248,7 +255,7 @@ describe( 'AccumulatedPanel — Collect gating', () => {
 		} finally {
 			jest.useRealTimers();
 		}
-	} );
+	}, 20000 );
 } );
 
 describe( 'AccumulatedPanel — Regenerate', () => {
@@ -267,13 +274,11 @@ describe( 'AccumulatedPanel — Regenerate', () => {
 	} );
 
 	it( 'asks the worker to regenerate and acknowledges; the shown digest stays', async () => {
-		renderPanel( COMPLETE, {
-			generate: jest.fn( () =>
-				Promise.resolve(
-					JSON.stringify( { regenerating: true, workers: 1 } )
-				)
-			),
+		replyByVerb.generate = JSON.stringify( {
+			regenerating: true,
+			workers: 1,
 		} );
+		renderPanel( COMPLETE );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: /regenerate digest/i } )
 		);
@@ -286,15 +291,10 @@ describe( 'AccumulatedPanel — Regenerate', () => {
 	} );
 
 	it( 'surfaces an error (and keeps the digest) when Regenerate finds no live worker', async () => {
-		renderPanel( COMPLETE, {
-			generate: jest.fn( () =>
-				Promise.resolve(
-					JSON.stringify( {
-						error: 'No live newspack-intelligence worker',
-					} )
-				)
-			),
+		replyByVerb.generate = JSON.stringify( {
+			error: 'No live newspack-intelligence worker',
 		} );
+		renderPanel( COMPLETE );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: /regenerate digest/i } )
 		);
@@ -309,9 +309,8 @@ describe( 'AccumulatedPanel — Regenerate', () => {
 	} );
 
 	it( 'surfaces an unexpected Regenerate response as an error', async () => {
-		renderPanel( COMPLETE, {
-			generate: jest.fn( () => Promise.resolve( 'not json' ) ),
-		} );
+		replyByVerb.generate = 'not json';
+		renderPanel( COMPLETE );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: /regenerate digest/i } )
 		);
@@ -322,12 +321,10 @@ describe( 'AccumulatedPanel — Regenerate', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'surfaces a rejected Regenerate verb as an error', async () => {
-		renderPanel( COMPLETE, {
-			generate: jest.fn( () =>
-				Promise.reject( new Error( 'generate blew up' ) )
-			),
-		} );
+	// A REFUSAL is a reply too: the verb answered, and it answered no.
+	it( 'surfaces a refused Regenerate verb as an error', async () => {
+		replyByVerb.generate = () => new Error( 'generate blew up' );
+		renderPanel( COMPLETE );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: /regenerate digest/i } )
 		);
@@ -417,4 +414,58 @@ describe( 'AccumulatedPanel — Copy + Create draft', () => {
 			screen.getByRole( 'button', { name: /create draft post/i } )
 		).toBeDisabled();
 	} );
+} );
+
+// These moved here with the verbs: the panel holds them now, so the wire-level
+// facts about them are asserted where the click that mints them lives.
+describe( 'AccumulatedPanel — the action verbs on the wire', () => {
+	it( 'mints each verb from its OWN node, addressed rather than correlated', async () => {
+		replyByVerb.generate = JSON.stringify( { regenerating: true } );
+		renderPanel( COMPLETE );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: /regenerate digest/i } )
+		);
+		await waitFor( () => expect( sent( 'generate' ).length ).toBe( 1 ), {
+			timeout: 6000,
+		} );
+		const [ msg ] = sent( 'generate' );
+		expect( msg[ FROM ] ).toBe( 'insights:generate:in' );
+		// Addressed, not correlated: TO=FROM is the return path (ADR-7).
+		expect( msg[ ID ] ).toBe( '' );
+		// Token-array command contract: argv, never a joined string.
+		expect( msg[ VALUE ] ).toMatchObject( {
+			name: 'generate',
+			arguments: [],
+		} );
+	}, 20000 );
+
+	// A click before /auth resolves would mint UNSIGNED and be refused, and the
+	// panel is clickable the moment it renders.
+	it( 'signs a click that beats the session', async () => {
+		forgetSession();
+		let landAuth;
+		const inFlight = new Promise( ( resolve ) => {
+			landAuth = resolve;
+		} );
+		__setAuthFetch( () =>
+			inFlight.then( () => ( {
+				handle: 'ffff6666ffff6666ffff6666ffff6666',
+				key: 'key-insights-late-auth',
+				expires_in: 3600,
+				now: 1771000000,
+			} ) )
+		);
+		replyByVerb.generate = JSON.stringify( { regenerating: true } );
+		renderPanel( COMPLETE );
+		act( () => {
+			fireEvent.click(
+				screen.getByRole( 'button', { name: /regenerate digest/i } )
+			);
+			landAuth();
+		} );
+		await waitFor( () => expect( sent( 'generate' ).length ).toBe( 1 ), {
+			timeout: 8000,
+		} );
+		expect( sent( 'generate' )[ 0 ][ VALUE ].auth ).toBeDefined();
+	}, 20000 );
 } );
