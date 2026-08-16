@@ -11,8 +11,8 @@ import './styles/insights.scss';
  * and renders the three thin per-slice widgets, each reading ITS OWN view node via
  * useNodeState. No god view node, no god `insights` command — each card owns one
  * slice: counts → SourceCounts, top → TopTable, accumulated (with the digest +
- * collection progress + actions) → AccumulatedPanel. The hook's awaited
- * `generate`/`collect` verbs (the only cross-widget wiring) flow into the panel.
+ * collection progress + actions) → AccumulatedPanel, which owns its own two
+ * action verbs; this page threads no command wiring at all.
  * Styling follows the Newspack in-product design system (docs/DESIGN.product.md):
  * light surfaces, a Cobalt accent, Inter, laid out in flow within wp-admin.
  *
@@ -26,9 +26,7 @@ export default function PublisherInsights( {
 	createDraft,
 	markdownToContent,
 } = {} ) {
-	const { generate, collect } = useInsightsGraph( {
-		intervalMs,
-	} );
+	useInsightsGraph( { intervalMs } );
 
 	return (
 		<div className="eai-insights">
@@ -44,8 +42,6 @@ export default function PublisherInsights( {
 			<div className="eai-insights__layout">
 				<div className="eai-insights__side">
 					<AccumulatedPanel
-						generate={ generate }
-						collect={ collect }
 						createDraft={ createDraft }
 						markdownToContent={ markdownToContent }
 					/>

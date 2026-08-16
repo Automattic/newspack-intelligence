@@ -16,22 +16,18 @@
  * receiver Tee → its slice view. One batched POST per tick fans out three slice
  * commands; each reply pivots back to its OWN view and lands in its OWN slice.
  *
- * Beyond the poll the hook exposes the awaited `generate`/`collect` action verbs
- * the dashboard buttons call: each fires a TM_COMMAND (FROM=accumulated:view) and
- * stashes a `{ resolve, reject }` under its message[ID] in that view's
- * SliceViewNode.fill() settles the matching Promise before the slice path. Both
- * resolve to the verb's raw ack payload ({collecting,workers} / {regenerating,workers}
- * / {error}); the new digest from a regenerate arrives via the poll, not the reply.
+ * The Collect and Regenerate buttons are NOT here: each is its own one-shot,
+ * held by `AccumulatedPanel` beside the lock and note its reply sets. This hook
+ * owns the poll; the panel owns its buttons.
  */
 
 import { useBatchedPoll } from '@newspack-nodes/shared/hooks/useBatchedPoll';
 import { addSliceFetcher } from '@newspack-nodes/shared/helpers/addSliceFetcher';
-import { useAwaitableCommand } from '@newspack-nodes/shared/hooks/useAwaitableCommand';
 import { views } from '../nodes/register';
 import { egressPath } from '@newspack-nodes/shared/helpers/egressPath';
 
 // Server-side CI mount; Fetchers and action verbs target it via _shell/_http.
-const SERVER = 'insights';
+export const SERVER = 'insights';
 // Digest slices change slowly; the cadence is explicit, never inferred.
 const DEFAULT_INTERVAL_MS = 30000;
 
@@ -66,9 +62,7 @@ const SLICES = [
 /**
  * @param {Object} [opts]            Options (test seams).
  * @param {number} [opts.intervalMs] Poll cadence in ms; defaults to DEFAULT_INTERVAL_MS. Never falls through to the router tick — that polled at 1Hz.
- * @return {{ generate: ( args?: string[] ) => Promise<*>, collect: ( args?: string[] ) => Promise<*> }}
- *   On-demand action verbs; each sends on the next tick and resolves with the
- *   reply that lands on the node that asked.
+ * @return {void} Nothing: every widget reads its own slice via `useNodeState`.
  */
 export function useInsightsGraph( opts = {} ) {
 	useBatchedPoll( {
@@ -84,10 +78,4 @@ export function useInsightsGraph( opts = {} ) {
 		teeName: 'insights:tee',
 		intervalMs: opts.intervalMs ?? DEFAULT_INTERVAL_MS,
 	} );
-
-	// One node per awaited action, each riding the same tick as the polls.
-	const generate = useAwaitableCommand( { ci: SERVER, command: 'generate' } );
-	const collect = useAwaitableCommand( { ci: SERVER, command: 'collect' } );
-
-	return { generate, collect };
 }
