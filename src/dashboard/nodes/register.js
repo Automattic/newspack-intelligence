@@ -11,7 +11,8 @@ import { SourceCountsViewNode } from './source-counts-view-node';
 import { TopTableViewNode } from './top-table-view-node';
 import { AccumulatedViewNode } from './accumulated-view-node';
 
-CommandInterpreterNode.registerNodeClasses( {
+/** The view classes, handed to `makeNode` — a name is per-bundle. */
+export const views = CommandInterpreterNode.registerNodeClasses( {
 	SourceCountsView: SourceCountsViewNode,
 	TopTableView: TopTableViewNode,
 	AccumulatedView: AccumulatedViewNode,

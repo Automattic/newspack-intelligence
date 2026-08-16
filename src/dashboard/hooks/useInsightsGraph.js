@@ -27,7 +27,7 @@
 import { useBatchedPoll } from '@newspack-nodes/shared/hooks/useBatchedPoll';
 import { addSliceFetcher } from '@newspack-nodes/shared/helpers/addSliceFetcher';
 import { useAwaitableCommand } from '@newspack-nodes/shared/hooks/useAwaitableCommand';
-import '../nodes/register';
+import { views } from '../nodes/register';
 import { egressPath } from '@newspack-nodes/shared/helpers/egressPath';
 
 // Server-side CI mount; Fetchers and action verbs target it via _shell/_http.
@@ -45,21 +45,21 @@ const SLICES = [
 		receiver: 'countsIn',
 		command: 'counts',
 		view: 'source-counts:view',
-		viewClass: 'SourceCountsView',
+		viewClass: views.SourceCountsView,
 	},
 	{
 		fetcher: 'fetch-top',
 		receiver: 'topIn',
 		command: 'top',
 		view: 'top-table:view',
-		viewClass: 'TopTableView',
+		viewClass: views.TopTableView,
 	},
 	{
 		fetcher: 'fetch-acc',
 		receiver: 'accIn',
 		command: 'accumulated',
 		view: ACC_VIEW,
-		viewClass: 'AccumulatedView',
+		viewClass: views.AccumulatedView,
 	},
 ];
 

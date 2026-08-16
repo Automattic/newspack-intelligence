@@ -15,7 +15,7 @@
 		"fix:scss": "stylelint --customSyntax postcss-scss --fix 'src/**/*.scss'",
 		"format": "prettier --write 'src/**/*.{js,jsx,scss,json}'",
 		"format:js": "prettier --write 'src/**/*.{js,jsx}'",
-		"lint:js": "eslint --no-error-on-unmatched-pattern 'src/**/*.{js,jsx}' 'scripts/**/*.mjs' && node scripts/lint-comments.mjs .",
+		"lint:js": "eslint --no-error-on-unmatched-pattern 'src/**/*.{js,jsx}' 'scripts/**/*.mjs' && node scripts/lint-comments.mjs . && node scripts/lint-contract.mjs",
 		"lint:php": "phpcs && php scripts/lint-comments.php .",
 		"lint:phpstan": "vendor/bin/phpstan analyse -c phpstan-deadcode.neon --memory-limit=2G --no-progress",
 		"lint:deadcode:js": "knip --no-progress",
@@ -70,6 +70,7 @@
 			"eslint",
 			"node scripts/reorder-node-methods.js --check",
 			"node scripts/lint-comments.mjs",
+			"node scripts/lint-contract.mjs",
 			"sh -c 'npm run lint:deadcode:js --silent'",
 			"sh -c 'npm run lint:types --silent'"
 		],

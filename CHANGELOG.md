@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The dashboard's three view classes are handed to `makeNode`, not named.** `SourceCountsView`, `TopTableView` and `AccumulatedView` were resolved by name through the interpreter's class map, which is a per-bundle static — a graph built through another bundle's interpreter cannot resolve them (substrate ADR-16). `nodes/register.js` exports the map it registers.
+
 ### Changed
 - `generate` and `collect` ride the batched router tick. The substrate retired `useRequestNode`, whose node minted a POST of its own from the click; both actions now go through `useAwaitableCommand` — one node per verb, the reply still addressed back to it, and the command batched with whatever else the tick was already sending.
 
