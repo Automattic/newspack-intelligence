@@ -7,7 +7,9 @@
 
 import { render, screen } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
-import { SourceCountsViewNode } from '../../nodes/source-counts-view-node';
+import { views } from '../../nodes/register';
+
+const SourceCountsViewNode = views.SourceCountsView;
 import { SourceCounts } from '../SourceCounts';
 
 beforeEach( () => Core.reset() );

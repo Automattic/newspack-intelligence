@@ -13,7 +13,9 @@ import {
 	newMessage,
 	Core,
 } from '@newspack-nodes/runtime';
-import { SourceCountsViewNode } from '../source-counts-view-node';
+import { views } from '../register';
+
+const SourceCountsViewNode = views.SourceCountsView;
 
 beforeEach( () => Core.reset() );
 

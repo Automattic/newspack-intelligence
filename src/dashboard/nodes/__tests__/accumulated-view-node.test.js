@@ -17,7 +17,9 @@ import {
 	newMessage,
 	Core,
 } from '@newspack-nodes/runtime';
-import { AccumulatedViewNode } from '../accumulated-view-node';
+import { views } from '../register';
+
+const AccumulatedViewNode = views.AccumulatedView;
 
 beforeEach( () => Core.reset() );
 

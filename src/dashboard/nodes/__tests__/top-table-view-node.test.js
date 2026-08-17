@@ -13,7 +13,9 @@ import {
 	newMessage,
 	Core,
 } from '@newspack-nodes/runtime';
-import { TopTableViewNode } from '../top-table-view-node';
+import { views } from '../register';
+
+const TopTableViewNode = views.TopTableView;
 
 beforeEach( () => Core.reset() );
 
