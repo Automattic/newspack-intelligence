@@ -37,6 +37,24 @@ After adding or renaming a Node class, regenerate the classmap (`make_node` and
 the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
+**`@wordpress/*` is pinned to the `wp-7.0` dist tag — never bump it to close an
+advisory.** Every declared runtime version IS its `wp-7.0` tag (`components
+32.2.1`, `element 6.40.1`, `i18n 6.13.1`, `api-fetch 7.40.1`, `icons 11.7.1`).
+`scripts/build.mjs` externalises them to the `wp.*` globals, so npm's copy never
+ships — raising it delivers no new code, it moves the API you compile, lint and
+type-check against AHEAD of the one the browser is handed. A component changed or
+removed between majors then builds clean, passes eslint and jest, and breaks at
+runtime, with nothing mechanical to catch it. Check `npm view @wordpress/<pkg>
+dist-tags --json` against `wp core version` before proposing any bump, and move
+the whole family together only when the WordPress target itself moves. A
+Dependabot advisory reachable only PAST the pin gets dismissed, not bumped:
+2026-08-17, uuid GHSA-w5hq-g745-h8pq needed `components >= 33.1.0`, one major
+past `wp-7.0`, for a package absent from `build/` entirely — dismissed
+`not_used`. npm `overrides` cannot rescue that, because npm matches an override
+by package NAME anywhere in the tree: both `{uuid: …}` and the nested
+`{"@wordpress/components": {uuid: …}}` downgraded the fourteen `@wordpress/*`
+packages that legitimately require `uuid@^14`.
+
 `lint:deadcode:js` (knip) runs in pre-commit on staged JS. knip's jest plugin is
 off and tests are excluded as consumers, so any export or module reachable only
 from its own test reads as dead — the same rule phpstan-deadcode applies on the
