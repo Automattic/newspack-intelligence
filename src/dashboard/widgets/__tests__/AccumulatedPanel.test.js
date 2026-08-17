@@ -24,7 +24,9 @@ import {
 	__setAuthFetch,
 } from '@newspack-nodes/runtime';
 import { installFakeCommandWire } from '@newspack-nodes/shared/test-utils/fakeCommandWire';
-import { AccumulatedViewNode } from '../../nodes/accumulated-view-node';
+import { views } from '../../nodes/register';
+
+const AccumulatedViewNode = views.AccumulatedView;
 import { AccumulatedPanel } from '../AccumulatedPanel';
 
 // What the server answers, by verb; a test sets the one it exercises.

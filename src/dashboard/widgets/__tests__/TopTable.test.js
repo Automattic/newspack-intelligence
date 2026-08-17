@@ -7,7 +7,9 @@
 
 import { render, screen } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
-import { TopTableViewNode } from '../../nodes/top-table-view-node';
+import { views } from '../../nodes/register';
+
+const TopTableViewNode = views.TopTableView;
 import { TopTable } from '../TopTable';
 
 beforeEach( () => Core.reset() );
