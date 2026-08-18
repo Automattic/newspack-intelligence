@@ -29,8 +29,7 @@ npm run build
 npm run lint:js && npm run lint:php && npm run lint:phpstan && npm run lint:scss
 npm run lint:deadcode:js                  # knip; GATED in pre-commit (caveat below)
 npx jest                                  # JS (local)
-docker exec -u bend eve-pyrobase1-1 bash -c \
-  'cd /services/pyrobase/sources/newspack-intelligence/tests && ../vendor/bin/phpunit'   # PHP (container, from /services)
+cd tests && ../vendor/bin/phpunit         # PHP; needs the substrate active
 ```
 
 After adding or renaming a Node class, regenerate the classmap (`make_node` and
@@ -64,9 +63,10 @@ cannot parse JSX in a `.js` file, which drops that file's `import()` expressions
 any `lazy( () => import( './X' ) )` target must be listed as `entry` in
 `knip.json` or it reads as an unused file.
 
-Deploy — build the zip first, since the setup script installs the release zip
-rather than building it: `npm run release:archive` then
-`docker exec eve-pyrobase1-1 /services/pyrobase/setup/newspack-intelligence.sh`.
+Deploy — build the zip first (`npm run release:archive`), then install
+`release/newspack-intelligence.zip` however the target site installs plugins. An
+installer that only copies the prebuilt zip will happily ship stale code if the
+build is skipped.
 
 ### Git hooks
 
