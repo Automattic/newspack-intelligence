@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-08-18
+
+### Fixed
+- **Picks up newspack-nodes 2.35.2.** The Publisher Insights dashboard inlines the substrate runtime, so two browser-side fixes only reach it through a rebuild. An unauthenticated send left `_http` locked, silently buffering every later direct `fill()` until the next Router tick POSTed the pile; and a send during a backbone rebuild threw on an unguarded `_http` lookup, unwinding out of `notifyTimer()` and killing the rest of that tick's pollers. The release.yml pin moves 2.34.0 → 2.35.2.
+
 ## [0.9.2] - 2026-08-17
 
 ### Fixed
