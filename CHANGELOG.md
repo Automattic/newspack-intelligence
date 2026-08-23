@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-08-22
+
+### Changed
+- **Substrate pin moves 2.35.2 → 2.36.2, and nothing else changes.** Unlike 0.9.3, this release picks up no fix: the three substrate releases in between are a Vault admin screen (2.36.0), the shared log-pane header's scrollbar inset (2.36.1) and the Topology Console's draft dirty-state (2.36.2), and this dashboard inlines none of them — it carries the substrate runtime and the debug overlay, not the log pane or the console. Diffed to be sure: a bundle built against 2.36.2 differs from the published 0.9.3 asset in 493 bytes, all of them the `@newspack-nodes` banner and esbuild's mangled identifiers, at identical file length. The pin moves for hygiene — left at 2.35.2 it silently becomes the base for the NEXT release, which is how a stale pin ships old code past a green workflow.
+
 ## [0.9.3] - 2026-08-18
 
 ### Fixed
