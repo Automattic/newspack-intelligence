@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`NodeLogPrefixTest`** — subclasses the substrate's shared `NodeLogPrefixTestCase`, which reads this plugin's `make_node` lines for the names its node classes run under and fails on a `$this->` log call that hard-codes one. `Node::log_midfix()` already prints the name, so a message that repeats it doubles it. No node here was offending; the guard is for the next one.
+
 ## [0.9.4] - 2026-08-22
 
 ### Changed
