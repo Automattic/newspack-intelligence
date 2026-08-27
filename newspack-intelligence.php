@@ -140,9 +140,14 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 		if ( ! \class_exists( '\Newspack_Nodes\Topology_Registry' ) ) {
 			return;
 		}
-		// Substrate handshake: dormant when too old (no notice API pre-0.54).
+		// @longform Substrate handshake: dormant when too old. 2.25.0 =
+		// Node::config_line(), which every source node builds its `arguments`
+		// dump from; 0.44.0 was Worker_Base::ipc_partition_args(), which the
+		// insights CI makes its Partition with. The floor read 0.54.0 (the
+		// notice API) long after both landed — a floor set too low does not
+		// degrade, it activates and then fatals on the missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
-			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '0.54.0', 'Newspack Intelligence' ) ) {
+			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.25.0', 'Newspack Intelligence' ) ) {
 			return;
 		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.
