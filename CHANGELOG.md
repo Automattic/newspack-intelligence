@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-08-27
+
 ### Fixed
 
 - **The substrate floor read `0.54.0`, from when the substrate was 0.x.** It calls `Node::config_line()` (substrate 2.25.0), which every source node builds its `arguments` dump from, and `Worker_Base::ipc_partition_args()` (0.44.0), which the insights CI makes its Partition with. On any substrate between 0.54.0 and 2.25.0 the handshake passes and the plugin activates, then fatals on the missing method rather than lying dormant — which is the one thing the floor exists to prevent.
