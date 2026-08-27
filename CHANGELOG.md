@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-08-27
+
+### Fixed
+
+- **Builds against substrate v2.43.1, up from v2.36.2.** The pin had sat eight releases behind, and a stale pin is invisible from the outside: local builds resolve the alias to the working tree while CI resolves it to the tag, so the shipped bundle carried shared code from weeks ago and every workflow run was green. This one moves what actually ships — a log line stamped in the reader's own zone rather than UTC, a failing command named by its own node, the inbound FROM stamp behind `stamp_message`'s guards, and everything else the substrate landed between the two tags.
+- **The console-warning gate matches that prefix in any zone.** It stripped a hardcoded ` UTC ` before comparing a declared `expectConsoleWarn`, so every declaration stopped matching the moment the substrate moved. The zone token is constrained to the shapes `Intl` emits — `UTC`, `GMT±H[:MM]`, a 2–5 letter abbreviation — never a bare `\S+`, which would match any `<date> <time> <word> <word>: ` warning text and strip it: the gate swallowing the very lines it exists to report.
+
 ### Added
 
 - **`NodeLogPrefixTest`** — subclasses the substrate's shared `NodeLogPrefixTestCase`, which reads this plugin's `make_node` lines for the names its node classes run under and fails on a `$this->` log call that hard-codes one. `Node::log_midfix()` already prints the name, so a message that repeats it doubles it. No node here was offending; the guard is for the next one.
