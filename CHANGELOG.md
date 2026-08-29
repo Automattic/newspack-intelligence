@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.9] - 2026-08-29
+
+### Changed
+
+- **Substrate pin moves to `v2.46.2`**, from `v2.43.3`. It registers the substrate's own `topologies/` dir at plugin load rather than inside the lazy runtime wiring — every topology here `include`s `topic-probe`, and on a request that wires neither tier (a frontend page view) the shutdown wake could not resolve it, losing the wake with `pending wake failed: unknown topology in include: topic-probe`.
+
 ## [0.9.8] - 2026-08-27
 
 ### Fixed
