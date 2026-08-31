@@ -264,34 +264,6 @@ final class Publisher_Matcher {
 		];
 	}
 
-	/** Whole-word (Unicode-aware) case-insensitive containment of $needle in $haystack. */
-	private function contains_word( string $haystack, string $needle ): bool {
-		if ( '' === $needle ) {
-			return false;
-		}
-		$pattern = '/(?<![\p{L}\p{N}])' . \preg_quote( $needle, '/' ) . '(?![\p{L}\p{N}])/iu';
-		return 1 === \preg_match( $pattern, $haystack );
-	}
-
-	/**
-	 * A match key derived from the stored domain: its registrable label, alphanumerics
-	 * only. Gives every imported publisher a text-matchable name without waiting on
-	 * enrichment. "wyofile.com" -> "wyofile"; "newsroom.example.co.nz" -> "example".
-	 * Short stems collide with ordinary words, so they are dropped.
-	 */
-	private function domain_stem( string $domain ): string {
-		$labels = \explode( '.', $this->normalize_domain( $domain ) );
-		\array_pop( $labels );
-		// Second-level registries leave a filler label behind.
-		if ( \count( $labels ) > 1 && \in_array( \end( $labels ), self::SECOND_LEVEL_LABELS, true ) ) {
-			\array_pop( $labels );
-		}
-		// The registrable label: a subdomain names its group.
-		$stem = [] === $labels ? '' : (string) \end( $labels );
-		$stem = (string) \preg_replace( '/[^\p{L}\p{N}]+/u', '', \mb_strtolower( $stem ) );
-		return \mb_strlen( $stem ) >= self::MIN_STEM_LENGTH ? $stem : '';
-	}
-
 	/**
 	 * Find a stem in the text ignoring the spacing prose uses, so
 	 * "fortworthreport" matches "Fort Worth Report". The offset map exists so a
@@ -323,31 +295,6 @@ final class Publisher_Matcher {
 	}
 
 	/**
-	 * The alphanumeric-only form of $text, plus a map from each of its offsets back to the
-	 * offset in $text. Publisher-independent, so it is built once per item rather than once
-	 * per publisher.
-	 *
-	 * @return array{0:string,1:array<int,int>}
-	 */
-	private function squash( string $text ): array {
-		$squashed = '';
-		$map      = [];
-		$chars    = \preg_split( '//u', $text, -1, \PREG_SPLIT_NO_EMPTY );
-		foreach ( \is_array( $chars ) ? $chars : [] as $i => $char ) {
-			if ( 1 !== \preg_match( '/[\p{L}\p{N}]/u', $char ) ) {
-				continue;
-			}
-			// Lowercasing can yield 2 codepoints (U+0130); index per codepoint.
-			$lower     = \mb_strtolower( $char );
-			$squashed .= $lower;
-			for ( $n = \mb_strlen( $lower ); $n > 0; $n-- ) {
-				$map[] = $i;
-			}
-		}
-		return [ $squashed, $map ];
-	}
-
-	/**
 	 * Whether a span reads as a publisher name rather than ordinary prose.
 	 *
 	 * Two rules, both required. Every word must be capitalized, single-word spans
@@ -375,9 +322,62 @@ final class Publisher_Matcher {
 		return '' !== $char && 1 === \preg_match( '/[\p{L}\p{N}]/u', $char );
 	}
 
+	/**
+	 * A match key derived from the stored domain: its registrable label, alphanumerics
+	 * only. Gives every imported publisher a text-matchable name without waiting on
+	 * enrichment. "wyofile.com" -> "wyofile"; "newsroom.example.co.nz" -> "example".
+	 * Short stems collide with ordinary words, so they are dropped.
+	 */
+	private function domain_stem( string $domain ): string {
+		$labels = \explode( '.', $this->normalize_domain( $domain ) );
+		\array_pop( $labels );
+		// Second-level registries leave a filler label behind.
+		if ( \count( $labels ) > 1 && \in_array( \end( $labels ), self::SECOND_LEVEL_LABELS, true ) ) {
+			\array_pop( $labels );
+		}
+		// The registrable label: a subdomain names its group.
+		$stem = [] === $labels ? '' : \end( $labels );
+		$stem = (string) \preg_replace( '/[^\p{L}\p{N}]+/u', '', \mb_strtolower( $stem ) );
+		return \mb_strlen( $stem ) >= self::MIN_STEM_LENGTH ? $stem : '';
+	}
+
 	/** Normalize a stored domain the same way a host is normalized. */
 	private function normalize_domain( string $domain ): string {
 		return $this->strip_www( \strtolower( \trim( $domain ) ) );
+	}
+
+	/**
+	 * The alphanumeric-only form of $text, plus a map from each of its offsets back to the
+	 * offset in $text. Publisher-independent, so it is built once per item rather than once
+	 * per publisher.
+	 *
+	 * @return array{0:string,1:array<int,int>}
+	 */
+	private function squash( string $text ): array {
+		$squashed = '';
+		$map      = [];
+		$chars    = \preg_split( '//u', $text, -1, \PREG_SPLIT_NO_EMPTY );
+		foreach ( \is_array( $chars ) ? $chars : [] as $i => $char ) {
+			if ( 1 !== \preg_match( '/[\p{L}\p{N}]/u', $char ) ) {
+				continue;
+			}
+			// Lowercasing can yield 2 codepoints (U+0130); index per codepoint.
+			$lower     = \mb_strtolower( $char );
+			$squashed .= $lower;
+			for ( $n = \mb_strlen( $lower ); $n > 0; $n-- ) {
+				$map[] = $i;
+			}
+		}
+		return [ $squashed, $map ];
+	}
+
+	/** Whole-word (Unicode-aware) case-insensitive containment of $needle in $haystack. */
+	private function contains_word( string $haystack, string $needle ): bool {
+		if ( '' === $needle ) {
+			return false;
+		}
+		$pattern = '/(?<![\p{L}\p{N}])' . \preg_quote( $needle, '/' ) . '(?![\p{L}\p{N}])/iu';
+		return 1 === \preg_match( $pattern, $haystack );
 	}
 
 	/** Normalize a URL to its bare host: lowercase, no leading "www.". '' when none. */
