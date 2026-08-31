@@ -41,6 +41,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **`NodeLogPrefixTest`** — subclasses the substrate's shared `NodeLogPrefixTestCase`, which reads this plugin's `make_node` lines for the names its node classes run under and fails on a `$this->` log call that hard-codes one. `Node::log_midfix()` already prints the name, so a message that repeats it doubles it. No node here was offending; the guard is for the next one.
+- Intake Gate resolves a publisher from its domain even when enrichment is empty.
+  The importer writes only `domain_name`, so the exact-name and alias signals were
+  dead for every imported publisher and only a URL-domain hit could attribute an
+  item. A key derived from the domain's registrable label (`wyofile.com` ->
+  `wyofile`, `newsroom.example.co.nz` -> `example`) is now searched in the item
+  **title**, ignoring the spacing prose uses, so "Fort Worth Report" resolves
+  `fortworthreport.org`. Reported as `matched_on: domain_stem` with confidence
+  0.9, below the 1.0 an exact domain or name earns, so the decision log can tell a
+  heuristic hit from a certain one.
+
+  Bodies are deliberately not searched: they are unstripped RSS `description` /
+  Atom `content`, where an `href`, a logo filename or an email address spells a
+  client's domain and would attribute any item merely linking to that client.
+
+  Guards on a hit: it must align to word boundaries in the original text, every
+  word must be capitalized, and a welded multi-word span must not open with an
+  article — a title capitalizes its first word regardless, so "The Reader
+  Activation System" is spelled exactly like a mention of `thereader.com`. Stems
+  under 6 characters are dropped as too generic to tell from ordinary words.
 
 ## [0.9.4] - 2026-08-22
 

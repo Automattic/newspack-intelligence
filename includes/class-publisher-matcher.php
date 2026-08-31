@@ -18,6 +18,18 @@ namespace Newspack_Intelligence;
 
 final class Publisher_Matcher {
 
+	/** A guard-approximated substring, so never the 1.0 an exact domain or name earns. */
+	private const STEM_CONFIDENCE = 0.9;
+
+	/** Filler labels of second-level registries, dropped along with the TLD. */
+	private const SECOND_LEVEL_LABELS = [ 'co', 'com', 'net', 'org', 'ac', 'gov', 'edu' ];
+
+	/** Leading words a title capitalizes anyway, so they cannot vouch for a name. */
+	private const ARTICLES = [ 'the', 'a', 'an' ];
+
+	/** Below this length a domain stem ("abq", "kcur") collides with ordinary words. */
+	private const MIN_STEM_LENGTH = 6;
+
 	/** Sources attributed structurally upstream, so they bypass the Gate entirely. */
 	private const BYPASS_SOURCES = [ 'github', 'linear' ];
 
@@ -92,7 +104,29 @@ final class Publisher_Matcher {
 			return $this->decision( $id, 'hold', null, null, 'ambiguous: ' . \count( $hits ) . " candidates ({$ids})" );
 		}
 
-		// 3. Inconclusive: LLM NER + fuzzy match, else hold if no extractor.
+		// 3. Domain stem, title only: bodies are unstripped RSS/Atom markup.
+		$stems    = [];
+		$haystack = $this->squash( $title );
+		foreach ( $this->active_publishers() as $pub ) {
+			$stem = $this->domain_stem( $pub['domain_name'] );
+			if ( '' === $stem ) {
+				continue;
+			}
+			$surface = $this->stem_hit( $title, $haystack, $stem );
+			if ( '' !== $surface ) {
+				$stems[ $pub['atomic_site_id'] ] = $surface;
+			}
+		}
+		if ( 1 === \count( $stems ) ) {
+			$aid = \array_key_first( $stems );
+			return $this->decision( $id, 'pass', $aid, 'domain_stem', "domain_stem:{$stems[ $aid ]}", self::STEM_CONFIDENCE );
+		}
+		if ( \count( $stems ) > 1 ) {
+			$ids = \implode( ',', \array_keys( $stems ) );
+			return $this->decision( $id, 'hold', null, null, 'ambiguous stems: ' . \count( $stems ) . " candidates ({$ids})" );
+		}
+
+		// 4. Inconclusive: LLM NER + fuzzy match, else hold if no extractor.
 		return $this->resolve_via_ner( $id, $item );
 	}
 
@@ -237,6 +271,108 @@ final class Publisher_Matcher {
 		}
 		$pattern = '/(?<![\p{L}\p{N}])' . \preg_quote( $needle, '/' ) . '(?![\p{L}\p{N}])/iu';
 		return 1 === \preg_match( $pattern, $haystack );
+	}
+
+	/**
+	 * A match key derived from the stored domain: its registrable label, alphanumerics
+	 * only. Gives every imported publisher a text-matchable name without waiting on
+	 * enrichment. "wyofile.com" -> "wyofile"; "newsroom.example.co.nz" -> "example".
+	 * Short stems collide with ordinary words, so they are dropped.
+	 */
+	private function domain_stem( string $domain ): string {
+		$labels = \explode( '.', $this->normalize_domain( $domain ) );
+		\array_pop( $labels );
+		// Second-level registries leave a filler label behind.
+		if ( \count( $labels ) > 1 && \in_array( \end( $labels ), self::SECOND_LEVEL_LABELS, true ) ) {
+			\array_pop( $labels );
+		}
+		// The registrable label: a subdomain names its group.
+		$stem = [] === $labels ? '' : (string) \end( $labels );
+		$stem = (string) \preg_replace( '/[^\p{L}\p{N}]+/u', '', \mb_strtolower( $stem ) );
+		return \mb_strlen( $stem ) >= self::MIN_STEM_LENGTH ? $stem : '';
+	}
+
+	/**
+	 * Find a stem in the text ignoring the spacing prose uses, so
+	 * "fortworthreport" matches "Fort Worth Report". The offset map exists so a
+	 * hit can be checked against word boundaries in the original text: without
+	 * that check "sentinel.com" matches "Sentinelese".
+	 *
+	 * @param array{0:string,1:array<int,int>} $haystack From squash( $text ).
+	 * @return string The matched surface text, or '' when absent.
+	 */
+	private function stem_hit( string $text, array $haystack, string $stem ): string {
+		[ $squashed, $map ] = $haystack;
+
+		$offset = 0;
+		while ( false !== ( $pos = \mb_strpos( $squashed, $stem, $offset ) ) ) {
+			$offset = $pos + 1;
+			$start  = $map[ $pos ];
+			$end    = $map[ $pos + \mb_strlen( $stem ) - 1 ];
+
+			$before = $start > 0 ? \mb_substr( $text, $start - 1, 1 ) : '';
+			$after  = \mb_substr( $text, $end + 1, 1 );
+			if ( ! $this->is_alnum( $before ) && ! $this->is_alnum( $after ) ) {
+				$surface = \mb_substr( $text, $start, $end - $start + 1 );
+				if ( $this->reads_as_name( $surface ) ) {
+					return $surface;
+				}
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * The alphanumeric-only form of $text, plus a map from each of its offsets back to the
+	 * offset in $text. Publisher-independent, so it is built once per item rather than once
+	 * per publisher.
+	 *
+	 * @return array{0:string,1:array<int,int>}
+	 */
+	private function squash( string $text ): array {
+		$squashed = '';
+		$map      = [];
+		$chars    = \preg_split( '//u', $text, -1, \PREG_SPLIT_NO_EMPTY );
+		foreach ( \is_array( $chars ) ? $chars : [] as $i => $char ) {
+			if ( 1 !== \preg_match( '/[\p{L}\p{N}]/u', $char ) ) {
+				continue;
+			}
+			// Lowercasing can yield 2 codepoints (U+0130); index per codepoint.
+			$lower     = \mb_strtolower( $char );
+			$squashed .= $lower;
+			for ( $n = \mb_strlen( $lower ); $n > 0; $n-- ) {
+				$map[] = $i;
+			}
+		}
+		return [ $squashed, $map ];
+	}
+
+	/**
+	 * Whether a span reads as a publisher name rather than ordinary prose.
+	 *
+	 * Two rules, both required. Every word must be capitalized, single-word spans
+	 * included: a lone lowercase "sentinel" is prose, not a masthead. And a welded
+	 * multi-word span must not open with an article, because a title capitalizes
+	 * its first word regardless — "The Reader Activation System" is spelled exactly
+	 * like a mention of thereader.com. Rejecting it costs that publisher the stem
+	 * signal (enrichment still matches it) and buys back a confident misattribution.
+	 */
+	private function reads_as_name( string $surface ): bool {
+		$words = \preg_split( '/[^\p{L}\p{N}]+/u', $surface, -1, \PREG_SPLIT_NO_EMPTY );
+		if ( ! \is_array( $words ) || [] === $words ) {
+			return false;
+		}
+		foreach ( $words as $word ) {
+			if ( 1 !== \preg_match( '/^[\p{Lu}\p{N}]/u', $word ) ) {
+				return false;
+			}
+		}
+		return \count( $words ) < 2 || ! \in_array( \mb_strtolower( $words[0] ), self::ARTICLES, true );
+	}
+
+	/** True when $char is a single letter or digit; '' (string edge) is not. */
+	private function is_alnum( string $char ): bool {
+		return '' !== $char && 1 === \preg_match( '/[\p{L}\p{N}]/u', $char );
 	}
 
 	/** Normalize a stored domain the same way a host is normalized. */
