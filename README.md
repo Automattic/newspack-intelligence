@@ -3,25 +3,35 @@
 An AI-driven **team intelligence digest** built on the
 [newspack-nodes](../newspack-nodes) substrate. It ingests items from real sources
 (GitHub, Linear, RSS/feeds), enriches them with an LLM (summarize + score),
-accumulates them into a durable digest, and publishes that digest as markdown +
+accumulates them into a durable digest, and publishes that digest as markdown and
 a WordPress draft post, from an admin control panel.
 
-> **Status:** the ingest → summarize → score → digest → WordPress-draft pipeline
-> and the Publisher Insights dashboard are working (v0.2.5). The teaching
-> walkthrough lives in `newspack-nodes/examples/example-ai-newsletter`.
+> **Status:** the whole path runs end-to-end — the three connectors, the LLM
+> summarize, score and compose stages, the intake Gate, and the Publisher
+> Insights dashboard. The teaching walkthrough lives in
+> `newspack-nodes/examples/example-ai-newsletter`.
+
+**Requires** WordPress 6.5, PHP 8.2, and the `newspack-nodes` substrate at 2.25.0
+or newer. Below that floor the plugin stays dormant.
 
 ## How it works
 
-Connector **Source nodes** (GitHub/Linear/feed) fetch inside a background worker
-and append normalized items to a durable `ingest` partition; a **Summarizer →
-Scorer** stage (LLM) paces through it into a durable `scored` partition; a
-**Digest_Builder** accumulates and, once every source reports in, composes the
-markdown digest → a `Log`. An `Insights_CI` service serves the admin dashboard;
-the WordPress draft is created from there via the block editor's markdown engine.
+Connector **Source nodes** (GitHub, Linear, feed) fetch inside a background
+worker and append normalized items to the durable `ingest` partition. A
+**Summarizer** and a **Scorer** pace through that partition into the durable
+`scored` partition. A **Digest_Builder** accumulates the scored items and
+composes the markdown digest once every source has reported in, writing it
+through a `Log`. A **Gate** tails the same `ingest` partition with its own
+offsets, appending one JSON decision line per item to attribute it to a Newspack
+client; it observes the pipeline without changing what the digest sees.
 
-AI calls go through the Automattic **AI API Proxy** (OpenAI-compatible), defaulting
-to a free internally-hosted model (`gpt-oss-120b`). The bearer token is stored as a
-substrate Vault entry (the option holds only its id) and resolved at use-time.
+An `Insights_CI` service serves the dashboard and routes Collect and Regenerate
+to the worker. The browser turns the digest markdown into block markup through
+the block editor's own paste engine and creates the draft over the REST API.
+
+AI calls go through the Automattic **AI API Proxy** (OpenAI-compatible),
+defaulting to the `gpt-oss-120b` model. The bearer token is a substrate Vault
+entry: the node config holds only its id, resolved at use time.
 
 ## Develop
 
@@ -35,4 +45,6 @@ cd tests && ../vendor/bin/phpunit   # PHP; needs newspack-nodes active
 
 ## Docs
 
+- Working guide: [`AGENTS.md`](AGENTS.md) — the topologies, the node catalogue,
+  the dashboard modules, the WordPress surface and the release order
 - Substrate: [`newspack-nodes`](https://github.com/Automattic/newspack-nodes)
