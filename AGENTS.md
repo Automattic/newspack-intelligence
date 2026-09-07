@@ -51,7 +51,12 @@ which fails the build on the substrate ADR violations a correctness review passe
 because none of them is a bug — a minted correlation id, a pending-reply registry
 or a hook naming a node class by string. `lint:php` pairs phpcs with the same
 comment rule. lint-staged adds `scripts/reorder-node-methods.{js,php} --check`,
-holding every Node subclass in newspaper order.
+which orders every top-level class in a staged file: a `Node` subclass takes the
+newspaper order, and every other class takes the generic one — the constructor
+first, then a topological walk of the call graph. The `includes/**/*.php` and
+`src/**/*.{js,jsx}` entries also pass `--all-classes`, which neither twin
+recognizes — both drop an unknown `--` token — so those two entries do exactly
+what the plain `--check` entries do.
 
 Inside dndocker, PHPUnit runs in the container from the `/services` mount, never
 from `/usr/src`, and the static tools run on the host:
@@ -137,6 +142,14 @@ the file types in the push range — PHP adds `lint:php`, the container deploy, 
 PHPUnit coverage suite and the per-class 90% gate; JS and SCSS add their linter
 and a build. The two coverage gates hold every JS file and every PHP class at 90%.
 
+`markdownToBlockMarkup.js` meets that JS floor without exercising its own
+conversion. `ensureCoreBlocks()` requires `@wordpress/block-library` lazily, and
+jest resolves that package's transitive `@wordpress/block-editor` to untranspiled
+`src/`, which babel-jest refuses to execute. The suite therefore covers the
+empty-input short-circuit and, through `jest.doMock`, the register-once call
+sequence; the markdown-to-blocks conversion itself is verified only by using the
+admin page in a browser, where WordPress enqueues the real `wp-block-library`.
+
 ## Architecture
 
 Four stages, each its own topology file, composed by `newspack-intelligence.tsl`.
@@ -150,6 +163,17 @@ a bounded in-memory set (`MAX_SEEN` 2000, oldest evicted first) that does not
 survive a respawn — `Digest_Builder_Node` dedups on the same id, so the digest
 stays correct while the summarize and score stages pay for the repeat.
 
+`Github_Source_Node` hits three REST endpoints per repo on each TICK — releases,
+closed pull requests and issues — keeping a closed PR only when it carries a
+`merged_at`, and dropping any issue carrying a `pull_request` key, because the
+issues endpoint lists PRs too. Each endpoint takes the 10 most recent results and
+pages no further, so an update that falls past that window between ticks is
+missed outright. A transport error, a non-200 or an undecodable body makes that
+one endpoint contribute nothing and never throws, so one bad repo cannot sink the
+batch; a rate-limited `print_less_often()` line is the only record, which makes a
+repo going quiet across many ticks the rare place here that fails quietly rather
+than loud.
+
 **Summary.** `ingest:consumer` paces items through `Summarizer` → `Scorer` into
 the durable `scored` Partition. The Summarizer asks the LLM for `{summary,
 relevance_score, reason}` and falls back to a deterministic template when no
@@ -162,10 +186,13 @@ draft when every source has reported `DONE` — counting DISTINCT source names, 
 a re-tick, a replay or a stale cross-cycle signal cannot overshoot `total` — or
 on an explicit `REGENERATE`. `Digest_Composer` takes the top 10 per source, so no
 busy source crowds the others out, and asks the LLM for a markdown briefing under
-a 32000-token budget; any LLM failure renders the same selection as a ranked
-bullet list rather than throwing. `RESET` empties the accumulator and nudges the
-scored Partition so the consumer's next checkpoint co-commits the emptied
-snapshot; without the nudge a worker restart reloads the stale item list.
+a 32000-token budget; a thrown `RuntimeException`, an empty reply and a
+whitespace-only reply all render that same selection as a ranked bullet list
+rather than throwing. The cap is `Digest_Composer::PER_SOURCE`, unrelated to the
+dashboard's `Insights_CI_Node::TOP_N`: the two hold the same number today, and
+changing one leaves the other where it was. `RESET` empties the accumulator and
+nudges the scored Partition so the consumer's next checkpoint co-commits the
+emptied snapshot; without the nudge a worker restart reloads the stale item list.
 
 **Gate (observer).** `gate:consumer` tails the SAME `ingest` Partition with its
 OWN offsets, so gating neither moves the summarizer's cursor nor changes the
@@ -182,11 +209,15 @@ Matching resolves in cheapness order against ACTIVE publishers only: URL domain
 (1.0), then a domain-stem hit in the TITLE alone (0.9), then optional cheap-LLM
 NER through `LLM_Entity_Extractor`. Two candidates at any step yield `hold` rather
 than a guess; NER bands its best similarity, passing at 0.85 or above, ignoring
-below 0.60 and holding between. Bodies feed the name search but never the stem
-search — they are unstripped RSS `description` and Atom `content`, where an
-`href` or a logo filename spells a client's domain — and a stem must run at least
-6 characters, align to word boundaries, capitalize every word and not open with an
-article, because a title capitalizes its first word regardless. GitHub and Linear
+below 0.60 and holding between. A `hold` reading `ner: no entities` does not
+separate a genuine empty result from a failed call — `LLM_Entity_Extractor`
+catches every `RuntimeException` and degrades to an empty triple — so a spike in
+that reason can mean the proxy is down rather than that the items name no
+subject. Bodies feed the name search but never the stem search — they are
+unstripped RSS `description` and Atom `content`, where an `href` or a logo
+filename spells a client's domain — and a stem must run at least 6 characters,
+align to word boundaries, capitalize every word and not open with an article,
+because a title capitalizes its first word regardless. GitHub and Linear
 items `bypass` the gate entirely, being attributed structurally upstream. With no
 resolvable vault token the gate runs deterministic-only.
 
@@ -195,9 +226,17 @@ the worker over its input IPC partition — durable and synchronous, with no
 live-worker dependency on read. The browser creates the WordPress draft from the
 digest markdown via `@wordpress/api-fetch`. LLM calls go through the Automattic
 AI API Proxy via `LLM_Client` / `Proxy_LLM_Client`, whose `$http_post` closure is
-the test seam; `Summarizer_Node::$llm_factory`, `Digest_Builder_Node::$llm_factory`,
-`Gate_Node::$matcher_factory` and `Insights_CI_Node::$read_items` are the other
-four, each replacing ONE call so the code around it still runs. Bearer tokens are
+the test seam. Seven more follow the same pattern, each a static `?\Closure`
+replacing ONE call so the branches around it still run as production code:
+`Github_Source_Node::$http_get`, `Linear_Source_Node::$http_post` and
+`Feed_Source_Node::$http_get` for the connector fetches, and
+`Summarizer_Node::$llm_factory`, `Digest_Builder_Node::$llm_factory`,
+`Gate_Node::$matcher_factory` and `Insights_CI_Node::$read_items` for the rest.
+Every caller of `LLM_Client::chat()` — `Summarizer_Node::fill()`,
+`Digest_Composer` and `LLM_Entity_Extractor` — catches `\RuntimeException` and
+nothing wider, and `Proxy_LLM_Client` throws only that, so a second
+implementation raising any other `Throwable` propagates out of `fill()` and
+breaks the Node contract that `fill()` never throws. Bearer tokens are
 substrate Vault entries: the node config holds only the entry id, resolved at
 use-time by `Vault_Secret`.
 
@@ -215,6 +254,13 @@ A source ends each TICK by emitting one `TM_INFO "DONE\n"` from a `finally`, so 
 throwing fetch still reports progress. The Summarizer, the Scorer and the Gate
 forward TM_INFO unchanged, which is how a DONE reaches the digest with the
 source's own name still in FROM.
+
+Each stage also stamps a state label, which `trace <node>` inside `wp nodes cli`
+prints: the Summarizer `SUMMARIZED` or `FAILED` with the title, the Scorer
+`SCORED`, the Gate `GATED:{decision}` with the item id, and the builder
+`RECEIVED` per item and `COMPOSED` with the composed count. `FAILED` covers three
+cases rather than one — no LLM client resolves, `chat()` throws, or the reply
+fails `parse_enrich()` — so it does not on its own mean the proxy call failed.
 
 ### Topologies
 
@@ -247,7 +293,11 @@ The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model`,
 state through `dump_config()`. `Digest_Builder` takes two positional arguments,
 the scored Partition to nudge on `RESET` and the `total` source count — that
 total MUST equal the number of names in `Insights_CI_Node::SOURCE_NODES`, or a
-collect never completes. `generate` and `collect` require `manage_options`.
+collect never completes. All five `Insights_CI` verbs require `manage_options`,
+the three read slices included: no schema entry declares a `capability`, and
+`Service_CI_Node` gates an undeclared verb at the strictest role rather than the
+loosest. The `require_manage_options()` calls inside the `generate` and `collect`
+handlers restate that gate rather than establish it.
 
 ### Publisher master store
 
@@ -267,6 +317,23 @@ columns as `Atomic site ID, Created, Domain name` and returns null — never `[]
 for a file whose first non-blank line is not that header or that yields no valid
 rows, because an empty snapshot would churn every client. `Client_Importer`
 refuses an empty row list for the same reason.
+
+Two things keep those counts from being an audit. `total_in_csv` counts DISTINCT
+`atomic_site_id` values rather than rows, so a snapshot repeating an id reports
+fewer than its line count while still processing the repeat — the second
+appearance finds the row the first one created and lands in `updated`. And
+`CPT_Publisher_Repository::create()` returns without a word when
+`wp_insert_post()` fails, while `Client_Importer` counts that row `created`
+regardless, so the reported creation can overshoot with nothing logged. Read the
+four counts as a report, never as a reconciliation that sums to `total_in_csv`.
+
+The repository holds neither a memo nor an object cache. `post_id()` resolves an
+atomic id through an uncached `meta_value` exact-match query on every call, and
+`find_by_atomic_id()`, `update_atomic_fields()`, `set_active()` and
+`mark_churned()` each call it independently, so one existing CSV row costs two or
+three lookups, on top of the unbounded `all_atomic_ids()` scan the churn pass
+runs once. The source marks the spot `TODO(Gate): reverse index + object cache
+under load` — a known limit to fix there, not one to route around.
 
 Reach it from `wp newspack-intelligence clients import <csv>` or from the CSV
 upload on the Settings page. Both paths run the identical parse-and-reconcile.
@@ -290,7 +357,12 @@ Publisher Insights admin page.
 | `styles/insights.scss` | — | The page styling, imported by `PublisherInsights.js` and emitted as `build/dashboard/index.css` |
 
 Each widget reads ONLY its own view node through `useNodeState`; there is no god
-view node and no god `insights` command. Collect and Regenerate are
+view node and no god `insights` command. The three slices arrive as `{sources:
+{source: count}}`, `{top: {source: [{title, score}]}}` and `{accumulated, done,
+total, digest}` — the same shapes `nodes/register.js` declares as each view's
+`empty`. `Insights_CI_Node::top_by_source()` sorts each source's list by score
+descending and caps it at ten before the wire, so `TopTable` trusts that order
+for its rank column and neither sorts nor caps. Collect and Regenerate are
 `useCommandOnce` one-shots owned by `AccumulatedPanel`, riding the same batched
 tick as the poll, because the lock, the note and the latch each reply sets live
 there. The view classes are handed to `makeNode` rather than named, because the
@@ -338,7 +410,10 @@ declares no hook or filter of its own for others to extend.
 - **Admin-post.** `newspack_intelligence_import_clients`, nonce- and
   capability-checked, handles the CSV upload and redirects with
   `clients_imported=1`, which an `admin_notices` callback turns into the success
-  notice.
+  notice. `handle_admin_post()` discards `import_path()`'s counts, so that
+  redirect is unconditional: an unreadable temp file, a header line other than
+  `Atomic site ID, Created, Domain name`, or a file yielding no valid rows still
+  reports success while importing nothing.
 - **REST.** None registered. The dashboard's "Create draft post" action POSTs
   core `/wp/v2/posts` from the browser.
 - **Uninstall.** Plugin delete removes every `newspack_intelligence_` option row
