@@ -1,6 +1,6 @@
 {
 	"name": "newspack-intelligence",
-	"version": "0.9.9",
+	"version": "0.9.10",
 	"private": true,
 	"description": "AI-driven team intelligence digest built on newspack-nodes.",
 	"author": "Automattic",

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.10] - 2026-09-08
+
+### Changed
+
+- **The three admin gates call `\Newspack_Nodes\Capabilities::can( MANAGE )` where they called `\Newspack_Nodes\Admin\Admin::current_user_allowed()`.** The substrate removed that method: `Capabilities::can()` now applies the `allowed_users` allowlist itself, so the wrapper was the same rule in two places. The gate is unchanged in effect — `manage_options` narrowed by that list — and the two class-presence guards ahead of the Publisher Insights menu and the Settings submenu name `Capabilities` for the same reason, since that is the class those functions call. **This release must ship with the substrate that removes the method**: an older Intelligence against the newer substrate fatals with `Call to undefined method` on every wp-admin page, because the enqueue gate runs on `admin_enqueue_scripts` and `version_at_least( '2.25.0' )` passes it through rather than going dormant.
+
 ## [0.9.9] - 2026-08-29
 
 ### Changed

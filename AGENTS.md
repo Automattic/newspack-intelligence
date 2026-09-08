@@ -72,7 +72,7 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.25.0' )` and stays
+error.** The loader calls `Bootstrap::version_at_least( '2.53.0' )` and stays
 dormant below it. 2.25.0 is `Node::config_line()`, which every source node builds
 its `arguments` dump from; `Worker_Base::ipc_partition_args()`, which the insights
 CI makes its Partition with, landed in 0.44.0. Against a substrate between a
@@ -394,8 +394,9 @@ declares no hook or filter of its own for others to extend.
 
 - **Admin pages.** `Publisher Insights`, a top-level menu at position 58.7, and
   `Newspack Intelligence` under Settings, which hosts the client-CSV upload.
-  Both are gated on `manage_options` AND the substrate's
-  `Newspack_Nodes\Admin\Admin::current_user_allowed()`. The dashboard bundle is
+  Both are gated on the substrate's
+  `Newspack_Nodes\Capabilities::can( Capabilities::MANAGE )`, which is
+  `manage_options` narrowed by the `allowed_users` list. The dashboard bundle is
   enqueued on `admin_enqueue_scripts` through `Admin::enqueue_react_page()`,
   which no-ops when `build/dashboard/index.js` is absent.
 - **Filter.** `newspack_nodes/devtools_overlay_pages` — declares the Insights

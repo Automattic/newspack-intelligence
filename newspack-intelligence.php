@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Newspack Intelligence
  * Description: AI-driven team intelligence digest built on the newspack-nodes substrate.
- * Version: 0.9.9
+ * Version: 0.9.10
  * Author: Automattic
  * Author URI: https://newspack.com/
  * License: GPL-2.0-or-later
@@ -20,7 +20,7 @@ namespace Newspack_Intelligence;
 \defined( 'ABSPATH' ) || exit;
 
 if ( ! \defined( 'NEWSPACK_INTELLIGENCE_VERSION' ) ) {
-	\define( 'NEWSPACK_INTELLIGENCE_VERSION', '0.9.9' );
+	\define( 'NEWSPACK_INTELLIGENCE_VERSION', '0.9.10' );
 }
 if ( ! \defined( 'NEWSPACK_INTELLIGENCE_DIR' ) ) {
 	\define( 'NEWSPACK_INTELLIGENCE_DIR', \plugin_dir_path( __FILE__ ) );
@@ -39,11 +39,11 @@ const SETTINGS_MENU_SLUG = 'newspack-intelligence-settings';
  * dashboard bundle takes over from there.
  */
 function register_insights_admin_page(): void {
-	if ( ! \function_exists( 'add_menu_page' ) || ! \class_exists( '\Newspack_Nodes\Admin\Admin' ) ) {
+	if ( ! \function_exists( 'add_menu_page' ) || ! \class_exists( '\Newspack_Nodes\Capabilities' ) ) {
 		return;
 	}
 	// Honor the substrate access gate (manage_options + allowed_users).
-	if ( ! \Newspack_Nodes\Admin\Admin::current_user_allowed() ) {
+	if ( ! \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) ) {
 		return;
 	}
 	\add_menu_page(
@@ -65,7 +65,7 @@ function enqueue_insights_assets( string $hook = '' ): void {
 	if ( ! \function_exists( 'wp_enqueue_script' ) || ! \class_exists( '\Newspack_Nodes\Admin\Admin' ) ) {
 		return;
 	}
-	if ( ! \Newspack_Nodes\Admin\Admin::current_user_allowed() ) {
+	if ( ! \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) ) {
 		return;
 	}
 
@@ -83,10 +83,10 @@ function enqueue_insights_assets( string $hook = '' ): void {
 
 /** Register the publisher CSV importer under the core Settings menu. */
 function register_clients_admin_page(): void {
-	if ( ! \function_exists( 'add_submenu_page' ) || ! \class_exists( '\\Newspack_Nodes\\Admin\\Admin' ) ) {
+	if ( ! \function_exists( 'add_submenu_page' ) || ! \class_exists( '\\Newspack_Nodes\\Capabilities' ) ) {
 		return;
 	}
-	if ( ! \Newspack_Nodes\Admin\Admin::current_user_allowed() ) {
+	if ( ! \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) ) {
 		return;
 	}
 	\add_submenu_page(
@@ -147,7 +147,7 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 		// notice API) long after both landed — a floor set too low does not
 		// degrade, it activates and then fatals on the missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
-			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.25.0', 'Newspack Intelligence' ) ) {
+			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.53.0', 'Newspack Intelligence' ) ) {
 			return;
 		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.
