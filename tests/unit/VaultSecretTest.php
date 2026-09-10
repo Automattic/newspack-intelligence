@@ -26,11 +26,7 @@ final class VaultSecretTest extends TestCase {
 	}
 
 	public function test_resolves_seeded_entry_auth_password(): void {
-		update_option(
-			Vault::OPTION_KEY,
-			[ 'aspen' => [ 'id' => 'aspen', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'secret-value' ] ]
-		);
-		Vault::get_instance()->reset_cache();
+		$this->seed_vault( 'aspen', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'secret-value' ] );
 
 		$this->assertSame( 'secret-value', $this->fixture()->resolve( 'aspen' ) );
 	}

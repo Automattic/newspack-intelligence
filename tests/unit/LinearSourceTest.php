@@ -102,11 +102,7 @@ final class LinearSourceTest extends TestCase {
 	}
 
 	public function test_tick_reads_token_from_verb_state(): void {
-		update_option(
-			'newspack_nodes_vault',
-			[ 'lin-creds' => [ 'id' => 'lin-creds', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'lin_from_vault' ] ]
-		);
-		Vault::get_instance()->reset_cache();
+		$this->seed_vault( 'lin-creds', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'lin_from_vault' ] );
 		$captured = [];
 		Linear_Source_Node::$http_post = static function ( string $url, array $args ) use ( &$captured ): array {
 			$captured[] = [ 'url' => $url, 'args' => $args ];
@@ -127,11 +123,7 @@ final class LinearSourceTest extends TestCase {
 	}
 
 	public function test_set_vault_id_resolves_seeded_entry_into_config_token(): void {
-		update_option(
-			'newspack_nodes_vault',
-			[ 'lin-creds' => [ 'id' => 'lin-creds', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'lin_from_vault' ] ]
-		);
-		Vault::get_instance()->reset_cache();
+		$this->seed_vault( 'lin-creds', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'lin_from_vault' ] );
 		$node = new Linear_Source_Node();
 		$node->name( 'linear' );
 
@@ -148,14 +140,12 @@ final class LinearSourceTest extends TestCase {
 	}
 
 	public function test_set_vault_id_last_write_wins(): void {
-		update_option(
-			'newspack_nodes_vault',
+		$this->seed_vault_servers(
 			[
-				'first'  => [ 'id' => 'first', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'first-secret' ],
-				'second' => [ 'id' => 'second', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'second-secret' ],
+				'first'  => [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'first-secret' ],
+				'second' => [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'second-secret' ],
 			]
 		);
-		Vault::get_instance()->reset_cache();
 		$node = new Linear_Source_Node();
 		$node->name( 'linear' );
 

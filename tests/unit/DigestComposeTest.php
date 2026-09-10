@@ -76,11 +76,7 @@ final class DigestComposeTest extends TestCase {
 	}
 
 	public function test_uses_own_verb_configured_client_and_relevance_profile_when_factory_unset(): void {
-		update_option(
-			Vault::OPTION_KEY,
-			[ 'ai-vault' => [ 'id' => 'ai-vault', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'proxy-token' ] ]
-		);
-		Vault::get_instance()->reset_cache();
+		$this->seed_vault( 'ai-vault', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'proxy-token' ] );
 
 		$captured = [];
 		Proxy_LLM_Client::$http_post = static function ( string $url, array $args ) use ( &$captured ): array {
