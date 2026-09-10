@@ -122,11 +122,7 @@ final class GithubSourceTest extends TestCase {
 	}
 
 	public function test_tick_reads_repos_and_token_from_verb_state(): void {
-		update_option(
-			'newspack_nodes_vault',
-			[ 'gh-creds' => [ 'id' => 'gh-creds', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'ghp_from_vault' ] ]
-		);
-		Vault::get_instance()->reset_cache();
+		$this->seed_vault( 'gh-creds', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'ghp_from_vault' ] );
 		$captured = [];
 		Github_Source_Node::$http_get = static function ( string $url, array $args ) use ( &$captured ): array {
 			$captured[] = [ 'url' => $url, 'args' => $args ];
@@ -158,11 +154,7 @@ final class GithubSourceTest extends TestCase {
 	}
 
 	public function test_set_vault_id_resolves_seeded_entry_into_config_token(): void {
-		update_option(
-			'newspack_nodes_vault',
-			[ 'gh-creds' => [ 'id' => 'gh-creds', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'ghp_from_vault' ] ]
-		);
-		Vault::get_instance()->reset_cache();
+		$this->seed_vault( 'gh-creds', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'ghp_from_vault' ] );
 		$node = new Github_Source_Node();
 		$node->name( 'github' );
 

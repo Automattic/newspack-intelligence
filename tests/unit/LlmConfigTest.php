@@ -103,11 +103,7 @@ final class LlmConfigTest extends TestCase {
 	}
 
 	public function test_make_llm_client_returns_configured_client_when_vault_resolves(): void {
-		update_option(
-			Vault::OPTION_KEY,
-			[ 'ai-vault' => [ 'id' => 'ai-vault', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'proxy-token' ] ]
-		);
-		Vault::get_instance()->reset_cache();
+		$this->seed_vault( 'ai-vault', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'proxy-token' ] );
 
 		$node = $this->fixture();
 		$node->set_vault_id( 'ai-vault' );
@@ -116,11 +112,7 @@ final class LlmConfigTest extends TestCase {
 	}
 
 	public function test_make_llm_client_returns_null_when_api_url_blank(): void {
-		update_option(
-			Vault::OPTION_KEY,
-			[ 'ai-vault' => [ 'id' => 'ai-vault', 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'proxy-token' ] ]
-		);
-		Vault::get_instance()->reset_cache();
+		$this->seed_vault( 'ai-vault', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'proxy-token' ] );
 
 		$node = $this->fixture();
 		$node->set_vault_id( 'ai-vault' );
