@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.11] - 2026-09-10
+
+### Changed
+
+- **Substrate pin moves to `v2.55.2`**, from `v2.53.0`. Nothing here calls the two APIs that range broke, `Partition_Node::locate_by()` without a key set and `useColumnPicker`'s `aliases` option, so the bundle picks up the shared runtime and hooks at their current versions and no code changes. The tests now seed the Vault through the substrate's `seed_vault()`, which seals the password the way `add()` does, because that substrate reads an unsealed password in the option as planted.
+
 ## [0.9.10] - 2026-09-08
 
 ### Changed
