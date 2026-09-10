@@ -99,6 +99,16 @@ if [[ -f "$docslint" ]]; then
 	ok "lint-docs clean"
 fi
 
+# The @wordpress/* family compiles against the API the browser is handed, so a
+# declaration carrying a range, or a lock resolved past it, builds against the
+# wrong WordPress.
+wppin="$(git rev-parse --show-toplevel)/scripts/lint-wp-pin.mjs"
+if [[ -f "$wppin" ]]; then
+	step "lint-wp-pin (@wordpress/* declared exactly and locked to it)"
+	node "$wppin" || fail "lint-wp-pin failed — a @wordpress/* dependency carries a range or the lock drifted (see above)"
+	ok "wp pin clean"
+fi
+
 # Classify the diff by file type. Exclude generated / vendored paths.
 changed="$(git diff --name-only "$range" 2>/dev/null || true)"
 php_changed="$(echo  "$changed" | grep -E '\.php$'           | grep -v -E '^(vendor/|release/)'          || true)"
