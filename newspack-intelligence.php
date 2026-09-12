@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Newspack Intelligence
  * Description: AI-driven team intelligence digest built on the newspack-nodes substrate.
- * Version: 0.9.12
+ * Version: 0.9.13
  * Author: Automattic
  * Author URI: https://newspack.com/
  * License: GPL-2.0-or-later
@@ -20,7 +20,7 @@ namespace Newspack_Intelligence;
 \defined( 'ABSPATH' ) || exit;
 
 if ( ! \defined( 'NEWSPACK_INTELLIGENCE_VERSION' ) ) {
-	\define( 'NEWSPACK_INTELLIGENCE_VERSION', '0.9.12' );
+	\define( 'NEWSPACK_INTELLIGENCE_VERSION', '0.9.13' );
 }
 if ( ! \defined( 'NEWSPACK_INTELLIGENCE_DIR' ) ) {
 	\define( 'NEWSPACK_INTELLIGENCE_DIR', \plugin_dir_path( __FILE__ ) );
@@ -144,11 +144,13 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 		// Node::config_line(), which every source node builds its `arguments`
 		// dump from; 0.44.0 was Worker_Base::ipc_partition_args(), which the
 		// insights CI makes its Partition with; 2.56.0 is the overlay_pages
-		// filter the insights page registers on. The floor read 0.54.0 (the
+		// filter the insights page registers on; 2.57.0 is the /auth reply
+		// naming the signing key `secret`, which the bundled auth client
+		// reads. The floor read 0.54.0 (the
 		// notice API) long after both landed — a floor set too low does not
 		// degrade, it activates and then fatals on the missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
-			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.56.0', 'Newspack Intelligence' ) ) {
+			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.57.0', 'Newspack Intelligence' ) ) {
 			return;
 		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.

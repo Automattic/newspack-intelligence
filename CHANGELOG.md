@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.13] - 2026-09-12
+
+### Changed
+
+- **The substrate floor rises to 2.57.0**, the release whose `/auth` reply names the signing key `secret`. The bundled auth client reads that field, so below the floor the plugin stays dormant instead of minting sessions it cannot sign with.
+
 ## [0.9.12] - 2026-09-11
 
 ### Changed
