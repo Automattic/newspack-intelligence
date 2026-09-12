@@ -72,8 +72,9 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.53.0' )` and stays
-dormant below it. 2.25.0 is `Node::config_line()`, which every source node builds
+error.** The loader calls `Bootstrap::version_at_least( '2.56.0' )` and stays
+dormant below it. 2.56.0 is the `newspack_nodes/overlay_pages` filter the
+insights page registers on. 2.25.0 is `Node::config_line()`, which every source node builds
 its `arguments` dump from; `Worker_Base::ipc_partition_args()`, which the insights
 CI makes its Partition with, landed in 0.44.0. Against a substrate between a
 too-low floor and the real one the handshake passes, the plugin activates, and it
