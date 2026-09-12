@@ -117,7 +117,7 @@ if ( \is_admin() ) {
 
 // Declare this page on the substrate overlay-page registry (ELN overlay tab).
 \add_filter(
-	'newspack_nodes/devtools_overlay_pages',
+	'newspack_nodes/overlay_pages',
 	static fn ( $pages ): array => \array_merge( (array) $pages, [ INSIGHTS_MENU_SLUG ] )
 );
 
