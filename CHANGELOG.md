@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The insights page registers on the substrate's `newspack_nodes/overlay_pages` filter.** The substrate renamed its DevTools hub the station and the overlay-page filter with it; no old name is aliased, so this release needs the substrate release carrying the new one.
+
 - **The `@wordpress/*` family is declared exactly, and a push gate holds the lock to the declaration.** Every runtime package was declared with a caret at its `wp-7.0` version, and the committed lock had climbed to trunk (seven packages, `components` 32.6.0 and `block-library` 9.48.1 among them, against the tag), so `npm ci` built against an API ahead of the one WordPress 7.0 hands the browser. `@wordpress/icons` is bundled, so the shipped icons move from 11.8.0 to 11.7.1. The declarations drop the caret, the lock is rebuilt at the tag, and `scripts/lint-wp-pin.mjs`, run from `pre-push`, fails a push when a declaration carries a range or the lock resolves elsewhere.
 
 ## [0.9.11] - 2026-09-10

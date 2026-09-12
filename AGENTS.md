@@ -399,7 +399,7 @@ declares no hook or filter of its own for others to extend.
   `manage_options` narrowed by the `allowed_users` list. The dashboard bundle is
   enqueued on `admin_enqueue_scripts` through `Admin::enqueue_react_page()`,
   which no-ops when `build/dashboard/index.js` is absent.
-- **Filter.** `newspack_nodes/devtools_overlay_pages` — declares the Insights
+- **Filter.** `newspack_nodes/overlay_pages` — declares the Insights
   page to the substrate overlay-page registry.
 - **Action.** `newspack_nodes/request_graph_ready` — mounts `Insights_CI` into
   each request graph, idempotently.
