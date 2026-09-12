@@ -452,7 +452,7 @@ describe( 'AccumulatedPanel — the action verbs on the wire', () => {
 		__setAuthFetch( () =>
 			inFlight.then( () => ( {
 				handle: 'ffff6666ffff6666ffff6666ffff6666',
-				key: 'key-insights-late-auth',
+				secret: 'key-insights-late-auth',
 				expires_in: 3600,
 				now: 1771000000,
 			} ) )
