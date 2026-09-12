@@ -11,7 +11,7 @@ a WordPress draft post, from an admin control panel.
 > Insights dashboard. The teaching walkthrough lives in
 > `newspack-nodes/examples/example-ai-newsletter`.
 
-**Requires** WordPress 6.5, PHP 8.2, and the `newspack-nodes` substrate at 2.25.0
+**Requires** WordPress 6.5, PHP 8.2, and the `newspack-nodes` substrate at 2.57.0
 or newer. Below that floor the plugin stays dormant.
 
 ## How it works
