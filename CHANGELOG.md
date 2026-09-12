@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.12] - 2026-09-11
+
 ### Changed
 
 - **The insights page registers on the substrate's `newspack_nodes/overlay_pages` filter.** The substrate renamed its DevTools hub the station and the overlay-page filter with it; no old name is aliased, so the loader's substrate floor rises to 2.56.0, the release carrying the new one.
