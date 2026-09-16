@@ -88,8 +88,8 @@ in the loader disagree. Change both together.
 **`@wordpress/*` is pinned to the `wp-7.0` dist tag — never bump it to close an
 advisory.** Each runtime package is declared exactly, no caret, and `scripts/lint-wp-pin.mjs` fails the push when a declaration carries a range or the lock resolves it elsewhere. A caret let every lock climb to trunk while the declaration still read as the tag, and `npm ci` built against the climb. Transitive `@wordpress/*` packages still float within the ranges the family's own manifests declare; the build externalizes those too. Every declared runtime version IS its `wp-7.0` tag: `api-fetch
 7.40.1`, `block-library 9.40.2`, `blocks 15.13.1`, `components 32.2.1`, `element
-6.40.1`, `i18n 6.13.1`, `icons 11.7.1` — the family matching the WordPress 7.0.4
-both containers run. The substrate build-kit externalises `element`, `api-fetch`,
+6.40.1`, `i18n 6.13.1`, `icons 11.7.1` — the newest tag npm publishes for the family,
+one minor behind the WordPress 7.1 both containers run. The substrate build-kit externalises `element`, `api-fetch`,
 `components`, `blocks`, `block-library`, `i18n` and `data` to the `wp.*` globals,
 so npm's copy of those never ships. `@wordpress/icons` is deliberately absent from
 that map: it publishes no runtime global, so an import of it bundles the icons it
