@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.14] - 2026-09-15
+
+### Changed
+
+- **Builds against substrate 2.60.7.** The substrate tag this plugin's CI checks out moves up from `v2.57.0`, so the Publisher Insights bundle inlines the shared runtime, the shared hooks and the debug overlay as they stand rather than as they were at that tag. Nothing in this plugin changed, and the runtime floor stays 2.57.0 — the release whose `/auth` reply names the signing key `secret`, which the bundled auth client reads.
+
 ## [0.9.13] - 2026-09-12
 
 ### Changed
