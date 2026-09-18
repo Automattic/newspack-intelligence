@@ -34,6 +34,29 @@ final class CptPublisherRepositoryTest extends TestCase {
 		$this->assertSame( [ '1', '2' ], $ids );
 	}
 
+	public function test_all_atomic_ids_pages_past_one_page_and_never_unbounded(): void {
+		$repo  = new CPT_Publisher_Repository();
+		$total = CPT_Publisher_Repository::ID_PAGE + 3;
+		for ( $i = 1; $i <= $total; $i++ ) {
+			$repo->create( [ 'atomic_site_id' => "site-{$i}", 'domain_name' => "d{$i}.com", 'created' => '2020-01-01' ], '2026-06-30' );
+		}
+
+		$this->assertCount( $total, $repo->all_atomic_ids() );
+		foreach ( \NPAINL_WP_Post_Store::$queries as $args ) {
+			$this->assertSame( CPT_Publisher_Repository::ID_PAGE, $args['posts_per_page'] );
+		}
+	}
+
+	public function test_all_with_enrichment_pages_past_one_page(): void {
+		$repo  = new CPT_Publisher_Repository();
+		$total = CPT_Publisher_Repository::ID_PAGE + 3;
+		for ( $i = 1; $i <= $total; $i++ ) {
+			$repo->create( [ 'atomic_site_id' => "site-{$i}", 'domain_name' => "d{$i}.com", 'created' => '2020-01-01' ], '2026-06-30' );
+		}
+
+		$this->assertCount( $total, $repo->all_with_enrichment() );
+	}
+
 	public function test_mark_churned_sets_status_and_date(): void {
 		$repo = new CPT_Publisher_Repository();
 		$repo->create( [ 'atomic_site_id' => '1', 'domain_name' => 'a.com', 'created' => '2020-01-01' ], '2026-06-30' );
