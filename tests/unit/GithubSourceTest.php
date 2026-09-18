@@ -143,6 +143,15 @@ final class GithubSourceTest extends TestCase {
 		$this->assertSame( 'Bearer ghp_from_vault', $captured[0]['args']['headers']['Authorization'] );
 	}
 
+	public function test_add_repo_refuses_a_blank_repo(): void {
+		$node = new Github_Source_Node();
+		$node->name( 'github' );
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'usage: add_repo <owner/name>' );
+		$node->add_repo( '   ' );
+	}
+
 	public function test_add_repo_accumulates_ordered_repos_into_config(): void {
 		$node = new Github_Source_Node();
 		$node->name( 'github' );

@@ -154,12 +154,13 @@ trait LLM_Config {
 	 * `add_profile` verb handler — appends one relevance-profile line.
 	 *
 	 * @param string $args The profile line text.
-	 * @return string Result line.
+	 * @return string `ok`.
+	 * @throws \RuntimeException When the argument is blank.
 	 */
 	public function add_profile( string $args ): string {
 		$profile = \trim( $args );
 		if ( '' === $profile ) {
-			return 'error: add_profile requires <text>';
+			throw new \RuntimeException( 'usage: add_profile <text>' );
 		}
 		$this->profiles[] = $profile;
 		return 'ok';
