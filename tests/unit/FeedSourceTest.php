@@ -208,6 +208,15 @@ XML;
 		$this->assertSame( 'newspack-intelligence', $captured[0]['args']['headers']['User-Agent'] );
 	}
 
+	public function test_add_url_refuses_a_blank_url(): void {
+		$node = new Feed_Source_Node();
+		$node->name( 'feed' );
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'usage: add_url <url>' );
+		$node->add_url( '   ' );
+	}
+
 	public function test_add_url_accumulates_ordered_urls_into_config(): void {
 		$node = new Feed_Source_Node();
 		$node->name( 'feed' );

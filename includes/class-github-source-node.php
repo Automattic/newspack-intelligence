@@ -185,12 +185,13 @@ class Github_Source_Node extends Source_Node {
 	 * `add_repo` verb handler — appends one owner/name repo to the registered list.
 	 *
 	 * @param string $args The repo, `owner/name`.
-	 * @return string Result line.
+	 * @return string `ok`.
+	 * @throws \RuntimeException When the argument is blank.
 	 */
 	public function add_repo( string $args ): string {
 		$repo = \trim( $args );
 		if ( '' === $repo ) {
-			return 'error: add_repo requires <owner/name>';
+			throw new \RuntimeException( 'usage: add_repo <owner/name>' );
 		}
 		$this->repos[] = $repo;
 		return 'ok';

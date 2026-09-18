@@ -183,12 +183,13 @@ class Feed_Source_Node extends Source_Node {
 	 * `add_url` verb handler — appends one feed URL to the registered list.
 	 *
 	 * @param string $args The feed URL.
-	 * @return string Result line.
+	 * @return string `ok`.
+	 * @throws \RuntimeException When the argument is blank.
 	 */
 	public function add_url( string $args ): string {
 		$url = \trim( $args );
 		if ( '' === $url ) {
-			return 'error: add_url requires <url>';
+			throw new \RuntimeException( 'usage: add_url <url>' );
 		}
 		$this->urls[] = $url;
 		return 'ok';

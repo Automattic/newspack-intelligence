@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A blank `add_url`, `add_repo` or `add_profile` refuses with a TM_ERROR.** Each answered an ordinary reply reading `error: … requires …`, which a reader testing the TM_ERROR bit took for success. They now throw, as the substrate's verbs do, and the reply is a TM_ERROR reading `usage: add_url <url>`, `usage: add_repo <owner/name>` or `usage: add_profile <text>`.
+
 ## [0.9.14] - 2026-09-15
 
 ### Changed

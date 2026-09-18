@@ -98,7 +98,12 @@ final class LlmConfigTest extends TestCase {
 	public function test_add_profile_rejects_blank_text(): void {
 		$node = $this->fixture();
 
-		$this->assertStringStartsWith( 'error:', $node->add_profile( '   ' ) );
+		try {
+			$node->add_profile( '   ' );
+			$this->fail( 'add_profile accepted blank text' );
+		} catch ( \RuntimeException $e ) {
+			$this->assertSame( 'usage: add_profile <text>', $e->getMessage() );
+		}
 		$this->assertSame( '', $node->profile() );
 	}
 
@@ -246,12 +251,15 @@ final class LlmConfigTest extends TestCase {
 		);
 	}
 
-	public function test_cmd_add_profile_propagates_blank_error_from_patron(): void {
+	public function test_cmd_add_profile_propagates_the_patron_refusal(): void {
 		$node = $this->fixture();
 
-		$result = $node::cmd_add_profile( $this->interpreter_for( $node ), [ '   ' ] );
-
-		$this->assertStringStartsWith( 'error:', $result );
+		try {
+			$node::cmd_add_profile( $this->interpreter_for( $node ), [ '   ' ] );
+			$this->fail( 'cmd_add_profile accepted blank text' );
+		} catch ( \RuntimeException $e ) {
+			$this->assertSame( 'usage: add_profile <text>', $e->getMessage() );
+		}
 		$this->assertSame( '', $node->profile() );
 	}
 
