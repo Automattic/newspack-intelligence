@@ -18,7 +18,10 @@ if ( ! class_exists( 'NPAINL_WP_Post_Store' ) ) {
 		public static int $update_calls = 0;
 		/** @var array<string,array{title:string,callback:mixed,screen:mixed,context:string,priority:string}> */
 		public static array $meta_boxes = [];
+		/** @var list<array<string,mixed>> Every get_posts() argument set, in call order. */
+		public static array $queries = [];
 		public static function reset(): void {
+			self::$queries      = [];
 			self::$posts        = [];
 			self::$meta         = [];
 			self::$next_id      = 100;
@@ -104,6 +107,12 @@ if ( ! function_exists( 'get_posts' ) ) {
 			}
 			$ids[] = $id;
 		}
-		return $ids;
+		NPAINL_WP_Post_Store::$queries[] = $args;
+		$per_page = (int) ( $args['posts_per_page'] ?? 5 );
+		if ( $per_page < 0 ) {
+			return $ids;
+		}
+		$page = \max( 1, (int) ( $args['paged'] ?? 1 ) );
+		return \array_slice( $ids, ( $page - 1 ) * $per_page, $per_page );
 	}
 }

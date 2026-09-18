@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The publisher store reads in pages of 500.** `all_atomic_ids()` and `all_with_enrichment()` each asked `get_posts()` for every row at once, which VIP forbids. They now walk one shared, id-ordered paged read, so a large publisher list still comes back whole.
+- **The PHP lint runs the locked standard.** `lint:php` and `fix:php` called bare `phpcs` and `phpcbf`, which npm resolved to whatever global install sat on the PATH. That older install passed the two unbounded reads above that the locked standard refuses. Both scripts now call `./vendor/bin`.
 - **A blank `add_url`, `add_repo` or `add_profile` refuses with a TM_ERROR.** Each answered an ordinary reply reading `error: … requires …`, which a reader testing the TM_ERROR bit took for success. They now throw, as the substrate's verbs do, and the reply is a TM_ERROR reading `usage: add_url <url>`, `usage: add_repo <owner/name>` or `usage: add_profile <text>`.
 
 ## [0.9.14] - 2026-09-15

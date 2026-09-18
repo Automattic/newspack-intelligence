@@ -11,6 +11,9 @@ namespace Newspack_Intelligence;
 
 final class CPT_Publisher_Repository implements Publisher_Repository {
 
+	/** Rows per `get_posts()` page; VIP forbids an unbounded `posts_per_page`. */
+	public const ID_PAGE = 500;
+
 	public function find_by_atomic_id( string $atomic_id ): ?array {
 		$post_id = $this->post_id( $atomic_id );
 		if ( null === $post_id ) {
@@ -28,19 +31,8 @@ final class CPT_Publisher_Repository implements Publisher_Repository {
 	}
 
 	public function all_with_enrichment(): array {
-		$ids = \get_posts(
-			[
-				'post_type'        => Publisher_CPT::POST_TYPE,
-				'post_status'      => 'any',
-				'fields'           => 'ids',
-				'posts_per_page'   => -1,
-				// TODO(Gate): reverse index + object cache under load.
-				// phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.SuppressFilters_suppress_filters -- internal admin-only lookup on a non-public CPT, not a front-end VIP request.
-				'suppress_filters' => true,
-			]
-		);
 		$out = [];
-		foreach ( $ids as $post_id ) {
+		foreach ( $this->all_ids() as $post_id ) {
 			$atomic = \get_post_meta( $post_id, Publisher_CPT::META_ATOMIC_ID, true );
 			if ( ! \is_string( $atomic ) || '' === $atomic ) {
 				continue;
@@ -120,25 +112,45 @@ final class CPT_Publisher_Repository implements Publisher_Repository {
 	}
 
 	public function all_atomic_ids(): array {
-		$ids = \get_posts(
-			[
-				'post_type'        => Publisher_CPT::POST_TYPE,
-				'post_status'      => 'any',
-				'fields'           => 'ids',
-				'posts_per_page'   => -1,
-				// TODO(Gate): object cache; drop suppress_filters someday.
-				// phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.SuppressFilters_suppress_filters -- internal admin-only lookup on a non-public CPT, not a front-end VIP request.
-				'suppress_filters' => true,
-			]
-		);
 		$out = [];
-		foreach ( $ids as $post_id ) {
+		foreach ( $this->all_ids() as $post_id ) {
 			$atomic = \get_post_meta( $post_id, Publisher_CPT::META_ATOMIC_ID, true );
 			if ( \is_string( $atomic ) && '' !== $atomic ) {
 				$out[] = $atomic;
 			}
 		}
 		return $out;
+	}
+
+	/**
+	 * Every publisher post id, read a page at a time in id order so a page
+	 * boundary cannot shift under the walk.
+	 *
+	 * @return list<int> The ids.
+	 */
+	private function all_ids(): array {
+		$ids = [];
+		for ( $page = 1; ; ++$page ) {
+			$batch = \get_posts(
+				[
+					'post_type'        => Publisher_CPT::POST_TYPE,
+					'post_status'      => 'any',
+					'fields'           => 'ids',
+					'posts_per_page'   => self::ID_PAGE,
+					'paged'            => $page,
+					'orderby'          => 'ID',
+					'order'            => 'ASC',
+					'no_found_rows'    => true,
+					// TODO(Gate): reverse index + object cache under load.
+					// phpcs:ignore WordPressVIPMinimum.Performance.WPQueryParams.SuppressFilters_suppress_filters -- internal admin-only lookup on a non-public CPT, not a front-end VIP request.
+					'suppress_filters' => true,
+				]
+			);
+			\array_push( $ids, ...\array_map( 'intval', $batch ) );
+			if ( \count( $batch ) < self::ID_PAGE ) {
+				return $ids;
+			}
+		}
 	}
 
 	public function create( array $atomic_fields, string $today ): void {
