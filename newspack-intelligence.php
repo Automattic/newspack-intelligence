@@ -51,7 +51,8 @@ function register_insights_admin_page(): void {
 		\__( 'Publisher Insights', 'newspack-intelligence' ),
 		'manage_options',
 		INSIGHTS_MENU_SLUG,
-		static fn () => print( '<div class="wrap"><div id="' . \esc_attr( INSIGHTS_MOUNT_ID ) . '" class="newspack-intelligence-insights"></div></div>' ),
+		// Notices go after `.wp-header-end`; without one, inside the app.
+		static fn () => print( '<div class="wrap"><hr class="wp-header-end"><div id="' . \esc_attr( INSIGHTS_MOUNT_ID ) . '" class="newspack-intelligence-insights"></div></div>' ),
 		'dashicons-email',
 		58.7
 	);
