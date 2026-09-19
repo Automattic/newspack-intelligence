@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Admin notices land above the Publisher Insights app, not inside it.** WordPress moves every notice after `.wp-header-end`, or failing that after the first `.wrap` heading, which on this page is inside the React tree; the page now prints the anchor ahead of its React root.
+
 ## [0.10.0] - 2026-09-19
 
 ### Changed
