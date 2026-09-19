@@ -9,7 +9,7 @@ import './styles/insights.scss';
  * Publisher Insights — the dashboard orchestrator. It mounts the GENUINE node graph
  * (useInsightsGraph: Timer → Tee → three slice Fetchers, ONE batched POST per tick)
  * and renders the three thin per-slice widgets, each reading ITS OWN view node via
- * useNodeState. No god view node, no god `insights` command — each card owns one
+ * useNodeField. No god view node, no god `insights` command — each card owns one
  * slice: counts → SourceCounts, top → TopTable, accumulated (with the digest +
  * collection progress + actions) → AccumulatedPanel, which owns its own two
  * action verbs; this page threads no command wiring at all.

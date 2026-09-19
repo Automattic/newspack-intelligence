@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Publisher Insights widgets read their view node's `view` field through `useNodeField`,** following the substrate's move of structured output out of `setState()`.
+
 ## [0.9.15] - 2026-09-17
 
 ### Changed

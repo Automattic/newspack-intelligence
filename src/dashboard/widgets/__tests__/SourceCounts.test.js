@@ -18,7 +18,7 @@ beforeEach( () => Core.reset() );
 function mountSlice( slice ) {
 	const node = new SourceCountsViewNode();
 	node.name = 'source-counts:view';
-	node.setState( 'view', slice );
+	node.setField( 'view', slice );
 	return node;
 }
 

@@ -1,7 +1,7 @@
 import apiFetch from '@wordpress/api-fetch';
 import { useState, useEffect, useRef } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
-import { useNodeState } from '@newspack-nodes/runtime';
+import { useNodeField } from '@newspack-nodes/runtime';
 import { useCommandOnce } from '@newspack-nodes/shared/hooks/useCommandOnce';
 import { SERVER } from '../hooks/useInsightsGraph';
 import { markdownToBlockMarkup } from '../markdownToBlockMarkup';
@@ -41,7 +41,7 @@ function parseAck( payload ) {
 /**
  * AccumulatedPanel — the Total items KPI + collection progress + digest/newsletter
  * card. Reads ONLY the `accumulated:view` node's slice ({ accumulated, done, total,
- * digest }) via useNodeState. Collect and Regenerate are its OWN one-shots, held
+ * digest }) via useNodeField. Collect and Regenerate are its OWN one-shots, held
  * here because the lock, the note and the latch each reply sets live here; Copy /
  * Create-draft act on the shown digest (the durable digest:log content the poll
  * delivers) via the `createDraft` / `markdownToContent` seams.
@@ -54,7 +54,7 @@ export function AccumulatedPanel( {
 	createDraft = defaultCreateDraft,
 	markdownToContent = markdownToBlockMarkup,
 } ) {
-	const slice = useNodeState( 'accumulated:view', 'view' ) || {
+	const slice = useNodeField( 'accumulated:view', 'view' ) || {
 		accumulated: 0,
 		done: 0,
 		total: 0,

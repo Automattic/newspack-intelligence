@@ -192,15 +192,13 @@ describe( 'useInsightsGraph — batched poll', () => {
 			Core.node( ROUTER ).fireCb();
 		} );
 
-		expect( Core.node( 'source-counts:view' ).setStateCache.view ).toEqual(
-			{
-				sources: { github: 2 },
-			}
-		);
-		expect( Core.node( 'top-table:view' ).setStateCache.view ).toEqual( {
+		expect( Core.node( 'source-counts:view' ).view ).toEqual( {
+			sources: { github: 2 },
+		} );
+		expect( Core.node( 'top-table:view' ).view ).toEqual( {
 			top: { github: [ { title: 'X', score: 5 } ] },
 		} );
-		expect( Core.node( ACC_VIEW ).setStateCache.view ).toEqual( {
+		expect( Core.node( ACC_VIEW ).view ).toEqual( {
 			accumulated: 7,
 			done: 2,
 			total: 3,

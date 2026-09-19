@@ -1,15 +1,15 @@
 import { __, sprintf } from '@wordpress/i18n';
-import { useNodeState } from '@newspack-nodes/runtime';
+import { useNodeField } from '@newspack-nodes/runtime';
 
 /**
  * TopTable — the "Top items by source" card. Reads ONLY the `top-table:view` node's
- * slice ({ top:{ source:[{title,score}] } }) via useNodeState and renders one
+ * slice ({ top:{ source:[{title,score}] } }) via useNodeField and renders one
  * score-ranked table per source with inline score bars (sized against the global
  * top score so they're comparable across sources), plus the Top score KPI. A slice
  * error surfaces as a notice; no items yet shows an empty state.
  */
 export function TopTable() {
-	const slice = useNodeState( 'top-table:view', 'view' ) || { top: {} };
+	const slice = useNodeField( 'top-table:view', 'view' ) || { top: {} };
 	const top = slice.top ?? {};
 	const topBySource = Object.entries( top );
 	const allTopItems = topBySource.flatMap( ( [ , items ] ) => items );

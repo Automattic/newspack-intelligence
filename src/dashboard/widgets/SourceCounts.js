@@ -1,14 +1,14 @@
 import { __ } from '@wordpress/i18n';
-import { useNodeState } from '@newspack-nodes/runtime';
+import { useNodeField } from '@newspack-nodes/runtime';
 
 /**
  * SourceCounts — the "By source" card. Reads ONLY the `source-counts:view` node's
- * slice ({ sources:{name:count} }) via useNodeState and renders one labeled
+ * slice ({ sources:{name:count} }) via useNodeField and renders one labeled
  * proportion bar per source (sized by its share of the total) plus the Sources
  * KPI. A slice error surfaces as a notice; no sources yet shows an empty hint.
  */
 export function SourceCounts() {
-	const slice = useNodeState( 'source-counts:view', 'view' ) || {
+	const slice = useNodeField( 'source-counts:view', 'view' ) || {
 		sources: {},
 	};
 	const sources = Object.entries( slice.sources ?? {} );

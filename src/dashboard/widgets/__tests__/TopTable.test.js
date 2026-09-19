@@ -17,7 +17,7 @@ beforeEach( () => Core.reset() );
 function mountSlice( slice ) {
 	const node = new TopTableViewNode();
 	node.name = 'top-table:view';
-	node.setState( 'view', slice );
+	node.setField( 'view', slice );
 	return node;
 }
 
