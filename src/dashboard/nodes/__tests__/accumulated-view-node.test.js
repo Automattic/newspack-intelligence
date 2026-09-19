@@ -1,7 +1,8 @@
 /**
  * accumulated:view tests — the thin view node that owns the accumulated slice
  * ({ accumulated, done, total, digest }). It parses an `accumulated` reply and
- * setStates it for <AccumulatedPanel/>; it never touches the counts or top slices.
+ * holds it in the `view` field for <AccumulatedPanel/>; it never touches
+ * the counts or top slices.
  *
  * The awaited `generate` / `collect` verbs are minted from their own nodes, so
  * their acks are addressed there and never reach this one.
@@ -42,7 +43,7 @@ const SLICE = { accumulated: 12, done: 2, total: 3, digest: '# Digest' };
 describe( 'accumulated:view — slice publish', () => {
 	test( 'starts with an empty accumulated slice', () => {
 		const v = makeView();
-		expect( v.setStateCache.view ).toEqual( {
+		expect( v.view ).toEqual( {
 			accumulated: 0,
 			done: 0,
 			total: 0,
@@ -53,7 +54,7 @@ describe( 'accumulated:view — slice publish', () => {
 	test( 'parses an accumulated reply into the slice and publishes it', () => {
 		const v = makeView();
 		v.fill( accReply( JSON.stringify( SLICE ) ) );
-		expect( v.setStateCache.view ).toEqual( SLICE );
+		expect( v.view ).toEqual( SLICE );
 	} );
 
 	test( 'a later reply replaces the published slice', () => {
@@ -69,8 +70,8 @@ describe( 'accumulated:view — slice publish', () => {
 				} )
 			)
 		);
-		expect( v.setStateCache.view.accumulated ).toBe( 8 );
-		expect( v.setStateCache.view.digest ).toBe( '# New' );
+		expect( v.view.accumulated ).toBe( 8 );
+		expect( v.view.digest ).toBe( '# New' );
 	} );
 
 	test( 'surfaces a TM_ERROR reply as an error in the slice', () => {
@@ -78,13 +79,13 @@ describe( 'accumulated:view — slice publish', () => {
 		const m = accReply( 'acc read failed' );
 		m[ TYPE ] = TM_COMMAND | TM_RESPONSE | TM_ERROR;
 		v.fill( m );
-		expect( v.setStateCache.view.error ).toMatch( /acc read failed/ );
+		expect( v.view.error ).toMatch( /acc read failed/ );
 	} );
 
 	test( 'ignores an unparseable payload (keeps the prior slice)', () => {
 		const v = makeView();
 		v.fill( accReply( JSON.stringify( SLICE ) ) );
 		v.fill( accReply( 'not json' ) );
-		expect( v.setStateCache.view ).toEqual( SLICE );
+		expect( v.view ).toEqual( SLICE );
 	} );
 } );

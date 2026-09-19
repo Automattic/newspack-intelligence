@@ -358,18 +358,19 @@ Publisher Insights admin page.
 | `markdownToBlockMarkup.js` | `markdownToBlockMarkup` | Converts digest markdown to block markup through the editor's own paste engine |
 | `styles/insights.scss` | — | The page styling, imported by `PublisherInsights.js` and emitted as `build/dashboard/index.css` |
 
-Each widget reads ONLY its own view node through `useNodeState`; there is no god
-view node and no god `insights` command. The three slices arrive as `{sources:
-{source: count}}`, `{top: {source: [{title, score}]}}` and `{accumulated, done,
-total, digest}` — the same shapes `nodes/register.js` declares as each view's
-`empty`. `Insights_CI_Node::top_by_source()` sorts each source's list by score
-descending and caps it at ten before the wire, so `TopTable` trusts that order
-for its rank column and neither sorts nor caps. Collect and Regenerate are
-`useCommandOnce` one-shots owned by `AccumulatedPanel`, riding the same batched
-tick as the poll, because the lock, the note and the latch each reply sets live
-there. The view classes are handed to `makeNode` rather than named, because the
-interpreter's class map is a per-bundle static (substrate ADR-16). The build
-resolves `@newspack-nodes/runtime`, `@newspack-nodes/shared/*` and
+Each widget reads ONLY its own view node's `view` field through `useNodeField`;
+there is no god view node and no god `insights` command. The three slices arrive
+as `{sources: {source: count}}`, `{top: {source: [{title, score}]}}` and
+`{accumulated, done, total, digest}` — the same shapes `nodes/register.js`
+declares as each view's `empty`. `Insights_CI_Node::top_by_source()` sorts each
+source's list by score descending and caps it at ten before the wire, so
+`TopTable` trusts that order for its rank column and neither sorts nor caps.
+Collect and Regenerate are `useCommandOnce` one-shots owned by
+`AccumulatedPanel`, riding the same batched tick as the poll, because the lock,
+the note and the latch each reply sets live there. The view classes are handed
+to `makeNode` rather than named, because the interpreter's class map is a
+per-bundle static (substrate ADR-16). The build resolves
+`@newspack-nodes/runtime`, `@newspack-nodes/shared/*` and
 `@newspack-nodes/debug-overlay` through the substrate's `alias-map.cjs`, from
 `NEWSPACK_NODES_SRC` in CI and from the sibling checkout locally.
 

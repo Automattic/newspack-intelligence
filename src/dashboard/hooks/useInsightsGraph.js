@@ -62,7 +62,7 @@ const SLICES = [
 /**
  * @param {Object} [opts]            Options (test seams).
  * @param {number} [opts.intervalMs] Poll cadence in ms; defaults to DEFAULT_INTERVAL_MS. Never falls through to the router tick — that polled at 1Hz.
- * @return {void} Nothing: every widget reads its own slice via `useNodeState`.
+ * @return {void} Nothing: every widget reads its own slice via `useNodeField`.
  */
 export function useInsightsGraph( opts = {} ) {
 	useBatchedPoll( {

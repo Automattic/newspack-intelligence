@@ -1,7 +1,8 @@
 /**
  * top-table:view tests — the thin view node that owns ONLY the per-source top
- * slice. It parses a `top` reply ({"top":{ source:[…] }}) and setStates it for
- * <TopTable/>; it never touches the counts or accumulated slices.
+ * slice. It parses a `top` reply ({"top":{ source:[…] }}) and holds
+ * it in the `view` field for <TopTable/>; it never touches the counts or
+ * accumulated slices.
  */
 
 import {
@@ -35,14 +36,14 @@ function topReply( payload ) {
 describe( 'top-table:view', () => {
 	test( 'starts with an empty top slice', () => {
 		const v = makeView();
-		expect( v.setStateCache.view ).toEqual( { top: {} } );
+		expect( v.view ).toEqual( { top: {} } );
 	} );
 
 	test( 'parses a per-source top reply into the slice and publishes it', () => {
 		const v = makeView();
 		const top = { github: [ { title: 'X', score: 5 } ] };
 		v.fill( topReply( JSON.stringify( { top } ) ) );
-		expect( v.setStateCache.view ).toEqual( { top } );
+		expect( v.view ).toEqual( { top } );
 	} );
 
 	test( 'surfaces a TM_ERROR reply as an error in the slice', () => {
@@ -50,7 +51,7 @@ describe( 'top-table:view', () => {
 		const m = topReply( 'top read failed' );
 		m[ TYPE ] = TM_COMMAND | TM_RESPONSE | TM_ERROR;
 		v.fill( m );
-		expect( v.setStateCache.view.error ).toMatch( /top read failed/ );
+		expect( v.view.error ).toMatch( /top read failed/ );
 	} );
 
 	test( 'ignores an unparseable payload (keeps the prior slice)', () => {
@@ -58,6 +59,6 @@ describe( 'top-table:view', () => {
 		const top = { github: [ { title: 'A', score: 1 } ] };
 		v.fill( topReply( JSON.stringify( { top } ) ) );
 		v.fill( topReply( 'not json' ) );
-		expect( v.setStateCache.view ).toEqual( { top } );
+		expect( v.view ).toEqual( { top } );
 	} );
 } );

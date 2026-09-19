@@ -2,7 +2,7 @@
 /**
  * AccumulatedPanel — the total-items KPI + collection progress + digest/newsletter
  * card. Reads ONLY the accumulated:view slice ({ accumulated, done, total, digest })
- * via useNodeState. Collect and Regenerate are the panel's OWN one-shots, so they
+ * via useNodeField. Collect and Regenerate are the panel's OWN one-shots, so they
  * go over a fake command wire here rather than arriving as promise props — which
  * is also what makes the wiring itself covered. Copy / Create-draft act on the
  * shown digest via the `createDraft` / `markdownToContent` seams.
@@ -50,7 +50,7 @@ const sent = ( verb ) =>
 function mountSlice( slice ) {
 	const node = new AccumulatedViewNode();
 	node.name = 'accumulated:view';
-	node.setState( 'view', slice );
+	node.setField( 'view', slice );
 	return node;
 }
 
