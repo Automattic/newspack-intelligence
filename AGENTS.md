@@ -42,7 +42,7 @@ npm run lint:types                        # tsc over the JS via tsconfig.check.j
 npm run lint:shell                        # shellcheck over pre-push and scripts/*.sh
 npm run lint:deadcode:js                  # knip; GATED in pre-commit (caveat below)
 npm run test:js                           # jest (local); test:js:coverage feeds the gate
-cd tests && ../vendor/bin/phpunit         # PHP; needs the substrate active
+cd tests && ../vendor/bin/phpunit --enforce-time-limit   # PHP; needs the substrate active
 ```
 
 `lint:js` is three gates under one name: eslint, `scripts/lint-comments.mjs` (the
@@ -64,8 +64,16 @@ from `/usr/src`, and the static tools run on the host:
 ```bash
 docker exec eve-pyrobase1-1 /services/pyrobase/setup/newspack-intelligence.sh
 docker exec -u bend eve-pyrobase1-1 bash -c \
-  'cd /services/pyrobase/sources/newspack-intelligence/tests && ../vendor/bin/phpunit'
+  'cd /services/pyrobase/sources/newspack-intelligence/tests && ../vendor/bin/phpunit --enforce-time-limit'
 ```
+
+`--enforce-time-limit` is what makes the budget real: `phpunit.xml` sets no
+`defaultTimeLimit`, so every test gets PHPUnit's one second, and
+`failOnRisky="true"` beside `failOnWarning="true"` turns a breach into a failure
+rather than an `OK, but there were issues!` the push ignores. No class buys more
+with `#[Medium]` or `#[Large]`, because a test must not wait in real time — it
+drives a seam, as this plugin's `Proxy_LLM_Client::$http_post` and the
+substrate's `Core::$clock` and `Event_Framework::$sleep` are there for.
 
 After adding or renaming a Node class, regenerate the classmap (`make_node` and
 the console palette read it): `composer build:autoloaders` (= `composer
