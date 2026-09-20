@@ -40,7 +40,7 @@ composer install && npm install
 npm run build          # esbuild the dashboard
 npm run lint:js && npm run lint:php && npm run lint:phpstan && npm run lint:scss
 npx jest               # JS unit tests (local)
-cd tests && ../vendor/bin/phpunit   # PHP; needs newspack-nodes active
+cd tests && ../vendor/bin/phpunit --enforce-time-limit   # PHP; needs newspack-nodes active
 ```
 
 ## Docs
