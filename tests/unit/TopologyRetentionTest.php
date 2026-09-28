@@ -40,8 +40,9 @@ final class TopologyRetentionTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		$this->tmp = $this->make_temp_dir( 'intelligence-retention-' );
+		$this->use_base_dir( $this->tmp );
 		Topology_Registry::reset();
-		Topology_Registry::register_stock_dir( \dirname( __DIR__, 2 ) . '/topologies' );
+		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
 	}
 
 	protected function tearDown(): void {
@@ -54,14 +55,15 @@ final class TopologyRetentionTest extends TestCase {
 		Core::register_config_namespace(
 			'config',
 			fn ( string $key ) => [
-				'logs_dir'     => $this->tmp . '/logs',
-				'offsets_dir'  => $this->tmp . '/offsets',
-				'segment_size' => self::SENTINEL_SEGMENT_SIZE,
-				'min_segments' => Partition_Node::DEFAULT_MIN_SEGMENTS,
-				'num_segments' => self::SENTINEL_NUM_SEGMENTS,
-				'min_lifetime' => self::SENTINEL_MIN_LIFETIME,
-				'lifetime'     => self::SENTINEL_LIFETIME,
-				'max_segments' => 0,
+				'logs_dir'       => $this->tmp . '/logs',
+				'offsets_dir'    => $this->tmp . '/offsets',
+				'deadletter_dir' => $this->tmp . '/deadletter',
+				'segment_size'   => self::SENTINEL_SEGMENT_SIZE,
+				'min_segments'   => Partition_Node::DEFAULT_MIN_SEGMENTS,
+				'num_segments'   => self::SENTINEL_NUM_SEGMENTS,
+				'min_lifetime'   => self::SENTINEL_MIN_LIFETIME,
+				'lifetime'       => self::SENTINEL_LIFETIME,
+				'max_segments'   => 0,
 			][ $key ] ?? null
 		);
 

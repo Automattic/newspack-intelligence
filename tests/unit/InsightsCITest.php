@@ -191,12 +191,8 @@ final class InsightsCITest extends TestCase {
 		$GLOBALS['_wp_test_current_user_can'] = [];
 		$GLOBALS['_current_user_can']         = false;
 		foreach ( [ 'counts', 'top', 'accumulated' ] as $verb ) {
-			try {
-				$ci->dispatch( $verb );
-				$this->fail( "verb '$verb' should be refused without manage_options" );
-			} catch ( \RuntimeException $e ) {
-				$this->assertStringContainsString( 'permission denied', $e->getMessage() );
-			}
+			$caught = $this->caught( fn () => $ci->dispatch( $verb ), "verb '$verb' should be refused without manage_options" );
+			$this->assertStringContainsString( 'permission denied', $caught->getMessage() );
 		}
 	}
 
