@@ -134,6 +134,15 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 	$base_interpreter->make_node( 'Insights_CI', 'insights' );
 }
 
+/**
+ * Register the `wp newspack-intelligence` verbs.
+ *
+ * @api Called by the plugins_loaded bootstrap; tests drive it against a recorder.
+ */
+function register_cli_commands(): void {
+	\WP_CLI::add_command( 'newspack-intelligence clients', '\\Newspack_Intelligence\\CLI\\Clients_CLI_Command' );
+}
+
 // Load after newspack-nodes (its deferred loader runs at plugins_loaded:11).
 \add_action(
 	'plugins_loaded',
@@ -158,7 +167,7 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 		require_once __DIR__ . '/vendor/autoload.php';
 
 		if ( \defined( 'WP_CLI' ) && \WP_CLI ) {
-			\WP_CLI::add_command( 'newspack-intelligence clients', '\\Newspack_Intelligence\\CLI\\Clients_CLI_Command' );
+			register_cli_commands();
 		}
 
 		// Register upload hooks only after Composer can load Clients_Settings.

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`Newspack_Intelligence\register_cli_commands()`** registers `wp newspack-intelligence clients`, and `CliUsageOverviewTest` holds it to the usage overview through the substrate's `ListsEveryCliCommand`.
+
 ## [0.10.1] - 2026-09-19
 
 ### Fixed
