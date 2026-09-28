@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Newspack_Nodes\Tests\TestCase;
 use Newspack_Intelligence\Client_Importer;
 use Newspack_Intelligence\Clients_Settings;
 
@@ -21,6 +21,7 @@ final class ClientsSettingsTest extends TestCase {
 			$_GET,
 			$_FILES
 		);
+		parent::tearDown();
 	}
 
 	public function test_import_path_parses_and_imports(): void {
@@ -73,12 +74,8 @@ final class ClientsSettingsTest extends TestCase {
 		$repo     = new Fake_Publisher_Repository();
 		$settings = new Clients_Settings( new Client_Importer( $repo ) );
 
-		try {
-			$settings->handle_admin_post();
-			$this->fail( 'expected wp_safe_redirect to short-circuit via exception' );
-		} catch ( \RuntimeException $e ) {
-			$this->assertStringContainsString( 'clients_imported=1', $e->getMessage() );
-		}
+		$caught = $this->caught( fn () => $settings->handle_admin_post(), 'expected wp_safe_redirect to short-circuit via exception' );
+		$this->assertStringContainsString( 'clients_imported=1', $caught->getMessage() );
 
 		$this->assertCount( 1, $repo->all_atomic_ids() );
 		\unlink( $tmp );
