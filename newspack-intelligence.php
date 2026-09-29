@@ -152,15 +152,16 @@ function register_cli_commands(): void {
 		}
 		// @longform Substrate handshake: dormant when too old. 2.25.0 =
 		// Node::config_line(), which every source node builds its `arguments`
-		// dump from; 0.44.0 was Worker_Base::ipc_partition_args(), which the
-		// insights CI makes its Partition with; 2.56.0 is the overlay_pages
-		// filter the insights page registers on; 2.57.0 is the /auth reply
-		// naming the signing key `secret`, which the bundled auth client
-		// reads. The floor read 0.54.0 (the
-		// notice API) long after both landed — a floor set too low does not
-		// degrade, it activates and then fatals on the missing method.
+		// dump from; 2.56.0 is the overlay_pages filter the insights page
+		// registers on; 2.57.0 is the /auth reply naming the signing key
+		// `secret`, which the bundled auth client reads; 2.71.0 is
+		// Schema_Reflection::answer_request(), which answers the sources' TICK
+		// and the digest's RESET and REGENERATE, and the static
+		// Spawn_Coordinator::worker_lock_dirs() that lists the insights CI's
+		// live workers, id included. A floor set too low
+		// does not degrade: it activates and then fatals on the missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
-			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.57.0', 'Newspack Intelligence' ) ) {
+			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.71.0', 'Newspack Intelligence' ) ) {
 			return;
 		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.

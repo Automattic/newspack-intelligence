@@ -113,8 +113,9 @@ final class LinearSourceTest extends TestCase {
 		$node->name( 'linear' );
 		$node->set_vault_id( 'lin-creds' );
 		$node->sink( new Capture_Sink_Node() );
-		$message                  = Message::new_message();
-		$message[ Message::TYPE ] = Message::TM_REQUEST;
+		$message                   = Message::new_message();
+		$message[ Message::TYPE ]  = Message::TM_REQUEST;
+		$message[ Message::VALUE ] = 'TICK';
 		$node->fill( $message );
 
 		$this->assertCount( 1, $captured );

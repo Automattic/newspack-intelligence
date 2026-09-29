@@ -82,16 +82,15 @@ class Digest_Builder_Node extends Node {
 	}
 
 	/**
-	 * Accepts TM_REQUEST 'RESET' and 'REGENERATE', TM_INFO "DONE\n", and TM_STRUCT messages.
+	 * Answers TM_REQUEST 'RESET' and 'REGENERATE'; accepts TM_INFO "DONE\n" and TM_STRUCT messages.
 	 *
 	 * @param array<int,mixed> $message Message reference.
 	 */
 	public function fill( array $message ): void {
-		$type = \is_numeric( $message[ Message::TYPE ] ) ? (int) $message[ Message::TYPE ] : 0;
-		if ( $type & Message::TM_REQUEST ) {
-			$this->handle_request( $message );
+		if ( $this->answer_request( $message ) ) {
 			return;
 		}
+		$type = \is_numeric( $message[ Message::TYPE ] ) ? (int) $message[ Message::TYPE ] : 0;
 		if ( $type & Message::TM_INFO ) {
 			$this->handle_info( $message );
 			return;
@@ -120,20 +119,18 @@ class Digest_Builder_Node extends Node {
 	}
 
 	/**
-	 * Runtime triggers. RESET (the dashboard's Collect, before it TICKs the sources) zeroes the progress counter.
+	 * RESET handler (the dashboard's Collect, before it TICKs the sources):
+	 * empty the accumulator and zero the progress counter.
 	 *
-	 * @param array<int,mixed> $message Incoming request Message.
+	 * @return array{cleared:int} The reply data: how many items were dropped.
 	 */
-	private function handle_request( array $message ): void {
-		$value = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
-		if ( 'RESET' === $value ) {
-			$this->items    = [];
-			$this->seen     = [];
-			$this->reported = [];
-			$this->nudge_scored_partition();
-		} elseif ( 'REGENERATE' === $value ) {
-			$this->compose_draft();
-		}
+	private function reset(): array {
+		$cleared        = \count( $this->items );
+		$this->items    = [];
+		$this->seen     = [];
+		$this->reported = [];
+		$this->nudge_scored_partition();
+		return [ 'cleared' => $cleared ];
 	}
 
  	/**
@@ -170,6 +167,16 @@ class Digest_Builder_Node extends Node {
 				$this->compose_draft();
 			}
 		}
+	}
+
+	/**
+	 * REGENERATE handler: compose a draft from the items already collected.
+	 *
+	 * @return array{composed:int} The reply data: how many items the draft drew on.
+	 */
+	private function regenerate(): array {
+		$this->compose_draft();
+		return [ 'composed' => \count( $this->items ) ];
 	}
 
 	private function compose_draft(): void {
@@ -274,10 +281,14 @@ class Digest_Builder_Node extends Node {
 				[
 					'name'        => 'RESET',
 					'description' => 'Zero the collection counter (the dashboard Collect sends this before TICKing sources). `total` comes from the make_node argument, not this request.',
+					'reply_shape' => '{ cleared }',
+					'handler'     => static fn ( self $node ): array => $node->reset(),
 				],
 				[
 					'name'        => 'REGENERATE',
 					'description' => 'Compose a new draft based on the items already collected.',
+					'reply_shape' => '{ composed }',
+					'handler'     => static fn ( self $node ): array => $node->regenerate(),
 				],
 			],
 			'commands'     => self::llm_config_commands(),

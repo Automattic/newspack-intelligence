@@ -80,12 +80,15 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.57.0' )` and stays
-dormant below it. 2.57.0 is the `/auth` reply naming the signing key `secret`,
-which the bundled auth client reads; 2.56.0 is the `newspack_nodes/overlay_pages` filter the
-insights page registers on. 2.25.0 is `Node::config_line()`, which every source node builds
-its `arguments` dump from; `Worker_Base::ipc_partition_args()`, which the insights
-CI makes its Partition with, landed in 0.44.0. Against a substrate between a
+error.** The loader calls `Bootstrap::version_at_least( '2.71.0' )` and stays
+dormant below it. 2.71.0 is `Schema_Reflection::answer_request()`, which answers
+the sources' `TICK` and the digest's `RESET` and `REGENERATE`, and the static
+`Spawn_Coordinator::worker_lock_dirs()`, which lists the insights CI's live
+workers with their ids. 2.57.0 is
+the `/auth` reply naming the signing key `secret`, which the bundled auth client
+reads; 2.56.0 is the `newspack_nodes/overlay_pages` filter the insights page
+registers on. 2.25.0 is `Node::config_line()`, which every source node builds its
+`arguments` dump from. Against a substrate between a
 too-low floor and the real one the handshake passes, the plugin activates, and it
 then fatals on the missing method — the one outcome the gate exists to prevent.
 `scripts/check-substrate-floor.sh` derives the true floor from PHPStan's
@@ -233,7 +236,10 @@ resolvable vault token the gate runs deterministic-only.
 
 `Insights_CI` serves the dashboard slices and routes Collect and Regenerate to
 the worker over its input IPC partition — durable and synchronous, with no
-live-worker dependency on read. The browser creates the WordPress draft from the
+live-worker dependency on read. Each request carries the CI's own name as FROM,
+which the worker's input reader stamps under `_repl`, so the answer every
+source's `TICK` and the digest's `RESET` and `REGENERATE` sends back lands on
+the worker's output partition, where an attached `wp nodes cli` reads it. The browser creates the WordPress draft from the
 digest markdown via `@wordpress/api-fetch`. LLM calls go through the Automattic
 AI API Proxy via `LLM_Client` / `Proxy_LLM_Client`, whose `$http_post` closure is
 the test seam. Seven more follow the same pattern, each a static `?\Closure`

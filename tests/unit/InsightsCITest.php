@@ -6,10 +6,12 @@ namespace Newspack_Intelligence\Tests;
 use Newspack_Intelligence\Digest_Builder_Node;
 use Newspack_Intelligence\Insights_CI_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
+use Newspack_Nodes\CLI;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Message;
-use Newspack_Nodes\Node;
 use Newspack_Nodes\Partition_Node;
+use Newspack_Nodes\Router_Node;
+use Newspack_Nodes\Worker_Base;
 use Newspack_Nodes\Tests\TestCase;
 
 /**
@@ -261,16 +263,19 @@ final class InsightsCITest extends TestCase {
 		$base            = $this->make_temp_dir( 'insights-ci-workers-' );
 		$this->created[] = $base;
 		\mkdir( $base . '/locks/newspack-intelligence.p0.lock.d', 0777, true );
-		\mkdir( $base . '/locks/newspack-intelligence.p1.lock.d', 0777, true );
+		\mkdir( $base . '/locks/newspack-intelligence.p5.lock.d', 0777, true );
+		// No worker id spells a padded partition, so it is no worker's lock.
+		\mkdir( $base . '/locks/newspack-intelligence.p03.lock.d', 0777, true );
 		// The pre-split topology name (`newspack-ai-newsletter`) must NO LONGER be
 		// recognized as a live worker — kept verbatim as a negative fixture.
 		\mkdir( $base . '/locks/newspack-ai-newsletter.p0.lock.d', 0777, true );
+		\mkdir( $base . '/locks/newspack-intelligence-gate.p2.lock.d', 0777, true );
 		\mkdir( $base . '/locks/other.p0.lock.d', 0777, true );
 
 		$workers = Insights_CI_Node::live_workers( $base );
 		\sort( $workers );
 		$this->assertSame(
-			[ 'newspack-intelligence.p0', 'newspack-intelligence.p1' ],
+			[ 'newspack-intelligence.p0', 'newspack-intelligence.p5' ],
 			$workers
 		);
 	}
@@ -284,37 +289,19 @@ final class InsightsCITest extends TestCase {
 		$this->assertStringContainsString( 'No live', (string) $parsed['error'] );
 	}
 
-	public function test_collect_routes_reset_and_tick_requests_to_each_live_worker(): void {
-		$base            = $this->make_temp_dir( 'insights-ci-collect-' );
-		$this->created[] = $base;
-		\mkdir( $base . '/locks/newspack-intelligence.p0.lock.d', 0777, true );
-		$interpreter = new Capturing_Interpreter();
+	public function test_collect_appends_reset_and_tick_requests_to_each_live_worker_input(): void {
+		$base = $this->live_worker_base( 'insights-ci-collect-', 'newspack-intelligence.p4' );
+		$ci   = $this->routed_ci( 'insights-collect-7' );
 
-		$result = Insights_CI_Node::collect( $interpreter, $base );
-		$parsed = \json_decode( $result, true );
+		$parsed = \json_decode( Insights_CI_Node::collect( $ci, $base ), true );
 
 		$this->assertSame( [ 'collecting' => 3, 'workers' => 1 ], $parsed );
-		$this->assertNotNull( $interpreter->partition );
-		$this->assertTrue( $interpreter->partition->voided );
-		$this->assertSame( 1, $interpreter->partition->flushes );
-		$this->assertSame( 'Partition', $interpreter->made_type );
-		$this->assertSame( 'newspack-intelligence.p0', $interpreter->made_name );
-		// The substrate owns the IPC geometry — all four retention axes, so an
-		// inherited <config:min_lifetime> can't protect the scratch from pruning.
-		$this->assertSame(
-			\Newspack_Nodes\Worker_Base::ipc_partition_args( $base . '/ipc/newspack-intelligence.p0/input' ),
-			$interpreter->made_args
-		);
-		$this->assertSame(
-			[
-				'newspack-intelligence.p0/digest',
-				'newspack-intelligence.p0/github',
-				'newspack-intelligence.p0/linear',
-				'newspack-intelligence.p0/feed',
-			],
-			\array_column( $interpreter->messages, Message::TO )
-		);
-		$this->assertSame( [ 'RESET', 'TICK', 'TICK', 'TICK' ], \array_column( $interpreter->messages, Message::VALUE ) );
+		$written = $this->worker_input( $base, 'newspack-intelligence.p4' );
+		$this->assertSame( [ 'digest', 'github', 'linear', 'feed' ], \array_column( $written, Message::TO ) );
+		$this->assertSame( [ 'RESET', 'TICK', 'TICK', 'TICK' ], \array_column( $written, Message::VALUE ) );
+		// FROM names the CI that asked, so each answer comes back addressed.
+		$this->assertSame( \array_fill( 0, 4, 'insights-collect-7' ), \array_column( $written, Message::FROM ) );
+		$this->assertSame( \array_fill( 0, 4, Message::TM_REQUEST ), \array_column( $written, Message::TYPE ) );
 	}
 
 	public function test_regenerate_errors_when_no_worker_is_live(): void {
@@ -326,19 +313,55 @@ final class InsightsCITest extends TestCase {
 		$this->assertStringContainsString( 'No live', (string) $parsed['error'] );
 	}
 
-	public function test_regenerate_routes_one_request_to_the_digest_node(): void {
-		$base            = $this->make_temp_dir( 'insights-ci-regen-' );
-		$this->created[] = $base;
-		\mkdir( $base . '/locks/newspack-intelligence.p0.lock.d', 0777, true );
-		$interpreter = new Capturing_Interpreter();
+	public function test_regenerate_appends_one_request_to_the_digest_node(): void {
+		$base = $this->live_worker_base( 'insights-ci-regen-', 'newspack-intelligence.p9' );
 
-		$result = Insights_CI_Node::regenerate( $interpreter, $base );
-		$parsed = \json_decode( $result, true );
+		$parsed = \json_decode( Insights_CI_Node::regenerate( $this->routed_ci( 'insights-regen-3' ), $base ), true );
 
 		$this->assertSame( [ 'regenerating' => true, 'workers' => 1 ], $parsed );
-		$this->assertCount( 1, $interpreter->messages );
-		$this->assertSame( 'newspack-intelligence.p0/digest', $interpreter->messages[0][ Message::TO ] );
-		$this->assertSame( 'REGENERATE', $interpreter->messages[0][ Message::VALUE ] );
+		$written = $this->worker_input( $base, 'newspack-intelligence.p9' );
+		$this->assertCount( 1, $written );
+		$this->assertSame( 'digest', $written[0][ Message::TO ] );
+		$this->assertSame( 'REGENERATE', $written[0][ Message::VALUE ] );
+		$this->assertSame( 'insights-regen-3', $written[0][ Message::FROM ] );
+	}
+
+	/** A base dir holding one live worker: its lock dir and its IPC input dir. */
+	private function live_worker_base( string $prefix, string $worker_id ): string {
+		$base            = $this->make_temp_dir( $prefix );
+		$this->created[] = $base;
+		[ $type, $partition ] = CLI::parse_worker_id( $worker_id ) ?? [ '', 0 ];
+		\mkdir( "{$base}/locks/{$worker_id}.lock.d", 0777, true );
+		\mkdir( Worker_Base::ipc_dir( $base, $type, $partition, Worker_Base::IPC_INPUT ), 0777, true );
+		return $base;
+	}
+
+	/** An insights CI under `$name`, sinking into a real Router. */
+	private function routed_ci( string $name ): Insights_CI_Node {
+		$router = new Router_Node();
+		$router->name( '_router' );
+		$ci = new Insights_CI_Node();
+		$ci->name( $name );
+		$ci->sink( $router );
+		return $ci;
+	}
+
+	/**
+	 * Every message a worker's IPC input partition holds on disk, oldest first.
+	 *
+	 * @return array<int,array<int,mixed>>
+	 */
+	private function worker_input( string $base, string $worker_id ): array {
+		[ $type, $partition ] = CLI::parse_worker_id( $worker_id ) ?? [ '', 0 ];
+		$segments             = \glob( Worker_Base::ipc_dir( $base, $type, $partition, Worker_Base::IPC_INPUT ) . '/*' ) ?: [];
+		\natsort( $segments );
+		$messages = [];
+		foreach ( $segments as $segment ) {
+			foreach ( \file( $segment, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES ) ?: [] as $line ) {
+				$messages[] = Message::unpacked( $line );
+			}
+		}
+		return $messages;
 	}
 
 	/** A digest path under a fresh tracked temp dir (one per test). */
@@ -359,41 +382,5 @@ final class InsightsCITest extends TestCase {
 		$source = (string) \file_get_contents( \dirname( __DIR__, 2 ) . '/includes/class-insights-ci-node.php' );
 		$this->assertStringNotContainsString( 'Settings::DIGEST_PATH', $source );
 		$this->assertStringContainsString( 'Digest_Builder_Node::digest_path()', $source );
-	}
-}
-
-class Capturing_Interpreter extends Command_Interpreter_Node {
-	public ?Inspectable_Partition_Node $partition = null;
-	public ?string $made_type = null;
-	public ?string $made_name = null;
-	/** @var array<int,mixed> */
-	public array $made_args = [];
-	/** @var array<int,array<int,mixed>> */
-	public array $messages = [];
-
-	public function make_node( string $type, string $name, ...$args ): ?Node {
-		$this->made_type = $type;
-		$this->made_name = $name;
-		$this->made_args = $args;
-		$this->partition = new Inspectable_Partition_Node();
-		return $this->partition;
-	}
-
-	public function fill( array $message ): void {
-		$this->messages[] = $message;
-	}
-}
-
-class Inspectable_Partition_Node extends Partition_Node {
-	public bool $voided = false;
-	public int $flushes = 0;
-
-	public function void_warranty(): Partition_Node {
-		$this->voided = true;
-		return $this;
-	}
-
-	public function flush(): void {
-		++$this->flushes;
 	}
 }

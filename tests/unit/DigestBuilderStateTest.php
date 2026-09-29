@@ -40,10 +40,65 @@ final class DigestBuilderStateTest extends TestCase {
 
 	/** Fire a RESET request (clears items + dedup + progress; total comes from the node's args). */
 	private function reset( Digest_Builder_Node $n ): void {
+		$this->request( $n, 'RESET' );
+	}
+
+	/** Fire a TM_REQUEST carrying `$verb`, from an asker the reply must find. */
+	private function request( Digest_Builder_Node $n, string $verb ): void {
 		$r                   = Message::new_message();
 		$r[ Message::TYPE ]  = Message::TM_REQUEST;
-		$r[ Message::VALUE ] = 'RESET';
+		$r[ Message::FROM ]  = '_repl/insights-digest-asker';
+		$r[ Message::ID ]    = '2:640:88';
+		$r[ Message::KEY ]   = 'digest-key-17';
+		$r[ Message::VALUE ] = $verb;
 		$n->fill( $r );
+	}
+
+	/**
+	 * Assert the last captured message answers `$verb` with `$data`, addressed
+	 * back along the request's FROM with its ID and KEY echoed.
+	 *
+	 * @param array<string,mixed> $data
+	 */
+	private function assert_answered( Capture_Sink_Node $sink, string $verb, array $data ): void {
+		$reply = \end( $sink->captured );
+		$this->assertSame( Message::TM_STRUCT | Message::TM_RESPONSE, $reply[ Message::TYPE ] );
+		$this->assertSame( 'digest-under-test', $reply[ Message::FROM ] );
+		$this->assertSame( '_repl/insights-digest-asker', $reply[ Message::TO ] );
+		$this->assertSame( '2:640:88', $reply[ Message::ID ] );
+		$this->assertSame( 'digest-key-17', $reply[ Message::KEY ] );
+		$this->assertSame( [ 'verb' => $verb, 'data' => $data ], $reply[ Message::VALUE ] );
+	}
+
+	public function test_reset_answers_with_the_count_it_cleared(): void {
+		$node = new Digest_Builder_Node();
+		$node->name( 'digest-under-test' );
+		$sink = new Capture_Sink_Node();
+		$node->sink( $sink );
+		$this->feed( $node, [ 'id' => 'github:5', 'title' => 'five' ] );
+		$this->feed( $node, [ 'id' => 'linear:6', 'title' => 'six' ] );
+		$this->feed( $node, [ 'id' => 'feed:7', 'title' => 'seven' ] );
+
+		$this->request( $node, 'RESET' );
+
+		$this->assertCount( 0, $node->save_state()['items'] );
+		$this->assert_answered( $sink, 'RESET', [ 'cleared' => 3 ] );
+	}
+
+	public function test_regenerate_answers_with_the_count_it_composed_after_the_draft(): void {
+		Digest_Builder_Node::$llm_factory = static fn (): ?LLM_Client => null;
+		$node                             = new Digest_Builder_Node();
+		$node->name( 'digest-under-test' );
+		$sink = new Capture_Sink_Node();
+		$node->sink( $sink );
+		$this->feed( $node, [ 'id' => 'github:8', 'title' => 'eight', 'source' => 'github' ] );
+		$this->feed( $node, [ 'id' => 'github:9', 'title' => 'nine', 'source' => 'github' ] );
+
+		$this->request( $node, 'REGENERATE' );
+
+		$this->assertCount( 2, $sink->captured, 'the draft, then the answer' );
+		$this->assertSame( Message::TM_BYTESTREAM, $sink->captured[0][ Message::TYPE ] );
+		$this->assert_answered( $sink, 'REGENERATE', [ 'composed' => 2 ] );
 	}
 
 	public function test_dedupes_accumulated_items_by_id(): void {
