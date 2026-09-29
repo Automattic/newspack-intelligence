@@ -10,23 +10,26 @@ use Newspack_Nodes\Tests\TestCase;
 
 final class SourceNodeTest extends TestCase {
 
-	private function tick(): array {
-		$request                  = Message::new_message();
-		$request[ Message::TYPE ] = Message::TM_REQUEST;
-		$request[ Message::KEY ]  = 'TICK';
+	private function tick( string $verb = 'TICK' ): array {
+		$request                   = Message::new_message();
+		$request[ Message::TYPE ]  = Message::TM_REQUEST;
+		$request[ Message::FROM ]  = '_repl/insights-asker';
+		$request[ Message::ID ]    = '4:812:97';
+		$request[ Message::KEY ]   = 'tick-key-31';
+		$request[ Message::VALUE ] = $verb;
 		return $request;
 	}
 
 	/**
-	 * The emitted item structs (a TICK also emits a trailing TM_INFO DONE, which
-	 * these item-count assertions exclude).
+	 * The emitted item structs (a TICK also emits a trailing TM_INFO DONE and
+	 * then answers the request, which these item-count assertions exclude).
 	 *
 	 * @param array<int,array<int,mixed>> $captured
 	 * @return array<int,array<int,mixed>>
 	 */
 	private function structs( array $captured ): array {
 		return \array_values(
-			\array_filter( $captured, static fn ( $m ) => 0 !== ( $m[ Message::TYPE ] & Message::TM_STRUCT ) )
+			\array_filter( $captured, static fn ( $m ) => Message::TM_STRUCT === ( $m[ Message::TYPE ] & ( Message::TM_STRUCT | Message::TM_RESPONSE ) ) )
 		);
 	}
 
@@ -56,9 +59,49 @@ final class SourceNodeTest extends TestCase {
 		$req = $this->tick();
 		$node->fill( $req );
 
-		$last = \end( $sink->captured );
-		$this->assertSame( Message::TM_INFO, $last[ Message::TYPE ] & Message::TM_INFO );
-		$this->assertSame( "DONE\n", $last[ Message::VALUE ] );
+		$this->assertCount( 3, $sink->captured );
+		$done = $sink->captured[1];
+		$this->assertSame( Message::TM_INFO, $done[ Message::TYPE ] & Message::TM_INFO );
+		$this->assertSame( "DONE\n", $done[ Message::VALUE ] );
+	}
+
+	public function test_tick_answers_the_request_after_its_done_signal(): void {
+		$sink = new Capture_Sink_Node();
+		$node = new Fake_Source_Node();
+		$node->name( 'fake-source-12' );
+		$node->items = [
+			[ 'source' => 'fake', 'id' => 'fake:1', 'title' => 'A' ],
+			[ 'source' => 'fake', 'id' => 'fake:1', 'title' => 'A again' ],
+			[ 'source' => 'fake', 'id' => 'fake:2', 'title' => 'B' ],
+			[ 'source' => 'fake', 'title' => 'no id' ],
+		];
+		$node->sink( $sink );
+
+		$req = $this->tick();
+		$node->fill( $req );
+
+		$reply = \end( $sink->captured );
+		$this->assertSame( Message::TM_STRUCT | Message::TM_RESPONSE, $reply[ Message::TYPE ] );
+		$this->assertSame( 'fake-source-12', $reply[ Message::FROM ] );
+		$this->assertSame( '_repl/insights-asker', $reply[ Message::TO ] );
+		$this->assertSame( '4:812:97', $reply[ Message::ID ] );
+		$this->assertSame( 'tick-key-31', $reply[ Message::KEY ] );
+		$this->assertSame( [ 'verb' => 'TICK', 'data' => [ 'emitted' => 2 ] ], $reply[ Message::VALUE ] );
+	}
+
+	public function test_a_request_other_than_tick_fetches_nothing(): void {
+		$sink = new Capture_Sink_Node();
+		$node = new Fake_Source_Node();
+		$node->items = [ [ 'source' => 'fake', 'id' => 'fake:1', 'title' => 'A' ] ];
+		$node->sink( $sink );
+
+		$req = $this->tick( 'SCAN' );
+		$node->fill( $req );
+
+		$this->assertCount( 1, $sink->captured, 'no item and no DONE: only the refusal' );
+		$refusal = $sink->captured[0];
+		$this->assertSame( Message::TM_ERROR, $refusal[ Message::TYPE ] & Message::TM_ERROR );
+		$this->assertSame( '_repl/insights-asker', $refusal[ Message::TO ] );
 	}
 
 	public function test_dedups_by_id_across_ticks(): void {
@@ -118,15 +161,15 @@ final class SourceNodeTest extends TestCase {
 	}
 
 	public function test_source_schema_declares_the_shared_tick_contract(): void {
-		$schema = Fake_Source_Node::expose_source_schema();
+		$schema = Fake_Source_Node::node_schema();
 
 		$this->assertSame( 'Source', $schema['category'] );
 		$this->assertFalse( $schema['accepts_fill'] );
 		$this->assertSame( 'Fake source', $schema['description'] );
-		$this->assertSame(
-			[ [ 'name' => 'TICK', 'description' => 'Fetch fake items.' ] ],
-			$schema['requests']
-		);
+		$this->assertCount( 1, $schema['requests'] );
+		$this->assertSame( 'TICK', $schema['requests'][0]['name'] );
+		$this->assertSame( 'Fetch fake items.', $schema['requests'][0]['description'] );
+		$this->assertIsCallable( $schema['requests'][0]['handler'] );
 	}
 
 }
@@ -148,7 +191,7 @@ class Fake_Source_Node extends Source_Node {
 		return $this->items;
 	}
 
-	public static function expose_source_schema(): array {
+	public static function node_schema(): array {
 		return self::source_schema( 'Fake source', 'Fetch fake items.' );
 	}
 }

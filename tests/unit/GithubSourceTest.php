@@ -134,8 +134,9 @@ final class GithubSourceTest extends TestCase {
 		$node->add_repo( 'owner/repo' );
 		$node->set_vault_id( 'gh-creds' );
 		$node->sink( new Capture_Sink_Node() );
-		$message                  = Message::new_message();
-		$message[ Message::TYPE ] = Message::TM_REQUEST;
+		$message                   = Message::new_message();
+		$message[ Message::TYPE ]  = Message::TM_REQUEST;
+		$message[ Message::VALUE ] = 'TICK';
 		$node->fill( $message );
 
 		$this->assertCount( 3, $captured );

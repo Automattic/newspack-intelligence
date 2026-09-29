@@ -6,8 +6,9 @@
  * two seams that differ: `fetch( $config )` (the blocking-HTTP call, the Source
  * interface) and `config()` (the per-connector Settings read). On a TICK request
  * (TM_REQUEST — the runtime trigger, NOT a TM_COMMAND verb) the base fetches,
- * dedups by item `id` against the ids it has already emitted, and emits each NEW
- * item as a fire-and-forget TM_STRUCT. The emitted-id set is bounded (MAX_SEEN,
+ * dedups by item `id` against the ids it has already emitted, emits each NEW
+ * item as a fire-and-forget TM_STRUCT, and answers the request with the count it
+ * emitted. The emitted-id set is bounded (MAX_SEEN,
  * oldest evicted first) and in-memory only — it does not survive a respawn, so a
  * fresh worker re-emits whatever its next fetch still returns. Digest_Builder_Node
  * dedups on the same id, so the digest stays correct; the summarize and score
@@ -46,30 +47,28 @@ abstract class Source_Node extends Node implements Source {
 	}
 
 	/**
-	 * TICK is a runtime trigger: a TM_REQUEST handled here in fill() (NOT a
-	 * TM_COMMAND verb). Any other type is ignored; a source mints, it doesn't
-	 * consume.
+	 * TICK is a runtime trigger: a TM_REQUEST answered from the declared
+	 * `requests` handler (NOT a TM_COMMAND verb). Any other type is ignored; a
+	 * source mints, it doesn't consume.
 	 *
 	 * @param array<int,mixed> $message Incoming request Message.
 	 */
 	public function fill( array $message ): void {
-		$type = Core::num_int( $message[ Message::TYPE ] );
-		if ( $type & Message::TM_REQUEST ) {
-			$this->handle_request( $message );
-		}
+		$this->answer_request( $message );
 	}
 
 	/**
 	 * TICK handler: fetch, drop ids already emitted, emit each new item as a
 	 * TM_STRUCT, then emit one TM_INFO DONE so the digest can count collection
-	 * progress. Fire-and-forget. An item with no string `id` is skipped (no id =
-	 * can't dedup, and the contract requires one). fetch() is synchronous, so DONE
-	 * is correctly ordered after every item from this tick. DONE's FROM
-	 * (breadcrumbed downstream) is the digest's distinct-source key; VALUE the marker.
+	 * progress. An item with no string `id` is skipped (no id = can't dedup, and
+	 * the contract requires one). fetch() is synchronous, so DONE is correctly
+	 * ordered after every item from this tick. DONE's FROM (breadcrumbed
+	 * downstream) is the digest's distinct-source key; VALUE the marker.
 	 *
-	 * @param array<int,mixed> $message Incoming request Message.
+	 * @return array{emitted:int} The reply data: how many new items went out.
 	 */
-	private function handle_request( array $message ): void {
+	private function tick(): array {
+		$emitted = 0;
 		try {
 			foreach ( $this->fetch( $this->config() ) as $item ) {
 				$id = Core::str( $item['id'] ?? null );
@@ -83,6 +82,7 @@ abstract class Source_Node extends Node implements Source {
 				$response[ Message::VALUE ] = $item;
 				// parent::fill stamps TO from target, then forwards to sink.
 				parent::fill( $response );
+				++$emitted;
 			}
 		} finally {
 			// DONE always fires even on throw, so progress can't stall.
@@ -92,6 +92,7 @@ abstract class Source_Node extends Node implements Source {
 			$done[ Message::VALUE ] = "DONE\n";
 			parent::fill( $done );
 		}
+		return [ 'emitted' => $emitted ];
 	}
 
 	/**
@@ -137,8 +138,8 @@ abstract class Source_Node extends Node implements Source {
 
 	/**
 	 * Build a connector's node_schema from the shared Source shape — category Source
-	 * plus one fire-and-forget TICK request — so the connectors don't each restate
-	 * it. arguments / accepts_fill / has_target inherit Node's defaults ([]/true/true).
+	 * plus one TICK request — so the connectors don't each restate it.
+	 * arguments / has_target inherit Node's defaults ([]/true).
 	 *
 	 * @return array<string,mixed>
 	 */
@@ -150,6 +151,8 @@ abstract class Source_Node extends Node implements Source {
 				[
 					'name'        => 'TICK',
 					'description' => $tick_description,
+					'reply_shape' => '{ emitted }',
+					'handler'     => static fn ( self $node ): array => $node->tick(),
 				],
 			],
 			'accepts_fill' => false,

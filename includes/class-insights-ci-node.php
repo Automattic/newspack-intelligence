@@ -14,12 +14,13 @@
 namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Service_CI_Node;
+use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
-use Newspack_Nodes\Worker_Base;
+use Newspack_Nodes\Spawn_Coordinator;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -78,7 +79,7 @@ class Insights_CI_Node extends Service_CI_Node {
 		}
 		$total = \count( self::SOURCE_NODES );
 		foreach ( $workers as $worker_id ) {
-			$out = self::ipc_out( $interpreter, $worker_id, $base_dir );
+			$out = self::ipc_out( $worker_id, $base_dir );
 			if ( null === $out ) {
 				continue;
 			}
@@ -108,7 +109,7 @@ class Insights_CI_Node extends Service_CI_Node {
 			);
 		}
 		foreach ( $workers as $worker_id ) {
-			$out = self::ipc_out( $interpreter, $worker_id, $base_dir );
+			$out = self::ipc_out( $worker_id, $base_dir );
 			if ( null === $out ) {
 				continue;
 			}
@@ -119,56 +120,48 @@ class Insights_CI_Node extends Service_CI_Node {
 	}
 
 	/**
-	 * Live worker ids of this topology — those with a `{base}/locks/{id}.lock.d` dir.
+	 * Live worker ids of this topology — those holding a lock dir.
 	 *
 	 * @return array<int,string>
 	 */
 	public static function live_workers( string $base_dir ): array {
-		$locks = \glob( \rtrim( $base_dir, '/' ) . '/locks/' . self::TOPOLOGY . '.p*.lock.d', \GLOB_ONLYDIR );
-		if ( false === $locks ) {
-			return [];
-		}
 		$ids = [];
-		foreach ( $locks as $lock ) {
-			$ids[] = \substr( \basename( $lock ), 0, -\strlen( '.lock.d' ) );
+		foreach ( Spawn_Coordinator::worker_lock_dirs( $base_dir ) as $lock ) {
+			if ( self::TOPOLOGY === $lock['type'] ) {
+				$ids[] = $lock['id'];
+			}
 		}
 		return $ids;
 	}
 
 	/**
-	 * Mount (idempotently) the outbound Partition that appends to a worker's input
-	 * IPC log; null if the name is already taken by a non-Partition node.
+	 * The Partition appending to a worker's input IPC log, mounted by the
+	 * substrate; null when the worker cannot be mounted.
 	 */
-	private static function ipc_out( Command_Interpreter_Node $interpreter, string $worker_id, string $base_dir ): ?Partition_Node {
-		$existing = Core::node( $worker_id );
-		if ( $existing instanceof Partition_Node ) {
-			return $existing;
-		}
-		if ( null !== $existing ) {
+	private static function ipc_out( string $worker_id, string $base_dir ): ?Partition_Node {
+		if ( ! Bootstrap::register_worker_partition( $worker_id, $base_dir ) ) {
 			return null;
 		}
-		$input = \rtrim( $base_dir, '/' ) . '/ipc/' . $worker_id . '/input';
-		$node  = $interpreter->make_node( 'Partition', $worker_id, ...Worker_Base::ipc_partition_args( $input ) );
-		if ( ! $node instanceof Partition_Node ) {
-			return null;
-		}
-		// Unbuffered so the worker sees the appended TICK/RESET immediately.
-		$node->void_warranty();
-		return $node;
+		$node = Core::node( $worker_id );
+		return $node instanceof Partition_Node ? $node : null;
 	}
 
 	/**
 	 * Route a TM_REQUEST to a node inside a worker: TO=`{worker_id}/{node}` so the
 	 * request router peels the worker id to its IPC-out Partition (which appends the
 	 * message for the worker to read and re-route to `{node}`). The verb rides in
-	 * VALUE — matching `request_node <path> <verb>` — so the digest reads it there.
+	 * VALUE — matching `request_node <path> <verb>` — so the node answers it there.
+	 *
+	 * FROM is this CI's own name. The worker's input reader stamps it under
+	 * `_repl`, so the node's answer lands on the worker's output partition —
+	 * the reply path every command read from IPC input takes.
 	 *
 	 * @param string $verb The request verb in VALUE (e.g. RESET for the digest, TICK for a source).
 	 */
 	private static function route_to_worker( Command_Interpreter_Node $interpreter, string $worker_id, string $node, string $verb ): void {
 		$message                   = Message::new_message();
 		$message[ Message::TYPE ]  = Message::TM_REQUEST;
-		$message[ Message::FROM ]  = 'insights';
+		$message[ Message::FROM ]  = $interpreter->name();
 		$message[ Message::TO ]    = $worker_id . '/' . $node;
 		$message[ Message::VALUE ] = $verb;
 		$interpreter->fill( $message );

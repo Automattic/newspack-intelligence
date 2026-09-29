@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Every TM_REQUEST gets an answer.** A source's `TICK` answers `{ verb: "TICK", data: { emitted } }` after its `DONE`, and the digest's `RESET` and `REGENERATE` answer `{ cleared }` and `{ composed }`, each TO the request's FROM through the substrate's `Schema_Reflection::answer_request()`. Any other verb fetches nothing and composes nothing: it answers on the TM_ERROR plane, where a source used to fetch on every TM_REQUEST whatever it carried.
+- **The insights CI addresses its requests FROM its own name** rather than a hardcoded `insights`, so the answers land on the worker's output partition beside every other reply to IPC input.
+- **The insights CI finds live workers through the substrate's lock-tree walk and mounts their input through `Bootstrap::register_worker_partition()`.** A lock dir no worker id spells, such as a zero-padded `newspack-intelligence.p03.lock.d`, is no longer counted, and the mounted input Partition no longer claims to be its log's sole writer.
+- **The substrate floor rises to 2.71.0**, the release carrying `Schema_Reflection::answer_request()` and the static `Spawn_Coordinator::worker_lock_dirs( $base_dir )`, whose entries carry each worker's id. Below it the plugin stays dormant.
+
 ## [0.10.2] - 2026-09-28
 
 ### Added
