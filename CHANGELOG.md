@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-29
+
 ### Changed
 
 - **Every TM_REQUEST gets an answer.** A source's `TICK` answers `{ verb: "TICK", data: { emitted } }` after its `DONE`, and the digest's `RESET` and `REGENERATE` answer `{ cleared }` and `{ composed }`, each TO the request's FROM through the substrate's `Schema_Reflection::answer_request()`. Any other verb fetches nothing and composes nothing: it answers on the TM_ERROR plane, where a source used to fetch on every TM_REQUEST whatever it carried.
