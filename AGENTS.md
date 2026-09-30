@@ -313,9 +313,8 @@ the scored Partition to nudge on `RESET` and the `total` source count — that
 total MUST equal the number of names in `Insights_CI_Node::SOURCE_NODES`, or a
 collect never completes. All five `Insights_CI` verbs require `manage_options`,
 the three read slices included: no schema entry declares a `capability`, and
-`Service_CI_Node` gates an undeclared verb at the strictest role rather than the
-loosest. The `require_manage_options()` calls inside the `generate` and `collect`
-handlers restate that gate rather than establish it.
+the substrate's `dispatch()` refuses an undeclared verb at the strictest role
+rather than the loosest. No handler checks a role of its own.
 
 ### Publisher master store
 
