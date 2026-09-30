@@ -12,6 +12,7 @@
 .release-staging
 .stylelintrc.js
 .vscode
+.superpowers
 *.log
 /.newspack-nodes
 /bin
