@@ -172,7 +172,7 @@ final class LlmConfigTest extends TestCase {
 	public function test_cmd_set_api_url_delegates_to_patron(): void {
 		$node = $this->fixture();
 
-		$result = $node::cmd_set_api_url( $this->interpreter_for( $node ), [ 'https://proxy.test/v1' ] );
+		$result = $node::cmd_set_api_url( $this->interpreter_for( $node ), [ 'url' => 'https://proxy.test/v1' ] );
 
 		$this->assertSame( 'ok', $result );
 		$this->assertSame( 'https://proxy.test/v1', $node->api_url() );
@@ -181,7 +181,7 @@ final class LlmConfigTest extends TestCase {
 	public function test_cmd_set_vault_id_delegates_to_patron(): void {
 		$node = $this->fixture();
 
-		$result = $node::cmd_set_vault_id( $this->interpreter_for( $node ), [ 'ai-vault' ] );
+		$result = $node::cmd_set_vault_id( $this->interpreter_for( $node ), [ 'vault_id' => 'ai-vault' ] );
 
 		$this->assertSame( 'ok', $result );
 		$this->assertSame( 'ai-vault', $node->vault_id() );
@@ -190,7 +190,7 @@ final class LlmConfigTest extends TestCase {
 	public function test_cmd_set_model_delegates_to_patron(): void {
 		$node = $this->fixture();
 
-		$result = $node::cmd_set_model( $this->interpreter_for( $node ), [ 'gpt-5' ] );
+		$result = $node::cmd_set_model( $this->interpreter_for( $node ), [ 'model' => 'gpt-5' ] );
 
 		$this->assertSame( 'ok', $result );
 		$this->assertSame( 'gpt-5', $node->model() );
@@ -199,7 +199,7 @@ final class LlmConfigTest extends TestCase {
 	public function test_cmd_set_feature_delegates_to_patron(): void {
 		$node = $this->fixture();
 
-		$result = $node::cmd_set_feature( $this->interpreter_for( $node ), [ 'my-feature' ] );
+		$result = $node::cmd_set_feature( $this->interpreter_for( $node ), [ 'feature' => 'my-feature' ] );
 
 		$this->assertSame( 'ok', $result );
 		$this->assertSame( 'my-feature', $node->feature() );
@@ -208,7 +208,7 @@ final class LlmConfigTest extends TestCase {
 	public function test_cmd_add_profile_delegates_to_patron(): void {
 		$node = $this->fixture();
 
-		$result = $node::cmd_add_profile( $this->interpreter_for( $node ), [ 'Engineering' ] );
+		$result = $node::cmd_add_profile( $this->interpreter_for( $node ), [ 'text' => [ 'Engineering' ] ] );
 
 		$this->assertSame( 'ok', $result );
 		$this->assertSame( 'Engineering', $node->profile() );
@@ -220,7 +220,7 @@ final class LlmConfigTest extends TestCase {
 		// An unquoted TSL line arrives as many tokens; the profile is all of them.
 		$result = $node::cmd_add_profile(
 			$this->interpreter_for( $node ),
-			[ 'Do', 'not', 'produce', 'tables.' ]
+			[ 'text' => [ 'Do', 'not', 'produce', 'tables.' ] ]
 		);
 		$this->assertSame( 'ok', $result );
 		$this->assertSame( 'Do not produce tables.', $node->profile() );
@@ -250,7 +250,7 @@ final class LlmConfigTest extends TestCase {
 	public function test_cmd_add_profile_propagates_the_patron_refusal(): void {
 		$node = $this->fixture();
 
-		$caught = $this->caught( fn () => $node::cmd_add_profile( $this->interpreter_for( $node ), [ '   ' ] ), 'cmd_add_profile accepted blank text' );
+		$caught = $this->caught( fn () => $node::cmd_add_profile( $this->interpreter_for( $node ), [ 'text' => [ '   ' ] ] ), 'cmd_add_profile accepted blank text' );
 		$this->assertSame( 'usage: add_profile <text>', $caught->getMessage() );
 		$this->assertSame( '', $node->profile() );
 	}
@@ -260,11 +260,11 @@ final class LlmConfigTest extends TestCase {
 		$interpreter = $this->interpreter_for( $node );
 		$handlers    = \array_column( $node::llm_config_commands(), 'handler', 'name' );
 
-		$this->assertSame( 'ok', $handlers['set_api_url']( $interpreter, [ 'https://proxy.test/v1' ] ) );
-		$this->assertSame( 'ok', $handlers['set_vault_id']( $interpreter, [ 'ai-vault' ] ) );
-		$this->assertSame( 'ok', $handlers['set_model']( $interpreter, [ 'gpt-5' ] ) );
-		$this->assertSame( 'ok', $handlers['set_feature']( $interpreter, [ 'my-feature' ] ) );
-		$this->assertSame( 'ok', $handlers['add_profile']( $interpreter, [ 'Engineering' ] ) );
+		$this->assertSame( 'ok', $handlers['set_api_url']( $interpreter, [ 'url' => 'https://proxy.test/v1' ] ) );
+		$this->assertSame( 'ok', $handlers['set_vault_id']( $interpreter, [ 'vault_id' => 'ai-vault' ] ) );
+		$this->assertSame( 'ok', $handlers['set_model']( $interpreter, [ 'model' => 'gpt-5' ] ) );
+		$this->assertSame( 'ok', $handlers['set_feature']( $interpreter, [ 'feature' => 'my-feature' ] ) );
+		$this->assertSame( 'ok', $handlers['add_profile']( $interpreter, [ 'text' => [ 'Engineering' ] ] ) );
 
 		$this->assertSame( 'https://proxy.test/v1', $node->api_url() );
 		$this->assertSame( 'ai-vault', $node->vault_id() );

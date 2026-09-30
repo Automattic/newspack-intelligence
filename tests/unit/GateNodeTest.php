@@ -119,7 +119,7 @@ final class GateNodeTest extends TestCase {
 		$interpreter = new Command_Interpreter_Node();
 		$interpreter->patron( $node );
 
-		$this->assertSame( 'ok', Gate_Node::cmd_set_config_version( $interpreter, [ 'csv-v99' ] ) );
+		$this->assertSame( 'ok', Gate_Node::cmd_set_config_version( $interpreter, [ 'version' => 'csv-v99' ] ) );
 
 		$node->fill( $this->struct( [ 'source' => 'feed', 'id' => 'p3', 'title' => 'T', 'url' => 'https://random.example/x', 'body' => '' ] ) );
 		$this->assertSame( 'csv-v99', $sink->captured[0][ Message::VALUE ]['config_version'] );

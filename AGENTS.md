@@ -80,8 +80,10 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.71.0' )` and stays
-dormant below it. 2.71.0 is `Schema_Reflection::answer_request()`, which answers
+error.** The loader calls `Bootstrap::version_at_least( '2.77.0' )` and stays
+dormant below it. 2.77.0 binds a verb's declared `args` before its handler runs,
+so every handler reads them by name (`$args['url']`), and the variadic
+`add_profile` `text` arrives as a list. 2.71.0 is `Schema_Reflection::answer_request()`, which answers
 the sources' `TICK` and the digest's `RESET` and `REGENERATE`, and the static
 `Spawn_Coordinator::worker_lock_dirs()`, which lists the insights CI's live
 workers with their ids. 2.57.0 is

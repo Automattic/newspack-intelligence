@@ -82,13 +82,13 @@ trait LLM_Config {
 	 * `set_api_url` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        The AI API Proxy base URL.
+	 * @param array<array-key,mixed> $args        Bound args; `url` is the AI API Proxy base URL.
 	 * @return string Result line.
 	 */
 	public static function cmd_set_api_url( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->set_api_url( Core::as_string( $args[0] ?? '' ) );
+		return $patron->set_api_url( Core::as_string( $args['url'] ) );
 	}
 
 	/** `set_vault_id` verb handler — last-write-wins. */
@@ -101,13 +101,13 @@ trait LLM_Config {
 	 * `set_vault_id` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        The Vault entry ID.
+	 * @param array<array-key,mixed> $args        Bound args; `vault_id` is the Vault entry ID.
 	 * @return string Result line.
 	 */
 	public static function cmd_set_vault_id( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->set_vault_id( Core::as_string( $args[0] ?? '' ) );
+		return $patron->set_vault_id( Core::as_string( $args['vault_id'] ) );
 	}
 
 	/** `set_model` verb handler — last-write-wins. */
@@ -121,13 +121,13 @@ trait LLM_Config {
 	 * `set_model` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        The LLM model id.
+	 * @param array<array-key,mixed> $args        Bound args; `model` is the LLM model id.
 	 * @return string Result line.
 	 */
 	public static function cmd_set_model( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->set_model( Core::as_string( $args[0] ?? '' ) );
+		return $patron->set_model( Core::as_string( $args['model'] ) );
 	}
 
 	/** `set_feature` verb handler — last-write-wins. */
@@ -141,13 +141,13 @@ trait LLM_Config {
 	 * `set_feature` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        The X-WPCOM-AI-Feature value.
+	 * @param array<array-key,mixed> $args        Bound args; `feature` is the X-WPCOM-AI-Feature value.
 	 * @return string Result line.
 	 */
 	public static function cmd_set_feature( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->set_feature( Core::as_string( $args[0] ?? '' ) );
+		return $patron->set_feature( Core::as_string( $args['feature'] ) );
 	}
 
 	/**
@@ -168,17 +168,17 @@ trait LLM_Config {
 
 	/**
 	 * `add_profile` verb dispatch — resolves the patron node and delegates.
-	 * All positional tokens join into one line, so an unquoted multi-word
+	 * The variadic `text` tokens join into one line, so an unquoted multi-word
 	 * TSL statement reads naturally (like `echo`).
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        The profile line tokens.
+	 * @param array<array-key,mixed> $args        Bound args; `text` is the profile line tokens.
 	 * @return string Result line.
 	 */
 	public static function cmd_add_profile( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		$tokens = \array_map( static fn ( $a ) => Core::as_string( $a ), $args );
+		$tokens = \array_map( static fn ( $a ) => Core::as_string( $a ), Core::arr( $args['text'] ) );
 		return $patron->add_profile( \implode( ' ', $tokens ) );
 	}
 
@@ -252,7 +252,7 @@ trait LLM_Config {
 				'name'        => 'add_profile',
 				'description' => 'Add a relevance-profile line used to score/compose items: <text>.',
 				'args'        => [
-					[ 'name' => 'text', 'type' => 'string', 'required' => true ],
+					[ 'name' => 'text', 'type' => 'string', 'required' => true, 'variadic' => true ],
 				],
 				'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_add_profile( $interpreter, $args ),
 				'multiple'    => true,

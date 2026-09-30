@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Verb handlers read their arguments by name.** The substrate binds each verb's declared `args` before the handler runs, by position or as `--name=value`, so `add_url`, `add_repo`, `set_vault_id`, `set_config_version`, `set_api_url`, `set_model`, `set_feature` and `add_profile` read `$args['url']`, `$args['repo']`, `$args['vault_id']` and so on instead of `$args[0]`. `add_profile` declares `text` variadic, so an unquoted multi-word TSL line still joins into one profile.
+- **The substrate floor rises to 2.77.0**, the release that binds verb arguments by their schema. Below it the plugin stays dormant.
+
 ## [0.11.0] - 2026-09-29
 
 ### Changed
