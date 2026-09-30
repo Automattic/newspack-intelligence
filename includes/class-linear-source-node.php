@@ -124,13 +124,13 @@ class Linear_Source_Node extends Source_Node {
 	 * `set_vault_id` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        The Vault entry ID.
+	 * @param array<array-key,mixed> $args        Bound args; `vault_id` is the Vault entry ID.
 	 * @return string Result line.
 	 */
 	public static function cmd_set_vault_id( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->set_vault_id( Core::as_string( $args[0] ?? '' ) );
+		return $patron->set_vault_id( Core::as_string( $args['vault_id'] ) );
 	}
 
 	/** Emit the base config plus a round-trippable `command_node {name}:config set_vault_id …` when set. */

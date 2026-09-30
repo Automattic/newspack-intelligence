@@ -10,8 +10,13 @@
  * @package Newspack_Intelligence
  */
 
+$base_directory = \getenv( 'NEWSPACK_TEST_BASE_DIR' );
+if ( false === $base_directory ) {
+	throw new \RuntimeException( 'NEWSPACK_TEST_BASE_DIR is unset; tests/bootstrap.php sets it.' );
+}
+
 return [
-	'base_directory'    => '/tmp/newspack-intelligence',
+	'base_directory'    => $base_directory,
 	'num_partitions'    => 1,
 	'segment_size'      => 1024,
 	'min_segments'      => 2,

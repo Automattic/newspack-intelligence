@@ -199,13 +199,13 @@ class Feed_Source_Node extends Source_Node {
 	 * `add_url` verb dispatch — resolves the patron node and delegates.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        The feed URL.
+	 * @param array<array-key,mixed> $args        Bound args; `url` is the feed URL.
 	 * @return string Result line.
 	 */
 	public static function cmd_add_url( Command_Interpreter_Node $interpreter, array $args ): string {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
-		return $patron->add_url( Core::as_string( $args[0] ?? '' ) );
+		return $patron->add_url( Core::as_string( $args['url'] ) );
 	}
 
 	/** Emit the base config plus one round-trippable `command_node {name}:config add_url …` per registered URL. */

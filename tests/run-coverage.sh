@@ -28,13 +28,14 @@ PHPUNIT="$SCRIPT_DIR/../vendor/bin/phpunit"
 # Ensure xdebug coverage mode is enabled
 export XDEBUG_MODE=coverage
 
-# Clean up any previous test artifacts
-rm -rf /tmp/newspack-intelligence-test 2>/dev/null
+# Each run's bootstrap names a per-PID base; sweep only what a crashed run
+# left, never a tree a concurrent suite is using.
+find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'newspack-intelligence-test-*' -mmin +120 -exec rm -rf {} +
 
 # Run PHPUnit with coverage
 "$PHPUNIT" --configuration phpunit.xml \
-    --coverage-clover ${OUT}/newspack-intelligence-coverage/clover.xml \
-    --coverage-html ${OUT}/newspack-intelligence-coverage \
+    --coverage-clover "${OUT}"/newspack-intelligence-coverage/clover.xml \
+    --coverage-html "${OUT}"/newspack-intelligence-coverage \
 	--enforce-time-limit \
     "$@"
 

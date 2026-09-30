@@ -11,6 +11,18 @@ if ( \function_exists( 'posix_getuid' ) && 0 === \posix_getuid() ) {
 }
 
 \ini_set( 'error_log', '/dev/null' );
+if ( false === \getenv( 'NEWSPACK_TEST_BASE_DIR' ) ) {
+	\putenv( 'NEWSPACK_TEST_BASE_DIR=' . \sys_get_temp_dir() . '/newspack-intelligence-test-' . \getmypid() );
+	// Registered from a shutdown function, so it runs after every handler the
+	// run itself registers, a late log write among them.
+	\register_shutdown_function(
+		static fn () => \register_shutdown_function(
+			static function (): void {
+				\exec( 'rm -rf ' . \escapeshellarg( (string) \getenv( 'NEWSPACK_TEST_BASE_DIR' ) ) );
+			}
+		)
+	);
+}
 \putenv( 'LOCAL_NEWSPACK_NODES_CONF=' . __DIR__ . '/newspack-intelligence-test-config.php' );
 \define( 'NONCE_SALT', 'newspack-nodes-test-nonce-salt' );
 \define( 'ABSPATH', '/' );
