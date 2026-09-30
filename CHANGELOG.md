@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2] - 2026-09-30
+
 ### Changed
 
 - **Every `:config` verb on this plugin's nodes demands MANAGE with newspack-nodes 2.79.1.** The substrate's `dispatch()` now refuses each verb below the role its schema declares, and the `LLM_Config` verbs (`set_api_url`, `set_vault_id`, `set_model`, `set_feature`, `add_profile`), `Gate`'s `set_config_version`, `Github_Source`'s `add_repo` and `Feed_Source`'s `add_url` declare none. A topology load runs them as before; a READ or TUNE session sent to a worker is refused. `insights generate` and `collect` no longer call `require_manage_options()` in their handlers, which the substrate removes: `dispatch()` holds them at MANAGE, as it does the three read slices.
