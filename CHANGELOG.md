@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-09-29
+
+### Changed
+
+- **Rebuilt against newspack-nodes 2.79.0,** so the inlined shell sends `request_struct <path> <json>`, a `TM_REQUEST|TM_STRUCT`, as the substrate's does.
+
 ## [0.12.0] - 2026-09-29
 
 ### Changed
