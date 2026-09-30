@@ -190,11 +190,16 @@ final class InsightsCITest extends TestCase {
 
 	public function test_slice_verbs_are_refused_without_manage_options(): void {
 		$ci = $this->ci_with_items( self::SEED );
+		$GLOBALS['_current_user_id']          = 3371;
 		$GLOBALS['_wp_test_current_user_can'] = [];
 		$GLOBALS['_current_user_can']         = false;
-		foreach ( [ 'counts', 'top', 'accumulated' ] as $verb ) {
-			$caught = $this->caught( fn () => $ci->dispatch( $verb ), "verb '$verb' should be refused without manage_options" );
-			$this->assertStringContainsString( 'permission denied', $caught->getMessage() );
+		try {
+			foreach ( [ 'counts', 'top', 'accumulated', 'generate', 'collect' ] as $verb ) {
+				$caught = $this->caught( fn () => $ci->dispatch( $verb ), "verb '$verb' should be refused without manage_options" );
+				$this->assertSame( 'permission denied: manage capability required', $caught->getMessage() );
+			}
+		} finally {
+			unset( $GLOBALS['_current_user_id'] );
 		}
 	}
 

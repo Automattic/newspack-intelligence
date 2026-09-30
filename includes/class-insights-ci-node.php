@@ -327,7 +327,7 @@ class Insights_CI_Node extends Service_CI_Node {
 	}
 
 	public static function node_schema(): array {
-		// slice_verb wraps each slice; gate lives in commands_from_schema().
+		// slice_verb wraps each slice; dispatch() gates each by its role.
 		return \array_merge( parent::node_schema(), [
 			'category'    => 'Service',
 			'description' => 'Reads the scored-pipeline offsetlog snapshot + rendered digest; serves the dashboard insights slices and recomposes on demand.',
@@ -355,7 +355,6 @@ class Insights_CI_Node extends Service_CI_Node {
 					'description' => 'Ask the worker to recompose the digest (TM_REQUEST REGENERATE to its digest node); the dashboard polls for the result.',
 					'args'        => [],
 					'handler'     => static function ( Command_Interpreter_Node $interpreter, array $args ): string {
-						self::require_manage_options();
 						return self::regenerate( $interpreter, Config::get_base_directory() );
 					},
 				],
@@ -364,7 +363,6 @@ class Insights_CI_Node extends Service_CI_Node {
 					'description' => 'Reset the digest counter and TICK every source to collect — the dashboard Collect button.',
 					'args'        => [],
 					'handler'     => static function ( Command_Interpreter_Node $interpreter, array $args ): string {
-						self::require_manage_options();
 						return self::collect( $interpreter, Config::get_base_directory() );
 					},
 				],
