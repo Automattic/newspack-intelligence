@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.5] - 2026-10-02
+
+### Changed
+
+- **Rebuilt against newspack-nodes 2.85.1,** so the bundled charts toggle to double height on a click.
+
 ## [0.12.4] - 2026-10-02
 
 ### Changed
