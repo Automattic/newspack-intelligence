@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.4] - 2026-10-02
+
+### Changed
+
+- **Rebuilt against newspack-nodes 2.85.0,** so the bundled shared code and debug overlay carry its duration-axis ticks and probe-chart changes.
+
 ## [0.12.3] - 2026-10-02
 
 ### Changed
