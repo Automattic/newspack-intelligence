@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.7] - 2026-10-03
+
+### Changed
+
+- **Rebuilt against newspack-nodes 2.87.0,** so the bundled debug overlay carries the Compose modal that mints its own messages and the lighter chart palette.
+
 ## [0.12.6] - 2026-10-03
 
 ### Changed
