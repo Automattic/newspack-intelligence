@@ -69,19 +69,6 @@ class Digest_Builder_Node extends Node {
 	}
 
 	/**
-	 * Parse the positional arguments: arg 0 is the total number of sources.
-	 *
-	 * @param list<string>|null $args Positional argument tokens, or null to read.
-	 */
-	public function arguments( ?array $args = null ): array {
-		if ( null === $args ) {
-			return parent::arguments();
-		}
-		$this->parse_schema_args( $args );
-		return $args;
-	}
-
-	/**
 	 * Answers TM_REQUEST 'RESET' and 'REGENERATE'; accepts TM_INFO "DONE\n" and TM_STRUCT messages.
 	 *
 	 * @param array<int,mixed> $message Message reference.

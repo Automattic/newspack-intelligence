@@ -159,10 +159,11 @@ function register_cli_commands(): void {
 		// and the digest's RESET and REGENERATE, and the static
 		// Spawn_Coordinator::worker_lock_dirs() that lists the insights CI's
 		// live workers, id included; 2.77.0 binds a verb's declared `args` by
-		// name before its handler runs. A floor set too low
+		// name before its handler runs; 2.88.0 is the trait's arguments(),
+		// which parses the digest's positionals. A floor set too low
 		// does not degrade: it activates and then fatals on the missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
-			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.77.0', 'Newspack Intelligence' ) ) {
+			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.88.0', 'Newspack Intelligence' ) ) {
 			return;
 		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.
