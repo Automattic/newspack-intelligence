@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.8] - 2026-10-03
+
 ### Changed
 
 - **`Digest_Builder_Node` takes its `arguments()` from the substrate's `Schema_Reflection`,** which parses and stores the tokens exactly as its own override did, so the override is gone. The substrate floor rises from 2.77.0 to 2.88.0, the release carrying that method; below it the plugin stays dormant.
