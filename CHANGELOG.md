@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.9] - 2026-10-05
+
+### Changed
+
+- **Rebuilt against newspack-nodes 2.91.0,** so every bundled slice carries the substrate's Fetcher gate: a late reply to a superseded ask no longer reaches its view.
+
 ## [0.12.8] - 2026-10-03
 
 ### Changed
