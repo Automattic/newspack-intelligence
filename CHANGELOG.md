@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.10] - 2026-10-05
+
+### Changed
+
+- **Rebuilt against newspack-nodes 2.92.0,** so its time charts resize on shift+click or the corner expand button, and a plain click no longer resizes them.
+
 ## [0.12.9] - 2026-10-05
 
 ### Changed
