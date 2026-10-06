@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`pre-push` gates every pushed ref, and fails closed.** It gathers changed paths from every non-delete ref, diffs a branch without a merge base against the empty tree, fails when `git diff` fails, and classifies `.mjs` and `.ts` files as JS.
+
 ## [0.12.17] - 2026-10-06
 
 ### Changed
