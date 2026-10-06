@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.17] - 2026-10-06
+
+### Changed
+
+- **Rebuilt against newspack-nodes 2.96.2,** so the debug overlay's canvas draws a node its owner builds with a plain outline, not as a node added at runtime.
+
 ## [0.12.16] - 2026-10-06
 
 ### Changed
