@@ -1,6 +1,6 @@
 <?php
 /**
- * Digest_Builder_Node: accumulates summaries; `flush` emits a markdown draft.
+ * Digest_Builder_Node: accumulates summaries and composes a markdown draft.
  *
  * @package Newspack_Intelligence
  */
@@ -19,6 +19,9 @@ class Digest_Builder_Node extends Node {
 
 	/** Digest filename under the configured logs dir; the path itself is digest_path(). */
 	public const DIGEST_FILE = 'digest.md';
+
+	/** The in-band marker RESET appends and this node clears on. */
+	public const FENCE = "RESET\n";
 
 	/**
 	 * LLM-client factory seam. Lazily-defaulted at the call site to this node's
@@ -41,16 +44,18 @@ class Digest_Builder_Node extends Node {
 	private array $items = [];
 
 	/**
-	 * Distinct sources that signalled DONE this cycle (keyed by source name).
-	 * Counting distinct names — not raw signals — is idempotent across re-ticks, replays,
-	 * and a stale cross-cycle DONE, so `done` can't overshoot the real source count.
+	 * Partition at the pipeline head (arg 0). RESET appends its fence here, so the
+	 * fence reaches this node behind every DONE already in flight.
+	 */
+	private string $ingest_partition = '';
+
+	/**
+	 * Distinct sources that signalled DONE this cycle, keyed by FROM. Counting
+	 * distinct names keeps a re-tick or a replay from advancing `done`.
 	 *
 	 * @var array<string,bool>
 	 */
 	private array $reported = [];
-
-	/** Scored-partition node name to nudge on RESET (arg 0); '' disables the nudge. */
-	private string $scored_partition = '';
 
 	/**
 	 * Seen item ids for in-cycle dedup; rebuilt from items on restore, cleared on RESET.
@@ -59,7 +64,7 @@ class Digest_Builder_Node extends Node {
 	 */
 	private array $seen = [];
 
-	/** Sources expected this cycle, set by a RESET (the dashboard's Collect). 0 until a collect. */
+	/** Sources expected per cycle (arg 1). */
 	private int $total = 0;
 
 	/** Tachikoma-parity: no-arg ctor. Wires the sibling :config interpreter from node_schema()['commands']. */
@@ -69,7 +74,7 @@ class Digest_Builder_Node extends Node {
 	}
 
 	/**
-	 * Answers TM_REQUEST 'RESET' and 'REGENERATE'; accepts TM_INFO "DONE\n" and TM_STRUCT messages.
+	 * Answers TM_REQUEST 'RESET' and 'REGENERATE'; accepts TM_INFO DONE and the RESET fence, and TM_STRUCT items.
 	 *
 	 * @param array<int,mixed> $message Message reference.
 	 */
@@ -106,54 +111,36 @@ class Digest_Builder_Node extends Node {
 	}
 
 	/**
-	 * RESET handler (the dashboard's Collect, before it TICKs the sources):
-	 * empty the accumulator and zero the progress counter.
+	 * Runtime notifications: the RESET fence clears the cycle, and a DONE from a
+	 * source not yet counted advances it, composing the draft on the one DONE
+	 * that completes it.
 	 *
-	 * @return array{cleared:int} The reply data: how many items were dropped.
-	 */
-	private function reset(): array {
-		$cleared        = \count( $this->items );
-		$this->items    = [];
-		$this->seen     = [];
-		$this->reported = [];
-		$this->nudge_scored_partition();
-		return [ 'cleared' => $cleared ];
-	}
-
- 	/**
-	 * Append a throwaway message to the scored Partition (if configured) so
-	 * scored:consumer advances its cursor and its next checkpoint co-commits this
-	 * node's now-emptied snapshot. Without it a RESET changes our state but not the
-	 * consumer cursor, so the offsetlog keeps the stale full items list and a worker
-	 * restart reloads it. The 'RESET' is ignored downstream.
-	 * TO is set explicitly because `target` is the draft sink (digest:tee).
-	 */
-	private function nudge_scored_partition(): void {
-		if ( '' === $this->scored_partition ) {
-			return;
-		}
-		$nudge                   = Message::new_message();
-		$nudge[ Message::TYPE ]  = Message::TM_INFO;
-		$nudge[ Message::FROM ]  = $this->name;
-		$nudge[ Message::TO ]    = $this->scored_partition;
-		$nudge[ Message::VALUE ] = 'RESET';
-		parent::fill( $nudge );
-	}
-
-	/**
-	 * Runtime notifications. DONE signals from sources are tallied here.
-	 *
-	 * @param array<int,mixed> $message Incoming request Message.
+	 * @param array<int,mixed> $message Incoming TM_INFO Message.
 	 */
 	private function handle_info( array $message ): void {
 		$value = \is_string( $message[ Message::VALUE ] ?? null ) ? $message[ Message::VALUE ] : '';
-		if ( "DONE\n" === $value ) {
-			$from                    = \is_string( $message[ Message::FROM ] ?? null ) ? $message[ Message::FROM ] : '';
-			$this->reported[ $from ] = true;
-			if ( \count( $this->reported ) >= $this->total ) {
-				$this->compose_draft();
-			}
+		if ( self::FENCE === $value ) {
+			$this->reset();
+			return;
 		}
+		if ( "DONE\n" !== $value ) {
+			return;
+		}
+		$from = \is_string( $message[ Message::FROM ] ?? null ) ? $message[ Message::FROM ] : '';
+		if ( isset( $this->reported[ $from ] ) ) {
+			return;
+		}
+		$this->reported[ $from ] = true;
+		if ( \count( $this->reported ) === $this->total ) {
+			$this->compose_draft();
+		}
+	}
+
+	/** Empty the accumulator, its dedup set and the reported-source tally. */
+	private function reset(): void {
+		$this->items    = [];
+		$this->seen     = [];
+		$this->reported = [];
 	}
 
 	/**
@@ -178,12 +165,40 @@ class Digest_Builder_Node extends Node {
 	}
 
 	/**
+	 * RESET handler (the dashboard's Collect, before it TICKs the sources):
+	 * append the fence to the ingest Partition. It returns through the pipeline
+	 * behind every message already in flight, and clears the cycle on arrival,
+	 * where scored:consumer co-commits the emptied snapshot with its cursor.
+	 * TO is set explicitly because `target` is the draft sink (digest:tee).
+	 *
+	 * @return array{fence:string} The reply data: the Partition the fence went to.
+	 */
+	private function fence(): array {
+		$fence                   = Message::new_message();
+		$fence[ Message::TYPE ]  = Message::TM_INFO;
+		$fence[ Message::FROM ]  = $this->name;
+		$fence[ Message::TO ]    = $this->ingest_partition;
+		$fence[ Message::VALUE ] = self::FENCE;
+		parent::fill( $fence );
+		return [ 'fence' => $this->ingest_partition ];
+	}
+
+	/**
+	 * The Partition the fence writes past `target`, so the console draws its edge.
+	 *
+	 * @api Unioned into display_targets() by the substrate's Node.
+	 * @return list<string>
+	 */
+	protected function extra_targets(): array {
+		return [ $this->ingest_partition ];
+	}
+
+	/**
 	 * Where the digest:log Node writes the rendered newsletter — derived from the
 	 * substrate's configured `logs_dir`, so it lands INSIDE the runtime base.
 	 * MUST match `<config:logs_dir>/digest.md` in
-	 * topologies/newspack-intelligence-digest.tsl. It was a hardcoded absolute
-	 * /tmp path, which the substrate's Log path guard correctly refuses: a Log
-	 * outside the base is exactly what that guard exists to stop.
+	 * topologies/newspack-intelligence-digest.tsl; the substrate's Log path guard
+	 * refuses a Log outside the base.
 	 */
 	public static function digest_path(): string {
 		$dir = \Newspack_Nodes\Core::resolve_config_token( 'config', 'logs_dir' );
@@ -208,7 +223,8 @@ class Digest_Builder_Node extends Node {
 	}
 
 	/**
-	 * Restore the accumulated items from a snapshot cache. Tolerates a malformed
+	 * Restore the accumulated items and reported sources from a snapshot cache;
+	 * `total` stays the configured argument. Tolerates a malformed
 	 * payload (resets to empty, drops non-array items) rather than fataling a
 	 * fresh worker on boot.
 	 *
@@ -218,7 +234,6 @@ class Digest_Builder_Node extends Node {
 		$this->items    = [];
 		$this->seen     = [];
 		$this->reported = [];
-		$this->total    = isset( $state['total'] ) && \is_numeric( $state['total'] ) ? (int) $state['total'] : 0;
 		$sources        = $state['reported'] ?? null;
 		if ( \is_array( $sources ) ) {
 			foreach ( $sources as $source ) {
@@ -252,24 +267,24 @@ class Digest_Builder_Node extends Node {
 			'description'  => 'Accumulates summaries',
 			'arguments'    => [
 				[
-					'name'        => 'scored_partition',
+					'name'        => 'ingest_partition',
 					'type'        => 'string',
 					'required'    => true,
-					'description' => 'Scored Partition node to nudge on RESET so the consumer persists the emptied snapshot.',
+					'description' => 'Partition at the pipeline head; RESET appends its fence there so the reset trails every DONE in flight.',
 				],
 				[
 					'name'        => 'total',
 					'type'        => 'int',
-					'default'     => 0,
-					'description' => 'Total number of sources about to collect.',
+					'required'    => true,
+					'description' => 'Sources per cycle; the DONE that brings the reported count to it composes the draft.',
 				],
 			],
 			'requests'     => [
 				[
 					'name'        => 'RESET',
-					'description' => 'Zero the collection counter (the dashboard Collect sends this before TICKing sources). `total` comes from the make_node argument, not this request.',
-					'reply_shape' => '{ cleared }',
-					'handler'     => static fn ( self $node ): array => $node->reset(),
+					'description' => 'Fence the ingest Partition; the cycle clears when the fence arrives back (the dashboard Collect sends this before TICKing sources).',
+					'reply_shape' => '{ fence }',
+					'handler'     => static fn ( self $node ): array => $node->fence(),
 				],
 				[
 					'name'        => 'REGENERATE',

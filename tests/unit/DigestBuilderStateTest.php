@@ -38,9 +38,30 @@ final class DigestBuilderStateTest extends TestCase {
 		$n->fill( $m );
 	}
 
-	/** Fire a RESET request (clears items + dedup + progress; total comes from the node's args). */
+	/** A full RESET: the request, then its fence arriving back in-band. */
 	private function reset( Digest_Builder_Node $n ): void {
 		$this->request( $n, 'RESET' );
+		$this->fence( $n );
+	}
+
+	/** Deliver the RESET fence as scored:consumer hands it back down the pipeline. */
+	private function fence( Digest_Builder_Node $n ): void {
+		$m                   = Message::new_message();
+		$m[ Message::TYPE ]  = Message::TM_INFO;
+		$m[ Message::FROM ]  = 'scored:consumer/ingest:consumer/_repl/digest-under-test';
+		$m[ Message::VALUE ] = "RESET\n";
+		$n->fill( $m );
+	}
+
+	/**
+	 * The drafts the node has emitted so far.
+	 *
+	 * @return array<int,array<int,mixed>>
+	 */
+	private function drafts( Capture_Sink_Node $sink ): array {
+		return \array_values(
+			\array_filter( $sink->captured, static fn ( array $m ): bool => Message::TM_BYTESTREAM === $m[ Message::TYPE ] )
+		);
 	}
 
 	/** Fire a TM_REQUEST carrying `$verb`, from an asker the reply must find. */
@@ -70,9 +91,10 @@ final class DigestBuilderStateTest extends TestCase {
 		$this->assertSame( [ 'verb' => $verb, 'data' => $data ], $reply[ Message::VALUE ] );
 	}
 
-	public function test_reset_answers_with_the_count_it_cleared(): void {
+	public function test_reset_appends_a_fence_to_the_ingest_partition_and_clears_when_it_returns(): void {
 		$node = new Digest_Builder_Node();
 		$node->name( 'digest-under-test' );
+		$node->arguments( [ 'ingest:sentinel-7', '3' ] );
 		$sink = new Capture_Sink_Node();
 		$node->sink( $sink );
 		$this->feed( $node, [ 'id' => 'github:5', 'title' => 'five' ] );
@@ -81,8 +103,62 @@ final class DigestBuilderStateTest extends TestCase {
 
 		$this->request( $node, 'RESET' );
 
+		$fence = $sink->captured[0];
+		$this->assertSame( Message::TM_INFO, $fence[ Message::TYPE ] );
+		$this->assertSame( 'digest-under-test', $fence[ Message::FROM ] );
+		$this->assertSame( 'ingest:sentinel-7', $fence[ Message::TO ] );
+		$this->assertSame( "RESET\n", $fence[ Message::VALUE ] );
+		$this->assert_answered( $sink, 'RESET', [ 'fence' => 'ingest:sentinel-7' ] );
+		$this->assertCount( 3, $node->save_state()['items'], 'nothing clears until the fence returns' );
+
+		$this->fence( $node );
+
 		$this->assertCount( 0, $node->save_state()['items'] );
-		$this->assert_answered( $sink, 'RESET', [ 'cleared' => 3 ] );
+	}
+
+	/**
+	 * A DONE minted before RESET reaches the digest behind the RESET request but
+	 * ahead of its fence, so it completes its own cycle and never the next one.
+	 */
+	public function test_a_done_in_flight_at_reset_counts_toward_its_own_cycle(): void {
+		Digest_Builder_Node::$llm_factory = static fn (): ?LLM_Client => null;
+		$node                             = new Digest_Builder_Node();
+		$node->name( 'digest-under-test' );
+		$node->arguments( [ 'ingest:partition', '3' ] );
+		$sink = new Capture_Sink_Node();
+		$node->sink( $sink );
+		$this->feed( $node, [ 'id' => 'github:41', 'summary' => 'cycle one', 'score' => 2.0 ] );
+		$this->done( $node, 'github' );
+
+		$this->request( $node, 'RESET' );
+		$this->done( $node, 'linear' );
+		$this->done( $node, 'feed' );
+
+		$this->assertCount( 1, $this->drafts( $sink ), 'the late DONEs complete the cycle they belong to' );
+		$this->assertStringContainsString( '- cycle one', $this->drafts( $sink )[0][ Message::VALUE ] );
+
+		$this->fence( $node );
+		$this->done( $node, 'github' );
+		$this->done( $node, 'linear' );
+
+		$this->assertSame( 2, $node->save_state()['done'] );
+		$this->assertCount( 1, $this->drafts( $sink ), 'two of three sources is not a complete cycle' );
+	}
+
+	public function test_a_done_after_completion_does_not_recompose(): void {
+		Digest_Builder_Node::$llm_factory = static fn (): ?LLM_Client => null;
+		$node                             = new Digest_Builder_Node();
+		$node->arguments( [ 'ingest:partition', '2' ] );
+		$sink = new Capture_Sink_Node();
+		$node->sink( $sink );
+		$this->done( $node, 'github' );
+		$this->done( $node, 'linear' );
+		$this->assertCount( 1, $this->drafts( $sink ) );
+
+		$this->done( $node, 'linear' );
+		$this->done( $node, 'feed' );
+
+		$this->assertCount( 1, $this->drafts( $sink ), 'a replayed or surplus DONE leaves the draft alone' );
 	}
 
 	public function test_regenerate_answers_with_the_count_it_composed_after_the_draft(): void {
@@ -146,7 +222,7 @@ final class DigestBuilderStateTest extends TestCase {
 		Digest_Builder_Node::$llm_factory = static fn (): ?LLM_Client => null;
 		$sink                             = new Capture_Sink_Node();
 		$node                             = new Digest_Builder_Node();
-		$node->arguments( [ 'scored:partition', '2' ] );
+		$node->arguments( [ 'ingest:partition', '2' ] );
 		$node->sink( $sink );
 
 		$this->feed( $node, [ 'summary' => 'shipped X', 'score' => 5.0 ] );
@@ -161,13 +237,13 @@ final class DigestBuilderStateTest extends TestCase {
 
 	public function test_arguments_round_trips_the_total(): void {
 		$node = new Digest_Builder_Node();
-		$node->arguments( [ 'scored:partition', '3' ] );
-		$this->assertSame( [ 'scored:partition', '3' ], $node->arguments() );
+		$node->arguments( [ 'ingest:partition', '3' ] );
+		$this->assertSame( [ 'ingest:partition', '3' ], $node->arguments() );
 	}
 
 	public function test_total_comes_from_args_and_reset_zeroes_done(): void {
 		$node = new Digest_Builder_Node();
-		$node->arguments( [ 'scored:partition', '3' ] );
+		$node->arguments( [ 'ingest:partition', '3' ] );
 		$node->sink( new Capture_Sink_Node() );
 		$this->done( $node );
 		$this->reset( $node );
@@ -201,7 +277,7 @@ final class DigestBuilderStateTest extends TestCase {
 
 	public function test_reset_zeroes_done_for_the_next_cycle(): void {
 		$node = new Digest_Builder_Node();
-		$node->arguments( [ 'scored:partition', '2' ] );
+		$node->arguments( [ 'ingest:partition', '2' ] );
 		$node->sink( new Capture_Sink_Node() );
 		$this->done( $node );
 		$this->reset( $node );
@@ -213,10 +289,42 @@ final class DigestBuilderStateTest extends TestCase {
 
 	public function test_progress_round_trips_through_save_and_restore(): void {
 		$node = new Digest_Builder_Node();
-		$node->restore_state( [ 'items' => [], 'reported' => [ 'github', 'linear' ], 'total' => 3 ] );
-		$state = $node->save_state();
-		$this->assertSame( 2, $state['done'] );
-		$this->assertSame( 3, $state['total'] );
+		$node->arguments( [ 'ingest:partition', '3' ] );
+		$node->sink( new Capture_Sink_Node() );
+		$this->done( $node, 'github' );
+		$this->done( $node, 'linear' );
+
+		$restored = new Digest_Builder_Node();
+		$restored->arguments( [ 'ingest:partition', '3' ] );
+		$restored->restore_state( $node->save_state() );
+
+		$this->assertSame( [ 'github', 'linear' ], $restored->save_state()['reported'] );
+		$this->assertSame( 2, $restored->save_state()['done'] );
+	}
+
+	public function test_the_configured_total_outranks_a_snapshot_total(): void {
+		$node = new Digest_Builder_Node();
+		$node->arguments( [ 'ingest:partition', '4' ] );
+
+		$node->restore_state( [ 'items' => [], 'reported' => [ 'github' ], 'total' => 3 ] );
+
+		$this->assertSame( 4, $node->save_state()['total'] );
+	}
+
+	public function test_a_missing_total_fails_loud(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'Missing required argument: total' );
+
+		( new Digest_Builder_Node() )->arguments( [ 'ingest:partition' ] );
+	}
+
+	/** The fence's Partition is a destination the console must draw an edge to. */
+	public function test_display_targets_include_the_fenced_partition(): void {
+		$node = new Digest_Builder_Node();
+		$node->arguments( [ 'ingest:sentinel-7', '3' ] );
+		$node->connect_node( 'digest:tee' );
+
+		$this->assertSame( [ 'digest:tee', 'ingest:sentinel-7' ], $node->display_targets() );
 	}
 
 	public function test_restored_sources_stay_deduped_across_a_restart(): void {

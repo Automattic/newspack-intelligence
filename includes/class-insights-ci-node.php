@@ -62,10 +62,10 @@ class Insights_CI_Node extends Service_CI_Node {
 	}
 
 	/**
-	 * Trigger a collection cycle: reset the digest's progress counter, then TICK every
-	 * source, all routed into each live worker's input IPC partition
-	 * (the only transport from the request graph to a worker's nodes — the same one
-	 * `wp nodes cli` uses). Fire-and-forget; the dashboard polls progress separately.
+	 * Trigger a collection cycle: RESET the digest, which fences the ingest
+	 * Partition, then TICK every source, all routed into each live worker's input
+	 * IPC partition (the only transport from the request graph to a worker's
+	 * nodes — the same one `wp nodes cli` uses). Fire-and-forget; the dashboard polls progress separately.
 	 *
 	 * @param Command_Interpreter_Node $interpreter The request-graph interpreter (this CI).
 	 * @param string                   $base_dir    The substrate base directory (ipc/locks live under it).
@@ -360,7 +360,7 @@ class Insights_CI_Node extends Service_CI_Node {
 				],
 				[
 					'name'        => 'collect',
-					'description' => 'Reset the digest counter and TICK every source to collect — the dashboard Collect button.',
+					'description' => 'RESET the digest and TICK every source to collect — the dashboard Collect button.',
 					'args'        => [],
 					'handler'     => static function ( Command_Interpreter_Node $interpreter, array $args ): string {
 						return self::collect( $interpreter, Config::get_base_directory() );
