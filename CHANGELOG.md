@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.14] - 2026-10-06
+
+### Changed
+
+- **Rebuilt against newspack-nodes 2.95.1,** so the debug overlay's idle cards fade straight to their dim, a hover-out no longer replays a wire's draw animation, and the canvas fills its empty room before it widens.
+
 ## [0.12.13] - 2026-10-06
 
 ### Changed
