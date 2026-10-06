@@ -199,17 +199,20 @@ client resolves; the Scorer blends that relevance score with a recency bonus
 
 **Digest.** `scored:consumer` feeds `Digest_Builder` → `Tee` → `Log`
 (`digest:log`, writing `digest.md`). The builder accumulates items and composes a
-draft when every source has reported `DONE` — counting DISTINCT source names, so
-a re-tick, a replay or a stale cross-cycle signal cannot overshoot `total` — or
-on an explicit `REGENERATE`. `Digest_Composer` takes the top 10 per source, so no
+draft on the `DONE` that completes the cycle — counting DISTINCT source names, so
+a re-tick or a replay neither advances `done` nor recomposes — or on an explicit
+`REGENERATE`. `Digest_Composer` takes the top 10 per source, so no
 busy source crowds the others out, and asks the LLM for a markdown briefing under
 a 32000-token budget; a thrown `RuntimeException`, an empty reply and a
 whitespace-only reply all render that same selection as a ranked bullet list
 rather than throwing. The cap is `Digest_Composer::PER_SOURCE`, unrelated to the
 dashboard's `Insights_CI_Node::TOP_N`: the two hold the same number today, and
-changing one leaves the other where it was. `RESET` empties the accumulator and
-nudges the scored Partition so the consumer's next checkpoint co-commits the
-emptied snapshot; without the nudge a worker restart reloads the stale item list.
+changing one leaves the other where it was. `RESET` clears nothing itself: it
+appends a `TM_INFO "RESET\n"` fence to `ingest:partition`, which reaches the
+digest through the summary stage behind every `DONE` already in flight, so a
+late `DONE` completes its own cycle rather than the next one. The digest clears
+its items, dedup set and `done` when the fence arrives, and `scored:consumer`
+co-commits that emptied snapshot with the cursor past it.
 
 **Gate (observer).** `gate:consumer` tails the SAME `ingest` Partition with its
 OWN offsets, so gating neither moves the summarizer's cursor nor changes the
@@ -271,9 +274,10 @@ reply parses, then DROPS `body` to keep the scored log and its snapshot small;
 the Scorer adds `score`.
 
 A source ends each TICK by emitting one `TM_INFO "DONE\n"` from a `finally`, so a
-throwing fetch still reports progress. The Summarizer, the Scorer and the Gate
-forward TM_INFO unchanged, which is how a DONE reaches the digest with the
-source's own name still in FROM.
+throwing fetch still reports progress. The Summarizer and the Scorer forward
+TM_INFO unchanged, which is how a DONE reaches the digest with the source's own
+name still in FROM. The Gate is a terminal observer and drops it, so neither a
+DONE nor the RESET fence reaches `gate-decisions.jsonl`.
 
 Each stage also stamps a state label, which `trace <node>` inside `wp nodes cli`
 prints: the Summarizer `SUMMARIZED` or `FAILED` with the title, the Scorer
@@ -311,12 +315,15 @@ substrate. This plugin adds:
 The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model`,
 `set_feature` and `add_profile`; every node carrying the trait also re-emits its
 state through `dump_config()`. `Digest_Builder` takes two positional arguments,
-the scored Partition to nudge on `RESET` and the `total` source count — that
-total MUST equal the number of names in `Insights_CI_Node::SOURCE_NODES`, or a
-collect never completes. All five `Insights_CI` verbs require `manage_options`,
-the three read slices included: no schema entry declares a `capability`, and
-the substrate's `dispatch()` refuses an undeclared verb at the strictest role
-rather than the loosest. No handler checks a role of its own.
+the ingest Partition `RESET` fences and the `total` source count, both required.
+That total MUST equal the number of names in `Insights_CI_Node::SOURCE_NODES`:
+above it a collect never completes, and below it the digest composes before
+every source has reported. A snapshot restore never overrides it.
+
+All five `Insights_CI` verbs require `manage_options`, the three read slices
+included: no schema entry declares a `capability`, and the substrate's
+`dispatch()` refuses an undeclared verb at the strictest role rather than the
+loosest. No handler checks a role of its own.
 
 ### Publisher master store
 

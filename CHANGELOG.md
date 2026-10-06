@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A `DONE` still in flight at `RESET` completes its own cycle, not the next one.** `RESET` appends a `TM_INFO "RESET\n"` fence to `ingest:partition` and the digest clears when that fence arrives, behind every message the previous cycle left in the pipeline. The digest's first argument is the ingest Partition (`make_node Digest_Builder digest ingest:partition 3`), the scored-Partition nudge is gone, and `RESET` answers `{ fence }` instead of `{ cleared }`. The digest declares that Partition in its display targets, so the console draws the edge.
+- **The digest composes once per cycle.** It composes on the `DONE` that brings the reported sources to `total`; a replayed or surplus `DONE` no longer recomposes and rewrites `digest.md`. `total` is a required argument, so a `make_node` without it fails loud, and a worker restoring its snapshot keeps the configured `total` rather than the snapshot's.
+- **The Gate drops control signals.** It no longer forwards `DONE` or the `RESET` fence, so neither writes a line to `gate-decisions.jsonl`.
+- **Dormant against an old substrate, the plugin registers no admin pages.** The Publisher Insights page, the Newspack Intelligence settings page, the dashboard enqueue and the `newspack_nodes/overlay_pages` declaration register behind the version handshake, where the settings page could otherwise fatal on `Clients_Settings`.
 - **`pre-push` gates every pushed ref, and fails closed.** It gathers changed paths from every non-delete ref, diffs a branch without a merge base against the empty tree, fails when `git diff` fails, and classifies `.mjs` and `.ts` files as JS.
 
 ## [0.12.17] - 2026-10-06

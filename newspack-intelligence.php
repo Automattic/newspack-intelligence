@@ -110,18 +110,6 @@ function render_clients_page(): void {
 	echo '</div>';
 }
 
-if ( \is_admin() ) {
-	\add_action( 'admin_menu', __NAMESPACE__ . '\\register_insights_admin_page', 11 );
-	\add_action( 'admin_menu', __NAMESPACE__ . '\\register_clients_admin_page', 12 );
-	\add_action( 'admin_enqueue_scripts', __NAMESPACE__ . '\\enqueue_insights_assets' );
-}
-
-// Declare this page on the substrate overlay-page registry (ELN overlay tab).
-\add_filter(
-	'newspack_nodes/overlay_pages',
-	static fn ( $pages ): array => \array_merge( (array) $pages, [ INSIGHTS_MENU_SLUG ] )
-);
-
 /**
  * Mount the Publisher Insights service interpreter into the per-request graph, the
  * same way the substrate mounts its own CIs. Idempotent: a second call (same
@@ -173,7 +161,15 @@ function register_cli_commands(): void {
 			register_cli_commands();
 		}
 
-		// Register upload hooks only after Composer can load Clients_Settings.
+		// Admin pages and upload hooks need Composer to load Clients_Settings.
+		\add_action( 'admin_menu', __NAMESPACE__ . '\\register_insights_admin_page', 11 );
+		\add_action( 'admin_menu', __NAMESPACE__ . '\\register_clients_admin_page', 12 );
+		\add_action( 'admin_enqueue_scripts', __NAMESPACE__ . '\\enqueue_insights_assets' );
+		// Declare the page on the substrate overlay registry (ELN overlay tab).
+		\add_filter(
+			'newspack_nodes/overlay_pages',
+			static fn ( $pages ): array => \array_merge( (array) $pages, [ INSIGHTS_MENU_SLUG ] )
+		);
 		\add_action(
 			'admin_post_' . Clients_Settings::ADMIN_POST_ACTION,
 			static function (): void {

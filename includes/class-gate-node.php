@@ -45,11 +45,7 @@ class Gate_Node extends Node {
 	public function fill( array $message ): void {
 		/** @var int $type */
 		$type = $message[ Message::TYPE ];
-		// Forward control signals (a source's DONE) unchanged, like Summarizer.
-		if ( $type & Message::TM_INFO ) {
-			parent::fill( $message );
-			return;
-		}
+		// A terminal observer: DONE and the RESET fence end here.
 		if ( ! ( $type & Message::TM_STRUCT ) ) {
 			return;
 		}

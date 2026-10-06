@@ -78,15 +78,17 @@ final class GateNodeTest extends TestCase {
 		$this->assertSame( 'ignore', $sink->captured[0][ Message::VALUE ]['decision'] );
 	}
 
-	public function test_forwards_done_signal_unchanged(): void {
-		$sink                = new Capture_Sink_Node();
-		$node                = $this->gate_with( new Publisher_Matcher( $this->repo(), 'csv-v1' ), $sink );
-		$m                   = Message::new_message();
-		$m[ Message::TYPE ]  = Message::TM_INFO;
-		$m[ Message::VALUE ] = "DONE\n";
-		$node->fill( $m );
-		$this->assertCount( 1, $sink->captured );
-		$this->assertSame( "DONE\n", $sink->captured[0][ Message::VALUE ] );
+	/** The Gate is a terminal observer: a DONE or RESET marker never reaches its decision log. */
+	public function test_drops_control_signals(): void {
+		$sink = new Capture_Sink_Node();
+		$node = $this->gate_with( new Publisher_Matcher( $this->repo(), 'csv-v1' ), $sink );
+		foreach ( [ "DONE\n", "RESET\n" ] as $marker ) {
+			$m                   = Message::new_message();
+			$m[ Message::TYPE ]  = Message::TM_INFO;
+			$m[ Message::VALUE ] = $marker;
+			$node->fill( $m );
+		}
+		$this->assertCount( 0, $sink->captured );
 	}
 
 	public function test_production_matcher_holds_unknown_item_with_default_config_version(): void {

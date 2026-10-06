@@ -24,9 +24,6 @@ use Newspack_Nodes\Tests\TestCase;
  */
 final class InsightsCITest extends TestCase {
 
-	/** @var string[] make_temp_dir() doesn't self-register for cleanup, so track + remove here. */
-	private array $created = [];
-
 	/** Per-test digest temp dir, lazily created by digest_path(). */
 	private ?string $digest_dir = null;
 
@@ -44,11 +41,7 @@ final class InsightsCITest extends TestCase {
 		Insights_CI_Node::$read_items = null;
 		$GLOBALS['_wp_test_current_user_can'] = [];
 		$GLOBALS['_current_user_can']         = false;
-		foreach ( $this->created as $dir ) {
-			$this->rmdir_recursive( $dir );
-		}
-		$this->created    = [];
-		$this->digest_dir = null;
+		$this->digest_dir                     = null;
 		$this->clear_digest_segments();
 		parent::tearDown();
 	}
@@ -82,8 +75,7 @@ final class InsightsCITest extends TestCase {
 
 	/** Point Config's offsets dir at a fresh temp base seeded with $cache, and return the CI bound to it. */
 	private function ci_with_cache( array $cache ): Insights_CI_Node {
-		$base            = $this->make_temp_dir( 'insights-ci-base-' );
-		$this->created[] = $base;
+		$base = $this->make_temp_dir( 'insights-ci-base-' );
 		$this->use_base_dir( $base );
 		$this->write_scored_cache( Config::get_offsets_directory(), 0, $cache );
 		$ci = new Insights_CI_Node();
@@ -126,8 +118,7 @@ final class InsightsCITest extends TestCase {
 	}
 
 	public function test_accumulated_verb_returns_count_progress_and_digest(): void {
-		$base            = $this->make_temp_dir( 'insights-ci-base-' );
-		$this->created[] = $base;
+		$base = $this->make_temp_dir( 'insights-ci-base-' );
 		$this->use_base_dir( $base );
 		$this->write_scored_cache(
 			Config::get_offsets_directory(),
@@ -265,8 +256,7 @@ final class InsightsCITest extends TestCase {
 	}
 
 	public function test_live_workers_lists_topology_workers_from_lock_dirs(): void {
-		$base            = $this->make_temp_dir( 'insights-ci-workers-' );
-		$this->created[] = $base;
+		$base = $this->make_temp_dir( 'insights-ci-workers-' );
 		\mkdir( $base . '/locks/newspack-intelligence.p0.lock.d', 0777, true );
 		\mkdir( $base . '/locks/newspack-intelligence.p5.lock.d', 0777, true );
 		// No worker id spells a padded partition, so it is no worker's lock.
@@ -286,10 +276,9 @@ final class InsightsCITest extends TestCase {
 	}
 
 	public function test_collect_errors_when_no_worker_is_live(): void {
-		$base            = $this->make_temp_dir( 'insights-ci-nocollect-' );
-		$this->created[] = $base;
-		$result          = Insights_CI_Node::collect( new Command_Interpreter_Node(), $base );
-		$parsed          = \json_decode( $result, true );
+		$base   = $this->make_temp_dir( 'insights-ci-nocollect-' );
+		$result = Insights_CI_Node::collect( new Command_Interpreter_Node(), $base );
+		$parsed = \json_decode( $result, true );
 		$this->assertIsArray( $parsed );
 		$this->assertStringContainsString( 'No live', (string) $parsed['error'] );
 	}
@@ -310,10 +299,9 @@ final class InsightsCITest extends TestCase {
 	}
 
 	public function test_regenerate_errors_when_no_worker_is_live(): void {
-		$base            = $this->make_temp_dir( 'insights-ci-noregen-' );
-		$this->created[] = $base;
-		$result          = Insights_CI_Node::regenerate( new Command_Interpreter_Node(), $base );
-		$parsed          = \json_decode( $result, true );
+		$base   = $this->make_temp_dir( 'insights-ci-noregen-' );
+		$result = Insights_CI_Node::regenerate( new Command_Interpreter_Node(), $base );
+		$parsed = \json_decode( $result, true );
 		$this->assertIsArray( $parsed );
 		$this->assertStringContainsString( 'No live', (string) $parsed['error'] );
 	}
@@ -333,8 +321,7 @@ final class InsightsCITest extends TestCase {
 
 	/** A base dir holding one live worker: its lock dir and its IPC input dir. */
 	private function live_worker_base( string $prefix, string $worker_id ): string {
-		$base            = $this->make_temp_dir( $prefix );
-		$this->created[] = $base;
+		$base                = $this->make_temp_dir( $prefix );
 		[ $type, $partition ] = CLI::parse_worker_id( $worker_id ) ?? [ '', 0 ];
 		\mkdir( "{$base}/locks/{$worker_id}.lock.d", 0777, true );
 		\mkdir( Worker_Base::ipc_dir( $base, $type, $partition, Worker_Base::IPC_INPUT ), 0777, true );
@@ -373,7 +360,6 @@ final class InsightsCITest extends TestCase {
 	private function digest_path(): string {
 		if ( null === $this->digest_dir ) {
 			$this->digest_dir = $this->make_temp_dir( 'insights-ci-digest-' );
-			$this->created[]  = $this->digest_dir;
 		}
 		return $this->digest_dir . '/digest.md';
 	}

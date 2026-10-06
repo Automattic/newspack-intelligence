@@ -18,6 +18,7 @@ final class DigestComposeTest extends TestCase {
 		Proxy_LLM_Client::$http_post      = null;
 		delete_option( Vault::OPTION_KEY );
 		Vault::get_instance()->reset_cache();
+		parent::tearDown();
 	}
 
 	/**
@@ -35,7 +36,7 @@ final class DigestComposeTest extends TestCase {
 	 * Raise the total to one and fire a single DONE to trigger exactly one compose.
 	 */
 	private function complete( Digest_Builder_Node $n ): void {
-		$n->arguments( [ '1' ] );
+		$n->arguments( [ 'ingest:partition', '1' ] );
 		$m                   = Message::new_message();
 		$m[ Message::TYPE ]  = Message::TM_INFO;
 		$m[ Message::FROM ]  = 'src';
