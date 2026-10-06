@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.11] - 2026-10-05
+
+### Changed
+
+- **Rebuilt against newspack-nodes 2.93.0,** so the dashboard refreshes the moment its tab is shown again, its search inputs carry a clear button, and its dialogs submit on Enter.
+
 ## [0.12.10] - 2026-10-05
 
 ### Changed

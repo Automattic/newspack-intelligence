@@ -164,11 +164,9 @@ describe( 'useInsightsGraph — batched poll', () => {
 		} );
 		expect( wire.batches.length ).toBe( 0 );
 
+		// Tab visible again: the dashboard polls at once, one batch.
 		await act( async () => {
 			setVisibility( 'visible' );
-		} );
-		await act( async () => {
-			Core.node( ROUTER ).fireCb();
 		} );
 		expect( wire.batches.length ).toBe( 1 );
 		expect( wire.batches[ 0 ].length ).toBe( 3 );
