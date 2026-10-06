@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.15] - 2026-10-06
+
+### Changed
+
+- **Rebuilt against newspack-nodes 2.96.0,** so the debug overlay draws a node's owned Table with its owner named, and offers no delete or rename on it.
+
 ## [0.12.14] - 2026-10-06
 
 ### Changed
