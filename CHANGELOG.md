@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The four topologies write `{partition}`, and the substrate floor rises from 2.88.0 to 2.99.0.** The substrate resolves `{partition}` in the arguments a node's schema marks and refuses `<partition>`. A custom topology still writing `<partition>`, such as `<config:logs_dir>/ingest.p<partition>`, now fails to load; write `{partition}`. Below 2.99.0 the plugin stays dormant.
+
 ## [0.13.0] - 2026-10-06
 
 ### Changed
