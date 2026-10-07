@@ -15,9 +15,13 @@
  * A subclass computing its own boundary, or a hook naming a class, works
  * until a second cadence or a second bundle arrives.
  *
- * Two rules read PHP: a verb checking its own role, which `dispatch()` does
- * against the role the verb declares (ADR-26), and a durable arm built
- * outside the Table that owns it (ADR-24).
+ * Six rules read PHP: a verb checking its own role, which `dispatch()` does
+ * against the role the verb declares (ADR-26); a durable arm built outside the
+ * Table that owns it (ADR-24); a log stamp spelled by hand (ADR-29); a class
+ * taking `Fanout_Targets` without ever fanning out, which declares a target no
+ * delivery reads (ADR-19); a command signed outside `Command_Auth`, whose
+ * `mint_for()` is the one signed mint (ADR-15); and a node deciding where it
+ * reads by the bound partition rather than by what its TSL wrote (ADR-33).
  *
  * See ADR-7, AGENTS.md ("A reply is already addressed — never correlate it")
  * and docs/architecture-guide.md on the response envelope.
@@ -36,6 +40,7 @@
  * implements the routing belongs in EXEMPT instead.
  */
 
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { walkFiles } from './lib/walk-files.mjs';
@@ -111,11 +116,26 @@ if ( ! BUILTIN?.size ) {
 }
 
 /**
+ * A PHP source with its comments removed, so a call a docblock or a trailing
+ * comment only names does not count as one. PHP's own tokenizer does the
+ * stripping through `php -w`, so a `/*`, `//` or `#` inside a string, a
+ * heredoc or a nowdoc stays code; `-w` also collapses whitespace, which no
+ * caller here reads. A missing `php` throws rather than passing the file.
+ *
+ * @param {string} text A file's whole text.
+ * @return {string} The text with every comment removed.
+ */
+const withoutComments = ( text ) =>
+	execFileSync( 'php', [ '-w' ], { input: text, encoding: 'utf8' } );
+
+/**
  * The rules, each a regex tested against a single source line of the language
  * `lang` names, JavaScript when absent. `id` names the shape in the output,
  * `why` is the sentence a developer reads there, and an optional `skip`
- * receives the match and the file and waves a hit through — how the two
- * name-lookup rules let the builtin classes past, and the arm rule its Table.
+ * receives the match, the file and the file's whole text and waves a hit
+ * through — how the two name-lookup rules let the builtin classes past, the
+ * arm rule its Table, and the fan-out rule a file whose code, comments
+ * aside, does fan out.
  */
 const RULES = [
 	{
@@ -187,6 +207,40 @@ const RULES = [
 		skip: ( match, rel ) => 'includes/class-table-node.php' === rel,
 		why: 'a durable arm built outside its Table: build the Table, which owns the arm, its keys and its counters (ADR-24)',
 	},
+	{
+		id: 'stamp-grammar-outside-discovery',
+		lang: 'php',
+		test: /SOURCES_PREFIX\s*\.\s*['"]\/|Log_Discovery::(?:GROUPS|STAMP_PREFIXES)\b|'logs'\s*[!=]==\s*\$group\b|\{\$group\}\/|['"](?:sources|offsets|deadletter|remote)\//,
+		skip: ( match, rel ) => 'includes/class-log-discovery.php' === rel,
+		why: "a log stamp written, parsed or joined to a root by hand: Log_Discovery::stamp_for() writes it and remote_for() a spoke log's name, split() reads it, dir_of() and dirs_matching() resolve it (ADR-29)",
+	},
+	{
+		id: 'fanout-without-fanout',
+		lang: 'php',
+		test: /^\s*use\s+\\?(?:Newspack_Nodes\\)?Fanout_Targets\s*[;,{]/,
+		skip: ( match, rel, text ) =>
+			/\b(?:live_targets|send_signed)\s*\(/.test(
+				withoutComments( text )
+			),
+		why: 'a class taking Fanout_Targets that never fans out: its connect_node stores a target no delivery reads; declare what it writes in extra_targets() (ADR-19)',
+	},
+	{
+		// The blocking operator probe signs its one synchronous POST itself.
+		id: 'signed-mint-outside-command-auth',
+		lang: 'php',
+		test: /\bCommand_Auth::sign_for\s*\(/,
+		skip: ( match, rel ) =>
+			'includes/class-command-auth.php' === rel ||
+			'includes/class-http-out-node.php' === rel,
+		why: 'a command signed by hand: Command_Auth::mint_for() checks the session, builds the TM_COMMAND and signs it, the one signed mint (ADR-15)',
+	},
+	{
+		id: 'owns-unpartitioned-outside-core',
+		lang: 'php',
+		test: /\bowns_unpartitioned\s*\(/,
+		skip: ( match, rel ) => 'includes/class-core.php' === rel,
+		why: 'ownership decided off the bound partition: ask Core::owns() with the source as the TSL wrote it, the one predicate (ADR-33)',
+	},
 ];
 
 /** The language a file is scanned as, by its extension; null for neither. */
@@ -248,7 +302,8 @@ for ( const file of targets ) {
 		continue;
 	}
 	const lang = langOf( file );
-	const lines = readFileSync( file, 'utf8' ).split( '\n' );
+	const text = readFileSync( file, 'utf8' );
+	const lines = text.split( '\n' );
 	lines.forEach( ( line, i ) => {
 		// Prose is not code; failing a build over a docblock teaches docblocks.
 		const code = line.trim();
@@ -266,7 +321,7 @@ for ( const file of targets ) {
 				continue;
 			}
 			const match = rule.test.exec( line );
-			if ( match && ! rule.skip?.( match, rel ) ) {
+			if ( match && ! rule.skip?.( match, rel, text ) ) {
 				console.error(
 					`${ rel }:${ i + 1 }  [${ rule.id }]  ${ rule.why }`
 				);

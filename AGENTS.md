@@ -80,8 +80,10 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.88.0' )` and stays
-dormant below it. 2.88.0 is `Schema_Reflection::arguments()`, which parses the
+error.** The loader calls `Bootstrap::version_at_least( '2.99.0' )` and stays
+dormant below it. 2.99.0 resolves `{partition}` in the arguments a node's schema
+marks and refuses `<partition>`, so the topologies here write `{partition}`.
+2.88.0 is `Schema_Reflection::arguments()`, which parses the
 digest's positionals onto its properties, so `Digest_Builder_Node` carries no
 `arguments()` of its own. 2.77.0 binds a verb's declared `args` before its handler runs,
 so every handler reads them by name (`$args['url']`), and the variadic

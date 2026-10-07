@@ -7,7 +7,7 @@
 # the gate INLINE (to filter what reaches the digest) is a deliberate later step.
 var num_partitions = 1
 include topic-probe
-make_node Consumer gate:consumer <config:logs_dir>/ingest.p<partition> <config:offsets_dir>/gate.p<partition> <config:deadletter_dir>/gate.p<partition>
+make_node Consumer gate:consumer <config:logs_dir>/ingest.p{partition} <config:offsets_dir>/gate.p{partition} <config:deadletter_dir>/gate.p{partition}
 cmd gate:consumer:config set_line_mode true
 make_node Gate gate
 cmd gate:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1
