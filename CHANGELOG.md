@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`scripts/pre-push` is newspack-nodes' shared hook**, vendored by `sync-shared-scripts.sh`. This plugin's `scripts/pre-push.local` holds only its container constants. `lint:shell` and lint-staged check it too.
+- **`pre-push` checks this plugin's substrate floor.** The shared hook runs `scripts/check-substrate-floor.sh` on every push, after `lint-wp-pin`, so a `version_at_least()` floor below an API the plugin calls fails the push. The vendored `test-*.sh` copies are gone; those self-tests run in newspack-nodes alone.
+
 ### Fixed
 
 - **A `DONE` still in flight at `RESET` completes its own cycle, not the next one.** `RESET` appends a `TM_INFO "RESET\n"` fence to `ingest:partition` and the digest clears when that fence arrives, behind every message the previous cycle left in the pipeline. The digest's first argument is the ingest Partition (`make_node Digest_Builder digest ingest:partition 3`), the scored-Partition nudge is gone, and `RESET` answers `{ fence }` instead of `{ cleared }`. The digest declares that Partition in its display targets, so the console draws the edge.
