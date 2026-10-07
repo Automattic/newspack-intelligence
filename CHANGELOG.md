@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-06
+
 ### Changed
 
 - **`scripts/pre-push` is newspack-nodes' shared hook**, vendored by `sync-shared-scripts.sh`. This plugin's `scripts/pre-push.local` holds only its container constants. `lint:shell` and lint-staged check it too.
