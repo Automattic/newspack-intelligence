@@ -39,7 +39,7 @@ composer install && npm install
 npm run build
 npm run lint:js && npm run lint:php && npm run lint:phpstan && npm run lint:scss
 npm run lint:types                        # tsc over the JS via tsconfig.check.json
-npm run lint:shell                        # shellcheck over pre-push and scripts/*.sh
+npm run lint:shell                        # shellcheck over pre-push, pre-push.local, scripts/*.sh
 npm run lint:deadcode:js                  # knip; GATED in pre-commit (caveat below)
 npm run test:js                           # jest (local); test:js:coverage feeds the gate
 cd tests && ../vendor/bin/phpunit --enforce-time-limit   # PHP; needs the substrate active
@@ -149,10 +149,14 @@ git config core.hooksPath scripts    # what composer's post-install-cmd runs
 A clone that never ran `composer install` has no hooks. `pre-commit` first runs
 `scripts/sync-shared-scripts.sh`, refreshing this plugin's copy of the shared
 tooling from `../newspack-nodes/scripts/` when that sibling is checked out — edit
-shared scripts THERE, not here.
+shared scripts THERE, not here. `pre-push` is one of them; this plugin adds no
+gate of its own, so its `scripts/pre-push.local`, which the shared hook sources
+and the sync never touches, holds only the container constants the hook requires.
 
-`pre-push` runs the JS suite with coverage, its per-file 90% gate and
-`scripts/lint-docs.sh` on every push, including a docs-only one: jest can break
+`pre-push` runs the JS suite with coverage, its per-file 90% gate,
+`scripts/lint-docs.sh`, `scripts/lint-wp-pin.mjs` and
+`scripts/check-substrate-floor.sh` on every push, including a docs-only one:
+jest can break
 from a sibling shared-runtime change this push never touched, and lint-docs is the
 grep gate keeping this file in step with the runtime. Everything else is scoped to
 the file types in the push range — PHP adds `lint:php`, the container deploy, the

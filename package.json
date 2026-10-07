@@ -20,7 +20,7 @@
 		"lint:phpstan": "vendor/bin/phpstan analyse -c phpstan-deadcode.neon --memory-limit=2G --no-progress",
 		"lint:deadcode:js": "knip --no-progress",
 		"lint:scss": "stylelint --customSyntax postcss-scss 'src/**/*.scss'",
-		"lint:shell": "shellcheck scripts/pre-push scripts/*.sh",
+		"lint:shell": "shellcheck scripts/pre-push scripts/pre-push.local scripts/*.sh",
 		"make-pot": "wp i18n make-pot . languages/newspack-intelligence.pot --domain=newspack-intelligence --exclude=node_modules,build,vendor,tests,release",
 		"test:js": "jest --passWithNoTests",
 		"test:js:coverage": "jest --passWithNoTests --coverage --collectCoverageFrom='src/**/*.{js,jsx}' --coverageReporters=json-summary --coverageReporters=text",
@@ -90,7 +90,8 @@
 			"php scripts/fix-blank-lines.php"
 		],
 		"*.sh": "shellcheck",
-		"scripts/pre-push": "shellcheck"
+		"scripts/pre-push": "shellcheck",
+		"scripts/pre-push.local": "shellcheck"
 	},
 	"browserslist": [
 		"extends @wordpress/browserslist-config"
