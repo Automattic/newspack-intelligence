@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Publisher Insights' commands pass `shell:insights` rather than `_shell`.** The poll and the Collect and Regenerate buttons send under the `insights` group, so `connect shell:insights` watches this dashboard's traffic alone. Built against newspack-nodes' `egressPath( group, ci )`.
+
 ## [0.14.1] - 2026-10-07
 
 ### Changed
