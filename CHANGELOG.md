@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-10-08
+
 ### Changed
 
 - **The substrate floor rises to newspack-nodes 2.102.0,** whose `shell:<group>` Taps the dashboard is built against, and whose page global `Core` it shares with the substrate's bundles.
