@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Publisher Insights' commands pass `insights:shell`, no longer `shell:insights`,** so `connect insights:shell` watches this dashboard's traffic. Built against newspack-nodes' renamed group Taps.
+
 ## [0.14.2] - 2026-10-08
 
 ### Changed

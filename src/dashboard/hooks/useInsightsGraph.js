@@ -4,13 +4,13 @@
  * example):
  *
  *   insights:timer (Timer) ─> insights:tee (Tee) ─> fetch-counts (Fetcher) ─┐
- *                                                 ├> fetch-top    (Fetcher) ─┤  target = shell:insights/_http/insights
+ *                                                 ├> fetch-top    (Fetcher) ─┤  target = insights:shell/_http/insights
  *                                                 └> fetch-acc    (Fetcher) ─┘
  *   countsIn (Tee) ─> source-counts:view ─> <SourceCounts/>
  *   topIn    (Tee) ─> top-table:view     ─> <TopTable/>
  *   accIn    (Tee) ─> accumulated:view   ─> <AccumulatedPanel/>
  *
- * `useBatchedPoll` owns ALL the poll boilerplate (the `shell:insights` Tap +
+ * `useBatchedPoll` owns ALL the poll boilerplate (the `insights:shell` Tap +
  * `_http` HttpOut, the fan-out Tee + router-hitchhike Timer, the lock/flush
  * batch bracket, and the page-visibility gate); `addSliceFetcher` wires each
  * Fetcher → its receiver Tee → its slice view. One batched POST per tick fans
@@ -29,7 +29,7 @@ import { egressPath } from '@newspack-nodes/shared/helpers/egressPath';
 
 // Server-side CI mount; Fetchers and action verbs reach it through `_http`.
 export const SERVER = 'insights';
-// The dashboard's group: every command it sends passes `shell:insights`.
+// The dashboard's group: every command it sends passes `insights:shell`.
 export const GROUP = 'insights';
 // Digest slices change slowly; the cadence is explicit, never inferred.
 const DEFAULT_INTERVAL_MS = 30000;
