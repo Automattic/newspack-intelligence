@@ -80,8 +80,11 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.99.0' )` and stays
-dormant below it. 2.99.0 resolves `{partition}` in the arguments a node's schema
+error.** The loader calls `Bootstrap::version_at_least( '2.102.0' )` and stays
+dormant below it. 2.102.0 is the page's shared stream link and `shell:<group>` Taps
+the dashboard bundle is built against, and the page global `Core` it shares with
+the substrate's bundles, whose shape 2.102.0 changes; `check-substrate-floor.sh`
+cannot see it, because it reads PHP calls and not bundles. 2.99.0 resolves `{partition}` in the arguments a node's schema
 marks and refuses `<partition>`, so the topologies here write `{partition}`.
 2.88.0 is `Schema_Reflection::arguments()`, which parses the
 digest's positionals onto its properties, so `Digest_Builder_Node` carries no
