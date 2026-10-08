@@ -4,17 +4,18 @@
  * example):
  *
  *   insights:timer (Timer) ─> insights:tee (Tee) ─> fetch-counts (Fetcher) ─┐
- *                                                 ├> fetch-top    (Fetcher) ─┤  target = _shell/_http/insights
+ *                                                 ├> fetch-top    (Fetcher) ─┤  target = shell:insights/_http/insights
  *                                                 └> fetch-acc    (Fetcher) ─┘
  *   countsIn (Tee) ─> source-counts:view ─> <SourceCounts/>
  *   topIn    (Tee) ─> top-table:view     ─> <TopTable/>
  *   accIn    (Tee) ─> accumulated:view   ─> <AccumulatedPanel/>
  *
- * `useBatchedPoll` owns ALL the poll boilerplate (the `_shell`-Tap + `_http`
- * HttpOut, the fan-out Tee + router-hitchhike Timer, the lock/flush batch bracket,
- * and the page-visibility gate); `addSliceFetcher` wires each Fetcher → its
- * receiver Tee → its slice view. One batched POST per tick fans out three slice
- * commands; each reply pivots back to its OWN view and lands in its OWN slice.
+ * `useBatchedPoll` owns ALL the poll boilerplate (the `shell:insights` Tap +
+ * `_http` HttpOut, the fan-out Tee + router-hitchhike Timer, the lock/flush
+ * batch bracket, and the page-visibility gate); `addSliceFetcher` wires each
+ * Fetcher → its receiver Tee → its slice view. One batched POST per tick fans
+ * out three slice commands; each reply pivots back to its OWN view and lands
+ * in its OWN slice.
  *
  * The Collect and Regenerate buttons are NOT here: each is its own one-shot,
  * held by `AccumulatedPanel` beside the lock and note its reply sets. This hook
@@ -26,12 +27,14 @@ import { addSliceFetcher } from '@newspack-nodes/shared/helpers/addSliceFetcher'
 import { views } from '../nodes/register';
 import { egressPath } from '@newspack-nodes/shared/helpers/egressPath';
 
-// Server-side CI mount; Fetchers and action verbs target it via _shell/_http.
+// Server-side CI mount; Fetchers and action verbs reach it through `_http`.
 export const SERVER = 'insights';
+// The dashboard's group: every command it sends passes `shell:insights`.
+export const GROUP = 'insights';
 // Digest slices change slowly; the cadence is explicit, never inferred.
 const DEFAULT_INTERVAL_MS = 30000;
 
-const TARGET = egressPath( SERVER );
+const TARGET = egressPath( GROUP, SERVER );
 const ACC_VIEW = 'accumulated:view';
 
 // Per-slice fetcher config: receiver Tee, verb, view node, and its class.

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { useNodeField } from '@newspack-nodes/runtime';
 import { useCommandOnce } from '@newspack-nodes/shared/hooks/useCommandOnce';
-import { SERVER } from '../hooks/useInsightsGraph';
+import { SERVER, GROUP } from '../hooks/useInsightsGraph';
 import { markdownToBlockMarkup } from '../markdownToBlockMarkup';
 
 // How long a transient ack note stays before auto-dismissing.
@@ -153,6 +153,7 @@ export function AccumulatedPanel( {
 	// that button owns — the lock, the note, the latch. Nothing pairs a reply
 	// to a click: the node it lands on is the one that asked (ADR-7).
 	const { run: collect } = useCommandOnce( {
+		group: GROUP,
 		ci: SERVER,
 		command: 'collect',
 		onDone: ( { result, error: refusal } ) => {
@@ -188,6 +189,7 @@ export function AccumulatedPanel( {
 	} );
 
 	const { run: generate } = useCommandOnce( {
+		group: GROUP,
 		ci: SERVER,
 		command: 'generate',
 		onDone: ( { result, error: refusal } ) => {

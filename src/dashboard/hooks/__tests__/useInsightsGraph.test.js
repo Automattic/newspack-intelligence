@@ -4,7 +4,7 @@
  * addSliceFetcher), not a god object:
  *
  *   insights:timer (Timer) ─> insights:tee (Tee) ─> fetch-counts (Fetcher) ─┐
- *                                                 ├> fetch-top    (Fetcher) ─┤  target = _shell/_http/insights
+ *                                                 ├> fetch-top    (Fetcher) ─┤  target = shell:insights/_http/insights
  *                                                 └> fetch-acc    (Fetcher) ─┘
  *   countsIn (Tee) ─> source-counts:view
  *   topIn    (Tee) ─> top-table:view
@@ -24,7 +24,7 @@ import { useInsightsGraph } from '../useInsightsGraph';
 const INTERPRETER = '_command_interpreter';
 const ROUTER = '_router';
 const HTTP = '_http';
-const SHELL = '_shell';
+const GROUP_TAP = 'shell:insights';
 const ACC_VIEW = 'accumulated:view';
 
 function setVisibility( state ) {
@@ -69,7 +69,7 @@ beforeEach( () => {
 } );
 
 describe( 'useInsightsGraph — graph wiring', () => {
-	test( 'mounts the backbone, `_http`, `_shell` tap, the timer/tee/fetchers, and three view nodes, each sinking into the interpreter', async () => {
+	test( 'mounts the backbone, `_http`, the `shell:insights` Tap, the timer/tee/fetchers, and three view nodes, each sinking into the interpreter', async () => {
 		installWire( emptyPayloads );
 		renderHook( () => useInsightsGraph() );
 		await act( async () => {} );
@@ -80,7 +80,7 @@ describe( 'useInsightsGraph — graph wiring', () => {
 
 		const names = [
 			HTTP,
-			SHELL,
+			GROUP_TAP,
 			'insights:timer',
 			'insights:tee',
 			'fetch-counts',
@@ -100,11 +100,11 @@ describe( 'useInsightsGraph — graph wiring', () => {
 		}
 	} );
 
-	test( 'each Fetcher is configured with its receiver + verb and targets `_shell/_http/insights`', async () => {
+	test( 'each Fetcher is configured with its receiver + verb and targets `shell:insights/_http/insights`', async () => {
 		installWire( emptyPayloads );
 		renderHook( () => useInsightsGraph() );
 		await act( async () => {} );
-		const path = `${ SHELL }/${ HTTP }/insights`;
+		const path = `${ GROUP_TAP }/${ HTTP }/insights`;
 		expect( Core.node( 'fetch-counts' ).receiver ).toBe( 'countsIn' );
 		expect( Core.node( 'fetch-counts' ).verb ).toBe( 'counts' );
 		expect( Core.node( 'fetch-counts' ).target ).toBe( path );
