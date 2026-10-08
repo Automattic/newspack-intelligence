@@ -150,10 +150,12 @@ function register_cli_commands(): void {
 		// name before its handler runs; 2.88.0 is the trait's arguments(),
 		// which parses the digest's positionals; 2.99.0 resolves `{partition}`
 		// in the arguments a node's schema marks, and refuses `<partition>`,
-		// which every topology here writes as `{partition}`. A floor set too
-		// low does not degrade: it activates, then fatals on a missing method.
+		// which every topology here writes as `{partition}`; 2.102.0 is the
+		// page global Core the dashboard bundle shares with the substrate's.
+		// A floor set too low does not degrade: it activates, then fatals on a
+		// missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
-			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.99.0', 'Newspack Intelligence' ) ) {
+			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.102.0', 'Newspack Intelligence' ) ) {
 			return;
 		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.
