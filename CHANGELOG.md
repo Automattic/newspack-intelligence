@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.6] - 2026-10-12
+
+### Changed
+
+- **The bundled debug overlay and topology canvas come from newspack-nodes 2.105.1:** a patroned node opens from a "…" on its owner's card instead of drawing on the canvas; a graph holding a loop draws left to right; a sink sharing its feeder sits beside it; a card fed by nothing that feeds only a hub sits in the column before the hub, no longer pushing it a column right; and a half step opens only in the block whose wires open it.
+
 ## [0.14.5] - 2026-10-10
 
 ### Changed
