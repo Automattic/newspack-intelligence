@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-10-13
+
+### Changed
+
+- **Requires newspack-nodes 2.107.0.** The bundled Triage view removes a dead-letter record with `dl_remove`, which an older substrate refuses as an unknown verb, and the bundled topology console opens an owner's sidecars on the canvas; below 2.107.0 the plugin stays dormant.
+
 ## [0.15.0] - 2026-10-13
 
 ### Changed
