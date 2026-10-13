@@ -153,11 +153,12 @@ function register_cli_commands(): void {
 		// which every topology here writes as `{partition}`; 2.102.0 is the
 		// page global Core the dashboard bundle shares with the substrate's;
 		// 2.104.0 is the page link that routes by pairs, which the bundled
-		// stream hooks call.
+		// stream hooks call; 2.106.0 is dump_metadata -o, which the bundled
+		// topology console asks for an owner's sidecars.
 		// A floor set too low does not degrade: it activates, then fatals on a
 		// missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
-			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.104.0', 'Newspack Intelligence' ) ) {
+			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.106.0', 'Newspack Intelligence' ) ) {
 			return;
 		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.

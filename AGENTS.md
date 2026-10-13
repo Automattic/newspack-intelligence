@@ -80,8 +80,11 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.104.0' )` and stays
-dormant below it. 2.104.0 is `_stream` routing by pairs: its bundle builds
+error.** The loader calls `Bootstrap::version_at_least( '2.106.0' )` and stays
+dormant below it. 2.106.0 is `dump_metadata -o`, which the bundled topology
+console asks for an owner's sidecars; an older substrate answers it with an
+empty map, and `check-substrate-floor.sh` cannot see it, because it reads PHP
+calls and not bundles. 2.104.0 is `_stream` routing by pairs: its bundle builds
 `_stream`, and the bundled `useStreamGraph` calls `addPairs()`, which an earlier
 substrate's link lacks; `check-substrate-floor.sh` cannot see it, because it
 reads PHP calls and not bundles. 2.102.0 is the page's shared stream link and group Taps
