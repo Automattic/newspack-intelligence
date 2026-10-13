@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Newspack Intelligence
  * Description: AI-driven team intelligence digest built on the newspack-nodes substrate.
- * Version: 0.15.0
+ * Version: 0.15.1
  * Author: Automattic
  * Author URI: https://newspack.com/
  * License: GPL-2.0-or-later
@@ -20,7 +20,7 @@ namespace Newspack_Intelligence;
 \defined( 'ABSPATH' ) || exit;
 
 if ( ! \defined( 'NEWSPACK_INTELLIGENCE_VERSION' ) ) {
-	\define( 'NEWSPACK_INTELLIGENCE_VERSION', '0.15.0' );
+	\define( 'NEWSPACK_INTELLIGENCE_VERSION', '0.15.1' );
 }
 if ( ! \defined( 'NEWSPACK_INTELLIGENCE_DIR' ) ) {
 	\define( 'NEWSPACK_INTELLIGENCE_DIR', \plugin_dir_path( __FILE__ ) );
@@ -154,11 +154,12 @@ function register_cli_commands(): void {
 		// page global Core the dashboard bundle shares with the substrate's;
 		// 2.104.0 is the page link that routes by pairs, which the bundled
 		// stream hooks call; 2.106.0 is dump_metadata -o, which the bundled
-		// topology console asks for an owner's sidecars.
+		// topology console asks for an owner's sidecars; 2.107.0 is dl_remove,
+		// which the bundled Triage view sends.
 		// A floor set too low does not degrade: it activates, then fatals on a
 		// missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
-			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.106.0', 'Newspack Intelligence' ) ) {
+			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.107.0', 'Newspack Intelligence' ) ) {
 			return;
 		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.
