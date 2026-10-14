@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.4] - 2026-10-14
+
+### Changed
+
+- **Bundles newspack-nodes 2.109.0's console and stream:** stamps spelled with `:`, broker pairs with `=`, and Overview rates measured on the probe's own clock. The substrate floor stays at 2.107.0.
+
+
 ## [0.15.3] - 2026-10-13
 
 ### Changed
