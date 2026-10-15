@@ -295,7 +295,7 @@ XML;
 			$node->interpreter()->dispatch( 'remove_url', [ 'https://ghost.test/feed.xml' ] );
 			$this->fail( 'an unregistered url was removed' );
 		} catch ( \InvalidArgumentException $e ) {
-			$this->assertSame( "remove_url 'https://ghost.test/feed.xml' names no entry add_url gave", $e->getMessage() );
+			$this->assertSame( "remove_url 'https://ghost.test/feed.xml' names no url this node declares", $e->getMessage() );
 		}
 		$this->assertSame( [ 'https://kite.test/feed.xml' ], $this->config_of( $node )['feeds'] );
 	}

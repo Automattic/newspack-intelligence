@@ -132,7 +132,7 @@ final class LlmConfigTest extends TestCase {
 		$caught = $this->caught_any( fn () => $node->interpreter()->dispatch( 'remove_profile', [ '--text=Cover ghosts.' ] ) );
 
 		$this->assertInstanceOf( \InvalidArgumentException::class, $caught );
-		$this->assertSame( "remove_profile 'Cover ghosts.' names no entry add_profile gave", $caught->getMessage() );
+		$this->assertSame( "remove_profile 'Cover ghosts.' names no profile this node declares", $caught->getMessage() );
 		$this->assertSame( 'Skip kite trivia.', $node->profile() );
 	}
 
