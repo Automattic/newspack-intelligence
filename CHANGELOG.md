@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Rebuilt against newspack-nodes 2.110.0:** the bundled stream hooks call the page link's `addSource()`, which an older substrate's link lacks, so deploy the two together.
+- **Rebuilt against newspack-nodes 2.110.0:** the bundled stream hooks call the page link's `attachView()`, which an older substrate's link lacks, so deploy the two together.
 - **An identical `add_repo`, `add_url` or `add_profile` repeat is a no-op,** where it added a duplicate, so one `remove_*` takes the value back and a `Vault_Group` rebuilds a child holding what its live children hold.
 - **Requires newspack-nodes 2.110.0,** the release carrying `Schema_Reflection::list_verbs()`; below it the plugin stays dormant.
 - **`add_repo`, `add_url` and `add_profile` answer `ok` with a trailing newline,** as every declarative verb does, and refuse a blank argument with `InvalidArgumentException`; `add_repo`'s refusal reads `usage: add_repo <repo>`.
