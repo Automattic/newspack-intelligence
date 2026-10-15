@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-10-14
+
 ### Added
 
 - **`remove_repo`, `remove_url` and `remove_profile`,** each undoing one `add_repo`, `add_url` or `add_profile`: it takes the add's argument, drops that entry from what the node fetches or scores against and from its `dump_config()`, and is refused, naming the entry, when none matches (`remove_repo 'acme/ghost' names no repo this node declares`). The three pairs are declared through the substrate's `Schema_Reflection::list_verbs()`, which replaces their hand-written handlers and dump loops.
