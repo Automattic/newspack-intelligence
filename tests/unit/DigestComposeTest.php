@@ -95,7 +95,7 @@ final class DigestComposeTest extends TestCase {
 		$node->set_vault_id( 'ai-vault' );
 		$node->set_model( 'own-model' );
 		$node->set_feature( 'own-feature' );
-		$node->add_profile( 'Engineering audience' );
+		$node->interpreter()->dispatch( 'add_profile', [ 'Engineering audience' ] );
 		$node->sink( new Capture_Sink_Node() );
 
 		$this->feed( $node, [ 'summary' => 'sa', 'score' => 9.0, 'title' => 'A', 'source' => 'github', 'url' => 'http://a' ] );

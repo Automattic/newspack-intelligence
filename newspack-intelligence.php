@@ -155,11 +155,13 @@ function register_cli_commands(): void {
 		// 2.104.0 is the page link that routes by pairs, which the bundled
 		// stream hooks call; 2.106.0 is dump_metadata -o, which the bundled
 		// topology console asks for an owner's sidecars; 2.107.0 is dl_remove,
-		// which the bundled Triage view sends.
+		// which the bundled Triage view sends; 2.110.0 is the trait's
+		// list_verbs(), which declares add_repo, add_url and add_profile and
+		// their remove_* twins.
 		// A floor set too low does not degrade: it activates, then fatals on a
 		// missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
-			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.107.0', 'Newspack Intelligence' ) ) {
+			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.110.0', 'Newspack Intelligence' ) ) {
 			return;
 		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.

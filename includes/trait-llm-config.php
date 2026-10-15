@@ -4,11 +4,13 @@
  *
  * Summarizer_Node and Digest_Builder_Node both need the same api_url/vault_id/
  * model/feature/profiles quintet, configured via per-node topology verbs. This
- * trait carries that state, the five `set_*` / `add_profile` verbs (declared for
- * node_schema()['commands'] via llm_config_commands()), make_llm_client() (builds
- * the proxy client from the verb-configured state), and relevance_profile()
- * (joins the configured profile lines for prompt assembly). Uses Vault_Secret for
- * the same '' on blank/unknown/Vault-absent resolution.
+ * trait carries that state, the four `set_*` verbs and the `add_profile` /
+ * `remove_profile` pair (declared for node_schema()['commands'] via
+ * llm_config_commands(), the pair through `Schema_Reflection::list_verbs()`, so
+ * a using class also uses Schema_Reflection), make_llm_client() (builds the
+ * proxy client from the verb-configured state), and relevance_profile() (joins
+ * the configured profile lines for prompt assembly). Uses Vault_Secret for the
+ * same '' on blank/unknown/Vault-absent resolution.
  *
  * @package Newspack_Intelligence
  */
@@ -39,7 +41,7 @@ trait LLM_Config {
 	/** @var string X-WPCOM-AI-Feature value, set via set_feature. */
 	protected string $feature = self::DEFAULT_FEATURE;
 
-	/** @var array<int,string> Relevance-profile lines registered via add_profile, in call order. */
+	/** @var list<string> Relevance-profile lines add_profile registered and remove_profile left, in call order. */
 	protected array $profiles = [];
 
 	/**
@@ -151,42 +153,11 @@ trait LLM_Config {
 	}
 
 	/**
-	 * `add_profile` verb handler — appends one relevance-profile line.
-	 *
-	 * @param string $args The profile line text.
-	 * @return string `ok`.
-	 * @throws \RuntimeException When the argument is blank.
-	 */
-	public function add_profile( string $args ): string {
-		$profile = \trim( $args );
-		if ( '' === $profile ) {
-			throw new \RuntimeException( 'usage: add_profile <text>' );
-		}
-		$this->profiles[] = $profile;
-		return 'ok';
-	}
-
-	/**
-	 * `add_profile` verb dispatch — resolves the patron node and delegates.
-	 * The variadic `text` tokens join into one line, so an unquoted multi-word
-	 * TSL statement reads naturally (like `echo`).
-	 *
-	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        Bound args; `text` is the profile line tokens.
-	 * @return string Result line.
-	 */
-	public static function cmd_add_profile( Command_Interpreter_Node $interpreter, array $args ): string {
-		/** @var self $patron */
-		$patron = $interpreter->patron();
-		$tokens = \array_map( static fn ( $a ) => Core::as_string( $a ), Core::arr( $args['text'] ) );
-		return $patron->add_profile( \implode( ' ', $tokens ) );
-	}
-
-	/**
 	 * Emit the base config plus round-trippable `command_node {name}:config …` lines for
 	 * every explicitly-set or non-default verb (a pinned value survives a
-	 * future default bump). Args go through serialize_args (the serialization
-	 * anchor) so a multi-word profile re-tokenizes as ONE argument.
+	 * future default bump), then one `add_profile` line per profile through
+	 * `dump_lists()`. Args go through serialize_args (the serialization anchor)
+	 * so a multi-word profile re-tokenizes as ONE argument.
 	 */
 	public function dump_config(): string {
 		$out = parent::dump_config();
@@ -202,14 +173,11 @@ trait LLM_Config {
 		if ( isset( $this->llm_set['set_feature'] ) || self::DEFAULT_FEATURE !== $this->feature ) {
 			$out .= $this->config_line( 'set_feature', $this->feature );
 		}
-		foreach ( $this->profiles as $profile ) {
-			$out .= $this->config_line( 'add_profile', $profile );
-		}
-		return $out;
+		return $out . $this->dump_lists();
 	}
 
 	/**
-	 * node_schema()['commands'] entries for the five LLM-config verbs. A using
+	 * node_schema()['commands'] entries for the six LLM-config verbs. A using
 	 * class merges this into its own commands list.
 	 *
 	 * @return array<int,array<string,mixed>>
@@ -248,15 +216,7 @@ trait LLM_Config {
 				],
 				'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_set_feature( $interpreter, $args ),
 			],
-			[
-				'name'        => 'add_profile',
-				'description' => 'Add a relevance-profile line used to score/compose items: <text>.',
-				'args'        => [
-					[ 'name' => 'text', 'type' => 'string', 'required' => true, 'variadic' => true ],
-				],
-				'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_add_profile( $interpreter, $args ),
-				'multiple'    => true,
-			],
+			...self::list_verbs( 'profile', 'profiles', [ 'name' => 'text', 'type' => 'string', 'required' => true, 'variadic' => true ], 'Add a relevance-profile line used to score/compose items: <text>.' ),
 		];
 	}
 }

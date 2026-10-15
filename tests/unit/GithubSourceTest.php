@@ -131,7 +131,7 @@ final class GithubSourceTest extends TestCase {
 
 		$node = new Github_Source_Node();
 		$node->name( 'github' );
-		$node->add_repo( 'owner/repo' );
+		$node->interpreter()->dispatch( 'add_repo', [ 'owner/repo' ] );
 		$node->set_vault_id( 'gh-creds' );
 		$node->sink( new Capture_Sink_Node() );
 		$message                   = Message::new_message();
@@ -148,17 +148,17 @@ final class GithubSourceTest extends TestCase {
 		$node = new Github_Source_Node();
 		$node->name( 'github' );
 
-		$this->expectException( \RuntimeException::class );
-		$this->expectExceptionMessage( 'usage: add_repo <owner/name>' );
-		$node->add_repo( '   ' );
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'usage: add_repo <repo>' );
+		$node->interpreter()->dispatch( 'add_repo', [ '   ' ] );
 	}
 
 	public function test_add_repo_accumulates_ordered_repos_into_config(): void {
 		$node = new Github_Source_Node();
 		$node->name( 'github' );
 
-		$this->assertSame( 'ok', $node->add_repo( 'owner/repo-a' ) );
-		$this->assertSame( 'ok', $node->add_repo( 'owner/repo-b' ) );
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_repo', [ 'owner/repo-a' ] ) );
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_repo', [ 'owner/repo-b' ] ) );
 
 		$this->assertSame( [ 'owner/repo-a', 'owner/repo-b' ], $this->config_of( $node )['repos'] );
 	}
@@ -183,8 +183,8 @@ final class GithubSourceTest extends TestCase {
 	public function test_dump_config_re_emits_add_repo_and_set_vault_id(): void {
 		$node = new Github_Source_Node();
 		$node->name( 'github' );
-		$node->add_repo( 'owner/repo-a' );
-		$node->add_repo( 'owner/repo-b' );
+		$node->interpreter()->dispatch( 'add_repo', [ 'owner/repo-a' ] );
+		$node->interpreter()->dispatch( 'add_repo', [ 'owner/repo-b' ] );
 		$node->set_vault_id( 'gh-creds' );
 
 		$dump = $node->dump_config();
@@ -205,6 +205,59 @@ final class GithubSourceTest extends TestCase {
 		$this->assertContains( 'set_vault_id', $verb_names );
 		$vault_id_verb = $schema['commands'][ \array_search( 'set_vault_id', $verb_names, true ) ];
 		$this->assertSame( 'vault_id', $vault_id_verb['args'][0]['type'] );
+	}
+
+	public function test_remove_repo_stops_fetching_it_and_keeps_the_rest(): void {
+		$captured = [];
+		Github_Source_Node::$http_get = static function ( string $url, array $args ) use ( &$captured ): array {
+			$captured[] = $url;
+			return [ 'response' => [ 'code' => 200 ], 'body' => '[]' ];
+		};
+		$node = new Github_Source_Node();
+		$node->name( 'github' );
+		$node->interpreter()->dispatch( 'add_repo', [ 'acme/heron-repo' ] );
+		$node->interpreter()->dispatch( 'add_repo', [ 'acme/kite-repo' ] );
+
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'remove_repo', [ 'acme/heron-repo' ] ) );
+		$node->sink( new Capture_Sink_Node() );
+		$message                   = Message::new_message();
+		$message[ Message::TYPE ]  = Message::TM_REQUEST;
+		$message[ Message::VALUE ] = 'TICK';
+		$node->fill( $message );
+
+		$this->assertCount( 3, $captured );
+		$this->assertSame( [], \array_filter( $captured, static fn ( string $url ): bool => \str_contains( $url, 'heron-repo' ) ) );
+	}
+
+	public function test_remove_repo_naming_no_repo_is_refused_naming_it(): void {
+		$node = new Github_Source_Node();
+		$node->name( 'github' );
+		$node->interpreter()->dispatch( 'add_repo', [ 'acme/kite-repo' ] );
+
+		try {
+			$node->interpreter()->dispatch( 'remove_repo', [ 'acme/ghost-repo' ] );
+			$this->fail( 'an unregistered repo was removed' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( "remove_repo 'acme/ghost-repo' names no entry add_repo gave", $e->getMessage() );
+		}
+		$this->assertSame( [ 'acme/kite-repo' ], $this->config_of( $node )['repos'] );
+	}
+
+	public function test_a_removed_repo_leaves_the_dump_and_its_replay(): void {
+		$node = new Github_Source_Node();
+		$node->name( 'github' );
+		$node->interpreter()->dispatch( 'add_repo', [ 'acme/heron-repo' ] );
+		$node->interpreter()->dispatch( 'add_repo', [ 'acme/kite-repo' ] );
+		$node->interpreter()->dispatch( 'remove_repo', [ 'acme/heron-repo' ] );
+
+		$dump = $node->dump_config();
+		$this->assertStringNotContainsString( 'heron-repo', $dump );
+
+		\Newspack_Nodes\Core::reset();
+		$replayed = new Github_Source_Node();
+		$replayed->name( 'github' );
+		$this->replay_config( $dump, $replayed );
+		$this->assertSame( [ 'acme/kite-repo' ], $this->config_of( $replayed )['repos'] );
 	}
 
 	/** config() is protected — read it via reflection, matching SettingsSyncNodeTest's registry-access pattern. */

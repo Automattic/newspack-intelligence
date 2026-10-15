@@ -160,7 +160,7 @@ final class SummarizerLlmTest extends TestCase {
 		$this->assertSame( 'Transform', $schema['category'] );
 		$this->assertSame( [], $schema['arguments'] );
 		$this->assertSame(
-			[ 'set_api_url', 'set_vault_id', 'set_model', 'set_feature', 'add_profile' ],
+			[ 'set_api_url', 'set_vault_id', 'set_model', 'set_feature', 'add_profile', 'remove_profile' ],
 			\array_column( $schema['commands'], 'name' )
 		);
 		$this->assertTrue( $schema['accepts_fill'] );
@@ -187,7 +187,7 @@ final class SummarizerLlmTest extends TestCase {
 		$node->set_vault_id( 'ai-vault' );
 		$node->set_model( 'own-model' );
 		$node->set_feature( 'own-feature' );
-		$node->add_profile( 'Engineering audience' );
+		$node->interpreter()->dispatch( 'add_profile', [ 'Engineering audience' ] );
 		$node->sink( new Capture_Sink_Node() );
 
 		$message  = $this->struct( [ 'source' => 'github', 'id' => 'g#1', 'title' => 'T', 'body' => 'B' ] );
