@@ -37,7 +37,7 @@ class Github_Source_Node extends Source_Node {
 	 */
 	public static ?\Closure $http_get = null;
 
-	/** @var array<int,string> Repos (owner/name) registered via the `add_repo` verb, in call order. */
+	/** @var list<string> Repos (owner/name) the `add_repo` verb registered and `remove_repo` left, in call order. */
 	protected array $repos = [];
 
 	/** @var string Vault entry ID registered via the `set_vault_id` verb; resolved to the raw token at config() time. */
@@ -182,35 +182,6 @@ class Github_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * `add_repo` verb handler — appends one owner/name repo to the registered list.
-	 *
-	 * @param string $args The repo, `owner/name`.
-	 * @return string `ok`.
-	 * @throws \RuntimeException When the argument is blank.
-	 */
-	public function add_repo( string $args ): string {
-		$repo = \trim( $args );
-		if ( '' === $repo ) {
-			throw new \RuntimeException( 'usage: add_repo <owner/name>' );
-		}
-		$this->repos[] = $repo;
-		return 'ok';
-	}
-
-	/**
-	 * `add_repo` verb dispatch — resolves the patron node and delegates.
-	 *
-	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        Bound args; `repo` is `owner/name`.
-	 * @return string Result line.
-	 */
-	public static function cmd_add_repo( Command_Interpreter_Node $interpreter, array $args ): string {
-		/** @var self $patron */
-		$patron = $interpreter->patron();
-		return $patron->add_repo( Core::as_string( $args['repo'] ) );
-	}
-
-	/**
 	 * `set_vault_id` verb handler — last-write-wins.
 	 *
 	 * @param string $args The Vault entry ID.
@@ -236,10 +207,7 @@ class Github_Source_Node extends Source_Node {
 
 	/** Emit the base config plus round-trippable `command_node {name}:config add_repo …` / `set_vault_id …` lines. */
 	public function dump_config(): string {
-		$out = parent::dump_config();
-		foreach ( $this->repos as $repo ) {
-			$out .= $this->config_line( 'add_repo', $repo );
-		}
+		$out = parent::dump_config() . $this->dump_lists();
 		if ( '' !== $this->vault_id ) {
 			$out .= $this->config_line( 'set_vault_id', $this->vault_id );
 		}
@@ -254,15 +222,7 @@ class Github_Source_Node extends Source_Node {
 			),
 			[
 				'commands' => [
-					[
-						'name'        => 'add_repo',
-						'description' => 'Register a repo to fetch on TICK: <owner/name>.',
-						'args'        => [
-							[ 'name' => 'repo', 'type' => 'string', 'required' => true ],
-						],
-						'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_add_repo( $interpreter, $args ),
-						'multiple'    => true,
-					],
+					...self::list_verbs( 'repo', 'repos', [ 'name' => 'repo', 'type' => 'string', 'required' => true ], 'Register a repo to fetch on TICK: <owner/name>.' ),
 					[
 						'name'        => 'set_vault_id',
 						'description' => 'Set the Vault entry ID to resolve the GitHub token from: <vault_id>.',

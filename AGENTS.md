@@ -80,8 +80,12 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.107.0' )` and stays
-dormant below it. 2.107.0 is `dl_remove`, which the bundled Triage view sends
+error.** The loader calls `Bootstrap::version_at_least( '2.110.0' )` and stays
+dormant below it. 2.110.0 is `Schema_Reflection::list_verbs()`, the declarative
+list verb kind that gives `add_repo`, `add_url` and `add_profile` their handlers,
+their `remove_repo`, `remove_url` and `remove_profile` twins and their dump
+lines; an older substrate lacks it, and every node carrying one fatals on its
+first schema read. 2.107.0 is `dl_remove`, which the bundled Triage view sends
 to clear a dead-letter record; an older substrate refuses it as an unknown
 verb. 2.106.0 is `dump_metadata -o`, which the bundled topology
 console asks for an owner's sidecars; an older substrate answers it with an
@@ -320,9 +324,9 @@ substrate. This plugin adds:
 
 | Type | Class | Runtime triggers and verbs |
 |------|-------|----------------------------|
-| `Github_Source` | `Github_Source_Node` | `TICK`; `add_repo`, `set_vault_id` |
+| `Github_Source` | `Github_Source_Node` | `TICK`; `add_repo`, `remove_repo`, `set_vault_id` |
 | `Linear_Source` | `Linear_Source_Node` | `TICK`; `set_vault_id` |
-| `Feed_Source` | `Feed_Source_Node` | `TICK`; `add_url` |
+| `Feed_Source` | `Feed_Source_Node` | `TICK`; `add_url`, `remove_url` |
 | `Summarizer` | `Summarizer_Node` | the `LLM_Config` verbs |
 | `Scorer` | `Scorer_Node` | none |
 | `Digest_Builder` | `Digest_Builder_Node` | `RESET`, `REGENERATE`; the `LLM_Config` verbs |
@@ -330,8 +334,10 @@ substrate. This plugin adds:
 | `Insights_CI` | `Insights_CI_Node` | `counts`, `top`, `accumulated`, `generate`, `collect` |
 
 The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model`,
-`set_feature` and `add_profile`; every node carrying the trait also re-emits its
-state through `dump_config()`. `Digest_Builder` takes two positional arguments,
+`set_feature`, `add_profile` and `remove_profile`; every node carrying the trait
+also re-emits its state through `dump_config()`. Each `remove_*` takes its `add_*`'s
+argument, drops the first identical entry and is refused when none is, so a
+duplicate added twice is removed once per `remove_*`. `Digest_Builder` takes two positional arguments,
 the ingest Partition `RESET` fences and the `total` source count, both required.
 That total MUST equal the number of names in `Insights_CI_Node::SOURCE_NODES`:
 above it a collect never completes, and below it the digest composes before

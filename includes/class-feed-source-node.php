@@ -13,9 +13,6 @@
 
 namespace Newspack_Intelligence;
 
-use Newspack_Nodes\Command_Interpreter_Node;
-use Newspack_Nodes\Core;
-
 \defined( 'ABSPATH' ) || exit;
 
 class Feed_Source_Node extends Source_Node {
@@ -36,7 +33,7 @@ class Feed_Source_Node extends Source_Node {
 	 */
 	public static ?\Closure $http_get = null;
 
-	/** @var array<int,string> Feed URLs registered via the `add_url` verb, in call order. */
+	/** @var list<string> Feed URLs the `add_url` verb registered and `remove_url` left, in call order. */
 	protected array $urls = [];
 
 	/**
@@ -179,42 +176,9 @@ class Feed_Source_Node extends Source_Node {
 		return [ 'feeds' => $this->urls ];
 	}
 
-	/**
-	 * `add_url` verb handler — appends one feed URL to the registered list.
-	 *
-	 * @param string $args The feed URL.
-	 * @return string `ok`.
-	 * @throws \RuntimeException When the argument is blank.
-	 */
-	public function add_url( string $args ): string {
-		$url = \trim( $args );
-		if ( '' === $url ) {
-			throw new \RuntimeException( 'usage: add_url <url>' );
-		}
-		$this->urls[] = $url;
-		return 'ok';
-	}
-
-	/**
-	 * `add_url` verb dispatch — resolves the patron node and delegates.
-	 *
-	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        Bound args; `url` is the feed URL.
-	 * @return string Result line.
-	 */
-	public static function cmd_add_url( Command_Interpreter_Node $interpreter, array $args ): string {
-		/** @var self $patron */
-		$patron = $interpreter->patron();
-		return $patron->add_url( Core::as_string( $args['url'] ) );
-	}
-
 	/** Emit the base config plus one round-trippable `command_node {name}:config add_url …` per registered URL. */
 	public function dump_config(): string {
-		$out = parent::dump_config();
-		foreach ( $this->urls as $url ) {
-			$out .= $this->config_line( 'add_url', $url );
-		}
-		return $out;
+		return parent::dump_config() . $this->dump_lists();
 	}
 
 	public static function node_schema(): array {
@@ -225,15 +189,7 @@ class Feed_Source_Node extends Source_Node {
 			),
 			[
 				'commands' => [
-					[
-						'name'        => 'add_url',
-						'description' => 'Register a feed URL to fetch on TICK: <url>.',
-						'args'        => [
-							[ 'name' => 'url', 'type' => 'string', 'required' => true ],
-						],
-						'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_add_url( $interpreter, $args ),
-						'multiple'    => true,
-					],
+					...self::list_verbs( 'url', 'urls', [ 'name' => 'url', 'type' => 'string', 'required' => true ], 'Register a feed URL to fetch on TICK: <url>.' ),
 				],
 			]
 		);

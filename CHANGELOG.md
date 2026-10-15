@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`remove_repo`, `remove_url` and `remove_profile`,** each undoing one `add_repo`, `add_url` or `add_profile`: it takes the add's argument, drops the first identical entry from what the node fetches or scores against and from its `dump_config()`, and is refused, naming the entry, when none matches. The three pairs are declared through the substrate's `Schema_Reflection::list_verbs()`, which replaces their hand-written handlers and dump loops.
+
+### Changed
+
+- **Requires newspack-nodes 2.110.0,** the release carrying `Schema_Reflection::list_verbs()`; below it the plugin stays dormant.
+- **`add_repo`, `add_url` and `add_profile` answer `ok` with a trailing newline,** as every declarative verb does, and refuse a blank argument with `InvalidArgumentException`; `add_repo`'s refusal reads `usage: add_repo <repo>`.
+
 ## [0.15.5] - 2026-10-14
 
 ### Changed

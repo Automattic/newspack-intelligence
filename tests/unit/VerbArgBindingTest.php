@@ -33,8 +33,8 @@ final class VerbArgBindingTest extends TestCase {
 		$node    = new Feed_Source_Node();
 		$sibling = $this->sibling( $node, 'feed' );
 
-		$this->assertSame( 'ok', $sibling->dispatch( 'add_url', [ 'https://pos.test/a.xml' ] ) );
-		$this->assertSame( 'ok', $sibling->dispatch( 'add_url', [ '--url=https://named.test/b.xml' ] ) );
+		$this->assertSame( "ok\n", $sibling->dispatch( 'add_url', [ 'https://pos.test/a.xml' ] ) );
+		$this->assertSame( "ok\n", $sibling->dispatch( 'add_url', [ '--url=https://named.test/b.xml' ] ) );
 
 		$this->assertSame(
 			[ 'https://pos.test/a.xml', 'https://named.test/b.xml' ],

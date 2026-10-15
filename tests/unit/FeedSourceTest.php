@@ -197,7 +197,7 @@ XML;
 
 		$node = new Feed_Source_Node();
 		$node->name( 'feed' );
-		$node->add_url( 'https://example.com/feed.xml' );
+		$node->interpreter()->dispatch( 'add_url', [ 'https://example.com/feed.xml' ] );
 		$node->sink( new Capture_Sink_Node() );
 		$message                   = Message::new_message();
 		$message[ Message::TYPE ]  = Message::TM_REQUEST;
@@ -213,17 +213,17 @@ XML;
 		$node = new Feed_Source_Node();
 		$node->name( 'feed' );
 
-		$this->expectException( \RuntimeException::class );
+		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'usage: add_url <url>' );
-		$node->add_url( '   ' );
+		$node->interpreter()->dispatch( 'add_url', [ '   ' ] );
 	}
 
 	public function test_add_url_accumulates_ordered_urls_into_config(): void {
 		$node = new Feed_Source_Node();
 		$node->name( 'feed' );
 
-		$this->assertSame( 'ok', $node->add_url( 'https://example.com/a.xml' ) );
-		$this->assertSame( 'ok', $node->add_url( 'https://example.com/b.xml' ) );
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_url', [ 'https://example.com/a.xml' ] ) );
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_url', [ 'https://example.com/b.xml' ] ) );
 
 		$this->assertSame(
 			[ 'https://example.com/a.xml', 'https://example.com/b.xml' ],
@@ -234,8 +234,8 @@ XML;
 	public function test_dump_config_re_emits_add_url_lines_in_order(): void {
 		$node = new Feed_Source_Node();
 		$node->name( 'feed' );
-		$node->add_url( 'https://example.com/a.xml' );
-		$node->add_url( 'https://example.com/b.xml' );
+		$node->interpreter()->dispatch( 'add_url', [ 'https://example.com/a.xml' ] );
+		$node->interpreter()->dispatch( 'add_url', [ 'https://example.com/b.xml' ] );
 
 		$dump = $node->dump_config();
 		$this->assertStringContainsString( 'command_node feed:config add_url https://example.com/a.xml', $dump );
@@ -251,7 +251,7 @@ XML;
 
 		$result = $sibling->dispatch( 'add_url', [ 'https://example.com/c.xml' ] );
 
-		$this->assertSame( 'ok', $result );
+		$this->assertSame( "ok\n", $result );
 		$this->assertSame( [ 'https://example.com/c.xml' ], $this->config_of( $node )['feeds'] );
 	}
 
@@ -263,6 +263,58 @@ XML;
 		$this->assertSame( 'TICK', $schema['requests'][0]['name'] );
 		$this->assertStringContainsString( 'RSS 2.0 / Atom', $schema['description'] );
 		$this->assertContains( 'add_url', \array_column( $schema['commands'], 'name' ) );
+	}
+
+	public function test_remove_url_stops_fetching_it_and_keeps_the_rest(): void {
+		$captured = [];
+		Feed_Source_Node::$http_get = static function ( string $url, array $args ) use ( &$captured ): array {
+			$captured[] = $url;
+			return [ 'response' => [ 'code' => 200 ], 'body' => self::RSS ];
+		};
+		$node = new Feed_Source_Node();
+		$node->name( 'feed' );
+		$node->interpreter()->dispatch( 'add_url', [ 'https://heron.test/feed.xml' ] );
+		$node->interpreter()->dispatch( 'add_url', [ 'https://kite.test/feed.xml' ] );
+
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'remove_url', [ 'https://heron.test/feed.xml' ] ) );
+		$node->sink( new Capture_Sink_Node() );
+		$message                   = Message::new_message();
+		$message[ Message::TYPE ]  = Message::TM_REQUEST;
+		$message[ Message::VALUE ] = 'TICK';
+		$node->fill( $message );
+
+		$this->assertSame( [ 'https://kite.test/feed.xml' ], $captured );
+	}
+
+	public function test_remove_url_naming_no_url_is_refused_naming_it(): void {
+		$node = new Feed_Source_Node();
+		$node->name( 'feed' );
+		$node->interpreter()->dispatch( 'add_url', [ 'https://kite.test/feed.xml' ] );
+
+		try {
+			$node->interpreter()->dispatch( 'remove_url', [ 'https://ghost.test/feed.xml' ] );
+			$this->fail( 'an unregistered url was removed' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( "remove_url 'https://ghost.test/feed.xml' names no entry add_url gave", $e->getMessage() );
+		}
+		$this->assertSame( [ 'https://kite.test/feed.xml' ], $this->config_of( $node )['feeds'] );
+	}
+
+	public function test_a_removed_url_leaves_the_dump_and_its_replay(): void {
+		$node = new Feed_Source_Node();
+		$node->name( 'feed' );
+		$node->interpreter()->dispatch( 'add_url', [ 'https://heron.test/feed.xml' ] );
+		$node->interpreter()->dispatch( 'add_url', [ 'https://kite.test/feed.xml' ] );
+		$node->interpreter()->dispatch( 'remove_url', [ 'https://heron.test/feed.xml' ] );
+
+		$dump = $node->dump_config();
+		$this->assertStringNotContainsString( 'heron.test', $dump );
+
+		\Newspack_Nodes\Core::reset();
+		$replayed = new Feed_Source_Node();
+		$replayed->name( 'feed' );
+		$this->replay_config( $dump, $replayed );
+		$this->assertSame( [ 'https://kite.test/feed.xml' ], $this->config_of( $replayed )['feeds'] );
 	}
 
 	/** config() is protected — read it via reflection, matching SettingsSyncNodeTest's registry-access pattern. */

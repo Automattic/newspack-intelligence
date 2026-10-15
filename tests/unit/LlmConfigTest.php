@@ -8,6 +8,7 @@ use Newspack_Intelligence\LLM_Config;
 use Newspack_Intelligence\Proxy_LLM_Client;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Node;
+use Newspack_Nodes\Schema_Reflection;
 use Newspack_Nodes\Tests\TestCase;
 use Newspack_Nodes\Vault;
 
@@ -18,10 +19,20 @@ final class LlmConfigTest extends TestCase {
 		Vault::get_instance()->reset_cache();
 	}
 
-	/** Anonymous Node fixture exposing the trait's protected seams publicly, mirroring VaultSecretTest's pattern. */
+	/** Anonymous Node fixture exposing the trait's protected seams publicly, wired as Summarizer_Node is. */
 	private function fixture(): object {
 		return new class() extends Node {
+			use Schema_Reflection;
 			use LLM_Config;
+
+			public function __construct() {
+				parent::__construct();
+				$this->auto_wire_interpreter();
+			}
+
+			public static function node_schema(): array {
+				return [ 'commands' => self::llm_config_commands() ];
+			}
 
 			public function api_url(): string {
 				return $this->api_url;
@@ -90,17 +101,64 @@ final class LlmConfigTest extends TestCase {
 	public function test_add_profile_appends_and_joins_with_newline(): void {
 		$node = $this->fixture();
 
-		$this->assertSame( 'ok', $node->add_profile( 'Engineering' ) );
-		$this->assertSame( 'ok', $node->add_profile( 'Product' ) );
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_profile', [ 'Engineering' ] ) );
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_profile', [ 'Product' ] ) );
 		$this->assertSame( "Engineering\nProduct", $node->profile() );
 	}
 
 	public function test_add_profile_rejects_blank_text(): void {
 		$node = $this->fixture();
 
-		$caught = $this->caught( fn () => $node->add_profile( '   ' ), 'add_profile accepted blank text' );
+		$caught = $this->caught_any( fn () => $node->interpreter()->dispatch( 'add_profile', [ '   ' ] ) );
+		$this->assertInstanceOf( \InvalidArgumentException::class, $caught );
 		$this->assertSame( 'usage: add_profile <text>', $caught->getMessage() );
 		$this->assertSame( '', $node->profile() );
+	}
+
+	public function test_remove_profile_drops_it_from_the_relevance_profile(): void {
+		$node = $this->fixture();
+		$node->interpreter()->dispatch( 'add_profile', [ 'Cover', 'heron', 'migrations.' ] );
+		$node->interpreter()->dispatch( 'add_profile', [ 'Skip kite trivia.' ] );
+
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'remove_profile', [ 'Cover', 'heron', 'migrations.' ] ) );
+
+		$this->assertSame( 'Skip kite trivia.', $node->profile() );
+	}
+
+	public function test_remove_profile_naming_no_profile_is_refused_naming_it(): void {
+		$node = $this->fixture();
+		$node->interpreter()->dispatch( 'add_profile', [ 'Skip kite trivia.' ] );
+
+		$caught = $this->caught_any( fn () => $node->interpreter()->dispatch( 'remove_profile', [ '--text=Cover ghosts.' ] ) );
+
+		$this->assertInstanceOf( \InvalidArgumentException::class, $caught );
+		$this->assertSame( "remove_profile 'Cover ghosts.' names no entry add_profile gave", $caught->getMessage() );
+		$this->assertSame( 'Skip kite trivia.', $node->profile() );
+	}
+
+	public function test_a_removed_profile_leaves_the_dump_and_its_replay(): void {
+		$node = $this->fixture();
+		$node->name( 'llmnode' );
+		$node->interpreter()->dispatch( 'add_profile', [ 'Cover heron migrations.' ] );
+		$node->interpreter()->dispatch( 'add_profile', [ 'Skip kite trivia.' ] );
+		$node->interpreter()->dispatch( 'remove_profile', [ 'Cover heron migrations.' ] );
+
+		$dump = $node->dump_config();
+		$this->assertStringNotContainsString( 'heron', $dump );
+
+		$replayed = $this->fixture();
+		$this->replay_config( $dump, $replayed );
+		$this->assertSame( 'Skip kite trivia.', $replayed->profile() );
+	}
+
+	/** What $fn threw, whatever its class; the test fails when it throws nothing. */
+	private function caught_any( callable $fn ): \Throwable {
+		try {
+			$fn();
+		} catch ( \Throwable $e ) {
+			return $e;
+		}
+		$this->fail( 'nothing was refused' );
 	}
 
 	public function test_make_llm_client_returns_configured_client_when_vault_resolves(): void {
@@ -136,8 +194,8 @@ final class LlmConfigTest extends TestCase {
 		$node->set_vault_id( 'ai-vault' );
 		$node->set_model( 'gpt-5' );
 		$node->set_feature( 'my-feature' );
-		$node->add_profile( 'Engineering' );
-		$node->add_profile( 'Product' );
+		$node->interpreter()->dispatch( 'add_profile', [ 'Engineering' ] );
+		$node->interpreter()->dispatch( 'add_profile', [ 'Product' ] );
 
 		$dump = $node->dump_config();
 
@@ -205,24 +263,24 @@ final class LlmConfigTest extends TestCase {
 		$this->assertSame( 'my-feature', $node->feature() );
 	}
 
-	public function test_cmd_add_profile_delegates_to_patron(): void {
+	public function test_the_add_profile_handler_delegates_to_patron(): void {
 		$node = $this->fixture();
 
-		$result = $node::cmd_add_profile( $this->interpreter_for( $node ), [ 'text' => [ 'Engineering' ] ] );
+		$result = $node->interpreter()->commands()['add_profile']( $this->interpreter_for( $node ), [ 'text' => [ 'Engineering' ] ] );
 
-		$this->assertSame( 'ok', $result );
+		$this->assertSame( "ok\n", $result );
 		$this->assertSame( 'Engineering', $node->profile() );
 	}
 
-	public function test_cmd_add_profile_joins_all_positional_tokens(): void {
+	public function test_the_add_profile_handler_joins_all_positional_tokens(): void {
 		$node = $this->fixture();
 		$node->name( 'llmnode' );
 		// An unquoted TSL line arrives as many tokens; the profile is all of them.
-		$result = $node::cmd_add_profile(
+		$result = $node->interpreter()->commands()['add_profile'](
 			$this->interpreter_for( $node ),
 			[ 'text' => [ 'Do', 'not', 'produce', 'tables.' ] ]
 		);
-		$this->assertSame( 'ok', $result );
+		$this->assertSame( "ok\n", $result );
 		$this->assertSame( 'Do not produce tables.', $node->profile() );
 	}
 
@@ -240,17 +298,18 @@ final class LlmConfigTest extends TestCase {
 	public function test_dump_config_quotes_a_multi_word_profile(): void {
 		$node = $this->fixture();
 		$node->name( 'llmnode' );
-		$node->add_profile( 'Do not produce tables.' );
+		$node->interpreter()->dispatch( 'add_profile', [ 'Do not produce tables.' ] );
 		$this->assertStringContainsString(
 			"command_node llmnode:config add_profile 'Do not produce tables.'",
 			$node->dump_config()
 		);
 	}
 
-	public function test_cmd_add_profile_propagates_the_patron_refusal(): void {
+	public function test_the_add_profile_handler_refuses_blank_text(): void {
 		$node = $this->fixture();
 
-		$caught = $this->caught( fn () => $node::cmd_add_profile( $this->interpreter_for( $node ), [ 'text' => [ '   ' ] ] ), 'cmd_add_profile accepted blank text' );
+		$caught = $this->caught_any( fn () => $node->interpreter()->commands()['add_profile']( $this->interpreter_for( $node ), [ 'text' => [ '   ' ] ] ) );
+		$this->assertInstanceOf( \InvalidArgumentException::class, $caught );
 		$this->assertSame( 'usage: add_profile <text>', $caught->getMessage() );
 		$this->assertSame( '', $node->profile() );
 	}
@@ -264,7 +323,7 @@ final class LlmConfigTest extends TestCase {
 		$this->assertSame( 'ok', $handlers['set_vault_id']( $interpreter, [ 'vault_id' => 'ai-vault' ] ) );
 		$this->assertSame( 'ok', $handlers['set_model']( $interpreter, [ 'model' => 'gpt-5' ] ) );
 		$this->assertSame( 'ok', $handlers['set_feature']( $interpreter, [ 'feature' => 'my-feature' ] ) );
-		$this->assertSame( 'ok', $handlers['add_profile']( $interpreter, [ 'text' => [ 'Engineering' ] ] ) );
+		$this->assertSame( "ok\n", $node->interpreter()->commands()['add_profile']( $interpreter, [ 'text' => [ 'Engineering' ] ] ) );
 
 		$this->assertSame( 'https://proxy.test/v1', $node->api_url() );
 		$this->assertSame( 'ai-vault', $node->vault_id() );
@@ -273,16 +332,17 @@ final class LlmConfigTest extends TestCase {
 		$this->assertSame( 'Engineering', $node->profile() );
 	}
 
-	public function test_llm_config_commands_declares_all_five_verbs_and_the_vault_id_type(): void {
+	public function test_llm_config_commands_declares_all_six_verbs_and_the_vault_id_type(): void {
 		$commands   = $this->fixture()::llm_config_commands();
 		$verb_names = \array_column( $commands, 'name' );
 
-		$this->assertSame( [ 'set_api_url', 'set_vault_id', 'set_model', 'set_feature', 'add_profile' ], $verb_names );
+		$this->assertSame( [ 'set_api_url', 'set_vault_id', 'set_model', 'set_feature', 'add_profile', 'remove_profile' ], $verb_names );
 
 		$vault_verb = $commands[ \array_search( 'set_vault_id', $verb_names, true ) ];
 		$this->assertSame( 'vault_id', $vault_verb['args'][0]['type'] );
 
 		$profile_verb = $commands[ \array_search( 'add_profile', $verb_names, true ) ];
 		$this->assertTrue( $profile_verb['multiple'] );
+		$this->assertSame( 'profiles', $commands[ \array_search( 'remove_profile', $verb_names, true ) ]['unlist'] );
 	}
 }
