@@ -335,9 +335,9 @@ substrate. This plugin adds:
 
 The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model`,
 `set_feature`, `add_profile` and `remove_profile`; every node carrying the trait
-also re-emits its state through `dump_config()`. Each `remove_*` takes its `add_*`'s
-argument, drops the first identical entry and is refused when none is, so a
-duplicate added twice is removed once per `remove_*`. `Digest_Builder` takes two positional arguments,
+also re-emits its state through `dump_config()`. An identical `add_*` repeat is
+a no-op, and each `remove_*` takes its `add_*`'s argument, drops that entry and
+is refused when none is. `Digest_Builder` takes two positional arguments,
 the ingest Partition `RESET` fences and the `total` source count, both required.
 That total MUST equal the number of names in `Insights_CI_Node::SOURCE_NODES`:
 above it a collect never completes, and below it the digest composes before

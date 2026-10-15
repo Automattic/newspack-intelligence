@@ -9,10 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`remove_repo`, `remove_url` and `remove_profile`,** each undoing one `add_repo`, `add_url` or `add_profile`: it takes the add's argument, drops the first identical entry from what the node fetches or scores against and from its `dump_config()`, and is refused, naming the entry, when none matches. The three pairs are declared through the substrate's `Schema_Reflection::list_verbs()`, which replaces their hand-written handlers and dump loops.
+- **`remove_repo`, `remove_url` and `remove_profile`,** each undoing one `add_repo`, `add_url` or `add_profile`: it takes the add's argument, drops that entry from what the node fetches or scores against and from its `dump_config()`, and is refused, naming the entry, when none matches (`remove_repo 'acme/ghost' names no repo this node declares`). The three pairs are declared through the substrate's `Schema_Reflection::list_verbs()`, which replaces their hand-written handlers and dump loops.
 
 ### Changed
 
+- **Rebuilt against newspack-nodes 2.110.0:** the bundled stream hooks call the page link's `addSource()`, which an older substrate's link lacks, so deploy the two together.
+- **An identical `add_repo`, `add_url` or `add_profile` repeat is a no-op,** where it added a duplicate, so one `remove_*` takes the value back and a `Vault_Group` rebuilds a child holding what its live children hold.
 - **Requires newspack-nodes 2.110.0,** the release carrying `Schema_Reflection::list_verbs()`; below it the plugin stays dormant.
 - **`add_repo`, `add_url` and `add_profile` answer `ok` with a trailing newline,** as every declarative verb does, and refuse a blank argument with `InvalidArgumentException`; `add_repo`'s refusal reads `usage: add_repo <repo>`.
 

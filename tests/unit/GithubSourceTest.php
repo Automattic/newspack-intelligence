@@ -238,7 +238,7 @@ final class GithubSourceTest extends TestCase {
 			$node->interpreter()->dispatch( 'remove_repo', [ 'acme/ghost-repo' ] );
 			$this->fail( 'an unregistered repo was removed' );
 		} catch ( \InvalidArgumentException $e ) {
-			$this->assertSame( "remove_repo 'acme/ghost-repo' names no entry add_repo gave", $e->getMessage() );
+			$this->assertSame( "remove_repo 'acme/ghost-repo' names no repo this node declares", $e->getMessage() );
 		}
 		$this->assertSame( [ 'acme/kite-repo' ], $this->config_of( $node )['repos'] );
 	}
