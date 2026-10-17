@@ -37,14 +37,14 @@ function setVisibility( state ) {
 
 // Fake transport: postBatch records each batch and echoes a reply via FROM.
 const emptyPayloads = {
-	counts: JSON.stringify( { sources: {} } ),
-	top: JSON.stringify( { top: {} } ),
-	accumulated: JSON.stringify( {
+	counts: { sources: {} },
+	top: { top: {} },
+	accumulated: {
 		accumulated: 0,
 		done: 0,
 		total: 0,
 		digest: '',
-	} ),
+	},
 };
 
 // The seam is the WIRE: the graph packs, POSTs and unpacks for real, so
@@ -174,16 +174,16 @@ describe( 'useInsightsGraph — batched poll', () => {
 
 	test( 'each slice reply routes back to its own view node and lands in its slice', async () => {
 		installWire( {
-			counts: JSON.stringify( { sources: { github: 2 } } ),
-			top: JSON.stringify( {
+			counts: { sources: { github: 2 } },
+			top: {
 				top: { github: [ { title: 'X', score: 5 } ] },
-			} ),
-			accumulated: JSON.stringify( {
+			},
+			accumulated: {
 				accumulated: 7,
 				done: 2,
 				total: 3,
 				digest: '# D',
-			} ),
+			},
 		} );
 		renderHook( () => useInsightsGraph() );
 		await act( async () => {

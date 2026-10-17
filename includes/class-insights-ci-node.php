@@ -1,8 +1,9 @@
 <?php
 /**
  * Insights_CI_Node: the dashboard's server-side read, decomposed into three slice
- * verbs — `counts`/`top`/`accumulated` — built via Service_CI_Node::slice_verb()
+ * verbs — `counts`/`top`/`accumulated` — each a shape closure as its handler,
  * over ONE memoized scored-snapshot read (mirroring the de-godded teaching example).
+ * Every verb answers a struct, which the wire encodes once.
  * The `accumulated` slice also carries the rendered digest (latest `digest:log`
  * segment) and collection progress (done/total). It keeps the action verbs
  * `generate`/`collect`, which route Regenerate / Collect to the worker's nodes over
@@ -69,13 +70,13 @@ class Insights_CI_Node extends Service_CI_Node {
 	 *
 	 * @param Command_Interpreter_Node $interpreter The request-graph interpreter (this CI).
 	 * @param string                   $base_dir    The substrate base directory (ipc/locks live under it).
+	 * @return array{collecting:int, workers:int}
+	 * @throws \RuntimeException When no worker of the topology is live.
 	 */
-	public static function collect( Command_Interpreter_Node $interpreter, string $base_dir ): string {
+	public static function collect( Command_Interpreter_Node $interpreter, string $base_dir ): array {
 		$workers = self::live_workers( $base_dir );
 		if ( [] === $workers ) {
-			return (string) \wp_json_encode(
-				[ 'error' => 'No live ' . self::TOPOLOGY . ' worker — start the workers first.' ]
-			);
+			self::refuse_no_worker();
 		}
 		$total = \count( self::SOURCE_NODES );
 		foreach ( $workers as $worker_id ) {
@@ -89,7 +90,7 @@ class Insights_CI_Node extends Service_CI_Node {
 			}
 			$out->flush();
 		}
-		return (string) \wp_json_encode( [ 'collecting' => $total, 'workers' => \count( $workers ) ] );
+		return [ 'collecting' => $total, 'workers' => \count( $workers ) ];
 	}
 
 	/**
@@ -100,13 +101,13 @@ class Insights_CI_Node extends Service_CI_Node {
 	 *
 	 * @param Command_Interpreter_Node $interpreter The request-graph interpreter (this CI).
 	 * @param string                   $base_dir    The substrate base directory (ipc/locks live under it).
+	 * @return array{regenerating:true, workers:int}
+	 * @throws \RuntimeException When no worker of the topology is live.
 	 */
-	public static function regenerate( Command_Interpreter_Node $interpreter, string $base_dir ): string {
+	public static function regenerate( Command_Interpreter_Node $interpreter, string $base_dir ): array {
 		$workers = self::live_workers( $base_dir );
 		if ( [] === $workers ) {
-			return (string) \wp_json_encode(
-				[ 'error' => 'No live ' . self::TOPOLOGY . ' worker — start the workers first.' ]
-			);
+			self::refuse_no_worker();
 		}
 		foreach ( $workers as $worker_id ) {
 			$out = self::ipc_out( $worker_id, $base_dir );
@@ -116,7 +117,7 @@ class Insights_CI_Node extends Service_CI_Node {
 			self::route_to_worker( $interpreter, $worker_id, 'digest', 'REGENERATE' );
 			$out->flush();
 		}
-		return (string) \wp_json_encode( [ 'regenerating' => true, 'workers' => \count( $workers ) ] );
+		return [ 'regenerating' => true, 'workers' => \count( $workers ) ];
 	}
 
 	/**
@@ -132,6 +133,16 @@ class Insights_CI_Node extends Service_CI_Node {
 			}
 		}
 		return $ids;
+	}
+
+	/**
+	 * Refuse a worker-routing verb: `interpret()` answers the throw as a
+	 * TM_COMMAND|TM_ERROR reply.
+	 *
+	 * @throws \RuntimeException Always.
+	 */
+	private static function refuse_no_worker(): never {
+		throw new \RuntimeException( \esc_html( 'No live ' . self::TOPOLOGY . ' worker — start the workers first.' ) );
 	}
 
 	/**
@@ -327,7 +338,7 @@ class Insights_CI_Node extends Service_CI_Node {
 	}
 
 	public static function node_schema(): array {
-		// slice_verb wraps each slice; dispatch() gates each by its role.
+		// Each slice's handler is its shape; dispatch() gates each by its role.
 		return \array_merge( parent::node_schema(), [
 			'category'    => 'Service',
 			'description' => 'Reads the scored-pipeline offsetlog snapshot + rendered digest; serves the dashboard insights slices and recomposes on demand.',
@@ -336,25 +347,25 @@ class Insights_CI_Node extends Service_CI_Node {
 					'name'        => 'counts',
 					'description' => 'Return per-source item counts: { sources: { source: count } }.',
 					'args'        => [],
-					'handler'     => self::slice_verb( static fn ( self $ci ): array => [ 'sources' => self::shape_sources( $ci->items() ) ] ),
+					'handler'     => static fn ( self $ci ): array => [ 'sources' => self::shape_sources( $ci->items() ) ],
 				],
 				[
 					'name'        => 'top',
 					'description' => 'Return the per-source top-10 items by score: { top: { source: [ { title, score } ] } }.',
 					'args'        => [],
-					'handler'     => self::slice_verb( static fn ( self $ci ): array => [ 'top' => self::top_by_source( $ci->items() ) ] ),
+					'handler'     => static fn ( self $ci ): array => [ 'top' => self::top_by_source( $ci->items() ) ],
 				],
 				[
 					'name'        => 'accumulated',
 					'description' => 'Return the total item count, collection progress, and rendered digest: { accumulated, done, total, digest }.',
 					'args'        => [],
-					'handler'     => self::slice_verb( static fn ( self $ci ): array => $ci->accumulated_slice() ),
+					'handler'     => static fn ( self $ci ): array => $ci->accumulated_slice(),
 				],
 				[
 					'name'        => 'generate',
 					'description' => 'Ask the worker to recompose the digest (TM_REQUEST REGENERATE to its digest node); the dashboard polls for the result.',
 					'args'        => [],
-					'handler'     => static function ( Command_Interpreter_Node $interpreter, array $args ): string {
+					'handler'     => static function ( Command_Interpreter_Node $interpreter, array $args ): array {
 						return self::regenerate( $interpreter, Config::get_base_directory() );
 					},
 				],
@@ -362,7 +373,7 @@ class Insights_CI_Node extends Service_CI_Node {
 					'name'        => 'collect',
 					'description' => 'RESET the digest and TICK every source to collect — the dashboard Collect button.',
 					'args'        => [],
-					'handler'     => static function ( Command_Interpreter_Node $interpreter, array $args ): string {
+					'handler'     => static function ( Command_Interpreter_Node $interpreter, array $args ): array {
 						return self::collect( $interpreter, Config::get_base_directory() );
 					},
 				],

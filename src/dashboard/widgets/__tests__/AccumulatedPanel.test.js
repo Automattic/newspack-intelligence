@@ -156,7 +156,7 @@ describe( 'AccumulatedPanel — Collect gating', () => {
 	} );
 
 	it( 'shows 0/total immediately on click even when the prior cycle was complete', async () => {
-		replyByVerb.collect = JSON.stringify( { collecting: 3, workers: 1 } );
+		replyByVerb.collect = { collecting: 3, workers: 1 };
 		renderPanel( COMPLETE );
 		expect( screen.getByText( /collected 3\/3/i ) ).toBeInTheDocument();
 		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
@@ -166,7 +166,7 @@ describe( 'AccumulatedPanel — Collect gating', () => {
 	} );
 
 	it( 'acknowledges a successful Collect and locks the button until the cycle completes', async () => {
-		replyByVerb.collect = JSON.stringify( { collecting: 3, workers: 2 } );
+		replyByVerb.collect = { collecting: 3, workers: 2 };
 		renderPanel( COMPLETE );
 		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
 		expect(
@@ -177,38 +177,22 @@ describe( 'AccumulatedPanel — Collect gating', () => {
 		).toBeDisabled();
 	} );
 
-	it( 'surfaces a no-worker error when Collect finds nothing live', async () => {
-		replyByVerb.collect = JSON.stringify( {
-			error: 'No live newspack-intelligence worker',
-		} );
+	// A REFUSAL is a reply too: the verb answered, and it answered no.
+	it( 'surfaces a refused Collect, no live worker, as an error and unlocks', async () => {
+		replyByVerb.collect = () =>
+			new Error(
+				'No live newspack-intelligence worker — start the workers first.'
+			);
 		renderPanel( COMPLETE );
 		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
 		expect( await screen.findByText( /no live/i ) ).toBeInTheDocument();
-	} );
-
-	it( 'surfaces an unexpected Collect response as an error', async () => {
-		replyByVerb.collect = 'not json';
-		renderPanel( COMPLETE );
-		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
 		expect(
-			await screen.findByText(
-				/collection returned an unexpected response/i
-			)
-		).toBeInTheDocument();
-	} );
-
-	// A REFUSAL is a reply too: the verb answered, and it answered no.
-	it( 'surfaces a refused Collect verb as an error', async () => {
-		replyByVerb.collect = () => new Error( 'collect blew up' );
-		renderPanel( COMPLETE );
-		fireEvent.click( screen.getByRole( 'button', { name: /^collect$/i } ) );
-		expect(
-			await screen.findByText( /collect blew up/i )
-		).toBeInTheDocument();
+			screen.getByRole( 'button', { name: /^collect$/i } )
+		).toBeEnabled();
 	} );
 
 	it( 'releases the Collect lock after the long safety timeout when progress never changes', async () => {
-		replyByVerb.collect = JSON.stringify( { collecting: 3, workers: 1 } );
+		replyByVerb.collect = { collecting: 3, workers: 1 };
 		// Fake the safety timeout ONLY. setInterval stays real so the graph
 		// keeps ticking and the ack actually arrives; faking it would stop the
 		// graph and pass this test for the wrong reason.
@@ -236,7 +220,7 @@ describe( 'AccumulatedPanel — Collect gating', () => {
 	}, 20000 );
 
 	it( 'auto-dismisses the "Collecting from N…" note so it does not linger forever', async () => {
-		replyByVerb.collect = JSON.stringify( { collecting: 3, workers: 1 } );
+		replyByVerb.collect = { collecting: 3, workers: 1 };
 		// Fake the dismissal ONLY; setInterval stays real so the ack arrives.
 		jest.useFakeTimers( {
 			doNotFake: [ 'setInterval', 'requestAnimationFrame' ],
@@ -276,10 +260,10 @@ describe( 'AccumulatedPanel — Regenerate', () => {
 	} );
 
 	it( 'asks the worker to regenerate and acknowledges; the shown digest stays', async () => {
-		replyByVerb.generate = JSON.stringify( {
+		replyByVerb.generate = {
 			regenerating: true,
 			workers: 1,
-		} );
+		};
 		renderPanel( COMPLETE );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: /regenerate digest/i } )
@@ -292,10 +276,11 @@ describe( 'AccumulatedPanel — Regenerate', () => {
 		).toContain( 'Sprint digest' );
 	} );
 
-	it( 'surfaces an error (and keeps the digest) when Regenerate finds no live worker', async () => {
-		replyByVerb.generate = JSON.stringify( {
-			error: 'No live newspack-intelligence worker',
-		} );
+	it( 'surfaces a refused Regenerate, no live worker, and keeps the digest', async () => {
+		replyByVerb.generate = () =>
+			new Error(
+				'No live newspack-intelligence worker — start the workers first.'
+			);
 		renderPanel( COMPLETE );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: /regenerate digest/i } )
@@ -308,31 +293,6 @@ describe( 'AccumulatedPanel — Regenerate', () => {
 		expect(
 			screen.getByTestId( 'eai-insights-preview' ).textContent
 		).toContain( 'Sprint digest' );
-	} );
-
-	it( 'surfaces an unexpected Regenerate response as an error', async () => {
-		replyByVerb.generate = 'not json';
-		renderPanel( COMPLETE );
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /regenerate digest/i } )
-		);
-		expect(
-			await screen.findByText(
-				/regeneration returned an unexpected response/i
-			)
-		).toBeInTheDocument();
-	} );
-
-	// A REFUSAL is a reply too: the verb answered, and it answered no.
-	it( 'surfaces a refused Regenerate verb as an error', async () => {
-		replyByVerb.generate = () => new Error( 'generate blew up' );
-		renderPanel( COMPLETE );
-		fireEvent.click(
-			screen.getByRole( 'button', { name: /regenerate digest/i } )
-		);
-		expect(
-			await screen.findByText( /generate blew up/i )
-		).toBeInTheDocument();
 	} );
 } );
 
@@ -422,7 +382,7 @@ describe( 'AccumulatedPanel — Copy + Create draft', () => {
 // facts about them are asserted where the click that mints them lives.
 describe( 'AccumulatedPanel — the action verbs on the wire', () => {
 	it( 'mints each verb from its OWN node, addressed rather than correlated', async () => {
-		replyByVerb.generate = JSON.stringify( { regenerating: true } );
+		replyByVerb.generate = { regenerating: true };
 		renderPanel( COMPLETE );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: /regenerate digest/i } )
@@ -457,7 +417,7 @@ describe( 'AccumulatedPanel — the action verbs on the wire', () => {
 				now: 1771000000,
 			} ) )
 		);
-		replyByVerb.generate = JSON.stringify( { regenerating: true } );
+		replyByVerb.generate = { regenerating: true };
 		renderPanel( COMPLETE );
 		act( () => {
 			fireEvent.click(

@@ -90,20 +90,20 @@ final class InsightsCITest extends TestCase {
 
 	public function test_counts_verb_returns_sources_slice_only(): void {
 		$ci      = $this->ci_with_items( self::SEED );
-		$decoded = \json_decode( (string) $ci->dispatch( 'counts' ), true );
+		$decoded = $ci->dispatch( 'counts' );
 		$this->assertSame( [ 'sources' => [ 'github' => 2, 'linear' => 1 ] ], $decoded );
 	}
 
 	public function test_top_verb_returns_per_source_top_slice_sorted_desc(): void {
 		$ci      = $this->ci_with_items( self::SEED );
-		$decoded = \json_decode( (string) $ci->dispatch( 'top' ), true );
+		$decoded = $ci->dispatch( 'top' );
 		$this->assertSame( [ 'top' ], \array_keys( $decoded ) );
 		// Per-source: github's two items, ranked desc by score.
 		$this->assertSame( [ 'github', 'linear' ], \array_keys( $decoded['top'] ) );
-		$this->assertEquals( 6.0, $decoded['top']['github'][0]['score'] );
+		$this->assertSame( 6.0, $decoded['top']['github'][0]['score'] );
 		$this->assertSame( 'Roundup Block ships', $decoded['top']['github'][0]['title'] );
-		$this->assertEquals( 5.0, $decoded['top']['github'][1]['score'] );
-		$this->assertEquals( 4.0, $decoded['top']['linear'][0]['score'] );
+		$this->assertSame( 5.0, $decoded['top']['github'][1]['score'] );
+		$this->assertSame( 4.0, $decoded['top']['linear'][0]['score'] );
 	}
 
 	public function test_top_verb_caps_each_source_at_ten(): void {
@@ -112,9 +112,9 @@ final class InsightsCITest extends TestCase {
 			$items[] = [ 'source' => 'github', 'title' => "Item $i", 'summary' => 's', 'score' => (float) $i ];
 		}
 		$ci      = $this->ci_with_items( $items );
-		$decoded = \json_decode( (string) $ci->dispatch( 'top' ), true );
+		$decoded = $ci->dispatch( 'top' );
 		$this->assertCount( 10, $decoded['top']['github'] );
-		$this->assertEquals( 24.0, $decoded['top']['github'][0]['score'] );
+		$this->assertSame( 24.0, $decoded['top']['github'][0]['score'] );
 	}
 
 	public function test_accumulated_verb_returns_count_progress_and_digest(): void {
@@ -133,7 +133,7 @@ final class InsightsCITest extends TestCase {
 		$ci = new Insights_CI_Node();
 		$ci->name( 'insights' );
 
-		$decoded = \json_decode( (string) $ci->dispatch( 'accumulated' ), true );
+		$decoded = $ci->dispatch( 'accumulated' );
 		$this->assertSame( 3, $decoded['accumulated'] );
 		$this->assertSame( 2, $decoded['done'] );
 		$this->assertSame( 3, $decoded['total'] );
@@ -142,9 +142,9 @@ final class InsightsCITest extends TestCase {
 
 	public function test_empty_snapshot_yields_empty_slices(): void {
 		$ci = $this->ci_with_items( [] );
-		$this->assertSame( [ 'sources' => [] ], \json_decode( (string) $ci->dispatch( 'counts' ), true ) );
-		$this->assertSame( [ 'top' => [] ], \json_decode( (string) $ci->dispatch( 'top' ), true ) );
-		$acc = \json_decode( (string) $ci->dispatch( 'accumulated' ), true );
+		$this->assertSame( [ 'sources' => [] ], $ci->dispatch( 'counts' ) );
+		$this->assertSame( [ 'top' => [] ], $ci->dispatch( 'top' ) );
+		$acc = $ci->dispatch( 'accumulated' );
 		$this->assertSame( 0, $acc['accumulated'] );
 		$this->assertSame( 0, $acc['done'] );
 		$this->assertSame( 0, $acc['total'] );
@@ -158,8 +158,8 @@ final class InsightsCITest extends TestCase {
 			$items[] = [ 'source' => 'github', 'title' => "Item $i " . \str_repeat( 'x', 80 ), 'summary' => 's', 'score' => (float) $i ];
 		}
 		$ci = $this->ci_with_items( $items );
-		$this->assertSame( 60, \json_decode( (string) $ci->dispatch( 'accumulated' ), true )['accumulated'] );
-		$this->assertEquals( 59.0, \json_decode( (string) $ci->dispatch( 'top' ), true )['top']['github'][0]['score'] );
+		$this->assertSame( 60, $ci->dispatch( 'accumulated' )['accumulated'] );
+		$this->assertSame( 59.0, $ci->dispatch( 'top' )['top']['github'][0]['score'] );
 	}
 
 	public function test_three_verbs_share_one_memoized_read(): void {
@@ -275,19 +275,18 @@ final class InsightsCITest extends TestCase {
 		);
 	}
 
-	public function test_collect_errors_when_no_worker_is_live(): void {
+	public function test_collect_throws_when_no_worker_is_live(): void {
 		$base   = $this->make_temp_dir( 'insights-ci-nocollect-' );
-		$result = Insights_CI_Node::collect( new Command_Interpreter_Node(), $base );
-		$parsed = \json_decode( $result, true );
-		$this->assertIsArray( $parsed );
-		$this->assertStringContainsString( 'No live', (string) $parsed['error'] );
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'No live newspack-intelligence worker' );
+		Insights_CI_Node::collect( new Command_Interpreter_Node(), $base );
 	}
 
 	public function test_collect_appends_reset_and_tick_requests_to_each_live_worker_input(): void {
 		$base = $this->live_worker_base( 'insights-ci-collect-', 'newspack-intelligence.p4' );
 		$ci   = $this->routed_ci( 'insights-collect-7' );
 
-		$parsed = \json_decode( Insights_CI_Node::collect( $ci, $base ), true );
+		$parsed = Insights_CI_Node::collect( $ci, $base );
 
 		$this->assertSame( [ 'collecting' => 3, 'workers' => 1 ], $parsed );
 		$written = $this->worker_input( $base, 'newspack-intelligence.p4' );
@@ -298,18 +297,17 @@ final class InsightsCITest extends TestCase {
 		$this->assertSame( \array_fill( 0, 4, Message::TM_REQUEST ), \array_column( $written, Message::TYPE ) );
 	}
 
-	public function test_regenerate_errors_when_no_worker_is_live(): void {
+	public function test_regenerate_throws_when_no_worker_is_live(): void {
 		$base   = $this->make_temp_dir( 'insights-ci-noregen-' );
-		$result = Insights_CI_Node::regenerate( new Command_Interpreter_Node(), $base );
-		$parsed = \json_decode( $result, true );
-		$this->assertIsArray( $parsed );
-		$this->assertStringContainsString( 'No live', (string) $parsed['error'] );
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'No live newspack-intelligence worker' );
+		Insights_CI_Node::regenerate( new Command_Interpreter_Node(), $base );
 	}
 
 	public function test_regenerate_appends_one_request_to_the_digest_node(): void {
 		$base = $this->live_worker_base( 'insights-ci-regen-', 'newspack-intelligence.p9' );
 
-		$parsed = \json_decode( Insights_CI_Node::regenerate( $this->routed_ci( 'insights-regen-3' ), $base ), true );
+		$parsed = Insights_CI_Node::regenerate( $this->routed_ci( 'insights-regen-3' ), $base );
 
 		$this->assertSame( [ 'regenerating' => true, 'workers' => 1 ], $parsed );
 		$written = $this->worker_input( $base, 'newspack-intelligence.p9' );

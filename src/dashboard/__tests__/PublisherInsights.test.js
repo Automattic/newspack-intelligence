@@ -27,19 +27,19 @@ const DIGEST = '# Sprint digest\n\n- Big news shipped';
 
 // A fake transport: postBatch echoes a per-verb reply pivoted via FROM.
 const populated = {
-	counts: JSON.stringify( { sources: { github: 2, linear: 1 } } ),
-	top: JSON.stringify( {
+	counts: { sources: { github: 2, linear: 1 } },
+	top: {
 		top: {
 			github: [ { title: 'Big release', score: 9.5 } ],
 			linear: [ { title: 'Hot thread', score: 4 } ],
 		},
-	} ),
-	accumulated: JSON.stringify( {
+	},
+	accumulated: {
 		accumulated: 3,
 		done: 3,
 		total: 3,
 		digest: DIGEST,
-	} ),
+	},
 };
 
 // The seam is the wire; the page's graph POSTs and unpacks for real.
@@ -120,14 +120,14 @@ describe( 'PublisherInsights — render', () => {
 	it( 'shows per-slice empty states from an empty server reply', async () => {
 		await renderAndTick(
 			installWire( {
-				counts: JSON.stringify( { sources: {} } ),
-				top: JSON.stringify( { top: {} } ),
-				accumulated: JSON.stringify( {
+				counts: { sources: {} },
+				top: { top: {} },
+				accumulated: {
 					accumulated: 0,
 					done: 0,
 					total: 0,
 					digest: '',
-				} ),
+				},
 			} )
 		);
 		await waitFor( () =>
@@ -144,7 +144,7 @@ describe( 'PublisherInsights — actions flow through the real graph', () => {
 		await renderAndTick(
 			installWire( {
 				...populated,
-				generate: JSON.stringify( { regenerating: true, workers: 1 } ),
+				generate: { regenerating: true, workers: 1 },
 			} )
 		);
 		await waitFor( () =>
@@ -162,9 +162,9 @@ describe( 'PublisherInsights — actions flow through the real graph', () => {
 		await renderAndTick(
 			installWire( {
 				...populated,
-				collect: JSON.stringify( {
-					error: 'No live newspack-intelligence worker',
-				} ),
+				collect: new Error(
+					'No live newspack-intelligence worker — start the workers first.'
+				),
 			} )
 		);
 		await waitFor( () =>

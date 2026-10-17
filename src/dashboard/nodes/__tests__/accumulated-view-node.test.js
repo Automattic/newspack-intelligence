@@ -53,22 +53,20 @@ describe( 'accumulated:view — slice publish', () => {
 
 	test( 'parses an accumulated reply into the slice and publishes it', () => {
 		const v = makeView();
-		v.fill( accReply( JSON.stringify( SLICE ) ) );
+		v.fill( accReply( SLICE ) );
 		expect( v.view ).toEqual( SLICE );
 	} );
 
 	test( 'a later reply replaces the published slice', () => {
 		const v = makeView();
-		v.fill( accReply( JSON.stringify( SLICE ) ) );
+		v.fill( accReply( SLICE ) );
 		v.fill(
-			accReply(
-				JSON.stringify( {
-					accumulated: 8,
-					done: 3,
-					total: 3,
-					digest: '# New',
-				} )
-			)
+			accReply( {
+				accumulated: 8,
+				done: 3,
+				total: 3,
+				digest: '# New',
+			} )
 		);
 		expect( v.view.accumulated ).toBe( 8 );
 		expect( v.view.digest ).toBe( '# New' );
@@ -82,10 +80,10 @@ describe( 'accumulated:view — slice publish', () => {
 		expect( v.view.error ).toMatch( /acc read failed/ );
 	} );
 
-	test( 'ignores an unparseable payload (keeps the prior slice)', () => {
+	test( 'ignores a string payload (keeps the prior slice)', () => {
 		const v = makeView();
-		v.fill( accReply( JSON.stringify( SLICE ) ) );
-		v.fill( accReply( 'not json' ) );
+		v.fill( accReply( SLICE ) );
+		v.fill( accReply( JSON.stringify( { ...SLICE, accumulated: 3391 } ) ) );
 		expect( v.view ).toEqual( SLICE );
 	} );
 } );

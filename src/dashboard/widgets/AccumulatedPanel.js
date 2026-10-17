@@ -28,16 +28,6 @@ const defaultCreateDraft = ( { title, content } ) =>
 		data: { title, content, status: 'draft' },
 	} );
 
-// Parse a verb ack: {…} | {error} on success/handled-failure, null on garbage.
-function parseAck( payload ) {
-	try {
-		const parsed = JSON.parse( payload );
-		return parsed && 'object' === typeof parsed ? parsed : null;
-	} catch ( e ) {
-		return null;
-	}
-}
-
 /**
  * AccumulatedPanel — the Total items KPI + collection progress + digest/newsletter
  * card. Reads ONLY the `accumulated:view` node's slice ({ accumulated, done, total,
@@ -157,33 +147,22 @@ export function AccumulatedPanel( {
 		ci: SERVER,
 		command: 'collect',
 		onDone: ( { result, error: refusal } ) => {
-			// { collecting, workers } on success, { error } if no worker.
-			const parsed = refusal ? null : parseAck( result );
-			if ( parsed && ! parsed.error ) {
-				// Ack now, keep the lock; the effect frees it on complete.
-				setCollectNote( {
-					type: 'ok',
-					text: sprintf(
-						/* translators: %d: number of workers the collection was dispatched to. */
-						__(
-							'Collecting from %d worker(s)…',
-							'newspack-intelligence'
-						),
-						Number( parsed.workers ) || 0
-					),
-				} );
+			if ( refusal ) {
+				setCollecting( false );
+				setCollectNote( { type: 'error', text: refusal } );
 				return;
 			}
-			setCollecting( false );
+			// Ack now, keep the lock; the effect frees it on complete.
 			setCollectNote( {
-				type: 'error',
-				text:
-					refusal ||
-					( parsed?.error && String( parsed.error ) ) ||
+				type: 'ok',
+				text: sprintf(
+					/* translators: %d: number of workers the collection was dispatched to. */
 					__(
-						'Collection returned an unexpected response.',
+						'Collecting from %d worker(s)…',
 						'newspack-intelligence'
 					),
+					result.workers
+				),
 			} );
 		},
 	} );
@@ -192,27 +171,18 @@ export function AccumulatedPanel( {
 		group: GROUP,
 		ci: SERVER,
 		command: 'generate',
-		onDone: ( { result, error: refusal } ) => {
+		onDone: ( { error: refusal } ) => {
 			setGenerating( false );
-			// { regenerating, workers } on success, { error } if no worker.
-			const parsed = refusal ? null : parseAck( result );
-			if ( parsed && ! parsed.error ) {
-				// The worker is recomposing; the digest lands on the next poll.
-				setRegenNote(
-					__(
-						'Regenerating… the draft updates on the next poll.',
-						'newspack-intelligence'
-					)
-				);
+			if ( refusal ) {
+				setDraftError( refusal );
 				return;
 			}
-			setDraftError(
-				refusal ||
-					( parsed?.error && String( parsed.error ) ) ||
-					__(
-						'Regeneration returned an unexpected response.',
-						'newspack-intelligence'
-					)
+			// The worker is recomposing; the digest lands on the next poll.
+			setRegenNote(
+				__(
+					'Regenerating… the draft updates on the next poll.',
+					'newspack-intelligence'
+				)
 			);
 		},
 	} );

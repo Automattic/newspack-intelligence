@@ -7,7 +7,7 @@
  * registration runs before the graph is built. Timer/Tee/Fetcher/Tap/HttpOut
  * are runtime nodes and register themselves.
  *
- * Each verb answers a JSON body that IS the slice, so none declares a `parse`.
+ * Each verb answers a struct that IS the slice, so none declares a `parse`.
  */
 
 import { registerSliceViews } from '@newspack-nodes/shared/nodes/slice-view-node';
@@ -18,7 +18,6 @@ export const views = registerSliceViews( {
 	SourceCountsView: {
 		description: 'Owns the per-source counts slice for its React widget.',
 		empty: { sources: {} },
-		json: true,
 	},
 
 	/** `top-table:view` — score-ranked top items per source, for `<TopTable/>`. */
@@ -26,7 +25,6 @@ export const views = registerSliceViews( {
 		description:
 			'Owns the per-source top-items slice for its React widget.',
 		empty: { top: {} },
-		json: true,
 	},
 
 	/**
@@ -39,6 +37,5 @@ export const views = registerSliceViews( {
 	AccumulatedView: {
 		description: 'Owns the accumulated-digest slice for its React widget.',
 		empty: { accumulated: 0, done: 0, total: 0, digest: '' },
-		json: true,
 	},
 } );
