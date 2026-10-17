@@ -42,7 +42,7 @@ describe( 'top-table:view', () => {
 	test( 'parses a per-source top reply into the slice and publishes it', () => {
 		const v = makeView();
 		const top = { github: [ { title: 'X', score: 5 } ] };
-		v.fill( topReply( JSON.stringify( { top } ) ) );
+		v.fill( topReply( { top } ) );
 		expect( v.view ).toEqual( { top } );
 	} );
 
@@ -54,11 +54,11 @@ describe( 'top-table:view', () => {
 		expect( v.view.error ).toMatch( /top read failed/ );
 	} );
 
-	test( 'ignores an unparseable payload (keeps the prior slice)', () => {
+	test( 'ignores a string payload (keeps the prior slice)', () => {
 		const v = makeView();
 		const top = { github: [ { title: 'A', score: 1 } ] };
-		v.fill( topReply( JSON.stringify( { top } ) ) );
-		v.fill( topReply( 'not json' ) );
+		v.fill( topReply( { top } ) );
+		v.fill( topReply( JSON.stringify( { top: { tern: [] } } ) ) );
 		expect( v.view ).toEqual( { top } );
 	} );
 } );
