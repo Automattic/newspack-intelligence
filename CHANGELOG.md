@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-17
+
 ### Changed
 
 - **The Insights verbs answer structs, encoded once.** `counts`, `top` and `accumulated` answer the arrays their shape handlers return, and `collect` and `generate` answer `{ collecting, workers }` and `{ regenerating, workers }` as arrays, where each JSON-encoded its reply into a string the wire encoded again. With no live worker the two verbs refuse, throwing `No live newspack-intelligence worker — start the workers first.`, which the reply carries as a `TM_ERROR` instead of a successful `{ error }`. The dashboard's views drop the `json` flag, and `AccumulatedPanel` shows the refusal's text and reads the ack struct on success.
