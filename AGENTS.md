@@ -80,8 +80,10 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.110.0' )` and stays
-dormant below it. 2.110.0 is `Schema_Reflection::list_verbs()`, the declarative
+error.** The loader calls `Bootstrap::version_at_least( '2.115.0' )` and stays
+dormant below it. 2.115.0 is the `crt-color` skin, which the skin list bundled
+here offers and an older substrate's style handle carries no tokens for, so
+the page would draw unskinned. 2.110.0 is `Schema_Reflection::list_verbs()`, the declarative
 list verb kind that gives `add_repo`, `add_url` and `add_profile` their handlers,
 their `remove_repo`, `remove_url` and `remove_profile` twins and their dump
 lines; an older substrate lacks it, and every node carrying one fatals on its

@@ -157,11 +157,12 @@ function register_cli_commands(): void {
 		// topology console asks for an owner's sidecars; 2.107.0 is dl_remove,
 		// which the bundled Triage view sends; 2.110.0 is the trait's
 		// list_verbs(), which declares add_repo, add_url and add_profile and
-		// their remove_* twins.
+		// their remove_* twins; 2.115.0 is the crt-color skin the bundled
+		// skin list offers, which an older substrate has no tokens for.
 		// A floor set too low does not degrade: it activates, then fatals on a
 		// missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
-			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.110.0', 'Newspack Intelligence' ) ) {
+			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.115.0', 'Newspack Intelligence' ) ) {
 			return;
 		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.
