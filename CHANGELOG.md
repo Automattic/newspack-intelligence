@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-10-18
+
 ### Changed
 - **Requires newspack-nodes 2.115.0,** whose style handle carries the `crt-color` skin the bundled skin list offers; below it the plugin goes dormant behind its admin notice.
 
