@@ -7,7 +7,7 @@
  * quarantine means poison is logged and dropped. ingest:consumer and
  * scored:consumer both shipped without a dead-letter dir before this guard existed.
  *
- * The audit itself is the substrate's (it reads each node's own node_schema for the
+ * The substrate owns the audit itself (it reads each node's own node_schema for the
  * argument positions); this pins THIS plugin's topologies to it.
  *
  * @package Newspack_Intelligence

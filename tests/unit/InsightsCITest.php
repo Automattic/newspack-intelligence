@@ -259,7 +259,7 @@ final class InsightsCITest extends TestCase {
 		$base = $this->make_temp_dir( 'insights-ci-workers-' );
 		\mkdir( $base . '/locks/newspack-intelligence.p0.lock.d', 0777, true );
 		\mkdir( $base . '/locks/newspack-intelligence.p5.lock.d', 0777, true );
-		// No worker id spells a padded partition, so it is no worker's lock.
+		// No worker id spells a padded partition, so no worker owns this lock.
 		\mkdir( $base . '/locks/newspack-intelligence.p03.lock.d', 0777, true );
 		// The pre-split topology name (`newspack-ai-newsletter`) must NO LONGER be
 		// recognized as a live worker — kept verbatim as a negative fixture.
