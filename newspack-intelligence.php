@@ -131,7 +131,7 @@ function register_cli_commands(): void {
 	\WP_CLI::add_command( 'newspack-intelligence clients', '\\Newspack_Intelligence\\CLI\\Clients_CLI_Command' );
 }
 
-// Load after newspack-nodes (its deferred loader runs at plugins_loaded:11).
+// newspack-nodes loads after this file, so wiring waits for plugins_loaded.
 \add_action(
 	'plugins_loaded',
 	static function (): void {
