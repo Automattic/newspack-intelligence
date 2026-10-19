@@ -29,7 +29,7 @@ import PublisherInsightsPage from '../PublisherInsightsPage';
 beforeEach( () => {
 	Core.reset();
 	// The mount poll reaches the wire; answer it rather than letting the POST
-	// fail, which now routes a TM_ERROR back and re-renders outside act().
+	// fail, which routes a TM_ERROR back and re-renders outside act().
 	installFakeCommandWire( () => null );
 } );
 

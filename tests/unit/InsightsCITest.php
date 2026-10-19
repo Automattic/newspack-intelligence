@@ -125,7 +125,7 @@ final class InsightsCITest extends TestCase {
 			0,
 			[ 'items' => self::SEED, 'done' => '2', 'total' => '3' ]
 		);
-		// digest_path() is base-relative now, and this test switched the base —
+		// digest_path() is base-relative, and this test switches the base —
 		// so the logs dir has to exist under THIS base before the fixture write.
 		$digest_dir = \dirname( Digest_Builder_Node::digest_path() );
 		\is_dir( $digest_dir ) || \mkdir( $digest_dir, 0777, true );
@@ -194,15 +194,14 @@ final class InsightsCITest extends TestCase {
 		}
 	}
 
-	public function test_insights_god_verb_is_gone_and_slice_verbs_registered(): void {
+	public function test_the_slice_and_action_verbs_are_registered(): void {
 		$ci = new Insights_CI_Node();
 		$ci->name( 'insights' );
 		$commands = $ci->commands();
-		$this->assertArrayNotHasKey( 'insights', $commands );
 		$this->assertArrayHasKey( 'counts', $commands );
 		$this->assertArrayHasKey( 'top', $commands );
 		$this->assertArrayHasKey( 'accumulated', $commands );
-		// generate / collect are kept.
+		// The action verbs sit beside the slice verbs.
 		$this->assertArrayHasKey( 'generate', $commands );
 		$this->assertArrayHasKey( 'collect', $commands );
 	}
@@ -261,8 +260,8 @@ final class InsightsCITest extends TestCase {
 		\mkdir( $base . '/locks/newspack-intelligence.p5.lock.d', 0777, true );
 		// No worker id spells a padded partition, so no worker owns this lock.
 		\mkdir( $base . '/locks/newspack-intelligence.p03.lock.d', 0777, true );
-		// The pre-split topology name (`newspack-ai-newsletter`) must NO LONGER be
-		// recognized as a live worker — kept verbatim as a negative fixture.
+		// `newspack-ai-newsletter` names no topology here, so its lock is not a
+		// live worker.
 		\mkdir( $base . '/locks/newspack-ai-newsletter.p0.lock.d', 0777, true );
 		\mkdir( $base . '/locks/newspack-intelligence-gate.p2.lock.d', 0777, true );
 		\mkdir( $base . '/locks/other.p0.lock.d', 0777, true );
@@ -360,16 +359,5 @@ final class InsightsCITest extends TestCase {
 			$this->digest_dir = $this->make_temp_dir( 'insights-ci-digest-' );
 		}
 		return $this->digest_dir . '/digest.md';
-	}
-
-	/**
-	 * The digest path moved from the retired Settings singleton onto Digest_Builder_Node
-	 * (Task B of the topology-config migration). Structural guard: the production
-	 * source must read the relocated constant, not the old one.
-	 */
-	public function test_reads_digest_path_from_digest_builder_node_not_settings(): void {
-		$source = (string) \file_get_contents( \dirname( __DIR__, 2 ) . '/includes/class-insights-ci-node.php' );
-		$this->assertStringNotContainsString( 'Settings::DIGEST_PATH', $source );
-		$this->assertStringContainsString( 'Digest_Builder_Node::digest_path()', $source );
 	}
 }

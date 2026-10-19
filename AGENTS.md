@@ -8,9 +8,8 @@ durable digest, and publishes that digest as markdown and a WordPress draft post
 > The whole path runs end-to-end: three live connectors, the LLM enrich / score /
 > compose stages, the intake Gate that attributes an item to a Newspack client,
 > and the two-column Publisher Insights dashboard. The design record lives in
-> dndocker under the pre-rebrand `newspack-ai-newsletter` filenames (see
-> [References](#references)); those documents are historical, and the code is the
-> authority.
+> dndocker (see [References](#references)); where it and the code disagree, the
+> code is the authority.
 
 ## Workflow discipline (mandatory)
 
@@ -81,46 +80,18 @@ install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
 error.** The loader calls `Bootstrap::version_at_least( '2.115.0' )` and stays
-dormant below it. 2.115.0 is the `crt-color` skin, which the skin list bundled
-here offers and an older substrate's style handle carries no tokens for, so
-the page would draw unskinned. 2.110.0 is `Schema_Reflection::list_verbs()`, the declarative
-list verb kind that gives `add_repo`, `add_url` and `add_profile` their handlers,
-their `remove_repo`, `remove_url` and `remove_profile` twins and their dump
-lines; an older substrate lacks it, and every node carrying one fatals on its
-first schema read. 2.107.0 is `dl_remove`, which the bundled Triage view sends
-to clear a dead-letter record; an older substrate refuses it as an unknown
-verb. 2.106.0 is `dump_metadata -o`, which the bundled topology
-console asks for an owner's sidecars; an older substrate answers it with an
-empty map, and `check-substrate-floor.sh` cannot see it, because it reads PHP
-calls and not bundles. 2.104.0 is `_stream` routing by pairs: its bundle builds
-`_stream`, and the bundled `useStreamGraph` calls `addPairs()`, which an earlier
-substrate's link lacks; `check-substrate-floor.sh` cannot see it, because it
-reads PHP calls and not bundles. 2.102.0 is the page's shared stream link and group Taps
-the dashboard bundle is built against, and the page global `Core` it shares with
-the substrate's bundles, whose shape 2.102.0 changes; `check-substrate-floor.sh`
-cannot see it, because it reads PHP calls and not bundles. 2.99.0 resolves `{partition}` in the arguments a node's schema
-marks and refuses `<partition>`, so the topologies here write `{partition}`.
-2.88.0 is `Schema_Reflection::arguments()`, which parses the
-digest's positionals onto its properties, so `Digest_Builder_Node` carries no
-`arguments()` of its own. 2.77.0 binds a verb's declared `args` before its handler runs,
-so every handler reads them by name (`$args['url']`), and the variadic
-`add_profile` `text` arrives as a list. 2.71.0 is `Schema_Reflection::answer_request()`, which answers
-the sources' `TICK` and the digest's `RESET` and `REGENERATE`, and the static
-`Spawn_Coordinator::worker_lock_dirs()`, which lists the insights CI's live
-workers with their ids. 2.57.0 is
-the `/auth` reply naming the signing key `secret`, which the bundled auth client
-reads; 2.56.0 is the `newspack_nodes/overlay_pages` filter the insights page
-registers on. 2.25.0 is `Node::config_line()`, which every source node builds its
-`arguments` dump from. Against a substrate between a
-too-low floor and the real one the handshake passes, the plugin activates, and it
-then fatals on the missing method — the one outcome the gate exists to prevent.
-`scripts/check-substrate-floor.sh` derives the true floor from PHPStan's
-declaring-class resolution and compares it to the declared one, and
-`scripts/lint-docs.sh` fails the push when the number in this file and the number
-in the loader disagree. Change both together.
+dormant below it. Against a substrate between a too-low floor and the real one
+the handshake passes, the plugin activates, and it then fatals on the missing
+method — the one outcome the gate exists to prevent. `CHANGELOG.md` records why
+each floor was raised.
+`scripts/check-substrate-floor.sh` derives the floor the plugin's PHP calls need
+from PHPStan's declaring-class resolution and compares it to the declared one. It
+reads PHP calls and not bundles, so when only a bundled dashboard reaches a
+substrate API, the maintainer raises the floor by hand. `scripts/lint-docs.sh` fails the push when the
+number in this file and the number in the loader disagree. Change both together.
 
 **`@wordpress/*` is pinned to the `wp-7.0` dist tag — never bump it to close an
-advisory.** Each runtime package is declared exactly, no caret, and `scripts/lint-wp-pin.mjs` fails the push when a declaration carries a range or the lock resolves it elsewhere. A caret let every lock climb to trunk while the declaration still read as the tag, and `npm ci` built against the climb. Transitive `@wordpress/*` packages still float within the ranges the family's own manifests declare; the build externalizes those too. Every declared runtime version IS its `wp-7.0` tag: `api-fetch
+advisory.** Each runtime package is declared exactly, no caret, and `scripts/lint-wp-pin.mjs` fails the push when a declaration carries a range or the lock resolves it elsewhere. A caret lets every lock climb to trunk while the declaration still reads as the tag, and `npm ci` then builds against the climb. Transitive `@wordpress/*` packages still float within the ranges the family's own manifests declare; the build externalizes those too. Every declared runtime version IS its `wp-7.0` tag: `api-fetch
 7.40.1`, `block-library 9.40.2`, `blocks 15.13.1`, `components 32.2.1`, `element
 6.40.1`, `i18n 6.13.1`, `icons 11.7.1` — the newest tag npm publishes for the family,
 one minor behind the WordPress 7.1 both containers run. The substrate build-kit externalises `element`, `api-fetch`,
@@ -134,12 +105,10 @@ eslint and jest, and breaks at runtime, with nothing mechanical to catch it. Che
 `npm view @wordpress/<pkg> dist-tags --json` against `wp core version` before
 proposing any bump, and move the whole family together only when the WordPress
 target itself moves. A Dependabot advisory reachable only PAST the pin gets
-dismissed, not bumped: 2026-08-17, uuid GHSA-w5hq-g745-h8pq needed `components >=
-33.1.0`, one major past `wp-7.0`, for a package absent from `build/` entirely —
-dismissed `not_used`. npm `overrides` cannot rescue that, because npm matches an
-override by package NAME anywhere in the tree: both `{uuid: …}` and the nested
-`{"@wordpress/components": {uuid: …}}` downgraded the fourteen `@wordpress/*`
-packages that legitimately require `uuid@^14`.
+dismissed, not bumped. npm `overrides` cannot scope around it, because npm
+matches an override by package NAME anywhere in the tree: a top-level override and
+one nested under `@wordpress/components` alike downgrade the `@wordpress/*`
+packages that legitimately require the newer transitive dependency.
 
 `lint:deadcode:js` (knip) runs in pre-commit on staged JS. knip's jest plugin is
 off and tests are excluded as consumers, so any export or module reachable only
@@ -477,8 +446,8 @@ declares no hook or filter of its own for others to extend.
 
 - Substrate: [`newspack-nodes`](../newspack-nodes) (+ its `AGENTS.md`)
 - Teaching walkthrough: `newspack-nodes/examples/example-ai-newsletter`
-- Design record, in `dndocker/docs/superpowers/` — historical, and named for the
-  plugin's pre-rebrand slug where it predates the rename:
+- Design record, in `dndocker/docs/superpowers/`; the code is the authority where
+  the two disagree:
   - `specs/2026-06-15-newspack-ai-newsletter-floorplan-design.md` — the master
     floorplan, executed by `plans/2026-06-15-newspack-ai-newsletter-foundation.md`
   - `specs/2026-06-15-newspack-ai-newsletter-ai-core-design.md` — the LLM stages,

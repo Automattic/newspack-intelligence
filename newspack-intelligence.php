@@ -138,28 +138,10 @@ function register_cli_commands(): void {
 		if ( ! \class_exists( '\Newspack_Nodes\Topology_Registry' ) ) {
 			return;
 		}
-		// @longform Substrate handshake: dormant when too old. 2.25.0 =
-		// Node::config_line(), which every source node builds its `arguments`
-		// dump from; 2.56.0 is the overlay_pages filter the insights page
-		// registers on; 2.57.0 is the /auth reply naming the signing key
-		// `secret`, which the bundled auth client reads; 2.71.0 is
-		// Schema_Reflection::answer_request(), which answers the sources' TICK
-		// and the digest's RESET and REGENERATE, and the static
-		// Spawn_Coordinator::worker_lock_dirs() that lists the insights CI's
-		// live workers, id included; 2.77.0 binds a verb's declared `args` by
-		// name before its handler runs; 2.88.0 is the trait's arguments(),
-		// which parses the digest's positionals; 2.99.0 resolves `{partition}`
-		// in the arguments a node's schema marks, and refuses `<partition>`,
-		// which every topology here writes as `{partition}`; 2.102.0 is the
-		// page global Core the dashboard bundle shares with the substrate's;
-		// 2.104.0 is the page link that routes by pairs, which the bundled
-		// stream hooks call; 2.106.0 is dump_metadata -o, which the bundled
-		// topology console asks for an owner's sidecars; 2.107.0 is dl_remove,
-		// which the bundled Triage view sends; 2.110.0 is the trait's
-		// list_verbs(), which declares add_repo, add_url and add_profile and
-		// their remove_* twins; 2.115.0 is the crt-color skin the bundled
-		// skin list offers, which an older substrate has no tokens for.
-		// A floor set too low does not degrade: it activates, then fatals on a
+		// @longform Substrate handshake: dormant below the floor, which
+		// scripts/check-substrate-floor.sh holds to the substrate APIs this
+		// plugin calls; CHANGELOG.md records why each floor was raised. A
+		// floor set too low does not degrade: it activates, then fatals on a
 		// missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
 			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.115.0', 'Newspack Intelligence' ) ) {

@@ -423,7 +423,7 @@ require_once \dirname( __DIR__, 2 ) . '/newspack-nodes/tests/Helpers/wp-shims.ph
 
 require_once \dirname( __DIR__, 2 ) . '/newspack-nodes/newspack-nodes.php';
 require_once \dirname( __DIR__, 2 ) . '/newspack-nodes/tests/Helpers/TopologyDurability.php';
-// The substrate no longer wires its runtime at plugin-file scope (it defers to
+// The substrate does not wire its runtime at plugin-file scope (it defers to
 // Bootstrap::ensure_runtime_wired() at REST/admin/CLI/cron entry points), so
 // boot it explicitly here — registers the node-class namespaces, the
 // `<config:…>` token namespace, the stock-topology dir, and Core::$memd.
@@ -439,9 +439,4 @@ require_once \dirname( __DIR__, 2 ) . '/newspack-nodes/tests/Helpers/InMemoryMem
 // This plugin's classes (composer classmap autoload) once vendor is built.
 require_once __DIR__ . '/../vendor/autoload.php';
 
-// The plugin bootstrap file lands in Task 3; load it once it exists so the
-// suite picks it up without a fatal during scaffold-only runs.
-$plugin_file = \dirname( __DIR__ ) . '/newspack-intelligence.php';
-if ( \file_exists( $plugin_file ) ) {
-	require_once $plugin_file;
-}
+require_once \dirname( __DIR__ ) . '/newspack-intelligence.php';
