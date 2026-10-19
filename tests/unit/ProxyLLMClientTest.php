@@ -40,9 +40,9 @@ final class ProxyLLMClientTest extends TestCase {
 
 	/**
 	 * Ingested content (GitHub/Linear/feed text) is not guaranteed clean UTF-8.
-	 * Before this fix, an unencodable message body made wp_json_encode() return
-	 * false, which the bare (string) cast silently swallowed to '' — an EMPTY
-	 * request body sent to the AI proxy instead of a loud, diagnosable failure.
+	 * An unencodable message body makes wp_json_encode() return false, and the
+	 * client throws rather than casting that to '' and sending the AI proxy an
+	 * EMPTY request body, so the failure is loud and diagnosable.
 	 */
 	public function test_throws_instead_of_sending_empty_body_on_unencodable_message(): void {
 		$seen = null;

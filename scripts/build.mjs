@@ -21,9 +21,9 @@ const __dirname = path.dirname( fileURLToPath( import.meta.url ) );
 const ROOT = path.resolve( __dirname, '..' );
 
 // @longform
-// ONE override for the whole substrate surface. It was four — one per alias
-// plus the kit — all naming paths inside the same directory, so omitting any
-// single one resolved to a nonexistent sibling path.
+// One variable names the substrate src dir, which holds every alias target and
+// the build kit. Overriding one alias alone would leave the rest pointing at a
+// nonexistent sibling path, so the per-alias overrides are refused below.
 const substrateSrc =
 	process.env.NEWSPACK_NODES_SRC ||
 	path.resolve( ROOT, '../newspack-nodes/src' );
@@ -41,7 +41,7 @@ const { esbuildAlias, assertNoRetiredOverrides } = (
 	)
 ).default;
 
-// Refuse the retired per-alias overrides; never silently ignore one.
+// Refuse a per-alias override; never silently ignore one.
 assertNoRetiredOverrides( process.env );
 
 const alias = esbuildAlias( substrateSrc );

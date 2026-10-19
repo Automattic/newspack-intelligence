@@ -20,13 +20,12 @@ use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
 
 /**
- * Guards the topology's Partition/Log retention geometry after the substrate's
- * retention rename (segment_size min_segments num_segments min_lifetime lifetime
- * [max_segments]) — num_segments is the count target, lifetime the age rule, and
+ * Guards the topology's Partition/Log retention geometry (segment_size
+ * min_segments num_segments min_lifetime lifetime [max_segments]) — num_segments is the count target, lifetime the age rule, and
  * max_segments a trailing hard cap.
  *
  * Asserts RESOLVED node properties, not the raw arg string: a raw-string check
- * would pass on the pre-rename form even though the tokens land in the wrong slots.
+ * would pass on a misordered form even though the tokens land in the wrong slots.
  *
  * Also guards the digest's RESET fence along its real route: the composed
  * topology routes through `_router`, so a DONE still in flight at RESET completes
@@ -95,7 +94,7 @@ final class TopologyRetentionTest extends TestCase {
 		$shell->eval_script( "include newspack-intelligence\n" );
 	}
 
-	/** Each durable Partition resolves the renamed knobs into the right slots. */
+	/** Each durable Partition resolves its retention knobs into the right slots. */
 	public function test_partitions_resolve_split_retention_geometry(): void {
 		$this->load_topology();
 

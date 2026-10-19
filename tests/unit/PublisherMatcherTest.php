@@ -303,7 +303,7 @@ final class PublisherMatcherTest extends TestCase {
 	}
 
 	public function test_no_extractor_falls_back_to_hold(): void {
-		// Slice-1 regression: a deterministic miss with no extractor still holds.
+		// A deterministic miss with no extractor still holds.
 		$d = $this->match( [ 'title' => 'A local bake sale', 'url' => 'https://random.example/x' ] );
 		$this->assertSame( 'hold', $d['decision'] );
 	}

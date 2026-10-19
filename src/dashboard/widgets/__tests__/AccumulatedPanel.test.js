@@ -378,8 +378,8 @@ describe( 'AccumulatedPanel — Copy + Create draft', () => {
 	} );
 } );
 
-// These moved here with the verbs: the panel holds them now, so the wire-level
-// facts about them are asserted where the click that mints them lives.
+// The panel holds the verbs, so the wire-level facts about them are asserted
+// where the click that mints them lives.
 describe( 'AccumulatedPanel — the action verbs on the wire', () => {
 	it( 'mints each verb from its OWN node, addressed rather than correlated', async () => {
 		replyByVerb.generate = { regenerating: true };

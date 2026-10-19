@@ -1,6 +1,6 @@
 <?php
 /**
- * CSV_Parser: parse the Step-1 Newspack-clients CSV into normalized rows.
+ * CSV_Parser: parse the Newspack-clients CSV into normalized rows.
  *
  * @package Newspack_Intelligence
  */
