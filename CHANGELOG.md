@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-10-19
+
+### Changed
+- **Plain English throughout.** Comments, docs and test names no longer use clipped forms such as "is no X" for "is not an X", and the loader's comment no longer names a substrate loader at `plugins_loaded:11` that does not exist.
+
 ## [0.17.1] - 2026-10-18
 
 ### Changed
