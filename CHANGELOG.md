@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.4] - 2026-10-20
+
+### Changed
+- **Built against newspack-nodes 2.118.0.** The bundled runtime reads a raw block's format off its stamp, delivers a `read_block` reply whole, and renders a bare `TM_BATCH` as its text; the bundled debug overlay keeps its Timeline trace button out of the REPL and stores no trace or debug level.
+
 ## [0.17.3] - 2026-10-19
 
 ### Changed
