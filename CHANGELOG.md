@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.5] - 2026-10-20
+
+### Changed
+- **Built against newspack-nodes 2.119.0.** The bundled runtime sends every command a task makes in one POST, flushed on a MessageChannel task that a hidden tab does not throttle; its timers and Router tick pace by the shared grid; and its `fnv1a()` hashes a string's UTF-8 bytes, as PHP does.
+
 ## [0.17.4] - 2026-10-20
 
 ### Changed
