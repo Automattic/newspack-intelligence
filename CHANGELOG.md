@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.6] - 2026-10-21
+
+### Changed
+- **Built against newspack-nodes 2.121.1.** The dashboard's bundled runtime says what a dropped `/command` response line was: its HTTP status, its place in the body, whether the body was cut short, its size, the batch's verbs and its first 120 characters, credentials masked.
+
 ## [0.17.5] - 2026-10-20
 
 ### Changed
