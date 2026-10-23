@@ -212,6 +212,6 @@ final class PublisherMetaBoxTest extends TestCase {
 
 		$stored = \get_post_meta( $post_id, Publisher_CPT::META_PUBLISHER_NAME, true );
 		$this->assertStringNotContainsString( '<script>', $stored );
-		$this->assertSame( 'alert(1)Acme', $stored );
+		$this->assertSame( 'Acme', $stored, 'core drops a script body with its tags' );
 	}
 }
