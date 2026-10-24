@@ -19,7 +19,7 @@ final class LlmConfigTest extends TestCase {
 		Vault::get_instance()->reset_cache();
 	}
 
-	/** Anonymous Node fixture exposing the trait's protected seams publicly, wired as Summarizer_Node is. */
+	/** Anonymous Node fixture exposing the trait's protected seams publicly, wired as Extractor_Node is. */
 	private function fixture(): object {
 		return new class() extends Node {
 			use Schema_Reflection;

@@ -1,6 +1,6 @@
 <?php
 /**
- * Source: a connector that fetches normalized digest items.
+ * Source: a connector that fetches normalized items.
  *
  * @package Newspack_Intelligence
  */

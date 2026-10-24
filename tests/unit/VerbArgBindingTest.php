@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Intelligence\Extractor_Node;
 use Newspack_Intelligence\Feed_Source_Node;
-use Newspack_Intelligence\Gate_Node;
 use Newspack_Intelligence\Github_Source_Node;
 use Newspack_Intelligence\Linear_Source_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
@@ -66,19 +66,9 @@ final class VerbArgBindingTest extends TestCase {
 		$this->assertSame( 'lin-named', $this->prop( $node, 'vault_id' ) );
 	}
 
-	public function test_gate_verbs_bind_both_ways(): void {
-		$node    = new Gate_Node();
-		$sibling = $this->sibling( $node, 'gate' );
-
-		$sibling->dispatch( 'set_config_version', [ 'csv-pos' ] );
-		$this->assertSame( 'csv-pos', $this->prop( $node, 'config_version' ) );
-		$sibling->dispatch( 'set_config_version', [ '--version=csv-named' ] );
-		$this->assertSame( 'csv-named', $this->prop( $node, 'config_version' ) );
-	}
-
 	public function test_llm_config_verbs_bind_both_ways(): void {
-		$node    = new Gate_Node();
-		$sibling = $this->sibling( $node, 'gate' );
+		$node    = new Extractor_Node();
+		$sibling = $this->sibling( $node, 'extractor' );
 
 		$sibling->dispatch( 'set_api_url', [ 'https://pos.test/v9' ] );
 		$this->assertSame( 'https://pos.test/v9', $this->prop( $node, 'api_url' ) );
@@ -102,8 +92,8 @@ final class VerbArgBindingTest extends TestCase {
 	}
 
 	public function test_add_profile_joins_a_positional_tail_and_takes_it_by_name(): void {
-		$node    = new Gate_Node();
-		$sibling = $this->sibling( $node, 'gate' );
+		$node    = new Extractor_Node();
+		$sibling = $this->sibling( $node, 'extractor' );
 
 		$sibling->dispatch( 'add_profile', [ 'Cover', 'zebra', 'migrations.' ] );
 		$sibling->dispatch( 'add_profile', [ '--text=Skip lunar trivia.' ] );

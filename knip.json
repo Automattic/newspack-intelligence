@@ -39,7 +39,6 @@
 		"jest-environment-jsdom",
 		"@testing-library/jest-dom",
 		"@testing-library/react",
-		"@wordpress/components",
 		"@wordpress/icons",
 		"d3",
 		"@noble/hashes",

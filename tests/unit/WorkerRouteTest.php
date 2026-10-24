@@ -21,16 +21,16 @@ final class WorkerRouteTest extends TestCase {
 	/** Only this topology's workers are reached, however other locks are named. */
 	public function test_only_the_topologys_workers_are_reached(): void {
 		$base = $this->make_temp_dir( 'worker-route-workers-' );
-		foreach ( [ 'newspack-intelligence.p0', 'newspack-intelligence.p5', 'newspack-intelligence-gate.p2', 'other.p0' ] as $worker_id ) {
+		foreach ( [ 'newspack-intelligence.p0', 'newspack-intelligence.p5', 'newspack-intelligence-collect.p2', 'other.p0' ] as $worker_id ) {
 			self::live_worker( $base, $worker_id );
 		}
 		// No worker id spells a padded partition, so no worker owns this lock.
 		\mkdir( $base . '/locks/newspack-intelligence.p03.lock.d', 0777, true );
 
-		$reached = Worker_Route::send( $this->interpreter( 'route-asker-3' ), $base, [ [ 'digest', 'REGENERATE' ] ] );
+		$reached = Worker_Route::send( $this->interpreter( 'route-asker-3' ), $base, [ [ 'feed', 'TICK' ] ] );
 
 		$this->assertSame( 2, $reached );
-		foreach ( [ 'newspack-intelligence.p0' => 1, 'newspack-intelligence.p5' => 1, 'newspack-intelligence-gate.p2' => 0, 'other.p0' => 0 ] as $worker_id => $count ) {
+		foreach ( [ 'newspack-intelligence.p0' => 1, 'newspack-intelligence.p5' => 1, 'newspack-intelligence-collect.p2' => 0, 'other.p0' => 0 ] as $worker_id => $count ) {
 			$this->assertCount( $count, self::worker_input( $base, $worker_id ), $worker_id );
 		}
 	}
@@ -41,7 +41,7 @@ final class WorkerRouteTest extends TestCase {
 		self::live_worker( $base, 'newspack-intelligence.p1' );
 		\mkdir( $base . '/locks/newspack-intelligence.p2.lock.d', 0777, true );
 
-		$this->assertSame( 1, Worker_Route::send( $this->interpreter( 'route-asker-4' ), $base, [ [ 'digest', 'RESET' ] ] ) );
+		$this->assertSame( 1, Worker_Route::send( $this->interpreter( 'route-asker-4' ), $base, [ [ 'github', 'TICK' ] ] ) );
 	}
 
 	/** Live workers none of which can be reached are refused like no worker at all. */
@@ -51,7 +51,7 @@ final class WorkerRouteTest extends TestCase {
 		$this->expectException( \RuntimeException::class );
 		$this->expectExceptionMessage( 'No newspack-intelligence worker could be reached' );
 
-		Worker_Route::send( $this->interpreter( 'route-asker-5' ), $base, [ [ 'digest', 'RESET' ] ] );
+		Worker_Route::send( $this->interpreter( 'route-asker-5' ), $base, [ [ 'github', 'TICK' ] ] );
 	}
 
 	/** Every request reaches every live worker, in order, FROM the asking interpreter. */
@@ -60,7 +60,7 @@ final class WorkerRouteTest extends TestCase {
 		self::live_worker( $base, 'newspack-intelligence.p2' );
 		self::live_worker( $base, 'newspack-intelligence.p6' );
 
-		$workers = Worker_Route::send( $this->interpreter( 'route-asker-8' ), $base, [ [ 'reresolver', 'RERESOLVE 2026-01-04 2026-02-07' ], [ 'digest', 'REGENERATE' ] ] );
+		$workers = Worker_Route::send( $this->interpreter( 'route-asker-8' ), $base, [ [ 'reresolver', 'RERESOLVE 2026-01-04 2026-02-07' ], [ 'feed', 'TICK' ] ] );
 
 		$this->assertSame( 2, $workers );
 		foreach ( [ 'newspack-intelligence.p2', 'newspack-intelligence.p6' ] as $worker_id ) {
@@ -68,7 +68,7 @@ final class WorkerRouteTest extends TestCase {
 			$this->assertSame(
 				[
 					[ Message::TM_REQUEST, 'route-asker-8', 'reresolver', 'RERESOLVE 2026-01-04 2026-02-07' ],
-					[ Message::TM_REQUEST, 'route-asker-8', 'digest', 'REGENERATE' ],
+					[ Message::TM_REQUEST, 'route-asker-8', 'feed', 'TICK' ],
 				],
 				\array_map( static fn ( array $m ): array => [ $m[ Message::TYPE ], $m[ Message::FROM ], $m[ Message::TO ], $m[ Message::VALUE ] ], $written ),
 				$worker_id
@@ -79,7 +79,7 @@ final class WorkerRouteTest extends TestCase {
 	public function test_no_live_worker_is_refused(): void {
 		$this->expectException( \RuntimeException::class );
 		$this->expectExceptionMessage( 'No newspack-intelligence worker could be reached' );
-		Worker_Route::send( $this->interpreter( 'route-asker-9' ), $this->make_temp_dir( 'worker-route-none-' ), [ [ 'digest', 'RESET' ] ] );
+		Worker_Route::send( $this->interpreter( 'route-asker-9' ), $this->make_temp_dir( 'worker-route-none-' ), [ [ 'github', 'TICK' ] ] );
 	}
 
 	/** An interpreter under `$name`, sinking into a real Router. */

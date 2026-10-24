@@ -7,6 +7,21 @@ const { TextEncoder, TextDecoder } = require( 'util' );
 global.TextEncoder = global.TextEncoder || TextEncoder;
 global.TextDecoder = global.TextDecoder || TextDecoder;
 
+// jsdom has no matchMedia, which @wordpress/components reads for breakpoints.
+// Mirrors newspack-nodes/jest.setup.js.
+if ( 'undefined' !== typeof window && ! window.matchMedia ) {
+	window.matchMedia = ( query ) => ( {
+		matches: false,
+		media: query,
+		onchange: null,
+		addListener: () => {},
+		removeListener: () => {},
+		addEventListener: () => {},
+		removeEventListener: () => {},
+		dispatchEvent: () => false,
+	} );
+}
+
 /* eslint-env jest */
 // jest-dom custom matchers (toBeInTheDocument, etc.) for the React dashboard tests.
 import '@testing-library/jest-dom';

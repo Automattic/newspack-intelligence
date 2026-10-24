@@ -1,5 +1,0 @@
-var num_partitions = 1
-include topic-probe
-make_node Partition ingest:partition <config:logs_dir>/ingest.p{partition} <config:segment_size> <config:min_segments> <config:num_segments> <config:max_segments> <config:min_lifetime> <config:lifetime>
-cmd ingest:partition:config void_warranty
-secure

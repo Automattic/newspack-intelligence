@@ -1,15 +1,10 @@
 # Newspack Intelligence
 
-An AI-driven **team intelligence digest** built on the
-[newspack-nodes](../newspack-nodes) substrate. It ingests items from real sources
-(GitHub, Linear, RSS/feeds), enriches them with an LLM (summarize + score),
-accumulates them into a durable digest, and publishes that digest as markdown and
-a WordPress draft post, from an admin control panel.
-
-> **Status:** the whole path runs end-to-end — the three connectors, the LLM
-> summarize, score and compose stages, the intake Gate, and the Publisher
-> Insights dashboard. The teaching walkthrough lives in
-> `newspack-nodes/examples/example-ai-newsletter`.
+Collects and curates intelligence as an **entity graph**, built on the
+[newspack-nodes](../newspack-nodes) substrate. It records items from GitHub,
+Linear and feeds, links each to the organizations, people and topics it
+concerns, and answers questions about them with citations, on the Intelligence
+admin page and to agents over MCP.
 
 **Requires** WordPress 6.5, PHP 8.2, and the `newspack-nodes` substrate at 2.115.0
 or newer. Below that floor the plugin stays dormant.
@@ -17,17 +12,24 @@ or newer. Below that floor the plugin stays dormant.
 ## How it works
 
 Connector **Source nodes** (GitHub, Linear, feed) fetch inside a background
-worker and append normalized items to the durable `ingest` partition. A
-**Summarizer** and a **Scorer** pace through that partition into the durable
-`scored` partition. A **Digest_Builder** accumulates the scored items and
-composes the markdown digest once every source has reported in, writing it
-through a `Log`. A **Gate** tails the same `ingest` partition with its own
-offsets, appending one JSON decision line per item to attribute it to a Newspack
-client; it observes the pipeline without changing what the digest sees.
+worker and record each new item as an `item_recorded` event on the `intel:items`
+stream. Entities, names, identifiers, roles and every person's judgment are
+events on the `intel:ontology` stream, which keeps every segment. A
+**Projector** replays both streams into the `intel-graph` SQLite Row_Table.
 
-An `Insights_CI` service serves the dashboard and routes Collect and Regenerate
-to the worker. The browser turns the digest markdown into block markup through
-the block editor's own paste engine and creates the draft over the REST API.
+A **Resolver** links each recorded item to the entities it names, by
+identifier, by name and, failing both, by an LLM's named-entity extraction; an
+**Extractor** asks the LLM for a summary, a kind, topics, scores and claims; a
+**Deduper** clusters copies of one story. When the ontology changes, a
+**Reresolver** queues the stored items the change could link anew.
+
+`Intelligence_CI` answers the graph's read verbs (search, entity, timeline,
+related, claims, trends, review, collections) and its curation verbs, which the
+Intelligence page sends; the same verbs reach agents through the plugin's MCP
+door. Nothing is compiled: a person or an agent asks, and the graph answers.
+A client CSV, imported on the Settings page or with
+`wp newspack-intelligence clients import`, keeps Newspack's clients in the
+graph.
 
 AI calls go through the Automattic **AI API Proxy** (OpenAI-compatible),
 defaulting to the `gpt-oss-120b` model. The bearer token is a substrate Vault
@@ -37,7 +39,7 @@ entry: the node config holds only its id, resolved at use time.
 
 ```bash
 composer install && npm install
-npm run build          # esbuild the dashboard
+npm run build          # esbuild the Intelligence page
 npm run lint:js && npm run lint:php && npm run lint:phpstan && npm run lint:scss
 npx jest               # JS unit tests (local)
 cd tests && ../vendor/bin/phpunit --enforce-time-limit   # PHP; needs newspack-nodes active
@@ -45,6 +47,7 @@ cd tests && ../vendor/bin/phpunit --enforce-time-limit   # PHP; needs newspack-n
 
 ## Docs
 
-- Working guide: [`AGENTS.md`](AGENTS.md) — the topologies, the node catalogue,
-  the dashboard modules, the WordPress surface and the release order
+- Working guide: [`AGENTS.md`](AGENTS.md) — the streams, the node catalogue,
+  the topologies, the Intelligence page, the WordPress surface and the release
+  order
 - Substrate: [`newspack-nodes`](https://github.com/Automattic/newspack-nodes)

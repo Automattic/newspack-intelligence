@@ -5,8 +5,7 @@
  *
  * The offsetlog and dead-letter dirs are arguments, and omitting one fails SILENT:
  * no cursor means the reader replays from the head after every restart; no
- * quarantine means poison is logged and dropped. ingest:consumer and
- * scored:consumer both shipped without a dead-letter dir before this guard existed.
+ * quarantine means poison is logged and dropped.
  *
  * The substrate owns the audit itself (it reads each node's own node_schema for the
  * argument positions); this pins THIS plugin's topologies to it.

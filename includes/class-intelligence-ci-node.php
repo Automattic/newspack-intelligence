@@ -21,7 +21,7 @@ use Newspack_Nodes\Service_CI_Node;
 
 class Intelligence_CI_Node extends Service_CI_Node {
 
-	/** The source node names a fetch ticks; their count MUST equal the digest's `total` make_node arg in newspack-intelligence-digest.tsl. */
+	/** The source node names `fetch_now` ticks. */
 	private const SOURCE_NODES = [ 'github', 'linear', 'feed' ];
 
 	/**

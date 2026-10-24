@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
-use Newspack_Intelligence\Insights_CI_Node;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intel_Tiers;
@@ -77,7 +76,7 @@ final class IntelligenceCITest extends TestCase {
 		$this->assertSame( [ 'public', 'internal' ], Intel_Tiers::readable() );
 	}
 
-	/** The service CIs mount once per request graph, under their names. */
+	/** The service CI mounts once per request graph, and only it. */
 	public function test_the_service_cis_mount_once(): void {
 		$interpreter = Core::node( Node_Names::COMMAND_INTERPRETER );
 		$this->assertInstanceOf( Command_Interpreter_Node::class, $interpreter );
@@ -88,7 +87,6 @@ final class IntelligenceCITest extends TestCase {
 
 		$this->assertInstanceOf( Intelligence_CI_Node::class, $first );
 		$this->assertSame( $first, Core::node( 'intelligence' ) );
-		$this->assertInstanceOf( Insights_CI_Node::class, Core::node( 'insights' ) );
 	}
 
 	/** Args bind by position or by name, as each verb declares them. */

@@ -19,9 +19,9 @@ class Clients_Settings {
 	 */
 	public function __construct( private ?Client_Importer $importer = null ) {}
 
-	/** admin-post handler: validate nonce/caps + $_FILES, then import_path(). */
+	/** admin-post handler: validate the MANAGE role, the nonce and $_FILES, then import_path(). */
 	public function handle_admin_post(): void {
-		if ( ! \current_user_can( 'manage_options' ) || ! \check_admin_referer( self::ADMIN_POST_ACTION ) ) {
+		if ( ! \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) || ! \check_admin_referer( self::ADMIN_POST_ACTION ) ) {
 			\wp_die( \esc_html__( 'Not allowed.', 'newspack-intelligence' ) );
 		}
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- sanitized on the next line via sanitize_text_field( wp_unslash() ).

@@ -3,9 +3,9 @@
  * LLM_Entity_Extractor: Entity_Extractor backed by an LLM_Client + Prompts::extract_entities.
  *
  * Keeps the model's job narrow (extract names) and the parse lenient: any shortfall — bad JSON,
- * missing keys, HTTP error — degrades to an empty triple so the Gate falls back to `hold`, never
- * throws. The cross-referencing against the store is deterministic PHP in Publisher_Matcher, not
- * the model's job.
+ * missing keys, HTTP error — degrades to an empty triple, so the resolver's NER step finds no
+ * candidate, and never throws. Matching the names against the graph is deterministic PHP in
+ * `Resolver`, not the model's job.
  *
  * @package Newspack_Intelligence
  */

@@ -27,7 +27,7 @@ final class SourceNodeTest extends TestCase {
 	private function tick( string $verb = 'TICK' ): array {
 		$request                   = Message::new_message();
 		$request[ Message::TYPE ]  = Message::TM_REQUEST;
-		$request[ Message::FROM ]  = '_repl/insights-asker';
+		$request[ Message::FROM ]  = '_repl/intelligence-asker';
 		$request[ Message::ID ]    = '4:812:97';
 		$request[ Message::KEY ]   = 'tick-key-31';
 		$request[ Message::VALUE ] = $verb;
@@ -174,7 +174,7 @@ final class SourceNodeTest extends TestCase {
 		$reply = \end( $sink->captured );
 		$this->assertSame( Message::TM_STRUCT | Message::TM_RESPONSE, $reply[ Message::TYPE ] );
 		$this->assertSame( 'fake-source-12', $reply[ Message::FROM ] );
-		$this->assertSame( '_repl/insights-asker', $reply[ Message::TO ] );
+		$this->assertSame( '_repl/intelligence-asker', $reply[ Message::TO ] );
 		$this->assertSame( '4:812:97', $reply[ Message::ID ] );
 		$this->assertSame( 'tick-key-31', $reply[ Message::KEY ] );
 		$this->assertSame( [ 'verb' => 'TICK', 'data' => [ 'emitted' => 2, 'refused' => 0 ] ], $reply[ Message::VALUE ] );
@@ -191,7 +191,7 @@ final class SourceNodeTest extends TestCase {
 		$this->assertCount( 1, $sink->captured, 'no event: only the refusal' );
 		$refusal = $sink->captured[0];
 		$this->assertSame( Message::TM_ERROR, $refusal[ Message::TYPE ] & Message::TM_ERROR );
-		$this->assertSame( '_repl/insights-asker', $refusal[ Message::TO ] );
+		$this->assertSame( '_repl/intelligence-asker', $refusal[ Message::TO ] );
 	}
 
 	/** An item make() refuses is skipped and counted; the rest of the fetch records. */
