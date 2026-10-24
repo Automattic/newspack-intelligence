@@ -3,11 +3,15 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\Tests\TestCase;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Intelligence\Client_Importer;
 use Newspack_Intelligence\Clients_Settings;
+use function Newspack_Intelligence\register_clients_admin_page;
+use function Newspack_Intelligence\render_clients_page;
+use const Newspack_Intelligence\SETTINGS_MENU_SLUG;
 
 require_once __DIR__ . '/../support/fake-client-roster.php';
 require_once __DIR__ . '/../support/reads-ontology-log.php';
@@ -17,10 +21,19 @@ final class ClientsSettingsTest extends TestCase {
 	use Reads_Ontology_Log;
 	use Seeds_Entity_Index;
 
+	/** The capability the MANAGE role maps to under the test's capability map. */
+	private const MANAGE_CAP = 'newspack_intel_test_manage';
+
+	protected function setUp(): void {
+		parent::setUp();
+		\add_filter( 'newspack_nodes/capability_map', static fn ( array $map ): array => [ Capabilities::MANAGE => self::MANAGE_CAP ] + $map );
+	}
+
 	protected function tearDown(): void {
 		Topology_Registry::reset();
 		Topology_Analyzer::reset_caches();
 		unset(
+			$GLOBALS['_admin_submenu_pages'],
 			$GLOBALS['_current_user_id'],
 			$GLOBALS['_wp_test_user_logins'],
 			$GLOBALS['_current_user_can'],
@@ -85,6 +98,47 @@ final class ClientsSettingsTest extends TestCase {
 		$this->expectException( \RuntimeException::class );
 		$this->expectExceptionMessageMatches( '/wp_die/' );
 		$settings->handle_admin_post();
+	}
+
+	/** The upload answers the MANAGE role, so a session scoped below it dies. */
+	public function test_handle_admin_post_dies_for_a_caller_below_manage(): void {
+		$GLOBALS['_current_user_can']    = true;
+		$GLOBALS['_check_admin_referer'] = true;
+		Capabilities::$session_scope     = Capabilities::TUNE;
+		$repo                            = new Fake_Client_Roster();
+		$settings                        = new Clients_Settings( new Client_Importer( $repo ) );
+
+		$caught = $this->caught( fn () => $settings->handle_admin_post(), 'a caller below manage imports' );
+
+		$this->assertStringStartsWith( 'wp_die', $caught->getMessage() );
+		$this->assertSame( [], $repo->statuses() );
+	}
+
+	/** The Settings page registers under the capability MANAGE maps to. */
+	public function test_the_settings_page_registers_under_the_manage_capability(): void {
+		$GLOBALS['_current_user_can']    = true;
+		$GLOBALS['_admin_submenu_pages'] = [];
+
+		register_clients_admin_page();
+
+		$this->assertCount( 1, $GLOBALS['_admin_submenu_pages'] );
+		$this->assertSame( self::MANAGE_CAP, $GLOBALS['_admin_submenu_pages'][0][3] );
+		$this->assertSame( SETTINGS_MENU_SLUG, $GLOBALS['_admin_submenu_pages'][0][4] );
+	}
+
+	/** The page renders nothing for a caller below MANAGE. */
+	public function test_the_settings_page_renders_nothing_below_manage(): void {
+		$GLOBALS['_current_user_can'] = true;
+		Capabilities::$session_scope  = Capabilities::TUNE;
+
+		\ob_start();
+		render_clients_page();
+		$this->assertSame( '', (string) \ob_get_clean() );
+
+		Capabilities::$session_scope = Capabilities::MANAGE;
+		\ob_start();
+		render_clients_page();
+		$this->assertStringContainsString( 'name="clients_csv"', (string) \ob_get_clean() );
 	}
 
 	public function test_handle_admin_post_imports_then_redirects_with_flag(): void {

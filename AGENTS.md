@@ -1,15 +1,15 @@
 # AGENTS.md — Newspack Intelligence
 
-An AI-driven team intelligence digest built on the `newspack-nodes` substrate
-(sibling plugin; `Requires Plugins: newspack-nodes`). It ingests GitHub, Linear
-and feed items, enriches and scores each one with an LLM, accumulates them into a
-durable digest, and publishes that digest as markdown and a WordPress draft post.
+Collects and curates intelligence as an entity graph, built on the
+`newspack-nodes` substrate (sibling plugin; `Requires Plugins: newspack-nodes`).
+It records GitHub, Linear and feed items as events, links each to the entities
+it concerns, extracts a summary, topics and claims with an LLM, and answers
+questions about them with citations — on the Intelligence admin page, and to
+agents through its MCP door. Nothing is compiled: a person or an agent asks,
+and the graph answers.
 
-> The whole path runs end-to-end: three live connectors, the LLM enrich / score /
-> compose stages, the intake Gate that attributes an item to a Newspack client,
-> and the two-column Publisher Insights dashboard. The design record lives in
-> dndocker (see [References](#references)); where it and the code disagree, the
-> code is the authority.
+> The design record lives in dndocker (see [References](#references)); where it
+> and the code disagree, the code is the authority.
 
 ## Workflow discipline (mandatory)
 
@@ -91,8 +91,7 @@ substrate API, the maintainer raises the floor by hand. `scripts/lint-docs.sh` f
 number in this file and the number in the loader disagree. Change both together.
 
 **`@wordpress/*` is pinned to the `wp-7.0` dist tag — never bump it to close an
-advisory.** Each runtime package is declared exactly, no caret, and `scripts/lint-wp-pin.mjs` fails the push when a declaration carries a range or the lock resolves it elsewhere. A caret lets every lock climb to trunk while the declaration still reads as the tag, and `npm ci` then builds against the climb. Transitive `@wordpress/*` packages still float within the ranges the family's own manifests declare; the build externalizes those too. Every declared runtime version IS its `wp-7.0` tag: `api-fetch
-7.40.1`, `block-library 9.40.2`, `blocks 15.13.1`, `components 32.2.1`, `element
+advisory.** Each runtime package is declared exactly, no caret, and `scripts/lint-wp-pin.mjs` fails the push when a declaration carries a range or the lock resolves it elsewhere. A caret lets every lock climb to trunk while the declaration still reads as the tag, and `npm ci` then builds against the climb. Transitive `@wordpress/*` packages still float within the ranges the family's own manifests declare; the build externalizes those too. Every declared runtime version IS its `wp-7.0` tag: `components 32.2.1`, `element
 6.40.1`, `i18n 6.13.1`, `icons 11.7.1` — the newest tag npm publishes for the family,
 one minor behind the WordPress 7.1 both containers run. The substrate build-kit externalises `element`, `api-fetch`,
 `components`, `blocks`, `block-library`, `i18n` and `data` to the `wp.*` globals,
@@ -151,19 +150,13 @@ the file types in the push range — PHP adds `lint:php`, the container deploy, 
 PHPUnit coverage suite and the per-class 90% gate; JS and SCSS add their linter
 and a build. The two coverage gates hold every JS file and every PHP class at 90%.
 
-`markdownToBlockMarkup.js` meets that JS floor without exercising its own
-conversion. `ensureCoreBlocks()` requires `@wordpress/block-library` lazily, and
-jest resolves that package's transitive `@wordpress/block-editor` to untranspiled
-`src/`, which babel-jest refuses to execute. The suite therefore covers the
-empty-input short-circuit and, through `jest.doMock`, the register-once call
-sequence; the markdown-to-blocks conversion itself is verified only by using the
-admin page in a browser, where WordPress enqueues the real `wp-block-library`.
-
 ## Architecture
 
-The graph is being rebuilt on two event streams. The sources already write to
-them; the four older stages below stay composed by `newspack-intelligence.tsl`
-until the entity graph replaces them, and receive nothing from the sources.
+Everything the graph knows is an event on one of two streams. The sources
+record items; the resolver, the extractor and the deduper record what they
+make of each; the seed, the client import, people and agents record the
+ontology and every judgment. The projector replays both streams into one
+SQLite Row_Table, which every read queries and the streams can rebuild.
 
 **Streams.** `intel:items` holds `item_recorded` and the other per-item events
 for two years (16 MiB segments, both retention rules at 63,072,000 seconds,
@@ -214,8 +207,10 @@ and, like `intel:reresolve:resolve`, hands it one record a poll
 identifiers in the item's URL (host by suffix walk, GitHub org and repo,
 LinkedIn company, X handle, a Linear issue's team) at 1.0; names and aliases
 as whole words in title and body at 1.0, an acronym only in its own case at
-0.9; a domain's stem in the title behind the gate's guards at 0.9; and only
-when those find nothing, the NER extractor's organizations fuzzy-matched
+0.9; a domain's stem in the title at 0.9, when it runs at least
+`MIN_STEM_LENGTH` (6) characters, aligns to word boundaries, capitalizes
+every word and is not led by an article, and never in a body, which is raw
+markup where an href spells a domain; and only when those find nothing, the NER extractor's organizations fuzzy-matched
 against every name — asserted at 0.85, proposed at 0.60, below that a
 candidate entity (at most `MAX_PROPOSALS`, 3, and never a name a rejected
 entity carries). A name whose norm the index holds exactly scores 1.0 with no
@@ -364,8 +359,8 @@ before they write, through the `Refuses_Root` trait, as `wp nodes` verbs do,
 because a root-owned segment or IPC file is one the workers cannot append
 to.
 
-**Reads.** `Intelligence_CI` (`intelligence`), mounted beside `insights`
-on every request graph, answers eight verbs, each declaring `read` and its
+**Reads.** `Intelligence_CI` (`intelligence`), mounted on every request
+graph, answers eight verbs, each declaring `read` and its
 args: `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `review`
 and `collections`. Each handler hands its bound args to the `Graph_Query`
 read of the same name, through `Intel_Graph_Row_Schema::read()` over every
@@ -458,8 +453,12 @@ keys at `Graph_Curation::KEY_BYTES` (320), item keys at `ITEM_KEY_BYTES`
 (1,024) — while a collected title is cut at `TITLE_BYTES` (512) on a
 character boundary, so every event fits one 4,096-byte line whatever
 characters fill it. `fetch_now` TICKs every source in each live worker
-through `Worker_Route`, as `insights collect` does without its `RESET`, and
-declares `manage`, because it mounts a worker's input (substrate ADR-23).
+through `Worker_Route` and declares `manage`, because it mounts a worker's
+input (substrate ADR-23). `Worker_Route` appends each request to every live
+worker's input IPC partition — durable and synchronous, with no live-worker
+dependency on read — carrying the CI's own name as FROM, which the worker's
+input reader stamps under `_repl`, so each source's answer lands on the
+worker's output partition, where an attached `wp nodes cli` reads it.
 
 **MCP door.** `Intelligence_Mcp_Door`, wired by the loader, is a declaration
 on the substrate's `Mcp_Door` (substrate ADR-38), serving
@@ -523,80 +522,22 @@ batch; a rate-limited `print_less_often()` line is the only record, which makes 
 repo going quiet across many ticks the rare place here that fails quietly rather
 than loud.
 
-**Summary.** `ingest:consumer` paces items through `Summarizer` → `Scorer` into
-the durable `scored` Partition. The Summarizer asks the LLM for `{summary,
-relevance_score, reason}` and falls back to a deterministic template when no
-client resolves; the Scorer blends that relevance score with a recency bonus
-(7-day half-life, 2.0 points maximum) and falls back to a title-keyword heuristic.
-
-**Digest.** `scored:consumer` feeds `Digest_Builder` → `Tee` → `Log`
-(`digest:log`, writing `digest.md`). The builder accumulates items and composes a
-draft on the `DONE` that completes the cycle — counting DISTINCT source names, so
-a re-tick or a replay neither advances `done` nor recomposes — or on an explicit
-`REGENERATE`. `Digest_Composer` takes the top 10 per source, so no
-busy source crowds the others out, and asks the LLM for a markdown briefing under
-a 32000-token budget; a thrown `RuntimeException`, an empty reply and a
-whitespace-only reply all render that same selection as a ranked bullet list
-rather than throwing. The cap is `Digest_Composer::PER_SOURCE`, unrelated to the
-dashboard's `Insights_CI_Node::TOP_N`: the two hold the same number today, and
-changing one leaves the other where it was. `RESET` clears nothing itself: it
-appends a `TM_INFO "RESET\n"` fence to `ingest:partition`, which reaches the
-digest through the summary stage behind every `DONE` already in flight, so a
-late `DONE` completes its own cycle rather than the next one. The digest clears
-its items, dedup set and `done` when the fence arrives, and `scored:consumer`
-co-commits that emptied snapshot with the cursor past it.
-
-**Gate (observer).** `gate:consumer` tails the SAME `ingest` Partition with its
-OWN offsets, so gating neither moves the summarizer's cursor nor changes the
-digest. `Gate_Node` runs `Publisher_Matcher` over each item and appends one JSON
-line to `gate:log` — an append-only, replayable decision log, and the data source
-for threshold tuning. Each line is `{stage, item_id, decision, atomic_site_id,
-matched_on, confidence, reason, config_version}` plus the persist-time `ts` the
-node stamps, and `decision` is one of `pass`, `hold`, `ignore` and `bypass`.
-Moving the gate inline, to filter what reaches the digest, is a deliberate later
-step.
-
-Matching resolves in cheapness order against ACTIVE publishers only: URL domain
-(confidence 1.0), then a whole-word publisher name or alias across title and body
-(1.0), then a domain-stem hit in the TITLE alone (0.9), then optional cheap-LLM
-NER through `LLM_Entity_Extractor`. Two candidates at any step yield `hold` rather
-than a guess; NER bands its best similarity, passing at 0.85 or above, ignoring
-below 0.60 and holding between. A `hold` reading `ner: no entities` does not
-separate a genuine empty result from a failed call — `LLM_Entity_Extractor`
-catches every `RuntimeException` and degrades to an empty triple — so a spike in
-that reason can mean the proxy is down rather than that the items name no
-subject. Bodies feed the name search but never the stem search — they are
-unstripped RSS `description` and Atom `content`, where an `href` or a logo
-filename spells a client's domain — and a stem must run at least 6 characters,
-align to word boundaries, capitalize every word and not open with an article,
-because a title capitalizes its first word regardless. GitHub and Linear
-items `bypass` the gate entirely, being attributed structurally upstream. With no
-resolvable vault token the gate runs deterministic-only.
-
-`Insights_CI` serves the dashboard slices and routes Collect and Regenerate to
-the worker through `Worker_Route`, which appends each request to every live
-worker's input IPC partition — durable and synchronous, with no live-worker
-dependency on read. Each request carries the CI's own name as FROM,
-which the worker's input reader stamps under `_repl`, so the answer every
-source's `TICK` and the digest's `RESET` and `REGENERATE` sends back lands on
-the worker's output partition, where an attached `wp nodes cli` reads it. The browser creates the WordPress draft from the
-digest markdown via `@wordpress/api-fetch`. LLM calls go through the Automattic
+**Seams and the LLM contract.** LLM calls go through the Automattic
 AI API Proxy via `LLM_Client` / `Proxy_LLM_Client`, whose `$http_post` closure is
 the test seam. More follow the same pattern, each a static `?\Closure`
 replacing ONE call so the branches around it still run as production code:
 `Github_Source_Node::$http_get`, `Linear_Source_Node::$http_post` and
 `Feed_Source_Node::$http_get` for the connector fetches;
 `LLM_Config::$llm_factory`, which every node using the trait holds its own
-copy of (`Summarizer_Node::$llm_factory`, `Extractor_Node::$llm_factory`
-and the rest) and `make_llm_client()` answers first; and
-`Gate_Node::$matcher_factory` and `Insights_CI_Node::$read_items`; and
+copy of (`Resolver_Node::$llm_factory` and `Extractor_Node::$llm_factory`)
+and `make_llm_client()` answers first; and
 `Intel_Graph_Row_Schema::$read_rows` and `Resolver::$similar_text` for the
 projection read and the fuzzy step's scoring.
-Every caller of `LLM_Client::chat()` — `Summarizer_Node::fill()`,
-`Extractor_Node::fill()`, `Digest_Composer` and `LLM_Entity_Extractor` —
-re-throws `Worker_Should_Stop` first, because a cooperative stop is a
+Both callers of `LLM_Client::chat()` — `Extractor_Node::fill()` and
+`LLM_Entity_Extractor`, the resolver's NER step — re-throw
+`Worker_Should_Stop` first, because a cooperative stop is a
 `\RuntimeException` too and must stop the worker rather than read as a
-failed call (substrate ADR-14), then catches `\RuntimeException` and nothing
+failed call (substrate ADR-14), then catch `\RuntimeException` and nothing
 wider. `Proxy_LLM_Client` throws only that, so a second implementation
 raising any other `Throwable` propagates out of `fill()` and breaks the Node
 contract that `fill()` never throws. Bearer tokens are
@@ -615,22 +556,6 @@ connector's date string will not parse; `retrieved_ts` the worker's `Core::$now`
 `machine:source:{name}@{plugin version}`, with the plugin version as its
 `config_version`.
 
-The older stages read the item shape `{source, id, title, url, body, timestamp}`
-off `ingest:partition`. Each adds to that array and forwards the whole of it: the
-Summarizer adds `summary`, plus `relevance_score` (clamped to 0–10) and `reason`
-when the LLM reply parses, then DROPS `body` to keep the scored log and its
-snapshot small; the Scorer adds `score`. The Summarizer and the Scorer forward
-TM_INFO unchanged, which is how a `DONE` reaches the digest with its sender's
-name still in FROM. The Gate is a terminal observer and drops it, so neither a
-DONE nor the RESET fence reaches `gate-decisions.jsonl`.
-
-Each stage also stamps a state label, which `trace <node>` inside `wp nodes cli`
-prints: the Summarizer `SUMMARIZED` or `FAILED` with the title, the Scorer
-`SCORED`, the Gate `GATED:{decision}` with the item id, and the builder
-`RECEIVED` per item and `COMPOSED` with the composed count. `FAILED` covers three
-cases rather than one — no LLM client resolves, `chat()` throws, or the reply
-fails `parse_enrich()` — so it does not on its own mean the proxy call failed.
-
 ### Topologies
 
 | File | What it wires |
@@ -640,15 +565,10 @@ fails `parse_enrich()` — so it does not on its own mean the proxy call failed.
 | `newspack-intelligence-collect.tsl` | The three sources → `intel:writer`; includes the streams |
 | `newspack-intelligence-project.tsl` | `intel:items:consumer` → `projector`, and `intel:ontology:consumer` → `intel:ontology:tee` → `projector`, writing the `intel-graph` Row_Table |
 | `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the items Consumer checkpointing the deduper; includes the streams |
-| `newspack-intelligence-ingest.tsl` | `ingest:partition` alone |
-| `newspack-intelligence-summary.tsl` | `ingest:consumer` → `summarizer` → `scorer` → `scored:partition` |
-| `newspack-intelligence-digest.tsl` | `scored:consumer` → `digest` → `digest:tee` → `digest:log` |
-| `newspack-intelligence-gate.tsl` | `gate:consumer` → `gate` → `gate:tojson` → `gate:log` |
 
 ### Nodes
 
-`Consumer`, `Partition`, `Tee`, `Log` and `Struct_To_JSON` come from the
-substrate. This plugin adds:
+`Consumer`, `Partition`, `Tee` and `Row_Table` come from the substrate. This plugin adds:
 
 | Type | Class | Runtime triggers and verbs |
 |------|-------|----------------------------|
@@ -661,38 +581,14 @@ substrate. This plugin adds:
 | `Extractor` | `Extractor_Node` | `<writer>`; the `LLM_Config` verbs |
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>` |
-| `Summarizer` | `Summarizer_Node` | the `LLM_Config` verbs |
-| `Scorer` | `Scorer_Node` | none |
-| `Digest_Builder` | `Digest_Builder_Node` | `RESET`, `REGENERATE`; the `LLM_Config` verbs |
-| `Gate` | `Gate_Node` | the `LLM_Config` verbs, `set_config_version` |
-| `Insights_CI` | `Insights_CI_Node` | `counts`, `top`, `accumulated`, `generate`, `collect` |
 | `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `review`, `collections`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, each at `tune`; `fetch_now` at `manage` |
 
 The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model`,
 `set_feature`, `add_profile` and `remove_profile`; every node carrying the trait
 also re-emits its state through `dump_config()`. An identical `add_*` repeat is
 a no-op, and each `remove_*` takes its `add_*`'s argument, drops that entry and
-is refused when none is. `Digest_Builder` takes two positional arguments,
-the ingest Partition `RESET` fences and the `total` source count, both required.
-That total MUST equal the number of names in `Intelligence_CI_Node::SOURCE_NODES`:
-above it a collect never completes, and below it the digest composes before
-every source has reported. A snapshot restore never overrides it.
-
-All five `Insights_CI` verbs require `manage_options`, the three read slices
-included: no schema entry declares a `capability`, and the substrate's
-`dispatch()` refuses an undeclared verb at the strictest role rather than the
-loosest. No handler checks a role of its own.
-
-### Publisher master store
-
-The gate matches against a `newspack_publisher` CPT whose rows split in two:
-the ATOMIC fields — `atomic_site_id`, `domain_name`, `created`, plus the
-`status` / `first_seen` / `last_seen` / `churned_at` provenance — and the
-ENRICHMENT fields a human edits in the Publisher details meta box: publisher
-name, localities, GitHub org, LinkedIn company id, X handle, aliases and beat
-tags. Localities, aliases and beat tags are pipe-separated.
-`CPT_Publisher_Repository` reads the store for the gate through
-`all_with_enrichment()`; nothing imports into it.
+is refused when none is. Every `Intelligence_CI` verb declares its role, and
+no handler checks a role of its own (substrate ADR-26).
 
 ### Client roster
 
@@ -757,52 +653,65 @@ the upload runs as the web user.
 
 ### Dashboard
 
-`src/dashboard/` builds one bundle, `build/dashboard/index.js`, mounted on the
-Publisher Insights admin page.
+`src/intelligence/` builds one bundle, `build/intelligence/index.js`, mounted on
+the Intelligence admin page. Every view reads the `intelligence` verbs through
+its own one-shot commands; nothing polls.
 
 | Module | Export | What it does |
 |--------|--------|--------------|
-| `index.js` | — | Mounts `PublisherInsightsPage` on `#newspack-intelligence-insights` |
-| `PublisherInsightsPage.js` | default | The page: the dashboard plus the substrate debug overlay |
-| `PublisherInsights.js` | default | The orchestrator: runs the graph hook, lays the three widgets in two columns |
-| `hooks/useInsightsGraph.js` | `useInsightsGraph`, `SERVER` | Timer → Tee → three slice Fetchers; ONE batched POST per 30s tick |
-| `nodes/register.js` | `views` | Declares `source-counts:view`, `top-table:view` and `accumulated:view` through `registerSliceViews` |
-| `widgets/SourceCounts.js` | `SourceCounts` | The "By source" card |
-| `widgets/TopTable.js` | `TopTable` | The "Top items by source" card |
-| `widgets/AccumulatedPanel.js` | `AccumulatedPanel` | The digest card, and the Collect / Regenerate / Create-draft actions |
-| `markdownToBlockMarkup.js` | `markdownToBlockMarkup` | Converts digest markdown to block markup through the editor's own paste engine |
-| `styles/insights.scss` | — | The page styling, imported by `PublisherInsights.js` and emitted as `build/dashboard/index.css` |
+| `index.js` | — | Mounts `IntelligencePage` on `#newspack-intelligence-app`, handing it `canTune` and `vocabulary` from `NewspackNodesData` |
+| `IntelligencePage.js` | default | Switches Search, Entity, Review and Collections in place; holds the submitted search, the open entity and collection, and the item being saved, so a view returns as it was left; carries the substrate debug overlay |
+| `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite` | A read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments; a write sent once per `run()`, running `refresh` once it lands and handing back `useCommandOnce`'s own `pending`, refusal and answered arguments |
+| `views/Search.js` | default | `search` with words, kind, topic, source and a day range, a page at a time |
+| `views/Entity.js` | default | `entity`, `timeline` a page at a time, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
+| `views/Review.js` | default | `review links` and `review entities`; for a curator, `confirm_link`, `reject_link`, `accept_entity`, `reject_entity` and `merge_entities` |
+| `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection` |
+| `components/SaveToCollection.js` | default | The one dialog any result saves through, sending `collect` |
+| `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty by its `rows` key, or its rows — as a `newspack-nodes-card` named and headed by an optional title, or bare inside a dialog; the one alert every refusal, read or write, renders in |
+| `components/Pager.js` | default | How many of the matches a page shows, and Previous and Next over a stack of page starts, for Search and the Entity timeline |
+| `components/ItemRow.js`, `Cite.js`, `format.js` | — | An item row; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day and `metaLine()`, which joins a row's meta parts and keeps a 0 |
+| `styles/intelligence.scss` | — | Geometry only, emitted as `build/intelligence/index.css` |
 
-Each widget reads ONLY its own view node's `view` field through `useNodeField`;
-there is no god view node and no god `insights` command. The three slices arrive
-as `{sources: {source: count}}`, `{top: {source: [{title, score}]}}` and
-`{accumulated, done, total, digest}` — the same shapes `nodes/register.js`
-declares as each view's `empty`. `Insights_CI_Node::top_by_source()` sorts each
-source's list by score descending and caps it at ten before the wire, so
-`TopTable` trusts that order for its rank column and neither sorts nor caps.
-Collect and Regenerate are `useCommandOnce` one-shots owned by
-`AccumulatedPanel`, riding the same batched tick as the poll, because the lock,
-the note and the latch each reply sets live there. The view classes are handed
-to `makeNode` rather than named, because the interpreter's class map is a
-per-bundle static (substrate ADR-16). The build resolves
-`@newspack-nodes/runtime`, `@newspack-nodes/shared/*` and
-`@newspack-nodes/debug-overlay` through the substrate's `alias-map.cjs`, from
-`NEWSPACK_NODES_SRC` in CI and from the sibling checkout locally.
+Each read is a `useCommandOnce` read with `retry`, under the `intelligence`
+group, so `connect intelligence:shell` watches every send; its scope names
+what the slice shows (`entity:record`, `review:links`, `collections:one`), so
+two reads of one verb never share a Fetcher. A write is one `useCommandOnce`
+per verb, held by its view rather than by a row, sending every arg named
+(`--key=…`, through `formatCommandArgs`) so a curator's value beginning
+`--name=` binds as a value, and a write that lands
+re-reads the slice it changed. No send names a subject: an item key spells a
+whole URL, past the length a reply address carries, so pending is per verb
+and a queue's rows hold while any judgment of it waits, a merge included.
+The view switcher wears the shared tab roles (`nodes-tab-host__tabbar`,
+`nodes-tab-host__tab`). `canTune`, which `enqueue_intelligence_assets()` sets
+from `Capabilities::can( TUNE )` on the page's own hook suffix alone,
+only hides the curation controls: the server's role gate refuses a write the
+caller may not make. The vocabulary the selects offer is `Intel_Event`'s own
+lists, localized beside it. Every string from the graph renders as text, an
+item URL becomes a link only when it is http or https, and `Answer` gives an
+empty answer and an `available: false` one different words. The page root
+carries `newspack-nodes-theme`, `newspack-nodes-skin-root` and
+`newspack-nodes-ui`, and the enqueue names `newspack-nodes-graph`, which pulls
+the ui and theme sheets in, so cards, banners, empty states and buttons take
+the shared roles. The build resolves `@newspack-nodes/runtime`,
+`@newspack-nodes/shared/*` and `@newspack-nodes/debug-overlay` through the
+substrate's `alias-map.cjs`, from `NEWSPACK_NODES_SRC` in CI and from the
+sibling checkout locally.
 
 ## Layout
 
 | Path | What |
 |------|------|
-| `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus, WP-CLI, CPT hooks, the `Insights_CI` and `Intelligence_CI` mounts, the MCP door's `wire()` |
-| `includes/` (pipeline) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node`, the `Emits_Struct` trait, `Ontology_Seed`, `Ontology_Writer`, `Source_Node` and its three connectors, `Summarizer_Node`, `Scorer_Node`, `Digest_Builder_Node`, `Digest_Composer` |
-| `includes/` (gate) | `Gate_Node`, `Publisher_Matcher`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
-| `includes/` (publishers) | `Publisher_CPT`, `Publisher_Meta_Box`, `CPT_Publisher_Repository` and the `Publisher_Repository` interface |
+| `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus, WP-CLI, the `Intelligence_CI` mount, the MCP door's `wire()` |
+| `includes/` (streams) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Ontology_Seed`, `Ontology_Writer`, the `Emits_Struct` trait |
+| `includes/` (collect) | `Source_Node` and its three connectors, the `Source` interface |
+| `includes/` (resolve) | `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
 | `includes/` (clients) | `Client_Importer`, the `Client_Roster` interface, `Graph_Client_Roster`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |
-| `includes/` (service) | `Insights_CI_Node`, `Intelligence_CI_Node`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Intel_Tiers`, `Worker_Route`, the `Source` interface, `uninstall-cleanup.php` |
+| `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Intel_Tiers`, `Worker_Route`, `uninstall-cleanup.php` |
 | `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed` and `ontology reresolve`; the `Refuses_Root` trait both use |
-| `topologies/` | The nine `.tsl` node-graph topologies |
-| `src/dashboard/` | The Publisher Insights React panel |
+| `topologies/` | The five `.tsl` node-graph topologies |
+| `src/intelligence/` | The Intelligence page's React bundle |
 | `tests/` | PHPUnit (`unit/` + `bootstrap.php` + `support/` + `run-coverage.sh`; `integration/` exists but is empty) |
 | `scripts/` | Git hooks, the shared tooling copies, `bump-version.sh`, `build.mjs`, the lint and coverage gates |
 
@@ -811,48 +720,60 @@ per-bundle static (substrate ADR-16). The build resolves
 Nothing here is registered until the substrate handshake passes, and the plugin
 declares no hook or filter of its own for others to extend.
 
-- **Admin pages.** `Publisher Insights`, a top-level menu at position 58.7, and
-  `Newspack Intelligence` under Settings, which hosts the client-CSV upload.
-  Both are gated on the substrate's
-  `Newspack_Nodes\Capabilities::can( Capabilities::MANAGE )`, which is
-  `manage_options` narrowed by the `allowed_users` list. The dashboard bundle is
-  enqueued on `admin_enqueue_scripts` through `Admin::enqueue_react_page()`,
-  which no-ops when `build/dashboard/index.js` is absent.
-- **Filter.** `newspack_nodes/overlay_pages` — declares the Insights
+- **Admin pages.** `Intelligence`, a top-level menu at position 58.6 with the
+  slug `newspack-intelligence`, gated on
+  `Newspack_Nodes\Capabilities::can( Capabilities::READ )` and registered under
+  the capability `READ` maps to. Its bundle is enqueued on
+  `admin_enqueue_scripts` for its own hook suffix,
+  `toplevel_page_newspack-intelligence`, and no other — WordPress refuses the
+  page to a caller without the menu's capability before that hook runs —
+  through `Admin::enqueue_react_page()`, which no-ops when
+  `build/intelligence/index.js` is absent. `Newspack Intelligence` under
+  Settings, which hosts the client-CSV upload, is gated, rendered and
+  registered the same way on `Capabilities::MANAGE`, which applies the
+  `allowed_users` list.
+- **Filter.** `newspack_nodes/overlay_pages` — declares the Intelligence
   page to the substrate overlay-page registry.
-- **Action.** `newspack_nodes/request_graph_ready` — mounts `Insights_CI` and
-  `Intelligence_CI` into each request graph, idempotently.
-- **Post type.** `newspack_publisher`, the publisher master store: private, with
-  its own `Publishers` admin menu and every capability mapped to
-  `manage_options`. Its meta keys are the `Publisher_CPT::META_*` constants — the
-  CSV-owned atomic fields, and the enrichment fields the meta box edits on
-  `add_meta_boxes` and `save_post`.
-- **Admin-post.** `newspack_intelligence_import_clients`, nonce- and
-  capability-checked, handles the CSV upload and redirects with
-  `clients_imported=1`, which an `admin_notices` callback turns into the success
-  notice. `handle_admin_post()` discards `import_path()`'s counts, so that
-  redirect is unconditional: an unreadable temp file, a header line other than
-  `Atomic site ID, Created, Domain name`, or a file yielding no valid rows still
-  reports success while importing nothing.
+- **Action.** `newspack_nodes/request_graph_ready` — mounts `Intelligence_CI`
+  into each request graph, idempotently.
+- **Admin-post.** `newspack_intelligence_import_clients` handles the CSV
+  upload, refusing a caller `Capabilities::can( MANAGE )` refuses or a failed
+  nonce, and redirects with `clients_imported=1`, which an `admin_notices`
+  callback turns into the success notice. `handle_admin_post()` discards
+  `import_path()`'s counts, so that redirect is unconditional: an unreadable
+  temp file, a header line other than `Atomic site ID, Created, Domain name`,
+  or a file yielding no valid rows still reports success while importing
+  nothing.
 - **REST.** `POST /wp-json/newspack-intelligence/v1/mcp`, the MCP door, which
   the substrate's `Mcp_Door` serves and declares as an OAuth resource on
-  `newspack_nodes/oauth_resources`. The dashboard's "Create draft post" action
-  POSTs core `/wp/v2/posts` from the browser.
+  `newspack_nodes/oauth_resources`.
 - **Uninstall.** Plugin delete removes every `newspack_intelligence_` option row
-  and its transient variants, on every site of a multisite. Deactivation removes
-  nothing.
+  and its transient variants, on every site of a multisite, and
+  `delete_graph_tables()` removes the SQLite files, WAL files included, of
+  every Row_Table the plugin's own topologies declare with the `Intel_Graph`
+  schema, on every partition — under a base directory this install
+  configured, never the default one every unconfigured install shares. The
+  substrate's uninstall removes the streams with the rest of its runtime
+  tree. Deactivation removes nothing.
 
 ## References
 
 - Substrate: [`newspack-nodes`](../newspack-nodes) (+ its `AGENTS.md`)
-- Teaching walkthrough: `newspack-nodes/examples/example-ai-newsletter`
 - Design record, in `dndocker/docs/superpowers/`; the code is the authority where
   the two disagree:
-  - `specs/2026-06-15-newspack-ai-newsletter-floorplan-design.md` — the master
-    floorplan, executed by `plans/2026-06-15-newspack-ai-newsletter-foundation.md`
-  - `specs/2026-06-15-newspack-ai-newsletter-ai-core-design.md` — the LLM stages,
-    executed by `plans/2026-06-15-newspack-ai-newsletter-ai-core.md`
-  - `specs/2026-07-06-ai-newsletter-topology-config-migration-design.md` — why
-    there is no settings page: config lives in the topology verbs
+  - `specs/2026-10-24-intelligence-entity-graph-design.md` — the entity graph:
+    the two streams, the projection, resolution, curation, the MCP door and
+    the later phases, executed by
+    `plans/2026-10-24-intelligence-entity-graph-phase1.md`, with the substrate
+    halves in `plans/2026-10-24-nodes-partition-keep-everything.md` (the
+    ontology stream's retention) and `plans/2026-10-24-nodes-mcp-door.md`
+    (the door)
   - `specs/2026-07-16-newspack-intelligence-rebrand-design.md` — the rename
   - `specs/2026-07-29-intelligence-actions-v7-design.md` — the release workflow
+  - `specs/2026-06-15-newspack-ai-newsletter-floorplan-design.md` and
+    `specs/2026-06-15-newspack-ai-newsletter-ai-core-design.md` — the digest
+    pipeline the entity graph replaced, executed by
+    `plans/2026-06-15-newspack-ai-newsletter-foundation.md` and
+    `plans/2026-06-15-newspack-ai-newsletter-ai-core.md`
+  - `specs/2026-07-06-ai-newsletter-topology-config-migration-design.md` — why
+    node config lives in the topology verbs

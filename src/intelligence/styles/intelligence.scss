@@ -1,0 +1,102 @@
+/**
+ * The Intelligence page's geometry. Appearance — cards, banners, empty
+ * states, status text, tabs, buttons and fields — comes from the shared
+ * `newspack-nodes-ui` roles the page root opts into, so nothing here paints.
+ */
+
+@use "@newspack-nodes/shared/styles/tokens" as base;
+
+.newspack-intelligence {
+	max-width: 1200px;
+	margin: base.$space-lg base.$space-xl 0 0;
+
+	// The shared tab bar's paint arrives with the ui sheet; its row is ours.
+	.nodes-tab-host__tabbar {
+		display: flex;
+		flex-wrap: wrap;
+		gap: base.$space-xs;
+		margin: base.$space-lg 0 base.$space-xl;
+	}
+
+	&__view {
+		display: flex;
+		flex-direction: column;
+		gap: base.$space-xl;
+	}
+
+	&__filters {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+		gap: base.$space-md base.$space-lg;
+		align-items: end;
+	}
+
+	&__items,
+	&__facts,
+	&__chips {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	&__items {
+		display: flex;
+		flex-direction: column;
+		gap: base.$space-lg;
+	}
+
+	&__facts,
+	&__chips {
+		display: flex;
+		gap: base.$space-sm;
+	}
+
+	&__facts {
+		flex-direction: column;
+	}
+
+	&__chips {
+		flex-wrap: wrap;
+	}
+
+	&__item p {
+		margin: base.$space-xs 0;
+	}
+
+	&__item-head,
+	&__judge,
+	&__pager {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: base.$space-sm;
+	}
+
+	&__item-head strong {
+		flex: 1 1 auto;
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+
+	&__edits {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+		gap: base.$space-lg;
+		margin-top: base.$space-lg;
+	}
+
+	&__edit {
+		display: flex;
+		flex-direction: column;
+		gap: base.$space-sm;
+		min-width: 0;
+	}
+
+	&__merge,
+	&__create {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: end;
+		gap: base.$space-sm;
+	}
+}

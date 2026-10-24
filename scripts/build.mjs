@@ -68,8 +68,8 @@ for ( const dep of Object.keys(
 
 const ENTRIES = [
 	{
-		entry: 'src/dashboard/index.js',
-		outDir: path.resolve( ROOT, 'build/dashboard' ),
+		entry: 'src/intelligence/index.js',
+		outDir: path.resolve( ROOT, 'build/intelligence' ),
 	},
 ];
 

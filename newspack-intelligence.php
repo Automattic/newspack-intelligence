@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Newspack Intelligence
- * Description: AI-driven team intelligence digest built on the newspack-nodes substrate.
+ * Description: Collects and curates intelligence as an entity graph, built on the newspack-nodes substrate.
  * Version: 0.17.7
  * Author: Automattic
  * Author URI: https://newspack.com/
@@ -29,60 +29,70 @@ if ( ! \defined( 'NEWSPACK_INTELLIGENCE_URL' ) ) {
 	\define( 'NEWSPACK_INTELLIGENCE_URL', \plugin_dir_url( __FILE__ ) );
 }
 
-const INSIGHTS_MENU_SLUG = 'newspack-intelligence-insights';
-const INSIGHTS_MOUNT_ID  = 'newspack-intelligence-insights';
-const SETTINGS_MENU_SLUG = 'newspack-intelligence-settings';
+const INTELLIGENCE_MENU_SLUG = 'newspack-intelligence';
+const INTELLIGENCE_MOUNT_ID  = 'newspack-intelligence-app';
+const SETTINGS_MENU_SLUG     = 'newspack-intelligence-settings';
 
 /**
- * Register the Publisher Insights dashboard as its own top-level admin menu. The
- * callback renders only the React mount point inside the standard `.wrap`; the
- * dashboard bundle takes over from there.
+ * Register the Intelligence page — search, entity, review and collections —
+ * as its own top-level menu for every reader of the graph. The callback
+ * renders only the React mount point inside the standard `.wrap`.
  */
-function register_insights_admin_page(): void {
+function register_intelligence_admin_page(): void {
 	if ( ! \function_exists( 'add_menu_page' ) || ! \class_exists( '\Newspack_Nodes\Capabilities' ) ) {
 		return;
 	}
-	// Honor the substrate access gate (manage_options + allowed_users).
-	if ( ! \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) ) {
+	if ( ! \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::READ ) ) {
 		return;
 	}
 	\add_menu_page(
-		\__( 'Publisher Insights', 'newspack-intelligence' ),
-		\__( 'Publisher Insights', 'newspack-intelligence' ),
-		'manage_options',
-		INSIGHTS_MENU_SLUG,
+		\__( 'Intelligence', 'newspack-intelligence' ),
+		\__( 'Intelligence', 'newspack-intelligence' ),
+		\Newspack_Nodes\Capabilities::cap_for( \Newspack_Nodes\Capabilities::READ ),
+		INTELLIGENCE_MENU_SLUG,
 		// Notices go after `.wp-header-end`; without one, inside the app.
-		static fn () => print( '<div class="wrap"><hr class="wp-header-end"><div id="' . \esc_attr( INSIGHTS_MOUNT_ID ) . '" class="newspack-intelligence-insights"></div></div>' ),
-		'dashicons-email',
-		58.7
+		static fn () => print( '<div class="wrap"><hr class="wp-header-end"><div id="' . \esc_attr( INTELLIGENCE_MOUNT_ID ) . '"></div></div>' ),
+		'dashicons-search',
+		58.6
 	);
 }
 
 /**
- * Enqueue the Publisher Insights dashboard bundle on its own admin page.
- * `Admin::enqueue_react_page()` no-ops when `build/dashboard/index.js` is absent.
+ * Enqueue the Intelligence bundle on its own admin page, telling it whether
+ * to render curation controls and the vocabulary those controls offer. The
+ * server's role gate stays the authority; the flag only hides. WordPress
+ * refuses the page to a caller its menu capability excludes before this
+ * runs. `Admin::enqueue_react_page()` no-ops when
+ * `build/intelligence/index.js` is absent.
+ *
+ * @param string $hook The admin page's hook suffix.
  */
-function enqueue_insights_assets( string $hook = '' ): void {
-	if ( ! \function_exists( 'wp_enqueue_script' ) || ! \class_exists( '\Newspack_Nodes\Admin\Admin' ) ) {
+function enqueue_intelligence_assets( string $hook ): void {
+	if ( 'toplevel_page_' . INTELLIGENCE_MENU_SLUG !== $hook || ! \class_exists( '\Newspack_Nodes\Admin\Admin' ) ) {
 		return;
 	}
-	if ( ! \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) ) {
-		return;
-	}
-
 	\Newspack_Nodes\Admin\Admin::enqueue_react_page(
 		[
-			'handle'           => 'newspack-intelligence-insights',
-			'page'             => INSIGHTS_MENU_SLUG,
-			'dir'              => __DIR__ . '/build/dashboard',
-			'url'              => \plugins_url( 'build/dashboard', __FILE__ ),
+			'handle'           => 'newspack-intelligence',
+			'page'             => INTELLIGENCE_MENU_SLUG,
+			'dir'              => __DIR__ . '/build/intelligence',
+			'url'              => \plugins_url( 'build/intelligence', __FILE__ ),
 			'version_fallback' => \NEWSPACK_INTELLIGENCE_VERSION,
 			'style_deps'       => [ 'wp-components', 'newspack-nodes-graph' ],
+			'localize'         => [
+				'canTune'    => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::TUNE ),
+				'vocabulary' => [
+					'roles'           => Intel_Event::ROLES,
+					'nameKinds'       => Intel_Event::NAME_KINDS,
+					'identifierKinds' => Intel_Event::IDENTIFIER_KINDS,
+					'itemKinds'       => Intel_Event::ITEM_KINDS,
+				],
+			],
 		]
 	);
 }
 
-/** Register the publisher CSV importer under the core Settings menu. */
+/** Register the client CSV importer under the core Settings menu. */
 function register_clients_admin_page(): void {
 	if ( ! \function_exists( 'add_submenu_page' ) || ! \class_exists( '\\Newspack_Nodes\\Capabilities' ) ) {
 		return;
@@ -94,15 +104,15 @@ function register_clients_admin_page(): void {
 		'options-general.php',
 		\__( 'Newspack Intelligence Settings', 'newspack-intelligence' ),
 		\__( 'Newspack Intelligence', 'newspack-intelligence' ),
-		'manage_options',
+		\Newspack_Nodes\Capabilities::cap_for( \Newspack_Nodes\Capabilities::MANAGE ),
 		SETTINGS_MENU_SLUG,
 		__NAMESPACE__ . '\\render_clients_page'
 	);
 }
 
-/** Render the publisher CSV import page. */
+/** Render the client CSV import page. */
 function render_clients_page(): void {
-	if ( ! \current_user_can( 'manage_options' ) ) {
+	if ( ! \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) ) {
 		return;
 	}
 	echo '<div class="wrap"><h1>' . \esc_html__( 'Newspack Intelligence Settings', 'newspack-intelligence' ) . '</h1>';
@@ -111,16 +121,13 @@ function render_clients_page(): void {
 }
 
 /**
- * Mount this plugin's service interpreters into the per-request graph, the
- * same way the substrate mounts its own CIs: `insights` for the Publisher
- * Insights slices and `intelligence` for the graph's read verbs. Idempotent:
- * a second call in one request skips every name already mounted.
+ * Mount `intelligence`, the graph's read and curation verbs, into the
+ * per-request graph, the same way the substrate mounts its own CIs.
+ * Idempotent: a second call in one request finds it mounted.
  */
 function mount_service_cis( \Newspack_Nodes\Command_Interpreter_Node $base_interpreter ): void {
-	foreach ( [ 'insights' => 'Insights_CI', 'intelligence' => 'Intelligence_CI' ] as $name => $type ) {
-		if ( null === \Newspack_Nodes\Core::node( $name ) ) {
-			$base_interpreter->make_node( $type, $name );
-		}
+	if ( null === \Newspack_Nodes\Core::node( 'intelligence' ) ) {
+		$base_interpreter->make_node( 'Intelligence_CI', 'intelligence' );
 	}
 }
 
@@ -158,13 +165,13 @@ function register_cli_commands(): void {
 		}
 
 		// Admin pages and upload hooks need Composer to load Clients_Settings.
-		\add_action( 'admin_menu', __NAMESPACE__ . '\\register_insights_admin_page', 11 );
-		\add_action( 'admin_menu', __NAMESPACE__ . '\\register_clients_admin_page', 12 );
-		\add_action( 'admin_enqueue_scripts', __NAMESPACE__ . '\\enqueue_insights_assets' );
+		\add_action( 'admin_menu', __NAMESPACE__ . '\\register_intelligence_admin_page', 10 );
+		\add_action( 'admin_menu', __NAMESPACE__ . '\\register_clients_admin_page', 11 );
+		\add_action( 'admin_enqueue_scripts', __NAMESPACE__ . '\\enqueue_intelligence_assets' );
 		// Declare the page on the substrate overlay registry (ELN overlay tab).
 		\add_filter(
 			'newspack_nodes/overlay_pages',
-			static fn ( $pages ): array => \array_merge( (array) $pages, [ INSIGHTS_MENU_SLUG ] )
+			static fn ( $pages ): array => \array_merge( (array) $pages, [ INTELLIGENCE_MENU_SLUG ] )
 		);
 		\add_action(
 			'admin_post_' . Clients_Settings::ADMIN_POST_ACTION,
@@ -179,18 +186,13 @@ function register_cli_commands(): void {
 			}
 		);
 
-		// Wire inside the gate; classes autoload only after the require above.
-		\add_action( 'init', [ Publisher_CPT::class, 'register' ] );
-		\add_action( 'add_meta_boxes', [ Publisher_Meta_Box::class, 'register' ] );
-		\add_action( 'save_post', [ Publisher_Meta_Box::class, 'save' ] );
-
 		// register_plugin: namespace + topologies/ dir + catalog.
 		\Newspack_Nodes\Topology_Registry::register_plugin(
 			'Newspack_Intelligence\\',
 			__DIR__ . '/topologies'
 		);
 
-		// Mount the service CIs into each request graph.
+		// Mount the service CI into each request graph.
 		\add_action( 'newspack_nodes/request_graph_ready', __NAMESPACE__ . '\\mount_service_cis' );
 
 		// The MCP door agents read and curate the graph through.
