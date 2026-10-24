@@ -1,10 +1,10 @@
 <?php
 /**
- * Client_Importer: reconcile a parsed clients CSV against the publisher store.
+ * Client_Importer: reconcile a parsed clients CSV against the client roster.
  *
- * Pure logic: depends only on a Publisher_Repository. Upserts by atomic_site_id
- * (never touches enrichment), marks churn for stored ids absent from the CSV,
- * and reactivates returning publishers.
+ * Pure logic: depends only on a Client_Roster. Upserts by atomic_site_id,
+ * marks churn for held ids absent from the CSV, reactivates returning
+ * clients, then commits the roster's changes once.
  *
  * @package Newspack_Intelligence
  */
@@ -15,7 +15,7 @@ namespace Newspack_Intelligence;
 
 final class Client_Importer {
 
-	public function __construct( private Publisher_Repository $repo ) {}
+	public function __construct( private Client_Roster $roster ) {}
 
 	/**
 	 * @param array<int,array{atomic_site_id:string,domain_name:string,created:string}> $rows
@@ -39,31 +39,29 @@ final class Client_Importer {
 		foreach ( $rows as $row ) {
 			$id             = $row['atomic_site_id'];
 			$csv_ids[ $id ] = true;
-			$existing       = $this->repo->find_by_atomic_id( $id );
+			$existing       = $this->roster->find_by_atomic_id( $id );
 			if ( null === $existing ) {
-				$this->repo->create( $row, $today );
+				$this->roster->create( $row, $today );
 				++$created;
 				continue;
 			}
-			$this->repo->update_atomic_fields( $id, $row, $today );
-			if ( 'churned' === ( $existing['status'] ?? '' ) ) {
-				$this->repo->set_active( $id );
+			$this->roster->update_atomic_fields( $id, $row, $today );
+			if ( 'churned' === $existing['status'] ) {
+				$this->roster->set_active( $id, $today );
 				++$reactivated;
 			} else {
 				++$updated;
 			}
 		}
 
-		foreach ( $this->repo->all_atomic_ids() as $id ) {
-			if ( isset( $csv_ids[ $id ] ) ) {
-				continue;
-			}
-			$existing = $this->repo->find_by_atomic_id( $id );
-			if ( 'churned' !== ( $existing['status'] ?? '' ) ) {
-				$this->repo->mark_churned( $id, $today );
+		foreach ( $this->roster->statuses() as $id => $status ) {
+			if ( 'active' === $status && ! isset( $csv_ids[ $id ] ) ) {
+				$this->roster->mark_churned( $id, $today );
 				++$churned;
 			}
 		}
+
+		$this->roster->commit();
 
 		return [
 			'created'      => $created,

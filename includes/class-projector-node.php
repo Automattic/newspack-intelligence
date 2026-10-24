@@ -184,7 +184,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			'link_confirmed'      => $judgment( 'confirmed' ),
 			'link_rejected'       => $judgment( 'rejected' ),
 			'collection_created'  => [ [ 'set', 'collections', [ 'collection_key', 'name', 'actor', 'ts' ] ] ],
-			'collected'           => [ [ 'set', 'collected', [ 'collection_key', 'item_key', 'url', 'title', 'actor', 'ts' ] ] ],
+			'collected'           => [ [ 'set', 'collected', [ 'collection_key', 'item_key', 'url', 'title', 'tier', 'actor', 'ts' ] ] ],
 		];
 		$event_row = [
 			'ignore',

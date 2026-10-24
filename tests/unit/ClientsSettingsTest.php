@@ -4,16 +4,25 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Nodes\Tests\TestCase;
+use Newspack_Nodes\Topology_Analyzer;
+use Newspack_Nodes\Topology_Registry;
 use Newspack_Intelligence\Client_Importer;
 use Newspack_Intelligence\Clients_Settings;
 
-require_once __DIR__ . '/../support/fake-publisher-repository.php';
-require_once __DIR__ . '/../support/wp-post-stubs.php';
+require_once __DIR__ . '/../support/fake-client-roster.php';
+require_once __DIR__ . '/../support/reads-ontology-log.php';
+require_once __DIR__ . '/../support/seeds-entity-index.php';
 
 final class ClientsSettingsTest extends TestCase {
+	use Reads_Ontology_Log;
+	use Seeds_Entity_Index;
 
 	protected function tearDown(): void {
+		Topology_Registry::reset();
+		Topology_Analyzer::reset_caches();
 		unset(
+			$GLOBALS['_current_user_id'],
+			$GLOBALS['_wp_test_user_logins'],
 			$GLOBALS['_current_user_can'],
 			$GLOBALS['_check_admin_referer'],
 			$GLOBALS['_wp_referer'],
@@ -29,7 +38,7 @@ final class ClientsSettingsTest extends TestCase {
 		$tmp = \tempnam( \sys_get_temp_dir(), 'clients' );
 		\file_put_contents( $tmp, $csv );
 
-		$repo     = new Fake_Publisher_Repository(); // from tests/support/fake-publisher-repository.php
+		$repo     = new Fake_Client_Roster();
 		$settings = new Clients_Settings( new Client_Importer( $repo ) );
 		$result   = $settings->import_path( $tmp );
 
@@ -39,22 +48,39 @@ final class ClientsSettingsTest extends TestCase {
 	}
 
 	public function test_import_path_returns_zeroes_for_unreadable_file(): void {
-		$settings = new Clients_Settings( new Client_Importer( new Fake_Publisher_Repository() ) );
+		$settings = new Clients_Settings( new Client_Importer( new Fake_Client_Roster() ) );
 		$result   = $settings->import_path( '/no/such/file.csv' );
 		$this->assertSame( 0, $result['total_in_csv'] );
 	}
 
-	public function test_default_constructor_builds_a_cpt_backed_importer(): void {
-		\NPAINL_WP_Post_Store::reset();
-		$settings = new Clients_Settings();
-		$result   = $settings->import_path( '/no/such/file.csv' );
+	/** An upload imports into the ontology as the signed-in person. */
+	public function test_default_constructor_imports_as_the_signed_in_user(): void {
+		Topology_Analyzer::reset_caches();
+		$this->start_entity_graph();
+		$this->activate( 'newspack-intelligence-project' );
+		$GLOBALS['_current_user_id']          = 37;
+		$GLOBALS['_wp_test_user_logins'][37]  = 'tidewater-editor';
+		$csv = "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"64\",\"2022-02-02\",\"tidewater.example\"\n";
+		$tmp = \tempnam( \sys_get_temp_dir(), 'clients' );
+		\file_put_contents( $tmp, $csv );
+
+		$result = ( new Clients_Settings() )->import_path( $tmp );
+
+		$this->assertSame( 1, $result['created'] );
+		$this->assertSame( [ 'user:tidewater-editor' ], \array_values( \array_unique( \array_column( self::ontology_events(), 'actor' ) ) ) );
+		\unlink( $tmp );
+	}
+
+	/** An unreadable file imports nothing, so it needs no signed-in person. */
+	public function test_default_constructor_reports_zeroes_for_unreadable_file(): void {
+		$result = ( new Clients_Settings() )->import_path( '/no/such/file.csv' );
 		$this->assertSame( 0, $result['total_in_csv'] );
 	}
 
 	public function test_handle_admin_post_dies_when_not_allowed(): void {
 		$GLOBALS['_current_user_can']   = false;
 		$GLOBALS['_check_admin_referer'] = true;
-		$settings                       = new Clients_Settings( new Client_Importer( new Fake_Publisher_Repository() ) );
+		$settings                       = new Clients_Settings( new Client_Importer( new Fake_Client_Roster() ) );
 
 		$this->expectException( \RuntimeException::class );
 		$this->expectExceptionMessageMatches( '/wp_die/' );
@@ -71,19 +97,19 @@ final class ClientsSettingsTest extends TestCase {
 		\file_put_contents( $tmp, $csv );
 		$_FILES = [ 'clients_csv' => [ 'tmp_name' => $tmp, 'name' => 'clients.csv' ] ];
 
-		$repo     = new Fake_Publisher_Repository();
+		$repo     = new Fake_Client_Roster();
 		$settings = new Clients_Settings( new Client_Importer( $repo ) );
 
 		$caught = $this->caught( fn () => $settings->handle_admin_post(), 'expected wp_safe_redirect to short-circuit via exception' );
 		$this->assertStringContainsString( 'clients_imported=1', $caught->getMessage() );
 
-		$this->assertCount( 1, $repo->all_atomic_ids() );
+		$this->assertCount( 1, $repo->statuses() );
 		\unlink( $tmp );
 		unset( $_FILES );
 	}
 
 	public function test_render_upload_section_outputs_a_csv_upload_form(): void {
-		$settings = new Clients_Settings( new Client_Importer( new Fake_Publisher_Repository() ) );
+		$settings = new Clients_Settings( new Client_Importer( new Fake_Client_Roster() ) );
 
 		\ob_start();
 		$settings->render_upload_section();
@@ -95,7 +121,7 @@ final class ClientsSettingsTest extends TestCase {
 	}
 
 	public function test_render_import_notice_shows_success_only_when_flag_set(): void {
-		$settings = new Clients_Settings( new Client_Importer( new Fake_Publisher_Repository() ) );
+		$settings = new Clients_Settings( new Client_Importer( new Fake_Client_Roster() ) );
 
 		$_GET = [ 'clients_imported' => '1' ];
 		\ob_start();

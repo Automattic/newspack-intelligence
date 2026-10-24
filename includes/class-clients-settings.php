@@ -1,6 +1,6 @@
 <?php
 /**
- * Clients_Settings: CSV upload → publisher master import, on the Settings page.
+ * Clients_Settings: CSV upload → client roster import, on the Settings page.
  *
  * @package Newspack_Intelligence
  */
@@ -13,11 +13,11 @@ class Clients_Settings {
 
 	public const ADMIN_POST_ACTION = 'newspack_intelligence_import_clients';
 
-	private Client_Importer $importer;
-
-	public function __construct( ?Client_Importer $importer = null ) {
-		$this->importer = $importer ?? new Client_Importer( new CPT_Publisher_Repository() );
-	}
+	/**
+	 * @param Client_Importer|null $importer The importer; null imports into the
+	 *                                       graph roster as the signed-in user.
+	 */
+	public function __construct( private ?Client_Importer $importer = null ) {}
 
 	/** admin-post handler: validate nonce/caps + $_FILES, then import_path(). */
 	public function handle_admin_post(): void {
@@ -38,6 +38,7 @@ class Clients_Settings {
 	 *
 	 * @param string $path Path to the CSV file.
 	 * @return array{created:int,updated:int,reactivated:int,churned:int,total_in_csv:int}
+	 * @throws \Newspack_Nodes\Table_Unavailable When the projection cannot be read.
 	 */
 	public function import_path( string $path ): array {
 		$rows = CSV_Parser::parse_file( $path );
@@ -50,7 +51,8 @@ class Clients_Settings {
 				'total_in_csv' => 0,
 			];
 		}
-		return $this->importer->import( $rows, \gmdate( 'Y-m-d' ) );
+		$importer = $this->importer ?? new Client_Importer( new Graph_Client_Roster( Intel_Event::caller() ) );
+		return $importer->import( $rows, \gmdate( 'Y-m-d' ) );
 	}
 
 	/** Render the upload form (called from the Settings page). */

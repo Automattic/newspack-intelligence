@@ -4,7 +4,9 @@
  * projection. It holds the accepted and proposed entities, each name by its
  * `norm()` and each identifier by `kind:value`; a merged entity's names and
  * identifiers answer its survivor's key, and a rejected entity's names are
- * kept only to refuse proposing them again. An entity exists once it has
+ * kept only to refuse proposing them again. An identifier whose survivor is
+ * rejected or unresolvable is left out too, and `held_by_refused()` names
+ * the key holding it. An entity exists once it has
  * both an `entities` row and an `entity_states` row; a name or identifier
  * naming any other key is not indexed. A topic is matched by extraction,
  * never in text: it is offered by its canonical name through `topics()` and
@@ -32,7 +34,7 @@ final class Entity_Index {
 	public const MAX_NAME_WORDS = 6;
 
 	/** The longest merge chain followed to its survivor. */
-	private const MAX_MERGE_HOPS = 10;
+	public const MAX_MERGE_HOPS = 10;
 
 	/** The states an entity is indexed in. */
 	private const LIVE_STATES = [ 'accepted', 'proposed' ];
@@ -44,11 +46,11 @@ final class Entity_Index {
 	 */
 	private array $names = [];
 
-	/** @var array<string,string> `kind:value` => entity key. */
+	/** @var array<string,array<array-key,string>> Kind => value => the entity it names. */
 	private array $identifiers = [];
 
-	/** @var list<array{entity_key:string,domain:string}> Each domain identifier. */
-	private array $domains = [];
+	/** @var array<string,array<array-key,string>> Kind => value => the key holding it, whose survivor is rejected or unresolvable. */
+	private array $refused = [];
 
 	/** @var array<string,true> The norm of every rejected entity's names. */
 	private array $rejected = [];
@@ -58,6 +60,9 @@ final class Entity_Index {
 
 	/** @var array<string,string> Each live topic's canonical name => its key. */
 	private array $topics = [];
+
+	/** @var array<string,string> Each merged key's survivor, '' where it does not resolve. */
+	private array $merged = [];
 
 	/** The index every reader in this process shares. */
 	private static ?self $current = null;
@@ -83,53 +88,40 @@ final class Entity_Index {
 
 	/**
 	 * Read the index from the projection: every attached partition's
-	 * entities, states, merges, names and identifiers. An entity whose merge
-	 * chain cycles or runs past MAX_MERGE_HOPS answers no survivor, so its
-	 * names and identifiers are left out, logged once naming each chain.
+	 * entities, states, merges, names and identifiers, each table one
+	 * statement over every partition, a later partition's row winning. An
+	 * entity whose merge chain cycles or runs past MAX_MERGE_HOPS answers no
+	 * survivor, so its names and identifiers are left out, logged once
+	 * naming each chain.
 	 *
 	 * @param Row_Reader $r The reader `Intel_Graph_Row_Schema::read()` hands over.
 	 */
 	public static function load( Row_Reader $r ): self {
-		$rows   = static function ( string $columns, string $table ) use ( $r ): array {
-			$all = [];
-			foreach ( $r->aliases() as $alias ) {
-				\array_push( $all, ...$r->rows( "SELECT {$columns} FROM {$alias}.{$table} ORDER BY 1", [] ) );
-			}
-			return $all;
-		};
 		$states = [];
-		foreach ( $rows( 'entity_key, state', 'entity_states' ) as [ $key, $state ] ) {
+		foreach ( $r->rows( 'SELECT entity_key, state FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_states' ) . ' s', [] ) as [ $key, $state ] ) {
 			$states[ Core::as_string( $key ) ] = Core::as_string( $state );
 		}
-		$merges = [];
-		foreach ( $rows( 'entity_key, merged_into', 'entity_merges' ) as [ $key, $into ] ) {
-			$merges[ Core::as_string( $key ) ] = Core::as_string( $into );
-		}
-		$existing = [];
-		$named    = [];
-		$topics   = [];
-		foreach ( $rows( 'entity_key, name, type', 'entities' ) as [ $key, $name, $type ] ) {
-			$key  = Core::as_string( $key );
-			$name = Core::as_string( $name );
-			if ( ! isset( $states[ $key ] ) ) {
-				continue;
+		$index         = new self();
+		$index->merged = self::survivors( $r );
+		$entities      = $r->rows( 'SELECT entity_key, name, type FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e', [] );
+		$existing      = [];
+		$topics        = [];
+		foreach ( $entities as [ $key, $name, $type ] ) {
+			$key = Core::as_string( $key );
+			if ( isset( $states[ $key ] ) ) {
+				$existing[ $key ] = $states[ $key ];
+				if ( 'topic' === $type ) {
+					$topics[ $key ] = Core::as_string( $name );
+				}
 			}
-			$existing[ $key ] = $states[ $key ];
-			if ( 'topic' === $type ) {
-				$topics[ $key ] = $name;
-				continue;
-			}
-			$named[] = [ $key, 'canonical', $name, self::norm( $name ) ];
 		}
-		$index    = new self();
-		$broken   = [];
-		$answers  = [];
-		$survivor = static function ( string $key ) use ( $merges, &$broken, &$answers ): ?string {
-			return \array_key_exists( $key, $answers ) ? $answers[ $key ] : $answers[ $key ] = self::survivor( $key, $merges, $broken );
+		$survivor = static function ( string $key ) use ( $index ): ?string {
+			$survivor = $index->merged[ $key ] ?? $key;
+			return '' === $survivor ? null : $survivor;
 		};
 		$state_of = static fn ( string $key ): ?string => $existing[ $survivor( $key ) ?? '' ] ?? null;
 		foreach ( $existing as $key => $state ) {
-			if ( ! isset( $merges[ $key ] ) && \in_array( $state, self::LIVE_STATES, true ) ) {
+			if ( ! isset( $index->merged[ $key ] ) && \in_array( $state, self::LIVE_STATES, true ) ) {
 				$index->states[ $key ] = $state;
 				if ( isset( $topics[ $key ] ) ) {
 					$index->topics[ $topics[ $key ] ] = $key;
@@ -137,39 +129,100 @@ final class Entity_Index {
 			}
 		}
 		\ksort( $index->topics );
-		foreach ( [ ...$named, ...$rows( 'entity_key, kind, value, norm', 'names' ) ] as [ $key, $kind, $value, $norm ] ) {
-			$key = Core::as_string( $key );
+		$add_name = static function ( string $key, string $kind, string $value, string $norm ) use ( $index, $topics, $survivor, $state_of ): void {
 			if ( isset( $topics[ $key ] ) ) {
-				continue;
+				return;
 			}
-			$value = Core::as_string( $value );
 			$state = $state_of( $key );
-			$norm  = Core::as_string( $norm );
 			if ( 'rejected' === $state ) {
 				$index->rejected[ $norm ] = true;
 			} elseif ( \in_array( $state, self::LIVE_STATES, true ) ) {
 				$entity = Core::as_string( $survivor( $key ) );
-				$kind   = Core::as_string( $kind );
 				$index->names[ $norm ][ "{$entity}|{$kind}|{$value}" ] = [ 'entity_key' => $entity, 'kind' => $kind, 'value' => $value, 'state' => $state ];
 			}
-		}
-		foreach ( $rows( 'entity_key, kind, value', 'identifiers' ) as [ $key, $kind, $value ] ) {
+		};
+		foreach ( $entities as [ $key, $canonical ] ) {
 			$key = Core::as_string( $key );
-			if ( ! \in_array( $state_of( $key ), self::LIVE_STATES, true ) ) {
-				continue;
-			}
-			$entity = Core::as_string( $survivor( $key ) );
-			$kind   = Core::as_string( $kind );
-			$value  = self::identifier_value( $kind, Core::as_string( $value ) );
-			$index->identifiers[ "{$kind}:{$value}" ] = $entity;
-			if ( 'domain' === $kind ) {
-				$index->domains[] = [ 'entity_key' => $entity, 'domain' => $value ];
+			if ( isset( $existing[ $key ] ) ) {
+				$add_name( $key, 'canonical', Core::as_string( $canonical ), self::norm( Core::as_string( $canonical ) ) );
 			}
 		}
+		foreach ( $r->rows( 'SELECT entity_key, kind, value, norm FROM ' . Intel_Graph_Row_Schema::all( $r, 'names' ) . ' n ORDER BY 1', [] ) as [ $key, $kind, $value, $norm ] ) {
+			$add_name( Core::as_string( $key ), Core::as_string( $kind ), Core::as_string( $value ), Core::as_string( $norm ) );
+		}
+		foreach ( $r->rows( 'SELECT entity_key, kind, value FROM ' . Intel_Graph_Row_Schema::all( $r, 'identifiers' ) . ' i', [] ) as [ $key, $kind, $value ] ) {
+			$key   = Core::as_string( $key );
+			$kind  = Core::as_string( $kind );
+			$value = self::identifier_value( $kind, Core::as_string( $value ) );
+			$state = $state_of( $key );
+			if ( \in_array( $state, self::LIVE_STATES, true ) ) {
+				$index->identifiers[ $kind ][ $value ] = Core::as_string( $survivor( $key ) );
+			} elseif ( 'rejected' === $state || null === $survivor( $key ) ) {
+				$index->refused[ $kind ][ $value ] = $key;
+			}
+		}
+		return $index;
+	}
+
+	/**
+	 * A name as matching compares it: lowercase, punctuation to one space,
+	 * whitespace collapsed, a leading `the` dropped.
+	 *
+	 * @param string $s Any text.
+	 */
+	public static function norm( string $s ): string {
+		$s = (string) \preg_replace( '/[^\p{L}\p{M}\p{N}\s]+/u', ' ', \mb_strtolower( $s ) );
+		$s = \trim( (string) \preg_replace( '/\s+/u', ' ', $s ) );
+		return (string) \preg_replace( '/^the /u', '', $s );
+	}
+
+	/**
+	 * Each merged key's survivor across every attached partition, '' where
+	 * its chain cycles or runs past MAX_MERGE_HOPS; every such chain is
+	 * logged once. The one survivor map every reader of the graph shares.
+	 *
+	 * @param Row_Reader $r The reader `Intel_Graph_Row_Schema::read()` hands over.
+	 * @return array<string,string>
+	 */
+	public static function survivors( Row_Reader $r ): array {
+		[ $survivors, $broken ] = self::walk( self::merges( $r ) );
 		if ( [] !== $broken ) {
 			Core::print_less_often( 'leaving out entities whose merges do not resolve: ', \implode( '; ', \array_keys( $broken ) ) );
 		}
-		return $index;
+		return $survivors;
+	}
+
+	/**
+	 * Each merged key => the key it merged into, across every attached
+	 * partition, a later partition's merge winning, by key.
+	 *
+	 * @param Row_Reader $r The reader `Intel_Graph_Row_Schema::read()` hands over.
+	 * @return array<string,string>
+	 */
+	public static function merges( Row_Reader $r ): array {
+		$merges = [];
+		foreach ( $r->rows( 'SELECT entity_key, merged_into FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_merges' ) . ' m', [] ) as [ $key, $into ] ) {
+			$merges[ Core::as_string( $key ) ] = Core::as_string( $into );
+		}
+		\ksort( $merges );
+		return $merges;
+	}
+
+	/**
+	 * Each merged key's survivor, '' where its chain cycles or runs past
+	 * MAX_MERGE_HOPS, and each such chain, described: the one walker every
+	 * survivor is read by.
+	 *
+	 * @param array<string,string> $merges Each merged key => the key it merged into.
+	 * @return array{0:array<string,string>,1:array<string,true>}
+	 */
+	public static function walk( array $merges ): array {
+		$survivors = [];
+		$broken    = [];
+		foreach ( \array_keys( $merges ) as $key ) {
+			$survivors[ $key ] = self::survivor( $key, $merges, $broken ) ?? '';
+		}
+		return [ $survivors, $broken ];
 	}
 
 	/**
@@ -199,25 +252,24 @@ final class Entity_Index {
 	}
 
 	/**
-	 * A name as matching compares it: lowercase, punctuation to one space,
-	 * whitespace collapsed, a leading `the` dropped.
-	 *
-	 * @param string $s Any text.
-	 */
-	public static function norm( string $s ): string {
-		$s = (string) \preg_replace( '/[^\p{L}\p{M}\p{N}\s]+/u', ' ', \mb_strtolower( $s ) );
-		$s = \trim( (string) \preg_replace( '/\s+/u', ' ', $s ) );
-		return (string) \preg_replace( '/^the /u', '', $s );
-	}
-
-	/**
 	 * The entity an identifier names.
 	 *
 	 * @param string $kind  An identifier kind.
 	 * @param string $value Its value, in any case.
 	 */
 	public function by_identifier( string $kind, string $value ): ?string {
-		return $this->identifiers[ $kind . ':' . self::identifier_value( $kind, $value ) ] ?? null;
+		return $this->identifiers[ $kind ][ self::identifier_value( $kind, $value ) ] ?? null;
+	}
+
+	/**
+	 * The key holding an identifier the index leaves out because its
+	 * survivor is rejected, or its merge chain cycles or runs too long.
+	 *
+	 * @param string $kind  An identifier kind.
+	 * @param string $value Its value, in any case.
+	 */
+	public function held_by_refused( string $kind, string $value ): ?string {
+		return $this->refused[ $kind ][ self::identifier_value( $kind, $value ) ] ?? null;
 	}
 
 	/**
@@ -274,12 +326,25 @@ final class Entity_Index {
 	}
 
 	/**
-	 * Each entity's domain identifiers, for the stem step.
+	 * Each identifier of a kind the index holds: value => the entity it
+	 * names. A value of digits alone is an integer key.
 	 *
-	 * @return list<array{entity_key:string,domain:string}>
+	 * @param string $kind An identifier kind.
+	 * @return array<array-key,string>
 	 */
-	public function with_domain(): array {
-		return $this->domains;
+	public function identifiers( string $kind ): array {
+		return $this->identifiers[ $kind ] ?? [];
+	}
+
+	/**
+	 * Each identifier of a kind the index leaves out: value => the key
+	 * holding it, whose survivor is rejected or unresolvable.
+	 *
+	 * @param string $kind An identifier kind.
+	 * @return array<array-key,string>
+	 */
+	public function refused( string $kind ): array {
+		return $this->refused[ $kind ] ?? [];
 	}
 
 	/**
@@ -316,6 +381,16 @@ final class Entity_Index {
 	 */
 	public function state( string $entity_key ): ?string {
 		return $this->states[ $entity_key ] ?? null;
+	}
+
+	/**
+	 * Each merged key's survivor as the index read it, '' where its chain
+	 * cycles or runs past MAX_MERGE_HOPS.
+	 *
+	 * @return array<string,string>
+	 */
+	public function merged(): array {
+		return $this->merged;
 	}
 
 	/**

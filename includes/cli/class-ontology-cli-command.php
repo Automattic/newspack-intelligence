@@ -10,15 +10,15 @@ namespace Newspack_Intelligence\CLI;
 
 use Newspack_Intelligence\Ontology_Seed;
 use Newspack_Intelligence\Ontology_Writer;
-use Newspack_Intelligence\Reresolver_Node;
+use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Worker_Route;
 use Newspack_Nodes\Bootstrap;
-use Newspack_Nodes\CLI;
 use Newspack_Nodes\Config;
 
 \defined( 'ABSPATH' ) || exit;
 
 class Ontology_CLI_Command {
+	use Refuses_Root;
 
 	/**
 	 * Write the seed ontology — topics, partners, funders, industry bodies
@@ -37,7 +37,7 @@ class Ontology_CLI_Command {
 	 * @throws \Newspack_Nodes\Table_Unavailable When the projection cannot be read.
 	 */
 	public function seed( array $args, array $assoc_args ): void {
-		if ( self::refused_root( 'seed' ) ) {
+		if ( self::refused_root( 'ontology seed' ) ) {
 			return;
 		}
 		$present = Ontology_Seed::present();
@@ -71,34 +71,18 @@ class Ontology_CLI_Command {
 	 * @throws \RuntimeException When no worker is live.
 	 */
 	public function reresolve( array $args, array $assoc_args ): void {
-		if ( self::refused_root( 'reresolve' ) ) {
+		if ( self::refused_root( 'ontology reresolve' ) ) {
 			return;
 		}
 		$since = $assoc_args['since'] ?? '';
 		$until = $assoc_args['until'] ?? \gmdate( 'Y-m-d' );
 		try {
-			Reresolver_Node::range( $since, $until );
+			Intel_Graph_Row_Schema::range( $since, $until );
 		} catch ( \InvalidArgumentException $e ) {
 			\WP_CLI::error( $e->getMessage() );
 			return;
 		}
 		$workers = Worker_Route::send( Bootstrap::mount_request_graph(), Config::get_base_directory(), [ [ 'reresolver', "RERESOLVE {$since} {$until}" ] ] );
 		\WP_CLI::success( \sprintf( 'Asked %d %s to re-resolve the items dated %s to %s.', $workers, 1 === $workers ? 'worker' : 'workers', $since, $until ) );
-	}
-
-	/**
-	 * Refuse a root run, through the substrate's effective-uid seam: a root
-	 * write leaves the ontology segment or a worker's IPC file root-owned,
-	 * which the workers, running as the web user, then cannot append to.
-	 *
-	 * @param string $verb The verb, for the message.
-	 * @return bool Whether it refused.
-	 */
-	private static function refused_root( string $verb ): bool {
-		if ( 0 !== CLI::uid() ) {
-			return false;
-		}
-		\WP_CLI::error( "wp newspack-intelligence ontology {$verb} must run as the same user as the workers, not root." );
-		return true;
 	}
 }

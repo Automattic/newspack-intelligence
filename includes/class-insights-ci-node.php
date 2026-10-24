@@ -24,9 +24,6 @@ use Newspack_Nodes\Core;
 
 class Insights_CI_Node extends Service_CI_Node {
 
-	/** The source node names Collect ticks; their count MUST equal the digest's `total` make_node arg in newspack-intelligence-digest.tsl. */
-	private const SOURCE_NODES = [ 'github', 'linear', 'feed' ];
-
 	private const TOP_N = 10;
 
 	/**
@@ -187,12 +184,9 @@ class Insights_CI_Node extends Service_CI_Node {
 	 * @throws \RuntimeException When no worker of the topology is live.
 	 */
 	public static function collect( Command_Interpreter_Node $interpreter, string $base_dir ): array {
-		$requests = [ [ 'digest', 'RESET' ] ];
-		foreach ( self::SOURCE_NODES as $source ) {
-			$requests[] = [ $source, 'TICK' ];
-		}
-		$workers = Worker_Route::send( $interpreter, $base_dir, $requests );
-		return [ 'collecting' => \count( self::SOURCE_NODES ), 'workers' => $workers ];
+		$ticks   = Intelligence_CI_Node::ticks();
+		$workers = Worker_Route::send( $interpreter, $base_dir, [ [ 'digest', 'RESET' ], ...$ticks ] );
+		return [ 'collecting' => \count( $ticks ), 'workers' => $workers ];
 	}
 
 	/**

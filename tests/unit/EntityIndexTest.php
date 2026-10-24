@@ -4,6 +4,9 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Entity_Index;
+use Newspack_Intelligence\Intel_Graph_Row_Schema;
+use Newspack_Nodes\Sqlite_Arm;
+use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
 
@@ -110,7 +113,7 @@ final class EntityIndexTest extends TestCase {
 
 		$this->assertSame( [ self::GAZETTE, self::GAZETTE ], \array_column( $index->names_in( 'Gazette of the Harbor, or GH Daily' ), 'entity_key' ) );
 		$this->assertSame( self::GAZETTE, $index->by_identifier( 'domain', 'ghdaily.example' ) );
-		$this->assertSame( [ [ 'entity_key' => self::GAZETTE, 'domain' => 'ghdaily.example' ] ], $index->with_domain() );
+		$this->assertSame( [ 'ghdaily.example' => self::GAZETTE ], $index->identifiers( 'domain' ) );
 	}
 
 	/** A chain of merges answers its last survivor. */
@@ -142,6 +145,26 @@ final class EntityIndexTest extends TestCase {
 		$lines = self::stderr_lines( $stderr, 'entity merge cycle' );
 		$this->assertCount( 1, $lines );
 		$this->assertStringContainsString( 'organization:ledger-salem → organization:salem-ledger → organization:ledger-salem', $lines[0] );
+	}
+
+	/** The survivor map names each merged key's survivor, '' on a broken chain, and logs each broken chain once. */
+	public function test_survivors_map_every_merged_key(): void {
+		$stderr = $this->capture_stderr();
+		$this->seed(
+			self::entity( 'organization:salem-ledger', 'Salem Ledger' ),
+			self::merged( 'organization:the-ledger', 'organization:ledger-salem' ),
+			self::merged( 'organization:ledger-salem', 'organization:salem-ledger' ),
+			self::merged( 'organization:loop-a', 'organization:loop-b' ),
+			self::merged( 'organization:loop-b', 'organization:loop-a' )
+		);
+		$reader = Sqlite_Arm::open_rows( [ 0 => Table_Node::file( 'intel-graph', 0 ) ], Intel_Graph_Row_Schema::version() );
+
+		$this->assertSame(
+			[ 'organization:ledger-salem' => 'organization:salem-ledger', 'organization:loop-a' => '', 'organization:loop-b' => '', 'organization:the-ledger' => 'organization:salem-ledger' ],
+			Entity_Index::survivors( $reader )
+		);
+		Entity_Index::survivors( $reader );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'entity merge cycle' ) );
 	}
 
 	/** A chain of exactly ten hops still answers its survivor. */
@@ -194,10 +217,29 @@ final class EntityIndexTest extends TestCase {
 
 		$this->assertSame( [], $index->names_in( 'Faded Gazette and FadeGaz return' ) );
 		$this->assertNull( $index->by_identifier( 'domain', 'fadedgazette.example' ) );
-		$this->assertSame( [], $index->with_domain() );
+		$this->assertSame( [], $index->identifiers( 'domain' ) );
+		$this->assertSame( [ 'fadedgazette.example' => 'organization:faded-gazette' ], $index->refused( 'domain' ) );
 		$this->assertTrue( $index->is_rejected_name( 'faded gazette' ) );
 		$this->assertTrue( $index->is_rejected_name( 'fadegaz' ) );
 		$this->assertFalse( $index->is_rejected_name( 'harbor gazette' ) );
+	}
+
+	/** An identifier whose holder is rejected or unresolvable names its holding key; a live one names none. */
+	public function test_held_by_refused_names_the_rejected_or_unresolvable_holder(): void {
+		$index = $this->index_of(
+			self::entity( 'organization:quillmouth-herald', 'Quillmouth Herald', [ 'domain' => [ 'quillmouth.example' ] ] ),
+			self::rejected( 'organization:quillmouth-herald' ),
+			self::entity( 'organization:ashby-post', 'Ashby Post', [ 'domain' => [ 'ashbypost.example' ] ] ),
+			self::entity( 'organization:post-of-ashby', 'Post of Ashby' ),
+			self::merged( 'organization:ashby-post', 'organization:post-of-ashby' ),
+			self::merged( 'organization:post-of-ashby', 'organization:ashby-post' ),
+			self::entity( self::GAZETTE, 'Harbor Gazette', [ 'domain' => [ 'harborgazette.example' ] ] )
+		);
+
+		$this->assertSame( 'organization:quillmouth-herald', $index->held_by_refused( 'domain', 'WWW.Quillmouth.example' ) );
+		$this->assertSame( 'organization:ashby-post', $index->held_by_refused( 'domain', 'ashbypost.example' ) );
+		$this->assertNull( $index->held_by_refused( 'domain', 'harborgazette.example' ) );
+		$this->assertNull( $index->held_by_refused( 'domain', 'nobody.example' ) );
 	}
 
 	public function test_a_proposed_entity_answers_as_proposed(): void {
@@ -257,7 +299,8 @@ final class EntityIndexTest extends TestCase {
 		$index = new Entity_Index();
 
 		$this->assertSame( [], $index->names_in( 'Harbor Gazette' ) );
-		$this->assertSame( [], $index->with_domain() );
+		$this->assertSame( [], $index->identifiers( 'domain' ) );
+		$this->assertSame( [], $index->refused( 'domain' ) );
 		$this->assertSame( [], $index->name_norms() );
 		$this->assertFalse( $index->is_rejected_name( 'harbor gazette' ) );
 	}

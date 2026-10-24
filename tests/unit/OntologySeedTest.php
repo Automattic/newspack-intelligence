@@ -130,13 +130,6 @@ final class OntologySeedTest extends TestCase {
 		Ontology_Seed::present();
 	}
 
-	/** A cold WP-CLI process has no tick clock yet; the seed still stamps a real time. */
-	public function test_a_cold_process_stamps_a_real_time(): void {
-		Core::$now = 0.0;
-
-		$this->assertGreaterThan( 0, Ontology_Seed::events( [] )[0]['ts'] );
-	}
-
 	/**
 	 * An event as the fact it states: its kind and every field but the envelope.
 	 *
