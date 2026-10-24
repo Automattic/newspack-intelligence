@@ -1,6 +1,11 @@
 var on_demand_idle = 0
+# Fetches and LLM calls block one fill(); a 60s lock steal tears intel:items.
+var stale_timeout = 600
 var num_partitions = 1
 include topic-probe
+include newspack-intelligence-streams
+include newspack-intelligence-collect
+include newspack-intelligence-project
 include newspack-intelligence-ingest
 include newspack-intelligence-summary
 include newspack-intelligence-digest

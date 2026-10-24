@@ -161,16 +161,55 @@ admin page in a browser, where WordPress enqueues the real `wp-block-library`.
 
 ## Architecture
 
-Four stages, each its own topology file, composed by `newspack-intelligence.tsl`.
+The graph is being rebuilt on two event streams. The sources already write to
+them; the four older stages below stay composed by `newspack-intelligence.tsl`
+until the entity graph replaces them, and receive nothing from the sources.
 
-**Ingest.** The connector **Source nodes** (`github`, `linear`, `feed`) fetch on a
-`TICK` request inside the background worker and append normalized items to the
-durable `ingest` Partition. Blocking HTTP runs in the worker rather than a
-per-fetch job; the ingest buffer and the paced consumers downstream keep the
-worker heartbeating through a collect. `Source_Node` dedups by item `id` against
-a bounded in-memory set (`MAX_SEEN` 2000, oldest evicted first) that does not
-survive a respawn — `Digest_Builder_Node` dedups on the same id, so the digest
-stays correct while the summarize and score stages pay for the repeat.
+**Streams.** `intel:items` holds `item_recorded` and the other per-item events
+for two years (16 MiB segments, both retention rules at 63,072,000 seconds,
+a hard cap of 8,192 segments), and only the worker writes it, so it
+takes bodies past PIPE_BUF under `void_warranty`. `intel:ontology` holds the
+entity events and keeps every segment (`keep_everything`, substrate ADR-37).
+`Intel_Event_Writer_Node` (`intel:writer intel:items intel:ontology`) addresses
+each event by TO to the partition its `make_node` line names for the stream
+`Intel_Event::stream_of()` gives its kind, and drops a message naming no kind
+with a rate-limited line; it validates nothing, because `Intel_Event::make()`
+validated the event at mint and the projector validates it where it reads.
+`make()` refuses an ontology event that does not pack into one 4,096-byte
+line, because that stream takes no large write.
+
+**Projection.** `projector` replays both streams into the `intel-graph`
+Row_Table (`Intel_Graph_Row_Schema`), fed by `intel:items:consumer` and
+`intel:ontology:consumer`, which drain in batches and each checkpoint it.
+`projections()` declares, per kind, the row ops it writes and where each column
+comes from — an event field, a literal, a computed closure, or each element of
+a fan-out field — and every value is typed by its column's declared type. Every
+op is an `ignore` or a whole-row `set` on a keyed table, and each table is
+written by one stream alone, so a replay writes what it wrote before and the
+streams project the same rows in either order. The projector never reads
+before it writes: an entity is three rows — identity in `entities`, state in
+`entity_states`, merge in `entity_merges` — and an item's extraction sits in
+`extractions` beside its `items` row, which is written once. A link, claim,
+judgment or topic may name an entity no `entities` row holds yet; readers join
+to it. A machine's `entity_proposed` writes with `ignore` and a person's
+`entity_created` with `set`, so a machine never overwrites a person.
+Item-scoped tables keep 730 days by an indexed day column, `floor( ts / 86400
+)`; the ontology and curation tables declare `keep`. Ops buffer and leave as
+one `ROWS` batch every 5 seconds, at 2,000 ops or 1 MiB of string values, at
+each checkpoint and on a clean stop; a failed batch raises a plain stop and
+keeps the buffer, so the cursor replays it. A message that carries no valid
+event throws out of `fill()`, so its Consumer dead-letters it and reads on.
+`Url_Canon::of()` and `Entity_Index::norm()` compute the canonical URL, the
+title norm and each name's norm the readers match on.
+
+**Collect.** The connector **Source nodes** (`github`, `linear`, `feed`) fetch on
+a `TICK` request inside the background worker and emit one `item_recorded` event
+per new item to `intel:writer`. Each records at the tier its `make_node` line
+names (`make_node Feed_Source feed public`), which a load without one refuses
+and `set_tier` replaces at runtime. Blocking HTTP runs in the
+worker rather than a per-fetch job. `Source_Node` dedups by `item_key` against a
+bounded in-memory set (`MAX_SEEN` 2000, oldest evicted first) that does not
+survive a respawn, so a fresh worker records an item again.
 
 `Github_Source_Node` hits three REST endpoints per repo on each TICK — releases,
 closed pull requests and issues — keeping a closed PR only when it carries a
@@ -252,22 +291,27 @@ Every caller of `LLM_Client::chat()` — `Summarizer_Node::fill()`,
 nothing wider, and `Proxy_LLM_Client` throws only that, so a second
 implementation raising any other `Throwable` propagates out of `fill()` and
 breaks the Node contract that `fill()` never throws. Bearer tokens are
-substrate Vault entries: the node config holds only the entry id, resolved at
-use-time by `Vault_Secret`.
+substrate Vault entries: the node config holds only the entry id, set by the
+`set_vault_id` setter `Vault_Secret` declares and resolved at use time by its
+`vault_secret()`.
 
 ### The item contract
 
-`Source_Node::normalize_item()` mints every item as `{source, id, title, url,
-body, timestamp}`, `id` namespaced `"{source}:{raw id}"` — the key every later
-dedup reads, and `timestamp` 0 when the connector's date string will not parse.
-Each stage adds to that array and forwards the whole of it: the Summarizer adds
-`summary`, plus `relevance_score` (clamped to 0–10) and `reason` when the LLM
-reply parses, then DROPS `body` to keep the scored log and its snapshot small;
-the Scorer adds `score`.
+`Source_Node::normalize_item()` mints every item as the `item_recorded` fields
+`{item_key, source, tier, url, title, body, item_ts, retrieved_ts}`: `item_key`
+namespaced `"{source}:{raw id}"`, the key dedup reads; `body` cut at
+`MAX_BODY_BYTES` (65,536) on a UTF-8 character boundary; `item_ts` 0 when the
+connector's date string will not parse; `retrieved_ts` the worker's `Core::$now`.
+`tick()` wraps each in `Intel_Event::make()` under the actor
+`machine:source:{name}@{plugin version}`, with the plugin version as its
+`config_version`.
 
-A source ends each TICK by emitting one `TM_INFO "DONE\n"` from a `finally`, so a
-throwing fetch still reports progress. The Summarizer and the Scorer forward
-TM_INFO unchanged, which is how a DONE reaches the digest with the source's own
+The older stages read the item shape `{source, id, title, url, body, timestamp}`
+off `ingest:partition`. Each adds to that array and forwards the whole of it: the
+Summarizer adds `summary`, plus `relevance_score` (clamped to 0–10) and `reason`
+when the LLM reply parses, then DROPS `body` to keep the scored log and its
+snapshot small; the Scorer adds `score`. The Summarizer and the Scorer forward
+TM_INFO unchanged, which is how a `DONE` reaches the digest with its sender's
 name still in FROM. The Gate is a terminal observer and drops it, so neither a
 DONE nor the RESET fence reaches `gate-decisions.jsonl`.
 
@@ -282,8 +326,11 @@ fails `parse_enrich()` — so it does not on its own mean the proxy call failed.
 
 | File | What it wires |
 |------|---------------|
-| `newspack-intelligence.tsl` | Includes the four stages below; `on_demand_idle 0` keeps the worker resident, which the TICK-driven sources need |
-| `newspack-intelligence-ingest.tsl` | The three sources → `ingest:partition` |
+| `newspack-intelligence.tsl` | Includes every file below; `on_demand_idle 0` keeps the worker resident, which the TICK-driven sources need, and `stale_timeout 600` keeps a peer from stealing its lock while a TICK's fetches or an LLM call block one `fill()` |
+| `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology` and `intel:writer` |
+| `newspack-intelligence-collect.tsl` | The three sources → `intel:writer`; includes the streams |
+| `newspack-intelligence-project.tsl` | `intel:items:consumer` and `intel:ontology:consumer` → `projector` → the `intel-graph` Row_Table |
+| `newspack-intelligence-ingest.tsl` | `ingest:partition` alone |
 | `newspack-intelligence-summary.tsl` | `ingest:consumer` → `summarizer` → `scorer` → `scored:partition` |
 | `newspack-intelligence-digest.tsl` | `scored:consumer` → `digest` → `digest:tee` → `digest:log` |
 | `newspack-intelligence-gate.tsl` | `gate:consumer` → `gate` → `gate:tojson` → `gate:log` |
@@ -295,9 +342,11 @@ substrate. This plugin adds:
 
 | Type | Class | Runtime triggers and verbs |
 |------|-------|----------------------------|
-| `Github_Source` | `Github_Source_Node` | `TICK`; `add_repo`, `remove_repo`, `set_vault_id` |
-| `Linear_Source` | `Linear_Source_Node` | `TICK`; `set_vault_id` |
-| `Feed_Source` | `Feed_Source_Node` | `TICK`; `add_url`, `remove_url` |
+| `Github_Source` | `Github_Source_Node` | `<tier>`; `TICK`; `set_tier`, `add_repo`, `remove_repo`, `set_vault_id` |
+| `Linear_Source` | `Linear_Source_Node` | `<tier>`; `TICK`; `set_tier`, `set_vault_id` |
+| `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`; `set_tier`, `add_url`, `remove_url` |
+| `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition>`; no verbs |
+| `Projector` | `Projector_Node` | `set_graph_target` |
 | `Summarizer` | `Summarizer_Node` | the `LLM_Config` verbs |
 | `Scorer` | `Scorer_Node` | none |
 | `Digest_Builder` | `Digest_Builder_Node` | `RESET`, `REGENERATE`; the `LLM_Config` verbs |
@@ -397,13 +446,13 @@ per-bundle static (substrate ADR-16). The build resolves
 | Path | What |
 |------|------|
 | `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus, WP-CLI, CPT hooks, `Insights_CI` mount |
-| `includes/` (pipeline) | `Source_Node` and its three connectors, `Summarizer_Node`, `Scorer_Node`, `Digest_Builder_Node`, `Digest_Composer` |
+| `includes/` (pipeline) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Entity_Index`, `Source_Node` and its three connectors, `Summarizer_Node`, `Scorer_Node`, `Digest_Builder_Node`, `Digest_Composer` |
 | `includes/` (gate) | `Gate_Node`, `Publisher_Matcher`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
 | `includes/` (publishers) | `Publisher_CPT`, `Publisher_Meta_Box`, `CPT_Publisher_Repository` and the `Publisher_Repository` interface, `Client_Importer`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |
 | `includes/` (service) | `Insights_CI_Node`, the `Source` interface, `uninstall-cleanup.php` |
 | `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>` |
-| `topologies/` | The five `.tsl` node-graph topologies |
+| `topologies/` | The eight `.tsl` node-graph topologies |
 | `src/dashboard/` | The Publisher Insights React panel |
 | `tests/` | PHPUnit (`unit/` + `bootstrap.php` + `support/` + `run-coverage.sh`; `integration/` exists but is empty) |
 | `scripts/` | Git hooks, the shared tooling copies, `bump-version.sh`, `build.mjs`, the lint and coverage gates |

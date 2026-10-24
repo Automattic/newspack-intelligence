@@ -57,13 +57,13 @@ XML;
 		};
 	}
 
-	/** @return array<string,array<string,mixed>> items keyed by id */
+	/** @return array<string,array<string,mixed>> items keyed by item_key */
 	private function fetch_by_id( array $config ): array {
 		$node  = new Feed_Source_Node();
 		$items = $node->fetch( $config );
 		$out   = [];
 		foreach ( $items as $item ) {
-			$out[ $item['id'] ] = $item;
+			$out[ $item['item_key'] ] = $item;
 		}
 		return $out;
 	}
@@ -78,7 +78,7 @@ XML;
 		$this->assertSame( 'First Post', $item['title'] );
 		$this->assertSame( 'https://example.com/first', $item['url'] );
 		$this->assertSame( 'First body', $item['body'] );
-		$this->assertSame( \strtotime( 'Mon, 10 Jun 2026 00:00:00 GMT' ), $item['timestamp'] );
+		$this->assertSame( \strtotime( 'Mon, 10 Jun 2026 00:00:00 GMT' ), $item['item_ts'] );
 	}
 
 	public function test_rss_item_without_guid_falls_back_to_link_for_id(): void {
@@ -98,7 +98,7 @@ XML;
 		$this->assertSame( 'Atom Entry', $item['title'] );
 		$this->assertSame( 'https://example.com/atom-entry', $item['url'] );
 		$this->assertSame( 'Atom summary', $item['body'] );
-		$this->assertSame( \strtotime( '2026-06-12T00:00:00Z' ), $item['timestamp'] );
+		$this->assertSame( \strtotime( '2026-06-12T00:00:00Z' ), $item['item_ts'] );
 	}
 
 	public function test_wp_error_contributes_no_items_without_throwing(): void {
@@ -185,7 +185,7 @@ XML;
 		$by = $this->fetch_by_id( [ 'feeds' => [ 'https://example.com/feed.xml' ] ] );
 
 		$this->assertArrayHasKey( 'feed:dc-1', $by );
-		$this->assertSame( \strtotime( '2026-06-09T00:00:00Z' ), $by['feed:dc-1']['timestamp'] );
+		$this->assertSame( \strtotime( '2026-06-09T00:00:00Z' ), $by['feed:dc-1']['item_ts'] );
 	}
 
 	public function test_tick_reads_feeds_from_verb_state(): void {
@@ -198,6 +198,7 @@ XML;
 		$node = new Feed_Source_Node();
 		$node->name( 'feed' );
 		$node->interpreter()->dispatch( 'add_url', [ 'https://example.com/feed.xml' ] );
+		$node->arguments( [ 'internal' ] );
 		$node->sink( new Capture_Sink_Node() );
 		$message                   = Message::new_message();
 		$message[ Message::TYPE ]  = Message::TM_REQUEST;
@@ -277,6 +278,7 @@ XML;
 		$node->interpreter()->dispatch( 'add_url', [ 'https://kite.test/feed.xml' ] );
 
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'remove_url', [ 'https://heron.test/feed.xml' ] ) );
+		$node->arguments( [ 'internal' ] );
 		$node->sink( new Capture_Sink_Node() );
 		$message                   = Message::new_message();
 		$message[ Message::TYPE ]  = Message::TM_REQUEST;

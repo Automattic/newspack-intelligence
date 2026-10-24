@@ -39,13 +39,13 @@ final class GithubSourceTest extends TestCase {
 		};
 	}
 
-	/** @return array<string,array<string,mixed>> items keyed by id */
+	/** @return array<string,array<string,mixed>> items keyed by item_key */
 	private function fetch_by_id( array $config ): array {
 		$node  = new Github_Source_Node();
 		$items = $node->fetch( $config );
 		$out   = [];
 		foreach ( $items as $item ) {
-			$out[ $item['id'] ] = $item;
+			$out[ $item['item_key'] ] = $item;
 		}
 		return $out;
 	}
@@ -68,11 +68,11 @@ final class GithubSourceTest extends TestCase {
 		$this->assertSame( 'v2.0', $release['title'] );
 		$this->assertSame( 'https://gh/r/releases/11', $release['url'] );
 		$this->assertSame( 'release notes', $release['body'] );
-		$this->assertSame( \strtotime( '2026-06-10T00:00:00Z' ), $release['timestamp'] );
+		$this->assertSame( \strtotime( '2026-06-10T00:00:00Z' ), $release['item_ts'] );
 
 		$issue = $by['github:owner/repo#issue-7'];
 		$this->assertSame( 'Real issue', $issue['title'] );
-		$this->assertSame( \strtotime( '2026-06-12T00:00:00Z' ), $issue['timestamp'] );
+		$this->assertSame( \strtotime( '2026-06-12T00:00:00Z' ), $issue['item_ts'] );
 	}
 
 	public function test_fetch_sends_bearer_auth_and_useragent_when_token_set(): void {
@@ -132,7 +132,8 @@ final class GithubSourceTest extends TestCase {
 		$node = new Github_Source_Node();
 		$node->name( 'github' );
 		$node->interpreter()->dispatch( 'add_repo', [ 'owner/repo' ] );
-		$node->set_vault_id( 'gh-creds' );
+		$node->interpreter()->dispatch( 'set_vault_id', [ 'gh-creds' ] );
+		$node->arguments( [ 'internal' ] );
 		$node->sink( new Capture_Sink_Node() );
 		$message                   = Message::new_message();
 		$message[ Message::TYPE ]  = Message::TM_REQUEST;
@@ -163,34 +164,21 @@ final class GithubSourceTest extends TestCase {
 		$this->assertSame( [ 'owner/repo-a', 'owner/repo-b' ], $this->config_of( $node )['repos'] );
 	}
 
-	public function test_set_vault_id_resolves_seeded_entry_into_config_token(): void {
+	public function test_repos_and_vault_id_round_trip_through_the_dump(): void {
 		$this->seed_vault( 'gh-creds', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'ghp_from_vault' ] );
-		$node = new Github_Source_Node();
-		$node->name( 'github' );
-
-		$node->set_vault_id( 'gh-creds' );
-		$this->assertSame( 'ghp_from_vault', $this->config_of( $node )['token'] );
-	}
-
-	public function test_set_vault_id_unknown_id_yields_empty_token(): void {
-		$node = new Github_Source_Node();
-		$node->name( 'github' );
-
-		$node->set_vault_id( 'no-such-id' );
-		$this->assertSame( '', $this->config_of( $node )['token'] );
-	}
-
-	public function test_dump_config_re_emits_add_repo_and_set_vault_id(): void {
 		$node = new Github_Source_Node();
 		$node->name( 'github' );
 		$node->interpreter()->dispatch( 'add_repo', [ 'owner/repo-a' ] );
 		$node->interpreter()->dispatch( 'add_repo', [ 'owner/repo-b' ] );
-		$node->set_vault_id( 'gh-creds' );
-
+		$node->interpreter()->dispatch( 'set_vault_id', [ 'gh-creds' ] );
 		$dump = $node->dump_config();
-		$this->assertStringContainsString( 'command_node github:config add_repo owner/repo-a', $dump );
-		$this->assertStringContainsString( 'command_node github:config add_repo owner/repo-b', $dump );
+
+		$replayed = new Github_Source_Node();
+		$replayed->name( 'github-replayed' );
+		$this->replay_config( $dump, $replayed );
+
 		$this->assertStringContainsString( 'command_node github:config set_vault_id gh-creds', $dump );
+		$this->assertSame( [ 'repos' => [ 'owner/repo-a', 'owner/repo-b' ], 'token' => 'ghp_from_vault' ], $this->config_of( $replayed ) );
 	}
 
 	public function test_node_schema_declares_github_source_contract(): void {
@@ -219,6 +207,7 @@ final class GithubSourceTest extends TestCase {
 		$node->interpreter()->dispatch( 'add_repo', [ 'acme/kite-repo' ] );
 
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'remove_repo', [ 'acme/heron-repo' ] ) );
+		$node->arguments( [ 'internal' ] );
 		$node->sink( new Capture_Sink_Node() );
 		$message                   = Message::new_message();
 		$message[ Message::TYPE ]  = Message::TM_REQUEST;

@@ -1,0 +1,26 @@
+# The sources, each recording item_recorded events at its tier into intel:writer.
+var num_partitions = 1
+include topic-probe
+include newspack-intelligence-streams
+make_node Github_Source github public
+cmd github:config set_vault_id github
+cmd github:config add_repo Automattic/newspack-ads
+cmd github:config add_repo Automattic/newspack-activecampaign
+cmd github:config add_repo Automattic/newspack-manager
+cmd github:config add_repo Automattic/newspack-network
+cmd github:config add_repo Automattic/newspack-plugin
+make_node Linear_Source linear internal
+cmd linear:config set_vault_id linear
+make_node Feed_Source feed public
+cmd feed:config add_url https://make.wordpress.org/core/feed/
+cmd feed:config add_url https://wordpress.org/news/feed/
+cmd feed:config add_url https://automattic.com/blog/feed/
+cmd feed:config add_url https://www.niemanlab.org/feed/
+cmd feed:config add_url https://knightfoundation.org/feed/
+cmd feed:config add_url https://www.lenfestinstitute.org/feed/
+cmd feed:config add_url https://lionpublishers.com/feed/
+cmd feed:config add_url https://www.pressforward.news/feed/
+connect_node github intel:writer
+connect_node linear intel:writer
+connect_node feed intel:writer
+secure

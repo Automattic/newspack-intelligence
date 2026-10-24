@@ -30,11 +30,24 @@ parameters:
         # The Node contract, dispatched by the SUBSTRATE, which this analysis
         # reads for symbols but never as a caller: make_node() constructs and
         # calls arguments(), Router calls fill(), the console reads
-        # node_schema()/dump_config(), and Worker_Base drives
+        # node_schema()/dump_config(), Topology_Analyzer and extra_targets()
+        # read declared_targets(), and Worker_Base drives
         # save_state()/restore_state(). Every one reads as dead here and none
         # is. Anything OUTSIDE this list is a real finding — that is the point
         # of naming them rather than muting the rule.
         -
             identifier: shipmonk.deadMethod
-            message: '#::(__construct|fill|arguments|node_schema|dump_config|save_state|restore_state)$#'
+            message: '#::(__construct|fill|arguments|node_schema|dump_config|declared_targets|save_state|restore_state)$#'
             path: includes/*.php
+        # A verb declared `setter` in node_schema() has no handler of its own:
+        # the substrate's Schema_Reflection synthesizes one that calls
+        # `$patron->{"set_{$prop}"}( … )`, so the setter reads as dead. It IS
+        # the verb's implementation.
+        -
+            identifier: shipmonk.deadMethod
+            message: '#::set_vault_id$#'
+            path: includes/trait-vault-secret.php
+        -
+            identifier: shipmonk.deadMethod
+            message: '#::set_graph_target$#'
+            path: includes/class-projector-node.php

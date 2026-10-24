@@ -1,10 +1,10 @@
 <?php
 /**
  * Feed_Source_Node: pulls items from configured RSS 2.0 / Atom feeds and
- * normalizes them into digest items.
+ * normalizes them into recorded items.
  *
- * Extends Source_Node, so the base owns the TICK/TM_REQUEST trigger, dedup, and
- * snapshot; this class supplies only the two seams: config() (Settings read) and
+ * Extends Source_Node, so the base owns the TICK/TM_REQUEST trigger and dedup;
+ * this class supplies only the two seams: config() (Settings read) and
  * fetch() (the blocking feed GETs + XML parsing, behind the $http_get closure
  * seam).
  *
@@ -37,9 +37,9 @@ class Feed_Source_Node extends Source_Node {
 	protected array $urls = [];
 
 	/**
-	 * Fetch every configured feed, normalized to the item contract
-	 * {source,id,title,url,body,timestamp}. A failed or unparseable feed contributes
-	 * nothing and never throws — one bad feed can't sink the batch.
+	 * Fetch every configured feed, normalized to the item_recorded fields. A
+	 * failed or unparseable feed contributes nothing and never throws — one bad
+	 * feed can't sink the batch.
 	 *
 	 * @param array<string,mixed> $config {feeds: string[]}.
 	 * @return array<int,array<string,mixed>>
@@ -182,15 +182,11 @@ class Feed_Source_Node extends Source_Node {
 	}
 
 	public static function node_schema(): array {
-		return \array_merge(
-			self::source_schema(
-				'Fetches items from the configured RSS 2.0 / Atom feeds on a TICK request (request_node feed TICK).',
-				'Fetch + emit new feed items. Trigger with `request_node feed TICK`.'
-			),
+		return self::source_schema(
+			'Fetches items from the configured RSS 2.0 / Atom feeds on a TICK request (request_node feed TICK).',
+			'Fetch + emit new feed items. Trigger with `request_node feed TICK`.',
 			[
-				'commands' => [
-					...self::list_verbs( 'url', 'urls', [ 'name' => 'url', 'type' => 'string', 'required' => true ], 'Register a feed URL to fetch on TICK: <url>.' ),
-				],
+				...self::list_verbs( 'url', 'urls', [ 'name' => 'url', 'type' => 'string', 'required' => true ], 'Register a feed URL to fetch on TICK: <url>.' ),
 			]
 		);
 	}
