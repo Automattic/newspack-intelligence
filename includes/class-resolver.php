@@ -108,10 +108,10 @@ final class Resolver {
 		private float $assert_at = 0.85,
 		private float $propose_at = 0.60
 	) {
-		foreach ( $index->with_domain() as $entity ) {
-			$stem = self::domain_stem( $entity['domain'] );
+		foreach ( $index->identifiers( 'domain' ) as $domain => $entity_key ) {
+			$stem = self::domain_stem( (string) $domain );
 			if ( '' !== $stem ) {
-				$this->stems[] = [ $entity['entity_key'], $stem ];
+				$this->stems[] = [ $entity_key, $stem ];
 			}
 		}
 		foreach ( $index->name_norms() as $norm => $entity_keys ) {

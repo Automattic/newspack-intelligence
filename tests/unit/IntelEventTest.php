@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Intel_Event;
+use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Tests\TestCase;
@@ -190,14 +191,71 @@ final class IntelEventTest extends TestCase {
 		$this->assertSame( [ "machine:quarry-stage@{$version}", $version, 'feed:machine-62' ], [ $event['actor'], $event['config_version'], $event['item_key'] ] );
 	}
 
-	/** A cold process, whose tick clock has not started, stamps the wall clock. */
-	public function test_make_stamps_the_wall_clock_before_the_tick_clock_starts(): void {
-		Core::$now = 0.0;
-		$before    = \microtime( true );
+	/** An entity and a collection are keyed by the slug of a name, and refused alike when it slugs to nothing. */
+	public function test_entity_and_collection_keys_share_one_slug(): void {
+		$this->assertSame( 'person:marisol-okafor', Intel_Event::entity_key( 'person', 'Marisol Okafor' ) );
+		$this->assertSame( 'grant-watch', Intel_Event::collection_key( 'Grant Watch' ) );
+		$refusals = [];
+		foreach ( [ static fn (): string => Intel_Event::entity_key( 'person', '!?!' ), static fn (): string => Intel_Event::collection_key( '!?!' ) ] as $key ) {
+			try {
+				$key();
+			} catch ( \InvalidArgumentException $e ) {
+				$refusals[] = $e->getMessage();
+			}
+		}
+		$this->assertSame( [ 'person name !?! sanitizes to nothing', 'collection name !?! sanitizes to nothing' ], $refusals );
+	}
+
+	/** A machine actor names its stage at the plugin version. */
+	public function test_a_machine_actor_names_its_stage(): void {
+		$this->assertSame( 'machine:ledger-sweep@' . \NEWSPACK_INTELLIGENCE_VERSION, Intel_Event::machine( 'ledger-sweep' ) );
+	}
+
+	/**
+	 * The caller is the signed-in person, or the agent a labelled session
+	 * names, its label kept whole; both validate.
+	 */
+	public function test_the_caller_is_the_person_or_the_agent_their_session_names(): void {
+		$GLOBALS['_current_user_id']         = 4217;
+		$GLOBALS['_wp_test_user_logins'][4217] = 'harbor-desk';
+		$label                               = 'Research: weekly ' . \str_repeat( 'é', 70 );
+		try {
+			$person                      = Intel_Event::caller();
+			Capabilities::$session_label = '';
+			$unlabelled                  = Intel_Event::caller();
+			Capabilities::$session_label = $label;
+			$agent                       = Intel_Event::caller();
+		} finally {
+			unset( $GLOBALS['_current_user_id'], $GLOBALS['_wp_test_user_logins'] );
+			Capabilities::$session_label = null;
+		}
+
+		$this->assertSame( [ 'user:harbor-desk', 'user:harbor-desk', "agent:harbor-desk:{$label}" ], [ $person, $unlabelled, $agent ] );
+		foreach ( [ $person, $agent ] as $actor ) {
+			Intel_Event::validate( Intel_Event::make( 'entity_accepted', [ 'entity_key' => 'organization:quarry-ledger' ], $actor, '6.1.4' ) );
+		}
+	}
+
+	/** With no signed-in person there is no caller. */
+	public function test_no_signed_in_person_is_no_caller(): void {
+		Capabilities::$session_label = 'Research: weekly';
+		try {
+			$this->expectException( \InvalidArgumentException::class );
+			$this->expectExceptionMessage( 'a user actor needs a login' );
+			Intel_Event::caller();
+		} finally {
+			Capabilities::$session_label = null;
+		}
+	}
+
+	/** A role is stamped with the tick clock's whole second; an event with the tick clock itself. */
+	public function test_now_is_the_tick_clocks_second(): void {
+		Core::$now = 1791904321.875;
 
 		$event = Intel_Event::make( 'entity_accepted', [ 'entity_key' => 'organization:quarry-ledger' ], 'user:88', '6.1.4' );
 
-		$this->assertGreaterThanOrEqual( \floor( $before ), $event['ts'] );
+		$this->assertSame( 1791904321, Intel_Event::now() );
+		$this->assertSame( 1791904321.875, $event['ts'] );
 	}
 
 	/** Each kind carries its stream, its fields and the sets they are drawn from. */

@@ -8,21 +8,26 @@
 namespace Newspack_Intelligence\CLI;
 
 use Newspack_Intelligence\Client_Importer;
-use Newspack_Intelligence\CPT_Publisher_Repository;
 use Newspack_Intelligence\CSV_Parser;
+use Newspack_Intelligence\Graph_Client_Roster;
+use Newspack_Intelligence\Intel_Event;
 
 \defined( 'ABSPATH' ) || exit;
 
 class Clients_CLI_Command {
-
-	private Client_Importer $importer;
-
-	public function __construct( ?Client_Importer $importer = null ) {
-		$this->importer = $importer ?? new Client_Importer( new CPT_Publisher_Repository() );
-	}
+	use Refuses_Root;
 
 	/**
-	 * Import a Newspack-clients CSV into the publisher master store.
+	 * @param Client_Importer|null $importer The importer; null builds one per
+	 *                                       import, over the graph roster.
+	 */
+	public function __construct( private ?Client_Importer $importer = null ) {}
+
+	/**
+	 * Import a Newspack-clients CSV as the client roster: each new client,
+	 * churn, return and new domain becomes an ontology event, recorded as
+	 * the client-import machine. A projection that will not open fails the
+	 * command rather than re-creating every client.
 	 *
 	 * ## OPTIONS
 	 *
@@ -36,8 +41,12 @@ class Clients_CLI_Command {
 	 * @api WP-CLI dispatches this by reflection; nothing here calls it.
 	 * @param array<int,string>    $args       Positional args.
 	 * @param array<string,string> $assoc_args Flags.
+	 * @throws \Newspack_Nodes\Table_Unavailable When the projection cannot be read.
 	 */
 	public function import( array $args, array $assoc_args ): void {
+		if ( self::refused_root( 'clients import' ) ) {
+			return;
+		}
 		$path = $args[0] ?? '';
 		$rows = CSV_Parser::parse_file( $path );
 		if ( null === $rows ) {
@@ -46,7 +55,8 @@ class Clients_CLI_Command {
 			}
 			return;
 		}
-		$result = $this->importer->import( $rows, \gmdate( 'Y-m-d' ) );
+		$importer = $this->importer ?? new Client_Importer( new Graph_Client_Roster( Intel_Event::machine( 'client-import' ) ) );
+		$result   = $importer->import( $rows, \gmdate( 'Y-m-d' ) );
 
 		if ( \class_exists( '\WP_CLI' ) ) {
 			\WP_CLI::success(

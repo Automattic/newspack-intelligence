@@ -51,3 +51,12 @@ parameters:
             identifier: shipmonk.deadMethod
             message: '#::set_graph_target$#'
             path: includes/class-projector-node.php
+        # The CPT repository's import half stands beside the graph roster
+        # with no caller; the gate still reads the store through
+        # all_with_enrichment().
+        -
+            identifier: shipmonk.deadMethod
+            message: '#::(find_by_atomic_id|all_atomic_ids|create|update_atomic_fields|set_active|mark_churned|post_id)$#'
+            paths:
+                - includes/class-cpt-publisher-repository.php
+                - includes/interface-publisher-repository.php

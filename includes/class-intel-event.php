@@ -9,6 +9,7 @@
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Partition_Node;
@@ -58,7 +59,7 @@ final class Intel_Event {
 		'link_confirmed'      => [ self::ONTOLOGY, [ 'item_key', 'entity_key', 'item_url' ], [] ],
 		'link_rejected'       => [ self::ONTOLOGY, [ 'item_key', 'entity_key', 'item_url' ], [] ],
 		'collection_created'  => [ self::ONTOLOGY, [ 'collection_key', 'name' ], [] ],
-		'collected'           => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'url', 'title' ], [] ],
+		'collected'           => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'url', 'title', 'tier' ], [ 'tier' => self::TIERS ] ],
 	];
 
 	/** The actor classes an actor string may begin with. */
@@ -78,7 +79,16 @@ final class Intel_Event {
 	 * @throws \InvalidArgumentException As make() does.
 	 */
 	public static function machine_event( string $stage, string $kind, array $fields ): array {
-		return self::make( $kind, $fields, self::machine_prefix( $stage ) . \NEWSPACK_INTELLIGENCE_VERSION, \NEWSPACK_INTELLIGENCE_VERSION );
+		return self::make( $kind, $fields, self::machine( $stage ), \NEWSPACK_INTELLIGENCE_VERSION );
+	}
+
+	/**
+	 * A pipeline stage's actor: the stage at the plugin version.
+	 *
+	 * @param string $stage The stage name.
+	 */
+	public static function machine( string $stage ): string {
+		return self::machine_prefix( $stage ) . \NEWSPACK_INTELLIGENCE_VERSION;
 	}
 
 	/**
@@ -91,10 +101,9 @@ final class Intel_Event {
 	}
 
 	/**
-	 * Build a validated event VALUE, stamped on the tick clock, or on the
-	 * wall clock in a process whose tick clock has not started. An ontology
-	 * event must pack into one partition line, because that stream takes no
-	 * large write.
+	 * Build a validated event VALUE, stamped on the tick clock, which the
+	 * substrate pins at class load. An ontology event must pack into one
+	 * partition line, because that stream takes no large write.
 	 *
 	 * @param string              $kind           An event kind from KINDS.
 	 * @param array<string,mixed> $fields         The kind's fields.
@@ -107,7 +116,7 @@ final class Intel_Event {
 		$event = [
 			'event'          => $kind,
 			'event_id'       => \bin2hex( \random_bytes( 16 ) ),
-			'ts'             => Core::$now ?: Core::right_now(),
+			'ts'             => Core::$now,
 			'actor'          => $actor,
 			'config_version' => $config_version,
 		] + $fields;
@@ -187,6 +196,69 @@ final class Intel_Event {
 	}
 
 	/**
+	 * An entity's key: its type and the slug of its name.
+	 *
+	 * @param string $type An entity type from TYPES.
+	 * @param string $name The name the key is slugged from.
+	 * @throws \InvalidArgumentException On a type outside TYPES, or a name that sanitizes to nothing.
+	 */
+	public static function entity_key( string $type, string $name ): string {
+		if ( ! \in_array( $type, self::TYPES, true ) ) {
+			throw new \InvalidArgumentException( \esc_html( "unknown entity type: {$type}" ) );
+		}
+		return "{$type}:" . self::slug( "{$type} name", $name );
+	}
+
+	/**
+	 * A collection's key: the slug of its name.
+	 *
+	 * @param string $name The collection's name.
+	 * @throws \InvalidArgumentException On a name that sanitizes to nothing.
+	 */
+	public static function collection_key( string $name ): string {
+		return self::slug( 'collection name', $name );
+	}
+
+	/**
+	 * A name as a key slugs it, refused when it sanitizes to nothing.
+	 *
+	 * @param string $what What the name names, for the refusal.
+	 * @param string $name The name.
+	 * @throws \InvalidArgumentException When it sanitizes to nothing.
+	 */
+	private static function slug( string $what, string $name ): string {
+		$slug = \sanitize_title( $name );
+		if ( '' === $slug ) {
+			throw new \InvalidArgumentException( \esc_html( "{$what} {$name} sanitizes to nothing" ) );
+		}
+		return $slug;
+	}
+
+	/**
+	 * The second a role a person opens or closes is stamped with: the tick
+	 * clock's, which the substrate pins at class load.
+	 */
+	public static function now(): int {
+		return (int) Core::$now;
+	}
+
+	/**
+	 * The actor a curation is recorded as: the agent the caller's session
+	 * label names, `agent:<login>:<label>`, the label as the substrate bounds
+	 * it; else the signed-in person, `user:<login>`.
+	 *
+	 * @throws \InvalidArgumentException When no person is signed in.
+	 */
+	public static function caller(): string {
+		$login = Core::as_string( \wp_get_current_user()->user_login );
+		if ( '' === $login ) {
+			throw new \InvalidArgumentException( 'a user actor needs a login' );
+		}
+		$label = Capabilities::$session_label;
+		return null === $label || '' === $label ? "user:{$login}" : "agent:{$login}:{$label}";
+	}
+
+	/**
 	 * The item a record carries: exactly the `item_recorded` fields, in
 	 * their order, or null when one is missing.
 	 *
@@ -215,23 +287,5 @@ final class Intel_Event {
 			throw new \InvalidArgumentException( "unknown event kind: {$kind}" );
 		}
 		return self::KINDS[ $kind ][0];
-	}
-
-	/**
-	 * An entity's key: its type and the slug of its name.
-	 *
-	 * @param string $type An entity type from TYPES.
-	 * @param string $slug The name the key is slugged from.
-	 * @throws \InvalidArgumentException On a type outside TYPES, or a slug that sanitizes to nothing.
-	 */
-	public static function entity_key( string $type, string $slug ): string {
-		if ( ! \in_array( $type, self::TYPES, true ) ) {
-			throw new \InvalidArgumentException( \esc_html( "unknown entity type: {$type}" ) );
-		}
-		$slugged = \sanitize_title( $slug );
-		if ( '' === $slugged ) {
-			throw new \InvalidArgumentException( \esc_html( "entity key {$type}: slug '{$slug}' is empty once sanitized" ) );
-		}
-		return "{$type}:{$slugged}";
 	}
 }

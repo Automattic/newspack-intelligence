@@ -26,6 +26,8 @@ if ( false === \getenv( 'NEWSPACK_TEST_BASE_DIR' ) ) {
 \putenv( 'LOCAL_NEWSPACK_NODES_CONF=' . __DIR__ . '/newspack-intelligence-test-config.php' );
 \define( 'NONCE_SALT', 'newspack-nodes-test-nonce-salt' );
 \define( 'ABSPATH', '/' );
+// Names the install, so the command-session store an MCP test mints into has one.
+\define( 'DB_NAME', 'newspack_intelligence_test' );
 
 if ( ! function_exists( 'plugin_dir_url' ) ) {
 	function plugin_dir_url( string $file ): string {
@@ -101,37 +103,6 @@ if ( ! class_exists( '\WP_Hook' ) ) {
 	}
 }
 
-// Overrides shared shims: array-params request + public-prop responses.
-if ( ! class_exists( '\WP_REST_Request' ) ) {
-	class WP_REST_Request {
-		private array $params = [];
-		public function __construct( array $params = [] ) { $this->params = $params; }
-		public function get_param( string $key ): mixed { return $this->params[ $key ] ?? null; }
-		public function set_param( string $key, mixed $value ): void { $this->params[ $key ] = $value; }
-	}
-	class WP_REST_Response {
-		public mixed $data;
-		public int $status;
-		public function __construct( mixed $data = null, int $status = 200 ) {
-			$this->data = $data;
-			$this->status = $status;
-		}
-		public function get_data(): mixed { return $this->data; }
-		public function get_status(): int { return $this->status; }
-	}
-	class WP_Error {
-		public string $code;
-		public string $message;
-		public array $data;
-		public function __construct( string $code = '', string $message = '', array $data = [] ) {
-			$this->code = $code;
-			$this->message = $message;
-			$this->data = $data;
-		}
-		public function get_error_code(): string { return $this->code; }
-		public function get_error_message(): string { return $this->message; }
-	}
-}
 // Overrides shared shim: routes keyed by namespace.route, not appended.
 if ( ! function_exists( 'register_rest_route' ) ) {
 	$GLOBALS['_rest_routes'] = [];

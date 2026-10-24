@@ -507,14 +507,6 @@ final class ReresolverNodeTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'refusing a re-resolution: not a Y-m-d date: 2026-02-30' ) );
 	}
 
-	public function test_the_range_bounds_are_whole_utc_days(): void {
-		$this->assertSame( [ 1785715200, 1787270400 ], Reresolver_Node::range( '2026-08-03', '2026-08-20' ) );
-		$this->assertSame( [ 1787184000, 1787270400 ], Reresolver_Node::range( '2026-08-20', '2026-08-20' ) );
-		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessage( 'since 2026-08-21 is after until 2026-08-20' );
-		Reresolver_Node::range( '2026-08-21', '2026-08-20' );
-	}
-
 	/** The queue and a range's place in it checkpoint with the ontology Consumer's cursor. */
 	public function test_the_queue_survives_a_respawn_through_its_snapshot(): void {
 		$this->seed(

@@ -57,38 +57,52 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	public static ?\Closure $read_rows = null;
 
 	/**
-	 * Run a read against every partition's intel-graph file. Given a line, a
-	 * projection that will not open is logged rate-limited under it and
-	 * answers null; given none, it throws.
+	 * A UTC day range as its first second and the second after its last.
 	 *
-	 * @template T
-	 * @param \Closure(Row_Reader): T $read        The read.
-	 * @param string|null             $unavailable The line logged when no projection opens.
-	 * @return T|null
-	 * @throws Table_Unavailable When no projection opens and no line is given.
-	 * @throws \RuntimeException As `Row_Table_Node::read()`, or what the read throws.
+	 * @param string $since The first day, Y-m-d.
+	 * @param string $until The last day, Y-m-d.
+	 * @return array{0:int,1:int}
+	 * @throws \InvalidArgumentException When a day is not a Y-m-d date, or the range runs backwards.
 	 */
-	public static function read( \Closure $read, ?string $unavailable = null ): mixed {
-		try {
-			return null === self::$read_rows ? Row_Table_Node::read( self::class, $read ) : ( self::$read_rows )( $read );
-		} catch ( Table_Unavailable $e ) {
-			if ( null === $unavailable ) {
-				throw $e;
-			}
-			Core::print_less_often( $unavailable, $e->getMessage() );
-			return null;
+	public static function range( string $since, string $until ): array {
+		$from = self::day( $since );
+		$to   = self::day( $until ) + self::DAY_SECONDS;
+		if ( $from >= $to ) {
+			throw new \InvalidArgumentException( \esc_html( "since {$since} is after until {$until}" ) );
 		}
+		return [ $from, $to ];
 	}
 
 	/**
-	 * An item's time: its item_ts, or its retrieved_ts when undated; the PHP
-	 * twin of ITEM_TIME.
+	 * A Y-m-d day's first second, UTC.
 	 *
-	 * @param int $item_ts      The item's own date, 0 when it has none.
-	 * @param int $retrieved_ts When it was retrieved.
+	 * @param string $ymd The day.
+	 * @throws \InvalidArgumentException When it is not a Y-m-d date.
 	 */
-	public static function item_time( int $item_ts, int $retrieved_ts ): int {
-		return 0 === $item_ts ? $retrieved_ts : $item_ts;
+	public static function day( string $ymd ): int {
+		$day = \DateTimeImmutable::createFromFormat( '!Y-m-d', $ymd, new \DateTimeZone( 'UTC' ) );
+		if ( false === $day || $day->format( 'Y-m-d' ) !== $ymd ) {
+			throw new \InvalidArgumentException( \esc_html( "not a Y-m-d date: {$ymd}" ) );
+		}
+		return $day->getTimestamp();
+	}
+
+	/**
+	 * A table's rows across every attached partition, as one subquery; with
+	 * no partition attached, an empty row set of its declared columns.
+	 *
+	 * @param Row_Reader $r     The reader.
+	 * @param string     $table A declared table.
+	 */
+	public static function all( Row_Reader $r, string $table ): string {
+		if ( [] === $r->aliases() ) {
+			$columns = [];
+			foreach ( self::tables()[ $table ]['columns'] as $column => $type ) {
+				$columns[] = 'CAST( NULL AS ' . \explode( ' ', $type )[0] . " ) AS {$column}";
+			}
+			return '( SELECT ' . \implode( ', ', $columns ) . ' WHERE 0 )';
+		}
+		return '( ' . \implode( ' UNION ALL ', \array_map( static fn ( string $a ): string => "SELECT * FROM {$a}.{$table}", $r->aliases() ) ) . ' )';
 	}
 
 	/**
@@ -291,6 +305,7 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 					'ts'         => 'REAL NOT NULL',
 				],
 				'key'     => [ 'item_key', 'entity_key', 'actor_kind' ],
+				'indexes' => [ 'judgments_entity_key' => [ 'entity_key' ] ],
 				'keep'    => true,
 			],
 			'collections'   => [
@@ -309,6 +324,7 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 					'item_key'       => 'TEXT NOT NULL',
 					'url'            => 'TEXT NOT NULL',
 					'title'          => 'TEXT NOT NULL',
+					'tier'           => 'TEXT NOT NULL',
 					'actor'          => 'TEXT NOT NULL',
 					'ts'             => 'REAL NOT NULL',
 				],
@@ -326,9 +342,64 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 					'ts'             => 'REAL NOT NULL',
 				],
 				'key'     => [ 'event_id' ],
+				'indexes' => [ 'events_subject_kind' => [ 'subject', 'kind' ] ],
 				'keep'    => true,
 			],
 		];
+	}
+
+	/**
+	 * Run a read against every partition's intel-graph file. Given a line, a
+	 * projection that will not open is logged rate-limited under it and
+	 * answers null; given none, it throws.
+	 *
+	 * @template T
+	 * @param \Closure(Row_Reader): T $read        The read.
+	 * @param string|null             $unavailable The line logged when no projection opens.
+	 * @return ($unavailable is null ? T : T|null)
+	 * @throws Table_Unavailable When no projection opens and no line is given.
+	 * @throws \RuntimeException As `Row_Table_Node::read()`, or what the read throws.
+	 */
+	public static function read( \Closure $read, ?string $unavailable = null ): mixed {
+		try {
+			return null === self::$read_rows ? Row_Table_Node::read( self::class, $read ) : ( self::$read_rows )( $read );
+		} catch ( Table_Unavailable $e ) {
+			if ( null === $unavailable ) {
+				throw $e;
+			}
+			Core::print_less_often( $unavailable, $e->getMessage() );
+			return null;
+		}
+	}
+
+	/**
+	 * Text as one quoted FTS5 phrase, its quotes doubled, so a MATCH reads
+	 * it as words and never as query syntax.
+	 *
+	 * @param string $text Any text.
+	 */
+	public static function fts_phrase( string $text ): string {
+		return '"' . \str_replace( '"', '""', $text ) . '"';
+	}
+
+	/**
+	 * One `?` per value, comma-separated.
+	 *
+	 * @param list<mixed> $values The values.
+	 */
+	public static function marks( array $values ): string {
+		return \implode( ', ', \array_fill( 0, \count( $values ), '?' ) );
+	}
+
+	/**
+	 * An item's time: its item_ts, or its retrieved_ts when undated; the PHP
+	 * twin of ITEM_TIME.
+	 *
+	 * @param int $item_ts      The item's own date, 0 when it has none.
+	 * @param int $retrieved_ts When it was retrieved.
+	 */
+	public static function item_time( int $item_ts, int $retrieved_ts ): int {
+		return 0 === $item_ts ? $retrieved_ts : $item_ts;
 	}
 
 	/**

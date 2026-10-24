@@ -96,7 +96,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 			Intel_Event::make( 'item_recorded', [ 'item_key' => 'feed:abc-7731', 'source' => 'feed', 'tier' => 'public', 'url' => 'https://harborgazette.example/a', 'title' => 'Award', 'body' => 'Body', 'item_ts' => $old, 'retrieved_ts' => $old ], 'machine:source:feed@9.4.1', '9.4.1' ),
 			Intel_Event::make( 'link_asserted', [ 'item_key' => 'feed:abc-7731', 'entity_key' => 'organization:harbor-gazette', 'role' => 'subject', 'method' => 'identifier', 'confidence' => 1.0, 'retrieved_ts' => $old ], 'machine:resolve@9.4.1', '9.4.1' ),
 			Intel_Event::make( 'link_confirmed', [ 'item_key' => 'feed:abc-7731', 'entity_key' => 'organization:harbor-gazette', 'item_url' => 'https://harborgazette.example/a' ], 'user:41', 'clients-v3' ),
-			Intel_Event::make( 'collected', [ 'collection_key' => 'awards-2024', 'item_key' => 'feed:abc-7731', 'url' => 'https://harborgazette.example/a', 'title' => 'Award' ], 'user:41', 'clients-v3' ),
+			Intel_Event::make( 'collected', [ 'collection_key' => 'awards-2024', 'item_key' => 'feed:abc-7731', 'url' => 'https://harborgazette.example/a', 'title' => 'Award', 'tier' => 'public' ], 'user:41', 'clients-v3' ),
 		];
 		foreach ( $events as $event ) {
 			self::deliver( $projector, $event );
@@ -118,5 +118,30 @@ final class IntelGraphRowSchemaTest extends TestCase {
 	 */
 	private static function counts( array $tables ): array {
 		return \array_map( static fn ( string $t ): int => (int) self::graph_rows( $t, '1', 'COUNT(*)' )[0][0], $tables );
+	}
+
+	/** The reads that open on a proposal's subject or a judged entity reach it by an index. */
+	public function test_events_and_judgments_are_indexed_where_the_reads_open(): void {
+		$tables = Intel_Graph_Row_Schema::tables();
+
+		$this->assertContains( [ 'subject', 'kind' ], $tables['events']['indexes'] ?? [] );
+		$this->assertContains( [ 'entity_key' ], $tables['judgments']['indexes'] ?? [] );
+		$this->assertSame( 1, Intel_Graph_Row_Schema::version() );
+	}
+
+	/** With no partition written, a table reads as an empty row set of its declared columns. */
+	public function test_a_table_with_no_partition_is_an_empty_typed_row_set(): void {
+		$reader = \Newspack_Nodes\Sqlite_Arm::open_rows( [ 0 => $this->make_temp_dir( 'intel-unwritten-' ) . '/intel-graph.p0.sqlite' ], Intel_Graph_Row_Schema::version() );
+
+		$this->assertSame( [], $reader->aliases() );
+		$this->assertSame( [], $reader->rows( 'SELECT entity_key, role, from_ts FROM ' . Intel_Graph_Row_Schema::all( $reader, 'roles' ) . ' r WHERE to_ts = 0', [] ) );
+	}
+
+	public function test_the_range_bounds_are_whole_utc_days(): void {
+		$this->assertSame( [ 1785715200, 1787270400 ], Intel_Graph_Row_Schema::range( '2026-08-03', '2026-08-20' ) );
+		$this->assertSame( [ 1787184000, 1787270400 ], Intel_Graph_Row_Schema::range( '2026-08-20', '2026-08-20' ) );
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'since 2026-08-21 is after until 2026-08-20' );
+		Intel_Graph_Row_Schema::range( '2026-08-21', '2026-08-20' );
 	}
 }

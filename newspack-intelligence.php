@@ -111,15 +111,17 @@ function render_clients_page(): void {
 }
 
 /**
- * Mount the Publisher Insights service interpreter into the per-request graph, the
- * same way the substrate mounts its own CIs. Idempotent: a second call (same
- * request) no-ops rather than colliding on the 'insights' node name.
+ * Mount this plugin's service interpreters into the per-request graph, the
+ * same way the substrate mounts its own CIs: `insights` for the Publisher
+ * Insights slices and `intelligence` for the graph's read verbs. Idempotent:
+ * a second call in one request skips every name already mounted.
  */
-function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_interpreter ): void {
-	if ( null !== \Newspack_Nodes\Core::node( 'insights' ) ) {
-		return;
+function mount_service_cis( \Newspack_Nodes\Command_Interpreter_Node $base_interpreter ): void {
+	foreach ( [ 'insights' => 'Insights_CI', 'intelligence' => 'Intelligence_CI' ] as $name => $type ) {
+		if ( null === \Newspack_Nodes\Core::node( $name ) ) {
+			$base_interpreter->make_node( $type, $name );
+		}
 	}
-	$base_interpreter->make_node( 'Insights_CI', 'insights' );
 }
 
 /**
@@ -188,8 +190,11 @@ function register_cli_commands(): void {
 			__DIR__ . '/topologies'
 		);
 
-		// Mount Insights CI into each request graph (dashboard polls it).
-		\add_action( 'newspack_nodes/request_graph_ready', __NAMESPACE__ . '\\mount_insights_ci' );
+		// Mount the service CIs into each request graph.
+		\add_action( 'newspack_nodes/request_graph_ready', __NAMESPACE__ . '\\mount_service_cis' );
+
+		// The MCP door agents read and curate the graph through.
+		( new Intelligence_Mcp_Door() )->wire();
 	},
 	12
 );

@@ -334,7 +334,8 @@ throws dead-letters alone (ADR-12). A tick takes the oldest signal at least
 no signal due does a requested range send its next `RERESOLVE_PAGE` (20).
 Each record carries `fresh_after`, its signal's time plus
 `SWEEP_INTERVAL_S`, or 0 for a range. A signal searches one
-quoted FTS5 phrase per name over `items_fts` (its `"` doubled) and a LIKE per
+quoted FTS5 phrase per name over `items_fts`
+(`Intel_Graph_Row_Schema::fts_phrase()`, its `"` doubled) and a LIKE per
 URL pattern, anchored to a whole host (after `://` or `.`, before `/`, a `:`
 port, `?`, `#` or the end) or a whole path segment (before `/`, `?`, `#` or
 the end), with `%`, `_` and `\` escaped. FTS folds case, so an acronym —
@@ -358,9 +359,121 @@ not open. Any other failure of a unit's projection
 read drops that unit with a rate-limited line naming it and the cause, so a
 respawn cannot restore the same head and fail on it again; a cooperative stop
 propagates first. `Intel_Graph_Row_Schema::$read_rows` is the read's test
-seam. Both `ontology` verbs refuse to run as root before they write, as
-`wp nodes` verbs do, because a root-owned segment or IPC file is one the
-workers cannot append to.
+seam. Both `ontology` verbs and `clients import` refuse to run as root
+before they write, through the `Refuses_Root` trait, as `wp nodes` verbs do,
+because a root-owned segment or IPC file is one the workers cannot append
+to.
+
+**Reads.** `Intelligence_CI` (`intelligence`), mounted beside `insights`
+on every request graph, answers eight verbs, each declaring `read` and its
+args: `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `review`
+and `collections`. Each handler hands its bound args to the `Graph_Query`
+read of the same name, through `Intel_Graph_Row_Schema::read()` over every
+partition's file. A read opens on `Graph_Query::graph()`, which resolves
+the tiers once from `Intel_Tiers::readable()` — `public` and `internal` —
+and binds the prelude every statement opens with: `mg`, the survivor map,
+and `ri`, the items of those tiers. Every statement reads items through
+`ri`, never `items` with a filter of its own, so no item, link, claim,
+count or citation rests on an item of another tier, and an entity short of
+`accepted` — proposed, or rejected — answers `entity` only while a readable
+item cites it, by a link or as the item it was proposed from.
+`Graph_Query::visible()` is that rule, and `seen()` refuses what it hides
+as `no entity: <key>`; `entity`, `timeline` and every curation verb resolve
+their entity keys through it. Names, identifiers and roles carry no
+tier and are not filtered. A key a read names, and every key a row names,
+answers as its survivor in `Entity_Index::survivors()`, the one survivor
+map the index load also reads, built with its inverse once a read in
+`graph()`; a key whose chain cycles or runs past
+`Entity_Index::MAX_MERGE_HOPS` is refused, and its rows count nowhere. Links read through the `live` CTE as
+one per item and survivor, a topic link apart from the rest, subject over
+mention; a link's state is the highest-ranked judgment's (`JUDGE_RANK`: a
+person over an agent), else the machine's, and a `rejected` link counts
+nowhere. Each read hands `live()` the links it rests on — an entity's keys,
+a page's items, the items a claim or a proposal names — and windows only
+those; `trends` with no `entity` reads every link in range. Summaries, kinds and scores come from `extractions`,
+names from a join on `entities`. `q` reaches FTS5 as one `fts_phrase()` per
+word over title, body and summary, and a word holding no letter or digit
+matches as an empty phrase, which FTS5 ignores; every other value binds,
+and a blank optional arg is a value read as given (substrate ADR-25), so a
+blank `q` or `source` matches nothing. Days parse through
+`Intel_Graph_Row_Schema::range()`. No answer carries a body; `limit` is
+capped at `Graph_Query::MAX_LIMIT` (200); trend rows, related entities and
+proposed entities cite their five newest items, and items and claims their
+URLs. A projection that will not open answers `available: false` beside
+empty rows, logged; one no partition has written answers empty rows.
+A collection's saved items read from `collected` alone, at the tier each
+was saved at, so a saved item outlives its expiring `items` row; `collected`
+keeps its own tier filter, and `collections` opens no graph.
+
+**Curation.** `Intelligence_CI` also answers thirteen curation verbs, each
+declaring `tune`, each writing one ontology event through
+`Ontology_Writer::append()` and answering `{ ok, event_id }`; the two
+creations add the key they minted. `Graph_Curation` holds them:
+`confirm_link` and `reject_link` (carrying the item's URL), `accept_entity`,
+`reject_entity`, `merge_entities`, `add_name`, `add_identifier`,
+`assert_role`, `end_role`, `tag_topic`, `create_entity` (keyed
+`Intel_Event::entity_key()`), `create_collection` (keyed
+`Intel_Event::collection_key()`, the same slug) and `collect` (the item's
+URL, its title and its tier). The actor is `Intel_Event::caller()`:
+`agent:<login>:<label>` when `Capabilities::$session_label` is non-empty,
+as for an MCP connection or an issued session, the label as
+`Sessions::clean_label()` bounded it, else `user:<login>`; a call with no
+signed-in user is refused before it writes. Every refusal throws before
+anything is written, and no handler checks a role (substrate ADR-26).
+Each verb reads the projection once. Every entity key it names — both
+sides of a merge, a link's entity, a tagged topic — must be one
+`Graph_Query::seen()` lets the caller see, any other key is refused as
+`no entity: <key>`, and the verb acts on the survivor it answers as, so a
+key merged away accepts, merges or tags its survivor; a curation verb
+answers no more than a read does. An item is read through `ri`, and one
+outside the readable tiers is refused as `no item: <key>`, exactly as a
+missing one. A judged link must exist: `confirm_link` and `reject_link`
+refuse `no link: <item> <entity>` unless a `links` row, of any role, joins
+the item to one of the entity's keys. `tag_topic` refuses a topic whose
+survivor is not of type `topic` (its `entities` type, else its key's). A
+merge into itself or across types — the two survivors' types, read the same
+way — is refused, and so is any merge after which `Entity_Index::walk()` — over the
+projection's merges, read by `Entity_Index::merges()`, plus the new one —
+leaves a key that resolved before on a chain that cycles or runs past
+`MAX_MERGE_HOPS`, naming the first such key. `add_identifier` stores the
+value as `Entity_Index::identifier_value()` spells it, reads the holder by
+the `identifiers` primary key, and refuses one another entity holds: the
+holder's survivor, accepted or proposed, or the holding key itself when
+its survivor is rejected or its chain does not resolve. `create_entity` refuses
+a key `Graph_Query::taken()` finds taken — visible and no longer a
+machine's `proposed` — and over any other key, a proposal or one the caller
+cannot see, writes `entity_created` as it would for a new key; `create_collection` refuses a taken
+collection key. A role counts as held when any key resolving to the
+entity's survivor holds it open, as `Graph_Query::open_roles()` reads it:
+`assert_role` refuses it then, and when any of those keys holds a row of
+the role from this very second, because a role row is keyed by its
+`from_ts` and a new one would overwrite it (`try again in a second`);
+otherwise it opens it on the survivor from `Intel_Event::now()`, the tick
+clock's second, and `end_role` closes the latest open row now, on
+the key that holds it, and refuses when there is none. Every string is
+bounded first: a key, a name or a value that trims to nothing is refused,
+and so is one past its cap in bytes as the stream writes it, JSON-escaped —
+keys at `Graph_Curation::KEY_BYTES` (320), item keys at `ITEM_KEY_BYTES`
+(512), names and values at `NAME_BYTES` (256) and URLs at `URL_BYTES`
+(1,024) — while a collected title is cut at `TITLE_BYTES` (512) on a
+character boundary, so every event fits one 4,096-byte line whatever
+characters fill it. `fetch_now` TICKs every source in each live worker
+through `Worker_Route`, as `insights collect` does without its `RESET`, and
+declares `manage`, because it mounts a worker's input (substrate ADR-23).
+
+**MCP door.** `Intelligence_Mcp_Door`, wired by the loader, is a declaration
+on the substrate's `Mcp_Door` (substrate ADR-38), serving
+`POST /wp-json/newspack-intelligence/v1/mcp`. Its tools are read off
+`Intelligence_CI_Node`'s schema, one `intel_<verb>` per verb but
+`fetch_now`, which it leaves out by name, each offering every declared arg
+under the verb's own description. The door owns the session check, the
+scope ceiling, the meter, the OAuth resource and the `<site-data>` fence,
+and offers a session only the tools its role covers, so a read session is
+offered the reads alone and every answer passes the reads' own tiers. Each
+read's summary names the 730-day item horizon,
+`Intel_Graph_Row_Schema::RETAIN_DAYS`, filled as `{horizon}`. The glossary
+lists the entity types and link roles from `Intel_Event::TYPES` and
+`LINK_ROLES`.
 
 **Seeding.** `wp newspack-intelligence ontology seed` writes
 `Ontology_Seed::events()` — thirty topics, the partners, funders and
@@ -388,7 +501,7 @@ these appends both writing it, `intel:ontology:consumer` runs
 shared log needs. Every machine stage mints through
 `Intel_Event::machine_event()`, which stamps `machine:<stage>@<plugin
 version>` and that version as the `config_version`; `make()` stamps the
-tick clock, or the wall clock in a cold WP-CLI process.
+tick clock, which the substrate pins at class load.
 
 **Collect.** The connector **Source nodes** (`github`, `linear`, `feed`) fetch on
 a `TICK` request inside the background worker and emit one `item_recorded` event
@@ -553,6 +666,7 @@ substrate. This plugin adds:
 | `Digest_Builder` | `Digest_Builder_Node` | `RESET`, `REGENERATE`; the `LLM_Config` verbs |
 | `Gate` | `Gate_Node` | the `LLM_Config` verbs, `set_config_version` |
 | `Insights_CI` | `Insights_CI_Node` | `counts`, `top`, `accumulated`, `generate`, `collect` |
+| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `review`, `collections`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, each at `tune`; `fetch_now` at `manage` |
 
 The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model`,
 `set_feature`, `add_profile` and `remove_profile`; every node carrying the trait
@@ -560,7 +674,7 @@ also re-emits its state through `dump_config()`. An identical `add_*` repeat is
 a no-op, and each `remove_*` takes its `add_*`'s argument, drops that entry and
 is refused when none is. `Digest_Builder` takes two positional arguments,
 the ingest Partition `RESET` fences and the `total` source count, both required.
-That total MUST equal the number of names in `Insights_CI_Node::SOURCE_NODES`:
+That total MUST equal the number of names in `Intelligence_CI_Node::SOURCE_NODES`:
 above it a collect never completes, and below it the digest composes before
 every source has reported. A snapshot restore never overrides it.
 
@@ -571,42 +685,75 @@ loosest. No handler checks a role of its own.
 
 ### Publisher master store
 
-The gate matches against a `newspack_publisher` CPT whose rows split in two.
-`Client_Importer` owns the ATOMIC fields — `atomic_site_id`, `domain_name`,
-`created`, plus the `status` / `first_seen` / `last_seen` / `churned_at`
-provenance — and never touches the ENRICHMENT fields a human edits in the
-Publisher details meta box: publisher name, localities, GitHub org, LinkedIn
-company id, X handle, aliases and beat tags. Localities, aliases and beat tags are
-pipe-separated.
+The gate matches against a `newspack_publisher` CPT whose rows split in two:
+the ATOMIC fields — `atomic_site_id`, `domain_name`, `created`, plus the
+`status` / `first_seen` / `last_seen` / `churned_at` provenance — and the
+ENRICHMENT fields a human edits in the Publisher details meta box: publisher
+name, localities, GitHub org, LinkedIn company id, X handle, aliases and beat
+tags. Localities, aliases and beat tags are pipe-separated.
+`CPT_Publisher_Repository` reads the store for the gate through
+`all_with_enrichment()`; nothing imports into it.
 
-An import is a reconciliation against a full snapshot, reported as four disjoint
-counts. A CSV id absent from the store is `created`; a present one has its atomic
-fields updated and counts as `reactivated` if it was churned and `updated`
-otherwise; a stored id absent from the CSV is `churned`. `CSV_Parser` reads the
-columns as `Atomic site ID, Created, Domain name` and returns null — never `[]` —
-for a file whose first non-blank line is not that header or that yields no valid
-rows, because an empty snapshot would churn every client. `Client_Importer`
-refuses an empty row list for the same reason.
+### Client roster
 
-Two things keep those counts from being an audit. `total_in_csv` counts DISTINCT
-`atomic_site_id` values rather than rows, so a snapshot repeating an id reports
-fewer than its line count while still processing the repeat — the second
-appearance finds the row the first one created and lands in `updated`. And
-`CPT_Publisher_Repository::create()` returns without a word when
-`wp_insert_post()` fails, while `Client_Importer` counts that row `created`
-regardless, so the reported creation can overshoot with nothing logged. Read the
-four counts as a report, never as a reconciliation that sums to `total_in_csv`.
+`Client_Importer` reconciles a client CSV against a `Client_Roster`. An
+import is a reconciliation against a full snapshot, reported as four
+disjoint counts. A CSV id absent from the roster is `created`; a present one
+has its atomic fields updated and counts as `reactivated` if it was churned
+and `updated` otherwise; an `active` id the roster's `statuses()` holds
+that the CSV lacks is `churned`. The importer then calls the roster's
+`commit()` once. `CSV_Parser` reads the
+columns as `Atomic site ID, Created, Domain name` and returns null — never
+`[]` — for a file whose first non-blank line is not that header or that
+yields no valid rows, because an empty snapshot would churn every client.
+`Client_Importer` refuses an empty row list for the same reason, and
+commits nothing. `total_in_csv` counts DISTINCT `atomic_site_id` values
+rather than rows, so a snapshot repeating an id reports fewer than its line
+count while still processing the repeat — the second appearance finds the
+client the first one created and lands in `updated`.
 
-The repository holds neither a memo nor an object cache. `post_id()` resolves an
-atomic id through an uncached `meta_value` exact-match query on every call, and
-`find_by_atomic_id()`, `update_atomic_fields()`, `set_active()` and
-`mark_churned()` each call it independently, so one existing CSV row costs two or
-three lookups, on top of the unbounded `all_atomic_ids()` scan the churn pass
-runs once. The source marks the spot `TODO(Gate): reverse index + object cache
-under load` — a known limit to fix there, not one to route around.
-
-Reach it from `wp newspack-intelligence clients import <csv>` or from the CSV
-upload on the Settings page. Both paths run the identical parse-and-reconcile.
+`Graph_Client_Roster` keeps the roster in the entity graph. A client is an
+organization carrying its `atomic_site_id` as an identifier and an open
+`client` role; a churned one carries an open `former_client` role instead,
+and reads as `churned` whenever no `client` role is open. Its first call of
+an import reads the projection through `Intel_Graph_Row_Schema::read()`
+given no line, so a projection that will not open throws `Table_Unavailable`
+rather than reconciling against an empty roster and re-creating every
+client. That one read is `Entity_Index::load()`, whose
+`identifiers( <kind> )` and `refused( <kind> )` give the atomic and domain
+identifiers it holds and leaves out, plus `Graph_Query::open_roles()` over
+every key of each survivor holding one, through `merged()`; so every
+identifier answers the survivor of any merge, and an open role held under
+any key merged into a client's entity counts as the client's. A client the roster lacks resolves first by its atomic id,
+else by its domain, to the entity `by_identifier()` answers, which gains
+the atomic id and a `client` role; only a client found by neither creates
+`organization:atomic-<id>`, named by its normalised domain, or
+`Atomic site <id>` when it has none; a row naming no atomic id is refused. A domain is added as an `identifier_added` only when no
+entity holds it, so an import never moves a curated or seeded entity's
+domain, and it renames nothing. One entity may carry several atomic ids,
+one per site a publisher runs, and churns once, only when none of them is
+in the snapshot. A churn writes `role_ended client` on the key each open row is
+held under, from that row's `from_ts`, and `role_asserted former_client` on
+the survivor; a return is the reverse. `Entity_Index::load()` leaves out an
+identifier whose survivor is rejected or whose merge chain cycles or runs
+past 10 hops, and `held_by_refused()` names the key holding it. A client
+whose atomic id such an entity holds — rejected, merged into a rejected
+survivor, or on a broken chain — is left alone: no event, counted
+`updated`, never churned. So is a new client whose domain such an entity
+holds, and a domain one holds is never added to a client. Every entity left
+alone is named in one stderr line per import. An event that will not mint
+throws naming its row's atomic id.
+Each role event dates from the start, UTC, of the import's day. Identifier
+values go through `Entity_Index::identifier_value()`. `commit()` appends
+the import's events in order through one `Ontology_Writer::append()`, then
+forgets what it read, so the next import reads the roster again. The roster
+takes its actor at construction: `Intel_Event::machine( 'client-import' )`
+from `wp newspack-intelligence clients import <csv>`, and
+`Intel_Event::caller()`, the signed-in user, from the CSV upload on the
+Settings page. Both build their importer and roster per import, so a
+failed import's read and buffered events never reach the next. The command
+refuses to run as root before it reads the CSV, as the `ontology` verbs do;
+the upload runs as the web user.
 
 ### Dashboard
 
@@ -646,13 +793,14 @@ per-bundle static (substrate ADR-16). The build resolves
 
 | Path | What |
 |------|------|
-| `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus, WP-CLI, CPT hooks, `Insights_CI` mount |
+| `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus, WP-CLI, CPT hooks, the `Insights_CI` and `Intelligence_CI` mounts, the MCP door's `wire()` |
 | `includes/` (pipeline) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node`, the `Emits_Struct` trait, `Ontology_Seed`, `Ontology_Writer`, `Source_Node` and its three connectors, `Summarizer_Node`, `Scorer_Node`, `Digest_Builder_Node`, `Digest_Composer` |
 | `includes/` (gate) | `Gate_Node`, `Publisher_Matcher`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
-| `includes/` (publishers) | `Publisher_CPT`, `Publisher_Meta_Box`, `CPT_Publisher_Repository` and the `Publisher_Repository` interface, `Client_Importer`, `CSV_Parser`, `Clients_Settings` |
+| `includes/` (publishers) | `Publisher_CPT`, `Publisher_Meta_Box`, `CPT_Publisher_Repository` and the `Publisher_Repository` interface |
+| `includes/` (clients) | `Client_Importer`, the `Client_Roster` interface, `Graph_Client_Roster`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |
-| `includes/` (service) | `Insights_CI_Node`, `Worker_Route`, the `Source` interface, `uninstall-cleanup.php` |
-| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed` and `ontology reresolve` |
+| `includes/` (service) | `Insights_CI_Node`, `Intelligence_CI_Node`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Intel_Tiers`, `Worker_Route`, the `Source` interface, `uninstall-cleanup.php` |
+| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed` and `ontology reresolve`; the `Refuses_Root` trait both use |
 | `topologies/` | The nine `.tsl` node-graph topologies |
 | `src/dashboard/` | The Publisher Insights React panel |
 | `tests/` | PHPUnit (`unit/` + `bootstrap.php` + `support/` + `run-coverage.sh`; `integration/` exists but is empty) |
@@ -672,8 +820,8 @@ declares no hook or filter of its own for others to extend.
   which no-ops when `build/dashboard/index.js` is absent.
 - **Filter.** `newspack_nodes/overlay_pages` — declares the Insights
   page to the substrate overlay-page registry.
-- **Action.** `newspack_nodes/request_graph_ready` — mounts `Insights_CI` into
-  each request graph, idempotently.
+- **Action.** `newspack_nodes/request_graph_ready` — mounts `Insights_CI` and
+  `Intelligence_CI` into each request graph, idempotently.
 - **Post type.** `newspack_publisher`, the publisher master store: private, with
   its own `Publishers` admin menu and every capability mapped to
   `manage_options`. Its meta keys are the `Publisher_CPT::META_*` constants — the
@@ -686,8 +834,10 @@ declares no hook or filter of its own for others to extend.
   redirect is unconditional: an unreadable temp file, a header line other than
   `Atomic site ID, Created, Domain name`, or a file yielding no valid rows still
   reports success while importing nothing.
-- **REST.** None registered. The dashboard's "Create draft post" action POSTs
-  core `/wp/v2/posts` from the browser.
+- **REST.** `POST /wp-json/newspack-intelligence/v1/mcp`, the MCP door, which
+  the substrate's `Mcp_Door` serves and declares as an OAuth resource on
+  `newspack_nodes/oauth_resources`. The dashboard's "Create draft post" action
+  POSTs core `/wp/v2/posts` from the browser.
 - **Uninstall.** Plugin delete removes every `newspack_intelligence_` option row
   and its transient variants, on every site of a multisite. Deactivation removes
   nothing.

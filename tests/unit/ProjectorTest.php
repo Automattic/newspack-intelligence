@@ -512,7 +512,7 @@ final class ProjectorTest extends TestCase {
 			$this->ontology( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.example/a' ] ),
 			$this->ontology( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => 'organization:salem-ledger', 'item_url' => 'https://harborgazette.example/a' ], 'agent:41:Claude desktop' ),
 			$this->ontology( 'collection_created', [ 'collection_key' => 'awards-2026', 'name' => 'Awards 2026' ] ),
-			$this->ontology( 'collected', [ 'collection_key' => 'awards-2026', 'item_key' => self::ITEM, 'url' => 'https://harborgazette.example/a', 'title' => 'Award' ] ),
+			$this->ontology( 'collected', [ 'collection_key' => 'awards-2026', 'item_key' => self::ITEM, 'url' => 'https://harborgazette.example/a', 'title' => 'Award', 'tier' => 'internal' ] ),
 		];
 	}
 

@@ -302,7 +302,7 @@ class Reresolver_Node extends Timer_Node {
 	 * whose title or body holds a name as a phrase, or an acronym as a
 	 * phrase and in its own case, or whose URL matches a pattern, newest
 	 * first, and how many match in all: counted only when the cap is reached.
-	 * Each name is one quoted FTS5 phrase, its quotes doubled, so it is never
+	 * Each name is one `Intel_Graph_Row_Schema::fts_phrase()`, so it is never
 	 * read as query syntax; FTS folds case, so an acronym's case is held by a
 	 * GLOB over the title or the body, its wildcards bracketed.
 	 *
@@ -315,7 +315,7 @@ class Reresolver_Node extends Timer_Node {
 	private static function matched( Row_Reader $r, array $names, array $acronyms, array $urls ): array {
 		$match  = [];
 		$binds  = [];
-		$phrase = static fn ( string $name ): string => '"' . \str_replace( '"', '""', $name ) . '"';
+		$phrase = Intel_Graph_Row_Schema::fts_phrase( ... );
 		if ( [] !== $names ) {
 			$match[] = 'i.id IN ( SELECT rowid FROM {a}.items_fts WHERE items_fts MATCH ? )';
 			$binds[] = \implode( ' OR ', \array_map( $phrase, $names ) );
@@ -461,7 +461,7 @@ class Reresolver_Node extends Timer_Node {
 				throw new \InvalidArgumentException( 'usage: RERESOLVE <since Y-m-d> <until Y-m-d>' );
 			}
 			[ , $since, $until ] = $words;
-			[ $from, $to ]       = self::range( $since, $until );
+			[ $from, $to ]       = Intel_Graph_Row_Schema::range( $since, $until );
 		} catch ( \InvalidArgumentException $e ) {
 			$this->print_less_often( 'refusing a re-resolution: ', $e->getMessage() );
 			return [ 'refused' => $e->getMessage() ];
@@ -478,37 +478,6 @@ class Reresolver_Node extends Timer_Node {
 	 */
 	private function queue_up( string $kind, string $value ): void {
 		$this->queue[ "{$kind}|{$value}" ] ??= [ 'at' => Core::$now, 'after' => null ];
-	}
-
-	/**
-	 * A UTC day range as its first second and the second after its last.
-	 *
-	 * @param string $since The first day, Y-m-d.
-	 * @param string $until The last day, Y-m-d.
-	 * @return array{0:int,1:int}
-	 * @throws \InvalidArgumentException When a day is not a Y-m-d date, or the range runs backwards.
-	 */
-	public static function range( string $since, string $until ): array {
-		$from = self::day( $since );
-		$to   = self::day( $until ) + Intel_Graph_Row_Schema::DAY_SECONDS;
-		if ( $from >= $to ) {
-			throw new \InvalidArgumentException( \esc_html( "since {$since} is after until {$until}" ) );
-		}
-		return [ $from, $to ];
-	}
-
-	/**
-	 * A Y-m-d day's first second, UTC.
-	 *
-	 * @param string $ymd The day.
-	 * @throws \InvalidArgumentException When it is not a Y-m-d date.
-	 */
-	private static function day( string $ymd ): int {
-		$day = \DateTimeImmutable::createFromFormat( '!Y-m-d', $ymd, new \DateTimeZone( 'UTC' ) );
-		if ( false === $day || $day->format( 'Y-m-d' ) !== $ymd ) {
-			throw new \InvalidArgumentException( \esc_html( "not a Y-m-d date: {$ymd}" ) );
-		}
-		return $day->getTimestamp();
 	}
 
 	/**
