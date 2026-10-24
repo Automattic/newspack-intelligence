@@ -4,8 +4,10 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use PHPUnit\Framework\TestCase;
+use Newspack_Intelligence\LLM_Client;
 use Newspack_Intelligence\LLM_Entity_Extractor;
 use Newspack_Intelligence\Proxy_LLM_Client;
+use Newspack_Nodes\Worker_Should_Stop;
 
 final class LlmEntityExtractorTest extends TestCase {
 
@@ -55,5 +57,18 @@ final class LlmEntityExtractorTest extends TestCase {
 		$this->respond( '{"orgs":["Valid", 123, null, "Also"],"people":[],"locations":[]}' );
 		$out = $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] );
 		$this->assertSame( [ 'Valid', 'Also' ], $out['orgs'] );
+	}
+
+	/** A cooperative stop inside the call is not a failed call: it propagates. */
+	public function test_a_cooperative_stop_propagates(): void {
+		$extractor = new LLM_Entity_Extractor( new class() implements LLM_Client {
+				public function chat( array $messages, array $opts = [] ): string {
+					throw new Worker_Should_Stop( 'max_runtime 595 reached' );
+				}
+			} );
+
+		$this->expectException( Worker_Should_Stop::class );
+		$this->expectExceptionMessage( 'max_runtime 595 reached' );
+		$extractor->extract( [ 'title' => 'Quarry Ledger merges', 'body' => 'B' ] );
 	}
 }

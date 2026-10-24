@@ -6,13 +6,13 @@ namespace Newspack_Intelligence\Tests;
 use Newspack_Intelligence\Digest_Builder_Node;
 use Newspack_Intelligence\Insights_CI_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
-use Newspack_Nodes\CLI;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Router_Node;
-use Newspack_Nodes\Worker_Base;
 use Newspack_Nodes\Tests\TestCase;
+
+require_once __DIR__ . '/../support/routes-to-workers.php';
 
 /**
  * Insights_CI is the dashboard's server read, decomposed into three slice verbs —
@@ -23,6 +23,7 @@ use Newspack_Nodes\Tests\TestCase;
  * the input IPC partition (the request graph never composes itself).
  */
 final class InsightsCITest extends TestCase {
+	use Routes_To_Workers;
 
 	/** Per-test digest temp dir, lazily created by digest_path(). */
 	private ?string $digest_dir = null;
@@ -254,30 +255,10 @@ final class InsightsCITest extends TestCase {
 		$this->assertSame( '', Insights_CI_Node::read_latest_digest( $path ) );
 	}
 
-	public function test_live_workers_lists_topology_workers_from_lock_dirs(): void {
-		$base = $this->make_temp_dir( 'insights-ci-workers-' );
-		\mkdir( $base . '/locks/newspack-intelligence.p0.lock.d', 0777, true );
-		\mkdir( $base . '/locks/newspack-intelligence.p5.lock.d', 0777, true );
-		// No worker id spells a padded partition, so no worker owns this lock.
-		\mkdir( $base . '/locks/newspack-intelligence.p03.lock.d', 0777, true );
-		// `newspack-ai-newsletter` names no topology here, so its lock is not a
-		// live worker.
-		\mkdir( $base . '/locks/newspack-ai-newsletter.p0.lock.d', 0777, true );
-		\mkdir( $base . '/locks/newspack-intelligence-gate.p2.lock.d', 0777, true );
-		\mkdir( $base . '/locks/other.p0.lock.d', 0777, true );
-
-		$workers = Insights_CI_Node::live_workers( $base );
-		\sort( $workers );
-		$this->assertSame(
-			[ 'newspack-intelligence.p0', 'newspack-intelligence.p5' ],
-			$workers
-		);
-	}
-
 	public function test_collect_throws_when_no_worker_is_live(): void {
 		$base   = $this->make_temp_dir( 'insights-ci-nocollect-' );
 		$this->expectException( \RuntimeException::class );
-		$this->expectExceptionMessage( 'No live newspack-intelligence worker' );
+		$this->expectExceptionMessage( 'No newspack-intelligence worker could be reached' );
 		Insights_CI_Node::collect( new Command_Interpreter_Node(), $base );
 	}
 
@@ -288,7 +269,7 @@ final class InsightsCITest extends TestCase {
 		$parsed = Insights_CI_Node::collect( $ci, $base );
 
 		$this->assertSame( [ 'collecting' => 3, 'workers' => 1 ], $parsed );
-		$written = $this->worker_input( $base, 'newspack-intelligence.p4' );
+		$written = self::worker_input( $base, 'newspack-intelligence.p4' );
 		$this->assertSame( [ 'digest', 'github', 'linear', 'feed' ], \array_column( $written, Message::TO ) );
 		$this->assertSame( [ 'RESET', 'TICK', 'TICK', 'TICK' ], \array_column( $written, Message::VALUE ) );
 		// FROM names the CI that asked, so each answer comes back addressed.
@@ -299,7 +280,7 @@ final class InsightsCITest extends TestCase {
 	public function test_regenerate_throws_when_no_worker_is_live(): void {
 		$base   = $this->make_temp_dir( 'insights-ci-noregen-' );
 		$this->expectException( \RuntimeException::class );
-		$this->expectExceptionMessage( 'No live newspack-intelligence worker' );
+		$this->expectExceptionMessage( 'No newspack-intelligence worker could be reached' );
 		Insights_CI_Node::regenerate( new Command_Interpreter_Node(), $base );
 	}
 
@@ -309,19 +290,17 @@ final class InsightsCITest extends TestCase {
 		$parsed = Insights_CI_Node::regenerate( $this->routed_ci( 'insights-regen-3' ), $base );
 
 		$this->assertSame( [ 'regenerating' => true, 'workers' => 1 ], $parsed );
-		$written = $this->worker_input( $base, 'newspack-intelligence.p9' );
+		$written = self::worker_input( $base, 'newspack-intelligence.p9' );
 		$this->assertCount( 1, $written );
 		$this->assertSame( 'digest', $written[0][ Message::TO ] );
 		$this->assertSame( 'REGENERATE', $written[0][ Message::VALUE ] );
 		$this->assertSame( 'insights-regen-3', $written[0][ Message::FROM ] );
 	}
 
-	/** A base dir holding one live worker: its lock dir and its IPC input dir. */
+	/** A base dir holding one live worker. */
 	private function live_worker_base( string $prefix, string $worker_id ): string {
-		$base                = $this->make_temp_dir( $prefix );
-		[ $type, $partition ] = CLI::parse_worker_id( $worker_id ) ?? [ '', 0 ];
-		\mkdir( "{$base}/locks/{$worker_id}.lock.d", 0777, true );
-		\mkdir( Worker_Base::ipc_dir( $base, $type, $partition, Worker_Base::IPC_INPUT ), 0777, true );
+		$base = $this->make_temp_dir( $prefix );
+		self::live_worker( $base, $worker_id );
 		return $base;
 	}
 
@@ -333,24 +312,6 @@ final class InsightsCITest extends TestCase {
 		$ci->name( $name );
 		$ci->sink( $router );
 		return $ci;
-	}
-
-	/**
-	 * Every message a worker's IPC input partition holds on disk, oldest first.
-	 *
-	 * @return array<int,array<int,mixed>>
-	 */
-	private function worker_input( string $base, string $worker_id ): array {
-		[ $type, $partition ] = CLI::parse_worker_id( $worker_id ) ?? [ '', 0 ];
-		$segments             = \glob( Worker_Base::ipc_dir( $base, $type, $partition, Worker_Base::IPC_INPUT ) . '/*' ) ?: [];
-		\natsort( $segments );
-		$messages = [];
-		foreach ( $segments as $segment ) {
-			foreach ( \file( $segment, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES ) ?: [] as $line ) {
-				$messages[] = Message::unpacked( $line );
-			}
-		}
-		return $messages;
 	}
 
 	/** A digest path under a fresh tracked temp dir (one per test). */

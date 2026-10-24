@@ -88,6 +88,7 @@ final class IntelEventTest extends TestCase {
 						'role'       => 'topic',
 						'method'     => 'name',
 						'confidence' => 0.5,
+						'retrieved_ts' => 1791200000,
 					],
 					$actor,
 					'c'
@@ -153,6 +154,7 @@ final class IntelEventTest extends TestCase {
 				'role'       => 'topic',
 				'method'     => 'extract',
 				'confidence' => 1.0,
+				'retrieved_ts' => 1791300000,
 			],
 			'machine:extract@9.4.1',
 			''
@@ -161,16 +163,48 @@ final class IntelEventTest extends TestCase {
 		$this->assertSame( 'extract', $event['method'] );
 	}
 
-	/** A machine actor names its stage and version. */
-	public function test_machine_names_the_stage_and_its_version(): void {
-		$this->assertSame( 'machine:extract@v3', Intel_Event::machine( 'extract', 'v3' ) );
+	/** An entity key is its type and the slug of its name. */
+	public function test_entity_key_slugs_the_name_under_its_type(): void {
+		$this->assertSame( 'product:newspack-plugin', Intel_Event::entity_key( 'product', 'Newspack Plugin' ) );
+		$this->assertSame( 'organization:elan-gazette', Intel_Event::entity_key( 'organization', 'Élan Gazette' ) );
+	}
+
+	public function test_entity_key_refuses_a_type_outside_types(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'vehicle' );
+		Intel_Event::entity_key( 'vehicle', 'Harbor Gazette' );
+	}
+
+	public function test_entity_key_refuses_a_slug_that_sanitizes_to_nothing(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageMatches( '/organization.*!!!/' );
+		Intel_Event::entity_key( 'organization', '!!!' );
+	}
+
+	/** A machine's event names its stage at the plugin version, and stamps that version as its config. */
+	public function test_machine_event_stamps_the_stage_and_the_plugin_version(): void {
+		$event = Intel_Event::machine_event( 'quarry-stage', 'cluster_joined', [ 'item_key' => 'feed:machine-62', 'cluster_key' => 'cluster:62', 'retrieved_ts' => 1791400000 ] );
+
+		Intel_Event::validate( $event );
+		$version = \NEWSPACK_INTELLIGENCE_VERSION;
+		$this->assertSame( [ "machine:quarry-stage@{$version}", $version, 'feed:machine-62' ], [ $event['actor'], $event['config_version'], $event['item_key'] ] );
+	}
+
+	/** A cold process, whose tick clock has not started, stamps the wall clock. */
+	public function test_make_stamps_the_wall_clock_before_the_tick_clock_starts(): void {
+		Core::$now = 0.0;
+		$before    = \microtime( true );
+
+		$event = Intel_Event::make( 'entity_accepted', [ 'entity_key' => 'organization:quarry-ledger' ], 'user:88', '6.1.4' );
+
+		$this->assertGreaterThanOrEqual( \floor( $before ), $event['ts'] );
 	}
 
 	/** Each kind carries its stream, its fields and the sets they are drawn from. */
 	public function test_one_table_holds_each_kinds_stream_fields_and_sets(): void {
 		$this->assertSame( [ 'event', 'event_id', 'ts', 'actor', 'config_version' ], Intel_Event::ENVELOPE );
 		$this->assertSame(
-			[ Intel_Event::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence' ], [ 'role' => Intel_Event::LINK_ROLES, 'method' => Intel_Event::METHODS ] ],
+			[ Intel_Event::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => Intel_Event::LINK_ROLES, 'method' => Intel_Event::METHODS ] ],
 			Intel_Event::KINDS['link_asserted']
 		);
 		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'entity_key' ], [] ], Intel_Event::KINDS['entity_accepted'] );
@@ -243,5 +277,17 @@ final class IntelEventTest extends TestCase {
 			'item_ts'        => 1.0,
 			'retrieved_ts'   => 2.0,
 		];
+	}
+
+	/** An item is exactly the item_recorded fields, in their order; one missing is none. */
+	public function test_item_of_takes_exactly_the_item_fields(): void {
+		$fields = [ 'retrieved_ts' => 1796000000, 'item_key' => 'feed:item-of-31', 'source' => 'feed', 'tier' => 'internal', 'url' => 'https://quarry.example/a', 'title' => 'Quarry Ledger', 'body' => 'b', 'item_ts' => 1795990000, 'event' => 'item_recorded', 'actor' => 'machine:x@1' ];
+
+		$this->assertSame(
+			[ 'item_key' => 'feed:item-of-31', 'source' => 'feed', 'tier' => 'internal', 'url' => 'https://quarry.example/a', 'title' => 'Quarry Ledger', 'body' => 'b', 'item_ts' => 1795990000, 'retrieved_ts' => 1796000000 ],
+			Intel_Event::item_of( $fields )
+		);
+		unset( $fields['item_ts'] );
+		$this->assertNull( Intel_Event::item_of( $fields ) );
 	}
 }

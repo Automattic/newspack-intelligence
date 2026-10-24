@@ -2,13 +2,14 @@
 /**
  * LLM_Config: shared per-node LLM configuration verbs + client factory.
  *
- * Summarizer_Node and Digest_Builder_Node both need the same api_url/vault_id/
- * model/feature/profiles quintet, configured via per-node topology verbs. This
+ * Every LLM-calling node needs the same api_url/vault_id/model/feature/
+ * profiles quintet, configured via per-node topology verbs. This
  * trait carries that state, the four `set_*` verbs and the `add_profile` /
  * `remove_profile` pair (declared for node_schema()['commands'] via
  * llm_config_commands(), the pair through `Schema_Reflection::list_verbs()`, so
- * a using class also uses Schema_Reflection), make_llm_client() (builds the
- * proxy client from the verb-configured state), and relevance_profile() (joins
+ * a using class also uses Schema_Reflection), make_llm_client() (answers the
+ * `$llm_factory` seam first, else builds the proxy client from the
+ * verb-configured state), and relevance_profile() (joins
  * the configured profile lines for prompt assembly). Uses Vault_Secret for
  * the `set_vault_id` verb and the token it resolves.
  *
@@ -29,6 +30,16 @@ trait LLM_Config {
 	private const DEFAULT_MODEL   = 'gpt-oss-120b';
 	private const DEFAULT_FEATURE = 'newspack-intelligence';
 
+	/**
+	 * LLM-client seam replacing the proxy client `make_llm_client()` builds;
+	 * each using class holds its own. Tests reassign it to a canned client or
+	 * none, and reset it to null in tearDown.
+	 * Signature: `function (): ?LLM_Client`.
+	 *
+	 * @var (\Closure(): ?LLM_Client)|null
+	 */
+	public static ?\Closure $llm_factory = null;
+
 	/** @var string AI API Proxy base URL, set via set_api_url. */
 	protected string $api_url = self::DEFAULT_API_URL;
 
@@ -42,11 +53,14 @@ trait LLM_Config {
 	protected array $profiles = [];
 
 	/**
-	 * Build the proxy client from this node's own verb-configured state; null
-	 * when there's no api_url or no resolvable token (callers fall back to
-	 * heuristics).
+	 * The `$llm_factory` seam's client when one is set; otherwise the proxy
+	 * client from this node's own verb-configured state, or null when there's
+	 * no api_url or no resolvable token (callers fall back to heuristics).
 	 */
 	protected function make_llm_client(): ?LLM_Client {
+		if ( null !== self::$llm_factory ) {
+			return ( self::$llm_factory )();
+		}
 		if ( '' === $this->api_url ) {
 			return null;
 		}

@@ -20,6 +20,7 @@ use Newspack_Nodes\Schema_Reflection;
 
 class Intel_Event_Writer_Node extends Node {
 	use Schema_Reflection;
+	use Emits_Struct;
 
 	/** The partition an items-stream event is addressed to. */
 	protected string $items_partition = '';
@@ -46,16 +47,6 @@ class Intel_Event_Writer_Node extends Node {
 		}
 		$message[ Message::TO ] = Intel_Event::ITEMS === Intel_Event::stream_of( $kind ) ? $this->items_partition : $this->ontology_partition;
 		parent::fill( $message );
-	}
-
-	/**
-	 * Both stream partitions, which this node addresses by TO, never by target.
-	 *
-	 * @param list<string> $args The `make_node` argument tokens.
-	 * @return list<string>
-	 */
-	public static function declared_targets( array $args ): array {
-		return \array_slice( $args, 0, 2 );
 	}
 
 	/** @return array<string,mixed> */

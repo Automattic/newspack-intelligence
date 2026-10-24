@@ -24,19 +24,6 @@ class Digest_Builder_Node extends Node {
 	public const FENCE = "RESET\n";
 
 	/**
-	 * LLM-client factory seam. Lazily-defaulted at the call site to this node's
-	 * own verb-configured `make_llm_client()` (null when no vault token resolves).
-	 * Tests reassign in setUp to inject a real `Proxy_LLM_Client` — faking only its
-	 * `$http_post` seam — so prompt assembly, the client, and the briefing compose
-	 * all run as real, covered production code; tearDown resets it to null.
-	 *
-	 * Signature: `function (): ?LLM_Client`.
-	 *
-	 * @var (\Closure(): ?LLM_Client)|null
-	 */
-	public static ?\Closure $llm_factory = null;
-
-	/**
 	 * Accumulated summarized items (array-key: they round-trip through offsetlog JSON).
 	 *
 	 * @var array<int,array<array-key,mixed>>
@@ -154,7 +141,7 @@ class Digest_Builder_Node extends Node {
 	}
 
 	private function compose_draft(): void {
-		$client = self::$llm_factory ? ( self::$llm_factory )() : $this->make_llm_client();
+		$client = $this->make_llm_client();
 		$draft  = Digest_Composer::compose( $this->items, $client, $this->relevance_profile() );
 		$this->set_state( 'COMPOSED', \count( $this->items ) . ' items' );
 		$response                   = Message::new_message();

@@ -13,6 +13,7 @@
 namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Core;
+use Newspack_Nodes\Worker_Should_Stop;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -39,6 +40,8 @@ class Digest_Composer {
 					Prompts::digest( $selected, $profile ),
 					[ 'max_tokens' => self::MAX_TOKENS ]
 				);
+			} catch ( Worker_Should_Stop $stop ) {
+				throw $stop;
 			} catch ( \RuntimeException $e ) {
 				// LLM failure never throws — fall back to the ranked list.
 				Core::print_less_often( 'AI digest compose failed: ', $e->getMessage() );

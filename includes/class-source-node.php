@@ -24,13 +24,13 @@ namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Node;
-use Newspack_Nodes\Message;
 use Newspack_Nodes\Schema_Reflection;
 
 \defined( 'ABSPATH' ) || exit;
 
 abstract class Source_Node extends Node implements Source {
 	use Schema_Reflection;
+	use Emits_Struct;
 
 	/** Bytes of body an item records; a longer body is cut on a character boundary. */
 	public const MAX_BODY_BYTES = 65536;
@@ -92,25 +92,19 @@ abstract class Source_Node extends Node implements Source {
 	private function tick(): array {
 		$emitted = 0;
 		$refused = 0;
-		$actor   = Intel_Event::machine( "source:{$this->name}", \NEWSPACK_INTELLIGENCE_VERSION );
 		foreach ( $this->fetch( $this->config() ) as $item ) {
 			$key = Core::as_string( $item['item_key'] );
 			if ( isset( $this->seen[ $key ] ) ) {
 				continue;
 			}
 			try {
-				$value = Intel_Event::make( 'item_recorded', $item, $actor, \NEWSPACK_INTELLIGENCE_VERSION );
+				$value = Intel_Event::machine_event( "source:{$this->name}", 'item_recorded', $item );
 			} catch ( \InvalidArgumentException $invalid ) {
 				$this->print_less_often( 'refused an item: ', "{$key}: {$invalid->getMessage()}" );
 				++$refused;
 				continue;
 			}
-			$event                   = Message::new_message();
-			$event[ Message::TYPE ]  = Message::TM_STRUCT;
-			$event[ Message::FROM ]  = $this->name;
-			$event[ Message::VALUE ] = $value;
-			// parent::fill stamps TO from target, then forwards to sink.
-			parent::fill( $event );
+			$this->emit( '', $value );
 			// Only a recorded key is remembered, so a refused item retries.
 			$this->remember( $key );
 			++$emitted;

@@ -179,8 +179,8 @@ final class Publisher_Matcher {
 
 	/** String similarity in [0,1]: normalized-equality short-circuit, else similar_text ratio. */
 	private function similarity( string $a, string $b ): float {
-		$na = $this->normalize_name( $a );
-		$nb = $this->normalize_name( $b );
+		$na = Entity_Index::norm( $a );
+		$nb = Entity_Index::norm( $b );
 		if ( '' === $na || '' === $nb ) {
 			return 0.0;
 		}
@@ -190,14 +190,6 @@ final class Publisher_Matcher {
 		$percent = 0.0;
 		\similar_text( $na, $nb, $percent );
 		return $percent / 100.0;
-	}
-
-	/** Normalize a name for fuzzy compare: lowercase, strip punctuation, drop leading "the", collapse ws. */
-	private function normalize_name( string $s ): string {
-		$s = \strtolower( \trim( $s ) );
-		$s = (string) \preg_replace( '/[^\p{L}\p{N}\s]+/u', ' ', $s );
-		$s = (string) \preg_replace( '/^the\s+/', '', $s );
-		return \trim( (string) \preg_replace( '/\s+/', ' ', $s ) );
 	}
 
 	/**

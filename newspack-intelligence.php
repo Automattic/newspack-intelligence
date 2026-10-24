@@ -129,6 +129,7 @@ function mount_insights_ci( \Newspack_Nodes\Command_Interpreter_Node $base_inter
  */
 function register_cli_commands(): void {
 	\WP_CLI::add_command( 'newspack-intelligence clients', '\\Newspack_Intelligence\\CLI\\Clients_CLI_Command' );
+	\WP_CLI::add_command( 'newspack-intelligence ontology', '\\Newspack_Intelligence\\CLI\\Ontology_CLI_Command' );
 }
 
 // newspack-nodes loads after this file, so wiring waits for plugins_loaded.

@@ -331,4 +331,21 @@ final class LlmConfigTest extends TestCase {
 		$this->assertTrue( $profile_verb['multiple'] );
 		$this->assertSame( 'profiles', $commands[ \array_search( 'remove_profile', $verb_names, true ) ]['unlist'] );
 	}
+
+	/** The using class's factory seam answers before any proxy client is built. */
+	public function test_the_factory_seam_answers_first(): void {
+		$node   = $this->fixture();
+		$canned = new class() implements LLM_Client {
+			public function chat( array $messages, array $opts = [] ): string {
+				return 'Quarry Ledger canned reply';
+			}
+		};
+		try {
+			$node::$llm_factory = static fn (): LLM_Client => $canned;
+
+			$this->assertSame( $canned, $node->client() );
+		} finally {
+			$node::$llm_factory = null;
+		}
+	}
 }

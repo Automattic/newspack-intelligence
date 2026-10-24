@@ -6,6 +6,7 @@ namespace Newspack_Intelligence\Tests;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Nodes\Core;
+use Newspack_Nodes\Table_Unavailable;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
 
@@ -27,6 +28,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
+		Intel_Graph_Row_Schema::$read_rows = null;
 		Topology_Registry::reset();
 		parent::tearDown();
 	}
@@ -50,6 +52,41 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'Intel_Graph' ], Core::node( 'intel-graph' )->arguments(), 'the Row_Table accepts the schema' );
 	}
 
+	/** A read given a line answers null while no projection opens, logged once; a read given none throws. */
+	public function test_a_read_given_a_line_answers_null_while_no_projection_opens(): void {
+		$stderr = $this->capture_stderr();
+
+		$this->assertNull( Intel_Graph_Row_Schema::read( static fn (): int => 41, 'no intel-graph for the harbor: ' ) );
+		$this->assertNull( Intel_Graph_Row_Schema::read( static fn (): int => 41, 'no intel-graph for the harbor: ' ) );
+
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'no intel-graph for the harbor: ' ) );
+		$this->expectException( Table_Unavailable::class );
+		Intel_Graph_Row_Schema::read( static fn (): int => 41 );
+	}
+
+	/** The seam replaces the one call every projection read goes through. */
+	public function test_the_read_seam_replaces_the_projection_read(): void {
+		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): array => [ 'seamed', 17 ];
+
+		$this->assertSame( [ 'seamed', 17 ], Intel_Graph_Row_Schema::read( static fn (): int => 41 ) );
+		$this->assertSame( [ 'seamed', 17 ], Intel_Graph_Row_Schema::read( static fn (): int => 41, 'never logged: ' ) );
+	}
+
+	/** An item's time is its item_ts, or its retrieved_ts when undated, alike in SQL and in PHP. */
+	public function test_an_items_time_is_one_rule_in_sql_and_php(): void {
+		$pdo = new \PDO( 'sqlite::memory:' );
+		$sql = $pdo->prepare( 'SELECT ' . Intel_Graph_Row_Schema::ITEM_TIME . ' FROM ( SELECT ? AS item_ts, ? AS retrieved_ts ) i' );
+		$at  = [];
+		foreach ( [ [ 0, 1793000017 ], [ 1792000041, 1793000017 ] ] as [ $item_ts, $retrieved_ts ] ) {
+			$sql->bindValue( 1, $item_ts, \PDO::PARAM_INT );
+			$sql->bindValue( 2, $retrieved_ts, \PDO::PARAM_INT );
+			$sql->execute();
+			$this->assertSame( Intel_Graph_Row_Schema::item_time( $item_ts, $retrieved_ts ), (int) $sql->fetchColumn() );
+			$at[] = Intel_Graph_Row_Schema::item_time( $item_ts, $retrieved_ts );
+		}
+		$this->assertSame( [ 1793000017, 1792000041 ], $at );
+	}
+
 	public function test_judgments_and_collected_outlive_their_items(): void {
 		$now       = 1793000000;
 		Core::$now = (float) ( $now - 731 * 86400 );
@@ -57,7 +94,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$old       = (int) Core::$now;
 		$events    = [
 			Intel_Event::make( 'item_recorded', [ 'item_key' => 'feed:abc-7731', 'source' => 'feed', 'tier' => 'public', 'url' => 'https://harborgazette.example/a', 'title' => 'Award', 'body' => 'Body', 'item_ts' => $old, 'retrieved_ts' => $old ], 'machine:source:feed@9.4.1', '9.4.1' ),
-			Intel_Event::make( 'link_asserted', [ 'item_key' => 'feed:abc-7731', 'entity_key' => 'organization:harbor-gazette', 'role' => 'subject', 'method' => 'identifier', 'confidence' => 1.0 ], 'machine:resolve@9.4.1', '9.4.1' ),
+			Intel_Event::make( 'link_asserted', [ 'item_key' => 'feed:abc-7731', 'entity_key' => 'organization:harbor-gazette', 'role' => 'subject', 'method' => 'identifier', 'confidence' => 1.0, 'retrieved_ts' => $old ], 'machine:resolve@9.4.1', '9.4.1' ),
 			Intel_Event::make( 'link_confirmed', [ 'item_key' => 'feed:abc-7731', 'entity_key' => 'organization:harbor-gazette', 'item_url' => 'https://harborgazette.example/a' ], 'user:41', 'clients-v3' ),
 			Intel_Event::make( 'collected', [ 'collection_key' => 'awards-2024', 'item_key' => 'feed:abc-7731', 'url' => 'https://harborgazette.example/a', 'title' => 'Award' ], 'user:41', 'clients-v3' ),
 		];

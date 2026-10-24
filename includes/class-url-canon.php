@@ -27,7 +27,7 @@ final class Url_Canon {
 		if ( ! \is_array( $parts ) || ! isset( $parts['host'] ) ) {
 			return $url;
 		}
-		$host  = (string) \preg_replace( '/^www\./', '', \strtolower( $parts['host'] ) );
+		$host  = self::host( $parts['host'] );
 		$port  = isset( $parts['port'] ) ? ':' . $parts['port'] : '';
 		$query = [];
 		foreach ( \explode( '&', $parts['query'] ?? '' ) as $pair ) {
@@ -37,5 +37,15 @@ final class Url_Canon {
 		}
 		\sort( $query );
 		return $host . $port . \rtrim( $parts['path'] ?? '', '/' ) . ( [] === $query ? '' : '?' . \implode( '&', $query ) );
+	}
+
+	/**
+	 * A host as every reader compares it: lowercase, its leading `www.`
+	 * dropped.
+	 *
+	 * @param string $host A host.
+	 */
+	public static function host( string $host ): string {
+		return (string) \preg_replace( '/^www\./', '', \strtolower( $host ) );
 	}
 }

@@ -170,6 +170,8 @@ for two years (16 MiB segments, both retention rules at 63,072,000 seconds,
 a hard cap of 8,192 segments), and only the worker writes it, so it
 takes bodies past PIPE_BUF under `void_warranty`. `intel:ontology` holds the
 entity events and keeps every segment (`keep_everything`, substrate ADR-37).
+`intel:reresolve` keeps a day of `item_reresolve` records, each naming one
+stored item.
 `Intel_Event_Writer_Node` (`intel:writer intel:items intel:ontology`) addresses
 each event by TO to the partition its `make_node` line names for the stream
 `Intel_Event::stream_of()` gives its kind, and drops a message naming no kind
@@ -193,14 +195,200 @@ before it writes: an entity is three rows — identity in `entities`, state in
 judgment or topic may name an entity no `entities` row holds yet; readers join
 to it. A machine's `entity_proposed` writes with `ignore` and a person's
 `entity_created` with `set`, so a machine never overwrites a person.
-Item-scoped tables keep 730 days by an indexed day column, `floor( ts / 86400
-)`; the ontology and curation tables declare `keep`. Ops buffer and leave as
+Item-scoped tables keep 730 days by an indexed day column, the item's
+retrieval `floor( retrieved_ts / 86400 )`, which every item-scoped event
+carries — a supersession its canonical's — so an item and every row about it
+expire together however late a re-resolution writes them; the ontology and
+curation tables declare `keep`. Ops buffer and leave as
 one `ROWS` batch every 5 seconds, at 2,000 ops or 1 MiB of string values, at
 each checkpoint and on a clean stop; a failed batch raises a plain stop and
 keeps the buffer, so the cursor replays it. A message that carries no valid
 event throws out of `fill()`, so its Consumer dead-letters it and reads on.
 `Url_Canon::of()` and `Entity_Index::norm()` compute the canonical URL, the
 title norm and each name's norm the readers match on.
+
+**Resolution.** `resolver`, fed `item_recorded` events by its own
+`intel:items:resolve` Consumer, which skips every other kind on the stream
+and, like `intel:reresolve:resolve`, hands it one record a poll
+(`set_line_mode true`), links each item to the entities it is about. `Resolver` holds the order:
+identifiers in the item's URL (host by suffix walk, GitHub org and repo,
+LinkedIn company, X handle, a Linear issue's team) at 1.0; names and aliases
+as whole words in title and body at 1.0, an acronym only in its own case at
+0.9; a domain's stem in the title behind the gate's guards at 0.9; and only
+when those find nothing, the NER extractor's organizations fuzzy-matched
+against every name — asserted at 0.85, proposed at 0.60, below that a
+candidate entity (at most `MAX_PROPOSALS`, 3, and never a name a rejected
+entity carries). A name whose norm the index holds exactly scores 1.0 with no
+scan; otherwise only names whose byte length can reach the proposing band
+are scored, because similar_text's ratio never passes 2·min/(sum). Name and stem hits whose spans overlap in one text settle
+together: the longest span wins and a shorter hit drops, while equal spans
+naming several entities assert the one whose locality the text also names,
+written capitalized, at 0.9, else propose each at 0.5. A locality never
+drops a name. An entity
+found in the URL or title is the subject, one found only in the body a
+mention, and each entity keeps its strongest link. `Entity_Index` reads
+accepted and proposed entities off the projection through
+`Intel_Graph_Row_Schema::read()`: names by norm, identifiers by `kind:value`, a
+merged entity's names and identifiers answering its survivor; an entity
+whose merge chain cycles or runs past 10 hops is left out, logged once, and
+the rest loads. A link to a proposed entity is `link_proposed` at whatever
+confidence its method earned, so a machine's guess never asserts.
+`Resolver_Node` writes a
+`link_asserted` or `link_proposed` per link and an `entity_proposed` per
+candidate, keyed `Intel_Event::entity_key()`, to the writer its `make_node`
+line names, by TO and declared as an extra target, then forwards `{ item,
+links, proposals }` to its target, `extractor`. An `item_reresolve` record,
+fed by `intel:reresolve:resolve`, names a stored item, which it reads from
+the projection with whether the projection holds an extraction a call
+made — a `machine:extract-heuristic@…` stand-in does not count, matched
+through `Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE )`.
+An item the projection no longer holds is dropped with a line, and a
+projection that will not open throws, so the record dead-letters. A
+re-resolution runs the first three steps alone, since NER ran on first
+resolution, writes its links, and forwards the item only when no such
+extraction is projected, so an item is extracted by a call at most once and
+an item a proxy outage left heuristic is extracted again. `Resolver::resolve(
+$item, $ner )` takes the NER step per call: the node builds it from its
+`LLM_Config` state for each recorded item, so a runtime `set_vault_id` or
+`set_api_url` reaches the next one, and passes none on a re-resolution; the
+`Resolver` itself is rebuilt only when the index is. Every link event carries the item's
+`retrieved_ts`. The resolver and the extractor share the process's one
+`Entity_Index::current()`, read again every `Entity_Index::TTL_S` (60
+seconds) and when an `item_reresolve` record's `fresh_after` falls after its
+last read, so one signal's records cost one read; with no `intel-graph`
+table it answers no entities and logs once. Every projection read goes
+through `Intel_Graph_Row_Schema::read()`, which given a line logs a
+projection that will not open and answers null, and given none throws. An `item_recorded` it cannot read
+throws, so the Consumer dead-letters it. A topic is never matched in text:
+the index offers each live topic by its canonical name through `topics()`
+and indexes none of its names.
+
+**Extraction.** `extractor` skips a resolution with no link and no
+candidate; for any other it makes one `chat()` call through
+`Prompts::extract()`, which carries the item as JSON (tags hex-escaped)
+inside an `<item>` fence the system message names as untrusted and offers
+the index's topic names. `Prompts::parse_extract()` reads the first `{…}`
+block through `Prompts::json_object()`, which the NER step shares, cuts the summary to 280 characters, reads an unknown kind as `other`,
+clamps the scores and keeps at most five claims with a predicate from the
+closed set. It writes an `extraction_recorded` naming topic keys, and a
+`claim_asserted` per claim whose subject the item links by an asserted
+link, taking that link's confidence; a subject linked only by
+`link_proposed` asserts no claim. Subject and object resolve through every
+entity whose name spells the whole of them in `Entity_Index::names_in()`:
+the subject is the one of those the item asserts, and the object is the
+only one, or the only one the item links, else it stays `object_text`, so
+two entities sharing a name never resolve by load order. No client, a thrown
+`RuntimeException` or a reply that does not parse records a heuristic
+extraction instead — the first sentence of the title and of the body, kind
+`other`, no topics, scores 0 — as `machine:extract-heuristic@<version>`, so
+the item is never retried in a loop; a later re-resolution extracts it
+again. Either way it then
+forwards an `item_extracted` struct `{ item, relevance, importance }` to its
+target, `deduper`; it is a struct between two nodes, not an event kind.
+
+**Dedup.** `deduper` finds an earlier copy of each extracted item: the same
+`Url_Canon::of()` URL, or else the same `Entity_Index::norm()` title when that
+runs at least `MIN_TITLE_NORM` (24) characters, within `WINDOW_DAYS` (14) of
+the earlier copy. An item's time is its `item_ts`, or its `retrieved_ts` when
+undated: `Intel_Graph_Row_Schema::ITEM_TIME` in SQL, `item_time()` in PHP. A newcomer meeting a singleton founds a cluster keyed by the earlier
+item's `item_key`: a `cluster_joined` for each, then a `cluster_superseded`
+naming the higher-ranked as canonical, a tie keeping the earlier. A later
+newcomer writes `cluster_joined`, and `cluster_superseded` only when it
+outranks the canonical; while the cluster's canonical is unknown, as when
+its members are projected and its canonical is not yet, it only joins. An
+item already placed is never placed again: its own LRU entry, else its own
+`clusters` row, is looked for before any copy, and re-delivered it only
+supersedes its own cluster's canonical once it outranks it. A canonical
+re-delivered at a higher rank supersedes itself to record it; at a lower one
+the cluster passes to its best-ranked projected member, a tie keeping the
+earlier item. Rank is
+relevance plus importance. Supersession is by event, as `machine:dedup@<version>`; nothing
+edits an earlier row. Lookup reads a bounded `LRU_Cache` (`LRU_SIZE` 5,000
+entries) first — each spelling, keyed by a 16-hex md5 of it, naming its item,
+time, cluster and retrieval, and each `cluster:<key>` naming the canonical, its rank and
+whether the cluster was founded, both as positional lists — and the
+projection on a miss: the extracted copy at the same URL, else the nearest
+in time by title. A cluster the LRU no longer holds is read again from
+`canonicals`, and a cluster held again replaces its one entry. The resolve
+Consumer checkpoints the LRU with its cursor (`add_snapshot_node deduper`),
+so a respawned deduper resumes exactly what it had decided, and a miss
+reaches only items older than the LRU's horizon; a full LRU checkpoints
+about 460 KB, most of it the item keys it names; an entry whose item
+stands in its own cluster stores no cluster key. With no `intel-graph` table a miss finds nothing, logged.
+
+**Re-resolution.** `reresolver`, which the composed graph builds, takes the
+ontology stream through `intel:ontology:tee`, the Tee between
+`intel:ontology:consumer` and the projector, and queues what an event can
+link anew: an `entity_created` or `name_added` its name, an
+`identifier_added` the URL spellings its kind has (`IDENTIFIER_URLS`), an
+`entity_accepted` every name and identifier the projection holds for the
+entity, and a new locality the entity's own names, because a locality settles
+an ambiguous name and links nothing alone. A topic queues nothing, and a
+repeated signal is queued once. Each Router tick appends `item_reresolve`
+records, each naming a stored item, to `intel:reresolve`, a Partition
+keeping a day of records under PIPE_BUF. Its own Consumer,
+`intel:reresolve:resolve`, feeds `resolver` one record a poll, so the tick
+never runs resolution and extraction itself, and an item whose resolution
+throws dead-letters alone (ADR-12). A tick takes the oldest signal at least
+`SWEEP_INTERVAL_S` (30) old, past the projector's 5-second flush; only with
+no signal due does a requested range send its next `RERESOLVE_PAGE` (20).
+Each record carries `fresh_after`, its signal's time plus
+`SWEEP_INTERVAL_S`, or 0 for a range. A signal searches one
+quoted FTS5 phrase per name over `items_fts` (its `"` doubled) and a LIKE per
+URL pattern, anchored to a whole host (after `://` or `.`, before `/`, a `:`
+port, `?`, `#` or the end) or a whole path segment (before `/`, `?`, `#` or
+the end), with `%`, `_` and `\` escaped. FTS folds case, so an acronym —
+a `name_added` of kind `acronym`, or an accepted entity's acronym — also
+needs a case-sensitive `GLOB` on the title or body (`*`, `?` and `[`
+bracketed), as the resolver matches an acronym only in its own case. It appends its newest `MAX_ITEMS_PER_SIGNAL`
+(500) hits at once, newest first, and only on reaching that cap counts the
+rest, to log how many it skipped. `wp
+newspack-intelligence ontology reresolve --since=<Y-m-d> [--until=<Y-m-d>]`
+validates the days, then sends `RERESOLVE <since> <until>` through
+`Worker_Route` to each live worker's `reresolver`, reporting how many it
+reached; the reresolver answers the range it queued, or the refusal, and
+sends every item dated in those UTC days, an undated one by its retrieval,
+partition by partition in row-id order. The queue checkpoints with
+`intel:ontology:consumer` (`add_snapshot_node reresolver`), each unit by its
+key, `<kind>|<value>`, with when it was queued and a range's cursor, and an
+entry the checkpoint cannot read, or a checkpoint holding no queue, is
+dropped and logged; a signal leaves the queue once swept, a range once a
+page comes back short, and either waits, logged, while the projection will
+not open. Any other failure of a unit's projection
+read drops that unit with a rate-limited line naming it and the cause, so a
+respawn cannot restore the same head and fail on it again; a cooperative stop
+propagates first. `Intel_Graph_Row_Schema::$read_rows` is the read's test
+seam. Both `ontology` verbs refuse to run as root before they write, as
+`wp nodes` verbs do, because a root-owned segment or IPC file is one the
+workers cannot append to.
+
+**Seeding.** `wp newspack-intelligence ontology seed` writes
+`Ontology_Seed::events()` — thirty topics, the partners, funders and
+industry bodies, and Newspack's products, one entity per table row — for
+the keys `Ontology_Seed::present()` does not find settled in the
+projection's `entity_states` — any state but a machine's pending
+`proposed` — so an entity a curator has accepted, rejected, merged or
+renamed is never reset, while a machine's proposal of a seed key is
+replaced by the seed's creation; it prints how many keys were new and how many present, and a
+projection that will not open fails it with `Table_Unavailable` rather than
+writing everything. It writes through `Ontology_Writer::append()`, the
+request-side writer: a transient Partition named `intel:ontology:writer`,
+built from the `intel:ontology` declaration in
+`newspack-intelligence-streams.tsl` read through `Topology_Analyzer` — its
+directory and its arguments — then filled, flushed and removed in a
+`finally`, so a failure propagates and a second append finds the name free.
+The declared `keep_everything` is honoured through
+`Partition_Node::set_keep_everything()`, never replayed as a command,
+because a command's role gate judges the caller and would refuse a curator
+below MANAGE; any other `intel:ontology:config` line is refused by name. A
+writer missing `keep_everything` would prune the kept-forever stream on
+rotation, which is why nothing copies the declaration. With the worker and
+these appends both writing it, `intel:ontology:consumer` runs
+`set_multi_writer true`, so it seals a segment only after the grace a
+shared log needs. Every machine stage mints through
+`Intel_Event::machine_event()`, which stamps `machine:<stage>@<plugin
+version>` and that version as the `config_version`; `make()` stamps the
+tick clock, or the wall clock in a cold WP-CLI process.
 
 **Collect.** The connector **Source nodes** (`github`, `linear`, `feed`) fetch on
 a `TICK` request inside the background worker and emit one `item_recorded` event
@@ -273,24 +461,32 @@ items `bypass` the gate entirely, being attributed structurally upstream. With n
 resolvable vault token the gate runs deterministic-only.
 
 `Insights_CI` serves the dashboard slices and routes Collect and Regenerate to
-the worker over its input IPC partition — durable and synchronous, with no
-live-worker dependency on read. Each request carries the CI's own name as FROM,
+the worker through `Worker_Route`, which appends each request to every live
+worker's input IPC partition — durable and synchronous, with no live-worker
+dependency on read. Each request carries the CI's own name as FROM,
 which the worker's input reader stamps under `_repl`, so the answer every
 source's `TICK` and the digest's `RESET` and `REGENERATE` sends back lands on
 the worker's output partition, where an attached `wp nodes cli` reads it. The browser creates the WordPress draft from the
 digest markdown via `@wordpress/api-fetch`. LLM calls go through the Automattic
 AI API Proxy via `LLM_Client` / `Proxy_LLM_Client`, whose `$http_post` closure is
-the test seam. Seven more follow the same pattern, each a static `?\Closure`
+the test seam. More follow the same pattern, each a static `?\Closure`
 replacing ONE call so the branches around it still run as production code:
 `Github_Source_Node::$http_get`, `Linear_Source_Node::$http_post` and
-`Feed_Source_Node::$http_get` for the connector fetches, and
-`Summarizer_Node::$llm_factory`, `Digest_Builder_Node::$llm_factory`,
-`Gate_Node::$matcher_factory` and `Insights_CI_Node::$read_items` for the rest.
+`Feed_Source_Node::$http_get` for the connector fetches;
+`LLM_Config::$llm_factory`, which every node using the trait holds its own
+copy of (`Summarizer_Node::$llm_factory`, `Extractor_Node::$llm_factory`
+and the rest) and `make_llm_client()` answers first; and
+`Gate_Node::$matcher_factory` and `Insights_CI_Node::$read_items`; and
+`Intel_Graph_Row_Schema::$read_rows` and `Resolver::$similar_text` for the
+projection read and the fuzzy step's scoring.
 Every caller of `LLM_Client::chat()` — `Summarizer_Node::fill()`,
-`Digest_Composer` and `LLM_Entity_Extractor` — catches `\RuntimeException` and
-nothing wider, and `Proxy_LLM_Client` throws only that, so a second
-implementation raising any other `Throwable` propagates out of `fill()` and
-breaks the Node contract that `fill()` never throws. Bearer tokens are
+`Extractor_Node::fill()`, `Digest_Composer` and `LLM_Entity_Extractor` —
+re-throws `Worker_Should_Stop` first, because a cooperative stop is a
+`\RuntimeException` too and must stop the worker rather than read as a
+failed call (substrate ADR-14), then catches `\RuntimeException` and nothing
+wider. `Proxy_LLM_Client` throws only that, so a second implementation
+raising any other `Throwable` propagates out of `fill()` and breaks the Node
+contract that `fill()` never throws. Bearer tokens are
 substrate Vault entries: the node config holds only the entry id, set by the
 `set_vault_id` setter `Vault_Secret` declares and resolved at use time by its
 `vault_secret()`.
@@ -302,7 +498,7 @@ substrate Vault entries: the node config holds only the entry id, set by the
 namespaced `"{source}:{raw id}"`, the key dedup reads; `body` cut at
 `MAX_BODY_BYTES` (65,536) on a UTF-8 character boundary; `item_ts` 0 when the
 connector's date string will not parse; `retrieved_ts` the worker's `Core::$now`.
-`tick()` wraps each in `Intel_Event::make()` under the actor
+`tick()` wraps each in `Intel_Event::machine_event()` under the actor
 `machine:source:{name}@{plugin version}`, with the plugin version as its
 `config_version`.
 
@@ -326,10 +522,11 @@ fails `parse_enrich()` — so it does not on its own mean the proxy call failed.
 
 | File | What it wires |
 |------|---------------|
-| `newspack-intelligence.tsl` | Includes every file below; `on_demand_idle 0` keeps the worker resident, which the TICK-driven sources need, and `stale_timeout 600` keeps a peer from stealing its lock while a TICK's fetches or an LLM call block one `fill()` |
-| `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology` and `intel:writer` |
+| `newspack-intelligence.tsl` | Includes every file below and wires `reresolver`, which spans the project and streams files; `on_demand_idle 0` keeps the worker resident, which the TICK-driven sources need, and `stale_timeout 600` keeps a peer from stealing its lock while a TICK's fetches or an LLM call block one `fill()` |
+| `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve` and `intel:writer` |
 | `newspack-intelligence-collect.tsl` | The three sources → `intel:writer`; includes the streams |
-| `newspack-intelligence-project.tsl` | `intel:items:consumer` and `intel:ontology:consumer` → `projector` → the `intel-graph` Row_Table |
+| `newspack-intelligence-project.tsl` | `intel:items:consumer` → `projector`, and `intel:ontology:consumer` → `intel:ontology:tee` → `projector`, writing the `intel-graph` Row_Table |
+| `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the items Consumer checkpointing the deduper; includes the streams |
 | `newspack-intelligence-ingest.tsl` | `ingest:partition` alone |
 | `newspack-intelligence-summary.tsl` | `ingest:consumer` → `summarizer` → `scorer` → `scored:partition` |
 | `newspack-intelligence-digest.tsl` | `scored:consumer` → `digest` → `digest:tee` → `digest:log` |
@@ -347,6 +544,10 @@ substrate. This plugin adds:
 | `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`; `set_tier`, `add_url`, `remove_url` |
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
+| `Resolver` | `Resolver_Node` | `<writer>`; the `LLM_Config` verbs |
+| `Extractor` | `Extractor_Node` | `<writer>`; the `LLM_Config` verbs |
+| `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
+| `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>` |
 | `Summarizer` | `Summarizer_Node` | the `LLM_Config` verbs |
 | `Scorer` | `Scorer_Node` | none |
 | `Digest_Builder` | `Digest_Builder_Node` | `RESET`, `REGENERATE`; the `LLM_Config` verbs |
@@ -446,13 +647,13 @@ per-bundle static (substrate ADR-16). The build resolves
 | Path | What |
 |------|------|
 | `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus, WP-CLI, CPT hooks, `Insights_CI` mount |
-| `includes/` (pipeline) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Entity_Index`, `Source_Node` and its three connectors, `Summarizer_Node`, `Scorer_Node`, `Digest_Builder_Node`, `Digest_Composer` |
+| `includes/` (pipeline) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node`, the `Emits_Struct` trait, `Ontology_Seed`, `Ontology_Writer`, `Source_Node` and its three connectors, `Summarizer_Node`, `Scorer_Node`, `Digest_Builder_Node`, `Digest_Composer` |
 | `includes/` (gate) | `Gate_Node`, `Publisher_Matcher`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
 | `includes/` (publishers) | `Publisher_CPT`, `Publisher_Meta_Box`, `CPT_Publisher_Repository` and the `Publisher_Repository` interface, `Client_Importer`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |
-| `includes/` (service) | `Insights_CI_Node`, the `Source` interface, `uninstall-cleanup.php` |
-| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>` |
-| `topologies/` | The eight `.tsl` node-graph topologies |
+| `includes/` (service) | `Insights_CI_Node`, `Worker_Route`, the `Source` interface, `uninstall-cleanup.php` |
+| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed` and `ontology reresolve` |
+| `topologies/` | The nine `.tsl` node-graph topologies |
 | `src/dashboard/` | The Publisher Insights React panel |
 | `tests/` | PHPUnit (`unit/` + `bootstrap.php` + `support/` + `run-coverage.sh`; `integration/` exists but is empty) |
 | `scripts/` | Git hooks, the shared tooling copies, `bump-version.sh`, `build.mjs`, the lint and coverage gates |

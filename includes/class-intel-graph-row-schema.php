@@ -3,8 +3,9 @@
  * Intel_Graph_Row_Schema: the tables the projector replays both event streams
  * into, declared as `make_node Row_Table intel-graph Intel_Graph`.
  *
- * The item-scoped tables keep `RETAIN_DAYS` by a day column, `floor( ts /
- * 86400 )`, which leads an index. The ontology and curation tables keep every
+ * The item-scoped tables keep `RETAIN_DAYS` by a day column, the item's
+ * retrieval `floor( retrieved_ts / 86400 )`, which leads an index, so an item
+ * and every row about it expire together. The ontology and curation tables keep every
  * row, as the ontology stream does. An entity's identity (`entities`), its
  * state (`entity_states`) and its merge (`entity_merges`) are three rows, so
  * every event writes whole rows and the projector never reads before it
@@ -15,6 +16,11 @@
  */
 
 namespace Newspack_Intelligence;
+
+use Newspack_Nodes\Core;
+use Newspack_Nodes\Row_Reader;
+use Newspack_Nodes\Row_Table_Node;
+use Newspack_Nodes\Table_Unavailable;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -36,6 +42,54 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 
 	/** Seconds in the unit a day column counts. */
 	public const DAY_SECONDS = 86400;
+
+	/** An item's time in SQL over `items i`: its item_ts, or its retrieved_ts when undated. */
+	public const ITEM_TIME = 'COALESCE( NULLIF( i.item_ts, 0 ), i.retrieved_ts )';
+
+	/**
+	 * Projection-read seam: replaces the one `Row_Table_Node::read()` call
+	 * every read of the intel-graph goes through. Tests reassign it to make a
+	 * read fail; null runs the real read.
+	 * Signature: `function ( \Closure $read ): mixed`.
+	 *
+	 * @var \Closure|null
+	 */
+	public static ?\Closure $read_rows = null;
+
+	/**
+	 * Run a read against every partition's intel-graph file. Given a line, a
+	 * projection that will not open is logged rate-limited under it and
+	 * answers null; given none, it throws.
+	 *
+	 * @template T
+	 * @param \Closure(Row_Reader): T $read        The read.
+	 * @param string|null             $unavailable The line logged when no projection opens.
+	 * @return T|null
+	 * @throws Table_Unavailable When no projection opens and no line is given.
+	 * @throws \RuntimeException As `Row_Table_Node::read()`, or what the read throws.
+	 */
+	public static function read( \Closure $read, ?string $unavailable = null ): mixed {
+		try {
+			return null === self::$read_rows ? Row_Table_Node::read( self::class, $read ) : ( self::$read_rows )( $read );
+		} catch ( Table_Unavailable $e ) {
+			if ( null === $unavailable ) {
+				throw $e;
+			}
+			Core::print_less_often( $unavailable, $e->getMessage() );
+			return null;
+		}
+	}
+
+	/**
+	 * An item's time: its item_ts, or its retrieved_ts when undated; the PHP
+	 * twin of ITEM_TIME.
+	 *
+	 * @param int $item_ts      The item's own date, 0 when it has none.
+	 * @param int $retrieved_ts When it was retrieved.
+	 */
+	public static function item_time( int $item_ts, int $retrieved_ts ): int {
+		return 0 === $item_ts ? $retrieved_ts : $item_ts;
+	}
 
 	/**
 	 * The declared tables: each item-scoped one keeps `RETAIN_DAYS` by its day

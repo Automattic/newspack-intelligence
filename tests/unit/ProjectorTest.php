@@ -38,6 +38,9 @@ final class ProjectorTest extends TestCase {
 
 	private const MACHINE = 'machine:resolve@9.4.1';
 
+	/** When the fixture item was retrieved: 700 days before NOW, inside its retention. */
+	private const RETRIEVED = 1732520000;
+
 	private Projector_Node $projector;
 
 	/** The runtime base this test's files live under. */
@@ -62,9 +65,9 @@ final class ProjectorTest extends TestCase {
 	public function test_an_item_and_its_links_project_to_rows(): void {
 		$this->project( [ $this->item(), $this->link( 'link_asserted' ), $this->extraction() ] );
 
-		$day = \intdiv( 1793000000, 86400 );
+		$day = \intdiv( self::RETRIEVED, 86400 );
 		$this->assertSame(
-			[ [ 1, self::ITEM, 'feed', 'public', 'https://www.HarborGazette.example/2026/10/award/?utm_source=np&b=2&a=1#top', 'harborgazette.example/2026/10/award?a=1&b=2', 'The Harbor Gazette Wins a State Award!', 'harbor gazette wins a state award', 'The Gazette took first place.', 1792900000, 1793000000, $day ] ],
+			[ [ 1, self::ITEM, 'feed', 'public', 'https://www.HarborGazette.example/2026/10/award/?utm_source=np&b=2&a=1#top', 'harborgazette.example/2026/10/award?a=1&b=2', 'The Harbor Gazette Wins a State Award!', 'harbor gazette wins a state award', 'The Gazette took first place.', 1792900000, self::RETRIEVED, $day ] ],
 			self::graph_rows( 'items' )
 		);
 		$this->assertSame(
@@ -84,14 +87,14 @@ final class ProjectorTest extends TestCase {
 	public function test_an_item_is_written_once(): void {
 		$this->project( [ $this->item(), [ 'title' => 'Harbor Gazette award, updated', 'retrieved_ts' => self::NOW + 3600 ] + $this->item() ] );
 
-		$this->assertSame( [ [ 'The Harbor Gazette Wins a State Award!', 1793000000 ] ], self::graph_rows( 'items', '1', 'title, retrieved_ts' ) );
+		$this->assertSame( [ [ 'The Harbor Gazette Wins a State Award!', self::RETRIEVED ] ], self::graph_rows( 'items', '1', 'title, retrieved_ts' ) );
 	}
 
 	/** A link by name and a topic chosen by extraction are two rows for one entity. */
 	public function test_a_resolver_link_and_a_topic_link_to_one_entity_both_survive(): void {
 		$this->project(
 			[
-				Intel_Event::make( 'link_asserted', [ 'item_key' => self::ITEM, 'entity_key' => 'topic:ai', 'role' => 'mention', 'method' => 'name', 'confidence' => 1.0 ], self::MACHINE, '' ),
+				Intel_Event::make( 'link_asserted', [ 'item_key' => self::ITEM, 'entity_key' => 'topic:ai', 'role' => 'mention', 'method' => 'name', 'confidence' => 1.0, 'retrieved_ts' => self::RETRIEVED ], self::MACHINE, '' ),
 				[ 'topics' => [ 'topic:ai' ] ] + $this->extraction(),
 			]
 		);
@@ -376,14 +379,17 @@ final class ProjectorTest extends TestCase {
 		$this->assertInstanceOf( Projector_Node::class, $projector );
 		$this->assertSame( 'intel-graph', $this->read_private( $projector, 'graph_target' ) );
 		$this->assertInstanceOf( Row_Table_Node::class, Core::node( 'intel-graph' ) );
-		foreach ( [ 'intel:items:consumer' => 'items', 'intel:ontology:consumer' => 'ontology' ] as $name => $stream ) {
+		foreach ( [ 'intel:items:consumer' => [ 'items', 'projector' ], 'intel:ontology:consumer' => [ 'ontology', 'intel:ontology:tee' ] ] as $name => [ $stream, $target ] ) {
 			$consumer = Core::node( $name );
 			$this->assertInstanceOf( Consumer_Node::class, $consumer, $name );
-			$this->assertSame( 'projector', $consumer->target(), $name );
+			$this->assertSame( $target, $consumer->target(), $name );
 			$this->assertStringEndsWith( "/logs/intel-{$stream}.p0", $this->read_private( $consumer, 'source_dir' ), $name );
 			$this->assertFalse( $this->read_private( $consumer, 'line_mode' ), "{$name} drains in batches" );
 			$this->assertSame( [ 'projector' ], $this->read_private( $consumer, 'snapshot_nodes' ), $name );
 		}
+		$this->assertFalse( $this->read_private( Core::node( 'intel:items:consumer' ), 'multi_writer' ), 'the worker is the items stream\'s one writer' );
+		$this->assertTrue( $this->read_private( Core::node( 'intel:ontology:consumer' ), 'multi_writer' ), 'the worker and request-side writers share the ontology stream' );
+		$this->assertSame( [ 'projector' ], Core::node( 'intel:ontology:tee' )?->target(), 'the ontology reaches the projector through its tee' );
 	}
 
 	/**
@@ -410,7 +416,7 @@ final class ProjectorTest extends TestCase {
 				'title'        => 'The Harbor Gazette Wins a State Award!',
 				'body'         => 'The Gazette took first place.',
 				'item_ts'      => 1792900000,
-				'retrieved_ts' => self::NOW,
+				'retrieved_ts' => self::RETRIEVED,
 			],
 			'machine:source:feed@9.4.1',
 			''
@@ -431,8 +437,9 @@ final class ProjectorTest extends TestCase {
 				'item_key'   => self::ITEM,
 				'entity_key' => $entity_key,
 				'role'       => 'subject',
-				'method'     => 'identifier',
-				'confidence' => 1.0,
+				'method'       => 'identifier',
+				'confidence'   => 1.0,
+				'retrieved_ts' => self::RETRIEVED,
 			],
 			self::MACHINE,
 			''
@@ -450,7 +457,8 @@ final class ProjectorTest extends TestCase {
 				'relevance'  => 8,
 				'importance' => 6,
 				'sentiment'  => 0.5,
-				'topics'     => [ 'topic:awards' ],
+				'topics'       => [ 'topic:awards' ],
+				'retrieved_ts' => self::RETRIEVED,
 			],
 			'machine:extract@9.4.1',
 			''
@@ -488,9 +496,9 @@ final class ProjectorTest extends TestCase {
 			$this->extraction(),
 			$this->link( 'link_asserted' ),
 			$this->link( 'link_proposed', 'organization:salem-ledger' ),
-			$machine( 'claim_asserted', [ 'item_key' => self::ITEM, 'ord' => 0, 'subject_key' => self::GAZETTE, 'predicate' => 'won', 'object_key' => '', 'object_text' => 'Peabody Award', 'confidence' => 0.9 ] ),
-			$machine( 'cluster_joined', [ 'item_key' => self::ITEM, 'cluster_key' => 'cluster:7731' ] ),
-			$machine( 'cluster_superseded', [ 'cluster_key' => 'cluster:7731', 'canonical_item_key' => self::ITEM, 'previous_item_key' => 'feed:abc-7730', 'rank' => 14.0 ] ),
+			$machine( 'claim_asserted', [ 'item_key' => self::ITEM, 'ord' => 0, 'subject_key' => self::GAZETTE, 'predicate' => 'won', 'object_key' => '', 'object_text' => 'Peabody Award', 'confidence' => 0.9, 'retrieved_ts' => self::RETRIEVED ] ),
+			$machine( 'cluster_joined', [ 'item_key' => self::ITEM, 'cluster_key' => 'cluster:7731', 'retrieved_ts' => self::RETRIEVED ] ),
+			$machine( 'cluster_superseded', [ 'cluster_key' => 'cluster:7731', 'canonical_item_key' => self::ITEM, 'previous_item_key' => 'feed:abc-7730', 'rank' => 14.0, 'retrieved_ts' => self::RETRIEVED ] ),
 			$this->ontology( 'entity_created', [ 'entity_key' => self::GAZETTE, 'type' => 'organization', 'name' => 'Harbor Gazette' ] ),
 			$this->proposal( 'organization:salem-ledger', 'Salem Ledger' ),
 			$this->ontology( 'entity_accepted', [ 'entity_key' => 'organization:salem-ledger' ] ),

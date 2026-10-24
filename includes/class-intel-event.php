@@ -32,15 +32,19 @@ final class Intel_Event {
 	/** The fields every event carries beside its kind's own, in mint order. */
 	public const ENVELOPE = [ 'event', 'event_id', 'ts', 'actor', 'config_version' ];
 
-	/** kind => [ stream, its own fields, [ field => the closed set it is drawn from ] ] */
+	/**
+	 * kind => [ stream, its own fields, [ field => the closed set it is drawn
+	 * from ] ]. Every item-scoped kind but the record carries its item's
+	 * `retrieved_ts`, the canonical's for a supersession, which dates its rows.
+	 */
 	public const KINDS = [
 		'item_recorded'       => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ] ],
-		'extraction_recorded' => [ self::ITEMS, [ 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'topics' ], [ 'kind' => self::ITEM_KINDS ] ],
-		'link_asserted'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ] ],
-		'link_proposed'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ] ],
-		'claim_asserted'      => [ self::ITEMS, [ 'item_key', 'ord', 'subject_key', 'predicate', 'object_key', 'object_text', 'confidence' ], [ 'predicate' => self::PREDICATES ] ],
-		'cluster_joined'      => [ self::ITEMS, [ 'item_key', 'cluster_key' ], [] ],
-		'cluster_superseded'  => [ self::ITEMS, [ 'cluster_key', 'canonical_item_key', 'previous_item_key', 'rank' ], [] ],
+		'extraction_recorded' => [ self::ITEMS, [ 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'topics', 'retrieved_ts' ], [ 'kind' => self::ITEM_KINDS ] ],
+		'link_asserted'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ] ],
+		'link_proposed'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ] ],
+		'claim_asserted'      => [ self::ITEMS, [ 'item_key', 'ord', 'subject_key', 'predicate', 'object_key', 'object_text', 'confidence', 'retrieved_ts' ], [ 'predicate' => self::PREDICATES ] ],
+		'cluster_joined'      => [ self::ITEMS, [ 'item_key', 'cluster_key', 'retrieved_ts' ], [] ],
+		'cluster_superseded'  => [ self::ITEMS, [ 'cluster_key', 'canonical_item_key', 'previous_item_key', 'rank', 'retrieved_ts' ], [] ],
 		'entity_created'      => [ self::ONTOLOGY, [ 'entity_key', 'type', 'name' ], [ 'type' => self::TYPES ] ],
 		'entity_proposed'     => [ self::ONTOLOGY, [ 'entity_key', 'type', 'name', 'from_item_key' ], [ 'type' => self::TYPES ] ],
 		'entity_accepted'     => [ self::ONTOLOGY, [ 'entity_key' ], [] ],
@@ -64,8 +68,33 @@ final class Intel_Event {
 	private static array $required = [];
 
 	/**
-	 * Build a validated event VALUE. An ontology event must pack into one
-	 * partition line, because that stream takes no large write.
+	 * An event a pipeline stage mints: its actor the stage at the plugin
+	 * version, and that version its config_version.
+	 *
+	 * @param string              $stage  The stage name.
+	 * @param string              $kind   An event kind from KINDS.
+	 * @param array<string,mixed> $fields The kind's fields.
+	 * @return array<string,mixed>
+	 * @throws \InvalidArgumentException As make() does.
+	 */
+	public static function machine_event( string $stage, string $kind, array $fields ): array {
+		return self::make( $kind, $fields, self::machine_prefix( $stage ) . \NEWSPACK_INTELLIGENCE_VERSION, \NEWSPACK_INTELLIGENCE_VERSION );
+	}
+
+	/**
+	 * What every actor a pipeline stage mints begins with, at any version.
+	 *
+	 * @param string $stage The stage name.
+	 */
+	public static function machine_prefix( string $stage ): string {
+		return "machine:{$stage}@";
+	}
+
+	/**
+	 * Build a validated event VALUE, stamped on the tick clock, or on the
+	 * wall clock in a process whose tick clock has not started. An ontology
+	 * event must pack into one partition line, because that stream takes no
+	 * large write.
 	 *
 	 * @param string              $kind           An event kind from KINDS.
 	 * @param array<string,mixed> $fields         The kind's fields.
@@ -78,7 +107,7 @@ final class Intel_Event {
 		$event = [
 			'event'          => $kind,
 			'event_id'       => \bin2hex( \random_bytes( 16 ) ),
-			'ts'             => Core::$now,
+			'ts'             => Core::$now ?: Core::right_now(),
 			'actor'          => $actor,
 			'config_version' => $config_version,
 		] + $fields;
@@ -158,6 +187,24 @@ final class Intel_Event {
 	}
 
 	/**
+	 * The item a record carries: exactly the `item_recorded` fields, in
+	 * their order, or null when one is missing.
+	 *
+	 * @param array<array-key,mixed> $fields The fields carried.
+	 * @return array<string,mixed>|null
+	 */
+	public static function item_of( array $fields ): ?array {
+		$item = [];
+		foreach ( self::KINDS['item_recorded'][1] as $field ) {
+			if ( ! \array_key_exists( $field, $fields ) ) {
+				return null;
+			}
+			$item[ $field ] = $fields[ $field ];
+		}
+		return $item;
+	}
+
+	/**
 	 * The stream a kind is written to.
 	 *
 	 * @param string $kind An event kind.
@@ -171,12 +218,20 @@ final class Intel_Event {
 	}
 
 	/**
-	 * A machine actor: a pipeline stage at a version.
+	 * An entity's key: its type and the slug of its name.
 	 *
-	 * @param string $stage   The stage name.
-	 * @param string $version The stage version.
+	 * @param string $type An entity type from TYPES.
+	 * @param string $slug The name the key is slugged from.
+	 * @throws \InvalidArgumentException On a type outside TYPES, or a slug that sanitizes to nothing.
 	 */
-	public static function machine( string $stage, string $version ): string {
-		return "machine:{$stage}@{$version}";
+	public static function entity_key( string $type, string $slug ): string {
+		if ( ! \in_array( $type, self::TYPES, true ) ) {
+			throw new \InvalidArgumentException( \esc_html( "unknown entity type: {$type}" ) );
+		}
+		$slugged = \sanitize_title( $slug );
+		if ( '' === $slugged ) {
+			throw new \InvalidArgumentException( \esc_html( "entity key {$type}: slug '{$slug}' is empty once sanitized" ) );
+		}
+		return "{$type}:{$slugged}";
 	}
 }

@@ -6,8 +6,8 @@
  * Every verb answers a struct, which the wire encodes once.
  * The `accumulated` slice also carries the rendered digest (latest `digest:log`
  * segment) and collection progress (done/total). It keeps the action verbs
- * `generate`/`collect`, which route Regenerate / Collect to the worker's nodes over
- * the input IPC partition — durable, synchronous, no live-worker dependency on read.
+ * `generate`/`collect`, which route Regenerate / Collect to the worker's nodes
+ * through `Worker_Route`.
  *
  * @package Newspack_Intelligence
  */
@@ -15,13 +15,10 @@
 namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Service_CI_Node;
-use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
-use Newspack_Nodes\Message;
-use Newspack_Nodes\Spawn_Coordinator;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -29,9 +26,6 @@ class Insights_CI_Node extends Service_CI_Node {
 
 	/** The source node names Collect ticks; their count MUST equal the digest's `total` make_node arg in newspack-intelligence-digest.tsl. */
 	private const SOURCE_NODES = [ 'github', 'linear', 'feed' ];
-
-	/** The worker topology whose sources Collect ticks; also the worker-id prefix. */
-	private const TOPOLOGY = 'newspack-intelligence';
 
 	private const TOP_N = 10;
 
@@ -60,122 +54,6 @@ class Insights_CI_Node extends Service_CI_Node {
 	 */
 	private function items(): array {
 		return $this->snapshot()['items'];
-	}
-
-	/**
-	 * Trigger a collection cycle: RESET the digest, which fences the ingest
-	 * Partition, then TICK every source, all routed into each live worker's input
-	 * IPC partition (the only transport from the request graph to a worker's
-	 * nodes — the same one `wp nodes cli` uses). Fire-and-forget; the dashboard polls progress separately.
-	 *
-	 * @param Command_Interpreter_Node $interpreter The request-graph interpreter (this CI).
-	 * @param string                   $base_dir    The substrate base directory (ipc/locks live under it).
-	 * @return array{collecting:int, workers:int}
-	 * @throws \RuntimeException When no worker of the topology is live.
-	 */
-	public static function collect( Command_Interpreter_Node $interpreter, string $base_dir ): array {
-		$workers = self::live_workers( $base_dir );
-		if ( [] === $workers ) {
-			self::refuse_no_worker();
-		}
-		$total = \count( self::SOURCE_NODES );
-		foreach ( $workers as $worker_id ) {
-			$out = self::ipc_out( $worker_id, $base_dir );
-			if ( null === $out ) {
-				continue;
-			}
-			self::route_to_worker( $interpreter, $worker_id, 'digest', 'RESET' );
-			foreach ( self::SOURCE_NODES as $source ) {
-				self::route_to_worker( $interpreter, $worker_id, $source, 'TICK' );
-			}
-			$out->flush();
-		}
-		return [ 'collecting' => $total, 'workers' => \count( $workers ) ];
-	}
-
-	/**
-	 * Ask the worker to recompose: route a single TM_REQUEST REGENERATE to its
-	 * `digest` node (the same request graph → worker IPC transport `collect` uses).
-	 * The worker's Digest_Builder composes from its live items and writes digest:log;
-	 * the dashboard's poll surfaces the new digest. Fire-and-forget — no markdown here.
-	 *
-	 * @param Command_Interpreter_Node $interpreter The request-graph interpreter (this CI).
-	 * @param string                   $base_dir    The substrate base directory (ipc/locks live under it).
-	 * @return array{regenerating:true, workers:int}
-	 * @throws \RuntimeException When no worker of the topology is live.
-	 */
-	public static function regenerate( Command_Interpreter_Node $interpreter, string $base_dir ): array {
-		$workers = self::live_workers( $base_dir );
-		if ( [] === $workers ) {
-			self::refuse_no_worker();
-		}
-		foreach ( $workers as $worker_id ) {
-			$out = self::ipc_out( $worker_id, $base_dir );
-			if ( null === $out ) {
-				continue;
-			}
-			self::route_to_worker( $interpreter, $worker_id, 'digest', 'REGENERATE' );
-			$out->flush();
-		}
-		return [ 'regenerating' => true, 'workers' => \count( $workers ) ];
-	}
-
-	/**
-	 * Live worker ids of this topology — those holding a lock dir.
-	 *
-	 * @return array<int,string>
-	 */
-	public static function live_workers( string $base_dir ): array {
-		$ids = [];
-		foreach ( Spawn_Coordinator::worker_lock_dirs( $base_dir ) as $lock ) {
-			if ( self::TOPOLOGY === $lock['type'] ) {
-				$ids[] = $lock['id'];
-			}
-		}
-		return $ids;
-	}
-
-	/**
-	 * Refuse a worker-routing verb: `interpret()` answers the throw as a
-	 * TM_COMMAND|TM_ERROR reply.
-	 *
-	 * @throws \RuntimeException Always.
-	 */
-	private static function refuse_no_worker(): never {
-		throw new \RuntimeException( \esc_html( 'No live ' . self::TOPOLOGY . ' worker — start the workers first.' ) );
-	}
-
-	/**
-	 * The Partition appending to a worker's input IPC log, mounted by the
-	 * substrate; null when the worker cannot be mounted.
-	 */
-	private static function ipc_out( string $worker_id, string $base_dir ): ?Partition_Node {
-		if ( ! Bootstrap::register_worker_partition( $worker_id, $base_dir ) ) {
-			return null;
-		}
-		$node = Core::node( $worker_id );
-		return $node instanceof Partition_Node ? $node : null;
-	}
-
-	/**
-	 * Route a TM_REQUEST to a node inside a worker: TO=`{worker_id}/{node}` so the
-	 * request router peels the worker id to its IPC-out Partition (which appends the
-	 * message for the worker to read and re-route to `{node}`). The verb rides in
-	 * VALUE — matching `request_node <path> <verb>` — so the node answers it there.
-	 *
-	 * FROM is this CI's own name. The worker's input reader stamps it under
-	 * `_repl`, so the node's answer lands on the worker's output partition —
-	 * the reply path every command read from IPC input takes.
-	 *
-	 * @param string $verb The request verb in VALUE (e.g. RESET for the digest, TICK for a source).
-	 */
-	private static function route_to_worker( Command_Interpreter_Node $interpreter, string $worker_id, string $node, string $verb ): void {
-		$message                   = Message::new_message();
-		$message[ Message::TYPE ]  = Message::TM_REQUEST;
-		$message[ Message::FROM ]  = $interpreter->name();
-		$message[ Message::TO ]    = $worker_id . '/' . $node;
-		$message[ Message::VALUE ] = $verb;
-		$interpreter->fill( $message );
 	}
 
 	/**
@@ -295,6 +173,40 @@ class Insights_CI_Node extends Service_CI_Node {
 		$value = Partition_Node::read_latest_value_at( $offsetlog_dir );
 		$cache = \is_array( $value ) && \is_array( $value['cache'] ?? null ) ? $value['cache'] : [];
 		return \is_array( $cache['digest'] ?? null ) ? $cache['digest'] : [];
+	}
+
+	/**
+	 * Trigger a collection cycle: RESET the digest, which fences the ingest
+	 * Partition, then TICK every source, each a request routed into every live
+	 * worker's input IPC partition. Fire-and-forget; the dashboard polls
+	 * progress separately.
+	 *
+	 * @param Command_Interpreter_Node $interpreter The request-graph interpreter (this CI).
+	 * @param string                   $base_dir    The substrate base directory (ipc/locks live under it).
+	 * @return array{collecting:int, workers:int}
+	 * @throws \RuntimeException When no worker of the topology is live.
+	 */
+	public static function collect( Command_Interpreter_Node $interpreter, string $base_dir ): array {
+		$requests = [ [ 'digest', 'RESET' ] ];
+		foreach ( self::SOURCE_NODES as $source ) {
+			$requests[] = [ $source, 'TICK' ];
+		}
+		$workers = Worker_Route::send( $interpreter, $base_dir, $requests );
+		return [ 'collecting' => \count( self::SOURCE_NODES ), 'workers' => $workers ];
+	}
+
+	/**
+	 * Ask the worker to recompose: one REGENERATE request to its `digest`
+	 * node, which composes from its live items and writes digest:log; the
+	 * dashboard's poll surfaces the new digest. Fire-and-forget.
+	 *
+	 * @param Command_Interpreter_Node $interpreter The request-graph interpreter (this CI).
+	 * @param string                   $base_dir    The substrate base directory (ipc/locks live under it).
+	 * @return array{regenerating:true, workers:int}
+	 * @throws \RuntimeException When no worker of the topology is live.
+	 */
+	public static function regenerate( Command_Interpreter_Node $interpreter, string $base_dir ): array {
+		return [ 'regenerating' => true, 'workers' => Worker_Route::send( $interpreter, $base_dir, [ [ 'digest', 'REGENERATE' ] ] ) ];
 	}
 
 	/**

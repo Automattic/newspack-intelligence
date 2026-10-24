@@ -23,7 +23,7 @@ class Gate_Node extends Node {
 	use LLM_Config;
 
 	/**
-	 * Matcher-factory seam (mirrors Summarizer_Node::$llm_factory). Null => build the
+	 * Matcher-factory seam (mirrors `LLM_Config::$llm_factory`). Null => build the
 	 * production matcher from this node's config. Tests reassign, then reset in tearDown.
 	 *
 	 * @var (\Closure(): Publisher_Matcher)|null
