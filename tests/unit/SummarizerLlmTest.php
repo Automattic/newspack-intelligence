@@ -10,6 +10,7 @@ use Newspack_Nodes\Message;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
 use Newspack_Nodes\Vault;
+use Newspack_Nodes\Worker_Should_Stop;
 
 final class SummarizerLlmTest extends TestCase {
 
@@ -213,5 +214,25 @@ final class SummarizerLlmTest extends TestCase {
 		$this->assertArrayHasKey( 'summary', $out );
 		$this->assertStringContainsString( 'Roundup', $out['summary'] );
 		$this->assertArrayNotHasKey( 'relevance_score', $out );
+	}
+
+	/** A cooperative stop inside the call is not a failed call: it propagates and nothing is forwarded. */
+	public function test_a_cooperative_stop_propagates(): void {
+		Summarizer_Node::$llm_factory = static fn (): LLM_Client => new class() implements LLM_Client {
+				public function chat( array $messages, array $opts = [] ): string {
+					throw new Worker_Should_Stop( 'max_runtime 595 reached' );
+				}
+			};
+		$sink                         = new Capture_Sink_Node();
+		$node                         = new Summarizer_Node();
+		$node->sink( $sink );
+
+		try {
+			$node->fill( $this->struct( [ 'source' => 'feed', 'id' => 'f#9', 'title' => 'Quarry Ledger merges', 'body' => 'b' ] ) );
+			$this->fail( 'the stop propagates' );
+		} catch ( Worker_Should_Stop $stop ) {
+			$this->assertSame( 'max_runtime 595 reached', $stop->getMessage() );
+		}
+		$this->assertSame( [], $sink->captured );
 	}
 }

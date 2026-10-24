@@ -6,8 +6,15 @@ include topic-probe
 include newspack-intelligence-streams
 include newspack-intelligence-collect
 include newspack-intelligence-project
+include newspack-intelligence-resolve
 include newspack-intelligence-ingest
 include newspack-intelligence-summary
 include newspack-intelligence-digest
 include newspack-intelligence-gate
+# Re-resolution spans two files: the ontology tee feeds the reresolver, which
+# appends the items to re-resolve to intel:reresolve and checkpoints with the
+# ontology Consumer.
+make_node Reresolver reresolver intel:reresolve
+connect_node intel:ontology:tee reresolver
+command_node intel:ontology:consumer:config add_snapshot_node reresolver
 secure

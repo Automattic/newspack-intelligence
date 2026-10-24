@@ -12,6 +12,8 @@
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Worker_Should_Stop;
+
 \defined( 'ABSPATH' ) || exit;
 
 final class LLM_Entity_Extractor implements Entity_Extractor {
@@ -24,6 +26,8 @@ final class LLM_Entity_Extractor implements Entity_Extractor {
 				Prompts::extract_entities( $item ),
 				[ 'max_tokens' => 300, 'temperature' => 0.0 ]
 			);
+		} catch ( Worker_Should_Stop $stop ) {
+			throw $stop;
 		} catch ( \RuntimeException $e ) {
 			return self::empty_triple();
 		}
@@ -36,9 +40,8 @@ final class LLM_Entity_Extractor implements Entity_Extractor {
 	 * @return array{orgs:array<int,string>,people:array<int,string>,locations:array<int,string>}
 	 */
 	private static function parse( string $raw ): array {
-		$json = ( 1 === \preg_match( '/\{.*\}/s', $raw, $m ) ) ? $m[0] : $raw;
-		$d    = \json_decode( $json, true );
-		if ( ! \is_array( $d ) ) {
+		$d = Prompts::json_object( $raw );
+		if ( null === $d ) {
 			return self::empty_triple();
 		}
 		return [

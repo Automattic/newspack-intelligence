@@ -6,6 +6,7 @@ namespace Newspack_Intelligence\Tests;
 use Newspack_Intelligence\Digest_Composer;
 use Newspack_Intelligence\LLM_Client;
 use Newspack_Nodes\Tests\TestCase;
+use Newspack_Nodes\Worker_Should_Stop;
 
 /**
  * Digest_Composer is the shared compose core used by both the worker's
@@ -78,5 +79,16 @@ final class DigestComposerTest extends TestCase {
 		$this->assertStringContainsString( 'g12 ', $user );
 		$this->assertStringNotContainsString( 'g1 ', $user );
 		$this->assertStringNotContainsString( 'g2 ', $user );
+	}
+
+	/** A cooperative stop inside the call is not a failed call: it propagates. */
+	public function test_a_cooperative_stop_propagates(): void {
+		$this->expectException( Worker_Should_Stop::class );
+		$this->expectExceptionMessage( 'max_runtime 595 reached' );
+		Digest_Composer::compose( [ [ 'summary' => 'Quarry Ledger merges' ] ], new class() implements LLM_Client {
+				public function chat( array $messages, array $opts = [] ): string {
+					throw new Worker_Should_Stop( 'max_runtime 595 reached' );
+				}
+			}, 'p' );
 	}
 }

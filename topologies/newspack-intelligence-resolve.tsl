@@ -1,0 +1,37 @@
+# Resolution and extraction: each recorded item linked to the entities it is
+# about, then extracted. The Consumer reads the whole items stream; the
+# resolver acts on item_recorded alone, writes its links and candidates to
+# intel:writer and forwards each resolution to the extractor, which writes the
+# extraction and its claims to intel:writer and forwards the item to the
+# deduper, which writes each cluster decision to intel:writer. The Consumer
+# checkpoints the deduper's lookup with its cursor. intel:reresolve:resolve
+# feeds the resolver each item the reresolver names, so an item whose
+# resolution throws dead-letters alone. Both Consumers hand the resolver one
+# item a poll, so a burst never runs every item's LLM calls in one fill().
+var num_partitions = 1
+include topic-probe
+include newspack-intelligence-streams
+make_node Consumer intel:items:resolve <config:logs_dir>/intel-items.p{partition} <config:offsets_dir>/<topology>.intel-items-resolve.p{partition} <config:deadletter_dir>/<topology>.intel-items-resolve.p{partition}
+command_node intel:items:resolve:config set_line_mode true
+make_node Resolver resolver intel:writer
+cmd resolver:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1
+cmd resolver:config set_vault_id AI-proxy
+cmd resolver:config set_model gpt-oss-120b
+cmd resolver:config set_feature newspack-intelligence
+make_node Extractor extractor intel:writer
+cmd extractor:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1
+cmd extractor:config set_vault_id AI-proxy
+cmd extractor:config set_model gpt-oss-120b
+cmd extractor:config set_feature newspack-intelligence
+cmd extractor:config add_profile "Newspack serves independent news publishers on WordPress."
+cmd extractor:config add_profile "Relevant: what Newspack's clients launch, win, raise, struggle with or ask for; what Newspack ships; where the news industry is moving."
+cmd extractor:config add_profile "Not relevant: dependency bumps, typo fixes, cosmetic changes."
+make_node Deduper deduper intel:writer
+command_node intel:items:resolve:config add_snapshot_node deduper
+make_node Consumer intel:reresolve:resolve <config:logs_dir>/intel-reresolve.p{partition} <config:offsets_dir>/<topology>.intel-reresolve-resolve.p{partition} <config:deadletter_dir>/<topology>.intel-reresolve-resolve.p{partition}
+command_node intel:reresolve:resolve:config set_line_mode true
+connect_node intel:items:resolve resolver
+connect_node intel:reresolve:resolve resolver
+connect_node resolver extractor
+connect_node extractor deduper
+secure

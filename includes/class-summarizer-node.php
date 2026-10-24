@@ -12,25 +12,13 @@ use Newspack_Nodes\Core;
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Schema_Reflection;
+use Newspack_Nodes\Worker_Should_Stop;
 
 \defined( 'ABSPATH' ) || exit;
 
 class Summarizer_Node extends Node {
 	use Schema_Reflection;
 	use LLM_Config;
-
-	/**
-	 * LLM-client factory seam. Lazily-defaulted at the call site to this node's
-	 * own verb-configured `make_llm_client()` (null when no vault token resolves).
-	 * Tests reassign in setUp to inject a real `Proxy_LLM_Client` — faking only its
-	 * `$http_post` seam — so prompt assembly, the client, and the JSON parse all
-	 * run as real, covered production code; tearDown resets it to null.
-	 *
-	 * Signature: `function (): ?LLM_Client`.
-	 *
-	 * @var (\Closure(): ?LLM_Client)|null
-	 */
-	public static ?\Closure $llm_factory = null;
 
 	/** Tachikoma-parity: no-arg ctor. Wires the sibling :config interpreter from node_schema()['commands']. */
 	public function __construct() {
@@ -57,7 +45,7 @@ class Summarizer_Node extends Node {
 			$item['title'] = '(untitled)';
 		}
 		/** @var array<string,mixed> $item */
-		$client   = self::$llm_factory ? ( self::$llm_factory )() : $this->make_llm_client();
+		$client   = $this->make_llm_client();
 		$enriched = null;
 		if ( $client instanceof LLM_Client ) {
 			try {
@@ -66,6 +54,8 @@ class Summarizer_Node extends Node {
 					[ 'max_tokens' => 500, 'temperature' => 0.3 ]
 				);
 				$enriched = self::parse_enrich( $raw );
+			} catch ( Worker_Should_Stop $stop ) {
+				throw $stop;
 			} catch ( \RuntimeException $e ) {
 				$this->stderr( 'ERROR: ' . $e->getMessage() );
 			}

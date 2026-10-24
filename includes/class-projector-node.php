@@ -153,7 +153,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			return self::$projections;
 		}
 		$day    = static fn ( string $field ): \Closure => static fn ( array $e ): int => (int) \floor( Core::as_float( $e[ $field ] ) / Intel_Graph_Row_Schema::DAY_SECONDS );
-		$link   = static fn ( string $state ): array => [ [ 'set', 'links', [ 'item_key', 'entity_key', 'role', 'method', 'confidence', [ $state ], 'actor', 'ts', $day( 'ts' ) ] ] ];
+		$link   = static fn ( string $state ): array => [ [ 'set', 'links', [ 'item_key', 'entity_key', 'role', 'method', 'confidence', [ $state ], 'actor', 'ts', $day( 'retrieved_ts' ) ] ] ];
 		$entity = static fn ( string $verb, string $state ): array => [
 			[ $verb, 'entities', [ 'entity_key', 'type', 'name', 'ts' ] ],
 			[ $verb, 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ],
@@ -163,14 +163,14 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 		$table    = [
 			'item_recorded'       => [ [ 'ignore', 'items', [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ) ] ] ],
 			'extraction_recorded' => [
-				[ 'set', 'extractions', [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'actor', $day( 'ts' ) ] ],
-				[ 'set', 'links', [ 'item_key', self::EACH, [ 'topic' ], [ 'extract' ], [ 1.0 ], [ 'asserted' ], 'actor', 'ts', $day( 'ts' ) ], 'topics' ],
+				[ 'set', 'extractions', [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'actor', $day( 'retrieved_ts' ) ] ],
+				[ 'set', 'links', [ 'item_key', self::EACH, [ 'topic' ], [ 'extract' ], [ 1.0 ], [ 'asserted' ], 'actor', 'ts', $day( 'retrieved_ts' ) ], 'topics' ],
 			],
 			'link_asserted'       => $link( 'asserted' ),
 			'link_proposed'       => $link( 'proposed' ),
-			'claim_asserted'      => [ [ 'set', 'claims', [ 'item_key', 'ord', 'subject_key', 'predicate', 'object_key', 'object_text', 'confidence', $day( 'ts' ) ] ] ],
-			'cluster_joined'      => [ [ 'set', 'clusters', [ 'item_key', 'cluster_key', $day( 'ts' ) ] ] ],
-			'cluster_superseded'  => [ [ 'set', 'canonicals', [ 'cluster_key', 'canonical_item_key', 'rank', $day( 'ts' ) ] ] ],
+			'claim_asserted'      => [ [ 'set', 'claims', [ 'item_key', 'ord', 'subject_key', 'predicate', 'object_key', 'object_text', 'confidence', $day( 'retrieved_ts' ) ] ] ],
+			'cluster_joined'      => [ [ 'set', 'clusters', [ 'item_key', 'cluster_key', $day( 'retrieved_ts' ) ] ] ],
+			'cluster_superseded'  => [ [ 'set', 'canonicals', [ 'cluster_key', 'canonical_item_key', 'rank', $day( 'retrieved_ts' ) ] ] ],
 			'entity_created'      => $entity( 'set', 'accepted' ),
 			'entity_proposed'     => $entity( 'ignore', 'proposed' ),
 			'entity_accepted'     => $state_set( 'accepted' ),

@@ -33,6 +33,21 @@ if ( ! function_exists( 'plugin_dir_url' ) ) {
 	}
 }
 
+// Stand-in for sanitize_title(): transliterate, lowercase, dash non-alphanumerics.
+if ( ! function_exists( 'sanitize_title' ) ) {
+	function sanitize_title( string $title ): string {
+		$ascii = (string) iconv( 'UTF-8', 'ASCII//TRANSLIT//IGNORE', $title );
+		return trim( (string) preg_replace( '/[^a-z0-9]+/', '-', strtolower( $ascii ) ), '-' );
+	}
+}
+
+// Stand-in for wp_strip_all_tags(): script and style bodies go with their tags.
+if ( ! function_exists( 'wp_strip_all_tags' ) ) {
+	function wp_strip_all_tags( string $text ): string {
+		return trim( strip_tags( (string) preg_replace( '@<(script|style)[^>]*?>.*?</\\1>@si', '', $text ) ) );
+	}
+}
+
 // Overrides shared shim: add_filter records _wp_test_filters by priority.
 if ( ! function_exists( 'do_action' ) ) {
 	$GLOBALS['_wp_actions']      = [];
