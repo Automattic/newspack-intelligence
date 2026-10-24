@@ -9,8 +9,8 @@
  * llm_config_commands(), the pair through `Schema_Reflection::list_verbs()`, so
  * a using class also uses Schema_Reflection), make_llm_client() (builds the
  * proxy client from the verb-configured state), and relevance_profile() (joins
- * the configured profile lines for prompt assembly). Uses Vault_Secret for the
- * same '' on blank/unknown/Vault-absent resolution.
+ * the configured profile lines for prompt assembly). Uses Vault_Secret for
+ * the `set_vault_id` verb and the token it resolves.
  *
  * @package Newspack_Intelligence
  */
@@ -32,9 +32,6 @@ trait LLM_Config {
 	/** @var string AI API Proxy base URL, set via set_api_url. */
 	protected string $api_url = self::DEFAULT_API_URL;
 
-	/** @var string Vault entry ID registered via set_vault_id; resolved to the raw token at use time. */
-	protected string $vault_id = '';
-
 	/** @var string LLM model id, set via set_model. */
 	protected string $model = self::DEFAULT_MODEL;
 
@@ -53,7 +50,7 @@ trait LLM_Config {
 		if ( '' === $this->api_url ) {
 			return null;
 		}
-		$token = $this->resolve_vault_secret( $this->vault_id );
+		$token = $this->vault_secret();
 		if ( '' === $token ) {
 			return null;
 		}
@@ -91,25 +88,6 @@ trait LLM_Config {
 		/** @var self $patron */
 		$patron = $interpreter->patron();
 		return $patron->set_api_url( Core::as_string( $args['url'] ) );
-	}
-
-	/** `set_vault_id` verb handler — last-write-wins. */
-	public function set_vault_id( string $args ): string {
-		$this->vault_id = \trim( $args );
-		return 'ok';
-	}
-
-	/**
-	 * `set_vault_id` verb dispatch — resolves the patron node and delegates.
-	 *
-	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        Bound args; `vault_id` is the Vault entry ID.
-	 * @return string Result line.
-	 */
-	public static function cmd_set_vault_id( Command_Interpreter_Node $interpreter, array $args ): string {
-		/** @var self $patron */
-		$patron = $interpreter->patron();
-		return $patron->set_vault_id( Core::as_string( $args['vault_id'] ) );
 	}
 
 	/** `set_model` verb handler — last-write-wins. */
@@ -155,7 +133,8 @@ trait LLM_Config {
 	/**
 	 * Emit the base config plus round-trippable `command_node {name}:config …` lines for
 	 * every explicitly-set or non-default verb (a pinned value survives a
-	 * future default bump), then one `add_profile` line per profile through
+	 * future default bump), the `set_vault_id` line through `dump_setters()`,
+	 * then one `add_profile` line per profile through
 	 * `dump_lists()`. Args go through serialize_args (the serialization anchor)
 	 * so a multi-word profile re-tokenizes as ONE argument.
 	 */
@@ -164,16 +143,13 @@ trait LLM_Config {
 		if ( isset( $this->llm_set['set_api_url'] ) || ( '' !== $this->api_url && self::DEFAULT_API_URL !== $this->api_url ) ) {
 			$out .= $this->config_line( 'set_api_url', $this->api_url );
 		}
-		if ( '' !== $this->vault_id ) {
-			$out .= $this->config_line( 'set_vault_id', $this->vault_id );
-		}
 		if ( isset( $this->llm_set['set_model'] ) || self::DEFAULT_MODEL !== $this->model ) {
 			$out .= $this->config_line( 'set_model', $this->model );
 		}
 		if ( isset( $this->llm_set['set_feature'] ) || self::DEFAULT_FEATURE !== $this->feature ) {
 			$out .= $this->config_line( 'set_feature', $this->feature );
 		}
-		return $out . $this->dump_lists();
+		return $out . $this->dump_setters() . $this->dump_lists();
 	}
 
 	/**
@@ -192,14 +168,7 @@ trait LLM_Config {
 				],
 				'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_set_api_url( $interpreter, $args ),
 			],
-			[
-				'name'        => 'set_vault_id',
-				'description' => 'Set the Vault entry ID to resolve the AI API Proxy token from: <vault_id>.',
-				'args'        => [
-					[ 'name' => 'vault_id', 'type' => 'vault_id', 'required' => true ],
-				],
-				'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_set_vault_id( $interpreter, $args ),
-			],
+			self::vault_id_verb( 'the AI API Proxy token' ),
 			[
 				'name'        => 'set_model',
 				'description' => 'Set the LLM model id: <model>.',

@@ -34,13 +34,13 @@ final class LinearSourceTest extends TestCase {
 		};
 	}
 
-	/** @return array<string,array<string,mixed>> items keyed by id */
+	/** @return array<string,array<string,mixed>> items keyed by item_key */
 	private function fetch_by_id( array $config ): array {
 		$node  = new Linear_Source_Node();
 		$items = $node->fetch( $config );
 		$out   = [];
 		foreach ( $items as $item ) {
-			$out[ $item['id'] ] = $item;
+			$out[ $item['item_key'] ] = $item;
 		}
 		return $out;
 	}
@@ -57,7 +57,7 @@ final class LinearSourceTest extends TestCase {
 		$this->assertSame( 'First issue', $item['title'] );
 		$this->assertSame( 'https://linear.app/abc-123', $item['url'] );
 		$this->assertSame( 'first body', $item['body'] );
-		$this->assertSame( \strtotime( '2026-06-12T00:00:00Z' ), $item['timestamp'] );
+		$this->assertSame( \strtotime( '2026-06-12T00:00:00Z' ), $item['item_ts'] );
 	}
 
 	public function test_fetch_sends_raw_token_as_authorization_header(): void {
@@ -111,7 +111,8 @@ final class LinearSourceTest extends TestCase {
 
 		$node = new Linear_Source_Node();
 		$node->name( 'linear' );
-		$node->set_vault_id( 'lin-creds' );
+		$node->interpreter()->dispatch( 'set_vault_id', [ 'lin-creds' ] );
+		$node->arguments( [ 'internal' ] );
 		$node->sink( new Capture_Sink_Node() );
 		$message                   = Message::new_message();
 		$message[ Message::TYPE ]  = Message::TM_REQUEST;
@@ -123,45 +124,19 @@ final class LinearSourceTest extends TestCase {
 		$this->assertSame( 'lin_from_vault', $captured[0]['args']['headers']['Authorization'] );
 	}
 
-	public function test_set_vault_id_resolves_seeded_entry_into_config_token(): void {
+	public function test_the_vault_id_round_trips_through_the_dump(): void {
 		$this->seed_vault( 'lin-creds', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'lin_from_vault' ] );
 		$node = new Linear_Source_Node();
 		$node->name( 'linear' );
+		$node->interpreter()->dispatch( 'set_vault_id', [ 'lin-creds' ] );
+		$dump = $node->dump_config();
 
-		$this->assertSame( 'ok', $node->set_vault_id( 'lin-creds' ) );
-		$this->assertSame( 'lin_from_vault', $this->config_of( $node )['token'] );
-	}
+		$replayed = new Linear_Source_Node();
+		$replayed->name( 'linear-replayed' );
+		$this->replay_config( $dump, $replayed );
 
-	public function test_set_vault_id_unknown_id_yields_empty_token(): void {
-		$node = new Linear_Source_Node();
-		$node->name( 'linear' );
-
-		$node->set_vault_id( 'no-such-id' );
-		$this->assertSame( '', $this->config_of( $node )['token'] );
-	}
-
-	public function test_set_vault_id_last_write_wins(): void {
-		$this->seed_vault_servers(
-			[
-				'first'  => [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'first-secret' ],
-				'second' => [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'second-secret' ],
-			]
-		);
-		$node = new Linear_Source_Node();
-		$node->name( 'linear' );
-
-		$node->set_vault_id( 'first' );
-		$node->set_vault_id( 'second' );
-
-		$this->assertSame( 'second-secret', $this->config_of( $node )['token'] );
-	}
-
-	public function test_dump_config_re_emits_set_vault_id(): void {
-		$node = new Linear_Source_Node();
-		$node->name( 'linear' );
-		$node->set_vault_id( 'lin-creds' );
-
-		$this->assertStringContainsString( 'command_node linear:config set_vault_id lin-creds', $node->dump_config() );
+		$this->assertStringContainsString( 'command_node linear:config set_vault_id lin-creds', $dump );
+		$this->assertSame( 'lin_from_vault', $this->config_of( $replayed )['token'] );
 	}
 
 	public function test_node_schema_declares_linear_source_contract(): void {

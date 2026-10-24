@@ -77,13 +77,6 @@ final class LlmConfigTest extends TestCase {
 		$this->assertSame( 'https://proxy.test/v1', $node->api_url() );
 	}
 
-	public function test_set_vault_id_mutates_state(): void {
-		$node = $this->fixture();
-
-		$this->assertSame( 'ok', $node->set_vault_id( 'ai-vault' ) );
-		$this->assertSame( 'ai-vault', $node->vault_id() );
-	}
-
 	public function test_set_model_mutates_state(): void {
 		$node = $this->fixture();
 
@@ -165,7 +158,7 @@ final class LlmConfigTest extends TestCase {
 		$this->seed_vault( 'ai-vault', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'proxy-token' ] );
 
 		$node = $this->fixture();
-		$node->set_vault_id( 'ai-vault' );
+		$node->interpreter()->dispatch( 'set_vault_id', [ 'ai-vault' ] );
 
 		$this->assertInstanceOf( Proxy_LLM_Client::class, $node->client() );
 	}
@@ -174,7 +167,7 @@ final class LlmConfigTest extends TestCase {
 		$this->seed_vault( 'ai-vault', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'proxy-token' ] );
 
 		$node = $this->fixture();
-		$node->set_vault_id( 'ai-vault' );
+		$node->interpreter()->dispatch( 'set_vault_id', [ 'ai-vault' ] );
 		$node->set_api_url( '' );
 
 		$this->assertNull( $node->client() );
@@ -182,7 +175,7 @@ final class LlmConfigTest extends TestCase {
 
 	public function test_make_llm_client_returns_null_when_token_unresolved(): void {
 		$node = $this->fixture();
-		$node->set_vault_id( 'no-such-id' );
+		$node->interpreter()->dispatch( 'set_vault_id', [ 'no-such-id' ] );
 
 		$this->assertNull( $node->client() );
 	}
@@ -191,7 +184,7 @@ final class LlmConfigTest extends TestCase {
 		$node = $this->fixture();
 		$node->name( 'llmnode' );
 		$node->set_api_url( 'https://proxy.test/v1' );
-		$node->set_vault_id( 'ai-vault' );
+		$node->interpreter()->dispatch( 'set_vault_id', [ 'ai-vault' ] );
 		$node->set_model( 'gpt-5' );
 		$node->set_feature( 'my-feature' );
 		$node->interpreter()->dispatch( 'add_profile', [ 'Engineering' ] );
@@ -205,6 +198,10 @@ final class LlmConfigTest extends TestCase {
 		$this->assertStringContainsString( 'command_node llmnode:config set_feature my-feature', $dump );
 		$this->assertStringContainsString( 'command_node llmnode:config add_profile Engineering', $dump );
 		$this->assertStringContainsString( 'command_node llmnode:config add_profile Product', $dump );
+		$replayed = $this->fixture();
+		$replayed->name( 'llmnode-replayed' );
+		$this->replay_config( $dump, $replayed );
+		$this->assertSame( 'ai-vault', $replayed->vault_id() );
 	}
 
 	public function test_dump_config_omits_untouched_defaults(): void {
@@ -234,15 +231,6 @@ final class LlmConfigTest extends TestCase {
 
 		$this->assertSame( 'ok', $result );
 		$this->assertSame( 'https://proxy.test/v1', $node->api_url() );
-	}
-
-	public function test_cmd_set_vault_id_delegates_to_patron(): void {
-		$node = $this->fixture();
-
-		$result = $node::cmd_set_vault_id( $this->interpreter_for( $node ), [ 'vault_id' => 'ai-vault' ] );
-
-		$this->assertSame( 'ok', $result );
-		$this->assertSame( 'ai-vault', $node->vault_id() );
 	}
 
 	public function test_cmd_set_model_delegates_to_patron(): void {
@@ -320,13 +308,11 @@ final class LlmConfigTest extends TestCase {
 		$handlers    = \array_column( $node::llm_config_commands(), 'handler', 'name' );
 
 		$this->assertSame( 'ok', $handlers['set_api_url']( $interpreter, [ 'url' => 'https://proxy.test/v1' ] ) );
-		$this->assertSame( 'ok', $handlers['set_vault_id']( $interpreter, [ 'vault_id' => 'ai-vault' ] ) );
 		$this->assertSame( 'ok', $handlers['set_model']( $interpreter, [ 'model' => 'gpt-5' ] ) );
 		$this->assertSame( 'ok', $handlers['set_feature']( $interpreter, [ 'feature' => 'my-feature' ] ) );
 		$this->assertSame( "ok\n", $node->interpreter()->commands()['add_profile']( $interpreter, [ 'text' => [ 'Engineering' ] ] ) );
 
 		$this->assertSame( 'https://proxy.test/v1', $node->api_url() );
-		$this->assertSame( 'ai-vault', $node->vault_id() );
 		$this->assertSame( 'gpt-5', $node->model() );
 		$this->assertSame( 'my-feature', $node->feature() );
 		$this->assertSame( 'Engineering', $node->profile() );

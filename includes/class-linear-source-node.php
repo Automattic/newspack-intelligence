@@ -1,19 +1,16 @@
 <?php
 /**
  * Linear_Source_Node: pulls recently-updated Linear issues via the Linear GraphQL
- * API and normalizes them into digest items.
+ * API and normalizes them into recorded items.
  *
- * Extends Source_Node, so the base owns the TICK/TM_REQUEST trigger, dedup, and
- * snapshot; this class supplies only the two seams: config() (Settings read) and
+ * Extends Source_Node, so the base owns the TICK/TM_REQUEST trigger and dedup;
+ * this class supplies only the two seams: config() (Settings read) and
  * fetch() (the blocking GraphQL call, behind the $http_post closure seam).
  *
  * @package Newspack_Intelligence
  */
 
 namespace Newspack_Intelligence;
-
-use Newspack_Nodes\Command_Interpreter_Node;
-use Newspack_Nodes\Core;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -37,13 +34,10 @@ class Linear_Source_Node extends Source_Node {
 	 */
 	public static ?\Closure $http_post = null;
 
-	/** @var string Vault entry ID registered via the `set_vault_id` verb; resolved to the raw token at config() time. */
-	protected string $vault_id = '';
-
 	/**
-	 * Fetch recently-updated Linear issues, normalized to the item contract
-	 * {source,id,title,url,body,timestamp}. No token → skip (no creds). A transport
-	 * error or non-200 contributes nothing and never throws (fire-and-forget).
+	 * Fetch recently-updated Linear issues, normalized to the item_recorded
+	 * fields. No token → skip (no creds). A transport error or non-200
+	 * contributes nothing and never throws (fire-and-forget).
 	 *
 	 * @param array<string,mixed> $config {token: string}.
 	 * @return array<int,array<string,mixed>>
@@ -77,7 +71,7 @@ class Linear_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * Walk data.issues.nodes[] and normalize each into a digest item. A node with no
+	 * Walk data.issues.nodes[] and normalize each into a recorded item. A node with no
 	 * string identifier is skipped.
 	 *
 	 * @param mixed $decoded Decoded GraphQL response body.
@@ -106,59 +100,15 @@ class Linear_Source_Node extends Source_Node {
 
 	/** @return array{token:string} */
 	protected function config(): array {
-		return [ 'token' => $this->resolve_vault_secret( $this->vault_id ) ];
-	}
-
-	/**
-	 * `set_vault_id` verb handler — last-write-wins.
-	 *
-	 * @param string $args The Vault entry ID.
-	 * @return string Result line.
-	 */
-	public function set_vault_id( string $args ): string {
-		$this->vault_id = \trim( $args );
-		return 'ok';
-	}
-
-	/**
-	 * `set_vault_id` verb dispatch — resolves the patron node and delegates.
-	 *
-	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        Bound args; `vault_id` is the Vault entry ID.
-	 * @return string Result line.
-	 */
-	public static function cmd_set_vault_id( Command_Interpreter_Node $interpreter, array $args ): string {
-		/** @var self $patron */
-		$patron = $interpreter->patron();
-		return $patron->set_vault_id( Core::as_string( $args['vault_id'] ) );
-	}
-
-	/** Emit the base config plus a round-trippable `command_node {name}:config set_vault_id …` when set. */
-	public function dump_config(): string {
-		$out = parent::dump_config();
-		if ( '' !== $this->vault_id ) {
-			$out .= $this->config_line( 'set_vault_id', $this->vault_id );
-		}
-		return $out;
+		return [ 'token' => $this->vault_secret() ];
 	}
 
 	public static function node_schema(): array {
-		return \array_merge(
-			self::source_schema(
-				'Fetches recently-updated Linear issues on a TICK request (request_node linear TICK).',
-				'Fetch + emit new Linear issues. Trigger with `request_node linear TICK`.'
-			),
+		return self::source_schema(
+			'Fetches recently-updated Linear issues on a TICK request (request_node linear TICK).',
+			'Fetch + emit new Linear issues. Trigger with `request_node linear TICK`.',
 			[
-				'commands' => [
-					[
-						'name'        => 'set_vault_id',
-						'description' => 'Set the Vault entry ID to resolve the Linear API token from: <vault_id>.',
-						'args'        => [
-							[ 'name' => 'vault_id', 'type' => 'vault_id', 'required' => true ],
-						],
-						'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_set_vault_id( $interpreter, $args ),
-					],
-				],
+				self::vault_id_verb( 'the Linear API token' ),
 			]
 		);
 	}

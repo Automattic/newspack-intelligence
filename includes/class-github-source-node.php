@@ -1,10 +1,10 @@
 <?php
 /**
  * Github_Source_Node: pulls Releases, Merged PRs, and Issues from configured
- * GitHub repos and normalizes them into digest items.
+ * GitHub repos and normalizes them into recorded items.
  *
- * Extends Source_Node, so the base owns the TICK/TM_REQUEST trigger, dedup, and
- * snapshot; this class supplies only the two seams: config() (Settings read) and
+ * Extends Source_Node, so the base owns the TICK/TM_REQUEST trigger and dedup;
+ * this class supplies only the two seams: config() (Settings read) and
  * fetch() (the blocking GitHub REST calls, behind the $http_get closure seam).
  *
  * @package Newspack_Intelligence
@@ -12,7 +12,6 @@
 
 namespace Newspack_Intelligence;
 
-use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
 
 \defined( 'ABSPATH' ) || exit;
@@ -40,13 +39,10 @@ class Github_Source_Node extends Source_Node {
 	/** @var list<string> Repos (owner/name) the `add_repo` verb registered and `remove_repo` left, in call order. */
 	protected array $repos = [];
 
-	/** @var string Vault entry ID registered via the `set_vault_id` verb; resolved to the raw token at config() time. */
-	protected string $vault_id = '';
-
 	/**
-	 * Fetch Releases + Merged PRs + Issues for every configured repo, normalized to
-	 * the item contract {source,id,title,url,body,timestamp}. A failed repo/endpoint
-	 * contributes nothing and never throws — one bad repo can't sink the batch.
+	 * Fetch Releases + Merged PRs + Issues for every configured repo, normalized
+	 * to the item_recorded fields. A failed repo/endpoint contributes nothing and
+	 * never throws — one bad repo can't sink the batch.
 	 *
 	 * @param array<string,mixed> $config {repos: string[], token: string}.
 	 * @return array<int,array<string,mixed>>
@@ -177,61 +173,22 @@ class Github_Source_Node extends Source_Node {
 	protected function config(): array {
 		return [
 			'repos' => $this->repos,
-			'token' => $this->resolve_vault_secret( $this->vault_id ),
+			'token' => $this->vault_secret(),
 		];
 	}
 
-	/**
-	 * `set_vault_id` verb handler — last-write-wins.
-	 *
-	 * @param string $args The Vault entry ID.
-	 * @return string Result line.
-	 */
-	public function set_vault_id( string $args ): string {
-		$this->vault_id = \trim( $args );
-		return 'ok';
-	}
-
-	/**
-	 * `set_vault_id` verb dispatch — resolves the patron node and delegates.
-	 *
-	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        Bound args; `vault_id` is the Vault entry ID.
-	 * @return string Result line.
-	 */
-	public static function cmd_set_vault_id( Command_Interpreter_Node $interpreter, array $args ): string {
-		/** @var self $patron */
-		$patron = $interpreter->patron();
-		return $patron->set_vault_id( Core::as_string( $args['vault_id'] ) );
-	}
-
-	/** Emit the base config plus round-trippable `command_node {name}:config add_repo …` / `set_vault_id …` lines. */
+	/** Emit the base config plus one `add_repo` line per registered repo. */
 	public function dump_config(): string {
-		$out = parent::dump_config() . $this->dump_lists();
-		if ( '' !== $this->vault_id ) {
-			$out .= $this->config_line( 'set_vault_id', $this->vault_id );
-		}
-		return $out;
+		return parent::dump_config() . $this->dump_lists();
 	}
 
 	public static function node_schema(): array {
-		return \array_merge(
-			self::source_schema(
-				'Fetches GitHub Releases, Merged PRs, and Issues for the configured repos on a TICK request (request_node github TICK).',
-				'Fetch + emit new GitHub items. Trigger with `request_node github TICK`.'
-			),
+		return self::source_schema(
+			'Fetches GitHub Releases, Merged PRs, and Issues for the configured repos on a TICK request (request_node github TICK).',
+			'Fetch + emit new GitHub items. Trigger with `request_node github TICK`.',
 			[
-				'commands' => [
-					...self::list_verbs( 'repo', 'repos', [ 'name' => 'repo', 'type' => 'string', 'required' => true ], 'Register a repo to fetch on TICK: <owner/name>.' ),
-					[
-						'name'        => 'set_vault_id',
-						'description' => 'Set the Vault entry ID to resolve the GitHub token from: <vault_id>.',
-						'args'        => [
-							[ 'name' => 'vault_id', 'type' => 'vault_id', 'required' => true ],
-						],
-						'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_set_vault_id( $interpreter, $args ),
-					],
-				],
+				...self::list_verbs( 'repo', 'repos', [ 'name' => 'repo', 'type' => 'string', 'required' => true ], 'Register a repo to fetch on TICK: <owner/name>.' ),
+				self::vault_id_verb( 'the GitHub token' ),
 			]
 		);
 	}

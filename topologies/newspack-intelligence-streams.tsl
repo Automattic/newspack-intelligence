@@ -1,0 +1,12 @@
+# The two event streams and the writer that routes each event to its own.
+# intel:items keeps two years and takes large bodies from its one writer, the
+# worker; intel:ontology keeps every segment and takes no large write, so each
+# ontology event fits one line.
+var num_partitions = 1
+include topic-probe
+make_node Partition intel:items <config:logs_dir>/intel-items.p{partition} 16777216 2 4096 8192 63072000 63072000
+command_node intel:items:config void_warranty
+make_node Partition intel:ontology <config:logs_dir>/intel-ontology.p{partition} 4194304 2 4 0 0 0
+command_node intel:ontology:config keep_everything true
+make_node Intel_Event_Writer intel:writer intel:items intel:ontology
+secure
