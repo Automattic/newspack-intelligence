@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.7] - 2026-10-23
+
+### Changed
+- **Built against newspack-nodes 2.128.0.** In the bundled debug overlay's Console tab, `/` focuses the REPL without also reaching a page's own `/` shortcut, and a `/` typed in a form control stays there; the Newspack skins draw charts in the re-stepped eight-color palette.
+
 ## [0.17.6] - 2026-10-21
 
 ### Changed
