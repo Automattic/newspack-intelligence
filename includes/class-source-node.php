@@ -159,7 +159,7 @@ abstract class Source_Node extends Node implements Source {
 			'title'        => Core::str( $title ),
 			'body'         => \mb_strcut( Core::str( $body ), 0, self::MAX_BODY_BYTES, 'UTF-8' ),
 			'item_ts'      => false !== $ts ? $ts : 0,
-			'retrieved_ts' => Core::$now,
+			'retrieved_ts' => Intel_Event::now(),
 		];
 	}
 
