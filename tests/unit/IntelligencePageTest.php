@@ -142,6 +142,15 @@ final class IntelligencePageTest extends TestCase {
 		$this->assertSame( [ 'wp-components', 'newspack-nodes-graph' ], $GLOBALS['_enqueued_styles']['newspack-intelligence']['deps'] );
 	}
 
+	public function test_the_bundle_stamps_this_plugins_version_in_the_header(): void {
+		Capabilities::$session_scope = Capabilities::READ;
+		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];
+
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+
+		$this->assertSame( \NEWSPACK_INTELLIGENCE_VERSION, $this->localized( 'newspack-intelligence' )['version'] ?? null );
+	}
+
 	public function test_another_page_enqueues_nothing_and_reads_no_capability(): void {
 		$reads = 0;
 		\add_filter(

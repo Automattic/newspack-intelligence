@@ -551,7 +551,8 @@ substrate Vault entries: the node config holds only the entry id, set by the
 `{item_key, source, tier, url, title, body, item_ts, retrieved_ts}`: `item_key`
 namespaced `"{source}:{raw id}"`, the key dedup reads; `body` cut at
 `MAX_BODY_BYTES` (65,536) on a UTF-8 character boundary; `item_ts` 0 when the
-connector's date string will not parse; `retrieved_ts` the worker's `Core::$now`.
+connector's date string will not parse; `retrieved_ts` the worker's tick
+clock in whole seconds, `Intel_Event::now()`, as every reader takes it.
 `tick()` wraps each in `Intel_Event::machine_event()` under the actor
 `machine:source:{name}@{plugin version}`, with the plugin version as its
 `config_version`.
@@ -660,14 +661,14 @@ its own one-shot commands; nothing polls.
 | Module | Export | What it does |
 |--------|--------|--------------|
 | `index.js` | — | Mounts `IntelligencePage` on `#newspack-intelligence-app`, handing it `canTune` and `vocabulary` from `NewspackNodesData` |
-| `IntelligencePage.js` | default | Switches Search, Entity, Review and Collections in place; holds the submitted search, the open entity and collection, and the item being saved, so a view returns as it was left; carries the substrate debug overlay |
+| `IntelligencePage.js` | default | Switches Search, Entity, Review and Collections in place; holds the submitted search, the open entity and collection, and the item being saved, so a view returns as it was left; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the `NEWSPACK::NODES` header subtitled `Intelligence` and the debug overlay |
 | `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite` | A read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments; a write sent once per `run()`, running `refresh` once it lands and handing back `useCommandOnce`'s own `pending`, refusal and answered arguments |
 | `views/Search.js` | default | `search` with words, kind, topic, source and a day range, a page at a time |
 | `views/Entity.js` | default | `entity`, `timeline` a page at a time, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
 | `views/Review.js` | default | `review links` and `review entities`; for a curator, `confirm_link`, `reject_link`, `accept_entity`, `reject_entity` and `merge_entities` |
 | `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection` |
 | `components/SaveToCollection.js` | default | The one dialog any result saves through, sending `collect` |
-| `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty by its `rows` key, or its rows — as a `newspack-nodes-card` named and headed by an optional title, or bare inside a dialog; the one alert every refusal, read or write, renders in |
+| `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty by its `rows` key, or its rows — as a stock `Card` section named by an optional title, which heads its `CardHeader`, with the state inset in its `CardBody`, or bare inside a dialog; the one alert every refusal, read or write, renders in |
 | `components/Pager.js` | default | How many of the matches a page shows, and Previous and Next over a stack of page starts, for Search and the Entity timeline |
 | `components/ItemRow.js`, `Cite.js`, `format.js` | — | An item row; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day and `metaLine()`, which joins a row's meta parts and keeps a 0 |
 | `styles/intelligence.scss` | — | Geometry only, emitted as `build/intelligence/index.css` |
@@ -689,9 +690,11 @@ only hides the curation controls: the server's role gate refuses a write the
 caller may not make. The vocabulary the selects offer is `Intel_Event`'s own
 lists, localized beside it. Every string from the graph renders as text, an
 item URL becomes a link only when it is http or https, and `Answer` gives an
-empty answer and an `available: false` one different words. The page root
+empty answer and an `available: false` one different words. The page
+renders inside the substrate's shared `DashboardShell`, whose `ThemedRoot`
 carries `newspack-nodes-theme`, `newspack-nodes-skin-root` and
-`newspack-nodes-ui`, and the enqueue names `newspack-nodes-graph`, which pulls
+`newspack-nodes-ui` and paints the admin gutters in the skin, and whose header
+stamps the `version` the enqueue localizes; the enqueue names `newspack-nodes-graph`, which pulls
 the ui and theme sheets in, so cards, banners, empty states and buttons take
 the shared roles. The build resolves `@newspack-nodes/runtime`,
 `@newspack-nodes/shared/*` and `@newspack-nodes/debug-overlay` through the

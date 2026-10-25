@@ -2,8 +2,8 @@
 /**
  * Answer renders a read in exactly one of its states, and each kind of
  * nothing says which kind it is: still asking, refused, a graph that would
- * not open, or a graph that holds no rows. As a card it names and heads
- * itself by its title.
+ * not open, or a graph that holds no rows. As a card it names itself by its
+ * title, heads itself in a header band and insets its rows in a body.
  */
 
 import { render, screen } from '@testing-library/react';
@@ -96,7 +96,7 @@ describe( 'AnswerBody', () => {
 } );
 
 describe( 'Answer', () => {
-	it( 'is a card named and headed by its title at its level', () => {
+	it( 'is a card named by its title, headed in its header band', () => {
 		render(
 			<Answer
 				title="Leads"
@@ -108,21 +108,32 @@ describe( 'Answer', () => {
 			</Answer>
 		);
 		const card = screen.getByRole( 'region', { name: 'Leads' } );
-		expect( card ).toHaveClass( 'newspack-nodes-card' );
+		expect( card ).toHaveClass( 'components-card' );
+		const heading = screen.getByRole( 'heading', {
+			level: 4,
+			name: 'Leads',
+		} );
+		expect( heading.closest( '.components-card__header' ) ).not.toBeNull();
 		expect(
-			screen.getByRole( 'heading', { level: 4, name: 'Leads' } )
-		).toBeInTheDocument();
+			screen.getByText( 'rows' ).closest( '.components-card__body' )
+		).not.toBeNull();
 	} );
 
-	it( 'is an unheaded card without a title', () => {
+	it( 'is an unheaded card without a title, its rows still inset', () => {
 		const { container } = render(
 			<Answer read={ answered( { name: 'Acme', available: true } ) }>
 				{ ( a ) => a.name }
 			</Answer>
 		);
 		expect( container.querySelector( 'section' ) ).toHaveClass(
-			'newspack-nodes-card'
+			'components-card'
 		);
+		expect(
+			container.querySelector( '.components-card__header' )
+		).toBeNull();
 		expect( screen.queryByRole( 'heading' ) ).toBeNull();
+		expect(
+			screen.getByText( 'Acme' ).closest( '.components-card__body' )
+		).not.toBeNull();
 	} );
 } );

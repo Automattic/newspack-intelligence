@@ -1,21 +1,26 @@
 /**
  * The Intelligence page's geometry. Appearance — cards, banners, empty
  * states, status text, tabs, buttons and fields — comes from the shared
- * `newspack-nodes-ui` roles the page root opts into, so nothing here paints.
+ * `newspack-nodes-ui` roles the dashboard shell opts into, so nothing here
+ * paints.
  */
 
 @use "@newspack-nodes/shared/styles/tokens" as base;
 
 .newspack-intelligence {
-	max-width: 1200px;
-	margin: base.$space-lg base.$space-xl 0 0;
+	padding: base.$space-lg base.$space-xl;
 
 	// The shared tab bar's paint arrives with the ui sheet; its row is ours.
 	.nodes-tab-host__tabbar {
 		display: flex;
 		flex-wrap: wrap;
 		gap: base.$space-xs;
-		margin: base.$space-lg 0 base.$space-xl;
+		margin: 0 0 base.$space-xl;
+	}
+
+	// The card's header band spaces its heading; the heading adds none.
+	.components-card__header :is(h2, h3, h4) {
+		margin: 0;
 	}
 
 	&__view {
