@@ -189,7 +189,7 @@ describe( 'IntelligencePage', () => {
 		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 	} );
 
-	it( 'carries the theme classes and the debug overlay', async () => {
+	it( 'renders inside the shared dashboard shell, headed by its subtitle', async () => {
 		const { container } = renderPage();
 		await screen.findByRole( 'link', {
 			name: 'Acme Gazette wins regional prize',
@@ -199,6 +199,28 @@ describe( 'IntelligencePage', () => {
 			'newspack-nodes-skin-root',
 			'newspack-nodes-ui'
 		);
+		expect(
+			container.querySelector( '.newspack-nodes-page-surface' )
+		).not.toBeNull();
+		expect(
+			container.querySelector( '.topology-brand' ).textContent
+		).toContain( 'NEWSPACK' );
+		expect(
+			container.querySelector( '.topology-subtitle' ).textContent
+		).toContain( 'Intelligence' );
+		expect( screen.queryByRole( 'heading', { level: 1 } ) ).toBeNull();
+		expect(
+			container.querySelector(
+				'.newspack-nodes-page-content .newspack-intelligence'
+			)
+		).not.toBeNull();
+	} );
+
+	it( 'mounts one debug overlay under its own storage key', async () => {
+		renderPage();
+		await screen.findByRole( 'link', {
+			name: 'Acme Gazette wins regional prize',
+		} );
 		expect( screen.getByTestId( 'debug-overlay' ) ).toBeInTheDocument();
 		expect( global.__debugOverlayProps.storageKey ).toBe(
 			'newspack-nodes:debug:intelligence'

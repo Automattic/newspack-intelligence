@@ -1,6 +1,6 @@
 import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
-import DebugOverlay from '@newspack-nodes/debug-overlay';
+import DashboardShell from '@newspack-nodes/shared/components/DashboardShell';
 import Search, { NEW_SEARCH } from './views/Search';
 import Entity from './views/Entity';
 import Review from './views/Review';
@@ -15,6 +15,10 @@ import './styles/intelligence.scss';
  * so a view returns as it was left. Curation renders only
  * for `canTune`, which hides controls and enforces nothing: the server's role
  * gate refuses a write the caller may not make.
+ *
+ * The shared `DashboardShell` supplies the skin, the positioned page surface,
+ * the header naming this page and the debug overlay; the page scrolls in the
+ * shell, since no view owns a scroller of its own.
  *
  * @param {Object}  props
  * @param {boolean} props.canTune    Whether the caller may curate.
@@ -53,64 +57,73 @@ export default function IntelligencePage( { canTune, vocabulary } ) {
 	];
 
 	return (
-		<div className="newspack-intelligence newspack-nodes-theme newspack-nodes-skin-root newspack-nodes-ui">
-			<h1>{ __( 'Intelligence', 'newspack-intelligence' ) }</h1>
-			<div
-				className="nodes-tab-host__tabbar"
-				role="tablist"
-				aria-label={ __( 'Views', 'newspack-intelligence' ) }
-			>
-				{ tabs.map( ( [ id, label ] ) => (
-					<button
-						key={ id }
-						type="button"
-						role="tab"
-						className={ `nodes-tab-host__tab${
-							view === id ? ' is-active' : ''
-						}` }
-						aria-selected={ view === id }
-						onClick={ () => setView( id ) }
+		<DashboardShell
+			storageKey="newspack-nodes:debug:intelligence"
+			subtitle={ __( 'Intelligence', 'newspack-intelligence' ) }
+			overflowY="auto"
+		>
+			{ () => (
+				<div className="newspack-intelligence">
+					<div
+						className="nodes-tab-host__tabbar"
+						role="tablist"
+						aria-label={ __( 'Views', 'newspack-intelligence' ) }
 					>
-						{ label }
-					</button>
-				) ) }
-			</div>
-			{ 'search' === view && (
-				<Search
-					query={ search }
-					onQuery={ setSearch }
-					vocabulary={ vocabulary }
-					onOpenEntity={ openEntity }
-					onSave={ onSave }
-				/>
+						{ tabs.map( ( [ id, label ] ) => (
+							<button
+								key={ id }
+								type="button"
+								role="tab"
+								className={ `nodes-tab-host__tab${
+									view === id ? ' is-active' : ''
+								}` }
+								aria-selected={ view === id }
+								onClick={ () => setView( id ) }
+							>
+								{ label }
+							</button>
+						) ) }
+					</div>
+					{ 'search' === view && (
+						<Search
+							query={ search }
+							onQuery={ setSearch }
+							vocabulary={ vocabulary }
+							onOpenEntity={ openEntity }
+							onSave={ onSave }
+						/>
+					) }
+					{ 'entity' === view && (
+						<Entity
+							key={ entityKey }
+							entityKey={ entityKey }
+							canTune={ canTune }
+							vocabulary={ vocabulary }
+							onOpenEntity={ openEntity }
+							onSave={ onSave }
+						/>
+					) }
+					{ 'review' === view && (
+						<Review
+							canTune={ canTune }
+							onOpenEntity={ openEntity }
+						/>
+					) }
+					{ 'collections' === view && (
+						<Collections
+							canTune={ canTune }
+							opened={ collection }
+							onOpen={ setCollection }
+						/>
+					) }
+					{ saving && (
+						<SaveToCollection
+							item={ saving }
+							onClose={ () => setSaving( null ) }
+						/>
+					) }
+				</div>
 			) }
-			{ 'entity' === view && (
-				<Entity
-					key={ entityKey }
-					entityKey={ entityKey }
-					canTune={ canTune }
-					vocabulary={ vocabulary }
-					onOpenEntity={ openEntity }
-					onSave={ onSave }
-				/>
-			) }
-			{ 'review' === view && (
-				<Review canTune={ canTune } onOpenEntity={ openEntity } />
-			) }
-			{ 'collections' === view && (
-				<Collections
-					canTune={ canTune }
-					opened={ collection }
-					onOpen={ setCollection }
-				/>
-			) }
-			{ saving && (
-				<SaveToCollection
-					item={ saving }
-					onClose={ () => setSaving( null ) }
-				/>
-			) }
-			<DebugOverlay storageKey="newspack-nodes:debug:intelligence" />
-		</div>
+		</DashboardShell>
 	);
 }

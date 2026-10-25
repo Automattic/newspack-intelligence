@@ -1,3 +1,4 @@
+import { Card, CardBody, CardHeader } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import Refusal from './Refusal';
 
@@ -43,8 +44,10 @@ export function AnswerBody( { read, rows, empty, children } ) {
 }
 
 /**
- * One read as a card: a section, named and headed by `title` when given,
- * around the read's state, `AnswerBody` taking every other prop.
+ * One read as a card: a section, named by `title` and headed by it in the
+ * card's header band when given, around the read's state inset in the card's
+ * body, `AnswerBody` taking every other prop. The stock card is the one the
+ * shared `newspack-nodes-ui` sheet paints, as on every Event Logger dashboard.
  *
  * @param {Object}                                              props
  * @param {string}                                              [props.title]  Names and heads the section.
@@ -58,9 +61,15 @@ export function AnswerBody( { read, rows, empty, children } ) {
 export default function Answer( { title, level = 2, ...body } ) {
 	const Heading = /** @type {'h2' | 'h3' | 'h4'} */ ( `h${ level }` );
 	return (
-		<section className="newspack-nodes-card" aria-label={ title }>
-			{ title && <Heading>{ title }</Heading> }
-			<AnswerBody { ...body } />
-		</section>
+		<Card as="section" aria-label={ title }>
+			{ title && (
+				<CardHeader>
+					<Heading>{ title }</Heading>
+				</CardHeader>
+			) }
+			<CardBody>
+				<AnswerBody { ...body } />
+			</CardBody>
+		</Card>
 	);
 }
