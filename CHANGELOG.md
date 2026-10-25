@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-25
+
 ### Added
 - **`Intel_Event`, the entity graph's event vocabulary.** One table names every event kind, its stream (`items` or `ontology`), its fields and the closed sets they are drawn from; `make()` fills the envelope and refuses an ontology event that does not pack into one 4,096-byte partition line, `validate()` refuses an unknown kind, a missing field, a value outside its closed set, an actor that is not `user:`, `agent:` or `machine:`, or a person or agent writing the items stream, and `from_message()` reads the event a TM_STRUCT message carries.
 - **Two event streams and the writer that fills them.** `intel:items` keeps two years of items (16 MiB segments, both retention rules at 63,072,000 seconds, a hard cap of 8,192 segments) and takes item bodies past PIPE_BUF from its one writer, the worker; `intel:ontology` keeps every segment. `Intel_Event_Writer` takes the two partitions as `make_node` arguments and addresses each event to the one its kind's stream names, dropping a message that names no kind with a rate-limited line.
