@@ -119,7 +119,7 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( 'Harbor Gazette wins state award', $event['title'] );
 		$this->assertSame( 'The Gazette took first place.', $event['body'] );
 		$this->assertSame( 1792591200, $event['item_ts'] );
-		$this->assertSame( self::RETRIEVED, $event['retrieved_ts'] );
+		$this->assertSame( 1793011234, $event['retrieved_ts'], 'whole seconds, as item_ts and every reader take it' );
 		$this->assertSame( [ 'verb' => 'TICK', 'data' => [ 'emitted' => 1, 'refused' => 0 ] ], $sink->captured[1][ Message::VALUE ] );
 	}
 
