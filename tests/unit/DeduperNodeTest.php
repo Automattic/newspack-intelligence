@@ -430,15 +430,18 @@ final class DeduperNodeTest extends TestCase {
 		for ( $i = 0; $i < 1666; $i++ ) {
 			$this->extracted( "github:Automattic/newspack-plugin#{$i}", "https://www.harborgazette.example/2026/10/county-commission-approves-new-budget-{$i}/", "County commission approves the new budget after a long night number {$i}", 7, 5, self::TS + $i );
 		}
-		$state   = $this->deduper->save_state();
-		$count   = 0;
+		$state = $this->deduper->save_state();
+		$count = 0;
+		$odd   = [];
 		foreach ( $state['seen']['buckets'] as $bucket ) {
 			foreach ( $bucket as $key => $entry ) {
 				++$count;
-				$this->assertMatchesRegularExpression( '/^([0-9a-f]{16}|cluster:github:Automattic\/newspack-plugin#\d+)$/', (string) $key );
-				$this->assertTrue( \array_is_list( $entry ) );
+				if ( 1 !== \preg_match( '/^([0-9a-f]{16}|cluster:github:Automattic\/newspack-plugin#\d+)$/', (string) $key ) || ! \array_is_list( $entry ) ) {
+					$odd[] = $key;
+				}
 			}
 		}
+		$this->assertSame( [], $odd, 'every entry is keyed by a hash or a cluster and positional' );
 		$this->assertSame( 4998, $count );
 		$json = (string) \json_encode( $state, \JSON_UNESCAPED_SLASHES );
 		$this->assertStringNotContainsString( 'harborgazette', $json );
