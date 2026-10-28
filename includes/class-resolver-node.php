@@ -12,9 +12,13 @@
  * Intel_Event_Writer's two partitions are.
  *
  * A re-resolution runs the resolver's identifier, name and stem steps alone,
- * because NER ran when the item was first resolved, and forwards nothing for
- * an item the projection holds an extraction of, so an item is extracted at
- * most once. It reads the process's shared `Entity_Index::current()`, again
+ * because NER ran when the item was first resolved. It forwards an item the
+ * projection holds an extraction of only when a curator's confirmation sent
+ * it (`judged`), or when it asserts a link to an entity whose link to the
+ * item is not settled, by an asserted link or a judgment, compared by
+ * survivor: an entity accepted after the extraction dropped its claims. What
+ * it forwards carries the judgments, a confirmed link asserted and a
+ * rejected one left out, and whether a call extracted the item before. It reads the process's shared `Entity_Index::current()`, again
  * once a re-resolution's signal settled after the shared index was read.
  * While no active topology declares the `intel-graph` table, items resolve
  * against an empty index. The `LLM_Config` verbs configure the NER client,
@@ -35,6 +39,9 @@ use Newspack_Nodes\Table_Unavailable;
 
 \defined( 'ABSPATH' ) || exit;
 
+/**
+ * @phpstan-type Judgment array{known: array<string,true>, verdicts: array<string,string>, stored: array<string,array{role:string,method:string,confidence:float}>}
+ */
 class Resolver_Node extends Node {
 	use Schema_Reflection;
 	use LLM_Config;
@@ -77,7 +84,8 @@ class Resolver_Node extends Node {
 		if ( 'item_recorded' === $kind ) {
 			$item = Intel_Event::item_of( Intel_Event::from_message( $message ) ) ?? throw new \InvalidArgumentException( 'item_recorded: missing an item field' );
 			$client = $this->make_llm_client();
-			$this->resolved( $item, $this->resolver( 0.0 )->resolve( $item, null !== $client ? new LLM_Entity_Extractor( $client ) : null ), true );
+			$resolution = $this->resolver( 0.0 )->resolve( $item, null !== $client ? new LLM_Entity_Extractor( $client ) : null );
+			$this->resolved( $item, $resolution, [ 'extracted' => false ] + $resolution );
 			return;
 		}
 		if ( self::RERESOLVE !== $kind ) {
@@ -85,17 +93,64 @@ class Resolver_Node extends Node {
 		}
 		$item_key    = $value['item_key'] ?? null;
 		$fresh_after = $value['fresh_after'] ?? null;
-		if ( ! \is_string( $item_key ) || ! ( \is_int( $fresh_after ) || \is_float( $fresh_after ) ) ) {
+		$judged      = $value['judged'] ?? null;
+		if ( ! \is_string( $item_key ) || ! ( \is_int( $fresh_after ) || \is_float( $fresh_after ) ) || ! \is_bool( $judged ) ) {
 			$this->print_less_often( 'dropping a re-resolution it cannot read from ', Core::as_string( $message[ Message::FROM ] ) );
 			return;
 		}
-		$stored = self::stored( $item_key );
+		$resolver = $this->resolver( (float) $fresh_after );
+		$stored   = self::stored( $item_key, $resolver->index->merged() );
 		if ( null === $stored ) {
 			$this->print_less_often( 'no stored item to re-resolve: ', $item_key );
 			return;
 		}
-		[ $item, $extracted ] = $stored;
-		$this->resolved( $item, $this->resolver( (float) $fresh_after )->resolve( $item, null ), ! $extracted );
+		[ $item, $extracted, $judgment ] = $stored;
+		$resolution                      = $resolver->resolve( $item, null );
+		$forward                         = $judged || ! $extracted || self::asserts_anew( $resolution['links'], $judgment['known'] );
+		$this->resolved( $item, $resolution, $forward ? [ 'extracted' => $extracted ] + self::judged( $resolution, $judgment ) : null );
+	}
+
+	/**
+	 * What the extractor is sent: the resolution with the curators'
+	 * judgments in force — a confirmed link asserted, from its stored row
+	 * where the resolution did not find it again, and a rejected one left
+	 * out — so its claims follow what a curator decided.
+	 *
+	 * @param array{links: list<array{entity_key:string,role:string,method:string,confidence:float,state:string}>, proposals: list<array{type:string,name:string}>} $resolution What resolve() answered.
+	 * @param Judgment                                                                                                                                              $judgment   What settled() read.
+	 * @return array{links: list<array{entity_key:string,role:string,method:string,confidence:float,state:string}>, proposals: list<array{type:string,name:string}>}
+	 */
+	private static function judged( array $resolution, array $judgment ): array {
+		$links = [];
+		foreach ( $resolution['links'] as $link ) {
+			$verdict = $judgment['verdicts'][ $link['entity_key'] ] ?? null;
+			if ( 'rejected' !== $verdict ) {
+				$links[ $link['entity_key'] ] = 'confirmed' === $verdict ? [ 'state' => 'asserted' ] + $link : $link;
+			}
+		}
+		foreach ( $judgment['verdicts'] as $entity => $verdict ) {
+			if ( 'confirmed' === $verdict && ! isset( $links[ $entity ] ) && isset( $judgment['stored'][ $entity ] ) ) {
+				$links[ $entity ] = [ 'entity_key' => $entity ] + $judgment['stored'][ $entity ] + [ 'state' => 'asserted' ];
+			}
+		}
+		return [ 'links' => \array_values( $links ) ] + $resolution;
+	}
+
+	/**
+	 * Whether a resolution asserts a link to an entity whose link to the item
+	 * is not yet settled, as an entity accepted since the item was extracted
+	 * makes it: the extraction then ran without that subject's claims.
+	 *
+	 * @param list<array{entity_key:string,state:string}> $links The resolution's links, keyed by survivor.
+	 * @param array<string,true>                          $known The survivors whose links are settled.
+	 */
+	private static function asserts_anew( array $links, array $known ): bool {
+		foreach ( $links as $link ) {
+			if ( 'asserted' === $link['state'] && ! isset( $known[ $link['entity_key'] ] ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -113,16 +168,19 @@ class Resolver_Node extends Node {
 
 	/**
 	 * A stored item's `item_recorded` fields, as the projection holds them,
-	 * and whether it holds an extraction of the item a call made, a heuristic
-	 * stand-in not counting; null when no partition's file holds the item.
+	 * whether it holds an extraction of the item a call made, a heuristic
+	 * stand-in not counting, and what `settled()` reads of its links and
+	 * judgments, each entity as its survivor in the resolver's own index;
+	 * null when no partition's file holds the item.
 	 *
-	 * @param string $item_key The item.
-	 * @return array{0:array<string,mixed>,1:bool}|null
+	 * @param string               $item_key The item.
+	 * @param array<string,string> $merged   Each merged key's survivor, as the index read it.
+	 * @return array{0:array<string,mixed>,1:bool,2:Judgment}|null
 	 * @throws Table_Unavailable When the projection will not open.
 	 */
-	private static function stored( string $item_key ): ?array {
+	private static function stored( string $item_key, array $merged ): ?array {
 		return Intel_Graph_Row_Schema::read(
-			static function ( Row_Reader $r ) use ( $item_key ): ?array {
+			static function ( Row_Reader $r ) use ( $item_key, $merged ): ?array {
 				foreach ( $r->aliases() as $a ) {
 					$sql = "SELECT i.item_key, i.source, i.tier, i.url, i.title, i.body, i.item_ts, i.retrieved_ts, EXISTS ( SELECT 1 FROM {$a}.extractions e WHERE e.item_key = i.item_key AND INSTR( e.actor, ? ) <> 1 ) FROM {$a}.items i WHERE i.item_key = ?";
 					foreach ( $r->rows( $sql, [ Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE ), $item_key ] ) as [ $key, $source, $tier, $url, $title, $body, $item_ts, $retrieved_ts, $extracted ] ) {
@@ -136,7 +194,7 @@ class Resolver_Node extends Node {
 							'item_ts'      => Core::as_int( $item_ts ),
 							'retrieved_ts' => Core::as_int( $retrieved_ts ),
 						];
-						return [ $item, 0 !== Core::as_int( $extracted ) ];
+						return [ $item, 0 !== Core::as_int( $extracted ), self::settled( $r, $item_key, $merged ) ];
 					}
 				}
 				return null;
@@ -145,14 +203,57 @@ class Resolver_Node extends Node {
 	}
 
 	/**
-	 * Write each link and candidate to the writer, then forward the
-	 * resolution to the target when asked to.
+	 * What the item's links and judgments say, each entity by its survivor,
+	 * a key whose merge chain is broken counting nowhere, as Graph_Query
+	 * reads them: `stored`, each linked survivor's one link, picked subject
+	 * over mention, then by confidence and key; `known`, the survivors whose
+	 * picked link is asserted, or which are judged; and `verdicts`, the state
+	 * of each judged survivor's highest-ranked judgment, the latest among
+	 * equals.
+	 *
+	 * @param Row_Reader           $r        The reader.
+	 * @param string               $item_key The item.
+	 * @param array<string,string> $merged   Each merged key's survivor; '' where its chain is broken.
+	 * @return Judgment
+	 */
+	private static function settled( Row_Reader $r, string $item_key, array $merged ): array {
+		$survivor = static fn ( mixed $key ): string => $merged[ Core::as_string( $key ) ] ?? Core::as_string( $key );
+		$known    = [];
+		$stored   = [];
+		foreach ( $r->rows( 'SELECT entity_key, role, method, confidence, state FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . " l WHERE item_key = ? AND role <> 'topic' ORDER BY role = 'subject' DESC, confidence DESC, entity_key", [ $item_key ] ) as [ $key, $role, $method, $confidence, $state ] ) {
+			$entity = $survivor( $key );
+			if ( '' === $entity || isset( $stored[ $entity ] ) ) {
+				continue;
+			}
+			$stored[ $entity ] = [ 'role' => Core::as_string( $role ), 'method' => Core::as_string( $method ), 'confidence' => Core::as_float( $confidence ) ];
+			if ( 'asserted' === $state ) {
+				$known[ $entity ] = true;
+			}
+		}
+		$verdicts = [];
+		foreach ( $r->rows( 'SELECT entity_key, state FROM ' . Intel_Graph_Row_Schema::all( $r, 'judgments' ) . ' j WHERE item_key = ? ORDER BY ' . Graph_Query::judge_rank( 'actor_kind' ) . ' DESC, ts DESC', [ $item_key ] ) as [ $key, $state ] ) {
+			$entity = $survivor( $key );
+			if ( '' !== $entity ) {
+				$verdicts[ $entity ] ??= Core::as_string( $state );
+				$known[ $entity ]      = true;
+			}
+		}
+		return [
+			'known'    => $known,
+			'verdicts' => $verdicts,
+			'stored'   => $stored,
+		];
+	}
+
+	/**
+	 * Write each link and candidate to the writer, then forward what the
+	 * extractor is sent, when there is anything.
 	 *
 	 * @param array<string,mixed>                                                                                                        $item       The item.
 	 * @param array{links: list<array{entity_key:string,role:string,method:string,confidence:float,state:string}>, proposals: list<array{type:string,name:string}>} $resolution What resolve() answered.
-	 * @param bool                                                                                                                       $forward    Whether the extractor is sent it.
+	 * @param array<string,mixed>|null                                                                                                   $forwarded  What the extractor is sent, or null for nothing.
 	 */
-	private function resolved( array $item, array $resolution, bool $forward ): void {
+	private function resolved( array $item, array $resolution, ?array $forwarded ): void {
 		$item_key = Core::as_string( $item['item_key'] );
 		foreach ( $resolution['links'] as $link ) {
 			$kind = 'asserted' === $link['state'] ? 'link_asserted' : 'link_proposed';
@@ -167,8 +268,8 @@ class Resolver_Node extends Node {
 			];
 			$this->emit( $this->writer, Intel_Event::machine_event( 'resolve', 'entity_proposed', $fields ) );
 		}
-		if ( $forward ) {
-			$this->emit( '', [ 'item' => $item ] + $resolution );
+		if ( null !== $forwarded ) {
+			$this->emit( '', [ 'item' => $item ] + $forwarded );
 		}
 	}
 

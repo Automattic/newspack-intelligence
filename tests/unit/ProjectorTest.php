@@ -83,6 +83,30 @@ final class ProjectorTest extends TestCase {
 		$this->assertSame( [], self::graph_rows( 'events' ), 'items-stream events are not kept in events' );
 	}
 
+	/**
+	 * An extraction replaces the item's claims and topic links, so one
+	 * yielding fewer leaves none of the earlier behind; a resolver's link
+	 * stays.
+	 */
+	public function test_a_reextraction_replaces_the_items_claims_and_topics(): void {
+		$claim = static fn ( int $ord, string $object ): array => Intel_Event::make( 'claim_asserted', [ 'item_key' => self::ITEM, 'ord' => $ord, 'subject_key' => self::GAZETTE, 'predicate' => 'won', 'object_key' => '', 'object_text' => $object, 'confidence' => 0.9, 'retrieved_ts' => self::RETRIEVED ], 'machine:extract@9.4.1', '' );
+		$this->project(
+			[
+				$this->item(),
+				$this->link( 'link_asserted' ),
+				[ 'topics' => [ 'topic:awards', 'topic:local-news' ] ] + $this->extraction(),
+				$claim( 0, 'Peabody Award' ),
+				$claim( 1, 'State Press Award' ),
+				$claim( 2, 'Murrow Award' ),
+				[ 'topics' => [ 'topic:local-news' ] ] + $this->extraction(),
+				$claim( 0, 'Pulitzer Prize' ),
+			]
+		);
+
+		$this->assertSame( [ [ 0, 'Pulitzer Prize' ] ], self::graph_rows( 'claims', 'ord', 'ord, object_text' ) );
+		$this->assertSame( [ [ self::GAZETTE, 'subject' ], [ 'topic:local-news', 'topic' ] ], self::graph_rows( 'links', 'entity_key', 'entity_key, role' ) );
+	}
+
 	/** An item is written once: its first retrieval is the provenance kept. */
 	public function test_an_item_is_written_once(): void {
 		$this->project( [ $this->item(), [ 'title' => 'Harbor Gazette award, updated', 'retrieved_ts' => self::NOW + 3600 ] + $this->item() ] );

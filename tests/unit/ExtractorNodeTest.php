@@ -277,13 +277,33 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( \str_repeat( 'ü', 280 ), $this->written()[0]['summary'] );
 	}
 
-	/** A resolution missing its item, or an item missing a field, is dropped with a line, never thrown. */
+	/**
+	 * An item already extracted by a call keeps that extraction when the
+	 * re-extraction's call fails: no heuristic stand-in replaces it, and
+	 * nothing is written or forwarded.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'failures' )]
+	public function test_a_failed_reextraction_keeps_the_earlier_extraction( ?string $reply ): void {
+		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ) );
+		if ( null !== $reply ) {
+			$this->answer( $reply );
+		}
+		$stderr = $this->capture_stderr();
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], true ) );
+
+		$this->assertSame( [], $this->out->captured );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'keeping the earlier extraction of ' . self::ITEM ) );
+	}
+
+	/** A resolution missing its item or whether it was extracted, or an item missing a field, is dropped with a line, never thrown. */
 	public function test_a_malformed_resolution_is_dropped(): void {
 		$stderr = $this->capture_stderr();
 
 		$this->extractor->fill( self::message( [ 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [] ] ) );
 		$this->extractor->fill( self::message( [ 'item' => [ 'item_key' => self::ITEM ], 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [] ] ) );
-		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => 'none', 'proposals' => [] ] ) );
+		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => 'none', 'proposals' => [], 'extracted' => false ] ) );
+		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [] ] ) );
 		$this->extractor->fill( self::message( 'TICK' ) );
 
 		$this->assertSame( [], $this->out->captured );
@@ -308,7 +328,7 @@ final class ExtractorNodeTest extends TestCase {
 		$resolver->sink( new Capture_Sink_Node() );
 		$message                   = Message::new_message();
 		$message[ Message::TYPE ]  = Message::TM_STRUCT;
-		$message[ Message::VALUE ] = [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM, 'fresh_after' => self::NOW + 1 ];
+		$message[ Message::VALUE ] = [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM, 'fresh_after' => self::NOW + 1, 'judged' => false ];
 		$resolver->fill( $message );
 		Resolver_Node::$llm_factory = null;
 
@@ -457,8 +477,8 @@ final class ExtractorNodeTest extends TestCase {
 	 * @param array<string,mixed>       $over      Item fields to set.
 	 * @return array<int,mixed>
 	 */
-	private static function resolved( array $links, array $proposals, array $over = [] ): array {
-		return self::message( [ 'item' => \array_merge( self::item(), $over ), 'links' => $links, 'proposals' => $proposals ] );
+	private static function resolved( array $links, array $proposals, array $over = [], bool $extracted = false ): array {
+		return self::message( [ 'item' => \array_merge( self::item(), $over ), 'links' => $links, 'proposals' => $proposals, 'extracted' => $extracted ] );
 	}
 
 	/** @return array<string,mixed> The item every resolution carries. */

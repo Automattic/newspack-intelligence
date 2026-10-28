@@ -91,6 +91,7 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertSame(
 			[
 				'item'      => self::item( [ 'url' => 'https://www.harborgazette.org/2026/10/award', 'body' => 'Mesa Courier reprinted it.' ] ),
+				'extracted' => false,
 				'links'     => [
 					[ 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'identifier', 'confidence' => 1.0, 'state' => 'asserted' ],
 					[ 'entity_key' => self::MESA, 'role' => 'mention', 'method' => 'name', 'confidence' => 1.0, 'state' => 'asserted' ],
@@ -206,13 +207,14 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertSame( [ [], [] ], [ $this->resolved()['links'], $this->resolved()['proposals'] ] );
 	}
 
-	/** A re-resolved item already extracted writes its links and forwards nothing, so it is extracted at most once. */
+	/** A re-resolved item already extracted, asserting nothing it did not, writes its links and forwards nothing. */
 	public function test_a_reresolved_item_already_extracted_is_not_forwarded(): void {
 		$this->seed(
 			self::gazette(),
 			[
 				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
-				Intel_Event::make( 'extraction_recorded', [ 'item_key' => self::ITEM, 'summary' => 'Extracted on first resolution.', 'kind' => 'award', 'relevance' => 7, 'importance' => 3, 'sentiment' => 0.2, 'topics' => [], 'retrieved_ts' => 1792950000 ], 'machine:extract@9.4.1', '9.4.1' ),
+				self::link( 'link_asserted' ),
+				self::extracted(),
 			]
 		);
 
@@ -220,6 +222,26 @@ final class ResolverNodeTest extends TestCase {
 
 		$this->assertSame( [ [ 'link_asserted', self::GAZETTE ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'] ], $this->written() ) );
 		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $m ): bool => 'intel:resolved:null' === $m[ Message::TO ] ) );
+	}
+
+	/**
+	 * A re-resolved item already extracted is forwarded when it now asserts a
+	 * link it only proposed, so an accepted entity's claims are extracted.
+	 */
+	public function test_a_reresolved_item_asserting_a_link_it_only_proposed_is_forwarded(): void {
+		$this->seed(
+			self::gazette(),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::link( 'link_proposed' ),
+				self::extracted(),
+			]
+		);
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+
+		$this->assertSame( self::ITEM, $this->resolved()['item']['item_key'] );
+		$this->assertSame( [ self::GAZETTE ], \array_column( $this->resolved()['links'], 'entity_key' ) );
 	}
 
 	/** A re-resolved item whose only extraction is heuristic is forwarded, so a proxy outage does not degrade it for good. */
@@ -236,6 +258,96 @@ final class ResolverNodeTest extends TestCase {
 
 		$this->assertSame( self::ITEM, $this->resolved()['item']['item_key'] );
 		$this->assertSame( [ self::GAZETTE ], \array_column( $this->resolved()['links'], 'entity_key' ) );
+	}
+
+	/** A link a curator rejected is not new when the resolver now asserts it: no call is spent on a removed subject. */
+	public function test_a_reresolved_item_asserting_a_link_a_curator_rejected_is_not_forwarded(): void {
+		$this->seed(
+			self::gazette(),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::link( 'link_proposed' ),
+				self::extracted(),
+				Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.org/a' ], 'user:curator-31', '9.4.1' ),
+			]
+		);
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+
+		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $m ): bool => 'intel:resolved:null' === $m[ Message::TO ] ) );
+	}
+
+	/** A person's confirmation outranks an agent's rejection, as Graph_Query ranks them, so the extractor is sent the link asserted. */
+	public function test_a_rejection_a_person_overruled_is_sent_asserted(): void {
+		$this->seed(
+			self::gazette(),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::link( 'link_proposed' ),
+				self::extracted(),
+				Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.org/a' ], 'agent:curator-31:triage', '9.4.1' ),
+				Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.org/a' ], 'user:curator-31', '9.4.1' ),
+			]
+		);
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0, true ) );
+
+		$this->assertSame( [ [ self::GAZETTE, 'asserted' ] ], \array_map( static fn ( array $l ): array => [ $l['entity_key'], $l['state'] ], $this->resolved()['links'] ) );
+	}
+
+	/**
+	 * A link a curator confirmed is settled: the confirmation's own pass
+	 * extracted it, so its entity's acceptance later spends no second call.
+	 */
+	public function test_a_reresolved_item_asserting_a_link_a_curator_confirmed_is_not_forwarded(): void {
+		$this->seed(
+			self::gazette(),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::link( 'link_proposed' ),
+				self::extracted(),
+				Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.org/a' ], 'user:curator-31', '9.4.1' ),
+			]
+		);
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+
+		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $m ): bool => 'intel:resolved:null' === $m[ Message::TO ] ) );
+	}
+
+	/** A survivor's state is its picked link's, subject over mention, as Graph_Query picks it: an asserted mention does not settle a proposed subject. */
+	public function test_a_proposed_subject_beside_an_asserted_mention_is_not_settled(): void {
+		$this->seed(
+			self::gazette(),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				Intel_Event::make( 'link_proposed', [ 'item_key' => self::ITEM, 'entity_key' => 'organization:harbor-gazette-weekly', 'role' => 'subject', 'method' => 'ner_fuzzy', 'confidence' => 0.6, 'retrieved_ts' => 1792950000 ], 'machine:resolve@9.4.1', '9.4.1' ),
+				Intel_Event::make( 'entity_merged', [ 'entity_key' => 'organization:harbor-gazette-weekly', 'into_key' => self::GAZETTE ], 'user:curator-31', '9.4.1' ),
+				Intel_Event::make( 'link_asserted', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'role' => 'mention', 'method' => 'name', 'confidence' => 1.0, 'retrieved_ts' => 1792950000 ], 'machine:resolve@9.4.1', '9.4.1' ),
+				self::extracted(),
+			]
+		);
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+
+		$this->assertSame( self::ITEM, $this->resolved()['item']['item_key'] );
+	}
+
+	/** A stored link to an entity merged away asserts its survivor, so asserting the survivor is not new. */
+	public function test_a_reresolved_item_asserting_the_survivor_of_its_merged_link_is_not_forwarded(): void {
+		$this->seed(
+			self::gazette(),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				Intel_Event::make( 'link_asserted', [ 'item_key' => self::ITEM, 'entity_key' => 'organization:harbor-gazette-weekly', 'role' => 'subject', 'method' => 'name', 'confidence' => 1.0, 'retrieved_ts' => 1792950000 ], 'machine:resolve@9.4.1', '9.4.1' ),
+				Intel_Event::make( 'entity_merged', [ 'entity_key' => 'organization:harbor-gazette-weekly', 'into_key' => self::GAZETTE ], 'user:curator-31', '9.4.1' ),
+				self::extracted(),
+			]
+		);
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+
+		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $m ): bool => 'intel:resolved:null' === $m[ Message::TO ] ) );
 	}
 
 	/** The NER client is built from the node's configuration at each item, so a runtime set_api_url reaches the next item. */
@@ -259,16 +371,17 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertSame( [ 'https://first-proxy.test/v1/chat/completions', 'https://second-proxy.test/v1/chat/completions' ], $urls );
 	}
 
-	/** A re-resolution missing its item or its freshness, or naming one the projection no longer holds, is dropped with a line, never thrown. */
+	/** A re-resolution missing its item, its freshness or its judged flag, or naming one the projection no longer holds, is dropped with a line, never thrown. */
 	public function test_a_reresolve_without_its_item_is_dropped(): void {
 		$stderr = $this->capture_stderr();
 
 		$this->resolver->fill( self::message( [ 'event' => Resolver_Node::RERESOLVE, 'item' => self::item( [] ), 'fresh_after' => 0.0 ] ) );
-		$this->resolver->fill( self::message( [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM ] ) );
+		$this->resolver->fill( self::message( [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM, 'judged' => false ] ) );
+		$this->resolver->fill( self::message( [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM, 'fresh_after' => 0.0 ] ) );
 		$this->resolver->fill( self::reresolve( 'feed:pruned-9001', 0.0 ) );
 
 		$this->assertSame( [], $this->out->captured );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'dropping a re-resolution it cannot read from intel:items:resolve' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'dropping a re-resolution it cannot read from intel:items:resolve' ), 'one line, rate-limited' );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'no stored item to re-resolve: feed:pruned-9001' ) );
 	}
 
@@ -353,6 +466,21 @@ final class ResolverNodeTest extends TestCase {
 		};
 	}
 
+	/**
+	 * The item's link to the Gazette, as the resolver once wrote it.
+	 *
+	 * @param string $kind `link_asserted` or `link_proposed`.
+	 * @return array<string,mixed>
+	 */
+	private static function link( string $kind ): array {
+		return Intel_Event::make( $kind, [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'identifier', 'confidence' => 1.0, 'retrieved_ts' => 1792950000 ], 'machine:resolve@9.4.1', '9.4.1' );
+	}
+
+	/** @return array<string,mixed> The item's extraction, as a call once made it. */
+	private static function extracted(): array {
+		return Intel_Event::make( 'extraction_recorded', [ 'item_key' => self::ITEM, 'summary' => 'Extracted on first resolution.', 'kind' => 'award', 'relevance' => 7, 'importance' => 3, 'sentiment' => 0.2, 'topics' => [], 'retrieved_ts' => 1792950000 ], 'machine:extract@9.4.1', '9.4.1' );
+	}
+
 	/** @return list<array<string,mixed>> The events addressed to the writer. */
 	private function written(): array {
 		$events = [];
@@ -409,10 +537,11 @@ final class ResolverNodeTest extends TestCase {
 	 *
 	 * @param string $item_key    The stored item.
 	 * @param float  $fresh_after The tick its signal's index must be read after.
+	 * @param bool   $judged      Whether a curator's confirmation sent it.
 	 * @return array<int,mixed>
 	 */
-	private static function reresolve( string $item_key, float $fresh_after ): array {
-		return self::message( [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => $item_key, 'fresh_after' => $fresh_after ] );
+	private static function reresolve( string $item_key, float $fresh_after, bool $judged = false ): array {
+		return self::message( [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => $item_key, 'fresh_after' => $fresh_after, 'judged' => $judged ] );
 	}
 
 	/**
