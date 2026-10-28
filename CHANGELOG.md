@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-28
+
 ### Added
 - **`wp newspack-intelligence ontology reproject` rebuilds the graph from the event streams.** It holds the fleet with `wp nodes stop`, deletes the `intel-graph` Row_Table's files and the cursor of every Consumer the projector checkpoints with, read from each active topology's TSL, then releases the hold with `wp nodes start`, which runs even when a delete fails. A fleet that does not stop has nothing deleted under it, and its hold is released. The projector then replays both streams from their oldest segment. The streams and every other reader's cursor stay, so a rebuild signals nothing and re-resolves nothing. **Run it after upgrading to this release:** the graph schema's version rises to 2, so the substrate discards the old projection when it opens it, and the graph stays empty until it runs. Run it right after deploying. The reresolver's new reader (below) replays the ontology once on its first boot, and its sweeps may re-resolve items while the graph rebuilds; that spends no call beyond the one-time re-extraction below, because each new extraction lands after the item's old one in the stream and settles it. Then run `wp newspack-intelligence ontology reresolve --since=<day>` to reach the items no signal names.
 
