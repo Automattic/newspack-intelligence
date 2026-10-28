@@ -2,7 +2,8 @@
 /**
  * Review reads the two queues — proposed links and proposed entities — each
  * row with the items citing it, and offers a curator the judgments each row
- * takes, re-reading its queue once a judgment lands.
+ * takes, re-reading its queue once a judgment lands. A link queue row is one
+ * item, holding a judgment for each entity proposed for it.
  */
 
 import {
@@ -28,6 +29,21 @@ const LINK = {
 	url: 'https://github.example/automattic/newspack/912',
 };
 
+const SIBLING = {
+	...LINK,
+	entity_key: 'organization:valley-ledger',
+	name: 'Valley Ledger',
+	role: 'subject',
+	method: 'name',
+	confidence: 1,
+};
+
+// Words distinct from the page's own, so a description proves it read these.
+const VOCABULARY = {
+	linkRoleWords: { mention: 'Named in passing', subject: 'Headlined' },
+	methodWords: { ner_fuzzy: 'a lookalike', name: 'its exact name' },
+};
+
 const PROPOSED = {
 	entity_key: 'organization:valley-times',
 	type: 'organization',
@@ -49,13 +65,18 @@ beforeEach( () => {
 	wire = intelWire();
 	wire.replies.review = ( [ what ] ) =>
 		'links' === what
-			? { links: [ LINK ], available: true }
+			? { links: [ LINK, SIBLING ], available: true }
 			: { entities: [ PROPOSED ], available: true };
 } );
 
 function renderReview( props = {} ) {
 	return render(
-		<Review canTune={ false } onOpenEntity={ jest.fn() } { ...props } />
+		<Review
+			canTune={ false }
+			vocabulary={ VOCABULARY }
+			onOpenEntity={ jest.fn() }
+			{ ...props }
+		/>
 	);
 }
 
@@ -74,14 +95,48 @@ describe( 'Review — reads', () => {
 				name: 'Valley Times joins the network',
 			} )
 		).toHaveAttribute( 'href', 'https://valley.example/17' );
+		const links = queue( 'Proposed links' );
 		expect(
-			within( queue( 'Proposed links' ) ).getByText(
-				/mention · ner_fuzzy · 0\.61/
-			)
-		).toBeInTheDocument();
+			within( links ).getAllByRole( 'link', {
+				name: 'Paywall bug reported by Acme',
+			} )
+		).toHaveLength( 1 );
+		expect(
+			within( links ).getByRole( 'button', { name: 'Acme Gazette' } )
+		).toHaveAccessibleDescription(
+			'Named in passing, found by a lookalike (61%)'
+		);
+		expect(
+			within( links ).getByRole( 'button', { name: 'Valley Ledger' } )
+		).toHaveAccessibleDescription(
+			'Headlined, found by its exact name (100%)'
+		);
 		expect( wire.sent( 'review' ) ).toEqual(
 			expect.arrayContaining( [ [ 'links' ], [ 'entities' ] ] )
 		);
+	} );
+
+	it( 'reads a role or method outside the vocabulary as given', async () => {
+		wire.replies.review = ( [ what ] ) =>
+			'links' === what
+				? {
+						links: [ { ...LINK, role: 'cameo', method: 'hunch' } ],
+						available: true,
+				  }
+				: { entities: [], available: true };
+		renderReview();
+		expect(
+			await screen.findByRole( 'button', { name: 'Acme Gazette' } )
+		).toHaveAccessibleDescription( 'cameo, found by hunch (61%)' );
+	} );
+
+	it( "shows a proposed entity's key, which a merge names", async () => {
+		renderReview();
+		expect(
+			await within( queue( 'Proposed entities' ) ).findByText(
+				/organization:valley-times/
+			)
+		).toBeInTheDocument();
 	} );
 
 	it( 'opens a row entity', async () => {
@@ -114,9 +169,11 @@ describe( 'Review — reads', () => {
 	it( 'offers a reader no judgment', async () => {
 		renderReview();
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
-		for ( const name of [ 'Confirm', 'Reject', 'Accept', 'Merge' ] ) {
-			expect( screen.queryByRole( 'button', { name } ) ).toBeNull();
-		}
+		expect(
+			screen.queryAllByRole( 'button', {
+				name: /^(Confirm|Reject|Accept|Merge)/,
+			} )
+		).toEqual( [] );
 	} );
 } );
 
@@ -130,7 +187,9 @@ describe( 'Review — judgments', () => {
 		} );
 		const links = queue( 'Proposed links' );
 		fireEvent.click(
-			within( links ).getByRole( 'button', { name: 'Confirm' } )
+			within( links ).getByRole( 'button', {
+				name: 'Confirm Acme Gazette',
+			} )
 		);
 		await waitFor( () =>
 			expect( wire.sent( 'confirm_link' ) ).toEqual( [
@@ -147,15 +206,15 @@ describe( 'Review — judgments', () => {
 		);
 		const reject = await within( queue( 'Proposed links' ) ).findByRole(
 			'button',
-			{ name: 'Reject' }
+			{ name: 'Reject Valley Ledger' }
 		);
 		await waitFor( () => expect( reject ).toBeEnabled() );
 		fireEvent.click( reject );
 		await waitFor( () =>
 			expect( wire.sent( 'reject_link' ) ).toEqual( [
 				[
-					`--item=${ LINK.item_key }`,
-					`--entity=${ LINK.entity_key }`,
+					`--item=${ SIBLING.item_key }`,
+					`--entity=${ SIBLING.entity_key }`,
 				],
 			] )
 		);
@@ -169,10 +228,14 @@ describe( 'Review — judgments', () => {
 		} );
 		const links = queue( 'Proposed links' );
 		fireEvent.click(
-			within( links ).getByRole( 'button', { name: 'Confirm' } )
+			within( links ).getByRole( 'button', {
+				name: 'Confirm Acme Gazette',
+			} )
 		);
 		expect(
-			within( links ).getByRole( 'button', { name: 'Reject' } )
+			within( links ).getByRole( 'button', {
+				name: 'Reject Valley Ledger',
+			} )
 		).toBeDisabled();
 	} );
 
@@ -192,7 +255,9 @@ describe( 'Review — judgments', () => {
 		} );
 		const links = queue( 'Proposed links' );
 		fireEvent.click(
-			within( links ).getByRole( 'button', { name: 'Confirm' } )
+			within( links ).getByRole( 'button', {
+				name: 'Confirm Acme Gazette',
+			} )
 		);
 		await waitFor( () =>
 			expect( wire.sent( 'confirm_link' ) ).toEqual( [
@@ -200,7 +265,9 @@ describe( 'Review — judgments', () => {
 			] )
 		);
 		expect(
-			within( links ).getByRole( 'button', { name: 'Reject' } )
+			within( links ).getByRole( 'button', {
+				name: 'Reject Acme Gazette',
+			} )
 		).toBeDisabled();
 	} );
 
@@ -218,18 +285,22 @@ describe( 'Review — judgments', () => {
 			await waitFor( () => expect( button ).toBeEnabled() );
 			return button;
 		};
-		fireEvent.click( await settled( 'Accept' ) );
+		fireEvent.click( await settled( 'Accept Valley Times' ) );
 		await waitFor( () =>
 			expect( wire.sent( 'accept_entity' ) ).toEqual( [
 				[ `--key=${ PROPOSED.entity_key }` ],
 			] )
 		);
-		fireEvent.click( await settled( 'Reject' ) );
+		fireEvent.click( await settled( 'Reject Valley Times' ) );
 		await waitFor( () =>
 			expect( wire.sent( 'reject_entity' ) ).toEqual( [
 				[ `--key=${ PROPOSED.entity_key }` ],
 			] )
 		);
+		expect(
+			within( entities() ).queryByLabelText( 'Merge into' )
+		).toBeNull();
+		fireEvent.click( await settled( 'Merge Valley Times…' ) );
 		fireEvent.change( within( entities() ).getByLabelText( 'Merge into' ), {
 			target: { value: 'organization:the-valley-times' },
 		} );
@@ -249,6 +320,11 @@ describe( 'Review — judgments', () => {
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
 		const entities = queue( 'Proposed entities' );
+		fireEvent.click(
+			within( entities ).getByRole( 'button', {
+				name: 'Merge Valley Times…',
+			} )
+		);
 		fireEvent.change( within( entities ).getByLabelText( 'Merge into' ), {
 			target: { value: 'organization:the-valley-times' },
 		} );
@@ -259,7 +335,9 @@ describe( 'Review — judgments', () => {
 			expect( wire.sent( 'merge_entities' ) ).toHaveLength( 1 )
 		);
 		expect(
-			within( entities ).getByRole( 'button', { name: 'Accept' } )
+			within( entities ).getByRole( 'button', {
+				name: 'Accept Valley Times',
+			} )
 		).toBeDisabled();
 		expect(
 			within( entities ).getByRole( 'button', { name: 'Merge' } )
@@ -274,6 +352,11 @@ describe( 'Review — judgments', () => {
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
 		const entities = queue( 'Proposed entities' );
+		fireEvent.click(
+			within( entities ).getByRole( 'button', {
+				name: 'Merge Valley Times…',
+			} )
+		);
 		fireEvent.change( within( entities ).getByLabelText( 'Merge into' ), {
 			target: { value: 'person:jo' },
 		} );

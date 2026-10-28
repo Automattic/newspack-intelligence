@@ -82,12 +82,27 @@ function enqueue_intelligence_assets( string $hook ): void {
 			'style_deps'       => [ 'wp-components', 'newspack-nodes-graph' ],
 			'localize'         => [
 				'version'    => \NEWSPACK_INTELLIGENCE_VERSION,
-				'canTune'    => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::TUNE ),
+				'canTune'    => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::TUNE ) ? '1' : '',
 				'vocabulary' => [
 					'roles'           => Intel_Event::ROLES,
 					'nameKinds'       => Intel_Event::NAME_KINDS,
 					'identifierKinds' => Intel_Event::IDENTIFIER_KINDS,
 					'itemKinds'       => Intel_Event::ITEM_KINDS,
+					'linkRoleWords'   => [
+						'subject' => \__( 'The subject', 'newspack-intelligence' ),
+						'mention' => \__( 'Mentioned', 'newspack-intelligence' ),
+						'topic'   => \__( 'A topic', 'newspack-intelligence' ),
+					],
+					'methodWords'     => [
+						'identifier'  => \__( 'its identifier', 'newspack-intelligence' ),
+						'name'        => \__( 'its name', 'newspack-intelligence' ),
+						'alias'       => \__( 'an alias', 'newspack-intelligence' ),
+						'acronym'     => \__( 'its acronym', 'newspack-intelligence' ),
+						'domain_stem' => \__( 'its domain', 'newspack-intelligence' ),
+						'ner_fuzzy'   => \__( 'a similar name', 'newspack-intelligence' ),
+						'human'       => \__( 'a person', 'newspack-intelligence' ),
+						'extract'     => \__( 'extraction', 'newspack-intelligence' ),
+					],
 				],
 			],
 		]

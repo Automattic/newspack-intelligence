@@ -26,16 +26,18 @@ export default function Cite( { url, title } ) {
  * where the graph holds no name.
  *
  * @param {Object}                props
- * @param {string}                props.entityKey The entity's key.
- * @param {?string}               props.name      Its name.
- * @param {(key: string) => void} props.onOpen    Opens it.
+ * @param {string}                props.entityKey     The entity's key.
+ * @param {?string}               props.name          Its name.
+ * @param {(key: string) => void} props.onOpen        Opens it.
+ * @param {string}                [props.description] Its tooltip.
  * @return {import('react').ReactElement} The chip.
  */
-export function EntityChip( { entityKey, name, onOpen } ) {
+export function EntityChip( { entityKey, name, onOpen, description } ) {
 	return (
 		<button
 			type="button"
 			className="button button-small"
+			title={ description }
 			onClick={ () => onOpen( entityKey ) }
 		>
 			{ name || entityKey }

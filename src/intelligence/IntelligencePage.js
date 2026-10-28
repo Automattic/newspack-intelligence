@@ -106,6 +106,7 @@ export default function IntelligencePage( { canTune, vocabulary } ) {
 					{ 'review' === view && (
 						<Review
 							canTune={ canTune }
+							vocabulary={ vocabulary }
 							onOpenEntity={ openEntity }
 						/>
 					) }
