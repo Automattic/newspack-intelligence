@@ -7,12 +7,12 @@
  * identifier the projection holds for the entity). A new locality queues its
  * entity, because a locality settles an ambiguous name and links nothing
  * alone; a topic queues nothing, because a topic is matched by extraction. A
- * `link_confirmed` queues its one item, sent `judged` with no search, so the
- * resolver extracts it again with the curator's confirmation in force. A
- * repeated signal is queued once.
+ * `link_confirmed` queues its one item with no search, so the resolver
+ * extracts it again with the curator's confirmation in force. A repeated
+ * signal is queued once.
  *
  * It ticks with the Router and appends `item_reresolve` records, each naming
- * a stored item and whether a confirmation sent it, to the stream its `make_node` line names (substrate
+ * a stored item, to the stream its `make_node` line names (substrate
  * ADR-19), whose own Consumer feeds the resolver one record a poll: so no
  * fill() makes more than one item's blocking LLM calls, and an item whose
  * resolution throws dead-letters alone (ADR-12). Each tick takes the oldest
@@ -71,7 +71,7 @@ class Reresolver_Node extends Timer_Node {
 	private const SIGNALS = [ 'entity_created', 'entity_accepted', 'name_added', 'identifier_added', 'link_confirmed' ];
 
 	/** The kinds of queued work. */
-	private const KINDS = [ 'name', 'acronym', 'identifier', 'entity', 'range', 'judged' ];
+	private const KINDS = [ 'name', 'acronym', 'identifier', 'entity', 'range', 'item' ];
 
 	/** Each identifier kind's URL spellings: a template, its value at `%s`, and its anchor. */
 	private const IDENTIFIER_URLS = [
@@ -195,7 +195,7 @@ class Reresolver_Node extends Timer_Node {
 				default    => [ 'name', Core::as_string( $event['value'] ) ],
 			},
 			'identifier_added' => [ 'identifier', $kind . ':' . Entity_Index::identifier_value( $kind, Core::as_string( $event['value'] ) ) ],
-			'link_confirmed'   => [ 'judged', Core::as_string( $event['item_key'] ) ],
+			'link_confirmed'   => [ 'item', Core::as_string( $event['item_key'] ) ],
 			default            => [ 'entity', $key ],
 		};
 		if ( ( \in_array( $queued, [ 'name', 'acronym' ], true ) && [] === self::name_phrases( $value ) ) || ( 'identifier' === $queued && [] === self::url_patterns( $value ) ) ) {
@@ -214,9 +214,9 @@ class Reresolver_Node extends Timer_Node {
 	 */
 	private function sweep( string $key, array $work ): void {
 		[ $kind, $value ] = \explode( '|', $key, 2 );
-		if ( 'judged' === $kind ) {
+		if ( 'item' === $kind ) {
 			unset( $this->queue[ $key ] );
-			$this->send( [ $value ], $work['at'] + self::SWEEP_INTERVAL_S, true );
+			$this->send( [ $value ], $work['at'] + self::SWEEP_INTERVAL_S );
 			return;
 		}
 		$found            = $this->read(
@@ -236,7 +236,7 @@ class Reresolver_Node extends Timer_Node {
 		}
 		unset( $this->queue[ $key ] );
 		[ $item_keys, $total ] = $found;
-		$this->send( $item_keys, $work['at'] + self::SWEEP_INTERVAL_S, false );
+		$this->send( $item_keys, $work['at'] + self::SWEEP_INTERVAL_S );
 		if ( $total > \count( $item_keys ) ) {
 			$this->print_less_often( 're-resolving only the newest ' . self::MAX_ITEMS_PER_SIGNAL . ' items a signal names: ', \sprintf( '%s names %d items; skipping the oldest %d', $value, $total, $total - \count( $item_keys ) ) );
 		}
@@ -376,7 +376,7 @@ class Reresolver_Node extends Timer_Node {
 			return;
 		}
 		[ $keys, $after ] = $found;
-		$this->send( $keys, 0.0, false );
+		$this->send( $keys, 0.0 );
 		if ( null === $after ) {
 			unset( $this->queue[ $key ] );
 			return;
@@ -449,11 +449,10 @@ class Reresolver_Node extends Timer_Node {
 	 *
 	 * @param list<string> $item_keys   The items.
 	 * @param float        $fresh_after The tick by which the projection holds the signal.
-	 * @param bool         $judged      Whether a curator's confirmation sent them, so each is extracted again.
 	 */
-	private function send( array $item_keys, float $fresh_after, bool $judged ): void {
+	private function send( array $item_keys, float $fresh_after ): void {
 		foreach ( $item_keys as $item_key ) {
-			$this->emit( $this->stream, [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => $item_key, 'fresh_after' => $fresh_after, 'judged' => $judged ] );
+			$this->emit( $this->stream, [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => $item_key, 'fresh_after' => $fresh_after ] );
 		}
 	}
 

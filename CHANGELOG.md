@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`wp newspack-intelligence ontology reproject` rebuilds the graph from the event streams.** It holds the fleet with `wp nodes stop`, deletes the `intel-graph` Row_Table's files and the cursor of every Consumer the projector checkpoints with, read from each active topology's TSL, then releases the hold with `wp nodes start`, which runs even when a delete fails. A fleet that does not stop has nothing deleted under it, and its hold is released. The projector then replays both streams from their oldest segment. The streams and every other reader's cursor stay. **Run it after upgrading to this release:** the graph schema's version rises to 2, so the substrate discards the old projection when it opens it, and the graph stays empty until it runs.
+
+### Changed
+- **A link is settled when the item was extracted after it, not merely once it is asserted.** An extraction's row now records when it was made (`extractions.ts`). A re-resolution forwards an item a call has extracted when, with the curators' verdicts in force, it asserts a link that was asserted or confirmed after that extraction; a link a curator rejected stays settled. An item whose links were asserted while an older release ran, which never extracted it again, now is. A curator's ✓ needs no flag of its own any more: the confirmation is newer than the extraction, so `item_reresolve` records no longer carry `judged`, and the reresolver queues a confirmed link's item like any other. A re-resolution writes only the links whose state, method or confidence changed, so a link's time is when it last changed and settling does not re-extract every item it re-resolves.
+
 ### Fixed
 - **One click on Review's ✓ or ✕ takes.** A judgment is appended to the ontology log at once, but the projector writes it into the queue the page re-reads only on its next five-second flush, so the re-read after a click still listed the proposal and its ✓ looked dead; each further click recorded the same judgment again. A judgment now takes its link or entity out of the queue the moment it is sent, and the row stays out until a read no longer lists it. A refused judgment puts its row back beside the refusal, matched by the arguments the refusal echoes, and a refusal naming no send, such as a Router's NOT_AVAILABLE, puts back every judged row of that queue. A queue no longer locks its other rows while one judgment waits, so the next proposal can be judged at once.
+- **A failed re-extraction is tried again.** An extractor whose call fails keeps the item's earlier extraction, which stays older than the link that sent it, so the item's next re-resolution forwards it again; before, the link already counted as settled and the item was never retried.
+- **A heuristic stand-in never replaces a call's extraction.** The extractor records the stand-in when no call answers and the projection shows no call's extraction yet, which a lagging projection could show wrongly; the stand-in then deleted the call's claims and topics. The projector now writes a stand-in only into an item no extraction holds, with an `ignore`, so the stream's order decides and a call's extraction, claims and topics stand.
 
 ## [0.19.0] - 2026-10-27
 

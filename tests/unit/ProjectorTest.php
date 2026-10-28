@@ -77,7 +77,7 @@ final class ProjectorTest extends TestCase {
 			],
 			self::graph_rows( 'links', 'entity_key' )
 		);
-		$this->assertSame( [ [ 1, self::ITEM, 'Harbor Gazette won the state award.', 'award', 8.0, 6.0, 0.5, 'machine:extract@9.4.1', $day ] ], self::graph_rows( 'extractions' ) );
+		$this->assertSame( [ [ 1, self::ITEM, 'Harbor Gazette won the state award.', 'award', 8.0, 6.0, 0.5, 'machine:extract@9.4.1', self::NOW, $day ] ], self::graph_rows( 'extractions' ) );
 		$this->assertSame( [], self::graph_rows( 'entities' ), 'a link writes no entity row; readers join to one' );
 		$this->assertSame( [], self::graph_rows( 'entity_states' ) );
 		$this->assertSame( [], self::graph_rows( 'events' ), 'items-stream events are not kept in events' );
@@ -105,6 +105,47 @@ final class ProjectorTest extends TestCase {
 
 		$this->assertSame( [ [ 0, 'Pulitzer Prize' ] ], self::graph_rows( 'claims', 'ord', 'ord, object_text' ) );
 		$this->assertSame( [ [ self::GAZETTE, 'subject' ], [ 'topic:local-news', 'topic' ] ], self::graph_rows( 'links', 'entity_key', 'entity_key, role' ) );
+	}
+
+	/** An extraction's row records when it was made, the time the resolver compares a link's against. */
+	public function test_an_extraction_records_its_time(): void {
+		Core::$now = self::NOW + 41.5;
+		$this->project( [ $this->item(), $this->extraction() ] );
+
+		$this->assertSame( [ [ self::NOW + 41.5 ] ], self::graph_rows( 'extractions', '1', 'ts' ) );
+	}
+
+	/**
+	 * A heuristic stand-in recorded after a call's extraction leaves the
+	 * call's row, claims and topics as they were, whatever the projection
+	 * held when the extractor chose the stand-in.
+	 */
+	public function test_a_heuristic_extraction_never_replaces_a_calls(): void {
+		$this->project(
+			[
+				$this->item(),
+				$this->extraction(),
+				Intel_Event::make( 'claim_asserted', [ 'item_key' => self::ITEM, 'ord' => 0, 'subject_key' => self::GAZETTE, 'predicate' => 'won', 'object_key' => '', 'object_text' => 'Peabody Award', 'confidence' => 0.9, 'retrieved_ts' => self::RETRIEVED ], 'machine:extract@9.4.1', '' ),
+			]
+		);
+		Core::$now = self::NOW + 60;
+		$this->project( [ $this->stand_in() ] );
+
+		$this->assertSame( [ [ 'Harbor Gazette won the state award.', 'machine:extract@9.4.1', self::NOW ] ], self::graph_rows( 'extractions', '1', 'summary, actor, ts' ) );
+		$this->assertSame( [ [ 0, 'Peabody Award' ] ], self::graph_rows( 'claims', 'ord', 'ord, object_text' ) );
+		$this->assertSame( [ [ 'topic:awards', 'topic' ] ], self::graph_rows( 'links', 'entity_key', 'entity_key, role' ) );
+	}
+
+	/** An item no call has extracted records the heuristic stand-in, which a later call replaces. */
+	public function test_a_heuristic_extraction_stands_until_a_call_replaces_it(): void {
+		$this->project( [ $this->item(), $this->stand_in() ] );
+
+		$this->assertSame( [ [ 'The Harbor Gazette Wins a State Award!', 'machine:extract-heuristic@9.4.1' ] ], self::graph_rows( 'extractions', '1', 'summary, actor' ) );
+
+		Core::$now = self::NOW + 90;
+		$this->project( [ $this->extraction() ] );
+
+		$this->assertSame( [ [ 'Harbor Gazette won the state award.', 'machine:extract@9.4.1', self::NOW + 90 ] ], self::graph_rows( 'extractions', '1', 'summary, actor, ts' ) );
 	}
 
 	/** An item is written once: its first retrieval is the provenance kept. */
@@ -485,6 +526,25 @@ final class ProjectorTest extends TestCase {
 				'retrieved_ts' => self::RETRIEVED,
 			],
 			'machine:extract@9.4.1',
+			''
+		);
+	}
+
+	/** @return array<string,mixed> The heuristic stand-in the extractor records when no call answers. */
+	private function stand_in(): array {
+		return Intel_Event::make(
+			'extraction_recorded',
+			[
+				'item_key'     => self::ITEM,
+				'summary'      => 'The Harbor Gazette Wins a State Award!',
+				'kind'         => 'other',
+				'relevance'    => 0,
+				'importance'   => 0,
+				'sentiment'    => 0.0,
+				'topics'       => [],
+				'retrieved_ts' => self::RETRIEVED,
+			],
+			'machine:extract-heuristic@9.4.1',
 			''
 		);
 	}

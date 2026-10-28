@@ -52,6 +52,9 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	/** The column spec naming the element a fan-out op is written for. */
 	private const EACH = '@each';
 
+	/** The specs a heuristic stand-in's `extraction_recorded` is projected by. */
+	private const STAND_IN = 'extraction_recorded/stand-in';
+
 	/**
 	 * Each kind's op specs, built once: `[ verb, table, columns, fan-out field? ]`.
 	 *
@@ -119,7 +122,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 		}
 		++$this->counter;
 		$event = Intel_Event::from_message( $message );
-		foreach ( self::projections()[ Core::as_string( $event['event'] ) ] as $spec ) {
+		foreach ( self::projections()[ self::projected_as( $event ) ] as $spec ) {
 			foreach ( self::ops( $event, $spec ) as $op ) {
 				$this->rows[] = $op;
 				foreach ( $op[2] as $value ) {
@@ -142,6 +145,17 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
+	 * The projection an event is written by: its kind's, or `STAND_IN` for an
+	 * extraction the heuristic stage recorded.
+	 *
+	 * @param array<array-key,mixed> $event A validated event.
+	 */
+	private static function projected_as( array $event ): string {
+		$kind = Core::as_string( $event['event'] );
+		return 'extraction_recorded' === $kind && \str_starts_with( Core::as_string( $event['actor'] ), Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE ) ) ? self::STAND_IN : $kind;
+	}
+
+	/**
 	 * Each kind's op specs. A column spec is an event field's name, a
 	 * one-element list holding a literal, EACH for the element a fan-out op
 	 * is written for, or a closure computing the value from the event; a
@@ -149,7 +163,9 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * deletes the item's claims and topic links before it writes its own, so
 	 * one yielding fewer leaves none of the earlier behind; both tables are
 	 * written by the items stream alone, so a replay deletes and writes in
-	 * the same order. Every ontology kind also writes its `events` row.
+	 * the same order. A heuristic stand-in only fills an item no extraction
+	 * holds yet (`STAND_IN`), so it never replaces a call's extraction, its
+	 * claims or its topics. Every ontology kind also writes its `events` row.
 	 *
 	 * @return array<string,list<array{0:string,1:string,2:array<mixed>,3?:string}>>
 	 */
@@ -164,13 +180,14 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			[ $verb, 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ],
 		];
 		$state_set = static fn ( string $state ): array => [ [ 'set', 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ] ];
+		$extraction = [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'actor', 'ts', $day( 'retrieved_ts' ) ];
 		$judgment = static fn ( string $state ): array => [ [ 'set', 'judgments', [ 'item_key', 'entity_key', static fn ( array $e ): string => \explode( ':', Core::as_string( $e['actor'] ), 2 )[0], [ $state ], 'actor', 'item_url', 'ts' ] ] ];
 		$table    = [
 			'item_recorded'       => [ [ 'ignore', 'items', [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ) ] ] ],
 			'extraction_recorded' => [
 				[ 'delete', 'claims', [ 'item_key' => 'item_key' ] ],
 				[ 'delete', 'links', [ 'item_key' => 'item_key', 'role' => [ 'topic' ] ] ],
-				[ 'set', 'extractions', [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'actor', $day( 'retrieved_ts' ) ] ],
+				[ 'set', 'extractions', $extraction ],
 				[ 'set', 'links', [ 'item_key', self::EACH, [ 'topic' ], [ 'extract' ], [ 1.0 ], [ 'asserted' ], 'actor', 'ts', $day( 'retrieved_ts' ) ], 'topics' ],
 			],
 			'link_asserted'       => $link( 'asserted' ),
@@ -211,6 +228,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 				$table[ $kind ][] = $event_row;
 			}
 		}
+		$table[ self::STAND_IN ] = [ [ 'ignore', 'extractions', $extraction ] ];
 		return self::$projections = $table;
 	}
 
