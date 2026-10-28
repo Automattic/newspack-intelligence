@@ -153,7 +153,6 @@ final class OntologyCliCommandTest extends TestCase {
 		}
 		$this->seed( self::entity( 'organization:tidewater-ledger', 'Tidewater Ledger' ) );
 		\file_put_contents( "{$graph}-wal", '' );
-		$standing        = \count( \array_filter( [ $graph, "{$graph}-wal", "{$graph}-shm" ], 'file_exists' ) );
 		$seen            = [];
 		\WP_CLI::$on_run = static function ( string $command ) use ( &$seen, $graph, $cursors ): void {
 			$seen[] = [ $command, \file_exists( $graph ), \is_dir( $cursors[0] ) ];
@@ -165,7 +164,7 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame( [ [ 'launch' => false, 'exit_error' => false, 'return' => 'all' ], [ 'launch' => false, 'exit_error' => true ] ], \array_column( \WP_CLI::$ran, 1 ) );
 		$this->assertSame( [ false, false, false, false ], [ \file_exists( $graph ), \file_exists( "{$graph}-wal" ), \file_exists( "{$graph}-shm" ), \is_dir( $cursors[1] ) ] );
 		$this->assertSame( [ true, true ], \array_map( 'is_dir', $kept ) );
-		$this->assertSame( [ "Deleted the intel-graph projection ({$standing} files) and 2 projector cursors; the projector replays both streams." ], \WP_CLI::$successes );
+		$this->assertSame( [ 'Deleted the intel-graph projection and 2 projector cursors; the projector replays both streams.' ], \WP_CLI::$successes );
 	}
 
 	/** A fleet that will not stop deletes nothing, and the hold is released before the refusal. */
