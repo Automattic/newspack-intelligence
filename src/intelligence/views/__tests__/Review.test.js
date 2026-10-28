@@ -10,10 +10,18 @@ import {
 	render,
 	screen,
 	fireEvent,
+	act,
 	waitFor,
 	within,
 } from '@testing-library/react';
-import { Core } from '@newspack-nodes/runtime';
+import {
+	Core,
+	newMessage,
+	TYPE,
+	TO,
+	VALUE,
+	TM_ERROR,
+} from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import Review from '../Review';
 
@@ -178,6 +186,9 @@ describe( 'Review — reads', () => {
 } );
 
 describe( 'Review — judgments', () => {
+	const linksRead = () =>
+		wire.sent( 'review' ).filter( ( [ w ] ) => 'links' === w );
+
 	it( 'confirms and rejects a link by its item and entity, then re-reads', async () => {
 		wire.replies.confirm_link = { ok: true, event_id: 'ev-c' };
 		wire.replies.reject_link = { ok: true, event_id: 'ev-r' };
@@ -185,9 +196,8 @@ describe( 'Review — judgments', () => {
 		await screen.findByRole( 'link', {
 			name: 'Paywall bug reported by Acme',
 		} );
-		const links = queue( 'Proposed links' );
 		fireEvent.click(
-			within( links ).getByRole( 'button', {
+			within( queue( 'Proposed links' ) ).getByRole( 'button', {
 				name: 'Confirm Acme Gazette',
 			} )
 		);
@@ -199,17 +209,12 @@ describe( 'Review — judgments', () => {
 				],
 			] )
 		);
-		await waitFor( () =>
-			expect(
-				wire.sent( 'review' ).filter( ( [ w ] ) => 'links' === w )
-			).toHaveLength( 2 )
+		await waitFor( () => expect( linksRead() ).toHaveLength( 2 ) );
+		fireEvent.click(
+			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+				name: 'Reject Valley Ledger',
+			} )
 		);
-		const reject = await within( queue( 'Proposed links' ) ).findByRole(
-			'button',
-			{ name: 'Reject Valley Ledger' }
-		);
-		await waitFor( () => expect( reject ).toBeEnabled() );
-		fireEvent.click( reject );
 		await waitFor( () =>
 			expect( wire.sent( 'reject_link' ) ).toEqual( [
 				[
@@ -220,8 +225,8 @@ describe( 'Review — judgments', () => {
 		);
 	} );
 
-	it( 'holds a row judgment while the last one waits', async () => {
-		wire.replies.confirm_link = () => new Promise( () => {} );
+	it( 'hides a judged link at once, though the re-read still lists it', async () => {
+		wire.replies.confirm_link = { ok: true, event_id: 'ev-c' };
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'link', {
 			name: 'Paywall bug reported by Acme',
@@ -233,13 +238,151 @@ describe( 'Review — judgments', () => {
 			} )
 		);
 		expect(
+			within( links ).queryByRole( 'button', { name: 'Acme Gazette' } )
+		).toBeNull();
+		await waitFor( () => expect( linksRead() ).toHaveLength( 2 ) );
+		expect(
+			within( queue( 'Proposed links' ) ).queryByRole( 'button', {
+				name: 'Acme Gazette',
+			} )
+		).toBeNull();
+		expect(
+			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+				name: 'Valley Ledger',
+			} )
+		).toBeInTheDocument();
+	} );
+
+	it( 'takes the next judgment while the last one waits', async () => {
+		wire.replies.confirm_link = () => new Promise( () => {} );
+		wire.replies.reject_link = () => new Promise( () => {} );
+		renderReview( { canTune: true } );
+		await screen.findByRole( 'link', {
+			name: 'Paywall bug reported by Acme',
+		} );
+		const links = queue( 'Proposed links' );
+		fireEvent.click(
+			within( links ).getByRole( 'button', {
+				name: 'Confirm Acme Gazette',
+			} )
+		);
+		fireEvent.click(
 			within( links ).getByRole( 'button', {
 				name: 'Reject Valley Ledger',
 			} )
-		).toBeDisabled();
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'reject_link' ) ).toEqual( [
+				[
+					`--item=${ SIBLING.item_key }`,
+					`--entity=${ SIBLING.entity_key }`,
+				],
+			] )
+		);
+		expect(
+			within( links ).getByText( 'No proposed link awaits review.' )
+		).toBeInTheDocument();
 	} );
 
-	it( 'judges a link whose item key is a whole feed URL, holding its row', async () => {
+	it( 'brings a refused judgment back with its refusal', async () => {
+		wire.replies.confirm_link = () =>
+			new Error( 'no link: github:automattic/newspack#912' );
+		renderReview( { canTune: true } );
+		await screen.findByRole( 'link', {
+			name: 'Paywall bug reported by Acme',
+		} );
+		fireEvent.click(
+			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+				name: 'Confirm Acme Gazette',
+			} )
+		);
+		expect(
+			await screen.findByText( /no link: github:automattic/ )
+		).toBeInTheDocument();
+		expect(
+			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+				name: 'Confirm Acme Gazette',
+			} )
+		).toBeInTheDocument();
+	} );
+
+	it( 'brings every judged link back on a refusal naming no send', async () => {
+		wire.replies.confirm_link = () => new Promise( () => {} );
+		wire.replies.reject_link = () => new Promise( () => {} );
+		renderReview( { canTune: true } );
+		await screen.findByRole( 'link', {
+			name: 'Paywall bug reported by Acme',
+		} );
+		const links = queue( 'Proposed links' );
+		fireEvent.click(
+			within( links ).getByRole( 'button', {
+				name: 'Confirm Acme Gazette',
+			} )
+		);
+		fireEvent.click(
+			within( links ).getByRole( 'button', {
+				name: 'Reject Valley Ledger',
+			} )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 )
+		);
+		const bounce = newMessage();
+		bounce[ TYPE ] = TM_ERROR;
+		bounce[ TO ] = 'intelligence:confirm_link:in';
+		bounce[ VALUE ] = 'NOT_AVAILABLE\n';
+		await act( async () => {
+			Core.node( '_command_interpreter' ).fill( bounce );
+		} );
+		expect(
+			await within( queue( 'Proposed links' ) ).findByRole( 'button', {
+				name: 'Acme Gazette',
+			} )
+		).toBeInTheDocument();
+		expect(
+			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+				name: 'Valley Ledger',
+			} )
+		).toBeInTheDocument();
+	} );
+
+	it( 'shows a judged link again once a read has dropped it and a later one lists it', async () => {
+		let listed = [ LINK, SIBLING ];
+		wire.replies.review = ( [ what ] ) =>
+			'links' === what
+				? { links: listed, available: true }
+				: { entities: [], available: true };
+		wire.replies.confirm_link = () => {
+			listed = [ SIBLING ];
+			return { ok: true, event_id: 'ev-c' };
+		};
+		wire.replies.reject_link = () => {
+			listed = [ LINK ];
+			return { ok: true, event_id: 'ev-r' };
+		};
+		renderReview( { canTune: true } );
+		await screen.findByRole( 'link', {
+			name: 'Paywall bug reported by Acme',
+		} );
+		fireEvent.click(
+			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+				name: 'Confirm Acme Gazette',
+			} )
+		);
+		await waitFor( () => expect( linksRead() ).toHaveLength( 2 ) );
+		fireEvent.click(
+			await within( queue( 'Proposed links' ) ).findByRole( 'button', {
+				name: 'Reject Valley Ledger',
+			} )
+		);
+		expect(
+			await within( queue( 'Proposed links' ) ).findByRole( 'button', {
+				name: 'Acme Gazette',
+			} )
+		).toBeInTheDocument();
+	} );
+
+	it( 'judges a link whose item key is a whole feed URL, hiding it', async () => {
 		const itemKey = `feed:https://news.example.org/2026/10/${ 'slug-'.repeat(
 			30
 		) }`;
@@ -265,61 +408,51 @@ describe( 'Review — judgments', () => {
 			] )
 		);
 		expect(
-			within( links ).getByRole( 'button', {
-				name: 'Reject Acme Gazette',
-			} )
-		).toBeDisabled();
-	} );
-
-	it( 'accepts, rejects and merges a proposed entity', async () => {
-		wire.replies.accept_entity = { ok: true, event_id: 'ev-a' };
-		wire.replies.reject_entity = { ok: true, event_id: 'ev-x' };
-		wire.replies.merge_entities = { ok: true, event_id: 'ev-m' };
-		renderReview( { canTune: true } );
-		await screen.findByRole( 'button', { name: 'Valley Times' } );
-		const entities = () => queue( 'Proposed entities' );
-		const settled = async ( name ) => {
-			const button = await within( entities() ).findByRole( 'button', {
-				name,
-			} );
-			await waitFor( () => expect( button ).toBeEnabled() );
-			return button;
-		};
-		fireEvent.click( await settled( 'Accept Valley Times' ) );
-		await waitFor( () =>
-			expect( wire.sent( 'accept_entity' ) ).toEqual( [
-				[ `--key=${ PROPOSED.entity_key }` ],
-			] )
-		);
-		fireEvent.click( await settled( 'Reject Valley Times' ) );
-		await waitFor( () =>
-			expect( wire.sent( 'reject_entity' ) ).toEqual( [
-				[ `--key=${ PROPOSED.entity_key }` ],
-			] )
-		);
-		expect(
-			within( entities() ).queryByLabelText( 'Merge into' )
+			within( links ).queryByRole( 'button', { name: 'Acme Gazette' } )
 		).toBeNull();
-		fireEvent.click( await settled( 'Merge Valley Times…' ) );
-		fireEvent.change( within( entities() ).getByLabelText( 'Merge into' ), {
-			target: { value: 'organization:the-valley-times' },
-		} );
-		fireEvent.click( await settled( 'Merge' ) );
-		await waitFor( () =>
-			expect( wire.sent( 'merge_entities' ) ).toEqual( [
-				[
-					`--from=${ PROPOSED.entity_key }`,
-					'--into=organization:the-valley-times',
-				],
-			] )
-		);
 	} );
 
-	it( 'holds the entity rows while a merge from that queue waits', async () => {
+	it.each( [
+		[
+			'accept_entity',
+			'Accept Valley Times',
+			[ `--key=${ PROPOSED.entity_key }` ],
+		],
+		[
+			'reject_entity',
+			'Reject Valley Times',
+			[ `--key=${ PROPOSED.entity_key }` ],
+		],
+	] )(
+		'sends %s for a proposed entity and hides it',
+		async ( verb, name, tokens ) => {
+			wire.replies[ verb ] = { ok: true, event_id: 'ev-e' };
+			renderReview( { canTune: true } );
+			await screen.findByRole( 'button', { name: 'Valley Times' } );
+			fireEvent.click(
+				within( queue( 'Proposed entities' ) ).getByRole( 'button', {
+					name,
+				} )
+			);
+			await waitFor( () =>
+				expect( wire.sent( verb ) ).toEqual( [ tokens ] )
+			);
+			expect(
+				within( queue( 'Proposed entities' ) ).getByText(
+					'No proposed entity awaits review.'
+				)
+			).toBeInTheDocument();
+		}
+	);
+
+	it( 'merges a proposed entity into the one named, hiding it', async () => {
 		wire.replies.merge_entities = () => new Promise( () => {} );
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
 		const entities = queue( 'Proposed entities' );
+		expect(
+			within( entities ).queryByLabelText( 'Merge into' )
+		).toBeNull();
 		fireEvent.click(
 			within( entities ).getByRole( 'button', {
 				name: 'Merge Valley Times…',
@@ -332,19 +465,19 @@ describe( 'Review — judgments', () => {
 			within( entities ).getByRole( 'button', { name: 'Merge' } )
 		);
 		await waitFor( () =>
-			expect( wire.sent( 'merge_entities' ) ).toHaveLength( 1 )
+			expect( wire.sent( 'merge_entities' ) ).toEqual( [
+				[
+					`--from=${ PROPOSED.entity_key }`,
+					'--into=organization:the-valley-times',
+				],
+			] )
 		);
 		expect(
-			within( entities ).getByRole( 'button', {
-				name: 'Accept Valley Times',
-			} )
-		).toBeDisabled();
-		expect(
-			within( entities ).getByRole( 'button', { name: 'Merge' } )
-		).toBeDisabled();
+			within( entities ).queryByRole( 'button', { name: 'Valley Times' } )
+		).toBeNull();
 	} );
 
-	it( 'shows a refused judgment as the refusal', async () => {
+	it( 'shows a refused merge as the refusal, the entity back in its queue', async () => {
 		wire.replies.merge_entities = () =>
 			new Error(
 				'cannot merge organization:valley-times (organization) into person:jo (person)'
@@ -365,6 +498,11 @@ describe( 'Review — judgments', () => {
 		);
 		expect(
 			await screen.findByText( /cannot merge organization:valley-times/ )
+		).toBeInTheDocument();
+		expect(
+			within( queue( 'Proposed entities' ) ).getByRole( 'button', {
+				name: 'Accept Valley Times',
+			} )
 		).toBeInTheDocument();
 	} );
 } );

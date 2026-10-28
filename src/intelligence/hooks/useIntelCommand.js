@@ -70,17 +70,21 @@ export function useIntelRead( scope, command, args ) {
 /**
  * One curation verb, sent once per `run( args )` with every arg named
  * (`--key=value`), so a curator's value that begins `--name=` binds as the
- * value it is rather than as an option; it runs `refresh` once a send lands. Everything else is `useCommandOnce`'s own: whether a send still
- * waits, the last reply's refusal, and the arguments it answered.
+ * value it is rather than as an option. `run()` answers the tokens it sent;
+ * a landed send runs `refresh`, and a refused one hands `onRefused` the
+ * tokens its reply echoes, which say which send it was. Everything else is
+ * `useCommandOnce`'s own: whether a send still waits, the last reply's
+ * refusal, and the arguments it answered.
  *
- * @param {string}     command        The write verb.
- * @param {Object}     [opts]         Options.
- * @param {() => void} [opts.refresh] Runs once a send lands.
- * @return {{run: (args: Object<string, string>) => void, pending: boolean, refusal: ?string, answeredArgs: ?string[]}}
+ * @param {string}                     command          The write verb.
+ * @param {Object}                     [opts]           Options.
+ * @param {() => void}                 [opts.refresh]   Runs once a send lands.
+ * @param {(tokens: string[]) => void} [opts.onRefused] Runs once a send is refused.
+ * @return {{run: (args: Object<string, string>) => string[], pending: boolean, refusal: ?string, answeredArgs: ?string[]}}
  *   `run()`, whether a send of this verb still waits, the last refusal, and
  *   the arguments the last reply answered.
  */
-export function useIntelWrite( command, { refresh } = {} ) {
+export function useIntelWrite( command, { refresh, onRefused } = {} ) {
 	const {
 		run: send,
 		pending,
@@ -91,14 +95,15 @@ export function useIntelWrite( command, { refresh } = {} ) {
 		ci: CI,
 		command,
 		subjectOf: NO_SUBJECT,
-		onDone: ( { error: refused } ) => {
-			if ( ! refused ) {
-				refresh?.();
-			}
-		},
+		onDone: ( { error: refused, args } ) =>
+			refused ? onRefused?.( args ) : refresh?.(),
 	} );
 	const run = useCallback(
-		( args ) => send( formatCommandArgs( [], args ) ),
+		( args ) => {
+			const tokens = formatCommandArgs( [], args );
+			send( tokens );
+			return tokens;
+		},
 		[ send ]
 	);
 	return { run, pending, refusal: error, answeredArgs };
