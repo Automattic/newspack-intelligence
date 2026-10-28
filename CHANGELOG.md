@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-27
+
 ### Changed
 - **The Review queues are one compact control per proposal.** A proposed link was a row per item and entity, the item's title repeated for each entity, a `mention · name · 1` line beneath it and a Confirm slab beside a red Reject slab; a proposed entity carried an Accept slab, a red Reject slab and an open Merge field. A link row is now one item, its title once, holding a pill per entity proposed for it: the entity's name, which opens it, joined to a ✓ that confirms and a ✕ that rejects. The pill's tooltip says in words what the entity is to the item, how it was found and how sure the finding was ("Mentioned, found by a similar name (61%)"). The words for each role and method come from the page's localized vocabulary, keyed by `Intel_Event::LINK_ROLES` and `Intel_Event::METHODS`. A proposed entity is the same pill, accepting or rejecting it, beside its type and key and a Merge… button that opens the merge field. Each glyph is named for screen readers ("Confirm Acme Gazette", "Reject Valley Times"), and every pill takes the accent of the shared secondary button rather than the danger red.
 
