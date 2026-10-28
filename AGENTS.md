@@ -267,9 +267,10 @@ its stored links, the judgments of them and the entities its last call
 extraction was given, each entity as its survivor in the resolver's own
 index, across every partition, a key whose merge chain is broken counting
 nowhere. A link is settled when the last call extraction was given its
-survivor as asserted, or when a curator rejected it, so a merge settles
-through the survivor and a confirmation the projection had not yet recorded
-when the item was extracted is still owed its claims;
+survivor as asserted, so a merge settles through the survivor and a
+confirmation the projection had not yet recorded when the item was
+extracted is still owed its claims; a link a curator rejected never reaches
+the comparison, because the extractor is not sent it;
 its verdict is its highest-ranked judgment's (`Graph_Query::judge_rank()`, the
 latest among equals). A record missing its item or its
 freshness is dropped with a line, as is one naming an item the projection no
@@ -618,7 +619,7 @@ clock in whole seconds, `Intel_Event::now()`, as every reader takes it.
 
 ### Nodes
 
-`Consumer`, `Partition`, `Tee` and `Row_Table` come from the substrate. This plugin adds:
+`Consumer`, `Partition` and `Row_Table` come from the substrate. This plugin adds:
 
 | Type | Class | Runtime triggers and verbs |
 |------|-------|----------------------------|

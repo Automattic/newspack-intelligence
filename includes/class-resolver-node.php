@@ -15,9 +15,10 @@
  * because NER ran when the item was first resolved. It forwards an item a
  * call has extracted only when, with the curators' judgments in force, it
  * asserts a link to an entity, compared by survivor, whose link to the item
- * is not settled: one the item's last extraction was given as asserted, or
- * one a curator rejected. An extraction not given the subject ran without
- * its claims, whenever the link or the confirmation was written. What it
+ * is not settled, one the item's last extraction was given as asserted; a
+ * link a curator rejected is not sent at all. An extraction not given the
+ * subject ran without its claims, whenever the link or the confirmation was
+ * written. What it
  * forwards carries the judgments, a confirmed link asserted and a rejected
  * one left out, and whether a call extracted the item before. It reads the process's shared `Entity_Index::current()`, again
  * once a re-resolution's signal settled after the shared index was read.
@@ -210,9 +211,9 @@ class Resolver_Node extends Node {
 	 * a key whose merge chain is broken counting nowhere, as Graph_Query
 	 * reads them: `stored`, each linked survivor's one link, picked subject
 	 * over mention, then by confidence and key; `known`, the survivors the
-	 * item's last extraction was given as asserted, and those whose verdict
-	 * rejects the link; and `verdicts`, the state of each judged survivor's
-	 * highest-ranked judgment, the latest among equals.
+	 * item's last extraction was given as asserted; and `verdicts`, the state
+	 * of each judged survivor's highest-ranked judgment, the latest among
+	 * equals.
 	 *
 	 * @param Row_Reader           $r        The reader.
 	 * @param string               $item_key The item.
@@ -237,11 +238,8 @@ class Resolver_Node extends Node {
 		$verdicts = [];
 		foreach ( $r->rows( 'SELECT entity_key, state FROM ' . Intel_Graph_Row_Schema::all( $r, 'judgments' ) . ' j WHERE item_key = ? ORDER BY ' . Graph_Query::judge_rank( 'actor_kind' ) . ' DESC, ts DESC', [ $item_key ] ) as [ $key, $state ] ) {
 			$entity = $survivor( $key );
-			if ( '' !== $entity && ! isset( $verdicts[ $entity ] ) ) {
-				$verdicts[ $entity ] = Core::as_string( $state );
-				if ( 'rejected' === $verdicts[ $entity ] ) {
-					$known[ $entity ] = true;
-				}
+			if ( '' !== $entity ) {
+				$verdicts[ $entity ] ??= Core::as_string( $state );
 			}
 		}
 		return [

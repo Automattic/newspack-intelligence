@@ -627,7 +627,7 @@ final class ReresolverNodeTest extends TestCase {
 	}
 
 	/**
-	 * Deliver an ontology event as the Tee does.
+	 * Deliver an ontology event as its Consumer does.
 	 *
 	 * @param string              $kind   The event kind.
 	 * @param array<string,mixed> $fields Its fields.
@@ -692,7 +692,7 @@ final class ReresolverNodeTest extends TestCase {
 	}
 
 	/**
-	 * A record from the ontology Tee carrying a VALUE.
+	 * A record from the reresolver's ontology Consumer carrying a VALUE.
 	 *
 	 * @param mixed $value The VALUE.
 	 * @return array<int,mixed>
