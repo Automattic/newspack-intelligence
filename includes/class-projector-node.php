@@ -163,7 +163,8 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * deletes the item's claims and topic links before it writes its own, so
 	 * one yielding fewer leaves none of the earlier behind; both tables are
 	 * written by the items stream alone, so a replay deletes and writes in
-	 * the same order. A heuristic stand-in only fills an item no extraction
+	 * the same order; the entities an extraction was given replace the
+	 * item's earlier set the same way. A heuristic stand-in only fills an item no extraction
 	 * holds yet (`STAND_IN`), so it never replaces a call's extraction, its
 	 * claims or its topics. Every ontology kind also writes its `events` row.
 	 *
@@ -180,7 +181,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			[ $verb, 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ],
 		];
 		$state_set = static fn ( string $state ): array => [ [ 'set', 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ] ];
-		$extraction = [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'actor', 'ts', $day( 'retrieved_ts' ) ];
+		$extraction = [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'actor', $day( 'retrieved_ts' ) ];
 		$judgment = static fn ( string $state ): array => [ [ 'set', 'judgments', [ 'item_key', 'entity_key', static fn ( array $e ): string => \explode( ':', Core::as_string( $e['actor'] ), 2 )[0], [ $state ], 'actor', 'item_url', 'ts' ] ] ];
 		$table    = [
 			'item_recorded'       => [ [ 'ignore', 'items', [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ) ] ] ],
@@ -189,6 +190,10 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 				[ 'delete', 'links', [ 'item_key' => 'item_key', 'role' => [ 'topic' ] ] ],
 				[ 'set', 'extractions', $extraction ],
 				[ 'set', 'links', [ 'item_key', self::EACH, [ 'topic' ], [ 'extract' ], [ 1.0 ], [ 'asserted' ], 'actor', 'ts', $day( 'retrieved_ts' ) ], 'topics' ],
+			],
+			'subjects_extracted'  => [
+				[ 'delete', 'extracted_subjects', [ 'item_key' => 'item_key' ] ],
+				[ 'set', 'extracted_subjects', [ 'item_key', self::EACH, $day( 'retrieved_ts' ) ], 'entity_keys' ],
 			],
 			'link_asserted'       => $link( 'asserted' ),
 			'link_proposed'       => $link( 'proposed' ),

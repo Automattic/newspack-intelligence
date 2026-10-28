@@ -41,6 +41,7 @@ final class Intel_Event {
 	public const KINDS = [
 		'item_recorded'       => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ] ],
 		'extraction_recorded' => [ self::ITEMS, [ 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'topics', 'retrieved_ts' ], [ 'kind' => self::ITEM_KINDS ] ],
+		'subjects_extracted'  => [ self::ITEMS, [ 'item_key', 'entity_keys', 'retrieved_ts' ], [] ],
 		'link_asserted'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ] ],
 		'link_proposed'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ] ],
 		'claim_asserted'      => [ self::ITEMS, [ 'item_key', 'ord', 'subject_key', 'predicate', 'object_key', 'object_text', 'confidence', 'retrieved_ts' ], [ 'predicate' => self::PREDICATES ] ],

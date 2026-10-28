@@ -77,7 +77,7 @@ final class ProjectorTest extends TestCase {
 			],
 			self::graph_rows( 'links', 'entity_key' )
 		);
-		$this->assertSame( [ [ 1, self::ITEM, 'Harbor Gazette won the state award.', 'award', 8.0, 6.0, 0.5, 'machine:extract@9.4.1', self::NOW, $day ] ], self::graph_rows( 'extractions' ) );
+		$this->assertSame( [ [ 1, self::ITEM, 'Harbor Gazette won the state award.', 'award', 8.0, 6.0, 0.5, 'machine:extract@9.4.1', $day ] ], self::graph_rows( 'extractions' ) );
 		$this->assertSame( [], self::graph_rows( 'entities' ), 'a link writes no entity row; readers join to one' );
 		$this->assertSame( [], self::graph_rows( 'entity_states' ) );
 		$this->assertSame( [], self::graph_rows( 'events' ), 'items-stream events are not kept in events' );
@@ -107,12 +107,20 @@ final class ProjectorTest extends TestCase {
 		$this->assertSame( [ [ self::GAZETTE, 'subject' ], [ 'topic:local-news', 'topic' ] ], self::graph_rows( 'links', 'entity_key', 'entity_key, role' ) );
 	}
 
-	/** An extraction's row records when it was made, the time the resolver compares a link's against. */
-	public function test_an_extraction_records_its_time(): void {
-		Core::$now = self::NOW + 41.5;
-		$this->project( [ $this->item(), $this->extraction() ] );
+	/**
+	 * The entities an extraction was given as asserted replace the item's
+	 * earlier set, so the resolver settles a link by what the last extraction
+	 * saw.
+	 */
+	public function test_an_extractions_subjects_replace_the_items_earlier_set(): void {
+		$subjects = fn ( string ...$keys ): array => Intel_Event::make( 'subjects_extracted', [ 'item_key' => self::ITEM, 'entity_keys' => $keys, 'retrieved_ts' => self::RETRIEVED ], 'machine:extract@9.4.1', '' );
+		$this->project( [ $this->item(), $subjects( self::GAZETTE, 'organization:salem-ledger' ) ] );
 
-		$this->assertSame( [ [ self::NOW + 41.5 ] ], self::graph_rows( 'extractions', '1', 'ts' ) );
+		$this->assertSame( [ [ self::GAZETTE ], [ 'organization:salem-ledger' ] ], self::graph_rows( 'extracted_subjects', 'entity_key', 'entity_key' ) );
+
+		$this->project( [ $subjects( self::GAZETTE ) ] );
+
+		$this->assertSame( [ [ self::ITEM, self::GAZETTE, \intdiv( self::RETRIEVED, 86400 ) ] ], self::graph_rows( 'extracted_subjects' ) );
 	}
 
 	/**
@@ -128,10 +136,9 @@ final class ProjectorTest extends TestCase {
 				Intel_Event::make( 'claim_asserted', [ 'item_key' => self::ITEM, 'ord' => 0, 'subject_key' => self::GAZETTE, 'predicate' => 'won', 'object_key' => '', 'object_text' => 'Peabody Award', 'confidence' => 0.9, 'retrieved_ts' => self::RETRIEVED ], 'machine:extract@9.4.1', '' ),
 			]
 		);
-		Core::$now = self::NOW + 60;
 		$this->project( [ $this->stand_in() ] );
 
-		$this->assertSame( [ [ 'Harbor Gazette won the state award.', 'machine:extract@9.4.1', self::NOW ] ], self::graph_rows( 'extractions', '1', 'summary, actor, ts' ) );
+		$this->assertSame( [ [ 'Harbor Gazette won the state award.', 'machine:extract@9.4.1' ] ], self::graph_rows( 'extractions', '1', 'summary, actor' ) );
 		$this->assertSame( [ [ 0, 'Peabody Award' ] ], self::graph_rows( 'claims', 'ord', 'ord, object_text' ) );
 		$this->assertSame( [ [ 'topic:awards', 'topic' ] ], self::graph_rows( 'links', 'entity_key', 'entity_key, role' ) );
 	}
@@ -142,10 +149,9 @@ final class ProjectorTest extends TestCase {
 
 		$this->assertSame( [ [ 'The Harbor Gazette Wins a State Award!', 'machine:extract-heuristic@9.4.1' ] ], self::graph_rows( 'extractions', '1', 'summary, actor' ) );
 
-		Core::$now = self::NOW + 90;
 		$this->project( [ $this->extraction() ] );
 
-		$this->assertSame( [ [ 'Harbor Gazette won the state award.', 'machine:extract@9.4.1', self::NOW + 90 ] ], self::graph_rows( 'extractions', '1', 'summary, actor, ts' ) );
+		$this->assertSame( [ [ 'Harbor Gazette won the state award.', 'machine:extract@9.4.1' ] ], self::graph_rows( 'extractions', '1', 'summary, actor' ) );
 	}
 
 	/** An item is written once: its first retrieval is the provenance kept. */
@@ -578,6 +584,7 @@ final class ProjectorTest extends TestCase {
 		return [
 			$this->item(),
 			$this->extraction(),
+			$machine( 'subjects_extracted', [ 'item_key' => self::ITEM, 'entity_keys' => [ self::GAZETTE ], 'retrieved_ts' => self::RETRIEVED ] ),
 			$this->link( 'link_asserted' ),
 			$this->link( 'link_proposed', 'organization:salem-ledger' ),
 			$machine( 'claim_asserted', [ 'item_key' => self::ITEM, 'ord' => 0, 'subject_key' => self::GAZETTE, 'predicate' => 'won', 'object_key' => '', 'object_text' => 'Peabody Award', 'confidence' => 0.9, 'retrieved_ts' => self::RETRIEVED ] ),

@@ -12,15 +12,14 @@
  * Intel_Event_Writer's two partitions are.
  *
  * A re-resolution runs the resolver's identifier, name and stem steps alone,
- * because NER ran when the item was first resolved, and writes only the
- * links that changed, so a link's time is when it last changed. It forwards
- * an item a call has extracted only when, with the curators' judgments in
- * force, it asserts a link to an entity, compared by survivor, whose link to
- * the item is not settled: asserted or confirmed no later than the item's
- * last extraction, or rejected. An extraction older than the link ran
- * without that subject's claims. What it forwards carries the judgments, a
- * confirmed link asserted and a rejected one left out, and whether a call
- * extracted the item before. It reads the process's shared `Entity_Index::current()`, again
+ * because NER ran when the item was first resolved. It forwards an item a
+ * call has extracted only when, with the curators' judgments in force, it
+ * asserts a link to an entity, compared by survivor, whose link to the item
+ * is not settled: one the item's last extraction was given as asserted, or
+ * one a curator rejected. An extraction not given the subject ran without
+ * its claims, whenever the link or the confirmation was written. What it
+ * forwards carries the judgments, a confirmed link asserted and a rejected
+ * one left out, and whether a call extracted the item before. It reads the process's shared `Entity_Index::current()`, again
  * once a re-resolution's signal settled after the shared index was read.
  * While no active topology declares the `intel-graph` table, items resolve
  * against an empty index. The `LLM_Config` verbs configure the NER client,
@@ -42,7 +41,7 @@ use Newspack_Nodes\Table_Unavailable;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * @phpstan-type Judgment array{known: array<string,true>, verdicts: array<string,string>, stored: array<string,array{role:string,method:string,confidence:float}>, held: array<string,array{0:string,1:string,2:float}>}
+ * @phpstan-type Judgment array{known: array<string,true>, verdicts: array<string,string>, stored: array<string,array{role:string,method:string,confidence:float}>}
  */
 class Resolver_Node extends Node {
 	use Schema_Reflection;
@@ -109,7 +108,7 @@ class Resolver_Node extends Node {
 		$resolution                      = $resolver->resolve( $item, null );
 		$sent                            = self::judged( $resolution, $judgment );
 		$forward                         = ! $extracted || self::asserts_anew( $sent['links'], $judgment['known'] );
-		$this->resolved( $item, $resolution, $forward ? [ 'extracted' => $extracted ] + $sent : null, $judgment['held'] );
+		$this->resolved( $item, $resolution, $forward ? [ 'extracted' => $extracted ] + $sent : null );
 	}
 
 	/**
@@ -140,9 +139,9 @@ class Resolver_Node extends Node {
 
 	/**
 	 * Whether what the extractor would be sent asserts a link to an entity
-	 * whose link to the item is not settled, as one asserted or confirmed
-	 * since the item was extracted is: the extraction then ran without that
-	 * subject's claims.
+	 * whose link to the item is not settled, as one the item's last
+	 * extraction was not given is: that extraction ran without the subject's
+	 * claims.
 	 *
 	 * @param list<array{entity_key:string,state:string}> $links The links, keyed by survivor.
 	 * @param array<string,true>                          $known The survivors whose links are settled.
@@ -172,10 +171,10 @@ class Resolver_Node extends Node {
 	/**
 	 * A stored item's `item_recorded` fields, as the projection holds them,
 	 * whether it holds an extraction of the item a call made, a heuristic
-	 * stand-in not counting, and what `settled()` reads of its links and
-	 * judgments against that extraction's time, each entity as its survivor
-	 * in the resolver's own index; null when no partition's file holds the
-	 * item.
+	 * stand-in not counting, and what `settled()` reads of its links,
+	 * judgments and the entities its last extraction was given, each entity
+	 * as its survivor in the resolver's own index; null when no partition's
+	 * file holds the item.
 	 *
 	 * @param string               $item_key The item.
 	 * @param array<string,string> $merged   Each merged key's survivor, as the index read it.
@@ -186,8 +185,8 @@ class Resolver_Node extends Node {
 		return Intel_Graph_Row_Schema::read(
 			static function ( Row_Reader $r ) use ( $item_key, $merged ): ?array {
 				foreach ( $r->aliases() as $a ) {
-					$sql = "SELECT i.item_key, i.source, i.tier, i.url, i.title, i.body, i.item_ts, i.retrieved_ts, ( SELECT e.ts FROM {$a}.extractions e WHERE e.item_key = i.item_key AND INSTR( e.actor, ? ) <> 1 ) FROM {$a}.items i WHERE i.item_key = ?";
-					foreach ( $r->rows( $sql, [ Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE ), $item_key ] ) as [ $key, $source, $tier, $url, $title, $body, $item_ts, $retrieved_ts, $extracted_ts ] ) {
+					$sql = "SELECT i.item_key, i.source, i.tier, i.url, i.title, i.body, i.item_ts, i.retrieved_ts, EXISTS ( SELECT 1 FROM {$a}.extractions e WHERE e.item_key = i.item_key AND INSTR( e.actor, ? ) <> 1 ) FROM {$a}.items i WHERE i.item_key = ?";
+					foreach ( $r->rows( $sql, [ Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE ), $item_key ] ) as [ $key, $source, $tier, $url, $title, $body, $item_ts, $retrieved_ts, $extracted ] ) {
 						$item = [
 							'item_key'     => Core::as_string( $key ),
 							'source'       => Core::as_string( $source ),
@@ -198,8 +197,7 @@ class Resolver_Node extends Node {
 							'item_ts'      => Core::as_int( $item_ts ),
 							'retrieved_ts' => Core::as_int( $retrieved_ts ),
 						];
-						$extracted = null !== $extracted_ts;
-						return [ $item, $extracted, self::settled( $r, $item_key, $merged, $extracted ? Core::as_float( $extracted_ts ) : -\INF ) ];
+						return [ $item, 0 !== Core::as_int( $extracted ), self::settled( $r, $item_key, $merged ) ];
 					}
 				}
 				return null;
@@ -211,70 +209,59 @@ class Resolver_Node extends Node {
 	 * What the item's links and judgments say, each entity by its survivor,
 	 * a key whose merge chain is broken counting nowhere, as Graph_Query
 	 * reads them: `stored`, each linked survivor's one link, picked subject
-	 * over mention, then by confidence and key; `held`, each stored link's
-	 * state, method and confidence by its own key and role; `known`, the
-	 * survivors whose picked link was asserted, or whose verdict confirmed
-	 * it, no later than `$extracted_ts`, and those whose verdict rejects it;
-	 * and `verdicts`, the state of each judged survivor's highest-ranked
-	 * judgment, the latest among equals.
+	 * over mention, then by confidence and key; `known`, the survivors the
+	 * item's last extraction was given as asserted, and those whose verdict
+	 * rejects the link; and `verdicts`, the state of each judged survivor's
+	 * highest-ranked judgment, the latest among equals.
 	 *
-	 * @param Row_Reader           $r            The reader.
-	 * @param string               $item_key     The item.
-	 * @param array<string,string> $merged       Each merged key's survivor; '' where its chain is broken.
-	 * @param float                $extracted_ts When a call last extracted the item; -INF if never.
+	 * @param Row_Reader           $r        The reader.
+	 * @param string               $item_key The item.
+	 * @param array<string,string> $merged   Each merged key's survivor; '' where its chain is broken.
 	 * @return Judgment
 	 */
-	private static function settled( Row_Reader $r, string $item_key, array $merged, float $extracted_ts ): array {
+	private static function settled( Row_Reader $r, string $item_key, array $merged ): array {
 		$survivor = static fn ( mixed $key ): string => $merged[ Core::as_string( $key ) ] ?? Core::as_string( $key );
 		$known    = [];
-		$stored   = [];
-		$held     = [];
-		foreach ( $r->rows( 'SELECT entity_key, role, method, confidence, state, ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . " l WHERE item_key = ? AND role <> 'topic' ORDER BY role = 'subject' DESC, confidence DESC, entity_key", [ $item_key ] ) as [ $key, $role, $method, $confidence, $state, $ts ] ) {
-			$held[ Core::as_string( $key ) . '|' . Core::as_string( $role ) ] = [ Core::as_string( $state ), Core::as_string( $method ), Core::as_float( $confidence ) ];
-			$entity = $survivor( $key );
-			if ( '' === $entity || isset( $stored[ $entity ] ) ) {
-				continue;
+		foreach ( $r->rows( 'SELECT entity_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'extracted_subjects' ) . ' s WHERE item_key = ?', [ $item_key ] ) as [ $key ] ) {
+			if ( '' !== $survivor( $key ) ) {
+				$known[ $survivor( $key ) ] = true;
 			}
-			$stored[ $entity ] = [ 'role' => Core::as_string( $role ), 'method' => Core::as_string( $method ), 'confidence' => Core::as_float( $confidence ) ];
-			if ( 'asserted' === $state && Core::as_float( $ts ) <= $extracted_ts ) {
-				$known[ $entity ] = true;
+		}
+		$stored = [];
+		foreach ( $r->rows( 'SELECT entity_key, role, method, confidence FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . " l WHERE item_key = ? AND role <> 'topic' ORDER BY role = 'subject' DESC, confidence DESC, entity_key", [ $item_key ] ) as [ $key, $role, $method, $confidence ] ) {
+			$entity = $survivor( $key );
+			if ( '' !== $entity && ! isset( $stored[ $entity ] ) ) {
+				$stored[ $entity ] = [ 'role' => Core::as_string( $role ), 'method' => Core::as_string( $method ), 'confidence' => Core::as_float( $confidence ) ];
 			}
 		}
 		$verdicts = [];
-		foreach ( $r->rows( 'SELECT entity_key, state, ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'judgments' ) . ' j WHERE item_key = ? ORDER BY ' . Graph_Query::judge_rank( 'actor_kind' ) . ' DESC, ts DESC', [ $item_key ] ) as [ $key, $state, $ts ] ) {
+		foreach ( $r->rows( 'SELECT entity_key, state FROM ' . Intel_Graph_Row_Schema::all( $r, 'judgments' ) . ' j WHERE item_key = ? ORDER BY ' . Graph_Query::judge_rank( 'actor_kind' ) . ' DESC, ts DESC', [ $item_key ] ) as [ $key, $state ] ) {
 			$entity = $survivor( $key );
-			if ( '' === $entity || isset( $verdicts[ $entity ] ) ) {
-				continue;
-			}
-			$verdicts[ $entity ] = Core::as_string( $state );
-			if ( 'rejected' === $verdicts[ $entity ] || Core::as_float( $ts ) <= $extracted_ts ) {
-				$known[ $entity ] = true;
+			if ( '' !== $entity && ! isset( $verdicts[ $entity ] ) ) {
+				$verdicts[ $entity ] = Core::as_string( $state );
+				if ( 'rejected' === $verdicts[ $entity ] ) {
+					$known[ $entity ] = true;
+				}
 			}
 		}
 		return [
 			'known'    => $known,
 			'verdicts' => $verdicts,
 			'stored'   => $stored,
-			'held'     => $held,
 		];
 	}
 
 	/**
-	 * Write each link the projection does not already hold as it is, and
-	 * each candidate, to the writer, then forward what the extractor is
-	 * sent, when there is anything.
+	 * Write each link and candidate to the writer, then forward what the
+	 * extractor is sent, when there is anything.
 	 *
 	 * @param array<string,mixed>                                                                                                        $item       The item.
 	 * @param array{links: list<array{entity_key:string,role:string,method:string,confidence:float,state:string}>, proposals: list<array{type:string,name:string}>} $resolution What resolve() answered.
 	 * @param array<string,mixed>|null                                                                                                   $forwarded  What the extractor is sent, or null for nothing.
-	 * @param array<string,array{0:string,1:string,2:float}>                                                                             $held       Each stored link's state, method and confidence by key and role.
 	 */
-	private function resolved( array $item, array $resolution, ?array $forwarded, array $held = [] ): void {
+	private function resolved( array $item, array $resolution, ?array $forwarded ): void {
 		$item_key = Core::as_string( $item['item_key'] );
 		foreach ( $resolution['links'] as $link ) {
-			if ( [ $link['state'], $link['method'], $link['confidence'] ] === ( $held[ "{$link['entity_key']}|{$link['role']}" ] ?? null ) ) {
-				continue;
-			}
 			$kind = 'asserted' === $link['state'] ? 'link_asserted' : 'link_proposed';
 			$this->emit( $this->writer, Intel_Event::machine_event( 'resolve', $kind, [ 'item_key' => $item_key ] + \array_diff_key( $link, [ 'state' => true ] ) + [ 'retrieved_ts' => $item['retrieved_ts'] ] ) );
 		}

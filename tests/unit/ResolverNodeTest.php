@@ -208,9 +208,8 @@ final class ResolverNodeTest extends TestCase {
 	}
 
 	/**
-	 * A re-resolved item extracted since its links were asserted writes no
-	 * link it already holds as it is, so a link's time stays the time it
-	 * changed, and forwards nothing.
+	 * A re-resolved item whose extraction was given its asserted links writes
+	 * them again and forwards nothing.
 	 */
 	public function test_a_reresolved_item_already_extracted_is_not_forwarded(): void {
 		$this->seed(
@@ -218,33 +217,33 @@ final class ResolverNodeTest extends TestCase {
 			[
 				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
 				self::link( 'link_asserted' ),
-				self::extracted(),
+				...self::extracted( self::GAZETTE ),
 			]
 		);
 
 		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
 
-		$this->assertSame( [], $this->written() );
+		$this->assertSame( [ [ 'link_asserted', self::GAZETTE ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'] ], $this->written() ) );
 		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $m ): bool => 'intel:resolved:null' === $m[ Message::TO ] ) );
 	}
 
 	/**
-	 * A link asserted after the item's last extraction is not settled: that
-	 * extraction ran without the subject, so the item is forwarded again.
+	 * A link asserted that the item's last extraction was not given is not
+	 * settled: that extraction ran without the subject, so the item is
+	 * forwarded again, whenever the link's own event was written.
 	 */
-	public function test_a_link_asserted_after_the_extraction_is_forwarded(): void {
+	public function test_a_link_its_extraction_was_not_given_is_forwarded(): void {
 		$this->seed(
 			self::gazette(),
 			[
 				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
-				[ 'ts' => self::NOW - 600 ] + self::extracted(),
 				self::link( 'link_asserted' ),
+				...self::extracted(),
 			]
 		);
 
 		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
 
-		$this->assertSame( [], $this->written() );
 		$this->assertSame( [ [ self::GAZETTE, 'asserted' ] ], \array_map( static fn ( array $l ): array => [ $l['entity_key'], $l['state'] ], $this->resolved()['links'] ) );
 		$this->assertTrue( $this->resolved()['extracted'] );
 	}
@@ -259,13 +258,12 @@ final class ResolverNodeTest extends TestCase {
 			[
 				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
 				self::link( 'link_proposed' ),
-				self::extracted(),
+				...self::extracted(),
 			]
 		);
 
 		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
 
-		$this->assertSame( [ [ 'link_asserted', self::GAZETTE ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'] ], $this->written() ) );
 		$this->assertSame( self::ITEM, $this->resolved()['item']['item_key'] );
 		$this->assertSame( [ self::GAZETTE ], \array_column( $this->resolved()['links'], 'entity_key' ) );
 	}
@@ -293,7 +291,7 @@ final class ResolverNodeTest extends TestCase {
 			[
 				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
 				self::link( 'link_proposed' ),
-				self::extracted(),
+				...self::extracted(),
 				Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.org/a' ], 'user:curator-31', '9.4.1' ),
 			]
 		);
@@ -310,7 +308,7 @@ final class ResolverNodeTest extends TestCase {
 			[
 				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
 				self::link( 'link_proposed' ),
-				[ 'ts' => self::NOW - 600 ] + self::extracted(),
+				...self::extracted(),
 				Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.org/a' ], 'agent:curator-31:triage', '9.4.1' ),
 				Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.org/a' ], 'user:curator-31', '9.4.1' ),
 			]
@@ -322,9 +320,8 @@ final class ResolverNodeTest extends TestCase {
 	}
 
 	/**
-	 * A link a curator confirmed before the item's last extraction is
-	 * settled: that extraction ran with it asserted, so its entity's
-	 * acceptance later spends no second call.
+	 * A link a curator confirmed that the item's last extraction was given is
+	 * settled, so its entity's acceptance later spends no second call.
 	 */
 	public function test_a_reresolved_item_asserting_a_link_a_curator_confirmed_is_not_forwarded(): void {
 		$this->seed(
@@ -332,8 +329,8 @@ final class ResolverNodeTest extends TestCase {
 			[
 				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
 				self::link( 'link_proposed' ),
-				[ 'ts' => self::NOW - 600 ] + Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.org/a' ], 'user:curator-31', '9.4.1' ),
-				self::extracted(),
+				Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.org/a' ], 'user:curator-31', '9.4.1' ),
+				...self::extracted( self::GAZETTE ),
 			]
 		);
 
@@ -343,18 +340,19 @@ final class ResolverNodeTest extends TestCase {
 	}
 
 	/**
-	 * A curator's confirmation after the item's last extraction sends it to
-	 * the extractor with the link asserted, though the resolver still only
-	 * proposes it.
+	 * A confirmation the item's last extraction was not given sends the item
+	 * to the extractor with the link asserted, though it was made before that
+	 * extraction: one the projection had not yet recorded when the item was
+	 * extracted is still owed its claims.
 	 */
-	public function test_a_link_confirmed_after_the_extraction_is_forwarded_asserted(): void {
+	public function test_a_confirmation_the_extraction_was_not_given_is_forwarded_asserted(): void {
 		$this->seed(
 			self::gazette(),
 			[
 				Intel_Event::make( 'item_recorded', self::item( [] ), 'machine:source:feed@9.4.1', '9.4.1' ),
 				Intel_Event::make( 'link_proposed', [ 'item_key' => self::ITEM, 'entity_key' => self::MESA, 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.6, 'retrieved_ts' => 1792950000 ], 'machine:resolve@9.4.1', '9.4.1' ),
-				[ 'ts' => self::NOW - 600 ] + self::extracted(),
-				Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::MESA, 'item_url' => 'https://harborgazette.org/a' ], 'user:curator-31', '9.4.1' ),
+				[ 'ts' => self::NOW - 900 ] + Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::MESA, 'item_url' => 'https://harborgazette.org/a' ], 'user:curator-31', '9.4.1' ),
+				...self::extracted(),
 			]
 		);
 
@@ -363,36 +361,23 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertSame( [ [ self::MESA, 'asserted' ] ], \array_map( static fn ( array $l ): array => [ $l['entity_key'], $l['state'] ], $this->resolved()['links'] ) );
 	}
 
-	/** A survivor's state is its picked link's, subject over mention, as Graph_Query picks it: an asserted mention does not settle a proposed subject. */
-	public function test_a_proposed_subject_beside_an_asserted_mention_is_not_settled(): void {
-		$this->seed(
-			self::gazette(),
-			[
-				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
-				Intel_Event::make( 'link_proposed', [ 'item_key' => self::ITEM, 'entity_key' => 'organization:harbor-gazette-weekly', 'role' => 'subject', 'method' => 'ner_fuzzy', 'confidence' => 0.6, 'retrieved_ts' => 1792950000 ], 'machine:resolve@9.4.1', '9.4.1' ),
-				Intel_Event::make( 'entity_merged', [ 'entity_key' => 'organization:harbor-gazette-weekly', 'into_key' => self::GAZETTE ], 'user:curator-31', '9.4.1' ),
-				Intel_Event::make( 'link_asserted', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'role' => 'mention', 'method' => 'name', 'confidence' => 1.0, 'retrieved_ts' => 1792950000 ], 'machine:resolve@9.4.1', '9.4.1' ),
-				self::extracted(),
-			]
-		);
-
-		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
-
-		$this->assertSame( self::ITEM, $this->resolved()['item']['item_key'] );
-	}
-
-	/** A stored link to an entity merged away asserts its survivor, so asserting the survivor is not new. */
+	/**
+	 * An extraction given a key merged away since settles its survivor, on
+	 * every later pass: a merge costs no call.
+	 */
 	public function test_a_reresolved_item_asserting_the_survivor_of_its_merged_link_is_not_forwarded(): void {
 		$this->seed(
 			self::gazette(),
 			[
 				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.org/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
 				Intel_Event::make( 'link_asserted', [ 'item_key' => self::ITEM, 'entity_key' => 'organization:harbor-gazette-weekly', 'role' => 'subject', 'method' => 'name', 'confidence' => 1.0, 'retrieved_ts' => 1792950000 ], 'machine:resolve@9.4.1', '9.4.1' ),
+				...self::extracted( 'organization:harbor-gazette-weekly' ),
 				Intel_Event::make( 'entity_merged', [ 'entity_key' => 'organization:harbor-gazette-weekly', 'into_key' => self::GAZETTE ], 'user:curator-31', '9.4.1' ),
-				self::extracted(),
 			]
 		);
 
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+		$this->seed( $this->written() );
 		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
 
 		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $m ): bool => 'intel:resolved:null' === $m[ Message::TO ] ) );
@@ -523,9 +508,18 @@ final class ResolverNodeTest extends TestCase {
 		return Intel_Event::make( $kind, [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'identifier', 'confidence' => 1.0, 'retrieved_ts' => 1792950000 ], 'machine:resolve@9.4.1', '9.4.1' );
 	}
 
-	/** @return array<string,mixed> The item's extraction, as a call once made it. */
-	private static function extracted(): array {
-		return Intel_Event::make( 'extraction_recorded', [ 'item_key' => self::ITEM, 'summary' => 'Extracted on first resolution.', 'kind' => 'award', 'relevance' => 7, 'importance' => 3, 'sentiment' => 0.2, 'topics' => [], 'retrieved_ts' => 1792950000 ], 'machine:extract@9.4.1', '9.4.1' );
+	/**
+	 * The item's extraction, as a call once made it, and the entities it was
+	 * given as asserted.
+	 *
+	 * @param string ...$subjects The entities the extraction was given asserted.
+	 * @return list<array<string,mixed>>
+	 */
+	private static function extracted( string ...$subjects ): array {
+		return [
+			Intel_Event::make( 'extraction_recorded', [ 'item_key' => self::ITEM, 'summary' => 'Extracted on first resolution.', 'kind' => 'award', 'relevance' => 7, 'importance' => 3, 'sentiment' => 0.2, 'topics' => [], 'retrieved_ts' => 1792950000 ], 'machine:extract@9.4.1', '9.4.1' ),
+			Intel_Event::make( 'subjects_extracted', [ 'item_key' => self::ITEM, 'entity_keys' => $subjects, 'retrieved_ts' => 1792950000 ], 'machine:extract@9.4.1', '9.4.1' ),
+		];
 	}
 
 	/** @return list<array<string,mixed>> The events addressed to the writer. */

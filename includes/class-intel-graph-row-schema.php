@@ -149,13 +149,22 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 					'importance' => 'REAL NOT NULL',
 					'sentiment'  => 'REAL NOT NULL',
 					'actor'      => 'TEXT NOT NULL',
-					'ts'         => 'REAL NOT NULL',
 					'item_day'   => 'INTEGER NOT NULL',
 				],
 				'key'           => [ 'item_key' ],
 				'autoincrement' => 'id',
 				'fts'           => [ 'summary' ],
 				'indexes' => [ 'extractions_item_day' => [ 'item_day' ] ],
+				'retain'  => [ 'item_day', self::RETAIN_DAYS, self::DAY_SECONDS ],
+			],
+			'extracted_subjects' => [
+				'columns' => [
+					'item_key'   => 'TEXT NOT NULL',
+					'entity_key' => 'TEXT NOT NULL',
+					'item_day'   => 'INTEGER NOT NULL',
+				],
+				'key'     => [ 'item_key', 'entity_key' ],
+				'indexes' => [ 'extracted_subjects_item_day' => [ 'item_day' ] ],
 				'retain'  => [ 'item_day', self::RETAIN_DAYS, self::DAY_SECONDS ],
 			],
 			'links'         => [
