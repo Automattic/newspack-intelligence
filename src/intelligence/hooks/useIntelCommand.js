@@ -10,8 +10,8 @@
  * changed once it lands.
  *
  * No send names a subject: an item key spells a whole URL, past the length a
- * reply address carries, so a subject would be dropped for that one item and
- * its pending guard with it. Pending is per verb instead.
+ * reply address carries, so a subject would be dropped for that one item. A
+ * write's refusal names its send by the arguments it echoes instead.
  */
 
 import { useCallback, useEffect } from '@wordpress/element';
@@ -72,22 +72,19 @@ export function useIntelRead( scope, command, args ) {
  * (`--key=value`), so a curator's value that begins `--name=` binds as the
  * value it is rather than as an option. `run()` answers the tokens it sent;
  * a landed send runs `refresh`, and a refused one hands `onRefused` the
- * tokens its reply echoes, which say which send it was. Everything else is
- * `useCommandOnce`'s own: whether a send still waits, the last reply's
- * refusal, and the arguments it answered.
+ * tokens its reply echoes, which say which send it was. The last reply's
+ * refusal and the arguments it answered are `useCommandOnce`'s own.
  *
  * @param {string}                     command          The write verb.
  * @param {Object}                     [opts]           Options.
  * @param {() => void}                 [opts.refresh]   Runs once a send lands.
  * @param {(tokens: string[]) => void} [opts.onRefused] Runs once a send is refused.
- * @return {{run: (args: Object<string, string>) => string[], pending: boolean, refusal: ?string, answeredArgs: ?string[]}}
- *   `run()`, whether a send of this verb still waits, the last refusal, and
- *   the arguments the last reply answered.
+ * @return {{run: (args: Object<string, string>) => string[], refusal: ?string, answeredArgs: ?string[]}}
+ *   `run()`, the last refusal, and the arguments the last reply answered.
  */
 export function useIntelWrite( command, { refresh, onRefused } = {} ) {
 	const {
 		run: send,
-		pending,
 		error,
 		answeredArgs,
 	} = useCommandOnce( {
@@ -106,5 +103,5 @@ export function useIntelWrite( command, { refresh, onRefused } = {} ) {
 		},
 		[ send ]
 	);
-	return { run, pending, refusal: error, answeredArgs };
+	return { run, refusal: error, answeredArgs };
 }

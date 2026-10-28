@@ -709,10 +709,10 @@ its own one-shot commands; nothing polls.
 |--------|--------|--------------|
 | `index.js` | — | Mounts `IntelligencePage` on `#newspack-intelligence-app`, handing it `canTune` and `vocabulary` from `NewspackNodesData` |
 | `IntelligencePage.js` | default | Switches Search, Entity, Review and Collections in place; holds the submitted search, the open entity and collection, and the item being saved, so a view returns as it was left; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the `NEWSPACK::NODES` header subtitled `Intelligence` and the debug overlay |
-| `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite` | A read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments; a write sent once per `run()`, running `refresh` once it lands and handing back `useCommandOnce`'s own `pending`, refusal and answered arguments |
+| `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite` | A read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments; a write sent once per `run()`, which answers the tokens it sent, running `refresh` once it lands, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal and answered arguments |
 | `views/Search.js` | default | `search` with words, kind, topic, source and a day range, a page at a time |
 | `views/Entity.js` | default | `entity`, `timeline` a page at a time, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
-| `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity, and `review entities`, a pill per entity; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities` |
+| `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity, and `review entities`, a pill per entity; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`; a judgment hides its pill or row as it is sent, until a read no longer lists it, and a refusal puts it back |
 | `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection` |
 | `components/SaveToCollection.js` | default | The one dialog any result saves through, sending `collect` |
 | `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty by its `rows` key, or its rows — as a stock `Card` section named by an optional title, which heads its `CardHeader`, with the state inset in its `CardBody`, or bare inside a dialog; the one alert every refusal, read or write, renders in |
@@ -728,8 +728,10 @@ per verb, held by its view rather than by a row, sending every arg named
 (`--key=…`, through `formatCommandArgs`) so a curator's value beginning
 `--name=` binds as a value, and a write that lands
 re-reads the slice it changed. No send names a subject: an item key spells a
-whole URL, past the length a reply address carries, so pending is per verb
-and a queue's rows hold while any judgment of it waits, a merge included.
+whole URL, past the length a reply address carries, so a refusal is matched
+to its send by the arguments it echoes. Review takes a judged row out as the
+judgment is sent, because the projector records it only on its next flush,
+and holds no other row while it waits.
 The view switcher wears the shared tab roles (`nodes-tab-host__tabbar`,
 `nodes-tab-host__tab`). `canTune`, which `enqueue_intelligence_assets()` sets
 from `Capabilities::can( TUNE )` on the page's own hook suffix alone, as

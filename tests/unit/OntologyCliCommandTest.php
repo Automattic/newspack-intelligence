@@ -173,14 +173,33 @@ final class OntologyCliCommandTest extends TestCase {
 		$cursor          = Config::get_base_directory() . '/offsets/newspack-intelligence-project.intel-items.p0';
 		\mkdir( $cursor, 0777, true );
 		$this->seed( self::entity( 'organization:tidewater-ledger', 'Tidewater Ledger' ) );
-		\WP_CLI::$on_run = static fn ( string $command ): int => 'nodes stop' === $command ? 1 : 0;
+		\WP_CLI::$on_run = static fn ( string $command ): ?array => 'nodes stop' === $command ? [ 1, "Held the fleet; waiting for workers to exit.\n", "Error: Timed out after 90s; still up: newspack-intelligence.p0\n" ] : null;
 
 		( new Ontology_CLI_Command() )->reproject( [], [] );
 
 		$this->assertSame( [ 'nodes stop', 'nodes start' ], \array_column( \WP_CLI::$ran, 0 ) );
 		$this->assertSame( [ true, true ], [ \file_exists( $graph ), \is_dir( $cursor ) ] );
-		$this->assertSame( [ 'The fleet did not stop, so reproject deleted nothing; the hold is released.' ], \WP_CLI::$errors );
+		$this->assertSame( [ 'Held the fleet; waiting for workers to exit.' ], \WP_CLI::$logs );
+		$this->assertSame( [ 'The fleet did not stop, so reproject deleted nothing; the hold is released. Error: Timed out after 90s; still up: newspack-intelligence.p0' ], \WP_CLI::$errors );
 		$this->assertSame( [], \WP_CLI::$successes );
+	}
+
+	/** A stop that throws, having perhaps set the hold, still releases it, and the throw surfaces. */
+	public function test_reproject_releases_the_hold_when_the_stop_throws(): void {
+		\WP_CLI::$on_run = static function ( string $command ): ?array {
+			if ( 'nodes stop' === $command ) {
+				throw new \RuntimeException( 'could not flag newspack-intelligence.p0 to stop' );
+			}
+			return null;
+		};
+
+		try {
+			( new Ontology_CLI_Command() )->reproject( [], [] );
+			$this->fail( 'the stop throws' );
+		} catch ( \RuntimeException $e ) {
+			$this->assertSame( 'could not flag newspack-intelligence.p0 to stop', $e->getMessage() );
+			$this->assertSame( [ 'nodes stop', 'nodes start' ], \array_column( \WP_CLI::$ran, 0 ) );
+		}
 	}
 
 	/** A delete that fails still releases the hold, and the failure surfaces. */

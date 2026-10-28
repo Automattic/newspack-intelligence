@@ -16,6 +16,8 @@ if ( ! class_exists( 'WP_CLI' ) ) {
 		public static array $errors = [];
 		/** @var array<int,string> */
 		public static array $successes = [];
+		/** @var array<int,string> */
+		public static array $logs = [];
 		/** @var list<array{0:string,1:array<string,mixed>}> */
 		public static array $ran = [];
 		public static ?\Closure $on_run = null;
@@ -28,19 +30,24 @@ if ( ! class_exists( 'WP_CLI' ) ) {
 		public static function success( string $message ): void {
 			self::$successes[] = $message;
 		}
+		public static function log( string $message ): void {
+			self::$logs[] = $message;
+		}
 		/**
 		 * @param array<string,mixed> $options
-		 * @return object{return_code:int,stdout:string,stderr:string} What `$on_run` exits with, 0 without one.
+		 * @return object{return_code:int,stdout:string,stderr:string} What `$on_run` answers as `[ code, stdout, stderr ]`, a clean exit without one.
 		 */
 		public static function runcommand( string $command, array $options = [] ): object {
-			self::$ran[] = [ $command, $options ];
-			$code        = null === self::$on_run ? 0 : ( self::$on_run )( $command );
-			return (object) [ 'return_code' => \is_int( $code ) ? $code : 0, 'stdout' => '', 'stderr' => '' ];
+			self::$ran[]                  = [ $command, $options ];
+			$run                          = null === self::$on_run ? null : ( self::$on_run )( $command );
+			[ $code, $stdout, $stderr ]   = \is_array( $run ) ? $run : [ 0, '', '' ];
+			return (object) [ 'return_code' => $code, 'stdout' => $stdout, 'stderr' => $stderr ];
 		}
 		public static function reset(): void {
 			self::$commands  = [];
 			self::$errors    = [];
 			self::$successes = [];
+			self::$logs      = [];
 			self::$ran       = [];
 			self::$on_run    = null;
 		}
