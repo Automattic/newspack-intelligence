@@ -46,14 +46,19 @@ function Reader( { args } ) {
 	return <p>{ answer ? `answer: ${ answer.name }` : 'nothing asked' }</p>;
 }
 
-function Writer( { refresh } ) {
-	const { run, refusal } = useIntelWrite( 'accept_entity', { refresh } );
+function Writer( { refresh, onRefused, onSent = () => {} } ) {
+	const { run, refusal } = useIntelWrite( 'accept_entity', {
+		refresh,
+		onRefused,
+	} );
 	return (
 		<>
 			<button
 				type="button"
 				className="button"
-				onClick={ () => run( { key: 'organization:acme-gazette' } ) }
+				onClick={ () =>
+					onSent( run( { key: 'organization:acme-gazette' } ) )
+				}
 			>
 				accept
 			</button>
@@ -149,5 +154,22 @@ describe( 'useIntelWrite', () => {
 		fireEvent.click( screen.getByRole( 'button', { name: 'accept' } ) );
 		await waitFor( () => expect( refresh ).toHaveBeenCalled() );
 		expect( screen.queryByText( /refusal:/ ) ).toBeNull();
+	} );
+
+	it( 'answers each run with the tokens it sent, and a refusal with the tokens refused', async () => {
+		wire.replies.accept_entity = () =>
+			new Error( 'no entity: organization:acme-gazette' );
+		const onSent = jest.fn();
+		const onRefused = jest.fn();
+		render( <Writer onSent={ onSent } onRefused={ onRefused } /> );
+		fireEvent.click( screen.getByRole( 'button', { name: 'accept' } ) );
+		expect( onSent ).toHaveBeenCalledWith( [
+			'--key=organization:acme-gazette',
+		] );
+		await waitFor( () =>
+			expect( onRefused ).toHaveBeenCalledWith( [
+				'--key=organization:acme-gazette',
+			] )
+		);
 	} );
 } );

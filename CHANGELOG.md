@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **One click on Review's ✓ or ✕ takes.** A judgment is appended to the ontology log at once, but the projector writes it into the queue the page re-reads only on its next five-second flush, so the re-read after a click still listed the proposal and its ✓ looked dead; each further click recorded the same judgment again. A judgment now takes its link or entity out of the queue the moment it is sent, and the row stays out until a read no longer lists it. A refused judgment puts its row back beside the refusal, matched by the arguments the refusal echoes, and a refusal naming no send, such as a Router's NOT_AVAILABLE, puts back every judged row of that queue. A queue no longer locks its other rows while one judgment waits, so the next proposal can be judged at once.
+
 ## [0.19.0] - 2026-10-27
 
 ### Changed

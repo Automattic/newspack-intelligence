@@ -1,4 +1,4 @@
-import { useState } from '@wordpress/element';
+import { useEffect, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { TextControl } from '@wordpress/components';
 import { Icon, check, closeSmall } from '@wordpress/icons';
@@ -33,15 +33,14 @@ function howFound( link, vocabulary ) {
  * the affirming and rejecting glyphs, joined into one pill.
  *
  * A curator's `judge` names the affirming glyph for the entity (`yes`),
- * affirms (`onYes`), rejects (`onNo`), and is `disabled` while a judgment
- * of the queue waits.
+ * affirms (`onYes`) and rejects (`onNo`).
  *
- * @param {Object}                                                                                          props
- * @param {string}                                                                                          props.entityKey     The entity's key.
- * @param {?string}                                                                                         props.name          Its name.
- * @param {string}                                                                                          [props.description] What the proposal rests on.
- * @param {(key: string) => void}                                                                           props.onOpen        Opens the entity.
- * @param {?{yes: (label: string) => string, onYes: () => void, onNo: () => void, disabled: boolean}|false} props.judge         A curator's judgment, or none.
+ * @param {Object}                                                                       props
+ * @param {string}                                                                       props.entityKey     The entity's key.
+ * @param {?string}                                                                      props.name          Its name.
+ * @param {string}                                                                       [props.description] What the proposal rests on.
+ * @param {(key: string) => void}                                                        props.onOpen        Opens the entity.
+ * @param {?{yes: (label: string) => string, onYes: () => void, onNo: () => void}|false} props.judge         A curator's judgment, or none.
  * @return {import('react').ReactElement} The pill.
  */
 function Judgment( { entityKey, name, description, onOpen, judge } ) {
@@ -61,7 +60,6 @@ function Judgment( { entityKey, name, description, onOpen, judge } ) {
 						className="button button-small"
 						aria-label={ judge.yes( label ) }
 						onClick={ judge.onYes }
-						disabled={ judge.disabled }
 					>
 						<Icon icon={ check } size={ 18 } />
 					</button>
@@ -74,7 +72,6 @@ function Judgment( { entityKey, name, description, onOpen, judge } ) {
 							label
 						) }
 						onClick={ judge.onNo }
-						disabled={ judge.disabled }
 					>
 						<Icon icon={ closeSmall } size={ 18 } />
 					</button>
@@ -89,12 +86,11 @@ function Judgment( { entityKey, name, description, onOpen, judge } ) {
  * closed until asked for.
  *
  * @param {Object}                 props
- * @param {string}                 props.label    The entity's name.
- * @param {(into: string) => void} props.onMerge  Sends the merge.
- * @param {boolean}                props.disabled While a judgment of the queue waits.
+ * @param {string}                 props.label   The entity's name.
+ * @param {(into: string) => void} props.onMerge Sends the merge.
  * @return {import('react').ReactElement} The control.
  */
-function Merge( { label, onMerge, disabled } ) {
+function Merge( { label, onMerge } ) {
 	const [ open, setOpen ] = useState( false );
 	const [ into, setInto ] = useState( '' );
 	return (
@@ -109,7 +105,6 @@ function Merge( { label, onMerge, disabled } ) {
 					label
 				) }
 				onClick={ () => setOpen( ! open ) }
-				disabled={ disabled }
 			>
 				{ __( 'Merge…', 'newspack-intelligence' ) }
 			</button>
@@ -125,11 +120,7 @@ function Merge( { label, onMerge, disabled } ) {
 						value={ into }
 						onChange={ setInto }
 					/>
-					<button
-						type="submit"
-						className="button"
-						disabled={ disabled }
-					>
+					<button type="submit" className="button">
 						{ __( 'Merge', 'newspack-intelligence' ) }
 					</button>
 				</form>
@@ -156,12 +147,92 @@ function byItem( links ) {
 }
 
 /**
+ * One queue's read with the rows a curator has judged taken out, from the
+ * moment each judgment is sent: the projection records a judgment seconds
+ * after it lands, so a re-read lists the row until then. A row stays out
+ * until a read no longer lists it, and returns when its judgment is
+ * refused, matched by the tokens the refusal echoes; a refusal echoing
+ * none, such as a Router's NOT_AVAILABLE, puts every judged row back.
+ *
+ * @param {{answer: ?Object, error: ?string, loading: boolean}} read  What `useIntelRead` returned.
+ * @param {string}                                              rows  The answer's row list.
+ * @param {(row: Object) => string}                             keyOf A row's key.
+ * @return {{read: Object, judge: (key: string, run: () => string[]) => void, refused: (tokens: string[]) => void}}
+ *   The read without the judged rows; `judge()`, which sends a row's
+ *   judgment through `run` and takes the row out; and `refused()`, which
+ *   puts back the row whose judgment sent `tokens`, or every row for none.
+ */
+function useJudged( read, rows, keyOf ) {
+	// Each judged row's key => the tokens its judgment sent, as JSON.
+	const [ judged, setJudged ] = useState( () => new Map() );
+	const listed = read.answer?.[ rows ];
+	useEffect( () => {
+		if ( ! listed ) {
+			return;
+		}
+		const keys = new Set( listed.map( keyOf ) );
+		setJudged( ( was ) => {
+			const kept = new Map(
+				[ ...was ].filter( ( [ key ] ) => keys.has( key ) )
+			);
+			return kept.size === was.size ? was : kept;
+		} );
+	}, [ listed, keyOf ] );
+	return {
+		read: listed
+			? {
+					...read,
+					answer: {
+						...read.answer,
+						[ rows ]: listed.filter(
+							( row ) => ! judged.has( keyOf( row ) )
+						),
+					},
+			  }
+			: read,
+		judge: ( key, run ) => {
+			const tokens = JSON.stringify( run() );
+			setJudged( ( was ) => new Map( was ).set( key, tokens ) );
+		},
+		refused: ( tokens ) => {
+			const sent = JSON.stringify( tokens );
+			setJudged(
+				( was ) =>
+					new Map(
+						0 === tokens.length
+							? []
+							: [ ...was ].filter( ( [ , t ] ) => t !== sent )
+					)
+			);
+		},
+	};
+}
+
+/**
+ * A proposed link's key: its item and entity.
+ *
+ * @param {Object} link The link.
+ * @return {string} The key.
+ */
+const linkKey = ( link ) =>
+	JSON.stringify( [ link.item_key, link.entity_key ] );
+
+/**
+ * A proposed entity's key.
+ *
+ * @param {Object} entity The entity.
+ * @return {string} The key.
+ */
+const entityKey = ( entity ) => entity.entity_key;
+
+/**
  * Review: the proposed links and the proposed entities, each row with the
  * items citing it, and for a curator the judgments each takes — confirm or
  * reject a link; accept, reject or merge an entity. A link row is one item
- * with a pill per entity proposed for it. A judgment that lands re-reads its
- * queue, a refused one shows the refusal, and a queue's rows hold while a
- * judgment of it waits.
+ * with a pill per entity proposed for it. A judgment takes its row out of
+ * the queue as it is sent, so the next can follow at once; one that lands
+ * re-reads its queue, and a refused one shows the refusal and puts its row
+ * back.
  *
  * @param {Object}                props
  * @param {boolean}               props.canTune      Whether to offer judgments.
@@ -175,26 +246,38 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 		'entities',
 	] );
 
-	const relink = { refresh: links.refresh };
-	const rejudge = { refresh: entities.refresh };
+	const judgedLinks = useJudged( links, 'links', linkKey );
+	const judgedEntities = useJudged( entities, 'entities', entityKey );
+
+	const relink = {
+		refresh: links.refresh,
+		onRefused: judgedLinks.refused,
+	};
+	const rejudge = {
+		refresh: entities.refresh,
+		onRefused: judgedEntities.refused,
+	};
 	const confirmLink = useIntelWrite( 'confirm_link', relink );
 	const rejectLink = useIntelWrite( 'reject_link', relink );
 	const acceptEntity = useIntelWrite( 'accept_entity', rejudge );
 	const rejectEntity = useIntelWrite( 'reject_entity', rejudge );
 	const mergeEntities = useIntelWrite( 'merge_entities', rejudge );
-	const linkJudgments = [ confirmLink, rejectLink ];
-	const entityJudgments = [ acceptEntity, rejectEntity, mergeEntities ];
-	const linkWaits = linkJudgments.some( ( write ) => write.pending );
-	const entityWaits = entityJudgments.some( ( write ) => write.pending );
+	const judgments = [
+		confirmLink,
+		rejectLink,
+		acceptEntity,
+		rejectEntity,
+		mergeEntities,
+	];
 
 	return (
 		<div className="newspack-intelligence__view">
-			{ [ ...linkJudgments, ...entityJudgments ].map( ( write, i ) => (
+			{ judgments.map( ( write, i ) => (
 				<Refusal key={ i } error={ write.refusal } />
 			) ) }
 			<Answer
 				title={ __( 'Proposed links', 'newspack-intelligence' ) }
-				read={ links }
+				read={ judgedLinks.read }
 				rows="links"
 				empty={ __(
 					'No proposed link awaits review.',
@@ -220,6 +303,11 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 											item: link.item_key,
 											entity: link.entity_key,
 										};
+										const judge = ( write ) =>
+											judgedLinks.judge(
+												linkKey( link ),
+												() => write.run( pair )
+											);
 										return (
 											<Judgment
 												key={ link.entity_key }
@@ -242,14 +330,11 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 																label
 															),
 														onYes: () =>
-															confirmLink.run(
-																pair
+															judge(
+																confirmLink
 															),
 														onNo: () =>
-															rejectLink.run(
-																pair
-															),
-														disabled: linkWaits,
+															judge( rejectLink ),
 													}
 												}
 											/>
@@ -263,7 +348,7 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 			</Answer>
 			<Answer
 				title={ __( 'Proposed entities', 'newspack-intelligence' ) }
-				read={ entities }
+				read={ judgedEntities.read }
 				rows="entities"
 				empty={ __(
 					'No proposed entity awaits review.',
@@ -274,6 +359,10 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 					<ul className="newspack-intelligence__items">
 						{ answer.entities.map( ( entity ) => {
 							const key = entity.entity_key;
+							const judge = ( write, args ) =>
+								judgedEntities.judge( key, () =>
+									write.run( args )
+								);
 							return (
 								<li
 									key={ key }
@@ -296,14 +385,13 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 															label
 														),
 													onYes: () =>
-														acceptEntity.run( {
+														judge( acceptEntity, {
 															key,
 														} ),
 													onNo: () =>
-														rejectEntity.run( {
+														judge( rejectEntity, {
 															key,
 														} ),
-													disabled: entityWaits,
 												}
 											}
 										/>
@@ -314,12 +402,11 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 											<Merge
 												label={ entity.name || key }
 												onMerge={ ( into ) =>
-													mergeEntities.run( {
+													judge( mergeEntities, {
 														from: key,
 														into,
 													} )
 												}
-												disabled={ entityWaits }
 											/>
 										) }
 									</div>
