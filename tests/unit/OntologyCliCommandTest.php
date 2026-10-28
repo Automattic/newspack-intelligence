@@ -161,7 +161,7 @@ final class OntologyCliCommandTest extends TestCase {
 		( new Ontology_CLI_Command() )->reproject( [], [] );
 
 		$this->assertSame( [ [ 'nodes stop', true, true ], [ 'nodes start', false, false ] ], $seen );
-		$this->assertSame( [ [ 'launch' => false, 'exit_error' => false, 'return' => 'all' ], [ 'launch' => false, 'exit_error' => true ] ], \array_column( \WP_CLI::$ran, 1 ) );
+		$this->assertSame( [ [ 'launch' => true, 'exit_error' => false, 'return' => 'all' ], [ 'launch' => true, 'exit_error' => true ] ], \array_column( \WP_CLI::$ran, 1 ), 'each runs in its own process, so a throw in it leaves this one\'s WP-CLI state alone' );
 		$this->assertSame( [ false, false, false, false ], [ \file_exists( $graph ), \file_exists( "{$graph}-wal" ), \file_exists( "{$graph}-shm" ), \is_dir( $cursors[1] ) ] );
 		$this->assertSame( [ true, true ], \array_map( 'is_dir', $kept ) );
 		$this->assertSame( [ 'Deleted the intel-graph projection and 2 projector cursors; the projector replays both streams.' ], \WP_CLI::$successes );

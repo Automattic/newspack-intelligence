@@ -30,8 +30,10 @@ class Ontology_CLI_Command {
 	 * with `wp nodes stop`, deletes the `intel-graph` Row_Table's files and
 	 * the cursor of every Consumer the projector checkpoints with, then
 	 * releases the hold with `wp nodes start`, so the projector replays both
-	 * streams from their oldest segment. A fleet that does not stop has
-	 * nothing deleted under it, and the hold is released all the same. The streams and every other
+	 * streams from their oldest segment. Each verb runs in its own process,
+	 * so whatever it throws reaches this one as an exit code and stderr. A
+	 * fleet that does not stop has nothing deleted under it, and the hold is
+	 * released all the same. The streams and every other
 	 * reader's cursor stay. Run it after an upgrade that changes the graph
 	 * schema's version, which leaves the projection empty until it runs.
 	 *
@@ -55,8 +57,7 @@ class Ontology_CLI_Command {
 		$stopped = false;
 		$why     = '';
 		try {
-			// An exit here would skip the finally that lifts the hold.
-			$stop    = \WP_CLI::runcommand( 'nodes stop', [ 'launch' => false, 'exit_error' => false, 'return' => 'all' ] );
+			$stop    = \WP_CLI::runcommand( 'nodes stop', [ 'launch' => true, 'exit_error' => false, 'return' => 'all' ] );
 			$stop    = \is_object( $stop ) ? \get_object_vars( $stop ) : [];
 			$said    = \trim( Core::as_string( $stop['stdout'] ?? '' ) );
 			$stopped = 0 === ( $stop['return_code'] ?? null );
@@ -71,7 +72,7 @@ class Ontology_CLI_Command {
 				Spawn_Coordinator::delete_directory_recursive( $dir, $base );
 			}
 		} finally {
-			\WP_CLI::runcommand( 'nodes start', [ 'launch' => false, 'exit_error' => true ] );
+			\WP_CLI::runcommand( 'nodes start', [ 'launch' => true, 'exit_error' => true ] );
 		}
 		if ( ! $stopped ) {
 			\WP_CLI::error( \trim( "The fleet did not stop, so reproject deleted nothing; the hold is released. {$why}" ) );
