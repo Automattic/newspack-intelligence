@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Newspack Intelligence
  * Description: Collects and curates intelligence as an entity graph, built on the newspack-nodes substrate.
- * Version: 0.19.0
+ * Version: 0.20.0
  * Author: Automattic
  * Author URI: https://newspack.com/
  * License: GPL-2.0-or-later
@@ -20,7 +20,7 @@ namespace Newspack_Intelligence;
 \defined( 'ABSPATH' ) || exit;
 
 if ( ! \defined( 'NEWSPACK_INTELLIGENCE_VERSION' ) ) {
-	\define( 'NEWSPACK_INTELLIGENCE_VERSION', '0.19.0' );
+	\define( 'NEWSPACK_INTELLIGENCE_VERSION', '0.20.0' );
 }
 if ( ! \defined( 'NEWSPACK_INTELLIGENCE_DIR' ) ) {
 	\define( 'NEWSPACK_INTELLIGENCE_DIR', \plugin_dir_path( __FILE__ ) );
