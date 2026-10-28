@@ -1,7 +1,8 @@
 <?php
 /**
  * Reresolver_Node: re-resolves stored items when the ontology grows. Fed the
- * ontology stream by `intel:ontology:tee`, it queues a signal for each
+ * ontology stream by its own Consumer, `intel:ontology:reresolve`, apart from
+ * the projector's, it queues a signal for each
  * `entity_created` or `name_added` (the name), each `identifier_added` (the
  * URLs the identifier spells) and each `entity_accepted` (every name and
  * identifier the projection holds for the entity). A new locality queues its
@@ -28,7 +29,7 @@
  * by its retrieval, sent in the order the projection recorded them, by a
  * cursor on each partition's row id.
  *
- * The queue checkpoints with the ontology Consumer's cursor, each unit by its
+ * The queue checkpoints with its Consumer's cursor, each unit by its
  * key, `<kind>|<value>`, with when it was queued and a range's cursor, so a
  * respawned reresolver resumes the signals that cursor consumed; an entry the
  * checkpoint cannot read is dropped and logged. A signal leaves the queue

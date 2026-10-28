@@ -444,7 +444,7 @@ final class ProjectorTest extends TestCase {
 		$this->assertInstanceOf( Projector_Node::class, $projector );
 		$this->assertSame( 'intel-graph', $this->read_private( $projector, 'graph_target' ) );
 		$this->assertInstanceOf( Row_Table_Node::class, Core::node( 'intel-graph' ) );
-		foreach ( [ 'intel:items:consumer' => [ 'items', 'projector' ], 'intel:ontology:consumer' => [ 'ontology', 'intel:ontology:tee' ] ] as $name => [ $stream, $target ] ) {
+		foreach ( [ 'intel:items:consumer' => [ 'items', 'projector' ], 'intel:ontology:consumer' => [ 'ontology', 'projector' ] ] as $name => [ $stream, $target ] ) {
 			$consumer = Core::node( $name );
 			$this->assertInstanceOf( Consumer_Node::class, $consumer, $name );
 			$this->assertSame( $target, $consumer->target(), $name );
@@ -454,7 +454,7 @@ final class ProjectorTest extends TestCase {
 		}
 		$this->assertFalse( $this->read_private( Core::node( 'intel:items:consumer' ), 'multi_writer' ), 'the worker is the items stream\'s one writer' );
 		$this->assertTrue( $this->read_private( Core::node( 'intel:ontology:consumer' ), 'multi_writer' ), 'the worker and request-side writers share the ontology stream' );
-		$this->assertSame( [ 'projector' ], Core::node( 'intel:ontology:tee' )?->target(), 'the ontology reaches the projector through its tee' );
+		$this->assertNull( Core::node( 'intel:ontology:tee' ), 'the ontology reaches the projector alone' );
 	}
 
 	/**

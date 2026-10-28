@@ -218,12 +218,12 @@ snapshot node, read from each active topology's TSL for each partition, and
 releases the hold with `wp nodes start`, in a `finally`, so the projector
 replays both streams from their oldest segment. It reads `nodes stop`'s exit
 code rather than letting it exit, which would skip that `finally`; a fleet
-that does not stop has nothing deleted under it and its hold released. The streams and every other
-reader's cursor stay; `wp nodes gc --force` would not do here, because a
-deactivated topology orphans its event logs with its tables. Replaying the
-ontology also re-signals the reresolver, whose sweeps wait
-`SWEEP_INTERVAL_S` behind the replay, and an item is extracted again only
-where its links are unsettled.
+that does not stop has nothing deleted under it and its hold released. The
+streams and every other reader's cursor stay, the reresolver's included,
+since it reads the ontology through its own Consumer, so a rebuild signals
+nothing and re-resolves nothing; `wp newspack-intelligence ontology
+reresolve` does that when wanted. `wp nodes gc --force` would not do here,
+because a deactivated topology orphans its event logs with its tables.
 
 **Resolution.** `resolver`, fed `item_recorded` events by its own
 `intel:items:resolve` Consumer, which skips every other kind on the stream
@@ -356,9 +356,9 @@ reaches only items older than the LRU's horizon; a full LRU checkpoints
 about 460 KB, most of it the item keys it names; an entry whose item
 stands in its own cluster stores no cluster key. With no `intel-graph` table a miss finds nothing, logged.
 
-**Re-resolution.** `reresolver`, which the composed graph builds, takes the
-ontology stream through `intel:ontology:tee`, the Tee between
-`intel:ontology:consumer` and the projector, and queues what an event can
+**Re-resolution.** `reresolver`, which the composed graph builds, reads the
+ontology stream through its own Consumer, `intel:ontology:reresolve`, apart
+from the projector's, and queues what an event can
 link anew: an `entity_created` or `name_added` its name, an
 `identifier_added` the URL spellings its kind has (`IDENTIFIER_URLS`), an
 `entity_accepted` every name and identifier the projection holds for the
@@ -392,7 +392,7 @@ validates the days, then sends `RERESOLVE <since> <until>` through
 reached; the reresolver answers the range it queued, or the refusal, and
 sends every item dated in those UTC days, an undated one by its retrieval,
 partition by partition in row-id order. The queue checkpoints with
-`intel:ontology:consumer` (`add_snapshot_node reresolver`), each unit by its
+`intel:ontology:reresolve` (`add_snapshot_node reresolver`), each unit by its
 key, `<kind>|<value>`, with when it was queued and a range's cursor, and an
 entry the checkpoint cannot read, or a checkpoint holding no queue, is
 dropped and logged; a signal leaves the queue once swept, a range once a
@@ -611,7 +611,7 @@ clock in whole seconds, `Intel_Event::now()`, as every reader takes it.
 | `newspack-intelligence.tsl` | Includes every file below and wires `reresolver`, which spans the project and streams files; `on_demand_idle 0` keeps the worker resident, which the TICK-driven sources need, and `stale_timeout 600` keeps a peer from stealing its lock while a TICK's fetches or an LLM call block one `fill()` |
 | `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve` and `intel:writer` |
 | `newspack-intelligence-collect.tsl` | The three sources → `intel:writer`; includes the streams |
-| `newspack-intelligence-project.tsl` | `intel:items:consumer` → `projector`, and `intel:ontology:consumer` → `intel:ontology:tee` → `projector`, writing the `intel-graph` Row_Table |
+| `newspack-intelligence-project.tsl` | `intel:items:consumer` → `projector` and `intel:ontology:consumer` → `projector`, writing the `intel-graph` Row_Table; no other node rides their cursors |
 | `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the items Consumer checkpointing the deduper; includes the streams |
 
 ### Nodes
