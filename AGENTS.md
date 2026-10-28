@@ -182,7 +182,12 @@ a fan-out field — and every value is typed by its column's declared type. Ever
 op is an `ignore` or a whole-row `set` on a keyed table, but for an
 extraction, which first deletes the item's claims and topic links (the
 substrate's `delete` op, 2.134.0) so one yielding fewer leaves none of the
-earlier behind; each table is written by one stream alone, so a replay writes
+earlier behind. A heuristic stand-in is projected by `STAND_IN` instead, one
+`ignore` of its `extractions` row, so it fills an item no extraction holds
+and never replaces a call's extraction, claims or topics, whatever the
+projection held when the extractor chose it. An extraction's row records its
+event's `ts`, the time the resolver settles links against. Each table is
+written by one stream alone, so a replay writes
 what it wrote before and the streams project the same rows in either order. The projector never reads
 before it writes: an entity is three rows — identity in `entities`, state in
 `entity_states`, merge in `entity_merges` — and an item's extraction sits in
@@ -201,6 +206,24 @@ keeps the buffer, so the cursor replays it. A message that carries no valid
 event throws out of `fill()`, so its Consumer dead-letters it and reads on.
 `Url_Canon::of()` and `Entity_Index::norm()` compute the canonical URL, the
 title norm and each name's norm the readers match on.
+
+**Rebuilding.** `Intel_Graph_Row_Schema::version()`, 2, versions the
+projection's shape; the substrate discards a file at another version when
+the Row_Table opens it, and the projector's Consumers resume where they
+stopped, so the graph stays empty until it is rebuilt. A schema change bumps
+the version, and the upgrade runs `wp newspack-intelligence ontology
+reproject`. It holds the fleet with `wp nodes stop`, deletes the graph's
+files and the cursor of every Consumer whose config adds the projector as a
+snapshot node, read from each active topology's TSL for each partition, and
+releases the hold with `wp nodes start`, in a `finally`, so the projector
+replays both streams from their oldest segment. It reads `nodes stop`'s exit
+code rather than letting it exit, which would skip that `finally`; a fleet
+that does not stop has nothing deleted under it and its hold released. The streams and every other
+reader's cursor stay; `wp nodes gc --force` would not do here, because a
+deactivated topology orphans its event logs with its tables. Replaying the
+ontology also re-signals the reresolver, whose sweeps wait
+`SWEEP_INTERVAL_S` behind the replay, and an item is extracted again only
+where its links are unsettled.
 
 **Resolution.** `resolver`, fed `item_recorded` events by its own
 `intel:items:resolve` Consumer, which skips every other kind on the stream
@@ -241,26 +264,30 @@ made — a `machine:extract-heuristic@…` stand-in does not count, matched
 through `Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE )` —
 and its stored links and the judgments of them, each entity as its survivor
 in the resolver's own index, across every partition, a key whose merge chain
-is broken counting nowhere. A link is settled when it is asserted or judged;
+is broken counting nowhere. A link is settled when it was asserted, or a
+curator confirmed it, no later than the call's extraction, by the link's or
+the judgment's `ts` against the extraction's, or when a curator rejected it;
 its verdict is its highest-ranked judgment's (`Graph_Query::judge_rank()`, the
-latest among equals). A record names whether a curator's
-confirmation sent it (`judged`); one missing that, its item or its
+latest among equals). A record missing its item or its
 freshness is dropped with a line, as is one naming an item the projection no
 longer holds, and a projection that will not open throws, so the record
 dead-letters. A re-resolution runs the first three steps alone, since NER
-ran on first resolution, writes its links, and forwards the item when no
-such extraction is projected, when it asserts a link to an entity whose link
-is not settled, or when it is `judged`. So an item a proxy outage left
-heuristic is extracted again, as is one naming an entity accepted or created
-after its extraction, which asserted no claim about a subject it only
-proposed, and one a curator confirmed a link of; an item whose settled links
-are unchanged is never extracted twice. What it forwards carries the
+ran on first resolution, and writes only the links whose state, method or
+confidence changed, so a link's `ts` is when it last changed rather than
+when it was last re-resolved. It forwards the item when no such extraction
+is projected, or when, with the curators' verdicts in force, it asserts a
+link that is not settled. So an item a proxy outage left heuristic is
+extracted again, as is one naming an entity accepted or created after its
+extraction, which asserted no claim about a subject it only proposed, and
+one a curator confirmed a link of since; an item whose settled links are
+unchanged is never extracted twice. What it forwards carries the
 curators' verdicts: a confirmed link asserted, from its stored row when the
 re-resolution did not find it again, and a rejected one left out, so the
 extractor's claims follow them, while the link events it writes stay the
 resolver's own; and whether a call extracted the item before (`extracted`),
 so an extractor whose call fails keeps that extraction rather than replacing
-it with the heuristic stand-in. `Resolver::resolve(
+it with the heuristic stand-in. That extraction stays older than the link,
+so the item's next re-resolution tries again. `Resolver::resolve(
 $item, $ner )` takes the NER step per call: the node builds it from its
 `LLM_Config` state for each recorded item, so a runtime `set_vault_id` or
 `set_api_url` reaches the next one, and passes none on a re-resolution; the
@@ -337,9 +364,9 @@ link anew: an `entity_created` or `name_added` its name, an
 `entity_accepted` every name and identifier the projection holds for the
 entity, and a new locality the entity's own names, because a locality settles
 an ambiguous name and links nothing alone; a `link_confirmed` queues its one
-item, sent `judged` without a search. A topic queues nothing, and a
+item without a search. A topic queues nothing, and a
 repeated signal is queued once. Each Router tick appends `item_reresolve`
-records, each naming a stored item and whether a confirmation sent it, to
+records, each naming a stored item, to
 `intel:reresolve`, a Partition
 keeping a day of records under PIPE_BUF. Its own Consumer,
 `intel:reresolve:resolve`, feeds `resolver` one record a poll, so the tick
@@ -374,7 +401,7 @@ not open. Any other failure of a unit's projection
 read drops that unit with a rate-limited line naming it and the cause, so a
 respawn cannot restore the same head and fail on it again; a cooperative stop
 propagates first. `Intel_Graph_Row_Schema::$read_rows` is the read's test
-seam. Both `ontology` verbs and `clients import` refuse to run as root
+seam. The `ontology` verbs and `clients import` refuse to run as root
 before they write, through the `Refuses_Root` trait, as `wp nodes` verbs do,
 because a root-owned segment or IPC file is one the workers cannot append
 to.
@@ -733,7 +760,7 @@ sibling checkout locally.
 | `includes/` (clients) | `Client_Importer`, the `Client_Roster` interface, `Graph_Client_Roster`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |
 | `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Intel_Tiers`, `Worker_Route`, `uninstall-cleanup.php` |
-| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed` and `ontology reresolve`; the `Refuses_Root` trait both use |
+| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed`, `ontology reresolve` and `ontology reproject`; the `Refuses_Root` trait they share |
 | `topologies/` | The five `.tsl` node-graph topologies |
 | `src/intelligence/` | The Intelligence page's React bundle |
 | `tests/` | PHPUnit (`unit/` + `bootstrap.php` + `support/` + `run-coverage.sh`; `integration/` exists but is empty) |

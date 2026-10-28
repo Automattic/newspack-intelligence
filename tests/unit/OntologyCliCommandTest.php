@@ -4,7 +4,9 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\CLI\Ontology_CLI_Command;
+use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Ontology_Seed;
+use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\CLI;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Message;
@@ -135,21 +137,86 @@ final class OntologyCliCommandTest extends TestCase {
 		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2026-03-09', 'until' => '2026-04-17' ] );
 	}
 
-	/** Run as root, either verb refuses before it writes, so no root-owned segment or IPC file is left for the workers. */
-	public function test_both_verbs_refuse_root_before_any_write(): void {
+	/**
+	 * `reproject` holds the fleet, deletes the graph's file and the cursor of
+	 * each Consumer the projector checkpoints with, then releases the hold;
+	 * the streams and every other reader's cursor stay.
+	 */
+	public function test_reproject_deletes_the_graph_and_the_projectors_cursors_inside_a_hold(): void {
+		$base    = Config::get_base_directory();
+		$graph   = Bootstrap::row_table( Intel_Graph_Row_Schema::class )['files'][0];
+		$cursors = [ "{$base}/offsets/newspack-intelligence-project.intel-items.p0", "{$base}/offsets/newspack-intelligence-project.intel-ontology.p0" ];
+		$kept    = [ "{$base}/offsets/newspack-intelligence-project.intel-items-resolve.p0", "{$base}/logs/intel-ontology.p0" ];
+		foreach ( [ ...$cursors, ...$kept ] as $dir ) {
+			\mkdir( $dir, 0777, true );
+			\file_put_contents( "{$dir}/0.log", "[1]\n" );
+		}
+		$this->seed( self::entity( 'organization:tidewater-ledger', 'Tidewater Ledger' ) );
+		\file_put_contents( "{$graph}-wal", '' );
+		$standing        = \count( \array_filter( [ $graph, "{$graph}-wal", "{$graph}-shm" ], 'file_exists' ) );
+		$seen            = [];
+		\WP_CLI::$on_run = static function ( string $command ) use ( &$seen, $graph, $cursors ): void {
+			$seen[] = [ $command, \file_exists( $graph ), \is_dir( $cursors[0] ) ];
+		};
+
+		( new Ontology_CLI_Command() )->reproject( [], [] );
+
+		$this->assertSame( [ [ 'nodes stop', true, true ], [ 'nodes start', false, false ] ], $seen );
+		$this->assertSame( [ [ 'launch' => false, 'exit_error' => false, 'return' => 'all' ], [ 'launch' => false, 'exit_error' => true ] ], \array_column( \WP_CLI::$ran, 1 ) );
+		$this->assertSame( [ false, false, false, false ], [ \file_exists( $graph ), \file_exists( "{$graph}-wal" ), \file_exists( "{$graph}-shm" ), \is_dir( $cursors[1] ) ] );
+		$this->assertSame( [ true, true ], \array_map( 'is_dir', $kept ) );
+		$this->assertSame( [ "Deleted the intel-graph projection ({$standing} files) and 2 projector cursors; the projector replays both streams." ], \WP_CLI::$successes );
+	}
+
+	/** A fleet that will not stop deletes nothing, and the hold is released before the refusal. */
+	public function test_reproject_deletes_nothing_when_the_fleet_will_not_stop(): void {
+		$graph           = Bootstrap::row_table( Intel_Graph_Row_Schema::class )['files'][0];
+		$cursor          = Config::get_base_directory() . '/offsets/newspack-intelligence-project.intel-items.p0';
+		\mkdir( $cursor, 0777, true );
+		$this->seed( self::entity( 'organization:tidewater-ledger', 'Tidewater Ledger' ) );
+		\WP_CLI::$on_run = static fn ( string $command ): int => 'nodes stop' === $command ? 1 : 0;
+
+		( new Ontology_CLI_Command() )->reproject( [], [] );
+
+		$this->assertSame( [ 'nodes stop', 'nodes start' ], \array_column( \WP_CLI::$ran, 0 ) );
+		$this->assertSame( [ true, true ], [ \file_exists( $graph ), \is_dir( $cursor ) ] );
+		$this->assertSame( [ 'The fleet did not stop, so reproject deleted nothing; the hold is released.' ], \WP_CLI::$errors );
+		$this->assertSame( [], \WP_CLI::$successes );
+	}
+
+	/** A delete that fails still releases the hold, and the failure surfaces. */
+	public function test_reproject_releases_the_hold_when_a_delete_fails(): void {
+		$graph = Bootstrap::row_table( Intel_Graph_Row_Schema::class )['files'][0];
+		\mkdir( "{$graph}-wal", 0777, true );
+		\file_put_contents( "{$graph}-wal/held", 'x' );
+
+		try {
+			( new Ontology_CLI_Command() )->reproject( [], [] );
+			$this->fail( 'the delete throws' );
+		} catch ( \UnexpectedValueException ) {
+			$this->assertSame( [ 'nodes stop', 'nodes start' ], \array_column( \WP_CLI::$ran, 0 ) );
+			$this->assertSame( [], \WP_CLI::$successes );
+		}
+	}
+
+	/** Run as root, each verb refuses before it writes, so no root-owned segment, IPC file or hold is left for the workers. */
+	public function test_every_verb_refuses_root_before_any_write(): void {
 		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p5' );
 		CLI::$uid_provider = static fn (): int => 0;
 
 		( new Ontology_CLI_Command() )->seed( [], [] );
 		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2026-03-09', 'until' => '2026-04-17' ] );
+		( new Ontology_CLI_Command() )->reproject( [], [] );
 
 		$this->assertSame(
 			[
 				'wp newspack-intelligence ontology seed must run as the same user as the workers, not root.',
 				'wp newspack-intelligence ontology reresolve must run as the same user as the workers, not root.',
+				'wp newspack-intelligence ontology reproject must run as the same user as the workers, not root.',
 			],
 			\WP_CLI::$errors
 		);
+		$this->assertSame( [], \WP_CLI::$ran );
 		$this->assertSame( 0, self::ontology_segments() );
 		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p5' ) );
 		$this->assertSame( [], \WP_CLI::$successes );

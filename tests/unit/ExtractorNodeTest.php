@@ -328,7 +328,7 @@ final class ExtractorNodeTest extends TestCase {
 		$resolver->sink( new Capture_Sink_Node() );
 		$message                   = Message::new_message();
 		$message[ Message::TYPE ]  = Message::TM_STRUCT;
-		$message[ Message::VALUE ] = [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM, 'fresh_after' => self::NOW + 1, 'judged' => false ];
+		$message[ Message::VALUE ] = [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM, 'fresh_after' => self::NOW + 1 ];
 		$resolver->fill( $message );
 		Resolver_Node::$llm_factory = null;
 

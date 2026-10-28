@@ -47,7 +47,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'retrieved_day', 730, 86400 ], $tables['items']['retain'] );
 		$this->assertSame( [ 'entity_key', 'type', 'name', 'created_ts' ], \array_keys( $tables['entities']['columns'] ), 'an entity row carries no id' );
 		$this->assertArrayNotHasKey( 'autoincrement', $tables['entities'] );
-		$this->assertSame( 1, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 2, Intel_Graph_Row_Schema::version() );
 		$this->projector_graph();
 		$this->assertSame( [ 'Intel_Graph' ], Core::node( 'intel-graph' )->arguments(), 'the Row_Table accepts the schema' );
 	}
@@ -126,7 +126,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 
 		$this->assertContains( [ 'subject', 'kind' ], $tables['events']['indexes'] ?? [] );
 		$this->assertContains( [ 'entity_key' ], $tables['judgments']['indexes'] ?? [] );
-		$this->assertSame( 1, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 2, Intel_Graph_Row_Schema::version() );
 	}
 
 	/** With no partition written, a table reads as an empty row set of its declared columns. */

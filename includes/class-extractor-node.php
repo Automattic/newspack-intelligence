@@ -8,8 +8,8 @@
  * addressed by TO to the writer its `make_node` line names (substrate
  * ADR-19). Each extraction then forwards an `item_extracted` struct `{ item,
  * relevance, importance }` to its target, the deduper. The Resolver forwards
- * an item the projection holds an extraction of only when it newly asserts a
- * link or a curator confirmed one, so an item is extracted again only to
+ * an item the projection holds an extraction of only when a link was asserted
+ * or confirmed after that extraction, so an item is extracted again only to
  * record claims about a subject accepted or confirmed since; the projector
  * replaces the item's claims and topics with the new extraction's.
  *
@@ -17,9 +17,10 @@
  * spell the whole of them. The subject is the one of those the item links
  * by an asserted link, so a claim about a merely proposed subject asserts
  * nothing; the object is the only one, or the only one the item links, and
- * otherwise stays text. A claim takes the confidence of its subject's link. With no client, a thrown call or a reply
- * that does not parse, the item still records a heuristic extraction under
- * its own actor, so it is marked extracted rather than retried. The topics
+ * otherwise stays text. A claim takes the confidence of its subject's link.
+ * With no client, a thrown call or a reply that does not parse, an item no
+ * call has extracted records a heuristic extraction under its own actor, so
+ * it is marked extracted rather than retried in a loop. The topics
  * offered and the names claims resolve through come from the process's
  * shared `Entity_Index::current()`, the one the Resolver reads.
  *
@@ -87,8 +88,8 @@ class Extractor_Node extends Node {
 	/**
 	 * Ask for the item's extraction and write it, or its heuristic stand-in
 	 * under its own stage, dated by the item's retrieval; an item a call
-	 * extracted before keeps that extraction when this call fails, since the
-	 * stand-in would replace its claims and topics with none.
+	 * extracted before keeps that extraction when this call fails, older than
+	 * the link that sent it, so its next re-resolution tries again.
 	 *
 	 * @param array<string,mixed>                 $item      The item.
 	 * @param array<string,array{0:float,1:bool}> $linked    Each linked entity => its link's confidence and whether it is asserted.
