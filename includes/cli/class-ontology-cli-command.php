@@ -52,10 +52,18 @@ class Ontology_CLI_Command {
 		$table   = Bootstrap::row_table( Intel_Graph_Row_Schema::class );
 		$cursors = self::projector_cursors();
 		$base    = Config::get_base_directory();
-		// An exit here would skip the finally that lifts the hold.
-		$stop    = \WP_CLI::runcommand( 'nodes stop', [ 'launch' => false, 'exit_error' => false, 'return' => 'all' ] );
-		$stopped = \is_object( $stop ) && \property_exists( $stop, 'return_code' ) && 0 === $stop->return_code;
+		$stopped = false;
+		$why     = '';
 		try {
+			// An exit here would skip the finally that lifts the hold.
+			$stop    = \WP_CLI::runcommand( 'nodes stop', [ 'launch' => false, 'exit_error' => false, 'return' => 'all' ] );
+			$stop    = \is_object( $stop ) ? \get_object_vars( $stop ) : [];
+			$said    = \trim( Core::as_string( $stop['stdout'] ?? '' ) );
+			$stopped = 0 === ( $stop['return_code'] ?? null );
+			$why     = \trim( Core::as_string( $stop['stderr'] ?? '' ) );
+			if ( '' !== $said ) {
+				\WP_CLI::log( $said );
+			}
 			foreach ( $stopped ? $table['files'] : [] as $file ) {
 				Sqlite_Arm::remove_database( $file );
 			}
@@ -66,7 +74,7 @@ class Ontology_CLI_Command {
 			\WP_CLI::runcommand( 'nodes start', [ 'launch' => false, 'exit_error' => true ] );
 		}
 		if ( ! $stopped ) {
-			\WP_CLI::error( 'The fleet did not stop, so reproject deleted nothing; the hold is released.' );
+			\WP_CLI::error( \trim( "The fleet did not stop, so reproject deleted nothing; the hold is released. {$why}" ) );
 			return;
 		}
 		\WP_CLI::success( \sprintf( 'Deleted the %s projection and %d projector cursors; the projector replays both streams.', $table['name'], \count( $cursors ) ) );
