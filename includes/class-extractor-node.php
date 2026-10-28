@@ -6,12 +6,14 @@
  * It writes an `extraction_recorded` naming topic keys plus a
  * `claim_asserted` per claim whose subject is an entity the item links,
  * addressed by TO to the writer its `make_node` line names (substrate
- * ADR-19). Each extraction then forwards an `item_extracted` struct `{ item,
+ * ADR-19). A call's extraction also writes a `subjects_extracted` naming
+ * the entities it was given as asserted, the set the Resolver settles links
+ * by. Each extraction then forwards an `item_extracted` struct `{ item,
  * relevance, importance }` to its target, the deduper. The Resolver forwards
- * an item the projection holds an extraction of only when a link was asserted
- * or confirmed after that extraction, so an item is extracted again only to
- * record claims about a subject accepted or confirmed since; the projector
- * replaces the item's claims and topics with the new extraction's.
+ * an item the projection holds an extraction of only when it asserts a link
+ * that extraction was not given, so an item is extracted again only to record
+ * claims about a subject accepted or confirmed since; the projector replaces
+ * the item's claims and topics with the new extraction's.
  *
  * A claim's subject and object resolve through the entities whose names
  * spell the whole of them. The subject is the one of those the item links
@@ -88,8 +90,8 @@ class Extractor_Node extends Node {
 	/**
 	 * Ask for the item's extraction and write it, or its heuristic stand-in
 	 * under its own stage, dated by the item's retrieval; an item a call
-	 * extracted before keeps that extraction when this call fails, older than
-	 * the link that sent it, so its next re-resolution tries again.
+	 * extracted before keeps that extraction when this call fails, which was
+	 * not given the link that sent it, so its next re-resolution tries again.
 	 *
 	 * @param array<string,mixed>                 $item      The item.
 	 * @param array<string,array{0:float,1:bool}> $linked    Each linked entity => its link's confidence and whether it is asserted.
@@ -128,6 +130,10 @@ class Extractor_Node extends Node {
 			'retrieved_ts' => $item['retrieved_ts'],
 		];
 		$this->emit( $this->writer, Intel_Event::machine_event( $stage, 'extraction_recorded', $fields ) );
+		if ( self::HEURISTIC_STAGE !== $stage ) {
+			$given = \array_keys( \array_filter( $linked, static fn ( array $link ): bool => $link[1] ) );
+			$this->emit( $this->writer, Intel_Event::machine_event( $stage, 'subjects_extracted', [ 'item_key' => $item_key, 'entity_keys' => $given, 'retrieved_ts' => $item['retrieved_ts'] ] ) );
+		}
 		$this->emit( '', [ 'event' => self::EXTRACTED, 'item' => $item, 'relevance' => $parsed['relevance'], 'importance' => $parsed['importance'] ] );
 		$ord = 0;
 		foreach ( $parsed['claims'] as $claim ) {

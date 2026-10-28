@@ -185,8 +185,9 @@ substrate's `delete` op, 2.134.0) so one yielding fewer leaves none of the
 earlier behind. A heuristic stand-in is projected by `STAND_IN` instead, one
 `ignore` of its `extractions` row, so it fills an item no extraction holds
 and never replaces a call's extraction, claims or topics, whatever the
-projection held when the extractor chose it. An extraction's row records its
-event's `ts`, the time the resolver settles links against. Each table is
+projection held when the extractor chose it. A `subjects_extracted` replaces
+the item's `extracted_subjects` rows, the entities its last call extraction
+was given as asserted, which the resolver settles links by. Each table is
 written by one stream alone, so a replay writes
 what it wrote before and the streams project the same rows in either order. The projector never reads
 before it writes: an entity is three rows — identity in `entities`, state in
@@ -262,19 +263,19 @@ fed by `intel:reresolve:resolve`, names a stored item, which it reads from
 the projection with whether the projection holds an extraction a call
 made — a `machine:extract-heuristic@…` stand-in does not count, matched
 through `Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE )` —
-and its stored links and the judgments of them, each entity as its survivor
-in the resolver's own index, across every partition, a key whose merge chain
-is broken counting nowhere. A link is settled when it was asserted, or a
-curator confirmed it, no later than the call's extraction, by the link's or
-the judgment's `ts` against the extraction's, or when a curator rejected it;
+its stored links, the judgments of them and the entities its last call
+extraction was given, each entity as its survivor in the resolver's own
+index, across every partition, a key whose merge chain is broken counting
+nowhere. A link is settled when the last call extraction was given its
+survivor as asserted, or when a curator rejected it, so a merge settles
+through the survivor and a confirmation the projection had not yet recorded
+when the item was extracted is still owed its claims;
 its verdict is its highest-ranked judgment's (`Graph_Query::judge_rank()`, the
 latest among equals). A record missing its item or its
 freshness is dropped with a line, as is one naming an item the projection no
 longer holds, and a projection that will not open throws, so the record
 dead-letters. A re-resolution runs the first three steps alone, since NER
-ran on first resolution, and writes only the links whose state, method or
-confidence changed, so a link's `ts` is when it last changed rather than
-when it was last re-resolved. It forwards the item when no such extraction
+ran on first resolution, writes its links, and forwards the item when no such extraction
 is projected, or when, with the curators' verdicts in force, it asserts a
 link that is not settled. So an item a proxy outage left heuristic is
 extracted again, as is one naming an entity accepted or created after its
@@ -286,8 +287,8 @@ re-resolution did not find it again, and a rejected one left out, so the
 extractor's claims follow them, while the link events it writes stay the
 resolver's own; and whether a call extracted the item before (`extracted`),
 so an extractor whose call fails keeps that extraction rather than replacing
-it with the heuristic stand-in. That extraction stays older than the link,
-so the item's next re-resolution tries again. `Resolver::resolve(
+it with the heuristic stand-in. That extraction was not given the link, so
+the item's next re-resolution tries again. `Resolver::resolve(
 $item, $ner )` takes the NER step per call: the node builds it from its
 `LLM_Config` state for each recorded item, so a runtime `set_vault_id` or
 `set_api_url` reaches the next one, and passes none on a re-resolution; the
@@ -310,7 +311,8 @@ inside an `<item>` fence the system message names as untrusted and offers
 the index's topic names. `Prompts::parse_extract()` reads the first `{…}`
 block through `Prompts::json_object()`, which the NER step shares, cuts the summary to 280 characters, reads an unknown kind as `other`,
 clamps the scores and keeps at most five claims with a predicate from the
-closed set. It writes an `extraction_recorded` naming topic keys, and a
+closed set. It writes an `extraction_recorded` naming topic keys, then a
+`subjects_extracted` naming the entities it was given as asserted, and a
 `claim_asserted` per claim whose subject the item links by an asserted
 link, taking that link's confidence; a subject linked only by
 `link_proposed` asserts no claim. Subject and object resolve through every

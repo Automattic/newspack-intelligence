@@ -114,7 +114,8 @@ final class ExtractorNodeTest extends TestCase {
 			$this->assertSame( 1794050000, $event['retrieved_ts'], 'an extraction and its claims carry the item\'s retrieval' );
 			$this->assertSame( $version, $event['config_version'] );
 		}
-		$this->assertSame( [ 'extraction_recorded', 'claim_asserted', 'claim_asserted' ], \array_column( $events, 'event' ) );
+		$this->assertSame( [ 'extraction_recorded', 'subjects_extracted', 'claim_asserted', 'claim_asserted' ], \array_column( $events, 'event' ) );
+		$this->assertSame( [ self::GAZETTE ], $events[1]['entity_keys'], 'the extraction names the entities it was given asserted' );
 		$this->assertSame( [ [ 'event' => 'item_extracted', 'item' => self::item(), 'relevance' => 8, 'importance' => 6 ] ], $this->forwarded() );
 		$this->assertSame(
 			[ 'The Harbor Gazette won a Peabody for its port series.', 'award', 8, 6, 0.6, [ 'topic:awards' ] ],
@@ -125,7 +126,7 @@ final class ExtractorNodeTest extends TestCase {
 				[ 0, self::GAZETTE, 'won', self::PEABODY, '', 0.9 ],
 				[ 1, self::GAZETTE, 'located_in', '', 'Port Angeles', 0.9 ],
 			],
-			\array_map( static fn ( array $e ): array => [ $e['ord'], $e['subject_key'], $e['predicate'], $e['object_key'], $e['object_text'], $e['confidence'] ], \array_slice( $events, 1 ) )
+			\array_map( static fn ( array $e ): array => [ $e['ord'], $e['subject_key'], $e['predicate'], $e['object_key'], $e['object_text'], $e['confidence'] ], \array_slice( $events, 2 ) )
 		);
 		$this->assertCount( 1, $this->asked );
 		$system = $this->asked[0][0]['content'];
@@ -199,14 +200,14 @@ final class ExtractorNodeTest extends TestCase {
 		);
 	}
 
-	/** A subject the item only proposes a link to asserts no claim; the extraction is still recorded. */
+	/** A subject the item only proposes a link to asserts no claim and is not among the entities the extraction was given; the extraction is still recorded. */
 	public function test_a_claim_about_a_proposed_subject_is_dropped(): void {
 		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ) );
 		$this->answer( '{"summary":"Harbor Gazette wins.","kind":"award","claims":[{"subject":"Harbor Gazette","predicate":"won","object":"Peabody Award"}]}' );
 
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 0.6, 'proposed' ) ], [] ) );
 
-		$this->assertSame( [ 'extraction_recorded' ], \array_column( $this->written(), 'event' ) );
+		$this->assertSame( [ [ 'extraction_recorded', null ], [ 'subjects_extracted', [] ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_keys'] ?? null ], $this->written() ) );
 	}
 
 	/**
