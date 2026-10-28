@@ -2,6 +2,8 @@
 /**
  * The bundle entry mounts IntelligencePage on its admin page's mount point,
  * handing it the curation flag and the vocabulary PHP localized.
+ * `wp_localize_script()` casts a top-level scalar to a string, so the flag
+ * arrives as `'1'` for a curator and `''` for anyone else.
  */
 
 describe( 'intelligence index', () => {
@@ -25,7 +27,7 @@ describe( 'intelligence index', () => {
 		window.NewspackNodesData = {
 			restUrl: '/wp-json/',
 			nonce: 'NONCE',
-			canTune: true,
+			canTune: '1',
 			vocabulary: { roles: [ 'funder' ] },
 		};
 	} );
@@ -47,15 +49,19 @@ describe( 'intelligence index', () => {
 		} );
 	} );
 
-	it( 'hides curation unless the flag is exactly true', () => {
-		window.NewspackNodesData.canTune = 'yes';
-		document.body.innerHTML = '<div id="newspack-intelligence-app"></div>';
-		const { render } = loadIndex();
+	it.each( [ '', 'yes', true ] )(
+		'hides curation unless the flag is exactly the string 1, not %p',
+		( flag ) => {
+			window.NewspackNodesData.canTune = flag;
+			document.body.innerHTML =
+				'<div id="newspack-intelligence-app"></div>';
+			const { render } = loadIndex();
 
-		document.dispatchEvent( new Event( 'DOMContentLoaded' ) );
+			document.dispatchEvent( new Event( 'DOMContentLoaded' ) );
 
-		expect( render.mock.calls[ 0 ][ 0 ].props.canTune ).toBe( false );
-	} );
+			expect( render.mock.calls[ 0 ][ 0 ].props.canTune ).toBe( false );
+		}
+	);
 
 	it( 'does nothing when the mount is absent', () => {
 		const { createRoot } = loadIndex();

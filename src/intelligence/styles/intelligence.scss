@@ -69,7 +69,7 @@
 	}
 
 	&__item-head,
-	&__judge,
+	&__judgments,
 	&__pager {
 		display: flex;
 		flex-wrap: wrap;
@@ -95,6 +95,55 @@
 		flex-direction: column;
 		gap: base.$space-sm;
 		min-width: 0;
+	}
+
+	&__judgments,
+	&__item-head + &__facts {
+		margin-top: base.$space-sm;
+	}
+
+	// A proposal's citations: WordPress spaces every admin `li`; the gap does.
+	&__item-head + &__facts {
+		gap: base.$space-xs;
+
+		> li {
+			margin: 0;
+		}
+	}
+
+	// One proposal reads as one pill: the chip and its glyphs share edges.
+	// Scoped under the root to outrank the shared button's own radius.
+	.newspack-intelligence__judgment {
+		display: inline-flex;
+
+		> .button.button-small {
+			border-radius: 0;
+		}
+
+		> .button.button-small + .button.button-small {
+			margin-inline-start: -1px;
+			padding-inline: base.$space-xs;
+		}
+
+		// A hovered or focused segment rises over the neighbour overlapping it.
+		> .button.button-small:is(:hover, :focus) {
+			position: relative;
+			z-index: 1;
+		}
+
+		> .button.button-small:first-child {
+			border-start-start-radius: var(--button-radius, 5px);
+			border-end-start-radius: var(--button-radius, 5px);
+		}
+
+		> .button.button-small:last-child {
+			border-start-end-radius: var(--button-radius, 5px);
+			border-end-end-radius: var(--button-radius, 5px);
+		}
+
+		svg {
+			fill: currentcolor;
+		}
 	}
 
 	&__merge,

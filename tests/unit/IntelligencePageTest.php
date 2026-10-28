@@ -118,7 +118,7 @@ final class IntelligencePageTest extends TestCase {
 		enqueue_intelligence_assets( self::PAGE_HOOK );
 
 		$data = $this->localized( 'newspack-intelligence' );
-		$this->assertFalse( $data['canTune'] );
+		$this->assertSame( '', $data['canTune'], 'a reader is sent the empty string' );
 		$this->assertSame( \plugins_url( 'build/intelligence/index.js', \dirname( __DIR__, 2 ) . '/newspack-intelligence.php' ), $GLOBALS['_enqueued_scripts'][0][1] );
 	}
 
@@ -129,7 +129,8 @@ final class IntelligencePageTest extends TestCase {
 		enqueue_intelligence_assets( self::PAGE_HOOK );
 
 		$data = $this->localized( 'newspack-intelligence' );
-		$this->assertTrue( $data['canTune'] );
+		$this->assertSame( '1', $data['canTune'], 'a curator is sent the string 1' );
+		$vocabulary = $data['vocabulary'];
 		$this->assertSame(
 			[
 				'roles'           => Intel_Event::ROLES,
@@ -137,9 +138,22 @@ final class IntelligencePageTest extends TestCase {
 				'identifierKinds' => Intel_Event::IDENTIFIER_KINDS,
 				'itemKinds'       => Intel_Event::ITEM_KINDS,
 			],
-			$data['vocabulary']
+			\array_diff_key( $vocabulary, [ 'linkRoleWords' => 0, 'methodWords' => 0 ] )
 		);
 		$this->assertSame( [ 'wp-components', 'newspack-nodes-graph' ], $GLOBALS['_enqueued_styles']['newspack-intelligence']['deps'] );
+	}
+
+	public function test_the_vocabulary_words_every_link_role_and_method(): void {
+		Capabilities::$session_scope = Capabilities::READ;
+		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];
+
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+
+		$vocabulary = $this->localized( 'newspack-intelligence' )['vocabulary'];
+		$this->assertSame( Intel_Event::LINK_ROLES, \array_keys( $vocabulary['linkRoleWords'] ) );
+		$this->assertSame( Intel_Event::METHODS, \array_keys( $vocabulary['methodWords'] ) );
+		$this->assertSame( 'Mentioned', $vocabulary['linkRoleWords']['mention'] );
+		$this->assertSame( 'a similar name', $vocabulary['methodWords']['ner_fuzzy'] );
 	}
 
 	public function test_the_bundle_stamps_this_plugins_version_in_the_header(): void {
@@ -187,11 +201,10 @@ final class IntelligencePageTest extends TestCase {
 	 * @return array<string,mixed>
 	 */
 	private function localized( string $handle ): array {
-		foreach ( $GLOBALS['_localized_scripts'] as [ $named, $object, $data ] ) {
-			if ( $handle === $named && 'NewspackNodesData' === $object ) {
-				return $data;
-			}
+		$record = $GLOBALS['_localized_scripts'][ $handle ] ?? null;
+		if ( null === $record || 'NewspackNodesData' !== $record['object_name'] ) {
+			$this->fail( "nothing localized onto {$handle}" );
 		}
-		$this->fail( "nothing localized onto {$handle}" );
+		return $record['data'];
 	}
 }

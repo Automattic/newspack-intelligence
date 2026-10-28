@@ -8,14 +8,14 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	if ( ! el ) {
 		return;
 	}
-	// The payload `enqueue_intelligence_assets()` localizes.
+	// wp_localize_script() sends the flag as a string: '1' or ''.
 	const { canTune, vocabulary } =
-		/** @type {{NewspackNodesData: {canTune: boolean, vocabulary: Object}}} */ (
+		/** @type {{NewspackNodesData: {canTune: string, vocabulary: Object}}} */ (
 			/** @type {unknown} */ ( window )
 		).NewspackNodesData;
 	createRoot( el ).render(
 		<IntelligencePage
-			canTune={ true === canTune }
+			canTune={ '1' === canTune }
 			vocabulary={ vocabulary }
 		/>
 	);
