@@ -8,8 +8,10 @@
  * addressed by TO to the writer its `make_node` line names (substrate
  * ADR-19). Each extraction then forwards an `item_extracted` struct `{ item,
  * relevance, importance }` to its target, the deduper. The Resolver forwards
- * no item the projection holds an extraction of, so an item is extracted
- * once.
+ * an item the projection holds an extraction of only when it newly asserts a
+ * link or a curator confirmed one, so an item is extracted again only to
+ * record claims about a subject accepted or confirmed since; the projector
+ * replaces the item's claims and topics with the new extraction's.
  *
  * A claim's subject and object resolve through the entities whose names
  * spell the whole of them. The subject is the one of those the item links
@@ -65,7 +67,8 @@ class Extractor_Node extends Node {
 		$item      = Intel_Event::item_of( Core::arr( $value['item'] ?? null ) );
 		$links     = $value['links'] ?? null;
 		$proposals = $value['proposals'] ?? null;
-		if ( 0 === ( Core::int( $message[ Message::TYPE ] ) & Message::TM_STRUCT ) || null === $item || ! \is_array( $links ) || ! \is_array( $proposals ) ) {
+		$extracted = $value['extracted'] ?? null;
+		if ( 0 === ( Core::int( $message[ Message::TYPE ] ) & Message::TM_STRUCT ) || null === $item || ! \is_array( $links ) || ! \is_array( $proposals ) || ! \is_bool( $extracted ) ) {
 			$this->print_less_often( 'dropping a resolution it cannot read from ', Core::as_string( $message[ Message::FROM ] ) );
 			return;
 		}
@@ -78,18 +81,21 @@ class Extractor_Node extends Node {
 			$key  = Core::as_string( $link['entity_key'] ?? null );
 			$linked[ $key ] = [ Core::as_float( $link['confidence'] ?? null ), 'asserted' === ( $link['state'] ?? null ) ];
 		}
-		$this->extract( $item, $linked, Entity_Index::current() );
+		$this->extract( $item, $linked, $extracted, Entity_Index::current() );
 	}
 
 	/**
 	 * Ask for the item's extraction and write it, or its heuristic stand-in
-	 * under its own stage, dated by the item's retrieval.
+	 * under its own stage, dated by the item's retrieval; an item a call
+	 * extracted before keeps that extraction when this call fails, since the
+	 * stand-in would replace its claims and topics with none.
 	 *
-	 * @param array<string,mixed>                 $item   The item.
-	 * @param array<string,array{0:float,1:bool}> $linked Each linked entity => its link's confidence and whether it is asserted.
-	 * @param Entity_Index                        $index  The entities claims resolve through.
+	 * @param array<string,mixed>                 $item      The item.
+	 * @param array<string,array{0:float,1:bool}> $linked    Each linked entity => its link's confidence and whether it is asserted.
+	 * @param bool                                $extracted Whether a call extracted the item before.
+	 * @param Entity_Index                        $index     The entities claims resolve through.
 	 */
-	private function extract( array $item, array $linked, Entity_Index $index ): void {
+	private function extract( array $item, array $linked, bool $extracted, Entity_Index $index ): void {
 		$topics = $index->topics();
 		$client = $this->make_llm_client();
 		$parsed = null;
@@ -103,9 +109,13 @@ class Extractor_Node extends Node {
 				$this->print_less_often( 'extraction call failed: ', $e->getMessage() );
 			}
 		}
+		$item_key = Core::as_string( $item['item_key'] );
+		if ( null === $parsed && $extracted ) {
+			$this->print_less_often( 'keeping the earlier extraction of ', "{$item_key}: no call answered" );
+			return;
+		}
 		$stage    = null === $parsed ? self::HEURISTIC_STAGE : 'extract';
 		$parsed ??= [ 'summary' => self::heuristic_summary( $item ), 'kind' => 'other', 'topics' => [], 'relevance' => 0, 'importance' => 0, 'sentiment' => 0.0, 'claims' => [] ];
-		$item_key = Core::as_string( $item['item_key'] );
 		$fields   = [
 			'item_key'     => $item_key,
 			'summary'      => $parsed['summary'],

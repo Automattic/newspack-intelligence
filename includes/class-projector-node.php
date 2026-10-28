@@ -35,6 +35,7 @@ use Newspack_Nodes\Worker_Should_Stop;
  * Projects intelligence events into the intel-graph rows.
  *
  * @phpstan-import-type Row_Op from \Newspack_Nodes\Sqlite_Arm
+ * @phpstan-import-type Row_Delete from \Newspack_Nodes\Sqlite_Arm
  */
 class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	use \Newspack_Nodes\Schema_Reflection;
@@ -58,7 +59,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 */
 	private static ?array $projections = null;
 
-	/** @var array<string,list<string>> Each table's column types, in row order. */
+	/** @var array<string,array<int|string,string>> Each table's column types, by position and by name. */
 	private static array $types = [];
 
 	/** Node NAME of the Row_Table the rows are written to ('' = unnamed). */
@@ -70,7 +71,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	/**
 	 * The ROWS batch the next write sends, in the order it was buffered.
 	 *
-	 * @var list<Row_Op>
+	 * @var list<Row_Op|Row_Delete>
 	 */
 	private array $rows = [];
 
@@ -143,10 +144,14 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	/**
 	 * Each kind's op specs. A column spec is an event field's name, a
 	 * one-element list holding a literal, EACH for the element a fan-out op
-	 * is written for, or a closure computing the value from the event. Every
-	 * ontology kind also writes its `events` row.
+	 * is written for, or a closure computing the value from the event; a
+	 * `delete` names its columns, each mapped to such a spec. An extraction
+	 * deletes the item's claims and topic links before it writes its own, so
+	 * one yielding fewer leaves none of the earlier behind; both tables are
+	 * written by the items stream alone, so a replay deletes and writes in
+	 * the same order. Every ontology kind also writes its `events` row.
 	 *
-	 * @return array<string,list<array{0:string,1:string,2:list<mixed>,3?:string}>>
+	 * @return array<string,list<array{0:string,1:string,2:array<mixed>,3?:string}>>
 	 */
 	private static function projections(): array {
 		if ( null !== self::$projections ) {
@@ -163,6 +168,8 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 		$table    = [
 			'item_recorded'       => [ [ 'ignore', 'items', [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ) ] ] ],
 			'extraction_recorded' => [
+				[ 'delete', 'claims', [ 'item_key' => 'item_key' ] ],
+				[ 'delete', 'links', [ 'item_key' => 'item_key', 'role' => [ 'topic' ] ] ],
 				[ 'set', 'extractions', [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'actor', $day( 'retrieved_ts' ) ] ],
 				[ 'set', 'links', [ 'item_key', self::EACH, [ 'topic' ], [ 'extract' ], [ 1.0 ], [ 'asserted' ], 'actor', 'ts', $day( 'retrieved_ts' ) ], 'topics' ],
 			],
@@ -208,31 +215,63 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * The row ops one spec writes for an event: one, or one per element of
-	 * its fan-out field, each value typed by its column's declared type.
+	 * The row ops one spec writes for an event: a delete, whose columns are
+	 * named; or one positional op, or one per element of its fan-out field.
+	 * Each value is typed by its column's declared type.
 	 *
-	 * @param array<array-key,mixed>                         $e    A validated event.
-	 * @param array{0:string,1:string,2:list<mixed>,3?:string} $spec The op spec.
-	 * @return list<Row_Op>
+	 * @param array<array-key,mixed>                          $e    A validated event.
+	 * @param array{0:string,1:string,2:array<mixed>,3?:string} $spec The op spec.
+	 * @return list<Row_Op|Row_Delete>
 	 */
 	private static function ops( array $e, array $spec ): array {
 		[ $verb, $table, $columns ] = $spec;
-		$types                      = self::$types[ $table ] ??= \array_values( Intel_Graph_Row_Schema::tables()[ $table ]['columns'] );
-		$ops                        = [];
+		$types                      = self::$types[ $table ] ??= self::types_of( $table );
+		if ( 'delete' === $verb ) {
+			$where = [];
+			foreach ( $columns as $name => $column ) {
+				$name           = Core::as_string( $name );
+				$where[ $name ] = self::typed( self::value( $e, $column, null ), $types[ $name ] );
+			}
+			return [ [ 'delete', $table, $where ] ];
+		}
+		$ops = [];
 		foreach ( isset( $spec[3] ) ? Core::arr( $e[ $spec[3] ] ) : [ null ] as $element ) {
 			$row = [];
-			foreach ( $columns as $at => $column ) {
-				$value = match ( true ) {
-					$column instanceof \Closure => $column( $e ),
-					\is_array( $column )        => $column[0],
-					self::EACH === $column      => $element,
-					default                     => $e[ Core::as_string( $column ) ],
-				};
-				$row[] = self::typed( $value, $types[ $at ] );
+			foreach ( \array_values( $columns ) as $at => $column ) {
+				$row[] = self::typed( self::value( $e, $column, $element ), $types[ $at ] );
 			}
 			$ops[] = [ $verb, $table, $row ];
 		}
 		return $ops;
+	}
+
+	/**
+	 * One column spec's value for an event: a closure's answer, a literal,
+	 * the fan-out element, or the event field it names.
+	 *
+	 * @param array<array-key,mixed> $e       A validated event.
+	 * @param mixed                  $column  The column spec.
+	 * @param mixed                  $element The fan-out element, or null.
+	 */
+	private static function value( array $e, mixed $column, mixed $element ): mixed {
+		return match ( true ) {
+			$column instanceof \Closure => $column( $e ),
+			\is_array( $column )        => $column[0],
+			self::EACH === $column      => $element,
+			default                     => $e[ Core::as_string( $column ) ],
+		};
+	}
+
+	/**
+	 * A table's column types, by position and by name, so a positional row
+	 * and a delete's named columns read one map.
+	 *
+	 * @param string $table The table.
+	 * @return array<int|string,string>
+	 */
+	private static function types_of( string $table ): array {
+		$declared = Intel_Graph_Row_Schema::tables()[ $table ]['columns'];
+		return \array_values( $declared ) + $declared;
 	}
 
 	/**

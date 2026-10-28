@@ -79,7 +79,7 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.129.0' )` and stays
+error.** The loader calls `Bootstrap::version_at_least( '2.134.0' )` and stays
 dormant below it. Against a substrate between a too-low floor and the real one
 the handshake passes, the plugin activates, and it then fatals on the missing
 method — the one outcome the gate exists to prevent. `CHANGELOG.md` records why
@@ -179,9 +179,11 @@ Row_Table (`Intel_Graph_Row_Schema`), fed by `intel:items:consumer` and
 `projections()` declares, per kind, the row ops it writes and where each column
 comes from — an event field, a literal, a computed closure, or each element of
 a fan-out field — and every value is typed by its column's declared type. Every
-op is an `ignore` or a whole-row `set` on a keyed table, and each table is
-written by one stream alone, so a replay writes what it wrote before and the
-streams project the same rows in either order. The projector never reads
+op is an `ignore` or a whole-row `set` on a keyed table, but for an
+extraction, which first deletes the item's claims and topic links (the
+substrate's `delete` op, 2.134.0) so one yielding fewer leaves none of the
+earlier behind; each table is written by one stream alone, so a replay writes
+what it wrote before and the streams project the same rows in either order. The projector never reads
 before it writes: an entity is three rows — identity in `entities`, state in
 `entity_states`, merge in `entity_merges` — and an item's extraction sits in
 `extractions` beside its `items` row, which is written once. A link, claim,
@@ -236,13 +238,29 @@ links, proposals }` to its target, `extractor`. An `item_reresolve` record,
 fed by `intel:reresolve:resolve`, names a stored item, which it reads from
 the projection with whether the projection holds an extraction a call
 made — a `machine:extract-heuristic@…` stand-in does not count, matched
-through `Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE )`.
-An item the projection no longer holds is dropped with a line, and a
-projection that will not open throws, so the record dead-letters. A
-re-resolution runs the first three steps alone, since NER ran on first
-resolution, writes its links, and forwards the item only when no such
-extraction is projected, so an item is extracted by a call at most once and
-an item a proxy outage left heuristic is extracted again. `Resolver::resolve(
+through `Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE )` —
+and its stored links and the judgments of them, each entity as its survivor
+in the resolver's own index, across every partition, a key whose merge chain
+is broken counting nowhere. A link is settled when it is asserted or judged;
+its verdict is its highest-ranked judgment's (`Graph_Query::judge_rank()`, the
+latest among equals). A record names whether a curator's
+confirmation sent it (`judged`); one missing that, its item or its
+freshness is dropped with a line, as is one naming an item the projection no
+longer holds, and a projection that will not open throws, so the record
+dead-letters. A re-resolution runs the first three steps alone, since NER
+ran on first resolution, writes its links, and forwards the item when no
+such extraction is projected, when it asserts a link to an entity whose link
+is not settled, or when it is `judged`. So an item a proxy outage left
+heuristic is extracted again, as is one naming an entity accepted or created
+after its extraction, which asserted no claim about a subject it only
+proposed, and one a curator confirmed a link of; an item whose settled links
+are unchanged is never extracted twice. What it forwards carries the
+curators' verdicts: a confirmed link asserted, from its stored row when the
+re-resolution did not find it again, and a rejected one left out, so the
+extractor's claims follow them, while the link events it writes stay the
+resolver's own; and whether a call extracted the item before (`extracted`),
+so an extractor whose call fails keeps that extraction rather than replacing
+it with the heuristic stand-in. `Resolver::resolve(
 $item, $ner )` takes the NER step per call: the node builds it from its
 `LLM_Config` state for each recorded item, so a runtime `set_vault_id` or
 `set_api_url` reaches the next one, and passes none on a re-resolution; the
@@ -318,9 +336,11 @@ link anew: an `entity_created` or `name_added` its name, an
 `identifier_added` the URL spellings its kind has (`IDENTIFIER_URLS`), an
 `entity_accepted` every name and identifier the projection holds for the
 entity, and a new locality the entity's own names, because a locality settles
-an ambiguous name and links nothing alone. A topic queues nothing, and a
+an ambiguous name and links nothing alone; a `link_confirmed` queues its one
+item, sent `judged` without a search. A topic queues nothing, and a
 repeated signal is queued once. Each Router tick appends `item_reresolve`
-records, each naming a stored item, to `intel:reresolve`, a Partition
+records, each naming a stored item and whether a confirmation sent it, to
+`intel:reresolve`, a Partition
 keeping a day of records under PIPE_BUF. Its own Consumer,
 `intel:reresolve:resolve`, feeds `resolver` one record a poll, so the tick
 never runs resolution and extraction itself, and an item whose resolution
@@ -665,7 +685,7 @@ its own one-shot commands; nothing polls.
 | `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite` | A read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments; a write sent once per `run()`, running `refresh` once it lands and handing back `useCommandOnce`'s own `pending`, refusal and answered arguments |
 | `views/Search.js` | default | `search` with words, kind, topic, source and a day range, a page at a time |
 | `views/Entity.js` | default | `entity`, `timeline` a page at a time, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
-| `views/Review.js` | default | `review links` and `review entities`; for a curator, `confirm_link`, `reject_link`, `accept_entity`, `reject_entity` and `merge_entities` |
+| `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity, and `review entities`, a pill per entity; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities` |
 | `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection` |
 | `components/SaveToCollection.js` | default | The one dialog any result saves through, sending `collect` |
 | `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty by its `rows` key, or its rows — as a stock `Card` section named by an optional title, which heads its `CardHeader`, with the state inset in its `CardBody`, or bare inside a dialog; the one alert every refusal, read or write, renders in |
@@ -685,7 +705,8 @@ whole URL, past the length a reply address carries, so pending is per verb
 and a queue's rows hold while any judgment of it waits, a merge included.
 The view switcher wears the shared tab roles (`nodes-tab-host__tabbar`,
 `nodes-tab-host__tab`). `canTune`, which `enqueue_intelligence_assets()` sets
-from `Capabilities::can( TUNE )` on the page's own hook suffix alone,
+from `Capabilities::can( TUNE )` on the page's own hook suffix alone, as
+the string `'1'` or `''` because the substrate refuses a boolean extra,
 only hides the curation controls: the server's role gate refuses a write the
 caller may not make. The vocabulary the selects offer is `Intel_Event`'s own
 lists, localized beside it. Every string from the graph renders as text, an

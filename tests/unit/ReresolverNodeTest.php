@@ -157,6 +157,20 @@ final class ReresolverNodeTest extends TestCase {
 		$this->assertSame( [ 'feed:acronym-3', 'feed:acronym-1' ], $this->sent_keys() );
 	}
 
+	/** A curator's confirmation re-resolves its one item, judged, once its interval passes; no search runs. */
+	public function test_a_confirmed_link_reresolves_its_item_judged(): void {
+		$this->signal( 'link_confirmed', [ 'item_key' => 'feed:judged-17', 'entity_key' => self::GAZETTE, 'item_url' => 'https://news.example/j' ] );
+		$this->sweep_at( self::NOW + Reresolver_Node::SWEEP_INTERVAL_S - 1 );
+		$this->assertSame( [], $this->out->captured );
+
+		$this->sweep_at( self::NOW + Reresolver_Node::SWEEP_INTERVAL_S );
+
+		$this->assertSame(
+			[ [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => 'feed:judged-17', 'fresh_after' => self::NOW + Reresolver_Node::SWEEP_INTERVAL_S, 'judged' => true ] ],
+			\array_map( static fn ( array $m ): mixed => $m[ Message::VALUE ], $this->out->captured )
+		);
+	}
+
 	/** A signal is swept only once it is SWEEP_INTERVAL_S old, after the projector's flushes. */
 	public function test_the_sweep_waits_for_the_interval(): void {
 		$this->seed( self::items( [ 'feed:wait-1', 'HarbGaz wins', '', 'https://news.example/w', 1793100000 ] ) );
@@ -653,8 +667,9 @@ final class ReresolverNodeTest extends TestCase {
 		$keys = [];
 		foreach ( $this->out->captured as $message ) {
 			$this->assertSame( [ Message::TM_STRUCT, 'reresolver', 'intel:reresolve' ], [ $message[ Message::TYPE ], $message[ Message::FROM ], $message[ Message::TO ] ] );
-			$this->assertSame( [ 'event', 'item_key', 'fresh_after' ], \array_keys( $message[ Message::VALUE ] ) );
+			$this->assertSame( [ 'event', 'item_key', 'fresh_after', 'judged' ], \array_keys( $message[ Message::VALUE ] ) );
 			$this->assertSame( Resolver_Node::RERESOLVE, $message[ Message::VALUE ]['event'] );
+			$this->assertFalse( $message[ Message::VALUE ]['judged'], 'a search judges nothing' );
 			$keys[] = $message[ Message::VALUE ]['item_key'];
 		}
 		return $keys;

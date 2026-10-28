@@ -654,11 +654,7 @@ final class Graph_Query {
 	 * @return Sql The `, lk AS …, live AS …` clauses and their binds.
 	 */
 	private static function live( Row_Reader $r, string $only, array $binds ): array {
-		$rank = 'CASE j.actor_kind';
-		foreach ( self::JUDGE_RANK as $kind => $n ) {
-			$rank .= " WHEN '{$kind}' THEN {$n}";
-		}
-		$rank .= ' ELSE 0 END';
+		$rank = self::judge_rank( 'j.actor_kind' );
 		$time = Intel_Graph_Row_Schema::ITEM_TIME;
 		$sql  = ', lk AS ( SELECT l.item_key, COALESCE( mg.value, l.entity_key ) AS entity_key, l.role, l.method, l.confidence, l.state,'
 			. " l.role = 'topic' AS topical, ROW_NUMBER() OVER ( PARTITION BY l.item_key, COALESCE( mg.value, l.entity_key ), l.role = 'topic'"
@@ -672,6 +668,22 @@ final class Graph_Query {
 			. ' FROM lk JOIN ri i ON i.item_key = lk.item_key'
 			. " LEFT JOIN jt ON jt.item_key = lk.item_key AND jt.entity_key = lk.entity_key WHERE lk.pick = 1 AND lk.entity_key <> '' ) WHERE state <> 'rejected' )";
 		return [ $sql, [ ...$binds, ...$binds ] ];
+	}
+
+	/**
+	 * The SQL ranking a judgment by its actor kind, as `JUDGE_RANK` ranks
+	 * them, an unranked kind lowest: the one ranking every reader of
+	 * judgments orders by, descending, then by `ts` descending for the
+	 * latest among equals, which each caller appends.
+	 *
+	 * @param string $column The actor kind column.
+	 */
+	public static function judge_rank( string $column ): string {
+		$rank = "CASE {$column}";
+		foreach ( self::JUDGE_RANK as $kind => $n ) {
+			$rank .= " WHEN '{$kind}' THEN {$n}";
+		}
+		return "{$rank} ELSE 0 END";
 	}
 
 	/**
