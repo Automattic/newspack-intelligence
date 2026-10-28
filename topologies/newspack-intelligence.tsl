@@ -7,10 +7,12 @@ include newspack-intelligence-streams
 include newspack-intelligence-collect
 include newspack-intelligence-project
 include newspack-intelligence-resolve
-# Re-resolution spans two files: the ontology tee feeds the reresolver, which
-# appends the items to re-resolve to intel:reresolve and checkpoints with the
-# ontology Consumer.
+# Re-resolution spans two files: the reresolver reads the ontology through
+# its own Consumer, which it checkpoints with, and appends the items to
+# re-resolve to intel:reresolve.
+make_node Consumer intel:ontology:reresolve <config:logs_dir>/intel-ontology.p{partition} <config:offsets_dir>/<topology>.intel-ontology-reresolve.p{partition} <config:deadletter_dir>/<topology>.intel-ontology-reresolve.p{partition}
 make_node Reresolver reresolver intel:reresolve
-connect_node intel:ontology:tee reresolver
-command_node intel:ontology:consumer:config add_snapshot_node reresolver
+command_node intel:ontology:reresolve:config add_snapshot_node reresolver
+command_node intel:ontology:reresolve:config set_multi_writer true
+connect_node intel:ontology:reresolve reresolver
 secure

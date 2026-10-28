@@ -16,7 +16,6 @@ use Newspack_Nodes\Node_Names;
 use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Router_Node;
 use Newspack_Nodes\Shell_Node;
-use Newspack_Nodes\Tee_Node;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Worker_Should_Stop;
@@ -575,8 +574,8 @@ final class ReresolverNodeTest extends TestCase {
 		( new Reresolver_Node() )->arguments( [] );
 	}
 
-	/** The composed graph tees the ontology stream to the projector and the reresolver, which it checkpoints. */
-	public function test_the_composed_topology_tees_the_ontology_to_the_reresolver(): void {
+	/** The composed graph gives the reresolver its own reader of the ontology stream, which it checkpoints with. */
+	public function test_the_composed_topology_gives_the_reresolver_its_own_ontology_reader(): void {
 		Core::reset();
 		Core::$var['partition'] = '0';
 		Core::$var['topology']  = 'newspack-intelligence';
@@ -592,12 +591,15 @@ final class ReresolverNodeTest extends TestCase {
 		$shell->eval_script( "include newspack-intelligence\n" );
 
 		$consumer = Core::node( 'intel:ontology:consumer' );
-		$this->assertInstanceOf( Consumer_Node::class, $consumer );
-		$this->assertSame( 'intel:ontology:tee', $consumer->target() );
-		$this->assertSame( [ 'projector', 'reresolver' ], $this->read_private( $consumer, 'snapshot_nodes' ) );
-		$tee = Core::node( 'intel:ontology:tee' );
-		$this->assertInstanceOf( Tee_Node::class, $tee );
-		$this->assertSame( [ 'projector', 'reresolver' ], $tee->target() );
+		$this->assertSame( [ 'projector', [ 'projector' ] ], [ $consumer?->target(), $this->read_private( $consumer, 'snapshot_nodes' ) ], 'the projector reads the ontology alone, so a reproject resets nothing else' );
+		$this->assertNull( Core::node( 'intel:ontology:tee' ) );
+		$own = Core::node( 'intel:ontology:reresolve' );
+		$this->assertInstanceOf( Consumer_Node::class, $own );
+		$this->assertSame( 'reresolver', $own->target() );
+		$this->assertSame( [ 'reresolver' ], $this->read_private( $own, 'snapshot_nodes' ) );
+		$this->assertStringEndsWith( '/logs/intel-ontology.p0', $this->read_private( $own, 'source_dir' ) );
+		$this->assertStringEndsWith( '/newspack-intelligence.intel-ontology-reresolve.p0', $this->read_private( $own, 'offsetlog_dir' ) );
+		$this->assertTrue( $this->read_private( $own, 'multi_writer' ), 'the ontology stream has request-side writers' );
 		$reresolver = Core::node( 'reresolver' );
 		$this->assertInstanceOf( Reresolver_Node::class, $reresolver );
 		$this->assertSame( [ 'intel:reresolve' ], $reresolver->display_targets() );
