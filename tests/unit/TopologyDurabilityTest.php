@@ -16,11 +16,14 @@
 namespace Newspack_Intelligence\Tests\Unit;
 
 use Newspack_Intelligence\Intel_Event_Writer_Node;
+use Newspack_Intelligence\Intel_Tiers;
 use Newspack_Intelligence\Projector_Node;
 use Newspack_Intelligence\Source_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Delay_Node;
+use Newspack_Nodes\Log_Discovery;
+use Newspack_Nodes\Message;
 use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Router_Node;
 use Newspack_Nodes\Shell_Node;
@@ -85,6 +88,82 @@ class TopologyDurabilityTest extends TestCase {
 			[ $this->read_private( $later, 'dir' ), $this->read_private( $later, 'offsets_dir' ), $this->read_private( $later, 'deadletter_dir' ), $this->read_private( $later, 'interval_s' ), $this->read_private( $later, 'max_age_s' ) ]
 		);
 		$this->assertSame( [ 'extractor', 'intel:writer', 'intel:later' ], Core::node( 'resolver' )->display_targets() );
+	}
+
+	/**
+	 * Every intel stream gates a raw read on the restricted tier's own
+	 * capability, `Intel_Tiers::CAPABILITY`, which the TSL spells out: once
+	 * each of the three Partitions and the later Delay's queue writes, its dir
+	 * holds the `.read-capability` marker naming it, and so do the cursor and
+	 * the dead letters of every reader of them, once each has checkpointed and
+	 * quarantined a torn line.
+	 */
+	public function test_every_intel_stream_and_its_readers_carry_the_restricted_marker(): void {
+		$this->load( 'newspack-intelligence' );
+		foreach ( [ 'intel:items', 'intel:ontology', 'intel:reresolve' ] as $stream ) {
+			$partition                 = Core::node( $stream );
+			$probe                     = Message::new_message();
+			$probe[ Message::TYPE ]    = Message::TM_BYTESTREAM;
+			$probe[ Message::VALUE ]   = "marker probe 7713 {$stream}";
+			$partition->fill( $probe );
+			$partition->flush();
+			self::tear( $partition->partition_dir() );
+		}
+		$at                      = static function ( float $t ): void {
+			Core::$clock = static fn (): float => $t;
+			Core::right_now();
+		};
+		$at( 1793278000.0 );
+		$later                   = Core::node( 'intel:later' );
+		$park                    = Message::new_message();
+		$park[ Message::TYPE ]   = Message::TM_STRUCT;
+		$park[ Message::KEY ]    = 'feed:probe-7713';
+		$park[ Message::VALUE ]  = [ 'event' => 'item_reresolve', 'item_key' => 'feed:probe-7713', 'fresh_after' => 0, 'not_before' => Core::right_now() + 3600 ];
+		$later->fill( $park );
+		$later->fire_cb();
+		self::tear( "{$this->tmp}/logs/intel-later.p0" );
+		$at( 1793278070.0 );
+		$later->fire_cb();
+		foreach ( [ 'intel:items:consumer', 'intel:items:resolve', 'intel:ontology:consumer' ] as $name ) {
+			$reader = Core::node( $name );
+			$reader->poll();
+			while ( $reader->poll() > 0 ) {
+				continue;
+			}
+			$reader->checkpoint();
+		}
+
+		$marked = [];
+		foreach ( [ 'logs/intel-items.p0', 'logs/intel-ontology.p0', 'logs/intel-reresolve.p0', 'logs/intel-later.p0' ] as $dir ) {
+			$marked[ $dir ] = self::marker( "{$this->tmp}/{$dir}" );
+		}
+		foreach ( [ 'intel-items', 'intel-items-resolve', 'intel-ontology', 'intel-later' ] as $reader ) {
+			foreach ( [ 'offsets', 'deadletter' ] as $root ) {
+				$marked[ "{$root}/newspack-intelligence.{$reader}.p0" ] = self::marker( "{$this->tmp}/{$root}/newspack-intelligence.{$reader}.p0" );
+			}
+		}
+		$this->assertSame( \array_fill_keys( \array_keys( $marked ), Intel_Tiers::CAPABILITY . "\n" ), $marked );
+	}
+
+	/**
+	 * Append a line no reader can unpack to a log's newest segment.
+	 *
+	 * @param string $dir The log's dir.
+	 */
+	private static function tear( string $dir ): void {
+		$segments = \glob( "{$dir}/*.log" ) ?: [];
+		\natsort( $segments );
+		\file_put_contents( (string) \end( $segments ), "torn record 7713\n", \FILE_APPEND );
+	}
+
+	/**
+	 * What a dir's read-capability marker holds, or `missing`.
+	 *
+	 * @param string $dir The dir.
+	 */
+	private static function marker( string $dir ): string {
+		$file = "{$dir}/" . Log_Discovery::READ_MARKER;
+		return \is_file( $file ) ? (string) \file_get_contents( $file ) : 'missing';
 	}
 
 	/** A TICK blocks inside one fill(), so a peer must not steal the lock at 60s. */
