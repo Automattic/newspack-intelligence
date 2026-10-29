@@ -57,10 +57,14 @@ if ( ! function_exists( 'register_rest_route' ) ) {
 		$GLOBALS['_rest_routes'][ $namespace . $route ] = $args;
 	}
 }
-// Overrides shared shim: single _current_user_can bool, not per-cap map.
-if ( ! function_exists( 'current_user_can' ) ) {
-	function current_user_can( string $cap ): bool {
-		return $GLOBALS['_current_user_can'] ?? false;
+// The users, sites and capabilities the plugin's own reads and grants ask of.
+require_once __DIR__ . '/support/wp-user-stubs.php';
+
+// Overrides shared shim: sets the user get_current_user_id() reads.
+if ( ! function_exists( 'wp_set_current_user' ) ) {
+	function wp_set_current_user( $id, $name = '' ) {
+		$GLOBALS['_current_user_id'] = (int) $id;
+		return (object) [ 'ID' => (int) $id ];
 	}
 }
 
@@ -126,8 +130,9 @@ if ( ! function_exists( 'wp_nonce_field' ) ) {
 }
 
 if ( ! function_exists( 'check_admin_referer' ) ) {
-	// Test seam: $GLOBALS['_check_admin_referer'] toggles the pass/fail branch.
+	// _check_admin_referer toggles the answer; _check_admin_referer_asked records each action.
 	function check_admin_referer( string $action = '-1', string $query_arg = '_wpnonce' ): bool {
+		$GLOBALS['_check_admin_referer_asked'][] = $action;
 		return $GLOBALS['_check_admin_referer'] ?? true;
 	}
 }
@@ -271,6 +276,9 @@ if ( ! function_exists( 'add_query_arg' ) ) {
 		} else {
 			$params = [ (string) $args[0] => (string) ( $args[1] ?? '' ) ];
 			$url    = (string) ( $args[2] ?? '' );
+		}
+		if ( [] === $params ) {
+			return $url;
 		}
 		$sep   = ( false === \strpos( $url, '?' ) ) ? '?' : '&';
 		$pairs = [];

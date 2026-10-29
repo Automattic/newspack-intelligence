@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Intel_Event;
+use Newspack_Intelligence\Restricted_Settings;
 use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\Tests\TestCase;
 use function Newspack_Intelligence\enqueue_intelligence_assets;
@@ -17,7 +18,10 @@ use function Newspack_Intelligence\register_intelligence_admin_page;
 use const Newspack_Intelligence\INTELLIGENCE_MENU_SLUG;
 use const Newspack_Intelligence\INTELLIGENCE_MOUNT_ID;
 
+require_once __DIR__ . '/../support/signs-in-users.php';
+
 final class IntelligencePageTest extends TestCase {
+	use Signs_In_Users;
 
 	/** The hook suffix WordPress gives the Intelligence page. */
 	private const PAGE_HOOK = 'toplevel_page_newspack-intelligence';
@@ -45,8 +49,11 @@ final class IntelligencePageTest extends TestCase {
 			$GLOBALS['_enqueued_styles'],
 			$GLOBALS['_localized_scripts'],
 			$GLOBALS['_style_data'],
-			$_GET
+			$GLOBALS['_check_admin_referer_asked'],
+			$_GET,
+			$_POST
 		);
+		self::forget_users();
 		parent::tearDown();
 	}
 
@@ -80,6 +87,20 @@ final class IntelligencePageTest extends TestCase {
 			\array_values( \array_filter( $GLOBALS['_wp_actions']['admin_menu'] ?? [], 'is_string' ) )
 		);
 		$this->assertContains( 'Newspack_Intelligence\\enqueue_intelligence_assets', $GLOBALS['_wp_actions']['admin_enqueue_scripts'] ?? [] );
+	}
+
+	/** The loader wires each restricted-access admin-post to its own action. */
+	public function test_the_loader_wires_the_restricted_access_admin_posts(): void {
+		$this->plugin_loader()();
+		self::sign_in( 8401, 'heron-ops', 'manage_options' );
+		$_POST = [ 'login' => 'ghost-heron' ];
+
+		foreach ( [ Restricted_Settings::GRANT_ACTION, Restricted_Settings::REVOKE_ACTION ] as $action ) {
+			$GLOBALS['_check_admin_referer_asked'] = [];
+			$caught                                = $this->caught( static fn () => \do_action( "admin_post_{$action}" ), "{$action} is not wired" );
+			$this->assertSame( 'wp_die: no user: ghost-heron', $caught->getMessage(), $action );
+			$this->assertSame( [ $action ], $GLOBALS['_check_admin_referer_asked'], $action );
+		}
 	}
 
 	/** The Intelligence page joins the substrate's overlay registry only past the handshake. */

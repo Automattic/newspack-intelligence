@@ -38,6 +38,7 @@ final class ClientsSettingsTest extends TestCase {
 			$GLOBALS['_wp_test_user_logins'],
 			$GLOBALS['_current_user_can'],
 			$GLOBALS['_check_admin_referer'],
+			$GLOBALS['_check_admin_referer_asked'],
 			$GLOBALS['_wp_referer'],
 			$GLOBALS['_last_redirect'],
 			$_GET,
@@ -155,7 +156,8 @@ final class ClientsSettingsTest extends TestCase {
 		$settings = new Clients_Settings( new Client_Importer( $repo ) );
 
 		$caught = $this->caught( fn () => $settings->handle_admin_post(), 'expected wp_safe_redirect to short-circuit via exception' );
-		$this->assertStringContainsString( 'clients_imported=1', $caught->getMessage() );
+		$this->assertSame( 'wp_safe_redirect: http://localhost/wp-admin/options-general.php?page=x&clients_imported=1', $caught->getMessage() );
+		$this->assertSame( [ Clients_Settings::ADMIN_POST_ACTION ], $GLOBALS['_check_admin_referer_asked'] );
 
 		$this->assertCount( 1, $repo->statuses() );
 		\unlink( $tmp );

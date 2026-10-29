@@ -4,7 +4,8 @@
  *
  * Runs ONLY on plugin delete (WordPress defines WP_UNINSTALL_PLUGIN), never on
  * deactivate. Removes every `newspack_intelligence_` option this plugin
- * created and the files of the `intel-graph` Row_Table its topologies declare.
+ * created, the restricted-access capability from every user, and the files
+ * of the `intel-graph` Row_Table its topologies declare.
  * The main file, which registers the autoloader, does not run here.
  *
  * @package Newspack_Intelligence

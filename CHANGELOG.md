@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The restricted tier has holders.** A user granted the capability `newspack_intelligence_restricted` (`Intel_Tiers::CAPABILITY`), a WordPress user capability rather than a role, reads restricted items beside public and internal ones: `Intel_Tiers::readable()` asks `current_user_can()` on each call and caches nothing, so every read, every curation verb's item check, `collect` and `collections` answer restricted rows to a holder alone, and a non-holder still gets `no item: <key>` for one. The capability adds a tier and no verb: each verb's own role gate runs first. An MCP session reads the tier while the user who minted it holds the capability, since the door becomes that user for each call, so a revoke takes effect on the session's next call; the session's scope neither widens nor narrows it. A role carrying the capability also reads the tier, and on a multisite a super admin passes every `current_user_can()` check and so reads it on every site, both without a grant.
+- **`wp newspack-intelligence restricted grant <login>`, `revoke <login>` and `list`** grant, revoke and list the capability on the current site. A holder is a user's own grant on the site, so `list` names every user `revoke` takes and no role, then says that a role and a super admin read the tier without a grant. A grant or a revoke names the user it changed by the user's own login, looked up as WordPress does; an unknown login, on a multisite a user who is not a member of the current site, a grant to a user already granted it and a revoke from a user holding no grant are each refused by name and change nothing, so a grant never makes anyone a member of a site. Every verb refuses to run as root.
+- **A "Restricted access" section on Settings → Newspack Intelligence** lists each user's own grant with a revoke for it, grants by login, and says who reads the tier without a grant. Each is an admin-post, `newspack_intelligence_grant_restricted` or `newspack_intelligence_revoke_restricted`, refused to a caller below MANAGE or whose nonce for its own action fails; a refused change dies naming why.
+- **Each grant and revoke writes one stderr line, which reaches the PHP error log**, naming the operator and the user by its own login: `restricted access granted to <login> by <operator>` or `restricted access revoked from <login> by <operator>`. The operator is `user:<login>` for the Settings page and for `wp … --user=<login>`, else `wp-cli uid <uid>`.
+- **Uninstall removes every user's own grant of the capability**, on every site of a multisite, whether or not the substrate is active.
+
+### Changed
+- **The Settings page's three admin-posts share one gate, one form head and one return.** The client-CSV upload and the two restricted-access handlers open on `admit_settings_post()`, build their forms on `open_settings_form()` and return through `return_to_settings()`, all three in the plugin file beside the Settings page. Each still refuses a caller below MANAGE or whose nonce for its own action fails with `Not allowed.`, and the upload still returns with `clients_imported=1`.
+
 ## [0.22.0] - 2026-10-29
 
 ### Changed

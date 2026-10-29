@@ -5,6 +5,7 @@ namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
+use Newspack_Intelligence\Intel_Tiers;
 use Newspack_Intelligence\Intelligence_CI_Node;
 use Newspack_Intelligence\Intelligence_Mcp_Door;
 use Newspack_Nodes\Bootstrap;
@@ -21,6 +22,7 @@ use Newspack_Nodes\Tests\Mcp_Requests;
 use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
+require_once __DIR__ . '/../support/signs-in-users.php';
 require_once \dirname( __DIR__, 3 ) . '/newspack-nodes/tests/Helpers/McpRequests.php';
 
 /**
@@ -31,6 +33,7 @@ require_once \dirname( __DIR__, 3 ) . '/newspack-nodes/tests/Helpers/McpRequests
 final class IntelligenceMcpDoorTest extends TestCase {
 	use Seeds_Intel_Graph;
 	use Mcp_Requests;
+	use Signs_In_Users;
 
 	private const GAZETTE = 'organization:harbor-gazette';
 
@@ -44,15 +47,15 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		$this->start_intel_graph();
 		$this->prev_memd                     = Core::$memd;
 		Core::$memd                          = new InMemoryMemcached();
-		$GLOBALS['_current_user_can']        = true;
-		$GLOBALS['_wp_test_current_user_id'] = 5129;
+		$GLOBALS['_current_user_can'] = true;
+		self::sign_in( 5129, 'kinsey-desk', 'manage_options' );
 		\Newspack_Intelligence\mount_service_cis( Bootstrap::mount_request_graph() );
 	}
 
 	protected function tearDown(): void {
 		Core::$memd                          = $this->prev_memd;
 		$GLOBALS['_current_user_can']        = false;
-		$GLOBALS['_wp_test_current_user_id'] = 0;
+		self::forget_users();
 		Intel_Graph_Row_Schema::$read_rows   = null;
 		Topology_Registry::reset();
 		Topology_Analyzer::reset_caches();
@@ -117,6 +120,32 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		foreach ( [ 'hubspot', 'deal at risk', 'churn', 'Hidden Buyer' ] as $secret ) {
 			$this->assertStringNotContainsString( $secret, (string) \wp_json_encode( [ $all, $risk, $counts ] ), $secret );
 		}
+	}
+
+	/**
+	 * A session reads the restricted tier while the user who minted it holds
+	 * the capability, asked on each call: the call after a revoke reads
+	 * public and internal items alone.
+	 */
+	public function test_a_session_reads_restricted_while_its_minting_user_holds_it(): void {
+		$this->seed_world();
+		$this->seed( self::item( 'unthread:ticket-58', 'Gazette escalates a billing ticket', 'unthread', 'restricted', self::$oct_13 ) );
+		self::sign_in( 6151, 'harbor-closer', 'manage_options', Intel_Tiers::CAPABILITY );
+		[ , $bearer ] = $this->session( Capabilities::READ );
+		$search       = function () use ( $bearer ): array {
+			$GLOBALS['_current_user_id'] = 0;
+			$door                        = new Intelligence_Mcp_Door();
+			$this->assertTrue( $door->check_permission( $this->request( [], $bearer ) ) );
+			$reply = $door->dispatch( $this->request( [ 'jsonrpc' => '2.0', 'id' => 6151, 'method' => 'tools/call', 'params' => [ 'name' => 'intel_search', 'arguments' => [] ] ], $bearer ) );
+			$this->assertIsArray( $reply );
+			return \array_column( \json_decode( \substr( $reply['result']['content'][0]['text'], \strlen( "<site-data>\n" ), -\strlen( "\n</site-data>" ) ), true )['items'], 'item_key' );
+		};
+
+		$this->assertSame( [ 'unthread:ticket-58', 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], $search() );
+
+		Intel_Tiers::revoke( 'harbor-closer', 'user:kinsey-desk' );
+
+		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], $search() );
 	}
 
 	/** A reply is fenced once, and an item cannot close the fence from inside. */

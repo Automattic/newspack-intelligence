@@ -44,6 +44,15 @@
 		<type>error</type>
 	</rule>
 
+	<!-- The Settings page's admin-posts verify their nonce through this gate. -->
+	<rule ref="WordPress.Security.NonceVerification">
+		<properties>
+			<property name="customNonceVerificationFunctions" type="array">
+				<element value="admit_settings_post"/>
+			</property>
+		</properties>
+	</rule>
+
 	<!-- Text domain for translations -->
 	<config name="text_domain" value="newspack-intelligence"/>
 

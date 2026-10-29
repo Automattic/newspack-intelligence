@@ -25,6 +25,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
 require_once __DIR__ . '/../support/reads-ontology-log.php';
 require_once __DIR__ . '/../support/routes-to-workers.php';
+require_once __DIR__ . '/../support/signs-in-users.php';
 
 /**
  * The `intelligence` curation verbs: each writes its judgment as one
@@ -37,6 +38,7 @@ final class IntelligenceCurationTest extends TestCase {
 	use Seeds_Intel_Graph;
 	use Reads_Ontology_Log;
 	use Routes_To_Workers;
+	use Signs_In_Users;
 
 	private const GAZETTE = 'organization:harbor-gazette';
 
@@ -75,15 +77,14 @@ final class IntelligenceCurationTest extends TestCase {
 		parent::setUp();
 		Topology_Analyzer::reset_caches();
 		$this->start_intel_graph();
-		$GLOBALS['_current_user_id']                 = 37;
-		$GLOBALS['_wp_test_user_logins'][37]         = self::LOGIN;
-		$GLOBALS['_current_user_can']                = true;
+		self::sign_in( 37, self::LOGIN, 'manage_options' );
+		$GLOBALS['_current_user_can'] = true;
 		$this->ci = new Intelligence_CI_Node();
 		$this->ci->name( 'intelligence' );
 	}
 
 	protected function tearDown(): void {
-		unset( $GLOBALS['_current_user_id'], $GLOBALS['_wp_test_user_logins'] );
+		self::forget_users();
 		$GLOBALS['_current_user_can']      = false;
 		Intel_Graph_Row_Schema::$read_rows = null;
 		Topology_Registry::reset();
