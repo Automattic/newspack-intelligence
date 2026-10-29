@@ -7,6 +7,7 @@ use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Ontology_Writer;
 use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\Core;
+use Newspack_Nodes\Log_Discovery;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
@@ -78,6 +79,44 @@ final class OntologyWriterTest extends TestCase {
 		$this->assertSame( 9, self::ontology_segments() );
 	}
 
+	/**
+	 * The stream's raw-read gate, declared by position or by name as the
+	 * substrate binds it, reaches the writer beside its keep_everything: the
+	 * append lands, and its flush writes the read-capability marker.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public static function read_gates(): array {
+		return [
+			'by position' => [ 'set_read_capability quarry_ledger_reader', 'quarry_ledger_reader' ],
+			'by name'     => [ 'set_read_capability --capability=mesa_courier_reader', 'mesa_courier_reader' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'read_gates' )]
+	public function test_the_writer_carries_the_declared_read_capability( string $line, string $capability ): void {
+		$this->shadow_streams( "command_node intel:ontology:config keep_everything true\ncommand_node intel:ontology:config {$line}\n" );
+
+		$this->append_one_by_one( 7 );
+
+		$this->assertSame( 7, self::ontology_segments() );
+		$this->assertSame( "{$capability}\n", \file_get_contents( self::ontology_dir() . '/' . Log_Discovery::READ_MARKER ) );
+	}
+
+	/** A malformed declared capability fails the append before anything is written. */
+	public function test_a_malformed_read_capability_fails_the_append(): void {
+		$this->shadow_streams( "command_node intel:ontology:config set_read_capability Quarry-Ledger\n" );
+
+		try {
+			Ontology_Writer::append( [ self::created( 'organization:quarry-ledger', 'Quarry Ledger' ) ] );
+			$this->fail( 'a malformed capability is refused' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertStringContainsString( "'Quarry-Ledger'", $e->getMessage() );
+		}
+		$this->assertNull( Core::node( Ontology_Writer::WRITER ) );
+		$this->assertSame( [], self::ontology_events() );
+	}
+
 	/** Without the declaration the same rotations prune to the count target, so the test above is not vacuous. */
 	public function test_a_declaration_without_keep_everything_prunes(): void {
 		$this->shadow_streams( '' );
@@ -97,6 +136,9 @@ final class OntologyWriterTest extends TestCase {
 		return [
 			'another verb'          => [ 'void_warranty', 'intel:ontology:config void_warranty' ],
 			'keep_everything false' => [ 'keep_everything off', 'intel:ontology:config keep_everything off' ],
+			'a bare read gate'      => [ 'set_read_capability', 'intel:ontology:config set_read_capability' ],
+			'an unknown option'     => [ 'set_read_capability --cap=quarry_ledger_reader', 'intel:ontology:config set_read_capability --cap=quarry_ledger_reader' ],
+			'a surplus token'       => [ 'set_read_capability quarry_ledger_reader mesa_courier_reader', 'intel:ontology:config set_read_capability quarry_ledger_reader mesa_courier_reader' ],
 		];
 	}
 

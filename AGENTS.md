@@ -79,7 +79,7 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.137.0' )` and stays
+error.** The loader calls `Bootstrap::version_at_least( '2.138.0' )` and stays
 dormant below it. Against a substrate between a too-low floor and the real one
 the handshake passes, the plugin activates, and it then fatals on the missing
 method — the one outcome the gate exists to prevent. `CHANGELOG.md` records why
@@ -170,7 +170,17 @@ parks the `item_reresolve` records the resolver and the extractor want to
 reprocess later, each due at its `not_before`; every minute it sends each
 one due to `intel:reresolve`, its target, and drops one parked longer than a
 day, a record parked again keeping its first `parked_at`. Each record parks
-with KEY its `item_key`, so the Delay's age-out line names the item.
+with KEY its `item_key`, so the Delay's age-out line names the item. All
+four carry restricted items whole, so each declares `command_node
+<name>:config set_read_capability newspack_intelligence_restricted`
+(substrate ADR-39): each writes a `.read-capability` marker naming it into
+its own dir on the write that opens it, every reader of it copies the
+marker into its cursor and dead-letter dirs as it next writes them, and
+the substrate's raw-log verbs, its catalog and an SSE subscription refuse
+a marked dir to a caller without the capability. The TSL spells the
+capability out; a test writes through each stream, checkpoints and
+quarantines through each reader, and holds every marker to
+`Intel_Tiers::CAPABILITY`.
 `Intel_Event_Writer_Node` (`intel:writer intel:items intel:ontology`) addresses
 each event by TO to the partition its `make_node` line names for the stream
 `Intel_Event::stream_of()` gives its kind, and drops a message naming no kind
@@ -582,7 +592,10 @@ escapes as it renders it. `wp newspack-intelligence restricted grant
 <login>`, `revoke <login>` and `list` (`Restricted_CLI_Command`) and the
 Settings page's "Restricted access" section (`Restricted_Settings`) are the
 two operator surfaces, both at MANAGE, and each says that a role and a
-super admin read the tier without a grant. Uninstall reaches `strip()` with
+super admin read the tier without a grant. The raw-log surface is gated on
+the same capability, so a non-holder's `raw-logs` reads and SSE
+subscriptions of the four intel streams, and of every cursor and
+dead-letter dir derived from them, are refused (see Streams). Uninstall reaches `strip()` with
 the substrate possibly inactive, so it and everything it calls use no
 substrate class.
 
@@ -694,12 +707,16 @@ built from the `intel:ontology` declaration in
 `newspack-intelligence-streams.tsl` read through `Topology_Analyzer` — its
 directory and its arguments — then filled, flushed and removed in a
 `finally`, so a failure propagates and a second append finds the name free.
-The declared `keep_everything` is honoured through
-`Partition_Node::set_keep_everything()`, never replayed as a command,
-because a command's role gate judges the caller and would refuse a curator
-below MANAGE; any other `intel:ontology:config` line is refused by name. A
-writer missing `keep_everything` would prune the kept-forever stream on
-rotation, which is why nothing copies the declaration. With the worker and
+The declared `keep_everything` and `set_read_capability` are bound
+against the Partition's own declaration of each verb, by position or by
+name (`Command_Args::bind()`), and honoured through the Partition's own
+setters, never replayed as commands, because a command's role gate judges
+the caller and would refuse a curator below MANAGE; any other
+`intel:ontology:config` line is refused by name. A writer missing
+`keep_everything` would prune the kept-forever stream on rotation, and one
+missing the read gate could open the shared directory without its
+`.read-capability` marker, which is why nothing copies the declaration;
+this writer leaves the marker when it flushes. With the worker and
 these appends both writing it, `intel:ontology:consumer` runs
 `set_multi_writer true`, so it seals a segment only after the grace a
 shared log needs. Every machine stage mints through
