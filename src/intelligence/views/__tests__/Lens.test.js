@@ -41,6 +41,31 @@ const TRENDS = {
 	available: true,
 };
 
+const SIGNALS = {
+	signals: [
+		{
+			bucket: '2026-09-28',
+			by: 'kind',
+			value: 'praise',
+			count: 11,
+			baseline: 1.6666,
+			items: [
+				{
+					item_key: 'linear:SUP-91',
+					url: 'https://linear.example/SUP-91',
+					title: 'Acme thanks support for the fix',
+				},
+				{
+					item_key: 'feed:untitled-6',
+					url: 'data:text/html,hi',
+					title: '',
+				},
+			],
+		},
+	],
+	available: true,
+};
+
 let wire;
 
 function Harness( props ) {
@@ -51,6 +76,7 @@ function Harness( props ) {
 			opened={ opened }
 			onOpen={ setOpened }
 			onOpenEntity={ jest.fn() }
+			onWatch={ jest.fn() }
 			{ ...props }
 		/>
 	);
@@ -63,6 +89,7 @@ beforeEach( () => {
 	wire.replies.lenses = LENSES;
 	wire.replies.search = { items: [ ITEM ], total: 1, available: true };
 	wire.replies.trends = TRENDS;
+	wire.replies.signals = SIGNALS;
 } );
 
 const openSupport = async () =>
@@ -122,6 +149,64 @@ describe( 'Lens', () => {
 		expect( wire.sent( 'trends' ) ).toEqual( [
 			[ '--lens=support-desk' ],
 		] );
+	} );
+
+	it( 'shows the lens’s signals, each count against its baseline', async () => {
+		render( <Harness canTune={ false } /> );
+		await openSupport();
+		const signals = await screen.findByRole( 'region', {
+			name: 'Signals',
+		} );
+		const row = await within( signals ).findByRole( 'row', {
+			name: /2026-09-28/,
+		} );
+		expect( within( row ).getByText( 'praise' ) ).toBeInTheDocument();
+		expect(
+			within( row ).getByText( '11 against a baseline of 1.7' )
+		).toBeInTheDocument();
+		expect(
+			within( row ).getByRole( 'link', {
+				name: 'Acme thanks support for the fix',
+			} )
+		).toHaveAttribute( 'href', 'https://linear.example/SUP-91' );
+		expect(
+			within( row ).getByText( 'data:text/html,hi' ).closest( 'a' )
+		).toBeNull();
+		expect(
+			signals.compareDocumentPosition(
+				screen.getByRole( 'region', { name: 'Support desk' } )
+			) & window.Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
+		expect( wire.sent( 'signals' ) ).toEqual( [
+			[ '--lens=support-desk' ],
+		] );
+	} );
+
+	it( 'says a lens shows no signal', async () => {
+		wire.replies.signals = { signals: [], available: true };
+		render( <Harness canTune={ false } /> );
+		await openSupport();
+		expect(
+			await screen.findByText( 'No signal is seen through this lens.' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'offers every reader a watch on the lens opened', async () => {
+		const onWatch = jest.fn();
+		render( <Harness canTune={ false } onWatch={ onWatch } /> );
+		await screen.findByRole( 'button', { name: 'Support desk' } );
+		expect(
+			screen.queryByRole( 'button', { name: 'Watch this' } )
+		).toBeNull();
+		await openSupport();
+		await screen.findByText( '11 against a baseline of 1.7' );
+		await screen.findByText( 'Paywall login loops for Acme' );
+		await screen.findByText( 'Acme Gazette wins regional prize' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Watch this' } ) );
+		expect( onWatch ).toHaveBeenCalledWith(
+			{ kind: 'lens', key: 'support-desk' },
+			'Support desk'
+		);
 	} );
 
 	it( 'says a lens sees no item and no trend', async () => {

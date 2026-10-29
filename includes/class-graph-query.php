@@ -45,6 +45,8 @@ use Newspack_Nodes\Row_Reader;
  * @phpstan-type Graph array{survivors:array<string,string>,keys:array<string,list<string>>,with:string,binds:list<scalar>}
  * @phpstan-type Filter array{q:?string,entity:?string,lists:array<string,list<string>>,days:array{0:int,1:int}|null}
  * @phpstan-type Lens array{lists:array<string,list<string>>,entity:?string,days:?int,tiers:list<string>,by:?string,bucket:?string}
+ * @phpstan-type Within array{join:string,binds:list<scalar>,fields:array<string,string>,order:string}
+ * @phpstan-type Item array{item_key:string,url:string,title:string,source:string,item_ts:int,retrieved_ts:int}
  */
 final class Graph_Query {
 
@@ -114,13 +116,33 @@ final class Graph_Query {
 	/** The span a trend row counts when neither the call nor its lens names one. */
 	public const DEFAULT_BUCKET = 'week';
 
+	/** The fewest items a signal counts. */
+	public const SIGNAL_MIN = 3;
+
+	/** How many standard deviations above its baseline's mean a signal stands. */
+	public const SIGNAL_SIGMAS = 2;
+
+	/** How many buckets before the latest complete one a signal's baseline spans. */
+	public const SIGNAL_BASELINE = 8;
+
 	/** The days an unbounded range runs between. */
 	private const ALL_DAYS = [ '1970-01-01', '9999-12-31' ];
 
+	/** The columns `item_row()` reads, in its order, over `i`. */
+	public const ITEM_ROW = 'i.item_key, i.url, i.title, i.source, i.item_ts, i.retrieved_ts';
+
 	/** The answer a listing of items gives with no rows. */
-	private const NO_ITEMS = [
+	public const NO_ITEMS = [
 		'items' => [],
 		'total' => 0,
+	];
+
+	/** How a page of items reads with nothing joined to it: newest first. */
+	private const NEWEST = [
+		'join'   => '',
+		'binds'  => [],
+		'fields' => [],
+		'order'  => Intel_Graph_Row_Schema::ITEM_TIME . ' DESC, i.item_key DESC',
 	];
 
 	/** The line logged when no projection opens. */
@@ -163,27 +185,108 @@ final class Graph_Query {
 	}
 
 	/**
+	 * The items a watch's target holds that the caller may read and the
+	 * watch has not matched, entering the target at or after `$since`, the
+	 * oldest first: a lens's or an entity's item at its retrieval, read
+	 * through the lens or the entity as `search` reads it, and a
+	 * collection's at its saving, through the readable items.
+	 *
+	 * @api Read by the watcher, as each watch's owner, inside its one read.
+	 * @param Row_Reader $r     The reader.
+	 * @param Graph      $g     The owner's graph.
+	 * @param string     $kind  `lens`, `entity` or `collection`.
+	 * @param string     $key   The target's key.
+	 * @param string     $watch The watch key.
+	 * @param float      $since The earliest entry read.
+	 * @param int        $limit The most items answered.
+	 * @return list<array{at:float,item:Item}>
+	 * @throws \InvalidArgumentException On a lens no one saved, a collection no one made, or an entity whose merge chain does not resolve.
+	 */
+	public static function arrivals( Row_Reader $r, array $g, string $kind, string $key, string $watch, float $since, int $limit ): array {
+		$tail = static fn ( string $at ): string => "{$at} >= ? AND NOT EXISTS ( SELECT 1 FROM " . Intel_Graph_Row_Schema::all( $r, 'watch_matches' ) . ' m WHERE m.watch_key = ? AND m.item_key = i.item_key ) ORDER BY at, i.item_key LIMIT ?';
+		$last = [ $since, $watch, $limit ];
+		if ( 'collection' === $kind ) {
+			if ( null === self::collection( $r, $key ) ) {
+				throw new \InvalidArgumentException( \esc_html( "no collection: {$key}" ) );
+			}
+			$rows = $r->rows( "{$g['with']} SELECT " . self::ITEM_ROW . ', d.ts AS at FROM ' . Intel_Graph_Row_Schema::all( $r, 'collected' ) . ' d JOIN ri i ON i.item_key = d.item_key WHERE d.collection_key = ? AND ' . $tail( 'd.ts' ), [ ...$g['binds'], $key, ...$last ] );
+		} else {
+			[ $call, $name ] = self::asked( [ $kind => $key ] );
+			$rows            = self::lensed(
+				$r,
+				$g,
+				$call,
+				$name,
+				static function ( Row_Reader $r, array $g, array $filter ) use ( $tail, $last ): array {
+					[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false );
+					return $r->rows( "{$with} SELECT " . self::ITEM_ROW . ", i.retrieved_ts AS at FROM ri i WHERE {$where} AND " . $tail( 'i.retrieved_ts' ), [ ...$lead, ...$binds, ...$last ] );
+				}
+			);
+		}
+		return \array_map( static fn ( array $row ): array => [ 'at' => Core::as_float( $row[6] ), 'item' => self::item_row( $row ) ], $rows );
+	}
+
+	/**
+	 * A cited item from a row leading with `ITEM_ROW`'s columns: the one
+	 * shape an arrival, an owed match and an email carry.
+	 *
+	 * @api Graph_Watches reads its owed matches by it.
+	 * @param list<mixed> $row The row.
+	 * @return Item
+	 */
+	public static function item_row( array $row ): array {
+		return [
+			'item_key'     => Core::as_string( $row[0] ),
+			'url'          => Core::as_string( $row[1] ),
+			'title'        => Core::as_string( $row[2] ),
+			'source'       => Core::as_string( $row[3] ),
+			'item_ts'      => Core::as_int( $row[4] ),
+			'retrieved_ts' => Core::as_int( $row[5] ),
+		];
+	}
+
+	/**
+	 * A page of the readable items a join admits, each as `search` answers
+	 * it plus the join's fields, in the join's order, and their count.
+	 *
+	 * @api Read by Graph_Watches, whose join is a watch's unseen matches.
+	 * @param Row_Reader             $r      The reader.
+	 * @param Graph                  $g      The graph the read opened.
+	 * @param Within                 $within The join, its fields and the order.
+	 * @param array<array-key,mixed> $args   The bound verb args: `limit`, `offset`.
+	 * @return array<string,mixed> `{ items, total }`.
+	 * @throws \InvalidArgumentException On a bad page.
+	 */
+	public static function listed( Row_Reader $r, array $g, array $within, array $args ): array {
+		[ $limit, $offset ] = self::page( $args );
+		return self::items( $r, $g, self::filter_of( [] ), $limit, $offset, $within );
+	}
+
+	/**
 	 * One page of matching items, the count of all of them, and each item's
-	 * live entity links.
+	 * live entity links; `$within` joins a set the items must be in, the
+	 * fields it adds after the links, and the order it lists them in.
 	 *
 	 * @param Row_Reader $r      The reader.
 	 * @param Graph      $g      The graph the read opened.
 	 * @param Filter     $filter The filters.
 	 * @param int        $limit  The page size.
 	 * @param int        $offset The page start.
+	 * @param Within     $within The join, its fields and the order.
 	 * @return array<string,mixed>
 	 */
-	private static function items( Row_Reader $r, array $g, array $filter, int $limit, int $offset ): array {
-		$time                     = Intel_Graph_Row_Schema::ITEM_TIME;
-		[ $with, $where, $binds ] = self::narrowed( $r, $g, $filter, false );
-		$total                    = Core::as_int( $r->rows( "{$with} SELECT COUNT(*) FROM ri i WHERE {$where}", $binds )[0][0] ?? 0 );
-		$page                     = $r->rows(
-			"{$with} SELECT " . \implode( ', ', self::ITEM_COLUMNS ) . ' FROM ri i LEFT JOIN ' . Intel_Graph_Row_Schema::all( $r, 'extractions' )
-			. " x ON x.item_key = i.item_key WHERE {$where} ORDER BY {$time} DESC, i.item_key DESC LIMIT ? OFFSET ?",
+	private static function items( Row_Reader $r, array $g, array $filter, int $limit, int $offset, array $within = self::NEWEST ): array {
+		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false );
+		$binds                           = [ ...$lead, ...$within['binds'], ...$binds ];
+		$columns                         = self::ITEM_COLUMNS + $within['fields'];
+		$total                           = Core::as_int( $r->rows( "{$with} SELECT COUNT(*) FROM ri i {$within['join']} WHERE {$where}", $binds )[0][0] ?? 0 );
+		$page                            = $r->rows(
+			"{$with} SELECT " . \implode( ', ', $columns ) . " FROM ri i {$within['join']} LEFT JOIN " . Intel_Graph_Row_Schema::all( $r, 'extractions' )
+			. " x ON x.item_key = i.item_key WHERE {$where} ORDER BY {$within['order']} LIMIT ? OFFSET ?",
 			[ ...$binds, $limit, $offset ]
 		);
-		$items                    = \array_map( static fn ( array $row ): array => \array_combine( \array_keys( self::ITEM_COLUMNS ), $row ), $page );
-		$linked                   = [];
+		$items                           = \array_map( static fn ( array $row ): array => \array_combine( \array_keys( $columns ), $row ), $page );
+		$linked                          = [];
 		if ( [] !== $items ) {
 			$page_keys             = \array_map( static fn ( array $item ): string => Core::as_string( $item['item_key'] ), $items );
 			[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( ' . Intel_Graph_Row_Schema::marks( $page_keys ) . ' )', $page_keys );
@@ -192,7 +295,7 @@ final class Graph_Query {
 			}
 		}
 		return [
-			'items' => \array_map( static fn ( array $item ): array => $item + [ 'entities' => $linked[ Core::as_string( $item['item_key'] ) ] ?? [] ], $items ),
+			'items' => \array_map( static fn ( array $item ): array => \array_diff_key( $item, $within['fields'] ) + [ 'entities' => $linked[ Core::as_string( $item['item_key'] ) ] ?? [] ] + \array_intersect_key( $item, $within['fields'] ), $items ),
 			'total' => $total,
 		];
 	}
@@ -204,7 +307,7 @@ final class Graph_Query {
 	 * @return array{0:int,1:int}
 	 * @throws \InvalidArgumentException On a limit below 1 or a negative offset.
 	 */
-	private static function page( array $args ): array {
+	public static function page( array $args ): array {
 		$limit  = self::limit( $args );
 		$offset = Core::as_int( $args['offset'] );
 		if ( $offset < 0 ) {
@@ -484,9 +587,8 @@ final class Graph_Query {
 	 * Readable items counted by kind or by topic per day, week or month,
 	 * filtered as `search` filters them but for `q`, each read through
 	 * `lens` when the call names one; each row cites its newest items, each
-	 * its key, URL and title. The
-	 * axis and the bucket are the call's, else its lens's, else
-	 * DEFAULT_AXIS and DEFAULT_BUCKET.
+	 * its key, URL and title. The axis and the bucket are the call's, else
+	 * its lens's, else DEFAULT_AXIS and DEFAULT_BUCKET.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args.
 	 * @return array<string,mixed> `{ rows, available }`.
@@ -496,31 +598,192 @@ final class Graph_Query {
 		$by     = self::given( $args, 'by' );
 		$bucket = self::given( $args, 'bucket' );
 		self::check_trend( $by, $bucket );
-		return self::through(
-			$args,
-			[ 'rows' => [] ],
-			static function ( Row_Reader $r, array $g, array $filter, array $lens ) use ( $by, $bucket ): array {
-				$by                       = $by ?? $lens['by'] ?? self::DEFAULT_AXIS;
-				$span                     = self::BUCKETS[ $bucket ?? $lens['bucket'] ?? self::DEFAULT_BUCKET ];
-				$time                     = Intel_Graph_Row_Schema::ITEM_TIME;
-				[ $with, $where, $binds ] = self::narrowed( $r, $g, $filter, 'topic' === $by );
-				[ $value, $join ]         = self::TREND_AXES[ $by ];
-				$rows                     = $r->rows(
-					"{$with}, hits AS ( SELECT DISTINCT {$value} AS value, i.item_key, i.url, i.title, {$time} AS t FROM ri i " . \str_replace( '{extractions}', Intel_Graph_Row_Schema::all( $r, 'extractions' ), $join ) . " WHERE {$where} ),"
-					. " ranked AS ( SELECT {$span} AS bucket, value, item_key, url, title, ROW_NUMBER() OVER ( PARTITION BY {$span}, value ORDER BY t DESC, item_key DESC ) AS rn,"
-					. " COUNT(*) OVER ( PARTITION BY {$span}, value ) AS n FROM hits )"
-					. ' SELECT bucket, value, n, item_key, url, title FROM ranked WHERE rn <= ? ORDER BY bucket, n DESC, value, rn',
-					[ ...$binds, self::CITATIONS ]
-				);
-				$out                      = [];
-				foreach ( $rows as [ $day, $counted, $n, $item, $url, $title ] ) {
-					$at          = Core::as_string( $day ) . '|' . Core::as_string( $counted );
-					$out[ $at ] ??= [ 'bucket' => $day, 'value' => $counted, 'count' => Core::as_int( $n ), 'items' => [] ];
-					$out[ $at ]['items'][] = [ 'item_key' => $item, 'url' => $url, 'title' => $title ];
-				}
-				return [ 'rows' => \array_values( $out ) ];
+		return self::through( $args, [ 'rows' => [] ], static fn ( Row_Reader $r, array $g, array $filter, array $lens ): array => [ 'rows' => self::counts( $r, $g, $filter, ...self::axis( $by, $bucket, $lens ) ) ] );
+	}
+
+	/**
+	 * Refuse a trend axis or bucket outside its set; null names none.
+	 *
+	 * @param string|null $by     The axis.
+	 * @param string|null $bucket The bucket.
+	 * @throws \InvalidArgumentException Naming the set.
+	 */
+	public static function check_trend( ?string $by, ?string $bucket ): void {
+		if ( null !== $by ) {
+			self::one_of( 'by', $by, self::trend_axes() );
+		}
+		if ( null !== $bucket ) {
+			self::one_of( 'bucket', $bucket, self::buckets() );
+		}
+	}
+
+	/**
+	 * The spans a trend row may count.
+	 *
+	 * @return list<string>
+	 */
+	public static function buckets(): array {
+		return \array_keys( self::BUCKETS );
+	}
+
+	/**
+	 * What a trend may count.
+	 *
+	 * @return list<string>
+	 */
+	public static function trend_axes(): array {
+		return \array_keys( self::TREND_AXES );
+	}
+
+	/**
+	 * The spikes of the latest complete bucket, counted as `trends` counts
+	 * for the same lens and entity, so its filters, axis, bucket and tiers
+	 * apply alike (`spiking()`).
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args: `lens`, `entity`.
+	 * @return array<string,mixed> `{ signals: [ { bucket, by, value, count, baseline, items } ], available }`.
+	 * @throws \InvalidArgumentException As `trends()`.
+	 */
+	public static function signals( array $args ): array {
+		return self::through( $args, [ 'signals' => [] ], static fn ( Row_Reader $r, array $g, array $filter, array $lens ): array => [ 'signals' => self::spiking( $r, $g, $filter, $lens, 0.0 ) ] );
+	}
+
+	/**
+	 * Run a read through the lens the call names, on the graph the read
+	 * opens (`lensed()`).
+	 *
+	 * @param array<array-key,mixed>                                       $args  The bound verb args.
+	 * @param array<string,mixed>                                          $empty The answer with no rows.
+	 * @param \Closure(Row_Reader,Graph,Filter,Lens): array<string,mixed> $read  The read.
+	 * @return array<string,mixed>
+	 * @throws \InvalidArgumentException On a bad day, a lens key that sanitizes to nothing, or a lens no one saved.
+	 */
+	private static function through( array $args, array $empty, \Closure $read ): array {
+		[ $call, $name ] = self::asked( $args );
+		return self::available( $empty, static fn ( Row_Reader $r ): array => self::lensed( $r, self::graph( $r ), $call, $name, $read ) );
+	}
+
+	/**
+	 * `signals()` on an open read, answering none unless the latest
+	 * complete bucket closed after an instant.
+	 *
+	 * @api Read by the watcher's digest, as each watch's owner.
+	 * @param Row_Reader             $r     The reader.
+	 * @param Graph                  $g     The owner's graph.
+	 * @param array<array-key,mixed> $args  `lens` or `entity`.
+	 * @param float                  $after The instant, UTC seconds.
+	 * @return list<array<string,mixed>>
+	 * @throws \InvalidArgumentException As `trends()`.
+	 */
+	public static function spikes( Row_Reader $r, array $g, array $args, float $after ): array {
+		[ $call, $name ] = self::asked( $args );
+		return self::lensed( $r, $g, $call, $name, static fn ( Row_Reader $r, array $g, array $filter, array $lens ): array => self::spiking( $r, $g, $filter, $lens, $after ) );
+	}
+
+	/**
+	 * Per value counted, the latest complete bucket's count when it is at
+	 * least SIGNAL_MIN and at least the mean plus SIGNAL_SIGMAS standard
+	 * deviations of the SIGNAL_BASELINE buckets before it, each citing its
+	 * row's items; none unless that bucket closed after `$after`. Only those
+	 * buckets are counted. A history holding no counted item before the
+	 * oldest of them spikes nothing, since its zeros are not a baseline,
+	 * which an item in the oldest bucket answers, else one look further back.
+	 *
+	 * @param Row_Reader $r      The reader.
+	 * @param Graph      $g      The graph.
+	 * @param Filter     $filter The filters.
+	 * @param Lens       $lens   The lens, `no_lens()` for none.
+	 * @param float      $after  The instant, UTC seconds.
+	 * @return list<array<string,mixed>>
+	 */
+	private static function spiking( Row_Reader $r, array $g, array $filter, array $lens, float $after ): array {
+		[ $by, $span ] = self::axis( null, null, $lens );
+		$starts        = self::bucket_starts( $r, $span, self::SIGNAL_BASELINE + 2 );
+		$oldest        = $starts[ self::SIGNAL_BASELINE + 1 ];
+		$cut           = Intel_Graph_Row_Schema::day( $oldest );
+		if ( Intel_Graph_Row_Schema::day( $starts[0] ) <= $after ) {
+			return [];
+		}
+		[ $from, $to ] = $filter['days'] ?? self::all_days();
+		$rows          = self::counts( $r, $g, [ 'days' => [ \max( $from, $cut ), $to ] ] + $filter, $by, $span );
+		if ( [] === $rows || ( Core::as_string( $rows[0]['bucket'] ) > $oldest && ! self::counted_before( $r, $g, [ 'days' => [ $from, \min( $to, $cut ) ] ] + $filter, $by ) ) ) {
+			return [];
+		}
+		$counts = [];
+		foreach ( $rows as $row ) {
+			$counts[ Core::as_string( $row['value'] ) ][ Core::as_string( $row['bucket'] ) ] = $row;
+		}
+		$signals = [];
+		foreach ( $counts as $value => $buckets ) {
+			$latest = $buckets[ $starts[1] ] ?? null;
+			$base   = \array_map( static fn ( string $start ): int => Core::as_int( $buckets[ $start ]['count'] ?? 0 ), \array_slice( $starts, 2 ) );
+			if ( null !== $latest && self::spiked( Core::as_int( $latest['count'] ), $base ) ) {
+				$signals[] = [ 'bucket' => $starts[1], 'by' => $by, 'value' => $value, 'count' => $latest['count'], 'baseline' => \array_sum( $base ) / (float) self::SIGNAL_BASELINE, 'items' => $latest['items'] ];
 			}
+		}
+		\usort( $signals, static fn ( array $a, array $b ): int => [ $b['count'], $a['value'] ] <=> [ $a['count'], $b['value'] ] );
+		return $signals;
+	}
+
+	/**
+	 * Whether a count spikes over its baseline: at least SIGNAL_MIN, and at
+	 * least the baseline's mean plus SIGNAL_SIGMAS population standard
+	 * deviations, compared in whole numbers so the threshold itself counts.
+	 *
+	 * @param int       $count    The count.
+	 * @param list<int> $baseline The counts before it.
+	 */
+	private static function spiked( int $count, array $baseline ): bool {
+		$n     = \count( $baseline );
+		$sum   = \array_sum( $baseline );
+		$above = $n * $count - $sum;
+		$var   = $n * \array_sum( \array_map( static fn ( int $x ): int => $x * $x, $baseline ) ) - $sum * $sum;
+		return $count >= self::SIGNAL_MIN && $above >= 0 && $above * $above >= self::SIGNAL_SIGMAS * self::SIGNAL_SIGMAS * $var;
+	}
+
+	/**
+	 * Whether the filters admit any readable item the axis counts.
+	 *
+	 * @param Row_Reader $r      The reader.
+	 * @param Graph      $g      The graph.
+	 * @param Filter     $filter The filters.
+	 * @param string     $by     The axis.
+	 */
+	private static function counted_before( Row_Reader $r, array $g, array $filter, string $by ): bool {
+		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, 'topic' === $by );
+		$join                            = \str_replace( '{extractions}', Intel_Graph_Row_Schema::all( $r, 'extractions' ), self::TREND_AXES[ $by ][1] );
+		return [] !== $r->rows( "{$with} SELECT 1 FROM ri i {$join} WHERE {$where} LIMIT 1", [ ...$lead, ...$binds ] );
+	}
+
+	/**
+	 * The trend rows: readable items the filters admit, counted per bucket
+	 * and value of the axis, each citing its newest items.
+	 *
+	 * @param Row_Reader $r      The reader.
+	 * @param Graph      $g      The graph.
+	 * @param Filter     $filter The filters.
+	 * @param string     $by     The axis.
+	 * @param string     $span   A BUCKETS expression over `t`.
+	 * @return list<array{bucket:mixed,value:mixed,count:int,items:list<array{item_key:mixed,url:mixed,title:mixed}>}>
+	 */
+	private static function counts( Row_Reader $r, array $g, array $filter, string $by, string $span ): array {
+		$time                            = Intel_Graph_Row_Schema::ITEM_TIME;
+		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, 'topic' === $by );
+		[ $value, $join ]                = self::TREND_AXES[ $by ];
+		$rows                            = $r->rows(
+			"{$with}, hits AS ( SELECT DISTINCT {$value} AS value, i.item_key, i.url, i.title, {$time} AS t FROM ri i " . \str_replace( '{extractions}', Intel_Graph_Row_Schema::all( $r, 'extractions' ), $join ) . " WHERE {$where} ),"
+			. " ranked AS ( SELECT {$span} AS bucket, value, item_key, url, title, ROW_NUMBER() OVER ( PARTITION BY {$span}, value ORDER BY t DESC, item_key DESC ) AS rn,"
+			. " COUNT(*) OVER ( PARTITION BY {$span}, value ) AS n FROM hits )"
+			. ' SELECT bucket, value, n, item_key, url, title FROM ranked WHERE rn <= ? ORDER BY bucket, n DESC, value, rn',
+			[ ...$lead, ...$binds, self::CITATIONS ]
 		);
+		$out                             = [];
+		foreach ( $rows as [ $day, $counted, $n, $item, $url, $title ] ) {
+			$at                    = Core::as_string( $day ) . '|' . Core::as_string( $counted );
+			$out[ $at ]          ??= [ 'bucket' => $day, 'value' => $counted, 'count' => Core::as_int( $n ), 'items' => [] ];
+			$out[ $at ]['items'][] = [ 'item_key' => $item, 'url' => $url, 'title' => $title ];
+		}
+		return \array_values( $out );
 	}
 
 	/**
@@ -537,7 +800,7 @@ final class Graph_Query {
 	 * @param Graph      $g      The graph the read opened.
 	 * @param Filter     $filter The filters.
 	 * @param bool       $linked Whether the read joins `live` itself.
-	 * @return array{0:string,1:string,2:list<scalar|null>} The `WITH` clauses, the condition, and their binds in order.
+	 * @return array{0:string,1:string,2:list<scalar|null>,3:list<scalar|null>} The `WITH` clauses, the condition, the clauses' binds and the condition's.
 	 */
 	private static function narrowed( Row_Reader $r, array $g, array $filter, bool $linked ): array {
 		$time  = Intel_Graph_Row_Schema::ITEM_TIME;
@@ -591,7 +854,7 @@ final class Graph_Query {
 		if ( [] !== $roles ) {
 			$with .= ', rl AS ( SELECT COALESCE( mg.value, r.entity_key ) AS entity_key, r.role, r.from_ts, r.to_ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'roles' ) . ' r LEFT JOIN mg ON mg.key = r.entity_key )';
 		}
-		return [ $with, \implode( ' AND ', $where ), [ ...$lead, ...$binds ] ];
+		return [ $with, \implode( ' AND ', $where ), $lead, $binds ];
 	}
 
 	/**
@@ -643,33 +906,60 @@ final class Graph_Query {
 	}
 
 	/**
-	 * Run a read through the lens the call names, its key slugged as a save
-	 * slugs it, if it names one: each of the lens's filters stands for one
-	 * the call does not name, its days for the call's `since` and `until`
-	 * together, and the graph's `ri` holds the caller's readable tiers
-	 * narrowed to the lens's, never widened. A lens's entity or topic the
-	 * caller cannot see stays in the filter, where it matches no item the
-	 * caller may read, so it narrows to nothing and never widens.
+	 * The first day of the bucket holding now and of each before it, newest
+	 * first, as the bucket's own SQL spells them.
 	 *
-	 * @param array<array-key,mixed>                                       $args  The bound verb args.
-	 * @param array<string,mixed>                                          $empty The answer with no rows.
-	 * @param \Closure(Row_Reader,Graph,Filter,Lens): array<string,mixed> $read  The read.
-	 * @return array<string,mixed>
-	 * @throws \InvalidArgumentException On a bad day, a lens key that sanitizes to nothing, or a lens no one saved.
+	 * @param Row_Reader $r     The reader.
+	 * @param string     $span  A BUCKETS expression over `t`.
+	 * @param int        $count How many buckets.
+	 * @return list<string> Y-m-d days.
 	 */
-	private static function through( array $args, array $empty, \Closure $read ): array {
-		$call = self::filter_of( $args );
-		$name = self::given( $args, 'lens' );
-		$name = null === $name ? null : Intel_Event::lens_key( $name );
-		return self::available(
-			$empty,
-			static function ( Row_Reader $r ) use ( $call, $name, $read ): array {
-				$lens  = null === $name ? self::no_lens() : self::lens( $r, $name );
-				$tiers = Intel_Tiers::readable();
-				$tiers = [] === $lens['tiers'] ? $tiers : \array_values( \array_intersect( $tiers, $lens['tiers'] ) );
-				return $read( $r, self::bound( $r, Entity_Index::survivors( $r ), $tiers ), self::over( $lens, $call ), $lens );
-			}
-		);
+	private static function bucket_starts( Row_Reader $r, string $span, int $count ): array {
+		$starts = [];
+		$t      = Intel_Event::now();
+		while ( \count( $starts ) < $count ) {
+			$start    = Core::as_string( $r->rows( "SELECT {$span} FROM ( SELECT ? AS t )", [ $t ] )[0][0] ?? '' );
+			$starts[] = $start;
+			$t        = Intel_Graph_Row_Schema::day( $start ) - 1;
+		}
+		return $starts;
+	}
+
+	/**
+	 * What a trend counts and the bucket it counts by: the call's, else the
+	 * lens's, else DEFAULT_AXIS and DEFAULT_BUCKET.
+	 *
+	 * @param string|null $by     The call's axis.
+	 * @param string|null $bucket The call's bucket.
+	 * @param Lens        $lens   The lens.
+	 * @return array{0:string,1:string} The axis and its bucket's SQL over `t`.
+	 */
+	private static function axis( ?string $by, ?string $bucket, array $lens ): array {
+		return [ $by ?? $lens['by'] ?? self::DEFAULT_AXIS, self::BUCKETS[ $bucket ?? $lens['bucket'] ?? self::DEFAULT_BUCKET ] ];
+	}
+
+	/**
+	 * Run a read on a graph through a lens, if one is named: each of the
+	 * lens's filters stands for one the call does not name, its days for
+	 * the call's `since` and `until` together, and the graph's `ri` holds
+	 * the caller's readable tiers narrowed to the lens's, never widened. A
+	 * lens's entity or topic the caller cannot see stays in the filter,
+	 * where it matches no item the caller may read, so it narrows to
+	 * nothing and never widens.
+	 *
+	 * @template T
+	 * @param Row_Reader                              $r    The reader.
+	 * @param Graph                                   $g    The caller's graph.
+	 * @param Filter                                  $call The call's own filters.
+	 * @param string|null                             $name The lens key, null for none.
+	 * @param \Closure(Row_Reader,Graph,Filter,Lens): T $read The read.
+	 * @return T
+	 * @throws \InvalidArgumentException On a lens no one saved.
+	 */
+	private static function lensed( Row_Reader $r, array $g, array $call, ?string $name, \Closure $read ): mixed {
+		$lens = null === $name ? self::no_lens() : self::lens( $r, $name );
+		$g    = [] === $lens['tiers'] ? $g : self::bound( $r, $g['survivors'], \array_values( \array_intersect( Intel_Tiers::readable(), $lens['tiers'] ) ) );
+		return $read( $r, $g, self::over( $lens, $call ), $lens );
 	}
 
 	/**
@@ -769,6 +1059,19 @@ final class Graph_Query {
 	}
 
 	/**
+	 * The filters a call names and the lens it names, its key slugged as a
+	 * save slugs it.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @return array{0:Filter,1:?string}
+	 * @throws \InvalidArgumentException On a bad day, or a lens key that sanitizes to nothing.
+	 */
+	private static function asked( array $args ): array {
+		$name = self::given( $args, 'lens' );
+		return [ self::filter_of( $args ), null === $name ? null : Intel_Event::lens_key( $name ) ];
+	}
+
+	/**
 	 * The filters a call names: `q`, `entity`, each list its repeatable arg
 	 * gives, and the UTC days `since` to `until`, null when it names neither.
 	 *
@@ -799,40 +1102,6 @@ final class Graph_Query {
 	 */
 	private static function strings( mixed $values ): array {
 		return \array_values( \array_map( static fn ( mixed $value ): string => Core::as_string( $value ), Core::arr( $values ) ) );
-	}
-
-	/**
-	 * Refuse a trend axis or bucket outside its set; null names none.
-	 *
-	 * @param string|null $by     The axis.
-	 * @param string|null $bucket The bucket.
-	 * @throws \InvalidArgumentException Naming the set.
-	 */
-	public static function check_trend( ?string $by, ?string $bucket ): void {
-		if ( null !== $by ) {
-			self::one_of( 'by', $by, self::trend_axes() );
-		}
-		if ( null !== $bucket ) {
-			self::one_of( 'bucket', $bucket, self::buckets() );
-		}
-	}
-
-	/**
-	 * The spans a trend row may count.
-	 *
-	 * @return list<string>
-	 */
-	public static function buckets(): array {
-		return \array_keys( self::BUCKETS );
-	}
-
-	/**
-	 * What a trend may count.
-	 *
-	 * @return list<string>
-	 */
-	public static function trend_axes(): array {
-		return \array_keys( self::TREND_AXES );
 	}
 
 	/**
@@ -987,7 +1256,7 @@ final class Graph_Query {
 	 * @param \Closure(Row_Reader,Graph): array<string,mixed> $read  The read.
 	 * @return array<string,mixed>
 	 */
-	private static function answer( array $empty, \Closure $read ): array {
+	public static function answer( array $empty, \Closure $read ): array {
 		return self::available( $empty, static fn ( Row_Reader $r ): array => $read( $r, self::graph( $r ) ) );
 	}
 

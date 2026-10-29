@@ -14,17 +14,23 @@ or newer. Below that floor the plugin stays dormant.
 Connector **Source nodes** (GitHub, Linear, feed) fetch inside a background
 worker and record each new item as an `item_recorded` event on the `intel:items`
 stream. Entities, names, identifiers, roles and every person's judgment are
-events on the `intel:ontology` stream, which keeps every segment. A
-**Projector** replays both streams into the `intel-graph` SQLite Row_Table.
+events on the `intel:ontology` stream, which keeps every segment; each watch's
+matches and marks are events on the `intel:watches` stream. A **Projector**
+replays the three streams into the `intel-graph` SQLite Row_Table.
 
 A **Resolver** links each recorded item to the entities it names, by
 identifier, by name and, failing both, by an LLM's named-entity extraction; an
 **Extractor** asks the LLM for a summary, a kind, topics, scores and claims; a
 **Deduper** clusters copies of one story. When the ontology changes, a
-**Reresolver** queues the stored items the change could link anew.
+**Reresolver** queues the stored items the change could link anew. A
+**Watcher** runs every reader's watches every five minutes, as that reader,
+recording each new item a watched lens, entity or collection gains and
+emailing it, or a daily digest of it, when the watch asks.
 
 `Intelligence_CI` answers the graph's read verbs (search, entity, timeline,
-related, claims, trends, review, collections, lenses) and its curation verbs, which the
+related, claims, trends, signals, review, collections, lenses), each reader's
+own watches (watches, save_watch, remove_watch, watch_matches, mark_seen) and
+its curation verbs, which the
 Intelligence page sends; the same verbs reach agents through the plugin's MCP
 door. Nothing is compiled: a person or an agent asks, and the graph answers.
 A client CSV, imported on the Settings page or with

@@ -9,7 +9,8 @@
  * `_wp_test_site_caps[ site ][ user id ]`: a key naming a role in
  * `_wp_test_roles` grants that role's capabilities, any other key is the
  * capability itself, and a row is membership of the site. Logins live in
- * `_wp_test_user_logins[ user id ]`; the sites in `_wp_test_sites`, the
+ * `_wp_test_user_logins[ user id ]` and addresses in
+ * `_wp_test_user_emails[ user id ]`; the sites in `_wp_test_sites`, the
  * current one in `_wp_test_blog_id`.
  *
  * @package Newspack_Intelligence
@@ -73,8 +74,12 @@ if ( ! class_exists( 'WP_User' ) ) {
 		/** @var array<string,bool> The user's own map on the current site, roles included. */
 		public array $caps;
 
+		/** The address in `_wp_test_user_emails`, '' when none. */
+		public string $user_email;
+
 		public function __construct( public int $ID, public string $user_login ) {
-			$this->caps = $GLOBALS['_wp_test_site_caps'][ get_current_blog_id() ][ $ID ] ?? [];
+			$this->caps       = $GLOBALS['_wp_test_site_caps'][ get_current_blog_id() ][ $ID ] ?? [];
+			$this->user_email = $GLOBALS['_wp_test_user_emails'][ $ID ] ?? '';
 		}
 
 		public function add_cap( string $cap, bool $grant = true ): void {
@@ -97,6 +102,19 @@ if ( ! function_exists( 'get_user_by' ) ) {
 			}
 		}
 		return false;
+	}
+}
+
+// Records each user whose cache is dropped, in `_wp_test_cleaned_users`.
+if ( ! function_exists( 'clean_user_cache' ) ) {
+	function clean_user_cache( $user ): void {
+		$GLOBALS['_wp_test_cleaned_users'][] = $user instanceof WP_User ? $user->ID : (int) $user;
+	}
+}
+
+if ( ! function_exists( 'is_email' ) ) {
+	function is_email( string $email ): string|false {
+		return false === \filter_var( $email, \FILTER_VALIDATE_EMAIL ) ? false : $email;
 	}
 }
 

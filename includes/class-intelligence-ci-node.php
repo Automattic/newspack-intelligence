@@ -56,10 +56,11 @@ class Intelligence_CI_Node extends Service_CI_Node {
 	}
 
 	/**
-	 * Declarative schema: the nine read verbs, each a handler over
-	 * `Graph_Query`; the fifteen curation verbs, each over
-	 * `Graph_Curation` and seeing only the entities and items a read
-	 * caller sees; and `fetch_now`.
+	 * Declarative schema: the ten read verbs, each a handler over
+	 * `Graph_Query`; the five watch verbs, also at read, each over
+	 * `Graph_Watches` and answering the caller's own watches alone; the
+	 * fifteen curation verbs, each over `Graph_Curation` and seeing only the
+	 * entities and items a read caller sees; and `fetch_now`.
 	 *
 	 * @api Used by the substrate to build the dispatch table and the catalog.
 	 * @return array<string,mixed>
@@ -85,6 +86,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 		$link  = [ $item, $arg( 'entity', 'The entity key.' ) ];
 		$about = $key( 'The entity key.' );
 		$role  = [ $about, $arg( 'role', 'The role: ' . \implode( ', ', Intel_Event::ROLES ) . '.' ) ];
+		$box   = static fn ( string $name, bool $default, string $what ): array => [ 'name' => $name, 'type' => 'bool', 'default' => $default, 'description' => $what ];
 		$read  = Capabilities::READ;
 		$tune  = Capabilities::TUNE;
 		return \array_merge(
@@ -128,9 +130,36 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						],
 						Graph_Query::trends( ... )
 					),
+					$verb(
+						$read,
+						'signals',
+						'The latest complete bucket\'s spikes, counted as trends counts: each value whose count reaches ' . Graph_Query::SIGNAL_MIN . ' and the mean plus ' . Graph_Query::SIGNAL_SIGMAS . ' standard deviations of the ' . Graph_Query::SIGNAL_BASELINE . ' buckets before it: { signals: [ { bucket, by, value, count, baseline, items: [ { item_key, url, title } ] } ] }, baseline the mean.',
+						[ $lens, $text( 'entity', 'Only items linking this entity.' ) ],
+						Graph_Query::signals( ... )
+					),
 					$verb( $read, 'review', 'The review queue, each row with its citing items: { links } or { entities }.', [ $arg( 'what', 'The queue: links or entities.' ), $limit( Graph_Query::DEFAULT_LIMIT ) ], Graph_Query::review( ... ) ),
 					$verb( $read, 'collections', 'Every collection with its item count, or one with its saved items.', [ $text( 'key', 'One collection\'s key.' ) ], Graph_Query::collections( ... ) ),
 					$verb( $read, 'lenses', 'Every lens, by name: { lenses: [ { lens_key, name, description, filters: { kinds, topics, roles, sources, entity, days, tiers, by, bucket } } ] }.', [], Graph_Query::lenses( ... ) ),
+					$verb( $read, 'watches', 'The caller\'s own watches, by name, each with its unseen matches: { watches: [ { watch_key, name, target: { kind, key }, digest, instant, inbox, unseen } ] }.', [], Graph_Watches::watches( ... ) ),
+					$verb(
+						$read,
+						'save_watch',
+						'Save one of the caller\'s own watches over exactly one lens, entity or collection, ticking at least one delivery; a key replaces one of the caller\'s watches: { ok, event_id, watch_key }.',
+						[
+							$arg( 'name', 'Its name, at most ' . Graph_Curation::NAME_BYTES . ' bytes.' ),
+							$text( 'lens', 'A lens it follows.' ),
+							$text( 'entity', 'An entity it follows.' ),
+							$text( 'collection', 'A collection it follows.' ),
+							$box( 'digest', false, 'Email a daily digest of its matches.' ),
+							$box( 'instant', false, 'Email each new match.' ),
+							$box( 'inbox', true, 'List its unseen matches on the Intelligence page.' ),
+							$text( 'key', 'The key of the caller\'s own watch it replaces.' ),
+						],
+						Graph_Watches::save( ... )
+					),
+					$verb( $read, 'remove_watch', 'Remove one of the caller\'s own watches: { ok, event_id }.', [ $key( 'The watch key.' ) ], Graph_Watches::remove( ... ) ),
+					$verb( $read, 'watch_matches', 'The unseen matches of one of the caller\'s own watches, latest matched first: { items, total }, each item as search answers it plus matched_ts.', [ $key( 'The watch key.' ), $limit( Graph_Query::DEFAULT_LIMIT ), $page ], Graph_Watches::matches( ... ) ),
+					$verb( $read, 'mark_seen', 'Mark seen matches of one of the caller\'s own watches, every unseen one when no item is named: { ok, count }.', [ $key( 'The watch key.' ), [ 'name' => 'item', 'type' => 'string', 'variadic' => true, 'description' => 'A matched item key; repeat it to mark several.' ] ], Graph_Watches::mark_seen( ... ) ),
 					$verb( $tune, 'confirm_link', 'Confirm a readable item\'s link to an entity: { ok, event_id }.', $link, static fn ( array $args ): array => Graph_Curation::judge_link( 'link_confirmed', $args ) ),
 					$verb( $tune, 'reject_link', 'Reject a readable item\'s link to an entity: { ok, event_id }.', $link, static fn ( array $args ): array => Graph_Curation::judge_link( 'link_rejected', $args ) ),
 					$verb( $tune, 'accept_entity', 'Accept an entity: { ok, event_id }.', [ $about ], static fn ( array $args ): array => Graph_Curation::judge_entity( 'entity_accepted', $args ) ),

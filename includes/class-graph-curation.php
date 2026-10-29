@@ -1,7 +1,7 @@
 <?php
 /**
  * Graph_Curation: the `intelligence` curation verbs. Each writes its
- * judgment as one ontology event through `Ontology_Writer::append()`, under
+ * judgment as one ontology event through `Stream_Writer::append()`, under
  * `Intel_Event::caller()` — the agent a labelled session names, else the
  * person — and answers `{ ok, event_id }`. A refusal throws before anything
  * is written.
@@ -502,12 +502,13 @@ final class Graph_Curation {
 	 * The verb's one read of the projection, on the graph it opens; one that
 	 * will not open throws.
 	 *
+	 * @api Graph_Watches reads through it too.
 	 * @template T of array
 	 * @param \Closure(Row_Reader,Graph): T $read The read.
 	 * @return T
 	 * @throws \Newspack_Nodes\Table_Unavailable When no projection opens.
 	 */
-	private static function on_graph( \Closure $read ): array {
+	public static function on_graph( \Closure $read ): array {
 		return Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): array => $read( $r, Graph_Query::graph( $r ) ) );
 	}
 
@@ -568,12 +569,13 @@ final class Graph_Curation {
 	/**
 	 * A value, refused when it trims to nothing or runs past its cap.
 	 *
+	 * @api Graph_Watches bounds its args by it too.
 	 * @param string $name  What the value is, for the refusal.
 	 * @param string $value The value.
 	 * @param int    $bytes The cap.
 	 * @throws \InvalidArgumentException When blank or past the cap.
 	 */
-	private static function bounded( string $name, string $value, int $bytes ): string {
+	public static function bounded( string $name, string $value, int $bytes ): string {
 		if ( '' === \trim( $value ) ) {
 			throw new \InvalidArgumentException( \esc_html( "{$name} is blank" ) );
 		}
@@ -596,16 +598,17 @@ final class Graph_Curation {
 	}
 
 	/**
-	 * Mint an event as the caller and append it to the ontology stream.
+	 * Mint an event as the caller and append it to its kind's stream.
 	 *
+	 * @api Graph_Watches writes through it too.
 	 * @param string              $kind   The event kind.
 	 * @param array<string,mixed> $fields Its fields.
 	 * @return array{ok:true,event_id:string}
 	 * @throws \InvalidArgumentException As `Intel_Event::make()`.
 	 */
-	private static function write( string $kind, array $fields ): array {
+	public static function write( string $kind, array $fields ): array {
 		$event = Intel_Event::make( $kind, $fields, Intel_Event::caller(), \NEWSPACK_INTELLIGENCE_VERSION );
-		Ontology_Writer::append( [ $event ] );
+		Stream_Writer::append( [ $event ] );
 		return [ 'ok' => true, 'event_id' => Core::as_string( $event['event_id'] ) ];
 	}
 

@@ -19,6 +19,7 @@ use Newspack_Nodes\Partition_Node;
 final class Intel_Event {
 	public const ITEMS    = 'items';
 	public const ONTOLOGY = 'ontology';
+	public const WATCHES  = 'watches';
 
 	public const TYPES            = [ 'organization', 'person', 'place', 'product', 'topic', 'event' ];
 	public const ROLES            = [ 'client', 'former_client', 'prospect', 'competitor', 'partner', 'funder', 'industry_body', 'newspack_product' ];
@@ -29,6 +30,11 @@ final class Intel_Event {
 	public const TIERS            = [ 'public', 'internal', 'restricted' ];
 	public const LINK_ROLES       = [ 'subject', 'mention', 'topic' ];
 	public const METHODS          = [ 'identifier', 'name', 'alias', 'acronym', 'domain_stem', 'ner_fuzzy', 'human', 'extract' ];
+	public const WATCH_TARGETS    = [ 'lens', 'entity', 'collection' ];
+	public const DELIVERIES       = [ 'scan', 'instant', 'digest' ];
+
+	/** The values a watch's checkbox holds. */
+	private const FLAG = [ true, false ];
 
 	/** The fields every event carries beside its kind's own, in mint order. */
 	public const ENVELOPE = [ 'event', 'event_id', 'ts', 'actor', 'config_version' ];
@@ -64,6 +70,11 @@ final class Intel_Event {
 		'collected'           => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'url', 'title', 'tier' ], [ 'tier' => self::TIERS ] ],
 		'lens_saved'          => [ self::ONTOLOGY, [ 'lens_key', 'name', 'description', 'filters' ], [] ],
 		'lens_removed'        => [ self::ONTOLOGY, [ 'lens_key' ], [] ],
+		'watch_saved'         => [ self::ONTOLOGY, [ 'watch_key', 'owner', 'name', 'target_kind', 'target_key', 'digest', 'instant', 'inbox' ], [ 'target_kind' => self::WATCH_TARGETS, 'digest' => self::FLAG, 'instant' => self::FLAG, 'inbox' => self::FLAG ] ],
+		'watch_removed'       => [ self::ONTOLOGY, [ 'watch_key', 'owner' ], [] ],
+		'watch_matched'       => [ self::WATCHES, [ 'watch_key', 'owner', 'item_key', 'at', 'retrieved_ts', 'quiet' ], [ 'quiet' => self::FLAG ] ],
+		'watch_seen'          => [ self::WATCHES, [ 'watch_key', 'owner', 'item_key', 'retrieved_ts' ], [] ],
+		'watch_delivered'     => [ self::WATCHES, [ 'owner', 'mode', 'watch_key', 'through' ], [ 'mode' => self::DELIVERIES ] ],
 	];
 
 	/** The actor classes an actor string may begin with. */
@@ -106,15 +117,16 @@ final class Intel_Event {
 
 	/**
 	 * Build a validated event VALUE, stamped on the tick clock, which the
-	 * substrate pins at class load. An ontology event must pack into one
-	 * partition line, because that stream takes no large write.
+	 * substrate pins at class load. An event of any stream but the items
+	 * stream must pack into one partition line, because only that stream
+	 * takes a large write.
 	 *
 	 * @param string              $kind           An event kind from KINDS.
 	 * @param array<string,mixed> $fields         The kind's fields.
 	 * @param string              $actor          The actor string.
 	 * @param string              $config_version The config version in force.
 	 * @return array<string,mixed>
-	 * @throws \InvalidArgumentException When the event does not satisfy its kind, or an ontology event does not fit one line.
+	 * @throws \InvalidArgumentException When the event does not satisfy its kind, or one outside the items stream does not fit one line.
 	 */
 	public static function make( string $kind, array $fields, string $actor, string $config_version ): array {
 		$event = [
@@ -125,13 +137,14 @@ final class Intel_Event {
 			'config_version' => $config_version,
 		] + $fields;
 		self::validate( $event );
-		if ( self::ONTOLOGY === self::KINDS[ $kind ][0] ) {
+		$stream = self::KINDS[ $kind ][0];
+		if ( self::ITEMS !== $stream ) {
 			$message                   = Message::new_message();
 			$message[ Message::TYPE ]  = Message::TM_STRUCT;
 			$message[ Message::VALUE ] = $event;
 			$size                      = Message::packed_size( $message ) + 1;
 			if ( $size > Partition_Node::MAX_LINE_SIZE ) {
-				throw new \InvalidArgumentException( \esc_html( "{$kind}: {$size} bytes packed, past the " . Partition_Node::MAX_LINE_SIZE . '-byte line the ontology stream takes' ) );
+				throw new \InvalidArgumentException( \esc_html( "{$kind}: {$size} bytes packed, past the " . Partition_Node::MAX_LINE_SIZE . "-byte line the {$stream} stream takes" ) );
 			}
 		}
 		return $event;
@@ -294,6 +307,7 @@ final class Intel_Event {
 	 * The stream a kind is written to.
 	 *
 	 * @param string $kind An event kind.
+	 * @return self::ITEMS|self::ONTOLOGY|self::WATCHES
 	 * @throws \InvalidArgumentException On an unknown kind.
 	 */
 	public static function stream_of( string $kind ): string {

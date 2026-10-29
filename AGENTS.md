@@ -152,11 +152,14 @@ and a build. The two coverage gates hold every JS file and every PHP class at 90
 
 ## Architecture
 
-Everything the graph knows is an event on one of two streams. The sources
+Everything the graph knows is an event on one of three streams. The sources
 record items; the resolver, the extractor and the deduper record what they
 make of each; the seed, the client import, people and agents record the
-ontology and every judgment. The projector replays both streams into one
-SQLite Row_Table, which every read queries and the streams can rebuild.
+ontology and every judgment, each reader's watches among them; the watcher
+records what each watch matched and how far it has delivered, and each
+reader the matches they have seen. The projector replays the three streams
+into one SQLite Row_Table, which every read queries and the streams can
+rebuild.
 
 **Streams.** `intel:items` holds `item_recorded` and the other per-item events
 for two years (16 MiB segments, both retention rules at 63,072,000 seconds,
@@ -164,14 +167,19 @@ a hard cap of 8,192 segments), and only the worker writes it, so it
 takes bodies past PIPE_BUF under `void_warranty`. `intel:ontology` holds the
 entity events and keeps every segment (`keep_everything`, substrate ADR-37).
 `intel:reresolve` keeps a day of `item_reresolve` records, each naming one
-stored item. `intel:later`, a substrate Delay
+stored item. `intel:watches` holds each watch's `watch_matched`,
+`watch_seen` and `watch_delivered` records, one line each, for two years
+(4 MiB segments, both retention rules at 63,072,000 seconds, a hard cap of
+8,192 segments), as long as the items they name, so a replay rebuilds every
+match row a retained item still has; the watcher and request-side appends
+both write it. `intel:later`, a substrate Delay
 (`make_node Delay intel:later <dir> <offsets_dir> <deadletter_dir> 60 86400`),
 parks the `item_reresolve` records the resolver and the extractor want to
 reprocess later, each due at its `not_before`; every minute it sends each
 one due to `intel:reresolve`, its target, and drops one parked longer than a
 day, a record parked again keeping its first `parked_at`. Each record parks
-with KEY its `item_key`, so the Delay's age-out line names the item. All
-four carry restricted items whole, so each declares `command_node
+with KEY its `item_key`, so the Delay's age-out line names the item. Each
+of the five carries restricted items whole or names them, so each declares `command_node
 <name>:config set_read_capability newspack_intelligence_restricted`
 (substrate ADR-39): each writes a `.read-capability` marker naming it into
 its own dir on the write that opens it, every reader of it copies the
@@ -181,17 +189,20 @@ a marked dir to a caller without the capability. The TSL spells the
 capability out; a test writes through each stream, checkpoints and
 quarantines through each reader, and holds every marker to
 `Intel_Tiers::CAPABILITY`.
-`Intel_Event_Writer_Node` (`intel:writer intel:items intel:ontology`) addresses
+`Intel_Event_Writer_Node` (`intel:writer intel:items intel:ontology
+intel:watches`) addresses
 each event by TO to the partition its `make_node` line names for the stream
 `Intel_Event::stream_of()` gives its kind, and drops a message naming no kind
 with a rate-limited line; it validates nothing, because `Intel_Event::make()`
 validated the event at mint and the projector validates it where it reads.
-`make()` refuses an ontology event that does not pack into one 4,096-byte
-line, because that stream takes no large write.
+`make()` refuses an event of any stream but the items stream that does not
+pack into one 4,096-byte line, because only the items stream takes a large
+write.
 
-**Projection.** `projector` replays both streams into the `intel-graph`
-Row_Table (`Intel_Graph_Row_Schema`), fed by `intel:items:consumer` and
-`intel:ontology:consumer`, which drain in batches and each checkpoint it.
+**Projection.** `projector` replays the three streams into the `intel-graph`
+Row_Table (`Intel_Graph_Row_Schema`), fed by `intel:items:consumer`,
+`intel:ontology:consumer` and `intel:watches:consumer`, which drain in
+batches and each checkpoint it.
 `projections()` declares, per kind, the row ops it writes and where each column
 comes from — an event field, a literal, a computed closure, or each element of
 a fan-out field — and every value is typed by its column's declared type. Every
@@ -202,7 +213,9 @@ earlier behind, and for a `link_retracted`, which deletes the one `links`
 row its `item_key`, `entity_key` and `role` key in the file of the
 partition that projects it, and for a `lens_removed`, which deletes the
 one `lenses` row its `lens_key` keys; a `lens_saved` sets that row whole,
-its `filters` as JSON. A heuristic stand-in is projected by
+its `filters` as JSON; and for a `watch_removed`, which deletes the one
+`watches` row its `watch_key` keys, a `watch_saved` setting that row whole,
+its three boxes as integers. A heuristic stand-in is projected by
 `STAND_IN` instead, one `ignore` of its `extractions` row, so it fills an
 item no extraction holds and never replaces a call's extraction, claims or
 topics, whatever the projection held when the extractor chose it. A
@@ -210,7 +223,7 @@ topics, whatever the projection held when the extractor chose it. A
 the item's `extracted_subjects` rows, the entities its last call extraction
 was given as asserted, which the resolver settles links by. Each table is
 written by one stream alone, so a replay writes
-what it wrote before and the streams project the same rows in either order. The projector never reads
+what it wrote before and the streams project the same rows in any order. The projector never reads
 before it writes: an entity is three rows — identity in `entities`, state in
 `entity_states`, merge in `entity_merges` — and an item's extraction sits in
 `extractions` beside its `items` row, which is written once. A link, claim,
@@ -220,8 +233,10 @@ to it. A machine's `entity_proposed` writes with `ignore` and a person's
 Item-scoped tables keep 730 days by an indexed day column, the item's
 retrieval `floor( retrieved_ts / 86400 )`, which every item-scoped event
 carries — a supersession its canonical's — so an item and every row about it
-expire together however late a re-resolution writes them; the ontology and
-curation tables declare `keep`. Ops buffer and leave as
+expire together however late a re-resolution writes them; `watch_matches`
+and `watch_seen`, keyed by watch and item, are dated the same way, so a
+match expires with its item. The ontology and curation tables, `watches`
+and `watch_deliveries` declare `keep`. Ops buffer and leave as
 one `ROWS` batch every 5 seconds, at 2,000 ops or 1 MiB of string values, at
 each checkpoint and on a clean stop; a failed batch raises a plain stop and
 keeps the buffer, so the cursor replays it. A message that carries no valid
@@ -238,7 +253,7 @@ reproject`. It holds the fleet with `wp nodes stop`, deletes the graph's
 files and the cursor of every Consumer whose config adds the projector as a
 snapshot node, read from each active topology's TSL for each partition, and
 releases the hold with `wp nodes start`, in a `finally`, so the projector
-replays both streams from their oldest segment. It reads `nodes stop`'s exit
+replays every stream from its oldest segment. It reads `nodes stop`'s exit
 code rather than letting it exit, which would skip that `finally`; a fleet
 that does not stop has nothing deleted under it and its hold released. The
 streams and every other reader's cursor stay, the reresolver's included,
@@ -287,8 +302,9 @@ by TO and declared as an extra target, then forwards `{ item, links,
 proposals, extracted, attempt }` to its target, `extractor`. It resolves
 nothing while its index holds no live entity
 (`Entity_Index::has_live_entities()`), or while a projector's reader of the
-ontology stream `Ontology_Writer::stream_dir()` names had not committed the
-stream's end (`Consumer_Node::lag_from_disk()`) just before the index was
+ontology stream `Stream_Writer::stream_dir()` names had not committed the
+stream's end (`Projector_Node::behind()`, over
+`Consumer_Node::lag_from_disk()`) just before the index was
 read (`Entity_Index::behind_ontology()`): `Entity_Index::current()` takes
 that reading first at every load, every `Entity_Index::TTL_S`, whichever
 reader triggers it, so a flush and commit landing between the two reads can
@@ -524,9 +540,10 @@ verbs do, because a root-owned segment or IPC file is one the workers
 cannot append to.
 
 **Reads.** `Intelligence_CI` (`intelligence`), mounted on every request
-graph, answers nine verbs, each declaring `read` and its
-args: `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `review`,
-`collections` and `lenses`. Each handler hands its bound args to the `Graph_Query`
+graph, answers ten read verbs, each declaring `read` and its
+args: `search`, `entity`, `timeline`, `related`, `claims`, `trends`,
+`signals`, `review`, `collections` and `lenses`, and the five watch verbs
+below. Each handler hands its bound args to the `Graph_Query`
 read of the same name, through `Intel_Graph_Row_Schema::read()` over every
 partition's file. A read opens on `Graph_Query::graph()`, which resolves
 the tiers once from `Intel_Tiers::readable()` — `public` and `internal`,
@@ -602,6 +619,135 @@ matches no item the caller may read, so it narrows that caller to nothing
 rather than dropping out and widening. A lens no one saved is refused as
 `no lens: <key>`.
 
+**Signals.** `signals [--lens=] [--entity=]` reads the rows `trends`
+answers for the same lens and entity, so the lens's filters, axis, bucket
+and tiers apply alike, and answers `{ signals: [ { bucket, by, value,
+count, baseline, items } ], available }`: per value counted, the latest
+complete bucket's count when it is at least `Graph_Query::SIGNAL_MIN` (3)
+and at least the mean plus `SIGNAL_SIGMAS` (2) population standard
+deviations of the `SIGNAL_BASELINE` (8) buckets before it, compared in whole
+numbers so the threshold itself counts. `baseline` is that mean, and
+`items` cite the bucket's five newest items. It counts those
+`SIGNAL_BASELINE + 2` buckets alone, not the whole retention. A history
+holding no counted item before the oldest baseline bucket signals nothing,
+because its zeros are not a baseline: an item in that bucket answers it,
+else one `LIMIT 1` look further back within the lens's own days.
+`Graph_Query::spikes()` is the same read on a read already open, answering
+none unless the latest complete bucket closed after a given instant; the
+digest reads it.
+
+**Watches.** A watch is one reader's standing question over exactly one
+lens, entity or collection. `Graph_Watches` holds its five verbs, each at
+`read`, each answering or changing the caller's own watches alone:
+`watches` lists them by name, `{ watches: [ { watch_key, name, target: {
+kind, key }, digest, instant, inbox, unseen } ], available }`, `unseen`
+counting the unseen matches the caller may read now, 0 for a watch whose
+`inbox` is off; `save_watch <name>
+[--lens=] [--entity=] [--collection=] [--digest=] [--instant=] [--inbox=]
+[--key=]` writes `watch_saved` under a key it mints, sixteen hex
+characters, or under the key of one of the caller's own watches, which it
+replaces, and answers `{ ok, event_id, watch_key }`; `remove_watch <key>`
+writes `watch_removed`; `watch_matches <key> [--limit=] [--offset=]`
+answers the watch's unseen matches the caller may read now, the latest
+matched first, each as `search` answers it plus `matched_ts`, through
+`Graph_Query::listed()`, and `{ items: [], total: 0 }` for a watch whose
+`inbox` is off, whose matches the watcher still records for its email; and `mark_seen <key> [--item=…]` writes one
+`watch_seen` per named match, or per unseen match when none is named, a
+match already seen not again, and answers `{ ok, count }`. The three boxes
+are bools, `digest` and `instant` off and `inbox` on by default.
+`save_watch` refuses a blank name, not exactly one target (`a watch follows
+exactly one of lens, entity or collection`), no box ticked (`a watch
+delivers by digest, instant email or inbox; tick one`), a lens no one saved
+(`no lens: <key>`, slugged as `save_lens` slugs it), a collection no one
+made (`no collection: <key>`) and an entity the caller cannot see (`no
+entity: <key>`, through `Graph_Query::seen()`, whose survivor it stores). A
+key that is not one of the caller's own watches is refused as `no watch:
+<key>` whether another reader saved it or no one did, so no verb tells the
+two apart, and `mark_seen` refuses an item the watch never matched, or one
+of a tier the caller does not hold now, as `no match: <item>`. Each verb
+reads the projection once, writes as `Intel_Event::caller()` with the
+caller's user id as `owner`, and refuses before anything is written. A
+watch's definition rides the ontology stream, which keeps every segment,
+because a watch must outlive the watches stream's two years; its matches,
+seen marks and deliveries ride the watches stream.
+
+**Watcher.** `watcher` (`make_node Watcher watcher intel:writer`) rides the
+Router's tick every `Watcher_Node::WATCH_INTERVAL_S` (300) seconds. A pass
+waits, logged, while a projector's reader of the watches stream has not
+committed its end (`Projector_Node::behind()`), so it never reads a mark or
+a match it appended itself as missing; while it waits it drops to the
+Router's own tick and asks again on the next one, taking its interval back
+once a pass runs, so a burst of `mark_seen` writes delays it seconds, not
+an interval. It takes no such hold on the ontology stream, whose many
+writers would starve it, so a watch saved or removed in the last few
+seconds runs as it stood. It reads every watch and its marks from the
+projection (`Graph_Watches::standing()`), takes the user signed in before
+the pass once, then for each owner drops that user's cached record
+(`clean_user_cache()`), signs in with `wp_set_current_user()` inside a
+`try`, and in its `finally` signs back in as that prior user, so a
+`set_current_user` listener that throws leaves no one signed in as the
+owner, every read answers the tiers the owner holds now, and a revoked
+grant stops at the next pass. Any failure of one owner, the sign-in among
+them, is logged and the next owner runs; an owner who no longer exists, or
+no longer holds `read`, is skipped and logged. An owner's whole pass reads
+the projection once, as that owner: each watch's arrivals, the matches its
+instant email is owed, and, with the digest due, every digest watch's owed
+matches and signals, read first and acted on after. Arrivals are
+`Graph_Query::arrivals()`: the target's items the owner may read now that
+the watch has not matched, entering the target at or after `LATE_S`
+(86,400 seconds, the day `intel:later` parks a retry at most) before the
+watch's high-water mark, or before its saving on a first pass, the oldest
+first, at most `PASS_LIMIT` (200) a pass, so a backlog drains over passes.
+An item enters a lens or an entity at its retrieval, read through the lens
+or the entity exactly as `search` reads it, and a collection at its
+saving, read through the readable items. Because an item can join its
+target well after its retrieval — an extraction retried from
+`intel:later`, a resolver's 60-second hold, a curator's `confirm_link`, a
+re-resolution — the watch reads a day behind its mark, and its own match
+rows keep an item it has already matched from matching again; an item
+that joins more than a day behind the mark is not read. The mark is the
+newest entry it has matched, written as a `watch_delivered` of mode `scan`,
+a `keep` row, whenever it moves, so no retention moves it back and nothing
+old floods in when a match row expires. Each item becomes one
+`watch_matched { watch_key, owner, item_key, at, retrieved_ts, quiet }`
+addressed to `intel:writer`, `quiet` when it entered the target before the
+watch was saved. A watch's first pass, one with no `scan` mark written
+since it was saved, so that every save, new or replacing, starts it
+afresh, marks the watch at its saving at least, even when it finds
+nothing, so the first item after the saving is news and a backlog that
+joins later — a re-resolution linking history, a grant, a merge, a widened
+lens — floods nothing older than a day before it. A watch with `instant`
+ticked is then sent its owed matches (`Graph_Watches::owed()`): each not
+quiet, recorded after both its last `instant` mark and its saving, of an
+item the owner may read now, with this pass's news; a sent email writes
+the `instant` mark at the pass's clock. Once a day, on the first pass at or
+after `DIGEST_HOUR_UTC` (13) whose owner's last `digest` mark falls before
+that hour, each owner with a digest watch is sent one email of every digest
+watch's matches owed since that mark and the watch's saving, this pass's
+among them, and of each lens's or entity's signals since that mark
+(`Graph_Query::spikes()`); an empty digest sends nothing, and either writes
+the owner's `digest` mark. Every mark is a watches-stream event projected
+into `watch_deliveries`, so a respawned watcher reads the day as done. A
+send that fails, or an owner with no valid address, is logged and marks
+nothing, so the next pass sends the same recorded matches again and never
+matches them again. Each log line keys its rate limit on its subject, the
+owner's login and the watch key, so every failing owner and watch is
+logged, not only the first; a cooperative stop propagates first (substrate
+ADR-14). Every mark compares the worker's own clock, `Core::$now`, against
+stamps the watcher wrote, so a wall-clock step backwards can leave a match
+recorded across it unemailed.
+
+Email goes through the one `wp_mail()` call `Watcher_Node::$wp_mail`
+replaces, as plain text (`Content-Type: text/plain; charset=UTF-8`, and no
+other header), to the owner's own address alone, the subject led by the
+site's name. It carries each match's title as one line, every run of
+whitespace or control, format or invalid characters one space; its URL only
+when it is http or https; its source and its UTC day, at most
+`Graph_Query::DEFAULT_LIMIT` (50) a watch with a count of the rest; each
+signal with the items it cites; and a link to the Intelligence page naming
+the watch, `admin.php?page=newspack-intelligence&watch=<key>`. It never
+carries an item's body.
+
 **Restricted tier.** `Intel_Tiers::CAPABILITY`,
 `newspack_intelligence_restricted`, is a WordPress user capability, granted
 per user and per site, and the one spelling every reader uses. `readable()`
@@ -628,14 +774,14 @@ Settings page's "Restricted access" section (`Restricted_Settings`) are the
 two operator surfaces, both at MANAGE, and each says that a role and a
 super admin read the tier without a grant. The raw-log surface is gated on
 the same capability, so a non-holder's `raw-logs` reads and SSE
-subscriptions of the four intel streams, and of every cursor and
+subscriptions of the five intel streams, and of every cursor and
 dead-letter dir derived from them, are refused (see Streams). Uninstall reaches `strip()` with
 the substrate possibly inactive, so it and everything it calls use no
 substrate class.
 
 **Curation.** `Intelligence_CI` also answers fifteen curation verbs, each
 declaring `tune`, each writing one ontology event through
-`Ontology_Writer::append()` and answering `{ ok, event_id }`; the two
+`Stream_Writer::append()` and answering `{ ok, event_id }`; the two
 creations add the key they minted. `Graph_Curation` holds them:
 `confirm_link` and `reject_link` (carrying the item's URL), `accept_entity`,
 `reject_entity`, `merge_entities`, `add_name`, `add_identifier`,
@@ -742,7 +888,11 @@ read's summary names the 730-day item horizon,
 lists the entity types and link roles from `Intel_Event::TYPES` and
 `LINK_ROLES`. `intel_lenses`, `intel_save_lens`, `intel_remove_lens` and
 the `lens` and list args of `intel_search` and `intel_trends` come off the
-schema with no door code; a variadic arg is a JSON array.
+schema with no door code; a variadic arg is a JSON array. So do
+`intel_signals` and the five watch tools, which a read session is offered;
+the door becomes the session's minting user, so a watch tool answers and
+changes that user's own watches, and a watch saved through it emails that
+user.
 
 **Seeding.** `wp newspack-intelligence ontology seed` writes
 `Ontology_Seed::events()` — thirty topics, the partners, funders and
@@ -757,25 +907,27 @@ reset, a machine's proposal of a seed key is replaced by the seed's
 creation, and a lens a curator saved over or removed is left alone; it
 prints how many keys were new and how many present, and a
 projection that will not open fails it with `Table_Unavailable` rather than
-writing everything. It writes through `Ontology_Writer::append()`, the
-request-side writer: a transient Partition named `intel:ontology:writer`,
-built from the `intel:ontology` declaration in
-`newspack-intelligence-streams.tsl` read through `Topology_Analyzer` — its
-directory and its arguments — then filled, flushed and removed in a
+writing everything. It writes through `Stream_Writer::append()`, the
+request-side writer of the ontology and watches streams, which routes each
+event by `Intel_Event::stream_of()` and refuses an items-stream event, which
+only the worker writes, before anything is written: per stream, a transient
+Partition named `<partition>:writer`, built from that stream's declaration
+in `newspack-intelligence-streams.tsl` read through `Topology_Analyzer` —
+its directory and its arguments — then filled, flushed and removed in a
 `finally`, so a failure propagates and a second append finds the name free.
 The declared `keep_everything` and `set_read_capability` are bound
 against the Partition's own declaration of each verb, by position or by
 name (`Command_Args::bind()`), and honoured through the Partition's own
 setters, never replayed as commands, because a command's role gate judges
 the caller and would refuse a curator below MANAGE; any other
-`intel:ontology:config` line is refused by name. A writer missing
+`<partition>:config` line is refused by name. A writer missing
 `keep_everything` would prune the kept-forever stream on rotation, and one
 missing the read gate could open the shared directory without its
 `.read-capability` marker, which is why nothing copies the declaration;
 this writer leaves the marker when it flushes. With the worker and
-these appends both writing it, `intel:ontology:consumer` runs
-`set_multi_writer true`, so it seals a segment only after the grace a
-shared log needs. Every machine stage mints through
+these appends both writing each of the two, `intel:ontology:consumer` and
+`intel:watches:consumer` run `set_multi_writer true`, so each seals a
+segment only after the grace a shared log needs. Every machine stage mints through
 `Intel_Event::machine_event()`, which stamps `machine:<stage>@<plugin
 version>` and that version as the `config_version`; `make()` stamps the
 tick clock, which the substrate pins at class load.
@@ -816,7 +968,8 @@ replacing ONE call so the branches around it still run as production code:
 copy of (`Resolver_Node::$llm_factory` and `Extractor_Node::$llm_factory`)
 and `make_llm_client()` answers first; and
 `Intel_Graph_Row_Schema::$read_rows` and `Resolver::$similar_text` for the
-projection read and the fuzzy step's scoring.
+projection read and the fuzzy step's scoring; and `Watcher_Node::$wp_mail`
+for the one `wp_mail()` call every watch email goes through.
 Both callers of `LLM_Client::chat()` — `Extractor_Node::fill()` and
 `LLM_Entity_Extractor`, the resolver's NER step — re-throw
 `Worker_Should_Stop` first, because a cooperative stop is a
@@ -850,10 +1003,10 @@ version}`, with the plugin version as its `config_version`.
 
 | File | What it wires |
 |------|---------------|
-| `newspack-intelligence.tsl` | Includes every file below and wires `reresolver`, which spans the project and streams files; `on_demand_idle 0` keeps the worker resident, which the TICK-driven sources need, and `stale_timeout 600` keeps a peer from stealing its lock while a TICK's fetches or an LLM call block one `fill()` |
-| `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve`, `intel:writer`, and `intel:later`, the Delay whose due records go to `intel:reresolve` |
+| `newspack-intelligence.tsl` | Includes every file below and wires `reresolver`, which spans the project and streams files, and `watcher`, which reads the projection and writes to `intel:writer`; `on_demand_idle 0` keeps the worker resident, which the TICK-driven sources need, and `stale_timeout 600` keeps a peer from stealing its lock while a TICK's fetches or an LLM call block one `fill()` |
+| `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve`, `intel:watches`, `intel:writer`, and `intel:later`, the Delay whose due records go to `intel:reresolve` |
 | `newspack-intelligence-collect.tsl` | The three sources → `intel:writer`; includes the streams |
-| `newspack-intelligence-project.tsl` | `intel:items:consumer` → `projector` and `intel:ontology:consumer` → `projector`, writing the `intel-graph` Row_Table; no other node rides their cursors |
+| `newspack-intelligence-project.tsl` | `intel:items:consumer`, `intel:ontology:consumer` and `intel:watches:consumer`, each → `projector`, writing the `intel-graph` Row_Table; no other node rides their cursors |
 | `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later`, the items Consumer checkpointing the deduper; includes the streams |
 
 ### Nodes
@@ -866,13 +1019,14 @@ plugin adds:
 | `Github_Source` | `Github_Source_Node` | `<tier>`; `TICK`; `set_tier`, `add_repo`, `remove_repo`, `set_vault_id` |
 | `Linear_Source` | `Linear_Source_Node` | `<tier>`; `TICK`; `set_tier`, `add_team`, `remove_team`, `set_vault_id` |
 | `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`; `set_tier`, `add_url`, `remove_url` |
-| `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition>`; no verbs |
+| `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
 | `Resolver` | `Resolver_Node` | `<writer> <later>`; the `LLM_Config` verbs |
 | `Extractor` | `Extractor_Node` | `<writer> <later>`; the `LLM_Config` verbs |
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>` |
-| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `review`, `collections`, `lenses`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, each at `tune`; `fetch_now` at `manage` |
+| `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no verbs |
+| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, each at `tune`; `fetch_now` at `manage` |
 
 The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model`,
 `set_feature`, `add_profile` and `remove_profile`; every node carrying the trait
@@ -932,7 +1086,7 @@ alone is named in one stderr line per import. An event that will not mint
 throws naming its row's atomic id.
 Each role event dates from the start, UTC, of the import's day. Identifier
 values go through `Entity_Index::identifier_value()`. `commit()` appends
-the import's events in order through one `Ontology_Writer::append()`, then
+the import's events in order through one `Stream_Writer::append()`, then
 forgets what it read, so the next import reads the roster again. The roster
 takes its actor at construction: `Intel_Event::machine( 'client-import' )`
 from `wp newspack-intelligence clients import <csv>`, and
@@ -951,19 +1105,20 @@ its own one-shot commands; nothing polls.
 | Module | Export | What it does |
 |--------|--------|--------------|
 | `index.js` | — | Mounts `IntelligencePage` on `#newspack-intelligence-app`, handing it `canTune` and `vocabulary` from `NewspackNodesData` |
-| `IntelligencePage.js` | default | Switches Search, Entity, Lenses, Review and Collections in place; holds the submitted search, the open entity, lens and collection, and the item being saved, so a view returns as it was left; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the `NEWSPACK::NODES` header subtitled `Intelligence` and the debug overlay |
+| `IntelligencePage.js` | default | Switches Search, Entity, Lenses, Review, Collections and Watches in place; holds the submitted search, the open entity, lens, collection and watch, the watch form's draft and the item being saved, so a view returns as it was left, and a lens's "Watch this" opens the watch form on that lens; a URL carrying `watch=<key>`, as the watcher's email links it, opens the page on Watches with that watch open, or on the list when the reader's watches do not hold it; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the `NEWSPACK::NODES` header subtitled `Intelligence` and the debug overlay |
 | `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite`, `commandArgs` | `commandArgs()` names every value given, a list once per member, leaving out a blank value or an empty list; a read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments; a write sent once per `run()`, which answers the tokens it sent, running `refresh` once it lands, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal and answered arguments |
 | `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
-| `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `search --lens` a page at a time beside `trends --lens`; trend rows citing their items; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
+| `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens` above `search --lens` a page at a time beside `trends --lens`; trend rows and signals citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
 | `views/Entity.js` | default | `entity`, `timeline` a page at a time, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
 | `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity, and `review entities`, a pill per entity; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back |
 | `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection`, its collection shown saving through `useHeld` until a read lists it by name |
+| `views/Watches.js` | default, `CLOSED_WATCH`, `newWatch` | `watches`, the caller's own, each with its target and unseen count, or "Inbox off" for a watch without its inbox, opened onto `watch_matches --key` a page at a time, or onto the words that its inbox is off, each match with a "Mark seen" (`mark_seen --key --item`) and the page with "Mark these seen", naming each match it shows, a marked match hidden through `useHeld` until a read no longer lists it and a landed mark returning to the first page; for every reader, not gated on `canTune`, the form saving a new watch or the one opened through `save_watch` — its name, the kind it follows and exactly one target (a lens picked from `lenses`, an entity key, or a collection picked from `collections`), and the three deliveries as checkboxes, each sent as `true` or `false` — and `remove_watch`, each held until a read of `watches` lists the watch with the name, target kind and deliveries the save sent, an edit by its own key, the target's key uncompared because the server stores an entity as its survivor |
 | `hooks/useHeld.js` | `useHeld` | A read's rows with each write shown from the moment it is sent: a held key's row taken out until no read lists it, or a held row put in its place until a read lists one `matches` says reflects it; a refusal undoes the hold whose send it echoes, and a bare refusal every hold |
 | `components/SaveToCollection.js` | default | The one dialog any result saves through, sending `collect` |
 | `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty by its `rows` key, or its rows — as a stock `Card` section named by an optional title, which heads its `CardHeader`, with the state inset in its `CardBody`, or bare inside a dialog; the one alert every refusal, read or write, renders in |
-| `components/Pager.js` | default | How many of the matches a page shows, and Previous and Next over a stack of page starts, for Search, the Entity timeline and a lens's items |
+| `components/Pager.js` | default | How many of the matches a page shows, and Previous and Next over a stack of page starts, for Search, the Entity timeline, a lens's items and a watch's matches |
 | `components/ListField.js`, `lensDraft.js` | `ListField`; `lensDraft`, `newLens`, `draftLens`, `draftArgs`, `listOf`, `daysSince` | A comma-separated field naming the values a closed list allows; a lens read into a form's text and back into the lens and the options `save_lens` and `search` take, its list filters read from `vocabulary.lensLists` and its tiers kept beside them, the one place that knows the lens's shape; and the first UTC day of a lens's rolling window |
-| `components/ItemRow.js`, `Cite.js`, `format.js` | — | An item row; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day and `metaLine()`, which joins a row's meta parts and keeps a 0 |
+| `components/ItemRow.js`, `Cite.js`, `format.js` | — | An item row, headed by any control the view passes as its children; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day and `metaLine()`, which joins a row's meta parts and keeps a 0 |
 | `styles/intelligence.scss` | — | Geometry only, emitted as `build/intelligence/index.css` |
 
 Each read is a `useCommandOnce` read with `retry`, under the `intelligence`
@@ -975,8 +1130,8 @@ per verb, held by its view rather than by a row, sending every arg named
 `--name=` binds as a value, and a write that lands
 re-reads the slice it changed. No send names a subject: an item key spells a
 whole URL, past the length a reply address carries, so a refusal is matched
-to its send by the arguments it echoes. Review, Lenses and Collections show
-each write as it is sent through `useHeld`, because the projector records it
+to its send by the arguments it echoes. Review, Lenses, Collections and
+Watches show each write as it is sent through `useHeld`, because the projector records it
 only on its next flush, so a re-read answers the old rows until then.
 The view switcher is the substrate's shared `TabBar`, over one `tabpanel`
 labelled by the selected tab. `canTune`, which `enqueue_intelligence_assets()` sets
@@ -1005,12 +1160,13 @@ sibling checkout locally.
 | Path | What |
 |------|------|
 | `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus and the Settings page's admin-post helpers, WP-CLI, the `Intelligence_CI` mount, the MCP door's `wire()` |
-| `includes/` (streams) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Ontology_Seed`, `Ontology_Writer`, the `Emits_Struct` trait |
+| `includes/` (streams) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Ontology_Seed`, `Stream_Writer`, the `Emits_Struct` trait |
 | `includes/` (collect) | `Source_Node` and its three connectors, the `Source` interface |
 | `includes/` (resolve) | `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
 | `includes/` (clients) | `Client_Importer`, the `Client_Roster` interface, `Graph_Client_Roster`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |
-| `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
+| `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
+| `includes/` (watches) | `Watcher_Node` |
 | `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed`, `ontology reresolve` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; the `Refuses_Root` trait they share |
 | `topologies/` | The five `.tsl` node-graph topologies |
 | `src/intelligence/` | The Intelligence page's React bundle |
@@ -1060,6 +1216,10 @@ declares no hook or filter of its own for others to extend.
 - **REST.** `POST /wp-json/newspack-intelligence/v1/mcp`, the MCP door, which
   the substrate's `Mcp_Door` serves and declares as an OAuth resource on
   `newspack_nodes/oauth_resources`.
+- **Email.** The watcher sends a watch's owner, at their own address, an
+  email of new matches when the watch asks for one and one digest a day
+  from 13:00 UTC, through `wp_mail()`; nothing else in the plugin sends
+  mail.
 - **Uninstall.** Plugin delete removes every `newspack_intelligence_` option row
   and its transient variants and strips `newspack_intelligence_restricted`
   from every user's own grant, on every site of a multisite, with or
@@ -1083,6 +1243,8 @@ declares no hook or filter of its own for others to extend.
     halves in `plans/2026-10-24-nodes-partition-keep-everything.md` (the
     ontology stream's retention) and `plans/2026-10-24-nodes-mcp-door.md`
     (the door)
+  - `specs/2026-10-29-intelligence-signals-watches-design.md` — signals,
+    watches, the watcher and its email
   - `specs/2026-07-16-newspack-intelligence-rebrand-design.md` — the rename
   - `specs/2026-07-29-intelligence-actions-v7-design.md` — the release workflow
   - `specs/2026-06-15-newspack-ai-newsletter-floorplan-design.md` and

@@ -145,7 +145,7 @@ final class OntologyCliCommandTest extends TestCase {
 	public function test_reproject_deletes_the_graph_and_the_projectors_cursors_inside_a_hold(): void {
 		$base    = Config::get_base_directory();
 		$graph   = Bootstrap::row_table( Intel_Graph_Row_Schema::class )['files'][0];
-		$cursors = [ "{$base}/offsets/newspack-intelligence-project.intel-items.p0", "{$base}/offsets/newspack-intelligence-project.intel-ontology.p0" ];
+		$cursors = [ "{$base}/offsets/newspack-intelligence-project.intel-items.p0", "{$base}/offsets/newspack-intelligence-project.intel-ontology.p0", "{$base}/offsets/newspack-intelligence-project.intel-watches.p0" ];
 		$kept    = [ "{$base}/offsets/newspack-intelligence-project.intel-items-resolve.p0", "{$base}/logs/intel-ontology.p0" ];
 		foreach ( [ ...$cursors, ...$kept ] as $dir ) {
 			\mkdir( $dir, 0777, true );
@@ -162,9 +162,9 @@ final class OntologyCliCommandTest extends TestCase {
 
 		$this->assertSame( [ [ 'nodes stop', true, true ], [ 'nodes start', false, false ] ], $seen );
 		$this->assertSame( [ [ 'launch' => true, 'exit_error' => false, 'return' => 'all' ], [ 'launch' => true, 'exit_error' => true ] ], \array_column( \WP_CLI::$ran, 1 ), 'each runs in its own process, so a throw in it leaves this one\'s WP-CLI state alone' );
-		$this->assertSame( [ false, false, false, false ], [ \file_exists( $graph ), \file_exists( "{$graph}-wal" ), \file_exists( "{$graph}-shm" ), \is_dir( $cursors[1] ) ] );
+		$this->assertSame( [ false, false, false, false, false ], [ \file_exists( $graph ), \file_exists( "{$graph}-wal" ), \file_exists( "{$graph}-shm" ), \is_dir( $cursors[1] ), \is_dir( $cursors[2] ) ] );
 		$this->assertSame( [ true, true ], \array_map( 'is_dir', $kept ) );
-		$this->assertSame( [ 'Deleted the intel-graph projection and 2 projector cursors; the projector replays both streams.' ], \WP_CLI::$successes );
+		$this->assertSame( [ 'Deleted the intel-graph projection and 3 projector cursors; the projector replays every stream.' ], \WP_CLI::$successes );
 	}
 
 	/** A fleet that will not stop deletes nothing, and the hold is released before the refusal. */

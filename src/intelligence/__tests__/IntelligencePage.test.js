@@ -1,6 +1,6 @@
 /* eslint-env jest */
 /**
- * IntelligencePage switches among its five views in place, opens an entity
+ * IntelligencePage switches among its six views in place, opens an entity
  * from any chip, saves an item through one dialog only for a curator, and
  * carries the substrate debug overlay under its own storage key.
  */
@@ -41,7 +41,28 @@ beforeEach( () => {
 	wire.replies.collections = { collections: [], available: true };
 	wire.replies.lenses = LENSES;
 	wire.replies.trends = { rows: [], available: true };
+	wire.replies.signals = { signals: [], available: true };
+	wire.replies.watches = { watches: [], available: true };
 } );
+
+afterEach( () => {
+	window.history.replaceState( {}, '', '/' );
+} );
+
+const LINKED = {
+	watches: [
+		{
+			watch_key: '9f3a51c07be2d468',
+			name: 'Gazette group',
+			target: { kind: 'entity', key: 'organization:acme-gazette' },
+			digest: true,
+			instant: false,
+			inbox: true,
+			unseen: 5,
+		},
+	],
+	available: true,
+};
 
 function renderPage( canTune = false ) {
 	return render(
@@ -87,12 +108,9 @@ describe( 'IntelligencePage', () => {
 		expect( panel ).toHaveAttribute( 'aria-labelledby', search.id );
 
 		fireEvent.keyDown( search, { key: 'End' } );
-		expect( nav( 'Collections' ) ).toHaveAttribute(
-			'aria-selected',
-			'true'
-		);
-		expect( nav( 'Collections' ) ).toHaveFocus();
-		fireEvent.keyDown( nav( 'Collections' ), { key: 'ArrowRight' } );
+		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		expect( nav( 'Watches' ) ).toHaveFocus();
+		fireEvent.keyDown( nav( 'Watches' ), { key: 'ArrowRight' } );
 		expect( nav( 'Search' ) ).toHaveAttribute( 'aria-selected', 'true' );
 		expect(
 			await screen.findByRole( 'link', {
@@ -181,6 +199,90 @@ describe( 'IntelligencePage', () => {
 		expect(
 			await screen.findByText( 'seen by --lens=support-desk --offset=1' )
 		).toBeInTheDocument();
+	} );
+
+	it( 'switches to Watches for every reader', async () => {
+		renderPage( false );
+		fireEvent.click( nav( 'Watches' ) );
+		expect(
+			await screen.findByText( 'No watch yet.' )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'New watch' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'opens the watch form on a lens from its Watch this', async () => {
+		renderPage( false );
+		fireEvent.click( nav( 'Lenses' ) );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Developer shipping' } )
+		);
+		await screen.findByText( 'No signal is seen through this lens.' );
+		await screen.findByText( 'No trend is seen through this lens.' );
+		await screen.findByText( 'Acme Gazette wins regional prize' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Watch this' } ) );
+		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		const form = screen.getByRole( 'form', { name: 'Save watch' } );
+		expect( within( form ).getByLabelText( 'Name' ) ).toHaveValue(
+			'Developer shipping'
+		);
+		expect( within( form ).getByLabelText( 'Follows' ) ).toHaveValue(
+			'lens'
+		);
+		await within( form ).findByRole( 'option', {
+			name: 'Developer shipping',
+		} );
+		expect( within( form ).getByLabelText( 'Lens' ) ).toHaveValue(
+			'dev-shipping'
+		);
+		await screen.findByText( 'No watch yet.' );
+	} );
+
+	it( 'opens the watch a link names, on the Watches view', async () => {
+		window.history.replaceState(
+			{},
+			'',
+			'/wp-admin/admin.php?page=newspack-intelligence&watch=9f3a51c07be2d468'
+		);
+		wire.replies.watches = LINKED;
+		wire.replies.watch_matches = {
+			items: [ ITEM ],
+			total: 1,
+			available: true,
+		};
+		renderPage();
+		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		const region = await screen.findByRole( 'region', {
+			name: 'Gazette group',
+		} );
+		expect(
+			await within( region ).findByRole( 'link', {
+				name: 'Acme Gazette wins regional prize',
+			} )
+		).toBeInTheDocument();
+		expect( wire.sent( 'watch_matches' ) ).toEqual( [
+			[ '--key=9f3a51c07be2d468' ],
+		] );
+		expect( wire.sent( 'search' ) ).toEqual( [] );
+	} );
+
+	it( 'shows the list for a linked watch the read does not list', async () => {
+		window.history.replaceState(
+			{},
+			'',
+			'/wp-admin/admin.php?page=newspack-intelligence&watch=0d1e2f3a4b5c6d7e'
+		);
+		wire.replies.watches = LINKED;
+		renderPage();
+		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		expect(
+			await screen.findByRole( 'button', { name: 'Gazette group' } )
+		).not.toHaveClass( 'is-active' );
+		expect(
+			screen.queryByRole( 'region', { name: 'Gazette group' } )
+		).toBeNull();
+		expect( wire.sent( 'watch_matches' ) ).toEqual( [] );
 	} );
 
 	it( 'reopens the collection it left', async () => {

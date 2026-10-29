@@ -169,14 +169,29 @@ function LensForm( { initial, vocabulary, onSave, onCancel } ) {
 }
 
 /**
- * A lens's trend rows: each bucket and value with its count, citing the
- * newest items the row counts.
+ * A signal's count against the baseline it spiked over, to one decimal.
  *
- * @param {Object}        props
- * @param {Array<Object>} props.rows The rows `trends` answers.
+ * @param {Object} signal A signal as `signals` answers it.
+ * @return {string} The count.
+ */
+const againstBaseline = ( signal ) =>
+	sprintf(
+		/* translators: 1: the bucket's count, 2: the mean of the buckets before. */
+		__( '%1$d against a baseline of %2$s', 'newspack-intelligence' ),
+		signal.count,
+		String( Math.round( signal.baseline * 10 ) / 10 )
+	);
+
+/**
+ * A lens's trend rows, or its signals: each bucket and value with its
+ * count, citing the newest items the row counts.
+ *
+ * @param {Object}                           props
+ * @param {Array<Object>}                    props.rows    The rows `trends` or `signals` answers.
+ * @param {(row: Object) => (string|number)} [props.count] A row's count as shown.
  * @return {import('react').ReactElement} The table.
  */
-function TrendTable( { rows } ) {
+function TrendTable( { rows, count = ( row ) => row.count } ) {
 	return (
 		<table className="newspack-nodes-table">
 			<thead>
@@ -200,7 +215,7 @@ function TrendTable( { rows } ) {
 					<tr key={ `${ row.bucket } ${ row.value }` }>
 						<td>{ row.bucket }</td>
 						<td>{ row.value }</td>
-						<td>{ row.count }</td>
+						<td>{ count( row ) }</td>
 						<td>
 							<ul className="newspack-intelligence__facts">
 								{ row.items.map( ( item ) => (
@@ -221,8 +236,8 @@ function TrendTable( { rows } ) {
 }
 
 /**
- * The lens opened: its items a page at a time beside its trend rows, each
- * read through the lens.
+ * The lens opened: its signals above its items, a page at a time, beside
+ * its trend rows, each read through the lens.
  *
  * @param {Object}                     props
  * @param {Object}                     props.lens         The listed lens opened.
@@ -245,59 +260,84 @@ function Opened( { lens, starts, onStarts, onOpenEntity, onSave } ) {
 		'trends',
 		commandArgs( through )
 	);
+	const signals = useIntelRead(
+		'lens:signals',
+		'signals',
+		commandArgs( through )
+	);
 	return (
-		<div className="newspack-intelligence__lens">
+		<>
 			<Answer
-				title={ lens.name }
+				title={ __( 'Signals', 'newspack-intelligence' ) }
 				level={ 3 }
-				read={ items }
-				rows="items"
+				read={ signals }
+				rows="signals"
 				empty={ __(
-					'No readable item is seen through this lens.',
+					'No signal is seen through this lens.',
 					'newspack-intelligence'
 				) }
 			>
 				{ ( answer ) => (
-					<>
-						<ul className="newspack-intelligence__items">
-							{ answer.items.map( ( item ) => (
-								<ItemRow
-									key={ item.item_key }
-									item={ item }
-									onOpenEntity={ onOpenEntity }
-									onSave={ onSave }
-								/>
-							) ) }
-						</ul>
-						<Pager
-							starts={ starts }
-							onStarts={ onStarts }
-							shown={ answer.items.length }
-							total={ answer.total }
-						/>
-					</>
+					<TrendTable
+						rows={ answer.signals }
+						count={ againstBaseline }
+					/>
 				) }
 			</Answer>
-			<Answer
-				title={ __( 'Trends', 'newspack-intelligence' ) }
-				level={ 3 }
-				read={ trends }
-				rows="rows"
-				empty={ __(
-					'No trend is seen through this lens.',
-					'newspack-intelligence'
-				) }
-			>
-				{ ( answer ) => <TrendTable rows={ answer.rows } /> }
-			</Answer>
-		</div>
+			<div className="newspack-intelligence__lens">
+				<Answer
+					title={ lens.name }
+					level={ 3 }
+					read={ items }
+					rows="items"
+					empty={ __(
+						'No readable item is seen through this lens.',
+						'newspack-intelligence'
+					) }
+				>
+					{ ( answer ) => (
+						<>
+							<ul className="newspack-intelligence__items">
+								{ answer.items.map( ( item ) => (
+									<ItemRow
+										key={ item.item_key }
+										item={ item }
+										onOpenEntity={ onOpenEntity }
+										onSave={ onSave }
+									/>
+								) ) }
+							</ul>
+							<Pager
+								starts={ starts }
+								onStarts={ onStarts }
+								shown={ answer.items.length }
+								total={ answer.total }
+							/>
+						</>
+					) }
+				</Answer>
+				<Answer
+					title={ __( 'Trends', 'newspack-intelligence' ) }
+					level={ 3 }
+					read={ trends }
+					rows="rows"
+					empty={ __(
+						'No trend is seen through this lens.',
+						'newspack-intelligence'
+					) }
+				>
+					{ ( answer ) => <TrendTable rows={ answer.rows } /> }
+				</Answer>
+			</div>
+		</>
 	);
 }
 
 /**
- * Lenses: every lens, the one opened with its items and trend rows read
- * through it, and for a curator the form saving a new lens or the one
- * opened, and the control removing it. A save shows its lens and a removal
+ * Lenses: every lens, the one opened with its signals, items and trend rows
+ * read through it and, for every reader, the control watching it; and for a
+ * curator the form saving a new lens or the one opened, and the control
+ * removing it. A save shows its lens and a removal
  * takes its lens out from the moment each is sent, until a read of `lenses`
  * reflects it, since the projector records it seconds after it lands; a
  * refusal puts the lens back. One that lands lists again, and a removal
@@ -310,6 +350,7 @@ function Opened( { lens, starts, onStarts, onOpenEntity, onSave } ) {
  * @param {{key: ?string, starts: number[]}}                   props.opened       The lens opened and its page starts.
  * @param {(opened: {key: ?string, starts: number[]}) => void} props.onOpen       Opens a lens, or a page of it.
  * @param {(key: string) => void}                              props.onOpenEntity Opens an entity.
+ * @param {(target: Object, name: string) => void}             props.onWatch      Opens the watch form on a target.
  * @param {(item: Object) => void}                             [props.onSave]     Saves an item; absent for a reader.
  * @return {import('react').ReactElement} The view.
  */
@@ -319,6 +360,7 @@ export default function Lens( {
 	opened,
 	onOpen,
 	onOpenEntity,
+	onWatch,
 	onSave,
 } ) {
 	const lists = vocabulary.lensLists;
@@ -354,30 +396,30 @@ export default function Lens( {
 
 	return (
 		<div className="newspack-intelligence__view">
-			{ canTune &&
-				( editing ? (
-					<LensForm
-						initial={ editing }
-						vocabulary={ vocabulary }
-						onSave={ ( draft ) =>
-							lenses.hold(
-								draft.key,
-								draftLens( draft, lists ),
-								() => save.run( draftArgs( draft, lists ) )
-							)
-						}
-						onCancel={ () => setEditing( null ) }
-					/>
-				) : (
+			{ editing ? (
+				<LensForm
+					initial={ editing }
+					vocabulary={ vocabulary }
+					onSave={ ( draft ) =>
+						lenses.hold( draft.key, draftLens( draft, lists ), () =>
+							save.run( draftArgs( draft, lists ) )
+						)
+					}
+					onCancel={ () => setEditing( null ) }
+				/>
+			) : (
+				( canTune || lens ) && (
 					<div className="newspack-intelligence__create">
-						<button
-							type="button"
-							className="button button-primary"
-							onClick={ () => setEditing( newLens( lists ) ) }
-						>
-							{ __( 'New lens', 'newspack-intelligence' ) }
-						</button>
-						{ lens && (
+						{ canTune && (
+							<button
+								type="button"
+								className="button button-primary"
+								onClick={ () => setEditing( newLens( lists ) ) }
+							>
+								{ __( 'New lens', 'newspack-intelligence' ) }
+							</button>
+						) }
+						{ canTune && lens && (
 							<>
 								<button
 									type="button"
@@ -415,8 +457,23 @@ export default function Lens( {
 								</button>
 							</>
 						) }
+						{ lens && (
+							<button
+								type="button"
+								className="button"
+								onClick={ () =>
+									onWatch(
+										{ kind: 'lens', key: lens.lens_key },
+										lens.name
+									)
+								}
+							>
+								{ __( 'Watch this', 'newspack-intelligence' ) }
+							</button>
+						) }
 					</div>
-				) ) }
+				)
+			) }
 			<Refusal error={ save.refusal } />
 			<Refusal error={ remove.refusal } />
 			<Answer
