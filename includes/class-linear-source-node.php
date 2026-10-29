@@ -1,7 +1,8 @@
 <?php
 /**
- * Linear_Source_Node: pulls recently-updated Linear issues via the Linear GraphQL
- * API and normalizes them into recorded items.
+ * Linear_Source_Node: pulls the recently-updated issues of the Linear teams the
+ * `add_team` verb names via the Linear GraphQL API and normalizes them into
+ * recorded items.
  *
  * Extends Source_Node, so the base owns the TICK/TM_REQUEST trigger and dedup;
  * this class supplies only the two seams: config() (Settings read) and
@@ -19,7 +20,7 @@ class Linear_Source_Node extends Source_Node {
 
 	private const API_URL = 'https://api.linear.app/graphql';
 
-	private const QUERY = '{ issues(first: 30, orderBy: updatedAt) { nodes { identifier title url description updatedAt } } }';
+	private const QUERY = 'query ($teams: [String!]) { issues(first: 30, orderBy: updatedAt, filter: { team: { key: { in: $teams } } }) { nodes { identifier title url description updatedAt } } }';
 
 	/**
 	 * wp_remote_post call seam. Null by default; the call site then invokes the real
@@ -34,17 +35,23 @@ class Linear_Source_Node extends Source_Node {
 	 */
 	public static ?\Closure $http_post = null;
 
+	/** @var list<string> Team keys the `add_team` verb registered and `remove_team` left, in call order. */
+	protected array $teams = [];
+
 	/**
-	 * Fetch recently-updated Linear issues, normalized to the item_recorded
-	 * fields. No token → skip (no creds). A transport error or non-200
-	 * contributes nothing and never throws (fire-and-forget).
+	 * Fetch the configured teams' recently-updated Linear issues, normalized to
+	 * the item_recorded fields. No team or no token → skip, with no call. The
+	 * keys ride as the `$teams` GraphQL variable, never in the query text. A
+	 * transport error or non-200 contributes nothing and never throws
+	 * (fire-and-forget).
 	 *
-	 * @param array<string,mixed> $config {token: string}.
+	 * @param array<string,mixed> $config {teams: string[], token: string}.
 	 * @return array<int,array<string,mixed>>
 	 */
 	public function fetch( array $config ): array {
+		$teams = \is_array( $config['teams'] ?? null ) ? \array_values( $config['teams'] ) : [];
 		$token = \is_string( $config['token'] ?? null ) ? $config['token'] : '';
-		if ( '' === $token ) {
+		if ( [] === $teams || '' === $token ) {
 			return [];
 		}
 
@@ -55,7 +62,12 @@ class Linear_Source_Node extends Source_Node {
 				'Authorization' => $token,
 				'Content-Type'  => 'application/json',
 			],
-			'body'    => (string) \wp_json_encode( [ 'query' => self::QUERY ] ),
+			'body'    => (string) \wp_json_encode(
+				[
+					'query'     => self::QUERY,
+					'variables' => [ 'teams' => $teams ],
+				]
+			),
 		];
 		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_post_wp_remote_post -- connector fetches run in a background worker, not a VIP web request; the closure seam covers tests.
 		$response = null !== self::$http_post ? ( self::$http_post )( self::API_URL, $args ) : \wp_remote_post( self::API_URL, $args );
@@ -98,16 +110,25 @@ class Linear_Source_Node extends Source_Node {
 		return $out;
 	}
 
-	/** @return array{token:string} */
+	/** @return array{teams:list<string>,token:string} */
 	protected function config(): array {
-		return [ 'token' => $this->vault_secret() ];
+		return [
+			'teams' => $this->teams,
+			'token' => $this->vault_secret(),
+		];
+	}
+
+	/** Emit the base config plus one `add_team` line per registered team. */
+	public function dump_config(): string {
+		return parent::dump_config() . $this->dump_lists();
 	}
 
 	public static function node_schema(): array {
 		return self::source_schema(
-			'Fetches recently-updated Linear issues on a TICK request (request_node linear TICK).',
+			'Fetches recently-updated Linear issues of the configured teams on a TICK request (request_node linear TICK).',
 			'Fetch + emit new Linear issues. Trigger with `request_node linear TICK`.',
 			[
+				...self::list_verbs( 'team', 'teams', [ 'name' => 'team', 'type' => 'string', 'required' => true ], 'Register a Linear team to fetch on TICK by its key: <KEY>.' ),
 				self::vault_id_verb( 'the Linear API token' ),
 			]
 		);
