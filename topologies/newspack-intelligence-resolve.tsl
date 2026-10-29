@@ -13,12 +13,12 @@ include topic-probe
 include newspack-intelligence-streams
 make_node Consumer intel:items:resolve <config:logs_dir>/intel-items.p{partition} <config:offsets_dir>/<topology>.intel-items-resolve.p{partition} <config:deadletter_dir>/<topology>.intel-items-resolve.p{partition}
 command_node intel:items:resolve:config set_line_mode true
-make_node Resolver resolver intel:writer
+make_node Resolver resolver intel:writer intel:later
 cmd resolver:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1
 cmd resolver:config set_vault_id AI-proxy
 cmd resolver:config set_model gpt-oss-120b
 cmd resolver:config set_feature newspack-intelligence
-make_node Extractor extractor intel:writer
+make_node Extractor extractor intel:writer intel:later
 cmd extractor:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1
 cmd extractor:config set_vault_id AI-proxy
 cmd extractor:config set_model gpt-oss-120b

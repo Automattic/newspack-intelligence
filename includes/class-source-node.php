@@ -35,10 +35,13 @@ abstract class Source_Node extends Node implements Source {
 	/** Bytes of body an item records; a longer body is cut on a character boundary. */
 	public const MAX_BODY_BYTES = 65536;
 
+	/** Bytes of a refused key its line shows. */
+	private const KEY_SHOWN_BYTES = 64;
+
 	/** Cap on the remembered recorded-key set — bounds memory on a long-lived worker. */
 	private const MAX_SEEN = 2000;
 
-	/** @var array<string,bool> Recorded item keys (insertion-ordered), for cross-tick dedup. */
+	/** @var array<string,bool> Recorded item keys and keys refused for their size (insertion-ordered), for cross-tick dedup. */
 	protected array $seen = [];
 
 	/** The access tier every item this source records carries. */
@@ -85,7 +88,11 @@ abstract class Source_Node extends Node implements Source {
 	/**
 	 * TICK handler: fetch, drop item keys already recorded, and emit one
 	 * `item_recorded` event per new item as a TM_STRUCT to the target. An item
-	 * make() refuses is logged, counted and skipped unremembered, so it retries.
+	 * make() refuses is logged, counted and skipped unremembered, so it
+	 * retries. One whose key runs past Graph_Curation::ITEM_KEY_BYTES as the
+	 * stream writes it, so that a record naming it could outgrow one line, is
+	 * logged naming the key cut to KEY_SHOWN_BYTES, counted and remembered,
+	 * so it is refused once a process.
 	 *
 	 * @return array{emitted:int,refused:int} The reply data: how many new items went out, and how many make() refused.
 	 */
@@ -97,6 +104,13 @@ abstract class Source_Node extends Node implements Source {
 			if ( isset( $this->seen[ $key ] ) ) {
 				continue;
 			}
+			$bytes = Graph_Curation::written_bytes( $key );
+			if ( $bytes > Graph_Curation::ITEM_KEY_BYTES ) {
+				$this->print_less_often( 'refused an item whose key runs ', "{$bytes} bytes, past " . Graph_Curation::ITEM_KEY_BYTES . ': ' . Core::terminal_safe( \mb_strcut( $key, 0, self::KEY_SHOWN_BYTES ) ) );
+				$this->remember( $key );
+				++$refused;
+				continue;
+			}
 			try {
 				$value = Intel_Event::machine_event( "source:{$this->name}", 'item_recorded', $item );
 			} catch ( \InvalidArgumentException $invalid ) {
@@ -105,7 +119,7 @@ abstract class Source_Node extends Node implements Source {
 				continue;
 			}
 			$this->emit( '', $value );
-			// Only a recorded key is remembered, so a refused item retries.
+			// Unlike a size refusal, a make() refusal is not kept: it retries.
 			$this->remember( $key );
 			++$emitted;
 		}

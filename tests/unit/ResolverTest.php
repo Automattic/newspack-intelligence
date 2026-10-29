@@ -94,7 +94,7 @@ final class ResolverTest extends TestCase {
 
 	/** An item matching nothing links nothing and proposes nothing. */
 	public function test_no_signal_links_nothing(): void {
-		$this->assertSame( [ 'links' => [], 'proposals' => [] ], $this->golden( [ 'title' => 'A local bake sale', 'url' => 'https://random.example/x', 'body' => 'Nothing relevant here.' ] ) );
+		$this->assertSame( [ 'links' => [], 'proposals' => [], 'recognized' => false ], $this->golden( [ 'title' => 'A local bake sale', 'url' => 'https://random.example/x', 'body' => 'Nothing relevant here.' ] ) );
 	}
 
 	public function test_a_word_boundary_prevents_a_substring_match(): void {
@@ -432,7 +432,7 @@ final class ResolverTest extends TestCase {
 	/** An organization matching nothing becomes a candidate entity, not a drop. */
 	public function test_ner_unrelated_org_becomes_a_proposal(): void {
 		$this->assertSame(
-			[ 'links' => [], 'proposals' => [ [ 'type' => 'organization', 'name' => 'Acme Widgets Corporation' ] ] ],
+			[ 'links' => [], 'proposals' => [ [ 'type' => 'organization', 'name' => 'Acme Widgets Corporation' ] ], 'recognized' => true ],
 			$this->golden( [ 'title' => 'Factory opens', 'url' => 'https://elsewhere.example/x' ], [], new Fake_Entity_Extractor( [ 'Acme Widgets Corporation' ] ) )
 		);
 	}
@@ -458,7 +458,8 @@ final class ResolverTest extends TestCase {
 					self::link( 'organization:salem-ledger', 'subject', 'ner_fuzzy', 0.9091 ),
 					self::link( self::GAZETTE, 'subject', 'ner_fuzzy', 0.7179, 'proposed' ),
 				],
-				'proposals' => [ [ 'type' => 'organization', 'name' => 'Acme Widgets Corporation' ] ],
+				'proposals'  => [ [ 'type' => 'organization', 'name' => 'Acme Widgets Corporation' ] ],
+				'recognized' => true,
 			],
 			( new Resolver( $index ) )->resolve( self::item( [ 'title' => 'Regional publishers announce a merger', 'url' => 'https://random.example/x' ] ), $extractor )
 		);
@@ -488,14 +489,23 @@ final class ResolverTest extends TestCase {
 		$this->assertSame( [ 'quarry ledger' ], $compared, 'neither a 2-byte nor a 39-byte norm can reach 0.60 against 12 bytes' );
 	}
 
+	/** NER that answered no organization links nothing, and is recognized as having answered. */
 	public function test_ner_no_orgs_links_nothing(): void {
-		$this->assertSame( [ 'links' => [], 'proposals' => [] ], $this->golden( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ], [], new Fake_Entity_Extractor( [] ) ) );
+		$this->assertSame( [ 'links' => [], 'proposals' => [], 'recognized' => true ], $this->golden( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ], [], new Fake_Entity_Extractor( [] ) ) );
 	}
 
-	/** A deterministic link spares the model call. */
+	/** A NER call that failed links and proposes nothing, and is not recognized. */
+	public function test_a_failed_ner_call_is_not_recognized(): void {
+		$extractor = new Fake_Entity_Extractor( null );
+
+		$this->assertSame( [ 'links' => [], 'proposals' => [], 'recognized' => false ], $this->golden( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ], [], $extractor ) );
+		$this->assertSame( 1, $extractor->calls );
+	}
+
+	/** A deterministic link spares the model call, so NER is not recognized. */
 	public function test_a_deterministic_link_skips_the_extractor(): void {
 		$extractor = new Fake_Entity_Extractor( [ 'The Harbor Gazette' ] );
-		$this->golden( [ 'url' => 'https://mesa.news/x' ], [], $extractor );
+		$this->assertFalse( $this->golden( [ 'url' => 'https://mesa.news/x' ], [], $extractor )['recognized'] );
 		$this->assertSame( 0, $extractor->calls );
 	}
 
@@ -506,7 +516,7 @@ final class ResolverTest extends TestCase {
 		);
 
 		$this->assertSame(
-			[ 'links' => [], 'proposals' => [ [ 'type' => 'organization', 'name' => 'Portland Timber Union' ] ] ],
+			[ 'links' => [], 'proposals' => [ [ 'type' => 'organization', 'name' => 'Portland Timber Union' ] ], 'recognized' => true ],
 			( new Resolver( $index ) )->resolve( self::item( [ 'title' => 'Factory opens', 'url' => 'https://random.example/x' ] ), new Fake_Entity_Extractor( [ 'Acme Widgets Corporation', 'Portland Timber Union' ] ) )
 		);
 	}
@@ -523,12 +533,12 @@ final class ResolverTest extends TestCase {
 
 	/** With no extractor a deterministic miss links nothing and proposes nothing. */
 	public function test_no_extractor_links_nothing(): void {
-		$this->assertSame( [ 'links' => [], 'proposals' => [] ], $this->golden( [ 'title' => 'Acme Widgets Corporation opens', 'url' => 'https://random.example/x' ] ) );
+		$this->assertSame( [ 'links' => [], 'proposals' => [], 'recognized' => false ], $this->golden( [ 'title' => 'Acme Widgets Corporation opens', 'url' => 'https://random.example/x' ] ) );
 	}
 
 	public function test_an_empty_index_links_nothing_and_still_proposes(): void {
 		$this->assertSame(
-			[ 'links' => [], 'proposals' => [ [ 'type' => 'organization', 'name' => 'Harbor Gazette' ] ] ],
+			[ 'links' => [], 'proposals' => [ [ 'type' => 'organization', 'name' => 'Harbor Gazette' ] ], 'recognized' => true ],
 			( new Resolver( new Entity_Index() ) )->resolve( self::item( [ 'url' => 'https://harborgazette.org/x', 'title' => 'Harbor Gazette' ] ), new Fake_Entity_Extractor( [ 'Harbor Gazette' ] ) )
 		);
 	}

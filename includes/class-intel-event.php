@@ -44,6 +44,7 @@ final class Intel_Event {
 		'subjects_extracted'  => [ self::ITEMS, [ 'item_key', 'entity_keys', 'retrieved_ts' ], [] ],
 		'link_asserted'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ] ],
 		'link_proposed'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ] ],
+		'link_retracted'      => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES ] ],
 		'claim_asserted'      => [ self::ITEMS, [ 'item_key', 'ord', 'subject_key', 'predicate', 'object_key', 'object_text', 'confidence', 'retrieved_ts' ], [ 'predicate' => self::PREDICATES ] ],
 		'cluster_joined'      => [ self::ITEMS, [ 'item_key', 'cluster_key', 'retrieved_ts' ], [] ],
 		'cluster_superseded'  => [ self::ITEMS, [ 'cluster_key', 'canonical_item_key', 'previous_item_key', 'rank', 'retrieved_ts' ], [] ],

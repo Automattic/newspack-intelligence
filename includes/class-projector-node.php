@@ -3,10 +3,13 @@
  * Projector_Node: replays both event streams into the `intel-graph`
  * Row_Table (`Intel_Graph_Row_Schema`). Two Consumers, one per stream, fill
  * it with one event each; `projections()` declares, for each kind, the row
- * ops it writes and where each column comes from. Every op is an `ignore` or a whole-row
- * `set` on a keyed table, and each table is written by one stream alone, so
- * a replayed event writes what it wrote before and the two streams project
- * the same rows in either order. A row naming an entity no `entities` row
+ * ops it writes and where each column comes from. Every op is an `ignore`
+ * or a whole-row `set` on a keyed table but for three `delete`s, each the
+ * items stream's own: an extraction deletes the item's claims and topic
+ * links, a `subjects_extracted` the item's extracted subjects, and a
+ * `link_retracted` the one link row it keys. Each table is written by one
+ * stream alone, so a replayed event writes what it wrote before and the two
+ * streams project the same rows in either order. A row naming an entity no `entities` row
  * holds yet is left to the readers' join. A machine's proposal writes with
  * `ignore` and a person's creation with `set`, so a machine never overwrites
  * a person. Every ontology event also lands in `events`, ignored by its id.
@@ -22,11 +25,13 @@
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Shutdown_Sweeper;
 use Newspack_Nodes\Table_Client;
 use Newspack_Nodes\Timer_Node;
+use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Worker_Should_Stop;
 
 \defined( 'ABSPATH' ) || exit;
@@ -164,9 +169,11 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * one yielding fewer leaves none of the earlier behind; both tables are
 	 * written by the items stream alone, so a replay deletes and writes in
 	 * the same order; the entities an extraction was given replace the
-	 * item's earlier set the same way. A heuristic stand-in only fills an item no extraction
-	 * holds yet (`STAND_IN`), so it never replaces a call's extraction, its
-	 * claims or its topics. Every ontology kind also writes its `events` row.
+	 * item's earlier set the same way. A retraction deletes the one link row
+	 * its item, entity and role key. A heuristic stand-in only fills an item
+	 * no extraction holds yet (`STAND_IN`), so it never replaces a call's
+	 * extraction, its claims or its topics. Every ontology kind also writes
+	 * its `events` row.
 	 *
 	 * @return array<string,list<array{0:string,1:string,2:array<mixed>,3?:string}>>
 	 */
@@ -197,6 +204,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			],
 			'link_asserted'       => $link( 'asserted' ),
 			'link_proposed'       => $link( 'proposed' ),
+			'link_retracted'      => [ [ 'delete', 'links', [ 'item_key' => 'item_key', 'entity_key' => 'entity_key', 'role' => 'role' ] ] ],
 			'claim_asserted'      => [ [ 'set', 'claims', [ 'item_key', 'ord', 'subject_key', 'predicate', 'object_key', 'object_text', 'confidence', $day( 'retrieved_ts' ) ] ] ],
 			'cluster_joined'      => [ [ 'set', 'clusters', [ 'item_key', 'cluster_key', $day( 'retrieved_ts' ) ] ] ],
 			'cluster_superseded'  => [ [ 'set', 'canonicals', [ 'cluster_key', 'canonical_item_key', 'rank', $day( 'retrieved_ts' ) ] ] ],
@@ -392,6 +400,44 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 */
 	public function dump_config(): string {
 		return parent::dump_config() . $this->dump_setters();
+	}
+
+	/**
+	 * Every Consumer whose config adds a projector as a snapshot node, for
+	 * each partition of each active topology that declares them: the source
+	 * it reads and its cursor directory, as the TSL spells them, resolved.
+	 *
+	 * @api Read by the resolver's hold and `ontology reproject`.
+	 * @return list<array{source:string,offsets:string}>
+	 */
+	public static function readers(): array {
+		$readers = [];
+		foreach ( Bootstrap::active_topologies()[0] as $topology => $entry ) {
+			$projectors = [];
+			$consumers  = [];
+			$snapshots  = [];
+			foreach ( Topology_Analyzer::statements( $topology )['statements'] as $statement ) {
+				$values = $statement['values'];
+				if ( 'make_node' === $statement['verb'] && 'Projector' === ( $values[1] ?? null ) ) {
+					$projectors[ $values[2] ?? '' ] = true;
+				} elseif ( 'make_node' === $statement['verb'] && 'Consumer' === ( $values[1] ?? null ) && isset( $values[4] ) ) {
+					$consumers[ $values[2] ] = [ $values[3], $values[4] ];
+				} elseif ( 'command_node' === $statement['verb'] && 'add_snapshot_node' === ( $values[2] ?? null ) ) {
+					$snapshots[] = [ \substr( $values[1], 0, -\strlen( ':config' ) ), $values[3] ?? '' ];
+				}
+			}
+			foreach ( $snapshots as [ $consumer, $snapshot ] ) {
+				if ( isset( $projectors[ $snapshot ], $consumers[ $consumer ] ) ) {
+					for ( $p = 0; $p < Bootstrap::partitions_of( $entry ); $p++ ) {
+						$readers[] = [
+							'source'  => Core::resolve_partition_template( $consumers[ $consumer ][0], $p, $topology ),
+							'offsets' => Core::resolve_partition_template( $consumers[ $consumer ][1], $p, $topology ),
+						];
+					}
+				}
+			}
+		}
+		return \array_values( \array_unique( $readers, \SORT_REGULAR ) );
 	}
 
 	/**

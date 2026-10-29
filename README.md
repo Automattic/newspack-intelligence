@@ -6,7 +6,7 @@ Linear and feeds, links each to the organizations, people and topics it
 concerns, and answers questions about them with citations, on the Intelligence
 admin page and to agents over MCP.
 
-**Requires** WordPress 6.5, PHP 8.2, and the `newspack-nodes` substrate at 2.134.0
+**Requires** WordPress 6.5, PHP 8.2, and the `newspack-nodes` substrate at 2.137.0
 or newer. Below that floor the plugin stays dormant.
 
 ## How it works

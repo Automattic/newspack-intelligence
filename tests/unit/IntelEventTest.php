@@ -164,6 +164,17 @@ final class IntelEventTest extends TestCase {
 		$this->assertSame( 'extract', $event['method'] );
 	}
 
+	/** A retraction names the link row it removes by its key, on the items stream, its role drawn from LINK_ROLES. */
+	public function test_a_link_retraction_names_the_row_by_its_key(): void {
+		$this->assertSame( [ Intel_Event::ITEMS, [ 'item_key', 'entity_key', 'role', 'retrieved_ts' ], [ 'role' => Intel_Event::LINK_ROLES ] ], Intel_Event::KINDS['link_retracted'] );
+		$event = Intel_Event::machine_event( 'resolve', 'link_retracted', [ 'item_key' => 'feed:abc-7731', 'entity_key' => 'organization:mesa-courier', 'role' => 'mention', 'retrieved_ts' => 1791300000 ] );
+		$this->assertSame( Intel_Event::ITEMS, Intel_Event::stream_of( $event['event'] ) );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'link_retracted: field role is outside its set' );
+		Intel_Event::machine_event( 'resolve', 'link_retracted', [ 'item_key' => 'feed:abc-7731', 'entity_key' => 'organization:mesa-courier', 'role' => 'byline', 'retrieved_ts' => 1791300000 ] );
+	}
+
 	/** An entity key is its type and the slug of its name. */
 	public function test_entity_key_slugs_the_name_under_its_type(): void {
 		$this->assertSame( 'product:newspack-plugin', Intel_Event::entity_key( 'product', 'Newspack Plugin' ) );

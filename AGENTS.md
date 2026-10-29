@@ -79,7 +79,7 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.134.0' )` and stays
+error.** The loader calls `Bootstrap::version_at_least( '2.137.0' )` and stays
 dormant below it. Against a substrate between a too-low floor and the real one
 the handshake passes, the plugin activates, and it then fatals on the missing
 method — the one outcome the gate exists to prevent. `CHANGELOG.md` records why
@@ -164,7 +164,13 @@ a hard cap of 8,192 segments), and only the worker writes it, so it
 takes bodies past PIPE_BUF under `void_warranty`. `intel:ontology` holds the
 entity events and keeps every segment (`keep_everything`, substrate ADR-37).
 `intel:reresolve` keeps a day of `item_reresolve` records, each naming one
-stored item.
+stored item. `intel:later`, a substrate Delay
+(`make_node Delay intel:later <dir> <offsets_dir> <deadletter_dir> 60 86400`),
+parks the `item_reresolve` records the resolver and the extractor want to
+reprocess later, each due at its `not_before`; every minute it sends each
+one due to `intel:reresolve`, its target, and drops one parked longer than a
+day, a record parked again keeping its first `parked_at`. Each record parks
+with KEY its `item_key`, so the Delay's age-out line names the item.
 `Intel_Event_Writer_Node` (`intel:writer intel:items intel:ontology`) addresses
 each event by TO to the partition its `make_node` line names for the stream
 `Intel_Event::stream_of()` gives its kind, and drops a message naming no kind
@@ -182,10 +188,13 @@ a fan-out field — and every value is typed by its column's declared type. Ever
 op is an `ignore` or a whole-row `set` on a keyed table, but for an
 extraction, which first deletes the item's claims and topic links (the
 substrate's `delete` op, 2.134.0) so one yielding fewer leaves none of the
-earlier behind. A heuristic stand-in is projected by `STAND_IN` instead, one
-`ignore` of its `extractions` row, so it fills an item no extraction holds
-and never replaces a call's extraction, claims or topics, whatever the
-projection held when the extractor chose it. A `subjects_extracted` replaces
+earlier behind, and for a `link_retracted`, which deletes the one `links`
+row its `item_key`, `entity_key` and `role` key in the file of the
+partition that projects it. A heuristic stand-in is projected by
+`STAND_IN` instead, one `ignore` of its `extractions` row, so it fills an
+item no extraction holds and never replaces a call's extraction, claims or
+topics, whatever the projection held when the extractor chose it. A
+`subjects_extracted` replaces
 the item's `extracted_subjects` rows, the entities its last call extraction
 was given as asserted, which the resolver settles links by. Each table is
 written by one stream alone, so a replay writes
@@ -254,12 +263,58 @@ merged entity's names and identifiers answering its survivor; an entity
 whose merge chain cycles or runs past 10 hops is left out, logged once, and
 the rest loads. A link to a proposed entity is `link_proposed` at whatever
 confidence its method earned, so a machine's guess never asserts.
-`Resolver_Node` writes a
-`link_asserted` or `link_proposed` per link and an `entity_proposed` per
-candidate, keyed `Intel_Event::entity_key()`, to the writer its `make_node`
-line names, by TO and declared as an extra target, then forwards `{ item,
-links, proposals }` to its target, `extractor`. An `item_reresolve` record,
-fed by `intel:reresolve:resolve`, names a stored item, which it reads from
+`Resolver_Node` (`make_node Resolver resolver intel:writer intel:later`)
+writes a `link_asserted` or `link_proposed` per link, a `link_retracted` per
+stored link it no longer writes, and an `entity_proposed` per candidate,
+keyed `Intel_Event::entity_key()`, to the writer its `make_node` line names,
+by TO and declared as an extra target, then forwards `{ item, links,
+proposals, extracted, attempt }` to its target, `extractor`. It resolves
+nothing while its index holds no live entity
+(`Entity_Index::has_live_entities()`), or while a projector's reader of the
+ontology stream `Ontology_Writer::stream_dir()` names had not committed the
+stream's end (`Consumer_Node::lag_from_disk()`) just before the index was
+read (`Entity_Index::behind_ontology()`): `Entity_Index::current()` takes
+that reading first at every load, every `Entity_Index::TTL_S`, whichever
+reader triggers it, so a flush and commit landing between the two reads can
+make the index only fresher than the reading says. The projector flushes at
+every checkpoint, so a cursor at the end means every ontology event is
+projected, and a false hold only parks a record a minute. The resolver's
+own `entity_proposed` events leave that cursor short until the projector's
+next checkpoint, up to 30 seconds, so items following a proposal may park a
+minute; nothing is lost and no LLM call is spent.
+`Projector_Node::readers()` answers each
+projector reader's source and offsets dirs from the active topologies' TSL,
+the one walk `ontology reproject` deletes the cursors by. A held
+`item_recorded` parks on `intel:later`, its second argument, also declared,
+as `{ event: item_reresolve, item_key, fresh_after: 0, ner: true }`, and a
+held `item_reresolve` parks again unchanged, its `parked_at` too, each due
+`HOLD_S` (60) seconds on with KEY its `item_key`, so the Delay's age-out
+line names it, under a rate-limited line naming the cause, the fix (`wp
+newspack-intelligence ontology seed`, or `ontology reproject` after an
+upgrade) and the recovery once a day ages a record out: `ontology
+reresolve --since=<day>` re-resolves it without its NER step, and on a
+fresh install `ontology seed` runs first. `Resolver_Node::reresolve()` is
+the one constructor of that record, which the hold, the extractor's retry
+and the reresolver all mint and the resolver reads back strictly. An
+`item_reresolve` carrying `ner: true` runs the NER step, and parks again
+while the projection does not hold its item yet rather than dropping it;
+`ner`, `attempt` and `parked_at` are optional, and a record carrying one
+that does not read is dropped with the rest. `Resolver::resolve()` answers
+`recognized` beside the links, whether its NER step ran and answered:
+`LLM_Entity_Extractor::extract()` answers none, logged rate-limited, for a
+failed call or a reply whose `orgs` is not a list (none, an error object, a
+scalar), so a failure is told from an answer naming nobody.
+A resolution retracts each stored non-topic `links` row of the item in this
+worker's own partition's file, the only one its projector deletes in, by
+its raw entity key and role, that it does not write again, so a link whose
+role changed is retracted in its old one; a row whose survivor a curator
+confirmed is kept, and so is a `ner_fuzzy` row unless the NER step ran and
+answered, since nothing else looked for it again. The re-resolution reads
+those rows with the rest of `settled()`; an `item_recorded` reads them and
+the verdicts alone through `Intel_Graph_Row_Schema::read()` given a line, so
+a projection that will not open retracts nothing, logged. An
+`item_reresolve` record, fed by `intel:reresolve:resolve`, names a stored
+item, which it reads from
 the projection with whether the projection holds an extraction a call
 made — a `machine:extract-heuristic@…` stand-in does not count, matched
 through `Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE )` —
@@ -276,25 +331,32 @@ latest among equals). A record missing its item or its
 freshness is dropped with a line, as is one naming an item the projection no
 longer holds, and a projection that will not open throws, so the record
 dead-letters. A re-resolution runs the first three steps alone, since NER
-ran on first resolution, writes its links, and forwards the item when no such extraction
-is projected, or when, with the curators' verdicts in force, it asserts a
-link that is not settled. So an item a proxy outage left heuristic is
+ran on first resolution, unless it carries `ner: true`, writes its links,
+and forwards the item when no such extraction is projected, or when, with
+the curators' verdicts in force, it asserts a link that is not settled. So an
+item a proxy outage left heuristic is
 extracted again, as is one naming an entity accepted or created after its
 extraction, which asserted no claim about a subject it only proposed, and
 one a curator confirmed a link of since; an item whose settled links are
 unchanged is never extracted twice. What it forwards carries the
 curators' verdicts: a confirmed link asserted, from its stored row when the
 re-resolution did not find it again, and a rejected one left out, so the
-extractor's claims follow them, while the link events it writes stay the
+extractor's claims follow them; and, from a re-resolution whose NER step
+did not run and answer, each stored `ner_fuzzy` link it did not find, read
+across every partition by survivor, in its stored state, unless a curator
+rejected it, asserted when
+one confirmed it, so the settled check sees it and an extraction retry
+reaches an item only NER linked. The link events it writes stay the
 resolver's own; and whether a call extracted the item before (`extracted`),
 so an extractor whose call fails keeps that extraction rather than replacing
 it with the heuristic stand-in. That extraction was not given the link, so
 the item's next re-resolution tries again. `Resolver::resolve(
 $item, $ner )` takes the NER step per call: the node builds it from its
-`LLM_Config` state for each recorded item, so a runtime `set_vault_id` or
-`set_api_url` reaches the next one, and passes none on a re-resolution; the
-`Resolver` itself is rebuilt only when the index is. Every link event carries the item's
-`retrieved_ts`. The resolver and the extractor share the process's one
+`LLM_Config` state for each item owed NER, so a runtime `set_vault_id` or
+`set_api_url` reaches the next one, and passes none on any other
+re-resolution; the `Resolver` itself is rebuilt only when the index is.
+Every link event carries the item's `retrieved_ts`. The resolver and the
+extractor share the process's one
 `Entity_Index::current()`, read again every `Entity_Index::TTL_S` (60
 seconds) and when an `item_reresolve` record's `fresh_after` falls after its
 last read, so one signal's records cost one read; with no `intel-graph`
@@ -325,7 +387,17 @@ two entities sharing a name never resolve by load order. No client, a thrown
 extraction instead — the first sentence of the title and of the body, kind
 `other`, no topics, scores 0 — as `machine:extract-heuristic@<version>`, so
 the item is never retried in a loop; a later re-resolution extracts it
-again. Either way it then
+again. A call made that fails — a thrown `RuntimeException` or a reply that
+does not parse, never a cooperative stop and never a missing client — also
+parks `{ event: item_reresolve, item_key, fresh_after: 0, attempt: attempt +
+1 }` on `intel:later`, the extractor's second argument, with KEY its
+`item_key`, due
+`RETRY_BASE_S * 2 ** attempt` (300 seconds doubled) capped at `RETRY_MAX_S`
+(3,600), while `attempt` is below `MAX_ATTEMPTS` (5), so every retry lands
+inside the day the queue keeps; at the cap a line says it gave up. The
+replay is a re-resolution, which forwards the item for extraction only
+while it is still owed one, and the resolution it reads carries that
+`attempt`, which a resolution lacking it is dropped for. Either way it then
 forwards an `item_extracted` struct `{ item, relevance, importance }` to its
 target, `deduper`; it is a struct between two nodes, not an event kind.
 
@@ -603,23 +675,29 @@ namespaced `"{source}:{raw id}"`, the key dedup reads; `body` cut at
 `MAX_BODY_BYTES` (65,536) on a UTF-8 character boundary; `item_ts` 0 when the
 connector's date string will not parse; `retrieved_ts` the worker's tick
 clock in whole seconds, `Intel_Event::now()`, as every reader takes it.
-`tick()` wraps each in `Intel_Event::machine_event()` under the actor
-`machine:source:{name}@{plugin version}`, with the plugin version as its
-`config_version`.
+`tick()` refuses an item whose `item_key` runs past
+`Graph_Curation::ITEM_KEY_BYTES` (512) as the stream writes it, JSON-escaped
+(`Graph_Curation::written_bytes()`), with a rate-limited line naming the
+source, the key's length and the key cut to 64 bytes through
+`Core::terminal_safe()`, so no record naming it outgrows one line; it counts
+as refused and is remembered, so a process refuses it once. It wraps each
+in `Intel_Event::machine_event()` under the actor `machine:source:{name}@{plugin
+version}`, with the plugin version as its `config_version`.
 
 ### Topologies
 
 | File | What it wires |
 |------|---------------|
 | `newspack-intelligence.tsl` | Includes every file below and wires `reresolver`, which spans the project and streams files; `on_demand_idle 0` keeps the worker resident, which the TICK-driven sources need, and `stale_timeout 600` keeps a peer from stealing its lock while a TICK's fetches or an LLM call block one `fill()` |
-| `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve` and `intel:writer` |
+| `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve`, `intel:writer`, and `intel:later`, the Delay whose due records go to `intel:reresolve` |
 | `newspack-intelligence-collect.tsl` | The three sources → `intel:writer`; includes the streams |
 | `newspack-intelligence-project.tsl` | `intel:items:consumer` → `projector` and `intel:ontology:consumer` → `projector`, writing the `intel-graph` Row_Table; no other node rides their cursors |
-| `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the items Consumer checkpointing the deduper; includes the streams |
+| `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later`, the items Consumer checkpointing the deduper; includes the streams |
 
 ### Nodes
 
-`Consumer`, `Partition` and `Row_Table` come from the substrate. This plugin adds:
+`Consumer`, `Partition`, `Row_Table` and `Delay` come from the substrate. This
+plugin adds:
 
 | Type | Class | Runtime triggers and verbs |
 |------|-------|----------------------------|
@@ -628,8 +706,8 @@ clock in whole seconds, `Intel_Event::now()`, as every reader takes it.
 | `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`; `set_tier`, `add_url`, `remove_url` |
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
-| `Resolver` | `Resolver_Node` | `<writer>`; the `LLM_Config` verbs |
-| `Extractor` | `Extractor_Node` | `<writer>`; the `LLM_Config` verbs |
+| `Resolver` | `Resolver_Node` | `<writer> <later>`; the `LLM_Config` verbs |
+| `Extractor` | `Extractor_Node` | `<writer> <later>`; the `LLM_Config` verbs |
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>` |
 | `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `review`, `collections`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, each at `tune`; `fetch_now` at `manage` |

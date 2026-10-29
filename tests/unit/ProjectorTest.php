@@ -154,6 +154,16 @@ final class ProjectorTest extends TestCase {
 		$this->assertSame( [ [ 'Harbor Gazette won the state award.', 'machine:extract@9.4.1' ] ], self::graph_rows( 'extractions', '1', 'summary, actor' ) );
 	}
 
+	/** A retraction deletes the one link row its item, entity and role key, so a role it no longer holds goes and the rest stay. */
+	public function test_a_retraction_deletes_its_link_row_alone(): void {
+		$mention = [ 'role' => 'mention' ] + $this->link( 'link_asserted' );
+		$this->project( [ $this->link( 'link_asserted' ), $mention, $this->link( 'link_proposed', 'organization:salem-ledger' ) ] );
+
+		$this->project( [ Intel_Event::make( 'link_retracted', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'role' => 'mention', 'retrieved_ts' => self::RETRIEVED ], self::MACHINE, '' ) ] );
+
+		$this->assertSame( [ [ self::GAZETTE, 'subject' ], [ 'organization:salem-ledger', 'subject' ] ], self::graph_rows( 'links', 'entity_key, role', 'entity_key, role' ) );
+	}
+
 	/** An item is written once: its first retrieval is the provenance kept. */
 	public function test_an_item_is_written_once(): void {
 		$this->project( [ $this->item(), [ 'title' => 'Harbor Gazette award, updated', 'retrieved_ts' => self::NOW + 3600 ] + $this->item() ] );
@@ -587,6 +597,7 @@ final class ProjectorTest extends TestCase {
 			$machine( 'subjects_extracted', [ 'item_key' => self::ITEM, 'entity_keys' => [ self::GAZETTE ], 'retrieved_ts' => self::RETRIEVED ] ),
 			$this->link( 'link_asserted' ),
 			$this->link( 'link_proposed', 'organization:salem-ledger' ),
+			$machine( 'link_retracted', [ 'item_key' => self::ITEM, 'entity_key' => 'organization:gazette-harbor', 'role' => 'mention', 'retrieved_ts' => self::RETRIEVED ] ),
 			$machine( 'claim_asserted', [ 'item_key' => self::ITEM, 'ord' => 0, 'subject_key' => self::GAZETTE, 'predicate' => 'won', 'object_key' => '', 'object_text' => 'Peabody Award', 'confidence' => 0.9, 'retrieved_ts' => self::RETRIEVED ] ),
 			$machine( 'cluster_joined', [ 'item_key' => self::ITEM, 'cluster_key' => 'cluster:7731', 'retrieved_ts' => self::RETRIEVED ] ),
 			$machine( 'cluster_superseded', [ 'cluster_key' => 'cluster:7731', 'canonical_item_key' => self::ITEM, 'previous_item_key' => 'feed:abc-7730', 'rank' => 14.0, 'retrieved_ts' => self::RETRIEVED ] ),

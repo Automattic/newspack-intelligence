@@ -446,6 +446,7 @@ final class ReresolverNodeTest extends TestCase {
 	/** A record whose resolution throws downstream dead-letters alone, and the next is delivered. */
 	public function test_a_poison_record_dead_letters_and_the_next_is_resolved(): void {
 		$this->seed(
+			self::entity( self::GAZETTE, 'Harbor Gazette', [ 'alias' => [ 'HarbGaz' ] ] ),
 			self::items(
 				[ 'feed:poison-1', 'HarbGaz poison', '', 'https://news.example/p', 1793200000 ],
 				[ 'feed:poison-2', 'HarbGaz healthy', '', 'https://news.example/q', 1793100000 ]
@@ -481,7 +482,7 @@ final class ReresolverNodeTest extends TestCase {
 		};
 		$resolver = new Resolver_Node();
 		$resolver->name( 'resolver' );
-		$resolver->arguments( [ 'intel:writer' ] );
+		$resolver->arguments( [ 'intel:writer', 'intel:later' ] );
 		$resolver->target( 'extractor' );
 		$resolver->sink( $downstream );
 		$consumer = new Consumer_Node();

@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Newspack_Nodes\Tests\TestCase;
 use Newspack_Intelligence\LLM_Client;
 use Newspack_Intelligence\LLM_Entity_Extractor;
 use Newspack_Intelligence\Proxy_LLM_Client;
@@ -41,16 +41,52 @@ final class LlmEntityExtractorTest extends TestCase {
 		$this->assertSame( [ 'WyoFile' ], $out['orgs'] );
 	}
 
-	public function test_garbage_reply_yields_empty_triple(): void {
+	/** A reply that does not parse is no answer, told apart from an empty one. */
+	public function test_garbage_reply_answers_none(): void {
 		$this->respond( 'no json here' );
-		$out = $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] );
-		$this->assertSame( [ 'orgs' => [], 'people' => [], 'locations' => [] ], $out );
+		$stderr = $this->capture_stderr();
+
+		$this->assertNull( $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER reply named no organization list' ) );
 	}
 
-	public function test_http_error_yields_empty_triple_without_throwing(): void {
+	/** A failed call answers none without throwing, told apart from an empty answer. */
+	public function test_http_error_answers_none_without_throwing(): void {
 		Proxy_LLM_Client::$http_post = static fn (): array => [ 'response' => [ 'code' => 503 ], 'body' => 'down' ];
-		$out = $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] );
-		$this->assertSame( [], $out['orgs'] );
+		$stderr                      = $this->capture_stderr();
+
+		$this->assertNull( $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER call failed: ' ) );
+	}
+
+	/**
+	 * A reply is an answer only when its `orgs` is a list: an empty object,
+	 * an error object or a scalar `orgs` answers none, logged.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public static function no_answers(): array {
+		return [
+			'an empty object'  => [ '{}' ],
+			'an error object'  => [ '{"error":"rate limited for 41s"}' ],
+			'a scalar orgs'    => [ '{"orgs":"The Texas Tribune"}' ],
+			'an object orgs'   => [ '{"orgs":{"first":"The Texas Tribune"}}' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'no_answers' )]
+	public function test_a_reply_without_an_orgs_list_answers_none( string $reply ): void {
+		$this->respond( $reply );
+		$stderr = $this->capture_stderr();
+
+		$this->assertNull( $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER reply named no organization list' ) );
+	}
+
+	/** An answer naming nothing is an answer: an empty triple. */
+	public function test_an_empty_answer_is_an_empty_triple(): void {
+		$this->respond( '{"orgs":[],"people":["Ana Ruiz"]}' );
+		$this->assertSame( [ 'orgs' => [], 'people' => [ 'Ana Ruiz' ], 'locations' => [] ], $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] ) );
 	}
 
 	public function test_non_string_entries_are_dropped(): void {

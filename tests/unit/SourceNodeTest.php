@@ -212,6 +212,56 @@ final class SourceNodeTest extends TestCase {
 		$this->assertStringContainsString( 'fake:harbor-9: item_recorded: missing field url', \implode( "\n", Core::$recent_log ) );
 	}
 
+	/**
+	 * An item whose key runs past Graph_Curation::ITEM_KEY_BYTES as the stream
+	 * writes it, JSON-escaped, is refused with a line naming the source and
+	 * the key's length, so no record naming it outgrows one line.
+	 */
+	public function test_an_item_key_past_its_cap_is_refused(): void {
+		$stderr      = $this->capture_stderr();
+		$sink        = new Capture_Sink_Node();
+		$node        = $this->fake( $sink );
+		$node->items = [
+			[ 'id' => \str_repeat( '"', 253 ), 'title' => 'At the cap, escaped' ],
+			[ 'id' => \str_repeat( '"', 254 ), 'title' => 'One byte past it' ],
+		];
+
+		$node->fill( $this->tick() );
+
+		$this->assertSame( [ 'fake:' . \str_repeat( '"', 253 ) ], \array_map( static fn ( array $m ): string => $m[ Message::VALUE ]['item_key'], $this->structs( $sink->captured ) ) );
+		$this->assertSame( [ 'verb' => 'TICK', 'data' => [ 'emitted' => 1, 'refused' => 1 ] ], \end( $sink->captured )[ Message::VALUE ] );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'fake-source-12: refused an item whose key runs 513 bytes, past 512: fake:' . \str_repeat( '"', 59 ) ) );
+		$this->assertSame( 512, \Newspack_Intelligence\Graph_Curation::ITEM_KEY_BYTES );
+	}
+
+	/** A key refused for its size is remembered, so the next tick neither counts nor logs it again. */
+	public function test_a_size_refused_key_is_refused_once_per_process(): void {
+		$sink        = new Capture_Sink_Node();
+		$node        = $this->fake( $sink );
+		$node->items = [ [ 'id' => \str_repeat( 'k', 600 ), 'title' => 'Too long a key' ] ];
+		$node->fill( $this->tick() );
+		Core::$recent_log_timers = [];
+		$stderr                  = $this->capture_stderr();
+
+		$node->fill( $this->tick() );
+
+		$this->assertSame( [ 'verb' => 'TICK', 'data' => [ 'emitted' => 0, 'refused' => 0 ] ], \end( $sink->captured )[ Message::VALUE ] );
+		$this->assertCount( 0, self::stderr_lines( $stderr, 'refused an item whose key runs' ) );
+	}
+
+	/** The refused key is named cut to 64 bytes and terminal-safe, so a hostile key cannot drive the operator's terminal. */
+	public function test_a_size_refused_key_is_named_terminal_safe(): void {
+		$stderr      = $this->capture_stderr();
+		$node        = $this->fake( new Capture_Sink_Node() );
+		$node->items = [ [ 'id' => "\033[2J" . \str_repeat( 'k', 600 ), 'title' => 'A hostile key' ] ];
+
+		$node->fill( $this->tick() );
+
+		$lines = self::stderr_lines( $stderr, 'refused an item whose key runs 614 bytes, past 512: fake:' );
+		$this->assertCount( 1, $lines );
+		$this->assertStringNotContainsString( "\033", \implode( '', $lines ) );
+	}
+
 	/** A refused item is not remembered, so a later fetch of it records. */
 	public function test_a_refused_item_is_recorded_on_a_later_tick(): void {
 		$sink        = new Capture_Sink_Node();

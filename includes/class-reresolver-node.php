@@ -453,7 +453,7 @@ class Reresolver_Node extends Timer_Node {
 	 */
 	private function send( array $item_keys, float $fresh_after ): void {
 		foreach ( $item_keys as $item_key ) {
-			$this->emit( $this->stream, [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => $item_key, 'fresh_after' => $fresh_after ] );
+			$this->emit( $this->stream, Resolver_Node::reresolve( $item_key, $fresh_after ) );
 		}
 	}
 

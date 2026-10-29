@@ -20,6 +20,7 @@
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Consumer_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Row_Reader;
 
@@ -64,6 +65,9 @@ final class Entity_Index {
 	/** @var array<string,string> Each merged key's survivor, '' where it does not resolve. */
 	private array $merged = [];
 
+	/** Whether a projector's reader of the ontology stream stood short of its end just before this index was read. */
+	private bool $behind = false;
+
 	/** The index every reader in this process shares. */
 	private static ?self $current = null;
 
@@ -74,14 +78,19 @@ final class Entity_Index {
 	 * The index this process shares, read again once TTL_S has passed or
 	 * when it was read before `$fresh_after`, the tick by which the
 	 * projection holds what a caller needs; an empty one, logged once, while
-	 * no `intel-graph` table can be read.
+	 * no `intel-graph` table can be read. Each read first takes whether the
+	 * projector stands behind the ontology stream, BEFORE the index, so a
+	 * flush and commit landing between the two reads can only make the index
+	 * fresher than the reading says, never staler.
 	 *
 	 * @param float $fresh_after The earliest read the caller accepts.
 	 */
 	public static function current( float $fresh_after = 0.0 ): self {
 		if ( null === self::$current || self::$read_at < $fresh_after || Core::$now - self::$read_at >= self::TTL_S ) {
-			self::$current = Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): self => self::load( $r ), 'no intel-graph to read entities from; reading none: ' ) ?? new self();
-			self::$read_at = Core::$now;
+			$behind                = self::ontology_behind();
+			self::$current         = Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): self => self::load( $r ), 'no intel-graph to read entities from; reading none: ' ) ?? new self();
+			self::$current->behind = $behind;
+			self::$read_at         = Core::$now;
 		}
 		return self::$current;
 	}
@@ -252,6 +261,22 @@ final class Entity_Index {
 	}
 
 	/**
+	 * Whether a projector's reader of the ontology stream, the one
+	 * Ontology_Writer appends to, has a committed cursor short of its end.
+	 * The projector flushes at every checkpoint, so a cursor at the end means
+	 * every ontology event is projected.
+	 */
+	private static function ontology_behind(): bool {
+		$stream = Ontology_Writer::stream_dir();
+		foreach ( Projector_Node::readers() as $reader ) {
+			if ( $stream === $reader['source'] && ! Consumer_Node::lag_from_disk( $reader['source'], $reader['offsets'] )['caught_up'] ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * The entity an identifier names.
 	 *
 	 * @param string $kind  An identifier kind.
@@ -372,6 +397,20 @@ final class Entity_Index {
 	 */
 	public function topics(): array {
 		return $this->topics;
+	}
+
+	/** Whether it holds any live entity: one accepted or proposed, not merged away. */
+	public function has_live_entities(): bool {
+		return [] !== $this->states;
+	}
+
+	/**
+	 * Whether a projector's reader of the ontology stream had not committed
+	 * the stream's end just before this index was read, so the index may
+	 * lack an ontology event; false for one current() did not read.
+	 */
+	public function behind_ontology(): bool {
+		return $this->behind;
 	}
 
 	/**

@@ -10,7 +10,9 @@
  * fuzzy-matched against every name: asserted at `assert_at`, proposed at
  * `propose_at`, and below that a candidate entity unless one was rejected
  * under that name. The caller hands each item its NER step, or none, which
- * runs the first three alone.
+ * runs the first three alone; `recognized` says whether that step ran and
+ * answered, so a caller judging what it looked for tells a call that failed,
+ * or one never made, from one that named nothing.
  *
  * Name and stem hits whose spans overlap in one text settle together: the
  * longest span wins, and equal spans naming several entities assert the one
@@ -120,11 +122,12 @@ final class Resolver {
 	}
 
 	/**
-	 * The item's links, each entity's strongest, and its candidate entities.
+	 * The item's links, each entity's strongest, its candidate entities, and
+	 * whether the NER step ran and answered.
 	 *
 	 * @param array<string,mixed>   $item The `item_recorded` fields.
 	 * @param Entity_Extractor|null $ner  The NER step; none skips it.
-	 * @return array{links: list<Link>, proposals: list<Proposal>}
+	 * @return array{links: list<Link>, proposals: list<Proposal>, recognized: bool}
 	 */
 	public function resolve( array $item, ?Entity_Extractor $ner ): array {
 		$this->links = [];
@@ -137,10 +140,12 @@ final class Resolver {
 		$localities  = self::localities( [ ...$title_names, ...$body_names ] );
 		$this->clustered( [ ...self::named( $title_names ), ...$this->stemmed( $title ) ], $localities, 'subject' );
 		$this->clustered( self::named( $body_names ), $localities, 'mention' );
-		$proposals = null !== $ner && [] === $this->links ? $this->recognized( $item, $ner ) : [];
+		$named     = null !== $ner && [] === $this->links ? $ner->extract( $item ) : null;
+		$proposals = null === $named ? [] : $this->recognized( $named['orgs'] );
 		return [
-			'links'     => \array_values( $this->links ),
-			'proposals' => $proposals,
+			'links'      => \array_values( $this->links ),
+			'proposals'  => $proposals,
+			'recognized' => null !== $named,
 		];
 	}
 
@@ -151,13 +156,12 @@ final class Resolver {
 	 * candidate entity, at most MAX_PROPOSALS, never a name a rejected entity
 	 * carries.
 	 *
-	 * @param array<string,mixed> $item The item.
-	 * @param Entity_Extractor    $ner  The NER step.
+	 * @param array<int,string> $orgs The organizations the extractor named.
 	 * @return list<Proposal>
 	 */
-	private function recognized( array $item, Entity_Extractor $ner ): array {
+	private function recognized( array $orgs ): array {
 		$proposals = [];
-		foreach ( $ner->extract( $item )['orgs'] as $org ) {
+		foreach ( $orgs as $org ) {
 			$name = Entity_Index::norm( $org );
 			if ( '' === $name ) {
 				continue;
