@@ -5,9 +5,11 @@ namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Deduper_Node;
 use Newspack_Intelligence\Intel_Event;
+use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Projector_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
+use Newspack_Nodes\Table_Unavailable;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
 use Newspack_Nodes\Topology_Registry;
@@ -43,6 +45,7 @@ final class DeduperNodeTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
+		Intel_Graph_Row_Schema::$read_rows = null;
 		Topology_Registry::reset();
 		parent::tearDown();
 	}
@@ -424,9 +427,12 @@ final class DeduperNodeTest extends TestCase {
 
 	/**
 	 * A full lookup checkpoints as positional entries under hashed spellings,
-	 * carrying no URL or title, so its size is the item keys it names.
+	 * carrying no URL or title, so its size is the item keys it names. Every
+	 * miss finds nothing in a projection that will not open, as in an empty
+	 * one, so the LRU alone decides and no miss pays a SQLite read.
 	 */
 	public function test_a_full_lookup_checkpoints_compactly(): void {
+		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): never => throw new Table_Unavailable( 'no intel-graph in this test' );
 		for ( $i = 0; $i < 1666; $i++ ) {
 			$this->extracted( "github:Automattic/newspack-plugin#{$i}", "https://www.harborgazette.example/2026/10/county-commission-approves-new-budget-{$i}/", "County commission approves the new budget after a long night number {$i}", 7, 5, self::TS + $i );
 		}
