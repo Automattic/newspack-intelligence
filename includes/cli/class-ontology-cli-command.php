@@ -10,7 +10,7 @@
 namespace Newspack_Intelligence\CLI;
 
 use Newspack_Intelligence\Ontology_Seed;
-use Newspack_Intelligence\Ontology_Writer;
+use Newspack_Intelligence\Stream_Writer;
 use Newspack_Intelligence\Projector_Node;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Worker_Route;
@@ -29,8 +29,8 @@ class Ontology_CLI_Command {
 	 * Rebuild the graph projection from the event streams. Holds the fleet
 	 * with `wp nodes stop`, deletes the `intel-graph` Row_Table's files and
 	 * the cursor of every Consumer the projector checkpoints with, then
-	 * releases the hold with `wp nodes start`, so the projector replays both
-	 * streams from their oldest segment. Each verb runs in its own process,
+	 * releases the hold with `wp nodes start`, so the projector replays every
+	 * stream from its oldest segment. Each verb runs in its own process,
 	 * so whatever it throws reaches this one as an exit code and stderr. A
 	 * fleet that does not stop has nothing deleted under it, and the hold is
 	 * released all the same. The streams and every other
@@ -78,7 +78,7 @@ class Ontology_CLI_Command {
 			\WP_CLI::error( \trim( "The fleet did not stop, so reproject deleted nothing; the hold is released. {$why}" ) );
 			return;
 		}
-		\WP_CLI::success( \sprintf( 'Deleted the %s projection and %d projector cursors; the projector replays both streams.', $table['name'], \count( $cursors ) ) );
+		\WP_CLI::success( \sprintf( 'Deleted the %s projection and %d projector cursors; the projector replays every stream.', $table['name'], \count( $cursors ) ) );
 	}
 
 	/**
@@ -103,7 +103,7 @@ class Ontology_CLI_Command {
 		}
 		$present = Ontology_Seed::present();
 		$events  = Ontology_Seed::events( $present );
-		Ontology_Writer::append( $events );
+		Stream_Writer::append( $events );
 		$created = \count( \array_filter( $events, static fn ( array $event ): bool => \in_array( $event['event'], [ 'entity_created', 'lens_saved' ], true ) ) );
 		\WP_CLI::success( \sprintf( 'Seeded %d events: %d keys new, %d present.', \count( $events ), $created, \count( $present ) ) );
 	}

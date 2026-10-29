@@ -57,6 +57,8 @@ trait Signs_In_Users {
 		unset(
 			$GLOBALS['_current_user_id'],
 			$GLOBALS['_wp_test_user_logins'],
+			$GLOBALS['_wp_test_user_emails'],
+			$GLOBALS['_wp_test_cleaned_users'],
 			$GLOBALS['_wp_test_site_caps'],
 			$GLOBALS['_wp_test_blog_id'],
 			$GLOBALS['_wp_test_blog_stack'],

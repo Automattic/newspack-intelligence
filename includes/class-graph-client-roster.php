@@ -318,7 +318,7 @@ final class Graph_Client_Roster implements Client_Roster {
 				Core::stderr( 'client import: leaving alone the entities rejected or unresolvably merged: ' . \implode( ', ', \array_keys( $this->left_alone ) ) );
 			}
 			if ( [] !== $this->events ) {
-				Ontology_Writer::append( $this->events );
+				Stream_Writer::append( $this->events );
 			}
 		} finally {
 			$this->events     = [];

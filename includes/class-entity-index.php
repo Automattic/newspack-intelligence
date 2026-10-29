@@ -20,7 +20,6 @@
 
 namespace Newspack_Intelligence;
 
-use Newspack_Nodes\Consumer_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Row_Reader;
 
@@ -262,18 +261,10 @@ final class Entity_Index {
 
 	/**
 	 * Whether a projector's reader of the ontology stream, the one
-	 * Ontology_Writer appends to, has a committed cursor short of its end.
-	 * The projector flushes at every checkpoint, so a cursor at the end means
-	 * every ontology event is projected.
+	 * Stream_Writer appends to, has not projected all of it yet.
 	 */
 	private static function ontology_behind(): bool {
-		$stream = Ontology_Writer::stream_dir();
-		foreach ( Projector_Node::readers() as $reader ) {
-			if ( $stream === $reader['source'] && ! Consumer_Node::lag_from_disk( $reader['source'], $reader['offsets'] )['caught_up'] ) {
-				return true;
-			}
-		}
-		return false;
+		return Projector_Node::behind( Stream_Writer::stream_dir( Intel_Event::ONTOLOGY ) );
 	}
 
 	/**

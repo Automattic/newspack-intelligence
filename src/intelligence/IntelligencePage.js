@@ -1,6 +1,7 @@
 import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import DashboardShell from '@newspack-nodes/shared/components/DashboardShell';
+import { getQueryParam } from '@newspack-nodes/shared/utils/queryParams';
 import TabBar, {
 	panelDomId,
 	tabDomId,
@@ -10,16 +11,29 @@ import Entity from './views/Entity';
 import Review from './views/Review';
 import Collections from './views/Collections';
 import Lens, { CLOSED_LENS } from './views/Lens';
+import Watches, { CLOSED_WATCH, newWatch } from './views/Watches';
 import SaveToCollection from './components/SaveToCollection';
 import './styles/intelligence.scss';
 
 /**
- * The Intelligence page: Search, Entity, Lenses, Review and Collections,
- * switched in place. Each view reads its own verbs; the page holds which view
- * shows, the submitted search, the open entity, lens and collection, and the
- * item being saved, so a view returns as it was left. Curation renders only
- * for `canTune`, which hides controls and enforces nothing: the server's role
- * gate refuses a write the caller may not make.
+ * The watch a link opens the page on, as the watcher's email names it
+ * (`&watch=<key>`), or null.
+ *
+ * @return {?string} The watch's key.
+ */
+const linkedWatch = () => getQueryParam( 'watch' ) || null;
+
+/**
+ * The Intelligence page: Search, Entity, Lenses, Review, Collections and
+ * Watches, switched in place. Each view reads its own verbs; the page holds
+ * which view shows, the submitted search, the open entity, lens, collection
+ * and watch, the watch form's draft and the item being saved, so a view
+ * returns as it was left, and a lens's "Watch this" opens the form on it.
+ * Curation renders only for `canTune`, which hides controls and enforces
+ * nothing: the server's role gate refuses a write the caller may not make.
+ * Watches are every reader's own, so they are not gated on it. A link naming
+ * a watch opens the page on Watches with that watch open; a key the reader's
+ * watches do not hold opens nothing, leaving the list.
  *
  * The shared `DashboardShell` supplies the skin, the positioned page surface,
  * the header naming this page and the debug overlay; the page scrolls in the
@@ -31,7 +45,9 @@ import './styles/intelligence.scss';
  * @return {import('react').ReactElement} The page.
  */
 export default function IntelligencePage( { canTune, vocabulary } ) {
-	const [ view, setView ] = useState( 'search' );
+	const [ view, setView ] = useState( () =>
+		linkedWatch() ? 'watches' : 'search'
+	);
 	const [ entityKey, setEntityKey ] = useState( null );
 	const [ saving, setSaving ] = useState( null );
 	const [ search, setSearch ] = useState( () =>
@@ -39,12 +55,21 @@ export default function IntelligencePage( { canTune, vocabulary } ) {
 	);
 	const [ collection, setCollection ] = useState( null );
 	const [ lens, setLens ] = useState( CLOSED_LENS );
+	const [ watch, setWatch ] = useState( () => ( {
+		...CLOSED_WATCH,
+		key: linkedWatch(),
+	} ) );
+	const [ watchDraft, setWatchDraft ] = useState( null );
 
 	const openEntity = ( key ) => {
 		setEntityKey( key );
 		setView( 'entity' );
 	};
 	const onSave = canTune ? setSaving : undefined;
+	const openWatchForm = ( target, name ) => {
+		setWatchDraft( newWatch( target, name ) );
+		setView( 'watches' );
+	};
 
 	const tabs = [
 		{ id: 'search', label: __( 'Search', 'newspack-intelligence' ) },
@@ -66,6 +91,7 @@ export default function IntelligencePage( { canTune, vocabulary } ) {
 			id: 'collections',
 			label: __( 'Collections', 'newspack-intelligence' ),
 		},
+		{ id: 'watches', label: __( 'Watches', 'newspack-intelligence' ) },
 	];
 
 	return (
@@ -114,6 +140,7 @@ export default function IntelligencePage( { canTune, vocabulary } ) {
 								opened={ lens }
 								onOpen={ setLens }
 								onOpenEntity={ openEntity }
+								onWatch={ openWatchForm }
 								onSave={ onSave }
 							/>
 						) }
@@ -129,6 +156,16 @@ export default function IntelligencePage( { canTune, vocabulary } ) {
 								canTune={ canTune }
 								opened={ collection }
 								onOpen={ setCollection }
+							/>
+						) }
+						{ 'watches' === view && (
+							<Watches
+								opened={ watch }
+								onOpen={ setWatch }
+								draft={ watchDraft }
+								onDraft={ setWatchDraft }
+								onOpenEntity={ openEntity }
+								onSave={ onSave }
 							/>
 						) }
 					</div>

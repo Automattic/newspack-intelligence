@@ -28,7 +28,7 @@ final class IntelEventWriterTest extends TestCase {
 		$this->sink       = new Capture_Sink_Node();
 		$this->writer     = new Intel_Event_Writer_Node();
 		$this->writer->name( 'intel:writer' );
-		$this->writer->arguments( [ 'harbor:items', 'harbor:ontology' ] );
+		$this->writer->arguments( [ 'harbor:items', 'harbor:ontology', 'harbor:watches' ] );
 		$this->writer->sink( $this->sink );
 	}
 
@@ -66,14 +66,19 @@ final class IntelEventWriterTest extends TestCase {
 			'9.4.1'
 		);
 
+		$matched = Intel_Event::make( 'watch_matched', [ 'watch_key' => 'a1b2c3d4e5f60718', 'owner' => 3307, 'item_key' => 'feed:abc-7731', 'at' => 1793000000, 'retrieved_ts' => 1793000000, 'quiet' => false ], 'machine:watcher@9.4.1', '9.4.1' );
+
 		$this->writer->fill( $this->delivered( $identifier ) );
 		$this->writer->fill( $this->delivered( $item ) );
+		$this->writer->fill( $this->delivered( $matched ) );
 
-		$this->assertCount( 2, $this->sink->captured );
+		$this->assertCount( 3, $this->sink->captured );
 		$this->assertSame( 'harbor:ontology', $this->sink->captured[0][ Message::TO ] );
 		$this->assertSame( $identifier, $this->sink->captured[0][ Message::VALUE ] );
 		$this->assertSame( 'harbor:items', $this->sink->captured[1][ Message::TO ] );
 		$this->assertSame( $item, $this->sink->captured[1][ Message::VALUE ] );
+		$this->assertSame( 'harbor:watches', $this->sink->captured[2][ Message::TO ] );
+		$this->assertSame( $matched, $this->sink->captured[2][ Message::VALUE ] );
 	}
 
 	public function test_the_writer_drops_what_names_no_kind_without_throwing(): void {
@@ -88,15 +93,16 @@ final class IntelEventWriterTest extends TestCase {
 	}
 
 	public function test_the_writer_declares_the_partitions_its_arguments_name(): void {
-		$this->assertSame( [ 'harbor:items', 'harbor:ontology' ], Intel_Event_Writer_Node::declared_targets( [ 'harbor:items', 'harbor:ontology' ] ) );
-		$this->assertSame( [ 'harbor:items', 'harbor:ontology' ], $this->writer->display_targets() );
+		$this->assertSame( [ 'harbor:items', 'harbor:ontology', 'harbor:watches' ], Intel_Event_Writer_Node::declared_targets( [ 'harbor:items', 'harbor:ontology', 'harbor:watches' ] ) );
+		$this->assertSame( [ 'harbor:items', 'harbor:ontology', 'harbor:watches' ], $this->writer->display_targets() );
 	}
 
-	public function test_the_writer_needs_both_partitions(): void {
+	public function test_the_writer_needs_every_streams_partition(): void {
 		$writer = new Intel_Event_Writer_Node();
 		$writer->name( 'intel:writer:bare' );
 
 		$this->expectException( \InvalidArgumentException::class );
-		$writer->arguments( [ 'harbor:items' ] );
+		$this->expectExceptionMessage( 'watches_partition' );
+		$writer->arguments( [ 'harbor:items', 'harbor:ontology' ] );
 	}
 }

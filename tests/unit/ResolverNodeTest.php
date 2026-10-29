@@ -6,7 +6,7 @@ namespace Newspack_Intelligence\Tests;
 use Newspack_Intelligence\Entity_Index;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
-use Newspack_Intelligence\Ontology_Writer;
+use Newspack_Intelligence\Stream_Writer;
 use Newspack_Intelligence\LLM_Client;
 use Newspack_Intelligence\Proxy_LLM_Client;
 use Newspack_Intelligence\Resolver_Node;
@@ -704,7 +704,7 @@ final class ResolverNodeTest extends TestCase {
 	/** While the projector has not projected every ontology event, a recorded item parks; the hold says why. */
 	public function test_a_projection_behind_the_ontology_holds_a_recorded_item(): void {
 		$this->seed( self::gazette() );
-		Ontology_Writer::append( self::entity( self::MESA, 'Mesa Courier' ) );
+		Stream_Writer::append( self::entity( self::MESA, 'Mesa Courier' ) );
 		$stderr = $this->capture_stderr();
 
 		$this->resolver->fill( self::recorded( [ 'url' => 'https://harborgazette.org/a' ] ) );
@@ -717,7 +717,7 @@ final class ResolverNodeTest extends TestCase {
 	/** Once the projector's cursor stands at the ontology stream's end, an index holding entities resolves. */
 	public function test_a_projection_caught_up_with_the_ontology_resolves(): void {
 		$this->seed( self::gazette() );
-		Ontology_Writer::append( self::entity( self::MESA, 'Mesa Courier' ) );
+		Stream_Writer::append( self::entity( self::MESA, 'Mesa Courier' ) );
 		self::commit_ontology_cursor();
 
 		$this->resolver->fill( self::recorded( [ 'url' => 'https://harborgazette.org/a' ] ) );
@@ -732,7 +732,7 @@ final class ResolverNodeTest extends TestCase {
 	 */
 	public function test_a_commit_between_the_cursor_and_the_index_reads_holds(): void {
 		$this->seed( self::gazette() );
-		Ontology_Writer::append( self::entity( self::MESA, 'Mesa Courier' ) );
+		Stream_Writer::append( self::entity( self::MESA, 'Mesa Courier' ) );
 		$committed                         = 0;
 		Intel_Graph_Row_Schema::$read_rows = static function ( \Closure $read ) use ( &$committed ): mixed {
 			if ( 0 === $committed++ ) {

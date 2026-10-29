@@ -478,7 +478,7 @@ final class ProjectorTest extends TestCase {
 		$this->assertInstanceOf( Projector_Node::class, $projector );
 		$this->assertSame( 'intel-graph', $this->read_private( $projector, 'graph_target' ) );
 		$this->assertInstanceOf( Row_Table_Node::class, Core::node( 'intel-graph' ) );
-		foreach ( [ 'intel:items:consumer' => [ 'items', 'projector' ], 'intel:ontology:consumer' => [ 'ontology', 'projector' ] ] as $name => [ $stream, $target ] ) {
+		foreach ( [ 'intel:items:consumer' => [ 'items', 'projector' ], 'intel:ontology:consumer' => [ 'ontology', 'projector' ], 'intel:watches:consumer' => [ 'watches', 'projector' ] ] as $name => [ $stream, $target ] ) {
 			$consumer = Core::node( $name );
 			$this->assertInstanceOf( Consumer_Node::class, $consumer, $name );
 			$this->assertSame( $target, $consumer->target(), $name );
@@ -488,6 +488,7 @@ final class ProjectorTest extends TestCase {
 		}
 		$this->assertFalse( $this->read_private( Core::node( 'intel:items:consumer' ), 'multi_writer' ), 'the worker is the items stream\'s one writer' );
 		$this->assertTrue( $this->read_private( Core::node( 'intel:ontology:consumer' ), 'multi_writer' ), 'the worker and request-side writers share the ontology stream' );
+		$this->assertTrue( $this->read_private( Core::node( 'intel:watches:consumer' ), 'multi_writer' ), 'the watcher and request-side writers share the watches stream' );
 		$this->assertNull( Core::node( 'intel:ontology:tee' ), 'the ontology reaches the projector alone' );
 	}
 
@@ -636,7 +637,41 @@ final class ProjectorTest extends TestCase {
 			$this->ontology( 'lens_saved', [ 'lens_key' => 'board-desk', 'name' => 'Board desk', 'description' => 'For the board.', 'filters' => [ 'kinds' => [ 'funding' ] ] + Graph_Query::unfiltered() ] ),
 			$this->ontology( 'lens_saved', [ 'lens_key' => 'old-desk', 'name' => 'Old desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ] ),
 			$this->ontology( 'lens_removed', [ 'lens_key' => 'old-desk' ] ),
+			...$this->watch_events(),
 		];
+	}
+
+	/** @return list<array<string,mixed>> A watch saved, saved again and matched, one removed, a match seen and two deliveries. */
+	private function watch_events(): array {
+		$watcher = static fn ( string $kind, array $fields ): array => Intel_Event::make( $kind, $fields, 'machine:watcher@9.4.1', '' );
+		return [
+			$this->ontology( 'watch_saved', [ 'watch_key' => 'a1b2c3d4e5f60718', 'owner' => 3307, 'name' => 'Gazette draft', 'target_kind' => 'entity', 'target_key' => self::GAZETTE, 'digest' => false, 'instant' => false, 'inbox' => true ] ),
+			$this->ontology( 'watch_saved', [ 'watch_key' => 'a1b2c3d4e5f60718', 'owner' => 3307, 'name' => 'Gazette', 'target_kind' => 'entity', 'target_key' => self::GAZETTE, 'digest' => true, 'instant' => false, 'inbox' => true ] ),
+			$this->ontology( 'watch_saved', [ 'watch_key' => 'f0e1d2c3b4a59687', 'owner' => 3307, 'name' => 'Old desk', 'target_kind' => 'lens', 'target_key' => 'board-desk', 'digest' => false, 'instant' => true, 'inbox' => false ] ),
+			$this->ontology( 'watch_removed', [ 'watch_key' => 'f0e1d2c3b4a59687', 'owner' => 3307 ] ),
+			$watcher( 'watch_matched', [ 'watch_key' => 'a1b2c3d4e5f60718', 'owner' => 3307, 'item_key' => self::ITEM, 'at' => self::RETRIEVED, 'retrieved_ts' => self::RETRIEVED, 'quiet' => true ] ),
+			$this->ontology( 'watch_seen', [ 'watch_key' => 'a1b2c3d4e5f60718', 'owner' => 3307, 'item_key' => self::ITEM, 'retrieved_ts' => self::RETRIEVED ] ),
+			$watcher( 'watch_delivered', [ 'owner' => 3307, 'mode' => 'instant', 'watch_key' => 'a1b2c3d4e5f60718', 'through' => 1792990000.5 ] ),
+			$watcher( 'watch_delivered', [ 'owner' => 3307, 'mode' => 'digest', 'watch_key' => '', 'through' => 1792995000.5 ] ),
+			$watcher( 'watch_delivered', [ 'owner' => 3307, 'mode' => 'scan', 'watch_key' => 'a1b2c3d4e5f60718', 'through' => 1792980000.0 ] ),
+		];
+	}
+
+	/**
+	 * A saved watch is one row, replaced by its key and deleted by its
+	 * removal, its checkboxes as integers; a match, a seen mark and a
+	 * delivery are a row each, a match and a seen mark dated by their item's
+	 * retrieval day.
+	 */
+	public function test_a_watch_and_its_matches_project_to_rows(): void {
+		$this->project( $this->watch_events() );
+
+		$day = \intdiv( self::RETRIEVED, Intel_Graph_Row_Schema::DAY_SECONDS );
+		$this->assertSame( [ [ 'a1b2c3d4e5f60718', 3307, 'Gazette', 'entity', self::GAZETTE, 1, 0, 1, 'user:41', self::NOW ] ], self::graph_rows( 'watches' ) );
+		$this->assertSame( [ [ 'a1b2c3d4e5f60718', 3307, self::ITEM, (float) self::RETRIEVED, self::NOW, 1, $day ] ], self::graph_rows( 'watch_matches' ) );
+		$this->assertSame( [ [ 'a1b2c3d4e5f60718', 3307, self::ITEM, self::NOW, $day ] ], self::graph_rows( 'watch_seen' ) );
+		$this->assertSame( [ [ 3307, 'digest', '', 1792995000.5, self::NOW ], [ 3307, 'instant', 'a1b2c3d4e5f60718', 1792990000.5, self::NOW ], [ 3307, 'scan', 'a1b2c3d4e5f60718', 1792980000.0, self::NOW ] ], self::graph_rows( 'watch_deliveries', 'mode' ) );
+		$this->assertSame( [ [ 'watch_removed', 'f0e1d2c3b4a59687' ], [ 'watch_saved', 'a1b2c3d4e5f60718' ], [ 'watch_saved', 'a1b2c3d4e5f60718' ], [ 'watch_saved', 'f0e1d2c3b4a59687' ] ], self::graph_rows( 'events', 'kind, subject', 'kind, subject' ), 'each watch definition is kept under its key' );
 	}
 
 	/**

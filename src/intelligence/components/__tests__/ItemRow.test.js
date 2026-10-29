@@ -87,4 +87,17 @@ describe( 'ItemRow', () => {
 		);
 		expect( onSave ).toHaveBeenCalledWith( ITEM );
 	} );
+
+	it( 'heads the row with the controls it is given', () => {
+		render(
+			<ItemRow item={ ITEM } onOpenEntity={ jest.fn() }>
+				<button type="button">Mark seen</button>
+			</ItemRow>
+		);
+		expect(
+			screen
+				.getByRole( 'button', { name: 'Mark seen' } )
+				.closest( '.newspack-intelligence__item-head' )
+		).not.toBeNull();
+	} );
 } );

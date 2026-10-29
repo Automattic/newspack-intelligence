@@ -1,16 +1,16 @@
 <?php
 /**
- * Projector_Node: replays both event streams into the `intel-graph`
- * Row_Table (`Intel_Graph_Row_Schema`). Two Consumers, one per stream, fill
- * it with one event each; `projections()` declares, for each kind, the row
- * ops it writes and where each column comes from. Every op is an `ignore`
- * or a whole-row `set` on a keyed table but for four `delete`s: three the
- * items stream's own — an extraction deletes the item's claims and topic
- * links, a `subjects_extracted` the item's extracted subjects, and a
+ * Projector_Node: replays the three event streams into the `intel-graph`
+ * Row_Table (`Intel_Graph_Row_Schema`). Three Consumers, one per stream,
+ * fill it with one event each; `projections()` declares, for each kind, the
+ * row ops it writes and where each column comes from. Every op is an
+ * `ignore` or a whole-row `set` on a keyed table but for five `delete`s:
+ * three the items stream's own — an extraction deletes the item's claims and
+ * topic links, a `subjects_extracted` the item's extracted subjects, and a
  * `link_retracted` the one link row it keys — and the ontology stream's
- * `lens_removed`, the one lens row it keys. Each table is written by one
- * stream alone, so a replayed event writes what it wrote before and the two
- * streams project the same rows in either order. A row naming an entity no `entities` row
+ * `lens_removed` and `watch_removed`, the one lens or watch row each keys.
+ * Each table is written by one stream alone, so a replayed event writes what
+ * it wrote before and the streams project the same rows in any order. A row naming an entity no `entities` row
  * holds yet is left to the readers' join. A machine's proposal writes with
  * `ignore` and a person's creation with `set`, so a machine never overwrites
  * a person. Every ontology event also lands in `events`, ignored by its id.
@@ -27,6 +27,7 @@
 namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Bootstrap;
+use Newspack_Nodes\Consumer_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Shutdown_Sweeper;
@@ -225,6 +226,11 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			'collected'           => [ [ 'set', 'collected', [ 'collection_key', 'item_key', 'url', 'title', 'tier', 'actor', 'ts' ] ] ],
 			'lens_saved'          => [ [ 'set', 'lenses', [ 'lens_key', 'name', 'description', static fn ( array $e ): string => self::json( $e['filters'] ), 'actor', 'ts' ] ] ],
 			'lens_removed'        => [ [ 'delete', 'lenses', [ 'lens_key' => 'lens_key' ] ] ],
+			'watch_saved'         => [ [ 'set', 'watches', [ 'watch_key', 'owner', 'name', 'target_kind', 'target_key', 'digest', 'instant', 'inbox', 'actor', 'ts' ] ] ],
+			'watch_removed'       => [ [ 'delete', 'watches', [ 'watch_key' => 'watch_key' ] ] ],
+			'watch_matched'       => [ [ 'set', 'watch_matches', [ 'watch_key', 'owner', 'item_key', 'at', 'ts', 'quiet', $day( 'retrieved_ts' ) ] ] ],
+			'watch_seen'          => [ [ 'set', 'watch_seen', [ 'watch_key', 'owner', 'item_key', 'ts', $day( 'retrieved_ts' ) ] ] ],
+			'watch_delivered'     => [ [ 'set', 'watch_deliveries', [ 'owner', 'mode', 'watch_key', 'through', 'ts' ] ] ],
 		];
 		$event_row = [
 			'ignore',
@@ -233,7 +239,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 				'event_id',
 				'event',
 				'actor',
-				static fn ( array $e ): string => Core::as_string( $e['entity_key'] ?? $e['collection_key'] ?? $e['lens_key'] ?? null ),
+				static fn ( array $e ): string => Core::as_string( $e['entity_key'] ?? $e['collection_key'] ?? $e['lens_key'] ?? $e['watch_key'] ?? null ),
 				static fn ( array $e ): string => self::json( \array_diff_key( $e, \array_flip( Intel_Event::ENVELOPE ) ) ),
 				'config_version',
 				'ts',
@@ -387,32 +393,20 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * The `set_graph_target` verb's entry point, which the declared setter
-	 * calls by name.
+	 * Whether a projector's reader of a stream has a committed cursor short
+	 * of its end. The projector flushes at every checkpoint, so a cursor at
+	 * the end means every event the stream holds is projected.
 	 *
-	 * @param string $table The Row_Table the rows are written to.
+	 * @api Read by the resolver's hold and the watcher's pass.
+	 * @param string $stream_dir The stream's directory.
 	 */
-	public function set_graph_target( string $table ): void {
-		$this->graph_target = $table;
-	}
-
-	/**
-	 * The Row_Table the verb named, which the flush writes past any target.
-	 *
-	 * @api Unioned into display_targets() by the substrate's Node.
-	 * @return list<string>
-	 */
-	protected function extra_targets(): array {
-		return [ $this->graph_target ];
-	}
-
-	/**
-	 * The base config plus the `set_graph_target` line.
-	 *
-	 * @api Used by substrate.
-	 */
-	public function dump_config(): string {
-		return parent::dump_config() . $this->dump_setters();
+	public static function behind( string $stream_dir ): bool {
+		foreach ( self::readers() as $reader ) {
+			if ( $stream_dir === $reader['source'] && ! Consumer_Node::lag_from_disk( $reader['source'], $reader['offsets'] )['caught_up'] ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -454,6 +448,35 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
+	 * The `set_graph_target` verb's entry point, which the declared setter
+	 * calls by name.
+	 *
+	 * @param string $table The Row_Table the rows are written to.
+	 */
+	public function set_graph_target( string $table ): void {
+		$this->graph_target = $table;
+	}
+
+	/**
+	 * The Row_Table the verb named, which the flush writes past any target.
+	 *
+	 * @api Unioned into display_targets() by the substrate's Node.
+	 * @return list<string>
+	 */
+	protected function extra_targets(): array {
+		return [ $this->graph_target ];
+	}
+
+	/**
+	 * The base config plus the `set_graph_target` line.
+	 *
+	 * @api Used by substrate.
+	 */
+	public function dump_config(): string {
+		return parent::dump_config() . $this->dump_setters();
+	}
+
+	/**
 	 * Declarative schema: the `:config` verb and the palette metadata.
 	 *
 	 * @api Used by the substrate to provide UI etc.
@@ -462,7 +485,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	public static function node_schema(): array {
 		return [
 			'category'    => 'Transform',
-			'description' => 'Replays the intel:items and intel:ontology events into an Intel_Graph Row_Table.',
+			'description' => 'Replays the intel:items, intel:ontology and intel:watches events into an Intel_Graph Row_Table.',
 			'arguments'   => [],
 			'commands'    => [
 				[

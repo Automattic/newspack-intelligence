@@ -75,7 +75,7 @@ final class IntelligenceMcpDoorTest extends TestCase {
 
 		$this->assertSame( \array_map( static fn ( string $verb ): string => "intel_{$verb}", \array_keys( $offered ) ), \array_keys( $tools ) );
 		$this->assertArrayNotHasKey( 'intel_fetch_now', $tools );
-		$this->assertCount( 24, $tools );
+		$this->assertCount( 30, $tools );
 		foreach ( $offered as $verb => $spec ) {
 			$properties = (array) $tools[ "intel_{$verb}" ]['inputSchema']['properties'];
 			$this->assertSame( \array_column( $spec['args'], 'name' ), \array_keys( $properties ), $verb );
@@ -92,13 +92,15 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		}
 		$this->assertArrayHasKey( 'intel_save_lens', $tools );
 		$this->assertArrayHasKey( 'intel_remove_lens', $tools );
+		$this->assertSame( [ 'type' => 'boolean' ], \array_intersect_key( $tools['intel_save_watch']['inputSchema']['properties']['digest'], [ 'type' => 1 ] ) );
+		$this->assertSame( [ 'name' ], $tools['intel_save_watch']['inputSchema']['required'] );
 	}
 
-	/** A read session is offered the nine reads and no tool that writes a judgment. */
+	/** A read session is offered the reads and the caller's own watches, and no tool that writes a judgment. */
 	public function test_a_read_scope_lists_no_curation_tool(): void {
 		$names = \array_column( $this->call( Capabilities::READ, 'tools/list' )['result']['tools'], 'name' );
 
-		$this->assertSame( [ 'intel_search', 'intel_entity', 'intel_timeline', 'intel_related', 'intel_claims', 'intel_trends', 'intel_review', 'intel_collections', 'intel_lenses' ], $names );
+		$this->assertSame( [ 'intel_search', 'intel_entity', 'intel_timeline', 'intel_related', 'intel_claims', 'intel_trends', 'intel_signals', 'intel_review', 'intel_collections', 'intel_lenses', 'intel_watches', 'intel_save_watch', 'intel_remove_watch', 'intel_watch_matches', 'intel_mark_seen' ], $names );
 		$refused = $this->call( Capabilities::READ, 'tools/call', [ 'name' => 'intel_confirm_link', 'arguments' => [ 'item' => 'feed:gazette-award', 'entity' => self::GAZETTE ] ] );
 		$this->assertSame( 'Unknown tool: intel_confirm_link', $refused['error']['message'] );
 	}

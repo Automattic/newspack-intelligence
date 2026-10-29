@@ -4,8 +4,10 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Intel_Event;
-use Newspack_Intelligence\Ontology_Writer;
+use Newspack_Intelligence\Intel_Tiers;
+use Newspack_Intelligence\Stream_Writer;
 use Newspack_Nodes\Capabilities;
+use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Log_Discovery;
 use Newspack_Nodes\Topology_Analyzer;
@@ -15,11 +17,11 @@ use Newspack_Nodes\Tests\TestCase;
 require_once __DIR__ . '/../support/reads-ontology-log.php';
 
 /**
- * The request-side ontology writer: a transient Partition built from the
- * streams topology's own `intel:ontology` declaration, its config lines
- * included, filled, flushed and removed whatever happens.
+ * The request-side stream writer: per stream, a transient Partition built
+ * from the streams topology's own declaration of that stream's Partition,
+ * its config lines included, filled, flushed and removed whatever happens.
  */
-final class OntologyWriterTest extends TestCase {
+final class StreamWriterTest extends TestCase {
 	use Reads_Ontology_Log;
 
 	private string $fixtures = '';
@@ -45,16 +47,48 @@ final class OntologyWriterTest extends TestCase {
 	public function test_events_land_in_the_declared_ontology_directory(): void {
 		$events = [ self::created( 'organization:quarry-ledger', 'Quarry Ledger' ), self::created( 'organization:mesa-courier', 'Mesa Courier' ) ];
 
-		Ontology_Writer::append( $events );
+		Stream_Writer::append( $events );
 
 		$this->assertSame( $events, self::ontology_events() );
-		$this->assertNull( Core::node( Ontology_Writer::WRITER ) );
+		$this->assertNull( Core::node( 'intel:ontology:writer' ) );
+	}
+
+	/**
+	 * A watches-stream event lands in the watches directory the streams
+	 * topology declares, gated by its read capability, and an ontology event
+	 * in the same append lands in the ontology directory.
+	 */
+	public function test_each_event_lands_in_its_own_streams_directory(): void {
+		$seen    = Intel_Event::make( 'watch_seen', [ 'watch_key' => 'a1b2c3d4e5f60718', 'owner' => 3307, 'item_key' => 'feed:quarry-ledger-41', 'retrieved_ts' => 1793000600 ], 'user:73', '4.2.9' );
+		$created = self::created( 'organization:quarry-ledger', 'Quarry Ledger' );
+
+		Stream_Writer::append( [ $seen, $created ] );
+
+		$this->assertSame( [ $created ], self::ontology_events() );
+		$watches = Config::get_logs_directory() . '/intel-watches.p0';
+		$this->assertSame( [ $seen ], self::watches_events() );
+		$this->assertSame( Intel_Tiers::CAPABILITY . "\n", \file_get_contents( $watches . '/' . Log_Discovery::READ_MARKER ) );
+		$this->assertNull( Core::node( 'intel:watches:writer' ) );
+		$this->assertSame( $watches, Stream_Writer::stream_dir( Intel_Event::WATCHES ) );
+	}
+
+	/** Only the worker writes the items stream, so an append of an items event is refused before anything is written. */
+	public function test_an_items_stream_event_is_refused(): void {
+		$item = Intel_Event::make( 'item_recorded', [ 'item_key' => 'feed:quarry-ledger-41', 'source' => 'feed', 'tier' => 'public', 'url' => 'https://quarry.example/41', 'title' => 'Quarry Ledger', 'body' => '', 'item_ts' => 1793000000, 'retrieved_ts' => 1793000600 ], 'machine:source:feed@4.2.9', '4.2.9' );
+
+		try {
+			Stream_Writer::append( [ self::created( 'organization:quarry-ledger', 'Quarry Ledger' ), $item ] );
+			$this->fail( 'an items event was appended' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( 'the items stream takes no append from outside the worker: item_recorded', $e->getMessage() );
+		}
+		$this->assertSame( [], self::ontology_events() );
 	}
 
 	/** A second write in one process reuses the name the first released. */
 	public function test_a_second_write_does_not_collide_on_the_name(): void {
-		Ontology_Writer::append( [ self::created( 'organization:quarry-ledger', 'Quarry Ledger' ) ] );
-		Ontology_Writer::append( [ self::created( 'organization:mesa-courier', 'Mesa Courier' ) ] );
+		Stream_Writer::append( [ self::created( 'organization:quarry-ledger', 'Quarry Ledger' ) ] );
+		Stream_Writer::append( [ self::created( 'organization:mesa-courier', 'Mesa Courier' ) ] );
 
 		$this->assertSame( [ 'organization:quarry-ledger', 'organization:mesa-courier' ], \array_column( self::ontology_events(), 'entity_key' ) );
 	}
@@ -108,12 +142,12 @@ final class OntologyWriterTest extends TestCase {
 		$this->shadow_streams( "command_node intel:ontology:config set_read_capability Quarry-Ledger\n" );
 
 		try {
-			Ontology_Writer::append( [ self::created( 'organization:quarry-ledger', 'Quarry Ledger' ) ] );
+			Stream_Writer::append( [ self::created( 'organization:quarry-ledger', 'Quarry Ledger' ) ] );
 			$this->fail( 'a malformed capability is refused' );
 		} catch ( \InvalidArgumentException $e ) {
 			$this->assertStringContainsString( "'Quarry-Ledger'", $e->getMessage() );
 		}
-		$this->assertNull( Core::node( Ontology_Writer::WRITER ) );
+		$this->assertNull( Core::node( 'intel:ontology:writer' ) );
 		$this->assertSame( [], self::ontology_events() );
 	}
 
@@ -147,12 +181,12 @@ final class OntologyWriterTest extends TestCase {
 		$this->shadow_streams( "command_node intel:ontology:config {$line}\n" );
 
 		try {
-			Ontology_Writer::append( [ self::created( 'organization:quarry-ledger', 'Quarry Ledger' ) ] );
+			Stream_Writer::append( [ self::created( 'organization:quarry-ledger', 'Quarry Ledger' ) ] );
 			$this->fail( 'the line is refused' );
 		} catch ( \RuntimeException $e ) {
 			$this->assertStringContainsString( $named, $e->getMessage() );
 		}
-		$this->assertNull( Core::node( Ontology_Writer::WRITER ) );
+		$this->assertNull( Core::node( 'intel:ontology:writer' ) );
 		$this->assertSame( [], self::ontology_events() );
 	}
 
@@ -163,7 +197,7 @@ final class OntologyWriterTest extends TestCase {
 
 		$this->expectException( \RuntimeException::class );
 		$this->expectExceptionMessage( 'newspack-intelligence-streams declares no intel:ontology Partition' );
-		Ontology_Writer::append( [ self::created( 'organization:quarry-ledger', 'Quarry Ledger' ) ] );
+		Stream_Writer::append( [ self::created( 'organization:quarry-ledger', 'Quarry Ledger' ) ] );
 	}
 
 	/**
@@ -184,7 +218,7 @@ final class OntologyWriterTest extends TestCase {
 	 */
 	private function append_one_by_one( int $count ): void {
 		for ( $i = 0; $i < $count; $i++ ) {
-			Ontology_Writer::append( [ self::created( "organization:ledger-{$i}", "Ledger number {$i} of the Quarry Valley press" ) ] );
+			Stream_Writer::append( [ self::created( "organization:ledger-{$i}", "Ledger number {$i} of the Quarry Valley press" ) ] );
 		}
 	}
 

@@ -348,6 +348,33 @@ final class IntelEventTest extends TestCase {
 		];
 	}
 
+	/** A watch's definition rides the ontology stream; its matches, seen marks and deliveries ride the watches stream. */
+	public function test_a_watch_is_defined_on_the_ontology_and_matched_on_the_watches_stream(): void {
+		$this->assertSame(
+			[ Intel_Event::ONTOLOGY, [ 'watch_key', 'owner', 'name', 'target_kind', 'target_key', 'digest', 'instant', 'inbox' ], [ 'target_kind' => [ 'lens', 'entity', 'collection' ], 'digest' => [ true, false ], 'instant' => [ true, false ], 'inbox' => [ true, false ] ] ],
+			Intel_Event::KINDS['watch_saved']
+		);
+		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'watch_key', 'owner' ], [] ], Intel_Event::KINDS['watch_removed'] );
+		$this->assertSame( [ Intel_Event::WATCHES, [ 'watch_key', 'owner', 'item_key', 'at', 'retrieved_ts', 'quiet' ], [ 'quiet' => [ true, false ] ] ], Intel_Event::KINDS['watch_matched'] );
+		$this->assertSame( [ Intel_Event::WATCHES, [ 'watch_key', 'owner', 'item_key', 'retrieved_ts' ], [] ], Intel_Event::KINDS['watch_seen'] );
+		$this->assertSame( [ Intel_Event::WATCHES, [ 'owner', 'mode', 'watch_key', 'through' ], [ 'mode' => [ 'scan', 'instant', 'digest' ] ] ], Intel_Event::KINDS['watch_delivered'] );
+		$this->assertSame( 'watches', Intel_Event::WATCHES );
+	}
+
+	/** A watch's checkbox is a bool: any other value is outside its set. */
+	public function test_a_watch_flag_is_a_bool(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'watch_saved: field instant is outside its set' );
+		Intel_Event::make( 'watch_saved', [ 'watch_key' => 'a1b2c3d4e5f60718', 'owner' => 3307, 'name' => 'Gazette', 'target_kind' => 'entity', 'target_key' => 'organization:harbor-gazette', 'digest' => true, 'instant' => 1, 'inbox' => false ], 'user:harbor-reader', '9.4.1' );
+	}
+
+	/** A watches-stream record must fit one line, as an ontology record must. */
+	public function test_make_refuses_a_watches_event_past_one_line(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessageMatches( '/watch_seen.*\d{4} bytes.*4096/' );
+		Intel_Event::make( 'watch_seen', [ 'watch_key' => 'a1b2c3d4e5f60718', 'owner' => 3307, 'item_key' => 'feed:' . \str_repeat( 'x', 4200 ), 'retrieved_ts' => 1793000000 ], 'user:harbor-reader', '9.4.1' );
+	}
+
 	/** An item is exactly the item_recorded fields, in their order; one missing is none. */
 	public function test_item_of_takes_exactly_the_item_fields(): void {
 		$fields = [ 'retrieved_ts' => 1796000000, 'item_key' => 'feed:item-of-31', 'source' => 'feed', 'tier' => 'internal', 'url' => 'https://quarry.example/a', 'title' => 'Quarry Ledger', 'body' => 'b', 'item_ts' => 1795990000, 'event' => 'item_recorded', 'actor' => 'machine:x@1' ];

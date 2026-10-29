@@ -15,4 +15,8 @@ make_node Reresolver reresolver intel:reresolve
 command_node intel:ontology:reresolve:config add_snapshot_node reresolver
 command_node intel:ontology:reresolve:config set_multi_writer true
 connect_node intel:ontology:reresolve reresolver
+# The watcher reads the projection as each watch's owner every five minutes
+# and writes its matches and marks to intel:writer, which the streams file
+# declares.
+make_node Watcher watcher intel:writer
 secure

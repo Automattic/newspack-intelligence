@@ -60,10 +60,12 @@ if ( ! function_exists( 'register_rest_route' ) ) {
 // The users, sites and capabilities the plugin's own reads and grants ask of.
 require_once __DIR__ . '/support/wp-user-stubs.php';
 
-// Overrides shared shim: sets the user get_current_user_id() reads.
+// Overrides shared shim: sets the user get_current_user_id() reads, then,
+// as WordPress does, fires `set_current_user`.
 if ( ! function_exists( 'wp_set_current_user' ) ) {
 	function wp_set_current_user( $id, $name = '' ) {
 		$GLOBALS['_current_user_id'] = (int) $id;
+		do_action( 'set_current_user' );
 		return (object) [ 'ID' => (int) $id ];
 	}
 }
@@ -343,6 +345,13 @@ if ( ! function_exists( 'is_admin' ) ) {
 
 if ( ! defined( 'WP_PLUGIN_DIR' ) ) {
 	define( 'WP_PLUGIN_DIR', '/tmp/test-wp-plugins' );
+}
+
+// As WordPress with no translation loaded: the singular for one, else the plural.
+if ( ! function_exists( '_n' ) ) {
+	function _n( string $single, string $plural, int $number, string $domain = 'default' ): string {
+		return 1 === $number ? $single : $plural;
+	}
 }
 
 // Canonical shared WP shims from the substrate; local overrides above win.
