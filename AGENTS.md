@@ -659,8 +659,17 @@ are bools, `digest` and `instant` off and `inbox` on by default.
 exactly one of lens, entity or collection`), no box ticked (`a watch
 delivers by digest, instant email or inbox; tick one`), a lens no one saved
 (`no lens: <key>`, slugged as `save_lens` slugs it), a collection no one
-made (`no collection: <key>`) and an entity the caller cannot see (`no
-entity: <key>`, through `Graph_Query::seen()`, whose survivor it stores). A
+made (`no collection: <key>`), an entity the caller cannot see (`no
+entity: <key>`, through `Graph_Query::seen()`, whose survivor it stores),
+and a new watch once the caller keeps `Graph_Watches::MAX_PER_OWNER` (25)
+(`you have 25 watches, and one reader may keep 25 at most; remove one
+first`); an edit under `--key` is never refused by the cap, and another
+reader's watches do not count. The count reads the caller's own rows from
+the projection, so a save not yet flushed counts five seconds late and a
+burst can pass the cap by the saves inside one flush window, which is
+accepted: the cap bounds what one reader's watches cost each pass, and
+holding it exactly would need a second count of the ontology stream's
+unprojected tail. A
 key that is not one of the caller's own watches is refused as `no watch:
 <key>` whether another reader saved it or no one did, so no verb tells the
 two apart, and `mark_seen` refuses an item the watch never matched, or one
