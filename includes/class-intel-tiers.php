@@ -26,8 +26,8 @@ final class Intel_Tiers {
 	/** The user capability that adds `restricted` to a caller's tiers. */
 	public const CAPABILITY = 'newspack_intelligence_restricted';
 
-	/** The tiers every read caller holds. */
-	private const READABLE = [ 'public', 'internal' ];
+	/** The tiers every read caller holds: all but the restricted one. */
+	public const UNRESTRICTED = [ 'public', 'internal' ];
 
 	/** The tier the capability adds. */
 	private const RESTRICTED = 'restricted';
@@ -130,6 +130,6 @@ final class Intel_Tiers {
 	 * @return list<string>
 	 */
 	public static function readable(): array {
-		return \current_user_can( self::CAPABILITY ) ? [ ...self::READABLE, self::RESTRICTED ] : self::READABLE;
+		return \current_user_can( self::CAPABILITY ) ? [ ...self::UNRESTRICTED, self::RESTRICTED ] : self::UNRESTRICTED;
 	}
 }

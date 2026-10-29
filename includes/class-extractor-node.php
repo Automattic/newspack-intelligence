@@ -172,7 +172,7 @@ class Extractor_Node extends Node {
 				'subject_key'  => $subject,
 				'predicate'    => $claim['predicate'],
 				'object_key'   => $object ?? '',
-				'object_text'  => null === $object ? $claim['object'] : '',
+				'object_text'  => $claim['object'],
 				'confidence'   => $linked[ $subject ][0],
 				'retrieved_ts' => $item['retrieved_ts'],
 			];

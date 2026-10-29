@@ -78,14 +78,26 @@ final class Graph_Curation {
 
 	/**
 	 * Judge an entity named by `key`: `entity_accepted` or `entity_rejected`.
+	 * An accept is refused for an entity a caller without restricted access
+	 * cannot see, since accepting it would show it to every reader.
 	 *
 	 * @param string                 $kind `entity_accepted` or `entity_rejected`.
 	 * @param array<array-key,mixed> $args The bound verb args: `key`.
 	 * @return array<string,mixed>
-	 * @throws \InvalidArgumentException On a bad key, or one the caller cannot see.
+	 * @throws \InvalidArgumentException On a bad key, one the caller cannot see, or an accept that would declassify it.
 	 */
 	public static function judge_entity( string $kind, array $args ): array {
-		return self::write( $kind, [ 'entity_key' => self::entity( $args, 'key' ) ] );
+		$key    = self::key( $args, 'key' );
+		$entity = self::on_graph(
+			static function ( Row_Reader $r, array $g ) use ( $kind, $key ): array {
+				$entity = Graph_Query::seen( $r, $g, $key );
+				if ( 'entity_accepted' === $kind && ! self::open( $r, $g, $entity ) ) {
+					throw new \InvalidArgumentException( \esc_html( "{$entity} is cited by no item outside the restricted tier; accepting it would show it to every reader" ) );
+				}
+				return [ $entity ];
+			}
+		)[0];
+		return self::write( $kind, [ 'entity_key' => $entity ] );
 	}
 
 	/**
@@ -114,11 +126,13 @@ final class Graph_Curation {
 	}
 
 	/**
-	 * Tag an entity with a topic, an entity of type `topic`.
+	 * Tag an entity with a topic, an entity of type `topic`, unless the
+	 * entity is one every reader sees and the topic is not, which the tag
+	 * would show on the entity's record.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`, `topic`.
 	 * @return array<string,mixed>
-	 * @throws \InvalidArgumentException On a bad key, one the caller cannot see, or a topic that is not one.
+	 * @throws \InvalidArgumentException On a bad key, one the caller cannot see, a topic that is not one, or a tag across the restricted line.
 	 */
 	public static function tag_topic( array $args ): array {
 		$key                 = self::key( $args, 'key' );
@@ -129,7 +143,11 @@ final class Graph_Curation {
 				if ( 'topic' !== self::type_of( $r, $tagged ) ) {
 					throw new \InvalidArgumentException( \esc_html( "{$tagged} is not a topic" ) );
 				}
-				return [ Graph_Query::seen( $r, $g, $key ), $tagged ];
+				$entity = Graph_Query::seen( $r, $g, $key );
+				if ( self::open( $r, $g, $entity ) && ! self::open( $r, $g, $tagged ) ) {
+					throw new \InvalidArgumentException( \esc_html( "tagging {$entity} with {$tagged} would show {$tagged} to every reader; no item outside the restricted tier cites it" ) );
+				}
+				return [ $entity, $tagged ];
 			}
 		);
 		return self::write( 'topic_tagged', [ 'entity_key' => $entity, 'topic_key' => $tagged ] );
@@ -137,21 +155,23 @@ final class Graph_Curation {
 
 	/**
 	 * Merge the survivor one key answers as into another's of the same type,
-	 * unless the merge would leave any key on a chain that cycles or runs
-	 * past `Entity_Index::MAX_MERGE_HOPS` that resolved before it.
+	 * unless exactly one of the two is one a caller without restricted access
+	 * sees, which the merge would show to every reader, or the merge would
+	 * leave any key on a chain that cycles or runs past
+	 * `Entity_Index::MAX_MERGE_HOPS` that resolved before it.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `from`, `into`.
 	 * @return array<string,mixed>
-	 * @throws \InvalidArgumentException On a merge into itself or across types, one naming an entity the caller cannot see, or one that breaks a chain, naming its first key.
+	 * @throws \InvalidArgumentException On a merge into itself or across types, one naming an entity the caller cannot see, one across the restricted line, or one that breaks a chain, naming its first key.
 	 */
 	public static function merge( array $args ): array {
 		$from_key = self::key( $args, 'from' );
 		$into_key = self::key( $args, 'into' );
-		[ $from, $into, $types, $merges, $before ] = self::on_graph(
+		[ $from, $into, $types, $open, $merges, $before ] = self::on_graph(
 			static function ( Row_Reader $r, array $g ) use ( $from_key, $into_key ): array {
 				$from = Graph_Query::seen( $r, $g, $from_key );
 				$into = Graph_Query::seen( $r, $g, $into_key );
-				return [ $from, $into, [ self::type_of( $r, $from ), self::type_of( $r, $into ) ], Entity_Index::merges( $r ), $g['survivors'] ];
+				return [ $from, $into, [ self::type_of( $r, $from ), self::type_of( $r, $into ) ], [ self::open( $r, $g, $from ), self::open( $r, $g, $into ) ], Entity_Index::merges( $r ), $g['survivors'] ];
 			}
 		);
 		if ( $from === $into ) {
@@ -160,12 +180,28 @@ final class Graph_Curation {
 		if ( $types[0] !== $types[1] ) {
 			throw new \InvalidArgumentException( \esc_html( "cannot merge {$from} ({$types[0]}) into {$into} ({$types[1]})" ) );
 		}
+		if ( $open[0] !== $open[1] ) {
+			$hidden = $open[0] ? $into : $from;
+			throw new \InvalidArgumentException( \esc_html( "merging {$from} into {$into} would show {$hidden} to every reader; no item outside the restricted tier cites it" ) );
+		}
 		foreach ( Entity_Index::walk( [ $from => $into ] + $merges )[0] as $key => $survivor ) {
 			if ( '' === $survivor && '' !== ( $before[ $key ] ?? $key ) ) {
 				throw new \InvalidArgumentException( \esc_html( "merging {$from} into {$into} would leave {$key} on a chain that cycles or runs past " . Entity_Index::MAX_MERGE_HOPS . ' hops' ) );
 			}
 		}
 		return self::write( 'entity_merged', [ 'entity_key' => $from, 'into_key' => $into ] );
+	}
+
+	/**
+	 * Whether a caller without restricted access sees a survivor: accepted,
+	 * or cited by an item of `Intel_Tiers::UNRESTRICTED` (`Graph_Query::visible()`).
+	 *
+	 * @param Row_Reader $r        The reader.
+	 * @param Graph      $g        The graph the read opened.
+	 * @param string     $survivor The survivor.
+	 */
+	private static function open( Row_Reader $r, array $g, string $survivor ): bool {
+		return null !== Graph_Query::visible( $r, Graph_Query::unrestricted( $r, $g ), $survivor );
 	}
 
 	/**

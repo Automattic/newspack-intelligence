@@ -123,7 +123,7 @@ final class ExtractorNodeTest extends TestCase {
 		);
 		$this->assertSame(
 			[
-				[ 0, self::GAZETTE, 'won', self::PEABODY, '', 0.9 ],
+				[ 0, self::GAZETTE, 'won', self::PEABODY, 'Peabody Award', 0.9 ],
 				[ 1, self::GAZETTE, 'located_in', '', 'Port Angeles', 0.9 ],
 			],
 			\array_map( static fn ( array $e ): array => [ $e['ord'], $e['subject_key'], $e['predicate'], $e['object_key'], $e['object_text'], $e['confidence'] ], \array_slice( $events, 2 ) )
@@ -157,7 +157,7 @@ final class ExtractorNodeTest extends TestCase {
 
 		$claims = \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'claim_asserted' === $e['event'] ) );
 		$this->assertSame(
-			[ [ 0, self::GAZETTE, 'partners_with', self::MESA, '' ] ],
+			[ [ 0, self::GAZETTE, 'partners_with', self::MESA, 'Mesa Courier' ] ],
 			\array_map( static fn ( array $e ): array => [ $e['ord'], $e['subject_key'], $e['predicate'], $e['object_key'], $e['object_text'] ], $claims )
 		);
 	}
@@ -192,9 +192,9 @@ final class ExtractorNodeTest extends TestCase {
 		$claims = \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'claim_asserted' === $e['event'] ) );
 		$this->assertSame(
 			[
-				[ 'organization:harbor-gazette-wa', 'won', self::PEABODY, '' ],
+				[ 'organization:harbor-gazette-wa', 'won', self::PEABODY, 'Peabody Award' ],
 				[ 'organization:harbor-gazette-wa', 'partners_with', '', 'Mesa Courier' ],
-				[ 'organization:harbor-gazette-wa', 'competes_with', 'organization:harbor-gazette-wa', '' ],
+				[ 'organization:harbor-gazette-wa', 'competes_with', 'organization:harbor-gazette-wa', 'Harbor Gazette' ],
 			],
 			\array_map( static fn ( array $e ): array => [ $e['subject_key'], $e['predicate'], $e['object_key'], $e['object_text'] ], $claims )
 		);
