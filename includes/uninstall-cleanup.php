@@ -1,8 +1,9 @@
 <?php
 /**
- * Uninstall cleanup helpers: every option row the plugin wrote, and the
- * SQLite files of the Row_Table its topologies declare with the Intel_Graph
- * schema. The substrate's uninstall removes the rest of the runtime tree.
+ * Uninstall cleanup helpers: every option row the plugin wrote, the
+ * restricted-access capability on every user, and the SQLite files of the
+ * Row_Table its topologies declare with the Intel_Graph schema. The
+ * substrate's uninstall removes the rest of the runtime tree.
  *
  * Loaded only from uninstall.php (plugin delete). Kept out of the autoloader so
  * it costs nothing at runtime.
@@ -92,7 +93,8 @@ function delete_graph_tables( string $topologies_dir ): int {
 }
 
 /**
- * Delete all prefixed options, iterating every site on multisite.
+ * Delete all prefixed options and strip restricted access from every user,
+ * on every site of a multisite.
  *
  * @param string $prefix Option-name prefix.
  * @return void
@@ -105,9 +107,11 @@ function uninstall_cleanup( string $prefix ): void {
 		foreach ( \get_sites( [ 'fields' => 'ids', 'number' => 0 ] ) as $site_id ) {
 			\switch_to_blog( $site_id );
 			delete_prefixed_options( $wpdb, $prefix );
+			Intel_Tiers::strip();
 			\restore_current_blog();
 		}
 		return;
 	}
 	delete_prefixed_options( $wpdb, $prefix );
+	Intel_Tiers::strip();
 }

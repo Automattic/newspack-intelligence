@@ -127,14 +127,52 @@ function register_clients_admin_page(): void {
 	);
 }
 
-/** Render the client CSV import page. */
+/** Render the Settings page: the client CSV import, then restricted access. */
 function render_clients_page(): void {
 	if ( ! \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) ) {
 		return;
 	}
 	echo '<div class="wrap"><h1>' . \esc_html__( 'Newspack Intelligence Settings', 'newspack-intelligence' ) . '</h1>';
 	( new Clients_Settings() )->render_upload_section();
+	Restricted_Settings::render_section();
 	echo '</div>';
+}
+
+/**
+ * Refuse a Settings-page admin-post to a caller below MANAGE, or whose nonce
+ * for `$action` fails; every handler on the page opens with it.
+ *
+ * @param string $action The admin-post action, its nonce action too.
+ */
+function admit_settings_post( string $action ): void {
+	if ( ! \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) || ! \check_admin_referer( $action ) ) {
+		\wp_die( \esc_html__( 'Not allowed.', 'newspack-intelligence' ) );
+	}
+}
+
+/**
+ * Open a Settings-page form posting to admin-post as `$action`: the form
+ * tag, the action's nonce field and the hidden action. The caller adds its
+ * fields and closes the form.
+ *
+ * @param string $action      The admin-post action, its nonce action too.
+ * @param bool   $uploads_file Whether the form posts a file.
+ */
+function open_settings_form( string $action, bool $uploads_file = false ): void {
+	echo '<form method="post"' . ( $uploads_file ? ' enctype="multipart/form-data"' : '' ) . ' action="' . \esc_url( \admin_url( 'admin-post.php' ) ) . '">';
+	\wp_nonce_field( $action );
+	echo '<input type="hidden" name="action" value="' . \esc_attr( $action ) . '" />';
+}
+
+/**
+ * Return from a Settings-page admin-post to the page it came from, else
+ * the Settings page, with `$args` added to its query.
+ *
+ * @param array<string,string> $args Query args to add.
+ */
+function return_to_settings( array $args = [] ): never {
+	\wp_safe_redirect( \add_query_arg( $args, \wp_get_referer() ?: \admin_url( 'options-general.php?page=' . SETTINGS_MENU_SLUG ) ) );
+	exit;
 }
 
 /**
@@ -156,6 +194,7 @@ function mount_service_cis( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 function register_cli_commands(): void {
 	\WP_CLI::add_command( 'newspack-intelligence clients', '\\Newspack_Intelligence\\CLI\\Clients_CLI_Command' );
 	\WP_CLI::add_command( 'newspack-intelligence ontology', '\\Newspack_Intelligence\\CLI\\Ontology_CLI_Command' );
+	\WP_CLI::add_command( 'newspack-intelligence restricted', '\\Newspack_Intelligence\\CLI\\Restricted_CLI_Command' );
 }
 
 // newspack-nodes loads after this file, so wiring waits for plugins_loaded.
@@ -196,6 +235,8 @@ function register_cli_commands(): void {
 				( new Clients_Settings() )->handle_admin_post();
 			}
 		);
+		\add_action( 'admin_post_' . Restricted_Settings::GRANT_ACTION, static fn () => Restricted_Settings::handle_grant() );
+		\add_action( 'admin_post_' . Restricted_Settings::REVOKE_ACTION, static fn () => Restricted_Settings::handle_revoke() );
 		\add_action(
 			'admin_notices',
 			static function (): void {

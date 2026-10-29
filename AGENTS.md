@@ -500,10 +500,10 @@ not open. Any other failure of a unit's projection
 read drops that unit with a rate-limited line naming it and the cause, so a
 respawn cannot restore the same head and fail on it again; a cooperative stop
 propagates first. `Intel_Graph_Row_Schema::$read_rows` is the read's test
-seam. The `ontology` verbs and `clients import` refuse to run as root
-before they write, through the `Refuses_Root` trait, as `wp nodes` verbs do,
-because a root-owned segment or IPC file is one the workers cannot append
-to.
+seam. Every `wp newspack-intelligence` verb refuses to run as root
+before it reads or writes, through the `Refuses_Root` trait, as `wp nodes`
+verbs do, because a root-owned segment or IPC file is one the workers
+cannot append to.
 
 **Reads.** `Intelligence_CI` (`intelligence`), mounted on every request
 graph, answers eight verbs, each declaring `read` and its
@@ -511,8 +511,9 @@ args: `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `review`
 and `collections`. Each handler hands its bound args to the `Graph_Query`
 read of the same name, through `Intel_Graph_Row_Schema::read()` over every
 partition's file. A read opens on `Graph_Query::graph()`, which resolves
-the tiers once from `Intel_Tiers::readable()` — `public` and `internal` —
-and binds the prelude every statement opens with: `mg`, the survivor map,
+the tiers once from `Intel_Tiers::readable()` — `public` and `internal`,
+and `restricted` for a caller holding the restricted tier (below) — and
+binds the prelude every statement opens with: `mg`, the survivor map,
 and `ri`, the items of those tiers. Every statement reads items through
 `ri`, never `items` with a filter of its own, so no item, link, claim,
 count or citation rests on an item of another tier, and an entity short of
@@ -545,6 +546,34 @@ empty rows, logged; one no partition has written answers empty rows.
 A collection's saved items read from `collected` alone, at the tier each
 was saved at, so a saved item outlives its expiring `items` row; `collected`
 keeps its own tier filter, and `collections` opens no graph.
+
+**Restricted tier.** `Intel_Tiers::CAPABILITY`,
+`newspack_intelligence_restricted`, is a WordPress user capability, granted
+per user and per site, and the one spelling every reader uses. `readable()`
+adds `restricted` when `current_user_can()` answers for it, asked on each
+call and cached nowhere, so a grant or a revoke reaches the very next read.
+It adds a tier and no verb: a verb's own role gate runs first, and holding
+the capability without `read` reads nothing. A role carrying the
+capability, and on a multisite a super admin, who passes every
+`current_user_can()` check, also reads the tier without a grant. To the
+operator surfaces a holder is one thing, a user's own grant on the current
+site (`WP_User::$caps`): `holders()` lists those alone, so every listed
+login is one `revoke()` takes, and `strip()` removes every one, leaving a
+role's. `grant()` and `revoke()` look the login up as WordPress does, through
+`sanitize_user()`, and refuse an unknown one (`no user: <login>`), on a
+multisite a user who is not a member of the current site, so a grant never
+makes one, a grant to a user already granted it and a revoke from one
+holding no grant. Each change returns the user's own login, and writes one
+`Core::stderr()` line, which reaches the PHP error log, naming that login
+and the operator: `user:<login>` for the Settings page and for `--user`,
+else `wp-cli uid <uid>`. A refusal carries plain text, which each surface
+escapes as it renders it. `wp newspack-intelligence restricted grant
+<login>`, `revoke <login>` and `list` (`Restricted_CLI_Command`) and the
+Settings page's "Restricted access" section (`Restricted_Settings`) are the
+two operator surfaces, both at MANAGE, and each says that a role and a
+super admin read the tier without a grant. Uninstall reaches `strip()` with
+the substrate possibly inactive, so it and everything it calls use no
+substrate class.
 
 **Curation.** `Intelligence_CI` also answers thirteen curation verbs, each
 declaring `tune`, each writing one ontology event through
@@ -614,7 +643,11 @@ on the substrate's `Mcp_Door` (substrate ADR-38), serving
 under the verb's own description. The door owns the session check, the
 scope ceiling, the meter, the OAuth resource and the `<site-data>` fence,
 and offers a session only the tools its role covers, so a read session is
-offered the reads alone and every answer passes the reads' own tiers. Each
+offered the reads alone and every answer passes the reads' own tiers. The
+door becomes the session's minting user for each call, so a session reads
+the restricted tier while that user holds `Intel_Tiers::CAPABILITY`, and a
+revoke takes effect on its next call; its scope neither widens nor narrows
+the tier. Each
 read's summary names the 730-day item horizon,
 `Intel_Graph_Row_Schema::RETAIN_DAYS`, filled as `{horizon}`. The glossary
 lists the entity types and link roles from `Intel_Event::TYPES` and
@@ -866,14 +899,14 @@ sibling checkout locally.
 
 | Path | What |
 |------|------|
-| `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus, WP-CLI, the `Intelligence_CI` mount, the MCP door's `wire()` |
+| `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus and the Settings page's admin-post helpers, WP-CLI, the `Intelligence_CI` mount, the MCP door's `wire()` |
 | `includes/` (streams) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Ontology_Seed`, `Ontology_Writer`, the `Emits_Struct` trait |
 | `includes/` (collect) | `Source_Node` and its three connectors, the `Source` interface |
 | `includes/` (resolve) | `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
 | `includes/` (clients) | `Client_Importer`, the `Client_Roster` interface, `Graph_Client_Roster`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |
-| `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Intel_Tiers`, `Worker_Route`, `uninstall-cleanup.php` |
-| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed`, `ontology reresolve` and `ontology reproject`; the `Refuses_Root` trait they share |
+| `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
+| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed`, `ontology reresolve` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; the `Refuses_Root` trait they share |
 | `topologies/` | The five `.tsl` node-graph topologies |
 | `src/intelligence/` | The Intelligence page's React bundle |
 | `tests/` | PHPUnit (`unit/` + `bootstrap.php` + `support/` + `run-coverage.sh`; `integration/` exists but is empty) |
@@ -893,7 +926,8 @@ declares no hook or filter of its own for others to extend.
   page to a caller without the menu's capability before that hook runs —
   through `Admin::enqueue_react_page()`, which no-ops when
   `build/intelligence/index.js` is absent. `Newspack Intelligence` under
-  Settings, which hosts the client-CSV upload, is gated, rendered and
+  Settings, which hosts the client-CSV upload and the "Restricted access"
+  section, is gated, rendered and
   registered the same way on `Capabilities::MANAGE`, which applies the
   `allowed_users` list.
 - **Filter.** `newspack_nodes/overlay_pages` — declares the Intelligence
@@ -907,12 +941,24 @@ declares no hook or filter of its own for others to extend.
   `import_path()`'s counts, so that redirect is unconditional: an unreadable
   temp file, a header line other than `Atomic site ID, Created, Domain name`,
   or a file yielding no valid rows still reports success while importing
-  nothing.
+  nothing. `newspack_intelligence_grant_restricted` and
+  `newspack_intelligence_revoke_restricted` grant and revoke restricted
+  access to the posted login, then return to the page; a refused change
+  dies naming why. All three open on `admit_settings_post()`, which refuses
+  a caller below MANAGE or whose nonce for its own action fails, build
+  their forms on `open_settings_form()` and return through
+  `return_to_settings()`, the three helpers the plugin file declares beside
+  the Settings page they serve.
+- **Capability.** `newspack_intelligence_restricted`, a user capability
+  granted per user, adds the restricted tier to every read (see Restricted
+  tier). Nothing in this plugin grants it but an operator.
 - **REST.** `POST /wp-json/newspack-intelligence/v1/mcp`, the MCP door, which
   the substrate's `Mcp_Door` serves and declares as an OAuth resource on
   `newspack_nodes/oauth_resources`.
 - **Uninstall.** Plugin delete removes every `newspack_intelligence_` option row
-  and its transient variants, on every site of a multisite, and
+  and its transient variants and strips `newspack_intelligence_restricted`
+  from every user's own grant, on every site of a multisite, with or
+  without the substrate active, and
   `delete_graph_tables()` removes the SQLite files, WAL files included, of
   every Row_Table the plugin's own topologies declare with the `Intel_Graph`
   schema, on every partition — under a base directory this install

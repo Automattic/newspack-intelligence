@@ -5,7 +5,6 @@ namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
-use Newspack_Intelligence\Intel_Tiers;
 use Newspack_Intelligence\Intelligence_CI_Node;
 use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\Command_Interpreter_Node;
@@ -16,6 +15,7 @@ use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
+require_once __DIR__ . '/../support/signs-in-users.php';
 
 /**
  * The `intelligence` service CI: eight read verbs over the projection, each
@@ -24,6 +24,7 @@ require_once __DIR__ . '/../support/seeds-intel-graph.php';
  */
 final class IntelligenceCITest extends TestCase {
 	use Seeds_Intel_Graph;
+	use Signs_In_Users;
 
 	private const GAZETTE = 'organization:harbor-gazette';
 
@@ -37,12 +38,13 @@ final class IntelligenceCITest extends TestCase {
 		$this->start_intel_graph();
 		$GLOBALS['_wp_test_current_user_can']['manage_options'] = true;
 		$GLOBALS['_current_user_can']                           = true;
+		self::sign_in( 3373, 'harbor-desk', 'manage_options' );
 		$this->ci = new Intelligence_CI_Node();
 		$this->ci->name( 'intelligence' );
 	}
 
 	protected function tearDown(): void {
-		unset( $GLOBALS['_current_user_id'] );
+		self::forget_users();
 		$GLOBALS['_wp_test_current_user_can'] = [];
 		$GLOBALS['_current_user_can']         = false;
 		Intel_Graph_Row_Schema::$read_rows    = null;
@@ -70,10 +72,6 @@ final class IntelligenceCITest extends TestCase {
 				$this->assertSame( 'permission denied: read capability required', $e->getMessage() );
 			}
 		}
-	}
-
-	public function test_phase_one_reads_public_and_internal(): void {
-		$this->assertSame( [ 'public', 'internal' ], Intel_Tiers::readable() );
 	}
 
 	/** The service CI mounts once per request graph, and only it. */
