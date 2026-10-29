@@ -309,10 +309,34 @@ worker's own partition's file, the only one its projector deletes in, by
 its raw entity key and role, that it does not write again, so a link whose
 role changed is retracted in its old one; a row whose survivor a curator
 confirmed is kept, and so is a `ner_fuzzy` row unless the NER step ran and
-answered, since nothing else looked for it again. The re-resolution reads
-those rows with the rest of `settled()`; an `item_recorded` reads them and
-the verdicts alone through `Intel_Graph_Row_Schema::read()` given a line, so
-a projection that will not open retracts nothing, logged. An
+answered, since nothing else looked for it again. Every resolution reads
+those rows with the rest of `settled()`; an `item_recorded` reads them
+through `Intel_Graph_Row_Schema::read()` given a line, so a projection that
+will not open resolves the item from the event, NER included, with no
+judgments, and retracts nothing, logged. An `item_recorded` for an item the
+projection already holds is a re-resolution: it runs exactly what an
+`item_reresolve` naming the item does, with an `attempt` of 0, and runs
+the NER step unless the item was
+resolved before — the projection holds an extraction of it from any
+actor, or a non-topic link in any partition. Holding the `items` row alone
+is not that: the projector writes it on its next flush, every 5 seconds,
+whether or not any resolution ran, while `intel:items:resolve` hands the
+resolver one line a poll, each possibly blocking on LLM calls, so under a
+burst most first recordings arrive with their row projected. Such a
+first recording, and an item whose NER step named nobody or failed, so
+that nothing linked or extracted it, runs NER and is forwarded with
+`extracted: false`; a fresh worker's repeat of a resolved item runs none,
+and a repeat a call extracted with its links settled spends no call and
+keeps the stored extraction. One the projection does not hold yet takes
+the same path from the event's item, NER included, forwarded with
+`extracted: false` and the judgments the projection already holds of it,
+because a replay can project the ontology stream, verdicts included, ahead
+of the items stream. The repeat path has one accepted cost: a crash after the projector
+flushed an item's extraction but before `intel:items:resolve` committed
+its cursor, up to 30 seconds, replays the `item_recorded` as a settled
+repeat, which is not forwarded, so the deduper never places the item in a
+cluster. A missing cluster placement is the price of the NER and
+extraction calls the repeat path saves on every respawn. An
 `item_reresolve` record, fed by `intel:reresolve:resolve`, names a stored
 item, which it reads from
 the projection with whether the projection holds an extraction a call
@@ -631,7 +655,13 @@ names (`make_node Feed_Source feed public`), which a load without one refuses
 and `set_tier` replaces at runtime. Blocking HTTP runs in the
 worker rather than a per-fetch job. `Source_Node` dedups by `item_key` against a
 bounded in-memory set (`MAX_SEEN` 2000, oldest evicted first) that does not
-survive a respawn, so a fresh worker records an item again.
+survive a respawn, so a fresh worker records an item again; the resolver
+reads a repeat of an item it resolved before, one the projection holds an
+extraction or a non-topic link of, as a re-resolution, which runs no NER
+step and is forwarded for extraction only while the item is still owed
+one, so a repeat a call extracted with its links settled costs the
+projection reads and no LLM call. A repeat of an item nothing ever linked
+runs NER again.
 
 `Github_Source_Node` hits three REST endpoints per repo on each TICK — releases,
 closed pull requests and issues — keeping a closed PR only when it carries a
@@ -702,7 +732,7 @@ plugin adds:
 | Type | Class | Runtime triggers and verbs |
 |------|-------|----------------------------|
 | `Github_Source` | `Github_Source_Node` | `<tier>`; `TICK`; `set_tier`, `add_repo`, `remove_repo`, `set_vault_id` |
-| `Linear_Source` | `Linear_Source_Node` | `<tier>`; `TICK`; `set_tier`, `set_vault_id` |
+| `Linear_Source` | `Linear_Source_Node` | `<tier>`; `TICK`; `set_tier`, `add_team`, `remove_team`, `set_vault_id` |
 | `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`; `set_tier`, `add_url`, `remove_url` |
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |

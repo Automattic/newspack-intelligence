@@ -104,6 +104,16 @@ class TopologyDurabilityTest extends TestCase {
 		}
 	}
 
+	/** The Linear source fetches Newspack's own teams and no others. */
+	public function test_the_linear_source_names_newspacks_teams(): void {
+		$this->load( 'newspack-intelligence' );
+
+		$this->assertSame(
+			[ 'NEWS', 'NPAI', 'NPPRO', 'NPPM', 'NPMIG', 'NPLAUNC', 'NPSUPP', 'NPPD', 'DSGNEWS' ],
+			$this->read_private( Core::node( 'linear' ), 'teams' )
+		);
+	}
+
 	/** Compose a topology the way a worker does, over the test base dir. */
 	private function load( string $topology ): void {
 		Core::$var['partition'] = '0';

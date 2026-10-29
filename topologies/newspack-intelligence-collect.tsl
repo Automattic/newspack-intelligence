@@ -11,6 +11,15 @@ cmd github:config add_repo Automattic/newspack-network
 cmd github:config add_repo Automattic/newspack-plugin
 make_node Linear_Source linear internal
 cmd linear:config set_vault_id linear
+cmd linear:config add_team NEWS
+cmd linear:config add_team NPAI
+cmd linear:config add_team NPPRO
+cmd linear:config add_team NPPM
+cmd linear:config add_team NPMIG
+cmd linear:config add_team NPLAUNC
+cmd linear:config add_team NPSUPP
+cmd linear:config add_team NPPD
+cmd linear:config add_team DSGNEWS
 make_node Feed_Source feed public
 cmd feed:config add_url https://make.wordpress.org/core/feed/
 cmd feed:config add_url https://wordpress.org/news/feed/

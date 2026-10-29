@@ -195,16 +195,7 @@ final class ResolverNodeTest extends TestCase {
 	public function test_a_reresolve_skips_ner(): void {
 		$this->seed( self::gazette(), [ Intel_Event::make( 'item_recorded', self::item( [ 'title' => 'Regional publishers announce a merger' ] ), 'machine:source:feed@9.4.1', '9.4.1' ) ] );
 		$asked = 0;
-		Resolver_Node::$llm_factory = static function () use ( &$asked ): LLM_Client {
-			return new class( $asked ) implements LLM_Client {
-				public function __construct( private int &$asked ) {}
-
-				public function chat( array $messages, array $opts = [] ): string {
-					++$this->asked;
-					return '{"orgs": ["Harbor Gazette Weekly", "Acme Widgets Corporation"]}';
-				}
-			};
-		};
+		$this->answer( '{"orgs": ["Harbor Gazette Weekly", "Acme Widgets Corporation"]}', $asked );
 
 		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
 
@@ -863,7 +854,160 @@ final class ResolverNodeTest extends TestCase {
 
 		$this->assertSame( [ [ 'link_asserted', self::ITEM ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['item_key'] ], $this->written() ) );
 		$this->assertSame( self::ITEM, $this->resolved()['item']['item_key'] );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'no intel-graph to read stored links from; retracting none' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'no intel-graph to read the stored item from; resolving it fresh, retracting none' ) );
+	}
+
+	/**
+	 * An item recorded again, as a fresh worker records it, whose links its
+	 * last extraction was given is a re-resolution: no NER call, nothing
+	 * forwarded, so its extraction is not replaced.
+	 */
+	public function test_a_rerecorded_item_with_settled_links_is_not_forwarded_and_runs_no_ner(): void {
+		$item = self::item( [ 'title' => 'Ferry operators publish a timetable' ] );
+		$this->seed(
+			self::gazette(),
+			self::entity( 'organization:quarry-ledger', 'Quarry Ledger' ),
+			[
+				Intel_Event::make( 'item_recorded', $item, 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::stored_link( 'organization:quarry-ledger', 'subject', 'ner_fuzzy' ),
+				...self::extracted( 'organization:quarry-ledger' ),
+			]
+		);
+		$asked = 0;
+		$this->answer( '{"orgs": ["Quarry Ledger Weekly"], "people": [], "locations": []}', $asked );
+
+		$this->resolver->fill( self::recorded( [ 'title' => 'Ferry operators publish a timetable' ] ) );
+
+		$this->assertSame( 0, $asked, 'no NER call' );
+		$this->assertSame( [], $this->written(), 'the unsearched NER row is kept' );
+		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $m ): bool => 'intel:resolved:null' === $m[ Message::TO ] ) );
+	}
+
+	/**
+	 * An item recorded again with an asserted link its last extraction was
+	 * not given is forwarded as a re-resolution: the curators' verdicts in
+	 * force, a rejected link left out and a confirmed one asserted.
+	 */
+	public function test_a_rerecorded_item_with_an_unsettled_link_is_forwarded_with_the_verdicts(): void {
+		$over = [ 'url' => 'https://harborgazette.org/b', 'body' => 'Mesa Courier reprinted it.' ];
+		$this->seed(
+			self::gazette(),
+			self::entity( self::MESA, 'Mesa Courier' ),
+			self::entity( 'organization:quarry-ledger', 'Quarry Ledger' ),
+			[
+				Intel_Event::make( 'item_recorded', self::item( $over ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::MESA, 'item_url' => 'https://harborgazette.org/b' ], 'user:curator-47', '9.4.1' ),
+				self::stored_link( 'organization:quarry-ledger', 'mention', 'name', 'link_proposed' ),
+				Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => 'organization:quarry-ledger', 'item_url' => 'https://harborgazette.org/b' ], 'user:curator-47', '9.4.1' ),
+				...self::extracted(),
+			]
+		);
+		$asked = 0;
+		$this->answer( '{"orgs": [], "people": [], "locations": []}', $asked );
+
+		$this->resolver->fill( self::recorded( $over ) );
+
+		$this->assertSame( 0, $asked );
+		$this->assertSame(
+			[
+				'item'      => self::item( $over ),
+				'extracted' => true,
+				'attempt'   => 0,
+				'links'     => [
+					[ 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'identifier', 'confidence' => 1.0, 'state' => 'asserted' ],
+					[ 'entity_key' => 'organization:quarry-ledger', 'role' => 'mention', 'method' => 'name', 'confidence' => 0.85, 'state' => 'asserted' ],
+				],
+				'proposals' => [],
+			],
+			$this->resolved()
+		);
+	}
+
+	/** A first recording, whose item the projection does not hold yet, runs NER and is sent for extraction as never attempted. */
+	public function test_a_first_recording_runs_ner_and_forwards_unextracted(): void {
+		$this->seed( self::gazette(), [ self::stored_link( self::MESA, 'mention', 'name' ) ] );
+		$asked = 0;
+		$this->answer( '{"orgs": ["Harbor Gazette Weekly"], "people": [], "locations": []}', $asked );
+
+		$this->resolver->fill( self::recorded( [ 'title' => 'Ferry operators publish a timetable' ] ) );
+
+		$this->assertSame( 1, $asked );
+		$this->assertSame( [ [ 'link_proposed', self::GAZETTE ], [ 'link_retracted', self::MESA ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'] ], $this->written() ) );
+		$this->assertSame( [ false, 0 ], [ $this->resolved()['extracted'], $this->resolved()['attempt'] ] );
+	}
+
+	/**
+	 * A first recording whose items row the projector flushed before the
+	 * resolver reached it has not been resolved: NER runs, and the item is
+	 * sent for extraction as never extracted.
+	 */
+	public function test_a_first_recording_already_projected_runs_ner(): void {
+		$over = [ 'title' => 'Coastal publishers form a press alliance' ];
+		$this->seed( self::gazette(), [ Intel_Event::make( 'item_recorded', self::item( $over ), 'machine:source:feed@9.4.1', '9.4.1' ) ] );
+		$asked = 0;
+		$this->answer( '{"orgs": ["Harbor Gazette Weekly"], "people": [], "locations": []}', $asked );
+
+		$this->resolver->fill( self::recorded( $over ) );
+
+		$this->assertSame( 1, $asked );
+		$this->assertSame( [ [ 'link_proposed', self::GAZETTE, 'ner_fuzzy' ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['method'] ], $this->written() ) );
+		$this->assertSame( [ false, 0, [ self::GAZETTE ] ], [ $this->resolved()['extracted'], $this->resolved()['attempt'], \array_column( $this->resolved()['links'], 'entity_key' ) ] );
+	}
+
+	/**
+	 * A first recording whose item the projection does not hold yet, but
+	 * whose rejected link the ontology stream already projected, as a replay
+	 * can, leaves that link out of what it forwards.
+	 */
+	public function test_a_first_recording_not_projected_honours_a_projected_rejection(): void {
+		$over = [ 'url' => 'https://harborgazette.org/d', 'body' => 'Mesa Courier reprinted it.' ];
+		$this->seed(
+			self::gazette(),
+			self::entity( self::MESA, 'Mesa Courier' ),
+			[ Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.org/d' ], 'user:curator-58', '9.4.1' ) ]
+		);
+
+		$this->resolver->fill( self::recorded( $over ) );
+
+		$this->assertSame( [ self::MESA ], \array_column( $this->resolved()['links'], 'entity_key' ) );
+		$this->assertSame( [ false, 0, self::item( $over ) ], [ $this->resolved()['extracted'], $this->resolved()['attempt'], $this->resolved()['item'] ] );
+	}
+
+	/** A repeat of an item whose NER step named nobody, so nothing linked or extracted it, runs NER again. */
+	public function test_a_repeat_of_an_item_never_linked_runs_ner_again(): void {
+		$over = [ 'title' => 'Coastal publishers form a press alliance' ];
+		$this->seed( self::gazette(), [ Intel_Event::make( 'item_recorded', self::item( $over ), 'machine:source:feed@9.4.1', '9.4.1' ) ] );
+		$asked = 0;
+		$this->answer( '{"orgs": [], "people": [], "locations": []}', $asked );
+
+		$this->resolver->fill( self::recorded( $over ) );
+		$this->resolver->fill( self::recorded( $over ) );
+
+		$this->assertSame( 2, $asked );
+		$this->assertSame( [], $this->written() );
+	}
+
+	/** An item recorded again still writes its link events and retracts a stored link it no longer finds. */
+	public function test_a_rerecorded_item_writes_its_links_and_retractions(): void {
+		$over = [ 'url' => 'https://harborgazette.org/c' ];
+		$this->seed(
+			self::gazette(),
+			self::entity( self::MESA, 'Mesa Courier' ),
+			[
+				Intel_Event::make( 'item_recorded', self::item( $over ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::link( 'link_asserted' ),
+				self::stored_link( self::MESA, 'mention', 'alias' ),
+				...self::extracted( self::GAZETTE ),
+			]
+		);
+
+		$this->resolver->fill( self::recorded( $over ) );
+
+		$this->assertSame(
+			[ [ 'link_asserted', self::GAZETTE, 'subject' ], [ 'link_retracted', self::MESA, 'mention' ] ],
+			\array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['role'] ], $this->written() )
+		);
+		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $m ): bool => 'intel:resolved:null' === $m[ Message::TO ] ) );
 	}
 
 	public function test_the_writer_and_the_later_queue_are_declared_beside_the_target(): void {
@@ -915,20 +1059,25 @@ final class ResolverNodeTest extends TestCase {
 	}
 
 	/**
-	 * Answer every NER call with one reply, or throw when the reply is `throw`.
+	 * Answer every NER call with one reply, or throw when the reply is `throw`,
+	 * counting each call.
 	 *
 	 * @param string $reply The model's reply.
+	 * @param int    $asked The calls made, counted up.
 	 */
-	private function answer( string $reply ): void {
-		Resolver_Node::$llm_factory = static fn (): LLM_Client => new class( $reply ) implements LLM_Client {
-			public function __construct( private string $reply ) {}
+	private function answer( string $reply, int &$asked = 0 ): void {
+		Resolver_Node::$llm_factory = static function () use ( $reply, &$asked ): LLM_Client {
+			return new class( $reply, $asked ) implements LLM_Client {
+				public function __construct( private string $reply, private int &$asked ) {}
 
-			public function chat( array $messages, array $opts = [] ): string {
-				if ( 'throw' === $this->reply ) {
-					throw new \RuntimeException( 'proxy 502' );
+				public function chat( array $messages, array $opts = [] ): string {
+					++$this->asked;
+					if ( 'throw' === $this->reply ) {
+						throw new \RuntimeException( 'proxy 502' );
+					}
+					return $this->reply;
 				}
-				return $this->reply;
-			}
+			};
 		};
 	}
 

@@ -35,7 +35,23 @@
  * out, and, when its NER step did not run and answer, each stored NER link
  * it did not find again, as stored; whether a call extracted the item
  * before; and the record's extraction `attempt`, 0 when it carries none.
- * Only the links it found itself are written as events.
+ * Only the links it found itself are written as events. An `item_recorded`
+ * for an item the projection already holds is that same re-resolution, with
+ * an `attempt` of 0; it runs the NER step unless the item was resolved
+ * before, the projection holding an extraction of it from any actor or a
+ * non-topic link, because the projector writes the `items` row whether or
+ * not any resolution ran. So a fresh worker's repeat of a resolved item
+ * runs no NER, while a first recording the projector flushed before the
+ * resolver reached it, or an item no step ever linked, runs it. One the
+ * projection does not hold yet takes the same path from the event's item,
+ * NER included, forwarded as never extracted, with the judgments the
+ * projection already holds of it, since a replay can project the ontology
+ * stream ahead of the items stream; one read while the projection will not
+ * open takes it with no judgments and retracts nothing. The accepted cost: a crash after the projector flushed an
+ * item's extraction, before the resolve Consumer committed its cursor, up
+ * to 30 seconds, replays the `item_recorded` as a settled repeat, which is
+ * not forwarded, so the deduper never places the item in a cluster; the
+ * repeat path saves the NER and extraction calls every respawn would spend.
  *
  * A resolution retracts each stored non-topic link row of the item in this
  * worker's own partition's file, the one its projector deletes in, by its
@@ -83,6 +99,20 @@ class Resolver_Node extends Node {
 	/** The item's non-topic links, subject before mention, then by confidence and key. */
 	private const LINKS_OF_ITEM = "item_key = ? AND role <> 'topic' ORDER BY role = 'subject' DESC, confidence DESC, entity_key";
 
+	/** What stored() reads of an item where the projection will not open. */
+	private const NOTHING_STORED = [
+		null,
+		false,
+		[
+			'known'    => [],
+			'stored'   => [],
+			'ner'      => [],
+			'verdicts' => [],
+			'rows'     => [],
+		],
+		false,
+	];
+
 	/** What a hold line says of a record the later queue ages out. */
 	private const AGED_OUT = 'A record parked past a day drops, keyed by its item; wp newspack-intelligence ontology reresolve --since=<day> re-resolves it without its NER step, after ontology seed on a fresh install.';
 
@@ -110,12 +140,15 @@ class Resolver_Node extends Node {
 	 * queue: a recorded item as a re-resolution owed its NER step, a
 	 * re-resolution unchanged, its `parked_at` too. A re-resolution owed NER
 	 * runs it, and parks again while the projection does not hold its item
-	 * yet. A recorded item whose stored links will not read retracts nothing,
-	 * logged. An `item_recorded` that does not validate throws, as does a
-	 * re-resolution while the projection will not open, so its Consumer
-	 * dead-letters it (ADR-12); a re-resolution it cannot read, or naming an
-	 * item the projection no longer holds, is dropped with a rate-limited
-	 * line.
+	 * yet. A recorded item the projection already holds is resolved as a
+	 * re-resolution, owed NER until the item was resolved before, an
+	 * extraction or a non-topic link projected; one it does not hold, or
+	 * read while the projection will not open, runs NER on the event's item,
+	 * the latter retracting nothing, logged. An `item_recorded` that
+	 * does not validate throws, as does a re-resolution while the projection
+	 * will not open, so its Consumer dead-letters it (ADR-12); a
+	 * re-resolution it cannot read, or naming an item the projection no
+	 * longer holds, is dropped with a rate-limited line.
 	 *
 	 * @param array<int,mixed> $message Incoming Message.
 	 * @throws \InvalidArgumentException When an item_recorded event does not validate.
@@ -136,17 +169,8 @@ class Resolver_Node extends Node {
 				$this->hold( self::reresolve( $item_key, 0, [ 'ner' => true ] ) );
 				return;
 			}
-			$own        = self::own_alias();
-			$resolution = $resolver->resolve( $item, $this->ner() );
-			$merged     = $resolver->index->merged();
-			$links      = Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): array => self::own_links( $r, $item_key, $merged, $own ), 'no intel-graph to read stored links from; retracting none: ' );
-			$forwarded  = [
-				'extracted' => false,
-				'attempt'   => 0,
-				'links'     => $resolution['links'],
-				'proposals' => $resolution['proposals'],
-			];
-			$this->resolved( $item, $resolution, null === $links ? [] : self::retractable( $links, $resolution['recognized'] ), $forwarded );
+			[ $held, $extracted, $judgment, $resolved ] = self::stored( $item_key, $resolver->index->merged(), self::own_alias(), 'no intel-graph to read the stored item from; resolving it fresh, retracting none: ' ) ?? self::NOTHING_STORED;
+			$this->resolve_again( $resolver, [ $held ?? $item, $extracted, $judgment ], $resolved ? null : $this->ner(), 0 );
 			return;
 		}
 		if ( self::RERESOLVE !== $kind ) {
@@ -164,23 +188,38 @@ class Resolver_Node extends Node {
 			$this->hold( $record );
 			return;
 		}
-		$stored = self::stored( $item_key, $resolver->index->merged(), self::own_alias() );
-		if ( null === $stored && $owes_ner ) {
+		$stored = self::stored( $item_key, $resolver->index->merged(), self::own_alias(), null );
+		if ( isset( $stored[0] ) ) {
+			$this->resolve_again( $resolver, $stored, $owes_ner ? $this->ner() : null, $record['attempt'] ?? 0 );
+			return;
+		}
+		if ( $owes_ner ) {
 			$this->print_less_often( 'holding a re-resolution the projection does not hold yet: ', $item_key );
 			$this->hold( $record );
 			return;
 		}
-		if ( null === $stored ) {
-			$this->print_less_often( 'no stored item to re-resolve: ', $item_key );
-			return;
-		}
+		$this->print_less_often( 'no stored item to re-resolve: ', $item_key );
+	}
+
+	/**
+	 * Resolve an item against what the projection holds of it: NER only when
+	 * handed the step, the curators' judgments in force, forwarded only while
+	 * still owed an extraction — no call extraction projected, or a link
+	 * asserted anew.
+	 *
+	 * @param Resolver                                       $resolver The resolver over the shared index.
+	 * @param array{0:array<string,mixed>,1:bool,2:Judgment} $stored   The item, whether a call extracted it, and what settled() read.
+	 * @param LLM_Entity_Extractor|null                      $ner      The NER step, or none.
+	 * @param int                                            $attempt  The failed extraction calls behind it.
+	 */
+	private function resolve_again( Resolver $resolver, array $stored, ?LLM_Entity_Extractor $ner, int $attempt ): void {
 		[ $item, $extracted, $judgment ] = $stored;
-		$resolution                      = $resolver->resolve( $item, $owes_ner ? $this->ner() : null );
+		$resolution                      = $resolver->resolve( $item, $ner );
 		$sent                            = self::judged( $resolution, $judgment );
 		$forward                         = ! $extracted || self::asserts_anew( $sent['links'], $judgment['known'] );
 		$forwarded                       = [
 			'extracted' => $extracted,
-			'attempt'   => $record['attempt'] ?? 0,
+			'attempt'   => $attempt,
 		] + $sent;
 		$this->resolved( $item, $resolution, self::retractable( $judgment, $resolution['recognized'] ), $forward ? $forwarded : null );
 	}
@@ -295,8 +334,8 @@ class Resolver_Node extends Node {
 	 * link unless the NER step ran and answered, since nothing else looked
 	 * for it again.
 	 *
-	 * @param Own_Links|Judgment $links      What own_links() read.
-	 * @param bool               $recognized Whether the NER step ran and answered.
+	 * @param Judgment $links      What settled() read.
+	 * @param bool     $recognized Whether the NER step ran and answered.
 	 * @return array<string,array{entity_key:string,role:string}>
 	 */
 	private static function retractable( array $links, bool $recognized ): array {
@@ -391,24 +430,29 @@ class Resolver_Node extends Node {
 
 	/**
 	 * A stored item's `item_recorded` fields, as the projection holds them,
-	 * whether it holds an extraction of the item a call made, a heuristic
-	 * stand-in not counting, and what `settled()` reads of its links,
-	 * judgments and the entities its last extraction was given, each entity
-	 * as its survivor in the resolver's own index; null when no partition's
-	 * file holds the item.
+	 * null when no partition's file holds the item; whether it holds an
+	 * extraction of the item a call made, a heuristic stand-in not counting;
+	 * what `settled()` reads of its links, judgments and the entities its
+	 * last extraction was given, each entity as its survivor in the
+	 * resolver's own index; and whether the item was resolved before, an
+	 * extraction from any actor or a non-topic link in any partition, false
+	 * when no file holds it. A projection that will not open answers null,
+	 * logged, given a line, and throws given none.
 	 *
-	 * @param string               $item_key The item.
-	 * @param array<string,string> $merged   Each merged key's survivor, as the index read it.
-	 * @param string               $own      This worker's own partition's alias.
-	 * @return array{0:array<string,mixed>,1:bool,2:Judgment}|null
-	 * @throws Table_Unavailable When the projection will not open.
+	 * @param string               $item_key    The item.
+	 * @param array<string,string> $merged      Each merged key's survivor, as the index read it.
+	 * @param string               $own         This worker's own partition's alias.
+	 * @param string|null          $unavailable The line logging a projection that will not open, or null to throw.
+	 * @return array{0:array<string,mixed>|null,1:bool,2:Judgment,3:bool}|null
+	 * @throws Table_Unavailable When the projection will not open and no line is given.
 	 */
-	private static function stored( string $item_key, array $merged, string $own ): ?array {
+	private static function stored( string $item_key, array $merged, string $own, ?string $unavailable ): ?array {
 		return Intel_Graph_Row_Schema::read(
-			static function ( Row_Reader $r ) use ( $item_key, $merged, $own ): ?array {
+			static function ( Row_Reader $r ) use ( $item_key, $merged, $own ): array {
+				$links = Intel_Graph_Row_Schema::all( $r, 'links' );
 				foreach ( $r->aliases() as $a ) {
-					$sql = "SELECT i.item_key, i.source, i.tier, i.url, i.title, i.body, i.item_ts, i.retrieved_ts, EXISTS ( SELECT 1 FROM {$a}.extractions e WHERE e.item_key = i.item_key AND INSTR( e.actor, ? ) <> 1 ) FROM {$a}.items i WHERE i.item_key = ?";
-					foreach ( $r->rows( $sql, [ Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE ), $item_key ] ) as [ $key, $source, $tier, $url, $title, $body, $item_ts, $retrieved_ts, $extracted ] ) {
+					$sql = "SELECT i.item_key, i.source, i.tier, i.url, i.title, i.body, i.item_ts, i.retrieved_ts, EXISTS ( SELECT 1 FROM {$a}.extractions e WHERE e.item_key = i.item_key AND INSTR( e.actor, ? ) <> 1 ), EXISTS ( SELECT 1 FROM {$a}.extractions e WHERE e.item_key = i.item_key ) OR EXISTS ( SELECT 1 FROM {$links} l WHERE l.item_key = i.item_key AND l.role <> 'topic' ) FROM {$a}.items i WHERE i.item_key = ?";
+					foreach ( $r->rows( $sql, [ Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE ), $item_key ] ) as [ $key, $source, $tier, $url, $title, $body, $item_ts, $retrieved_ts, $extracted, $resolved ] ) {
 						$item = [
 							'item_key'     => Core::as_string( $key ),
 							'source'       => Core::as_string( $source ),
@@ -419,11 +463,12 @@ class Resolver_Node extends Node {
 							'item_ts'      => Core::as_int( $item_ts ),
 							'retrieved_ts' => Core::as_int( $retrieved_ts ),
 						];
-						return [ $item, 0 !== Core::as_int( $extracted ), self::settled( $r, $item_key, $merged, $own ) ];
+						return [ $item, 0 !== Core::as_int( $extracted ), self::settled( $r, $item_key, $merged, $own ), 0 !== Core::as_int( $resolved ) ];
 					}
 				}
-				return null;
-			}
+				return [ null, false, self::settled( $r, $item_key, $merged, $own ), false ];
+			},
+			$unavailable
 		);
 	}
 
