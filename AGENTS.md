@@ -735,8 +735,8 @@ whole URL, past the length a reply address carries, so a refusal is matched
 to its send by the arguments it echoes. Review takes a judged row out as the
 judgment is sent, because the projector records it only on its next flush,
 and holds no other row while it waits.
-The view switcher wears the shared tab roles (`nodes-tab-host__tabbar`,
-`nodes-tab-host__tab`). `canTune`, which `enqueue_intelligence_assets()` sets
+The view switcher is the substrate's shared `TabBar`, over one `tabpanel`
+labelled by the selected tab. `canTune`, which `enqueue_intelligence_assets()` sets
 from `Capabilities::can( TUNE )` on the page's own hook suffix alone, as
 the string `'1'` or `''` because the substrate refuses a boolean extra,
 only hides the curation controls: the server's role gate refuses a write the

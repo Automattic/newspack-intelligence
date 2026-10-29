@@ -38,7 +38,7 @@ export default function Pager( { starts, onStarts, shown, total } ) {
 					{ __( 'Previous', 'newspack-intelligence' ) }
 				</button>
 			) }
-			{ offset + shown < total && (
+			{ 0 < shown && offset + shown < total && (
 				<button
 					type="button"
 					className="button"
