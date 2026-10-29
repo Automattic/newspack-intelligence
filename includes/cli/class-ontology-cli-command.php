@@ -82,11 +82,11 @@ class Ontology_CLI_Command {
 	}
 
 	/**
-	 * Write the seed ontology — topics, partners, funders, industry bodies
-	 * and Newspack's products — to the ontology stream, for the keys the
-	 * projection lacks. A key it already holds is left as curated, and a
-	 * projection that will not open fails the command rather than writing
-	 * everything.
+	 * Write the seed ontology — topics, partners, funders, industry bodies,
+	 * Newspack's products and a lens per audience — to the ontology stream,
+	 * for the keys the projection lacks. A key it already holds is left as
+	 * curated, and a projection that will not open fails the command rather
+	 * than writing everything.
 	 *
 	 * ## EXAMPLES
 	 *
@@ -104,7 +104,7 @@ class Ontology_CLI_Command {
 		$present = Ontology_Seed::present();
 		$events  = Ontology_Seed::events( $present );
 		Ontology_Writer::append( $events );
-		$created = \count( \array_filter( $events, static fn ( array $event ): bool => 'entity_created' === $event['event'] ) );
+		$created = \count( \array_filter( $events, static fn ( array $event ): bool => \in_array( $event['event'], [ 'entity_created', 'lens_saved' ], true ) ) );
 		\WP_CLI::success( \sprintf( 'Seeded %d events: %d keys new, %d present.', \count( $events ), $created, \count( $present ) ) );
 	}
 

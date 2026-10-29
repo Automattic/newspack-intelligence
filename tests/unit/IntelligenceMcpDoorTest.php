@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intel_Tiers;
@@ -74,7 +75,7 @@ final class IntelligenceMcpDoorTest extends TestCase {
 
 		$this->assertSame( \array_map( static fn ( string $verb ): string => "intel_{$verb}", \array_keys( $offered ) ), \array_keys( $tools ) );
 		$this->assertArrayNotHasKey( 'intel_fetch_now', $tools );
-		$this->assertCount( 21, $tools );
+		$this->assertCount( 24, $tools );
 		foreach ( $offered as $verb => $spec ) {
 			$properties = (array) $tools[ "intel_{$verb}" ]['inputSchema']['properties'];
 			$this->assertSame( \array_column( $spec['args'], 'name' ), \array_keys( $properties ), $verb );
@@ -85,13 +86,19 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		}
 		$this->assertSame( [ 'type' => 'integer' ], \array_intersect_key( $tools['intel_search']['inputSchema']['properties']['limit'], [ 'type' => 1 ] ) );
 		$this->assertSame( [ 'item', 'entity' ], $tools['intel_confirm_link']['inputSchema']['required'] );
+		foreach ( [ 'intel_search', 'intel_trends' ] as $lensed ) {
+			$this->assertSame( 'string', $tools[ $lensed ]['inputSchema']['properties']['lens']['type'], $lensed );
+			$this->assertSame( [ 'type' => 'array', 'items' => [ 'type' => 'string' ] ], \array_intersect_key( $tools[ $lensed ]['inputSchema']['properties']['kind'], [ 'type' => 1, 'items' => 1 ] ), $lensed );
+		}
+		$this->assertArrayHasKey( 'intel_save_lens', $tools );
+		$this->assertArrayHasKey( 'intel_remove_lens', $tools );
 	}
 
-	/** A read session is offered the eight reads and no tool that writes a judgment. */
+	/** A read session is offered the nine reads and no tool that writes a judgment. */
 	public function test_a_read_scope_lists_no_curation_tool(): void {
 		$names = \array_column( $this->call( Capabilities::READ, 'tools/list' )['result']['tools'], 'name' );
 
-		$this->assertSame( [ 'intel_search', 'intel_entity', 'intel_timeline', 'intel_related', 'intel_claims', 'intel_trends', 'intel_review', 'intel_collections' ], $names );
+		$this->assertSame( [ 'intel_search', 'intel_entity', 'intel_timeline', 'intel_related', 'intel_claims', 'intel_trends', 'intel_review', 'intel_collections', 'intel_lenses' ], $names );
 		$refused = $this->call( Capabilities::READ, 'tools/call', [ 'name' => 'intel_confirm_link', 'arguments' => [ 'item' => 'feed:gazette-award', 'entity' => self::GAZETTE ] ] );
 		$this->assertSame( 'Unknown tool: intel_confirm_link', $refused['error']['message'] );
 	}
@@ -146,6 +153,16 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		Intel_Tiers::revoke( 'harbor-closer', 'user:kinsey-desk' );
 
 		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], $search() );
+	}
+
+	/** A lens is read through the door: listed, and searched through by its key with a list argument beside it. */
+	public function test_a_lens_reads_through_the_door(): void {
+		$this->seed_world();
+		$this->seed( [ Intel_Event::make( 'lens_saved', [ 'lens_key' => 'harbor-desk', 'name' => 'Harbor desk', 'description' => 'Awards and launches.', 'filters' => [ 'kinds' => [ 'award', 'launch' ] ] + Graph_Query::unfiltered() ], 'user:41', 'fixture-9' ) ] );
+
+		$this->assertSame( [ 'harbor-desk' ], \array_column( $this->tool_answer( 'intel_lenses', [] )['lenses'], 'lens_key' ) );
+		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award' ], \array_column( $this->tool_answer( 'intel_search', [ 'lens' => 'harbor-desk' ] )['items'], 'item_key' ) );
+		$this->assertSame( [ 'linear:joint-grant' ], \array_column( $this->tool_answer( 'intel_search', [ 'lens' => 'harbor-desk', 'kind' => [ 'funding', 'praise' ] ] )['items'], 'item_key' ) );
 	}
 
 	/** A reply is fenced once, and an item cannot close the fence from inside. */

@@ -52,7 +52,7 @@ final class IntelligenceCurationTest extends TestCase {
 	/** A rejected proposal only a restricted item cites. */
 	private const SHELVED = 'organization:shelved-buyer';
 
-	private const CURATION = [ 'confirm_link', 'reject_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect' ];
+	private const CURATION = [ 'confirm_link', 'reject_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'save_lens', 'remove_lens' ];
 
 	/** Each curation event kind, by the verb that writes it. */
 	private const VERB_OF = [
@@ -125,6 +125,8 @@ final class IntelligenceCurationTest extends TestCase {
 			'create over a hidden rejection' => [ 'create_entity', [ 'organization', 'Shelved Buyer' ], [ 'event' => 'entity_created', 'entity_key' => self::SHELVED, 'type' => 'organization', 'name' => 'Shelved Buyer' ] ],
 			'accept a cited rejection'       => [ 'accept_entity', [ 'organization:open-buyer' ], [ 'event' => 'entity_accepted', 'entity_key' => 'organization:open-buyer' ] ],
 			'collect'           => [ 'collect', [ 'col:october', 'github:ledger-launch' ], [ 'event' => 'collected', 'collection_key' => 'col:october', 'item_key' => 'github:ledger-launch', 'url' => 'https://news.example/github/ledger-launch', 'title' => 'Salem Ledger launches a newsletter tool', 'tier' => 'internal' ] ],
+			'save_lens'         => [ 'save_lens', [ 'Ledger Watch', 'Ledger watch', '--entity=organization:gazette-weekly', '--kind=launch' ], [ 'event' => 'lens_saved', 'lens_key' => 'ledger-watch', 'name' => 'Ledger watch', 'description' => '' ] ],
+			'remove_lens'       => [ 'remove_lens', [ 'harbor-desk' ], [ 'event' => 'lens_removed', 'lens_key' => 'harbor-desk' ] ],
 		];
 	}
 
@@ -482,7 +484,7 @@ final class IntelligenceCurationTest extends TestCase {
 	 * entity, a proposal a public item cites and one only a restricted item
 	 * cites, a rejection of each kind, an accepted entity no item cites, a
 	 * rejected entity holding an X handle, and an item whose URL runs one
-	 * byte past its cap.
+	 * byte past its cap, and a lens.
 	 */
 	private function seed_curation_world(): void {
 		$this->seed_world();
@@ -510,6 +512,7 @@ final class IntelligenceCurationTest extends TestCase {
 			[
 				Intel_Event::make( 'collection_created', [ 'collection_key' => 'col:october', 'name' => 'October wins' ], 'user:41', 'fixture-9' ),
 				Intel_Event::make( 'collection_created', [ 'collection_key' => 'col-october', 'name' => 'Col October' ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'lens_saved', [ 'lens_key' => 'harbor-desk', 'name' => 'Harbor desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ], 'user:41', 'fixture-9' ),
 			],
 			...$chain
 		);

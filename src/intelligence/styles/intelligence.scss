@@ -70,7 +70,8 @@
 
 	&__item-head,
 	&__judgments,
-	&__pager {
+	&__pager,
+	&__actions {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
@@ -81,6 +82,52 @@
 		flex: 1 1 auto;
 		min-width: 0;
 		overflow-wrap: anywhere;
+	}
+
+	// A lens's filters span the filter grid, each term above its value.
+	&__runs {
+		grid-column: 1 / -1;
+
+		dl {
+			display: grid;
+			grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+			gap: base.$space-sm base.$space-lg;
+			margin: 0;
+		}
+
+		dd {
+			margin: 0;
+			overflow-wrap: anywhere;
+		}
+	}
+
+	// A lens's items and its trend rows sit side by side where both fit.
+	&__lens {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+		gap: base.$space-xl;
+		align-items: start;
+
+		td {
+			overflow-wrap: anywhere;
+		}
+	}
+
+	// The lens form's tier checkboxes: a fieldset laid out as one field.
+	&__choices {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: base.$space-sm base.$space-lg;
+		min-width: 0;
+		margin: 0;
+		padding: 0;
+		border: 0;
+
+		> legend {
+			flex-basis: 100%;
+			padding: 0;
+		}
 	}
 
 	&__edits {

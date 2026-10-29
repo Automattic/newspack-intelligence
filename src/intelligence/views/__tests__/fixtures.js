@@ -8,7 +8,17 @@ export const VOCABULARY = {
 	nameKinds: [ 'canonical', 'alias', 'acronym' ],
 	identifierKinds: [ 'domain', 'github_org' ],
 	itemKinds: [ 'award', 'launch', 'funding' ],
+	tiers: [ 'public', 'internal', 'restricted' ],
+	trendAxes: [ 'kind', 'topic' ],
+	buckets: [ 'day', 'week', 'month' ],
 };
+
+VOCABULARY.lensLists = [
+	{ field: 'kinds', option: 'kind', values: VOCABULARY.itemKinds },
+	{ field: 'topics', option: 'topic', values: null },
+	{ field: 'roles', option: 'role', values: VOCABULARY.roles },
+	{ field: 'sources', option: 'source', values: null },
+];
 
 export const ITEM = {
 	item_key: 'feed:press-gazette-17',
@@ -44,5 +54,43 @@ export const ENTITY = {
 	],
 	topics: [ { topic_key: 'topic:local-news', name: 'Local news' } ],
 	counts: { items: 12, proposed_links: 3 },
+	available: true,
+};
+
+export const LENSES = {
+	lenses: [
+		{
+			lens_key: 'support-desk',
+			name: 'Support desk',
+			description: 'What clients complain about',
+			filters: {
+				kinds: [ 'complaint', 'praise' ],
+				topics: [],
+				roles: [ 'client' ],
+				sources: [],
+				entity: 'organization:acme-gazette',
+				days: 21,
+				tiers: [ 'internal' ],
+				by: 'kind',
+				bucket: 'day',
+			},
+		},
+		{
+			lens_key: 'dev-shipping',
+			name: 'Developer shipping',
+			description: 'Releases and incidents',
+			filters: {
+				kinds: [ 'release' ],
+				topics: [ 'topic:product' ],
+				roles: [],
+				sources: [ 'github', 'linear' ],
+				entity: null,
+				days: null,
+				tiers: [],
+				by: null,
+				bucket: null,
+			},
+		},
+	],
 	available: true,
 };

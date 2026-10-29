@@ -88,6 +88,18 @@ function enqueue_intelligence_assets( string $hook ): void {
 					'nameKinds'       => Intel_Event::NAME_KINDS,
 					'identifierKinds' => Intel_Event::IDENTIFIER_KINDS,
 					'itemKinds'       => Intel_Event::ITEM_KINDS,
+					'tiers'           => Intel_Event::TIERS,
+					'trendAxes'       => Graph_Query::trend_axes(),
+					'buckets'         => Graph_Query::buckets(),
+					'lensLists'       => \array_map(
+						static fn ( string $field, array $list ): array => [
+							'field'  => $field,
+							'option' => $list[0],
+							'values' => $list[1],
+						],
+						\array_keys( Graph_Query::LENS_LISTS ),
+						Graph_Query::LENS_LISTS
+					),
 					'linkRoleWords'   => [
 						'subject' => \__( 'The subject', 'newspack-intelligence' ),
 						'mention' => \__( 'Mentioned', 'newspack-intelligence' ),

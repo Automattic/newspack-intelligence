@@ -24,7 +24,7 @@ identifier, by name and, failing both, by an LLM's named-entity extraction; an
 **Reresolver** queues the stored items the change could link anew.
 
 `Intelligence_CI` answers the graph's read verbs (search, entity, timeline,
-related, claims, trends, review, collections) and its curation verbs, which the
+related, claims, trends, review, collections, lenses) and its curation verbs, which the
 Intelligence page sends; the same verbs reach agents through the plugin's MCP
 door. Nothing is compiled: a person or an agent asks, and the graph answers.
 A client CSV, imported on the Settings page or with

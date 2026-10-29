@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Projector_Node;
@@ -305,6 +306,23 @@ final class ProjectorTest extends TestCase {
 			self::graph_rows( 'events' )
 		);
 		$this->assertSame( [ [ self::GAZETTE, 'domain', 'harborgazette.example' ] ], self::graph_rows( 'identifiers' ) );
+	}
+
+	/** A saved lens is one row holding its filters as JSON, replaced by its key; a removal deletes it. */
+	public function test_a_lens_saves_replaces_and_removes_its_row(): void {
+		$filters = [ 'kinds' => [ 'praise' ], 'days' => 21 ] + Graph_Query::unfiltered();
+		$saved   = $this->ontology( 'lens_saved', [ 'lens_key' => 'harbor-desk', 'name' => 'Harbor desk', 'description' => 'Praise for the harbor.', 'filters' => $filters ] );
+		$this->project(
+			[
+				$this->ontology( 'lens_saved', [ 'lens_key' => 'harbor-desk', 'name' => 'Harbor draft', 'description' => '', 'filters' => Graph_Query::unfiltered() ] ),
+				$saved,
+				$this->ontology( 'lens_saved', [ 'lens_key' => 'tide-desk', 'name' => 'Tide desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ] ),
+				$this->ontology( 'lens_removed', [ 'lens_key' => 'tide-desk' ] ),
+			]
+		);
+
+		$this->assertSame( [ [ 'harbor-desk', 'Harbor desk', 'Praise for the harbor.', \json_encode( $filters ), 'user:41', self::NOW ] ], self::graph_rows( 'lenses' ) );
+		$this->assertSame( [ [ 'lens_removed', 'tide-desk' ], [ 'lens_saved', 'harbor-desk' ], [ 'lens_saved', 'harbor-desk' ], [ 'lens_saved', 'tide-desk' ] ], self::graph_rows( 'events', 'kind, subject', 'kind, subject' ), 'each lens event is kept under its key' );
 	}
 
 	public function test_merge_sets_merged_into_and_reject_sets_state(): void {
@@ -615,6 +633,9 @@ final class ProjectorTest extends TestCase {
 			$this->ontology( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => 'organization:salem-ledger', 'item_url' => 'https://harborgazette.example/a' ], 'agent:41:Claude desktop' ),
 			$this->ontology( 'collection_created', [ 'collection_key' => 'awards-2026', 'name' => 'Awards 2026' ] ),
 			$this->ontology( 'collected', [ 'collection_key' => 'awards-2026', 'item_key' => self::ITEM, 'url' => 'https://harborgazette.example/a', 'title' => 'Award', 'tier' => 'internal' ] ),
+			$this->ontology( 'lens_saved', [ 'lens_key' => 'board-desk', 'name' => 'Board desk', 'description' => 'For the board.', 'filters' => [ 'kinds' => [ 'funding' ] ] + Graph_Query::unfiltered() ] ),
+			$this->ontology( 'lens_saved', [ 'lens_key' => 'old-desk', 'name' => 'Old desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ] ),
+			$this->ontology( 'lens_removed', [ 'lens_key' => 'old-desk' ] ),
 		];
 	}
 

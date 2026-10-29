@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Ontology_Seed;
 use Newspack_Nodes\Core;
@@ -42,7 +43,7 @@ final class OntologySeedTest extends TestCase {
 		}
 	}
 
-	/** One event per fact, and a second run states the very same facts. */
+	/** One event per fact, and a second run states the very same facts; every key it names it creates or saves once. */
 	public function test_the_seed_is_idempotent_by_key(): void {
 		Core::$now = 1795000000.0;
 		$first     = \array_map( self::fact( ... ), Ontology_Seed::events( [] ) );
@@ -51,7 +52,7 @@ final class OntologySeedTest extends TestCase {
 
 		$this->assertSame( $first, $second );
 		$this->assertSame( \array_values( \array_unique( $first ) ), $first, 'no fact is stated twice' );
-		$created = \array_filter( $first, static fn ( string $fact ): bool => \str_starts_with( $fact, 'entity_created|' ) );
+		$created = \array_filter( $first, static fn ( string $fact ): bool => \str_starts_with( $fact, 'entity_created|' ) || \str_starts_with( $fact, 'lens_saved|' ) );
 		$this->assertCount( \count( \array_unique( \array_map( static fn ( string $fact ): string => \explode( '|', $fact )[1], $first ) ) ), $created, 'every key it names it creates, once' );
 	}
 
@@ -118,8 +119,40 @@ final class OntologySeedTest extends TestCase {
 	public function test_a_second_run_emits_nothing(): void {
 		$this->seed( Ontology_Seed::events( Ontology_Seed::present() ) );
 
-		$this->assertCount( 42, Ontology_Seed::present() );
+		$this->assertCount( 45, Ontology_Seed::present() );
 		$this->assertSame( [], Ontology_Seed::events( Ontology_Seed::present() ) );
+	}
+
+	/** The seed writes three lenses, each its audience's filters, every other filter empty. */
+	public function test_the_seed_writes_three_lenses(): void {
+		$lenses = \array_column( \array_filter( Ontology_Seed::events( [] ), static fn ( array $e ): bool => 'lens_saved' === $e['event'] ), null, 'lens_key' );
+		$none   = [ 'kinds' => [], 'topics' => [], 'roles' => [], 'sources' => [], 'entity' => null, 'days' => null, 'tiers' => [], 'by' => null, 'bucket' => null ];
+
+		$this->assertSame( [ 'leadership', 'support', 'developers' ], \array_keys( $lenses ) );
+		$this->assertSame( [ 'Leadership', 'Support', 'Developers' ], \array_column( $lenses, 'name' ) );
+		$this->assertEquals( [ 'roles' => [ 'client', 'former_client', 'prospect', 'competitor', 'partner', 'funder' ], 'kinds' => [ 'launch', 'funding', 'partnership', 'award', 'churn_signal', 'research' ], 'days' => 30, 'by' => 'topic', 'bucket' => 'week' ] + $none, $lenses['leadership']['filters'] );
+		$this->assertEquals( [ 'roles' => [ 'client' ], 'kinds' => [ 'complaint', 'incident', 'feature_request', 'churn_signal', 'praise' ], 'days' => 14, 'by' => 'kind', 'bucket' => 'day' ] + $none, $lenses['support']['filters'] );
+		$this->assertEquals( [ 'sources' => [ 'github', 'linear' ], 'kinds' => [ 'release', 'incident', 'feature_request' ], 'days' => 30, 'by' => 'kind', 'bucket' => 'week' ] + $none, $lenses['developers']['filters'] );
+		foreach ( $lenses as $lens ) {
+			$this->assertSame( \array_keys( Graph_Query::unfiltered() ), \array_keys( $lens['filters'] ), 'every lens has the saved shape' );
+			$this->assertNotSame( '', $lens['description'] );
+		}
+	}
+
+	/** A lens a curator has saved or removed is present, so the seed leaves it alone. */
+	public function test_a_curated_lens_is_left_alone(): void {
+		$this->seed(
+			[
+				Intel_Event::make( 'lens_saved', [ 'lens_key' => 'support', 'name' => 'Support desk', 'description' => 'Ours.', 'filters' => [ 'kinds' => [ 'complaint' ] ] + Graph_Query::unfiltered() ], 'user:41', 'fixture-7' ),
+				Intel_Event::make( 'lens_removed', [ 'lens_key' => 'developers' ], 'user:41', 'fixture-7' ),
+			]
+		);
+
+		$present = Ontology_Seed::present();
+		$events  = Ontology_Seed::events( $present );
+
+		$this->assertSame( [ 'support', 'developers' ], \array_values( \array_intersect( $present, [ 'leadership', 'support', 'developers' ] ) ) );
+		$this->assertSame( [ 'leadership' ], \array_column( \array_filter( $events, static fn ( array $e ): bool => 'lens_saved' === $e['event'] ), 'lens_key' ) );
 	}
 
 	/** With no projection to read, the seed refuses rather than writing everything. */
@@ -136,6 +169,6 @@ final class OntologySeedTest extends TestCase {
 	 * @param array<string,mixed> $event The event.
 	 */
 	private static function fact( array $event ): string {
-		return \implode( '|', \array_map( 'strval', \array_values( \array_diff_key( $event, \array_flip( [ 'event_id', 'ts', 'actor', 'config_version' ] ) ) ) ) );
+		return \implode( '|', \array_map( static fn ( mixed $value ): string => \is_array( $value ) ? (string) \wp_json_encode( $value ) : (string) $value, \array_values( \array_diff_key( $event, \array_flip( [ 'event_id', 'ts', 'actor', 'config_version' ] ) ) ) ) );
 	}
 }

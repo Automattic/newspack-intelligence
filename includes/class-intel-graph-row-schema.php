@@ -341,6 +341,18 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				'key'     => [ 'collection_key', 'item_key' ],
 				'keep'    => true,
 			],
+			'lenses'        => [
+				'columns' => [
+					'lens_key'    => 'TEXT NOT NULL',
+					'name'        => 'TEXT NOT NULL',
+					'description' => 'TEXT NOT NULL',
+					'filters'     => 'TEXT NOT NULL',
+					'actor'       => 'TEXT NOT NULL',
+					'ts'          => 'REAL NOT NULL',
+				],
+				'key'     => [ 'lens_key' ],
+				'keep'    => true,
+			],
 			'events'        => [
 				'columns' => [
 					'event_id'       => 'TEXT NOT NULL',

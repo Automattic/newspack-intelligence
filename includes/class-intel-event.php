@@ -62,6 +62,8 @@ final class Intel_Event {
 		'link_rejected'       => [ self::ONTOLOGY, [ 'item_key', 'entity_key', 'item_url' ], [] ],
 		'collection_created'  => [ self::ONTOLOGY, [ 'collection_key', 'name' ], [] ],
 		'collected'           => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'url', 'title', 'tier' ], [ 'tier' => self::TIERS ] ],
+		'lens_saved'          => [ self::ONTOLOGY, [ 'lens_key', 'name', 'description', 'filters' ], [] ],
+		'lens_removed'        => [ self::ONTOLOGY, [ 'lens_key' ], [] ],
 	];
 
 	/** The actor classes an actor string may begin with. */
@@ -219,6 +221,16 @@ final class Intel_Event {
 	 */
 	public static function collection_key( string $name ): string {
 		return self::slug( 'collection name', $name );
+	}
+
+	/**
+	 * A lens's key: the slug of the key a curator gives it.
+	 *
+	 * @param string $key The key as given.
+	 * @throws \InvalidArgumentException On a key that sanitizes to nothing.
+	 */
+	public static function lens_key( string $key ): string {
+		return self::slug( 'lens key', $key );
 	}
 
 	/**

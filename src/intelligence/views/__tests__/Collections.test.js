@@ -152,6 +152,67 @@ describe( 'Collections', () => {
 		await waitFor( () =>
 			expect( wire.sent( 'collections' ) ).toHaveLength( 2 )
 		);
+		expect( screen.getByText( 'Paywall complaints' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'Saving…' ) ).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', { name: 'Paywall complaints' } )
+		).toBeNull();
+	} );
+
+	it( 'lists a created collection as the read answers it once it does', async () => {
+		wire.replies.create_collection = {
+			ok: true,
+			event_id: 'ev-d',
+			collection_key: 'paywall-complaints',
+		};
+		let created = false;
+		wire.replies.collections = ( args ) =>
+			0 < args.length
+				? ONE
+				: {
+						...LIST,
+						collections: created
+							? [
+									...LIST.collections,
+									{
+										collection_key: 'paywall-complaints',
+										name: 'Paywall complaints',
+										created_ts: 1790121600,
+										items: 0,
+									},
+							  ]
+							: LIST.collections,
+				  };
+		render( <Harness canTune={ true } /> );
+		await screen.findByRole( 'button', { name: 'Q4 client wins' } );
+		created = true;
+		fireEvent.change( screen.getByLabelText( 'Name' ), {
+			target: { value: 'Paywall complaints' },
+		} );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Create collection' } )
+		);
+		expect(
+			await screen.findByRole( 'button', { name: 'Paywall complaints' } )
+		).toBeInTheDocument();
+		expect( screen.queryByText( 'Saving…' ) ).toBeNull();
+	} );
+
+	it( 'drops a refused creation from the list', async () => {
+		wire.replies.create_collection = () =>
+			new Error( 'name must not be blank' );
+		render( <Harness canTune={ true } /> );
+		await screen.findByRole( 'button', { name: 'Q4 client wins' } );
+		fireEvent.change( screen.getByLabelText( 'Name' ), {
+			target: { value: 'Paywall complaints' },
+		} );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Create collection' } )
+		);
+		expect(
+			await screen.findByText( 'name must not be blank' )
+		).toBeInTheDocument();
+		expect( screen.queryByText( 'Paywall complaints' ) ).toBeNull();
 	} );
 
 	it( 'shows a refused creation as the refusal', async () => {

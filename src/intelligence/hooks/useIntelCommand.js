@@ -68,9 +68,26 @@ export function useIntelRead( scope, command, args ) {
 }
 
 /**
+ * The tokens naming every value given (`--key=value`), a list once per
+ * member, as a verb's repeatable option binds them. A blank value and an
+ * empty list are left out, so the verb reads its own default for them.
+ *
+ * @param {Object<string, string|number|Array<string>>} options By name.
+ * @return {string[]} The tokens.
+ */
+export function commandArgs( options ) {
+	return Object.entries( options ).flatMap( ( [ name, value ] ) =>
+		[]
+			.concat( value )
+			.filter( ( one ) => '' !== one )
+			.flatMap( ( one ) => formatCommandArgs( [], { [ name ]: one } ) )
+	);
+}
+
+/**
  * One curation verb, sent once per `run( args )` with every arg named
- * (`--key=value`), so a curator's value that begins `--name=` binds as the
- * value it is rather than as an option. `run()` answers the tokens it sent;
+ * through `commandArgs()`, so a curator's value that begins `--name=` binds
+ * as the value it is rather than as an option. `run()` answers the tokens it sent;
  * a landed send runs `refresh`, and a refused one hands `onRefused` the
  * tokens its reply echoes, which say which send it was. The last reply's
  * refusal and the arguments it answered are `useCommandOnce`'s own.
@@ -79,7 +96,7 @@ export function useIntelRead( scope, command, args ) {
  * @param {Object}                     [opts]           Options.
  * @param {() => void}                 [opts.refresh]   Runs once a send lands.
  * @param {(tokens: string[]) => void} [opts.onRefused] Runs once a send is refused.
- * @return {{run: (args: Object<string, string>) => string[], refusal: ?string, answeredArgs: ?string[]}}
+ * @return {{run: (args: Object<string, string|Array<string>>) => string[], refusal: ?string, answeredArgs: ?string[]}}
  *   `run()`, the last refusal, and the arguments the last reply answered.
  */
 export function useIntelWrite( command, { refresh, onRefused } = {} ) {
@@ -97,7 +114,7 @@ export function useIntelWrite( command, { refresh, onRefused } = {} ) {
 	} );
 	const run = useCallback(
 		( args ) => {
-			const tokens = formatCommandArgs( [], args );
+			const tokens = commandArgs( args );
 			send( tokens );
 			return tokens;
 		},

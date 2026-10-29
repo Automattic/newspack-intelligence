@@ -20,6 +20,10 @@
  * Summaries, kinds and scores come from `extractions`, a name from
  * `entities`, joined, since a link may name an entity with no row.
  *
+ * `search` and `trends` read through a lens when the call names one: each
+ * filter the lens saved stands for one the call does not name, and its
+ * tiers narrow the caller's readable ones, never widen them (`through()`).
+ *
  * Every value a caller sends is bound, a blank one as given (ADR-25); `q`
  * reaches FTS5 only as quoted phrases, one per word. No answer carries an
  * item body. A projection that will not open answers `available: false`
@@ -39,6 +43,8 @@ use Newspack_Nodes\Row_Reader;
 /**
  * @phpstan-type Sql array{0:string,1:list<scalar|null>}
  * @phpstan-type Graph array{survivors:array<string,string>,keys:array<string,list<string>>,with:string,binds:list<scalar>}
+ * @phpstan-type Filter array{q:?string,entity:?string,lists:array<string,list<string>>,days:array{0:int,1:int}|null}
+ * @phpstan-type Lens array{lists:array<string,list<string>>,entity:?string,days:?int,tiers:list<string>,by:?string,bucket:?string}
  */
 final class Graph_Query {
 
@@ -90,6 +96,24 @@ final class Graph_Query {
 	/** The queues `review` answers. */
 	private const REVIEWS = [ 'links', 'entities' ];
 
+	/**
+	 * The list filters `search`, `trends` and a lens share, each matching
+	 * any of its values: field => [ the repeatable arg naming it, its
+	 * vocabulary or null when free, what a value is ].
+	 */
+	public const LENS_LISTS = [
+		'kinds'   => [ 'kind', Intel_Event::ITEM_KINDS, 'An item kind its extraction gave' ],
+		'topics'  => [ 'topic', null, 'A topic the item is tagged with' ],
+		'roles'   => [ 'role', Intel_Event::ROLES, 'A role an entity the item links held at the item\'s time' ],
+		'sources' => [ 'source', null, 'The source that recorded it' ],
+	];
+
+	/** What a trend counts when neither the call nor its lens names it. */
+	public const DEFAULT_AXIS = 'kind';
+
+	/** The span a trend row counts when neither the call nor its lens names one. */
+	public const DEFAULT_BUCKET = 'week';
+
 	/** The days an unbounded range runs between. */
 	private const ALL_DAYS = [ '1970-01-01', '9999-12-31' ];
 
@@ -110,80 +134,56 @@ final class Graph_Query {
 	 * @throws \InvalidArgumentException On a key that names no entity the caller may see, or as `search()`.
 	 */
 	public static function timeline( array $args ): array {
-		$key  = Core::as_string( $args['key'] );
-		$page = self::page_of( [ 'entity' => $key ] + $args );
+		$key                = Core::as_string( $args['key'] );
+		[ $limit, $offset ] = self::page( $args );
+		$filter             = self::filter_of( [ 'entity' => $key ] + $args );
 		return self::answer(
 			self::NO_ITEMS,
-			static function ( Row_Reader $r, array $g ) use ( $key, $page ): array {
+			static function ( Row_Reader $r, array $g ) use ( $key, $filter, $limit, $offset ): array {
 				self::seen( $r, $g, $key );
-				return self::items( $r, $g, ...$page );
+				return self::items( $r, $g, $filter, $limit, $offset );
 			}
 		);
 	}
 
 	/**
 	 * Items matching every filter given, newest first: `q` over title, body
-	 * and summary, `entity` linked by any link, `topic` by a topic link,
-	 * `kind`, `source`, and the UTC days `since` to `until`.
+	 * and summary, `entity` linked by any link, any `topic` by a topic link,
+	 * any `role` held at the item's time by an entity the item links, any
+	 * `kind`, any `source`, and the UTC days `since` to `until`, each read
+	 * through `lens` when the call names one.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args.
 	 * @return array<string,mixed> `{ items, total, available }`.
-	 * @throws \InvalidArgumentException On a bad page or day.
+	 * @throws \InvalidArgumentException On a bad page or day, or a lens no one saved.
 	 */
 	public static function search( array $args ): array {
-		$page = self::page_of( $args );
-		return self::answer( self::NO_ITEMS, static fn ( Row_Reader $r, array $g ): array => self::items( $r, $g, ...$page ) );
+		[ $limit, $offset ] = self::page( $args );
+		return self::through( $args, self::NO_ITEMS, static fn ( Row_Reader $r, array $g, array $filter ): array => self::items( $r, $g, $filter, $limit, $offset ) );
 	}
 
 	/**
 	 * One page of matching items, the count of all of them, and each item's
 	 * live entity links.
 	 *
-	 * @param Row_Reader            $r      The reader.
-	 * @param Graph                 $g      The graph the read opened.
-	 * @param array<string,?string> $filter The filters given.
-	 * @param array{0:int,1:int}    $days   The time range.
-	 * @param int                   $limit  The page size.
-	 * @param int                   $offset The page start.
+	 * @param Row_Reader $r      The reader.
+	 * @param Graph      $g      The graph the read opened.
+	 * @param Filter     $filter The filters.
+	 * @param int        $limit  The page size.
+	 * @param int        $offset The page start.
 	 * @return array<string,mixed>
 	 */
-	private static function items( Row_Reader $r, array $g, array $filter, array $days, int $limit, int $offset ): array {
-		$time  = Intel_Graph_Row_Schema::ITEM_TIME;
-		$where = [ "{$time} >= ?", "{$time} < ?" ];
-		$binds = $days;
-		if ( null !== $filter['q'] ) {
-			[ $matching, $match_binds ] = self::matching( $r, $filter['q'] );
-			$where[]                    = "i.item_key IN {$matching}";
-			\array_push( $binds, ...$match_binds );
-		}
-		$linked = [
-			'entity' => 'i.item_key IN ( SELECT item_key FROM live WHERE entity_key = ? )',
-			'topic'  => 'i.item_key IN ( SELECT item_key FROM live WHERE topical AND entity_key = ? )',
-		];
-		$keys   = [];
-		foreach ( $linked as $name => $sql ) {
-			if ( null !== $filter[ $name ] ) {
-				$survivor = self::survivor( $filter[ $name ], $g );
-				$where[]  = $sql;
-				$binds[]  = $survivor;
-				\array_push( $keys, ...self::keys_of( $survivor, $g ) );
-			}
-		}
-		foreach ( [ 'kind' => 'x.kind = ?', 'source' => 'i.source = ?' ] as $name => $sql ) {
-			if ( null !== $filter[ $name ] ) {
-				$where[] = $sql;
-				$binds[] = $filter[ $name ];
-			}
-		}
-		[ $live, $live_binds ] = [] === $keys ? [ '', [] ] : self::live( $r, '{t}.entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' )', $keys );
-		$with                  = $g['with'] . $live;
-		$binds                 = [ ...$g['binds'], ...$live_binds, ...$binds ];
-		$where                 = ' WHERE ' . \implode( ' AND ', $where );
-		$extracted             = ' LEFT JOIN ' . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . ' x ON x.item_key = i.item_key';
-		$total                 = Core::as_int( $r->rows( "{$with} SELECT COUNT(*) FROM ri i" . ( null === $filter['kind'] ? '' : $extracted ) . $where, $binds )[0][0] ?? 0 );
-		$page                  = $r->rows( "{$with} SELECT " . \implode( ', ', self::ITEM_COLUMNS ) . " FROM ri i{$extracted}{$where} ORDER BY {$time} DESC, i.item_key DESC LIMIT ? OFFSET ?", [ ...$binds, $limit, $offset ] );
-		$items                 = \array_map( static fn ( array $row ): array => \array_combine( \array_keys( self::ITEM_COLUMNS ), $row ), $page );
-		$linked                = [];
+	private static function items( Row_Reader $r, array $g, array $filter, int $limit, int $offset ): array {
+		$time                     = Intel_Graph_Row_Schema::ITEM_TIME;
+		[ $with, $where, $binds ] = self::narrowed( $r, $g, $filter, false );
+		$total                    = Core::as_int( $r->rows( "{$with} SELECT COUNT(*) FROM ri i WHERE {$where}", $binds )[0][0] ?? 0 );
+		$page                     = $r->rows(
+			"{$with} SELECT " . \implode( ', ', self::ITEM_COLUMNS ) . ' FROM ri i LEFT JOIN ' . Intel_Graph_Row_Schema::all( $r, 'extractions' )
+			. " x ON x.item_key = i.item_key WHERE {$where} ORDER BY {$time} DESC, i.item_key DESC LIMIT ? OFFSET ?",
+			[ ...$binds, $limit, $offset ]
+		);
+		$items                    = \array_map( static fn ( array $row ): array => \array_combine( \array_keys( self::ITEM_COLUMNS ), $row ), $page );
+		$linked                   = [];
 		if ( [] !== $items ) {
 			$page_keys             = \array_map( static fn ( array $item ): string => Core::as_string( $item['item_key'] ), $items );
 			[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( ' . Intel_Graph_Row_Schema::marks( $page_keys ) . ' )', $page_keys );
@@ -198,47 +198,73 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The item keys whose title, body or summary holds every word of `q`,
-	 * each word one quoted phrase, as a subquery over every partition. A `q`
-	 * holding no word is one empty phrase, which matches nothing.
+	 * A page's size and start, checked.
 	 *
-	 * @param Row_Reader $r The reader.
-	 * @param string     $q The words.
-	 * @return Sql
+	 * @param array<array-key,mixed> $args The bound verb args: `limit`, `offset`.
+	 * @return array{0:int,1:int}
+	 * @throws \InvalidArgumentException On a limit below 1 or a negative offset.
 	 */
-	private static function matching( Row_Reader $r, string $q ): array {
-		$words = \preg_split( '/\s+/u', \trim( $q ), -1, \PREG_SPLIT_NO_EMPTY );
-		$match = \implode( ' ', \array_map( Intel_Graph_Row_Schema::fts_phrase( ... ), false === $words || [] === $words ? [ '' ] : $words ) );
-		$parts = [];
-		$binds = [];
-		foreach ( $r->aliases() as $a ) {
-			$parts[] = "SELECT item_key FROM {$a}.items WHERE id IN ( SELECT rowid FROM {$a}.items_fts WHERE items_fts MATCH ? )";
-			$parts[] = "SELECT item_key FROM {$a}.extractions WHERE id IN ( SELECT rowid FROM {$a}.extractions_fts WHERE extractions_fts MATCH ? )";
-			\array_push( $binds, $match, $match );
-		}
-		return [ '( ' . \implode( ' UNION ALL ', $parts ) . ' )', $binds ];
-	}
-
-	/**
-	 * The filters, days, limit and offset of one page of the items the args
-	 * match, the page and days checked.
-	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
-	 * @return array{0:array<string,?string>,1:array{0:int,1:int},2:int,3:int}
-	 * @throws \InvalidArgumentException On a bad page or day.
-	 */
-	private static function page_of( array $args ): array {
+	private static function page( array $args ): array {
 		$limit  = self::limit( $args );
 		$offset = Core::as_int( $args['offset'] );
 		if ( $offset < 0 ) {
 			throw new \InvalidArgumentException( 'offset must not be negative' );
 		}
-		$days   = self::days( $args );
-		$filter = [];
-		foreach ( [ 'q', 'entity', 'topic', 'kind', 'source' ] as $name ) {
-			$filter[ $name ] = self::given( $args, $name );
-		}
-		return [ $filter, $days, $limit, $offset ];
+		return [ $limit, $offset ];
+	}
+
+	/**
+	 * Every lens, by name: its key, name, description and filters, its
+	 * entity and topics only those the caller may see now (`sees()`).
+	 *
+	 * @return array<string,mixed> `{ lenses: [ { lens_key, name, description, filters } ], available }`.
+	 */
+	public static function lenses(): array {
+		return self::answer(
+			[ 'lenses' => [] ],
+			static function ( Row_Reader $r, array $g ): array {
+				$lenses = [];
+				foreach ( $r->rows( 'SELECT lens_key, name, description, filters FROM ' . Intel_Graph_Row_Schema::all( $r, 'lenses' ) . ' l ORDER BY name, lens_key', [] ) as [ $key, $name, $description, $filters ] ) {
+					$lens                    = self::lens_of( $filters );
+					$lens['entity']          = null !== $lens['entity'] && self::sees( $r, $g, $lens['entity'] ) ? $lens['entity'] : null;
+					$lens['lists']['topics'] = \array_values( \array_filter( $lens['lists']['topics'], static fn ( string $topic ): bool => self::sees( $r, $g, $topic ) ) );
+					$lenses[]                = [ 'lens_key' => $key, 'name' => $name, 'description' => $description, 'filters' => self::flat( $lens ) ];
+				}
+				return [ 'lenses' => $lenses ];
+			}
+		);
+	}
+
+	/**
+	 * Whether the caller may see a key: its chain resolves and `visible()`
+	 * answers it.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param Graph      $g   The graph the read opened.
+	 * @param string     $key An entity key.
+	 */
+	private static function sees( Row_Reader $r, array $g, string $key ): bool {
+		return '' !== ( $g['survivors'][ $key ] ?? $key ) && null !== self::visible( $r, $g, $key );
+	}
+
+	/**
+	 * A lens's filters with none set, in the shape every lens is saved in.
+	 *
+	 * @return array<string,mixed>
+	 */
+	public static function unfiltered(): array {
+		return self::flat( self::no_lens() );
+	}
+
+	/**
+	 * A lens's filters in the shape it is saved and answered in: each list
+	 * by its field, then `entity`, `days`, `tiers`, `by` and `bucket`.
+	 *
+	 * @param Lens $lens The lens.
+	 * @return array<string,mixed>
+	 */
+	private static function flat( array $lens ): array {
+		return $lens['lists'] + \array_diff_key( $lens, [ 'lists' => true ] );
 	}
 
 	/**
@@ -333,7 +359,8 @@ final class Graph_Query {
 
 	/**
 	 * The entities sharing the most readable items with one, each with how
-	 * many it shares and the newest it shares as citations.
+	 * many it shares and the newest it shares as citations, each its key,
+	 * URL and title.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`, `limit`.
 	 * @return array<string,mixed> `{ entities, available }`.
@@ -350,18 +377,18 @@ final class Graph_Query {
 				[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' n WHERE entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) )', $keys );
 				$rows                  = $r->rows(
 					"{$g['with']}{$live}, mine AS ( SELECT DISTINCT item_key FROM live WHERE entity_key = ? ),"
-					. ' pairs AS ( SELECT DISTINCT live.entity_key, live.item_key, live.t FROM live JOIN mine ON mine.item_key = live.item_key WHERE live.entity_key <> ? ),'
+					. ' pairs AS ( SELECT DISTINCT live.entity_key, live.item_key, live.url, live.title, live.t FROM live JOIN mine ON mine.item_key = live.item_key WHERE live.entity_key <> ? ),'
 					. ' best AS ( SELECT entity_key, COUNT(*) AS n FROM pairs GROUP BY entity_key ORDER BY n DESC, entity_key LIMIT ? ),'
-					. ' cited AS ( SELECT p.entity_key, p.item_key, ROW_NUMBER() OVER ( PARTITION BY p.entity_key ORDER BY p.t DESC, p.item_key DESC ) AS rn FROM pairs p JOIN best ON best.entity_key = p.entity_key )'
+					. ' cited AS ( SELECT p.entity_key, p.item_key, p.url, p.title, ROW_NUMBER() OVER ( PARTITION BY p.entity_key ORDER BY p.t DESC, p.item_key DESC ) AS rn FROM pairs p JOIN best ON best.entity_key = p.entity_key )'
 					. ' SELECT best.entity_key, ' . self::column_of( $r, 'name', 'best.entity_key' ) . ', ' . self::column_of( $r, 'type', 'best.entity_key' )
-					. ', best.n, cited.item_key FROM best JOIN cited ON cited.entity_key = best.entity_key WHERE cited.rn <= ? ORDER BY best.n DESC, best.entity_key, cited.rn',
+					. ', best.n, cited.item_key, cited.url, cited.title FROM best JOIN cited ON cited.entity_key = best.entity_key WHERE cited.rn <= ? ORDER BY best.n DESC, best.entity_key, cited.rn',
 					[ ...$g['binds'], ...$live_binds, $survivor, $survivor, $limit, self::CITATIONS ]
 				);
 				$entities              = [];
-				foreach ( $rows as [ $entity, $name, $type, $shared, $item ] ) {
+				foreach ( $rows as [ $entity, $name, $type, $shared, $item, $url, $title ] ) {
 					$entity              = Core::as_string( $entity );
-					$entities[ $entity ] ??= [ 'entity_key' => $entity, 'name' => $name, 'type' => $type, 'shared_items' => Core::as_int( $shared ), 'item_keys' => [] ];
-					$entities[ $entity ]['item_keys'][] = Core::as_string( $item );
+					$entities[ $entity ] ??= [ 'entity_key' => $entity, 'name' => $name, 'type' => $type, 'shared_items' => Core::as_int( $shared ), 'items' => [] ];
+					$entities[ $entity ]['items'][] = [ 'item_key' => $item, 'url' => $url, 'title' => $title ];
 				}
 				return [ 'entities' => \array_values( $entities ) ];
 			}
@@ -455,62 +482,116 @@ final class Graph_Query {
 
 	/**
 	 * Readable items counted by kind or by topic per day, week or month,
-	 * filtered by an entity they link, a role an entity they link held at
-	 * the item's time, and UTC days; each row cites its newest items.
+	 * filtered as `search` filters them but for `q`, each read through
+	 * `lens` when the call names one; each row cites its newest items, each
+	 * its key, URL and title. The
+	 * axis and the bucket are the call's, else its lens's, else
+	 * DEFAULT_AXIS and DEFAULT_BUCKET.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `by`, `role`, `entity`, `since`, `until`, `bucket`.
+	 * @param array<array-key,mixed> $args The bound verb args.
 	 * @return array<string,mixed> `{ rows, available }`.
-	 * @throws \InvalidArgumentException On an unknown axis or bucket, a bad day, or an unresolvable key.
+	 * @throws \InvalidArgumentException On an unknown axis or bucket, a bad day, an unresolvable key, or a lens no one saved.
 	 */
 	public static function trends( array $args ): array {
-		$by     = Core::as_string( $args['by'] );
-		$bucket = Core::as_string( $args['bucket'] );
-		if ( ! isset( self::TREND_AXES[ $by ] ) ) {
-			throw new \InvalidArgumentException( \esc_html( 'by must be one of: ' . \implode( ', ', \array_keys( self::TREND_AXES ) ) ) );
-		}
-		if ( ! isset( self::BUCKETS[ $bucket ] ) ) {
-			throw new \InvalidArgumentException( \esc_html( 'bucket must be one of: ' . \implode( ', ', \array_keys( self::BUCKETS ) ) ) );
-		}
-		$days   = self::days( $args );
-		$role   = self::given( $args, 'role' );
-		$entity = self::given( $args, 'entity' );
-		return self::answer(
+		$by     = self::given( $args, 'by' );
+		$bucket = self::given( $args, 'bucket' );
+		self::check_trend( $by, $bucket );
+		return self::through(
+			$args,
 			[ 'rows' => [] ],
-			static function ( Row_Reader $r, array $g ) use ( $by, $bucket, $days, $role, $entity ): array {
-				$time  = Intel_Graph_Row_Schema::ITEM_TIME;
-				$where = [ "{$time} >= ?", "{$time} < ?" ];
-				$binds = $days;
-				$only  = [ '1', [] ];
-				if ( null !== $entity ) {
-					$survivor = self::survivor( $entity, $g );
-					$keys     = self::keys_of( $survivor, $g );
-					$only     = [ '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' n WHERE entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) )', $keys ];
-					$where[]  = 'i.item_key IN ( SELECT item_key FROM live WHERE entity_key = ? )';
-					$binds[]  = $survivor;
-				}
-				if ( null !== $role ) {
-					$where[] = "EXISTS ( SELECT 1 FROM live JOIN rl ON rl.entity_key = live.entity_key WHERE live.item_key = i.item_key AND NOT live.topical AND rl.role = ? AND rl.from_ts <= {$time} AND ( 0 = rl.to_ts OR {$time} < rl.to_ts ) )";
-					$binds[] = $role;
-				}
-				[ $live, $live_binds ] = self::live( $r, ...$only );
-				[ $value, $join ]      = self::TREND_AXES[ $by ];
-				$rows                  = $r->rows(
-					"{$g['with']}{$live}, rl AS ( SELECT COALESCE( mg.value, r.entity_key ) AS entity_key, r.role, r.from_ts, r.to_ts FROM " . Intel_Graph_Row_Schema::all( $r, 'roles' ) . ' r LEFT JOIN mg ON mg.key = r.entity_key ),'
-					. " hits AS ( SELECT DISTINCT {$value} AS value, i.item_key, {$time} AS t FROM ri i " . \str_replace( '{extractions}', Intel_Graph_Row_Schema::all( $r, 'extractions' ), $join ) . ' WHERE ' . \implode( ' AND ', $where ) . ' ),'
-					. ' ranked AS ( SELECT ' . self::BUCKETS[ $bucket ] . ' AS bucket, value, item_key, ROW_NUMBER() OVER ( PARTITION BY ' . self::BUCKETS[ $bucket ] . ', value ORDER BY t DESC, item_key DESC ) AS rn,'
-					. ' COUNT(*) OVER ( PARTITION BY ' . self::BUCKETS[ $bucket ] . ', value ) AS n FROM hits )'
-					. ' SELECT bucket, value, n, item_key FROM ranked WHERE rn <= ? ORDER BY bucket, n DESC, value, rn',
-					[ ...$g['binds'], ...$live_binds, ...$binds, self::CITATIONS ]
+			static function ( Row_Reader $r, array $g, array $filter, array $lens ) use ( $by, $bucket ): array {
+				$by                       = $by ?? $lens['by'] ?? self::DEFAULT_AXIS;
+				$span                     = self::BUCKETS[ $bucket ?? $lens['bucket'] ?? self::DEFAULT_BUCKET ];
+				$time                     = Intel_Graph_Row_Schema::ITEM_TIME;
+				[ $with, $where, $binds ] = self::narrowed( $r, $g, $filter, 'topic' === $by );
+				[ $value, $join ]         = self::TREND_AXES[ $by ];
+				$rows                     = $r->rows(
+					"{$with}, hits AS ( SELECT DISTINCT {$value} AS value, i.item_key, i.url, i.title, {$time} AS t FROM ri i " . \str_replace( '{extractions}', Intel_Graph_Row_Schema::all( $r, 'extractions' ), $join ) . " WHERE {$where} ),"
+					. " ranked AS ( SELECT {$span} AS bucket, value, item_key, url, title, ROW_NUMBER() OVER ( PARTITION BY {$span}, value ORDER BY t DESC, item_key DESC ) AS rn,"
+					. " COUNT(*) OVER ( PARTITION BY {$span}, value ) AS n FROM hits )"
+					. ' SELECT bucket, value, n, item_key, url, title FROM ranked WHERE rn <= ? ORDER BY bucket, n DESC, value, rn',
+					[ ...$binds, self::CITATIONS ]
 				);
-				$out                   = [];
-				foreach ( $rows as [ $day, $counted, $n, $item ] ) {
+				$out                      = [];
+				foreach ( $rows as [ $day, $counted, $n, $item, $url, $title ] ) {
 					$at          = Core::as_string( $day ) . '|' . Core::as_string( $counted );
-					$out[ $at ] ??= [ 'bucket' => $day, 'value' => $counted, 'count' => Core::as_int( $n ), 'item_keys' => [] ];
-					$out[ $at ]['item_keys'][] = Core::as_string( $item );
+					$out[ $at ] ??= [ 'bucket' => $day, 'value' => $counted, 'count' => Core::as_int( $n ), 'items' => [] ];
+					$out[ $at ]['items'][] = [ 'item_key' => $item, 'url' => $url, 'title' => $title ];
 				}
 				return [ 'rows' => \array_values( $out ) ];
 			}
 		);
+	}
+
+	/**
+	 * The CTEs and the condition over `ri i` the filters make: the item's
+	 * time inside `days`, `q` as `matching()` reads it, `entity` linked, any
+	 * of `topics` by a topic link, any of `roles` held at the item's time by
+	 * an entity the item links, any of `kinds` and any of `sources`. `live`
+	 * follows the graph's prelude when a filter reads links or `$linked` asks
+	 * for it, over the links of the items linking a named entity or topic,
+	 * else of the readable items inside `days`; `rl`, each role row under its
+	 * survivor, follows it when a role is named.
+	 *
+	 * @param Row_Reader $r      The reader.
+	 * @param Graph      $g      The graph the read opened.
+	 * @param Filter     $filter The filters.
+	 * @param bool       $linked Whether the read joins `live` itself.
+	 * @return array{0:string,1:string,2:list<scalar|null>} The `WITH` clauses, the condition, and their binds in order.
+	 */
+	private static function narrowed( Row_Reader $r, array $g, array $filter, bool $linked ): array {
+		$time  = Intel_Graph_Row_Schema::ITEM_TIME;
+		$where = [ "{$time} >= ?", "{$time} < ?" ];
+		$days  = $filter['days'] ?? self::all_days();
+		$binds = $days;
+		if ( null !== $filter['q'] ) {
+			[ $matching, $match_binds ] = self::matching( $r, $filter['q'] );
+			$where[]                    = "i.item_key IN {$matching}";
+			\array_push( $binds, ...$match_binds );
+		}
+		$keys = [];
+		if ( null !== $filter['entity'] ) {
+			$survivor = self::survivor( $filter['entity'], $g );
+			$where[]  = 'i.item_key IN ( SELECT item_key FROM live WHERE entity_key = ? )';
+			$binds[]  = $survivor;
+			\array_push( $keys, ...self::keys_of( $survivor, $g ) );
+		}
+		[ 'kinds' => $kinds, 'topics' => $topics, 'roles' => $roles, 'sources' => $sources ] = $filter['lists'];
+		if ( [] !== $topics ) {
+			$topics  = \array_map( static fn ( string $topic ): string => self::survivor( $topic, $g ), $topics );
+			$where[] = 'i.item_key IN ( SELECT item_key FROM live WHERE topical AND entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $topics ) . ' ) )';
+			\array_push( $binds, ...$topics );
+			foreach ( $topics as $topic ) {
+				\array_push( $keys, ...self::keys_of( $topic, $g ) );
+			}
+		}
+		if ( [] !== $roles ) {
+			$where[] = 'EXISTS ( SELECT 1 FROM live JOIN rl ON rl.entity_key = live.entity_key WHERE live.item_key = i.item_key AND NOT live.topical AND rl.role IN ( '
+				. Intel_Graph_Row_Schema::marks( $roles ) . " ) AND rl.from_ts <= {$time} AND ( 0 = rl.to_ts OR {$time} < rl.to_ts ) )";
+			\array_push( $binds, ...$roles );
+		}
+		if ( [] !== $kinds ) {
+			$where[] = 'i.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . ' xk WHERE kind IN ( ' . Intel_Graph_Row_Schema::marks( $kinds ) . ' ) )';
+			\array_push( $binds, ...$kinds );
+		}
+		if ( [] !== $sources ) {
+			$where[] = 'i.source IN ( ' . Intel_Graph_Row_Schema::marks( $sources ) . ' )';
+			\array_push( $binds, ...$sources );
+		}
+		$with = $g['with'];
+		$lead = $g['binds'];
+		if ( $linked || [] !== $keys || [] !== $roles ) {
+			$only                  = [] === $keys
+				? [ "{t}.item_key IN ( SELECT item_key FROM ri i WHERE {$time} >= ? AND {$time} < ? )", $days ]
+				: [ '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' n WHERE entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) )', $keys ];
+			[ $live, $live_binds ] = self::live( $r, ...$only );
+			$with                 .= $live;
+			\array_push( $lead, ...$live_binds );
+		}
+		if ( [] !== $roles ) {
+			$with .= ', rl AS ( SELECT COALESCE( mg.value, r.entity_key ) AS entity_key, r.role, r.from_ts, r.to_ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'roles' ) . ' r LEFT JOIN mg ON mg.key = r.entity_key )';
+		}
+		return [ $with, \implode( ' AND ', $where ), [ ...$lead, ...$binds ] ];
 	}
 
 	/**
@@ -540,15 +621,218 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The first second and the second after the last of the UTC days the
-	 * args bound, all of time where they bind none.
+	 * The item keys whose title, body or summary holds every word of `q`,
+	 * each word one quoted phrase, as a subquery over every partition. A `q`
+	 * holding no word is one empty phrase, which matches nothing.
+	 *
+	 * @param Row_Reader $r The reader.
+	 * @param string     $q The words.
+	 * @return Sql
+	 */
+	private static function matching( Row_Reader $r, string $q ): array {
+		$words = \preg_split( '/\s+/u', \trim( $q ), -1, \PREG_SPLIT_NO_EMPTY );
+		$match = \implode( ' ', \array_map( Intel_Graph_Row_Schema::fts_phrase( ... ), false === $words || [] === $words ? [ '' ] : $words ) );
+		$parts = [];
+		$binds = [];
+		foreach ( $r->aliases() as $a ) {
+			$parts[] = "SELECT item_key FROM {$a}.items WHERE id IN ( SELECT rowid FROM {$a}.items_fts WHERE items_fts MATCH ? )";
+			$parts[] = "SELECT item_key FROM {$a}.extractions WHERE id IN ( SELECT rowid FROM {$a}.extractions_fts WHERE extractions_fts MATCH ? )";
+			\array_push( $binds, $match, $match );
+		}
+		return [ '( ' . \implode( ' UNION ALL ', $parts ) . ' )', $binds ];
+	}
+
+	/**
+	 * Run a read through the lens the call names, its key slugged as a save
+	 * slugs it, if it names one: each of the lens's filters stands for one
+	 * the call does not name, its days for the call's `since` and `until`
+	 * together, and the graph's `ri` holds the caller's readable tiers
+	 * narrowed to the lens's, never widened. A lens's entity or topic the
+	 * caller cannot see stays in the filter, where it matches no item the
+	 * caller may read, so it narrows to nothing and never widens.
+	 *
+	 * @param array<array-key,mixed>                                       $args  The bound verb args.
+	 * @param array<string,mixed>                                          $empty The answer with no rows.
+	 * @param \Closure(Row_Reader,Graph,Filter,Lens): array<string,mixed> $read  The read.
+	 * @return array<string,mixed>
+	 * @throws \InvalidArgumentException On a bad day, a lens key that sanitizes to nothing, or a lens no one saved.
+	 */
+	private static function through( array $args, array $empty, \Closure $read ): array {
+		$call = self::filter_of( $args );
+		$name = self::given( $args, 'lens' );
+		$name = null === $name ? null : Intel_Event::lens_key( $name );
+		return self::available(
+			$empty,
+			static function ( Row_Reader $r ) use ( $call, $name, $read ): array {
+				$lens  = null === $name ? self::no_lens() : self::lens( $r, $name );
+				$tiers = Intel_Tiers::readable();
+				$tiers = [] === $lens['tiers'] ? $tiers : \array_values( \array_intersect( $tiers, $lens['tiers'] ) );
+				return $read( $r, self::bound( $r, Entity_Index::survivors( $r ), $tiers ), self::over( $lens, $call ), $lens );
+			}
+		);
+	}
+
+	/**
+	 * The call's filters over a lens's: each the call names replaces the
+	 * lens's; the call's days, from `since`, `until` or both, replace the
+	 * lens's window whole.
+	 *
+	 * @param Lens   $lens The lens, `no_lens()` for none.
+	 * @param Filter $call The call's own filters.
+	 * @return Filter
+	 */
+	private static function over( array $lens, array $call ): array {
+		$lists = [];
+		foreach ( \array_keys( self::LENS_LISTS ) as $field ) {
+			$lists[ $field ] = [] === $call['lists'][ $field ] ? $lens['lists'][ $field ] : $call['lists'][ $field ];
+		}
+		return [
+			'q'      => $call['q'],
+			'entity' => $call['entity'] ?? $lens['entity'],
+			'lists'  => $lists,
+			'days'   => $call['days'] ?? ( null === $lens['days'] ? null : self::last_days( $lens['days'] ) ),
+		];
+	}
+
+	/**
+	 * The last `$days` UTC days, today the last of them, as `days` bounds
+	 * them; an item dated past today still falls inside.
+	 *
+	 * @param int $days How many days.
+	 * @return array{0:int,1:int}
+	 */
+	private static function last_days( int $days ): array {
+		$today = \intdiv( Intel_Event::now(), Intel_Graph_Row_Schema::DAY_SECONDS ) * Intel_Graph_Row_Schema::DAY_SECONDS;
+		return [ $today - ( $days - 1 ) * Intel_Graph_Row_Schema::DAY_SECONDS, self::all_days()[1] ];
+	}
+
+	/**
+	 * Every UTC day, as `days` bounds them.
+	 *
+	 * @return array{0:int,1:int}
+	 */
+	private static function all_days(): array {
+		return Intel_Graph_Row_Schema::range( self::ALL_DAYS[0], self::ALL_DAYS[1] );
+	}
+
+	/**
+	 * A lens's filters, read back as saved.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param string     $key The lens key.
+	 * @return Lens
+	 * @throws \InvalidArgumentException When no lens has the key.
+	 */
+	private static function lens( Row_Reader $r, string $key ): array {
+		$filters = $r->rows( 'SELECT filters FROM ' . Intel_Graph_Row_Schema::all( $r, 'lenses' ) . ' l WHERE lens_key = ? LIMIT 1', [ $key ] )[0][0] ?? throw new \InvalidArgumentException( \esc_html( "no lens: {$key}" ) );
+		return self::lens_of( $filters );
+	}
+
+	/**
+	 * A lens's stored filters, typed, its lists gathered by LENS_LISTS.
+	 *
+	 * @param mixed $filters The `filters` column, JSON.
+	 * @return Lens
+	 * @throws \JsonException When the column does not decode.
+	 */
+	private static function lens_of( mixed $filters ): array {
+		$saved = Core::arr( \json_decode( Core::as_string( $filters ), true, 512, \JSON_THROW_ON_ERROR ) );
+		$text  = static fn ( mixed $value ): ?string => null === $value ? null : Core::as_string( $value );
+		$lists = [];
+		foreach ( \array_keys( self::LENS_LISTS ) as $field ) {
+			$lists[ $field ] = self::strings( $saved[ $field ] );
+		}
+		return [
+			'lists'  => $lists,
+			'entity' => $text( $saved['entity'] ),
+			'days'   => null === $saved['days'] ? null : Core::as_int( $saved['days'] ),
+			'tiers'  => self::strings( $saved['tiers'] ),
+			'by'     => $text( $saved['by'] ),
+			'bucket' => $text( $saved['bucket'] ),
+		];
+	}
+
+	/**
+	 * A lens setting no filter: what a read through none applies.
+	 *
+	 * @return Lens
+	 */
+	private static function no_lens(): array {
+		return [
+			'lists'  => \array_fill_keys( \array_keys( self::LENS_LISTS ), [] ),
+			'entity' => null,
+			'days'   => null,
+			'tiers'  => [],
+			'by'     => null,
+			'bucket' => null,
+		];
+	}
+
+	/**
+	 * The filters a call names: `q`, `entity`, each list its repeatable arg
+	 * gives, and the UTC days `since` to `until`, null when it names neither.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args.
-	 * @return array{0:int,1:int}
-	 * @throws \InvalidArgumentException When a day is not Y-m-d, or the range runs backwards.
+	 * @return Filter
+	 * @throws \InvalidArgumentException On a bad day.
 	 */
-	private static function days( array $args ): array {
-		return Intel_Graph_Row_Schema::range( self::given( $args, 'since' ) ?? self::ALL_DAYS[0], self::given( $args, 'until' ) ?? self::ALL_DAYS[1] );
+	private static function filter_of( array $args ): array {
+		$since = self::given( $args, 'since' );
+		$until = self::given( $args, 'until' );
+		$lists = [];
+		foreach ( self::LENS_LISTS as $field => [ $arg ] ) {
+			$lists[ $field ] = self::strings( $args[ $arg ] ?? [] );
+		}
+		return [
+			'q'      => self::given( $args, 'q' ),
+			'entity' => self::given( $args, 'entity' ),
+			'lists'  => $lists,
+			'days'   => null === $since && null === $until ? null : Intel_Graph_Row_Schema::range( $since ?? self::ALL_DAYS[0], $until ?? self::ALL_DAYS[1] ),
+		];
+	}
+
+	/**
+	 * A list of values as strings.
+	 *
+	 * @param mixed $values The values.
+	 * @return list<string>
+	 */
+	private static function strings( mixed $values ): array {
+		return \array_values( \array_map( static fn ( mixed $value ): string => Core::as_string( $value ), Core::arr( $values ) ) );
+	}
+
+	/**
+	 * Refuse a trend axis or bucket outside its set; null names none.
+	 *
+	 * @param string|null $by     The axis.
+	 * @param string|null $bucket The bucket.
+	 * @throws \InvalidArgumentException Naming the set.
+	 */
+	public static function check_trend( ?string $by, ?string $bucket ): void {
+		if ( null !== $by ) {
+			self::one_of( 'by', $by, self::trend_axes() );
+		}
+		if ( null !== $bucket ) {
+			self::one_of( 'bucket', $bucket, self::buckets() );
+		}
+	}
+
+	/**
+	 * The spans a trend row may count.
+	 *
+	 * @return list<string>
+	 */
+	public static function buckets(): array {
+		return \array_keys( self::BUCKETS );
+	}
+
+	/**
+	 * What a trend may count.
+	 *
+	 * @return list<string>
+	 */
+	public static function trend_axes(): array {
+		return \array_keys( self::TREND_AXES );
 	}
 
 	/**
@@ -561,10 +845,7 @@ final class Graph_Query {
 	 * @throws \InvalidArgumentException On an unknown queue or a bad limit.
 	 */
 	public static function review( array $args ): array {
-		$what = Core::as_string( $args['what'] );
-		if ( ! \in_array( $what, self::REVIEWS, true ) ) {
-			throw new \InvalidArgumentException( \esc_html( 'what must be one of: ' . \implode( ', ', self::REVIEWS ) ) );
-		}
+		$what = self::one_of( 'what', Core::as_string( $args['what'] ), self::REVIEWS );
 		$limit = self::limit( $args );
 		return self::answer(
 			[ $what => [] ],
@@ -734,6 +1015,21 @@ final class Graph_Query {
 			throw new \InvalidArgumentException( 'limit must be at least 1' );
 		}
 		return \min( $limit, self::MAX_LIMIT );
+	}
+
+	/**
+	 * A value from its set, refused naming the set; null names none.
+	 *
+	 * @param string       $name  What the value is, for the refusal.
+	 * @param string|null  $value The value.
+	 * @param list<string> $set   The set.
+	 * @throws \InvalidArgumentException Outside the set.
+	 */
+	public static function one_of( string $name, ?string $value, array $set ): string {
+		if ( null === $value || ! \in_array( $value, $set, true ) ) {
+			throw new \InvalidArgumentException( \esc_html( "{$name} must be one of: " . \implode( ', ', $set ) ) );
+		}
+		return $value;
 	}
 
 	/**

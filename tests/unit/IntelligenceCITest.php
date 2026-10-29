@@ -18,7 +18,7 @@ require_once __DIR__ . '/../support/seeds-intel-graph.php';
 require_once __DIR__ . '/../support/signs-in-users.php';
 
 /**
- * The `intelligence` service CI: eight read verbs over the projection, each
+ * The `intelligence` service CI: nine read verbs over the projection, each
  * gated at `read`, its args bound by the schema, answering only rows of the
  * tiers a read caller holds, every answer carrying its citations.
  */
@@ -28,7 +28,7 @@ final class IntelligenceCITest extends TestCase {
 
 	private const GAZETTE = 'organization:harbor-gazette';
 
-	private const VERBS = [ 'search', 'entity', 'timeline', 'related', 'claims', 'trends', 'review', 'collections' ];
+	private const VERBS = [ 'search', 'entity', 'timeline', 'related', 'claims', 'trends', 'review', 'collections', 'lenses' ];
 
 	private Intelligence_CI_Node $ci;
 
@@ -215,10 +215,11 @@ final class IntelligenceCITest extends TestCase {
 				$this->assertNotSame( '', $row['item_key'] );
 			}
 		};
-		$keyed = function ( array $rows ): void {
+		$keyed = function ( array $rows ) use ( $cited ): void {
 			$this->assertNotSame( [], $rows );
 			foreach ( $rows as $row ) {
-				$this->assertNotSame( [], $row['item_keys'] );
+				$this->assertNotSame( [], $row['items'] );
+				$cited( $row['items'] );
 			}
 		};
 

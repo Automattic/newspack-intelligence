@@ -21,7 +21,7 @@ import {
 	TM_ERROR,
 } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
-import { useIntelRead, useIntelWrite } from '../useIntelCommand';
+import { commandArgs, useIntelRead, useIntelWrite } from '../useIntelCommand';
 
 let wire;
 
@@ -171,5 +171,34 @@ describe( 'useIntelWrite', () => {
 				'--key=organization:acme-gazette',
 			] )
 		);
+	} );
+} );
+
+describe( 'commandArgs', () => {
+	it( 'names each value given, repeating a list once per member', () => {
+		expect(
+			commandArgs( {
+				key: 'support-desk',
+				kind: [ 'complaint', 'praise' ],
+				days: 21,
+				offset: 0,
+			} )
+		).toEqual( [
+			'--key=support-desk',
+			'--kind=complaint',
+			'--kind=praise',
+			'--days=21',
+			'--offset=0',
+		] );
+	} );
+
+	it( 'leaves out a blank value and an empty list', () => {
+		expect(
+			commandArgs( {
+				q: '',
+				topic: [],
+				source: [ 'linear', '' ],
+			} )
+		).toEqual( [ '--source=linear' ] );
 	} );
 } );
