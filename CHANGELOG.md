@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-29
+
 ### Added
 - **`intel:later` parks records to reprocess later.** The streams topology declares a substrate Delay, `intel:later`, which keeps each record a day at most, sweeps every minute, and sends each due record to `intel:reresolve` as an `item_reresolve`, so the resolver reads it one a poll like any other re-resolution. `make_node Resolver` and `make_node Extractor` each take it as a second argument, declared as a destination beside the writer.
 - **A failed extraction call is retried with backoff.** When the extractor's call throws a `RuntimeException` or answers a reply that does not parse, it still writes the heuristic stand-in, or keeps the earlier extraction, and also parks the item on `intel:later` for a re-resolution one attempt on, due 300 seconds doubled per attempt and capped at an hour, for at most 5 attempts. The re-resolution forwards the item for extraction only while it is still owed one. A re-resolution whose NER step did not run and answer now sends the extractor the item's stored NER links as they were stored in any partition, unless a curator rejected one, so a retry reaches an item only NER linked, and costs no NER call; the link events it writes are still only those it found. With no client configured nothing is retried.
