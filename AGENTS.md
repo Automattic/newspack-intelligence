@@ -405,8 +405,10 @@ link, taking that link's confidence; a subject linked only by
 `link_proposed` asserts no claim. Subject and object resolve through every
 entity whose name spells the whole of them in `Entity_Index::names_in()`:
 the subject is the one of those the item asserts, and the object is the
-only one, or the only one the item links, else it stays `object_text`, so
-two entities sharing a name never resolve by load order. No client, a thrown
+only one, or the only one the item links, else it carries no key, so
+two entities sharing a name never resolve by load order. Every claim keeps
+the object as the item spelled it in `object_text`, keyed or not, which a
+read answers to a caller who cannot see the object's entity. No client, a thrown
 `RuntimeException` or a reply that does not parse records a heuristic
 extraction instead — the first sentence of the title and of the body, kind
 `other`, no topics, scores 0 — as `machine:extract-heuristic@<version>`, so
@@ -522,7 +524,16 @@ item cites it, by a link or as the item it was proposed from.
 `Graph_Query::visible()` is that rule, and `seen()` refuses what it hides
 as `no entity: <key>`; `entity`, `timeline` and every curation verb resolve
 their entity keys through it. Names, identifiers and roles carry no
-tier and are not filtered. A key a read names, and every key a row names,
+tier and are not filtered: they are the entity's own, under the keys
+merged into it. Every other entity a read names passes the same rule: an
+entity's record lists a topic it is tagged with only when `visible()` lets
+the caller see the topic; a claim answers its object's key only when
+`visible()` lets the caller see the object, else the object as the item
+spelled it (`object_text`), and leaves out a claim holding neither, as one
+written before the extractor kept the spelling may; a claim's subject is
+linked by a live link on the claim's own readable item, so the caller
+always sees it; and every other read names an entity only through `live`
+or `cites`, so only one a readable item cites. A key a read names, and every key a row names,
 answers as its survivor in `Entity_Index::survivors()`, the one survivor
 map the index load also reads, built with its inverse once a read in
 `graph()`; a key whose chain cycles or runs past
@@ -597,7 +608,22 @@ sides of a merge, a link's entity, a tagged topic — must be one
 key merged away accepts, merges or tags its survivor; a curation verb
 answers no more than a read does. An item is read through `ri`, and one
 outside the readable tiers is refused as `no item: <key>`, exactly as a
-missing one. A judged link must exist: `confirm_link` and `reject_link`
+missing one. Curation cannot declassify: `accept_entity` refuses an entity
+a caller without restricted access cannot see (`<key> is cited by no item
+outside the restricted tier; accepting it would show it to every reader`),
+`merge_entities` refuses a merge where exactly one side is such an
+entity (`merging <from> into <into> would show <key> to every reader; no
+item outside the restricted tier cites it`), since a merged-away entity's
+names and key show on its survivor and a survivor gains the other's
+citations, and `tag_topic` refuses such a topic on an entity every reader
+sees (`tagging <entity> with <topic> would show <topic> to every reader;
+no item outside the restricted tier cites it`). All three ask `Graph_Query::visible()` over
+`Graph_Query::unrestricted()`, the read's own graph with `ri` bound to
+`Intel_Tiers::UNRESTRICTED`, so an accepted or created entity passes, and
+so does one an unrestricted item cites by a link or as the item it was
+proposed from. Two entities only restricted items cite merge, and a holder
+still rejects one, or creates a public entity over its key on purpose with
+`create_entity`. A judged link must exist: `confirm_link` and `reject_link`
 refuse `no link: <item> <entity>` unless a `links` row, of any role, joins
 the item to one of the entity's keys. `tag_topic` refuses a topic whose
 survivor is not of type `topic` (its `entities` type, else its key's). A

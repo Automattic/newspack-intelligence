@@ -243,7 +243,8 @@ final class Graph_Query {
 
 	/**
 	 * One entity, read as its survivor: its record, the keys merged into it,
-	 * every name, identifier, role and topic it or they carry, and how many
+	 * every name, identifier and role it or they carry, every topic they are
+	 * tagged with that the caller may see (`visible()`), and how many
 	 * readable items link it and how many of those links are proposed.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`.
@@ -279,10 +280,13 @@ final class Graph_Query {
 			static fn ( array $row ): array => [ 'role' => $row[0], 'from_ts' => $row[1], 'to_ts' => $row[2] ],
 			$r->rows( 'SELECT DISTINCT role, from_ts, to_ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'roles' ) . " t WHERE entity_key IN ( {$in} ) ORDER BY from_ts, role", $keys )
 		);
-		$topics                = $r->rows(
-			"{$g['with']} SELECT DISTINCT topic_key, " . self::column_of( $r, 'name', 'topic_key' ) . ' FROM ( SELECT COALESCE( mg.value, t.topic_key ) AS topic_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_topics' )
-			. " t LEFT JOIN mg ON mg.key = t.topic_key WHERE t.entity_key IN ( {$in} ) ) WHERE topic_key <> '' ORDER BY 1",
-			[ ...$g['binds'], ...$keys ]
+		$topics                = \array_filter(
+			$r->rows(
+				"{$g['with']} SELECT DISTINCT topic_key, " . self::column_of( $r, 'name', 'topic_key' ) . ' FROM ( SELECT COALESCE( mg.value, t.topic_key ) AS topic_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_topics' )
+				. " t LEFT JOIN mg ON mg.key = t.topic_key WHERE t.entity_key IN ( {$in} ) ) WHERE topic_key <> '' ORDER BY 1",
+				[ ...$g['binds'], ...$keys ]
+			),
+			static fn ( array $row ): bool => null !== self::visible( $r, $g, Core::as_string( $row[0] ) )
 		);
 		$counts                = $r->rows( "{$g['with']}{$live} SELECT COUNT( DISTINCT item_key ), COUNT( CASE WHEN state = 'proposed' THEN 1 END ) FROM live WHERE entity_key = ?", [ ...$g['binds'], ...$live_binds, $survivor ] )[0] ?? [ 0, 0 ];
 		return [
@@ -294,7 +298,7 @@ final class Graph_Query {
 			'names'       => $pairs( 'names', 'kind', 'value' ),
 			'identifiers' => $pairs( 'identifiers', 'kind', 'value' ),
 			'roles'       => $roles,
-			'topics'      => \array_map( static fn ( array $row ): array => [ 'topic_key' => $row[0], 'name' => $row[1] ], $topics ),
+			'topics'      => \array_values( \array_map( static fn ( array $row ): array => [ 'topic_key' => $row[0], 'name' => $row[1] ], $topics ) ),
 			'counts'      => [ 'items' => Core::as_int( $counts[0] ), 'proposed_links' => Core::as_int( $counts[1] ) ],
 		];
 	}
@@ -325,44 +329,6 @@ final class Graph_Query {
 	public static function taken( Row_Reader $r, array $g, string $key ): bool {
 		$survivor = self::visible( $r, $g, $key );
 		return null !== $survivor && 'proposed' !== self::state_of( $r, $survivor );
-	}
-
-	/**
-	 * The survivor a key answers as, when the caller may see that entity:
-	 * one a person accepted, or a proposed or rejected one a readable item
-	 * cites, by a link or as the item it was proposed from. Null for any
-	 * other key.
-	 *
-	 * @param Row_Reader $r   The reader.
-	 * @param Graph      $g   The graph the read opened.
-	 * @param string     $key An entity key.
-	 * @throws \InvalidArgumentException When its merge chain does not resolve.
-	 */
-	public static function visible( Row_Reader $r, array $g, string $key ): ?string {
-		$survivor = self::survivor( $key, $g );
-		$state    = self::state_of( $r, $survivor );
-		if ( null === $state && [] === $r->rows( 'SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e WHERE entity_key = ? LIMIT 1', [ $survivor ] ) ) {
-			return null;
-		}
-		if ( 'accepted' === $state ) {
-			return $survivor;
-		}
-		$keys                  = self::keys_of( $survivor, $g );
-		$in                    = Intel_Graph_Row_Schema::marks( $keys );
-		[ $live, $live_binds ] = self::live( $r, "{t}.entity_key IN ( {$in} )", $keys );
-		[ $cites, $cited ]     = self::cites( $r, "ev.subject IN ( {$in} )", $keys );
-		return [] === $r->rows( "{$g['with']}{$live}, {$cites} SELECT 1 FROM cites WHERE entity_key = ? LIMIT 1", [ ...$g['binds'], ...$live_binds, ...$cited, $survivor ] ) ? null : $survivor;
-	}
-
-	/**
-	 * An entity's latest state, or null when it has none.
-	 *
-	 * @param Row_Reader $r   The reader.
-	 * @param string     $key The entity key.
-	 */
-	public static function state_of( Row_Reader $r, string $key ): ?string {
-		$state = $r->rows( 'SELECT state FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_states' ) . ' s WHERE entity_key = ? ORDER BY ts DESC LIMIT 1', [ $key ] )[0][0] ?? null;
-		return null === $state ? null : Core::as_string( $state );
 	}
 
 	/**
@@ -404,7 +370,10 @@ final class Graph_Query {
 
 	/**
 	 * The claims naming an entity as subject or object, newest first, each
-	 * resting on a readable item that links its subject by a live link.
+	 * resting on a readable item that links its subject by a live link, so
+	 * the caller sees every subject. An object answers its key only when
+	 * `visible()` lets the caller see it, else the item's spelling of it; a
+	 * claim holding neither for the caller is left out.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`, `predicate`, `limit`.
 	 * @return array<string,mixed> `{ claims, available }`.
@@ -426,18 +395,62 @@ final class Graph_Query {
 					"{$g['with']}{$live}, cl AS ( SELECT COALESCE( ms.value, c.subject_key ) AS subject, c.predicate, COALESCE( mo.value, c.object_key ) AS object_key, c.object_text, c.confidence, c.item_key, c.ord"
 					. ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'claims' ) . ' c LEFT JOIN mg ms ON ms.key = c.subject_key LEFT JOIN mg mo ON mo.key = c.object_key'
 					. " WHERE c.subject_key IN ( {$in} ) OR c.object_key IN ( {$in} ) )"
-					. " SELECT cl.subject, cl.predicate, CASE WHEN cl.object_key = '' THEN cl.object_text ELSE cl.object_key END, cl.confidence, cl.item_key, live.url"
+					. ' SELECT cl.subject, cl.predicate, cl.object_key, cl.object_text, cl.confidence, cl.item_key, live.url'
 					. ' FROM cl JOIN live ON live.item_key = cl.item_key AND live.entity_key = cl.subject AND NOT live.topical'
 					. " WHERE ( cl.subject = ? OR cl.object_key = ? ){$only} ORDER BY live.t DESC, cl.item_key, cl.ord LIMIT ?",
 					[ ...$g['binds'], ...$live_binds, ...$keys, ...$keys, $survivor, $survivor, ...( null === $predicate ? [] : [ $predicate ] ), $limit ]
 				);
 				$claims                = [];
-				foreach ( $rows as [ $subject, $said, $object, $confidence, $item, $url ] ) {
-					$claims[] = [ 'subject' => $subject, 'predicate' => $said, 'object' => $object, 'confidence' => $confidence, 'item_key' => $item, 'url' => $url ];
+				$sees                  = [];
+				foreach ( $rows as [ $subject, $said, $object_key, $object_text, $confidence, $item, $url ] ) {
+					$key          = Core::as_string( $object_key );
+					$sees[ $key ] ??= '' !== $key && null !== self::visible( $r, $g, $key );
+					$object       = $sees[ $key ] ? $key : Core::as_string( $object_text );
+					if ( '' !== $object ) {
+						$claims[] = [ 'subject' => $subject, 'predicate' => $said, 'object' => $object, 'confidence' => $confidence, 'item_key' => $item, 'url' => $url ];
+					}
 				}
 				return [ 'claims' => $claims ];
 			}
 		);
+	}
+
+	/**
+	 * The survivor a key answers as, when the caller may see that entity:
+	 * one a person accepted, or a proposed or rejected one a readable item
+	 * cites, by a link or as the item it was proposed from. Null for any
+	 * other key.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param Graph      $g   The graph the read opened.
+	 * @param string     $key An entity key.
+	 * @throws \InvalidArgumentException When its merge chain does not resolve.
+	 */
+	public static function visible( Row_Reader $r, array $g, string $key ): ?string {
+		$survivor = self::survivor( $key, $g );
+		$state    = self::state_of( $r, $survivor );
+		if ( null === $state && [] === $r->rows( 'SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e WHERE entity_key = ? LIMIT 1', [ $survivor ] ) ) {
+			return null;
+		}
+		if ( 'accepted' === $state ) {
+			return $survivor;
+		}
+		$keys                  = self::keys_of( $survivor, $g );
+		$in                    = Intel_Graph_Row_Schema::marks( $keys );
+		[ $live, $live_binds ] = self::live( $r, "{t}.entity_key IN ( {$in} )", $keys );
+		[ $cites, $cited ]     = self::cites( $r, "ev.subject IN ( {$in} )", $keys );
+		return [] === $r->rows( "{$g['with']}{$live}, {$cites} SELECT 1 FROM cites WHERE entity_key = ? LIMIT 1", [ ...$g['binds'], ...$live_binds, ...$cited, $survivor ] ) ? null : $survivor;
+	}
+
+	/**
+	 * An entity's latest state, or null when it has none.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param string     $key The entity key.
+	 */
+	public static function state_of( Row_Reader $r, string $key ): ?string {
+		$state = $r->rows( 'SELECT state FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_states' ) . ' s WHERE entity_key = ? ORDER BY ts DESC LIMIT 1', [ $key ] )[0][0] ?? null;
+		return null === $state ? null : Core::as_string( $state );
 	}
 
 	/**
@@ -700,14 +713,50 @@ final class Graph_Query {
 	/**
 	 * The graph a read opens on: each merged key's survivor, each survivor's
 	 * keys, and the prelude every statement opens with, binding the survivor
-	 * map as `mg` and the readable tiers' items as `ri`.
+	 * map as `mg` and the caller's readable tiers' items as `ri`.
 	 *
 	 * @param Row_Reader $r The reader.
 	 * @return Graph
 	 */
 	public static function graph( Row_Reader $r ): array {
-		$survivors = Entity_Index::survivors( $r );
-		$tiers     = Intel_Tiers::readable();
+		return self::bound( $r, Entity_Index::survivors( $r ), Intel_Tiers::readable() );
+	}
+
+	/**
+	 * A verb's limit: at least 1, at most MAX_LIMIT.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @throws \InvalidArgumentException Below 1.
+	 */
+	private static function limit( array $args ): int {
+		$limit = Core::as_int( $args['limit'] );
+		if ( $limit < 1 ) {
+			throw new \InvalidArgumentException( 'limit must be at least 1' );
+		}
+		return \min( $limit, self::MAX_LIMIT );
+	}
+
+	/**
+	 * A graph as a caller without restricted access reads it: its survivors,
+	 * its `ri` the items of `Intel_Tiers::UNRESTRICTED` alone.
+	 *
+	 * @param Row_Reader $r The reader.
+	 * @param Graph      $g The graph the read opened.
+	 * @return Graph
+	 */
+	public static function unrestricted( Row_Reader $r, array $g ): array {
+		return self::bound( $r, $g['survivors'], Intel_Tiers::UNRESTRICTED );
+	}
+
+	/**
+	 * The graph over a survivor map, its `ri` the items of `$tiers`.
+	 *
+	 * @param Row_Reader           $r         The reader.
+	 * @param array<string,string> $survivors Each merged key's survivor, '' where it does not resolve.
+	 * @param list<string>         $tiers     The tiers `ri` holds.
+	 * @return Graph
+	 */
+	private static function bound( Row_Reader $r, array $survivors, array $tiers ): array {
 		return [
 			'survivors' => $survivors,
 			'keys'      => self::inverse( $survivors ),
@@ -737,20 +786,6 @@ final class Graph_Query {
 			$keys[ $survivor ] = [ $survivor, ...$into ];
 		}
 		return $keys;
-	}
-
-	/**
-	 * A verb's limit: at least 1, at most MAX_LIMIT.
-	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
-	 * @throws \InvalidArgumentException Below 1.
-	 */
-	private static function limit( array $args ): int {
-		$limit = Core::as_int( $args['limit'] );
-		if ( $limit < 1 ) {
-			throw new \InvalidArgumentException( 'limit must be at least 1' );
-		}
-		return \min( $limit, self::MAX_LIMIT );
 	}
 
 	/**
