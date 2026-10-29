@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-10-29
+
 ### Fixed
 - **The view tabs follow the WAI-ARIA tabs pattern.** The page renders the substrate's shared `TabBar`, so each tab names the panel it controls, the panel is labelled by the selected tab, and the arrow keys, Home and End move and select. A release builds against substrate 2.135.0 or later, the first to carry `TabBar`.
 - **Next leaves a page that shows no rows.** The pager offered Next when a page answered no rows while more matched, and Next asked for the same page again.
