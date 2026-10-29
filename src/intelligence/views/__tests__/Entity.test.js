@@ -34,7 +34,13 @@ beforeEach( () => {
 				name: 'Jo Reporter',
 				type: 'person',
 				shared_items: 4,
-				item_keys: [ 'feed:press-gazette-17' ],
+				items: [
+					{
+						item_key: 'feed:press-gazette-17',
+						url: 'https://pressgazette.example/acme',
+						title: 'Acme Gazette wins regional prize',
+					},
+				],
 			},
 		],
 		available: true,
@@ -150,7 +156,13 @@ describe( 'Entity — reads', () => {
 					name: 'Jo Reporter',
 					type: 'person',
 					shared_items: 1,
-					item_keys: [ 'feed:press-gazette-17' ],
+					items: [
+						{
+							item_key: 'feed:press-gazette-17',
+							url: 'https://pressgazette.example/acme',
+							title: 'Acme Gazette wins regional prize',
+						},
+					],
 				},
 			],
 			available: true,

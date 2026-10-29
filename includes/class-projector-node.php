@@ -4,10 +4,11 @@
  * Row_Table (`Intel_Graph_Row_Schema`). Two Consumers, one per stream, fill
  * it with one event each; `projections()` declares, for each kind, the row
  * ops it writes and where each column comes from. Every op is an `ignore`
- * or a whole-row `set` on a keyed table but for three `delete`s, each the
- * items stream's own: an extraction deletes the item's claims and topic
+ * or a whole-row `set` on a keyed table but for four `delete`s: three the
+ * items stream's own — an extraction deletes the item's claims and topic
  * links, a `subjects_extracted` the item's extracted subjects, and a
- * `link_retracted` the one link row it keys. Each table is written by one
+ * `link_retracted` the one link row it keys — and the ontology stream's
+ * `lens_removed`, the one lens row it keys. Each table is written by one
  * stream alone, so a replayed event writes what it wrote before and the two
  * streams project the same rows in either order. A row naming an entity no `entities` row
  * holds yet is left to the readers' join. A machine's proposal writes with
@@ -222,6 +223,8 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			'link_rejected'       => $judgment( 'rejected' ),
 			'collection_created'  => [ [ 'set', 'collections', [ 'collection_key', 'name', 'actor', 'ts' ] ] ],
 			'collected'           => [ [ 'set', 'collected', [ 'collection_key', 'item_key', 'url', 'title', 'tier', 'actor', 'ts' ] ] ],
+			'lens_saved'          => [ [ 'set', 'lenses', [ 'lens_key', 'name', 'description', static fn ( array $e ): string => self::json( $e['filters'] ), 'actor', 'ts' ] ] ],
+			'lens_removed'        => [ [ 'delete', 'lenses', [ 'lens_key' => 'lens_key' ] ] ],
 		];
 		$event_row = [
 			'ignore',
@@ -230,8 +233,8 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 				'event_id',
 				'event',
 				'actor',
-				static fn ( array $e ): string => Core::as_string( $e['entity_key'] ?? $e['collection_key'] ?? null ),
-				static fn ( array $e ): string => (string) \wp_json_encode( \array_diff_key( $e, \array_flip( Intel_Event::ENVELOPE ) ), \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR ),
+				static fn ( array $e ): string => Core::as_string( $e['entity_key'] ?? $e['collection_key'] ?? $e['lens_key'] ?? null ),
+				static fn ( array $e ): string => self::json( \array_diff_key( $e, \array_flip( Intel_Event::ENVELOPE ) ) ),
 				'config_version',
 				'ts',
 			],
@@ -243,6 +246,16 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 		}
 		$table[ self::STAND_IN ] = [ [ 'ignore', 'extractions', $extraction ] ];
 		return self::$projections = $table;
+	}
+
+	/**
+	 * A value as a TEXT column stores it: JSON, slashes and Unicode unescaped.
+	 *
+	 * @param mixed $value The value.
+	 * @throws \JsonException When it will not encode.
+	 */
+	private static function json( mixed $value ): string {
+		return (string) \wp_json_encode( $value, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_THROW_ON_ERROR );
 	}
 
 	/**

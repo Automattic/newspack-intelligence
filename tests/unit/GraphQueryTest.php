@@ -99,9 +99,9 @@ final class GraphQueryTest extends TestCase {
 		$this->seed_world();
 
 		$this->assertSame( [ 'feed:gazette-award', 'linear:joint-grant' ], self::keys( self::search( [ 'entity' => self::GAZETTE ] ) ) );
-		$this->assertSame( [ 'feed:gazette-award', 'linear:joint-grant' ], self::keys( self::search( [ 'topic' => 'topic:awards' ] ) ) );
-		$this->assertSame( [ 'github:ledger-launch' ], self::keys( self::search( [ 'kind' => 'launch' ] ) ) );
-		$this->assertSame( [ 'github:ledger-launch' ], self::keys( self::search( [ 'source' => 'github' ] ) ) );
+		$this->assertSame( [ 'feed:gazette-award', 'linear:joint-grant' ], self::keys( self::search( [ 'topic' => [ 'topic:awards' ] ] ) ) );
+		$this->assertSame( [ 'github:ledger-launch' ], self::keys( self::search( [ 'kind' => [ 'launch' ] ] ) ) );
+		$this->assertSame( [ 'github:ledger-launch' ], self::keys( self::search( [ 'source' => [ 'github' ] ] ) ) );
 		$this->assertSame( [ 'feed:gazette-award' ], self::keys( self::search( [ 'since' => '2026-10-05', 'until' => '2026-10-10' ] ) ) );
 		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award' ], self::keys( self::search( [ 'since' => '2026-10-02' ] ) ) );
 		$this->assertSame( [ 'linear:joint-grant' ], self::keys( self::search( [ 'until' => '2026-10-02' ] ) ) );
@@ -112,7 +112,7 @@ final class GraphQueryTest extends TestCase {
 		$this->seed_world();
 		$this->seed( self::link( 'link_asserted', 'github:ledger-launch', 'topic:awards', 'mention', 'name', 1.0, self::$oct_13 ) );
 
-		$this->assertSame( [ 'feed:gazette-award', 'linear:joint-grant' ], self::keys( self::search( [ 'topic' => 'topic:awards' ] ) ) );
+		$this->assertSame( [ 'feed:gazette-award', 'linear:joint-grant' ], self::keys( self::search( [ 'topic' => [ 'topic:awards' ] ] ) ) );
 		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], self::keys( self::search( [ 'entity' => 'topic:awards' ] ) ) );
 	}
 
@@ -229,8 +229,8 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame(
 			[
 				'entities'  => [
-					[ 'entity_key' => 'topic:awards', 'name' => 'Awards', 'type' => 'topic', 'shared_items' => 2, 'item_keys' => [ 'feed:gazette-award', 'linear:joint-grant' ] ],
-					[ 'entity_key' => self::LEDGER, 'name' => 'Salem Ledger', 'type' => 'organization', 'shared_items' => 1, 'item_keys' => [ 'linear:joint-grant' ] ],
+					[ 'entity_key' => 'topic:awards', 'name' => 'Awards', 'type' => 'topic', 'shared_items' => 2, 'items' => self::cited( 'feed:gazette-award', 'linear:joint-grant' ) ],
+					[ 'entity_key' => self::LEDGER, 'name' => 'Salem Ledger', 'type' => 'organization', 'shared_items' => 1, 'items' => self::cited( 'linear:joint-grant' ) ],
 				],
 				'available' => true,
 			],
@@ -259,9 +259,9 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame(
 			[
 				'rows'      => [
-					[ 'bucket' => '2026-09-28', 'value' => 'funding', 'count' => 1, 'item_keys' => [ 'linear:joint-grant' ] ],
-					[ 'bucket' => '2026-10-05', 'value' => 'award', 'count' => 1, 'item_keys' => [ 'feed:gazette-award' ] ],
-					[ 'bucket' => '2026-10-12', 'value' => 'launch', 'count' => 1, 'item_keys' => [ 'github:ledger-launch' ] ],
+					[ 'bucket' => '2026-09-28', 'value' => 'funding', 'count' => 1, 'items' => self::cited( 'linear:joint-grant' ) ],
+					[ 'bucket' => '2026-10-05', 'value' => 'award', 'count' => 1, 'items' => self::cited( 'feed:gazette-award' ) ],
+					[ 'bucket' => '2026-10-12', 'value' => 'launch', 'count' => 1, 'items' => self::cited( 'github:ledger-launch' ) ],
 				],
 				'available' => true,
 			],
@@ -269,8 +269,8 @@ final class GraphQueryTest extends TestCase {
 		);
 		$this->assertSame(
 			[
-				[ 'bucket' => '2026-10-01', 'value' => 'topic:awards', 'count' => 2, 'item_keys' => [ 'feed:gazette-award', 'linear:joint-grant' ] ],
-				[ 'bucket' => '2026-10-01', 'value' => 'topic:ai', 'count' => 1, 'item_keys' => [ 'github:ledger-launch' ] ],
+				[ 'bucket' => '2026-10-01', 'value' => 'topic:awards', 'count' => 2, 'items' => self::cited( 'feed:gazette-award', 'linear:joint-grant' ) ],
+				[ 'bucket' => '2026-10-01', 'value' => 'topic:ai', 'count' => 1, 'items' => self::cited( 'github:ledger-launch' ) ],
 			],
 			self::trends( [ 'by' => 'topic', 'bucket' => 'month' ] )['rows']
 		);
@@ -282,10 +282,27 @@ final class GraphQueryTest extends TestCase {
 		$this->seed_world();
 		$this->seed( [ Intel_Event::make( 'role_asserted', [ 'entity_key' => self::LEDGER, 'role' => 'client', 'from_ts' => self::$oct_06 ], 'user:41', 'fixture-9' ) ] );
 
-		$this->assertSame( [ 'funding', 'award', 'launch' ], \array_column( self::trends( [ 'by' => 'kind', 'role' => 'client' ] )['rows'], 'value' ) );
-		$this->assertSame( [ 'funding', 'award' ], \array_column( self::trends( [ 'by' => 'kind', 'role' => 'client', 'until' => '2026-10-10' ] )['rows'], 'value' ) );
+		$this->assertSame( [ 'funding', 'award', 'launch' ], \array_column( self::trends( [ 'by' => 'kind', 'role' => [ 'client' ] ] )['rows'], 'value' ) );
+		$this->assertSame( [ 'funding', 'award' ], \array_column( self::trends( [ 'by' => 'kind', 'role' => [ 'client' ], 'until' => '2026-10-10' ] )['rows'], 'value' ) );
 		$this->assertSame( [ 'funding', 'launch' ], \array_column( self::trends( [ 'by' => 'kind', 'entity' => self::LEDGER ] )['rows'], 'value' ) );
-		$this->assertSame( [], self::trends( [ 'by' => 'kind', 'role' => 'funder' ] )['rows'] );
+		$this->assertSame( [], self::trends( [ 'by' => 'kind', 'role' => [ 'funder' ] ] )['rows'] );
+	}
+
+	/** A role filter over a window answers exactly the unwindowed answer's items inside it. */
+	public function test_a_windowed_role_filter_answers_the_window_of_the_whole(): void {
+		$this->seed_world();
+		$this->seed(
+			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => self::LEDGER, 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ) ],
+			self::item( 'feed:ledger-hire', 'Salem Ledger hires an editor', 'feed', 'public', self::$oct_20 - 3600 ),
+			self::extraction( 'feed:ledger-hire', 'An editor joins.', 'hire', self::$oct_20 - 3600, [] ),
+			self::link( 'link_asserted', 'feed:ledger-hire', self::LEDGER, 'subject', 'name', 1.0, self::$oct_20 - 3600 )
+		);
+		$window = static fn ( array $items ): array => \array_values( \array_filter( $items, static fn ( array $item ): bool => $item['item_ts'] >= self::$oct_06 - 43200 && $item['item_ts'] < self::$oct_13 + 43200 ) );
+
+		$whole = self::search( [ 'role' => [ 'client' ] ] )['items'];
+		$this->assertSame( [ 'feed:ledger-hire', 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], \array_column( $whole, 'item_key' ) );
+		$this->assertSame( $window( $whole ), self::search( [ 'role' => [ 'client' ], 'since' => '2026-10-06', 'until' => '2026-10-13' ] )['items'] );
+		$this->assertSame( [ 'award', 'launch' ], \array_column( self::trends( [ 'by' => 'kind', 'role' => [ 'client' ], 'since' => '2026-10-06', 'until' => '2026-10-13' ] )['rows'], 'value' ) );
 	}
 
 	public function test_a_trend_row_cites_its_five_newest_items(): void {
@@ -298,7 +315,7 @@ final class GraphQueryTest extends TestCase {
 
 		$this->assertSame(
 			[ [ 'bucket' => '2026-10-05', 'value' => 'award', 'count' => 6, 'item_keys' => [ 'feed:award-6', 'feed:award-5', 'feed:award-4', 'feed:award-3', 'feed:award-2' ] ] ],
-			self::trends( [ 'by' => 'kind' ] )['rows']
+			\array_map( static fn ( array $row ): array => \array_diff_key( $row, [ 'items' => 1 ] ) + [ 'item_keys' => \array_column( $row['items'], 'item_key' ) ], self::trends( [ 'by' => 'kind' ] )['rows'] )
 		);
 	}
 
@@ -412,7 +429,7 @@ final class GraphQueryTest extends TestCase {
 		}
 		$this->assertSame( [ 'feed:old-ledger-hire', 'github:ledger-launch', 'linear:joint-grant' ], self::keys( self::search( [ 'entity' => 'organization:old-ledger' ] ) ) );
 		$this->assertSame( [ [ 'entity_key' => self::LEDGER, 'name' => 'Salem Ledger', 'state' => 'asserted' ], [ 'entity_key' => self::GAZETTE, 'name' => 'Harbor Gazette', 'state' => 'asserted' ] ], self::search( [ 'q' => 'editor' ] )['items'][0]['entities'] );
-		$this->assertSame( [ 'feed:old-ledger-hire', 'linear:joint-grant' ], \array_column( self::read( 'related', [ 'key' => self::GAZETTE, 'limit' => 20 ] )['entities'], 'item_keys', 'entity_key' )[ self::LEDGER ] );
+		$this->assertSame( [ 'feed:old-ledger-hire', 'linear:joint-grant' ], \array_column( \array_column( self::read( 'related', [ 'key' => self::GAZETTE, 'limit' => 20 ] )['entities'], 'items', 'entity_key' )[ self::LEDGER ], 'item_key' ) );
 		$this->assertSame( [ 'funding', 'hire', 'launch' ], \array_column( self::trends( [ 'by' => 'kind', 'entity' => 'organization:ledger-of-salem' ] )['rows'], 'value' ) );
 	}
 
@@ -448,7 +465,7 @@ final class GraphQueryTest extends TestCase {
 		$this->seed_world();
 		$this->seed( self::judged( 'link_rejected', 'linear:joint-grant', 'topic:awards', 'user:41' ) );
 
-		$this->assertSame( [ 'feed:gazette-award' ], self::keys( self::search( [ 'topic' => 'topic:awards' ] ) ) );
+		$this->assertSame( [ 'feed:gazette-award' ], self::keys( self::search( [ 'topic' => [ 'topic:awards' ] ] ) ) );
 		$this->assertSame( [ 1, 1 ], \array_column( self::trends( [ 'by' => 'topic', 'bucket' => 'month' ] )['rows'], 'count' ) );
 	}
 
@@ -526,7 +543,7 @@ final class GraphQueryTest extends TestCase {
 	 * @return array<string,mixed>
 	 */
 	private static function search( array $args ): array {
-		return Graph_Query::search( $args + [ 'q' => null, 'entity' => null, 'kind' => null, 'topic' => null, 'source' => null, 'since' => null, 'until' => null, 'limit' => 50, 'offset' => 0 ] );
+		return Graph_Query::search( $args + [ 'q' => null, 'entity' => null, 'lens' => null, 'since' => null, 'until' => null, 'limit' => 50, 'offset' => 0, 'kind' => [], 'topic' => [], 'role' => [], 'source' => [] ] );
 	}
 
 	/**
@@ -536,7 +553,22 @@ final class GraphQueryTest extends TestCase {
 	 * @return array<string,mixed>
 	 */
 	private static function trends( array $args ): array {
-		return Graph_Query::trends( $args + [ 'role' => null, 'entity' => null, 'since' => null, 'until' => null, 'bucket' => 'week' ] );
+		return Graph_Query::trends( $args + [ 'entity' => null, 'lens' => null, 'since' => null, 'until' => null, 'bucket' => null, 'kind' => [], 'topic' => [], 'role' => [], 'source' => [] ] );
+	}
+
+	/**
+	 * Fixture items as a citation lists them: key, URL and title.
+	 *
+	 * @param string ...$keys The item keys, in order.
+	 * @return list<array{item_key:string,url:string,title:string}>
+	 */
+	private static function cited( string ...$keys ): array {
+		$titles = [
+			'feed:gazette-award'   => 'Harbor Gazette wins state award',
+			'github:ledger-launch' => 'Salem Ledger launches a newsletter tool',
+			'linear:joint-grant'   => 'Gazette and Ledger share a grant',
+		];
+		return \array_map( static fn ( string $key ): array => [ 'item_key' => $key, 'url' => self::url( $key ), 'title' => $titles[ $key ] ], $keys );
 	}
 
 	/**

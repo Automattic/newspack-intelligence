@@ -9,11 +9,13 @@
  * Every string an event carries is bounded first, in bytes as the stream
  * writes it, JSON-escaped: a key, a name or a URL past its cap is refused,
  * and a collected title is cut. The caps hold every event inside one atomic
- * partition line whatever characters fill them. Each verb then reads the
- * projection once, on the graph `Graph_Query::graph()` opens: every entity
- * key it names answers as the survivor `Graph_Query::seen()` lets the caller
- * see, and an item is read through the readable items, so one outside them
- * is refused exactly as a missing one.
+ * partition line whatever characters fill them, but a lens's, whose lists
+ * no cap holds, so `Intel_Event::make()` refuses one past the line. Each
+ * verb then reads the projection once at most, on the graph
+ * `Graph_Query::graph()` opens: every entity key it names answers as the
+ * survivor `Graph_Query::seen()` lets the caller see, and an item is read
+ * through the readable items, so one outside them is refused exactly as a
+ * missing one.
  *
  * @package Newspack_Intelligence
  */
@@ -190,29 +192,6 @@ final class Graph_Curation {
 			}
 		}
 		return self::write( 'entity_merged', [ 'entity_key' => $from, 'into_key' => $into ] );
-	}
-
-	/**
-	 * Whether a caller without restricted access sees a survivor: accepted,
-	 * or cited by an item of `Intel_Tiers::UNRESTRICTED` (`Graph_Query::visible()`).
-	 *
-	 * @param Row_Reader $r        The reader.
-	 * @param Graph      $g        The graph the read opened.
-	 * @param string     $survivor The survivor.
-	 */
-	private static function open( Row_Reader $r, array $g, string $survivor ): bool {
-		return null !== Graph_Query::visible( $r, Graph_Query::unrestricted( $r, $g ), $survivor );
-	}
-
-	/**
-	 * An entity's type: its `entities` row's, else its key's own `<type>:`.
-	 *
-	 * @param Row_Reader $r   The reader.
-	 * @param string     $key The entity key.
-	 */
-	private static function type_of( Row_Reader $r, string $key ): string {
-		$type = $r->rows( 'SELECT type FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e WHERE entity_key = ? LIMIT 1', [ $key ] )[0][0] ?? null;
-		return null === $type ? \explode( ':', $key, 2 )[0] : Core::as_string( $type );
 	}
 
 	/**
@@ -393,20 +372,6 @@ final class Graph_Curation {
 	}
 
 	/**
-	 * Mint an event as the caller and append it to the ontology stream.
-	 *
-	 * @param string              $kind   The event kind.
-	 * @param array<string,mixed> $fields Its fields.
-	 * @return array{ok:true,event_id:string}
-	 * @throws \InvalidArgumentException As `Intel_Event::make()`.
-	 */
-	private static function write( string $kind, array $fields ): array {
-		$event = Intel_Event::make( $kind, $fields, Intel_Event::caller(), \NEWSPACK_INTELLIGENCE_VERSION );
-		Ontology_Writer::append( [ $event ] );
-		return [ 'ok' => true, 'event_id' => Core::as_string( $event['event_id'] ) ];
-	}
-
-	/**
 	 * A readable item, as `collected` and a judged link carry it.
 	 *
 	 * @param Row_Reader $r   The reader.
@@ -418,6 +383,119 @@ final class Graph_Curation {
 	private static function item( Row_Reader $r, array $g, string $key ): array {
 		$row = $r->rows( "{$g['with']} SELECT url, title, tier FROM ri WHERE item_key = ? LIMIT 1", [ ...$g['binds'], $key ] )[0] ?? throw new \InvalidArgumentException( \esc_html( "no item: {$key}" ) );
 		return [ 'url' => self::capped( "{$key} url", Core::as_string( $row[0] ), self::URL_BYTES ), 'title' => Core::as_string( $row[1] ), 'tier' => Core::as_string( $row[2] ) ];
+	}
+
+	/**
+	 * The `item` arg, bounded at ITEM_KEY_BYTES.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args, `item` among them.
+	 * @throws \InvalidArgumentException When blank or past its cap.
+	 */
+	private static function item_key( array $args ): string {
+		return self::bounded( 'item', Core::as_string( $args['item'] ), self::ITEM_KEY_BYTES );
+	}
+
+	/**
+	 * Save a lens under its key, slugged, replacing any lens there: every
+	 * filter in `Graph_Query::unfiltered()`'s shape, each list of
+	 * `Graph_Query::LENS_LISTS` and each tier checked against its vocabulary,
+	 * an entity or topic as the survivor `Graph_Query::seen()` lets the
+	 * caller see, a topic of type `topic`, and refused when a caller without
+	 * restricted access could not see it, since every reader lists every
+	 * lens. An event past one ontology line is refused as
+	 * `Intel_Event::make()` refuses it.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args: `key`, `name`, `description`, `entity`, `days`, `by`, `bucket`, and the lists `kind`, `topic`, `role`, `source`, `tier`.
+	 * @return array<string,mixed> `{ ok, event_id, lens_key }`.
+	 * @throws \InvalidArgumentException On a value outside its vocabulary, a bad key, an entity or topic the caller cannot see or every reader could not, a topic that is not one, or an event past one line.
+	 */
+	public static function save_lens( array $args ): array {
+		$key    = self::capped( 'key', Intel_Event::lens_key( Core::as_string( $args['key'] ) ), self::KEY_BYTES );
+		$name   = self::bounded( 'name', Core::as_string( $args['name'] ), self::NAME_BYTES );
+		$days   = null === $args['days'] ? null : Core::as_int( $args['days'] );
+		if ( null !== $days && ( $days < 1 || $days > Intel_Graph_Row_Schema::RETAIN_DAYS ) ) {
+			throw new \InvalidArgumentException( \esc_html( 'days must be between 1 and ' . Intel_Graph_Row_Schema::RETAIN_DAYS ) );
+		}
+		$by     = null === $args['by'] ? null : Core::as_string( $args['by'] );
+		$bucket = null === $args['bucket'] ? null : Core::as_string( $args['bucket'] );
+		Graph_Query::check_trend( $by, $bucket );
+		$lists  = self::lists( $args );
+		$entity = null === $args['entity'] ? null : self::key( $args, 'entity' );
+		$tiers  = self::within( $args, 'tier', Intel_Event::TIERS );
+		if ( null !== $entity || [] !== $lists['topics'] ) {
+			[ $entity, $lists['topics'] ] = self::on_graph(
+				static fn ( Row_Reader $r, array $g ): array => [
+					null === $entity ? null : self::shown( $r, $g, $entity ),
+					\array_values( \array_unique( \array_map( static fn ( string $topic ): string => self::topic( $r, $g, $topic ), $lists['topics'] ) ) ),
+				]
+			);
+		}
+		$filters = $lists + [
+			'entity' => $entity,
+			'days'   => $days,
+			'tiers'  => $tiers,
+			'by'     => $by,
+			'bucket' => $bucket,
+		];
+		$description = Core::as_string( $args['description'] );
+		return self::write( 'lens_saved', [ 'lens_key' => $key, 'name' => $name, 'description' => $description, 'filters' => $filters ] ) + [ 'lens_key' => $key ];
+	}
+
+	/**
+	 * A topic a lens names, as `shown()` answers it, refused when its
+	 * survivor is not of type `topic`.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param Graph      $g   The graph the read opened.
+	 * @param string     $key A topic's entity key.
+	 * @throws \InvalidArgumentException As `shown()`, or for an entity that is not a topic.
+	 */
+	private static function topic( Row_Reader $r, array $g, string $key ): string {
+		$survivor = self::shown( $r, $g, $key );
+		if ( 'topic' !== self::type_of( $r, $survivor ) ) {
+			throw new \InvalidArgumentException( \esc_html( "{$survivor} is not a topic" ) );
+		}
+		return $survivor;
+	}
+
+	/**
+	 * An entity's type: its `entities` row's, else its key's own `<type>:`.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param string     $key The entity key.
+	 */
+	private static function type_of( Row_Reader $r, string $key ): string {
+		$type = $r->rows( 'SELECT type FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e WHERE entity_key = ? LIMIT 1', [ $key ] )[0][0] ?? null;
+		return null === $type ? \explode( ':', $key, 2 )[0] : Core::as_string( $type );
+	}
+
+	/**
+	 * The survivor a key a lens names answers as, when the caller sees it
+	 * and so would a caller without restricted access.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param Graph      $g   The graph the read opened.
+	 * @param string     $key An entity key.
+	 * @throws \InvalidArgumentException As `Graph_Query::seen()`, or for one only restricted items cite.
+	 */
+	private static function shown( Row_Reader $r, array $g, string $key ): string {
+		$survivor = Graph_Query::seen( $r, $g, $key );
+		if ( ! self::open( $r, $g, $survivor ) ) {
+			throw new \InvalidArgumentException( \esc_html( "a lens naming {$survivor} would show it to every reader; no item outside the restricted tier cites it" ) );
+		}
+		return $survivor;
+	}
+
+	/**
+	 * Whether a caller without restricted access sees a survivor: accepted,
+	 * or cited by an item of `Intel_Tiers::UNRESTRICTED` (`Graph_Query::visible()`).
+	 *
+	 * @param Row_Reader $r        The reader.
+	 * @param Graph      $g        The graph the read opened.
+	 * @param string     $survivor The survivor.
+	 */
+	private static function open( Row_Reader $r, array $g, string $survivor ): bool {
+		return null !== Graph_Query::visible( $r, Graph_Query::unrestricted( $r, $g ), $survivor );
 	}
 
 	/**
@@ -434,16 +512,6 @@ final class Graph_Curation {
 	}
 
 	/**
-	 * The `item` arg, bounded at ITEM_KEY_BYTES.
-	 *
-	 * @param array<array-key,mixed> $args The bound verb args, `item` among them.
-	 * @throws \InvalidArgumentException When blank or past its cap.
-	 */
-	private static function item_key( array $args ): string {
-		return self::bounded( 'item', Core::as_string( $args['item'] ), self::ITEM_KEY_BYTES );
-	}
-
-	/**
 	 * A key arg, bounded at KEY_BYTES.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args.
@@ -452,6 +520,49 @@ final class Graph_Curation {
 	 */
 	private static function key( array $args, string $name ): string {
 		return self::bounded( $name, Core::as_string( $args[ $name ] ), self::KEY_BYTES );
+	}
+
+	/**
+	 * Each of `Graph_Query::LENS_LISTS` by its field, read from its arg:
+	 * each value of its vocabulary, or bounded where it has none.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @return array<string,list<string>>
+	 * @throws \InvalidArgumentException On a value outside its vocabulary, blank or past its cap.
+	 */
+	private static function lists( array $args ): array {
+		$lists = [];
+		foreach ( Graph_Query::LENS_LISTS as $field => [ $option, $values ] ) {
+			$lists[ $field ] = null === $values ? self::listed( $args, $option, self::KEY_BYTES ) : self::within( $args, $option, $values );
+		}
+		return $lists;
+	}
+
+	/**
+	 * A list arg's values, each one of its vocabulary.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @param string                 $name The arg.
+	 * @param list<string>           $set  Its vocabulary.
+	 * @return list<string>
+	 * @throws \InvalidArgumentException On a value outside it.
+	 */
+	private static function within( array $args, string $name, array $set ): array {
+		return \array_map( static fn ( string $value ): string => Graph_Query::one_of( $name, $value, $set ), self::listed( $args, $name, self::NAME_BYTES ) );
+	}
+
+	/**
+	 * A list arg's values, each bounded, a value repeated kept once.
+	 *
+	 * @param array<array-key,mixed> $args  The bound verb args.
+	 * @param string                 $name  The arg.
+	 * @param int                    $bytes Each value's cap.
+	 * @return list<string>
+	 * @throws \InvalidArgumentException On a value blank or past its cap.
+	 */
+	private static function listed( array $args, string $name, int $bytes ): array {
+		$values = \array_map( static fn ( mixed $value ): string => self::bounded( $name, Core::as_string( $value ), $bytes ), Core::arr( $args[ $name ] ) );
+		return \array_values( \array_unique( $values ) );
 	}
 
 	/**
@@ -467,6 +578,35 @@ final class Graph_Curation {
 			throw new \InvalidArgumentException( \esc_html( "{$name} is blank" ) );
 		}
 		return self::capped( $name, $value, $bytes );
+	}
+
+	/**
+	 * Remove the lens a key names, slugged as `save_lens()` slugs it.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args: `key`.
+	 * @return array<string,mixed> `{ ok, event_id }`.
+	 * @throws \InvalidArgumentException When the key sanitizes to nothing, or no lens has it.
+	 */
+	public static function remove_lens( array $args ): array {
+		$key = self::capped( 'key', Intel_Event::lens_key( Core::as_string( $args['key'] ) ), self::KEY_BYTES );
+		if ( ! Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): bool => [] !== $r->rows( 'SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'lenses' ) . ' l WHERE lens_key = ? LIMIT 1', [ $key ] ) ) ) {
+			throw new \InvalidArgumentException( \esc_html( "no lens: {$key}" ) );
+		}
+		return self::write( 'lens_removed', [ 'lens_key' => $key ] );
+	}
+
+	/**
+	 * Mint an event as the caller and append it to the ontology stream.
+	 *
+	 * @param string              $kind   The event kind.
+	 * @param array<string,mixed> $fields Its fields.
+	 * @return array{ok:true,event_id:string}
+	 * @throws \InvalidArgumentException As `Intel_Event::make()`.
+	 */
+	private static function write( string $kind, array $fields ): array {
+		$event = Intel_Event::make( $kind, $fields, Intel_Event::caller(), \NEWSPACK_INTELLIGENCE_VERSION );
+		Ontology_Writer::append( [ $event ] );
+		return [ 'ok' => true, 'event_id' => Core::as_string( $event['event_id'] ) ];
 	}
 
 	/**

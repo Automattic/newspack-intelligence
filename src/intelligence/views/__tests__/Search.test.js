@@ -1,16 +1,25 @@
 /* eslint-env jest */
 /**
  * Search asks `search` on mount and on every submit, with each filter given
- * as a named option, and renders the items it answers; its two kinds of
- * nothing say which they are.
+ * as a named option and each list value repeated, and renders the items it
+ * answers; its two kinds of nothing say which they are. A lens picked shows
+ * every filter it runs with, read-only, and sends only the lens, the words
+ * and the page; "Edit as my own search" copies them into Search's fields.
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import {
+	render,
+	screen,
+	fireEvent,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
-import { ITEM, VOCABULARY } from './fixtures';
+import { ITEM, LENSES, VOCABULARY } from './fixtures';
 import { useState } from '@wordpress/element';
-import Search, { NEW_SEARCH } from '../Search';
+import Search, { newSearch } from '../Search';
+import { daysSince } from '../../components/lensDraft';
 
 let wire;
 
@@ -21,7 +30,9 @@ beforeEach( () => {
 } );
 
 function Harness( props ) {
-	const [ query, setQuery ] = useState( NEW_SEARCH );
+	const [ query, setQuery ] = useState( () =>
+		newSearch( VOCABULARY.lensLists )
+	);
 	return (
 		<Search
 			query={ query }
@@ -57,14 +68,20 @@ describe( 'Search', () => {
 		fireEvent.change( screen.getByLabelText( 'Words' ), {
 			target: { value: 'regional prize' },
 		} );
-		fireEvent.change( screen.getByLabelText( 'Kind' ), {
-			target: { value: 'funding' },
+		fireEvent.change( screen.getByLabelText( 'Kinds' ), {
+			target: { value: 'funding, launch' },
 		} );
-		fireEvent.change( screen.getByLabelText( 'Topic' ), {
+		fireEvent.change( screen.getByLabelText( 'Topics' ), {
 			target: { value: 'topic:local-news' },
 		} );
-		fireEvent.change( screen.getByLabelText( 'Source' ), {
-			target: { value: 'github' },
+		fireEvent.change( screen.getByLabelText( 'Roles' ), {
+			target: { value: 'competitor' },
+		} );
+		fireEvent.change( screen.getByLabelText( 'Sources' ), {
+			target: { value: 'github,' },
+		} );
+		fireEvent.change( screen.getByLabelText( 'Entity' ), {
+			target: { value: 'organization:valley-ledger' },
 		} );
 		fireEvent.change( screen.getByLabelText( 'Since' ), {
 			target: { value: '2026-09-01' },
@@ -77,12 +94,154 @@ describe( 'Search', () => {
 			expect( wire.sent( 'search' ) ).toContainEqual( [
 				'--q=regional prize',
 				'--kind=funding',
+				'--kind=launch',
 				'--topic=topic:local-news',
+				'--role=competitor',
 				'--source=github',
+				'--entity=organization:valley-ledger',
 				'--since=2026-09-01',
 				'--until=2026-09-30',
 			] )
 		);
+	} );
+
+	it( 'shows a lens picked read-only and searches only through it, with the words', async () => {
+		wire.replies.lenses = LENSES;
+		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+		renderSearch();
+		await screen.findByRole( 'option', { name: 'Support desk' } );
+		fireEvent.change( screen.getByLabelText( 'Words' ), {
+			target: { value: 'paywall' },
+		} );
+		fireEvent.change( screen.getByLabelText( 'Lens' ), {
+			target: { value: 'support-desk' },
+		} );
+		const runs = screen.getByRole( 'group', {
+			name: 'Support desk searches with',
+		} );
+		for ( const shown of [
+			'complaint, praise',
+			'client',
+			'organization:acme-gazette',
+			'The last 21 days',
+			'internal',
+		] ) {
+			expect( within( runs ).getByText( shown ) ).toBeInTheDocument();
+		}
+		expect( within( runs ).getAllByText( 'Any' ) ).toHaveLength( 2 );
+		expect( screen.queryByLabelText( 'Kinds' ) ).toBeNull();
+		expect( screen.queryByLabelText( 'Entity' ) ).toBeNull();
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toContainEqual( [
+				'--q=paywall',
+				'--lens=support-desk',
+			] )
+		);
+		expect( wire.sent( 'lenses' ) ).toEqual( [ [] ] );
+	} );
+
+	it( 'copies a lens into its own fields to edit, dropping the lens and its tiers', async () => {
+		wire.replies.lenses = LENSES;
+		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+		renderSearch();
+		await screen.findByRole( 'option', { name: 'Support desk' } );
+		fireEvent.change( screen.getByLabelText( 'Lens' ), {
+			target: { value: 'support-desk' },
+		} );
+		expect(
+			screen.getByText(
+				'A search reads every tier you may read, so editing drops this lens’s tiers.'
+			)
+		).toBeInTheDocument();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Edit as my own search' } )
+		);
+		const since = daysSince( 21, Date.now() );
+		expect( screen.getByLabelText( 'Lens' ) ).toHaveValue( '' );
+		expect( screen.getByLabelText( 'Kinds' ) ).toHaveValue(
+			'complaint, praise'
+		);
+		expect( screen.getByLabelText( 'Roles' ) ).toHaveValue( 'client' );
+		expect( screen.getByLabelText( 'Entity' ) ).toHaveValue(
+			'organization:acme-gazette'
+		);
+		expect( screen.getByLabelText( 'Since' ) ).toHaveValue( since );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toContainEqual( [
+				'--kind=complaint',
+				'--kind=praise',
+				'--role=client',
+				'--entity=organization:acme-gazette',
+				`--since=${ since }`,
+			] )
+		);
+		fireEvent.change( screen.getByLabelText( 'Kinds' ), {
+			target: { value: '' },
+		} );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Search' } ) );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toContainEqual( [
+				'--role=client',
+				'--entity=organization:acme-gazette',
+				`--since=${ since }`,
+			] )
+		);
+	} );
+
+	it( 'copies a lens setting no days or tiers without a since day or a tier note', async () => {
+		wire.replies.lenses = LENSES;
+		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+		renderSearch();
+		await screen.findByRole( 'option', { name: 'Developer shipping' } );
+		fireEvent.change( screen.getByLabelText( 'Lens' ), {
+			target: { value: 'dev-shipping' },
+		} );
+		const runs = screen.getByRole( 'group', {
+			name: 'Developer shipping searches with',
+		} );
+		expect( within( runs ).getAllByText( 'Any' ) ).toHaveLength( 4 );
+		expect( screen.queryByText( /drops this lens’s tiers/ ) ).toBeNull();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Edit as my own search' } )
+		);
+		expect( screen.getByLabelText( 'Since' ) ).toHaveValue( '' );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toContainEqual( [
+				'--kind=release',
+				'--topic=topic:product',
+				'--source=github',
+				'--source=linear',
+			] )
+		);
+	} );
+
+	it( 'returns to its own filters when no lens is picked', async () => {
+		wire.replies.lenses = LENSES;
+		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+		renderSearch();
+		await screen.findByRole( 'option', { name: 'Support desk' } );
+		fireEvent.change( screen.getByLabelText( 'Kinds' ), {
+			target: { value: 'award' },
+		} );
+		fireEvent.change( screen.getByLabelText( 'Lens' ), {
+			target: { value: 'support-desk' },
+		} );
+		fireEvent.change( screen.getByLabelText( 'Lens' ), {
+			target: { value: '' },
+		} );
+		expect( screen.getByLabelText( 'Kinds' ) ).toHaveValue( 'award' );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toContainEqual( [ '--kind=award' ] )
+		);
+	} );
+
+	it( 'shows a refused lens list as the refusal', async () => {
+		wire.replies.lenses = () => new Error( 'unknown command: lenses' );
+		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+		renderSearch();
+		expect(
+			await screen.findByText( 'unknown command: lenses' )
+		).toBeInTheDocument();
 	} );
 
 	it( 'pages forward past the rows shown, and back', async () => {

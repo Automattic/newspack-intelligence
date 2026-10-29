@@ -5,18 +5,19 @@ import TabBar, {
 	panelDomId,
 	tabDomId,
 } from '@newspack-nodes/shared/tabs/TabBar';
-import Search, { NEW_SEARCH } from './views/Search';
+import Search, { newSearch } from './views/Search';
 import Entity from './views/Entity';
 import Review from './views/Review';
 import Collections from './views/Collections';
+import Lens, { CLOSED_LENS } from './views/Lens';
 import SaveToCollection from './components/SaveToCollection';
 import './styles/intelligence.scss';
 
 /**
- * The Intelligence page: Search, Entity, Review and Collections, switched in
- * place. Each view reads its own verbs; the page holds which view shows, the
- * submitted search, the open entity and collection, and the item being saved,
- * so a view returns as it was left. Curation renders only
+ * The Intelligence page: Search, Entity, Lenses, Review and Collections,
+ * switched in place. Each view reads its own verbs; the page holds which view
+ * shows, the submitted search, the open entity, lens and collection, and the
+ * item being saved, so a view returns as it was left. Curation renders only
  * for `canTune`, which hides controls and enforces nothing: the server's role
  * gate refuses a write the caller may not make.
  *
@@ -33,8 +34,11 @@ export default function IntelligencePage( { canTune, vocabulary } ) {
 	const [ view, setView ] = useState( 'search' );
 	const [ entityKey, setEntityKey ] = useState( null );
 	const [ saving, setSaving ] = useState( null );
-	const [ search, setSearch ] = useState( NEW_SEARCH );
+	const [ search, setSearch ] = useState( () =>
+		newSearch( vocabulary.lensLists )
+	);
 	const [ collection, setCollection ] = useState( null );
+	const [ lens, setLens ] = useState( CLOSED_LENS );
 
 	const openEntity = ( key ) => {
 		setEntityKey( key );
@@ -56,6 +60,7 @@ export default function IntelligencePage( { canTune, vocabulary } ) {
 					},
 			  ]
 			: [] ),
+		{ id: 'lenses', label: __( 'Lenses', 'newspack-intelligence' ) },
 		{ id: 'review', label: __( 'Review', 'newspack-intelligence' ) },
 		{
 			id: 'collections',
@@ -98,6 +103,16 @@ export default function IntelligencePage( { canTune, vocabulary } ) {
 								entityKey={ entityKey }
 								canTune={ canTune }
 								vocabulary={ vocabulary }
+								onOpenEntity={ openEntity }
+								onSave={ onSave }
+							/>
+						) }
+						{ 'lenses' === view && (
+							<Lens
+								canTune={ canTune }
+								vocabulary={ vocabulary }
+								opened={ lens }
+								onOpen={ setLens }
 								onOpenEntity={ openEntity }
 								onSave={ onSave }
 							/>

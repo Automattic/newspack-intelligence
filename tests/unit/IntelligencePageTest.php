@@ -158,6 +158,15 @@ final class IntelligencePageTest extends TestCase {
 				'nameKinds'       => Intel_Event::NAME_KINDS,
 				'identifierKinds' => Intel_Event::IDENTIFIER_KINDS,
 				'itemKinds'       => Intel_Event::ITEM_KINDS,
+				'tiers'           => Intel_Event::TIERS,
+				'trendAxes'       => [ 'kind', 'topic' ],
+				'buckets'         => [ 'day', 'week', 'month' ],
+				'lensLists'       => [
+					[ 'field' => 'kinds', 'option' => 'kind', 'values' => Intel_Event::ITEM_KINDS ],
+					[ 'field' => 'topics', 'option' => 'topic', 'values' => null ],
+					[ 'field' => 'roles', 'option' => 'role', 'values' => Intel_Event::ROLES ],
+					[ 'field' => 'sources', 'option' => 'source', 'values' => null ],
+				],
 			],
 			\array_diff_key( $vocabulary, [ 'linkRoleWords' => 0, 'methodWords' => 0 ] )
 		);

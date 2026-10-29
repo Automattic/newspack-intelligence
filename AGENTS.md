@@ -200,7 +200,9 @@ extraction, which first deletes the item's claims and topic links (the
 substrate's `delete` op, 2.134.0) so one yielding fewer leaves none of the
 earlier behind, and for a `link_retracted`, which deletes the one `links`
 row its `item_key`, `entity_key` and `role` key in the file of the
-partition that projects it. A heuristic stand-in is projected by
+partition that projects it, and for a `lens_removed`, which deletes the
+one `lenses` row its `lens_key` keys; a `lens_saved` sets that row whole,
+its `filters` as JSON. A heuristic stand-in is projected by
 `STAND_IN` instead, one `ignore` of its `extractions` row, so it fills an
 item no extraction holds and never replaces a call's extraction, claims or
 topics, whatever the projection held when the extractor chose it. A
@@ -243,7 +245,11 @@ streams and every other reader's cursor stay, the reresolver's included,
 since it reads the ontology through its own Consumer, so a rebuild signals
 nothing and re-resolves nothing; `wp newspack-intelligence ontology
 reresolve` does that when wanted. `wp nodes gc --force` would not do here,
-because a deactivated topology orphans its event logs with its tables.
+because a deactivated topology orphans its event logs with its tables. A
+table added at the same version needs neither: the writer declares every
+table with `CREATE TABLE IF NOT EXISTS` when its Row_Table opens the file,
+so a worker restarted after the deploy creates it, and a read before that
+restart refuses `no such table`.
 
 **Resolution.** `resolver`, fed `item_recorded` events by its own
 `intel:items:resolve` Consumer, which skips every other kind on the stream
@@ -518,9 +524,9 @@ verbs do, because a root-owned segment or IPC file is one the workers
 cannot append to.
 
 **Reads.** `Intelligence_CI` (`intelligence`), mounted on every request
-graph, answers eight verbs, each declaring `read` and its
-args: `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `review`
-and `collections`. Each handler hands its bound args to the `Graph_Query`
+graph, answers nine verbs, each declaring `read` and its
+args: `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `review`,
+`collections` and `lenses`. Each handler hands its bound args to the `Graph_Query`
 read of the same name, through `Intel_Graph_Row_Schema::read()` over every
 partition's file. A read opens on `Graph_Query::graph()`, which resolves
 the tiers once from `Intel_Tiers::readable()` — `public` and `internal`,
@@ -553,7 +559,9 @@ mention; a link's state is the highest-ranked judgment's (`JUDGE_RANK`: a
 person over an agent), else the machine's, and a `rejected` link counts
 nowhere. Each read hands `live()` the links it rests on — an entity's keys,
 a page's items, the items a claim or a proposal names — and windows only
-those; `trends` with no `entity` reads every link in range. Summaries, kinds and scores come from `extractions`,
+those; `search` and `trends` naming a role, or `trends` counting topics,
+with no entity or topic window the links of the readable items inside
+their days. Summaries, kinds and scores come from `extractions`,
 names from a join on `entities`. `q` reaches FTS5 as one `fts_phrase()` per
 word over title, body and summary, and a word holding no letter or digit
 matches as an empty phrase, which FTS5 ignores; every other value binds,
@@ -561,12 +569,38 @@ and a blank optional arg is a value read as given (substrate ADR-25), so a
 blank `q` or `source` matches nothing. Days parse through
 `Intel_Graph_Row_Schema::range()`. No answer carries a body; `limit` is
 capped at `Graph_Query::MAX_LIMIT` (200); trend rows, related entities and
-proposed entities cite their five newest items, and items and claims their
-URLs. A projection that will not open answers `available: false` beside
+proposed entities cite their five newest items, the first two as `items: [
+{ item_key, url, title } ]`, and items and claims their URLs. A projection that will not open answers `available: false` beside
 empty rows, logged; one no partition has written answers empty rows.
 A collection's saved items read from `collected` alone, at the tier each
 was saved at, so a saved item outlives its expiring `items` row; `collected`
 keeps its own tier filter, and `collections` opens no graph.
+`search` and `trends` filter alike — `entity`, and the lists
+`Graph_Query::LENS_LISTS` declares once, `kind`, `topic`, `role` and
+`source`, each repeatable and matching any of its values, `role` an entity
+the item links holding it at the item's time — and `search` adds `q`.
+`LENS_LISTS` names each list's field, its arg, its vocabulary (null when
+free) and its description, and the call's filters, a lens's, `save_lens`,
+the schema's args and the page's `lensLists` vocabulary all iterate it. `trends` counts by `by` per `bucket`, the call's, else its lens's,
+else `kind` (`Graph_Query::DEFAULT_AXIS`) per `week` (`DEFAULT_BUCKET`);
+neither arg declares a default, since a bound default would mask the
+lens's. `lenses` answers `{ lenses: [ { lens_key, name, description,
+filters } ], available }` by name, `filters` always the whole
+`Graph_Query::unfiltered()` shape — `kinds`, `topics`, `roles`,
+`sources`, `entity`, `days`, `tiers`, `by` and `bucket` — its entity and
+topics only those the caller may see now (`visible()`), so one a judgment
+has since left to restricted items alone is left out for a non-holder.
+Given `lens`, slugged as `save_lens` slugs it, `search` and `trends` read
+through it (`Graph_Query::through()`):
+each list the call names, and `entity`, replaces the lens's; `since` or
+`until`, or both, replace the lens's `days`, the last that many UTC days
+ending today, whole, the side the call leaves open staying open; and the
+graph opens with `ri` over the caller's readable tiers intersected with the
+lens's `tiers`, so a lens narrows a holder and never widens a reader. A
+lens's entity or topic the caller cannot see stays in the filter, where it
+matches no item the caller may read, so it narrows that caller to nothing
+rather than dropping out and widening. A lens no one saved is refused as
+`no lens: <key>`.
 
 **Restricted tier.** `Intel_Tiers::CAPABILITY`,
 `newspack_intelligence_restricted`, is a WordPress user capability, granted
@@ -599,7 +633,7 @@ dead-letter dir derived from them, are refused (see Streams). Uninstall reaches 
 the substrate possibly inactive, so it and everything it calls use no
 substrate class.
 
-**Curation.** `Intelligence_CI` also answers thirteen curation verbs, each
+**Curation.** `Intelligence_CI` also answers fifteen curation verbs, each
 declaring `tune`, each writing one ontology event through
 `Ontology_Writer::append()` and answering `{ ok, event_id }`; the two
 creations add the key they minted. `Graph_Curation` holds them:
@@ -607,14 +641,16 @@ creations add the key they minted. `Graph_Curation` holds them:
 `reject_entity`, `merge_entities`, `add_name`, `add_identifier`,
 `assert_role`, `end_role`, `tag_topic`, `create_entity` (keyed
 `Intel_Event::entity_key()`), `create_collection` (keyed
-`Intel_Event::collection_key()`, the same slug) and `collect` (the item's
-URL, its title and its tier). The actor is `Intel_Event::caller()`:
+`Intel_Event::collection_key()`, the same slug), `collect` (the item's
+URL, its title and its tier), `save_lens` (keyed `Intel_Event::lens_key()`,
+the given key slugged, answering it) and `remove_lens`. The actor is `Intel_Event::caller()`:
 `agent:<login>:<label>` when `Capabilities::$session_label` is non-empty,
 as for an MCP connection or an issued session, the label as
 `Sessions::clean_label()` bounded it, else `user:<login>`; a call with no
 signed-in user is refused before it writes. Every refusal throws before
 anything is written, and no handler checks a role (substrate ADR-26).
-Each verb reads the projection once. Every entity key it names — both
+Each verb reads the projection once, `save_lens` only when it names an
+entity or a topic. Every entity key it names — both
 sides of a merge, a link's entity, a tagged topic — must be one
 `Graph_Query::seen()` lets the caller see, any other key is refused as
 `no entity: <key>`, and the verb acts on the survivor it answers as, so a
@@ -666,7 +702,21 @@ keys at `Graph_Curation::KEY_BYTES` (320), item keys at `ITEM_KEY_BYTES`
 (512), names and values at `NAME_BYTES` (256) and URLs at `URL_BYTES`
 (1,024) — while a collected title is cut at `TITLE_BYTES` (512) on a
 character boundary, so every event fits one 4,096-byte line whatever
-characters fill it. `fetch_now` TICKs every source in each live worker
+characters fill it. A lens's lists are the exception: `save_lens` writes
+`lens_saved` replacing any lens under its key, every filter in
+`Graph_Query::unfiltered()`'s shape, each value of a `LENS_LISTS` list
+checked against its vocabulary and each free one bounded at `KEY_BYTES`,
+each tier checked against `Intel_Event::TIERS`, `by` and `bucket` against the trend sets
+(`Graph_Query::check_trend()`), `days` from 1 to `RETAIN_DAYS`, each
+value bounded, and its entity and topics stored as the survivors `seen()`
+answers, a topic refused when its survivor is not of type `topic`, as
+`tag_topic` refuses it (`<key> is not a topic`), and either refused, since every reader lists every lens, when a caller
+without restricted access could not see one (`a lens naming <key> would
+show it to every reader; no item outside the restricted tier cites it`);
+no cap holds the lists, so `Intel_Event::make()` refuses an event past one
+line, before anything is written. `remove_lens` slugs its key as
+`save_lens` does and refuses `no lens: <key>`.
+`fetch_now` TICKs every source in each live worker
 through `Worker_Route` and declares `manage`, because it mounts a worker's
 input (substrate ADR-23). `Worker_Route` appends each request to every live
 worker's input IPC partition — durable and synchronous, with no live-worker
@@ -690,16 +740,22 @@ the tier. Each
 read's summary names the 730-day item horizon,
 `Intel_Graph_Row_Schema::RETAIN_DAYS`, filled as `{horizon}`. The glossary
 lists the entity types and link roles from `Intel_Event::TYPES` and
-`LINK_ROLES`.
+`LINK_ROLES`. `intel_lenses`, `intel_save_lens`, `intel_remove_lens` and
+the `lens` and list args of `intel_search` and `intel_trends` come off the
+schema with no door code; a variadic arg is a JSON array.
 
 **Seeding.** `wp newspack-intelligence ontology seed` writes
 `Ontology_Seed::events()` — thirty topics, the partners, funders and
-industry bodies, and Newspack's products, one entity per table row — for
-the keys `Ontology_Seed::present()` does not find settled in the
-projection's `entity_states` — any state but a machine's pending
-`proposed` — so an entity a curator has accepted, rejected, merged or
-renamed is never reset, while a machine's proposal of a seed key is
-replaced by the seed's creation; it prints how many keys were new and how many present, and a
+industry bodies, Newspack's products, one entity per table row, and three
+lenses, `leadership`, `support` and `developers` — for the keys
+`Ontology_Seed::present()` does not find settled in the projection: an
+entity in `entity_states` in any state but a machine's pending
+`proposed`, a seed lens any `lens_saved` or `lens_removed` in `events`
+names, read by subject and kind, the index `events` keeps.
+So an entity a curator has accepted, rejected, merged or renamed is never
+reset, a machine's proposal of a seed key is replaced by the seed's
+creation, and a lens a curator saved over or removed is left alone; it
+prints how many keys were new and how many present, and a
 projection that will not open fails it with `Table_Unavailable` rather than
 writing everything. It writes through `Ontology_Writer::append()`, the
 request-side writer: a transient Partition named `intel:ontology:writer`,
@@ -816,7 +872,7 @@ plugin adds:
 | `Extractor` | `Extractor_Node` | `<writer> <later>`; the `LLM_Config` verbs |
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>` |
-| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `review`, `collections`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, each at `tune`; `fetch_now` at `manage` |
+| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `review`, `collections`, `lenses`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, each at `tune`; `fetch_now` at `manage` |
 
 The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model`,
 `set_feature`, `add_profile` and `remove_profile`; every node carrying the trait
@@ -895,37 +951,43 @@ its own one-shot commands; nothing polls.
 | Module | Export | What it does |
 |--------|--------|--------------|
 | `index.js` | — | Mounts `IntelligencePage` on `#newspack-intelligence-app`, handing it `canTune` and `vocabulary` from `NewspackNodesData` |
-| `IntelligencePage.js` | default | Switches Search, Entity, Review and Collections in place; holds the submitted search, the open entity and collection, and the item being saved, so a view returns as it was left; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the `NEWSPACK::NODES` header subtitled `Intelligence` and the debug overlay |
-| `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite` | A read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments; a write sent once per `run()`, which answers the tokens it sent, running `refresh` once it lands, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal and answered arguments |
-| `views/Search.js` | default | `search` with words, kind, topic, source and a day range, a page at a time |
+| `IntelligencePage.js` | default | Switches Search, Entity, Lenses, Review and Collections in place; holds the submitted search, the open entity, lens and collection, and the item being saved, so a view returns as it was left; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the `NEWSPACK::NODES` header subtitled `Intelligence` and the debug overlay |
+| `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite`, `commandArgs` | `commandArgs()` names every value given, a list once per member, leaving out a blank value or an empty list; a read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments; a write sent once per `run()`, which answers the tokens it sent, running `refresh` once it lands, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal and answered arguments |
+| `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
+| `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `search --lens` a page at a time beside `trends --lens`; trend rows citing their items; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
 | `views/Entity.js` | default | `entity`, `timeline` a page at a time, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
-| `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity, and `review entities`, a pill per entity; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`; a judgment hides its pill or row as it is sent, until a read no longer lists it, and a refusal puts it back |
-| `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection` |
+| `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity, and `review entities`, a pill per entity; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back |
+| `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection`, its collection shown saving through `useHeld` until a read lists it by name |
+| `hooks/useHeld.js` | `useHeld` | A read's rows with each write shown from the moment it is sent: a held key's row taken out until no read lists it, or a held row put in its place until a read lists one `matches` says reflects it; a refusal undoes the hold whose send it echoes, and a bare refusal every hold |
 | `components/SaveToCollection.js` | default | The one dialog any result saves through, sending `collect` |
 | `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty by its `rows` key, or its rows — as a stock `Card` section named by an optional title, which heads its `CardHeader`, with the state inset in its `CardBody`, or bare inside a dialog; the one alert every refusal, read or write, renders in |
-| `components/Pager.js` | default | How many of the matches a page shows, and Previous and Next over a stack of page starts, for Search and the Entity timeline |
+| `components/Pager.js` | default | How many of the matches a page shows, and Previous and Next over a stack of page starts, for Search, the Entity timeline and a lens's items |
+| `components/ListField.js`, `lensDraft.js` | `ListField`; `lensDraft`, `newLens`, `draftLens`, `draftArgs`, `listOf`, `daysSince` | A comma-separated field naming the values a closed list allows; a lens read into a form's text and back into the lens and the options `save_lens` and `search` take, its list filters read from `vocabulary.lensLists` and its tiers kept beside them, the one place that knows the lens's shape; and the first UTC day of a lens's rolling window |
 | `components/ItemRow.js`, `Cite.js`, `format.js` | — | An item row; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day and `metaLine()`, which joins a row's meta parts and keeps a 0 |
 | `styles/intelligence.scss` | — | Geometry only, emitted as `build/intelligence/index.css` |
 
 Each read is a `useCommandOnce` read with `retry`, under the `intelligence`
 group, so `connect intelligence:shell` watches every send; its scope names
-what the slice shows (`entity:record`, `review:links`, `collections:one`), so
+what the slice shows (`entity:record`, `review:links`, `lens:items`), so
 two reads of one verb never share a Fetcher. A write is one `useCommandOnce`
 per verb, held by its view rather than by a row, sending every arg named
 (`--key=…`, through `formatCommandArgs`) so a curator's value beginning
 `--name=` binds as a value, and a write that lands
 re-reads the slice it changed. No send names a subject: an item key spells a
 whole URL, past the length a reply address carries, so a refusal is matched
-to its send by the arguments it echoes. Review takes a judged row out as the
-judgment is sent, because the projector records it only on its next flush,
-and holds no other row while it waits.
+to its send by the arguments it echoes. Review, Lenses and Collections show
+each write as it is sent through `useHeld`, because the projector records it
+only on its next flush, so a re-read answers the old rows until then.
 The view switcher is the substrate's shared `TabBar`, over one `tabpanel`
 labelled by the selected tab. `canTune`, which `enqueue_intelligence_assets()` sets
 from `Capabilities::can( TUNE )` on the page's own hook suffix alone, as
 the string `'1'` or `''` because the substrate refuses a boolean extra,
 only hides the curation controls: the server's role gate refuses a write the
 caller may not make. The vocabulary the selects offer is `Intel_Event`'s own
-lists, localized beside it. Every string from the graph renders as text, an
+lists, `tiers` among them, the trend axes and buckets as `trendAxes`
+and `buckets` (`Graph_Query::trend_axes()` and `buckets()`), and
+`lensLists`, one `{ field, option, values }` per `Graph_Query::LENS_LISTS`
+entry, `values` null when free, localized beside it. Every string from the graph renders as text, an
 item URL becomes a link only when it is http or https, and `Answer` gives an
 empty answer and an `available: false` one different words. The page
 renders inside the substrate's shared `DashboardShell`, whose `ThemedRoot`

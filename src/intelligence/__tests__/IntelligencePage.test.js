@@ -1,6 +1,6 @@
 /* eslint-env jest */
 /**
- * IntelligencePage switches among its four views in place, opens an entity
+ * IntelligencePage switches among its five views in place, opens an entity
  * from any chip, saves an item through one dialog only for a curator, and
  * carries the substrate debug overlay under its own storage key.
  */
@@ -23,7 +23,7 @@ jest.mock( '@newspack-nodes/debug-overlay', () => ( {
 } ) );
 
 import { intelWire } from './intelWire';
-import { ENTITY, ITEM, VOCABULARY } from '../views/__tests__/fixtures';
+import { ENTITY, ITEM, LENSES, VOCABULARY } from '../views/__tests__/fixtures';
 import IntelligencePage from '../IntelligencePage';
 
 let wire;
@@ -39,6 +39,8 @@ beforeEach( () => {
 	wire.replies.claims = { claims: [], available: true };
 	wire.replies.review = ( [ what ] ) => ( { [ what ]: [], available: true } );
 	wire.replies.collections = { collections: [], available: true };
+	wire.replies.lenses = LENSES;
+	wire.replies.trends = { rows: [], available: true };
 } );
 
 function renderPage( canTune = false ) {
@@ -153,6 +155,32 @@ describe( 'IntelligencePage', () => {
 		expect( screen.getByLabelText( 'Words' ) ).toHaveValue(
 			'regional prize'
 		);
+	} );
+
+	it( 'reopens the lens it left, on the page it left', async () => {
+		wire.replies.search = ( args ) => ( {
+			items: [
+				{
+					...ITEM,
+					title: `seen by ${ args.join( ' ' ) || 'nothing' }`,
+				},
+			],
+			total: 30,
+			available: true,
+		} );
+		renderPage();
+		fireEvent.click( nav( 'Lenses' ) );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Support desk' } )
+		);
+		await screen.findByText( 'seen by --lens=support-desk' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
+		await screen.findByText( 'seen by --lens=support-desk --offset=1' );
+		fireEvent.click( nav( 'Review' ) );
+		fireEvent.click( nav( 'Lenses' ) );
+		expect(
+			await screen.findByText( 'seen by --lens=support-desk --offset=1' )
+		).toBeInTheDocument();
 	} );
 
 	it( 'reopens the collection it left', async () => {

@@ -1,9 +1,10 @@
-import { useEffect, useState } from '@wordpress/element';
+import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { TextControl } from '@wordpress/components';
 import { Icon, check, closeSmall } from '@wordpress/icons';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
+import { useHeld } from '../hooks/useHeld';
 import Answer from '../components/Answer';
 import Cite, { EntityChip } from '../components/Cite';
 import Refusal from '../components/Refusal';
@@ -147,68 +148,6 @@ function byItem( links ) {
 }
 
 /**
- * One queue's read with the rows a curator has judged taken out, from the
- * moment each judgment is sent: the projection records a judgment seconds
- * after it lands, so a re-read lists the row until then. A row stays out
- * until a read no longer lists it, and returns when its judgment is
- * refused, matched by the tokens the refusal echoes; a refusal echoing
- * none, such as a Router's NOT_AVAILABLE, puts every judged row back.
- *
- * @param {{answer: ?Object, error: ?string, loading: boolean}} read  What `useIntelRead` returned.
- * @param {string}                                              rows  The answer's row list.
- * @param {(row: Object) => string}                             keyOf A row's key.
- * @return {{read: Object, judge: (key: string, run: () => string[]) => void, refused: (tokens: string[]) => void}}
- *   The read without the judged rows; `judge()`, which sends a row's
- *   judgment through `run` and takes the row out; and `refused()`, which
- *   puts back the row whose judgment sent `tokens`, or every row for none.
- */
-function useJudged( read, rows, keyOf ) {
-	// Each judged row's key => the tokens its judgment sent, as JSON.
-	const [ judged, setJudged ] = useState( () => new Map() );
-	const listed = read.answer?.[ rows ];
-	useEffect( () => {
-		if ( ! listed ) {
-			return;
-		}
-		const keys = new Set( listed.map( keyOf ) );
-		setJudged( ( was ) => {
-			const kept = new Map(
-				[ ...was ].filter( ( [ key ] ) => keys.has( key ) )
-			);
-			return kept.size === was.size ? was : kept;
-		} );
-	}, [ listed, keyOf ] );
-	return {
-		read: listed
-			? {
-					...read,
-					answer: {
-						...read.answer,
-						[ rows ]: listed.filter(
-							( row ) => ! judged.has( keyOf( row ) )
-						),
-					},
-			  }
-			: read,
-		judge: ( key, run ) => {
-			const tokens = JSON.stringify( run() );
-			setJudged( ( was ) => new Map( was ).set( key, tokens ) );
-		},
-		refused: ( tokens ) => {
-			const sent = JSON.stringify( tokens );
-			setJudged(
-				( was ) =>
-					new Map(
-						0 === tokens.length
-							? []
-							: [ ...was ].filter( ( [ , t ] ) => t !== sent )
-					)
-			);
-		},
-	};
-}
-
-/**
  * A proposed link's key: its item and entity.
  *
  * @param {Object} link The link.
@@ -246,8 +185,8 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 		'entities',
 	] );
 
-	const judgedLinks = useJudged( links, 'links', linkKey );
-	const judgedEntities = useJudged( entities, 'entities', entityKey );
+	const judgedLinks = useHeld( links, 'links', linkKey );
+	const judgedEntities = useHeld( entities, 'entities', entityKey );
 
 	const relink = {
 		refresh: links.refresh,
@@ -304,8 +243,9 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 											entity: link.entity_key,
 										};
 										const judge = ( write ) =>
-											judgedLinks.judge(
+											judgedLinks.hold(
 												linkKey( link ),
+												null,
 												() => write.run( pair )
 											);
 										return (
@@ -360,7 +300,7 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 						{ answer.entities.map( ( entity ) => {
 							const key = entity.entity_key;
 							const judge = ( write, args ) =>
-								judgedEntities.judge( key, () =>
+								judgedEntities.hold( key, null, () =>
 									write.run( args )
 								);
 							return (

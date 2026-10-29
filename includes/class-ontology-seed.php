@@ -2,11 +2,12 @@
 /**
  * Ontology_Seed: the entities the graph starts from — the topic vocabulary
  * extraction chooses from, the partners, funders and industry bodies the
- * team follows, and Newspack's own products. One table row per entity, so
- * each key is created once. A run writes only the keys the projection does
- * not settle, so an entity a curator has since accepted, rejected, merged or
- * renamed is never reset to what the seed says, while a machine's pending
- * proposal of a seed key is replaced by the seed's creation.
+ * team follows, and Newspack's own products — and a lens per audience. One
+ * table row per entity or lens, so each key is written once. A run writes
+ * only the keys the projection does not settle, so an entity a curator has
+ * since accepted, rejected, merged or renamed is never reset to what the
+ * seed says, while a machine's pending proposal of a seed key is replaced by
+ * the seed's creation; a lens any event has saved or removed is left alone.
  *
  * @package Newspack_Intelligence
  */
@@ -77,10 +78,50 @@ final class Ontology_Seed {
 	];
 
 	/**
+	 * Lens key => [ name, description, the filters it sets over
+	 * `Graph_Query::unfiltered()` ].
+	 */
+	private const LENSES = [
+		'leadership' => [
+			'Leadership',
+			'Where clients and the industry are moving.',
+			[
+				'roles'  => [ 'client', 'former_client', 'prospect', 'competitor', 'partner', 'funder' ],
+				'kinds'  => [ 'launch', 'funding', 'partnership', 'award', 'churn_signal', 'research' ],
+				'days'   => 30,
+				'by'     => 'topic',
+				'bucket' => 'week',
+			],
+		],
+		'support'    => [
+			'Support',
+			'What clients complain about and ask for.',
+			[
+				'roles'  => [ 'client' ],
+				'kinds'  => [ 'complaint', 'incident', 'feature_request', 'churn_signal', 'praise' ],
+				'days'   => 14,
+				'by'     => 'kind',
+				'bucket' => 'day',
+			],
+		],
+		'developers' => [
+			'Developers',
+			'What shipped and what broke.',
+			[
+				'sources' => [ 'github', 'linear' ],
+				'kinds'   => [ 'release', 'incident', 'feature_request' ],
+				'days'    => 30,
+				'by'      => 'kind',
+				'bucket'  => 'week',
+			],
+		],
+	];
+
+	/**
 	 * The seed as ontology events, under the seed's own machine actor, for
 	 * each entity `$present` does not name: its creation, then its names and
 	 * identifiers, then its roles, each role asserted from 0, before any
-	 * record.
+	 * record; then each lens `$present` does not name.
 	 *
 	 * @param list<string> $present The keys to leave alone, as present() answers.
 	 * @return list<array<string,mixed>>
@@ -105,6 +146,11 @@ final class Ontology_Seed {
 				}
 			}
 		}
+		foreach ( self::LENSES as $key => [ $name, $description, $filters ] ) {
+			if ( ! isset( $skip[ $key ] ) ) {
+				$events[] = self::mint( 'lens_saved', [ 'lens_key' => $key, 'name' => $name, 'description' => $description, 'filters' => \array_replace( Graph_Query::unfiltered(), $filters ) ] );
+			}
+		}
 		return $events;
 	}
 
@@ -120,18 +166,23 @@ final class Ontology_Seed {
 	}
 
 	/**
-	 * The seed keys the projection settles — any state but a machine's
-	 * pending `proposed` — in seed order.
+	 * The seed keys the projection settles — an entity in any state but a
+	 * machine's pending `proposed`, a lens any `lens_saved` or
+	 * `lens_removed` names — in seed order.
 	 *
 	 * @return list<string>
 	 * @throws Table_Unavailable When no projection can be read.
 	 */
 	public static function present(): array {
-		$held = Intel_Graph_Row_Schema::read(
-			static function ( Row_Reader $r ): array {
+		$lenses = \array_keys( self::LENSES );
+		$held   = Intel_Graph_Row_Schema::read(
+			static function ( Row_Reader $r ) use ( $lenses ): array {
 				$keys = [];
 				foreach ( $r->aliases() as $alias ) {
 					foreach ( $r->rows( "SELECT entity_key FROM {$alias}.entity_states WHERE state <> ?", [ 'proposed' ] ) as [ $key ] ) {
+						$keys[ Core::as_string( $key ) ] = true;
+					}
+					foreach ( $r->rows( "SELECT subject FROM {$alias}.events WHERE subject IN ( " . Intel_Graph_Row_Schema::marks( $lenses ) . ' ) AND kind IN ( ?, ? )', [ ...$lenses, 'lens_saved', 'lens_removed' ] ) as [ $key ] ) {
 						$keys[ Core::as_string( $key ) ] = true;
 					}
 				}
@@ -145,6 +196,11 @@ final class Ontology_Seed {
 				if ( isset( $held[ $key ] ) ) {
 					$present[] = $key;
 				}
+			}
+		}
+		foreach ( $lenses as $key ) {
+			if ( isset( $held[ $key ] ) ) {
+				$present[] = $key;
 			}
 		}
 		return $present;

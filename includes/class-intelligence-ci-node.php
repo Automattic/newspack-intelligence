@@ -15,6 +15,7 @@ namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\Config;
+use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Service_CI_Node;
 
 \defined( 'ABSPATH' ) || exit;
@@ -55,8 +56,8 @@ class Intelligence_CI_Node extends Service_CI_Node {
 	}
 
 	/**
-	 * Declarative schema: the eight read verbs, each a handler over
-	 * `Graph_Query`; the thirteen curation verbs, each over
+	 * Declarative schema: the nine read verbs, each a handler over
+	 * `Graph_Query`; the fifteen curation verbs, each over
 	 * `Graph_Curation` and seeing only the entities and items a read
 	 * caller sees; and `fetch_now`.
 	 *
@@ -69,6 +70,14 @@ class Intelligence_CI_Node extends Service_CI_Node {
 		$key   = static fn ( string $what ): array => $arg( 'key', $what );
 		$limit = static fn ( int $default ): array => [ 'name' => 'limit', 'type' => 'int', 'default' => $default, 'description' => 'The most rows answered, at most ' . Graph_Query::MAX_LIMIT . '.' ];
 		$text  = static fn ( string $name, string $what ): array => [ 'name' => $name, 'type' => 'string', 'description' => $what ];
+		$any   = static fn ( string $name, string $what ): array => [ 'name' => $name, 'type' => 'string', 'variadic' => true, 'description' => "{$what} Repeat it to match any." ];
+		$lists = [];
+		foreach ( Graph_Query::LENS_LISTS as [ $option, $values, $what ] ) {
+			$lists[] = $any( $option, $what . ( null === $values ? '.' : ': ' . \implode( ', ', $values ) . '.' ) );
+		}
+		$lens  = $text( 'lens', 'A lens whose filters apply; each filter the call names itself replaces the lens\'s, and since or until replaces its days.' );
+		$axis  = $text( 'by', 'What is counted: ' . \implode( ' or ', Graph_Query::trend_axes() ) . '; else the lens\'s, else ' . Graph_Query::DEFAULT_AXIS . '.' );
+		$span  = $text( 'bucket', 'The span a row counts: ' . \implode( ', ', Graph_Query::buckets() ) . '; else the lens\'s, else ' . Graph_Query::DEFAULT_BUCKET . '.' );
 		$since = $text( 'since', 'The first UTC day, Y-m-d.' );
 		$until = $text( 'until', 'The last UTC day, Y-m-d.' );
 		$page  = [ 'name' => 'offset', 'type' => 'int', 'default' => 0, 'description' => 'Rows skipped before the page.' ];
@@ -82,7 +91,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 			parent::node_schema(),
 			[
 				'category'    => 'Service',
-				'description' => 'Reads the intelligence graph — items, entities, claims, trends, the review queue and collections, each answer citing its items — and records each curation as an ontology event.',
+				'description' => 'Reads the intelligence graph — items, entities, claims, trends, the review queue, collections and lenses, each answer citing its items — and records each curation as an ontology event.',
 				'commands'    => [
 					$verb(
 						$read,
@@ -91,36 +100,37 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						[
 							$text( 'q', 'Words every match holds in its title, body or summary.' ),
 							$text( 'entity', 'An entity the item links.' ),
-							$text( 'kind', 'The item kind its extraction gave.' ),
-							$text( 'topic', 'A topic the item is tagged with.' ),
-							$text( 'source', 'The source that recorded it.' ),
+							$lens,
 							$since,
 							$until,
 							$limit( Graph_Query::DEFAULT_LIMIT ),
 							$page,
+							...$lists,
 						],
 						Graph_Query::search( ... )
 					),
 					$verb( $read, 'entity', 'One entity as its merge survivor: { entity_key, type, name, state, merged_from, names, identifiers, roles, topics, counts: { items, proposed_links } }.', [ $about ], Graph_Query::entity( ... ) ),
 					$verb( $read, 'timeline', 'An entity\'s items, newest first: { items, total }, each item as search answers it.', [ $about, $since, $until, $limit( Graph_Query::DEFAULT_LIMIT ), $page ], Graph_Query::timeline( ... ) ),
-					$verb( $read, 'related', 'The entities sharing the most items with one: { entities: [ { entity_key, name, type, shared_items, item_keys } ] }.', [ $about, $limit( Graph_Query::RELATED_LIMIT ) ], Graph_Query::related( ... ) ),
+					$verb( $read, 'related', 'The entities sharing the most items with one: { entities: [ { entity_key, name, type, shared_items, items: [ { item_key, url, title } ] } ] }, five newest shared items cited an entity.', [ $about, $limit( Graph_Query::RELATED_LIMIT ) ], Graph_Query::related( ... ) ),
 					$verb( $read, 'claims', 'The claims naming an entity, newest first: { claims: [ { subject, predicate, object, confidence, item_key, url } ] }.', [ $about, $text( 'predicate', 'Only claims of this predicate.' ), $limit( Graph_Query::DEFAULT_LIMIT ) ], Graph_Query::claims( ... ) ),
 					$verb(
 						$read,
 						'trends',
-						'Items counted by kind or topic per bucket: { rows: [ { bucket, value, count, item_keys } ] }, five newest items cited a row.',
+						'Items counted by kind or topic per bucket: { rows: [ { bucket, value, count, items: [ { item_key, url, title } ] } ] }, five newest items cited a row.',
 						[
-							$arg( 'by', 'What is counted: kind or topic.' ),
-							$text( 'role', 'Only items linking an entity holding this role at the time.' ),
+							$axis,
 							$text( 'entity', 'Only items linking this entity.' ),
+							$lens,
 							$since,
 							$until,
-							[ 'name' => 'bucket', 'type' => 'string', 'default' => 'week', 'description' => 'The span a row counts: day, week or month.' ],
+							$span,
+							...$lists,
 						],
 						Graph_Query::trends( ... )
 					),
 					$verb( $read, 'review', 'The review queue, each row with its citing items: { links } or { entities }.', [ $arg( 'what', 'The queue: links or entities.' ), $limit( Graph_Query::DEFAULT_LIMIT ) ], Graph_Query::review( ... ) ),
 					$verb( $read, 'collections', 'Every collection with its item count, or one with its saved items.', [ $text( 'key', 'One collection\'s key.' ) ], Graph_Query::collections( ... ) ),
+					$verb( $read, 'lenses', 'Every lens, by name: { lenses: [ { lens_key, name, description, filters: { kinds, topics, roles, sources, entity, days, tiers, by, bucket } } ] }.', [], Graph_Query::lenses( ... ) ),
 					$verb( $tune, 'confirm_link', 'Confirm a readable item\'s link to an entity: { ok, event_id }.', $link, static fn ( array $args ): array => Graph_Curation::judge_link( 'link_confirmed', $args ) ),
 					$verb( $tune, 'reject_link', 'Reject a readable item\'s link to an entity: { ok, event_id }.', $link, static fn ( array $args ): array => Graph_Curation::judge_link( 'link_rejected', $args ) ),
 					$verb( $tune, 'accept_entity', 'Accept an entity: { ok, event_id }.', [ $about ], static fn ( array $args ): array => Graph_Curation::judge_entity( 'entity_accepted', $args ) ),
@@ -152,6 +162,24 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					),
 					$verb( $tune, 'create_collection', 'Create a collection keyed by its name, refused when the key is taken: { ok, event_id, collection_key }.', [ $arg( 'name', 'Its name, at most ' . Graph_Curation::NAME_BYTES . ' bytes.' ) ], Graph_Curation::create_collection( ... ) ),
 					$verb( $tune, 'collect', 'Save a readable item into a collection, its title cut at ' . Graph_Curation::TITLE_BYTES . ' bytes: { ok, event_id }.', [ $arg( 'collection', 'The collection key.' ), $item ], Graph_Curation::collect( ... ) ),
+					$verb(
+						$tune,
+						'save_lens',
+						'Save a lens, a named set of search and trends filters, replacing any under its key; refused past one ' . Partition_Node::MAX_LINE_SIZE . '-byte ontology line: { ok, event_id, lens_key }.',
+						[
+							$key( 'The lens key, slugged.' ),
+							$arg( 'name', 'Its name, at most ' . Graph_Curation::NAME_BYTES . ' bytes.' ),
+							[ 'name' => 'description', 'type' => 'string', 'default' => '', 'description' => 'What it is for.' ],
+							$text( 'entity', 'An entity every item links.' ),
+							[ 'name' => 'days', 'type' => 'int', 'description' => 'The last days it reads, today included, 1 to ' . Intel_Graph_Row_Schema::RETAIN_DAYS . '.' ],
+							$text( 'by', 'What its trends count: ' . \implode( ' or ', Graph_Query::trend_axes() ) . '.' ),
+							$text( 'bucket', 'The span its trend rows count: ' . \implode( ', ', Graph_Query::buckets() ) . '.' ),
+							...$lists,
+							$any( 'tier', 'A tier it reads, narrowing what its reader may read: ' . \implode( ', ', Intel_Event::TIERS ) . '.' ),
+						],
+						Graph_Curation::save_lens( ... )
+					),
+					$verb( $tune, 'remove_lens', 'Remove a lens: { ok, event_id }.', [ $key( 'The lens key.' ) ], Graph_Curation::remove_lens( ... ) ),
 					[
 						'name'        => 'fetch_now',
 						'capability'  => Capabilities::MANAGE,
