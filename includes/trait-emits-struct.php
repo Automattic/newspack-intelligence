@@ -17,16 +17,18 @@ trait Emits_Struct {
 
 	/**
 	 * Send one TM_STRUCT from this node through the sink: to `$to`, or to
-	 * the target when ''.
+	 * the target when '', keyed by `$key`.
 	 *
 	 * @param string              $to    The destination, or '' for the target.
 	 * @param array<string,mixed> $value The VALUE.
+	 * @param string              $key   The KEY, '' for none.
 	 */
-	private function emit( string $to, array $value ): void {
+	private function emit( string $to, array $value, string $key = '' ): void {
 		$message                   = Message::new_message();
 		$message[ Message::TYPE ]  = Message::TM_STRUCT;
 		$message[ Message::FROM ]  = $this->name;
 		$message[ Message::TO ]    = $to;
+		$message[ Message::KEY ]   = $key;
 		$message[ Message::VALUE ] = $value;
 		parent::fill( $message );
 	}

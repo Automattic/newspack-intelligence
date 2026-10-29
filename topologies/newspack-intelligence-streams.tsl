@@ -4,6 +4,9 @@
 # worker and request-side Ontology_Writer appends, so it takes no large write
 # and each ontology event fits one line. intel:reresolve holds a day of
 # item_reresolve records, each naming a stored item, so one fits one line.
+# intel:later parks item_reresolve records the resolver and the extractor
+# want to reprocess later, keeps each a day at most, and every minute sends
+# each one due to intel:reresolve.
 var num_partitions = 1
 include topic-probe
 make_node Partition intel:items <config:logs_dir>/intel-items.p{partition} 16777216 2 4096 8192 63072000 63072000
@@ -12,4 +15,6 @@ make_node Partition intel:ontology <config:logs_dir>/intel-ontology.p{partition}
 command_node intel:ontology:config keep_everything true
 make_node Partition intel:reresolve <config:logs_dir>/intel-reresolve.p{partition} 1048576 2 4 0 86400 86400
 make_node Intel_Event_Writer intel:writer intel:items intel:ontology
+make_node Delay intel:later <config:logs_dir>/intel-later.p{partition} <config:offsets_dir>/<topology>.intel-later.p{partition} <config:deadletter_dir>/<topology>.intel-later.p{partition} 60 86400
+connect_node intel:later intel:reresolve
 secure

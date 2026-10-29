@@ -56,7 +56,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->out                   = new Capture_Sink_Node();
 		$this->extractor             = new Extractor_Node();
 		$this->extractor->name( 'extractor' );
-		$this->extractor->arguments( [ 'intel:writer' ] );
+		$this->extractor->arguments( [ 'intel:writer', 'intel:later' ] );
 		$this->extractor->target( 'deduper' );
 		$this->extractor->sink( $this->out );
 	}
@@ -281,7 +281,7 @@ final class ExtractorNodeTest extends TestCase {
 	/**
 	 * An item already extracted by a call keeps that extraction when the
 	 * re-extraction's call fails: no heuristic stand-in replaces it, and
-	 * nothing is written or forwarded.
+	 * nothing is written or forwarded; a failed call parks its retry.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider( 'failures' )]
 	public function test_a_failed_reextraction_keeps_the_earlier_extraction( ?string $reply ): void {
@@ -293,11 +293,12 @@ final class ExtractorNodeTest extends TestCase {
 
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], true ) );
 
-		$this->assertSame( [], $this->out->captured );
+		$this->assertSame( [ [], [] ], [ $this->written(), $this->forwarded() ] );
+		$this->assertCount( null === $reply ? 0 : 1, $this->parked(), 'a failed call is retried; no call is not' );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'keeping the earlier extraction of ' . self::ITEM ) );
 	}
 
-	/** A resolution missing its item or whether it was extracted, or an item missing a field, is dropped with a line, never thrown. */
+	/** A resolution missing its item, whether it was extracted or its attempt, or an item missing a field, is dropped with a line, never thrown. */
 	public function test_a_malformed_resolution_is_dropped(): void {
 		$stderr = $this->capture_stderr();
 
@@ -305,6 +306,8 @@ final class ExtractorNodeTest extends TestCase {
 		$this->extractor->fill( self::message( [ 'item' => [ 'item_key' => self::ITEM ], 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [] ] ) );
 		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => 'none', 'proposals' => [], 'extracted' => false ] ) );
 		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [] ] ) );
+		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [], 'extracted' => false ] ) );
+		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [], 'extracted' => false, 'attempt' => '2' ] ) );
 		$this->extractor->fill( self::message( 'TICK' ) );
 
 		$this->assertSame( [], $this->out->captured );
@@ -324,7 +327,7 @@ final class ExtractorNodeTest extends TestCase {
 		Resolver_Node::$llm_factory = static fn (): ?LLM_Client => null;
 		$resolver                   = new Resolver_Node();
 		$resolver->name( 'resolver' );
-		$resolver->arguments( [ 'intel:writer' ] );
+		$resolver->arguments( [ 'intel:writer', 'intel:later' ] );
 		$resolver->target( 'extractor' );
 		$resolver->sink( new Capture_Sink_Node() );
 		$message                   = Message::new_message();
@@ -354,15 +357,81 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( 60, Entity_Index::TTL_S );
 	}
 
-	public function test_the_writer_is_declared_as_its_destination(): void {
-		$this->assertSame( [ 'intel:writer' ], $this->extractor->arguments() );
-		$this->assertSame( [ 'deduper', 'intel:writer' ], $this->extractor->display_targets() );
+	public function test_the_writer_and_the_later_queue_are_declared_as_its_destinations(): void {
+		$this->assertSame( [ 'intel:writer', 'intel:later' ], $this->extractor->arguments() );
+		$this->assertSame( [ 'deduper', 'intel:writer', 'intel:later' ], $this->extractor->display_targets() );
 	}
 
 	public function test_a_load_without_a_writer_is_refused(): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'Missing required argument: writer' );
 		( new Extractor_Node() )->arguments( [] );
+	}
+
+	public function test_a_load_without_a_later_queue_is_refused(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'Missing required argument: later' );
+		( new Extractor_Node() )->arguments( [ 'intel:writer' ] );
+	}
+
+	/**
+	 * A call that fails parks the item on the later queue for a re-resolution
+	 * one attempt on, backing off 300 seconds doubled per attempt to an hour,
+	 * and still writes the stand-in or keeps the earlier extraction.
+	 *
+	 * @return array<string,array{0:string,1:int,2:bool,3:int}>
+	 */
+	public static function retries(): array {
+		return [
+			'a thrown call, first try'          => [ 'throw', 0, false, 300 ],
+			'an unparseable reply, third try'   => [ 'I would rather not.', 2, false, 1200 ],
+			'a thrown re-extraction, last try'  => [ 'throw', 4, true, 3600 ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'retries' )]
+	public function test_a_failed_call_parks_a_retry_with_backoff( string $reply, int $attempt, bool $extracted, int $backoff ): void {
+		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ) );
+		$this->answer( $reply );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], $extracted, $attempt ) );
+
+		$this->assertSame(
+			[ [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM, 'fresh_after' => 0, 'attempt' => $attempt + 1, 'not_before' => self::NOW + $backoff ] ],
+			$this->parked()
+		);
+		$this->assertSame( $extracted ? [] : [ 'extraction_recorded' ], \array_column( $this->written(), 'event' ), 'the stand-in or kept extraction is written as without a retry' );
+		$this->assertSame( [ 300, 3600, 5 ], [ Extractor_Node::RETRY_BASE_S, Extractor_Node::RETRY_MAX_S, Extractor_Node::MAX_ATTEMPTS ] );
+	}
+
+	/** No client makes no call, so nothing fails and nothing is retried. */
+	public function test_no_client_parks_no_retry(): void {
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], false, 3 ) );
+
+		$this->assertSame( [], $this->parked() );
+		$this->assertSame( [ 'extraction_recorded' ], \array_column( $this->written(), 'event' ) );
+	}
+
+	/** A call that answers parks nothing. */
+	public function test_an_answered_call_parks_no_retry(): void {
+		$this->answer( '{"summary":"Harbor Gazette wins."}' );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], false, 2 ) );
+
+		$this->assertSame( [], $this->parked() );
+		$this->assertSame( [ 'extraction_recorded', 'subjects_extracted' ], \array_column( $this->written(), 'event' ) );
+	}
+
+	/** The last attempt's failure parks nothing more, logged. */
+	public function test_a_failure_at_the_last_attempt_gives_up(): void {
+		$this->answer( 'throw' );
+		$stderr = $this->capture_stderr();
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], false, Extractor_Node::MAX_ATTEMPTS ) );
+
+		$this->assertSame( [], $this->parked() );
+		$this->assertSame( [ 'extraction_recorded' ], \array_column( $this->written(), 'event' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'giving up extracting ' . self::ITEM . ' after 5 attempts' ) );
 	}
 
 	/** The resolve topology hands each resolution to the extractor, configured for the proxy and the audience. */
@@ -383,10 +452,10 @@ final class ExtractorNodeTest extends TestCase {
 
 		$resolver = Core::node( 'resolver' );
 		$this->assertInstanceOf( Resolver_Node::class, $resolver );
-		$this->assertSame( [ 'extractor', 'intel:writer' ], $resolver->display_targets() );
+		$this->assertSame( [ 'extractor', 'intel:writer', 'intel:later' ], $resolver->display_targets() );
 		$extractor = Core::node( 'extractor' );
 		$this->assertInstanceOf( Extractor_Node::class, $extractor );
-		$this->assertSame( [ 'deduper', 'intel:writer' ], $extractor->display_targets() );
+		$this->assertSame( [ 'deduper', 'intel:writer', 'intel:later' ], $extractor->display_targets() );
 		$deduper = Core::node( 'deduper' );
 		$this->assertInstanceOf( Deduper_Node::class, $deduper );
 		$this->assertSame( [ 'intel:writer' ], $deduper->display_targets() );
@@ -435,7 +504,7 @@ final class ExtractorNodeTest extends TestCase {
 	private function written(): array {
 		$events = [];
 		foreach ( $this->out->captured as $message ) {
-			if ( 'deduper' === $message[ Message::TO ] ) {
+			if ( 'deduper' === $message[ Message::TO ] || 'intel:later' === $message[ Message::TO ] ) {
 				continue;
 			}
 			$this->assertSame( 'intel:writer', $message[ Message::TO ] );
@@ -444,6 +513,19 @@ final class ExtractorNodeTest extends TestCase {
 			$events[] = $message[ Message::VALUE ];
 		}
 		return $events;
+	}
+
+	/** @return list<array<string,mixed>> The records parked on the later queue. */
+	private function parked(): array {
+		$parked = [];
+		foreach ( $this->out->captured as $message ) {
+			if ( 'intel:later' === $message[ Message::TO ] ) {
+				$this->assertSame( [ Message::TM_STRUCT, 'extractor' ], [ $message[ Message::TYPE ], $message[ Message::FROM ] ] );
+				$this->assertSame( $message[ Message::VALUE ]['item_key'], $message[ Message::KEY ], 'a parked record is keyed by its item' );
+				$parked[] = $message[ Message::VALUE ];
+			}
+		}
+		return $parked;
 	}
 
 	/** @return list<array<string,mixed>> The structs forwarded to the target. */
@@ -476,10 +558,12 @@ final class ExtractorNodeTest extends TestCase {
 	 * @param list<array<string,mixed>> $links     The links.
 	 * @param list<array<string,mixed>> $proposals The candidates.
 	 * @param array<string,mixed>       $over      Item fields to set.
+	 * @param bool                      $extracted Whether a call extracted the item before.
+	 * @param int                       $attempt   The extraction attempts made so far.
 	 * @return array<int,mixed>
 	 */
-	private static function resolved( array $links, array $proposals, array $over = [], bool $extracted = false ): array {
-		return self::message( [ 'item' => \array_merge( self::item(), $over ), 'links' => $links, 'proposals' => $proposals, 'extracted' => $extracted ] );
+	private static function resolved( array $links, array $proposals, array $over = [], bool $extracted = false, int $attempt = 0 ): array {
+		return self::message( [ 'item' => \array_merge( self::item(), $over ), 'links' => $links, 'proposals' => $proposals, 'extracted' => $extracted, 'attempt' => $attempt ] );
 	}
 
 	/** @return array<string,mixed> The item every resolution carries. */

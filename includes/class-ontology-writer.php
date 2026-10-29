@@ -84,12 +84,22 @@ final class Ontology_Writer {
 				$keep = self::keeps_everything( \array_slice( $values, 2 ) );
 			}
 		}
-		$dir = Topology_Analyzer::resolved_node_dirs( self::TOPOLOGY, self::PARTITION, 1 )[0] ?? null;
-		if ( null === $args || null === $dir ) {
+		if ( null === $args ) {
 			throw new \RuntimeException( \esc_html( self::TOPOLOGY . ' declares no ' . self::PARTITION . ' Partition' ) );
 		}
 		$rest = \array_map( static fn ( string $token ): string => Core::resolve_config_tokens( $token ), \array_slice( $args, 1 ) );
-		return [ [ $dir, ...$rest ], $keep ];
+		return [ [ self::stream_dir(), ...$rest ], $keep ];
+	}
+
+	/**
+	 * The ontology stream's directory these appends write, the streams
+	 * topology's declaration resolved for partition 0.
+	 *
+	 * @throws \RuntimeException When the topology declares no such Partition.
+	 */
+	public static function stream_dir(): string {
+		return Topology_Analyzer::resolved_node_dirs( self::TOPOLOGY, self::PARTITION, 1 )[0]
+			?? throw new \RuntimeException( \esc_html( self::TOPOLOGY . ' declares no ' . self::PARTITION . ' Partition' ) );
 	}
 
 	/**

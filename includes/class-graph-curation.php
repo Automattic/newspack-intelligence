@@ -452,9 +452,10 @@ final class Graph_Curation {
 	 * The bytes text adds to a packed message, escaped as `Message::packed()`
 	 * escapes it.
 	 *
+	 * @api Source_Node bounds a recorded item's key by it.
 	 * @param string $text The text.
 	 */
-	private static function written_bytes( string $text ): int {
+	public static function written_bytes( string $text ): int {
 		$message = Message::new_message();
 		$bare    = Message::packed_size( $message );
 		$message[ Message::VALUE ] = $text;

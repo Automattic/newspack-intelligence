@@ -20,6 +20,7 @@ use Newspack_Intelligence\Projector_Node;
 use Newspack_Intelligence\Source_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
+use Newspack_Nodes\Delay_Node;
 use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Router_Node;
 use Newspack_Nodes\Shell_Node;
@@ -70,6 +71,20 @@ class TopologyDurabilityTest extends TestCase {
 		$this->assertInstanceOf( Intel_Event_Writer_Node::class, Core::node( 'intel:writer' ) );
 		$this->assertSame( [ 'intel:items', 'intel:ontology' ], Core::node( 'intel:writer' )->display_targets() );
 		$this->assertInstanceOf( Projector_Node::class, Core::node( 'projector' ), 'the composed graph projects both streams' );
+	}
+
+	/** The later queue keeps a day, sweeps every minute, and replays each due record as a re-resolution. */
+	public function test_the_later_queue_replays_into_the_reresolve_stream(): void {
+		$this->load( 'newspack-intelligence' );
+
+		$later = Core::node( 'intel:later' );
+		$this->assertInstanceOf( Delay_Node::class, $later );
+		$this->assertSame( 'intel:reresolve', $later->target() );
+		$this->assertSame(
+			[ $this->tmp . '/logs/intel-later.p0', $this->tmp . '/offsets/newspack-intelligence.intel-later.p0', $this->tmp . '/deadletter/newspack-intelligence.intel-later.p0', 60, 86400 ],
+			[ $this->read_private( $later, 'dir' ), $this->read_private( $later, 'offsets_dir' ), $this->read_private( $later, 'deadletter_dir' ), $this->read_private( $later, 'interval_s' ), $this->read_private( $later, 'max_age_s' ) ]
+		);
+		$this->assertSame( [ 'extractor', 'intel:writer', 'intel:later' ], Core::node( 'resolver' )->display_targets() );
 	}
 
 	/** A TICK blocks inside one fill(), so a peer must not steal the lock at 60s. */

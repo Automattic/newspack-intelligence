@@ -22,7 +22,10 @@
  * otherwise stays text. A claim takes the confidence of its subject's link.
  * With no client, a thrown call or a reply that does not parse, an item no
  * call has extracted records a heuristic extraction under its own actor, so
- * it is marked extracted rather than retried in a loop. The topics
+ * it is marked extracted rather than retried in a loop. A call made that
+ * fails also parks a re-resolution of the item on the Delay its `make_node`
+ * line names after the writer, with exponential backoff, until MAX_ATTEMPTS;
+ * the struct it reads carries the `attempt` that counts them. The topics
  * offered and the names claims resolve through come from the process's
  * shared `Entity_Index::current()`, the one the Resolver reads.
  *
@@ -50,8 +53,20 @@ class Extractor_Node extends Node {
 	/** The stage a heuristic extraction is recorded under, standing in for a call. */
 	public const HEURISTIC_STAGE = 'extract-heuristic';
 
+	/** Seconds before the first retry of a failed call; each later one doubles it. */
+	public const RETRY_BASE_S = 300;
+
+	/** The longest wait before a retry. */
+	public const RETRY_MAX_S = 3600;
+
+	/** The attempts after which a failed call is no longer retried. */
+	public const MAX_ATTEMPTS = 5;
+
 	/** The writer every extraction and claim is addressed to. */
 	protected string $writer = '';
+
+	/** The Delay a failed call's retry parks on. */
+	protected string $later = '';
 
 	/** Wire the sibling `:config` interpreter for the LLM verbs. */
 	public function __construct() {
@@ -71,7 +86,8 @@ class Extractor_Node extends Node {
 		$links     = $value['links'] ?? null;
 		$proposals = $value['proposals'] ?? null;
 		$extracted = $value['extracted'] ?? null;
-		if ( 0 === ( Core::int( $message[ Message::TYPE ] ) & Message::TM_STRUCT ) || null === $item || ! \is_array( $links ) || ! \is_array( $proposals ) || ! \is_bool( $extracted ) ) {
+		$attempt   = $value['attempt'] ?? null;
+		if ( 0 === ( Core::int( $message[ Message::TYPE ] ) & Message::TM_STRUCT ) || null === $item || ! \is_array( $links ) || ! \is_array( $proposals ) || ! \is_bool( $extracted ) || ! \is_int( $attempt ) ) {
 			$this->print_less_often( 'dropping a resolution it cannot read from ', Core::as_string( $message[ Message::FROM ] ) );
 			return;
 		}
@@ -84,7 +100,7 @@ class Extractor_Node extends Node {
 			$key  = Core::as_string( $link['entity_key'] ?? null );
 			$linked[ $key ] = [ Core::as_float( $link['confidence'] ?? null ), 'asserted' === ( $link['state'] ?? null ) ];
 		}
-		$this->extract( $item, $linked, $extracted, Entity_Index::current() );
+		$this->extract( $item, $linked, $extracted, $attempt, Entity_Index::current() );
 	}
 
 	/**
@@ -92,13 +108,15 @@ class Extractor_Node extends Node {
 	 * under its own stage, dated by the item's retrieval; an item a call
 	 * extracted before keeps that extraction when this call fails, which was
 	 * not given the link that sent it, so its next re-resolution tries again.
+	 * A call made that fails also parks the item's retry.
 	 *
 	 * @param array<string,mixed>                 $item      The item.
 	 * @param array<string,array{0:float,1:bool}> $linked    Each linked entity => its link's confidence and whether it is asserted.
 	 * @param bool                                $extracted Whether a call extracted the item before.
+	 * @param int                                 $attempt   The failed calls made for the item so far.
 	 * @param Entity_Index                        $index     The entities claims resolve through.
 	 */
-	private function extract( array $item, array $linked, bool $extracted, Entity_Index $index ): void {
+	private function extract( array $item, array $linked, bool $extracted, int $attempt, Entity_Index $index ): void {
 		$topics = $index->topics();
 		$client = $this->make_llm_client();
 		$parsed = null;
@@ -113,6 +131,9 @@ class Extractor_Node extends Node {
 			}
 		}
 		$item_key = Core::as_string( $item['item_key'] );
+		if ( null !== $client && null === $parsed ) {
+			$this->retry( $item_key, $attempt );
+		}
 		if ( null === $parsed && $extracted ) {
 			$this->print_less_often( 'keeping the earlier extraction of ', "{$item_key}: no call answered" );
 			return;
@@ -160,6 +181,27 @@ class Extractor_Node extends Node {
 	}
 
 	/**
+	 * Park a failed call's retry on the later queue, keyed by its item: a
+	 * re-resolution one attempt on, due `RETRY_BASE_S * 2 ** $attempt`
+	 * seconds from now, at most RETRY_MAX_S, so every retry lands inside the
+	 * day the queue keeps. The replay is a re-resolution, which forwards the
+	 * item for extraction only while it is still owed one. From MAX_ATTEMPTS
+	 * on it parks nothing.
+	 *
+	 * @param string $item_key The item.
+	 * @param int    $attempt  The failed calls made for it before this one.
+	 */
+	private function retry( string $item_key, int $attempt ): void {
+		if ( $attempt >= self::MAX_ATTEMPTS ) {
+			$this->print_less_often( 'giving up extracting ', "{$item_key} after {$attempt} attempts" );
+			return;
+		}
+		$backoff = \min( self::RETRY_MAX_S, self::RETRY_BASE_S * ( 2 ** $attempt ) );
+		$record  = Resolver_Node::reresolve( $item_key, 0, [ 'attempt' => $attempt + 1 ] ) + [ 'not_before' => Core::$now + $backoff ];
+		$this->emit( $this->later, $record, $item_key );
+	}
+
+	/**
 	 * The heuristic summary: the first sentence of the title, then of the
 	 * body with its tags stripped, cut to the summary length.
 	 *
@@ -203,6 +245,7 @@ class Extractor_Node extends Node {
 			'description'  => 'Extracts each resolved item that links something: its summary, kind, topics, scores and claims; forwards the item and its scores.',
 			'arguments'    => [
 				[ 'name' => 'writer', 'type' => 'node_name', 'required' => true, 'description' => 'The event writer every extraction and claim is addressed to: intel:writer.' ],
+				[ 'name' => 'later', 'type' => 'node_name', 'required' => true, 'description' => 'The Delay a failed call\'s retry parks on: intel:later.' ],
 			],
 			'commands'     => self::llm_config_commands(),
 			'accepts_fill' => true,

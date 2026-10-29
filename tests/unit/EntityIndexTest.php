@@ -208,6 +208,19 @@ final class EntityIndexTest extends TestCase {
 		$this->assertNull( $index->state( 'organization:ghost-gazette' ) );
 	}
 
+	/** An index holds live entities once one is accepted or proposed and neither merged away nor rejected. */
+	public function test_it_holds_live_entities_only_when_one_is_live(): void {
+		$this->assertFalse( ( new Entity_Index() )->has_live_entities() );
+		$this->assertFalse(
+			$this->index_of(
+				self::proposed( 'organization:faded-gazette', 'Faded Gazette' ),
+				self::rejected( 'organization:faded-gazette' )
+			)->has_live_entities(),
+			'a rejected entity is not live'
+		);
+		$this->assertTrue( $this->index_of( self::proposed( 'organization:salem-ledger', 'Salem Ledger' ) )->has_live_entities() );
+	}
+
 	/** A rejected entity matches nothing, and its names stay known as rejected. */
 	public function test_a_rejected_entity_is_absent_and_its_names_are_rejected(): void {
 		$index = $this->index_of(

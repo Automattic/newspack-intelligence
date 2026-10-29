@@ -11,6 +11,7 @@ namespace Newspack_Intelligence\CLI;
 
 use Newspack_Intelligence\Ontology_Seed;
 use Newspack_Intelligence\Ontology_Writer;
+use Newspack_Intelligence\Projector_Node;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Worker_Route;
 use Newspack_Nodes\Bootstrap;
@@ -18,7 +19,6 @@ use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Spawn_Coordinator;
 use Newspack_Nodes\Sqlite_Arm;
-use Newspack_Nodes\Topology_Analyzer;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -52,7 +52,7 @@ class Ontology_CLI_Command {
 			return;
 		}
 		$table   = Bootstrap::row_table( Intel_Graph_Row_Schema::class );
-		$cursors = self::projector_cursors();
+		$cursors = \array_values( \array_unique( \array_column( Projector_Node::readers(), 'offsets' ) ) );
 		$base    = Config::get_base_directory();
 		$stopped = false;
 		$why     = '';
@@ -79,40 +79,6 @@ class Ontology_CLI_Command {
 			return;
 		}
 		\WP_CLI::success( \sprintf( 'Deleted the %s projection and %d projector cursors; the projector replays both streams.', $table['name'], \count( $cursors ) ) );
-	}
-
-	/**
-	 * The cursor directory of every Consumer whose config adds the projector
-	 * as a snapshot node, for each partition of each active topology that
-	 * declares them, as the TSL spells them.
-	 *
-	 * @return list<string>
-	 */
-	private static function projector_cursors(): array {
-		$dirs = [];
-		foreach ( Bootstrap::active_topologies()[0] as $topology => $entry ) {
-			$projectors = [];
-			$cursors    = [];
-			$snapshots  = [];
-			foreach ( Topology_Analyzer::statements( $topology )['statements'] as $statement ) {
-				$values = $statement['values'];
-				if ( 'make_node' === $statement['verb'] && 'Projector' === ( $values[1] ?? null ) ) {
-					$projectors[ $values[2] ?? '' ] = true;
-				} elseif ( 'make_node' === $statement['verb'] && 'Consumer' === ( $values[1] ?? null ) && isset( $values[4] ) ) {
-					$cursors[ $values[2] ] = $values[4];
-				} elseif ( 'command_node' === $statement['verb'] && 'add_snapshot_node' === ( $values[2] ?? null ) ) {
-					$snapshots[] = [ \substr( $values[1], 0, -\strlen( ':config' ) ), $values[3] ?? '' ];
-				}
-			}
-			foreach ( $snapshots as [ $consumer, $snapshot ] ) {
-				if ( isset( $projectors[ $snapshot ], $cursors[ $consumer ] ) ) {
-					for ( $p = 0; $p < Bootstrap::partitions_of( $entry ); $p++ ) {
-						$dirs[] = Core::resolve_partition_template( $cursors[ $consumer ], $p, $topology );
-					}
-				}
-			}
-		}
-		return \array_values( \array_unique( $dirs ) );
 	}
 
 	/**
