@@ -32,6 +32,9 @@ use Newspack_Nodes\Row_Reader;
  */
 final class Graph_Watches {
 
+	/** The most watches one reader keeps; an edit of one never counts against it. */
+	public const MAX_PER_OWNER = 25;
+
 	/** Random bytes a minted watch key spells in hex. */
 	private const KEY_BYTES = 8;
 
@@ -79,9 +82,18 @@ final class Graph_Watches {
 	 * slugged as `save_lens` slugs it; an entity is stored as the survivor
 	 * `Graph_Query::seen()` answers.
 	 *
+	 * A new watch is refused once the caller owns MAX_PER_OWNER, counted
+	 * from the projection as every verb reads the caller's watches. A save
+	 * the projector has not recorded counts only from its next flush, up to
+	 * five seconds on, so a burst can pass the cap by the saves inside one
+	 * flush window. That is accepted: the cap bounds what one reader's
+	 * watches cost each pass, not a boundary of trust, the overshoot is a
+	 * reader's own requests in seconds, and holding it exactly would need a
+	 * second count of the ontology stream's unprojected tail.
+	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `name`, `lens`, `entity`, `collection`, `digest`, `instant`, `inbox`, `key`.
 	 * @return array<string,mixed> `{ ok, event_id, watch_key }`.
-	 * @throws \InvalidArgumentException On a blank name, not exactly one target, no delivery, a target the caller cannot see, or a key that is not one of the caller's watches.
+	 * @throws \InvalidArgumentException On a blank name, not exactly one target, no delivery, a target the caller cannot see, a key that is not one of the caller's watches, or a new watch past MAX_PER_OWNER.
 	 */
 	public static function save( array $args ): array {
 		$name    = Graph_Curation::bounded( 'name', Core::as_string( $args['name'] ), Graph_Curation::NAME_BYTES );
@@ -104,6 +116,8 @@ final class Graph_Watches {
 			static function ( Row_Reader $r, array $g ) use ( $args, $kind, $given, $key, $owner ): array {
 				if ( null !== $args['key'] ) {
 					self::own( $r, $key, $owner );
+				} else {
+					self::room( $r, $owner );
 				}
 				return [ self::target( $r, $g, $kind, $given ) ];
 			}
@@ -140,6 +154,20 @@ final class Graph_Watches {
 			throw new \InvalidArgumentException( \esc_html( "no lens: {$lens}" ) );
 		}
 		return $lens;
+	}
+
+	/**
+	 * Refuse a new watch when the owner already keeps MAX_PER_OWNER.
+	 *
+	 * @param Row_Reader $r     The reader.
+	 * @param int        $owner The caller's user id.
+	 * @throws \InvalidArgumentException Naming the cap and how to free one.
+	 */
+	private static function room( Row_Reader $r, int $owner ): void {
+		$kept = Core::as_int( $r->rows( 'SELECT COUNT(*) FROM ' . Intel_Graph_Row_Schema::all( $r, 'watches' ) . ' w WHERE owner = ?', [ $owner ] )[0][0] ?? 0 );
+		if ( $kept >= self::MAX_PER_OWNER ) {
+			throw new \InvalidArgumentException( \esc_html( "you have {$kept} watches, and one reader may keep " . self::MAX_PER_OWNER . ' at most; remove one first' ) );
+		}
 	}
 
 	/**

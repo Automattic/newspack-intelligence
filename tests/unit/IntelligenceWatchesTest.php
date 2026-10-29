@@ -182,6 +182,44 @@ final class IntelligenceWatchesTest extends TestCase {
 		$this->assertSame( [], self::watches_events() );
 	}
 
+	/**
+	 * A reader keeps at most MAX_PER_OWNER watches: a new one past them is
+	 * refused, naming the cap and how to free one, and writes nothing.
+	 */
+	public function test_a_new_watch_past_the_cap_is_refused(): void {
+		$this->assertSame( 25, Graph_Watches::MAX_PER_OWNER );
+		$this->own_many( self::OWNER, 25 );
+
+		try {
+			$this->ci->dispatch( 'save_watch', [ 'One too many', '--entity=' . self::GAZETTE ] );
+			$this->fail( 'the twenty-sixth watch was saved' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( 'you have 25 watches, and one reader may keep 25 at most; remove one first', $e->getMessage() );
+		}
+		$this->assertSame( [], self::ontology_events() );
+	}
+
+	/** At the cap a reader may still edit one of their own watches. */
+	public function test_an_edit_at_the_cap_is_saved(): void {
+		$this->own_many( self::OWNER, 25 );
+
+		$answer = $this->ci->dispatch( 'save_watch', [ 'Renamed at the cap', '--entity=' . self::GAZETTE, '--key=' . self::many_key( self::OWNER, 7 ) ] );
+
+		$this->assertSame( self::many_key( self::OWNER, 7 ), $answer['watch_key'] );
+		$this->assertSame( [ 'watch_saved' ], \array_column( self::ontology_events(), 'event' ) );
+	}
+
+	/** Another reader's watches count toward their cap, not the caller's. */
+	public function test_another_readers_watches_do_not_count(): void {
+		$this->own_many( self::NEIGHBOR, 25 );
+		$this->own_many( self::OWNER, 24 );
+
+		$answer = $this->ci->dispatch( 'save_watch', [ 'The twenty-fifth', '--entity=' . self::GAZETTE ] );
+
+		$this->assertMatchesRegularExpression( '/^[0-9a-f]{16}$/', $answer['watch_key'] );
+		$this->assertSame( [ 'watch_saved' ], \array_column( self::ontology_events(), 'event' ) );
+	}
+
 	/** Removing one's own watch writes `watch_removed`, and the list drops it. */
 	public function test_a_watch_removes(): void {
 		$this->own_watches();
@@ -284,6 +322,30 @@ final class IntelligenceWatchesTest extends TestCase {
 				self::saved( self::THEIRS, self::NEIGHBOR, 'Their Gazette', 'entity', self::GAZETTE ),
 			]
 		);
+	}
+
+	/**
+	 * Project `$count` watches a reader saved over the Gazette.
+	 *
+	 * @param int $owner The reader.
+	 * @param int $count How many.
+	 */
+	private function own_many( int $owner, int $count ): void {
+		$events = [];
+		for ( $n = 1; $n <= $count; $n++ ) {
+			$events[] = self::saved( self::many_key( $owner, $n ), $owner, "Desk {$n}", 'entity', self::GAZETTE );
+		}
+		$this->seed( $events );
+	}
+
+	/**
+	 * The key of a reader's n-th fixture watch.
+	 *
+	 * @param int $owner The reader.
+	 * @param int $n     Which.
+	 */
+	private static function many_key( int $owner, int $n ): string {
+		return \sprintf( '%08x%08x', $owner, $n );
 	}
 
 	/**
