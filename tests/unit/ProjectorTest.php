@@ -15,6 +15,7 @@ use Newspack_Nodes\Node_Names;
 use Newspack_Nodes\Router_Node;
 use Newspack_Nodes\Row_Table_Node;
 use Newspack_Nodes\Shell_Node;
+use Newspack_Nodes\Sqlite_Arm;
 use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Topic_Node;
 use Newspack_Nodes\Topology_Registry;
@@ -38,6 +39,9 @@ final class ProjectorTest extends TestCase {
 	private const GAZETTE = 'organization:harbor-gazette';
 
 	private const MACHINE = 'machine:resolve@9.4.1';
+
+	/** An item recorded from another team, which the operator purges. */
+	private const PURGED = 'linear:WPCOM-4410';
 
 	/** When the fixture item was retrieved: 700 days before NOW, inside its retention. */
 	private const RETRIEVED = 1732520000;
@@ -504,12 +508,17 @@ final class ProjectorTest extends TestCase {
 		$this->projector->save_state();
 	}
 
-	/** @return array<string,mixed> */
-	private function item(): array {
+	/**
+	 * The fixture item's record, under its own key or another.
+	 *
+	 * @param string $key The item key.
+	 * @return array<string,mixed>
+	 */
+	private function item( string $key = self::ITEM ): array {
 		return Intel_Event::make(
 			'item_recorded',
 			[
-				'item_key'     => self::ITEM,
+				'item_key'     => $key,
 				'source'       => 'feed',
 				'tier'         => 'public',
 				'url'          => 'https://www.HarborGazette.example/2026/10/award/?utm_source=np&b=2&a=1#top',
@@ -638,7 +647,19 @@ final class ProjectorTest extends TestCase {
 			$this->ontology( 'lens_saved', [ 'lens_key' => 'old-desk', 'name' => 'Old desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ] ),
 			$this->ontology( 'lens_removed', [ 'lens_key' => 'old-desk' ] ),
 			...$this->watch_events(),
+			$this->item( self::PURGED ),
+			$this->purge( self::PURGED ),
 		];
+	}
+
+	/**
+	 * The operator's purge of an item.
+	 *
+	 * @param string $key The item key.
+	 * @return array<string,mixed>
+	 */
+	private function purge( string $key ): array {
+		return Intel_Event::make( 'item_purged', [ 'item_key' => $key, 'reason' => 'another team\'s issue' ], 'machine:purge@9.4.1', '' );
 	}
 
 	/** @return list<array<string,mixed>> A watch saved, saved again and matched, one removed, a match seen and two deliveries. */
@@ -672,6 +693,72 @@ final class ProjectorTest extends TestCase {
 		$this->assertSame( [ [ 'a1b2c3d4e5f60718', 3307, self::ITEM, self::NOW, $day ] ], self::graph_rows( 'watch_seen' ) );
 		$this->assertSame( [ [ 3307, 'digest', '', 1792995000.5, self::NOW ], [ 3307, 'instant', 'a1b2c3d4e5f60718', 1792990000.5, self::NOW ], [ 3307, 'scan', 'a1b2c3d4e5f60718', 1792980000.0, self::NOW ] ], self::graph_rows( 'watch_deliveries', 'mode' ) );
 		$this->assertSame( [ [ 'watch_removed', 'f0e1d2c3b4a59687' ], [ 'watch_saved', 'a1b2c3d4e5f60718' ], [ 'watch_saved', 'a1b2c3d4e5f60718' ], [ 'watch_saved', 'f0e1d2c3b4a59687' ] ], self::graph_rows( 'events', 'kind, subject', 'kind, subject' ), 'each watch definition is kept under its key' );
+	}
+
+	/**
+	 * A purge deletes every row about its item in each table the items
+	 * stream writes, a cluster's canonical row naming it among them, and
+	 * keeps the item's rows another stream writes and every other item's.
+	 */
+	public function test_a_purge_deletes_every_row_about_its_item_alone(): void {
+		$machine = static fn ( string $kind, array $fields ): array => Intel_Event::make( $kind, [ 'retrieved_ts' => self::RETRIEVED ] + $fields, self::MACHINE, '' );
+		$about   = static fn ( string $key ): array => [
+			$machine( 'link_asserted', [ 'item_key' => $key, 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'name', 'confidence' => 1.0 ] ),
+			$machine( 'extraction_recorded', [ 'item_key' => $key, 'summary' => "Summary of {$key}", 'kind' => 'award', 'relevance' => 3, 'importance' => 4, 'sentiment' => 0.0, 'topics' => [ 'topic:awards' ] ] ),
+			$machine( 'subjects_extracted', [ 'item_key' => $key, 'entity_keys' => [ self::GAZETTE ] ] ),
+			$machine( 'claim_asserted', [ 'item_key' => $key, 'ord' => 0, 'subject_key' => self::GAZETTE, 'predicate' => 'won', 'object_key' => '', 'object_text' => 'A prize', 'confidence' => 0.9 ] ),
+			$machine( 'cluster_joined', [ 'item_key' => $key, 'cluster_key' => self::PURGED ] ),
+		];
+		$this->project(
+			[
+				$this->item( self::PURGED ),
+				$this->item(),
+				...$about( self::PURGED ),
+				...$about( self::ITEM ),
+				$machine( 'cluster_superseded', [ 'cluster_key' => self::PURGED, 'canonical_item_key' => self::PURGED, 'previous_item_key' => self::PURGED, 'rank' => 7.0 ] ),
+				$machine( 'cluster_superseded', [ 'cluster_key' => 'feed:abc-9001', 'canonical_item_key' => self::ITEM, 'previous_item_key' => 'feed:abc-9001', 'rank' => 9.0 ] ),
+				$this->ontology( 'link_confirmed', [ 'item_key' => self::PURGED, 'entity_key' => self::GAZETTE, 'item_url' => 'https://linear.app/a8c/issue/WPCOM-4410' ] ),
+				$this->ontology( 'collected', [ 'collection_key' => 'awards-2026', 'item_key' => self::PURGED, 'url' => 'https://linear.app/a8c/issue/WPCOM-4410', 'title' => 'WPCOM work', 'tier' => 'internal' ] ),
+				Intel_Event::make( 'watch_matched', [ 'watch_key' => 'a1b2c3d4e5f60718', 'owner' => 3307, 'item_key' => self::PURGED, 'at' => self::RETRIEVED, 'retrieved_ts' => self::RETRIEVED, 'quiet' => false ], 'machine:watcher@9.4.1', '' ),
+				Intel_Event::make( 'watch_seen', [ 'watch_key' => 'a1b2c3d4e5f60718', 'owner' => 3307, 'item_key' => self::PURGED, 'retrieved_ts' => self::RETRIEVED ], 'user:41', '' ),
+			]
+		);
+		$before = self::dump();
+
+		$this->project( [ $this->purge( self::PURGED ) ] );
+
+		$after = self::dump();
+		$kept  = static fn ( array $rows, int $column ): array => \array_values( \array_filter( $rows, static fn ( array $row ): bool => self::PURGED !== $row[ $column ] ) );
+		foreach ( [ 'items' => 1, 'extractions' => 1, 'extracted_subjects' => 0, 'links' => 0, 'claims' => 0, 'clusters' => 0, 'canonicals' => 1 ] as $table => $column ) {
+			$this->assertNotSame( $kept( $before[ $table ], $column ), $before[ $table ], "{$table} held a row about the purged item" );
+			$this->assertSame( $kept( $before[ $table ], $column ), $after[ $table ], $table );
+		}
+		$this->assertSame( [ [ self::ITEM ] ], self::graph_rows( 'clusters', '1', 'item_key' ), 'a kept member keeps the cluster the purged item founded' );
+		foreach ( \array_diff_key( $before, \array_flip( [ 'items', 'extractions', 'extracted_subjects', 'links', 'claims', 'clusters', 'canonicals' ] ) ) as $table => $rows ) {
+			$this->assertSame( $rows, $after[ $table ], "{$table} is another stream's" );
+		}
+		$this->assertNotSame( [], $after['collected'] );
+		$this->assertNotSame( [], $after['watch_matches'] );
+		$index = Sqlite_Arm::open_rows( [ 0 => Table_Node::file( 'intel-graph', 0 ) ], Intel_Graph_Row_Schema::version() );
+		$this->assertSame( [ [ 2 ] ], $index->rows( "SELECT rowid FROM p0.items_fts WHERE items_fts MATCH 'harbor'", [] ), 'the title index holds the kept item alone' );
+		$this->assertSame( [], $index->rows( "SELECT rowid FROM p0.extractions_fts WHERE extractions_fts MATCH 'wpcom'", [] ), 'the summary index forgets the purged extraction' );
+		$this->assertCount( 1, $index->rows( "SELECT rowid FROM p0.extractions_fts WHERE extractions_fts MATCH 'summary'", [] ) );
+	}
+
+	/**
+	 * A replay applies the record then the purge in stream order and ends
+	 * purged; a later recording of the same key, as a source recording it
+	 * again writes, records it again.
+	 */
+	public function test_a_replayed_purge_ends_purged_and_a_later_recording_returns(): void {
+		$this->project( [ $this->item( self::PURGED ), $this->purge( self::PURGED ) ] );
+		$this->project( [ $this->item( self::PURGED ), $this->purge( self::PURGED ) ] );
+
+		$this->assertSame( [], self::graph_rows( 'items' ) );
+
+		$this->project( [ $this->item( self::PURGED ) ] );
+
+		$this->assertSame( [ [ self::PURGED ] ], self::graph_rows( 'items', '1', 'item_key' ) );
 	}
 
 	/**

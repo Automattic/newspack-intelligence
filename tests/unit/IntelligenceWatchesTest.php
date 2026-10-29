@@ -292,6 +292,20 @@ final class IntelligenceWatchesTest extends TestCase {
 		$this->assertSame( [ 'feed:gazette-award', 'linear:joint-grant' ], \array_column( self::watches_events(), 'item_key' ) );
 	}
 
+	/** A purged item's match row stays, but the watch neither lists nor counts it. */
+	public function test_a_purged_items_match_is_neither_listed_nor_counted(): void {
+		$this->own_watches();
+		$this->seed(
+			self::matched( self::OWN, 'linear:joint-grant', 3, self::$oct_01 ),
+			self::matched( self::OWN, 'feed:gazette-award', 2, self::$oct_06 ),
+			[ Intel_Event::make( 'item_purged', [ 'item_key' => 'linear:joint-grant', 'reason' => 'another team' ], 'machine:purge@9.4.1', 'fixture-9' ) ]
+		);
+
+		$this->assertSame( [ [ 'feed:gazette-award' ], 1 ], [ \array_column( $this->ci->dispatch( 'watch_matches', [ self::OWN ] )['items'], 'item_key' ), $this->ci->dispatch( 'watch_matches', [ self::OWN ] )['total'] ] );
+		$this->assertSame( 1, $this->ci->dispatch( 'watches', [] )['watches'][0]['unseen'] );
+		$this->assertCount( 2, self::graph_rows( 'watch_matches' ), 'the watches stream\'s rows stay' );
+	}
+
 	/**
 	 * A watch that does not ask for the inbox counts no unseen match and
 	 * lists none, though the watcher records them for its email.

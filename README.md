@@ -38,6 +38,9 @@ A client CSV, imported on the Settings page or with
 graph. Restricted items answer only a user granted the
 `newspack_intelligence_restricted` capability, on the Settings page or with
 `wp newspack-intelligence restricted grant <login>`.
+`wp newspack-intelligence items purge --source=<name> --keep=<globs>`
+counts, and with `--yes` purges, a source's recorded items outside the kept
+key globs.
 
 AI calls go through the Automattic **AI API Proxy** (OpenAI-compatible),
 defaulting to the `gpt-oss-120b` model. The bearer token is a substrate Vault
