@@ -215,7 +215,9 @@ partition that projects it, and for a `lens_removed`, which deletes the
 one `lenses` row its `lens_key` keys; a `lens_saved` sets that row whole,
 its `filters` as JSON; and for a `watch_removed`, which deletes the one
 `watches` row its `watch_key` keys, a `watch_saved` setting that row whole,
-its three boxes as integers. A heuristic stand-in is projected by
+its three boxes as integers; and for an `item_purged`, which deletes the
+rows the items stream has written about its item in each table that stream
+writes (see Purging items). A heuristic stand-in is projected by
 `STAND_IN` instead, one `ignore` of its `extractions` row, so it fills an
 item no extraction holds and never replaces a call's extraction, claims or
 topics, whatever the projection held when the extractor chose it. A
@@ -1008,6 +1010,72 @@ as refused and is remembered, so a process refuses it once. It wraps each
 in `Intel_Event::machine_event()` under the actor `machine:source:{name}@{plugin
 version}`, with the plugin version as its `config_version`.
 
+### Purging items
+
+`item_purged { item_key, reason }`, an items-stream kind, deletes with the
+substrate's `delete` op the rows the items stream has written about its
+item by the time the projector reads it, in the tables that stream writes:
+`items`, which `items_fts` follows through its triggers, `extractions`,
+which `extractions_fts` follows, `extracted_subjects`, `links`, `claims`,
+`clusters`, and the `canonicals` row of any cluster whose canonical it is.
+Nothing elects that cluster another canonical; its kept members keep their
+`clusters` rows. Rows another stream wrote about the item — `judgments`,
+`collected`, `watch_matches`, `watch_seen` — stay, and no read answers
+them, because every read joins `ri`; a collection still lists its saved
+copy. An entity a machine proposed from the item (`entity_proposed`, on
+the ontology stream) stays in the entity index and goes on matching other
+items. A replay applies the record, then the purge, and ends purged, while
+a later `item_recorded` of the same key, a source recording it again,
+records it again.
+
+An item the resolver has not reached when its purge is projected is
+resolved afterwards, from the `item_recorded` its own Consumer still
+holds, and the links, extraction and claims that writes outlive the
+purge: no read answers them, since the `items` row is gone, and no rerun
+selects them, since the selection reads that row. So purge only once
+the resolver has caught up — `wp nodes status` lists the reader
+`newspack-intelligence.intel-items-resolve.p<N>` with nothing behind.
+A worker running a release older than the one carrying `item_purged`
+drops every purge its writer receives as an unknown kind, so restart the
+workers (`wp nodes restart all`) after deploying that release and before
+purging.
+
+`wp newspack-intelligence items purge --source=<name> --keep=<globs>
+[--reason=<text>] [--yes]` (`Items_CLI_Command`) mints them. It selects,
+across every partition, each stored item of the source whose key matches
+none of the comma-separated keep globs, each matched by `fnmatch()`
+against the whole key in its own case. `--keep` is required, so no command
+purges a whole source, and WP-CLI keeps only the last of a repeated flag,
+so the command counts `--keep` in `$_SERVER['argv']` and refuses it given
+twice. Without `--yes` it writes nothing and prints the count per key
+prefix, up to the first `-` and its control characters rendered by
+`Core::terminal_safe()`, the total and the command that purges them. With
+`--yes` it appends one `item_purged` per item, as `machine:purge@<version>`,
+its `reason` the one given or the selection, at most `REASON_BYTES` (512)
+as the stream writes it (`Graph_Curation::written_bytes()`). The items
+stream takes no write from outside the worker, which writes it alone under
+`void_warranty`, so the events go through `Worker_Route::append()` to
+`intel:writer` in every live worker, `BATCH` (500) at a time: 500 events
+whose key and reason each fill their cap with the most escaped characters
+pack under one IPC segment, and every batch, the first included, is
+appended only once `Worker_Route::read_through()` finds every live
+worker's committed input cursor at its end, so the unread input never
+outruns the IPC partition's count-pruned retention. That cursor commits
+about every 30 seconds. Input left unread for `READ_WAIT_S` (600) stops
+the command, naming how many it sent; running it again sends the rest,
+because it selects only what the projection still holds. Its success line
+names the dry run to rerun once the projectors have read the purges, which
+answers `Nothing to purge` when none is left. `Items_CLI_Command::$sleep`
+is the wait's test seam. The Linear items recorded from other teams before
+0.22.0 go with:
+
+```bash
+wp newspack-intelligence items purge --source=linear \
+  --keep='linear:NEWS-*,linear:NPAI-*,linear:NPPRO-*,linear:NPPM-*,linear:NPMIG-*,linear:NPLAUNC-*,linear:NPSUPP-*,linear:NPPD-*,linear:DSGNEWS-*'
+```
+
+Read the counts, then run the command it prints, which adds `--yes`.
+
 ### Topologies
 
 | File | What it wires |
@@ -1176,7 +1244,7 @@ sibling checkout locally.
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |
 | `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
 | `includes/` (watches) | `Watcher_Node` |
-| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed`, `ontology reresolve` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; the `Refuses_Root` trait they share |
+| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed`, `ontology reresolve` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; the `Refuses_Root` trait they share |
 | `topologies/` | The five `.tsl` node-graph topologies |
 | `src/intelligence/` | The Intelligence page's React bundle |
 | `tests/` | PHPUnit (`unit/` + `bootstrap.php` + `support/` + `run-coverage.sh`; `integration/` exists but is empty) |

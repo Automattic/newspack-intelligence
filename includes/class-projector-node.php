@@ -4,11 +4,13 @@
  * Row_Table (`Intel_Graph_Row_Schema`). Three Consumers, one per stream,
  * fill it with one event each; `projections()` declares, for each kind, the
  * row ops it writes and where each column comes from. Every op is an
- * `ignore` or a whole-row `set` on a keyed table but for five `delete`s:
- * three the items stream's own — an extraction deletes the item's claims and
- * topic links, a `subjects_extracted` the item's extracted subjects, and a
- * `link_retracted` the one link row it keys — and the ontology stream's
- * `lens_removed` and `watch_removed`, the one lens or watch row each keys.
+ * `ignore` or a whole-row `set` on a keyed table but for the `delete`s:
+ * the items stream's own — an extraction deletes the item's claims and
+ * topic links, a `subjects_extracted` the item's extracted subjects, a
+ * `link_retracted` the one link row it keys, and an `item_purged` the rows
+ * that stream has written about its item by then — and the ontology
+ * stream's `lens_removed` and `watch_removed`, the one lens or watch row
+ * each keys.
  * Each table is written by one stream alone, so a replayed event writes what
  * it wrote before and the streams project the same rows in any order. A row naming an entity no `entities` row
  * holds yet is left to the readers' join. A machine's proposal writes with
@@ -172,7 +174,12 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * written by the items stream alone, so a replay deletes and writes in
 	 * the same order; the entities an extraction was given replace the
 	 * item's earlier set the same way. A retraction deletes the one link row
-	 * its item, entity and role key. A heuristic stand-in only fills an item
+	 * its item, entity and role key. A purge deletes the item's row, its
+	 * extraction, extracted subjects, links, claims and cluster membership,
+	 * and the canonical row of any cluster it heads, which no event elects
+	 * again; rows another stream wrote about it stay, and every read joins
+	 * the items, so they answer nothing, as do rows a later resolution of
+	 * the item writes. A heuristic stand-in only fills an item
 	 * no extraction holds yet (`STAND_IN`), so it never replaces a call's
 	 * extraction, its claims or its topics. Every ontology kind also writes
 	 * its `events` row.
@@ -210,6 +217,15 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			'claim_asserted'      => [ [ 'set', 'claims', [ 'item_key', 'ord', 'subject_key', 'predicate', 'object_key', 'object_text', 'confidence', $day( 'retrieved_ts' ) ] ] ],
 			'cluster_joined'      => [ [ 'set', 'clusters', [ 'item_key', 'cluster_key', $day( 'retrieved_ts' ) ] ] ],
 			'cluster_superseded'  => [ [ 'set', 'canonicals', [ 'cluster_key', 'canonical_item_key', 'rank', $day( 'retrieved_ts' ) ] ] ],
+			'item_purged'         => [
+				[ 'delete', 'items', [ 'item_key' => 'item_key' ] ],
+				[ 'delete', 'extractions', [ 'item_key' => 'item_key' ] ],
+				[ 'delete', 'extracted_subjects', [ 'item_key' => 'item_key' ] ],
+				[ 'delete', 'links', [ 'item_key' => 'item_key' ] ],
+				[ 'delete', 'claims', [ 'item_key' => 'item_key' ] ],
+				[ 'delete', 'clusters', [ 'item_key' => 'item_key' ] ],
+				[ 'delete', 'canonicals', [ 'canonical_item_key' => 'item_key' ] ],
+			],
 			'entity_created'      => $entity( 'set', 'accepted' ),
 			'entity_proposed'     => $entity( 'ignore', 'proposed' ),
 			'entity_accepted'     => $state_set( 'accepted' ),

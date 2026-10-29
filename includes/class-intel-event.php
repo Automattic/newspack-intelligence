@@ -41,8 +41,9 @@ final class Intel_Event {
 
 	/**
 	 * kind => [ stream, its own fields, [ field => the closed set it is drawn
-	 * from ] ]. Every item-scoped kind but the record carries its item's
-	 * `retrieved_ts`, the canonical's for a supersession, which dates its rows.
+	 * from ] ]. Every item-scoped kind but the record and the purge carries
+	 * its item's `retrieved_ts`, the canonical's for a supersession, which
+	 * dates its rows; a purge writes no row.
 	 */
 	public const KINDS = [
 		'item_recorded'       => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ] ],
@@ -54,6 +55,7 @@ final class Intel_Event {
 		'claim_asserted'      => [ self::ITEMS, [ 'item_key', 'ord', 'subject_key', 'predicate', 'object_key', 'object_text', 'confidence', 'retrieved_ts' ], [ 'predicate' => self::PREDICATES ] ],
 		'cluster_joined'      => [ self::ITEMS, [ 'item_key', 'cluster_key', 'retrieved_ts' ], [] ],
 		'cluster_superseded'  => [ self::ITEMS, [ 'cluster_key', 'canonical_item_key', 'previous_item_key', 'rank', 'retrieved_ts' ], [] ],
+		'item_purged'         => [ self::ITEMS, [ 'item_key', 'reason' ], [] ],
 		'entity_created'      => [ self::ONTOLOGY, [ 'entity_key', 'type', 'name' ], [ 'type' => self::TYPES ] ],
 		'entity_proposed'     => [ self::ONTOLOGY, [ 'entity_key', 'type', 'name', 'from_item_key' ], [ 'type' => self::TYPES ] ],
 		'entity_accepted'     => [ self::ONTOLOGY, [ 'entity_key' ], [] ],

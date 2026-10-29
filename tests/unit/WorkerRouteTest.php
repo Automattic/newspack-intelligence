@@ -7,6 +7,7 @@ use Newspack_Intelligence\Worker_Route;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Router_Node;
+use Newspack_Nodes\Worker_Base;
 use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/routes-to-workers.php';
@@ -74,6 +75,62 @@ final class WorkerRouteTest extends TestCase {
 				$worker_id
 			);
 		}
+	}
+
+	/** Every event reaches every live worker's node as a struct, in order, FROM the asking interpreter. */
+	public function test_each_event_is_appended_as_a_struct_to_each_live_worker_input(): void {
+		$base = $this->make_temp_dir( 'worker-route-append-' );
+		self::live_worker( $base, 'newspack-intelligence.p2' );
+		self::live_worker( $base, 'newspack-intelligence.p6' );
+		$events = [ [ 'event' => 'item_purged', 'item_key' => 'linear:WPCOM-4410' ], [ 'event' => 'item_purged', 'item_key' => 'linear:WPCOM-4411' ] ];
+
+		$this->assertSame( 2, Worker_Route::append( $this->interpreter( 'route-asker-11' ), $base, 'intel:writer', $events ) );
+
+		foreach ( [ 'newspack-intelligence.p2', 'newspack-intelligence.p6' ] as $worker_id ) {
+			$this->assertSame(
+				[
+					[ Message::TM_STRUCT, 'route-asker-11', 'intel:writer', $events[0] ],
+					[ Message::TM_STRUCT, 'route-asker-11', 'intel:writer', $events[1] ],
+				],
+				\array_map( static fn ( array $m ): array => [ $m[ Message::TYPE ], $m[ Message::FROM ], $m[ Message::TO ], $m[ Message::VALUE ] ], self::worker_input( $base, $worker_id ) ),
+				$worker_id
+			);
+		}
+	}
+
+	/** Appending with no live worker is refused like a request. */
+	public function test_an_append_with_no_live_worker_is_refused(): void {
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'No newspack-intelligence worker could be reached' );
+		Worker_Route::append( $this->interpreter( 'route-asker-12' ), $this->make_temp_dir( 'worker-route-append-none-' ), 'intel:writer', [ [ 'event' => 'item_purged' ] ] );
+	}
+
+	/**
+	 * The workers have read through once every live worker's committed input
+	 * cursor reaches the end; another topology's worker is not asked.
+	 */
+	public function test_the_workers_have_read_through_once_every_cursor_reaches_the_end(): void {
+		$base = $this->make_temp_dir( 'worker-route-read-' );
+		self::live_worker( $base, 'newspack-intelligence.p3' );
+		self::live_worker( $base, 'newspack-intelligence.p4' );
+		self::live_worker( $base, 'newspack-intelligence-collect.p2' );
+
+		$this->assertTrue( Worker_Route::read_through( $base ), 'empty inputs hold nothing unread' );
+
+		$asker = $this->interpreter( 'route-asker-13' );
+		Worker_Route::append( $asker, $base, 'intel:writer', [ [ 'event' => 'item_purged', 'item_key' => 'feed:abc-77' ] ] );
+		Worker_Route::send( $asker, $base, [ [ 'feed', 'TICK' ] ] );
+		\file_put_contents( Worker_Base::ipc_dir( $base, 'newspack-intelligence-collect', 2, Worker_Base::IPC_INPUT ) . '/0.log', "[1]\n" );
+
+		$this->assertFalse( Worker_Route::read_through( $base ) );
+
+		self::read_input( $base, 'newspack-intelligence.p3' );
+
+		$this->assertFalse( Worker_Route::read_through( $base ), 'one worker has not read it' );
+
+		self::read_input( $base, 'newspack-intelligence.p4' );
+
+		$this->assertTrue( Worker_Route::read_through( $base ) );
 	}
 
 	public function test_no_live_worker_is_refused(): void {
