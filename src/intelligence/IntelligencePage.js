@@ -1,6 +1,10 @@
 import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import DashboardShell from '@newspack-nodes/shared/components/DashboardShell';
+import TabBar, {
+	panelDomId,
+	tabDomId,
+} from '@newspack-nodes/shared/tabs/TabBar';
 import Search, { NEW_SEARCH } from './views/Search';
 import Entity from './views/Entity';
 import Review from './views/Review';
@@ -39,21 +43,24 @@ export default function IntelligencePage( { canTune, vocabulary } ) {
 	const onSave = canTune ? setSaving : undefined;
 
 	const tabs = [
-		[ 'search', __( 'Search', 'newspack-intelligence' ) ],
+		{ id: 'search', label: __( 'Search', 'newspack-intelligence' ) },
 		...( entityKey
 			? [
-					[
-						'entity',
-						sprintf(
+					{
+						id: 'entity',
+						label: sprintf(
 							/* translators: %s: the open entity's key. */
 							__( 'Entity: %s', 'newspack-intelligence' ),
 							entityKey
 						),
-					],
+					},
 			  ]
 			: [] ),
-		[ 'review', __( 'Review', 'newspack-intelligence' ) ],
-		[ 'collections', __( 'Collections', 'newspack-intelligence' ) ],
+		{ id: 'review', label: __( 'Review', 'newspack-intelligence' ) },
+		{
+			id: 'collections',
+			label: __( 'Collections', 'newspack-intelligence' ),
+		},
 	];
 
 	return (
@@ -64,59 +71,52 @@ export default function IntelligencePage( { canTune, vocabulary } ) {
 		>
 			{ () => (
 				<div className="newspack-intelligence">
+					<TabBar
+						scope="intelligence"
+						label={ __( 'Views', 'newspack-intelligence' ) }
+						tabs={ tabs }
+						activeId={ view }
+						onPick={ setView }
+					/>
 					<div
-						className="nodes-tab-host__tabbar"
-						role="tablist"
-						aria-label={ __( 'Views', 'newspack-intelligence' ) }
+						id={ panelDomId( 'intelligence' ) }
+						role="tabpanel"
+						aria-labelledby={ tabDomId( 'intelligence', view ) }
 					>
-						{ tabs.map( ( [ id, label ] ) => (
-							<button
-								key={ id }
-								type="button"
-								role="tab"
-								className={ `nodes-tab-host__tab${
-									view === id ? ' is-active' : ''
-								}` }
-								aria-selected={ view === id }
-								onClick={ () => setView( id ) }
-							>
-								{ label }
-							</button>
-						) ) }
+						{ 'search' === view && (
+							<Search
+								query={ search }
+								onQuery={ setSearch }
+								vocabulary={ vocabulary }
+								onOpenEntity={ openEntity }
+								onSave={ onSave }
+							/>
+						) }
+						{ 'entity' === view && (
+							<Entity
+								key={ entityKey }
+								entityKey={ entityKey }
+								canTune={ canTune }
+								vocabulary={ vocabulary }
+								onOpenEntity={ openEntity }
+								onSave={ onSave }
+							/>
+						) }
+						{ 'review' === view && (
+							<Review
+								canTune={ canTune }
+								vocabulary={ vocabulary }
+								onOpenEntity={ openEntity }
+							/>
+						) }
+						{ 'collections' === view && (
+							<Collections
+								canTune={ canTune }
+								opened={ collection }
+								onOpen={ setCollection }
+							/>
+						) }
 					</div>
-					{ 'search' === view && (
-						<Search
-							query={ search }
-							onQuery={ setSearch }
-							vocabulary={ vocabulary }
-							onOpenEntity={ openEntity }
-							onSave={ onSave }
-						/>
-					) }
-					{ 'entity' === view && (
-						<Entity
-							key={ entityKey }
-							entityKey={ entityKey }
-							canTune={ canTune }
-							vocabulary={ vocabulary }
-							onOpenEntity={ openEntity }
-							onSave={ onSave }
-						/>
-					) }
-					{ 'review' === view && (
-						<Review
-							canTune={ canTune }
-							vocabulary={ vocabulary }
-							onOpenEntity={ openEntity }
-						/>
-					) }
-					{ 'collections' === view && (
-						<Collections
-							canTune={ canTune }
-							opened={ collection }
-							onOpen={ setCollection }
-						/>
-					) }
 					{ saving && (
 						<SaveToCollection
 							item={ saving }

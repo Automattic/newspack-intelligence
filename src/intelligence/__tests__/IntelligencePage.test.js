@@ -77,6 +77,28 @@ describe( 'IntelligencePage', () => {
 		).toBeInTheDocument();
 	} );
 
+	it( 'labels its view panel by the selected tab, and moves with the keys', async () => {
+		renderPage();
+		const search = nav( 'Search' );
+		const panel = screen.getByRole( 'tabpanel' );
+		expect( search ).toHaveAttribute( 'aria-controls', panel.id );
+		expect( panel ).toHaveAttribute( 'aria-labelledby', search.id );
+
+		fireEvent.keyDown( search, { key: 'End' } );
+		expect( nav( 'Collections' ) ).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		expect( nav( 'Collections' ) ).toHaveFocus();
+		fireEvent.keyDown( nav( 'Collections' ), { key: 'ArrowRight' } );
+		expect( nav( 'Search' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		expect(
+			await screen.findByRole( 'link', {
+				name: 'Acme Gazette wins regional prize',
+			} )
+		).toBeInTheDocument();
+	} );
+
 	it( 'opens an entity from a result chip and returns to it from the nav', async () => {
 		renderPage();
 		fireEvent.click(
