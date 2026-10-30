@@ -92,6 +92,27 @@ final class OntologySeedTest extends TestCase {
 		$this->assertContains( 'role_asserted|organization:partner-org-24|industry_body|0', $facts );
 	}
 
+	/** TEAMA-2574's partners, industry bodies, funders and award bodies, each with its domains, names and role. */
+	public function test_the_news_2574_organizations_carry_their_roles(): void {
+		$facts = \array_map( self::fact( ... ), Ontology_Seed::events( [] ) );
+
+		foreach ( [ 'partnerorg4', 'partnerorg27', 'publication6', 'partner-org-5-collaborative', 'partner-org-6', 'partner-org-7', 'partner-org-8' ] as $partner ) {
+			$this->assertContains( "role_asserted|organization:{$partner}|partner|0", $facts );
+		}
+		foreach ( [ 'partner-org-9', 'partnerorg10', 'association-of-partner-org-11', 'partner-org-12', 'americas-newspapers', 'partner-org-14', 'partner-org-17', 'partnerorg18-prizes', 'american-society-of-partner-org-20', 'partner-org-21-and-editors', 'partner-org-22', 'partnerorg23-prize' ] as $body ) {
+			$this->assertContains( "role_asserted|organization:{$body}|industry_body|0", $facts );
+		}
+		foreach ( [ 'partner-org-15', 'partner-org-16' ] as $funder ) {
+			$this->assertContains( "role_asserted|organization:{$funder}|funder|0", $facts );
+		}
+		$this->assertContains( 'identifier_added|organization:partnerorg27|domain|partner-20.example', $facts );
+		$this->assertContains( 'identifier_added|organization:partner-org-17|domain|partner-21.example', $facts );
+		$this->assertContains( 'identifier_added|organization:partner-org-17|domain|partner-7.example', $facts );
+		$this->assertContains( 'name_added|organization:partner-org-17|alias|PartnerOrg19 Awards', $facts );
+		$this->assertContains( 'name_added|organization:partner-org-22|acronym|ORG1', $facts );
+		$this->assertContains( 'entity_created|organization:americas-newspapers|organization|America\'s Newspapers', $facts );
+	}
+
 	/** A seeded key a curator has since rejected is present, so nothing about it is written again. */
 	public function test_a_key_the_projection_holds_is_not_reemitted(): void {
 		$this->seed( self::entity( 'organization:partner-org-1', 'Knight Fund (curated)' ), self::rejected( 'organization:partner-org-1' ) );
@@ -102,7 +123,7 @@ final class OntologySeedTest extends TestCase {
 		$this->assertSame( [ 'organization:partner-org-1' ], $present );
 		$this->assertNotContains( 'organization:partner-org-1', \array_column( $events, 'entity_key' ) );
 		$this->assertContains( 'organization:partner-org-3', \array_column( $events, 'entity_key' ) );
-		$this->assertCount( 41, \array_filter( $events, static fn ( array $e ): bool => 'entity_created' === $e['event'] ) );
+		$this->assertCount( 62, \array_filter( $events, static fn ( array $e ): bool => 'entity_created' === $e['event'] ) );
 	}
 
 	/** A machine's pending proposal of a seed key is not present, so the seed's creation replaces it. */
@@ -119,7 +140,7 @@ final class OntologySeedTest extends TestCase {
 	public function test_a_second_run_emits_nothing(): void {
 		$this->seed( Ontology_Seed::events( Ontology_Seed::present() ) );
 
-		$this->assertCount( 45, Ontology_Seed::present() );
+		$this->assertCount( 66, Ontology_Seed::present() );
 		$this->assertSame( [], Ontology_Seed::events( Ontology_Seed::present() ) );
 	}
 
