@@ -92,6 +92,27 @@ final class OntologySeedTest extends TestCase {
 		$this->assertContains( 'role_asserted|organization:lion-publishers|industry_body|0', $facts );
 	}
 
+	/** NEWS-2574's partners, industry bodies, funders and award bodies, each with its domains, names and role. */
+	public function test_the_news_2574_organizations_carry_their_roles(): void {
+		$facts = \array_map( self::fact( ... ), Ontology_Seed::events( [] ) );
+
+		foreach ( [ 'everlit', 'pugpig', 'bluelena', 'blue-engine-collaborative', 'local-media-association', 'news-revenue-hub', 'parse-ly' ] as $partner ) {
+			$this->assertContains( "role_asserted|organization:{$partner}|partner|0", $facts );
+		}
+		foreach ( [ 'news-product-alliance', 'opennews', 'association-of-alternative-newsmedia', 'national-newspaper-association', 'americas-newspapers', 'online-news-association', 'television-academy', 'pulitzer-prizes', 'american-society-of-magazine-editors', 'investigative-reporters-and-editors', 'reporters-committee', 'nobel-prize' ] as $body ) {
+			$this->assertContains( "role_asserted|organization:{$body}|industry_body|0", $facts );
+		}
+		foreach ( [ 'media-forward-fund', 'google-news-initiative' ] as $funder ) {
+			$this->assertContains( "role_asserted|organization:{$funder}|funder|0", $facts );
+		}
+		$this->assertContains( 'identifier_added|organization:pugpig|domain|pugpig.com', $facts );
+		$this->assertContains( 'identifier_added|organization:television-academy|domain|emmys.com', $facts );
+		$this->assertContains( 'identifier_added|organization:television-academy|domain|televisionacademy.com', $facts );
+		$this->assertContains( 'name_added|organization:television-academy|alias|Emmy Awards', $facts );
+		$this->assertContains( 'name_added|organization:reporters-committee|acronym|RCFP', $facts );
+		$this->assertContains( 'entity_created|organization:americas-newspapers|organization|America\'s Newspapers', $facts );
+	}
+
 	/** A seeded key a curator has since rejected is present, so nothing about it is written again. */
 	public function test_a_key_the_projection_holds_is_not_reemitted(): void {
 		$this->seed( self::entity( 'organization:knight-foundation', 'Knight Fund (curated)' ), self::rejected( 'organization:knight-foundation' ) );
@@ -102,7 +123,7 @@ final class OntologySeedTest extends TestCase {
 		$this->assertSame( [ 'organization:knight-foundation' ], $present );
 		$this->assertNotContains( 'organization:knight-foundation', \array_column( $events, 'entity_key' ) );
 		$this->assertContains( 'organization:press-forward', \array_column( $events, 'entity_key' ) );
-		$this->assertCount( 41, \array_filter( $events, static fn ( array $e ): bool => 'entity_created' === $e['event'] ) );
+		$this->assertCount( 62, \array_filter( $events, static fn ( array $e ): bool => 'entity_created' === $e['event'] ) );
 	}
 
 	/** A machine's pending proposal of a seed key is not present, so the seed's creation replaces it. */
@@ -119,7 +140,7 @@ final class OntologySeedTest extends TestCase {
 	public function test_a_second_run_emits_nothing(): void {
 		$this->seed( Ontology_Seed::events( Ontology_Seed::present() ) );
 
-		$this->assertCount( 45, Ontology_Seed::present() );
+		$this->assertCount( 66, Ontology_Seed::present() );
 		$this->assertSame( [], Ontology_Seed::events( Ontology_Seed::present() ) );
 	}
 

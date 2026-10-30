@@ -52,7 +52,7 @@ final class OntologyCliCommandTest extends TestCase {
 		$written = self::ontology_events();
 		$this->assertSame( \array_column( Ontology_Seed::events( [ 'product:newspack-ads' ] ), 'entity_key' ), \array_column( $written, 'entity_key' ) );
 		$this->assertNotContains( 'product:newspack-ads', \array_column( $written, 'entity_key' ) );
-		$this->assertSame( [ \sprintf( 'Seeded %d events: 44 keys new, 1 present.', \count( $written ) ) ], \WP_CLI::$successes );
+		$this->assertSame( [ \sprintf( 'Seeded %d events: 65 keys new, 1 present.', \count( $written ) ) ], \WP_CLI::$successes );
 	}
 
 	public function test_seed_fails_loud_without_a_projection(): void {
