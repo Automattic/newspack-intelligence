@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The feed source reads fourteen more feeds,** from TEAMA-2574's partners, industry bodies, award bodies and newsletters: PartnerOrg27, Publication6, Partner Org 6, partner-org-8, PartnerOrg10, the Association of Partner Org 11, the Partner Org 12, Partner Org 15, Partner Org 21 and Editors, the Partner Org 22 for Freedom of the Press, the PartnerOrg23 Prizes, Partner Org 28, and the archives of the Partner Org 9's Product Notes and the PartnerOrg2 Institute's Solution Set. Each was fetched and parsed through `Feed_Source_Node::fetch()` before it was added.
+
 ### Fixed
 - **The Search, Lens and Watches forms line their fields up again.** Each field's label and input share a row with its neighbours', and a field's help hangs below its input instead of pushing the input up. The forms' buttons take a row of their own beneath the fields, and Search's "Edit as my own search" sits beside its Search button.
 
