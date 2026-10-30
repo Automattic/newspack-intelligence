@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **The Search, Lens and Watches forms line their fields up again.** Each field's label and input share a row with its neighbours', and a field's help hangs below its input instead of pushing the input up. The forms' buttons take a row of their own beneath the fields, and Search's "Edit as my own search" sits beside its Search button.
+
 ## [0.26.0] - 2026-10-29
 
 ### Added

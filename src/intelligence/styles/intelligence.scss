@@ -33,7 +33,12 @@
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 		gap: base.$space-md base.$space-lg;
-		align-items: end;
+		align-items: start;
+
+		// A field's help hangs below its input; the buttons take a row.
+		> .newspack-intelligence__actions {
+			grid-column: 1 / -1;
+		}
 	}
 
 	&__items,
