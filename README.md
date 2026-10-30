@@ -11,9 +11,10 @@ or newer. Below that floor the plugin stays dormant.
 
 ## How it works
 
-Connector **Source nodes** (GitHub, Linear, feed) fetch inside a background
-worker and record each new item as an `item_recorded` event on the `intel:items`
-stream. Entities, names, identifiers, roles and every person's judgment are
+Connector **Source nodes** (GitHub, Linear, feed) fetch on a schedule inside a
+background worker — GitHub and Linear every fifteen minutes, the feeds, each
+client's own among them, every half hour — and record each item the graph does
+not yet hold as an `item_recorded` event on the `intel:items` stream. Entities, names, identifiers, roles and every person's judgment are
 events on the `intel:ontology` stream, which keeps every segment; each watch's
 matches and marks are events on the `intel:watches` stream. A **Projector**
 replays the three streams into the `intel-graph` SQLite Row_Table.

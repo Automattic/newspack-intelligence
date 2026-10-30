@@ -207,6 +207,23 @@ class TopologyDurabilityTest extends TestCase {
 		}
 	}
 
+	/**
+	 * GitHub and Linear fetch every fifteen minutes on the grid, the feeds
+	 * every half hour with each open client's feed added; each rides the
+	 * Router's tick.
+	 */
+	public function test_the_sources_fetch_on_the_grid(): void {
+		$this->load( 'newspack-intelligence' );
+
+		foreach ( [ 'github' => 900, 'linear' => 900, 'feed' => 1800 ] as $name => $seconds ) {
+			$source = Core::node( $name );
+			$this->assertInstanceOf( Source_Node::class, $source, $name );
+			$this->assertSame( $seconds, $this->read_private( $source, 'interval' ), $name );
+			$this->assertSame( 'router', $source->timer_mode(), $name );
+		}
+		$this->assertTrue( $this->read_private( Core::node( 'feed' ), 'client_feeds' ) );
+	}
+
 	/** The Linear source fetches Newspack's own teams and no others. */
 	public function test_the_linear_source_names_newspacks_teams(): void {
 		$this->load( 'newspack-intelligence' );

@@ -3,9 +3,9 @@
  * Github_Source_Node: pulls Releases, Merged PRs, and Issues from configured
  * GitHub repos and normalizes them into recorded items.
  *
- * Extends Source_Node, so the base owns the TICK/TM_REQUEST trigger and dedup;
- * this class supplies only the two seams: config() (Settings read) and
- * fetch() (the blocking GitHub REST calls, behind the $http_get closure seam).
+ * Extends Source_Node, which owns the TICK/TM_REQUEST trigger, the grid and
+ * the record path; its tick() hands record() what fetch() (the blocking GitHub REST calls, behind the $http_get closure seam)
+ * finds for config()'s repos and token.
  *
  * @package Newspack_Intelligence
  */
@@ -38,6 +38,15 @@ class Github_Source_Node extends Source_Node {
 
 	/** @var list<string> Repos (owner/name) the `add_repo` verb registered and `remove_repo` left, in call order. */
 	protected array $repos = [];
+
+	/**
+	 * Fetch, and record what the fetch found.
+	 *
+	 * @return array{emitted:int,refused:int} The reply data.
+	 */
+	protected function tick(): array {
+		return $this->record( $this->fetch( $this->config() ) );
+	}
 
 	/**
 	 * Fetch Releases + Merged PRs + Issues for every configured repo, normalized
@@ -186,6 +195,7 @@ class Github_Source_Node extends Source_Node {
 		return self::source_schema(
 			'Fetches GitHub Releases, Merged PRs, and Issues for the configured repos on a TICK request (request_node github TICK).',
 			'Fetch + emit new GitHub items. Trigger with `request_node github TICK`.',
+			'{ emitted, refused }',
 			[
 				...self::list_verbs( 'repo', 'repos', [ 'name' => 'repo', 'type' => 'string', 'required' => true ], 'Register a repo to fetch on TICK: <owner/name>.' ),
 				self::vault_id_verb( 'the GitHub token' ),

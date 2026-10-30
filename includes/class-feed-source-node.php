@@ -1,83 +1,164 @@
 <?php
 /**
- * Feed_Source_Node: pulls items from configured RSS 2.0 / Atom feeds and
- * normalizes them into recorded items.
+ * Feed_Source_Node: pulls items from configured RSS 2.0 / Atom feeds, and
+ * from each client's own feed, and normalizes them into recorded items.
  *
- * Extends Source_Node, so the base owns the TICK/TM_REQUEST trigger and dedup;
- * this class supplies only the two seams: config() (Settings read) and
- * fetch() (the blocking feed GETs + XML parsing, behind the $http_get closure
- * seam).
+ * Extends Source_Node, which owns the TICK/TM_REQUEST trigger, the grid and
+ * the record path; its `tick()` starts a pass. A pass never blocks: it sends each feed URL, keyed by
+ * itself, to the `{name}:curl` sibling, keeping at most
+ * Curl_Node::MAX_IN_FLIGHT in flight and sending the next as each answers,
+ * and records each body's items as it lands. A due fetch while a pass is
+ * in flight starts nothing.
  *
  * @package Newspack_Intelligence
  */
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Core;
+use Newspack_Nodes\Curl_Node;
+use Newspack_Nodes\Message;
+use Newspack_Nodes\Row_Reader;
+
 \defined( 'ABSPATH' ) || exit;
 
 class Feed_Source_Node extends Source_Node {
-	private const ATOM_NS    = 'http://www.w3.org/2005/Atom';
-	private const DC_NS      = 'http://purl.org/dc/elements/1.1/';
+	private const ATOM_NS = 'http://www.w3.org/2005/Atom';
+	private const DC_NS   = 'http://purl.org/dc/elements/1.1/';
 
-	private const USER_AGENT = 'newspack-intelligence';
-
-	/**
-	 * wp_remote_get call seam. Null by default; the call site then invokes the real
-	 * `wp_remote_get`. Tests reassign it (and reset to null in tearDown) to return a
-	 * canned feed body WITHOUT short-circuiting the WP_Error / non-200 branches or
-	 * the XML parse + normalization — so all of that runs as real, covered code.
-	 *
-	 * Signature: `function ( string $url, array $args ): array|\WP_Error`.
-	 *
-	 * @var (\Closure( string, array<string,mixed> ): (array<string,mixed>|\WP_Error))|null
-	 */
-	public static ?\Closure $http_get = null;
+	/** Days old a client feed's item may be and still record; an undated one never does. */
+	public const CLIENT_FEED_DAYS = 7;
 
 	/** @var list<string> Feed URLs the `add_url` verb registered and `remove_url` left, in call order. */
 	protected array $urls = [];
 
-	/**
-	 * Fetch every configured feed, normalized to the item_recorded fields. A
-	 * failed or unparseable feed contributes nothing and never throws — one bad
-	 * feed can't sink the batch.
-	 *
-	 * @param array<string,mixed> $config {feeds: string[]}.
-	 * @return array<int,array<string,mixed>>
-	 */
-	public function fetch( array $config ): array {
-		$feeds = \is_array( $config['feeds'] ?? null ) ? $config['feeds'] : [];
-		$items = [];
-		foreach ( $feeds as $feed ) {
-			if ( ! \is_string( $feed ) || '' === $feed ) {
-				continue;
-			}
-			$items = \array_merge( $items, $this->fetch_feed( $feed ) );
-		}
-		return $items;
+	/** Whether a pass also fetches `https://<domain>/feed/` for each open client's domain. */
+	protected bool $client_feeds = false;
+
+	/** The `{name}:curl` sibling that fetches; null only while the constructor runs. */
+	private ?Curl_Node $curl = null;
+
+	/** @var array<string,bool> Feeds this pass has yet to send: url => whether it is a client's. */
+	private array $queue = [];
+
+	/** @var array<string,bool> Feeds sent and not yet answered: url => whether it is a client's. */
+	private array $in_flight = [];
+
+	/** True while send() runs; an answer arriving inside it does not re-enter. */
+	private bool $sending = false;
+
+	/** Build the Curl sibling, which answers back here through its target. */
+	public function __construct() {
+		parent::__construct();
+		$curl = new Curl_Node();
+		$curl->patron( $this );
+		$curl->arguments( [] );
+		$this->curl = $curl;
+		$this->publish_sibling( 'curl', $curl );
 	}
 
 	/**
-	 * GET one feed and parse it. Returns [] on transport error, non-200, or a body
-	 * that won't parse as XML.
+	 * A TICK request is answered; anything else is Curl's answer for a feed.
 	 *
+	 * @param array<int,mixed> $message Incoming Message.
+	 */
+	public function fill( array $message ): void {
+		if ( ! $this->answer_request( $message ) ) {
+			$this->answer( $message );
+		}
+	}
+
+	/**
+	 * Start a pass unless feeds are in flight: queue every feed the config
+	 * names, replacing what a throw left queued, and send the first to Curl.
+	 *
+	 * @return array{fetching:int} How many feeds the pass fetches, 0 when one is still in flight.
+	 */
+	protected function tick(): array {
+		if ( [] !== $this->in_flight ) {
+			return [ 'fetching' => 0 ];
+		}
+		$config      = $this->config();
+		$this->queue = \array_fill_keys( $config['feeds'], false ) + \array_fill_keys( $config['clients'], true );
+		$fetching    = \count( $this->queue );
+		$this->send();
+		return [ 'fetching' => $fetching ];
+	}
+
+	/**
+	 * Take Curl's answer for a feed in flight: a body records its items, a
+	 * client's only the recent ones, and a TM_ERROR is logged and records
+	 * nothing. The next feed goes out whatever the record did, so a pass
+	 * always ends. An answer for no feed in flight is dropped.
+	 *
+	 * @param array<int,mixed> $message The body as TM_BYTESTREAM, or the TM_ERROR, KEY the url.
+	 */
+	private function answer( array $message ): void {
+		$url = Core::as_string( $message[ Message::KEY ] );
+		if ( ! isset( $this->in_flight[ $url ] ) ) {
+			$this->drop_message( $message, 'no feed in flight' );
+			return;
+		}
+		$client = $this->in_flight[ $url ];
+		unset( $this->in_flight[ $url ] );
+		try {
+			$value = Core::as_string( $message[ Message::VALUE ] );
+			if ( 0 !== ( Core::as_int( $message[ Message::TYPE ] ) & Message::TM_ERROR ) ) {
+				$this->print_less_often( 'Feed fetch failed: ', $value );
+			} else {
+				$items = $this->parse( $value );
+				$this->record( $client ? $this->recent( $items ) : $items );
+			}
+		} finally {
+			$this->send();
+		}
+	}
+
+	/**
+	 * Send queued feeds to Curl while fewer than MAX_IN_FLIGHT are in
+	 * flight. An answer Curl sends synchronously frees its slot for this
+	 * same loop; a feed Curl throws on leaves flight, so the next pass
+	 * starts.
+	 *
+	 * @throws \LogicException When no Curl sibling was built.
+	 */
+	private function send(): void {
+		if ( $this->sending ) {
+			return;
+		}
+		$curl          = $this->curl ?? throw new \LogicException( \esc_html( "{$this->name} has no Curl sibling" ) );
+		$this->sending = true;
+		try {
+			while ( [] !== $this->queue && \count( $this->in_flight ) < Curl_Node::MAX_IN_FLIGHT ) {
+				$url                     = \array_key_first( $this->queue );
+				$this->in_flight[ $url ] = $this->queue[ $url ];
+				unset( $this->queue[ $url ] );
+				$message                   = Message::new_message();
+				$message[ Message::TYPE ]  = Message::TM_BYTESTREAM;
+				$message[ Message::FROM ]  = $this->name;
+				$message[ Message::KEY ]   = $url;
+				$message[ Message::VALUE ] = $url;
+				try {
+					$curl->fill( $message );
+				} catch ( \Throwable $e ) {
+					unset( $this->in_flight[ $url ] );
+					throw $e;
+				}
+			}
+		} finally {
+			$this->sending = false;
+		}
+	}
+
+	/**
+	 * The items dated within CLIENT_FEED_DAYS of the tick clock.
+	 *
+	 * @param array<int,array<string,mixed>> $items Normalized items.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function fetch_feed( string $url ): array {
-		$args     = [
-			// phpcs:ignore WordPressVIPMinimum.Performance.RemoteRequestTimeout.timeout_timeout -- connector fetches run in a background worker, not a web request.
-			'timeout' => 15,
-			'headers' => [ 'User-Agent' => self::USER_AGENT ],
-		];
-		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_get_wp_remote_get -- connector fetches run in a background worker, not a VIP web request; the closure seam covers tests.
-		$response = null !== self::$http_get ? ( self::$http_get )( $url, $args ) : \wp_remote_get( $url, $args );
-		if ( \is_wp_error( $response ) ) {
-			$this->print_less_often( 'Feed fetch failed: ', $response->get_error_message() );
-			return [];
-		}
-		if ( 200 !== (int) \wp_remote_retrieve_response_code( $response ) ) {
-			return [];
-		}
-		return $this->parse( \wp_remote_retrieve_body( $response ) );
+	private function recent( array $items ): array {
+		$since = Core::$now - self::CLIENT_FEED_DAYS * Intel_Graph_Row_Schema::DAY_SECONDS;
+		return \array_filter( $items, static fn ( array $item ): bool => 0 !== $item['item_ts'] && $item['item_ts'] >= $since );
 	}
 
 	/**
@@ -171,22 +252,90 @@ class Feed_Source_Node extends Source_Node {
 		return $fallback;
 	}
 
-	/** @return array{feeds:array<int,string>} */
+	/**
+	 * The configured feeds, and with client feeds on, each open client's
+	 * feed no configured URL already names.
+	 *
+	 * @return array{feeds:list<string>,clients:list<string>}
+	 */
 	protected function config(): array {
-		return [ 'feeds' => $this->urls ];
+		return [
+			'feeds'   => $this->urls,
+			'clients' => $this->client_feeds ? \array_values( \array_diff( $this->client_urls(), $this->urls ) ) : [],
+		];
 	}
 
-	/** Emit the base config plus one round-trippable `command_node {name}:config add_url …` per registered URL. */
+	/**
+	 * `https://<domain>/feed/` for each domain of every entity holding an
+	 * open `client` role, read in one projection read; none, logged, when
+	 * no projection opens.
+	 *
+	 * @return list<string>
+	 */
+	private function client_urls(): array {
+		return Intel_Graph_Row_Schema::read(
+			static function ( Row_Reader $r ): array {
+				$index     = Entity_Index::load( $r );
+				$keys      = Graph_Query::inverse( $index->merged() );
+				$domains   = $index->identifiers( 'domain' );
+				$survivors = [];
+				foreach ( $domains as $entity ) {
+					$survivors[ $entity ] = $keys[ $entity ] ?? [ $entity ];
+				}
+				$open = Graph_Query::open_roles( $r, $survivors, [ 'client' ] );
+				$urls = [];
+				foreach ( $domains as $domain => $entity ) {
+					if ( isset( $open[ $entity ]['client'] ) ) {
+						$urls[] = "https://{$domain}/feed/";
+					}
+				}
+				return $urls;
+			},
+			"{$this->name}: no intel-graph to read client domains from; fetching the configured feeds alone: "
+		) ?? [];
+	}
+
+	/**
+	 * The `set_client_feeds` verb's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param bool $on Whether a pass fetches each open client's feed.
+	 */
+	public function set_client_feeds( bool $on ): void {
+		$this->client_feeds = $on;
+	}
+
+	/**
+	 * Name the Curl sibling through `parent::`, and point its answers at
+	 * this name.
+	 *
+	 * @api Used by substrate.
+	 */
+	protected function set_sibling_names(): void {
+		parent::set_sibling_names();
+		$this->curl?->target( $this->name );
+	}
+
+	/** Emit the base config, one `add_url` line per registered URL, and the client-feeds toggle. */
 	public function dump_config(): string {
-		return parent::dump_config() . $this->dump_lists();
+		return parent::dump_config() . $this->dump_lists() . $this->dump_toggles();
 	}
 
 	public static function node_schema(): array {
 		return self::source_schema(
-			'Fetches items from the configured RSS 2.0 / Atom feeds on a TICK request (request_node feed TICK).',
-			'Fetch + emit new feed items. Trigger with `request_node feed TICK`.',
+			'Fetches items from the configured RSS 2.0 / Atom feeds, and each open client\'s feed when asked, without blocking, on a TICK request (request_node feed TICK).',
+			'Start a pass over the feeds; each body records its new items as it lands. Trigger with `request_node feed TICK`.',
+			'{ fetching }',
 			[
-				...self::list_verbs( 'url', 'urls', [ 'name' => 'url', 'type' => 'string', 'required' => true ], 'Register a feed URL to fetch on TICK: <url>.' ),
+				...self::list_verbs( 'url', 'urls', [ 'name' => 'url', 'type' => 'string', 'required' => true ], 'Register a feed URL to fetch on each pass: <url>.' ),
+				[
+					'name'        => 'set_client_feeds',
+					'description' => 'Also fetch https://<domain>/feed/ for each domain of every entity holding an open client role, recording only items dated within ' . self::CLIENT_FEED_DAYS . ' days.',
+					'args'        => [
+						[ 'name' => 'enabled', 'type' => 'bool', 'required' => false, 'description' => '1, true, yes or on enables; 0, false, no or off disables.' ],
+					],
+					'toggle'      => 'client_feeds',
+				],
 			]
 		);
 	}
