@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-10-29
+
 ### Added
 - **Sources fetch on a schedule.** Once `set_interval <seconds>` sets an interval, a source fetches on the wall-clock grid, riding the Router's tick: at each multiple of the interval since the epoch, never at a worker's first tick, so a recycled worker waits for the next boundary. With none set, only `TICK` fetches. The collect topology fetches GitHub and Linear every 900 seconds and the feeds every 1,800. A scheduled fetch that throws is logged naming the source and tried again at the next boundary; it never stops the worker. `fetch_now` still TICKs every source at once.
 - **Publisher feeds.** `set_client_feeds true`, which the collect topology turns on, adds `https://<domain>/feed/` for each domain of every entity holding an open `client` role, read from the projection each pass, so a churned client drops out on the next. A client feed records only items dated within 7 days (`Feed_Source_Node::CLIENT_FEED_DAYS`), never an undated one, which bounds the extraction calls publisher items cost. A configured feed records every item, as before.
