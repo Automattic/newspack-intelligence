@@ -29,16 +29,6 @@ class Slack_Source_Node extends Source_Node {
 	/** Messages a page asks for. */
 	private const PAGE = 200;
 
-	/** Characters of a message's first line its title keeps. */
-	private const TITLE_CHARS = 120;
-
-	/** The three escapes Slack writes into message text, and what each spells. */
-	private const ESCAPES = [
-		'&amp;' => '&',
-		'&lt;'  => '<',
-		'&gt;'  => '>',
-	];
-
 	/** Notices of membership and channel settings, which record nothing. */
 	private const SKIPPED = [ 'channel_join', 'channel_leave', 'channel_topic', 'channel_purpose' ];
 
@@ -118,11 +108,11 @@ class Slack_Source_Node extends Source_Node {
 				if ( '' === $thread && Core::as_int( $message['reply_count'] ?? null ) > 0 && (float) Core::as_string( $message['latest_reply'] ?? null ) > $moved ) {
 					$this->queue( self::page( 'replies', $channel, $oldest, $ts ) );
 				}
-				$text = \strtr( Core::str( $message['text'] ?? null ), self::ESCAPES );
+				$text = self::mrkdwn( Core::str( $message['text'] ?? null ) );
 				return $this->normalize_item(
 					'slack',
 					"{$channel}:{$ts}",
-					\mb_substr( \explode( "\n", $text, 2 )[0], 0, self::TITLE_CHARS ),
+					self::first_line( $text ),
 					'' === $this->workspace ? '' : "{$this->workspace}archives/{$channel}/p" . \str_replace( '.', '', $ts ),
 					self::poster( $message ) . ": {$text}",
 					'@' . (int) $ts

@@ -72,6 +72,9 @@ cmd p2:config add_site newspackonwpcloud.wordpress.com
 make_node P2_Source p2-restricted restricted p2
 cmd p2-restricted:config set_interval 1800
 cmd p2-restricted:config add_site newspacksalesandoperations.wordpress.com
+# Support threads quote publishers' staff by name, so Unthread is restricted.
+make_node Unthread_Source unthread restricted unthread
+cmd unthread:config set_interval 900
 connect_node github intel:writer
 connect_node linear intel:writer
 connect_node feed intel:writer
@@ -79,4 +82,5 @@ connect_node news intel:writer
 connect_node slack intel:writer
 connect_node p2 intel:writer
 connect_node p2-restricted intel:writer
+connect_node unthread intel:writer
 secure

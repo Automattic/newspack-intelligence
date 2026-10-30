@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Intelligence\Deduper_Node;
+use Newspack_Intelligence\Entity_Index;
 use Newspack_Intelligence\P2_Source_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Tests\TestCase;
@@ -129,8 +131,10 @@ final class P2SourceTest extends TestCase {
 
 	/**
 	 * A post keys under its site and id, a comment under its post's key and
-	 * its own id; each is titled and stripped to text with entities decoded,
-	 * its author leading its body.
+	 * its own id; each is stripped to text with entities decoded, a post
+	 * titled by its title and a comment by its author and its own first
+	 * line, its author leading its text, and a comment's body opening with
+	 * its post's title.
 	 */
 	public function test_posts_and_comments_record_under_keys_apart(): void {
 		$node = $this->p2( 'p2', 'internal', self::HERON );
@@ -164,10 +168,33 @@ final class P2SourceTest extends TestCase {
 		$this->assertSame( 'https://heronp2.wordpress.com/2026/10/28/q4-plan/', $post['url'] );
 		$this->assertSame( \strtotime( '2026-10-28T09:15:00+00:00' ), $post['item_ts'] );
 		$comment = $by['p2:88120:4107:c5502'];
-		$this->assertSame( 'Re: Heron’s Q4 plan', $comment['title'] );
-		$this->assertSame( 'Wren Osprey: Looks good > ship', $comment['body'] );
+		$this->assertSame( 'Wren Osprey: Looks good > ship', $comment['title'] );
+		$this->assertSame( "Re: Heron’s Q4 plan\nWren Osprey: Looks good > ship", $comment['body'] );
 		$this->assertSame( 'https://heronp2.wordpress.com/2026/10/28/q4-plan/#comment-5502', $comment['url'] );
 		$this->assertSame( \strtotime( '2026-10-28T10:30:00+00:00' ), $comment['item_ts'] );
+	}
+
+	/**
+	 * Two long comments on one post carry titles of their own, each its
+	 * author and its first line cut to 120 characters, so the deduper's
+	 * title norm never folds every comment on a post into one.
+	 */
+	public function test_two_comments_on_one_post_are_titled_apart(): void {
+		$node   = $this->p2( 'p2', 'internal', self::HERON );
+		$first  = 'Kestrel&#8217;s launch checklist still lists the old paywall plugin; we should drop it before Thursday&#8217;s rollout to the Heron network';
+		$second = '<p>Agreed &amp; done: the checklist now names the Heron paywall, and the rollout runbook links the new cache purge step for every site</p>';
+		$this->tick( $node );
+		$this->complete( self::posts( self::HERON ), self::posts_answer( [] ) );
+
+		$this->complete( self::comments( self::HERON ), self::comments_answer( [ self::comment( 5601, "<p>{$first}</p>\n<p>Second paragraph.</p>" ), self::comment( 5602, $second ) ] ) );
+
+		$by = $this->recorded();
+		$a  = $by['p2:88120:4107:c5601']['title'];
+		$b  = $by['p2:88120:4107:c5602']['title'];
+		$this->assertSame( 'Wren Osprey: ' . \mb_substr( 'Kestrel’s launch checklist still lists the old paywall plugin; we should drop it before Thursday’s rollout to the Heron network', 0, 120 ), $a );
+		$this->assertSame( 'Wren Osprey: ' . \mb_substr( 'Agreed & done: the checklist now names the Heron paywall, and the rollout runbook links the new cache purge step for every site', 0, 120 ), $b );
+		$this->assertNotSame( Entity_Index::norm( $a ), Entity_Index::norm( $b ) );
+		$this->assertGreaterThanOrEqual( Deduper_Node::MIN_TITLE_NORM, \mb_strlen( Entity_Index::norm( $a ) ) );
 	}
 
 	/** A posts answer naming a next page queues the same request at its handle, replacing the one it was asked at. */

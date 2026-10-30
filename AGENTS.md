@@ -2,8 +2,8 @@
 
 Collects and curates intelligence as an entity graph, built on the
 `newspack-nodes` substrate (sibling plugin; `Requires Plugins: newspack-nodes`).
-It records GitHub, Linear, Slack, P2 and feed items as events, links each to
-the entities it concerns, extracts a summary, topics and claims with an LLM,
+It records GitHub, Linear, Slack, P2, Unthread and feed items as events,
+links each to the entities it concerns, extracts a summary, topics and claims with an LLM,
 and answers questions about them with citations — on the Intelligence admin
 page, and to agents through its MCP door. Nothing is compiled: a person or an
 agent asks, and the graph answers.
@@ -952,7 +952,7 @@ version>` and that version as the `config_version`; `make()` stamps the
 tick clock, which the substrate pins at class load.
 
 **Collect.** The connector **Source nodes** (`github`, `linear`, `slack`,
-`p2`, `p2-restricted`, `feed`, `news`) fetch inside the background worker
+`p2`, `p2-restricted`, `unthread`, `feed`, `news`) fetch inside the background worker
 without blocking it and emit one `item_recorded` event per new item to
 `intel:writer`. Each records at the
 tier its `make_node` line names (`make_node Feed_Source feed public`), which
@@ -965,8 +965,8 @@ and :45 whatever its worker's age. A process's first tick only marks the
 clock, so a respawned worker waits for the next boundary rather than
 fetching at spawn, and a boundary that passes while no worker runs is
 skipped. With no interval set a source holds no timer and only `TICK`
-fetches. The collect topology sets GitHub, Linear and Slack to 900
-seconds, both P2 nodes and `feed` to 1,800, and `news` to 3,600.
+fetches. The collect topology sets GitHub, Linear, Slack and Unthread to
+900 seconds, both P2 nodes and `feed` to 1,800, and `news` to 3,600.
 
 `Source_Node` owns the chain every source fetches on, and each source
 supplies two seams: `begin()`, which queues the pass's opening requests
@@ -979,7 +979,9 @@ or list or one its source's closure reads an error off, logs
 `<api> answered an error for <url>: <error>` and answers null; `items()`
 maps each row to an item through its source's closure, leaving out a row
 the closure answers null for; and `checked_list()` declares a validated
-add verb, below. `dump_config()` replays every declared setter, list and
+add verb, below. Two more serve a title and a body: `first_line()` cuts a
+text's first line to `TITLE_CHARS` (120), and `mrkdwn()` decodes Slack's
+three escapes in one pass. `dump_config()` replays every declared setter, list and
 checked list. Three hooks tune it: `max_in_flight()`, `max_requests()`
 and `follows_redirects()`. A pass starts on a `TICK` or a grid boundary
 unless requests are in flight, in which case it starts nothing; it replaces
@@ -1025,7 +1027,9 @@ and `auth_scheme`. The `github` entry is `https://api.github.com` with
 `Authorization` and `Bearer`; the `linear` entry is `https://api.linear.app`
 with `Authorization` and no scheme; the `slack` entry is
 `https://slack.com` and the `p2` entry, which both P2 nodes name,
-`https://public-api.wordpress.com`, each with `Authorization` and `Bearer`.
+`https://public-api.wordpress.com`, each with `Authorization` and `Bearer`;
+the `unthread` entry is `https://api.unthread.io` with `X-Api-Key` and no
+scheme.
 A source with no group, or a group with no entry on the origin, fetches
 with no credential, and the refusal is logged. The feeds send no credential
 and declare no group.
@@ -1107,8 +1111,9 @@ thread's `conversations.replies`, paged alike, so a pass reads only the
 threads that moved since the pass before last; the
 parent a replies page repeats, `record()` drops as the history page's.
 Each message records as `slack:<channel>:<ts>`, its text's `&amp;`,
-`&lt;` and `&gt;` decoded in one pass and its `<@U…>` and `<#C…>` mentions
-kept as Slack wrote them, titled by its first line cut to 120 characters,
+`&lt;` and `&gt;` decoded in one pass by `Source_Node::mrkdwn()` and its
+`<@U…>` and `<#C…>` mentions kept as Slack wrote them, titled by its first
+line, cut to `Source_Node::TITLE_CHARS` (120) by `Source_Node::first_line()`,
 its poster leading its text, its url
 `<workspace>archives/<channel>/p<ts without the dot>`; `channel_join`,
 `channel_leave`, `channel_topic` and `channel_purpose` notices record
@@ -1124,17 +1129,58 @@ seen.
 WordPress.com REST API since `WINDOW_SECONDS` (seven days) ago, 100 a
 page. A posts page's `meta.next_page` is sent back as `page_handle`;
 comments carry no handle, so a full page of them queues the next `page`.
-A post records as `p2:<site_ID>:<ID>` and a comment as
-`p2:<site_ID>:<post ID>:c<ID>`, titled `Re: <post title>`, the site's id
-read from the comments answer, which carries it beside the comments rather
-than on each. Titles and content are stripped to text with entities
-decoded, the author's name leading the body. An answer carrying `error`
+A post records as `p2:<site_ID>:<ID>`, titled by its title, and a comment
+as `p2:<site_ID>:<post ID>:c<ID>`, the site's id read from the comments
+answer, which carries it beside the comments rather than on each. A comment
+is titled `<author name>: <first line>`, the first line cut by
+`Source_Node::first_line()`, so no two comments on a post share a title the
+deduper would fold them by, and its body opens with `Re: <post title>` on a
+line of its own. Titles and content
+are stripped to text with entities decoded, the author's name leading the
+text. An answer carrying `error`
 logs its `message`, rate-limited, and records nothing, and an answer
 naming no `site_ID` logs that, rate-limited under its site, and records
 none of what it lacks. `add_site` refuses anything but
 `^[a-z0-9-]+\.wordpress\.com\z`. `p2` reads at the internal
 tier and `p2-restricted`, the sales and operations P2, at the restricted
 one.
+
+`Unthread_Source_Node` POSTs `conversations/list` with `{ order:
+[updatedAt], descending: true, limit: 100 }`, the newest update first. The
+published reference documents a `where: [{ field, operator, value }]` clause
+with `>` among its operators but names no field it accepts, so the source
+reads its edge client-side until a live call shows whether `updatedAt`
+filters. Each conversation whose `updatedAt` falls within two intervals, or
+`WINDOW_SECONDS` (two days) while no interval is set, queues
+`conversations/<id>/messages/list` with `{ limit: 100 }`, as Slack reads
+only the threads that moved, so a pass re-reads only the conversations
+that moved since the pass before last; an id that is not a uuid is logged
+and skipped, and the node keeps that conversation's `#<friendlyId>` and
+context line for the pass. A page whose `cursors.hasNext` is true queues
+the next with `cursor: cursors.next` added to its body. A conversations page
+does so only while its last conversation with an `updatedAt` that parses is
+inside the edge, skipping one whose `updatedAt` does not parse, and queues
+it behind the first page of each of its conversations' messages, so a later
+page of messages waits behind it. Each message records as
+`unthread:<conversation id>:<ts>`, one item per message rather than per
+conversation, because the projection dedup records only keys the graph
+lacks and a conversation recorded once would never gain its later
+messages. Its text's `&amp;`, `&lt;` and `&gt;` are decoded once by
+`Source_Node::mrkdwn()`, as Slack's are. It is titled `#<friendlyId> <first
+line>`, the first line cut by `Source_Node::first_line()`, or
+`#<friendlyId>` when its text is empty, so the deduper folds neither a
+conversation's messages nor one macro reply sent in two tickets. Its body
+opens with the context line `[<status>] <customer>: <subject>`, the
+customer's name else `Unthread`, the subject the conversation's title, else
+its initial message's first line, else `#<friendlyId>`; then `user.name`,
+else `userId`, and the text. Its `item_ts` is its Slack-style `ts`, as
+Slack's is, and its url is empty, because the API names no permalink. A
+message missing its `ts` or `text` is logged under its page's url and
+skipped. An answer with no `data` list logs Unthread's `message`,
+rate-limited, and records nothing. `unthread` reads at the restricted
+tier, because support threads quote publishers' staff by name. The node
+was written against Unthread's published API reference and has not yet
+called the API live.
 
 **Seams and the LLM contract.** LLM calls go through the Automattic
 AI API Proxy via `LLM_Client` / `Proxy_LLM_Client`, whose `$http_post` closure is
@@ -1255,7 +1301,7 @@ Read the counts, then run the command it prints, the same command without
 |------|---------------|
 | `newspack-intelligence.tsl` | Includes every file below and wires `reresolver`, which spans the project and streams files, and `watcher`, which reads the projection and writes to `intel:writer`; `on_demand_idle 0` keeps the worker resident, which the scheduled sources need, and `stale_timeout 600` keeps a peer from stealing its lock while an LLM call blocks one `fill()` |
 | `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve`, `intel:watches`, `intel:writer`, and `intel:later`, the Delay whose due records go to `intel:reresolve` |
-| `newspack-intelligence-collect.tsl` | The seven sources → `intel:writer`: GitHub, Linear and Slack on a 900-second grid, `p2` and `p2-restricted` on 1,800, each under its Vault group, the two P2 nodes sharing `p2`; `feed` on 1,800 with client feeds on; `news`, the Google News searches, on 3,600; includes the streams |
+| `newspack-intelligence-collect.tsl` | The eight sources → `intel:writer`: GitHub, Linear, Slack and Unthread on a 900-second grid, Unthread at the restricted tier, `p2` and `p2-restricted` on 1,800, each under its Vault group, the two P2 nodes sharing `p2`; `feed` on 1,800 with client feeds on; `news`, the Google News searches, on 3,600; includes the streams |
 | `newspack-intelligence-project.tsl` | `intel:items:consumer`, `intel:ontology:consumer` and `intel:watches:consumer`, each → `projector`, writing the `intel-graph` Row_Table; no other node rides their cursors |
 | `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later`, the items Consumer checkpointing the deduper; includes the streams |
 
@@ -1270,6 +1316,7 @@ plugin adds:
 | `Linear_Source` | `Linear_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_team`, `remove_team`; owns `{name}:curl` |
 | `Slack_Source` | `Slack_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_channel`, `remove_channel`; owns `{name}:curl` |
 | `P2_Source` | `P2_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_site`, `remove_site`; owns `{name}:curl` |
+| `Unthread_Source` | `Unthread_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`; owns `{name}:curl` |
 | `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_url`, `remove_url`, `set_client_feeds`; owns `{name}:curl` |
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
@@ -1413,7 +1460,7 @@ sibling checkout locally.
 |------|------|
 | `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus and the Settings page's admin-post helpers, WP-CLI, the `Intelligence_CI` mount, the MCP door's `wire()` |
 | `includes/` (streams) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Ontology_Seed`, `Stream_Writer`, the `Emits_Struct` trait |
-| `includes/` (collect) | `Source_Node` and its five connectors |
+| `includes/` (collect) | `Source_Node` and its six connectors |
 | `includes/` (resolve) | `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
 | `includes/` (clients) | `Client_Importer`, the `Client_Roster` interface, `Graph_Client_Roster`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |

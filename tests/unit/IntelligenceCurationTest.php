@@ -409,8 +409,8 @@ final class IntelligenceCurationTest extends TestCase {
 
 		$this->assertSame( [ 'ok' => true, 'workers' => 1 ], $answer );
 		$written = self::worker_input( $base, 'newspack-intelligence.p6' );
-		$this->assertSame( [ 'github', 'linear', 'feed', 'news', 'slack', 'p2', 'p2-restricted' ], \array_column( $written, Message::TO ) );
-		$this->assertSame( \array_fill( 0, 7, 'TICK' ), \array_column( $written, Message::VALUE ) );
+		$this->assertSame( [ 'github', 'linear', 'feed', 'news', 'slack', 'p2', 'p2-restricted', 'unthread' ], \array_column( $written, Message::TO ) );
+		$this->assertSame( \array_fill( 0, 8, 'TICK' ), \array_column( $written, Message::VALUE ) );
 		$this->assertSame( [], self::ontology_events() );
 	}
 
