@@ -1,5 +1,5 @@
 var on_demand_idle = 0
-# Fetches and LLM calls block one fill(); a 60s lock steal tears intel:items.
+# An LLM call blocks one fill(); a 60s lock steal tears intel:items.
 var stale_timeout = 600
 var num_partitions = 1
 include topic-probe

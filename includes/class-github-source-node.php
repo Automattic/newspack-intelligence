@@ -3,81 +3,73 @@
  * Github_Source_Node: pulls Releases, Merged PRs, and Issues from configured
  * GitHub repos and normalizes them into recorded items.
  *
- * Extends Source_Node, which owns the TICK/TM_REQUEST trigger, the grid and
- * the record path; its tick() hands record() what fetch() (the blocking GitHub REST calls, behind the $http_get closure seam)
- * finds for config()'s repos and token.
+ * Extends Source_Node, which owns the trigger, the grid, the chain and the
+ * record path. The endpoint an answer's url names picks how its rows map to
+ * items.
  *
  * @package Newspack_Intelligence
  */
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
 
 \defined( 'ABSPATH' ) || exit;
 
 class Github_Source_Node extends Source_Node {
-	use Vault_Secret;
 
-	private const API_BASE   = 'https://api.github.com';
-	private const PER_PAGE   = 10;
-	private const USER_AGENT = 'newspack-intelligence';
+	private const API_BASE = 'https://api.github.com/repos/';
+	private const PER_PAGE = 30;
 
-	/**
-	 * libcurl/wp_remote_get call seam. Null by default; the call site then invokes
-	 * the real `wp_remote_get`. Tests reassign it (and reset to null in tearDown) to
-	 * return canned GitHub JSON WITHOUT short-circuiting header assembly, the
-	 * WP_Error / non-200 branches, or the per-endpoint normalization — so all of
-	 * that runs as real, covered production code.
-	 *
-	 * Signature: `function ( string $url, array $args ): array|\WP_Error`.
-	 *
-	 * @var (\Closure( string, array<string,mixed> ): (array<string,mixed>|\WP_Error))|null
-	 */
-	public static ?\Closure $http_get = null;
+	/** The one argument add_repo and remove_repo take. */
+	private const REPO_ARG = [
+		'name'     => 'repo',
+		'type'     => 'string',
+		'required' => true,
+	];
+
+	/** An owner/name pair, as add_repo takes it. */
+	private const REPO = '#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#';
+
+	/** Each endpoint a pass fetches per repo, by name, with its query. */
+	private const ENDPOINTS = [
+		'releases' => 'releases?per_page=' . self::PER_PAGE,
+		'pulls'    => 'pulls?state=closed&sort=updated&direction=desc&per_page=' . self::PER_PAGE,
+		'issues'   => 'issues?state=all&sort=updated&direction=desc&per_page=' . self::PER_PAGE,
+	];
 
 	/** @var list<string> Repos (owner/name) the `add_repo` verb registered and `remove_repo` left, in call order. */
 	protected array $repos = [];
 
 	/**
-	 * Fetch, and record what the fetch found.
+	 * One endpoint's rows as items, by the repo and the endpoint its url
+	 * names; a body that is not a JSON list yields none.
 	 *
-	 * @return array{emitted:int,refused:int} The reply data.
+	 * @param string $url  The endpoint's url, as begin() queued it.
+	 * @param string $body The JSON body.
+	 * @return array<int,array<string,mixed>>
 	 */
-	protected function tick(): array {
-		return $this->record( $this->fetch( $this->config() ) );
+	protected function received( string $url, string $body ): array {
+		$rows     = \json_decode( $body, true );
+		$endpoint = '#^' . \preg_quote( self::API_BASE, '#' ) . '([^/]+/[^/]+)/(' . \implode( '|', \array_keys( self::ENDPOINTS ) ) . ')\?#';
+		if ( ! \is_array( $rows ) || ! \array_is_list( $rows ) || 1 !== \preg_match( $endpoint, $url, $match ) ) {
+			return [];
+		}
+		return match ( $match[2] ) {
+			'releases' => $this->releases( $match[1], $rows ),
+			'pulls'    => $this->merged_prs( $match[1], $rows ),
+			default    => $this->issues( $match[1], $rows ),
+		};
 	}
 
 	/**
-	 * Fetch Releases + Merged PRs + Issues for every configured repo, normalized
-	 * to the item_recorded fields. A failed repo/endpoint contributes nothing and
-	 * never throws — one bad repo can't sink the batch.
-	 *
-	 * @param array<string,mixed> $config {repos: string[], token: string}.
+	 * @param array<mixed> $rows The endpoint's rows.
 	 * @return array<int,array<string,mixed>>
 	 */
-	public function fetch( array $config ): array {
-		$repos = \is_array( $config['repos'] ?? null ) ? $config['repos'] : [];
-		$token = \is_string( $config['token'] ?? null ) ? $config['token'] : '';
-		$items = [];
-		foreach ( $repos as $repo ) {
-			if ( ! \is_string( $repo ) || '' === $repo ) {
-				continue;
-			}
-			$items = \array_merge(
-				$items,
-				$this->releases( $repo, $token ),
-				$this->merged_prs( $repo, $token ),
-				$this->issues( $repo, $token ),
-			);
-		}
-		return $items;
-	}
-
-	/** @return array<int,array<string,mixed>> */
-	private function releases( string $repo, string $token ): array {
+	private function releases( string $repo, array $rows ): array {
 		$out = [];
-		foreach ( $this->get_json( "/repos/$repo/releases?per_page=" . self::PER_PAGE, $token ) as $r ) {
+		foreach ( $rows as $r ) {
 			if ( ! \is_array( $r ) ) {
 				continue;
 			}
@@ -92,10 +84,13 @@ class Github_Source_Node extends Source_Node {
 		return $out;
 	}
 
-	/** @return array<int,array<string,mixed>> Closed PRs that actually merged. */
-	private function merged_prs( string $repo, string $token ): array {
+	/**
+	 * @param array<mixed> $rows The endpoint's rows.
+	 * @return array<int,array<string,mixed>> Closed PRs that actually merged.
+	 */
+	private function merged_prs( string $repo, array $rows ): array {
 		$out = [];
-		foreach ( $this->get_json( "/repos/$repo/pulls?state=closed&sort=updated&direction=desc&per_page=" . self::PER_PAGE, $token ) as $pr ) {
+		foreach ( $rows as $pr ) {
 			if ( ! \is_array( $pr ) ) {
 				continue;
 			}
@@ -112,10 +107,13 @@ class Github_Source_Node extends Source_Node {
 		return $out;
 	}
 
-	/** @return array<int,array<string,mixed>> Issues only — the issues endpoint also lists PRs (pull_request key); those are dropped. */
-	private function issues( string $repo, string $token ): array {
+	/**
+	 * @param array<mixed> $rows The endpoint's rows.
+	 * @return array<int,array<string,mixed>> Issues only — the issues endpoint also lists PRs (pull_request key); those are dropped.
+	 */
+	private function issues( string $repo, array $rows ): array {
 		$out = [];
-		foreach ( $this->get_json( "/repos/$repo/issues?state=all&sort=updated&direction=desc&per_page=" . self::PER_PAGE, $token ) as $issue ) {
+		foreach ( $rows as $issue ) {
 			if ( ! \is_array( $issue ) || isset( $issue['pull_request'] ) ) {
 				continue;
 			}
@@ -134,71 +132,64 @@ class Github_Source_Node extends Source_Node {
 		return ( \is_int( $id ) || \is_string( $id ) ) ? (string) $id : '';
 	}
 
-	/**
-	 * GET a GitHub REST path and decode a JSON array body. Returns [] on transport
-	 * error, non-200, or a non-array body — the caller treats "no items" and "fetch
-	 * failed" identically (fire-and-forget).
-	 *
-	 * @return array<mixed>
-	 */
-	private function get_json( string $path, string $token ): array {
-		$url      = self::API_BASE . $path;
-		$args     = $this->request_args( $token );
-		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_get_wp_remote_get -- connector fetches run in a background worker, not a VIP web request; the closure seam covers tests.
-		$response = null !== self::$http_get ? ( self::$http_get )( $url, $args ) : \wp_remote_get( $url, $args );
-		if ( \is_wp_error( $response ) ) {
-			$this->print_less_often( 'GitHub fetch failed: ', $response->get_error_message() );
-			return [];
+	/** Queue each repo's three endpoints. */
+	protected function begin(): void {
+		foreach ( $this->repos as $repo ) {
+			foreach ( self::ENDPOINTS as $query ) {
+				$this->queue( self::API_BASE . "{$repo}/{$query}" );
+			}
 		}
-		if ( 200 !== (int) \wp_remote_retrieve_response_code( $response ) ) {
-			return [];
-		}
-		$decoded = \json_decode( \wp_remote_retrieve_body( $response ), true );
-		return Core::arr( $decoded );
 	}
 
 	/**
-	 * Build wp_remote_get args. Bearer auth only when a token is set; GitHub
-	 * requires a User-Agent.
+	 * The `add_repo` verb's entry point: register an owner/name repo once.
 	 *
-	 * @return array{timeout:int,headers:array<string,string>}
+	 * @param string $repo The repo, `owner/name`.
+	 * @return string The verb's result line.
+	 * @throws \InvalidArgumentException Naming a value that is not one owner/name pair.
 	 */
-	private function request_args( string $token ): array {
-		$headers = [
-			'Accept'     => 'application/vnd.github+json',
-			'User-Agent' => self::USER_AGENT,
-		];
-		if ( '' !== $token ) {
-			$headers['Authorization'] = 'Bearer ' . $token;
+	public function add_repo( string $repo ): string {
+		if ( 1 !== \preg_match( self::REPO, $repo ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+			throw new \InvalidArgumentException( "add_repo: '{$repo}' is not a GitHub owner/name" );
 		}
-		return [
-			// phpcs:ignore WordPressVIPMinimum.Performance.RemoteRequestTimeout.timeout_timeout -- connector fetches run in a background worker, not a web request.
-			'timeout' => 15,
-			'headers' => $headers,
-		];
+		if ( ! \in_array( $repo, $this->repos, true ) ) {
+			$this->repos[] = $repo;
+		}
+		return "ok\n";
 	}
 
-	/** @return array{repos:array<int,string>,token:string} */
-	protected function config(): array {
-		return [
-			'repos' => $this->repos,
-			'token' => $this->vault_secret(),
-		];
+	/**
+	 * `add_repo` verb dispatch — resolves the patron node and delegates.
+	 *
+	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
+	 * @param array<array-key,mixed>   $args        Bound args; `repo` is `owner/name`.
+	 * @return string Result line.
+	 */
+	public static function cmd_add_repo( Command_Interpreter_Node $interpreter, array $args ): string {
+		/** @var self $patron */
+		$patron = $interpreter->patron();
+		return $patron->add_repo( Core::as_string( $args['repo'] ) );
 	}
 
 	/** Emit the base config plus one `add_repo` line per registered repo. */
 	public function dump_config(): string {
-		return parent::dump_config() . $this->dump_lists();
+		return parent::dump_config() . \implode( '', \array_map( fn ( string $repo ): string => $this->config_line( 'add_repo', $repo ), $this->repos ) );
 	}
 
 	public static function node_schema(): array {
 		return self::source_schema(
-			'Fetches GitHub Releases, Merged PRs, and Issues for the configured repos on a TICK request (request_node github TICK).',
-			'Fetch + emit new GitHub items. Trigger with `request_node github TICK`.',
-			'{ emitted, refused }',
+			'Fetches GitHub Releases, Merged PRs, and Issues for the configured repos without blocking, one request at a time, on a TICK request (request_node github TICK).',
+			'Start a pass over the repos; each answer records its new items as it lands. Trigger with `request_node github TICK`.',
 			[
-				...self::list_verbs( 'repo', 'repos', [ 'name' => 'repo', 'type' => 'string', 'required' => true ], 'Register a repo to fetch on TICK: <owner/name>.' ),
-				self::vault_id_verb( 'the GitHub token' ),
+				[
+					'name'        => 'add_repo',
+					'description' => 'Register a repo to fetch on TICK: <owner/name>, letters, digits, `_`, `.` and `-` on each side.',
+					'args'        => [ self::REPO_ARG ],
+					'multiple'    => true,
+					'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_add_repo( $interpreter, $args ),
+				],
+				self::list_verbs( 'repo', 'repos', self::REPO_ARG, 'Register a repo to fetch on TICK: <owner/name>.' )[1],
 			]
 		);
 	}

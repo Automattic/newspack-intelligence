@@ -79,7 +79,7 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.139.0' )` and stays
+error.** The loader calls `Bootstrap::version_at_least( '2.140.0' )` and stays
 dormant below it. Against a substrate between a too-low floor and the real one
 the handshake passes, the plugin activates, and it then fatals on the missing
 method — the one outcome the gate exists to prevent. `CHANGELOG.md` records why
@@ -949,27 +949,75 @@ segment only after the grace a shared log needs. Every machine stage mints throu
 version>` and that version as the `config_version`; `make()` stamps the
 tick clock, which the substrate pins at class load.
 
-**Collect.** The connector **Source nodes** (`github`, `linear`, `feed`) fetch
-inside the background worker and emit one `item_recorded` event per new item to
-`intel:writer`. Each records at the tier its `make_node` line names
-(`make_node Feed_Source feed public`), which a load without one refuses and
-`set_tier` replaces at runtime. A source fetches on a `TICK` request, which
-`fetch_now` sends, and on the wall-clock grid once `set_interval <seconds>`
-sets its interval: it rides the Router's tick and fetches when
-`intdiv( now, interval )` passes the value it had at the process's previous
-tick, so a 900-second source fetches at :00, :15, :30 and :45 whatever its
-worker's age. A process's first tick only marks the clock, so a respawned
-worker waits for the next boundary rather than fetching at spawn, and a
-boundary that passes while no worker runs is skipped. With no interval set a
-source holds no timer and only `TICK` fetches. The collect topology sets
-GitHub and Linear to 900 seconds and the feeds to 1,800.
+**Collect.** The connector **Source nodes** (`github`, `linear`, `feed`,
+`news`) fetch inside the background worker without blocking it and emit one
+`item_recorded` event per new item to `intel:writer`. Each records at the
+tier its `make_node` line names (`make_node Feed_Source feed public`), which
+a load without one refuses and `set_tier` replaces at runtime. A source
+fetches on a `TICK` request, which `fetch_now` sends, and on the wall-clock
+grid once `set_interval <seconds>` sets its interval: it rides the Router's
+tick and fetches when `intdiv( now, interval )` passes the value it had at
+the process's previous tick, so a 900-second source fetches at :00, :15, :30
+and :45 whatever its worker's age. A process's first tick only marks the
+clock, so a respawned worker waits for the next boundary rather than
+fetching at spawn, and a boundary that passes while no worker runs is
+skipped. With no interval set a source holds no timer and only `TICK`
+fetches. The collect topology sets GitHub and Linear to 900 seconds, `feed`
+to 1,800 and `news` to 3,600.
 
-Each source supplies one seam, `tick()`, which a `TICK` request and the grid
-both call; `Source_Node` declares it abstract. GitHub's and Linear's hand
-`record()` what their public `fetch( $config )` finds for their `config()`;
-the feed's starts a pass. Every fetch records through that one path,
-`Source_Node::record()`: the blocking sources call it with a whole fetch, the
-feed with each body as it lands.
+`Source_Node` owns the chain every source fetches on, and each source
+supplies two seams: `begin()`, which queues the pass's opening requests
+through `queue( $url, $body )` — a GET, or with a body a POST of it as
+JSON — and `received( $url, $body )`, which turns one answer into
+normalized items and may queue the next requests. Four hooks tune it:
+`max_in_flight()`, `max_requests()`, `follows_redirects()` and
+`fetchable()`. A pass starts on a `TICK` or a grid boundary unless
+requests are in flight, in which case it starts nothing; it replaces
+whatever a throw left queued, calls `begin()`, and answers `{ fetching }`,
+the number of requests it opens on, 0 while one is in flight. A request
+is keyed by its subject, the url it was queued under: it goes to the
+source's `{name}:curl` sibling, the substrate's `Curl_Node`, as a
+TM_STRUCT whose KEY is that subject and whose VALUE is `{ url, method }`
+for its current hop, `body` added for a POST, and Curl answers back
+through its target with a copy of that message, KEY untouched.
+`max_in_flight()`, clamped to `Curl_Node::MAX_IN_FLIGHT` (16), bounds the
+requests in flight: 1 for GitHub and Linear, so theirs go strictly one
+after another, and 16 for the feeds. A host takes one request at a time,
+so a request whose host is busy waits in the queue while others go
+past it; the `news` node's searches, all on news.google.com, go out one
+after another. `max_requests()` bounds a pass:
+`Source_Node::MAX_REQUESTS_PER_PASS` (60) for an API source, past which
+the next request is logged and the queue dropped, and no cap for the
+feeds. `fetchable()` is asked of each url as it is sent; one it refuses
+ends its branch. A body goes to `received()`; a redirect Curl answers
+because `follows_redirects()` is false re-queues the same subject at the
+Location, one hop on, at most `Curl_Node::MAX_REDIRECTS` (5) hops, a hop
+past that logged; and a TM_ERROR — a transport failure or a status of 400
+or more — is logged rate-limited and ends that request's branch alone. An
+answer that throws is logged naming its subject, and the drain runs on; a
+cooperative stop propagates (substrate ADR-14). An answer for no request in
+flight is dropped, and the next request goes out whatever the record did,
+so a pass always ends once nothing is queued or in flight. A request Curl
+throws on leaves flight, so a throw costs one pass, never the source. A
+scheduled pass that throws is logged naming the source and tried again at
+the next boundary, so it never stops the worker, and a throw on the `TICK`
+path propagates out of `fill()`, which no catch answers as a TM_ERROR.
+Curl sends `User-Agent: newspack-nodes/<version>` (`Curl_Node::USER_AGENT`)
+on every fetch, which some feeds require — Nieman Lab and Pugpig answer 403
+without one.
+
+Credentials ride with the Curl sibling, never with the source. GitHub and
+Linear take a Vault group as their second `make_node` argument (`make_node
+Linear_Source linear internal linear`), and their Curl sibling runs under
+it: a request to the origin of the group's one entry carries the header
+line `Vault::credential_header()` builds from that entry's `auth_header`
+and `auth_scheme`. The `github` entry is `https://api.github.com` with
+`Authorization` and `Bearer`; the `linear` entry is `https://api.linear.app`
+with `Authorization` and no scheme. A source with no group, or a group with
+no entry on the origin, fetches with no credential, and the refusal is
+logged. The feeds send no credential and declare no group.
+
+Every answer records through one path, `Source_Node::record()`.
 It drops the keys a bounded in-memory set already holds (`MAX_SEEN` 2000,
 oldest evicted first), then reads, in one read through
 `Intel_Graph_Row_Schema::read()`, which of the rest the projection's `items`
@@ -982,37 +1030,22 @@ re-resolution, which runs no NER step and is forwarded for extraction only
 while the item is still owed one; re-resolution proper has its own path, the
 reresolver.
 
-GitHub and Linear fetch blocking HTTP inside one `fill()`, a few dozen calls
-a pass. The feed never blocks: `Feed_Source_Node` owns a `{name}:curl`
-sibling, the substrate's `Curl_Node`, which follows no redirect
-(`follow_redirects( false )`) and answers back through its target. A pass
-sends each feed URL to it as a TM_BYTESTREAM keyed by the URL, keeps at most
-`Curl_Node::MAX_IN_FLIGHT` (16) in flight and sends the next as each answers;
-each body is parsed as RSS 2.0 or Atom when it lands and its items recorded
-then. Every URL a feed sends, configured or a client's, first passes
-`wp_http_validate_url()`, which resolves the host and refuses a private,
-loopback or reserved address and a port other than 80, 443 and 8080; one it
-refuses is logged rate-limited, naming it, and records nothing. A 3xx comes
-back as a TM_RESPONSE carrying the absolute Location, which the feed follows
-itself, at the head of the queue and checked the same way, as the same feed
-— configured, or the same client with its domain — at most
-`Curl_Node::MAX_REDIRECTS` (5) hops; a hop past that is logged and records
-nothing. A TM_ERROR — a transport failure or a status of 400 or more — is
-logged rate-limited and records nothing, an
-answer for no feed in flight is dropped, and the next feed goes out whatever
-the record did, so a pass always ends. A feed Curl throws on leaves flight,
-and the next pass replaces whatever the throw left queued, so a throw costs
-one pass, never the source. A due fetch, by `TICK` or on the grid, while
-feeds are still in flight starts nothing. A scheduled fetch that throws is
-logged naming the source and tried again at the next boundary, so it never
-stops the worker; a cooperative stop propagates (substrate ADR-14), and a
-throw on the `TICK` path propagates out of `fill()`, which no catch answers
-as a TM_ERROR. So the feed's `TICK` answers
-`{ fetching }`, the count of feeds the pass it starts fetches, 0 when one is
-still in flight, where the blocking sources answer `{ emitted, refused }`.
-Curl sends `User-Agent: newspack-nodes/<version>` (`Curl_Node::USER_AGENT`)
-on every fetch, which some feeds require — Nieman Lab and Pugpig answer 403
-without one — so the substrate floor rises to the release carrying it.
+A feed pass queues each configured feed, then each client's, under its
+own url. `fetchable()` passes each url, a redirect's Location included, to
+`wp_http_validate_url()` as it is sent, which resolves the host and
+refuses a private, loopback or reserved address and a port other than 80,
+443 and 8080; one it refuses is logged rate-limited, naming it, and
+records nothing. The feed's Curl follows no redirect, so the base
+re-queues each Location under the feed it redirects, checked the same way.
+A body is a client's when the url it was queued under is one of the
+pass's client feeds, which `config()` names at the start of the pass, and
+its domain is that url's host, so a client's feed keeps its lane wherever
+it is redirected, and a configured feed redirected onto a client's
+`/feed/` keeps its own. Each body is parsed as RSS 2.0 or Atom when it
+lands and its items recorded then. The `news` node is a second
+`Feed_Source` holding one Google News search per organization that
+publishes no usable feed, each pairing the organization's quoted name with
+a journalism term.
 
 `set_client_feeds true`, which the collect topology sets, adds to each pass
 `https://<domain>/feed/` for each `domain` identifier of every entity holding
@@ -1032,25 +1065,31 @@ one day after it, the day ahead allowing for the publisher's own zone or
 clock; an undated one never records. A configured feed keys `feed:<guid>`
 and records every item, so an item two configured feeds list records once.
 
-`Github_Source_Node` hits three REST endpoints per repo on each TICK — releases,
-closed pull requests and issues — keeping a closed PR only when it carries a
-`merged_at`, and dropping any issue carrying a `pull_request` key, because the
-issues endpoint lists PRs too. Each endpoint takes the 10 most recent results and
-pages no further, so an update that falls past that window between ticks is
-missed outright. A transport error, a non-200 or an undecodable body makes that
-one endpoint contribute nothing and never throws, so one bad repo cannot sink the
-batch; a rate-limited `print_less_often()` line is the only record, which makes a
-repo going quiet across many ticks the rare place here that fails quietly rather
-than loud.
+`Github_Source_Node` GETs three REST endpoints per repo each pass — releases,
+closed pull requests and issues — and reads which one an answer is from its
+url, through one pattern built from `ENDPOINTS`, keeping a closed PR only when it carries a `merged_at`, and dropping any
+issue carrying a `pull_request` key, because the issues endpoint lists PRs
+too. `add_repo` refuses anything but one `owner/name` pair of letters,
+digits, `_`, `.` and `-`, naming the value. Each endpoint takes the 30 most
+recent results and pages no further, so an update that falls past that
+window between passes is missed outright. A TM_ERROR makes that one
+endpoint contribute nothing, logged rate-limited, and the pass goes on to
+the next; a body that is not a JSON list contributes nothing without a
+line, which makes a repo going quiet across many passes the rare place
+here that fails quietly rather than loud. `Linear_Source_Node` POSTs one
+GraphQL query a pass, the newest 30 issues of its teams, the team keys
+riding as the `$teams` variable, never in the query text; a pass with no
+team sends nothing. An answer carrying `errors`, which Linear sends with a
+200, logs its first error message, rate-limited, and one whose
+`data.issues.nodes` is not a list logs that and records nothing.
 
 **Seams and the LLM contract.** LLM calls go through the Automattic
 AI API Proxy via `LLM_Client` / `Proxy_LLM_Client`, whose `$http_post` closure is
 the test seam. More follow the same pattern, each a static `?\Closure`
 replacing ONE call so the branches around it still run as production code:
-`Github_Source_Node::$http_get` and `Linear_Source_Node::$http_post` for the
-blocking connector fetches, while the feed's fetches go through the
-substrate's own curl seams, `Event_Framework::$curl_dispatch` and
-`Curl_Node::$curl_result`, and `Feed_Source_Node::$validate_url` replaces
+every source's fetches go through the substrate's own curl seams,
+`Event_Framework::$curl_dispatch` and `Curl_Node::$curl_result`, which
+`tests/support/drives-curl.php` drives, and `Feed_Source_Node::$validate_url` replaces
 the one `wp_http_validate_url()` call each feed URL and Location passes, so
 a test refuses a URL without DNS;
 `LLM_Config::$llm_factory`, which every node using the trait holds its own
@@ -1066,10 +1105,10 @@ Both callers of `LLM_Client::chat()` — `Extractor_Node::fill()` and
 failed call (substrate ADR-14), then catch `\RuntimeException` and nothing
 wider. `Proxy_LLM_Client` throws only that, so a second implementation
 raising any other `Throwable` propagates out of `fill()` and breaks the Node
-contract that `fill()` never throws. Bearer tokens are
-substrate Vault entries: the node config holds only the entry id, set by the
+contract that `fill()` never throws. The AI API Proxy's bearer token is a
+substrate Vault entry: the node config holds only the entry id, set by the
 `set_vault_id` setter `Vault_Secret` declares and resolved at use time by its
-`vault_secret()`.
+`vault_secret()`; `LLM_Config` is its one user.
 
 ### The item contract
 
@@ -1159,9 +1198,9 @@ Read the counts, then run the command it prints, which adds `--yes`.
 
 | File | What it wires |
 |------|---------------|
-| `newspack-intelligence.tsl` | Includes every file below and wires `reresolver`, which spans the project and streams files, and `watcher`, which reads the projection and writes to `intel:writer`; `on_demand_idle 0` keeps the worker resident, which the scheduled sources need, and `stale_timeout 600` keeps a peer from stealing its lock while a GitHub or Linear fetch or an LLM call blocks one `fill()` |
+| `newspack-intelligence.tsl` | Includes every file below and wires `reresolver`, which spans the project and streams files, and `watcher`, which reads the projection and writes to `intel:writer`; `on_demand_idle 0` keeps the worker resident, which the scheduled sources need, and `stale_timeout 600` keeps a peer from stealing its lock while an LLM call blocks one `fill()` |
 | `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve`, `intel:watches`, `intel:writer`, and `intel:later`, the Delay whose due records go to `intel:reresolve` |
-| `newspack-intelligence-collect.tsl` | The three sources → `intel:writer`, GitHub and Linear on a 900-second grid and the feeds on 1,800 with client feeds on; includes the streams |
+| `newspack-intelligence-collect.tsl` | The four sources → `intel:writer`: GitHub and Linear on a 900-second grid, each under its Vault group; `feed` on 1,800 with client feeds on; `news`, the Google News searches, on 3,600; includes the streams |
 | `newspack-intelligence-project.tsl` | `intel:items:consumer`, `intel:ontology:consumer` and `intel:watches:consumer`, each → `projector`, writing the `intel-graph` Row_Table; no other node rides their cursors |
 | `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later`, the items Consumer checkpointing the deduper; includes the streams |
 
@@ -1172,8 +1211,8 @@ plugin adds:
 
 | Type | Class | Runtime triggers and verbs |
 |------|-------|----------------------------|
-| `Github_Source` | `Github_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_repo`, `remove_repo`, `set_vault_id` |
-| `Linear_Source` | `Linear_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_team`, `remove_team`, `set_vault_id` |
+| `Github_Source` | `Github_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_repo`, `remove_repo`; owns `{name}:curl` |
+| `Linear_Source` | `Linear_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_team`, `remove_team`; owns `{name}:curl` |
 | `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_url`, `remove_url`, `set_client_feeds`; owns `{name}:curl` |
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |

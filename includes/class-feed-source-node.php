@@ -3,15 +3,10 @@
  * Feed_Source_Node: pulls items from configured RSS 2.0 / Atom feeds, and
  * from each client's own feed, and normalizes them into recorded items.
  *
- * Extends Source_Node, which owns the TICK/TM_REQUEST trigger, the grid and
- * the record path; its `tick()` starts a pass. A pass never blocks: it sends
- * each feed URL WordPress will fetch (`wp_http_validate_url()`), keyed by
- * itself, to the `{name}:curl` sibling, keeping at most
- * Curl_Node::MAX_IN_FLIGHT in flight and sending the next as each answers,
- * follows each redirect itself, checked the same way, and records each
- * body's items as it lands. A client's items keep to its lane: keyed by its
- * domain, linking to its own site, and recent. A due fetch while a pass is
- * in flight starts nothing.
+ * Extends Source_Node, which owns the trigger, the grid, the chain and the
+ * record path. Its feeds name hosts no one vets, so WordPress checks each
+ * url, a redirect's Location included, as it is sent. The feed sends no
+ * credential, so it takes no vault group.
  *
  * @package Newspack_Intelligence
  */
@@ -20,7 +15,6 @@ namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
-use Newspack_Nodes\Message;
 use Newspack_Nodes\Row_Reader;
 
 \defined( 'ABSPATH' ) || exit;
@@ -37,7 +31,7 @@ class Feed_Source_Node extends Source_Node {
 
 	/**
 	 * URL-check seam: replaces the one `wp_http_validate_url()` call every
-	 * feed URL and every redirect's Location passes before it is sent, which
+	 * feed URL and every redirect's Location passes as it is sent, which
 	 * resolves the host and refuses a private, loopback or reserved address
 	 * and a port other than 80, 443 and 8080. Tests reassign it to refuse
 	 * chosen URLs without DNS; null calls WordPress.
@@ -53,148 +47,30 @@ class Feed_Source_Node extends Source_Node {
 	/** Whether a pass also fetches `https://<domain>/feed/` for each open client's domain. */
 	protected bool $client_feeds = false;
 
-	/** The `{name}:curl` sibling that fetches; null only while the constructor runs. */
-	private ?Curl_Node $curl = null;
+	/** @var array<string,true> This pass's client feeds, by the url each is queued under. */
+	private array $client_keys = [];
 
-	/** @var array<string,array{0:string,1:int}> Feeds this pass has yet to send: url => [ the client's domain, '' for a configured feed; redirects followed ]. */
-	private array $queue = [];
-
-	/** @var array<string,array{0:string,1:int}> Feeds sent and not yet answered, as the queue holds them. */
-	private array $in_flight = [];
-
-	/** True while send() runs; an answer arriving inside it does not re-enter. */
-	private bool $sending = false;
-
-	/** Build the Curl sibling, which answers back here through its target. */
-	public function __construct() {
-		parent::__construct();
-		$curl = new Curl_Node();
-		$curl->patron( $this );
-		$curl->arguments( [] );
-		$curl->follow_redirects( false );
-		$this->curl = $curl;
-		$this->publish_sibling( 'curl', $curl );
-	}
-
-	/**
-	 * A TICK request is answered; anything else is Curl's answer for a feed.
-	 *
-	 * @param array<int,mixed> $message Incoming Message.
-	 */
-	public function fill( array $message ): void {
-		if ( ! $this->answer_request( $message ) ) {
-			$this->answer( $message );
+	/** Queue every configured feed, then every client's, noting the clients. */
+	protected function begin(): void {
+		$config            = $this->config();
+		$this->client_keys = \array_fill_keys( $config['clients'], true );
+		foreach ( [ ...$config['feeds'], ...$config['clients'] ] as $url ) {
+			$this->queue( $url );
 		}
 	}
 
 	/**
-	 * Start a pass unless feeds are in flight: queue every feed the config
-	 * names, replacing what a throw left queued, and send the first to Curl.
+	 * A feed body's items; a client's, keyed under its domain, the host of
+	 * the url it was queued under, only those in its lane.
 	 *
-	 * @return array{fetching:int} How many feeds the pass fetches, 0 when one is still in flight.
+	 * @param string $url  The url the feed was queued under.
+	 * @param string $body The body.
+	 * @return array<int,array<string,mixed>>
 	 */
-	protected function tick(): array {
-		if ( [] !== $this->in_flight ) {
-			return [ 'fetching' => 0 ];
-		}
-		$config      = $this->config();
-		$this->queue = \array_fill_keys( $config['feeds'], [ '', 0 ] ) + \array_map( static fn ( string $domain ): array => [ $domain, 0 ], $config['clients'] );
-		$fetching    = \count( $this->queue );
-		$this->send();
-		return [ 'fetching' => $fetching ];
-	}
-
-	/**
-	 * Take Curl's answer for a feed in flight: a body records its items, a
-	 * client's only those in its lane; a redirect's Location goes to the
-	 * head of the queue as the same feed, one hop on, unless it would pass
-	 * MAX_REDIRECTS; a TM_ERROR is logged and records nothing. The next feed
-	 * goes out whatever the record did, so a pass always ends. An answer for
-	 * no feed in flight is dropped.
-	 *
-	 * @param array<int,mixed> $message The body as TM_BYTESTREAM, the Location as TM_RESPONSE, or the TM_ERROR, KEY the url.
-	 */
-	private function answer( array $message ): void {
-		$url = Core::as_string( $message[ Message::KEY ] );
-		if ( ! isset( $this->in_flight[ $url ] ) ) {
-			$this->drop_message( $message, 'no feed in flight' );
-			return;
-		}
-		[ $domain, $hops ] = $this->in_flight[ $url ];
-		unset( $this->in_flight[ $url ] );
-		try {
-			$type  = Core::as_int( $message[ Message::TYPE ] );
-			$value = Core::as_string( $message[ Message::VALUE ] );
-			if ( 0 !== ( $type & Message::TM_ERROR ) ) {
-				$this->print_less_often( 'Feed fetch failed: ', $value );
-			} elseif ( 0 !== ( $type & Message::TM_RESPONSE ) ) {
-				$this->redirected( $value, $domain, $hops + 1 );
-			} else {
-				$items = $this->parse( $value, $domain );
-				$this->record( '' === $domain ? $items : $this->in_lane( $items, $domain ) );
-			}
-		} finally {
-			$this->send();
-		}
-	}
-
-	/**
-	 * Queue a redirect's Location first, as the feed it redirects, unless
-	 * that would pass MAX_REDIRECTS hops, which is logged.
-	 *
-	 * @param string $location The absolute Location.
-	 * @param string $domain   The client's domain, '' for a configured feed.
-	 * @param int    $hops     The hops the Location would make.
-	 */
-	private function redirected( string $location, string $domain, int $hops ): void {
-		if ( $hops > Curl_Node::MAX_REDIRECTS ) {
-			$this->print_less_often( 'a feed redirected past ' . Curl_Node::MAX_REDIRECTS . ' hops; recording nothing: ' . Core::terminal_safe( $location ) );
-			return;
-		}
-		$this->queue = [ $location => [ $domain, $hops ] ] + $this->queue;
-	}
-
-	/**
-	 * Send queued feeds to Curl while fewer than MAX_IN_FLIGHT are in
-	 * flight, each only once `wp_http_validate_url()` accepts it; one it
-	 * refuses is logged and records nothing. An answer Curl sends
-	 * synchronously frees its slot for this same loop; a feed Curl throws on
-	 * leaves flight, so the next pass starts.
-	 *
-	 * @throws \LogicException When no Curl sibling was built.
-	 */
-	private function send(): void {
-		if ( $this->sending ) {
-			return;
-		}
-		$curl          = $this->curl ?? throw new \LogicException( \esc_html( "{$this->name} has no Curl sibling" ) );
-		$validate      = self::$validate_url ?? static fn ( string $url ): string|false => \wp_http_validate_url( $url );
-		$this->sending = true;
-		try {
-			while ( [] !== $this->queue && \count( $this->in_flight ) < Curl_Node::MAX_IN_FLIGHT ) {
-				$url  = \array_key_first( $this->queue );
-				$feed = $this->queue[ $url ];
-				unset( $this->queue[ $url ] );
-				if ( false === $validate( $url ) ) {
-					$this->print_less_often( 'refusing a feed URL WordPress will not fetch: ' . Core::terminal_safe( $url ) );
-					continue;
-				}
-				$this->in_flight[ $url ] = $feed;
-				$message                   = Message::new_message();
-				$message[ Message::TYPE ]  = Message::TM_BYTESTREAM;
-				$message[ Message::FROM ]  = $this->name;
-				$message[ Message::KEY ]   = $url;
-				$message[ Message::VALUE ] = $url;
-				try {
-					$curl->fill( $message );
-				} catch ( \Throwable $e ) {
-					unset( $this->in_flight[ $url ] );
-					throw $e;
-				}
-			}
-		} finally {
-			$this->sending = false;
-		}
+	protected function received( string $url, string $body ): array {
+		$domain = isset( $this->client_keys[ $url ] ) ? Core::as_string( \wp_parse_url( $url, \PHP_URL_HOST ) ) : '';
+		$items  = $this->parse( $body, $domain );
+		return '' === $domain ? $items : $this->in_lane( $items, $domain );
 	}
 
 	/**
@@ -322,25 +198,25 @@ class Feed_Source_Node extends Source_Node {
 
 	/**
 	 * The configured feeds, and with client feeds on, each open client's
-	 * feed no configured URL already names, by its domain.
+	 * feed no configured URL already names.
 	 *
-	 * @return array{feeds:list<string>,clients:array<string,string>}
+	 * @return array{feeds:list<string>,clients:list<string>}
 	 */
 	protected function config(): array {
 		return [
 			'feeds'   => $this->urls,
-			'clients' => $this->client_feeds ? \array_diff_key( $this->clients(), \array_flip( $this->urls ) ) : [],
+			'clients' => $this->client_feeds ? \array_values( \array_diff( $this->clients(), $this->urls ) ) : [],
 		];
 	}
 
 	/**
-	 * `https://<domain>/feed/` => the domain, for each domain of every
-	 * entity holding an open `client` role, read in one projection read;
-	 * none, logged, when no projection opens. A domain that is not a plain
-	 * hostname (`Entity_Index::hostname_fault()`), such as one a client
-	 * CSV import wrote, is skipped and named.
+	 * `https://<domain>/feed/` for each domain of every entity holding an
+	 * open `client` role, read in one projection read; none, logged, when
+	 * no projection opens. A domain that is not a plain hostname
+	 * (`Entity_Index::hostname_fault()`), such as one a client CSV import
+	 * wrote, is skipped and named.
 	 *
-	 * @return array<string,string>
+	 * @return list<string>
 	 */
 	private function clients(): array {
 		$clients = [];
@@ -350,7 +226,7 @@ class Feed_Source_Node extends Source_Node {
 				$this->print_less_often( 'skipping a client domain that is not a plain hostname: ' . Core::terminal_safe( $domain ) . ': ', $fault );
 				continue;
 			}
-			$clients[ "https://{$domain}/feed/" ] = $domain;
+			$clients[] = "https://{$domain}/feed/";
 		}
 		return $clients;
 	}
@@ -384,6 +260,36 @@ class Feed_Source_Node extends Source_Node {
 		) ?? [];
 	}
 
+	/** Feeds on separate hosts go out together, up to Curl's cap. */
+	protected function max_in_flight(): int {
+		return Curl_Node::MAX_IN_FLIGHT;
+	}
+
+	/** No cap: a pass sends every configured feed and every client's. */
+	protected function max_requests(): int {
+		return \PHP_INT_MAX;
+	}
+
+	/** A redirect's Location is checked before the feed follows it, so Curl follows none. */
+	protected function follows_redirects(): bool {
+		return false;
+	}
+
+	/**
+	 * Whether `wp_http_validate_url()` accepts the url; one it refuses is
+	 * logged and records nothing.
+	 *
+	 * @param string $url The url about to be sent.
+	 */
+	protected function fetchable( string $url ): bool {
+		$validate = self::$validate_url ?? static fn ( string $url ): string|false => \wp_http_validate_url( $url );
+		if ( false !== $validate( $url ) ) {
+			return true;
+		}
+		$this->print_less_often( 'refusing a feed URL WordPress will not fetch: ' . Core::terminal_safe( $url ) );
+		return false;
+	}
+
 	/**
 	 * The `set_client_feeds` verb's entry point.
 	 *
@@ -392,17 +298,6 @@ class Feed_Source_Node extends Source_Node {
 	 */
 	public function set_client_feeds( bool $on ): void {
 		$this->client_feeds = $on;
-	}
-
-	/**
-	 * Name the Curl sibling through `parent::`, and point its answers at
-	 * this name.
-	 *
-	 * @api Used by substrate.
-	 */
-	protected function set_sibling_names(): void {
-		parent::set_sibling_names();
-		$this->curl?->target( $this->name );
 	}
 
 	/** Emit the base config, one `add_url` line per registered URL, and the client-feeds toggle. */
@@ -414,7 +309,6 @@ class Feed_Source_Node extends Source_Node {
 		return self::source_schema(
 			'Fetches items from the configured RSS 2.0 / Atom feeds, and each open client\'s feed when asked, without blocking, on a TICK request (request_node feed TICK).',
 			'Start a pass over the feeds; each body records its new items as it lands. Trigger with `request_node feed TICK`.',
-			'{ fetching }',
 			[
 				...self::list_verbs( 'url', 'urls', [ 'name' => 'url', 'type' => 'string', 'required' => true ], 'Register a feed URL to fetch on each pass: <url>.' ),
 				[
@@ -425,7 +319,8 @@ class Feed_Source_Node extends Source_Node {
 					],
 					'toggle'      => 'client_feeds',
 				],
-			]
+			],
+			false
 		);
 	}
 }

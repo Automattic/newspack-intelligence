@@ -2,20 +2,13 @@
 /**
  * Source_Node: abstract base for every connector node (GitHub, Linear, Feed).
  *
- * Holds the uniform connector behavior so each concrete source supplies one
- * seam, `tick()`, which a TICK request and the grid both call: GitHub and
- * Linear fetch and hand the items to `record()`, while the feed starts a
- * pass whose bodies each reach `record()` as they land. A source fetches on a TICK
- * request (TM_REQUEST, the runtime trigger, NOT a TM_COMMAND verb) and, once
- * `set_interval` sets one, on the wall-clock grid, riding the Router's tick:
- * at each multiple of the interval since the epoch, never at a process's
- * first tick. Whatever a fetch finds goes through `record()`, the one record
- * path: it drops keys already recorded and keys the projection already
- * holds, emits one `item_recorded` event per new item as a fire-and-forget
- * TM_STRUCT, and counts what it emitted and what it refused. A source
- * records at the tier its `make_node` line names, which `set_tier` replaces
- * at runtime. The recorded-key set is bounded (MAX_SEEN, oldest evicted
- * first) and in-memory; a respawned worker reads the projection instead.
+ * Owns the chain every source fetches on, so the worker never waits on a
+ * request: a pass's requests go to the `{name}:curl` sibling, the
+ * substrate's `Curl_Node`, under the vault group the `make_node` line names,
+ * and each answer comes back here as a message. A request is keyed by its
+ * subject, the url it was queued under, which rides in KEY while each hop's
+ * url rides in VALUE. A source supplies `begin()` and `received()`, and
+ * `record()` is the one path its items take into the stream.
  *
  * Abstract — never make_node'd directly (no node_schema here); each concrete
  * connector declares its own Source category + TICK request.
@@ -26,6 +19,8 @@
 namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Core;
+use Newspack_Nodes\Curl_Node;
+use Newspack_Nodes\Message;
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Schema_Reflection;
@@ -37,6 +32,9 @@ use Newspack_Nodes\Worker_Should_Stop;
 abstract class Source_Node extends Timer_Node {
 	use Schema_Reflection;
 	use Emits_Struct;
+
+	/** Requests an API source sends in one pass; the next is dropped, logged. */
+	public const MAX_REQUESTS_PER_PASS = 60;
 
 	/** Bytes of body an item records; a longer body is cut on a character boundary. */
 	public const MAX_BODY_BYTES = 65536;
@@ -56,18 +54,41 @@ abstract class Source_Node extends Timer_Node {
 	/** Seconds between grid fetches, null for none: only TICK fetches. */
 	protected ?int $interval = null;
 
+	/** The Vault group whose entry on a request's origin lends it a credential; '' for none. */
+	protected string $vault_group = '';
+
+	/** The `{name}:curl` sibling that fetches. */
+	private Curl_Node $curl;
+
 	/** The tick clock, in whole seconds, at this process's last Router tick; null before the first. */
 	private ?int $checked = null;
 
-	/** Tachikoma-parity: no-arg ctor. Wires the sibling `:config` interpreter from node_schema()['commands']. */
+	/** @var array<string,array{0:string,1:string|null,2:int}> Requests this pass has yet to send, by subject: [ the hop's url, a POST's body or null, redirects followed ]. */
+	private array $queue = [];
+
+	/** @var array<string,array{0:string,1:string|null,2:int}> Requests sent and not yet answered, as the queue holds them. */
+	private array $in_flight = [];
+
+	/** Requests this pass has sent. */
+	private int $sent = 0;
+
+	/** True while send() runs; an answer arriving inside it does not re-enter. */
+	private bool $sending = false;
+
+	/**
+	 * Tachikoma-parity: no-arg ctor. Builds the Curl sibling first, because
+	 * naming the `:config` interpreter names every sibling.
+	 */
 	public function __construct() {
 		parent::__construct();
+		$this->attach_curl();
 		$this->auto_wire_interpreter();
 	}
 
 	/**
-	 * `<tier>`: the access tier, one of Intel_Event::TIERS, checked before any
-	 * token is assigned.
+	 * `<tier> [vault_group]`: the access tier, one of Intel_Event::TIERS,
+	 * checked before any token is assigned, and the vault group the Curl
+	 * sibling runs under, which a changed group rebuilds it for.
 	 *
 	 * @param list<string>|null $args Positional tokens, or null to read them back.
 	 * @return list<string>
@@ -82,19 +103,25 @@ abstract class Source_Node extends Timer_Node {
 		if ( ! \in_array( $tier, Intel_Event::TIERS, true ) ) {
 			throw new \InvalidArgumentException( \esc_html( "{$this->name}: tier {$tier} is not one of " . \implode( ', ', Intel_Event::TIERS ) ) );
 		}
+		$group = $this->vault_group;
 		$this->assign_schema_args( $args, $values );
+		if ( $group !== $this->vault_group ) {
+			$this->retract_sibling( 'curl' );
+			$this->attach_curl();
+		}
 		return parent::arguments( $args );
 	}
 
 	/**
-	 * TICK is a runtime trigger: a TM_REQUEST answered from the declared
-	 * `requests` handler (NOT a TM_COMMAND verb). Any other type is ignored; a
-	 * source mints, it doesn't consume.
+	 * A TICK request is answered from the declared `requests` handler (NOT a
+	 * TM_COMMAND verb); anything else is Curl's answer to a request.
 	 *
-	 * @param array<int,mixed> $message Incoming request Message.
+	 * @param array<int,mixed> $message Incoming Message.
 	 */
 	public function fill( array $message ): void {
-		$this->answer_request( $message );
+		if ( ! $this->answer_request( $message ) ) {
+			$this->answer( $message );
+		}
 	}
 
 	/**
@@ -124,30 +151,217 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
-	 * The one seam each source supplies, which a TICK request and the grid
-	 * call: fetch, and record what arrives.
+	 * Start a pass, which a TICK request and the grid both call, unless
+	 * requests are in flight: queue the source's opening requests, replacing
+	 * what a throw left queued, and send.
 	 *
-	 * @return array<string,int> The reply data.
+	 * @return array{fetching:int} How many requests the pass opens on, 0 when one is still in flight.
 	 */
-	abstract protected function tick(): array;
+	protected function tick(): array {
+		if ( [] !== $this->in_flight ) {
+			return [ 'fetching' => 0 ];
+		}
+		$this->queue = [];
+		$this->sent  = 0;
+		$this->begin();
+		$fetching = \count( $this->queue );
+		$this->send();
+		return [ 'fetching' => $fetching ];
+	}
+
+	/** Queue the pass's opening requests through queue(). */
+	abstract protected function begin(): void;
+
+	/**
+	 * Take Curl's answer to a request in flight: a body records what
+	 * received() makes of it, a redirect re-queues the request at its
+	 * Location, and a TM_ERROR is logged and ends its branch. An answer that
+	 * throws is logged naming its subject; a cooperative stop propagates
+	 * (substrate ADR-14). The next request goes out whatever happened, so a
+	 * pass always ends. An answer for no request in flight is dropped.
+	 *
+	 * @param array<int,mixed> $message The body as TM_BYTESTREAM, the Location as TM_RESPONSE, or the TM_ERROR, KEY the subject.
+	 * @throws Worker_Should_Stop When the worker is asked to stop.
+	 */
+	private function answer( array $message ): void {
+		$key     = Core::as_string( $message[ Message::KEY ] );
+		$request = $this->in_flight[ $key ] ?? null;
+		if ( null === $request ) {
+			$this->drop_message( $message, 'no request in flight' );
+			return;
+		}
+		unset( $this->in_flight[ $key ] );
+		try {
+			$type  = Core::as_int( $message[ Message::TYPE ] );
+			$value = Core::as_string( $message[ Message::VALUE ] );
+			if ( 0 !== ( $type & Message::TM_ERROR ) ) {
+				$this->print_less_often( 'a fetch failed: ', Core::terminal_safe( $value ) );
+			} elseif ( 0 !== ( $type & Message::TM_RESPONSE ) ) {
+				$this->redirect( $key, $request, $value );
+			} else {
+				$this->record( $this->received( $key, $value ) );
+			}
+		} catch ( Worker_Should_Stop $stop ) {
+			throw $stop;
+		} catch ( \Throwable $e ) {
+			$this->print_less_often( 'an answer failed: ', Core::terminal_safe( $key ) . ': ' . $e->getMessage() );
+		} finally {
+			$this->send();
+		}
+	}
+
+	/**
+	 * Send queued requests while fewer than max_in_flight(), clamped to
+	 * Curl's own cap, are in flight, one per host at a time, until the pass
+	 * has sent max_requests(); the one past that is logged and the queue
+	 * dropped. A request fetchable() refuses ends its branch. An answer Curl
+	 * sends synchronously frees its slot for this same loop.
+	 */
+	private function send(): void {
+		if ( $this->sending ) {
+			return;
+		}
+		$room          = \min( $this->max_in_flight(), Curl_Node::MAX_IN_FLIGHT );
+		$this->sending = true;
+		try {
+			do {
+				$sent = false;
+				foreach ( $this->queue as $key => $request ) {
+					if ( \count( $this->in_flight ) >= $room ) {
+						break 2;
+					}
+					if ( isset( $this->busy_hosts()[ self::host( $request[0] ) ] ) ) {
+						continue;
+					}
+					unset( $this->queue[ $key ] );
+					if ( $this->sent >= $this->max_requests() ) {
+						$this->print_less_often( 'a pass reached ' . $this->max_requests() . ' requests; sending no more: ', Core::terminal_safe( $request[0] ) );
+						$this->queue = [];
+						break 2;
+					}
+					if ( $this->fetchable( $request[0] ) ) {
+						++$this->sent;
+						$this->dispatch( $key, $request );
+						$sent = true;
+					}
+				}
+			} while ( $sent );
+		} finally {
+			$this->sending = false;
+		}
+	}
+
+	/** Requests in flight at once: 1, so an API source's go strictly one after another. */
+	protected function max_in_flight(): int {
+		return 1;
+	}
+
+	/**
+	 * The hosts a request in flight is fetching.
+	 *
+	 * @return array<string,true>
+	 */
+	private function busy_hosts(): array {
+		$busy = [];
+		foreach ( $this->in_flight as [ $url ] ) {
+			$busy[ self::host( $url ) ] = true;
+		}
+		return $busy;
+	}
+
+	/** A url's host, lowercased; '' for none. */
+	private static function host( string $url ): string {
+		return \strtolower( Core::as_string( \wp_parse_url( $url, \PHP_URL_HOST ) ) );
+	}
+
+	/** Requests a pass sends in all. */
+	protected function max_requests(): int {
+		return self::MAX_REQUESTS_PER_PASS;
+	}
+
+	/**
+	 * Whether a url may be fetched, asked as it is sent; a source that
+	 * refuses one logs why.
+	 *
+	 * @param string $url The hop's url.
+	 */
+	protected function fetchable( string $url ): bool {
+		return true;
+	}
+
+	/**
+	 * Send one request to Curl as a TM_STRUCT, its subject in KEY and its
+	 * hop in VALUE; a request Curl throws on leaves flight, so the next
+	 * pass starts.
+	 *
+	 * @param string                                $key     The request's subject.
+	 * @param array{0:string,1:string|null,2:int} $request The hop's url, a POST's body or null, and its hops.
+	 */
+	private function dispatch( string $key, array $request ): void {
+		[ $url, $body ]          = $request;
+		$this->in_flight[ $key ] = $request;
+		$value                   = [
+			'url'    => $url,
+			'method' => null === $body ? 'GET' : 'POST',
+		];
+		if ( null !== $body ) {
+			$value['body'] = $body;
+		}
+		$message                   = Message::new_message();
+		$message[ Message::TYPE ]  = Message::TM_STRUCT;
+		$message[ Message::FROM ]  = $this->name;
+		$message[ Message::KEY ]   = $key;
+		$message[ Message::VALUE ] = $value;
+		try {
+			$this->curl->fill( $message );
+		} catch ( \Throwable $e ) {
+			unset( $this->in_flight[ $key ] );
+			throw $e;
+		}
+	}
+
+	/**
+	 * Re-queue a redirected request under its subject at the Location, one
+	 * hop on, unless that would pass Curl_Node::MAX_REDIRECTS, which is
+	 * logged. Only a source whose Curl follows no redirect receives one.
+	 *
+	 * @param string                                $key      The request's subject.
+	 * @param array{0:string,1:string|null,2:int} $request  The request redirected.
+	 * @param string                                $location The absolute Location.
+	 */
+	private function redirect( string $key, array $request, string $location ): void {
+		[ , $body, $hops ] = $request;
+		if ( $hops >= Curl_Node::MAX_REDIRECTS ) {
+			$this->print_less_often( 'a request redirected past ' . Curl_Node::MAX_REDIRECTS . ' hops; recording nothing: ', Core::terminal_safe( $location ) );
+			return;
+		}
+		$this->queue[ $key ] = [ $location, $body, $hops + 1 ];
+	}
+
+	/**
+	 * What a body means: the items to record, normalized, queuing through
+	 * queue() any request it names next.
+	 *
+	 * @param string $url  The subject the body answers, the url it was queued under.
+	 * @param string $body The body.
+	 * @return array<int,array<string,mixed>>
+	 */
+	abstract protected function received( string $url, string $body ): array;
 
 	/**
 	 * Record items: drop the keys already recorded, remember without
 	 * recording those the projection already holds, and emit one
 	 * `item_recorded` event per new item as a TM_STRUCT to the target. An
-	 * item make() refuses is logged, counted and skipped unremembered, so it
-	 * retries. One whose key runs past Graph_Curation::ITEM_KEY_BYTES as the
-	 * stream writes it, so that a record naming it could outgrow one line, is
-	 * logged naming the key cut to KEY_SHOWN_BYTES, counted and remembered,
-	 * so it is refused once a process.
+	 * item make() refuses is logged and skipped unremembered, so it retries.
+	 * One whose key runs past Graph_Curation::ITEM_KEY_BYTES as the stream
+	 * writes it, so that a record naming it could outgrow one line, is
+	 * logged naming the key cut to KEY_SHOWN_BYTES and remembered, so it is
+	 * refused once a process.
 	 *
 	 * @param array<int,array<string,mixed>> $items Normalized items.
-	 * @return array{emitted:int,refused:int} How many new items went out, and how many were refused.
 	 */
-	protected function record( array $items ): array {
-		$held    = $this->held( $items );
-		$emitted = 0;
-		$refused = 0;
+	private function record( array $items ): void {
+		$held = $this->held( $items );
 		foreach ( $items as $item ) {
 			$key = Core::as_string( $item['item_key'] );
 			if ( isset( $this->seen[ $key ] ) ) {
@@ -161,25 +375,18 @@ abstract class Source_Node extends Timer_Node {
 			if ( $bytes > Graph_Curation::ITEM_KEY_BYTES ) {
 				$this->print_less_often( 'refused an item whose key runs ', "{$bytes} bytes, past " . Graph_Curation::ITEM_KEY_BYTES . ': ' . Core::terminal_safe( \mb_strcut( $key, 0, self::KEY_SHOWN_BYTES ) ) );
 				$this->remember( $key );
-				++$refused;
 				continue;
 			}
 			try {
 				$value = Intel_Event::machine_event( "source:{$this->name}", 'item_recorded', $item );
 			} catch ( \InvalidArgumentException $invalid ) {
 				$this->print_less_often( 'refused an item: ', "{$key}: {$invalid->getMessage()}" );
-				++$refused;
 				continue;
 			}
 			$this->emit( '', $value );
 			// Unlike a size refusal, a make() refusal is not kept: it retries.
 			$this->remember( $key );
-			++$emitted;
 		}
-		return [
-			'emitted' => $emitted,
-			'refused' => $refused,
-		];
 	}
 
 	/**
@@ -217,8 +424,40 @@ abstract class Source_Node extends Timer_Node {
 	private function remember( string $key ): void {
 		$this->seen[ $key ] = true;
 		if ( \count( $this->seen ) > self::MAX_SEEN ) {
-			$this->seen = \array_slice( $this->seen, -self::MAX_SEEN, null, true );
+			unset( $this->seen[ \array_key_first( $this->seen ) ] );
 		}
+	}
+
+	/**
+	 * Build and publish the Curl sibling under the vault group, following
+	 * redirects only where follows_redirects() says, its answers coming
+	 * back here.
+	 */
+	private function attach_curl(): void {
+		$curl = new Curl_Node();
+		$curl->patron( $this );
+		$curl->arguments( '' === $this->vault_group ? [] : [ $this->vault_group ] );
+		$curl->follow_redirects( $this->follows_redirects() );
+		$this->curl = $curl;
+		$this->publish_sibling( 'curl', $curl );
+		$curl->sink( $this->sink );
+	}
+
+	/** Whether Curl follows a redirect itself, or answers it for this source to re-queue. */
+	protected function follows_redirects(): bool {
+		return true;
+	}
+
+	/**
+	 * Queue a request this pass sends, its url its subject: a GET, or with a
+	 * body a POST of it as JSON. A url already queued is queued once, with
+	 * the later body.
+	 *
+	 * @param string      $url  The url.
+	 * @param string|null $body A POST's body, or null for a GET.
+	 */
+	protected function queue( string $url, ?string $body = null ): void {
+		$this->queue[ $url ] = [ $url, $body, 0 ];
 	}
 
 	/**
@@ -238,6 +477,17 @@ abstract class Source_Node extends Timer_Node {
 		if ( ! $this->timer_is_active() ) {
 			$this->set_timer();
 		}
+	}
+
+	/**
+	 * Name the Curl sibling through `parent::`, and point its answers at
+	 * this name.
+	 *
+	 * @api Used by substrate.
+	 */
+	protected function set_sibling_names(): void {
+		parent::set_sibling_names();
+		$this->curl->target( $this->name );
 	}
 
 	/** Emit the base config plus each declared setter's line. */
@@ -273,26 +523,31 @@ abstract class Source_Node extends Timer_Node {
 
 	/**
 	 * Build a connector's node_schema from the shared Source shape — category
-	 * Source, the `tier` positional, one TICK request and the `set_tier` verb
-	 * ahead of the connector's own — so the connectors don't each restate it.
-	 * has_target inherits Node's default (true).
+	 * Source, the `tier` positional and, for a source that sends a
+	 * credential, the optional `vault_group` after it, one TICK request and
+	 * the `set_tier` verb ahead of the connector's own — so the connectors
+	 * don't each restate it. has_target inherits Node's default (true).
 	 *
-	 * @param string                    $reply_shape What a TICK answers.
-	 * @param list<array<string,mixed>> $commands    The connector's own verbs.
+	 * @param list<array<string,mixed>> $commands     The connector's own verbs.
+	 * @param bool                      $credentialed Whether the source takes a vault group.
 	 * @return array<string,mixed>
 	 */
-	protected static function source_schema( string $description, string $tick_description, string $reply_shape, array $commands = [] ): array {
+	protected static function source_schema( string $description, string $tick_description, array $commands = [], bool $credentialed = true ): array {
+		$arguments = [
+			[ 'name' => 'tier', 'type' => 'string', 'required' => true, 'description' => 'The access tier every recorded item carries: public, internal or restricted.' ],
+		];
+		if ( $credentialed ) {
+			$arguments[] = [ 'name' => 'vault_group', 'type' => 'vault_group', 'default' => '', 'description' => 'Optional Vault group: a request to one entry\'s origin carries the credential header that entry names.' ];
+		}
 		return \array_merge( Node::node_schema(), [
 			'category'    => 'Source',
 			'description' => $description,
-			'arguments'   => [
-				[ 'name' => 'tier', 'type' => 'string', 'required' => true, 'description' => 'The access tier every recorded item carries: public, internal or restricted.' ],
-			],
+			'arguments'   => $arguments,
 			'requests'    => [
 				[
 					'name'        => 'TICK',
 					'description' => $tick_description,
-					'reply_shape' => $reply_shape,
+					'reply_shape' => '{ fetching }',
 					'handler'     => static fn ( self $node ): array => $node->tick(),
 				],
 			],

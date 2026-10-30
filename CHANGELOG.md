@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **A `news` source reads one Google News search for each of nine organizations that publish no usable feed:** Everlit, Blue Engine Collaborative, the Online News Association, the Institute for Nonprofit News, News Revenue Hub, the Google News Initiative, the News Emmys, the Pulitzer Prizes and the American Society of Magazine Editors. It is a second `Feed_Source` (`make_node Feed_Source news public`), fetching hourly into `intel:writer`. Each query pairs the organization's quoted name with a journalism term, and ships because at least 7 of its first 10 items concern the organization. America's Newspapers is left out: no query for it kept 7 of its first 10 items on topic, because the phrase is generic.
+- **The feed source reads the News Product Alliance** (`https://newsproduct.org/blog?format=rss`).
+- **Linear's failures are loud.** An answer carrying `errors`, which Linear sends with a 200, logs its first error message, rate-limited, and one whose `data.issues.nodes` is not a list logs that and records nothing.
+- **`add_repo` refuses anything but one GitHub `owner/name` pair** (letters, digits, `_`, `.` and `-` on each side), naming the value.
+
+### Changed
+- **No source blocks the worker.** `Source_Node` owns the chain `Feed_Source_Node` used: the `{name}:curl` sibling, the queue, the requests in flight and the answer path. A due pass queues the source's opening requests (`begin()`) and sends each to Curl as a TM_STRUCT request, its subject, the url it was queued under, in KEY and the url of its current hop in VALUE. Each answer goes to the source's `received( $url, $body )` under that subject, which returns the items to record and may queue the next requests. A TM_ERROR is logged, rate-limited, and ends only its own branch, and an answer that throws is logged naming its subject while the drain runs on. A pass ends when nothing is queued or in flight, and a due pass while requests are in flight starts nothing. A host has one request in flight at a time, so the `news` node's nine news.google.com searches go out one after another. GitHub and Linear send one request at a time and at most `Source_Node::MAX_REQUESTS_PER_PASS` (60) a pass; the feeds keep up to 16 in flight, with no cap on a pass. Every source's `TICK` answers `{ fetching }`, the number of requests the pass opens on, 0 while one is in flight; GitHub's and Linear's answered `{ emitted, refused }`.
+- **Credentials travel with the Curl sibling.** GitHub and Linear name their Vault group as a `make_node` argument after the tier (`make_node Linear_Source linear internal linear`), and build their Curl sibling under it, so each request carries the header line its origin's entry names (substrate 2.140.0's `auth_header` and `auth_scheme`). The `github` and `linear` entries need the API origin as their URL, that group, and `auth_header Authorization`, with `auth_scheme Bearer` for GitHub and none for Linear. Without them the sources fetch with no credential, and each refusal is logged: a status of 400 or more as a failed fetch, and an error Linear answers with a 200 as Linear's own.
+- **GitHub fetches 30 a page** from each repo's releases, closed pull requests and issues, and watches `Automattic/newspack-workspace` and `Automattic/newspack-activecampaign`. newspack-ads, newspack-network and newspack-plugin were archived on 2026-08-18, and newspack-manager is not on github.com. Item keys and their mapping are unchanged.
+- **Linear sends its GraphQL query as a POST of `{ query, variables }`** through Curl; item keys and their mapping are unchanged.
+- **A feed's redirect is queued behind the rest of its pass**, no longer at the head of it, under the feed it redirects, so a client's feed keeps its lane wherever it is sent and a configured feed redirected onto a client's `/feed/` keeps its own.
+- **A feed URL is checked by `wp_http_validate_url()` as it is sent**, never all at once when the pass opens, so a pass makes one DNS lookup per send.
+- **The substrate floor is 2.140.0,** the first release whose `Curl_Node` takes a TM_STRUCT `{ url, method, body }` request and whose Vault entries name their credential's header.
+
+### Removed
+- **`set_vault_id` on the GitHub and Linear sources,** with no alias; the Vault group on the `make_node` line replaces it. `Vault_Secret` stays for `LLM_Config`.
+- **`Github_Source_Node::fetch()`, `Linear_Source_Node::fetch()`, and their `$http_get` and `$http_post` seams.** Tests stand in for libcurl through the substrate's `Event_Framework::$curl_dispatch` and `Curl_Node::$curl_result`, as the feed's do.
+
 ## [0.27.0] - 2026-10-29
 
 ### Added

@@ -4,105 +4,64 @@
  * `add_team` verb names via the Linear GraphQL API and normalizes them into
  * recorded items.
  *
- * Extends Source_Node, which owns the TICK/TM_REQUEST trigger, the grid and
- * the record path; its tick() hands record() what fetch() (the blocking GraphQL call, behind the $http_post closure seam)
- * finds for config()'s teams and token.
+ * Extends Source_Node, which owns the trigger, the grid, the chain and the
+ * record path. A pass POSTs one GraphQL query of the newest page, the team
+ * keys riding as its `$teams` variable, through the Curl sibling under the
+ * source's vault group, and records the page's issues as it lands.
  *
  * @package Newspack_Intelligence
  */
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Core;
+
 \defined( 'ABSPATH' ) || exit;
 
 class Linear_Source_Node extends Source_Node {
-	use Vault_Secret;
 
 	private const API_URL = 'https://api.linear.app/graphql';
 
 	private const QUERY = 'query ($teams: [String!]) { issues(first: 30, orderBy: updatedAt, filter: { team: { key: { in: $teams } } }) { nodes { identifier title url description updatedAt } } }';
 
-	/**
-	 * wp_remote_post call seam. Null by default; the call site then invokes the real
-	 * `wp_remote_post`. Tests reassign it (and reset to null in tearDown) to return
-	 * canned Linear GraphQL JSON WITHOUT short-circuiting header/body assembly, the
-	 * WP_Error / non-200 branches, or node normalization — so all of that runs as
-	 * real, covered production code.
-	 *
-	 * Signature: `function ( string $url, array $args ): array|\WP_Error`.
-	 *
-	 * @var (\Closure( string, array<string,mixed> ): (array<string,mixed>|\WP_Error))|null
-	 */
-	public static ?\Closure $http_post = null;
-
 	/** @var list<string> Team keys the `add_team` verb registered and `remove_team` left, in call order. */
 	protected array $teams = [];
 
-	/**
-	 * Fetch, and record what the fetch found.
-	 *
-	 * @return array{emitted:int,refused:int} The reply data.
-	 */
-	protected function tick(): array {
-		return $this->record( $this->fetch( $this->config() ) );
-	}
-
-	/**
-	 * Fetch the configured teams' recently-updated Linear issues, normalized to
-	 * the item_recorded fields. No team or no token → skip, with no call. The
-	 * keys ride as the `$teams` GraphQL variable, never in the query text. A
-	 * transport error or non-200 contributes nothing and never throws
-	 * (fire-and-forget).
-	 *
-	 * @param array<string,mixed> $config {teams: string[], token: string}.
-	 * @return array<int,array<string,mixed>>
-	 */
-	public function fetch( array $config ): array {
-		$teams = \is_array( $config['teams'] ?? null ) ? \array_values( $config['teams'] ) : [];
-		$token = \is_string( $config['token'] ?? null ) ? $config['token'] : '';
-		if ( [] === $teams || '' === $token ) {
-			return [];
+	/** Queue the one POST, unless no team is named. */
+	protected function begin(): void {
+		if ( [] === $this->teams ) {
+			return;
 		}
-
-		$args = [
-			// phpcs:ignore WordPressVIPMinimum.Performance.RemoteRequestTimeout.timeout_timeout -- connector fetches run in a background worker, not a web request.
-			'timeout' => 15,
-			'headers' => [
-				'Authorization' => $token,
-				'Content-Type'  => 'application/json',
-			],
-			'body'    => (string) \wp_json_encode(
+		$this->queue(
+			self::API_URL,
+			(string) \wp_json_encode(
 				[
 					'query'     => self::QUERY,
-					'variables' => [ 'teams' => $teams ],
+					'variables' => [ 'teams' => $this->teams ],
 				]
-			),
-		];
-		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_post_wp_remote_post -- connector fetches run in a background worker, not a VIP web request; the closure seam covers tests.
-		$response = null !== self::$http_post ? ( self::$http_post )( self::API_URL, $args ) : \wp_remote_post( self::API_URL, $args );
-		if ( \is_wp_error( $response ) ) {
-			$this->print_less_often( 'Linear fetch failed: ', $response->get_error_message() );
-			return [];
-		}
-		if ( 200 !== (int) \wp_remote_retrieve_response_code( $response ) ) {
-			return [];
-		}
-
-		return $this->normalize( \json_decode( \wp_remote_retrieve_body( $response ), true ) );
+			)
+		);
 	}
 
 	/**
 	 * Walk data.issues.nodes[] and normalize each into a recorded item. A node with no
-	 * string identifier is skipped.
+	 * string identifier is skipped. An answer carrying `errors`, which Linear
+	 * sends with a 200, logs its first error, and one whose nodes are not a
+	 * list logs that and yields none.
 	 *
-	 * @param mixed $decoded Decoded GraphQL response body.
+	 * @param string $url  The GraphQL url.
+	 * @param string $body The JSON body.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function normalize( mixed $decoded ): array {
-		$data   = \is_array( $decoded ) ? ( $decoded['data'] ?? null ) : null;
-		$issues = \is_array( $data ) ? ( $data['issues'] ?? null ) : null;
-		$nodes  = \is_array( $issues ) ? ( $issues['nodes'] ?? null ) : null;
-		if ( ! \is_array( $nodes ) ) {
+	protected function received( string $url, string $body ): array {
+		$decoded = Core::arr( \json_decode( $body, true ) );
+		$nodes   = Core::arr( Core::arr( $decoded['data'] ?? null )['issues'] ?? null )['nodes'] ?? null;
+		$listed  = \is_array( $nodes ) && \array_is_list( $nodes );
+		$error   = Core::arr( Core::arr( $decoded['errors'] ?? null )[0] ?? null )['message'] ?? null;
+		if ( null !== $error || ! $listed ) {
+			$this->print_less_often( 'Linear answered an error: ', Core::terminal_safe( null !== $error ? Core::as_string( $error ) : 'data.issues.nodes is not a list' ) );
+		}
+		if ( ! $listed ) {
 			return [];
 		}
 		$out = [];
@@ -119,14 +78,6 @@ class Linear_Source_Node extends Source_Node {
 		return $out;
 	}
 
-	/** @return array{teams:list<string>,token:string} */
-	protected function config(): array {
-		return [
-			'teams' => $this->teams,
-			'token' => $this->vault_secret(),
-		];
-	}
-
 	/** Emit the base config plus one `add_team` line per registered team. */
 	public function dump_config(): string {
 		return parent::dump_config() . $this->dump_lists();
@@ -134,12 +85,10 @@ class Linear_Source_Node extends Source_Node {
 
 	public static function node_schema(): array {
 		return self::source_schema(
-			'Fetches recently-updated Linear issues of the configured teams on a TICK request (request_node linear TICK).',
-			'Fetch + emit new Linear issues. Trigger with `request_node linear TICK`.',
-			'{ emitted, refused }',
+			'Fetches recently-updated Linear issues of the configured teams without blocking, one GraphQL POST a pass, on a TICK request (request_node linear TICK).',
+			'Start a pass over the teams; the page records its new issues as it lands. Trigger with `request_node linear TICK`.',
 			[
 				...self::list_verbs( 'team', 'teams', [ 'name' => 'team', 'type' => 'string', 'required' => true ], 'Register a Linear team to fetch on TICK by its key: <KEY>.' ),
-				self::vault_id_verb( 'the Linear API token' ),
 			]
 		);
 	}
