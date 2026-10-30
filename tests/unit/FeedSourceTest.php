@@ -32,6 +32,9 @@ final class FeedSourceTest extends TestCase {
 	/** The target the feed's items go to. */
 	private const WRITER = 'writer-6127';
 
+	/** The Gazette's own site, where its items link. */
+	private const GAZETTE = 'https://harborgazette.example';
+
 	/** Who asks for a TICK, and hears its answer. */
 	private const ASKER = 'asker-5513';
 
@@ -90,12 +93,25 @@ XML;
 	/** @var array<string,true> Urls whose next dispatch throws. */
 	private array $refusing = [];
 
+	/** @var array<string,true> Urls the URL check refuses, as WordPress refuses a private address. */
+	private array $unsafe = [];
+
+	/** @var list<string> Every url the URL check was handed, in order. */
+	private array $validated = [];
+
+	/** @var array<string,string> The Location each url answers a 301 with. */
+	private array $locations = [];
+
+	/** @var array<string,array<int,mixed>> The opts each url's dispatch was handed. */
+	private array $opts = [];
+
 	protected function setUp(): void {
 		parent::setUp();
 		Event_Framework::reset();
 		Event_Framework::$curl_dispatch = function ( array $opts ): \CurlHandle {
 			$url                = (string) $opts[ \CURLOPT_URL ];
 			$this->dispatched[] = $url;
+			$this->opts[ $url ] = $opts;
 			if ( isset( $this->refusing[ $url ] ) ) {
 				unset( $this->refusing[ $url ] );
 				throw new \RuntimeException( "dispatch-down-5108 {$url}" );
@@ -107,12 +123,24 @@ XML;
 			return $easy;
 		};
 		Curl_Node::$curl_result = function ( \CurlHandle $easy ): array {
-			[ $code, $body ] = $this->answers[ $this->url_of[ \spl_object_id( $easy ) ] ];
+			$url = $this->url_of[ \spl_object_id( $easy ) ];
+			if ( isset( $this->locations[ $url ] ) ) {
+				return [
+					'code'     => 301,
+					'body'     => '',
+					'redirect' => $this->locations[ $url ],
+				];
+			}
+			[ $code, $body ] = $this->answers[ $url ];
 			return [
 				'code'     => $code,
 				'body'     => $body,
 				'redirect' => '',
 			];
+		};
+		Feed_Source_Node::$validate_url = function ( string $url ): string|false {
+			$this->validated[] = $url;
+			return isset( $this->unsafe[ $url ] ) ? false : $url;
 		};
 		$router = new Router_Node();
 		$router->name( Node_Names::ROUTER );
@@ -128,6 +156,7 @@ XML;
 	protected function tearDown(): void {
 		Event_Framework::$curl_dispatch    = null;
 		Curl_Node::$curl_result            = null;
+		Feed_Source_Node::$validate_url    = null;
 		Intel_Graph_Row_Schema::$read_rows = null;
 		Topology_Registry::reset();
 		parent::tearDown();
@@ -190,6 +219,12 @@ XML;
 		$this->in_drain( fn () => $this->complete_curl( $this->handles[ $url ], $result ) );
 	}
 
+	/** Complete one url's transfer inside a drain as a 301 to $location. */
+	private function redirect( string $url, string $location ): void {
+		$this->locations[ $url ] = $location;
+		$this->in_drain( fn () => $this->complete_curl( $this->handles[ $url ] ) );
+	}
+
 	/** @return list<array<int,mixed>> The answers the asker heard. */
 	private function answers(): array {
 		return \array_column( $this->asker->captured, Message::VALUE );
@@ -217,14 +252,17 @@ XML;
 	}
 
 	/**
-	 * An RSS body of items, each a guid, a title and a pubDate or null.
+	 * An RSS body of items, each a guid, a title, a pubDate or null, and the
+	 * site its link is on.
 	 *
-	 * @param list<array{0:string,1:string,2:int|null}> $items The items.
+	 * @param list<array{0:string,1:string,2:int|null,3?:string}> $items The items.
 	 */
 	private static function rss( array $items ): string {
 		$xml = '<?xml version="1.0"?><rss version="2.0"><channel>';
-		foreach ( $items as [ $guid, $title, $when ] ) {
-			$xml .= "<item><title>{$title}</title><link>https://example.com/{$guid}</link><guid>{$guid}</guid>"
+		foreach ( $items as $item ) {
+			[ $guid, $title, $when ] = $item;
+			$site                    = $item[3] ?? 'https://example.com';
+			$xml                    .= "<item><title>{$title}</title><link>{$site}/{$guid}</link><guid>{$guid}</guid>"
 				. ( null === $when ? '' : '<pubDate>' . \gmdate( 'D, d M Y H:i:s', $when ) . ' GMT</pubDate>' ) . '</item>';
 		}
 		return $xml . '</channel></rss>';
@@ -518,11 +556,139 @@ XML;
 		$now  = (int) Core::$now;
 		$week = Feed_Source_Node::CLIENT_FEED_DAYS * Intel_Graph_Row_Schema::DAY_SECONDS;
 
-		$this->complete( 'https://harborgazette.example/feed/', self::rss( [ [ 'gazette-fresh', 'Fresh', $now - $week + 60 ], [ 'gazette-stale', 'Stale', $now - $week - 60 ], [ 'gazette-undated', 'Undated', null ] ] ) );
+		$this->complete( 'https://harborgazette.example/feed/', self::rss( [ [ 'gazette-fresh', 'Fresh', $now - $week + 60, self::GAZETTE ], [ 'gazette-stale', 'Stale', $now - $week - 60, self::GAZETTE ], [ 'gazette-undated', 'Undated', null, self::GAZETTE ] ] ) );
 		$this->complete( 'https://pelican-7714.example/feed/', self::rss( [ [ 'pelican-stale', 'Stale', $now - $week - 60 ], [ 'pelican-undated', 'Undated', null ] ] ) );
 
 		$this->assertSame( 7, Feed_Source_Node::CLIENT_FEED_DAYS );
-		$this->assertSame( [ 'feed:gazette-fresh', 'feed:pelican-stale', 'feed:pelican-undated' ], \array_keys( $this->recorded() ) );
+		$this->assertSame( [ 'feed:harborgazette.example:gazette-fresh', 'feed:pelican-stale', 'feed:pelican-undated' ], \array_keys( $this->recorded() ) );
+	}
+
+	/**
+	 * A client feed's items are keyed by the client's domain, so no other
+	 * feed takes their keys; each must link to the client's own site or a
+	 * subdomain of it, and be dated no more than a day past the fetch.
+	 */
+	public function test_a_client_feeds_items_stay_in_its_lane(): void {
+		$this->start_intel_graph();
+		$this->seed_clients();
+		$node = $this->feed();
+		$node->interpreter()->dispatch( 'set_client_feeds', [ 'true' ] );
+		$this->tick( $node );
+		$now = (int) Core::$now;
+		$day = Intel_Graph_Row_Schema::DAY_SECONDS;
+
+		$this->complete(
+			'https://harborgazette.example/feed/',
+			self::rss(
+				[
+					[ 'own-site', 'Own', $now - 3600, self::GAZETTE ],
+					[ 'subdomain', 'Sub', $now - 3600, 'https://news.harborgazette.example' ],
+					[ 'cased', 'Cased', $now - 3600, 'https://WWW.HarborGazette.Example' ],
+					[ 'neighbour', 'Neighbour', $now - 3600, 'https://salemledger.example' ],
+					[ 'lookalike', 'Lookalike', $now - 3600, 'https://notharborgazette.example' ],
+					[ 'tomorrow', 'Tomorrow', $now + $day - 60, self::GAZETTE ],
+					[ 'past-tomorrow', 'Past tomorrow', $now + $day + 60, self::GAZETTE ],
+				]
+			)
+		);
+
+		$this->assertSame(
+			[ 'feed:harborgazette.example:own-site', 'feed:harborgazette.example:subdomain', 'feed:harborgazette.example:cased', 'feed:harborgazette.example:tomorrow' ],
+			\array_keys( $this->recorded() )
+		);
+	}
+
+	/** A client item's key counts its domain against the key cap, through the one record path. */
+	public function test_a_client_items_key_counts_its_domain_against_the_cap(): void {
+		$stderr = $this->capture_stderr();
+		$this->start_intel_graph();
+		$this->seed_clients();
+		$node = $this->feed();
+		$node->interpreter()->dispatch( 'set_client_feeds', [ 'true' ] );
+		$this->tick( $node );
+		$guid = \str_repeat( 'g', 486 );
+
+		$this->complete( 'https://harborgazette.example/feed/', self::rss( [ [ $guid, 'Long', (int) Core::$now - 60, self::GAZETTE ] ] ) );
+
+		$this->assertSame( [], $this->recorded() );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: refused an item whose key runs 513 bytes, past 512: feed:harborgazette.example:ggg' ) );
+	}
+
+	/** A stored client domain that is not a plain hostname is never fetched, and is named. */
+	public function test_a_client_domain_that_is_not_a_hostname_is_skipped_and_named(): void {
+		$stderr = $this->capture_stderr();
+		$this->start_intel_graph();
+		$this->seed(
+			self::entity( 'organization:quay-press', 'Quay Press', [ 'domain' => [ '10.0.0.5' ] ] ),
+			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => 'organization:quay-press', 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ) ]
+		);
+		$node = $this->feed( 'https://kite-2201.example/feed/' );
+		$node->interpreter()->dispatch( 'set_client_feeds', [ 'true' ] );
+
+		$this->tick( $node );
+
+		$this->assertSame( [ 'https://kite-2201.example/feed/' ], $this->dispatched );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: skipping a client domain that is not a plain hostname: 10.0.0.5: its top-level domain is not alphabetic' ) );
+	}
+
+	/** Every feed URL passes WordPress's URL check before it is sent; one it refuses records nothing, logged. */
+	public function test_a_feed_url_wordpress_refuses_is_never_sent(): void {
+		$stderr                                          = $this->capture_stderr();
+		$this->unsafe['https://intranet-3390.example/feed/'] = true;
+		$node                                            = $this->feed( 'https://intranet-3390.example/feed/', 'https://kite-2201.example/feed/' );
+
+		$this->tick( $node );
+
+		$this->assertSame( [ 'https://intranet-3390.example/feed/', 'https://kite-2201.example/feed/' ], $this->validated );
+		$this->assertSame( [ 'https://kite-2201.example/feed/' ], $this->dispatched );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: refusing a feed URL WordPress will not fetch: https://intranet-3390.example/feed/' ) );
+	}
+
+	/** Curl follows no redirect; the feed follows each Location itself, checked, keeping the client's lane. */
+	public function test_a_redirect_is_followed_by_the_feed_keeping_its_lane(): void {
+		$this->start_intel_graph();
+		$this->seed_clients();
+		$node = $this->feed();
+		$node->interpreter()->dispatch( 'set_client_feeds', [ 'true' ] );
+		$this->tick( $node );
+
+		$this->redirect( 'https://harborgazette.example/feed/', 'https://cdn-4410.example/gazette.xml' );
+		$this->complete( 'https://cdn-4410.example/gazette.xml', self::rss( [ [ 'moved', 'Moved', (int) Core::$now - 60, self::GAZETTE ] ] ) );
+
+		$this->assertFalse( $this->opts['https://harborgazette.example/feed/'][ \CURLOPT_FOLLOWLOCATION ] );
+		$this->assertSame( [ 'https://harborgazette.example/feed/', 'https://pelican-7714.example/feed/', 'https://cdn-4410.example/gazette.xml' ], $this->validated );
+		$this->assertSame( [ 'feed:harborgazette.example:moved' ], \array_keys( $this->recorded() ) );
+	}
+
+	/** A redirect to a URL WordPress refuses records nothing, logged. */
+	public function test_a_redirect_to_a_refused_url_is_not_followed(): void {
+		$stderr                                       = $this->capture_stderr();
+		$this->unsafe['http://169.254.169.254/feed/'] = true;
+		$node                                         = $this->feed( 'https://kite-2201.example/feed/' );
+		$this->tick( $node );
+
+		$this->redirect( 'https://kite-2201.example/feed/', 'http://169.254.169.254/feed/' );
+
+		$this->assertSame( [ 'https://kite-2201.example/feed/' ], $this->dispatched );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: refusing a feed URL WordPress will not fetch: http://169.254.169.254/feed/' ) );
+		$this->tick( $node );
+		$this->assertSame( [ 'https://kite-2201.example/feed/', 'https://kite-2201.example/feed/' ], $this->dispatched, 'the refused hop ends the pass' );
+	}
+
+	/** A feed follows at most MAX_REDIRECTS hops; the next records nothing, logged. */
+	public function test_a_feed_follows_at_most_five_redirects(): void {
+		$stderr = $this->capture_stderr();
+		$node   = $this->feed( 'https://hop-0.example/feed/' );
+		$this->tick( $node );
+
+		for ( $hop = 0; $hop <= Curl_Node::MAX_REDIRECTS; $hop++ ) {
+			$this->redirect( "https://hop-{$hop}.example/feed/", 'https://hop-' . ( $hop + 1 ) . '.example/feed/' );
+		}
+
+		$this->assertSame( 5, Curl_Node::MAX_REDIRECTS );
+		$this->assertCount( 6, $this->dispatched );
+		$this->assertSame( 'https://hop-5.example/feed/', \end( $this->dispatched ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: a feed redirected past 5 hops; recording nothing: https://hop-6.example/feed/' ) );
 	}
 
 	/** The toggle round-trips through dump_config(), and a source with it off dumps no line. */

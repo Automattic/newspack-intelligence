@@ -32,6 +32,39 @@ final class EntityIndexTest extends TestCase {
 		parent::tearDown();
 	}
 
+	/**
+	 * Plain hostnames, and what is wrong with each value that is not one.
+	 *
+	 * @return array<string,array{0:string,1:string|null}>
+	 */
+	public static function hostnames(): array {
+		$label = \str_repeat( 'a', 63 );
+		return [
+			'a hostname'               => [ 'harborgazette.example', null ],
+			'hyphens and digits'       => [ 'tide-2201.news9.example', null ],
+			'a 63-character label'     => [ "{$label}.example", null ],
+			'253 characters'           => [ "{$label}.{$label}.{$label}." . \str_repeat( 'b', 58 ) . '.ab', null ],
+			'254 characters'           => [ "{$label}.{$label}.{$label}." . \str_repeat( 'b', 59 ) . '.ab', 'it runs past 253 characters' ],
+			'an IPv4 literal'          => [ '10.0.0.5', 'its top-level domain is not alphabetic' ],
+			'an IPv6 literal'          => [ '[::1]', 'it holds a character other than a-z, 0-9, a hyphen or a dot' ],
+			'a single label'           => [ 'localhost', 'it has a single label' ],
+			'a port'                   => [ 'harborgazette.example:8080', 'it holds a character other than a-z, 0-9, a hyphen or a dot' ],
+			'a path'                   => [ 'harborgazette.example/feed', 'it holds a character other than a-z, 0-9, a hyphen or a dot' ],
+			'userinfo'                 => [ 'pier@harborgazette.example', 'it holds a character other than a-z, 0-9, a hyphen or a dot' ],
+			'a trailing dot'           => [ 'harborgazette.example.', 'it has an empty label' ],
+			'a 64-character label'     => [ "a{$label}.example", 'a label runs past 63 characters' ],
+			'a leading hyphen'         => [ '-harborgazette.example', 'a label starts or ends with a hyphen' ],
+			'a trailing hyphen'        => [ 'harborgazette-.example', 'a label starts or ends with a hyphen' ],
+			'a numeric top level'      => [ 'harborgazette.2201', 'its top-level domain is not alphabetic' ],
+			'nothing'                  => [ '', 'it has a single label' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'hostnames' )]
+	public function test_a_domain_must_be_a_plain_hostname( string $domain, ?string $fault ): void {
+		$this->assertSame( $fault, Entity_Index::hostname_fault( $domain ) );
+	}
+
 	public function test_names_answer_their_entity_with_kind_surface_and_state(): void {
 		$index = $this->index_of( self::entity( self::GAZETTE, 'The Harbor Gazette', [ 'alias' => [ 'HarbGaz' ], 'locality' => [ 'Port Angeles' ] ] ) );
 

@@ -4,10 +4,13 @@
  * from each client's own feed, and normalizes them into recorded items.
  *
  * Extends Source_Node, which owns the TICK/TM_REQUEST trigger, the grid and
- * the record path; its `tick()` starts a pass. A pass never blocks: it sends each feed URL, keyed by
+ * the record path; its `tick()` starts a pass. A pass never blocks: it sends
+ * each feed URL WordPress will fetch (`wp_http_validate_url()`), keyed by
  * itself, to the `{name}:curl` sibling, keeping at most
  * Curl_Node::MAX_IN_FLIGHT in flight and sending the next as each answers,
- * and records each body's items as it lands. A due fetch while a pass is
+ * follows each redirect itself, checked the same way, and records each
+ * body's items as it lands. A client's items keep to its lane: keyed by its
+ * domain, linking to its own site, and recent. A due fetch while a pass is
  * in flight starts nothing.
  *
  * @package Newspack_Intelligence
@@ -29,6 +32,21 @@ class Feed_Source_Node extends Source_Node {
 	/** Days old a client feed's item may be and still record; an undated one never does. */
 	public const CLIENT_FEED_DAYS = 7;
 
+	/** Days past the fetch a client item may be dated, for a publisher's mislabelled zone or skewed clock. */
+	private const CLIENT_FEED_AHEAD_DAYS = 1;
+
+	/**
+	 * URL-check seam: replaces the one `wp_http_validate_url()` call every
+	 * feed URL and every redirect's Location passes before it is sent, which
+	 * resolves the host and refuses a private, loopback or reserved address
+	 * and a port other than 80, 443 and 8080. Tests reassign it to refuse
+	 * chosen URLs without DNS; null calls WordPress.
+	 * Signature: `function ( string $url ): string|false`.
+	 *
+	 * @var (\Closure(string): (string|false))|null
+	 */
+	public static ?\Closure $validate_url = null;
+
 	/** @var list<string> Feed URLs the `add_url` verb registered and `remove_url` left, in call order. */
 	protected array $urls = [];
 
@@ -38,10 +56,10 @@ class Feed_Source_Node extends Source_Node {
 	/** The `{name}:curl` sibling that fetches; null only while the constructor runs. */
 	private ?Curl_Node $curl = null;
 
-	/** @var array<string,bool> Feeds this pass has yet to send: url => whether it is a client's. */
+	/** @var array<string,array{0:string,1:int}> Feeds this pass has yet to send: url => [ the client's domain, '' for a configured feed; redirects followed ]. */
 	private array $queue = [];
 
-	/** @var array<string,bool> Feeds sent and not yet answered: url => whether it is a client's. */
+	/** @var array<string,array{0:string,1:int}> Feeds sent and not yet answered, as the queue holds them. */
 	private array $in_flight = [];
 
 	/** True while send() runs; an answer arriving inside it does not re-enter. */
@@ -53,6 +71,7 @@ class Feed_Source_Node extends Source_Node {
 		$curl = new Curl_Node();
 		$curl->patron( $this );
 		$curl->arguments( [] );
+		$curl->follow_redirects( false );
 		$this->curl = $curl;
 		$this->publish_sibling( 'curl', $curl );
 	}
@@ -79,7 +98,7 @@ class Feed_Source_Node extends Source_Node {
 			return [ 'fetching' => 0 ];
 		}
 		$config      = $this->config();
-		$this->queue = \array_fill_keys( $config['feeds'], false ) + \array_fill_keys( $config['clients'], true );
+		$this->queue = \array_fill_keys( $config['feeds'], [ '', 0 ] ) + \array_map( static fn ( string $domain ): array => [ $domain, 0 ], $config['clients'] );
 		$fetching    = \count( $this->queue );
 		$this->send();
 		return [ 'fetching' => $fetching ];
@@ -87,11 +106,13 @@ class Feed_Source_Node extends Source_Node {
 
 	/**
 	 * Take Curl's answer for a feed in flight: a body records its items, a
-	 * client's only the recent ones, and a TM_ERROR is logged and records
-	 * nothing. The next feed goes out whatever the record did, so a pass
-	 * always ends. An answer for no feed in flight is dropped.
+	 * client's only those in its lane; a redirect's Location goes to the
+	 * head of the queue as the same feed, one hop on, unless it would pass
+	 * MAX_REDIRECTS; a TM_ERROR is logged and records nothing. The next feed
+	 * goes out whatever the record did, so a pass always ends. An answer for
+	 * no feed in flight is dropped.
 	 *
-	 * @param array<int,mixed> $message The body as TM_BYTESTREAM, or the TM_ERROR, KEY the url.
+	 * @param array<int,mixed> $message The body as TM_BYTESTREAM, the Location as TM_RESPONSE, or the TM_ERROR, KEY the url.
 	 */
 	private function answer( array $message ): void {
 		$url = Core::as_string( $message[ Message::KEY ] );
@@ -99,15 +120,18 @@ class Feed_Source_Node extends Source_Node {
 			$this->drop_message( $message, 'no feed in flight' );
 			return;
 		}
-		$client = $this->in_flight[ $url ];
+		[ $domain, $hops ] = $this->in_flight[ $url ];
 		unset( $this->in_flight[ $url ] );
 		try {
+			$type  = Core::as_int( $message[ Message::TYPE ] );
 			$value = Core::as_string( $message[ Message::VALUE ] );
-			if ( 0 !== ( Core::as_int( $message[ Message::TYPE ] ) & Message::TM_ERROR ) ) {
+			if ( 0 !== ( $type & Message::TM_ERROR ) ) {
 				$this->print_less_often( 'Feed fetch failed: ', $value );
+			} elseif ( 0 !== ( $type & Message::TM_RESPONSE ) ) {
+				$this->redirected( $value, $domain, $hops + 1 );
 			} else {
-				$items = $this->parse( $value );
-				$this->record( $client ? $this->recent( $items ) : $items );
+				$items = $this->parse( $value, $domain );
+				$this->record( '' === $domain ? $items : $this->in_lane( $items, $domain ) );
 			}
 		} finally {
 			$this->send();
@@ -115,10 +139,27 @@ class Feed_Source_Node extends Source_Node {
 	}
 
 	/**
+	 * Queue a redirect's Location first, as the feed it redirects, unless
+	 * that would pass MAX_REDIRECTS hops, which is logged.
+	 *
+	 * @param string $location The absolute Location.
+	 * @param string $domain   The client's domain, '' for a configured feed.
+	 * @param int    $hops     The hops the Location would make.
+	 */
+	private function redirected( string $location, string $domain, int $hops ): void {
+		if ( $hops > Curl_Node::MAX_REDIRECTS ) {
+			$this->print_less_often( 'a feed redirected past ' . Curl_Node::MAX_REDIRECTS . ' hops; recording nothing: ' . Core::terminal_safe( $location ) );
+			return;
+		}
+		$this->queue = [ $location => [ $domain, $hops ] ] + $this->queue;
+	}
+
+	/**
 	 * Send queued feeds to Curl while fewer than MAX_IN_FLIGHT are in
-	 * flight. An answer Curl sends synchronously frees its slot for this
-	 * same loop; a feed Curl throws on leaves flight, so the next pass
-	 * starts.
+	 * flight, each only once `wp_http_validate_url()` accepts it; one it
+	 * refuses is logged and records nothing. An answer Curl sends
+	 * synchronously frees its slot for this same loop; a feed Curl throws on
+	 * leaves flight, so the next pass starts.
 	 *
 	 * @throws \LogicException When no Curl sibling was built.
 	 */
@@ -127,12 +168,18 @@ class Feed_Source_Node extends Source_Node {
 			return;
 		}
 		$curl          = $this->curl ?? throw new \LogicException( \esc_html( "{$this->name} has no Curl sibling" ) );
+		$validate      = self::$validate_url ?? static fn ( string $url ): string|false => \wp_http_validate_url( $url );
 		$this->sending = true;
 		try {
 			while ( [] !== $this->queue && \count( $this->in_flight ) < Curl_Node::MAX_IN_FLIGHT ) {
-				$url                     = \array_key_first( $this->queue );
-				$this->in_flight[ $url ] = $this->queue[ $url ];
+				$url  = \array_key_first( $this->queue );
+				$feed = $this->queue[ $url ];
 				unset( $this->queue[ $url ] );
+				if ( false === $validate( $url ) ) {
+					$this->print_less_often( 'refusing a feed URL WordPress will not fetch: ' . Core::terminal_safe( $url ) );
+					continue;
+				}
+				$this->in_flight[ $url ] = $feed;
 				$message                   = Message::new_message();
 				$message[ Message::TYPE ]  = Message::TM_BYTESTREAM;
 				$message[ Message::FROM ]  = $this->name;
@@ -151,23 +198,39 @@ class Feed_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * The items dated within CLIENT_FEED_DAYS of the tick clock.
+	 * A client's items in its lane: linking to its domain or a subdomain of
+	 * it, and dated from CLIENT_FEED_DAYS before the worker's wall clock to
+	 * CLIENT_FEED_AHEAD_DAYS after it. `item_ts` is the publisher's own
+	 * stamp, so the day ahead allows for its zone or clock; an undated item
+	 * never records.
 	 *
-	 * @param array<int,array<string,mixed>> $items Normalized items.
+	 * @param array<int,array<string,mixed>> $items  Normalized items.
+	 * @param string                         $domain The client's domain.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function recent( array $items ): array {
+	private function in_lane( array $items, string $domain ): array {
 		$since = Core::$now - self::CLIENT_FEED_DAYS * Intel_Graph_Row_Schema::DAY_SECONDS;
-		return \array_filter( $items, static fn ( array $item ): bool => 0 !== $item['item_ts'] && $item['item_ts'] >= $since );
+		$until = Core::$now + self::CLIENT_FEED_AHEAD_DAYS * Intel_Graph_Row_Schema::DAY_SECONDS;
+		return \array_filter(
+			$items,
+			static function ( array $item ) use ( $since, $until, $domain ): bool {
+				$host = Entity_Index::identifier_value( 'domain', Core::as_string( \wp_parse_url( Core::as_string( $item['url'] ), \PHP_URL_HOST ) ) );
+				return 0 !== $item['item_ts'] && $item['item_ts'] >= $since && $item['item_ts'] <= $until
+					&& ( $domain === $host || \str_ends_with( $host, ".{$domain}" ) );
+			}
+		);
 	}
 
 	/**
 	 * Parse a feed body, supporting both RSS 2.0 (channel/item) and Atom (entry).
-	 * libxml errors are suppressed and a parse failure yields [].
+	 * libxml errors are suppressed and a parse failure yields []. A client's
+	 * items are keyed `feed:<domain>:<id>`, a configured feed's `feed:<id>`.
 	 *
+	 * @param string $body   The body.
+	 * @param string $domain The client's domain, '' for a configured feed.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function parse( string $body ): array {
+	private function parse( string $body, string $domain ): array {
 		$prev = \libxml_use_internal_errors( true );
 		// LIBXML_NONET: untrusted feed body — no SYSTEM ref may fetch a URL.
 		$xml = \simplexml_load_string( $body, \SimpleXMLElement::class, LIBXML_NONET );
@@ -178,15 +241,18 @@ class Feed_Source_Node extends Source_Node {
 			return [];
 		}
 		// Dispatch on document shape: RSS has <channel>; Atom's root is <feed>.
-		return isset( $xml->channel ) ? $this->parse_rss( $xml ) : $this->parse_atom( $xml );
+		$prefix = '' === $domain ? '' : "{$domain}:";
+		return isset( $xml->channel ) ? $this->parse_rss( $xml, $prefix ) : $this->parse_atom( $xml, $prefix );
 	}
 
 	/**
 	 * RSS 2.0: items at channel/item with title/link/description/guid/pubDate.
 	 *
+	 * @param \SimpleXMLElement $xml    The document.
+	 * @param string            $prefix What leads each item's id.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function parse_rss( \SimpleXMLElement $xml ): array {
+	private function parse_rss( \SimpleXMLElement $xml, string $prefix ): array {
 		$out = [];
 		if ( ! isset( $xml->channel ) ) {
 			return $out;
@@ -203,7 +269,7 @@ class Feed_Source_Node extends Source_Node {
 			if ( '' === $when ) {
 				$when = (string) $item->children( self::DC_NS )->date;
 			}
-			$out[] = $this->normalize_item( 'feed', $id, (string) $item->title, $link, (string) $item->description, $when );
+			$out[] = $this->normalize_item( 'feed', $prefix . $id, (string) $item->title, $link, (string) $item->description, $when );
 		}
 		return $out;
 	}
@@ -211,9 +277,11 @@ class Feed_Source_Node extends Source_Node {
 	/**
 	 * Atom: entries at entry with title, link[href], summary|content, id, updated.
 	 *
+	 * @param \SimpleXMLElement $xml    The document.
+	 * @param string            $prefix What leads each item's id.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function parse_atom( \SimpleXMLElement $xml ): array {
+	private function parse_atom( \SimpleXMLElement $xml, string $prefix ): array {
 		$out = [];
 		foreach ( $xml->children( self::ATOM_NS )->entry as $entry ) {
 			$link = $this->atom_link( $entry );
@@ -224,7 +292,7 @@ class Feed_Source_Node extends Source_Node {
 			}
 			$summary = (string) $entry->summary;
 			$body    = '' !== $summary ? $summary : (string) $entry->content;
-			$out[]   = $this->normalize_item( 'feed', $id, (string) $entry->title, $link, $body, (string) $entry->updated );
+			$out[]   = $this->normalize_item( 'feed', $prefix . $id, (string) $entry->title, $link, $body, (string) $entry->updated );
 		}
 		return $out;
 	}
@@ -254,25 +322,46 @@ class Feed_Source_Node extends Source_Node {
 
 	/**
 	 * The configured feeds, and with client feeds on, each open client's
-	 * feed no configured URL already names.
+	 * feed no configured URL already names, by its domain.
 	 *
-	 * @return array{feeds:list<string>,clients:list<string>}
+	 * @return array{feeds:list<string>,clients:array<string,string>}
 	 */
 	protected function config(): array {
 		return [
 			'feeds'   => $this->urls,
-			'clients' => $this->client_feeds ? \array_values( \array_diff( $this->client_urls(), $this->urls ) ) : [],
+			'clients' => $this->client_feeds ? \array_diff_key( $this->clients(), \array_flip( $this->urls ) ) : [],
 		];
 	}
 
 	/**
-	 * `https://<domain>/feed/` for each domain of every entity holding an
-	 * open `client` role, read in one projection read; none, logged, when
-	 * no projection opens.
+	 * `https://<domain>/feed/` => the domain, for each domain of every
+	 * entity holding an open `client` role, read in one projection read;
+	 * none, logged, when no projection opens. A domain that is not a plain
+	 * hostname (`Entity_Index::hostname_fault()`), such as one a client
+	 * CSV import wrote, is skipped and named.
+	 *
+	 * @return array<string,string>
+	 */
+	private function clients(): array {
+		$clients = [];
+		foreach ( $this->client_domains() as $domain ) {
+			$fault = Entity_Index::hostname_fault( $domain );
+			if ( null !== $fault ) {
+				$this->print_less_often( 'skipping a client domain that is not a plain hostname: ' . Core::terminal_safe( $domain ) . ': ', $fault );
+				continue;
+			}
+			$clients[ "https://{$domain}/feed/" ] = $domain;
+		}
+		return $clients;
+	}
+
+	/**
+	 * Each domain of every entity holding an open `client` role, in one
+	 * projection read; none, logged, when no projection opens.
 	 *
 	 * @return list<string>
 	 */
-	private function client_urls(): array {
+	private function client_domains(): array {
 		return Intel_Graph_Row_Schema::read(
 			static function ( Row_Reader $r ): array {
 				$index     = Entity_Index::load( $r );
@@ -282,14 +371,14 @@ class Feed_Source_Node extends Source_Node {
 				foreach ( $domains as $entity ) {
 					$survivors[ $entity ] = $keys[ $entity ] ?? [ $entity ];
 				}
-				$open = Graph_Query::open_roles( $r, $survivors, [ 'client' ] );
-				$urls = [];
+				$open    = Graph_Query::open_roles( $r, $survivors, [ 'client' ] );
+				$clients = [];
 				foreach ( $domains as $domain => $entity ) {
 					if ( isset( $open[ $entity ]['client'] ) ) {
-						$urls[] = "https://{$domain}/feed/";
+						$clients[] = (string) $domain;
 					}
 				}
-				return $urls;
+				return $clients;
 			},
 			"{$this->name}: no intel-graph to read client domains from; fetching the configured feeds alone: "
 		) ?? [];
@@ -330,7 +419,7 @@ class Feed_Source_Node extends Source_Node {
 				...self::list_verbs( 'url', 'urls', [ 'name' => 'url', 'type' => 'string', 'required' => true ], 'Register a feed URL to fetch on each pass: <url>.' ),
 				[
 					'name'        => 'set_client_feeds',
-					'description' => 'Also fetch https://<domain>/feed/ for each domain of every entity holding an open client role, recording only items dated within ' . self::CLIENT_FEED_DAYS . ' days.',
+					'description' => 'Also fetch https://<domain>/feed/ for each plain-hostname domain of every entity holding an open client role, keying its items feed:<domain>:<guid> and recording only those linking to that domain or a subdomain, dated within ' . self::CLIENT_FEED_DAYS . ' days before the fetch and one after.',
 					'args'        => [
 						[ 'name' => 'enabled', 'type' => 'bool', 'required' => false, 'description' => '1, true, yes or on enables; 0, false, no or off disables.' ],
 					],
