@@ -27,6 +27,54 @@ class Linear_Source_Node extends Source_Node {
 	/** @var list<string> Team keys the `add_team` verb registered and `remove_team` left, in call order. */
 	protected array $teams = [];
 
+	/**
+	 * Walk data.issues.nodes[] and normalize each into a recorded item. A node with no
+	 * string identifier is skipped. An answer carrying `errors`, which Linear
+	 * sends with a 200, logs its first error and yields none, as one whose
+	 * nodes are not a list does.
+	 *
+	 * @param string $url  The GraphQL url.
+	 * @param string $body The JSON body.
+	 * @return array<int,array<string,mixed>>
+	 */
+	protected function received( string $url, string $body ): array {
+		$answer = $this->json_answer(
+			'Linear',
+			$url,
+			$body,
+			static function ( array $answer ): ?string {
+				$error = Core::arr( Core::arr( $answer['errors'] ?? null )[0] ?? null )['message'] ?? null;
+				if ( null !== $error ) {
+					return Core::as_string( $error );
+				}
+				$nodes = self::nodes( $answer );
+				return \is_array( $nodes ) && \array_is_list( $nodes ) ? null : 'data.issues.nodes is not a list';
+			}
+		);
+		if ( null === $answer ) {
+			return [];
+		}
+		return self::items(
+			self::nodes( $answer ),
+			function ( array $node ): ?array {
+				$identifier = $node['identifier'] ?? null;
+				if ( ! \is_string( $identifier ) || '' === $identifier ) {
+					return null;
+				}
+				return $this->normalize_item( 'linear', $identifier, $node['title'] ?? '', $node['url'] ?? '', $node['description'] ?? '', $node['updatedAt'] ?? '' );
+			}
+		);
+	}
+
+	/**
+	 * Where an answer holds its issues.
+	 *
+	 * @param array<array-key,mixed> $answer The decoded answer.
+	 */
+	private static function nodes( array $answer ): mixed {
+		return Core::arr( Core::arr( $answer['data'] ?? null )['issues'] ?? null )['nodes'] ?? null;
+	}
+
 	/** Queue the one POST, unless no team is named. */
 	protected function begin(): void {
 		if ( [] === $this->teams ) {
@@ -41,46 +89,6 @@ class Linear_Source_Node extends Source_Node {
 				]
 			)
 		);
-	}
-
-	/**
-	 * Walk data.issues.nodes[] and normalize each into a recorded item. A node with no
-	 * string identifier is skipped. An answer carrying `errors`, which Linear
-	 * sends with a 200, logs its first error, and one whose nodes are not a
-	 * list logs that and yields none.
-	 *
-	 * @param string $url  The GraphQL url.
-	 * @param string $body The JSON body.
-	 * @return array<int,array<string,mixed>>
-	 */
-	protected function received( string $url, string $body ): array {
-		$decoded = Core::arr( \json_decode( $body, true ) );
-		$nodes   = Core::arr( Core::arr( $decoded['data'] ?? null )['issues'] ?? null )['nodes'] ?? null;
-		$listed  = \is_array( $nodes ) && \array_is_list( $nodes );
-		$error   = Core::arr( Core::arr( $decoded['errors'] ?? null )[0] ?? null )['message'] ?? null;
-		if ( null !== $error || ! $listed ) {
-			$this->print_less_often( 'Linear answered an error: ', Core::terminal_safe( null !== $error ? Core::as_string( $error ) : 'data.issues.nodes is not a list' ) );
-		}
-		if ( ! $listed ) {
-			return [];
-		}
-		$out = [];
-		foreach ( $nodes as $node ) {
-			if ( ! \is_array( $node ) ) {
-				continue;
-			}
-			$identifier = $node['identifier'] ?? null;
-			if ( ! \is_string( $identifier ) || '' === $identifier ) {
-				continue;
-			}
-			$out[] = $this->normalize_item( 'linear', $identifier, $node['title'] ?? '', $node['url'] ?? '', $node['description'] ?? '', $node['updatedAt'] ?? '' );
-		}
-		return $out;
-	}
-
-	/** Emit the base config plus one `add_team` line per registered team. */
-	public function dump_config(): string {
-		return parent::dump_config() . $this->dump_lists();
 	}
 
 	public static function node_schema(): array {

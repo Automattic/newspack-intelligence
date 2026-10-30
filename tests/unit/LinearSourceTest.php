@@ -102,7 +102,7 @@ final class LinearSourceTest extends TestCase {
 		$this->complete( self::GRAPHQL, '{"errors":[{"message":"linear-key-revoked-6618"},{"message":"second-error-6619"}]}' );
 
 		$this->assertSame( [], $this->recorded() );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: Linear answered an error: linear-key-revoked-6618' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: Linear answered an error for https://api.linear.app/graphql: linear-key-revoked-6618' ) );
 	}
 
 	/** An answer whose issues are not a list records nothing, and says so. */
@@ -113,7 +113,7 @@ final class LinearSourceTest extends TestCase {
 		$this->complete( self::GRAPHQL, '{"data":{"issues":{"nodes":{"ABC-7":{"identifier":"ABC-7"}}}}}' );
 
 		$this->assertSame( [], $this->recorded() );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: Linear answered an error: data.issues.nodes is not a list' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: Linear answered an error for https://api.linear.app/graphql: data.issues.nodes is not a list' ) );
 	}
 
 	public function test_no_team_fetches_nothing(): void {

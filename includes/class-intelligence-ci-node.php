@@ -15,24 +15,26 @@ namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\Config;
+use Newspack_Nodes\Core;
 use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Service_CI_Node;
+use Newspack_Nodes\Topology_Analyzer;
 
 \defined( 'ABSPATH' ) || exit;
 
 class Intelligence_CI_Node extends Service_CI_Node {
 
-	/** The source node names `fetch_now` ticks. */
-	private const SOURCE_NODES = [ 'github', 'linear', 'feed' ];
+	/** The topology whose Source nodes `fetch_now` ticks. */
+	private const COLLECT_TOPOLOGY = 'newspack-intelligence-collect';
 
 	/**
-	 * A TICK request for every source node, as `Worker_Route::send()` takes
-	 * them.
+	 * A TICK request for every Source node the collect topology declares, in
+	 * its order, as `Worker_Route::send()` takes them.
 	 *
 	 * @return list<array{0:string,1:string}>
 	 */
 	public static function ticks(): array {
-		return \array_map( static fn ( string $source ): array => [ $source, 'TICK' ], self::SOURCE_NODES );
+		return \array_map( static fn ( array $node ): array => [ Core::as_string( $node['name'] ?? null ), 'TICK' ], Topology_Analyzer::nodes_of_type( self::COLLECT_TOPOLOGY, Source_Node::class ) );
 	}
 
 	/**

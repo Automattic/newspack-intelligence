@@ -267,27 +267,43 @@ if ( ! function_exists( 'home_url' ) ) {
 	}
 }
 
-// Overrides shared shim: polymorphic (key,value,url) form like WP core.
+// Overrides shared shim: WP core's add_query_arg(), which replaces a key in
+// place, re-encodes the query it keeps and adds the new value as given.
 if ( ! function_exists( 'add_query_arg' ) ) {
-	// Polymorphic like WP core: add_query_arg( array $params, string $url ) or
-	// add_query_arg( string $key, string $value, string $url ).
 	function add_query_arg( ...$args ): string {
-		if ( \is_array( $args[0] ) ) {
-			$params = $args[0];
-			$url    = (string) ( $args[1] ?? '' );
+		$params = \is_array( $args[0] ) ? $args[0] : [ (string) $args[0] => $args[1] ?? '' ];
+		$uri    = (string) ( \is_array( $args[0] ) ? ( $args[1] ?? '' ) : ( $args[2] ?? '' ) );
+		$frag   = '';
+		$hash   = \strpos( $uri, '#' );
+		if ( false !== $hash ) {
+			$frag = \substr( $uri, $hash );
+			$uri  = \substr( $uri, 0, $hash );
+		}
+		if ( \str_contains( $uri, '?' ) ) {
+			[ $base, $query ] = \explode( '?', $uri, 2 );
+			$base            .= '?';
+		} elseif ( \str_contains( $uri, '://' ) || ! \str_contains( $uri, '=' ) ) {
+			$base  = $uri . '?';
+			$query = '';
 		} else {
-			$params = [ (string) $args[0] => (string) ( $args[1] ?? '' ) ];
-			$url    = (string) ( $args[2] ?? '' );
+			$base  = '';
+			$query = $uri;
 		}
-		if ( [] === $params ) {
-			return $url;
+		\parse_str( $query, $qs );
+		$kept = [];
+		foreach ( $qs as $k => $v ) {
+			if ( \is_array( $v ) ) {
+				throw new \LogicException( 'add_query_arg shim: a nested query value is not supported' );
+			}
+			$kept[ $k ] = \urlencode( (string) $v );
 		}
-		$sep   = ( false === \strpos( $url, '?' ) ) ? '?' : '&';
 		$pairs = [];
-		foreach ( $params as $k => $v ) {
-			$pairs[] = \rawurlencode( (string) $k ) . '=' . \rawurlencode( (string) $v );
+		foreach ( \array_replace( $kept, $params ) as $k => $v ) {
+			if ( false !== $v && null !== $v ) {
+				$pairs[] = '' === (string) $v ? (string) $k : "{$k}=" . (string) $v;
+			}
 		}
-		return $url . $sep . \implode( '&', $pairs );
+		return \str_replace( '?#', '#', \rtrim( $base . \implode( '&', $pairs ) . $frag, '?' ) );
 	}
 }
 

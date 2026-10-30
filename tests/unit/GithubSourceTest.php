@@ -129,7 +129,7 @@ final class GithubSourceTest extends TestCase {
 		$this->complete( $issues, (string) \json_encode( [ [ 'number' => 8, 'title' => 'Still here', 'html_url' => 'https://gh/r/issues/8', 'updated_at' => '2026-06-13T00:00:00Z' ] ] ) );
 
 		$this->assertSame( [ 'github:acme/heron-repo#issue-8' ], \array_keys( $this->recorded() ) );
-		$this->assertCount( 1, self::stderr_lines( $stderr, "github: a fetch failed: HTTP 502 {$releases}" ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, "github: a fetch failed for {$releases}: HTTP 502 {$releases}" ) );
 	}
 
 	/** The vault group the make_node line names lends every request GitHub's token, as its entry names the header. */
@@ -164,15 +164,7 @@ final class GithubSourceTest extends TestCase {
 		$node = new Github_Source_Node();
 		$node->name( 'github' );
 
-		foreach ( [ '   ', 'acme', 'acme/heron/extra', 'acme/heron repo', 'acme/heron?per_page=99', '/heron-repo' ] as $repo ) {
-			try {
-				$node->interpreter()->dispatch( 'add_repo', [ $repo ] );
-				$this->fail( "add_repo accepted {$repo}" );
-			} catch ( \InvalidArgumentException $e ) {
-				$this->assertSame( "add_repo: '{$repo}' is not a GitHub owner/name", $e->getMessage() );
-			}
-		}
-		$this->assertSame( [], $this->read_private( $node, 'repos' ) );
+		$this->assert_add_refuses( $node, 'repo', 'repos', [ '   ', 'acme', 'acme/heron/extra', 'acme/heron repo', 'acme/heron?per_page=99', '/heron-repo', "acme/heron-repo\n" ], 'a GitHub owner/name' );
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_repo', [ 'Acme_9/heron.repo-2' ] ) );
 		$this->assertSame( [ 'Acme_9/heron.repo-2' ], $this->read_private( $node, 'repos' ) );
 	}
@@ -188,14 +180,16 @@ final class GithubSourceTest extends TestCase {
 		$this->assertSame( [ 'acme/heron-repo' ], $this->read_private( $node, 'repos' ) );
 	}
 
-	/** A body that is not a JSON list, a JSON object of release-shaped rows among them, records nothing. */
+	/** A body that is not a JSON list, a JSON object of release-shaped rows among them, records nothing, logged. */
 	public function test_a_body_that_is_not_a_list_records_nothing(): void {
-		$node = $this->github( [ 'public' ], 'acme/heron-repo' );
+		$stderr = $this->capture_stderr();
+		$node   = $this->github( [ 'public' ], 'acme/heron-repo' );
 		$this->tick( $node );
 
 		$this->complete( self::endpoints( 'acme/heron-repo' )[0], (string) \json_encode( [ 'first' => [ 'id' => 91, 'name' => 'v9.1', 'html_url' => 'https://gh/r/releases/91', 'published_at' => '2026-06-15T00:00:00Z' ] ] ) );
 
 		$this->assertSame( [], $this->recorded() );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'github: GitHub answered an error for ' . self::endpoints( 'acme/heron-repo' )[0] . ': the answer is not a list' ) );
 	}
 
 	public function test_add_repo_accumulates_ordered_repos(): void {

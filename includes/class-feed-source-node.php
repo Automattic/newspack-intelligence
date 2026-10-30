@@ -302,7 +302,7 @@ class Feed_Source_Node extends Source_Node {
 
 	/** Emit the base config, one `add_url` line per registered URL, and the client-feeds toggle. */
 	public function dump_config(): string {
-		return parent::dump_config() . $this->dump_lists() . $this->dump_toggles();
+		return parent::dump_config() . $this->dump_toggles();
 	}
 
 	public static function node_schema(): array {

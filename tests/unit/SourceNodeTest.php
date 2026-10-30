@@ -7,6 +7,8 @@ use Newspack_Intelligence\Feed_Source_Node;
 use Newspack_Intelligence\Github_Source_Node;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Linear_Source_Node;
+use Newspack_Intelligence\P2_Source_Node;
+use Newspack_Intelligence\Slack_Source_Node;
 use Newspack_Intelligence\Source_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
@@ -268,9 +270,29 @@ final class SourceNodeTest extends TestCase {
 
 		$this->assertSame( $urls, $this->dispatched );
 		$this->assertSame( [ 'fake:wren-2' ], $this->recorded_keys() );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'fake-source-12: a fetch failed: HTTP 404 ' . $urls[0] ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'fake-source-12: a fetch failed for ' . $urls[0] . ': HTTP 404 ' . $urls[0] ) );
 		$this->tick( $node );
 		$this->assertSame( [ ...$urls, $urls[0] ], $this->dispatched, 'the pass ended, so the next one starts' );
+	}
+
+	/** Each failed fetch, and each answer that throws, is logged under its own url. */
+	public function test_each_failure_is_logged_under_its_own_url(): void {
+		$stderr = $this->capture_stderr();
+		$urls   = [ Fake_Source_Node::PAGE . '3', Fake_Source_Node::PAGE . '4', Fake_Source_Node::PAGE . '5', Fake_Source_Node::PAGE . '6' ];
+		$node   = $this->fake( [ 'public' ], $urls );
+		$this->tick( $node );
+
+		$this->complete( $urls[0], '', 404 );
+		$this->complete( $urls[1], '', 503 );
+		$node->answer_failure = new \RuntimeException( 'page-broke-3308' );
+		$this->complete( $urls[2], self::page( [] ) );
+		$node->answer_failure = new \RuntimeException( 'page-broke-3309' );
+		$this->complete( $urls[3], self::page( [] ) );
+
+		$this->assertCount( 1, self::stderr_lines( $stderr, "fake-source-12: a fetch failed for {$urls[0]}: HTTP 404 {$urls[0]}" ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, "fake-source-12: a fetch failed for {$urls[1]}: HTTP 503 {$urls[1]}" ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, "fake-source-12: an answer failed for {$urls[2]}: page-broke-3308" ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, "fake-source-12: an answer failed for {$urls[3]}: page-broke-3309" ) );
 	}
 
 	/** A pass sends at most MAX_REQUESTS_PER_PASS; the next is logged and dropped, and the pass ends. */
@@ -304,7 +326,7 @@ final class SourceNodeTest extends TestCase {
 
 		$this->assertSame( $urls, $this->dispatched );
 		$this->assertSame( [ 'fake:kept-2' ], $this->recorded_keys() );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'fake-source-12: an answer failed: ' . $urls[0] . ': page-broke-3307' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'fake-source-12: an answer failed for ' . $urls[0] . ': page-broke-3307' ) );
 	}
 
 	/** A cooperative stop inside an answer stops the worker. */
@@ -678,7 +700,7 @@ final class SourceNodeTest extends TestCase {
 
 	/** No source fires a FIRE event, so none declares one. */
 	public function test_no_source_declares_a_fire_registration(): void {
-		foreach ( [ Fake_Source_Node::class, Github_Source_Node::class, Linear_Source_Node::class, Feed_Source_Node::class ] as $class ) {
+		foreach ( [ Fake_Source_Node::class, Github_Source_Node::class, Linear_Source_Node::class, Feed_Source_Node::class, Slack_Source_Node::class, P2_Source_Node::class ] as $class ) {
 			$this->assertSame( [], $class::node_schema()['registrations'], $class );
 		}
 	}
