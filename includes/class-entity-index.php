@@ -27,6 +27,12 @@ use Newspack_Nodes\Row_Reader;
 
 final class Entity_Index {
 
+	/** The longest hostname, in characters. */
+	private const HOSTNAME_BYTES = 253;
+
+	/** The longest hostname label, in characters. */
+	private const LABEL_BYTES = 63;
+
 	/** Seconds the process uses one index before it reads the projection again. */
 	public const TTL_S = 60;
 
@@ -298,6 +304,29 @@ final class Entity_Index {
 	public static function identifier_value( string $kind, string $value ): string {
 		$value = \strtolower( \trim( $value ) );
 		return 'domain' === $kind ? Url_Canon::host( $value ) : $value;
+	}
+
+	/**
+	 * Why a domain, as `identifier_value()` spells it, is not a plain
+	 * hostname, or null when it is one: two or more labels of a-z, 0-9 and
+	 * hyphens, none starting or ending with one, each at most 63
+	 * characters, the last alphabetic, the whole at most 253. So no IP
+	 * literal, port, path, userinfo or trailing dot passes.
+	 *
+	 * @param string $domain A normalised domain.
+	 */
+	public static function hostname_fault( string $domain ): ?string {
+		$labels = \explode( '.', $domain );
+		return match ( true ) {
+			\strlen( $domain ) > self::HOSTNAME_BYTES => 'it runs past ' . self::HOSTNAME_BYTES . ' characters',
+			1 === \preg_match( '/[^a-z0-9.-]/', $domain ) => 'it holds a character other than a-z, 0-9, a hyphen or a dot',
+			\count( $labels ) < 2 => 'it has a single label',
+			\in_array( '', $labels, true ) => 'it has an empty label',
+			\max( \array_map( 'strlen', $labels ) ) > self::LABEL_BYTES => 'a label runs past ' . self::LABEL_BYTES . ' characters',
+			1 === \preg_match( '/(^|\.)-|-(\.|$)/', $domain ) => 'a label starts or ends with a hyphen',
+			1 !== \preg_match( '/^[a-z]+$/', \end( $labels ) ) => 'its top-level domain is not alphabetic',
+			default => null,
+		};
 	}
 
 	/**

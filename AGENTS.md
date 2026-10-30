@@ -838,7 +838,13 @@ way — is refused, and so is any merge after which `Entity_Index::walk()` — o
 projection's merges, read by `Entity_Index::merges()`, plus the new one —
 leaves a key that resolved before on a chain that cycles or runs past
 `MAX_MERGE_HOPS`, naming the first such key. `add_identifier` stores the
-value as `Entity_Index::identifier_value()` spells it, reads the holder by
+value as `Entity_Index::identifier_value()` spells it, refuses a `domain`
+that is not a plain hostname, naming why (`domain:<value> is not a plain
+hostname: <why>`, from `Entity_Index::hostname_fault()`: two or more labels
+of a-z, 0-9 and hyphens, none starting or ending with one, each at most 63
+characters, the last alphabetic, the whole at most 253, so no IP literal,
+port, path, userinfo or trailing dot), because a client's domain becomes a
+URL the worker fetches, reads the holder by
 the `identifiers` primary key, and refuses one another entity holds: the
 holder's survivor, accepted or proposed, or the holding key itself when
 its survivor is rejected or its chain does not resolve. `create_entity` refuses
@@ -978,12 +984,21 @@ reresolver.
 
 GitHub and Linear fetch blocking HTTP inside one `fill()`, a few dozen calls
 a pass. The feed never blocks: `Feed_Source_Node` owns a `{name}:curl`
-sibling, the substrate's `Curl_Node`, which follows redirects and answers back
-through its target. A pass sends each feed URL to it as a TM_BYTESTREAM keyed
-by the URL, keeps at most `Curl_Node::MAX_IN_FLIGHT` (16) in flight and sends
-the next as each answers; each body is parsed as RSS 2.0 or Atom when it
-lands and its items recorded then. A TM_ERROR — a transport failure or a
-status of 400 or more — is logged rate-limited and records nothing, an
+sibling, the substrate's `Curl_Node`, which follows no redirect
+(`follow_redirects( false )`) and answers back through its target. A pass
+sends each feed URL to it as a TM_BYTESTREAM keyed by the URL, keeps at most
+`Curl_Node::MAX_IN_FLIGHT` (16) in flight and sends the next as each answers;
+each body is parsed as RSS 2.0 or Atom when it lands and its items recorded
+then. Every URL a feed sends, configured or a client's, first passes
+`wp_http_validate_url()`, which resolves the host and refuses a private,
+loopback or reserved address and a port other than 80, 443 and 8080; one it
+refuses is logged rate-limited, naming it, and records nothing. A 3xx comes
+back as a TM_RESPONSE carrying the absolute Location, which the feed follows
+itself, at the head of the queue and checked the same way, as the same feed
+— configured, or the same client with its domain — at most
+`Curl_Node::MAX_REDIRECTS` (5) hops; a hop past that is logged and records
+nothing. A TM_ERROR — a transport failure or a status of 400 or more — is
+logged rate-limited and records nothing, an
 answer for no feed in flight is dropped, and the next feed goes out whatever
 the record did, so a pass always ends. A feed Curl throws on leaves flight,
 and the next pass replaces whatever the throw left queued, so a throw costs
@@ -1004,11 +1019,18 @@ without one — so the substrate floor rises to the release carrying it.
 an open `client` role, as its survivor, read once a pass through
 `Entity_Index::load()` and `Graph_Query::open_roles()`; a churned client drops
 out on its next pass, and a projection that will not open leaves the pass the
-configured feeds alone, logged. A URL both configured and a client's is
-fetched once, as configured. A client feed records only an item whose
-`item_ts` falls within `Feed_Source_Node::CLIENT_FEED_DAYS` (7) days of the
-tick clock, never an undated one; a configured feed records every item. Item
-keys stay `feed:<guid>`, so an item two feeds list records once.
+configured feeds alone, logged. A stored domain that is not a plain hostname
+(`Entity_Index::hostname_fault()`), such as one a client CSV import
+wrote, since the importer only normalises a domain, is never fetched and is named in a rate-limited line. A URL
+both configured and a client's is fetched once, as configured. A client's
+items stay in its lane: each is keyed `feed:<domain>:<guid>`, so no other
+feed can take its key first, and records only when its link's host,
+normalised as `Entity_Index::identifier_value()` spells a domain, is the
+client's domain or a subdomain of it, and its `item_ts` falls from
+`Feed_Source_Node::CLIENT_FEED_DAYS` (7) days before the worker's clock to
+one day after it, the day ahead allowing for the publisher's own zone or
+clock; an undated one never records. A configured feed keys `feed:<guid>`
+and records every item, so an item two configured feeds list records once.
 
 `Github_Source_Node` hits three REST endpoints per repo on each TICK — releases,
 closed pull requests and issues — keeping a closed PR only when it carries a
@@ -1028,7 +1050,9 @@ replacing ONE call so the branches around it still run as production code:
 `Github_Source_Node::$http_get` and `Linear_Source_Node::$http_post` for the
 blocking connector fetches, while the feed's fetches go through the
 substrate's own curl seams, `Event_Framework::$curl_dispatch` and
-`Curl_Node::$curl_result`;
+`Curl_Node::$curl_result`, and `Feed_Source_Node::$validate_url` replaces
+the one `wp_http_validate_url()` call each feed URL and Location passes, so
+a test refuses a URL without DNS;
 `LLM_Config::$llm_factory`, which every node using the trait holds its own
 copy of (`Resolver_Node::$llm_factory` and `Extractor_Node::$llm_factory`)
 and `make_llm_client()` answers first; and
@@ -1051,7 +1075,8 @@ substrate Vault entries: the node config holds only the entry id, set by the
 
 `Source_Node::normalize_item()` mints every item as the `item_recorded` fields
 `{item_key, source, tier, url, title, body, item_ts, retrieved_ts}`: `item_key`
-namespaced `"{source}:{raw id}"`, the key dedup reads; `body` cut at
+namespaced `"{source}:{raw id}"`, the key dedup reads, a client feed's raw id
+led by its domain (`feed:<domain>:<guid>`); `body` cut at
 `MAX_BODY_BYTES` (65,536) on a UTF-8 character boundary; `item_ts` 0 when the
 connector's date string will not parse; `retrieved_ts` the worker's tick
 clock in whole seconds, `Intel_Event::now()`, as every reader takes it.

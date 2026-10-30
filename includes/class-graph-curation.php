@@ -196,7 +196,8 @@ final class Graph_Curation {
 
 	/**
 	 * Add an identifier to an entity, spelled as `Entity_Index` compares it,
-	 * unless another entity holds it: the survivor of the key the
+	 * unless it is a domain that is not a plain hostname
+	 * (`Entity_Index::hostname_fault()`), or another entity holds it: the survivor of the key the
 	 * identifiers row names, accepted or proposed, or that key itself when
 	 * its survivor is rejected or its merge chain does not resolve.
 	 *
@@ -208,6 +209,10 @@ final class Graph_Curation {
 		$key               = self::key( $args, 'key' );
 		$kind              = Core::as_string( $args['kind'] );
 		$value             = self::bounded( 'value', Entity_Index::identifier_value( $kind, Core::as_string( $args['value'] ) ), self::NAME_BYTES );
+		$fault             = 'domain' === $kind ? Entity_Index::hostname_fault( $value ) : null;
+		if ( null !== $fault ) {
+			throw new \InvalidArgumentException( \esc_html( "domain:{$value} is not a plain hostname: {$fault}" ) );
+		}
 		[ $own, $held_by ] = self::on_graph(
 			static function ( Row_Reader $r, array $g ) use ( $key, $kind, $value ): array {
 				$own    = Graph_Query::seen( $r, $g, $key );
