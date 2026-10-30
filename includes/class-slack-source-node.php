@@ -97,28 +97,66 @@ class Slack_Source_Node extends Source_Node {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function messages( string $channel, string $thread, string $oldest, array $messages ): array {
-		$moved = Core::$now - ( null === $this->interval ? self::WINDOW_SECONDS : 2 * $this->interval );
+		$moved = self::moved_after( $this->interval );
 		return self::items(
 			$messages,
 			function ( array $message ) use ( $channel, $thread, $oldest, $moved ): ?array {
-				$ts = Core::str( $message['ts'] ?? null );
-				if ( 1 !== \preg_match( '/^\d+\.\d+$/', $ts ) || \in_array( $message['subtype'] ?? null, self::SKIPPED, true ) ) {
-					return null;
+				$fields = self::fields( $channel, $message, $this->workspace );
+				if ( null !== $fields && '' === $thread && self::moved( $message, $moved ) ) {
+					$this->queue( self::page( 'replies', $channel, $oldest, Core::as_string( $message['ts'] ) ) );
 				}
-				if ( '' === $thread && Core::as_int( $message['reply_count'] ?? null ) > 0 && (float) Core::as_string( $message['latest_reply'] ?? null ) > $moved ) {
-					$this->queue( self::page( 'replies', $channel, $oldest, $ts ) );
-				}
-				$text = self::mrkdwn( Core::str( $message['text'] ?? null ) );
-				return $this->normalize_item(
-					'slack',
-					"{$channel}:{$ts}",
-					self::first_line( $text ),
-					'' === $this->workspace ? '' : "{$this->workspace}archives/{$channel}/p" . \str_replace( '.', '', $ts ),
-					self::poster( $message ) . ": {$text}",
-					'@' . (int) $ts
-				);
+				return null === $fields ? null : $this->normalize_item( 'slack', ...$fields );
 			}
 		);
+	}
+
+	/**
+	 * The second a thread's latest reply must pass for its replies to be
+	 * read: two intervals back, or the window's opening with no interval.
+	 *
+	 * @api Context_A8C_Slack_Node
+	 * @param int|null $interval The source's interval in seconds, or null for none.
+	 */
+	public static function moved_after( ?int $interval ): float {
+		return Core::$now - ( null === $interval ? self::WINDOW_SECONDS : 2 * $interval );
+	}
+
+	/**
+	 * Whether a message heads a thread whose latest reply is newer than $after.
+	 *
+	 * @api Context_A8C_Slack_Node
+	 * @param array<array-key,mixed> $message The message.
+	 * @param float                  $after   What moved_after() answers.
+	 */
+	public static function moved( array $message, float $after ): bool {
+		return Core::as_int( $message['reply_count'] ?? null ) > 0 && (float) Core::as_string( $message['latest_reply'] ?? null ) > $after;
+	}
+
+	/**
+	 * A message's item fields after the source, as normalize_item() takes
+	 * them: its id `<channel>:<ts>`, its first line as title, its permalink on
+	 * the workspace, '' for none, its poster leading its text, dated by its
+	 * ts; null for a notice, or a ts that is not Slack's.
+	 *
+	 * @api Context_A8C_Slack_Node
+	 * @param string                 $channel   The channel the message is in.
+	 * @param array<array-key,mixed> $message   The message.
+	 * @param string                 $workspace The workspace's url with its trailing slash, or ''.
+	 * @return array{0:string,1:string,2:string,3:string,4:string}|null
+	 */
+	public static function fields( string $channel, array $message, string $workspace ): ?array {
+		$ts = Core::str( $message['ts'] ?? null );
+		if ( 1 !== \preg_match( '/^\d+\.\d+$/', $ts ) || \in_array( $message['subtype'] ?? null, self::SKIPPED, true ) ) {
+			return null;
+		}
+		$text = self::mrkdwn( Core::str( $message['text'] ?? null ) );
+		return [
+			"{$channel}:{$ts}",
+			self::first_line( $text ),
+			'' === $workspace ? '' : "{$workspace}archives/{$channel}/p" . \str_replace( '.', '', $ts ),
+			self::poster( $message ) . ": {$text}",
+			'@' . (int) $ts,
+		];
 	}
 
 	/** The first page of a channel's history, or with $thread the replies of that thread, since $oldest. */
@@ -142,11 +180,22 @@ class Slack_Source_Node extends Source_Node {
 		return '';
 	}
 
+	/**
+	 * The `add_channel` and `remove_channel` verbs, the add refusing anything
+	 * but a Slack channel id.
+	 *
+	 * @api Context_A8C_Slack_Node
+	 * @return list<array<string,mixed>>
+	 */
+	public static function channel_verbs(): array {
+		return self::checked_list( 'channel', 'channels', '/^[CG][A-Z0-9]{8,}\z/', 'a Slack channel id', 'Register a channel to read on TICK by its id: <C… or G…>.' );
+	}
+
 	public static function node_schema(): array {
 		return self::source_schema(
 			'Reads the messages of the configured Slack channels over the last ' . ( self::WINDOW_SECONDS / Intel_Graph_Row_Schema::DAY_SECONDS ) . ' days, and the replies of each thread active in them, without blocking, one request at a time, on a TICK request (request_node slack TICK).',
 			'Start a pass over the channels; each page records its new messages as it lands. Trigger with `request_node slack TICK`.',
-			self::checked_list( 'channel', 'channels', '/^[CG][A-Z0-9]{8,}\z/', 'a Slack channel id', 'Register a channel to read on TICK by its id: <C… or G…>.' )
+			self::channel_verbs()
 		);
 	}
 }

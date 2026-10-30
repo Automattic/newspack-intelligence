@@ -79,7 +79,7 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.140.0' )` and stays
+error.** The loader calls `Bootstrap::version_at_least( '2.141.0' )` and stays
 dormant below it. Against a substrate between a too-low floor and the real one
 the handshake passes, the plugin activates, and it then fatals on the missing
 method — the one outcome the gate exists to prevent. `CHANGELOG.md` records why
@@ -1003,7 +1003,9 @@ the next request is logged and the queue dropped, and no cap for the
 feeds. A body goes to `received()`; a redirect Curl answers
 because `follows_redirects()` is false re-queues the same subject at the
 Location, one hop on, at most `Curl_Node::MAX_REDIRECTS` (5) hops, a hop
-past that logged; and a TM_ERROR — a transport failure or a status of 400
+past that logged, unless the request carries header lines of its own or a
+method other than GET, which the re-queue would carry past Curl's own
+redirect guard, so it is logged and records nothing; and a TM_ERROR — a transport failure or a status of 400
 or more — is logged rate-limited under its url and ends that request's
 branch alone. An answer that throws is logged under its subject, and the
 drain runs on; a cooperative stop propagates (substrate ADR-14). An answer
@@ -1182,6 +1184,70 @@ tier, because support threads quote publishers' staff by name. The node
 was written against Unthread's published API reference and has not yet
 called the API live.
 
+`Context_A8C_Source_Node` serves the local workstation, which holds no
+Vault credential but is signed in to ContextA8C, Automattic's MCP server at
+`Context_A8C_Source_Node::MCP_URL`. Its `make_node` line takes the tier,
+the dir holding the relay's `wordpress-remote-*` token dirs, which the
+ContextA8C topology names `/mcp-auth`, and an optional proxy every request
+goes through, which it names `socks5h://host.docker.internal:8080`, the
+host's tunnel to the Automattic proxy, without which the server refuses
+every call. The token lives in `Context_A8C_Token`, the process's one hold
+on each token dir, and in no node's state: it reads the file obtained last,
+by `obtained_at`, which is in milliseconds, when it holds none. A token
+within `EXPIRY_MARGIN` (600) seconds of its expiry, or one a server answered
+401, is refreshed before the pass opens, by the one node that claims the
+refresh: the claim re-reads the newest file under an exclusive `flock` on a
+`.lock` file beside it, takes a token the relay refreshed meanwhile rather
+than refreshing again, and refuses to spend a refresh token the endpoint
+refused. The claiming node sends a form POST to `TOKEN_URL` of
+`grant_type`, `refresh_token`, the client file's `client_id` and
+`resource`, built as the request goes out through `request_options()`, so
+no queued request holds it; another node finding the refresh in flight
+waits, and its next tick starts its pass once the refresh lands, through
+`Source_Node::resumes()`, under the guard a scheduled pass runs in. A
+refresh that will never answer, thrown on as it went out or dropped from
+the queue, reaches `abandoned()`, which releases the claim. A refusal stands
+until the file holds a token obtained after the refused one, by
+`obtained_at`, so an older file's spent refresh token is never sent again;
+without one, a token obtained at another moment than the one held clears the
+stale mark. The answer
+is merged over the held token and written back under the same lock through
+a rename beside the file, so the relay and the node keep one valid pair. A
+refresh refused with 400 or 401 logs `ContextA8C refresh refused (HTTP
+<code>): sign in to ContextA8C again on the host`, and the next pass reads
+the file again, waiting for the relay to sign in. A pass with no readable
+token, or an expired one with no refresh token, logs and sends nothing.
+Every call is one JSON-RPC `tools/call` of `context-a8c-execute-tool` to
+the one url, queued under the subject `<provider>/<subtool>?<args>`, so
+`queue()` takes a subject apart from the url and `request_options()` adds
+the proxy, `Authorization: Bearer` and `Accept` as each goes out. The server
+refuses a call outside a session, so every pass opens its own:
+`initialize`, asking Curl for its `Mcp-Session-Id` response header, which
+`headers_received()` keeps with the protocol revision the answer names, then
+the `notifications/initialized` the protocol requires, then the calls, each
+carrying `Mcp-Session-Id` and `MCP-Protocol-Version`, and once nothing is
+left to send `pass_ended()` closes the session with a DELETE naming it,
+through `send_closing()`, outside the request cap, so a capped pass closes
+too. A
+request answered 401 reaches `failed()`, which ends the pass through
+`end_pass()` and marks the token stale, and one answered 400 or 404 under a
+session ends the pass and drops the session, each logged, so the next pass
+starts afresh; an `initialize` naming no session is logged and the pass
+calls nothing. A JSON-RPC error, an `isError` result or a first text
+content that is not a JSON object is logged under the subject; otherwise
+`answered()` maps the provider's answer through the mapping the source it
+stands in for exposes, so the item records under that source's key.
+`Context_A8C_Slack_Node` reads `messages` over Slack's window, 100 a page,
+older than `next_latest` while `has_more`, a message's workspace read off
+its own `permalink`, and the `thread` of each message Slack's rule says
+moved, paged by `next_cursor`. `Context_A8C_P2_Node` reads `posts-text`
+over P2's window with each post's comments, every page to `max_pages`; a
+comment records with no url, and only comments on the window's posts
+arrive. `Context_A8C_Linear_Node` reads each team's newest 30 issues from
+`team-issues`, every status group's, whose `description` arrives
+truncated. `Context_A8C_P2_Node` carries the window its first page asked
+forward to every later page of the pass.
+
 **Seams and the LLM contract.** LLM calls go through the Automattic
 AI API Proxy via `LLM_Client` / `Proxy_LLM_Client`, whose `$http_post` closure is
 the test seam. More follow the same pattern, each a static `?\Closure`
@@ -1299,9 +1365,10 @@ Read the counts, then run the command it prints, the same command without
 
 | File | What it wires |
 |------|---------------|
-| `newspack-intelligence.tsl` | Includes every file below and wires `reresolver`, which spans the project and streams files, and `watcher`, which reads the projection and writes to `intel:writer`; `on_demand_idle 0` keeps the worker resident, which the scheduled sources need, and `stale_timeout 600` keeps a peer from stealing its lock while an LLM call blocks one `fill()` |
+| `newspack-intelligence.tsl` | Includes every file below but the ContextA8C one and wires `reresolver`, which spans the project and streams files, and `watcher`, which reads the projection and writes to `intel:writer`; `on_demand_idle 0` keeps the worker resident, which the scheduled sources need, and `stale_timeout 600` keeps a peer from stealing its lock while an LLM call blocks one `fill()` |
 | `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve`, `intel:watches`, `intel:writer`, and `intel:later`, the Delay whose due records go to `intel:reresolve` |
-| `newspack-intelligence-collect.tsl` | The eight sources → `intel:writer`: GitHub, Linear, Slack and Unthread on a 900-second grid, Unthread at the restricted tier, `p2` and `p2-restricted` on 1,800, each under its Vault group, the two P2 nodes sharing `p2`; `feed` on 1,800 with client feeds on; `news`, the Google News searches, on 3,600; includes the streams |
+| `newspack-intelligence-collect.tsl` | The eight sources → `intel:writer`, as two halves it includes: `-collect-public`, GitHub on a 900-second grid, `feed` on 1,800 with client feeds on and `news`, the Google News searches, on 3,600; and `-collect-token`, Linear, Slack and Unthread on 900, Unthread at the restricted tier, `p2` and `p2-restricted` on 1,800, each under its Vault group, the two P2 nodes sharing `p2`; includes the streams |
+| `newspack-intelligence-context-a8c.tsl` | Local workstation only, and included by nothing shipped: `linear`, `slack`, `p2` and `p2-restricted` read through ContextA8C, each with the name, tier, interval and list of the source it stands in for, reading the token dir `/mcp-auth` through `socks5h://host.docker.internal:8080`. A workstation shadows `newspack-intelligence-collect` with its own copy including `-collect-public` and this file, from a stock dir it registers after this plugin's; dndocker's eve does so for its pyrobase install |
 | `newspack-intelligence-project.tsl` | `intel:items:consumer`, `intel:ontology:consumer` and `intel:watches:consumer`, each → `projector`, writing the `intel-graph` Row_Table; no other node rides their cursors |
 | `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later`, the items Consumer checkpointing the deduper; includes the streams |
 
@@ -1317,6 +1384,7 @@ plugin adds:
 | `Slack_Source` | `Slack_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_channel`, `remove_channel`; owns `{name}:curl` |
 | `P2_Source` | `P2_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_site`, `remove_site`; owns `{name}:curl` |
 | `Unthread_Source` | `Unthread_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`; owns `{name}:curl` |
+| `Context_A8C_Slack`, `Context_A8C_P2`, `Context_A8C_Linear` | `Context_A8C_*_Node` over `Context_A8C_Source_Node` | `<tier> <auth_dir> [proxy]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, and the list verbs of the source each stands in for; owns `{name}:curl` |
 | `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_url`, `remove_url`, `set_client_feeds`; owns `{name}:curl` |
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
@@ -1460,7 +1528,7 @@ sibling checkout locally.
 |------|------|
 | `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus and the Settings page's admin-post helpers, WP-CLI, the `Intelligence_CI` mount, the MCP door's `wire()` |
 | `includes/` (streams) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Ontology_Seed`, `Stream_Writer`, the `Emits_Struct` trait |
-| `includes/` (collect) | `Source_Node` and its six connectors |
+| `includes/` (collect) | `Source_Node` and its six connectors; `Context_A8C_Source_Node`, its three local connectors and `Context_A8C_Token`, the process's hold on the relay's token |
 | `includes/` (resolve) | `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
 | `includes/` (clients) | `Client_Importer`, the `Client_Roster` interface, `Graph_Client_Roster`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |

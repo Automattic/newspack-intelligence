@@ -1,0 +1,52 @@
+# The sources that run with no credential: GitHub, whose public API answers
+# without its Vault entry, and the feeds, each recording item_recorded events
+# at its tier into intel:writer.
+var num_partitions = 1
+include topic-probe
+include newspack-intelligence-streams
+make_node Github_Source github public github
+cmd github:config set_interval 900
+cmd github:config add_repo Automattic/newspack-workspace
+cmd github:config add_repo Automattic/newspack-activecampaign
+make_node Feed_Source feed public
+cmd feed:config set_interval 1800
+cmd feed:config set_client_feeds true
+cmd feed:config add_url https://make.wordpress.org/core/feed/
+cmd feed:config add_url https://wordpress.org/news/feed/
+cmd feed:config add_url https://automattic.com/blog/feed/
+cmd feed:config add_url https://www.partner-18.example/feed/
+cmd feed:config add_url https://partner-5.example/feed/
+cmd feed:config add_url https://www.partner-4.example/feed/
+cmd feed:config add_url https://partner-8.example/feed/
+cmd feed:config add_url https://www.partner-10.example/feed/
+cmd feed:config add_url https://www.partner-20.example/feed/
+cmd feed:config add_url https://client-150.example/feed/
+cmd feed:config add_url https://partner-15.example/feed/
+cmd feed:config add_url https://www.partner-28.example/feed/
+cmd feed:config add_url https://www.partner-16.example/feed.xml
+cmd feed:config add_url https://partner-27.example/feed/
+cmd feed:config add_url https://www.partner-23.example/index.php?rss=Article
+cmd feed:config add_url https://www.partner-6.example/feed.rss
+cmd feed:config add_url https://www.partner-25.example/feed/
+cmd feed:config add_url https://www.partner-26.example/feed/
+cmd feed:config add_url https://www.partner-11.example/feed/
+cmd feed:config add_url https://partner-2.example/feed
+cmd feed:config add_url https://newsletter-1.example/feed
+cmd feed:config add_url https://newsletter-2.example/feed
+cmd feed:config add_url https://partner-12.example/blog?format=rss
+# One Google News search per organization that publishes no feed of its own.
+make_node Feed_Source news public
+cmd news:config set_interval 3600
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+1%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+2%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+3%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+4%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+5%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+6%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+7%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+8%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+9%22&hl=en-US&gl=US&ceid=US:en
+connect_node github intel:writer
+connect_node feed intel:writer
+connect_node news intel:writer
+secure

@@ -243,6 +243,63 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( $urls, $this->dispatched );
 	}
 
+	/**
+	 * Two requests to one url go out under their own subjects, one after the
+	 * other, each carrying the header lines and the proxy the source names
+	 * for its subject, and each answer reaches received() under its subject.
+	 */
+	public function test_requests_to_one_url_keep_their_own_subjects_and_options(): void {
+		$node           = $this->fake( [ 'public' ], [] );
+		$node->subjects = [
+			'heron/history?page=4' => Fake_Source_Node::PAGE . 'mcp',
+			'kite/history?page=7'  => Fake_Source_Node::PAGE . 'mcp',
+		];
+		$node->options  = [
+			'heron/history?page=4' => [
+				'headers' => [ 'Authorization: Bearer heron-6610', 'Accept: text/heron-1' ],
+				'proxy'   => 'socks5h://proxy-heron.example:1099',
+			],
+			'kite/history?page=7'  => [ 'headers' => [ 'Accept: text/kite-2' ] ],
+		];
+
+		$this->tick( $node );
+		$this->assertSame( [ 'Content-Type: application/json', 'Authorization: Bearer heron-6610', 'Accept: text/heron-1' ], $this->opts[ Fake_Source_Node::PAGE . 'mcp' ][ \CURLOPT_HTTPHEADER ] );
+		$this->assertSame( 'body:heron/history?page=4', $this->opts[ Fake_Source_Node::PAGE . 'mcp' ][ \CURLOPT_POSTFIELDS ] );
+		$this->assertSame( 'socks5h://proxy-heron.example:1099', $this->opts[ Fake_Source_Node::PAGE . 'mcp' ][ \CURLOPT_PROXY ] );
+		$this->complete( Fake_Source_Node::PAGE . 'mcp', self::page( [] ) );
+		$this->assertSame( [ 'Content-Type: application/json', 'Accept: text/kite-2' ], $this->opts[ Fake_Source_Node::PAGE . 'mcp' ][ \CURLOPT_HTTPHEADER ] );
+		$this->assertArrayNotHasKey( \CURLOPT_PROXY, $this->opts[ Fake_Source_Node::PAGE . 'mcp' ] );
+		$this->complete( Fake_Source_Node::PAGE . 'mcp', self::page( [] ) );
+
+		$this->assertSame( [ Fake_Source_Node::PAGE . 'mcp', Fake_Source_Node::PAGE . 'mcp' ], $this->dispatched );
+		$this->assertSame( [ 'heron/history?page=4', 'kite/history?page=7' ], $node->heard );
+	}
+
+	/**
+	 * A source whose Curl follows no redirect re-queues a plain GET at its
+	 * Location, but not a request carrying header lines of its own, nor a
+	 * POST, which would carry them or the method to another url past Curl's
+	 * own redirect guard: each is logged and records nothing.
+	 */
+	public function test_only_a_plain_get_is_requeued_at_its_location(): void {
+		$stderr         = $this->capture_stderr();
+		$node           = $this->wire( new Fake_Unfollowing_Source_Node(), 'fake-source-12', [ 'public' ] );
+		$node->first    = [ Fake_Source_Node::PAGE . 'plain', Fake_Source_Node::PAGE . 'headed' ];
+		$node->subjects = [ 'kite/post?page=3' => 'https://posted-5520.example/mcp' ];
+		$node->room     = 3;
+		$node->options  = [ Fake_Source_Node::PAGE . 'headed' => [ 'headers' => [ 'X-Session-8: sess-3317' ] ] ];
+		$this->tick( $node );
+
+		$this->redirect( Fake_Source_Node::PAGE . 'plain', 'https://moved-plain-4410.example/plain' );
+		$this->redirect( Fake_Source_Node::PAGE . 'headed', 'https://moved-headed-4411.example/headed' );
+		$this->redirect( 'https://posted-5520.example/mcp', 'https://moved-post-4412.example/post' );
+
+		$this->assertContains( 'https://moved-plain-4410.example/plain', $this->dispatched );
+		$this->assertNotContains( 'https://moved-headed-4411.example/headed', $this->dispatched );
+		$this->assertNotContains( 'https://moved-post-4412.example/post', $this->dispatched );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'fake-source-12: a redirect of a request carrying its own headers or a method other than GET is not followed; recording nothing: https://moved-headed-4411.example/headed' ) );
+	}
+
 	/** An answer's items record, and the requests it names next send, as one pass. */
 	public function test_an_answer_records_its_items_and_sends_its_next_requests(): void {
 		$node = $this->fake();
@@ -596,6 +653,22 @@ final class SourceNodeTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'fake-source-12: a scheduled fetch failed; trying again at the next boundary: fetch-broke-4471' ) );
 	}
 
+	/**
+	 * A pass a source resumes off the grid, as one held back by a refresh
+	 * does, runs guarded as a scheduled one: a throw is logged and contained.
+	 */
+	public function test_a_resumed_pass_that_throws_is_logged_and_contained(): void {
+		$stderr          = $this->capture_stderr();
+		$node            = $this->fake();
+		$node->resumable = true;
+		$node->failure   = new \RuntimeException( 'resume-broke-7731' );
+
+		$this->tick_at( $node, self::BOUNDARY + 11.0 );
+
+		$this->assertSame( 1, $node->passes );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'fake-source-12: a scheduled fetch failed; trying again at the next boundary: resume-broke-7731' ) );
+	}
+
 	/** A cooperative stop inside a scheduled pass stops the worker. */
 	public function test_a_stop_inside_a_scheduled_fetch_propagates(): void {
 		$node          = $this->scheduled();
@@ -737,6 +810,15 @@ class Fake_Source_Node extends Source_Node {
 	/** @var list<string> The urls each pass opens on. */
 	public array $first = [];
 
+	/** @var array<string,string> The url each pass POSTs under each subject, after the first urls. */
+	public array $subjects = [];
+
+	/** @var array<string,array<string,mixed>> The fields each subject's request adds: its headers, its proxy. */
+	public array $options = [];
+
+	/** @var list<string> Every subject received() was handed, in order. */
+	public array $heard = [];
+
 	public int $passes = 0;
 
 	/** Requests in flight at once; 1, as for every API source, unless a test widens it. */
@@ -744,6 +826,9 @@ class Fake_Source_Node extends Source_Node {
 
 	/** What the next received() throws, once; null for none. */
 	public ?\Throwable $answer_failure = null;
+
+	/** Whether the next tick resumes a pass, off the grid, once. */
+	public bool $resumable = false;
 
 	/** What begin() throws, after counting the pass; null for none. */
 	public ?\Throwable $failure = null;
@@ -756,6 +841,20 @@ class Fake_Source_Node extends Source_Node {
 		foreach ( $this->first as $url ) {
 			$this->queue( $url );
 		}
+		foreach ( $this->subjects as $subject => $url ) {
+			$this->queue( $url, "body:{$subject}", $subject );
+		}
+	}
+
+	protected function resumes(): bool {
+		$resume          = $this->resumable;
+		$this->resumable = false;
+		return $resume;
+	}
+
+	/** @return array<string,mixed> */
+	protected function request_options( string $subject ): array {
+		return $this->options[ $subject ] ?? [];
 	}
 
 	/** @return array<int,array<string,mixed>> */
@@ -764,6 +863,7 @@ class Fake_Source_Node extends Source_Node {
 	}
 
 	protected function received( string $url, string $body ): array {
+		$this->heard[]        = $url;
 		$failure              = $this->answer_failure;
 		$this->answer_failure = null;
 		if ( null !== $failure ) {
@@ -781,5 +881,13 @@ class Fake_Source_Node extends Source_Node {
 
 	public static function node_schema(): array {
 		return self::source_schema( 'Fake source', 'Fetch fake items.' );
+	}
+}
+
+/** A fake source whose Curl follows no redirect, answering each Location to re-queue. */
+class Fake_Unfollowing_Source_Node extends Fake_Source_Node {
+
+	protected function follows_redirects(): bool {
+		return false;
 	}
 }

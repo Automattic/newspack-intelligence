@@ -1,0 +1,42 @@
+# Local workstation only: Slack, P2 and Linear read through ContextA8C as the
+# person signed in to it on the host, whose token dir the container mounts at
+# /mcp-auth, through the host's Automattic proxy tunnel, which the server
+# requires. Each node takes the name, tier, interval and lists of the source
+# it stands in for, so its items record under that source's keys. A local
+# newspack-intelligence-collect includes it in place of the token half.
+var num_partitions = 1
+include topic-probe
+include newspack-intelligence-streams
+make_node Context_A8C_Linear linear internal /mcp-auth socks5h://host.docker.internal:8080
+cmd linear:config set_interval 900
+cmd linear:config add_team TEAMA
+cmd linear:config add_team TEAMB
+cmd linear:config add_team TEAMC
+cmd linear:config add_team TEAMD
+cmd linear:config add_team TEAME
+cmd linear:config add_team TEAMF
+cmd linear:config add_team TEAMG
+cmd linear:config add_team TEAMH
+cmd linear:config add_team TEAMI
+make_node Context_A8C_Slack slack internal /mcp-auth socks5h://host.docker.internal:8080
+cmd slack:config set_interval 900
+cmd slack:config add_channel channel-1
+cmd slack:config add_channel channel-2
+cmd slack:config add_channel channel-3
+cmd slack:config add_channel channel-4
+make_node Context_A8C_P2 p2 internal /mcp-auth socks5h://host.docker.internal:8080
+cmd p2:config set_interval 1800
+cmd p2:config add_site p2-site-6.wordpress.com
+cmd p2:config add_site p2-site-2.wordpress.com
+cmd p2:config add_site p2-site-4.wordpress.com
+cmd p2:config add_site p2-site-5.wordpress.com
+cmd p2:config add_site p2-site-3.wordpress.com
+# The sales and operations P2 holds prospect management, so it is restricted.
+make_node Context_A8C_P2 p2-restricted restricted /mcp-auth socks5h://host.docker.internal:8080
+cmd p2-restricted:config set_interval 1800
+cmd p2-restricted:config add_site p2-site-1.wordpress.com
+connect_node linear intel:writer
+connect_node slack intel:writer
+connect_node p2 intel:writer
+connect_node p2-restricted intel:writer
+secure

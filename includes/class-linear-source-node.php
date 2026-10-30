@@ -91,13 +91,21 @@ class Linear_Source_Node extends Source_Node {
 		);
 	}
 
+	/**
+	 * The `add_team` and `remove_team` verbs.
+	 *
+	 * @api Context_A8C_Linear_Node
+	 * @return list<array<string,mixed>>
+	 */
+	public static function team_verbs(): array {
+		return self::list_verbs( 'team', 'teams', [ 'name' => 'team', 'type' => 'string', 'required' => true ], 'Register a Linear team to fetch on TICK by its key: <KEY>.' );
+	}
+
 	public static function node_schema(): array {
 		return self::source_schema(
 			'Fetches recently-updated Linear issues of the configured teams without blocking, one GraphQL POST a pass, on a TICK request (request_node linear TICK).',
 			'Start a pass over the teams; the page records its new issues as it lands. Trigger with `request_node linear TICK`.',
-			[
-				...self::list_verbs( 'team', 'teams', [ 'name' => 'team', 'type' => 'string', 'required' => true ], 'Register a Linear team to fetch on TICK by its key: <KEY>.' ),
-			]
+			self::team_verbs()
 		);
 	}
 }
