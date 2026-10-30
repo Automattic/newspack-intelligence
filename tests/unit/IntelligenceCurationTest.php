@@ -397,6 +397,8 @@ final class IntelligenceCurationTest extends TestCase {
 
 	/** fetch_now TICKs every source in each live worker, its answer counting the workers. */
 	public function test_fetch_now_ticks_every_source(): void {
+		Topology_Registry::register_builtin_dir( \dirname( __DIR__, 3 ) . '/newspack-nodes/topologies' );
+		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
 		$base = Config::get_base_directory();
 		self::live_worker( $base, 'newspack-intelligence.p6' );
 		$router = Core::node( Node_Names::ROUTER );
@@ -407,9 +409,18 @@ final class IntelligenceCurationTest extends TestCase {
 
 		$this->assertSame( [ 'ok' => true, 'workers' => 1 ], $answer );
 		$written = self::worker_input( $base, 'newspack-intelligence.p6' );
-		$this->assertSame( [ 'github', 'linear', 'feed' ], \array_column( $written, Message::TO ) );
-		$this->assertSame( [ 'TICK', 'TICK', 'TICK' ], \array_column( $written, Message::VALUE ) );
+		$this->assertSame( [ 'github', 'linear', 'feed', 'news', 'slack', 'p2', 'p2-restricted' ], \array_column( $written, Message::TO ) );
+		$this->assertSame( \array_fill( 0, 7, 'TICK' ), \array_column( $written, Message::VALUE ) );
 		$this->assertSame( [], self::ontology_events() );
+	}
+
+	/** The sources fetch_now TICKs are the Source nodes the collect topology declares, read from it. */
+	public function test_fetch_now_ticks_the_sources_the_collect_topology_declares(): void {
+		$dir = $this->make_temp_dir( 'intelligence-collect-' );
+		\file_put_contents( "{$dir}/newspack-intelligence-collect.tsl", "make_node Linear_Source kestrel-linear internal\nmake_node Github_Source heron-github public\n" );
+		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', $dir );
+
+		$this->assertSame( [ [ 'kestrel-linear', 'TICK' ], [ 'heron-github', 'TICK' ] ], Intelligence_CI_Node::ticks() );
 	}
 
 	/** A caller below tune is refused every curation verb; one below manage is refused fetch_now. */

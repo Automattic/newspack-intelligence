@@ -12,7 +12,6 @@
 
 namespace Newspack_Intelligence;
 
-use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
 
 \defined( 'ABSPATH' ) || exit;
@@ -21,16 +20,6 @@ class Github_Source_Node extends Source_Node {
 
 	private const API_BASE = 'https://api.github.com/repos/';
 	private const PER_PAGE = 30;
-
-	/** The one argument add_repo and remove_repo take. */
-	private const REPO_ARG = [
-		'name'     => 'repo',
-		'type'     => 'string',
-		'required' => true,
-	];
-
-	/** An owner/name pair, as add_repo takes it. */
-	private const REPO = '#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#';
 
 	/** Each endpoint a pass fetches per repo, by name, with its query. */
 	private const ENDPOINTS = [
@@ -44,16 +33,16 @@ class Github_Source_Node extends Source_Node {
 
 	/**
 	 * One endpoint's rows as items, by the repo and the endpoint its url
-	 * names; a body that is not a JSON list yields none.
+	 * names; a body that is not a JSON list yields none, logged.
 	 *
 	 * @param string $url  The endpoint's url, as begin() queued it.
 	 * @param string $body The JSON body.
 	 * @return array<int,array<string,mixed>>
 	 */
 	protected function received( string $url, string $body ): array {
-		$rows     = \json_decode( $body, true );
 		$endpoint = '#^' . \preg_quote( self::API_BASE, '#' ) . '([^/]+/[^/]+)/(' . \implode( '|', \array_keys( self::ENDPOINTS ) ) . ')\?#';
-		if ( ! \is_array( $rows ) || ! \array_is_list( $rows ) || 1 !== \preg_match( $endpoint, $url, $match ) ) {
+		$rows     = $this->json_answer( 'GitHub', $url, $body, static fn ( array $answer ): ?string => \array_is_list( $answer ) ? null : Core::as_string( $answer['message'] ?? null, 'the answer is not a list' ) );
+		if ( null === $rows || 1 !== \preg_match( $endpoint, $url, $match ) ) {
 			return [];
 		}
 		return match ( $match[2] ) {
@@ -68,20 +57,18 @@ class Github_Source_Node extends Source_Node {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function releases( string $repo, array $rows ): array {
-		$out = [];
-		foreach ( $rows as $r ) {
-			if ( ! \is_array( $r ) ) {
-				continue;
+		return self::items(
+			$rows,
+			function ( array $r ) use ( $repo ): ?array {
+				$id = self::id_token( $r['id'] ?? null );
+				if ( '' === $id ) {
+					return null;
+				}
+				$title = $r['name'] ?? '';
+				$title = ( \is_string( $title ) && '' !== $title ) ? $title : (string) ( \is_scalar( $r['tag_name'] ?? null ) ? $r['tag_name'] : '' );
+				return $this->normalize_item( 'github', "$repo#release-$id", $title, $r['html_url'] ?? '', $r['body'] ?? '', $r['published_at'] ?? '' );
 			}
-			$id = self::id_token( $r['id'] ?? null );
-			if ( '' === $id ) {
-				continue;
-			}
-			$title = $r['name'] ?? '';
-			$title = ( \is_string( $title ) && '' !== $title ) ? $title : (string) ( \is_scalar( $r['tag_name'] ?? null ) ? $r['tag_name'] : '' );
-			$out[] = $this->normalize_item( 'github', "$repo#release-$id", $title, $r['html_url'] ?? '', $r['body'] ?? '', $r['published_at'] ?? '' );
-		}
-		return $out;
+		);
 	}
 
 	/**
@@ -89,22 +76,18 @@ class Github_Source_Node extends Source_Node {
 	 * @return array<int,array<string,mixed>> Closed PRs that actually merged.
 	 */
 	private function merged_prs( string $repo, array $rows ): array {
-		$out = [];
-		foreach ( $rows as $pr ) {
-			if ( ! \is_array( $pr ) ) {
-				continue;
+		return self::items(
+			$rows,
+			function ( array $pr ) use ( $repo ): ?array {
+				$number    = self::id_token( $pr['number'] ?? null );
+				$merged_at = $pr['merged_at'] ?? null;
+				// A closed PR with no merged_at was closed unmerged.
+				if ( '' === $number || ! \is_string( $merged_at ) || '' === $merged_at ) {
+					return null;
+				}
+				return $this->normalize_item( 'github', "$repo#pr-$number", $pr['title'] ?? '', $pr['html_url'] ?? '', $pr['body'] ?? '', $merged_at );
 			}
-			$number = self::id_token( $pr['number'] ?? null );
-			if ( '' === $number ) {
-				continue;
-			}
-			$merged_at = $pr['merged_at'] ?? null;
-			if ( ! \is_string( $merged_at ) || '' === $merged_at ) {
-				continue; // Closed but not merged.
-			}
-			$out[] = $this->normalize_item( 'github', "$repo#pr-$number", $pr['title'] ?? '', $pr['html_url'] ?? '', $pr['body'] ?? '', $merged_at );
-		}
-		return $out;
+		);
 	}
 
 	/**
@@ -112,19 +95,16 @@ class Github_Source_Node extends Source_Node {
 	 * @return array<int,array<string,mixed>> Issues only — the issues endpoint also lists PRs (pull_request key); those are dropped.
 	 */
 	private function issues( string $repo, array $rows ): array {
-		$out = [];
-		foreach ( $rows as $issue ) {
-			if ( ! \is_array( $issue ) || isset( $issue['pull_request'] ) ) {
-				continue;
+		return self::items(
+			$rows,
+			function ( array $issue ) use ( $repo ): ?array {
+				$number = self::id_token( $issue['number'] ?? null );
+				if ( '' === $number || isset( $issue['pull_request'] ) ) {
+					return null;
+				}
+				return $this->normalize_item( 'github', "$repo#issue-$number", $issue['title'] ?? '', $issue['html_url'] ?? '', $issue['body'] ?? '', $issue['updated_at'] ?? ( $issue['created_at'] ?? '' ) );
 			}
-			$number = self::id_token( $issue['number'] ?? null );
-			if ( '' === $number ) {
-				continue;
-			}
-			$ts    = $issue['updated_at'] ?? ( $issue['created_at'] ?? '' );
-			$out[] = $this->normalize_item( 'github', "$repo#issue-$number", $issue['title'] ?? '', $issue['html_url'] ?? '', $issue['body'] ?? '', $ts );
-		}
-		return $out;
+		);
 	}
 
 	/** A GitHub id/number as a string token; '' when absent or non-scalar (skip it). */
@@ -141,56 +121,11 @@ class Github_Source_Node extends Source_Node {
 		}
 	}
 
-	/**
-	 * The `add_repo` verb's entry point: register an owner/name repo once.
-	 *
-	 * @param string $repo The repo, `owner/name`.
-	 * @return string The verb's result line.
-	 * @throws \InvalidArgumentException Naming a value that is not one owner/name pair.
-	 */
-	public function add_repo( string $repo ): string {
-		if ( 1 !== \preg_match( self::REPO, $repo ) ) {
-			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
-			throw new \InvalidArgumentException( "add_repo: '{$repo}' is not a GitHub owner/name" );
-		}
-		if ( ! \in_array( $repo, $this->repos, true ) ) {
-			$this->repos[] = $repo;
-		}
-		return "ok\n";
-	}
-
-	/**
-	 * `add_repo` verb dispatch — resolves the patron node and delegates.
-	 *
-	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed>   $args        Bound args; `repo` is `owner/name`.
-	 * @return string Result line.
-	 */
-	public static function cmd_add_repo( Command_Interpreter_Node $interpreter, array $args ): string {
-		/** @var self $patron */
-		$patron = $interpreter->patron();
-		return $patron->add_repo( Core::as_string( $args['repo'] ) );
-	}
-
-	/** Emit the base config plus one `add_repo` line per registered repo. */
-	public function dump_config(): string {
-		return parent::dump_config() . \implode( '', \array_map( fn ( string $repo ): string => $this->config_line( 'add_repo', $repo ), $this->repos ) );
-	}
-
 	public static function node_schema(): array {
 		return self::source_schema(
 			'Fetches GitHub Releases, Merged PRs, and Issues for the configured repos without blocking, one request at a time, on a TICK request (request_node github TICK).',
 			'Start a pass over the repos; each answer records its new items as it lands. Trigger with `request_node github TICK`.',
-			[
-				[
-					'name'        => 'add_repo',
-					'description' => 'Register a repo to fetch on TICK: <owner/name>, letters, digits, `_`, `.` and `-` on each side.',
-					'args'        => [ self::REPO_ARG ],
-					'multiple'    => true,
-					'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_add_repo( $interpreter, $args ),
-				],
-				self::list_verbs( 'repo', 'repos', self::REPO_ARG, 'Register a repo to fetch on TICK: <owner/name>.' )[1],
-			]
+			self::checked_list( 'repo', 'repos', '#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\z#', 'a GitHub owner/name', 'Register a repo to fetch on TICK: <owner/name>, letters, digits, `_`, `.` and `-` on each side.' )
 		);
 	}
 }

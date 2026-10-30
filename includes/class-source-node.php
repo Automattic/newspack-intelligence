@@ -1,6 +1,6 @@
 <?php
 /**
- * Source_Node: abstract base for every connector node (GitHub, Linear, Feed).
+ * Source_Node: abstract base for every connector node.
  *
  * Owns the chain every source fetches on, so the worker never waits on a
  * request: a pass's requests go to the `{name}:curl` sibling, the
@@ -18,6 +18,7 @@
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
 use Newspack_Nodes\Message;
@@ -195,7 +196,7 @@ abstract class Source_Node extends Timer_Node {
 			$type  = Core::as_int( $message[ Message::TYPE ] );
 			$value = Core::as_string( $message[ Message::VALUE ] );
 			if ( 0 !== ( $type & Message::TM_ERROR ) ) {
-				$this->print_less_often( 'a fetch failed: ', Core::terminal_safe( $value ) );
+				$this->print_less_often( 'a fetch failed for ' . Core::terminal_safe( $key ) . ': ', Core::terminal_safe( $value ) );
 			} elseif ( 0 !== ( $type & Message::TM_RESPONSE ) ) {
 				$this->redirect( $key, $request, $value );
 			} else {
@@ -204,7 +205,7 @@ abstract class Source_Node extends Timer_Node {
 		} catch ( Worker_Should_Stop $stop ) {
 			throw $stop;
 		} catch ( \Throwable $e ) {
-			$this->print_less_often( 'an answer failed: ', Core::terminal_safe( $key ) . ': ' . $e->getMessage() );
+			$this->print_less_often( 'an answer failed for ' . Core::terminal_safe( $key ) . ': ', $e->getMessage() );
 		} finally {
 			$this->send();
 		}
@@ -449,6 +450,30 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
+	 * A JSON answer, decoded, or null when it holds nothing to record: a
+	 * body that is no JSON object or list, or one $error reads an error off,
+	 * logged under the request's url so each failing request shows.
+	 *
+	 * @param string                                  $api   The service, as the line names it.
+	 * @param string                                  $url   The request's url.
+	 * @param string                                  $body  The body.
+	 * @param \Closure(array<array-key,mixed>):?string $error The error the answer carries, or null for none.
+	 * @return array<array-key,mixed>|null
+	 */
+	protected function json_answer( string $api, string $url, string $body, \Closure $error ): ?array {
+		$answer = \json_decode( $body, true );
+		$fault  = 'the body holds no JSON object or list';
+		if ( \is_array( $answer ) ) {
+			$fault = $error( $answer );
+			if ( null === $fault ) {
+				return $answer;
+			}
+		}
+		$this->print_less_often( "{$api} answered an error for " . Core::terminal_safe( $url ) . ': ', Core::terminal_safe( $fault ) );
+		return null;
+	}
+
+	/**
 	 * Queue a request this pass sends, its url its subject: a GET, or with a
 	 * body a POST of it as JSON. A url already queued is queued once, with
 	 * the later body.
@@ -490,9 +515,28 @@ abstract class Source_Node extends Timer_Node {
 		$this->curl->target( $this->name );
 	}
 
-	/** Emit the base config plus each declared setter's line. */
+	/** Emit the base config, each declared setter's line and one add line per list or checked list entry. */
 	public function dump_config(): string {
-		return parent::dump_config() . $this->dump_setters();
+		return parent::dump_config() . $this->dump_setters() . $this->dump_lists() . $this->dump_declared( 'checked', static fn ( mixed $entries ): array => \array_map( Core::as_string( ... ), \array_values( Core::arr( $entries ) ) ) );
+	}
+
+	/**
+	 * Each row mapped to its item, a row the map answers null for left out;
+	 * a row that is no array reaches the map as an empty one.
+	 *
+	 * @param mixed                                                       $rows The rows; anything but an array holds none.
+	 * @param \Closure(array<array-key,mixed>):(array<string,mixed>|null) $map  One row to its item, or null to leave it out.
+	 * @return list<array<string,mixed>>
+	 */
+	protected static function items( mixed $rows, \Closure $map ): array {
+		$items = [];
+		foreach ( Core::arr( $rows ) as $row ) {
+			$item = $map( Core::arr( $row ) );
+			if ( null !== $item ) {
+				$items[] = $item;
+			}
+		}
+		return $items;
 	}
 
 	/**
@@ -574,5 +618,39 @@ abstract class Source_Node extends Timer_Node {
 			],
 			'accepts_fill' => false,
 		] );
+	}
+
+	/**
+	 * The `add_<noun>` and `remove_<noun>` verbs of a list every entry of
+	 * which matches $pattern: list_verbs()'s pair, its add refusing a value
+	 * that does not match, naming it as not $kind, and appending one that
+	 * does unless an entry equals it. The add's `checked` key names the list
+	 * dump_config() writes one add line per entry of.
+	 *
+	 * @param string $noun        The verbs' suffix, and the one arg they take.
+	 * @param string $property    The list property, a `list<string>`.
+	 * @param string $pattern     The regex every entry matches.
+	 * @param string $kind        What an entry is, as a refusal names it.
+	 * @param string $description The add verb's description.
+	 * @return list<array<string,mixed>>
+	 */
+	protected static function checked_list( string $noun, string $property, string $pattern, string $kind, string $description ): array {
+		[ $add, $remove ] = self::list_verbs( $noun, $property, [ 'name' => $noun, 'type' => 'string', 'required' => true ], $description );
+		unset( $add['list'] );
+		$add['checked'] = $property;
+		$add['handler'] = static function ( Command_Interpreter_Node $interpreter, array $args ) use ( $noun, $property, $pattern, $kind ): string {
+			$value = Core::as_string( $args[ $noun ] );
+			if ( 1 !== \preg_match( $pattern, $value ) ) {
+				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+				throw new \InvalidArgumentException( "add_{$noun}: '{$value}' is not {$kind}" );
+			}
+			$source  = $interpreter->patron();
+			$entries = Core::arr( $source->{$property} );
+			if ( ! \in_array( $value, $entries, true ) ) {
+				$source->{$property} = [ ...$entries, $value ];
+			}
+			return "ok\n";
+		};
+		return [ $add, $remove ];
 	}
 }

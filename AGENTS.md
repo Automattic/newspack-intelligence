@@ -2,11 +2,11 @@
 
 Collects and curates intelligence as an entity graph, built on the
 `newspack-nodes` substrate (sibling plugin; `Requires Plugins: newspack-nodes`).
-It records GitHub, Linear and feed items as events, links each to the entities
-it concerns, extracts a summary, topics and claims with an LLM, and answers
-questions about them with citations — on the Intelligence admin page, and to
-agents through its MCP door. Nothing is compiled: a person or an agent asks,
-and the graph answers.
+It records GitHub, Linear, Slack, P2 and feed items as events, links each to
+the entities it concerns, extracts a summary, topics and claims with an LLM,
+and answers questions about them with citations — on the Intelligence admin
+page, and to agents through its MCP door. Nothing is compiled: a person or an
+agent asks, and the graph answers.
 
 > The design record lives in dndocker (see [References](#references)); where it
 > and the code disagree, the code is the authority.
@@ -879,10 +879,12 @@ show it to every reader; no item outside the restricted tier cites it`);
 no cap holds the lists, so `Intel_Event::make()` refuses an event past one
 line, before anything is written. `remove_lens` slugs its key as
 `save_lens` does and refuses `no lens: <key>`.
-`fetch_now` TICKs every source in each live worker
-through `Worker_Route` and declares `manage`, because it mounts a worker's
-input (substrate ADR-23). `Worker_Route` appends each request to every live
-worker's input IPC partition — durable and synchronous, with no live-worker
+`fetch_now` TICKs every source in each live worker — each node of a
+`Source_Node` subclass the collect topology declares, read through
+`Topology_Analyzer::nodes_of_type()` — through `Worker_Route` and
+declares `manage`, because it mounts a worker's input (substrate ADR-23).
+`Worker_Route` appends each request to every live worker's input IPC
+partition — durable and synchronous, with no live-worker
 dependency on read — carrying the CI's own name as FROM, which the worker's
 input reader stamps under `_repl`, so each source's answer lands on the
 worker's output partition, where an attached `wp nodes cli` reads it.
@@ -949,9 +951,10 @@ segment only after the grace a shared log needs. Every machine stage mints throu
 version>` and that version as the `config_version`; `make()` stamps the
 tick clock, which the substrate pins at class load.
 
-**Collect.** The connector **Source nodes** (`github`, `linear`, `feed`,
-`news`) fetch inside the background worker without blocking it and emit one
-`item_recorded` event per new item to `intel:writer`. Each records at the
+**Collect.** The connector **Source nodes** (`github`, `linear`, `slack`,
+`p2`, `p2-restricted`, `feed`, `news`) fetch inside the background worker
+without blocking it and emit one `item_recorded` event per new item to
+`intel:writer`. Each records at the
 tier its `make_node` line names (`make_node Feed_Source feed public`), which
 a load without one refuses and `set_tier` replaces at runtime. A source
 fetches on a `TICK` request, which `fetch_now` sends, and on the wall-clock
@@ -962,14 +965,22 @@ and :45 whatever its worker's age. A process's first tick only marks the
 clock, so a respawned worker waits for the next boundary rather than
 fetching at spawn, and a boundary that passes while no worker runs is
 skipped. With no interval set a source holds no timer and only `TICK`
-fetches. The collect topology sets GitHub and Linear to 900 seconds, `feed`
-to 1,800 and `news` to 3,600.
+fetches. The collect topology sets GitHub, Linear and Slack to 900
+seconds, both P2 nodes and `feed` to 1,800, and `news` to 3,600.
 
 `Source_Node` owns the chain every source fetches on, and each source
 supplies two seams: `begin()`, which queues the pass's opening requests
 through `queue( $url, $body )` — a GET, or with a body a POST of it as
 JSON — and `received( $url, $body )`, which turns one answer into
-normalized items and may queue the next requests. Four hooks tune it:
+normalized items and may queue the next requests, the next page's url
+built by `add_query_arg()`. Three helpers serve `received()`:
+`json_answer()` decodes a JSON body and, for a body that is no JSON object
+or list or one its source's closure reads an error off, logs
+`<api> answered an error for <url>: <error>` and answers null; `items()`
+maps each row to an item through its source's closure, leaving out a row
+the closure answers null for; and `checked_list()` declares a validated
+add verb, below. `dump_config()` replays every declared setter, list and
+checked list. Four hooks tune it:
 `max_in_flight()`, `max_requests()`, `follows_redirects()` and
 `fetchable()`. A pass starts on a `TICK` or a grid boundary unless
 requests are in flight, in which case it starts nothing; it replaces
@@ -981,7 +992,7 @@ TM_STRUCT whose KEY is that subject and whose VALUE is `{ url, method }`
 for its current hop, `body` added for a POST, and Curl answers back
 through its target with a copy of that message, KEY untouched.
 `max_in_flight()`, clamped to `Curl_Node::MAX_IN_FLIGHT` (16), bounds the
-requests in flight: 1 for GitHub and Linear, so theirs go strictly one
+requests in flight: 1 for the API sources, so theirs go strictly one
 after another, and 16 for the feeds. A host takes one request at a time,
 so a request whose host is busy waits in the queue while others go
 past it; the `news` node's searches, all on news.google.com, go out one
@@ -993,29 +1004,33 @@ ends its branch. A body goes to `received()`; a redirect Curl answers
 because `follows_redirects()` is false re-queues the same subject at the
 Location, one hop on, at most `Curl_Node::MAX_REDIRECTS` (5) hops, a hop
 past that logged; and a TM_ERROR — a transport failure or a status of 400
-or more — is logged rate-limited and ends that request's branch alone. An
-answer that throws is logged naming its subject, and the drain runs on; a
-cooperative stop propagates (substrate ADR-14). An answer for no request in
-flight is dropped, and the next request goes out whatever the record did,
-so a pass always ends once nothing is queued or in flight. A request Curl
-throws on leaves flight, so a throw costs one pass, never the source. A
-scheduled pass that throws is logged naming the source and tried again at
-the next boundary, so it never stops the worker, and a throw on the `TICK`
-path propagates out of `fill()`, which no catch answers as a TM_ERROR.
+or more — is logged rate-limited under its url and ends that request's
+branch alone. An answer that throws is logged under its subject, and the
+drain runs on; a cooperative stop propagates (substrate ADR-14). An answer
+for no request in flight is dropped, and the next request goes out whatever
+the record did, so a pass always ends once nothing is queued or in flight.
+A request Curl throws on leaves flight, so a throw costs one pass, never
+the source. A scheduled pass that throws is logged naming the source and
+tried again at the next boundary, so it never stops the worker, and a throw
+on the `TICK` path propagates out of `fill()`, which no catch answers as a
+TM_ERROR.
 Curl sends `User-Agent: newspack-nodes/<version>` (`Curl_Node::USER_AGENT`)
 on every fetch, which some feeds require — Nieman Lab and Pugpig answer 403
 without one.
 
-Credentials ride with the Curl sibling, never with the source. GitHub and
-Linear take a Vault group as their second `make_node` argument (`make_node
+Credentials ride with the Curl sibling, never with the source. The API
+sources take a Vault group as their second `make_node` argument (`make_node
 Linear_Source linear internal linear`), and their Curl sibling runs under
 it: a request to the origin of the group's one entry carries the header
 line `Vault::credential_header()` builds from that entry's `auth_header`
 and `auth_scheme`. The `github` entry is `https://api.github.com` with
 `Authorization` and `Bearer`; the `linear` entry is `https://api.linear.app`
-with `Authorization` and no scheme. A source with no group, or a group with
-no entry on the origin, fetches with no credential, and the refusal is
-logged. The feeds send no credential and declare no group.
+with `Authorization` and no scheme; the `slack` entry is
+`https://slack.com` and the `p2` entry, which both P2 nodes name,
+`https://public-api.wordpress.com`, each with `Authorization` and `Bearer`.
+A source with no group, or a group with no entry on the origin, fetches
+with no credential, and the refusal is logged. The feeds send no credential
+and declare no group.
 
 Every answer records through one path, `Source_Node::record()`.
 It drops the keys a bounded in-memory set already holds (`MAX_SEEN` 2000,
@@ -1070,18 +1085,62 @@ closed pull requests and issues — and reads which one an answer is from its
 url, through one pattern built from `ENDPOINTS`, keeping a closed PR only when it carries a `merged_at`, and dropping any
 issue carrying a `pull_request` key, because the issues endpoint lists PRs
 too. `add_repo` refuses anything but one `owner/name` pair of letters,
-digits, `_`, `.` and `-`, naming the value. Each endpoint takes the 30 most
-recent results and pages no further, so an update that falls past that
+digits, `_`, `.` and `-`, naming the value: it and the other sources' checked
+adds are declared by `Source_Node::checked_list()`, `list_verbs()`'s pair
+with an add that refuses a value its pattern does not match, which
+`dump_config()` replays one add line per entry. Each endpoint takes the 30
+most recent results and pages no further, so an update that falls past that
 window between passes is missed outright. A TM_ERROR makes that one
 endpoint contribute nothing, logged rate-limited, and the pass goes on to
-the next; a body that is not a JSON list contributes nothing without a
-line, which makes a repo going quiet across many passes the rare place
-here that fails quietly rather than loud. `Linear_Source_Node` POSTs one
+the next; a body that is not a JSON list contributes nothing, logged with
+its `message` or as not a list. `Linear_Source_Node` POSTs one
 GraphQL query a pass, the newest 30 issues of its teams, the team keys
 riding as the `$teams` variable, never in the query text; a pass with no
 team sends nothing. An answer carrying `errors`, which Linear sends with a
-200, logs its first error message, rate-limited, and one whose
-`data.issues.nodes` is not a list logs that and records nothing.
+200, logs its first error message, rate-limited, and records nothing, as
+one whose `data.issues.nodes` is not a list does.
+
+`Slack_Source_Node` asks `auth.test` while it holds no workspace url,
+which it keeps for the worker's life when it is https and names a host,
+and otherwise logs, then each channel's
+`conversations.history` over `WINDOW_SECONDS` (two days), 200 a page; a
+message recorded before `auth.test` answers carries no url. An answer's
+url names its endpoint, channel, window and thread. A page naming
+`response_metadata.next_cursor` queues the next by `cursor`, and from a
+history page each message with replies whose `latest_reply` is newer than
+two intervals, or the window while no interval is set, queues that
+thread's `conversations.replies`, paged alike, so a pass reads only the
+threads that moved since the pass before last; the
+parent a replies page repeats, `record()` drops as the history page's.
+Each message records as `slack:<channel>:<ts>`, its text's `&amp;`,
+`&lt;` and `&gt;` decoded in one pass and its `<@U…>` and `<#C…>` mentions
+kept as Slack wrote them, titled by its first line cut to 120 characters,
+its poster leading its text, its url
+`<workspace>archives/<channel>/p<ts without the dot>`; `channel_join`,
+`channel_leave`, `channel_topic` and `channel_purpose` notices record
+nothing. The poster is the message's `user_profile.real_name`, else
+`bot_profile.name`, else `username`, else `user`: no `users.info` request
+is made, which would hold each message until its poster's name arrived.
+Slack answers a refusal with a 200 and `ok` false, which logs its `error`,
+rate-limited, and records nothing. `add_channel` refuses anything but
+`^[CG][A-Z0-9]{8,}\z`. A reply under a parent older than the window is not
+seen.
+
+`P2_Source_Node` asks each site's posts, then its comments, through the
+WordPress.com REST API since `WINDOW_SECONDS` (seven days) ago, 100 a
+page. A posts page's `meta.next_page` is sent back as `page_handle`;
+comments carry no handle, so a full page of them queues the next `page`.
+A post records as `p2:<site_ID>:<ID>` and a comment as
+`p2:<site_ID>:<post ID>:c<ID>`, titled `Re: <post title>`, the site's id
+read from the comments answer, which carries it beside the comments rather
+than on each. Titles and content are stripped to text with entities
+decoded, the author's name leading the body. An answer carrying `error`
+logs its `message`, rate-limited, and records nothing, and an answer
+naming no `site_ID` logs that, rate-limited under its site, and records
+none of what it lacks. `add_site` refuses anything but
+`^[a-z0-9-]+\.wordpress\.com\z`. `p2` reads at the internal
+tier and `p2-restricted`, the sales and operations P2, at the restricted
+one.
 
 **Seams and the LLM contract.** LLM calls go through the Automattic
 AI API Proxy via `LLM_Client` / `Proxy_LLM_Client`, whose `$http_post` closure is
@@ -1200,7 +1259,7 @@ Read the counts, then run the command it prints, which adds `--yes`.
 |------|---------------|
 | `newspack-intelligence.tsl` | Includes every file below and wires `reresolver`, which spans the project and streams files, and `watcher`, which reads the projection and writes to `intel:writer`; `on_demand_idle 0` keeps the worker resident, which the scheduled sources need, and `stale_timeout 600` keeps a peer from stealing its lock while an LLM call blocks one `fill()` |
 | `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve`, `intel:watches`, `intel:writer`, and `intel:later`, the Delay whose due records go to `intel:reresolve` |
-| `newspack-intelligence-collect.tsl` | The four sources → `intel:writer`: GitHub and Linear on a 900-second grid, each under its Vault group; `feed` on 1,800 with client feeds on; `news`, the Google News searches, on 3,600; includes the streams |
+| `newspack-intelligence-collect.tsl` | The seven sources → `intel:writer`: GitHub, Linear and Slack on a 900-second grid, `p2` and `p2-restricted` on 1,800, each under its Vault group, the two P2 nodes sharing `p2`; `feed` on 1,800 with client feeds on; `news`, the Google News searches, on 3,600; includes the streams |
 | `newspack-intelligence-project.tsl` | `intel:items:consumer`, `intel:ontology:consumer` and `intel:watches:consumer`, each → `projector`, writing the `intel-graph` Row_Table; no other node rides their cursors |
 | `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later`, the items Consumer checkpointing the deduper; includes the streams |
 
@@ -1213,6 +1272,8 @@ plugin adds:
 |------|-------|----------------------------|
 | `Github_Source` | `Github_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_repo`, `remove_repo`; owns `{name}:curl` |
 | `Linear_Source` | `Linear_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_team`, `remove_team`; owns `{name}:curl` |
+| `Slack_Source` | `Slack_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_channel`, `remove_channel`; owns `{name}:curl` |
+| `P2_Source` | `P2_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_site`, `remove_site`; owns `{name}:curl` |
 | `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_url`, `remove_url`, `set_client_feeds`; owns `{name}:curl` |
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
@@ -1356,7 +1417,7 @@ sibling checkout locally.
 |------|------|
 | `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus and the Settings page's admin-post helpers, WP-CLI, the `Intelligence_CI` mount, the MCP door's `wire()` |
 | `includes/` (streams) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Ontology_Seed`, `Stream_Writer`, the `Emits_Struct` trait |
-| `includes/` (collect) | `Source_Node` and its three connectors |
+| `includes/` (collect) | `Source_Node` and its five connectors |
 | `includes/` (resolve) | `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
 | `includes/` (clients) | `Client_Importer`, the `Client_Roster` interface, `Graph_Client_Roster`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |

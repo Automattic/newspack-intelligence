@@ -55,8 +55,28 @@ cmd news:config add_url https://news.google.com/rss/search?q=%22Google+News+Init
 cmd news:config add_url https://news.google.com/rss/search?q=%22News+Emmy%22+OR+%22News+%26+Documentary+Emmy%22&hl=en-US&gl=US&ceid=US:en
 cmd news:config add_url https://news.google.com/rss/search?q=%22Pulitzer+Prizes%22+%28board+OR+winners+OR+announces+OR+finalists%29&hl=en-US&gl=US&ceid=US:en
 cmd news:config add_url https://news.google.com/rss/search?q=%22American+Society+of+Magazine+Editors%22+OR+%22National+Magazine+Awards%22&hl=en-US&gl=US&ceid=US:en
+make_node Slack_Source slack internal slack
+cmd slack:config set_interval 900
+cmd slack:config add_channel C015W6BES8J
+cmd slack:config add_channel C055SRT7WN4
+cmd slack:config add_channel C0ARY7E1TRA
+cmd slack:config add_channel C01C378QWRX
+make_node P2_Source p2 internal p2
+cmd p2:config set_interval 1800
+cmd p2:config add_site newspackp2.wordpress.com
+cmd p2:config add_site newspackengineering.wordpress.com
+cmd p2:config add_site newspackdesignp2.wordpress.com
+cmd p2:config add_site newspacksupport.wordpress.com
+cmd p2:config add_site newspackonwpcloud.wordpress.com
+# The sales and operations P2 holds prospect management, so it is restricted.
+make_node P2_Source p2-restricted restricted p2
+cmd p2-restricted:config set_interval 1800
+cmd p2-restricted:config add_site newspacksalesandoperations.wordpress.com
 connect_node github intel:writer
 connect_node linear intel:writer
 connect_node feed intel:writer
 connect_node news intel:writer
+connect_node slack intel:writer
+connect_node p2 intel:writer
+connect_node p2-restricted intel:writer
 secure

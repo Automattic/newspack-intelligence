@@ -181,7 +181,7 @@ XML;
 		$this->complete( 'https://heron-4410.example/feed/', '', 0, \CURLE_COULDNT_CONNECT );
 
 		$this->assertSame( [], $this->recorded() );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: a fetch failed: curl error 7 (' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: a fetch failed for https://heron-4410.example/feed/: curl error 7 (' ) );
 		$this->tick( $node );
 		$this->assertSame( [ 'https://heron-4410.example/feed/', 'https://heron-4410.example/feed/' ], $this->dispatched, 'the answered pass leaves room for the next' );
 	}

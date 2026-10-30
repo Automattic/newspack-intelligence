@@ -177,4 +177,22 @@ trait Drives_Curl {
 		$this->locations[ $url ] = $location;
 		$this->in_drain( fn () => $this->complete_curl( $this->handles[ $url ] ) );
 	}
+
+	/**
+	 * Each value is refused by `add_<noun>`, naming it and what it is not,
+	 * and the list stays empty.
+	 *
+	 * @param list<string> $values The values to refuse.
+	 */
+	private function assert_add_refuses( Source_Node $node, string $noun, string $property, array $values, string $kind ): void {
+		foreach ( $values as $value ) {
+			try {
+				$node->interpreter()->dispatch( "add_{$noun}", [ $value ] );
+				$this->fail( "add_{$noun} accepted {$value}" );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertSame( "add_{$noun}: '{$value}' is not {$kind}", $e->getMessage() );
+			}
+		}
+		$this->assertSame( [], $this->read_private( $node, $property ) );
+	}
 }
