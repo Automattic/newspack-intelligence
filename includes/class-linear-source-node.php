@@ -4,9 +4,9 @@
  * `add_team` verb names via the Linear GraphQL API and normalizes them into
  * recorded items.
  *
- * Extends Source_Node, so the base owns the TICK/TM_REQUEST trigger and dedup;
- * this class supplies only the two seams: config() (Settings read) and
- * fetch() (the blocking GraphQL call, behind the $http_post closure seam).
+ * Extends Source_Node, which owns the TICK/TM_REQUEST trigger, the grid and
+ * the record path; its tick() hands record() what fetch() (the blocking GraphQL call, behind the $http_post closure seam)
+ * finds for config()'s teams and token.
  *
  * @package Newspack_Intelligence
  */
@@ -37,6 +37,15 @@ class Linear_Source_Node extends Source_Node {
 
 	/** @var list<string> Team keys the `add_team` verb registered and `remove_team` left, in call order. */
 	protected array $teams = [];
+
+	/**
+	 * Fetch, and record what the fetch found.
+	 *
+	 * @return array{emitted:int,refused:int} The reply data.
+	 */
+	protected function tick(): array {
+		return $this->record( $this->fetch( $this->config() ) );
+	}
 
 	/**
 	 * Fetch the configured teams' recently-updated Linear issues, normalized to
@@ -127,6 +136,7 @@ class Linear_Source_Node extends Source_Node {
 		return self::source_schema(
 			'Fetches recently-updated Linear issues of the configured teams on a TICK request (request_node linear TICK).',
 			'Fetch + emit new Linear issues. Trigger with `request_node linear TICK`.',
+			'{ emitted, refused }',
 			[
 				...self::list_verbs( 'team', 'teams', [ 'name' => 'team', 'type' => 'string', 'required' => true ], 'Register a Linear team to fetch on TICK by its key: <KEY>.' ),
 				self::vault_id_verb( 'the Linear API token' ),

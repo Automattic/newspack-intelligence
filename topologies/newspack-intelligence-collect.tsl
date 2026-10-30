@@ -4,6 +4,7 @@ include topic-probe
 include newspack-intelligence-streams
 make_node Github_Source github public
 cmd github:config set_vault_id github
+cmd github:config set_interval 900
 cmd github:config add_repo Automattic/newspack-ads
 cmd github:config add_repo Automattic/newspack-activecampaign
 cmd github:config add_repo Automattic/newspack-manager
@@ -11,6 +12,7 @@ cmd github:config add_repo Automattic/newspack-network
 cmd github:config add_repo Automattic/newspack-plugin
 make_node Linear_Source linear internal
 cmd linear:config set_vault_id linear
+cmd linear:config set_interval 900
 cmd linear:config add_team NEWS
 cmd linear:config add_team NPAI
 cmd linear:config add_team NPPRO
@@ -21,6 +23,8 @@ cmd linear:config add_team NPSUPP
 cmd linear:config add_team NPPD
 cmd linear:config add_team DSGNEWS
 make_node Feed_Source feed public
+cmd feed:config set_interval 1800
+cmd feed:config set_client_feeds true
 cmd feed:config add_url https://make.wordpress.org/core/feed/
 cmd feed:config add_url https://wordpress.org/news/feed/
 cmd feed:config add_url https://automattic.com/blog/feed/

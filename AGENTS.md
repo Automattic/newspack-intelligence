@@ -943,20 +943,72 @@ segment only after the grace a shared log needs. Every machine stage mints throu
 version>` and that version as the `config_version`; `make()` stamps the
 tick clock, which the substrate pins at class load.
 
-**Collect.** The connector **Source nodes** (`github`, `linear`, `feed`) fetch on
-a `TICK` request inside the background worker and emit one `item_recorded` event
-per new item to `intel:writer`. Each records at the tier its `make_node` line
-names (`make_node Feed_Source feed public`), which a load without one refuses
-and `set_tier` replaces at runtime. Blocking HTTP runs in the
-worker rather than a per-fetch job. `Source_Node` dedups by `item_key` against a
-bounded in-memory set (`MAX_SEEN` 2000, oldest evicted first) that does not
-survive a respawn, so a fresh worker records an item again; the resolver
-reads a repeat of an item it resolved before, one the projection holds an
-extraction or a non-topic link of, as a re-resolution, which runs no NER
-step and is forwarded for extraction only while the item is still owed
-one, so a repeat a call extracted with its links settled costs the
-projection reads and no LLM call. A repeat of an item nothing ever linked
-runs NER again.
+**Collect.** The connector **Source nodes** (`github`, `linear`, `feed`) fetch
+inside the background worker and emit one `item_recorded` event per new item to
+`intel:writer`. Each records at the tier its `make_node` line names
+(`make_node Feed_Source feed public`), which a load without one refuses and
+`set_tier` replaces at runtime. A source fetches on a `TICK` request, which
+`fetch_now` sends, and on the wall-clock grid once `set_interval <seconds>`
+sets its interval: it rides the Router's tick and fetches when
+`intdiv( now, interval )` passes the value it had at the process's previous
+tick, so a 900-second source fetches at :00, :15, :30 and :45 whatever its
+worker's age. A process's first tick only marks the clock, so a respawned
+worker waits for the next boundary rather than fetching at spawn, and a
+boundary that passes while no worker runs is skipped. With no interval set a
+source holds no timer and only `TICK` fetches. The collect topology sets
+GitHub and Linear to 900 seconds and the feeds to 1,800.
+
+Each source supplies one seam, `tick()`, which a `TICK` request and the grid
+both call; `Source_Node` declares it abstract. GitHub's and Linear's hand
+`record()` what their public `fetch( $config )` finds for their `config()`;
+the feed's starts a pass. Every fetch records through that one path,
+`Source_Node::record()`: the blocking sources call it with a whole fetch, the
+feed with each body as it lands.
+It drops the keys a bounded in-memory set already holds (`MAX_SEEN` 2000,
+oldest evicted first), then reads, in one read through
+`Intel_Graph_Row_Schema::read()`, which of the rest the projection's `items`
+table holds in any partition, and remembers those without recording them, so a
+respawned worker records only items the graph lacks. A projection that will
+not open records everything, under a rate-limited line naming the source, so
+a broken projection costs repeats, not items. An item recorded twice, from
+two workers or past a projection still catching up, the resolver reads as a
+re-resolution, which runs no NER step and is forwarded for extraction only
+while the item is still owed one; re-resolution proper has its own path, the
+reresolver.
+
+GitHub and Linear fetch blocking HTTP inside one `fill()`, a few dozen calls
+a pass. The feed never blocks: `Feed_Source_Node` owns a `{name}:curl`
+sibling, the substrate's `Curl_Node`, which follows redirects and answers back
+through its target. A pass sends each feed URL to it as a TM_BYTESTREAM keyed
+by the URL, keeps at most `Curl_Node::MAX_IN_FLIGHT` (16) in flight and sends
+the next as each answers; each body is parsed as RSS 2.0 or Atom when it
+lands and its items recorded then. A TM_ERROR — a transport failure or a
+status of 400 or more — is logged rate-limited and records nothing, an
+answer for no feed in flight is dropped, and the next feed goes out whatever
+the record did, so a pass always ends. A feed Curl throws on leaves flight,
+and the next pass replaces whatever the throw left queued, so a throw costs
+one pass, never the source. A due fetch, by `TICK` or on the grid, while
+feeds are still in flight starts nothing. A scheduled fetch that throws is
+logged naming the source and tried again at the next boundary, so it never
+stops the worker; a cooperative stop propagates (substrate ADR-14), and a
+throw on the `TICK` path propagates out of `fill()`, which no catch answers
+as a TM_ERROR. So the feed's `TICK` answers
+`{ fetching }`, the count of feeds the pass it starts fetches, 0 when one is
+still in flight, where the blocking sources answer `{ emitted, refused }`.
+Curl sends `User-Agent: newspack-nodes/<version>` (`Curl_Node::USER_AGENT`)
+on every fetch, which some feeds require — Nieman Lab and Pugpig answer 403
+without one — so the substrate floor rises to the release carrying it.
+
+`set_client_feeds true`, which the collect topology sets, adds to each pass
+`https://<domain>/feed/` for each `domain` identifier of every entity holding
+an open `client` role, as its survivor, read once a pass through
+`Entity_Index::load()` and `Graph_Query::open_roles()`; a churned client drops
+out on its next pass, and a projection that will not open leaves the pass the
+configured feeds alone, logged. A URL both configured and a client's is
+fetched once, as configured. A client feed records only an item whose
+`item_ts` falls within `Feed_Source_Node::CLIENT_FEED_DAYS` (7) days of the
+tick clock, never an undated one; a configured feed records every item. Item
+keys stay `feed:<guid>`, so an item two feeds list records once.
 
 `Github_Source_Node` hits three REST endpoints per repo on each TICK — releases,
 closed pull requests and issues — keeping a closed PR only when it carries a
@@ -973,8 +1025,10 @@ than loud.
 AI API Proxy via `LLM_Client` / `Proxy_LLM_Client`, whose `$http_post` closure is
 the test seam. More follow the same pattern, each a static `?\Closure`
 replacing ONE call so the branches around it still run as production code:
-`Github_Source_Node::$http_get`, `Linear_Source_Node::$http_post` and
-`Feed_Source_Node::$http_get` for the connector fetches;
+`Github_Source_Node::$http_get` and `Linear_Source_Node::$http_post` for the
+blocking connector fetches, while the feed's fetches go through the
+substrate's own curl seams, `Event_Framework::$curl_dispatch` and
+`Curl_Node::$curl_result`;
 `LLM_Config::$llm_factory`, which every node using the trait holds its own
 copy of (`Resolver_Node::$llm_factory` and `Extractor_Node::$llm_factory`)
 and `make_llm_client()` answers first; and
@@ -1001,7 +1055,7 @@ namespaced `"{source}:{raw id}"`, the key dedup reads; `body` cut at
 `MAX_BODY_BYTES` (65,536) on a UTF-8 character boundary; `item_ts` 0 when the
 connector's date string will not parse; `retrieved_ts` the worker's tick
 clock in whole seconds, `Intel_Event::now()`, as every reader takes it.
-`tick()` refuses an item whose `item_key` runs past
+`record()` refuses an item whose `item_key` runs past
 `Graph_Curation::ITEM_KEY_BYTES` (512) as the stream writes it, JSON-escaped
 (`Graph_Curation::written_bytes()`), with a rate-limited line naming the
 source, the key's length and the key cut to 64 bytes through
@@ -1080,9 +1134,9 @@ Read the counts, then run the command it prints, which adds `--yes`.
 
 | File | What it wires |
 |------|---------------|
-| `newspack-intelligence.tsl` | Includes every file below and wires `reresolver`, which spans the project and streams files, and `watcher`, which reads the projection and writes to `intel:writer`; `on_demand_idle 0` keeps the worker resident, which the TICK-driven sources need, and `stale_timeout 600` keeps a peer from stealing its lock while a TICK's fetches or an LLM call block one `fill()` |
+| `newspack-intelligence.tsl` | Includes every file below and wires `reresolver`, which spans the project and streams files, and `watcher`, which reads the projection and writes to `intel:writer`; `on_demand_idle 0` keeps the worker resident, which the scheduled sources need, and `stale_timeout 600` keeps a peer from stealing its lock while a GitHub or Linear fetch or an LLM call blocks one `fill()` |
 | `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve`, `intel:watches`, `intel:writer`, and `intel:later`, the Delay whose due records go to `intel:reresolve` |
-| `newspack-intelligence-collect.tsl` | The three sources → `intel:writer`; includes the streams |
+| `newspack-intelligence-collect.tsl` | The three sources → `intel:writer`, GitHub and Linear on a 900-second grid and the feeds on 1,800 with client feeds on; includes the streams |
 | `newspack-intelligence-project.tsl` | `intel:items:consumer`, `intel:ontology:consumer` and `intel:watches:consumer`, each → `projector`, writing the `intel-graph` Row_Table; no other node rides their cursors |
 | `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later`, the items Consumer checkpointing the deduper; includes the streams |
 
@@ -1093,9 +1147,9 @@ plugin adds:
 
 | Type | Class | Runtime triggers and verbs |
 |------|-------|----------------------------|
-| `Github_Source` | `Github_Source_Node` | `<tier>`; `TICK`; `set_tier`, `add_repo`, `remove_repo`, `set_vault_id` |
-| `Linear_Source` | `Linear_Source_Node` | `<tier>`; `TICK`; `set_tier`, `add_team`, `remove_team`, `set_vault_id` |
-| `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`; `set_tier`, `add_url`, `remove_url` |
+| `Github_Source` | `Github_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_repo`, `remove_repo`, `set_vault_id` |
+| `Linear_Source` | `Linear_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_team`, `remove_team`, `set_vault_id` |
+| `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_url`, `remove_url`, `set_client_feeds`; owns `{name}:curl` |
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
 | `Resolver` | `Resolver_Node` | `<writer> <later>`; the `LLM_Config` verbs |
@@ -1238,7 +1292,7 @@ sibling checkout locally.
 |------|------|
 | `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus and the Settings page's admin-post helpers, WP-CLI, the `Intelligence_CI` mount, the MCP door's `wire()` |
 | `includes/` (streams) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Ontology_Seed`, `Stream_Writer`, the `Emits_Struct` trait |
-| `includes/` (collect) | `Source_Node` and its three connectors, the `Source` interface |
+| `includes/` (collect) | `Source_Node` and its three connectors |
 | `includes/` (resolve) | `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
 | `includes/` (clients) | `Client_Importer`, the `Client_Roster` interface, `Graph_Client_Roster`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |

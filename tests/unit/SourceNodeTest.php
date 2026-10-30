@@ -4,24 +4,68 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Feed_Source_Node;
+use Newspack_Intelligence\Github_Source_Node;
+use Newspack_Intelligence\Intel_Graph_Row_Schema;
+use Newspack_Intelligence\Linear_Source_Node;
 use Newspack_Intelligence\Source_Node;
+use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
+use Newspack_Nodes\Node_Names;
+use Newspack_Nodes\Router_Node;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
+use Newspack_Nodes\Row_Table_Node;
+use Newspack_Nodes\Table_Unavailable;
 use Newspack_Nodes\Tests\TestCase;
+use Newspack_Nodes\Topology_Registry;
+use Newspack_Nodes\Worker_Should_Stop;
+
+require_once __DIR__ . '/../support/seeds-intel-graph.php';
 
 final class SourceNodeTest extends TestCase {
+	use Seeds_Intel_Graph;
 
 	private const RETRIEVED = 1793011234.5;
+
+	/** A source's fetch interval, in seconds: 1,700, no default's. */
+	private const INTERVAL = 1700;
+
+	/** A grid boundary: a whole multiple of INTERVAL. */
+	private const BOUNDARY = self::INTERVAL * 1054712;
 
 	protected function setUp(): void {
 		parent::setUp();
 		Core::$now = self::RETRIEVED;
+		self::backbone();
 	}
 
 	protected function tearDown(): void {
-		Feed_Source_Node::$http_get = null;
+		Intel_Graph_Row_Schema::$read_rows = null;
+		Topology_Registry::reset();
 		parent::tearDown();
+	}
+
+	/** A Router and the interpreter sinking into it, as a worker holds them. */
+	private static function backbone(): void {
+		$router = new Router_Node();
+		$router->name( Node_Names::ROUTER );
+		$interpreter = new Command_Interpreter_Node();
+		$interpreter->name( Node_Names::COMMAND_INTERPRETER );
+		$interpreter->sink( $router );
+	}
+
+	/**
+	 * Count every projection read, each still run for real.
+	 *
+	 * @return \ArrayObject<int,int> One entry per read.
+	 */
+	private static function counted_reads(): \ArrayObject {
+		$reads                             = new \ArrayObject();
+		Intel_Graph_Row_Schema::$read_rows = static function ( \Closure $read ) use ( $reads ): mixed {
+			$reads[] = 1;
+			return Row_Table_Node::read( Intel_Graph_Row_Schema::class, $read );
+		};
+		return $reads;
 	}
 
 	private function tick( string $verb = 'TICK' ): array {
@@ -79,24 +123,22 @@ final class SourceNodeTest extends TestCase {
 	}
 
 	public function test_a_tick_emits_item_recorded_events_with_the_sources_tier(): void {
-		Feed_Source_Node::$http_get = static fn ( string $url, array $args ): array => [
-			'response' => [ 'code' => 200 ],
-			'body'     => '<?xml version="1.0"?><rss version="2.0"><channel><item>'
-				. '<title>Harbor Gazette wins state award</title>'
-				. '<link>https://harborgazette.example/award</link>'
-				. '<description>The Gazette took first place.</description>'
-				. '<guid>abc-7731</guid>'
-				. '<pubDate>Wed, 21 Oct 2026 14:00:00 GMT</pubDate>'
-				. '</item></channel></rss>',
-		];
 		$sink = new Capture_Sink_Node();
-		$node = new Feed_Source_Node();
+		$node = new Fake_Source_Node();
 		$node->name( 'feed' );
-		$node->interpreter()->dispatch( 'add_url', [ 'https://harborgazette.example/feed/' ] );
 		$node->arguments( [ 'public' ] );
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'set_tier', [ 'internal' ] ) );
 		$node->target( 'intel:writer' );
 		$node->sink( $sink );
+		$node->items = [
+			[
+				'id'    => 'abc-7731',
+				'title' => 'Harbor Gazette wins state award',
+				'url'   => 'https://harborgazette.example/award',
+				'body'  => 'The Gazette took first place.',
+				'when'  => 'Wed, 21 Oct 2026 14:00:00 GMT',
+			],
+		];
 
 		$node->fill( $this->tick() );
 
@@ -112,8 +154,8 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( 'machine:source:feed@' . NEWSPACK_INTELLIGENCE_VERSION, $event['actor'] );
 		$this->assertSame( NEWSPACK_INTELLIGENCE_VERSION, $event['config_version'] );
 		$this->assertNotSame( '', NEWSPACK_INTELLIGENCE_VERSION );
-		$this->assertSame( 'feed:abc-7731', $event['item_key'] );
-		$this->assertSame( 'feed', $event['source'] );
+		$this->assertSame( 'fake:abc-7731', $event['item_key'] );
+		$this->assertSame( 'fake', $event['source'] );
 		$this->assertSame( 'internal', $event['tier'] );
 		$this->assertSame( 'https://harborgazette.example/award', $event['url'] );
 		$this->assertSame( 'Harbor Gazette wins state award', $event['title'] );
@@ -312,6 +354,171 @@ final class SourceNodeTest extends TestCase {
 		$this->assertCount( 2002, $this->structs( $sink->captured ) );
 	}
 
+	/** A source with an interval set, its tick clock at a moment. */
+	private function scheduled( Capture_Sink_Node $sink ): Fake_Source_Node {
+		$node = $this->fake( $sink );
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'set_interval', [ (string) self::INTERVAL ] ) );
+		$node->items = [ [ 'id' => 'grid-1', 'title' => 'On the grid' ] ];
+		return $node;
+	}
+
+	/** Run one Router tick through the source at a moment. */
+	private static function tick_at( Fake_Source_Node $node, float $at ): void {
+		Core::$now = $at;
+		$node->fire_cb();
+	}
+
+	/** A source with an interval rides the Router's tick, and its first tick in a process fetches nothing. */
+	public function test_the_first_tick_of_a_process_fetches_nothing(): void {
+		$node = $this->scheduled( new Capture_Sink_Node() );
+
+		$this->assertSame( 'router', $node->timer_mode() );
+		self::tick_at( $node, self::BOUNDARY - 5.0 );
+		self::tick_at( $node, self::BOUNDARY + 3.0 - self::INTERVAL + 10 );
+
+		$this->assertSame( 0, $node->fetches, 'no boundary crossed since the first tick' );
+	}
+
+	/** Each boundary crossed fetches once, and a second tick past the same boundary fetches nothing. */
+	public function test_each_boundary_crossed_fetches_once(): void {
+		$sink = new Capture_Sink_Node();
+		$node = $this->scheduled( $sink );
+
+		self::tick_at( $node, self::BOUNDARY - 7.0 );
+		self::tick_at( $node, self::BOUNDARY + 2.0 );
+		self::tick_at( $node, self::BOUNDARY + 41.0 );
+		$this->assertSame( 1, $node->fetches );
+		$this->assertSame( [ 'fake:grid-1' ], \array_map( static fn ( array $m ): string => $m[ Message::VALUE ]['item_key'], $this->structs( $sink->captured ) ) );
+
+		self::tick_at( $node, self::BOUNDARY + self::INTERVAL + 1.0 );
+		$this->assertSame( 2, $node->fetches );
+	}
+
+	/** A boundary passed while no tick ran is skipped; the next tick past it fetches once. */
+	public function test_ticks_far_apart_fetch_once(): void {
+		$node = $this->scheduled( new Capture_Sink_Node() );
+
+		self::tick_at( $node, self::BOUNDARY - 9.0 );
+		self::tick_at( $node, self::BOUNDARY + 3 * self::INTERVAL + 4.0 );
+
+		$this->assertSame( 1, $node->fetches );
+	}
+
+	/** A scheduled fetch that throws is logged naming the source, and the Router's tick carries on. */
+	public function test_a_scheduled_fetch_that_throws_is_logged_and_contained(): void {
+		$stderr        = $this->capture_stderr();
+		$node          = $this->scheduled( new Capture_Sink_Node() );
+		$node->failure = new \RuntimeException( 'fetch-broke-4471' );
+
+		self::tick_at( $node, self::BOUNDARY - 4.0 );
+		self::tick_at( $node, self::BOUNDARY + 4.0 );
+
+		$this->assertSame( 1, $node->fetches );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'fake-source-12: a scheduled fetch failed; trying again at the next boundary: fetch-broke-4471' ) );
+	}
+
+	/** A cooperative stop inside a scheduled fetch stops the worker. */
+	public function test_a_stop_inside_a_scheduled_fetch_propagates(): void {
+		$node          = $this->scheduled( new Capture_Sink_Node() );
+		$node->failure = new Worker_Should_Stop( 'max_runtime 595 reached' );
+		self::tick_at( $node, self::BOUNDARY - 4.0 );
+
+		$this->expectException( Worker_Should_Stop::class );
+		$this->expectExceptionMessage( 'max_runtime 595 reached' );
+		self::tick_at( $node, self::BOUNDARY + 4.0 );
+	}
+
+	/** A source with no interval holds no timer, and only TICK fetches. */
+	public function test_no_interval_fetches_only_on_tick(): void {
+		$sink = new Capture_Sink_Node();
+		$node = $this->fake( $sink );
+		$node->items = [ [ 'id' => 'manual-1', 'title' => 'Asked for' ] ];
+
+		$this->assertFalse( $node->timer_is_active() );
+		self::tick_at( $node, self::BOUNDARY - 3.0 );
+		self::tick_at( $node, self::BOUNDARY + 3.0 );
+		$this->assertSame( 0, $node->fetches );
+
+		$node->fill( $this->tick() );
+		$this->assertSame( 1, $node->fetches );
+	}
+
+	/** The interval round-trips through dump_config(), and a source with none dumps no line. */
+	public function test_set_interval_rides_the_dump(): void {
+		$this->assertStringNotContainsString( 'set_interval', $this->fake( new Capture_Sink_Node() )->dump_config() );
+		Core::reset();
+		self::backbone();
+		$node = $this->scheduled( new Capture_Sink_Node() );
+
+		$dump = $node->dump_config();
+		$this->assertStringContainsString( "command_node fake-source-12:config set_interval 1700\n", $dump );
+
+		Core::reset();
+		self::backbone();
+		$replayed = $this->fake( new Capture_Sink_Node() );
+		$this->replay_config( $dump, $replayed );
+		$this->assertSame( self::INTERVAL, $this->read_private( $replayed, 'interval' ) );
+		$this->assertTrue( $replayed->timer_is_active() );
+	}
+
+	/** An interval below one second is refused, and the source keeps none. */
+	public function test_set_interval_refuses_less_than_a_second(): void {
+		$node = $this->fake( new Capture_Sink_Node() );
+
+		try {
+			$node->interpreter()->dispatch( 'set_interval', [ '0' ] );
+			$this->fail( 'interval 0 accepted' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( 'fake-source-12: set_interval wants a whole number of seconds from 1 up, got 0', $e->getMessage() );
+		}
+		$this->assertNull( $this->read_private( $node, 'interval' ) );
+		$this->assertFalse( $node->timer_is_active() );
+	}
+
+	/**
+	 * A respawned source, its seen set empty, records only what the
+	 * projection lacks, reading the projection once for the fetch; the held
+	 * item is remembered, so the next tick reads nothing.
+	 */
+	public function test_a_fresh_source_records_only_what_the_projection_lacks(): void {
+		$this->start_intel_graph();
+		$this->seed( self::item( 'fake:harbor-held', 'Harbor Gazette already recorded', 'fake', 'public', self::$oct_13 ) );
+		$reads       = self::counted_reads();
+		$sink        = new Capture_Sink_Node();
+		$node        = $this->fake( $sink );
+		$node->items = [
+			[ 'id' => 'harbor-held', 'title' => 'Harbor Gazette already recorded' ],
+			[ 'id' => 'harbor-fresh', 'title' => 'Harbor Gazette names a publisher' ],
+		];
+
+		$node->fill( $this->tick() );
+
+		$this->assertSame( [ 'fake:harbor-fresh' ], \array_map( static fn ( array $m ): string => $m[ Message::VALUE ]['item_key'], $this->structs( $sink->captured ) ) );
+		$this->assertSame( [ 'verb' => 'TICK', 'data' => [ 'emitted' => 1, 'refused' => 0 ] ], \end( $sink->captured )[ Message::VALUE ] );
+		$this->assertCount( 1, $reads );
+
+		$sink->captured = [];
+		$node->fill( $this->tick() );
+		$this->assertSame( [], $this->structs( $sink->captured ) );
+		$this->assertCount( 1, $reads, 'every key is seen, so nothing is read' );
+	}
+
+	/** A projection that will not open costs repeats, not items: everything records, logged. */
+	public function test_a_projection_that_will_not_open_records_everything_logged(): void {
+		$stderr                            = $this->capture_stderr();
+		Intel_Graph_Row_Schema::$read_rows = static function (): never {
+			throw new Table_Unavailable( 'graph-gone-7731' );
+		};
+		$sink        = new Capture_Sink_Node();
+		$node        = $this->fake( $sink );
+		$node->items = [ [ 'id' => 'harbor-a', 'title' => 'A' ], [ 'id' => 'harbor-b', 'title' => 'B' ] ];
+
+		$node->fill( $this->tick() );
+
+		$this->assertCount( 2, $this->structs( $sink->captured ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'fake-source-12: no intel-graph to read recorded items from; recording every item fetched: graph-gone-7731' ) );
+	}
+
 	public function test_the_tier_rides_the_make_node_line(): void {
 		$node = $this->fake( new Capture_Sink_Node(), 'public' );
 		$node->interpreter()->dispatch( 'set_tier', [ 'restricted' ] );
@@ -319,6 +526,24 @@ final class SourceNodeTest extends TestCase {
 		$dump = $node->dump_config();
 		$this->assertMatchesRegularExpression( '/^make_node \S+ fake-source-12 restricted$/m', $dump );
 		$this->assertStringNotContainsString( 'set_tier', $dump );
+	}
+
+	/** No source fires a FIRE event, so none declares one. */
+	public function test_no_source_declares_a_fire_registration(): void {
+		foreach ( [ Fake_Source_Node::class, Github_Source_Node::class, Linear_Source_Node::class, Feed_Source_Node::class ] as $class ) {
+			$this->assertSame( [], $class::node_schema()['registrations'], $class );
+		}
+	}
+
+	/**
+	 * The seam a TICK and the grid call is the source's own tick(); the
+	 * feed fetches by pass and declares no fetch(), and no Source interface
+	 * stands over the three.
+	 */
+	public function test_tick_is_the_seam_every_source_implements(): void {
+		$this->assertTrue( ( new \ReflectionMethod( Source_Node::class, 'tick' ) )->isAbstract() );
+		$this->assertFalse( \method_exists( Feed_Source_Node::class, 'fetch' ) );
+		$this->assertFalse( \interface_exists( 'Newspack_Intelligence\\Source' ) );
 	}
 
 	public function test_source_schema_declares_the_shared_tick_contract(): void {
@@ -338,8 +563,8 @@ final class SourceNodeTest extends TestCase {
 }
 
 /**
- * Concrete Source_Node whose fetch() normalizes canned records, so the base's
- * fill()/dedup/emit behavior can be tested without HTTP.
+ * Concrete Source_Node whose tick() records canned records, so the base's
+ * fill()/grid/record behavior can be tested without HTTP.
  */
 class Fake_Source_Node extends Source_Node {
 
@@ -348,12 +573,19 @@ class Fake_Source_Node extends Source_Node {
 
 	public int $fetches = 0;
 
-	protected function config(): array {
-		return [];
+	/** What fetch() throws, after counting the fetch; null for none. */
+	public ?\Throwable $failure = null;
+
+	protected function tick(): array {
+		return $this->record( $this->fetch() );
 	}
 
-	public function fetch( array $config ): array {
+	/** @return array<int,array<string,mixed>> */
+	public function fetch(): array {
 		++$this->fetches;
+		if ( null !== $this->failure ) {
+			throw $this->failure;
+		}
 		return \array_map(
 			fn ( array $r ): array => $r['raw'] ?? $this->normalize_item( 'fake', $r['id'], $r['title'] ?? '', $r['url'] ?? '', $r['body'] ?? '', $r['when'] ?? '' ),
 			$this->items
@@ -361,6 +593,6 @@ class Fake_Source_Node extends Source_Node {
 	}
 
 	public static function node_schema(): array {
-		return self::source_schema( 'Fake source', 'Fetch fake items.' );
+		return self::source_schema( 'Fake source', 'Fetch fake items.', '{ emitted, refused }' );
 	}
 }
