@@ -4,10 +4,9 @@
  * from each client's own feed, and normalizes them into recorded items.
  *
  * Extends Source_Node, which owns the trigger, the grid, the chain and the
- * record path. Its feeds name hosts no one vets; the `feed:curl` sibling
- * refuses a private or reserved address, a redirect's Location included,
- * unless `curl_allow_private_addresses` is set. The feed sends no
- * credential, so it takes no vault group.
+ * record path. It fetches whatever url a feed names, and every Location a
+ * redirect answers, and checks no address. The feed sends no credential,
+ * so it takes no vault group.
  *
  * @package Newspack_Intelligence
  */
