@@ -210,19 +210,7 @@ export default function Search( {
 					{ ...field( 'q' ) }
 				/>
 				{ lens ? (
-					<>
-						<LensRuns lens={ lens } lists={ lists } />
-						<button
-							type="button"
-							className="button"
-							onClick={ editAsOwn }
-						>
-							{ __(
-								'Edit as my own search',
-								'newspack-intelligence'
-							) }
-						</button>
-					</>
+					<LensRuns lens={ lens } lists={ lists } />
 				) : (
 					<>
 						{ lists.map( ( { option, values } ) => (
@@ -250,9 +238,23 @@ export default function Search( {
 						/>
 					</>
 				) }
-				<button type="submit" className="button button-primary">
-					{ __( 'Search', 'newspack-intelligence' ) }
-				</button>
+				<div className="newspack-intelligence__actions">
+					<button type="submit" className="button button-primary">
+						{ __( 'Search', 'newspack-intelligence' ) }
+					</button>
+					{ lens && (
+						<button
+							type="button"
+							className="button"
+							onClick={ editAsOwn }
+						>
+							{ __(
+								'Edit as my own search',
+								'newspack-intelligence'
+							) }
+						</button>
+					) }
+				</div>
 			</form>
 			<Refusal error={ lenses.error } />
 			<Answer
