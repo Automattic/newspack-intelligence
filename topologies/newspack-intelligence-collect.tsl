@@ -2,16 +2,11 @@
 var num_partitions = 1
 include topic-probe
 include newspack-intelligence-streams
-make_node Github_Source github public
-cmd github:config set_vault_id github
+make_node Github_Source github public github
 cmd github:config set_interval 900
-cmd github:config add_repo Automattic/newspack-ads
+cmd github:config add_repo Automattic/newspack-workspace
 cmd github:config add_repo Automattic/newspack-activecampaign
-cmd github:config add_repo Automattic/private-repo-1
-cmd github:config add_repo Automattic/newspack-network
-cmd github:config add_repo Automattic/newspack-plugin
-make_node Linear_Source linear internal
-cmd linear:config set_vault_id linear
+make_node Linear_Source linear internal linear
 cmd linear:config set_interval 900
 cmd linear:config add_team TEAMA
 cmd linear:config add_team TEAMB
@@ -47,7 +42,21 @@ cmd feed:config add_url https://www.partner-11.example/feed/
 cmd feed:config add_url https://partner-2.example/feed
 cmd feed:config add_url https://newsletter-1.example/feed
 cmd feed:config add_url https://newsletter-2.example/feed
+cmd feed:config add_url https://partner-12.example/blog?format=rss
+# One Google News search per organization that publishes no feed of its own.
+make_node Feed_Source news public
+cmd news:config set_interval 3600
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+1%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+2%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+3%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+4%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+5%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+6%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+7%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+8%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Organization+9%22&hl=en-US&gl=US&ceid=US:en
 connect_node github intel:writer
 connect_node linear intel:writer
 connect_node feed intel:writer
+connect_node news intel:writer
 secure

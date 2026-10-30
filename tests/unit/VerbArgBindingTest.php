@@ -42,28 +42,22 @@ final class VerbArgBindingTest extends TestCase {
 		);
 	}
 
-	public function test_add_repo_and_github_vault_id_bind_both_ways(): void {
+	public function test_add_repo_binds_by_position_and_by_name(): void {
 		$node    = new Github_Source_Node();
 		$sibling = $this->sibling( $node, 'github' );
 
 		$sibling->dispatch( 'add_repo', [ 'acme/pos-repo' ] );
 		$sibling->dispatch( 'add_repo', [ '--repo=acme/named-repo' ] );
 		$this->assertSame( [ 'acme/pos-repo', 'acme/named-repo' ], $this->prop( $node, 'repos' ) );
-
-		$sibling->dispatch( 'set_vault_id', [ 'gh-pos' ] );
-		$this->assertSame( 'gh-pos', $this->prop( $node, 'vault_id' ) );
-		$sibling->dispatch( 'set_vault_id', [ '--vault_id=gh-named' ] );
-		$this->assertSame( 'gh-named', $this->prop( $node, 'vault_id' ) );
 	}
 
-	public function test_linear_set_vault_id_binds_both_ways(): void {
+	public function test_add_team_binds_by_position_and_by_name(): void {
 		$node    = new Linear_Source_Node();
 		$sibling = $this->sibling( $node, 'linear' );
 
-		$sibling->dispatch( 'set_vault_id', [ 'lin-pos' ] );
-		$this->assertSame( 'lin-pos', $this->prop( $node, 'vault_id' ) );
-		$sibling->dispatch( 'set_vault_id', [ '--vault_id=lin-named' ] );
-		$this->assertSame( 'lin-named', $this->prop( $node, 'vault_id' ) );
+		$sibling->dispatch( 'add_team', [ 'POS7' ] );
+		$sibling->dispatch( 'add_team', [ '--team=NAMED8' ] );
+		$this->assertSame( [ 'POS7', 'NAMED8' ], $this->prop( $node, 'teams' ) );
 	}
 
 	public function test_llm_config_verbs_bind_both_ways(): void {

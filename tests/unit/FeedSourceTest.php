@@ -6,18 +6,14 @@ namespace Newspack_Intelligence\Tests;
 use Newspack_Intelligence\Feed_Source_Node;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
-use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
-use Newspack_Nodes\Event_Framework;
 use Newspack_Nodes\Message;
-use Newspack_Nodes\Node_Names;
-use Newspack_Nodes\Router_Node;
-use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
 use Newspack_Nodes\Topology_Registry;
 
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
+require_once __DIR__ . '/../support/drives-curl.php';
 
 /**
  * The feed source: a pass sends each feed URL to its `feed:curl` sibling,
@@ -28,15 +24,10 @@ require_once __DIR__ . '/../support/seeds-intel-graph.php';
  */
 final class FeedSourceTest extends TestCase {
 	use Seeds_Intel_Graph;
-
-	/** The target the feed's items go to. */
-	private const WRITER = 'writer-6127';
+	use Drives_Curl;
 
 	/** The Gazette's own site, where its items link. */
 	private const GAZETTE = 'https://harborgazette.example';
-
-	/** Who asks for a TICK, and hears its answer. */
-	private const ASKER = 'asker-5513';
 
 	private const RSS = <<<XML
 <?xml version="1.0"?>
@@ -74,88 +65,23 @@ XML;
 </feed>
 XML;
 
-	private Capture_Sink_Node $writer;
-
-	private Capture_Sink_Node $asker;
-
-	/** @var list<string> Every url a dispatch was handed, in order. */
-	private array $dispatched = [];
-
-	/** @var array<string,\CurlHandle> The handle each url's dispatch returned. */
-	private array $handles = [];
-
-	/** @var array<int,string> The url each handle fetches, by spl_object_id. */
-	private array $url_of = [];
-
-	/** @var array<string,array{0:int,1:string}> The status and body each url answers with. */
-	private array $answers = [];
-
-	/** @var array<string,true> Urls whose next dispatch throws. */
-	private array $refusing = [];
-
 	/** @var array<string,true> Urls the URL check refuses, as WordPress refuses a private address. */
 	private array $unsafe = [];
 
 	/** @var list<string> Every url the URL check was handed, in order. */
 	private array $validated = [];
 
-	/** @var array<string,string> The Location each url answers a 301 with. */
-	private array $locations = [];
-
-	/** @var array<string,array<int,mixed>> The opts each url's dispatch was handed. */
-	private array $opts = [];
-
 	protected function setUp(): void {
 		parent::setUp();
-		Event_Framework::reset();
-		Event_Framework::$curl_dispatch = function ( array $opts ): \CurlHandle {
-			$url                = (string) $opts[ \CURLOPT_URL ];
-			$this->dispatched[] = $url;
-			$this->opts[ $url ] = $opts;
-			if ( isset( $this->refusing[ $url ] ) ) {
-				unset( $this->refusing[ $url ] );
-				throw new \RuntimeException( "dispatch-down-5108 {$url}" );
-			}
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_init
-			$easy                                    = \curl_init();
-			$this->handles[ $url ]                   = $easy;
-			$this->url_of[ \spl_object_id( $easy ) ] = $url;
-			return $easy;
-		};
-		Curl_Node::$curl_result = function ( \CurlHandle $easy ): array {
-			$url = $this->url_of[ \spl_object_id( $easy ) ];
-			if ( isset( $this->locations[ $url ] ) ) {
-				return [
-					'code'     => 301,
-					'body'     => '',
-					'redirect' => $this->locations[ $url ],
-				];
-			}
-			[ $code, $body ] = $this->answers[ $url ];
-			return [
-				'code'     => $code,
-				'body'     => $body,
-				'redirect' => '',
-			];
-		};
+		$this->install_curl();
 		Feed_Source_Node::$validate_url = function ( string $url ): string|false {
 			$this->validated[] = $url;
 			return isset( $this->unsafe[ $url ] ) ? false : $url;
 		};
-		$router = new Router_Node();
-		$router->name( Node_Names::ROUTER );
-		$interpreter = new Command_Interpreter_Node();
-		$interpreter->name( Node_Names::COMMAND_INTERPRETER );
-		$interpreter->sink( $router );
-		$this->writer = new Capture_Sink_Node();
-		$this->writer->name( self::WRITER );
-		$this->asker = new Capture_Sink_Node();
-		$this->asker->name( self::ASKER );
 	}
 
 	protected function tearDown(): void {
-		Event_Framework::$curl_dispatch    = null;
-		Curl_Node::$curl_result            = null;
+		$this->uninstall_curl();
 		Feed_Source_Node::$validate_url    = null;
 		Intel_Graph_Row_Schema::$read_rows = null;
 		Topology_Registry::reset();
@@ -169,38 +95,11 @@ XML;
 	 * @param string ...$urls The feeds it fetches.
 	 */
 	private function feed( string ...$urls ): Feed_Source_Node {
-		$node = new Feed_Source_Node();
-		$node->name( 'feed' );
-		$node->arguments( [ 'public' ] );
+		$node = $this->wire( new Feed_Source_Node(), 'feed', [ 'public' ] );
 		foreach ( $urls as $url ) {
 			$node->interpreter()->dispatch( 'add_url', [ $url ] );
 		}
-		$node->sink( Core::node( Node_Names::COMMAND_INTERPRETER ) );
-		$node->target( self::WRITER );
 		return $node;
-	}
-
-	/** Run $work once inside a running drain loop, where a fetch may start. */
-	private function in_drain( \Closure $work ): void {
-		$done = false;
-		Event_Framework::instance()->drain(
-			static function () use ( $work, &$done ): bool {
-				if ( ! $done ) {
-					$done = true;
-					$work();
-				}
-				return false;
-			}
-		);
-	}
-
-	/** Ask the feed for a TICK inside a drain. */
-	private function tick( Feed_Source_Node $node ): void {
-		$request                   = Message::new_message();
-		$request[ Message::TYPE ]  = Message::TM_REQUEST;
-		$request[ Message::FROM ]  = self::ASKER;
-		$request[ Message::VALUE ] = 'TICK';
-		$this->in_drain( static fn () => $node->fill( $request ) );
 	}
 
 	/** Run one Router tick through the feed inside a drain, its clock at a moment. */
@@ -211,32 +110,6 @@ XML;
 				$node->fire_cb();
 			}
 		);
-	}
-
-	/** Complete one url's transfer inside a drain, answering a status and a body. */
-	private function complete( string $url, string $body, int $code = 200, int $result = \CURLE_OK ): void {
-		$this->answers[ $url ] = [ $code, $body ];
-		$this->in_drain( fn () => $this->complete_curl( $this->handles[ $url ], $result ) );
-	}
-
-	/** Complete one url's transfer inside a drain as a 301 to $location. */
-	private function redirect( string $url, string $location ): void {
-		$this->locations[ $url ] = $location;
-		$this->in_drain( fn () => $this->complete_curl( $this->handles[ $url ] ) );
-	}
-
-	/** @return list<array<int,mixed>> The answers the asker heard. */
-	private function answers(): array {
-		return \array_column( $this->asker->captured, Message::VALUE );
-	}
-
-	/** @return array<string,array<string,mixed>> Each recorded item's event, by item_key. */
-	private function recorded(): array {
-		$out = [];
-		foreach ( $this->writer->captured as $message ) {
-			$out[ $message[ Message::VALUE ]['item_key'] ] = $message[ Message::VALUE ];
-		}
-		return $out;
 	}
 
 	/**
@@ -308,7 +181,7 @@ XML;
 		$this->complete( 'https://heron-4410.example/feed/', '', 0, \CURLE_COULDNT_CONNECT );
 
 		$this->assertSame( [], $this->recorded() );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: Feed fetch failed: curl error 7 (' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: a fetch failed: curl error 7 (' ) );
 		$this->tick( $node );
 		$this->assertSame( [ 'https://heron-4410.example/feed/', 'https://heron-4410.example/feed/' ], $this->dispatched, 'the answered pass leaves room for the next' );
 	}
@@ -454,6 +327,11 @@ XML;
 		$curl = Core::node( 'feed-3307:curl' );
 		$this->assertInstanceOf( Curl_Node::class, $curl );
 		$this->assertSame( 'feed-3307', $curl->target() );
+	}
+
+	/** A feed sends no credential, so it declares no vault group. */
+	public function test_a_feed_declares_no_vault_group(): void {
+		$this->assertSame( [ 'tier' ], \array_column( Feed_Source_Node::node_schema()['arguments'], 'name' ) );
 	}
 
 	public function test_atom_entry_prefers_alternate_link_over_self(): void {
@@ -660,6 +538,77 @@ XML;
 		$this->assertSame( [ 'feed:harborgazette.example:moved' ], \array_keys( $this->recorded() ) );
 	}
 
+	/** A url is checked as it is sent, never as it is queued: one lookup per send. */
+	public function test_each_url_is_checked_only_as_it_is_sent(): void {
+		$urls = \array_map( static fn ( int $i ): string => "https://outlet-{$i}.example/feed/", \range( 1, 18 ) );
+		$node = $this->feed( ...$urls );
+
+		$this->tick( $node );
+		$this->assertSame( \array_slice( $urls, 0, 16 ), $this->validated );
+
+		$this->complete( $urls[0], self::RSS );
+		$this->assertSame( \array_slice( $urls, 0, 17 ), $this->validated );
+	}
+
+	/** The news node's searches share one host, so they go out one at a time. */
+	public function test_searches_on_one_host_go_out_one_at_a_time(): void {
+		$searches = \array_map( static fn ( int $i ): string => "https://news.google.com/rss/search?q=%22Heron+{$i}%22&hl=en-US", \range( 1, 9 ) );
+		$node     = $this->feed( ...$searches );
+
+		$this->tick( $node );
+		$this->assertSame( [ $searches[0] ], $this->dispatched );
+
+		$this->complete( $searches[0], self::RSS );
+		$this->assertSame( [ $searches[0], $searches[1] ], $this->dispatched );
+	}
+
+	/** A client feed redirected to a configured feed's host keeps the client's lane. */
+	public function test_a_client_feed_redirected_to_a_configured_host_keeps_its_lane(): void {
+		$this->start_intel_graph();
+		$this->seed_clients();
+		$node = $this->feed( 'https://kite-2201.example/feed/' );
+		$node->interpreter()->dispatch( 'set_client_feeds', [ 'true' ] );
+		$this->tick( $node );
+		$now = (int) Core::$now;
+
+		$this->redirect( 'https://harborgazette.example/feed/', 'https://kite-2201.example/gazette.xml' );
+		$this->complete( 'https://kite-2201.example/feed/', self::rss( [ [ 'kite-own', 'Kite', $now - 60, 'https://kite-2201.example' ] ] ) );
+		$this->complete( 'https://kite-2201.example/gazette.xml', self::rss( [ [ 'moved', 'Moved', $now - 60, self::GAZETTE ], [ 'stray', 'Stray', $now - 60, 'https://kite-2201.example' ] ] ) );
+
+		$this->assertSame( [ 'feed:kite-own', 'feed:harborgazette.example:moved' ], \array_keys( $this->recorded() ) );
+	}
+
+	/** A configured feed redirected to a client's /feed/ keeps the configured lane. */
+	public function test_a_configured_feed_redirected_to_a_clients_feed_keeps_its_lane(): void {
+		$node = $this->feed( 'https://kite-2201.example/feed/' );
+		$this->tick( $node );
+
+		$this->redirect( 'https://kite-2201.example/feed/', 'https://harborgazette.example/feed/' );
+		$this->complete( 'https://harborgazette.example/feed/', self::rss( [ [ 'undated', 'Undated', null, 'https://salemledger.example' ] ] ) );
+
+		$this->assertSame( [ 'feed:undated' ], \array_keys( $this->recorded() ) );
+	}
+
+	/**
+	 * A configured feed redirected onto the very url a client's feed is
+	 * fetching keeps its own lane, and the client keeps its, though both
+	 * fetch the one url.
+	 */
+	public function test_a_redirect_onto_a_client_feed_in_flight_keeps_both_lanes(): void {
+		$this->start_intel_graph();
+		$this->seed_clients();
+		$node = $this->feed( 'https://kite-2201.example/feed/' );
+		$node->interpreter()->dispatch( 'set_client_feeds', [ 'true' ] );
+		$this->tick( $node );
+		$body = self::rss( [ [ 'own-site', 'Own', (int) Core::$now - 60, self::GAZETTE ], [ 'offsite', 'Offsite', (int) Core::$now - 60, 'https://salemledger.example' ] ] );
+
+		$this->redirect( 'https://kite-2201.example/feed/', 'https://harborgazette.example/feed/' );
+		$this->complete( 'https://harborgazette.example/feed/', $body );
+		$this->complete( 'https://harborgazette.example/feed/', $body );
+
+		$this->assertSame( [ 'feed:harborgazette.example:own-site', 'feed:own-site', 'feed:offsite' ], \array_keys( $this->recorded() ) );
+	}
+
 	/** A redirect to a URL WordPress refuses records nothing, logged. */
 	public function test_a_redirect_to_a_refused_url_is_not_followed(): void {
 		$stderr                                       = $this->capture_stderr();
@@ -688,7 +637,7 @@ XML;
 		$this->assertSame( 5, Curl_Node::MAX_REDIRECTS );
 		$this->assertCount( 6, $this->dispatched );
 		$this->assertSame( 'https://hop-5.example/feed/', \end( $this->dispatched ) );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: a feed redirected past 5 hops; recording nothing: https://hop-6.example/feed/' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: a request redirected past 5 hops; recording nothing: https://hop-6.example/feed/' ) );
 	}
 
 	/** The toggle round-trips through dump_config(), and a source with it off dumps no line. */

@@ -4,153 +4,141 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Linear_Source_Node;
-use Newspack_Nodes\Message;
-use Newspack_Nodes\Vault;
-use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
 
-final class LinearSourceTest extends TestCase {
+require_once __DIR__ . '/../support/drives-curl.php';
 
-	protected function tearDown(): void {
-		Linear_Source_Node::$http_post = null;
-		delete_option( 'newspack_nodes_vault' );
-		Vault::get_instance()->reset_cache();
+/**
+ * The Linear source on the chain: one GraphQL POST of `{ query, variables }`
+ * a pass, through its Curl sibling under its vault group, and the page of
+ * issues it answers.
+ */
+final class LinearSourceTest extends TestCase {
+	use Drives_Curl;
+
+	private const GRAPHQL = 'https://api.linear.app/graphql';
+
+	protected function setUp(): void {
+		parent::setUp();
+		$this->install_curl();
 	}
 
-	/** A canned 200 with two issue nodes in the GraphQL response shape. */
-	private function stub_linear(): void {
-		Linear_Source_Node::$http_post = static function ( string $url, array $args ): array {
-			$body = [
-				'data' => [
-					'issues' => [
-						'nodes' => [
-							[ 'identifier' => 'ABC-123', 'title' => 'First issue', 'url' => 'https://linear.app/abc-123', 'description' => 'first body', 'updatedAt' => '2026-06-12T00:00:00Z' ],
-							[ 'identifier' => 'ABC-124', 'title' => 'Second issue', 'url' => 'https://linear.app/abc-124', 'description' => 'second body', 'updatedAt' => '2026-06-13T00:00:00Z' ],
-						],
-					],
-				],
-			];
-			return [ 'response' => [ 'code' => 200 ], 'body' => (string) \json_encode( $body ) ];
-		};
+	protected function tearDown(): void {
+		$this->uninstall_curl();
+		parent::tearDown();
 	}
 
 	/**
-	 * Capture each request's args into $captured and answer an empty page.
+	 * A Linear source as the collect topology builds it.
 	 *
-	 * @param list<array{url:string,args:array<string,mixed>}> $captured
+	 * @param list<string> $args  The make_node arguments.
+	 * @param string       ...$teams The team keys it fetches.
 	 */
-	private function capture_requests( array &$captured ): void {
-		Linear_Source_Node::$http_post = static function ( string $url, array $args ) use ( &$captured ): array {
-			$captured[] = [ 'url' => $url, 'args' => $args ];
-			return [ 'response' => [ 'code' => 200 ], 'body' => '{"data":{"issues":{"nodes":[]}}}' ];
-		};
-	}
-
-	/** @return array<string,array<string,mixed>> items keyed by item_key */
-	private function fetch_by_id( array $config ): array {
-		$node  = new Linear_Source_Node();
-		$items = $node->fetch( $config );
-		$out   = [];
-		foreach ( $items as $item ) {
-			$out[ $item['item_key'] ] = $item;
+	private function linear( array $args, string ...$teams ): Linear_Source_Node {
+		$node = $this->wire( new Linear_Source_Node(), 'linear', $args );
+		foreach ( $teams as $team ) {
+			$node->interpreter()->dispatch( 'add_team', [ $team ] );
 		}
-		return $out;
+		return $node;
 	}
 
-	public function test_fetch_normalizes_issue_nodes_into_items(): void {
-		$this->stub_linear();
-		$by = $this->fetch_by_id( [ 'teams' => [ 'KESTREL' ], 'token' => 'lin_secret' ] );
+	/** @return array<string,mixed> The body the pass POSTed, decoded. */
+	private function posted(): array {
+		return \json_decode( (string) $this->opts[ self::GRAPHQL ][ \CURLOPT_POSTFIELDS ], true );
+	}
 
-		$this->assertArrayHasKey( 'linear:ABC-123', $by );
-		$this->assertArrayHasKey( 'linear:ABC-124', $by );
+	/** A pass POSTs the query as JSON, the team keys riding as a variable and never in the query text. */
+	public function test_a_pass_posts_the_query_with_the_teams_as_a_variable(): void {
+		$this->tick( $this->linear( [ 'internal' ], 'KESTREL', 'WREN9' ) );
 
+		$this->assertSame( [ self::GRAPHQL ], $this->dispatched );
+		$this->assertTrue( $this->opts[ self::GRAPHQL ][ \CURLOPT_POST ] );
+		$this->assertContains( 'Content-Type: application/json', $this->opts[ self::GRAPHQL ][ \CURLOPT_HTTPHEADER ] );
+		$body = $this->posted();
+		$this->assertSame( [ 'teams' => [ 'KESTREL', 'WREN9' ] ], $body['variables'] );
+		$this->assertStringContainsString( '$teams: [String!]', $body['query'] );
+		$this->assertStringContainsString( 'issues(first: 30, orderBy: updatedAt, filter: { team: { key: { in: $teams } } })', $body['query'] );
+		$this->assertStringNotContainsString( 'KESTREL', $body['query'] );
+		$this->assertSame( [ [ 'verb' => 'TICK', 'data' => [ 'fetching' => 1 ] ] ], $this->answers() );
+	}
+
+	/** The page's issue nodes record as items; a node with no identifier is skipped. */
+	public function test_the_page_records_its_issues(): void {
+		$this->tick( $this->linear( [ 'internal' ], 'KESTREL' ) );
+
+		$this->complete(
+			self::GRAPHQL,
+			(string) \json_encode(
+				[
+					'data' => [
+						'issues' => [
+							'nodes' => [
+								[ 'identifier' => 'ABC-123', 'title' => 'First issue', 'url' => 'https://linear.app/abc-123', 'description' => 'first body', 'updatedAt' => '2026-06-12T00:00:00Z' ],
+								[ 'title' => 'No identifier' ],
+								[ 'identifier' => 'ABC-124', 'title' => 'Second issue', 'url' => 'https://linear.app/abc-124', 'description' => 'second body', 'updatedAt' => '2026-06-13T00:00:00Z' ],
+							],
+						],
+					],
+				]
+			)
+		);
+
+		$by = $this->recorded();
+		$this->assertSame( [ 'linear:ABC-123', 'linear:ABC-124' ], \array_keys( $by ) );
 		$item = $by['linear:ABC-123'];
 		$this->assertSame( 'linear', $item['source'] );
+		$this->assertSame( 'internal', $item['tier'] );
 		$this->assertSame( 'First issue', $item['title'] );
 		$this->assertSame( 'https://linear.app/abc-123', $item['url'] );
 		$this->assertSame( 'first body', $item['body'] );
 		$this->assertSame( \strtotime( '2026-06-12T00:00:00Z' ), $item['item_ts'] );
 	}
 
-	public function test_fetch_sends_raw_token_as_authorization_header(): void {
-		$captured = [];
-		$this->capture_requests( $captured );
-		$node = new Linear_Source_Node();
-		$node->fetch( [ 'teams' => [ 'KESTREL' ], 'token' => 'lin_secret' ] );
+	/** A GraphQL error answer, which Linear sends with a 200, records nothing and logs the first error. */
+	public function test_an_error_answer_records_nothing_and_logs_it(): void {
+		$stderr = $this->capture_stderr();
+		$this->tick( $this->linear( [ 'internal' ], 'KESTREL' ) );
 
-		$this->assertNotEmpty( $captured );
-		$this->assertSame( 'lin_secret', $captured[0]['args']['headers']['Authorization'] );
-		$this->assertStringNotContainsString( 'Bearer', $captured[0]['args']['headers']['Authorization'] );
+		$this->complete( self::GRAPHQL, '{"errors":[{"message":"linear-key-revoked-6618"},{"message":"second-error-6619"}]}' );
+
+		$this->assertSame( [], $this->recorded() );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: Linear answered an error: linear-key-revoked-6618' ) );
 	}
 
-	/** The keys ride as a GraphQL variable, never spliced into the query text. */
-	public function test_fetch_filters_issues_by_the_teams_through_a_variable(): void {
-		$captured = [];
-		$this->capture_requests( $captured );
-		$node = new Linear_Source_Node();
-		$node->fetch( [ 'teams' => [ 'KESTREL', 'WREN9' ], 'token' => 'lin_secret' ] );
+	/** An answer whose issues are not a list records nothing, and says so. */
+	public function test_an_answer_without_an_issue_list_is_logged(): void {
+		$stderr = $this->capture_stderr();
+		$this->tick( $this->linear( [ 'internal' ], 'KESTREL' ) );
 
-		$this->assertCount( 1, $captured );
-		$body = \json_decode( $captured[0]['args']['body'], true );
-		$this->assertSame( [ 'teams' => [ 'KESTREL', 'WREN9' ] ], $body['variables'] );
-		$this->assertStringContainsString( '$teams: [String!]', $body['query'] );
-		$this->assertStringContainsString( 'issues(first: 30, orderBy: updatedAt, filter: { team: { key: { in: $teams } } })', $body['query'] );
-		$this->assertStringNotContainsString( 'KESTREL', $body['query'] );
+		$this->complete( self::GRAPHQL, '{"data":{"issues":{"nodes":{"ABC-7":{"identifier":"ABC-7"}}}}}' );
+
+		$this->assertSame( [], $this->recorded() );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: Linear answered an error: data.issues.nodes is not a list' ) );
 	}
 
-	public function test_fetch_returns_empty_and_makes_no_call_with_no_team(): void {
-		$called = false;
-		Linear_Source_Node::$http_post = static function ( string $url, array $args ) use ( &$called ): array {
-			$called = true;
-			return [ 'response' => [ 'code' => 200 ], 'body' => '{}' ];
-		};
-		$node = new Linear_Source_Node();
-		$this->assertSame( [], $node->fetch( [ 'teams' => [], 'token' => 'lin_secret' ] ) );
-		$this->assertFalse( $called );
+	public function test_no_team_fetches_nothing(): void {
+		$this->tick( $this->linear( [ 'internal' ] ) );
+
+		$this->assertSame( [], $this->dispatched );
 	}
 
-	public function test_fetch_returns_empty_and_makes_no_call_when_token_blank(): void {
-		$called = false;
-		Linear_Source_Node::$http_post = static function ( string $url, array $args ) use ( &$called ): array {
-			$called = true;
-			return [ 'response' => [ 'code' => 200 ], 'body' => '{}' ];
-		};
-		$node = new Linear_Source_Node();
-		$this->assertSame( [], $node->fetch( [ 'teams' => [ 'KESTREL' ], 'token' => '' ] ) );
-		$this->assertFalse( $called );
-	}
+	/** The vault group the make_node line names lends the POST Linear's raw key, as its entry names the header. */
+	public function test_the_vault_group_sends_the_raw_linear_key(): void {
+		$this->seed_vault(
+			'linear',
+			[
+				'url'           => 'https://api.linear.app',
+				'group'         => 'linear-4402',
+				'auth_password' => 'lin_api_vault_6630',
+				'auth_header'   => 'Authorization',
+			]
+		);
+		$node = $this->linear( [ 'internal', 'linear-4402' ], 'KESTREL' );
 
-	public function test_fetch_returns_empty_on_wp_error_without_throwing(): void {
-		Linear_Source_Node::$http_post = static function ( string $url, array $args ): mixed {
-			return new \WP_Error( 'http', 'boom' );
-		};
-		$node = new Linear_Source_Node();
-		$this->assertSame( [], $node->fetch( [ 'teams' => [ 'KESTREL' ], 'token' => 'lin_secret' ] ) );
-	}
-
-	public function test_fetch_returns_empty_on_non_200(): void {
-		Linear_Source_Node::$http_post = static function ( string $url, array $args ): array {
-			return [ 'response' => [ 'code' => 401 ], 'body' => '' ];
-		};
-		$node = new Linear_Source_Node();
-		$this->assertSame( [], $node->fetch( [ 'teams' => [ 'KESTREL' ], 'token' => 'lin_secret' ] ) );
-	}
-
-	public function test_tick_reads_teams_and_token_from_verb_state(): void {
-		$this->seed_vault( 'lin-creds', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'lin_from_vault' ] );
-		$captured = [];
-		$this->capture_requests( $captured );
-
-		$node = new Linear_Source_Node();
-		$node->name( 'linear' );
-		$node->interpreter()->dispatch( 'add_team', [ 'KESTREL' ] );
-		$node->interpreter()->dispatch( 'set_vault_id', [ 'lin-creds' ] );
 		$this->tick( $node );
 
-		$this->assertCount( 1, $captured );
-		$this->assertSame( 'https://api.linear.app/graphql', $captured[0]['url'] );
-		$this->assertSame( 'lin_from_vault', $captured[0]['args']['headers']['Authorization'] );
-		$this->assertSame( [ 'teams' => [ 'KESTREL' ] ], \json_decode( $captured[0]['args']['body'], true )['variables'] );
+		$this->assertContains( 'Authorization: lin_api_vault_6630', $this->opts[ self::GRAPHQL ][ \CURLOPT_HTTPHEADER ] );
+		$this->assertMatchesRegularExpression( '/^make_node \S+ linear internal linear-4402$/m', $node->dump_config() );
 	}
 
 	public function test_add_team_accumulates_ordered_teams_and_ignores_a_repeat(): void {
@@ -161,23 +149,16 @@ final class LinearSourceTest extends TestCase {
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_team', [ 'WREN9' ] ) );
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_team', [ 'KESTREL' ] ) );
 
-		$this->assertSame( [ 'KESTREL', 'WREN9' ], $this->config_of( $node )['teams'] );
+		$this->assertSame( [ 'KESTREL', 'WREN9' ], $this->read_private( $node, 'teams' ) );
 	}
 
 	public function test_remove_team_stops_fetching_it_and_keeps_the_rest(): void {
-		$captured = [];
-		$this->capture_requests( $captured );
-		$node = new Linear_Source_Node();
-		$node->name( 'linear' );
-		$node->interpreter()->dispatch( 'add_team', [ 'KESTREL' ] );
-		$node->interpreter()->dispatch( 'add_team', [ 'WREN9' ] );
-		$node->interpreter()->dispatch( 'set_vault_id', [ 'lin-creds' ] );
-		$this->seed_vault( 'lin-creds', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'lin_from_vault' ] );
+		$node = $this->linear( [ 'internal' ], 'KESTREL', 'WREN9' );
 
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'remove_team', [ 'KESTREL' ] ) );
 		$this->tick( $node );
 
-		$this->assertSame( [ 'teams' => [ 'WREN9' ] ], \json_decode( $captured[0]['args']['body'], true )['variables'] );
+		$this->assertSame( [ 'teams' => [ 'WREN9' ] ], $this->posted()['variables'] );
 	}
 
 	public function test_remove_team_naming_no_team_is_refused_naming_it(): void {
@@ -191,14 +172,12 @@ final class LinearSourceTest extends TestCase {
 		} catch ( \InvalidArgumentException $e ) {
 			$this->assertSame( "remove_team 'GHOST' names no team this node declares", $e->getMessage() );
 		}
-		$this->assertSame( [ 'WREN9' ], $this->config_of( $node )['teams'] );
+		$this->assertSame( [ 'WREN9' ], $this->read_private( $node, 'teams' ) );
 	}
 
-	public function test_teams_and_vault_id_round_trip_through_the_dump(): void {
-		$this->seed_vault( 'lin-creds', [ 'url' => 'https://x.test', 'auth_username' => 'u', 'auth_password' => 'lin_from_vault' ] );
+	public function test_teams_round_trip_through_the_dump(): void {
 		$node = new Linear_Source_Node();
 		$node->name( 'linear' );
-		$node->interpreter()->dispatch( 'set_vault_id', [ 'lin-creds' ] );
 		$node->interpreter()->dispatch( 'add_team', [ 'KESTREL' ] );
 		$node->interpreter()->dispatch( 'add_team', [ 'WREN9' ] );
 		$node->interpreter()->dispatch( 'add_team', [ 'HERON' ] );
@@ -209,10 +188,9 @@ final class LinearSourceTest extends TestCase {
 		$replayed->name( 'linear-replayed' );
 		$this->replay_config( $dump, $replayed );
 
-		$this->assertStringContainsString( 'command_node linear:config set_vault_id lin-creds', $dump );
 		$this->assertStringContainsString( 'command_node linear:config add_team KESTREL', $dump );
 		$this->assertStringNotContainsString( 'WREN9', $dump );
-		$this->assertSame( [ 'teams' => [ 'KESTREL', 'HERON' ], 'token' => 'lin_from_vault' ], $this->config_of( $replayed ) );
+		$this->assertSame( [ 'KESTREL', 'HERON' ], $this->read_private( $replayed, 'teams' ) );
 	}
 
 	public function test_node_schema_declares_linear_source_contract(): void {
@@ -222,27 +200,9 @@ final class LinearSourceTest extends TestCase {
 		$this->assertFalse( $schema['accepts_fill'] );
 		$this->assertSame( 'TICK', $schema['requests'][0]['name'] );
 		$this->assertStringContainsString( 'Linear issues', $schema['description'] );
+		$this->assertSame( [ 'tier', 'vault_group' ], \array_column( $schema['arguments'], 'name' ) );
 		$verb_names = \array_column( $schema['commands'], 'name' );
 		$this->assertContains( 'add_team', $verb_names );
 		$this->assertContains( 'remove_team', $verb_names );
-		$this->assertContains( 'set_vault_id', $verb_names );
-		$vault_id_verb = $schema['commands'][ \array_search( 'set_vault_id', $verb_names, true ) ];
-		$this->assertSame( 'vault_id', $vault_id_verb['args'][0]['type'] );
-	}
-
-	/** Send the node a TICK request, as the worker's trigger does. */
-	private function tick( Linear_Source_Node $node ): void {
-		$node->arguments( [ 'internal' ] );
-		$node->sink( new Capture_Sink_Node() );
-		$message                   = Message::new_message();
-		$message[ Message::TYPE ]  = Message::TM_REQUEST;
-		$message[ Message::VALUE ] = 'TICK';
-		$node->fill( $message );
-	}
-
-	/** config() is protected — read it via reflection, matching SettingsSyncNodeTest's registry-access pattern. */
-	private function config_of( Linear_Source_Node $node ): array {
-		$method = new \ReflectionMethod( $node, 'config' );
-		return $method->invoke( $node );
 	}
 }

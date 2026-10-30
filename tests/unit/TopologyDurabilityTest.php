@@ -190,7 +190,7 @@ class TopologyDurabilityTest extends TestCase {
 		return \is_file( $file ) ? (string) \file_get_contents( $file ) : 'missing';
 	}
 
-	/** A TICK blocks inside one fill(), so a peer must not steal the lock at 60s. */
+	/** An LLM call blocks inside one fill(), so a peer must not steal the lock at 60s. */
 	public function test_the_composed_topology_declares_a_ten_minute_stale_timeout(): void {
 		$this->assertSame( 600, Topology_Registry::synthesize_entry( 'newspack-intelligence' )['stale_timeout'] ?? null );
 	}
@@ -199,7 +199,7 @@ class TopologyDurabilityTest extends TestCase {
 	public function test_the_sources_record_into_the_writer_at_their_tiers(): void {
 		$this->load( 'newspack-intelligence' );
 
-		foreach ( [ 'github' => 'public', 'linear' => 'internal', 'feed' => 'public' ] as $name => $tier ) {
+		foreach ( [ 'github' => 'public', 'linear' => 'internal', 'feed' => 'public', 'news' => 'public' ] as $name => $tier ) {
 			$source = Core::node( $name );
 			$this->assertInstanceOf( Source_Node::class, $source, $name );
 			$this->assertSame( 'intel:writer', $source->target(), $name );
@@ -209,19 +209,72 @@ class TopologyDurabilityTest extends TestCase {
 
 	/**
 	 * GitHub and Linear fetch every fifteen minutes on the grid, the feeds
-	 * every half hour with each open client's feed added; each rides the
-	 * Router's tick.
+	 * every half hour with each open client's feed added, the news searches
+	 * hourly; each rides the Router's tick.
 	 */
 	public function test_the_sources_fetch_on_the_grid(): void {
 		$this->load( 'newspack-intelligence' );
 
-		foreach ( [ 'github' => 900, 'linear' => 900, 'feed' => 1800 ] as $name => $seconds ) {
+		foreach ( [ 'github' => 900, 'linear' => 900, 'feed' => 1800, 'news' => 3600 ] as $name => $seconds ) {
 			$source = Core::node( $name );
 			$this->assertInstanceOf( Source_Node::class, $source, $name );
 			$this->assertSame( $seconds, $this->read_private( $source, 'interval' ), $name );
 			$this->assertSame( 'router', $source->timer_mode(), $name );
 		}
 		$this->assertTrue( $this->read_private( Core::node( 'feed' ), 'client_feeds' ) );
+		$this->assertFalse( $this->read_private( Core::node( 'news' ), 'client_feeds' ) );
+	}
+
+	/**
+	 * GitHub and Linear send their credentials through their Curl siblings,
+	 * each under the vault group its make_node line names; the feeds send
+	 * none.
+	 */
+	public function test_the_api_sources_name_their_vault_groups(): void {
+		$this->load( 'newspack-intelligence' );
+
+		foreach ( [ 'github' => 'github', 'linear' => 'linear', 'feed' => '', 'news' => '' ] as $name => $group ) {
+			$this->assertSame( $group, $this->read_private( Core::node( $name ), 'vault_group' ), $name );
+			$this->assertSame( $group, $this->read_private( Core::node( "{$name}:curl" ), 'vault_group' ), $name );
+		}
+	}
+
+	/** The GitHub source watches the two repos Newspack still ships from on github.com. */
+	public function test_the_github_source_names_newspacks_live_repos(): void {
+		$this->load( 'newspack-intelligence' );
+
+		$this->assertSame( [ 'Automattic/newspack-workspace', 'Automattic/newspack-activecampaign' ], $this->read_private( Core::node( 'github' ), 'repos' ) );
+	}
+
+	/** The feed reads the Partner Org 9's blog among its feeds. */
+	public function test_the_feed_reads_the_partner_org_9(): void {
+		$this->load( 'newspack-intelligence' );
+
+		$this->assertContains( 'https://partner-12.example/blog?format=rss', $this->read_private( Core::node( 'feed' ), 'urls' ) );
+	}
+
+	/**
+	 * The news source holds one Google News search per organization that
+	 * publishes no feed of its own, each URL kept whole through the shell's
+	 * parse: its quotes, `&`, `+` and `%` escapes.
+	 */
+	public function test_the_news_source_holds_each_search_whole(): void {
+		$this->load( 'newspack-intelligence' );
+
+		$this->assertSame(
+			[
+				'https://news.google.com/rss/search?q=%22Organization+1%22&hl=en-US&gl=US&ceid=US:en',
+				'https://news.google.com/rss/search?q=%22Organization+2%22&hl=en-US&gl=US&ceid=US:en',
+				'https://news.google.com/rss/search?q=%22Organization+3%22&hl=en-US&gl=US&ceid=US:en',
+				'https://news.google.com/rss/search?q=%22Organization+4%22&hl=en-US&gl=US&ceid=US:en',
+				'https://news.google.com/rss/search?q=%22Organization+5%22&hl=en-US&gl=US&ceid=US:en',
+				'https://news.google.com/rss/search?q=%22Organization+6%22&hl=en-US&gl=US&ceid=US:en',
+				'https://news.google.com/rss/search?q=%22Organization+7%22&hl=en-US&gl=US&ceid=US:en',
+				'https://news.google.com/rss/search?q=%22Organization+8%22&hl=en-US&gl=US&ceid=US:en',
+				'https://news.google.com/rss/search?q=%22Organization+9%22&hl=en-US&gl=US&ceid=US:en',
+			],
+			$this->read_private( Core::node( 'news' ), 'urls' )
+		);
 	}
 
 	/** The Linear source fetches Newspack's own teams and no others. */
