@@ -4,8 +4,9 @@
  * from each client's own feed, and normalizes them into recorded items.
  *
  * Extends Source_Node, which owns the trigger, the grid, the chain and the
- * record path. Its feeds name hosts no one vets, so WordPress checks each
- * url, a redirect's Location included, as it is sent. The feed sends no
+ * record path. Its feeds name hosts no one vets; the `feed:curl` sibling
+ * refuses a private or reserved address, a redirect's Location included,
+ * unless `curl_allow_private_addresses` is set. The feed sends no
  * credential, so it takes no vault group.
  *
  * @package Newspack_Intelligence
@@ -28,18 +29,6 @@ class Feed_Source_Node extends Source_Node {
 
 	/** Days past the fetch a client item may be dated, for a publisher's mislabelled zone or skewed clock. */
 	private const CLIENT_FEED_AHEAD_DAYS = 1;
-
-	/**
-	 * URL-check seam: replaces the one `wp_http_validate_url()` call every
-	 * feed URL and every redirect's Location passes as it is sent, which
-	 * resolves the host and refuses a private, loopback or reserved address
-	 * and a port other than 80, 443 and 8080. Tests reassign it to refuse
-	 * chosen URLs without DNS; null calls WordPress.
-	 * Signature: `function ( string $url ): string|false`.
-	 *
-	 * @var (\Closure(string): (string|false))|null
-	 */
-	public static ?\Closure $validate_url = null;
 
 	/** @var list<string> Feed URLs the `add_url` verb registered and `remove_url` left, in call order. */
 	protected array $urls = [];
@@ -270,23 +259,8 @@ class Feed_Source_Node extends Source_Node {
 		return \PHP_INT_MAX;
 	}
 
-	/** A redirect's Location is checked before the feed follows it, so Curl follows none. */
+	/** Curl follows no redirect: the feed re-queues each Location under the feed it redirects, keeping its lane. */
 	protected function follows_redirects(): bool {
-		return false;
-	}
-
-	/**
-	 * Whether `wp_http_validate_url()` accepts the url; one it refuses is
-	 * logged and records nothing.
-	 *
-	 * @param string $url The url about to be sent.
-	 */
-	protected function fetchable( string $url ): bool {
-		$validate = self::$validate_url ?? static fn ( string $url ): string|false => \wp_http_validate_url( $url );
-		if ( false !== $validate( $url ) ) {
-			return true;
-		}
-		$this->print_less_often( 'refusing a feed URL WordPress will not fetch: ' . Core::terminal_safe( $url ) );
 		return false;
 	}
 

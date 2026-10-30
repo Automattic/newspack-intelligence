@@ -215,8 +215,8 @@ abstract class Source_Node extends Timer_Node {
 	 * Send queued requests while fewer than max_in_flight(), clamped to
 	 * Curl's own cap, are in flight, one per host at a time, until the pass
 	 * has sent max_requests(); the one past that is logged and the queue
-	 * dropped. A request fetchable() refuses ends its branch. An answer Curl
-	 * sends synchronously frees its slot for this same loop.
+	 * dropped. An answer Curl sends synchronously frees its slot for this
+	 * same loop.
 	 */
 	private function send(): void {
 		if ( $this->sending ) {
@@ -240,11 +240,9 @@ abstract class Source_Node extends Timer_Node {
 						$this->queue = [];
 						break 2;
 					}
-					if ( $this->fetchable( $request[0] ) ) {
-						++$this->sent;
-						$this->dispatch( $key, $request );
-						$sent = true;
-					}
+					++$this->sent;
+					$this->dispatch( $key, $request );
+					$sent = true;
 				}
 			} while ( $sent );
 		} finally {
@@ -278,16 +276,6 @@ abstract class Source_Node extends Timer_Node {
 	/** Requests a pass sends in all. */
 	protected function max_requests(): int {
 		return self::MAX_REQUESTS_PER_PASS;
-	}
-
-	/**
-	 * Whether a url may be fetched, asked as it is sent; a source that
-	 * refuses one logs why.
-	 *
-	 * @param string $url The hop's url.
-	 */
-	protected function fetchable( string $url ): bool {
-		return true;
 	}
 
 	/**

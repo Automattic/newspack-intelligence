@@ -65,24 +65,13 @@ XML;
 </feed>
 XML;
 
-	/** @var array<string,true> Urls the URL check refuses, as WordPress refuses a private address. */
-	private array $unsafe = [];
-
-	/** @var list<string> Every url the URL check was handed, in order. */
-	private array $validated = [];
-
 	protected function setUp(): void {
 		parent::setUp();
 		$this->install_curl();
-		Feed_Source_Node::$validate_url = function ( string $url ): string|false {
-			$this->validated[] = $url;
-			return isset( $this->unsafe[ $url ] ) ? false : $url;
-		};
 	}
 
 	protected function tearDown(): void {
 		$this->uninstall_curl();
-		Feed_Source_Node::$validate_url    = null;
 		Intel_Graph_Row_Schema::$read_rows = null;
 		Topology_Registry::reset();
 		parent::tearDown();
@@ -509,20 +498,17 @@ XML;
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: skipping a client domain that is not a plain hostname: 10.0.0.5: its top-level domain is not alphabetic' ) );
 	}
 
-	/** Every feed URL passes WordPress's URL check before it is sent; one it refuses records nothing, logged. */
-	public function test_a_feed_url_wordpress_refuses_is_never_sent(): void {
-		$stderr                                          = $this->capture_stderr();
-		$this->unsafe['https://intranet-3390.example/feed/'] = true;
-		$node                                            = $this->feed( 'https://intranet-3390.example/feed/', 'https://kite-2201.example/feed/' );
+	/** The feed sends every url it names, a private address included; the address check is Curl's. */
+	public function test_a_feed_url_naming_a_private_address_is_sent_to_curl(): void {
+		$node = $this->feed( 'http://10.20.30.40/feed/', 'https://kite-2201.example/feed/' );
 
 		$this->tick( $node );
 
-		$this->assertSame( [ 'https://intranet-3390.example/feed/', 'https://kite-2201.example/feed/' ], $this->validated );
-		$this->assertSame( [ 'https://kite-2201.example/feed/' ], $this->dispatched );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: refusing a feed URL WordPress will not fetch: https://intranet-3390.example/feed/' ) );
+		$this->assertSame( [ 'http://10.20.30.40/feed/', 'https://kite-2201.example/feed/' ], $this->dispatched );
+		$this->assertArrayHasKey( \CURLOPT_PREREQFUNCTION, $this->opts['http://10.20.30.40/feed/'], 'Curl checks the address it connects to' );
 	}
 
-	/** Curl follows no redirect; the feed follows each Location itself, checked, keeping the client's lane. */
+	/** Curl follows no redirect; the feed follows each Location itself, keeping the client's lane. */
 	public function test_a_redirect_is_followed_by_the_feed_keeping_its_lane(): void {
 		$this->start_intel_graph();
 		$this->seed_clients();
@@ -534,20 +520,8 @@ XML;
 		$this->complete( 'https://cdn-4410.example/gazette.xml', self::rss( [ [ 'moved', 'Moved', (int) Core::$now - 60, self::GAZETTE ] ] ) );
 
 		$this->assertFalse( $this->opts['https://harborgazette.example/feed/'][ \CURLOPT_FOLLOWLOCATION ] );
-		$this->assertSame( [ 'https://harborgazette.example/feed/', 'https://pelican-7714.example/feed/', 'https://cdn-4410.example/gazette.xml' ], $this->validated );
+		$this->assertSame( [ 'https://harborgazette.example/feed/', 'https://pelican-7714.example/feed/', 'https://cdn-4410.example/gazette.xml' ], $this->dispatched );
 		$this->assertSame( [ 'feed:harborgazette.example:moved' ], \array_keys( $this->recorded() ) );
-	}
-
-	/** A url is checked as it is sent, never as it is queued: one lookup per send. */
-	public function test_each_url_is_checked_only_as_it_is_sent(): void {
-		$urls = \array_map( static fn ( int $i ): string => "https://outlet-{$i}.example/feed/", \range( 1, 18 ) );
-		$node = $this->feed( ...$urls );
-
-		$this->tick( $node );
-		$this->assertSame( \array_slice( $urls, 0, 16 ), $this->validated );
-
-		$this->complete( $urls[0], self::RSS );
-		$this->assertSame( \array_slice( $urls, 0, 17 ), $this->validated );
 	}
 
 	/** The news node's searches share one host, so they go out one at a time. */
@@ -609,19 +583,15 @@ XML;
 		$this->assertSame( [ 'feed:harborgazette.example:own-site', 'feed:own-site', 'feed:offsite' ], \array_keys( $this->recorded() ) );
 	}
 
-	/** A redirect to a URL WordPress refuses records nothing, logged. */
-	public function test_a_redirect_to_a_refused_url_is_not_followed(): void {
-		$stderr                                       = $this->capture_stderr();
-		$this->unsafe['http://169.254.169.254/feed/'] = true;
-		$node                                         = $this->feed( 'https://kite-2201.example/feed/' );
+	/** A redirect onto a private address is followed to Curl, which judges the address. */
+	public function test_a_redirect_to_a_private_address_is_sent_to_curl(): void {
+		$node = $this->feed( 'https://kite-2201.example/feed/' );
 		$this->tick( $node );
 
 		$this->redirect( 'https://kite-2201.example/feed/', 'http://169.254.169.254/feed/' );
 
-		$this->assertSame( [ 'https://kite-2201.example/feed/' ], $this->dispatched );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: refusing a feed URL WordPress will not fetch: http://169.254.169.254/feed/' ) );
-		$this->tick( $node );
-		$this->assertSame( [ 'https://kite-2201.example/feed/', 'https://kite-2201.example/feed/' ], $this->dispatched, 'the refused hop ends the pass' );
+		$this->assertSame( [ 'https://kite-2201.example/feed/', 'http://169.254.169.254/feed/' ], $this->dispatched );
+		$this->assertArrayHasKey( \CURLOPT_PREREQFUNCTION, $this->opts['http://169.254.169.254/feed/'], 'Curl checks the hop it connects to' );
 	}
 
 	/** A feed follows at most MAX_REDIRECTS hops; the next records nothing, logged. */
