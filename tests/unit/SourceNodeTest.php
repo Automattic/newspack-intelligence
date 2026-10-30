@@ -9,6 +9,7 @@ use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Linear_Source_Node;
 use Newspack_Intelligence\P2_Source_Node;
 use Newspack_Intelligence\Slack_Source_Node;
+use Newspack_Intelligence\Unthread_Source_Node;
 use Newspack_Intelligence\Source_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
@@ -700,7 +701,7 @@ final class SourceNodeTest extends TestCase {
 
 	/** No source fires a FIRE event, so none declares one. */
 	public function test_no_source_declares_a_fire_registration(): void {
-		foreach ( [ Fake_Source_Node::class, Github_Source_Node::class, Linear_Source_Node::class, Feed_Source_Node::class, Slack_Source_Node::class, P2_Source_Node::class ] as $class ) {
+		foreach ( [ Fake_Source_Node::class, Github_Source_Node::class, Linear_Source_Node::class, Feed_Source_Node::class, Slack_Source_Node::class, P2_Source_Node::class, Unthread_Source_Node::class ] as $class ) {
 			$this->assertSame( [], $class::node_schema()['registrations'], $class );
 		}
 	}

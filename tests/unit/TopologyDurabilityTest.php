@@ -199,7 +199,7 @@ class TopologyDurabilityTest extends TestCase {
 	public function test_the_sources_record_into_the_writer_at_their_tiers(): void {
 		$this->load( 'newspack-intelligence' );
 
-		foreach ( [ 'github' => 'public', 'linear' => 'internal', 'feed' => 'public', 'news' => 'public', 'slack' => 'internal', 'p2' => 'internal', 'p2-restricted' => 'restricted' ] as $name => $tier ) {
+		foreach ( [ 'github' => 'public', 'linear' => 'internal', 'feed' => 'public', 'news' => 'public', 'slack' => 'internal', 'p2' => 'internal', 'p2-restricted' => 'restricted', 'unthread' => 'restricted' ] as $name => $tier ) {
 			$source = Core::node( $name );
 			$this->assertInstanceOf( Source_Node::class, $source, $name );
 			$this->assertSame( 'intel:writer', $source->target(), $name );
@@ -208,7 +208,7 @@ class TopologyDurabilityTest extends TestCase {
 	}
 
 	/**
-	 * GitHub, Linear and Slack fetch every fifteen minutes on the grid, the
+	 * GitHub, Linear, Slack and Unthread fetch every fifteen minutes on the grid, the
 	 * feeds and both P2 nodes every half hour, the feed with each open
 	 * client's feed added, the news searches hourly; each rides the Router's
 	 * tick.
@@ -216,7 +216,7 @@ class TopologyDurabilityTest extends TestCase {
 	public function test_the_sources_fetch_on_the_grid(): void {
 		$this->load( 'newspack-intelligence' );
 
-		foreach ( [ 'github' => 900, 'linear' => 900, 'feed' => 1800, 'news' => 3600, 'slack' => 900, 'p2' => 1800, 'p2-restricted' => 1800 ] as $name => $seconds ) {
+		foreach ( [ 'github' => 900, 'linear' => 900, 'feed' => 1800, 'news' => 3600, 'slack' => 900, 'p2' => 1800, 'p2-restricted' => 1800, 'unthread' => 900 ] as $name => $seconds ) {
 			$source = Core::node( $name );
 			$this->assertInstanceOf( Source_Node::class, $source, $name );
 			$this->assertSame( $seconds, $this->read_private( $source, 'interval' ), $name );
@@ -227,14 +227,14 @@ class TopologyDurabilityTest extends TestCase {
 	}
 
 	/**
-	 * GitHub, Linear, Slack and both P2 nodes send their credentials through
+	 * GitHub, Linear, Slack, both P2 nodes and Unthread send their credentials through
 	 * their Curl siblings, each under the vault group its make_node line
 	 * names; the feeds send none.
 	 */
 	public function test_the_api_sources_name_their_vault_groups(): void {
 		$this->load( 'newspack-intelligence' );
 
-		foreach ( [ 'github' => 'github', 'linear' => 'linear', 'feed' => '', 'news' => '', 'slack' => 'slack', 'p2' => 'p2', 'p2-restricted' => 'p2' ] as $name => $group ) {
+		foreach ( [ 'github' => 'github', 'linear' => 'linear', 'feed' => '', 'news' => '', 'slack' => 'slack', 'p2' => 'p2', 'p2-restricted' => 'p2', 'unthread' => 'unthread' ] as $name => $group ) {
 			$this->assertSame( $group, $this->read_private( Core::node( $name ), 'vault_group' ), $name );
 			$this->assertSame( $group, $this->read_private( Core::node( "{$name}:curl" ), 'vault_group' ), $name );
 		}

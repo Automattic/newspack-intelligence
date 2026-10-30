@@ -77,7 +77,7 @@ class P2_Source_Node extends Source_Node {
 				if ( $site <= 0 ) {
 					$this->unsited( $host, $url );
 				}
-				return $site > 0 && $id > 0 ? $this->item( "{$site}:{$id}", Core::str( $post['title'] ?? null ), $post ) : null;
+				return $site > 0 && $id > 0 ? $this->item( "{$site}:{$id}", self::decoded( Core::str( $post['title'] ?? null ) ), self::author( $post ) . ': ' . self::text( $post ), $post ) : null;
 			}
 		);
 	}
@@ -108,7 +108,12 @@ class P2_Source_Node extends Source_Node {
 				$post    = Core::arr( $comment['post'] ?? null );
 				$post_id = Core::as_int( $post['ID'] ?? null );
 				$id      = Core::as_int( $comment['ID'] ?? null );
-				return $post_id > 0 && $id > 0 ? $this->item( "{$site}:{$post_id}:c{$id}", 'Re: ' . Core::str( $post['title'] ?? null ), $comment ) : null;
+				if ( $post_id <= 0 || $id <= 0 ) {
+					return null;
+				}
+				$author = self::author( $comment ) . ': ';
+				$text   = self::text( $comment );
+				return $this->item( "{$site}:{$post_id}:c{$id}", $author . self::first_line( $text ), 'Re: ' . self::decoded( Core::str( $post['title'] ?? null ) ) . "\n{$author}{$text}", $comment );
 			}
 		);
 	}
@@ -119,18 +124,35 @@ class P2_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * A post or comment as an item: its title and its content stripped to
-	 * text, entities decoded, its author's name leading the body.
+	 * A post or comment as an item under the title and body its caller
+	 * built, its url and date its own.
 	 *
 	 * @param string                 $id    The item's id under `p2:`.
-	 * @param string                 $title The title, as HTML.
+	 * @param string                 $title The title, as text.
+	 * @param string                 $body  The body, as text.
 	 * @param array<array-key,mixed> $row   The post or comment.
 	 * @return array<string,mixed>
 	 */
-	private function item( string $id, string $title, array $row ): array {
-		$author = Core::str( Core::arr( $row['author'] ?? null )['name'] ?? null );
-		$text   = self::decoded( \wp_strip_all_tags( Core::str( $row['content'] ?? null ) ) );
-		return $this->normalize_item( 'p2', $id, self::decoded( $title ), $row['URL'] ?? '', "{$author}: {$text}", $row['date'] ?? '' );
+	private function item( string $id, string $title, string $body, array $row ): array {
+		return $this->normalize_item( 'p2', $id, $title, $row['URL'] ?? '', $body, $row['date'] ?? '' );
+	}
+
+	/**
+	 * A post's or comment's author's name.
+	 *
+	 * @param array<array-key,mixed> $row The post or comment.
+	 */
+	private static function author( array $row ): string {
+		return Core::str( Core::arr( $row['author'] ?? null )['name'] ?? null );
+	}
+
+	/**
+	 * A post's or comment's content stripped to text, entities decoded.
+	 *
+	 * @param array<array-key,mixed> $row The post or comment.
+	 */
+	private static function text( array $row ): string {
+		return self::decoded( \wp_strip_all_tags( Core::str( $row['content'] ?? null ) ) );
 	}
 
 	/** HTML's entities as the characters they spell. */

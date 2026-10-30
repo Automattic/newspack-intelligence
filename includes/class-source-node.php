@@ -40,6 +40,16 @@ abstract class Source_Node extends Timer_Node {
 	/** Bytes of body an item records; a longer body is cut on a character boundary. */
 	public const MAX_BODY_BYTES = 65536;
 
+	/** Characters of a text's first line a title keeps. */
+	public const TITLE_CHARS = 120;
+
+	/** The three escapes Slack's mrkdwn writes into message text, and what each spells. */
+	private const MRKDWN_ESCAPES = [
+		'&amp;' => '&',
+		'&lt;'  => '<',
+		'&gt;'  => '>',
+	];
+
 	/** Bytes of a refused key its line shows. */
 	private const KEY_SHOWN_BYTES = 64;
 
@@ -525,6 +535,16 @@ abstract class Source_Node extends Timer_Node {
 			}
 		}
 		return $items;
+	}
+
+	/** A text's first line, cut to TITLE_CHARS characters. */
+	protected static function first_line( string $text ): string {
+		return \mb_substr( \explode( "\n", $text, 2 )[0], 0, self::TITLE_CHARS );
+	}
+
+	/** Mrkdwn text with its three escapes decoded in one pass, its mentions kept as written. */
+	protected static function mrkdwn( string $text ): string {
+		return \strtr( $text, self::MRKDWN_ESCAPES );
 	}
 
 	/**
