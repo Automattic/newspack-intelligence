@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **The feed source reads fourteen more feeds,** from NEWS-2574's partners, industry bodies, award bodies and newsletters: Pugpig, BlueLena, Local Media Association, Parse.ly, OpenNews, the Association of Alternative Newsmedia, the National Newspaper Association, Media Forward Fund, Investigative Reporters and Editors, the Reporters Committee for Freedom of the Press, the Nobel Prizes, News at Knight, and the archives of the News Product Alliance's Product Notes and the Lenfest Institute's Solution Set. Each was fetched and parsed through `Feed_Source_Node::fetch()` before it was added.
+
 ### Fixed
 - **The Search, Lens and Watches forms line their fields up again.** Each field's label and input share a row with its neighbours', and a field's help hangs below its input instead of pushing the input up. The forms' buttons take a row of their own beneath the fields, and Search's "Edit as my own search" sits beside its Search button.
 

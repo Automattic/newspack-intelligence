@@ -29,6 +29,20 @@ cmd feed:config add_url https://knightfoundation.org/feed/
 cmd feed:config add_url https://www.lenfestinstitute.org/feed/
 cmd feed:config add_url https://lionpublishers.com/feed/
 cmd feed:config add_url https://www.pressforward.news/feed/
+cmd feed:config add_url https://www.pugpig.com/feed/
+cmd feed:config add_url https://bluelena.io/feed/
+cmd feed:config add_url https://localmedia.org/feed/
+cmd feed:config add_url https://www.parse.ly/feed/
+cmd feed:config add_url https://www.opennews.org/feed.xml
+cmd feed:config add_url https://aan.org/feed/
+cmd feed:config add_url https://www.nnaweb.org/index.php?rss=Article
+cmd feed:config add_url https://www.mediaforwardfund.org/feed.rss
+cmd feed:config add_url https://www.ire.org/feed/
+cmd feed:config add_url https://www.rcfp.org/feed/
+cmd feed:config add_url https://www.nobelprize.org/feed/
+cmd feed:config add_url https://newsatknight.substack.com/feed
+cmd feed:config add_url https://us2.campaign-archive.com/feed?u=491444f71ba82dbc51c55ccb9&id=784c02de83
+cmd feed:config add_url https://us15.campaign-archive.com/feed?u=77370ff1d001f9bb991fed9e7&id=4c3cb20afe
 connect_node github intel:writer
 connect_node linear intel:writer
 connect_node feed intel:writer
