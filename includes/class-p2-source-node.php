@@ -77,7 +77,7 @@ class P2_Source_Node extends Source_Node {
 				if ( $site <= 0 ) {
 					$this->unsited( $host, $url );
 				}
-				return $site > 0 && $id > 0 ? $this->item( "{$site}:{$id}", self::decoded( Core::str( $post['title'] ?? null ) ), self::author( $post ) . ': ' . self::text( $post ), $post ) : null;
+				return $site > 0 && $id > 0 ? $this->normalize_item( 'p2', ...self::post_fields( $site, $id, Core::str( $post['title'] ?? null ), self::author( $post ), self::text( $post ), $post['URL'] ?? '', $post['date'] ?? '' ) ) : null;
 			}
 		);
 	}
@@ -111,9 +111,7 @@ class P2_Source_Node extends Source_Node {
 				if ( $post_id <= 0 || $id <= 0 ) {
 					return null;
 				}
-				$author = self::author( $comment ) . ': ';
-				$text   = self::text( $comment );
-				return $this->item( "{$site}:{$post_id}:c{$id}", $author . self::first_line( $text ), 'Re: ' . self::decoded( Core::str( $post['title'] ?? null ) ) . "\n{$author}{$text}", $comment );
+				return $this->normalize_item( 'p2', ...self::comment_fields( $site, $post_id, $id, Core::str( $post['title'] ?? null ), self::author( $comment ), self::text( $comment ), $comment['URL'] ?? '', $comment['date'] ?? '' ) );
 			}
 		);
 	}
@@ -124,17 +122,42 @@ class P2_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * A post or comment as an item under the title and body its caller
-	 * built, its url and date its own.
+	 * A post's item fields after the source, as normalize_item() takes them:
+	 * its id `<site>:<post>`, its title with entities decoded, its author's
+	 * name leading its text.
 	 *
-	 * @param string                 $id    The item's id under `p2:`.
-	 * @param string                 $title The title, as text.
-	 * @param string                 $body  The body, as text.
-	 * @param array<array-key,mixed> $row   The post or comment.
-	 * @return array<string,mixed>
+	 * @api Context_A8C_P2_Node
+	 * @param int    $site   The site's id.
+	 * @param int    $id     The post's id.
+	 * @param string $title  The post's title, as the API answers it.
+	 * @param string $author The author's name.
+	 * @param string $text   The post's content as text.
+	 * @param mixed  $url    The post's url.
+	 * @param mixed  $date   The post's date.
+	 * @return array{0:string,1:string,2:mixed,3:string,4:mixed}
 	 */
-	private function item( string $id, string $title, string $body, array $row ): array {
-		return $this->normalize_item( 'p2', $id, $title, $row['URL'] ?? '', $body, $row['date'] ?? '' );
+	public static function post_fields( int $site, int $id, string $title, string $author, string $text, mixed $url, mixed $date ): array {
+		return [ "{$site}:{$id}", self::decoded( $title ), $url, "{$author}: {$text}", $date ];
+	}
+
+	/**
+	 * A comment's item fields after the source: its id
+	 * `<site>:<post>:c<comment>`, titled by its author's name and its first
+	 * line, its body opening `Re: <post title>` on a line of its own.
+	 *
+	 * @api Context_A8C_P2_Node
+	 * @param int    $site       The site's id.
+	 * @param int    $post_id    The post's id.
+	 * @param int    $id         The comment's id.
+	 * @param string $post_title The post's title, as the API answers it.
+	 * @param string $author     The author's name.
+	 * @param string $text       The comment's content as text.
+	 * @param mixed  $url        The comment's url.
+	 * @param mixed  $date       The comment's date.
+	 * @return array{0:string,1:string,2:mixed,3:string,4:mixed}
+	 */
+	public static function comment_fields( int $site, int $post_id, int $id, string $post_title, string $author, string $text, mixed $url, mixed $date ): array {
+		return [ "{$site}:{$post_id}:c{$id}", "{$author}: " . self::first_line( $text ), $url, 'Re: ' . self::decoded( $post_title ) . "\n{$author}: {$text}", $date ];
 	}
 
 	/**
@@ -170,11 +193,22 @@ class P2_Source_Node extends Source_Node {
 		}
 	}
 
+	/**
+	 * The `add_site` and `remove_site` verbs, the add refusing anything but a
+	 * wordpress.com host.
+	 *
+	 * @api Context_A8C_P2_Node
+	 * @return list<array<string,mixed>>
+	 */
+	public static function site_verbs(): array {
+		return self::checked_list( 'site', 'sites', '/^[a-z0-9-]+\.wordpress\.com\z/', 'a wordpress.com site', 'Register a P2 to read on TICK by its host: <name>.wordpress.com.' );
+	}
+
 	public static function node_schema(): array {
 		return self::source_schema(
 			'Reads the posts and comments of the configured P2s over the last ' . ( self::WINDOW_SECONDS / Intel_Graph_Row_Schema::DAY_SECONDS ) . ' days through the WordPress.com REST API, without blocking, one request at a time, on a TICK request (request_node p2 TICK).',
 			'Start a pass over the sites; each page records its new posts and comments as it lands. Trigger with `request_node p2 TICK`.',
-			self::checked_list( 'site', 'sites', '/^[a-z0-9-]+\.wordpress\.com\z/', 'a wordpress.com site', 'Register a P2 to read on TICK by its host: <name>.wordpress.com.' )
+			self::site_verbs()
 		);
 	}
 }

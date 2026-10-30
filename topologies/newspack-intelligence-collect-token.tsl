@@ -1,0 +1,43 @@
+# The sources that read nothing without a credential from the Vault: Linear,
+# Slack, P2 and Unthread, each recording item_recorded events at its tier into
+# intel:writer.
+var num_partitions = 1
+include topic-probe
+include newspack-intelligence-streams
+make_node Linear_Source linear internal linear
+cmd linear:config set_interval 900
+cmd linear:config add_team NEWS
+cmd linear:config add_team NPAI
+cmd linear:config add_team NPPRO
+cmd linear:config add_team NPPM
+cmd linear:config add_team NPMIG
+cmd linear:config add_team NPLAUNC
+cmd linear:config add_team NPSUPP
+cmd linear:config add_team NPPD
+cmd linear:config add_team DSGNEWS
+make_node Slack_Source slack internal slack
+cmd slack:config set_interval 900
+cmd slack:config add_channel C015W6BES8J
+cmd slack:config add_channel C055SRT7WN4
+cmd slack:config add_channel C0ARY7E1TRA
+cmd slack:config add_channel C01C378QWRX
+make_node P2_Source p2 internal p2
+cmd p2:config set_interval 1800
+cmd p2:config add_site newspackp2.wordpress.com
+cmd p2:config add_site newspackengineering.wordpress.com
+cmd p2:config add_site newspackdesignp2.wordpress.com
+cmd p2:config add_site newspacksupport.wordpress.com
+cmd p2:config add_site newspackonwpcloud.wordpress.com
+# The sales and operations P2 holds prospect management, so it is restricted.
+make_node P2_Source p2-restricted restricted p2
+cmd p2-restricted:config set_interval 1800
+cmd p2-restricted:config add_site newspacksalesandoperations.wordpress.com
+# Support threads quote publishers' staff by name, so Unthread is restricted.
+make_node Unthread_Source unthread restricted unthread
+cmd unthread:config set_interval 900
+connect_node linear intel:writer
+connect_node slack intel:writer
+connect_node p2 intel:writer
+connect_node p2-restricted intel:writer
+connect_node unthread intel:writer
+secure

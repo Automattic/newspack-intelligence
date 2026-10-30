@@ -1,0 +1,52 @@
+# The sources that run with no credential: GitHub, whose public API answers
+# without its Vault entry, and the feeds, each recording item_recorded events
+# at its tier into intel:writer.
+var num_partitions = 1
+include topic-probe
+include newspack-intelligence-streams
+make_node Github_Source github public github
+cmd github:config set_interval 900
+cmd github:config add_repo Automattic/newspack-workspace
+cmd github:config add_repo Automattic/newspack-activecampaign
+make_node Feed_Source feed public
+cmd feed:config set_interval 1800
+cmd feed:config set_client_feeds true
+cmd feed:config add_url https://make.wordpress.org/core/feed/
+cmd feed:config add_url https://wordpress.org/news/feed/
+cmd feed:config add_url https://automattic.com/blog/feed/
+cmd feed:config add_url https://www.niemanlab.org/feed/
+cmd feed:config add_url https://knightfoundation.org/feed/
+cmd feed:config add_url https://www.lenfestinstitute.org/feed/
+cmd feed:config add_url https://lionpublishers.com/feed/
+cmd feed:config add_url https://www.pressforward.news/feed/
+cmd feed:config add_url https://www.pugpig.com/feed/
+cmd feed:config add_url https://bluelena.io/feed/
+cmd feed:config add_url https://localmedia.org/feed/
+cmd feed:config add_url https://www.parse.ly/feed/
+cmd feed:config add_url https://www.opennews.org/feed.xml
+cmd feed:config add_url https://aan.org/feed/
+cmd feed:config add_url https://www.nnaweb.org/index.php?rss=Article
+cmd feed:config add_url https://www.mediaforwardfund.org/feed.rss
+cmd feed:config add_url https://www.ire.org/feed/
+cmd feed:config add_url https://www.rcfp.org/feed/
+cmd feed:config add_url https://www.nobelprize.org/feed/
+cmd feed:config add_url https://newsatknight.substack.com/feed
+cmd feed:config add_url https://us2.campaign-archive.com/feed?u=491444f71ba82dbc51c55ccb9&id=784c02de83
+cmd feed:config add_url https://us15.campaign-archive.com/feed?u=77370ff1d001f9bb991fed9e7&id=4c3cb20afe
+cmd feed:config add_url https://newsproduct.org/blog?format=rss
+# One Google News search per organization that publishes no feed of its own.
+make_node Feed_Source news public
+cmd news:config set_interval 3600
+cmd news:config add_url https://news.google.com/rss/search?q=%22Everlit%22+audio&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Blue+Engine+Collaborative%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Online+News+Association%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Institute+for+Nonprofit+News%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22News+Revenue+Hub%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Google+News+Initiative%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22News+Emmy%22+OR+%22News+%26+Documentary+Emmy%22&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22Pulitzer+Prizes%22+%28board+OR+winners+OR+announces+OR+finalists%29&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://news.google.com/rss/search?q=%22American+Society+of+Magazine+Editors%22+OR+%22National+Magazine+Awards%22&hl=en-US&gl=US&ceid=US:en
+connect_node github intel:writer
+connect_node feed intel:writer
+connect_node news intel:writer
+secure

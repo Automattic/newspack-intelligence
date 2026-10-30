@@ -38,6 +38,9 @@ trait Drives_Curl {
 	/** @var array<string,array<int,mixed>> The opts each url's last dispatch was handed. */
 	private array $opts = [];
 
+	/** @var list<array<int,mixed>> The opts every dispatch was handed, in order. */
+	private array $sent = [];
+
 	/** @var array<string,\CurlHandle> The handle each url's last dispatch returned. */
 	private array $handles = [];
 
@@ -60,6 +63,7 @@ trait Drives_Curl {
 			$url                = (string) $opts[ \CURLOPT_URL ];
 			$this->dispatched[] = $url;
 			$this->opts[ $url ] = $opts;
+			$this->sent[]       = $opts;
 			if ( isset( $this->refusing[ $url ] ) ) {
 				unset( $this->refusing[ $url ] );
 				throw new \RuntimeException( "dispatch-down-5108 {$url}" );
@@ -166,8 +170,16 @@ trait Drives_Curl {
 		);
 	}
 
-	/** Complete one url's transfer inside a drain, answering a status and a body. */
-	private function complete( string $url, string $body, int $code = 200, int $result = \CURLE_OK ): void {
+	/**
+	 * Complete one url's transfer inside a drain, answering a status and a
+	 * body, after feeding its header callback the lines given, as libcurl does.
+	 *
+	 * @param list<string> $header_lines Response header lines, each with its CRLF.
+	 */
+	private function complete( string $url, string $body, int $code = 200, int $result = \CURLE_OK, array $header_lines = [] ): void {
+		foreach ( $header_lines as $line ) {
+			$this->opts[ $url ][ \CURLOPT_HEADERFUNCTION ]( $this->handles[ $url ], $line );
+		}
 		$this->answers[ $url ] = [ $code, $body ];
 		$this->in_drain( fn () => $this->complete_curl( $this->handles[ $url ], $result ) );
 	}

@@ -15,6 +15,9 @@
 
 namespace Newspack_Intelligence\Tests\Unit;
 
+use Newspack_Intelligence\Context_A8C_Linear_Node;
+use Newspack_Intelligence\Context_A8C_P2_Node;
+use Newspack_Intelligence\Context_A8C_Slack_Node;
 use Newspack_Intelligence\Intel_Event_Writer_Node;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intel_Tiers;
@@ -28,6 +31,7 @@ use Newspack_Nodes\Message;
 use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Router_Node;
 use Newspack_Nodes\Shell_Node;
+use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\Helpers\TopologyDurability;
 use Newspack_Nodes\Tests\TestCase;
@@ -295,6 +299,44 @@ class TopologyDurabilityTest extends TestCase {
 			[ 'NEWS', 'NPAI', 'NPPRO', 'NPPM', 'NPMIG', 'NPLAUNC', 'NPSUPP', 'NPPD', 'DSGNEWS' ],
 			$this->read_private( Core::node( 'linear' ), 'teams' )
 		);
+	}
+
+	/**
+	 * The ContextA8C topology stands a node in for each token source but
+	 * Unthread, under its name, tier, interval and list, each reading the
+	 * token dir the container mounts through the host's proxy tunnel and
+	 * recording into the writer.
+	 */
+	public function test_the_context_a8c_nodes_stand_in_for_the_token_half(): void {
+		$lists   = [ 'slack' => 'channels', 'p2' => 'sites', 'p2-restricted' => 'sites', 'linear' => 'teams' ];
+		$classes = [ 'slack' => Context_A8C_Slack_Node::class, 'p2' => Context_A8C_P2_Node::class, 'p2-restricted' => Context_A8C_P2_Node::class, 'linear' => Context_A8C_Linear_Node::class ];
+		$this->load( 'newspack-intelligence-collect-token' );
+		$shipped = [];
+		foreach ( $lists as $name => $list ) {
+			$node             = Core::node( $name );
+			$shipped[ $name ] = [ $this->read_private( $node, 'tier' ), $this->read_private( $node, 'interval' ), $this->read_private( $node, $list ) ];
+		}
+		Core::reset();
+
+		$this->load( 'newspack-intelligence-context-a8c' );
+
+		foreach ( $shipped as $name => [ $tier, $interval, $entries ] ) {
+			$node = Core::node( $name );
+			$this->assertSame( $classes[ $name ], \get_class( $node ), $name );
+			$this->assertSame( [ $tier, $interval, $entries ], [ $this->read_private( $node, 'tier' ), $this->read_private( $node, 'interval' ), $this->read_private( $node, $lists[ $name ] ) ], $name );
+			$this->assertSame( 'intel:writer', $node->target(), $name );
+			$this->assertSame( '/mcp-auth', $this->read_private( $node, 'auth_dir' ), $name );
+			$this->assertSame( 'socks5h://host.docker.internal:8080', $this->read_private( $node, 'proxy' ), $name );
+		}
+		$this->assertNull( Core::node( 'unthread' ) );
+	}
+
+	/** The collect topology is its two halves, so a local copy can swap the token half out. */
+	public function test_the_collect_topology_includes_both_halves(): void {
+		$names = static fn ( string $topology ): array => \array_column( Topology_Analyzer::graph_for( $topology )['nodes'], 'name' );
+
+		$this->assertEqualsCanonicalizing( \array_values( \array_unique( [ ...$names( 'newspack-intelligence-collect-public' ), ...$names( 'newspack-intelligence-collect-token' ) ] ) ), $names( 'newspack-intelligence-collect' ) );
+		$this->assertNotContains( 'slack', $names( 'newspack-intelligence-collect-public' ) );
 	}
 
 	/** Compose a topology the way a worker does, over the test base dir. */
