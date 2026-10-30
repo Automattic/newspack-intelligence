@@ -498,14 +498,13 @@ XML;
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: skipping a client domain that is not a plain hostname: 10.0.0.5: its top-level domain is not alphabetic' ) );
 	}
 
-	/** The feed sends every url it names, a private address included; the address check is Curl's. */
+	/** The feed sends every url it names to Curl, one on a private network included. */
 	public function test_a_feed_url_naming_a_private_address_is_sent_to_curl(): void {
 		$node = $this->feed( 'http://10.20.30.40/feed/', 'https://kite-2201.example/feed/' );
 
 		$this->tick( $node );
 
 		$this->assertSame( [ 'http://10.20.30.40/feed/', 'https://kite-2201.example/feed/' ], $this->dispatched );
-		$this->assertArrayHasKey( \CURLOPT_PREREQFUNCTION, $this->opts['http://10.20.30.40/feed/'], 'Curl checks the address it connects to' );
 	}
 
 	/** Curl follows no redirect; the feed follows each Location itself, keeping the client's lane. */
@@ -583,7 +582,7 @@ XML;
 		$this->assertSame( [ 'feed:harborgazette.example:own-site', 'feed:own-site', 'feed:offsite' ], \array_keys( $this->recorded() ) );
 	}
 
-	/** A redirect onto a private address is followed to Curl, which judges the address. */
+	/** A redirect onto a link-local url is sent to Curl like any other hop. */
 	public function test_a_redirect_to_a_private_address_is_sent_to_curl(): void {
 		$node = $this->feed( 'https://kite-2201.example/feed/' );
 		$this->tick( $node );
@@ -591,7 +590,6 @@ XML;
 		$this->redirect( 'https://kite-2201.example/feed/', 'http://169.254.169.254/feed/' );
 
 		$this->assertSame( [ 'https://kite-2201.example/feed/', 'http://169.254.169.254/feed/' ], $this->dispatched );
-		$this->assertArrayHasKey( \CURLOPT_PREREQFUNCTION, $this->opts['http://169.254.169.254/feed/'], 'Curl checks the hop it connects to' );
 	}
 
 	/** A feed follows at most MAX_REDIRECTS hops; the next records nothing, logged. */

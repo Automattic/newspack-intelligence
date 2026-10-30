@@ -1044,13 +1044,8 @@ while the item is still owed one; re-resolution proper has its own path, the
 reresolver.
 
 A feed pass queues each configured feed, then each client's, under its
-own url. The feed looks no name up itself: its `feed:curl` sibling, the
-substrate's `Curl_Node`, refuses a private or reserved address, checked
-against the address it connected to, unless the site-wide
-`curl_allow_private_addresses` setting is on, and answers the refusal as
-a TM_ERROR, logged under its url. The feed's Curl follows no redirect, so
-the base re-queues each Location under the feed it redirects, and Curl
-checks that hop's address the same way.
+own url. The feed's Curl follows no redirect, so the base re-queues each
+Location under the feed it redirects.
 A body is a client's when the url it was queued under is one of the
 pass's client feeds, which `config()` names at the start of the pass, and
 its domain is that url's host, so a client's feed keeps its lane wherever
