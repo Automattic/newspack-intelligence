@@ -980,10 +980,9 @@ or list or one its source's closure reads an error off, logs
 maps each row to an item through its source's closure, leaving out a row
 the closure answers null for; and `checked_list()` declares a validated
 add verb, below. `dump_config()` replays every declared setter, list and
-checked list. Four hooks tune it:
-`max_in_flight()`, `max_requests()`, `follows_redirects()` and
-`fetchable()`. A pass starts on a `TICK` or a grid boundary unless
-requests are in flight, in which case it starts nothing; it replaces
+checked list. Three hooks tune it: `max_in_flight()`, `max_requests()`
+and `follows_redirects()`. A pass starts on a `TICK` or a grid boundary
+unless requests are in flight, in which case it starts nothing; it replaces
 whatever a throw left queued, calls `begin()`, and answers `{ fetching }`,
 the number of requests it opens on, 0 while one is in flight. A request
 is keyed by its subject, the url it was queued under: it goes to the
@@ -999,8 +998,7 @@ past it; the `news` node's searches, all on news.google.com, go out one
 after another. `max_requests()` bounds a pass:
 `Source_Node::MAX_REQUESTS_PER_PASS` (60) for an API source, past which
 the next request is logged and the queue dropped, and no cap for the
-feeds. `fetchable()` is asked of each url as it is sent; one it refuses
-ends its branch. A body goes to `received()`; a redirect Curl answers
+feeds. A body goes to `received()`; a redirect Curl answers
 because `follows_redirects()` is false re-queues the same subject at the
 Location, one hop on, at most `Curl_Node::MAX_REDIRECTS` (5) hops, a hop
 past that logged; and a TM_ERROR — a transport failure or a status of 400
@@ -1046,12 +1044,13 @@ while the item is still owed one; re-resolution proper has its own path, the
 reresolver.
 
 A feed pass queues each configured feed, then each client's, under its
-own url. `fetchable()` passes each url, a redirect's Location included, to
-`wp_http_validate_url()` as it is sent, which resolves the host and
-refuses a private, loopback or reserved address and a port other than 80,
-443 and 8080; one it refuses is logged rate-limited, naming it, and
-records nothing. The feed's Curl follows no redirect, so the base
-re-queues each Location under the feed it redirects, checked the same way.
+own url. The feed looks no name up itself: its `feed:curl` sibling, the
+substrate's `Curl_Node`, refuses a private or reserved address, checked
+against the address it connected to, unless the site-wide
+`curl_allow_private_addresses` setting is on, and answers the refusal as
+a TM_ERROR, logged under its url. The feed's Curl follows no redirect, so
+the base re-queues each Location under the feed it redirects, and Curl
+checks that hop's address the same way.
 A body is a client's when the url it was queued under is one of the
 pass's client feeds, which `config()` names at the start of the pass, and
 its domain is that url's host, so a client's feed keeps its lane wherever
@@ -1148,9 +1147,7 @@ the test seam. More follow the same pattern, each a static `?\Closure`
 replacing ONE call so the branches around it still run as production code:
 every source's fetches go through the substrate's own curl seams,
 `Event_Framework::$curl_dispatch` and `Curl_Node::$curl_result`, which
-`tests/support/drives-curl.php` drives, and `Feed_Source_Node::$validate_url` replaces
-the one `wp_http_validate_url()` call each feed URL and Location passes, so
-a test refuses a URL without DNS;
+`tests/support/drives-curl.php` drives;
 `LLM_Config::$llm_factory`, which every node using the trait holds its own
 copy of (`Resolver_Node::$llm_factory` and `Extractor_Node::$llm_factory`)
 and `make_llm_client()` answers first; and
@@ -1218,18 +1215,16 @@ workers (`wp nodes restart all`) after deploying that release and before
 purging.
 
 `wp newspack-intelligence items purge --source=<name> --keep=<globs>
-[--reason=<text>] [--yes]` (`Items_CLI_Command`) mints them. It selects,
+[--reason=<text>] [--dry-run]` (`Items_CLI_Command`) mints them. It selects,
 across every partition, each stored item of the source whose key matches
 none of the comma-separated keep globs, each matched by `fnmatch()`
 against the whole key in its own case. `--keep` is required, so no command
 purges a whole source, and WP-CLI keeps only the last of a repeated flag,
 so the command counts `--keep` in `$_SERVER['argv']` and refuses it given
-twice. Without `--yes` it writes nothing and prints the count per key
-prefix, up to the first `-` and its control characters rendered by
-`Core::terminal_safe()`, the total and the command that purges them. With
-`--yes` it appends one `item_purged` per item, as `machine:purge@<version>`,
-its `reason` the one given or the selection, at most `REASON_BYTES` (512)
-as the stream writes it (`Graph_Curation::written_bytes()`). The items
+twice. It purges when run, with no prompt: it appends one `item_purged`
+per item, as `machine:purge@<version>`, its `reason` the one given or
+the selection, at most `REASON_BYTES` (512) as the stream writes it
+(`Graph_Curation::written_bytes()`). The items
 stream takes no write from outside the worker, which writes it alone under
 `void_warranty`, so the events go through `Worker_Route::append()` to
 `intel:writer` in every live worker, `BATCH` (500) at a time: 500 events
@@ -1241,17 +1236,23 @@ outruns the IPC partition's count-pruned retention. That cursor commits
 about every 30 seconds. Input left unread for `READ_WAIT_S` (600) stops
 the command, naming how many it sent; running it again sends the rest,
 because it selects only what the projection still holds. Its success line
-names the dry run to rerun once the projectors have read the purges, which
-answers `Nothing to purge` when none is left. `Items_CLI_Command::$sleep`
-is the wait's test seam. The Linear items recorded from other teams before
+names the dry run, the command with `--dry-run`, to run once the
+projectors have read the purges, which answers `Nothing to purge` when
+none is left. With `--dry-run` it writes nothing and prints the count per
+key prefix, up to the first `-` and its control characters rendered by
+`Core::terminal_safe()`, the total and the command that purges them, the
+same command without `--dry-run`, `--reason` carried when given.
+`Items_CLI_Command::$sleep` is the wait's test seam. The Linear items recorded from other teams before
 0.22.0 go with:
 
 ```bash
 wp newspack-intelligence items purge --source=linear \
-  --keep='linear:NEWS-*,linear:NPAI-*,linear:NPPRO-*,linear:NPPM-*,linear:NPMIG-*,linear:NPLAUNC-*,linear:NPSUPP-*,linear:NPPD-*,linear:DSGNEWS-*'
+  --keep='linear:NEWS-*,linear:NPAI-*,linear:NPPRO-*,linear:NPPM-*,linear:NPMIG-*,linear:NPLAUNC-*,linear:NPSUPP-*,linear:NPPD-*,linear:DSGNEWS-*' \
+  --dry-run
 ```
 
-Read the counts, then run the command it prints, which adds `--yes`.
+Read the counts, then run the command it prints, the same command without
+`--dry-run`, which purges them.
 
 ### Topologies
 

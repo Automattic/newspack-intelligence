@@ -53,13 +53,14 @@ class Items_CLI_Command {
 
 	/**
 	 * Purge a source's stored items: every one whose key matches none of the
-	 * keep globs. Without --yes it counts them per key prefix, up to the
-	 * first `-`, and prints the command that purges them; with --yes it
-	 * appends one `item_purged` per item to every live worker's writer, a
-	 * batch at a time, each once the workers have read everything their
-	 * input held. Each worker's projector deletes the rows its items stream
-	 * has written about the item; rows other streams wrote stay, and no read
-	 * answers them. A source recording a purged key again records it again.
+	 * keep globs. It appends one `item_purged` per item to every live
+	 * worker's writer, a batch at a time, each once the workers have read
+	 * everything their input held. With --dry-run it writes nothing, and
+	 * prints the count per key prefix, up to the first `-`, the total, and
+	 * the command that purges them. Each worker's projector deletes the rows
+	 * its items stream has written about the item; rows other streams wrote
+	 * stay, and no read answers them. A source recording a purged key again
+	 * records it again.
 	 *
 	 * ## OPTIONS
 	 *
@@ -72,11 +73,15 @@ class Items_CLI_Command {
 	 * [--reason=<text>]
 	 * : Why the items are purged, up to 512 bytes as the stream writes it; the selection by default.
 	 *
-	 * [--yes]
-	 * : Purge; without it the command only counts.
+	 * [--dry-run]
+	 * : Write nothing; count the items per key prefix and print the command that purges them.
 	 *
 	 * ## EXAMPLES
 	 *
+	 *     # Count what would go, and print the command that purges it.
+	 *     wp newspack-intelligence items purge --source=linear --keep='linear:NEWS-*,linear:NPAI-*' --dry-run
+	 *
+	 *     # Purge it.
 	 *     wp newspack-intelligence items purge --source=linear --keep='linear:NEWS-*,linear:NPAI-*'
 	 *
 	 * @api WP-CLI dispatches this by reflection; nothing here calls it.
@@ -122,12 +127,12 @@ class Items_CLI_Command {
 			\WP_CLI::success( "Nothing to purge: {$selection}." );
 			return;
 		}
-		$dry_run = 'wp newspack-intelligence items purge --source=' . \escapeshellarg( $source ) . ' --keep=' . \escapeshellarg( \implode( ',', $keeps ) );
-		if ( ! (bool) ( $assoc_args['yes'] ?? false ) ) {
-			self::count( $keys, $selection, $dry_run . ( null === $reason ? '' : ' --reason=' . \escapeshellarg( $why ) ) . ' --yes' );
+		$command = 'wp newspack-intelligence items purge --source=' . \escapeshellarg( $source ) . ' --keep=' . \escapeshellarg( \implode( ',', $keeps ) );
+		if ( isset( $assoc_args['dry-run'] ) ) {
+			self::count( $keys, $selection, $command . ( null === $reason ? '' : ' --reason=' . \escapeshellarg( $why ) ) );
 			return;
 		}
-		self::append( $keys, $why, $dry_run );
+		self::append( $keys, $why, "{$command} --dry-run" );
 	}
 
 	/**
@@ -136,7 +141,7 @@ class Items_CLI_Command {
 	 *
 	 * @param list<string> $keys    The selected keys.
 	 * @param string       $reason  Why.
-	 * @param string       $dry_run The command that counts what is left.
+	 * @param string       $dry_run The dry run, which counts what is left.
 	 * @throws \RuntimeException When no worker is live.
 	 */
 	private static function append( array $keys, string $reason, string $dry_run ): void {
@@ -156,7 +161,7 @@ class Items_CLI_Command {
 			\WP_CLI::log( \sprintf( 'Sent %d of %d.', $sent, \count( $events ) ) );
 		}
 		$one = 1 === $workers;
-		\WP_CLI::success( \sprintf( 'Sent %d item_purged events in %d %s to %d %s. Once %s read them, run the dry run again to confirm nothing is left: %s', $sent, \count( $batches ), 1 === \count( $batches ) ? 'batch' : 'batches', $workers, $one ? 'worker' : 'workers', $one ? 'its projector has' : 'their projectors have', $dry_run ) );
+		\WP_CLI::success( \sprintf( 'Sent %d item_purged events in %d %s to %d %s. Once %s read them, confirm nothing is left with the dry run, which then answers Nothing to purge: %s', $sent, \count( $batches ), 1 === \count( $batches ) ? 'batch' : 'batches', $workers, $one ? 'worker' : 'workers', $one ? 'its projector has' : 'their projectors have', $dry_run ) );
 	}
 
 	/**

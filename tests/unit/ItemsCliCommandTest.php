@@ -23,9 +23,9 @@ require_once __DIR__ . '/../support/routes-to-workers.php';
 
 /**
  * `wp newspack-intelligence items purge` selects a source's stored items its
- * keep globs leave, counts them per key prefix on a dry run, and with
- * `--yes` appends one `item_purged` each to every live worker's writer, a
- * batch at a time, each only once the workers read the one before.
+ * keep globs leave and appends one `item_purged` each to every live
+ * worker's writer, a batch at a time, each only once the workers read the
+ * one before; with `--dry-run` it only counts them per key prefix.
  */
 final class ItemsCliCommandTest extends TestCase {
 	use Routes_To_Workers;
@@ -36,7 +36,7 @@ final class ItemsCliCommandTest extends TestCase {
 	private const KEEP = 'linear:NEWS-*,linear:NPAI-*';
 
 	/** The dry run a purge names to confirm nothing of the KEEP selection is left. */
-	private const CONFIRM = "wp newspack-intelligence items purge --source='linear' --keep='linear:NEWS-*,linear:NPAI-*'";
+	private const CONFIRM = "wp newspack-intelligence items purge --source='linear' --keep='linear:NEWS-*,linear:NPAI-*' --dry-run";
 
 	/** The process's argv, which a test replaces and tearDown puts back. */
 	private mixed $argv = null;
@@ -63,14 +63,14 @@ final class ItemsCliCommandTest extends TestCase {
 	public function test_a_dry_run_counts_each_prefix_and_writes_nothing(): void {
 		$this->seed_teams();
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP, 'dry-run' => true ] );
 
 		$this->assertSame(
 			[
 				"1\tlinear:DOTCOM",
 				"2\tlinear:WPCOM",
 				'Total: 3 to purge of linear items, keeping linear:NEWS-*, linear:NPAI-*.',
-				"Purge them with: wp newspack-intelligence items purge --source='linear' --keep='linear:NEWS-*,linear:NPAI-*' --yes",
+				"Purge them with: wp newspack-intelligence items purge --source='linear' --keep='linear:NEWS-*,linear:NPAI-*'",
 			],
 			\WP_CLI::$logs
 		);
@@ -82,17 +82,17 @@ final class ItemsCliCommandTest extends TestCase {
 	public function test_a_dry_run_names_the_reason_it_was_given(): void {
 		$this->seed_teams();
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP, 'reason' => "Not Newspack's" ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP, 'reason' => "Not Newspack's", 'dry-run' => true ] );
 
-		$this->assertSame( "Purge them with: wp newspack-intelligence items purge --source='linear' --keep='linear:NEWS-*,linear:NPAI-*' --reason='Not Newspack'\\''s' --yes", \WP_CLI::$logs[3] );
+		$this->assertSame( "Purge them with: wp newspack-intelligence items purge --source='linear' --keep='linear:NEWS-*,linear:NPAI-*' --reason='Not Newspack'\\''s'", \WP_CLI::$logs[3] );
 	}
 
-	/** `--yes` appends one machine `item_purged` per selected item to the writer of every live worker. */
-	public function test_yes_appends_one_purge_per_selected_item_to_the_writer(): void {
+	/** A purge appends one machine `item_purged` per selected item to the writer of every live worker. */
+	public function test_a_purge_appends_one_purge_per_selected_item_to_the_writer(): void {
 		$this->seed_teams();
 		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p1' );
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP, 'reason' => 'other teams, before 0.22.0', 'yes' => true ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP, 'reason' => 'other teams, before 0.22.0' ] );
 
 		foreach ( [ self::WORKER, 'newspack-intelligence.p1' ] as $worker_id ) {
 			$written = self::worker_input( Config::get_base_directory(), $worker_id );
@@ -113,14 +113,14 @@ final class ItemsCliCommandTest extends TestCase {
 			);
 		}
 		$this->assertSame( [ 'Sent 3 of 3.' ], \WP_CLI::$logs );
-		$this->assertSame( [ 'Sent 3 item_purged events in 1 batch to 2 workers. Once their projectors have read them, run the dry run again to confirm nothing is left: ' . self::CONFIRM ], \WP_CLI::$successes );
+		$this->assertSame( [ 'Sent 3 item_purged events in 1 batch to 2 workers. Once their projectors have read them, confirm nothing is left with the dry run, which then answers Nothing to purge: ' . self::CONFIRM ], \WP_CLI::$successes );
 	}
 
 	/** With no `--reason`, each purge names the selection it was made by. */
 	public function test_a_purge_names_its_selection_without_a_reason(): void {
 		$this->seed_teams();
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP, 'yes' => true ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP ] );
 
 		$this->assertSame( [ 'linear items, keeping linear:NEWS-*, linear:NPAI-*' ], \array_values( \array_unique( \array_column( \array_column( self::worker_input( Config::get_base_directory(), self::WORKER ), Message::VALUE ), 'reason' ) ) ) );
 	}
@@ -139,12 +139,12 @@ final class ItemsCliCommandTest extends TestCase {
 			self::read_input( $base, self::WORKER );
 		};
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:NEWS-*', 'yes' => true ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:NEWS-*' ] );
 
 		$this->assertSame( [ [ 5, Items_CLI_Command::BATCH ] ], $waits, 'one wait, after the first batch alone' );
 		$this->assertCount( Items_CLI_Command::BATCH + 1, self::worker_input( $base, self::WORKER ) );
 		$this->assertSame( [ 'Sent 500 of 501.', 'Sent 501 of 501.' ], \WP_CLI::$logs );
-		$this->assertSame( [ "Sent 501 item_purged events in 2 batches to 1 worker. Once its projector has read them, run the dry run again to confirm nothing is left: wp newspack-intelligence items purge --source='linear' --keep='linear:NEWS-*'" ], \WP_CLI::$successes );
+		$this->assertSame( [ "Sent 501 item_purged events in 2 batches to 1 worker. Once its projector has read them, confirm nothing is left with the dry run, which then answers Nothing to purge: wp newspack-intelligence items purge --source='linear' --keep='linear:NEWS-*' --dry-run" ], \WP_CLI::$successes );
 	}
 
 	/** A batch the workers do not read in time stops the purge, saying how far it got and how to finish. */
@@ -159,7 +159,7 @@ final class ItemsCliCommandTest extends TestCase {
 			$waited += $seconds;
 		};
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:NEWS-*', 'yes' => true ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:NEWS-*' ] );
 
 		$this->assertSame( Items_CLI_Command::READ_WAIT_S, $waited );
 		$this->assertCount( Items_CLI_Command::BATCH, self::worker_input( Config::get_base_directory(), self::WORKER ) );
@@ -178,7 +178,7 @@ final class ItemsCliCommandTest extends TestCase {
 			self::read_input( $base, self::WORKER );
 		};
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP, 'yes' => true ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP ] );
 
 		$this->assertSame( [ [ 'RERESOLVE 2026-02-03 2026-02-04' ] ], $waits, 'one wait, before any purge was sent' );
 		$this->assertCount( 4, self::worker_input( $base, self::WORKER ) );
@@ -215,9 +215,9 @@ final class ItemsCliCommandTest extends TestCase {
 	/** A repeated `--keep`, of which WP-CLI keeps only the last, is refused and nothing is sent. */
 	public function test_a_repeated_keep_is_refused(): void {
 		$this->seed_teams();
-		$_SERVER['argv'] = [ 'wp', 'newspack-intelligence', 'items', 'purge', '--source=linear', '--keep=linear:NEWS-*', '--keep', '--keep=linear:NPAI-*', '--yes' ];
+		$_SERVER['argv'] = [ 'wp', 'newspack-intelligence', 'items', 'purge', '--source=linear', '--keep=linear:NEWS-*', '--keep', '--keep=linear:NPAI-*' ];
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:NPAI-*', 'yes' => true ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:NPAI-*' ] );
 
 		$this->assertSame( [ "--keep was given 3 times, and WP-CLI keeps only the last; pass one comma-separated list: --keep='<glob>,<glob>'." ], \WP_CLI::$errors );
 		$this->assertSame( [ [], [] ], [ \WP_CLI::$logs, \WP_CLI::$successes ] );
@@ -228,7 +228,7 @@ final class ItemsCliCommandTest extends TestCase {
 	public function test_a_prefix_prints_its_control_characters_as_codepoints(): void {
 		$this->seed( self::item( "linear:WP\x1b[2JCOM-5", 'Escape', 'linear', 'internal', self::$oct_06 ) );
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP, 'dry-run' => true ] );
 
 		$this->assertSame( "1\tlinear:WP<1B>[2JCOM", \WP_CLI::$logs[0] );
 	}
@@ -237,17 +237,17 @@ final class ItemsCliCommandTest extends TestCase {
 	public function test_a_glob_matches_the_whole_key_in_its_own_case(): void {
 		$this->seed_teams();
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:news-*,NPAI-*,linear:WPCOM-?' ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:news-*,NPAI-*,linear:WPCOM-?', 'dry-run' => true ] );
 
 		$this->assertSame( [ "1\tlinear:DOTCOM", "1\tlinear:NEWS", "1\tlinear:NPAI" ], \array_slice( \WP_CLI::$logs, 0, 3 ) );
 	}
 
-	/** A selection the keep globs leave empty writes nothing, with or without `--yes`. */
+	/** A selection the keep globs leave empty writes nothing, purged or dry run. */
 	public function test_an_empty_selection_writes_nothing(): void {
 		$this->seed_teams();
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:*', 'yes' => true ] );
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'hubspot', 'keep' => 'hubspot:deal-*', 'yes' => true ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:*' ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'hubspot', 'keep' => 'hubspot:deal-*', 'dry-run' => true ] );
 
 		$this->assertSame( [ 'Nothing to purge: linear items, keeping linear:*.', 'Nothing to purge: hubspot items, keeping hubspot:deal-*.' ], \WP_CLI::$successes );
 		$this->assertSame( [], self::worker_input( Config::get_base_directory(), self::WORKER ) );
@@ -261,15 +261,15 @@ final class ItemsCliCommandTest extends TestCase {
 	 */
 	public static function refusals(): array {
 		return [
-			'no source'        => [ [ 'keep' => self::KEEP, 'yes' => true ], '--source names the source whose items are purged.' ],
-			'a blank source'   => [ [ 'source' => ' ', 'yes' => true ], '--source names the source whose items are purged.' ],
-			'an empty glob'    => [ [ 'source' => 'linear', 'keep' => 'linear:NEWS-*,', 'yes' => true ], '--keep holds an empty glob; separate the globs by single commas.' ],
-			'a bare keep'      => [ [ 'source' => 'linear', 'keep' => true, 'yes' => true ], '--keep holds an empty glob; separate the globs by single commas.' ],
-			'no keep'          => [ [ 'source' => 'linear', 'yes' => true ], '--keep names the items to keep; a purge never takes every item of a source.' ],
-			'a blank reason'   => [ [ 'source' => 'linear', 'keep' => self::KEEP, 'reason' => '', 'yes' => true ], '--reason says why the items are purged, in 1 to 512 bytes as the stream writes it.' ],
-			'a long reason'    => [ [ 'source' => 'linear', 'keep' => self::KEEP, 'reason' => \str_repeat( 'r', 513 ), 'yes' => true ], '--reason says why the items are purged, in 1 to 512 bytes as the stream writes it.' ],
-			'an escaped reason' => [ [ 'source' => 'linear', 'keep' => self::KEEP, 'reason' => \str_repeat( "\x01", 100 ), 'yes' => true ], '--reason says why the items are purged, in 1 to 512 bytes as the stream writes it.' ],
-			'a long selection' => [ [ 'source' => 'linear', 'keep' => \implode( ',', \array_fill( 0, 60, 'linear:NEWS-*' ) ), 'yes' => true ], '--reason says why the items are purged, in 1 to 512 bytes as the stream writes it.' ],
+			'no source'        => [ [ 'keep' => self::KEEP ], '--source names the source whose items are purged.' ],
+			'a blank source'   => [ [ 'source' => ' ' ], '--source names the source whose items are purged.' ],
+			'an empty glob'    => [ [ 'source' => 'linear', 'keep' => 'linear:NEWS-*,' ], '--keep holds an empty glob; separate the globs by single commas.' ],
+			'a bare keep'      => [ [ 'source' => 'linear', 'keep' => true ], '--keep holds an empty glob; separate the globs by single commas.' ],
+			'no keep'          => [ [ 'source' => 'linear' ], '--keep names the items to keep; a purge never takes every item of a source.' ],
+			'a blank reason'   => [ [ 'source' => 'linear', 'keep' => self::KEEP, 'reason' => '' ], '--reason says why the items are purged, in 1 to 512 bytes as the stream writes it.' ],
+			'a long reason'    => [ [ 'source' => 'linear', 'keep' => self::KEEP, 'reason' => \str_repeat( 'r', 513 ) ], '--reason says why the items are purged, in 1 to 512 bytes as the stream writes it.' ],
+			'an escaped reason' => [ [ 'source' => 'linear', 'keep' => self::KEEP, 'reason' => \str_repeat( "\x01", 100 ) ], '--reason says why the items are purged, in 1 to 512 bytes as the stream writes it.' ],
+			'a long selection' => [ [ 'source' => 'linear', 'keep' => \implode( ',', \array_fill( 0, 60, 'linear:NEWS-*' ) ) ], '--reason says why the items are purged, in 1 to 512 bytes as the stream writes it.' ],
 		];
 	}
 
@@ -293,10 +293,22 @@ final class ItemsCliCommandTest extends TestCase {
 		$this->seed_teams();
 		CLI::$uid_provider = static fn (): int => 0;
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP, 'yes' => true ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP ] );
 
 		$this->assertSame( [ 'wp newspack-intelligence items purge must run as the same user as the workers, not root.' ], \WP_CLI::$errors );
 		$this->assertSame( [], self::worker_input( Config::get_base_directory(), self::WORKER ) );
+	}
+
+	/** A purge runs when invoked; its synopsis declares no confirmation flag. */
+	public function test_purge_declares_no_yes_option(): void {
+		$doc = (string) ( new \ReflectionMethod( Items_CLI_Command::class, 'purge' ) )->getDocComment();
+		$this->assertStringNotContainsString( '--yes', $doc );
+	}
+
+	/** WP-CLI refuses a flag the synopsis does not declare, so `--dry-run` is declared. */
+	public function test_purge_declares_a_dry_run_option(): void {
+		$doc = (string) ( new \ReflectionMethod( Items_CLI_Command::class, 'purge' ) )->getDocComment();
+		$this->assertStringContainsString( '[--dry-run]', $doc );
 	}
 
 	public function test_the_items_command_is_registered(): void {
