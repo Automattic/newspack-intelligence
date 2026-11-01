@@ -8,13 +8,16 @@ use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intelligence_CI_Node;
 use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\Command_Interpreter_Node;
+use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
+use Newspack_Nodes\Message;
 use Newspack_Nodes\Node_Names;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
+require_once __DIR__ . '/../support/routes-to-workers.php';
 require_once __DIR__ . '/../support/signs-in-users.php';
 
 /**
@@ -23,6 +26,7 @@ require_once __DIR__ . '/../support/signs-in-users.php';
  * tiers a read caller holds, every answer carrying its citations.
  */
 final class IntelligenceCITest extends TestCase {
+	use Routes_To_Workers;
 	use Seeds_Intel_Graph;
 	use Signs_In_Users;
 
@@ -72,6 +76,65 @@ final class IntelligenceCITest extends TestCase {
 				$this->assertSame( 'permission denied: read capability required', $e->getMessage() );
 			}
 		}
+	}
+
+	public function test_seed_ontology_refused_below_tune(): void {
+		Capabilities::$session_scope = Capabilities::READ;
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'permission denied: tune capability required' );
+		$this->ci->dispatch( 'seed_ontology', [] );
+	}
+
+	public function test_reresolve_refused_below_manage(): void {
+		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p2' );
+		Capabilities::$session_scope = Capabilities::TUNE;
+
+		try {
+			$this->ci->dispatch( 'reresolve', [ '2026-08-03', '2026-08-19' ] );
+			$this->fail( 'reresolve answers a tune caller' );
+		} catch ( \RuntimeException $e ) {
+			$this->assertSame( 'permission denied: manage capability required', $e->getMessage() );
+		}
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p2' ) );
+		$this->assertSame( Capabilities::MANAGE, \array_column( Intelligence_CI_Node::node_schema()['commands'], 'capability', 'name' )['reresolve'] ?? null, 'reresolve declares manage' );
+	}
+
+	/** `reresolve` asks each live worker's reresolver for the range, answering how many it asked. */
+	public function test_reresolve_asks_every_live_worker(): void {
+		$base = Config::get_base_directory();
+		self::live_worker( $base, 'newspack-intelligence.p1' );
+		self::live_worker( $base, 'newspack-intelligence.p4' );
+		$router = Core::node( Node_Names::ROUTER );
+		$this->assertNotNull( $router );
+		$this->ci->sink( $router );
+
+		$answer = $this->ci->dispatch( 'reresolve', [ '--since=2026-08-03', '--until=2026-08-19' ] );
+
+		$this->assertSame( [ 'ok' => true, 'workers' => 2 ], $answer );
+		foreach ( [ 'newspack-intelligence.p1', 'newspack-intelligence.p4' ] as $worker ) {
+			$this->assertSame( [ [ 'reresolver', 'RERESOLVE 2026-08-03 2026-08-19' ] ], \array_map( static fn ( array $m ): array => [ $m[ Message::TO ], $m[ Message::VALUE ] ], self::worker_input( $base, $worker ) ), $worker );
+		}
+	}
+
+	/** A day that does not parse is refused before anything is sent. */
+	public function test_reresolve_rejects_bad_range(): void {
+		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
+
+		try {
+			$this->ci->dispatch( 'reresolve', [ '2026-13-01', '2026-13-09' ] );
+			$this->fail( 'reresolve sends a month that does not exist' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( 'not a Y-m-d date: 2026-13-01', $e->getMessage() );
+		}
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p3' ) );
+	}
+
+	/** With no worker live, `reresolve` refuses naming the fix. */
+	public function test_reresolve_refuses_with_no_live_worker(): void {
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'No newspack-intelligence worker could be reached' );
+		$this->ci->dispatch( 'reresolve', [ '2026-08-03', '2026-08-19' ] );
 	}
 
 	/** The service CI mounts once per request graph, and only it. */

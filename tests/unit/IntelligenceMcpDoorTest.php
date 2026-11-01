@@ -65,17 +65,19 @@ final class IntelligenceMcpDoorTest extends TestCase {
 
 	/**
 	 * Every read and curation verb is a tool named after it, whose args are
-	 * the verb's own, described as the verb describes them; a manage verb
-	 * is no tool.
+	 * the verb's own, described as the verb describes them; a manage verb,
+	 * the health read and the seed are no tool.
 	 */
 	public function test_every_tool_names_a_declared_verb(): void {
 		$tools    = \array_column( $this->call( Capabilities::TUNE, 'tools/list' )['result']['tools'], null, 'name' );
 		$declared = Command_Interpreter_Node::declared_verbs( Intelligence_CI_Node::class );
-		$offered  = \array_filter( $declared, static fn ( array $verb, string $name ): bool => Capabilities::MANAGE !== $verb['capability'] && 'health' !== $name, \ARRAY_FILTER_USE_BOTH );
+		$offered  = \array_filter( $declared, static fn ( array $verb, string $name ): bool => Capabilities::MANAGE !== $verb['capability'] && ! \in_array( $name, [ 'health', 'seed_ontology' ], true ), \ARRAY_FILTER_USE_BOTH );
 
 		$this->assertSame( \array_map( static fn ( string $verb ): string => "intel_{$verb}", \array_keys( $offered ) ), \array_keys( $tools ) );
 		$this->assertArrayNotHasKey( 'intel_fetch_now', $tools );
 		$this->assertArrayNotHasKey( 'intel_health', $tools );
+		$this->assertArrayNotHasKey( 'intel_seed_ontology', $tools );
+		$this->assertArrayNotHasKey( 'intel_reresolve', $tools );
 		$this->assertCount( 30, $tools );
 		foreach ( $offered as $verb => $spec ) {
 			$properties = (array) $tools[ "intel_{$verb}" ]['inputSchema']['properties'];
@@ -104,6 +106,13 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		$this->assertSame( [ 'intel_search', 'intel_entity', 'intel_timeline', 'intel_related', 'intel_claims', 'intel_trends', 'intel_signals', 'intel_review', 'intel_collections', 'intel_lenses', 'intel_watches', 'intel_save_watch', 'intel_remove_watch', 'intel_watch_matches', 'intel_mark_seen' ], $names );
 		$refused = $this->call( Capabilities::READ, 'tools/call', [ 'name' => 'intel_confirm_link', 'arguments' => [ 'item' => 'feed:gazette-award', 'entity' => self::GAZETTE ] ] );
 		$this->assertSame( 'Unknown tool: intel_confirm_link', $refused['error']['message'] );
+	}
+
+	/** The seed is an operator's fix on the Intelligence page, so a tune session cannot call it through the door. */
+	public function test_a_tune_scope_cannot_seed_the_ontology(): void {
+		$refused = $this->call( Capabilities::TUNE, 'tools/call', [ 'name' => 'intel_seed_ontology', 'arguments' => [] ] );
+
+		$this->assertSame( 'Unknown tool: intel_seed_ontology', $refused['error']['message'] );
 	}
 
 	/** The tier test through the door: a restricted item, and a proposal only it cites, never answer. */

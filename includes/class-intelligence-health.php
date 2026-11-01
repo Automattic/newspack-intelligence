@@ -13,6 +13,7 @@
 namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Bootstrap;
+use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\CLI;
 use Newspack_Nodes\Command_Args;
 use Newspack_Nodes\Command_Interpreter_Node;
@@ -30,6 +31,9 @@ final class Intelligence_Health {
 
 	/** The worker partition every snapshot is read at: the topology runs one. */
 	private const PARTITION = 0;
+
+	/** The fields of a source's or the extractor's row only a manager reads. */
+	private const OPERATOR_FIELDS = [ 'credential', 'vault_id', 'last_error', 'reason' ];
 
 	/**
 	 * The slice `what` names.
@@ -50,21 +54,21 @@ final class Intelligence_Health {
 
 	/**
 	 * How the extractor extracts: its snapshot, else the mode the newest
-	 * extraction's actor names, else unknown.
+	 * extraction's actor names, else unknown; redacted below manage.
 	 *
 	 * @return array<array-key,mixed>
 	 */
 	private static function extraction(): array {
 		$status = Extractor_Node::read_status( 'extractor', self::PARTITION );
 		if ( null !== $status ) {
-			return $status;
+			return self::redacted( $status );
 		}
 		$actor = Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): mixed => $r->rows( 'SELECT actor FROM ' . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . ' e ORDER BY id DESC LIMIT 1', [] )[0][0] ?? null, 'no intel-graph to read the newest extraction from: ' );
 		if ( null === $actor ) {
 			return [ 'mode' => 'unknown' ];
 		}
 		$heuristic = \str_starts_with( Core::as_string( $actor ), Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE ) );
-		return [ ...Extractor_Node::BLANK_STATUS, 'mode' => $heuristic ? 'heuristic' : 'call' ];
+		return self::redacted( [ ...Extractor_Node::BLANK_STATUS, 'mode' => $heuristic ? 'heuristic' : 'call' ] );
 	}
 
 	/**
@@ -105,7 +109,8 @@ final class Intelligence_Health {
 	 * Every source the collect topology declares, in its order, but those
 	 * of a tier the caller cannot read: idle with the credential it needs
 	 * when its group lends none on the origin it fetches, whatever its
-	 * snapshot says; else its snapshot; else unknown.
+	 * snapshot says; else its snapshot; else unknown; each redacted for a
+	 * caller below manage.
 	 *
 	 * @return array{sources:list<array<array-key,mixed>>}
 	 */
@@ -123,7 +128,7 @@ final class Intelligence_Health {
 			}
 			$name      = Core::as_string( $node['name'] );
 			$sources[] = [ 'name' => $name, 'class' => $type, 'tier' => $tier ]
-				+ ( self::idle( $class, Core::as_string( $line['vault_group'] ?? '' ) ) ?? Source_Node::read_status( $name, self::PARTITION ) ?? [ 'state' => 'unknown' ] );
+				+ self::redacted( self::idle( $class, Core::as_string( $line['vault_group'] ?? '' ) ) ?? Source_Node::read_status( $name, self::PARTITION ) ?? [ 'state' => 'unknown' ] );
 		}
 		return [ 'sources' => $sources ];
 	}
@@ -148,6 +153,18 @@ final class Intelligence_Health {
 				'group' => $group,
 			],
 		];
+	}
+
+	/**
+	 * A row as the caller may read it: whole for a manager, else without
+	 * the credential, Vault id, error text and reason, leaving the state,
+	 * times and counts. Field redaction; the verb's role stays read (ADR-26).
+	 *
+	 * @param array<array-key,mixed> $row A source's or the extractor's row.
+	 * @return array<array-key,mixed>
+	 */
+	private static function redacted( array $row ): array {
+		return Capabilities::can( Capabilities::MANAGE ) ? $row : \array_diff_key( $row, \array_flip( self::OPERATOR_FIELDS ) );
 	}
 
 	/**

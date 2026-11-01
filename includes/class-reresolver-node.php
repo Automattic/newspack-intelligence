@@ -41,6 +41,8 @@
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Command_Interpreter_Node;
+use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Publishes_Status;
@@ -566,6 +568,24 @@ class Reresolver_Node extends Timer_Node {
 	 */
 	protected function status_heartbeat(): int {
 		return 0;
+	}
+
+	/**
+	 * Ask each live worker's reresolver to re-resolve every item dated in a
+	 * range of UTC days, the one request `wp newspack-intelligence ontology
+	 * reresolve` and the `reresolve` verb send; a range that does not parse
+	 * is refused before anything is sent.
+	 *
+	 * @param Command_Interpreter_Node $graph The caller's interpreter, whose name each request carries as FROM.
+	 * @param string                   $since The first day, Y-m-d.
+	 * @param string                   $until The last day, Y-m-d.
+	 * @return int The workers asked.
+	 * @throws \InvalidArgumentException When a day does not parse or the range runs backwards.
+	 * @throws \RuntimeException When no worker of the topology is live.
+	 */
+	public static function ask( Command_Interpreter_Node $graph, string $since, string $until ): int {
+		Intel_Graph_Row_Schema::range( $since, $until );
+		return Worker_Route::send( $graph, Config::get_base_directory(), [ [ 'reresolver', "RERESOLVE {$since} {$until}" ] ] );
 	}
 
 	/** @return array<string,mixed> */

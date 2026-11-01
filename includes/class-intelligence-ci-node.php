@@ -4,9 +4,11 @@
  * verbs declare `read` and answer through `Graph_Query`, whose reads see
  * only the items of the tiers `Intel_Tiers::readable()` grants. Its curation
  * verbs declare `tune` and write each judgment as one ontology event through
- * `Graph_Curation`, which reads through the same graph. `fetch_now` declares
- * `manage`, because it mounts a live worker's input to TICK every source
- * (substrate ADR-23).
+ * `Graph_Curation`, which reads through the same graph; `seed_ontology`, at
+ * `tune` too, writes the seed through `Ontology_Seed`. `fetch_now` and
+ * `reresolve` declare `manage`, because each mounts a live worker's input,
+ * one to TICK every source and one to send a re-resolution range (substrate
+ * ADR-23).
  *
  * @package Newspack_Intelligence
  */
@@ -74,7 +76,9 @@ class Intelligence_CI_Node extends Service_CI_Node {
 	 * `Graph_Watches` and answering the caller's own watches alone;
 	 * `health`, at read, over `Intelligence_Health`; the fifteen curation
 	 * verbs, each over `Graph_Curation` and seeing only the
-	 * entities and items a read caller sees; and `fetch_now`.
+	 * entities and items a read caller sees; `seed_ontology`, at tune, over
+	 * `Ontology_Seed::seed()`; and `fetch_now` and `reresolve`, at manage,
+	 * each sending to every live worker through `Worker_Route`.
 	 *
 	 * @api Used by the substrate to build the dispatch table and the catalog.
 	 * @return array<string,mixed>
@@ -224,12 +228,20 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						Graph_Curation::save_lens( ... )
 					),
 					$verb( $tune, 'remove_lens', 'Remove a lens: { ok, event_id }.', [ $key( 'The lens key.' ) ], Graph_Curation::remove_lens( ... ) ),
+					$verb( $tune, 'seed_ontology', 'Write the seed ontology for the keys the projection lacks, refused while the projector has not read every ontology change: { ok, events, created, present }.', [], static fn (): array => [ 'ok' => true ] + Ontology_Seed::seed() ),
 					[
 						'name'        => 'fetch_now',
 						'capability'  => Capabilities::MANAGE,
 						'description' => 'TICK every source in each live worker: { ok, workers }.',
 						'args'        => [],
 						'handler'     => static fn ( self $ci ): array => [ 'ok' => true, 'workers' => Worker_Route::send( $ci, Config::get_base_directory(), self::ticks() ) ],
+					],
+					[
+						'name'        => 'reresolve',
+						'capability'  => Capabilities::MANAGE,
+						'description' => 'Ask each live worker to re-resolve every stored item dated in a range of UTC days: { ok, workers }.',
+						'args'        => [ $arg( 'since', 'The first UTC day, Y-m-d.' ), $arg( 'until', 'The last UTC day, Y-m-d.' ) ],
+						'handler'     => static fn ( self $ci, array $args ): array => [ 'ok' => true, 'workers' => Reresolver_Node::ask( $ci, Core::as_string( $args['since'] ), Core::as_string( $args['until'] ) ) ],
 					],
 				],
 			]

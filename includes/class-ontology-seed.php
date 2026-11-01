@@ -139,6 +139,32 @@ final class Ontology_Seed {
 	];
 
 	/**
+	 * Write the seed events for the keys the projection does not settle, the
+	 * one seed `wp newspack-intelligence ontology seed` and the
+	 * `seed_ontology` verb run. It refuses while the projector has not read
+	 * the ontology stream to its end, whoever wrote what it has not read, so
+	 * a seed never reads a projection that lacks keys already written and
+	 * writes them again.
+	 *
+	 * @return array{events:int,created:int,present:int} The events written, the keys they create and the keys left alone.
+	 * @throws Seed_Refused While the projector stands behind the ontology stream.
+	 * @throws Table_Unavailable When no projection can be read.
+	 */
+	public static function seed(): array {
+		if ( Projector_Node::behind( Stream_Writer::stream_dir( Intel_Event::ONTOLOGY ) ) ) {
+			throw new Seed_Refused( 'Recent ontology changes are still being processed; try again in a minute.' );
+		}
+		$present = self::present();
+		$events  = self::events( $present );
+		Stream_Writer::append( $events );
+		return [
+			'events'  => \count( $events ),
+			'created' => \count( \array_filter( $events, static fn ( array $event ): bool => \in_array( $event['event'], [ 'entity_created', 'lens_saved' ], true ) ) ),
+			'present' => \count( $present ),
+		];
+	}
+
+	/**
 	 * The seed as ontology events, under the seed's own machine actor, for
 	 * each entity `$present` does not name: its creation, then its names and
 	 * identifiers, then its roles, each role asserted from 0, before any

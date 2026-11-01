@@ -83,6 +83,7 @@ function enqueue_intelligence_assets( string $hook ): void {
 			'localize'         => [
 				'version'    => \NEWSPACK_INTELLIGENCE_VERSION,
 				'canTune'    => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::TUNE ) ? '1' : '',
+				'canManage'  => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) ? '1' : '',
 				'vocabulary' => [
 					'roles'           => Intel_Event::ROLES,
 					'nameKinds'       => Intel_Event::NAME_KINDS,

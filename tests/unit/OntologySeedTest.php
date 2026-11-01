@@ -6,12 +6,14 @@ namespace Newspack_Intelligence\Tests;
 use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Ontology_Seed;
+use Newspack_Intelligence\Seed_Refused;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Table_Unavailable;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-entity-index.php';
+require_once __DIR__ . '/../support/reads-ontology-log.php';
 
 /**
  * The seeded ontology: the topic vocabulary, the partners, funders and
@@ -19,6 +21,7 @@ require_once __DIR__ . '/../support/seeds-entity-index.php';
  * writes the same set, and only for the keys the projection lacks.
  */
 final class OntologySeedTest extends TestCase {
+	use Reads_Ontology_Log;
 	use Seeds_Entity_Index;
 
 	protected function setUp(): void {
@@ -174,6 +177,37 @@ final class OntologySeedTest extends TestCase {
 
 		$this->assertSame( [ 'support', 'developers' ], \array_values( \array_intersect( $present, [ 'leadership', 'support', 'developers' ] ) ) );
 		$this->assertSame( [ 'leadership' ], \array_column( \array_filter( $events, static fn ( array $e ): bool => 'lens_saved' === $e['event'] ), 'lens_key' ) );
+	}
+
+	/** A run writes the events for the keys the projection lacks, and counts them against the keys it holds. */
+	public function test_seed_writes_only_missing_keys(): void {
+		$held = [ 'organization:partner-org-1', 'organization:partner-org-3', 'topic:ai' ];
+		$this->seed(
+			self::entity( $held[0], 'Knight Fund (curated)' ),
+			self::rejected( $held[1] ),
+			self::entity( $held[2], 'AI (curated)' ),
+			[ Intel_Event::make( 'lens_saved', [ 'lens_key' => 'support', 'name' => 'Support desk', 'description' => 'Ours.', 'filters' => Graph_Query::unfiltered() ], 'user:41', 'fixture-7' ) ]
+		);
+		$expected = Ontology_Seed::events( [ ...$held, 'support' ] );
+
+		$answer = Ontology_Seed::seed();
+
+		$this->assertSame( [ 'events' => \count( $expected ), 'created' => 62, 'present' => 4 ], $answer );
+		$this->assertSame( \array_map( self::fact( ... ), $expected ), \array_map( self::fact( ... ), self::ontology_events() ) );
+	}
+
+	/** Review Focus 5: ontology changes the projector has not read yet refuse a seed, which writes nothing. */
+	public function test_seed_refused_while_projector_behind(): void {
+		Ontology_Seed::seed();
+		$written = \count( self::ontology_events() );
+
+		try {
+			Ontology_Seed::seed();
+			$this->fail( 'a second seed runs while the first is unprojected' );
+		} catch ( Seed_Refused $e ) {
+			$this->assertSame( 'Recent ontology changes are still being processed; try again in a minute.', $e->getMessage() );
+		}
+		$this->assertSame( $written, \count( self::ontology_events() ) );
 	}
 
 	/** With no projection to read, the seed refuses rather than writing everything. */

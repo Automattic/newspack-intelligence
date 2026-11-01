@@ -557,9 +557,12 @@ bracketed), as the resolver matches an acronym only in its own case. It appends 
 (500) hits at once, newest first, and only on reaching that cap counts the
 rest, to log how many it skipped. `wp
 newspack-intelligence ontology reresolve --since=<Y-m-d> [--until=<Y-m-d>]`
-validates the days, then sends `RERESOLVE <since> <until>` through
-`Worker_Route` to each live worker's `reresolver`, reporting how many it
-reached; the reresolver publishes a range it queues as `last_range {
+and the `reresolve` verb both call `Reresolver_Node::ask()`, the command
+validating the days first, before it mounts the request graph; `ask()`
+validates them, then sends `RERESOLVE <since> <until>` through
+`Worker_Route` to each live worker's `reresolver`, answering how many it
+reached; with none live it throws, which the command lets fail and the
+verb answers as a refusal. The reresolver publishes a range it queues as `last_range {
 since, until }` through `Publishes_Status`, for `Resolver_Node::STATUS_TTL_S`,
 writing each one it is asked (no heartbeat), answers the range
 it queued, or the refusal, and
@@ -682,7 +685,13 @@ as a ContextA8C one, reading as ''. A source whose class's
 url's origin
 (`Curl_Node::lends_credential()`) is `{ state: idle, credential: { url,
 group } }` whatever its snapshot says; any other answers its snapshot as
-`Source_Node::BLANK_STATUS` names it, or `{ state: unknown }`. `backlog`
+`Source_Node::BLANK_STATUS` names it, or `{ state: unknown }`. A caller
+below `manage` reads each source row and the `extraction` row without
+`credential`, `vault_id`, `last_error` and `reason`
+(`Intelligence_Health::OPERATOR_FIELDS`), so it reads their state, times
+and counts, and a source idle for want of a credential still reads `idle`;
+that is field redaction through `Capabilities::can( MANAGE )`, and the verb
+stays at `read` (substrate ADR-26). `backlog`
 answers `{ reason, held, since, dropped }`: `reason` is
 `Entity_Index::current()->hold_cause()`, the one answer the resolver's
 hold reads, so it names the cause with the cache
@@ -961,12 +970,19 @@ partition — durable and synchronous, with no live-worker
 dependency on read — carrying the CI's own name as FROM, which the worker's
 input reader stamps under `_repl`, so each source's answer lands on the
 worker's output partition, where an attached `wp nodes cli` reads it.
+Two operator fixes share their implementation with a WP-CLI verb:
+`seed_ontology`, at `tune`, runs `Ontology_Seed::seed()` as `ontology
+seed` does and answers `{ ok, events, created, present }`; `reresolve
+<since> <until>`, at `manage`, both days required, runs
+`Reresolver_Node::ask()` as `ontology reresolve` does and answers `{ ok,
+workers }`.
 
 **MCP door.** `Intelligence_Mcp_Door`, wired by the loader, is a declaration
 on the substrate's `Mcp_Door` (substrate ADR-38), serving
 `POST /wp-json/newspack-intelligence/v1/mcp`. Its tools are read off
 `Intelligence_CI_Node`'s schema, one `intel_<verb>` per verb but
-`fetch_now` and `health`, which it leaves out by name (`NOT_TOOLS`), each offering every declared arg
+`fetch_now`, `health`, `seed_ontology` and `reresolve`, which it leaves
+out by name (`NOT_TOOLS`), each offering every declared arg
 under the verb's own description. The door owns the session check, the
 scope ceiling, the meter, the OAuth resource and the `<site-data>` fence,
 and offers a session only the tools its role covers, so a read session is
@@ -986,7 +1002,8 @@ the door becomes the session's minting user, so a watch tool answers and
 changes that user's own watches, and a watch saved through it emails that
 user.
 
-**Seeding.** `wp newspack-intelligence ontology seed` writes
+**Seeding.** `Ontology_Seed::seed()`, which `wp newspack-intelligence
+ontology seed` and the `seed_ontology` verb both run, writes
 `Ontology_Seed::events()` — thirty topics, the partners, funders and
 industry bodies, Newspack's products, one entity per table row, and three
 lenses, `leadership`, `support` and `developers` — for the keys
@@ -997,9 +1014,16 @@ names, read by subject and kind, the index `events` keeps.
 So an entity a curator has accepted, rejected, merged or renamed is never
 reset, a machine's proposal of a seed key is replaced by the seed's
 creation, and a lens a curator saved over or removed is left alone; it
-prints how many keys were new and how many present, and a
-projection that will not open fails it with `Table_Unavailable` rather than
-writing everything. It writes through `Stream_Writer::append()`, the
+answers how many events it wrote, how many keys were new and how many
+present, and a projection that will not open fails it with
+`Table_Unavailable` rather than writing everything. While a projector's
+reader of the ontology stream has not committed its end
+(`Projector_Node::behind()`, the reading `Entity_Index::current()` takes),
+whoever wrote what it has not read, it throws `Seed_Refused` before reading
+the projection, `Recent ontology changes are still being processed; try
+again in a minute.`, so a seed never writes keys already written that the
+projection has not recorded; the command shows that refusal, and only it,
+through `WP_CLI::error()`. It writes through `Stream_Writer::append()`, the
 request-side writer of the ontology and watches streams, which routes each
 event by `Intel_Event::stream_of()` and refuses an items-stream event, which
 only the worker writes, before anything is written: per stream, a transient
@@ -1513,7 +1537,7 @@ plugin adds:
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>`; publishes `last_range` through `Publishes_Status` |
 | `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no verbs |
-| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `health`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, each at `tune`; `fetch_now` at `manage` |
+| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `health`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
 
 The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model`,
 `set_feature`, `add_profile` and `remove_profile`; every node carrying the trait
@@ -1625,7 +1649,9 @@ labelled by the selected tab. `canTune`, which `enqueue_intelligence_assets()` s
 from `Capabilities::can( TUNE )` on the page's own hook suffix alone, as
 the string `'1'` or `''` because the substrate refuses a boolean extra,
 only hides the curation controls: the server's role gate refuses a write the
-caller may not make. The vocabulary the selects offer is `Intel_Event`'s own
+caller may not make. `canManage` is localized beside it the same way, from
+`Capabilities::can( MANAGE )`, so the page knows whether its reader is an
+operator. The vocabulary the selects offer is `Intel_Event`'s own
 lists, `tiers` among them, the trend axes and buckets as `trendAxes`
 and `buckets` (`Graph_Query::trend_axes()` and `buckets()`), and
 `lensLists`, one `{ field, option, values }` per `Graph_Query::LENS_LISTS`
@@ -1647,7 +1673,7 @@ sibling checkout locally.
 | Path | What |
 |------|------|
 | `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus and the Settings page's admin-post helpers, WP-CLI, the `Intelligence_CI` mount, the MCP door's `wire()` |
-| `includes/` (streams) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Ontology_Seed`, `Stream_Writer`, the `Emits_Struct` trait |
+| `includes/` (streams) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Ontology_Seed` and its `Seed_Refused`, `Stream_Writer`, the `Emits_Struct` trait |
 | `includes/` (collect) | `Source_Node` and its six connectors; `Context_A8C_Source_Node`, its three local connectors and `Context_A8C_Token`, the process's hold on the relay's token |
 | `includes/` (resolve) | `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
 | `includes/` (clients) | `Client_Importer`, the `Client_Roster` interface, `Graph_Client_Roster`, `CSV_Parser`, `Clients_Settings` |

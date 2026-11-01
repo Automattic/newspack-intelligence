@@ -5,6 +5,7 @@ namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\CLI\Ontology_CLI_Command;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
+use Newspack_Intelligence\Intelligence_CI_Node;
 use Newspack_Intelligence\Ontology_Seed;
 use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\CLI;
@@ -19,6 +20,7 @@ require_once __DIR__ . '/../support/wp-cli-stub.php';
 require_once __DIR__ . '/../support/reads-ontology-log.php';
 require_once __DIR__ . '/../support/seeds-entity-index.php';
 require_once __DIR__ . '/../support/routes-to-workers.php';
+require_once __DIR__ . '/../support/signs-in-users.php';
 
 /**
  * `wp newspack-intelligence ontology seed` writes the seed keys the
@@ -28,6 +30,7 @@ final class OntologyCliCommandTest extends TestCase {
 	use Reads_Ontology_Log;
 	use Routes_To_Workers;
 	use Seeds_Entity_Index;
+	use Signs_In_Users;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -38,6 +41,8 @@ final class OntologyCliCommandTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
+		self::forget_users();
+		unset( $GLOBALS['_current_user_can'] );
 		CLI::$uid_provider = null;
 		Topology_Registry::reset();
 		Topology_Analyzer::reset_caches();
@@ -53,6 +58,34 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame( \array_column( Ontology_Seed::events( [ 'product:newspack-ads' ] ), 'entity_key' ), \array_column( $written, 'entity_key' ) );
 		$this->assertNotContains( 'product:newspack-ads', \array_column( $written, 'entity_key' ) );
 		$this->assertSame( [ \sprintf( 'Seeded %d events: 65 keys new, 1 present.', \count( $written ) ) ], \WP_CLI::$successes );
+	}
+
+	/** The CLI and the `seed_ontology` verb run one seed, so each reports the same counts. */
+	public function test_cli_seed_and_verb_share_seed(): void {
+		$this->seed( self::entity( 'product:newspack-ads', 'Ads (curated)' ), self::entity( 'organization:partnerorg27', 'PartnerOrg27 (curated)' ) );
+		self::sign_in( 5153, 'tern-curator', 'manage_options' );
+		$GLOBALS['_current_user_can'] = true;
+		$ci                           = new Intelligence_CI_Node();
+		$ci->name( 'intelligence' );
+
+		$answer = $ci->dispatch( 'seed_ontology', [] );
+		self::commit_ontology_cursor();
+		( new Ontology_CLI_Command() )->seed( [], [] );
+
+		$this->assertSame( [ 'ok' => true, 'events' => \count( Ontology_Seed::events( [ 'organization:partnerorg27', 'product:newspack-ads' ] ) ), 'created' => 64, 'present' => 2 ], $answer );
+		$this->assertSame( [ \sprintf( 'Seeded %d events: %d keys new, %d present.', $answer['events'], $answer['created'], $answer['present'] ) ], \WP_CLI::$successes );
+	}
+
+	/** Ontology changes the projector has not read yet refuse a seed through WP-CLI's error, writing nothing. */
+	public function test_seed_refuses_while_the_last_is_unprojected(): void {
+		( new Ontology_CLI_Command() )->seed( [], [] );
+		$written = \count( self::ontology_events() );
+
+		( new Ontology_CLI_Command() )->seed( [], [] );
+
+		$this->assertSame( [ 'Recent ontology changes are still being processed; try again in a minute.' ], \WP_CLI::$errors );
+		$this->assertSame( $written, \count( self::ontology_events() ) );
+		$this->assertCount( 1, \WP_CLI::$successes );
 	}
 
 	public function test_seed_fails_loud_without_a_projection(): void {
@@ -129,6 +162,22 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame( [ $refusal ], \WP_CLI::$errors );
 		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p0' ) );
 		$this->assertSame( [], \WP_CLI::$successes );
+	}
+
+	/** A bad range is refused before the request graph is mounted. */
+	public function test_reresolve_validates_before_mounting_the_graph(): void {
+		$mounts = 0;
+		\add_action(
+			'newspack_nodes/request_graph_ready',
+			static function () use ( &$mounts ): void {
+				++$mounts;
+			}
+		);
+
+		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2026-13-04', 'until' => '2026-13-06' ] );
+
+		$this->assertSame( [ 'not a Y-m-d date: 2026-13-04' ], \WP_CLI::$errors );
+		$this->assertSame( 0, $mounts );
 	}
 
 	public function test_reresolve_fails_loud_with_no_live_worker(): void {

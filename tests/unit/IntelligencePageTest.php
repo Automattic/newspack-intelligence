@@ -173,6 +173,21 @@ final class IntelligencePageTest extends TestCase {
 		$this->assertSame( [ 'wp-components', 'newspack-nodes-graph' ], $GLOBALS['_enqueued_styles']['newspack-intelligence']['deps'] );
 	}
 
+	/** The page learns whether its reader holds manage, as `canTune` says tune: the string 1 or the empty string. */
+	public function test_page_localizes_can_manage(): void {
+		$_GET = [ 'page' => INTELLIGENCE_MENU_SLUG ];
+
+		Capabilities::$session_scope = Capabilities::TUNE;
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+		$curator = $this->localized( 'newspack-intelligence' );
+		Capabilities::$session_scope = Capabilities::MANAGE;
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+		$operator = $this->localized( 'newspack-intelligence' );
+
+		$this->assertSame( [ '1', '' ], [ $curator['canTune'], $curator['canManage'] ], 'a curator is sent the empty string' );
+		$this->assertSame( [ '1', '1' ], [ $operator['canTune'], $operator['canManage'] ], 'an operator is sent the string 1' );
+	}
+
 	public function test_the_vocabulary_words_every_link_role_and_method(): void {
 		Capabilities::$session_scope = Capabilities::READ;
 		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];

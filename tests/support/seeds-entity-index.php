@@ -9,10 +9,12 @@ use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Projector_Node;
 use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\Config;
+use Newspack_Nodes\Consumer_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Sqlite_Arm;
 use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Topology_Registry;
+use Newspack_Nodes\Tests\Capture_Sink_Node;
 
 require_once __DIR__ . '/projects-intel-graph.php';
 
@@ -118,6 +120,18 @@ trait Seeds_Entity_Index {
 			}
 		}
 		return $events;
+	}
+
+	/** Commit the project topology's ontology cursor at the stream's end, as the projector's Consumer does. */
+	private static function commit_ontology_cursor(): void {
+		$base     = Config::get_base_directory();
+		$consumer = new Consumer_Node();
+		$consumer->name( 'intel:ontology:consumer' );
+		$consumer->sink( new Capture_Sink_Node() );
+		$consumer->arguments( [ "{$base}/logs/intel-ontology.p0", "{$base}/offsets/newspack-intelligence-project.intel-ontology.p0", "{$base}/deadletter/newspack-intelligence-project.intel-ontology.p0" ] );
+		$consumer->drain();
+		$consumer->checkpoint( true );
+		$consumer->remove_node();
 	}
 
 	/**

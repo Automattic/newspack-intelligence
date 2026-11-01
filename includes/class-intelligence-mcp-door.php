@@ -40,8 +40,8 @@ class Intelligence_Mcp_Door extends Mcp_Door {
 	/** The CI node every tool addresses. */
 	private const NODE = 'intelligence';
 
-	/** The verbs no tool offers: one mounts a worker's input, one reads pipeline health for the page. */
-	private const NOT_TOOLS = [ 'fetch_now', 'health' ];
+	/** The verbs no tool offers: the page's health read and its operator fixes. */
+	private const NOT_TOOLS = [ 'fetch_now', 'health', 'seed_ontology', 'reresolve' ];
 
 	/** What closes a tool's summary, by its verb's role; any other role adds nothing. */
 	private const SUMMARY_TAILS = [
@@ -49,8 +49,8 @@ class Intelligence_Mcp_Door extends Mcp_Door {
 	];
 
 	/**
-	 * One `intel_<verb>` tool per verb but `fetch_now`, in declared order,
-	 * each offering every arg its verb declares, described as the verb does;
+	 * One `intel_<verb>` tool per verb but those NOT_TOOLS names, in declared
+	 * order, each offering every arg its verb declares, described as it does;
 	 * the substrate offers a session only the tools its scope's role covers.
 	 *
 	 * @api Read by the substrate's Mcp_Door.

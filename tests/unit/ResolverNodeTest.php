@@ -792,18 +792,6 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertSame( [ [ self::MESA, 'subject', 'ner_fuzzy', 0.85, 'asserted' ] ], \array_map( 'array_values', $this->resolved()['links'] ) );
 	}
 
-	/** Commit the project topology's ontology cursor at the stream's end, as the projector's Consumer does. */
-	private static function commit_ontology_cursor(): void {
-		$base     = \Newspack_Nodes\Config::get_base_directory();
-		$consumer = new Consumer_Node();
-		$consumer->name( 'intel:ontology:consumer' );
-		$consumer->sink( new Capture_Sink_Node() );
-		$consumer->arguments( [ "{$base}/logs/intel-ontology.p0", "{$base}/offsets/newspack-intelligence-project.intel-ontology.p0", "{$base}/deadletter/newspack-intelligence-project.intel-ontology.p0" ] );
-		$consumer->drain();
-		$consumer->checkpoint( true );
-		$consumer->remove_node();
-	}
-
 	/** A retraction reads this worker's own partition alone: a row another partition's file holds is not its to delete. */
 	public function test_a_link_in_another_partitions_file_is_not_retracted(): void {
 		$this->seed( self::gazette(), self::entity( self::MESA, 'Mesa Courier' ), [ self::stored_link( 'organization:salem-ledger', 'mention', 'name' ) ] );

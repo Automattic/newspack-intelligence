@@ -251,6 +251,39 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( [ 'mode' => 'unknown' ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 	}
 
+	/**
+	 * A reader below manage gets each source's and the extractor's state,
+	 * times and counts, and no credential, Vault id, error text or reason.
+	 */
+	public function test_a_reader_below_manage_sees_no_credential_vault_id_or_error(): void {
+		$this->collect( 'make_node Linear_Source kestrel-linear internal linear-t7', 'make_node Feed_Source publication4-feed public' );
+		$this->snapshot( 'publication4-feed', [ 'state' => 'failing', 'last_ok_at' => 1792470021, 'last_error' => 'HTTP 404 https://publication4.test/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 5, 'reason' => 'fetched 5' ] );
+		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_id' => 'proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ] );
+		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::READ;
+
+		$this->assertSame(
+			[
+				[ 'name' => 'kestrel-linear', 'class' => 'Linear_Source', 'tier' => 'internal', 'state' => 'idle' ],
+				[ 'name' => 'publication4-feed', 'class' => 'Feed_Source', 'tier' => 'public', 'state' => 'failing', 'last_ok_at' => 1792470021, 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 5 ],
+			],
+			$this->ci->dispatch( 'health', [ 'sources' ] )['sources']
+		);
+		$this->assertSame( [ 'mode' => 'call', 'last_ok_at' => 1792491357, 'failing_since' => 1792493000 ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+	}
+
+	/** A manager sees the credential a source needs, the extractor's Vault id and every error text. */
+	public function test_a_manager_sees_credential_vault_id_and_error(): void {
+		$this->collect( 'make_node Linear_Source kestrel-linear internal linear-t7', 'make_node Feed_Source publication4-feed public' );
+		$this->snapshot( 'publication4-feed', [ 'state' => 'failing', 'last_ok_at' => null, 'last_error' => 'HTTP 404 https://publication4.test/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 3, 'reason' => null ] );
+		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_id' => 'proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ] );
+		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::MANAGE;
+
+		$sources = $this->ci->dispatch( 'health', [ 'sources' ] )['sources'];
+		$this->assertSame( [ 'url' => 'https://api.linear.app/graphql', 'group' => 'linear-t7' ], $sources[0]['credential'] );
+		$this->assertSame( 'HTTP 404 https://publication4.test/feed/', $sources[1]['last_error'] );
+		$this->assertSame( [ 'proxy-k9', 'HTTP 502 https://proxy.test/v1' ], \array_values( \array_intersect_key( $this->ci->dispatch( 'health', [ 'extraction' ] ), [ 'vault_id' => 1, 'last_error' => 1 ] ) ) );
+	}
+
 	public function test_health_refuses_unknown_slice(): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'what must be one of: collection, sources, backlog, extraction' );

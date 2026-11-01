@@ -10,10 +10,10 @@
 namespace Newspack_Intelligence\CLI;
 
 use Newspack_Intelligence\Ontology_Seed;
-use Newspack_Intelligence\Stream_Writer;
 use Newspack_Intelligence\Projector_Node;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
-use Newspack_Intelligence\Worker_Route;
+use Newspack_Intelligence\Reresolver_Node;
+use Newspack_Intelligence\Seed_Refused;
 use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
@@ -86,7 +86,8 @@ class Ontology_CLI_Command {
 	 * Newspack's products and a lens per audience — to the ontology stream,
 	 * for the keys the projection lacks. A key it already holds is left as
 	 * curated, and a projection that will not open fails the command rather
-	 * than writing everything.
+	 * than writing everything. While the projector has not read every
+	 * ontology change, it refuses and writes nothing.
 	 *
 	 * ## EXAMPLES
 	 *
@@ -101,11 +102,13 @@ class Ontology_CLI_Command {
 		if ( self::refused_root( 'ontology seed' ) ) {
 			return;
 		}
-		$present = Ontology_Seed::present();
-		$events  = Ontology_Seed::events( $present );
-		Stream_Writer::append( $events );
-		$created = \count( \array_filter( $events, static fn ( array $event ): bool => \in_array( $event['event'], [ 'entity_created', 'lens_saved' ], true ) ) );
-		\WP_CLI::success( \sprintf( 'Seeded %d events: %d keys new, %d present.', \count( $events ), $created, \count( $present ) ) );
+		try {
+			$seeded = Ontology_Seed::seed();
+		} catch ( Seed_Refused $e ) {
+			\WP_CLI::error( $e->getMessage() );
+			return;
+		}
+		\WP_CLI::success( \sprintf( 'Seeded %d events: %d keys new, %d present.', $seeded['events'], $seeded['created'], $seeded['present'] ) );
 	}
 
 	/**
@@ -143,7 +146,7 @@ class Ontology_CLI_Command {
 			\WP_CLI::error( $e->getMessage() );
 			return;
 		}
-		$workers = Worker_Route::send( Bootstrap::mount_request_graph(), Config::get_base_directory(), [ [ 'reresolver', "RERESOLVE {$since} {$until}" ] ] );
+		$workers = Reresolver_Node::ask( Bootstrap::mount_request_graph(), $since, $until );
 		\WP_CLI::success( \sprintf( 'Asked %d %s to re-resolve the items dated %s to %s.', $workers, 1 === $workers ? 'worker' : 'workers', $since, $until ) );
 	}
 }
