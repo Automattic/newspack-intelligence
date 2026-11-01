@@ -48,8 +48,8 @@ cd tests && ../vendor/bin/phpunit --enforce-time-limit   # PHP; needs the substr
 80-column inline-comment rule, honoring `@longform`) and `scripts/lint-contract.mjs`,
 which fails the build on the substrate ADR violations a correctness review passes
 because none of them is a bug — a minted correlation id, a pending-reply registry
-or a hook naming a node class by string. `lint:php` pairs phpcs with the same
-comment rule. lint-staged adds `scripts/reorder-node-methods.{js,php} --check`,
+or a hook naming a node class by string. `lint:php` pairs phpcs, the ABSPATH guard
+sniff among its rules, with the same comment rule. lint-staged adds `scripts/reorder-node-methods.{js,php} --check`,
 which orders every top-level class in a staged file: a `Node` subclass takes the
 newspaper order, and every other class takes the generic one — the constructor
 first, then a topological walk of the call graph. The `includes/**/*.php` and
