@@ -17,6 +17,7 @@ use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Router_Node;
 use Newspack_Nodes\Shell_Node;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
+use Newspack_Nodes\Tests\Helpers\InMemoryMemcached;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Worker_Should_Stop;
 use Newspack_Nodes\Tests\TestCase;
@@ -519,6 +520,21 @@ final class ReresolverNodeTest extends TestCase {
 		);
 		$this->assertSame( [], $this->out->captured );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'refusing a re-resolution: not a Y-m-d date: 2026-02-30' ) );
+	}
+
+	/** Each range it queues is published as its last range, for a month; a refused one publishes nothing. */
+	public function test_reresolve_publishes_last_range(): void {
+		$memd       = new InMemoryMemcached();
+		Core::$memd = $memd;
+
+		$this->request( 'RERESOLVE 2026-10-30 2026-11-01' );
+		$this->request( 'RERESOLVE 2026-11-01 2026-10-30' );
+
+		$this->assertSame( [ 'last_range' => [ 'since' => '2026-10-30', 'until' => '2026-11-01' ] ], Reresolver_Node::read_status( 'reresolver', 0 ) );
+		$this->assertSame( [ Resolver_Node::STATUS_TTL_S ], \array_column( $memd->sets, 'ttl' ) );
+
+		$this->request( 'RERESOLVE 2026-10-30 2026-11-01' );
+		$this->assertCount( 2, $memd->sets, 'the same range asked again is written again, keeping it a month' );
 	}
 
 	/** The queue and a range's place in it checkpoint with the ontology Consumer's cursor. */

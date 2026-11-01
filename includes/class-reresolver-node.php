@@ -27,7 +27,7 @@
  * it skipped. A `RERESOLVE <since>
  * <until>` request queues every item dated in those UTC days, an undated one
  * by its retrieval, sent in the order the projection recorded them, by a
- * cursor on each partition's row id.
+ * cursor on each partition's row id, and publishes it as `last_range`.
  *
  * The queue checkpoints with its Consumer's cursor, each unit by its
  * key, `<kind>|<value>`, with when it was queued and a range's cursor, so a
@@ -43,6 +43,7 @@ namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
+use Newspack_Nodes\Publishes_Status;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Schema_Reflection;
 use Newspack_Nodes\Timer_Node;
@@ -58,6 +59,7 @@ use Newspack_Nodes\Worker_Should_Stop;
 class Reresolver_Node extends Timer_Node {
 	use Schema_Reflection;
 	use Emits_Struct;
+	use Publishes_Status;
 
 	/** Seconds a signal waits before its sweep, well past the projector's flush. */
 	public const SWEEP_INTERVAL_S = 30;
@@ -458,8 +460,8 @@ class Reresolver_Node extends Timer_Node {
 	}
 
 	/**
-	 * Answer RERESOLVE: queue the day range the request names, or answer and
-	 * log why it cannot.
+	 * Answer RERESOLVE: publish and queue the day range the request names,
+	 * or answer and log why it cannot.
 	 *
 	 * @return array{since:string,until:string}|array{refused:string}
 	 */
@@ -475,6 +477,7 @@ class Reresolver_Node extends Timer_Node {
 			$this->print_less_often( 'refusing a re-resolution: ', $e->getMessage() );
 			return [ 'refused' => $e->getMessage() ];
 		}
+		$this->publish_status( [ 'last_range' => [ 'since' => $since, 'until' => $until ] ] );
 		$this->queue_up( 'range', "{$from} {$to}" );
 		return [ 'since' => $since, 'until' => $until ];
 	}
@@ -545,6 +548,24 @@ class Reresolver_Node extends Timer_Node {
 	 */
 	public function save_state(): array {
 		return [ 'queue' => $this->queue ];
+	}
+
+	/**
+	 * Seconds the cache keeps the last range, as long as the resolver's hold.
+	 *
+	 * @api Used by substrate.
+	 */
+	protected function status_ttl(): int {
+		return Resolver_Node::STATUS_TTL_S;
+	}
+
+	/**
+	 * None: it publishes only when a RERESOLVE arrives, and writes each one.
+	 *
+	 * @api Used by substrate.
+	 */
+	protected function status_heartbeat(): int {
+		return 0;
 	}
 
 	/** @return array<string,mixed> */

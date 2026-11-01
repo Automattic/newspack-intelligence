@@ -23,6 +23,9 @@
  * minute; one the queue ages out after a day is recovered by `ontology
  * reresolve`, without its NER step.
  *
+ * It publishes each record's hold through `Publishes_Status`, as
+ * publish_hold() describes.
+ *
  * A re-resolution runs the resolver's identifier, name and stem steps alone,
  * because NER ran when the item was first resolved, unless the record is
  * owed NER. It forwards an item a call has extracted only when, with the
@@ -72,6 +75,7 @@ namespace Newspack_Intelligence;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Node;
+use Newspack_Nodes\Publishes_Status;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Schema_Reflection;
 use Newspack_Nodes\Table_Unavailable;
@@ -89,12 +93,30 @@ class Resolver_Node extends Node {
 	use Schema_Reflection;
 	use LLM_Config;
 	use Emits_Struct;
+	use Publishes_Status;
 
 	/** The record kind the Reresolver appends, naming a stored item to resolve again. */
 	public const RERESOLVE = 'item_reresolve';
 
 	/** Seconds a held record waits on the later queue. */
 	public const HOLD_S = 60;
+
+	/** Seconds the later queue keeps a parked record before it drops it. */
+	public const QUEUE_MAX_AGE_S = DAY_IN_SECONDS;
+
+	/** Seconds a hold or a last range outlives its last publish, so `dropped` outlives an idle resolver. */
+	public const STATUS_TTL_S = 30 * DAY_IN_SECONDS;
+
+	/** Seconds a parked record takes at most to return: due HOLD_S on, then the queue's minute sweep. */
+	private const CIRCULATION_S = 2 * self::HOLD_S;
+
+	/** Every key a hold carries, null, so each publish names them all. */
+	private const BLANK_STATUS = [
+		'reason'  => null,
+		'since'   => null,
+		'held'    => null,
+		'dropped' => null,
+	];
 
 	/** The item's non-topic links, subject before mention, then by confidence and key. */
 	private const LINKS_OF_ITEM = "item_key = ? AND role <> 'topic' ORDER BY role = 'subject' DESC, confidence DESC, entity_key";
@@ -124,6 +146,20 @@ class Resolver_Node extends Node {
 
 	/** The resolver over the shared index it last read. */
 	private ?Resolver $resolver = null;
+
+	/**
+	 * Each held item's key, while a hold stands: O(distinct held items) for
+	 * one worker's life, with no rotation.
+	 *
+	 * @var array<string,true>
+	 */
+	private array $held = [];
+
+	/** When this process next publishes its own count; null while nothing holds. */
+	private ?int $count_due = null;
+
+	/** Whether the clear is published and nothing is held since. */
+	private bool $cleared = false;
 
 	/** Wire the sibling `:config` interpreter for the LLM verbs. */
 	public function __construct() {
@@ -165,7 +201,9 @@ class Resolver_Node extends Node {
 			$item     = Intel_Event::item_of( Intel_Event::from_message( $message ) ) ?? throw new \InvalidArgumentException( 'item_recorded: missing an item field' );
 			$item_key = Core::as_string( $item['item_key'] );
 			$resolver = $this->resolver( 0.0 );
-			if ( $this->holds( $resolver ) ) {
+			$reason   = $this->hold_reason( $resolver );
+			$this->publish_hold( $item_key, $reason );
+			if ( '' !== $reason ) {
 				$this->hold( self::reresolve( $item_key, 0, [ 'ner' => true ] ) );
 				return;
 			}
@@ -184,7 +222,9 @@ class Resolver_Node extends Node {
 		$item_key = $record['item_key'];
 		$owes_ner = $record['ner'] ?? false;
 		$resolver = $this->resolver( (float) $record['fresh_after'] );
-		if ( $this->holds( $resolver ) ) {
+		$reason   = $this->hold_reason( $resolver );
+		$this->publish_hold( $item_key, $reason );
+		if ( '' !== $reason ) {
 			$this->hold( $record );
 			return;
 		}
@@ -294,7 +334,8 @@ class Resolver_Node extends Node {
 	}
 
 	/**
-	 * Whether to hold the record: while the index holds no live entity, or
+	 * Why to hold the record, '' when not: while the index holds no live
+	 * entity, or
 	 * while the projector stood behind the ontology stream just before the
 	 * index was read, each logged naming its cause and the recovery from an
 	 * age-out. A false hold, from a curation the projector has not flushed
@@ -305,16 +346,103 @@ class Resolver_Node extends Node {
 	 *
 	 * @param Resolver $resolver The resolver over the shared index.
 	 */
-	private function holds( Resolver $resolver ): bool {
+	private function hold_reason( Resolver $resolver ): string {
 		if ( ! $resolver->index->has_live_entities() ) {
 			$this->print_less_often( 'the entity index holds no live entity; holding items on ', "{$this->later} until wp newspack-intelligence ontology seed runs, or ontology reproject after an upgrade. " . self::AGED_OUT );
-			return true;
+			return 'no_live_entity';
 		}
 		if ( $resolver->index->behind_ontology() ) {
 			$this->print_less_often( 'the projector has not caught up with the ontology stream; holding items on ', "{$this->later}. " . self::AGED_OUT );
-			return true;
+			return 'behind_ontology';
 		}
-		return false;
+		return '';
+	}
+
+	/**
+	 * Publish the hold a record leaves, every key of BLANK_STATUS each time:
+	 * `reason`, '' when nothing holds; `since`, the first hold of the
+	 * standing reason, read back by a recycled worker and restarted when the
+	 * reason changes; `held`, held_count()'s gauge of the distinct items
+	 * held; and `dropped`. Held under $reason, its key joins the set; passed,
+	 * the hold ends and the set empties, and once that clear is published a
+	 * passing record publishes nothing until the next hold. A standing reason
+	 * that ends, by a pass or a new reason, after outlasting QUEUE_MAX_AGE_S
+	 * merges its first and last UTC day into `dropped`; any other end keeps
+	 * the days already there.
+	 *
+	 * @param string $item_key The record's item.
+	 * @param string $reason   Why it is held, or '' when it passed.
+	 */
+	private function publish_hold( string $item_key, string $reason ): void {
+		if ( '' === $reason && $this->cleared ) {
+			return;
+		}
+		$last     = $this->last_status();
+		$standing = Core::as_string( $last['reason'] ?? '' );
+		$began    = $last['since'] ?? null;
+		$dropped  = $last['dropped'] ?? null;
+		$now      = (int) Core::$now;
+		if ( '' !== $standing && $reason !== $standing && null !== $began && $now - Core::as_int( $began ) > self::QUEUE_MAX_AGE_S ) {
+			$dropped = self::dropped_days( $dropped, Core::as_int( $began ), $now );
+		}
+		if ( '' === $reason ) {
+			$this->held      = [];
+			$this->count_due = null;
+			$this->cleared   = true;
+			$this->publish_status( [ ...self::BLANK_STATUS, 'reason' => '', 'held' => 0, 'dropped' => $dropped ] );
+			return;
+		}
+		$this->held[ $item_key ] = true;
+		$this->cleared           = false;
+		$this->publish_status(
+			[
+				...self::BLANK_STATUS,
+				'reason'  => $reason,
+				'since'   => $reason === $standing && null !== $began ? Core::as_int( $began ) : $now,
+				'held'    => $this->held_count( '' === $standing ? null : ( $last['held'] ?? null ), $now ),
+				'dropped' => $dropped,
+			]
+		);
+	}
+
+	/**
+	 * The days a hold dropped records on, from its start to now in UTC,
+	 * widened to cover the days already published.
+	 *
+	 * @param mixed $dropped The days already published, or null.
+	 * @param int   $began   When the ended hold began.
+	 * @param int   $now     When it ended.
+	 * @return array{first_day:string,last_day:string}
+	 */
+	private static function dropped_days( mixed $dropped, int $began, int $now ): array {
+		$first_day = \gmdate( 'Y-m-d', $began );
+		$last_day  = \gmdate( 'Y-m-d', $now );
+		if ( \is_array( $dropped ) ) {
+			$first_day = \min( $first_day, Core::as_string( $dropped['first_day'] ?? $first_day ) );
+			$last_day  = \max( $last_day, Core::as_string( $dropped['last_day'] ?? $last_day ) );
+		}
+		return [
+			'first_day' => $first_day,
+			'last_day'  => $last_day,
+		];
+	}
+
+	/**
+	 * The count to publish, a gauge: the set's size once this process has
+	 * held CIRCULATION_S, since a recycled worker has not seen every parked
+	 * record return before then, refreshed once a heartbeat so a key held
+	 * between writes costs none; $published otherwise.
+	 *
+	 * @param mixed $published The count already published; null for unknown.
+	 * @param int   $now       The tick clock's second.
+	 */
+	private function held_count( mixed $published, int $now ): mixed {
+		$this->count_due ??= $now + self::CIRCULATION_S;
+		if ( $now < $this->count_due ) {
+			return $published;
+		}
+		$this->count_due = $now + $this->status_heartbeat();
+		return \count( $this->held );
 	}
 
 	/**
@@ -606,6 +734,24 @@ class Resolver_Node extends Node {
 		if ( null !== $forwarded ) {
 			$this->emit( '', [ 'item' => $item ] + $forwarded );
 		}
+	}
+
+	/**
+	 * Seconds after which an unchanged hold is written again.
+	 *
+	 * @api Used by substrate.
+	 */
+	protected function status_heartbeat(): int {
+		return 60;
+	}
+
+	/**
+	 * Seconds the cache keeps a hold nothing rewrites.
+	 *
+	 * @api Used by substrate.
+	 */
+	protected function status_ttl(): int {
+		return self::STATUS_TTL_S;
 	}
 
 	/** @return array<string,mixed> */

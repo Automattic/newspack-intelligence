@@ -425,6 +425,29 @@ throws, so the Consumer dead-letters it. A topic is never matched in text:
 the index offers each live topic by its canonical name through `topics()`
 and indexes none of its names.
 
+The resolver publishes its hold through `Publishes_Status`, under its name
+and worker partition, for `Resolver_Node::STATUS_TTL_S` (30 days), so
+`dropped` outlives a resolver that sees no record for a day, from
+`publish_hold()`, which `fill()` calls with each record's
+`hold_reason()`, every key of its `BLANK_STATUS` each time: `reason`
+(`no_live_entity`, `behind_ontology`, or '' when nothing holds); `since`,
+the first hold of the standing reason, read back by a recycled worker and
+restarted at now when the reason changes; `held`, the size of an in-memory
+set of the held items' keys, O(distinct held items) for one worker's life,
+a gauge published once this process has held one circulation of the later
+queue (`2 * HOLD_S`, since a parked record returns 60 to 120 seconds on)
+and refreshed once a heartbeat (60 seconds) after, the value read back
+until then, null when no hold stood; and `dropped`. A record that passes
+ends the hold and empties the set, publishing `reason` '', `since` null
+and `held` 0; once that clear is published, a passing record reads and
+writes nothing until the next hold, so `dropped` expires 30 days after
+the last publish. A standing reason that ends, by a pass or a new reason,
+more than `QUEUE_MAX_AGE_S` (a day, the `intel:later` Delay's max age,
+which `TopologyDurabilityTest` holds it to) after its `since` merges the
+UTC days of that `since` and of now into `dropped { first_day, last_day }`,
+keeping the earliest first day and the latest last day; any other end
+keeps the `dropped` already published.
+
 **Extraction.** `extractor` skips a resolution with no link and no
 candidate; for any other it makes one `chat()` call through
 `Prompts::extract()`, which carries the item as JSON (tags hex-escaped)
@@ -537,7 +560,10 @@ rest, to log how many it skipped. `wp
 newspack-intelligence ontology reresolve --since=<Y-m-d> [--until=<Y-m-d>]`
 validates the days, then sends `RERESOLVE <since> <until>` through
 `Worker_Route` to each live worker's `reresolver`, reporting how many it
-reached; the reresolver answers the range it queued, or the refusal, and
+reached; the reresolver publishes a range it queues as `last_range {
+since, until }` through `Publishes_Status`, for `Resolver_Node::STATUS_TTL_S`,
+writing each one it is asked (no heartbeat), answers the range
+it queued, or the refusal, and
 sends every item dated in those UTC days, an undated one by its retrieval,
 partition by partition in row-id order. The queue checkpoints with
 `intel:ontology:reresolve` (`add_snapshot_node reresolver`), each unit by its
@@ -1447,10 +1473,10 @@ plugin adds:
 | `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_url`, `remove_url`, `set_client_feeds`; owns `{name}:curl` |
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
-| `Resolver` | `Resolver_Node` | `<writer> <later>`; the `LLM_Config` verbs |
+| `Resolver` | `Resolver_Node` | `<writer> <later>`; the `LLM_Config` verbs; publishes its hold (`reason`, `since`, `held`, `dropped`) through `Publishes_Status` |
 | `Extractor` | `Extractor_Node` | `<writer> <later>`; the `LLM_Config` verbs |
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
-| `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>` |
+| `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>`; publishes `last_range` through `Publishes_Status` |
 | `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no verbs |
 | `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, each at `tune`; `fetch_now` at `manage` |
 
