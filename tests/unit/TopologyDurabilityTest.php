@@ -339,6 +339,21 @@ class TopologyDurabilityTest extends TestCase {
 		$this->assertNotContains( 'slack', $names( 'newspack-intelligence-collect-public' ) );
 	}
 
+	/**
+	 * Unthread is an include of its own, which the token half includes, so a
+	 * local copy can keep it beside the ContextA8C nodes, which cannot read it.
+	 */
+	public function test_unthread_is_an_include_the_token_half_includes(): void {
+		$names = static fn ( string $topology ): array => \array_column( Topology_Analyzer::graph_for( $topology )['nodes'], 'name' );
+		$own   = $names( 'newspack-intelligence-collect-unthread' );
+
+		$this->assertContains( 'unthread', $own );
+		foreach ( [ 'linear', 'slack', 'p2', 'p2-restricted', 'github', 'feed', 'news' ] as $other ) {
+			$this->assertNotContains( $other, $own, $other );
+		}
+		$this->assertContains( 'unthread', $names( 'newspack-intelligence-collect-token' ) );
+	}
+
 	/** Compose a topology the way a worker does, over the test base dir. */
 	private function load( string $topology ): void {
 		Core::$var['partition'] = '0';

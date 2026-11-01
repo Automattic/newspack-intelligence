@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Unthread is an include of its own, `newspack-intelligence-collect-unthread`, which `-collect-token` includes,** so a workstation reading Slack, P2 and Linear through ContextA8C, which cannot read Unthread, includes it beside them and runs every source the shipped topology runs. The node, its tier, interval, Vault group and target are unchanged.
+
 ## [0.29.0] - 2026-10-30
 
 ### Added

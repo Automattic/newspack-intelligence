@@ -1,9 +1,10 @@
 # The sources that read nothing without a credential from the Vault: Linear,
 # Slack, P2 and Unthread, each recording item_recorded events at its tier into
-# intel:writer.
+# intel:writer, Unthread through its own include.
 var num_partitions = 1
 include topic-probe
 include newspack-intelligence-streams
+include newspack-intelligence-collect-unthread
 make_node Linear_Source linear internal linear
 cmd linear:config set_interval 900
 cmd linear:config add_team TEAMA
@@ -32,12 +33,8 @@ cmd p2:config add_site p2-site-3.wordpress.com
 make_node P2_Source p2-restricted restricted p2
 cmd p2-restricted:config set_interval 1800
 cmd p2-restricted:config add_site p2-site-1.wordpress.com
-# Support threads quote publishers' staff by name, so Unthread is restricted.
-make_node Unthread_Source unthread restricted unthread
-cmd unthread:config set_interval 900
 connect_node linear intel:writer
 connect_node slack intel:writer
 connect_node p2 intel:writer
 connect_node p2-restricted intel:writer
-connect_node unthread intel:writer
 secure
