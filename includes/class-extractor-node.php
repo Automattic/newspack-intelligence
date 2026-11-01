@@ -27,7 +27,9 @@
  * line names after the writer, with exponential backoff, until MAX_ATTEMPTS;
  * the struct it reads carries the `attempt` that counts them. The topics
  * offered and the names claims resolve through come from the process's
- * shared `Entity_Index::current()`, the one the Resolver reads.
+ * shared `Entity_Index::current()`, the one the Resolver reads. Each
+ * extraction publishes its status: heuristic with no client, a call that
+ * answered, or the failure of one that did not.
  *
  * @package Newspack_Intelligence
  */
@@ -37,6 +39,7 @@ namespace Newspack_Intelligence;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Node;
+use Newspack_Nodes\Publishes_Status;
 use Newspack_Nodes\Schema_Reflection;
 use Newspack_Nodes\Worker_Should_Stop;
 
@@ -46,6 +49,7 @@ class Extractor_Node extends Node {
 	use Schema_Reflection;
 	use LLM_Config;
 	use Emits_Struct;
+	use Publishes_Status;
 
 	/** The struct kind forwarded to the target once an item is extracted. */
 	public const EXTRACTED = 'item_extracted';
@@ -61,6 +65,15 @@ class Extractor_Node extends Node {
 
 	/** The attempts after which a failed call is no longer retried. */
 	public const MAX_ATTEMPTS = 5;
+
+	/** Every key a status carries, null, so each publish clears what its outcome leaves out. */
+	public const BLANK_STATUS = [
+		'mode'          => null,
+		'vault_id'      => null,
+		'last_ok_at'    => null,
+		'last_error'    => null,
+		'failing_since' => null,
+	];
 
 	/** The writer every extraction and claim is addressed to. */
 	protected string $writer = '';
@@ -120,6 +133,7 @@ class Extractor_Node extends Node {
 		$topics = $index->topics();
 		$client = $this->make_llm_client();
 		$parsed = null;
+		$fault  = 'AI proxy answer did not parse as an extraction';
 		if ( null !== $client ) {
 			try {
 				$names  = \array_keys( $topics );
@@ -127,12 +141,18 @@ class Extractor_Node extends Node {
 			} catch ( Worker_Should_Stop $stop ) {
 				throw $stop;
 			} catch ( \RuntimeException $e ) {
-				$this->print_less_often( 'extraction call failed: ', $e->getMessage() );
+				$fault = $e->getMessage();
+				$this->print_less_often( 'extraction call failed: ', $fault );
 			}
 		}
 		$item_key = Core::as_string( $item['item_key'] );
-		if ( null !== $client && null === $parsed ) {
+		if ( null === $client ) {
+			$this->publish_snapshot( [ 'mode' => 'heuristic' ] );
+		} elseif ( null === $parsed ) {
+			$this->publish_failing( $fault );
 			$this->retry( $item_key, $attempt );
+		} else {
+			$this->publish_snapshot( [ 'mode' => 'call', 'last_ok_at' => (int) Core::$now ] );
 		}
 		if ( null === $parsed && $extracted ) {
 			$this->print_less_often( 'keeping the earlier extraction of ', "{$item_key}: no call answered" );
@@ -178,6 +198,33 @@ class Extractor_Node extends Node {
 			];
 			$this->emit( $this->writer, Intel_Event::machine_event( 'extract', 'claim_asserted', $fields ) );
 		}
+	}
+
+	/**
+	 * Publish a failed call: call, the last answer held, $fault as
+	 * `status_text()` renders it, and the failing_since already published.
+	 *
+	 * @param string $fault Why the call failed.
+	 */
+	private function publish_failing( string $fault ): void {
+		$this->publish_snapshot(
+			[
+				'mode'          => 'call',
+				'last_ok_at'    => $this->last_status()['last_ok_at'] ?? null,
+				'last_error'    => self::status_text( $fault ),
+				'failing_since' => $this->status_since( 'failing_since' ),
+			]
+		);
+	}
+
+	/**
+	 * Publish a status of every key, the configured vault id among them,
+	 * those $fields leaves out null.
+	 *
+	 * @param array<string,mixed> $fields The keys the outcome carries.
+	 */
+	private function publish_snapshot( array $fields ): void {
+		$this->publish_status( [ ...self::BLANK_STATUS, 'vault_id' => $this->vault_id, ...$fields ] );
 	}
 
 	/**
@@ -236,6 +283,25 @@ class Extractor_Node extends Node {
 			}
 		}
 		return \array_values( $keys );
+	}
+
+	/**
+	 * Seconds the cache keeps a status: a day, since the extractor runs only
+	 * when an item reaches it.
+	 *
+	 * @api Used by substrate.
+	 */
+	protected function status_ttl(): int {
+		return 86400;
+	}
+
+	/**
+	 * Seconds after which an unchanged status is written again.
+	 *
+	 * @api Used by substrate.
+	 */
+	protected function status_heartbeat(): int {
+		return 300;
 	}
 
 	/** @return array<string,mixed> */

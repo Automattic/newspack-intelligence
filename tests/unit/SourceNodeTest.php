@@ -1035,6 +1035,18 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'fetch-broke-8812', 'failing_since' => self::BOUNDARY + 4, 'failed' => 0, 'requests' => 0 ] ), $this->published( 'fake-source-12' ) );
 	}
 
+	/** A scheduled pass's throw is published terminal-safe, its control characters rendered. */
+	public function test_a_scheduled_throw_is_published_terminal_safe(): void {
+		$this->publishing();
+		$node          = $this->scheduled();
+		$node->failure = new \RuntimeException( "fetch-broke\e[2J-8813" );
+
+		$this->tick_at( $node, self::BOUNDARY - 4.0 );
+		$this->tick_at( $node, self::BOUNDARY + 4.0 );
+
+		$this->assertSame( 'fetch-broke<1B>[2J-8813', $this->published( 'fake-source-12' )['last_error'] ?? null );
+	}
+
 	/**
 	 * A throw dropping what an earlier pass stranded in the queue publishes
 	 * this pass's counts, not the stranded pass's.

@@ -461,6 +461,19 @@ while it is still owed one, and the resolution it reads carries that
 forwards an `item_extracted` struct `{ item, relevance, importance }` to its
 target, `deduper`; it is a struct between two nodes, not an event kind.
 
+The extractor publishes how it extracts through `Publishes_Status`, under
+its name and worker partition, for 86,400 seconds, with every key of
+`Extractor_Node::BLANK_STATUS`: `mode` (`call` or `heuristic`), the
+`vault_id` its `set_vault_id` line set, `last_ok_at`, `last_error` and
+`failing_since`. No client publishes `heuristic`, clearing the rest; a call
+whose reply parses publishes `call` with `last_ok_at`, clearing the failure;
+a call that throws or whose reply does not parse publishes `call`, keeps
+`last_ok_at`, and publishes its text through the trait's `status_text()`,
+terminal-safe and cut to 500 bytes, with `status_since( 'failing_since' )`:
+the value already published, else now. The mode follows whether a client
+was built, so a held `heuristic` gives way to `call` once the Vault entry
+exists.
+
 **Dedup.** `deduper` finds an earlier copy of each extracted item: the same
 `Url_Canon::of()` URL, or else the same `Entity_Index::norm()` title when that
 runs at least `MIN_TITLE_NORM` (24) characters, within `WINDOW_DAYS` (14) of
@@ -1043,12 +1056,12 @@ not fail, else
 last failure's text, cut to 500 bytes on a character boundary; a pass that
 counted no answer, asking no data and failing nothing, is quiet, not a
 fault, and publishes ok with both counts 0. A scheduled pass that throws
-publishes failing with the throw's message. `failing_since` keeps the value
-already published while the state stays failing, read back from the cache by
-a recycled worker's first publish. Every publish writes all seven keys —
-`state`, `last_ok_at`, `last_error`, `failing_since`, `failed`, `requests`
-and `reason` — those its state does not carry null, because a publish merges
-over the snapshot read back. A source that cannot fetch calls
+publishes failing with the throw's message, terminal-safe. `failing_since`
+keeps the value already published while the state stays failing, read back
+from the cache by a recycled worker's first publish. Every publish writes
+all seven keys — `state`, `last_ok_at`, `last_error`, `failing_since`,
+`failed`, `requests` and `reason` — those its state does not carry null,
+because a publish merges over the snapshot read back. A source that cannot fetch calls
 `idle( $reason )`, publishing `{ state: idle, reason }`, which its pass's
 end leaves standing; only the ContextA8C sources do, below.
 Curl sends `User-Agent: newspack-nodes/<version>` (`Curl_Node::USER_AGENT`)

@@ -8,6 +8,7 @@ use Newspack_Intelligence\Entity_Index;
 use Newspack_Intelligence\Extractor_Node;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\LLM_Client;
+use Newspack_Intelligence\Proxy_LLM_Client;
 use Newspack_Intelligence\Resolver_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
@@ -16,6 +17,7 @@ use Newspack_Nodes\Node_Names;
 use Newspack_Nodes\Router_Node;
 use Newspack_Nodes\Shell_Node;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
+use Newspack_Nodes\Tests\Helpers\InMemoryMemcached;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Worker_Should_Stop;
 use Newspack_Nodes\Tests\TestCase;
@@ -40,6 +42,12 @@ final class ExtractorNodeTest extends TestCase {
 
 	private const PEABODY = 'event:peabody-award';
 
+	/** The worker partition the extractor publishes its status from. */
+	private const PARTITION = 4;
+
+	/** The Vault entry the extractor's token resolves from; none exists. */
+	private const VAULT_ID = 'AI-proxy-test-9';
+
 	private Extractor_Node $extractor;
 
 	private Capture_Sink_Node $out;
@@ -63,6 +71,7 @@ final class ExtractorNodeTest extends TestCase {
 
 	protected function tearDown(): void {
 		Extractor_Node::$llm_factory = null;
+		Proxy_LLM_Client::$http_post = null;
 		Topology_Registry::reset();
 		parent::tearDown();
 	}
@@ -434,6 +443,96 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'giving up extracting ' . self::ITEM . ' after 5 attempts' ) );
 	}
 
+	/** With no Vault entry no client is built, so the extractor publishes heuristic, clearing a call's state. */
+	public function test_no_client_publishes_heuristic_with_vault_id(): void {
+		$this->publishing( [ 'mode' => 'call', 'vault_id' => 'AI-proxy-old-2', 'last_ok_at' => 7000, 'last_error' => 'AI proxy returned HTTP 500', 'failing_since' => 6000 ] );
+		Extractor_Node::$llm_factory = null;
+		$this->extractor->interpreter()?->dispatch( 'set_vault_id', [ self::VAULT_ID ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$this->assertSame( self::snapshot( [ 'mode' => 'heuristic', 'vault_id' => self::VAULT_ID ] ), $this->published() );
+	}
+
+	/** A call that answers publishes call and the time, clearing the failure an earlier process published. */
+	public function test_answered_call_publishes_call_and_clears_error(): void {
+		$this->publishing( [ 'mode' => 'heuristic', 'vault_id' => 'AI-proxy-old-2', 'last_ok_at' => 7000, 'last_error' => 'AI proxy returned HTTP 500', 'failing_since' => 5100 ] );
+		$this->extractor->interpreter()?->dispatch( 'set_vault_id', [ self::VAULT_ID ] );
+		$this->answer( '{"summary":"Harbor Gazette wins."}' );
+		Core::$now = 9200.0;
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'vault_id' => self::VAULT_ID, 'last_ok_at' => 9200 ] ), $this->published() );
+	}
+
+	/** A call that throws keeps the last answer, and a later failure keeps the first one's failing_since. */
+	public function test_failed_call_publishes_error_and_keeps_failing_since(): void {
+		$this->publishing( [ 'mode' => 'call', 'vault_id' => self::VAULT_ID, 'last_ok_at' => 7000 ] );
+		$this->extractor->interpreter()?->dispatch( 'set_vault_id', [ self::VAULT_ID ] );
+		Proxy_LLM_Client::$http_post = static fn (): array => [ 'response' => [ 'code' => 502 ], 'body' => 'bad gateway' ];
+		Extractor_Node::$llm_factory = static fn (): LLM_Client => new Proxy_LLM_Client( 'https://proxy.test/v1', 'SEKRET-71', 'gpt-oss-120b', 'newspack-intelligence' );
+
+		Core::$now = 8100.0;
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+		Core::$now = 8400.0;
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'vault_id' => self::VAULT_ID, 'last_ok_at' => 7000, 'last_error' => 'AI proxy returned HTTP 502', 'failing_since' => 8100 ] ), $this->published() );
+	}
+
+	/** A recycled worker's first failure keeps the failing_since its predecessor published, with the new error. */
+	public function test_failing_since_survives_a_worker_recycle(): void {
+		$this->publishing( [ 'mode' => 'call', 'vault_id' => self::VAULT_ID, 'last_ok_at' => 4800, 'last_error' => 'AI proxy returned HTTP 504', 'failing_since' => 5100 ] );
+		$this->answer( 'throw' );
+		Core::$now = 9300.0;
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'vault_id' => '', 'last_ok_at' => 4800, 'last_error' => 'proxy 503', 'failing_since' => 5100 ] ), $this->published() );
+	}
+
+	/** Once an entry exists a client is built, so a failing call publishes call over a held heuristic. */
+	public function test_a_failed_call_after_heuristic_publishes_call(): void {
+		$this->publishing( [ 'mode' => 'heuristic', 'vault_id' => self::VAULT_ID ] );
+		$this->answer( 'throw' );
+		Core::$now = 8900.0;
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'vault_id' => '', 'last_error' => 'proxy 503', 'failing_since' => 8900 ] ), $this->published() );
+	}
+
+	/** An answer that does not parse is a failed call; with nothing published before, the mode is call. */
+	public function test_an_unparsed_answer_publishes_failing(): void {
+		$this->publishing( null );
+		$this->answer( 'I would rather not.' );
+		Core::$now = 8700.0;
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'vault_id' => '', 'last_error' => 'AI proxy answer did not parse as an extraction', 'failing_since' => 8700 ] ), $this->published() );
+	}
+
+	/** A failure's text is scrubbed for the terminal and cut to 500 bytes on a character boundary. */
+	public function test_a_failure_text_is_scrubbed_and_cut(): void {
+		$this->publishing( null );
+		Extractor_Node::$llm_factory = static fn (): LLM_Client => new class() implements LLM_Client {
+				public function chat( array $messages, array $opts = [] ): string {
+					throw new \RuntimeException( "\e[2Jproxy said " . \str_repeat( 'ü', 400 ) );
+				}
+			};
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$error = Core::as_string( $this->published()['last_error'] ?? null );
+		$this->assertStringNotContainsString( "\e", $error );
+		$this->assertStringContainsString( 'proxy said ü', $error );
+		$this->assertGreaterThanOrEqual( 499, \strlen( $error ) );
+		$this->assertLessThanOrEqual( 500, \strlen( $error ) );
+		$this->assertTrue( \mb_check_encoding( $error, 'UTF-8' ) );
+	}
+
 	/** The resolve topology hands each resolution to the extractor, configured for the proxy and the audience. */
 	public function test_the_resolve_topology_wires_the_extractor(): void {
 		Core::reset();
@@ -472,6 +571,46 @@ final class ExtractorNodeTest extends TestCase {
 			$this->read_private( $extractor, 'profiles' )
 		);
 		$this->assertNull( Core::node( 'intel:resolved:null' ) );
+	}
+
+	/**
+	 * Bind a worker partition and a shared cache, as a worker runs, holding
+	 * the snapshot an earlier process published, if any.
+	 *
+	 * @param array<string,mixed>|null $earlier The earlier snapshot's keys.
+	 */
+	private function publishing( ?array $earlier ): void {
+		$memd                   = new InMemoryMemcached();
+		Core::$memd             = $memd;
+		Core::$var['partition'] = (string) self::PARTITION;
+		if ( null !== $earlier ) {
+			$memd->set( Extractor_Node::status_key( 'extractor', self::PARTITION ), self::snapshot( $earlier ), 600 );
+		}
+	}
+
+	/**
+	 * The status the extractor published, its keys sorted.
+	 *
+	 * @return array<array-key,mixed>|null
+	 */
+	private function published(): ?array {
+		$status = Extractor_Node::read_status( 'extractor', self::PARTITION );
+		if ( null !== $status ) {
+			\ksort( $status );
+		}
+		return $status;
+	}
+
+	/**
+	 * A status as the extractor writes one, every key named, sorted.
+	 *
+	 * @param array<string,mixed> $fields The keys set.
+	 * @return array<string,mixed>
+	 */
+	private static function snapshot( array $fields ): array {
+		$status = [ ...Extractor_Node::BLANK_STATUS, ...$fields ];
+		\ksort( $status );
+		return $status;
 	}
 
 	/**

@@ -68,9 +68,6 @@ abstract class Source_Node extends Timer_Node {
 	 */
 	protected const PROTOCOL_SUBJECTS = [];
 
-	/** Bytes of a failure's text a status keeps, cut on a character boundary. */
-	private const MAX_ERROR_BYTES = 500;
-
 	/** Every key a status carries, null, so each publish clears what its state leaves out. */
 	public const BLANK_STATUS = [
 		'state'         => null,
@@ -350,17 +347,15 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
-	 * Publish failing with $error cut to MAX_ERROR_BYTES, since the
-	 * failing_since already published while the state stays failing, a
-	 * recycled worker's included.
+	 * Publish failing with $error as `status_text()` renders it, since the
+	 * failing_since already published, a recycled worker's included.
 	 */
 	private function publish_failing( string $error ): void {
-		$last = $this->last_status();
 		$this->publish_snapshot(
 			[
 				'state'         => 'failing',
-				'last_error'    => \mb_strcut( $error, 0, self::MAX_ERROR_BYTES, 'UTF-8' ),
-				'failing_since' => 'failing' === ( $last['state'] ?? null ) ? Core::as_int( $last['failing_since'] ) : (int) Core::$now,
+				'last_error'    => self::status_text( $error ),
+				'failing_since' => $this->status_since( 'failing_since' ),
 				'failed'        => $this->failed,
 				'requests'      => $this->requests,
 			]
