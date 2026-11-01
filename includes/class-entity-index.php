@@ -307,19 +307,21 @@ final class Entity_Index {
 	}
 
 	/**
-	 * Why this index holds every record, '' when it holds none: while it
-	 * holds no live entity, one accepted or proposed and not merged away,
-	 * then while a projector's reader of the ontology stream had not
-	 * committed the stream's end just before current() read it. The
-	 * resolver's hold and the `health` verb read this one answer.
+	 * Why this index holds every record, '' when it holds none: while a
+	 * projector's reader of the ontology stream had not committed the
+	 * stream's end just before current() read it, then while it holds no
+	 * live entity, one accepted or proposed and not merged away. Behind
+	 * comes first, so a seed not yet projected reads as the projector
+	 * catching up rather than as an empty ontology. The resolver's hold and
+	 * the `health` verb read this one answer.
 	 *
 	 * @api Read by Resolver_Node and Intelligence_Health.
 	 */
 	public function hold_cause(): string {
-		if ( [] === $this->states ) {
-			return 'no_live_entity';
+		if ( $this->behind ) {
+			return 'behind_ontology';
 		}
-		return $this->behind ? 'behind_ontology' : '';
+		return [] === $this->states ? 'no_live_entity' : '';
 	}
 
 	/**

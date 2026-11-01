@@ -720,6 +720,18 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'the projector has not caught up with the ontology stream' ) );
 	}
 
+	/** A seed appended but not yet projected holds as the projector catching up, not as an empty ontology. */
+	public function test_a_seed_not_yet_projected_holds_as_behind_not_empty(): void {
+		Stream_Writer::append( self::entity( self::MESA, 'Mesa Courier' ) );
+		$stderr = $this->capture_stderr();
+
+		$this->resolver->fill( self::recorded( [ 'url' => 'https://harborgazette.example/a' ] ) );
+
+		$this->assertSame( [ self::ITEM ], \array_column( $this->parked(), 'item_key' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'the projector has not caught up with the ontology stream' ) );
+		$this->assertCount( 0, self::stderr_lines( $stderr, 'holds no live entity' ) );
+	}
+
 	/** Once the projector's cursor stands at the ontology stream's end, an index holding entities resolves. */
 	public function test_a_projection_caught_up_with_the_ontology_resolves(): void {
 		$this->seed( self::gazette() );

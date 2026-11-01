@@ -302,11 +302,13 @@ stored link it no longer writes, and an `entity_proposed` per candidate,
 keyed `Intel_Event::entity_key()`, to the writer its `make_node` line names,
 by TO and declared as an extra target, then forwards `{ item, links,
 proposals, extracted, attempt }` to its target, `extractor`. It resolves
-nothing while its index holds no live entity, or while a projector's reader
-of the ontology stream `Stream_Writer::stream_dir()` names had not committed
-the stream's end (`Projector_Node::behind()`, over
-`Consumer_Node::lag_from_disk()`) just before the index was read, the two
-in that order (`Entity_Index::hold_cause()`): `Entity_Index::current()` takes
+nothing while a projector's reader of the ontology stream
+`Stream_Writer::stream_dir()` names had not committed the stream's end
+(`Projector_Node::behind()`, over `Consumer_Node::lag_from_disk()`) just
+before the index was read, or while its index holds no live entity, the two
+in that order (`Entity_Index::hold_cause()`), so a seed not yet projected
+holds as `behind_ontology` rather than as an empty ontology:
+`Entity_Index::current()` takes
 that reading first at every load, every `Entity_Index::TTL_S`, whichever
 reader triggers it, so a flush and commit landing between the two reads can
 make the index only fresher than the reading says. The projector flushes at
@@ -687,21 +689,27 @@ url's origin
 group } }` whatever its snapshot says; any other answers its snapshot as
 `Source_Node::BLANK_STATUS` names it, or `{ state: unknown }`. A caller
 below `manage` reads each source row and the `extraction` row without
-`credential`, `vault_id`, `last_error` and `reason`
-(`Intelligence_Health::OPERATOR_FIELDS`), so it reads their state, times
-and counts, and a source idle for want of a credential still reads `idle`;
+`credential`, `vault_id` and `last_error`
+(`Intelligence_Health::OPERATOR_FIELDS`), so it reads their state, times,
+counts and an idle ContextA8C source's `reason`, fixed text naming at most
+an HTTP status, and a source idle for want of a credential still reads `idle`;
 that is field redaction through `Capabilities::can( MANAGE )`, and the verb
 stays at `read` (substrate ADR-26). `backlog`
 answers `{ reason, held, since, dropped }`: `reason` is
 `Entity_Index::current()->hold_cause()`, the one answer the resolver's
 hold reads, so it names the cause with the cache
-flushed; `held`, `since` and `dropped` are the resolver's snapshot's, null
-with none, and `dropped` is null once the reresolver's `last_range` covers
-it, `since` on or before its first day and `until` on or after its last.
-`extraction` answers the extractor's snapshot, else `mode` `heuristic` or
-`call` from the actor of the newest `extractions` row, by row id, beside
-`vault_id`, `last_ok_at`, `last_error` and `failing_since` null, else `{
-mode: unknown }`.
+flushed; `held` and `since` are the resolver's snapshot's when its `reason`
+is that same cause, else null, so a new hold after a clear reads its count
+as unknown rather than 0; `dropped` is the snapshot's, null with none or
+once the reresolver's `last_range` covers it, `since` on or before its
+first day and `until` on or after its last.
+`extraction` answers the extractor's snapshot, else `{ mode: unknown,
+last_mode }`, `last_mode` `heuristic` or `call` from the actor of the
+newest `extractions` row, by row id, which says how that extraction was
+made and never why, else `{ mode: unknown }`. Each snapshot is read under
+the name the `newspack-intelligence` topology gives its `Resolver`,
+`Extractor` and `Reresolver` (`Topology_Analyzer::nodes_of_type()`), and a
+class it does not declare reads as no snapshot.
 
 **Signals.** `signals [--lens=] [--entity=]` reads the rows `trends`
 answers for the same lens and entity, so the lens's filters, axis, bucket
@@ -1139,7 +1147,10 @@ not fail, else
 `{ state: failing, last_error, failing_since, failed, requests }` with the
 last failure's text, cut to 500 bytes on a character boundary; a pass that
 counted no answer, asking no data and failing nothing, is quiet, not a
-fault, and publishes ok with both counts 0. A scheduled pass that throws
+fault, and publishes ok with both counts 0, as does a pass whose `begin()`
+queues nothing, which ends at once, unless `begin()` called `fails()`,
+which publishes failing with that text, or the source `waits()` on another
+node, which publishes nothing. A scheduled pass that throws
 publishes failing with the throw's message, terminal-safe. `failing_since`
 keeps the value already published while the state stays failing, read back
 from the cache by a recycled worker's first publish. Every publish writes
@@ -1360,6 +1371,9 @@ the file again, waiting for the relay to sign in. A pass with no readable
 token, or an expired one with no refresh token, logs and sends nothing.
 Each of the three publishes idle, its reason opening `not signed in to
 ContextA8C` and ending with the fix, to sign in to ContextA8C on the host.
+A token lock that will not hold publishes failing, `could not lock the
+ContextA8C token: <path>`, and a pass waiting on another node's refresh
+publishes nothing, so the snapshot before it stands until the resumed pass.
 Every call is one JSON-RPC `tools/call` of `context-a8c-execute-tool` to
 the one url, queued under the subject `<provider>/<subtool>?<args>`, so
 `queue()` takes a subject apart from the url and `request_options()` adds
@@ -1618,7 +1632,7 @@ its own one-shot commands; nothing polls.
 | `index.js` | — | Mounts `IntelligencePage` on `#newspack-intelligence-app`, handing it `canTune`, `canManage` and `vocabulary` from `NewspackNodesData` |
 | `IntelligencePage.js` | default | Switches Search, Entity, Lenses, Review, Collections and Watches in place; holds the submitted search, the open entity, lens, collection and watch, the watch form's draft and the item being saved, so a view returns as it was left, and a lens's "Watch this" opens the watch form on that lens; a URL carrying `watch=<key>`, as the watcher's email links it, opens the page on Watches with that watch open, or on the list when the reader's watches do not hold it; mounts `HealthStrip` above the tab bar, on every view; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the `NEWSPACK::NODES` header subtitled `Intelligence` and the debug overlay |
 | `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite`, `commandArgs` | `commandArgs()` names every value given, a list once per member, leaving out a blank value or an empty list; a read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments; a write sent once per `run()` to the `intelligence` CI or the `ci` it names, which answers the tokens it sent, running `refresh` once it lands, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal, answered arguments and `pending` |
-| `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_id`, `last_error` and `reason`, reads it whole; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology`, `canManage` for the rest), and anyone else reads "An administrator can …" |
+| `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_id` and `last_error`, reads it whole; while collection is off every other row is listed neutral, never a fault; the projector catching up on the ontology is neutral until its hold has stood five minutes (`BEHIND_FAULT_S`), then a fault; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology`, `canManage` for the rest), and anyone else reads "An administrator can …" |
 | `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
 | `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens` above `search --lens` a page at a time beside `trends --lens`; trend rows and signals citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
 | `views/Entity.js` | default | `entity`, `timeline` a page at a time, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |

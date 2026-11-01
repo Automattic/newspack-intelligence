@@ -91,8 +91,8 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	 * Open a pass under the held token, or refresh it first when it is due:
 	 * a token another refresh is landing waits, and a missing token, one the
 	 * endpoint refused, one with no refresh token or a lock that will not
-	 * hold is logged and the pass sends nothing, the first three publishing
-	 * idle.
+	 * hold is logged and the pass sends nothing; the first three publish
+	 * idle, and a lock that will not hold publishes failing.
 	 */
 	protected function begin(): void {
 		$this->session  = '';
@@ -113,7 +113,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 			Context_A8C_Token::WAIT          => $this->waiting = true,
 			Context_A8C_Token::REFUSED       => $this->refused( Context_A8C_Token::refused_status( $this->auth_dir ) ),
 			Context_A8C_Token::UNREFRESHABLE => $this->unrefreshable( $held['path'] ),
-			default                          => $this->print_less_often( 'could not lock the ContextA8C token: ', $held['path'] ),
+			default                          => $this->fails( 'could not lock the ContextA8C token: ', $held['path'] ),
 		};
 	}
 
@@ -330,6 +330,11 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 		$resume        = $this->waiting;
 		$this->waiting = false;
 		return $resume;
+	}
+
+	/** Whether this pass waits on another node's refresh. */
+	protected function waits(): bool {
+		return $this->waiting;
 	}
 
 	/** Close the pass's session, once nothing is left to send, with a DELETE naming it. */

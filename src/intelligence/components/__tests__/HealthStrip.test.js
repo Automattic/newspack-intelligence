@@ -18,6 +18,7 @@ import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { HEALTHY, LAST_OK, okSource } from '../../__tests__/healthFixture';
 import HealthStrip from '../HealthStrip';
+import { utcTime } from '../format';
 
 /** 2026-10-30 14:05 UTC. */
 const SINCE = Date.UTC( 2026, 9, 30, 14, 5 ) / 1000;
@@ -26,6 +27,14 @@ const SINCE = Date.UTC( 2026, 9, 30, 14, 5 ) / 1000;
 const VAULT = 'admin.php?page=newspack-nodes-station&tab=vault';
 
 const HEALTHY_LINE = 'Collecting from 3 sources. Nothing waiting.';
+
+/**
+ * A second `seconds` before now, as a slice stamps it.
+ *
+ * @param {number} seconds How long ago.
+ * @return {number} The second.
+ */
+const ago = ( seconds ) => Math.floor( Date.now() / 1000 ) - seconds;
 
 const failingSource = ( name, error ) => ( {
 	...okSource( name ),
@@ -254,10 +263,51 @@ describe( 'HealthStrip', () => {
 		expect( screen.queryByText( /\b0 items/ ) ).toBeNull();
 	} );
 
-	it( 'says it is catching up while the projector is behind, offering nothing', async () => {
-		health.backlog = { ...STOPPED, reason: 'behind_ontology' };
+	it( 'reads a projector catching up for under five minutes as neutral', async () => {
+		health.backlog = {
+			...STOPPED,
+			reason: 'behind_ontology',
+			since: ago( 240 ),
+		};
 		renderStrip( { canTune: true, canManage: true } );
-		await worstFault( 'Catching up on the ontology.' );
+		await lineReads(
+			'Collecting from 3 sources. Catching up on the ontology.'
+		);
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
+		fireEvent.click( toggle() );
+		expect(
+			within( row( 'Waiting to resolve' ) ).getByText( 'catching up' )
+		).toHaveClass( 'is-neutral' );
+		expect(
+			screen.queryByRole( 'button', { name: 'Seed the ontology' } )
+		).toBeNull();
+	} );
+
+	it( 'reads a projector catching up with no known start as neutral', async () => {
+		health.backlog = {
+			...STOPPED,
+			reason: 'behind_ontology',
+			held: null,
+			since: null,
+		};
+		renderStrip();
+		await lineReads(
+			'Collecting from 3 sources. Catching up on the ontology.'
+		);
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+	} );
+
+	it( 'turns a projector behind for over five minutes into a fault, offering nothing', async () => {
+		const since = ago( 360 );
+		health.backlog = { ...STOPPED, reason: 'behind_ontology', since };
+		renderStrip( { canTune: true, canManage: true } );
+		await worstFault(
+			`Resolving is held: the projector has been behind the ontology since ${ utcTime(
+				since
+			) }.`
+		);
+		expect( strip() ).toHaveClass( 'is-warning' );
 		expect(
 			screen.queryByRole( 'button', { name: 'Seed the ontology' } )
 		).toBeNull();
@@ -414,6 +464,23 @@ describe( 'HealthStrip', () => {
 		expect( screen.queryByRole( 'link' ) ).toBeNull();
 	} );
 
+	it( 'shows a reader without MANAGE the reason a source is idle', async () => {
+		health.sources.sources.push( {
+			name: 'linear',
+			class: 'Context_A8C_Linear',
+			tier: 'internal',
+			state: 'idle',
+			reason: 'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host',
+		} );
+		renderStrip();
+		await worstFault(
+			'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host'
+		);
+		expect(
+			screen.queryByText( 'An administrator can add its credential.' )
+		).toBeNull();
+	} );
+
 	it( 'shows an idle source the reason it names, offering no Vault link', async () => {
 		health.sources.sources.push( {
 			name: 'slack',
@@ -477,6 +544,32 @@ describe( 'HealthStrip', () => {
 		expect(
 			within( row( 'news' ) ).getByText( 'No pass has reported yet.' )
 		).toBeInTheDocument();
+	} );
+
+	it( 'keeps every row neutral while collection is off', async () => {
+		health.collection.state = 'inactive';
+		health.backlog = STOPPED;
+		health.sources.sources.push( {
+			name: 'linear',
+			class: 'Linear_Source',
+			tier: 'internal',
+			state: 'idle',
+			credential: {
+				url: 'https://api.linear.app/graphql',
+				group: 'linear',
+			},
+		} );
+		renderStrip( { canTune: true, canManage: true } );
+		await lineReads( 'Collection is off.' );
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
+		fireEvent.click( toggle() );
+		expect( within( row( 'linear' ) ).getByText( 'idle' ) ).toHaveClass(
+			'is-neutral'
+		);
+		expect(
+			within( row( 'Waiting to resolve' ) ).getByText( 'held' )
+		).toHaveClass( 'is-neutral' );
 	} );
 
 	it( 'says collection is off even while a source reads unknown', async () => {
@@ -580,6 +673,36 @@ describe( 'HealthStrip', () => {
 		expect(
 			within( row( 'Extraction' ) ).getByText(
 				'No extraction has reported yet.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'reads an unknown extractor whose newest extraction used the heuristic as unknown', async () => {
+		health.extraction = { mode: 'unknown', last_mode: 'heuristic' };
+		renderStrip( { canManage: true } );
+		await lineReads( 'The pipeline’s health is not fully known.' );
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+		fireEvent.click( toggle() );
+		const extraction = row( 'Extraction' );
+		expect( within( extraction ).getByText( 'unknown' ) ).toHaveClass(
+			'is-neutral'
+		);
+		expect(
+			within( extraction ).getByText(
+				'No extraction has reported since the cache was cleared; the newest used the heuristic.'
+			)
+		).toBeInTheDocument();
+		expect( within( extraction ).queryByRole( 'link' ) ).toBeNull();
+	} );
+
+	it( 'reads an unknown extractor whose newest extraction used the AI proxy as unknown', async () => {
+		health.extraction = { mode: 'unknown', last_mode: 'call' };
+		renderStrip();
+		await lineReads( 'The pipeline’s health is not fully known.' );
+		fireEvent.click( toggle() );
+		expect(
+			within( row( 'Extraction' ) ).getByText(
+				'No extraction has reported since the cache was cleared; the newest used the AI proxy.'
 			)
 		).toBeInTheDocument();
 	} );

@@ -21,6 +21,7 @@ use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
 use Newspack_Nodes\Row_Reader;
+use Newspack_Nodes\Topology_Analyzer;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -33,7 +34,7 @@ final class Intelligence_Health {
 	private const PARTITION = 0;
 
 	/** The fields of a source's or the extractor's row only a manager reads. */
-	private const OPERATOR_FIELDS = [ 'credential', 'vault_id', 'last_error', 'reason' ];
+	private const OPERATOR_FIELDS = [ 'credential', 'vault_id', 'last_error' ];
 
 	/**
 	 * The slice `what` names.
@@ -53,13 +54,15 @@ final class Intelligence_Health {
 	}
 
 	/**
-	 * How the extractor extracts: its snapshot, else the mode the newest
-	 * extraction's actor names, else unknown; redacted below manage.
+	 * How the extractor extracts: its snapshot, redacted below manage; else
+	 * unknown, beside `last_mode`, how the newest extraction's actor says it
+	 * was made, when the projection holds one. An actor cannot say why a
+	 * stand-in was written, so no fallback claims a missing Vault entry.
 	 *
 	 * @return array<array-key,mixed>
 	 */
 	private static function extraction(): array {
-		$status = Extractor_Node::read_status( 'extractor', self::PARTITION );
+		$status = self::status_of( Extractor_Node::class );
 		if ( null !== $status ) {
 			return self::redacted( $status );
 		}
@@ -68,23 +71,28 @@ final class Intelligence_Health {
 			return [ 'mode' => 'unknown' ];
 		}
 		$heuristic = \str_starts_with( Core::as_string( $actor ), Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE ) );
-		return self::redacted( [ ...Extractor_Node::BLANK_STATUS, 'mode' => $heuristic ? 'heuristic' : 'call' ] );
+		return [
+			'mode'      => 'unknown',
+			'last_mode' => $heuristic ? 'heuristic' : 'call',
+		];
 	}
 
 	/**
 	 * Why items wait to resolve, as the resolver's hold decides it, beside
-	 * the count, start and dropped days its snapshot holds, each null when
-	 * no snapshot does. Dropped days a re-resolution has since covered are
-	 * null.
+	 * the count and start its snapshot holds when that snapshot names the
+	 * same reason, else null, and the dropped days its snapshot holds, null
+	 * with none or once a re-resolution has covered them.
 	 *
 	 * @return array{reason:string,held:mixed,since:mixed,dropped:mixed}
 	 */
 	private static function backlog(): array {
-		$hold = Resolver_Node::read_status( 'resolver', self::PARTITION ) ?? [];
+		$reason = Entity_Index::current()->hold_cause();
+		$hold   = self::status_of( Resolver_Node::class ) ?? [];
+		$same   = $reason === ( $hold['reason'] ?? null );
 		return [
-			'reason'  => Entity_Index::current()->hold_cause(),
-			'held'    => $hold['held'] ?? null,
-			'since'   => $hold['since'] ?? null,
+			'reason'  => $reason,
+			'held'    => $same ? $hold['held'] ?? null : null,
+			'since'   => $same ? $hold['since'] ?? null : null,
 			'dropped' => self::uncovered( $hold['dropped'] ?? null ),
 		];
 	}
@@ -98,11 +106,23 @@ final class Intelligence_Health {
 		if ( ! \is_array( $dropped ) ) {
 			return $dropped;
 		}
-		$range  = Reresolver_Node::read_status( 'reresolver', self::PARTITION )['last_range'] ?? null;
+		$range  = self::status_of( Reresolver_Node::class )['last_range'] ?? null;
 		$covers = \is_array( $range )
 			&& Core::as_string( $range['since'] ) <= Core::as_string( $dropped['first_day'] )
 			&& Core::as_string( $range['until'] ) >= Core::as_string( $dropped['last_day'] );
 		return $covers ? null : $dropped;
+	}
+
+	/**
+	 * The snapshot the active topology's node of `$class` published, null
+	 * when the topology declares none or no cache holds one.
+	 *
+	 * @param class-string<Extractor_Node|Resolver_Node|Reresolver_Node> $class The node's class.
+	 * @return array<array-key,mixed>|null
+	 */
+	private static function status_of( string $class ): ?array {
+		$node = Topology_Analyzer::nodes_of_type( Worker_Route::TOPOLOGY, $class )[0] ?? null;
+		return null === $node ? null : $class::read_status( Core::as_string( $node['name'] ), self::PARTITION );
 	}
 
 	/**
@@ -157,8 +177,9 @@ final class Intelligence_Health {
 
 	/**
 	 * A row as the caller may read it: whole for a manager, else without
-	 * the credential, Vault id, error text and reason, leaving the state,
-	 * times and counts. Field redaction; the verb's role stays read (ADR-26).
+	 * the credential, Vault id and error text, leaving the state, times,
+	 * counts and an idle source's reason, which is fixed text naming at most
+	 * an HTTP status. Field redaction; the verb's role stays read (ADR-26).
 	 *
 	 * @param array<array-key,mixed> $row A source's or the extractor's row.
 	 * @return array<array-key,mixed>

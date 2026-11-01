@@ -207,7 +207,9 @@ abstract class Source_Node extends Timer_Node {
 	 * requests are in flight or the source needs a credential its vault
 	 * group lends none on credential_url()'s origin, when it sits idle
 	 * silently, publishing nothing, until the entry exists: queue the
-	 * source's opening requests, replacing what a throw left queued, and send.
+	 * source's opening requests, replacing what a throw left queued, and
+	 * send. A pass that queues nothing ends at once, as unqueued()
+	 * describes; any other closes on its last answer.
 	 *
 	 * @return array{fetching:int} How many requests the pass opens on, 0 when one is still in flight or no credential is lent.
 	 */
@@ -221,11 +223,27 @@ abstract class Source_Node extends Timer_Node {
 		$this->failed     = 0;
 		$this->last_error = '';
 		$this->idled      = false;
+		$this->fault      = null;
 		$this->drop_queue();
 		$this->begin();
 		$fetching = \count( $this->queue );
 		$this->send();
+		if ( 0 === $fetching ) {
+			$this->unqueued();
+		}
 		return [ 'fetching' => $fetching ];
+	}
+
+	/**
+	 * End a pass begin() queued nothing for: failing with the text begin()
+	 * handed fails(), else nothing while it waits(), else a quiet ok.
+	 */
+	private function unqueued(): void {
+		if ( null !== $this->fault ) {
+			$this->publish_failing( $this->fault );
+		} elseif ( ! $this->waits() ) {
+			$this->close_pass();
+		}
 	}
 
 	/**
@@ -398,6 +416,14 @@ abstract class Source_Node extends Timer_Node {
 	 * pass held back by something now done does; the grid's guard applies.
 	 */
 	protected function resumes(): bool {
+		return false;
+	}
+
+	/**
+	 * Whether a pass begin() queued nothing for is held back by something
+	 * another node does, so it publishes nothing until it resumes.
+	 */
+	protected function waits(): bool {
 		return false;
 	}
 
@@ -742,7 +768,8 @@ abstract class Source_Node extends Timer_Node {
 	/**
 	 * Log a failure of the answer being taken, rate-limited under $prefix,
 	 * and count the answer as failed with the same text: what a source calls
-	 * for an answer it drops whole.
+	 * for an answer it drops whole. Called from a begin() that queues
+	 * nothing, it fails the pass.
 	 *
 	 * @param string $prefix What failed, naming the request's url, terminal-safe.
 	 * @param string $detail Why, made terminal-safe here.

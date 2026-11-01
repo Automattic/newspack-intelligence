@@ -5,6 +5,7 @@ namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Context_A8C_Linear_Node;
 use Newspack_Intelligence\Linear_Source_Node;
+use Newspack_Intelligence\Source_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Tests\TestCase;
 
@@ -625,6 +626,39 @@ final class ContextA8CLinearTest extends TestCase {
 		$this->complete( self::TOKEN, '', 400 );
 
 		$this->assert_idle( 'not signed in to ContextA8C: the refresh was refused (HTTP 400)' );
+	}
+
+	/** A pass waiting on another node's refresh publishes nothing, so the last snapshot stands. */
+	public function test_a_pass_waiting_on_another_refresh_leaves_the_snapshot_standing(): void {
+		$memd = $this->publishing();
+		$this->signed_in( 4000 );
+		$failing = self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 502 https://mcp.test/wren-8812', 'failing_since' => 4417, 'failed' => 2, 'requests' => 2 ] );
+		$memd->set( Source_Node::status_key( 'linear-wren-52', self::PARTITION ), $failing, 600 );
+		$first  = $this->linear( 'KESTREL' );
+		$second = $this->wire( new Context_A8C_Linear_Node(), 'linear-wren-52', [ 'internal', $this->auth_dir, self::PROXY ] );
+		$second->interpreter()->dispatch( 'add_team', [ 'WREN9' ] );
+
+		$this->tick( $first );
+		$this->tick( $second );
+
+		$this->assertSame( [ self::TOKEN ], $this->dispatched, 'the second waits for the first refresh' );
+		$this->assertSame( $failing, $this->published( 'linear-wren-52' ) );
+	}
+
+	/** A token lock that will not hold publishes failing with its text, keeping the failing_since standing. */
+	public function test_a_lock_that_will_not_open_publishes_failing(): void {
+		$memd = $this->publishing();
+		$this->signed_in( 4000 );
+		$memd->set( Source_Node::status_key( 'linear', self::PARTITION ), self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 502 https://mcp.test/kestrel-3307', 'failing_since' => 4391, 'failed' => 1, 'requests' => 1 ] ), 600 );
+		$dir = \dirname( $this->token_path() );
+		\chmod( $dir, 0555 );
+		try {
+			$this->tick( $this->linear( 'KESTREL' ) );
+		} finally {
+			\chmod( $dir, 0700 );
+		}
+
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'could not lock the ContextA8C token: ' . $this->token_path(), 'failing_since' => 4391, 'failed' => 0, 'requests' => 0 ] ), $this->published( 'linear' ) );
 	}
 
 	/** A refusal standing when another node's pass opens publishes idle for it too. */

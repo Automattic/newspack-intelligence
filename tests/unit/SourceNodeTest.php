@@ -1085,6 +1085,18 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( [], Core::$recent_log );
 	}
 
+	/** A pass with nothing to ask, as a Linear source naming no team, publishes a quiet ok with both counts 0. */
+	public function test_a_pass_with_nothing_to_ask_publishes_a_quiet_ok(): void {
+		$this->publishing();
+		self::at( 6273.0 );
+		$this->lend( 'heron-vault-7731', 'https://api.linear.app' );
+
+		$this->tick( $this->credentialed( Linear_Source_Node::class, '', '' ) );
+
+		$this->assertSame( [ [ 'verb' => 'TICK', 'data' => [ 'fetching' => 0 ] ] ], $this->answers() );
+		$this->assertSame( self::snapshot( [ 'state' => 'ok', 'last_ok_at' => 6273, 'failed' => 0, 'requests' => 0 ] ), $this->published( 'heron-source-31' ) );
+	}
+
 	/** Each class names the url its credential is lent on, with no instance; a source needing none names ''. */
 	public function test_credential_url_is_static_per_class(): void {
 		$this->assertSame( 'https://api.linear.app/graphql', Linear_Source_Node::credential_url() );

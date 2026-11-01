@@ -255,7 +255,7 @@ final class EntityIndexTest extends TestCase {
 		$this->assertSame( '', $this->index_of( self::proposed( 'organization:salem-ledger', 'Salem Ledger' ) )->hold_cause() );
 	}
 
-	/** An index holds every record while it holds no live entity, then while it was read behind the ontology stream. */
+	/** An index read behind the ontology stream names that first, so a seed not yet projected never reads as an empty ontology. */
 	public function test_hold_cause_names_why_an_index_holds(): void {
 		$behind = new \ReflectionProperty( Entity_Index::class, 'behind' );
 		$empty  = new Entity_Index();
@@ -266,7 +266,7 @@ final class EntityIndexTest extends TestCase {
 		$behind->setValue( $empty, true );
 		$behind->setValue( $live, true );
 
-		$this->assertSame( [ 'no_live_entity', 'behind_ontology' ], [ $empty->hold_cause(), $live->hold_cause() ], 'an empty index names no live entity first' );
+		$this->assertSame( [ 'behind_ontology', 'behind_ontology' ], [ $empty->hold_cause(), $live->hold_cause() ], 'an index read behind names the projector first, empty or not' );
 	}
 
 	/** A rejected entity matches nothing, and its names stay known as rejected. */

@@ -11,6 +11,9 @@ const VAULT_PAGE = 'admin.php?page=newspack-nodes-station&tab=vault';
 /** The rows list the toggle opens and closes. */
 const ROWS_ID = 'newspack-intelligence-health-rows';
 
+/** How long the projector may stay behind the ontology before it is a fault. */
+const BEHIND_FAULT_S = 300;
+
 /** @typedef {{key: string, label: string, state: string, tone: string, fault: boolean, unknown: boolean, text: string, fix: ?import('react').ReactNode}} HealthRow */
 
 /** @typedef {{word: string, tone: string, fault?: boolean, unknown?: boolean, text: Function, fix?: Function}} HealthState */
@@ -406,10 +409,23 @@ const STATES = {
 		},
 		behind_ontology: {
 			word: __( 'catching up', 'newspack-intelligence' ),
-			tone: 'is-warning',
-			fault: true,
+			tone: 'is-neutral',
 			text: () =>
 				__( 'Catching up on the ontology.', 'newspack-intelligence' ),
+		},
+		behind_long: {
+			word: __( 'behind', 'newspack-intelligence' ),
+			tone: 'is-warning',
+			fault: true,
+			text: ( { since } ) =>
+				sprintf(
+					/* translators: %s: a UTC time. */
+					__(
+						'Resolving is held: the projector has been behind the ontology since %s.',
+						'newspack-intelligence'
+					),
+					utcTime( since )
+				),
 		},
 	},
 	dropped: {
@@ -507,11 +523,24 @@ const STATES = {
 		},
 		unknown: {
 			...UNKNOWN,
-			text: () =>
-				__(
+			text: ( { last_mode: lastMode } ) => {
+				if ( 'heuristic' === lastMode ) {
+					return __(
+						'No extraction has reported since the cache was cleared; the newest used the heuristic.',
+						'newspack-intelligence'
+					);
+				}
+				if ( 'call' === lastMode ) {
+					return __(
+						'No extraction has reported since the cache was cleared; the newest used the AI proxy.',
+						'newspack-intelligence'
+					);
+				}
+				return __(
 					'No extraction has reported yet.',
 					'newspack-intelligence'
-				),
+				);
+			},
 		},
 	},
 };
@@ -566,8 +595,31 @@ const extractionState = ( { mode, failing_since: since } ) =>
 	'call' === mode && since ? 'failing' : mode;
 
 /**
+ * The backlog's state: its reason, or `behind_long` once the projector has
+ * stood behind the ontology longer than BEHIND_FAULT_S since a known start.
+ *
+ * @param {{reason: string, since: ?number}} backlog The slice.
+ * @param {number}                           now     The second it is now.
+ * @return {string} The state.
+ */
+const backlogState = ( { reason, since }, now ) =>
+	'behind_ontology' === reason && since && now - since > BEHIND_FAULT_S
+		? 'behind_long'
+		: reason;
+
+/**
+ * A row as it reads while collection is off: listed, but neither a fault
+ * nor coloured.
+ *
+ * @param {HealthRow} row The row.
+ * @return {HealthRow} The row, neutral.
+ */
+const offRow = ( row ) => ( { ...row, fault: false, tone: 'is-neutral' } );
+
+/**
  * Every row the answered slices hold: collection, the backlog and its
- * dropped days, extraction, then each source.
+ * dropped days, extraction, then each source; all but collection's neutral
+ * while collection is off.
  *
  * @param {Object}  answers            The four slices' answers, each null while owed.
  * @param {?Object} answers.collection The collection slice.
@@ -583,7 +635,7 @@ function healthRows( { collection, backlog, extraction, sources }, ctx ) {
 		...ctx,
 		firstFailing: listed.find( ( one ) => 'failing' === one.state ),
 	};
-	return [
+	const rows = [
 		collection &&
 			healthRow(
 				'collection',
@@ -598,7 +650,7 @@ function healthRows( { collection, backlog, extraction, sources }, ctx ) {
 				'backlog',
 				__( 'Waiting to resolve', 'newspack-intelligence' ),
 				'backlog',
-				backlog.reason,
+				backlogState( backlog, Math.floor( Date.now() / 1000 ) ),
 				backlog,
 				fixes
 			),
@@ -631,13 +683,20 @@ function healthRows( { collection, backlog, extraction, sources }, ctx ) {
 			)
 		),
 	].filter( Boolean );
+	if ( 'inactive' !== collection?.state ) {
+		return rows;
+	}
+	return rows.map( ( one ) =>
+		'collection' === one.key ? one : offRow( one )
+	);
 }
 
 /**
  * The strip's one line, the first that holds of: the worst fault; a slice
  * refused; a slice owed; collection off, which outranks the unknown rows
  * its expired snapshots leave; a row whose health is not known; else how
- * many sources it collects from, with nothing waiting.
+ * many sources it collects from, with nothing waiting or the projector
+ * catching up.
  *
  * @param {Object}           strip            What the line reads.
  * @param {Array<HealthRow>} strip.faults     The fault rows, worst first.
@@ -645,9 +704,10 @@ function healthRows( { collection, backlog, extraction, sources }, ctx ) {
  * @param {Array<Object>}    strip.reads      The four reads.
  * @param {?Object}          strip.collection The collection slice.
  * @param {?Object}          strip.sources    The sources slice.
+ * @param {?Object}          strip.backlog    The backlog slice.
  * @return {string} The line.
  */
-function healthLine( { faults, rows, reads, collection, sources } ) {
+function healthLine( { faults, rows, reads, collection, sources, backlog } ) {
 	if ( faults.length ) {
 		return faults[ 0 ].text;
 	}
@@ -670,6 +730,18 @@ function healthLine( { faults, rows, reads, collection, sources } ) {
 		);
 	}
 	const count = sources.sources.length;
+	if ( 'behind_ontology' === backlog.reason ) {
+		return sprintf(
+			/* translators: %d: the sources collected from. */
+			_n(
+				'Collecting from %d source. Catching up on the ontology.',
+				'Collecting from %d sources. Catching up on the ontology.',
+				count,
+				'newspack-intelligence'
+			),
+			count
+		);
+	}
 	return sprintf(
 		/* translators: %d: the sources collected from. */
 		_n(
@@ -689,7 +761,9 @@ function healthLine( { faults, rows, reads, collection, sources } ) {
  * again once any fix lands, and on Refresh; nothing polls. A fix shows for
  * a reader holding its role, as a button whose answer shows beside it, and
  * as its text step for anyone else; the server's role gate decides.
- * Collection off is neutral: it neither opens nor colours the strip. A
+ * Collection off is neutral: it neither opens nor colours the strip, and
+ * while it is off no other row does either; nor does a projector catching
+ * up on the ontology for under BEHIND_FAULT_S. A
  * reader's open or close holds until the set of faults changes.
  *
  * @param {Object}  props
@@ -744,6 +818,7 @@ export default function HealthStrip( { canTune, canManage } ) {
 						reads,
 						collection: collection.answer,
 						sources: sources.answer,
+						backlog: backlog.answer,
 					} ) }
 				</span>
 				<button

@@ -14,9 +14,9 @@
  * declared destinations (substrate ADR-19), as the Intel_Event_Writer's two
  * partitions are.
  *
- * While its index holds no live entity, or while the projector's reader of
- * the ontology stream had not committed its end just before that index was
- * read (`Entity_Index::hold_cause()`, the cursor taken first so a commit
+ * While the projector's reader of the ontology stream had not committed its
+ * end just before the index was read, or while that index holds no live
+ * entity (`Entity_Index::hold_cause()`, the cursor taken first so a commit
  * landing between the two reads cannot pass a stale index), it resolves
  * nothing: an `item_recorded` parks as an `item_reresolve` owed
  * its NER step (`ner`), and an `item_reresolve` parks again unchanged, each
@@ -341,15 +341,15 @@ class Resolver_Node extends Node {
 	}
 
 	/**
-	 * Why to hold the record, '' when not: while the index holds no live
-	 * entity, or
-	 * while the projector stood behind the ontology stream just before the
-	 * index was read, each logged naming its cause and the recovery from an
-	 * age-out. A false hold, from a curation the projector has not flushed
-	 * yet, only parks a record a minute. The resolver's own `entity_proposed`
-	 * events leave the projector's committed ontology cursor short until its
-	 * next checkpoint, up to 30 seconds, so items following a proposal may
-	 * park a minute; nothing is lost and no LLM call is spent.
+	 * Why to hold the record, '' when not: while the projector stood behind
+	 * the ontology stream just before the index was read, or while the
+	 * index holds no live entity, each logged naming its cause and the
+	 * recovery from an age-out. A false hold, from a curation the projector
+	 * has not flushed yet, only parks a record a minute. The resolver's own
+	 * `entity_proposed` events leave the projector's committed ontology
+	 * cursor short until its next checkpoint, up to 30 seconds, so items
+	 * following a proposal may park a minute; nothing is lost and no LLM
+	 * call is spent.
 	 *
 	 * @param Resolver $resolver The resolver over the shared index.
 	 */

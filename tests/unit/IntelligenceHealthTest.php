@@ -177,6 +177,14 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => 1352, 'since' => 1792400017, 'dropped' => null ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
 	}
 
+	/** A snapshot naming another reason, as a cleared hold before a new one, gives no count or start. */
+	public function test_backlog_count_unknown_when_snapshot_names_another_reason(): void {
+		$dropped = [ 'first_day' => '2026-09-21', 'last_day' => '2026-09-23' ];
+		$this->snapshot( 'resolver', [ 'reason' => '', 'since' => 1792388811, 'held' => 0, 'dropped' => $dropped ] );
+
+		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => null, 'since' => null, 'dropped' => $dropped ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
+	}
+
 	/** Review Focus 1: a flushed cache leaves the reason, derived here, and the count unknown, not zero. */
 	public function test_backlog_reason_survives_cache_flush_with_null_count(): void {
 		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400017, 'held' => 1352, 'dropped' => null ] );
@@ -188,6 +196,13 @@ final class IntelligenceHealthTest extends TestCase {
 	/** With entities to resolve against, an ontology event the projector has not read holds. */
 	public function test_backlog_reason_behind_ontology_with_seeded_index(): void {
 		$this->seed_world();
+		Stream_Writer::append( self::entity( 'organization:mesa-courier', 'Mesa Courier' ) );
+
+		$this->assertSame( 'behind_ontology', $this->ci->dispatch( 'health', [ 'backlog' ] )['reason'] );
+	}
+
+	/** Right after a seed, an empty index read behind the stream holds as the projector catching up. */
+	public function test_backlog_reason_behind_ontology_right_after_a_seed(): void {
 		Stream_Writer::append( self::entity( 'organization:mesa-courier', 'Mesa Courier' ) );
 
 		$this->assertSame( 'behind_ontology', $this->ci->dispatch( 'health', [ 'backlog' ] )['reason'] );
@@ -226,7 +241,7 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( $published, $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 	}
 
-	/** With no snapshot, the newest extraction's actor says how the extractor last extracted. */
+	/** With no snapshot the mode is unknown; the newest extraction's actor says only how the last one was made. */
 	public function test_extraction_falls_back_to_newest_actor(): void {
 		$this->seed_world();
 		$this->seed(
@@ -234,11 +249,11 @@ final class IntelligenceHealthTest extends TestCase {
 			[ Intel_Event::make( 'extraction_recorded', [ 'item_key' => 'feed:quiet-note', 'summary' => 'A quiet note.', 'kind' => 'other', 'relevance' => 0.0, 'importance' => 0.0, 'sentiment' => 0.0, 'topics' => [], 'retrieved_ts' => self::$oct_13 + 600 ], Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE ) . '9.4.1', 'fixture-9' ) ]
 		);
 
-		$this->assertSame( [ 'mode' => 'heuristic', 'vault_id' => null, 'last_ok_at' => null, 'last_error' => null, 'failing_since' => null ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+		$this->assertSame( [ 'mode' => 'unknown', 'last_mode' => 'heuristic' ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 
 		$this->seed( self::extraction( 'feed:quiet-note', 'A quiet note, read.', 'launch', self::$oct_13, [] ) );
 
-		$this->assertSame( 'call', $this->ci->dispatch( 'health', [ 'extraction' ] )['mode'] );
+		$this->assertSame( [ 'mode' => 'unknown', 'last_mode' => 'call' ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 	}
 
 	/** Review Focus 3: with no shared cache every published fact is unknown, the Vault still answers idle, and nothing throws. */
@@ -253,11 +268,13 @@ final class IntelligenceHealthTest extends TestCase {
 
 	/**
 	 * A reader below manage gets each source's and the extractor's state,
-	 * times and counts, and no credential, Vault id, error text or reason.
+	 * times, counts and idle reason, and no credential, Vault id or error
+	 * text.
 	 */
 	public function test_a_reader_below_manage_sees_no_credential_vault_id_or_error(): void {
-		$this->collect( 'make_node Linear_Source kestrel-linear internal linear-t7', 'make_node Feed_Source publication4-feed public' );
-		$this->snapshot( 'publication4-feed', [ 'state' => 'failing', 'last_ok_at' => 1792470021, 'last_error' => 'HTTP 404 https://publication4.test/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 5, 'reason' => 'fetched 5' ] );
+		$this->collect( 'make_node Linear_Source kestrel-linear internal linear-t7', 'make_node Feed_Source publication4-feed public', 'make_node Context_A8C_Linear cormorant-linear internal /tmp/mcp-auth-7413' );
+		$this->snapshot( 'publication4-feed', [ 'state' => 'failing', 'last_ok_at' => 1792470021, 'last_error' => 'HTTP 404 https://publication4.test/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 5 ] );
+		$this->snapshot( 'cormorant-linear', [ 'state' => 'idle', 'reason' => 'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host' ] );
 		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_id' => 'proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ] );
 		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::READ;
 
@@ -265,6 +282,7 @@ final class IntelligenceHealthTest extends TestCase {
 			[
 				[ 'name' => 'kestrel-linear', 'class' => 'Linear_Source', 'tier' => 'internal', 'state' => 'idle' ],
 				[ 'name' => 'publication4-feed', 'class' => 'Feed_Source', 'tier' => 'public', 'state' => 'failing', 'last_ok_at' => 1792470021, 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 5 ],
+				[ 'name' => 'cormorant-linear', 'class' => 'Context_A8C_Linear', 'tier' => 'internal', 'state' => 'idle', 'reason' => 'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host' ],
 			],
 			$this->ci->dispatch( 'health', [ 'sources' ] )['sources']
 		);
@@ -284,6 +302,49 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( [ 'proxy-k9', 'HTTP 502 https://proxy.test/v1' ], \array_values( \array_intersect_key( $this->ci->dispatch( 'health', [ 'extraction' ] ), [ 'vault_id' => 1, 'last_error' => 1 ] ) ) );
 	}
 
+	/** Each worker node's snapshot is read under the name the active topology gives it. */
+	public function test_snapshots_are_read_under_the_names_the_topology_gives(): void {
+		$this->shadow( 'newspack-intelligence-resolve', 'make_node Resolver plover-resolver intel:writer intel:later', 'make_node Extractor plover-extractor intel:writer intel:later' );
+		$extraction = [ 'mode' => 'call', 'vault_id' => 'proxy-p3', 'last_ok_at' => 1792477001, 'last_error' => null, 'failing_since' => null ];
+		$this->snapshot( 'plover-extractor', $extraction );
+		$this->snapshot( 'extractor', [ 'mode' => 'heuristic', 'vault_id' => 'proxy-x1', 'last_ok_at' => null, 'last_error' => null, 'failing_since' => null ] );
+		$this->snapshot( 'plover-resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400555, 'held' => 77, 'dropped' => null ] );
+		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400999, 'held' => 12, 'dropped' => null ] );
+
+		$this->assertSame( $extraction, $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => 77, 'since' => 1792400555, 'dropped' => null ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
+	}
+
+	/** A worker node the topology does not declare reads as unknown, not as an error. */
+	public function test_a_node_the_topology_lacks_reads_unknown(): void {
+		$this->shadow( 'newspack-intelligence-resolve', 'make_node Deduper deduper intel:writer' );
+		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_id' => 'proxy-x1', 'last_ok_at' => 1792477001, 'last_error' => null, 'failing_since' => null ] );
+		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400999, 'held' => 12, 'dropped' => null ] );
+
+		$this->assertSame( [ 'mode' => 'unknown' ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => null, 'since' => null, 'dropped' => null ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
+	}
+
+	/** Dropped days clear by the range the topology's own reresolver last queued. */
+	public function test_dropped_days_clear_by_the_named_reresolver(): void {
+		$this->seed_world();
+		$this->shadow(
+			'newspack-intelligence',
+			'include newspack-intelligence-streams',
+			'include newspack-intelligence-project',
+			'include newspack-intelligence-resolve',
+			'make_node Reresolver avocet-reresolver intel:reresolve'
+		);
+		$dropped = [ 'first_day' => '2026-10-12', 'last_day' => '2026-10-14' ];
+		$this->snapshot( 'resolver', [ 'reason' => '', 'since' => null, 'held' => 0, 'dropped' => $dropped ] );
+		$this->snapshot( 'reresolver', [ 'last_range' => [ 'since' => '2026-10-11', 'until' => '2026-10-15' ] ] );
+
+		$this->assertSame( $dropped, $this->ci->dispatch( 'health', [ 'backlog' ] )['dropped'], 'a range another name queued' );
+
+		$this->snapshot( 'avocet-reresolver', [ 'last_range' => [ 'since' => '2026-10-11', 'until' => '2026-10-15' ] ] );
+		$this->assertNull( $this->ci->dispatch( 'health', [ 'backlog' ] )['dropped'] );
+	}
+
 	public function test_health_refuses_unknown_slice(): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'what must be one of: collection, sources, backlog, extraction' );
@@ -297,8 +358,18 @@ final class IntelligenceHealthTest extends TestCase {
 	 * @param string ...$lines The topology's lines.
 	 */
 	private function collect( string ...$lines ): void {
+		$this->shadow( 'newspack-intelligence-collect', ...$lines );
+	}
+
+	/**
+	 * Shadow a shipped topology with these lines alone.
+	 *
+	 * @param string $topology The topology's name.
+	 * @param string ...$lines The topology's lines.
+	 */
+	private function shadow( string $topology, string ...$lines ): void {
 		$dir = $this->make_temp_dir( 'intelligence-health-' );
-		\file_put_contents( "{$dir}/newspack-intelligence-collect.tsl", \implode( "\n", $lines ) . "\n" );
+		\file_put_contents( "{$dir}/{$topology}.tsl", \implode( "\n", $lines ) . "\n" );
 		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', $dir );
 		Topology_Analyzer::reset_caches();
 	}
