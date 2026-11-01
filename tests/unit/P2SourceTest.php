@@ -33,6 +33,7 @@ final class P2SourceTest extends TestCase {
 		Core::$now   = self::NOW;
 		Core::$clock = static fn (): float => self::NOW;
 		$this->install_curl();
+		$this->lend( 'p2', 'https://public-api.wordpress.com', 'Authorization', 'Bearer p2-heron-2206' );
 	}
 
 	protected function tearDown(): void {
@@ -48,7 +49,7 @@ final class P2SourceTest extends TestCase {
 	 * @param string ...$sites The sites it reads.
 	 */
 	private function p2( string $name, string $tier, string ...$sites ): P2_Source_Node {
-		$node = $this->wire( new P2_Source_Node(), $name, [ $tier ] );
+		$node = $this->wire( new P2_Source_Node(), $name, [ $tier, 'p2' ] );
 		foreach ( $sites as $site ) {
 			$node->interpreter()->dispatch( 'add_site', [ $site ] );
 		}

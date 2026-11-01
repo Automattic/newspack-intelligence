@@ -180,6 +180,11 @@ class Slack_Source_Node extends Source_Node {
 		return '';
 	}
 
+	/** Slack answers nothing without a credential, so a pass waits for one. */
+	protected function credential_url(): string {
+		return self::API;
+	}
+
 	/**
 	 * The `add_channel` and `remove_channel` verbs, the add refusing anything
 	 * but a Slack channel id.

@@ -167,13 +167,16 @@ abstract class Source_Node extends Timer_Node {
 
 	/**
 	 * Start a pass, which a TICK request and the grid both call, unless
-	 * requests are in flight: queue the source's opening requests, replacing
-	 * what a throw left queued, and send.
+	 * requests are in flight or the source needs a credential its vault
+	 * group lends none on credential_url()'s origin, when it sits idle
+	 * silently until the entry exists: queue the source's opening requests,
+	 * replacing what a throw left queued, and send.
 	 *
-	 * @return array{fetching:int} How many requests the pass opens on, 0 when one is still in flight.
+	 * @return array{fetching:int} How many requests the pass opens on, 0 when one is still in flight or no credential is lent.
 	 */
 	protected function tick(): array {
-		if ( [] !== $this->in_flight ) {
+		$credential = $this->credential_url();
+		if ( [] !== $this->in_flight || ( '' !== $credential && ! $this->curl->lends_credential( $credential ) ) ) {
 			return [ 'fetching' => 0 ];
 		}
 		$this->drop_queue();
@@ -182,6 +185,15 @@ abstract class Source_Node extends Timer_Node {
 		$fetching = \count( $this->queue );
 		$this->send();
 		return [ 'fetching' => $fetching ];
+	}
+
+	/**
+	 * A url on the origin whose credential the source cannot fetch without,
+	 * which its vault group must hold an entry for before a pass sends
+	 * anything; '' for a source that needs none.
+	 */
+	protected function credential_url(): string {
+		return '';
 	}
 
 	/** Queue the pass's opening requests through queue(). */

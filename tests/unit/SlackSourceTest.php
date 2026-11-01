@@ -31,6 +31,7 @@ final class SlackSourceTest extends TestCase {
 		Core::$now   = self::NOW;
 		Core::$clock = static fn (): float => self::NOW;
 		$this->install_curl();
+		$this->lend( 'slack', 'https://slack.com', 'Authorization', 'Bearer xoxb-heron-7731' );
 	}
 
 	protected function tearDown(): void {
@@ -44,7 +45,7 @@ final class SlackSourceTest extends TestCase {
 	 * @param string ...$channels The channels it reads.
 	 */
 	private function slack( string ...$channels ): Slack_Source_Node {
-		$node = $this->wire( new Slack_Source_Node(), 'slack', [ 'internal' ] );
+		$node = $this->wire( new Slack_Source_Node(), 'slack', [ 'internal', 'slack' ] );
 		foreach ( $channels as $channel ) {
 			$node->interpreter()->dispatch( 'add_channel', [ $channel ] );
 		}

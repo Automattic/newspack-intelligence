@@ -487,6 +487,108 @@ final class SourceNodeTest extends TestCase {
 		$this->assertArrayNotHasKey( \CURLOPT_HTTPHEADER, $this->opts[ Fake_Source_Node::PAGE . '1' ] );
 	}
 
+	/**
+	 * Each source that needs a credential: its class, the add verb and value
+	 * that give a pass something to ask, the origin it fetches from, and how
+	 * many requests its pass opens on.
+	 *
+	 * @return array<string,array{0:class-string<Source_Node>,1:string,2:string,3:string,4:int}>
+	 */
+	public static function credentialed_sources(): array {
+		return [
+			'linear'   => [ Linear_Source_Node::class, 'add_team', 'KESTREL', 'https://api.linear.app', 1 ],
+			'slack'    => [ Slack_Source_Node::class, 'add_channel', 'C0HERON7731', 'https://slack.com', 2 ],
+			'p2'       => [ P2_Source_Node::class, 'add_site', 'heron-desk.wordpress.com', 'https://public-api.wordpress.com', 2 ],
+			'unthread' => [ Unthread_Source_Node::class, '', '', 'https://api.unthread.io', 1 ],
+		];
+	}
+
+	/**
+	 * A credentialed source as the collect topology builds it, under the
+	 * group `heron-vault-7731`, given something to ask.
+	 *
+	 * @param class-string<Source_Node> $class The source.
+	 * @param list<string>              $args  The make_node arguments.
+	 */
+	private function credentialed( string $class, string $verb, string $value, array $args = [ 'internal', 'heron-vault-7731' ] ): Source_Node {
+		$node = $this->wire( new $class(), 'heron-source-31', $args );
+		if ( '' !== $verb ) {
+			$node->interpreter()->dispatch( $verb, [ $value ] );
+		}
+		return $node;
+	}
+
+	/**
+	 * With no entry of its group on its origin, a pass sends nothing, answers
+	 * that it fetches nothing and logs nothing: an entry of its group on
+	 * another origin, and one on its origin in another group, lend it none.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'credentialed_sources' )]
+	public function test_a_source_with_no_vault_entry_on_its_origin_sends_nothing_silently( string $class, string $verb, string $value, string $origin ): void {
+		$this->lend( 'heron-vault-7731', 'https://elsewhere-4410.example' );
+		$this->lend( 'kestrel-vault-2208', $origin );
+		$this->lend( 'heron-vault-7731', \str_replace( 'https://', 'http://', $origin ) );
+		$node   = $this->credentialed( $class, $verb, $value );
+		$stderr = $this->capture_stderr();
+
+		$this->tick( $node );
+
+		$this->assertSame( [ [ 'verb' => 'TICK', 'data' => [ 'fetching' => 0 ] ] ], $this->answers() );
+		$this->assertSame( [], $this->dispatched );
+		$this->assertSame( [], self::stderr_lines( $stderr ) );
+	}
+
+	/** A credentialed source naming no vault group sends nothing, whatever the Vault holds for its origin. */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'credentialed_sources' )]
+	public function test_a_source_with_no_vault_group_sends_nothing( string $class, string $verb, string $value, string $origin ): void {
+		$this->lend( 'heron-vault-7731', $origin );
+		$node = $this->credentialed( $class, $verb, $value, [ 'internal' ] );
+
+		$this->tick( $node );
+
+		$this->assertSame( [ [ 'verb' => 'TICK', 'data' => [ 'fetching' => 0 ] ] ], $this->answers() );
+		$this->assertSame( [], $this->dispatched );
+	}
+
+	/** An entry added between two passes makes the second fetch, carrying its credential, with no restart. */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'credentialed_sources' )]
+	public function test_the_pass_after_the_entry_is_added_fetches_with_it( string $class, string $verb, string $value, string $origin, int $opening ): void {
+		$node = $this->credentialed( $class, $verb, $value );
+		$this->tick( $node );
+
+		$this->lend( 'heron-vault-7731', $origin, 'X-Heron-Key', 'heron-secret-6604' );
+		$this->tick( $node );
+
+		$this->assertSame( [ 'verb' => 'TICK', 'data' => [ 'fetching' => $opening ] ], $this->answers()[1] );
+		$this->assertCount( 1, $this->dispatched );
+		$this->assertStringStartsWith( "{$origin}/", $this->dispatched[0] );
+		$this->assertContains( 'X-Heron-Key: heron-secret-6604', $this->sent[0][ \CURLOPT_HTTPHEADER ] );
+	}
+
+	/** A scheduled pass of a credentialed source with no entry sends nothing and logs nothing. */
+	public function test_a_scheduled_pass_with_no_vault_entry_sends_nothing_silently(): void {
+		$node = $this->credentialed( Unthread_Source_Node::class, '', '' );
+		$node->interpreter()->dispatch( 'set_interval', [ (string) self::INTERVAL ] );
+		$stderr = $this->capture_stderr();
+
+		$this->tick_at( $node, self::BOUNDARY - 7.0 );
+		$this->tick_at( $node, self::BOUNDARY + 2.0 );
+
+		$this->assertSame( [], $this->dispatched );
+		$this->assertSame( [], self::stderr_lines( $stderr ) );
+	}
+
+	/** GitHub's public API answers without a token, so GitHub fetches with no Vault entry. */
+	public function test_github_fetches_with_no_vault_entry(): void {
+		$node = $this->wire( new Github_Source_Node(), 'heron-github-31', [ 'public', 'heron-vault-7731' ] );
+		$node->interpreter()->dispatch( 'add_repo', [ 'heron/gazette-9' ] );
+
+		$this->tick( $node );
+
+		$this->assertSame( [ [ 'verb' => 'TICK', 'data' => [ 'fetching' => 3 ] ] ], $this->answers() );
+		$this->assertStringStartsWith( 'https://api.github.com/repos/heron/gazette-9/', $this->dispatched[0] );
+	}
+
 	/** An item make() refuses is skipped and logged; the rest of the answer records. */
 	public function test_a_refused_item_is_skipped_and_logged(): void {
 		Core::$recent_log = [];
@@ -590,7 +692,7 @@ final class SourceNodeTest extends TestCase {
 	}
 
 	/** Run one Router tick through the source inside a drain, its clock at a moment. */
-	private function tick_at( Fake_Source_Node $node, float $at ): void {
+	private function tick_at( Source_Node $node, float $at ): void {
 		$this->in_drain(
 			static function () use ( $node, $at ): void {
 				Core::$now = $at;

@@ -99,7 +99,8 @@ final class ContextA8CSlackTest extends TestCase {
 			self::message( 'C0HERON11', self::ts( 1800 ), 'Released 4.2', [ 'subtype' => 'bot_message', 'bot_id' => 'B0KITE', 'username' => 'releases' ] ),
 			self::message( 'C0HERON11', self::ts( 900 ), 'joined', [ 'subtype' => 'channel_join' ] ),
 		];
-		$real     = $this->wire( new Slack_Source_Node(), 'slack-real', [ 'internal' ] );
+		$this->lend( 'slack', 'https://slack.com' );
+		$real     = $this->wire( new Slack_Source_Node(), 'slack-real', [ 'internal', 'slack' ] );
 		$real->interpreter()->dispatch( 'add_channel', [ 'C0HERON11' ] );
 		$this->tick( $real );
 		$this->complete( 'https://slack.com/api/auth.test', (string) \json_encode( [ 'ok' => true, 'url' => self::WORKSPACE ] ) );

@@ -21,6 +21,7 @@ final class LinearSourceTest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 		$this->install_curl();
+		$this->lend( 'linear', 'https://api.linear.app', 'Authorization', 'lin_api_heron_9917' );
 	}
 
 	protected function tearDown(): void {
@@ -49,7 +50,7 @@ final class LinearSourceTest extends TestCase {
 
 	/** A pass POSTs the query as JSON, the team keys riding as a variable and never in the query text. */
 	public function test_a_pass_posts_the_query_with_the_teams_as_a_variable(): void {
-		$this->tick( $this->linear( [ 'internal' ], 'KESTREL', 'WREN9' ) );
+		$this->tick( $this->linear( [ 'internal', 'linear' ], 'KESTREL', 'WREN9' ) );
 
 		$this->assertSame( [ self::GRAPHQL ], $this->dispatched );
 		$this->assertTrue( $this->opts[ self::GRAPHQL ][ \CURLOPT_POST ] );
@@ -64,7 +65,7 @@ final class LinearSourceTest extends TestCase {
 
 	/** The page's issue nodes record as items; a node with no identifier is skipped. */
 	public function test_the_page_records_its_issues(): void {
-		$this->tick( $this->linear( [ 'internal' ], 'KESTREL' ) );
+		$this->tick( $this->linear( [ 'internal', 'linear' ], 'KESTREL' ) );
 
 		$this->complete(
 			self::GRAPHQL,
@@ -97,7 +98,7 @@ final class LinearSourceTest extends TestCase {
 	/** A GraphQL error answer, which Linear sends with a 200, records nothing and logs the first error. */
 	public function test_an_error_answer_records_nothing_and_logs_it(): void {
 		$stderr = $this->capture_stderr();
-		$this->tick( $this->linear( [ 'internal' ], 'KESTREL' ) );
+		$this->tick( $this->linear( [ 'internal', 'linear' ], 'KESTREL' ) );
 
 		$this->complete( self::GRAPHQL, '{"errors":[{"message":"linear-key-revoked-6618"},{"message":"second-error-6619"}]}' );
 
@@ -108,7 +109,7 @@ final class LinearSourceTest extends TestCase {
 	/** An answer whose issues are not a list records nothing, and says so. */
 	public function test_an_answer_without_an_issue_list_is_logged(): void {
 		$stderr = $this->capture_stderr();
-		$this->tick( $this->linear( [ 'internal' ], 'KESTREL' ) );
+		$this->tick( $this->linear( [ 'internal', 'linear' ], 'KESTREL' ) );
 
 		$this->complete( self::GRAPHQL, '{"data":{"issues":{"nodes":{"ABC-7":{"identifier":"ABC-7"}}}}}' );
 
@@ -117,7 +118,7 @@ final class LinearSourceTest extends TestCase {
 	}
 
 	public function test_no_team_fetches_nothing(): void {
-		$this->tick( $this->linear( [ 'internal' ] ) );
+		$this->tick( $this->linear( [ 'internal', 'linear' ] ) );
 
 		$this->assertSame( [], $this->dispatched );
 	}
@@ -153,7 +154,7 @@ final class LinearSourceTest extends TestCase {
 	}
 
 	public function test_remove_team_stops_fetching_it_and_keeps_the_rest(): void {
-		$node = $this->linear( [ 'internal' ], 'KESTREL', 'WREN9' );
+		$node = $this->linear( [ 'internal', 'linear' ], 'KESTREL', 'WREN9' );
 
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'remove_team', [ 'KESTREL' ] ) );
 		$this->tick( $node );

@@ -204,6 +204,11 @@ class Unthread_Source_Node extends Source_Node {
 		$this->queue( $url, (string) \wp_json_encode( $body ) );
 	}
 
+	/** Unthread answers nothing without a credential, so a pass waits for one. */
+	protected function credential_url(): string {
+		return self::CONVERSATIONS;
+	}
+
 	public static function node_schema(): array {
 		return self::source_schema(
 			'Reads the Unthread conversations updated within two intervals, or the last ' . ( self::WINDOW_SECONDS / Intel_Graph_Row_Schema::DAY_SECONDS ) . ' days while no interval is set, and each one\'s messages, without blocking, one request at a time, on a TICK request (request_node unthread TICK).',

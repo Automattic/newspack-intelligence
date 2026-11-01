@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Linear, Slack, P2 and Unthread sit idle until their Vault entry exists.** Each declares the url it fetches through `Source_Node::credential_url()`, and every pass first asks its Curl sibling's `lends_credential()` (substrate 2.142.0) whether the source's vault group holds an entry on that url's origin: `https://api.linear.app`, `https://slack.com`, `https://public-api.wordpress.com` and `https://api.unthread.io`. With no group or no such entry, a pass, scheduled or a `TICK`, sends nothing, answers `{ fetching: 0 }` and logs nothing; before, it fetched with no credential and logged each 401. Every pass asks again, so the pass after the entry is added fetches, with no restart. GitHub, whose public API answers without a token, and the ContextA8C nodes, which take their token from the relay's file, fetch as before.
+- **The substrate floor is 2.142.0,** the first release with `Curl_Node::lends_credential()`.
 - **Unthread is an include of its own, `newspack-intelligence-collect-unthread`, which `-collect-token` includes,** so a workstation reading Slack, P2 and Linear through ContextA8C, which cannot read Unthread, includes it beside them and runs every source the shipped topology runs. The node, its tier, interval, Vault group and target are unchanged.
 
 ## [0.29.0] - 2026-10-30

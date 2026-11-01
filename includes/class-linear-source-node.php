@@ -75,6 +75,11 @@ class Linear_Source_Node extends Source_Node {
 		return Core::arr( Core::arr( $answer['data'] ?? null )['issues'] ?? null )['nodes'] ?? null;
 	}
 
+	/** Linear answers nothing without a credential, so a pass waits for one. */
+	protected function credential_url(): string {
+		return self::API_URL;
+	}
+
 	/** Queue the one POST, unless no team is named. */
 	protected function begin(): void {
 		if ( [] === $this->teams ) {

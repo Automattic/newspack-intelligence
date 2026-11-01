@@ -79,7 +79,7 @@ the console palette read it): `composer build:autoloaders` (= `composer
 install --optimize-autoloader`) or `composer dump-autoload -o`.
 
 **The substrate floor is a handshake, and a floor set too LOW is the dangerous
-error.** The loader calls `Bootstrap::version_at_least( '2.141.0' )` and stays
+error.** The loader calls `Bootstrap::version_at_least( '2.142.0' )` and stays
 dormant below it. Against a substrate between a too-low floor and the real one
 the handshake passes, the plugin activates, and it then fatals on the missing
 method — the one outcome the gate exists to prevent. `CHANGELOG.md` records why
@@ -1032,9 +1032,16 @@ with `Authorization` and no scheme; the `slack` entry is
 `https://public-api.wordpress.com`, each with `Authorization` and `Bearer`;
 the `unthread` entry is `https://api.unthread.io` with `X-Api-Key` and no
 scheme.
-A source with no group, or a group with no entry on the origin, fetches
-with no credential, and the refusal is logged. The feeds send no credential
-and declare no group.
+Linear, Slack, P2 and Unthread answer nothing without a credential, so
+each names the url it fetches through `credential_url()`, and a pass asks
+the Curl sibling's `lends_credential()` first: with no group, or no entry
+of the group on that url's origin, the pass sends nothing, answers
+`{ fetching: 0 }` and logs nothing, sitting idle until the entry exists.
+Every pass asks again, so the pass after the entry is added fetches, with no
+restart. GitHub, whose public API answers without a token, keeps the
+default `''` and fetches with no credential when its group lends none; the
+ContextA8C nodes take their token from the relay's file, not the Vault. The
+feeds send no credential and declare no group.
 
 Every answer records through one path, `Source_Node::record()`.
 It drops the keys a bounded in-memory set already holds (`MAX_SEEN` 2000,

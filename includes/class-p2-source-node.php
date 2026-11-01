@@ -183,6 +183,11 @@ class P2_Source_Node extends Source_Node {
 		return \html_entity_decode( $html, \ENT_QUOTES | \ENT_HTML5, 'UTF-8' );
 	}
 
+	/** The WordPress.com REST API answers nothing without a credential, so a pass waits for one. */
+	protected function credential_url(): string {
+		return self::API;
+	}
+
 	/** Queue each site's posts, then its comments, since the window opened. */
 	protected function begin(): void {
 		$after = \gmdate( 'Y-m-d\TH:i:s\Z', (int) Core::$now - self::WINDOW_SECONDS );

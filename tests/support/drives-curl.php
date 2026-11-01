@@ -110,6 +110,23 @@ trait Drives_Curl {
 	}
 
 	/**
+	 * Add a Vault entry in $group on $origin, beside any already stored,
+	 * lending each request there `<header>: <secret>`.
+	 */
+	private function lend( string $group, string $origin, string $header = 'X-Lent-Key', string $secret = 'lent-secret-3390' ): void {
+		$seal                       = new \ReflectionMethod( Vault::class, 'encrypt' );
+		$servers                    = \Newspack_Nodes\Core::arr( \get_option( Vault::OPTION_KEY, [] ) );
+		$servers[ "{$group}-lent" ] = [
+			'url'           => $origin,
+			'group'         => $group,
+			'auth_password' => $seal->invoke( null, $secret ),
+			'auth_header'   => $header,
+		];
+		\update_option( Vault::OPTION_KEY, $servers, false );
+		Vault::get_instance()->reset_cache();
+	}
+
+	/**
 	 * A source as a topology builds it: named, its arguments given, sinking
 	 * into the interpreter, its items addressed to the writer.
 	 *

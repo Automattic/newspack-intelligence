@@ -95,7 +95,8 @@ final class ContextA8CP2Test extends TestCase {
 	 * answer names none.
 	 */
 	public function test_each_post_and_comment_records_as_the_p2_source_records_them(): void {
-		$real = $this->wire( new P2_Source_Node(), 'p2-real', [ 'restricted' ] );
+		$this->lend( 'p2', 'https://public-api.wordpress.com' );
+		$real = $this->wire( new P2_Source_Node(), 'p2-real', [ 'restricted', 'p2' ] );
 		$real->interpreter()->dispatch( 'add_site', [ self::HERON ] );
 		$this->tick( $real );
 		$posts_url = self::API . self::HERON . '/posts/?after=' . self::after() . '&number=100&order_by=date&fields=ID,site_ID,title,URL,content,date,author';

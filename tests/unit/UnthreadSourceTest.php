@@ -40,6 +40,7 @@ final class UnthreadSourceTest extends TestCase {
 		Core::$now   = self::NOW;
 		Core::$clock = static fn (): float => self::NOW;
 		$this->install_curl();
+		$this->lend( 'unthread', 'https://api.unthread.io', 'X-Api-Key', 'unthread-key-5182' );
 	}
 
 	protected function tearDown(): void {

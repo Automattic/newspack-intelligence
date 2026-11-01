@@ -88,7 +88,8 @@ final class ContextA8CLinearTest extends TestCase {
 	 */
 	public function test_each_issue_records_as_the_linear_source_records_it(): void {
 		$this->signed_in();
-		$real = $this->wire( new Linear_Source_Node(), 'linear-real', [ 'internal' ] );
+		$this->lend( 'linear', 'https://api.linear.app' );
+		$real = $this->wire( new Linear_Source_Node(), 'linear-real', [ 'internal', 'linear' ] );
 		$real->interpreter()->dispatch( 'add_team', [ 'KESTREL' ] );
 		$this->tick( $real );
 		$nodes = [];
@@ -645,6 +646,16 @@ final class ContextA8CLinearTest extends TestCase {
 		$this->tick( $node );
 
 		$this->assertArrayNotHasKey( \CURLOPT_PROXY, $this->sent[0] );
+	}
+
+	/** A ContextA8C node takes its token from the relay's file, so it fetches with the Vault empty. */
+	public function test_a_pass_fetches_with_no_vault_entry(): void {
+		$this->signed_in();
+		$this->assertSame( [], \Newspack_Nodes\Vault::get_instance()->get_all() );
+
+		$this->tick( $this->linear( 'KESTREL' ) );
+
+		$this->assertSame( [ self::MCP ], \array_column( $this->sent, \CURLOPT_URL ) );
 	}
 
 	/** The token dir is required at load. */
