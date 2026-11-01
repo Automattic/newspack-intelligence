@@ -16,8 +16,9 @@
  *
  * While its index holds no live entity, or while the projector's reader of
  * the ontology stream had not committed its end just before that index was
- * read (`Entity_Index::behind_ontology()`, taken first so a commit landing
- * between the two reads cannot pass a stale index), it resolves nothing: an `item_recorded` parks as an `item_reresolve` owed
+ * read (`Entity_Index::hold_cause()`, the cursor taken first so a commit
+ * landing between the two reads cannot pass a stale index), it resolves
+ * nothing: an `item_recorded` parks as an `item_reresolve` owed
  * its NER step (`ner`), and an `item_reresolve` parks again unchanged, each
  * due HOLD_S on and keyed by its item. A false hold only parks a record a
  * minute; one the queue ages out after a day is recovered by `ontology
@@ -137,6 +138,12 @@ class Resolver_Node extends Node {
 
 	/** What a hold line says of a record the later queue ages out. */
 	private const AGED_OUT = 'A record parked past a day drops, keyed by its item; wp newspack-intelligence ontology reresolve --since=<day> re-resolves it without its NER step, after ontology seed on a fresh install.';
+
+	/** Each hold's log line by reason, `%s` the queue it parks on. */
+	private const HOLD_LINES = [
+		'no_live_entity'  => 'the entity index holds no live entity; holding items on %s until wp newspack-intelligence ontology seed runs, or ontology reproject after an upgrade.',
+		'behind_ontology' => 'the projector has not caught up with the ontology stream; holding items on %s.',
+	];
 
 	/** The writer every link and candidate event is addressed to. */
 	protected string $writer = '';
@@ -347,15 +354,11 @@ class Resolver_Node extends Node {
 	 * @param Resolver $resolver The resolver over the shared index.
 	 */
 	private function hold_reason( Resolver $resolver ): string {
-		if ( ! $resolver->index->has_live_entities() ) {
-			$this->print_less_often( 'the entity index holds no live entity; holding items on ', "{$this->later} until wp newspack-intelligence ontology seed runs, or ontology reproject after an upgrade. " . self::AGED_OUT );
-			return 'no_live_entity';
+		$reason = $resolver->index->hold_cause();
+		if ( '' !== $reason ) {
+			$this->print_less_often( \sprintf( self::HOLD_LINES[ $reason ], $this->later ), ' ', self::AGED_OUT );
 		}
-		if ( $resolver->index->behind_ontology() ) {
-			$this->print_less_often( 'the projector has not caught up with the ontology stream; holding items on ', "{$this->later}. " . self::AGED_OUT );
-			return 'behind_ontology';
-		}
-		return '';
+		return $reason;
 	}
 
 	/**

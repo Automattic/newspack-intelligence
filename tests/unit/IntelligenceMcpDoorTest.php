@@ -71,10 +71,11 @@ final class IntelligenceMcpDoorTest extends TestCase {
 	public function test_every_tool_names_a_declared_verb(): void {
 		$tools    = \array_column( $this->call( Capabilities::TUNE, 'tools/list' )['result']['tools'], null, 'name' );
 		$declared = Command_Interpreter_Node::declared_verbs( Intelligence_CI_Node::class );
-		$offered  = \array_filter( $declared, static fn ( array $verb ): bool => Capabilities::MANAGE !== $verb['capability'] );
+		$offered  = \array_filter( $declared, static fn ( array $verb, string $name ): bool => Capabilities::MANAGE !== $verb['capability'] && 'health' !== $name, \ARRAY_FILTER_USE_BOTH );
 
 		$this->assertSame( \array_map( static fn ( string $verb ): string => "intel_{$verb}", \array_keys( $offered ) ), \array_keys( $tools ) );
 		$this->assertArrayNotHasKey( 'intel_fetch_now', $tools );
+		$this->assertArrayNotHasKey( 'intel_health', $tools );
 		$this->assertCount( 30, $tools );
 		foreach ( $offered as $verb => $spec ) {
 			$properties = (array) $tools[ "intel_{$verb}" ]['inputSchema']['properties'];

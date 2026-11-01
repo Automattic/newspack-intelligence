@@ -40,8 +40,8 @@ class Intelligence_Mcp_Door extends Mcp_Door {
 	/** The CI node every tool addresses. */
 	private const NODE = 'intelligence';
 
-	/** The verb no tool offers: it mounts a worker's input. */
-	private const NOT_A_TOOL = 'fetch_now';
+	/** The verbs no tool offers: one mounts a worker's input, one reads pipeline health for the page. */
+	private const NOT_TOOLS = [ 'fetch_now', 'health' ];
 
 	/** What closes a tool's summary, by its verb's role; any other role adds nothing. */
 	private const SUMMARY_TAILS = [
@@ -58,7 +58,7 @@ class Intelligence_Mcp_Door extends Mcp_Door {
 	protected function tools(): array {
 		$tools = [];
 		foreach ( Command_Interpreter_Node::declared_verbs( Intelligence_CI_Node::class ) as $verb => $declared ) {
-			if ( self::NOT_A_TOOL === $verb ) {
+			if ( \in_array( $verb, self::NOT_TOOLS, true ) ) {
 				continue;
 			}
 			$args = [];

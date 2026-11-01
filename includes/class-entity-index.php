@@ -307,6 +307,22 @@ final class Entity_Index {
 	}
 
 	/**
+	 * Why this index holds every record, '' when it holds none: while it
+	 * holds no live entity, one accepted or proposed and not merged away,
+	 * then while a projector's reader of the ontology stream had not
+	 * committed the stream's end just before current() read it. The
+	 * resolver's hold and the `health` verb read this one answer.
+	 *
+	 * @api Read by Resolver_Node and Intelligence_Health.
+	 */
+	public function hold_cause(): string {
+		if ( [] === $this->states ) {
+			return 'no_live_entity';
+		}
+		return $this->behind ? 'behind_ontology' : '';
+	}
+
+	/**
 	 * Why a domain, as `identifier_value()` spells it, is not a plain
 	 * hostname, or null when it is one: two or more labels of a-z, 0-9 and
 	 * hyphens, none starting or ending with one, each at most 63
@@ -417,20 +433,6 @@ final class Entity_Index {
 	 */
 	public function topics(): array {
 		return $this->topics;
-	}
-
-	/** Whether it holds any live entity: one accepted or proposed, not merged away. */
-	public function has_live_entities(): bool {
-		return [] !== $this->states;
-	}
-
-	/**
-	 * Whether a projector's reader of the ontology stream had not committed
-	 * the stream's end just before this index was read, so the index may
-	 * lack an ontology event; false for one current() did not read.
-	 */
-	public function behind_ontology(): bool {
-		return $this->behind;
 	}
 
 	/**

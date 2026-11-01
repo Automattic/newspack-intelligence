@@ -28,7 +28,7 @@ final class IntelligenceCITest extends TestCase {
 
 	private const GAZETTE = 'organization:harbor-gazette';
 
-	private const VERBS = [ 'search', 'entity', 'timeline', 'related', 'claims', 'trends', 'signals', 'review', 'collections', 'lenses', 'watches', 'save_watch', 'remove_watch', 'watch_matches', 'mark_seen' ];
+	private const VERBS = [ 'search', 'entity', 'timeline', 'related', 'claims', 'trends', 'signals', 'review', 'collections', 'lenses', 'watches', 'save_watch', 'remove_watch', 'watch_matches', 'mark_seen', 'health' ];
 
 	private Intelligence_CI_Node $ci;
 

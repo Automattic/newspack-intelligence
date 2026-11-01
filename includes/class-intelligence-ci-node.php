@@ -24,7 +24,7 @@ use Newspack_Nodes\Topology_Analyzer;
 
 class Intelligence_CI_Node extends Service_CI_Node {
 
-	/** The topology whose Source nodes `fetch_now` ticks. */
+	/** The topology whose Source nodes `fetch_now` ticks and `health sources` reads. */
 	private const COLLECT_TOPOLOGY = 'newspack-intelligence-collect';
 
 	/**
@@ -34,17 +34,28 @@ class Intelligence_CI_Node extends Service_CI_Node {
 	 * @return list<array{0:string,1:string}>
 	 */
 	public static function ticks(): array {
-		return \array_map( static fn ( array $node ): array => [ Core::as_string( $node['name'] ?? null ), 'TICK' ], Topology_Analyzer::nodes_of_type( self::COLLECT_TOPOLOGY, Source_Node::class ) );
+		return \array_map( static fn ( array $node ): array => [ Core::as_string( $node['name'] ?? null ), 'TICK' ], self::sources() );
+	}
+
+	/**
+	 * Every Source node the collect topology declares, in its order, as
+	 * `Topology_Analyzer::nodes_of_type()` exports each.
+	 *
+	 * @api Read by Intelligence_Health.
+	 * @return list<array<string,mixed>>
+	 */
+	public static function sources(): array {
+		return Topology_Analyzer::nodes_of_type( self::COLLECT_TOPOLOGY, Source_Node::class );
 	}
 
 	/**
 	 * A verb whose handler answers what `$answer` makes of its bound args.
 	 *
-	 * @param string                                                 $capability  The role it declares.
-	 * @param string                                                 $name        Its name.
-	 * @param string                                                 $description What it answers.
-	 * @param list<array<string,mixed>>                              $args        Its args.
-	 * @param \Closure(array<array-key,mixed>): array<string,mixed> $answer      The answer.
+	 * @param string                                                    $capability  The role it declares.
+	 * @param string                                                    $name        Its name.
+	 * @param string                                                    $description What it answers.
+	 * @param list<array<string,mixed>>                                 $args        Its args.
+	 * @param \Closure(array<array-key,mixed>): array<array-key,mixed> $answer      The answer.
 	 * @return array<string,mixed>
 	 */
 	private static function verb( string $capability, string $name, string $description, array $args, \Closure $answer ): array {
@@ -60,8 +71,9 @@ class Intelligence_CI_Node extends Service_CI_Node {
 	/**
 	 * Declarative schema: the ten read verbs, each a handler over
 	 * `Graph_Query`; the five watch verbs, also at read, each over
-	 * `Graph_Watches` and answering the caller's own watches alone; the
-	 * fifteen curation verbs, each over `Graph_Curation` and seeing only the
+	 * `Graph_Watches` and answering the caller's own watches alone;
+	 * `health`, at read, over `Intelligence_Health`; the fifteen curation
+	 * verbs, each over `Graph_Curation` and seeing only the
 	 * entities and items a read caller sees; and `fetch_now`.
 	 *
 	 * @api Used by the substrate to build the dispatch table and the catalog.
@@ -162,6 +174,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					$verb( $read, 'remove_watch', 'Remove one of the caller\'s own watches: { ok, event_id }.', [ $key( 'The watch key.' ) ], Graph_Watches::remove( ... ) ),
 					$verb( $read, 'watch_matches', 'The unseen matches of one of the caller\'s own watches, latest matched first: { items, total }, each item as search answers it plus matched_ts.', [ $key( 'The watch key.' ), $limit( Graph_Query::DEFAULT_LIMIT ), $page ], Graph_Watches::matches( ... ) ),
 					$verb( $read, 'mark_seen', 'Mark seen matches of one of the caller\'s own watches, every unseen one when no item is named: { ok, count }.', [ $key( 'The watch key.' ), [ 'name' => 'item', 'type' => 'string', 'variadic' => true, 'description' => 'A matched item key; repeat it to mark several.' ] ], Graph_Watches::mark_seen( ... ) ),
+					$verb( $read, 'health', 'Pipeline health, one slice a call: collection { state, topology }; sources { sources: [ { name, class, tier, state, reason, credential: { url, group }, last_ok_at, last_error, failing_since, failed, requests } ] }; backlog { reason, held, since, dropped: { first_day, last_day } }; extraction { mode, vault_id, last_ok_at, last_error, failing_since }. A fact no worker has published reads as unknown or null.', [ $arg( 'what', 'The slice: collection, sources, backlog or extraction.' ) ], Intelligence_Health::answer( ... ) ),
 					$verb( $tune, 'confirm_link', 'Confirm a readable item\'s link to an entity: { ok, event_id }.', $link, static fn ( array $args ): array => Graph_Curation::judge_link( 'link_confirmed', $args ) ),
 					$verb( $tune, 'reject_link', 'Reject a readable item\'s link to an entity: { ok, event_id }.', $link, static fn ( array $args ): array => Graph_Curation::judge_link( 'link_rejected', $args ) ),
 					$verb( $tune, 'accept_entity', 'Accept an entity: { ok, event_id }.', [ $about ], static fn ( array $args ): array => Graph_Curation::judge_entity( 'entity_accepted', $args ) ),

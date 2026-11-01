@@ -302,12 +302,11 @@ stored link it no longer writes, and an `entity_proposed` per candidate,
 keyed `Intel_Event::entity_key()`, to the writer its `make_node` line names,
 by TO and declared as an extra target, then forwards `{ item, links,
 proposals, extracted, attempt }` to its target, `extractor`. It resolves
-nothing while its index holds no live entity
-(`Entity_Index::has_live_entities()`), or while a projector's reader of the
-ontology stream `Stream_Writer::stream_dir()` names had not committed the
-stream's end (`Projector_Node::behind()`, over
-`Consumer_Node::lag_from_disk()`) just before the index was
-read (`Entity_Index::behind_ontology()`): `Entity_Index::current()` takes
+nothing while its index holds no live entity, or while a projector's reader
+of the ontology stream `Stream_Writer::stream_dir()` names had not committed
+the stream's end (`Projector_Node::behind()`, over
+`Consumer_Node::lag_from_disk()`) just before the index was read, the two
+in that order (`Entity_Index::hold_cause()`): `Entity_Index::current()` takes
 that reading first at every load, every `Entity_Index::TTL_S`, whichever
 reader triggers it, so a flush and commit landing between the two reads can
 make the index only fresher than the reading says. The projector flushes at
@@ -581,12 +580,12 @@ verbs do, because a root-owned segment or IPC file is one the workers
 cannot append to.
 
 **Reads.** `Intelligence_CI` (`intelligence`), mounted on every request
-graph, answers ten read verbs, each declaring `read` and its
+graph, answers sixteen read verbs, each declaring `read` and its
 args: `search`, `entity`, `timeline`, `related`, `claims`, `trends`,
-`signals`, `review`, `collections` and `lenses`, and the five watch verbs
-below. Each handler hands its bound args to the `Graph_Query`
-read of the same name, through `Intel_Graph_Row_Schema::read()` over every
-partition's file. A read opens on `Graph_Query::graph()`, which resolves
+`signals`, `review`, `collections` and `lenses`, the five watch verbs and
+`health`, below. Each of the first ten hands its bound args to the
+`Graph_Query` read of the same name, through `Intel_Graph_Row_Schema::read()`
+over every partition's file. A read opens on `Graph_Query::graph()`, which resolves
 the tiers once from `Intel_Tiers::readable()` — `public` and `internal`,
 and `restricted` for a caller holding the restricted tier (below) — and
 binds the prelude every statement opens with: `mg`, the survivor map,
@@ -659,6 +658,41 @@ lens's entity or topic the caller cannot see stays in the filter, where it
 matches no item the caller may read, so it narrows that caller to nothing
 rather than dropping out and widening. A lens no one saved is refused as
 `no lens: <key>`.
+
+**Health.** `health <what>` (`Intelligence_Health`), at `read`, answers
+one slice of pipeline health a call, so the strip asks each through its
+own Fetcher, and refuses any other `what` (`what must be one of:
+collection, sources, backlog, extraction`). What durable state answers is
+derived in the request; the rest is a snapshot a worker published through
+`Publishes_Status`, read at partition 0, which the topology runs alone,
+and a snapshot no cache holds reads as unknown or null, never as healthy.
+`collection` answers `{ state, topology }`, the `CLI::worker_states()`
+word `wp nodes status` reports for `newspack-intelligence.p0`
+(`Worker_Route::TOPOLOGY`) against `Bootstrap::get_topologies()`:
+`inactive` while the topology is not active and no worker holds its lock.
+`sources` answers `{ sources: [ { name, class, tier, state, … } ] }`, one
+row per `Source_Node` the collect topology declares, in its order
+(`Intelligence_CI_Node::sources()`, which `fetch_now`'s ticks map), `class`
+its `make_node` type, leaving out a source whose tier
+`Intel_Tiers::readable()` does not grant the caller. Each line binds
+against its class's own `node_schema()` arguments (`Command_Args::bind()`),
+so `tier` and `vault_group` are read by name, a class declaring no group,
+as a ContextA8C one, reading as ''. A source whose class's
+`credential_url()` is not empty and whose group lends nothing on that
+url's origin
+(`Curl_Node::lends_credential()`) is `{ state: idle, credential: { url,
+group } }` whatever its snapshot says; any other answers its snapshot as
+`Source_Node::BLANK_STATUS` names it, or `{ state: unknown }`. `backlog`
+answers `{ reason, held, since, dropped }`: `reason` is
+`Entity_Index::current()->hold_cause()`, the one answer the resolver's
+hold reads, so it names the cause with the cache
+flushed; `held`, `since` and `dropped` are the resolver's snapshot's, null
+with none, and `dropped` is null once the reresolver's `last_range` covers
+it, `since` on or before its first day and `until` on or after its last.
+`extraction` answers the extractor's snapshot, else `mode` `heuristic` or
+`call` from the actor of the newest `extractions` row, by row id, beside
+`vault_id`, `last_ok_at`, `last_error` and `failing_since` null, else `{
+mode: unknown }`.
 
 **Signals.** `signals [--lens=] [--entity=]` reads the rows `trends`
 answers for the same lens and entity, so the lens's filters, axis, bucket
@@ -932,7 +966,7 @@ worker's output partition, where an attached `wp nodes cli` reads it.
 on the substrate's `Mcp_Door` (substrate ADR-38), serving
 `POST /wp-json/newspack-intelligence/v1/mcp`. Its tools are read off
 `Intelligence_CI_Node`'s schema, one `intel_<verb>` per verb but
-`fetch_now`, which it leaves out by name, each offering every declared arg
+`fetch_now` and `health`, which it leaves out by name (`NOT_TOOLS`), each offering every declared arg
 under the verb's own description. The door owns the session check, the
 scope ceiling, the meter, the OAuth resource and the `<site-data>` fence,
 and offers a session only the tools its role covers, so a read session is
@@ -1108,8 +1142,9 @@ the `unthread` entry is `https://api.unthread.io` with `X-Api-Key` and no
 scheme.
 Linear, Slack, P2 and Unthread answer nothing without a credential, so each
 names the url it fetches through the static `credential_url()`, a fact of
-the class a reader asks with no instance, and a pass asks the Curl sibling's
-`lends_credential()` first: with no group, or no entry of the group on that
+the class a reader asks with no instance, and a pass asks
+`Curl_Node::lends_credential()` of its group first: with no group, or no
+entry of the group on that
 url's origin, the pass sends nothing, answers `{ fetching: 0 }`, logs
 nothing and publishes nothing, sitting idle until the entry exists. Every
 pass asks again, so the pass after the entry is added fetches, with no
@@ -1478,7 +1513,7 @@ plugin adds:
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>`; publishes `last_range` through `Publishes_Status` |
 | `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no verbs |
-| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, each at `tune`; `fetch_now` at `manage` |
+| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `health`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, each at `tune`; `fetch_now` at `manage` |
 
 The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model`,
 `set_feature`, `add_profile` and `remove_profile`; every node carrying the trait
@@ -1617,7 +1652,7 @@ sibling checkout locally.
 | `includes/` (resolve) | `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
 | `includes/` (clients) | `Client_Importer`, the `Client_Roster` interface, `Graph_Client_Roster`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |
-| `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
+| `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Health`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
 | `includes/` (watches) | `Watcher_Node` |
 | `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed`, `ontology reresolve` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; the `Refuses_Root` trait they share |
 | `topologies/` | The `.tsl` node-graph topologies |

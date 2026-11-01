@@ -28,7 +28,7 @@ use Newspack_Nodes\Worker_Base;
 final class Worker_Route {
 
 	/** The worker topology the requests reach; also the worker-id prefix. */
-	private const TOPOLOGY = 'newspack-intelligence';
+	public const TOPOLOGY = 'newspack-intelligence';
 
 	/**
 	 * Append each request, in order, to every live worker's input partition,

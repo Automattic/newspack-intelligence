@@ -243,15 +243,30 @@ final class EntityIndexTest extends TestCase {
 
 	/** An index holds live entities once one is accepted or proposed and neither merged away nor rejected. */
 	public function test_it_holds_live_entities_only_when_one_is_live(): void {
-		$this->assertFalse( ( new Entity_Index() )->has_live_entities() );
-		$this->assertFalse(
+		$this->assertSame( 'no_live_entity', ( new Entity_Index() )->hold_cause() );
+		$this->assertSame(
+			'no_live_entity',
 			$this->index_of(
 				self::proposed( 'organization:faded-gazette', 'Faded Gazette' ),
 				self::rejected( 'organization:faded-gazette' )
-			)->has_live_entities(),
+			)->hold_cause(),
 			'a rejected entity is not live'
 		);
-		$this->assertTrue( $this->index_of( self::proposed( 'organization:salem-ledger', 'Salem Ledger' ) )->has_live_entities() );
+		$this->assertSame( '', $this->index_of( self::proposed( 'organization:salem-ledger', 'Salem Ledger' ) )->hold_cause() );
+	}
+
+	/** An index holds every record while it holds no live entity, then while it was read behind the ontology stream. */
+	public function test_hold_cause_names_why_an_index_holds(): void {
+		$behind = new \ReflectionProperty( Entity_Index::class, 'behind' );
+		$empty  = new Entity_Index();
+		$live   = $this->index_of( self::proposed( 'organization:salem-ledger', 'Salem Ledger' ) );
+
+		$this->assertSame( [ 'no_live_entity', '' ], [ $empty->hold_cause(), $live->hold_cause() ] );
+
+		$behind->setValue( $empty, true );
+		$behind->setValue( $live, true );
+
+		$this->assertSame( [ 'no_live_entity', 'behind_ontology' ], [ $empty->hold_cause(), $live->hold_cause() ], 'an empty index names no live entity first' );
 	}
 
 	/** A rejected entity matches nothing, and its names stay known as rejected. */

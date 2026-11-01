@@ -213,7 +213,7 @@ abstract class Source_Node extends Timer_Node {
 	 */
 	protected function tick(): array {
 		$credential = static::credential_url();
-		if ( [] !== $this->in_flight || ( '' !== $credential && ! $this->curl->lends_credential( $credential ) ) ) {
+		if ( [] !== $this->in_flight || ( '' !== $credential && ! Curl_Node::lends_credential( $this->vault_group, $credential ) ) ) {
 			return [ 'fetching' => 0 ];
 		}
 		$this->sent       = 0;
