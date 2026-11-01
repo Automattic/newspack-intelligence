@@ -881,6 +881,208 @@ final class SourceNodeTest extends TestCase {
 		}
 	}
 
+	/** Pin the worker's clock at $at, as each Router tick reads it. */
+	private static function at( float $at ): void {
+		Core::$now   = $at;
+		Core::$clock = static fn (): float => $at;
+	}
+
+	/** A fake source whose pass opens on $urls, answering each with $codes in turn. */
+	private function pass( Fake_Source_Node $node, array $urls, array $codes ): void {
+		$node->first = $urls;
+		$this->tick( $node );
+		foreach ( $urls as $i => $url ) {
+			$this->complete( $url, self::page( [] ), $codes[ $i ] );
+		}
+	}
+
+	/**
+	 * A pass any request of which answered publishes ok, at the clock its end
+	 * reads, with how many it sent and how many failed, under twice the
+	 * slowest source's interval.
+	 */
+	public function test_pass_with_an_answer_publishes_ok_with_its_counts(): void {
+		$memd = $this->publishing();
+		self::at( 5551.0 );
+		$urls = [ Fake_Source_Node::PAGE . '1', Fake_Source_Node::PAGE . '2', Fake_Source_Node::PAGE . '3' ];
+
+		$this->pass( $this->fake(), $urls, [ 200, 404, 200 ] );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'ok', 'last_ok_at' => 5551, 'failed' => 1, 'requests' => 3 ] ), $this->published( 'fake-source-12' ) );
+		$this->assertCount( 1, $memd->sets, 'one publish, at the pass end' );
+		$this->assertSame( 7200, $memd->sets[0]['ttl'] );
+	}
+
+	/** A pass no request of which answered publishes failing, with the last failure's text. */
+	public function test_pass_answering_nothing_publishes_failing_with_last_error(): void {
+		$this->publishing();
+		self::at( 5551.0 );
+
+		$this->pass( $this->fake(), [ 'https://example.test/news/', 'https://example.test/feed/' ], [ 404, 404 ] );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 404 https://example.test/feed/', 'failing_since' => 5551, 'failed' => 2, 'requests' => 2 ] ), $this->published( 'fake-source-12' ) );
+	}
+
+	/** A failing pass after a failing one keeps the first one's failing_since. */
+	public function test_failing_since_survives_a_second_failing_pass(): void {
+		$this->publishing();
+		$node = $this->fake();
+		self::at( 6000.0 );
+		$this->pass( $node, [ 'https://example.test/feed/' ], [ 503 ] );
+
+		self::at( 7800.0 );
+		$this->pass( $node, [ 'https://example.test/feed/' ], [ 404 ] );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 404 https://example.test/feed/', 'failing_since' => 6000, 'failed' => 1, 'requests' => 1 ] ), $this->published( 'fake-source-12' ) );
+	}
+
+	/** A respawned worker's first failing pass keeps the failing_since its predecessor published. */
+	public function test_failing_since_survives_a_worker_recycle(): void {
+		$memd = $this->publishing();
+		$memd->set( Source_Node::status_key( 'fake-source-12', self::PARTITION ), self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 500 https://example.test/old/', 'failing_since' => 4321, 'failed' => 3, 'requests' => 3 ] ), 60 );
+		self::at( 7800.0 );
+
+		$this->pass( $this->fake(), [ 'https://example.test/feed/' ], [ 404 ] );
+
+		$this->assertSame( 4321, $this->published( 'fake-source-12' )['failing_since'] );
+	}
+
+	/** A pass that answers after a failing one publishes ok, clearing the failure. */
+	public function test_recovery_publishes_ok(): void {
+		$this->publishing();
+		$node = $this->fake();
+		self::at( 6000.0 );
+		$this->pass( $node, [ 'https://example.test/feed/' ], [ 503 ] );
+
+		self::at( 7800.0 );
+		$this->pass( $node, [ 'https://example.test/feed/' ], [ 200 ] );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'ok', 'last_ok_at' => 7800, 'failed' => 0, 'requests' => 1 ] ), $this->published( 'fake-source-12' ) );
+	}
+
+	/** A body json_answer() reads an error off counts as a failed request, its error naming the url. */
+	public function test_json_error_counts_as_failed(): void {
+		$this->publishing();
+		self::at( 5551.0 );
+		$this->lend( 'heron-vault-7731', 'https://api.linear.app' );
+		$node = $this->credentialed( Linear_Source_Node::class, 'add_team', 'KESTREL' );
+		$this->tick( $node );
+
+		$this->complete( 'https://api.linear.app/graphql', '{"errors":[{"message":"bad"}]}' );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'Linear answered an error for https://api.linear.app/graphql: bad', 'failing_since' => 5551, 'failed' => 1, 'requests' => 1 ] ), $this->published( 'heron-source-31' ) );
+	}
+
+	/** An answer received() throws on counts as failed, its error naming the subject. */
+	public function test_an_answer_that_throws_counts_as_failed(): void {
+		$this->publishing();
+		self::at( 5551.0 );
+		$node                 = $this->fake();
+		$node->answer_failure = new \RuntimeException( 'page-broke-6620' );
+
+		$this->pass( $node, [ Fake_Source_Node::PAGE . '1' ], [ 200 ] );
+
+		$this->assertSame( 'failing', $this->published( 'fake-source-12' )['state'] );
+		$this->assertSame( 'an answer failed for ' . Fake_Source_Node::PAGE . '1: page-broke-6620', $this->published( 'fake-source-12' )['last_error'] );
+	}
+
+	/** A TM_ERROR's text reaches the status bare and terminal-safe, a control character scrubbed. */
+	public function test_a_tm_error_publishes_its_text_terminal_safe(): void {
+		$this->publishing();
+		$url  = 'https://example.test/x-7731';
+		$node = $this->fake( [ 'public' ], [ $url ] );
+		$this->tick( $node );
+		$raw                     = "HTTP 500\x1b[31m {$url}";
+		$error                   = Message::new_message();
+		$error[ Message::TYPE ]  = Message::TM_ERROR;
+		$error[ Message::KEY ]   = $url;
+		$error[ Message::VALUE ] = $raw;
+
+		$this->in_drain( static fn () => $node->fill( $error ) );
+
+		$published = $this->published( 'fake-source-12' )['last_error'];
+		$this->assertSame( Core::terminal_safe( $raw ), $published );
+		$this->assertStringNotContainsString( "\x1b", $published );
+	}
+
+	/** A failure's text is clipped to 500 bytes on a character boundary before it reaches the cache. */
+	public function test_a_long_error_is_clipped_on_a_character_boundary(): void {
+		$this->publishing();
+		$node                 = $this->fake();
+		$message              = 'a' . \str_repeat( 'é', 999 ) . 'z';
+		$node->answer_failure = new \RuntimeException( $message );
+
+		$this->pass( $node, [ Fake_Source_Node::PAGE . '1' ], [ 200 ] );
+
+		$full  = 'an answer failed for ' . Fake_Source_Node::PAGE . "1: {$message}";
+		$error = $this->published( 'fake-source-12' )['last_error'];
+		$this->assertSame( 2000, \strlen( $message ) );
+		$this->assertSame( \mb_strcut( $full, 0, 500, 'UTF-8' ), $error );
+		$this->assertLessThanOrEqual( 500, \strlen( $error ) );
+		$this->assertGreaterThanOrEqual( 499, \strlen( $error ) );
+		$this->assertTrue( \mb_check_encoding( $error, 'UTF-8' ) );
+	}
+
+	/** A scheduled pass that throws publishes failing with the throw's message. */
+	public function test_a_scheduled_pass_that_throws_publishes_failing(): void {
+		$this->publishing();
+		$node          = $this->scheduled();
+		$node->failure = new \RuntimeException( 'fetch-broke-8812' );
+
+		$this->tick_at( $node, self::BOUNDARY - 4.0 );
+		$this->tick_at( $node, self::BOUNDARY + 4.0 );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'fetch-broke-8812', 'failing_since' => self::BOUNDARY + 4, 'failed' => 0, 'requests' => 0 ] ), $this->published( 'fake-source-12' ) );
+	}
+
+	/**
+	 * A throw dropping what an earlier pass stranded in the queue publishes
+	 * this pass's counts, not the stranded pass's.
+	 */
+	public function test_a_throw_dropping_a_stranded_queue_publishes_this_passs_counts(): void {
+		$this->publishing();
+		$urls                       = [ 'https://heron-3301.example/a', 'https://kite-3302.example/b', 'https://wren-3303.example/c' ];
+		$node                       = $this->scheduled();
+		$node->first                = $urls;
+		$this->refusing[ $urls[1] ] = true;
+		$this->tick( $node );
+		try {
+			$this->complete( $urls[0], self::page( [] ) );
+			$this->fail( 'the next send threw nothing' );
+		} catch ( \RuntimeException $e ) {
+			$this->assertSame( "dispatch-down-5108 {$urls[1]}", $e->getMessage() );
+		}
+		$node->abandon_failure = new \RuntimeException( 'abandon-broke-6604' );
+
+		$this->tick_at( $node, self::BOUNDARY - 3.0 );
+		$this->tick_at( $node, self::BOUNDARY + 3.0 );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'abandon-broke-6604', 'failing_since' => self::BOUNDARY + 3, 'failed' => 0, 'requests' => 0 ] ), $this->published( 'fake-source-12' ) );
+	}
+
+	/** The credential gate publishes nothing and logs nothing: the request derives idle from the Vault. */
+	public function test_credential_gate_publishes_nothing_and_logs_nothing(): void {
+		$memd             = $this->publishing();
+		Core::$recent_log = [];
+		$node             = $this->credentialed( Linear_Source_Node::class, 'add_team', 'KESTREL' );
+
+		$this->tick( $node );
+
+		$this->assertSame( [ [ 'verb' => 'TICK', 'data' => [ 'fetching' => 0 ] ] ], $this->answers() );
+		$this->assertSame( [], $memd->sets );
+		$this->assertSame( [], Core::$recent_log );
+	}
+
+	/** Each class names the url its credential is lent on, with no instance; a source needing none names ''. */
+	public function test_credential_url_is_static_per_class(): void {
+		$this->assertSame( 'https://api.linear.app/graphql', Linear_Source_Node::credential_url() );
+		$this->assertSame( 'https://slack.com/api/', Slack_Source_Node::credential_url() );
+		$this->assertSame( 'https://public-api.wordpress.com/rest/v1.1/sites/', P2_Source_Node::credential_url() );
+		$this->assertSame( 'https://api.unthread.io/api/conversations/', Unthread_Source_Node::credential_url() );
+		$this->assertSame( '', Github_Source_Node::credential_url() );
+		$this->assertSame( '', Feed_Source_Node::credential_url() );
+	}
+
 	public function test_source_schema_declares_the_shared_tick_contract(): void {
 		$schema = Fake_Source_Node::node_schema();
 
@@ -929,6 +1131,9 @@ class Fake_Source_Node extends Source_Node {
 	/** What the next received() throws, once; null for none. */
 	public ?\Throwable $answer_failure = null;
 
+	/** What the next abandoned() throws, once; null for none. */
+	public ?\Throwable $abandon_failure = null;
+
 	/** Whether the next tick resumes a pass, off the grid, once. */
 	public bool $resumable = false;
 
@@ -945,6 +1150,14 @@ class Fake_Source_Node extends Source_Node {
 		}
 		foreach ( $this->subjects as $subject => $url ) {
 			$this->queue( $url, "body:{$subject}", $subject );
+		}
+	}
+
+	protected function abandoned( string $subject ): void {
+		$failure               = $this->abandon_failure;
+		$this->abandon_failure = null;
+		if ( null !== $failure ) {
+			throw $failure;
 		}
 	}
 

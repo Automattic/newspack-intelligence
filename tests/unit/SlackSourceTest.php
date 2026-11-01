@@ -351,6 +351,28 @@ final class SlackSourceTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, "slack: Slack's auth.test named no https workspace url: http://heron-4410.slack.com/" ) );
 	}
 
+	/** auth.test is no data: a pass whose every history fails publishes failing though auth.test answered. */
+	public function test_a_pass_whose_every_history_fails_publishes_failing(): void {
+		$this->publishing();
+		$this->authed( $this->slack( 'C0HERON11' ) );
+
+		$this->complete( self::history( 'C0HERON11' ), (string) \json_encode( [ 'ok' => false, 'error' => 'channel_not_found-7731' ] ) );
+
+		$status = $this->published( 'slack' );
+		$this->assertSame( [ 'failing', 1, 1, 'Slack answered an error for ' . self::history( 'C0HERON11' ) . ': channel_not_found-7731' ], [ $status['state'], $status['requests'], $status['failed'], $status['last_error'] ] );
+	}
+
+	/** An auth.test naming no https url counts in the pass as failed. */
+	public function test_a_workspace_url_that_is_not_https_counts_as_failed(): void {
+		$this->publishing();
+		$this->tick( $this->slack( 'C0HERON11' ) );
+
+		$this->complete( self::AUTH, self::ok( [ 'url' => 'http://heron-4410.slack.com/' ] ) );
+		$this->complete( self::history( 'C0HERON11' ), self::ok( [ 'messages' => [] ] ) );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'ok', 'last_ok_at' => (int) self::NOW, 'failed' => 1, 'requests' => 2 ] ), $this->published( 'slack' ) );
+	}
+
 	/** A channel is refused unless it is a Slack channel id, naming the value; nothing is added. */
 	public function test_add_channel_refuses_anything_but_a_channel_id(): void {
 		$node = new Slack_Source_Node();

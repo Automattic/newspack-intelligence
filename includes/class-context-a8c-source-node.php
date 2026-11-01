@@ -57,6 +57,9 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	/** The subject of the DELETE closing a pass's session. */
 	private const CLOSE = 'mcp/session/close';
 
+	/** Only a call fetches data; the refresh and the session's requests do not. */
+	protected const PROTOCOL_SUBJECTS = [ self::TOKEN_URL, self::INITIALIZE, self::INITIALIZED, self::CLOSE ];
+
 	/** The response header naming the session, which every later request sends. */
 	private const SESSION_HEADER = 'Mcp-Session-Id';
 
@@ -88,7 +91,8 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	 * Open a pass under the held token, or refresh it first when it is due:
 	 * a token another refresh is landing waits, and a missing token, one the
 	 * endpoint refused, one with no refresh token or a lock that will not
-	 * hold is logged and the pass sends nothing.
+	 * hold is logged and the pass sends nothing, the first three publishing
+	 * idle.
 	 */
 	protected function begin(): void {
 		$this->session  = '';
@@ -96,6 +100,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 		$held           = Context_A8C_Token::held( $this->auth_dir );
 		if ( null === $held ) {
 			$this->print_less_often( 'no readable ContextA8C token: ', Context_A8C_Token::pattern( $this->auth_dir ) );
+			$this->idle( 'not signed in to ContextA8C: no token file; sign in to ContextA8C on the host' );
 			return;
 		}
 		if ( ! Context_A8C_Token::due( $this->auth_dir, Core::$now, self::EXPIRY_MARGIN ) ) {
@@ -107,7 +112,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 			Context_A8C_Token::REFRESH       => $this->queue( self::TOKEN_URL, '', self::TOKEN_URL ),
 			Context_A8C_Token::WAIT          => $this->waiting = true,
 			Context_A8C_Token::REFUSED       => $this->refused( Context_A8C_Token::refused_status( $this->auth_dir ) ),
-			Context_A8C_Token::UNREFRESHABLE => $this->print_less_often( 'the ContextA8C token has expired and holds no refresh token; sign in to ContextA8C on the host: ', $held['path'] ),
+			Context_A8C_Token::UNREFRESHABLE => $this->unrefreshable( $held['path'] ),
 			default                          => $this->print_less_often( 'could not lock the ContextA8C token: ', $held['path'] ),
 		};
 	}
@@ -158,7 +163,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	private function refreshed( string $body ): void {
 		[ $landed, $written ] = Context_A8C_Token::landed( $this->auth_dir, $body, Core::$now );
 		if ( ! $landed ) {
-			$this->print_less_often( 'the token endpoint answered no access token: ', self::TOKEN_URL );
+			$this->fails( 'the token endpoint answered no access token: ', self::TOKEN_URL );
 			return;
 		}
 		if ( ! $written ) {
@@ -198,7 +203,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 			return;
 		}
 		if ( '' === $this->session ) {
-			$this->print_less_often( 'ContextA8C answered initialize with no Mcp-Session-Id: ', self::INITIALIZE );
+			$this->fails( 'ContextA8C answered initialize with no Mcp-Session-Id: ', self::MCP_URL );
 			return;
 		}
 		$this->revision = Core::as_string( Core::arr( $answer['result'] ?? null )['protocolVersion'] ?? null );
@@ -308,9 +313,16 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 		$this->print_less_often( 'ContextA8C refused the session; initializing again next pass: ', Core::terminal_safe( $error ) );
 	}
 
-	/** Log a refresh the endpoint refused, once a window whatever its status. */
+	/** Log and publish idle for a refresh the endpoint refused, logged once a window whatever its status. */
 	private function refused( int $status ): void {
 		$this->print_less_often( 'ContextA8C refresh refused ', "(HTTP {$status}): sign in to ContextA8C again on the host" );
+		$this->idle( "not signed in to ContextA8C: the refresh was refused (HTTP {$status}); sign in to ContextA8C again on the host" );
+	}
+
+	/** Log and publish idle for an expired token holding no refresh token. */
+	private function unrefreshable( string $path ): void {
+		$this->print_less_often( 'the ContextA8C token has expired and holds no refresh token; sign in to ContextA8C on the host: ', $path );
+		$this->idle( 'not signed in to ContextA8C: the token has expired and holds no refresh token; sign in to ContextA8C on the host' );
 	}
 
 	/** Resume, once, the pass another node's refresh held back. */

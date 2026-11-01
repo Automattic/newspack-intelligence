@@ -26,6 +26,9 @@ class Slack_Source_Node extends Source_Node {
 
 	private const API = 'https://slack.com/api/';
 
+	/** auth.test names the workspace, not data. */
+	protected const PROTOCOL_SUBJECTS = [ self::API . 'auth.test' ];
+
 	/** Messages a page asks for. */
 	private const PAGE = 200;
 
@@ -70,7 +73,7 @@ class Slack_Source_Node extends Source_Node {
 			if ( 'https' === \wp_parse_url( $workspace, \PHP_URL_SCHEME ) && '' !== Core::as_string( \wp_parse_url( $workspace, \PHP_URL_HOST ) ) ) {
 				$this->workspace = \trailingslashit( $workspace );
 			} else {
-				$this->print_less_often( "Slack's auth.test named no https workspace url: ", Core::terminal_safe( $workspace ) );
+				$this->fails( "Slack's auth.test named no https workspace url: ", $workspace );
 			}
 			return [];
 		}
@@ -181,7 +184,7 @@ class Slack_Source_Node extends Source_Node {
 	}
 
 	/** Slack answers nothing without a credential, so a pass waits for one. */
-	protected function credential_url(): string {
+	public static function credential_url(): string {
 		return self::API;
 	}
 

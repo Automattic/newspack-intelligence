@@ -18,6 +18,7 @@ use Newspack_Nodes\Message;
 use Newspack_Nodes\Node_Names;
 use Newspack_Nodes\Router_Node;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
+use Newspack_Nodes\Tests\Helpers\InMemoryMemcached;
 use Newspack_Nodes\Vault;
 
 trait Drives_Curl {
@@ -27,6 +28,9 @@ trait Drives_Curl {
 
 	/** Who asks for a TICK, and hears its answer. */
 	public const ASKER = 'asker-5513';
+
+	/** The worker partition a source publishes its status from. */
+	public const PARTITION = 6;
 
 	private Capture_Sink_Node $writer;
 
@@ -141,6 +145,43 @@ trait Drives_Curl {
 		$node->sink( \Newspack_Nodes\Core::node( Node_Names::COMMAND_INTERPRETER ) );
 		$node->target( self::WRITER );
 		return $node;
+	}
+
+	/**
+	 * Bind a worker partition and a shared cache, as a worker runs, so a
+	 * source publishes its status.
+	 */
+	private function publishing(): InMemoryMemcached {
+		$memd                                    = new InMemoryMemcached();
+		\Newspack_Nodes\Core::$memd             = $memd;
+		\Newspack_Nodes\Core::$var['partition'] = (string) self::PARTITION;
+		return $memd;
+	}
+
+	/**
+	 * The status a source published, its keys sorted.
+	 *
+	 * @return array<array-key,mixed>|null
+	 */
+	private function published( string $name ): ?array {
+		$status = Source_Node::read_status( $name, self::PARTITION );
+		if ( null !== $status ) {
+			\ksort( $status );
+		}
+		return $status;
+	}
+
+	/**
+	 * A status snapshot as a source writes it, every key it can carry named,
+	 * those $fields leaves out null, its keys sorted.
+	 *
+	 * @param array<string,mixed> $fields The keys the state carries.
+	 * @return array<string,mixed>
+	 */
+	private static function snapshot( array $fields ): array {
+		$status = [ ...Source_Node::BLANK_STATUS, ...$fields ];
+		\ksort( $status );
+		return $status;
 	}
 
 	/** Ask the source for a request inside a drain, as the asker. */

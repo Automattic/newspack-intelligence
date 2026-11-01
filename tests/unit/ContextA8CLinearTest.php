@@ -228,7 +228,7 @@ final class ContextA8CLinearTest extends TestCase {
 		$this->complete( self::MCP, '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26"}}' );
 
 		$this->assertSame( [ 'initialize' ], $this->methods() );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: ContextA8C answered initialize with no Mcp-Session-Id: mcp/initialize' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: ContextA8C answered initialize with no Mcp-Session-Id: ' . self::MCP ) );
 	}
 
 	/** An expiring token is refreshed, then the session opens, then the calls go out. */
@@ -584,6 +584,173 @@ final class ContextA8CLinearTest extends TestCase {
 
 		$this->assertSame( [], $this->dispatched );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: no readable ContextA8C token: ' . $this->auth_dir . '/wordpress-remote-*/' . \md5( self::MCP ) . '_tokens.json' ) );
+	}
+
+	/**
+	 * The idle snapshot a pass published, its reason checked to name the
+	 * cause, every other key but the state null.
+	 */
+	private function assert_idle( string $reason, string $name = 'linear' ): void {
+		$status = $this->published( $name );
+		$this->assertIsArray( $status );
+		$this->assertStringContainsString( $reason, (string) $status['reason'] );
+		$this->assertSame( self::snapshot( [ 'state' => 'idle', 'reason' => $status['reason'] ] ), $status );
+	}
+
+	/** No token file publishes idle, saying ContextA8C is not signed in. */
+	public function test_missing_token_publishes_idle_with_sign_in_reason(): void {
+		$this->publishing();
+
+		$this->tick( $this->linear( 'KESTREL' ) );
+
+		$this->assert_idle( 'not signed in to ContextA8C' );
+	}
+
+	/** An expired token with no refresh token publishes idle, naming why it cannot refresh. */
+	public function test_an_unrefreshable_token_publishes_idle(): void {
+		$this->publishing();
+		$this->seed_token( '0.5.4', [ 'access_token' => self::ACCESS, 'expires_in' => 3599, 'obtained_at' => (int) ( ( self::NOW - 7200 ) * 1000 ) ] );
+
+		$this->tick( $this->linear( 'KESTREL' ) );
+
+		$this->assert_idle( 'not signed in to ContextA8C: the token has expired and holds no refresh token' );
+	}
+
+	/** A refresh the endpoint refuses publishes idle, and the pass's end leaves it standing. */
+	public function test_a_refused_refresh_publishes_idle_not_failing(): void {
+		$this->publishing();
+		$this->signed_in( 4000 );
+
+		$this->tick( $this->linear( 'KESTREL' ) );
+		$this->complete( self::TOKEN, '', 400 );
+
+		$this->assert_idle( 'not signed in to ContextA8C: the refresh was refused (HTTP 400)' );
+	}
+
+	/** A refusal standing when another node's pass opens publishes idle for it too. */
+	public function test_a_refusal_standing_at_the_next_pass_publishes_idle(): void {
+		$this->publishing();
+		$this->signed_in( 4000 );
+		$this->tick( $this->linear( 'KESTREL' ) );
+		$this->complete( self::TOKEN, '', 401 );
+		$other = $this->wire( new Context_A8C_Linear_Node(), 'linear-wren-41', [ 'internal', $this->auth_dir, self::PROXY ] );
+		$other->interpreter()->dispatch( 'add_team', [ 'WREN9' ] );
+
+		$this->tick( $other );
+
+		$this->assert_idle( 'not signed in to ContextA8C: the refresh was refused (HTTP 401)', 'linear-wren-41' );
+	}
+
+	/**
+	 * A pass publishes once, when the DELETE closing its session lands,
+	 * counting the close among its requests.
+	 */
+	public function test_a_pass_publishes_once_when_its_session_closes(): void {
+		$memd = $this->publishing();
+		$this->signed_in();
+		$this->tick( $this->linear( 'KESTREL' ) );
+		$this->initialized();
+		$this->answer( [ 'groups' => [] ] );
+		$this->assertSame( [], $memd->sets, 'the close is still in flight' );
+
+		$this->ended();
+
+		$this->assertSame( self::snapshot( [ 'state' => 'ok', 'last_ok_at' => (int) self::NOW, 'failed' => 0, 'requests' => 1 ] ), $this->published( 'linear' ) );
+		$this->assertCount( 1, $memd->sets );
+	}
+
+	/**
+	 * Seed the status a previous process published, then run a pass that
+	 * makes no call, its session opened and closed.
+	 *
+	 * @param array<string,mixed> $seeded The snapshot already published.
+	 */
+	private function quiet_pass_over( array $seeded ): void {
+		$memd = $this->publishing();
+		$memd->set( \Newspack_Intelligence\Source_Node::status_key( 'linear', self::PARTITION ), $seeded, 60 );
+		$this->signed_in();
+		$this->tick( $this->linear() );
+		$this->initialized();
+
+		$this->ended();
+
+		$this->assertSame( [ 'initialize', 'notifications/initialized', 'DELETE' ], $this->methods() );
+	}
+
+	/** A quiet pass, no data asked and nothing failed, is healthy: it publishes ok over a standing failure. */
+	public function test_a_pass_with_no_call_publishes_ok_over_a_failure(): void {
+		$this->quiet_pass_over( self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 503 https://heron-8812.example/', 'failing_since' => 4242, 'failed' => 7, 'requests' => 7 ] ) );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'ok', 'last_ok_at' => (int) self::NOW, 'failed' => 0, 'requests' => 0 ] ), $this->published( 'linear' ) );
+	}
+
+	/** A quiet pass after the operator signs in clears the standing "not signed in". */
+	public function test_a_pass_with_no_call_publishes_ok_over_idle(): void {
+		$this->quiet_pass_over( self::snapshot( [ 'state' => 'idle', 'reason' => 'not signed in to ContextA8C: no token file-6617' ] ) );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'ok', 'last_ok_at' => (int) self::NOW, 'failed' => 0, 'requests' => 0 ] ), $this->published( 'linear' ) );
+	}
+
+	/** A close that fails counts in the pass it closes, as failed. */
+	public function test_a_failed_close_counts_in_its_pass(): void {
+		$this->publishing();
+		$this->signed_in();
+		$this->tick( $this->linear( 'KESTREL' ) );
+		$this->initialized();
+		$this->answer( [ 'groups' => [] ] );
+
+		$this->complete( self::MCP, '', 502 );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'ok', 'last_ok_at' => (int) self::NOW, 'failed' => 1, 'requests' => 2 ] ), $this->published( 'linear' ) );
+	}
+
+	/** Only a call fetches data: a pass whose every call fails publishes failing though its session opened and closed. */
+	public function test_pass_whose_every_tool_call_fails_publishes_failing(): void {
+		$this->publishing();
+		$this->signed_in();
+		$this->tick( $this->linear( 'KESTREL', 'WREN9' ) );
+		$this->initialized();
+		$error = '{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"Access forbidden-3381"}],"isError":true}}';
+		$this->complete( self::MCP, $error );
+		$this->complete( self::MCP, $error );
+
+		$this->ended();
+
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'ContextA8C answered an error for linear/team-issues?team=WREN9&limit=30: Access forbidden-3381', 'failing_since' => (int) self::NOW, 'failed' => 2, 'requests' => 2 ] ), $this->published( 'linear' ) );
+	}
+
+	/** A token refused after the session opened publishes failing: the opening answers fetched no data. */
+	public function test_a_401_after_initialize_publishes_failing(): void {
+		$this->publishing();
+		$this->signed_in();
+		$this->tick( $this->linear( 'KESTREL' ) );
+		$this->initialized();
+
+		$this->complete( self::MCP, '', 401 );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 401 ' . self::MCP, 'failing_since' => (int) self::NOW, 'failed' => 1, 'requests' => 1 ] ), $this->published( 'linear' ) );
+	}
+
+	/** A refresh answered 200 with no access token counts as failed, so the pass publishes failing. */
+	public function test_a_refresh_answering_no_access_token_publishes_failing(): void {
+		$this->publishing();
+		$this->signed_in( 4000 );
+		$this->tick( $this->linear( 'KESTREL' ) );
+
+		$this->complete( self::TOKEN, '{"token_type":"bearer-6620"}' );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'the token endpoint answered no access token: ' . self::TOKEN, 'failing_since' => (int) self::NOW, 'failed' => 1, 'requests' => 1 ] ), $this->published( 'linear' ) );
+	}
+
+	/** An `initialize` naming no session counts as failed, so the pass publishes failing. */
+	public function test_an_initialize_naming_no_session_publishes_failing(): void {
+		$this->publishing();
+		$this->signed_in();
+		$this->tick( $this->linear( 'KESTREL' ) );
+
+		$this->complete( self::MCP, '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26"}}' );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'ContextA8C answered initialize with no Mcp-Session-Id: ' . self::MCP, 'failing_since' => (int) self::NOW, 'failed' => 1, 'requests' => 1 ] ), $this->published( 'linear' ) );
 	}
 
 	/** A token file that is not JSON counts as none. */

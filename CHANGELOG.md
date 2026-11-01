@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Each source publishes how its last pass went** to the shared cache, under its name and worker partition, for `Source_Node::read_status()` to read: `ok` with when it last answered and how many of its requests failed, `failing` with the last error, cut to 500 bytes, and since when, or, for the ContextA8C sources, `idle` with a reason opening `not signed in to ContextA8C` for a missing token, an expired one holding no refresh token, or a refused refresh. A source with nothing to ask, or whose every request succeeded, reads `ok`; one with no Vault entry still publishes nothing and logs nothing.
+- **`Source_Node::fails( $prefix, $detail )`** logs a failure, rate-limited under its prefix, and counts the answer being taken as failed with the same text.
+
+### Changed
+- **Answers that fetched nothing count as failed, not answered,** so a pass that fetched nothing no longer reads `ok`: a JSON body carrying an error, a feed body that is no RSS or Atom feed (an HTML page at `/feed/` included), a ContextA8C refresh naming no access token or `initialize` naming no session, a Slack `auth.test` naming no https url, and a redirect not followed. A request that only opens or closes a pass, as a ContextA8C session's or Slack's `auth.test`, counts only when it fails.
+- **Two log lines name the url:** a feed body that is no RSS or Atom feed logs `no RSS or Atom feed at <url>`, where one that would not parse logged `Feed parse failed`, and ContextA8C's `initialize` naming no session logs the MCP url rather than its subject.
+- **`Source_Node::credential_url()` is static and public,** so a reader asks a source's credential url of its class with no instance.
+
 ## [0.29.1] - 2026-10-31
 
 ### Changed

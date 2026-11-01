@@ -184,6 +184,75 @@ XML;
 		$this->assertSame( [], $this->recorded() );
 	}
 
+	/** A pass some feeds of which answered 404 is ok, counting them. */
+	public function test_partly_failing_feed_pass_is_ok_with_count(): void {
+		$this->publishing();
+		Core::$now   = 6262.0;
+		Core::$clock = static fn (): float => 6262.0;
+		$urls        = \array_map( static fn ( int $i ): string => "https://outlet-{$i}.example/feed/", \range( 1, 5 ) );
+		$node        = $this->feed( ...$urls );
+		$this->tick( $node );
+
+		foreach ( $urls as $i => $url ) {
+			$this->complete( $url, 1 === $i % 2 ? '' : self::RSS, 1 === $i % 2 ? 404 : 200 );
+		}
+
+		$this->assertSame( self::snapshot( [ 'state' => 'ok', 'last_ok_at' => 6262, 'failed' => 2, 'requests' => 5 ] ), $this->published( 'feed' ) );
+	}
+
+	/** A redirect is a hop, not an answer: a feed moved to a 404 publishes failing, its one request counted once. */
+	public function test_a_redirect_to_a_404_publishes_failing(): void {
+		$this->publishing();
+		Core::$now   = 6262.0;
+		Core::$clock = static fn (): float => 6262.0;
+		$node        = $this->feed( 'https://moved-7720.example/feed/' );
+		$this->tick( $node );
+
+		$this->redirect( 'https://moved-7720.example/feed/', 'https://moved-7721.example/feed/' );
+		$this->complete( 'https://moved-7721.example/feed/', '', 404 );
+
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 404 https://moved-7721.example/feed/', 'failing_since' => 6262, 'failed' => 1, 'requests' => 1 ] ), $this->published( 'feed' ) );
+	}
+
+	/** A redirect not followed records nothing, so its request counts as failed, naming why. */
+	public function test_a_redirect_past_five_hops_counts_as_failed(): void {
+		$this->publishing();
+		$node = $this->feed( 'https://hop-0.example/feed/' );
+		$this->tick( $node );
+
+		for ( $hop = 0; $hop <= Curl_Node::MAX_REDIRECTS; $hop++ ) {
+			$this->redirect( "https://hop-{$hop}.example/feed/", 'https://hop-' . ( $hop + 1 ) . '.example/feed/' );
+		}
+
+		$status = $this->published( 'feed' );
+		$this->assertSame( [ 'failing', 1, 1, 'a request redirected past 5 hops; recording nothing: https://hop-6.example/feed/' ], [ $status['state'], $status['requests'], $status['failed'], $status['last_error'] ] );
+	}
+
+	/**
+	 * A body that is no RSS or Atom feed, malformed or another document,
+	 * counts as a failed answer naming its url.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public static function bodies_that_are_no_feed(): array {
+		return [
+			'malformed' => [ '<rss><this is not xml' ],
+			'html'      => [ '<html>not-a-feed-4471</html>' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bodies_that_are_no_feed' )]
+	public function test_a_body_that_is_no_feed_counts_as_failed( string $body ): void {
+		$this->publishing();
+		$node = $this->feed( 'https://heron-4471.example/feed/' );
+		$this->tick( $node );
+
+		$this->complete( 'https://heron-4471.example/feed/', $body );
+
+		$status = $this->published( 'feed' );
+		$this->assertSame( [ 'failing', 1, 1, 'no RSS or Atom feed at https://heron-4471.example/feed/' ], [ $status['state'], $status['requests'], $status['failed'], $status['last_error'] ] );
+	}
+
 	public function test_malformed_xml_contributes_nothing(): void {
 		$this->assertSame( [], $this->items_from( '<rss><this is not xml' ) );
 	}

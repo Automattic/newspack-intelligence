@@ -25,6 +25,7 @@ use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Node;
+use Newspack_Nodes\Publishes_Status;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Schema_Reflection;
 use Newspack_Nodes\Timer_Node;
@@ -35,6 +36,7 @@ use Newspack_Nodes\Worker_Should_Stop;
 abstract class Source_Node extends Timer_Node {
 	use Schema_Reflection;
 	use Emits_Struct;
+	use Publishes_Status;
 
 	/** Requests an API source sends in one pass; the next is dropped, logged. */
 	public const MAX_REQUESTS_PER_PASS = 60;
@@ -57,6 +59,28 @@ abstract class Source_Node extends Timer_Node {
 
 	/** Cap on the remembered recorded-key set — bounds memory on a long-lived worker. */
 	private const MAX_SEEN = 2000;
+
+	/**
+	 * The subjects of the requests that open or close a pass rather than
+	 * fetch its data, which count in it only when they fail.
+	 *
+	 * @var list<string>
+	 */
+	protected const PROTOCOL_SUBJECTS = [];
+
+	/** Bytes of a failure's text a status keeps, cut on a character boundary. */
+	private const MAX_ERROR_BYTES = 500;
+
+	/** Every key a status carries, null, so each publish clears what its state leaves out. */
+	public const BLANK_STATUS = [
+		'state'         => null,
+		'last_ok_at'    => null,
+		'last_error'    => null,
+		'failing_since' => null,
+		'failed'        => null,
+		'requests'      => null,
+		'reason'        => null,
+	];
 
 	/** @var array<string,bool> Recorded item keys and keys refused for their size (insertion-ordered), for cross-tick dedup. */
 	protected array $seen = [];
@@ -84,6 +108,21 @@ abstract class Source_Node extends Timer_Node {
 
 	/** Requests this pass has sent. */
 	private int $sent = 0;
+
+	/** Answers this pass has taken. */
+	private int $requests = 0;
+
+	/** Answers this pass has taken that failed. */
+	private int $failed = 0;
+
+	/** The text of this pass's last failed answer; '' for none. */
+	private string $last_error = '';
+
+	/** The failure the answer being taken carries; null while it carries none. */
+	private ?string $fault = null;
+
+	/** Whether this pass published idle, which its end leaves standing. */
+	private bool $idled = false;
 
 	/** True while send() runs; an answer arriving inside it does not re-enter. */
 	private bool $sending = false;
@@ -141,8 +180,8 @@ abstract class Source_Node extends Timer_Node {
 	 * On the Router's tick, fetch when the clock has crossed a multiple of
 	 * the interval since this process's last tick; its first tick only
 	 * marks the clock, so a respawned worker waits for the next boundary. A
-	 * fetch that fails is logged and the next boundary tries again; a
-	 * cooperative stop propagates (substrate ADR-14).
+	 * fetch that fails is logged and published failing, and the next boundary
+	 * tries again; a cooperative stop propagates (substrate ADR-14).
 	 *
 	 * @api Used by substrate.
 	 * @throws Worker_Should_Stop When the worker is asked to stop.
@@ -162,6 +201,7 @@ abstract class Source_Node extends Timer_Node {
 			throw $stop;
 		} catch ( \Throwable $e ) {
 			$this->print_less_often( 'a scheduled fetch failed; trying again at the next boundary: ', $e->getMessage() );
+			$this->publish_failing( $e->getMessage() );
 		}
 	}
 
@@ -169,18 +209,22 @@ abstract class Source_Node extends Timer_Node {
 	 * Start a pass, which a TICK request and the grid both call, unless
 	 * requests are in flight or the source needs a credential its vault
 	 * group lends none on credential_url()'s origin, when it sits idle
-	 * silently until the entry exists: queue the source's opening requests,
-	 * replacing what a throw left queued, and send.
+	 * silently, publishing nothing, until the entry exists: queue the
+	 * source's opening requests, replacing what a throw left queued, and send.
 	 *
 	 * @return array{fetching:int} How many requests the pass opens on, 0 when one is still in flight or no credential is lent.
 	 */
 	protected function tick(): array {
-		$credential = $this->credential_url();
+		$credential = static::credential_url();
 		if ( [] !== $this->in_flight || ( '' !== $credential && ! $this->curl->lends_credential( $credential ) ) ) {
 			return [ 'fetching' => 0 ];
 		}
+		$this->sent       = 0;
+		$this->requests   = 0;
+		$this->failed     = 0;
+		$this->last_error = '';
+		$this->idled      = false;
 		$this->drop_queue();
-		$this->sent = 0;
 		$this->begin();
 		$fetching = \count( $this->queue );
 		$this->send();
@@ -190,9 +234,10 @@ abstract class Source_Node extends Timer_Node {
 	/**
 	 * A url on the origin whose credential the source cannot fetch without,
 	 * which its vault group must hold an entry for before a pass sends
-	 * anything; '' for a source that needs none.
+	 * anything; '' for a source that needs none. A fact of the class, so a
+	 * reader asks it with no instance.
 	 */
-	protected function credential_url(): string {
+	public static function credential_url(): string {
 		return '';
 	}
 
@@ -207,8 +252,10 @@ abstract class Source_Node extends Timer_Node {
 	 * branch. Once nothing is queued or in flight, pass_ended() runs, and
 	 * anything it queues goes out. An answer that
 	 * throws is logged naming its subject; a cooperative stop propagates
-	 * (substrate ADR-14). The next request goes out whatever happened, so a
-	 * pass always ends. An answer for no request in flight is dropped.
+	 * (substrate ADR-14). Each answer counts toward the pass, failed or
+	 * answered, but a redirect hop and a protocol request that did not fail.
+	 * The next request goes out whatever happened, so a pass always ends. An
+	 * answer for no request in flight is dropped.
 	 *
 	 * @param array<int,mixed> $message The body as TM_BYTESTREAM, the Location as TM_RESPONSE, or the TM_ERROR, KEY the subject.
 	 * @throws Worker_Should_Stop When the worker is asked to stop.
@@ -221,6 +268,8 @@ abstract class Source_Node extends Timer_Node {
 			return;
 		}
 		unset( $this->in_flight[ $key ] );
+		$this->fault = null;
+		$hop         = false;
 		try {
 			$type  = Core::as_int( $message[ Message::TYPE ] );
 			$value = $message[ Message::VALUE ];
@@ -235,23 +284,87 @@ abstract class Source_Node extends Timer_Node {
 			}
 			$value = Core::as_string( $value );
 			if ( 0 !== ( $type & Message::TM_ERROR ) ) {
-				$this->print_less_often( 'a fetch failed for ' . Core::terminal_safe( $key ) . ': ', Core::terminal_safe( $value ) );
+				$this->fault = Core::terminal_safe( $value );
+				// Curl's text names the url, so the status takes it bare.
+				$this->print_less_often( 'a fetch failed for ' . Core::terminal_safe( $key ) . ': ', $this->fault );
 				$this->failed( $key, $value );
 			} elseif ( 0 !== ( $type & Message::TM_RESPONSE ) ) {
-				$this->redirect( $key, $request, $value );
+				$hop = $this->redirect( $key, $request, $value );
 			} else {
 				$this->record( $this->received( $key, $value ) );
 			}
 		} catch ( Worker_Should_Stop $stop ) {
 			throw $stop;
 		} catch ( \Throwable $e ) {
-			$this->print_less_often( 'an answer failed for ' . Core::terminal_safe( $key ) . ': ', $e->getMessage() );
+			$this->fails( 'an answer failed for ' . Core::terminal_safe( $key ) . ': ', $e->getMessage() );
 		} finally {
+			if ( null !== $this->fault ) {
+				++$this->requests;
+				++$this->failed;
+				$this->last_error = $this->fault;
+			} elseif ( ! $hop && ! \in_array( $key, static::PROTOCOL_SUBJECTS, true ) ) {
+				++$this->requests;
+			}
 			$this->send();
 			if ( [] === $this->queue && [] === $this->in_flight ) {
-				$this->pass_ended();
+				$this->close_pass();
 			}
 		}
+	}
+
+	/**
+	 * End the pass through pass_ended(), then publish how it went, unless a
+	 * closing request it sent is still to answer, whose answer ends it.
+	 */
+	private function close_pass(): void {
+		try {
+			$this->pass_ended();
+		} finally {
+			if ( [] === $this->in_flight ) {
+				$this->publish_pass();
+			}
+		}
+	}
+
+	/**
+	 * Publish the pass: ok when it counted no answer, a quiet pass being
+	 * healthy, or any answer did not fail, else failing with the last
+	 * failure's text; a pass that published idle publishes nothing.
+	 */
+	private function publish_pass(): void {
+		if ( $this->idled ) {
+			return;
+		}
+		if ( 0 === $this->requests || $this->failed < $this->requests ) {
+			$this->publish_snapshot(
+				[
+					'state'      => 'ok',
+					'last_ok_at' => (int) Core::$now,
+					'failed'     => $this->failed,
+					'requests'   => $this->requests,
+				]
+			);
+			return;
+		}
+		$this->publish_failing( $this->last_error );
+	}
+
+	/**
+	 * Publish failing with $error cut to MAX_ERROR_BYTES, since the
+	 * failing_since already published while the state stays failing, a
+	 * recycled worker's included.
+	 */
+	private function publish_failing( string $error ): void {
+		$last = $this->last_status();
+		$this->publish_snapshot(
+			[
+				'state'         => 'failing',
+				'last_error'    => \mb_strcut( $error, 0, self::MAX_ERROR_BYTES, 'UTF-8' ),
+				'failing_since' => 'failing' === ( $last['state'] ?? null ) ? Core::as_int( $last['failing_since'] ) : (int) Core::$now,
+				'failed'        => $this->failed,
+				'requests'      => $this->requests,
+			]
+		);
 	}
 
 	/**
@@ -411,25 +524,27 @@ abstract class Source_Node extends Timer_Node {
 	 * hop on, unless that would pass Curl_Node::MAX_REDIRECTS, or the request
 	 * carries header lines of its own or a method other than GET, which the
 	 * re-queue would carry to another url past Curl's own redirect guard;
-	 * either is logged and records nothing. Only a source whose Curl follows
-	 * no redirect receives one.
+	 * either is logged, records nothing and fails(). Only a source whose
+	 * Curl follows no redirect receives one.
 	 *
 	 * @param string                                $key      The request's subject.
 	 * @param array{0:string,1:string|null,2:int} $request  The request redirected.
 	 * @param string                                $location The absolute Location.
+	 * @return bool Whether it re-queued the request.
 	 */
-	private function redirect( string $key, array $request, string $location ): void {
+	private function redirect( string $key, array $request, string $location ): bool {
 		[ , $body, $hops ] = $request;
 		$options           = $this->request_options( $key );
 		if ( null !== $body || [] !== Core::arr( $options['headers'] ?? null ) || 'GET' !== ( $options['method'] ?? 'GET' ) ) {
-			$this->print_less_often( 'a redirect of a request carrying its own headers or a method other than GET is not followed; recording nothing: ', Core::terminal_safe( $location ) );
-			return;
+			$this->fails( 'a redirect of a request carrying its own headers or a method other than GET is not followed; recording nothing: ', $location );
+			return false;
 		}
 		if ( $hops >= Curl_Node::MAX_REDIRECTS ) {
-			$this->print_less_often( 'a request redirected past ' . Curl_Node::MAX_REDIRECTS . ' hops; recording nothing: ', Core::terminal_safe( $location ) );
-			return;
+			$this->fails( 'a request redirected past ' . Curl_Node::MAX_REDIRECTS . ' hops; recording nothing: ', $location );
+			return false;
 		}
 		$this->queue[ $key ] = [ $location, $body, $hops + 1 ];
+		return true;
 	}
 
 	/**
@@ -580,9 +695,35 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
+	 * Publish that the source cannot fetch, and why, which the pass's end
+	 * leaves standing.
+	 *
+	 * @param string $reason The cause and its fix, as a reader acts on it.
+	 */
+	protected function idle( string $reason ): void {
+		$this->idled = true;
+		$this->publish_snapshot(
+			[
+				'state'  => 'idle',
+				'reason' => $reason,
+			]
+		);
+	}
+
+	/**
+	 * Publish a status of every key, those $fields leaves out null.
+	 *
+	 * @param array<string,mixed> $fields The keys the state carries.
+	 */
+	private function publish_snapshot( array $fields ): void {
+		$this->publish_status( [ ...self::BLANK_STATUS, ...$fields ] );
+	}
+
+	/**
 	 * A JSON answer, decoded, or null when it holds nothing to record: a
 	 * body that is no JSON object or list, or one $error reads an error off,
-	 * logged under the request's url so each failing request shows.
+	 * logged under the request's url so each failing request shows, which
+	 * fails().
 	 *
 	 * @param string                                  $api   The service, as the line names it.
 	 * @param string                                  $url   The request's url.
@@ -599,8 +740,41 @@ abstract class Source_Node extends Timer_Node {
 				return $answer;
 			}
 		}
-		$this->print_less_often( "{$api} answered an error for " . Core::terminal_safe( $url ) . ': ', Core::terminal_safe( $fault ) );
+		$this->fails( "{$api} answered an error for " . Core::terminal_safe( $url ) . ': ', $fault );
 		return null;
+	}
+
+	/**
+	 * Log a failure of the answer being taken, rate-limited under $prefix,
+	 * and count the answer as failed with the same text: what a source calls
+	 * for an answer it drops whole.
+	 *
+	 * @param string $prefix What failed, naming the request's url, terminal-safe.
+	 * @param string $detail Why, made terminal-safe here.
+	 */
+	protected function fails( string $prefix, string $detail ): void {
+		$detail = Core::terminal_safe( $detail );
+		$this->print_less_often( $prefix, $detail );
+		$this->fault = $prefix . $detail;
+	}
+
+	/**
+	 * Seconds the cache keeps a status: twice the slowest source's interval,
+	 * `news`'s 3,600.
+	 *
+	 * @api Used by substrate.
+	 */
+	protected function status_ttl(): int {
+		return 7200;
+	}
+
+	/**
+	 * Seconds after which an unchanged status is written again.
+	 *
+	 * @api Used by substrate.
+	 */
+	protected function status_heartbeat(): int {
+		return 60;
 	}
 
 	/**

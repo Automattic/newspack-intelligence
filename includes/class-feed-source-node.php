@@ -57,7 +57,7 @@ class Feed_Source_Node extends Source_Node {
 	 */
 	protected function received( string $url, string $body ): array {
 		$domain = isset( $this->client_keys[ $url ] ) ? Core::as_string( \wp_parse_url( $url, \PHP_URL_HOST ) ) : '';
-		$items  = $this->parse( $body, $domain );
+		$items  = $this->parse( $url, $body, $domain );
 		return '' === $domain ? $items : $this->in_lane( $items, $domain );
 	}
 
@@ -87,26 +87,29 @@ class Feed_Source_Node extends Source_Node {
 
 	/**
 	 * Parse a feed body, supporting both RSS 2.0 (channel/item) and Atom (entry).
-	 * libxml errors are suppressed and a parse failure yields []. A client's
+	 * libxml errors are suppressed, and a body that will not parse, or parses
+	 * as neither, yields [], logged under its url, and fails(). A client's
 	 * items are keyed `feed:<domain>:<id>`, a configured feed's `feed:<id>`.
 	 *
+	 * @param string $url    The url the feed was queued under.
 	 * @param string $body   The body.
 	 * @param string $domain The client's domain, '' for a configured feed.
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function parse( string $body, string $domain ): array {
+	private function parse( string $url, string $body, string $domain ): array {
 		$prev = \libxml_use_internal_errors( true );
 		// LIBXML_NONET: untrusted feed body — no SYSTEM ref may fetch a URL.
 		$xml = \simplexml_load_string( $body, \SimpleXMLElement::class, LIBXML_NONET );
 		\libxml_clear_errors();
 		\libxml_use_internal_errors( $prev );
-		if ( false === $xml ) {
-			$this->print_less_often( 'Feed parse failed' );
+		$rss = false !== $xml && isset( $xml->channel );
+		if ( false === $xml || ( ! $rss && 'feed' !== $xml->getName() ) ) {
+			$this->fails( 'no RSS or Atom feed at ', $url );
 			return [];
 		}
 		// Dispatch on document shape: RSS has <channel>; Atom's root is <feed>.
 		$prefix = '' === $domain ? '' : "{$domain}:";
-		return isset( $xml->channel ) ? $this->parse_rss( $xml, $prefix ) : $this->parse_atom( $xml, $prefix );
+		return $rss ? $this->parse_rss( $xml, $prefix ) : $this->parse_atom( $xml, $prefix );
 	}
 
 	/**

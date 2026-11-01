@@ -184,7 +184,7 @@ class P2_Source_Node extends Source_Node {
 	}
 
 	/** The WordPress.com REST API answers nothing without a credential, so a pass waits for one. */
-	protected function credential_url(): string {
+	public static function credential_url(): string {
 		return self::API;
 	}
 

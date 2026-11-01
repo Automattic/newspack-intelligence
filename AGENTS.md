@@ -1016,6 +1016,41 @@ the source. A scheduled pass that throws is logged naming the source and
 tried again at the next boundary, so it never stops the worker, and a throw
 on the `TICK` path propagates out of `fill()`, which no catch answers as a
 TM_ERROR.
+
+Each source publishes how its last pass went through the substrate's
+`Publishes_Status`, under its name and worker partition, for 7,200 seconds,
+twice `news`'s interval; a reader asks
+`Source_Node::read_status( <name>, <partition> )`. An answer counts toward
+the pass as failed when it is a TM_ERROR, when `received()` throws, when a
+redirect is not followed, or when the source calls
+`fails( $prefix, $detail )` for it, which logs the failure rate-limited
+under its prefix and publishes the same text, its detail terminal-safe, as
+`json_answer()` does for an error its body carries, the feed source for a
+body that is no RSS or Atom feed, ContextA8C for a refresh naming no access
+token or an `initialize` naming no session, and Slack for an `auth.test`
+naming no https url; each error names its url. Any other answer counts as
+answered unless its subject is in the class's `PROTOCOL_SUBJECTS`, the
+requests that open or close a pass rather than fetch its data, empty on the
+base: ContextA8C's refresh, `initialize`, notification and close, and
+Slack's `auth.test`, which count only when they fail. A redirect re-queued
+is a hop of the same request and counts not at all. Once nothing is queued
+or in flight the pass ends: `pass_ended()` runs, and then, unless a request
+it sent with `send_closing()` is still to answer, in which case that answer
+ends the pass, the source publishes
+`{ state: ok, last_ok_at, failed, requests }` when any counted answer did
+not fail, else
+`{ state: failing, last_error, failing_since, failed, requests }` with the
+last failure's text, cut to 500 bytes on a character boundary; a pass that
+counted no answer, asking no data and failing nothing, is quiet, not a
+fault, and publishes ok with both counts 0. A scheduled pass that throws
+publishes failing with the throw's message. `failing_since` keeps the value
+already published while the state stays failing, read back from the cache by
+a recycled worker's first publish. Every publish writes all seven keys —
+`state`, `last_ok_at`, `last_error`, `failing_since`, `failed`, `requests`
+and `reason` — those its state does not carry null, because a publish merges
+over the snapshot read back. A source that cannot fetch calls
+`idle( $reason )`, publishing `{ state: idle, reason }`, which its pass's
+end leaves standing; only the ContextA8C sources do, below.
 Curl sends `User-Agent: newspack-nodes/<version>` (`Curl_Node::USER_AGENT`)
 on every fetch, which some feeds require — PartnerOrg26 Lab and PartnerOrg27 answer 403
 without one.
@@ -1032,14 +1067,15 @@ with `Authorization` and no scheme; the `slack` entry is
 `https://public-api.wordpress.com`, each with `Authorization` and `Bearer`;
 the `unthread` entry is `https://api.unthread.io` with `X-Api-Key` and no
 scheme.
-Linear, Slack, P2 and Unthread answer nothing without a credential, so
-each names the url it fetches through `credential_url()`, and a pass asks
-the Curl sibling's `lends_credential()` first: with no group, or no entry
-of the group on that url's origin, the pass sends nothing, answers
-`{ fetching: 0 }` and logs nothing, sitting idle until the entry exists.
-Every pass asks again, so the pass after the entry is added fetches, with no
-restart. GitHub, whose public API answers without a token, keeps the
-default `''` and fetches with no credential when its group lends none; the
+Linear, Slack, P2 and Unthread answer nothing without a credential, so each
+names the url it fetches through the static `credential_url()`, a fact of
+the class a reader asks with no instance, and a pass asks the Curl sibling's
+`lends_credential()` first: with no group, or no entry of the group on that
+url's origin, the pass sends nothing, answers `{ fetching: 0 }`, logs
+nothing and publishes nothing, sitting idle until the entry exists. Every
+pass asks again, so the pass after the entry is added fetches, with no
+restart. GitHub, whose public API answers without a token, keeps the default
+`''` and fetches with no credential when its group lends none; the
 ContextA8C nodes take their token from the relay's file, not the Vault. The
 feeds send no credential and declare no group.
 
@@ -1224,6 +1260,8 @@ refresh refused with 400 or 401 logs `ContextA8C refresh refused (HTTP
 <code>): sign in to ContextA8C again on the host`, and the next pass reads
 the file again, waiting for the relay to sign in. A pass with no readable
 token, or an expired one with no refresh token, logs and sends nothing.
+Each of the three publishes idle, its reason opening `not signed in to
+ContextA8C` and ending with the fix, to sign in to ContextA8C on the host.
 Every call is one JSON-RPC `tools/call` of `context-a8c-execute-tool` to
 the one url, queued under the subject `<provider>/<subtool>?<args>`, so
 `queue()` takes a subject apart from the url and `request_options()` adds
