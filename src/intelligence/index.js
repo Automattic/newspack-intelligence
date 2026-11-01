@@ -8,14 +8,15 @@ document.addEventListener( 'DOMContentLoaded', () => {
 	if ( ! el ) {
 		return;
 	}
-	// wp_localize_script() sends the flag as a string: '1' or ''.
-	const { canTune, vocabulary } =
-		/** @type {{NewspackNodesData: {canTune: string, vocabulary: Object}}} */ (
+	// wp_localize_script() sends each flag as a string: '1' or ''.
+	const { canTune, canManage, vocabulary } =
+		/** @type {{NewspackNodesData: {canTune: string, canManage: string, vocabulary: Object}}} */ (
 			/** @type {unknown} */ ( window )
 		).NewspackNodesData;
 	createRoot( el ).render(
 		<IntelligencePage
 			canTune={ '1' === canTune }
+			canManage={ '1' === canManage }
 			vocabulary={ vocabulary }
 		/>
 	);

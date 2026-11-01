@@ -18,6 +18,40 @@
 		margin: 0 0 base.$space-xl;
 	}
 
+	// The health strip's line leads its two controls; its rows sit below.
+	&__health-line,
+	&__health-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: base.$space-sm;
+	}
+
+	&__health-line > [role="status"] {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+
+	&__health-rows {
+		display: flex;
+		flex-direction: column;
+		gap: base.$space-xs;
+		margin: base.$space-sm 0 0;
+		padding: 0;
+		list-style: none;
+
+		// A closed strip's rows take no room, so no gap opens under the line.
+		&[hidden] {
+			display: none;
+		}
+	}
+
+	// WordPress spaces every admin `li`; the list's gap does.
+	&__health-row {
+		margin: 0;
+		overflow-wrap: anywhere;
+	}
+
 	// The card's header band spaces its heading; the heading adds none.
 	.components-card__header :is(h2, h3, h4) {
 		margin: 0;

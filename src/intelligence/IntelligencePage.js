@@ -13,6 +13,7 @@ import Collections from './views/Collections';
 import Lens, { CLOSED_LENS } from './views/Lens';
 import Watches, { CLOSED_WATCH, newWatch } from './views/Watches';
 import SaveToCollection from './components/SaveToCollection';
+import HealthStrip from './components/HealthStrip';
 import './styles/intelligence.scss';
 
 /**
@@ -33,7 +34,8 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
  * nothing: the server's role gate refuses a write the caller may not make.
  * Watches are every reader's own, so they are not gated on it. A link naming
  * a watch opens the page on Watches with that watch open; a key the reader's
- * watches do not hold opens nothing, leaving the list.
+ * watches do not hold opens nothing, leaving the list. The health strip sits
+ * above the tabs on every view, offering the operator fixes for `canManage`.
  *
  * The shared `DashboardShell` supplies the skin, the positioned page surface,
  * the header naming this page and the debug overlay; the page scrolls in the
@@ -41,10 +43,11 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
  *
  * @param {Object}  props
  * @param {boolean} props.canTune    Whether the caller may curate.
+ * @param {boolean} props.canManage  Whether the caller is an operator.
  * @param {Object}  props.vocabulary The ontology's closed lists.
  * @return {import('react').ReactElement} The page.
  */
-export default function IntelligencePage( { canTune, vocabulary } ) {
+export default function IntelligencePage( { canTune, canManage, vocabulary } ) {
 	const [ view, setView ] = useState( () =>
 		linkedWatch() ? 'watches' : 'search'
 	);
@@ -102,6 +105,7 @@ export default function IntelligencePage( { canTune, vocabulary } ) {
 		>
 			{ () => (
 				<div className="newspack-intelligence">
+					<HealthStrip canTune={ canTune } canManage={ canManage } />
 					<TabBar
 						scope="intelligence"
 						label={ __( 'Views', 'newspack-intelligence' ) }

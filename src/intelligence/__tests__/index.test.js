@@ -1,9 +1,10 @@
 /* eslint-env jest */
 /**
  * The bundle entry mounts IntelligencePage on its admin page's mount point,
- * handing it the curation flag and the vocabulary PHP localized.
- * `wp_localize_script()` casts a top-level scalar to a string, so the flag
- * arrives as `'1'` for a curator and `''` for anyone else.
+ * handing it the curation and operator flags and the vocabulary PHP
+ * localized. `wp_localize_script()` casts a top-level scalar to a string, so
+ * each flag arrives as `'1'` for a reader holding its role and `''` for
+ * anyone else.
  */
 
 describe( 'intelligence index', () => {
@@ -28,6 +29,7 @@ describe( 'intelligence index', () => {
 			restUrl: '/wp-json/',
 			nonce: 'NONCE',
 			canTune: '1',
+			canManage: '1',
 			vocabulary: { roles: [ 'funder' ] },
 		};
 	} );
@@ -45,6 +47,7 @@ describe( 'intelligence index', () => {
 		expect( element.type.name ).toBe( 'IntelligencePage' );
 		expect( element.props ).toEqual( {
 			canTune: true,
+			canManage: true,
 			vocabulary: { roles: [ 'funder' ] },
 		} );
 	} );
@@ -60,6 +63,20 @@ describe( 'intelligence index', () => {
 			document.dispatchEvent( new Event( 'DOMContentLoaded' ) );
 
 			expect( render.mock.calls[ 0 ][ 0 ].props.canTune ).toBe( false );
+		}
+	);
+
+	it.each( [ '', 'yes', true ] )(
+		'withholds the operator fixes unless the flag is exactly the string 1, not %p',
+		( flag ) => {
+			window.NewspackNodesData.canManage = flag;
+			document.body.innerHTML =
+				'<div id="newspack-intelligence-app"></div>';
+			const { render } = loadIndex();
+
+			document.dispatchEvent( new Event( 'DOMContentLoaded' ) );
+
+			expect( render.mock.calls[ 0 ][ 0 ].props.canManage ).toBe( false );
 		}
 	);
 

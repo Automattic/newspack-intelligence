@@ -23,6 +23,7 @@ jest.mock( '@newspack-nodes/debug-overlay', () => ( {
 } ) );
 
 import { intelWire } from './intelWire';
+import { HEALTHY } from './healthFixture';
 import { ENTITY, ITEM, LENSES, VOCABULARY } from '../views/__tests__/fixtures';
 import IntelligencePage from '../IntelligencePage';
 
@@ -43,6 +44,7 @@ beforeEach( () => {
 	wire.replies.trends = { rows: [], available: true };
 	wire.replies.signals = { signals: [], available: true };
 	wire.replies.watches = { watches: [], available: true };
+	wire.replies.health = ( [ what ] ) => HEALTHY[ what ];
 } );
 
 afterEach( () => {
@@ -85,6 +87,33 @@ describe( 'IntelligencePage', () => {
 			} )
 		).toBeInTheDocument();
 		expect( nav( 'Search' ) ).toHaveAttribute( 'aria-selected', 'true' );
+	} );
+
+	it( 'mounts the strip above the tab bar on every tab', async () => {
+		renderPage();
+		const healthy = `Collecting from ${ HEALTHY.sources.sources.length } sources. Nothing waiting.`;
+		await screen.findByText( healthy );
+		const strip = screen.getByRole( 'region', { name: 'Pipeline health' } );
+		const tabs = screen.getByRole( 'tablist', { name: 'Views' } );
+		expect(
+			strip.compareDocumentPosition( tabs ) &
+				window.Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
+		const views = [
+			[ 'Review', 'No proposed link awaits review.' ],
+			[ 'Collections', 'No collection yet.' ],
+			[ 'Watches', 'No watch yet.' ],
+		];
+		for ( const [ name, shown ] of views ) {
+			fireEvent.click( nav( name ) );
+			await screen.findByText( shown );
+			expect(
+				screen.getByRole( 'region', { name: 'Pipeline health' } )
+			).toHaveTextContent( healthy );
+		}
+		expect(
+			wire.sent( 'health' ).filter( ( [ what ] ) => 'backlog' === what )
+		).toHaveLength( 1 );
 	} );
 
 	it( 'switches to Review and Collections in place', async () => {

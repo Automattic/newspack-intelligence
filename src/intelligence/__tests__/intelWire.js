@@ -6,15 +6,15 @@
  * argument tokens it was sent.
  */
 
-import { VALUE } from '@newspack-nodes/runtime';
+import { TO, VALUE } from '@newspack-nodes/runtime';
 import { installFakeCommandWire } from '@newspack-nodes/shared/test-utils/fakeCommandWire';
 
 /**
  * Install the double.
  *
- * @return {{replies: Object, sent: (verb: string) => string[][]}} The answers
- *   by verb, which a test fills, and the argument tokens of every command of a
- *   verb that went on the wire.
+ * @return {{replies: Object, sent: (verb: string) => string[][], sentTo: (verb: string) => string[]}}
+ *   The answers by verb, which a test fills; the argument tokens of every
+ *   command of a verb that went on the wire; and the CI each was addressed to.
  */
 export function intelWire() {
 	const replies = {};
@@ -24,12 +24,12 @@ export function intelWire() {
 			? answer( m[ VALUE ].arguments ?? [] )
 			: answer;
 	} );
+	const ofVerb = ( verb ) =>
+		wire.batches.flat().filter( ( m ) => verb === m[ VALUE ]?.name );
 	return {
 		replies,
 		sent: ( verb ) =>
-			wire.batches
-				.flat()
-				.filter( ( m ) => verb === m[ VALUE ]?.name )
-				.map( ( m ) => m[ VALUE ].arguments ?? [] ),
+			ofVerb( verb ).map( ( m ) => m[ VALUE ].arguments ?? [] ),
+		sentTo: ( verb ) => ofVerb( verb ).map( ( m ) => m[ TO ] ),
 	};
 }

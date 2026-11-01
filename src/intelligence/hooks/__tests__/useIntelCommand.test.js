@@ -46,13 +46,15 @@ function Reader( { args } ) {
 	return <p>{ answer ? `answer: ${ answer.name }` : 'nothing asked' }</p>;
 }
 
-function Writer( { refresh, onRefused, onSent = () => {} } ) {
-	const { run, refusal } = useIntelWrite( 'accept_entity', {
+function Writer( { refresh, onRefused, onSent = () => {}, ci } ) {
+	const { run, refusal, pending } = useIntelWrite( 'accept_entity', {
+		ci,
 		refresh,
 		onRefused,
 	} );
 	return (
 		<>
+			{ pending && <p>pending</p> }
 			<button
 				type="button"
 				className="button"
@@ -171,6 +173,24 @@ describe( 'useIntelWrite', () => {
 				'--key=organization:acme-gazette',
 			] )
 		);
+	} );
+} );
+
+describe( 'useIntelWrite on another CI', () => {
+	it( 'addresses the CI it names, and is pending until the reply lands', async () => {
+		let answer;
+		wire.replies.accept_entity = () =>
+			new Promise( ( resolve ) => ( answer = resolve ) );
+		const refresh = jest.fn();
+		render( <Writer ci="workers" refresh={ refresh } /> );
+		fireEvent.click( screen.getByRole( 'button', { name: 'accept' } ) );
+		expect( screen.getByText( 'pending' ) ).toBeInTheDocument();
+		await waitFor( () =>
+			expect( wire.sentTo( 'accept_entity' ) ).toEqual( [ 'workers' ] )
+		);
+		await act( async () => answer( { ok: true } ) );
+		await waitFor( () => expect( refresh ).toHaveBeenCalledTimes( 1 ) );
+		expect( screen.queryByText( 'pending' ) ).toBeNull();
 	} );
 } );
 

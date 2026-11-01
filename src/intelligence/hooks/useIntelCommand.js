@@ -1,7 +1,9 @@
 /**
- * The Intelligence page's one-shot commands to the `intelligence` CI, each a
- * `useCommandOnce` riding the batched router tick under the `intelligence`
- * group, so `connect intelligence:shell` watches every send.
+ * The Intelligence page's one-shot commands, each a `useCommandOnce` riding
+ * the batched router tick under the `intelligence` group, so `connect
+ * intelligence:shell` watches every send. Each goes to the `intelligence` CI
+ * but a write naming another, as the health strip's fixes to the substrate's
+ * `workers` and `topologies` CIs do.
  *
  * A read is asked again whenever its arguments change and shows only the
  * answer to the question it asks now: the Fetcher's gate drops the answer to
@@ -21,7 +23,7 @@ import { useCommandOnce } from '@newspack-nodes/shared/hooks/useCommandOnce';
 /** The surface every command here is sent under. */
 const GROUP = 'intelligence';
 
-/** The server CI mount every verb here lives on. */
+/** The server CI mount a verb here lives on unless a write names another. */
 const CI = 'intelligence';
 
 /** Every send here is about nothing narrower than its verb. */
@@ -90,23 +92,27 @@ export function commandArgs( options ) {
  * as the value it is rather than as an option. `run()` answers the tokens it sent;
  * a landed send runs `refresh`, and a refused one hands `onRefused` the
  * tokens its reply echoes, which say which send it was. The last reply's
- * refusal and the arguments it answered are `useCommandOnce`'s own.
+ * refusal, the arguments it answered and whether a send is still owed its
+ * reply are `useCommandOnce`'s own.
  *
  * @param {string}                     command          The write verb.
  * @param {Object}                     [opts]           Options.
+ * @param {string}                     [opts.ci]        The CI the verb lives on.
  * @param {() => void}                 [opts.refresh]   Runs once a send lands.
  * @param {(tokens: string[]) => void} [opts.onRefused] Runs once a send is refused.
- * @return {{run: (args: Object<string, string|Array<string>>) => string[], refusal: ?string, answeredArgs: ?string[]}}
- *   `run()`, the last refusal, and the arguments the last reply answered.
+ * @return {{run: (args: Object<string, string|Array<string>>) => string[], refusal: ?string, answeredArgs: ?string[], pending: boolean}}
+ *   `run()`, the last refusal, the arguments the last reply answered, and
+ *   whether a send is still owed its reply.
  */
-export function useIntelWrite( command, { refresh, onRefused } = {} ) {
+export function useIntelWrite( command, { ci = CI, refresh, onRefused } = {} ) {
 	const {
 		run: send,
 		error,
 		answeredArgs,
+		pending,
 	} = useCommandOnce( {
 		group: GROUP,
-		ci: CI,
+		ci,
 		command,
 		subjectOf: NO_SUBJECT,
 		onDone: ( { error: refused, args } ) =>
@@ -120,5 +126,5 @@ export function useIntelWrite( command, { refresh, onRefused } = {} ) {
 		},
 		[ send ]
 	);
-	return { run, refusal: error, answeredArgs };
+	return { run, refusal: error, answeredArgs, pending };
 }
