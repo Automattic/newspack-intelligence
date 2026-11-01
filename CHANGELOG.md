@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-11-01
+
 ### Added
 - **Each source publishes how its last pass went** to the shared cache, under its name and worker partition, for `Source_Node::read_status()` to read: `ok` with when it last answered and how many of its requests failed, `failing` with the last error, terminal-safe, a scheduled pass's throw included, and cut to 500 bytes, and since when, or, for the ContextA8C sources, `idle` with a reason opening `not signed in to ContextA8C` for a missing token, an expired one holding no refresh token, or a refused refresh. A source with nothing to ask, or whose every request succeeded, reads `ok`; one with no Vault entry still publishes nothing and logs nothing.
 - **The extractor publishes how it extracts** to the shared cache, under its name and worker partition, for `Extractor_Node::read_status()` to read: `heuristic` with the Vault id it names when no client can be built, `call` with when a call last answered, and a failing call's error, terminal-safe and cut to 500 bytes, with since when, kept until a call answers or a `heuristic` publish, with no client, clears it. A reply that does not parse fails as `AI proxy answer did not parse as an extraction`.
@@ -27,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A pass that queues nothing publishes a quiet `ok`,** with both counts 0, as a Linear source naming no team does; a source whose Vault group lends it no credential still publishes nothing. A ContextA8C pass waiting on another node's refresh publishes nothing, leaving the last snapshot standing, and one whose token lock will not hold publishes `failing` with `could not lock the ContextA8C token: <path>`, keeping a standing `failing_since`.
 - **Two log lines name the url:** a feed body that is no RSS or Atom feed logs `no RSS or Atom feed at <url>`, where one that would not parse logged `Feed parse failed`, and ContextA8C's `initialize` naming no session logs the MCP url rather than its subject.
 - **`Source_Node::credential_url()` is static and public,** so a reader asks a source's credential url of its class with no instance.
-- **A pass asks `Curl_Node::lends_credential( $group, $url )`, now static,** of the source's own vault group, rather than of its Curl sibling. The substrate floor rises with the substrate release that carries it.
+- **A pass asks `Curl_Node::lends_credential( $group, $url )`, now static,** of the source's own vault group, rather than of its Curl sibling. The substrate floor is 2.143.0, the first release with `Publishes_Status` and the static `lends_credential()`.
 
 ## [0.29.1] - 2026-10-31
 

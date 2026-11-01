@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Newspack Intelligence
  * Description: Collects and curates intelligence as an entity graph, built on the newspack-nodes substrate.
- * Version: 0.29.1
+ * Version: 0.30.0
  * Author: Automattic
  * Author URI: https://newspack.com/
  * License: GPL-2.0-or-later
@@ -20,7 +20,7 @@ namespace Newspack_Intelligence;
 \defined( 'ABSPATH' ) || exit;
 
 if ( ! \defined( 'NEWSPACK_INTELLIGENCE_VERSION' ) ) {
-	\define( 'NEWSPACK_INTELLIGENCE_VERSION', '0.29.1' );
+	\define( 'NEWSPACK_INTELLIGENCE_VERSION', '0.30.0' );
 }
 if ( ! \defined( 'NEWSPACK_INTELLIGENCE_DIR' ) ) {
 	\define( 'NEWSPACK_INTELLIGENCE_DIR', \plugin_dir_path( __FILE__ ) );
@@ -224,7 +224,7 @@ function register_cli_commands(): void {
 		// floor set too low does not degrade: it activates, then fatals on a
 		// missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
-			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.142.0', 'Newspack Intelligence' ) ) {
+			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.143.0', 'Newspack Intelligence' ) ) {
 			return;
 		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.
