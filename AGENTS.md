@@ -427,27 +427,15 @@ the index offers each live topic by its canonical name through `topics()`
 and indexes none of its names.
 
 The resolver publishes its hold through `Publishes_Status`, under its name
-and worker partition, for `Resolver_Node::STATUS_TTL_S` (30 days), so
-`dropped` outlives a resolver that sees no record for a day, from
+and worker partition, for `Resolver_Node::STATUS_TTL_S` (30 days), from
 `publish_hold()`, which `fill()` calls with each record's
-`hold_reason()`, every key of its `BLANK_STATUS` each time: `reason`
-(`no_live_entity`, `behind_ontology`, or '' when nothing holds); `since`,
-the first hold of the standing reason, read back by a recycled worker and
-restarted at now when the reason changes; `held`, the size of an in-memory
-set of the held items' keys, O(distinct held items) for one worker's life,
-a gauge published once this process has held one circulation of the later
-queue (`2 * HOLD_S`, since a parked record returns 60 to 120 seconds on)
-and refreshed once a heartbeat (60 seconds) after, the value read back
-until then, null when no hold stood; and `dropped`. A record that passes
-ends the hold and empties the set, publishing `reason` '', `since` null
-and `held` 0; once that clear is published, a passing record reads and
-writes nothing until the next hold, so `dropped` expires 30 days after
-the last publish. A standing reason that ends, by a pass or a new reason,
-more than `QUEUE_MAX_AGE_S` (a day, the `intel:later` Delay's max age,
-which `TopologyDurabilityTest` holds it to) after its `since` merges the
-UTC days of that `since` and of now into `dropped { first_day, last_day }`,
-keeping the earliest first day and the latest last day; any other end
-keeps the `dropped` already published.
+`hold_reason()`: `reason` (`no_live_entity`, `behind_ontology`, or '' when
+nothing holds) and `since`, the first hold of the standing reason, read
+back by a recycled worker and restarted at now when the reason changes,
+null once nothing holds. Once the clear is published, a passing record
+reads and writes nothing until the next hold. How many records wait, and
+the days of any it dropped, the `intel:later` Delay publishes itself (see
+Health).
 
 **Extraction.** `extractor` skips a resolution with no link and no
 candidate; for any other it makes one `chat()` call through
@@ -559,13 +547,14 @@ bracketed), as the resolver matches an acronym only in its own case. It appends 
 (500) hits at once, newest first, and only on reaching that cap counts the
 rest, to log how many it skipped. `wp
 newspack-intelligence ontology reresolve --since=<Y-m-d> [--until=<Y-m-d>]`
-and the `reresolve` verb both call `Reresolver_Node::ask()`, the command
-validating the days first, before it mounts the request graph; `ask()`
-validates them, then sends `RERESOLVE <since> <until>` through
+and the `reresolve` verb both call `Reresolver_Node::ask()` with their
+graph, which validates the days before it sends anything, then sends
+`RERESOLVE <since> <until>` through
 `Worker_Route` to each live worker's `reresolver`, answering how many it
 reached; with none live it throws, which the command lets fail and the
 verb answers as a refusal. The reresolver publishes a range it queues as `last_range {
-since, until }` through `Publishes_Status`, for `Resolver_Node::STATUS_TTL_S`,
+since, until }` through `Publishes_Status`, for a year, so it outlives the
+Delay's dropped days it covers,
 writing each one it is asked (no heartbeat), answers the range
 it queued, or the refusal, and
 sends every item dated in those UTC days, an undated one by its retrieval,
@@ -667,7 +656,9 @@ rather than dropping out and widening. A lens no one saved is refused as
 **Health.** `health <what>` (`Intelligence_Health`), at `read`, answers
 one slice of pipeline health a call, so the strip asks each through its
 own Fetcher, and refuses any other `what` (`what must be one of:
-collection, sources, backlog, extraction`). What durable state answers is
+collection, sources, backlog, extraction`); `Intelligence_Health::SLICES`
+lists them once, for the dispatch, the refusal and the arg's description,
+each answered by the method of its name. What durable state answers is
 derived in the request; the rest is a snapshot a worker published through
 `Publishes_Status`, read at partition 0, which the topology runs alone,
 and a snapshot no cache holds reads as unknown or null, never as healthy.
@@ -682,11 +673,14 @@ its `make_node` type, leaving out a source whose tier
 `Intel_Tiers::readable()` does not grant the caller. Each line binds
 against its class's own `node_schema()` arguments (`Command_Args::bind()`),
 so `tier` and `vault_group` are read by name, a class declaring no group,
-as a ContextA8C one, reading as ''. A source whose class's
-`credential_url()` is not empty and whose group lends nothing on that
-url's origin
-(`Curl_Node::lends_credential()`) is `{ state: idle, credential: { url,
-group } }` whatever its snapshot says; any other answers its snapshot as
+as a ContextA8C one, reading as ''. A source's `tier` is the one its
+topology row carries, which `Source_Node::graph_facts()` answers to
+`Topology_Analyzer`: the last `set_tier` its config is sent, bound by
+that verb's own args, else its line's. A source whose class's `credential_url()` is not empty and
+whose group lends nothing on that url's origin
+(`Curl_Node::lends_credential()`, asked once per group and url a call) is
+`{ state: idle, credential: { url, group } }` whatever its snapshot says;
+any other answers its snapshot as
 `Source_Node::BLANK_STATUS` names it, or `{ state: unknown }`. A caller
 below `manage` reads each source row and the `extraction` row without
 `credential`, `vault_id` and `last_error`
@@ -696,13 +690,19 @@ an HTTP status, and a source idle for want of a credential still reads `idle`;
 that is field redaction through `Capabilities::can( MANAGE )`, and the verb
 stays at `read` (substrate ADR-26). `backlog`
 answers `{ reason, held, since, dropped }`: `reason` is
-`Entity_Index::current()->hold_cause()`, the one answer the resolver's
-hold reads, so it names the cause with the cache
-flushed; `held` and `since` are the resolver's snapshot's when its `reason`
-is that same cause, else null, so a new hold after a clear reads its count
-as unknown rather than 0; `dropped` is the snapshot's, null with none or
-once the reresolver's `last_range` covers it, `since` on or before its
-first day and `until` on or after its last.
+`Entity_Index::hold_cause_now()`, which answers what the resolver's
+`hold_cause()` answers of a freshly read index without loading one, the
+projector's reading then one `LIMIT 1` look for a live entity through
+the same `live()` query `load()` indexes by, which judges each key by the
+state the highest partition holding one writes
+(`Intel_Graph_Row_Schema::all()`, asked for it, tags each row with its
+file's `partition_ordinal`), so it names the cause with the cache flushed; `held` is the `depth` the later queue's Delay publishes,
+every entry it holds, the extractor's retries among them, null with no
+snapshot; `since` is the resolver's snapshot's when its `reason` is that
+same cause, else null; `dropped` is the Delay's `{ first_day, last_day }`,
+null with none or once the reresolver's `last_range` covers it, `since` on
+or before its first day and `until` on or after its last. The Delay read is
+the one the resolver's `make_node` line names as `later`.
 `extraction` answers the extractor's snapshot, else `{ mode: unknown,
 last_mode }`, `last_mode` `heuristic` or `call` from the actor of the
 newest `extractions` row, by row id, which says how that extraction was
@@ -1546,7 +1546,7 @@ plugin adds:
 | `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_url`, `remove_url`, `set_client_feeds`; owns `{name}:curl` |
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
-| `Resolver` | `Resolver_Node` | `<writer> <later>`; the `LLM_Config` verbs; publishes its hold (`reason`, `since`, `held`, `dropped`) through `Publishes_Status` |
+| `Resolver` | `Resolver_Node` | `<writer> <later>`; the `LLM_Config` verbs; publishes its hold (`reason`, `since`) through `Publishes_Status` |
 | `Extractor` | `Extractor_Node` | `<writer> <later>`; the `LLM_Config` verbs |
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>`; publishes `last_range` through `Publishes_Status` |
@@ -1632,7 +1632,7 @@ its own one-shot commands; nothing polls.
 | `index.js` | — | Mounts `IntelligencePage` on `#newspack-intelligence-app`, handing it `canTune`, `canManage` and `vocabulary` from `NewspackNodesData` |
 | `IntelligencePage.js` | default | Switches Search, Entity, Lenses, Review, Collections and Watches in place; holds the submitted search, the open entity, lens, collection and watch, the watch form's draft and the item being saved, so a view returns as it was left, and a lens's "Watch this" opens the watch form on that lens; a URL carrying `watch=<key>`, as the watcher's email links it, opens the page on Watches with that watch open, or on the list when the reader's watches do not hold it; mounts `HealthStrip` above the tab bar, on every view; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the `NEWSPACK::NODES` header subtitled `Intelligence` and the debug overlay |
 | `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite`, `commandArgs` | `commandArgs()` names every value given, a list once per member, leaving out a blank value or an empty list; a read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments; a write sent once per `run()` to the `intelligence` CI or the `ci` it names, which answers the tokens it sent, running `refresh` once it lands, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal, answered arguments and `pending` |
-| `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_id` and `last_error`, reads it whole; while collection is off every other row is listed neutral, never a fault; the projector catching up on the ontology is neutral until its hold has stood five minutes (`BEHIND_FAULT_S`), then a fault; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology`, `canManage` for the rest), and anyone else reads "An administrator can …" |
+| `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_id` and `last_error`, reads it whole; while collection is off every other row is listed neutral, never a fault; the projector catching up on the ontology is neutral until its hold has stood five minutes (`BEHIND_FAULT_S`), then a fault; with nothing held the backlog row counts the later queue's entries as items waiting to resolve or retry; every time it shows renders in the browser's own zone through the substrate's `formatLocalDateTime()`, while the dropped days stay the UTC days the server names, read as "Items parked from <first_day> to <last_day> were dropped before they resolved.", true of an entry aged out and of one the full queue refused; the line names each source no pass has reported ("Collecting from 5 of 6 sources; feed has not reported yet."), the names joined in the page's own language (`document.documentElement.lang`, else the browser's), and says the health is not fully known for any other unknown row, a source in a state it does not recognise included; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology`, `canManage` for the rest), and anyone else reads "An administrator can …" |
 | `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
 | `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens` above `search --lens` a page at a time beside `trends --lens`; trend rows and signals citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
 | `views/Entity.js` | default | `entity`, `timeline` a page at a time, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
@@ -1644,7 +1644,7 @@ its own one-shot commands; nothing polls.
 | `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty by its `rows` key, or its rows — as a stock `Card` section named by an optional title, which heads its `CardHeader`, with the state inset in its `CardBody`, or bare inside a dialog; the one alert every refusal, read or write, renders in |
 | `components/Pager.js` | default | How many of the matches a page shows, and Previous and Next over a stack of page starts, for Search, the Entity timeline, a lens's items and a watch's matches |
 | `components/ListField.js`, `lensDraft.js` | `ListField`; `lensDraft`, `newLens`, `draftLens`, `draftArgs`, `listOf`, `daysSince` | A comma-separated field naming the values a closed list allows; a lens read into a form's text and back into the lens and the options `save_lens` and `search` take, its list filters read from `vocabulary.lensLists` and its tiers kept beside them, the one place that knows the lens's shape; and the first UTC day of a lens's rolling window |
-| `components/ItemRow.js`, `Cite.js`, `format.js` | — | An item row, headed by any control the view passes as its children; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day, the UTC day and minute (`utcTime()`), and `metaLine()`, which joins a row's meta parts and keeps a 0 |
+| `components/ItemRow.js`, `Cite.js`, `format.js` | — | An item row, headed by any control the view passes as its children; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day (`utcDay()`), and `metaLine()`, which joins a row's meta parts and keeps a 0 |
 | `styles/intelligence.scss` | — | Geometry only, emitted as `build/intelligence/index.css` |
 
 Each read is a `useCommandOnce` read with `retry`, under the `intelligence`

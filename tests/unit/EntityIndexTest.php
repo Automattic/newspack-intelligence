@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Entity_Index;
+use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Nodes\Sqlite_Arm;
 use Newspack_Nodes\Table_Node;
@@ -28,6 +29,7 @@ final class EntityIndexTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
+		Intel_Graph_Row_Schema::$read_rows = null;
 		Topology_Registry::reset();
 		parent::tearDown();
 	}
@@ -253,6 +255,54 @@ final class EntityIndexTest extends TestCase {
 			'a rejected entity is not live'
 		);
 		$this->assertSame( '', $this->index_of( self::proposed( 'organization:salem-ledger', 'Salem Ledger' ) )->hold_cause() );
+	}
+
+	/**
+	 * Projections and the hold each one makes, with what a second
+	 * partition's file holds.
+	 *
+	 * @return array<string,array{0:list<list<array<string,mixed>>>,1:string,2?:list<list<array<string,mixed>>>}>
+	 */
+	public static function projections(): array {
+		return [
+			'nothing projected'            => [ [], 'no_live_entity' ],
+			'a proposed entity'            => [ [ self::proposed( 'organization:salem-ledger', 'Salem Ledger' ) ], '' ],
+			'a rejected entity'            => [ [ self::proposed( 'organization:faded-gazette', 'Faded Gazette' ), self::rejected( 'organization:faded-gazette' ) ], 'no_live_entity' ],
+			'an entity merged away alone'  => [ [ self::entity( 'organization:gazette-harbor', 'Gazette of the Harbor' ), self::merged( 'organization:gazette-harbor', 'organization:never-made' ) ], 'no_live_entity' ],
+			'an entity merged into a live' => [ [ self::entity( 'organization:gazette-harbor', 'Gazette of the Harbor' ), self::entity( self::GAZETTE, 'Harbor Gazette' ), self::merged( 'organization:gazette-harbor', self::GAZETTE ) ], '' ],
+			'a state with no entity row'   => [ [ [ Intel_Event::make( 'entity_accepted', [ 'entity_key' => 'organization:nowhere-courier' ], 'user:41', 'fixture-7' ) ] ], 'no_live_entity' ],
+			'an accepted topic'            => [ [ self::entity( 'topic:tidal-reporting', 'Tidal reporting' ) ], '' ],
+			'p0 accepted, p1 rejected'     => [ [ self::entity( 'organization:wren-dispatch', 'Wren Dispatch' ) ], 'no_live_entity', [ self::rejected( 'organization:wren-dispatch' ) ] ],
+			'p0 rejected, p1 accepted'     => [ [ self::proposed( 'organization:wren-dispatch', 'Wren Dispatch' ), self::rejected( 'organization:wren-dispatch' ) ], '', [ [ Intel_Event::make( 'entity_accepted', [ 'entity_key' => 'organization:wren-dispatch' ], 'user:41', 'fixture-7' ) ] ] ],
+		];
+	}
+
+	/**
+	 * The cheap check answers what a loaded index answers, over the same
+	 * projection, and loads no index to do it; across partitions, each
+	 * key's state is the one the highest partition holds.
+	 *
+	 * @param list<list<array<string,mixed>>> $events The ontology events projected into p0.
+	 * @param string                          $cause  The hold they make.
+	 * @param list<list<array<string,mixed>>> $later  The ontology events projected into p1.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'projections' )]
+	public function test_hold_cause_now_answers_as_a_loaded_index( array $events, string $cause, array $later = [] ): void {
+		$this->seed( ...$events );
+		$files = [ 0 => Table_Node::file( 'intel-graph', 0 ) ];
+		if ( [] !== $later ) {
+			$other = $this->projector_graph( 'intel-graph-b', 'projector-b' );
+			foreach ( \array_merge( ...$later ) as $event ) {
+				self::deliver( $other, $event );
+			}
+			$other->save_state();
+			$files[1] = Table_Node::file( 'intel-graph-b', 0 );
+		}
+		$loaded = Entity_Index::load( Sqlite_Arm::open_rows( $files, Intel_Graph_Row_Schema::version() ) )->hold_cause();
+		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): mixed => $read( Sqlite_Arm::open_rows( $files, Intel_Graph_Row_Schema::version() ) );
+
+		$this->assertSame( [ $cause, $cause ], [ $loaded, Entity_Index::hold_cause_now() ] );
+		$this->assertNull( ( new \ReflectionProperty( Entity_Index::class, 'current' ) )->getValue(), 'no shared index is loaded' );
 	}
 
 	/** An index read behind the ontology stream names that first, so a seed not yet projected never reads as an empty ontology. */

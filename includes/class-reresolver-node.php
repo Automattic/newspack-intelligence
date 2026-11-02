@@ -66,6 +66,9 @@ class Reresolver_Node extends Timer_Node {
 	/** Seconds a signal waits before its sweep, well past the projector's flush. */
 	public const SWEEP_INTERVAL_S = 30;
 
+	/** Seconds the last range outlives its publish: a year, past any dropped days it covers. */
+	private const STATUS_TTL_S = 365 * DAY_IN_SECONDS;
+
 	/** Items one signal re-resolves at most, the newest. */
 	public const MAX_ITEMS_PER_SIGNAL = 500;
 
@@ -553,12 +556,12 @@ class Reresolver_Node extends Timer_Node {
 	}
 
 	/**
-	 * Seconds the cache keeps the last range, as long as the resolver's hold.
+	 * Seconds the cache keeps the last range, a historical fact.
 	 *
 	 * @api Used by substrate.
 	 */
 	protected function status_ttl(): int {
-		return Resolver_Node::STATUS_TTL_S;
+		return self::STATUS_TTL_S;
 	}
 
 	/**
@@ -576,7 +579,7 @@ class Reresolver_Node extends Timer_Node {
 	 * reresolve` and the `reresolve` verb send; a range that does not parse
 	 * is refused before anything is sent.
 	 *
-	 * @param Command_Interpreter_Node $graph The caller's interpreter, whose name each request carries as FROM.
+	 * @param Command_Interpreter_Node $graph The caller's interpreter; each request carries its name as FROM.
 	 * @param string                   $since The first day, Y-m-d.
 	 * @param string                   $until The last day, Y-m-d.
 	 * @return int The workers asked.

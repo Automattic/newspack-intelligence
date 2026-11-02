@@ -12,6 +12,9 @@ const {
 	createJestConfig,
 } = require( '../newspack-nodes/src/build-kit/jest.cjs' );
 
+// A zone whose day leads UTC's, so a local time cannot pass as a UTC one.
+process.env.TZ = 'Pacific/Auckland';
+
 module.exports = createJestConfig( {
 	aliasBase: path.resolve( __dirname, '../newspack-nodes/src' ),
 	pinReactFrom: path.resolve( __dirname, 'node_modules' ),

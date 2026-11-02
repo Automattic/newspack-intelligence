@@ -102,22 +102,8 @@ class Resolver_Node extends Node {
 	/** Seconds a held record waits on the later queue. */
 	public const HOLD_S = 60;
 
-	/** Seconds the later queue keeps a parked record before it drops it. */
-	public const QUEUE_MAX_AGE_S = DAY_IN_SECONDS;
-
-	/** Seconds a hold or a last range outlives its last publish, so `dropped` outlives an idle resolver. */
+	/** Seconds a hold outlives its last publish. */
 	public const STATUS_TTL_S = 30 * DAY_IN_SECONDS;
-
-	/** Seconds a parked record takes at most to return: due HOLD_S on, then the queue's minute sweep. */
-	private const CIRCULATION_S = 2 * self::HOLD_S;
-
-	/** Every key a hold carries, null, so each publish names them all. */
-	private const BLANK_STATUS = [
-		'reason'  => null,
-		'since'   => null,
-		'held'    => null,
-		'dropped' => null,
-	];
 
 	/** The item's non-topic links, subject before mention, then by confidence and key. */
 	private const LINKS_OF_ITEM = "item_key = ? AND role <> 'topic' ORDER BY role = 'subject' DESC, confidence DESC, entity_key";
@@ -153,17 +139,6 @@ class Resolver_Node extends Node {
 
 	/** The resolver over the shared index it last read. */
 	private ?Resolver $resolver = null;
-
-	/**
-	 * Each held item's key, while a hold stands: O(distinct held items) for
-	 * one worker's life, with no rotation.
-	 *
-	 * @var array<string,true>
-	 */
-	private array $held = [];
-
-	/** When this process next publishes its own count; null while nothing holds. */
-	private ?int $count_due = null;
 
 	/** Whether the clear is published and nothing is held since. */
 	private bool $cleared = false;
@@ -209,7 +184,7 @@ class Resolver_Node extends Node {
 			$item_key = Core::as_string( $item['item_key'] );
 			$resolver = $this->resolver( 0.0 );
 			$reason   = $this->hold_reason( $resolver );
-			$this->publish_hold( $item_key, $reason );
+			$this->publish_hold( $reason );
 			if ( '' !== $reason ) {
 				$this->hold( self::reresolve( $item_key, 0, [ 'ner' => true ] ) );
 				return;
@@ -230,7 +205,7 @@ class Resolver_Node extends Node {
 		$owes_ner = $record['ner'] ?? false;
 		$resolver = $this->resolver( (float) $record['fresh_after'] );
 		$reason   = $this->hold_reason( $resolver );
-		$this->publish_hold( $item_key, $reason );
+		$this->publish_hold( $reason );
 		if ( '' !== $reason ) {
 			$this->hold( $record );
 			return;
@@ -362,90 +337,30 @@ class Resolver_Node extends Node {
 	}
 
 	/**
-	 * Publish the hold a record leaves, every key of BLANK_STATUS each time:
-	 * `reason`, '' when nothing holds; `since`, the first hold of the
-	 * standing reason, read back by a recycled worker and restarted when the
-	 * reason changes; `held`, held_count()'s gauge of the distinct items
-	 * held; and `dropped`. Held under $reason, its key joins the set; passed,
-	 * the hold ends and the set empties, and once that clear is published a
-	 * passing record publishes nothing until the next hold. A standing reason
-	 * that ends, by a pass or a new reason, after outlasting QUEUE_MAX_AGE_S
-	 * merges its first and last UTC day into `dropped`; any other end keeps
-	 * the days already there.
+	 * Publish the hold a record leaves: `reason`, '' when nothing holds, and
+	 * `since`, the first hold of the standing reason, read back by a
+	 * recycled worker and restarted when the reason changes, null once
+	 * nothing holds. Once the clear is published, a passing record publishes
+	 * nothing until the next hold.
 	 *
-	 * @param string $item_key The record's item.
-	 * @param string $reason   Why it is held, or '' when it passed.
+	 * @param string $reason Why the record is held, or '' when it passed.
 	 */
-	private function publish_hold( string $item_key, string $reason ): void {
+	private function publish_hold( string $reason ): void {
 		if ( '' === $reason && $this->cleared ) {
 			return;
 		}
-		$last     = $this->last_status();
-		$standing = Core::as_string( $last['reason'] ?? '' );
-		$began    = $last['since'] ?? null;
-		$dropped  = $last['dropped'] ?? null;
-		$now      = (int) Core::$now;
-		if ( '' !== $standing && $reason !== $standing && null !== $began && $now - Core::as_int( $began ) > self::QUEUE_MAX_AGE_S ) {
-			$dropped = self::dropped_days( $dropped, Core::as_int( $began ), $now );
-		}
-		if ( '' === $reason ) {
-			$this->held      = [];
-			$this->count_due = null;
-			$this->cleared   = true;
-			$this->publish_status( [ ...self::BLANK_STATUS, 'reason' => '', 'held' => 0, 'dropped' => $dropped ] );
-			return;
-		}
-		$this->held[ $item_key ] = true;
-		$this->cleared           = false;
+		$this->cleared = '' === $reason;
+		$standing      = $reason === ( $this->last_status()['reason'] ?? null );
 		$this->publish_status(
 			[
-				...self::BLANK_STATUS,
-				'reason'  => $reason,
-				'since'   => $reason === $standing && null !== $began ? Core::as_int( $began ) : $now,
-				'held'    => $this->held_count( '' === $standing ? null : ( $last['held'] ?? null ), $now ),
-				'dropped' => $dropped,
+				'reason' => $reason,
+				'since'  => match ( true ) {
+					'' === $reason => null,
+					$standing => $this->status_since( 'since' ),
+					default => (int) Core::$now,
+				},
 			]
 		);
-	}
-
-	/**
-	 * The days a hold dropped records on, from its start to now in UTC,
-	 * widened to cover the days already published.
-	 *
-	 * @param mixed $dropped The days already published, or null.
-	 * @param int   $began   When the ended hold began.
-	 * @param int   $now     When it ended.
-	 * @return array{first_day:string,last_day:string}
-	 */
-	private static function dropped_days( mixed $dropped, int $began, int $now ): array {
-		$first_day = \gmdate( 'Y-m-d', $began );
-		$last_day  = \gmdate( 'Y-m-d', $now );
-		if ( \is_array( $dropped ) ) {
-			$first_day = \min( $first_day, Core::as_string( $dropped['first_day'] ?? $first_day ) );
-			$last_day  = \max( $last_day, Core::as_string( $dropped['last_day'] ?? $last_day ) );
-		}
-		return [
-			'first_day' => $first_day,
-			'last_day'  => $last_day,
-		];
-	}
-
-	/**
-	 * The count to publish, a gauge: the set's size once this process has
-	 * held CIRCULATION_S, since a recycled worker has not seen every parked
-	 * record return before then, refreshed once a heartbeat so a key held
-	 * between writes costs none; $published otherwise.
-	 *
-	 * @param mixed $published The count already published; null for unknown.
-	 * @param int   $now       The tick clock's second.
-	 */
-	private function held_count( mixed $published, int $now ): mixed {
-		$this->count_due ??= $now + self::CIRCULATION_S;
-		if ( $now < $this->count_due ) {
-			return $published;
-		}
-		$this->count_due = $now + $this->status_heartbeat();
-		return \count( $this->held );
 	}
 
 	/**

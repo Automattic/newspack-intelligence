@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **The health strip's waiting count comes from the later queue.** `health backlog` answers `held` as the `depth` the `intel:later` Delay publishes, every entry it holds, so the count includes the extractor's retries and is known from the queue's first sweep; `dropped` is the days the Delay published for the entries it aged out, still null once the reresolver's last range covers them; `since` is still the resolver's hold start when its reason matches. The Delay is the one the resolver's `make_node` line names as `later`.
+- **The resolver publishes only its hold's `reason` and `since`.** Its held set, count gauge, dropped days and `Resolver_Node::QUEUE_MAX_AGE_S` are gone.
+- **`health sources` reads a source's tier after its `set_tier` lines,** the last one the topology sends its config, else its `make_node` line's, so a source set restricted by command is left out for a reader without the restricted tier. `Source_Node::graph_facts()` answers it as the `tier` of the source's `Topology_Analyzer` row.
+- **The strip shows every time in the browser's own zone:** last answered, failing since, the last extraction and a hold's start. The dropped days stay the UTC days the server names.
+- **The strip's line names the sources no pass has reported,** "Collecting from 5 of 6 sources; feed has not reported yet.", counting one source in the singular and joining the names in the page's own language, and stays neutral; any other unknown row, a source in a state the strip does not recognise included, reads "The pipeline’s health is not fully known." With nothing held, the line counts the queue's entries as items waiting to resolve or retry, rather than claiming nothing waits.
+- **The fetch fix reads "Fetch all sources now",** because it ticks every source.
+- **The dropped row reads "Items parked from <first_day> to <last_day> were dropped before they resolved.",** true both of an entry the later queue aged out and of one it refused while full.
+- **The reresolver keeps its `last_range` for a year,** a historical fact that outlives the Delay's dropped days, so a re-resolved range never returns as a Re-resolve offer; the resolver's hold keeps `Resolver_Node::STATUS_TTL_S`, 30 days.
+- **`health backlog` derives its reason without loading the entity index,** through `Entity_Index::hold_cause_now()`, one `LIMIT 1` query using the same live-entity rule the index loads by.
+- **An entity's state across partitions is the one the highest partition holding one writes,** for both the index's live entities and `hold_cause_now()`; before, the index counted an entity live when any partition's state was. `Intel_Graph_Row_Schema::all()` takes an opt-in that tags each row with its file's `partition_ordinal`, which only the state read uses.
+- **`health sources` asks the Vault once per group and url,** however many sources share them.
+- **`Reresolver_Node::ask()` validates the range before it sends,** so `ontology reresolve` mounts its graph and validates nothing itself.
+
 ## [0.30.0] - 2026-11-01
 
 ### Added

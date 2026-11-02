@@ -89,20 +89,30 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 
 	/**
 	 * A table's rows across every attached partition, as one subquery; with
-	 * no partition attached, an empty row set of its declared columns.
+	 * no partition attached, an empty row set of its declared columns. Given
+	 * `$ordinal`, each row also carries `partition_ordinal`, its file's place
+	 * among the attached ones, for a read that takes a later partition's row.
 	 *
-	 * @param Row_Reader $r     The reader.
-	 * @param string     $table A declared table.
+	 * @param Row_Reader $r       The reader.
+	 * @param string     $table   A declared table.
+	 * @param bool       $ordinal Whether each row carries its partition ordinal.
 	 */
-	public static function all( Row_Reader $r, string $table ): string {
+	public static function all( Row_Reader $r, string $table, bool $ordinal = false ): string {
 		if ( [] === $r->aliases() ) {
 			$columns = [];
 			foreach ( self::tables()[ $table ]['columns'] as $column => $type ) {
 				$columns[] = 'CAST( NULL AS ' . \explode( ' ', $type )[0] . " ) AS {$column}";
 			}
+			if ( $ordinal ) {
+				$columns[] = 'CAST( NULL AS INTEGER ) AS partition_ordinal';
+			}
 			return '( SELECT ' . \implode( ', ', $columns ) . ' WHERE 0 )';
 		}
-		return '( ' . \implode( ' UNION ALL ', \array_map( static fn ( string $a ): string => "SELECT * FROM {$a}.{$table}", $r->aliases() ) ) . ' )';
+		$arms = [];
+		foreach ( $r->aliases() as $at => $alias ) {
+			$arms[] = 'SELECT *' . ( $ordinal ? ", {$at} AS partition_ordinal" : '' ) . " FROM {$alias}.{$table}";
+		}
+		return '( ' . \implode( ' UNION ALL ', $arms ) . ' )';
 	}
 
 	/**

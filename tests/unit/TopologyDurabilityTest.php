@@ -22,7 +22,6 @@ use Newspack_Intelligence\Intel_Event_Writer_Node;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intel_Tiers;
 use Newspack_Intelligence\Projector_Node;
-use Newspack_Intelligence\Resolver_Node;
 use Newspack_Intelligence\Source_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
@@ -117,13 +116,6 @@ class TopologyDurabilityTest extends TestCase {
 			[ $this->read_private( $later, 'dir' ), $this->read_private( $later, 'offsets_dir' ), $this->read_private( $later, 'deadletter_dir' ), $this->read_private( $later, 'interval_s' ), $this->read_private( $later, 'max_age_s' ) ]
 		);
 		$this->assertSame( [ 'extractor', 'intel:writer', 'intel:later' ], Core::node( 'resolver' )->display_targets() );
-	}
-
-	/** The resolver's queue age is the later queue's: a hold past it has dropped records. */
-	public function test_queue_max_age_matches_later_delay(): void {
-		$this->load( 'newspack-intelligence' );
-
-		$this->assertSame( Resolver_Node::QUEUE_MAX_AGE_S, $this->read_private( Core::node( 'intel:later' ), 'max_age_s' ) );
 	}
 
 	/**

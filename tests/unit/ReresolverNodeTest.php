@@ -522,19 +522,21 @@ final class ReresolverNodeTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'refusing a re-resolution: not a Y-m-d date: 2026-02-30' ) );
 	}
 
-	/** Each range it queues is published as its last range, for a month; a refused one publishes nothing. */
+	/** Each range it queues is published as its last range, for a year, outliving the dropped days it covers; a refused one publishes nothing. */
 	public function test_reresolve_publishes_last_range(): void {
-		$memd       = new InMemoryMemcached();
-		Core::$memd = $memd;
+		$memd        = new InMemoryMemcached();
+		Core::$memd  = $memd;
+		Core::$clock = static fn (): float => self::NOW;
 
 		$this->request( 'RERESOLVE 2026-10-30 2026-11-01' );
 		$this->request( 'RERESOLVE 2026-11-01 2026-10-30' );
 
+		$this->assertSame( [ Reresolver_Node::status_key( 'reresolver', 0 ) => (int) self::NOW + 365 * DAY_IN_SECONDS ], $memd->expiries() );
+		$this->assertCount( 1, $memd->sets );
 		$this->assertSame( [ 'last_range' => [ 'since' => '2026-10-30', 'until' => '2026-11-01' ] ], Reresolver_Node::read_status( 'reresolver', 0 ) );
-		$this->assertSame( [ Resolver_Node::STATUS_TTL_S ], \array_column( $memd->sets, 'ttl' ) );
 
 		$this->request( 'RERESOLVE 2026-10-30 2026-11-01' );
-		$this->assertCount( 2, $memd->sets, 'the same range asked again is written again, keeping it a month' );
+		$this->assertCount( 2, $memd->sets, 'the same range asked again is written again' );
 	}
 
 	/** The queue and a range's place in it checkpoint with the ontology Consumer's cursor. */
@@ -578,6 +580,14 @@ final class ReresolverNodeTest extends TestCase {
 		$this->sweep_at( self::NOW + Reresolver_Node::SWEEP_INTERVAL_S );
 
 		$this->assertSame( [], $this->out->captured );
+	}
+
+	/** A range that does not parse is refused before anything is sent, so no missing worker is reported for it. */
+	public function test_ask_validates_the_range_before_it_sends(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'since 2026-07-19 is after until 2026-07-04' );
+
+		Reresolver_Node::ask( new Command_Interpreter_Node(), '2026-07-19', '2026-07-04' );
 	}
 
 	public function test_the_stream_is_declared_as_its_destination(): void {

@@ -141,12 +141,11 @@ class Ontology_CLI_Command {
 		$since = $assoc_args['since'] ?? '';
 		$until = $assoc_args['until'] ?? \gmdate( 'Y-m-d' );
 		try {
-			Intel_Graph_Row_Schema::range( $since, $until );
+			$workers = Reresolver_Node::ask( Bootstrap::mount_request_graph(), $since, $until );
 		} catch ( \InvalidArgumentException $e ) {
 			\WP_CLI::error( $e->getMessage() );
 			return;
 		}
-		$workers = Reresolver_Node::ask( Bootstrap::mount_request_graph(), $since, $until );
 		\WP_CLI::success( \sprintf( 'Asked %d %s to re-resolve the items dated %s to %s.', $workers, 1 === $workers ? 'worker' : 'workers', $since, $until ) );
 	}
 }

@@ -14,6 +14,7 @@ use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
+use Newspack_Nodes\Vault;
 use Newspack_Nodes\Tests\Helpers\InMemoryMemcached;
 use Newspack_Nodes\Tests\TestCase;
 
@@ -170,24 +171,74 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( [ 'github', 'feed', 'news', 'unthread', 'linear', 'slack', 'p2', 'p2-restricted' ], \array_column( $this->ci->dispatch( 'health', [ 'sources' ] )['sources'], 'name' ) );
 	}
 
-	/** An empty index holds every item; the count and start come from the resolver's snapshot. */
+	/**
+	 * A source reads at the tier its topology row names, so a restricted
+	 * line set internal is shown to a reader without the capability.
+	 */
+	public function test_a_source_reads_at_its_rows_tier(): void {
+		$this->collect(
+			'make_node Feed_Source tern-feed public',
+			'command_node tern-feed:config set_tier restricted',
+			'make_node Feed_Source skua-feed restricted',
+			'command_node skua-feed:config set_tier internal'
+		);
+
+		$this->assertSame( [ [ 'skua-feed', 'internal' ] ], \array_map( static fn ( array $row ): array => [ $row['name'], $row['tier'] ], $this->ci->dispatch( 'health', [ 'sources' ] )['sources'] ) );
+	}
+
+	/** The Vault is asked once per group and credential url in a call, however many sources share them. */
+	public function test_the_vault_is_asked_once_per_group_and_url(): void {
+		$this->collect(
+			'make_node P2_Source kittiwake-p2 internal kittiwake-g2',
+			'make_node P2_Source fulmar-p2 internal kittiwake-g2',
+			'make_node Linear_Source gannet-linear internal kittiwake-g2'
+		);
+		$asked    = new \ArrayObject();
+		$instance = new \ReflectionProperty( Vault::class, 'instance' );
+		$instance->setValue(
+			null,
+			new class( $asked ) extends Vault {
+				public function __construct( private \ArrayObject $asked ) {
+					parent::__construct();
+				}
+
+				public function in_group( string $group ): array {
+					$this->asked[] = $group;
+					return parent::in_group( $group );
+				}
+			}
+		);
+
+		try {
+			$this->assertSame( [ 'idle', 'idle', 'idle' ], \array_column( $this->ci->dispatch( 'health', [ 'sources' ] )['sources'], 'state' ) );
+		} finally {
+			$instance->setValue( null, null );
+		}
+
+		$this->assertSame( [ 'kittiwake-g2', 'kittiwake-g2' ], $asked->getArrayCopy(), 'once for the P2 url, once for the Linear url' );
+	}
+
+	/** An empty index holds every item; the count is the later queue's depth, the start the resolver's. */
 	public function test_backlog_reason_no_live_entity_with_empty_index(): void {
-		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400017, 'held' => 1352, 'dropped' => null ] );
+		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400017 ] );
+		$this->snapshot( 'intel:later', self::queue( 1352, null ) );
 
 		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => 1352, 'since' => 1792400017, 'dropped' => null ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
 	}
 
-	/** A snapshot naming another reason, as a cleared hold before a new one, gives no count or start. */
-	public function test_backlog_count_unknown_when_snapshot_names_another_reason(): void {
+	/** A resolver snapshot naming another reason, as a cleared hold before a new one, gives no start; the queue still counts. */
+	public function test_backlog_since_unknown_when_snapshot_names_another_reason(): void {
 		$dropped = [ 'first_day' => '2026-09-21', 'last_day' => '2026-09-23' ];
-		$this->snapshot( 'resolver', [ 'reason' => '', 'since' => 1792388811, 'held' => 0, 'dropped' => $dropped ] );
+		$this->snapshot( 'resolver', [ 'reason' => '', 'since' => null ] );
+		$this->snapshot( 'intel:later', self::queue( 29, $dropped ) );
 
-		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => null, 'since' => null, 'dropped' => $dropped ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
+		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => 29, 'since' => null, 'dropped' => $dropped ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
 	}
 
 	/** Review Focus 1: a flushed cache leaves the reason, derived here, and the count unknown, not zero. */
 	public function test_backlog_reason_survives_cache_flush_with_null_count(): void {
-		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400017, 'held' => 1352, 'dropped' => null ] );
+		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400017 ] );
+		$this->snapshot( 'intel:later', self::queue( 1352, null ) );
 		Core::$memd = new InMemoryMemcached();
 
 		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => null, 'since' => null, 'dropped' => null ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
@@ -219,7 +270,8 @@ final class IntelligenceHealthTest extends TestCase {
 	public function test_backlog_dropped_cleared_by_covering_range(): void {
 		$this->seed_world();
 		$dropped = [ 'first_day' => '2026-10-12', 'last_day' => '2026-10-14' ];
-		$this->snapshot( 'resolver', [ 'reason' => '', 'since' => null, 'held' => 0, 'dropped' => $dropped ] );
+		$this->snapshot( 'resolver', [ 'reason' => '', 'since' => null ] );
+		$this->snapshot( 'intel:later', self::queue( 3, $dropped ) );
 
 		$this->assertSame( $dropped, $this->ci->dispatch( 'health', [ 'backlog' ] )['dropped'], 'no re-resolution sent' );
 
@@ -230,7 +282,7 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( $dropped, $this->ci->dispatch( 'health', [ 'backlog' ] )['dropped'], 'a range short of the last day' );
 
 		$this->snapshot( 'reresolver', [ 'last_range' => [ 'since' => '2026-10-11', 'until' => '2026-10-14' ] ] );
-		$this->assertSame( [ 'reason' => '', 'held' => 0, 'since' => null, 'dropped' => null ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
+		$this->assertSame( [ 'reason' => '', 'held' => 3, 'since' => null, 'dropped' => null ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
 	}
 
 	/** The extractor's snapshot answers as published. */
@@ -302,14 +354,16 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( [ 'proxy-k9', 'HTTP 502 https://proxy.test/v1' ], \array_values( \array_intersect_key( $this->ci->dispatch( 'health', [ 'extraction' ] ), [ 'vault_id' => 1, 'last_error' => 1 ] ) ) );
 	}
 
-	/** Each worker node's snapshot is read under the name the active topology gives it. */
+	/** Each worker node's snapshot is read under the name the active topology gives it, the queue's under the one its resolver parks on. */
 	public function test_snapshots_are_read_under_the_names_the_topology_gives(): void {
-		$this->shadow( 'newspack-intelligence-resolve', 'make_node Resolver plover-resolver intel:writer intel:later', 'make_node Extractor plover-extractor intel:writer intel:later' );
+		$this->shadow( 'newspack-intelligence-resolve', 'make_node Resolver plover-resolver intel:writer plover-later', 'make_node Extractor plover-extractor intel:writer plover-later' );
 		$extraction = [ 'mode' => 'call', 'vault_id' => 'proxy-p3', 'last_ok_at' => 1792477001, 'last_error' => null, 'failing_since' => null ];
 		$this->snapshot( 'plover-extractor', $extraction );
 		$this->snapshot( 'extractor', [ 'mode' => 'heuristic', 'vault_id' => 'proxy-x1', 'last_ok_at' => null, 'last_error' => null, 'failing_since' => null ] );
-		$this->snapshot( 'plover-resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400555, 'held' => 77, 'dropped' => null ] );
-		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400999, 'held' => 12, 'dropped' => null ] );
+		$this->snapshot( 'plover-resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400555 ] );
+		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400999 ] );
+		$this->snapshot( 'plover-later', self::queue( 77, null ) );
+		$this->snapshot( 'intel:later', self::queue( 12, null ) );
 
 		$this->assertSame( $extraction, $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => 77, 'since' => 1792400555, 'dropped' => null ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
@@ -319,7 +373,7 @@ final class IntelligenceHealthTest extends TestCase {
 	public function test_a_node_the_topology_lacks_reads_unknown(): void {
 		$this->shadow( 'newspack-intelligence-resolve', 'make_node Deduper deduper intel:writer' );
 		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_id' => 'proxy-x1', 'last_ok_at' => 1792477001, 'last_error' => null, 'failing_since' => null ] );
-		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400999, 'held' => 12, 'dropped' => null ] );
+		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400999 ] );
 
 		$this->assertSame( [ 'mode' => 'unknown' ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => null, 'since' => null, 'dropped' => null ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
@@ -336,7 +390,7 @@ final class IntelligenceHealthTest extends TestCase {
 			'make_node Reresolver avocet-reresolver intel:reresolve'
 		);
 		$dropped = [ 'first_day' => '2026-10-12', 'last_day' => '2026-10-14' ];
-		$this->snapshot( 'resolver', [ 'reason' => '', 'since' => null, 'held' => 0, 'dropped' => $dropped ] );
+		$this->snapshot( 'intel:later', self::queue( 0, $dropped ) );
 		$this->snapshot( 'reresolver', [ 'last_range' => [ 'since' => '2026-10-11', 'until' => '2026-10-15' ] ] );
 
 		$this->assertSame( $dropped, $this->ci->dispatch( 'health', [ 'backlog' ] )['dropped'], 'a range another name queued' );
@@ -372,6 +426,22 @@ final class IntelligenceHealthTest extends TestCase {
 		\file_put_contents( "{$dir}/{$topology}.tsl", \implode( "\n", $lines ) . "\n" );
 		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', $dir );
 		Topology_Analyzer::reset_caches();
+	}
+
+	/**
+	 * The later queue's snapshot, as the Delay publishes it each sweep.
+	 *
+	 * @param int                                          $depth   The entries it holds.
+	 * @param array{first_day:string,last_day:string}|null $dropped The days of the entries it dropped.
+	 * @return array<string,mixed>
+	 */
+	private static function queue( int $depth, ?array $dropped ): array {
+		return [
+			'depth'            => $depth,
+			'oldest_parked_at' => 0 === $depth ? null : 1792399417,
+			'dropped'          => $dropped,
+			'dropped_count'    => null === $dropped ? 0 : 41,
+		];
 	}
 
 	/**

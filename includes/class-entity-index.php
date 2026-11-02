@@ -103,16 +103,17 @@ final class Entity_Index {
 	/**
 	 * Read the index from the projection: every attached partition's
 	 * entities, states, merges, names and identifiers, each table one
-	 * statement over every partition, a later partition's row winning. An
-	 * entity whose merge chain cycles or runs past MAX_MERGE_HOPS answers no
-	 * survivor, so its names and identifiers are left out, logged once
-	 * naming each chain.
+	 * statement over every partition. Each entity's state is the one the
+	 * highest partition holding one writes, and the live entities are
+	 * `live()`'s, read over those same states. An entity whose merge chain
+	 * cycles or runs past MAX_MERGE_HOPS answers no survivor, so its names
+	 * and identifiers are left out, logged once naming each chain.
 	 *
 	 * @param Row_Reader $r The reader `Intel_Graph_Row_Schema::read()` hands over.
 	 */
 	public static function load( Row_Reader $r ): self {
 		$states = [];
-		foreach ( $r->rows( 'SELECT entity_key, state FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_states' ) . ' s', [] ) as [ $key, $state ] ) {
+		foreach ( $r->rows( 'SELECT entity_key, state FROM ' . self::winning_states( $r ) . ' s', [] ) as [ $key, $state ] ) {
 			$states[ Core::as_string( $key ) ] = Core::as_string( $state );
 		}
 		$index         = new self();
@@ -134,12 +135,11 @@ final class Entity_Index {
 			return '' === $survivor ? null : $survivor;
 		};
 		$state_of = static fn ( string $key ): ?string => $existing[ $survivor( $key ) ?? '' ] ?? null;
-		foreach ( $existing as $key => $state ) {
-			if ( ! isset( $index->merged[ $key ] ) && \in_array( $state, self::LIVE_STATES, true ) ) {
-				$index->states[ $key ] = $state;
-				if ( isset( $topics[ $key ] ) ) {
-					$index->topics[ $topics[ $key ] ] = $key;
-				}
+		foreach ( self::live( $r, false ) as [ $key, $state ] ) {
+			$key                   = Core::as_string( $key );
+			$index->states[ $key ] = Core::as_string( $state );
+			if ( isset( $topics[ $key ] ) ) {
+				$index->topics[ $topics[ $key ] ] = $key;
 			}
 		}
 		\ksort( $index->topics );
@@ -208,7 +208,8 @@ final class Entity_Index {
 
 	/**
 	 * Each merged key => the key it merged into, across every attached
-	 * partition, a later partition's merge winning, by key.
+	 * partition; where two partitions merge one key apart, the row read
+	 * last wins, by key.
 	 *
 	 * @param Row_Reader $r The reader `Intel_Graph_Row_Schema::read()` hands over.
 	 * @return array<string,string>
@@ -266,14 +267,6 @@ final class Entity_Index {
 	}
 
 	/**
-	 * Whether a projector's reader of the ontology stream, the one
-	 * Stream_Writer appends to, has not projected all of it yet.
-	 */
-	private static function ontology_behind(): bool {
-		return Projector_Node::behind( Stream_Writer::stream_dir( Intel_Event::ONTOLOGY ) );
-	}
-
-	/**
 	 * The entity an identifier names.
 	 *
 	 * @param string $kind  An identifier kind.
@@ -307,21 +300,80 @@ final class Entity_Index {
 	}
 
 	/**
-	 * Why this index holds every record, '' when it holds none: while a
-	 * projector's reader of the ontology stream had not committed the
-	 * stream's end just before current() read it, then while it holds no
-	 * live entity, one accepted or proposed and not merged away. Behind
-	 * comes first, so a seed not yet projected reads as the projector
-	 * catching up rather than as an empty ontology. The resolver's hold and
-	 * the `health` verb read this one answer.
+	 * Why this index holds every record, by `cause()`'s rule, as current()
+	 * read it.
 	 *
-	 * @api Read by Resolver_Node and Intelligence_Health.
+	 * @api Read by Resolver_Node.
 	 */
 	public function hold_cause(): string {
-		if ( $this->behind ) {
+		return self::cause( $this->behind, [] !== $this->states );
+	}
+
+	/**
+	 * Why records would hold, by `cause()`'s rule, read now without loading
+	 * an index: no live entity while no `intel-graph` table can be read.
+	 *
+	 * @api Read by Intelligence_Health.
+	 */
+	public static function hold_cause_now(): string {
+		$behind = self::ontology_behind();
+		$live   = Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): bool => [] !== self::live( $r, true ), 'no intel-graph to read entities from; reading none: ' );
+		return self::cause( $behind, true === $live );
+	}
+
+	/**
+	 * Why records hold, '' when nothing holds: while a projector's reader of
+	 * the ontology stream had not committed its end just before the
+	 * projection was read, so a seed not yet projected never reads as an
+	 * empty ontology; then while no entity is live.
+	 *
+	 * @param bool $behind Whether the projector stood behind the stream.
+	 * @param bool $live   Whether a live entity is projected.
+	 */
+	private static function cause( bool $behind, bool $live ): string {
+		if ( $behind ) {
 			return 'behind_ontology';
 		}
-		return [] === $this->states ? 'no_live_entity' : '';
+		return $live ? '' : 'no_live_entity';
+	}
+
+	/**
+	 * Each live entity's key and state: its winning state in LIVE_STATES,
+	 * an `entities` row in any partition, and no merge away. The one rule
+	 * `load()` indexes by and `hold_cause_now()` asks after.
+	 *
+	 * @param Row_Reader $r   The reader `Intel_Graph_Row_Schema::read()` hands over.
+	 * @param bool       $any Whether one live entity answers enough.
+	 * @return list<list<mixed>>
+	 */
+	private static function live( Row_Reader $r, bool $any ): array {
+		return $r->rows(
+			'SELECT s.entity_key, s.state FROM ' . self::winning_states( $r ) . ' s'
+			. ' WHERE s.state IN ( ' . Intel_Graph_Row_Schema::marks( self::LIVE_STATES ) . ' )'
+			. ' AND EXISTS ( SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e WHERE e.entity_key = s.entity_key )'
+			. ' AND s.entity_key NOT IN ( SELECT entity_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_merges' ) . ' m )'
+			. ( $any ? ' LIMIT 1' : '' ),
+			self::LIVE_STATES
+		);
+	}
+
+	/**
+	 * Each entity's state as the highest partition holding one writes it,
+	 * one row per key, as a subquery.
+	 *
+	 * @param Row_Reader $r The reader `Intel_Graph_Row_Schema::read()` hands over.
+	 */
+	private static function winning_states( Row_Reader $r ): string {
+		return '( SELECT entity_key, state FROM ( SELECT entity_key, state, ROW_NUMBER() OVER ( PARTITION BY entity_key ORDER BY partition_ordinal DESC ) AS rn FROM '
+			. Intel_Graph_Row_Schema::all( $r, 'entity_states', true ) . ' a ) WHERE 1 = rn )';
+	}
+
+	/**
+	 * Whether a projector's reader of the ontology stream, the one
+	 * Stream_Writer appends to, has not projected all of it yet.
+	 */
+	private static function ontology_behind(): bool {
+		return Projector_Node::behind( Stream_Writer::stream_dir( Intel_Event::ONTOLOGY ) );
 	}
 
 	/**

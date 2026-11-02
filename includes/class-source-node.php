@@ -20,6 +20,7 @@
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Command_Args;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
@@ -900,6 +901,27 @@ abstract class Source_Node extends Timer_Node {
 			'item_ts'      => false !== $ts ? $ts : 0,
 			'retrieved_ts' => Intel_Event::now(),
 		];
+	}
+
+	/**
+	 * A source's topology row names the tier it records at: the last
+	 * `set_tier` its config is sent, bound by that verb's own args, else its
+	 * make_node line's, the first positional every source declares.
+	 *
+	 * @api Read by the substrate's Topology_Analyzer::graph_for().
+	 * @param list<string>                         $args     The `make_node` arguments, quotes stripped.
+	 * @param list<array{0:string,1:list<string>}> $commands Each verb and its argument tokens, in the order sent.
+	 * @return array{tier:string}
+	 * @throws \InvalidArgumentException When a `set_tier` line does not bind.
+	 */
+	public static function graph_facts( array $args, array $commands ): array {
+		$tier = $args[0] ?? '';
+		foreach ( $commands as [ $verb, $tokens ] ) {
+			if ( 'set_tier' === $verb ) {
+				$tier = Core::as_string( Command_Args::bind( Core::arr( Command_Interpreter_Node::declared_verbs( static::class )['set_tier']['args'] ), $tokens )['tier'] );
+			}
+		}
+		return [ 'tier' => $tier ];
 	}
 
 	/**

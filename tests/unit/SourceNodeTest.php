@@ -113,6 +113,19 @@ final class SourceNodeTest extends TestCase {
 		$node->arguments( [] );
 	}
 
+	/**
+	 * A topology's row for a source names the tier it records at: the last
+	 * `set_tier` its config is sent, bound by that verb's own args, else its
+	 * make_node line's.
+	 */
+	public function test_the_graph_row_names_the_last_set_tier_else_the_lines(): void {
+		$this->assertSame( [ 'tier' => 'internal' ], Fake_Source_Node::graph_facts( [ 'internal', 'tern-vault-3' ], [ [ 'set_interval', [ '900' ] ] ] ) );
+		$this->assertSame(
+			[ 'tier' => 'restricted' ],
+			Fake_Source_Node::graph_facts( [ 'public' ], [ [ 'set_tier', [ 'internal' ] ], [ 'set_interval', [ '1800' ] ], [ 'set_tier', [ '--tier=restricted' ] ] ] )
+		);
+	}
+
 	public function test_a_tier_outside_the_set_is_refused_at_load_and_by_set_tier(): void {
 		$node = $this->fake( [ 'internal' ] );
 		foreach ( [ static fn () => $node->arguments( [ 'secret' ] ), static fn () => $node->interpreter()->dispatch( 'set_tier', [ 'secret' ] ) ] as $refused ) {

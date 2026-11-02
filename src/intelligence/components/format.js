@@ -24,21 +24,6 @@ export function utcDay( ts ) {
 }
 
 /**
- * The UTC day and minute of a Unix time, `Y-m-d H:i UTC`, or '' for none.
- *
- * @param {?number} ts Seconds since the epoch; 0 is no time.
- * @return {string} The time.
- */
-export function utcTime( ts ) {
-	return ts
-		? `${ new Date( ts * 1000 )
-				.toISOString()
-				.slice( 0, 16 )
-				.replace( 'T', ' ' ) } UTC`
-		: '';
-}
-
-/**
  * A row's meta line: its parts joined by " · ", leaving out only the absent
  * ones — null, undefined and '' — so a 0 still shows.
  *

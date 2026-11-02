@@ -137,6 +137,17 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [], $reader->rows( 'SELECT entity_key, role, from_ts FROM ' . Intel_Graph_Row_Schema::all( $reader, 'roles' ) . ' r WHERE to_ts = 0', [] ) );
 	}
 
+	/** Only a read that asks for it sees each row's partition ordinal; every other read sees the declared columns alone. */
+	public function test_the_partition_ordinal_is_opt_in(): void {
+		$graph = $this->projector_graph();
+		self::deliver( $graph, Intel_Event::make( 'entity_created', [ 'entity_key' => 'organization:plover-ledger', 'type' => 'organization', 'name' => 'Plover Ledger' ], 'user:58', 'fixture-3' ) );
+		$graph->save_state();
+		$reader = \Newspack_Nodes\Sqlite_Arm::open_rows( [ 0 => \Newspack_Nodes\Table_Node::file( 'intel-graph', 0 ) ], Intel_Graph_Row_Schema::version() );
+
+		$this->assertCount( 4, $reader->rows( 'SELECT * FROM ' . Intel_Graph_Row_Schema::all( $reader, 'entities' ) . ' e', [] )[0] );
+		$this->assertSame( [ 0 ], \array_slice( $reader->rows( 'SELECT * FROM ' . Intel_Graph_Row_Schema::all( $reader, 'entities', true ) . ' e', [] )[0], 4 ) );
+	}
+
 	public function test_the_range_bounds_are_whole_utc_days(): void {
 		$this->assertSame( [ 1785715200, 1787270400 ], Intel_Graph_Row_Schema::range( '2026-08-03', '2026-08-20' ) );
 		$this->assertSame( [ 1787184000, 1787270400 ], Intel_Graph_Row_Schema::range( '2026-08-20', '2026-08-20' ) );

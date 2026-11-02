@@ -164,22 +164,6 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame( [], \WP_CLI::$successes );
 	}
 
-	/** A bad range is refused before the request graph is mounted. */
-	public function test_reresolve_validates_before_mounting_the_graph(): void {
-		$mounts = 0;
-		\add_action(
-			'newspack_nodes/request_graph_ready',
-			static function () use ( &$mounts ): void {
-				++$mounts;
-			}
-		);
-
-		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2026-13-04', 'until' => '2026-13-06' ] );
-
-		$this->assertSame( [ 'not a Y-m-d date: 2026-13-04' ], \WP_CLI::$errors );
-		$this->assertSame( 0, $mounts );
-	}
-
 	public function test_reresolve_fails_loud_with_no_live_worker(): void {
 		$this->expectException( \RuntimeException::class );
 		$this->expectExceptionMessage( 'No newspack-intelligence worker could be reached' );

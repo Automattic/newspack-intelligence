@@ -17,11 +17,17 @@ import {
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { HEALTHY, LAST_OK, okSource } from '../../__tests__/healthFixture';
+import { formatLocalDateTime } from '@newspack-nodes/shared/utils/formatUtils';
 import HealthStrip from '../HealthStrip';
-import { utcTime } from '../format';
 
-/** 2026-10-30 14:05 UTC. */
+/** 2026-10-30 14:05 UTC, the next day in Auckland. */
 const SINCE = Date.UTC( 2026, 9, 30, 14, 5 ) / 1000;
+
+/** SINCE as the strip renders it in Auckland, the zone jest.config.js pins. */
+const SINCE_LOCAL = '2026-10-31 03:05:00 GMT+13';
+
+/** LAST_OK as the strip renders it in Auckland. */
+const LAST_OK_LOCAL = '2026-10-31 22:41:00 GMT+13';
 
 /** The Vault tab of the substrate's Nodes station. */
 const VAULT = 'admin.php?page=newspack-nodes-station&tab=vault';
@@ -145,12 +151,12 @@ describe( 'HealthStrip', () => {
 		expect( rows() ).toBeVisible();
 		expect(
 			within( row( 'feed' ) ).getByText(
-				'Last answered 2026-10-31 09:41 UTC · 37 of 451 requests failed'
+				`Last answered ${ LAST_OK_LOCAL } · 37 of 451 requests failed`
 			)
 		).toBeInTheDocument();
 		expect(
 			within( row( 'Extraction' ) ).getByText(
-				'By the AI proxy; last extraction 2026-10-31 09:41 UTC.'
+				`By the AI proxy; last extraction ${ LAST_OK_LOCAL }.`
 			)
 		).toBeInTheDocument();
 		expect( within( row( 'github' ) ).getByText( 'ok' ) ).toHaveClass(
@@ -170,7 +176,7 @@ describe( 'HealthStrip', () => {
 		fireEvent.click( toggle() );
 		expect(
 			within( row( 'github' ) ).getByText(
-				'Last answered 2026-10-31 09:41 UTC · 1 of 1 request failed'
+				`Last answered ${ LAST_OK_LOCAL } · 1 of 1 request failed`
 			)
 		).toBeInTheDocument();
 	} );
@@ -179,7 +185,7 @@ describe( 'HealthStrip', () => {
 		health.backlog = STOPPED;
 		renderStrip();
 		await worstFault(
-			'Resolving is stopped: the ontology is empty. 47 items are waiting, since 2026-10-30 14:05 UTC.'
+			`Resolving is stopped: the ontology is empty. 47 items are waiting, since ${ SINCE_LOCAL }.`
 		);
 		expect( strip() ).toHaveClass( 'newspack-nodes-banner', 'is-warning' );
 		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'true' );
@@ -189,7 +195,7 @@ describe( 'HealthStrip', () => {
 		health.backlog = { ...STOPPED, held: 1 };
 		renderStrip();
 		await worstFault(
-			'Resolving is stopped: the ontology is empty. 1 item is waiting, since 2026-10-30 14:05 UTC.'
+			`Resolving is stopped: the ontology is empty. 1 item is waiting, since ${ SINCE_LOCAL }.`
 		);
 		expect( strip() ).toHaveClass( 'is-warning' );
 	} );
@@ -303,7 +309,7 @@ describe( 'HealthStrip', () => {
 		health.backlog = { ...STOPPED, reason: 'behind_ontology', since };
 		renderStrip( { canTune: true, canManage: true } );
 		await worstFault(
-			`Resolving is held: the projector has been behind the ontology since ${ utcTime(
+			`Resolving is held: the projector has been behind the ontology since ${ formatLocalDateTime(
 				since
 			) }.`
 		);
@@ -321,7 +327,7 @@ describe( 'HealthStrip', () => {
 		wire.replies.reresolve = { ok: true, workers: 1 };
 		renderStrip( { canManage: true } );
 		await worstFault(
-			'Items held from 2026-10-27 to 2026-10-28 were dropped after a day.'
+			'Items parked from 2026-10-27 to 2026-10-28 were dropped before they resolved.'
 		);
 		fireEvent.click( screen.getByRole( 'button', { name: 'Re-resolve' } ) );
 		expect(
@@ -496,7 +502,7 @@ describe( 'HealthStrip', () => {
 		expect( screen.queryByRole( 'link' ) ).toBeNull();
 	} );
 
-	it( 'offers one Fetch now, on the first failing source, naming its error and since', async () => {
+	it( 'offers one Fetch all sources now, on the first failing source, naming its error and since', async () => {
 		health.sources.sources[ 0 ] = failingSource(
 			'github',
 			'GitHub answered an error for https://api.github.com: rate limited'
@@ -508,14 +514,14 @@ describe( 'HealthStrip', () => {
 		wire.replies.fetch_now = { ok: true, workers: 1 };
 		renderStrip( { canManage: true } );
 		await worstFault(
-			'GitHub answered an error for https://api.github.com: rate limited · failing since 2026-10-30 14:05 UTC'
+			`GitHub answered an error for https://api.github.com: rate limited · failing since ${ SINCE_LOCAL }`
 		);
 		expect(
-			screen.getAllByRole( 'button', { name: 'Fetch now' } )
+			screen.getAllByRole( 'button', { name: 'Fetch all sources now' } )
 		).toHaveLength( 1 );
 		fireEvent.click(
 			within( row( 'github' ) ).getByRole( 'button', {
-				name: 'Fetch now',
+				name: 'Fetch all sources now',
 			} )
 		);
 		expect( await screen.findByText( 'Fetching.' ) ).toBeInTheDocument();
@@ -529,21 +535,123 @@ describe( 'HealthStrip', () => {
 			failing_since: SINCE,
 		};
 		renderStrip();
-		await worstFault( 'Failing since 2026-10-30 14:05 UTC' );
+		await worstFault( `Failing since ${ SINCE_LOCAL }` );
 		expect(
-			screen.getByText( 'An administrator can fetch it now.' )
+			screen.getByText( 'An administrator can fetch all sources now.' )
 		).toBeInTheDocument();
 	} );
 
-	it( 'reads a source no pass has reported as unknown, and claims no health', async () => {
+	it( 'names a source no pass has reported, and stays neutral', async () => {
 		health.sources.sources[ 2 ] = { name: 'news', state: 'unknown' };
 		renderStrip();
-		await lineReads( 'The pipeline’s health is not fully known.' );
+		await lineReads(
+			'Collecting from 2 of 3 sources; news has not reported yet. Nothing waiting.'
+		);
 		expect( strip() ).not.toHaveClass( 'is-warning' );
 		fireEvent.click( toggle() );
 		expect(
 			within( row( 'news' ) ).getByText( 'No pass has reported yet.' )
 		).toBeInTheDocument();
+	} );
+
+	it( 'names every source no pass has reported, as a list', async () => {
+		health.sources.sources[ 0 ] = { name: 'github', state: 'unknown' };
+		health.sources.sources[ 2 ] = { name: 'news', state: 'unknown' };
+		health.sources.sources.push( okSource( 'slack' ) );
+		renderStrip();
+		await lineReads(
+			'Collecting from 2 of 4 sources; github and news have not reported yet. Nothing waiting.'
+		);
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+	} );
+
+	it( 'counts a total of one source in the singular', async () => {
+		health.sources.sources = [ { name: 'github', state: 'unknown' } ];
+		renderStrip();
+		await lineReads(
+			'Collecting from 0 of 1 source; github has not reported yet. Nothing waiting.'
+		);
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+	} );
+
+	it( 'claims no health for a source in a state it does not recognise', async () => {
+		health.sources.sources[ 0 ] = { name: 'github', state: 'unknown' };
+		health.sources.sources[ 2 ] = { name: 'news', state: 'paused' };
+		renderStrip();
+		await lineReads( 'The pipeline’s health is not fully known.' );
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+	} );
+
+	it( 'joins the unreported names in the page’s own language', async () => {
+		document.documentElement.lang = 'de-DE';
+		health.sources.sources[ 0 ] = { name: 'github', state: 'unknown' };
+		health.sources.sources[ 2 ] = { name: 'news', state: 'unknown' };
+		try {
+			renderStrip();
+			await lineReads(
+				'Collecting from 1 of 3 sources; github und news have not reported yet. Nothing waiting.'
+			);
+			expect( strip() ).not.toHaveClass( 'is-warning' );
+		} finally {
+			document.documentElement.lang = '';
+		}
+	} );
+
+	it( 'joins the unreported names in the default language when the page’s is malformed', async () => {
+		document.documentElement.lang = 'en_US!';
+		health.sources.sources[ 0 ] = { name: 'github', state: 'unknown' };
+		health.sources.sources[ 2 ] = { name: 'news', state: 'unknown' };
+		try {
+			renderStrip();
+			await lineReads(
+				'Collecting from 1 of 3 sources; github and news have not reported yet. Nothing waiting.'
+			);
+			expect( strip() ).not.toHaveClass( 'is-warning' );
+		} finally {
+			document.documentElement.lang = '';
+		}
+	} );
+
+	it( 'claims no health while another row is unknown beside an unreported source', async () => {
+		health.sources.sources[ 2 ] = { name: 'news', state: 'unknown' };
+		health.extraction = { mode: 'unknown' };
+		renderStrip();
+		await lineReads( 'The pipeline’s health is not fully known.' );
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+	} );
+
+	it( 'counts the items waiting to resolve or retry while nothing holds', async () => {
+		health.backlog = { ...HEALTHY.backlog, held: 9 };
+		renderStrip();
+		await lineReads(
+			'Collecting from 3 sources. 9 items are waiting to resolve or retry.'
+		);
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+	} );
+
+	it( 'counts one item waiting to resolve or retry in the singular', async () => {
+		health.backlog = { ...HEALTHY.backlog, held: 1 };
+		renderStrip();
+		await lineReads(
+			'Collecting from 3 sources. 1 item is waiting to resolve or retry.'
+		);
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+	} );
+
+	it( 'claims nothing waiting only while the queue’s count is known', async () => {
+		health.backlog = { ...HEALTHY.backlog, held: null };
+		renderStrip();
+		await lineReads(
+			'Collecting from 3 sources. Resolving is running; how many items wait to retry is not known.'
+		);
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+	} );
+
+	it( 'renders every time in the browser’s zone, a day ahead of UTC here', () => {
+		expect( formatLocalDateTime( SINCE ) ).toBe( SINCE_LOCAL );
+		expect( new Date( SINCE * 1000 ).toISOString().slice( 0, 10 ) ).toBe(
+			'2026-10-30'
+		);
 	} );
 
 	it( 'keeps every row neutral while collection is off', async () => {
@@ -647,7 +755,7 @@ describe( 'HealthStrip', () => {
 		};
 		renderStrip( { canManage: true } );
 		await worstFault(
-			'AI proxy answered HTTP 502 · failing since 2026-10-30 14:05 UTC'
+			`AI proxy answered HTTP 502 · failing since ${ SINCE_LOCAL }`
 		);
 		expect( strip() ).toHaveClass( 'is-warning' );
 		expect(
@@ -728,7 +836,7 @@ describe( 'HealthStrip', () => {
 		health.backlog = STOPPED;
 		renderStrip();
 		await lineReads(
-			'Resolving is stopped: the ontology is empty. 47 items are waiting, since 2026-10-30 14:05 UTC.'
+			`Resolving is stopped: the ontology is empty. 47 items are waiting, since ${ SINCE_LOCAL }.`
 		);
 		fireEvent.click( toggle() );
 		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );

@@ -20,6 +20,7 @@ use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
+use Newspack_Nodes\Delay_Node;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Topology_Analyzer;
 
@@ -27,8 +28,8 @@ use Newspack_Nodes\Topology_Analyzer;
 
 final class Intelligence_Health {
 
-	/** The slices `what` names, in the order the strip reads them. */
-	private const SLICES = [ 'collection', 'sources', 'backlog', 'extraction' ];
+	/** The slices `what` names, each answered by the method of its name. */
+	public const SLICES = [ 'collection', 'sources', 'backlog', 'extraction' ];
 
 	/** The worker partition every snapshot is read at: the topology runs one. */
 	private const PARTITION = 0;
@@ -44,13 +45,11 @@ final class Intelligence_Health {
 	 * @throws \InvalidArgumentException When `what` names no slice.
 	 */
 	public static function answer( array $args ): array {
-		return match ( Core::as_string( $args['what'] ) ) {
-			'collection' => self::collection(),
-			'sources'    => self::sources(),
-			'backlog'    => self::backlog(),
-			'extraction' => self::extraction(),
-			default      => throw new \InvalidArgumentException( \esc_html( 'what must be one of: ' . \implode( ', ', self::SLICES ) ) ),
-		};
+		$what = Core::as_string( $args['what'] );
+		if ( ! \in_array( $what, self::SLICES, true ) ) {
+			throw new \InvalidArgumentException( \esc_html( 'what must be one of: ' . \implode( ', ', self::SLICES ) ) );
+		}
+		return self::$what();
 	}
 
 	/**
@@ -79,28 +78,30 @@ final class Intelligence_Health {
 
 	/**
 	 * Why items wait to resolve, as the resolver's hold decides it, beside
-	 * the count and start its snapshot holds when that snapshot names the
-	 * same reason, else null, and the dropped days its snapshot holds, null
+	 * how many entries its later queue holds, the extractor's retries among
+	 * them; the start of the resolver's hold when its snapshot names the same
+	 * reason, else null; and the days of the entries that queue dropped, null
 	 * with none or once a re-resolution has covered them.
 	 *
 	 * @return array{reason:string,held:mixed,since:mixed,dropped:mixed}
 	 */
 	private static function backlog(): array {
-		$reason = Entity_Index::current()->hold_cause();
-		$hold   = self::status_of( Resolver_Node::class ) ?? [];
-		$same   = $reason === ( $hold['reason'] ?? null );
+		$reason   = Entity_Index::hold_cause_now();
+		$resolver = self::node_of( Resolver_Node::class );
+		$hold     = null === $resolver ? [] : Resolver_Node::read_status( Core::as_string( $resolver['name'] ), self::PARTITION ) ?? [];
+		$queue    = null === $resolver ? [] : Delay_Node::read_status( Core::as_string( self::line( Resolver_Node::class, $resolver )['later'] ), self::PARTITION ) ?? [];
 		return [
 			'reason'  => $reason,
-			'held'    => $same ? $hold['held'] ?? null : null,
-			'since'   => $same ? $hold['since'] ?? null : null,
-			'dropped' => self::uncovered( $hold['dropped'] ?? null ),
+			'held'    => $queue['depth'] ?? null,
+			'since'   => $reason === ( $hold['reason'] ?? null ) ? $hold['since'] ?? null : null,
+			'dropped' => self::uncovered( $queue['dropped'] ?? null ),
 		];
 	}
 
 	/**
 	 * The dropped days, or null once the reresolver's last range covers them.
 	 *
-	 * @param mixed $dropped The resolver's `{ first_day, last_day }`, or null.
+	 * @param mixed $dropped The later queue's `{ first_day, last_day }`, or null.
 	 */
 	private static function uncovered( mixed $dropped ): mixed {
 		if ( ! \is_array( $dropped ) ) {
@@ -114,20 +115,32 @@ final class Intelligence_Health {
 	}
 
 	/**
-	 * The snapshot the active topology's node of `$class` published, null
-	 * when the topology declares none or no cache holds one.
+	 * The snapshot the topology's node of `$class` published, null when the
+	 * topology declares none or no cache holds one.
 	 *
-	 * @param class-string<Extractor_Node|Resolver_Node|Reresolver_Node> $class The node's class.
+	 * @param class-string<Extractor_Node|Reresolver_Node> $class The node's class.
 	 * @return array<array-key,mixed>|null
 	 */
 	private static function status_of( string $class ): ?array {
-		$node = Topology_Analyzer::nodes_of_type( Worker_Route::TOPOLOGY, $class )[0] ?? null;
+		$node = self::node_of( $class );
 		return null === $node ? null : $class::read_status( Core::as_string( $node['name'] ), self::PARTITION );
 	}
 
 	/**
+	 * The topology's first node of `$class`, as its graph row draws it;
+	 * null when it declares none.
+	 *
+	 * @param class-string<\Newspack_Nodes\Node> $class The node's class.
+	 * @return array<array-key,mixed>|null
+	 */
+	private static function node_of( string $class ): ?array {
+		return Topology_Analyzer::nodes_of_type( Worker_Route::TOPOLOGY, $class )[0] ?? null;
+	}
+
+	/**
 	 * Every source the collect topology declares, in its order, but those
-	 * of a tier the caller cannot read: idle with the credential it needs
+	 * whose row's tier (`Source_Node::graph_facts()`) the caller cannot
+	 * read: idle with the credential it needs
 	 * when its group lends none on the origin it fetches, whatever its
 	 * snapshot says; else its snapshot; else unknown; each redacted for a
 	 * caller below manage.
@@ -137,33 +150,47 @@ final class Intelligence_Health {
 	private static function sources(): array {
 		$readable = Intel_Tiers::readable();
 		$sources  = [];
+		$lent     = [];
 		foreach ( Intelligence_CI_Node::sources() as $node ) {
 			$type = Core::as_string( $node['type'] );
 			/** @var class-string<Source_Node> $class nodes_of_type() kept only Source_Node types. */
 			$class = Command_Interpreter_Node::resolve_class( $type );
-			$line = Command_Args::bind( Core::arr( $class::node_schema()['arguments'] ?? [] ), \array_map( Core::as_string( ... ), \array_values( Core::arr( $node['args'] ) ) ) );
-			$tier = Core::as_string( $line['tier'] );
+			$tier  = Core::as_string( $node['tier'] );
 			if ( ! \in_array( $tier, $readable, true ) ) {
 				continue;
 			}
 			$name      = Core::as_string( $node['name'] );
 			$sources[] = [ 'name' => $name, 'class' => $type, 'tier' => $tier ]
-				+ self::redacted( self::idle( $class, Core::as_string( $line['vault_group'] ?? '' ) ) ?? Source_Node::read_status( $name, self::PARTITION ) ?? [ 'state' => 'unknown' ] );
+				+ self::redacted( self::idle( $class, Core::as_string( self::line( $class, $node )['vault_group'] ?? '' ), $lent ) ?? Source_Node::read_status( $name, self::PARTITION ) ?? [ 'state' => 'unknown' ] );
 		}
 		return [ 'sources' => $sources ];
 	}
 
 	/**
-	 * A credentialed source's idle row when its group lends nothing on the
-	 * url it fetches; null when it needs no credential or one is lent.
+	 * A node's `make_node` line bound by its class's own arguments, so each
+	 * is read by name.
 	 *
-	 * @param class-string<Source_Node> $class The source's class.
-	 * @param string                    $group Its vault group, '' for none.
+	 * @param class-string<\Newspack_Nodes\Node> $class The node's class.
+	 * @param array<array-key,mixed>              $node  Its `nodes_of_type()` row.
+	 * @return array<string,mixed>
+	 */
+	private static function line( string $class, array $node ): array {
+		return Command_Args::bind( Core::arr( $class::node_schema()['arguments'] ?? [] ), \array_map( Core::as_string( ... ), \array_values( Core::arr( $node['args'] ) ) ) );
+	}
+
+	/**
+	 * A credentialed source's idle row when its group lends nothing on the
+	 * url it fetches; null when it needs no credential or one is lent. The
+	 * Vault is asked once per group and url, its answer kept in `$lent`.
+	 *
+	 * @param class-string<Source_Node>           $class The source's class.
+	 * @param string                              $group Its vault group, '' for none.
+	 * @param array<string,array<string,bool>>    $lent  Whether each group lends on each url, as asked so far.
 	 * @return array{state:string,credential:array{url:string,group:string}}|null
 	 */
-	private static function idle( string $class, string $group ): ?array {
+	private static function idle( string $class, string $group, array &$lent ): ?array {
 		$url = $class::credential_url();
-		if ( '' === $url || Curl_Node::lends_credential( $group, $url ) ) {
+		if ( '' === $url || ( $lent[ $group ][ $url ] ??= Curl_Node::lends_credential( $group, $url ) ) ) {
 			return null;
 		}
 		return [

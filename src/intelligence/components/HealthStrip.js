@@ -1,9 +1,10 @@
 import { useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { answerStatus } from '@newspack-nodes/shared/utils/answerStatus';
+import { formatLocalDateTime } from '@newspack-nodes/shared/utils/formatUtils';
 import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
 import Refusal from './Refusal';
-import { metaLine, utcTime } from './format';
+import { metaLine } from './format';
 
 /** The Vault tab of the substrate's Nodes station, where a credential is added. */
 const VAULT_PAGE = 'admin.php?page=newspack-nodes-station&tab=vault';
@@ -13,6 +14,9 @@ const ROWS_ID = 'newspack-intelligence-health-rows';
 
 /** How long the projector may stay behind the ontology before it is a fault. */
 const BEHIND_FAULT_S = 300;
+
+/** The prefix of a source row's key, which its name follows. */
+const SOURCE_ROW = 'source:';
 
 /** @typedef {{key: string, label: string, state: string, tone: string, fault: boolean, unknown: boolean, text: string, fix: ?import('react').ReactNode}} HealthRow */
 
@@ -128,18 +132,18 @@ function failingText( { last_error: error, failing_since: since } ) {
 			error,
 			since
 				? sprintf(
-						/* translators: %s: a UTC time. */
+						/* translators: %s: a time in the reader's zone. */
 						__( 'failing since %s', 'newspack-intelligence' ),
-						utcTime( since )
+						formatLocalDateTime( since )
 				  )
 				: null
 		);
 	}
 	return since
 		? sprintf(
-				/* translators: %s: a UTC time. */
+				/* translators: %s: a time in the reader's zone. */
 				__( 'Failing since %s', 'newspack-intelligence' ),
-				utcTime( since )
+				formatLocalDateTime( since )
 		  )
 		: __( 'Failing.', 'newspack-intelligence' );
 }
@@ -170,7 +174,7 @@ function stoppedText( { held, since } ) {
 		);
 	}
 	return sprintf(
-		/* translators: 1: items waiting to resolve, 2: a UTC time. */
+		/* translators: 1: items waiting to resolve, 2: a time in the reader's zone. */
 		_n(
 			'Resolving is stopped: the ontology is empty. %1$d item is waiting, since %2$s.',
 			'Resolving is stopped: the ontology is empty. %1$d items are waiting, since %2$s.',
@@ -178,7 +182,36 @@ function stoppedText( { held, since } ) {
 			'newspack-intelligence'
 		),
 		held,
-		utcTime( since )
+		formatLocalDateTime( since )
+	);
+}
+
+/**
+ * What waits while nothing holds: the later queue's entries, the
+ * extractor's retries among them, or that their number is not known.
+ *
+ * @param {{held: ?number}} backlog The slice.
+ * @return {string} The cause.
+ */
+function clearText( { held } ) {
+	if ( null === held ) {
+		return __(
+			'Resolving is running; how many items wait to retry is not known.',
+			'newspack-intelligence'
+		);
+	}
+	if ( 0 === held ) {
+		return __( 'Nothing waiting.', 'newspack-intelligence' );
+	}
+	return sprintf(
+		/* translators: %d: items waiting to resolve or retry. */
+		_n(
+			'%d item is waiting to resolve or retry.',
+			'%d items are waiting to resolve or retry.',
+			held,
+			'newspack-intelligence'
+		),
+		held
 	);
 }
 
@@ -314,12 +347,12 @@ const STATES = {
 				metaLine(
 					source.last_ok_at
 						? sprintf(
-								/* translators: %s: a UTC time. */
+								/* translators: %s: a time in the reader's zone. */
 								__(
 									'Last answered %s',
 									'newspack-intelligence'
 								),
-								utcTime( source.last_ok_at )
+								formatLocalDateTime( source.last_ok_at )
 						  )
 						: null,
 					source.failed
@@ -346,8 +379,14 @@ const STATES = {
 				ctx.firstFailing === source && (
 					<Fix
 						can={ ctx.canManage }
-						label={ __( 'Fetch now', 'newspack-intelligence' ) }
-						action={ __( 'fetch it now', 'newspack-intelligence' ) }
+						label={ __(
+							'Fetch all sources now',
+							'newspack-intelligence'
+						) }
+						action={ __(
+							'fetch all sources now',
+							'newspack-intelligence'
+						) }
 						verb="fetch_now"
 						refresh={ ctx.refresh }
 						texts={ {
@@ -383,7 +422,7 @@ const STATES = {
 		'': {
 			word: __( 'clear', 'newspack-intelligence' ),
 			tone: 'is-success',
-			text: () => __( 'Nothing waiting.', 'newspack-intelligence' ),
+			text: clearText,
 		},
 		no_live_entity: {
 			word: __( 'held', 'newspack-intelligence' ),
@@ -419,12 +458,12 @@ const STATES = {
 			fault: true,
 			text: ( { since } ) =>
 				sprintf(
-					/* translators: %s: a UTC time. */
+					/* translators: %s: a time in the reader's zone. */
 					__(
 						'Resolving is held: the projector has been behind the ontology since %s.',
 						'newspack-intelligence'
 					),
-					utcTime( since )
+					formatLocalDateTime( since )
 				),
 		},
 	},
@@ -437,7 +476,7 @@ const STATES = {
 				sprintf(
 					/* translators: 1: the first UTC day, 2: the last. */
 					__(
-						'Items held from %1$s to %2$s were dropped after a day.',
+						'Items parked from %1$s to %2$s were dropped before they resolved.',
 						'newspack-intelligence'
 					),
 					first,
@@ -469,12 +508,12 @@ const STATES = {
 			text: ( { last_ok_at: lastOk } ) =>
 				lastOk
 					? sprintf(
-							/* translators: %s: a UTC time. */
+							/* translators: %s: a time in the reader's zone. */
 							__(
 								'By the AI proxy; last extraction %s.',
 								'newspack-intelligence'
 							),
-							utcTime( lastOk )
+							formatLocalDateTime( lastOk )
 					  )
 					: __( 'By the AI proxy.', 'newspack-intelligence' ),
 		},
@@ -674,7 +713,7 @@ function healthRows( { collection, backlog, extraction, sources }, ctx ) {
 			),
 		...listed.map( ( one ) =>
 			healthRow(
-				`source:${ one.name }`,
+				`${ SOURCE_ROW }${ one.name }`,
 				one.name,
 				'source',
 				one.state,
@@ -692,11 +731,70 @@ function healthRows( { collection, backlog, extraction, sources }, ctx ) {
 }
 
 /**
+ * How many sources the strip collects from: all of them, or how many have
+ * reported and the names of those that have not.
+ *
+ * @param {number}        total      Every source the slice lists.
+ * @param {Array<string>} unreported The names of those no pass has reported.
+ * @return {string} The sentence.
+ */
+function collectingText( total, unreported ) {
+	if ( ! unreported.length ) {
+		return sprintf(
+			/* translators: %d: the sources collected from. */
+			_n(
+				'Collecting from %d source.',
+				'Collecting from %d sources.',
+				total,
+				'newspack-intelligence'
+			),
+			total
+		);
+	}
+	return sprintf(
+		/* translators: 1: the sources that have reported, 2: every source, as "3 sources", 3: the names of those that have not. */
+		_n(
+			'Collecting from %1$d of %2$s; %3$s has not reported yet.',
+			'Collecting from %1$d of %2$s; %3$s have not reported yet.',
+			unreported.length,
+			'newspack-intelligence'
+		),
+		total - unreported.length,
+		sprintf(
+			/* translators: %d: every source the strip lists. */
+			_n( '%d source', '%d sources', total, 'newspack-intelligence' ),
+			total
+		),
+		listFormat().format( unreported )
+	);
+}
+
+/**
+ * A conjunction list in the page's own language, `document.documentElement`'s
+ * `lang`, or the default one when that is empty or not a language tag, the
+ * one input the constructor's RangeError refuses here.
+ *
+ * @return {Intl.ListFormat} The format.
+ */
+function listFormat() {
+	/** @type {Intl.ListFormatOptions} */
+	const options = { type: 'conjunction' };
+	try {
+		return new Intl.ListFormat(
+			document.documentElement.lang || undefined,
+			options
+		);
+	} catch {
+		return new Intl.ListFormat( undefined, options );
+	}
+}
+
+/**
  * The strip's one line, the first that holds of: the worst fault; a slice
  * refused; a slice owed; collection off, which outranks the unknown rows
- * its expired snapshots leave; a row whose health is not known; else how
- * many sources it collects from, with nothing waiting or the projector
- * catching up.
+ * its expired snapshots leave; a row whose health is not known but a
+ * source no pass has reported; else how many sources it collects from,
+ * naming each source no pass has reported, and the backlog row's cause.
  *
  * @param {Object}           strip            What the line reads.
  * @param {Array<HealthRow>} strip.faults     The fault rows, worst first.
@@ -704,10 +802,9 @@ function healthRows( { collection, backlog, extraction, sources }, ctx ) {
  * @param {Array<Object>}    strip.reads      The four reads.
  * @param {?Object}          strip.collection The collection slice.
  * @param {?Object}          strip.sources    The sources slice.
- * @param {?Object}          strip.backlog    The backlog slice.
  * @return {string} The line.
  */
-function healthLine( { faults, rows, reads, collection, sources, backlog } ) {
+function healthLine( { faults, rows, reads, collection, sources } ) {
 	if ( faults.length ) {
 		return faults[ 0 ].text;
 	}
@@ -723,35 +820,22 @@ function healthLine( { faults, rows, reads, collection, sources, backlog } ) {
 	if ( 'inactive' === collection.state ) {
 		return __( 'Collection is off.', 'newspack-intelligence' );
 	}
-	if ( rows.some( ( row ) => row.unknown ) ) {
+	const unreported = sources.sources
+		.filter( ( one ) => 'unknown' === one.state )
+		.map( ( one ) => one.name );
+	const reportless = new Set(
+		unreported.map( ( name ) => `${ SOURCE_ROW }${ name }` )
+	);
+	if ( rows.some( ( row ) => row.unknown && ! reportless.has( row.key ) ) ) {
 		return __(
 			'The pipeline’s health is not fully known.',
 			'newspack-intelligence'
 		);
 	}
-	const count = sources.sources.length;
-	if ( 'behind_ontology' === backlog.reason ) {
-		return sprintf(
-			/* translators: %d: the sources collected from. */
-			_n(
-				'Collecting from %d source. Catching up on the ontology.',
-				'Collecting from %d sources. Catching up on the ontology.',
-				count,
-				'newspack-intelligence'
-			),
-			count
-		);
-	}
-	return sprintf(
-		/* translators: %d: the sources collected from. */
-		_n(
-			'Collecting from %d source. Nothing waiting.',
-			'Collecting from %d sources. Nothing waiting.',
-			count,
-			'newspack-intelligence'
-		),
-		count
-	);
+	const backlog = rows.find( ( row ) => 'backlog' === row.key );
+	return `${ collectingText( sources.sources.length, unreported ) } ${
+		backlog.text
+	}`;
 }
 
 /**
@@ -818,7 +902,6 @@ export default function HealthStrip( { canTune, canManage } ) {
 						reads,
 						collection: collection.answer,
 						sources: sources.answer,
-						backlog: backlog.answer,
 					} ) }
 				</span>
 				<button

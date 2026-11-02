@@ -48,12 +48,8 @@ final class ResolverNodeTest extends TestCase {
 
 	private Capture_Sink_Node $out;
 
-	/** The default time zone, restored after a test moves it. */
-	private string $zone = '';
-
 	protected function setUp(): void {
 		parent::setUp();
-		$this->zone = \date_default_timezone_get();
 		$this->start_entity_graph();
 		Core::$now = self::NOW;
 		$this->activate( 'newspack-intelligence-project' );
@@ -67,7 +63,6 @@ final class ResolverNodeTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
-		\date_default_timezone_set( $this->zone );
 		Intel_Graph_Row_Schema::$read_rows = null;
 		Resolver_Node::$llm_factory  = null;
 		Proxy_LLM_Client::$http_post = null;
@@ -1064,146 +1059,57 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertStringContainsString( "include newspack-intelligence-resolve\n", (string) \file_get_contents( \dirname( __DIR__, 2 ) . '/topologies/newspack-intelligence.tsl' ) );
 	}
 
-	/** An empty index's first hold publishes its reason and its start, its count unknown, for a month. */
+	/** An empty index's first hold publishes its reason and its start, and nothing else, for a month. */
 	public function test_empty_index_publishes_no_live_entity_with_since(): void {
 		$memd      = $this->publishing( null );
 		Core::$now = 9100.0;
 
 		$this->resolver->fill( self::recorded( [] ) );
 
-		$this->assertSame( self::hold( 'no_live_entity', 9100, null, null ), $this->published() );
+		$this->assertSame( self::hold( 'no_live_entity', 9100 ), $this->published() );
 		$this->assertSame( Resolver_Node::STATUS_TTL_S, \end( $memd->sets )['ttl'] );
 	}
 
-	/** Once this process has held one circulation, twice HOLD_S, the count is its distinct held items. */
-	public function test_held_count_counts_distinct_items_after_one_circulation(): void {
-		$this->publishing( null );
-		Core::$now = 9100.0;
-		$this->resolver->fill( self::recorded( [ 'item_key' => 'feed:held-1' ] ) );
-		$this->resolver->fill( self::recorded( [ 'item_key' => 'feed:held-2' ] ) );
-		Core::$now = 9130.0;
-		$this->resolver->fill( self::reresolve( 'feed:held-1', 0.0, [ 'ner' => true ] ) );
-		Core::$now = 9100.0 + 2 * Resolver_Node::HOLD_S - 1;
-		$this->resolver->fill( self::recorded( [ 'item_key' => 'feed:held-2' ] ) );
-		$this->assertSame( self::hold( 'no_live_entity', 9100, null, null ), $this->published(), 'no count before one circulation' );
-
-		Core::$now = 9100.0 + 2 * Resolver_Node::HOLD_S;
-		$this->resolver->fill( self::recorded( [ 'item_key' => 'feed:held-3' ] ) );
-
-		$this->assertSame( self::hold( 'no_live_entity', 9100, 3, null ), $this->published() );
-	}
-
-	/** A recycled worker keeps the hold's start and the count read back until it has held one circulation itself. */
-	public function test_recycled_process_keeps_since_and_count_for_one_circulation(): void {
-		$this->publishing( self::hold( 'no_live_entity', 9100, 1352, null ) );
+	/** A recycled worker keeps the start of the hold it reads back while the reason stands. */
+	public function test_recycled_process_keeps_since(): void {
+		$this->publishing( self::hold( 'no_live_entity', 9100 ) );
 		Core::$now = 9700.0;
 
 		$this->resolver->fill( self::recorded( [ 'item_key' => 'feed:held-1' ] ) );
-		$this->assertSame( self::hold( 'no_live_entity', 9100, 1352, null ), $this->published() );
-		Core::$now = 9700.0 + 2 * Resolver_Node::HOLD_S - 1;
-		$this->resolver->fill( self::recorded( [ 'item_key' => 'feed:held-2' ] ) );
-		$this->assertSame( self::hold( 'no_live_entity', 9100, 1352, null ), $this->published() );
 
-		Core::$now = 9700.0 + 2 * Resolver_Node::HOLD_S;
-		$this->resolver->fill( self::recorded( [ 'item_key' => 'feed:held-3' ] ) );
-		$this->assertSame( self::hold( 'no_live_entity', 9100, 3, null ), $this->published() );
+		$this->assertSame( self::hold( 'no_live_entity', 9100 ), $this->published() );
 	}
 
-	/**
-	 * The count is a gauge: published when it falls due, then refreshed once
-	 * a heartbeat, so ten keys held inside one heartbeat cost one write.
-	 */
-	public function test_held_count_refreshes_once_a_heartbeat(): void {
-		$memd      = $this->publishing( null );
-		Core::$now = 9100.0;
-		$this->resolver->fill( self::recorded( [ 'item_key' => 'feed:held-0' ] ) );
-		$due        = 9100 + 2 * Resolver_Node::HOLD_S;
-		$memd->sets = [];
-
-		for ( $i = 1; $i <= 10; $i++ ) {
-			Core::$now = (float) ( $due + $i - 1 );
-			$this->resolver->fill( self::recorded( [ 'item_key' => "feed:held-{$i}" ] ) );
-		}
-
-		$this->assertCount( 1, $memd->sets, 'one write for ten keys inside a heartbeat' );
-		$this->assertSame( self::hold( 'no_live_entity', 9100, 2, null ), $this->published() );
-
-		Core::$now = (float) ( $due + 60 );
-		$this->resolver->fill( self::recorded( [ 'item_key' => 'feed:held-11' ] ) );
-
-		$this->assertCount( 2, $memd->sets );
-		$this->assertSame( self::hold( 'no_live_entity', 9100, 12, null ), $this->published() );
-	}
-
-	/** A hold starting over a cleared snapshot counts unknown, not the 0 read back. */
-	public function test_a_hold_after_a_clear_counts_unknown_not_zero(): void {
-		$this->publishing( self::hold( '', null, 0, null ) );
+	/** A hold starting over a cleared snapshot starts now. */
+	public function test_a_hold_after_a_clear_starts_now(): void {
+		$this->publishing( self::hold( '', null ) );
 		Core::$now = 9100.0;
 
 		$this->resolver->fill( self::recorded( [] ) );
 
-		$this->assertSame( self::hold( 'no_live_entity', 9100, null, null ), $this->published() );
+		$this->assertSame( self::hold( 'no_live_entity', 9100 ), $this->published() );
 	}
 
-	/** A record that passes once a hold stood ends it: nothing held, no reason, no start. */
+	/** A record that passes once a hold stood ends it: no reason, no start. */
 	public function test_end_of_hold_publishes_clear(): void {
 		$this->publishing( null );
 		Core::$now = 9100.0;
 		$this->resolver->fill( self::recorded( [ 'item_key' => 'feed:held-1' ] ) );
-		$this->resolver->fill( self::recorded( [ 'item_key' => 'feed:held-2' ] ) );
 		$this->seed( self::gazette() );
 
 		Core::$now = 9100.0 + Entity_Index::TTL_S;
 		$this->resolver->fill( self::recorded( [ 'url' => 'https://harborgazette.example/a' ] ) );
 
-		$this->assertSame( self::hold( '', null, 0, null ), $this->published() );
-		$this->assertSame( [], $this->read_private( $this->resolver, 'held' ), 'the set holds keys only while a hold stands' );
-	}
-
-	/**
-	 * A hold that outlasted the one-day queue keeps its first and last UTC
-	 * day once it ends, whatever the default zone: 00:30Z and 01:00Z fall on
-	 * the day before in Los Angeles.
-	 */
-	public function test_hold_longer_than_queue_age_keeps_dropped_days(): void {
-		\date_default_timezone_set( 'America/Los_Angeles' );
-		$this->publishing( null );
-		Core::$now = 1793320200.0;
-		$this->resolver->fill( self::recorded( [] ) );
-		$this->seed( self::gazette() );
-
-		Core::$now = 1793494800.0;
-		$this->resolver->fill( self::recorded( [ 'url' => 'https://harborgazette.example/a' ] ) );
-
-		$this->assertSame( self::hold( '', null, 0, [ 'first_day' => '2026-10-30', 'last_day' => '2026-11-01' ] ), $this->published() );
-	}
-
-	/**
-	 * Two long legs, one reason after another, keep every dropped day: the
-	 * second's end keeps the first's first day and takes its own last day.
-	 */
-	public function test_two_long_holds_merge_their_dropped_days(): void {
-		$this->publishing( self::hold( 'no_live_entity', 1793147400, 9, null ) );
-		$this->seed( self::gazette() );
-		Stream_Writer::append( self::entity( self::MESA, 'Mesa Courier' ) );
-		Core::$now = 1793320200.0;
-		$this->resolver->fill( self::recorded( [ 'url' => 'https://harborgazette.example/a' ] ) );
-		$this->assertSame( [ 'first_day' => '2026-10-28', 'last_day' => '2026-10-30' ], $this->published()['dropped'] ?? null );
-		self::commit_ontology_cursor();
-
-		Core::$now = 1793494800.0;
-		$this->resolver->fill( self::recorded( [ 'url' => 'https://harborgazette.example/a' ] ) );
-
-		$this->assertSame( self::hold( '', null, 0, [ 'first_day' => '2026-10-28', 'last_day' => '2026-11-01' ] ), $this->published() );
+		$this->assertSame( self::hold( '', null ), $this->published() );
 	}
 
 	/** Once the clear is published, a passing record touches no snapshot, past the heartbeat too, until a hold. */
 	public function test_a_pass_after_the_clear_writes_nothing(): void {
-		$memd      = $this->publishing( self::hold( 'no_live_entity', 9100, 7, null ) );
+		$memd      = $this->publishing( self::hold( 'no_live_entity', 9100 ) );
 		$this->seed( self::gazette() );
 		Core::$now = 9400.0;
 		$this->resolver->fill( self::recorded( [ 'url' => 'https://harborgazette.example/a' ] ) );
-		$this->assertSame( self::hold( '', null, 0, null ), $this->published() );
+		$this->assertSame( self::hold( '', null ), $this->published() );
 		$sets = \count( $memd->sets );
 
 		Core::$now = 9400.0 + 600;
@@ -1212,31 +1118,16 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertCount( $sets, $memd->sets, 'no heartbeat write once cleared' );
 	}
 
-	/** A later hold that ended inside the queue's day leaves the dropped days before it standing. */
-	public function test_a_short_hold_keeps_the_dropped_days_before_it(): void {
-		$dropped = [ 'first_day' => '2026-10-20', 'last_day' => '2026-10-22' ];
-		$this->publishing( self::hold( 'no_live_entity', 1793530000, 4, $dropped ) );
-		$this->seed( self::gazette() );
-		Core::$now = 1793530800.0;
-
-		$this->resolver->fill( self::recorded( [ 'url' => 'https://harborgazette.example/a' ] ) );
-
-		$this->assertSame( self::hold( '', null, 0, $dropped ), $this->published() );
-	}
-
-	/**
-	 * A new reason restarts the start, and ends the old reason's hold: one
-	 * that outlasted the queue keeps its days though the hold goes on.
-	 */
-	public function test_a_reason_change_after_a_day_keeps_dropped_days(): void {
-		$this->publishing( self::hold( 'no_live_entity', 1793354400, 9, null ) );
+	/** A new reason restarts the start though the hold goes on. */
+	public function test_a_reason_change_restarts_since(): void {
+		$this->publishing( self::hold( 'no_live_entity', 1793354400 ) );
 		$this->seed( self::gazette() );
 		Stream_Writer::append( self::entity( self::MESA, 'Mesa Courier' ) );
 		Core::$now = 1793530800.0;
 
 		$this->resolver->fill( self::recorded( [ 'url' => 'https://harborgazette.example/a' ] ) );
 
-		$this->assertSame( self::hold( 'behind_ontology', 1793530800, 9, [ 'first_day' => '2026-10-30', 'last_day' => '2026-11-01' ] ), $this->published() );
+		$this->assertSame( self::hold( 'behind_ontology', 1793530800 ), $this->published() );
 	}
 
 	/**
@@ -1348,18 +1239,14 @@ final class ResolverNodeTest extends TestCase {
 	/**
 	 * A hold snapshot, every key named.
 	 *
-	 * @param string                                       $reason  Why it holds, or ''.
-	 * @param int|null                                     $since   When the reason's hold began.
-	 * @param int|null                                     $held    The distinct items held, or unknown.
-	 * @param array{first_day:string,last_day:string}|null $dropped The days a long hold dropped.
+	 * @param string   $reason Why it holds, or ''.
+	 * @param int|null $since  When the reason's hold began.
 	 * @return array<string,mixed>
 	 */
-	private static function hold( string $reason, ?int $since, ?int $held, ?array $dropped ): array {
+	private static function hold( string $reason, ?int $since ): array {
 		return [
-			'reason'  => $reason,
-			'since'   => $since,
-			'held'    => $held,
-			'dropped' => $dropped,
+			'reason' => $reason,
+			'since'  => $since,
 		];
 	}
 
