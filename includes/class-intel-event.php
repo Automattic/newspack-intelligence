@@ -28,7 +28,10 @@ final class Intel_Event {
 	public const NAME_KINDS       = [ 'canonical', 'alias', 'acronym', 'locality' ];
 	public const IDENTIFIER_KINDS = [ 'domain', 'github_org', 'github_repo', 'linkedin_company', 'x_handle', 'atomic_site_id', 'linear_team' ];
 	public const TIERS            = [ 'public', 'internal', 'restricted' ];
-	public const LINK_ROLES       = [ 'subject', 'mention', 'topic' ];
+	/** The link roles saying an item is about its entity; `publisher` says the entity's own site published it. */
+	public const ABOUT_ROLES      = [ 'subject', 'mention', 'topic' ];
+	public const PUBLISHER        = 'publisher';
+	public const LINK_ROLES       = [ ...self::ABOUT_ROLES, self::PUBLISHER ];
 	public const METHODS          = [ 'identifier', 'name', 'alias', 'acronym', 'domain_stem', 'ner_fuzzy', 'human', 'extract' ];
 	public const WATCH_TARGETS    = [ 'lens', 'entity', 'collection' ];
 	public const DELIVERIES       = [ 'scan', 'instant', 'digest' ];

@@ -1,5 +1,6 @@
 import { __ } from '@wordpress/i18n';
 import Cite, { EntityChip } from './Cite';
+import Pager from './Pager';
 import { metaLine, utcDay } from './format';
 
 /**
@@ -51,5 +52,40 @@ export default function ItemRow( { item, onOpenEntity, onSave, children } ) {
 				</ul>
 			) }
 		</li>
+	);
+}
+
+/**
+ * One page of the items a read answered, each an `ItemRow`, then the pager
+ * over the page starts its view holds.
+ *
+ * @param {Object}                           props
+ * @param {{items: Object[], total: number}} props.answer       The read's answer.
+ * @param {number[]}                         props.starts       Each page's first row, the current last.
+ * @param {(starts: number[]) => void}       props.onStarts     Replaces the stack.
+ * @param {(key: string) => void}            props.onOpenEntity Opens an entity.
+ * @param {(item: Object) => void}           [props.onSave]     Saves an item; absent for a reader.
+ * @return {import('react').ReactElement} The page.
+ */
+export function ItemPage( { answer, starts, onStarts, onOpenEntity, onSave } ) {
+	return (
+		<>
+			<ul className="newspack-intelligence__items">
+				{ answer.items.map( ( item ) => (
+					<ItemRow
+						key={ item.item_key }
+						item={ item }
+						onOpenEntity={ onOpenEntity }
+						onSave={ onSave }
+					/>
+				) ) }
+			</ul>
+			<Pager
+				starts={ starts }
+				onStarts={ onStarts }
+				shown={ answer.items.length }
+				total={ answer.total }
+			/>
+		</>
 	);
 }

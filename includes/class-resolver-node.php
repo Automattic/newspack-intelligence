@@ -105,8 +105,8 @@ class Resolver_Node extends Node {
 	/** Seconds a hold outlives its last publish. */
 	public const STATUS_TTL_S = 30 * DAY_IN_SECONDS;
 
-	/** The item's non-topic links, subject before mention, then by confidence and key. */
-	private const LINKS_OF_ITEM = "item_key = ? AND role <> 'topic' ORDER BY role = 'subject' DESC, confidence DESC, entity_key";
+	/** The item's non-topic links: subject, then mention, then publisher, each by confidence and key. */
+	private const LINKS_OF_ITEM = "item_key = ? AND role <> 'topic' ORDER BY role = 'subject' DESC, role = 'publisher', confidence DESC, entity_key";
 
 	/** What stored() reads of an item where the projection will not open. */
 	private const NOTHING_STORED = [
@@ -243,7 +243,7 @@ class Resolver_Node extends Node {
 			'extracted' => $extracted,
 			'attempt'   => $attempt,
 		] + $sent;
-		$this->resolved( $item, $resolution, self::retractable( $judgment, $resolution['recognized'] ), $forward ? $forwarded : null );
+		$this->resolved( $item, $resolution, self::retractable( $judgment, $resolution ), $forward ? $forwarded : null );
 	}
 
 	/**
@@ -376,18 +376,23 @@ class Resolver_Node extends Node {
 
 	/**
 	 * The stored links a resolution may retract: every one in this worker's
-	 * own partition but a link whose survivor a curator confirmed, and a NER
-	 * link unless the NER step ran and answered, since nothing else looked
-	 * for it again.
+	 * own partition but an about-link whose survivor a curator confirmed and
+	 * the resolution did not find again by the same method in another
+	 * about-role, and a NER link unless the NER step ran and answered, since
+	 * nothing else looked for it again. A verdict judges what the item is
+	 * about, so it keeps no `publisher` link, and a confirmed link the
+	 * resolver now finds in another about-role is replaced by that role.
 	 *
-	 * @param Judgment $links      What settled() read.
-	 * @param bool     $recognized Whether the NER step ran and answered.
+	 * @param Judgment   $links      What settled() read.
+	 * @param Resolution $resolution What resolve() answered.
 	 * @return array<string,array{entity_key:string,role:string}>
 	 */
-	private static function retractable( array $links, bool $recognized ): array {
-		$rows = [];
+	private static function retractable( array $links, array $resolution ): array {
+		$refound = self::refound( $resolution );
+		$rows    = [];
 		foreach ( $links['rows'] as $at => $row ) {
-			if ( 'confirmed' !== ( $links['verdicts'][ $row['survivor'] ] ?? null ) && ( $recognized || 'ner_fuzzy' !== $row['method'] ) ) {
+			$kept = Intel_Event::PUBLISHER !== $row['role'] && 'confirmed' === ( $links['verdicts'][ $row['survivor'] ] ?? null ) && ! isset( $refound[ "{$row['survivor']}|{$row['method']}" ] );
+			if ( ! $kept && ( $resolution['recognized'] || 'ner_fuzzy' !== $row['method'] ) ) {
 				$rows[ $at ] = [ 'entity_key' => $row['entity_key'], 'role' => $row['role'] ];
 			}
 		}
@@ -398,11 +403,14 @@ class Resolver_Node extends Node {
 	 * What the extractor is sent: the resolution with the curators'
 	 * judgments in force — a confirmed link asserted, from its stored row
 	 * where the resolution did not find it again, and a rejected one left
-	 * out — so its claims follow what a curator decided. A resolution whose
-	 * NER step did not run and answer also sends each stored NER link it did
-	 * not find, by survivor, its strongest NER row in any partition as
-	 * stored, so a retry reaches an item only NER linked; only the own
-	 * partition's rows are retracted.
+	 * out — so its claims follow what a curator decided. A verdict judges an
+	 * about-link alone, never a `publisher` one. A resolution whose NER step
+	 * did not run and answer also sends each stored NER link it did not
+	 * find, by survivor, its strongest NER row in any partition as stored,
+	 * so a retry reaches an item only NER linked; only the own partition's
+	 * rows are retracted. One link is sent per entity, an about-link over a
+	 * publisher one whatever their order, so a publisher the text also names
+	 * is sent as what the item is about.
 	 *
 	 * @param Resolution $resolution What resolve() answered.
 	 * @param Judgment   $judgment   What settled() read.
@@ -411,26 +419,58 @@ class Resolver_Node extends Node {
 	private static function judged( array $resolution, array $judgment ): array {
 		$links = [];
 		foreach ( $resolution['links'] as $link ) {
-			$verdict = $judgment['verdicts'][ $link['entity_key'] ] ?? null;
-			if ( 'rejected' !== $verdict ) {
-				$links[ $link['entity_key'] ] = 'confirmed' === $verdict ? [ 'state' => 'asserted' ] + $link : $link;
+			$entity    = $link['entity_key'];
+			$published = Intel_Event::PUBLISHER === $link['role'];
+			$verdict   = $published ? null : ( $judgment['verdicts'][ $entity ] ?? null );
+			if ( 'rejected' !== $verdict && ! ( $published && isset( $links[ $entity ] ) ) ) {
+				$links[ $entity ] = 'confirmed' === $verdict ? [ 'state' => 'asserted' ] + $link : $link;
 			}
 		}
 		foreach ( $resolution['recognized'] ? [] : $judgment['ner'] as $entity => $link ) {
 			$verdict = $judgment['verdicts'][ $entity ] ?? null;
-			if ( 'rejected' !== $verdict && ! isset( $links[ $entity ] ) ) {
+			if ( 'rejected' !== $verdict && ! self::about_held( $links, $entity ) ) {
 				$links[ $entity ] = [ 'entity_key' => $entity ] + \array_merge( $link, 'confirmed' === $verdict ? [ 'state' => 'asserted' ] : [] );
 			}
 		}
+		$refound = self::refound( $resolution );
 		foreach ( $judgment['verdicts'] as $entity => $verdict ) {
-			if ( 'confirmed' === $verdict && ! isset( $links[ $entity ] ) && isset( $judgment['stored'][ $entity ] ) ) {
-				$links[ $entity ] = [ 'entity_key' => $entity ] + \array_merge( $judgment['stored'][ $entity ], [ 'state' => 'asserted' ] );
+			$stored = $judgment['stored'][ $entity ] ?? null;
+			if ( 'confirmed' === $verdict && null !== $stored && Intel_Event::PUBLISHER !== $stored['role'] && ! self::about_held( $links, $entity ) && ! isset( $refound[ "{$entity}|{$stored['method']}" ] ) ) {
+				$links[ $entity ] = [ 'entity_key' => $entity ] + \array_merge( $stored, [ 'state' => 'asserted' ] );
 			}
 		}
 		return [
 			'links'     => \array_values( $links ),
 			'proposals' => $resolution['proposals'],
 		];
+	}
+
+	/**
+	 * Each entity and method a resolution links by in an about-role, as
+	 * `<entity>|<method>`; a `publisher` link judges nothing, so it replaces
+	 * no confirmed about-link.
+	 *
+	 * @param Resolution $resolution What resolve() answered.
+	 * @return array<string,true>
+	 */
+	private static function refound( array $resolution ): array {
+		$refound = [];
+		foreach ( $resolution['links'] as $link ) {
+			if ( Intel_Event::PUBLISHER !== $link['role'] ) {
+				$refound[ "{$link['entity_key']}|{$link['method']}" ] = true;
+			}
+		}
+		return $refound;
+	}
+
+	/**
+	 * Whether the links to send hold an about-link to the entity.
+	 *
+	 * @param array<string,array{role:string}> $links  The links, by entity.
+	 * @param string                           $entity The entity.
+	 */
+	private static function about_held( array $links, string $entity ): bool {
+		return isset( $links[ $entity ] ) && Intel_Event::PUBLISHER !== $links[ $entity ]['role'];
 	}
 
 	/**
@@ -523,8 +563,8 @@ class Resolver_Node extends Node {
 	 * a key whose merge chain is broken counting nowhere, as Graph_Query
 	 * reads them: `known`, the survivors the item's last extraction was
 	 * given as asserted; `stored`, each linked survivor's one link across
-	 * every partition, picked subject over mention, then by confidence and
-	 * key, with its method and state; `ner`, the same pick among the NER
+	 * every partition, picked subject over mention over publisher, then by
+	 * confidence and key, with its method and state; `ner`, the same pick among the NER
 	 * links alone, so a stronger link of another method hides none; and what
 	 * own_links() reads.
 	 *

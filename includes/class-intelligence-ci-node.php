@@ -129,8 +129,8 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						],
 						Graph_Query::search( ... )
 					),
-					$verb( $read, 'entity', 'One entity as its merge survivor: { entity_key, type, name, state, merged_from, names, identifiers, roles, topics, counts: { items, proposed_links } }.', [ $about ], Graph_Query::entity( ... ) ),
-					$verb( $read, 'timeline', 'An entity\'s items, newest first: { items, total }, each item as search answers it.', [ $about, $since, $until, $limit( Graph_Query::DEFAULT_LIMIT ), $page ], Graph_Query::timeline( ... ) ),
+					$verb( $read, 'entity', 'One entity as its merge survivor: { entity_key, type, name, state, merged_from, names, identifiers, roles, topics, counts: { items, proposed_links }, published: { count } }, counts.items the items about it and published.count those its own site published.', [ $about ], Graph_Query::entity( ... ) ),
+					$verb( $read, 'timeline', 'The items about an entity, or with published those its own site published, newest first: { items, total }, each item as search answers it.', [ $about, $since, $until, $limit( Graph_Query::DEFAULT_LIMIT ), $page, $box( 'published', false, 'Page the items its own site published instead of those about it.' ) ], Graph_Query::timeline( ... ) ),
 					$verb( $read, 'related', 'The entities sharing the most items with one: { entities: [ { entity_key, name, type, shared_items, items: [ { item_key, url, title } ] } ] }, five newest shared items cited an entity.', [ $about, $limit( Graph_Query::RELATED_LIMIT ) ], Graph_Query::related( ... ) ),
 					$verb( $read, 'claims', 'The claims naming an entity, newest first: { claims: [ { subject, predicate, object, confidence, item_key, url } ] }.', [ $about, $text( 'predicate', 'Only claims of this predicate.' ), $limit( Graph_Query::DEFAULT_LIMIT ) ], Graph_Query::claims( ... ) ),
 					$verb(

@@ -4,9 +4,8 @@ import { SelectControl, TextControl } from '@wordpress/components';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
 import Answer from '../components/Answer';
-import ItemRow from '../components/ItemRow';
+import { ItemPage } from '../components/ItemRow';
 import ListField from '../components/ListField';
-import Pager from '../components/Pager';
 import Refusal from '../components/Refusal';
 import { daysSince, draftArgs, lensDraft } from '../components/lensDraft';
 
@@ -266,24 +265,13 @@ export default function Search( {
 				) }
 			>
 				{ ( answer ) => (
-					<>
-						<ul className="newspack-intelligence__items">
-							{ answer.items.map( ( item ) => (
-								<ItemRow
-									key={ item.item_key }
-									item={ item }
-									onOpenEntity={ onOpenEntity }
-									onSave={ onSave }
-								/>
-							) ) }
-						</ul>
-						<Pager
-							starts={ starts }
-							onStarts={ setStarts }
-							shown={ answer.items.length }
-							total={ answer.total }
-						/>
-					</>
+					<ItemPage
+						answer={ answer }
+						starts={ starts }
+						onStarts={ setStarts }
+						onOpenEntity={ onOpenEntity }
+						onSave={ onSave }
+					/>
 				) }
 			</Answer>
 		</div>

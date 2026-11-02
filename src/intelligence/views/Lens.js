@@ -14,9 +14,8 @@ import {
 import { useHeld } from '../hooks/useHeld';
 import Answer from '../components/Answer';
 import Cite from '../components/Cite';
-import ItemRow from '../components/ItemRow';
+import { ItemPage } from '../components/ItemRow';
 import ListField from '../components/ListField';
-import Pager from '../components/Pager';
 import Refusal from '../components/Refusal';
 import {
 	draftArgs,
@@ -296,24 +295,13 @@ function Opened( { lens, starts, onStarts, onOpenEntity, onSave } ) {
 					) }
 				>
 					{ ( answer ) => (
-						<>
-							<ul className="newspack-intelligence__items">
-								{ answer.items.map( ( item ) => (
-									<ItemRow
-										key={ item.item_key }
-										item={ item }
-										onOpenEntity={ onOpenEntity }
-										onSave={ onSave }
-									/>
-								) ) }
-							</ul>
-							<Pager
-								starts={ starts }
-								onStarts={ onStarts }
-								shown={ answer.items.length }
-								total={ answer.total }
-							/>
-						</>
+						<ItemPage
+							answer={ answer }
+							starts={ starts }
+							onStarts={ onStarts }
+							onOpenEntity={ onOpenEntity }
+							onSave={ onSave }
+						/>
 					) }
 				</Answer>
 				<Answer

@@ -32,7 +32,10 @@ class Intelligence_Mcp_Door extends Mcp_Door {
 		. 'keyed `<type>:<slug>`, its type one of {types}; its state is proposed (a machine suggested it from an item), '
 		. 'accepted or rejected, and an entity merged into another answers as the one it survives as. A link joins an '
 		. 'item to an entity in one of the roles {link_roles}: a machine asserts or proposes it, a person or an agent '
-		. 'confirms or rejects it, and a rejected link counts nowhere. A claim is one statement an item makes about an '
+		. 'confirms or rejects it, and a rejected link counts nowhere. A publisher link says the entity\'s own site '
+		. 'published the item, not that the item is about it: search, a timeline, related entities, trends, signals and '
+		. 'the review queue leave it out, an entity counts what it published apart, and a timeline with published pages '
+		. 'those items. A claim is one statement an item makes about an '
 		. 'entity, a subject, a predicate and an object, cited to that item. An item that links no entity was recorded '
 		. 'but was not summarized, classified or read for claims, so it answers a search by its title and body alone. '
 		. 'Cite the URL of the item each statement rests on; a statement no item supports is not from the graph.';

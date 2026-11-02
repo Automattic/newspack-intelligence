@@ -2,11 +2,12 @@
 /**
  * Resolver: links one item to the entities it is about, against an
  * Entity_Index, in cost order. (1) Identifiers in the item's URL — its host
- * by suffix walk, a GitHub org or repo, a LinkedIn company, an X handle, a
- * Linear issue's team. (2) Names and aliases as whole words in the title and
- * body, an acronym only in its own case. (3) A domain's stem in the title,
- * behind the guards that keep prose from reading as a masthead. (4) Only when
- * the first three found nothing, the organizations an Entity_Extractor names,
+ * by suffix walk, the item's publisher, and a GitHub org or repo, a LinkedIn
+ * company, an X handle or a Linear issue's team its path names. (2) Names
+ * and aliases as whole words in the title and body, an acronym only in its
+ * own case. (3) A domain's stem in the title, behind the guards that keep
+ * prose from reading as a masthead. (4) Only when the first three found
+ * nothing, the organizations an Entity_Extractor names,
  * fuzzy-matched against every name: asserted at `assert_at`, proposed at
  * `propose_at`, and below that a candidate entity unless one was rejected
  * under that name. The caller hands each item its NER step, or none, which
@@ -16,10 +17,12 @@
  *
  * Name and stem hits whose spans overlap in one text settle together: the
  * longest span wins, and equal spans naming several entities assert the one
- * whose locality the text also names, else propose each. An entity found in
- * the URL or the title is the item's subject; one found only in the body is
- * a mention. Each entity keeps its strongest link. Pure: it reads the index
- * and the extractor and writes nothing.
+ * whose locality the text also names, else propose each. The entity whose
+ * domain the host is published the item, a `publisher` link apart from any
+ * the text earns, so a site's own story is not about its site unless it
+ * names it. An entity its path or the title names is the item's subject; one
+ * found only in the body is a mention. Each entity keeps its strongest such
+ * link. Pure: it reads the index and the extractor and writes nothing.
  *
  * @package Newspack_Intelligence
  */
@@ -122,8 +125,10 @@ final class Resolver {
 	}
 
 	/**
-	 * The item's links, each entity's strongest, its candidate entities, and
-	 * whether the NER step ran and answered.
+	 * The item's links, its publisher's first, then each entity's strongest
+	 * the URL's path or the text earns; its candidate entities; and whether
+	 * the NER step ran and answered. A publisher spares the NER step as any
+	 * link does.
 	 *
 	 * @param array<string,mixed>   $item The `item_recorded` fields.
 	 * @param Entity_Extractor|null $ner  The NER step; none skips it.
@@ -132,7 +137,11 @@ final class Resolver {
 	public function resolve( array $item, ?Entity_Extractor $ner ): array {
 		$this->links = [];
 		$title       = Core::as_string( $item['title'] );
-		foreach ( $this->identified( Core::as_string( $item['url'] ) ) as $entity_key ) {
+		$url         = Core::as_string( $item['url'] );
+		$host        = Url_Canon::host( Core::as_string( \wp_parse_url( $url, \PHP_URL_HOST ) ) );
+		$publisher   = $this->published_by( $host );
+		$published   = null === $publisher ? [] : [ $this->linked( $publisher, Intel_Event::PUBLISHER, 'identifier', self::EXACT, 'asserted' ) ];
+		foreach ( $this->identified( $host, $url ) as $entity_key ) {
 			$this->link( $entity_key, 'subject', 'identifier', self::EXACT, 'asserted' );
 		}
 		$title_names = $this->index->names_in( $title );
@@ -140,10 +149,10 @@ final class Resolver {
 		$localities  = self::localities( [ ...$title_names, ...$body_names ] );
 		$this->clustered( [ ...self::named( $title_names ), ...$this->stemmed( $title ) ], $localities, 'subject' );
 		$this->clustered( self::named( $body_names ), $localities, 'mention' );
-		$named     = null !== $ner && [] === $this->links ? $ner->extract( $item ) : null;
+		$named     = null !== $ner && [] === $published && [] === $this->links ? $ner->extract( $item ) : null;
 		$proposals = null === $named ? [] : $this->recognized( $named['orgs'] );
 		return [
-			'links'      => \array_values( $this->links ),
+			'links'      => [ ...$published, ...\array_values( $this->links ) ],
 			'proposals'  => $proposals,
 			'recognized' => null !== $named,
 		];
@@ -406,9 +415,8 @@ final class Resolver {
 	 * @param string $state      asserted or proposed.
 	 */
 	private function link( string $entity_key, string $role, string $method, float $confidence, string $state ): void {
-		$state = 'proposed' === $this->index->state( $entity_key ) ? 'proposed' : $state;
-		$link  = [ 'entity_key' => $entity_key, 'role' => $role, 'method' => $method, 'confidence' => $confidence, 'state' => $state ];
-		$held  = $this->links[ $entity_key ] ?? null;
+		$link = $this->linked( $entity_key, $role, $method, $confidence, $state );
+		$held = $this->links[ $entity_key ] ?? null;
 		if ( null !== $held ) {
 			if ( [ 'asserted' === $held['state'], $held['confidence'] ] >= [ 'asserted' === $state, $confidence ] ) {
 				$link = $held;
@@ -416,6 +424,22 @@ final class Resolver {
 			$link['role'] = 'subject' === $held['role'] || 'subject' === $role ? 'subject' : 'mention';
 		}
 		$this->links[ $entity_key ] = $link;
+	}
+
+	/**
+	 * One link, proposed whatever its method earned when its entity is
+	 * proposed, so a guess never asserts.
+	 *
+	 * @param string $entity_key The entity.
+	 * @param string $role       Its role.
+	 * @param string $method     How it was found.
+	 * @param float  $confidence The confidence.
+	 * @param string $state      asserted or proposed.
+	 * @return Link
+	 */
+	private function linked( string $entity_key, string $role, string $method, float $confidence, string $state ): array {
+		$state = 'proposed' === $this->index->state( $entity_key ) ? 'proposed' : $state;
+		return [ 'entity_key' => $entity_key, 'role' => $role, 'method' => $method, 'confidence' => $confidence, 'state' => $state ];
 	}
 
 	/**
@@ -456,27 +480,16 @@ final class Resolver {
 	}
 
 	/**
-	 * The entities the URL names: its host by suffix walk, most specific
-	 * first, then the account or project its path names on a known host.
+	 * The entities the URL's path names: the account or project on a known
+	 * host.
 	 *
-	 * @param string $url The item's URL.
+	 * @param string $host The item's host, without `www.`.
+	 * @param string $url  The item's URL.
 	 * @return list<string>
 	 */
-	private function identified( string $url ): array {
-		$host = Url_Canon::host( Core::as_string( \wp_parse_url( $url, \PHP_URL_HOST ) ) );
-		if ( '' === $host ) {
-			return [];
-		}
-		$found  = [];
-		$labels = \explode( '.', $host );
-		for ( $at = 0; $at < \count( $labels ) - 1; $at++ ) {
-			$entity_key = $this->index->by_identifier( 'domain', \implode( '.', \array_slice( $labels, $at ) ) );
-			if ( null !== $entity_key ) {
-				$found[] = $entity_key;
-				break;
-			}
-		}
-		$path = \array_values( \array_filter( \explode( '/', Core::as_string( \wp_parse_url( $url, \PHP_URL_PATH ) ) ), static fn ( string $part ): bool => '' !== $part ) );
+	private function identified( string $host, string $url ): array {
+		$found = [];
+		$path  = \array_values( \array_filter( \explode( '/', Core::as_string( \wp_parse_url( $url, \PHP_URL_PATH ) ) ), static fn ( string $part ): bool => '' !== $part ) );
 		foreach ( self::path_identifiers( $host, $path ) as [ $kind, $value ] ) {
 			$entity_key = $this->index->by_identifier( $kind, $value );
 			if ( null !== $entity_key ) {
@@ -503,6 +516,23 @@ final class Resolver {
 			'linear.app' === $host                        => 'issue' === ( $path[1] ?? '' ) && 1 === \preg_match( '/^([A-Za-z0-9]+)-\d+$/', $path[2] ?? '', $team ) ? [ [ 'linear_team', $team[1] ] ] : [],
 			default                                       => [],
 		};
+	}
+
+	/**
+	 * The entity whose domain the host is, by suffix walk, most specific
+	 * first: the item's publisher, or none.
+	 *
+	 * @param string $host The item's host, without `www.`.
+	 */
+	private function published_by( string $host ): ?string {
+		$labels = \explode( '.', $host );
+		for ( $at = 0; $at < \count( $labels ) - 1; $at++ ) {
+			$entity_key = $this->index->by_identifier( 'domain', \implode( '.', \array_slice( $labels, $at ) ) );
+			if ( null !== $entity_key ) {
+				return $entity_key;
+			}
+		}
+		return null;
 	}
 
 	/**

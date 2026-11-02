@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Entity_Index;
+use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Stream_Writer;
@@ -82,7 +83,7 @@ final class ResolverNodeTest extends TestCase {
 		$events  = $this->written();
 		$this->assertSame(
 			[
-				[ 'link_asserted', self::GAZETTE, 'subject', 'identifier', 1.0 ],
+				[ 'link_asserted', self::GAZETTE, 'publisher', 'identifier', 1.0 ],
 				[ 'link_asserted', self::MESA, 'mention', 'name', 1.0 ],
 			],
 			\array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['role'], $e['method'], $e['confidence'] ], $events )
@@ -100,13 +101,29 @@ final class ResolverNodeTest extends TestCase {
 				'extracted' => false,
 				'attempt'   => 0,
 				'links'     => [
-					[ 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'identifier', 'confidence' => 1.0, 'state' => 'asserted' ],
+					[ 'entity_key' => self::GAZETTE, 'role' => 'publisher', 'method' => 'identifier', 'confidence' => 1.0, 'state' => 'asserted' ],
 					[ 'entity_key' => self::MESA, 'role' => 'mention', 'method' => 'name', 'confidence' => 1.0, 'state' => 'asserted' ],
 				],
 				'proposals' => [],
 			],
 			$this->resolved()
 		);
+	}
+
+	/**
+	 * An item its publisher's own site names is written twice, publisher and
+	 * subject, and sent to extract once per entity, as what it is about.
+	 */
+	public function test_a_publisher_the_item_names_is_written_twice_and_sent_once(): void {
+		$this->seed( self::gazette() );
+
+		$this->resolver->fill( self::recorded( [ 'url' => 'https://harborgazette.example/anniversary', 'title' => 'The Harbor Gazette turns forty' ] ) );
+
+		$this->assertSame(
+			[ [ 'link_asserted', self::GAZETTE, 'publisher' ], [ 'link_asserted', self::GAZETTE, 'subject' ] ],
+			\array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['role'] ], $this->written() )
+		);
+		$this->assertSame( [ [ 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'name', 'confidence' => 1.0, 'state' => 'asserted' ] ], $this->resolved()['links'] );
 	}
 
 	/** A proposed link and a candidate entity are written as their own kinds. */
@@ -287,10 +304,10 @@ final class ResolverNodeTest extends TestCase {
 		$this->seed(
 			self::gazette(),
 			[
-				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.example/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
-				self::link( 'link_proposed' ),
+				Intel_Event::make( 'item_recorded', self::item( [ 'title' => 'The Harbor Gazette wins a prize' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::stored_link( self::GAZETTE, 'subject', 'name', 'link_proposed' ),
 				...self::extracted(),
-				Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.example/a' ], 'user:curator-31', '9.4.1' ),
+				Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://random.example/x' ], 'user:curator-31', '9.4.1' ),
 			]
 		);
 
@@ -304,11 +321,11 @@ final class ResolverNodeTest extends TestCase {
 		$this->seed(
 			self::gazette(),
 			[
-				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.example/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
-				self::link( 'link_proposed' ),
+				Intel_Event::make( 'item_recorded', self::item( [ 'title' => 'The Harbor Gazette wins a prize' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::stored_link( self::GAZETTE, 'subject', 'name', 'link_proposed' ),
 				...self::extracted(),
-				Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.example/a' ], 'agent:curator-31:triage', '9.4.1' ),
-				Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.example/a' ], 'user:curator-31', '9.4.1' ),
+				Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://random.example/x' ], 'agent:curator-31:triage', '9.4.1' ),
+				Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://random.example/x' ], 'user:curator-31', '9.4.1' ),
 			]
 		);
 
@@ -325,9 +342,9 @@ final class ResolverNodeTest extends TestCase {
 		$this->seed(
 			self::gazette(),
 			[
-				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.example/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
-				self::link( 'link_proposed' ),
-				Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.example/a' ], 'user:curator-31', '9.4.1' ),
+				Intel_Event::make( 'item_recorded', self::item( [ 'title' => 'The Harbor Gazette wins a prize' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::stored_link( self::GAZETTE, 'subject', 'name', 'link_proposed' ),
+				Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://random.example/x' ], 'user:curator-31', '9.4.1' ),
 				...self::extracted( self::GAZETTE ),
 			]
 		);
@@ -553,7 +570,7 @@ final class ResolverNodeTest extends TestCase {
 		$version = \NEWSPACK_INTELLIGENCE_VERSION;
 		$this->assertSame(
 			[
-				[ 'link_asserted', self::GAZETTE, 'subject' ],
+				[ 'link_asserted', self::GAZETTE, 'publisher' ],
 				[ 'link_retracted', 'organization:harbor-gazette-weekly', 'subject' ],
 				[ 'link_retracted', self::MESA, 'mention' ],
 			],
@@ -569,7 +586,7 @@ final class ResolverNodeTest extends TestCase {
 		$this->seed(
 			self::gazette(),
 			[
-				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.example/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				Intel_Event::make( 'item_recorded', self::item( [ 'title' => 'The Harbor Gazette wins a prize' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
 				self::stored_link( self::GAZETTE, 'mention', 'name' ),
 			]
 		);
@@ -583,8 +600,107 @@ final class ResolverNodeTest extends TestCase {
 	}
 
 	/**
-	 * A link a curator confirmed is never retracted, and a NER link stays when
-	 * the resolution ran no NER step, since nothing looked for it again.
+	 * A re-resolution rewrites a host link stored as `subject` into a
+	 * `publisher` one: it asserts the new role, retracts the old by its own
+	 * role, and the projection then holds the publisher alone. The item's
+	 * extraction was given the entity, so nothing is sent to extract again.
+	 */
+	public function test_a_reresolve_rewrites_a_host_link_stored_as_subject_to_publisher(): void {
+		$this->seed(
+			self::gazette(),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.example/crater', 'title' => 'A crater study from the university' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::stored_link( self::GAZETTE, 'subject', 'identifier' ),
+				...self::extracted( self::GAZETTE ),
+			]
+		);
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+
+		$this->assertSame(
+			[ [ 'link_asserted', self::GAZETTE, 'publisher' ], [ 'link_retracted', self::GAZETTE, 'subject' ] ],
+			\array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['role'] ], $this->written() )
+		);
+		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $m ): bool => 'intel:resolved:null' === $m[ Message::TO ] ) );
+		$this->seed( $this->written() );
+		$this->assertSame(
+			[ [ self::GAZETTE, 'publisher' ] ],
+			Intel_Graph_Row_Schema::read( static fn ( \Newspack_Nodes\Row_Reader $r ): array => $r->rows( 'SELECT entity_key, role FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' l WHERE item_key = ?', [ self::ITEM ] ) )
+		);
+	}
+
+	/**
+	 * A host link a curator confirmed as `subject` stays beside the
+	 * `publisher` link re-resolution asserts: a publisher link judges
+	 * nothing, so the confirmation keeps the item about the entity until a
+	 * curator rejects it.
+	 */
+	public function test_a_confirmed_host_link_stored_as_subject_stays_beside_its_publisher(): void {
+		$this->seed(
+			self::gazette(),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.example/tide', 'title' => 'Tide tables for the week' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::stored_link( self::GAZETTE, 'subject', 'identifier' ),
+				Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.example/tide' ], 'user:curator-62', '9.4.1' ),
+				...self::extracted( self::GAZETTE ),
+			]
+		);
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+
+		$this->assertSame( [ [ 'link_asserted', self::GAZETTE, 'publisher' ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['role'] ], $this->written() ) );
+		$this->seed( $this->written() );
+		$about = Graph_Query::timeline( [ 'key' => self::GAZETTE, 'published' => false, 'since' => null, 'until' => null, 'limit' => 50, 'offset' => 0 ] );
+		$this->assertSame( [ [ self::ITEM, [ [ 'entity_key' => self::GAZETTE, 'name' => 'The Harbor Gazette', 'state' => 'confirmed' ] ] ] ], \array_map( static fn ( array $item ): array => [ $item['item_key'], $item['entities'] ], $about['items'] ) );
+		$this->assertSame( [ [ 'items' => 1, 'proposed_links' => 0 ], [ 'count' => 1 ] ], \array_values( \array_intersect_key( Graph_Query::entity( [ 'key' => self::GAZETTE ] ), [ 'counts' => 1, 'published' => 1 ] ) ) );
+	}
+
+	/**
+	 * A confirmed about-link the resolver now finds by the same method in
+	 * another about-role is replaced by that role, the confirmation, keyed
+	 * by item and entity, still judging it.
+	 */
+	public function test_a_confirmed_subject_now_found_as_a_mention_is_replaced(): void {
+		$this->seed(
+			self::gazette(),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [ 'title' => 'Harbor news roundup', 'body' => 'The Harbor Gazette reprinted it.' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::stored_link( self::GAZETTE, 'subject', 'name' ),
+				Intel_Event::make( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://random.example/x' ], 'user:curator-62', '9.4.1' ),
+				...self::extracted( self::GAZETTE ),
+			]
+		);
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+
+		$this->assertSame(
+			[ [ 'link_asserted', self::GAZETTE, 'mention' ], [ 'link_retracted', self::GAZETTE, 'subject' ] ],
+			\array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['role'] ], $this->written() )
+		);
+	}
+
+	/**
+	 * A curator's rejection judges what the item is about, never who
+	 * published it: the extractor is still sent the publisher link.
+	 */
+	public function test_a_rejected_about_link_still_sends_the_publisher(): void {
+		$this->seed(
+			self::gazette(),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.example/forty', 'title' => 'The Harbor Gazette turns forty' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.example/forty' ], 'user:curator-62', '9.4.1' ),
+			]
+		);
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+
+		$this->assertSame( [ [ 'entity_key' => self::GAZETTE, 'role' => 'publisher', 'method' => 'identifier', 'confidence' => 1.0, 'state' => 'asserted' ] ], $this->resolved()['links'] );
+	}
+
+	/**
+	 * A confirmed about-link the resolution no longer finds is kept, and a
+	 * NER link stays when the resolution ran no NER step, since nothing
+	 * looked for it again.
 	 */
 	public function test_a_confirmed_or_unsearched_link_is_not_retracted(): void {
 		$this->seed(
@@ -644,7 +760,7 @@ final class ResolverNodeTest extends TestCase {
 			self::entity( self::MESA, 'Mesa Courier' ),
 			self::entity( 'organization:quarry-ledger', 'Quarry Ledger' ),
 			[
-				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.example/a', 'title' => 'Regional publishers announce a merger' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				Intel_Event::make( 'item_recorded', self::item( [ 'title' => 'The Harbor Gazette and regional publishers announce a merger' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
 				self::stored_link( 'organization:quarry-ledger', 'mention', 'ner_fuzzy' ),
 				Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => 'organization:quarry-ledger', 'item_url' => 'https://harborgazette.example/a' ], 'user:curator-31', '9.4.1' ),
 				self::stored_link( self::MESA, 'mention', 'ner_fuzzy', 'link_proposed' ),
@@ -657,7 +773,7 @@ final class ResolverNodeTest extends TestCase {
 
 		$this->assertSame(
 			[
-				[ 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'identifier', 'confidence' => 1.0, 'state' => 'asserted' ],
+				[ 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'name', 'confidence' => 1.0, 'state' => 'asserted' ],
 				[ 'entity_key' => self::MESA, 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.85, 'state' => 'asserted' ],
 			],
 			$this->resolved()['links']
@@ -915,7 +1031,7 @@ final class ResolverNodeTest extends TestCase {
 				'extracted' => true,
 				'attempt'   => 0,
 				'links'     => [
-					[ 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'identifier', 'confidence' => 1.0, 'state' => 'asserted' ],
+					[ 'entity_key' => self::GAZETTE, 'role' => 'publisher', 'method' => 'identifier', 'confidence' => 1.0, 'state' => 'asserted' ],
 					[ 'entity_key' => 'organization:quarry-ledger', 'role' => 'mention', 'method' => 'name', 'confidence' => 0.85, 'state' => 'asserted' ],
 				],
 				'proposals' => [],
@@ -961,11 +1077,11 @@ final class ResolverNodeTest extends TestCase {
 	 * can, leaves that link out of what it forwards.
 	 */
 	public function test_a_first_recording_not_projected_honours_a_projected_rejection(): void {
-		$over = [ 'url' => 'https://harborgazette.example/d', 'body' => 'Mesa Courier reprinted it.' ];
+		$over = [ 'title' => 'The Harbor Gazette prize', 'body' => 'Mesa Courier reprinted it.' ];
 		$this->seed(
 			self::gazette(),
 			self::entity( self::MESA, 'Mesa Courier' ),
-			[ Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.example/d' ], 'user:curator-58', '9.4.1' ) ]
+			[ Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://random.example/x' ], 'user:curator-58', '9.4.1' ) ]
 		);
 
 		$this->resolver->fill( self::recorded( $over ) );
@@ -1005,7 +1121,7 @@ final class ResolverNodeTest extends TestCase {
 		$this->resolver->fill( self::recorded( $over ) );
 
 		$this->assertSame(
-			[ [ 'link_asserted', self::GAZETTE, 'subject' ], [ 'link_retracted', self::MESA, 'mention' ] ],
+			[ [ 'link_asserted', self::GAZETTE, 'publisher' ], [ 'link_retracted', self::MESA, 'mention' ] ],
 			\array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['role'] ], $this->written() )
 		);
 		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $m ): bool => 'intel:resolved:null' === $m[ Message::TO ] ) );
@@ -1154,13 +1270,13 @@ final class ResolverNodeTest extends TestCase {
 	}
 
 	/**
-	 * The item's link to the Gazette, as the resolver once wrote it.
+	 * The item's link to the Gazette, its publisher, as the resolver writes it.
 	 *
 	 * @param string $kind `link_asserted` or `link_proposed`.
 	 * @return array<string,mixed>
 	 */
 	private static function link( string $kind ): array {
-		return Intel_Event::make( $kind, [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'identifier', 'confidence' => 1.0, 'retrieved_ts' => 1792950000 ], 'machine:resolve@9.4.1', '9.4.1' );
+		return Intel_Event::make( $kind, [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'role' => 'publisher', 'method' => 'identifier', 'confidence' => 1.0, 'retrieved_ts' => 1792950000 ], 'machine:resolve@9.4.1', '9.4.1' );
 	}
 
 	/**

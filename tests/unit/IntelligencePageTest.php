@@ -198,6 +198,7 @@ final class IntelligencePageTest extends TestCase {
 		$this->assertSame( Intel_Event::LINK_ROLES, \array_keys( $vocabulary['linkRoleWords'] ) );
 		$this->assertSame( Intel_Event::METHODS, \array_keys( $vocabulary['methodWords'] ) );
 		$this->assertSame( 'Mentioned', $vocabulary['linkRoleWords']['mention'] );
+		$this->assertSame( 'The publisher', $vocabulary['linkRoleWords']['publisher'] );
 		$this->assertSame( 'a similar name', $vocabulary['methodWords']['ner_fuzzy'] );
 	}
 

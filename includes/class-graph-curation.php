@@ -52,9 +52,10 @@ final class Graph_Curation {
 	private const HOLDING_STATES = [ 'accepted', 'proposed' ];
 
 	/**
-	 * Judge the link a readable item has to an entity, by any role and under
-	 * any of the entity's keys: `link_confirmed` or `link_rejected`, carrying
-	 * the item's URL.
+	 * Judge the link a readable item has to an entity, by any role saying
+	 * the item is about it and under any of the entity's keys:
+	 * `link_confirmed` or `link_rejected`, carrying the item's URL. A
+	 * `publisher` link alone is no link to judge.
 	 *
 	 * @param string                 $kind `link_confirmed` or `link_rejected`.
 	 * @param array<array-key,mixed> $args The bound verb args: `item`, `entity`.
@@ -69,7 +70,7 @@ final class Graph_Curation {
 				$entity = Graph_Query::seen( $r, $g, $entity_key );
 				$item   = self::item( $r, $g, $item_key );
 				$keys   = Graph_Query::keys_of( $entity, $g );
-				if ( [] === $r->rows( 'SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' l WHERE item_key = ? AND entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) LIMIT 1', [ $item_key, ...$keys ] ) ) {
+				if ( [] === $r->rows( 'SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' l WHERE item_key = ? AND entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) AND role IN ( ' . Intel_Graph_Row_Schema::marks( Intel_Event::ABOUT_ROLES ) . ' ) LIMIT 1', [ $item_key, ...$keys, ...Intel_Event::ABOUT_ROLES ] ) ) {
 					throw new \InvalidArgumentException( \esc_html( "no link: {$item_key} {$entity}" ) );
 				}
 				return [ $entity, $item ];

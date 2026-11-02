@@ -176,6 +176,7 @@ final class GraphQueryTest extends TestCase {
 				'roles'       => [ [ 'role' => 'client', 'from_ts' => self::$jan_01, 'to_ts' => 0 ] ],
 				'topics'      => [ [ 'topic_key' => 'topic:awards', 'name' => 'Awards' ] ],
 				'counts'      => [ 'items' => 2, 'proposed_links' => 0 ],
+				'published'   => [ 'count' => 0 ],
 				'available'   => true,
 			],
 			self::read( 'entity', [ 'key' => self::GAZETTE ] )
@@ -557,7 +558,7 @@ final class GraphQueryTest extends TestCase {
 	private static function read( string $verb, array $args ): array {
 		$defaults = [
 			'entity'      => [],
-			'timeline'    => [ 'limit' => 50, 'offset' => 0 ],
+			'timeline'    => [ 'published' => false, 'limit' => 50, 'offset' => 0 ],
 			'related'     => [ 'limit' => 20 ],
 			'claims'      => [ 'predicate' => null, 'limit' => 50 ],
 			'review'      => [ 'limit' => 50 ],

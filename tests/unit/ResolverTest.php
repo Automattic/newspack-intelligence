@@ -44,19 +44,53 @@ final class ResolverTest extends TestCase {
 		parent::tearDown();
 	}
 
-	public function test_a_domain_url_links_its_entity_as_subject(): void {
-		$this->assertSame( [ self::link( self::MESA, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://mesa-news.example/story/1' ] )['links'] );
+	/** An item on an entity's own domain was published by it: the host links it as publisher. */
+	public function test_a_domain_url_links_its_entity_as_publisher(): void {
+		$this->assertSame( [ self::link( self::MESA, 'publisher', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://mesa-news.example/story/1' ] )['links'] );
 	}
 
-	public function test_a_www_or_subdomain_url_links_its_entity(): void {
-		$this->assertSame( [ self::link( self::MESA, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://www.mesa-news.example/x' ] )['links'] );
-		$this->assertSame( [ self::link( self::MESA, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://blog.mesa-news.example/x' ] )['links'] );
+	public function test_a_www_or_subdomain_url_links_its_publisher(): void {
+		$this->assertSame( [ self::link( self::MESA, 'publisher', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://www.mesa-news.example/x' ] )['links'] );
+		$this->assertSame( [ self::link( self::MESA, 'publisher', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://blog.mesa-news.example/x' ] )['links'] );
 	}
 
-	public function test_a_client_domain_url_links_the_client_as_subject(): void {
+	/** A client's own story whose text never names the client is published by it, not about it. */
+	public function test_an_item_on_its_own_domain_naming_nothing_links_publisher_only(): void {
 		$this->assertSame(
-			[ self::link( self::GAZETTE, 'subject', 'identifier', 1.0 ) ],
-			$this->golden( [ 'url' => 'https://www.harborgazette.example/2026/10/award', 'title' => 'An award', 'body' => 'First place.' ] )['links']
+			[ self::link( self::GAZETTE, 'publisher', 'identifier', 1.0 ) ],
+			$this->golden( [ 'url' => 'https://www.harborgazette.example/2026/10/crater', 'title' => 'A crater study from the university', 'body' => 'Researchers mapped the rim.' ] )['links']
+		);
+	}
+
+	/** A client's own story naming the client links it twice: publisher by host, subject by name. */
+	public function test_an_item_on_its_own_domain_naming_its_publisher_links_both(): void {
+		$this->assertSame(
+			[ self::link( self::GAZETTE, 'publisher', 'identifier', 1.0 ), self::link( self::GAZETTE, 'subject', 'name', 1.0 ) ],
+			$this->golden( [ 'url' => 'https://www.harborgazette.example/2026/10/award', 'title' => 'The Harbor Gazette wins an award', 'body' => 'First place.' ] )['links']
+		);
+		$this->assertSame(
+			[ self::link( self::GAZETTE, 'publisher', 'identifier', 1.0 ), self::link( self::GAZETTE, 'mention', 'alias', 1.0 ) ],
+			$this->golden( [ 'url' => 'https://www.harborgazette.example/2026/10/staff', 'title' => 'Staff news', 'body' => 'HarbGaz hires an editor.' ] )['links']
+		);
+	}
+
+	/** The host's entity publishes a hosted item; the repo its path names is the subject. */
+	public function test_a_hosting_sites_entity_publishes_and_the_path_names_the_subject(): void {
+		$host     = 'organization:forge-host';
+		$product  = 'product:kiln-plugin';
+		$entities = [ ...self::entity( $host, 'Forge Host', [ 'domain' => [ 'github.com' ] ] ), ...self::entity( $product, 'Kiln Plugin', [ 'github_repo' => [ 'kiln/plugin' ] ] ) ];
+
+		$this->assertSame(
+			[ self::link( $host, 'publisher', 'identifier', 1.0 ), self::link( $product, 'subject', 'identifier', 1.0 ) ],
+			$this->resolve( [ 'url' => 'https://github.com/kiln/plugin/issues/7', 'title' => 'Kiln stalls' ], $entities )['links']
+		);
+	}
+
+	/** A proposed entity's site publishes as proposed, so a guess never asserts. */
+	public function test_a_proposed_entitys_site_publishes_as_proposed(): void {
+		$this->assertSame(
+			[ self::link( 'organization:tern-weekly', 'publisher', 'identifier', 1.0, 'proposed' ) ],
+			$this->resolve( [ 'url' => 'https://ternweekly.example/a', 'title' => 'Ferry schedule' ], self::proposed( 'organization:tern-weekly', 'Tern Weekly', [ 'domain' => [ 'ternweekly.example' ] ] ) )['links']
 		);
 	}
 
@@ -76,10 +110,10 @@ final class ResolverTest extends TestCase {
 		);
 	}
 
-	/** The URL's entity is the subject; another named in the body is a mention. */
+	/** The URL's entity is the publisher; another named in the body is a mention. */
 	public function test_a_domain_and_a_competing_name_both_link(): void {
 		$this->assertSame(
-			[ self::link( self::MESA, 'subject', 'identifier', 1.0 ), self::link( self::GAZETTE, 'mention', 'name', 1.0 ) ],
+			[ self::link( self::MESA, 'publisher', 'identifier', 1.0 ), self::link( self::GAZETTE, 'mention', 'name', 1.0 ) ],
 			$this->golden( [ 'url' => 'https://mesa-news.example/x', 'body' => 'The Harbor Gazette also covered this.' ] )['links']
 		);
 	}
@@ -218,7 +252,7 @@ final class ResolverTest extends TestCase {
 	/** GitHub and Linear items resolve like any other item. */
 	public function test_github_and_linear_items_resolve_like_any_other(): void {
 		foreach ( [ 'github', 'linear' ] as $source ) {
-			$this->assertSame( [ self::link( self::MESA, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'source' => $source, 'url' => 'https://mesa-news.example/x' ] )['links'], $source );
+			$this->assertSame( [ self::link( self::MESA, 'publisher', 'identifier', 1.0 ) ], $this->golden( [ 'source' => $source, 'url' => 'https://mesa-news.example/x' ] )['links'], $source );
 		}
 	}
 
@@ -306,7 +340,7 @@ final class ResolverTest extends TestCase {
 			$this->resolve( [ 'title' => 'Salem Ledger and Harbor Gazette co-publish', 'url' => 'https://random.example/x' ], ...$events )['links']
 		);
 		$this->assertSame(
-			[ self::link( 'organization:salem-ledger', 'subject', 'identifier', 1.0, 'proposed' ) ],
+			[ self::link( 'organization:salem-ledger', 'publisher', 'identifier', 1.0, 'proposed' ) ],
 			$this->resolver()->resolve( self::item( [ 'url' => 'https://salemledger.example/a' ] ), null )['links']
 		);
 	}
@@ -502,7 +536,7 @@ final class ResolverTest extends TestCase {
 		$this->assertSame( 1, $extractor->calls );
 	}
 
-	/** A deterministic link spares the model call, so NER is not recognized. */
+	/** A deterministic link, a publisher's included, spares the model call, so NER is not recognized. */
 	public function test_a_deterministic_link_skips_the_extractor(): void {
 		$extractor = new Fake_Entity_Extractor( [ 'The Harbor Gazette' ] );
 		$this->assertFalse( $this->golden( [ 'url' => 'https://mesa-news.example/x' ], [], $extractor )['recognized'] );

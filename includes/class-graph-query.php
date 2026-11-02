@@ -17,6 +17,10 @@
  * state is the highest-ranked judgment's (`JUDGE_RANK`), else the machine's,
  * and a `rejected` link counts nowhere. Each read hands `live()` the links
  * it can rest on and windows only those; `trends` with no entity reads all.
+ * A read counts the links saying an item is about its entity
+ * (`Intel_Event::ABOUT_ROLES`) unless it names other roles: an entity's
+ * publishing reads its `publisher` links, and visibility and a claim's
+ * subject rest on any link.
  * Summaries, kinds and scores come from `extractions`, a name from
  * `entities`, joined, since a link may name an entity with no row.
  *
@@ -149,21 +153,23 @@ final class Graph_Query {
 	private const UNAVAILABLE = 'intelligence: no intel-graph to read; answering none: ';
 
 	/**
-	 * An entity's items, newest first, as `search` answers them.
+	 * An entity's items, newest first, as `search` answers them: those about
+	 * it, or with `published` those its own site published.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, `since`, `until`, `limit`, `offset`.
+	 * @param array<array-key,mixed> $args The bound verb args: `key`, `published`, `since`, `until`, `limit`, `offset`.
 	 * @return array<string,mixed> `{ items, total, available }`.
 	 * @throws \InvalidArgumentException On a key that names no entity the caller may see, or as `search()`.
 	 */
 	public static function timeline( array $args ): array {
 		$key                = Core::as_string( $args['key'] );
+		$links              = true === $args['published'] ? [ Intel_Event::PUBLISHER ] : Intel_Event::ABOUT_ROLES;
 		[ $limit, $offset ] = self::page( $args );
 		$filter             = self::filter_of( [ 'entity' => $key ] + $args );
 		return self::answer(
 			self::NO_ITEMS,
-			static function ( Row_Reader $r, array $g ) use ( $key, $filter, $limit, $offset ): array {
+			static function ( Row_Reader $r, array $g ) use ( $key, $links, $filter, $limit, $offset ): array {
 				self::seen( $r, $g, $key );
-				return self::items( $r, $g, $filter, $limit, $offset );
+				return self::items( $r, $g, $filter, $limit, $offset, self::NEWEST, $links );
 			}
 		);
 	}
@@ -263,20 +269,22 @@ final class Graph_Query {
 	}
 
 	/**
-	 * One page of matching items, the count of all of them, and each item's
-	 * live entity links; `$within` joins a set the items must be in, the
-	 * fields it adds after the links, and the order it lists them in.
+	 * One page of matching items, the count of all of them, and the entities
+	 * each is about; `$within` joins a set the items must be in, the fields
+	 * it adds after the links, and the order it lists them in, and `$links`
+	 * are the link roles the filters read.
 	 *
-	 * @param Row_Reader $r      The reader.
-	 * @param Graph      $g      The graph the read opened.
-	 * @param Filter     $filter The filters.
-	 * @param int        $limit  The page size.
-	 * @param int        $offset The page start.
-	 * @param Within     $within The join, its fields and the order.
+	 * @param Row_Reader   $r      The reader.
+	 * @param Graph        $g      The graph the read opened.
+	 * @param Filter       $filter The filters.
+	 * @param int          $limit  The page size.
+	 * @param int          $offset The page start.
+	 * @param Within       $within The join, its fields and the order.
+	 * @param list<string> $links  The link roles the filters read.
 	 * @return array<string,mixed>
 	 */
-	private static function items( Row_Reader $r, array $g, array $filter, int $limit, int $offset, array $within = self::NEWEST ): array {
-		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false );
+	private static function items( Row_Reader $r, array $g, array $filter, int $limit, int $offset, array $within = self::NEWEST, array $links = Intel_Event::ABOUT_ROLES ): array {
+		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false, $links );
 		$binds                           = [ ...$lead, ...$within['binds'], ...$binds ];
 		$columns                         = self::ITEM_COLUMNS + $within['fields'];
 		$total                           = Core::as_int( $r->rows( "{$with} SELECT COUNT(*) FROM ri i {$within['join']} WHERE {$where}", $binds )[0][0] ?? 0 );
@@ -373,8 +381,9 @@ final class Graph_Query {
 	/**
 	 * One entity, read as its survivor: its record, the keys merged into it,
 	 * every name, identifier and role it or they carry, every topic they are
-	 * tagged with that the caller may see (`visible()`), and how many
-	 * readable items link it and how many of those links are proposed.
+	 * tagged with that the caller may see (`visible()`), how many readable
+	 * items are about it and how many of those links are proposed, and how
+	 * many its own site published.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`.
 	 * @return array<string,mixed>
@@ -382,7 +391,7 @@ final class Graph_Query {
 	 */
 	public static function entity( array $args ): array {
 		$key   = Core::as_string( $args['key'] );
-		$empty = [ 'entity_key' => $key, 'type' => null, 'name' => null, 'state' => null, 'merged_from' => [], 'names' => [], 'identifiers' => [], 'roles' => [], 'topics' => [], 'counts' => [ 'items' => 0, 'proposed_links' => 0 ] ];
+		$empty = [ 'entity_key' => $key, 'type' => null, 'name' => null, 'state' => null, 'merged_from' => [], 'names' => [], 'identifiers' => [], 'roles' => [], 'topics' => [], 'counts' => [ 'items' => 0, 'proposed_links' => 0 ], 'published' => [ 'count' => 0 ] ];
 		return self::answer( $empty, static fn ( Row_Reader $r, array $g ): array => self::entity_record( $r, $g, $key ) );
 	}
 
@@ -418,6 +427,8 @@ final class Graph_Query {
 			static fn ( array $row ): bool => null !== self::visible( $r, $g, Core::as_string( $row[0] ) )
 		);
 		$counts                = $r->rows( "{$g['with']}{$live} SELECT COUNT( DISTINCT item_key ), COUNT( CASE WHEN state = 'proposed' THEN 1 END ) FROM live WHERE entity_key = ?", [ ...$g['binds'], ...$live_binds, $survivor ] )[0] ?? [ 0, 0 ];
+		[ $sites, $site_binds ] = self::live( $r, "{t}.entity_key IN ( {$in} )", $keys, [ Intel_Event::PUBLISHER ] );
+		$published             = $r->rows( "{$g['with']}{$sites} SELECT COUNT( DISTINCT item_key ) FROM live WHERE entity_key = ?", [ ...$g['binds'], ...$site_binds, $survivor ] )[0][0] ?? 0;
 		return [
 			'entity_key'  => $survivor,
 			'type'        => $record[0] ?? null,
@@ -429,6 +440,7 @@ final class Graph_Query {
 			'roles'       => $roles,
 			'topics'      => \array_values( \array_map( static fn ( array $row ): array => [ 'topic_key' => $row[0], 'name' => $row[1] ], $topics ) ),
 			'counts'      => [ 'items' => Core::as_int( $counts[0] ), 'proposed_links' => Core::as_int( $counts[1] ) ],
+			'published'   => [ 'count' => Core::as_int( $published ) ],
 		];
 	}
 
@@ -477,7 +489,7 @@ final class Graph_Query {
 			static function ( Row_Reader $r, array $g ) use ( $key, $limit ): array {
 				$survivor              = self::survivor( $key, $g );
 				$keys                  = self::keys_of( $survivor, $g );
-				[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' n WHERE entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) )', $keys );
+				[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' n WHERE entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) AND n.role IN ( ' . Intel_Graph_Row_Schema::marks( Intel_Event::ABOUT_ROLES ) . ' ) )', [ ...$keys, ...Intel_Event::ABOUT_ROLES ] );
 				$rows                  = $r->rows(
 					"{$g['with']}{$live}, mine AS ( SELECT DISTINCT item_key FROM live WHERE entity_key = ? ),"
 					. ' pairs AS ( SELECT DISTINCT live.entity_key, live.item_key, live.url, live.title, live.t FROM live JOIN mine ON mine.item_key = live.item_key WHERE live.entity_key <> ? ),'
@@ -519,7 +531,7 @@ final class Graph_Query {
 				$survivor              = self::survivor( $key, $g );
 				$keys                  = self::keys_of( $survivor, $g );
 				$in                    = Intel_Graph_Row_Schema::marks( $keys );
-				[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'claims' ) . " n WHERE subject_key IN ( {$in} ) OR object_key IN ( {$in} ) )", [ ...$keys, ...$keys ] );
+				[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'claims' ) . " n WHERE subject_key IN ( {$in} ) OR object_key IN ( {$in} ) )", [ ...$keys, ...$keys ], Intel_Event::LINK_ROLES );
 				$only                  = null === $predicate ? '' : ' AND cl.predicate = ?';
 				$rows                  = $r->rows(
 					"{$g['with']}{$live}, cl AS ( SELECT COALESCE( ms.value, c.subject_key ) AS subject, c.predicate, COALESCE( mo.value, c.object_key ) AS object_key, c.object_text, c.confidence, c.item_key, c.ord"
@@ -567,7 +579,7 @@ final class Graph_Query {
 		}
 		$keys                  = self::keys_of( $survivor, $g );
 		$in                    = Intel_Graph_Row_Schema::marks( $keys );
-		[ $live, $live_binds ] = self::live( $r, "{t}.entity_key IN ( {$in} )", $keys );
+		[ $live, $live_binds ] = self::live( $r, "{t}.entity_key IN ( {$in} )", $keys, Intel_Event::LINK_ROLES );
 		[ $cites, $cited ]     = self::cites( $r, "ev.subject IN ( {$in} )", $keys );
 		return [] === $r->rows( "{$g['with']}{$live}, {$cites} SELECT 1 FROM cites WHERE entity_key = ? LIMIT 1", [ ...$g['binds'], ...$live_binds, ...$cited, $survivor ] ) ? null : $survivor;
 	}
@@ -793,16 +805,17 @@ final class Graph_Query {
 	 * an entity the item links, any of `kinds` and any of `sources`. `live`
 	 * follows the graph's prelude when a filter reads links or `$linked` asks
 	 * for it, over the links of the items linking a named entity or topic,
-	 * else of the readable items inside `days`; `rl`, each role row under its
-	 * survivor, follows it when a role is named.
+	 * else of the readable items inside `days`, over the link roles named;
+	 * `rl`, each role row under its survivor, follows it when a role is named.
 	 *
-	 * @param Row_Reader $r      The reader.
-	 * @param Graph      $g      The graph the read opened.
-	 * @param Filter     $filter The filters.
-	 * @param bool       $linked Whether the read joins `live` itself.
+	 * @param Row_Reader   $r      The reader.
+	 * @param Graph        $g      The graph the read opened.
+	 * @param Filter       $filter The filters.
+	 * @param bool         $linked Whether the read joins `live` itself.
+	 * @param list<string> $links  The link roles `live` reads.
 	 * @return array{0:string,1:string,2:list<scalar|null>,3:list<scalar|null>} The `WITH` clauses, the condition, the clauses' binds and the condition's.
 	 */
-	private static function narrowed( Row_Reader $r, array $g, array $filter, bool $linked ): array {
+	private static function narrowed( Row_Reader $r, array $g, array $filter, bool $linked, array $links = Intel_Event::ABOUT_ROLES ): array {
 		$time  = Intel_Graph_Row_Schema::ITEM_TIME;
 		$where = [ "{$time} >= ?", "{$time} < ?" ];
 		$days  = $filter['days'] ?? self::all_days();
@@ -846,8 +859,8 @@ final class Graph_Query {
 		if ( $linked || [] !== $keys || [] !== $roles ) {
 			$only                  = [] === $keys
 				? [ "{t}.item_key IN ( SELECT item_key FROM ri i WHERE {$time} >= ? AND {$time} < ? )", $days ]
-				: [ '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' n WHERE entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) )', $keys ];
-			[ $live, $live_binds ] = self::live( $r, ...$only );
+				: [ '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' n WHERE entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) AND n.role IN ( ' . Intel_Graph_Row_Schema::marks( $links ) . ' ) )', [ ...$keys, ...$links ] ];
+			[ $live, $live_binds ] = self::live( $r, $only[0], $only[1], $links );
 			$with                 .= $live;
 			\array_push( $lead, ...$live_binds );
 		}
@@ -1179,7 +1192,7 @@ final class Graph_Query {
 	 * @return list<array<string,mixed>>
 	 */
 	private static function proposed_links( Row_Reader $r, array $g, int $limit ): array {
-		[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . " n WHERE state = 'proposed' )", [] );
+		[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . " n WHERE state = 'proposed' AND n.role IN ( " . Intel_Graph_Row_Schema::marks( Intel_Event::ABOUT_ROLES ) . ' ) )', Intel_Event::ABOUT_ROLES );
 		$links                 = [];
 		$rows                  = $r->rows(
 			"{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::column_of( $r, 'name', 'live.entity_key' ) . ', ' . self::column_of( $r, 'type', 'live.entity_key' )
@@ -1206,31 +1219,37 @@ final class Graph_Query {
 
 	/**
 	 * The CTEs, to follow the graph's prelude, that every read counts links
-	 * through, over the links and judgments `$only` admits, `{t}` naming
-	 * either table: `live`, one link per item and survivor, a topic link
-	 * apart, subject over mention, at its effective state, on a readable
-	 * item, never rejected, with the item's title, URL and time `t`.
+	 * through, over the links of `$roles` and the judgments `$only` admits,
+	 * `{t}` naming either table: `live`, one link per item and survivor, a
+	 * topic link apart, at its effective state, on a readable item, with the
+	 * item's title, URL and time `t`. A judgment, which names no role, judges
+	 * an about-link; a `publisher` link keeps the machine's state. A rejected
+	 * link drops out before the pick, which takes subject over mention over
+	 * publisher, so a read of every role answers an entity's about-link where
+	 * one stands and its publisher link where a curator rejected the rest.
 	 *
 	 * @param Row_Reader   $r     The reader.
 	 * @param string       $only  A condition on `{t}`, the links or judgments a read rests on.
 	 * @param list<scalar> $binds Its binds.
+	 * @param list<string> $roles The link roles read, ABOUT_ROLES unless a read names others.
 	 * @return Sql The `, lk AS …, live AS …` clauses and their binds.
 	 */
-	private static function live( Row_Reader $r, string $only, array $binds ): array {
+	private static function live( Row_Reader $r, string $only, array $binds, array $roles = Intel_Event::ABOUT_ROLES ): array {
 		$rank = self::judge_rank( 'j.actor_kind' );
 		$time = Intel_Graph_Row_Schema::ITEM_TIME;
-		$sql  = ', lk AS ( SELECT l.item_key, COALESCE( mg.value, l.entity_key ) AS entity_key, l.role, l.method, l.confidence, l.state,'
-			. " l.role = 'topic' AS topical, ROW_NUMBER() OVER ( PARTITION BY l.item_key, COALESCE( mg.value, l.entity_key ), l.role = 'topic'"
-			. " ORDER BY l.role = 'subject' DESC, l.confidence DESC, l.entity_key ) AS pick"
-			. ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' l LEFT JOIN mg ON mg.key = l.entity_key WHERE ' . \str_replace( '{t}', 'l', $only ) . ' ),'
+		$sql  = ', lk AS ( SELECT l.item_key, COALESCE( mg.value, l.entity_key ) AS entity_key, l.entity_key AS raw_key, l.role, l.method, l.confidence, l.state'
+			. ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' l LEFT JOIN mg ON mg.key = l.entity_key WHERE ( ' . \str_replace( '{t}', 'l', $only ) . ' ) AND l.role IN ( ' . Intel_Graph_Row_Schema::marks( $roles ) . ' ) ),'
 			. ' jt AS ( SELECT item_key, entity_key, state FROM ( SELECT j.item_key, COALESCE( mg.value, j.entity_key ) AS entity_key, j.state,'
 			. " ROW_NUMBER() OVER ( PARTITION BY j.item_key, COALESCE( mg.value, j.entity_key ) ORDER BY {$rank} DESC, j.ts DESC ) AS pick"
 			. ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'judgments' ) . ' j LEFT JOIN mg ON mg.key = j.entity_key WHERE ' . \str_replace( '{t}', 'j', $only ) . ' ) WHERE pick = 1 ),'
-			. ' live AS ( SELECT * FROM ( SELECT lk.item_key, lk.entity_key, lk.role, lk.method, lk.confidence, lk.topical,'
-			. " i.title, i.url, {$time} AS t, COALESCE( jt.state, lk.state ) AS state"
+			. ' lj AS ( SELECT lk.item_key, lk.entity_key, lk.raw_key, lk.role, lk.method, lk.confidence, lk.role = \'topic\' AS topical,'
+			. " i.title, i.url, {$time} AS t, CASE WHEN lk.role = ? THEN lk.state ELSE COALESCE( jt.state, lk.state ) END AS state"
 			. ' FROM lk JOIN ri i ON i.item_key = lk.item_key'
-			. " LEFT JOIN jt ON jt.item_key = lk.item_key AND jt.entity_key = lk.entity_key WHERE lk.pick = 1 AND lk.entity_key <> '' ) WHERE state <> 'rejected' )";
-		return [ $sql, [ ...$binds, ...$binds ] ];
+			. " LEFT JOIN jt ON jt.item_key = lk.item_key AND jt.entity_key = lk.entity_key WHERE lk.entity_key <> '' ),"
+			. ' live AS ( SELECT item_key, entity_key, role, method, confidence, topical, title, url, t, state FROM ( SELECT lj.*,'
+			. ' ROW_NUMBER() OVER ( PARTITION BY lj.item_key, lj.entity_key, lj.topical'
+			. " ORDER BY lj.role = 'subject' DESC, lj.role = 'publisher', lj.confidence DESC, lj.raw_key ) AS pick FROM lj WHERE lj.state <> 'rejected' ) WHERE pick = 1 )";
+		return [ $sql, [ ...$binds, ...$roles, ...$binds, Intel_Event::PUBLISHER ] ];
 	}
 
 	/**

@@ -1,14 +1,19 @@
 import { useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
-import { SelectControl, TextControl } from '@wordpress/components';
+import {
+	Card,
+	CardBody,
+	CardHeader,
+	SelectControl,
+	TextControl,
+} from '@wordpress/components';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { formatCommandArgs } from '@newspack-nodes/runtime';
 import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
-import Answer from '../components/Answer';
+import Answer, { AnswerBody } from '../components/Answer';
 import Cite, { EntityChip } from '../components/Cite';
 import Refusal from '../components/Refusal';
-import ItemRow from '../components/ItemRow';
-import Pager from '../components/Pager';
+import { ItemPage } from '../components/ItemRow';
 import { metaLine, utcDay } from '../components/format';
 
 /**
@@ -154,7 +159,97 @@ function countsText( counts ) {
 }
 
 /**
- * Entity: one entity's record, its timeline a page at a time, the entities
+ * The items an entity's own site published, newest first, a page at a time.
+ *
+ * @param {Object}                 props
+ * @param {string}                 props.entityKey    The entity.
+ * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
+ * @param {(item: Object) => void} [props.onSave]     Saves an item; absent for a reader.
+ * @return {import('react').ReactElement} The page.
+ */
+function PublishedItems( { entityKey, onOpenEntity, onSave } ) {
+	const [ starts, setStarts ] = useState( [ 0 ] );
+	const offset = starts[ starts.length - 1 ];
+	const read = useIntelRead(
+		'entity:published',
+		'timeline',
+		formatCommandArgs( [ entityKey ], {
+			published: true,
+			...( 0 < offset ? { offset } : {} ),
+		} )
+	);
+	return (
+		<AnswerBody
+			read={ read }
+			rows="items"
+			empty={ __(
+				'No readable item was published by this entity.',
+				'newspack-intelligence'
+			) }
+		>
+			{ ( answer ) => (
+				<ItemPage
+					answer={ answer }
+					starts={ starts }
+					onStarts={ setStarts }
+					onOpenEntity={ onOpenEntity }
+					onSave={ onSave }
+				/>
+			) }
+		</AnswerBody>
+	);
+}
+
+/**
+ * What an entity's own site published, as a section of its own, collapsed
+ * until opened and read only then.
+ *
+ * @param {Object}                 props
+ * @param {string}                 props.entityKey    The entity.
+ * @param {string}                 props.name         The entity's name.
+ * @param {number}                 props.count        How many items it published.
+ * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
+ * @param {(item: Object) => void} [props.onSave]     Saves an item; absent for a reader.
+ * @return {import('react').ReactElement} The section.
+ */
+function Published( { entityKey, name, count, onOpenEntity, onSave } ) {
+	const [ open, setOpen ] = useState( false );
+	const title = sprintf(
+		/* translators: 1: the entity's name, 2: items its own site published. */
+		__( 'Published by %1$s (%2$d)', 'newspack-intelligence' ),
+		name,
+		count
+	);
+	return (
+		<Card as="section" aria-label={ title }>
+			<CardHeader>
+				<h3>
+					<button
+						type="button"
+						className="button-link"
+						aria-expanded={ open }
+						onClick={ () => setOpen( ! open ) }
+					>
+						{ title }
+					</button>
+				</h3>
+			</CardHeader>
+			{ open && (
+				<CardBody>
+					<PublishedItems
+						entityKey={ entityKey }
+						onOpenEntity={ onOpenEntity }
+						onSave={ onSave }
+					/>
+				</CardBody>
+			) }
+		</Card>
+	);
+}
+
+/**
+ * Entity: one entity's record, its timeline of the items about it a page at
+ * a time, then, collapsed, the items its own site published, the entities
  * sharing its items and the claims naming it, each from its own read; and,
  * once the record has answered, for a curator, the forms adding a name or
  * identifier and asserting or ending a role. Every edit that lands re-reads
@@ -329,31 +424,30 @@ export default function Entity( {
 				read={ timeline }
 				rows="items"
 				empty={ __(
-					'No readable item links this entity.',
+					'No readable item is about this entity.',
 					'newspack-intelligence'
 				) }
 			>
 				{ ( answer ) => (
-					<>
-						<ul className="newspack-intelligence__items">
-							{ answer.items.map( ( item ) => (
-								<ItemRow
-									key={ item.item_key }
-									item={ item }
-									onOpenEntity={ onOpenEntity }
-									onSave={ onSave }
-								/>
-							) ) }
-						</ul>
-						<Pager
-							starts={ starts }
-							onStarts={ setStarts }
-							shown={ answer.items.length }
-							total={ answer.total }
-						/>
-					</>
+					<ItemPage
+						answer={ answer }
+						starts={ starts }
+						onStarts={ setStarts }
+						onOpenEntity={ onOpenEntity }
+						onSave={ onSave }
+					/>
 				) }
 			</Answer>
+
+			{ record.answer && 0 < record.answer.published.count && (
+				<Published
+					entityKey={ entityKey }
+					name={ record.answer.name || record.answer.entity_key }
+					count={ record.answer.published.count }
+					onOpenEntity={ onOpenEntity }
+					onSave={ onSave }
+				/>
+			) }
 
 			<Answer
 				title={ __( 'Related', 'newspack-intelligence' ) }

@@ -102,9 +102,10 @@ function enqueue_intelligence_assets( string $hook ): void {
 						Graph_Query::LENS_LISTS
 					),
 					'linkRoleWords'   => [
-						'subject' => \__( 'The subject', 'newspack-intelligence' ),
-						'mention' => \__( 'Mentioned', 'newspack-intelligence' ),
-						'topic'   => \__( 'A topic', 'newspack-intelligence' ),
+						'subject'   => \__( 'The subject', 'newspack-intelligence' ),
+						'mention'   => \__( 'Mentioned', 'newspack-intelligence' ),
+						'topic'     => \__( 'A topic', 'newspack-intelligence' ),
+						'publisher' => \__( 'The publisher', 'newspack-intelligence' ),
 					],
 					'methodWords'     => [
 						'identifier'  => \__( 'its identifier', 'newspack-intelligence' ),

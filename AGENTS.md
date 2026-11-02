@@ -274,7 +274,8 @@ restart refuses `no such table`.
 and, like `intel:reresolve:resolve`, hands it one record a poll
 (`set_line_mode true`), links each item to the entities it is about. `Resolver` holds the order:
 identifiers in the item's URL (host by suffix walk, GitHub org and repo,
-LinkedIn company, X handle, a Linear issue's team) at 1.0; names and aliases
+LinkedIn company, X handle, a Linear issue's team) at 1.0, the entity whose
+`domain` the host is linked as the item's `publisher`; names and aliases
 as whole words in title and body at 1.0, an acronym only in its own case at
 0.9; a domain's stem in the title at 0.9, when it runs at least
 `MIN_STEM_LENGTH` (6) characters, aligns to word boundaries, capitalizes
@@ -288,9 +289,12 @@ are scored, because similar_text's ratio never passes 2·min/(sum). Name and ste
 together: the longest span wins and a shorter hit drops, while equal spans
 naming several entities assert the one whose locality the text also names,
 written capitalized, at 0.9, else propose each at 0.5. A locality never
-drops a name. An entity
-found in the URL or title is the subject, one found only in the body a
-mention, and each entity keeps its strongest link. `Entity_Index` reads
+drops a name. The host's entity published the item and is linked
+`publisher`, never `subject`, apart from any link the text earns it, so a
+client's own story is about the client only when its text names it, and a
+publisher spares the NER step as any link does. An entity the URL's path or
+the title names is the subject, one found only in the body a mention, and
+each entity keeps its strongest such link. `Entity_Index` reads
 accepted and proposed entities off the projection through
 `Intel_Graph_Row_Schema::read()`: names by norm, identifiers by `kind:value`, a
 merged entity's names and identifiers answering its survivor; an entity
@@ -343,9 +347,15 @@ scalar), so a failure is told from an answer naming nobody.
 A resolution retracts each stored non-topic `links` row of the item in this
 worker's own partition's file, the only one its projector deletes in, by
 its raw entity key and role, that it does not write again, so a link whose
-role changed is retracted in its old one; a row whose survivor a curator
-confirmed is kept, and so is a `ner_fuzzy` row unless the NER step ran and
-answered, since nothing else looked for it again. Every resolution reads
+role changed is retracted in its old one; an about-link whose survivor a
+curator confirmed is kept unless the resolution finds its entity again by the
+same method in another about-role, which replaces it, so a host link a
+curator confirmed as `subject` stays beside the `publisher` link the host now
+earns, and so is a `ner_fuzzy` row unless the NER step ran and answered,
+since nothing else looked for it again. A judgment names no role,
+so it governs an item's about-links alone and never a `publisher` link, and
+the extractor is sent one link per entity, an about-link over a publisher
+one. Every resolution reads
 those rows with the rest of `settled()`; an `item_recorded` reads them
 through `Intel_Graph_Row_Schema::read()` given a line, so a projection that
 will not open resolves the item from the event, NER included, with no
@@ -610,7 +620,16 @@ map the index load also reads, built with its inverse once a read in
 `graph()`; a key whose chain cycles or runs past
 `Entity_Index::MAX_MERGE_HOPS` is refused, and its rows count nowhere. Links read through the `live` CTE as
 one per item and survivor, a topic link apart from the rest, subject over
-mention; a link's state is the highest-ranked judgment's (`JUDGE_RANK`: a
+mention over publisher among the links no judgment rejected, over the roles
+saying an item is about its entity,
+`Intel_Event::ABOUT_ROLES`, unless a read names others: `visible()` and a
+claim's subject rest on any link, and an entity's publishing reads its
+`publisher` links alone, at the machine's state, since a judgment governs
+an about-link alone, so `search`, a lens, `timeline`, `related`,
+`trends`, `signals`, `review`, an entity's `counts` and each listed item's
+entities leave `publisher` out. `entity` answers `published: { count }`,
+the readable items its own site published, and `timeline --published`
+pages them; a link's state is the highest-ranked judgment's (`JUDGE_RANK`: a
 person over an agent), else the machine's, and a `rejected` link counts
 nowhere. Each read hands `live()` the links it rests on — an entity's keys,
 a page's items, the items a claim or a proposal names — and windows only
@@ -804,8 +823,9 @@ the watch has not matched, entering the target at or after `LATE_S`
 watch's high-water mark, or before its saving on a first pass, the oldest
 first, at most `PASS_LIMIT` (200) a pass, so a backlog drains over passes.
 An item enters a lens or an entity at its retrieval, read through the lens
-or the entity exactly as `search` reads it, and a collection at its
-saving, read through the readable items. Because an item can join its
+or the entity exactly as `search` reads it, so an item an entity only
+published enters neither, and a collection at its saving, read through the
+readable items. Because an item can join its
 target well after its retrieval — an extraction retried from
 `intel:later`, a resolver's 60-second hold, a curator's `confirm_link`, a
 re-resolution — the watch reads a day behind its mark, and its own match
@@ -924,8 +944,9 @@ so does one an unrestricted item cites by a link or as the item it was
 proposed from. Two entities only restricted items cite merge, and a holder
 still rejects one, or creates a public entity over its key on purpose with
 `create_entity`. A judged link must exist: `confirm_link` and `reject_link`
-refuse `no link: <item> <entity>` unless a `links` row, of any role, joins
-the item to one of the entity's keys. `tag_topic` refuses a topic whose
+refuse `no link: <item> <entity>` unless a `links` row of a role in
+`Intel_Event::ABOUT_ROLES` joins the item to one of the entity's keys, so a
+`publisher` link alone is not judged. `tag_topic` refuses a topic whose
 survivor is not of type `topic` (its `entities` type, else its key's). A
 merge into itself or across types — the two survivors' types, read the same
 way — is refused, and so is any merge after which `Entity_Index::walk()` — over the
@@ -995,7 +1016,8 @@ on the substrate's `Mcp_Door` (substrate ADR-38), serving
 `Intelligence_CI_Node`'s schema, one `intel_<verb>` per verb but
 `fetch_now`, `health`, `seed_ontology` and `reresolve`, which it leaves
 out by name (`NOT_TOOLS`), each offering every declared arg
-under the verb's own description. The door owns the session check, the
+under the verb's own description. Its glossary says what a `publisher`
+link means and which reads leave it out. The door owns the session check, the
 scope ceiling, the meter, the OAuth resource and the `<site-data>` fence,
 and offers a session only the tools its role covers, so a read session is
 offered the reads alone and every answer passes the reads' own tiers. The
@@ -1713,16 +1735,16 @@ its own one-shot commands; nothing polls.
 | `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_id` and `last_error`, reads it whole; while collection is off every other row is listed neutral, never a fault; the projector catching up on the ontology is neutral until its hold has stood five minutes (`BEHIND_FAULT_S`), then a fault; with nothing held the backlog row counts the later queue's entries as items waiting to resolve or retry; every time it shows renders in the browser's own zone through the substrate's `formatLocalDateTime()`, while the dropped days stay the UTC days the server names, read as "Items parked from <first_day> to <last_day> were dropped before they resolved.", true of an entry aged out and of one the full queue refused; the line names each source no pass has reported ("Collecting from 5 of 6 sources; feed has not reported yet."), the names joined in the page's own language (`document.documentElement.lang`, else the browser's), and says the health is not fully known for any other unknown row, a source in a state it does not recognise included; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology`, `canManage` for the rest), and anyone else reads "An administrator can …" |
 | `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
 | `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens` above `search --lens` a page at a time beside `trends --lens`; trend rows and signals citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
-| `views/Entity.js` | default | `entity`, `timeline` a page at a time, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
+| `views/Entity.js` | default | `entity`, `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
 | `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity, and `review entities`, a pill per entity; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back |
 | `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection`, its collection shown saving through `useHeld` until a read lists it by name |
 | `views/Watches.js` | default, `CLOSED_WATCH`, `newWatch` | `watches`, the caller's own, each with its target and unseen count, or "Inbox off" for a watch without its inbox, opened onto `watch_matches --key` a page at a time, or onto the words that its inbox is off, each match with a "Mark seen" (`mark_seen --key --item`) and the page with "Mark these seen", naming each match it shows, a marked match hidden through `useHeld` until a read no longer lists it and a landed mark returning to the first page; for every reader, not gated on `canTune`, the form saving a new watch or the one opened through `save_watch` — its name, the kind it follows and exactly one target (a lens picked from `lenses`, an entity key, or a collection picked from `collections`), and the three deliveries as checkboxes, each sent as `true` or `false` — and `remove_watch`, each held until a read of `watches` lists the watch with the name, target kind and deliveries the save sent, an edit by its own key, the target's key uncompared because the server stores an entity as its survivor |
 | `hooks/useHeld.js` | `useHeld` | A read's rows with each write shown from the moment it is sent: a held key's row taken out until no read lists it, or a held row put in its place until a read lists one `matches` says reflects it; a refusal undoes the hold whose send it echoes, and a bare refusal every hold |
 | `components/SaveToCollection.js` | default | The one dialog any result saves through, sending `collect` |
 | `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty by its `rows` key, or its rows — as a stock `Card` section named by an optional title, which heads its `CardHeader`, with the state inset in its `CardBody`, or bare inside a dialog; the one alert every refusal, read or write, renders in |
-| `components/Pager.js` | default | How many of the matches a page shows, and Previous and Next over a stack of page starts, for Search, the Entity timeline, a lens's items and a watch's matches |
+| `components/Pager.js` | default | How many of the matches a page shows, and Previous and Next over a stack of page starts, for Search, the Entity timeline and its published items, a lens's items and a watch's matches |
 | `components/ListField.js`, `lensDraft.js` | `ListField`; `lensDraft`, `newLens`, `draftLens`, `draftArgs`, `listOf`, `daysSince` | A comma-separated field naming the values a closed list allows; a lens read into a form's text and back into the lens and the options `save_lens` and `search` take, its list filters read from `vocabulary.lensLists` and its tiers kept beside them, the one place that knows the lens's shape; and the first UTC day of a lens's rolling window |
-| `components/ItemRow.js`, `Cite.js`, `format.js` | — | An item row, headed by any control the view passes as its children; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day (`utcDay()`), and `metaLine()`, which joins a row's meta parts and keeps a 0 |
+| `components/ItemRow.js`, `Cite.js`, `format.js` | `ItemPage` | An item row, headed by any control the view passes as its children, and `ItemPage`, a page of rows above its `Pager`, which Search, a lens and the Entity timeline and published section render; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day (`utcDay()`), and `metaLine()`, which joins a row's meta parts and keeps a 0 |
 | `styles/intelligence.scss` | — | Geometry only, emitted as `build/intelligence/index.css` |
 
 Each read is a `useCommandOnce` read with `retry`, under the `intelligence`

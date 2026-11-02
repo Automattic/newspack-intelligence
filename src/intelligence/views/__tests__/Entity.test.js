@@ -212,7 +212,7 @@ describe( 'Entity — reads', () => {
 		wire.replies.claims = { claims: [], available: false };
 		renderEntity();
 		expect(
-			await screen.findByText( 'No readable item links this entity.' )
+			await screen.findByText( 'No readable item is about this entity.' )
 		).toBeInTheDocument();
 		expect(
 			await screen.findByText(
@@ -242,6 +242,90 @@ describe( 'Entity — reads', () => {
 		expect(
 			await screen.findByText( `no entity: ${ KEY }` )
 		).toBeInTheDocument();
+	} );
+} );
+
+describe( 'Entity — published', () => {
+	const published = () =>
+		screen.getByRole( 'button', {
+			name: 'Published by Acme Gazette (4)',
+		} );
+
+	beforeEach( () => {
+		wire.replies.entity = { ...ENTITY, published: { count: 4 } };
+		wire.replies.timeline = ( args ) =>
+			args.includes( '--published' )
+				? {
+						items: [ 'crater', 'ferry' ].map( ( n ) => ( {
+							...ITEM,
+							item_key: `feed:acmegazette.example:${ n }`,
+							title: `${ n } at ${
+								args.slice( 2 ).join( ' ' ) || 'start'
+							}`,
+							entities: [],
+						} ) ),
+						total: 4,
+						available: true,
+				  }
+				: { items: [ ITEM ], total: 1, available: true };
+	} );
+
+	it( 'lists the items about it first, then a collapsed section counting what it published', async () => {
+		renderEntity();
+		const timeline = await screen.findByRole( 'region', {
+			name: 'Timeline',
+		} );
+		await screen.findByRole( 'button', {
+			name: 'Published by Acme Gazette (4)',
+		} );
+		const section = published().closest( 'section' );
+		expect(
+			// eslint-disable-next-line no-bitwise
+			timeline.compareDocumentPosition( section ) &
+				window.Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
+		expect( published() ).toHaveAttribute( 'aria-expanded', 'false' );
+		expect( within( section ).queryByRole( 'list' ) ).toBeNull();
+		await waitFor( () =>
+			expect( wire.sent( 'timeline' ) ).toEqual( [ [ KEY ] ] )
+		);
+	} );
+
+	it( 'reads what it published once opened, a page at a time', async () => {
+		renderEntity();
+		await screen.findByRole( 'button', {
+			name: 'Published by Acme Gazette (4)',
+		} );
+		fireEvent.click( published() );
+		const section = published().closest( 'section' );
+		expect( published() ).toHaveAttribute( 'aria-expanded', 'true' );
+		expect(
+			await within( section ).findByText( 'crater at start' )
+		).toBeInTheDocument();
+		expect(
+			within( section ).getByText( '2 of 4 items' )
+		).toBeInTheDocument();
+		fireEvent.click(
+			within( section ).getByRole( 'button', { name: 'Next' } )
+		);
+		expect(
+			await within( section ).findByText( 'crater at --offset=2' )
+		).toBeInTheDocument();
+		expect( wire.sent( 'timeline' ) ).toEqual(
+			expect.arrayContaining( [
+				[ KEY, '--published' ],
+				[ KEY, '--published', '--offset=2' ],
+			] )
+		);
+	} );
+
+	it( 'offers no section for an entity that published nothing', async () => {
+		wire.replies.entity = { ...ENTITY, published: { count: 0 } };
+		renderEntity();
+		await screen.findByRole( 'heading', { name: 'Acme Gazette' } );
+		expect(
+			screen.queryByRole( 'button', { name: /^Published by/ } )
+		).toBeNull();
 	} );
 } );
 
