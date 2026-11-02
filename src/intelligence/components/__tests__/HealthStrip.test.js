@@ -509,7 +509,7 @@ describe( 'HealthStrip', () => {
 		);
 		health.sources.sources[ 2 ] = failingSource(
 			'news',
-			'no RSS or Atom feed at https://news.google.com/rss'
+			'no RSS or Atom feed at https://search-7713.example/rss'
 		);
 		wire.replies.fetch_now = { ok: true, workers: 1 };
 		renderStrip( { canManage: true } );

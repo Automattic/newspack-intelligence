@@ -439,8 +439,8 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 		unset( $schema['owns'] );
 		$schema['arguments'] = [
 			...\array_values( Core::arr( $schema['arguments'] ?? null ) ),
-			[ 'name' => 'auth_dir', 'type' => 'string', 'required' => true, 'description' => 'The dir holding the ContextA8C relay\'s wordpress-remote-* token dirs, the host\'s ~/.mcp-auth as the container mounts it.' ],
-			[ 'name' => 'proxy', 'type' => 'string', 'default' => '', 'description' => 'Optional proxy every request goes through, <scheme>://<host>:<port>, as Curl takes it: the Automattic proxy\'s SOCKS tunnel, which the server requires.' ],
+			[ 'name' => 'auth_dir', 'type' => 'string', 'required' => true, 'description' => 'The dir holding the ContextA8C relay\'s wordpress-remote-* token dirs.' ],
+			[ 'name' => 'proxy', 'type' => 'string', 'default' => '', 'description' => 'Optional proxy every request goes through, <scheme>://<host>:<port>, as Curl takes it.' ],
 		];
 		return $schema;
 	}

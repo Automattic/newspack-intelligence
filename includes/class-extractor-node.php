@@ -137,7 +137,7 @@ class Extractor_Node extends Node {
 		if ( null !== $client ) {
 			try {
 				$names  = \array_keys( $topics );
-				$parsed = Prompts::parse_extract( $client->chat( Prompts::extract( $item, $names, $this->relevance_profile() ), [ 'max_tokens' => 800, 'temperature' => 0.2 ] ), $names );
+				$parsed = Prompts::parse_extract( $client->chat( Prompts::extract( $item, $names, $this->relevance_profile(), $this->audience ), [ 'max_tokens' => 800, 'temperature' => 0.2 ] ), $names );
 			} catch ( Worker_Should_Stop $stop ) {
 				throw $stop;
 			} catch ( \RuntimeException $e ) {

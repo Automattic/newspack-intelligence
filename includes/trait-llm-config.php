@@ -3,11 +3,12 @@
  * LLM_Config: shared per-node LLM configuration verbs + client factory.
  *
  * Every LLM-calling node needs the same api_url/vault_id/model/feature/
- * profiles quintet, configured via per-node topology verbs. This
- * trait carries that state, the four `set_*` verbs and the `add_profile` /
+ * audience/profiles state, configured via per-node topology verbs. This
+ * trait carries that state, the five `set_*` verbs and the `add_profile` /
  * `remove_profile` pair (declared for node_schema()['commands'] via
- * llm_config_commands(), the pair through `Schema_Reflection::list_verbs()`, so
- * a using class also uses Schema_Reflection), make_llm_client() (answers the
+ * llm_config_commands(), `set_audience` as a declared `setter` and the pair
+ * through `Schema_Reflection::list_verbs()`, so a using class also uses
+ * Schema_Reflection), make_llm_client() (answers the
  * `$llm_factory` seam first, else builds the proxy client from the
  * verb-configured state), and relevance_profile() (joins
  * the configured profile lines for prompt assembly). Uses Vault_Secret for
@@ -49,6 +50,9 @@ trait LLM_Config {
 	/** @var string X-WPCOM-AI-Feature value, set via set_feature. */
 	protected string $feature = self::DEFAULT_FEATURE;
 
+	/** @var string Who a prompt is framed for, set via set_audience; '' names no one. */
+	protected string $audience = '';
+
 	/** @var list<string> Relevance-profile lines add_profile registered and remove_profile left, in call order. */
 	protected array $profiles = [];
 
@@ -61,7 +65,7 @@ trait LLM_Config {
 	private array $llm_set = [];
 
 	/**
-	 * node_schema()['commands'] entries for the six LLM-config verbs. A using
+	 * node_schema()['commands'] entries for the seven LLM-config verbs. A using
 	 * class merges this into its own commands list.
 	 *
 	 * @return array<int,array<string,mixed>>
@@ -92,6 +96,14 @@ trait LLM_Config {
 					[ 'name' => 'feature', 'type' => 'string', 'required' => true ],
 				],
 				'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_set_feature( $interpreter, $args ),
+			],
+			[
+				'name'        => 'set_audience',
+				'description' => 'Set who the prompt is framed for: <audience>.',
+				'args'        => [
+					[ 'name' => 'audience', 'type' => 'string', 'required' => true ],
+				],
+				'setter'      => 'audience',
 			],
 			...self::list_verbs( 'profile', 'profiles', [ 'name' => 'text', 'type' => 'string', 'required' => true, 'variadic' => true ], 'Add a relevance-profile line used to score items: <text>.' ),
 		];
@@ -158,10 +170,19 @@ trait LLM_Config {
 	}
 
 	/**
+	 * The `set_audience` verb's entry point, which the declared setter calls.
+	 *
+	 * @param string $audience Who the prompt is framed for.
+	 */
+	public function set_audience( string $audience ): void {
+		$this->audience = $audience;
+	}
+
+	/**
 	 * Emit the base config plus round-trippable `command_node {name}:config …` lines for
 	 * every explicitly-set or non-default verb (a pinned value survives a
-	 * future default bump), the `set_vault_id` line through `dump_setters()`,
-	 * then one `add_profile` line per profile through
+	 * future default bump), the `set_vault_id` and `set_audience` lines through
+	 * `dump_setters()`, then one `add_profile` line per profile through
 	 * `dump_lists()`. Args go through serialize_args (the serialization anchor)
 	 * so a multi-word profile re-tokenizes as ONE argument.
 	 */

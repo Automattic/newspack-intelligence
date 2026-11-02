@@ -1,11 +1,11 @@
 # Unthread, recording item_recorded events at the restricted tier into
 # intel:writer under the unthread Vault group: an include of its own, so a
-# workstation reading the rest of the token half through ContextA8C, which
-# cannot read Unthread, still includes it.
+# collect that reads the rest of the token half another way still includes
+# it.
 var num_partitions = 1
 include topic-probe
 include newspack-intelligence-streams
-# Support threads quote publishers' staff by name, so Unthread is restricted.
+# Support threads quote customers by name, so Unthread is restricted.
 make_node Unthread_Source unthread restricted unthread
 cmd unthread:config set_interval 900
 connect_node unthread intel:writer

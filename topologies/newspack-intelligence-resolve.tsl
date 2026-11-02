@@ -23,9 +23,6 @@ cmd extractor:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-ap
 cmd extractor:config set_vault_id AI-proxy
 cmd extractor:config set_model gpt-oss-120b
 cmd extractor:config set_feature newspack-intelligence
-cmd extractor:config add_profile "Relevance profile line 1."
-cmd extractor:config add_profile "Relevance profile line 2."
-cmd extractor:config add_profile "Relevance profile line 3."
 make_node Deduper deduper intel:writer
 command_node intel:items:resolve:config add_snapshot_node deduper
 make_node Consumer intel:reresolve:resolve <config:logs_dir>/intel-reresolve.p{partition} <config:offsets_dir>/<topology>.intel-reresolve-resolve.p{partition} <config:deadletter_dir>/<topology>.intel-reresolve-resolve.p{partition}

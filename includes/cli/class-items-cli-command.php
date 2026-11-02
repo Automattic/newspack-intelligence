@@ -79,10 +79,10 @@ class Items_CLI_Command {
 	 * ## EXAMPLES
 	 *
 	 *     # Count what would go, and print the command that purges it.
-	 *     wp newspack-intelligence items purge --source=linear --keep='linear:TEAMA-*,linear:TEAMB-*' --dry-run
+	 *     wp newspack-intelligence items purge --source=linear --keep='linear:TEAMA-*,linear:PLOVER-*' --dry-run
 	 *
 	 *     # Purge it.
-	 *     wp newspack-intelligence items purge --source=linear --keep='linear:TEAMA-*,linear:TEAMB-*'
+	 *     wp newspack-intelligence items purge --source=linear --keep='linear:TEAMA-*,linear:PLOVER-*'
 	 *
 	 * @api WP-CLI dispatches this by reflection; nothing here calls it.
 	 * @param array<int,string>   $args       Positional args.

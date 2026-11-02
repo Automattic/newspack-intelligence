@@ -95,6 +95,7 @@ final class ExtractorNodeTest extends TestCase {
 			self::entity( 'topic:podcasts', 'Podcasts' )
 		);
 		$this->extractor->interpreter()?->dispatch( 'add_profile', [ 'Quarry Ledger readers care about prizes.' ] );
+		$this->extractor->interpreter()?->dispatch( 'set_audience', [ 'the Quarry Ledger kite desk' ] );
 		$this->answer(
 			(string) \json_encode(
 				[
@@ -141,6 +142,7 @@ final class ExtractorNodeTest extends TestCase {
 		$system = $this->asked[0][0]['content'];
 		$this->assertStringContainsString( '["Awards","Podcasts"]', $system );
 		$this->assertStringContainsString( 'Quarry Ledger readers care about prizes.', $system );
+		$this->assertStringStartsWith( 'You are an analyst reading one item for the Quarry Ledger kite desk. ', $system );
 		$this->assertStringContainsString( 'Harbor Gazette wins a Peabody', $this->asked[0][1]['content'] );
 	}
 
@@ -533,7 +535,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertTrue( \mb_check_encoding( $error, 'UTF-8' ) );
 	}
 
-	/** The resolve topology hands each resolution to the extractor, configured for the proxy and the audience. */
+	/** The resolve topology hands each resolution to the extractor, configured for the proxy. */
 	public function test_the_resolve_topology_wires_the_extractor(): void {
 		Core::reset();
 		Core::$var['partition'] = '0';
@@ -562,14 +564,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( 'AI-proxy', $this->read_private( $extractor, 'vault_id' ) );
 		$this->assertSame( 'gpt-oss-120b', $this->read_private( $extractor, 'model' ) );
 		$this->assertSame( 'newspack-intelligence', $this->read_private( $extractor, 'feature' ) );
-		$this->assertSame(
-			[
-				'Relevance profile line 1.',
-				"Relevance profile line 2.",
-				'Relevance profile line 3.',
-			],
-			$this->read_private( $extractor, 'profiles' )
-		);
+		$this->assertSame( [ [], '' ], [ $this->read_private( $extractor, 'profiles' ), $this->read_private( $extractor, 'audience' ) ], 'a deployment supplies the profile and the audience' );
 		$this->assertNull( Core::node( 'intel:resolved:null' ) );
 	}
 

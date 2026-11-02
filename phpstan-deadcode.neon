@@ -49,5 +49,9 @@ parameters:
             path: includes/trait-vault-secret.php
         -
             identifier: shipmonk.deadMethod
+            message: '#::set_audience$#'
+            path: includes/trait-llm-config.php
+        -
+            identifier: shipmonk.deadMethod
             message: '#::set_graph_target$#'
             path: includes/class-projector-node.php

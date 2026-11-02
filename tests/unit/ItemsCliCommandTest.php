@@ -33,10 +33,10 @@ final class ItemsCliCommandTest extends TestCase {
 
 	private const WORKER = 'newspack-intelligence.p0';
 
-	private const KEEP = 'linear:TEAMA-*,linear:TEAMB-*';
+	private const KEEP = 'linear:TEAMA-*,linear:PLOVER-*';
 
 	/** The dry run a purge names to confirm nothing of the KEEP selection is left. */
-	private const CONFIRM = "wp newspack-intelligence items purge --source='linear' --keep='linear:TEAMA-*,linear:TEAMB-*' --dry-run";
+	private const CONFIRM = "wp newspack-intelligence items purge --source='linear' --keep='linear:TEAMA-*,linear:PLOVER-*' --dry-run";
 
 	/** The process's argv, which a test replaces and tearDown puts back. */
 	private mixed $argv = null;
@@ -69,8 +69,8 @@ final class ItemsCliCommandTest extends TestCase {
 			[
 				"1\tlinear:DOTCOM",
 				"2\tlinear:WPCOM",
-				'Total: 3 to purge of linear items, keeping linear:TEAMA-*, linear:TEAMB-*.',
-				"Purge them with: wp newspack-intelligence items purge --source='linear' --keep='linear:TEAMA-*,linear:TEAMB-*'",
+				'Total: 3 to purge of linear items, keeping linear:TEAMA-*, linear:PLOVER-*.',
+				"Purge them with: wp newspack-intelligence items purge --source='linear' --keep='linear:TEAMA-*,linear:PLOVER-*'",
 			],
 			\WP_CLI::$logs
 		);
@@ -84,7 +84,7 @@ final class ItemsCliCommandTest extends TestCase {
 
 		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP, 'reason' => "Not Newspack's", 'dry-run' => true ] );
 
-		$this->assertSame( "Purge them with: wp newspack-intelligence items purge --source='linear' --keep='linear:TEAMA-*,linear:TEAMB-*' --reason='Not Newspack'\\''s'", \WP_CLI::$logs[3] );
+		$this->assertSame( "Purge them with: wp newspack-intelligence items purge --source='linear' --keep='linear:TEAMA-*,linear:PLOVER-*' --reason='Not Newspack'\\''s'", \WP_CLI::$logs[3] );
 	}
 
 	/** A purge appends one machine `item_purged` per selected item to the writer of every live worker. */
@@ -122,7 +122,7 @@ final class ItemsCliCommandTest extends TestCase {
 
 		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => self::KEEP ] );
 
-		$this->assertSame( [ 'linear items, keeping linear:TEAMA-*, linear:TEAMB-*' ], \array_values( \array_unique( \array_column( \array_column( self::worker_input( Config::get_base_directory(), self::WORKER ), Message::VALUE ), 'reason' ) ) ) );
+		$this->assertSame( [ 'linear items, keeping linear:TEAMA-*, linear:PLOVER-*' ], \array_values( \array_unique( \array_column( \array_column( self::worker_input( Config::get_base_directory(), self::WORKER ), Message::VALUE ), 'reason' ) ) ) );
 	}
 
 	/** Each batch is appended only once every worker has read the one before. */
@@ -215,9 +215,9 @@ final class ItemsCliCommandTest extends TestCase {
 	/** A repeated `--keep`, of which WP-CLI keeps only the last, is refused and nothing is sent. */
 	public function test_a_repeated_keep_is_refused(): void {
 		$this->seed_teams();
-		$_SERVER['argv'] = [ 'wp', 'newspack-intelligence', 'items', 'purge', '--source=linear', '--keep=linear:TEAMA-*', '--keep', '--keep=linear:TEAMB-*' ];
+		$_SERVER['argv'] = [ 'wp', 'newspack-intelligence', 'items', 'purge', '--source=linear', '--keep=linear:TEAMA-*', '--keep', '--keep=linear:PLOVER-*' ];
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:TEAMB-*' ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:PLOVER-*' ] );
 
 		$this->assertSame( [ "--keep was given 3 times, and WP-CLI keeps only the last; pass one comma-separated list: --keep='<glob>,<glob>'." ], \WP_CLI::$errors );
 		$this->assertSame( [ [], [] ], [ \WP_CLI::$logs, \WP_CLI::$successes ] );
@@ -237,9 +237,9 @@ final class ItemsCliCommandTest extends TestCase {
 	public function test_a_glob_matches_the_whole_key_in_its_own_case(): void {
 		$this->seed_teams();
 
-		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:teama-*,TEAMB-*,linear:WPCOM-?', 'dry-run' => true ] );
+		( new Items_CLI_Command() )->purge( [], [ 'source' => 'linear', 'keep' => 'linear:teama-*,PLOVER-*,linear:WPCOM-?', 'dry-run' => true ] );
 
-		$this->assertSame( [ "1\tlinear:DOTCOM", "1\tlinear:TEAMA", "1\tlinear:TEAMB" ], \array_slice( \WP_CLI::$logs, 0, 3 ) );
+		$this->assertSame( [ "1\tlinear:DOTCOM", "1\tlinear:TEAMA", "1\tlinear:PLOVER" ], \array_slice( \WP_CLI::$logs, 0, 3 ) );
 	}
 
 	/** A selection the keep globs leave empty writes nothing, purged or dry run. */
@@ -324,7 +324,7 @@ final class ItemsCliCommandTest extends TestCase {
 			self::item( 'linear:TEAMA-7', 'Newsletter block', 'linear', 'internal', self::$oct_06 ),
 			self::item( 'linear:DOTCOM-9', 'Domain search', 'linear', 'internal', self::$oct_06 ),
 			self::item( 'linear:WPCOM-1', 'Plans page', 'linear', 'internal', self::$oct_01 ),
-			self::item( 'linear:TEAMB-3', 'Summaries', 'linear', 'internal', self::$oct_01 ),
+			self::item( 'linear:PLOVER-3', 'Summaries', 'linear', 'internal', self::$oct_01 ),
 			self::item( 'github:ledger-launch', 'Salem Ledger launches a newsletter tool', 'github', 'internal', self::$oct_13 )
 		);
 	}

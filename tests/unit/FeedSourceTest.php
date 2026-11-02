@@ -685,7 +685,7 @@ XML;
 
 	/** The news node's searches share one host, so they go out one at a time. */
 	public function test_searches_on_one_host_go_out_one_at_a_time(): void {
-		$searches = \array_map( static fn ( int $i ): string => "https://news.google.com/rss/search?q=%22Heron+{$i}%22&hl=en-US", \range( 1, 9 ) );
+		$searches = \array_map( static fn ( int $i ): string => "https://search-7713.example/rss?q=%22Heron+{$i}%22&hl=en-US", \range( 1, 9 ) );
 		$node     = $this->feed( ...$searches );
 
 		$this->tick( $node );

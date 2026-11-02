@@ -19,4 +19,6 @@ connect_node intel:ontology:reresolve reresolver
 # and writes its matches and marks to intel:writer, which the streams file
 # declares.
 make_node Watcher watcher intel:writer
+# Last, so a deployment's lines reach every node above.
+include newspack-intelligence-deployment
 secure

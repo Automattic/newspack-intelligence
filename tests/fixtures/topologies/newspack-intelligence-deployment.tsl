@@ -1,0 +1,17 @@
+# A fictional deployment's lists, relevance profile and audience, shadowing
+# the shipped empty file of this name.
+cmd github:config add_repo heron-example/kite-ledger
+cmd github:config add_repo heron-example/quarry-wire
+cmd feed:config add_url https://heron.example/feed/
+cmd feed:config add_url https://quarry.example/feed?u=7713heron&id=4c3ckite
+cmd news:config add_url https://search.example/rss?q=%22Kite+Ledger%22+audio&hl=en-US&gl=US&ceid=US:en
+cmd news:config add_url https://search.example/rss?q=%22Quarry+Wire%22+%28board+OR+winners%29&hl=en-US
+cmd linear:config add_team HERON
+cmd linear:config add_team KITE
+cmd slack:config add_channel C0HERON7713
+cmd slack:config add_channel G0KITE88104
+cmd p2:config add_site heronexample.wordpress.com
+cmd p2-restricted:config add_site kiteexample.wordpress.com
+cmd extractor:config set_audience "the Quarry Ledger kite desk"
+cmd extractor:config add_profile "Relevant: what Quarry Ledger readers launch."
+cmd extractor:config add_profile "Not relevant: kite trivia."

@@ -15,9 +15,6 @@
 
 namespace Newspack_Intelligence\Tests\Unit;
 
-use Newspack_Intelligence\Context_A8C_Linear_Node;
-use Newspack_Intelligence\Context_A8C_P2_Node;
-use Newspack_Intelligence\Context_A8C_Slack_Node;
 use Newspack_Intelligence\Intel_Event_Writer_Node;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intel_Tiers;
@@ -259,91 +256,54 @@ class TopologyDurabilityTest extends TestCase {
 		}
 	}
 
-	/** The GitHub source watches the two repos Newspack still ships from on github.com. */
-	public function test_the_github_source_names_newspacks_live_repos(): void {
-		$this->load( 'newspack-intelligence' );
+	/** The verbs that name a deployment's lists, profile or audience. */
+	private const DEPLOYMENT_VERBS = '/:config\s+(add_repo|add_url|add_team|add_channel|add_site|add_profile|set_audience)\b/';
 
-		$this->assertSame( [ 'Automattic/newspack-workspace', 'Automattic/newspack-activecampaign' ], $this->read_private( Core::node( 'github' ), 'repos' ) );
+	/** No shipped file names a list, a profile line or an audience: a deployment supplies them. */
+	public function test_no_shipped_topology_names_a_list_profile_or_audience(): void {
+		$files = \glob( \dirname( __DIR__, 2 ) . '/topologies/*.tsl' ) ?: [];
+		$this->assertNotEmpty( $files );
+		foreach ( $files as $file ) {
+			$this->assertSame( 0, \preg_match( self::DEPLOYMENT_VERBS, (string) \file_get_contents( $file ) ), \basename( $file ) );
+		}
 	}
 
-	/** Slack reads four Newspack channels; the P2 nodes split the sales P2 off at the restricted tier. */
-	public function test_the_slack_and_p2_sources_name_their_channels_and_sites(): void {
+	/** The shipped graph declares every source and fetches nothing until a deployment names its lists. */
+	public function test_the_shipped_graph_holds_empty_lists_and_no_profile(): void {
 		$this->load( 'newspack-intelligence' );
 
-		$this->assertSame( [ 'channel-1', 'channel-2', 'channel-3', 'channel-4' ], $this->read_private( Core::node( 'slack' ), 'channels' ) );
-		$this->assertSame( [ 'p2-site-6.wordpress.com', 'p2-site-2.wordpress.com', 'p2-site-4.wordpress.com', 'p2-site-5.wordpress.com', 'p2-site-3.wordpress.com' ], $this->read_private( Core::node( 'p2' ), 'sites' ) );
-		$this->assertSame( [ 'p2-site-1.wordpress.com' ], $this->read_private( Core::node( 'p2-restricted' ), 'sites' ) );
-	}
-
-	/** The feed reads the Partner Org 9's blog among its feeds. */
-	public function test_the_feed_reads_the_partner_org_9(): void {
-		$this->load( 'newspack-intelligence' );
-
-		$this->assertContains( 'https://partner-12.example/blog?format=rss', $this->read_private( Core::node( 'feed' ), 'urls' ) );
+		foreach ( [ 'github' => 'repos', 'feed' => 'urls', 'news' => 'urls', 'linear' => 'teams', 'slack' => 'channels', 'p2' => 'sites', 'p2-restricted' => 'sites' ] as $name => $list ) {
+			$this->assertSame( [], $this->read_private( Core::node( $name ), $list ), $name );
+		}
+		$this->assertSame( [ [], '' ], [ $this->read_private( Core::node( 'extractor' ), 'profiles' ), $this->read_private( Core::node( 'extractor' ), 'audience' ) ] );
 	}
 
 	/**
-	 * The news source holds one Google News search per organization that
-	 * publishes no feed of its own, each URL kept whole through the shell's
-	 * parse: its quotes, `&`, `+` and `%` escapes.
+	 * A deployment shadows `newspack-intelligence-deployment` from a stock dir
+	 * registered after this plugin's, and its lines land on the nodes the
+	 * files before it declare, in order, each URL kept whole through the
+	 * shell's parse: its quotes, `&`, `+` and `%` escapes.
 	 */
-	public function test_the_news_source_holds_each_search_whole(): void {
+	public function test_a_deployment_file_supplies_the_lists_profile_and_audience(): void {
+		Topology_Registry::register_stock_dir( \dirname( __DIR__ ) . '/fixtures/topologies' );
 		$this->load( 'newspack-intelligence' );
 
+		$this->assertSame( [ 'heron-example/kite-ledger', 'heron-example/quarry-wire' ], $this->read_private( Core::node( 'github' ), 'repos' ) );
+		$this->assertSame( [ 'https://heron.example/feed/', 'https://quarry.example/feed?u=7713heron&id=4c3ckite' ], $this->read_private( Core::node( 'feed' ), 'urls' ) );
 		$this->assertSame(
 			[
-				'https://news.google.com/rss/search?q=%22Organization+1%22&hl=en-US&gl=US&ceid=US:en',
-				'https://news.google.com/rss/search?q=%22Organization+2%22&hl=en-US&gl=US&ceid=US:en',
-				'https://news.google.com/rss/search?q=%22Organization+3%22&hl=en-US&gl=US&ceid=US:en',
-				'https://news.google.com/rss/search?q=%22Organization+4%22&hl=en-US&gl=US&ceid=US:en',
-				'https://news.google.com/rss/search?q=%22Organization+5%22&hl=en-US&gl=US&ceid=US:en',
-				'https://news.google.com/rss/search?q=%22Organization+6%22&hl=en-US&gl=US&ceid=US:en',
-				'https://news.google.com/rss/search?q=%22Organization+7%22&hl=en-US&gl=US&ceid=US:en',
-				'https://news.google.com/rss/search?q=%22Organization+8%22&hl=en-US&gl=US&ceid=US:en',
-				'https://news.google.com/rss/search?q=%22Organization+9%22&hl=en-US&gl=US&ceid=US:en',
+				'https://search.example/rss?q=%22Kite+Ledger%22+audio&hl=en-US&gl=US&ceid=US:en',
+				'https://search.example/rss?q=%22Quarry+Wire%22+%28board+OR+winners%29&hl=en-US',
 			],
 			$this->read_private( Core::node( 'news' ), 'urls' )
 		);
-	}
-
-	/** The Linear source fetches Newspack's own teams and no others. */
-	public function test_the_linear_source_names_newspacks_teams(): void {
-		$this->load( 'newspack-intelligence' );
-
-		$this->assertSame(
-			[ 'TEAMA', 'TEAMB', 'TEAMC', 'TEAMD', 'TEAME', 'TEAMF', 'TEAMG', 'TEAMH', 'TEAMI' ],
-			$this->read_private( Core::node( 'linear' ), 'teams' )
-		);
-	}
-
-	/**
-	 * The ContextA8C topology stands a node in for each token source but
-	 * Unthread, under its name, tier, interval and list, each reading the
-	 * token dir the container mounts through the host's proxy tunnel and
-	 * recording into the writer.
-	 */
-	public function test_the_context_a8c_nodes_stand_in_for_the_token_half(): void {
-		$lists   = [ 'slack' => 'channels', 'p2' => 'sites', 'p2-restricted' => 'sites', 'linear' => 'teams' ];
-		$classes = [ 'slack' => Context_A8C_Slack_Node::class, 'p2' => Context_A8C_P2_Node::class, 'p2-restricted' => Context_A8C_P2_Node::class, 'linear' => Context_A8C_Linear_Node::class ];
-		$this->load( 'newspack-intelligence-collect-token' );
-		$shipped = [];
-		foreach ( $lists as $name => $list ) {
-			$node             = Core::node( $name );
-			$shipped[ $name ] = [ $this->read_private( $node, 'tier' ), $this->read_private( $node, 'interval' ), $this->read_private( $node, $list ) ];
-		}
-		Core::reset();
-
-		$this->load( 'newspack-intelligence-context-a8c' );
-
-		foreach ( $shipped as $name => [ $tier, $interval, $entries ] ) {
-			$node = Core::node( $name );
-			$this->assertSame( $classes[ $name ], \get_class( $node ), $name );
-			$this->assertSame( [ $tier, $interval, $entries ], [ $this->read_private( $node, 'tier' ), $this->read_private( $node, 'interval' ), $this->read_private( $node, $lists[ $name ] ) ], $name );
-			$this->assertSame( 'intel:writer', $node->target(), $name );
-			$this->assertSame( '/mcp-auth', $this->read_private( $node, 'auth_dir' ), $name );
-			$this->assertSame( 'socks5h://host.docker.internal:8080', $this->read_private( $node, 'proxy' ), $name );
-		}
-		$this->assertNull( Core::node( 'unthread' ) );
+		$this->assertSame( [ 'HERON', 'KITE' ], $this->read_private( Core::node( 'linear' ), 'teams' ) );
+		$this->assertSame( [ 'C0HERON7713', 'G0KITE88104' ], $this->read_private( Core::node( 'slack' ), 'channels' ) );
+		$this->assertSame( [ 'heronexample.wordpress.com' ], $this->read_private( Core::node( 'p2' ), 'sites' ) );
+		$this->assertSame( [ 'kiteexample.wordpress.com' ], $this->read_private( Core::node( 'p2-restricted' ), 'sites' ) );
+		$extractor = Core::node( 'extractor' );
+		$this->assertSame( 'the Quarry Ledger kite desk', $this->read_private( $extractor, 'audience' ) );
+		$this->assertSame( [ 'Relevant: what Quarry Ledger readers launch.', 'Not relevant: kite trivia.' ], $this->read_private( $extractor, 'profiles' ) );
 	}
 
 	/** The collect topology is its two halves, so a local copy can swap the token half out. */
@@ -356,7 +316,7 @@ class TopologyDurabilityTest extends TestCase {
 
 	/**
 	 * Unthread is an include of its own, which the token half includes, so a
-	 * local copy can keep it beside the ContextA8C nodes, which cannot read it.
+	 * collect reading the rest of the token half another way can keep it.
 	 */
 	public function test_unthread_is_an_include_the_token_half_includes(): void {
 		$names = static fn ( string $topology ): array => \array_column( Topology_Analyzer::graph_for( $topology )['nodes'], 'name' );

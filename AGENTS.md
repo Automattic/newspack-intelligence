@@ -442,7 +442,10 @@ Health).
 candidate; for any other it makes one `chat()` call through
 `Prompts::extract()`, which carries the item as JSON (tags hex-escaped)
 inside an `<item>` fence the system message names as untrusted and offers
-the index's topic names. `Prompts::parse_extract()` reads the first `{…}`
+the index's topic names. The system message frames the reading for the
+audience `set_audience` names, and for no one while none is set, and scores
+against the `add_profile` lines; the shipped topologies set neither, so a
+deployment supplies both (see Topologies). `Prompts::parse_extract()` reads the first `{…}`
 block through `Prompts::json_object()`, which the NER step shares, cuts the summary to 280 characters, reads an unknown kind as `other`,
 clamps the scores and keeps at most five claims with a predicate from the
 closed set. It writes an `extraction_recorded` naming topic keys, then a
@@ -1108,8 +1111,8 @@ requests in flight: 1 for the API sources, so theirs go strictly one
 after another, and the feed's `concurrency`, 16 unless `set_concurrency`
 lowers it, for the feeds. A host takes one request at a time,
 so a request whose host is busy waits in the queue while others go
-past it; the `news` node's searches, all on news.google.com, go out one
-after another. `max_requests()` bounds a pass:
+past it; searches a deployment gives the `news` node on one host go out
+one after another. `max_requests()` bounds a pass:
 `Source_Node::MAX_REQUESTS_PER_PASS` (60) for an API source, past which
 the next request is logged and the queue dropped, and no cap for the
 feeds. A body goes to `received()`; a redirect Curl answers
@@ -1187,8 +1190,7 @@ what the rebuilt Curl dropped. The ContextA8C sources own no Table: their
 `Frontier` keeps the requests in the process, because a pass's MCP session
 does not outlive it.
 Curl sends `User-Agent: newspack-nodes/<version>` (`Curl_Node::USER_AGENT`)
-on every fetch, which some feeds require — PartnerOrg26 Lab and PartnerOrg27 answer 403
-without one.
+on every fetch, which some feeds require, answering 403 without one.
 
 Credentials ride with the Curl sibling, never with the source. The API
 sources take a Vault group as their second `make_node` argument (`make_node
@@ -1238,9 +1240,8 @@ redirects, note and all, and a configured feed redirected onto a client's
 logged once under its own url with libxml's first error or the root
 element found. Each body is parsed as RSS 2.0 or Atom when it lands and
 its items recorded then. The `news` node is a second
-`Feed_Source` holding one Google News search per organization that
-publishes no usable feed, each pairing the organization's quoted name with
-a journalism term.
+`Feed_Source`, hourly, for the searches a deployment adds in place of the
+feeds an organization does not publish.
 
 `set_client_feeds true`, which the collect topology sets, adds to each pass
 `https://<domain>/feed/` for each `domain` identifier of every entity holding
@@ -1354,8 +1355,8 @@ logs its `message`, rate-limited, and records nothing, and an answer
 naming no `site_ID` logs that, rate-limited under its site, and records
 none of what it lacks. `add_site` refuses anything but
 `^[a-z0-9-]+\.wordpress\.com\z`. `p2` reads at the internal
-tier and `p2-restricted`, the sales and operations P2, at the restricted
-one.
+tier and `p2-restricted`, for the sites a deployment holds back, at the
+restricted one.
 
 `Unthread_Source_Node` POSTs `conversations/list` with `{ order:
 [updatedAt], descending: true, limit: 100 }`, the newest update first. The
@@ -1389,18 +1390,16 @@ Slack's is, and its url is empty, because the API names no permalink. A
 message missing its `ts` or `text` is logged under its page's url and
 skipped. An answer with no `data` list logs Unthread's `message`,
 rate-limited, and records nothing. `unthread` reads at the restricted
-tier, because support threads quote publishers' staff by name. The node
+tier, because support threads quote customers by name. The node
 was written against Unthread's published API reference and has not yet
 called the API live.
 
 `Context_A8C_Source_Node` serves the local workstation, which holds no
 Vault credential but is signed in to ContextA8C, Automattic's MCP server at
 `Context_A8C_Source_Node::MCP_URL`. Its `make_node` line takes the tier,
-the dir holding the relay's `wordpress-remote-*` token dirs, which the
-ContextA8C topology names `/mcp-auth`, and an optional proxy every request
-goes through, which it names `socks5h://host.docker.internal:8080`, the
-host's tunnel to the Automattic proxy, without which the server refuses
-every call. The token lives in `Context_A8C_Token`, the process's one hold
+the dir holding the relay's `wordpress-remote-*` token dirs, and an
+optional proxy every request goes through. No shipped topology declares
+one; a workstation's own collect topology does, in place of the token half. The token lives in `Context_A8C_Token`, the process's one hold
 on each token dir, and in no node's state: it reads the file obtained last,
 by `obtained_at`, which is in milliseconds, when it holds none. A token
 within `EXPIRY_MARGIN` (600) seconds of its expiry, or one a server answered
@@ -1563,12 +1562,13 @@ none is left. With `--dry-run` it writes nothing and prints the count per
 key prefix, up to the first `-` and its control characters rendered by
 `Core::terminal_safe()`, the total and the command that purges them, the
 same command without `--dry-run`, `--reason` carried when given.
-`Items_CLI_Command::$sleep` is the wait's test seam. The Linear items recorded from other teams before
-0.22.0 go with:
+`Items_CLI_Command::$sleep` is the wait's test seam. The Linear items
+recorded from teams a deployment no longer lists go with one `--keep` glob
+per team it does, `<KEY>` standing for each team's key:
 
 ```bash
 wp newspack-intelligence items purge --source=linear \
-  --keep='linear:TEAMA-*,linear:TEAMB-*,linear:TEAMC-*,linear:TEAMD-*,linear:TEAME-*,linear:TEAMF-*,linear:TEAMG-*,linear:TEAMH-*,linear:TEAMI-*' \
+  --keep='linear:<KEY>-*,linear:<KEY>-*' \
   --dry-run
 ```
 
@@ -1579,11 +1579,11 @@ Read the counts, then run the command it prints, the same command without
 
 | File | What it wires |
 |------|---------------|
-| `newspack-intelligence.tsl` | Includes every file below but the ContextA8C one and wires `reresolver`, which spans the project and streams files, and `watcher`, which reads the projection and writes to `intel:writer`; `on_demand_idle 0` keeps the worker resident, which the scheduled sources need, and `stale_timeout 600` keeps a peer from stealing its lock while an LLM call blocks one `fill()` |
+| `newspack-intelligence.tsl` | Includes every file below, `-deployment` last, and wires `reresolver`, which spans the project and streams files, and `watcher`, which reads the projection and writes to `intel:writer`; `on_demand_idle 0` keeps the worker resident, which the scheduled sources need, and `stale_timeout 600` keeps a peer from stealing its lock while an LLM call blocks one `fill()` |
 | `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve`, `intel:watches`, `intel:writer`, and `intel:later`, the Delay whose due records go to `intel:reresolve` |
-| `newspack-intelligence-collect.tsl` | The eight sources → `intel:writer`, as two halves it includes: `-collect-public`, GitHub on a 900-second grid, `feed` on 1,800 with client feeds on and `news`, the Google News searches, on 3,600; and `-collect-token`, Linear, Slack and Unthread on 900, `p2` and `p2-restricted` on 1,800, each under its Vault group, the two P2 nodes sharing `p2`, Unthread through `-collect-unthread`; includes the streams |
-| `newspack-intelligence-collect-unthread.tsl` | `unthread` at the restricted tier on 900, under its Vault group, → `intel:writer`, an include of its own so a workstation's collect can keep it beside the ContextA8C nodes; includes the streams |
-| `newspack-intelligence-context-a8c.tsl` | Local workstation only, and included by nothing shipped: `linear`, `slack`, `p2` and `p2-restricted` read through ContextA8C, each with the name, tier, interval and list of the source it stands in for, reading the token dir `/mcp-auth` through `socks5h://host.docker.internal:8080`. A workstation shadows `newspack-intelligence-collect` with its own copy including `-collect-public`, this file and `-collect-unthread`, from a stock dir it registers after this plugin's, so the shipped `newspack-intelligence` runs whole with these sources; dndocker's eve does so for its pyrobase install |
+| `newspack-intelligence-collect.tsl` | The eight sources → `intel:writer`, as two halves it includes: `-collect-public`, GitHub on a 900-second grid, `feed` on 1,800 with client feeds on and `news`, a second feed node for searches, on 3,600; and `-collect-token`, Linear, Slack and Unthread on 900, `p2` and `p2-restricted` on 1,800, each under its Vault group, the two P2 nodes sharing `p2`, Unthread through `-collect-unthread`; includes the streams |
+| `newspack-intelligence-collect-unthread.tsl` | `unthread` at the restricted tier on 900, under its Vault group, → `intel:writer`, an include of its own so a collect reading the rest of the token half another way can keep it; includes the streams |
+| `newspack-intelligence-deployment.tsl` | Empty: what a deployment reads and cares about. No shipped file names a repo, feed, search, team, channel, site, profile line or audience, so GitHub, Linear, Slack, both P2 nodes and `news` fetch nothing, `feed` reads only the open clients' feeds, Unthread, which takes no list, reads as it would anyway, and the extractor frames its prompt for no one and scores against no profile. A deployment shadows this file from a stock dir it registers after this plugin's (`Topology_Registry::register_stock_dir()`, the dir registered last resolving a name first) with `cmd <node>:config add_…`, `add_profile` and `set_audience` lines; it is included last, so its lines reach every node the files above declare. A shadow cannot include the file it shadows, because the name resolves to itself, so this hook is where a deployment adds its lines without copying a shipped file. A deployment reading the token sources another way shadows `newspack-intelligence-collect` too, including `-collect-public`, its own nodes under the token half's names and `-collect-unthread` |
 | `newspack-intelligence-project.tsl` | `intel:items:consumer`, `intel:ontology:consumer` and `intel:watches:consumer`, each → `projector`, writing the `intel-graph` Row_Table; no other node rides their cursors |
 | `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later`, the items Consumer checkpointing the deduper; includes the streams |
 
@@ -1611,7 +1611,7 @@ plugin adds:
 | `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `health`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
 
 The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model`,
-`set_feature`, `add_profile` and `remove_profile`; every node carrying the trait
+`set_feature`, `set_audience`, `add_profile` and `remove_profile`; every node carrying the trait
 also re-emits its state through `dump_config()`. An identical `add_*` repeat is
 a no-op, and each `remove_*` takes its `add_*`'s argument, drops that entry and
 is refused when none is. Every `Intelligence_CI` verb declares its role, and

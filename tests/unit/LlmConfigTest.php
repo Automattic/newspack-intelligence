@@ -57,6 +57,10 @@ final class LlmConfigTest extends TestCase {
 			public function profile(): string {
 				return $this->relevance_profile();
 			}
+
+			public function audience(): string {
+				return $this->audience;
+			}
 		};
 	}
 
@@ -68,6 +72,31 @@ final class LlmConfigTest extends TestCase {
 		$this->assertSame( 'newspack-intelligence', $node->feature() );
 		$this->assertSame( '', $node->vault_id() );
 		$this->assertSame( '', $node->profile() );
+		$this->assertSame( '', $node->audience() );
+	}
+
+	/** The audience a prompt is framed for is set in TSL, one quoted token, last write wins. */
+	public function test_set_audience_sets_the_audience_last_write_wins(): void {
+		$node = $this->fixture();
+
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'set_audience', [ 'the heron desk' ] ) );
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'set_audience', [ 'the Quarry Ledger kite desk' ] ) );
+
+		$this->assertSame( 'the Quarry Ledger kite desk', $node->audience() );
+	}
+
+	/** A set audience dumps as one quoted token and replays to the same audience. */
+	public function test_a_set_audience_dumps_and_replays(): void {
+		$node = $this->fixture();
+		$node->name( 'llmnode' );
+		$node->interpreter()->dispatch( 'set_audience', [ 'the Quarry Ledger kite desk' ] );
+
+		$dump = $node->dump_config();
+
+		$this->assertStringContainsString( "command_node llmnode:config set_audience 'the Quarry Ledger kite desk'", $dump );
+		$replayed = $this->fixture();
+		$this->replay_config( $dump, $replayed );
+		$this->assertSame( 'the Quarry Ledger kite desk', $replayed->audience() );
 	}
 
 	public function test_set_api_url_mutates_state(): void {
@@ -215,6 +244,7 @@ final class LlmConfigTest extends TestCase {
 		$this->assertStringNotContainsString( 'set_feature', $dump );
 		$this->assertStringNotContainsString( 'set_vault_id', $dump );
 		$this->assertStringNotContainsString( 'add_profile', $dump );
+		$this->assertStringNotContainsString( 'set_audience', $dump );
 	}
 
 	/** Wire a `:config`-style interpreter whose patron is $node, matching the runtime dispatch shape. */
@@ -318,11 +348,11 @@ final class LlmConfigTest extends TestCase {
 		$this->assertSame( 'Engineering', $node->profile() );
 	}
 
-	public function test_llm_config_commands_declares_all_six_verbs_and_the_vault_id_type(): void {
+	public function test_llm_config_commands_declares_all_seven_verbs_and_the_vault_id_type(): void {
 		$commands   = $this->fixture()::llm_config_commands();
 		$verb_names = \array_column( $commands, 'name' );
 
-		$this->assertSame( [ 'set_api_url', 'set_vault_id', 'set_model', 'set_feature', 'add_profile', 'remove_profile' ], $verb_names );
+		$this->assertSame( [ 'set_api_url', 'set_vault_id', 'set_model', 'set_feature', 'set_audience', 'add_profile', 'remove_profile' ], $verb_names );
 
 		$vault_verb = $commands[ \array_search( 'set_vault_id', $verb_names, true ) ];
 		$this->assertSame( 'vault_id', $vault_verb['args'][0]['type'] );
