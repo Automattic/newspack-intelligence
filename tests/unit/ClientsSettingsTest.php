@@ -48,7 +48,7 @@ final class ClientsSettingsTest extends TestCase {
 	}
 
 	public function test_import_path_parses_and_imports(): void {
-		$csv = "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"1\",\"2020-01-01\",\"a.com\"\n";
+		$csv = "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"1\",\"2020-01-01\",\"a.example\"\n";
 		$tmp = \tempnam( \sys_get_temp_dir(), 'clients' );
 		\file_put_contents( $tmp, $csv );
 

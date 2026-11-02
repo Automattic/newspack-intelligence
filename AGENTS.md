@@ -983,7 +983,7 @@ dependency on read — carrying the CI's own name as FROM, which the worker's
 input reader stamps under `_repl`, so each source's answer lands on the
 worker's output partition, where an attached `wp nodes cli` reads it.
 Two operator fixes share their implementation with a WP-CLI verb:
-`seed_ontology`, at `tune`, runs `Ontology_Seed::seed()` as `ontology
+`seed_ontology`, at `tune`, runs `Ontology_Seed::load()->seed()` as `ontology
 seed` does and answers `{ ok, events, created, present }`; `reresolve
 <since> <until>`, at `manage`, both days required, runs
 `Reresolver_Node::ask()` as `ontology reresolve` does and answers `{ ok,
@@ -1014,12 +1014,29 @@ the door becomes the session's minting user, so a watch tool answers and
 changes that user's own watches, and a watch saved through it emails that
 user.
 
-**Seeding.** `Ontology_Seed::seed()`, which `wp newspack-intelligence
-ontology seed` and the `seed_ontology` verb both run, writes
-`Ontology_Seed::events()` — thirty topics, the partners, funders and
-industry bodies, Newspack's products, one entity per table row, and three
-lenses, `leadership`, `support` and `developers` — for the keys
-`Ontology_Seed::present()` does not find settled in the projection: an
+**Seeding.** The seed is data a deployment supplies:
+`newspack-intelligence-ontology-seed.json`, which `Ontology_Seed::load()`
+finds through `Topology_Registry::resolve_file()`, the stock dir registered
+last first, so a deployment's dir shadows the fictional example
+`topologies/` ships (a few `.example` organizations, four topics and one
+lens). The file holds `entities`, type => slug => `{ name, names,
+identifiers, roles }`, `names` and `identifiers` each kind => values, and
+`lenses`, key => `{ name, description, filters }`, the filters laid over
+`Graph_Query::unfiltered()`. `load()` mints every event as it reads,
+so `Intel_Event::make()` judges each type, kind and role and the one-line
+cap; it bounds each name and value as `create_entity` and `add_name` do,
+checks each lens's filters through `Graph_Curation::lens_filters()`, the
+half of `save_lens`'s checks that reads no projection, and refuses a slug
+or lens key its own key function would spell otherwise. Any refusal is a
+`Seed_Refused` naming the file and the field (`<file>:
+entities.organization.<slug>.roles: role_asserted: field role is outside
+its set`), before anything is written, as is a file that does not parse
+or holds a field neither shape takes. `wp newspack-intelligence ontology
+seed [<file>]` reads the file given, else the resolved one, and the
+`seed_ontology` verb the resolved one; both run `load()->seed()`, which
+writes `events()` — per entity its creation, its names, its identifiers
+and its roles from 0, then each lens, in the file's order — for the keys
+`present()` does not find settled in the projection: an
 entity in `entity_states` in any state but a machine's pending
 `proposed`, a seed lens any `lens_saved` or `lens_removed` in `events`
 names, read by subject and kind, the index `events` keeps.
@@ -1584,6 +1601,7 @@ Read the counts, then run the command it prints, the same command without
 | `newspack-intelligence-collect.tsl` | The eight sources → `intel:writer`, as two halves it includes: `-collect-public`, GitHub on a 900-second grid, `feed` on 1,800 with client feeds on and `news`, a second feed node for searches, on 3,600; and `-collect-token`, Linear, Slack and Unthread on 900, `p2` and `p2-restricted` on 1,800, each under its Vault group, the two P2 nodes sharing `p2`, Unthread through `-collect-unthread`; includes the streams |
 | `newspack-intelligence-collect-unthread.tsl` | `unthread` at the restricted tier on 900, under its Vault group, → `intel:writer`, an include of its own so a collect reading the rest of the token half another way can keep it; includes the streams |
 | `newspack-intelligence-deployment.tsl` | Empty: what a deployment reads and cares about. No shipped file names a repo, feed, search, team, channel, site, profile line or audience, so GitHub, Linear, Slack, both P2 nodes and `news` fetch nothing, `feed` reads only the open clients' feeds, Unthread, which takes no list, reads as it would anyway, and the extractor frames its prompt for no one and scores against no profile. A deployment shadows this file from a stock dir it registers after this plugin's (`Topology_Registry::register_stock_dir()`, the dir registered last resolving a name first) with `cmd <node>:config add_…`, `add_profile` and `set_audience` lines; it is included last, so its lines reach every node the files above declare. A shadow cannot include the file it shadows, because the name resolves to itself, so this hook is where a deployment adds its lines without copying a shipped file. A deployment reading the token sources another way shadows `newspack-intelligence-collect` too, including `-collect-public`, its own nodes under the token half's names and `-collect-unthread` |
+| `newspack-intelligence-ontology-seed.json` | Not a topology: the fictional example seed `ontology seed` reads, which a deployment shadows from its stock dir as it shadows the deployment file (see Seeding) |
 | `newspack-intelligence-project.tsl` | `intel:items:consumer`, `intel:ontology:consumer` and `intel:watches:consumer`, each → `projector`, writing the `intel-graph` Row_Table; no other node rides their cursors |
 | `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later`, the items Consumer checkpointing the deduper; includes the streams |
 
@@ -1604,15 +1622,18 @@ plugin adds:
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
 | `Resolver` | `Resolver_Node` | `<writer> <later>`; the `LLM_Config` verbs; publishes its hold (`reason`, `since`) through `Publishes_Status` |
-| `Extractor` | `Extractor_Node` | `<writer> <later>`; the `LLM_Config` verbs |
+| `Extractor` | `Extractor_Node` | `<writer> <later>`; the `LLM_Config` verbs, `set_audience`, `add_profile` and `remove_profile` |
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>`; publishes `last_range` through `Publishes_Status` |
 | `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no verbs |
 | `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `health`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
 
-The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model`,
-`set_feature`, `set_audience`, `add_profile` and `remove_profile`; every node carrying the trait
-also re-emits its state through `dump_config()`. An identical `add_*` repeat is
+The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model` and
+`set_feature`; every node carrying the trait also re-emits its state through
+`dump_config()`, which replays every setter and list its class declares.
+`Extractor_Node` adds the prompt verbs, `set_audience`, `add_profile` and
+`remove_profile`, which the resolver, building no extraction prompt, does
+not declare. An identical `add_*` repeat is
 a no-op, and each `remove_*` takes its `add_*`'s argument, drops that entry and
 is refused when none is. Every `Intelligence_CI` verb declares its role, and
 no handler checks a role of its own (substrate ADR-26).
@@ -1752,8 +1773,8 @@ sibling checkout locally.
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |
 | `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Health`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
 | `includes/` (watches) | `Watcher_Node` |
-| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed`, `ontology reresolve` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; the `Refuses_Root` trait they share |
-| `topologies/` | The `.tsl` node-graph topologies |
+| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed [<file>]`, `ontology reresolve` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; the `Refuses_Root` trait they share |
+| `topologies/` | The `.tsl` node-graph topologies, and the example ontology seed |
 | `src/intelligence/` | The Intelligence page's React bundle |
 | `tests/` | PHPUnit (`unit/` + `bootstrap.php` + `support/` + `run-coverage.sh`; `integration/` exists but is empty) |
 | `scripts/` | Git hooks, the shared tooling copies, `bump-version.sh`, `build.mjs`, the lint and coverage gates |

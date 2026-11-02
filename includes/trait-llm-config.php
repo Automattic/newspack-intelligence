@@ -1,18 +1,15 @@
 <?php
 /**
- * LLM_Config: shared per-node LLM configuration verbs + client factory.
+ * LLM_Config: shared per-node LLM client verbs + client factory.
  *
- * Every LLM-calling node needs the same api_url/vault_id/model/feature/
- * audience/profiles state, configured via per-node topology verbs. This
- * trait carries that state, the five `set_*` verbs and the `add_profile` /
- * `remove_profile` pair (declared for node_schema()['commands'] via
- * llm_config_commands(), `set_audience` as a declared `setter` and the pair
- * through `Schema_Reflection::list_verbs()`, so a using class also uses
- * Schema_Reflection), make_llm_client() (answers the
+ * Every LLM-calling node needs the same api_url/vault_id/model/feature
+ * state, configured via per-node topology verbs. This trait carries that
+ * state, the four client verbs (declared for node_schema()['commands'] via
+ * llm_config_commands(), `set_vault_id` as a declared `setter`, so a using
+ * class also uses Schema_Reflection), and make_llm_client() (answers the
  * `$llm_factory` seam first, else builds the proxy client from the
- * verb-configured state), and relevance_profile() (joins
- * the configured profile lines for prompt assembly). Uses Vault_Secret for
- * the `set_vault_id` verb and the token it resolves.
+ * verb-configured state). Uses Vault_Secret for the `set_vault_id` verb and
+ * the token it resolves.
  *
  * @package Newspack_Intelligence
  */
@@ -50,12 +47,6 @@ trait LLM_Config {
 	/** @var string X-WPCOM-AI-Feature value, set via set_feature. */
 	protected string $feature = self::DEFAULT_FEATURE;
 
-	/** @var string Who a prompt is framed for, set via set_audience; '' names no one. */
-	protected string $audience = '';
-
-	/** @var list<string> Relevance-profile lines add_profile registered and remove_profile left, in call order. */
-	protected array $profiles = [];
-
 	/**
 	 * Verb-set keys. An explicit set dumps even at the default value, so a
 	 * pinned choice survives a future default bump on reload.
@@ -65,7 +56,7 @@ trait LLM_Config {
 	private array $llm_set = [];
 
 	/**
-	 * node_schema()['commands'] entries for the seven LLM-config verbs. A using
+	 * node_schema()['commands'] entries for the four LLM client verbs. A using
 	 * class merges this into its own commands list.
 	 *
 	 * @return array<int,array<string,mixed>>
@@ -97,15 +88,6 @@ trait LLM_Config {
 				],
 				'handler'     => static fn ( Command_Interpreter_Node $interpreter, array $args ): string => self::cmd_set_feature( $interpreter, $args ),
 			],
-			[
-				'name'        => 'set_audience',
-				'description' => 'Set who the prompt is framed for: <audience>.',
-				'args'        => [
-					[ 'name' => 'audience', 'type' => 'string', 'required' => true ],
-				],
-				'setter'      => 'audience',
-			],
-			...self::list_verbs( 'profile', 'profiles', [ 'name' => 'text', 'type' => 'string', 'required' => true, 'variadic' => true ], 'Add a relevance-profile line used to score items: <text>.' ),
 		];
 	}
 
@@ -170,21 +152,13 @@ trait LLM_Config {
 	}
 
 	/**
-	 * The `set_audience` verb's entry point, which the declared setter calls.
-	 *
-	 * @param string $audience Who the prompt is framed for.
-	 */
-	public function set_audience( string $audience ): void {
-		$this->audience = $audience;
-	}
-
-	/**
 	 * Emit the base config plus round-trippable `command_node {name}:config …` lines for
 	 * every explicitly-set or non-default verb (a pinned value survives a
-	 * future default bump), the `set_vault_id` and `set_audience` lines through
-	 * `dump_setters()`, then one `add_profile` line per profile through
-	 * `dump_lists()`. Args go through serialize_args (the serialization anchor)
-	 * so a multi-word profile re-tokenizes as ONE argument.
+	 * future default bump), then every declared setter the using class's
+	 * schema names through `dump_setters()` and every declared list through
+	 * `dump_lists()`, the extractor's prompt verbs among them. Args go through
+	 * serialize_args (the serialization anchor) so a multi-word value
+	 * re-tokenizes as ONE argument.
 	 */
 	public function dump_config(): string {
 		$out = parent::dump_config();
@@ -217,10 +191,5 @@ trait LLM_Config {
 			return null;
 		}
 		return new Proxy_LLM_Client( $this->api_url, $token, $this->model, $this->feature );
-	}
-
-	/** The relevance-profile lines, joined for prompt assembly. */
-	protected function relevance_profile(): string {
-		return \implode( "\n", $this->profiles );
 	}
 }

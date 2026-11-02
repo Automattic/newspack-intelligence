@@ -83,11 +83,11 @@ final class EntityIndexTest extends TestCase {
 
 	/** Every overlapping hit comes back with its byte offset, the longer of two at one word first. */
 	public function test_names_in_returns_every_overlapping_hit_at_its_offset(): void {
-		$index = $this->index_of( self::entity( 'organization:the-times', 'The Times' ), self::entity( 'organization:the-publication-7', 'The Publication 7' ) );
+		$index = $this->index_of( self::entity( 'organization:the-times', 'The Times' ), self::entity( 'organization:the-bayport-times', 'The Bayport Times' ) );
 
 		$this->assertSame(
-			[ [ 'organization:the-publication-7', 'The Publication 7', 6 ], [ 'organization:the-publication-7', 'Publication 7', 10 ], [ 'organization:the-times', 'Times', 18 ] ],
-			\array_map( static fn ( array $hit ): array => [ $hit['entity_key'], $hit['surface'], $hit['at'] ], $index->names_in( 'Today The Publication 7 wins a PartnerOrg18' ) )
+			[ [ 'organization:the-bayport-times', 'The Bayport Times', 6 ], [ 'organization:the-bayport-times', 'Bayport Times', 10 ], [ 'organization:the-times', 'Times', 18 ] ],
+			\array_map( static fn ( array $hit ): array => [ $hit['entity_key'], $hit['surface'], $hit['at'] ], $index->names_in( 'Today The Bayport Times wins a Kestrel' ) )
 		);
 	}
 
@@ -126,10 +126,10 @@ final class EntityIndexTest extends TestCase {
 
 	/** An acronym answers only the case it is written in. */
 	public function test_an_acronym_answers_its_exact_case_only(): void {
-		$index = $this->index_of( self::entity( 'organization:partner-org-24', 'Local Independent Online News Publishers', [ 'acronym' => [ 'ORG3' ] ] ) );
+		$index = $this->index_of( self::entity( 'organization:owl-publishers', 'Organized Writers League', [ 'acronym' => [ 'OWL' ] ] ) );
 
-		$this->assertSame( [ [ 'entity_key' => 'organization:partner-org-24', 'kind' => 'acronym', 'surface' => 'ORG3', 'state' => 'accepted', 'at' => 0 ] ], $index->names_in( 'ORG3 summit opens' ) );
-		$this->assertSame( [], $index->names_in( 'a lion escapes; Lion King' ) );
+		$this->assertSame( [ [ 'entity_key' => 'organization:owl-publishers', 'kind' => 'acronym', 'surface' => 'OWL', 'state' => 'accepted', 'at' => 0 ] ], $index->names_in( 'OWL summit opens' ) );
+		$this->assertSame( [], $index->names_in( 'an owl escapes; Owl King' ) );
 	}
 
 	public function test_a_folded_codepoint_keeps_the_surface_it_was_written_in(): void {
@@ -369,11 +369,11 @@ final class EntityIndexTest extends TestCase {
 
 	/** An identifier answers whatever case it is asked in; a domain without its www. */
 	public function test_an_identifier_answers_case_insensitively(): void {
-		$index = $this->index_of( self::entity( 'product:newspack-plugin', 'Newspack Plugin', [ 'github_repo' => [ 'Automattic/newspack-plugin' ], 'domain' => [ 'www.Harbor.example' ] ] ) );
+		$index = $this->index_of( self::entity( 'product:example-plugin', 'Example Plugin', [ 'github_repo' => [ 'Example/plugin' ], 'domain' => [ 'www.Harbor.example' ] ] ) );
 
-		$this->assertSame( 'product:newspack-plugin', $index->by_identifier( 'github_repo', 'automattic/Newspack-Plugin' ) );
-		$this->assertSame( 'product:newspack-plugin', $index->by_identifier( 'domain', 'harbor.example' ) );
-		$this->assertNull( $index->by_identifier( 'github_org', 'automattic' ) );
+		$this->assertSame( 'product:example-plugin', $index->by_identifier( 'github_repo', 'example/Plugin' ) );
+		$this->assertSame( 'product:example-plugin', $index->by_identifier( 'domain', 'harbor.example' ) );
+		$this->assertNull( $index->by_identifier( 'github_org', 'example' ) );
 	}
 
 	/** Every matchable name's norm, with the entities it names; localities excluded. */

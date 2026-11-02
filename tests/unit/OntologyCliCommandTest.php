@@ -37,6 +37,7 @@ final class OntologyCliCommandTest extends TestCase {
 		\WP_CLI::reset();
 		Topology_Analyzer::reset_caches();
 		$this->start_entity_graph();
+		Topology_Registry::register_stock_dir( \dirname( __DIR__ ) . '/fixtures/topologies' );
 		$this->activate( 'newspack-intelligence-project' );
 	}
 
@@ -50,19 +51,42 @@ final class OntologyCliCommandTest extends TestCase {
 	}
 
 	public function test_seed_writes_the_keys_the_projection_lacks(): void {
-		$this->seed( self::entity( 'product:newspack-ads', 'Ads (curated)' ) );
+		$this->seed( self::entity( 'product:kite-ledger', 'Ledger (curated)' ) );
 
 		( new Ontology_CLI_Command() )->seed( [], [] );
 
 		$written = self::ontology_events();
-		$this->assertSame( \array_column( Ontology_Seed::events( [ 'product:newspack-ads' ] ), 'entity_key' ), \array_column( $written, 'entity_key' ) );
-		$this->assertNotContains( 'product:newspack-ads', \array_column( $written, 'entity_key' ) );
-		$this->assertSame( [ \sprintf( 'Seeded %d events: 65 keys new, 1 present.', \count( $written ) ) ], \WP_CLI::$successes );
+		$this->assertSame( \array_column( Ontology_Seed::load()->events( [ 'product:kite-ledger' ] ), 'entity_key' ), \array_column( $written, 'entity_key' ) );
+		$this->assertNotContains( 'product:kite-ledger', \array_column( $written, 'entity_key' ) );
+		$this->assertSame( [ \sprintf( 'Seeded %d events: 7 keys new, 1 present.', \count( $written ) ) ], \WP_CLI::$successes );
+	}
+
+	/** A path given reads that file in place of the one the topology dirs resolve. */
+	public function test_seed_reads_a_path_given(): void {
+		$path = $this->make_temp_dir( 'intel-seed-' ) . '/heron-seed.json';
+		\file_put_contents( $path, '{"entities":{"topic":{"salt-marsh":{"name":"Salt marsh"}}},"lenses":{}}' );
+
+		( new Ontology_CLI_Command() )->seed( [ $path ], [] );
+
+		$this->assertSame( [ 'topic:salt-marsh' ], \array_column( self::ontology_events(), 'entity_key' ) );
+		$this->assertSame( [ 'Seeded 1 events: 1 keys new, 0 present.' ], \WP_CLI::$successes );
+	}
+
+	/** A file the seed refuses reaches WP-CLI's error naming the field, and nothing is written. */
+	public function test_seed_refuses_a_bad_file_naming_the_field(): void {
+		$path = $this->make_temp_dir( 'intel-seed-' ) . '/heron-seed.json';
+		\file_put_contents( $path, '{"entities":{"organization":{"gull-fund":{"name":"Gull Fund","roles":["patron"]}}},"lenses":{}}' );
+
+		( new Ontology_CLI_Command() )->seed( [ $path ], [] );
+
+		$this->assertSame( [ "{$path}: entities.organization.gull-fund.roles: role_asserted: field role is outside its set" ], \WP_CLI::$errors );
+		$this->assertSame( [], self::ontology_events() );
+		$this->assertSame( [], \WP_CLI::$successes );
 	}
 
 	/** The CLI and the `seed_ontology` verb run one seed, so each reports the same counts. */
 	public function test_cli_seed_and_verb_share_seed(): void {
-		$this->seed( self::entity( 'product:newspack-ads', 'Ads (curated)' ), self::entity( 'organization:partnerorg27', 'PartnerOrg27 (curated)' ) );
+		$this->seed( self::entity( 'product:kite-ledger', 'Ledger (curated)' ), self::entity( 'organization:quarry-guild', 'Quarry (curated)' ) );
 		self::sign_in( 5153, 'tern-curator', 'manage_options' );
 		$GLOBALS['_current_user_can'] = true;
 		$ci                           = new Intelligence_CI_Node();
@@ -72,7 +96,7 @@ final class OntologyCliCommandTest extends TestCase {
 		self::commit_ontology_cursor();
 		( new Ontology_CLI_Command() )->seed( [], [] );
 
-		$this->assertSame( [ 'ok' => true, 'events' => \count( Ontology_Seed::events( [ 'organization:partnerorg27', 'product:newspack-ads' ] ) ), 'created' => 64, 'present' => 2 ], $answer );
+		$this->assertSame( [ 'ok' => true, 'events' => \count( Ontology_Seed::load()->events( [ 'organization:quarry-guild', 'product:kite-ledger' ] ) ), 'created' => 6, 'present' => 2 ], $answer );
 		$this->assertSame( [ \sprintf( 'Seeded %d events: %d keys new, %d present.', $answer['events'], $answer['created'], $answer['present'] ) ], \WP_CLI::$successes );
 	}
 

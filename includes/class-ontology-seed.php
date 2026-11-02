@@ -1,9 +1,7 @@
 <?php
 /**
- * Ontology_Seed: the entities the graph starts from — the topic vocabulary
- * extraction chooses from, the partners, funders and industry bodies the
- * team follows, and Newspack's own products — and a lens per audience. One
- * table row per entity or lens, so each key is written once. A run writes
+ * Ontology_Seed: the entities the graph starts from and a lens per
+ * audience, read from the seed file a deployment supplies. A run writes
  * only the keys the projection does not settle, so an entity a curator has
  * since accepted, rejected, merged or renamed is never reset to what the
  * seed says, while a machine's pending proposal of a seed key is replaced by
@@ -17,126 +15,52 @@ namespace Newspack_Intelligence;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Table_Unavailable;
+use Newspack_Nodes\Topology_Registry;
 
 \defined( 'ABSPATH' ) || exit;
 
 final class Ontology_Seed {
 
 	/**
-	 * Type => slug => [ name, kind => values, roles ]. A kind from
-	 * NAME_KINDS adds a name, any other an identifier.
+	 * The seed file, found as `Topology_Registry::resolve_file()` finds a
+	 * name, so the dir a deployment registers last shadows the plugin's
+	 * fictional example.
 	 */
-	private const ENTITIES = [
-		'topic'        => [
-			'ai'                         => [ 'Artificial intelligence', [ 'acronym' => [ 'AI' ], 'alias' => [ 'Generative AI', 'Machine learning' ] ], [] ],
-			'audience-growth'            => [ 'Audience growth', [ 'alias' => [ 'Audience development', 'Reader growth' ] ], [] ],
-			'advertising'                => [ 'Advertising', [ 'alias' => [ 'Ad revenue', 'Programmatic advertising' ] ], [] ],
-			'awards'                     => [ 'Awards', [ 'alias' => [ 'Journalism prizes', 'Honors' ] ], [] ],
-			'community-engagement'       => [ 'Community engagement', [ 'alias' => [ 'Engaged journalism', 'Reader engagement' ] ], [] ],
-			'data-journalism'            => [ 'Data journalism', [ 'alias' => [ 'Data reporting', 'Data visualization' ] ], [] ],
-			'donations'                  => [ 'Donations', [ 'alias' => [ 'Reader donations', 'Fundraising campaigns' ] ], [] ],
-			'elections'                  => [ 'Elections', [ 'alias' => [ 'Election coverage', 'Voter guides' ] ], [] ],
-			'events'                     => [ 'Events', [ 'alias' => [ 'Live events', 'Newsroom events' ] ], [] ],
-			'grants-and-philanthropy'    => [ 'Grants and philanthropy', [ 'alias' => [ 'Grants', 'Philanthropy' ] ], [] ],
-			'investigative-journalism'   => [ 'Investigative journalism', [ 'alias' => [ 'Investigations', 'Accountability reporting' ] ], [] ],
-			'layoffs'                    => [ 'Layoffs', [ 'alias' => [ 'Job cuts', 'Newsroom cuts' ] ], [] ],
-			'local-news'                 => [ 'Local news', [ 'alias' => [ 'Community news', 'Local journalism' ] ], [] ],
-			'membership'                 => [ 'Membership', [ 'alias' => [ 'Member programs', 'Memberships' ] ], [] ],
-			'mergers-and-acquisitions'   => [ 'Mergers and acquisitions', [ 'alias' => [ 'Mergers', 'Acquisitions' ] ], [] ],
-			'misinformation'             => [ 'Misinformation', [ 'alias' => [ 'Disinformation', 'Fact-checking' ] ], [] ],
-			'mobile-apps'                => [ 'Mobile apps', [ 'alias' => [ 'News apps', 'Mobile app' ] ], [] ],
-			'newsletters'                => [ 'Newsletters', [ 'alias' => [ 'Email newsletters', 'Newsletter' ] ], [] ],
-			'partner-org-25'             => [ 'Partner Org 25', [ 'alias' => [ 'Nonprofit newsrooms', 'Nonprofit journalism' ] ], [] ],
-			'paywalls-and-subscriptions' => [ 'Paywalls and subscriptions', [ 'alias' => [ 'Paywalls', 'Subscriptions', 'Digital subscriptions' ] ], [] ],
-			'podcasts-and-audio'         => [ 'Podcasts and audio', [ 'alias' => [ 'Podcasts', 'Audio journalism' ] ], [] ],
-			'press-freedom'              => [ 'Press freedom', [ 'alias' => [ 'Freedom of the press', 'Journalist safety' ] ], [] ],
-			'privacy-and-regulation'     => [ 'Privacy and regulation', [ 'alias' => [ 'Data privacy', 'Platform regulation' ] ], [] ],
-			'product-and-technology'     => [ 'Product and technology', [ 'alias' => [ 'News product', 'Newsroom technology' ] ], [] ],
-			'search-and-seo'             => [ 'Search and SEO', [ 'acronym' => [ 'SEO' ], 'alias' => [ 'Search engine optimization', 'Search traffic' ] ], [] ],
-			'social-media'               => [ 'Social media', [ 'alias' => [ 'Social platforms', 'Social distribution' ] ], [] ],
-			'video'                      => [ 'Video', [ 'alias' => [ 'Video journalism', 'Short-form video' ] ], [] ],
-			'accessibility'              => [ 'Accessibility', [ 'alias' => [ 'Web accessibility', 'Inclusive design' ] ], [] ],
-			'diversity-and-equity'       => [ 'Diversity and equity', [ 'acronym' => [ 'DEI' ], 'alias' => [ 'Newsroom diversity' ] ], [] ],
-			'reader-revenue'             => [ 'Reader revenue', [ 'alias' => [ 'Audience revenue', 'Reader-supported journalism' ] ], [] ],
-		],
-		'organization' => [
-			'partnerorg26-lab'                   => [ 'PartnerOrg26 Lab', [ 'alias' => [ 'PartnerOrg26 Journalism Lab' ], 'domain' => [ 'partner-18.example' ] ], [ 'industry_body' ] ],
-			'partner-org-1'            => [ 'Partner Org 1', [ 'alias' => [ 'John S. and James L. Partner Org 1' ], 'domain' => [ 'partner-5.example' ] ], [ 'funder' ] ],
-			'partnerorg2-institute'            => [ 'PartnerOrg2 Institute for Journalism', [ 'alias' => [ 'PartnerOrg2 Institute' ], 'domain' => [ 'partner-4.example' ] ], [ 'funder' ] ],
-			'institute-for-partner-org-25' => [ 'Institute for Partner Org 25', [ 'acronym' => [ 'ORG4' ], 'domain' => [ 'partner-24.example' ] ], [ 'industry_body' ] ],
-			'partner-org-24'              => [ 'Partner Org 24', [ 'alias' => [ 'Local Independent Online News Publishers' ], 'acronym' => [ 'ORG3' ], 'domain' => [ 'partner-8.example' ] ], [ 'industry_body' ] ],
-			'partner-org-3'                => [ 'Partner Org 3', [ 'domain' => [ 'partner-10.example' ] ], [ 'funder' ] ],
-			'partnerorg4'                      => [ 'PartnerOrg4', [ 'domain' => [ 'partner-17.example' ] ], [ 'partner' ] ],
-			'partnerorg27'                       => [ 'PartnerOrg27', [ 'domain' => [ 'partner-20.example' ] ], [ 'partner' ] ],
-			'publication6'                     => [ 'Publication6', [ 'domain' => [ 'client-150.example' ] ], [ 'partner' ] ],
-			'partner-org-5-collaborative'    => [ 'Partner Org 5 Collaborative', [ 'alias' => [ 'Partner Org 5' ], 'domain' => [ 'partner-3.example' ] ], [ 'partner' ] ],
-			'partner-org-6'      => [ 'Partner Org 6', [ 'acronym' => [ 'ORG5' ], 'domain' => [ 'partner-15.example' ] ], [ 'partner' ] ],
-			'partner-org-7'             => [ 'Partner Org 7', [ 'domain' => [ 'partner-9.example' ] ], [ 'partner' ] ],
-			'partner-org-8'                     => [ 'partner-org-8', [ 'alias' => [ 'PartnerOrg8' ], 'domain' => [ 'partner-28.example' ] ], [ 'partner' ] ],
-			'partner-org-9'        => [ 'Partner Org 9', [ 'acronym' => [ 'ORG6' ], 'domain' => [ 'partner-12.example' ] ], [ 'industry_body' ] ],
-			'partnerorg10'                     => [ 'PartnerOrg10', [ 'alias' => [ 'Partner Org 10' ], 'domain' => [ 'partner-16.example' ] ], [ 'industry_body' ] ],
-			'association-of-partner-org-11' => [ 'Association of Partner Org 11', [ 'acronym' => [ 'ORG7' ], 'domain' => [ 'partner-27.example' ] ], [ 'industry_body' ] ],
-			'partner-org-12' => [ 'Partner Org 12', [ 'acronym' => [ 'ORG8' ], 'domain' => [ 'partner-23.example' ] ], [ 'industry_body' ] ],
-			'americas-newspapers'          => [ "Partner Org 13", [ 'domain' => [ 'partner-14.example' ] ], [ 'industry_body' ] ],
-			'partner-org-14'      => [ 'Partner Org 14', [ 'acronym' => [ 'ORG9' ], 'domain' => [ 'partner-13.example' ] ], [ 'industry_body' ] ],
-			'partner-org-15'           => [ 'Partner Org 15', [ 'domain' => [ 'partner-6.example' ] ], [ 'funder' ] ],
-			'partner-org-16'       => [ 'Partner Org 16', [ 'acronym' => [ 'ORG10' ], 'domain' => [ 'partner-1.example' ] ], [ 'funder' ] ],
-			'partner-org-17'           => [ 'Partner Org 17', [ 'alias' => [ 'PartnerOrg19 Awards', 'Academy of Television Arts & Sciences' ], 'domain' => [ 'partner-21.example', 'partner-7.example' ] ], [ 'industry_body' ] ],
-			'partnerorg18-prizes'              => [ 'PartnerOrg18 Prizes', [ 'alias' => [ 'PartnerOrg18 Prize' ], 'domain' => [ 'partner-19.example' ] ], [ 'industry_body' ] ],
-			'american-society-of-partner-org-20' => [ 'American Society of Partner Org 20', [ 'acronym' => [ 'ORG2' ], 'domain' => [ 'partner-22.example' ] ], [ 'industry_body' ] ],
-			'partner-org-21-and-editors' => [ 'Partner Org 21 and Editors', [ 'acronym' => [ 'ORG11' ], 'domain' => [ 'partner-25.example' ] ], [ 'industry_body' ] ],
-			'partner-org-22'          => [ 'Partner Org 22 for Freedom of the Press', [ 'alias' => [ 'Partner Org 22' ], 'acronym' => [ 'ORG1' ], 'domain' => [ 'partner-26.example' ] ], [ 'industry_body' ] ],
-			'partnerorg23-prize'                  => [ 'PartnerOrg23 Prize', [ 'alias' => [ 'PartnerOrg23 Prizes' ], 'domain' => [ 'partner-11.example' ] ], [ 'industry_body' ] ],
-		],
-		'product'      => [
-			'newspack'                => [ 'Newspack', [ 'linear_team' => [ 'TEAMA' ] ], [ 'newspack_product' ] ],
-			'newspack-plugin'         => [ 'Newspack Plugin', [ 'github_repo' => [ 'automattic/newspack-plugin' ] ], [ 'newspack_product' ] ],
-			'newspack-ads'            => [ 'Newspack Ads', [ 'github_repo' => [ 'automattic/newspack-ads' ] ], [ 'newspack_product' ] ],
-			'newspack-activecampaign' => [ 'Newspack ActiveCampaign', [ 'github_repo' => [ 'automattic/newspack-activecampaign' ] ], [ 'newspack_product' ] ],
-			'private-repo-1'        => [ 'Newspack Manager', [ 'github_repo' => [ 'automattic/private-repo-1' ] ], [ 'newspack_product' ] ],
-			'newspack-network'        => [ 'Newspack Network', [ 'github_repo' => [ 'automattic/newspack-network' ] ], [ 'newspack_product' ] ],
-		],
+	public const FILE = 'newspack-intelligence-ontology-seed.json';
+
+	/** The fields an entity takes, `name` alone required. */
+	private const ENTITY_FIELDS = [ 'name', 'names', 'identifiers', 'roles' ];
+
+	/** An entity's two fact lists, each by the event it writes. */
+	private const FACT_LISTS = [
+		'names'       => 'name_added',
+		'identifiers' => 'identifier_added',
 	];
 
+	/** The fields a lens takes, each required. */
+	private const LENS_FIELDS = [ 'name', 'description', 'filters' ];
+
 	/**
-	 * Lens key => [ name, description, the filters it sets over
-	 * `Graph_Query::unfiltered()` ].
+	 * Entity key => its events as `load()` minted them: its creation, its
+	 * names, its identifiers, then its roles, in the file's order.
+	 *
+	 * @var array<string,list<array<string,mixed>>>
 	 */
-	private const LENSES = [
-		'leadership' => [
-			'Leadership',
-			'Where clients and the industry are moving.',
-			[
-				'roles'  => [ 'client', 'former_client', 'prospect', 'competitor', 'partner', 'funder' ],
-				'kinds'  => [ 'launch', 'funding', 'partnership', 'award', 'churn_signal', 'research' ],
-				'days'   => 30,
-				'by'     => 'topic',
-				'bucket' => 'week',
-			],
-		],
-		'support'    => [
-			'Support',
-			'What clients complain about and ask for.',
-			[
-				'roles'  => [ 'client' ],
-				'kinds'  => [ 'complaint', 'incident', 'feature_request', 'churn_signal', 'praise' ],
-				'days'   => 14,
-				'by'     => 'kind',
-				'bucket' => 'day',
-			],
-		],
-		'developers' => [
-			'Developers',
-			'What shipped and what broke.',
-			[
-				'sources' => [ 'github', 'linear' ],
-				'kinds'   => [ 'release', 'incident', 'feature_request' ],
-				'days'    => 30,
-				'by'      => 'kind',
-				'bucket'  => 'week',
-			],
-		],
-	];
+	private array $entities = [];
+
+	/**
+	 * Lens key => its `lens_saved`, in the file's order.
+	 *
+	 * @var array<string,array<string,mixed>>
+	 */
+	private array $lenses = [];
+
+	/**
+	 * A seed read from its file.
+	 *
+	 * @param string $path The file, named in every refusal.
+	 */
+	private function __construct( private readonly string $path ) {}
 
 	/**
 	 * Write the seed events for the keys the projection does not settle, the
@@ -150,12 +74,12 @@ final class Ontology_Seed {
 	 * @throws Seed_Refused While the projector stands behind the ontology stream.
 	 * @throws Table_Unavailable When no projection can be read.
 	 */
-	public static function seed(): array {
+	public function seed(): array {
 		if ( Projector_Node::behind( Stream_Writer::stream_dir( Intel_Event::ONTOLOGY ) ) ) {
 			throw new Seed_Refused( 'Recent ontology changes are still being processed; try again in a minute.' );
 		}
-		$present = self::present();
-		$events  = self::events( $present );
+		$present = $this->present();
+		$events  = $this->events( $present );
 		Stream_Writer::append( $events );
 		return [
 			'events'  => \count( $events ),
@@ -165,51 +89,15 @@ final class Ontology_Seed {
 	}
 
 	/**
-	 * The seed as ontology events, under the seed's own machine actor, for
-	 * each entity `$present` does not name: its creation, then its names and
-	 * identifiers, then its roles, each role asserted from 0, before any
-	 * record; then each lens `$present` does not name.
+	 * The seed's events, as `load()` minted them under the seed's own machine
+	 * actor, for each entity and then each lens `$present` does not name.
 	 *
 	 * @param list<string> $present The keys to leave alone, as present() answers.
 	 * @return list<array<string,mixed>>
 	 */
-	public static function events( array $present ): array {
-		$skip   = \array_flip( $present );
-		$events = [];
-		foreach ( self::ENTITIES as $type => $entities ) {
-			foreach ( $entities as $slug => [ $name, $facts, $roles ] ) {
-				$key = Intel_Event::entity_key( $type, $slug );
-				if ( isset( $skip[ $key ] ) ) {
-					continue;
-				}
-				$events[] = self::mint( 'entity_created', [ 'entity_key' => $key, 'type' => $type, 'name' => $name ] );
-				foreach ( $facts as $kind => $values ) {
-					foreach ( $values as $value ) {
-						$events[] = self::mint( \in_array( $kind, Intel_Event::NAME_KINDS, true ) ? 'name_added' : 'identifier_added', [ 'entity_key' => $key, 'kind' => $kind, 'value' => $value ] );
-					}
-				}
-				foreach ( $roles as $role ) {
-					$events[] = self::mint( 'role_asserted', [ 'entity_key' => $key, 'role' => $role, 'from_ts' => 0 ] );
-				}
-			}
-		}
-		foreach ( self::LENSES as $key => [ $name, $description, $filters ] ) {
-			if ( ! isset( $skip[ $key ] ) ) {
-				$events[] = self::mint( 'lens_saved', [ 'lens_key' => $key, 'name' => $name, 'description' => $description, 'filters' => \array_replace( Graph_Query::unfiltered(), $filters ) ] );
-			}
-		}
-		return $events;
-	}
-
-	/**
-	 * One seed event, under the seed's own machine actor.
-	 *
-	 * @param string              $kind   The event kind.
-	 * @param array<string,mixed> $fields Its fields.
-	 * @return array<string,mixed>
-	 */
-	private static function mint( string $kind, array $fields ): array {
-		return Intel_Event::machine_event( 'ontology-seed', $kind, $fields );
+	public function events( array $present ): array {
+		$skip = \array_flip( $present );
+		return [ ...\array_merge( ...\array_values( \array_diff_key( $this->entities, $skip ) ) ), ...\array_values( \array_diff_key( $this->lenses, $skip ) ) ];
 	}
 
 	/**
@@ -220,8 +108,8 @@ final class Ontology_Seed {
 	 * @return list<string>
 	 * @throws Table_Unavailable When no projection can be read.
 	 */
-	public static function present(): array {
-		$lenses = \array_keys( self::LENSES );
+	public function present(): array {
+		$lenses = \array_keys( $this->lenses );
 		$held   = Intel_Graph_Row_Schema::read(
 			static function ( Row_Reader $r ) use ( $lenses ): array {
 				$keys = [];
@@ -236,20 +124,232 @@ final class Ontology_Seed {
 				return $keys;
 			}
 		);
-		$present = [];
-		foreach ( self::ENTITIES as $type => $entities ) {
-			foreach ( \array_keys( $entities ) as $slug ) {
-				$key = Intel_Event::entity_key( $type, $slug );
-				if ( isset( $held[ $key ] ) ) {
-					$present[] = $key;
+		return \array_values( \array_filter( [ ...\array_keys( $this->entities ), ...$lenses ], static fn ( string $key ): bool => isset( $held[ $key ] ) ) );
+	}
+
+	/**
+	 * The seed a file holds: the one given, else the one the topology dirs
+	 * resolve, its events minted as it is read, so whatever `Intel_Event`
+	 * refuses — a type, kind or role outside its set, an event past one
+	 * line — is refused here, naming the file and the field.
+	 *
+	 * @param string|null $path A seed file, or null for the resolved one.
+	 * @throws Seed_Refused When no file is found, or the file does not parse or names what the graph has no word for, naming the field.
+	 */
+	public static function load( ?string $path = null ): self {
+		$path ??= Topology_Registry::resolve_file( self::FILE ) ?? throw new Seed_Refused( 'No ' . self::FILE . ' is in any topology dir.' );
+		if ( ! \is_file( $path ) || ! \is_readable( $path ) ) {
+			throw new Seed_Refused( \esc_html( "No seed file at {$path}." ) );
+		}
+		$seed = new self( $path );
+		// phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- a local seed file, not a remote fetch.
+		$text = (string) \file_get_contents( $path );
+		$file = $seed->fields( '', $seed->decode( $text ), [ 'entities', 'lenses' ], [ 'entities', 'lenses' ] );
+		foreach ( $seed->fields( 'entities', $file['entities'] ) as $type => $entities ) {
+			foreach ( $seed->fields( "entities.{$type}", $entities ) as $slug => $entity ) {
+				$seed->entity( "entities.{$type}.{$slug}", (string) $type, (string) $slug, $entity );
+			}
+		}
+		foreach ( $seed->fields( 'lenses', $file['lenses'] ) as $key => $lens ) {
+			$seed->lens( "lenses.{$key}", (string) $key, $lens );
+		}
+		return $seed;
+	}
+
+	/**
+	 * The file's JSON.
+	 *
+	 * @param string $text The file's bytes.
+	 * @throws Seed_Refused When they do not parse.
+	 */
+	private function decode( string $text ): mixed {
+		try {
+			return \json_decode( $text, true, 512, \JSON_THROW_ON_ERROR );
+		} catch ( \JsonException $e ) {
+			throw new Seed_Refused( \esc_html( "{$this->path}: not JSON: {$e->getMessage()}" ) );
+		}
+	}
+
+	/**
+	 * One entity's events, minted in the order the file lists its facts: its
+	 * name and every value bounded as `create_entity` and `add_name` bound
+	 * them, its slug the one its key spells.
+	 *
+	 * @param string $field Where it sits.
+	 * @param string $type  Its type.
+	 * @param string $slug  Its slug.
+	 * @param mixed  $value The entity.
+	 * @throws Seed_Refused Naming the field.
+	 */
+	private function entity( string $field, string $type, string $slug, mixed $value ): void {
+		$entity = $this->fields( $field, $value, self::ENTITY_FIELDS, [ 'name' ] );
+		$key    = $this->keyed( $field, "{$type}:{$slug}", static fn (): string => Intel_Event::entity_key( $type, $slug ) );
+		$name   = $this->text( "{$field}.name", $entity['name'] );
+		$events = [ $this->minted( "{$field}.name", static fn (): array => self::mint( 'entity_created', [ 'entity_key' => $key, 'type' => $type, 'name' => Graph_Curation::bounded( 'name', $name, Graph_Curation::NAME_BYTES ) ] ) ) ];
+		foreach ( self::FACT_LISTS as $list => $event ) {
+			foreach ( $this->fields( "{$field}.{$list}", $entity[ $list ] ?? [] ) as $kind => $values ) {
+				foreach ( $this->strings( "{$field}.{$list}.{$kind}", $values ) as $text ) {
+					$events[] = $this->minted( "{$field}.{$list}.{$kind}", static fn (): array => self::mint( $event, [ 'entity_key' => $key, 'kind' => $kind, 'value' => Graph_Curation::bounded( 'value', $text, Graph_Curation::NAME_BYTES ) ] ) );
 				}
 			}
 		}
-		foreach ( $lenses as $key ) {
-			if ( isset( $held[ $key ] ) ) {
-				$present[] = $key;
+		foreach ( $this->strings( "{$field}.roles", $entity['roles'] ?? [] ) as $role ) {
+			$events[] = $this->minted( "{$field}.roles", static fn (): array => self::mint( 'role_asserted', [ 'entity_key' => $key, 'role' => $role, 'from_ts' => 0 ] ) );
+		}
+		$this->entities[ $key ] = $events;
+	}
+
+	/**
+	 * One lens's `lens_saved`, its filters checked by
+	 * `Graph_Curation::lens_filters()` as `save_lens` checks them, its key
+	 * the one `Intel_Event::lens_key()` spells.
+	 *
+	 * @param string $field Where it sits.
+	 * @param string $key   Its key.
+	 * @param mixed  $value The lens.
+	 * @throws Seed_Refused Naming the field.
+	 */
+	private function lens( string $field, string $key, mixed $value ): void {
+		$this->keyed( $field, $key, static fn (): string => Intel_Event::lens_key( $key ) );
+		$lens    = $this->fields( $field, $value, self::LENS_FIELDS, self::LENS_FIELDS );
+		$filters = $this->fields( "{$field}.filters", $lens['filters'], \array_keys( Graph_Query::unfiltered() ) );
+		$args    = [ 'tier' => $this->strings( "{$field}.filters.tiers", $filters['tiers'] ?? [] ) ];
+		foreach ( Graph_Query::LENS_LISTS as $list => [ $option ] ) {
+			$args[ $option ] = $this->strings( "{$field}.filters.{$list}", $filters[ $list ] ?? [] );
+		}
+		foreach ( [ 'entity', 'by', 'bucket' ] as $one ) {
+			$args[ $one ] = null === ( $filters[ $one ] ?? null ) ? null : $this->text( "{$field}.filters.{$one}", $filters[ $one ] );
+		}
+		$args['days'] = $filters['days'] ?? null;
+		if ( null !== $args['days'] && ! \is_int( $args['days'] ) ) {
+			$this->refuse( "{$field}.filters.days", 'not a whole number' );
+		}
+		$checked     = $this->minted( "{$field}.filters", static fn (): array => Graph_Curation::lens_filters( $args ) );
+		$name        = $this->text( "{$field}.name", $lens['name'] );
+		$description = $this->text( "{$field}.description", $lens['description'] );
+		$bounded     = $this->minted( "{$field}.name", static fn (): string => Graph_Curation::bounded( 'name', $name, Graph_Curation::NAME_BYTES ) );
+		$this->lenses[ $key ] = $this->minted( $field, static fn (): array => self::mint( 'lens_saved', [ 'lens_key' => $key, 'name' => $bounded, 'description' => $description, 'filters' => $checked ] ) );
+	}
+
+	/**
+	 * One seed event, under the seed's own machine actor.
+	 *
+	 * @param string              $kind   The event kind.
+	 * @param array<string,mixed> $fields Its fields.
+	 * @return array<string,mixed>
+	 */
+	private static function mint( string $kind, array $fields ): array {
+		return Intel_Event::machine_event( 'ontology-seed', $kind, $fields );
+	}
+
+	/**
+	 * A string.
+	 *
+	 * @param string $field Where it sits.
+	 * @param mixed  $value The value.
+	 * @throws Seed_Refused Naming the field.
+	 */
+	private function text( string $field, mixed $value ): string {
+		if ( ! \is_string( $value ) ) {
+			$this->refuse( $field, 'not a string' );
+		}
+		return $value;
+	}
+
+	/**
+	 * A list of strings.
+	 *
+	 * @param string $field Where it sits.
+	 * @param mixed  $value The value.
+	 * @return list<string>
+	 * @throws Seed_Refused Naming the field.
+	 */
+	private function strings( string $field, mixed $value ): array {
+		if ( ! \is_array( $value ) || ! \array_is_list( $value ) ) {
+			$this->refuse( $field, 'not a list of strings' );
+		}
+		$strings = [];
+		foreach ( $value as $item ) {
+			if ( ! \is_string( $item ) ) {
+				$this->refuse( $field, 'not a list of strings' );
+			}
+			$strings[] = $item;
+		}
+		return $strings;
+	}
+
+	/**
+	 * A JSON object's fields, refused when it is not an object, holds a
+	 * field outside `$takes`, or lacks one of `$required`.
+	 *
+	 * @param string            $field    Where it sits, '' for the file.
+	 * @param mixed             $value    The value.
+	 * @param list<string>|null $takes    The fields it takes, null for any.
+	 * @param list<string>      $required The fields it must hold.
+	 * @return array<array-key,mixed>
+	 * @throws Seed_Refused Naming the field.
+	 */
+	private function fields( string $field, mixed $value, ?array $takes = null, array $required = [] ): array {
+		if ( ! \is_array( $value ) || ( [] !== $value && \array_is_list( $value ) ) ) {
+			$this->refuse( '' === $field ? 'seed' : $field, 'not an object' );
+		}
+		$at = static fn ( int|string $key ): string => '' === $field ? (string) $key : "{$field}.{$key}";
+		foreach ( \array_keys( $value ) as $key ) {
+			if ( null !== $takes && ! \in_array( $key, $takes, true ) ) {
+				$this->refuse( $at( $key ), 'not a field it takes' );
 			}
 		}
-		return $present;
+		foreach ( $required as $key ) {
+			if ( ! \array_key_exists( $key, $value ) ) {
+				$this->refuse( $at( $key ), 'missing' );
+			}
+		}
+		return $value;
+	}
+
+	/**
+	 * A seed key, refused unless the key its slug makes spells it the same,
+	 * so no key is written under another spelling than the file's.
+	 *
+	 * @param string             $field Where it sits.
+	 * @param string             $key   The key as the file spells it.
+	 * @param \Closure(): string $make  The key the slug makes.
+	 * @throws Seed_Refused Naming the field.
+	 */
+	private function keyed( string $field, string $key, \Closure $make ): string {
+		$made = $this->minted( $field, $make );
+		if ( $made !== $key ) {
+			$this->refuse( $field, "not a slug; the key it makes is {$made}" );
+		}
+		return $key;
+	}
+
+	/**
+	 * What `$make` answers, its `\InvalidArgumentException` refused as the
+	 * field's.
+	 *
+	 * @template T
+	 * @param string      $field Where it sits.
+	 * @param \Closure(): T $make  What mints or checks the value.
+	 * @return T
+	 * @throws Seed_Refused Naming the field.
+	 */
+	private function minted( string $field, \Closure $make ): mixed {
+		try {
+			return $make();
+		} catch ( \InvalidArgumentException $e ) {
+			$this->refuse( $field, $e->getMessage() );
+		}
+	}
+
+	/**
+	 * Refuse the file, naming it and the field.
+	 *
+	 * @param string $field Where the fault sits.
+	 * @param string $why   What it is.
+	 * @throws Seed_Refused Always.
+	 */
+	private function refuse( string $field, string $why ): never {
+		throw new Seed_Refused( \esc_html( "{$this->path}: {$field}: {$why}" ) );
 	}
 }

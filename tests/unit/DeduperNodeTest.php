@@ -53,12 +53,12 @@ final class DeduperNodeTest extends TestCase {
 	/** Scheme, `www.`, tracking keys, key order, the fragment and a trailing slash do not part two copies. */
 	public function test_tracking_params_and_www_do_not_split_a_url(): void {
 		$this->extracted( 'feed:quarry-41', 'https://www.Quarry.example/news/levy/?utm_source=np&id=7&fbclid=Iw9#top', 'Levy passes', 5, 3 );
-		$this->extracted( 'linear:TEAMA-882', 'http://quarry.example/news/levy?gclid=Cj0&mc_cid=a1&mc_eid=b2&id=7', 'Quarry levy', 4, 2 );
+		$this->extracted( 'linear:KITE-882', 'http://quarry.example/news/levy?gclid=Cj0&mc_cid=a1&mc_eid=b2&id=7', 'Quarry levy', 4, 2 );
 
 		$this->assertSame(
 			[
 				[ 'cluster_joined', 'feed:quarry-41', 'feed:quarry-41' ],
-				[ 'cluster_joined', 'linear:TEAMA-882', 'feed:quarry-41' ],
+				[ 'cluster_joined', 'linear:KITE-882', 'feed:quarry-41' ],
 				[ 'cluster_superseded', 'feed:quarry-41', 'feed:quarry-41', 'feed:quarry-41', 8.0 ],
 			],
 			$this->decisions()
@@ -141,7 +141,7 @@ final class DeduperNodeTest extends TestCase {
 
 	/** A fresh deduper finds an earlier copy, its cluster and its canonical in the projection. */
 	public function test_a_miss_reads_the_cluster_from_the_projection(): void {
-		$url = 'https://lion.example/grant';
+		$url = 'https://owl.example/grant';
 		$this->seed(
 			self::recorded( 'feed:grant-1', $url, 'Grant one', 2, 1, self::TS - 9 * self::DAY ),
 			self::recorded( 'feed:grant-2', $url, 'Grant two', 7, 5, self::TS - 4 * self::DAY ),
@@ -153,7 +153,7 @@ final class DeduperNodeTest extends TestCase {
 			]
 		);
 
-		$this->extracted( 'feed:grant-4', 'https://www.lion.example/grant?utm_medium=email', 'Grant four', 8, 5 );
+		$this->extracted( 'feed:grant-4', 'https://www.owl.example/grant?utm_medium=email', 'Grant four', 8, 5 );
 		$this->extracted( 'feed:grant-5', 'https://elsewhere.example/y', 'Grant elsewhere again', 9, 9 );
 
 		$this->assertSame(
@@ -220,13 +220,13 @@ final class DeduperNodeTest extends TestCase {
 
 	/** On a miss, a copy at the same URL wins over a nearer one sharing only the title. */
 	public function test_the_url_wins_over_a_nearer_title_on_a_miss(): void {
-		$title = 'Partner Org 3 names its newest local grantees';
+		$title = 'Tern Forward names its newest local grantees';
 		$this->seed(
-			self::recorded( 'feed:pf-url', 'https://partnerorg3.example/grantees', 'Grantees', 2, 3, self::TS - 8 * self::DAY ),
+			self::recorded( 'feed:pf-url', 'https://ternforward.example/grantees', 'Grantees', 2, 3, self::TS - 8 * self::DAY ),
 			self::recorded( 'feed:pf-title', 'https://mesa.example/partner-org-3', $title, 6, 6, self::TS - self::DAY )
 		);
 
-		$this->extracted( 'feed:pf-new', 'https://partnerorg3.example/grantees', $title, 1, 1 );
+		$this->extracted( 'feed:pf-new', 'https://ternforward.example/grantees', $title, 1, 1 );
 
 		$this->assertSame(
 			[
@@ -243,8 +243,8 @@ final class DeduperNodeTest extends TestCase {
 	 * cluster though its title now meets a nearer copy, and only re-ranks.
 	 */
 	public function test_a_placed_item_is_never_re_placed(): void {
-		$url   = 'https://partnerorg2.example/fellows';
-		$title = 'PartnerOrg2 names the next class of local news fellows';
+		$url   = 'https://osprey.example/fellows';
+		$title = 'Osprey names the next class of local news fellows';
 		$this->extracted( 'feed:fel-a', $url, 'Fellows', 4, 4, self::TS - 6 * self::DAY );
 		$this->extracted( 'feed:fel-t', 'https://other.example/fellows', $title, 2, 2, self::TS - self::DAY );
 		$this->extracted( 'feed:fel-b', $url, $title, 3, 3 );
@@ -266,8 +266,8 @@ final class DeduperNodeTest extends TestCase {
 
 	/** On a miss, an item whose own clusters row the projection holds stays in that cluster. */
 	public function test_a_projected_placed_item_is_never_re_placed(): void {
-		$url   = 'https://partnerorg2.example/fellows';
-		$title = 'PartnerOrg2 names the next class of local news fellows';
+		$url   = 'https://osprey.example/fellows';
+		$title = 'Osprey names the next class of local news fellows';
 		$this->seed(
 			self::recorded( 'feed:fel-a', $url, 'Fellows', 4, 4, self::TS - 6 * self::DAY ),
 			self::recorded( 'feed:fel-t', 'https://other.example/fellows', $title, 2, 2, self::TS - self::DAY ),
@@ -282,19 +282,19 @@ final class DeduperNodeTest extends TestCase {
 
 	/** An undated item is timed by its retrieval, in the LRU and in the projection. */
 	public function test_an_undated_item_is_timed_by_its_retrieval(): void {
-		$this->extracted( 'linear:TEAMA-1', 'https://linear.example/news-1', 'Undated', 2, 2, 0, self::TS - 3 * self::DAY );
-		$this->extracted( 'feed:dated-1', 'https://linear.example/news-1', 'Dated', 1, 1 );
-		$this->seed( self::recorded( 'linear:TEAMA-2', 'https://linear.example/news-2', 'Undated two', 5, 5, 0, self::TS - 2 * self::DAY ) );
-		$this->extracted( 'feed:dated-2', 'https://linear.example/news-2', 'Dated two', 1, 1 );
+		$this->extracted( 'linear:KITE-1', 'https://linear.example/kite-1', 'Undated', 2, 2, 0, self::TS - 3 * self::DAY );
+		$this->extracted( 'feed:dated-1', 'https://linear.example/kite-1', 'Dated', 1, 1 );
+		$this->seed( self::recorded( 'linear:KITE-2', 'https://linear.example/kite-2', 'Undated two', 5, 5, 0, self::TS - 2 * self::DAY ) );
+		$this->extracted( 'feed:dated-2', 'https://linear.example/kite-2', 'Dated two', 1, 1 );
 
 		$this->assertSame(
 			[
-				[ 'cluster_joined', 'linear:TEAMA-1', 'linear:TEAMA-1' ],
-				[ 'cluster_joined', 'feed:dated-1', 'linear:TEAMA-1' ],
-				[ 'cluster_superseded', 'linear:TEAMA-1', 'linear:TEAMA-1', 'linear:TEAMA-1', 4.0 ],
-				[ 'cluster_joined', 'linear:TEAMA-2', 'linear:TEAMA-2' ],
-				[ 'cluster_joined', 'feed:dated-2', 'linear:TEAMA-2' ],
-				[ 'cluster_superseded', 'linear:TEAMA-2', 'linear:TEAMA-2', 'linear:TEAMA-2', 10.0 ],
+				[ 'cluster_joined', 'linear:KITE-1', 'linear:KITE-1' ],
+				[ 'cluster_joined', 'feed:dated-1', 'linear:KITE-1' ],
+				[ 'cluster_superseded', 'linear:KITE-1', 'linear:KITE-1', 'linear:KITE-1', 4.0 ],
+				[ 'cluster_joined', 'linear:KITE-2', 'linear:KITE-2' ],
+				[ 'cluster_joined', 'feed:dated-2', 'linear:KITE-2' ],
+				[ 'cluster_superseded', 'linear:KITE-2', 'linear:KITE-2', 'linear:KITE-2', 10.0 ],
 			],
 			$this->decisions()
 		);
@@ -302,7 +302,7 @@ final class DeduperNodeTest extends TestCase {
 
 	/** The lookup checkpoints with the cursor, so a respawned deduper with no projection still meets a remembered copy. */
 	public function test_the_lookup_survives_a_respawn_through_its_snapshot(): void {
-		$url = 'https://lion.example/summit';
+		$url = 'https://owl.example/summit';
 		$this->extracted( 'feed:sum-1', $url, 'Summit', 3, 3 );
 		$this->extracted( 'feed:sum-2', $url, 'Summit two', 4, 4 );
 		$state = \json_decode( (string) \json_encode( $this->deduper->save_state() ), true );
@@ -365,23 +365,23 @@ final class DeduperNodeTest extends TestCase {
 
 	/** A founder whose URL a later cluster took stays in its own cluster when re-delivered. */
 	public function test_a_re_delivered_founder_stays_in_its_own_cluster(): void {
-		$url   = 'https://lion.example/award';
-		$title = 'Partner Org 24 names its newest award winners';
-		$this->extracted( 'feed:lion-a', $url, $title, 3, 3, self::TS );
-		$this->extracted( 'feed:lion-b', 'https://other.example/lion', $title, 1, 1, self::TS + self::DAY );
-		$this->extracted( 'feed:lion-c', $url, 'Lion C', 2, 2, self::TS + 20 * self::DAY );
-		$this->extracted( 'feed:lion-d', $url, 'Lion D', 1, 2, self::TS + 10 * self::DAY );
+		$url   = 'https://owl.example/award';
+		$title = 'Owl Publishers names its newest award winners';
+		$this->extracted( 'feed:owl-a', $url, $title, 3, 3, self::TS );
+		$this->extracted( 'feed:owl-b', 'https://other.example/owl', $title, 1, 1, self::TS + self::DAY );
+		$this->extracted( 'feed:owl-c', $url, 'Owl C', 2, 2, self::TS + 20 * self::DAY );
+		$this->extracted( 'feed:owl-d', $url, 'Owl D', 1, 2, self::TS + 10 * self::DAY );
 		$this->seed(
-			self::recorded( 'feed:lion-a', $url, $title, 3, 3, self::TS ),
-			self::recorded( 'feed:lion-b', 'https://other.example/lion', $title, 1, 1, self::TS + self::DAY ),
-			self::recorded( 'feed:lion-c', $url, 'Lion C', 2, 2, self::TS + 20 * self::DAY ),
-			self::recorded( 'feed:lion-d', $url, 'Lion D', 1, 2, self::TS + 10 * self::DAY ),
+			self::recorded( 'feed:owl-a', $url, $title, 3, 3, self::TS ),
+			self::recorded( 'feed:owl-b', 'https://other.example/owl', $title, 1, 1, self::TS + self::DAY ),
+			self::recorded( 'feed:owl-c', $url, 'Owl C', 2, 2, self::TS + 20 * self::DAY ),
+			self::recorded( 'feed:owl-d', $url, 'Owl D', 1, 2, self::TS + 10 * self::DAY ),
 			$this->written()
 		);
 		$placed = $this->decisions();
-		$this->assertSame( [ [ 'feed:lion-a' ], [ 'feed:lion-a' ], [ 'feed:lion-c' ], [ 'feed:lion-c' ] ], self::graph_rows( 'clusters', 'item_key', 'cluster_key' ) );
+		$this->assertSame( [ [ 'feed:owl-a' ], [ 'feed:owl-a' ], [ 'feed:owl-c' ], [ 'feed:owl-c' ] ], self::graph_rows( 'clusters', 'item_key', 'cluster_key' ) );
 
-		$this->extracted( 'feed:lion-a', $url, $title, 3, 3, self::TS );
+		$this->extracted( 'feed:owl-a', $url, $title, 3, 3, self::TS );
 
 		$this->assertSame( $placed, $this->decisions() );
 	}
@@ -434,7 +434,7 @@ final class DeduperNodeTest extends TestCase {
 	public function test_a_full_lookup_checkpoints_compactly(): void {
 		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): never => throw new Table_Unavailable( 'no intel-graph in this test' );
 		for ( $i = 0; $i < 1666; $i++ ) {
-			$this->extracted( "github:Automattic/newspack-plugin#{$i}", "https://www.harborgazette.example/2026/10/county-commission-approves-new-budget-{$i}/", "County commission approves the new budget after a long night number {$i}", 7, 5, self::TS + $i );
+			$this->extracted( "github:example/plugin#{$i}", "https://www.harborgazette.example/2026/10/county-commission-approves-new-budget-{$i}/", "County commission approves the new budget after a long night number {$i}", 7, 5, self::TS + $i );
 		}
 		$state = $this->deduper->save_state();
 		$count = 0;
@@ -442,7 +442,7 @@ final class DeduperNodeTest extends TestCase {
 		foreach ( $state['seen']['buckets'] as $bucket ) {
 			foreach ( $bucket as $key => $entry ) {
 				++$count;
-				if ( 1 !== \preg_match( '/^([0-9a-f]{16}|cluster:github:Automattic\/newspack-plugin#\d+)$/', (string) $key ) || ! \array_is_list( $entry ) ) {
+				if ( 1 !== \preg_match( '/^([0-9a-f]{16}|cluster:github:example\/plugin#\d+)$/', (string) $key ) || ! \array_is_list( $entry ) ) {
 					$odd[] = $key;
 				}
 			}
@@ -620,10 +620,10 @@ final class DeduperNodeTest extends TestCase {
 
 	/** Each join carries its member's retrieval, and each supersession its canonical's, from the LRU or the projection. */
 	public function test_each_decision_carries_its_items_retrieval(): void {
-		$this->seed( self::recorded( 'feed:kept-1', 'https://lion.example/kept', 'Kept one', 1, 1, self::TS - self::DAY, self::TS - 700 * self::DAY ) );
-		$this->extracted( 'feed:kept-2', 'https://lion.example/kept', 'Kept two', 1, 0, self::TS, self::TS + 11 );
-		$this->extracted( 'feed:lru-1', 'https://lion.example/lru', 'Lru one', 3, 3, self::TS, self::TS + 22 );
-		$this->extracted( 'feed:lru-2', 'https://lion.example/lru', 'Lru two', 1, 1, self::TS, self::TS + 33 );
+		$this->seed( self::recorded( 'feed:kept-1', 'https://owl.example/kept', 'Kept one', 1, 1, self::TS - self::DAY, self::TS - 700 * self::DAY ) );
+		$this->extracted( 'feed:kept-2', 'https://owl.example/kept', 'Kept two', 1, 0, self::TS, self::TS + 11 );
+		$this->extracted( 'feed:lru-1', 'https://owl.example/lru', 'Lru one', 3, 3, self::TS, self::TS + 22 );
+		$this->extracted( 'feed:lru-2', 'https://owl.example/lru', 'Lru two', 1, 1, self::TS, self::TS + 33 );
 
 		$this->assertSame(
 			[

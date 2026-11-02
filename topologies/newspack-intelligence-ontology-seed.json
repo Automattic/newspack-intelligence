@@ -1,0 +1,91 @@
+{
+	"entities": {
+		"topic": {
+			"local-news": {
+				"name": "Local news",
+				"names": {
+					"alias": [
+						"Community news",
+						"Local journalism"
+					]
+				}
+			},
+			"newsletters": {
+				"name": "Newsletters",
+				"names": {
+					"alias": [
+						"Email newsletters"
+					]
+				}
+			},
+			"elections": {
+				"name": "Elections",
+				"names": {
+					"alias": [
+						"Election coverage"
+					]
+				}
+			},
+			"reader-revenue": {
+				"name": "Reader revenue",
+				"names": {
+					"alias": [
+						"Memberships",
+						"Subscriptions"
+					]
+				}
+			}
+		},
+		"organization": {
+			"example-press-fund": {
+				"name": "Example Press Fund",
+				"identifiers": {
+					"domain": [
+						"pressfund.example"
+					]
+				},
+				"roles": [
+					"funder"
+				]
+			},
+			"example-newsroom-network": {
+				"name": "Example Newsroom Network",
+				"names": {
+					"acronym": [
+						"ENN"
+					]
+				},
+				"identifiers": {
+					"domain": [
+						"newsroomnetwork.example"
+					]
+				},
+				"roles": [
+					"industry_body"
+				]
+			},
+			"example-analytics": {
+				"name": "Example Analytics",
+				"identifiers": {
+					"domain": [
+						"analytics.example"
+					]
+				},
+				"roles": [
+					"partner"
+				]
+			}
+		}
+	},
+	"lenses": {
+		"overview": {
+			"name": "Overview",
+			"description": "What every source recorded over the last month.",
+			"filters": {
+				"days": 30,
+				"by": "kind",
+				"bucket": "week"
+			}
+		}
+	}
+}

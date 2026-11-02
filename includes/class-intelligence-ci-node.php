@@ -77,7 +77,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 	 * `health`, at read, over `Intelligence_Health`; the fifteen curation
 	 * verbs, each over `Graph_Curation` and seeing only the
 	 * entities and items a read caller sees; `seed_ontology`, at tune, over
-	 * `Ontology_Seed::seed()`; and `fetch_now` and `reresolve`, at manage,
+	 * `Ontology_Seed::load()->seed()`; and `fetch_now` and `reresolve`, at manage,
 	 * each sending to every live worker through `Worker_Route`.
 	 *
 	 * @api Used by the substrate to build the dispatch table and the catalog.
@@ -228,7 +228,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						Graph_Curation::save_lens( ... )
 					),
 					$verb( $tune, 'remove_lens', 'Remove a lens: { ok, event_id }.', [ $key( 'The lens key.' ) ], Graph_Curation::remove_lens( ... ) ),
-					$verb( $tune, 'seed_ontology', 'Write the seed ontology for the keys the projection lacks, refused while the projector has not read every ontology change: { ok, events, created, present }.', [], static fn (): array => [ 'ok' => true ] + Ontology_Seed::seed() ),
+					$verb( $tune, 'seed_ontology', 'Write the seed ontology the topology dirs resolve for the keys the projection lacks, refused while the projector has not read every ontology change: { ok, events, created, present }.', [], static fn (): array => [ 'ok' => true ] + Ontology_Seed::load()->seed() ),
 					[
 						'name'        => 'fetch_now',
 						'capability'  => Capabilities::MANAGE,

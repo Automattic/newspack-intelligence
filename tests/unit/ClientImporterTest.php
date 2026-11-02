@@ -32,7 +32,7 @@ final class ClientImporterTest extends TestCase {
 	public function test_creates_new_publishers(): void {
 		$roster = new Fake_Client_Roster();
 		$result = ( new Client_Importer( $roster ) )->import(
-			$this->rows( [ '1', 'a.com', '2020-01-01' ], [ '2', 'b.com', '2021-01-01' ] ),
+			$this->rows( [ '1', 'a.example', '2020-01-01' ], [ '2', 'b.example', '2021-01-01' ] ),
 			'2026-06-30'
 		);
 		$this->assertSame( 2, $result['created'] );
@@ -42,18 +42,18 @@ final class ClientImporterTest extends TestCase {
 
 	public function test_upsert_refreshes_atomic_fields(): void {
 		$roster               = new Fake_Client_Roster();
-		$roster->store['1']   = [ 'domain_name' => 'old.com', 'status' => 'active', 'since' => '2026-01-01' ];
-		$result               = ( new Client_Importer( $roster ) )->import( $this->rows( [ '1', 'new.com', '2020-01-01' ] ), '2026-06-30' );
+		$roster->store['1']   = [ 'domain_name' => 'old.example', 'status' => 'active', 'since' => '2026-01-01' ];
+		$result               = ( new Client_Importer( $roster ) )->import( $this->rows( [ '1', 'new.example', '2020-01-01' ] ), '2026-06-30' );
 
 		$this->assertSame( 1, $result['updated'] );
-		$this->assertSame( 'new.com', $roster->store['1']['domain_name'] );
+		$this->assertSame( 'new.example', $roster->store['1']['domain_name'] );
 		$this->assertSame( '2026-01-01', $roster->store['1']['since'] );
 	}
 
 	public function test_marks_churned_when_absent_from_csv(): void {
 		$roster             = new Fake_Client_Roster();
-		$roster->store['9'] = [ 'domain_name' => 'gone.com', 'status' => 'active', 'since' => '2025-01-01' ];
-		$result             = ( new Client_Importer( $roster ) )->import( $this->rows( [ '1', 'a.com', '2020-01-01' ] ), '2026-06-30' );
+		$roster->store['9'] = [ 'domain_name' => 'gone.example', 'status' => 'active', 'since' => '2025-01-01' ];
+		$result             = ( new Client_Importer( $roster ) )->import( $this->rows( [ '1', 'a.example', '2020-01-01' ] ), '2026-06-30' );
 
 		$this->assertSame( 1, $result['churned'] );
 		$this->assertSame( 'churned', $roster->store['9']['status'] );
@@ -62,8 +62,8 @@ final class ClientImporterTest extends TestCase {
 
 	public function test_reactivates_returning_publisher(): void {
 		$roster             = new Fake_Client_Roster();
-		$roster->store['9'] = [ 'domain_name' => 'gone.com', 'status' => 'churned', 'since' => '2025-12-01' ];
-		$result             = ( new Client_Importer( $roster ) )->import( $this->rows( [ '9', 'gone.com', '2019-01-01' ] ), '2026-06-30' );
+		$roster->store['9'] = [ 'domain_name' => 'gone.example', 'status' => 'churned', 'since' => '2025-12-01' ];
+		$result             = ( new Client_Importer( $roster ) )->import( $this->rows( [ '9', 'gone.example', '2019-01-01' ] ), '2026-06-30' );
 
 		$this->assertSame( 1, $result['reactivated'] );
 		$this->assertSame( 0, $result['updated'] ); // Disjoint from `updated`: reactivation is not also counted as an update.
@@ -89,7 +89,7 @@ final class ClientImporterTest extends TestCase {
 	public function test_idempotent_second_run_marks_nothing_churned(): void {
 		$roster   = new Fake_Client_Roster();
 		$importer = new Client_Importer( $roster );
-		$rows     = $this->rows( [ '1', 'a.com', '2020-01-01' ] );
+		$rows     = $this->rows( [ '1', 'a.example', '2020-01-01' ] );
 		$importer->import( $rows, '2026-06-30' );
 		$result = $importer->import( $rows, '2026-07-01' );
 		$this->assertSame( 0, $result['churned'] );

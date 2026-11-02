@@ -32,7 +32,7 @@ final class ClientsCliCommandTest extends TestCase {
 	}
 
 	public function test_import_reads_file_and_populates_repo(): void {
-		$csv = "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"1\",\"2020-01-01\",\"a.com\"\n\"2\",\"2021-01-01\",\"b.com\"\n";
+		$csv = "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"1\",\"2020-01-01\",\"a.example\"\n\"2\",\"2021-01-01\",\"b.example\"\n";
 		$tmp = \tempnam( \sys_get_temp_dir(), 'clients' );
 		\file_put_contents( $tmp, $csv );
 

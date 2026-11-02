@@ -110,14 +110,14 @@ final class ReresolverNodeTest extends TestCase {
 	public function test_an_identifier_searches_urls(): void {
 		$this->seed(
 			self::items(
-				[ 'feed:url-1', 'An award', '', 'https://www.harbor_gazette.org/2026/award', 1793100000 ],
-				[ 'feed:url-2', 'A wildcard lookalike', '', 'https://harborxgazette.org/a', 1793200000 ],
-				[ 'feed:url-3', 'Names harbor_gazette.org in text', 'harbor_gazette.org', 'https://news.example/x', 1793300000 ],
+				[ 'feed:url-1', 'An award', '', 'https://www.harbor_gazette.example/2026/award', 1793100000 ],
+				[ 'feed:url-2', 'A wildcard lookalike', '', 'https://harborxgazette.example/a', 1793200000 ],
+				[ 'feed:url-3', 'Names harbor_gazette.example in text', 'harbor_gazette.example', 'https://news.example/x', 1793300000 ],
 				[ 'feed:url-4', 'A post', '', 'https://twitter.com/HarbGazNews/status/41', 1793400000 ]
 			)
 		);
 
-		$this->signal( 'identifier_added', [ 'entity_key' => self::GAZETTE, 'kind' => 'domain', 'value' => 'WWW.Harbor_Gazette.org' ] );
+		$this->signal( 'identifier_added', [ 'entity_key' => self::GAZETTE, 'kind' => 'domain', 'value' => 'WWW.Harbor_Gazette.example' ] );
 		$this->signal( 'identifier_added', [ 'entity_key' => self::GAZETTE, 'kind' => 'x_handle', 'value' => 'harbgaznews' ] );
 		$this->sweep_at( self::NOW + Reresolver_Node::SWEEP_INTERVAL_S );
 		$this->assertSame( [ 'feed:url-1' ], $this->sent_keys() );
@@ -141,17 +141,17 @@ final class ReresolverNodeTest extends TestCase {
 		$this->assertSame( [ 'feed:phrase-1' ], $this->sent_keys() );
 	}
 
-	/** An acronym matches only in its own case, as the resolver links it: `ORG3` never sweeps an item spelling only "lion". */
+	/** An acronym matches only in its own case, as the resolver links it: `OWL` never sweeps an item spelling only "owl". */
 	public function test_an_acronym_sweeps_only_its_own_case(): void {
 		$this->seed(
 			self::items(
-				[ 'feed:acronym-1', 'ORG3 members meet', '', 'https://news.example/1', 1793100000 ],
-				[ 'feed:acronym-2', 'A lion escapes the zoo', 'The Lion was found.', 'https://news.example/2', 1793200000 ],
-				[ 'feed:acronym-3', 'Members meet', 'Hosted by ORG3 in June.', 'https://news.example/3', 1793300000 ]
+				[ 'feed:acronym-1', 'OWL members meet', '', 'https://news.example/1', 1793100000 ],
+				[ 'feed:acronym-2', 'An owl escapes the zoo', 'The Owl was found.', 'https://news.example/2', 1793200000 ],
+				[ 'feed:acronym-3', 'Members meet', 'Hosted by OWL in June.', 'https://news.example/3', 1793300000 ]
 			)
 		);
 
-		$this->signal( 'name_added', [ 'entity_key' => 'organization:partner-org-24', 'kind' => 'acronym', 'value' => 'ORG3' ] );
+		$this->signal( 'name_added', [ 'entity_key' => 'organization:owl-publishers', 'kind' => 'acronym', 'value' => 'OWL' ] );
 		$this->sweep_at( self::NOW + Reresolver_Node::SWEEP_INTERVAL_S );
 
 		$this->assertSame( [ 'feed:acronym-3', 'feed:acronym-1' ], $this->sent_keys() );
@@ -224,11 +224,11 @@ final class ReresolverNodeTest extends TestCase {
 	/** Accepting an entity searches every name and identifier the projection holds for it. */
 	public function test_an_accepted_entity_reresolves_its_names_and_identifiers(): void {
 		$this->seed(
-			self::proposed( 'organization:quarry-ledger', 'Quarry Ledger', [ 'acronym' => [ 'QL' ], 'domain' => [ 'quarryledger.com' ] ] ),
+			self::proposed( 'organization:quarry-ledger', 'Quarry Ledger', [ 'acronym' => [ 'QL' ], 'domain' => [ 'quarryledger.example' ] ] ),
 			self::items(
 				[ 'feed:accept-1', 'Quarry Ledger wins', '', 'https://news.example/1', 1793100000 ],
 				[ 'feed:accept-2', 'QL hires', '', 'https://news.example/2', 1793200000 ],
-				[ 'feed:accept-3', 'A story', '', 'https://quarryledger.com/3', 1793300000 ],
+				[ 'feed:accept-3', 'A story', '', 'https://quarryledger.example/3', 1793300000 ],
 				[ 'feed:accept-4', 'Ledger of quarries', '', 'https://news.example/4', 1793400000 ],
 				[ 'feed:accept-5', 'Notes on ql syntax', '', 'https://news.example/5', 1793500000 ]
 			)
@@ -347,24 +347,24 @@ final class ReresolverNodeTest extends TestCase {
 	public function test_identifiers_match_whole_hosts_and_path_segments(): void {
 		$this->seed(
 			self::items(
-				[ 'feed:anchor-host', 'A', '', 'https://ap.org/news/1', 1793100001 ],
-				[ 'feed:anchor-sub', 'B', '', 'https://apnews.ap.org', 1793100002 ],
-				[ 'feed:anchor-snap', 'C', '', 'https://snap.org/news/1', 1793100003 ],
-				[ 'feed:anchor-query', 'D', '', 'https://news.example/x?ref=ap.org', 1793100004 ],
+				[ 'feed:anchor-host', 'A', '', 'https://ap.example/news/1', 1793100001 ],
+				[ 'feed:anchor-sub', 'B', '', 'https://apnews.ap.example', 1793100002 ],
+				[ 'feed:anchor-snap', 'C', '', 'https://snap.example/news/1', 1793100003 ],
+				[ 'feed:anchor-query', 'D', '', 'https://news.example/x?ref=ap.example', 1793100004 ],
 				[ 'feed:anchor-handle', 'E', '', 'https://x.com/abc?s=20', 1793100005 ],
 				[ 'feed:anchor-handle-longer', 'F', '', 'https://x.com/abcxyz', 1793100006 ],
-				[ 'feed:anchor-org', 'G', '', 'https://github.com/newspack#readme', 1793100007 ],
-				[ 'feed:anchor-org-longer', 'H', '', 'https://github.com/newspack-other/repo', 1793100008 ],
+				[ 'feed:anchor-org', 'G', '', 'https://github.com/heron-example#readme', 1793100007 ],
+				[ 'feed:anchor-org-longer', 'H', '', 'https://github.com/heron-example-other/repo', 1793100008 ],
 				[ 'feed:anchor-dropbox', 'I', '', 'https://dropbox.com/abc', 1793100009 ],
-				[ 'feed:anchor-port', 'J', '', 'https://ap.org:8443/x', 1793100010 ],
-				[ 'feed:anchor-host-query', 'K', '', 'https://ap.org?x', 1793100011 ],
-				[ 'feed:anchor-host-fragment', 'L', '', 'https://ap.org#y', 1793100012 ]
+				[ 'feed:anchor-port', 'J', '', 'https://ap.example:8443/x', 1793100010 ],
+				[ 'feed:anchor-host-query', 'K', '', 'https://ap.example?x', 1793100011 ],
+				[ 'feed:anchor-host-fragment', 'L', '', 'https://ap.example#y', 1793100012 ]
 			)
 		);
 
-		$this->signal( 'identifier_added', [ 'entity_key' => self::GAZETTE, 'kind' => 'domain', 'value' => 'ap.org' ] );
+		$this->signal( 'identifier_added', [ 'entity_key' => self::GAZETTE, 'kind' => 'domain', 'value' => 'ap.example' ] );
 		$this->signal( 'identifier_added', [ 'entity_key' => self::GAZETTE, 'kind' => 'x_handle', 'value' => 'abc' ] );
-		$this->signal( 'identifier_added', [ 'entity_key' => self::GAZETTE, 'kind' => 'github_org', 'value' => 'newspack' ] );
+		$this->signal( 'identifier_added', [ 'entity_key' => self::GAZETTE, 'kind' => 'github_org', 'value' => 'heron-example' ] );
 		for ( $tick = 0; $tick < 3; $tick++ ) {
 			$this->sweep_at( self::NOW + Reresolver_Node::SWEEP_INTERVAL_S + $tick );
 		}

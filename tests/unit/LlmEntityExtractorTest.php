@@ -28,17 +28,17 @@ final class LlmEntityExtractorTest extends TestCase {
 	}
 
 	public function test_parses_clean_json(): void {
-		$this->respond( '{"orgs":["The Publication 1"],"people":["Jane Doe"],"locations":["Austin"]}' );
+		$this->respond( '{"orgs":["The Prairie Tribune"],"people":["Jane Doe"],"locations":["Millbrook"]}' );
 		$out = $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] );
-		$this->assertSame( [ 'The Publication 1' ], $out['orgs'] );
+		$this->assertSame( [ 'The Prairie Tribune' ], $out['orgs'] );
 		$this->assertSame( [ 'Jane Doe' ], $out['people'] );
-		$this->assertSame( [ 'Austin' ], $out['locations'] );
+		$this->assertSame( [ 'Millbrook' ], $out['locations'] );
 	}
 
 	public function test_parses_json_wrapped_in_prose_or_fences(): void {
-		$this->respond( "Here you go:\n```json\n{\"orgs\":[\"Publication3\"],\"people\":[],\"locations\":[]}\n```" );
+		$this->respond( "Here you go:\n```json\n{\"orgs\":[\"PrairieFile\"],\"people\":[],\"locations\":[]}\n```" );
 		$out = $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] );
-		$this->assertSame( [ 'Publication3' ], $out['orgs'] );
+		$this->assertSame( [ 'PrairieFile' ], $out['orgs'] );
 	}
 
 	/** A reply that does not parse is no answer, told apart from an empty one. */
@@ -69,8 +69,8 @@ final class LlmEntityExtractorTest extends TestCase {
 		return [
 			'an empty object'  => [ '{}' ],
 			'an error object'  => [ '{"error":"rate limited for 41s"}' ],
-			'a scalar orgs'    => [ '{"orgs":"The Publication 1"}' ],
-			'an object orgs'   => [ '{"orgs":{"first":"The Publication 1"}}' ],
+			'a scalar orgs'    => [ '{"orgs":"The Prairie Tribune"}' ],
+			'an object orgs'   => [ '{"orgs":{"first":"The Prairie Tribune"}}' ],
 		];
 	}
 

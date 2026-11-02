@@ -81,7 +81,13 @@ class Extractor_Node extends Node {
 	/** The Delay a failed call's retry parks on. */
 	protected string $later = '';
 
-	/** Wire the sibling `:config` interpreter for the LLM verbs. */
+	/** Who the prompt is framed for, set via set_audience; '' names no one. */
+	protected string $audience = '';
+
+	/** @var list<string> Relevance-profile lines add_profile registered and remove_profile left, in call order. */
+	protected array $profiles = [];
+
+	/** Wire the sibling `:config` interpreter for the LLM and prompt verbs. */
 	public function __construct() {
 		parent::__construct();
 		$this->auto_wire_interpreter();
@@ -137,7 +143,7 @@ class Extractor_Node extends Node {
 		if ( null !== $client ) {
 			try {
 				$names  = \array_keys( $topics );
-				$parsed = Prompts::parse_extract( $client->chat( Prompts::extract( $item, $names, $this->relevance_profile(), $this->audience ), [ 'max_tokens' => 800, 'temperature' => 0.2 ] ), $names );
+				$parsed = Prompts::parse_extract( $client->chat( Prompts::extract( $item, $names, \implode( "\n", $this->profiles ), $this->audience ), [ 'max_tokens' => 800, 'temperature' => 0.2 ] ), $names );
 			} catch ( Worker_Should_Stop $stop ) {
 				throw $stop;
 			} catch ( \RuntimeException $e ) {
@@ -304,6 +310,15 @@ class Extractor_Node extends Node {
 		return 300;
 	}
 
+	/**
+	 * The `set_audience` verb's entry point, which the declared setter calls.
+	 *
+	 * @param string $audience Who the prompt is framed for.
+	 */
+	public function set_audience( string $audience ): void {
+		$this->audience = $audience;
+	}
+
 	/** @return array<string,mixed> */
 	public static function node_schema(): array {
 		return [
@@ -313,7 +328,18 @@ class Extractor_Node extends Node {
 				[ 'name' => 'writer', 'type' => 'node_name', 'required' => true, 'description' => 'The event writer every extraction and claim is addressed to: intel:writer.' ],
 				[ 'name' => 'later', 'type' => 'node_name', 'required' => true, 'description' => 'The Delay a failed call\'s retry parks on: intel:later.' ],
 			],
-			'commands'     => self::llm_config_commands(),
+			'commands'     => [
+				...self::llm_config_commands(),
+				[
+					'name'        => 'set_audience',
+					'description' => 'Set who the prompt is framed for: <audience>.',
+					'args'        => [
+						[ 'name' => 'audience', 'type' => 'string', 'required' => true ],
+					],
+					'setter'      => 'audience',
+				],
+				...self::list_verbs( 'profile', 'profiles', [ 'name' => 'text', 'type' => 'string', 'required' => true, 'variadic' => true ], 'Add a relevance-profile line used to score items: <text>.' ),
+			],
 			'accepts_fill' => true,
 			'has_target'   => true,
 		];

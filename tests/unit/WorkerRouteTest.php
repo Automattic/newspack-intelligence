@@ -82,7 +82,7 @@ final class WorkerRouteTest extends TestCase {
 		$base = $this->make_temp_dir( 'worker-route-append-' );
 		self::live_worker( $base, 'newspack-intelligence.p2' );
 		self::live_worker( $base, 'newspack-intelligence.p6' );
-		$events = [ [ 'event' => 'item_purged', 'item_key' => 'linear:WPCOM-4410' ], [ 'event' => 'item_purged', 'item_key' => 'linear:WPCOM-4411' ] ];
+		$events = [ [ 'event' => 'item_purged', 'item_key' => 'linear:WREN-4410' ], [ 'event' => 'item_purged', 'item_key' => 'linear:WREN-4411' ] ];
 
 		$this->assertSame( 2, Worker_Route::append( $this->interpreter( 'route-asker-11' ), $base, 'intel:writer', $events ) );
 

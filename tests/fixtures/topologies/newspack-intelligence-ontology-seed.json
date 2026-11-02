@@ -1,0 +1,124 @@
+{
+	"entities": {
+		"topic": {
+			"tide-tables": {
+				"name": "Tide tables",
+				"names": {
+					"alias": [
+						"Tide charts",
+						"Tidal data"
+					]
+				}
+			},
+			"kite-repair": {
+				"name": "Kite repair",
+				"names": {
+					"acronym": [
+						"KR"
+					],
+					"alias": [
+						"Kite mending"
+					]
+				}
+			}
+		},
+		"organization": {
+			"heron-trust": {
+				"name": "Heron Trust",
+				"names": {
+					"alias": [
+						"The Heron Trust"
+					]
+				},
+				"identifiers": {
+					"domain": [
+						"herontrust.example"
+					]
+				},
+				"roles": [
+					"funder"
+				]
+			},
+			"quarry-guild": {
+				"name": "Quarry Guild",
+				"names": {
+					"acronym": [
+						"QG"
+					]
+				},
+				"identifiers": {
+					"domain": [
+						"quarryguild.example",
+						"qg.example"
+					]
+				},
+				"roles": [
+					"industry_body"
+				]
+			},
+			"marsh-press": {
+				"name": "Marsh Press",
+				"identifiers": {
+					"domain": [
+						"marshpress.example"
+					]
+				},
+				"roles": [
+					"partner",
+					"funder"
+				]
+			}
+		},
+		"product": {
+			"kite-ledger": {
+				"name": "Kite Ledger",
+				"identifiers": {
+					"github_repo": [
+						"heron-example/kite-ledger"
+					],
+					"linear_team": [
+						"KITE"
+					]
+				},
+				"roles": [
+					"newspack_product"
+				]
+			}
+		}
+	},
+	"lenses": {
+		"harbor-desk": {
+			"name": "Harbor desk",
+			"description": "What the harbor desk follows.",
+			"filters": {
+				"roles": [
+					"funder",
+					"partner"
+				],
+				"kinds": [
+					"funding",
+					"praise"
+				],
+				"days": 21,
+				"by": "topic",
+				"bucket": "day"
+			}
+		},
+		"kite-watch": {
+			"name": "Kite watch",
+			"description": "Releases and incidents.",
+			"filters": {
+				"sources": [
+					"github"
+				],
+				"kinds": [
+					"release",
+					"incident"
+				],
+				"days": 7,
+				"by": "kind",
+				"bucket": "week"
+			}
+		}
+	}
+}

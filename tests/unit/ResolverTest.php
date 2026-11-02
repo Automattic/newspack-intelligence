@@ -45,12 +45,12 @@ final class ResolverTest extends TestCase {
 	}
 
 	public function test_a_domain_url_links_its_entity_as_subject(): void {
-		$this->assertSame( [ self::link( self::MESA, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://mesa.example/story/1' ] )['links'] );
+		$this->assertSame( [ self::link( self::MESA, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://mesa-news.example/story/1' ] )['links'] );
 	}
 
 	public function test_a_www_or_subdomain_url_links_its_entity(): void {
-		$this->assertSame( [ self::link( self::MESA, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://www.mesa.example/x' ] )['links'] );
-		$this->assertSame( [ self::link( self::MESA, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://blog.mesa.example/x' ] )['links'] );
+		$this->assertSame( [ self::link( self::MESA, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://www.mesa-news.example/x' ] )['links'] );
+		$this->assertSame( [ self::link( self::MESA, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://blog.mesa-news.example/x' ] )['links'] );
 	}
 
 	public function test_a_client_domain_url_links_the_client_as_subject(): void {
@@ -80,7 +80,7 @@ final class ResolverTest extends TestCase {
 	public function test_a_domain_and_a_competing_name_both_link(): void {
 		$this->assertSame(
 			[ self::link( self::MESA, 'subject', 'identifier', 1.0 ), self::link( self::GAZETTE, 'mention', 'name', 1.0 ) ],
-			$this->golden( [ 'url' => 'https://mesa.example/x', 'body' => 'The Harbor Gazette also covered this.' ] )['links']
+			$this->golden( [ 'url' => 'https://mesa-news.example/x', 'body' => 'The Harbor Gazette also covered this.' ] )['links']
 		);
 	}
 
@@ -149,7 +149,7 @@ final class ResolverTest extends TestCase {
 		);
 	}
 
-	/** "kxzt.org" reduces to "kxzt", too short to tell from ordinary text. */
+	/** "kxzt.example" reduces to "kxzt", too short to tell from ordinary text. */
 	public function test_a_short_domain_stem_is_not_used(): void {
 		$this->assertSame( [], $this->golden( [ 'title' => 'Reported by KXZT staff', 'url' => 'https://random.example/x' ] )['links'] );
 	}
@@ -166,9 +166,9 @@ final class ResolverTest extends TestCase {
 	/** A body's href, logo filename or email address spells a domain, never a mention. */
 	public function test_a_domain_stem_ignores_the_body(): void {
 		$bodies = [
-			'See <a href="https://plainsfile.com/story-x">this piece</a>.',
+			'See <a href="https://plainsfile.example/story-x">this piece</a>.',
 			'<img src="/img/plainsfile-logo.png" alt="logo">',
-			'Send tips to tips@plainsfile.com today.',
+			'Send tips to tips@plainsfile.example today.',
 		];
 		foreach ( $bodies as $body ) {
 			$this->assertSame( [], $this->golden( [ 'title' => 'Media roundup', 'body' => $body, 'url' => 'https://random.example/x' ] )['links'], $body );
@@ -185,7 +185,7 @@ final class ResolverTest extends TestCase {
 		$group = 'organization:atomic-3011';
 		$this->assertSame(
 			[ self::link( $group, 'subject', 'domain_stem', 0.9 ) ],
-			$this->golden( [ 'title' => 'Harborviewmediagroup names an editor', 'url' => 'https://random.example/x' ], self::entity( $group, 'Atomic site 3011', [ 'domain' => [ 'newsroom.harborviewmediagroup.com' ] ] ) )['links']
+			$this->golden( [ 'title' => 'Harborviewmediagroup names an editor', 'url' => 'https://random.example/x' ], self::entity( $group, 'Atomic site 3011', [ 'domain' => [ 'newsroom.harborviewmediagroup.example' ] ] ) )['links']
 		);
 	}
 
@@ -204,7 +204,7 @@ final class ResolverTest extends TestCase {
 	}
 
 	public function test_a_domain_stem_reports_a_lower_confidence_than_an_identifier(): void {
-		$exact = $this->golden( [ 'url' => 'https://mesa.example/story/1' ] )['links'][0]['confidence'];
+		$exact = $this->golden( [ 'url' => 'https://mesa-news.example/story/1' ] )['links'][0]['confidence'];
 		$stem  = $this->golden( [ 'title' => 'PlainsFile wins a national award', 'url' => 'https://elsewhere.example/x' ] )['links'][0]['confidence'];
 		$this->assertSame( 1.0, $exact );
 		$this->assertLessThan( $exact, $stem );
@@ -212,42 +212,42 @@ final class ResolverTest extends TestCase {
 
 	/** A rejected entity links by neither its domain nor its name. */
 	public function test_a_rejected_entity_never_links(): void {
-		$this->assertSame( [], $this->golden( [ 'title' => 'Faded Gazette returns', 'url' => 'https://fadedgazette.com/x' ] )['links'] );
+		$this->assertSame( [], $this->golden( [ 'title' => 'Faded Gazette returns', 'url' => 'https://fadedgazette.example/x' ] )['links'] );
 	}
 
 	/** GitHub and Linear items resolve like any other item. */
 	public function test_github_and_linear_items_resolve_like_any_other(): void {
 		foreach ( [ 'github', 'linear' ] as $source ) {
-			$this->assertSame( [ self::link( self::MESA, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'source' => $source, 'url' => 'https://mesa.example/x' ] )['links'], $source );
+			$this->assertSame( [ self::link( self::MESA, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'source' => $source, 'url' => 'https://mesa-news.example/x' ] )['links'], $source );
 		}
 	}
 
 	public function test_a_repo_url_links_its_product(): void {
-		$product = 'product:newspack-plugin';
+		$product = 'product:example-plugin';
 		$this->assertSame(
 			[ self::link( $product, 'subject', 'identifier', 1.0 ) ],
-			$this->golden( [ 'source' => 'github', 'url' => 'https://github.com/Automattic/newspack-plugin/pull/4100', 'title' => 'Fix the checkout' ], self::entity( $product, 'Newspack Plugin', [ 'github_repo' => [ 'Automattic/newspack-plugin' ] ] ) )['links']
+			$this->golden( [ 'source' => 'github', 'url' => 'https://github.com/example/plugin/pull/4100', 'title' => 'Fix the checkout' ], self::entity( $product, 'Example Plugin', [ 'github_repo' => [ 'example/plugin' ] ] ) )['links']
 		);
 	}
 
 	/** An org URL links the org; a repo URL links its org and its repo. */
 	public function test_a_github_org_links_by_its_identifier(): void {
-		$org     = 'organization:automattic';
-		$product = 'product:newspack-plugin';
-		$entities = [ ...self::entity( $org, 'Automattic', [ 'github_org' => [ 'Automattic' ] ] ), ...self::entity( $product, 'Newspack Plugin', [ 'github_repo' => [ 'Automattic/newspack-plugin' ] ] ) ];
+		$org     = 'organization:example';
+		$product = 'product:example-plugin';
+		$entities = [ ...self::entity( $org, 'Example', [ 'github_org' => [ 'Example' ] ] ), ...self::entity( $product, 'Example Plugin', [ 'github_repo' => [ 'example/plugin' ] ] ) ];
 
-		$this->assertSame( [ self::link( $org, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://github.com/automattic' ], $entities )['links'] );
+		$this->assertSame( [ self::link( $org, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://github.com/example' ], $entities )['links'] );
 		$this->assertSame(
 			[ self::link( $org, 'subject', 'identifier', 1.0 ), self::link( $product, 'subject', 'identifier', 1.0 ) ],
-			$this->resolver()->resolve( self::item( [ 'url' => 'https://github.com/Automattic/newspack-plugin/issues/9' ] ), null )['links']
+			$this->resolver()->resolve( self::item( [ 'url' => 'https://github.com/Example/plugin/issues/9' ] ), null )['links']
 		);
 	}
 
 	public function test_a_linear_issue_links_its_team_product(): void {
-		$product = 'product:newspack';
+		$product = 'product:kite-ledger';
 		$this->assertSame(
 			[ self::link( $product, 'subject', 'identifier', 1.0 ) ],
-			$this->golden( [ 'source' => 'linear', 'url' => 'https://linear.app/a8c/issue/TEAMA-2731/churn-dates-from-hubspot', 'title' => 'Churn dates' ], self::entity( $product, 'Newspack', [ 'linear_team' => [ 'TEAMA' ] ] ) )['links']
+			$this->golden( [ 'source' => 'linear', 'url' => 'https://linear.app/heron-example/issue/KITE-2731/rotate-the-backups', 'title' => 'Rotate the backups' ], self::entity( $product, 'Kite Ledger', [ 'linear_team' => [ 'KITE' ] ] ) )['links']
 		);
 	}
 
@@ -327,7 +327,7 @@ final class ResolverTest extends TestCase {
 			[ self::link( 'organization:atomic-3014', 'subject', 'domain_stem', 0.9 ) ],
 			$this->resolve(
 				[ 'title' => 'Bay Shore Report cuts staff', 'url' => 'https://random.example/x' ],
-				self::entity( 'organization:atomic-3014', 'Atomic site 3014', [ 'domain' => [ 'bayshorereport.com' ] ] ),
+				self::entity( 'organization:atomic-3014', 'Atomic site 3014', [ 'domain' => [ 'bayshorereport.test' ] ] ),
 				self::entity( 'organization:shore-report', 'Shore Report' )
 			)['links']
 		);
@@ -348,10 +348,10 @@ final class ResolverTest extends TestCase {
 	/** Two names overlapping at equal length are one ambiguous span: each proposed. */
 	public function test_equal_length_overlapping_names_propose_both(): void {
 		$this->assertSame(
-			[ self::link( 'organization:publication-7-media', 'subject', 'name', 0.5, 'proposed' ), self::link( 'organization:times-media-group', 'subject', 'name', 0.5, 'proposed' ) ],
+			[ self::link( 'organization:bayport-times-media', 'subject', 'name', 0.5, 'proposed' ), self::link( 'organization:times-media-group', 'subject', 'name', 0.5, 'proposed' ) ],
 			$this->resolve(
-				[ 'title' => 'Publication 7 Media Group expands', 'url' => 'https://random.example/x' ],
-				self::entity( 'organization:publication-7-media', 'Publication 7 Media' ),
+				[ 'title' => 'Bayport Times Media Group expands', 'url' => 'https://random.example/x' ],
+				self::entity( 'organization:bayport-times-media', 'Bayport Times Media' ),
 				self::entity( 'organization:times-media-group', 'Times Media Group' )
 			)['links']
 		);
@@ -368,11 +368,11 @@ final class ResolverTest extends TestCase {
 	/** A name inside a longer name links only the longer one. */
 	public function test_the_longest_name_wins(): void {
 		$this->assertSame(
-			[ self::link( 'organization:the-publication-7', 'subject', 'name', 1.0 ) ],
+			[ self::link( 'organization:the-bayport-times', 'subject', 'name', 1.0 ) ],
 			$this->resolve(
-				[ 'title' => 'The Publication 7 wins a PartnerOrg18', 'url' => 'https://random.example/x' ],
+				[ 'title' => 'The Bayport Times wins a Kestrel', 'url' => 'https://random.example/x' ],
 				self::entity( 'organization:the-times', 'The Times' ),
-				self::entity( 'organization:the-publication-7', 'The Publication 7' )
+				self::entity( 'organization:the-bayport-times', 'The Bayport Times' )
 			)['links']
 		);
 	}
@@ -384,7 +384,7 @@ final class ResolverTest extends TestCase {
 			$this->resolve(
 				[ 'title' => 'Sentinel names a new editor', 'url' => 'https://random.example/x' ],
 				self::entity( 'organization:sentinel', 'Sentinel' ),
-				self::entity( 'organization:atomic-3012', 'Atomic site 3012', [ 'domain' => [ 'sentinel.com' ] ] )
+				self::entity( 'organization:atomic-3012', 'Atomic site 3012', [ 'domain' => [ 'sentinel.example' ] ] )
 			)['links']
 		);
 	}
@@ -395,8 +395,8 @@ final class ResolverTest extends TestCase {
 			[ self::link( 'organization:atomic-3013', 'subject', 'domain_stem', 0.9 ) ],
 			$this->resolve(
 				[ 'title' => 'Sentinel names a new editor', 'body' => 'The Salem paper announced it Monday.', 'url' => 'https://random.example/x' ],
-				self::entity( 'organization:atomic-3012', 'Atomic site 3012', [ 'domain' => [ 'sentinel.com' ], 'locality' => [ 'Bend' ] ] ),
-				self::entity( 'organization:atomic-3013', 'Atomic site 3013', [ 'domain' => [ 'sentinel.net' ], 'locality' => [ 'Salem' ] ] )
+				self::entity( 'organization:atomic-3012', 'Atomic site 3012', [ 'domain' => [ 'sentinel.example' ], 'locality' => [ 'Bend' ] ] ),
+				self::entity( 'organization:atomic-3013', 'Atomic site 3013', [ 'domain' => [ 'sentinel.test' ], 'locality' => [ 'Salem' ] ] )
 			)['links']
 		);
 	}
@@ -407,11 +407,11 @@ final class ResolverTest extends TestCase {
 	}
 
 	public function test_an_acronym_needs_its_exact_case(): void {
-		$lion     = 'organization:partner-org-24';
-		$entities = self::entity( $lion, 'Local Independent Online News Publishers', [ 'acronym' => [ 'ORG3' ] ] );
+		$owl      = 'organization:owl-publishers';
+		$entities = self::entity( $owl, 'Organized Writers League', [ 'acronym' => [ 'OWL' ] ] );
 
-		$this->assertSame( [ self::link( $lion, 'subject', 'acronym', 0.9 ) ], $this->resolve( [ 'title' => 'ORG3 summit opens', 'url' => 'https://random.example/x' ], $entities )['links'] );
-		$this->assertSame( [], $this->resolver()->resolve( self::item( [ 'title' => 'A lion escapes the zoo', 'url' => 'https://random.example/x' ] ), null )['links'] );
+		$this->assertSame( [ self::link( $owl, 'subject', 'acronym', 0.9 ) ], $this->resolve( [ 'title' => 'OWL summit opens', 'url' => 'https://random.example/x' ], $entities )['links'] );
+		$this->assertSame( [], $this->resolver()->resolve( self::item( [ 'title' => 'An owl escapes the zoo', 'url' => 'https://random.example/x' ] ), null )['links'] );
 	}
 
 	public function test_ner_exact_org_asserts(): void {
@@ -505,7 +505,7 @@ final class ResolverTest extends TestCase {
 	/** A deterministic link spares the model call, so NER is not recognized. */
 	public function test_a_deterministic_link_skips_the_extractor(): void {
 		$extractor = new Fake_Entity_Extractor( [ 'The Harbor Gazette' ] );
-		$this->assertFalse( $this->golden( [ 'url' => 'https://mesa.example/x' ], [], $extractor )['recognized'] );
+		$this->assertFalse( $this->golden( [ 'url' => 'https://mesa-news.example/x' ], [], $extractor )['recognized'] );
 		$this->assertSame( 0, $extractor->calls );
 	}
 
@@ -588,16 +588,16 @@ final class ResolverTest extends TestCase {
 	private static function golden_entities(): array {
 		$atomic = static fn ( int $id, string $domain ): array => self::entity( "organization:atomic-{$id}", "Atomic site {$id}", [ 'domain' => [ $domain ] ] );
 		return [
-			...self::entity( self::MESA, 'Mesa Courier', [ 'alias' => [ 'MDC', 'Mesa Daily Courier' ], 'domain' => [ 'mesa.example' ] ] ),
+			...self::entity( self::MESA, 'Mesa Courier', [ 'alias' => [ 'MDC', 'Mesa Daily Courier' ], 'domain' => [ 'mesa-news.example' ] ] ),
 			...self::entity( self::GAZETTE, 'The Harbor Gazette', [ 'alias' => [ 'HarbGaz' ], 'domain' => [ 'harborgazette.example' ] ] ),
-			...self::proposed( 'organization:faded-gazette', 'Faded Gazette', [ 'domain' => [ 'fadedgazette.com' ] ] ),
+			...self::proposed( 'organization:faded-gazette', 'Faded Gazette', [ 'domain' => [ 'fadedgazette.example' ] ] ),
 			...self::rejected( 'organization:faded-gazette' ),
-			...$atomic( 3003, 'plainsfile.com' ),
+			...$atomic( 3003, 'plainsfile.example' ),
 			...$atomic( 3004, 'tidewater.co.nz' ),
-			...$atomic( 3005, 'thecitizen.com' ),
-			...$atomic( 3006, 'bayshorereport.org' ),
-			...$atomic( 3007, 'kxzt.org' ),
-			...$atomic( 3009, 'lantern.com' ),
+			...$atomic( 3005, 'thecitizen.example' ),
+			...$atomic( 3006, 'bayshorereport.example' ),
+			...$atomic( 3007, 'kxzt.example' ),
+			...$atomic( 3009, 'lantern.example' ),
 			...$atomic( 3010, 'kiwiledger.co.nz' ),
 		];
 	}

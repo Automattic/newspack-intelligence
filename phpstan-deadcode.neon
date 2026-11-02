@@ -50,7 +50,7 @@ parameters:
         -
             identifier: shipmonk.deadMethod
             message: '#::set_audience$#'
-            path: includes/trait-llm-config.php
+            path: includes/class-extractor-node.php
         -
             identifier: shipmonk.deadMethod
             message: '#::set_graph_target$#'

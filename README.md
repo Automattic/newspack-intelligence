@@ -35,8 +35,8 @@ its curation verbs, which the
 Intelligence page sends; the same verbs reach agents through the plugin's MCP
 door. Nothing is compiled: a person or an agent asks, and the graph answers.
 A client CSV, imported on the Settings page or with
-`wp newspack-intelligence clients import`, keeps Newspack's clients in the
-graph. Restricted items answer only a user granted the
+`wp newspack-intelligence clients import`, keeps a deployment's clients in
+the graph. Restricted items answer only a user granted the
 `newspack_intelligence_restricted` capability, on the Settings page or with
 `wp newspack-intelligence restricted grant <login>`.
 `wp newspack-intelligence items purge --source=<name> --keep=<globs>`

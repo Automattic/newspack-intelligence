@@ -76,6 +76,166 @@ final class ExtractorNodeTest extends TestCase {
 		parent::tearDown();
 	}
 
+	/** The prompt verbs are the extractor's alone: the resolver, which builds no extraction prompt, declares none. */
+	public function test_only_the_extractor_declares_the_prompt_verbs(): void {
+		$prompt   = [ 'set_audience', 'add_profile', 'remove_profile' ];
+		$commands = \array_column( Extractor_Node::node_schema()['commands'], null, 'name' );
+
+		$this->assertSame( [ 'set_api_url', 'set_vault_id', 'set_model', 'set_feature', ...$prompt ], \array_keys( $commands ) );
+		$this->assertSame( 'audience', $commands['set_audience']['setter'] );
+		$this->assertTrue( $commands['add_profile']['multiple'] );
+		$this->assertSame( 'profiles', $commands['remove_profile']['unlist'] );
+		$this->assertSame( [], \array_intersect( $prompt, \array_column( Resolver_Node::node_schema()['commands'], 'name' ) ) );
+	}
+
+	/** The audience a prompt is framed for is set in TSL, one quoted token, last write wins. */
+	public function test_set_audience_sets_the_audience_last_write_wins(): void {
+		$node = $this->prompt_node();
+
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'set_audience', [ 'the heron desk' ] ) );
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'set_audience', [ 'the Quarry Ledger kite desk' ] ) );
+
+		$this->assertSame( 'the Quarry Ledger kite desk', $this->read_private( $node, 'audience' ) );
+	}
+
+	/** A set audience dumps as one quoted token and replays to the same audience. */
+	public function test_a_set_audience_dumps_and_replays(): void {
+		$node = $this->prompt_node();
+		$node->name( 'llmnode' );
+		$node->interpreter()->dispatch( 'set_audience', [ 'the Quarry Ledger kite desk' ] );
+
+		$dump = $node->dump_config();
+
+		$this->assertStringContainsString( "command_node llmnode:config set_audience 'the Quarry Ledger kite desk'", $dump );
+		$replayed = $this->prompt_node();
+		$this->replay_config( $dump, $replayed );
+		$this->assertSame( 'the Quarry Ledger kite desk', $this->read_private( $replayed, 'audience' ) );
+	}
+
+	public function test_add_profile_appends_and_joins_with_newline(): void {
+		$node = $this->prompt_node();
+
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_profile', [ 'Engineering' ] ) );
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_profile', [ 'Product' ] ) );
+		$this->assertSame( "Engineering\nProduct", $this->profile_of( $node ) );
+	}
+
+	public function test_add_profile_rejects_blank_text(): void {
+		$node = $this->prompt_node();
+
+		$caught = $this->caught_any( fn () => $node->interpreter()->dispatch( 'add_profile', [ '   ' ] ) );
+		$this->assertInstanceOf( \InvalidArgumentException::class, $caught );
+		$this->assertSame( 'usage: add_profile <text>', $caught->getMessage() );
+		$this->assertSame( '', $this->profile_of( $node ) );
+	}
+
+	public function test_remove_profile_drops_it_from_the_relevance_profile(): void {
+		$node = $this->prompt_node();
+		$node->interpreter()->dispatch( 'add_profile', [ 'Cover', 'heron', 'migrations.' ] );
+		$node->interpreter()->dispatch( 'add_profile', [ 'Skip kite trivia.' ] );
+
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'remove_profile', [ 'Cover', 'heron', 'migrations.' ] ) );
+
+		$this->assertSame( 'Skip kite trivia.', $this->profile_of( $node ) );
+	}
+
+	public function test_remove_profile_naming_no_profile_is_refused_naming_it(): void {
+		$node = $this->prompt_node();
+		$node->interpreter()->dispatch( 'add_profile', [ 'Skip kite trivia.' ] );
+
+		$caught = $this->caught_any( fn () => $node->interpreter()->dispatch( 'remove_profile', [ '--text=Cover ghosts.' ] ) );
+
+		$this->assertInstanceOf( \InvalidArgumentException::class, $caught );
+		$this->assertSame( "remove_profile 'Cover ghosts.' names no profile this node declares", $caught->getMessage() );
+		$this->assertSame( 'Skip kite trivia.', $this->profile_of( $node ) );
+	}
+
+	public function test_a_removed_profile_leaves_the_dump_and_its_replay(): void {
+		$node = $this->prompt_node();
+		$node->name( 'llmnode' );
+		$node->interpreter()->dispatch( 'add_profile', [ 'Cover heron migrations.' ] );
+		$node->interpreter()->dispatch( 'add_profile', [ 'Skip kite trivia.' ] );
+		$node->interpreter()->dispatch( 'remove_profile', [ 'Cover heron migrations.' ] );
+
+		$dump = $node->dump_config();
+		$this->assertStringNotContainsString( 'heron', $dump );
+
+		$replayed = $this->prompt_node();
+		$this->replay_config( $dump, $replayed );
+		$this->assertSame( 'Skip kite trivia.', $this->profile_of( $replayed ) );
+	}
+
+	public function test_the_add_profile_handler_delegates_to_patron(): void {
+		$node = $this->prompt_node();
+
+		$result = $node->interpreter()->commands()['add_profile']( $this->interpreter_for( $node ), [ 'text' => [ 'Engineering' ] ] );
+
+		$this->assertSame( "ok\n", $result );
+		$this->assertSame( 'Engineering', $this->profile_of( $node ) );
+	}
+
+	public function test_the_add_profile_handler_joins_all_positional_tokens(): void {
+		$node = $this->prompt_node();
+		$node->name( 'llmnode' );
+		// An unquoted TSL line arrives as many tokens; the profile is all of them.
+		$result = $node->interpreter()->commands()['add_profile'](
+			$this->interpreter_for( $node ),
+			[ 'text' => [ 'Do', 'not', 'produce', 'tables.' ] ]
+		);
+		$this->assertSame( "ok\n", $result );
+		$this->assertSame( 'Do not produce tables.', $this->profile_of( $node ) );
+	}
+
+	public function test_dump_config_quotes_a_multi_word_profile(): void {
+		$node = $this->prompt_node();
+		$node->name( 'llmnode' );
+		$node->interpreter()->dispatch( 'add_profile', [ 'Do not produce tables.' ] );
+		$this->assertStringContainsString(
+			"command_node llmnode:config add_profile 'Do not produce tables.'",
+			$node->dump_config()
+		);
+	}
+
+	public function test_the_add_profile_handler_refuses_blank_text(): void {
+		$node = $this->prompt_node();
+
+		$caught = $this->caught_any( fn () => $node->interpreter()->commands()['add_profile']( $this->interpreter_for( $node ), [ 'text' => [ '   ' ] ] ) );
+		$this->assertInstanceOf( \InvalidArgumentException::class, $caught );
+		$this->assertSame( 'usage: add_profile <text>', $caught->getMessage() );
+		$this->assertSame( '', $this->profile_of( $node ) );
+	}
+
+	/** An extractor for the prompt verbs, its interpreter wired. */
+	private function prompt_node(): Extractor_Node {
+		return new Extractor_Node();
+	}
+
+	/**
+	 * The relevance profile an extractor holds, its lines joined.
+	 *
+	 * @param Extractor_Node $node The extractor.
+	 */
+	private function profile_of( Extractor_Node $node ): string {
+		return \implode( "\n", Core::arr( $this->read_private( $node, 'profiles' ) ) );
+	}
+
+	/** What $fn threw, whatever its class; the test fails when it throws nothing. */
+	private function caught_any( callable $fn ): \Throwable {
+		try {
+			$fn();
+		} catch ( \Throwable $e ) {
+			return $e;
+		}
+		$this->fail( 'nothing was refused' );
+	}
+
+	/** Wire a `:config`-style interpreter whose patron is $node. */
+	private function interpreter_for( Extractor_Node $node ): Command_Interpreter_Node {
+		$interpreter = new Command_Interpreter_Node();
+		$interpreter->patron( $node );
+		return $interpreter;
+	}
+
 	/** An item with no link and no candidate costs no call and records nothing. */
 	public function test_an_unlinked_item_is_not_extracted(): void {
 		$this->answer( '{"summary":"Never asked."}' );

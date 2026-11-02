@@ -415,33 +415,19 @@ final class Graph_Curation {
 	 * @throws \InvalidArgumentException On a value outside its vocabulary, a bad key, an entity or topic the caller cannot see or every reader could not, a topic that is not one, or an event past one line.
 	 */
 	public static function save_lens( array $args ): array {
-		$key    = self::capped( 'key', Intel_Event::lens_key( Core::as_string( $args['key'] ) ), self::KEY_BYTES );
-		$name   = self::bounded( 'name', Core::as_string( $args['name'] ), self::NAME_BYTES );
-		$days   = null === $args['days'] ? null : Core::as_int( $args['days'] );
-		if ( null !== $days && ( $days < 1 || $days > Intel_Graph_Row_Schema::RETAIN_DAYS ) ) {
-			throw new \InvalidArgumentException( \esc_html( 'days must be between 1 and ' . Intel_Graph_Row_Schema::RETAIN_DAYS ) );
-		}
-		$by     = null === $args['by'] ? null : Core::as_string( $args['by'] );
-		$bucket = null === $args['bucket'] ? null : Core::as_string( $args['bucket'] );
-		Graph_Query::check_trend( $by, $bucket );
-		$lists  = self::lists( $args );
-		$entity = null === $args['entity'] ? null : self::key( $args, 'entity' );
-		$tiers  = self::within( $args, 'tier', Intel_Event::TIERS );
-		if ( null !== $entity || [] !== $lists['topics'] ) {
-			[ $entity, $lists['topics'] ] = self::on_graph(
+		$key     = self::capped( 'key', Intel_Event::lens_key( Core::as_string( $args['key'] ) ), self::KEY_BYTES );
+		$name    = self::bounded( 'name', Core::as_string( $args['name'] ), self::NAME_BYTES );
+		$filters = self::lens_filters( $args );
+		$entity  = $filters['entity'];
+		$topics  = \array_map( Core::as_string( ... ), Core::arr( $filters['topics'] ) );
+		if ( null !== $entity || [] !== $topics ) {
+			[ $filters['entity'], $filters['topics'] ] = self::on_graph(
 				static fn ( Row_Reader $r, array $g ): array => [
-					null === $entity ? null : self::shown( $r, $g, $entity ),
-					\array_values( \array_unique( \array_map( static fn ( string $topic ): string => self::topic( $r, $g, $topic ), $lists['topics'] ) ) ),
+					null === $entity ? null : self::shown( $r, $g, Core::as_string( $entity ) ),
+					\array_values( \array_unique( \array_map( static fn ( string $topic ): string => self::topic( $r, $g, $topic ), $topics ) ) ),
 				]
 			);
 		}
-		$filters = $lists + [
-			'entity' => $entity,
-			'days'   => $days,
-			'tiers'  => $tiers,
-			'by'     => $by,
-			'bucket' => $bucket,
-		];
 		$description = Core::as_string( $args['description'] );
 		return self::write( 'lens_saved', [ 'lens_key' => $key, 'name' => $name, 'description' => $description, 'filters' => $filters ] ) + [ 'lens_key' => $key ];
 	}
@@ -515,6 +501,37 @@ final class Graph_Curation {
 	 */
 	public static function on_graph( \Closure $read ): array {
 		return Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): array => $read( $r, Graph_Query::graph( $r ) ) );
+	}
+
+	/**
+	 * A lens's filters in `Graph_Query::unfiltered()`'s shape, checked as far
+	 * as no projection is read: `days` from 1 to `RETAIN_DAYS`, `by` and
+	 * `bucket` against the trend sets, each `LENS_LISTS` list against its
+	 * vocabulary or bounded where it has none, each tier one of
+	 * `Intel_Event::TIERS`, and the entity bounded. `save_lens()` then reads
+	 * the entity and topics through the graph; the ontology seed, which reads
+	 * none, writes them as given.
+	 *
+	 * @api Ontology_Seed checks a seed's lenses by it.
+	 * @param array<array-key,mixed> $args `save_lens`'s bound args: `entity`, `days`, `by`, `bucket`, the lists by their option and `tier`.
+	 * @return array<string,mixed>
+	 * @throws \InvalidArgumentException On a value outside its range or vocabulary, blank or past its cap.
+	 */
+	public static function lens_filters( array $args ): array {
+		$days = null === $args['days'] ? null : Core::as_int( $args['days'] );
+		if ( null !== $days && ( $days < 1 || $days > Intel_Graph_Row_Schema::RETAIN_DAYS ) ) {
+			throw new \InvalidArgumentException( \esc_html( 'days must be between 1 and ' . Intel_Graph_Row_Schema::RETAIN_DAYS ) );
+		}
+		$by     = null === $args['by'] ? null : Core::as_string( $args['by'] );
+		$bucket = null === $args['bucket'] ? null : Core::as_string( $args['bucket'] );
+		Graph_Query::check_trend( $by, $bucket );
+		return self::lists( $args ) + [
+			'entity' => null === $args['entity'] ? null : self::key( $args, 'entity' ),
+			'days'   => $days,
+			'tiers'  => self::within( $args, 'tier', Intel_Event::TIERS ),
+			'by'     => $by,
+			'bucket' => $bucket,
+		];
 	}
 
 	/**

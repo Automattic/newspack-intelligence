@@ -178,17 +178,17 @@ final class IntelEventTest extends TestCase {
 	/** A purge names its item and why, on the items stream, which only a machine writes. */
 	public function test_a_purge_names_its_item_and_why(): void {
 		$this->assertSame( [ Intel_Event::ITEMS, [ 'item_key', 'reason' ], [] ], Intel_Event::KINDS['item_purged'] );
-		$event = Intel_Event::machine_event( 'purge', 'item_purged', [ 'item_key' => 'linear:WPCOM-4410', 'reason' => 'other team' ] );
-		$this->assertSame( [ 'machine:purge@' . \NEWSPACK_INTELLIGENCE_VERSION, 'linear:WPCOM-4410', 'other team' ], [ $event['actor'], $event['item_key'], $event['reason'] ] );
+		$event = Intel_Event::machine_event( 'purge', 'item_purged', [ 'item_key' => 'linear:WREN-4410', 'reason' => 'other team' ] );
+		$this->assertSame( [ 'machine:purge@' . \NEWSPACK_INTELLIGENCE_VERSION, 'linear:WREN-4410', 'other team' ], [ $event['actor'], $event['item_key'], $event['reason'] ] );
 
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'item_purged: only a machine writes the items stream' );
-		Intel_Event::make( 'item_purged', [ 'item_key' => 'linear:WPCOM-4410', 'reason' => 'other team' ], 'user:4217', 'c' );
+		Intel_Event::make( 'item_purged', [ 'item_key' => 'linear:WREN-4410', 'reason' => 'other team' ], 'user:4217', 'c' );
 	}
 
 	/** An entity key is its type and the slug of its name. */
 	public function test_entity_key_slugs_the_name_under_its_type(): void {
-		$this->assertSame( 'product:newspack-plugin', Intel_Event::entity_key( 'product', 'Newspack Plugin' ) );
+		$this->assertSame( 'product:example-plugin', Intel_Event::entity_key( 'product', 'Example Plugin' ) );
 		$this->assertSame( 'organization:elan-gazette', Intel_Event::entity_key( 'organization', 'Élan Gazette' ) );
 	}
 

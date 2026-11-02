@@ -41,7 +41,7 @@ final class ProjectorTest extends TestCase {
 	private const MACHINE = 'machine:resolve@9.4.1';
 
 	/** An item recorded from another team, which the operator purges. */
-	private const PURGED = 'linear:WPCOM-4410';
+	private const PURGED = 'linear:WREN-4410';
 
 	/** When the fixture item was retrieved: 700 days before NOW, inside its retention. */
 	private const RETRIEVED = 1732520000;
@@ -104,11 +104,11 @@ final class ProjectorTest extends TestCase {
 				$claim( 1, 'State Press Award' ),
 				$claim( 2, 'Murrow Award' ),
 				[ 'topics' => [ 'topic:local-news' ] ] + $this->extraction(),
-				$claim( 0, 'PartnerOrg18 Prize' ),
+				$claim( 0, 'Kestrel Prize' ),
 			]
 		);
 
-		$this->assertSame( [ [ 0, 'PartnerOrg18 Prize' ] ], self::graph_rows( 'claims', 'ord', 'ord, object_text' ) );
+		$this->assertSame( [ [ 0, 'Kestrel Prize' ] ], self::graph_rows( 'claims', 'ord', 'ord, object_text' ) );
 		$this->assertSame( [ [ self::GAZETTE, 'subject' ], [ 'topic:local-news', 'topic' ] ], self::graph_rows( 'links', 'entity_key', 'entity_key, role' ) );
 	}
 
@@ -717,8 +717,8 @@ final class ProjectorTest extends TestCase {
 				...$about( self::ITEM ),
 				$machine( 'cluster_superseded', [ 'cluster_key' => self::PURGED, 'canonical_item_key' => self::PURGED, 'previous_item_key' => self::PURGED, 'rank' => 7.0 ] ),
 				$machine( 'cluster_superseded', [ 'cluster_key' => 'feed:abc-9001', 'canonical_item_key' => self::ITEM, 'previous_item_key' => 'feed:abc-9001', 'rank' => 9.0 ] ),
-				$this->ontology( 'link_confirmed', [ 'item_key' => self::PURGED, 'entity_key' => self::GAZETTE, 'item_url' => 'https://linear.app/a8c/issue/WPCOM-4410' ] ),
-				$this->ontology( 'collected', [ 'collection_key' => 'awards-2026', 'item_key' => self::PURGED, 'url' => 'https://linear.app/a8c/issue/WPCOM-4410', 'title' => 'WPCOM work', 'tier' => 'internal' ] ),
+				$this->ontology( 'link_confirmed', [ 'item_key' => self::PURGED, 'entity_key' => self::GAZETTE, 'item_url' => 'https://linear.app/heron-example/issue/WREN-4410' ] ),
+				$this->ontology( 'collected', [ 'collection_key' => 'awards-2026', 'item_key' => self::PURGED, 'url' => 'https://linear.app/heron-example/issue/WREN-4410', 'title' => 'WREN work', 'tier' => 'internal' ] ),
 				Intel_Event::make( 'watch_matched', [ 'watch_key' => 'a1b2c3d4e5f60718', 'owner' => 3307, 'item_key' => self::PURGED, 'at' => self::RETRIEVED, 'retrieved_ts' => self::RETRIEVED, 'quiet' => false ], 'machine:watcher@9.4.1', '' ),
 				Intel_Event::make( 'watch_seen', [ 'watch_key' => 'a1b2c3d4e5f60718', 'owner' => 3307, 'item_key' => self::PURGED, 'retrieved_ts' => self::RETRIEVED ], 'user:41', '' ),
 			]
@@ -741,7 +741,7 @@ final class ProjectorTest extends TestCase {
 		$this->assertNotSame( [], $after['watch_matches'] );
 		$index = Sqlite_Arm::open_rows( [ 0 => Table_Node::file( 'intel-graph', 0 ) ], Intel_Graph_Row_Schema::version() );
 		$this->assertSame( [ [ 2 ] ], $index->rows( "SELECT rowid FROM p0.items_fts WHERE items_fts MATCH 'harbor'", [] ), 'the title index holds the kept item alone' );
-		$this->assertSame( [], $index->rows( "SELECT rowid FROM p0.extractions_fts WHERE extractions_fts MATCH 'wpcom'", [] ), 'the summary index forgets the purged extraction' );
+		$this->assertSame( [], $index->rows( "SELECT rowid FROM p0.extractions_fts WHERE extractions_fts MATCH 'wren'", [] ), 'the summary index forgets the purged extraction' );
 		$this->assertCount( 1, $index->rows( "SELECT rowid FROM p0.extractions_fts WHERE extractions_fts MATCH 'summary'", [] ) );
 	}
 

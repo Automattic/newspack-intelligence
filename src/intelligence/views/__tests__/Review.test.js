@@ -26,7 +26,7 @@ import { intelWire } from '../../__tests__/intelWire';
 import Review from '../Review';
 
 const LINK = {
-	item_key: 'github:automattic/newspack#912',
+	item_key: 'github:example/plugin#912',
 	entity_key: 'organization:acme-gazette',
 	name: 'Acme Gazette',
 	type: 'organization',
@@ -34,7 +34,7 @@ const LINK = {
 	method: 'ner_fuzzy',
 	confidence: 0.61,
 	title: 'Paywall bug reported by Acme',
-	url: 'https://github.example/automattic/newspack/912',
+	url: 'https://github.example/example/plugin/912',
 };
 
 const SIBLING = {
@@ -286,7 +286,7 @@ describe( 'Review — judgments', () => {
 
 	it( 'brings a refused judgment back with its refusal', async () => {
 		wire.replies.confirm_link = () =>
-			new Error( 'no link: github:automattic/newspack#912' );
+			new Error( 'no link: github:example/plugin#912' );
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'link', {
 			name: 'Paywall bug reported by Acme',
@@ -297,7 +297,7 @@ describe( 'Review — judgments', () => {
 			} )
 		);
 		expect(
-			await screen.findByText( /no link: github:automattic/ )
+			await screen.findByText( /no link: github:example\/plugin/ )
 		).toBeInTheDocument();
 		expect(
 			within( queue( 'Proposed links' ) ).getByRole( 'button', {
