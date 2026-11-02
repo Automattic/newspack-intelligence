@@ -225,11 +225,42 @@ final class GraphQueryTest extends TestCase {
 				'topics'      => [ [ 'topic_key' => 'topic:awards', 'name' => 'Awards' ] ],
 				'counts'      => [ 'items' => 2, 'proposed_links' => 0 ],
 				'published'   => [ 'count' => 0 ],
+				'status'      => [ 'client_since' => self::$jan_01, 'kinds' => [ 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => self::$oct_06 ],
 				'available'   => true,
 			],
 			self::read( 'entity', [ 'key' => self::GAZETTE ] )
 		);
 		$this->assertSame( [ 'items' => 2, 'proposed_links' => 1 ], self::read( 'entity', [ 'key' => self::LEDGER ] )['counts'] );
+	}
+
+	/**
+	 * Every read shows an entity the roster created under one of its own
+	 * domains by the newest canonical name added to it; an alias names
+	 * nothing.
+	 */
+	public function test_an_entity_is_shown_by_its_newest_canonical_name(): void {
+		$key = 'organization:atomic-880044';
+		$this->seed(
+			self::entity( $key, 'kestrelbay.example', [ 'domain' => [ 'kestrelbay.example' ], 'canonical' => [ 'Kestrel Bay Courier', 'Kestrel Bay Courier Cooperative' ], 'alias' => [ 'KBC' ] ] ),
+			self::item( 'feed:kestrel-ferry', 'Ferry schedule set', 'feed', 'public', self::$oct_13 ),
+			self::link( 'link_asserted', 'feed:kestrel-ferry', $key, 'subject', 'identifier', 1.0, self::$oct_13 )
+		);
+
+		$this->assertSame( 'Kestrel Bay Courier Cooperative', self::read( 'entity', [ 'key' => $key ] )['name'] );
+		$this->assertSame( [ [ 'entity_key' => $key, 'name' => 'Kestrel Bay Courier Cooperative', 'state' => 'asserted' ] ], self::search( [ 'q' => 'ferry' ] )['items'][0]['entities'] );
+	}
+
+	/** An entity created under a name of its own keeps it, whatever canonical name is added. */
+	public function test_an_entity_created_under_a_name_keeps_it(): void {
+		$key = 'organization:osprey-times';
+		$this->seed(
+			self::entity( $key, 'Osprey Times', [ 'domain' => [ 'ospreytimes.example' ], 'canonical' => [ 'Osprey Times Media Group' ] ] ),
+			self::item( 'feed:osprey-tide', 'Osprey tide tables', 'feed', 'public', self::$oct_13 ),
+			self::link( 'link_asserted', 'feed:osprey-tide', $key, 'subject', 'identifier', 1.0, self::$oct_13 )
+		);
+
+		$this->assertSame( 'Osprey Times', self::read( 'entity', [ 'key' => $key ] )['name'] );
+		$this->assertSame( 'Osprey Times', self::search( [ 'q' => 'tide' ] )['items'][0]['entities'][0]['name'] );
 	}
 
 	public function test_an_unknown_entity_is_refused(): void {

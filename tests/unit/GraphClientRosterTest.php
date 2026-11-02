@@ -33,6 +33,12 @@ final class GraphClientRosterTest extends TestCase {
 	/** 2026-04-02 00:00 UTC. */
 	private const APR_02 = 1775088000;
 
+	/** 2021-03-14 00:00 UTC, the day a site the CSV lists was Created. */
+	private const CREATED_2021 = 1615680000;
+
+	/** 2020-02-02 00:00 UTC. */
+	private const CREATED_2020 = 1580601600;
+
 	protected function setUp(): void {
 		parent::setUp();
 		Topology_Analyzer::reset_caches();
@@ -56,7 +62,7 @@ final class GraphClientRosterTest extends TestCase {
 				[ 'entity_created', $key, 'organization', 'harborgazette.example' ],
 				[ 'identifier_added', $key, 'atomic_site_id', '990011' ],
 				[ 'identifier_added', $key, 'domain', 'harborgazette.example' ],
-				[ 'role_asserted', $key, 'client', self::MAR_14 ],
+				[ 'role_asserted', $key, 'client', self::AUG_20 ],
 			],
 			self::brief( self::ontology_events() )
 		);
@@ -75,7 +81,7 @@ final class GraphClientRosterTest extends TestCase {
 		$this->assertSame(
 			[
 				[ 'identifier_added', 'organization:harbor-gazette', 'atomic_site_id', '990011' ],
-				[ 'role_asserted', 'organization:harbor-gazette', 'client', self::MAR_14 ],
+				[ 'role_asserted', 'organization:harbor-gazette', 'client', self::AUG_20 ],
 			],
 			\array_slice( self::brief( self::ontology_events() ), $before )
 		);
@@ -97,8 +103,9 @@ final class GraphClientRosterTest extends TestCase {
 			[
 				[ 'role_ended', 'organization:atomic-770022', 'client', self::AUG_20, self::MAR_14 ],
 				[ 'role_asserted', 'organization:tidewater-times', 'former_client', self::MAR_14 ],
+				[ 'role_asserted', 'organization:atomic-990011', 'client', self::AUG_20 ],
 			],
-			\array_slice( self::brief( self::ontology_events() ), $before + 4 )
+			\array_slice( self::brief( self::ontology_events() ), $before + 3 )
 		);
 		$this->assertSame( 1, $result['churned'] );
 	}
@@ -122,8 +129,9 @@ final class GraphClientRosterTest extends TestCase {
 			[
 				[ 'role_ended', $key, 'client', self::AUG_20, self::APR_02 ],
 				[ 'role_asserted', $key, 'former_client', self::APR_02 ],
+				[ 'role_asserted', 'organization:atomic-330044', 'client', self::AUG_20 ],
 			],
-			\array_slice( self::brief( self::ontology_events() ), $before + 4 )
+			\array_slice( self::brief( self::ontology_events() ), $before + 3 )
 		);
 	}
 
@@ -233,7 +241,7 @@ final class GraphClientRosterTest extends TestCase {
 			[
 				[ 'entity_created', $key, 'organization', 'Atomic site 440055' ],
 				[ 'identifier_added', $key, 'atomic_site_id', '440055' ],
-				[ 'role_asserted', $key, 'client', self::MAR_14 ],
+				[ 'role_asserted', $key, 'client', self::AUG_20 ],
 			],
 			self::brief( self::ontology_events() )
 		);
@@ -263,8 +271,9 @@ final class GraphClientRosterTest extends TestCase {
 			[
 				[ 'role_ended', $key, 'client', self::AUG_20, self::MAR_14 ],
 				[ 'role_asserted', $key, 'former_client', self::MAR_14 ],
+				[ 'role_asserted', 'organization:atomic-990011', 'client', self::AUG_20 ],
 			],
-			\array_slice( self::brief( self::ontology_events() ), 4 )
+			\array_slice( self::brief( self::ontology_events() ), 3 )
 		);
 		$this->assertSame( 1, $churn['churned'] );
 
@@ -291,6 +300,112 @@ final class GraphClientRosterTest extends TestCase {
 			],
 			self::roles_of( $key )
 		);
+
+		$before = \count( self::ontology_events() );
+		self::importer()->import( self::rows( [ '770022', 'tidewater.example' ], [ '990011', 'harborgazette.example' ] ), '2026-05-09' );
+
+		$this->assertSame( [], \array_slice( self::ontology_events(), $before ) );
+	}
+
+	/** A new client is a client from the day its site was Created, not the import day. */
+	public function test_a_new_client_is_a_client_from_its_created_day(): void {
+		self::importer()->import( [ self::row( '990011', 'harborgazette.example', '2021-03-14 09:26:53' ) ], '2026-03-14' );
+
+		$this->assertSame( [ 'role_asserted', 'organization:atomic-990011', 'client', self::CREATED_2021 ], self::brief( self::ontology_events() )[3] );
+	}
+
+	/**
+	 * A re-import moves a client whose open role started on another day: the
+	 * open row ends where it began, holding no time, and one opens from the
+	 * Created day; the next import of the same snapshot writes nothing.
+	 */
+	public function test_a_reimport_moves_a_clients_start_to_its_created_day(): void {
+		$this->seed( self::client( '770022', 'tidewater.example', self::AUG_20 ) );
+		$key    = 'organization:atomic-770022';
+		$before = \count( self::ontology_events() );
+		$rows   = [ self::row( '770022', 'tidewater.example', '2021-03-14 09:26:53' ) ];
+
+		$result = self::importer()->import( $rows, '2026-03-14' );
+
+		$this->assertSame(
+			[
+				[ 'role_ended', $key, 'client', self::AUG_20, self::AUG_20 ],
+				[ 'role_asserted', $key, 'client', self::CREATED_2021 ],
+			],
+			\array_slice( self::brief( self::ontology_events() ), $before )
+		);
+		$this->assertSame( [ 0, 1, 0, 0 ], [ $result['created'], $result['updated'], $result['reactivated'], $result['churned'] ] );
+
+		$this->seed( self::ontology_events() );
+		$before = \count( self::ontology_events() );
+		self::importer()->import( $rows, '2026-04-02' );
+
+		$this->assertSame( [], \array_slice( self::ontology_events(), $before ) );
+		$this->assertSame( [ [ 'client', self::CREATED_2021, 0 ], [ 'client', self::AUG_20, self::AUG_20 ] ], self::roles_of( $key ) );
+	}
+
+	/**
+	 * A client row a curator ended keeps its span when the client is in the
+	 * next snapshot: the import opens a new row from the end of it, never
+	 * reopening the ended one, whose start the Created day would name.
+	 */
+	public function test_a_client_row_a_curator_ended_stays_ended(): void {
+		$this->seed(
+			self::client( '770022', 'tidewater.example', self::AUG_20 ),
+			[ Intel_Event::make( 'role_ended', [ 'entity_key' => 'organization:atomic-770022', 'role' => 'client', 'from_ts' => self::AUG_20, 'to_ts' => self::MAR_14 + 3600 ], 'user:41', 'fixture-7' ) ]
+		);
+		$key    = 'organization:atomic-770022';
+		$before = \count( self::ontology_events() );
+
+		$result = self::importer()->import( self::rows( [ '770022', 'tidewater.example' ] ), '2026-04-02' );
+
+		$this->assertSame( [ [ 'role_asserted', $key, 'client', self::MAR_14 + 3600 ] ], \array_slice( self::brief( self::ontology_events() ), $before ) );
+		$this->assertSame( 1, $result['reactivated'] );
+		$this->seed( self::ontology_events() );
+		$this->assertSame( [ [ 'client', self::AUG_20, self::MAR_14 + 3600 ], [ 'client', self::MAR_14 + 3600, 0 ] ], self::roles_of( $key ) );
+	}
+
+	/** A publisher running several sites is a client from the earliest one's Created day, opened once. */
+	public function test_several_sites_open_one_role_from_the_earliest_created(): void {
+		self::importer()->import( [ self::row( '990011', 'harborgazette.example', '2021-03-14 09:26:53' ), self::row( '990012', 'HarborGazette.example', '2020-02-02' ) ], '2026-03-14' );
+
+		$key = 'organization:atomic-990011';
+		$this->assertSame(
+			[
+				[ 'entity_created', $key, 'organization', 'harborgazette.example' ],
+				[ 'identifier_added', $key, 'atomic_site_id', '990011' ],
+				[ 'identifier_added', $key, 'domain', 'harborgazette.example' ],
+				[ 'identifier_added', $key, 'atomic_site_id', '990012' ],
+				[ 'role_asserted', $key, 'client', self::CREATED_2020 ],
+			],
+			self::brief( self::ontology_events() )
+		);
+	}
+
+	/** @return array<string,array{0:string}> */
+	public static function createds_that_are_not_dates(): array {
+		return [
+			'words'               => [ 'last spring' ],
+			'a day the year lacks' => [ '2021-02-30' ],
+			'an hour past the day' => [ '2021-03-14 24:05:00' ],
+			'a minute past the hour' => [ '2021-03-14 09:60' ],
+		];
+	}
+
+	/**
+	 * A Created that is not a day, or whose time is not a time of day, is
+	 * refused naming its row's atomic id, and the import writes nothing.
+	 *
+	 * @dataProvider createds_that_are_not_dates
+	 */
+	public function test_a_created_that_is_not_a_date_is_refused( string $created ): void {
+		try {
+			self::importer()->import( [ self::row( '990031', 'longwharf.example', $created ) ], '2026-03-14' );
+			$this->fail( 'the import refuses' );
+		} catch ( \InvalidArgumentException $refused ) {
+			$this->assertSame( "client import: atomic site 990031: Created is not a date: {$created}", $refused->getMessage() );
+			$this->assertSame( [], self::ontology_events() );
+		}
 	}
 
 	/** A new domain is one more identifier; the entity keeps its name, and a respelling of a held domain writes nothing. */
@@ -353,13 +468,26 @@ final class GraphClientRosterTest extends TestCase {
 	}
 
 	/**
-	 * CSV rows, each an atomic id and a domain.
+	 * CSV rows, each an atomic id and a domain, its site Created on the day
+	 * client() opens a seeded client's role.
 	 *
 	 * @param array{0:string,1:string} ...$pairs The rows.
 	 * @return list<array{atomic_site_id:string,domain_name:string,created:string}>
 	 */
 	private static function rows( array ...$pairs ): array {
-		return \array_map( static fn ( array $p ): array => [ 'atomic_site_id' => $p[0], 'domain_name' => $p[1], 'created' => '2019-04-04' ], $pairs );
+		return \array_map( static fn ( array $p ): array => self::row( $p[0], $p[1], '2025-08-20 16:12:09' ), $pairs );
+	}
+
+	/**
+	 * One CSV row.
+	 *
+	 * @param string $id      The atomic site id.
+	 * @param string $domain  Its domain.
+	 * @param string $created When its site was Created.
+	 * @return array{atomic_site_id:string,domain_name:string,created:string}
+	 */
+	private static function row( string $id, string $domain, string $created ): array {
+		return [ 'atomic_site_id' => $id, 'domain_name' => $domain, 'created' => $created ];
 	}
 
 	/**

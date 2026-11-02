@@ -66,15 +66,27 @@ final class ResolverTest extends TestCase {
 		);
 	}
 
-	/** A client's own story naming the client links it twice: publisher by host, subject by name. */
+	/** A client's own story whose title names the client links it twice: publisher by host, subject by name. */
 	public function test_an_item_on_its_own_domain_naming_its_publisher_links_both(): void {
 		$this->assertSame(
 			[ self::link( self::GAZETTE, 'publisher', 'identifier', 1.0 ), self::link( self::GAZETTE, 'subject', 'name', 1.0 ) ],
-			$this->golden( [ 'url' => 'https://www.harborgazette.example/2026/10/award', 'title' => 'The Harbor Gazette wins an award', 'body' => 'First place.' ] )['links']
+			$this->golden( [ 'url' => 'https://www.harborgazette.example/2026/10/award', 'title' => 'The Harbor Gazette wins an award', 'body' => 'First place. The post appeared first on Harbor Gazette.' ] )['links']
+		);
+	}
+
+	/**
+	 * A site naming itself in its own body is not news about it: a body-only
+	 * mention of the item's publisher is dropped, as a feed footer spells
+	 * one, and a mention of anyone else in the same body stays.
+	 */
+	public function test_a_body_naming_its_own_publisher_mentions_no_one_but_others(): void {
+		$this->assertSame(
+			[ self::link( self::GAZETTE, 'publisher', 'identifier', 1.0 ) ],
+			$this->golden( [ 'url' => 'https://www.harborgazette.example/2026/10/tide', 'title' => 'Tide tables for Monday', 'body' => 'Low water at four. The post Tide tables for Monday appeared first on Harbor Gazette.' ] )['links']
 		);
 		$this->assertSame(
-			[ self::link( self::GAZETTE, 'publisher', 'identifier', 1.0 ), self::link( self::GAZETTE, 'mention', 'alias', 1.0 ) ],
-			$this->golden( [ 'url' => 'https://www.harborgazette.example/2026/10/staff', 'title' => 'Staff news', 'body' => 'HarbGaz hires an editor.' ] )['links']
+			[ self::link( self::GAZETTE, 'publisher', 'identifier', 1.0 ), self::link( self::MESA, 'mention', 'name', 1.0 ) ],
+			$this->golden( [ 'url' => 'https://www.harborgazette.example/2026/10/staff', 'title' => 'Staff news', 'body' => 'HarbGaz hires an editor from the Mesa Courier.' ] )['links']
 		);
 	}
 

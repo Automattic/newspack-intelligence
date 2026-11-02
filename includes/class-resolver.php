@@ -151,9 +151,10 @@ final class Resolver {
 
 	/**
 	 * The item's links, its publisher's first, then each entity's strongest
-	 * the URL's path or the text earns; its candidate entities; and whether
-	 * the NER step ran and answered. A publisher spares the NER step as any
-	 * link does.
+	 * the URL's path or the text earns, but a body-only mention of its own
+	 * publisher, which is not news about it; its candidate entities; and
+	 * whether the NER step ran and answered. A publisher spares the NER step
+	 * as any link does.
 	 *
 	 * @param array<string,mixed>   $item The `item_recorded` fields.
 	 * @param Entity_Extractor|null $ner  The NER step; none skips it.
@@ -177,6 +178,10 @@ final class Resolver {
 		$localities  = self::localities( [ ...$title_names, ...$body_names ] );
 		$this->clustered( [ ...self::named( $title_names ), ...$this->stemmed( $title ) ], $localities, 'subject' );
 		$this->clustered( self::named( $body_names ), $localities, 'mention' );
+		if ( null !== $publisher && 'mention' === ( $this->links[ $publisher ]['role'] ?? null ) ) {
+			// A site naming itself in its own body, as a feed footer does.
+			unset( $this->links[ $publisher ] );
+		}
 		$named     = null !== $ner && [] === $published && [] === $this->links ? $ner->extract( $item ) : null;
 		$proposals = null === $named ? [] : $this->recognized( [ 'organization' => $named['orgs'], 'product' => $named['products'] ] );
 		return [
@@ -287,70 +292,6 @@ final class Resolver {
 			}
 		}
 		return $hits;
-	}
-
-	/**
-	 * Find a stem in the text ignoring the spacing prose uses, so
-	 * "bayshorereport" matches "Bay Shore Report". The offset map lets a hit
-	 * be checked against word boundaries in the original text: without that
-	 * check "lantern.com" matches "Lanternese".
-	 *
-	 * @param string                           $text     The title.
-	 * @param array{0:string,1:array<int,int>} $haystack From squash( $text ).
-	 * @param string                           $stem     The stem.
-	 * @return array{0:string,1:int}|null The matched surface and its byte offset, or none.
-	 */
-	private static function stem_hit( string $text, array $haystack, string $stem ): ?array {
-		[ $squashed, $map ] = $haystack;
-		$offset             = 0;
-		while ( false !== ( $pos = \mb_strpos( $squashed, $stem, $offset ) ) ) {
-			$offset = $pos + 1;
-			$start  = $map[ $pos ];
-			$end    = $map[ $pos + \mb_strlen( $stem ) - 1 ];
-			$before = $start > 0 ? \mb_substr( $text, $start - 1, 1 ) : '';
-			$after  = \mb_substr( $text, $end + 1, 1 );
-			if ( ! self::is_alnum( $before ) && ! self::is_alnum( $after ) ) {
-				$surface = \mb_substr( $text, $start, $end - $start + 1 );
-				if ( self::reads_as_name( $surface ) ) {
-					return [ $surface, \strlen( \mb_substr( $text, 0, $start ) ) ];
-				}
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * The alphanumeric-only lowercase form of the text, and a map from each
-	 * of its codepoint offsets back to the codepoint offset in the text.
-	 *
-	 * @param string $text The title.
-	 * @return array{0:string,1:array<int,int>}
-	 */
-	private static function squash( string $text ): array {
-		$squashed = '';
-		$map      = [];
-		$chars    = \preg_split( '//u', $text, -1, \PREG_SPLIT_NO_EMPTY );
-		foreach ( \is_array( $chars ) ? $chars : [] as $i => $char ) {
-			if ( ! self::is_alnum( $char ) ) {
-				continue;
-			}
-			// Lowercasing can yield 2 codepoints (U+0130); index per codepoint.
-			$lower     = \mb_strtolower( $char );
-			$squashed .= $lower;
-			for ( $n = \mb_strlen( $lower ); $n > 0; $n-- ) {
-				$map[] = $i;
-			}
-		}
-		return [ $squashed, $map ];
-	}
-
-	/**
-	 * True when the character is a single letter or digit; '' is not.
-	 *
-	 * @param string $char One character, or '' at a string's edge.
-	 */
-	private static function is_alnum( string $char ): bool {
-		return '' !== $char && 1 === \preg_match( '/[\p{L}\p{N}]/u', $char );
 	}
 
 	/**
@@ -535,26 +476,6 @@ final class Resolver {
 	}
 
 	/**
-	 * Whether a span reads as a name rather than ordinary prose: every word
-	 * capitalized, single words included, and a welded span not opening with
-	 * an article, because a title capitalizes its first word regardless.
-	 *
-	 * @param string $surface The span.
-	 */
-	private static function reads_as_name( string $surface ): bool {
-		$words = \preg_split( '/[^\p{L}\p{N}]+/u', $surface, -1, \PREG_SPLIT_NO_EMPTY );
-		if ( ! \is_array( $words ) || [] === $words ) {
-			return false;
-		}
-		foreach ( $words as $word ) {
-			if ( 1 !== \preg_match( '/^[\p{Lu}\p{N}]/u', $word ) ) {
-				return false;
-			}
-		}
-		return \count( $words ) < 2 || ! \in_array( \mb_strtolower( $words[0] ), self::ARTICLES, true );
-	}
-
-	/**
 	 * The entities the URL's path names: the account or project on a known
 	 * host.
 	 *
@@ -608,6 +529,105 @@ final class Resolver {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Whether a text names a domain's site as a title's stem match does
+	 * (`stem_hit()`): its letters and digits, lowercased, spell the domain's
+	 * registrable label (`domain_stem()`), one at least MIN_STEM_LENGTH long,
+	 * on word boundaries, every word of it capitalized.
+	 *
+	 * @api Feed_Source_Node names a client by a feed title only when it does.
+	 * @param string $text   The text.
+	 * @param string $domain A domain as the index holds it.
+	 */
+	public static function names_site( string $text, string $domain ): bool {
+		$stem = self::domain_stem( $domain );
+		return '' !== $stem && null !== self::stem_hit( $text, self::squash( $text ), $stem );
+	}
+
+	/**
+	 * The alphanumeric-only lowercase form of the text, and a map from each
+	 * of its codepoint offsets back to the codepoint offset in the text.
+	 *
+	 * @param string $text The title.
+	 * @return array{0:string,1:array<int,int>}
+	 */
+	private static function squash( string $text ): array {
+		$squashed = '';
+		$map      = [];
+		$chars    = \preg_split( '//u', $text, -1, \PREG_SPLIT_NO_EMPTY );
+		foreach ( \is_array( $chars ) ? $chars : [] as $i => $char ) {
+			if ( ! self::is_alnum( $char ) ) {
+				continue;
+			}
+			// Lowercasing can yield 2 codepoints (U+0130); index per codepoint.
+			$lower     = \mb_strtolower( $char );
+			$squashed .= $lower;
+			for ( $n = \mb_strlen( $lower ); $n > 0; $n-- ) {
+				$map[] = $i;
+			}
+		}
+		return [ $squashed, $map ];
+	}
+
+	/**
+	 * Find a stem in the text ignoring the spacing prose uses, so
+	 * "bayshorereport" matches "Bay Shore Report". The offset map lets a hit
+	 * be checked against word boundaries in the original text: without that
+	 * check "lantern.com" matches "Lanternese".
+	 *
+	 * @param string                           $text     The title.
+	 * @param array{0:string,1:array<int,int>} $haystack From squash( $text ).
+	 * @param string                           $stem     The stem.
+	 * @return array{0:string,1:int}|null The matched surface and its byte offset, or none.
+	 */
+	private static function stem_hit( string $text, array $haystack, string $stem ): ?array {
+		[ $squashed, $map ] = $haystack;
+		$offset             = 0;
+		while ( false !== ( $pos = \mb_strpos( $squashed, $stem, $offset ) ) ) {
+			$offset = $pos + 1;
+			$start  = $map[ $pos ];
+			$end    = $map[ $pos + \mb_strlen( $stem ) - 1 ];
+			$before = $start > 0 ? \mb_substr( $text, $start - 1, 1 ) : '';
+			$after  = \mb_substr( $text, $end + 1, 1 );
+			if ( ! self::is_alnum( $before ) && ! self::is_alnum( $after ) ) {
+				$surface = \mb_substr( $text, $start, $end - $start + 1 );
+				if ( self::reads_as_name( $surface ) ) {
+					return [ $surface, \strlen( \mb_substr( $text, 0, $start ) ) ];
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Whether a span reads as a name rather than ordinary prose: every word
+	 * capitalized, single words included, and a welded span not opening with
+	 * an article, because a title capitalizes its first word regardless.
+	 *
+	 * @param string $surface The span.
+	 */
+	private static function reads_as_name( string $surface ): bool {
+		$words = \preg_split( '/[^\p{L}\p{N}]+/u', $surface, -1, \PREG_SPLIT_NO_EMPTY );
+		if ( ! \is_array( $words ) || [] === $words ) {
+			return false;
+		}
+		foreach ( $words as $word ) {
+			if ( 1 !== \preg_match( '/^[\p{Lu}\p{N}]/u', $word ) ) {
+				return false;
+			}
+		}
+		return \count( $words ) < 2 || ! \in_array( \mb_strtolower( $words[0] ), self::ARTICLES, true );
+	}
+
+	/**
+	 * True when the character is a single letter or digit; '' is not.
+	 *
+	 * @param string $char One character, or '' at a string's edge.
+	 */
+	private static function is_alnum( string $char ): bool {
+		return '' !== $char && 1 === \preg_match( '/[\p{L}\p{N}]/u', $char );
 	}
 
 	/**

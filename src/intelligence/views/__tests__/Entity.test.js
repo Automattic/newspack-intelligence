@@ -323,6 +323,67 @@ describe( 'Entity — reads', () => {
 	} );
 } );
 
+describe( 'Entity — status', () => {
+	const heading = () =>
+		screen.findByRole( 'heading', { name: 'Acme Gazette' } );
+
+	it( 'heads a client with its start, latest signal, asks and last item', async () => {
+		wire.replies.signals = {
+			signals: [
+				{
+					axis: 'publisher',
+					signal: 'drop',
+					bucket: '2026-10-12',
+					by: null,
+					value: null,
+					count: 2,
+					baseline: 4.5,
+					items: [],
+				},
+			],
+			available: true,
+		};
+		renderEntity();
+		const status = ( await heading() ).nextElementSibling;
+		await waitFor( () =>
+			expect( status ).toHaveTextContent(
+				'Client since 2026-09-09 · Latest signal: publisher drop, week of 2026-10-12 · 2 feature requests, 5 complaints · Last item 2026-09-22'
+			)
+		);
+		expect( wire.sent( 'signals' ) ).toHaveLength( 1 );
+	} );
+
+	it( 'says a client has no signal and no item yet, and counts one in the singular', async () => {
+		wire.replies.entity = {
+			...ENTITY,
+			status: {
+				client_since: 1791504000,
+				kinds: { feature_request: 1, complaint: 0 },
+				last_item_ts: null,
+			},
+		};
+		renderEntity();
+		const status = ( await heading() ).nextElementSibling;
+		await waitFor( () =>
+			expect( status ).toHaveTextContent(
+				'Client since 2026-10-09 · No signal · 1 feature request, 0 complaints · No item about it yet'
+			)
+		);
+	} );
+
+	it( 'renders no status line for an entity holding no client role', async () => {
+		wire.replies.entity = {
+			...ENTITY,
+			roles: [ ENTITY.roles[ 1 ] ],
+			status: null,
+		};
+		renderEntity();
+		await heading();
+		expect( screen.queryByText( /Client since/ ) ).not.toBeInTheDocument();
+		expect( screen.queryByText( /Latest signal/ ) ).not.toBeInTheDocument();
+	} );
+} );
+
 describe( 'Entity — published', () => {
 	const published = () =>
 		screen.getByRole( 'button', {

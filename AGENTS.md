@@ -306,8 +306,10 @@ drops a name. The host's entity published the item and is linked
 client's own story is about the client only when its text names it, and a
 publisher spares the NER step as any link does. An entity the URL's path or
 the title names is the subject, one found only in the body a mention, and
-each entity keeps its strongest such link. `Entity_Index` reads
-accepted and proposed entities off the projection through
+each entity keeps its strongest such link, but the item's own publisher
+found only in its body is not mentioned: a site naming itself there, as a
+feed's "appeared first on" footer does, is not news about it.
+`Entity_Index` reads accepted and proposed entities off the projection through
 `Intel_Graph_Row_Schema::read()`: names by norm, identifiers by `kind:value`, a
 merged entity's names and identifiers answering its survivor; an entity
 whose merge chain cycles or runs past 10 hops is left out, logged once, and
@@ -686,14 +688,30 @@ an about-link alone, so `search`, a lens, `timeline`, `related`,
 listed item's entities leave `publisher` out, and an entity's publisher
 signals read it alone. `entity` answers `published: { count }`,
 the readable items its own site published, and `timeline --published`
-pages them; a link's state is the highest-ranked judgment's (`JUDGE_RANK`: a
-person over an agent), else the machine's, and a `rejected` link counts
-nowhere. Each read hands `live()` the links it rests on — an entity's keys,
-a page's items, the items a claim or a proposal names — and windows only
-those; `search` and `trends` naming a role, or `trends` counting topics,
-with no entity or topic window the links of the readable items inside
-their days. Summaries, kinds and scores come from `extractions`,
-names from a join on `entities`. `q` reaches FTS5 as one `fts_phrase()` per
+pages them. For an entity holding an open `client` role, `entity` also
+answers `status: { client_since, kinds, last_item_ts }`
+(`Graph_Query::status()`): the earliest start of its open `client` rows,
+read off the role rows the record already holds, `kinds` counting the
+readable items about it extracted as each of `Graph_Query::STATUS_KINDS`
+(`feature_request` and `complaint`), and the time of the newest readable
+item about it, or null. Its window is the whole retention: every readable
+item counts, as the timeline pages them, and what its own site published
+counts in none of them. Any other entity answers `status: null`. The
+status carries no signal: the Entity view reads the latest from its own
+`signals` read. A link's state is the highest-ranked judgment's
+(`JUDGE_RANK`: a person over an agent), else the machine's, and a
+`rejected` link counts nowhere. Each read hands `live()` the links it rests
+on — an entity's keys, a page's items, the items a claim or a proposal
+names — and windows only those; `search` and `trends` naming a role, or
+`trends` counting topics, with no entity or topic window the links of the
+readable items inside their days. Summaries, kinds and scores come from
+`extractions`.
+Every read names an entity through `Graph_Query::name_of()`: the name it
+was created with, unless that is one of its own domains, as the roster
+names a client, and a `canonical` name was added since, when the newest of
+those, the highest partition's first; so a client the roster named by its
+domain shows its site's title once the feed adds it, and every other
+entity keeps its created name. `q` reaches FTS5 as one `fts_phrase()` per
 word over title, body and summary, and a word holding no letter or digit
 matches as an empty phrase, which FTS5 ignores; every other value binds,
 and a blank optional arg is a value read as given (substrate ADR-25), so a
@@ -1356,7 +1374,9 @@ a broken projection costs repeats, not items. An item recorded twice, from
 two workers or past a projection still catching up, the resolver reads as a
 re-resolution, which runs no NER step and is forwarded for extraction only
 while the item is still owed one; re-resolution proper has its own path, the
-reresolver.
+reresolver. A source writes any other event it mints through the same door
+as an item, `Source_Node::write()`, as the stage `source:<name>`; one
+`Intel_Event::make()` refuses is logged naming its subject and not sent.
 
 A feed pass queues each configured feed under its own url, then each
 client's, its note naming the client's domain and found feed, and bounds
@@ -1390,6 +1410,26 @@ from
 one day after it, the day ahead allowing for the publisher's own zone or
 clock; an undated one never records. A configured feed keys `feed:<guid>`
 and records every item, so an item two configured feeds list records once.
+
+A client's feed also names the client. The pass's read of the open
+clients notes each whose entity `Graph_Query::name_of()` still shows by one
+of its own domains, as the roster import names a client; when such a
+client's feed lands in its lane, its RSS `<channel><title>` or Atom
+`<feed><title>`, whitespace collapsed, is written once through
+`Source_Node::write()` as a `name_added` of kind `canonical`. A title that
+is blank, past `Graph_Curation::NAME_BYTES`, or the client's domain again,
+spelled as `Entity_Index::identifier_value()` spells one, names no one; so
+does one that does not name the site (`Resolver::names_site()`), which is
+the resolver's own `domain_stem` match: the domain's registrable label, of
+at least `MIN_STEM_LENGTH` (6) characters, spelled by the title's letters
+and digits, lowercased, on word boundaries, every word of it capitalized.
+So "Harbor Gazette" names harborgazette.example, and "News", "Home",
+"Kestrel Bayou News" for kestrelbay.example and "Lanternese Weekly" for
+lantern.example name nothing. Once
+is once: the feed remembers each entity it named for the life of its
+process, and the next process reads the name off the projection, which
+then shows the client by it. The name joins the resolver's names like any
+canonical name, and the reresolver re-reads the items naming it.
 
 A client's feed that answers a 4xx, a body that is no feed, or a redirect
 off its lane listing no item that links into it is lost, and the client's
@@ -1800,7 +1840,20 @@ survivor, or on a broken chain — is left alone: no event, counted
 holds, and a domain one holds is never added to a client. Every entity left
 alone is named in one stderr line per import. An event that will not mint
 throws naming its row's atomic id.
-Each role event dates from the start, UTC, of the import's day. Identifier
+A client is a client from the start, UTC, of the earliest day its rows in
+the snapshot were `Created` (`Y-m-d`, then optionally a time of day, which
+is dropped), or from the latest end of a `client` or `former_client` row
+that held time, its return or a curator's `end_role`, when that is later,
+so no ended row is reopened; a churn and a return's `former_client` end
+date from the start of the import's day. A `Created` that is not a day, or
+whose time is not a time of day, refuses the import, naming the row's
+atomic id, before anything is written. One read of the `roles` table gives
+both the open rows and those ends. Once every row is reconciled,
+`commit()` settles each client in the snapshot: an open `client` row
+starting on another day ends at its own start, holding no time, and the
+client's one `role_asserted` is minted from its start unless an open row
+already starts there, so a re-import corrects a client the import day
+dated. Identifier
 values go through `Entity_Index::identifier_value()`. `commit()` appends
 the import's events in order through one `Stream_Writer::append()`, then
 forgets what it read, so the next import reads the roster again. The roster
@@ -1826,7 +1879,7 @@ its own one-shot commands; nothing polls.
 | `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_id` and `last_error`, reads it whole; while collection is off every other row is listed neutral, never a fault; the projector catching up on the ontology is neutral until its hold has stood five minutes (`BEHIND_FAULT_S`), then a fault; with nothing held the backlog row counts the later queue's entries as items waiting to resolve or retry; every time it shows renders in the browser's own zone through the substrate's `formatLocalDateTime()`, while the dropped days stay the UTC days the server names, read as "Items parked from <first_day> to <last_day> were dropped before they resolved.", true of an entry aged out and of one the full queue refused; the line names each source no pass has reported ("Collecting from 5 of 6 sources; feed has not reported yet."), the names joined in the page's own language (`document.documentElement.lang`, else the browser's), and says the health is not fully known for any other unknown row, a source in a state it does not recognise included; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology`, `canManage` for the rest), and anyone else reads "An administrator can …" |
 | `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time, in the order the answer's `sort` names, which the reader switches, sending `--sort` from the first page; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words, the order and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
 | `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens` above `search --lens` a page at a time, in the order the answer's `sort` names, which the reader switches, beside `trends --lens`; trend rows and signals citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
-| `views/Entity.js` | default | `entity`, then `signals --entity` under its header, both axes, each row's value its axis and kind and the value it counts, its count against its baseline, then `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
+| `views/Entity.js` | default | `entity`, headed, for a record answering a `status`, by the client's status line — client since, the first row of its own `signals` read once answered or "No signal", its feature requests and complaints, and the day of its last item or "No item about it yet" — then `signals --entity` under its header, both axes, each row's value its axis and kind and the value it counts, its count against its baseline, then `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
 | `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity and the sentence each link quotes, and `review entities`, a pill per entity, each citing item with the sentence it quotes; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`, its field focused; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back. Each queue's list, named for its queue and described by a visually hidden sentence of its keys, takes focus and the review keys while focus is in it and not in a field, as the substrate's `isTypingTarget()` reads it: `j` and `k` move between the link pills or the entity rows (`data-review-row`, `tabindex="-1"`, so the shared `[tabindex]:focus-visible` ring shows), and `y`, `n` and `m` press the focused row's control whose `aria-keyshortcuts` names the key (✓, ✕, Merge…), a judgment moving focus to the row then in its place, else the last |
 | `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection`, its collection shown saving through `useHeld` until a read lists it by name |
 | `views/Watches.js` | default, `CLOSED_WATCH`, `newWatch` | `watches`, the caller's own, each with its target and unseen count, or "Inbox off" for a watch without its inbox, opened onto `watch_matches --key` a page at a time, or onto the words that its inbox is off, each match with a "Mark seen" (`mark_seen --key --item`) and the page with "Mark these seen", naming each match it shows, a marked match hidden through `useHeld` until a read no longer lists it and a landed mark returning to the first page; for every reader, not gated on `canTune`, the form saving a new watch or the one opened through `save_watch` — its name, the kind it follows and exactly one target (a lens picked from `lenses`, an entity key, or a collection picked from `collections`), and the three deliveries as checkboxes, each sent as `true` or `false` — and `remove_watch`, each held until a read of `watches` lists the watch with the name, target kind and deliveries the save sent, an edit by its own key, the target's key uncompared because the server stores an entity as its survivor |

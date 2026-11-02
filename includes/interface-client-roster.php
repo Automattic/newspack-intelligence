@@ -27,7 +27,7 @@ interface Client_Roster {
 	public function statuses(): array;
 
 	/**
-	 * A new client, active from today.
+	 * A new client, active from the day its site was Created.
 	 *
 	 * @param array{atomic_site_id:string,domain_name:string,created:string} $row   The CSV row.
 	 * @param string                                                         $today YYYY-MM-DD, UTC.
@@ -35,7 +35,8 @@ interface Client_Roster {
 	public function create( array $row, string $today ): void;
 
 	/**
-	 * Refresh a held client's CSV fields; its status is left alone.
+	 * Refresh a held client's CSV fields, its Created day among them; its
+	 * status is left alone.
 	 *
 	 * @param string                                                         $atomic_id The atomic site id.
 	 * @param array{atomic_site_id:string,domain_name:string,created:string} $row       The CSV row.

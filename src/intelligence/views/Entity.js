@@ -163,6 +163,80 @@ function countsText( counts ) {
 }
 
 /**
+ * A client's latest signal, the first the signals read lists; nothing
+ * until that read answers.
+ *
+ * @param {Object[]|undefined} signals The signals read's rows.
+ * @return {string|undefined} The part.
+ */
+function latestSignal( signals ) {
+	if ( undefined === signals ) {
+		return undefined;
+	}
+	return 0 === signals.length
+		? __( 'No signal', 'newspack-intelligence' )
+		: sprintf(
+				/* translators: 1: the signal's axis and kind, 2: the first UTC day of its week. */
+				__(
+					'Latest signal: %1$s, week of %2$s',
+					'newspack-intelligence'
+				),
+				signalValue( signals[ 0 ] ),
+				signals[ 0 ].bucket
+		  );
+}
+
+/**
+ * A client's status line: when it became a client, its latest signal, how
+ * many items about it are feature requests and complaints, and when the
+ * newest of them is dated.
+ *
+ * @param {Object}             status  The record's `status`.
+ * @param {Object[]|undefined} signals The signals read's rows.
+ * @return {string} The line.
+ */
+function statusText( status, signals ) {
+	const { feature_request: asks, complaint: complaints } = status.kinds;
+	return metaLine(
+		sprintf(
+			/* translators: %s: the first UTC day of its client role. */
+			__( 'Client since %s', 'newspack-intelligence' ),
+			utcDay( status.client_since )
+		),
+		latestSignal( signals ),
+		[
+			sprintf(
+				/* translators: %d: items about it that are feature requests. */
+				_n(
+					'%d feature request',
+					'%d feature requests',
+					asks,
+					'newspack-intelligence'
+				),
+				asks
+			),
+			sprintf(
+				/* translators: %d: items about it that are complaints. */
+				_n(
+					'%d complaint',
+					'%d complaints',
+					complaints,
+					'newspack-intelligence'
+				),
+				complaints
+			),
+		].join( ', ' ),
+		null === status.last_item_ts
+			? __( 'No item about it yet', 'newspack-intelligence' )
+			: sprintf(
+					/* translators: %s: the UTC day of the newest item about it. */
+					__( 'Last item %s', 'newspack-intelligence' ),
+					utcDay( status.last_item_ts )
+			  )
+	);
+}
+
+/**
  * The items an entity's own site published, newest first, a page at a time.
  *
  * @param {Object}                 props
@@ -252,9 +326,10 @@ function Published( { entityKey, name, count, onOpenEntity, onSave } ) {
 }
 
 /**
- * Entity: one entity's record, its signals on both axes, its timeline of
- * the items about it a page at a time, then, collapsed, the items its own
- * site published, the entities sharing its items and the claims naming it,
+ * Entity: one entity's record, headed for a client by its status line, its
+ * signals on both axes, its timeline of the items about it a page at a
+ * time, then, collapsed, the items its own site published, the entities
+ * sharing its items and the claims naming it,
  * each from its own read; and, once the record has answered, for a
  * curator, the forms adding a name or identifier and asserting or ending a
  * role. Every edit that lands re-reads the record.
@@ -304,6 +379,14 @@ export default function Entity( {
 				{ ( entity ) => (
 					<>
 						<h2>{ entity.name || entity.entity_key }</h2>
+						{ entity.status && (
+							<p className="newspack-nodes-status">
+								{ statusText(
+									entity.status,
+									signals.answer?.signals
+								) }
+							</p>
+						) }
 						<p className="newspack-nodes-status is-muted">
 							{ metaLine(
 								entity.type,

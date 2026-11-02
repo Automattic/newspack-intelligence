@@ -445,15 +445,16 @@ final class ReresolverNodeTest extends TestCase {
 
 	/**
 	 * A unit whose projection read fails for any reason but an absent table
-	 * leaves the queue with one line, so a respawn cannot crash-loop on it,
-	 * and the next unit runs on the next tick.
+	 * leaves the queue with one line, its control characters shown inert,
+	 * so a respawn cannot crash-loop on it, and the next unit runs on the
+	 * next tick.
 	 */
 	public function test_a_failing_read_drops_its_unit_and_the_next_runs(): void {
 		$this->seed( self::items( [ 'feed:contain-1', 'Mesa Courier wins', '', 'https://news.example/m', 1793100000 ] ) );
 		$calls                      = 0;
 		\Newspack_Intelligence\Intel_Graph_Row_Schema::$read_rows = static function ( \Closure $read ) use ( &$calls ): mixed {
 			if ( 1 === ++$calls ) {
-				throw new \PDOException( 'SQLSTATE[HY000]: database disk image is malformed' );
+				throw new \PDOException( "SQLSTATE[HY000]: database disk image is malformed\x1b[2J" );
 			}
 			return \Newspack_Nodes\Row_Table_Node::read( \Newspack_Intelligence\Intel_Graph_Row_Schema::class, $read );
 		};
@@ -464,7 +465,7 @@ final class ReresolverNodeTest extends TestCase {
 		$this->sweep_at( self::NOW + Reresolver_Node::SWEEP_INTERVAL_S );
 		$this->assertSame( [], $this->sent_keys() );
 		$this->assertSame( [ 'name|Mesa Courier' ], \array_keys( $this->reresolver->save_state()['queue'] ) );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'dropping a re-resolution unit its read failed: name|HarbGaz: SQLSTATE[HY000]: database disk image is malformed' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'dropping a re-resolution unit its read failed: name|HarbGaz: SQLSTATE[HY000]: database disk image is malformed<1B>[2J' ) );
 
 		$this->sweep_at( self::NOW + Reresolver_Node::SWEEP_INTERVAL_S + 1 );
 		$this->assertSame( [ 'feed:contain-1' ], $this->sent_keys() );

@@ -254,7 +254,7 @@ class Reresolver_Node extends Timer_Node {
 		[ $item_keys, $total ] = $found;
 		$this->send( $item_keys, $work['at'] + self::SWEEP_INTERVAL_S, [] );
 		if ( $total > \count( $item_keys ) ) {
-			$this->print_less_often( 're-resolving only the newest ' . self::MAX_ITEMS_PER_SIGNAL . ' items a signal names: ', \sprintf( '%s names %d items; skipping the oldest %d', $value, $total, $total - \count( $item_keys ) ) );
+			$this->print_less_often( 're-resolving only the newest ' . self::MAX_ITEMS_PER_SIGNAL . ' items a signal names: ', \sprintf( '%s names %d items; skipping the oldest %d', Core::terminal_safe( $value ), $total, $total - \count( $item_keys ) ) );
 		}
 	}
 
@@ -456,7 +456,7 @@ class Reresolver_Node extends Timer_Node {
 			throw $stop;
 		} catch ( \Throwable $e ) {
 			unset( $this->queue[ $key ] );
-			$this->print_less_often( 'dropping a re-resolution unit its read failed: ', "{$key}: {$e->getMessage()}" );
+			$this->print_less_often( 'dropping a re-resolution unit its read failed: ', Core::terminal_safe( "{$key}: {$e->getMessage()}" ) );
 		}
 		return null;
 	}

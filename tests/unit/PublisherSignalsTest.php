@@ -23,6 +23,7 @@ require_once __DIR__ . '/../support/signs-in-users.php';
  * baseline mean of at least SIGNAL_MIN is a drop, the first two empty weeks
  * of one a silence, unless every client's output fell that week, which is
  * collection failing rather than the client. A lens answers none of them.
+ * A client's record answers its status beside them.
  *
  * The Courier is a client, the Tern Ledger a client publishing five items a
  * week throughout, and the Heron Weekly a former client. The fixture's tick
@@ -212,6 +213,41 @@ final class PublisherSignalsTest extends TestCase {
 
 		$this->assertSame( [ 'drop' ], \array_column( $read( 0.0 ), 'signal' ) );
 		$this->assertSame( [], $read( (float) self::THIS_WEEK ) );
+	}
+
+	/**
+	 * A client's record heads with its status: when its open client role
+	 * began, how many readable items about it are feature requests and
+	 * complaints, and when the newest item about it is dated. What its own
+	 * site published counts in neither. Its signals are the signals read's.
+	 */
+	public function test_a_clients_record_answers_its_status(): void {
+		$this->published( self::TERN, 'research', self::STEADY );
+		$this->published( self::COURIER, 'research', [ 1 => 1, 2 => 4, 3 => 4, 4 => 4, 5 => 4, 6 => 4, 7 => 4, 8 => 4, 9 => 4 ] );
+		$this->published( self::COURIER, 'complaint', [ 1 => 1 ] );
+		$this->about( 'feature_request', [ 2 => 2 ] );
+		$this->about( 'complaint', [ 3 => 3 ] );
+		$this->about( 'praise', [ 4 => 1 ] );
+
+		$this->assertSame(
+			[ 'client_since' => self::$jan_01, 'kinds' => [ 'feature_request' => 2, 'complaint' => 3 ], 'last_item_ts' => self::THIS_WEEK - 2 * self::WEEK + 3 * 86400 + 2 * 60 ],
+			$this->ci->dispatch( 'entity', [ self::COURIER ] )['status']
+		);
+	}
+
+	/** A client with nothing about it answers its start alone. */
+	public function test_a_quiet_clients_status_answers_its_start_alone(): void {
+		$this->assertSame(
+			[ 'client_since' => self::$jan_01, 'kinds' => [ 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => null ],
+			$this->ci->dispatch( 'entity', [ self::TERN ] )['status']
+		);
+	}
+
+	/** An entity holding no client role, a former client's included, answers no status. */
+	public function test_an_entity_holding_no_client_role_answers_no_status(): void {
+		$this->about( 'complaint', [ 2 => 3 ] );
+
+		$this->assertNull( $this->ci->dispatch( 'entity', [ self::HERON ] )['status'] );
 	}
 
 	/**

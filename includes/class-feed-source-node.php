@@ -5,7 +5,8 @@
  *
  * It fetches each configured feed, each client's, and the feed a client's
  * home page advertises once its own is lost, remembering each client
- * domain's found feed and backoff in one row of its Table.
+ * domain's found feed and backoff in one row of its Table. A client still
+ * shown by its domain is named once by its own feed's title.
  *
  * @package Newspack_Intelligence
  */
@@ -71,6 +72,12 @@ class Feed_Source_Node extends Source_Node {
 	/** Whether the row was read, so the domains may be written over it. */
 	private bool $writable = false;
 
+	/** @var array<string,string> Each client domain whose entity every read shows by a domain => that entity, read each pass. */
+	private array $unnamed = [];
+
+	/** @var array<string,true> Each entity this process named, so no later pass names it again. */
+	private array $named = [];
+
 	/** Write the domains a pass changed, at most once a tick, so a recycle keeps them. */
 	protected function fire(): void {
 		parent::fire();
@@ -113,20 +120,43 @@ class Feed_Source_Node extends Source_Node {
 	protected function received( string $url, string $body ): array {
 		$domain = Core::as_string( $this->note()['domain'] ?? '' );
 		if ( '' === $domain ) {
-			return $this->parse( $url, $body, '' ) ?? [];
+			return $this->parse( $url, $body, '' )[0] ?? [];
 		}
 		if ( self::home_of( $domain ) === $url ) {
 			$this->discovered( $domain, $body );
 			return [];
 		}
-		$lanes = self::lanes( $domain, $this->found() );
-		$items = $this->parse( $url, $body, $domain );
+		$lanes           = self::lanes( $domain, $this->found() );
+		[ $items, $title ] = $this->parse( $url, $body, $domain ) ?? [ null, '' ];
 		if ( null === $items || ! $this->landed( $lanes, $url, $items ) ) {
 			$this->lost( $domain );
 			return [];
 		}
 		$this->keep( $domain, [ 'feed' => $this->found() ] );
+		$this->entitle( $domain, $title );
 		return $this->in_lane( $items, $lanes );
+	}
+
+	/**
+	 * Name a client every read still shows by a domain after its own feed's
+	 * title, whitespace collapsed, as a canonical name, once; a title that
+	 * is blank, past Graph_Curation::NAME_BYTES, the domain again, or that
+	 * does not spell the site (`Resolver::names_site()`) names no one.
+	 */
+	private function entitle( string $domain, string $title ): void {
+		$entity = $this->unnamed[ $domain ] ?? null;
+		$title  = \trim( (string) \preg_replace( '/\s+/u', ' ', $title ) );
+		if ( null === $entity || isset( $this->named[ $entity ] ) || $domain === Entity_Index::identifier_value( 'domain', $title ) || ! Resolver::names_site( $title, $domain ) ) {
+			return;
+		}
+		try {
+			$title = Graph_Curation::bounded( 'title', $title, Graph_Curation::NAME_BYTES );
+		} catch ( \InvalidArgumentException ) {
+			return;
+		}
+		if ( $this->write( 'name_added', [ 'entity_key' => $entity, 'kind' => 'canonical', 'value' => $title ], $entity ) ) {
+			$this->named[ $entity ] = true;
+		}
 	}
 
 	/**
@@ -316,13 +346,14 @@ class Feed_Source_Node extends Source_Node {
 
 	/**
 	 * A feed body's items, RSS 2.0 or Atom, a client's keyed
-	 * `feed:<domain>:<id>`, a configured feed's `feed:<id>`; null, failing once
-	 * under its url, for a body that is neither.
+	 * `feed:<domain>:<id>`, a configured feed's `feed:<id>`, and the feed's
+	 * own title; null, failing once under its url, for a body that is
+	 * neither.
 	 *
 	 * @param string $url    The url the feed was queued under.
 	 * @param string $body   The body.
 	 * @param string $domain The client's domain, '' for a configured feed.
-	 * @return array<int,array<string,mixed>>|null
+	 * @return array{0:array<int,array<string,mixed>>,1:string}|null
 	 */
 	private function parse( string $url, string $body, string $domain ): ?array {
 		$prev = \libxml_use_internal_errors( true );
@@ -339,7 +370,9 @@ class Feed_Source_Node extends Source_Node {
 		}
 		// Dispatch on document shape: RSS has <channel>; Atom's root is <feed>.
 		$prefix = '' === $domain ? '' : "{$domain}:";
-		return $rss ? $this->parse_rss( $xml, $prefix ) : $this->parse_atom( $xml, $prefix );
+		return $rss
+			? [ $this->parse_rss( $xml, $prefix ), (string) $xml->channel->title ]
+			: [ $this->parse_atom( $xml, $prefix ), (string) $xml->children( self::ATOM_NS )->title ];
 	}
 
 	/**
@@ -485,12 +518,12 @@ class Feed_Source_Node extends Source_Node {
 	/**
 	 * client_domains() less any that is not a plain hostname
 	 * (`Entity_Index::hostname_fault()`), each named; null when no projection
-	 * opens.
+	 * opens. Holds the domains whose client is still shown by a domain.
 	 *
 	 * @return list<string>|null
 	 */
 	private function clients(): ?array {
-		$domains = $this->client_domains();
+		[ $domains, $this->unnamed ] = $this->client_domains() ?? [ null, [] ];
 		if ( null === $domains ) {
 			return null;
 		}
@@ -507,10 +540,12 @@ class Feed_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * Each domain of every entity holding an open `client` role, in one
-	 * projection read; null, logged, when no projection opens.
+	 * Each domain of every entity holding an open `client` role, and each
+	 * of those whose entity `Graph_Query::name_of()` shows by one of its
+	 * domains => that entity, in one projection read; null, logged, when no
+	 * projection opens.
 	 *
-	 * @return list<string>|null
+	 * @return array{0:list<string>,1:array<string,string>}|null
 	 */
 	private function client_domains(): ?array {
 		return Intel_Graph_Row_Schema::read(
@@ -526,10 +561,18 @@ class Feed_Source_Node extends Source_Node {
 				$clients = [];
 				foreach ( $domains as $domain => $entity ) {
 					if ( isset( $open[ $entity ]['client'] ) ) {
-						$clients[] = (string) $domain;
+						$clients[ (string) $domain ] = $entity;
 					}
 				}
-				return $clients;
+				$entities = \array_values( \array_unique( $clients ) );
+				$shown    = [];
+				if ( [] !== $entities ) {
+					foreach ( $r->rows( 'SELECT k.entity_key, ' . Graph_Query::name_of( $r, 'k.entity_key' ) . ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' k WHERE k.entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $entities ) . ' )', $entities ) as [ $entity, $name ] ) {
+						$shown[ Core::as_string( $entity ) ] = Entity_Index::identifier_value( 'domain', Core::as_string( $name ) );
+					}
+				}
+				$unnamed = \array_filter( $clients, static fn ( string $entity ): bool => isset( $shown[ $entity ], $domains[ $shown[ $entity ] ] ) && $entity === $domains[ $shown[ $entity ] ] );
+				return [ \array_map( 'strval', \array_keys( $clients ) ), $unnamed ];
 			},
 			"{$this->name}: no intel-graph to read client domains from; fetching the configured feeds alone: "
 		);

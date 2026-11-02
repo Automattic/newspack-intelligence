@@ -623,6 +623,175 @@ XML;
 		);
 	}
 
+	/** The Kestrel, a client the roster named by its domain. */
+	private const KESTREL = 'organization:atomic-880044';
+
+	private const KESTREL_FEED = 'https://kestrelbay.example/feed/';
+
+	private const SANDPIPER_FEED = 'https://sandpipergazette.example/feed/';
+
+	/**
+	 * A client named by its own domain takes its feed's title as its
+	 * canonical name, its whitespace collapsed, once: not again on the next
+	 * pass, nor from the next process once the projection holds it. A client
+	 * already holding a name takes none.
+	 */
+	public function test_a_client_named_by_its_domain_takes_its_feeds_title_once(): void {
+		$node = $this->titled_clients();
+
+		$this->tick( $node );
+		$this->complete( self::KESTREL_FEED, self::titled_rss( "\n\t\tKestrel  Bay Courier\n", 'https://kestrelbay.example' ) );
+		$this->complete( self::SANDPIPER_FEED, self::titled_rss( 'Sandpiper Gazette Online', 'https://sandpipergazette.example' ) );
+
+		$this->assertSame( [ [ self::KESTREL, 'canonical', 'Kestrel Bay Courier' ] ], self::brief_names( $this->names() ) );
+		$this->assertStringStartsWith( Intel_Event::machine_prefix( 'source:feed' ), $this->names()[0]['actor'] );
+
+		$this->tick( $node );
+		$this->complete( self::KESTREL_FEED, self::titled_rss( 'Kestrel Bay Courier', 'https://kestrelbay.example' ) );
+		$this->complete( self::SANDPIPER_FEED, self::titled_rss( 'Sandpiper Gazette Online', 'https://sandpipergazette.example' ) );
+		$this->assertCount( 1, $this->names() );
+
+		$this->seed( $this->names() );
+		$successor = $this->successor( $node );
+		$this->tick( $successor );
+		$this->complete( self::KESTREL_FEED, self::titled_rss( 'Kestrel Bay Courier', 'https://kestrelbay.example' ) );
+		$this->complete( self::SANDPIPER_FEED, self::titled_rss( 'Sandpiper Gazette Online', 'https://sandpipergazette.example' ) );
+		$this->assertCount( 1, $this->names() );
+	}
+
+	/** An Atom feed's own title names the client as an RSS channel's does. */
+	public function test_an_atom_feeds_title_names_the_client(): void {
+		$node = $this->titled_clients();
+
+		$this->tick( $node );
+		$this->complete( self::KESTREL_FEED, '<?xml version="1.0"?><feed xmlns="http://www.w3.org/2005/Atom"><title>Kestrel Bay Atom Desk</title><entry><title>Tide</title><link href="https://kestrelbay.example/tide"/><id>tide-1</id><updated>2026-10-19T12:00:00Z</updated></entry></feed>' );
+
+		$this->assertSame( [ [ self::KESTREL, 'canonical', 'Kestrel Bay Atom Desk' ] ], self::brief_names( $this->names() ) );
+	}
+
+	/** @return array<string,array{0:string}> */
+	public static function titles_never_written(): array {
+		return [
+			'empty'               => [ '' ],
+			'only whitespace'     => [ " \n\t " ],
+			'the domain'          => [ 'KestrelBay.example' ],
+			'the domain, www'     => [ 'www.kestrelbay.example' ],
+			'past the name bound' => [ \str_repeat( 'Kestrel Bay ', 30 ) ],
+			'a generic word'      => [ 'News' ],
+			'another'             => [ 'Home' ],
+			'a part of the label' => [ 'Kestrel Daily' ],
+		];
+	}
+
+	/**
+	 * A title names the site only when its letters and digits spell the
+	 * domain's registrable label, its spacing and case aside.
+	 */
+	public function test_a_title_spelling_the_domains_label_names_the_client(): void {
+		$node = $this->titled_clients( 'organization:atomic-880055', 'harborgazette.example' );
+
+		$this->tick( $node );
+		$this->complete( self::GAZETTE_FEED, self::titled_rss( 'Harbor Gazette', self::GAZETTE ) );
+
+		$this->assertSame( [ [ 'organization:atomic-880055', 'canonical', 'Harbor Gazette' ] ], self::brief_names( $this->names() ) );
+	}
+
+	/** @return array<string,array{0:string,1:string}> */
+	public static function titles_off_the_labels_word_boundaries(): array {
+		return [
+			'the label running into a word' => [ 'kestrelbay.example', 'Kestrel Bayou News' ],
+			'the label inside a word'       => [ 'lantern.example', 'Lanternese Weekly' ],
+		];
+	}
+
+	/**
+	 * The label must start and end on word boundaries, as the resolver's stem
+	 * match requires, or the title names another word.
+	 *
+	 * @dataProvider titles_off_the_labels_word_boundaries
+	 */
+	public function test_a_label_off_a_word_boundary_names_no_one( string $domain, string $title ): void {
+		$node = $this->titled_clients( 'organization:atomic-880077', $domain );
+
+		$this->tick( $node );
+		$this->complete( "https://{$domain}/feed/", self::titled_rss( $title, "https://{$domain}" ) );
+
+		$this->assertSame( [], $this->names() );
+	}
+
+	/** A label shorter than the resolver's least stem is too common a word to vouch for a title. */
+	public function test_a_short_label_names_no_one(): void {
+		$node = $this->titled_clients( 'organization:atomic-880066', 'abq.example' );
+
+		$this->tick( $node );
+		$this->complete( 'https://abq.example/feed/', self::titled_rss( 'ABQ Tide Desk', 'https://abq.example' ) );
+
+		$this->assertSame( [], $this->names() );
+	}
+
+	/**
+	 * A title that is empty, only whitespace, the bare domain again, or past
+	 * the name bound names no one.
+	 *
+	 * @dataProvider titles_never_written
+	 */
+	public function test_a_title_naming_nothing_new_is_never_written( string $title ): void {
+		$node = $this->titled_clients();
+
+		$this->tick( $node );
+		$this->complete( self::KESTREL_FEED, self::titled_rss( $title, 'https://kestrelbay.example' ) );
+
+		$this->assertSame( [], $this->names() );
+	}
+
+	/**
+	 * Client feeds on, over a client the roster named by its domain, the
+	 * Kestrel unless another is given, and the Sandpiper Gazette, a client
+	 * already holding a name.
+	 *
+	 * @param string $key    The domain-named client.
+	 * @param string $domain Its domain.
+	 */
+	private function titled_clients( string $key = self::KESTREL, string $domain = 'kestrelbay.example' ): Feed_Source_Node {
+		$this->start_intel_graph();
+		$this->seed(
+			self::entity( $key, $domain, [ 'domain' => [ $domain ] ] ),
+			self::entity( 'organization:sandpiper-gazette', 'Sandpiper Gazette', [ 'domain' => [ 'sandpipergazette.example' ] ] ),
+			[
+				Intel_Event::make( 'role_asserted', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'role_asserted', [ 'entity_key' => 'organization:sandpiper-gazette', 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ),
+			]
+		);
+		$node = $this->feed();
+		$node->set_client_feeds( true );
+		return $node;
+	}
+
+	/** An RSS body titled $title, listing one item on $site from an hour ago. */
+	private static function titled_rss( string $title, string $site ): string {
+		$when = \gmdate( 'D, d M Y H:i:s', (int) Core::$now - 3600 );
+		return '<?xml version="1.0"?><rss version="2.0"><channel><title>' . \htmlspecialchars( $title, \ENT_XML1 ) . "</title><item><title>Tide</title><link>{$site}/tide</link><guid>tide-1</guid><pubDate>{$when} GMT</pubDate></item></channel></rss>";
+	}
+
+	/**
+	 * The names the feed wrote, as the writer took them.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private function names(): array {
+		return \array_values( \array_filter( \array_column( $this->writer->captured, Message::VALUE ), static fn ( array $event ): bool => 'name_added' === $event['event'] ) );
+	}
+
+	/**
+	 * Each name as its entity, kind and value.
+	 *
+	 * @param list<array<string,mixed>> $names The names.
+	 * @return list<list<mixed>>
+	 */
+	private static function brief_names( array $names ): array {
+		return \array_map( static fn ( array $name ): array => [ $name['entity_key'], $name['kind'], $name['value'] ], $names );
+	}
+
 	/** A client item's key counts its domain against the key cap, through the one record path. */
 	public function test_a_client_items_key_counts_its_domain_against_the_cap(): void {
 		$stderr = $this->capture_stderr();

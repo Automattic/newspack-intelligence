@@ -55,6 +55,11 @@ export const ENTITY = {
 	topics: [ { topic_key: 'topic:local-news', name: 'Local news' } ],
 	counts: { items: 12, proposed_links: 3 },
 	published: { count: 0 },
+	status: {
+		client_since: 1788912000,
+		kinds: { feature_request: 2, complaint: 5 },
+		last_item_ts: 1790035200,
+	},
 	available: true,
 };
 

@@ -176,7 +176,7 @@ class Extractor_Node extends Node {
 			$this->publish_snapshot( [ 'mode' => 'call', 'last_ok_at' => (int) Core::$now ] );
 		}
 		if ( null === $parsed && $extracted ) {
-			$this->print_less_often( 'keeping the earlier extraction of ', "{$item_key}: no call answered" );
+			$this->print_less_often( 'keeping the earlier extraction of ', Core::terminal_safe( $item_key ) . ': no call answered' );
 			return;
 		}
 		$stage    = null === $parsed ? self::HEURISTIC_STAGE : 'extract';
@@ -264,7 +264,7 @@ class Extractor_Node extends Node {
 	 */
 	private function retry( string $item_key, int $attempt, bool $owed ): void {
 		if ( $attempt >= self::MAX_ATTEMPTS ) {
-			$this->print_less_often( 'giving up extracting ', "{$item_key} after {$attempt} attempts" );
+			$this->print_less_often( 'giving up extracting ', Core::terminal_safe( $item_key ) . " after {$attempt} attempts" );
 			return;
 		}
 		$backoff = \min( self::RETRY_MAX_S, self::RETRY_BASE_S * ( 2 ** $attempt ) );

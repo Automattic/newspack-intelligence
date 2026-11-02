@@ -700,16 +700,31 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 				$this->remember( $key );
 				continue;
 			}
-			try {
-				$value = Intel_Event::machine_event( "source:{$this->name}", 'item_recorded', $item );
-			} catch ( \InvalidArgumentException $invalid ) {
-				$this->print_less_often( 'refused an item: ', "{$key}: {$invalid->getMessage()}" );
-				continue;
-			}
-			$this->emit( '', $value );
 			// Unlike a size refusal, a make() refusal is not kept: it retries.
-			$this->remember( $key );
+			if ( $this->write( 'item_recorded', $item, $key ) ) {
+				$this->remember( $key );
+			}
 		}
+	}
+
+	/**
+	 * Send one event this source mints, as the stage `source:<name>`, to its
+	 * target; one make() refuses is logged naming its subject, and not sent.
+	 *
+	 * @param string              $kind    The event kind.
+	 * @param array<string,mixed> $fields  Its fields.
+	 * @param string              $subject What the refusal names: an item key, an entity.
+	 * @return bool Whether it was sent.
+	 */
+	protected function write( string $kind, array $fields, string $subject ): bool {
+		try {
+			$value = Intel_Event::machine_event( "source:{$this->name}", $kind, $fields );
+		} catch ( \InvalidArgumentException $invalid ) {
+			$this->print_less_often( "refused {$kind}: ", Core::terminal_safe( "{$subject}: {$invalid->getMessage()}" ) );
+			return false;
+		}
+		$this->emit( '', $value );
+		return true;
 	}
 
 	/**

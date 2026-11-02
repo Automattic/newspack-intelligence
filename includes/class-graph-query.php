@@ -22,7 +22,7 @@
  * publishing reads its `publisher` links, and visibility and a claim's
  * subject rest on any link.
  * Summaries, kinds and scores come from `extractions`, a name from
- * `entities`, joined, since a link may name an entity with no row.
+ * `name_of()`, joined, since a link may name an entity with no row.
  *
  * `search` and `trends` read through a lens when the call names one: each
  * filter the lens saved stands for one the call does not name, and its
@@ -80,6 +80,9 @@ final class Graph_Query {
 
 	/** The role an entity holds while it is a client. */
 	private const CLIENT = 'client';
+
+	/** The item kinds a client's status counts. */
+	private const STATUS_KINDS = [ 'feature_request', 'complaint' ];
 
 	/** What a count of every item counts: one value, no join. */
 	private const EVERY_ITEM = [ "''", '' ];
@@ -345,7 +348,7 @@ final class Graph_Query {
 		if ( [] !== $items ) {
 			$page_keys             = \array_map( static fn ( array $item ): string => Core::as_string( $item['item_key'] ), $items );
 			[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( ' . Intel_Graph_Row_Schema::marks( $page_keys ) . ' )', $page_keys );
-			foreach ( $r->rows( "{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::column_of( $r, 'name', 'live.entity_key' ) . " , live.state FROM live WHERE NOT live.topical ORDER BY live.role = 'subject' DESC, live.entity_key", [ ...$g['binds'], ...$live_binds ] ) as [ $item_key, $entity, $name, $state ] ) {
+			foreach ( $r->rows( "{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::name_of( $r, 'live.entity_key' ) . " , live.state FROM live WHERE NOT live.topical ORDER BY live.role = 'subject' DESC, live.entity_key", [ ...$g['binds'], ...$live_binds ] ) as [ $item_key, $entity, $name, $state ] ) {
 				$linked[ Core::as_string( $item_key ) ][] = [ 'entity_key' => $entity, 'name' => $name, 'state' => $state ];
 			}
 		}
@@ -429,8 +432,8 @@ final class Graph_Query {
 	 * One entity, read as its survivor: its record, the keys merged into it,
 	 * every name, identifier and role it or they carry, every topic they are
 	 * tagged with that the caller may see (`visible()`), how many readable
-	 * items are about it and how many of those links are proposed, and how
-	 * many its own site published.
+	 * items are about it and how many of those links are proposed, how
+	 * many its own site published, and a client's `status()`.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`.
 	 * @return array<string,mixed>
@@ -438,7 +441,7 @@ final class Graph_Query {
 	 */
 	public static function entity( array $args ): array {
 		$key   = Core::as_string( $args['key'] );
-		$empty = [ 'entity_key' => $key, 'type' => null, 'name' => null, 'state' => null, 'merged_from' => [], 'names' => [], 'identifiers' => [], 'roles' => [], 'topics' => [], 'counts' => [ 'items' => 0, 'proposed_links' => 0 ], 'published' => [ 'count' => 0 ] ];
+		$empty = [ 'entity_key' => $key, 'type' => null, 'name' => null, 'state' => null, 'merged_from' => [], 'names' => [], 'identifiers' => [], 'roles' => [], 'topics' => [], 'counts' => [ 'items' => 0, 'proposed_links' => 0 ], 'published' => [ 'count' => 0 ], 'status' => null ];
 		return self::answer( $empty, static fn ( Row_Reader $r, array $g ): array => self::entity_record( $r, $g, $key ) );
 	}
 
@@ -455,7 +458,7 @@ final class Graph_Query {
 		$survivor              = self::seen( $r, $g, $key );
 		$keys                  = self::keys_of( $survivor, $g );
 		$in                    = Intel_Graph_Row_Schema::marks( $keys );
-		$record                = $r->rows( 'SELECT type, name FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e WHERE entity_key = ? LIMIT 1', [ $survivor ] )[0] ?? null;
+		$record                = $r->rows( 'SELECT type, ' . self::name_of( $r, 'e.entity_key' ) . ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e WHERE entity_key = ? LIMIT 1', [ $survivor ] )[0] ?? null;
 		[ $live, $live_binds ] = self::live( $r, "{t}.entity_key IN ( {$in} )", $keys );
 		$pairs                 = static fn ( string $table, string $a, string $b ): array => \array_map(
 			static fn ( array $row ): array => [ $a => $row[0], $b => $row[1] ],
@@ -467,7 +470,7 @@ final class Graph_Query {
 		);
 		$topics                = \array_filter(
 			$r->rows(
-				"{$g['with']} SELECT DISTINCT topic_key, " . self::column_of( $r, 'name', 'topic_key' ) . ' FROM ( SELECT COALESCE( mg.value, t.topic_key ) AS topic_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_topics' )
+				"{$g['with']} SELECT DISTINCT topic_key, " . self::name_of( $r, 'topic_key' ) . ' FROM ( SELECT COALESCE( mg.value, t.topic_key ) AS topic_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_topics' )
 				. " t LEFT JOIN mg ON mg.key = t.topic_key WHERE t.entity_key IN ( {$in} ) ) WHERE topic_key <> '' ORDER BY 1",
 				[ ...$g['binds'], ...$keys ]
 			),
@@ -488,6 +491,39 @@ final class Graph_Query {
 			'topics'      => \array_values( \array_map( static fn ( array $row ): array => [ 'topic_key' => $row[0], 'name' => $row[1] ], $topics ) ),
 			'counts'      => [ 'items' => Core::as_int( $counts[0] ), 'proposed_links' => Core::as_int( $counts[1] ) ],
 			'published'   => [ 'count' => Core::as_int( $published ) ],
+			'status'      => self::status( $r, $g, $survivor, $roles ),
+		];
+	}
+
+	/**
+	 * A client's status: when its open client role began, how many readable
+	 * items about it are of each STATUS_KINDS kind, and when the newest of
+	 * them is dated; null for an entity holding no open client role. Its
+	 * signals are the `signals` read's, which the page already makes.
+	 *
+	 * @param Row_Reader                                            $r        The reader.
+	 * @param Graph                                                 $g        The graph the read opened.
+	 * @param string                                                $survivor The entity.
+	 * @param list<array{role:mixed,from_ts:mixed,to_ts:mixed}> $roles    Every role row of its keys.
+	 * @return array{client_since:int,kinds:array<string,int>,last_item_ts:int|null}|null
+	 */
+	private static function status( Row_Reader $r, array $g, string $survivor, array $roles ): ?array {
+		$open = \array_filter( $roles, static fn ( array $row ): bool => self::CLIENT === $row['role'] && 0 === Core::as_int( $row['to_ts'] ) );
+		if ( [] === $open ) {
+			return null;
+		}
+		$filter                          = self::filter_of( [ 'entity' => $survivor ] );
+		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false );
+		$counted                         = \implode( ', ', \array_fill( 0, \count( self::STATUS_KINDS ), 'COUNT( DISTINCT CASE WHEN x.kind = ? THEN i.item_key END )' ) );
+		$row                             = $r->rows(
+			"{$with} SELECT MAX( " . Intel_Graph_Row_Schema::ITEM_TIME . " ), {$counted} FROM ri i LEFT JOIN " . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . " x ON x.item_key = i.item_key WHERE {$where}",
+			[ ...$lead, ...self::STATUS_KINDS, ...$binds ]
+		)[0];
+		$last                            = \array_shift( $row );
+		return [
+			'client_since' => \min( \array_map( static fn ( array $row ): int => Core::as_int( $row['from_ts'] ), $open ) ),
+			'kinds'        => \array_combine( self::STATUS_KINDS, \array_map( Core::as_int( ... ), $row ) ),
+			'last_item_ts' => null === $last ? null : Core::as_int( $last ),
 		];
 	}
 
@@ -542,7 +578,7 @@ final class Graph_Query {
 					. ' pairs AS ( SELECT DISTINCT live.entity_key, live.item_key, live.url, live.title, live.t FROM live JOIN mine ON mine.item_key = live.item_key WHERE live.entity_key <> ? ),'
 					. ' best AS ( SELECT entity_key, COUNT(*) AS n FROM pairs GROUP BY entity_key ORDER BY n DESC, entity_key LIMIT ? ),'
 					. ' cited AS ( SELECT p.entity_key, p.item_key, p.url, p.title, ROW_NUMBER() OVER ( PARTITION BY p.entity_key ORDER BY p.t DESC, p.item_key DESC ) AS rn FROM pairs p JOIN best ON best.entity_key = p.entity_key )'
-					. ' SELECT best.entity_key, ' . self::column_of( $r, 'name', 'best.entity_key' ) . ', ' . self::column_of( $r, 'type', 'best.entity_key' )
+					. ' SELECT best.entity_key, ' . self::name_of( $r, 'best.entity_key' ) . ', ' . self::type_of( $r, 'best.entity_key' )
 					. ', best.n, cited.item_key, cited.url, cited.title FROM best JOIN cited ON cited.entity_key = best.entity_key WHERE cited.rn <= ? ORDER BY best.n DESC, best.entity_key, cited.rn',
 					[ ...$g['binds'], ...$live_binds, $survivor, $survivor, $limit, self::CITATIONS ]
 				);
@@ -1350,7 +1386,7 @@ final class Graph_Query {
 			. ' best AS ( SELECT p.entity_key, p.ts FROM proposed p WHERE EXISTS ( SELECT 1 FROM cites c WHERE c.entity_key = p.entity_key ) ORDER BY p.ts DESC, p.entity_key LIMIT ? ),'
 			. ' quoted AS ( SELECT c.entity_key, c.item_key, MAX( c.title ) AS title, MAX( c.url ) AS url, MAX( c.t ) AS t, MAX( c.evidence ) AS evidence FROM cites c JOIN best ON best.entity_key = c.entity_key GROUP BY c.entity_key, c.item_key ),'
 			. ' cited AS ( SELECT q.*, ROW_NUMBER() OVER ( PARTITION BY q.entity_key ORDER BY q.t DESC, q.item_key DESC ) AS rn FROM quoted q )'
-			. ' SELECT best.entity_key, ' . self::column_of( $r, 'type', 'best.entity_key' ) . ', ' . self::column_of( $r, 'name', 'best.entity_key' )
+			. ' SELECT best.entity_key, ' . self::type_of( $r, 'best.entity_key' ) . ', ' . self::name_of( $r, 'best.entity_key' )
 			. ', cited.item_key, cited.url, cited.title, cited.evidence FROM best JOIN cited ON cited.entity_key = best.entity_key WHERE cited.rn <= ? ORDER BY best.ts DESC, best.entity_key, cited.rn',
 			[ ...$g['binds'], ...$live_binds, ...$cited, $limit, self::CITATIONS ]
 		);
@@ -1394,7 +1430,7 @@ final class Graph_Query {
 		[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . " n WHERE state = 'proposed' AND n.role IN ( " . Intel_Graph_Row_Schema::marks( Intel_Event::ABOUT_ROLES ) . ' ) )', Intel_Event::ABOUT_ROLES );
 		$links                 = [];
 		$rows                  = $r->rows(
-			"{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::column_of( $r, 'name', 'live.entity_key' ) . ', ' . self::column_of( $r, 'type', 'live.entity_key' )
+			"{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::name_of( $r, 'live.entity_key' ) . ', ' . self::type_of( $r, 'live.entity_key' )
 			. ", live.role, live.method, live.confidence, live.evidence, live.title, live.url FROM live WHERE live.state = 'proposed' ORDER BY live.t DESC, live.item_key, live.entity_key LIMIT ?",
 			[ ...$g['binds'], ...$live_binds, $limit ]
 		);
@@ -1405,15 +1441,34 @@ final class Graph_Query {
 	}
 
 	/**
-	 * An entity's column, as a scalar subquery on the key an expression
-	 * names; null where no `entities` row holds it.
+	 * An entity's type, as a scalar subquery on the key an expression names;
+	 * null where no `entities` row holds it.
 	 *
-	 * @param Row_Reader $r      The reader.
-	 * @param string     $column `name` or `type`.
-	 * @param string     $key    The SQL naming the entity key.
+	 * @param Row_Reader $r   The reader.
+	 * @param string     $key The SQL naming the entity key.
 	 */
-	private static function column_of( Row_Reader $r, string $column, string $key ): string {
-		return "( SELECT e.{$column} FROM " . Intel_Graph_Row_Schema::all( $r, 'entities' ) . " e WHERE e.entity_key = {$key} LIMIT 1 )";
+	private static function type_of( Row_Reader $r, string $key ): string {
+		return '( SELECT en.type FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . " en WHERE en.entity_key = {$key} LIMIT 1 )";
+	}
+
+	/**
+	 * The name every read shows an entity by, as a scalar subquery on the key
+	 * an expression names: the name it was created with, unless that is one
+	 * of its own domains, as the roster names a client, and a canonical name
+	 * was added to it since, when the newest of those, the highest
+	 * partition's first, as `Entity_Index` reads states; null where it has
+	 * no `entities` row.
+	 *
+	 * @api Feed_Source_Node reads which clients are still named by a domain.
+	 * @param Row_Reader $r   The reader.
+	 * @param string     $key The SQL naming the entity key.
+	 */
+	public static function name_of( Row_Reader $r, string $key ): string {
+		$entities = Intel_Graph_Row_Schema::all( $r, 'entities' );
+		$created  = "( SELECT en.name FROM {$entities} en WHERE en.entity_key = {$key} LIMIT 1 )";
+		return "CASE WHEN EXISTS ( SELECT 1 FROM {$entities} ed JOIN " . Intel_Graph_Row_Schema::all( $r, 'identifiers' ) . " di ON di.entity_key = ed.entity_key AND di.kind = 'domain' AND LOWER( di.value ) = LOWER( ed.name ) WHERE ed.entity_key = {$key} )"
+			. ' THEN COALESCE( ( SELECT nm.value FROM ' . Intel_Graph_Row_Schema::all( $r, 'names', true ) . " nm WHERE nm.entity_key = {$key} AND nm.kind = 'canonical' ORDER BY nm.partition_ordinal DESC, nm.id DESC LIMIT 1 ), {$created} )"
+			. " ELSE {$created} END";
 	}
 
 	/**
