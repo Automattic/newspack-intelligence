@@ -11,12 +11,12 @@ namespace Newspack_Intelligence;
 
 interface Entity_Extractor {
 	/**
-	 * Extract the organizations / people / locations the item is about; none
-	 * when the call failed or its answer did not parse, so a caller tells a
-	 * failure from an answer naming nothing.
+	 * Extract the organizations / products / people / locations the item is
+	 * about; none when the call failed or its answer did not parse, so a
+	 * caller tells a failure from an answer naming nothing.
 	 *
 	 * @param array<string,mixed> $item The item's fields (title, body, ...).
-	 * @return array{orgs:array<int,string>,people:array<int,string>,locations:array<int,string>}|null
+	 * @return array{orgs:array<int,string>,products:array<int,string>,people:array<int,string>,locations:array<int,string>}|null
 	 */
 	public function extract( array $item ): ?array;
 }

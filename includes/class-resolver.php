@@ -7,13 +7,14 @@
  * and aliases as whole words in the title and body, an acronym only in its
  * own case. (3) A domain's stem in the title, behind the guards that keep
  * prose from reading as a masthead. (4) Only when the first three found
- * nothing, the organizations an Entity_Extractor names,
+ * nothing, the organizations and products an Entity_Extractor names,
  * fuzzy-matched against every name: asserted at `assert_at`, proposed at
- * `propose_at`, and below that a candidate entity unless one was rejected
- * under that name. The caller hands each item its NER step, or none, which
- * runs the first three alone; `recognized` says whether that step ran and
- * answered, so a caller judging what it looked for tells a call that failed,
- * or one never made, from one that named nothing.
+ * `propose_at`, and below that a candidate entity of the type it was named
+ * as, unless one was rejected under that name. The caller hands each item
+ * its NER step, or none, which runs the first three alone; `recognized`
+ * says whether that step ran and answered, so a caller judging what it
+ * looked for tells a call that failed, or one never made, from one that
+ * named nothing.
  *
  * Name and stem hits whose spans overlap in one text settle together: the
  * longest span wins, and equal spans naming several entities assert the one
@@ -22,7 +23,11 @@
  * the text earns, so a site's own story is not about its site unless it
  * names it. An entity its path or the title names is the item's subject; one
  * found only in the body is a mention. Each entity keeps its strongest such
- * link. Pure: it reads the index and the extractor and writes nothing.
+ * link. Every proposed link a name earns, and every candidate, carries as
+ * evidence the first sentence of the title or the body, markup stripped,
+ * that spells it, cut to `Intel_Event::EVIDENCE_BYTES` around the name; an
+ * asserted link and one an identifier found carry none. Pure: it reads the
+ * index and the extractor and writes nothing.
  *
  * @package Newspack_Intelligence
  */
@@ -34,8 +39,8 @@ use Newspack_Nodes\Core;
 \defined( 'ABSPATH' ) || exit;
 
 /**
- * @phpstan-type Link array{entity_key:string, role:string, method:string, confidence:float, state:string}
- * @phpstan-type Proposal array{type:string, name:string}
+ * @phpstan-type Link array{entity_key:string, role:string, method:string, confidence:float, state:string, evidence?:string}
+ * @phpstan-type Proposal array{type:string, name:string, evidence:string}
  */
 final class Resolver {
 
@@ -68,6 +73,12 @@ final class Resolver {
 	/** Below this length a domain stem ("abq", "kcur") collides with ordinary words. */
 	private const MIN_STEM_LENGTH = 6;
 
+	/** The characters of a long sentence kept ahead of the name it quotes. */
+	private const EVIDENCE_LEAD = 60;
+
+	/** What marks a sentence cut short. */
+	private const ELLIPSIS = '…';
+
 	/**
 	 * Similarity seam: replaces the one `similar_text()` call the fuzzy step
 	 * scores a pair of norms with. Tests reassign it to count comparisons;
@@ -99,6 +110,20 @@ final class Resolver {
 	 * @var array<string,Link>
 	 */
 	private array $links = [];
+
+	/**
+	 * The title and body of the item being resolved.
+	 *
+	 * @var array{0:string,1:string}
+	 */
+	private array $texts = [ '', '' ];
+
+	/**
+	 * Their sentences, the title's first, split when evidence first asks.
+	 *
+	 * @var list<string>|null
+	 */
+	private ?array $sentences = null;
 
 	/**
 	 * Hold the index, and derive each domain's
@@ -135,22 +160,25 @@ final class Resolver {
 	 * @return array{links: list<Link>, proposals: list<Proposal>, recognized: bool}
 	 */
 	public function resolve( array $item, ?Entity_Extractor $ner ): array {
-		$this->links = [];
-		$title       = Core::as_string( $item['title'] );
-		$url         = Core::as_string( $item['url'] );
-		$host        = Url_Canon::host( Core::as_string( \wp_parse_url( $url, \PHP_URL_HOST ) ) );
-		$publisher   = $this->published_by( $host );
-		$published   = null === $publisher ? [] : [ $this->linked( $publisher, Intel_Event::PUBLISHER, 'identifier', self::EXACT, 'asserted' ) ];
+		$this->links     = [];
+		$title           = Core::as_string( $item['title'] );
+		$body            = Core::as_string( $item['body'] );
+		$this->texts     = [ $title, $body ];
+		$this->sentences = null;
+		$url             = Core::as_string( $item['url'] );
+		$host            = Url_Canon::host( Core::as_string( \wp_parse_url( $url, \PHP_URL_HOST ) ) );
+		$publisher       = $this->published_by( $host );
+		$published       = null === $publisher ? [] : [ $this->linked( $publisher, Intel_Event::PUBLISHER, 'identifier', self::EXACT, 'asserted', '' ) ];
 		foreach ( $this->identified( $host, $url ) as $entity_key ) {
-			$this->link( $entity_key, 'subject', 'identifier', self::EXACT, 'asserted' );
+			$this->link( $entity_key, 'subject', 'identifier', self::EXACT, 'asserted', '' );
 		}
 		$title_names = $this->index->names_in( $title );
-		$body_names  = $this->index->names_in( Core::as_string( $item['body'] ) );
+		$body_names  = $this->index->names_in( $body );
 		$localities  = self::localities( [ ...$title_names, ...$body_names ] );
 		$this->clustered( [ ...self::named( $title_names ), ...$this->stemmed( $title ) ], $localities, 'subject' );
 		$this->clustered( self::named( $body_names ), $localities, 'mention' );
 		$named     = null !== $ner && [] === $published && [] === $this->links ? $ner->extract( $item ) : null;
-		$proposals = null === $named ? [] : $this->recognized( $named['orgs'] );
+		$proposals = null === $named ? [] : $this->recognized( [ 'organization' => $named['orgs'], 'product' => $named['products'] ] );
 		return [
 			'links'      => [ ...$published, ...\array_values( $this->links ) ],
 			'proposals'  => $proposals,
@@ -159,31 +187,33 @@ final class Resolver {
 	}
 
 	/**
-	 * The NER step: each subject organization the extractor names, scored
-	 * against every name. Asserted at `assert_at` when one entity holds the
-	 * best score; proposed at `propose_at`, or when several tie; below that, a
-	 * candidate entity, at most MAX_PROPOSALS, never a name a rejected entity
-	 * carries.
+	 * The NER step: each subject organization and product the extractor
+	 * names, scored against every name. Asserted at `assert_at` when one
+	 * entity holds the best score; proposed at `propose_at`, or when several
+	 * tie; below that, a candidate entity of the type it was named as, at
+	 * most MAX_PROPOSALS, never a name a rejected entity carries.
 	 *
-	 * @param array<int,string> $orgs The organizations the extractor named.
+	 * @param array<string,array<int,string>> $named Each entity type => the names the extractor gave it.
 	 * @return list<Proposal>
 	 */
-	private function recognized( array $orgs ): array {
+	private function recognized( array $named ): array {
 		$proposals = [];
-		foreach ( $orgs as $org ) {
-			$name = Entity_Index::norm( $org );
-			if ( '' === $name ) {
-				continue;
-			}
-			[ $best, $winners ] = $this->best_norms( $name );
-			$confidence = \round( $best, 4 );
-			if ( $best >= $this->propose_at ) {
-				$state = $best >= $this->assert_at && 1 === \count( $winners ) ? 'asserted' : 'proposed';
-				foreach ( \array_keys( $winners ) as $entity_key ) {
-					$this->link( $entity_key, 'subject', 'ner_fuzzy', $confidence, $state );
+		foreach ( $named as $type => $names ) {
+			foreach ( $names as $given ) {
+				$name = Entity_Index::norm( $given );
+				if ( '' === $name ) {
+					continue;
 				}
-			} elseif ( \count( $proposals ) < self::MAX_PROPOSALS && ! $this->index->is_rejected_name( $name ) ) {
-				$proposals[ $name ] ??= [ 'type' => 'organization', 'name' => $org ];
+				[ $best, $winners ] = $this->best_norms( $name );
+				$confidence = \round( $best, 4 );
+				if ( $best >= $this->propose_at ) {
+					$state = $best >= $this->assert_at && 1 === \count( $winners ) ? 'asserted' : 'proposed';
+					foreach ( \array_keys( $winners ) as $entity_key ) {
+						$this->link( $entity_key, 'subject', 'ner_fuzzy', $confidence, $state, $given );
+					}
+				} elseif ( \count( $proposals ) < self::MAX_PROPOSALS && ! $this->index->is_rejected_name( $name ) ) {
+					$proposals[ $name ] ??= [ 'type' => $type, 'name' => $given, 'evidence' => $this->evidence( $given ) ];
+				}
 			}
 		}
 		return \array_values( $proposals );
@@ -362,22 +392,22 @@ final class Resolver {
 	}
 
 	/**
-	 * The entities a cluster's longest hits name, each with the kind it was
+	 * The entities a cluster's longest hits name, each with the hit it was
 	 * first found by.
 	 *
 	 * @param non-empty-list<array{entity_key:string,kind:string,surface:string,at:int}> $cluster Overlapping hits.
-	 * @return array<string,string>
+	 * @return array<string,array{entity_key:string,kind:string,surface:string,at:int}>
 	 */
 	private static function longest( array $cluster ): array {
 		$words = \array_map( static fn ( array $hit ): int => (int) \preg_match_all( '/[\p{L}\p{M}\p{N}]+/u', $hit['surface'] ), $cluster );
 		$most  = \max( $words );
-		$kinds = [];
+		$hits  = [];
 		foreach ( $cluster as $n => $hit ) {
 			if ( $most === $words[ $n ] ) {
-				$kinds[ $hit['entity_key'] ] ??= $hit['kind'];
+				$hits[ $hit['entity_key'] ] ??= $hit;
 			}
 		}
-		return $kinds;
+		return $hits;
 	}
 
 	/**
@@ -385,20 +415,21 @@ final class Resolver {
 	 * only one at its own strength; of several, the one whose locality the
 	 * text names, guarded; else each, proposed.
 	 *
-	 * @param array<string,string> $kinds      Entity key => the kind it was found by.
-	 * @param array<string,true>   $localities The entities whose locality the text names.
-	 * @param string               $role       The link role.
+	 * @param array<string,array{kind:string,surface:string}> $hits       Entity key => the hit it was found by.
+	 * @param array<string,true>                              $localities The entities whose locality the text names.
+	 * @param string                                          $role       The link role.
 	 */
-	private function settle( array $kinds, array $localities, string $role ): void {
-		$settled = 1 === \count( $kinds ) ? $kinds : \array_intersect_key( $kinds, $localities );
+	private function settle( array $hits, array $localities, string $role ): void {
+		$settled = 1 === \count( $hits ) ? $hits : \array_intersect_key( $hits, $localities );
 		if ( 1 === \count( $settled ) ) {
 			$entity_key              = \array_key_first( $settled );
-			[ $method, $confidence ] = self::STRENGTHS[ $settled[ $entity_key ] ];
-			$this->link( $entity_key, $role, $method, 1 === \count( $kinds ) ? $confidence : self::GUARDED, 'asserted' );
+			$hit                     = $settled[ $entity_key ];
+			[ $method, $confidence ] = self::STRENGTHS[ $hit['kind'] ];
+			$this->link( $entity_key, $role, $method, 1 === \count( $hits ) ? $confidence : self::GUARDED, 'asserted', $hit['surface'] );
 			return;
 		}
-		foreach ( $kinds as $entity_key => $kind ) {
-			$this->link( $entity_key, $role, self::STRENGTHS[ $kind ][0], self::AMBIGUOUS, 'proposed' );
+		foreach ( $hits as $entity_key => $hit ) {
+			$this->link( $entity_key, $role, self::STRENGTHS[ $hit['kind'] ][0], self::AMBIGUOUS, 'proposed', $hit['surface'] );
 		}
 	}
 
@@ -413,9 +444,10 @@ final class Resolver {
 	 * @param string $method     How it was found.
 	 * @param float  $confidence The confidence.
 	 * @param string $state      asserted or proposed.
+	 * @param string $name       The name it was found by, '' for an identifier.
 	 */
-	private function link( string $entity_key, string $role, string $method, float $confidence, string $state ): void {
-		$link = $this->linked( $entity_key, $role, $method, $confidence, $state );
+	private function link( string $entity_key, string $role, string $method, float $confidence, string $state, string $name ): void {
+		$link = $this->linked( $entity_key, $role, $method, $confidence, $state, $name );
 		$held = $this->links[ $entity_key ] ?? null;
 		if ( null !== $held ) {
 			if ( [ 'asserted' === $held['state'], $held['confidence'] ] >= [ 'asserted' === $state, $confidence ] ) {
@@ -428,18 +460,61 @@ final class Resolver {
 
 	/**
 	 * One link, proposed whatever its method earned when its entity is
-	 * proposed, so a guess never asserts.
+	 * proposed, so a guess never asserts. A proposed link alone carries
+	 * evidence, the sentence its name was found in; an asserted one has none.
 	 *
 	 * @param string $entity_key The entity.
 	 * @param string $role       Its role.
 	 * @param string $method     How it was found.
 	 * @param float  $confidence The confidence.
 	 * @param string $state      asserted or proposed.
+	 * @param string $name       The name it was found by, '' for an identifier.
 	 * @return Link
 	 */
-	private function linked( string $entity_key, string $role, string $method, float $confidence, string $state ): array {
+	private function linked( string $entity_key, string $role, string $method, float $confidence, string $state, string $name ): array {
 		$state = 'proposed' === $this->index->state( $entity_key ) ? 'proposed' : $state;
-		return [ 'entity_key' => $entity_key, 'role' => $role, 'method' => $method, 'confidence' => $confidence, 'state' => $state ];
+		$link  = [ 'entity_key' => $entity_key, 'role' => $role, 'method' => $method, 'confidence' => $confidence, 'state' => $state ];
+		return 'proposed' === $state ? $link + [ 'evidence' => $this->evidence( $name ) ] : $link;
+	}
+
+	/**
+	 * The first of the item's sentences spelling a name, both read as
+	 * `Entity_Index::plain()` reads text, case aside, cut to EVIDENCE_BYTES
+	 * around it; '' when none spells it, or for no name.
+	 *
+	 * @param string $name The name as the text or the extractor gave it.
+	 */
+	private function evidence( string $name ): string {
+		$needle = Entity_Index::plain( $name );
+		if ( '' === $needle ) {
+			return '';
+		}
+		$this->sentences ??= [ ...Entity_Index::sentences( $this->texts[0] ), ...Entity_Index::sentences( $this->texts[1] ) ];
+		foreach ( $this->sentences as $sentence ) {
+			$at = \mb_stripos( $sentence, $needle );
+			if ( false !== $at ) {
+				return self::excerpt( $sentence, $at );
+			}
+		}
+		return '';
+	}
+
+	/**
+	 * A sentence whole when its written bytes fit EVIDENCE_BYTES; else cut
+	 * on whole characters from EVIDENCE_LEAD before the name, each cut
+	 * marked with an ellipsis.
+	 *
+	 * @param string $sentence The sentence.
+	 * @param int    $at       The character the name starts at.
+	 */
+	private static function excerpt( string $sentence, int $at ): string {
+		if ( Graph_Curation::written_bytes( $sentence ) <= Intel_Event::EVIDENCE_BYTES ) {
+			return $sentence;
+		}
+		$from = \max( 0, $at - self::EVIDENCE_LEAD );
+		$text = ( 0 === $from ? '' : self::ELLIPSIS ) . \mb_substr( $sentence, $from );
+		$cut  = Graph_Curation::cut( $text, Intel_Event::EVIDENCE_BYTES - Graph_Curation::written_bytes( self::ELLIPSIS ) );
+		return $cut === $text ? $cut : $cut . self::ELLIPSIS;
 	}
 
 	/**

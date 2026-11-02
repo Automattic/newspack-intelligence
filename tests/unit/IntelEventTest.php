@@ -166,7 +166,7 @@ final class IntelEventTest extends TestCase {
 
 	/** A retraction names the link row it removes by its key, on the items stream, its role drawn from LINK_ROLES. */
 	public function test_a_link_retraction_names_the_row_by_its_key(): void {
-		$this->assertSame( [ Intel_Event::ITEMS, [ 'item_key', 'entity_key', 'role', 'retrieved_ts' ], [ 'role' => Intel_Event::LINK_ROLES ] ], Intel_Event::KINDS['link_retracted'] );
+		$this->assertSame( [ Intel_Event::ITEMS, [ 'item_key', 'entity_key', 'role', 'retrieved_ts' ], [ 'role' => Intel_Event::LINK_ROLES ], [] ], Intel_Event::KINDS['link_retracted'] );
 		$event = Intel_Event::machine_event( 'resolve', 'link_retracted', [ 'item_key' => 'feed:abc-7731', 'entity_key' => 'organization:mesa-courier', 'role' => 'mention', 'retrieved_ts' => 1791300000 ] );
 		$this->assertSame( Intel_Event::ITEMS, Intel_Event::stream_of( $event['event'] ) );
 
@@ -177,7 +177,7 @@ final class IntelEventTest extends TestCase {
 
 	/** A purge names its item and why, on the items stream, which only a machine writes. */
 	public function test_a_purge_names_its_item_and_why(): void {
-		$this->assertSame( [ Intel_Event::ITEMS, [ 'item_key', 'reason' ], [] ], Intel_Event::KINDS['item_purged'] );
+		$this->assertSame( [ Intel_Event::ITEMS, [ 'item_key', 'reason' ], [], [] ], Intel_Event::KINDS['item_purged'] );
 		$event = Intel_Event::machine_event( 'purge', 'item_purged', [ 'item_key' => 'linear:WREN-4410', 'reason' => 'other team' ] );
 		$this->assertSame( [ 'machine:purge@' . \NEWSPACK_INTELLIGENCE_VERSION, 'linear:WREN-4410', 'other team' ], [ $event['actor'], $event['item_key'], $event['reason'] ] );
 
@@ -284,10 +284,39 @@ final class IntelEventTest extends TestCase {
 	public function test_one_table_holds_each_kinds_stream_fields_and_sets(): void {
 		$this->assertSame( [ 'event', 'event_id', 'ts', 'actor', 'config_version' ], Intel_Event::ENVELOPE );
 		$this->assertSame(
-			[ Intel_Event::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => Intel_Event::LINK_ROLES, 'method' => Intel_Event::METHODS ] ],
+			[ Intel_Event::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => Intel_Event::LINK_ROLES, 'method' => Intel_Event::METHODS ], [] ],
 			Intel_Event::KINDS['link_asserted']
 		);
-		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'entity_key' ], [] ], Intel_Event::KINDS['entity_accepted'] );
+		$this->assertSame( [ ...\array_slice( Intel_Event::KINDS['link_asserted'], 0, 3 ), [ 'evidence' => 512 ] ], Intel_Event::KINDS['link_proposed'] );
+		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'entity_key', 'type', 'name', 'from_item_key' ], [ 'type' => Intel_Event::TYPES ], [ 'evidence' => 512 ] ], Intel_Event::KINDS['entity_proposed'] );
+		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'entity_key' ], [], [] ], Intel_Event::KINDS['entity_accepted'] );
+		$this->assertSame( [ 'link_proposed', 'entity_proposed' ], \array_keys( \array_filter( \array_map( static fn ( array $row ): array => $row[3], Intel_Event::KINDS ) ) ) );
+	}
+
+	/** A proposal's evidence is optional: one written before proposals carried it validates. */
+	public function test_a_proposal_without_evidence_validates(): void {
+		$event = Intel_Event::make( 'link_proposed', [ 'item_key' => 'feed:abc-7731', 'entity_key' => 'organization:tern-weekly', 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.62, 'retrieved_ts' => 1791300000 ], 'machine:resolve@9.4.1', '' );
+
+		$this->assertArrayNotHasKey( 'evidence', $event );
+	}
+
+	/**
+	 * A proposal's evidence, when present, is a string within its cap.
+	 *
+	 * @return array<string,array{0:mixed,1:string}>
+	 */
+	public static function bad_evidence(): array {
+		return [
+			'not a string'    => [ [ 'Tern Weekly won.' ], 'link_proposed: evidence is not a string' ],
+			'past its cap'    => [ \str_repeat( 'Tern "Weekly" ', 60 ), 'link_proposed: evidence runs past 512 bytes' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_evidence' )]
+	public function test_a_proposals_evidence_must_be_a_bounded_string( mixed $evidence, string $why ): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( $why );
+		Intel_Event::make( 'link_proposed', [ 'item_key' => 'feed:abc-7731', 'entity_key' => 'organization:tern-weekly', 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.62, 'evidence' => $evidence, 'retrieved_ts' => 1791300000 ], 'machine:resolve@9.4.1', '' );
 	}
 
 	/** An ontology record must fit one line: the stream takes no large writes. */
@@ -362,13 +391,13 @@ final class IntelEventTest extends TestCase {
 	/** A watch's definition rides the ontology stream; its matches, seen marks and deliveries ride the watches stream. */
 	public function test_a_watch_is_defined_on_the_ontology_and_matched_on_the_watches_stream(): void {
 		$this->assertSame(
-			[ Intel_Event::ONTOLOGY, [ 'watch_key', 'owner', 'name', 'target_kind', 'target_key', 'digest', 'instant', 'inbox' ], [ 'target_kind' => [ 'lens', 'entity', 'collection' ], 'digest' => [ true, false ], 'instant' => [ true, false ], 'inbox' => [ true, false ] ] ],
+			[ Intel_Event::ONTOLOGY, [ 'watch_key', 'owner', 'name', 'target_kind', 'target_key', 'digest', 'instant', 'inbox' ], [ 'target_kind' => [ 'lens', 'entity', 'collection' ], 'digest' => [ true, false ], 'instant' => [ true, false ], 'inbox' => [ true, false ] ], [] ],
 			Intel_Event::KINDS['watch_saved']
 		);
-		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'watch_key', 'owner' ], [] ], Intel_Event::KINDS['watch_removed'] );
-		$this->assertSame( [ Intel_Event::WATCHES, [ 'watch_key', 'owner', 'item_key', 'at', 'retrieved_ts', 'quiet' ], [ 'quiet' => [ true, false ] ] ], Intel_Event::KINDS['watch_matched'] );
-		$this->assertSame( [ Intel_Event::WATCHES, [ 'watch_key', 'owner', 'item_key', 'retrieved_ts' ], [] ], Intel_Event::KINDS['watch_seen'] );
-		$this->assertSame( [ Intel_Event::WATCHES, [ 'owner', 'mode', 'watch_key', 'through' ], [ 'mode' => [ 'scan', 'instant', 'digest' ] ] ], Intel_Event::KINDS['watch_delivered'] );
+		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'watch_key', 'owner' ], [], [] ], Intel_Event::KINDS['watch_removed'] );
+		$this->assertSame( [ Intel_Event::WATCHES, [ 'watch_key', 'owner', 'item_key', 'at', 'retrieved_ts', 'quiet' ], [ 'quiet' => [ true, false ] ], [] ], Intel_Event::KINDS['watch_matched'] );
+		$this->assertSame( [ Intel_Event::WATCHES, [ 'watch_key', 'owner', 'item_key', 'retrieved_ts' ], [], [] ], Intel_Event::KINDS['watch_seen'] );
+		$this->assertSame( [ Intel_Event::WATCHES, [ 'owner', 'mode', 'watch_key', 'through' ], [ 'mode' => [ 'scan', 'instant', 'digest' ] ], [] ], Intel_Event::KINDS['watch_delivered'] );
 		$this->assertSame( 'watches', Intel_Event::WATCHES );
 	}
 

@@ -28,6 +28,14 @@ final class PromptsTest extends TestCase {
 		$this->assertStringContainsString( 'The Prairie Tribune reported', $user );
 	}
 
+	/** A tool, platform, vendor product or service is asked for as a product, never an organization. */
+	public function test_extract_entities_asks_for_tools_as_products(): void {
+		$system = Prompts::extract_entities( [ 'title' => 'Kestrel Mail outage', 'body' => 'Senders on Kestrel Mail saw delays.' ] )[0]['content'];
+
+		$this->assertStringContainsString( '{"orgs": [], "products": [], "people": [], "locations": []}', $system );
+		$this->assertStringContainsString( 'A tool, platform, vendor product or service is a product, never an organization', $system );
+	}
+
 	/** The item rides as JSON inside a fence the system message names as untrusted; the item cannot close it. */
 	public function test_the_prompt_fences_the_item_as_data(): void {
 		$m = Prompts::extract(

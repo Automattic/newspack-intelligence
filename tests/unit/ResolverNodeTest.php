@@ -141,7 +141,29 @@ final class ResolverNodeTest extends TestCase {
 			[ 'organization:acme-widgets-corporation', 'organization', 'Acme Widgets Corporation', self::ITEM ],
 			[ $events[1]['entity_key'], $events[1]['type'], $events[1]['name'], $events[1]['from_item_key'] ]
 		);
-		$this->assertSame( [ [ 'type' => 'organization', 'name' => 'Acme Widgets Corporation' ] ], $this->resolved()['proposals'] );
+		$this->assertSame( [ [ 'type' => 'organization', 'name' => 'Acme Widgets Corporation', 'evidence' => '' ] ], $this->resolved()['proposals'] );
+	}
+
+	/** A proposed link and a candidate each carry the sentence of the item that named them. */
+	public function test_a_proposed_link_and_a_candidate_carry_their_sentences(): void {
+		$this->seed( self::gazette() );
+		$this->answer( '{"orgs": ["Harbor Gazete Weekly", "Plover Wharf Trust"], "people": [], "locations": []}' );
+
+		$this->resolver->fill( self::recorded( [ 'title' => 'Ferry sale', 'body' => 'Plover Wharf Trust bought a ferry. The Harbor Gazete Weekly covered it.' ] ) );
+
+		$this->assertSame(
+			[ [ 'link_proposed', 'The Harbor Gazete Weekly covered it.' ], [ 'entity_proposed', 'Plover Wharf Trust bought a ferry.' ] ],
+			\array_map( static fn ( array $e ): array => [ $e['event'], $e['evidence'] ], $this->written() )
+		);
+	}
+
+	/** An asserted link is written without evidence: only a proposal carries it. */
+	public function test_an_asserted_link_carries_no_evidence(): void {
+		$this->seed( self::gazette() );
+
+		$this->resolver->fill( self::recorded( [ 'body' => 'The Harbor Gazette won a prize.' ] ) );
+
+		$this->assertSame( [ [ 'link_asserted', false ] ], \array_map( static fn ( array $e ): array => [ $e['event'], \array_key_exists( 'evidence', $e ) ], $this->written() ) );
 	}
 
 	/** The Consumer reads the whole items stream; other kinds are skipped. */

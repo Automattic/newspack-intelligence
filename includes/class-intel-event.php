@@ -44,43 +44,49 @@ final class Intel_Event {
 
 	/**
 	 * kind => [ stream, its own fields, [ field => the closed set it is drawn
-	 * from ] ]. Every item-scoped kind but the record and the purge carries
-	 * its item's `retrieved_ts`, the canonical's for a supersession, which
-	 * dates its rows; a purge writes no row.
+	 * from ], [ optional string field => the most bytes it takes ] ]. Every
+	 * item-scoped kind but the record and the purge carries its item's
+	 * `retrieved_ts`, the canonical's for a supersession, which dates its
+	 * rows; a purge writes no row. A proposal's `evidence`, the sentence it
+	 * was found in, is optional: one written before proposals carried it has
+	 * none.
 	 */
 	public const KINDS = [
-		'item_recorded'       => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ] ],
-		'extraction_recorded' => [ self::ITEMS, [ 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'topics', 'retrieved_ts' ], [ 'kind' => self::ITEM_KINDS ] ],
-		'subjects_extracted'  => [ self::ITEMS, [ 'item_key', 'entity_keys', 'retrieved_ts' ], [] ],
-		'link_asserted'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ] ],
-		'link_proposed'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ] ],
-		'link_retracted'      => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES ] ],
-		'claim_asserted'      => [ self::ITEMS, [ 'item_key', 'ord', 'subject_key', 'predicate', 'object_key', 'object_text', 'confidence', 'retrieved_ts' ], [ 'predicate' => self::PREDICATES ] ],
-		'cluster_joined'      => [ self::ITEMS, [ 'item_key', 'cluster_key', 'retrieved_ts' ], [] ],
-		'cluster_superseded'  => [ self::ITEMS, [ 'cluster_key', 'canonical_item_key', 'previous_item_key', 'rank', 'retrieved_ts' ], [] ],
-		'item_purged'         => [ self::ITEMS, [ 'item_key', 'reason' ], [] ],
-		'entity_created'      => [ self::ONTOLOGY, [ 'entity_key', 'type', 'name' ], [ 'type' => self::TYPES ] ],
-		'entity_proposed'     => [ self::ONTOLOGY, [ 'entity_key', 'type', 'name', 'from_item_key' ], [ 'type' => self::TYPES ] ],
-		'entity_accepted'     => [ self::ONTOLOGY, [ 'entity_key' ], [] ],
-		'entity_rejected'     => [ self::ONTOLOGY, [ 'entity_key' ], [] ],
-		'entity_merged'       => [ self::ONTOLOGY, [ 'entity_key', 'into_key' ], [] ],
-		'name_added'          => [ self::ONTOLOGY, [ 'entity_key', 'kind', 'value' ], [ 'kind' => self::NAME_KINDS ] ],
-		'identifier_added'    => [ self::ONTOLOGY, [ 'entity_key', 'kind', 'value' ], [ 'kind' => self::IDENTIFIER_KINDS ] ],
-		'role_asserted'       => [ self::ONTOLOGY, [ 'entity_key', 'role', 'from_ts' ], [ 'role' => self::ROLES ] ],
-		'role_ended'          => [ self::ONTOLOGY, [ 'entity_key', 'role', 'from_ts', 'to_ts' ], [ 'role' => self::ROLES ] ],
-		'topic_tagged'        => [ self::ONTOLOGY, [ 'entity_key', 'topic_key' ], [] ],
-		'link_confirmed'      => [ self::ONTOLOGY, [ 'item_key', 'entity_key', 'item_url' ], [] ],
-		'link_rejected'       => [ self::ONTOLOGY, [ 'item_key', 'entity_key', 'item_url' ], [] ],
-		'collection_created'  => [ self::ONTOLOGY, [ 'collection_key', 'name' ], [] ],
-		'collected'           => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'url', 'title', 'tier' ], [ 'tier' => self::TIERS ] ],
-		'lens_saved'          => [ self::ONTOLOGY, [ 'lens_key', 'name', 'description', 'filters' ], [] ],
-		'lens_removed'        => [ self::ONTOLOGY, [ 'lens_key' ], [] ],
-		'watch_saved'         => [ self::ONTOLOGY, [ 'watch_key', 'owner', 'name', 'target_kind', 'target_key', 'digest', 'instant', 'inbox' ], [ 'target_kind' => self::WATCH_TARGETS, 'digest' => self::FLAG, 'instant' => self::FLAG, 'inbox' => self::FLAG ] ],
-		'watch_removed'       => [ self::ONTOLOGY, [ 'watch_key', 'owner' ], [] ],
-		'watch_matched'       => [ self::WATCHES, [ 'watch_key', 'owner', 'item_key', 'at', 'retrieved_ts', 'quiet' ], [ 'quiet' => self::FLAG ] ],
-		'watch_seen'          => [ self::WATCHES, [ 'watch_key', 'owner', 'item_key', 'retrieved_ts' ], [] ],
-		'watch_delivered'     => [ self::WATCHES, [ 'owner', 'mode', 'watch_key', 'through' ], [ 'mode' => self::DELIVERIES ] ],
+		'item_recorded'       => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ], [] ],
+		'extraction_recorded' => [ self::ITEMS, [ 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'topics', 'retrieved_ts' ], [ 'kind' => self::ITEM_KINDS ], [] ],
+		'subjects_extracted'  => [ self::ITEMS, [ 'item_key', 'entity_keys', 'retrieved_ts' ], [], [] ],
+		'link_asserted'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ], [] ],
+		'link_proposed'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ], [ 'evidence' => self::EVIDENCE_BYTES ] ],
+		'link_retracted'      => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES ], [] ],
+		'claim_asserted'      => [ self::ITEMS, [ 'item_key', 'ord', 'subject_key', 'predicate', 'object_key', 'object_text', 'confidence', 'retrieved_ts' ], [ 'predicate' => self::PREDICATES ], [] ],
+		'cluster_joined'      => [ self::ITEMS, [ 'item_key', 'cluster_key', 'retrieved_ts' ], [], [] ],
+		'cluster_superseded'  => [ self::ITEMS, [ 'cluster_key', 'canonical_item_key', 'previous_item_key', 'rank', 'retrieved_ts' ], [], [] ],
+		'item_purged'         => [ self::ITEMS, [ 'item_key', 'reason' ], [], [] ],
+		'entity_created'      => [ self::ONTOLOGY, [ 'entity_key', 'type', 'name' ], [ 'type' => self::TYPES ], [] ],
+		'entity_proposed'     => [ self::ONTOLOGY, [ 'entity_key', 'type', 'name', 'from_item_key' ], [ 'type' => self::TYPES ], [ 'evidence' => self::EVIDENCE_BYTES ] ],
+		'entity_accepted'     => [ self::ONTOLOGY, [ 'entity_key' ], [], [] ],
+		'entity_rejected'     => [ self::ONTOLOGY, [ 'entity_key' ], [], [] ],
+		'entity_merged'       => [ self::ONTOLOGY, [ 'entity_key', 'into_key' ], [], [] ],
+		'name_added'          => [ self::ONTOLOGY, [ 'entity_key', 'kind', 'value' ], [ 'kind' => self::NAME_KINDS ], [] ],
+		'identifier_added'    => [ self::ONTOLOGY, [ 'entity_key', 'kind', 'value' ], [ 'kind' => self::IDENTIFIER_KINDS ], [] ],
+		'role_asserted'       => [ self::ONTOLOGY, [ 'entity_key', 'role', 'from_ts' ], [ 'role' => self::ROLES ], [] ],
+		'role_ended'          => [ self::ONTOLOGY, [ 'entity_key', 'role', 'from_ts', 'to_ts' ], [ 'role' => self::ROLES ], [] ],
+		'topic_tagged'        => [ self::ONTOLOGY, [ 'entity_key', 'topic_key' ], [], [] ],
+		'link_confirmed'      => [ self::ONTOLOGY, [ 'item_key', 'entity_key', 'item_url' ], [], [] ],
+		'link_rejected'       => [ self::ONTOLOGY, [ 'item_key', 'entity_key', 'item_url' ], [], [] ],
+		'collection_created'  => [ self::ONTOLOGY, [ 'collection_key', 'name' ], [], [] ],
+		'collected'           => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'url', 'title', 'tier' ], [ 'tier' => self::TIERS ], [] ],
+		'lens_saved'          => [ self::ONTOLOGY, [ 'lens_key', 'name', 'description', 'filters' ], [], [] ],
+		'lens_removed'        => [ self::ONTOLOGY, [ 'lens_key' ], [], [] ],
+		'watch_saved'         => [ self::ONTOLOGY, [ 'watch_key', 'owner', 'name', 'target_kind', 'target_key', 'digest', 'instant', 'inbox' ], [ 'target_kind' => self::WATCH_TARGETS, 'digest' => self::FLAG, 'instant' => self::FLAG, 'inbox' => self::FLAG ], [] ],
+		'watch_removed'       => [ self::ONTOLOGY, [ 'watch_key', 'owner' ], [], [] ],
+		'watch_matched'       => [ self::WATCHES, [ 'watch_key', 'owner', 'item_key', 'at', 'retrieved_ts', 'quiet' ], [ 'quiet' => self::FLAG ], [] ],
+		'watch_seen'          => [ self::WATCHES, [ 'watch_key', 'owner', 'item_key', 'retrieved_ts' ], [], [] ],
+		'watch_delivered'     => [ self::WATCHES, [ 'owner', 'mode', 'watch_key', 'through' ], [ 'mode' => self::DELIVERIES ], [] ],
 	];
+
+	/** The longest evidence, in the bytes a packed message writes it in. */
+	public const EVIDENCE_BYTES = 512;
 
 	/** The actor classes an actor string may begin with. */
 	private const ACTOR_CLASSES = [ 'user', 'agent', 'machine' ];
@@ -185,7 +191,7 @@ final class Intel_Event {
 		if ( ! \is_string( $kind ) || ! isset( self::KINDS[ $kind ] ) ) {
 			throw new \InvalidArgumentException( 'unknown event kind: ' . ( \is_string( $kind ) ? $kind : \get_debug_type( $kind ) ) );
 		}
-		[ $stream, $fields, $sets ] = self::KINDS[ $kind ];
+		[ $stream, $fields, $sets, $bounded ] = self::KINDS[ $kind ];
 		foreach ( self::$required[ $kind ] ??= [ ...self::ENVELOPE, ...$fields ] as $field ) {
 			if ( ! \array_key_exists( $field, $event ) ) {
 				throw new \InvalidArgumentException( "{$kind}: missing field {$field}" );
@@ -212,9 +218,30 @@ final class Intel_Event {
 				throw new \InvalidArgumentException( "{$kind}: field {$field} is outside its set" );
 			}
 		}
+		foreach ( $bounded as $field => $bytes ) {
+			if ( \array_key_exists( $field, $event ) ) {
+				self::check_bounded( "{$kind}: {$field}", $event[ $field ], $bytes );
+			}
+		}
 		if ( self::ITEMS === $stream && 'machine' !== $class ) {
 			throw new \InvalidArgumentException( "{$kind}: only a machine writes the items stream" );
 		}
+	}
+
+	/**
+	 * Refuse an optional field that is not a string within its bytes, as a
+	 * packed message writes it.
+	 *
+	 * @param string $what  The kind and field, for the refusal.
+	 * @param mixed  $value The value carried.
+	 * @param int    $bytes The most bytes it takes.
+	 * @throws \InvalidArgumentException Naming the kind, the field and the fault.
+	 */
+	private static function check_bounded( string $what, mixed $value, int $bytes ): void {
+		if ( ! \is_string( $value ) ) {
+			throw new \InvalidArgumentException( \esc_html( "{$what} is not a string" ) );
+		}
+		Graph_Curation::capped( $what, $value, $bytes );
 	}
 
 	/**

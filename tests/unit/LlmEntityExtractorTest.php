@@ -35,6 +35,26 @@ final class LlmEntityExtractorTest extends TestCase {
 		$this->assertSame( [ 'Millbrook' ], $out['locations'] );
 	}
 
+	/** A name past the bytes an entity's name may take is left out, logged, so a proposal fits one line. */
+	public function test_a_name_past_the_name_cap_is_left_out(): void {
+		$long = \str_repeat( 'Kestrel "Mail" ', 40 );
+		$this->respond( (string) \json_encode( [ 'orgs' => [ $long, 'Plover Wharf Trust' ], 'products' => [ $long ], 'people' => [], 'locations' => [] ] ) );
+		$stderr = $this->capture_stderr();
+
+		$out = $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] );
+
+		$this->assertSame( [ [ 'Plover Wharf Trust' ], [] ], [ $out['orgs'], $out['products'] ] );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER name left out: ' ) );
+	}
+
+	/** The products a reply names are read beside its organizations. */
+	public function test_parses_the_products_a_reply_names(): void {
+		$this->respond( '{"orgs":["The Prairie Tribune"],"products":["Kestrel Mail", 7, "Wrenpay"],"people":[],"locations":[]}' );
+		$out = $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] );
+		$this->assertSame( [ 'Kestrel Mail', 'Wrenpay' ], $out['products'] );
+		$this->assertSame( [ 'The Prairie Tribune' ], $out['orgs'] );
+	}
+
 	public function test_parses_json_wrapped_in_prose_or_fences(): void {
 		$this->respond( "Here you go:\n```json\n{\"orgs\":[\"PrairieFile\"],\"people\":[],\"locations\":[]}\n```" );
 		$out = $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] );
@@ -86,7 +106,7 @@ final class LlmEntityExtractorTest extends TestCase {
 	/** An answer naming nothing is an answer: an empty triple. */
 	public function test_an_empty_answer_is_an_empty_triple(): void {
 		$this->respond( '{"orgs":[],"people":["Ana Ruiz"]}' );
-		$this->assertSame( [ 'orgs' => [], 'people' => [ 'Ana Ruiz' ], 'locations' => [] ], $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] ) );
+		$this->assertSame( [ 'orgs' => [], 'products' => [], 'people' => [ 'Ana Ruiz' ], 'locations' => [] ], $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] ) );
 	}
 
 	public function test_non_string_entries_are_dropped(): void {

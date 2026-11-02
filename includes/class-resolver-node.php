@@ -90,7 +90,7 @@ use Newspack_Nodes\Table_Unavailable;
  * @phpstan-type Own_Links array{verdicts: array<string,string>, rows: array<string,Row>}
  * @phpstan-type Judgment array{known: array<string,true>, stored: array<string,array{role:string,method:string,confidence:float,state:string}>, ner: array<string,array{role:string,method:string,confidence:float,state:string}>, verdicts: array<string,string>, rows: array<string,Row>}
  * @phpstan-type Reresolve array{event:string, item_key:string, fresh_after:int|float, ner?:bool, extract?:bool, attempt?:int, parked_at?:int|float}
- * @phpstan-type Resolution array{links: list<array{entity_key:string,role:string,method:string,confidence:float,state:string}>, proposals: list<array{type:string,name:string}>, recognized: bool}
+ * @phpstan-type Resolution array{links: list<array{entity_key:string,role:string,method:string,confidence:float,state:string,evidence?:string}>, proposals: list<array{type:string,name:string,evidence:string}>, recognized: bool}
  */
 class Resolver_Node extends Node {
 	use Schema_Reflection;
@@ -419,15 +419,17 @@ class Resolver_Node extends Node {
 	 * so a retry reaches an item only NER linked; only the own partition's
 	 * rows are retracted. One link is sent per entity, an about-link over a
 	 * publisher one whatever their order, so a publisher the text also names
-	 * is sent as what the item is about.
+	 * is sent as what the item is about. A link's evidence stays on its
+	 * event: the extractor reads the item itself.
 	 *
 	 * @param Resolution $resolution What resolve() answered.
 	 * @param Judgment   $judgment   What settled() read.
-	 * @return array{links: list<array{entity_key:string,role:string,method:string,confidence:float,state:string}>, proposals: list<array{type:string,name:string}>}
+	 * @return array{links: list<array{entity_key:string,role:string,method:string,confidence:float,state:string}>, proposals: list<array{type:string,name:string,evidence:string}>}
 	 */
 	private static function judged( array $resolution, array $judgment ): array {
 		$links = [];
 		foreach ( $resolution['links'] as $link ) {
+			unset( $link['evidence'] );
 			$entity    = $link['entity_key'];
 			$published = Intel_Event::PUBLISHER === $link['role'];
 			$verdict   = $published ? null : ( $judgment['verdicts'][ $entity ] ?? null );
@@ -695,6 +697,7 @@ class Resolver_Node extends Node {
 				'type'          => $proposal['type'],
 				'name'          => $proposal['name'],
 				'from_item_key' => $item_key,
+				'evidence'      => $proposal['evidence'],
 			];
 			$this->emit( $this->writer, Intel_Event::machine_event( 'resolve', 'entity_proposed', $fields ) );
 		}

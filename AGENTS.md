@@ -247,7 +247,7 @@ event throws out of `fill()`, so its Consumer dead-letters it and reads on.
 `Url_Canon::of()` and `Entity_Index::norm()` compute the canonical URL, the
 title norm and each name's norm the readers match on.
 
-**Rebuilding.** `Intel_Graph_Row_Schema::version()`, 2, versions the
+**Rebuilding.** `Intel_Graph_Row_Schema::version()`, 3, versions the
 projection's shape; the substrate discards a file at another version when
 the Row_Table opens it, and the projector's Consumers resume where they
 stopped, so the graph stays empty until it is rebuilt. A schema change bumps
@@ -280,10 +280,22 @@ as whole words in title and body at 1.0, an acronym only in its own case at
 0.9; a domain's stem in the title at 0.9, when it runs at least
 `MIN_STEM_LENGTH` (6) characters, aligns to word boundaries, capitalizes
 every word and is not led by an article, and never in a body, which is raw
-markup where an href spells a domain; and only when those find nothing, the NER extractor's organizations fuzzy-matched
+markup where an href spells a domain; and only when those find nothing, the NER extractor's organizations and products fuzzy-matched
 against every name — asserted at 0.85, proposed at 0.60, below that a
-candidate entity (at most `MAX_PROPOSALS`, 3, and never a name a rejected
-entity carries). A name whose norm the index holds exactly scores 1.0 with no
+candidate entity of the type it was named as (at most `MAX_PROPOSALS`, 3,
+and never a name a rejected entity carries). `Prompts::extract_entities()`
+asks for `orgs` and `products` apart, a tool, platform, vendor product or
+service being a product, never an organization, and
+`LLM_Entity_Extractor` reads a missing `products` as none and leaves out,
+logged, any name past `Graph_Curation::NAME_BYTES` (256), so a proposal
+fits one line. The rejected entities are the stoplist: a deployment's seed
+rejects its own teams, processes and generic words (see Seeding), and a
+curator adds a name by rejecting the proposal that carries it. A rejected
+name blocks a proposal whatever type the model gives it, so the stoplist is
+never scoped by type; and an organization proposed before tools were asked
+for as products is corrected by hand: `create_entity` the
+`product:<slug>`, then `reject_entity` the mistyped organization, whose
+name then proposes nothing again while the product's links it. A name whose norm the index holds exactly scores 1.0 with no
 scan; otherwise only names whose byte length can reach the proposing band
 are scored, because similar_text's ratio never passes 2·min/(sum). Name and stem hits whose spans overlap in one text settle
 together: the longest span wins and a shorter hit drops, while equal spans
@@ -428,7 +440,21 @@ $item, $ner )` takes the NER step per call: the node builds it from its
 `LLM_Config` state for each item owed NER, so a runtime `set_vault_id` or
 `set_api_url` reaches the next one, and passes none on any other
 re-resolution; the `Resolver` itself is rebuilt only when the index is.
-Every link event carries the item's `retrieved_ts`. The resolver and the
+Every link event carries the item's `retrieved_ts`. A `link_proposed` and
+an `entity_proposed` carry `evidence`: the first of the title's and the
+body's sentences, each read by `Entity_Index::sentences()`, that spells the
+name the link or the candidate was found by, the name read by
+`Entity_Index::plain()` too, so one a line or a tab breaks still matches,
+case aside, cut on whole characters to `Intel_Event::EVIDENCE_BYTES` (512)
+as the stream writes it, from 60 characters before the name, an ellipsis
+marking each cut; '' for a link an identifier found, or a name no sentence
+spells. `Resolver::linked()` alone decides that a proposed link carries it
+and an asserted one does not. Each `Intel_Event::KINDS` row ends with its
+optional string fields and the bytes each takes, `evidence` on those two
+kinds; one written before proposals carried it has none, `validate()`
+refuses one that is present and not a string within the cap, and the
+projector writes a missing one, and every asserted link's, as ''. The
+extractor is sent each link without it. The resolver and the
 extractor share the process's one
 `Entity_Index::current()`, read again every `Entity_Index::TTL_S` (60
 seconds) and when an `item_reresolve` record's `fresh_after` falls after its
@@ -481,7 +507,8 @@ two entities sharing a name never resolve by load order. Every claim keeps
 the object as the item spelled it in `object_text`, keyed or not, which a
 read answers to a caller who cannot see the object's entity. No client, a thrown
 `RuntimeException` or a reply that does not parse records a heuristic
-extraction instead — the first sentence of the title and of the body, kind
+extraction instead — the first of `Entity_Index::sentences()` of the
+title and of the body, markup stripped and entities decoded, kind
 `other`, no topics, scores 0 — as `machine:extract-heuristic@<version>`, so
 the item is never retried in a loop; a later re-resolution extracts it
 again. A call made that fails — a thrown `RuntimeException` or a reply that
@@ -1097,9 +1124,10 @@ user.
 `newspack-intelligence-ontology-seed.json`, which `Ontology_Seed::load()`
 finds through `Topology_Registry::resolve_file()`, the stock dir registered
 last first, so a deployment's dir shadows the fictional example
-`topologies/` ships (a few `.example` organizations, four topics and one
-lens). The file holds `entities`, type => slug => `{ name, names,
-identifiers, roles }`, `names` and `identifiers` each kind => values, and
+`topologies/` ships (a few `.example` organizations, a generic name it
+rejects, four topics and one lens). The file holds `entities`, type =>
+slug => `{ name, names, identifiers, roles, state }`, `names` and
+`identifiers` each kind => values, `state` `rejected` or absent, and
 `lenses`, key => `{ name, description, filters }`, the filters laid over
 `Graph_Query::unfiltered()`. `load()` mints every event as it reads,
 so `Intel_Event::make()` judges each type, kind and role and the one-line
@@ -1113,12 +1141,16 @@ its set`), before anything is written, as is a file that does not parse
 or holds a field neither shape takes. `wp newspack-intelligence ontology
 seed [<file>]` reads the file given, else the resolved one, and the
 `seed_ontology` verb the resolved one; both run `load()->seed()`, which
-writes `events()` — per entity its creation, its names, its identifiers
-and its roles from 0, then each lens, in the file's order — for the keys
+writes `events()` — per entity its creation, its names, its identifiers,
+its roles from 0 and an `entity_rejected` when its `state` says so, then
+each lens, in the file's order — for the keys
 `present()` does not find settled in the projection: an
 entity in `entity_states` in any state but a machine's pending
 `proposed`, a seed lens any `lens_saved` or `lens_removed` in `events`
 names, read by subject and kind, the index `events` keeps.
+A rejected seed entity's names never reach a proposal, as a curator's
+rejection keeps them (see Resolution), so the deployment's stoplist is its
+seed's rejected entities and no list of its own.
 So an entity a curator has accepted, rejected, merged or renamed is never
 reset, a machine's proposal of a seed key is replaced by the seed's
 creation, and a lens a curator saved over or removed is left alone; it
@@ -1795,7 +1827,7 @@ its own one-shot commands; nothing polls.
 | `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time, in the order the answer's `sort` names, which the reader switches, sending `--sort` from the first page; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words, the order and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
 | `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens` above `search --lens` a page at a time, in the order the answer's `sort` names, which the reader switches, beside `trends --lens`; trend rows and signals citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
 | `views/Entity.js` | default | `entity`, then `signals --entity` under its header, both axes, each row's value its axis and kind and the value it counts, its count against its baseline, then `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
-| `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity, and `review entities`, a pill per entity; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back |
+| `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity and the sentence each link quotes, and `review entities`, a pill per entity, each citing item with the sentence it quotes; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`, its field focused; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back. Each queue's list, named for its queue and described by a visually hidden sentence of its keys, takes focus and the review keys while focus is in it and not in a field, as the substrate's `isTypingTarget()` reads it: `j` and `k` move between the link pills or the entity rows (`data-review-row`, `tabindex="-1"`, so the shared `[tabindex]:focus-visible` ring shows), and `y`, `n` and `m` press the focused row's control whose `aria-keyshortcuts` names the key (✓, ✕, Merge…), a judgment moving focus to the row then in its place, else the last |
 | `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection`, its collection shown saving through `useHeld` until a read lists it by name |
 | `views/Watches.js` | default, `CLOSED_WATCH`, `newWatch` | `watches`, the caller's own, each with its target and unseen count, or "Inbox off" for a watch without its inbox, opened onto `watch_matches --key` a page at a time, or onto the words that its inbox is off, each match with a "Mark seen" (`mark_seen --key --item`) and the page with "Mark these seen", naming each match it shows, a marked match hidden through `useHeld` until a read no longer lists it and a landed mark returning to the first page; for every reader, not gated on `canTune`, the form saving a new watch or the one opened through `save_watch` — its name, the kind it follows and exactly one target (a lens picked from `lenses`, an entity key, or a collection picked from `collections`), and the three deliveries as checkboxes, each sent as `true` or `false` — and `remove_watch`, each held until a read of `watches` lists the watch with the name, target kind and deliveries the save sent, an edit by its own key, the target's key uncompared because the server stores an entity as its survivor |
 | `components/TrendTable.js` | default, `againstBaseline`, `signalValue` | The table of trend rows or signals a lens and an entity render, each row's bucket, value, count and cited items; a signal's count against its baseline, and its axis and kind with the value it counts |

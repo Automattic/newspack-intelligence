@@ -274,19 +274,18 @@ class Extractor_Node extends Node {
 
 	/**
 	 * The heuristic summary: the first sentence of the title, then of the
-	 * body with its tags stripped, cut to the summary length.
+	 * body, each as `Entity_Index::sentences()` reads it, cut to the summary
+	 * length.
 	 *
 	 * @param array<string,mixed> $item The item.
 	 */
 	private static function heuristic_summary( array $item ): string {
 		$sentences = [];
 		foreach ( [ 'title', 'body' ] as $field ) {
-			$text = \trim( (string) \preg_replace( '/\s+/u', ' ', \wp_strip_all_tags( Core::as_string( $item[ $field ] ) ) ) );
-			if ( '' === $text ) {
-				continue;
+			$sentence = Entity_Index::sentences( Core::as_string( $item[ $field ] ) )[0] ?? null;
+			if ( null !== $sentence ) {
+				$sentences[] = 1 === \preg_match( '/[.!?]$/u', $sentence ) ? $sentence : "{$sentence}.";
 			}
-			$sentence    = 1 === \preg_match( '/^.+?[.!?](?=\s|$)/u', $text, $m ) ? $m[0] : $text;
-			$sentences[] = 1 === \preg_match( '/[.!?]$/u', $sentence ) ? $sentence : "{$sentence}.";
 		}
 		return \mb_substr( \implode( ' ', $sentences ), 0, Prompts::SUMMARY_CHARS );
 	}

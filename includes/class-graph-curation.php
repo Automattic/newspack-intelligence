@@ -361,10 +361,11 @@ final class Graph_Curation {
 	 * Text cut to its longest prefix of whole characters whose written
 	 * bytes fit the cap.
 	 *
+	 * @api Resolver cuts an evidence sentence by it too.
 	 * @param string $text  The text.
 	 * @param int    $bytes The cap.
 	 */
-	private static function cut( string $text, int $bytes ): string {
+	public static function cut( string $text, int $bytes ): string {
 		[ $fits, $over ] = [ 0, \mb_strlen( $text ) + 1 ];
 		while ( $over - $fits > 1 ) {
 			$mid = \intdiv( $fits + $over, 2 );
@@ -638,12 +639,13 @@ final class Graph_Curation {
 	/**
 	 * A value, refused past its cap in bytes as the stream writes it.
 	 *
+	 * @api Intel_Event bounds an optional field by it, and LLM_Entity_Extractor a name.
 	 * @param string $name  What the value is, for the refusal.
 	 * @param string $value The value.
 	 * @param int    $bytes The cap.
 	 * @throws \InvalidArgumentException Past the cap.
 	 */
-	private static function capped( string $name, string $value, int $bytes ): string {
+	public static function capped( string $name, string $value, int $bytes ): string {
 		if ( self::written_bytes( $value ) > $bytes ) {
 			throw new \InvalidArgumentException( \esc_html( "{$name} runs past {$bytes} bytes" ) );
 		}

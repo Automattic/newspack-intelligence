@@ -107,6 +107,12 @@
 		margin: base.$space-xs 0;
 	}
 
+	// The sentence a proposal quotes sits under its row, indented a step.
+	&__evidence {
+		margin: base.$space-xs 0 0;
+		padding-inline-start: base.$space-sm;
+	}
+
 	&__item-head,
 	&__judgments,
 	&__pager,

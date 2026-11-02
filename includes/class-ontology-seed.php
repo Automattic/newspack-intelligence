@@ -29,7 +29,10 @@ final class Ontology_Seed {
 	public const FILE = 'newspack-intelligence-ontology-seed.json';
 
 	/** The fields an entity takes, `name` alone required. */
-	private const ENTITY_FIELDS = [ 'name', 'names', 'identifiers', 'roles' ];
+	private const ENTITY_FIELDS = [ 'name', 'names', 'identifiers', 'roles', 'state' ];
+
+	/** Each state an entity may be declared in, by the event that sets it. */
+	private const STATES = [ 'rejected' => 'entity_rejected' ];
 
 	/** An entity's two fact lists, each by the event it writes. */
 	private const FACT_LISTS = [
@@ -173,7 +176,9 @@ final class Ontology_Seed {
 	/**
 	 * One entity's events, minted in the order the file lists its facts: its
 	 * name and every value bounded as `create_entity` and `add_name` bound
-	 * them, its slug the one its key spells.
+	 * them, its slug the one its key spells, and last the state it is
+	 * declared in, so a rejected entity's names stop a proposal as a
+	 * curator's rejection does.
 	 *
 	 * @param string $field Where it sits.
 	 * @param string $type  Its type.
@@ -195,6 +200,13 @@ final class Ontology_Seed {
 		}
 		foreach ( $this->strings( "{$field}.roles", $entity['roles'] ?? [] ) as $role ) {
 			$events[] = $this->minted( "{$field}.roles", static fn (): array => self::mint( 'role_asserted', [ 'entity_key' => $key, 'role' => $role, 'from_ts' => 0 ] ) );
+		}
+		if ( \array_key_exists( 'state', $entity ) ) {
+			$state = $this->text( "{$field}.state", $entity['state'] );
+			if ( ! isset( self::STATES[ $state ] ) ) {
+				$this->refuse( "{$field}.state", 'not one of: ' . \implode( ', ', \array_keys( self::STATES ) ) );
+			}
+			$events[] = $this->minted( "{$field}.state", static fn (): array => self::mint( self::STATES[ $state ], [ 'entity_key' => $key ] ) );
 		}
 		$this->entities[ $key ] = $events;
 	}

@@ -181,8 +181,10 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * the items, so they answer nothing, as do rows a later resolution of
 	 * the item writes. A heuristic stand-in only fills an item
 	 * no extraction holds yet (`STAND_IN`), so it never replaces a call's
-	 * extraction, its claims or its topics. Every ontology kind also writes
-	 * its `events` row.
+	 * extraction, its claims or its topics. A proposed link's evidence, which
+	 * one written before proposals carried it lacks, projects as '', as an
+	 * asserted link's always does. Every ontology kind also writes its
+	 * `events` row.
 	 *
 	 * @return array<string,list<array{0:string,1:string,2:array<mixed>,3?:string}>>
 	 */
@@ -191,7 +193,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			return self::$projections;
 		}
 		$day    = static fn ( string $field ): \Closure => static fn ( array $e ): int => (int) \floor( Core::as_float( $e[ $field ] ) / Intel_Graph_Row_Schema::DAY_SECONDS );
-		$link   = static fn ( string $state ): array => [ [ 'set', 'links', [ 'item_key', 'entity_key', 'role', 'method', 'confidence', [ $state ], 'actor', 'ts', $day( 'retrieved_ts' ) ] ] ];
+		$link   = static fn ( string $state, mixed $evidence ): array => [ [ 'set', 'links', [ 'item_key', 'entity_key', 'role', 'method', 'confidence', [ $state ], $evidence, 'actor', 'ts', $day( 'retrieved_ts' ) ] ] ];
 		$entity = static fn ( string $verb, string $state ): array => [
 			[ $verb, 'entities', [ 'entity_key', 'type', 'name', 'ts' ] ],
 			[ $verb, 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ],
@@ -205,14 +207,14 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 				[ 'delete', 'claims', [ 'item_key' => 'item_key' ] ],
 				[ 'delete', 'links', [ 'item_key' => 'item_key', 'role' => [ 'topic' ] ] ],
 				[ 'set', 'extractions', $extraction ],
-				[ 'set', 'links', [ 'item_key', self::EACH, [ 'topic' ], [ 'extract' ], [ 1.0 ], [ 'asserted' ], 'actor', 'ts', $day( 'retrieved_ts' ) ], 'topics' ],
+				[ 'set', 'links', [ 'item_key', self::EACH, [ 'topic' ], [ 'extract' ], [ 1.0 ], [ 'asserted' ], [ '' ], 'actor', 'ts', $day( 'retrieved_ts' ) ], 'topics' ],
 			],
 			'subjects_extracted'  => [
 				[ 'delete', 'extracted_subjects', [ 'item_key' => 'item_key' ] ],
 				[ 'set', 'extracted_subjects', [ 'item_key', self::EACH, $day( 'retrieved_ts' ) ], 'entity_keys' ],
 			],
-			'link_asserted'       => $link( 'asserted' ),
-			'link_proposed'       => $link( 'proposed' ),
+			'link_asserted'       => $link( 'asserted', [ '' ] ),
+			'link_proposed'       => $link( 'proposed', static fn ( array $e ): string => Core::as_string( $e['evidence'] ?? '' ) ),
 			'link_retracted'      => [ [ 'delete', 'links', [ 'item_key' => 'item_key', 'entity_key' => 'entity_key', 'role' => 'role' ] ] ],
 			'claim_asserted'      => [ [ 'set', 'claims', [ 'item_key', 'ord', 'subject_key', 'predicate', 'object_key', 'object_text', 'confidence', $day( 'retrieved_ts' ) ] ] ],
 			'cluster_joined'      => [ [ 'set', 'clusters', [ 'item_key', 'cluster_key', $day( 'retrieved_ts' ) ] ] ],

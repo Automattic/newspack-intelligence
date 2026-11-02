@@ -382,15 +382,15 @@ final class GraphQueryTest extends TestCase {
 	public function test_review_queues_proposed_links_and_entities_with_their_items(): void {
 		$this->seed_world();
 		$this->seed(
-			self::proposal( 'organization:tidewater-times', 'Tidewater Times', 'feed:gazette-award' ),
-			self::link( 'link_proposed', 'github:ledger-launch', 'organization:tidewater-times', 'mention', 'ner_fuzzy', 0.62, self::$oct_13 )
+			self::proposal( 'organization:tidewater-times', 'Tidewater Times', 'feed:gazette-award', 'Tidewater Times judged the state award.' ),
+			self::link( 'link_proposed', 'github:ledger-launch', 'organization:tidewater-times', 'mention', 'ner_fuzzy', 0.62, self::$oct_13, 'Tidewater Times readers asked for the tool.' )
 		);
 
 		$this->assertSame(
 			[
 				'links'     => [
-					[ 'item_key' => 'github:ledger-launch', 'entity_key' => 'organization:tidewater-times', 'name' => 'Tidewater Times', 'type' => 'organization', 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.62, 'title' => 'Salem Ledger launches a newsletter tool', 'url' => 'https://news.example/github/ledger-launch' ],
-					[ 'item_key' => 'linear:joint-grant', 'entity_key' => self::LEDGER, 'name' => 'Salem Ledger', 'type' => 'organization', 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.6, 'title' => 'Gazette and Ledger share a grant', 'url' => 'https://news.example/linear/joint-grant' ],
+					[ 'item_key' => 'github:ledger-launch', 'entity_key' => 'organization:tidewater-times', 'name' => 'Tidewater Times', 'type' => 'organization', 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.62, 'evidence' => 'Tidewater Times readers asked for the tool.', 'title' => 'Salem Ledger launches a newsletter tool', 'url' => 'https://news.example/github/ledger-launch' ],
+					[ 'item_key' => 'linear:joint-grant', 'entity_key' => self::LEDGER, 'name' => 'Salem Ledger', 'type' => 'organization', 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.6, 'evidence' => '', 'title' => 'Gazette and Ledger share a grant', 'url' => 'https://news.example/linear/joint-grant' ],
 				],
 				'available' => true,
 			],
@@ -404,8 +404,8 @@ final class GraphQueryTest extends TestCase {
 						'type'       => 'organization',
 						'name'       => 'Tidewater Times',
 						'items'      => [
-							[ 'item_key' => 'github:ledger-launch', 'url' => 'https://news.example/github/ledger-launch', 'title' => 'Salem Ledger launches a newsletter tool' ],
-							[ 'item_key' => 'feed:gazette-award', 'url' => 'https://news.example/feed/gazette-award', 'title' => 'Harbor Gazette wins state award' ],
+							[ 'item_key' => 'github:ledger-launch', 'url' => 'https://news.example/github/ledger-launch', 'title' => 'Salem Ledger launches a newsletter tool', 'evidence' => 'Tidewater Times readers asked for the tool.' ],
+							[ 'item_key' => 'feed:gazette-award', 'url' => 'https://news.example/feed/gazette-award', 'title' => 'Harbor Gazette wins state award', 'evidence' => 'Tidewater Times judged the state award.' ],
 						],
 					],
 				],
@@ -413,6 +413,15 @@ final class GraphQueryTest extends TestCase {
 			],
 			self::read( 'review', [ 'what' => 'entities' ] )
 		);
+	}
+
+	/** A proposed link and a proposal written before proposals carried evidence reach the review rows with none. */
+	public function test_a_proposal_written_before_evidence_reaches_review_with_none(): void {
+		$this->seed_world();
+		$this->seed( self::proposal( 'organization:tidewater-times', 'Tidewater Times', 'feed:gazette-award' ) );
+
+		$this->assertSame( [ [ 'linear:joint-grant', '' ] ], \array_map( static fn ( array $l ): array => [ $l['item_key'], $l['evidence'] ], self::read( 'review', [ 'what' => 'links' ] )['links'] ) );
+		$this->assertSame( [ [ 'feed:gazette-award', '' ] ], \array_map( static fn ( array $i ): array => [ $i['item_key'], $i['evidence'] ], self::read( 'review', [ 'what' => 'entities' ] )['entities'][0]['items'] ) );
 	}
 
 	/** A machine's proposal answers as an entity only while a readable item cites it. */

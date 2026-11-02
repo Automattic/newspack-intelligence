@@ -120,10 +120,11 @@ trait Seeds_Intel_Graph {
 	 * @param string $method     How it was found.
 	 * @param float  $confidence Its confidence.
 	 * @param int    $item_ts    The item's date.
+	 * @param string $evidence   The sentence it was found in, or '' for an event written before proposals carried one.
 	 * @return list<array<string,mixed>>
 	 */
-	private static function link( string $kind, string $item, string $entity, string $role, string $method, float $confidence, int $item_ts ): array {
-		return [ Intel_Event::make( $kind, [ 'item_key' => $item, 'entity_key' => $entity, 'role' => $role, 'method' => $method, 'confidence' => $confidence, 'retrieved_ts' => $item_ts + 600 ], self::$machine, 'fixture-9' ) ];
+	private static function link( string $kind, string $item, string $entity, string $role, string $method, float $confidence, int $item_ts, string $evidence = '' ): array {
+		return [ Intel_Event::make( $kind, [ 'item_key' => $item, 'entity_key' => $entity, 'role' => $role, 'method' => $method, 'confidence' => $confidence, 'retrieved_ts' => $item_ts + 600 ] + self::evidence( $evidence ), self::$machine, 'fixture-9' ) ];
 	}
 
 	/**
@@ -158,13 +159,25 @@ trait Seeds_Intel_Graph {
 	/**
 	 * A machine's proposal of an entity, naming the item it came from.
 	 *
-	 * @param string $key  The entity key.
-	 * @param string $name Its name.
-	 * @param string $item The item that proposed it.
+	 * @param string $key      The entity key.
+	 * @param string $name     Its name.
+	 * @param string $item     The item that proposed it.
+	 * @param string $evidence The sentence that named it, or '' for an event written before proposals carried one.
 	 * @return list<array<string,mixed>>
 	 */
-	private static function proposal( string $key, string $name, string $item ): array {
-		return [ Intel_Event::make( 'entity_proposed', [ 'entity_key' => $key, 'type' => \explode( ':', $key )[0], 'name' => $name, 'from_item_key' => $item ], self::$machine, 'fixture-9' ) ];
+	private static function proposal( string $key, string $name, string $item, string $evidence = '' ): array {
+		return [ Intel_Event::make( 'entity_proposed', [ 'entity_key' => $key, 'type' => \explode( ':', $key )[0], 'name' => $name, 'from_item_key' => $item ] + self::evidence( $evidence ), self::$machine, 'fixture-9' ) ];
+	}
+
+	/**
+	 * A proposal's evidence field: none for '', as every proposal written
+	 * before proposals carried one.
+	 *
+	 * @param string $evidence The sentence.
+	 * @return array<string,string>
+	 */
+	private static function evidence( string $evidence ): array {
+		return '' === $evidence ? [] : [ 'evidence' => $evidence ];
 	}
 
 	/**

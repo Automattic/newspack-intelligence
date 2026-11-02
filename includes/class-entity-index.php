@@ -267,6 +267,29 @@ final class Entity_Index {
 	}
 
 	/**
+	 * Text's sentences as `plain()` reads it, split after each closing mark
+	 * a space follows.
+	 *
+	 * @param string $text A title or a body.
+	 * @return list<string>
+	 */
+	public static function sentences( string $text ): array {
+		$plain = self::plain( $text );
+		return '' === $plain ? [] : ( \preg_split( '/(?<=[.!?])\s+/u', $plain ) ?: [ $plain ] );
+	}
+
+	/**
+	 * Text as prose reads it: markup stripped with a space where each tag
+	 * stood, entities decoded, whitespace collapsed to one space.
+	 *
+	 * @param string $text A title, a body or a name found in one.
+	 */
+	public static function plain( string $text ): string {
+		$text = \html_entity_decode( \wp_strip_all_tags( \str_replace( '<', ' <', $text ) ), \ENT_QUOTES | \ENT_HTML5, 'UTF-8' );
+		return \trim( (string) \preg_replace( '/\s+/u', ' ', $text ) );
+	}
+
+	/**
 	 * The entity an identifier names.
 	 *
 	 * @param string $kind  An identifier kind.

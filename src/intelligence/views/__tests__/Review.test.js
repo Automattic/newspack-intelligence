@@ -33,6 +33,7 @@ const LINK = {
 	role: 'mention',
 	method: 'ner_fuzzy',
 	confidence: 0.61,
+	evidence: 'Acme readers flagged the paywall bug twice.',
 	title: 'Paywall bug reported by Acme',
 	url: 'https://github.example/example/plugin/912',
 };
@@ -44,6 +45,7 @@ const SIBLING = {
 	role: 'subject',
 	method: 'name',
 	confidence: 1,
+	evidence: 'Valley Ledger editors reproduced it.',
 };
 
 // Words distinct from the page's own, so a description proves it read these.
@@ -61,6 +63,7 @@ const PROPOSED = {
 			item_key: 'feed:valley-17',
 			url: 'https://valley.example/17',
 			title: 'Valley Times joins the network',
+			evidence: 'Valley Times signed on this week.',
 		},
 	],
 };
@@ -504,5 +507,192 @@ describe( 'Review — judgments', () => {
 				name: 'Accept Valley Times',
 			} )
 		).toBeInTheDocument();
+	} );
+} );
+
+describe( 'Review — evidence', () => {
+	it( 'quotes the sentence each proposal came from', async () => {
+		renderReview();
+		const links = queue( 'Proposed links' );
+		expect(
+			await within( links ).findByText(
+				'Acme readers flagged the paywall bug twice.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( links ).getByText( 'Valley Ledger editors reproduced it.' )
+		).toBeInTheDocument();
+		expect(
+			await within( queue( 'Proposed entities' ) ).findByText(
+				'Valley Times signed on this week.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'quotes nothing for a proposal no sentence spells', async () => {
+		wire.replies.review = ( [ what ] ) =>
+			'links' === what
+				? { links: [ { ...LINK, evidence: '' } ], available: true }
+				: { entities: [], available: true };
+		renderReview();
+		const links = queue( 'Proposed links' );
+		await within( links ).findByRole( 'button', { name: 'Acme Gazette' } );
+		expect( links.querySelectorAll( 'blockquote' ) ).toHaveLength( 0 );
+	} );
+} );
+
+describe( 'Review — keyboard', () => {
+	const list = ( name ) =>
+		within( queue( name ) ).getByRole( 'list', { name } );
+	const key = ( target, k ) => fireEvent.keyDown( target, { key: k } );
+	// A judgment is focused: one row, carrying the tabindex the ring keys on.
+	const focusedHolds = ( name ) => {
+		expect( document.activeElement ).toHaveAttribute( 'tabindex', '-1' );
+		expect( document.activeElement ).toContainElement(
+			screen.getByRole( 'button', { name } )
+		);
+	};
+
+	it( 'names each list and describes its keys to a screen reader, each key on its control', async () => {
+		renderReview( { canTune: true } );
+		await screen.findByRole( 'button', { name: 'Valley Times' } );
+		for ( const name of [ 'Proposed links', 'Proposed entities' ] ) {
+			expect( list( name ) ).toHaveAccessibleDescription(
+				'Press j and k to move between proposals, y to confirm or accept, n to reject and m to merge.'
+			);
+		}
+		expect(
+			screen.getByRole( 'button', { name: 'Confirm Acme Gazette' } )
+		).toHaveAttribute( 'aria-keyshortcuts', 'y' );
+		expect(
+			screen.getByRole( 'button', { name: 'Reject Acme Gazette' } )
+		).toHaveAttribute( 'aria-keyshortcuts', 'n' );
+		expect(
+			screen.getByRole( 'button', { name: 'Merge Valley Times…' } )
+		).toHaveAttribute( 'aria-keyshortcuts', 'm' );
+	} );
+
+	it( 'moves through the judgments with j and k, each focusable', async () => {
+		renderReview( { canTune: true } );
+		await screen.findByRole( 'button', { name: 'Acme Gazette' } );
+		const links = list( 'Proposed links' );
+		links.focus();
+		key( links, 'j' );
+		focusedHolds( 'Acme Gazette' );
+		key( document.activeElement, 'j' );
+		focusedHolds( 'Valley Ledger' );
+		key( document.activeElement, 'j' );
+		focusedHolds( 'Valley Ledger' );
+		key( document.activeElement, 'k' );
+		focusedHolds( 'Acme Gazette' );
+		expect( links ).toHaveAttribute( 'tabindex', '0' );
+	} );
+
+	it( 'confirms with y and rejects with n, focus moving to the next row', async () => {
+		wire.replies.confirm_link = () => new Promise( () => {} );
+		wire.replies.reject_link = () => new Promise( () => {} );
+		renderReview( { canTune: true } );
+		await screen.findByRole( 'button', { name: 'Acme Gazette' } );
+		const links = list( 'Proposed links' );
+		links.focus();
+		key( links, 'j' );
+		await act( async () => key( document.activeElement, 'y' ) );
+		await waitFor( () =>
+			expect( wire.sent( 'confirm_link' ) ).toEqual( [
+				[
+					`--item=${ LINK.item_key }`,
+					`--entity=${ LINK.entity_key }`,
+				],
+			] )
+		);
+		focusedHolds( 'Valley Ledger' );
+		await act( async () => key( document.activeElement, 'n' ) );
+		await waitFor( () =>
+			expect( wire.sent( 'reject_link' ) ).toEqual( [
+				[
+					`--item=${ SIBLING.item_key }`,
+					`--entity=${ SIBLING.entity_key }`,
+				],
+			] )
+		);
+		expect(
+			within( queue( 'Proposed links' ) ).getByText(
+				'No proposed link awaits review.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'focuses the row above once the last row is judged', async () => {
+		wire.replies.reject_link = () => new Promise( () => {} );
+		renderReview( { canTune: true } );
+		await screen.findByRole( 'button', { name: 'Valley Ledger' } );
+		const links = list( 'Proposed links' );
+		links.focus();
+		key( links, 'k' );
+		key( document.activeElement, 'j' );
+		await act( async () => key( document.activeElement, 'n' ) );
+		expect( wire.sent( 'reject_link' ) ).toEqual( [
+			[
+				`--item=${ SIBLING.item_key }`,
+				`--entity=${ SIBLING.entity_key }`,
+			],
+		] );
+		focusedHolds( 'Acme Gazette' );
+	} );
+
+	it( 'accepts an entity with y, and opens its merge with m', async () => {
+		wire.replies.accept_entity = () => new Promise( () => {} );
+		renderReview( { canTune: true } );
+		await screen.findByRole( 'button', { name: 'Valley Times' } );
+		const entities = list( 'Proposed entities' );
+		entities.focus();
+		key( entities, 'j' );
+		focusedHolds( 'Valley Times' );
+		await act( async () => key( document.activeElement, 'm' ) );
+		const into = within( queue( 'Proposed entities' ) ).getByLabelText(
+			'Merge into'
+		);
+		expect( document.activeElement ).toBe( into );
+		key( into, 'y' );
+		key( into, 'n' );
+		key( into, 'k' );
+		expect( document.activeElement ).toBe( into );
+		expect( wire.sent( 'accept_entity' ) ).toEqual( [] );
+		expect( wire.sent( 'reject_entity' ) ).toEqual( [] );
+		into.closest( '[tabindex="-1"]' ).focus();
+		await act( async () => key( document.activeElement, 'y' ) );
+		await waitFor( () =>
+			expect( wire.sent( 'accept_entity' ) ).toEqual( [
+				[ `--key=${ PROPOSED.entity_key }` ],
+			] )
+		);
+	} );
+
+	it( 'ignores a key with a modifier, and every key outside the list', async () => {
+		wire.replies.confirm_link = () => new Promise( () => {} );
+		renderReview( { canTune: true } );
+		await screen.findByRole( 'button', { name: 'Acme Gazette' } );
+		const links = list( 'Proposed links' );
+		links.focus();
+		key( links, 'j' );
+		fireEvent.keyDown( document.activeElement, {
+			key: 'y',
+			metaKey: true,
+		} );
+		key( document.body, 'y' );
+		key( document.body, 'j' );
+		focusedHolds( 'Acme Gazette' );
+		expect( wire.sent( 'confirm_link' ) ).toEqual( [] );
+	} );
+
+	it( 'offers a reader the moves and no judgment', async () => {
+		renderReview();
+		await screen.findByRole( 'button', { name: 'Acme Gazette' } );
+		const links = list( 'Proposed links' );
+		links.focus();
+		key( links, 'j' );
+		key( document.activeElement, 'y' );
+		focusedHolds( 'Acme Gazette' );
+		expect( wire.sent( 'confirm_link' ) ).toEqual( [] );
 	} );
 } );

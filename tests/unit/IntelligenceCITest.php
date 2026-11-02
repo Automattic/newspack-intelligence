@@ -260,6 +260,21 @@ final class IntelligenceCITest extends TestCase {
 		$this->ci->dispatch( 'entity', [ 'organization:hidden-buyer' ] );
 	}
 
+	/** A proposal's sentence answers only through an item the reader may read. */
+	public function test_a_restricted_items_sentence_never_answers(): void {
+		$this->seed_world();
+		$this->seed(
+			self::proposal( 'organization:tidewater-times', 'Tidewater Times', 'hubspot:deal-9', 'Tidewater Times will not renew next quarter.' ),
+			self::proposal( 'organization:tidewater-times', 'Tidewater Times', 'feed:gazette-award', 'Tidewater Times judged the state award.' )
+		);
+		self::write_restricted_item( 'hubspot:deal-9', 'Harbor Gazette deal at risk' );
+
+		$this->assertSame(
+			[ [ 'feed:gazette-award', 'Tidewater Times judged the state award.' ] ],
+			\array_map( static fn ( array $item ): array => [ $item['item_key'], $item['evidence'] ], $this->ci->dispatch( 'review', [ 'entities' ] )['entities'][0]['items'] )
+		);
+	}
+
 	/** Every row an answer lists names the items it rests on, with their URLs where the shape carries one. */
 	public function test_every_answer_carries_citations(): void {
 		$this->seed_world();

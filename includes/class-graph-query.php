@@ -1315,8 +1315,9 @@ final class Graph_Query {
 
 	/**
 	 * The review queue: proposed links, newest item first, each with its
-	 * item; or proposed entities no merge took, the newest proposal first,
-	 * each with the readable items citing it, by a link or as its source.
+	 * item and evidence; or proposed entities no merge took, the newest
+	 * proposal first, each with the readable items citing it, by a link or
+	 * as its source, and the sentence each quotes.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `what`, `limit`.
 	 * @return array<string,mixed> `{ links|entities, available }`.
@@ -1347,16 +1348,17 @@ final class Graph_Query {
 			"{$g['with']}{$live}, {$cites}, proposed AS ( SELECT s.entity_key, MAX( s.ts ) AS ts FROM " . Intel_Graph_Row_Schema::all( $r, 'entity_states' ) . " s WHERE s.state = 'proposed'"
 			. ' AND s.entity_key NOT IN ( SELECT key FROM mg ) GROUP BY s.entity_key ),'
 			. ' best AS ( SELECT p.entity_key, p.ts FROM proposed p WHERE EXISTS ( SELECT 1 FROM cites c WHERE c.entity_key = p.entity_key ) ORDER BY p.ts DESC, p.entity_key LIMIT ? ),'
-			. ' cited AS ( SELECT c.entity_key, c.item_key, c.title, c.url, ROW_NUMBER() OVER ( PARTITION BY c.entity_key ORDER BY c.t DESC, c.item_key DESC ) AS rn FROM cites c JOIN best ON best.entity_key = c.entity_key )'
+			. ' quoted AS ( SELECT c.entity_key, c.item_key, MAX( c.title ) AS title, MAX( c.url ) AS url, MAX( c.t ) AS t, MAX( c.evidence ) AS evidence FROM cites c JOIN best ON best.entity_key = c.entity_key GROUP BY c.entity_key, c.item_key ),'
+			. ' cited AS ( SELECT q.*, ROW_NUMBER() OVER ( PARTITION BY q.entity_key ORDER BY q.t DESC, q.item_key DESC ) AS rn FROM quoted q )'
 			. ' SELECT best.entity_key, ' . self::column_of( $r, 'type', 'best.entity_key' ) . ', ' . self::column_of( $r, 'name', 'best.entity_key' )
-			. ', cited.item_key, cited.url, cited.title FROM best JOIN cited ON cited.entity_key = best.entity_key WHERE cited.rn <= ? ORDER BY best.ts DESC, best.entity_key, cited.rn',
+			. ', cited.item_key, cited.url, cited.title, cited.evidence FROM best JOIN cited ON cited.entity_key = best.entity_key WHERE cited.rn <= ? ORDER BY best.ts DESC, best.entity_key, cited.rn',
 			[ ...$g['binds'], ...$live_binds, ...$cited, $limit, self::CITATIONS ]
 		);
 		$entities              = [];
-		foreach ( $rows as [ $entity, $type, $name, $item, $url, $title ] ) {
+		foreach ( $rows as [ $entity, $type, $name, $item, $url, $title, $evidence ] ) {
 			$entity              = Core::as_string( $entity );
 			$entities[ $entity ] ??= [ 'entity_key' => $entity, 'type' => $type, 'name' => $name, 'items' => [] ];
-			$entities[ $entity ]['items'][] = [ 'item_key' => $item, 'url' => $url, 'title' => $title ];
+			$entities[ $entity ]['items'][] = [ 'item_key' => $item, 'url' => $url, 'title' => $title, 'evidence' => Core::as_string( $evidence ) ];
 		}
 		return \array_values( $entities );
 	}
@@ -1364,7 +1366,8 @@ final class Graph_Query {
 	/**
 	 * The `cites` CTE, to follow `live()`: each readable item citing an
 	 * entity, by a live link or as the item a proposal came from, the
-	 * proposals `$only` admits over the `events` row `ev`.
+	 * proposals `$only` admits over the `events` row `ev`, with the sentence
+	 * the link or the proposal quotes.
 	 *
 	 * @param Row_Reader   $r     The reader.
 	 * @param string       $only  A condition on `ev`, the proposals read.
@@ -1372,8 +1375,8 @@ final class Graph_Query {
 	 * @return Sql The CTE and its binds.
 	 */
 	private static function cites( Row_Reader $r, string $only, array $binds ): array {
-		$sql = 'cites AS ( SELECT entity_key, item_key, title, url, t FROM live UNION SELECT COALESCE( mg.value, ev.subject ), i.item_key, i.title, i.url, '
-			. Intel_Graph_Row_Schema::ITEM_TIME . ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'events' )
+		$sql = 'cites AS ( SELECT entity_key, item_key, title, url, t, evidence FROM live UNION SELECT COALESCE( mg.value, ev.subject ), i.item_key, i.title, i.url, '
+			. Intel_Graph_Row_Schema::ITEM_TIME . ", json_extract( ev.detail, '$.evidence' ) FROM " . Intel_Graph_Row_Schema::all( $r, 'events' )
 			. " ev JOIN ri i ON i.item_key = json_extract( ev.detail, '$.from_item_key' ) LEFT JOIN mg ON mg.key = ev.subject"
 			. " WHERE ev.kind = 'entity_proposed' AND {$only} )";
 		return [ $sql, $binds ];
@@ -1392,11 +1395,11 @@ final class Graph_Query {
 		$links                 = [];
 		$rows                  = $r->rows(
 			"{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::column_of( $r, 'name', 'live.entity_key' ) . ', ' . self::column_of( $r, 'type', 'live.entity_key' )
-			. ", live.role, live.method, live.confidence, live.title, live.url FROM live WHERE live.state = 'proposed' ORDER BY live.t DESC, live.item_key, live.entity_key LIMIT ?",
+			. ", live.role, live.method, live.confidence, live.evidence, live.title, live.url FROM live WHERE live.state = 'proposed' ORDER BY live.t DESC, live.item_key, live.entity_key LIMIT ?",
 			[ ...$g['binds'], ...$live_binds, $limit ]
 		);
-		foreach ( $rows as [ $item, $entity, $name, $type, $role, $method, $confidence, $title, $url ] ) {
-			$links[] = [ 'item_key' => $item, 'entity_key' => $entity, 'name' => $name, 'type' => $type, 'role' => $role, 'method' => $method, 'confidence' => $confidence, 'title' => $title, 'url' => $url ];
+		foreach ( $rows as [ $item, $entity, $name, $type, $role, $method, $confidence, $evidence, $title, $url ] ) {
+			$links[] = [ 'item_key' => $item, 'entity_key' => $entity, 'name' => $name, 'type' => $type, 'role' => $role, 'method' => $method, 'confidence' => $confidence, 'evidence' => $evidence, 'title' => $title, 'url' => $url ];
 		}
 		return $links;
 	}
@@ -1433,16 +1436,16 @@ final class Graph_Query {
 	private static function live( Row_Reader $r, string $only, array $binds, array $roles = Intel_Event::ABOUT_ROLES ): array {
 		$rank = self::judge_rank( 'j.actor_kind' );
 		$time = Intel_Graph_Row_Schema::ITEM_TIME;
-		$sql  = ', lk AS ( SELECT l.item_key, COALESCE( mg.value, l.entity_key ) AS entity_key, l.entity_key AS raw_key, l.role, l.method, l.confidence, l.state'
+		$sql  = ', lk AS ( SELECT l.item_key, COALESCE( mg.value, l.entity_key ) AS entity_key, l.entity_key AS raw_key, l.role, l.method, l.confidence, l.state, l.evidence'
 			. ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' l LEFT JOIN mg ON mg.key = l.entity_key WHERE ( ' . \str_replace( '{t}', 'l', $only ) . ' ) AND l.role IN ( ' . Intel_Graph_Row_Schema::marks( $roles ) . ' ) ),'
 			. ' jt AS ( SELECT item_key, entity_key, state FROM ( SELECT j.item_key, COALESCE( mg.value, j.entity_key ) AS entity_key, j.state,'
 			. " ROW_NUMBER() OVER ( PARTITION BY j.item_key, COALESCE( mg.value, j.entity_key ) ORDER BY {$rank} DESC, j.ts DESC ) AS pick"
 			. ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'judgments' ) . ' j LEFT JOIN mg ON mg.key = j.entity_key WHERE ' . \str_replace( '{t}', 'j', $only ) . ' ) WHERE pick = 1 ),'
-			. ' lj AS ( SELECT lk.item_key, lk.entity_key, lk.raw_key, lk.role, lk.method, lk.confidence, lk.role = \'topic\' AS topical,'
+			. ' lj AS ( SELECT lk.item_key, lk.entity_key, lk.raw_key, lk.role, lk.method, lk.confidence, lk.evidence, lk.role = \'topic\' AS topical,'
 			. " i.title, i.url, {$time} AS t, CASE WHEN lk.role = ? THEN lk.state ELSE COALESCE( jt.state, lk.state ) END AS state"
 			. ' FROM lk JOIN ri i ON i.item_key = lk.item_key'
 			. " LEFT JOIN jt ON jt.item_key = lk.item_key AND jt.entity_key = lk.entity_key WHERE lk.entity_key <> '' ),"
-			. ' live AS ( SELECT item_key, entity_key, role, method, confidence, topical, title, url, t, state FROM ( SELECT lj.*,'
+			. ' live AS ( SELECT item_key, entity_key, role, method, confidence, evidence, topical, title, url, t, state FROM ( SELECT lj.*,'
 			. ' ROW_NUMBER() OVER ( PARTITION BY lj.item_key, lj.entity_key, lj.topical'
 			. " ORDER BY lj.role = 'subject' DESC, lj.role = 'publisher', lj.confidence DESC, lj.raw_key ) AS pick FROM lj WHERE lj.state <> 'rejected' ) WHERE pick = 1 )";
 		return [ $sql, [ ...$binds, ...$roles, ...$binds, Intel_Event::PUBLISHER ] ];

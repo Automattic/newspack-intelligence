@@ -548,6 +548,13 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( [], $this->out->captured );
 	}
 
+	/** The heuristic summary decodes entities and keeps a line break between the words it parted. */
+	public function test_a_heuristic_summary_decodes_entities_and_spaces_a_break(): void {
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [ 'title' => 'Tide &amp; ferry news', 'body' => 'The ferry<br>sailed late. Then docked.' ] ) );
+
+		$this->assertSame( 'Tide & ferry news. The ferry sailed late.', $this->written()[0]['summary'] );
+	}
+
 	/** The heuristic summary keeps the summary's length, on a character boundary. */
 	public function test_a_heuristic_summary_is_cut_to_the_summary_length(): void {
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [ 'title' => \str_repeat( 'ü', 400 ), 'body' => '' ] ) );

@@ -74,6 +74,10 @@
 				"roles": [
 					"partner"
 				]
+			},
+			"weekly-standup": {
+				"name": "Weekly standup",
+				"state": "rejected"
 			}
 		}
 	},

@@ -185,6 +185,7 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 					'method'     => 'TEXT NOT NULL',
 					'confidence' => 'REAL NOT NULL',
 					'state'      => 'TEXT NOT NULL',
+					'evidence'   => 'TEXT NOT NULL',
 					'actor'      => 'TEXT NOT NULL',
 					'ts'         => 'REAL NOT NULL',
 					'item_day'   => 'INTEGER NOT NULL',
@@ -494,6 +495,6 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	 * @api Read by the Row_Table that opens the file.
 	 */
 	public static function version(): int {
-		return 2;
+		return 3;
 	}
 }

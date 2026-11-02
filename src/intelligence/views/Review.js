@@ -1,8 +1,15 @@
-import { useState } from '@wordpress/element';
+import {
+	useEffect,
+	useId,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
-import { TextControl } from '@wordpress/components';
+import { TextControl, VisuallyHidden } from '@wordpress/components';
 import { Icon, check, closeSmall } from '@wordpress/icons';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
+import { isTypingTarget } from '@newspack-nodes/shared/utils/isTypingTarget';
 import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
 import Answer from '../components/Answer';
@@ -29,9 +36,112 @@ function howFound( link, vocabulary ) {
 	);
 }
 
+/** A row the review keys move between, by its attribute. */
+const ROW = '[data-review-row]';
+
+/** The keys that press a row's control, each the `aria-keyshortcuts` of one. */
+const JUDGMENT_KEYS = [ 'y', 'n', 'm' ];
+
+/**
+ * One queue's rows as a list the review keys work in: `j` and `k` focus the
+ * next and the previous row, and `y`, `n` and `m` press the focused row's
+ * control whose `aria-keyshortcuts` names that key. A key typed in a field,
+ * or with a modifier, is left alone. A judgment takes its row out, so once
+ * the list renders without it focus moves to the row in its place, else the
+ * last. The list is named for its queue and described, for a screen reader,
+ * by the keys it takes.
+ *
+ * @param {Object}                    props
+ * @param {string}                    props.label    The queue's name.
+ * @param {import('react').ReactNode} props.children Its rows.
+ * @return {import('react').ReactElement} The list.
+ */
+function ReviewList( { label, children } ) {
+	const list = useRef( null );
+	const judged = useRef( null );
+	const keysId = useId();
+	useLayoutEffect( () => {
+		if ( null === judged.current ) {
+			return;
+		}
+		const left = list.current.querySelectorAll( ROW );
+		( left[ judged.current ] ?? left[ left.length - 1 ] )?.focus();
+		judged.current = null;
+	} );
+
+	const onKeyDown = ( event ) => {
+		const { key, target } = event;
+		if (
+			event.altKey ||
+			event.ctrlKey ||
+			event.metaKey ||
+			isTypingTarget( target )
+		) {
+			return;
+		}
+		const rows = [ ...list.current.querySelectorAll( ROW ) ];
+		const at = rows.findIndex( ( row ) => row.contains( target ) );
+		if ( 'j' === key || 'k' === key ) {
+			event.preventDefault();
+			const step = 'j' === key ? 1 : -1;
+			rows[
+				Math.min( Math.max( at + step, 0 ), rows.length - 1 )
+			]?.focus();
+			return;
+		}
+		const control =
+			JUDGMENT_KEYS.includes( key ) &&
+			rows[ at ]?.querySelector( `[aria-keyshortcuts="${ key }"]` );
+		if ( ! control ) {
+			return;
+		}
+		event.preventDefault();
+		judged.current = 'm' === key ? null : at;
+		control.click();
+	};
+
+	return (
+		<>
+			<VisuallyHidden id={ keysId }>
+				{ __(
+					'Press j and k to move between proposals, y to confirm or accept, n to reject and m to merge.',
+					'newspack-intelligence'
+				) }
+			</VisuallyHidden>
+			{ /* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex, jsx-a11y/no-noninteractive-element-interactions -- the review keys move between its rows. */ }
+			<ul
+				ref={ list }
+				className="newspack-intelligence__items"
+				tabIndex={ 0 }
+				aria-label={ label }
+				aria-describedby={ keysId }
+				onKeyDown={ onKeyDown }
+			>
+				{ children }
+			</ul>
+		</>
+	);
+}
+
+/**
+ * The sentence a proposal was found in, quoted; nothing without one.
+ *
+ * @param {Object} props
+ * @param {string} props.text The sentence.
+ * @return {?import('react').ReactElement} The quote.
+ */
+function Evidence( { text } ) {
+	return text ? (
+		<blockquote className="newspack-intelligence__evidence">
+			{ text }
+		</blockquote>
+	) : null;
+}
+
 /**
  * One proposal as a single control: the entity's chip, then for a curator
- * the affirming and rejecting glyphs, joined into one pill.
+ * the affirming and rejecting glyphs, joined into one pill. As a `row` it
+ * is one the review keys move to.
  *
  * A curator's `judge` names the affirming glyph for the entity (`yes`),
  * affirms (`onYes`) and rejects (`onNo`).
@@ -42,12 +152,16 @@ function howFound( link, vocabulary ) {
  * @param {string}                                                                       [props.description] What the proposal rests on.
  * @param {(key: string) => void}                                                        props.onOpen        Opens the entity.
  * @param {?{yes: (label: string) => string, onYes: () => void, onNo: () => void}|false} props.judge         A curator's judgment, or none.
+ * @param {boolean}                                                                      [props.row]         Whether it is a review row.
  * @return {import('react').ReactElement} The pill.
  */
-function Judgment( { entityKey, name, description, onOpen, judge } ) {
+function Judgment( { entityKey, name, description, onOpen, judge, row } ) {
 	const label = name || entityKey;
 	return (
-		<span className="newspack-intelligence__judgment">
+		<span
+			className="newspack-intelligence__judgment"
+			{ ...( row && { tabIndex: -1, 'data-review-row': '' } ) }
+		>
 			<EntityChip
 				entityKey={ entityKey }
 				name={ name }
@@ -60,6 +174,7 @@ function Judgment( { entityKey, name, description, onOpen, judge } ) {
 						type="button"
 						className="button button-small"
 						aria-label={ judge.yes( label ) }
+						aria-keyshortcuts="y"
 						onClick={ judge.onYes }
 					>
 						<Icon icon={ check } size={ 18 } />
@@ -67,6 +182,7 @@ function Judgment( { entityKey, name, description, onOpen, judge } ) {
 					<button
 						type="button"
 						className="button button-small"
+						aria-keyshortcuts="n"
 						aria-label={ sprintf(
 							/* translators: %s: the entity's name. */
 							__( 'Reject %s', 'newspack-intelligence' ),
@@ -84,7 +200,7 @@ function Judgment( { entityKey, name, description, onOpen, judge } ) {
 
 /**
  * The control merging one proposed entity into another the curator names,
- * closed until asked for.
+ * closed until asked for, its field focused as it opens.
  *
  * @param {Object}                 props
  * @param {string}                 props.label   The entity's name.
@@ -94,11 +210,18 @@ function Judgment( { entityKey, name, description, onOpen, judge } ) {
 function Merge( { label, onMerge } ) {
 	const [ open, setOpen ] = useState( false );
 	const [ into, setInto ] = useState( '' );
+	const field = useRef( null );
+	useEffect( () => {
+		if ( open ) {
+			field.current?.focus();
+		}
+	}, [ open ] );
 	return (
 		<>
 			<button
 				type="button"
 				className="button button-small"
+				aria-keyshortcuts="m"
 				aria-expanded={ open }
 				aria-label={ sprintf(
 					/* translators: %s: the entity's name. */
@@ -115,6 +238,7 @@ function Merge( { label, onMerge } ) {
 					{ ...submitProps( () => onMerge( into ) ) }
 				>
 					<TextControl
+						ref={ field }
 						__next40pxDefaultSize
 						label={ __( 'Merge into', 'newspack-intelligence' ) }
 						placeholder="organization:the-valley-times"
@@ -166,12 +290,14 @@ const entityKey = ( entity ) => entity.entity_key;
 
 /**
  * Review: the proposed links and the proposed entities, each row with the
- * items citing it, and for a curator the judgments each takes — confirm or
- * reject a link; accept, reject or merge an entity. A link row is one item
- * with a pill per entity proposed for it. A judgment takes its row out of
- * the queue as it is sent, so the next can follow at once; one that lands
- * re-reads its queue, and a refused one shows the refusal and puts its row
- * back.
+ * items citing it and the sentence each proposal was found in, and for a
+ * curator the judgments each takes — confirm or reject a link; accept,
+ * reject or merge an entity. A link row is one item with a pill per entity
+ * proposed for it. A judgment takes its row out of the queue as it is sent,
+ * so the next can follow at once; one that lands re-reads its queue, and a
+ * refused one shows the refusal and puts its row back. In either list `j`
+ * and `k` move between the judgments, `y` confirms or accepts, `n` rejects
+ * and `m` opens a merge.
  *
  * @param {Object}                props
  * @param {boolean}               props.canTune      Whether to offer judgments.
@@ -224,7 +350,12 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 				) }
 			>
 				{ ( answer ) => (
-					<ul className="newspack-intelligence__items">
+					<ReviewList
+						label={ __(
+							'Proposed links',
+							'newspack-intelligence'
+						) }
+					>
 						{ byItem( answer.links ).map( ( row ) => (
 							<li
 								key={ row[ 0 ].item_key }
@@ -251,6 +382,7 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 										return (
 											<Judgment
 												key={ link.entity_key }
+												row
 												entityKey={ link.entity_key }
 												name={ link.name }
 												description={ howFound(
@@ -281,9 +413,16 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 										);
 									} ) }
 								</div>
+								{ [
+									...new Set(
+										row.map( ( link ) => link.evidence )
+									),
+								].map( ( text ) => (
+									<Evidence key={ text } text={ text } />
+								) ) }
 							</li>
 						) ) }
-					</ul>
+					</ReviewList>
 				) }
 			</Answer>
 			<Answer
@@ -296,7 +435,12 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 				) }
 			>
 				{ ( answer ) => (
-					<ul className="newspack-intelligence__items">
+					<ReviewList
+						label={ __(
+							'Proposed entities',
+							'newspack-intelligence'
+						) }
+					>
 						{ answer.entities.map( ( entity ) => {
 							const key = entity.entity_key;
 							const judge = ( write, args ) =>
@@ -307,6 +451,8 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 								<li
 									key={ key }
 									className="newspack-intelligence__item"
+									tabIndex={ -1 }
+									data-review-row=""
 								>
 									<div className="newspack-intelligence__item-head">
 										<Judgment
@@ -357,13 +503,16 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 													url={ item.url }
 													title={ item.title }
 												/>
+												<Evidence
+													text={ item.evidence }
+												/>
 											</li>
 										) ) }
 									</ul>
 								</li>
 							);
 						} ) }
-					</ul>
+					</ReviewList>
 				) }
 			</Answer>
 		</div>

@@ -6,6 +6,7 @@ namespace Newspack_Intelligence\Tests;
 use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Ontology_Seed;
+use Newspack_Intelligence\Resolver;
 use Newspack_Intelligence\Seed_Refused;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Table_Unavailable;
@@ -14,6 +15,7 @@ use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-entity-index.php';
 require_once __DIR__ . '/../support/reads-ontology-log.php';
+require_once __DIR__ . '/../support/fake-entity-extractor.php';
 
 /**
  * The seeded ontology: the entities and lenses a seed file names, read from
@@ -211,6 +213,47 @@ final class OntologySeedTest extends TestCase {
 		$this->assertSame( [ 'entity_created|topic:salt-marsh|topic|Salt marsh' ], \array_map( self::fact( ... ), Ontology_Seed::load( $path )->events( [] ) ) );
 	}
 
+	/** An entity the seed declares rejected is created with its names, then rejected. */
+	public function test_a_seed_entity_declared_rejected_is_created_then_rejected(): void {
+		$path = $this->seed_file( [ 'entities' => [ 'organization' => [ 'tern-desk' => [ 'name' => 'Tern Desk', 'names' => [ 'alias' => [ 'Tern desk team' ] ], 'state' => 'rejected' ] ] ], 'lenses' => [] ] );
+
+		$this->assertSame(
+			[
+				'entity_created|organization:tern-desk|organization|Tern Desk',
+				'name_added|organization:tern-desk|alias|Tern desk team',
+				'entity_rejected|organization:tern-desk',
+			],
+			\array_map( self::fact( ... ), Ontology_Seed::load( $path )->events( [] ) )
+		);
+	}
+
+	/** Once a rejected seed entity is projected, a second seed writes nothing for it. */
+	public function test_a_seed_rejected_key_is_not_written_twice(): void {
+		$seed = Ontology_Seed::load( $this->seed_file( [ 'entities' => [ 'organization' => [ 'tern-desk' => [ 'name' => 'Tern Desk', 'state' => 'rejected' ] ] ], 'lenses' => [] ] ) );
+		$this->seed( $seed->events( $seed->present() ) );
+
+		$this->assertSame( [ 'organization:tern-desk' ], $seed->present() );
+		$this->assertSame( [], $seed->events( $seed->present() ) );
+	}
+
+	/**
+	 * The stoplist is the rejected entities: a name the seed rejects and a
+	 * name a curator rejected are never proposed, and another still is.
+	 */
+	public function test_a_seed_rejected_name_and_a_curator_rejected_name_are_never_proposed(): void {
+		$path = $this->seed_file( [ 'entities' => [ 'organization' => [ 'tern-desk' => [ 'name' => 'Tern Desk', 'names' => [ 'alias' => [ 'Tern desk team' ] ], 'state' => 'rejected' ] ] ], 'lenses' => [] ] );
+		$index = $this->index_of(
+			Ontology_Seed::load( $path )->events( [] ),
+			self::proposed( 'organization:gull-rota', 'Gull Rota' ),
+			self::rejected( 'organization:gull-rota' )
+		);
+		$ner   = new Fake_Entity_Extractor( [ 'Tern Desk', 'Tern desk team', 'Gull Rota', 'Plover Wharf Trust' ] );
+
+		$proposals = ( new Resolver( $index ) )->resolve( [ 'item_key' => 'feed:stop-1', 'url' => 'https://elsewhere.example/a', 'title' => 'Wharf news', 'body' => '', 'retrieved_ts' => 1793000000 ], $ner )['proposals'];
+
+		$this->assertSame( [ 'Plover Wharf Trust' ], \array_column( $proposals, 'name' ) );
+	}
+
 	/** The plugin's own seed, read with no deployment's dir registered, is a fictional example that validates. */
 	public function test_the_shipped_example_seed_validates(): void {
 		Topology_Registry::reset();
@@ -261,6 +304,7 @@ final class OntologySeedTest extends TestCase {
 			'unknown identifier'  => [ $entity( [ 'identifiers' => [ 'website' => [ 'gull.example' ] ] ] ), 'entities.organization.gull-fund.identifiers.website: identifier_added: field kind is outside its set' ],
 			'value not a string'  => [ $entity( [ 'identifiers' => [ 'domain' => [ 7 ] ] ] ), 'entities.organization.gull-fund.identifiers.domain: not a list of strings' ],
 			'stray entity field'  => [ $entity( [ 'role' => [ 'funder' ] ] ), 'entities.organization.gull-fund.role: not a field it takes' ],
+			'unknown state'       => [ $entity( [ 'state' => 'accepted' ] ), 'entities.organization.gull-fund.state: not one of: rejected' ],
 			'slug not a slug'     => [ '{"entities":{"topic":{"Salt Marsh":{"name":"Salt marsh"}}},"lenses":{}}', 'entities.topic.Salt Marsh: not a slug; the key it makes is topic:salt-marsh' ],
 			'unknown lens filter' => [ $lens( [ 'audience' => [ 'gulls' ] ] ), 'lenses.gull-desk.filters.audience: not a field it takes' ],
 			'lens role unknown'   => [ $lens( [ 'roles' => [ 'patron' ] ] ), 'lenses.gull-desk.filters: role must be one of: ' . \implode( ', ', Intel_Event::ROLES ) ],

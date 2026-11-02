@@ -77,8 +77,8 @@ final class ProjectorTest extends TestCase {
 		);
 		$this->assertSame(
 			[
-				[ self::ITEM, self::GAZETTE, 'subject', 'identifier', 1.0, 'asserted', self::MACHINE, self::NOW, $day ],
-				[ self::ITEM, 'topic:awards', 'topic', 'extract', 1.0, 'asserted', 'machine:extract@9.4.1', self::NOW, $day ],
+				[ self::ITEM, self::GAZETTE, 'subject', 'identifier', 1.0, 'asserted', '', self::MACHINE, self::NOW, $day ],
+				[ self::ITEM, 'topic:awards', 'topic', 'extract', 1.0, 'asserted', '', 'machine:extract@9.4.1', self::NOW, $day ],
 			],
 			self::graph_rows( 'links', 'entity_key' )
 		);
@@ -241,6 +241,27 @@ final class ProjectorTest extends TestCase {
 		$this->assertNotSame( [], $dumps['items-first']['entities'] );
 		$this->assertSame( $dumps['items-first'], $dumps['ontology-first'] );
 		$this->assertSame( $dumps['items-first'], $dumps['each-twice'] );
+	}
+
+	/**
+	 * A proposed link's evidence is projected onto its row; a proposal
+	 * written before proposals carried one, an asserted link and a topic link
+	 * an extraction writes project none.
+	 */
+	public function test_a_proposed_links_evidence_is_projected(): void {
+		$this->project(
+			[
+				[ 'evidence' => 'Plover Wharf Trust bought the Gazette a ferry.' ] + $this->link( 'link_proposed' ),
+				$this->link( 'link_proposed', 'organization:salem-ledger' ),
+				$this->link( 'link_asserted', 'organization:tern-weekly' ),
+				$this->extraction(),
+			]
+		);
+
+		$this->assertSame(
+			[ [ self::GAZETTE, 'Plover Wharf Trust bought the Gazette a ferry.' ], [ 'organization:salem-ledger', '' ], [ 'organization:tern-weekly', '' ], [ 'topic:awards', '' ] ],
+			self::graph_rows( 'links', 'entity_key', 'entity_key, evidence' )
+		);
 	}
 
 	public function test_an_entity_named_before_it_is_created_is_completed_by_its_creation(): void {
