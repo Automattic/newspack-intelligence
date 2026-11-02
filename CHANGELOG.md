@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-02
+
 ### Added
 - **A `publisher` link role.** The resolver links the entity whose `domain` is the item URL's host as `publisher`, never `subject`, so a client's own story is not about the client unless its text names it: an item on a client's site naming the client links twice, `publisher` from its host and `subject` or `mention` from its text. A GitHub org, repo, LinkedIn company, X handle or Linear team the URL's path names stays the subject. A publisher spares the NER step as any link does, and the extractor is sent one link per entity, the one the item is about where the text also names it. `Intel_Event::LINK_ROLES` gains `publisher`, and `Intel_Event::ABOUT_ROLES` (`subject`, `mention`, `topic`) is the one spelling of what an item is about.
 - **`entity` answers `published: { count }`,** the readable items its own site published, apart from `counts.items`, and **`timeline --published`** pages them; the Entity view lists the items about the entity first, then a collapsed "Published by <name> (N)" section, read only once opened.
@@ -30,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Keyboard review.** In either Review queue, with focus in its list and not in a field (the substrate's `isTypingTarget()`), `j` and `k` move between the judgments, `y` confirms or accepts, `n` rejects and `m` opens a merge with its field focused; a judgment moves focus to the row then in its place. Each key sits on its control as `aria-keyshortcuts`, and each list is named for its queue and described to a screen reader by a visually hidden sentence of its keys.
 
 ### Changed
+- **The substrate floor rises to newspack-nodes 2.144.0,** for `Frontier`, `Table_Client::get()`, `Topology_Registry::resolve_file()`, `Curl_Node::concurrency_of()` and the `public_only` and `connect_timeout` request fields.
 - **The Intelligence page opens on the Briefing,** not Search; Search is the second tab.
 - **A site naming itself in its own body is not news about it.** The resolver drops a body-only `mention` of the item's own `publisher`, as a feed's "…appeared first on <site>" footer spells one, so once a client carries its site's name its own items do not count as about it again; a `subject` from the title stays, and a mention of anyone else stays. `ontology reresolve` retracts the stored ones.
 - **Log lines quote untrusted names inertly.** The reresolver's skipped-items and failed-read lines, the extractor's two per-item lines and a source's refused-event line pass names, keys and error text through `Core::terminal_safe()`.
