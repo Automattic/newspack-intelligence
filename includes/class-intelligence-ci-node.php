@@ -152,7 +152,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					$verb(
 						$read,
 						'signals',
-						'The latest complete bucket\'s spikes, counted as trends counts: each value whose count reaches ' . Graph_Query::SIGNAL_MIN . ' and the mean plus ' . Graph_Query::SIGNAL_SIGMAS . ' standard deviations of the ' . Graph_Query::SIGNAL_BASELINE . ' buckets before it: { signals: [ { bucket, by, value, count, baseline, items: [ { item_key, url, title } ] } ] }, baseline the mean.',
+						'The latest complete bucket\'s signals. On the about axis, spikes counted as trends counts: each value whose count reaches ' . Graph_Query::SIGNAL_MIN . ', passes the mean and reaches the mean plus ' . Graph_Query::SIGNAL_SIGMAS . ' standard deviations of the ' . Graph_Query::SIGNAL_BASELINE . ' buckets before it. For an entity named with no lens, also the publisher axis, what its own site published per week: a burst of one kind by the spike rule; and for a client, a drop to ' . Graph_Query::SIGNAL_DROP . ' of a baseline mean of at least ' . Graph_Query::SIGNAL_MIN . ', or silent on the first two empty weeks, neither in a week every client\'s output dropped: { signals: [ { axis, signal, bucket, by, value, count, baseline, items: [ { item_key, url, title } ] } ] }, signal spike, drop, silent or burst, by and value null for a drop or a silence, baseline the mean.',
 						[ $lens, $text( 'entity', 'Only items linking this entity.' ) ],
 						Graph_Query::signals( ... )
 					),

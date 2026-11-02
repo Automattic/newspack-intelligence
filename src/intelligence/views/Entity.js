@@ -14,6 +14,10 @@ import Answer, { AnswerBody } from '../components/Answer';
 import Cite, { EntityChip } from '../components/Cite';
 import Refusal from '../components/Refusal';
 import { ItemPage } from '../components/ItemRow';
+import TrendTable, {
+	againstBaseline,
+	signalValue,
+} from '../components/TrendTable';
 import { metaLine, utcDay } from '../components/format';
 
 /**
@@ -248,12 +252,12 @@ function Published( { entityKey, name, count, onOpenEntity, onSave } ) {
 }
 
 /**
- * Entity: one entity's record, its timeline of the items about it a page at
- * a time, then, collapsed, the items its own site published, the entities
- * sharing its items and the claims naming it, each from its own read; and,
- * once the record has answered, for a curator, the forms adding a name or
- * identifier and asserting or ending a role. Every edit that lands re-reads
- * the record.
+ * Entity: one entity's record, its signals on both axes, its timeline of
+ * the items about it a page at a time, then, collapsed, the items its own
+ * site published, the entities sharing its items and the claims naming it,
+ * each from its own read; and, once the record has answered, for a
+ * curator, the forms adding a name or identifier and asserting or ending a
+ * role. Every edit that lands re-reads the record.
  *
  * @param {Object}                 props
  * @param {string}                 props.entityKey    The entity shown.
@@ -274,6 +278,11 @@ export default function Entity( {
 	const [ starts, setStarts ] = useState( [ 0 ] );
 	const offset = starts[ starts.length - 1 ];
 	const record = useIntelRead( 'entity:record', 'entity', about );
+	const signals = useIntelRead(
+		'entity:signals',
+		'signals',
+		formatCommandArgs( [], { entity: entityKey } )
+	);
 	const timeline = useIntelRead(
 		'entity:timeline',
 		'timeline',
@@ -415,6 +424,25 @@ export default function Entity( {
 							<Refusal key={ i } error={ write.refusal } />
 						) ) }
 					</>
+				) }
+			</Answer>
+
+			<Answer
+				title={ __( 'Signals', 'newspack-intelligence' ) }
+				level={ 3 }
+				read={ signals }
+				rows="signals"
+				empty={ __(
+					'No signal is seen for this entity.',
+					'newspack-intelligence'
+				) }
+			>
+				{ ( answer ) => (
+					<TrendTable
+						rows={ answer.signals }
+						value={ signalValue }
+						count={ againstBaseline }
+					/>
 				) }
 			</Answer>
 

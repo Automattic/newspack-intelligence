@@ -237,7 +237,7 @@ final class IntelligenceMcpDoorTest extends TestCase {
 
 		$this->assertStringContainsString( "An entity is keyed `<type>:<slug>`, its type one of {$either( Intel_Event::TYPES )};", $instructions );
 		$this->assertStringContainsString( "A link joins an item to an entity in one of the roles {$either( Intel_Event::LINK_ROLES )}:", $instructions );
-		$this->assertStringContainsString( 'A publisher link says the entity\'s own site published the item, not that the item is about it: search, a timeline, related entities, trends, signals and the review queue leave it out, an entity counts what it published apart, and a timeline with published pages those items.', $instructions );
+		$this->assertStringContainsString( 'A publisher link says the entity\'s own site published the item, not that the item is about it: search, a timeline, related entities, trends, a signal about an entity and the review queue leave it out, an entity counts what it published apart, its signals read it on a publisher axis of their own, and a timeline with published pages those items.', $instructions );
 	}
 
 	/** Every tool closes on the caveat, and each read names the items' horizon. */

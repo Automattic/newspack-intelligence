@@ -429,7 +429,26 @@ final class WatcherNodeTest extends TestCase {
 		$this->pass_at( self::$oct_20 + 3630 );
 
 		$this->assertCount( 1, $this->mails );
-		$this->assertStringContainsString( "Complaint desk\nSignal: kind complaint, 5 from 2026-10-12, against a mean of 1.0\n- Complaint 5 of week 1\n", $this->mails[0]['message'] );
+		$this->assertStringContainsString( "Complaint desk\nSignal (about, spike): kind complaint, 5 from 2026-10-12, against a mean of 1.0\n- Complaint 5 of week 1\n", $this->mails[0]['message'] );
+	}
+
+	/** An entity watch's digest names what the entity's own site published: a burst of one kind, citing its items. */
+	public function test_a_digest_names_its_entity_publisher_signals(): void {
+		$week = 604800;
+		for ( $back = 1; $back <= 9; $back++ ) {
+			$kinds = 1 === $back ? [ 'research', 'partnership', 'partnership', 'partnership' ] : [ 'research' ];
+			foreach ( $kinds as $n => $kind ) {
+				$key = "feed:gazette-desk-{$back}-{$n}";
+				$at  = 1792368000 - $back * $week + 2 * 86400 + $n * 60;
+				$this->seed( self::item( $key, "Gazette desk {$kind} {$n} of week {$back}", 'feed', 'public', $at ), self::extraction( $key, 'A desk note.', $kind, $at, [] ), self::link( 'link_asserted', $key, self::GAZETTE, Intel_Event::PUBLISHER, 'identifier', 1.0, $at ) );
+			}
+		}
+		$this->watching( self::DESK, self::OWNER, 'Gazette desk', false, self::$oct_13, true );
+
+		$this->pass_at( self::$oct_20 + 3630 );
+
+		$this->assertCount( 1, $this->mails );
+		$this->assertStringContainsString( "Signal (publisher, burst): kind partnership, 3 from 2026-10-12, against a mean of 0.0\n- Gazette desk partnership 3 of week 1\n", $this->mails[0]['message'] );
 	}
 
 	/** A digest with nothing in it sends no email and still marks the day. */

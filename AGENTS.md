@@ -655,8 +655,9 @@ saying an item is about its entity,
 claim's subject rest on any link, and an entity's publishing reads its
 `publisher` links alone, at the machine's state, since a judgment governs
 an about-link alone, so `search`, a lens, `timeline`, `related`,
-`trends`, `signals`, `review`, an entity's `counts` and each listed item's
-entities leave `publisher` out. `entity` answers `published: { count }`,
+`trends`, the about signals, `review`, an entity's `counts` and each
+listed item's entities leave `publisher` out, and an entity's publisher
+signals read it alone. `entity` answers `published: { count }`,
 the readable items its own site published, and `timeline --published`
 pages them; a link's state is the highest-ranked judgment's (`JUDGE_RANK`: a
 person over an agent), else the machine's, and a `rejected` link counts
@@ -771,22 +772,41 @@ the name the `newspack-intelligence` topology gives its `Resolver`,
 `Extractor` and `Reresolver` (`Topology_Analyzer::nodes_of_type()`), and a
 class it does not declare reads as no snapshot.
 
-**Signals.** `signals [--lens=] [--entity=]` reads the rows `trends`
-answers for the same lens and entity, so the lens's filters, axis, bucket
-and tiers apply alike, and answers `{ signals: [ { bucket, by, value,
-count, baseline, items } ], available }`: per value counted, the latest
-complete bucket's count when it is at least `Graph_Query::SIGNAL_MIN` (3)
-and at least the mean plus `SIGNAL_SIGMAS` (2) population standard
-deviations of the `SIGNAL_BASELINE` (8) buckets before it, compared in whole
-numbers so the threshold itself counts. `baseline` is that mean, and
+**Signals.** `signals [--lens=] [--entity=]` answers `{ signals: [ {
+axis, signal, bucket, by, value, count, baseline, items } ], available }`.
+On the `about` axis, each a `spike`, it reads the rows `trends` answers
+for the same lens and entity, so the lens's filters, axis, bucket and
+tiers apply alike: per value counted, the latest
+complete bucket's count when it is at least `Graph_Query::SIGNAL_MIN` (3),
+above the mean of the `SIGNAL_BASELINE` (8) buckets before it, so a flat
+history never signals, and at least that mean plus `SIGNAL_SIGMAS` (2)
+population standard deviations of them, compared in whole numbers so the
+threshold itself counts. `baseline` is that mean, and
 `items` cite the bucket's five newest items. It counts those
 `SIGNAL_BASELINE + 2` buckets alone, not the whole retention. A history
 holding no counted item before the oldest baseline bucket signals nothing,
 because its zeros are not a baseline: an item in that bucket answers it,
-else one `LIMIT 1` look further back within the lens's own days.
+else one `LIMIT 1` look further back within the lens's own days. An
+entity named with no lens answers the `publisher` axis after them, read
+from its `publisher` links per week (`Graph_Query::publishing()`): a
+`burst` for each item kind its own output spikes by the rule above, the
+short history included, so a steady publisher bursts nothing; and, for an
+entity holding an open `client` role now (`Graph_Query::open_roles()`, as
+the feed source reads it), a `drop` when the latest complete week falls
+(`fell()`), holding at most `SIGNAL_DROP` (0.5) of a baseline mean of at
+least `SIGNAL_MIN`, or `silent` in its place when that week and the one
+before it are empty and the week before them was not, so a silence is told
+once and then neither signal follows. Neither fires in a week when the
+`publisher`-linked items of every client, an entity linked holding
+`client` at the item's time, fell by the same rule, because that is
+collection failing rather than the client. A drop or a silence counts
+every item, `by` and `value` null, against the same eight weeks before the
+latest, and cites the week's items. A lens's signals answer no publisher
+axis, its own entity's included.
 `Graph_Query::spikes()` is the same read on a read already open, answering
 none unless the latest complete bucket closed after a given instant; the
-digest reads it.
+digest reads it, so an entity watch's digest carries both axes, each line
+`Signal (<axis>, <signal>): …`.
 
 **Watches.** A watch is one reader's standing question over exactly one
 lens, entity or collection. `Graph_Watches` holds its five verbs, each at
@@ -1774,10 +1794,11 @@ its own one-shot commands; nothing polls.
 | `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_id` and `last_error`, reads it whole; while collection is off every other row is listed neutral, never a fault; the projector catching up on the ontology is neutral until its hold has stood five minutes (`BEHIND_FAULT_S`), then a fault; with nothing held the backlog row counts the later queue's entries as items waiting to resolve or retry; every time it shows renders in the browser's own zone through the substrate's `formatLocalDateTime()`, while the dropped days stay the UTC days the server names, read as "Items parked from <first_day> to <last_day> were dropped before they resolved.", true of an entry aged out and of one the full queue refused; the line names each source no pass has reported ("Collecting from 5 of 6 sources; feed has not reported yet."), the names joined in the page's own language (`document.documentElement.lang`, else the browser's), and says the health is not fully known for any other unknown row, a source in a state it does not recognise included; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology`, `canManage` for the rest), and anyone else reads "An administrator can …" |
 | `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time, in the order the answer's `sort` names, which the reader switches, sending `--sort` from the first page; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words, the order and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
 | `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens` above `search --lens` a page at a time, in the order the answer's `sort` names, which the reader switches, beside `trends --lens`; trend rows and signals citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
-| `views/Entity.js` | default | `entity`, `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
+| `views/Entity.js` | default | `entity`, then `signals --entity` under its header, both axes, each row's value its axis and kind and the value it counts, its count against its baseline, then `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
 | `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity, and `review entities`, a pill per entity; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back |
 | `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection`, its collection shown saving through `useHeld` until a read lists it by name |
 | `views/Watches.js` | default, `CLOSED_WATCH`, `newWatch` | `watches`, the caller's own, each with its target and unseen count, or "Inbox off" for a watch without its inbox, opened onto `watch_matches --key` a page at a time, or onto the words that its inbox is off, each match with a "Mark seen" (`mark_seen --key --item`) and the page with "Mark these seen", naming each match it shows, a marked match hidden through `useHeld` until a read no longer lists it and a landed mark returning to the first page; for every reader, not gated on `canTune`, the form saving a new watch or the one opened through `save_watch` — its name, the kind it follows and exactly one target (a lens picked from `lenses`, an entity key, or a collection picked from `collections`), and the three deliveries as checkboxes, each sent as `true` or `false` — and `remove_watch`, each held until a read of `watches` lists the watch with the name, target kind and deliveries the save sent, an edit by its own key, the target's key uncompared because the server stores an entity as its survivor |
+| `components/TrendTable.js` | default, `againstBaseline`, `signalValue` | The table of trend rows or signals a lens and an entity render, each row's bucket, value, count and cited items; a signal's count against its baseline, and its axis and kind with the value it counts |
 | `hooks/useHeld.js` | `useHeld` | A read's rows with each write shown from the moment it is sent: a held key's row taken out until no read lists it, or a held row put in its place until a read lists one `matches` says reflects it; a refusal undoes the hold whose send it echoes, and a bare refusal every hold |
 | `components/SaveToCollection.js` | default | The one dialog any result saves through, sending `collect` |
 | `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty by its `rows` key, or its rows — as a stock `Card` section named by an optional title, which heads its `CardHeader`, with the state inset in its `CardBody`, or bare inside a dialog; the one alert every refusal, read or write, renders in |

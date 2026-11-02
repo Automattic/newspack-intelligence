@@ -419,8 +419,9 @@ class Watcher_Node extends Timer_Node {
 			$text .= \sprintf( \__( '- and %d more on the Intelligence page', 'newspack-intelligence' ), \count( $items ) - self::MAIL_ITEMS ) . "\n";
 		}
 		foreach ( $signals as $signal ) {
-			/* translators: 1: what the signal counts, 2: the value counted, 3: its count, 4: the first day of its bucket, 5: the mean of the buckets before it. */
-			$text .= \sprintf( \__( 'Signal: %1$s %2$s, %3$d from %4$s, against a mean of %5$.1f', 'newspack-intelligence' ), self::line( Core::as_string( $signal['by'] ) ), self::line( Core::as_string( $signal['value'] ) ), Core::as_int( $signal['count'] ), Core::as_string( $signal['bucket'] ), Core::as_float( $signal['baseline'] ) ) . "\n";
+			$what  = null === $signal['by'] ? '' : self::line( Core::as_string( $signal['by'] ) . ' ' . Core::as_string( $signal['value'] ) ) . ', ';
+			/* translators: 1: the signal's axis, 2: its kind, 3: what it counts and the value counted, then a comma, or nothing, 4: its count, 5: the first day of its bucket, 6: the mean of the buckets before it. */
+			$text .= \sprintf( \__( 'Signal (%1$s, %2$s): %3$s%4$d from %5$s, against a mean of %6$.1f', 'newspack-intelligence' ), Core::as_string( $signal['axis'] ), Core::as_string( $signal['signal'] ), $what, Core::as_int( $signal['count'] ), Core::as_string( $signal['bucket'] ), Core::as_float( $signal['baseline'] ) ) . "\n";
 			foreach ( Core::arr( $signal['items'] ) as $cited ) {
 				$cited = Core::arr( $cited );
 				$text .= self::cite( Core::as_string( $cited['title'] ?? '' ), Core::as_string( $cited['url'] ?? '' ) );

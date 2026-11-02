@@ -13,7 +13,7 @@ import {
 } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
 import Answer from '../components/Answer';
-import Cite from '../components/Cite';
+import TrendTable, { againstBaseline } from '../components/TrendTable';
 import { ItemPage } from '../components/ItemRow';
 import ListField from '../components/ListField';
 import Refusal from '../components/Refusal';
@@ -164,73 +164,6 @@ function LensForm( { initial, vocabulary, onSave, onCancel } ) {
 				</button>
 			</div>
 		</form>
-	);
-}
-
-/**
- * A signal's count against the baseline it spiked over, to one decimal.
- *
- * @param {Object} signal A signal as `signals` answers it.
- * @return {string} The count.
- */
-const againstBaseline = ( signal ) =>
-	sprintf(
-		/* translators: 1: the bucket's count, 2: the mean of the buckets before. */
-		__( '%1$d against a baseline of %2$s', 'newspack-intelligence' ),
-		signal.count,
-		String( Math.round( signal.baseline * 10 ) / 10 )
-	);
-
-/**
- * A lens's trend rows, or its signals: each bucket and value with its
- * count, citing the newest items the row counts.
- *
- * @param {Object}                           props
- * @param {Array<Object>}                    props.rows    The rows `trends` or `signals` answers.
- * @param {(row: Object) => (string|number)} [props.count] A row's count as shown.
- * @return {import('react').ReactElement} The table.
- */
-function TrendTable( { rows, count = ( row ) => row.count } ) {
-	return (
-		<table className="newspack-nodes-table">
-			<thead>
-				<tr>
-					<th scope="col">
-						{ __( 'Bucket', 'newspack-intelligence' ) }
-					</th>
-					<th scope="col">
-						{ __( 'Value', 'newspack-intelligence' ) }
-					</th>
-					<th scope="col">
-						{ __( 'Count', 'newspack-intelligence' ) }
-					</th>
-					<th scope="col">
-						{ __( 'Items', 'newspack-intelligence' ) }
-					</th>
-				</tr>
-			</thead>
-			<tbody>
-				{ rows.map( ( row ) => (
-					<tr key={ `${ row.bucket } ${ row.value }` }>
-						<td>{ row.bucket }</td>
-						<td>{ row.value }</td>
-						<td>{ count( row ) }</td>
-						<td>
-							<ul className="newspack-intelligence__facts">
-								{ row.items.map( ( item ) => (
-									<li key={ item.item_key }>
-										<Cite
-											url={ item.url }
-											title={ item.title }
-										/>
-									</li>
-								) ) }
-							</ul>
-						</td>
-					</tr>
-				) ) }
-			</tbody>
-		</table>
 	);
 }
 

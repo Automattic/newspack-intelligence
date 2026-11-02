@@ -89,6 +89,14 @@ final class IntelligenceSignalsTest extends TestCase {
 		$this->assertSame( [], $this->ci->dispatch( 'signals', [] )['signals'] );
 	}
 
+	/** A flat history never signals: the latest count must pass the baseline mean, and one above a flat baseline does. */
+	public function test_a_flat_history_signals_nothing(): void {
+		$this->weeks( 'hire', [ 1 => 3, 2 => 3, 3 => 3, 4 => 3, 5 => 3, 6 => 3, 7 => 3, 8 => 3, 9 => 3 ] );
+		$this->weeks( 'release', [ 1 => 4, 2 => 3, 3 => 3, 4 => 3, 5 => 3, 6 => 3, 7 => 3, 8 => 3, 9 => 3 ] );
+
+		$this->assertSame( [ [ '2026-10-12', 'kind', 'release', 4, 3.0 ] ], self::signals( $this->ci->dispatch( 'signals', [] ) ) );
+	}
+
 	/** Over a quiet baseline a count still needs SIGNAL_MIN; the current, incomplete week never signals. */
 	public function test_a_quiet_baseline_still_needs_the_minimum(): void {
 		$this->weeks( 'launch', [ 0 => 9, 1 => 3, 9 => 0 ] );

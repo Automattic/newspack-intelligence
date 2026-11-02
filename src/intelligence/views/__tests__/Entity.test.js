@@ -45,6 +45,7 @@ beforeEach( () => {
 		],
 		available: true,
 	};
+	wire.replies.signals = { signals: [], available: true };
 	wire.replies.claims = {
 		claims: [
 			{
@@ -233,6 +234,83 @@ describe( 'Entity — reads', () => {
 			await screen.findByText(
 				'The intelligence graph could not be opened, so this was not read.'
 			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'shows its signals under its header, each marked by its axis', async () => {
+		wire.replies.signals = {
+			signals: [
+				{
+					axis: 'about',
+					signal: 'spike',
+					bucket: '2026-10-12',
+					by: 'kind',
+					value: 'complaint',
+					count: 6,
+					baseline: 1.125,
+					items: [
+						{
+							item_key: 'linear:SUP-140',
+							url: 'https://linear.example/SUP-140',
+							title: 'Acme asks for a refund',
+						},
+					],
+				},
+				{
+					axis: 'publisher',
+					signal: 'drop',
+					bucket: '2026-10-12',
+					by: null,
+					value: null,
+					count: 2,
+					baseline: 7.375,
+					items: [
+						{
+							item_key: 'feed:acmegazette.example:city-hall',
+							url: 'https://acmegazette.example/city-hall',
+							title: 'City hall budget vote',
+						},
+					],
+				},
+			],
+			available: true,
+		};
+		renderEntity();
+		const signals = await screen.findByRole( 'region', {
+			name: 'Signals',
+		} );
+		const drop = await within( signals ).findByRole( 'row', {
+			name: /publisher drop/,
+		} );
+		expect(
+			within( drop ).getByText( '2 against a baseline of 7.4' )
+		).toBeInTheDocument();
+		expect(
+			within( drop ).getByRole( 'link', {
+				name: 'City hall budget vote',
+			} )
+		).toHaveAttribute( 'href', 'https://acmegazette.example/city-hall' );
+		expect(
+			within( signals ).getByRole( 'row', {
+				name: /about spike: complaint/,
+			} )
+		).toBeInTheDocument();
+		expect(
+			recordCard().compareDocumentPosition( signals ) &
+				window.Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
+		expect(
+			signals.compareDocumentPosition(
+				screen.getByRole( 'region', { name: 'Timeline' } )
+			) & window.Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
+		expect( wire.sent( 'signals' ) ).toEqual( [ [ `--entity=${ KEY }` ] ] );
+	} );
+
+	it( 'says it shows no signal', async () => {
+		renderEntity();
+		expect(
+			await screen.findByText( 'No signal is seen for this entity.' )
 		).toBeInTheDocument();
 	} );
 
