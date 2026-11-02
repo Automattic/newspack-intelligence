@@ -53,118 +53,12 @@ trait LLM_Config {
 	protected array $profiles = [];
 
 	/**
-	 * The `$llm_factory` seam's client when one is set; otherwise the proxy
-	 * client from this node's own verb-configured state, or null when there's
-	 * no api_url or no resolvable token (callers fall back to heuristics).
-	 */
-	protected function make_llm_client(): ?LLM_Client {
-		if ( null !== self::$llm_factory ) {
-			return ( self::$llm_factory )();
-		}
-		if ( '' === $this->api_url ) {
-			return null;
-		}
-		$token = $this->vault_secret();
-		if ( '' === $token ) {
-			return null;
-		}
-		return new Proxy_LLM_Client( $this->api_url, $token, $this->model, $this->feature );
-	}
-
-	/** The relevance-profile lines, joined for prompt assembly. */
-	protected function relevance_profile(): string {
-		return \implode( "\n", $this->profiles );
-	}
-
-	/**
 	 * Verb-set keys. An explicit set dumps even at the default value, so a
 	 * pinned choice survives a future default bump on reload.
 	 *
 	 * @var array<string,true>
 	 */
 	private array $llm_set = [];
-
-	/** `set_api_url` verb handler — last-write-wins. */
-	public function set_api_url( string $args ): string {
-		$this->api_url                = \trim( $args );
-		$this->llm_set['set_api_url'] = true;
-		return 'ok';
-	}
-
-	/**
-	 * `set_api_url` verb dispatch — resolves the patron node and delegates.
-	 *
-	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        Bound args; `url` is the AI API Proxy base URL.
-	 * @return string Result line.
-	 */
-	public static function cmd_set_api_url( Command_Interpreter_Node $interpreter, array $args ): string {
-		/** @var self $patron */
-		$patron = $interpreter->patron();
-		return $patron->set_api_url( Core::as_string( $args['url'] ) );
-	}
-
-	/** `set_model` verb handler — last-write-wins. */
-	public function set_model( string $args ): string {
-		$this->model                = \trim( $args );
-		$this->llm_set['set_model'] = true;
-		return 'ok';
-	}
-
-	/**
-	 * `set_model` verb dispatch — resolves the patron node and delegates.
-	 *
-	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        Bound args; `model` is the LLM model id.
-	 * @return string Result line.
-	 */
-	public static function cmd_set_model( Command_Interpreter_Node $interpreter, array $args ): string {
-		/** @var self $patron */
-		$patron = $interpreter->patron();
-		return $patron->set_model( Core::as_string( $args['model'] ) );
-	}
-
-	/** `set_feature` verb handler — last-write-wins. */
-	public function set_feature( string $args ): string {
-		$this->feature                = \trim( $args );
-		$this->llm_set['set_feature'] = true;
-		return 'ok';
-	}
-
-	/**
-	 * `set_feature` verb dispatch — resolves the patron node and delegates.
-	 *
-	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
-	 * @param array<array-key,mixed> $args        Bound args; `feature` is the X-WPCOM-AI-Feature value.
-	 * @return string Result line.
-	 */
-	public static function cmd_set_feature( Command_Interpreter_Node $interpreter, array $args ): string {
-		/** @var self $patron */
-		$patron = $interpreter->patron();
-		return $patron->set_feature( Core::as_string( $args['feature'] ) );
-	}
-
-	/**
-	 * Emit the base config plus round-trippable `command_node {name}:config …` lines for
-	 * every explicitly-set or non-default verb (a pinned value survives a
-	 * future default bump), the `set_vault_id` line through `dump_setters()`,
-	 * then one `add_profile` line per profile through
-	 * `dump_lists()`. Args go through serialize_args (the serialization anchor)
-	 * so a multi-word profile re-tokenizes as ONE argument.
-	 */
-	public function dump_config(): string {
-		$out = parent::dump_config();
-		if ( isset( $this->llm_set['set_api_url'] ) || ( '' !== $this->api_url && self::DEFAULT_API_URL !== $this->api_url ) ) {
-			$out .= $this->config_line( 'set_api_url', $this->api_url );
-		}
-		if ( isset( $this->llm_set['set_model'] ) || self::DEFAULT_MODEL !== $this->model ) {
-			$out .= $this->config_line( 'set_model', $this->model );
-		}
-		if ( isset( $this->llm_set['set_feature'] ) || self::DEFAULT_FEATURE !== $this->feature ) {
-			$out .= $this->config_line( 'set_feature', $this->feature );
-		}
-		return $out . $this->dump_setters() . $this->dump_lists();
-	}
 
 	/**
 	 * node_schema()['commands'] entries for the six LLM-config verbs. A using
@@ -201,5 +95,111 @@ trait LLM_Config {
 			],
 			...self::list_verbs( 'profile', 'profiles', [ 'name' => 'text', 'type' => 'string', 'required' => true, 'variadic' => true ], 'Add a relevance-profile line used to score items: <text>.' ),
 		];
+	}
+
+	/**
+	 * `set_feature` verb dispatch — resolves the patron node and delegates.
+	 *
+	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
+	 * @param array<array-key,mixed> $args        Bound args; `feature` is the X-WPCOM-AI-Feature value.
+	 * @return string Result line.
+	 */
+	public static function cmd_set_feature( Command_Interpreter_Node $interpreter, array $args ): string {
+		/** @var self $patron */
+		$patron = $interpreter->patron();
+		return $patron->set_feature( Core::as_string( $args['feature'] ) );
+	}
+
+	/**
+	 * `set_model` verb dispatch — resolves the patron node and delegates.
+	 *
+	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
+	 * @param array<array-key,mixed> $args        Bound args; `model` is the LLM model id.
+	 * @return string Result line.
+	 */
+	public static function cmd_set_model( Command_Interpreter_Node $interpreter, array $args ): string {
+		/** @var self $patron */
+		$patron = $interpreter->patron();
+		return $patron->set_model( Core::as_string( $args['model'] ) );
+	}
+
+	/**
+	 * `set_api_url` verb dispatch — resolves the patron node and delegates.
+	 *
+	 * @param Command_Interpreter_Node $interpreter The sibling `:config` interpreter.
+	 * @param array<array-key,mixed> $args        Bound args; `url` is the AI API Proxy base URL.
+	 * @return string Result line.
+	 */
+	public static function cmd_set_api_url( Command_Interpreter_Node $interpreter, array $args ): string {
+		/** @var self $patron */
+		$patron = $interpreter->patron();
+		return $patron->set_api_url( Core::as_string( $args['url'] ) );
+	}
+
+	/** `set_api_url` verb handler — last-write-wins. */
+	public function set_api_url( string $args ): string {
+		$this->api_url                = \trim( $args );
+		$this->llm_set['set_api_url'] = true;
+		return 'ok';
+	}
+
+	/** `set_model` verb handler — last-write-wins. */
+	public function set_model( string $args ): string {
+		$this->model                = \trim( $args );
+		$this->llm_set['set_model'] = true;
+		return 'ok';
+	}
+
+	/** `set_feature` verb handler — last-write-wins. */
+	public function set_feature( string $args ): string {
+		$this->feature                = \trim( $args );
+		$this->llm_set['set_feature'] = true;
+		return 'ok';
+	}
+
+	/**
+	 * Emit the base config plus round-trippable `command_node {name}:config …` lines for
+	 * every explicitly-set or non-default verb (a pinned value survives a
+	 * future default bump), the `set_vault_id` line through `dump_setters()`,
+	 * then one `add_profile` line per profile through
+	 * `dump_lists()`. Args go through serialize_args (the serialization anchor)
+	 * so a multi-word profile re-tokenizes as ONE argument.
+	 */
+	public function dump_config(): string {
+		$out = parent::dump_config();
+		if ( isset( $this->llm_set['set_api_url'] ) || ( '' !== $this->api_url && self::DEFAULT_API_URL !== $this->api_url ) ) {
+			$out .= $this->config_line( 'set_api_url', $this->api_url );
+		}
+		if ( isset( $this->llm_set['set_model'] ) || self::DEFAULT_MODEL !== $this->model ) {
+			$out .= $this->config_line( 'set_model', $this->model );
+		}
+		if ( isset( $this->llm_set['set_feature'] ) || self::DEFAULT_FEATURE !== $this->feature ) {
+			$out .= $this->config_line( 'set_feature', $this->feature );
+		}
+		return $out . $this->dump_setters() . $this->dump_lists();
+	}
+
+	/**
+	 * The `$llm_factory` seam's client when one is set; otherwise the proxy
+	 * client from this node's own verb-configured state, or null when there's
+	 * no api_url or no resolvable token (callers fall back to heuristics).
+	 */
+	protected function make_llm_client(): ?LLM_Client {
+		if ( null !== self::$llm_factory ) {
+			return ( self::$llm_factory )();
+		}
+		if ( '' === $this->api_url ) {
+			return null;
+		}
+		$token = $this->vault_secret();
+		if ( '' === $token ) {
+			return null;
+		}
+		return new Proxy_LLM_Client( $this->api_url, $token, $this->model, $this->feature );
+	}
+
+	/** The relevance-profile lines, joined for prompt assembly. */
+	protected function relevance_profile(): string {
+		return \implode( "\n", $this->profiles );
 	}
 }

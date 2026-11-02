@@ -21,6 +21,15 @@ trait Vault_Secret {
 	protected string $vault_id = '';
 
 	/**
+	 * The `set_vault_id` verb's entry point, which the declared setter calls.
+	 *
+	 * @param string $vault_id The Vault entry id.
+	 */
+	public function set_vault_id( string $vault_id ): void {
+		$this->vault_id = $vault_id;
+	}
+
+	/**
 	 * The `set_vault_id` verb's declaration, for a using node's commands.
 	 *
 	 * @param string $what What the entry holds, for the verb's description.
@@ -35,15 +44,6 @@ trait Vault_Secret {
 			],
 			'setter'      => 'vault_id',
 		];
-	}
-
-	/**
-	 * The `set_vault_id` verb's entry point, which the declared setter calls.
-	 *
-	 * @param string $vault_id The Vault entry id.
-	 */
-	public function set_vault_id( string $vault_id ): void {
-		$this->vault_id = $vault_id;
 	}
 
 	/** The entry's auth_password, or '' when it cannot be resolved. */
