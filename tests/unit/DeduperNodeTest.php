@@ -223,7 +223,7 @@ final class DeduperNodeTest extends TestCase {
 		$title = 'Tern Forward names its newest local grantees';
 		$this->seed(
 			self::recorded( 'feed:pf-url', 'https://ternforward.example/grantees', 'Grantees', 2, 3, self::TS - 8 * self::DAY ),
-			self::recorded( 'feed:pf-title', 'https://mesa.example/partner-org-3', $title, 6, 6, self::TS - self::DAY )
+			self::recorded( 'feed:pf-title', 'https://mesa.example/patron-fund', $title, 6, 6, self::TS - self::DAY )
 		);
 
 		$this->extracted( 'feed:pf-new', 'https://ternforward.example/grantees', $title, 1, 1 );
