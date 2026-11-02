@@ -2,15 +2,9 @@
 /**
  * Source_Node: abstract base for every connector node.
  *
- * Owns the chain every source fetches on, so the worker never waits on a
- * request: a pass's requests go to the `{name}:curl` sibling, the
- * substrate's `Curl_Node`, under the vault group the `make_node` line names,
- * and each answer comes back here as a message. A request is keyed by its
- * subject, the url it was queued under unless the source names another,
- * which rides in KEY while each hop's url rides in VALUE. A source supplies
- * `begin()` and `received()`, may name what each request adds, its header
- * lines or its proxy, through `request_options()`, and `record()` is the one
- * path its items take into the stream.
+ * Owns the chain: a pass's requests wait in the `{name}:frontier` Table it
+ * owns until its `{name}:curl` sibling answers each; a source supplies
+ * `begin()` and `received()`, and `record()` takes its items to the stream.
  *
  * Abstract — never make_node'd directly (no node_schema here); each concrete
  * connector declares its own Source category + TICK request.
@@ -24,17 +18,24 @@ use Newspack_Nodes\Command_Args;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
+use Newspack_Nodes\Frontier;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Publishes_Status;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Schema_Reflection;
+use Newspack_Nodes\Shutdown_Sweeper;
+use Newspack_Nodes\Table_Client;
+use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Timer_Node;
 use Newspack_Nodes\Worker_Should_Stop;
 
 \defined( 'ABSPATH' ) || exit;
 
-abstract class Source_Node extends Timer_Node {
+/**
+ * @phpstan-type Request array{0:string,1:string|null,2:int,3:array<array-key,mixed>}
+ */
+abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	use Schema_Reflection;
 	use Emits_Struct;
 	use Publishes_Status;
@@ -55,6 +56,12 @@ abstract class Source_Node extends Timer_Node {
 		'&gt;'  => '>',
 	];
 
+	/** Sibling kind of the Table a source keeps its passes' requests in. */
+	public const FRONTIER = 'frontier';
+
+	/** Rooms of requests one take moves into the queue, so a busy host's leave room for others'. */
+	private const TAKE_ROOMS = 4;
+
 	/** Bytes of a refused key its line shows. */
 	private const KEY_SHOWN_BYTES = 64;
 
@@ -68,6 +75,9 @@ abstract class Source_Node extends Timer_Node {
 	 * @var list<string>
 	 */
 	protected const PROTOCOL_SUBJECTS = [];
+
+	/** The access tier positional every source opens its `make_node` line with. */
+	protected const TIER_ARGUMENT = [ 'name' => 'tier', 'type' => 'string', 'required' => true, 'description' => 'The access tier every recorded item carries: public, internal or restricted.' ];
 
 	/** Every key a status carries, null, so each publish clears what its state leaves out. */
 	public const BLANK_STATUS = [
@@ -92,17 +102,32 @@ abstract class Source_Node extends Timer_Node {
 	/** The Vault group whose entry on a request's origin lends it a credential; '' for none. */
 	protected string $vault_group = '';
 
+	/** Each pass's requests, in the source's Table, or in the process for a source owning none. */
+	private Frontier $frontier;
+
+	/** Asks the source's Table. */
+	protected Table_Client $tables;
+
 	/** The `{name}:curl` sibling that fetches. */
 	private Curl_Node $curl;
 
 	/** The tick clock, in whole seconds, at this process's last Router tick; null before the first. */
 	private ?int $checked = null;
 
-	/** @var array<string,array{0:string,1:string|null,2:int}> Requests this pass has yet to send, by subject: [ the hop's url, a POST's body or null, redirects followed ]. */
+	/** @var array<string,Request> Requests queued since the last send, by subject: [ the hop's url, a POST's body or null, redirects followed, the note ]. */
+	private array $adds = [];
+
+	/** @var array<string,Request> Requests taken to send, by subject, each waiting for a slot and its host. */
 	private array $queue = [];
 
-	/** @var array<string,array{0:string,1:string|null,2:int}> Requests sent and not yet answered, as the queue holds them. */
+	/** @var array<string,Request> Requests sent and not yet answered, as the queue holds them. */
 	private array $in_flight = [];
+
+	/** Whether a pass is open: it took a request, and has not published. */
+	private bool $open = false;
+
+	/** @var Request The request whose answer is being taken. */
+	private array $answering = [ '', null, 0, [] ];
 
 	/** Requests this pass has sent. */
 	private int $sent = 0;
@@ -127,18 +152,21 @@ abstract class Source_Node extends Timer_Node {
 
 	/**
 	 * Tachikoma-parity: no-arg ctor. Builds the Curl sibling first, because
-	 * naming the `:config` interpreter names every sibling.
+	 * naming the `:config` interpreter names every sibling, and a Frontier
+	 * over the Table the class's schema `owns`, else in the process.
 	 */
 	public function __construct() {
 		parent::__construct();
+		$this->tables   = new Table_Client( $this );
+		$this->frontier = self::owns_frontier() ? new Frontier( $this->tables, fn (): string => $this->sibling_name( self::FRONTIER ) ) : new Frontier();
 		$this->attach_curl();
 		$this->auto_wire_interpreter();
 	}
 
 	/**
-	 * `<tier> [vault_group]`: the access tier, one of Intel_Event::TIERS,
-	 * checked before any token is assigned, and the vault group the Curl
-	 * sibling runs under, which a changed group rebuilds it for.
+	 * `<tier> [vault_group]`: the tier, refused outside Intel_Event::TIERS, and
+	 * the group Curl runs under, building the owned Table once and Curl again,
+	 * resending its flight, on a new group.
 	 *
 	 * @param list<string>|null $args Positional tokens, or null to read them back.
 	 * @return list<string>
@@ -158,6 +186,12 @@ abstract class Source_Node extends Timer_Node {
 		if ( $group !== $this->vault_group ) {
 			$this->retract_sibling( 'curl' );
 			$this->attach_curl();
+			$this->queue     = [];
+			$this->in_flight = [];
+			$this->frontier->restart();
+		}
+		if ( self::owns_frontier() && ! isset( $this->siblings()[ self::FRONTIER ] ) ) {
+			$this->own_frontier();
 		}
 		return parent::arguments( $args );
 	}
@@ -169,17 +203,18 @@ abstract class Source_Node extends Timer_Node {
 	 * @param array<int,mixed> $message Incoming Message.
 	 */
 	public function fill( array $message ): void {
+		if ( $this->tables->accepts( $message ) ) {
+			return;
+		}
 		if ( ! $this->answer_request( $message ) ) {
 			$this->answer( $message );
 		}
 	}
 
 	/**
-	 * On the Router's tick, fetch when the clock has crossed a multiple of
-	 * the interval since this process's last tick; its first tick only
-	 * marks the clock, so a respawned worker waits for the next boundary. A
-	 * fetch that fails is logged and published failing, and the next boundary
-	 * tries again; a cooperative stop propagates (substrate ADR-14).
+	 * On the Router's tick, start a pass at each grid boundary, else send what
+	 * the frontier holds while nothing is in flight; a failure is logged and
+	 * published (a stop propagates, ADR-14).
 	 *
 	 * @api Used by substrate.
 	 * @throws Worker_Should_Stop When the worker is asked to stop.
@@ -188,13 +223,12 @@ abstract class Source_Node extends Timer_Node {
 		$now           = (int) Core::$now;
 		$last          = $this->checked;
 		$this->checked = $now;
-		$resume        = $this->resumes();
-		$boundary      = null !== $last && null !== $this->interval && \intdiv( $now, $this->interval ) > \intdiv( $last, $this->interval );
-		if ( ! $resume && ! $boundary ) {
+		$due           = $this->resumes() || ( null !== $last && null !== $this->interval && \intdiv( $now, $this->interval ) > \intdiv( $last, $this->interval ) );
+		if ( ! $due && [] !== $this->in_flight ) {
 			return;
 		}
 		try {
-			$this->tick();
+			$due ? $this->tick() : $this->send();
 		} catch ( Worker_Should_Stop $stop ) {
 			throw $stop;
 		} catch ( \Throwable $e ) {
@@ -203,14 +237,51 @@ abstract class Source_Node extends Timer_Node {
 		}
 	}
 
+	/** Whether the class's schema `owns` a frontier Table. */
+	private static function owns_frontier(): bool {
+		return isset( Core::arr( static::node_schema()['owns'] ?? null )[ self::FRONTIER ] );
+	}
+
 	/**
-	 * Start a pass, which a TICK request and the grid both call, unless
-	 * requests are in flight or the source needs a credential its vault
-	 * group lends none on credential_url()'s origin, when it sits idle
-	 * silently, publishing nothing, until the entry exists: queue the
-	 * source's opening requests, replacing what a throw left queued, and
-	 * send. A pass that queues nothing ends at once, as unqueued()
-	 * describes; any other closes on its last answer.
+	 * Build and publish the frontier Table, as owned_table() declares it,
+	 * where the worker's partition is bound; one it refuses leaves none.
+	 *
+	 * @throws \Throwable What the Table refused.
+	 */
+	private function own_frontier(): void {
+		$table = new Table_Node();
+		$table->patron( $this );
+		$this->publish_sibling( self::FRONTIER, $table );
+		try {
+			$table->arguments( \array_values( static::owned_table( self::FRONTIER, $this->name, [] ) ) );
+		} catch ( \Throwable $e ) {
+			$this->retract_sibling( self::FRONTIER );
+			throw $e;
+		}
+		$table->sink( $this->sink );
+	}
+
+	/**
+	 * The frontier Table a source named `$owner` builds, which the analyzer
+	 * reads off its line: its own name as namespace, a year's TTL, sqlite.
+	 *
+	 * @param string       $suffix    The owned Table's suffix, `frontier`.
+	 * @param string       $owner     The source's name.
+	 * @param list<string> $arguments The source's `make_node` arguments.
+	 * @return array{namespace: string, ttl: string, backend: string}
+	 */
+	public static function owned_table( string $suffix, string $owner, array $arguments ): array {
+		return [
+			'namespace' => $owner,
+			'ttl'       => (string) Frontier::MEMBER_TTL,
+			'backend'   => 'sqlite',
+		];
+	}
+
+	/**
+	 * Start a pass on a TICK or the grid, dropping what is still queued, unless
+	 * requests are in flight or no credential is lent on credential_url()'s
+	 * origin.
 	 *
 	 * @return array{fetching:int} How many requests the pass opens on, 0 when one is still in flight or no credential is lent.
 	 */
@@ -227,7 +298,7 @@ abstract class Source_Node extends Timer_Node {
 		$this->fault      = null;
 		$this->drop_queue();
 		$this->begin();
-		$fetching = \count( $this->queue );
+		$fetching = \count( $this->adds );
 		$this->send();
 		if ( 0 === $fetching ) {
 			$this->unqueued();
@@ -248,10 +319,9 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
-	 * A url on the origin whose credential the source cannot fetch without,
-	 * which its vault group must hold an entry for before a pass sends
-	 * anything; '' for a source that needs none. A fact of the class, so a
-	 * reader asks it with no instance.
+	 * A url on the origin whose credential the class cannot fetch without,
+	 * which its vault group must lend before a pass sends anything; '' for
+	 * none.
 	 */
 	public static function credential_url(): string {
 		return '';
@@ -261,17 +331,9 @@ abstract class Source_Node extends Timer_Node {
 	abstract protected function begin(): void;
 
 	/**
-	 * Take Curl's answer to a request in flight: a body records what
-	 * received() makes of it, the response headers a request named reaching
-	 * headers_received() first, a redirect re-queues the request at its
-	 * Location, and a TM_ERROR is logged, handed to failed() and ends its
-	 * branch. Once nothing is queued or in flight, pass_ended() runs, and
-	 * anything it queues goes out. An answer that
-	 * throws is logged naming its subject; a cooperative stop propagates
-	 * (substrate ADR-14). Each answer counts toward the pass, failed or
-	 * answered, but a redirect hop and a protocol request that did not fail.
-	 * The next request goes out whatever happened, so a pass always ends. An
-	 * answer for no request in flight is dropped.
+	 * Take Curl's answer, a body, a redirect or a TM_ERROR, count it toward the
+	 * pass and send the next (a stop propagates, ADR-14); one for no request in
+	 * flight is dropped.
 	 *
 	 * @param array<int,mixed> $message The body as TM_BYTESTREAM, the Location as TM_RESPONSE, or the TM_ERROR, KEY the subject.
 	 * @throws Worker_Should_Stop When the worker is asked to stop.
@@ -284,8 +346,10 @@ abstract class Source_Node extends Timer_Node {
 			return;
 		}
 		unset( $this->in_flight[ $key ] );
-		$this->fault = null;
-		$hop         = false;
+		$this->frontier->settle( [ $key ] );
+		$this->answering = $request;
+		$this->fault     = null;
+		$hop             = false;
 		try {
 			$type  = Core::as_int( $message[ Message::TYPE ] );
 			$value = $message[ Message::VALUE ];
@@ -322,9 +386,108 @@ abstract class Source_Node extends Timer_Node {
 				++$this->requests;
 			}
 			$this->send();
-			if ( [] === $this->queue && [] === $this->in_flight ) {
-				$this->close_pass();
+		}
+	}
+
+	/**
+	 * Take the response headers request_options() named, by lowercased name,
+	 * before the body; nothing unless a source reads some.
+	 *
+	 * @param string                $subject The request's subject.
+	 * @param array<string,string> $headers Each header the response sent.
+	 */
+	protected function headers_received( string $subject, array $headers ): void {
+	}
+
+	/**
+	 * Send at once, outside the request budget, the request pass_ended() closes
+	 * a pass with.
+	 *
+	 * @param string      $url     The url.
+	 * @param string|null $body    A POST's body, or null for a GET.
+	 * @param string      $subject What the request asks.
+	 */
+	protected function send_closing( string $url, ?string $body, string $subject ): void {
+		$this->dispatch( $subject, [ $url, $body, 0, [] ] );
+	}
+
+	/**
+	 * Whether the source resumes a pass on this tick, off the grid, as a
+	 * pass held back by something now done does; the grid's guard applies.
+	 */
+	protected function resumes(): bool {
+		return false;
+	}
+
+	/**
+	 * Whether a pass begin() queued nothing for is held back by something
+	 * another node does, so it publishes nothing until it resumes.
+	 */
+	protected function waits(): bool {
+		return false;
+	}
+
+	/**
+	 * Take a request's failure after it is logged: a transport failure or a
+	 * status of 400 or more, as Curl's TM_ERROR names it; nothing unless a
+	 * source acts on one.
+	 *
+	 * @param string $subject The request's subject.
+	 * @param string $error   The TM_ERROR's text, such as `HTTP 404 <url>`.
+	 */
+	protected function failed( string $subject, string $error ): void {
+	}
+
+	/**
+	 * Send queued requests, one per host, while fewer than max_in_flight() are
+	 * in flight and the pass has sent fewer than max_requests(), then close an
+	 * open pass with nothing left.
+	 */
+	private function send(): void {
+		if ( $this->sending ) {
+			return;
+		}
+		$room          = \min( $this->max_in_flight(), Curl_Node::MAX_IN_FLIGHT );
+		$busy          = [];
+		$this->sending = true;
+		try {
+			foreach ( $this->in_flight as [ $url ] ) {
+				$busy[ self::host( $url ) ] = true;
 			}
+			do {
+				$took = $this->stage( $room );
+				$sent = false;
+				foreach ( $this->queue as $key => $request ) {
+					if ( \count( $this->in_flight ) >= $room ) {
+						break 2;
+					}
+					if ( isset( $busy[ self::host( $request[0] ) ] ) ) {
+						continue;
+					}
+					unset( $this->queue[ $key ] );
+					if ( $this->sent >= $this->max_requests() ) {
+						$this->print_less_often( 'a pass reached ' . $this->max_requests() . ' requests; sending no more: ', Core::terminal_safe( $request[0] ) );
+						$this->frontier->settle( [ $key ] );
+						$this->abandoned( $key );
+						$this->drop_queue();
+						break 2;
+					}
+					++$this->sent;
+					$host          = self::host( $request[0] );
+					$busy[ $host ] = true;
+					$this->dispatch( $key, $request );
+					// Curl answered it as it was handed, so its host is free.
+					if ( ! isset( $this->in_flight[ $key ] ) ) {
+						unset( $busy[ $host ] );
+					}
+					$sent = true;
+				}
+			} while ( $sent || $took );
+		} finally {
+			$this->sending = false;
+		}
+		if ( $this->open && [] === $this->queue && [] === $this->in_flight ) {
+			$this->close_pass();
 		}
 	}
 
@@ -337,15 +500,15 @@ abstract class Source_Node extends Timer_Node {
 			$this->pass_ended();
 		} finally {
 			if ( [] === $this->in_flight ) {
+				$this->open = false;
 				$this->publish_pass();
 			}
 		}
 	}
 
 	/**
-	 * Publish the pass: ok when it counted no answer, a quiet pass being
-	 * healthy, or any answer did not fail, else failing with the last
-	 * failure's text; a pass that published idle publishes nothing.
+	 * Publish the pass ok unless every answer it counted failed, then failing
+	 * with the last failure's text; nothing after an idle.
 	 */
 	private function publish_pass(): void {
 		if ( $this->idled ) {
@@ -382,17 +545,6 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
-	 * Take the response headers a request named through request_options()'s
-	 * `response_headers`, by lowercased name, before its body: none unless a
-	 * source reads some.
-	 *
-	 * @param string                $subject The request's subject.
-	 * @param array<string,string> $headers Each header the response sent.
-	 */
-	protected function headers_received( string $subject, array $headers ): void {
-	}
-
-	/**
 	 * Take a pass's end, once nothing is queued or in flight: nothing unless
 	 * a source closes something, through send_closing().
 	 */
@@ -400,83 +552,26 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
-	 * Send the request a pass closes with at once, outside the pass's request
-	 * budget, so a pass the cap ended still closes; pass_ended() calls it,
-	 * when nothing is queued or in flight.
+	 * Hand the frontier the requests queued since, and take TAKE_ROOMS of
+	 * $room into the queue once half of it, or all, is free.
 	 *
-	 * @param string      $url     The url.
-	 * @param string|null $body    A POST's body, or null for a GET.
-	 * @param string      $subject What the request asks.
+	 * @return bool Whether the take moved any.
 	 */
-	protected function send_closing( string $url, ?string $body, string $subject ): void {
-		$this->dispatch( $subject, [ $url, $body, 0 ] );
-	}
-
-	/**
-	 * Whether the source resumes a pass on this tick, off the grid, as a
-	 * pass held back by something now done does; the grid's guard applies.
-	 */
-	protected function resumes(): bool {
-		return false;
-	}
-
-	/**
-	 * Whether a pass begin() queued nothing for is held back by something
-	 * another node does, so it publishes nothing until it resumes.
-	 */
-	protected function waits(): bool {
-		return false;
-	}
-
-	/**
-	 * Take a request's failure after it is logged: a transport failure or a
-	 * status of 400 or more, as Curl's TM_ERROR names it; nothing unless a
-	 * source acts on one.
-	 *
-	 * @param string $subject The request's subject.
-	 * @param string $error   The TM_ERROR's text, such as `HTTP 404 <url>`.
-	 */
-	protected function failed( string $subject, string $error ): void {
-	}
-
-	/**
-	 * Send queued requests while fewer than max_in_flight(), clamped to
-	 * Curl's own cap, are in flight, one per host at a time, until the pass
-	 * has sent max_requests(); the one past that is logged and the queue
-	 * dropped. An answer Curl sends synchronously frees its slot for this
-	 * same loop.
-	 */
-	private function send(): void {
-		if ( $this->sending ) {
-			return;
+	private function stage( int $room ): bool {
+		if ( [] !== $this->adds && ! $this->frontier->add( $this->adds ) ) {
+			$this->print_less_often( 'the Table took none of the requests queued; sending none of them: ', $this->sibling_name( self::FRONTIER ) );
 		}
-		$room          = \min( $this->max_in_flight(), Curl_Node::MAX_IN_FLIGHT );
-		$this->sending = true;
-		try {
-			do {
-				$sent = false;
-				foreach ( $this->queue as $key => $request ) {
-					if ( \count( $this->in_flight ) >= $room ) {
-						break 2;
-					}
-					if ( isset( $this->busy_hosts()[ self::host( $request[0] ) ] ) ) {
-						continue;
-					}
-					unset( $this->queue[ $key ] );
-					if ( $this->sent >= $this->max_requests() ) {
-						$this->print_less_often( 'a pass reached ' . $this->max_requests() . ' requests; sending no more: ', Core::terminal_safe( $request[0] ) );
-						$this->abandoned( $key );
-						$this->drop_queue();
-						break 2;
-					}
-					++$this->sent;
-					$this->dispatch( $key, $request );
-					$sent = true;
-				}
-			} while ( $sent );
-		} finally {
-			$this->sending = false;
+		$this->adds = [];
+		$taken      = [];
+		if ( [] === $this->in_flight || 2 * ( $room - \count( $this->in_flight ) ) >= $room ) {
+			$taken = $this->frontier->take( self::TAKE_ROOMS * $room );
 		}
+		foreach ( $taken as [ $subject, $value ] ) {
+			[ $url, $body, $hops, $note ] = Core::arr( $value );
+			$this->queue[ $subject ]      = [ Core::as_string( $url ), \is_string( $body ) ? $body : null, Core::as_int( $hops ), Core::arr( $note ) ];
+		}
+		$this->open = $this->open || [] !== $this->queue;
+		return [] !== $taken;
 	}
 
 	/** Requests in flight at once: 1, so an API source's go strictly one after another. */
@@ -484,21 +579,8 @@ abstract class Source_Node extends Timer_Node {
 		return 1;
 	}
 
-	/**
-	 * The hosts a request in flight is fetching.
-	 *
-	 * @return array<string,true>
-	 */
-	private function busy_hosts(): array {
-		$busy = [];
-		foreach ( $this->in_flight as [ $url ] ) {
-			$busy[ self::host( $url ) ] = true;
-		}
-		return $busy;
-	}
-
 	/** A url's host, lowercased; '' for none. */
-	private static function host( string $url ): string {
+	protected static function host( string $url ): string {
 		return \strtolower( Core::as_string( \wp_parse_url( $url, \PHP_URL_HOST ) ) );
 	}
 
@@ -508,13 +590,11 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
-	 * Send one request to Curl as a TM_STRUCT, its subject in KEY and its
-	 * hop in VALUE, with the fields request_options() names for its subject
-	 * as it goes out; a request Curl throws on leaves flight, so the next
-	 * pass starts.
+	 * Send one request to Curl as a TM_STRUCT, KEY its subject, with the fields
+	 * request_options() names; one Curl throws on leaves flight.
 	 *
-	 * @param string                                $key     The request's subject.
-	 * @param array{0:string,1:string|null,2:int} $request The hop's url, a POST's body or null, and its hops.
+	 * @param string  $key     The request's subject.
+	 * @param Request $request The hop's url, a POST's body or null, its hops and its note.
 	 */
 	private function dispatch( string $key, array $request ): void {
 		[ $url, $body ]          = $request;
@@ -526,7 +606,7 @@ abstract class Source_Node extends Timer_Node {
 		if ( null !== $body ) {
 			$value['body'] = $body;
 		}
-		$value                     = [ ...$value, ...$this->request_options( $key ) ];
+		$value                     = [ ...$value, ...$this->request_options( $key ), 'public_only' => $this->public_only() ];
 		$message                   = Message::new_message();
 		$message[ Message::TYPE ]  = Message::TM_STRUCT;
 		$message[ Message::FROM ]  = $this->name;
@@ -536,27 +616,30 @@ abstract class Source_Node extends Timer_Node {
 			$this->curl->fill( $message );
 		} catch ( \Throwable $e ) {
 			unset( $this->in_flight[ $key ] );
+			$this->frontier->settle( [ $key ] );
 			$this->abandoned( $key );
 			throw $e;
 		}
 	}
 
+	/** Whether every request reaches public addresses alone; a source through a tunnel answers false. */
+	protected function public_only(): bool {
+		return true;
+	}
+
 	/**
-	 * Re-queue a redirected request under its subject at the Location, one
-	 * hop on, unless that would pass Curl_Node::MAX_REDIRECTS, or the request
-	 * carries header lines of its own or a method other than GET, which the
-	 * re-queue would carry to another url past Curl's own redirect guard;
-	 * either is logged, records nothing and fails(). Only a source whose
-	 * Curl follows no redirect receives one.
+	 * Re-queue a redirected plain GET under its subject at the Location, one
+	 * hop on, failing one past Curl_Node::MAX_REDIRECTS or carrying headers,
+	 * a body or another method past Curl's own redirect guard.
 	 *
-	 * @param string                                $key      The request's subject.
-	 * @param array{0:string,1:string|null,2:int} $request  The request redirected.
-	 * @param string                                $location The absolute Location.
+	 * @param string  $key      The request's subject.
+	 * @param Request $request  The request redirected.
+	 * @param string  $location The absolute Location.
 	 * @return bool Whether it re-queued the request.
 	 */
 	private function redirect( string $key, array $request, string $location ): bool {
-		[ , $body, $hops ] = $request;
-		$options           = $this->request_options( $key );
+		[ , $body, $hops, $note ] = $request;
+		$options                  = $this->request_options( $key );
 		if ( null !== $body || [] !== Core::arr( $options['headers'] ?? null ) || 'GET' !== ( $options['method'] ?? 'GET' ) ) {
 			$this->fails( 'a redirect of a request carrying its own headers or a method other than GET is not followed; recording nothing: ', $location );
 			return false;
@@ -565,7 +648,7 @@ abstract class Source_Node extends Timer_Node {
 			$this->fails( 'a request redirected past ' . Curl_Node::MAX_REDIRECTS . ' hops; recording nothing: ', $location );
 			return false;
 		}
-		$this->queue[ $key ] = [ $location, $body, $hops + 1 ];
+		$this->adds[ $key ] = [ $location, $body, $hops + 1, $note ];
 		return true;
 	}
 
@@ -593,14 +676,10 @@ abstract class Source_Node extends Timer_Node {
 	abstract protected function received( string $url, string $body ): array;
 
 	/**
-	 * Record items: drop the keys already recorded, remember without
-	 * recording those the projection already holds, and emit one
-	 * `item_recorded` event per new item as a TM_STRUCT to the target. An
-	 * item make() refuses is logged and skipped unremembered, so it retries.
-	 * One whose key runs past Graph_Curation::ITEM_KEY_BYTES as the stream
-	 * writes it, so that a record naming it could outgrow one line, is
-	 * logged naming the key cut to KEY_SHOWN_BYTES and remembered, so it is
-	 * refused once a process.
+	 * Emit one `item_recorded` event per item neither seen nor held by the
+	 * projection, remembering each key but one make() refuses, so that one
+	 * retries; a key past Graph_Curation::ITEM_KEY_BYTES is logged and refused
+	 * once a process.
 	 *
 	 * @param array<int,array<string,mixed>> $items Normalized items.
 	 */
@@ -674,8 +753,7 @@ abstract class Source_Node extends Timer_Node {
 
 	/**
 	 * Build and publish the Curl sibling under the vault group, following
-	 * redirects only where follows_redirects() says, its answers coming
-	 * back here.
+	 * redirects as follows_redirects() says, its answers coming back here.
 	 */
 	private function attach_curl(): void {
 		$curl = new Curl_Node();
@@ -697,19 +775,23 @@ abstract class Source_Node extends Timer_Node {
 		$this->drop_queue();
 	}
 
-	/** Drop every queued request, each handed to abandoned(), since none will answer. */
+	/**
+	 * Drop every request not in flight, each handed to abandoned(), since
+	 * none will answer: those queued since the last send, and every one the
+	 * frontier holds.
+	 */
 	private function drop_queue(): void {
-		$queued      = \array_keys( $this->queue );
+		$dropped     = [ ...\array_keys( $this->adds ), ...\array_diff( $this->frontier->drain(), \array_keys( $this->in_flight ) ) ];
 		$this->queue = [];
-		foreach ( $queued as $subject ) {
+		$this->adds  = [];
+		foreach ( \array_unique( \array_map( 'strval', $dropped ) ) as $subject ) {
 			$this->abandoned( $subject );
 		}
 	}
 
 	/**
-	 * Take a request that will never answer: dropped from the queue, or
-	 * thrown on as it went out; nothing unless a source holds something for
-	 * it.
+	 * Take a request that will never answer; nothing unless a source holds
+	 * something for it.
 	 *
 	 * @param string $subject The request's subject.
 	 */
@@ -742,10 +824,8 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
-	 * A JSON answer, decoded, or null when it holds nothing to record: a
-	 * body that is no JSON object or list, or one $error reads an error off,
-	 * logged under the request's url so each failing request shows, which
-	 * fails().
+	 * A JSON object or list $error reads no error off, decoded; null, logged
+	 * under the url and failed, for any other body.
 	 *
 	 * @param string                                  $api   The service, as the line names it.
 	 * @param string                                  $url   The request's url.
@@ -767,10 +847,8 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
-	 * Log a failure of the answer being taken, rate-limited under $prefix,
-	 * and count the answer as failed with the same text: what a source calls
-	 * for an answer it drops whole. Called from a begin() that queues
-	 * nothing, it fails the pass.
+	 * Log, under $prefix, and count as failed the answer being taken, which a
+	 * source drops whole; from a begin() queueing nothing, it fails the pass.
 	 *
 	 * @param string $prefix What failed, naming the request's url, terminal-safe.
 	 * @param string $detail Why, made terminal-safe here.
@@ -779,6 +857,33 @@ abstract class Source_Node extends Timer_Node {
 		$detail = Core::terminal_safe( $detail );
 		$this->print_less_often( $prefix, $detail );
 		$this->fault = $prefix . $detail;
+	}
+
+	/**
+	 * On a clean stop, remove the answered requests from the Table, so the next
+	 * process sends none again.
+	 *
+	 * @api Used by substrate.
+	 */
+	public function shutdown_sweep(): void {
+		$this->frontier->flush();
+	}
+
+	/**
+	 * The url the answer being taken was fetched from: its request's, or the
+	 * last Location a redirect of it named.
+	 */
+	protected function hop(): string {
+		return $this->answering[0];
+	}
+
+	/**
+	 * The note the answer being taken's request was queued with.
+	 *
+	 * @return array<array-key,mixed>
+	 */
+	protected function note(): array {
+		return $this->answering[3];
 	}
 
 	/**
@@ -801,16 +906,17 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
-	 * Queue a request this pass sends, under its subject, the url unless one
-	 * is named: a GET, or with a body a POST of it as JSON. A subject already
-	 * queued is queued once, with the later url and body.
+	 * Queue a GET, or with a body a POST of it as JSON, under its subject, the
+	 * url unless one is named, with a note note() reads back; a subject queued
+	 * again keeps the later.
 	 *
-	 * @param string      $url     The url.
-	 * @param string|null $body    A POST's body, or null for a GET.
-	 * @param string|null $subject What the request asks, when several share one url.
+	 * @param string                 $url     The url.
+	 * @param string|null            $body    A POST's body, or null for a GET.
+	 * @param string|null            $subject What the request asks, when several share one url.
+	 * @param array<array-key,mixed> $note    What the source reads with its answer.
 	 */
-	protected function queue( string $url, ?string $body = null, ?string $subject = null ): void {
-		$this->queue[ $subject ?? $url ] = [ $url, $body, 0 ];
+	protected function queue( string $url, ?string $body = null, ?string $subject = null, array $note = [] ): void {
+		$this->adds[ $subject ?? $url ] = [ $url, $body, 0, $note ];
 	}
 
 	/**
@@ -878,10 +984,9 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
-	 * Normalize one connector record into the `item_recorded` fields — every
-	 * field coerced and guarded once here, so each connector only maps its raw
-	 * fields to the args. The key is namespaced `"$source:$id"`; the bare `$id`
-	 * must already be stable per item, because dedup keys on it.
+	 * One connector record as the `item_recorded` fields, each coerced here,
+	 * keyed `"$source:$id"`, so `$id` must be stable per item, as dedup keys on
+	 * it.
 	 *
 	 * @param mixed $title
 	 * @param mixed $url
@@ -925,26 +1030,25 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
-	 * Build a connector's node_schema from the shared Source shape — category
-	 * Source, the `tier` positional and, for a source that sends a
-	 * credential, the optional `vault_group` after it, one TICK request and
-	 * the `set_tier` verb ahead of the connector's own — so the connectors
-	 * don't each restate it. has_target inherits Node's default (true).
+	 * A connector's node_schema from the shared Source shape: category Source,
+	 * the frontier Table it owns, `tier` and, for a source sending a
+	 * credential, `vault_group`, one TICK request, and `set_tier` and
+	 * `set_interval` ahead of the connector's own verbs.
 	 *
 	 * @param list<array<string,mixed>> $commands     The connector's own verbs.
 	 * @param bool                      $credentialed Whether the source takes a vault group.
 	 * @return array<string,mixed>
 	 */
 	protected static function source_schema( string $description, string $tick_description, array $commands = [], bool $credentialed = true ): array {
-		$arguments = [
-			[ 'name' => 'tier', 'type' => 'string', 'required' => true, 'description' => 'The access tier every recorded item carries: public, internal or restricted.' ],
-		];
+		$arguments = [ self::TIER_ARGUMENT ];
 		if ( $credentialed ) {
 			$arguments[] = [ 'name' => 'vault_group', 'type' => 'vault_group', 'default' => '', 'description' => 'Optional Vault group: a request to one entry\'s origin carries the credential header that entry names.' ];
 		}
 		return \array_merge( Node::node_schema(), [
 			'category'    => 'Source',
 			'description' => $description,
+			// The Table owned_table() declares, which the analyzer reads.
+			'owns'        => [ self::FRONTIER => 'Table' ],
 			'arguments'   => $arguments,
 			'requests'    => [
 				[
@@ -980,11 +1084,9 @@ abstract class Source_Node extends Timer_Node {
 	}
 
 	/**
-	 * The `add_<noun>` and `remove_<noun>` verbs of a list every entry of
-	 * which matches $pattern: list_verbs()'s pair, its add refusing a value
-	 * that does not match, naming it as not $kind, and appending one that
-	 * does unless an entry equals it. The add's `checked` key names the list
-	 * dump_config() writes one add line per entry of.
+	 * list_verbs()'s `add_<noun>` and `remove_<noun>` over a list whose every
+	 * entry matches $pattern, the add refusing a value that does not, naming it
+	 * as not $kind, and dumped one add line per entry.
 	 *
 	 * @param string $noun        The verbs' suffix, and the one arg they take.
 	 * @param string $property    The list property, a `list<string>`.

@@ -227,7 +227,11 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( Message::TM_ERROR, $this->asker->captured[0][ Message::TYPE ] & Message::TM_ERROR );
 	}
 
-	/** A request travels to the Curl sibling as a TM_STRUCT GET, its url in KEY. */
+	/**
+	 * A request travels to the Curl sibling as a TM_STRUCT GET, its url in
+	 * KEY; an API source's Curl follows a redirect, hop by hop itself, since
+	 * the request is public-only.
+	 */
 	public function test_a_request_goes_to_the_curl_sibling_keyed_by_its_url(): void {
 		$node = $this->fake();
 
@@ -238,7 +242,8 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( 'fake-source-12', $curl->target() );
 		$this->assertSame( [ Fake_Source_Node::PAGE . '1' ], $this->dispatched );
 		$this->assertTrue( $this->opts[ Fake_Source_Node::PAGE . '1' ][ \CURLOPT_HTTPGET ] );
-		$this->assertTrue( $this->opts[ Fake_Source_Node::PAGE . '1' ][ \CURLOPT_FOLLOWLOCATION ], 'an API source lets Curl follow' );
+		$this->assertTrue( $this->read_private( $curl, 'follow' ), 'an API source lets Curl follow' );
+		$this->assertFalse( $this->opts[ Fake_Source_Node::PAGE . '1' ][ \CURLOPT_FOLLOWLOCATION ], 'not libcurl' );
 	}
 
 	/** An API source sends its requests strictly one after another. */
@@ -262,7 +267,7 @@ final class SourceNodeTest extends TestCase {
 	 * for its subject, and each answer reaches received() under its subject.
 	 */
 	public function test_requests_to_one_url_keep_their_own_subjects_and_options(): void {
-		$node           = $this->fake( [ 'public' ], [] );
+		$node           = $this->wire( new Fake_Tunnel_Source_Node(), 'fake-source-12', [ 'public' ] );
 		$node->subjects = [
 			'heron/history?page=4' => Fake_Source_Node::PAGE . 'mcp',
 			'kite/history?page=7'  => Fake_Source_Node::PAGE . 'mcp',
@@ -303,8 +308,8 @@ final class SourceNodeTest extends TestCase {
 		$node->options  = [ Fake_Source_Node::PAGE . 'headed' => [ 'headers' => [ 'X-Session-8: sess-3317' ] ] ];
 		$this->tick( $node );
 
-		$this->redirect( Fake_Source_Node::PAGE . 'plain', 'https://moved-plain-4410.example/plain' );
 		$this->redirect( Fake_Source_Node::PAGE . 'headed', 'https://moved-headed-4411.example/headed' );
+		$this->redirect( Fake_Source_Node::PAGE . 'plain', 'https://moved-plain-4410.example/plain' );
 		$this->redirect( 'https://posted-5520.example/mcp', 'https://moved-post-4412.example/post' );
 
 		$this->assertContains( 'https://moved-plain-4410.example/plain', $this->dispatched );
@@ -424,10 +429,36 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( [ $same[0], 'https://kite-5509.example/a', $same[1] ], $this->dispatched );
 	}
 
+	/** A request Curl refuses as it is handed frees its host for the next on it, in the same send. */
+	public function test_a_refused_request_frees_its_host_at_once(): void {
+		$node           = $this->fake( [ 'public' ], [] );
+		$node->subjects = [
+			'a-curlew/1' => 'https://curlew-6630.example/one',
+			'b-curlew/2' => 'https://curlew-6630.example/two',
+		];
+		$node->options  = [ 'a-curlew/1' => [ 'method' => 'PATCH' ] ];
+
+		$this->tick( $node );
+
+		$this->assertSame( [ 'https://curlew-6630.example/two' ], $this->dispatched );
+	}
+
+	/** Requests waiting on a busy host leave the room to the hosts behind them. */
+	public function test_a_busy_host_does_not_spend_the_room(): void {
+		$busy  = \array_map( static fn ( int $i ): string => "https://avocet-3307.example/{$i}", \range( 1, 6 ) );
+		$other = \array_map( static fn ( int $i ): string => "https://plover-{$i}.example/feed", \range( 1, 5 ) );
+		$node       = $this->fake( [ 'public' ], [ ...$busy, ...$other ] );
+		$node->room = 6;
+
+		$this->tick( $node );
+
+		$this->assertSame( [ $busy[0], ...$other ], $this->dispatched );
+	}
+
 	/** However many a source asks for, Curl's own cap bounds what is in flight, and the rest wait rather than drop. */
 	public function test_in_flight_is_clamped_to_curls_cap(): void {
 		$stderr     = $this->capture_stderr();
-		$urls       = \array_map( static fn ( int $i ): string => "https://outlet-{$i}.example/page", \range( 1, 19 ) );
+		$urls       = \array_map( static fn ( int $i ): string => \sprintf( 'https://outlet-%02d.example/page', $i ), \range( 1, 19 ) );
 		$node       = $this->fake( [ 'public' ], $urls );
 		$node->room = 40;
 
@@ -483,6 +514,23 @@ final class SourceNodeTest extends TestCase {
 		$this->assertMatchesRegularExpression( '/^make_node \S+ fake-source-12 internal fake-group-3310$/m', $node->dump_config() );
 	}
 
+	/**
+	 * A replay naming another vault group rebuilds Curl, whose transfers go
+	 * with it, so the next send fetches again what was in flight.
+	 */
+	public function test_a_new_vault_group_sends_again_what_was_in_flight(): void {
+		$node = $this->fake( [ 'internal', 'fake-group-3310' ] );
+		$this->tick( $node );
+
+		$this->bound( fn () => $node->arguments( [ 'internal', 'fake-group-4421' ] ) );
+		$this->tick_at( $node, self::BOUNDARY + 23.0 );
+		$this->complete( Fake_Source_Node::PAGE . '1', self::page( [ [ 'id' => 'sandpiper-1', 'title' => 'Sandpiper' ] ] ) );
+
+		$this->assertSame( [ Fake_Source_Node::PAGE . '1', Fake_Source_Node::PAGE . '1' ], $this->dispatched );
+		$this->assertSame( [ 'fake:sandpiper-1' ], $this->recorded_keys() );
+		$this->assertSame( 1, $node->passes, 'the pass resumed, not begun' );
+	}
+
 	/** With no vault group a request carries no credential, whatever the vault holds for its origin. */
 	public function test_no_vault_group_sends_no_credential(): void {
 		$this->seed_vault(
@@ -510,7 +558,7 @@ final class SourceNodeTest extends TestCase {
 	public static function credentialed_sources(): array {
 		return [
 			'linear'   => [ Linear_Source_Node::class, 'add_team', 'KESTREL', 'https://api.linear.app', 1 ],
-			'slack'    => [ Slack_Source_Node::class, 'add_channel', 'C0HERON7731', 'https://slack.com', 2 ],
+			'slack'    => [ Slack_Source_Node::class, 'add_channel', 'C0HERON7731', 'https://slack.com', 1 ],
 			'p2'       => [ P2_Source_Node::class, 'add_site', 'heron-desk.wordpress.com', 'https://public-api.wordpress.com', 2 ],
 			'unthread' => [ Unthread_Source_Node::class, '', '', 'https://api.unthread.io', 1 ],
 		];
@@ -931,9 +979,9 @@ final class SourceNodeTest extends TestCase {
 		$this->publishing();
 		self::at( 5551.0 );
 
-		$this->pass( $this->fake(), [ 'https://example.test/news/', 'https://example.test/feed/' ], [ 404, 404 ] );
+		$this->pass( $this->fake(), [ 'https://example.test/feed/', 'https://example.test/news/' ], [ 404, 404 ] );
 
-		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 404 https://example.test/feed/', 'failing_since' => 5551, 'failed' => 2, 'requests' => 2 ] ), $this->published( 'fake-source-12' ) );
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 404 https://example.test/news/', 'failing_since' => 5551, 'failed' => 2, 'requests' => 2 ] ), $this->published( 'fake-source-12' ) );
 	}
 
 	/** A failing pass after a failing one keeps the first one's failing_since. */
@@ -1070,6 +1118,7 @@ final class SourceNodeTest extends TestCase {
 		$node                       = $this->scheduled();
 		$node->first                = $urls;
 		$this->refusing[ $urls[1] ] = true;
+		$this->tick_at( $node, self::BOUNDARY - 3.0 );
 		$this->tick( $node );
 		try {
 			$this->complete( $urls[0], self::page( [] ) );
@@ -1079,7 +1128,6 @@ final class SourceNodeTest extends TestCase {
 		}
 		$node->abandon_failure = new \RuntimeException( 'abandon-broke-6604' );
 
-		$this->tick_at( $node, self::BOUNDARY - 3.0 );
 		$this->tick_at( $node, self::BOUNDARY + 3.0 );
 
 		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'abandon-broke-6604', 'failing_since' => self::BOUNDARY + 3, 'failed' => 0, 'requests' => 0 ] ), $this->published( 'fake-source-12' ) );
@@ -1118,6 +1166,114 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( 'https://api.unthread.io/api/conversations/', Unthread_Source_Node::credential_url() );
 		$this->assertSame( '', Github_Source_Node::credential_url() );
 		$this->assertSame( '', Feed_Source_Node::credential_url() );
+	}
+
+	/**
+	 * A pass's requests wait in the source's Table, so the process after a
+	 * recycle sends what the last one left on its first tick, with no TICK
+	 * and no boundary: the request it had in flight, then the one it never
+	 * sent, each with the note it was queued with.
+	 */
+	public function test_a_pass_cut_by_a_recycle_resumes_from_its_table(): void {
+		$urls        = [ Fake_Source_Node::PAGE . 'a-1', Fake_Source_Node::PAGE . 'b-2', Fake_Source_Node::PAGE . 'c-3' ];
+		$node        = $this->fake( [ 'public' ], $urls );
+		$node->notes = [ $urls[1] => [ 'heron' => 'note-4471' ], $urls[2] => [ 'kite' => 'note-5520' ] ];
+		$this->tick( $node );
+		$this->complete( $urls[0], self::page( [ [ 'id' => 'heron-1', 'title' => 'Heron' ] ] ) );
+
+		$successor = $this->respawn( $node, new Fake_Source_Node() );
+		$this->tick_at( $successor, self::BOUNDARY + 17.0 );
+		$this->assertSame( [ $urls[0], $urls[1], $urls[1] ], $this->dispatched );
+		$this->complete( $urls[1], self::page( [ [ 'id' => 'kite-2', 'title' => 'Kite' ] ] ) );
+		$this->complete( $urls[2], self::page( [] ) );
+
+		$this->assertSame( [ $urls[0], $urls[1], $urls[1], $urls[2] ], $this->dispatched );
+		$this->assertSame( 0, $successor->passes, 'the pass resumed, not begun' );
+		$this->assertSame( [ [ 'heron' => 'note-4471' ], [ 'kite' => 'note-5520' ] ], $successor->noted );
+		$this->assertSame( [ 'fake:heron-1', 'fake:kite-2' ], $this->recorded_keys() );
+	}
+
+	/**
+	 * A clean stop removes from the Table what was answered and not yet
+	 * removed, so the next process sends again only what was in flight.
+	 */
+	public function test_a_clean_stop_sweeps_the_answered_out_of_the_table(): void {
+		$urls       = \array_map( static fn ( int $i ): string => "https://dunlin-{$i}.example/page", \range( 1, 4 ) );
+		$node       = $this->fake( [ 'public' ], $urls );
+		$node->room = 4;
+		$this->tick( $node );
+		$this->complete( $urls[0], self::page( [ [ 'id' => 'dunlin-1', 'title' => 'Dunlin' ] ] ) );
+
+		$node->shutdown_sweep();
+		$successor       = new Fake_Source_Node();
+		$successor->room = 4;
+		$this->tick_at( $this->respawn( $node, $successor ), self::BOUNDARY + 41.0 );
+
+		$this->assertSame( [ ...$urls, ...\array_slice( $urls, 1 ) ], $this->dispatched );
+	}
+
+	/** A pass that ended leaves nothing in its Table, so the next process's first tick sends nothing. */
+	public function test_a_finished_pass_leaves_nothing_to_resume(): void {
+		$node = $this->fake();
+		$this->fetch_page( $node, [] );
+
+		$this->tick_at( $this->respawn( $node, new Fake_Source_Node() ), self::BOUNDARY + 17.0 );
+
+		$this->assertSame( [ Fake_Source_Node::PAGE . '1' ], $this->dispatched );
+	}
+
+	/**
+	 * Every request a source sends is public-only, so an address outside
+	 * the global ranges is refused, failing the answer.
+	 */
+	public function test_every_request_reaches_public_addresses_alone(): void {
+		$stderr = $this->capture_stderr();
+		$node   = $this->fake( [ 'public' ], [ Fake_Source_Node::PAGE . '1' ] );
+		$this->connected[ Fake_Source_Node::PAGE . '1' ] = '10.20.30.40';
+		$this->tick( $node );
+
+		$this->complete( Fake_Source_Node::PAGE . '1', self::page( [ [ 'id' => 'inside-1', 'title' => 'Inside' ] ] ) );
+
+		$this->assertSame( '', $this->opts[ Fake_Source_Node::PAGE . '1' ][ \CURLOPT_PROXY ] );
+		$this->assertSame( [], $this->recorded_keys() );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'fake-source-12: a fetch failed for ' . Fake_Source_Node::PAGE . '1: refused private address' ) );
+	}
+
+	/** A source answering public_only() false sends its requests through a proxy, which Curl refuses beside the flag. */
+	public function test_a_source_reaching_private_addresses_sends_through_its_proxy(): void {
+		$node           = $this->wire( new Fake_Tunnel_Source_Node(), 'tunnel-source-31', [ 'internal' ] );
+		$node->first    = [];
+		$node->subjects = [ 'tunnel/page?4' => 'https://tunnel-6610.example/mcp' ];
+		$node->options  = [ 'tunnel/page?4' => [ 'proxy' => 'socks5h://proxy-heron.example:1099' ] ];
+		$this->tick( $node );
+
+		$this->complete( 'https://tunnel-6610.example/mcp', self::page( [ [ 'id' => 'tunnel-4', 'title' => 'Tunnel' ] ] ) );
+
+		$this->assertSame( 'socks5h://proxy-heron.example:1099', $this->opts['https://tunnel-6610.example/mcp'][ \CURLOPT_PROXY ] );
+		$this->assertSame( [ 'fake:tunnel-4' ], $this->recorded_keys() );
+	}
+
+	/**
+	 * A source owns its Table, `<name>:frontier`, a sqlite file of the
+	 * worker's partition, as the analyzer reads it off the class.
+	 */
+	public function test_a_source_owns_its_frontier_table(): void {
+		$node  = $this->fake();
+		$table = Core::node( 'fake-source-12:frontier' );
+
+		$this->assertInstanceOf( \Newspack_Nodes\Table_Node::class, $table );
+		$this->assertSame( $node, $table->publisher() );
+		$this->assertSame( [ 'fake-source-12', (string) \Newspack_Nodes\Frontier::MEMBER_TTL, 'sqlite' ], $table->arguments() );
+		$this->assertSame( [ 'frontier' => 'Table' ], Fake_Source_Node::node_schema()['owns'] );
+		$this->assertSame(
+			[
+				'namespace' => 'heron-feed-7',
+				'ttl'       => (string) \Newspack_Nodes\Frontier::MEMBER_TTL,
+				'backend'   => 'sqlite',
+			],
+			Fake_Source_Node::owned_table( 'frontier', 'heron-feed-7', [ 'public' ] )
+		);
+		$this->assertStringNotContainsString( 'fake-source-12:frontier', $node->dump_config() );
 	}
 
 	public function test_source_schema_declares_the_shared_tick_contract(): void {
@@ -1160,6 +1316,12 @@ class Fake_Source_Node extends Source_Node {
 	/** @var list<string> Every subject received() was handed, in order. */
 	public array $heard = [];
 
+	/** @var array<string,array<string,mixed>> The note each first url is queued with. */
+	public array $notes = [];
+
+	/** @var list<array<array-key,mixed>> The note of every answer received() was handed, in order. */
+	public array $noted = [];
+
 	public int $passes = 0;
 
 	/** Requests in flight at once; 1, as for every API source, unless a test widens it. */
@@ -1183,7 +1345,7 @@ class Fake_Source_Node extends Source_Node {
 			throw $this->failure;
 		}
 		foreach ( $this->first as $url ) {
-			$this->queue( $url );
+			$this->queue( $url, null, null, $this->notes[ $url ] ?? [] );
 		}
 		foreach ( $this->subjects as $subject => $url ) {
 			$this->queue( $url, "body:{$subject}", $subject );
@@ -1216,6 +1378,7 @@ class Fake_Source_Node extends Source_Node {
 
 	protected function received( string $url, string $body ): array {
 		$this->heard[]        = $url;
+		$this->noted[]        = $this->note();
 		$failure              = $this->answer_failure;
 		$this->answer_failure = null;
 		if ( null !== $failure ) {
@@ -1240,6 +1403,14 @@ class Fake_Source_Node extends Source_Node {
 class Fake_Unfollowing_Source_Node extends Fake_Source_Node {
 
 	protected function follows_redirects(): bool {
+		return false;
+	}
+}
+
+/** A fake source that reaches private addresses through its proxy, as a tunnel does. */
+class Fake_Tunnel_Source_Node extends Fake_Source_Node {
+
+	protected function public_only(): bool {
 		return false;
 	}
 }

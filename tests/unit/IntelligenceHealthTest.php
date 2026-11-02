@@ -120,16 +120,16 @@ final class IntelligenceHealthTest extends TestCase {
 
 	/** A source needing no credential, or one its group lends, answers its published snapshot. */
 	public function test_source_snapshot_is_reported(): void {
-		$this->collect( 'make_node Feed_Source publication4-feed public', 'make_node Linear_Source heron-linear internal heron-g4' );
+		$this->collect( 'make_node Feed_Source grebe-feed public', 'make_node Linear_Source heron-linear internal heron-g4' );
 		$this->lend( 'heron-g4', 'https://api.linear.app' );
-		$failing = [ 'state' => 'failing', 'last_ok_at' => null, 'last_error' => 'HTTP 404 https://publication4.test/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 3, 'reason' => null ];
+		$failing = [ 'state' => 'failing', 'last_ok_at' => null, 'last_error' => 'HTTP 404 https://grebe-5519.example/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 3, 'reason' => null ];
 		$ok      = [ 'state' => 'ok', 'last_ok_at' => 1792495678, 'last_error' => null, 'failing_since' => null, 'failed' => 2, 'requests' => 9, 'reason' => null ];
-		$this->snapshot( 'publication4-feed', $failing );
+		$this->snapshot( 'grebe-feed', $failing );
 		$this->snapshot( 'heron-linear', $ok );
 
 		$this->assertSame(
 			[
-				[ 'name' => 'publication4-feed', 'class' => 'Feed_Source', 'tier' => 'public', ...$failing ],
+				[ 'name' => 'grebe-feed', 'class' => 'Feed_Source', 'tier' => 'public', ...$failing ],
 				[ 'name' => 'heron-linear', 'class' => 'Linear_Source', 'tier' => 'internal', ...$ok ],
 			],
 			$this->ci->dispatch( 'health', [ 'sources' ] )['sources']
@@ -324,8 +324,8 @@ final class IntelligenceHealthTest extends TestCase {
 	 * text.
 	 */
 	public function test_a_reader_below_manage_sees_no_credential_vault_id_or_error(): void {
-		$this->collect( 'make_node Linear_Source kestrel-linear internal linear-t7', 'make_node Feed_Source publication4-feed public', 'make_node Context_A8C_Linear cormorant-linear internal /tmp/mcp-auth-7413' );
-		$this->snapshot( 'publication4-feed', [ 'state' => 'failing', 'last_ok_at' => 1792470021, 'last_error' => 'HTTP 404 https://publication4.test/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 5 ] );
+		$this->collect( 'make_node Linear_Source kestrel-linear internal linear-t7', 'make_node Feed_Source grebe-feed public', 'make_node Context_A8C_Linear cormorant-linear internal /tmp/mcp-auth-7413' );
+		$this->snapshot( 'grebe-feed', [ 'state' => 'failing', 'last_ok_at' => 1792470021, 'last_error' => 'HTTP 404 https://grebe-5519.example/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 5 ] );
 		$this->snapshot( 'cormorant-linear', [ 'state' => 'idle', 'reason' => 'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host' ] );
 		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_id' => 'proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ] );
 		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::READ;
@@ -333,7 +333,7 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame(
 			[
 				[ 'name' => 'kestrel-linear', 'class' => 'Linear_Source', 'tier' => 'internal', 'state' => 'idle' ],
-				[ 'name' => 'publication4-feed', 'class' => 'Feed_Source', 'tier' => 'public', 'state' => 'failing', 'last_ok_at' => 1792470021, 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 5 ],
+				[ 'name' => 'grebe-feed', 'class' => 'Feed_Source', 'tier' => 'public', 'state' => 'failing', 'last_ok_at' => 1792470021, 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 5 ],
 				[ 'name' => 'cormorant-linear', 'class' => 'Context_A8C_Linear', 'tier' => 'internal', 'state' => 'idle', 'reason' => 'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host' ],
 			],
 			$this->ci->dispatch( 'health', [ 'sources' ] )['sources']
@@ -343,14 +343,14 @@ final class IntelligenceHealthTest extends TestCase {
 
 	/** A manager sees the credential a source needs, the extractor's Vault id and every error text. */
 	public function test_a_manager_sees_credential_vault_id_and_error(): void {
-		$this->collect( 'make_node Linear_Source kestrel-linear internal linear-t7', 'make_node Feed_Source publication4-feed public' );
-		$this->snapshot( 'publication4-feed', [ 'state' => 'failing', 'last_ok_at' => null, 'last_error' => 'HTTP 404 https://publication4.test/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 3, 'reason' => null ] );
+		$this->collect( 'make_node Linear_Source kestrel-linear internal linear-t7', 'make_node Feed_Source grebe-feed public' );
+		$this->snapshot( 'grebe-feed', [ 'state' => 'failing', 'last_ok_at' => null, 'last_error' => 'HTTP 404 https://grebe-5519.example/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 3, 'reason' => null ] );
 		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_id' => 'proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ] );
 		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::MANAGE;
 
 		$sources = $this->ci->dispatch( 'health', [ 'sources' ] )['sources'];
 		$this->assertSame( [ 'url' => 'https://api.linear.app/graphql', 'group' => 'linear-t7' ], $sources[0]['credential'] );
-		$this->assertSame( 'HTTP 404 https://publication4.test/feed/', $sources[1]['last_error'] );
+		$this->assertSame( 'HTTP 404 https://grebe-5519.example/feed/', $sources[1]['last_error'] );
 		$this->assertSame( [ 'proxy-k9', 'HTTP 502 https://proxy.test/v1' ], \array_values( \array_intersect_key( $this->ci->dispatch( 'health', [ 'extraction' ] ), [ 'vault_id' => 1, 'last_error' => 1 ] ) ) );
 	}
 

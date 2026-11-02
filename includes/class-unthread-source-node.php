@@ -47,12 +47,8 @@ class Unthread_Source_Node extends Source_Node {
 	/** A conversation id, which every url naming it carries. */
 	private const UUID = '/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\z/i';
 
-	/** @var array<string,array{ticket:string,context:string}> Each conversation this pass reads, by its id: `#<friendlyId>`, and its context line. */
-	private array $conversations = [];
-
-	/** Queue the first page of conversations, forgetting the last pass's. */
+	/** Queue the first page of conversations. */
 	protected function begin(): void {
-		$this->conversations = [];
 		$this->page( self::CONVERSATIONS . 'list', self::LIST_BODY );
 	}
 
@@ -80,7 +76,7 @@ class Unthread_Source_Node extends Source_Node {
 			return [];
 		}
 		if ( '' !== $next ) {
-			$this->page( $url, self::MESSAGES_BODY, $next );
+			$this->page( $url, self::MESSAGES_BODY, $next, $this->note() );
 		}
 		return $this->messages( \explode( '/', \substr( $url, \strlen( self::CONVERSATIONS ) ), 2 )[0], $url, $rows );
 	}
@@ -117,8 +113,8 @@ class Unthread_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * Remember a conversation's context line and friendly id and queue its
-	 * messages, unless its id is not a uuid, which is logged.
+	 * Queue a conversation's messages, noting its friendly id and context
+	 * line, unless its id is not a uuid, which is logged.
 	 *
 	 * @param array<array-key,mixed> $conversation The conversation.
 	 */
@@ -128,11 +124,11 @@ class Unthread_Source_Node extends Source_Node {
 			$this->print_less_often( 'Unthread named a conversation whose id is not a uuid: ', Core::terminal_safe( $id ) );
 			return;
 		}
-		$this->conversations[ $id ] = [
+		$note = [
 			'ticket'  => '#' . Core::as_string( $conversation['friendlyId'] ?? null ),
 			'context' => self::context( $conversation ),
 		];
-		$this->page( self::CONVERSATIONS . "{$id}/messages/list", self::MESSAGES_BODY );
+		$this->page( self::CONVERSATIONS . "{$id}/messages/list", self::MESSAGES_BODY, '', $note );
 	}
 
 	/**
@@ -151,7 +147,7 @@ class Unthread_Source_Node extends Source_Node {
 
 	/**
 	 * A messages page's messages as items, their mrkdwn decoded, each
-	 * titled by its conversation's friendly id and its own first line, so no
+	 * titled by the friendly id its page notes and its own first line, so no
 	 * two messages share a title, its body its conversation's context line,
 	 * then its poster's name and its text, and dated by its Slack-style ts;
 	 * one missing its ts or text is logged and left out.
@@ -162,7 +158,8 @@ class Unthread_Source_Node extends Source_Node {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function messages( string $id, string $url, array $rows ): array {
-		[ 'ticket' => $ticket, 'context' => $context ] = $this->conversations[ $id ];
+		$ticket  = Core::as_string( $this->note()['ticket'] ?? '' );
+		$context = Core::as_string( $this->note()['context'] ?? '' );
 		return self::items(
 			$rows,
 			function ( array $message ) use ( $id, $url, $ticket, $context ): ?array {
@@ -191,17 +188,18 @@ class Unthread_Source_Node extends Source_Node {
 
 	/**
 	 * Queue a page of a list endpoint: its body, with the cursor after the
-	 * first page.
+	 * first page, and the note its answer reads.
 	 *
-	 * @param string              $url    The endpoint's url.
-	 * @param array<string,mixed> $body   The first page's body.
-	 * @param string              $cursor The page's cursor; '' for the first.
+	 * @param string                 $url    The endpoint's url.
+	 * @param array<string,mixed>    $body   The first page's body.
+	 * @param string                 $cursor The page's cursor; '' for the first.
+	 * @param array<array-key,mixed> $note   What the answer reads back.
 	 */
-	private function page( string $url, array $body, string $cursor = '' ): void {
+	private function page( string $url, array $body, string $cursor = '', array $note = [] ): void {
 		if ( '' !== $cursor ) {
 			$body['cursor'] = $cursor;
 		}
-		$this->queue( $url, (string) \wp_json_encode( $body ) );
+		$this->queue( $url, (string) \wp_json_encode( $body ), null, $note );
 	}
 
 	/** Unthread answers nothing without a credential, so a pass waits for one. */

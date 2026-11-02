@@ -17,8 +17,6 @@ require_once __DIR__ . '/../support/drives-curl.php';
 final class GithubSourceTest extends TestCase {
 	use Drives_Curl;
 
-	private const HERON = 'https://api.github.com/repos/acme/heron-repo/';
-
 	protected function setUp(): void {
 		parent::setUp();
 		$this->install_curl();
@@ -43,16 +41,16 @@ final class GithubSourceTest extends TestCase {
 		return $node;
 	}
 
-	/** The three endpoint urls of a repo, in the order a pass fetches them. */
+	/** The three endpoint urls of a repo, in the order a pass fetches them, its Table's, by url. */
 	private static function endpoints( string $repo ): array {
 		return [
-			"https://api.github.com/repos/{$repo}/releases?per_page=30",
-			"https://api.github.com/repos/{$repo}/pulls?state=closed&sort=updated&direction=desc&per_page=30",
 			"https://api.github.com/repos/{$repo}/issues?state=all&sort=updated&direction=desc&per_page=30",
+			"https://api.github.com/repos/{$repo}/pulls?state=closed&sort=updated&direction=desc&per_page=30",
+			"https://api.github.com/repos/{$repo}/releases?per_page=30",
 		];
 	}
 
-	/** A pass GETs each repo's releases, closed pull requests and issues, 30 a page, one at a time. */
+	/** A pass GETs each repo's issues, closed pull requests and releases, 30 a page, one at a time. */
 	public function test_a_pass_fetches_three_endpoints_per_repo_one_at_a_time(): void {
 		$node = $this->github( [ 'public' ], 'acme/heron-repo', 'acme/kite-repo' );
 		$urls = [ ...self::endpoints( 'acme/heron-repo' ), ...self::endpoints( 'acme/kite-repo' ) ];
@@ -72,14 +70,14 @@ final class GithubSourceTest extends TestCase {
 	public function test_answers_normalize_releases_merged_prs_and_issues(): void {
 		$node = $this->github( [ 'public' ], 'acme/heron-repo' );
 		$this->tick( $node );
-		[ $releases, $pulls, $issues ] = self::endpoints( 'acme/heron-repo' );
+		[ $issues, $pulls, $releases ] = self::endpoints( 'acme/heron-repo' );
 
 		$this->complete(
-			$releases,
+			$issues,
 			(string) \json_encode(
 				[
-					[ 'id' => 11, 'name' => 'v2.0', 'tag_name' => 'v2.0', 'html_url' => 'https://gh/r/releases/11', 'body' => 'release notes', 'published_at' => '2026-06-10T00:00:00Z' ],
-					[ 'id' => 12, 'name' => '', 'tag_name' => 'v2.1-tag', 'html_url' => 'https://gh/r/releases/12', 'body' => '', 'published_at' => '2026-06-14T00:00:00Z' ],
+					[ 'number' => 7, 'title' => 'Real issue', 'html_url' => 'https://gh/r/issues/7', 'body' => 'issue body', 'updated_at' => '2026-06-12T00:00:00Z' ],
+					[ 'number' => 5, 'title' => 'PR masquerading as issue', 'html_url' => 'https://gh/r/pull/5', 'body' => 'x', 'updated_at' => '2026-06-11T00:00:00Z', 'pull_request' => [ 'url' => 'https://gh/r/pull/5' ] ],
 				]
 			)
 		);
@@ -93,17 +91,17 @@ final class GithubSourceTest extends TestCase {
 			)
 		);
 		$this->complete(
-			$issues,
+			$releases,
 			(string) \json_encode(
 				[
-					[ 'number' => 7, 'title' => 'Real issue', 'html_url' => 'https://gh/r/issues/7', 'body' => 'issue body', 'updated_at' => '2026-06-12T00:00:00Z' ],
-					[ 'number' => 5, 'title' => 'PR masquerading as issue', 'html_url' => 'https://gh/r/pull/5', 'body' => 'x', 'updated_at' => '2026-06-11T00:00:00Z', 'pull_request' => [ 'url' => 'https://gh/r/pull/5' ] ],
+					[ 'id' => 11, 'name' => 'v2.0', 'tag_name' => 'v2.0', 'html_url' => 'https://gh/r/releases/11', 'body' => 'release notes', 'published_at' => '2026-06-10T00:00:00Z' ],
+					[ 'id' => 12, 'name' => '', 'tag_name' => 'v2.1-tag', 'html_url' => 'https://gh/r/releases/12', 'body' => '', 'published_at' => '2026-06-14T00:00:00Z' ],
 				]
 			)
 		);
 
 		$by = $this->recorded();
-		$this->assertSame( [ 'github:acme/heron-repo#release-11', 'github:acme/heron-repo#release-12', 'github:acme/heron-repo#pr-5', 'github:acme/heron-repo#issue-7' ], \array_keys( $by ) );
+		$this->assertSame( [ 'github:acme/heron-repo#issue-7', 'github:acme/heron-repo#pr-5', 'github:acme/heron-repo#release-11', 'github:acme/heron-repo#release-12' ], \array_keys( $by ) );
 		$release = $by['github:acme/heron-repo#release-11'];
 		$this->assertSame( 'github', $release['source'] );
 		$this->assertSame( 'v2.0', $release['title'] );
@@ -122,14 +120,14 @@ final class GithubSourceTest extends TestCase {
 		$stderr = $this->capture_stderr();
 		$node   = $this->github( [ 'public' ], 'acme/heron-repo' );
 		$this->tick( $node );
-		[ $releases, $pulls, $issues ] = self::endpoints( 'acme/heron-repo' );
+		[ $issues, $pulls, $releases ] = self::endpoints( 'acme/heron-repo' );
 
-		$this->complete( $releases, '', 502 );
+		$this->complete( $issues, '', 502 );
 		$this->complete( $pulls, '{"message":"not a list"', 200 );
-		$this->complete( $issues, (string) \json_encode( [ [ 'number' => 8, 'title' => 'Still here', 'html_url' => 'https://gh/r/issues/8', 'updated_at' => '2026-06-13T00:00:00Z' ] ] ) );
+		$this->complete( $releases, (string) \json_encode( [ [ 'id' => 81, 'name' => 'Still here', 'html_url' => 'https://gh/r/releases/81', 'published_at' => '2026-06-13T00:00:00Z' ] ] ) );
 
-		$this->assertSame( [ 'github:acme/heron-repo#issue-8' ], \array_keys( $this->recorded() ) );
-		$this->assertCount( 1, self::stderr_lines( $stderr, "github: a fetch failed for {$releases}: HTTP 502 {$releases}" ) );
+		$this->assertSame( [ 'github:acme/heron-repo#release-81' ], \array_keys( $this->recorded() ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, "github: a fetch failed for {$issues}: HTTP 502 {$issues}" ) );
 	}
 
 	/** The vault group the make_node line names lends every request GitHub's token, as its entry names the header. */
@@ -148,7 +146,7 @@ final class GithubSourceTest extends TestCase {
 
 		$this->tick( $node );
 
-		$this->assertContains( 'Authorization: Bearer ghp_vault_5512', $this->opts[ self::HERON . 'releases?per_page=30' ][ \CURLOPT_HTTPHEADER ] );
+		$this->assertContains( 'Authorization: Bearer ghp_vault_5512', $this->opts[ self::endpoints( 'acme/heron-repo' )[0] ][ \CURLOPT_HTTPHEADER ] );
 		$this->assertMatchesRegularExpression( '/^make_node \S+ github public github-7731$/m', $node->dump_config() );
 	}
 
@@ -180,13 +178,13 @@ final class GithubSourceTest extends TestCase {
 		$this->assertSame( [ 'acme/heron-repo' ], $this->read_private( $node, 'repos' ) );
 	}
 
-	/** A body that is not a JSON list, a JSON object of release-shaped rows among them, records nothing, logged. */
+	/** A body that is not a JSON list, a JSON object of issue-shaped rows among them, records nothing, logged. */
 	public function test_a_body_that_is_not_a_list_records_nothing(): void {
 		$stderr = $this->capture_stderr();
 		$node   = $this->github( [ 'public' ], 'acme/heron-repo' );
 		$this->tick( $node );
 
-		$this->complete( self::endpoints( 'acme/heron-repo' )[0], (string) \json_encode( [ 'first' => [ 'id' => 91, 'name' => 'v9.1', 'html_url' => 'https://gh/r/releases/91', 'published_at' => '2026-06-15T00:00:00Z' ] ] ) );
+		$this->complete( self::endpoints( 'acme/heron-repo' )[0], (string) \json_encode( [ 'first' => [ 'number' => 91, 'title' => 'Issue 91', 'html_url' => 'https://gh/r/issues/91', 'updated_at' => '2026-06-15T00:00:00Z' ] ] ) );
 
 		$this->assertSame( [], $this->recorded() );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'github: GitHub answered an error for ' . self::endpoints( 'acme/heron-repo' )[0] . ': the answer is not a list' ) );

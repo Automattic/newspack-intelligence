@@ -57,13 +57,14 @@ first, then a topological walk of the call graph. The `includes/**/*.php` and
 recognizes — both drop an unknown `--` token — so those two entries do exactly
 what the plain `--check` entries do.
 
-Inside dndocker, PHPUnit runs in the container from the `/services` mount, never
-from `/usr/src`, and the static tools run on the host:
+PHPUnit runs from `tests/`, and the static tools run on the host. The test
+bootstrap loads WordPress's own `WP_HTML_Tag_Processor` and `WP_Http`, which
+the feed reads a home page with, from the WordPress install `WP_ABSPATH`
+names, and refuses to start without it; `scripts/pre-push.local` sets it for
+the push:
 
 ```bash
-docker exec eve-pyrobase1-1 /services/pyrobase/setup/newspack-intelligence.sh
-docker exec -u bend eve-pyrobase1-1 bash -c \
-  'cd /services/pyrobase/sources/newspack-intelligence/tests && ../vendor/bin/phpunit --enforce-time-limit'
+cd tests && WP_ABSPATH=<wordpress root> ../vendor/bin/phpunit --enforce-time-limit
 ```
 
 `--enforce-time-limit` is what makes the budget real: `phpunit.xml` sets no
@@ -1060,8 +1061,8 @@ tick clock, which the substrate pins at class load.
 `p2`, `p2-restricted`, `unthread`, `feed`, `news`) fetch inside the background worker
 without blocking it and emit one `item_recorded` event per new item to
 `intel:writer`. Each records at the
-tier its `make_node` line names (`make_node Feed_Source feed public`), which
-a load without one refuses and `set_tier` replaces at runtime. A source
+tier its `make_node` line names (`make_node Feed_Source feed public`),
+which a load without one refuses and `set_tier` replaces at runtime. A source
 fetches on a `TICK` request, which `fetch_now` sends, and on the wall-clock
 grid once `set_interval <seconds>` sets its interval: it rides the Router's
 tick and fetches when `intdiv( now, interval )` passes the value it had at
@@ -1069,14 +1070,15 @@ the process's previous tick, so a 900-second source fetches at :00, :15, :30
 and :45 whatever its worker's age. A process's first tick only marks the
 clock, so a respawned worker waits for the next boundary rather than
 fetching at spawn, and a boundary that passes while no worker runs is
-skipped. With no interval set a source holds no timer and only `TICK`
+skipped; only a pass its Table still holds resumes at once (below). With no interval set a source holds no timer and only `TICK`
 fetches. The collect topology sets GitHub, Linear, Slack and Unthread to
 900 seconds, both P2 nodes and `feed` to 1,800, and `news` to 3,600.
 
 `Source_Node` owns the chain every source fetches on, and each source
 supplies two seams: `begin()`, which queues the pass's opening requests
-through `queue( $url, $body )` — a GET, or with a body a POST of it as
-JSON — and `received( $url, $body )`, which turns one answer into
+through `queue( $url, $body, $subject, $note )` — a GET, or with a body a
+POST of it as JSON, carrying a note `note()` reads back as its answer is
+taken — and `received( $url, $body )`, which turns one answer into
 normalized items and may queue the next requests, the next page's url
 built by `add_query_arg()`. Three helpers serve `received()`:
 `json_answer()` decodes a JSON body and, for a body that is no JSON object
@@ -1089,17 +1091,22 @@ text's first line to `TITLE_CHARS` (120), and `mrkdwn()` decodes Slack's
 three escapes in one pass. `dump_config()` replays every declared setter, list and
 checked list. Three hooks tune it: `max_in_flight()`, `max_requests()`
 and `follows_redirects()`. A pass starts on a `TICK` or a grid boundary
-unless requests are in flight, in which case it starts nothing; it replaces
-whatever a throw left queued, calls `begin()`, and answers `{ fetching }`,
+unless requests are in flight, in which case it starts nothing; it drops
+whatever is still queued, calls `begin()`, and answers `{ fetching }`,
 the number of requests it opens on, 0 while one is in flight. A request
 is keyed by its subject, the url it was queued under: it goes to the
 source's `{name}:curl` sibling, the substrate's `Curl_Node`, as a
 TM_STRUCT whose KEY is that subject and whose VALUE is `{ url, method }`
-for its current hop, `body` added for a POST, and Curl answers back
-through its target with a copy of that message, KEY untouched.
+for its current hop, `body` added for a POST, and `public_only` as the
+source's `public_only()` answers: true, so a source reaches public
+addresses alone, a redirect's every hop included, but for a ContextA8C
+source, whose requests may go through a proxy Curl refuses beside the flag;
+Curl answers back through its target with a copy of that message, KEY
+untouched.
 `max_in_flight()`, clamped to `Curl_Node::MAX_IN_FLIGHT` (16), bounds the
 requests in flight: 1 for the API sources, so theirs go strictly one
-after another, and 16 for the feeds. A host takes one request at a time,
+after another, and the feed's `concurrency`, 16 unless `set_concurrency`
+lowers it, for the feeds. A host takes one request at a time,
 so a request whose host is busy waits in the queue while others go
 past it; the `news` node's searches, all on news.google.com, go out one
 after another. `max_requests()` bounds a pass:
@@ -1116,8 +1123,8 @@ branch alone. An answer that throws is logged under its subject, and the
 drain runs on; a cooperative stop propagates (substrate ADR-14). An answer
 for no request in flight is dropped, and the next request goes out whatever
 the record did, so a pass always ends once nothing is queued or in flight.
-A request Curl throws on leaves flight, so a throw costs one pass, never
-the source. A scheduled pass that throws is logged naming the source and
+A request Curl throws on leaves flight, so a throw costs that request,
+never the source. A scheduled pass that throws is logged naming the source and
 tried again at the next boundary, so it never stops the worker, and a throw
 on the `TICK` path propagates out of `fill()`, which no catch answers as a
 TM_ERROR.
@@ -1159,6 +1166,26 @@ all seven keys — `state`, `last_ok_at`, `last_error`, `failing_since`,
 because a publish merges over the snapshot read back. A source that cannot fetch calls
 `idle( $reason )`, publishing `{ state: idle, reason }`, which its pass's
 end leaves standing; only the ContextA8C sources do, below.
+
+A pass outlives its worker. Each source owns a sqlite Table,
+`{name}:frontier`, which its schema declares under `owns` and the analyzer
+reads, and keeps every request in it through the substrate's `Frontier`,
+by subject, until it is answered. A send takes `TAKE_ROOMS` (4) times
+`max_in_flight()` from the Table once half the room, or all of it, is
+free, so requests waiting on a busy host leave room for the rest; the
+Table hands them lowest subject first, so a pass sends in about that
+order. A request's url, body, hop count and note ride in the member, so it
+resumes at the hop it reached with what its answer needs. A process's first
+send returns `inflight` to `pending`, and every Router tick with nothing in
+flight sends what the Table holds, so the next worker's first tick resumes
+a pass a recycle or a crash cut, a request in flight then sent again; its
+counts start afresh. A clean stop's `shutdown_sweep()` removes the
+answered requests the Table still lists, so the next worker sends none of
+them again. A pass starting on a `TICK` or a boundary drops what the Table
+still holds, and a replay naming another vault group sends again
+what the rebuilt Curl dropped. The ContextA8C sources own no Table: their
+`Frontier` keeps the requests in the process, because a pass's MCP session
+does not outlive it.
 Curl sends `User-Agent: newspack-nodes/<version>` (`Curl_Node::USER_AGENT`)
 on every fetch, which some feeds require — PartnerOrg26 Lab and PartnerOrg27 answer 403
 without one.
@@ -1201,15 +1228,16 @@ re-resolution, which runs no NER step and is forwarded for extraction only
 while the item is still owed one; re-resolution proper has its own path, the
 reresolver.
 
-A feed pass queues each configured feed, then each client's, under its
-own url. The feed's Curl follows no redirect, so the base re-queues each
-Location under the feed it redirects.
-A body is a client's when the url it was queued under is one of the
-pass's client feeds, which `config()` names at the start of the pass, and
-its domain is that url's host, so a client's feed keeps its lane wherever
-it is redirected, and a configured feed redirected onto a client's
-`/feed/` keeps its own. Each body is parsed as RSS 2.0 or Atom when it
-lands and its items recorded then. The `news` node is a second
+A feed pass queues each configured feed under its own url, then each
+client's, its note naming the client's domain and found feed, and bounds
+every request's connection at `Feed_Source_Node::CONNECT_TIMEOUT` (10)
+seconds within Curl's 30, through Curl's `connect_timeout`. The feed's Curl
+follows no redirect, so the base re-queues each Location under the feed it
+redirects, note and all, and a configured feed redirected onto a client's
+`/feed/` keeps its own lane. A body that is no RSS or Atom feed fails,
+logged once under its own url with libxml's first error or the root
+element found. Each body is parsed as RSS 2.0 or Atom when it lands and
+its items recorded then. The `news` node is a second
 `Feed_Source` holding one Google News search per organization that
 publishes no usable feed, each pairing the organization's quoted name with
 a journalism term.
@@ -1226,11 +1254,39 @@ both configured and a client's is fetched once, as configured. A client's
 items stay in its lane: each is keyed `feed:<domain>:<guid>`, so no other
 feed can take its key first, and records only when its link's host,
 normalised as `Entity_Index::identifier_value()` spells a domain, is the
-client's domain or a subdomain of it, and its `item_ts` falls from
+client's domain, the host of the feed its request notes its home page
+advertised, so spelled, or a subdomain of either, and its `item_ts` falls
+from
 `Feed_Source_Node::CLIENT_FEED_DAYS` (7) days before the worker's clock to
 one day after it, the day ahead allowing for the publisher's own zone or
 clock; an undated one never records. A configured feed keys `feed:<guid>`
 and records every item, so an item two configured feeds list records once.
+
+A client's feed that answers a 4xx, a body that is no feed, or a redirect
+off its lane listing no item that links into it is lost, and the client's
+home page, `https://<domain>/`, is fetched in the same pass, its redirects
+followed anywhere. The first `<link rel="alternate">` of type
+`application/rss+xml` or `application/atom+xml` it carries, read with
+WordPress's `WP_HTML_Tag_Processor` and resolved by
+`WP_Http::make_absolute_url()` against the url the page landed on, is
+fetched under the client's feed and remembered as the domain's feed, when
+`Curl_Node::origin_of()` reads it as http or https free of userinfo and
+`Entity_Index::hostname_fault()` finds its host a plain hostname; one
+refused is logged once under the page and fails discovery. A remembered
+feed that is lost, a page advertising none, only the conventional feed or
+one refused, a home page answering a 4xx, or a host that does not resolve
+(curl error 6) backs the domain off and forgets its found feed: it sits out
+the next 1, 2, 4 … passes, doubling with each failure in a row up to
+`Feed_Source_Node::MAX_SKIP_PASSES` (48), kept as `retry_at`, the start of
+the pass it runs in again on the grid of the feed's interval, and a client
+feed that answers resets it. A timeout, a 5xx and any other curl error back
+nothing off. Each domain's found feed, failures and `retry_at` live in one
+row of the feed's Table, `domains`, kept a week and holding the pass's
+clients alone: read at a pass's first use, and written, when changed, at
+the Router's next tick, as the pass ends and on a clean stop, until the
+Table takes it. A read the Table does not
+answer runs the pass with no backoff and writes nothing, so it never
+overwrites the row.
 
 `Github_Source_Node` GETs three REST endpoints per repo each pass — releases,
 closed pull requests and issues — and reads which one an answer is from its
@@ -1254,9 +1310,11 @@ one whose `data.issues.nodes` is not a list does.
 
 `Slack_Source_Node` asks `auth.test` while it holds no workspace url,
 which it keeps for the worker's life when it is https and names a host,
-and otherwise logs, then each channel's
-`conversations.history` over `WINDOW_SECONDS` (two days), 200 a page; a
-message recorded before `auth.test` answers carries no url. An answer's
+and otherwise logs; once it answers, or straight away with the url held,
+each channel's `conversations.history` over `WINDOW_SECONDS` (two days),
+200 a page, every page noting the workspace, so a page another worker
+resumes links its messages the same; a pass whose `auth.test` named none,
+or failed in transport, records them with no url. An answer's
 url names its endpoint, channel, window and thread. A page naming
 `response_metadata.next_cursor` queues the next by `cursor`, and from a
 history page each message with replies whose `latest_reply` is newer than
@@ -1279,7 +1337,7 @@ rate-limited, and records nothing. `add_channel` refuses anything but
 `^[CG][A-Z0-9]{8,}\z`. A reply under a parent older than the window is not
 seen.
 
-`P2_Source_Node` asks each site's posts, then its comments, through the
+`P2_Source_Node` asks each site's posts and comments through the
 WordPress.com REST API since `WINDOW_SECONDS` (seven days) ago, 100 a
 page. A posts page's `meta.next_page` is sent back as `page_handle`;
 comments carry no handle, so a full page of them queues the next `page`.
@@ -1309,13 +1367,12 @@ filters. Each conversation whose `updatedAt` falls within two intervals, or
 `conversations/<id>/messages/list` with `{ limit: 100 }`, as Slack reads
 only the threads that moved, so a pass re-reads only the conversations
 that moved since the pass before last; an id that is not a uuid is logged
-and skipped, and the node keeps that conversation's `#<friendlyId>` and
-context line for the pass. A page whose `cursors.hasNext` is true queues
+and skipped, and each messages page notes the conversation's
+`#<friendlyId>` and context line, which every later page carries on. A page whose `cursors.hasNext` is true queues
 the next with `cursor: cursors.next` added to its body. A conversations page
 does so only while its last conversation with an `updatedAt` that parses is
-inside the edge, skipping one whose `updatedAt` does not parse, and queues
-it behind the first page of each of its conversations' messages, so a later
-page of messages waits behind it. Each message records as
+inside the edge, skipping one whose `updatedAt` does not parse; its
+conversations' messages sort ahead of it in the Table. Each message records as
 `unthread:<conversation id>:<ts>`, one item per message rather than per
 conversation, because the projection dedup records only keys the graph
 lacks and a conversation recorded once would never gain its later
@@ -1537,13 +1594,13 @@ plugin adds:
 
 | Type | Class | Runtime triggers and verbs |
 |------|-------|----------------------------|
-| `Github_Source` | `Github_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_repo`, `remove_repo`; owns `{name}:curl` |
-| `Linear_Source` | `Linear_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_team`, `remove_team`; owns `{name}:curl` |
-| `Slack_Source` | `Slack_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_channel`, `remove_channel`; owns `{name}:curl` |
-| `P2_Source` | `P2_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_site`, `remove_site`; owns `{name}:curl` |
-| `Unthread_Source` | `Unthread_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`; owns `{name}:curl` |
+| `Github_Source` | `Github_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_repo`, `remove_repo`; owns `{name}:curl` and `{name}:frontier` |
+| `Linear_Source` | `Linear_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_team`, `remove_team`; owns `{name}:curl` and `{name}:frontier` |
+| `Slack_Source` | `Slack_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_channel`, `remove_channel`; owns `{name}:curl` and `{name}:frontier` |
+| `P2_Source` | `P2_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_site`, `remove_site`; owns `{name}:curl` and `{name}:frontier` |
+| `Unthread_Source` | `Unthread_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`; owns `{name}:curl` and `{name}:frontier` |
 | `Context_A8C_Slack`, `Context_A8C_P2`, `Context_A8C_Linear` | `Context_A8C_*_Node` over `Context_A8C_Source_Node` | `<tier> <auth_dir> [proxy]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, and the list verbs of the source each stands in for; owns `{name}:curl` |
-| `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_url`, `remove_url`, `set_client_feeds`; owns `{name}:curl` |
+| `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_url`, `remove_url`, `set_client_feeds`, `set_concurrency`; owns `{name}:curl` and `{name}:frontier` |
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
 | `Resolver` | `Resolver_Node` | `<writer> <later>`; the `LLM_Config` verbs; publishes its hold (`reason`, `since`) through `Publishes_Status` |
@@ -1752,9 +1809,10 @@ declares no hook or filter of its own for others to extend.
   and its transient variants and strips `newspack_intelligence_restricted`
   from every user's own grant, on every site of a multisite, with or
   without the substrate active, and
-  `delete_graph_tables()` removes the SQLite files, WAL files included, of
+  `delete_tables()` removes the SQLite files, WAL files included, of
   every Row_Table the plugin's own topologies declare with the `Intel_Graph`
-  schema, on every partition — under a base directory this install
+  schema and of every `{name}:frontier` Table their sources own, on every
+  partition — under a base directory this install
   configured, never the default one every unconfigured install shares. The
   substrate's uninstall removes the streams with the rest of its runtime
   tree. Deactivation removes nothing.

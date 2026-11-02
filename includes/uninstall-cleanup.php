@@ -2,8 +2,9 @@
 /**
  * Uninstall cleanup helpers: every option row the plugin wrote, the
  * restricted-access capability on every user, and the SQLite files of the
- * Row_Table its topologies declare with the Intel_Graph schema. The
- * substrate's uninstall removes the rest of the runtime tree.
+ * Row_Table its topologies declare with the Intel_Graph schema and of each
+ * source's frontier Table. The substrate's uninstall removes the rest of
+ * the runtime tree.
  *
  * Loaded only from uninstall.php (plugin delete). Kept out of the autoloader so
  * it costs nothing at runtime.
@@ -43,19 +44,16 @@ function delete_prefixed_options( $wpdb, string $prefix ): int {
 }
 
 /**
- * Delete the SQLite files, WAL files included, of every Row_Table the
- * plugin's own topologies declare with the Intel_Graph schema, on every
- * partition a fleet can run. Only this plugin's topologies are read, inside
- * `Topology_Registry::with_stock_dir()`, so another plugin's broken one
- * cannot block the uninstall and the dir is left unregistered; a broken one
- * this plugin ships fails loud. Nothing is deleted under the default base
- * directory, which every unconfigured install on a host shares, nor where
- * the substrate is not loaded.
+ * Delete, on every partition, the SQLite and WAL files of every Intel_Graph
+ * Row_Table and frontier Table this plugin's own topologies declare, read
+ * inside `Topology_Registry::with_stock_dir()` so no other plugin's can
+ * block it; nothing under the default base every unconfigured install
+ * shares, nor without the substrate.
  *
  * @param string $topologies_dir The plugin's shipped `.tsl` files.
  * @return int Files deleted.
  */
-function delete_graph_tables( string $topologies_dir ): int {
+function delete_tables( string $topologies_dir ): int {
 	if ( ! \class_exists( '\Newspack_Nodes\Table_Node' ) ) {
 		return 0;
 	}
@@ -74,7 +72,15 @@ function delete_graph_tables( string $topologies_dir ): int {
 					$shipped[] = $name;
 				}
 			}
-			return \Newspack_Nodes\Bootstrap::row_tables_of( Intel_Graph_Row_Schema::class, ...$shipped );
+			$tables = \Newspack_Nodes\Bootstrap::row_tables_of( Intel_Graph_Row_Schema::class, ...$shipped );
+			foreach ( $shipped as $name ) {
+				foreach ( \array_keys( \Newspack_Nodes\Topology_Analyzer::declared_tables( $name ) ) as $table ) {
+					if ( \str_ends_with( $table, ':' . Source_Node::FRONTIER ) ) {
+						$tables[] = $table;
+					}
+				}
+			}
+			return \array_values( \array_unique( $tables ) );
 		}
 	);
 	$deleted = 0;

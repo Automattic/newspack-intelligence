@@ -373,6 +373,20 @@ if ( ! function_exists( '_n' ) ) {
 // Canonical shared WP shims from the substrate; local overrides above win.
 require_once \dirname( __DIR__, 2 ) . '/newspack-nodes/tests/Helpers/wp-shims.php';
 
+// WordPress's parsers the feed reads a home page with, as wp-settings.php loads them.
+$newspack_intelligence_abspath = \getenv( 'WP_ABSPATH' );
+if ( ! \is_string( $newspack_intelligence_abspath ) || ! \is_file( "{$newspack_intelligence_abspath}/wp-includes/class-wp-http.php" ) ) {
+	throw new \RuntimeException( 'newspack-intelligence tests need WP_ABSPATH naming a WordPress install, whose wp-includes they load' );
+}
+\define( 'NEWSPACK_INTELLIGENCE_TEST_WPINC', \rtrim( $newspack_intelligence_abspath, '/' ) . '/wp-includes' );
+require_once NEWSPACK_INTELLIGENCE_TEST_WPINC . '/class-wp-token-map.php';
+foreach ( [ 'html5-named-character-references', 'class-wp-html-attribute-token', 'class-wp-html-span', 'class-wp-html-doctype-info', 'class-wp-html-text-replacement', 'class-wp-html-decoder', 'class-wp-html-tag-processor' ] as $newspack_intelligence_html_api ) {
+	require_once NEWSPACK_INTELLIGENCE_TEST_WPINC . "/html-api/{$newspack_intelligence_html_api}.php";
+}
+require_once NEWSPACK_INTELLIGENCE_TEST_WPINC . '/Requests/src/Autoload.php';
+\WpOrg\Requests\Autoload::register();
+require_once NEWSPACK_INTELLIGENCE_TEST_WPINC . '/class-wp-http.php';
+
 require_once \dirname( __DIR__, 2 ) . '/newspack-nodes/newspack-nodes.php';
 require_once \dirname( __DIR__, 2 ) . '/newspack-nodes/tests/Helpers/TopologyDurability.php';
 // The substrate does not wire its runtime at plugin-file scope (it defers to

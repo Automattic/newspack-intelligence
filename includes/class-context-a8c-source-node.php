@@ -421,15 +421,22 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 		return [ 'headers' => $headers ] + ( self::CLOSE === $subject ? [ 'method' => 'DELETE' ] : [] ) + $proxy;
 	}
 
+	/** A request may go through the proxy, which Curl refuses beside a public-only one. */
+	protected function public_only(): bool {
+		return false;
+	}
+
 	/**
-	 * A ContextA8C source's node_schema: the Source shape, with no vault
-	 * group, the token dir after the tier, and the proxy after it.
+	 * A ContextA8C source's node_schema: the Source shape, owning no Table,
+	 * since its session cannot outlive the process, with no vault group, the
+	 * token dir after the tier, and the proxy after it.
 	 *
 	 * @param list<array<string,mixed>> $commands The source's own verbs.
 	 * @return array<string,mixed>
 	 */
 	protected static function context_schema( string $description, string $tick_description, array $commands ): array {
-		$schema              = self::source_schema( $description, $tick_description, $commands, false );
+		$schema = self::source_schema( $description, $tick_description, $commands, false );
+		unset( $schema['owns'] );
 		$schema['arguments'] = [
 			...\array_values( Core::arr( $schema['arguments'] ?? null ) ),
 			[ 'name' => 'auth_dir', 'type' => 'string', 'required' => true, 'description' => 'The dir holding the ContextA8C relay\'s wordpress-remote-* token dirs, the host\'s ~/.mcp-auth as the container mounts it.' ],

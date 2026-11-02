@@ -9,6 +9,7 @@ use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
 use Newspack_Nodes\Message;
+use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Tests\TestCase;
 use Newspack_Nodes\Topology_Registry;
 
@@ -17,7 +18,7 @@ require_once __DIR__ . '/../support/drives-curl.php';
 
 /**
  * The feed source: a pass sends each feed URL to its `feed:curl` sibling,
- * at most Curl_Node::MAX_IN_FLIGHT at once, and records each body's items
+ * at most its concurrency at once, and records each body's items
  * as the body lands. The graph is real — a Router, an interpreter, the Curl
  * sibling and a capturing target — and only libcurl is stood in for,
  * through the substrate's dispatch and result seams.
@@ -250,7 +251,27 @@ XML;
 		$this->complete( 'https://heron-4471.example/feed/', $body );
 
 		$status = $this->published( 'feed' );
-		$this->assertSame( [ 'failing', 1, 1, 'no RSS or Atom feed at https://heron-4471.example/feed/' ], [ $status['state'], $status['requests'], $status['failed'], $status['last_error'] ] );
+		$this->assertSame( [ 'failing', 1, 1 ], [ $status['state'], $status['requests'], $status['failed'] ] );
+		$this->assertStringStartsWith( 'no RSS or Atom feed at https://heron-4471.example/feed/: ', $status['last_error'] );
+	}
+
+	/**
+	 * A body that is no feed is logged under its own url, saying why: two
+	 * feeds failing log two lines, and a feed failing again logs none.
+	 */
+	public function test_each_body_that_is_no_feed_is_logged_once_under_its_url(): void {
+		$stderr = $this->capture_stderr();
+		$node   = $this->feed( 'https://heron-4471.example/feed/', 'https://grebe-4472.example/feed/' );
+		$this->tick( $node );
+		$this->complete( 'https://heron-4471.example/feed/', '<html>not-a-feed-4471</html>' );
+		$this->complete( 'https://grebe-4472.example/feed/', '<rss><channel></channel></rss><rss>' );
+
+		$this->tick( $node );
+		$this->complete( 'https://heron-4471.example/feed/', '<html>not-a-feed-4471</html>' );
+
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: no RSS or Atom feed at https://heron-4471.example/feed/: its root element is <html>' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: no RSS or Atom feed at https://grebe-4472.example/feed/: Extra content at the end of the document' ) );
+		$this->assertCount( 2, self::stderr_lines( $stderr, 'feed: no RSS or Atom feed at ' ) );
 	}
 
 	public function test_malformed_xml_contributes_nothing(): void {
@@ -278,9 +299,12 @@ XML;
 		$this->assertSame( 2, $curl->transfers_in_flight() );
 	}
 
-	/** At most MAX_IN_FLIGHT feeds are in flight; each answer sends the next. */
-	public function test_at_most_sixteen_in_flight_and_the_next_sent_as_one_answers(): void {
-		$urls = \array_map( static fn ( int $i ): string => "https://outlet-{$i}.example/feed/", \range( 1, 18 ) );
+	/**
+	 * By default a feed sends as many as Curl takes at once, sixteen; each
+	 * answer sends the next.
+	 */
+	public function test_at_most_sixteen_in_flight_by_default_and_the_next_sent_as_one_answers(): void {
+		$urls = \array_map( static fn ( int $i ): string => \sprintf( 'https://outlet-%02d.example/feed/', $i ), \range( 1, 18 ) );
 		$node = $this->feed( ...$urls );
 
 		$this->tick( $node );
@@ -292,6 +316,26 @@ XML;
 		$this->assertSame( \array_slice( $urls, 0, 17 ), $this->dispatched );
 		$this->complete( $urls[0], '', 404 );
 		$this->assertSame( $urls, $this->dispatched );
+	}
+
+	/** `set_concurrency` bounds the feeds in flight, rides the dump, and refuses a count Curl cannot take. */
+	public function test_set_concurrency_bounds_the_feeds_in_flight(): void {
+		$urls = \array_map( static fn ( int $i ): string => "https://outlet-{$i}.example/feed/", \range( 1, 8 ) );
+		$node = $this->feed( ...$urls );
+		foreach ( [ '0', '17' ] as $refused ) {
+			try {
+				$node->interpreter()->dispatch( 'set_concurrency', [ $refused ] );
+				$this->fail( "concurrency {$refused} accepted" );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertSame( "concurrency wants a whole number from 1 to 16, got '{$refused}'", $e->getMessage() );
+			}
+		}
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'set_concurrency', [ '6' ] ) );
+
+		$this->tick( $node );
+
+		$this->assertSame( \array_slice( $urls, 0, 6 ), $this->dispatched );
+		$this->assertStringContainsString( "command_node feed:config set_concurrency 6\n", $node->dump_config() );
 	}
 
 	/** A body's items are recorded when it lands, while the other feeds are still in flight. */
@@ -374,6 +418,51 @@ XML;
 		$node->fill( $stray );
 
 		$this->assertSame( [], $this->recorded() );
+	}
+
+	/**
+	 * A pass's feeds wait in the feed's Table, so the process after a recycle
+	 * sends on its first tick the feed it had in flight and the one it never
+	 * sent, with no TICK and no boundary.
+	 */
+	public function test_a_pass_cut_by_a_recycle_resumes_in_the_next_process(): void {
+		$urls = [ 'https://auk-3301.example/feed/', 'https://bittern-3302.example/feed/', 'https://coot-3303.example/feed/' ];
+		$node = $this->feed( ...$urls );
+		$node->interpreter()->dispatch( 'set_concurrency', [ '1' ] );
+		$this->tick( $node );
+		$this->complete( $urls[0], self::RSS );
+
+		$successor = $this->successor( $node );
+		$this->fire_at( $successor, 7351.0 );
+		$this->complete( $urls[1], self::ATOM );
+		$this->complete( $urls[2], '', 404 );
+
+		$this->assertSame( [ $urls[0], $urls[1], $urls[1], $urls[2] ], $this->dispatched );
+		$this->assertArrayHasKey( 'feed:atom-id-1', $this->recorded() );
+	}
+
+	/** A client's feed the next process resumes keeps the client's lane, which rides with the request. */
+	public function test_a_resumed_client_feed_keeps_its_lane(): void {
+		$node = $this->client_feed();
+		$this->tick( $node );
+
+		$this->fire_at( $this->successor( $node ), Core::$now + 9.0 );
+		$this->complete( self::GAZETTE_FEED, self::rss( [ [ 'own-site', 'Own', (int) Core::$now - 60, self::GAZETTE ], [ 'offsite', 'Offsite', (int) Core::$now - 60, 'https://salemledger.example' ] ] ) );
+
+		$this->assertSame( [ 'feed:harborgazette.example:own-site' ], \array_keys( $this->recorded() ) );
+	}
+
+	/**
+	 * The process after a recycle: a feed under the stopped one's name and
+	 * arguments, configured alike, its Table the same.
+	 */
+	private function successor( Feed_Source_Node $stopped ): Feed_Source_Node {
+		$successor = $this->respawn( $stopped, new Feed_Source_Node() );
+		foreach ( $this->read_private( $stopped, 'urls' ) as $url ) {
+			$successor->interpreter()->dispatch( 'add_url', [ $url ] );
+		}
+		$successor->set_client_feeds( $this->read_private( $stopped, 'client_feeds' ) );
+		return $successor;
 	}
 
 	/** A rename carries the Curl sibling and its answers with it. */
@@ -465,7 +554,7 @@ XML;
 
 		$this->tick( $node );
 
-		$this->assertSame( [ 'https://kite-2201.example/feed/', 'https://pelican-7714.example/feed/', 'https://harborgazette.example/feed/' ], $this->dispatched );
+		$this->assertSame( [ 'https://harborgazette.example/feed/', 'https://kite-2201.example/feed/', 'https://pelican-7714.example/feed/' ], $this->dispatched );
 		$this->assertSame( [ [ 'verb' => 'TICK', 'data' => [ 'fetching' => 3 ] ] ], $this->answers() );
 	}
 
@@ -567,13 +656,15 @@ XML;
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: skipping a client domain that is not a plain hostname: 10.0.0.5: its top-level domain is not alphabetic' ) );
 	}
 
-	/** The feed sends every url it names to Curl, one on a private network included. */
-	public function test_a_feed_url_naming_a_private_address_is_sent_to_curl(): void {
-		$node = $this->feed( 'http://10.20.30.40/feed/', 'https://kite-2201.example/feed/' );
+	/** A configured feed is public-only too: one naming a private address is refused, never fetched, and fails. */
+	public function test_a_feed_url_naming_a_private_address_is_refused(): void {
+		$stderr = $this->capture_stderr();
+		$node   = $this->feed( 'http://10.20.30.40/feed/', 'https://kite-2201.example/feed/' );
 
 		$this->tick( $node );
 
-		$this->assertSame( [ 'http://10.20.30.40/feed/', 'https://kite-2201.example/feed/' ], $this->dispatched );
+		$this->assertSame( [ 'https://kite-2201.example/feed/' ], $this->dispatched );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: a fetch failed for http://10.20.30.40/feed/: refused private address http://10.20.30.40/feed/' ) );
 	}
 
 	/** Curl follows no redirect; the feed follows each Location itself, keeping the client's lane. */
@@ -651,14 +742,16 @@ XML;
 		$this->assertSame( [ 'feed:harborgazette.example:own-site', 'feed:own-site', 'feed:offsite' ], \array_keys( $this->recorded() ) );
 	}
 
-	/** A redirect onto a link-local url is sent to Curl like any other hop. */
-	public function test_a_redirect_to_a_private_address_is_sent_to_curl(): void {
-		$node = $this->feed( 'https://kite-2201.example/feed/' );
+	/** A redirect onto a link-local url is a public-only hop like any other, so Curl refuses it. */
+	public function test_a_redirect_to_a_private_address_is_refused(): void {
+		$stderr = $this->capture_stderr();
+		$node   = $this->feed( 'https://kite-2201.example/feed/' );
 		$this->tick( $node );
 
 		$this->redirect( 'https://kite-2201.example/feed/', 'http://169.254.169.254/feed/' );
 
-		$this->assertSame( [ 'https://kite-2201.example/feed/', 'http://169.254.169.254/feed/' ], $this->dispatched );
+		$this->assertSame( [ 'https://kite-2201.example/feed/' ], $this->dispatched );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: a fetch failed for https://kite-2201.example/feed/: refused private address http://169.254.169.254/feed/' ) );
 	}
 
 	/** A feed follows at most MAX_REDIRECTS hops; the next records nothing, logged. */
@@ -675,6 +768,489 @@ XML;
 		$this->assertCount( 6, $this->dispatched );
 		$this->assertSame( 'https://hop-5.example/feed/', \end( $this->dispatched ) );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: a request redirected past 5 hops; recording nothing: https://hop-6.example/feed/' ) );
+	}
+
+	/** The Gazette's conventional feed, and the home page discovery reads. */
+	private const GAZETTE_FEED = 'https://harborgazette.example/feed/';
+
+	private const GAZETTE_HOME = 'https://harborgazette.example/';
+
+	/** Where the Gazette's home page says its feed lives. */
+	private const GAZETTE_FOUND = 'https://gazette-news-6612.example/rss.xml';
+
+	/** The Pelican's conventional feed, which answers every pass. */
+	private const PELICAN_FEED = 'https://pelican-7714.example/feed/';
+
+	/**
+	 * The client feeds' source: the graph seeded with the clients, client
+	 * feeds on, a pass every 1,800 seconds.
+	 */
+	private function client_feed(): Feed_Source_Node {
+		$this->start_intel_graph();
+		$this->seed_clients();
+		$node = $this->feed();
+		$node->set_client_feeds( true );
+		$node->interpreter()->dispatch( 'set_interval', [ '1800' ] );
+		return $node;
+	}
+
+	/** A client pass opened, fetching the Gazette's and the Pelican's feeds. */
+	private function client_pass(): Feed_Source_Node {
+		$node = $this->client_feed();
+		$this->tick( $node );
+		return $node;
+	}
+
+	/** A home page whose head advertises one feed of $type at $href. */
+	private static function home_page( string $type, string $href ): string {
+		return "<!doctype html><html><head><title>Gazette</title><link rel='stylesheet' href='/a.css'><link rel=\"alternate\" type=\"{$type}\" title=\"Gazette &raquo; Feed\" href=\"{$href}\"></head><body>news</body></html>";
+	}
+
+	/** The feed's memory of each client domain, as its Table holds it. */
+	private static function domains(): mixed {
+		$table = Core::node( 'feed:frontier' );
+		\assert( $table instanceof Table_Node );
+		return $table->lookup( 'domains' );
+	}
+
+	/** Seed the feed's memory of each client domain, in its Table, before a pass asks for it. */
+	private function remembered( array $domains ): void {
+		$table = Core::node( 'feed:frontier' );
+		\assert( $table instanceof Table_Node );
+		$table->store( 'domains', $domains );
+	}
+
+	/**
+	 * A client feed answering 404 sends discovery to the client's home page,
+	 * whose advertised feed is fetched in the same pass under the client's
+	 * lane, which now takes the advertised feed's host too.
+	 */
+	public function test_a_client_feed_answering_404_is_found_on_its_home_page(): void {
+		$this->client_pass();
+		$now = (int) Core::$now;
+
+		$this->complete( self::GAZETTE_FEED, '', 404 );
+		$this->complete( self::GAZETTE_HOME, self::home_page( 'application/rss+xml', self::GAZETTE_FOUND ) );
+		$this->complete( self::GAZETTE_FOUND, self::rss( [ [ 'found', 'Found', $now - 60, 'https://gazette-news-6612.example' ], [ 'own', 'Own', $now - 60, self::GAZETTE ], [ 'stray', 'Stray', $now - 60, 'https://salemledger.example' ] ] ) );
+
+		$this->assertSame( [ self::GAZETTE_FEED, self::PELICAN_FEED, self::GAZETTE_HOME, self::GAZETTE_FOUND ], $this->dispatched );
+		$this->assertSame( [ 'feed:harborgazette.example:found', 'feed:harborgazette.example:own' ], \array_keys( $this->recorded() ) );
+	}
+
+	/** A found feed on a `www.` host admits items on the bare host and its subdomains, as a domain identifier spells it. */
+	public function test_a_found_feed_on_a_www_host_keeps_the_bare_host_in_its_lane(): void {
+		$this->client_pass();
+		$now   = (int) Core::$now;
+		$found = 'https://www.osprey-cdn-4420.example/feed.xml';
+
+		$this->complete( self::GAZETTE_FEED, '', 404 );
+		$this->complete( self::GAZETTE_HOME, self::home_page( 'application/rss+xml', $found ) );
+		$this->complete( $found, self::rss( [ [ 'bare-4420', 'Bare', $now - 60, 'https://osprey-cdn-4420.example' ], [ 'sub-4420', 'Sub', $now - 60, 'https://news.osprey-cdn-4420.example' ], [ 'stray-4420', 'Stray', $now - 60, 'https://salemledger.example' ] ] ) );
+
+		$this->assertSame( [ 'feed:harborgazette.example:bare-4420', 'feed:harborgazette.example:sub-4420' ], \array_keys( $this->recorded() ) );
+	}
+
+	/** A feed the home page advertised is fetched from then on, by the next process's passes too. */
+	public function test_a_found_feed_is_fetched_from_then_on(): void {
+		$node = $this->client_pass();
+		$this->complete( self::GAZETTE_FEED, '<html>a theme page-7740</html>' );
+		$this->complete( self::GAZETTE_HOME, self::home_page( 'application/rss+xml', self::GAZETTE_FOUND ) );
+		$this->complete( self::GAZETTE_FOUND, self::rss( [] ) );
+		$this->complete( self::PELICAN_FEED, self::rss( [] ) );
+
+		$this->tick( $this->successor( $node ) );
+
+		$this->assertSame( [ self::GAZETTE_FOUND, self::PELICAN_FEED ], \array_slice( $this->dispatched, -2 ) );
+	}
+
+	/**
+	 * A home page that redirects is read where it lands, so a relative feed
+	 * link resolves against that host, entities decoded, and Atom is taken.
+	 */
+	public function test_a_relative_feed_link_resolves_where_the_home_page_landed(): void {
+		$this->client_pass();
+		$now = (int) Core::$now;
+
+		$this->complete( self::GAZETTE_FEED, '', 410 );
+		$this->redirect( self::GAZETTE_HOME, 'https://gazette-moved-6613.example/' );
+		$this->complete( 'https://gazette-moved-6613.example/', self::home_page( 'application/atom+xml', '/search/?f=rss&amp;t=article' ) );
+		$this->complete( 'https://gazette-moved-6613.example/search/?f=rss&t=article', self::rss( [ [ 'moved', 'Moved', $now - 60, 'https://gazette-moved-6613.example' ] ] ) );
+
+		$this->assertSame( 'https://gazette-moved-6613.example/search/?f=rss&t=article', \end( $this->dispatched ) );
+		$this->assertSame( [ 'feed:harborgazette.example:moved' ], \array_keys( $this->recorded() ) );
+	}
+
+	/**
+	 * Where a home page landed, the page, and the feed it advertises.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public static function advertised_feeds(): array {
+		$moved = 'https://gazette-moved-6613.example/en/front';
+		return [
+			'whole'              => [ $moved, self::home_page( 'application/rss+xml', 'http://feeds-6614.example/g' ), 'http://feeds-6614.example/g' ],
+			'from the scheme'    => [ $moved, self::home_page( 'application/rss+xml', '//feeds-6614.example/g' ), 'https://feeds-6614.example/g' ],
+			'from the directory' => [ $moved, self::home_page( 'application/atom+xml', 'atom.xml' ), 'https://gazette-moved-6613.example/en/atom.xml' ],
+			'from the root page' => [ self::GAZETTE_HOME, self::home_page( 'application/rss+xml', 'rss' ), 'https://harborgazette.example/rss' ],
+			'single and bare'    => [ $moved, "<link type='Application/RSS+XML' rel='home alternate' href=/en/rss>", 'https://gazette-moved-6613.example/en/rss' ],
+			'after another link' => [ $moved, "<link rel=alternate type=text/html href=/es/><link rel=alternate type=application/atom+xml href=/en/atom>", 'https://gazette-moved-6613.example/en/atom' ],
+		];
+	}
+
+	/** A home page's feed link resolves against where the page landed. */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'advertised_feeds' )]
+	public function test_a_home_pages_feed_link_resolves_where_it_landed( string $landed, string $page, string $fetched ): void {
+		$this->client_pass();
+		$this->complete( self::GAZETTE_FEED, '', 404 );
+		if ( self::GAZETTE_HOME !== $landed ) {
+			$this->redirect( self::GAZETTE_HOME, $landed );
+		}
+
+		$this->complete( $landed, $page );
+
+		$this->assertSame( $fetched, \end( $this->dispatched ) );
+	}
+
+	/**
+	 * A home page's link the feed may not fetch, and why it is refused.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public static function refused_feeds(): array {
+		return [
+			'not over http' => [ 'feed://gazette-moved-6613.example/rss', 'invalid url feed://gazette-moved-6613.example/rss' ],
+			'userinfo'      => [ 'https://reader:pw-6615@feeds-6614.example/g', 'invalid url carrying userinfo' ],
+			'an address'    => [ 'http://10.0.0.5/rss', '10.0.0.5: its top-level domain is not alphabetic' ],
+			'a single word' => [ 'https://intranet-6616/rss', 'intranet-6616: it has a single label' ],
+		];
+	}
+
+	/**
+	 * A home page advertising a feed that is not an http or https url on a
+	 * plain hostname fetches nothing: the refusal is logged once, the answer
+	 * fails, and discovery fails for the domain, which backs off.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'refused_feeds' )]
+	public function test_a_discovered_feed_must_be_a_web_url_on_a_plain_hostname( string $href, string $why ): void {
+		$stderr = $this->capture_stderr();
+		$this->client_pass();
+		$this->complete( self::GAZETTE_FEED, '', 404 );
+
+		$this->complete( self::GAZETTE_HOME, self::home_page( 'application/rss+xml', $href ) );
+		$this->complete( self::PELICAN_FEED, self::rss( [] ) );
+
+		$this->assertSame( [ self::GAZETTE_FEED, self::PELICAN_FEED, self::GAZETTE_HOME ], $this->dispatched );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: refused a feed the home page advertised at https://harborgazette.example/: ' . $why ) );
+		$this->assertSame( 1, self::domains()['harborgazette.example']['failures'] );
+	}
+
+	/** A home page answering a 4xx backs its domain off, so the next pass skips it. */
+	public function test_a_home_page_answering_a_4xx_backs_off(): void {
+		$node = $this->client_pass();
+		$this->complete( self::GAZETTE_FEED, '', 404 );
+		$this->complete( self::GAZETTE_HOME, '', 403 );
+		$this->complete( self::PELICAN_FEED, self::rss( [] ) );
+
+		$this->tick( $node );
+
+		$this->assertSame( [ self::GAZETTE_FEED, self::PELICAN_FEED, self::GAZETTE_HOME, self::PELICAN_FEED ], $this->dispatched );
+	}
+
+	/** A home page advertising no feed fails its answer, naming the page. */
+	public function test_a_home_page_advertising_no_feed_fails_naming_it(): void {
+		$stderr = $this->capture_stderr();
+		$node   = $this->client_feed();
+		$this->publishing();
+		$this->tick( $node );
+
+		$this->complete( self::GAZETTE_FEED, '', 404 );
+		$this->complete( self::GAZETTE_HOME, '<html><head><link rel="alternate" type="text/html" href="/es/"></head></html>' );
+		$this->complete( self::PELICAN_FEED, '', 503 );
+
+		$this->assertSame( [ 'failing', 3, 3 ], [ $this->published( 'feed' )['state'], $this->published( 'feed' )['requests'], $this->published( 'feed' )['failed'] ] );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: no RSS or Atom feed is advertised at https://harborgazette.example/: ' ) );
+		$this->assertCount( 3, $this->dispatched, 'nothing is fetched for a feed no page names' );
+	}
+
+	/**
+	 * A client feed redirected to another domain whose items none link to
+	 * the client fails, named once, and its home page names where the feed
+	 * moved, which the lane then takes.
+	 */
+	public function test_a_client_feed_redirected_off_its_domain_fails_and_is_found(): void {
+		$stderr = $this->capture_stderr();
+		$this->client_pass();
+		$now  = (int) Core::$now;
+		$body = self::rss( [ [ 'tribune', 'Tribune', $now - 60, 'https://tribune-7781.example' ] ] );
+
+		$this->redirect( self::GAZETTE_FEED, 'https://tribune-7781.example/feed/' );
+		$this->complete( 'https://tribune-7781.example/feed/', $body );
+		$this->assertSame( [], $this->recorded() );
+		$this->redirect( self::GAZETTE_HOME, 'https://tribune-7781.example/' );
+		$this->complete( 'https://tribune-7781.example/', self::home_page( 'application/rss+xml', 'https://tribune-7781.example/feed/' ) );
+		$this->complete( 'https://tribune-7781.example/feed/', $body );
+
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: a client feed redirected off its domain: https://harborgazette.example/feed/: https://tribune-7781.example/feed/' ) );
+		$this->assertSame( [ 'feed:harborgazette.example:tribune' ], \array_keys( $this->recorded() ) );
+	}
+
+	/**
+	 * Run $passes passes of the client feeds, one every 1,800 seconds after
+	 * the seeded clock, answering the Pelican's feed with an empty one and
+	 * each Gazette fetch with the next of $answers: `feed`, a status, or
+	 * `curl <code>`.
+	 *
+	 * @param list<string|int> $answers How each Gazette fetch is answered, in order.
+	 * @return list<int> The passes, from 1, that fetched the Gazette.
+	 */
+	private function gazette_passes( Feed_Source_Node $node, int $passes, array $answers ): array {
+		$fetched = [];
+		for ( $pass = 1; $pass <= $passes; $pass++ ) {
+			$at          = (float) ( self::$oct_20 + $pass * 1800 + 5 );
+			Core::$now   = $at;
+			Core::$clock = static fn (): float => $at;
+			$seen        = \count( $this->dispatched );
+			$this->tick( $node );
+			$gazette = \array_values( \array_diff( \array_slice( $this->dispatched, $seen ), [ self::PELICAN_FEED ] ) );
+			if ( [] !== $gazette ) {
+				$fetched[] = $pass;
+				$answer    = \array_shift( $answers );
+				match ( true ) {
+					'feed' === $answer                                       => $this->complete( $gazette[0], self::rss( [] ) ),
+					\is_string( $answer ) && \str_starts_with( $answer, 'curl ' ) => $this->complete( $gazette[0], '', 0, (int) \substr( $answer, 5 ) ),
+					default                                                  => $this->complete( $gazette[0], '', (int) $answer ),
+				};
+			}
+			$this->complete( self::PELICAN_FEED, self::rss( [] ) );
+		}
+		return $fetched;
+	}
+
+	/**
+	 * A client domain whose host does not resolve sits out whole passes,
+	 * one, then two, then four, and an answering feed resets it.
+	 */
+	public function test_a_domain_that_keeps_failing_skips_passes_doubling(): void {
+		$node = $this->client_feed();
+
+		$fetched = $this->gazette_passes( $node, 13, [ 'curl 6', 'curl 6', 'curl 6', 'feed', 'feed' ] );
+
+		$this->assertSame( [ 1, 3, 6, 11, 12, 13 ], $fetched );
+	}
+
+	/** A domain's backoff stops doubling at 48 passes, kept as the moment it may be fetched again. */
+	public function test_a_domains_backoff_is_capped_at_48_passes(): void {
+		$node = $this->client_feed();
+		$this->remembered( [ 'harborgazette.example' => [ 'feed' => '', 'failures' => 9, 'retry_at' => 0 ] ] );
+
+		$this->gazette_passes( $node, 1, [ 'curl 6' ] );
+
+		$this->assertSame( 48, Feed_Source_Node::MAX_SKIP_PASSES );
+		$this->assertSame( [ 'feed' => '', 'failures' => 10, 'retry_at' => self::$oct_20 + ( 1 + 48 + 1 ) * 1800 ], self::domains()['harborgazette.example'] );
+	}
+
+	/**
+	 * A found feed that fails is forgotten and backs its domain off, and
+	 * once its skip runs out the conventional feed is fetched again.
+	 */
+	public function test_a_found_feed_that_fails_is_forgotten_after_its_skip(): void {
+		$node = $this->client_pass();
+		$this->complete( self::GAZETTE_FEED, '', 404 );
+		$this->complete( self::GAZETTE_HOME, self::home_page( 'application/rss+xml', self::GAZETTE_FOUND ) );
+		$this->complete( self::GAZETTE_FOUND, self::rss( [] ) );
+		$this->complete( self::PELICAN_FEED, self::rss( [] ) );
+		$seen = \count( $this->dispatched );
+
+		$fetched = $this->gazette_passes( $node, 3, [ 410, 'feed' ] );
+
+		$this->assertSame( [ 1, 3 ], $fetched, 'the pass after the found feed fails is skipped' );
+		$this->assertSame( [ self::GAZETTE_FOUND, self::PELICAN_FEED, self::PELICAN_FEED, self::GAZETTE_FEED, self::PELICAN_FEED ], \array_slice( $this->dispatched, $seen ) );
+	}
+
+	/**
+	 * Failures no domain is to blame for, each backing nothing off.
+	 *
+	 * @return array<string,array{0:string|int}>
+	 */
+	public static function passing_failures(): array {
+		return [
+			'a 5xx'            => [ 503 ],
+			'a timeout'        => [ 'curl ' . \CURLE_OPERATION_TIMEDOUT ],
+			'a TLS handshake'  => [ 'curl ' . \CURLE_SSL_CONNECT_ERROR ],
+			'an oversize body' => [ 'curl ' . \CURLE_FILESIZE_EXCEEDED ],
+		];
+	}
+
+	/** A 5xx, a timeout, curl 35 and curl 63 are not structural: the domain skips no pass. */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'passing_failures' )]
+	public function test_only_a_structural_failure_backs_off( string|int $failure ): void {
+		$node = $this->client_feed();
+
+		$fetched = $this->gazette_passes( $node, 3, [ $failure, 'feed', 'feed' ] );
+
+		$this->assertSame( [ 1, 2, 3 ], $fetched );
+	}
+
+	/**
+	 * The domains are one row of the feed's Table: recalled once a pass,
+	 * and written once, as the pass ends, only when the pass changed them.
+	 */
+	public function test_the_domains_are_recalled_once_a_pass_and_written_only_when_changed(): void {
+		$node  = $this->client_feed();
+		$table = $this->recording_table();
+		$this->tick( $node );
+		$this->complete( self::GAZETTE_FEED, '', 404 );
+		$this->complete( self::GAZETTE_HOME, self::home_page( 'application/rss+xml', self::GAZETTE_FOUND ) );
+		$this->complete( self::GAZETTE_FOUND, self::rss( [] ) );
+		$this->complete( self::PELICAN_FEED, self::rss( [] ) );
+		$this->assertSame( [ 'GET domains', 'RM domains', 'ADD domains' ], $table->memory_asks() );
+
+		$this->tick( $node );
+		$this->complete( self::GAZETTE_FOUND, self::rss( [] ) );
+		$this->complete( self::PELICAN_FEED, self::rss( [] ) );
+
+		$this->assertSame( [ 'GET domains', 'RM domains', 'ADD domains', 'GET domains' ], $table->memory_asks() );
+	}
+
+	/** A pass whose only news is a domain sitting out writes nothing. */
+	public function test_a_pass_that_only_skips_writes_nothing(): void {
+		$node  = $this->client_feed();
+		$table = $this->recording_table();
+
+		$fetched = $this->gazette_passes( $node, 2, [ 'curl 6' ] );
+
+		$this->assertSame( [ 1 ], $fetched, 'the second pass sits the domain out' );
+		$this->assertSame( [ 'GET domains', 'RM domains', 'ADD domains', 'GET domains' ], $table->memory_asks() );
+	}
+
+	/**
+	 * A recall the Table does not answer is not an empty memory: the pass
+	 * runs with no backoff, and the row stands as it was.
+	 */
+	public function test_a_failed_recall_backs_nothing_off_and_leaves_the_row(): void {
+		$row  = [ 'harborgazette.example' => [ 'feed' => '', 'failures' => 3, 'retry_at' => self::$oct_20 + 99000 ] ];
+		$node = $this->client_feed();
+		$this->remembered( $row );
+		$recording             = $this->recording_table();
+		$recording->refuse_get = true;
+
+		$this->gazette_passes( $node, 1, [ 'curl 6' ] );
+
+		$this->assertContains( self::GAZETTE_FEED, $this->dispatched, 'no backoff holds the domain back' );
+		$this->assertSame( [ 'GET domains' ], $recording->memory_asks() );
+		$this->assertSame( $row, self::domains() );
+	}
+
+	/** Every feed request, a configured feed's, a client's and a home page's, bounds its connection at 10 seconds within Curl's 30. */
+	public function test_every_feed_request_bounds_its_connection(): void {
+		$node = $this->client_feed();
+		$node->interpreter()->dispatch( 'add_url', [ 'https://kite-2201.example/feed/' ] );
+		$this->tick( $node );
+		$this->complete( self::GAZETTE_FEED, '', 404 );
+
+		$this->assertSame( 10, Feed_Source_Node::CONNECT_TIMEOUT );
+		foreach ( [ 'https://kite-2201.example/feed/', self::GAZETTE_FEED, self::GAZETTE_HOME ] as $url ) {
+			$this->assertSame( [ 10, Curl_Node::REQUEST_TIMEOUT ], [ $this->opts[ $url ][ \CURLOPT_CONNECTTIMEOUT ], $this->opts[ $url ][ \CURLOPT_TIMEOUT ] ], $url );
+		}
+	}
+
+	/**
+	 * The feed's Table, as one recording the memory asks it takes, over the
+	 * same file, in its name, so the feed asks it.
+	 */
+	private function recording_table(): Recording_Table_Node {
+		Core::node( 'feed:frontier' )?->remove_node();
+		$table = new Recording_Table_Node();
+		$this->bound(
+			static function () use ( $table ): void {
+				$table->name( 'feed:frontier' );
+				$table->arguments( \array_values( Feed_Source_Node::owned_table( 'frontier', 'feed', [] ) ) );
+			}
+		);
+		$table->sink( Core::node( \Newspack_Nodes\Node_Names::COMMAND_INTERPRETER ) );
+		return $table;
+	}
+
+	/**
+	 * A feed the home page advertised, cut by a recycle before it answers,
+	 * keeps its lane in the next process and is remembered from then on.
+	 */
+	public function test_a_found_feed_resumed_in_a_new_process_keeps_its_lane_and_is_remembered(): void {
+		$node = $this->client_pass();
+		$now  = (int) Core::$now;
+		$this->complete( self::GAZETTE_FEED, '', 404 );
+		$this->complete( self::GAZETTE_HOME, self::home_page( 'application/rss+xml', self::GAZETTE_FOUND ) );
+
+		$successor = $this->successor( $node );
+		$this->fire_at( $successor, Core::$now + 11.0 );
+		$this->complete( self::GAZETTE_FOUND, self::rss( [ [ 'found-9', 'Found', $now - 60, 'https://gazette-news-6612.example' ], [ 'stray-9', 'Stray', $now - 60, 'https://salemledger.example' ] ] ) );
+		$this->complete( self::PELICAN_FEED, self::rss( [] ) );
+		$this->tick( $successor );
+
+		$this->assertSame( [ 'feed:harborgazette.example:found-9' ], \array_keys( $this->recorded() ) );
+		$this->assertSame( [ 'feed' => self::GAZETTE_FOUND, 'failures' => 0, 'retry_at' => 0 ], self::domains()['harborgazette.example'] );
+		$this->assertSame( [ self::GAZETTE_FOUND, self::PELICAN_FEED ], \array_slice( $this->dispatched, -2 ) );
+	}
+
+	/** A backoff a pass sets is written at the next tick, so the process after a recycle holds it. */
+	public function test_a_backoff_set_before_a_recycle_holds_after_it(): void {
+		$at          = (float) self::$oct_20 + 5;
+		Core::$now   = $at;
+		Core::$clock = static fn (): float => $at;
+		$node        = $this->client_pass();
+		$this->complete( self::GAZETTE_FEED, '', 0, \CURLE_COULDNT_RESOLVE_HOST );
+		$this->fire_at( $node, Core::$now + 3.0 );
+
+		$fetched = $this->gazette_passes( $this->successor( $node ), 2, [ 'feed' ] );
+
+		$this->assertSame( [ 2 ], $fetched, 'the first pass after the recycle sits the domain out' );
+	}
+
+	/** A write the Table refuses leaves the domains to write again, which the next tick does. */
+	public function test_a_refused_write_is_made_again_at_the_next_tick(): void {
+		$node             = $this->client_feed();
+		$table            = $this->recording_table();
+		$table->refuse_add = true;
+		$this->tick( $node );
+		$this->complete( self::GAZETTE_FEED, '', 0, \CURLE_COULDNT_RESOLVE_HOST );
+		$this->complete( self::PELICAN_FEED, self::rss( [] ) );
+		$this->assertNull( self::domains(), 'the pass end removed the row and could not add it' );
+
+		$table->refuse_add = false;
+		$this->fire_at( $node, Core::$now + 7.0 );
+
+		$this->assertSame( 1, self::domains()['harborgazette.example']['failures'] ?? null );
+	}
+
+	/** A clean stop writes what the pass changed since the last tick, so the next process holds it. */
+	public function test_a_clean_stop_writes_the_domains(): void {
+		$at          = (float) self::$oct_20 + 5;
+		Core::$now   = $at;
+		Core::$clock = static fn (): float => $at;
+		$node        = $this->client_pass();
+		$this->complete( self::GAZETTE_FEED, '', 0, \CURLE_COULDNT_RESOLVE_HOST );
+
+		$node->shutdown_sweep();
+		$fetched = $this->gazette_passes( $this->successor( $node ), 2, [ 'feed' ] );
+
+		$this->assertSame( [ 2 ], $fetched, 'the first pass after the recycle sits the domain out' );
+	}
+
+	/** The row keeps the pass's clients alone, so a churned client or one never a client leaves it. */
+	public function test_the_domains_row_sheds_every_domain_no_longer_a_client(): void {
+		$node = $this->client_feed();
+		$this->remembered(
+			[
+				'harborgazette.example' => [ 'feed' => self::GAZETTE_FOUND, 'failures' => 0, 'retry_at' => 0 ],
+				'salemledger.example'   => [ 'feed' => '', 'failures' => 2, 'retry_at' => self::$oct_20 + 7200 ],
+				'grebe-5519.example'    => [ 'feed' => 'https://grebe-5519.example/atom.xml', 'failures' => 0, 'retry_at' => 0 ],
+			]
+		);
+		$this->tick( $node );
+		$this->complete( self::GAZETTE_FOUND, self::rss( [] ) );
+		$this->complete( self::PELICAN_FEED, self::rss( [] ) );
+
+		$this->assertSame( [ 'harborgazette.example' ], \array_keys( self::domains() ) );
 	}
 
 	/** The toggle round-trips through dump_config(), and a source with it off dumps no line. */
@@ -815,5 +1391,42 @@ XML;
 	private function config_of( Feed_Source_Node $node ): array {
 		$method = new \ReflectionMethod( $node, 'config' );
 		return $method->invoke( $node );
+	}
+}
+
+/**
+ * A durable Table that records each ask it takes, and may refuse every
+ * GET as a backend read that failed.
+ */
+final class Recording_Table_Node extends Table_Node {
+
+	/** @var list<string> Each ask, its verb then its keys. */
+	public array $asked = [];
+
+	/** Whether a GET is refused. */
+	public bool $refuse_get = false;
+
+	/** Whether an ADD is refused. */
+	public bool $refuse_add = false;
+
+	public function fill( array $message ): void {
+		$value         = $message[ Message::VALUE ];
+		$ask           = \is_array( $value ) ? \implode( ' ', [ (string) \array_key_first( $value ), ...\array_keys( Core::arr( \reset( $value ) ) ) ] ) : \trim( Core::as_string( $value ) );
+		$this->asked[] = $ask;
+		if ( ( $this->refuse_get && \str_starts_with( $ask, 'GET ' ) ) || ( $this->refuse_add && \str_starts_with( $ask, 'ADD ' ) ) ) {
+			$reply                     = Message::new_message();
+			$reply[ Message::TYPE ]    = Message::TM_ERROR;
+			$reply[ Message::FROM ]    = $this->name();
+			$reply[ Message::TO ]      = $message[ Message::FROM ];
+			$reply[ Message::VALUE ]   = "{$ask}: backend failed-7715\n";
+			$this->sink()->fill( $reply );
+			return;
+		}
+		parent::fill( $message );
+	}
+
+	/** @return list<string> The asks naming the feed's memory row. */
+	public function memory_asks(): array {
+		return \array_values( \array_filter( $this->asked, static fn ( string $ask ): bool => \str_ends_with( $ask, ' domains' ) ) );
 	}
 }

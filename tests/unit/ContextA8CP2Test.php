@@ -99,6 +99,17 @@ final class ContextA8CP2Test extends TestCase {
 		$real = $this->wire( new P2_Source_Node(), 'p2-real', [ 'restricted', 'p2' ] );
 		$real->interpreter()->dispatch( 'add_site', [ self::HERON ] );
 		$this->tick( $real );
+		$this->complete(
+			self::API . self::HERON . '/comments/?after=' . self::after() . '&number=100&fields=ID,post,content,date,author,URL',
+			(string) \json_encode(
+				[
+					'site_ID'  => 7781,
+					'comments' => [
+						[ 'ID' => 33, 'post' => [ 'ID' => 512, 'title' => 'Kestrel &amp; Heron launch' ], 'content' => "<p>Congrats\nall</p>", 'date' => '2026-10-28T10:30:00+00:00', 'author' => [ 'name' => 'Plover Kite' ] ],
+					],
+				]
+			)
+		);
 		$posts_url = self::API . self::HERON . '/posts/?after=' . self::after() . '&number=100&order_by=date&fields=ID,site_ID,title,URL,content,date,author';
 		$this->complete(
 			$posts_url,
@@ -111,18 +122,8 @@ final class ContextA8CP2Test extends TestCase {
 				]
 			)
 		);
-		$this->complete(
-			self::API . self::HERON . '/comments/?after=' . self::after() . '&number=100&fields=ID,post,content,date,author,URL',
-			(string) \json_encode(
-				[
-					'site_ID'  => 7781,
-					'comments' => [
-						[ 'ID' => 33, 'post' => [ 'ID' => 512, 'title' => 'Kestrel &amp; Heron launch' ], 'content' => "<p>Congrats\nall</p>", 'date' => '2026-10-28T10:30:00+00:00', 'author' => [ 'name' => 'Plover Kite' ] ],
-					],
-				]
-			)
-		);
-		$expected               = $this->items_recorded();
+		$expected = $this->items_recorded();
+		\usort( $expected, static fn ( array $a, array $b ): int => \strcmp( $a['item_key'], $b['item_key'] ) );
 		$this->writer->captured = [];
 
 		$this->tick( $this->p2( 'restricted', self::HERON ) );

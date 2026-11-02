@@ -1,7 +1,8 @@
 <?php
 /**
  * Uninstall removes the files of every Row_Table the plugin's shipped
- * topologies declare with the Intel_Graph schema, and only this install's.
+ * topologies declare with the Intel_Graph schema, and of every frontier
+ * Table its sources own, and only this install's.
  *
  * @package Newspack_Intelligence\Tests\Unit
  */
@@ -40,7 +41,7 @@ final class UninstallGraphTablesTest extends TestCase {
 		];
 		self::write( ...$doomed, ...$kept );
 
-		$deleted = \Newspack_Intelligence\delete_graph_tables( \dirname( __DIR__, 2 ) . '/topologies' );
+		$deleted = \Newspack_Intelligence\delete_tables( \dirname( __DIR__, 2 ) . '/topologies' );
 
 		$this->assertSame( 3 * Spawn_Coordinator::MAX_PARTITIONS, $deleted, 'three files for each partition' );
 		foreach ( $doomed as $file ) {
@@ -48,6 +49,27 @@ final class UninstallGraphTablesTest extends TestCase {
 		}
 		foreach ( $kept as $file ) {
 			$this->assertFileExists( $file, 'another Table\'s file stands' );
+		}
+	}
+
+	/** Each source's frontier Table goes with the graph, on every partition. */
+	public function test_uninstall_deletes_every_sources_frontier_table(): void {
+		$this->use_base_dir( $this->make_temp_dir( 'uninstall-frontier-' ) );
+		$doomed = [];
+		foreach ( [ 'github', 'feed', 'news', 'linear', 'slack', 'p2', 'p2-restricted', 'unthread' ] as $source ) {
+			$doomed = [ ...$doomed, ...self::partition_files( "{$source}:frontier" ) ];
+		}
+		$kept = [ Table_Node::file( 'heron-ledger-4417', 3 ), Table_Node::file( 'egret:frontier', 2 ) ];
+		self::write( ...self::partition_files( 'intel-graph' ), ...$doomed, ...$kept );
+
+		$deleted = \Newspack_Intelligence\delete_tables( \dirname( __DIR__, 2 ) . '/topologies' );
+
+		$this->assertSame( 3 * Spawn_Coordinator::MAX_PARTITIONS * 9, $deleted, 'the graph and eight frontiers' );
+		foreach ( $doomed as $file ) {
+			$this->assertFileDoesNotExist( $file );
+		}
+		foreach ( $kept as $file ) {
+			$this->assertFileExists( $file, 'a Table no shipped source owns stands' );
 		}
 	}
 
@@ -60,7 +82,7 @@ final class UninstallGraphTablesTest extends TestCase {
 		$kept   = [ Table_Node::file( 'heron-cache-5521', 0 ) ];
 		self::write( ...$doomed, ...$kept );
 
-		$this->assertSame( 3 * Spawn_Coordinator::MAX_PARTITIONS, \Newspack_Intelligence\delete_graph_tables( $shipped ) );
+		$this->assertSame( 3 * Spawn_Coordinator::MAX_PARTITIONS, \Newspack_Intelligence\delete_tables( $shipped ) );
 		$this->assertFileDoesNotExist( $doomed[0] );
 		$this->assertFileExists( $kept[0], 'a keyed Table stands' );
 		$this->assertNull( Topology_Registry::resolve( 'heron-graph-5521' ), 'the read leaves its dir unregistered' );
@@ -76,7 +98,7 @@ final class UninstallGraphTablesTest extends TestCase {
 		$kept = Table_Node::file( 'heron-foreign-6631', 2 );
 		self::write( ...self::partition_files( 'intel-graph' ), ...[ $kept ] );
 
-		$this->assertSame( 3 * Spawn_Coordinator::MAX_PARTITIONS, \Newspack_Intelligence\delete_graph_tables( \dirname( __DIR__, 2 ) . '/topologies' ) );
+		$this->assertSame( 3 * Spawn_Coordinator::MAX_PARTITIONS, \Newspack_Intelligence\delete_tables( \dirname( __DIR__, 2 ) . '/topologies' ) );
 		$this->assertFileExists( $kept, 'another plugin\'s table is its own to clean up' );
 	}
 
@@ -92,7 +114,7 @@ final class UninstallGraphTablesTest extends TestCase {
 		$file = Table_Node::file( 'heron-default-7712', 0 );
 		self::write( $file );
 		try {
-			$this->assertSame( 0, \Newspack_Intelligence\delete_graph_tables( $shipped ) );
+			$this->assertSame( 0, \Newspack_Intelligence\delete_tables( $shipped ) );
 			$this->assertFileExists( $file );
 		} finally {
 			\is_file( $file ) && \unlink( $file );

@@ -32,6 +32,9 @@ trait Drives_Curl {
 	/** The worker partition a source publishes its status from. */
 	public const PARTITION = 6;
 
+	/** The address every transfer connected to, a public one, unless a test names another. */
+	public const CONNECTED = '93.184.215.14';
+
 	private Capture_Sink_Node $writer;
 
 	private Capture_Sink_Node $asker;
@@ -60,8 +63,16 @@ trait Drives_Curl {
 	/** @var array<string,true> Urls whose next dispatch throws. */
 	private array $refusing = [];
 
-	/** Stand in for libcurl, and build the Router, the interpreter, the writer and the asker. */
+	/** @var array<string,string> The address each url's transfer connected to, where not CONNECTED. */
+	private array $connected = [];
+
+	/**
+	 * Stand in for libcurl, give the test a base of its own, where each
+	 * source's Table keeps its file, and build the Router, the interpreter,
+	 * the writer and the asker.
+	 */
 	private function install_curl(): void {
+		$this->use_base_dir( $this->make_temp_dir( 'intel-sources-' ) );
 		Event_Framework::reset();
 		Event_Framework::$curl_dispatch = function ( array $opts ): \CurlHandle {
 			$url                = (string) $opts[ \CURLOPT_URL ];
@@ -80,11 +91,13 @@ trait Drives_Curl {
 		};
 		Curl_Node::$curl_result = function ( \CurlHandle $easy ): array {
 			$url = $this->url_of[ \spl_object_id( $easy ) ];
+			$ip = $this->connected[ $url ] ?? self::CONNECTED;
 			if ( isset( $this->locations[ $url ] ) ) {
 				return [
 					'code'     => 301,
 					'body'     => '',
 					'redirect' => $this->locations[ $url ],
+					'ip'       => $ip,
 				];
 			}
 			[ $code, $body ] = $this->answers[ $url ];
@@ -92,6 +105,7 @@ trait Drives_Curl {
 				'code'     => $code,
 				'body'     => $body,
 				'redirect' => '',
+				'ip'       => $ip,
 			];
 		};
 		$router = new Router_Node();
@@ -130,9 +144,39 @@ trait Drives_Curl {
 		Vault::get_instance()->reset_cache();
 	}
 
+	/** Run $work where the worker's partition is bound, as a topology load binds it. */
+	private function bound( \Closure $work ): void {
+		$bound = \Newspack_Nodes\Core::$var['partition'] ?? null;
+		\Newspack_Nodes\Core::$var['partition'] = (string) self::PARTITION;
+		try {
+			$work();
+		} finally {
+			\Newspack_Nodes\Core::$var['partition'] = $bound;
+			if ( null === $bound ) {
+				unset( \Newspack_Nodes\Core::$var['partition'] );
+			}
+		}
+	}
+
 	/**
-	 * A source as a topology builds it: named, its arguments given, sinking
-	 * into the interpreter, its items addressed to the writer.
+	 * The process after a recycle: the stopped source leaves the graph, and
+	 * $successor takes its name and its arguments, and so its Table.
+	 *
+	 * @template T of Source_Node
+	 * @param T $successor The source the next process builds.
+	 * @return T
+	 */
+	private function respawn( Source_Node $stopped, Source_Node $successor ): Source_Node {
+		$name = $stopped->name();
+		$args = $stopped->arguments();
+		$stopped->remove_node();
+		return $this->wire( $successor, $name, $args );
+	}
+
+	/**
+	 * A source as a topology builds it: named, its arguments given where the
+	 * worker's partition is bound, so it builds its frontier Table there,
+	 * sinking into the interpreter, its items addressed to the writer.
 	 *
 	 * @template T of Source_Node
 	 * @param T            $node The source.
@@ -141,7 +185,7 @@ trait Drives_Curl {
 	 */
 	private function wire( Source_Node $node, string $name, array $args ): Source_Node {
 		$node->name( $name );
-		$node->arguments( $args );
+		$this->bound( static fn () => $node->arguments( $args ) );
 		$node->sink( \Newspack_Nodes\Core::node( Node_Names::COMMAND_INTERPRETER ) );
 		$node->target( self::WRITER );
 		return $node;

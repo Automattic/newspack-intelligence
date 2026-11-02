@@ -90,7 +90,7 @@ final class SlackSourceTest extends TestCase {
 		$node = $this->slack( 'C0HERON11', 'G0KESTREL7' );
 
 		$this->tick( $node );
-		$this->assertSame( [ [ 'verb' => 'TICK', 'data' => [ 'fetching' => 3 ] ] ], $this->answers() );
+		$this->assertSame( [ [ 'verb' => 'TICK', 'data' => [ 'fetching' => 1 ] ] ], $this->answers() );
 		$this->assertSame( [ self::AUTH ], $this->dispatched );
 		$this->complete( self::AUTH, self::ok( [ 'url' => self::WORKSPACE ] ) );
 		$this->assertSame( [ self::AUTH, self::history( 'C0HERON11' ) ], $this->dispatched );
@@ -99,6 +99,22 @@ final class SlackSourceTest extends TestCase {
 		$this->assertSame( [ self::AUTH, self::history( 'C0HERON11' ), self::history( 'G0KESTREL7' ) ], $this->dispatched );
 		$this->assertSame( 172800, Slack_Source_Node::WINDOW_SECONDS );
 		$this->assertTrue( $this->opts[ self::history( 'G0KESTREL7' ) ][ \CURLOPT_HTTPGET ] );
+	}
+
+	/**
+	 * Each page carries the workspace auth.test named, so the process after a
+	 * recycle that sends it records each message under its permalink.
+	 */
+	public function test_a_resumed_page_keeps_the_workspace(): void {
+		$node = $this->slack( 'C0HERON11', 'G0KESTREL7' );
+		$this->authed( $node );
+
+		$successor = $this->respawn( $node, new Slack_Source_Node() );
+		$this->in_drain( static fn () => $successor->fire_cb() );
+		$this->complete( self::history( 'C0HERON11' ), self::ok( [ 'messages' => [ [ 'ts' => self::ts( 600 ), 'text' => 'Heron desk standup', 'user' => 'U0HERON' ] ] ] ) );
+
+		$this->assertSame( [ self::AUTH, self::history( 'C0HERON11' ), self::history( 'C0HERON11' ), self::history( 'G0KESTREL7' ) ], $this->dispatched );
+		$this->assertSame( self::WORKSPACE . 'archives/C0HERON11/p' . \str_replace( '.', '', self::ts( 600 ) ), \array_values( $this->recorded() )[0]['url'] );
 	}
 
 	/** The workspace's url outlives the pass, so the next pass asks auth.test no more. */
@@ -336,6 +352,29 @@ final class SlackSourceTest extends TestCase {
 
 		$this->assertSame( '', $this->recorded()[ 'slack:C0HERON11:' . self::ts( 100 ) ]['url'] );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'slack: Slack answered an error for https://slack.com/api/auth.test: not_authed-3391' ) );
+	}
+
+	/** @return array<string,array{0:int,1:int}> Each way a transfer fails: its status, and libcurl's result. */
+	public static function transport_failures(): array {
+		return [
+			'a 5xx'          => [ 503, \CURLE_OK ],
+			'a 429'          => [ 429, \CURLE_OK ],
+			'a timeout'      => [ 200, \CURLE_OPERATION_TIMEDOUT ],
+			'a curl failure' => [ 200, \CURLE_COULDNT_CONNECT ],
+		];
+	}
+
+	/** An auth.test that fails in transport still reads the histories, with no permalink. */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'transport_failures' )]
+	public function test_an_auth_test_failing_in_transport_still_reads_the_histories( int $code, int $result ): void {
+		$node = $this->slack( 'C0HERON11' );
+		$this->tick( $node );
+
+		$this->complete( self::AUTH, '', $code, $result );
+		$this->complete( self::history( 'C0HERON11' ), self::ok( [ 'messages' => [ [ 'ts' => self::ts( 140 ), 'text' => 'Kestrel desk', 'user' => 'U0K' ] ] ] ) );
+
+		$this->assertSame( [ self::AUTH, self::history( 'C0HERON11' ) ], $this->dispatched );
+		$this->assertSame( '', $this->recorded()[ 'slack:C0HERON11:' . self::ts( 140 ) ]['url'] );
 	}
 
 	/** An auth.test url that is not https is refused, logged, and leaves every permalink empty. */

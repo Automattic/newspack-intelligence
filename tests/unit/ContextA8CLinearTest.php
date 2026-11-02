@@ -838,7 +838,7 @@ final class ContextA8CLinearTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: ContextA8C answered an error for linear/team-issues?team=KESTREL&limit=30: the text content holds no JSON object' ) );
 	}
 
-	/** With no proxy named, a call goes out direct. */
+	/** With no proxy named, a call goes out direct, through no proxy of its own. */
 	public function test_no_proxy_calls_direct(): void {
 		$this->signed_in();
 		$node = $this->wire( new Context_A8C_Linear_Node(), 'linear', [ 'internal', $this->auth_dir ] );

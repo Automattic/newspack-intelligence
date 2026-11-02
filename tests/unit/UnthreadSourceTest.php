@@ -133,6 +133,34 @@ final class UnthreadSourceTest extends TestCase {
 		$this->assertSame( 172800, Unthread_Source_Node::WINDOW_SECONDS );
 	}
 
+	/**
+	 * A conversation's messages page carries its ticket and context line, so
+	 * the process after a recycle that sends it records each message whole.
+	 */
+	public function test_a_resumed_messages_page_keeps_its_conversations_context(): void {
+		$node = $this->unthread();
+		$this->tick( $node );
+		$this->complete( self::LIST, self::page( [ self::conversation( self::HERON, 60 ) ] ) );
+
+		$successor = $this->respawn( $node, new Unthread_Source_Node() );
+		$this->tick_at( $successor, self::NOW + 4.0 );
+		$this->complete( self::messages_url( self::HERON ), self::page( [ self::message( self::HERON, '1793170000.000300', 7200 ) ] ) );
+
+		$item = $this->recorded()[ 'unthread:' . self::HERON . ':1793170000.000300' ];
+		$this->assertSame( '#4417 Cleared the session cache for Heron', $item['title'] );
+		$this->assertSame( self::CONTEXT . "\nWren Osprey: Cleared the session cache for Heron", $item['body'] );
+	}
+
+	/** Run one Router tick through the source inside a drain, its clock at a moment. */
+	private function tick_at( Unthread_Source_Node $node, float $at ): void {
+		$this->in_drain(
+			static function () use ( $node, $at ): void {
+				Core::$now = $at;
+				$node->fire_cb();
+			}
+		);
+	}
+
 	/** A conversation updated inside the window has its messages read; one updated before it does not. */
 	public function test_only_conversations_updated_in_the_window_have_their_messages_read(): void {
 		$node = $this->unthread();

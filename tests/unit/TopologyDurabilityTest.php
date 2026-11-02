@@ -31,6 +31,7 @@ use Newspack_Nodes\Message;
 use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Router_Node;
 use Newspack_Nodes\Shell_Node;
+use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\Helpers\TopologyDurability;
@@ -241,6 +242,20 @@ class TopologyDurabilityTest extends TestCase {
 		foreach ( [ 'github' => 'github', 'linear' => 'linear', 'feed' => '', 'news' => '', 'slack' => 'slack', 'p2' => 'p2', 'p2-restricted' => 'p2', 'unthread' => 'unthread' ] as $name => $group ) {
 			$this->assertSame( $group, $this->read_private( Core::node( $name ), 'vault_group' ), $name );
 			$this->assertSame( $group, $this->read_private( Core::node( "{$name}:curl" ), 'vault_group' ), $name );
+		}
+	}
+
+	/** Each source keeps its passes in a sqlite Table it owns, `<name>:frontier`, which the analyzer reads off its line. */
+	public function test_each_source_keeps_its_work_in_a_table_of_its_own(): void {
+		$this->load( 'newspack-intelligence' );
+
+		$declared = Topology_Analyzer::declared_tables( 'newspack-intelligence' );
+		foreach ( [ 'github', 'linear', 'feed', 'news', 'slack', 'p2', 'p2-restricted', 'unthread' ] as $name ) {
+			$table = Core::node( "{$name}:frontier" );
+			$this->assertInstanceOf( Table_Node::class, $table, $name );
+			$this->assertSame( Core::node( $name ), $table->publisher(), $name );
+			$this->assertSame( 'sqlite', $this->read_private( $table, 'backend' ), $name );
+			$this->assertSame( 'sqlite', $declared[ "{$name}:frontier" ]['backend'] ?? null, $name );
 		}
 	}
 

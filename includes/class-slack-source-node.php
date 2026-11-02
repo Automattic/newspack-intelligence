@@ -4,11 +4,9 @@
  * `add_channel` verb names, and the replies of each thread active in its
  * window, and normalizes them into recorded items.
  *
- * Extends Source_Node, which owns the trigger, the grid, the chain and the
- * record path. A pass asks `auth.test` for the workspace's url while the
- * node holds none, then each channel's `conversations.history` over the
- * window; an answer's url names its endpoint, channel, thread and cursor,
- * which say what it is and what to read next.
+ * A pass asks `auth.test` for the workspace's url while it holds none, then
+ * each channel's `conversations.history`, every page noting the workspace;
+ * an answer's url names its endpoint, channel, thread and cursor.
  *
  * @package Newspack_Intelligence
  */
@@ -41,23 +39,20 @@ class Slack_Source_Node extends Source_Node {
 	/** The workspace's url, `https://<team>.slack.com/`, as auth.test answers it; '' until it has. */
 	private string $workspace = '';
 
-	/** Queue auth.test while the workspace is unknown, then each channel's history over the window. */
+	/** Queue auth.test while the workspace is unknown, else each channel's history over the window. */
 	protected function begin(): void {
 		if ( '' === $this->workspace ) {
 			$this->queue( self::API . 'auth.test' );
+			return;
 		}
-		$oldest = (string) ( (int) Core::$now - self::WINDOW_SECONDS );
-		foreach ( $this->channels as $channel ) {
-			$this->queue( self::page( 'history', $channel, $oldest ) );
-		}
+		$this->histories();
 	}
 
 	/**
-	 * What one answer means, by the endpoint its url names: auth.test the
-	 * workspace's url, kept only when it is https and names a host, logged
-	 * otherwise; a history or replies page its messages and the next
-	 * page its cursor names. An answer Slack refuses, with `ok` false and a
-	 * 200, logs Slack's error and records nothing.
+	 * One answer by the endpoint its url names: auth.test the workspace's url,
+	 * kept only when https, then the histories; a history or replies page its
+	 * messages and the next page; an answer Slack refuses logs its error and
+	 * records nothing.
 	 *
 	 * @param string $url  The endpoint's url, as it was queued.
 	 * @param string $body The JSON body.
@@ -65,33 +60,46 @@ class Slack_Source_Node extends Source_Node {
 	 */
 	protected function received( string $url, string $body ): array {
 		$answer = $this->json_answer( 'Slack', $url, $body, static fn ( array $answer ): ?string => true === ( $answer['ok'] ?? null ) ? null : Core::as_string( $answer['error'] ?? null, 'no ok answer' ) );
-		if ( null === $answer ) {
-			return [];
-		}
 		if ( self::API . 'auth.test' === $url ) {
 			$workspace = Core::str( $answer['url'] ?? null );
 			if ( 'https' === \wp_parse_url( $workspace, \PHP_URL_SCHEME ) && '' !== Core::as_string( \wp_parse_url( $workspace, \PHP_URL_HOST ) ) ) {
 				$this->workspace = \trailingslashit( $workspace );
-			} else {
+			} elseif ( null !== $answer ) {
 				$this->fails( "Slack's auth.test named no https workspace url: ", $workspace );
 			}
+			$this->histories();
+			return [];
+		}
+		if ( null === $answer ) {
 			return [];
 		}
 		$cursor = Core::str( Core::arr( $answer['response_metadata'] ?? null )['next_cursor'] ?? null );
 		if ( '' !== $cursor ) {
-			$this->queue( \add_query_arg( 'cursor', \rawurlencode( $cursor ), $url ) );
+			$this->queue( \add_query_arg( 'cursor', \rawurlencode( $cursor ), $url ), null, null, $this->note() );
 		}
 		\parse_str( Core::as_string( \wp_parse_url( $url, \PHP_URL_QUERY ) ), $query );
 		return $this->messages( Core::as_string( $query['channel'] ?? null ), Core::as_string( $query['ts'] ?? null ), Core::as_string( $query['oldest'] ?? null ), Core::arr( $answer['messages'] ?? null ) );
 	}
 
+	/** An auth.test that fails in transport still reads the histories, as one Slack refuses does. */
+	protected function failed( string $subject, string $error ): void {
+		if ( self::API . 'auth.test' === $subject ) {
+			$this->histories();
+		}
+	}
+
+	/** Queue each channel's history over the window, noting the workspace, '' while unknown. */
+	private function histories(): void {
+		$oldest = (string) ( (int) Core::$now - self::WINDOW_SECONDS );
+		foreach ( $this->channels as $channel ) {
+			$this->queue( self::page( 'history', $channel, $oldest ), null, null, [ 'workspace' => $this->workspace ] );
+		}
+	}
+
 	/**
-	 * A page's messages as items, Slack's three escapes decoded in one pass
-	 * and its mentions kept; from a history page, each thread whose latest
-	 * reply is newer than two intervals, or the window with no interval set,
-	 * has its replies queued, so a pass reads only the threads that moved
-	 * since the last but one. A replies page repeats its thread's parent,
-	 * which record() drops as the history page's.
+	 * A page's messages as items, queuing from a history page the replies of
+	 * each thread that moved within two intervals, or the window with none set;
+	 * record() drops the parent a replies page repeats.
 	 *
 	 * @param string       $channel  The channel the page reads.
 	 * @param string       $thread   The thread a replies page reads; '' for history.
@@ -100,13 +108,15 @@ class Slack_Source_Node extends Source_Node {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function messages( string $channel, string $thread, string $oldest, array $messages ): array {
-		$moved = self::moved_after( $this->interval );
+		$moved     = self::moved_after( $this->interval );
+		$note      = $this->note();
+		$workspace = Core::as_string( $note['workspace'] ?? '' );
 		return self::items(
 			$messages,
-			function ( array $message ) use ( $channel, $thread, $oldest, $moved ): ?array {
-				$fields = self::fields( $channel, $message, $this->workspace );
+			function ( array $message ) use ( $channel, $thread, $oldest, $moved, $note, $workspace ): ?array {
+				$fields = self::fields( $channel, $message, $workspace );
 				if ( null !== $fields && '' === $thread && self::moved( $message, $moved ) ) {
-					$this->queue( self::page( 'replies', $channel, $oldest, Core::as_string( $message['ts'] ) ) );
+					$this->queue( self::page( 'replies', $channel, $oldest, Core::as_string( $message['ts'] ) ), null, null, $note );
 				}
 				return null === $fields ? null : $this->normalize_item( 'slack', ...$fields );
 			}

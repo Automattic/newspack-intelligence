@@ -114,16 +114,16 @@ final class P2SourceTest extends TestCase {
 		];
 	}
 
-	/** A pass reads each site's posts, then its comments, over the last seven days, one request at a time. */
-	public function test_a_pass_reads_each_sites_posts_then_comments_over_the_window(): void {
+	/** A pass reads each site's comments and posts, in its Table's order, over the last seven days, one request at a time. */
+	public function test_a_pass_reads_each_sites_comments_and_posts_over_the_window(): void {
 		$node = $this->p2( 'p2', 'internal', self::HERON, self::KESTREL );
-		$urls = [ self::posts( self::HERON ), self::comments( self::HERON ), self::posts( self::KESTREL ), self::comments( self::KESTREL ) ];
+		$urls = [ self::comments( self::HERON ), self::posts( self::HERON ), self::comments( self::KESTREL ), self::posts( self::KESTREL ) ];
 
 		$this->tick( $node );
 		$this->assertSame( [ [ 'verb' => 'TICK', 'data' => [ 'fetching' => 4 ] ] ], $this->answers() );
-		$this->complete( $urls[0], self::posts_answer( [] ) );
-		$this->complete( $urls[1], self::comments_answer( [] ) );
-		$this->complete( $urls[2], self::posts_answer( [] ) );
+		$this->complete( $urls[0], self::comments_answer( [] ) );
+		$this->complete( $urls[1], self::posts_answer( [] ) );
+		$this->complete( $urls[2], self::comments_answer( [] ) );
 
 		$this->assertSame( $urls, $this->dispatched );
 		$this->assertSame( 604800, P2_Source_Node::WINDOW_SECONDS );
@@ -141,6 +141,7 @@ final class P2SourceTest extends TestCase {
 		$node = $this->p2( 'p2', 'internal', self::HERON );
 		$this->tick( $node );
 
+		$this->complete( self::comments( self::HERON ), self::comments_answer( [ self::comment( 5502, '<p>Looks good &gt; ship</p>' ) ] ) );
 		$this->complete(
 			self::posts( self::HERON ),
 			self::posts_answer(
@@ -157,11 +158,10 @@ final class P2SourceTest extends TestCase {
 				]
 			)
 		);
-		$this->complete( self::comments( self::HERON ), self::comments_answer( [ self::comment( 5502, '<p>Looks good &gt; ship</p>' ) ] ) );
 
 		$by   = $this->recorded();
 		$post = $by['p2:88120:4107'];
-		$this->assertSame( [ 'p2:88120:4107', 'p2:88120:4107:c5502' ], \array_keys( $by ) );
+		$this->assertSame( [ 'p2:88120:4107:c5502', 'p2:88120:4107' ], \array_keys( $by ) );
 		$this->assertSame( 'p2', $post['source'] );
 		$this->assertSame( 'internal', $post['tier'] );
 		$this->assertSame( 'Heron’s Q4 plan', $post['title'] );
@@ -185,7 +185,6 @@ final class P2SourceTest extends TestCase {
 		$first  = 'Kestrel&#8217;s launch checklist still lists the old paywall plugin; we should drop it before Thursday&#8217;s rollout to the Heron network';
 		$second = '<p>Agreed &amp; done: the checklist now names the Heron paywall, and the rollout runbook links the new cache purge step for every site</p>';
 		$this->tick( $node );
-		$this->complete( self::posts( self::HERON ), self::posts_answer( [] ) );
 
 		$this->complete( self::comments( self::HERON ), self::comments_answer( [ self::comment( 5601, "<p>{$first}</p>\n<p>Second paragraph.</p>" ), self::comment( 5602, $second ) ] ) );
 
@@ -207,12 +206,12 @@ final class P2SourceTest extends TestCase {
 		$page3 = self::next_page( self::HERON, 'posts', 'page_handle', $last );
 		$this->tick( $node );
 
-		$this->complete( self::posts( self::HERON ), self::posts_answer( [], $first ) );
 		$this->complete( self::comments( self::HERON ), self::comments_answer( [] ) );
+		$this->complete( self::posts( self::HERON ), self::posts_answer( [], $first ) );
 		$this->complete( $page2, self::posts_answer( [], $last ) );
 		$this->complete( $page3, self::posts_answer( [] ) );
 
-		$this->assertSame( [ self::posts( self::HERON ), self::comments( self::HERON ), $page2, $page3 ], $this->dispatched );
+		$this->assertSame( [ self::comments( self::HERON ), self::posts( self::HERON ), $page2, $page3 ], $this->dispatched );
 	}
 
 	/** Comments carry no next page: a full page queues the next by number, and a short one ends them. */
@@ -222,12 +221,12 @@ final class P2SourceTest extends TestCase {
 		$page2 = self::next_page( self::HERON, 'comments', 'page', '2' );
 		$page3 = self::next_page( self::HERON, 'comments', 'page', '3' );
 
-		$this->complete( self::posts( self::HERON ), self::posts_answer( [] ) );
 		$this->complete( self::comments( self::HERON ), self::comments_answer( \array_map( self::comment( ... ), \range( 6001, 6100 ) ) ) );
+		$this->complete( self::posts( self::HERON ), self::posts_answer( [] ) );
 		$this->complete( $page2, self::comments_answer( \array_map( self::comment( ... ), \range( 6101, 6200 ) ) ) );
 		$this->complete( $page3, self::comments_answer( [ self::comment( 6201 ) ] ) );
 
-		$this->assertSame( [ self::posts( self::HERON ), self::comments( self::HERON ), $page2, $page3 ], $this->dispatched );
+		$this->assertSame( [ self::comments( self::HERON ), self::posts( self::HERON ), $page2, $page3 ], $this->dispatched );
 		$this->assertCount( 201, $this->recorded() );
 	}
 
@@ -236,6 +235,7 @@ final class P2SourceTest extends TestCase {
 		$stderr = $this->capture_stderr();
 		$node   = $this->p2( 'p2', 'internal', self::HERON );
 		$this->tick( $node );
+		$this->complete( self::comments( self::HERON ), self::comments_answer( [] ) );
 
 		$this->complete( self::posts( self::HERON ), '{"error":"unauthorized","message":"User cannot access this private blog 4471.","posts":[{"ID":1,"site_ID":2}]}' );
 
@@ -248,6 +248,7 @@ final class P2SourceTest extends TestCase {
 		$stderr = $this->capture_stderr();
 		$node   = $this->p2( 'p2', 'internal', self::HERON );
 		$this->tick( $node );
+		$this->complete( self::comments( self::HERON ), self::comments_answer( [] ) );
 
 		$this->complete( self::posts( self::HERON ), '<html>Kestrel maintenance 5531</html>' );
 
@@ -260,7 +261,6 @@ final class P2SourceTest extends TestCase {
 		$node = $this->p2( 'p2-restricted', 'restricted', self::KESTREL );
 		$this->tick( $node );
 
-		$this->complete( self::posts( self::KESTREL ), self::posts_answer( [] ) );
 		$this->complete( self::comments( self::KESTREL ), self::comments_answer( [ self::comment( 7301 ) ] ) );
 
 		$this->assertSame( 'restricted', $this->recorded()['p2:88120:4107:c7301']['tier'] );
@@ -272,8 +272,9 @@ final class P2SourceTest extends TestCase {
 		$node   = $this->p2( 'p2', 'internal', self::HERON, self::KESTREL );
 		$this->tick( $node );
 
-		$this->complete( self::posts( self::HERON ), self::posts_answer( [] ) );
 		$this->complete( self::comments( self::HERON ), (string) \json_encode( [ 'found' => -1, 'comments' => [ self::comment( 8801 ) ] ] ) );
+		$this->complete( self::posts( self::HERON ), self::posts_answer( [] ) );
+		$this->complete( self::comments( self::KESTREL ), self::comments_answer( [] ) );
 		$this->complete( self::posts( self::KESTREL ), self::posts_answer( [ [ 'ID' => 4108, 'title' => 'No site', 'content' => '', 'date' => '2026-10-28T09:15:00+00:00', 'author' => [ 'name' => 'Dunlin Marsh' ] ] ] ) );
 
 		$this->assertSame( [], $this->recorded() );
