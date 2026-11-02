@@ -8,7 +8,7 @@
  * per link, a `link_retracted` per stored link row it no longer writes and
  * an `entity_proposed` per candidate, addressed by TO to the writer its
  * `make_node` line names, then forwards an `item_resolved` struct `{ item,
- * links, proposals, extracted, attempt }` to its target. A record it cannot
+ * links, proposals, extracted, attempt, extract }` to its target. A record it cannot
  * resolve yet parks on the Delay its `make_node` line names after the
  * writer. All of it leaves through its sink, so the writer and the Delay are
  * declared destinations (substrate ADR-19), as the Intel_Event_Writer's two
@@ -29,7 +29,8 @@
  *
  * A re-resolution runs the resolver's identifier, name and stem steps alone,
  * because NER ran when the item was first resolved, unless the record is
- * owed NER. It forwards an item a call has extracted only when, with the
+ * owed NER. It forwards an item a call has extracted only when the record is
+ * owed an extraction (`extract`), or when, with the
  * curators' judgments in force, it asserts a link to an entity, compared by
  * survivor, whose link to the item is not settled, one the item's last
  * extraction was given as asserted; a link a curator rejected is not sent
@@ -38,7 +39,8 @@
  * carries the judgments, a confirmed link asserted and a rejected one left
  * out, and, when its NER step did not run and answer, each stored NER link
  * it did not find again, as stored; whether a call extracted the item
- * before; and the record's extraction `attempt`, 0 when it carries none.
+ * before; the record's extraction `attempt`, 0 when it carries none; and
+ * whether it was owed an extraction, false when it carries none.
  * Only the links it found itself are written as events. An `item_recorded`
  * for an item the projection already holds is that same re-resolution, with
  * an `attempt` of 0; it runs the NER step unless the item was resolved
@@ -87,7 +89,7 @@ use Newspack_Nodes\Table_Unavailable;
  * @phpstan-type Row array{entity_key:string, role:string, method:string, survivor:string}
  * @phpstan-type Own_Links array{verdicts: array<string,string>, rows: array<string,Row>}
  * @phpstan-type Judgment array{known: array<string,true>, stored: array<string,array{role:string,method:string,confidence:float,state:string}>, ner: array<string,array{role:string,method:string,confidence:float,state:string}>, verdicts: array<string,string>, rows: array<string,Row>}
- * @phpstan-type Reresolve array{event:string, item_key:string, fresh_after:int|float, ner?:bool, attempt?:int, parked_at?:int|float}
+ * @phpstan-type Reresolve array{event:string, item_key:string, fresh_after:int|float, ner?:bool, extract?:bool, attempt?:int, parked_at?:int|float}
  * @phpstan-type Resolution array{links: list<array{entity_key:string,role:string,method:string,confidence:float,state:string}>, proposals: list<array{type:string,name:string}>, recognized: bool}
  */
 class Resolver_Node extends Node {
@@ -190,7 +192,7 @@ class Resolver_Node extends Node {
 				return;
 			}
 			[ $held, $extracted, $judgment, $resolved ] = self::stored( $item_key, $resolver->index->merged(), self::own_alias(), 'no intel-graph to read the stored item from; resolving it fresh, retracting none: ' ) ?? self::NOTHING_STORED;
-			$this->resolve_again( $resolver, [ $held ?? $item, $extracted, $judgment ], $resolved ? null : $this->ner(), 0 );
+			$this->resolve_again( $resolver, [ $held ?? $item, $extracted, $judgment ], $resolved ? null : $this->ner(), 0, false );
 			return;
 		}
 		if ( self::RERESOLVE !== $kind ) {
@@ -212,7 +214,7 @@ class Resolver_Node extends Node {
 		}
 		$stored = self::stored( $item_key, $resolver->index->merged(), self::own_alias(), null );
 		if ( isset( $stored[0] ) ) {
-			$this->resolve_again( $resolver, $stored, $owes_ner ? $this->ner() : null, $record['attempt'] ?? 0 );
+			$this->resolve_again( $resolver, $stored, $owes_ner ? $this->ner() : null, $record['attempt'] ?? 0, $record['extract'] ?? false );
 			return;
 		}
 		if ( $owes_ner ) {
@@ -226,22 +228,24 @@ class Resolver_Node extends Node {
 	/**
 	 * Resolve an item against what the projection holds of it: NER only when
 	 * handed the step, the curators' judgments in force, forwarded only while
-	 * still owed an extraction — no call extraction projected, or a link
-	 * asserted anew.
+	 * still owed an extraction — asked for one, no call extraction projected,
+	 * or a link asserted anew.
 	 *
 	 * @param Resolver                                       $resolver The resolver over the shared index.
 	 * @param array{0:array<string,mixed>,1:bool,2:Judgment} $stored   The item, whether a call extracted it, and what settled() read.
 	 * @param LLM_Entity_Extractor|null                      $ner      The NER step, or none.
 	 * @param int                                            $attempt  The failed extraction calls behind it.
+	 * @param bool                                           $extract  Whether the record asks for an extraction whatever the item holds.
 	 */
-	private function resolve_again( Resolver $resolver, array $stored, ?LLM_Entity_Extractor $ner, int $attempt ): void {
+	private function resolve_again( Resolver $resolver, array $stored, ?LLM_Entity_Extractor $ner, int $attempt, bool $extract ): void {
 		[ $item, $extracted, $judgment ] = $stored;
 		$resolution                      = $resolver->resolve( $item, $ner );
 		$sent                            = self::judged( $resolution, $judgment );
-		$forward                         = ! $extracted || self::asserts_anew( $sent['links'], $judgment['known'] );
+		$forward                         = $extract || ! $extracted || self::asserts_anew( $sent['links'], $judgment['known'] );
 		$forwarded                       = [
 			'extracted' => $extracted,
 			'attempt'   => $attempt,
+			'extract'   => $extract,
 		] + $sent;
 		$this->resolved( $item, $resolution, self::retractable( $judgment, $resolution ), $forward ? $forwarded : null );
 	}
@@ -258,14 +262,18 @@ class Resolver_Node extends Node {
 		$item_key    = $value['item_key'] ?? null;
 		$fresh_after = $value['fresh_after'] ?? null;
 		$ner         = $value['ner'] ?? false;
+		$extract     = $value['extract'] ?? false;
 		$attempt     = $value['attempt'] ?? 0;
 		$parked_at   = $value['parked_at'] ?? 0;
-		if ( ! \is_string( $item_key ) || ! self::is_number( $fresh_after ) || ! \is_bool( $ner ) || ! \is_int( $attempt ) || ! self::is_number( $parked_at ) ) {
+		if ( ! \is_string( $item_key ) || ! self::is_number( $fresh_after ) || ! \is_bool( $ner ) || ! \is_bool( $extract ) || ! \is_int( $attempt ) || ! self::is_number( $parked_at ) ) {
 			return null;
 		}
 		$more = [];
 		if ( isset( $value['ner'] ) ) {
 			$more['ner'] = $ner;
+		}
+		if ( isset( $value['extract'] ) ) {
+			$more['extract'] = $extract;
 		}
 		if ( isset( $value['attempt'] ) ) {
 			$more['attempt'] = $attempt;
@@ -279,13 +287,14 @@ class Resolver_Node extends Node {
 	/**
 	 * An `item_reresolve` record naming a stored item: the one shape the
 	 * resolver's hold, the extractor's retry and the reresolver mint, which
-	 * reresolve_of() reads back. `ner` marks one owed its NER step, `attempt`
-	 * counts the failed extraction calls behind it, and `parked_at` is the
-	 * later queue's own stamp, carried through a re-park.
+	 * reresolve_of() reads back. `ner` marks one owed its NER step, `extract`
+	 * one owed an extraction call whatever the item holds, `attempt` counts
+	 * the failed extraction calls behind it, and `parked_at` is the later
+	 * queue's own stamp, carried through a re-park.
 	 *
 	 * @param string                                          $item_key    The stored item.
 	 * @param int|float                                       $fresh_after The tick its index must be read after; 0 for any.
-	 * @param array{ner?:bool,attempt?:int,parked_at?:int|float} $more     The optional fields it carries.
+	 * @param array{ner?:bool,extract?:bool,attempt?:int,parked_at?:int|float} $more The optional fields it carries.
 	 * @return Reresolve
 	 */
 	public static function reresolve( string $item_key, int|float $fresh_after, array $more = [] ): array {

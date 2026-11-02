@@ -26,7 +26,7 @@ import {
 } from '../components/lensDraft';
 
 /** No lens open, its items on their first page. */
-export const CLOSED_LENS = { key: null, starts: [ 0 ] };
+export const CLOSED_LENS = { key: null, starts: [ 0 ], sort: '' };
 
 /**
  * A listed lens's key.
@@ -235,24 +235,35 @@ function TrendTable( { rows, count = ( row ) => row.count } ) {
 }
 
 /**
- * The lens opened: its signals above its items, a page at a time, beside
- * its trend rows, each read through the lens.
+ * The lens opened: its signals above its items, a page at a time in the
+ * order the answer names, which the reader may switch, beside its trend
+ * rows, each read through the lens.
  *
  * @param {Object}                     props
  * @param {Object}                     props.lens         The listed lens opened.
  * @param {number[]}                   props.starts       Each page's first row.
  * @param {(starts: number[]) => void} props.onStarts     Replaces the page starts.
+ * @param {string}                     props.sort         The order asked for; '' for the server's.
+ * @param {(sort: string) => void}     props.onSort       Asks for an order, from the first page.
  * @param {(key: string) => void}      props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void}     [props.onSave]     Saves an item; absent for a reader.
  * @return {import('react').ReactElement} The lens's reads.
  */
-function Opened( { lens, starts, onStarts, onOpenEntity, onSave } ) {
+function Opened( {
+	lens,
+	starts,
+	onStarts,
+	sort,
+	onSort,
+	onOpenEntity,
+	onSave,
+} ) {
 	const through = { lens: lens.lens_key };
 	const offset = starts[ starts.length - 1 ];
 	const items = useIntelRead(
 		'lens:items',
 		'search',
-		commandArgs( 0 < offset ? { ...through, offset } : through )
+		commandArgs( { ...through, sort, ...( 0 < offset ? { offset } : {} ) } )
 	);
 	const trends = useIntelRead(
 		'lens:trends',
@@ -301,6 +312,7 @@ function Opened( { lens, starts, onStarts, onOpenEntity, onSave } ) {
 							onStarts={ onStarts }
 							onOpenEntity={ onOpenEntity }
 							onSave={ onSave }
+							onSort={ onSort }
 						/>
 					) }
 				</Answer>
@@ -329,17 +341,17 @@ function Opened( { lens, starts, onStarts, onOpenEntity, onSave } ) {
  * takes its lens out from the moment each is sent, until a read of `lenses`
  * reflects it, since the projector records it seconds after it lands; a
  * refusal puts the lens back. One that lands lists again, and a removal
- * also closes the lens. The page holds the lens opened and its page, so it
- * outlives a visit to another view.
+ * also closes the lens. The page holds the lens opened, its page and its
+ * order, so it outlives a visit to another view.
  *
- * @param {Object}                                             props
- * @param {boolean}                                            props.canTune      Whether to offer curation.
- * @param {Object}                                             props.vocabulary   The ontology's closed lists.
- * @param {{key: ?string, starts: number[]}}                   props.opened       The lens opened and its page starts.
- * @param {(opened: {key: ?string, starts: number[]}) => void} props.onOpen       Opens a lens, or a page of it.
- * @param {(key: string) => void}                              props.onOpenEntity Opens an entity.
- * @param {(target: Object, name: string) => void}             props.onWatch      Opens the watch form on a target.
- * @param {(item: Object) => void}                             [props.onSave]     Saves an item; absent for a reader.
+ * @param {Object}                                                           props
+ * @param {boolean}                                                          props.canTune      Whether to offer curation.
+ * @param {Object}                                                           props.vocabulary   The ontology's closed lists.
+ * @param {{key: ?string, starts: number[], sort: string}}                   props.opened       The lens opened, its page starts and its order.
+ * @param {(opened: {key: ?string, starts: number[], sort: string}) => void} props.onOpen       Opens a lens, a page of it or an order.
+ * @param {(key: string) => void}                                            props.onOpenEntity Opens an entity.
+ * @param {(target: Object, name: string) => void}                           props.onWatch      Opens the watch form on a target.
+ * @param {(item: Object) => void}                                           [props.onSave]     Saves an item; absent for a reader.
  * @return {import('react').ReactElement} The view.
  */
 export default function Lens( {
@@ -483,8 +495,8 @@ export default function Lens( {
 									}
 									onClick={ () =>
 										onOpen( {
+											...CLOSED_LENS,
 											key: one.lens_key,
-											starts: [ 0 ],
 										} )
 									}
 								>
@@ -503,8 +515,10 @@ export default function Lens( {
 					key={ JSON.stringify( lens.filters ) }
 					lens={ lens }
 					starts={ opened.starts }
-					onStarts={ ( starts ) =>
-						onOpen( { key: lens.lens_key, starts } )
+					onStarts={ ( starts ) => onOpen( { ...opened, starts } ) }
+					sort={ opened.sort }
+					onSort={ ( sort ) =>
+						onOpen( { ...opened, sort, starts: [ 0 ] } )
 					}
 					onOpenEntity={ onOpenEntity }
 					onSave={ onSave }

@@ -9,11 +9,14 @@
  * ADR-19). A call's extraction also writes a `subjects_extracted` naming
  * the entities it was given as asserted, the set the Resolver settles links
  * by. Each extraction then forwards an `item_extracted` struct `{ item,
- * relevance, importance }` to its target, the deduper. The Resolver forwards
- * an item the projection holds an extraction of only when it asserts a link
- * that extraction was not given, so an item is extracted again only to record
- * claims about a subject accepted or confirmed since; the projector replaces
- * the item's claims and topics with the new extraction's.
+ * relevance, importance }` to its target, the deduper. Its importance is at
+ * least the floor `add_importance_floor` sets for its kind, the heuristic
+ * stand-in's `other` included. The Resolver forwards an item the projection
+ * holds an extraction of only when it asserts a link that extraction was not
+ * given, or when its record is owed an extraction (`extract`), so an item is
+ * extracted again to record claims about a subject accepted or confirmed
+ * since, or when `ontology reextract` asks; the projector replaces the
+ * item's claims and topics with the new extraction's.
  *
  * A claim's subject and object resolve through the entities whose names
  * spell the whole of them. The subject is the one of those the item links
@@ -25,7 +28,8 @@
  * it is marked extracted rather than retried in a loop. A call made that
  * fails also parks a re-resolution of the item on the Delay its `make_node`
  * line names after the writer, with exponential backoff, until MAX_ATTEMPTS;
- * the struct it reads carries the `attempt` that counts them. The topics
+ * the struct it reads carries the `attempt` that counts them, and the retry
+ * stays owed its extraction when the struct was (`extract`). The topics
  * offered and the names claims resolve through come from the process's
  * shared `Entity_Index::current()`, the one the Resolver reads. Each
  * extraction publishes its status: heuristic with no client, a call that
@@ -36,6 +40,7 @@
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Node;
@@ -47,7 +52,9 @@ use Newspack_Nodes\Worker_Should_Stop;
 
 class Extractor_Node extends Node {
 	use Schema_Reflection;
-	use LLM_Config;
+	use LLM_Config {
+		dump_config as private llm_dump_config;
+	}
 	use Emits_Struct;
 	use Publishes_Status;
 
@@ -65,6 +72,9 @@ class Extractor_Node extends Node {
 
 	/** The attempts after which a failed call is no longer retried. */
 	public const MAX_ATTEMPTS = 5;
+
+	/** The highest importance floor a kind takes. */
+	public const MAX_FLOOR = 9;
 
 	/** Every key a status carries, null, so each publish clears what its outcome leaves out. */
 	public const BLANK_STATUS = [
@@ -87,6 +97,9 @@ class Extractor_Node extends Node {
 	/** @var list<string> Relevance-profile lines add_profile registered and remove_profile left, in call order. */
 	protected array $profiles = [];
 
+	/** @var array<string,int> Each item kind's least importance, by add_importance_floor, in call order. */
+	protected array $importance_floors = [];
+
 	/** Wire the sibling `:config` interpreter for the LLM and prompt verbs. */
 	public function __construct() {
 		parent::__construct();
@@ -106,7 +119,8 @@ class Extractor_Node extends Node {
 		$proposals = $value['proposals'] ?? null;
 		$extracted = $value['extracted'] ?? null;
 		$attempt   = $value['attempt'] ?? null;
-		if ( 0 === ( Core::int( $message[ Message::TYPE ] ) & Message::TM_STRUCT ) || null === $item || ! \is_array( $links ) || ! \is_array( $proposals ) || ! \is_bool( $extracted ) || ! \is_int( $attempt ) ) {
+		$owed      = $value['extract'] ?? null;
+		if ( 0 === ( Core::int( $message[ Message::TYPE ] ) & Message::TM_STRUCT ) || null === $item || ! \is_array( $links ) || ! \is_array( $proposals ) || ! \is_bool( $extracted ) || ! \is_int( $attempt ) || ! \is_bool( $owed ) ) {
 			$this->print_less_often( 'dropping a resolution it cannot read from ', Core::as_string( $message[ Message::FROM ] ) );
 			return;
 		}
@@ -119,7 +133,7 @@ class Extractor_Node extends Node {
 			$key  = Core::as_string( $link['entity_key'] ?? null );
 			$linked[ $key ] = [ Core::as_float( $link['confidence'] ?? null ), 'asserted' === ( $link['state'] ?? null ) ];
 		}
-		$this->extract( $item, $linked, $extracted, $attempt, Entity_Index::current() );
+		$this->extract( $item, $linked, $extracted, $owed, $attempt, Entity_Index::current() );
 	}
 
 	/**
@@ -132,10 +146,11 @@ class Extractor_Node extends Node {
 	 * @param array<string,mixed>                 $item      The item.
 	 * @param array<string,array{0:float,1:bool}> $linked    Each linked entity => its link's confidence and whether it is asserted.
 	 * @param bool                                $extracted Whether a call extracted the item before.
+	 * @param bool                                $owed      Whether it was sent to be extracted whatever it holds.
 	 * @param int                                 $attempt   The failed calls made for the item so far.
 	 * @param Entity_Index                        $index     The entities claims resolve through.
 	 */
-	private function extract( array $item, array $linked, bool $extracted, int $attempt, Entity_Index $index ): void {
+	private function extract( array $item, array $linked, bool $extracted, bool $owed, int $attempt, Entity_Index $index ): void {
 		$topics = $index->topics();
 		$client = $this->make_llm_client();
 		$parsed = null;
@@ -156,7 +171,7 @@ class Extractor_Node extends Node {
 			$this->publish_snapshot( [ 'mode' => 'heuristic' ] );
 		} elseif ( null === $parsed ) {
 			$this->publish_failing( $fault );
-			$this->retry( $item_key, $attempt );
+			$this->retry( $item_key, $attempt, $owed );
 		} else {
 			$this->publish_snapshot( [ 'mode' => 'call', 'last_ok_at' => (int) Core::$now ] );
 		}
@@ -166,6 +181,7 @@ class Extractor_Node extends Node {
 		}
 		$stage    = null === $parsed ? self::HEURISTIC_STAGE : 'extract';
 		$parsed ??= [ 'summary' => self::heuristic_summary( $item ), 'kind' => 'other', 'topics' => [], 'relevance' => 0, 'importance' => 0, 'sentiment' => 0.0, 'claims' => [] ];
+		$parsed['importance'] = \max( $parsed['importance'], $this->importance_floors[ $parsed['kind'] ] ?? 0 );
 		$fields   = [
 			'item_key'     => $item_key,
 			'summary'      => $parsed['summary'],
@@ -238,19 +254,21 @@ class Extractor_Node extends Node {
 	 * re-resolution one attempt on, due `RETRY_BASE_S * 2 ** $attempt`
 	 * seconds from now, at most RETRY_MAX_S, so every retry lands inside the
 	 * day the queue keeps. The replay is a re-resolution, which forwards the
-	 * item for extraction only while it is still owed one. From MAX_ATTEMPTS
-	 * on it parks nothing.
+	 * item for extraction only while it is still owed one; an item sent to be
+	 * extracted whatever it holds stays so. From MAX_ATTEMPTS on it parks
+	 * nothing.
 	 *
 	 * @param string $item_key The item.
 	 * @param int    $attempt  The failed calls made for it before this one.
+	 * @param bool   $owed     Whether it was sent to be extracted whatever it holds.
 	 */
-	private function retry( string $item_key, int $attempt ): void {
+	private function retry( string $item_key, int $attempt, bool $owed ): void {
 		if ( $attempt >= self::MAX_ATTEMPTS ) {
 			$this->print_less_often( 'giving up extracting ', "{$item_key} after {$attempt} attempts" );
 			return;
 		}
 		$backoff = \min( self::RETRY_MAX_S, self::RETRY_BASE_S * ( 2 ** $attempt ) );
-		$record  = Resolver_Node::reresolve( $item_key, 0, [ 'attempt' => $attempt + 1 ] ) + [ 'not_before' => Core::$now + $backoff ];
+		$record  = Resolver_Node::reresolve( $item_key, 0, [ 'attempt' => $attempt + 1 ] + ( $owed ? [ 'extract' => true ] : [] ) ) + [ 'not_before' => Core::$now + $backoff ];
 		$this->emit( $this->later, $record, $item_key );
 	}
 
@@ -319,8 +337,55 @@ class Extractor_Node extends Node {
 		$this->audience = $audience;
 	}
 
+	/**
+	 * Replay the client and prompt verbs, then one `add_importance_floor`
+	 * line per floor, in the order they were set.
+	 */
+	public function dump_config(): string {
+		$out = $this->llm_dump_config();
+		foreach ( $this->importance_floors as $kind => $min ) {
+			$out .= $this->config_line( 'add_importance_floor', $kind, (string) $min );
+		}
+		return $out;
+	}
+
+	/**
+	 * Set a kind's floor, replacing any it had: every extraction of that
+	 * kind, the heuristic stand-in's `other` included, scores at least $min.
+	 *
+	 * @param string $kind A kind from `Intel_Event::ITEM_KINDS`.
+	 * @param int    $min  From 0 to MAX_FLOOR.
+	 * @throws \InvalidArgumentException On any other kind or min.
+	 */
+	public function add_importance_floor( string $kind, int $min ): void {
+		if ( ! \in_array( $kind, Intel_Event::ITEM_KINDS, true ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+			throw new \InvalidArgumentException( "add_importance_floor: '{$kind}' is not an item kind" );
+		}
+		if ( $min < 0 || $min > self::MAX_FLOOR ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+			throw new \InvalidArgumentException( 'add_importance_floor: a floor is 0 to ' . self::MAX_FLOOR . "; got {$min}" );
+		}
+		$this->importance_floors[ $kind ] = $min;
+	}
+
+	/**
+	 * Drop a kind's floor.
+	 *
+	 * @param string $kind The kind.
+	 * @throws \InvalidArgumentException When the kind has none.
+	 */
+	public function remove_importance_floor( string $kind ): void {
+		if ( ! isset( $this->importance_floors[ $kind ] ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+			throw new \InvalidArgumentException( "remove_importance_floor: '{$kind}' has no floor" );
+		}
+		unset( $this->importance_floors[ $kind ] );
+	}
+
 	/** @return array<string,mixed> */
 	public static function node_schema(): array {
+		$kind = [ 'name' => 'kind', 'type' => 'string', 'required' => true, 'description' => 'An item kind: ' . \implode( ', ', Intel_Event::ITEM_KINDS ) . '.' ];
 		return [
 			'category'     => 'Transform',
 			'description'  => 'Extracts each resolved item that links something: its summary, kind, topics, scores and claims; forwards the item and its scores.',
@@ -339,6 +404,30 @@ class Extractor_Node extends Node {
 					'setter'      => 'audience',
 				],
 				...self::list_verbs( 'profile', 'profiles', [ 'name' => 'text', 'type' => 'string', 'required' => true, 'variadic' => true ], 'Add a relevance-profile line used to score items: <text>.' ),
+				[
+					'name'        => 'add_importance_floor',
+					'description' => 'Score every extraction of a kind at least <min>, 0 to ' . self::MAX_FLOOR . ', replacing its floor: <kind> <min>.',
+					'args'        => [ $kind, [ 'name' => 'min', 'type' => 'int', 'required' => true ] ],
+					'multiple'    => true,
+					'handler'     => static function ( Command_Interpreter_Node $interpreter, array $args ): string {
+						/** @var self $extractor */
+						$extractor = $interpreter->patron();
+						$extractor->add_importance_floor( Core::as_string( $args['kind'] ), Core::as_int( $args['min'] ) );
+						return "ok\n";
+					},
+				],
+				[
+					'name'        => 'remove_importance_floor',
+					'description' => 'Undo add_importance_floor: drop the floor of <kind>. Refused when it has none.',
+					'args'        => [ $kind ],
+					'action'      => true,
+					'handler'     => static function ( Command_Interpreter_Node $interpreter, array $args ): string {
+						/** @var self $extractor */
+						$extractor = $interpreter->patron();
+						$extractor->remove_importance_floor( Core::as_string( $args['kind'] ) );
+						return "ok\n";
+					},
+				],
 			],
 			'accepts_fill' => true,
 			'has_target'   => true,

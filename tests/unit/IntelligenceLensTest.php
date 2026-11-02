@@ -202,8 +202,29 @@ final class IntelligenceLensTest extends TestCase {
 		$this->save( 'fifteen-days', '--days=15' );
 		$this->save( 'fourteen-days', '--days=14' );
 
-		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award' ], self::keys( $this->ci->dispatch( 'search', [ '--lens=fifteen-days' ] ) ) );
+		$this->assertSame( [ 'feed:gazette-award', 'github:ledger-launch' ], self::keys( $this->ci->dispatch( 'search', [ '--lens=fifteen-days' ] ) ) );
 		$this->assertSame( [ 'github:ledger-launch' ], self::keys( $this->ci->dispatch( 'search', [ '--lens=fourteen-days' ] ) ) );
+	}
+
+	/** A lens ranks by importance unless the call names a sort, words or none, and says which it read in. */
+	public function test_a_lens_ranks_by_importance_unless_told_otherwise(): void {
+		$this->save( 'harbor-month', '--days=30' );
+
+		$ranked = $this->ci->dispatch( 'search', [ '--lens=harbor-month', '--q=gazette' ] );
+		$timed  = $this->ci->dispatch( 'search', [ '--lens=harbor-month', '--sort=time' ] );
+
+		$this->assertSame( [ 'importance', [ 'feed:gazette-award', 'linear:joint-grant' ] ], [ $ranked['sort'], self::keys( $ranked ) ] );
+		$this->assertSame( [ 'time', [ 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ] ], [ $timed['sort'], self::keys( $timed ) ] );
+	}
+
+	/** The search verb declares `sort` once, with no default, so the door and the page read the same arg. */
+	public function test_search_declares_its_sort(): void {
+		$search = \array_column( Intelligence_CI_Node::node_schema()['commands'], null, 'name' )['search'];
+		$sort   = \array_column( $search['args'], null, 'name' )['sort'];
+
+		$this->assertSame( 'string', $sort['type'] );
+		$this->assertArrayNotHasKey( 'default', $sort );
+		$this->assertStringContainsString( 'importance, time', $sort['description'] );
 	}
 
 	/** A filter the call names replaces the lens's for that field and leaves the rest standing. */
@@ -284,7 +305,7 @@ final class IntelligenceLensTest extends TestCase {
 
 	/** Each repeatable filter matches any of its values. */
 	public function test_repeatable_filters_match_any(): void {
-		$search = fn ( string ...$args ): array => self::keys( $this->ci->dispatch( 'search', $args ) );
+		$search = fn ( string ...$args ): array => self::keys( $this->ci->dispatch( 'search', [ '--sort=time', ...$args ] ) );
 
 		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award' ], $search( '--kind=award', '--kind=launch' ) );
 		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], $search( '--topic=topic:awards', '--topic=topic:ai' ) );
@@ -297,7 +318,7 @@ final class IntelligenceLensTest extends TestCase {
 	/** Search's role reads items linking an entity holding the role at the item's time. */
 	public function test_search_filters_by_role(): void {
 		$this->seed( [ Intel_Event::make( 'role_asserted', [ 'entity_key' => self::LEDGER, 'role' => 'partner', 'from_ts' => self::$oct_06 ], 'user:41', 'fixture-9' ) ] );
-		$search = fn ( string ...$args ): array => self::keys( $this->ci->dispatch( 'search', $args ) );
+		$search = fn ( string ...$args ): array => self::keys( $this->ci->dispatch( 'search', [ '--sort=time', ...$args ] ) );
 
 		$this->assertSame( [ 'feed:gazette-award', 'linear:joint-grant' ], $search( '--role=client' ) );
 		$this->assertSame( [ 'github:ledger-launch' ], $search( '--role=partner' ), 'the grant predates the partnership' );
@@ -321,7 +342,7 @@ final class IntelligenceLensTest extends TestCase {
 		$GLOBALS['_current_user_id'] = self::READER;
 		$this->assertSame( [ 'feed:gazette-award' ], self::keys( $this->ci->dispatch( 'search', [ '--lens=public-only' ] ) ) );
 		$this->assertSame( [ 'github:ledger-launch', 'linear:joint-grant' ], self::keys( $this->ci->dispatch( 'search', [ '--lens=inside' ] ) ) );
-		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => true ], $this->ci->dispatch( 'search', [ '--lens=sealed' ] ) );
+		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => true, 'sort' => 'importance' ], $this->ci->dispatch( 'search', [ '--lens=sealed' ] ) );
 		$this->assertNotContains( 'churn_signal', \array_column( $this->ci->dispatch( 'trends', [ 'kind', '--lens=inside' ] )['rows'], 'value' ) );
 	}
 

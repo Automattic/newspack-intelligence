@@ -6,7 +6,7 @@
  */
 
 import { render, screen, fireEvent } from '@testing-library/react';
-import ItemRow from '../ItemRow';
+import ItemRow, { ItemPage } from '../ItemRow';
 
 const ITEM = {
 	item_key: 'feed:press-gazette-17',
@@ -99,5 +99,48 @@ describe( 'ItemRow', () => {
 				.getByRole( 'button', { name: 'Mark seen' } )
 				.closest( '.newspack-intelligence__item-head' )
 		).not.toBeNull();
+	} );
+} );
+
+describe( 'ItemPage', () => {
+	const page = ( sort, onSort ) =>
+		render(
+			<ItemPage
+				answer={ { items: [ ITEM ], total: 1, sort } }
+				starts={ [ 0 ] }
+				onStarts={ jest.fn() }
+				onOpenEntity={ jest.fn() }
+				onSort={ onSort }
+			/>
+		);
+
+	it( 'says a page is ranked by importance and switches it to newest first', () => {
+		const onSort = jest.fn();
+		page( 'importance', onSort );
+		expect(
+			screen.getByText( 'Ranked by importance' )
+		).toBeInTheDocument();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Show newest first' } )
+		);
+		expect( onSort ).toHaveBeenCalledWith( 'time' );
+	} );
+
+	it( 'says a page is newest first and switches it to importance', () => {
+		const onSort = jest.fn();
+		page( 'time', onSort );
+		expect( screen.getByText( 'Newest first' ) ).toBeInTheDocument();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Rank by importance' } )
+		);
+		expect( onSort ).toHaveBeenCalledWith( 'importance' );
+	} );
+
+	it( 'offers no switch to a page that does not sort', () => {
+		page( undefined, undefined );
+		expect( screen.queryByText( 'Ranked by importance' ) ).toBeNull();
+		expect(
+			screen.queryByRole( 'button', { name: 'Show newest first' } )
+		).toBeNull();
 	} );
 } );

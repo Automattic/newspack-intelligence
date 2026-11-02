@@ -100,6 +100,7 @@ final class ResolverNodeTest extends TestCase {
 				'item'      => self::item( [ 'url' => 'https://www.harborgazette.example/2026/10/award', 'body' => 'Mesa Courier reprinted it.' ] ),
 				'extracted' => false,
 				'attempt'   => 0,
+				'extract'   => false,
 				'links'     => [
 					[ 'entity_key' => self::GAZETTE, 'role' => 'publisher', 'method' => 'identifier', 'confidence' => 1.0, 'state' => 'asserted' ],
 					[ 'entity_key' => self::MESA, 'role' => 'mention', 'method' => 'name', 'confidence' => 1.0, 'state' => 'asserted' ],
@@ -240,6 +241,28 @@ final class ResolverNodeTest extends TestCase {
 
 		$this->assertSame( [ [ 'link_asserted', self::GAZETTE ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'] ], $this->written() ) );
 		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $m ): bool => 'intel:resolved:null' === $m[ Message::TO ] ) );
+	}
+
+	/**
+	 * A re-resolution owed its extraction (`extract`) forwards an item a call
+	 * extracted with every link settled, marked so the extractor's retry
+	 * stays owed too.
+	 */
+	public function test_a_reextraction_forwards_an_item_already_extracted(): void {
+		$this->seed(
+			self::gazette(),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.example/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::link( 'link_asserted' ),
+				...self::extracted( self::GAZETTE ),
+			]
+		);
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0, [ 'extract' => true, 'attempt' => 2 ] ) );
+
+		$resolved = $this->resolved();
+		$this->assertSame( [ true, true, 2 ], [ $resolved['extracted'], $resolved['extract'], $resolved['attempt'] ] );
+		$this->assertSame( [ self::GAZETTE ], \array_column( $resolved['links'], 'entity_key' ) );
 	}
 
 	/**
@@ -434,6 +457,7 @@ final class ResolverNodeTest extends TestCase {
 		$this->resolver->fill( self::reresolve( self::ITEM, 0.0, [ 'ner' => 'yes' ] ) );
 		$this->resolver->fill( self::reresolve( self::ITEM, 0.0, [ 'attempt' => '2' ] ) );
 		$this->resolver->fill( self::reresolve( self::ITEM, 0.0, [ 'parked_at' => 'yesterday' ] ) );
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0, [ 'extract' => 1 ] ) );
 		$this->resolver->fill( self::reresolve( 'feed:pruned-9001', 0.0 ) );
 
 		$this->assertSame( [], $this->out->captured );
@@ -1030,6 +1054,7 @@ final class ResolverNodeTest extends TestCase {
 				'item'      => self::item( $over ),
 				'extracted' => true,
 				'attempt'   => 0,
+				'extract'   => false,
 				'links'     => [
 					[ 'entity_key' => self::GAZETTE, 'role' => 'publisher', 'method' => 'identifier', 'confidence' => 1.0, 'state' => 'asserted' ],
 					[ 'entity_key' => 'organization:quarry-ledger', 'role' => 'mention', 'method' => 'name', 'confidence' => 0.85, 'state' => 'asserted' ],

@@ -78,14 +78,120 @@ final class ExtractorNodeTest extends TestCase {
 
 	/** The prompt verbs are the extractor's alone: the resolver, which builds no extraction prompt, declares none. */
 	public function test_only_the_extractor_declares_the_prompt_verbs(): void {
-		$prompt   = [ 'set_audience', 'add_profile', 'remove_profile' ];
+		$prompt   = [ 'set_audience', 'add_profile', 'remove_profile', 'add_importance_floor', 'remove_importance_floor' ];
 		$commands = \array_column( Extractor_Node::node_schema()['commands'], null, 'name' );
 
 		$this->assertSame( [ 'set_api_url', 'set_vault_id', 'set_model', 'set_feature', ...$prompt ], \array_keys( $commands ) );
 		$this->assertSame( 'audience', $commands['set_audience']['setter'] );
 		$this->assertTrue( $commands['add_profile']['multiple'] );
 		$this->assertSame( 'profiles', $commands['remove_profile']['unlist'] );
+		$this->assertTrue( $commands['add_importance_floor']['multiple'] );
+		$this->assertTrue( $commands['remove_importance_floor']['action'] );
 		$this->assertSame( [], \array_intersect( $prompt, \array_column( Resolver_Node::node_schema()['commands'], 'name' ) ) );
+	}
+
+	/** A floor lifts a kind's importance after the call; with none set the model's score stands. */
+	public function test_an_importance_floor_lifts_the_kind_it_names(): void {
+		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ) );
+		$this->answer( '{"summary":"The Gazette cancels its plan.","kind":"churn_signal","relevance":3,"importance":2}' );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+		$this->assertSame( [ 2, 2 ], [ $this->written()[0]['importance'], $this->forwarded()[0]['importance'] ] );
+
+		$this->out->captured = [];
+		$this->assertSame( "ok\n", $this->extractor->interpreter()?->dispatch( 'add_importance_floor', [ 'churn_signal', '8' ] ) );
+		$this->assertSame( "ok\n", $this->extractor->interpreter()?->dispatch( 'add_importance_floor', [ 'praise', '7' ] ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$this->assertSame( [ 8, 8, 3 ], [ $this->written()[0]['importance'], $this->forwarded()[0]['importance'], $this->written()[0]['relevance'] ] );
+	}
+
+	/** A floor never lowers a score above it. */
+	public function test_an_importance_floor_keeps_a_higher_score(): void {
+		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ) );
+		$this->extractor->interpreter()?->dispatch( 'add_importance_floor', [ 'complaint', '6' ] );
+		$this->answer( '{"summary":"Readers report a broken paywall.","kind":"complaint","importance":9}' );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$this->assertSame( 9, $this->written()[0]['importance'] );
+	}
+
+	/** The heuristic stand-in, kind `other`, takes `other`'s floor too. */
+	public function test_the_heuristic_stand_in_takes_its_kinds_floor(): void {
+		$this->extractor->interpreter()?->dispatch( 'add_importance_floor', [ 'other', '3' ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$this->assertSame( [ 'other', 3, 3 ], [ $this->written()[0]['kind'], $this->written()[0]['importance'], $this->forwarded()[0]['importance'] ] );
+	}
+
+	/** A second floor for a kind replaces the first; a removed floor no longer applies. */
+	public function test_a_floor_is_replaced_and_removed_by_kind(): void {
+		$node = $this->prompt_node();
+		$node->interpreter()->dispatch( 'add_importance_floor', [ 'complaint', '8' ] );
+		$node->interpreter()->dispatch( 'add_importance_floor', [ 'feature_request', '6' ] );
+		$node->interpreter()->dispatch( 'add_importance_floor', [ 'complaint', '5' ] );
+		$this->assertSame( [ 'complaint' => 5, 'feature_request' => 6 ], $this->read_private( $node, 'importance_floors' ) );
+
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'remove_importance_floor', [ 'complaint' ] ) );
+
+		$this->assertSame( [ 'feature_request' => 6 ], $this->read_private( $node, 'importance_floors' ) );
+	}
+
+	/**
+	 * A floor naming a kind outside `Intel_Event::ITEM_KINDS`, or a min
+	 * outside 0 to 9, is refused; so is removing a kind with no floor.
+	 *
+	 * @return array<string,array{0:string,1:list<string>,2:string}>
+	 */
+	public static function refused_floors(): array {
+		return [
+			'an unknown kind'      => [ 'add_importance_floor', [ 'gossip', '4' ], "add_importance_floor: 'gossip' is not an item kind" ],
+			'a min above nine'     => [ 'add_importance_floor', [ 'complaint', '10' ], 'add_importance_floor: a floor is 0 to 9; got 10' ],
+			'a kind with no floor' => [ 'remove_importance_floor', [ 'praise' ], "remove_importance_floor: 'praise' has no floor" ],
+		];
+	}
+
+	/**
+	 * @param string       $verb    The verb.
+	 * @param list<string> $tokens  Its tokens.
+	 * @param string       $refusal What it says.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'refused_floors' )]
+	public function test_a_bad_floor_is_refused( string $verb, array $tokens, string $refusal ): void {
+		$node = $this->prompt_node();
+		$node->interpreter()->dispatch( 'add_importance_floor', [ 'launch', '4' ] );
+
+		$caught = $this->caught_any( fn () => $node->interpreter()->dispatch( $verb, $tokens ) );
+
+		$this->assertInstanceOf( \InvalidArgumentException::class, $caught );
+		$this->assertSame( $refusal, $caught->getMessage() );
+		$this->assertSame( [ 'launch' => 4 ], $this->read_private( $node, 'importance_floors' ) );
+	}
+
+	/** A negative min, which the verb's int binding refuses first, is refused by the setter too. */
+	public function test_a_negative_floor_is_refused(): void {
+		$node = $this->prompt_node();
+
+		$caught = $this->caught_any( fn () => $node->add_importance_floor( 'complaint', -1 ) );
+
+		$this->assertSame( 'add_importance_floor: a floor is 0 to 9; got -1', $caught->getMessage() );
+		$this->assertSame( [], $this->read_private( $node, 'importance_floors' ) );
+	}
+
+	/** Each floor dumps as one add line and replays to the same floors. */
+	public function test_floors_dump_and_replay(): void {
+		$node = $this->prompt_node();
+		$node->name( 'llmnode' );
+		$node->interpreter()->dispatch( 'add_importance_floor', [ 'churn_signal', '8' ] );
+		$node->interpreter()->dispatch( 'add_importance_floor', [ 'feature_request', '6' ] );
+
+		$dump = $node->dump_config();
+
+		$this->assertStringContainsString( "command_node llmnode:config add_importance_floor churn_signal 8\ncommand_node llmnode:config add_importance_floor feature_request 6\n", $dump );
+		$replayed = $this->prompt_node();
+		$this->replay_config( $dump, $replayed );
+		$this->assertSame( [ 'churn_signal' => 8, 'feature_request' => 6 ], $this->read_private( $replayed, 'importance_floors' ) );
 	}
 
 	/** The audience a prompt is framed for is set in TSL, one quoted token, last write wins. */
@@ -478,7 +584,9 @@ final class ExtractorNodeTest extends TestCase {
 		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => 'none', 'proposals' => [], 'extracted' => false ] ) );
 		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [] ] ) );
 		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [], 'extracted' => false ] ) );
-		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [], 'extracted' => false, 'attempt' => '2' ] ) );
+		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [], 'extracted' => false, 'attempt' => '2', 'extract' => false ] ) );
+		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [], 'extracted' => false, 'attempt' => 2 ] ) );
+		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [], 'extracted' => false, 'attempt' => 2, 'extract' => 'yes' ] ) );
 		$this->extractor->fill( self::message( 'TICK' ) );
 
 		$this->assertSame( [], $this->out->captured );
@@ -573,6 +681,19 @@ final class ExtractorNodeTest extends TestCase {
 		);
 		$this->assertSame( $extracted ? [] : [ 'extraction_recorded' ], \array_column( $this->written(), 'event' ), 'the stand-in or kept extraction is written as without a retry' );
 		$this->assertSame( [ 300, 3600, 5 ], [ Extractor_Node::RETRY_BASE_S, Extractor_Node::RETRY_MAX_S, Extractor_Node::MAX_ATTEMPTS ] );
+	}
+
+	/** A failed re-extraction's retry stays owed its extraction, so its re-resolution forwards it again. */
+	public function test_a_failed_reextraction_parks_a_retry_still_owed_it(): void {
+		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ) );
+		$this->answer( 'throw' );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], true, 1, true ) );
+
+		$this->assertSame(
+			[ [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM, 'fresh_after' => 0, 'attempt' => 2, 'extract' => true, 'not_before' => self::NOW + 600 ] ],
+			$this->parked()
+		);
 	}
 
 	/** No client makes no call, so nothing fails and nothing is retried. */
@@ -854,10 +975,11 @@ final class ExtractorNodeTest extends TestCase {
 	 * @param array<string,mixed>       $over      Item fields to set.
 	 * @param bool                      $extracted Whether a call extracted the item before.
 	 * @param int                       $attempt   The extraction attempts made so far.
+	 * @param bool                      $extract   Whether it is owed an extraction whatever it holds.
 	 * @return array<int,mixed>
 	 */
-	private static function resolved( array $links, array $proposals, array $over = [], bool $extracted = false, int $attempt = 0 ): array {
-		return self::message( [ 'item' => \array_merge( self::item(), $over ), 'links' => $links, 'proposals' => $proposals, 'extracted' => $extracted, 'attempt' => $attempt ] );
+	private static function resolved( array $links, array $proposals, array $over = [], bool $extracted = false, int $attempt = 0, bool $extract = false ): array {
+		return self::message( [ 'item' => \array_merge( self::item(), $over ), 'links' => $links, 'proposals' => $proposals, 'extracted' => $extracted, 'attempt' => $attempt, 'extract' => $extract ] );
 	}
 
 	/** @return array<string,mixed> The item every resolution carries. */

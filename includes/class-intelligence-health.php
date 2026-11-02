@@ -45,10 +45,7 @@ final class Intelligence_Health {
 	 * @throws \InvalidArgumentException When `what` names no slice.
 	 */
 	public static function answer( array $args ): array {
-		$what = Core::as_string( $args['what'] );
-		if ( ! \in_array( $what, self::SLICES, true ) ) {
-			throw new \InvalidArgumentException( \esc_html( 'what must be one of: ' . \implode( ', ', self::SLICES ) ) );
-		}
+		$what = Graph_Query::one_of( 'what', Core::as_string( $args['what'] ), self::SLICES );
 		return self::$what();
 	}
 

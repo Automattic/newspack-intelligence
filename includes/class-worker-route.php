@@ -137,10 +137,11 @@ final class Worker_Route {
 	/**
 	 * Live worker ids of the topology — those holding a lock dir.
 	 *
+	 * @api Read by `ontology reextract`, each of whose workers re-extracts the range.
 	 * @param string $base_dir The substrate base directory.
 	 * @return list<string>
 	 */
-	private static function live_workers( string $base_dir ): array {
+	public static function live_workers( string $base_dir ): array {
 		$ids = [];
 		foreach ( Spawn_Coordinator::worker_lock_dirs( $base_dir ) as $lock ) {
 			if ( self::TOPOLOGY === $lock['type'] ) {

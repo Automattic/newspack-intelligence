@@ -496,4 +496,36 @@ describe( 'Lens', () => {
 			screen.getByRole( 'region', { name: 'Trends' } )
 		).toBeInTheDocument();
 	} );
+
+	it( 'ranks the lens items by importance and switches them to newest first', async () => {
+		wire.replies.search = ( args ) => ( {
+			items: [ 'a', 'b', 'c' ].map( ( n ) => ( {
+				...ITEM,
+				item_key: `feed:${ n }`,
+			} ) ),
+			total: 70,
+			available: true,
+			sort: args.includes( '--sort=time' ) ? 'time' : 'importance',
+		} );
+		render( <Harness canTune={ false } /> );
+		await openSupport();
+		expect(
+			await screen.findByText( 'Ranked by importance' )
+		).toBeInTheDocument();
+		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ).at( -1 ) ).toEqual( [
+				'--lens=support-desk',
+				'--offset=3',
+			] )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Show newest first' } )
+		);
+		expect( await screen.findByText( 'Newest first' ) ).toBeInTheDocument();
+		expect( wire.sent( 'search' ).at( -1 ) ).toEqual( [
+			'--lens=support-desk',
+			'--sort=time',
+		] );
+	} );
 } );

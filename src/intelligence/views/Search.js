@@ -22,10 +22,11 @@ const listLabels = () => ( {
 } );
 
 /**
- * A search before anything is asked: no filter, on its first page.
+ * A search before anything is asked: no filter, on its first page, in the
+ * order the server picks.
  *
  * @param {Array<Object>} lists The lens's list filters.
- * @return {{filters: Object<string, string>, starts: number[]}} The query.
+ * @return {{filters: Object<string, string>, starts: number[], sort: string}} The query.
  */
 export function newSearch( lists ) {
 	return {
@@ -40,6 +41,7 @@ export function newSearch( lists ) {
 			].map( ( name ) => [ name, '' ] )
 		),
 		starts: [ 0 ],
+		sort: '',
 	};
 }
 
@@ -112,13 +114,14 @@ function LensRuns( { lens, lists } ) {
 }
 
 /**
- * Search: the newest readable items matching every filter given, a page at a
- * time, each with its linked entities as chips. A lens picked shows every
- * filter it searches with, read-only, and sends only the lens, the words and
- * the page; "Edit as my own search" copies its filters into Search's own
- * fields, its days as the day they start from and without its tiers, and
- * drops the lens. The page holds the submitted search, so it outlives a
- * visit to another view.
+ * Search: the readable items matching every filter given, a page at a time,
+ * in the order the answer names, which the reader may switch, each with its
+ * linked entities as chips. A lens picked shows every
+ * filter it searches with, read-only, and sends only the lens, the words,
+ * the order and the page; "Edit as my own search" copies its filters into
+ * Search's own fields, its days as the day they start from and without its
+ * tiers, and drops the lens. The page holds the submitted search and its
+ * order, so they outlive a visit to another view.
  *
  * @param {Object}                  props
  * @param {Object}                  props.query        The submitted filters, and each page's start.
@@ -136,9 +139,9 @@ export default function Search( {
 	onSave,
 } ) {
 	const lists = vocabulary.lensLists;
-	const { filters, starts } = query;
+	const { filters, starts, sort } = query;
 	const [ draft, setDraft ] = useState( filters );
-	const setStarts = ( next ) => onQuery( { filters, starts: next } );
+	const setStarts = ( next ) => onQuery( { ...query, starts: next } );
 	const offset = starts[ starts.length - 1 ];
 	const read = useIntelRead(
 		'search:items',
@@ -147,6 +150,7 @@ export default function Search( {
 			...( filters.lens
 				? { q: filters.q, lens: filters.lens }
 				: draftArgs( filters, lists ) ),
+			sort,
 			...( 0 < offset ? { offset } : {} ),
 		} )
 	);
@@ -156,7 +160,7 @@ export default function Search( {
 	);
 	const submit = ( next ) => {
 		setDraft( next );
-		onQuery( { filters: next, starts: [ 0 ] } );
+		onQuery( { ...query, filters: next, starts: [ 0 ] } );
 	};
 	const editAsOwn = () => {
 		const text = lensDraft( lens, lists );
@@ -271,6 +275,9 @@ export default function Search( {
 						onStarts={ setStarts }
 						onOpenEntity={ onOpenEntity }
 						onSave={ onSave }
+						onSort={ ( next ) =>
+							onQuery( { ...query, sort: next, starts: [ 0 ] } )
+						}
 					/>
 				) }
 			</Answer>

@@ -116,9 +116,10 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					$verb(
 						$read,
 						'search',
-						'Items matching every filter given, newest first: { items: [ { item_key, title, url, source, tier, item_ts, summary, kind, relevance, importance, entities } ], total }.',
+						'Items matching every filter given, in the order sort names: { items: [ { item_key, title, url, source, tier, item_ts, summary, kind, relevance, importance, entities } ], total, sort }.',
 						[
 							$text( 'q', 'Words every match holds in its title, body or summary.' ),
+							$text( 'sort', 'The order, one of ' . \implode( ', ', Graph_Query::sorts() ) . ': importance the highest first, then the newest; time the newest first. With none, time for words without a lens, else importance.' ),
 							$text( 'entity', 'An entity the item links.' ),
 							$lens,
 							$since,
@@ -241,7 +242,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						'capability'  => Capabilities::MANAGE,
 						'description' => 'Ask each live worker to re-resolve every stored item dated in a range of UTC days: { ok, workers }.',
 						'args'        => [ $arg( 'since', 'The first UTC day, Y-m-d.' ), $arg( 'until', 'The last UTC day, Y-m-d.' ) ],
-						'handler'     => static fn ( self $ci, array $args ): array => [ 'ok' => true, 'workers' => Reresolver_Node::ask( $ci, Core::as_string( $args['since'] ), Core::as_string( $args['until'] ) ) ],
+						'handler'     => static fn ( self $ci, array $args ): array => [ 'ok' => true, 'workers' => Reresolver_Node::ask( $ci, 'RERESOLVE', Core::as_string( $args['since'] ), Core::as_string( $args['until'] ) ) ],
 					],
 				],
 			]

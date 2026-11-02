@@ -149,6 +149,20 @@ final class Graph_Query {
 		'order'  => Intel_Graph_Row_Schema::ITEM_TIME . ' DESC, i.item_key DESC',
 	];
 
+	/** How a page of items reads by importance: the highest, then the newest, the unscored last. */
+	private const MOST_IMPORTANT = [
+		'join'   => '',
+		'binds'  => [],
+		'fields' => [],
+		'order'  => 'x.importance DESC, ' . Intel_Graph_Row_Schema::ITEM_TIME . ' DESC, i.item_key DESC',
+	];
+
+	/** Each order `search` takes, by its `sort`. */
+	private const SORTS = [
+		'importance' => self::MOST_IMPORTANT,
+		'time'       => self::NEWEST,
+	];
+
 	/** The line logged when no projection opens. */
 	private const UNAVAILABLE = 'intelligence: no intel-graph to read; answering none: ';
 
@@ -175,19 +189,43 @@ final class Graph_Query {
 	}
 
 	/**
-	 * Items matching every filter given, newest first: `q` over title, body
-	 * and summary, `entity` linked by any link, any `topic` by a topic link,
-	 * any `role` held at the item's time by an entity the item links, any
-	 * `kind`, any `source`, and the UTC days `since` to `until`, each read
-	 * through `lens` when the call names one.
+	 * Items matching every filter given, in the order `sort_of()` picks: `q`
+	 * over title, body and summary, `entity` linked by any link, any `topic`
+	 * by a topic link, any `role` held at the item's time by an entity the
+	 * item links, any `kind`, any `source`, and the UTC days `since` to
+	 * `until`, each read through `lens` when the call names one.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args.
-	 * @return array<string,mixed> `{ items, total, available }`.
-	 * @throws \InvalidArgumentException On a bad page or day, or a lens no one saved.
+	 * @return array<string,mixed> `{ items, total, available, sort }`.
+	 * @throws \InvalidArgumentException On a bad page, day or sort, or a lens no one saved.
 	 */
 	public static function search( array $args ): array {
 		[ $limit, $offset ] = self::page( $args );
-		return self::through( $args, self::NO_ITEMS, static fn ( Row_Reader $r, array $g, array $filter ): array => self::items( $r, $g, $filter, $limit, $offset ) );
+		$sort               = self::sort_of( $args );
+		return self::through( $args, self::NO_ITEMS, static fn ( Row_Reader $r, array $g, array $filter ): array => self::items( $r, $g, $filter, $limit, $offset, self::SORTS[ $sort ] ) ) + [ 'sort' => $sort ];
+	}
+
+	/**
+	 * The order a search reads in: the `sort` it names, else `time` for
+	 * words with no lens, else `importance`.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args: `sort`, `q`, `lens`.
+	 * @throws \InvalidArgumentException On a sort SORTS does not hold.
+	 */
+	private static function sort_of( array $args ): string {
+		if ( null === $args['sort'] ) {
+			return null === $args['lens'] && '' !== \trim( Core::as_string( $args['q'] ) ) ? 'time' : 'importance';
+		}
+		return self::one_of( 'sort', Core::as_string( $args['sort'] ), self::sorts() );
+	}
+
+	/**
+	 * The orders `search` takes, for the arg's description.
+	 *
+	 * @return list<string>
+	 */
+	public static function sorts(): array {
+		return \array_keys( self::SORTS );
 	}
 
 	/**
@@ -1308,9 +1346,11 @@ final class Graph_Query {
 	/**
 	 * A value from its set, refused naming the set; null names none.
 	 *
-	 * @param string       $name  What the value is, for the refusal.
-	 * @param string|null  $value The value.
-	 * @param list<string> $set   The set.
+	 * @template T of string
+	 * @param string      $name  What the value is, for the refusal.
+	 * @param string|null $value The value.
+	 * @param list<T>     $set   The set.
+	 * @return T
 	 * @throws \InvalidArgumentException Outside the set.
 	 */
 	public static function one_of( string $name, ?string $value, array $set ): string {

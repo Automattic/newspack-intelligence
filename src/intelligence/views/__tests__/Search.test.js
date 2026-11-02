@@ -315,4 +315,26 @@ describe( 'Search', () => {
 			screen.queryByText( 'No readable item matches these filters.' )
 		).toBeNull();
 	} );
+
+	it( 'switches the order and asks again from the first page', async () => {
+		wire.replies.search = ( args ) => ( {
+			items: [ ITEM ],
+			total: 70,
+			available: true,
+			sort: args.includes( '--sort=time' ) ? 'time' : 'importance',
+		} );
+		renderSearch();
+		expect(
+			await screen.findByText( 'Ranked by importance' )
+		).toBeInTheDocument();
+		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ).at( -1 ) ).toEqual( [ '--offset=1' ] )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Show newest first' } )
+		);
+		expect( await screen.findByText( 'Newest first' ) ).toBeInTheDocument();
+		expect( wire.sent( 'search' ).at( -1 ) ).toEqual( [ '--sort=time' ] );
+	} );
 } );

@@ -130,9 +130,9 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		$counts = $this->tool_answer( 'intel_entity', [ 'key' => self::GAZETTE ] )['counts'];
 		$hidden = $this->call( Capabilities::READ, 'tools/call', [ 'name' => 'intel_entity', 'arguments' => [ 'key' => 'organization:hidden-buyer' ] ] );
 
-		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], \array_column( $all['items'], 'item_key' ) );
+		$this->assertSame( [ 'feed:gazette-award', 'github:ledger-launch', 'linear:joint-grant' ], \array_column( $all['items'], 'item_key' ) );
 		$this->assertSame( 3, $all['total'] );
-		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => true ], $risk );
+		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => true, 'sort' => 'time' ], $risk );
 		$this->assertSame( [ 'items' => 2, 'proposed_links' => 0 ], $counts );
 		$this->assertTrue( $hidden['result']['isError'] );
 		$this->assertSame( 'no entity: organization:hidden-buyer', $hidden['result']['content'][0]['text'] );
@@ -160,11 +160,11 @@ final class IntelligenceMcpDoorTest extends TestCase {
 			return \array_column( \json_decode( \substr( $reply['result']['content'][0]['text'], \strlen( "<site-data>\n" ), -\strlen( "\n</site-data>" ) ), true )['items'], 'item_key' );
 		};
 
-		$this->assertSame( [ 'unthread:ticket-58', 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], $search() );
+		$this->assertSame( [ 'feed:gazette-award', 'github:ledger-launch', 'linear:joint-grant', 'unthread:ticket-58' ], $search() );
 
 		Intel_Tiers::revoke( 'harbor-closer', 'user:kinsey-desk' );
 
-		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], $search() );
+		$this->assertSame( [ 'feed:gazette-award', 'github:ledger-launch', 'linear:joint-grant' ], $search() );
 	}
 
 	/** A lens is read through the door: listed, and searched through by its key with a list argument beside it. */
@@ -173,7 +173,8 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		$this->seed( [ Intel_Event::make( 'lens_saved', [ 'lens_key' => 'harbor-desk', 'name' => 'Harbor desk', 'description' => 'Awards and launches.', 'filters' => [ 'kinds' => [ 'award', 'launch' ] ] + Graph_Query::unfiltered() ], 'user:41', 'fixture-9' ) ] );
 
 		$this->assertSame( [ 'harbor-desk' ], \array_column( $this->tool_answer( 'intel_lenses', [] )['lenses'], 'lens_key' ) );
-		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award' ], \array_column( $this->tool_answer( 'intel_search', [ 'lens' => 'harbor-desk' ] )['items'], 'item_key' ) );
+		$this->assertSame( [ 'feed:gazette-award', 'github:ledger-launch' ], \array_column( $this->tool_answer( 'intel_search', [ 'lens' => 'harbor-desk' ] )['items'], 'item_key' ) );
+		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award' ], \array_column( $this->tool_answer( 'intel_search', [ 'lens' => 'harbor-desk', 'sort' => 'time' ] )['items'], 'item_key' ) );
 		$this->assertSame( [ 'linear:joint-grant' ], \array_column( $this->tool_answer( 'intel_search', [ 'lens' => 'harbor-desk', 'kind' => [ 'funding', 'praise' ] ] )['items'], 'item_key' ) );
 	}
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\CLI\Ontology_CLI_Command;
+use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intelligence_CI_Node;
 use Newspack_Intelligence\Ontology_Seed;
@@ -194,6 +195,121 @@ final class OntologyCliCommandTest extends TestCase {
 		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2026-03-09', 'until' => '2026-04-17' ] );
 	}
 
+	/** `reextract` sends a REEXTRACT range when its calls fit its limit, naming how many. */
+	public function test_reextract_asks_for_a_range_within_its_limit(): void {
+		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
+		$this->seed_dated( 'feed:kestrel-1', 'feed:kestrel-2', 'feed:kestrel-3' );
+
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-04', 'limit' => '3' ] );
+
+		$this->assertSame(
+			[ [ Message::TM_REQUEST, 'reresolver', 'REEXTRACT 2026-08-03 2026-08-04' ] ],
+			\array_map( static fn ( array $m ): array => [ $m[ Message::TYPE ], $m[ Message::TO ], $m[ Message::VALUE ] ], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p3' ) )
+		);
+		$this->assertSame( [ 'Asked 1 worker to re-extract the items dated 2026-08-03 to 2026-08-04: 3 model calls, a failed one retried up to 5 times.' ], \WP_CLI::$successes );
+	}
+
+	/** Every live worker re-extracts the whole range, so its calls are the items times the workers. */
+	public function test_reextract_counts_a_call_per_item_per_live_worker(): void {
+		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p1' );
+		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p2' );
+		$this->seed_dated( 'feed:kestrel-1', 'feed:kestrel-2', 'feed:kestrel-3' );
+
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'limit' => '5' ] );
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'limit' => '6' ] );
+
+		$this->assertSame( [ 'ontology reextract would make 6 model calls, 3 items dated 2026-08-03 to ' . \gmdate( 'Y-m-d' ) . ' times 2 live workers, above --limit=5, and a failed call may retry up to 5 times; raise --limit to run it.' ], \WP_CLI::$errors );
+		$this->assertSame( [ 'Asked 2 workers to re-extract the items dated 2026-08-03 to 2026-08-03: 6 model calls, a failed one retried up to 5 times.' ], \WP_CLI::$successes );
+		$this->assertSame( [ 'REEXTRACT 2026-08-03 2026-08-03' ], \array_column( self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p2' ), Message::VALUE ) );
+	}
+
+	/** Above its limit `reextract` refuses, naming the calls, and sends nothing. */
+	public function test_reextract_refuses_above_its_limit_naming_the_count(): void {
+		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
+		$this->seed_dated( 'feed:kestrel-1', 'feed:kestrel-2', 'feed:kestrel-3' );
+
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-04', 'limit' => '2' ] );
+
+		$this->assertSame( [ 'ontology reextract would make 3 model calls, 3 items dated 2026-08-03 to 2026-08-04 times 1 live worker, above --limit=2, and a failed call may retry up to 5 times; raise --limit to run it.' ], \WP_CLI::$errors );
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p3' ) );
+		$this->assertSame( [ 200, [] ], [ Ontology_CLI_Command::REEXTRACT_LIMIT, \WP_CLI::$successes ] );
+	}
+
+	/** A range dating no item sends nothing and says so. */
+	public function test_reextract_sends_nothing_for_a_range_dating_no_item(): void {
+		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
+		$this->seed_dated( 'feed:kestrel-1' );
+
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-05', 'until' => '2026-08-06' ] );
+
+		$this->assertSame( [ 'No item is dated 2026-08-05 to 2026-08-06; nothing to re-extract.' ], \WP_CLI::$successes );
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p3' ) );
+	}
+
+	/**
+	 * `--dry-run` sends nothing and prints the calls and the command that
+	 * runs them, carrying `--limit` only when the calls pass the default.
+	 */
+	public function test_reextract_dry_run_prints_the_count_and_the_command(): void {
+		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
+		$this->seed_dated( 'feed:kestrel-1', 'feed:kestrel-2' );
+
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'limit' => '1', 'dry-run' => true ] );
+
+		$this->assertSame(
+			[
+				'2 items dated 2026-08-03 to 2026-08-03 would be re-extracted by 1 live worker: 2 model calls, a failed one retried up to 5 times.',
+				'Re-extract them with: wp newspack-intelligence ontology reextract --since=2026-08-03 --until=2026-08-03',
+			],
+			\WP_CLI::$logs
+		);
+		$this->assertSame( [ [], [], [] ], [ self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p3' ), \WP_CLI::$successes, \WP_CLI::$errors ] );
+	}
+
+	/** A dry run past the default limit prints the command with the limit its calls need. */
+	public function test_reextract_dry_run_names_the_limit_past_the_default(): void {
+		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p1' );
+		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p2' );
+		$this->seed_dated( ...\array_map( static fn ( int $i ): string => "feed:heron-{$i}", \range( 1, 101 ) ) );
+
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'dry-run' => true ] );
+
+		$today = \gmdate( 'Y-m-d' );
+		$this->assertSame( "Re-extract them with: wp newspack-intelligence ontology reextract --since=2026-08-03 --until={$today} --limit=202", \WP_CLI::$logs[1] );
+	}
+
+	/** A bad range is refused before anything is read or sent. */
+	public function test_reextract_refuses_a_bad_range(): void {
+		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
+
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-04', 'until' => '2026-08-03' ] );
+
+		$this->assertSame( [ 'since 2026-08-04 is after until 2026-08-03' ], \WP_CLI::$errors );
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p3' ) );
+	}
+
+	/** A limit that is not a positive whole number is refused. */
+	public function test_reextract_refuses_a_bad_limit(): void {
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'invalid --limit' );
+
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'limit' => '0' ] );
+	}
+
+	/**
+	 * Record items dated 2026-08-03 12:00 UTC.
+	 *
+	 * @param string ...$keys The item keys.
+	 */
+	private function seed_dated( string ...$keys ): void {
+		$this->seed(
+			\array_map(
+				static fn ( string $key ): array => Intel_Event::make( 'item_recorded', [ 'item_key' => $key, 'source' => 'feed', 'tier' => 'public', 'url' => "https://news.example/{$key}", 'title' => $key, 'body' => '', 'item_ts' => 1785758400, 'retrieved_ts' => 1785758400 ], 'machine:source:feed@9.4.1', '9.4.1' ),
+				$keys
+			)
+		);
+	}
+
 	/**
 	 * `reproject` holds the fleet, deletes the graph's file and the cursor of
 	 * each Consumer the projector checkpoints with, then releases the hold;
@@ -282,12 +398,14 @@ final class OntologyCliCommandTest extends TestCase {
 		( new Ontology_CLI_Command() )->seed( [], [] );
 		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2026-03-09', 'until' => '2026-04-17' ] );
 		( new Ontology_CLI_Command() )->reproject( [], [] );
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-03-09', 'until' => '2026-04-17' ] );
 
 		$this->assertSame(
 			[
 				'wp newspack-intelligence ontology seed must run as the same user as the workers, not root.',
 				'wp newspack-intelligence ontology reresolve must run as the same user as the workers, not root.',
 				'wp newspack-intelligence ontology reproject must run as the same user as the workers, not root.',
+				'wp newspack-intelligence ontology reextract must run as the same user as the workers, not root.',
 			],
 			\WP_CLI::$errors
 		);

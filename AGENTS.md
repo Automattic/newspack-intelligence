@@ -306,7 +306,7 @@ writes a `link_asserted` or `link_proposed` per link, a `link_retracted` per
 stored link it no longer writes, and an `entity_proposed` per candidate,
 keyed `Intel_Event::entity_key()`, to the writer its `make_node` line names,
 by TO and declared as an extra target, then forwards `{ item, links,
-proposals, extracted, attempt }` to its target, `extractor`. It resolves
+proposals, extracted, attempt, extract }` to its target, `extractor`. It resolves
 nothing while a projector's reader of the ontology stream
 `Stream_Writer::stream_dir()` names had not committed the stream's end
 (`Projector_Node::behind()`, over `Consumer_Node::lag_from_disk()`) just
@@ -338,8 +338,11 @@ the one constructor of that record, which the hold, the extractor's retry
 and the reresolver all mint and the resolver reads back strictly. An
 `item_reresolve` carrying `ner: true` runs the NER step, and parks again
 while the projection does not hold its item yet rather than dropping it;
-`ner`, `attempt` and `parked_at` are optional, and a record carrying one
-that does not read is dropped with the rest. `Resolver::resolve()` answers
+`ner`, `extract`, `attempt` and `parked_at` are optional, and a record
+carrying one that does not read is dropped with the rest. An `item_reresolve`
+carrying `extract: true`, which a `REEXTRACT` range and the extractor's retry
+of one mint, is forwarded whatever the item holds, so the extractor calls the
+model for an item a call already extracted with its links settled. `Resolver::resolve()` answers
 `recognized` beside the links, whether its NER step ran and answered:
 `LLM_Entity_Extractor::extract()` answers none, logged rate-limited, for a
 failed call or a reply whose `orgs` is not a list (none, an error object, a
@@ -455,7 +458,15 @@ inside an `<item>` fence the system message names as untrusted and offers
 the index's topic names. The system message frames the reading for the
 audience `set_audience` names, and for no one while none is set, and scores
 against the `add_profile` lines; the shipped topologies set neither, so a
-deployment supplies both (see Topologies). `Prompts::parse_extract()` reads the first `{…}`
+deployment supplies both (see Topologies). `add_importance_floor <kind>
+<min>` sets a kind's least importance, 0 to `Extractor_Node::MAX_FLOOR` (9),
+a second for the same kind replacing the first, refusing a kind outside
+`Intel_Event::ITEM_KINDS` and a min outside that span, and
+`remove_importance_floor <kind>` drops it, refused when the kind has none;
+`dump_config()` replays one add line per floor. After the call, and on the
+heuristic stand-in, whose kind is `other`, alike, the importance written and
+forwarded is the greater of the score and its kind's floor; the shipped
+topologies set none. `Prompts::parse_extract()` reads the first `{…}`
 block through `Prompts::json_object()`, which the NER step shares, cuts the summary to 280 characters, reads an unknown kind as `other`,
 clamps the scores and keeps at most five claims with a predicate from the
 closed set. It writes an `extraction_recorded` naming topic keys, then a
@@ -476,14 +487,15 @@ the item is never retried in a loop; a later re-resolution extracts it
 again. A call made that fails — a thrown `RuntimeException` or a reply that
 does not parse, never a cooperative stop and never a missing client — also
 parks `{ event: item_reresolve, item_key, fresh_after: 0, attempt: attempt +
-1 }` on `intel:later`, the extractor's second argument, with KEY its
+1 }`, with `extract: true` when the resolution it read carried it, on
+`intel:later`, the extractor's second argument, with KEY its
 `item_key`, due
 `RETRY_BASE_S * 2 ** attempt` (300 seconds doubled) capped at `RETRY_MAX_S`
 (3,600), while `attempt` is below `MAX_ATTEMPTS` (5), so every retry lands
 inside the day the queue keeps; at the cap a line says it gave up. The
 replay is a re-resolution, which forwards the item for extraction only
 while it is still owed one, and the resolution it reads carries that
-`attempt`, which a resolution lacking it is dropped for. Either way it then
+`attempt` and `extract`, which a resolution lacking either is dropped for. Either way it then
 forwards an `item_extracted` struct `{ item, relevance, importance }` to its
 target, `deduper`; it is a struct between two nodes, not an event kind.
 
@@ -562,11 +574,28 @@ bracketed), as the resolver matches an acronym only in its own case. It appends 
 rest, to log how many it skipped. `wp
 newspack-intelligence ontology reresolve --since=<Y-m-d> [--until=<Y-m-d>]`
 and the `reresolve` verb both call `Reresolver_Node::ask()` with their
-graph, which validates the days before it sends anything, then sends
-`RERESOLVE <since> <until>` through
+graph and `RERESOLVE`, which validates the days before it sends anything,
+then sends `RERESOLVE <since> <until>` through
 `Worker_Route` to each live worker's `reresolver`, answering how many it
 reached; with none live it throws, which the command lets fail and the
-verb answers as a refusal. The reresolver publishes a range it queues as `last_range {
+verb answers as a refusal. `wp newspack-intelligence ontology reextract
+--since=<Y-m-d> [--until=<Y-m-d>] [--limit=<n>] [--dry-run]` re-extracts the
+same range through the same path, sharing `reresolve`'s one helper for the
+root refusal, the days, the refusal of a bad range, `ask()` and the success
+line. Every live worker re-extracts the whole range, so it counts its calls
+as the items the range dates (`Reresolver_Node::count_dated()`) times the
+live workers (`Worker_Route::live_workers()`), refuses calls above
+`--limit`, `Ontology_CLI_Command::REEXTRACT_LIMIT` (200) when omitted and
+refused when not a positive whole number, naming the items and the workers
+and that a failed call may retry up to `Extractor_Node::MAX_ATTEMPTS` (5)
+times, sends nothing for a range dating no item, and otherwise asks with
+`REEXTRACT`, which queues the range as a `reextract` unit whose records
+carry `extract: true`; `--dry-run` sends nothing and prints the calls and
+the command that runs them, with `--limit` only past the default.
+`Reresolver_Node::RANGES` maps each range request to its queue kind, and
+both the declared requests and `ask()`'s refusal of any other read it. A
+call that fails keeps the item's earlier extraction, and its retry stays
+owed one. The reresolver publishes a range it queues as `last_range {
 since, until }` through `Publishes_Status`, for a year, so it outlives the
 Delay's dropped days it covers,
 writing each one it is asked (no heartbeat), answers the range
@@ -655,7 +684,15 @@ keeps its own tier filter, and `collections` opens no graph.
 the item links holding it at the item's time — and `search` adds `q`.
 `LENS_LISTS` names each list's field, its arg, its vocabulary (null when
 free) and its description, and the call's filters, a lens's, `save_lens`,
-the schema's args and the page's `lensLists` vocabulary all iterate it. `trends` counts by `by` per `bucket`, the call's, else its lens's,
+the schema's args and the page's `lensLists` vocabulary all iterate it.
+`search` reads in the order its `sort` names (`Graph_Query::sorts()`):
+`importance`, the highest importance first, then the newest, an item no
+extraction scored last, or `time`, the newest first; any other is refused.
+With none named it reads by `time` when it has words and no lens, else by
+`importance`, so a lens and a bare search rank by importance, and it answers
+the order it read in as `sort`. The arg declares no default, since a bound
+default would mask that choice; the MCP door and the page read it off the
+schema. `trends` counts by `by` per `bucket`, the call's, else its lens's,
 else `kind` (`Graph_Query::DEFAULT_AXIS`) per `week` (`DEFAULT_BUCKET`);
 neither arg declares a default, since a bound default would mask the
 lens's. `lenses` answers `{ lenses: [ { lens_key, name, description,
@@ -1622,7 +1659,7 @@ Read the counts, then run the command it prints, the same command without
 | `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve`, `intel:watches`, `intel:writer`, and `intel:later`, the Delay whose due records go to `intel:reresolve` |
 | `newspack-intelligence-collect.tsl` | The eight sources → `intel:writer`, as two halves it includes: `-collect-public`, GitHub on a 900-second grid, `feed` on 1,800 with client feeds on and `news`, a second feed node for searches, on 3,600; and `-collect-token`, Linear, Slack and Unthread on 900, `p2` and `p2-restricted` on 1,800, each under its Vault group, the two P2 nodes sharing `p2`, Unthread through `-collect-unthread`; includes the streams |
 | `newspack-intelligence-collect-unthread.tsl` | `unthread` at the restricted tier on 900, under its Vault group, → `intel:writer`, an include of its own so a collect reading the rest of the token half another way can keep it; includes the streams |
-| `newspack-intelligence-deployment.tsl` | Empty: what a deployment reads and cares about. No shipped file names a repo, feed, search, team, channel, site, profile line or audience, so GitHub, Linear, Slack, both P2 nodes and `news` fetch nothing, `feed` reads only the open clients' feeds, Unthread, which takes no list, reads as it would anyway, and the extractor frames its prompt for no one and scores against no profile. A deployment shadows this file from a stock dir it registers after this plugin's (`Topology_Registry::register_stock_dir()`, the dir registered last resolving a name first) with `cmd <node>:config add_…`, `add_profile` and `set_audience` lines; it is included last, so its lines reach every node the files above declare. A shadow cannot include the file it shadows, because the name resolves to itself, so this hook is where a deployment adds its lines without copying a shipped file. A deployment reading the token sources another way shadows `newspack-intelligence-collect` too, including `-collect-public`, its own nodes under the token half's names and `-collect-unthread` |
+| `newspack-intelligence-deployment.tsl` | Empty: what a deployment reads and cares about. No shipped file names a repo, feed, search, team, channel, site, profile line or audience, so GitHub, Linear, Slack, both P2 nodes and `news` fetch nothing, `feed` reads only the open clients' feeds, Unthread, which takes no list, reads as it would anyway, and the extractor frames its prompt for no one, scores against no profile and floors no kind. A deployment shadows this file from a stock dir it registers after this plugin's (`Topology_Registry::register_stock_dir()`, the dir registered last resolving a name first) with `cmd <node>:config add_…`, `add_profile`, `add_importance_floor` and `set_audience` lines; it is included last, so its lines reach every node the files above declare. A shadow cannot include the file it shadows, because the name resolves to itself, so this hook is where a deployment adds its lines without copying a shipped file. A deployment reading the token sources another way shadows `newspack-intelligence-collect` too, including `-collect-public`, its own nodes under the token half's names and `-collect-unthread` |
 | `newspack-intelligence-ontology-seed.json` | Not a topology: the fictional example seed `ontology seed` reads, which a deployment shadows from its stock dir as it shadows the deployment file (see Seeding) |
 | `newspack-intelligence-project.tsl` | `intel:items:consumer`, `intel:ontology:consumer` and `intel:watches:consumer`, each → `projector`, writing the `intel-graph` Row_Table; no other node rides their cursors |
 | `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later`, the items Consumer checkpointing the deduper; includes the streams |
@@ -1644,9 +1681,9 @@ plugin adds:
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
 | `Resolver` | `Resolver_Node` | `<writer> <later>`; the `LLM_Config` verbs; publishes its hold (`reason`, `since`) through `Publishes_Status` |
-| `Extractor` | `Extractor_Node` | `<writer> <later>`; the `LLM_Config` verbs, `set_audience`, `add_profile` and `remove_profile` |
+| `Extractor` | `Extractor_Node` | `<writer> <later>`; the `LLM_Config` verbs, `set_audience`, `add_profile`, `remove_profile`, `add_importance_floor` and `remove_importance_floor` |
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
-| `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>`; publishes `last_range` through `Publishes_Status` |
+| `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>`, `REEXTRACT <since> <until>`; publishes `last_range` through `Publishes_Status` |
 | `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no verbs |
 | `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `health`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
 
@@ -1654,8 +1691,10 @@ The `LLM_Config` verbs are `set_api_url`, `set_vault_id`, `set_model` and
 `set_feature`; every node carrying the trait also re-emits its state through
 `dump_config()`, which replays every setter and list its class declares.
 `Extractor_Node` adds the prompt verbs, `set_audience`, `add_profile` and
-`remove_profile`, which the resolver, building no extraction prompt, does
-not declare. An identical `add_*` repeat is
+`remove_profile`, and the floor verbs, `add_importance_floor` and
+`remove_importance_floor`, which the resolver, building no extraction
+prompt, does not declare; its `dump_config()` replays the trait's lines,
+then one `add_importance_floor` line per floor. An identical `add_*` repeat is
 a no-op, and each `remove_*` takes its `add_*`'s argument, drops that entry and
 is refused when none is. Every `Intelligence_CI` verb declares its role, and
 no handler checks a role of its own (substrate ADR-26).
@@ -1733,8 +1772,8 @@ its own one-shot commands; nothing polls.
 | `IntelligencePage.js` | default | Switches Search, Entity, Lenses, Review, Collections and Watches in place; holds the submitted search, the open entity, lens, collection and watch, the watch form's draft and the item being saved, so a view returns as it was left, and a lens's "Watch this" opens the watch form on that lens; a URL carrying `watch=<key>`, as the watcher's email links it, opens the page on Watches with that watch open, or on the list when the reader's watches do not hold it; mounts `HealthStrip` above the tab bar, on every view; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the `NEWSPACK::NODES` header subtitled `Intelligence` and the debug overlay |
 | `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite`, `commandArgs` | `commandArgs()` names every value given, a list once per member, leaving out a blank value or an empty list; a read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments; a write sent once per `run()` to the `intelligence` CI or the `ci` it names, which answers the tokens it sent, running `refresh` once it lands, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal, answered arguments and `pending` |
 | `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_id` and `last_error`, reads it whole; while collection is off every other row is listed neutral, never a fault; the projector catching up on the ontology is neutral until its hold has stood five minutes (`BEHIND_FAULT_S`), then a fault; with nothing held the backlog row counts the later queue's entries as items waiting to resolve or retry; every time it shows renders in the browser's own zone through the substrate's `formatLocalDateTime()`, while the dropped days stay the UTC days the server names, read as "Items parked from <first_day> to <last_day> were dropped before they resolved.", true of an entry aged out and of one the full queue refused; the line names each source no pass has reported ("Collecting from 5 of 6 sources; feed has not reported yet."), the names joined in the page's own language (`document.documentElement.lang`, else the browser's), and says the health is not fully known for any other unknown row, a source in a state it does not recognise included; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology`, `canManage` for the rest), and anyone else reads "An administrator can …" |
-| `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
-| `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens` above `search --lens` a page at a time beside `trends --lens`; trend rows and signals citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
+| `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time, in the order the answer's `sort` names, which the reader switches, sending `--sort` from the first page; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words, the order and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
+| `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens` above `search --lens` a page at a time, in the order the answer's `sort` names, which the reader switches, beside `trends --lens`; trend rows and signals citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
 | `views/Entity.js` | default | `entity`, `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
 | `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity, and `review entities`, a pill per entity; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back |
 | `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection`, its collection shown saving through `useHeld` until a read lists it by name |
@@ -1744,7 +1783,7 @@ its own one-shot commands; nothing polls.
 | `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty by its `rows` key, or its rows — as a stock `Card` section named by an optional title, which heads its `CardHeader`, with the state inset in its `CardBody`, or bare inside a dialog; the one alert every refusal, read or write, renders in |
 | `components/Pager.js` | default | How many of the matches a page shows, and Previous and Next over a stack of page starts, for Search, the Entity timeline and its published items, a lens's items and a watch's matches |
 | `components/ListField.js`, `lensDraft.js` | `ListField`; `lensDraft`, `newLens`, `draftLens`, `draftArgs`, `listOf`, `daysSince` | A comma-separated field naming the values a closed list allows; a lens read into a form's text and back into the lens and the options `save_lens` and `search` take, its list filters read from `vocabulary.lensLists` and its tiers kept beside them, the one place that knows the lens's shape; and the first UTC day of a lens's rolling window |
-| `components/ItemRow.js`, `Cite.js`, `format.js` | `ItemPage` | An item row, headed by any control the view passes as its children, and `ItemPage`, a page of rows above its `Pager`, which Search, a lens and the Entity timeline and published section render; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day (`utcDay()`), and `metaLine()`, which joins a row's meta parts and keeps a 0 |
+| `components/ItemRow.js`, `Cite.js`, `format.js` | `ItemPage` | An item row, headed by any control the view passes as its children, and `ItemPage`, a page of rows above its `Pager`, which Search, a lens and the Entity timeline and published section render, and which, given `onSort`, says whether the page is ranked by importance or newest first and offers the other; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day (`utcDay()`), and `metaLine()`, which joins a row's meta parts and keeps a 0 |
 | `styles/intelligence.scss` | — | Geometry only, emitted as `build/intelligence/index.css` |
 
 Each read is a `useCommandOnce` read with `retry`, under the `intelligence`
@@ -1795,7 +1834,7 @@ sibling checkout locally.
 | `includes/` (LLM) | `Prompts`, the `LLM_Client` interface, `Proxy_LLM_Client`, the `LLM_Config` and `Vault_Secret` traits |
 | `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Health`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
 | `includes/` (watches) | `Watcher_Node` |
-| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed [<file>]`, `ontology reresolve` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; the `Refuses_Root` trait they share |
+| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed [<file>]`, `ontology reresolve`, `ontology reextract` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; the `Refuses_Root` trait they share |
 | `topologies/` | The `.tsl` node-graph topologies, and the example ontology seed |
 | `src/intelligence/` | The Intelligence page's React bundle |
 | `tests/` | PHPUnit (`unit/` + `bootstrap.php` + `support/` + `run-coverage.sh`; `integration/` exists but is empty) |

@@ -63,6 +63,7 @@ final class GraphQueryTest extends TestCase {
 				],
 				'total'     => 1,
 				'available' => true,
+				'sort'      => 'time',
 			],
 			$answer
 		);
@@ -114,6 +115,53 @@ final class GraphQueryTest extends TestCase {
 
 		$this->assertSame( [ 'feed:gazette-award', 'linear:joint-grant' ], self::keys( self::search( [ 'topic' => [ 'topic:awards' ] ] ) ) );
 		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], self::keys( self::search( [ 'entity' => 'topic:awards' ] ) ) );
+	}
+
+	/** By importance a churn signal scored 8 outranks a newer fundraising letter scored 7; by time the letter leads. */
+	public function test_importance_ranks_a_churn_signal_over_a_newer_letter(): void {
+		$this->seed(
+			self::item( 'linear:quarry-cancels', 'Quarry Tribune cancels its plan', 'linear', 'internal', self::$oct_06 ),
+			self::extraction( 'linear:quarry-cancels', 'The Tribune is leaving.', 'churn_signal', self::$oct_06, [], 3.0, 8.0 ),
+			self::item( 'feed:kestrel-appeal', 'Kestrel Weekly asks readers to give', 'feed', 'public', self::$oct_13 ),
+			self::extraction( 'feed:kestrel-appeal', 'A year-end appeal.', 'funding', self::$oct_13, [], 8.0, 7.0 )
+		);
+
+		$this->assertSame( [ 'linear:quarry-cancels', 'feed:kestrel-appeal' ], self::keys( self::search( [ 'sort' => 'importance' ] ) ) );
+		$this->assertSame( [ 'feed:kestrel-appeal', 'linear:quarry-cancels' ], self::keys( self::search( [ 'sort' => 'time' ] ) ) );
+	}
+
+	/** Equal importance falls back to the newest, and an item no extraction scored ranks last. */
+	public function test_importance_breaks_ties_by_time_and_ranks_the_unscored_last(): void {
+		$this->seed(
+			self::item( 'feed:heron-older', 'Heron Post older note', 'feed', 'public', self::$oct_01 ),
+			self::extraction( 'feed:heron-older', 'Older.', 'other', self::$oct_01, [], 2.0, 4.0 ),
+			self::item( 'feed:heron-newer', 'Heron Post newer note', 'feed', 'public', self::$oct_13 ),
+			self::extraction( 'feed:heron-newer', 'Newer.', 'other', self::$oct_13, [], 2.0, 4.0 ),
+			self::item( 'feed:heron-unscored', 'Heron Post unscored note', 'feed', 'public', self::$oct_20 )
+		);
+
+		$this->assertSame( [ 'feed:heron-newer', 'feed:heron-older', 'feed:heron-unscored' ], self::keys( self::search( [ 'sort' => 'importance' ] ) ) );
+	}
+
+	/** With no sort named, words rank by time and no words by importance; the answer says which. */
+	public function test_search_defaults_to_time_with_words_and_importance_without(): void {
+		$this->seed_world();
+
+		$worded = self::search( [ 'q' => 'gazette', 'sort' => null ] );
+		$bare   = self::search( [ 'sort' => null ] );
+
+		$this->assertSame( [ 'time', [ 'feed:gazette-award', 'linear:joint-grant' ] ], [ $worded['sort'], self::keys( $worded ) ] );
+		$this->assertSame( [ 'importance', [ 'feed:gazette-award', 'github:ledger-launch', 'linear:joint-grant' ] ], [ $bare['sort'], self::keys( $bare ) ] );
+		$this->assertSame( 'importance', self::search( [ 'q' => 'gazette', 'sort' => 'importance' ] )['sort'] );
+	}
+
+	/** A sort other than importance or time is refused. */
+	public function test_an_unknown_sort_is_refused(): void {
+		$this->seed_world();
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'sort must be one of: importance, time' );
+		self::search( [ 'sort' => 'relevance' ] );
 	}
 
 	public function test_search_pages_newest_first_and_counts_every_match(): void {
@@ -523,7 +571,7 @@ final class GraphQueryTest extends TestCase {
 		$this->activate();
 		$stderr = $this->capture_stderr();
 
-		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => false ], self::search( [ 'q' => 'award' ] ) );
+		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => false, 'sort' => 'time' ], self::search( [ 'q' => 'award' ] ) );
 		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => false ], self::read( 'timeline', [ 'key' => self::GAZETTE, 'limit' => 50, 'offset' => 0 ] ) );
 		$this->assertFalse( self::read( 'entity', [ 'key' => self::GAZETTE ] )['available'] );
 		$this->assertSame( [ 'entities' => [], 'available' => false ], self::read( 'related', [ 'key' => self::GAZETTE, 'limit' => 20 ] ) );
@@ -544,7 +592,7 @@ final class GraphQueryTest extends TestCase {
 
 	/** Before any partition has written a file, every read answers nothing, available. */
 	public function test_an_unwritten_graph_answers_empty(): void {
-		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => true ], self::search( [ 'q' => 'award' ] ) );
+		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => true, 'sort' => 'time' ], self::search( [ 'q' => 'award' ] ) );
 		$this->assertSame( [ 'rows' => [], 'available' => true ], self::trends( [ 'by' => 'topic' ] ) );
 	}
 
@@ -568,13 +616,14 @@ final class GraphQueryTest extends TestCase {
 	}
 
 	/**
-	 * A search over the readable tiers, the verb's defaults filled in.
+	 * A search over the readable tiers, the verb's defaults filled in, by
+	 * time unless the args name a sort, so a filter's test reads one order.
 	 *
 	 * @param array<string,mixed> $args The verb's args.
 	 * @return array<string,mixed>
 	 */
 	private static function search( array $args ): array {
-		return Graph_Query::search( $args + [ 'q' => null, 'entity' => null, 'lens' => null, 'since' => null, 'until' => null, 'limit' => 50, 'offset' => 0, 'kind' => [], 'topic' => [], 'role' => [], 'source' => [] ] );
+		return Graph_Query::search( $args + [ 'q' => null, 'sort' => 'time', 'entity' => null, 'lens' => null, 'since' => null, 'until' => null, 'limit' => 50, 'offset' => 0, 'kind' => [], 'topic' => [], 'role' => [], 'source' => [] ] );
 	}
 
 	/**

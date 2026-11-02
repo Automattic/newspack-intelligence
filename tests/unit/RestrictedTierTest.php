@@ -86,13 +86,13 @@ final class RestrictedTierTest extends TestCase {
 
 		$GLOBALS['_current_user_id'] = self::HOLDER;
 		$all                         = $this->ci->dispatch( 'search', [] );
-		$this->assertSame( [ self::DEAL, 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], \array_column( $all['items'], 'item_key' ) );
+		$this->assertSame( [ 'feed:gazette-award', 'github:ledger-launch', self::DEAL, 'linear:joint-grant' ], \array_column( $all['items'], 'item_key' ) );
 		$this->assertSame( 4, $all['total'] );
 		$this->assertSame( [ self::DEAL ], \array_column( $this->ci->dispatch( 'search', [ '--q=renewal clause' ] )['items'], 'item_key' ) );
 
 		$GLOBALS['_current_user_id'] = self::READER;
 		$all                         = $this->ci->dispatch( 'search', [] );
-		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], \array_column( $all['items'], 'item_key' ) );
+		$this->assertSame( [ 'feed:gazette-award', 'github:ledger-launch', 'linear:joint-grant' ], \array_column( $all['items'], 'item_key' ) );
 		$this->assertSame( 3, $all['total'] );
 		$this->assertSame( [], $this->ci->dispatch( 'search', [ '--q=renewal clause' ] )['items'] );
 	}

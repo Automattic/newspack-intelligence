@@ -325,6 +325,48 @@ final class ReresolverNodeTest extends TestCase {
 		$this->assertCount( 45, $this->sent_keys(), 'a finished range leaves the queue' );
 	}
 
+	/**
+	 * A REEXTRACT range sends the same items a RERESOLVE range does, each
+	 * record owed its extraction; it checkpoints as its own kind and
+	 * publishes its range as the last one.
+	 */
+	public function test_a_reextract_range_sends_records_owed_their_extraction(): void {
+		$memd        = new InMemoryMemcached();
+		Core::$memd  = $memd;
+		$this->seed(
+			self::items(
+				[ 'feed:redo-1', 'Kestrel story', '', 'https://news.example/r1', 1785715200 ],
+				[ 'feed:redo-2', 'Heron story', '', 'https://news.example/r2', 1785715200 + 900 ],
+				[ 'feed:redo-late', 'Late story', '', 'https://news.example/r3', 1785801600 ]
+			)
+		);
+
+		$asker = $this->request( 'REEXTRACT 2026-08-03 2026-08-03' );
+		$this->assertSame( [ 'reextract|1785715200 1785801600' => [ 'at' => self::NOW, 'after' => null ] ], $this->reresolver->save_state()['queue'] );
+		$this->sweep_at( self::NOW + 1 );
+
+		$this->assertSame( [ 'verb' => 'REEXTRACT', 'data' => [ 'since' => '2026-08-03', 'until' => '2026-08-03' ] ], $asker[0][ Message::VALUE ] );
+		$this->assertSame(
+			[ Resolver_Node::reresolve( 'feed:redo-1', 0.0, [ 'extract' => true ] ), Resolver_Node::reresolve( 'feed:redo-2', 0.0, [ 'extract' => true ] ) ],
+			\array_column( $this->out->captured, Message::VALUE )
+		);
+		$this->assertSame( [ 'last_range' => [ 'since' => '2026-08-03', 'until' => '2026-08-03' ] ], Reresolver_Node::read_status( 'reresolver', 0 ) );
+		$this->assertSame( [], $this->reresolver->save_state()['queue'] );
+	}
+
+	/** How many items a range dates, an undated one by its retrieval, across every partition. */
+	public function test_count_dated_counts_the_items_a_range_sends(): void {
+		$this->seed(
+			self::items(
+				[ 'feed:count-1', 'One', '', 'https://news.example/c1', 1785715200 ],
+				[ 'feed:count-undated', 'Undated', '', 'https://news.example/c2', 0, 1785715200 + 70 ],
+				[ 'feed:count-out', 'Out', '', 'https://news.example/c3', 1785801600 ]
+			)
+		);
+
+		$this->assertSame( [ 2, 3 ], [ Reresolver_Node::count_dated( '2026-08-03', '2026-08-03' ), Reresolver_Node::count_dated( '2026-08-03', '2026-08-04' ) ] );
+	}
+
 	/** A due signal goes before any range, so a backfill never delays a curator's change. */
 	public function test_a_due_signal_goes_before_a_range(): void {
 		$rows = [ [ 'feed:first-harbgaz', 'HarbGaz wins', '', 'https://news.example/h', 1793100000 ] ];
@@ -587,7 +629,26 @@ final class ReresolverNodeTest extends TestCase {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'since 2026-07-19 is after until 2026-07-04' );
 
-		Reresolver_Node::ask( new Command_Interpreter_Node(), '2026-07-19', '2026-07-04' );
+		Reresolver_Node::ask( new Command_Interpreter_Node(), 'RERESOLVE', '2026-07-19', '2026-07-04' );
+	}
+
+	/** A request RANGES does not name is refused before the range is read. */
+	public function test_ask_refuses_a_request_it_does_not_range(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'request must be one of: RERESOLVE, REEXTRACT' );
+
+		Reresolver_Node::ask( new Command_Interpreter_Node(), 'REPROJECT', '2026-07-04', '2026-07-19' );
+	}
+
+	/** Each range request is declared from RANGES, answering the same queue. */
+	public function test_each_range_request_is_declared(): void {
+		$this->assertSame( \array_keys( Reresolver_Node::RANGES ), \array_column( Reresolver_Node::node_schema()['requests'], 'name' ) );
+		$this->seed( self::items( [ 'feed:lower-1', 'Story', '', 'https://news.example/l1', 1785715200 ] ) );
+
+		$asker = $this->request( 'reextract 2026-08-03 2026-08-03' );
+
+		$this->assertSame( [ 'verb' => 'REEXTRACT', 'data' => [ 'since' => '2026-08-03', 'until' => '2026-08-03' ] ], $asker[0][ Message::VALUE ] );
+		$this->assertSame( [ 'reextract|1785715200 1785801600' ], \array_keys( $this->reresolver->save_state()['queue'] ) );
 	}
 
 	public function test_the_stream_is_declared_as_its_destination(): void {

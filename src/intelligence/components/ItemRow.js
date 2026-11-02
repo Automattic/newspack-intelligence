@@ -56,20 +56,61 @@ export default function ItemRow( { item, onOpenEntity, onSave, children } ) {
 }
 
 /**
- * One page of the items a read answered, each an `ItemRow`, then the pager
- * over the page starts its view holds.
+ * Each order `search` answers in: what a page in it says, the order the
+ * switch offers instead, and the switch's label.
  *
- * @param {Object}                           props
- * @param {{items: Object[], total: number}} props.answer       The read's answer.
- * @param {number[]}                         props.starts       Each page's first row, the current last.
- * @param {(starts: number[]) => void}       props.onStarts     Replaces the stack.
- * @param {(key: string) => void}            props.onOpenEntity Opens an entity.
- * @param {(item: Object) => void}           [props.onSave]     Saves an item; absent for a reader.
+ * @return {Object<string, {shown: string, other: string, label: string}>} The orders.
+ */
+const sorts = () => ( {
+	importance: {
+		shown: __( 'Ranked by importance', 'newspack-intelligence' ),
+		other: 'time',
+		label: __( 'Show newest first', 'newspack-intelligence' ),
+	},
+	time: {
+		shown: __( 'Newest first', 'newspack-intelligence' ),
+		other: 'importance',
+		label: __( 'Rank by importance', 'newspack-intelligence' ),
+	},
+} );
+
+/**
+ * One page of the items a read answered, each an `ItemRow`, then the pager
+ * over the page starts its view holds; given `onSort`, the order the answer
+ * says it is in, and the switch to the other.
+ *
+ * @param {Object}                                          props
+ * @param {{items: Object[], total: number, sort: ?string}} props.answer       The read's answer.
+ * @param {number[]}                                        props.starts       Each page's first row, the current last.
+ * @param {(starts: number[]) => void}                      props.onStarts     Replaces the stack.
+ * @param {(key: string) => void}                           props.onOpenEntity Opens an entity.
+ * @param {(item: Object) => void}                          [props.onSave]     Saves an item; absent for a reader.
+ * @param {(sort: string) => void}                          [props.onSort]     Asks for the other order; absent for a page that does not sort.
  * @return {import('react').ReactElement} The page.
  */
-export function ItemPage( { answer, starts, onStarts, onOpenEntity, onSave } ) {
+export function ItemPage( {
+	answer,
+	starts,
+	onStarts,
+	onOpenEntity,
+	onSave,
+	onSort,
+} ) {
+	const order = onSort && sorts()[ answer.sort ];
 	return (
 		<>
+			{ order && (
+				<p className="newspack-nodes-status is-muted">
+					<span>{ order.shown }</span>{ ' ' }
+					<button
+						type="button"
+						className="button button-small"
+						onClick={ () => onSort( order.other ) }
+					>
+						{ order.label }
+					</button>
+				</p>
+			) }
 			<ul className="newspack-intelligence__items">
 				{ answer.items.map( ( item ) => (
 					<ItemRow
