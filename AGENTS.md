@@ -137,11 +137,16 @@ git config core.hooksPath scripts    # what composer's post-install-cmd runs
 A clone that never ran `composer install` has no hooks. `pre-commit` first runs
 `scripts/sync-shared-scripts.sh`, refreshing this plugin's copy of the shared
 tooling from `../newspack-nodes/scripts/` when that sibling is checked out — edit
-shared scripts THERE, not here. `pre-push` is one of them; this plugin adds no
+shared scripts THERE, not here. `pre-commit` then runs the private-data gate
+over the staged diff, and `commit-msg` over the message, because
+`scripts/pre-push.local` sets `PRIVATE_DATA_GATE=1`. `pre-push` is a shared
+script too; this plugin adds no
 gate of its own, so its `scripts/pre-push.local`, which the shared hook sources
-and the sync never touches, holds only the container constants the hook requires.
+and the sync never touches, holds the container constants the hook requires and
+`PRIVATE_DATA_GATE=1`, which turns the private-data gate on.
 
-`pre-push` runs the JS suite with coverage, its per-file 90% gate,
+`pre-push` runs the JS suite with coverage, its per-file 90% gate, the
+private-data gate `scripts/lint-private-data.py` over every pushed commit,
 `scripts/lint-docs.sh`, `scripts/lint-wp-pin.mjs` and
 `scripts/check-substrate-floor.sh` on every push, including a docs-only one:
 jest can break
