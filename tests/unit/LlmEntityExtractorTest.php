@@ -28,9 +28,9 @@ final class LlmEntityExtractorTest extends TestCase {
 	}
 
 	public function test_parses_clean_json(): void {
-		$this->respond( '{"orgs":["The Prairie Tribune"],"people":["Jane Doe"],"locations":["Millbrook"]}' );
+		$this->respond( '{"orgs":["The Prairie Wendlemark"],"people":["Jane Doe"],"locations":["Millbrook"]}' );
 		$out = $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] );
-		$this->assertSame( [ 'The Prairie Tribune' ], $out['orgs'] );
+		$this->assertSame( [ 'The Prairie Wendlemark' ], $out['orgs'] );
 		$this->assertSame( [ 'Jane Doe' ], $out['people'] );
 		$this->assertSame( [ 'Millbrook' ], $out['locations'] );
 	}
@@ -49,10 +49,10 @@ final class LlmEntityExtractorTest extends TestCase {
 
 	/** The products a reply names are read beside its organizations. */
 	public function test_parses_the_products_a_reply_names(): void {
-		$this->respond( '{"orgs":["The Prairie Tribune"],"products":["Kestrel Mail", 7, "Wrenpay"],"people":[],"locations":[]}' );
+		$this->respond( '{"orgs":["The Prairie Wendlemark"],"products":["Kestrel Mail", 7, "Wrenpay"],"people":[],"locations":[]}' );
 		$out = $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] );
 		$this->assertSame( [ 'Kestrel Mail', 'Wrenpay' ], $out['products'] );
-		$this->assertSame( [ 'The Prairie Tribune' ], $out['orgs'] );
+		$this->assertSame( [ 'The Prairie Wendlemark' ], $out['orgs'] );
 	}
 
 	public function test_parses_json_wrapped_in_prose_or_fences(): void {
@@ -89,8 +89,8 @@ final class LlmEntityExtractorTest extends TestCase {
 		return [
 			'an empty object'  => [ '{}' ],
 			'an error object'  => [ '{"error":"rate limited for 41s"}' ],
-			'a scalar orgs'    => [ '{"orgs":"The Prairie Tribune"}' ],
-			'an object orgs'   => [ '{"orgs":{"first":"The Prairie Tribune"}}' ],
+			'a scalar orgs'    => [ '{"orgs":"The Prairie Wendlemark"}' ],
+			'an object orgs'   => [ '{"orgs":{"first":"The Prairie Wendlemark"}}' ],
 		];
 	}
 

@@ -54,7 +54,7 @@ describe( 'Search', () => {
 		renderSearch();
 		expect(
 			await screen.findByRole( 'link', {
-				name: 'Acme Gazette wins regional prize',
+				name: 'Acme Quillsheet wins regional prize',
 			} )
 		).toBeInTheDocument();
 		expect( screen.getByText( /1 of 9 items/ ) ).toBeInTheDocument();
@@ -122,7 +122,7 @@ describe( 'Search', () => {
 		for ( const shown of [
 			'complaint, praise',
 			'client',
-			'organization:acme-gazette',
+			'organization:acme-quillsheet',
 			'The last 21 days',
 			'internal',
 		] ) {
@@ -163,7 +163,7 @@ describe( 'Search', () => {
 		);
 		expect( screen.getByLabelText( 'Roles' ) ).toHaveValue( 'client' );
 		expect( screen.getByLabelText( 'Entity' ) ).toHaveValue(
-			'organization:acme-gazette'
+			'organization:acme-quillsheet'
 		);
 		expect( screen.getByLabelText( 'Since' ) ).toHaveValue( since );
 		await waitFor( () =>
@@ -171,7 +171,7 @@ describe( 'Search', () => {
 				'--kind=complaint',
 				'--kind=praise',
 				'--role=client',
-				'--entity=organization:acme-gazette',
+				'--entity=organization:acme-quillsheet',
 				`--since=${ since }`,
 			] )
 		);
@@ -182,7 +182,7 @@ describe( 'Search', () => {
 		await waitFor( () =>
 			expect( wire.sent( 'search' ) ).toContainEqual( [
 				'--role=client',
-				'--entity=organization:acme-gazette',
+				'--entity=organization:acme-quillsheet',
 				`--since=${ since }`,
 			] )
 		);
@@ -269,10 +269,10 @@ describe( 'Search', () => {
 		const onOpenEntity = jest.fn();
 		renderSearch( { onOpenEntity } );
 		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Acme Gazette' } )
+			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
 		);
 		expect( onOpenEntity ).toHaveBeenCalledWith(
-			'organization:acme-gazette'
+			'organization:acme-quillsheet'
 		);
 	} );
 

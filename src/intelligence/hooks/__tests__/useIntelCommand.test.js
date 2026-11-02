@@ -59,7 +59,7 @@ function Writer( { refresh, onRefused, onSent = () => {}, ci } ) {
 				type="button"
 				className="button"
 				onClick={ () =>
-					onSent( run( { key: 'organization:acme-gazette' } ) )
+					onSent( run( { key: 'organization:acme-quillsheet' } ) )
 				}
 			>
 				accept
@@ -75,21 +75,23 @@ describe( 'useIntelRead', () => {
 			name: `named ${ key }`,
 			available: true,
 		} );
-		render( <Reader args={ [ 'organization:acme-gazette' ] } /> );
+		render( <Reader args={ [ 'organization:acme-quillsheet' ] } /> );
 		expect(
-			await screen.findByText( 'answer: named organization:acme-gazette' )
+			await screen.findByText(
+				'answer: named organization:acme-quillsheet'
+			)
 		).toBeInTheDocument();
 		expect( wire.sent( 'entity' ) ).toEqual( [
-			[ 'organization:acme-gazette' ],
+			[ 'organization:acme-quillsheet' ],
 		] );
 	} );
 
 	it( 'asks again when its arguments change, showing the new answer', async () => {
 		wire.replies.entity = ( [ key ] ) => ( { name: key, available: true } );
 		const { rerender } = render(
-			<Reader args={ [ 'organization:acme-gazette' ] } />
+			<Reader args={ [ 'organization:acme-quillsheet' ] } />
 		);
-		await screen.findByText( 'answer: organization:acme-gazette' );
+		await screen.findByText( 'answer: organization:acme-quillsheet' );
 		rerender( <Reader args={ [ 'person:jo-reporter' ] } /> );
 		expect(
 			await screen.findByText( 'answer: person:jo-reporter' )
@@ -108,7 +110,7 @@ describe( 'useIntelRead', () => {
 	} );
 
 	it( 'shows a refusal that echoes no arguments rather than loading forever', async () => {
-		render( <Reader args={ [ 'organization:acme-gazette' ] } /> );
+		render( <Reader args={ [ 'organization:acme-quillsheet' ] } /> );
 		await waitFor( () =>
 			expect( wire.sent( 'entity' ) ).toHaveLength( 1 )
 		);
@@ -133,7 +135,7 @@ describe( 'useIntelWrite', () => {
 		fireEvent.click( screen.getByRole( 'button', { name: 'accept' } ) );
 		await waitFor( () => expect( refresh ).toHaveBeenCalledTimes( 1 ) );
 		expect( wire.sent( 'accept_entity' ) ).toEqual( [
-			[ '--key=organization:acme-gazette' ],
+			[ '--key=organization:acme-quillsheet' ],
 		] );
 	} );
 
@@ -141,14 +143,14 @@ describe( 'useIntelWrite', () => {
 		let refuse = true;
 		wire.replies.accept_entity = () =>
 			refuse
-				? new Error( 'no entity: organization:acme-gazette' )
+				? new Error( 'no entity: organization:acme-quillsheet' )
 				: { ok: true, event_id: 'ev-42' };
 		const refresh = jest.fn();
 		render( <Writer refresh={ refresh } /> );
 		fireEvent.click( screen.getByRole( 'button', { name: 'accept' } ) );
 		expect(
 			await screen.findByText(
-				'refusal: no entity: organization:acme-gazette'
+				'refusal: no entity: organization:acme-quillsheet'
 			)
 		).toBeInTheDocument();
 		expect( refresh ).not.toHaveBeenCalled();
@@ -160,17 +162,17 @@ describe( 'useIntelWrite', () => {
 
 	it( 'answers each run with the tokens it sent, and a refusal with the tokens refused', async () => {
 		wire.replies.accept_entity = () =>
-			new Error( 'no entity: organization:acme-gazette' );
+			new Error( 'no entity: organization:acme-quillsheet' );
 		const onSent = jest.fn();
 		const onRefused = jest.fn();
 		render( <Writer onSent={ onSent } onRefused={ onRefused } /> );
 		fireEvent.click( screen.getByRole( 'button', { name: 'accept' } ) );
 		expect( onSent ).toHaveBeenCalledWith( [
-			'--key=organization:acme-gazette',
+			'--key=organization:acme-quillsheet',
 		] );
 		await waitFor( () =>
 			expect( onRefused ).toHaveBeenCalledWith( [
-				'--key=organization:acme-gazette',
+				'--key=organization:acme-quillsheet',
 			] )
 		);
 	} );

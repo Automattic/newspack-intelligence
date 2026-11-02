@@ -78,7 +78,7 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		$this->assertArrayNotHasKey( 'intel_health', $tools );
 		$this->assertArrayNotHasKey( 'intel_seed_ontology', $tools );
 		$this->assertArrayNotHasKey( 'intel_reresolve', $tools );
-		$this->assertCount( 30, $tools );
+		$this->assertCount( 31, $tools );
 		foreach ( $offered as $verb => $spec ) {
 			$properties = (array) $tools[ "intel_{$verb}" ]['inputSchema']['properties'];
 			$this->assertSame( \array_column( $spec['args'], 'name' ), \array_keys( $properties ), $verb );
@@ -103,7 +103,7 @@ final class IntelligenceMcpDoorTest extends TestCase {
 	public function test_a_read_scope_lists_no_curation_tool(): void {
 		$names = \array_column( $this->call( Capabilities::READ, 'tools/list' )['result']['tools'], 'name' );
 
-		$this->assertSame( [ 'intel_search', 'intel_entity', 'intel_timeline', 'intel_related', 'intel_claims', 'intel_trends', 'intel_signals', 'intel_review', 'intel_collections', 'intel_lenses', 'intel_watches', 'intel_save_watch', 'intel_remove_watch', 'intel_watch_matches', 'intel_mark_seen' ], $names );
+		$this->assertSame( [ 'intel_search', 'intel_entity', 'intel_timeline', 'intel_related', 'intel_claims', 'intel_trends', 'intel_signals', 'intel_review', 'intel_collections', 'intel_lenses', 'intel_watches', 'intel_save_watch', 'intel_remove_watch', 'intel_watch_matches', 'intel_mark_seen', 'intel_briefing' ], $names );
 		$refused = $this->call( Capabilities::READ, 'tools/call', [ 'name' => 'intel_confirm_link', 'arguments' => [ 'item' => 'feed:gazette-award', 'entity' => self::GAZETTE ] ] );
 		$this->assertSame( 'Unknown tool: intel_confirm_link', $refused['error']['message'] );
 	}

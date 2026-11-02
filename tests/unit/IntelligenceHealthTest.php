@@ -191,7 +191,7 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->collect(
 			'make_node P2_Source kittiwake-p2 internal kittiwake-g2',
 			'make_node P2_Source fulmar-p2 internal kittiwake-g2',
-			'make_node Linear_Source gannet-linear internal kittiwake-g2'
+			'make_node Linear_Source shrike-linear internal kittiwake-g2'
 		);
 		$asked    = new \ArrayObject();
 		$instance = new \ReflectionProperty( Vault::class, 'instance' );

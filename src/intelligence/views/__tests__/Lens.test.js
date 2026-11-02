@@ -126,9 +126,9 @@ describe( 'Lens', () => {
 		} );
 		expect(
 			await within( items ).findByRole( 'link', {
-				name: 'Acme Gazette wins regional prize',
+				name: 'Acme Quillsheet wins regional prize',
 			} )
-		).toHaveAttribute( 'href', 'https://pressgazette.example/acme' );
+		).toHaveAttribute( 'href', 'https://inkfold-review.example/acme' );
 		const trends = screen.getByRole( 'region', { name: 'Trends' } );
 		const row = await within( trends ).findByRole( 'row', {
 			name: /2026-09-21/,
@@ -201,7 +201,7 @@ describe( 'Lens', () => {
 		await openSupport();
 		await screen.findByText( '11 against a baseline of 1.7' );
 		await screen.findByText( 'Paywall login loops for Acme' );
-		await screen.findByText( 'Acme Gazette wins regional prize' );
+		await screen.findByText( 'Acme Quillsheet wins regional prize' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Watch this' } ) );
 		expect( onWatch ).toHaveBeenCalledWith(
 			{ kind: 'lens', key: 'support-desk' },
@@ -287,7 +287,7 @@ describe( 'Lens', () => {
 		type( 'Topics', 'topic:local-news,topic:ai' );
 		type( 'Roles', 'funder' );
 		type( 'Sources', 'feed, github' );
-		type( 'Entity', 'organization:acme-gazette' );
+		type( 'Entity', 'organization:acme-quillsheet' );
 		type( 'Days', '45' );
 		fireEvent.click( within( form ).getByLabelText( 'restricted' ) );
 		fireEvent.click( within( form ).getByLabelText( 'public' ) );
@@ -311,7 +311,7 @@ describe( 'Lens', () => {
 					'--source=github',
 					'--tier=public',
 					'--tier=restricted',
-					'--entity=organization:acme-gazette',
+					'--entity=organization:acme-quillsheet',
 					'--days=45',
 					'--by=topic',
 					'--bucket=month',
@@ -363,7 +363,7 @@ describe( 'Lens', () => {
 					'--kind=praise',
 					'--role=client',
 					'--role=former_client',
-					'--entity=organization:acme-gazette',
+					'--entity=organization:acme-quillsheet',
 					'--days=21',
 					'--by=kind',
 				],

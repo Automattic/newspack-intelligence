@@ -120,8 +120,8 @@ final class GraphQueryTest extends TestCase {
 	/** By importance a churn signal scored 8 outranks a newer fundraising letter scored 7; by time the letter leads. */
 	public function test_importance_ranks_a_churn_signal_over_a_newer_letter(): void {
 		$this->seed(
-			self::item( 'linear:quarry-cancels', 'Quarry Tribune cancels its plan', 'linear', 'internal', self::$oct_06 ),
-			self::extraction( 'linear:quarry-cancels', 'The Tribune is leaving.', 'churn_signal', self::$oct_06, [], 3.0, 8.0 ),
+			self::item( 'linear:quarry-cancels', 'Quarry Wendlemark cancels its plan', 'linear', 'internal', self::$oct_06 ),
+			self::extraction( 'linear:quarry-cancels', 'The Wendlemark is leaving.', 'churn_signal', self::$oct_06, [], 3.0, 8.0 ),
 			self::item( 'feed:kestrel-appeal', 'Kestrel Weekly asks readers to give', 'feed', 'public', self::$oct_13 ),
 			self::extraction( 'feed:kestrel-appeal', 'A year-end appeal.', 'funding', self::$oct_13, [], 8.0, 7.0 )
 		);

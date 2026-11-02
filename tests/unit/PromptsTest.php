@@ -19,13 +19,13 @@ final class PromptsTest extends TestCase {
 	}
 
 	public function test_extract_entities_demands_json_orgs_people_locations(): void {
-		$m = Prompts::extract_entities( [ 'title' => 'City Council votes', 'body' => 'The Prairie Tribune reported the vote in Millbrook.' ] );
+		$m = Prompts::extract_entities( [ 'title' => 'City Council votes', 'body' => 'The Prairie Wendlemark reported the vote in Millbrook.' ] );
 		$this->assertSame( 'system', $m[0]['role'] );
 		$this->assertStringContainsStringIgnoringCase( 'json', $m[0]['content'] );
 		$this->assertStringContainsStringIgnoringCase( 'orgs', $m[0]['content'] );
 		$user = $m[1]['content'];
 		$this->assertStringContainsString( 'City Council votes', $user );
-		$this->assertStringContainsString( 'The Prairie Tribune reported', $user );
+		$this->assertStringContainsString( 'The Prairie Wendlemark reported', $user );
 	}
 
 	/** A tool, platform, vendor product or service is asked for as a product, never an organization. */

@@ -6,6 +6,7 @@ import TabBar, {
 	panelDomId,
 	tabDomId,
 } from '@newspack-nodes/shared/tabs/TabBar';
+import Briefing from './views/Briefing';
 import Search, { newSearch } from './views/Search';
 import Entity from './views/Entity';
 import Review from './views/Review';
@@ -25,8 +26,10 @@ import './styles/intelligence.scss';
 const linkedWatch = () => getQueryParam( 'watch' ) || null;
 
 /**
- * The Intelligence page: Search, Entity, Lenses, Review, Collections and
- * Watches, switched in place. Each view reads its own verbs; the page holds
+ * The Intelligence page: Briefing, the view it opens on, then Search,
+ * Entity, Lenses, Review, Collections and Watches, switched in place. The
+ * Briefing opens an entity, a lens, a watch, the watch form or Search. Each
+ * view reads its own verbs; the page holds
  * which view shows, the submitted search, the open entity, lens, collection
  * and watch, the watch form's draft and the item being saved, so a view
  * returns as it was left, and a lens's "Watch this" opens the form on it.
@@ -49,7 +52,7 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
  */
 export default function IntelligencePage( { canTune, canManage, vocabulary } ) {
 	const [ view, setView ] = useState( () =>
-		linkedWatch() ? 'watches' : 'search'
+		linkedWatch() ? 'watches' : 'briefing'
 	);
 	const [ entityKey, setEntityKey ] = useState( null );
 	const [ saving, setSaving ] = useState( null );
@@ -74,7 +77,17 @@ export default function IntelligencePage( { canTune, canManage, vocabulary } ) {
 		setView( 'watches' );
 	};
 
+	const openLens = ( key ) => {
+		setLens( { ...CLOSED_LENS, key } );
+		setView( 'lenses' );
+	};
+	const openWatch = ( key ) => {
+		setWatch( { ...CLOSED_WATCH, key } );
+		setView( 'watches' );
+	};
+
 	const tabs = [
+		{ id: 'briefing', label: __( 'Briefing', 'newspack-intelligence' ) },
 		{ id: 'search', label: __( 'Search', 'newspack-intelligence' ) },
 		...( entityKey
 			? [
@@ -118,6 +131,21 @@ export default function IntelligencePage( { canTune, canManage, vocabulary } ) {
 						role="tabpanel"
 						aria-labelledby={ tabDomId( 'intelligence', view ) }
 					>
+						{ 'briefing' === view && (
+							<Briefing
+								onOpenEntity={ openEntity }
+								onOpenLens={ openLens }
+								onOpenWatch={ openWatch }
+								onNewWatch={ () =>
+									openWatchForm(
+										{ kind: 'lens', key: '' },
+										''
+									)
+								}
+								onSearch={ () => setView( 'search' ) }
+								onSave={ onSave }
+							/>
+						) }
 						{ 'search' === view && (
 							<Search
 								query={ search }

@@ -24,7 +24,7 @@ const WATCHES = {
 		{
 			watch_key: 'acme-complaints',
 			name: 'Acme complaints',
-			target: { kind: 'entity', key: 'organization:acme-gazette' },
+			target: { kind: 'entity', key: 'organization:acme-quillsheet' },
 			digest: true,
 			instant: false,
 			inbox: true,
@@ -126,7 +126,7 @@ describe( 'Watches', () => {
 		).closest( 'li' );
 		expect(
 			within( acme ).getByText(
-				'Entity · organization:acme-gazette · 7 unseen'
+				'Entity · organization:acme-quillsheet · 7 unseen'
 			)
 		).toBeInTheDocument();
 		const support = screen
@@ -162,9 +162,9 @@ describe( 'Watches', () => {
 		} );
 		expect(
 			await within( region ).findByRole( 'link', {
-				name: 'Acme Gazette wins regional prize',
+				name: 'Acme Quillsheet wins regional prize',
 			} )
-		).toHaveAttribute( 'href', 'https://pressgazette.example/acme' );
+		).toHaveAttribute( 'href', 'https://inkfold-review.example/acme' );
 		expect(
 			within( region ).getByText( 'javascript:alert(1)' ).closest( 'a' )
 		).toBeNull();
@@ -227,16 +227,16 @@ describe( 'Watches', () => {
 		wire.replies.mark_seen = { ok: true, count: 1 };
 		render( <Harness /> );
 		await openAcme();
-		const row = await matchRow( 'Acme Gazette wins regional prize' );
+		const row = await matchRow( 'Acme Quillsheet wins regional prize' );
 		fireEvent.click(
 			within( row ).getByRole( 'button', { name: 'Mark seen' } )
 		);
 		expect(
-			screen.queryByText( 'Acme Gazette wins regional prize' )
+			screen.queryByText( 'Acme Quillsheet wins regional prize' )
 		).toBeNull();
 		await waitFor( () =>
 			expect( wire.sent( 'mark_seen' ) ).toEqual( [
-				[ '--key=acme-complaints', '--item=feed:press-gazette-17' ],
+				[ '--key=acme-complaints', '--item=feed:inkfold-review-17' ],
 			] )
 		);
 		await waitFor( () =>
@@ -246,7 +246,7 @@ describe( 'Watches', () => {
 			expect( wire.sent( 'watches' ) ).toHaveLength( 2 )
 		);
 		expect(
-			screen.queryByText( 'Acme Gazette wins regional prize' )
+			screen.queryByText( 'Acme Quillsheet wins regional prize' )
 		).toBeNull();
 		expect( screen.getByText( 'javascript:alert(1)' ) ).toBeInTheDocument();
 	} );
@@ -288,19 +288,19 @@ describe( 'Watches', () => {
 		wire.replies.mark_seen = { ok: true, count: 7 };
 		render( <Harness /> );
 		await openAcme();
-		await matchRow( 'Acme Gazette wins regional prize' );
+		await matchRow( 'Acme Quillsheet wins regional prize' );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Mark these seen' } )
 		);
 		expect(
-			screen.queryByText( 'Acme Gazette wins regional prize' )
+			screen.queryByText( 'Acme Quillsheet wins regional prize' )
 		).toBeNull();
 		expect( screen.queryByText( 'javascript:alert(1)' ) ).toBeNull();
 		await waitFor( () =>
 			expect( wire.sent( 'mark_seen' ) ).toEqual( [
 				[
 					'--key=acme-complaints',
-					'--item=feed:press-gazette-17',
+					'--item=feed:inkfold-review-17',
 					'--item=feed:untitled-9',
 				],
 			] )
@@ -315,7 +315,7 @@ describe( 'Watches', () => {
 		wire.replies.mark_seen = () => new Error( 'no watch: acme-complaints' );
 		render( <Harness /> );
 		await openAcme();
-		await matchRow( 'Acme Gazette wins regional prize' );
+		await matchRow( 'Acme Quillsheet wins regional prize' );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Mark these seen' } )
 		);
@@ -323,7 +323,7 @@ describe( 'Watches', () => {
 			await screen.findByText( 'no watch: acme-complaints' )
 		).toBeInTheDocument();
 		expect(
-			screen.getByText( 'Acme Gazette wins regional prize' )
+			screen.getByText( 'Acme Quillsheet wins regional prize' )
 		).toBeInTheDocument();
 		expect( screen.getByText( 'javascript:alert(1)' ) ).toBeInTheDocument();
 	} );
@@ -339,7 +339,7 @@ describe( 'Watches', () => {
 		fireEvent.click( screen.getByRole( 'button', { name: 'New watch' } ) );
 		type( 'Name', 'Paywall watch' );
 		type( 'Follows', 'entity' );
-		type( 'Entity', 'organization:other-gazette' );
+		type( 'Entity', 'organization:other-quillsheet' );
 		type( 'Follows', 'collection' );
 		await within( form() ).findByRole( 'option', {
 			name: 'Paywall complaints',
@@ -451,7 +451,7 @@ describe( 'Watches', () => {
 			screen.getByRole( 'button', { name: 'Edit Acme complaints' } )
 		);
 		type( 'Name', 'Acme watch' );
-		type( 'Entity', 'organization:acme-gazette-inc' );
+		type( 'Entity', 'organization:acme-quillsheet-inc' );
 		saved = true;
 		fireEvent.click(
 			within( form() ).getByRole( 'button', { name: 'Save watch' } )
@@ -461,14 +461,14 @@ describe( 'Watches', () => {
 		).closest( 'li' );
 		expect(
 			await within( row ).findByText(
-				'Entity · organization:acme-gazette · 3 unseen'
+				'Entity · organization:acme-quillsheet · 3 unseen'
 			)
 		).toBeInTheDocument();
 		expect( wire.sent( 'save_watch' ) ).toEqual( [
 			[
 				'--key=acme-complaints',
 				'--name=Acme watch',
-				'--entity=organization:acme-gazette-inc',
+				'--entity=organization:acme-quillsheet-inc',
 				'--digest=true',
 				'--instant=false',
 				'--inbox=true',
@@ -490,10 +490,10 @@ describe( 'Watches', () => {
 						...WATCHES.watches,
 						{
 							watch_key: '9f3a51c07be2d468',
-							name: 'Gazette group',
+							name: 'Quillsheet group',
 							target: {
 								kind: 'entity',
-								key: 'organization:acme-gazette',
+								key: 'organization:acme-quillsheet',
 							},
 							digest: false,
 							instant: true,
@@ -506,8 +506,8 @@ describe( 'Watches', () => {
 		render(
 			<Harness
 				initialDraft={ newWatch(
-					{ kind: 'entity', key: 'organization:acme-gazette-inc' },
-					'Gazette group'
+					{ kind: 'entity', key: 'organization:acme-quillsheet-inc' },
+					'Quillsheet group'
 				) }
 			/>
 		);
@@ -520,11 +520,11 @@ describe( 'Watches', () => {
 			within( form() ).getByRole( 'button', { name: 'Save watch' } )
 		);
 		const row = (
-			await screen.findByRole( 'button', { name: 'Gazette group' } )
+			await screen.findByRole( 'button', { name: 'Quillsheet group' } )
 		).closest( 'li' );
 		expect(
 			within( row ).getByText(
-				'Entity · organization:acme-gazette · 2 unseen'
+				'Entity · organization:acme-quillsheet · 2 unseen'
 			)
 		).toBeInTheDocument();
 		expect( screen.queryByText( 'Saving…' ) ).toBeNull();
@@ -583,7 +583,7 @@ describe( 'Watches', () => {
 			screen.getByRole( 'button', { name: 'Edit Acme complaints' } )
 		);
 		expect( within( form() ).getByLabelText( 'Entity' ) ).toHaveValue(
-			'organization:acme-gazette'
+			'organization:acme-quillsheet'
 		);
 		expect(
 			within( form() ).getByLabelText( 'Email me a daily digest' )
@@ -600,7 +600,7 @@ describe( 'Watches', () => {
 				[
 					'--key=acme-complaints',
 					'--name=Acme watch',
-					'--entity=organization:acme-gazette',
+					'--entity=organization:acme-quillsheet',
 					'--digest=false',
 					'--instant=false',
 					'--inbox=true',

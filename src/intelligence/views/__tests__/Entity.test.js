@@ -17,7 +17,7 @@ import { intelWire } from '../../__tests__/intelWire';
 import { ENTITY, ITEM, VOCABULARY } from './fixtures';
 import Entity from '../Entity';
 
-const KEY = 'organization:acme-gazette';
+const KEY = 'organization:acme-quillsheet';
 
 let wire;
 
@@ -36,9 +36,9 @@ beforeEach( () => {
 				shared_items: 4,
 				items: [
 					{
-						item_key: 'feed:press-gazette-17',
-						url: 'https://pressgazette.example/acme',
-						title: 'Acme Gazette wins regional prize',
+						item_key: 'feed:inkfold-review-17',
+						url: 'https://inkfold-review.example/acme',
+						title: 'Acme Quillsheet wins regional prize',
 					},
 				],
 			},
@@ -53,8 +53,8 @@ beforeEach( () => {
 				predicate: 'won',
 				object: 'Regional Press Award',
 				confidence: 0.9,
-				item_key: 'feed:press-gazette-17',
-				url: 'https://pressgazette.example/acme',
+				item_key: 'feed:inkfold-review-17',
+				url: 'https://inkfold-review.example/acme',
 			},
 		],
 		available: true,
@@ -75,13 +75,13 @@ function renderEntity( props = {} ) {
 
 const recordCard = () =>
 	screen
-		.getByRole( 'heading', { name: 'Acme Gazette' } )
+		.getByRole( 'heading', { name: 'Acme Quillsheet' } )
 		.closest( 'section' );
 
 describe( 'Entity — reads', () => {
 	it( 'asks each read verb about the entity', async () => {
 		renderEntity();
-		await screen.findByRole( 'heading', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		await waitFor( () => {
 			for ( const verb of [
 				'entity',
@@ -96,13 +96,13 @@ describe( 'Entity — reads', () => {
 
 	it( 'renders the record: names, identifiers, roles, topics and counts', async () => {
 		renderEntity();
-		await screen.findByRole( 'heading', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		const record = recordCard();
 		expect(
-			within( record ).getByText( /alias: The Gazette/ )
+			within( record ).getByText( /alias: The Quillsheet/ )
 		).toBeInTheDocument();
 		expect(
-			within( record ).getByText( /domain: acmegazette\.example/ )
+			within( record ).getByText( /domain: acmequillsheet\.example/ )
 		).toBeInTheDocument();
 		expect(
 			within( record ).getByText( /client since 2026-09-09/ )
@@ -111,7 +111,7 @@ describe( 'Entity — reads', () => {
 			within( record ).getByText( /prospect 2026-05-28 – 2026-09-09/ )
 		).toBeInTheDocument();
 		expect(
-			within( record ).getByText( /organization:acme-gazette-inc/ )
+			within( record ).getByText( /organization:acme-quillsheet-inc/ )
 		).toBeInTheDocument();
 		expect(
 			within( record ).getByText( /12 items, 3 proposed links/ )
@@ -126,7 +126,7 @@ describe( 'Entity — reads', () => {
 		renderEntity( { onOpenEntity } );
 		expect(
 			await screen.findByRole( 'link', {
-				name: 'Acme Gazette wins regional prize',
+				name: 'Acme Quillsheet wins regional prize',
 			} )
 		).toBeInTheDocument();
 		fireEvent.click(
@@ -140,9 +140,9 @@ describe( 'Entity — reads', () => {
 		).toBeInTheDocument();
 		expect(
 			within( claims ).getByRole( 'link', {
-				name: 'feed:press-gazette-17',
+				name: 'feed:inkfold-review-17',
 			} )
-		).toHaveAttribute( 'href', 'https://pressgazette.example/acme' );
+		).toHaveAttribute( 'href', 'https://inkfold-review.example/acme' );
 	} );
 
 	it( 'counts one of a thing in the singular', async () => {
@@ -159,9 +159,9 @@ describe( 'Entity — reads', () => {
 					shared_items: 1,
 					items: [
 						{
-							item_key: 'feed:press-gazette-17',
-							url: 'https://pressgazette.example/acme',
-							title: 'Acme Gazette wins regional prize',
+							item_key: 'feed:inkfold-review-17',
+							url: 'https://inkfold-review.example/acme',
+							title: 'Acme Quillsheet wins regional prize',
 						},
 					],
 				},
@@ -266,8 +266,8 @@ describe( 'Entity — reads', () => {
 					baseline: 7.375,
 					items: [
 						{
-							item_key: 'feed:acmegazette.example:city-hall',
-							url: 'https://acmegazette.example/city-hall',
+							item_key: 'feed:acmequillsheet.example:city-hall',
+							url: 'https://acmequillsheet.example/city-hall',
 							title: 'City hall budget vote',
 						},
 					],
@@ -289,7 +289,7 @@ describe( 'Entity — reads', () => {
 			within( drop ).getByRole( 'link', {
 				name: 'City hall budget vote',
 			} )
-		).toHaveAttribute( 'href', 'https://acmegazette.example/city-hall' );
+		).toHaveAttribute( 'href', 'https://acmequillsheet.example/city-hall' );
 		expect(
 			within( signals ).getByRole( 'row', {
 				name: /about spike: complaint/,
@@ -325,7 +325,7 @@ describe( 'Entity — reads', () => {
 
 describe( 'Entity — status', () => {
 	const heading = () =>
-		screen.findByRole( 'heading', { name: 'Acme Gazette' } );
+		screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 
 	it( 'heads a client with its start, latest signal, asks and last item', async () => {
 		wire.replies.signals = {
@@ -387,7 +387,7 @@ describe( 'Entity — status', () => {
 describe( 'Entity — published', () => {
 	const published = () =>
 		screen.getByRole( 'button', {
-			name: 'Published by Acme Gazette (4)',
+			name: 'Published by Acme Quillsheet (4)',
 		} );
 
 	beforeEach( () => {
@@ -397,7 +397,7 @@ describe( 'Entity — published', () => {
 				? {
 						items: [ 'crater', 'ferry' ].map( ( n ) => ( {
 							...ITEM,
-							item_key: `feed:acmegazette.example:${ n }`,
+							item_key: `feed:acmequillsheet.example:${ n }`,
 							title: `${ n } at ${
 								args.slice( 2 ).join( ' ' ) || 'start'
 							}`,
@@ -415,7 +415,7 @@ describe( 'Entity — published', () => {
 			name: 'Timeline',
 		} );
 		await screen.findByRole( 'button', {
-			name: 'Published by Acme Gazette (4)',
+			name: 'Published by Acme Quillsheet (4)',
 		} );
 		const section = published().closest( 'section' );
 		expect(
@@ -433,7 +433,7 @@ describe( 'Entity — published', () => {
 	it( 'reads what it published once opened, a page at a time', async () => {
 		renderEntity();
 		await screen.findByRole( 'button', {
-			name: 'Published by Acme Gazette (4)',
+			name: 'Published by Acme Quillsheet (4)',
 		} );
 		fireEvent.click( published() );
 		const section = published().closest( 'section' );
@@ -461,7 +461,7 @@ describe( 'Entity — published', () => {
 	it( 'offers no section for an entity that published nothing', async () => {
 		wire.replies.entity = { ...ENTITY, published: { count: 0 } };
 		renderEntity();
-		await screen.findByRole( 'heading', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		expect(
 			screen.queryByRole( 'button', { name: /^Published by/ } )
 		).toBeNull();
@@ -471,7 +471,7 @@ describe( 'Entity — published', () => {
 describe( 'Entity — curation', () => {
 	it( 'offers a reader no curation control', async () => {
 		renderEntity();
-		await screen.findByRole( 'heading', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		for ( const name of [
 			'Add name',
 			'Add identifier',
@@ -497,7 +497,7 @@ describe( 'Entity — curation', () => {
 	it( 'adds a name of the chosen kind and re-reads the record', async () => {
 		wire.replies.add_name = { ok: true, event_id: 'ev-name' };
 		renderEntity( { canTune: true } );
-		await screen.findByRole( 'heading', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		const form = screen.getByRole( 'group', { name: 'Add name' } );
 		fireEvent.change( within( form ).getByLabelText( 'Kind' ), {
 			target: { value: 'acronym' },
@@ -521,7 +521,7 @@ describe( 'Entity — curation', () => {
 	it( 'sends a value that reads like an option as the value', async () => {
 		wire.replies.add_name = { ok: true, event_id: 'ev-dash' };
 		renderEntity( { canTune: true } );
-		await screen.findByRole( 'heading', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		const form = screen.getByRole( 'group', { name: 'Add name' } );
 		fireEvent.change( within( form ).getByLabelText( 'Value' ), {
 			target: { value: '--kind=acronym' },
@@ -543,13 +543,13 @@ describe( 'Entity — curation', () => {
 	it( 'adds an identifier of the chosen kind', async () => {
 		wire.replies.add_identifier = { ok: true, event_id: 'ev-id' };
 		renderEntity( { canTune: true } );
-		await screen.findByRole( 'heading', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		const form = screen.getByRole( 'group', { name: 'Add identifier' } );
 		fireEvent.change( within( form ).getByLabelText( 'Kind' ), {
 			target: { value: 'github_org' },
 		} );
 		fireEvent.change( within( form ).getByLabelText( 'Value' ), {
-			target: { value: 'acme-gazette' },
+			target: { value: 'acme-quillsheet' },
 		} );
 		fireEvent.click(
 			within( form ).getByRole( 'button', { name: 'Add identifier' } )
@@ -559,7 +559,7 @@ describe( 'Entity — curation', () => {
 				[
 					`--key=${ KEY }`,
 					'--kind=github_org',
-					'--value=acme-gazette',
+					'--value=acme-quillsheet',
 				],
 			] )
 		);
@@ -569,7 +569,7 @@ describe( 'Entity — curation', () => {
 		wire.replies.assert_role = { ok: true, event_id: 'ev-role' };
 		wire.replies.end_role = { ok: true, event_id: 'ev-end' };
 		renderEntity( { canTune: true } );
-		await screen.findByRole( 'heading', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		const form = screen.getByRole( 'group', { name: 'Assert role' } );
 		fireEvent.change( within( form ).getByLabelText( 'Role' ), {
 			target: { value: 'competitor' },
@@ -595,7 +595,7 @@ describe( 'Entity — curation', () => {
 		wire.replies.assert_role = () =>
 			new Error( `${ KEY } already holds client` );
 		renderEntity( { canTune: true } );
-		await screen.findByRole( 'heading', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		const form = screen.getByRole( 'group', { name: 'Assert role' } );
 		fireEvent.click(
 			within( form ).getByRole( 'button', { name: 'Assert role' } )

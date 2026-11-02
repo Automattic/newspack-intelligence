@@ -170,6 +170,52 @@ function inboxText( watch ) {
 }
 
 /**
+ * One of the reader's watches: the button opening it, then the kind and
+ * target it follows and what its inbox holds; or, while a save of it awaits
+ * a read, its name as saving.
+ *
+ * @param {Object}                props
+ * @param {Object}                props.watch    A watch as `watches` answers it.
+ * @param {boolean}               [props.active] Whether it is the watch opened.
+ * @param {(key: string) => void} props.onOpen   Opens it.
+ * @return {import('react').ReactElement} The row.
+ */
+export function WatchRow( { watch, active = false, onOpen } ) {
+	if ( ! watch.watch_key ) {
+		return (
+			<li>
+				<span>{ watch.name }</span>{ ' ' }
+				<span className="newspack-nodes-status is-muted">
+					{ __( 'Saving…', 'newspack-intelligence' ) }
+				</span>
+			</li>
+		);
+	}
+	return (
+		<li>
+			<button
+				type="button"
+				className={
+					active
+						? 'button button-small is-active'
+						: 'button button-small'
+				}
+				onClick={ () => onOpen( watch.watch_key ) }
+			>
+				{ watch.name }
+			</button>{ ' ' }
+			<span className="newspack-nodes-status is-muted">
+				{ metaLine(
+					kindWords()[ watch.target.kind ],
+					watch.target.key,
+					inboxText( watch )
+				) }
+			</span>
+		</li>
+	);
+}
+
+/**
  * A listed item's key.
  *
  * @param {Object} item The item.
@@ -450,7 +496,6 @@ export default function Watches( {
 	const watch = watches.read.answer?.watches.find(
 		( one ) => one.watch_key === opened.key
 	);
-	const kinds = kindWords();
 
 	return (
 		<div className="newspack-intelligence__view">
@@ -518,45 +563,16 @@ export default function Watches( {
 			>
 				{ ( answer ) => (
 					<ul className="newspack-intelligence__facts">
-						{ answer.watches.map( ( one ) =>
-							one.watch_key ? (
-								<li key={ one.watch_key }>
-									<button
-										type="button"
-										className={
-											opened.key === one.watch_key
-												? 'button button-small is-active'
-												: 'button button-small'
-										}
-										onClick={ () =>
-											onOpen( {
-												key: one.watch_key,
-												starts: [ 0 ],
-											} )
-										}
-									>
-										{ one.name }
-									</button>{ ' ' }
-									<span className="newspack-nodes-status is-muted">
-										{ metaLine(
-											kinds[ one.target.kind ],
-											one.target.key,
-											inboxText( one )
-										) }
-									</span>
-								</li>
-							) : (
-								<li key={ one.name }>
-									<span>{ one.name }</span>{ ' ' }
-									<span className="newspack-nodes-status is-muted">
-										{ __(
-											'Saving…',
-											'newspack-intelligence'
-										) }
-									</span>
-								</li>
-							)
-						) }
+						{ answer.watches.map( ( one ) => (
+							<WatchRow
+								key={ one.watch_key || one.name }
+								watch={ one }
+								active={ opened.key === one.watch_key }
+								onOpen={ ( key ) =>
+									onOpen( { key, starts: [ 0 ] } )
+								}
+							/>
+						) ) }
 					</ul>
 				) }
 			</Answer>

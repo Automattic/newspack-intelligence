@@ -9,18 +9,18 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import ItemRow, { ItemPage } from '../ItemRow';
 
 const ITEM = {
-	item_key: 'feed:press-gazette-17',
-	title: 'Acme Gazette wins <b>award</b>',
-	url: 'https://pressgazette.example/acme',
+	item_key: 'feed:inkfold-review-17',
+	title: 'Acme Quillsheet wins <b>award</b>',
+	url: 'https://inkfold-review.example/acme',
 	source: 'feed',
 	tier: 'public',
 	item_ts: 1790035200,
-	summary: 'The Acme Gazette took the regional prize.',
+	summary: 'The Acme Quillsheet took the regional prize.',
 	kind: 'award',
 	entities: [
 		{
-			entity_key: 'organization:acme-gazette',
-			name: 'Acme Gazette',
+			entity_key: 'organization:acme-quillsheet',
+			name: 'Acme Quillsheet',
 			state: 'asserted',
 		},
 	],
@@ -30,7 +30,7 @@ describe( 'ItemRow', () => {
 	it( 'links the title to the item URL and renders it as text', () => {
 		render( <ItemRow item={ ITEM } onOpenEntity={ jest.fn() } /> );
 		const link = screen.getByRole( 'link', {
-			name: 'Acme Gazette wins <b>award</b>',
+			name: 'Acme Quillsheet wins <b>award</b>',
 		} );
 		expect( link ).toHaveAttribute( 'href', ITEM.url );
 		expect( link.querySelector( 'b' ) ).toBeNull();
@@ -52,7 +52,7 @@ describe( 'ItemRow', () => {
 		);
 		expect( screen.queryByRole( 'link' ) ).toBeNull();
 		expect(
-			screen.getByText( 'Acme Gazette wins <b>award</b>' )
+			screen.getByText( 'Acme Quillsheet wins <b>award</b>' )
 		).toBeInTheDocument();
 	} );
 
@@ -60,10 +60,10 @@ describe( 'ItemRow', () => {
 		const onOpenEntity = jest.fn();
 		render( <ItemRow item={ ITEM } onOpenEntity={ onOpenEntity } /> );
 		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Acme Gazette' } )
+			screen.getByRole( 'button', { name: 'Acme Quillsheet' } )
 		);
 		expect( onOpenEntity ).toHaveBeenCalledWith(
-			'organization:acme-gazette'
+			'organization:acme-quillsheet'
 		);
 	} );
 

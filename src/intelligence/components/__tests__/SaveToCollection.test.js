@@ -11,8 +11,8 @@ import { intelWire } from '../../__tests__/intelWire';
 import SaveToCollection from '../SaveToCollection';
 
 const ITEM = {
-	item_key: 'feed:press-gazette-17',
-	title: 'Acme Gazette wins regional prize',
+	item_key: 'feed:inkfold-review-17',
+	title: 'Acme Quillsheet wins regional prize',
 };
 
 const LIST = {
@@ -47,7 +47,7 @@ describe( 'SaveToCollection', () => {
 			expect( wire.sent( 'collect' ) ).toEqual( [
 				[
 					'--collection=paywall-complaints',
-					'--item=feed:press-gazette-17',
+					'--item=feed:inkfold-review-17',
 				],
 			] )
 		);
@@ -73,12 +73,12 @@ describe( 'SaveToCollection', () => {
 
 	it( 'shows a refused save as the refusal', async () => {
 		wire.replies.collect = () =>
-			new Error( 'no item: feed:press-gazette-17' );
+			new Error( 'no item: feed:inkfold-review-17' );
 		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
 		await screen.findByLabelText( 'Collection' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Save' } ) );
 		expect(
-			await screen.findByText( 'no item: feed:press-gazette-17' )
+			await screen.findByText( 'no item: feed:inkfold-review-17' )
 		).toBeInTheDocument();
 	} );
 

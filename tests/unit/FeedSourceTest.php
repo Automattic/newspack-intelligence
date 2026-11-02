@@ -1150,17 +1150,17 @@ XML;
 		$stderr = $this->capture_stderr();
 		$this->client_pass();
 		$now  = (int) Core::$now;
-		$body = self::rss( [ [ 'tribune', 'Tribune', $now - 60, 'https://tribune-7781.example' ] ] );
+		$body = self::rss( [ [ 'wendlemark', 'Wendlemark', $now - 60, 'https://wendlemark-7781.example' ] ] );
 
-		$this->redirect( self::GAZETTE_FEED, 'https://tribune-7781.example/feed/' );
-		$this->complete( 'https://tribune-7781.example/feed/', $body );
+		$this->redirect( self::GAZETTE_FEED, 'https://wendlemark-7781.example/feed/' );
+		$this->complete( 'https://wendlemark-7781.example/feed/', $body );
 		$this->assertSame( [], $this->recorded() );
-		$this->redirect( self::GAZETTE_HOME, 'https://tribune-7781.example/' );
-		$this->complete( 'https://tribune-7781.example/', self::home_page( 'application/rss+xml', 'https://tribune-7781.example/feed/' ) );
-		$this->complete( 'https://tribune-7781.example/feed/', $body );
+		$this->redirect( self::GAZETTE_HOME, 'https://wendlemark-7781.example/' );
+		$this->complete( 'https://wendlemark-7781.example/', self::home_page( 'application/rss+xml', 'https://wendlemark-7781.example/feed/' ) );
+		$this->complete( 'https://wendlemark-7781.example/feed/', $body );
 
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: a client feed redirected off its domain: https://harborgazette.example/feed/: https://tribune-7781.example/feed/' ) );
-		$this->assertSame( [ 'feed:harborgazette.example:tribune' ], \array_keys( $this->recorded() ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: a client feed redirected off its domain: https://harborgazette.example/feed/: https://wendlemark-7781.example/feed/' ) );
+		$this->assertSame( [ 'feed:harborgazette.example:wendlemark' ], \array_keys( $this->recorded() ) );
 	}
 
 	/**

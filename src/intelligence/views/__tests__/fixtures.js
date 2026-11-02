@@ -21,33 +21,33 @@ VOCABULARY.lensLists = [
 ];
 
 export const ITEM = {
-	item_key: 'feed:press-gazette-17',
-	title: 'Acme Gazette wins regional prize',
-	url: 'https://pressgazette.example/acme',
+	item_key: 'feed:inkfold-review-17',
+	title: 'Acme Quillsheet wins regional prize',
+	url: 'https://inkfold-review.example/acme',
 	source: 'feed',
 	tier: 'public',
 	item_ts: 1790035200,
-	summary: 'The Acme Gazette took the regional prize.',
+	summary: 'The Acme Quillsheet took the regional prize.',
 	kind: 'award',
 	relevance: 7,
 	importance: 6,
 	entities: [
 		{
-			entity_key: 'organization:acme-gazette',
-			name: 'Acme Gazette',
+			entity_key: 'organization:acme-quillsheet',
+			name: 'Acme Quillsheet',
 			state: 'asserted',
 		},
 	],
 };
 
 export const ENTITY = {
-	entity_key: 'organization:acme-gazette',
+	entity_key: 'organization:acme-quillsheet',
 	type: 'organization',
-	name: 'Acme Gazette',
+	name: 'Acme Quillsheet',
 	state: 'accepted',
-	merged_from: [ 'organization:acme-gazette-inc' ],
-	names: [ { kind: 'alias', value: 'The Gazette' } ],
-	identifiers: [ { kind: 'domain', value: 'acmegazette.example' } ],
+	merged_from: [ 'organization:acme-quillsheet-inc' ],
+	names: [ { kind: 'alias', value: 'The Quillsheet' } ],
+	identifiers: [ { kind: 'domain', value: 'acmequillsheet.example' } ],
 	roles: [
 		{ role: 'client', from_ts: 1788912000, to_ts: 0 },
 		{ role: 'prospect', from_ts: 1780000000, to_ts: 1788912000 },
@@ -74,7 +74,7 @@ export const LENSES = {
 				topics: [],
 				roles: [ 'client' ],
 				sources: [],
-				entity: 'organization:acme-gazette',
+				entity: 'organization:acme-quillsheet',
 				days: 21,
 				tiers: [ 'internal' ],
 				by: 'kind',

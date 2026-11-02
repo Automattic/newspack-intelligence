@@ -27,8 +27,8 @@ import Review from '../Review';
 
 const LINK = {
 	item_key: 'github:example/plugin#912',
-	entity_key: 'organization:acme-gazette',
-	name: 'Acme Gazette',
+	entity_key: 'organization:acme-quillsheet',
+	name: 'Acme Quillsheet',
 	type: 'organization',
 	role: 'mention',
 	method: 'ner_fuzzy',
@@ -113,7 +113,7 @@ describe( 'Review — reads', () => {
 			} )
 		).toHaveLength( 1 );
 		expect(
-			within( links ).getByRole( 'button', { name: 'Acme Gazette' } )
+			within( links ).getByRole( 'button', { name: 'Acme Quillsheet' } )
 		).toHaveAccessibleDescription(
 			'Named in passing, found by a lookalike (61%)'
 		);
@@ -137,7 +137,7 @@ describe( 'Review — reads', () => {
 				: { entities: [], available: true };
 		renderReview();
 		expect(
-			await screen.findByRole( 'button', { name: 'Acme Gazette' } )
+			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
 		).toHaveAccessibleDescription( 'cameo, found by hunch (61%)' );
 	} );
 
@@ -201,7 +201,7 @@ describe( 'Review — judgments', () => {
 		} );
 		fireEvent.click(
 			within( queue( 'Proposed links' ) ).getByRole( 'button', {
-				name: 'Confirm Acme Gazette',
+				name: 'Confirm Acme Quillsheet',
 			} )
 		);
 		await waitFor( () =>
@@ -237,16 +237,16 @@ describe( 'Review — judgments', () => {
 		const links = queue( 'Proposed links' );
 		fireEvent.click(
 			within( links ).getByRole( 'button', {
-				name: 'Confirm Acme Gazette',
+				name: 'Confirm Acme Quillsheet',
 			} )
 		);
 		expect(
-			within( links ).queryByRole( 'button', { name: 'Acme Gazette' } )
+			within( links ).queryByRole( 'button', { name: 'Acme Quillsheet' } )
 		).toBeNull();
 		await waitFor( () => expect( linksRead() ).toHaveLength( 2 ) );
 		expect(
 			within( queue( 'Proposed links' ) ).queryByRole( 'button', {
-				name: 'Acme Gazette',
+				name: 'Acme Quillsheet',
 			} )
 		).toBeNull();
 		expect(
@@ -266,7 +266,7 @@ describe( 'Review — judgments', () => {
 		const links = queue( 'Proposed links' );
 		fireEvent.click(
 			within( links ).getByRole( 'button', {
-				name: 'Confirm Acme Gazette',
+				name: 'Confirm Acme Quillsheet',
 			} )
 		);
 		fireEvent.click(
@@ -296,7 +296,7 @@ describe( 'Review — judgments', () => {
 		} );
 		fireEvent.click(
 			within( queue( 'Proposed links' ) ).getByRole( 'button', {
-				name: 'Confirm Acme Gazette',
+				name: 'Confirm Acme Quillsheet',
 			} )
 		);
 		expect(
@@ -304,7 +304,7 @@ describe( 'Review — judgments', () => {
 		).toBeInTheDocument();
 		expect(
 			within( queue( 'Proposed links' ) ).getByRole( 'button', {
-				name: 'Confirm Acme Gazette',
+				name: 'Confirm Acme Quillsheet',
 			} )
 		).toBeInTheDocument();
 	} );
@@ -319,7 +319,7 @@ describe( 'Review — judgments', () => {
 		const links = queue( 'Proposed links' );
 		fireEvent.click(
 			within( links ).getByRole( 'button', {
-				name: 'Confirm Acme Gazette',
+				name: 'Confirm Acme Quillsheet',
 			} )
 		);
 		fireEvent.click(
@@ -339,7 +339,7 @@ describe( 'Review — judgments', () => {
 		} );
 		expect(
 			await within( queue( 'Proposed links' ) ).findByRole( 'button', {
-				name: 'Acme Gazette',
+				name: 'Acme Quillsheet',
 			} )
 		).toBeInTheDocument();
 		expect(
@@ -369,7 +369,7 @@ describe( 'Review — judgments', () => {
 		} );
 		fireEvent.click(
 			within( queue( 'Proposed links' ) ).getByRole( 'button', {
-				name: 'Confirm Acme Gazette',
+				name: 'Confirm Acme Quillsheet',
 			} )
 		);
 		await waitFor( () => expect( linksRead() ).toHaveLength( 2 ) );
@@ -380,7 +380,7 @@ describe( 'Review — judgments', () => {
 		);
 		expect(
 			await within( queue( 'Proposed links' ) ).findByRole( 'button', {
-				name: 'Acme Gazette',
+				name: 'Acme Quillsheet',
 			} )
 		).toBeInTheDocument();
 	} );
@@ -402,7 +402,7 @@ describe( 'Review — judgments', () => {
 		const links = queue( 'Proposed links' );
 		fireEvent.click(
 			within( links ).getByRole( 'button', {
-				name: 'Confirm Acme Gazette',
+				name: 'Confirm Acme Quillsheet',
 			} )
 		);
 		await waitFor( () =>
@@ -411,7 +411,7 @@ describe( 'Review — judgments', () => {
 			] )
 		);
 		expect(
-			within( links ).queryByRole( 'button', { name: 'Acme Gazette' } )
+			within( links ).queryByRole( 'button', { name: 'Acme Quillsheet' } )
 		).toBeNull();
 	} );
 
@@ -536,7 +536,9 @@ describe( 'Review — evidence', () => {
 				: { entities: [], available: true };
 		renderReview();
 		const links = queue( 'Proposed links' );
-		await within( links ).findByRole( 'button', { name: 'Acme Gazette' } );
+		await within( links ).findByRole( 'button', {
+			name: 'Acme Quillsheet',
+		} );
 		expect( links.querySelectorAll( 'blockquote' ) ).toHaveLength( 0 );
 	} );
 } );
@@ -562,10 +564,10 @@ describe( 'Review — keyboard', () => {
 			);
 		}
 		expect(
-			screen.getByRole( 'button', { name: 'Confirm Acme Gazette' } )
+			screen.getByRole( 'button', { name: 'Confirm Acme Quillsheet' } )
 		).toHaveAttribute( 'aria-keyshortcuts', 'y' );
 		expect(
-			screen.getByRole( 'button', { name: 'Reject Acme Gazette' } )
+			screen.getByRole( 'button', { name: 'Reject Acme Quillsheet' } )
 		).toHaveAttribute( 'aria-keyshortcuts', 'n' );
 		expect(
 			screen.getByRole( 'button', { name: 'Merge Valley Times…' } )
@@ -574,17 +576,17 @@ describe( 'Review — keyboard', () => {
 
 	it( 'moves through the judgments with j and k, each focusable', async () => {
 		renderReview( { canTune: true } );
-		await screen.findByRole( 'button', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
 		const links = list( 'Proposed links' );
 		links.focus();
 		key( links, 'j' );
-		focusedHolds( 'Acme Gazette' );
+		focusedHolds( 'Acme Quillsheet' );
 		key( document.activeElement, 'j' );
 		focusedHolds( 'Valley Ledger' );
 		key( document.activeElement, 'j' );
 		focusedHolds( 'Valley Ledger' );
 		key( document.activeElement, 'k' );
-		focusedHolds( 'Acme Gazette' );
+		focusedHolds( 'Acme Quillsheet' );
 		expect( links ).toHaveAttribute( 'tabindex', '0' );
 	} );
 
@@ -592,7 +594,7 @@ describe( 'Review — keyboard', () => {
 		wire.replies.confirm_link = () => new Promise( () => {} );
 		wire.replies.reject_link = () => new Promise( () => {} );
 		renderReview( { canTune: true } );
-		await screen.findByRole( 'button', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
 		const links = list( 'Proposed links' );
 		links.focus();
 		key( links, 'j' );
@@ -637,7 +639,7 @@ describe( 'Review — keyboard', () => {
 				`--entity=${ SIBLING.entity_key }`,
 			],
 		] );
-		focusedHolds( 'Acme Gazette' );
+		focusedHolds( 'Acme Quillsheet' );
 	} );
 
 	it( 'accepts an entity with y, and opens its merge with m', async () => {
@@ -671,7 +673,7 @@ describe( 'Review — keyboard', () => {
 	it( 'ignores a key with a modifier, and every key outside the list', async () => {
 		wire.replies.confirm_link = () => new Promise( () => {} );
 		renderReview( { canTune: true } );
-		await screen.findByRole( 'button', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
 		const links = list( 'Proposed links' );
 		links.focus();
 		key( links, 'j' );
@@ -681,18 +683,18 @@ describe( 'Review — keyboard', () => {
 		} );
 		key( document.body, 'y' );
 		key( document.body, 'j' );
-		focusedHolds( 'Acme Gazette' );
+		focusedHolds( 'Acme Quillsheet' );
 		expect( wire.sent( 'confirm_link' ) ).toEqual( [] );
 	} );
 
 	it( 'offers a reader the moves and no judgment', async () => {
 		renderReview();
-		await screen.findByRole( 'button', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
 		const links = list( 'Proposed links' );
 		links.focus();
 		key( links, 'j' );
 		key( document.activeElement, 'y' );
-		focusedHolds( 'Acme Gazette' );
+		focusedHolds( 'Acme Quillsheet' );
 		expect( wire.sent( 'confirm_link' ) ).toEqual( [] );
 	} );
 } );

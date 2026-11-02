@@ -10,8 +10,8 @@ import Refusal from './Refusal';
  *
  * @param {Object}                                              props
  * @param {{answer: ?Object, error: ?string, loading: boolean}} props.read     What `useIntelRead` returned.
- * @param {string}                                              [props.rows]   The answer's row list; an answer without one is never empty.
- * @param {string}                                              [props.empty]  What an answer with no rows says.
+ * @param {string|string[]}                                     [props.rows]   The answer's row lists, empty when every one is; an answer without one is never empty.
+ * @param {import('react').ReactNode}                           [props.empty]  What an answer with no rows says, and any control inviting what to do.
  * @param {(answer: Object) => import('react').ReactNode}       props.children Renders the rows.
  * @return {import('react').ReactNode} The answer's state.
  */
@@ -37,7 +37,10 @@ export function AnswerBody( { read, rows, empty, children } ) {
 			</p>
 		);
 	}
-	if ( rows && 0 === answer[ rows ].length ) {
+	if (
+		rows &&
+		[].concat( rows ).every( ( key ) => 0 === answer[ key ].length )
+	) {
 		return <p className="newspack-nodes-empty-state is-quiet">{ empty }</p>;
 	}
 	return children( answer );
@@ -53,8 +56,8 @@ export function AnswerBody( { read, rows, empty, children } ) {
  * @param {string}                                              [props.title]  Names and heads the section.
  * @param {number}                                              [props.level]  The heading's level.
  * @param {{answer: ?Object, error: ?string, loading: boolean}} props.read     What `useIntelRead` returned.
- * @param {string}                                              [props.rows]   The answer's row list.
- * @param {string}                                              [props.empty]  What an answer with no rows says.
+ * @param {string|string[]}                                     [props.rows]   The answer's row lists.
+ * @param {import('react').ReactNode}                           [props.empty]  What an answer with no rows says.
  * @param {(answer: Object) => import('react').ReactNode}       props.children Renders the rows.
  * @return {import('react').ReactElement} The card.
  */

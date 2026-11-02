@@ -85,6 +85,58 @@ describe( 'AnswerBody', () => {
 		expect( screen.getByText( '2 leads' ) ).toBeInTheDocument();
 	} );
 
+	it( 'is empty only when every list it names is empty', () => {
+		const two = { rows: [ 'leads', 'deals' ], empty: 'No lead or deal.' };
+		const { rerender } = render(
+			<AnswerBody
+				read={ answered( { leads: [], deals: [], available: true } ) }
+				{ ...two }
+			>
+				{ () => 'rows' }
+			</AnswerBody>
+		);
+		expect( screen.getByText( 'No lead or deal.' ) ).toBeInTheDocument();
+		rerender(
+			<AnswerBody
+				read={ answered( {
+					leads: [],
+					deals: [ 'd' ],
+					available: true,
+				} ) }
+				{ ...two }
+			>
+				{ () => 'rows' }
+			</AnswerBody>
+		);
+		expect( screen.getByText( 'rows' ) ).toBeInTheDocument();
+	} );
+
+	it( 'says an empty answer with the controls an invitation carries', () => {
+		const onAct = jest.fn();
+		render(
+			<AnswerBody
+				read={ answered( { leads: [], available: true } ) }
+				rows="leads"
+				empty={
+					<>
+						No lead yet.{ ' ' }
+						<button
+							type="button"
+							className="button"
+							onClick={ onAct }
+						>
+							Add a lead
+						</button>
+					</>
+				}
+			>
+				{ () => 'rows' }
+			</AnswerBody>
+		);
+		screen.getByRole( 'button', { name: 'Add a lead' } ).click();
+		expect( onAct ).toHaveBeenCalledTimes( 1 );
+	} );
+
 	it( 'never calls an answer without rows empty', () => {
 		render(
 			<AnswerBody read={ answered( { name: 'Acme', available: true } ) }>

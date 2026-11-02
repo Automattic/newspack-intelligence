@@ -34,9 +34,9 @@ const ONE = {
 	created_ts: 1790035200,
 	items: [
 		{
-			item_key: 'feed:press-gazette-17',
-			url: 'https://pressgazette.example/acme',
-			title: 'Acme Gazette wins regional prize',
+			item_key: 'feed:inkfold-review-17',
+			url: 'https://inkfold-review.example/acme',
+			title: 'Acme Quillsheet wins regional prize',
 			actor: 'user:editor',
 		},
 	],
@@ -79,9 +79,9 @@ describe( 'Collections', () => {
 		} );
 		expect(
 			await within( items ).findByRole( 'link', {
-				name: 'Acme Gazette wins regional prize',
+				name: 'Acme Quillsheet wins regional prize',
 			} )
-		).toHaveAttribute( 'href', 'https://pressgazette.example/acme' );
+		).toHaveAttribute( 'href', 'https://inkfold-review.example/acme' );
 		expect(
 			within( items ).getByText( /user:editor/ )
 		).toBeInTheDocument();

@@ -1,7 +1,7 @@
 /* eslint-env jest */
 /**
- * IntelligencePage switches among its six views in place, opens an entity
- * from any chip, saves an item through one dialog only for a curator, and
+ * IntelligencePage opens on the Briefing, switches among its seven views in
+ * place, opens an entity from any chip, saves an item through one dialog only for a curator, and
  * carries the substrate debug overlay under its own storage key.
  */
 
@@ -45,18 +45,29 @@ beforeEach( () => {
 	wire.replies.signals = { signals: [], available: true };
 	wire.replies.watches = { watches: [], available: true };
 	wire.replies.health = ( [ what ] ) => HEALTHY[ what ];
+	wire.replies.briefing = ( [ what ] ) => WEEK[ what ];
 } );
 
 afterEach( () => {
 	window.history.replaceState( {}, '', '/' );
 } );
 
+/** A week whose one change sits under no client, so its chip is the only one. */
+const WEEK = {
+	changes: {
+		groups: [ { entity_key: null, name: null, items: [ ITEM ] } ],
+		total: 1,
+		available: true,
+	},
+	signals: { clients: [], lenses: [], available: true },
+};
+
 const LINKED = {
 	watches: [
 		{
 			watch_key: '9f3a51c07be2d468',
-			name: 'Gazette group',
-			target: { kind: 'entity', key: 'organization:acme-gazette' },
+			name: 'Quillsheet group',
+			target: { kind: 'entity', key: 'organization:acme-quillsheet' },
 			digest: true,
 			instant: false,
 			inbox: true,
@@ -79,14 +90,109 @@ const nav = ( name ) =>
 	);
 
 describe( 'IntelligencePage', () => {
-	it( 'opens on Search', async () => {
+	it( 'opens on the Briefing, its first tab', async () => {
 		renderPage();
 		expect(
 			await screen.findByRole( 'link', {
-				name: 'Acme Gazette wins regional prize',
+				name: 'Acme Quillsheet wins regional prize',
 			} )
 		).toBeInTheDocument();
+		const tabs = within(
+			screen.getByRole( 'tablist', { name: 'Views' } )
+		).getAllByRole( 'tab' );
+		expect( tabs[ 0 ] ).toBe( nav( 'Briefing' ) );
+		expect( nav( 'Briefing' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		expect( wire.sent( 'search' ) ).toEqual( [] );
+	} );
+
+	it( 'opens a watch the Briefing lists, on its matches', async () => {
+		wire.replies.watches = LINKED;
+		wire.replies.watch_matches = {
+			items: [ ITEM ],
+			total: 1,
+			available: true,
+		};
+		renderPage();
+		await screen.findByText(
+			'Entity · organization:acme-quillsheet · 5 unseen'
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Quillsheet group' } )
+		);
+		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		expect(
+			await screen.findByRole( 'region', { name: 'Quillsheet group' } )
+		).toBeInTheDocument();
+		await waitFor( () =>
+			expect( wire.sent( 'watch_matches' ) ).toEqual( [
+				[ '--key=9f3a51c07be2d468' ],
+			] )
+		);
+	} );
+
+	it( 'opens the watch form from the Briefing’s empty watches', async () => {
+		renderPage();
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'New watch' } )
+		);
+		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		const form = screen.getByRole( 'form', { name: 'Save watch' } );
+		expect( within( form ).getByLabelText( 'Follows' ) ).toHaveValue(
+			'lens'
+		);
+		await within( form ).findByRole( 'option', {
+			name: 'Developer shipping',
+		} );
+		await screen.findByText( 'No watch yet.' );
+	} );
+
+	it( 'opens a lens a Briefing signal names, and Search from its invitation', async () => {
+		wire.replies.briefing = ( [ what ] ) =>
+			'signals' === what
+				? {
+						clients: [],
+						lenses: [
+							{
+								lens_key: 'support-desk',
+								name: 'Support desk',
+								signals: [
+									{
+										axis: 'about',
+										signal: 'spike',
+										bucket: '2026-10-12',
+										by: 'kind',
+										value: 'complaint',
+										count: 7,
+										baseline: 1.5,
+										items: [],
+									},
+								],
+							},
+						],
+						available: true,
+				  }
+				: {
+						...WEEK,
+						changes: { groups: [], total: 0, available: true },
+				  }[ what ];
+		renderPage();
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Support desk' } )
+		);
+		expect( nav( 'Lenses' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		expect(
+			await screen.findByRole( 'region', { name: 'Support desk' } )
+		).toBeInTheDocument();
+		fireEvent.click( nav( 'Briefing' ) );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Search everything' } )
+		);
 		expect( nav( 'Search' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		expect(
+			await screen.findByRole( 'link', {
+				name: 'Acme Quillsheet wins regional prize',
+			} )
+		).toBeInTheDocument();
 	} );
 
 	it( 'mounts the strip above the tab bar on every tab', async () => {
@@ -131,19 +237,21 @@ describe( 'IntelligencePage', () => {
 
 	it( 'labels its view panel by the selected tab, and moves with the keys', async () => {
 		renderPage();
-		const search = nav( 'Search' );
+		const briefing = nav( 'Briefing' );
 		const panel = screen.getByRole( 'tabpanel' );
-		expect( search ).toHaveAttribute( 'aria-controls', panel.id );
-		expect( panel ).toHaveAttribute( 'aria-labelledby', search.id );
+		expect( briefing ).toHaveAttribute( 'aria-controls', panel.id );
+		expect( panel ).toHaveAttribute( 'aria-labelledby', briefing.id );
 
-		fireEvent.keyDown( search, { key: 'End' } );
+		fireEvent.keyDown( briefing, { key: 'End' } );
 		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
 		expect( nav( 'Watches' ) ).toHaveFocus();
 		fireEvent.keyDown( nav( 'Watches' ), { key: 'ArrowRight' } );
+		expect( nav( 'Briefing' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		fireEvent.keyDown( nav( 'Briefing' ), { key: 'ArrowRight' } );
 		expect( nav( 'Search' ) ).toHaveAttribute( 'aria-selected', 'true' );
 		expect(
 			await screen.findByRole( 'link', {
-				name: 'Acme Gazette wins regional prize',
+				name: 'Acme Quillsheet wins regional prize',
 			} )
 		).toBeInTheDocument();
 	} );
@@ -151,20 +259,20 @@ describe( 'IntelligencePage', () => {
 	it( 'opens an entity from a result chip and returns to it from the nav', async () => {
 		renderPage();
 		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Acme Gazette' } )
+			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
 		);
 		expect(
-			await screen.findByRole( 'heading', { name: 'Acme Gazette' } )
+			await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } )
 		).toBeInTheDocument();
 		await waitFor( () =>
 			expect( wire.sent( 'entity' ) ).toEqual( [
-				[ 'organization:acme-gazette' ],
+				[ 'organization:acme-quillsheet' ],
 			] )
 		);
 		fireEvent.click( nav( 'Review' ) );
-		fireEvent.click( nav( 'Entity: organization:acme-gazette' ) );
+		fireEvent.click( nav( 'Entity: organization:acme-quillsheet' ) );
 		expect(
-			await screen.findByRole( 'heading', { name: 'Acme Gazette' } )
+			await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } )
 		).toBeInTheDocument();
 	} );
 
@@ -180,6 +288,7 @@ describe( 'IntelligencePage', () => {
 			available: true,
 		} );
 		renderPage();
+		fireEvent.click( nav( 'Search' ) );
 		await screen.findByText( 'found by nothing' );
 		const form = screen.getByRole( 'search', { name: 'Filters' } );
 		fireEvent.change( within( form ).getByLabelText( 'Words' ), {
@@ -192,9 +301,9 @@ describe( 'IntelligencePage', () => {
 		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
 		await screen.findByText( 'found by --q=regional prize --offset=1' );
 		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Acme Gazette' } )
+			screen.getByRole( 'button', { name: 'Acme Quillsheet' } )
 		);
-		await screen.findByRole( 'heading', { name: 'Acme Gazette' } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		fireEvent.click( nav( 'Search' ) );
 		expect(
 			await screen.findByText( 'found by --q=regional prize --offset=1' )
@@ -249,7 +358,7 @@ describe( 'IntelligencePage', () => {
 		);
 		await screen.findByText( 'No signal is seen through this lens.' );
 		await screen.findByText( 'No trend is seen through this lens.' );
-		await screen.findByText( 'Acme Gazette wins regional prize' );
+		await screen.findByText( 'Acme Quillsheet wins regional prize' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Watch this' } ) );
 		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
 		const form = screen.getByRole( 'form', { name: 'Save watch' } );
@@ -283,11 +392,11 @@ describe( 'IntelligencePage', () => {
 		renderPage();
 		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
 		const region = await screen.findByRole( 'region', {
-			name: 'Gazette group',
+			name: 'Quillsheet group',
 		} );
 		expect(
 			await within( region ).findByRole( 'link', {
-				name: 'Acme Gazette wins regional prize',
+				name: 'Acme Quillsheet wins regional prize',
 			} )
 		).toBeInTheDocument();
 		expect( wire.sent( 'watch_matches' ) ).toEqual( [
@@ -306,10 +415,10 @@ describe( 'IntelligencePage', () => {
 		renderPage();
 		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
 		expect(
-			await screen.findByRole( 'button', { name: 'Gazette group' } )
+			await screen.findByRole( 'button', { name: 'Quillsheet group' } )
 		).not.toHaveClass( 'is-active' );
 		expect(
-			screen.queryByRole( 'region', { name: 'Gazette group' } )
+			screen.queryByRole( 'region', { name: 'Quillsheet group' } )
 		).toBeNull();
 		expect( wire.sent( 'watch_matches' ) ).toEqual( [] );
 	} );
@@ -351,7 +460,7 @@ describe( 'IntelligencePage', () => {
 	it( 'offers a reader no save control and no curation', async () => {
 		renderPage( false );
 		await screen.findByRole( 'link', {
-			name: 'Acme Gazette wins regional prize',
+			name: 'Acme Quillsheet wins regional prize',
 		} );
 		expect(
 			screen.queryByRole( 'button', { name: /save to collection/i } )
@@ -373,7 +482,7 @@ describe( 'IntelligencePage', () => {
 	it( 'renders inside the shared dashboard shell, headed by its subtitle', async () => {
 		const { container } = renderPage();
 		await screen.findByRole( 'link', {
-			name: 'Acme Gazette wins regional prize',
+			name: 'Acme Quillsheet wins regional prize',
 		} );
 		expect( container.firstChild ).toHaveClass(
 			'newspack-nodes-theme',
@@ -400,7 +509,7 @@ describe( 'IntelligencePage', () => {
 	it( 'mounts one debug overlay under its own storage key', async () => {
 		renderPage();
 		await screen.findByRole( 'link', {
-			name: 'Acme Gazette wins regional prize',
+			name: 'Acme Quillsheet wins regional prize',
 		} );
 		expect( screen.getByTestId( 'debug-overlay' ) ).toBeInTheDocument();
 		expect( global.__debugOverlayProps.storageKey ).toBe(
