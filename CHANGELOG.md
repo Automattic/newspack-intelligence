@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-11-03
+
 ### Changed
 
 - **The plugin ships `newspack-intelligence-deployment`, which includes the site's `newspack-intelligence-lists`.** The shipped deployment file is `include newspack-intelligence-lists` alone, so a site supplies `<base_dir>/topologies/newspack-intelligence-lists.tsl`, empty when it has no settings of its own, and the plugin ships no file of that name, which would win over the site's. Everything that keyed on the deployment file keys on the lists file: `Intelligence_Health::LISTS` replaces `DEPLOYMENT`, `missing_lists()` and `warn_missing_lists()`, the `wp nodes doctor` hook, replace `missing_deployment()` and `warn_missing_deployment()`, the `collection` slice answers `unconfigured` naming the lists file's path, which the health strip shows as a `no lists file` fault, saying an empty file will do, and uninstall skips a composition that will not read only because no lists file resolves.
