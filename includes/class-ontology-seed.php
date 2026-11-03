@@ -14,6 +14,7 @@ namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\Capabilities;
+use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Table_Unavailable;
@@ -170,11 +171,14 @@ final class Ontology_Seed {
 	 * Where a site keeps its seed: its Intelligence data dir, a sibling of
 	 * the substrate's runtime base, outside every topology dir.
 	 *
+	 * The dir passes the runtime base's own gate, created 0700 when absent,
+	 * so a dir another user planted, or a symlink, is refused.
+	 *
 	 * @api Read by dndocker's deploy tools, which install a site's seed here.
-	 * @throws \RuntimeException When the runtime base directory is unusable.
+	 * @throws \RuntimeException When the runtime base directory or the data dir is unusable, a symlink, or not privately ours.
 	 */
 	public static function path(): string {
-		return \dirname( Bootstrap::base_dir() ) . '/newspack-intelligence/' . self::FILE;
+		return Config::ensure_path( \dirname( Bootstrap::base_dir() ) . '/newspack-intelligence' ) . '/' . self::FILE;
 	}
 
 	/**

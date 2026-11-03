@@ -56,6 +56,19 @@ final class OntologySeedTest extends TestCase {
 		$this->assertSame( \dirname( Config::get_base_directory() ) . '/newspack-intelligence/newspack-intelligence-ontology-seed.json', Ontology_Seed::path() );
 	}
 
+	/** A data dir planted as a symlink is refused, as the runtime base is. */
+	public function test_a_symlinked_data_dir_is_refused(): void {
+		$dir       = \dirname( Ontology_Seed::path() );
+		$elsewhere = $this->make_temp_dir( 'intel-plover-' );
+		\rename( Ontology_Seed::path(), $elsewhere . '/' . Ontology_Seed::FILE );
+		\rmdir( $dir );
+		\symlink( $elsewhere, $dir );
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'symlink or path traversal detected' );
+		Ontology_Seed::load();
+	}
+
 	/** The data dir's file is the seed, so the fixture, not the shipped example, is read. */
 	public function test_the_data_dirs_file_is_the_seed(): void {
 		$keys = \array_values( \array_filter( \array_column( Ontology_Seed::load()->events( [] ), 'entity_key' ) ) );

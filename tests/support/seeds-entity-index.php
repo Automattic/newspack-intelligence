@@ -50,7 +50,6 @@ trait Seeds_Entity_Index {
 
 	/** Install the fictional fixture seed where `Ontology_Seed` reads one. */
 	private static function place_seed(): void {
-		\mkdir( \dirname( Ontology_Seed::path() ), 0700, true );
 		\copy( \dirname( __DIR__ ) . '/fixtures/' . Ontology_Seed::FILE, Ontology_Seed::path() );
 	}
 
