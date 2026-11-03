@@ -38,7 +38,7 @@ final class OntologyCliCommandTest extends TestCase {
 		\WP_CLI::reset();
 		Topology_Analyzer::reset_caches();
 		$this->start_entity_graph();
-		Topology_Registry::register_stock_dir( \dirname( __DIR__ ) . '/fixtures/topologies' );
+		self::place_seed();
 		$this->activate( 'newspack-intelligence-project' );
 		$this->run_intelligence_as( 'skua-intel' );
 	}
@@ -63,7 +63,7 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame( [ \sprintf( 'Seeded %d events: 7 keys new, 1 present.', \count( $written ) ) ], \WP_CLI::$successes );
 	}
 
-	/** A path given reads that file in place of the one the topology dirs resolve. */
+	/** A path given reads that file in place of the data dir's. */
 	public function test_seed_reads_a_path_given(): void {
 		$path = $this->make_temp_dir( 'intel-seed-' ) . '/heron-seed.json';
 		\file_put_contents( $path, '{"entities":{"topic":{"salt-marsh":{"name":"Salt marsh"}}},"lenses":{}}' );
@@ -75,15 +75,12 @@ final class OntologyCliCommandTest extends TestCase {
 	}
 
 	/**
-	 * With no seed in any topology dir, the command and the `seed_ontology`
-	 * verb each refuse naming the user-dir path it belongs at, and write
+	 * With no seed in the data dir, the command and the `seed_ontology` verb
+	 * each refuse naming, to a manager, the path it belongs at, and write
 	 * nothing.
 	 */
 	public function test_seed_with_no_seed_file_refuses_naming_where_it_belongs(): void {
-		$user = $this->make_temp_dir( 'intel-seed-shrike-' );
-		Topology_Registry::reset();
-		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
-		Topology_Registry::register_user_dir( $user );
+		\unlink( Ontology_Seed::path() );
 		self::sign_in( 5167, 'shrike-curator', 'manage_options' );
 		$GLOBALS['_current_user_can'] = true;
 		$ci                           = new Intelligence_CI_Node();
@@ -98,17 +95,14 @@ final class OntologyCliCommandTest extends TestCase {
 		}
 
 		$this->assertCount( 1, \WP_CLI::$errors );
-		$this->assertStringContainsString( "write a seed for this site to {$user}/newspack-intelligence-ontology-seed.json", \WP_CLI::$errors[0] );
+		$this->assertSame( 'No newspack-intelligence-ontology-seed.json: write a seed for this site to ' . Ontology_Seed::path() . ', starting from the example the plugin ships at examples/newspack-intelligence-ontology-seed.json.', \WP_CLI::$errors[0] );
 		$this->assertSame( \WP_CLI::$errors[0], $verb );
 		$this->assertSame( [], self::ontology_events() );
 	}
 
-	/** A tune caller's `seed_ontology` refusal names no absolute path, neither the user dir nor the plugin's. */
+	/** A tune caller's `seed_ontology` refusal names no absolute path, neither the data dir nor the plugin's. */
 	public function test_a_tune_callers_seed_refusal_names_no_absolute_path(): void {
-		$user = $this->make_temp_dir( 'intel-seed-dipper-' );
-		Topology_Registry::reset();
-		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
-		Topology_Registry::register_user_dir( $user );
+		\unlink( Ontology_Seed::path() );
 		self::sign_in( 5291, 'dipper-curator', 'manage_options' );
 		$GLOBALS['_current_user_can']                = true;
 		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::TUNE;
@@ -122,18 +116,14 @@ final class OntologyCliCommandTest extends TestCase {
 			$refusal = $e->getMessage();
 		}
 
-		$this->assertStringNotContainsString( $user, $refusal );
+		$this->assertStringNotContainsString( \dirname( Ontology_Seed::path() ), $refusal );
 		$this->assertStringNotContainsString( \NEWSPACK_INTELLIGENCE_DIR, $refusal );
-		$this->assertStringContainsString( 'in the user topology dir, starting from the example the plugin ships at examples/newspack-intelligence-ontology-seed.json.', $refusal );
+		$this->assertStringContainsString( 'in its Intelligence data dir, starting from the example the plugin ships at examples/newspack-intelligence-ontology-seed.json.', $refusal );
 	}
 
 	/** A tune caller's `seed_ontology` refusal of a bad seed names the file by its name alone, and nothing is written. */
 	public function test_a_tune_callers_bad_seed_refusal_names_no_absolute_path(): void {
-		$user = $this->make_temp_dir( 'intel-seed-phalarope-' );
-		\file_put_contents( "{$user}/newspack-intelligence-ontology-seed.json", '{"entities":{"organization":{"gull-fund":{"name":"Gull Fund","roles":["patron"]}}},"lenses":{}}' );
-		Topology_Registry::reset();
-		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
-		Topology_Registry::register_user_dir( $user );
+		\file_put_contents( Ontology_Seed::path(), '{"entities":{"organization":{"gull-fund":{"name":"Gull Fund","roles":["patron"]}}},"lenses":{}}' );
 		self::sign_in( 5303, 'phalarope-curator', 'manage_options' );
 		$GLOBALS['_current_user_can']                = true;
 		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::TUNE;

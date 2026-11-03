@@ -237,7 +237,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						Graph_Curation::save_lens( ... )
 					),
 					$verb( $tune, 'remove_lens', 'Remove a lens: { ok, event_id }.', [ $key( 'The lens key.' ) ], Graph_Curation::remove_lens( ... ) ),
-					$verb( $tune, 'seed_ontology', 'Write the seed ontology the topology dirs resolve for the keys the projection lacks, refused while the projector has not read every ontology change: { ok, events, created, present }.', [], static fn (): array => [ 'ok' => true ] + Ontology_Seed::load()->seed() ),
+					$verb( $tune, 'seed_ontology', 'Write the site\'s seed ontology for the keys the projection lacks, refused while the projector has not read every ontology change: { ok, events, created, present }.', [], static fn (): array => [ 'ok' => true ] + Ontology_Seed::load()->seed() ),
 					[
 						'name'        => 'fetch_now',
 						'capability'  => Capabilities::MANAGE,

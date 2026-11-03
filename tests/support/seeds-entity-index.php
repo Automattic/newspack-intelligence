@@ -6,6 +6,7 @@ namespace Newspack_Intelligence\Tests;
 use Newspack_Intelligence\Entity_Index;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
+use Newspack_Intelligence\Ontology_Seed;
 use Newspack_Intelligence\Projector_Node;
 use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\Config;
@@ -30,11 +31,14 @@ trait Seeds_Entity_Index {
 	private ?Projector_Node $seeder = null;
 
 	/**
-	 * A runtime base, the plugin's namespace, a user topology dir holding
-	 * an empty deployment file, and a projector to seed with.
+	 * A runtime base one dir down in a temp dir of its own, so the seed's
+	 * data dir beside it is this test's alone; the plugin's namespace, a
+	 * user topology dir holding empty lists, and a projector to seed with.
 	 */
 	private function start_entity_graph(): void {
-		$this->use_base_dir( $this->make_temp_dir( 'intel-entities-' ) );
+		$dir = $this->make_temp_dir( 'intel-entities-' );
+		\mkdir( "{$dir}/base", 0700 );
+		$this->use_base_dir( "{$dir}/base" );
 		Core::$var['partition'] = '0';
 		Topology_Registry::reset();
 		Topology_Registry::register_builtin_dir( \dirname( __DIR__, 3 ) . '/newspack-nodes/topologies' );
@@ -42,6 +46,12 @@ trait Seeds_Entity_Index {
 		Topology_Registry::register_user_dir( \dirname( __DIR__ ) . '/fixtures/user-topologies' );
 		$this->seeder = $this->projector_graph();
 		( new \ReflectionProperty( Entity_Index::class, 'current' ) )->setValue( null, null );
+	}
+
+	/** Install the fictional fixture seed where `Ontology_Seed` reads one. */
+	private static function place_seed(): void {
+		\mkdir( \dirname( Ontology_Seed::path() ), 0700, true );
+		\copy( \dirname( __DIR__ ) . '/fixtures/' . Ontology_Seed::FILE, Ontology_Seed::path() );
 	}
 
 	/**

@@ -102,7 +102,7 @@ final class UninstallGraphTablesTest extends TestCase {
 		$this->assertFileExists( $kept, 'another plugin\'s table is its own to clean up' );
 	}
 
-	/** A shipped part that will not read for any reason but the missing deployment file fails uninstall loud. */
+	/** A shipped part that will not read for any reason but the missing lists file fails uninstall loud. */
 	public function test_uninstall_refuses_a_shipped_part_broken_another_way(): void {
 		$this->use_base_dir( $this->make_temp_dir( 'uninstall-graph-broken-' ) );
 		$shipped = $this->make_temp_dir( 'uninstall-graph-broken-shipped-' );

@@ -196,14 +196,15 @@ final class Worker_Route {
 	}
 
 	/**
-	 * The topology to activate: the one catalog topology declaring an
-	 * `Intel_Event_Writer` that no other such topology includes, so a part
-	 * the composition includes is never offered; null when none or several
-	 * are. One that will not read is not offered.
+	 * The topologies to activate, sorted: each catalog topology declaring an
+	 * `Intel_Event_Writer` that no other such topology includes, so a part a
+	 * composition includes is never offered. One that will not read is not
+	 * offered.
 	 *
+	 * @return list<string>
 	 * @throws Worker_Should_Stop When reading a topology raises a cooperative stop.
 	 */
-	public static function candidate(): ?string {
+	public static function candidates(): array {
 		$declaring = [];
 		$failures  = Worker_Should_Stop::attempt_each(
 			\array_map( Core::as_string( ... ), \array_keys( Bootstrap::get_topology_catalog() ) ),
@@ -217,7 +218,8 @@ final class Worker_Route {
 			$included = [ ...$included, ...self::included( Topology_Analyzer::statements( $name )['tree'] ) ];
 		}
 		$roots = \array_values( \array_diff( $declaring, $included ) );
-		return 1 === \count( $roots ) ? $roots[0] : null;
+		\sort( $roots );
+		return $roots;
 	}
 
 	/**

@@ -1,0 +1,18 @@
+# Intelligence on a workstation, activated in place of newspack-intelligence:
+# the same core, with Slack, P2 and Linear read through ContextA8C
+# (newspack-intelligence-context-a8c) in place of the Vault-credentialed
+# token half, and the public sources and Unthread, which ContextA8C cannot
+# read, as shipped.
+var on_demand_idle = 0
+# An LLM call blocks one fill(); a 60s lock steal tears intel:items.
+var stale_timeout = 600
+var num_partitions = 1
+include newspack-intelligence-core
+include newspack-intelligence-collect-public
+include newspack-intelligence-context-a8c
+include newspack-intelligence-collect-unthread
+# Last, so the site's lines reach every node above.
+include newspack-intelligence-deployment
+# Six feeds at once: a workstation's Docker resolver fails lookups at sixteen.
+cmd feed:config set_concurrency 6
+secure

@@ -17,17 +17,15 @@ use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Table_Unavailable;
-use Newspack_Nodes\Topology_Registry;
 
 \defined( 'ABSPATH' ) || exit;
 
 final class Ontology_Seed {
 
 	/**
-	 * The seed file, found as `Topology_Registry::resolve_file()` finds a
-	 * name: a deployment keeps it in the user topology dir. The plugin's
-	 * fictional example, the shape to start from, sits in `examples/`,
-	 * outside every topology dir.
+	 * The seed file's name, which a site keeps in its Intelligence data dir
+	 * (`path()`). The plugin's fictional example, the shape to start from,
+	 * sits in `examples/`.
 	 */
 	public const FILE = 'newspack-intelligence-ontology-seed.json';
 
@@ -134,22 +132,28 @@ final class Ontology_Seed {
 	}
 
 	/**
-	 * The seed a file holds: the one given, else the one the topology dirs,
-	 * the user dir among them, resolve, its events minted as it is read, so whatever `Intel_Event`
-	 * refuses — a type, kind or role outside its set, an event past one
-	 * line — is refused here, naming the file and the field.
+	 * The seed a file holds: the one given, else the site's at `path()`,
+	 * its events minted as it is read, so whatever `Intel_Event` refuses — a
+	 * type, kind or role outside its set, an event past one line — is
+	 * refused here, naming the file and the field.
 	 *
-	 * @param string|null $path A seed file, or null for the resolved one.
-	 * @throws Seed_Refused When no file is found, naming where it belongs and the example, or the file does not parse or names what the graph has no word for, naming the field.
+	 * @param string|null $path A seed file, or null for the site's.
+	 * @throws Seed_Refused When no file is found, naming a given file by its name, else where the site's belongs, by its path only to a manager, and the example to start from; or when the file does not parse or names what the graph has no word for, naming the field.
 	 */
 	public static function load( ?string $path = null ): self {
-		$path ??= self::resolved();
-		if ( ! \is_file( $path ) || ! \is_readable( $path ) ) {
-			throw new Seed_Refused( \esc_html( 'No seed file at ' . \basename( $path ) . '.' ) );
+		$at = $path ?? self::path();
+		if ( ! \is_file( $at ) || ! \is_readable( $at ) ) {
+			throw new Seed_Refused(
+				\esc_html(
+					null === $path
+						? 'No ' . self::FILE . ': write a seed for this site ' . ( Capabilities::can( Capabilities::MANAGE ) ? "to {$at}" : 'as ' . self::FILE . ' in its Intelligence data dir' ) . ', starting from the example the plugin ships at examples/' . self::FILE . '.'
+						: 'No seed file at ' . \basename( $at ) . '.'
+				)
+			);
 		}
-		$seed = new self( $path );
+		$seed = new self( $at );
 		// phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- a local seed file, not a remote fetch.
-		$text = (string) \file_get_contents( $path );
+		$text = (string) \file_get_contents( $at );
 		$file = $seed->fields( '', $seed->decode( $text ), [ 'entities', 'lenses' ], [ 'entities', 'lenses' ] );
 		foreach ( $seed->fields( 'entities', $file['entities'] ) as $type => $entities ) {
 			foreach ( $seed->fields( "entities.{$type}", $entities ) as $slug => $entity ) {
@@ -163,16 +167,14 @@ final class Ontology_Seed {
 	}
 
 	/**
-	 * The seed file the topology dirs resolve, once the runtime has
-	 * registered the user dir.
+	 * Where a site keeps its seed: its Intelligence data dir, a sibling of
+	 * the substrate's runtime base, outside every topology dir.
 	 *
-	 * @throws Seed_Refused When no dir holds one, naming where it belongs, by its path only to a manager, and the example to start from.
+	 * @api Read by dndocker's deploy tools, which install a site's seed here.
+	 * @throws \RuntimeException When the runtime base directory is unusable.
 	 */
-	private static function resolved(): string {
-		Bootstrap::ensure_runtime_wired();
-		return Topology_Registry::resolve_file( self::FILE ) ?? throw new Seed_Refused(
-			\esc_html( 'No ' . self::FILE . ' in any topology dir: write a seed for this site ' . ( Capabilities::can( Capabilities::MANAGE ) ? 'to ' . Topology_Registry::user_dir() . '/' . self::FILE : 'as ' . self::FILE . ' in the user topology dir' ) . ', starting from the example the plugin ships at examples/' . self::FILE . '.' )
-		);
+	public static function path(): string {
+		return \dirname( Bootstrap::base_dir() ) . '/newspack-intelligence/' . self::FILE;
 	}
 
 	/**

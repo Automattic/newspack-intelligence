@@ -43,36 +43,57 @@ function Step( { action } ) {
 
 /**
  * A fix sent as one write, with its answer beside it, for a reader holding
- * its role; its text step for anyone else, who mounts no write.
+ * its role; its text step for anyone else, who mounts no write. One button
+ * sends `args` under `label`, or one per entry of `choices`.
  *
  * @param {Object}                     props
- * @param {boolean}                    props.can     Whether the reader holds the role.
- * @param {string}                     props.label   The button's words.
- * @param {string}                     props.action  The text step's action.
- * @param {string}                     props.verb    The write verb.
- * @param {string}                     [props.ci]    The CI it lives on.
- * @param {() => void}                 props.refresh Re-reads the strip once it lands.
- * @param {Object<string, string>}     [props.args]  Its named args.
- * @param {{busy: string, ok: string}} props.texts   Its answer's words.
+ * @param {boolean}                    props.can       Whether the reader holds the role.
+ * @param {string}                     [props.label]   The button's words.
+ * @param {string}                     props.action    The text step's action.
+ * @param {string}                     props.verb      The write verb.
+ * @param {string}                     [props.ci]      The CI it lives on.
+ * @param {() => void}                 props.refresh   Re-reads the strip once it lands.
+ * @param {Object<string, string>}     [props.args]    Its named args.
+ * @param {Array<FixChoice>}           [props.choices] One button each, in place of `label` and `args`.
+ * @param {{busy: string, ok: string}} props.texts     Its answer's words.
  * @return {import('react').ReactElement} The fix.
  */
-function Fix( { can, action, ...send } ) {
-	return can ? <SendFix { ...send } /> : <Step action={ action } />;
+function Fix( {
+	can,
+	action,
+	label,
+	args = {},
+	choices = [ { label, args } ],
+	...send
+} ) {
+	return can ? (
+		<SendFix choices={ choices } { ...send } />
+	) : (
+		<Step action={ action } />
+	);
 }
 
 /**
- * The button sending a fix's write, and the answer it landed with.
+ * One button of a fix: its words and the named args it sends.
+ *
+ * @typedef {Object} FixChoice
+ * @property {string}                 label The button's words.
+ * @property {Object<string, string>} args  Its named args.
+ */
+
+/**
+ * The buttons sending a fix's one write, each its own args, and the answer
+ * the last send landed with.
  *
  * @param {Object}                     props
- * @param {string}                     props.label   The button's words.
+ * @param {Array<FixChoice>}           props.choices The buttons.
  * @param {string}                     props.verb    The write verb.
  * @param {string}                     [props.ci]    The CI it lives on.
  * @param {() => void}                 props.refresh Re-reads the strip once it lands.
- * @param {Object<string, string>}     [props.args]  Its named args.
  * @param {{busy: string, ok: string}} props.texts   Its answer's words.
- * @return {import('react').ReactElement} The button and its answer.
+ * @return {import('react').ReactElement} The buttons and their answer.
  */
-function SendFix( { label, verb, ci, refresh, args = {}, texts } ) {
+function SendFix( { choices, verb, ci, refresh, texts } ) {
 	const write = useIntelWrite( verb, { ci, refresh } );
 	const status = answerStatus(
 		null !== write.answeredArgs ? { error: write.refusal } : null,
@@ -81,14 +102,17 @@ function SendFix( { label, verb, ci, refresh, args = {}, texts } ) {
 	);
 	return (
 		<>
-			<button
-				type="button"
-				className="button button-small"
-				disabled={ write.pending }
-				onClick={ () => write.run( args ) }
-			>
-				{ label }
-			</button>
+			{ choices.map( ( choice ) => (
+				<button
+					key={ choice.label }
+					type="button"
+					className="button button-small"
+					disabled={ write.pending }
+					onClick={ () => write.run( choice.args ) }
+				>
+					{ choice.label }
+				</button>
+			) ) }
 			{ status.text && (
 				<span
 					className={ `newspack-nodes-status ${ status.tone }` }
@@ -270,8 +294,8 @@ const STATES = {
 		inactive: {
 			word: __( 'inactive', 'newspack-intelligence' ),
 			tone: 'is-neutral',
-			text: ( { topology } ) =>
-				topology
+			text: ( { topologies } ) =>
+				topologies.length
 					? __( 'Collection is off.', 'newspack-intelligence' )
 					: createInterpolateElement(
 							__(
@@ -280,11 +304,14 @@ const STATES = {
 							),
 							{ code: <code /> }
 					  ),
-			fix: ( { topology }, ctx ) =>
-				topology && (
+			fix: ( { topologies }, ctx ) =>
+				topologies.length > 0 && (
 					<Fix
 						can={ ctx.canManage }
-						label={ __( 'Activate', 'newspack-intelligence' ) }
+						choices={ topologies.map( ( name ) => ( {
+							label: name,
+							args: { name },
+						} ) ) }
 						action={ __(
 							'activate collection',
 							'newspack-intelligence'
@@ -292,7 +319,6 @@ const STATES = {
 						verb="activate"
 						ci="topologies"
 						refresh={ ctx.refresh }
-						args={ { name: topology } }
 						texts={ {
 							busy: __( 'Activating…', 'newspack-intelligence' ),
 							ok: __( 'Activated.', 'newspack-intelligence' ),
@@ -301,21 +327,21 @@ const STATES = {
 				),
 		},
 		unconfigured: {
-			word: __( 'no deployment file', 'newspack-intelligence' ),
+			word: __( 'no lists file', 'newspack-intelligence' ),
 			tone: 'is-error',
 			fault: true,
 			text: ( { file } ) =>
 				file
 					? sprintf(
-							/* translators: %s: the path the deployment file belongs at. */
+							/* translators: %s: the path the lists file belongs at. */
 							__(
-								'No deployment file: create %s, empty if this site has no settings of its own.',
+								'No lists file: create %s, empty if this site has no settings of its own.',
 								'newspack-intelligence'
 							),
 							file
 					  )
 					: __(
-							'An administrator can create the deployment file.',
+							'An administrator can create the lists file; an empty one will do.',
 							'newspack-intelligence'
 					  ),
 		},

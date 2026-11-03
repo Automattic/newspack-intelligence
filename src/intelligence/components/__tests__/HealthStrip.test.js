@@ -355,40 +355,56 @@ describe( 'HealthStrip', () => {
 	} );
 
 	it( 'inactive is neutral and does not open', async () => {
-		health.collection.state = 'inactive';
-		wire.replies.activate = { name: 'intel-staging', active: true };
+		health.collection = {
+			state: 'inactive',
+			topologies: [ 'intel-staging', 'intel-workbench' ],
+		};
+		wire.replies.activate = { name: 'intel-workbench', active: true };
 		renderStrip( { canManage: true } );
 		await lineReads( 'Collection is off.' );
 		expect( strip() ).not.toHaveClass( 'is-warning' );
 		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
 		expect(
-			screen.queryByRole( 'button', { name: 'Activate' } )
+			screen.queryByRole( 'button', { name: 'intel-workbench' } )
 		).toBeNull();
 		fireEvent.click( toggle() );
 		expect(
 			within( row( 'Collection' ) ).getByText( 'inactive' )
 		).toHaveClass( 'is-neutral' );
-		fireEvent.click( screen.getByRole( 'button', { name: 'Activate' } ) );
+		expect(
+			within( row( 'Collection' ) )
+				.getAllByRole( 'button' )
+				.map( ( button ) => button.textContent )
+		).toEqual( [ 'intel-staging', 'intel-workbench' ] );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'intel-workbench' } )
+		);
 		expect( await screen.findByText( 'Activated.' ) ).toBeInTheDocument();
 		expect( wire.sent( 'activate' ) ).toEqual( [
-			[ '--name=intel-staging' ],
+			[ '--name=intel-workbench' ],
 		] );
 		expect( wire.sentTo( 'activate' ) ).toEqual( [ 'topologies' ] );
 		await waitFor( () => expect( reads( 'collection' ) ).toBe( 2 ) );
 	} );
 
-	it( 'gives a reader without MANAGE the activate step as text', async () => {
-		health.collection.state = 'inactive';
+	it( 'gives a reader without MANAGE the activate step as text, once', async () => {
+		health.collection = {
+			state: 'inactive',
+			topologies: [ 'intel-staging', 'intel-workbench' ],
+		};
 		renderStrip( { canTune: true } );
 		await lineReads( 'Collection is off.' );
 		fireEvent.click( toggle() );
 		expect(
-			screen.getByText( 'An administrator can activate collection.' )
-		).toBeInTheDocument();
+			screen.getAllByText( 'An administrator can activate collection.' )
+		).toHaveLength( 1 );
+		expect(
+			screen.queryByRole( 'button', { name: 'intel-staging' } )
+		).toBeNull();
 	} );
 
-	it( 'offers no Activate while no one composition is known', async () => {
-		health.collection = { state: 'inactive', topology: null };
+	it( 'offers no Activate while no composition is known', async () => {
+		health.collection = { state: 'inactive', topologies: [] };
 		renderStrip( { canManage: true } );
 		await lineReads( 'Collection is off.' );
 		fireEvent.click( toggle() );
@@ -400,29 +416,31 @@ describe( 'HealthStrip', () => {
 			'Collection is off; wp nodes activate turns on the topology that composes Intelligence.'
 		);
 		expect(
-			screen.queryByRole( 'button', { name: 'Activate' } )
-		).toBeNull();
+			within( row( 'Collection' ) ).queryAllByRole( 'button' )
+		).toEqual( [] );
 	} );
 
-	it( 'names where the deployment file belongs, and that empty will do', async () => {
+	it( 'names where the lists file belongs, and that empty will do', async () => {
 		health.collection = {
 			state: 'unconfigured',
-			file: '/srv/kestrel-nodes/topologies/newspack-intelligence-deployment.tsl',
+			file: '/srv/kestrel-nodes/topologies/newspack-intelligence-lists.tsl',
 		};
 		renderStrip( { canManage: true } );
 		await worstFault(
-			'No deployment file: create /srv/kestrel-nodes/topologies/newspack-intelligence-deployment.tsl, empty if this site has no settings of its own.'
+			'No lists file: create /srv/kestrel-nodes/topologies/newspack-intelligence-lists.tsl, empty if this site has no settings of its own.'
 		);
 		expect( strip() ).toHaveClass( 'is-warning' );
 		expect(
-			within( row( 'Collection' ) ).getByText( 'no deployment file' )
+			within( row( 'Collection' ) ).getByText( 'no lists file' )
 		).toHaveClass( 'is-error' );
 	} );
 
-	it( 'tells a reader with no path that an administrator creates the deployment file', async () => {
+	it( 'tells a reader with no path that an administrator creates the lists file', async () => {
 		health.collection = { state: 'unconfigured' };
 		renderStrip( { canManage: false } );
-		await worstFault( 'An administrator can create the deployment file.' );
+		await worstFault(
+			'An administrator can create the lists file; an empty one will do.'
+		);
 		expect( screen.queryByText( /\/topologies\// ) ).toBeNull();
 	} );
 
@@ -694,7 +712,10 @@ describe( 'HealthStrip', () => {
 	} );
 
 	it( 'keeps every row neutral while collection is off', async () => {
-		health.collection.state = 'inactive';
+		health.collection = {
+			state: 'inactive',
+			topologies: [ 'intel-staging' ],
+		};
 		health.backlog = STOPPED;
 		health.sources.sources.push( {
 			name: 'linear',
@@ -720,7 +741,10 @@ describe( 'HealthStrip', () => {
 	} );
 
 	it( 'says collection is off even while a source reads unknown', async () => {
-		health.collection.state = 'inactive';
+		health.collection = {
+			state: 'inactive',
+			topologies: [ 'intel-staging' ],
+		};
 		health.sources.sources[ 1 ] = { name: 'feed', state: 'unknown' };
 		renderStrip();
 		await lineReads( 'Collection is off.' );

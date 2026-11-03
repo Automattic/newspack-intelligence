@@ -257,6 +257,9 @@ class TopologyDurabilityTest extends TestCase {
 		}
 	}
 
+	/** The token half's sources, which the workstation reads through ContextA8C. */
+	private const TOKEN_HALF = [ 'linear', 'slack', 'p2', 'p2-restricted' ];
+
 	/** The verbs that name a deployment's lists, profile or audience. */
 	private const DEPLOYMENT_VERBS = '/:config\s+(add_repo|add_url|add_team|add_channel|add_site|add_profile|set_audience)\b/';
 
@@ -279,13 +282,21 @@ class TopologyDurabilityTest extends TestCase {
 		$this->assertSame( [ [], '' ], [ $this->read_private( Core::node( 'extractor' ), 'profiles' ), $this->read_private( Core::node( 'extractor' ), 'audience' ) ] );
 	}
 
-	/** The plugin ships neither file a deployment owns, so neither can shadow a deployment's own. */
-	public function test_the_shipped_topologies_hold_no_deployment_file_and_no_seed(): void {
+	/**
+	 * The plugin ships no file a site owns, its lists or its seed, so
+	 * neither can shadow the site's own: a stock dir resolves first.
+	 */
+	public function test_the_shipped_topologies_hold_no_lists_file_and_no_seed(): void {
 		$shipped = \array_map( 'basename', \glob( \dirname( __DIR__, 2 ) . '/topologies/*' ) ?: [] );
 
-		$this->assertNotSame( [], $shipped );
-		$this->assertNotContains( 'newspack-intelligence-deployment.tsl', $shipped );
+		$this->assertContains( 'newspack-intelligence-deployment.tsl', $shipped );
+		$this->assertSame( [], \preg_grep( '/^newspack-intelligence-lists\b/', $shipped ) );
 		$this->assertNotContains( 'newspack-intelligence-ontology-seed.json', $shipped );
+	}
+
+	/** The shipped deployment file includes the site's lists and nothing else. */
+	public function test_the_deployment_file_is_the_lists_include(): void {
+		$this->assertSame( [ 'include newspack-intelligence-lists' ], self::statements( 'newspack-intelligence-deployment' ) );
 	}
 
 	/**
@@ -294,7 +305,7 @@ class TopologyDurabilityTest extends TestCase {
 	 * copies those lines and nothing of the core.
 	 */
 	public function test_the_composition_is_its_frontmatter_core_collect_and_deployment(): void {
-		$lines = \array_values( \array_filter( \array_map( 'trim', \file( \dirname( __DIR__, 2 ) . '/topologies/newspack-intelligence.tsl' ) ?: [] ), static fn ( string $line ): bool => '' !== $line && ! \str_starts_with( $line, '#' ) ) );
+		$lines = self::statements( 'newspack-intelligence' );
 
 		$this->assertSame(
 			[
@@ -322,22 +333,22 @@ class TopologyDurabilityTest extends TestCase {
 		$this->assertEqualsCanonicalizing( $names( 'newspack-intelligence' ), \array_values( \array_unique( [ ...$core, ...$names( 'newspack-intelligence-collect' ) ] ) ) );
 	}
 
-	/** With no deployment file in any topology dir the composition does not load, naming the include. */
-	public function test_the_composition_without_a_deployment_file_fails_to_load(): void {
+	/** With no lists file in any topology dir the composition does not load, naming the include. */
+	public function test_the_composition_without_a_lists_file_fails_to_load(): void {
 		Topology_Registry::register_user_dir( $this->make_temp_dir( 'intelligence-durability-bare-' ) );
 
 		$this->expectException( \RuntimeException::class );
-		$this->expectExceptionMessage( 'Shell: include: file not found: newspack-intelligence-deployment' );
+		$this->expectExceptionMessage( 'Shell: include: file not found: newspack-intelligence-lists' );
 		$this->load( 'newspack-intelligence' );
 	}
 
 	/**
-	 * A deployment keeps `newspack-intelligence-deployment` in the user
-	 * topology dir, and its lines land on the nodes the files before it
+	 * A site keeps `newspack-intelligence-lists` in the user topology dir,
+	 * and its lines land on the nodes the files before the deployment file
 	 * declare, in order, each URL kept whole through the shell's parse: its
 	 * quotes, `&`, `+` and `%` escapes.
 	 */
-	public function test_a_deployment_file_supplies_the_lists_profile_and_audience(): void {
+	public function test_a_lists_file_supplies_the_lists_profile_and_audience(): void {
 		Topology_Registry::register_user_dir( \dirname( __DIR__ ) . '/fixtures/topologies' );
 		$this->load( 'newspack-intelligence' );
 
@@ -380,6 +391,95 @@ class TopologyDurabilityTest extends TestCase {
 			$this->assertNotContains( $other, $own, $other );
 		}
 		$this->assertContains( 'unthread', $names( 'newspack-intelligence-collect-token' ) );
+	}
+
+	/**
+	 * The workstation holds its frontmatter, the shipped core, the public
+	 * collect, ContextA8C in place of the token half, Unthread, the
+	 * deployment file, then its own feed concurrency.
+	 */
+	public function test_the_workstation_composes_the_shipped_parts(): void {
+		$this->assertSame(
+			[
+				'var on_demand_idle = 0',
+				'var stale_timeout = 600',
+				'var num_partitions = 1',
+				'include newspack-intelligence-core',
+				'include newspack-intelligence-collect-public',
+				'include newspack-intelligence-context-a8c',
+				'include newspack-intelligence-collect-unthread',
+				'include newspack-intelligence-deployment',
+				'cmd feed:config set_concurrency 6',
+				'secure',
+			],
+			self::statements( 'newspack-intelligence-workstation' )
+		);
+	}
+
+	/**
+	 * The workstation declares what the composition declares, every node
+	 * under the same name and class but the token half's, each of which is
+	 * its ContextA8C stand-in, and frontmatter alike.
+	 */
+	public function test_the_workstation_mirrors_the_composition(): void {
+		$classes = static fn ( string $topology ): array => \array_column( Topology_Analyzer::graph_for( $topology )['nodes'], 'type', 'name' );
+		$shipped = $classes( 'newspack-intelligence' );
+		$local   = $classes( 'newspack-intelligence-workstation' );
+		$token   = \array_flip( self::TOKEN_HALF );
+
+		$this->assertEqualsCanonicalizing( \array_keys( $shipped ), \array_keys( $local ) );
+		$this->assertSame( \array_diff_key( $shipped, $token ), \array_diff_key( $local, $token ) );
+		$this->assertSame( [ 'Context_A8C_Linear', 'Context_A8C_Slack', 'Context_A8C_P2', 'Context_A8C_P2' ], \array_values( \array_intersect_key( $local, $token ) ) );
+		$this->assertSame( Topology_Analyzer::frontmatter( 'newspack-intelligence' ), Topology_Analyzer::frontmatter( 'newspack-intelligence-workstation' ) );
+	}
+
+	/**
+	 * Each ContextA8C node stands in for a token source under its name,
+	 * tier and interval, reading the token dir the container mounts through
+	 * the proxy, and records into the writer.
+	 */
+	public function test_the_context_a8c_nodes_stand_in_for_the_token_half(): void {
+		$this->load( 'newspack-intelligence-collect-token' );
+		$shipped = [];
+		foreach ( self::TOKEN_HALF as $name ) {
+			$shipped[ $name ] = [ $this->read_private( Core::node( $name ), 'tier' ), $this->read_private( Core::node( $name ), 'interval' ) ];
+		}
+		Core::reset();
+
+		$this->load( 'newspack-intelligence-context-a8c' );
+
+		foreach ( $shipped as $name => $declared ) {
+			$node = Core::node( $name );
+			$this->assertSame( $declared, [ $this->read_private( $node, 'tier' ), $this->read_private( $node, 'interval' ) ], $name );
+			$this->assertSame( 'intel:writer', $node->target(), $name );
+			$this->assertSame( '/mcp-auth', $this->read_private( $node, 'auth_dir' ), $name );
+			$this->assertSame( 'socks5h://host.docker.internal:8080', $this->read_private( $node, 'proxy' ), $name );
+		}
+		$this->assertNull( Core::node( 'unthread' ) );
+	}
+
+	/**
+	 * The workstation's `cmd` after the deployment include applies, and
+	 * lands after the site's lists.
+	 */
+	public function test_the_workstation_sets_feed_concurrency_after_the_lists(): void {
+		Topology_Registry::register_user_dir( \dirname( __DIR__ ) . '/fixtures/topologies' );
+		$this->load( 'newspack-intelligence-workstation' );
+
+		$this->assertSame( 6, $this->read_private( Core::node( 'feed' ), 'concurrency' ) );
+		$this->assertSame( [ 'https://heron.example/feed/', 'https://quarry.example/feed?u=7713heron&id=4c3ckite' ], $this->read_private( Core::node( 'feed' ), 'urls' ) );
+		$this->assertSame( [ 'HERON', 'KITE' ], $this->read_private( Core::node( 'linear' ), 'teams' ) );
+	}
+
+	/**
+	 * A shipped file's statements: its lines, trimmed, but blank lines and
+	 * comments.
+	 *
+	 * @param string $topology The shipped topology.
+	 * @return list<string>
+	 */
+	private static function statements( string $topology ): array {
+		return \array_values( \array_filter( \array_map( 'trim', \file( \dirname( __DIR__, 2 ) . "/topologies/{$topology}.tsl" ) ?: [] ), static fn ( string $line ): bool => '' !== $line && ! \str_starts_with( $line, '#' ) ) );
 	}
 
 	/** Compose a topology the way a worker does, over the test base dir. */

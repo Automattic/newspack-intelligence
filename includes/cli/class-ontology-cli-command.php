@@ -223,8 +223,8 @@ class Ontology_CLI_Command {
 	/**
 	 * Write the seed ontology — the entities and lenses a seed file names —
 	 * to the ontology stream, for the keys the projection lacks. The file is
-	 * the one given, else the `newspack-intelligence-ontology-seed.json` the
-	 * topology dirs resolve, kept in the user topology dir. A
+	 * the one given, else the site's `newspack-intelligence-ontology-seed.json`
+	 * in its Intelligence data dir, beside the runtime base. A
 	 * file that does not parse, or names an unknown type, role, kind or lens
 	 * filter, is refused naming the field. A key the projection already
 	 * holds is left as curated, and a projection that will not open fails the
@@ -234,7 +234,7 @@ class Ontology_CLI_Command {
 	 * ## OPTIONS
 	 *
 	 * [<file>]
-	 * : A seed file to read in place of the resolved one.
+	 * : A seed file to read in place of the site's.
 	 *
 	 * ## EXAMPLES
 	 *

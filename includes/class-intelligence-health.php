@@ -29,8 +29,8 @@ use Newspack_Nodes\Topology_Registry;
 
 final class Intelligence_Health {
 
-	/** The topology every composition includes last, which a deployment supplies. */
-	public const DEPLOYMENT = 'newspack-intelligence-deployment';
+	/** The topology the shipped deployment file includes, which a site supplies. */
+	public const LISTS = 'newspack-intelligence-lists';
 
 	/** The slices `what` names, each answered by the method of its name. */
 	public const SLICES = [ 'collection', 'sources', 'backlog', 'extraction' ];
@@ -42,19 +42,19 @@ final class Intelligence_Health {
 	private const OPERATOR_FIELDS = [ 'credential', 'vault_id', 'last_error', 'file' ];
 
 	/**
-	 * Warn, ahead of `wp nodes doctor`'s rows, where the deployment file
-	 * belongs while no topology dir holds one; doctor itself reports only
-	 * that the composition will not read. An unusable runtime base is left
-	 * to doctor's own filesystem row.
+	 * Warn, ahead of `wp nodes doctor`'s rows, where the lists file belongs
+	 * while no topology dir holds one; doctor itself reports only that the
+	 * composition will not read. An unusable runtime base is left to
+	 * doctor's own filesystem row.
 	 */
-	public static function warn_missing_deployment(): void {
+	public static function warn_missing_lists(): void {
 		try {
-			$missing = self::missing_deployment();
+			$missing = self::missing_lists();
 		} catch ( \RuntimeException $e ) {
 			return;
 		}
 		if ( null !== $missing ) {
-			\WP_CLI::warning( 'No ' . self::DEPLOYMENT . ".tsl in any topology dir, so no topology composing Intelligence will load: create {$missing}, empty if this site has no settings of its own." );
+			\WP_CLI::warning( 'No ' . self::LISTS . ".tsl in any topology dir, so no topology composing Intelligence will load: create {$missing}, empty if this site has no settings of its own." );
 		}
 	}
 
@@ -224,13 +224,13 @@ final class Intelligence_Health {
 	/**
 	 * Collection's state: its worker's, the word `wp nodes status` reports,
 	 * when an active topology runs Intelligence, whatever the topology dirs
-	 * hold. Otherwise `unconfigured`, naming to a manager where the
-	 * deployment file belongs, while no topology dir holds one; else
-	 * `inactive`, offering `Worker_Route::candidate()`. With no deployment
-	 * file missing, a topology that will not read is refused.
+	 * hold. Otherwise `unconfigured`, naming to a manager where the lists
+	 * file belongs, while no topology dir holds one; else `inactive`,
+	 * offering `Worker_Route::candidates()`. With no lists file missing, a
+	 * topology that will not read is refused.
 	 *
 	 * @return array<array-key,mixed>
-	 * @throws \RuntimeException When several active topologies run Intelligence, or none does while one will not read and the deployment file is not what it lacks.
+	 * @throws \RuntimeException When several active topologies run Intelligence, or none does while one will not read and the lists file is not what it lacks.
 	 */
 	private static function collection(): array {
 		try {
@@ -244,8 +244,8 @@ final class Intelligence_Health {
 		}
 		if ( null === $topology ) {
 			return self::unconfigured() ?? [
-				'state'    => 'inactive',
-				'topology' => Worker_Route::candidate(),
+				'state'      => 'inactive',
+				'topologies' => Worker_Route::candidates(),
 			];
 		}
 		$id = CLI::worker_id( $topology, self::PARTITION );
@@ -256,13 +256,13 @@ final class Intelligence_Health {
 	}
 
 	/**
-	 * The `unconfigured` row while no topology dir holds the deployment
-	 * file, its path for a manager alone; null once one does.
+	 * The `unconfigured` row while no topology dir holds the lists file, its
+	 * path for a manager alone; null once one does.
 	 *
 	 * @return array<array-key,mixed>|null
 	 */
 	private static function unconfigured(): ?array {
-		$missing = self::missing_deployment();
+		$missing = self::missing_lists();
 		return null === $missing ? null : self::redacted(
 			[
 				'state' => 'unconfigured',
@@ -273,7 +273,7 @@ final class Intelligence_Health {
 
 	/**
 	 * A row as the caller may read it: whole for a manager, else without
-	 * the credential, Vault id, error text and deployment file's path,
+	 * the credential, Vault id, error text and lists file's path,
 	 * leaving the state, times, counts and an idle source's reason, which is
 	 * fixed text naming at most an HTTP status. Field redaction; the verb's
 	 * role stays read (ADR-26).
@@ -286,13 +286,13 @@ final class Intelligence_Health {
 	}
 
 	/**
-	 * Where the deployment file belongs, the user topology dir, while no
-	 * topology dir holds one; null once one does.
+	 * Where the lists file belongs, the user topology dir, while no topology
+	 * dir holds one; null once one does.
 	 *
 	 * @throws \RuntimeException When the runtime base directory is unusable.
 	 */
-	public static function missing_deployment(): ?string {
+	public static function missing_lists(): ?string {
 		Bootstrap::ensure_runtime_wired();
-		return null === Topology_Registry::resolve( self::DEPLOYMENT ) ? Topology_Registry::user_dir() . '/' . self::DEPLOYMENT . '.tsl' : null;
+		return null === Topology_Registry::resolve( self::LISTS ) ? Topology_Registry::user_dir() . '/' . self::LISTS . '.tsl' : null;
 	}
 }

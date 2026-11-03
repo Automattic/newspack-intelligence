@@ -73,34 +73,35 @@ final class IntelligenceHealthTest extends TestCase {
 
 	/**
 	 * With no active topology declaring the event writer collection is off,
-	 * offering the one catalog composition no other includes.
+	 * offering every catalog composition no other includes, by name: the
+	 * shipped one and the workstation's.
 	 */
 	public function test_collection_inactive_when_topology_off(): void {
 		$this->activate( 'topic-probe' );
 
-		$this->assertSame( [ 'state' => 'inactive', 'topology' => 'newspack-intelligence' ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
+		$this->assertSame( [ 'state' => 'inactive', 'topologies' => [ 'newspack-intelligence', 'newspack-intelligence-workstation' ] ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
 	}
 
-	/** Off, with two compositions in the catalog, collection offers neither. */
-	public function test_collection_off_with_two_compositions_names_none(): void {
+	/** Off, a third composition in the catalog joins the offer in its sorted place. */
+	public function test_collection_off_offers_every_composition_sorted(): void {
 		$dir = $this->make_temp_dir( 'intelligence-health-sanderling-' );
 		\file_put_contents( "{$dir}/sanderling-intel.tsl", "include newspack-intelligence-streams\n" );
 		Topology_Registry::register_stock_dir( $dir );
 		$this->activate( 'topic-probe' );
 
-		$this->assertSame( [ 'state' => 'inactive', 'topology' => null ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
+		$this->assertSame( [ 'state' => 'inactive', 'topologies' => [ 'newspack-intelligence', 'newspack-intelligence-workstation', 'sanderling-intel' ] ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
 	}
 
 	/**
-	 * With no deployment file in any topology dir collection cannot run:
-	 * the slice names where it belongs, whether or not anything is active.
+	 * With no lists file in any topology dir collection cannot run: the
+	 * slice names where it belongs, whether or not anything is active.
 	 */
-	public function test_collection_without_a_deployment_file_names_where_it_belongs(): void {
+	public function test_collection_without_a_lists_file_names_where_it_belongs(): void {
 		$bare = $this->make_temp_dir( 'intelligence-health-bare-' );
 		Topology_Registry::register_user_dir( $bare );
 		Topology_Analyzer::reset_caches();
 
-		$this->assertSame( [ 'state' => 'unconfigured', 'file' => "{$bare}/newspack-intelligence-deployment.tsl" ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
+		$this->assertSame( [ 'state' => 'unconfigured', 'file' => "{$bare}/newspack-intelligence-lists.tsl" ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
 		$this->activate( 'topic-probe' );
 		$this->assertSame( 'unconfigured', $this->ci->dispatch( 'health', [ 'collection' ] )['state'] );
 	}
@@ -109,11 +110,11 @@ final class IntelligenceHealthTest extends TestCase {
 	public function test_collection_inactive_beside_a_stale_active_name(): void {
 		$this->activate( 'heron-old' );
 
-		$this->assertSame( [ 'state' => 'inactive', 'topology' => 'newspack-intelligence' ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
+		$this->assertSame( [ 'state' => 'inactive', 'topologies' => [ 'newspack-intelligence', 'newspack-intelligence-workstation' ] ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
 	}
 
-	/** A live composition that includes no deployment file reads its worker's state, whatever the topology dirs hold. */
-	public function test_a_live_composition_without_a_deployment_include_reads_its_state(): void {
+	/** A live composition that includes no lists file reads its worker's state, whatever the topology dirs hold. */
+	public function test_a_live_composition_without_a_lists_include_reads_its_state(): void {
 		Topology_Registry::register_user_dir( $this->make_temp_dir( 'intelligence-health-phalarope-' ) );
 		$this->activate();
 		$this->run_intelligence_as( 'phalarope-intel' );
@@ -123,8 +124,8 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( [ 'state' => 'live', 'topology' => 'phalarope-intel' ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
 	}
 
-	/** A reader below manage learns the deployment file is missing, not where the user dir sits. */
-	public function test_a_reader_below_manage_gets_no_deployment_path(): void {
+	/** A reader below manage learns the lists file is missing, not where the user dir sits. */
+	public function test_a_reader_below_manage_gets_no_lists_path(): void {
 		Topology_Registry::register_user_dir( $this->make_temp_dir( 'intelligence-health-turnstone-' ) );
 		Topology_Analyzer::reset_caches();
 		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::READ;
@@ -132,8 +133,8 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( [ 'state' => 'unconfigured' ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
 	}
 
-	/** `wp nodes doctor` opens with where the deployment file belongs while no topology dir holds one, and that empty will do. */
-	public function test_doctor_names_a_missing_deployment_file(): void {
+	/** `wp nodes doctor` opens with where the lists file belongs while no topology dir holds one, and that empty will do. */
+	public function test_doctor_names_a_missing_lists_file(): void {
 		$bare = $this->make_temp_dir( 'intelligence-health-doctor-' );
 		\WP_CLI::reset();
 		\Newspack_Intelligence\register_cli_commands();
@@ -141,13 +142,13 @@ final class IntelligenceHealthTest extends TestCase {
 		foreach ( \WP_CLI::$hooks['before_invoke:nodes doctor'] ?? [] as $hook ) {
 			$hook( 'nodes doctor' );
 		}
-		$this->assertSame( [], \WP_CLI::$warnings, 'the fixture deployment file resolves' );
+		$this->assertSame( [], \WP_CLI::$warnings, 'the fixture lists file resolves' );
 
 		Topology_Registry::register_user_dir( $bare );
 		foreach ( \WP_CLI::$hooks['before_invoke:nodes doctor'] ?? [] as $hook ) {
 			$hook( 'nodes doctor' );
 		}
-		$this->assertSame( [ "No newspack-intelligence-deployment.tsl in any topology dir, so no topology composing Intelligence will load: create {$bare}/newspack-intelligence-deployment.tsl, empty if this site has no settings of its own." ], \WP_CLI::$warnings );
+		$this->assertSame( [ "No newspack-intelligence-lists.tsl in any topology dir, so no topology composing Intelligence will load: create {$bare}/newspack-intelligence-lists.tsl, empty if this site has no settings of its own." ], \WP_CLI::$warnings );
 		\WP_CLI::reset();
 	}
 
@@ -160,8 +161,8 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->ci->dispatch( 'health', [ 'collection' ] );
 	}
 
-	/** Two active compositions are refused naming both, even while no deployment file resolves, never read as unconfigured. */
-	public function test_two_compositions_without_a_deployment_file_are_refused_not_unconfigured(): void {
+	/** Two active compositions are refused naming both, even while no lists file resolves, never read as unconfigured. */
+	public function test_two_compositions_without_a_lists_file_are_refused_not_unconfigured(): void {
 		Topology_Registry::register_user_dir( $this->make_temp_dir( 'intelligence-health-guillemot-' ) );
 		$this->activate();
 		$this->run_intelligence_as( 'auk-intel' );

@@ -8,6 +8,7 @@ use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Ontology_Seed;
 use Newspack_Intelligence\Resolver;
 use Newspack_Intelligence\Seed_Refused;
+use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Table_Unavailable;
 use Newspack_Nodes\Topology_Registry;
@@ -19,20 +20,18 @@ require_once __DIR__ . '/../support/fake-entity-extractor.php';
 
 /**
  * The seeded ontology: the entities and lenses a seed file names, read from
- * the file the last registered topology dir holds, as events keyed so a
- * second run writes the same set, and only for the keys the projection lacks.
+ * the site's Intelligence data dir beside the runtime base, as events keyed
+ * so a second run writes the same set, and only for the keys the projection
+ * lacks.
  */
 final class OntologySeedTest extends TestCase {
 	use Reads_Ontology_Log;
 	use Seeds_Entity_Index;
 
-	/** The fictional fixture dir, holding a seed of its own. */
-	private const FIXTURES = __DIR__ . '/../fixtures/topologies';
-
 	protected function setUp(): void {
 		parent::setUp();
 		$this->start_entity_graph();
-		Topology_Registry::register_stock_dir( self::FIXTURES );
+		self::place_seed();
 		$this->activate( 'newspack-intelligence-project' );
 	}
 
@@ -52,8 +51,13 @@ final class OntologySeedTest extends TestCase {
 		}
 	}
 
-	/** The file the last registered dir holds is the seed, so the fixture shadows the shipped example. */
-	public function test_the_last_registered_dirs_file_is_the_seed(): void {
+	/** The seed sits in the Intelligence data dir beside the runtime base. */
+	public function test_the_seed_path_is_the_data_dir_beside_the_base(): void {
+		$this->assertSame( \dirname( Config::get_base_directory() ) . '/newspack-intelligence/newspack-intelligence-ontology-seed.json', Ontology_Seed::path() );
+	}
+
+	/** The data dir's file is the seed, so the fixture, not the shipped example, is read. */
+	public function test_the_data_dirs_file_is_the_seed(): void {
 		$keys = \array_values( \array_filter( \array_column( Ontology_Seed::load()->events( [] ), 'entity_key' ) ) );
 
 		$this->assertSame( [ 'topic:tide-tables', 'topic:kite-repair', 'organization:heron-trust', 'organization:quarry-guild', 'organization:marsh-press', 'product:kite-ledger' ], \array_values( \array_unique( $keys ) ) );
@@ -206,8 +210,8 @@ final class OntologySeedTest extends TestCase {
 		Ontology_Seed::load()->present();
 	}
 
-	/** A path given is read in place of the resolved file. */
-	public function test_a_given_path_is_read_in_place_of_the_resolved_file(): void {
+	/** A path given is read in place of the one at `Ontology_Seed::path()`. */
+	public function test_a_given_path_is_read_in_place_of_the_sites(): void {
 		$path = $this->seed_file( [ 'entities' => [ 'topic' => [ 'salt-marsh' => [ 'name' => 'Salt marsh' ] ] ], 'lenses' => [] ] );
 
 		$this->assertSame( [ 'entity_created|topic:salt-marsh|topic|Salt marsh' ], \array_map( self::fact( ... ), Ontology_Seed::load( $path )->events( [] ) ) );
@@ -267,32 +271,27 @@ final class OntologySeedTest extends TestCase {
 		}
 	}
 
-	/** A deployment's seed in the user topology dir is the one a seed reads. */
-	public function test_the_user_dir_seed_is_read(): void {
+	/** A seed in a topology dir is not read: only the data dir's is. */
+	public function test_a_seed_in_a_topology_dir_is_not_read(): void {
 		$user = $this->make_temp_dir( 'intel-seed-user-' );
-		\copy( self::FIXTURES . '/' . Ontology_Seed::FILE, "{$user}/" . Ontology_Seed::FILE );
-		Topology_Registry::reset();
-		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
-		Topology_Registry::register_user_dir( $user );
-
-		$created = \array_column( \array_filter( Ontology_Seed::load()->events( [] ), static fn ( array $e ): bool => 'entity_created' === $e['event'] ), 'entity_key' );
-
-		$this->assertContains( 'topic:tide-tables', $created );
-	}
-
-	/**
-	 * With no seed in any topology dir, a caller below manage is told the
-	 * file belongs in the user topology dir and where the plugin keeps the
-	 * example, and no absolute path.
-	 */
-	public function test_no_seed_file_in_any_dir_is_refused(): void {
-		$user = $this->make_temp_dir( 'intel-seed-bare-' );
-		Topology_Registry::reset();
-		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
+		\copy( Ontology_Seed::path(), "{$user}/" . Ontology_Seed::FILE );
+		\unlink( Ontology_Seed::path() );
 		Topology_Registry::register_user_dir( $user );
 
 		$this->expectException( Seed_Refused::class );
-		$this->expectExceptionMessage( 'No newspack-intelligence-ontology-seed.json in any topology dir: write a seed for this site as newspack-intelligence-ontology-seed.json in the user topology dir, starting from the example the plugin ships at examples/newspack-intelligence-ontology-seed.json.' );
+		Ontology_Seed::load();
+	}
+
+	/**
+	 * With no seed in the data dir, a caller below manage is told the file
+	 * belongs in the site's Intelligence data dir and where the plugin keeps
+	 * the example, and no absolute path.
+	 */
+	public function test_no_seed_file_in_the_data_dir_is_refused(): void {
+		\unlink( Ontology_Seed::path() );
+
+		$this->expectException( Seed_Refused::class );
+		$this->expectExceptionMessage( "No newspack-intelligence-ontology-seed.json: write a seed for this site as newspack-intelligence-ontology-seed.json in its Intelligence data dir, starting from the example the plugin ships at examples/newspack-intelligence-ontology-seed.json." );
 		Ontology_Seed::load();
 	}
 
