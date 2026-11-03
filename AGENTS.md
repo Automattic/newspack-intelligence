@@ -773,12 +773,20 @@ each answered by the method of its name. What durable state answers is
 derived in the request; the rest is a snapshot a worker published through
 `Publishes_Status`, read at partition 0, which the topology runs alone,
 and a snapshot no cache holds reads as unknown or null, never as healthy.
-`collection` answers `{ state, topology }`, the `CLI::worker_states()`
-word `wp nodes status` reports for `newspack-intelligence.p0`
-(`Worker_Route::TOPOLOGY`) against `Bootstrap::get_topologies()`:
-`inactive` while the topology is not active and no worker holds its lock.
+`collection` asks `Worker_Route::running()` first: with a topology running
+Intelligence it answers `{ state, topology }`, the `CLI::worker_states()`
+word `wp nodes status` reports for that topology's `.p0` against
+`Bootstrap::get_topologies()`, whatever the topology dirs hold. Only when
+none runs, or `running()` throws because an active `.tsl` will not read
+(the one throw it chains a cause on), does it ask
+`Intelligence_Health::missing_deployment()`: while no topology dir
+resolves `newspack-intelligence-deployment` it answers `{ state:
+unconfigured, file }`, `file` the path it belongs at in the user topology
+dir; else `{ state: inactive, topology }`, `topology` the composition
+`Worker_Route::candidate()` offers to activate, or null, or, after a
+throw, the throw.
 `sources` answers `{ sources: [ { name, class, tier, state, … } ] }`, one
-row per `Source_Node` the collect topology declares, in its order
+row per `Source_Node` Intelligence's topology declares, in its order
 (`Intelligence_CI_Node::sources()`, which `fetch_now`'s ticks map), `class`
 its `make_node` type, leaving out a source whose tier
 `Intel_Tiers::readable()` does not grant the caller. Each line binds
@@ -794,8 +802,9 @@ whose group lends nothing on that url's origin
 any other answers its snapshot as
 `Source_Node::BLANK_STATUS` names it, or `{ state: unknown }`. A caller
 below `manage` reads each source row and the `extraction` row without
-`credential`, `vault_id` and `last_error`
-(`Intelligence_Health::OPERATOR_FIELDS`), so it reads their state, times,
+`credential`, `vault_id` and `last_error`, and the `unconfigured` row
+without `file` (`Intelligence_Health::OPERATOR_FIELDS`), so no absolute
+path reaches it, and it reads their state, times,
 counts and an idle ContextA8C source's `reason`, fixed text naming at most
 an HTTP status, and a source idle for want of a credential still reads `idle`;
 that is field redaction through `Capabilities::can( MANAGE )`, and the verb
@@ -818,9 +827,10 @@ the one the resolver's `make_node` line names as `later`.
 last_mode }`, `last_mode` `heuristic` or `call` from the actor of the
 newest `extractions` row, by row id, which says how that extraction was
 made and never why, else `{ mode: unknown }`. Each snapshot is read under
-the name the `newspack-intelligence` topology gives its `Resolver`,
-`Extractor` and `Reresolver` (`Topology_Analyzer::nodes_of_type()`), and a
-class it does not declare reads as no snapshot.
+the name the topology `Worker_Route::running()` answers gives its
+`Resolver`, `Extractor` and `Reresolver`
+(`Topology_Analyzer::nodes_of_type()`), and a class it does not declare
+reads as no snapshot.
 
 **Signals.** `signals [--lens=] [--entity=]` answers `{ signals: [ {
 axis, signal, bucket, by, value, count, baseline, items } ], available }`.
@@ -1142,7 +1152,7 @@ no cap holds the lists, so `Intel_Event::make()` refuses an event past one
 line, before anything is written. `remove_lens` slugs its key as
 `save_lens` does and refuses `no lens: <key>`.
 `fetch_now` TICKs every source in each live worker — each node of a
-`Source_Node` subclass the collect topology declares, read through
+`Source_Node` subclass Intelligence's topology declares, read through
 `Topology_Analyzer::nodes_of_type()` — through `Worker_Route` and
 declares `manage`, because it mounts a worker's input (substrate ADR-23).
 `Worker_Route` appends each request to every live worker's input IPC
@@ -1185,11 +1195,20 @@ changes that user's own watches, and a watch saved through it emails that
 user.
 
 **Seeding.** The seed is data a deployment supplies:
-`newspack-intelligence-ontology-seed.json`, which `Ontology_Seed::load()`
-finds through `Topology_Registry::resolve_file()`, the stock dir registered
-last first, so a deployment's dir shadows the fictional example
-`topologies/` ships (a few `.example` organizations, a generic name it
-rejects, four topics and one lens). The file holds `entities`, type =>
+`newspack-intelligence-ontology-seed.json`, which it keeps in the user
+topology dir, `<base_dir>/topologies/`, and `Ontology_Seed::load()` finds
+through `Topology_Registry::resolve_file()` once `Bootstrap::ensure_runtime_wired()`
+has registered that dir. The plugin ships a fictional example,
+`examples/newspack-intelligence-ontology-seed.json` (a few `.example`
+organizations, a generic name it rejects, four topics and one lens), outside
+every topology dir, as the shape to start from. With no seed in any dir,
+`load()` refuses with `Seed_Refused` naming where the file belongs and the
+example as `examples/newspack-intelligence-ontology-seed.json`, relative to
+the plugin, which the command shows through `WP_CLI::error()` and the
+health strip's "Seed the ontology" fix beside its button. The user-dir
+path is named only to a caller `Capabilities::can( MANAGE )` admits, since
+`seed_ontology` answers `tune`; anyone else, WP-CLI without a manager's
+`--user` among them, reads "in the user topology dir". The file holds `entities`, type =>
 slug => `{ name, names, identifiers, roles, state }`, `names` and
 `identifiers` each kind => values, `state` `rejected` or absent, and
 `lenses`, key => `{ name, description, filters }`, the filters laid over
@@ -1199,7 +1218,8 @@ cap; it bounds each name and value as `create_entity` and `add_name` do,
 checks each lens's filters through `Graph_Curation::lens_filters()`, the
 half of `save_lens`'s checks that reads no projection, and refuses a slug
 or lens key its own key function would spell otherwise. Any refusal is a
-`Seed_Refused` naming the file and the field (`<file>:
+`Seed_Refused` naming the file, by its name alone so a `tune` caller of
+`seed_ontology` reads no absolute path, and the field (`<file name>:
 entities.organization.<slug>.roles: role_asserted: field role is outside
 its set`), before anything is written, as is a file that does not parse
 or holds a field neither shape takes. `wp newspack-intelligence ontology
@@ -1613,7 +1633,9 @@ Vault credential but is signed in to ContextA8C, Automattic's MCP server at
 `Context_A8C_Source_Node::MCP_URL`. Its `make_node` line takes the tier,
 the dir holding the relay's `wordpress-remote-*` token dirs, and an
 optional proxy every request goes through. No shipped topology declares
-one; a workstation's own collect topology does, in place of the token half. The token lives in `Context_A8C_Token`, the process's one hold
+one; a workstation composes its own topology from the shipped parts, with a
+file declaring these nodes in place of the token half, and activates it in
+place of `newspack-intelligence` (see Topologies). The token lives in `Context_A8C_Token`, the process's one hold
 on each token dir, and in no node's state: it reads the file obtained last,
 by `obtained_at`, which is in milliseconds, when it holds none. A token
 within `EXPIRY_MARGIN` (600) seconds of its expiry, or one a server answered
@@ -1742,7 +1764,8 @@ holds, and the links, extraction and claims that writes outlive the
 purge: no read answers them, since the `items` row is gone, and no rerun
 selects them, since the selection reads that row. So purge only once
 the resolver has caught up — `wp nodes status` lists the reader
-`newspack-intelligence.intel-items-resolve.p<N>` with nothing behind.
+`<topology>.intel-items-resolve.p<N>` with nothing behind, `<topology>`
+being the one it lists for Intelligence.
 A worker running a release older than the one carrying `item_purged`
 drops every purge its writer receives as an unknown kind, so restart the
 workers (`wp nodes restart all`) after deploying that release and before
@@ -1793,12 +1816,12 @@ Read the counts, then run the command it prints, the same command without
 
 | File | What it wires |
 |------|---------------|
-| `newspack-intelligence.tsl` | Includes every file below, `-deployment` last, and wires `reresolver`, which spans the project and streams files, and `watcher`, which reads the projection and writes to `intel:writer`; `on_demand_idle 0` keeps the worker resident, which the scheduled sources need, and `stale_timeout 600` keeps a peer from stealing its lock while an LLM call blocks one `fill()` |
+| `newspack-intelligence.tsl` | Its frontmatter, then `-core`, `-collect` and `-deployment` last: `on_demand_idle 0` keeps the worker resident, which the scheduled sources need, and `stale_timeout 600` keeps a peer from stealing its lock while an LLM call blocks one `fill()`. Frontmatter is read from the activated file alone, so a part cannot carry it — the composition a deployment activates, though nothing finds Intelligence by this name. `Worker_Route::running()` takes Intelligence's topology to be the one active topology declaring an `Intel_Event_Writer` node (every composition includes `-streams`, through `-core`), so a deployment may compose its own under another name, holding its frontmatter, `-core`, its own collect and `-deployment` last, and activate that instead; routing, `fetch_now`, `Intelligence_CI_Node::sources()` and every `health` slice read that one. Two active topologies declaring the writer are refused naming both, and none read as collection off, which routing refuses (`Worker_Route::topology()`) and `health` answers `inactive`; with none declaring it while an active `.tsl` will not read, both are refused naming that topology and why, while an active name no `.tsl` resolves (`Topology_Missing`) declares nothing and is passed over. Uninstall skips this composition while it will not read only because no deployment file resolves, because its parts declare its tables, and fails on any other shipped topology that will not read |
+| `newspack-intelligence-core.tsl` | Everything but the collect: `-streams`, `-project` and `-resolve`, then `reresolver`, which spans the project and streams files, fed by its own `intel:ontology:reresolve` Consumer, and `watcher`, which reads the projection and writes to `intel:writer`; every composition includes it first |
 | `newspack-intelligence-streams.tsl` | `intel:items`, `intel:ontology`, `intel:reresolve`, `intel:watches`, `intel:writer`, and `intel:later`, the Delay whose due records go to `intel:reresolve` |
 | `newspack-intelligence-collect.tsl` | The eight sources → `intel:writer`, as two halves it includes: `-collect-public`, GitHub on a 900-second grid, `feed` on 1,800 with client feeds on and `news`, a second feed node for searches, on 3,600; and `-collect-token`, Linear, Slack and Unthread on 900, `p2` and `p2-restricted` on 1,800, each under its Vault group, the two P2 nodes sharing `p2`, Unthread through `-collect-unthread`; includes the streams |
 | `newspack-intelligence-collect-unthread.tsl` | `unthread` at the restricted tier on 900, under its Vault group, → `intel:writer`, an include of its own so a collect reading the rest of the token half another way can keep it; includes the streams |
-| `newspack-intelligence-deployment.tsl` | Empty: what a deployment reads and cares about. No shipped file names a repo, feed, search, team, channel, site, profile line or audience, so GitHub, Linear, Slack, both P2 nodes and `news` fetch nothing, `feed` reads only the open clients' feeds, Unthread, which takes no list, reads as it would anyway, and the extractor frames its prompt for no one, scores against no profile and floors no kind. A deployment shadows this file from a stock dir it registers after this plugin's (`Topology_Registry::register_stock_dir()`, the dir registered last resolving a name first) with `cmd <node>:config add_…`, `add_profile`, `add_importance_floor` and `set_audience` lines; it is included last, so its lines reach every node the files above declare. A shadow cannot include the file it shadows, because the name resolves to itself, so this hook is where a deployment adds its lines without copying a shipped file. A deployment reading the token sources another way shadows `newspack-intelligence-collect` too, including `-collect-public`, its own nodes under the token half's names and `-collect-unthread` |
-| `newspack-intelligence-ontology-seed.json` | Not a topology: the fictional example seed `ontology seed` reads, which a deployment shadows from its stock dir as it shadows the deployment file (see Seeding) |
+| `newspack-intelligence-deployment` | Not shipped: what a deployment reads and cares about, which it keeps in the user topology dir, `<base_dir>/topologies/newspack-intelligence-deployment.tsl`, empty when it has no settings of its own. The shipped topologies name no repo, feed, search, team, channel, site, profile line or audience, so with an empty file GitHub, Linear, Slack, both P2 nodes and `news` fetch nothing, `feed` reads only the open clients' feeds, Unthread, which takes no list, reads as it would anyway, and the extractor frames its prompt for no one, scores against no profile and floors no kind. Its `cmd <node>:config add_…`, `add_profile`, `add_importance_floor` and `set_audience` lines reach every node the files before it declare, because the composition includes it last. With no such file in any topology dir the composition does not read: the worker cannot load, `wp nodes doctor` fails worker liveness naming the include and opens with a warning naming the path and that an empty file will do (`Intelligence_Health::warn_missing_deployment()`, on `before_invoke:nodes doctor`), and the health strip's `collection` row reads `no deployment file` naming the path. The user dir resolves after every stock dir, so the plugin ships no file of this name, which would win |
 | `newspack-intelligence-project.tsl` | `intel:items:consumer`, `intel:ontology:consumer` and `intel:watches:consumer`, each → `projector`, writing the `intel-graph` Row_Table; no other node rides their cursors |
 | `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later`, the items Consumer checkpointing the deduper; includes the streams |
 
@@ -1922,7 +1945,7 @@ its own one-shot commands; nothing polls.
 | `index.js` | — | Mounts `IntelligencePage` on `#newspack-intelligence-app`, handing it `canTune`, `canManage` and `vocabulary` from `NewspackNodesData` |
 | `IntelligencePage.js` | default | Opens on Briefing, its first tab, and switches Briefing, Search, Entity, Lenses, Review, Collections and Watches in place; holds the submitted search, the open entity, lens, collection and watch, the watch form's draft and the item being saved, so a view returns as it was left, and a lens's "Watch this" opens the watch form on that lens; the Briefing opens an entity, a lens or the lens list, a watch, the watch form or Search; a URL carrying `watch=<key>`, as the watcher's email links it, opens the page on Watches with that watch open, or on the list when the reader's watches do not hold it; mounts `HealthStrip` above the tab bar, on every view; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the `NEWSPACK::NODES` header subtitled `Intelligence` and the debug overlay |
 | `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite`, `commandArgs` | `commandArgs()` names every value given, a list once per member, leaving out a blank value or an empty list; a read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments; a write sent once per `run()` to the `intelligence` CI or the `ci` it names, which answers the tokens it sent, running `refresh` once it lands, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal, answered arguments and `pending` |
-| `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_id` and `last_error`, reads it whole; while collection is off every other row is listed neutral, never a fault; the projector catching up on the ontology is neutral until its hold has stood five minutes (`BEHIND_FAULT_S`), then a fault; with nothing held the backlog row counts the later queue's entries as items waiting to resolve or retry; every time it shows renders in the browser's own zone through the substrate's `formatLocalDateTime()`, while the dropped days stay the UTC days the server names, read as "Items parked from <first_day> to <last_day> were dropped before they resolved.", true of an entry aged out and of one the full queue refused; the line names each source no pass has reported ("Collecting from 5 of 6 sources; feed has not reported yet."), the names joined in the page's own language (`document.documentElement.lang`, else the browser's), and says the health is not fully known for any other unknown row, a source in a state it does not recognise included; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology`, `canManage` for the rest), and anyone else reads "An administrator can …" |
+| `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_id`, `last_error` and `file`, reads it whole; while collection is off every other row is listed neutral, never a fault, and its Activate fix mounts only when the slice names the one composition to activate, the row otherwise naming `wp nodes activate` as `<code>`; `unconfigured` is a fault naming the path the deployment file belongs at and that an empty file will do, or, for a reader the answer gives no `file`, that an administrator can create it; the projector catching up on the ontology is neutral until its hold has stood five minutes (`BEHIND_FAULT_S`), then a fault; with nothing held the backlog row counts the later queue's entries as items waiting to resolve or retry; every time it shows renders in the browser's own zone through the substrate's `formatLocalDateTime()`, while the dropped days stay the UTC days the server names, read as "Items parked from <first_day> to <last_day> were dropped before they resolved.", true of an entry aged out and of one the full queue refused; the line names each source no pass has reported ("Collecting from 5 of 6 sources; feed has not reported yet."), the names joined in the page's own language (`document.documentElement.lang`, else the browser's), and says the health is not fully known for any other unknown row, a source in a state it does not recognise included; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology`, `canManage` for the rest), and anyone else reads "An administrator can …" |
 | `views/Briefing.js` | default | The two `briefing` slices and `watches`, each its own read and card: "Last seven days", each client's items under its `EntityChip` and then the rest under "Industry", each an `ItemRow`, and, when the window held more than it shows, how many of how many; "Signals", each client's under its chip and each lens's under the button opening it, through `TrendTable`; "Your watches", each a `WatchRow` opening it; a card answering nothing says so and offers the one control that acts on it: Search everything, Open lenses or New watch |
 | `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time, in the order the answer's `sort` names, which the reader switches, sending `--sort` from the first page; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words, the order and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
 | `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens` above `search --lens` a page at a time, in the order the answer's `sort` names, which the reader switches, beside `trends --lens`; trend rows and signals citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
@@ -1979,7 +2002,7 @@ sibling checkout locally.
 
 | Path | What |
 |------|------|
-| `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus and the Settings page's admin-post helpers, WP-CLI, the `Intelligence_CI` mount, the MCP door's `wire()` |
+| `newspack-intelligence.php` | Bootstrap: substrate handshake, topology registration, admin menus and the Settings page's admin-post helpers, WP-CLI and its `before_invoke:nodes doctor` warning, the `Intelligence_CI` mount, the MCP door's `wire()` |
 | `includes/` (streams) | `Intel_Event`, `Intel_Event_Writer_Node`, `Projector_Node`, `Intel_Graph_Row_Schema`, `Url_Canon`, `Ontology_Seed` and its `Seed_Refused`, `Stream_Writer`, the `Emits_Struct` trait |
 | `includes/` (collect) | `Source_Node` and its six connectors; `Context_A8C_Source_Node`, its three local connectors and `Context_A8C_Token`, the process's hold on the relay's token |
 | `includes/` (resolve) | `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node`, `LLM_Entity_Extractor` and the `Entity_Extractor` interface |
@@ -1988,7 +2011,8 @@ sibling checkout locally.
 | `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Briefing`, `Intelligence_Health`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
 | `includes/` (watches) | `Watcher_Node` |
 | `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed [<file>]`, `ontology reresolve`, `ontology reextract` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; the `Refuses_Root` trait they share |
-| `topologies/` | The `.tsl` node-graph topologies, and the example ontology seed |
+| `topologies/` | The `.tsl` node-graph topologies |
+| `examples/` | The fictional ontology seed, the shape a deployment starts its own from |
 | `src/intelligence/` | The Intelligence page's React bundle |
 | `tests/` | PHPUnit (`unit/` + `bootstrap.php` + `support/` + `run-coverage.sh`; `integration/` exists but is empty) |
 | `scripts/` | Git hooks, the shared tooling copies, `bump-version.sh`, `build.mjs`, the lint and coverage gates |

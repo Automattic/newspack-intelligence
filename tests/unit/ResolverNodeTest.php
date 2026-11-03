@@ -1219,7 +1219,8 @@ final class ResolverNodeTest extends TestCase {
 
 	/** The composed graph resolves what it records. */
 	public function test_the_composed_topology_includes_resolution(): void {
-		$this->assertStringContainsString( "include newspack-intelligence-resolve\n", (string) \file_get_contents( \dirname( __DIR__, 2 ) . '/topologies/newspack-intelligence.tsl' ) );
+		$this->assertStringContainsString( "include newspack-intelligence-core\n", (string) \file_get_contents( \dirname( __DIR__, 2 ) . '/topologies/newspack-intelligence.tsl' ) );
+		$this->assertStringContainsString( "include newspack-intelligence-resolve\n", (string) \file_get_contents( \dirname( __DIR__, 2 ) . '/topologies/newspack-intelligence-core.tsl' ) );
 	}
 
 	/** An empty index's first hold publishes its reason and its start, and nothing else, for a month. */

@@ -2,23 +2,9 @@ var on_demand_idle = 0
 # An LLM call blocks one fill(); a 60s lock steal tears intel:items.
 var stale_timeout = 600
 var num_partitions = 1
-include topic-probe
-include newspack-intelligence-streams
+include newspack-intelligence-core
 include newspack-intelligence-collect
-include newspack-intelligence-project
-include newspack-intelligence-resolve
-# Re-resolution spans two files: the reresolver reads the ontology through
-# its own Consumer, which it checkpoints with, and appends the items to
-# re-resolve to intel:reresolve.
-make_node Consumer intel:ontology:reresolve <config:logs_dir>/intel-ontology.p{partition} <config:offsets_dir>/<topology>.intel-ontology-reresolve.p{partition} <config:deadletter_dir>/<topology>.intel-ontology-reresolve.p{partition}
-make_node Reresolver reresolver intel:reresolve
-command_node intel:ontology:reresolve:config add_snapshot_node reresolver
-command_node intel:ontology:reresolve:config set_multi_writer true
-connect_node intel:ontology:reresolve reresolver
-# The watcher reads the projection as each watch's owner every five minutes
-# and writes its matches and marks to intel:writer, which the streams file
-# declares.
-make_node Watcher watcher intel:writer
-# Last, so a deployment's lines reach every node above.
+# Last, so a deployment's lines reach every node above. The deployment keeps
+# this file in the user topology dir, empty if it has no settings of its own.
 include newspack-intelligence-deployment
 secure

@@ -45,6 +45,7 @@ class TopologyDurabilityTest extends TestCase {
 		Topology_Registry::reset();
 		Topology_Registry::register_builtin_dir( \dirname( __DIR__, 3 ) . '/newspack-nodes/topologies' );
 		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
+		Topology_Registry::register_user_dir( \dirname( __DIR__ ) . '/fixtures/user-topologies' );
 	}
 
 	protected function tearDown(): void {
@@ -278,14 +279,66 @@ class TopologyDurabilityTest extends TestCase {
 		$this->assertSame( [ [], '' ], [ $this->read_private( Core::node( 'extractor' ), 'profiles' ), $this->read_private( Core::node( 'extractor' ), 'audience' ) ] );
 	}
 
+	/** The plugin ships neither file a deployment owns, so neither can shadow a deployment's own. */
+	public function test_the_shipped_topologies_hold_no_deployment_file_and_no_seed(): void {
+		$shipped = \array_map( 'basename', \glob( \dirname( __DIR__, 2 ) . '/topologies/*' ) ?: [] );
+
+		$this->assertNotSame( [], $shipped );
+		$this->assertNotContains( 'newspack-intelligence-deployment.tsl', $shipped );
+		$this->assertNotContains( 'newspack-intelligence-ontology-seed.json', $shipped );
+	}
+
 	/**
-	 * A deployment shadows `newspack-intelligence-deployment` from a stock dir
-	 * registered after this plugin's, and its lines land on the nodes the
-	 * files before it declare, in order, each URL kept whole through the
-	 * shell's parse: its quotes, `&`, `+` and `%` escapes.
+	 * The composition is its frontmatter, the core, its collect and the
+	 * deployment file last, so a deployment composing its own collect
+	 * copies those lines and nothing of the core.
+	 */
+	public function test_the_composition_is_its_frontmatter_core_collect_and_deployment(): void {
+		$lines = \array_values( \array_filter( \array_map( 'trim', \file( \dirname( __DIR__, 2 ) . '/topologies/newspack-intelligence.tsl' ) ?: [] ), static fn ( string $line ): bool => '' !== $line && ! \str_starts_with( $line, '#' ) ) );
+
+		$this->assertSame(
+			[
+				'var on_demand_idle = 0',
+				'var stale_timeout = 600',
+				'var num_partitions = 1',
+				'include newspack-intelligence-core',
+				'include newspack-intelligence-collect',
+				'include newspack-intelligence-deployment',
+				'secure',
+			],
+			$lines
+		);
+	}
+
+	/** The core part declares every node but the collect's, the reresolver and the watcher among them. */
+	public function test_the_core_declares_every_node_but_the_collects(): void {
+		Topology_Registry::register_user_dir( \dirname( __DIR__ ) . '/fixtures/topologies' );
+		$names = static fn ( string $topology ): array => \array_column( Topology_Analyzer::graph_for( $topology )['nodes'], 'name' );
+		$core  = $names( 'newspack-intelligence-core' );
+
+		$this->assertContains( 'reresolver', $core );
+		$this->assertContains( 'watcher', $core );
+		$this->assertContains( 'intel:ontology:reresolve', $core );
+		$this->assertEqualsCanonicalizing( $names( 'newspack-intelligence' ), \array_values( \array_unique( [ ...$core, ...$names( 'newspack-intelligence-collect' ) ] ) ) );
+	}
+
+	/** With no deployment file in any topology dir the composition does not load, naming the include. */
+	public function test_the_composition_without_a_deployment_file_fails_to_load(): void {
+		Topology_Registry::register_user_dir( $this->make_temp_dir( 'intelligence-durability-bare-' ) );
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'Shell: include: file not found: newspack-intelligence-deployment' );
+		$this->load( 'newspack-intelligence' );
+	}
+
+	/**
+	 * A deployment keeps `newspack-intelligence-deployment` in the user
+	 * topology dir, and its lines land on the nodes the files before it
+	 * declare, in order, each URL kept whole through the shell's parse: its
+	 * quotes, `&`, `+` and `%` escapes.
 	 */
 	public function test_a_deployment_file_supplies_the_lists_profile_and_audience(): void {
-		Topology_Registry::register_stock_dir( \dirname( __DIR__ ) . '/fixtures/topologies' );
+		Topology_Registry::register_user_dir( \dirname( __DIR__ ) . '/fixtures/topologies' );
 		$this->load( 'newspack-intelligence' );
 
 		$this->assertSame( [ 'heron-example/kite-ledger', 'heron-example/quarry-wire' ], $this->read_private( Core::node( 'github' ), 'repos' ) );

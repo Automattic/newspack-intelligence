@@ -40,6 +40,7 @@ final class IntelligenceCITest extends TestCase {
 		parent::setUp();
 		Topology_Analyzer::reset_caches();
 		$this->start_intel_graph();
+		$this->activate( 'newspack-intelligence' );
 		$GLOBALS['_wp_test_current_user_can']['manage_options'] = true;
 		$GLOBALS['_current_user_can']                           = true;
 		self::sign_in( 3373, 'harbor-desk', 'manage_options' );

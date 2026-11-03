@@ -26,7 +26,7 @@ final class OntologySeedTest extends TestCase {
 	use Reads_Ontology_Log;
 	use Seeds_Entity_Index;
 
-	/** The fictional fixture dir, which shadows the plugin's example seed. */
+	/** The fictional fixture dir, holding a seed of its own. */
 	private const FIXTURES = __DIR__ . '/../fixtures/topologies';
 
 	protected function setUp(): void {
@@ -254,12 +254,9 @@ final class OntologySeedTest extends TestCase {
 		$this->assertSame( [ 'Plover Wharf Trust' ], \array_column( $proposals, 'name' ) );
 	}
 
-	/** The plugin's own seed, read with no deployment's dir registered, is a fictional example that validates. */
+	/** The example the plugin ships, outside every topology dir, is fictional and validates. */
 	public function test_the_shipped_example_seed_validates(): void {
-		Topology_Registry::reset();
-		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
-
-		$events = Ontology_Seed::load()->events( [] );
+		$events = Ontology_Seed::load( \NEWSPACK_INTELLIGENCE_DIR . 'examples/' . Ontology_Seed::FILE )->events( [] );
 
 		$this->assertNotSame( [], \array_filter( $events, static fn ( array $e ): bool => 'lens_saved' === $e['event'] ) );
 		foreach ( \array_filter( $events, static fn ( array $e ): bool => 'identifier_added' === $e['event'] && 'domain' === $e['kind'] ) as $domain ) {
@@ -270,11 +267,32 @@ final class OntologySeedTest extends TestCase {
 		}
 	}
 
-	public function test_no_seed_file_in_any_dir_is_refused(): void {
+	/** A deployment's seed in the user topology dir is the one a seed reads. */
+	public function test_the_user_dir_seed_is_read(): void {
+		$user = $this->make_temp_dir( 'intel-seed-user-' );
+		\copy( self::FIXTURES . '/' . Ontology_Seed::FILE, "{$user}/" . Ontology_Seed::FILE );
 		Topology_Registry::reset();
+		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
+		Topology_Registry::register_user_dir( $user );
+
+		$created = \array_column( \array_filter( Ontology_Seed::load()->events( [] ), static fn ( array $e ): bool => 'entity_created' === $e['event'] ), 'entity_key' );
+
+		$this->assertContains( 'topic:tide-tables', $created );
+	}
+
+	/**
+	 * With no seed in any topology dir, a caller below manage is told the
+	 * file belongs in the user topology dir and where the plugin keeps the
+	 * example, and no absolute path.
+	 */
+	public function test_no_seed_file_in_any_dir_is_refused(): void {
+		$user = $this->make_temp_dir( 'intel-seed-bare-' );
+		Topology_Registry::reset();
+		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
+		Topology_Registry::register_user_dir( $user );
 
 		$this->expectException( Seed_Refused::class );
-		$this->expectExceptionMessage( 'No newspack-intelligence-ontology-seed.json is in any topology dir.' );
+		$this->expectExceptionMessage( 'No newspack-intelligence-ontology-seed.json in any topology dir: write a seed for this site as newspack-intelligence-ontology-seed.json in the user topology dir, starting from the example the plugin ships at examples/newspack-intelligence-ontology-seed.json.' );
 		Ontology_Seed::load();
 	}
 
@@ -331,7 +349,7 @@ final class OntologySeedTest extends TestCase {
 			Ontology_Seed::load( $path )->seed();
 			$this->fail( 'the seed reads a bad file' );
 		} catch ( Seed_Refused $e ) {
-			$this->assertStringStartsWith( "{$path}: {$field}", $e->getMessage() );
+			$this->assertStringStartsWith( "seed.json: {$field}", $e->getMessage() );
 		}
 		$this->assertSame( [], self::ontology_events() );
 	}
@@ -340,7 +358,7 @@ final class OntologySeedTest extends TestCase {
 		$path = $this->make_temp_dir( 'intel-seed-' ) . '/absent-4471.json';
 
 		$this->expectException( Seed_Refused::class );
-		$this->expectExceptionMessage( "No seed file at {$path}." );
+		$this->expectExceptionMessage( 'No seed file at absent-4471.json.' );
 		Ontology_Seed::load( $path );
 	}
 

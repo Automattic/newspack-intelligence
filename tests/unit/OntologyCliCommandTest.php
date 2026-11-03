@@ -40,6 +40,7 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->start_entity_graph();
 		Topology_Registry::register_stock_dir( \dirname( __DIR__ ) . '/fixtures/topologies' );
 		$this->activate( 'newspack-intelligence-project' );
+		$this->run_intelligence_as( 'skua-intel' );
 	}
 
 	protected function tearDown(): void {
@@ -73,6 +74,83 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame( [ 'Seeded 1 events: 1 keys new, 0 present.' ], \WP_CLI::$successes );
 	}
 
+	/**
+	 * With no seed in any topology dir, the command and the `seed_ontology`
+	 * verb each refuse naming the user-dir path it belongs at, and write
+	 * nothing.
+	 */
+	public function test_seed_with_no_seed_file_refuses_naming_where_it_belongs(): void {
+		$user = $this->make_temp_dir( 'intel-seed-shrike-' );
+		Topology_Registry::reset();
+		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
+		Topology_Registry::register_user_dir( $user );
+		self::sign_in( 5167, 'shrike-curator', 'manage_options' );
+		$GLOBALS['_current_user_can'] = true;
+		$ci                           = new Intelligence_CI_Node();
+		$ci->name( 'intelligence' );
+
+		( new Ontology_CLI_Command() )->seed( [], [] );
+		try {
+			$ci->dispatch( 'seed_ontology', [] );
+			$this->fail( 'the verb seeds with no seed file' );
+		} catch ( \Newspack_Intelligence\Seed_Refused $e ) {
+			$verb = $e->getMessage();
+		}
+
+		$this->assertCount( 1, \WP_CLI::$errors );
+		$this->assertStringContainsString( "write a seed for this site to {$user}/newspack-intelligence-ontology-seed.json", \WP_CLI::$errors[0] );
+		$this->assertSame( \WP_CLI::$errors[0], $verb );
+		$this->assertSame( [], self::ontology_events() );
+	}
+
+	/** A tune caller's `seed_ontology` refusal names no absolute path, neither the user dir nor the plugin's. */
+	public function test_a_tune_callers_seed_refusal_names_no_absolute_path(): void {
+		$user = $this->make_temp_dir( 'intel-seed-dipper-' );
+		Topology_Registry::reset();
+		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
+		Topology_Registry::register_user_dir( $user );
+		self::sign_in( 5291, 'dipper-curator', 'manage_options' );
+		$GLOBALS['_current_user_can']                = true;
+		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::TUNE;
+		$ci                                          = new Intelligence_CI_Node();
+		$ci->name( 'intelligence' );
+
+		try {
+			$ci->dispatch( 'seed_ontology', [] );
+			$this->fail( 'the verb seeds with no seed file' );
+		} catch ( \Newspack_Intelligence\Seed_Refused $e ) {
+			$refusal = $e->getMessage();
+		}
+
+		$this->assertStringNotContainsString( $user, $refusal );
+		$this->assertStringNotContainsString( \NEWSPACK_INTELLIGENCE_DIR, $refusal );
+		$this->assertStringContainsString( 'in the user topology dir, starting from the example the plugin ships at examples/newspack-intelligence-ontology-seed.json.', $refusal );
+	}
+
+	/** A tune caller's `seed_ontology` refusal of a bad seed names the file by its name alone, and nothing is written. */
+	public function test_a_tune_callers_bad_seed_refusal_names_no_absolute_path(): void {
+		$user = $this->make_temp_dir( 'intel-seed-phalarope-' );
+		\file_put_contents( "{$user}/newspack-intelligence-ontology-seed.json", '{"entities":{"organization":{"gull-fund":{"name":"Gull Fund","roles":["patron"]}}},"lenses":{}}' );
+		Topology_Registry::reset();
+		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
+		Topology_Registry::register_user_dir( $user );
+		self::sign_in( 5303, 'phalarope-curator', 'manage_options' );
+		$GLOBALS['_current_user_can']                = true;
+		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::TUNE;
+		$ci                                          = new Intelligence_CI_Node();
+		$ci->name( 'intelligence' );
+
+		try {
+			$ci->dispatch( 'seed_ontology', [] );
+			$this->fail( 'the verb seeds a bad file' );
+		} catch ( \Newspack_Intelligence\Seed_Refused $e ) {
+			$refusal = $e->getMessage();
+		}
+
+		$this->assertSame( 'newspack-intelligence-ontology-seed.json: entities.organization.gull-fund.roles: role_asserted: field role is outside its set', $refusal );
+		$this->assertSame( [], self::ontology_events() );
+	}
+
 	/** A file the seed refuses reaches WP-CLI's error naming the field, and nothing is written. */
 	public function test_seed_refuses_a_bad_file_naming_the_field(): void {
 		$path = $this->make_temp_dir( 'intel-seed-' ) . '/heron-seed.json';
@@ -80,7 +158,7 @@ final class OntologyCliCommandTest extends TestCase {
 
 		( new Ontology_CLI_Command() )->seed( [ $path ], [] );
 
-		$this->assertSame( [ "{$path}: entities.organization.gull-fund.roles: role_asserted: field role is outside its set" ], \WP_CLI::$errors );
+		$this->assertSame( [ 'heron-seed.json: entities.organization.gull-fund.roles: role_asserted: field role is outside its set' ], \WP_CLI::$errors );
 		$this->assertSame( [], self::ontology_events() );
 		$this->assertSame( [], \WP_CLI::$successes );
 	}
@@ -127,22 +205,22 @@ final class OntologyCliCommandTest extends TestCase {
 
 	/** `reresolve` asks each live worker's reresolver to re-resolve a day range. */
 	public function test_reresolve_routes_the_range_to_the_reresolver(): void {
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p3' );
 
 		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2026-03-09', 'until' => '2026-04-17' ] );
 
 		$this->assertSame(
 			[ [ Message::TM_REQUEST, 'reresolver', 'RERESOLVE 2026-03-09 2026-04-17' ] ],
-			\array_map( static fn ( array $m ): array => [ $m[ Message::TYPE ], $m[ Message::TO ], $m[ Message::VALUE ] ], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p3' ) )
+			\array_map( static fn ( array $m ): array => [ $m[ Message::TYPE ], $m[ Message::TO ], $m[ Message::VALUE ] ], self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ) )
 		);
 		$this->assertSame( [ 'Asked 1 worker to re-resolve the items dated 2026-03-09 to 2026-04-17.' ], \WP_CLI::$successes );
 	}
 
 	/** The command reports the workers it reached, not the locks it found. */
 	public function test_reresolve_reports_the_workers_it_reached(): void {
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p1' );
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p2' );
-		\mkdir( Config::get_base_directory() . '/locks/newspack-intelligence.p4.lock.d', 0777, true );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p1' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p2' );
+		\mkdir( Config::get_base_directory() . '/locks/skua-intel.p4.lock.d', 0777, true );
 
 		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2026-05-11', 'until' => '2026-05-12' ] );
 
@@ -151,12 +229,12 @@ final class OntologyCliCommandTest extends TestCase {
 
 	/** With no --until the range runs through today, UTC. */
 	public function test_reresolve_runs_through_today_by_default(): void {
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p0' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p0' );
 
 		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2025-11-30' ] );
 
 		$today = \gmdate( 'Y-m-d' );
-		$this->assertSame( [ "RERESOLVE 2025-11-30 {$today}" ], \array_column( self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p0' ), Message::VALUE ) );
+		$this->assertSame( [ "RERESOLVE 2025-11-30 {$today}" ], \array_column( self::worker_input( Config::get_base_directory(), 'skua-intel.p0' ), Message::VALUE ) );
 	}
 
 	/**
@@ -180,39 +258,39 @@ final class OntologyCliCommandTest extends TestCase {
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_ranges' )]
 	public function test_reresolve_refuses_a_bad_range( array $flags, string $refusal ): void {
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p0' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p0' );
 
 		( new Ontology_CLI_Command() )->reresolve( [], $flags );
 
 		$this->assertSame( [ $refusal ], \WP_CLI::$errors );
-		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p0' ) );
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'skua-intel.p0' ) );
 		$this->assertSame( [], \WP_CLI::$successes );
 	}
 
 	public function test_reresolve_fails_loud_with_no_live_worker(): void {
 		$this->expectException( \RuntimeException::class );
-		$this->expectExceptionMessage( 'No newspack-intelligence worker could be reached' );
+		$this->expectExceptionMessage( 'No skua-intel worker could be reached' );
 		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2026-03-09', 'until' => '2026-04-17' ] );
 	}
 
 	/** `reextract` sends a REEXTRACT range when its calls fit its limit, naming how many. */
 	public function test_reextract_asks_for_a_range_within_its_limit(): void {
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p3' );
 		$this->seed_dated( 'feed:kestrel-1', 'feed:kestrel-2', 'feed:kestrel-3' );
 
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-04', 'limit' => '3' ] );
 
 		$this->assertSame(
 			[ [ Message::TM_REQUEST, 'reresolver', 'REEXTRACT 2026-08-03 2026-08-04' ] ],
-			\array_map( static fn ( array $m ): array => [ $m[ Message::TYPE ], $m[ Message::TO ], $m[ Message::VALUE ] ], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p3' ) )
+			\array_map( static fn ( array $m ): array => [ $m[ Message::TYPE ], $m[ Message::TO ], $m[ Message::VALUE ] ], self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ) )
 		);
 		$this->assertSame( [ 'Asked 1 worker to re-extract the items dated 2026-08-03 to 2026-08-04: 3 model calls, a failed one retried up to 5 times.' ], \WP_CLI::$successes );
 	}
 
 	/** Every live worker re-extracts the whole range, so its calls are the items times the workers. */
 	public function test_reextract_counts_a_call_per_item_per_live_worker(): void {
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p1' );
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p2' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p1' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p2' );
 		$this->seed_dated( 'feed:kestrel-1', 'feed:kestrel-2', 'feed:kestrel-3' );
 
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'limit' => '5' ] );
@@ -220,30 +298,30 @@ final class OntologyCliCommandTest extends TestCase {
 
 		$this->assertSame( [ 'ontology reextract would make 6 model calls, 3 items dated 2026-08-03 to ' . \gmdate( 'Y-m-d' ) . ' times 2 live workers, above --limit=5, and a failed call may retry up to 5 times; raise --limit to run it.' ], \WP_CLI::$errors );
 		$this->assertSame( [ 'Asked 2 workers to re-extract the items dated 2026-08-03 to 2026-08-03: 6 model calls, a failed one retried up to 5 times.' ], \WP_CLI::$successes );
-		$this->assertSame( [ 'REEXTRACT 2026-08-03 2026-08-03' ], \array_column( self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p2' ), Message::VALUE ) );
+		$this->assertSame( [ 'REEXTRACT 2026-08-03 2026-08-03' ], \array_column( self::worker_input( Config::get_base_directory(), 'skua-intel.p2' ), Message::VALUE ) );
 	}
 
 	/** Above its limit `reextract` refuses, naming the calls, and sends nothing. */
 	public function test_reextract_refuses_above_its_limit_naming_the_count(): void {
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p3' );
 		$this->seed_dated( 'feed:kestrel-1', 'feed:kestrel-2', 'feed:kestrel-3' );
 
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-04', 'limit' => '2' ] );
 
 		$this->assertSame( [ 'ontology reextract would make 3 model calls, 3 items dated 2026-08-03 to 2026-08-04 times 1 live worker, above --limit=2, and a failed call may retry up to 5 times; raise --limit to run it.' ], \WP_CLI::$errors );
-		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p3' ) );
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ) );
 		$this->assertSame( [ 200, [] ], [ Ontology_CLI_Command::REEXTRACT_LIMIT, \WP_CLI::$successes ] );
 	}
 
 	/** A range dating no item sends nothing and says so. */
 	public function test_reextract_sends_nothing_for_a_range_dating_no_item(): void {
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p3' );
 		$this->seed_dated( 'feed:kestrel-1' );
 
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-05', 'until' => '2026-08-06' ] );
 
 		$this->assertSame( [ 'No item is dated 2026-08-05 to 2026-08-06; nothing to re-extract.' ], \WP_CLI::$successes );
-		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p3' ) );
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ) );
 	}
 
 	/**
@@ -251,7 +329,7 @@ final class OntologyCliCommandTest extends TestCase {
 	 * runs them, carrying `--limit` only when the calls pass the default.
 	 */
 	public function test_reextract_dry_run_prints_the_count_and_the_command(): void {
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p3' );
 		$this->seed_dated( 'feed:kestrel-1', 'feed:kestrel-2' );
 
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'limit' => '1', 'dry-run' => true ] );
@@ -263,13 +341,13 @@ final class OntologyCliCommandTest extends TestCase {
 			],
 			\WP_CLI::$logs
 		);
-		$this->assertSame( [ [], [], [] ], [ self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p3' ), \WP_CLI::$successes, \WP_CLI::$errors ] );
+		$this->assertSame( [ [], [], [] ], [ self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ), \WP_CLI::$successes, \WP_CLI::$errors ] );
 	}
 
 	/** A dry run past the default limit prints the command with the limit its calls need. */
 	public function test_reextract_dry_run_names_the_limit_past_the_default(): void {
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p1' );
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p2' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p1' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p2' );
 		$this->seed_dated( ...\array_map( static fn ( int $i ): string => "feed:heron-{$i}", \range( 1, 101 ) ) );
 
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'dry-run' => true ] );
@@ -280,12 +358,12 @@ final class OntologyCliCommandTest extends TestCase {
 
 	/** A bad range is refused before anything is read or sent. */
 	public function test_reextract_refuses_a_bad_range(): void {
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p3' );
 
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-04', 'until' => '2026-08-03' ] );
 
 		$this->assertSame( [ 'since 2026-08-04 is after until 2026-08-03' ], \WP_CLI::$errors );
-		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p3' ) );
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ) );
 	}
 
 	/** A limit that is not a positive whole number is refused. */
@@ -392,7 +470,7 @@ final class OntologyCliCommandTest extends TestCase {
 
 	/** Run as root, each verb refuses before it writes, so no root-owned segment, IPC file or hold is left for the workers. */
 	public function test_every_verb_refuses_root_before_any_write(): void {
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p5' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p5' );
 		CLI::$uid_provider = static fn (): int => 0;
 
 		( new Ontology_CLI_Command() )->seed( [], [] );
@@ -411,7 +489,7 @@ final class OntologyCliCommandTest extends TestCase {
 		);
 		$this->assertSame( [], \WP_CLI::$ran );
 		$this->assertSame( 0, self::ontology_segments() );
-		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p5' ) );
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'skua-intel.p5' ) );
 		$this->assertSame( [], \WP_CLI::$successes );
 	}
 

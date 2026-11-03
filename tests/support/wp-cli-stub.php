@@ -5,7 +5,8 @@ declare(strict_types=1);
 // branches (error / success reporting) execute under test. Records messages
 // instead of exiting; production hits `return;` after WP_CLI::error() anyway.
 // Records each `add_command()` too, name => callable, for the usage-overview
-// rule, and each `runcommand()`, handing it to `$on_run` when one is set.
+// rule, each `add_hook()`, hook => its callables, each `warning()`, and each
+// `runcommand()`, handing it to `$on_run` when one is set.
 // Guarded so more than one test file can require it.
 
 if ( ! class_exists( 'WP_CLI' ) ) {
@@ -18,6 +19,10 @@ if ( ! class_exists( 'WP_CLI' ) ) {
 		public static array $successes = [];
 		/** @var array<int,string> */
 		public static array $logs = [];
+		/** @var array<int,string> */
+		public static array $warnings = [];
+		/** @var array<string,list<callable>> */
+		public static array $hooks = [];
 		/** @var list<array{0:string,1:array<string,mixed>}> */
 		public static array $ran = [];
 		public static ?\Closure $on_run = null;
@@ -32,6 +37,12 @@ if ( ! class_exists( 'WP_CLI' ) ) {
 		}
 		public static function log( string $message ): void {
 			self::$logs[] = $message;
+		}
+		public static function warning( string $message ): void {
+			self::$warnings[] = $message;
+		}
+		public static function add_hook( string $when, callable $callback ): void {
+			self::$hooks[ $when ][] = $callback;
 		}
 		/**
 		 * @param array<string,mixed> $options
@@ -48,6 +59,8 @@ if ( ! class_exists( 'WP_CLI' ) ) {
 			self::$errors    = [];
 			self::$successes = [];
 			self::$logs      = [];
+			self::$warnings  = [];
+			self::$hooks     = [];
 			self::$ran       = [];
 			self::$on_run    = null;
 		}

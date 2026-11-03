@@ -1,4 +1,4 @@
-import { useState } from '@wordpress/element';
+import { createInterpolateElement, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { answerStatus } from '@newspack-nodes/shared/utils/answerStatus';
 import { formatLocalDateTime } from '@newspack-nodes/shared/utils/formatUtils';
@@ -18,7 +18,7 @@ const BEHIND_FAULT_S = 300;
 /** The prefix of a source row's key, which its name follows. */
 const SOURCE_ROW = 'source:';
 
-/** @typedef {{key: string, label: string, state: string, tone: string, fault: boolean, unknown: boolean, text: string, fix: ?import('react').ReactNode}} HealthRow */
+/** @typedef {{key: string, label: string, state: string, tone: string, fault: boolean, unknown: boolean, text: import('react').ReactNode, fix: ?import('react').ReactNode}} HealthRow */
 
 /** @typedef {{word: string, tone: string, fault?: boolean, unknown?: boolean, text: Function, fix?: Function}} HealthState */
 
@@ -270,25 +270,54 @@ const STATES = {
 		inactive: {
 			word: __( 'inactive', 'newspack-intelligence' ),
 			tone: 'is-neutral',
-			text: () => __( 'Collection is off.', 'newspack-intelligence' ),
-			fix: ( { topology }, ctx ) => (
-				<Fix
-					can={ ctx.canManage }
-					label={ __( 'Activate', 'newspack-intelligence' ) }
-					action={ __(
-						'activate collection',
-						'newspack-intelligence'
-					) }
-					verb="activate"
-					ci="topologies"
-					refresh={ ctx.refresh }
-					args={ { name: topology } }
-					texts={ {
-						busy: __( 'Activating…', 'newspack-intelligence' ),
-						ok: __( 'Activated.', 'newspack-intelligence' ),
-					} }
-				/>
-			),
+			text: ( { topology } ) =>
+				topology
+					? __( 'Collection is off.', 'newspack-intelligence' )
+					: createInterpolateElement(
+							__(
+								'Collection is off; <code>wp nodes activate</code> turns on the topology that composes Intelligence.',
+								'newspack-intelligence'
+							),
+							{ code: <code /> }
+					  ),
+			fix: ( { topology }, ctx ) =>
+				topology && (
+					<Fix
+						can={ ctx.canManage }
+						label={ __( 'Activate', 'newspack-intelligence' ) }
+						action={ __(
+							'activate collection',
+							'newspack-intelligence'
+						) }
+						verb="activate"
+						ci="topologies"
+						refresh={ ctx.refresh }
+						args={ { name: topology } }
+						texts={ {
+							busy: __( 'Activating…', 'newspack-intelligence' ),
+							ok: __( 'Activated.', 'newspack-intelligence' ),
+						} }
+					/>
+				),
+		},
+		unconfigured: {
+			word: __( 'no deployment file', 'newspack-intelligence' ),
+			tone: 'is-error',
+			fault: true,
+			text: ( { file } ) =>
+				file
+					? sprintf(
+							/* translators: %s: the path the deployment file belongs at. */
+							__(
+								'No deployment file: create %s, empty if this site has no settings of its own.',
+								'newspack-intelligence'
+							),
+							file
+					  )
+					: __(
+							'An administrator can create the deployment file.',
+							'newspack-intelligence'
+					  ),
 		},
 		stale: {
 			word: __( 'stale', 'newspack-intelligence' ),
@@ -802,7 +831,7 @@ function listFormat() {
  * @param {Array<Object>}    strip.reads      The four reads.
  * @param {?Object}          strip.collection The collection slice.
  * @param {?Object}          strip.sources    The sources slice.
- * @return {string} The line.
+ * @return {import('react').ReactNode} The line.
  */
 function healthLine( { faults, rows, reads, collection, sources } ) {
 	if ( faults.length ) {

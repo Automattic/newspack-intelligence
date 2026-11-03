@@ -29,13 +29,17 @@ trait Seeds_Entity_Index {
 	/** The projector the fixture entities are written through. */
 	private ?Projector_Node $seeder = null;
 
-	/** A runtime base, the plugin's namespace and a projector to seed with. */
+	/**
+	 * A runtime base, the plugin's namespace, a user topology dir holding
+	 * an empty deployment file, and a projector to seed with.
+	 */
 	private function start_entity_graph(): void {
 		$this->use_base_dir( $this->make_temp_dir( 'intel-entities-' ) );
 		Core::$var['partition'] = '0';
 		Topology_Registry::reset();
 		Topology_Registry::register_builtin_dir( \dirname( __DIR__, 3 ) . '/newspack-nodes/topologies' );
 		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
+		Topology_Registry::register_user_dir( \dirname( __DIR__ ) . '/fixtures/user-topologies' );
 		$this->seeder = $this->projector_graph();
 		( new \ReflectionProperty( Entity_Index::class, 'current' ) )->setValue( null, null );
 	}

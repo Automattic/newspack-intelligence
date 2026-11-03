@@ -1,6 +1,0 @@
-# What a deployment reads and cares about: its sources' lists, and the
-# extractor's relevance profile and audience. Shipped empty, so no source
-# holds a list; a deployment shadows this file from a stock dir it registers
-# after this plugin's, with `cmd <node>:config` lines over the nodes the
-# files before it declare.
-secure

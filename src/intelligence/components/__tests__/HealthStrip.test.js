@@ -387,6 +387,45 @@ describe( 'HealthStrip', () => {
 		).toBeInTheDocument();
 	} );
 
+	it( 'offers no Activate while no one composition is known', async () => {
+		health.collection = { state: 'inactive', topology: null };
+		renderStrip( { canManage: true } );
+		await lineReads( 'Collection is off.' );
+		fireEvent.click( toggle() );
+		const command = within( row( 'Collection' ) ).getByText(
+			'wp nodes activate'
+		);
+		expect( command.tagName ).toBe( 'CODE' );
+		expect( command.parentElement ).toHaveTextContent(
+			'Collection is off; wp nodes activate turns on the topology that composes Intelligence.'
+		);
+		expect(
+			screen.queryByRole( 'button', { name: 'Activate' } )
+		).toBeNull();
+	} );
+
+	it( 'names where the deployment file belongs, and that empty will do', async () => {
+		health.collection = {
+			state: 'unconfigured',
+			file: '/srv/kestrel-nodes/topologies/newspack-intelligence-deployment.tsl',
+		};
+		renderStrip( { canManage: true } );
+		await worstFault(
+			'No deployment file: create /srv/kestrel-nodes/topologies/newspack-intelligence-deployment.tsl, empty if this site has no settings of its own.'
+		);
+		expect( strip() ).toHaveClass( 'is-warning' );
+		expect(
+			within( row( 'Collection' ) ).getByText( 'no deployment file' )
+		).toHaveClass( 'is-error' );
+	} );
+
+	it( 'tells a reader with no path that an administrator creates the deployment file', async () => {
+		health.collection = { state: 'unconfigured' };
+		renderStrip( { canManage: false } );
+		await worstFault( 'An administrator can create the deployment file.' );
+		expect( screen.queryByText( /\/topologies\// ) ).toBeNull();
+	} );
+
 	it( 'restart offered only for stale', async () => {
 		health.collection.state = 'stale';
 		wire.replies.restart = { restarted: 1 };

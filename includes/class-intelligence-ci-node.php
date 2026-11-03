@@ -26,12 +26,9 @@ use Newspack_Nodes\Topology_Analyzer;
 
 class Intelligence_CI_Node extends Service_CI_Node {
 
-	/** The topology whose Source nodes `fetch_now` ticks and `health sources` reads. */
-	private const COLLECT_TOPOLOGY = 'newspack-intelligence-collect';
-
 	/**
-	 * A TICK request for every Source node the collect topology declares, in
-	 * its order, as `Worker_Route::send()` takes them.
+	 * A TICK request for every Source node Intelligence's topology declares,
+	 * in its order, as `Worker_Route::send()` takes them.
 	 *
 	 * @return list<array{0:string,1:string}>
 	 */
@@ -40,14 +37,17 @@ class Intelligence_CI_Node extends Service_CI_Node {
 	}
 
 	/**
-	 * Every Source node the collect topology declares, in its order, as
-	 * `Topology_Analyzer::nodes_of_type()` exports each.
+	 * Every Source node Intelligence's topology declares, in its order, as
+	 * `Topology_Analyzer::nodes_of_type()` exports each; none while
+	 * collection is off.
 	 *
 	 * @api Read by Intelligence_Health.
 	 * @return list<array<string,mixed>>
+	 * @throws \RuntimeException When `Worker_Route::running()` cannot name one topology.
 	 */
 	public static function sources(): array {
-		return Topology_Analyzer::nodes_of_type( self::COLLECT_TOPOLOGY, Source_Node::class );
+		$topology = Worker_Route::running();
+		return null === $topology ? [] : Topology_Analyzer::nodes_of_type( $topology, Source_Node::class );
 	}
 
 	/**

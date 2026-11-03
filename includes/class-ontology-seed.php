@@ -12,6 +12,8 @@
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Bootstrap;
+use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Table_Unavailable;
@@ -23,8 +25,9 @@ final class Ontology_Seed {
 
 	/**
 	 * The seed file, found as `Topology_Registry::resolve_file()` finds a
-	 * name, so the dir a deployment registers last shadows the plugin's
-	 * fictional example.
+	 * name: a deployment keeps it in the user topology dir. The plugin's
+	 * fictional example, the shape to start from, sits in `examples/`,
+	 * outside every topology dir.
 	 */
 	public const FILE = 'newspack-intelligence-ontology-seed.json';
 
@@ -61,7 +64,7 @@ final class Ontology_Seed {
 	/**
 	 * A seed read from its file.
 	 *
-	 * @param string $path The file, named in every refusal.
+	 * @param string $path The file, named by its basename in every refusal.
 	 */
 	private function __construct( private readonly string $path ) {}
 
@@ -131,18 +134,18 @@ final class Ontology_Seed {
 	}
 
 	/**
-	 * The seed a file holds: the one given, else the one the topology dirs
-	 * resolve, its events minted as it is read, so whatever `Intel_Event`
+	 * The seed a file holds: the one given, else the one the topology dirs,
+	 * the user dir among them, resolve, its events minted as it is read, so whatever `Intel_Event`
 	 * refuses — a type, kind or role outside its set, an event past one
 	 * line — is refused here, naming the file and the field.
 	 *
 	 * @param string|null $path A seed file, or null for the resolved one.
-	 * @throws Seed_Refused When no file is found, or the file does not parse or names what the graph has no word for, naming the field.
+	 * @throws Seed_Refused When no file is found, naming where it belongs and the example, or the file does not parse or names what the graph has no word for, naming the field.
 	 */
 	public static function load( ?string $path = null ): self {
-		$path ??= Topology_Registry::resolve_file( self::FILE ) ?? throw new Seed_Refused( 'No ' . self::FILE . ' is in any topology dir.' );
+		$path ??= self::resolved();
 		if ( ! \is_file( $path ) || ! \is_readable( $path ) ) {
-			throw new Seed_Refused( \esc_html( "No seed file at {$path}." ) );
+			throw new Seed_Refused( \esc_html( 'No seed file at ' . \basename( $path ) . '.' ) );
 		}
 		$seed = new self( $path );
 		// phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- a local seed file, not a remote fetch.
@@ -160,6 +163,19 @@ final class Ontology_Seed {
 	}
 
 	/**
+	 * The seed file the topology dirs resolve, once the runtime has
+	 * registered the user dir.
+	 *
+	 * @throws Seed_Refused When no dir holds one, naming where it belongs, by its path only to a manager, and the example to start from.
+	 */
+	private static function resolved(): string {
+		Bootstrap::ensure_runtime_wired();
+		return Topology_Registry::resolve_file( self::FILE ) ?? throw new Seed_Refused(
+			\esc_html( 'No ' . self::FILE . ' in any topology dir: write a seed for this site ' . ( Capabilities::can( Capabilities::MANAGE ) ? 'to ' . Topology_Registry::user_dir() . '/' . self::FILE : 'as ' . self::FILE . ' in the user topology dir' ) . ', starting from the example the plugin ships at examples/' . self::FILE . '.' )
+		);
+	}
+
+	/**
 	 * The file's JSON.
 	 *
 	 * @param string $text The file's bytes.
@@ -169,7 +185,7 @@ final class Ontology_Seed {
 		try {
 			return \json_decode( $text, true, 512, \JSON_THROW_ON_ERROR );
 		} catch ( \JsonException $e ) {
-			throw new Seed_Refused( \esc_html( "{$this->path}: not JSON: {$e->getMessage()}" ) );
+			throw new Seed_Refused( \esc_html( \basename( $this->path ) . ": not JSON: {$e->getMessage()}" ) );
 		}
 	}
 
@@ -362,6 +378,6 @@ final class Ontology_Seed {
 	 * @throws Seed_Refused Always.
 	 */
 	private function refuse( string $field, string $why ): never {
-		throw new Seed_Refused( \esc_html( "{$this->path}: {$field}: {$why}" ) );
+		throw new Seed_Refused( \esc_html( \basename( $this->path ) . ": {$field}: {$why}" ) );
 	}
 }

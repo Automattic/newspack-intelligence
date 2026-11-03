@@ -48,10 +48,14 @@ function delete_prefixed_options( $wpdb, string $prefix ): int {
  * Row_Table and frontier Table this plugin's own topologies declare, read
  * inside `Topology_Registry::with_stock_dir()` so no other plugin's can
  * block it; nothing under the default base every unconfigured install
- * shares, nor without the substrate.
+ * shares, nor without the substrate. A composition that will not read
+ * only because no deployment file resolves to include is skipped, because
+ * the parts it includes, each read on its own, declare its tables; any
+ * other topology that will not read fails the uninstall.
  *
  * @param string $topologies_dir The plugin's shipped `.tsl` files.
  * @return int Files deleted.
+ * @throws \Throwable What a shipped topology that will not read threw, but the missing deployment include.
  */
 function delete_tables( string $topologies_dir ): int {
 	if ( ! \class_exists( '\Newspack_Nodes\Table_Node' ) ) {
@@ -72,7 +76,12 @@ function delete_tables( string $topologies_dir ): int {
 					$shipped[] = $name;
 				}
 			}
-			$tables = \Newspack_Nodes\Bootstrap::row_tables_of( Intel_Graph_Row_Schema::class, ...$shipped );
+			$failed = \Newspack_Nodes\Worker_Should_Stop::attempt_each( \array_combine( $shipped, $shipped ), \Newspack_Nodes\Topology_Analyzer::graph_for( ... ) );
+			$absent = null === \Newspack_Nodes\Topology_Registry::resolve( Intelligence_Health::DEPLOYMENT );
+			$skip   = static fn ( \Throwable $e ): bool => $absent && 'unknown topology in include: ' . Intelligence_Health::DEPLOYMENT === $e->getMessage();
+			\Newspack_Nodes\Worker_Should_Stop::raise( \array_filter( $failed, static fn ( \Throwable $e ): bool => ! $skip( $e ) ) );
+			$shipped = \array_values( \array_diff( $shipped, \array_keys( $failed ) ) );
+			$tables  = \Newspack_Nodes\Bootstrap::row_tables_of( Intel_Graph_Row_Schema::class, ...$shipped );
 			foreach ( $shipped as $name ) {
 				foreach ( \array_keys( \Newspack_Nodes\Topology_Analyzer::declared_tables( $name ) ) as $table ) {
 					if ( \str_ends_with( $table, ':' . Source_Node::FRONTIER ) ) {

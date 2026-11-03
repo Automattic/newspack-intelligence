@@ -1,5 +1,5 @@
-# A fictional deployment's lists, relevance profile and audience, shadowing
-# the shipped empty file of this name.
+# A fictional deployment's lists, relevance profile and audience, as a
+# deployment keeps them in the user topology dir.
 cmd github:config add_repo heron-example/kite-ledger
 cmd github:config add_repo heron-example/quarry-wire
 cmd feed:config add_url https://heron.example/feed/

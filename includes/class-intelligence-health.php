@@ -23,10 +23,14 @@ use Newspack_Nodes\Curl_Node;
 use Newspack_Nodes\Delay_Node;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Topology_Analyzer;
+use Newspack_Nodes\Topology_Registry;
 
 \defined( 'ABSPATH' ) || exit;
 
 final class Intelligence_Health {
+
+	/** The topology every composition includes last, which a deployment supplies. */
+	public const DEPLOYMENT = 'newspack-intelligence-deployment';
 
 	/** The slices `what` names, each answered by the method of its name. */
 	public const SLICES = [ 'collection', 'sources', 'backlog', 'extraction' ];
@@ -34,8 +38,25 @@ final class Intelligence_Health {
 	/** The worker partition every snapshot is read at: the topology runs one. */
 	private const PARTITION = 0;
 
-	/** The fields of a source's or the extractor's row only a manager reads. */
-	private const OPERATOR_FIELDS = [ 'credential', 'vault_id', 'last_error' ];
+	/** The fields of a source's, the extractor's or collection's row only a manager reads. */
+	private const OPERATOR_FIELDS = [ 'credential', 'vault_id', 'last_error', 'file' ];
+
+	/**
+	 * Warn, ahead of `wp nodes doctor`'s rows, where the deployment file
+	 * belongs while no topology dir holds one; doctor itself reports only
+	 * that the composition will not read. An unusable runtime base is left
+	 * to doctor's own filesystem row.
+	 */
+	public static function warn_missing_deployment(): void {
+		try {
+			$missing = self::missing_deployment();
+		} catch ( \RuntimeException $e ) {
+			return;
+		}
+		if ( null !== $missing ) {
+			\WP_CLI::warning( 'No ' . self::DEPLOYMENT . ".tsl in any topology dir, so no topology composing Intelligence will load: create {$missing}, empty if this site has no settings of its own." );
+		}
+	}
 
 	/**
 	 * The slice `what` names.
@@ -124,18 +145,19 @@ final class Intelligence_Health {
 	}
 
 	/**
-	 * The topology's first node of `$class`, as its graph row draws it;
-	 * null when it declares none.
+	 * Intelligence's topology's first node of `$class`, as its graph row
+	 * draws it; null when it declares none or collection is off.
 	 *
 	 * @param class-string<\Newspack_Nodes\Node> $class The node's class.
 	 * @return array<array-key,mixed>|null
 	 */
 	private static function node_of( string $class ): ?array {
-		return Topology_Analyzer::nodes_of_type( Worker_Route::TOPOLOGY, $class )[0] ?? null;
+		$topology = Worker_Route::running();
+		return null === $topology ? null : Topology_Analyzer::nodes_of_type( $topology, $class )[0] ?? null;
 	}
 
 	/**
-	 * Every source the collect topology declares, in its order, but those
+	 * Every source Intelligence's topology declares, in its order, but those
 	 * whose row's tier (`Source_Node::graph_facts()`) the caller cannot
 	 * read: idle with the credential it needs
 	 * when its group lends none on the origin it fetches, whatever its
@@ -200,12 +222,63 @@ final class Intelligence_Health {
 	}
 
 	/**
-	 * A row as the caller may read it: whole for a manager, else without
-	 * the credential, Vault id and error text, leaving the state, times,
-	 * counts and an idle source's reason, which is fixed text naming at most
-	 * an HTTP status. Field redaction; the verb's role stays read (ADR-26).
+	 * Collection's state: its worker's, the word `wp nodes status` reports,
+	 * when an active topology runs Intelligence, whatever the topology dirs
+	 * hold. Otherwise `unconfigured`, naming to a manager where the
+	 * deployment file belongs, while no topology dir holds one; else
+	 * `inactive`, offering `Worker_Route::candidate()`. With no deployment
+	 * file missing, a topology that will not read is refused.
 	 *
-	 * @param array<array-key,mixed> $row A source's or the extractor's row.
+	 * @return array<array-key,mixed>
+	 * @throws \RuntimeException When several active topologies run Intelligence, or none does while one will not read and the deployment file is not what it lacks.
+	 */
+	private static function collection(): array {
+		try {
+			$topology = Worker_Route::running();
+		} catch ( \RuntimeException $e ) {
+			// running() chains the failure only when a topology will not read.
+			if ( null === $e->getPrevious() ) {
+				throw $e;
+			}
+			return self::unconfigured() ?? throw $e;
+		}
+		if ( null === $topology ) {
+			return self::unconfigured() ?? [
+				'state'    => 'inactive',
+				'topology' => Worker_Route::candidate(),
+			];
+		}
+		$id = CLI::worker_id( $topology, self::PARTITION );
+		return [
+			'state'    => ( new CLI( Config::get_base_directory() ) )->worker_states( [ $id ], Bootstrap::get_topologies(), false )[ $id ]['state'],
+			'topology' => $topology,
+		];
+	}
+
+	/**
+	 * The `unconfigured` row while no topology dir holds the deployment
+	 * file, its path for a manager alone; null once one does.
+	 *
+	 * @return array<array-key,mixed>|null
+	 */
+	private static function unconfigured(): ?array {
+		$missing = self::missing_deployment();
+		return null === $missing ? null : self::redacted(
+			[
+				'state' => 'unconfigured',
+				'file'  => $missing,
+			]
+		);
+	}
+
+	/**
+	 * A row as the caller may read it: whole for a manager, else without
+	 * the credential, Vault id, error text and deployment file's path,
+	 * leaving the state, times, counts and an idle source's reason, which is
+	 * fixed text naming at most an HTTP status. Field redaction; the verb's
+	 * role stays read (ADR-26).
+	 *
+	 * @param array<array-key,mixed> $row A source's, the extractor's or collection's row.
 	 * @return array<array-key,mixed>
 	 */
 	private static function redacted( array $row ): array {
@@ -213,16 +286,13 @@ final class Intelligence_Health {
 	}
 
 	/**
-	 * The worker's state, the word `wp nodes status` reports for it:
-	 * `inactive` while the topology is outside the active set.
+	 * Where the deployment file belongs, the user topology dir, while no
+	 * topology dir holds one; null once one does.
 	 *
-	 * @return array{state:string,topology:string}
+	 * @throws \RuntimeException When the runtime base directory is unusable.
 	 */
-	private static function collection(): array {
-		$id = CLI::worker_id( Worker_Route::TOPOLOGY, self::PARTITION );
-		return [
-			'state'    => ( new CLI( Config::get_base_directory() ) )->worker_states( [ $id ], Bootstrap::get_topologies(), false )[ $id ]['state'],
-			'topology' => Worker_Route::TOPOLOGY,
-		];
+	public static function missing_deployment(): ?string {
+		Bootstrap::ensure_runtime_wired();
+		return null === Topology_Registry::resolve( self::DEPLOYMENT ) ? Topology_Registry::user_dir() . '/' . self::DEPLOYMENT . '.tsl' : null;
 	}
 }

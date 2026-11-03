@@ -47,6 +47,7 @@ final class ItemsCliCommandTest extends TestCase {
 		\WP_CLI::reset();
 		Topology_Analyzer::reset_caches();
 		$this->start_intel_graph();
+		$this->activate( 'newspack-intelligence' );
 		self::live_worker( Config::get_base_directory(), self::WORKER );
 	}
 

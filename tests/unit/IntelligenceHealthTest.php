@@ -22,6 +22,7 @@ require_once __DIR__ . '/../support/seeds-intel-graph.php';
 require_once __DIR__ . '/../support/signs-in-users.php';
 require_once __DIR__ . '/../support/drives-curl.php';
 require_once __DIR__ . '/../support/routes-to-workers.php';
+require_once __DIR__ . '/../support/wp-cli-stub.php';
 
 /**
  * The `health` read verb: four slices, each derived from durable state where
@@ -43,6 +44,7 @@ final class IntelligenceHealthTest extends TestCase {
 		parent::setUp();
 		Topology_Analyzer::reset_caches();
 		$this->start_intel_graph();
+		$this->activate( 'newspack-intelligence' );
 		$GLOBALS['_wp_test_current_user_can']['manage_options'] = true;
 		$GLOBALS['_current_user_can']                           = true;
 		self::sign_in( 3373, 'harbor-desk', 'manage_options' );
@@ -69,14 +71,109 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( \Newspack_Nodes\Capabilities::READ, $roles['health'] );
 	}
 
-	/** A topology outside the active set, with no worker holding a lock, is off. */
+	/**
+	 * With no active topology declaring the event writer collection is off,
+	 * offering the one catalog composition no other includes.
+	 */
 	public function test_collection_inactive_when_topology_off(): void {
+		$this->activate( 'topic-probe' );
+
 		$this->assertSame( [ 'state' => 'inactive', 'topology' => 'newspack-intelligence' ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
+	}
+
+	/** Off, with two compositions in the catalog, collection offers neither. */
+	public function test_collection_off_with_two_compositions_names_none(): void {
+		$dir = $this->make_temp_dir( 'intelligence-health-sanderling-' );
+		\file_put_contents( "{$dir}/sanderling-intel.tsl", "include newspack-intelligence-streams\n" );
+		Topology_Registry::register_stock_dir( $dir );
+		$this->activate( 'topic-probe' );
+
+		$this->assertSame( [ 'state' => 'inactive', 'topology' => null ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
+	}
+
+	/**
+	 * With no deployment file in any topology dir collection cannot run:
+	 * the slice names where it belongs, whether or not anything is active.
+	 */
+	public function test_collection_without_a_deployment_file_names_where_it_belongs(): void {
+		$bare = $this->make_temp_dir( 'intelligence-health-bare-' );
+		Topology_Registry::register_user_dir( $bare );
+		Topology_Analyzer::reset_caches();
+
+		$this->assertSame( [ 'state' => 'unconfigured', 'file' => "{$bare}/newspack-intelligence-deployment.tsl" ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
+		$this->activate( 'topic-probe' );
+		$this->assertSame( 'unconfigured', $this->ci->dispatch( 'health', [ 'collection' ] )['state'] );
+	}
+
+	/** A stale active name no `.tsl` resolves, beside no Intelligence topology, leaves collection off rather than refused. */
+	public function test_collection_inactive_beside_a_stale_active_name(): void {
+		$this->activate( 'heron-old' );
+
+		$this->assertSame( [ 'state' => 'inactive', 'topology' => 'newspack-intelligence' ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
+	}
+
+	/** A live composition that includes no deployment file reads its worker's state, whatever the topology dirs hold. */
+	public function test_a_live_composition_without_a_deployment_include_reads_its_state(): void {
+		Topology_Registry::register_user_dir( $this->make_temp_dir( 'intelligence-health-phalarope-' ) );
+		$this->activate();
+		$this->run_intelligence_as( 'phalarope-intel' );
+		self::live_worker( Config::get_base_directory(), 'phalarope-intel.p0' );
+		\touch( Config::get_base_directory() . '/locks/phalarope-intel.p0.lock.d/heartbeat' );
+
+		$this->assertSame( [ 'state' => 'live', 'topology' => 'phalarope-intel' ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
+	}
+
+	/** A reader below manage learns the deployment file is missing, not where the user dir sits. */
+	public function test_a_reader_below_manage_gets_no_deployment_path(): void {
+		Topology_Registry::register_user_dir( $this->make_temp_dir( 'intelligence-health-turnstone-' ) );
+		Topology_Analyzer::reset_caches();
+		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::READ;
+
+		$this->assertSame( [ 'state' => 'unconfigured' ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
+	}
+
+	/** `wp nodes doctor` opens with where the deployment file belongs while no topology dir holds one, and that empty will do. */
+	public function test_doctor_names_a_missing_deployment_file(): void {
+		$bare = $this->make_temp_dir( 'intelligence-health-doctor-' );
+		\WP_CLI::reset();
+		\Newspack_Intelligence\register_cli_commands();
+
+		foreach ( \WP_CLI::$hooks['before_invoke:nodes doctor'] ?? [] as $hook ) {
+			$hook( 'nodes doctor' );
+		}
+		$this->assertSame( [], \WP_CLI::$warnings, 'the fixture deployment file resolves' );
+
+		Topology_Registry::register_user_dir( $bare );
+		foreach ( \WP_CLI::$hooks['before_invoke:nodes doctor'] ?? [] as $hook ) {
+			$hook( 'nodes doctor' );
+		}
+		$this->assertSame( [ "No newspack-intelligence-deployment.tsl in any topology dir, so no topology composing Intelligence will load: create {$bare}/newspack-intelligence-deployment.tsl, empty if this site has no settings of its own." ], \WP_CLI::$warnings );
+		\WP_CLI::reset();
+	}
+
+	/** Two active topologies declaring the event writer are refused, naming both. */
+	public function test_collection_with_two_intelligence_topologies_is_refused(): void {
+		$this->run_intelligence_as( 'knot-intel' );
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'Active topologies newspack-intelligence and knot-intel each declare an Intel_Event_Writer node; activate one.' );
+		$this->ci->dispatch( 'health', [ 'collection' ] );
+	}
+
+	/** Two active compositions are refused naming both, even while no deployment file resolves, never read as unconfigured. */
+	public function test_two_compositions_without_a_deployment_file_are_refused_not_unconfigured(): void {
+		Topology_Registry::register_user_dir( $this->make_temp_dir( 'intelligence-health-guillemot-' ) );
+		$this->activate();
+		$this->run_intelligence_as( 'auk-intel' );
+		$this->run_intelligence_as( 'murre-intel' );
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'Active topologies auk-intel and murre-intel each declare an Intel_Event_Writer node; activate one.' );
+		$this->ci->dispatch( 'health', [ 'collection' ] );
 	}
 
 	/** An active worker whose heartbeat outran its timeout reads stale, as `wp nodes status` reads it. */
 	public function test_collection_reports_stale_lock(): void {
-		$this->activate( 'newspack-intelligence' );
 		$lock = Config::get_base_directory() . '/locks/newspack-intelligence.p0.lock.d';
 		\mkdir( $lock, 0777, true );
 		\touch( "{$lock}/heartbeat", \time() - 7213 );
@@ -85,13 +182,14 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( [ 'state' => 'stale', 'topology' => 'newspack-intelligence' ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
 	}
 
-	/** A worker holding a fresh lock is live. */
+	/** A worker holding a fresh lock is live, under whatever name its topology has. */
 	public function test_collection_reports_a_live_worker(): void {
-		$this->activate( 'newspack-intelligence' );
-		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p0' );
-		\touch( Config::get_base_directory() . '/locks/newspack-intelligence.p0.lock.d/heartbeat' );
+		$this->activate();
+		$this->run_intelligence_as( 'dunlin-intel' );
+		self::live_worker( Config::get_base_directory(), 'dunlin-intel.p0' );
+		\touch( Config::get_base_directory() . '/locks/dunlin-intel.p0.lock.d/heartbeat' );
 
-		$this->assertSame( 'live', $this->ci->dispatch( 'health', [ 'collection' ] )['state'] );
+		$this->assertSame( [ 'state' => 'live', 'topology' => 'dunlin-intel' ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
 	}
 
 	/**
@@ -312,7 +410,7 @@ final class IntelligenceHealthTest extends TestCase {
 	public function test_no_shared_cache_reads_unknown_without_throwing(): void {
 		Core::$memd = null;
 
-		$this->assertSame( 'inactive', $this->ci->dispatch( 'health', [ 'collection' ] )['state'] );
+		$this->assertSame( 'down', $this->ci->dispatch( 'health', [ 'collection' ] )['state'] );
 		$this->assertSame( [ 'unknown', 'unknown', 'unknown', 'idle', 'idle', 'idle' ], \array_column( $this->ci->dispatch( 'health', [ 'sources' ] )['sources'], 'state' ) );
 		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => null, 'since' => null, 'dropped' => null ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
 		$this->assertSame( [ 'mode' => 'unknown' ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
@@ -407,12 +505,14 @@ final class IntelligenceHealthTest extends TestCase {
 	}
 
 	/**
-	 * Shadow the collect topology with these make_node lines alone.
+	 * Run Intelligence alone under a topology of another name, declaring
+	 * these make_node lines after the streams.
 	 *
 	 * @param string ...$lines The topology's lines.
 	 */
 	private function collect( string ...$lines ): void {
-		$this->shadow( 'newspack-intelligence-collect', ...$lines );
+		$this->activate();
+		$this->run_intelligence_as( 'curlew-intel', 'include newspack-intelligence-resolve', ...$lines );
 	}
 
 	/**

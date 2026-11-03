@@ -395,11 +395,11 @@ final class IntelligenceCurationTest extends TestCase {
 		$this->assertSame( [ 'col-october' => 0, 'col:october' => 1 ], \array_column( Graph_Query::collections( [] )['collections'], 'items', 'collection_key' ) );
 	}
 
-	/** fetch_now TICKs every source in each live worker, its answer counting the workers. */
+	/** fetch_now TICKs every source in each live worker of Intelligence's topology, whatever its name. */
 	public function test_fetch_now_ticks_every_source(): void {
-		Topology_Registry::register_builtin_dir( \dirname( __DIR__, 3 ) . '/newspack-nodes/topologies' );
-		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
+		$this->run_intelligence_as( 'kittiwake-intel', 'include newspack-intelligence-collect' );
 		$base = Config::get_base_directory();
+		self::live_worker( $base, 'kittiwake-intel.p6' );
 		self::live_worker( $base, 'newspack-intelligence.p6' );
 		$router = Core::node( Node_Names::ROUTER );
 		$this->assertNotNull( $router );
@@ -408,19 +408,27 @@ final class IntelligenceCurationTest extends TestCase {
 		$answer = $this->ci->dispatch( 'fetch_now', [] );
 
 		$this->assertSame( [ 'ok' => true, 'workers' => 1 ], $answer );
-		$written = self::worker_input( $base, 'newspack-intelligence.p6' );
+		$written = self::worker_input( $base, 'kittiwake-intel.p6' );
 		$this->assertSame( [ 'github', 'feed', 'news', 'unthread', 'linear', 'slack', 'p2', 'p2-restricted' ], \array_column( $written, Message::TO ) );
 		$this->assertSame( \array_fill( 0, 8, 'TICK' ), \array_column( $written, Message::VALUE ) );
+		$this->assertSame( [], self::worker_input( $base, 'newspack-intelligence.p6' ), 'a topology outside the active set' );
 		$this->assertSame( [], self::ontology_events() );
 	}
 
-	/** The sources fetch_now TICKs are the Source nodes the collect topology declares, read from it. */
-	public function test_fetch_now_ticks_the_sources_the_collect_topology_declares(): void {
-		$dir = $this->make_temp_dir( 'intelligence-collect-' );
-		\file_put_contents( "{$dir}/newspack-intelligence-collect.tsl", "make_node Linear_Source kestrel-linear internal\nmake_node Github_Source heron-github public\n" );
-		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', $dir );
+	/** The sources fetch_now TICKs are the Source nodes Intelligence's topology declares, read from it. */
+	public function test_fetch_now_ticks_the_sources_the_topology_declares(): void {
+		$this->run_intelligence_as( 'tern-intel', 'make_node Linear_Source kestrel-linear internal', 'make_node Github_Source heron-github public' );
 
 		$this->assertSame( [ [ 'kestrel-linear', 'TICK' ], [ 'heron-github', 'TICK' ] ], Intelligence_CI_Node::ticks() );
+	}
+
+	/** With no active topology declaring the event writer, fetch_now is refused naming why. */
+	public function test_fetch_now_with_no_intelligence_topology_is_refused(): void {
+		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
+
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'No active topology declares an Intel_Event_Writer node' );
+		$this->ci->dispatch( 'fetch_now', [] );
 	}
 
 	/** A caller below tune is refused every curation verb; one below manage is refused fetch_now. */

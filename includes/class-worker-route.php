@@ -6,7 +6,9 @@
  * the Router peels to that partition; the worker reads it and routes it on
  * to `{node}`. Durable and synchronous, with no live-worker dependency on
  * read; `read_through()` tells a caller pacing its writes when a worker has
- * read them.
+ * read them. The workers are those of Intelligence's topology: the one
+ * active topology that declares an `Intel_Event_Writer`, whatever its name,
+ * so a deployment may compose its own.
  *
  * @package Newspack_Intelligence
  */
@@ -21,14 +23,14 @@ use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Spawn_Coordinator;
+use Newspack_Nodes\Topology_Analyzer;
+use Newspack_Nodes\Topology_Missing;
 use Newspack_Nodes\Worker_Base;
+use Newspack_Nodes\Worker_Should_Stop;
 
 \defined( 'ABSPATH' ) || exit;
 
 final class Worker_Route {
-
-	/** The worker topology the requests reach; also the worker-id prefix. */
-	public const TOPOLOGY = 'newspack-intelligence';
 
 	/**
 	 * Append each request, in order, to every live worker's input partition,
@@ -76,8 +78,9 @@ final class Worker_Route {
 	 * @throws \RuntimeException When no worker of the topology is reached.
 	 */
 	private static function deliver( Command_Interpreter_Node $interpreter, string $base_dir, array $messages ): int {
-		$reached = 0;
-		foreach ( self::live_workers( $base_dir ) as $worker_id ) {
+		$topology = self::topology();
+		$reached  = 0;
+		foreach ( self::workers_of( $topology, $base_dir ) as $worker_id ) {
 			$out = self::ipc_out( $worker_id, $base_dir );
 			if ( null === $out ) {
 				continue;
@@ -94,7 +97,7 @@ final class Worker_Route {
 			++$reached;
 		}
 		if ( 0 === $reached ) {
-			throw new \RuntimeException( \esc_html( 'No ' . self::TOPOLOGY . ' worker could be reached: none is live with a mountable input — start the workers first.' ) );
+			throw new \RuntimeException( \esc_html( "No {$topology} worker could be reached: none is live with a mountable input — start the workers first." ) );
 		}
 		return $reached;
 	}
@@ -142,12 +145,103 @@ final class Worker_Route {
 	 * @return list<string>
 	 */
 	public static function live_workers( string $base_dir ): array {
+		return self::workers_of( self::topology(), $base_dir );
+	}
+
+	/**
+	 * Intelligence's topology, which every route reaches.
+	 *
+	 * @throws \RuntimeException When no active topology declares an `Intel_Event_Writer`, or several do.
+	 */
+	public static function topology(): string {
+		return self::running() ?? throw new \RuntimeException( 'No active topology declares an Intel_Event_Writer node: activate the topology that composes Intelligence.' );
+	}
+
+	/**
+	 * The one active topology declaring an `Intel_Event_Writer`; null while
+	 * none does and every active `.tsl` reads, which is collection off. An
+	 * active name no `.tsl` resolves declares nothing, so it counts as read.
+	 *
+	 * @throws \RuntimeException When several do, naming them; or none does while an active `.tsl` will not read, naming it, its failure chained.
+	 */
+	public static function running(): ?string {
+		[ $readable, $unreadable ] = Bootstrap::active_topologies();
+		$unreadable                = \array_filter( $unreadable, static fn ( \Throwable $e ): bool => ! $e instanceof Topology_Missing );
+		$declaring                 = self::declaring( \array_map( Core::as_string( ... ), \array_keys( $readable ) ) );
+		if ( \count( $declaring ) > 1 ) {
+			throw new \RuntimeException( \esc_html( 'Active topologies ' . \implode( ' and ', $declaring ) . ' each declare an Intel_Event_Writer node; activate one.' ) );
+		}
+		if ( [] === $declaring && [] !== $unreadable ) {
+			$why = \array_map( static fn ( string $name, \Throwable $e ): string => "{$name} will not read: {$e->getMessage()}", \array_keys( $unreadable ), $unreadable );
+			throw new \RuntimeException( \esc_html( 'No active topology declares an Intel_Event_Writer node, and ' . \implode( '; ', $why ) ), 0, \reset( $unreadable ) );
+		}
+		return $declaring[0] ?? null;
+	}
+
+	/**
+	 * Live worker ids of `$topology`.
+	 *
+	 * @param string $topology The topology.
+	 * @param string $base_dir The substrate base directory.
+	 * @return list<string>
+	 */
+	private static function workers_of( string $topology, string $base_dir ): array {
 		$ids = [];
 		foreach ( Spawn_Coordinator::worker_lock_dirs( $base_dir ) as $lock ) {
-			if ( self::TOPOLOGY === $lock['type'] ) {
+			if ( $topology === $lock['type'] ) {
 				$ids[] = $lock['id'];
 			}
 		}
 		return $ids;
+	}
+
+	/**
+	 * The topology to activate: the one catalog topology declaring an
+	 * `Intel_Event_Writer` that no other such topology includes, so a part
+	 * the composition includes is never offered; null when none or several
+	 * are. One that will not read is not offered.
+	 *
+	 * @throws Worker_Should_Stop When reading a topology raises a cooperative stop.
+	 */
+	public static function candidate(): ?string {
+		$declaring = [];
+		$failures  = Worker_Should_Stop::attempt_each(
+			\array_map( Core::as_string( ... ), \array_keys( Bootstrap::get_topology_catalog() ) ),
+			static function ( string $name ) use ( &$declaring ): void {
+				$declaring = [ ...$declaring, ...self::declaring( [ $name ] ) ];
+			}
+		);
+		Worker_Should_Stop::raise( \array_filter( $failures, static fn ( \Throwable $e ): bool => $e instanceof Worker_Should_Stop ) );
+		$included = [];
+		foreach ( $declaring as $name ) {
+			$included = [ ...$included, ...self::included( Topology_Analyzer::statements( $name )['tree'] ) ];
+		}
+		$roots = \array_values( \array_diff( $declaring, $included ) );
+		return 1 === \count( $roots ) ? $roots[0] : null;
+	}
+
+	/**
+	 * Every topology an include tree names, at any depth.
+	 *
+	 * @param array<array-key,mixed> $tree As `Topology_Analyzer::statements()` answers it.
+	 * @return list<string>
+	 */
+	private static function included( array $tree ): array {
+		$names = [];
+		foreach ( $tree as $name => $subtree ) {
+			$names = [ ...$names, (string) $name, ...self::included( Core::arr( $subtree ) ) ];
+		}
+		return $names;
+	}
+
+	/**
+	 * Those of `$names` whose graph declares an `Intel_Event_Writer`, in order.
+	 *
+	 * @param list<string> $names Topology names.
+	 * @return list<string>
+	 * @throws \RuntimeException When a topology will not read.
+	 */
+	private static function declaring( array $names ): array {
+		return \array_values( \array_filter( $names, static fn ( string $name ): bool => [] !== Topology_Analyzer::nodes_of_type( $name, Intel_Event_Writer_Node::class ) ) );
 	}
 }
