@@ -1045,6 +1045,17 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
+	 * Whether a source its `make_node` line configures can collect on this
+	 * host; one the host limits answers false where it cannot.
+	 *
+	 * @api Read by Worker_Route::candidates().
+	 * @param array<string,mixed> $args The line's arguments, bound by this class's node_schema().
+	 */
+	public static function runs_here( array $args ): bool {
+		return true;
+	}
+
+	/**
 	 * A connector's node_schema from the shared Source shape: category Source,
 	 * the frontier Table it owns, `tier` and, for a source sending a
 	 * credential, `vault_group`, one TICK request, and `set_tier` and

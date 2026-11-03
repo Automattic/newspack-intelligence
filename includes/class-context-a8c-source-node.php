@@ -427,6 +427,17 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	}
 
 	/**
+	 * A ContextA8C source fetches only on a host whose relay token dir it can
+	 * read and search, as the token glob does.
+	 *
+	 * @param array<string,mixed> $args The line's arguments, bound by this class's node_schema().
+	 */
+	public static function runs_here( array $args ): bool {
+		$dir = Core::as_string( $args['auth_dir'] );
+		return \is_dir( $dir ) && \is_readable( $dir ) && \is_executable( $dir );
+	}
+
+	/**
 	 * A ContextA8C source's node_schema: the Source shape, owning no Table,
 	 * since its session cannot outlive the process, with no vault group, the
 	 * token dir after the tier, and the proxy after it.

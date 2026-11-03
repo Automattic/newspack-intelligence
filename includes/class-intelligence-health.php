@@ -15,7 +15,6 @@ namespace Newspack_Intelligence;
 use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\CLI;
-use Newspack_Nodes\Command_Args;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
@@ -107,7 +106,7 @@ final class Intelligence_Health {
 		$reason   = Entity_Index::hold_cause_now();
 		$resolver = self::node_of( Resolver_Node::class );
 		$hold     = null === $resolver ? [] : Resolver_Node::read_status( Core::as_string( $resolver['name'] ), self::PARTITION ) ?? [];
-		$queue    = null === $resolver ? [] : Delay_Node::read_status( Core::as_string( self::line( Resolver_Node::class, $resolver )['later'] ), self::PARTITION ) ?? [];
+		$queue    = null === $resolver ? [] : Delay_Node::read_status( Core::as_string( Worker_Route::line( Resolver_Node::class, $resolver )['later'] ), self::PARTITION ) ?? [];
 		return [
 			'reason'  => $reason,
 			'held'    => $queue['depth'] ?? null,
@@ -180,21 +179,9 @@ final class Intelligence_Health {
 			}
 			$name      = Core::as_string( $node['name'] );
 			$sources[] = [ 'name' => $name, 'class' => $type, 'tier' => $tier ]
-				+ self::redacted( self::idle( $class, Core::as_string( self::line( $class, $node )['vault_group'] ?? '' ), $lent ) ?? Source_Node::read_status( $name, self::PARTITION ) ?? [ 'state' => 'unknown' ] );
+				+ self::redacted( self::idle( $class, Core::as_string( Worker_Route::line( $class, $node )['vault_group'] ?? '' ), $lent ) ?? Source_Node::read_status( $name, self::PARTITION ) ?? [ 'state' => 'unknown' ] );
 		}
 		return [ 'sources' => $sources ];
-	}
-
-	/**
-	 * A node's `make_node` line bound by its class's own arguments, so each
-	 * is read by name.
-	 *
-	 * @param class-string<\Newspack_Nodes\Node> $class The node's class.
-	 * @param array<array-key,mixed>              $node  Its `nodes_of_type()` row.
-	 * @return array<string,mixed>
-	 */
-	private static function line( string $class, array $node ): array {
-		return Command_Args::bind( Core::arr( $class::node_schema()['arguments'] ?? [] ), \array_map( Core::as_string( ... ), \array_values( Core::arr( $node['args'] ) ) ) );
 	}
 
 	/**

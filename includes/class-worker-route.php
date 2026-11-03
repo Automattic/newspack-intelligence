@@ -17,6 +17,7 @@ namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\CLI;
+use Newspack_Nodes\Command_Args;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Consumer_Node;
 use Newspack_Nodes\Core;
@@ -199,10 +200,11 @@ final class Worker_Route {
 	 * The topologies to activate, sorted: each catalog topology declaring an
 	 * `Intel_Event_Writer` that no other such topology includes, so a part a
 	 * composition includes is never offered. One that will not read is not
-	 * offered.
+	 * offered, nor one declaring a source that cannot collect on this host.
 	 *
 	 * @return list<string>
 	 * @throws Worker_Should_Stop When reading a topology raises a cooperative stop.
+	 * @throws \InvalidArgumentException When a source's `make_node` line does not bind.
 	 */
 	public static function candidates(): array {
 		$declaring = [];
@@ -217,9 +219,48 @@ final class Worker_Route {
 		foreach ( $declaring as $name ) {
 			$included = [ ...$included, ...self::included( Topology_Analyzer::statements( $name )['tree'] ) ];
 		}
-		$roots = \array_values( \array_diff( $declaring, $included ) );
+		$roots = \array_values( \array_filter( \array_diff( $declaring, $included ), self::collects_here( ... ) ) );
 		\sort( $roots );
 		return $roots;
+	}
+
+	/**
+	 * Whether every source `$topology` declares can collect on this host.
+	 *
+	 * @throws \InvalidArgumentException When a source's `make_node` line does not bind, naming the topology.
+	 */
+	private static function collects_here( string $topology ): bool {
+		foreach ( Topology_Analyzer::nodes_of_type( $topology, Source_Node::class ) as $node ) {
+			/** @var class-string<Source_Node> $class nodes_of_type() kept only Source_Node types. */
+			$class = Command_Interpreter_Node::resolve_class( Core::as_string( $node['type'] ) );
+			try {
+				$args = self::line( $class, $node );
+			} catch ( \InvalidArgumentException $e ) {
+				throw new \InvalidArgumentException( \esc_html( "{$topology}: {$e->getMessage()}" ), 0, $e );
+			}
+			if ( ! $class::runs_here( $args ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/**
+	 * A node's `make_node` line bound by its class's own arguments, so each
+	 * is read by name.
+	 *
+	 * @api Read by Intelligence_Health.
+	 * @param class-string<\Newspack_Nodes\Node> $class The node's class.
+	 * @param array<array-key,mixed>              $node  Its `nodes_of_type()` row.
+	 * @return array<string,mixed>
+	 * @throws \InvalidArgumentException When the line does not bind, naming the node.
+	 */
+	public static function line( string $class, array $node ): array {
+		try {
+			return Command_Args::bind( Core::arr( $class::node_schema()['arguments'] ?? [] ), \array_map( Core::as_string( ... ), \array_values( Core::arr( $node['args'] ) ) ) );
+		} catch ( \InvalidArgumentException $e ) {
+			throw new \InvalidArgumentException( \esc_html( Core::as_string( $node['type'] ) . ' ' . Core::as_string( $node['name'] ) . ": {$e->getMessage()}" ), 0, $e );
+		}
 	}
 
 	/**

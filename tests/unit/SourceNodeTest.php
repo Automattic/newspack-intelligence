@@ -1293,6 +1293,19 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( 'vault_group', $schema['arguments'][1]['type'] );
 		$this->assertSame( '', $schema['arguments'][1]['default'] );
 	}
+
+	/** A source no host limits runs anywhere, whatever its line names. */
+	public function test_a_source_runs_here_by_default(): void {
+		$this->assertTrue(
+			Linear_Source_Node::runs_here(
+				[
+					'tier'        => 'restricted',
+					'vault_group' => 'heron-7719',
+					'auth_dir'    => '/tmp/no-relay-7719',
+				]
+			)
+		);
+	}
 }
 
 /**

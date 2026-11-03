@@ -882,4 +882,59 @@ final class ContextA8CLinearTest extends TestCase {
 		$this->assertStringContainsString( "make_node Context_A8C_Linear linear internal {$this->auth_dir} " . self::PROXY, $dump );
 		$this->assertSame( [ 'KESTREL', 'WREN9' ], $this->read_private( $replayed, 'teams' ) );
 	}
+
+	/** A ContextA8C source runs on a host whose token dir it can read. */
+	public function test_it_runs_where_its_token_dir_reads(): void {
+		$this->assertTrue( Context_A8C_Linear_Node::runs_here( self::relay_line( $this->auth_dir ) ) );
+	}
+
+	/** With its token dir missing, a ContextA8C source cannot run here. */
+	public function test_it_does_not_run_without_its_token_dir(): void {
+		$this->assertFalse( Context_A8C_Linear_Node::runs_here( self::relay_line( '/tmp/no-relay-7719' ) ) );
+	}
+
+	/** A file at the token dir's path is not a token dir. */
+	public function test_it_does_not_run_where_its_token_dir_is_a_file(): void {
+		$file = "{$this->auth_dir}/relay-heron-7719";
+		\file_put_contents( $file, 'not a dir' );
+
+		$this->assertFalse( Context_A8C_Linear_Node::runs_here( self::relay_line( $file ) ) );
+	}
+
+	/** A token dir the worker's user cannot read is one it cannot fetch through. */
+	public function test_it_does_not_run_where_its_token_dir_will_not_read(): void {
+		$dir = "{$this->auth_dir}/sealed-kite-4410";
+		\mkdir( $dir, 0 );
+
+		try {
+			$this->assertFalse( Context_A8C_Linear_Node::runs_here( self::relay_line( $dir ) ) );
+		} finally {
+			\chmod( $dir, 0700 );
+		}
+	}
+
+	/** A token dir its user may list but not search is one the relay's token glob cannot reach. */
+	public function test_it_does_not_run_where_its_token_dir_will_not_search(): void {
+		$dir = "{$this->auth_dir}/listed-wren-0444";
+		\mkdir( $dir, 0444 );
+
+		try {
+			$this->assertFalse( Context_A8C_Linear_Node::runs_here( self::relay_line( $dir ) ) );
+		} finally {
+			\chmod( $dir, 0700 );
+		}
+	}
+
+	/**
+	 * A ContextA8C line's arguments as its schema binds them.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function relay_line( string $auth_dir ): array {
+		return [
+			'tier'     => 'internal',
+			'auth_dir' => $auth_dir,
+			'proxy'    => self::PROXY,
+		];
+	}
 }

@@ -65,6 +65,25 @@ final class IntelligenceHealthTest extends TestCase {
 		parent::tearDown();
 	}
 
+	/**
+	 * Point the workstation's ContextA8C sources at `$dir`, as a site's own
+	 * copy of their part, shadowing the shipped one, would; with
+	 * `$linear_unbound`, its `linear` line names no token dir at all.
+	 */
+	private function relay_at( string $dir, bool $linear_unbound = false ): void {
+		$parts   = $this->make_temp_dir( 'intelligence-health-relay-' );
+		$shipped = (string) \file_get_contents( \dirname( __DIR__, 2 ) . '/topologies/newspack-intelligence-context-a8c.tsl' );
+		$part    = (string) \preg_replace( '/^(make_node Context_A8C_\S+ \S+ \S+) \/mcp-auth /m', "\$1 {$dir} ", $shipped, -1, $count );
+		$this->assertSame( 4, $count );
+		if ( $linear_unbound ) {
+			$part = (string) \preg_replace( '/^(make_node Context_A8C_Linear linear internal) .*$/m', '$1', $part, -1, $count );
+			$this->assertSame( 1, $count );
+		}
+		\file_put_contents( "{$parts}/newspack-intelligence-context-a8c.tsl", $part );
+		Topology_Registry::register_stock_dir( $parts );
+		Topology_Analyzer::reset_caches();
+	}
+
 	public function test_health_is_a_read(): void {
 		$roles = \array_column( Intelligence_CI_Node::node_schema()['commands'], 'capability', 'name' );
 
@@ -74,16 +93,41 @@ final class IntelligenceHealthTest extends TestCase {
 	/**
 	 * With no active topology declaring the event writer collection is off,
 	 * offering every catalog composition no other includes, by name: the
-	 * shipped one and the workstation's.
+	 * shipped one and, its token dir reading, the workstation's.
 	 */
 	public function test_collection_inactive_when_topology_off(): void {
+		$this->relay_at( $this->make_temp_dir( 'intelligence-health-relay-auth-' ) );
 		$this->activate( 'topic-probe' );
 
 		$this->assertSame( [ 'state' => 'inactive', 'topologies' => [ 'newspack-intelligence', 'newspack-intelligence-workstation' ] ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
 	}
 
+	/** A composition whose ContextA8C token dir this host lacks is not offered. */
+	public function test_collection_off_leaves_out_a_composition_that_cannot_collect_here(): void {
+		$this->relay_at( '/tmp/no-relay-7719' );
+		$this->activate( 'topic-probe' );
+
+		$this->assertSame( [ 'state' => 'inactive', 'topologies' => [ 'newspack-intelligence' ] ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
+	}
+
+	/** A composition whose source line will not bind refuses the offer, naming the composition, the source and why. */
+	public function test_collection_off_refuses_a_source_line_that_will_not_bind(): void {
+		$this->relay_at( $this->make_temp_dir( 'intelligence-health-relay-auth-' ), true );
+		$this->activate( 'topic-probe' );
+
+		try {
+			$this->ci->dispatch( 'health', [ 'collection' ] );
+			$this->fail( 'collection answered past a line that will not bind' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( 'newspack-intelligence-workstation: Context_A8C_Linear linear: missing required argument: auth_dir', $e->getMessage() );
+			$this->assertSame( 'Context_A8C_Linear linear: missing required argument: auth_dir', $e->getPrevious()?->getMessage() );
+			$this->assertSame( 'missing required argument: auth_dir', $e->getPrevious()->getPrevious()?->getMessage() );
+		}
+	}
+
 	/** Off, a third composition in the catalog joins the offer in its sorted place. */
 	public function test_collection_off_offers_every_composition_sorted(): void {
+		$this->relay_at( $this->make_temp_dir( 'intelligence-health-relay-auth-' ) );
 		$dir = $this->make_temp_dir( 'intelligence-health-sanderling-' );
 		\file_put_contents( "{$dir}/sanderling-intel.tsl", "include newspack-intelligence-streams\n" );
 		Topology_Registry::register_stock_dir( $dir );
@@ -108,6 +152,7 @@ final class IntelligenceHealthTest extends TestCase {
 
 	/** A stale active name no `.tsl` resolves, beside no Intelligence topology, leaves collection off rather than refused. */
 	public function test_collection_inactive_beside_a_stale_active_name(): void {
+		$this->relay_at( $this->make_temp_dir( 'intelligence-health-relay-auth-' ) );
 		$this->activate( 'heron-old' );
 
 		$this->assertSame( [ 'state' => 'inactive', 'topologies' => [ 'newspack-intelligence', 'newspack-intelligence-workstation' ] ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
@@ -233,6 +278,16 @@ final class IntelligenceHealthTest extends TestCase {
 			],
 			$this->ci->dispatch( 'health', [ 'sources' ] )['sources']
 		);
+	}
+
+	/** A running source whose line will not bind refuses the slice, naming the source and why. */
+	public function test_sources_refuses_a_source_line_that_will_not_bind(): void {
+		$this->relay_at( $this->make_temp_dir( 'intelligence-health-relay-auth-' ), true );
+		$this->activate( 'newspack-intelligence-workstation' );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'Context_A8C_Linear linear: missing required argument: auth_dir' );
+		$this->ci->dispatch( 'health', [ 'sources' ] );
 	}
 
 	/**
