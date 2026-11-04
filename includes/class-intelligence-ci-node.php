@@ -120,7 +120,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						'Items matching every filter given, in the order sort names: { items: [ { item_key, title, url, source, tier, item_ts, summary, kind, relevance, importance, entities } ], total, sort }.',
 						[
 							$text( 'q', 'Words every match holds in its title, body or summary.' ),
-							$text( 'sort', 'The order, one of ' . \implode( ', ', Graph_Query::sorts() ) . ': importance the highest first, then the newest; time the newest first. With none, time for words without a lens, else importance.' ),
+							$text( 'sort', 'The order, one of ' . \implode( ', ', Graph_Query::sorts() ) . ': importance the highest first, then the most relevant, then the newest; time the newest first. With none, time for words without a lens, else importance.' ),
 							$text( 'entity', 'An entity the item links.' ),
 							$lens,
 							$since,
@@ -183,7 +183,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					$verb(
 						$read,
 						'briefing',
-						'What changed in the last ' . Intelligence_Briefing::DAYS . ' UTC days, one slice a call: changes { groups: [ { entity_key, name, items } ], total }, the ' . Graph_Query::DEFAULT_LIMIT . ' most important items about any entity, each as search answers it, grouped under each open client it is about, or in a group whose entity_key is null when it is not about any open client, total counting every such item; signals { clients: [ { entity_key, name, signals } ], lenses: [ { lens_key, name, signals } ] }, each client\'s signals on both axes and each lens\'s, as signals answers them, whose bucket closed in those days.',
+						'What changed in the last ' . Intelligence_Briefing::DAYS . ' UTC days, one slice a call: changes { groups: [ { entity_key, name, role, items } ], total }, the ' . Graph_Query::DEFAULT_LIMIT . ' most important items naming any entity as subject or mention, each as search answers it, in three kinds of group: under each open client it is about, role client; when it is about no open client but about an entity holding an open newspack_product role, in one group of that role; else in one group of role null, entity_key and name null for both; total counting every such item; signals { clients: [ { entity_key, name, signals } ], lenses: [ { lens_key, name, signals } ] }, each client\'s signals on both axes and each lens\'s, as signals answers them, whose bucket closed in those days.',
 						[ $arg( 'what', 'The slice, one of: ' . \implode( ', ', Intelligence_Briefing::SLICES ) . '.' ) ],
 						Intelligence_Briefing::answer( ... )
 					),

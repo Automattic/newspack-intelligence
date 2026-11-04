@@ -30,8 +30,8 @@ function Invitation( { text, label, onClick } ) {
 }
 
 /**
- * A run of the briefing's rows under its heading: a client, a lens or
- * Industry.
+ * A run of the briefing's rows under its heading: a client, a lens,
+ * Newspack or Industry.
  *
  * @param {Object}                    props
  * @param {import('react').ReactNode} props.title    The group's heading.
@@ -48,8 +48,10 @@ function Group( { title, children } ) {
 }
 
 /**
- * The week's changes: each client's items under its chip, then the rest
- * under Industry, and how many the week held when the briefing shows fewer.
+ * The week's changes, each group in the answer's order, by its most
+ * important item: a client's items under its chip, Newspack's own work
+ * under Newspack and the rest under Industry, and how many the week held
+ * when the briefing shows fewer.
  *
  * @param {Object}                 props
  * @param {Object}                 props.answer       The `briefing changes` answer.
@@ -58,6 +60,22 @@ function Group( { title, children } ) {
  * @return {import('react').ReactElement} The groups.
  */
 function Changes( { answer, onOpenEntity, onSave } ) {
+	const heading = ( group ) => {
+		switch ( group.role ) {
+			case 'client':
+				return (
+					<EntityChip
+						entityKey={ group.entity_key }
+						name={ group.name }
+						onOpen={ onOpenEntity }
+					/>
+				);
+			case 'newspack_product':
+				return __( 'Newspack', 'newspack-intelligence' );
+			default:
+				return __( 'Industry', 'newspack-intelligence' );
+		}
+	};
 	const shown = new Set(
 		answer.groups.flatMap( ( group ) =>
 			group.items.map( ( item ) => item.item_key )
@@ -68,9 +86,9 @@ function Changes( { answer, onOpenEntity, onSave } ) {
 			{ shown < answer.total && (
 				<p className="newspack-nodes-status is-muted">
 					{ sprintf(
-						/* translators: 1: items shown, 2: items about any entity in the window. */
+						/* translators: 1: items shown, 2: items naming any entity in the window. */
 						__(
-							'The %1$d most important of %2$d items about clients and the industry in the last seven days.',
+							'The %1$d most important of %2$d items about clients, Newspack and the industry in the last seven days.',
 							'newspack-intelligence'
 						),
 						shown,
@@ -80,18 +98,8 @@ function Changes( { answer, onOpenEntity, onSave } ) {
 			) }
 			{ answer.groups.map( ( group ) => (
 				<Group
-					key={ group.entity_key ?? '' }
-					title={
-						group.entity_key ? (
-							<EntityChip
-								entityKey={ group.entity_key }
-								name={ group.name }
-								onOpen={ onOpenEntity }
-							/>
-						) : (
-							__( 'Industry', 'newspack-intelligence' )
-						)
-					}
+					key={ group.entity_key ?? group.role ?? '' }
+					title={ heading( group ) }
 				>
 					<ul className="newspack-intelligence__items">
 						{ group.items.map( ( item ) => (
@@ -111,11 +119,11 @@ function Changes( { answer, onOpenEntity, onSave } ) {
 
 /**
  * Briefing: what changed in the last seven days, each its own read — the
- * two `briefing` slices, the week's items about clients and the industry,
- * ranked by importance and grouped by client, and every client's and lens's
- * signals; and `watches`, the reader's own, each as the Watches view lists
- * it. Each row opens
- * the item, its client, its lens or its watch; each empty slice invites the
+ * two `briefing` slices, the week's items about clients, Newspack and the
+ * industry, ranked by importance and grouped by client, Newspack or
+ * Industry, and every client's and lens's signals; and `watches`, the
+ * reader's own, each as the Watches view lists it. Each row opens the
+ * item, its client, its lens or its watch; each empty slice invites the
  * one thing the reader can do about it. Nothing polls.
  *
  * @param {Object}                 props
@@ -159,7 +167,7 @@ export default function Briefing( {
 				empty={
 					<Invitation
 						text={ __(
-							'Nothing about a client or the industry arrived in the last seven days.',
+							'Nothing about a client, Newspack or the industry arrived in the last seven days.',
 							'newspack-intelligence'
 						) }
 						label={ __(

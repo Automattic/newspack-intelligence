@@ -27,10 +27,37 @@ const CHURN = {
 	],
 };
 
+const PRODUCT_BUG = {
+	...ITEM,
+	item_key: 'github:tern-mailer-crash-12',
+	title: 'Tern Mailer crashes on send',
+	url: 'https://github.example/tern-mailer/issues/12',
+	kind: 'incident',
+	importance: 8,
+	entities: [
+		{
+			entity_key: 'product:tern-mailer',
+			name: 'Tern Mailer',
+			state: 'asserted',
+		},
+	],
+};
+
 const CHANGES = {
 	groups: [
-		{ entity_key: CLIENT, name: 'Kestrel Quillwork', items: [ CHURN ] },
-		{ entity_key: null, name: null, items: [ ITEM ] },
+		{ entity_key: null, name: null, role: null, items: [ ITEM ] },
+		{
+			entity_key: CLIENT,
+			name: 'Kestrel Quillwork',
+			role: 'client',
+			items: [ CHURN ],
+		},
+		{
+			entity_key: null,
+			name: null,
+			role: 'newspack_product',
+			items: [ PRODUCT_BUG ],
+		},
 	],
 	total: 61,
 	available: true,
@@ -136,7 +163,7 @@ describe( 'Briefing', () => {
 		expect( wire.sent( 'watches' ) ).toEqual( [ [] ] );
 	} );
 
-	it( 'groups the week under each client, the rest under Industry', async () => {
+	it( 'heads each group by its role, in the order the answer gives', async () => {
 		renderBriefing();
 		const changes = await screen.findByRole( 'region', {
 			name: 'Last seven days',
@@ -148,12 +175,21 @@ describe( 'Briefing', () => {
 			level: 3,
 		} );
 		expect( groups.map( ( g ) => g.textContent ) ).toEqual( [
-			'Kestrel Quillwork',
 			'Industry',
+			'Kestrel Quillwork',
+			'Newspack',
 		] );
 		expect(
+			within( groups[ 2 ].closest( 'section' ) ).getByRole( 'link', {
+				name: 'Tern Mailer crashes on send',
+			} )
+		).toHaveAttribute(
+			'href',
+			'https://github.example/tern-mailer/issues/12'
+		);
+		expect(
 			within( changes ).getByText(
-				'The 2 most important of 61 items about clients and the industry in the last seven days.'
+				'The 3 most important of 61 items about clients, Newspack and the industry in the last seven days.'
 			)
 		).toBeInTheDocument();
 		expect(
@@ -162,7 +198,7 @@ describe( 'Briefing', () => {
 			} )
 		).toHaveAttribute( 'href', 'https://inkfold-review.example/acme' );
 		fireEvent.click(
-			within( groups[ 0 ] ).getByRole( 'button', {
+			within( groups[ 1 ] ).getByRole( 'button', {
 				name: 'Kestrel Quillwork',
 			} )
 		);
@@ -219,7 +255,7 @@ describe( 'Briefing', () => {
 		wire.replies.watches = { watches: [], available: true };
 		renderBriefing();
 		await screen.findByText(
-			'Nothing about a client or the industry arrived in the last seven days.',
+			'Nothing about a client, Newspack or the industry arrived in the last seven days.',
 			{ exact: false }
 		);
 		fireEvent.click(

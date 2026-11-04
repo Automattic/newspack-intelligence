@@ -495,13 +495,19 @@ the index's topic names. The system message frames the reading for the
 audience `set_audience` names, and without an audience while none is set, and scores
 against the `add_profile` lines; the shipped topologies set neither, so a
 deployment supplies both (see Topologies). `add_importance_floor <kind>
-<min>` sets a kind's least importance, 0 to `Extractor_Node::MAX_FLOOR` (9),
-a second for the same kind replacing the first, refusing a kind outside
-`Intel_Event::ITEM_KINDS` and a min outside that span, and
-`remove_importance_floor <kind>` drops it, refused when the kind has none;
-`dump_config()` replays one add line per floor. After the call, and on the
-heuristic stand-in, whose kind is `other`, alike, the importance written and
-forwarded is the greater of the score and its kind's floor; the shipped
+<min> [<relevance>]` sets a kind's least importance, 0 to
+`Extractor_Node::MAX_FLOOR` (9), and the relevance an extraction needs
+before the floor lifts it, 0 to `Prompts::MAX_SCORE` (10), the scale
+`Prompts::parse_extract()` clamps to, and 0 when omitted; a second for the
+same kind replaces the first, and it refuses a kind outside
+`Intel_Event::ITEM_KINDS`, a min outside its span and a relevance outside
+its own, each naming the value, and `remove_importance_floor <kind>` drops
+it, refused when the kind has none; `dump_config()` replays one add line per
+floor, its relevance only when it is not 0. After the call, and on the heuristic
+stand-in, whose kind is `other` and whose relevance is 0, alike, the
+importance written and forwarded is the greater of the score and its kind's
+floor when the relevance is at least the floor's, else the score, so the
+stand-in takes only a floor that names no relevance; the shipped
 topologies set none. `Prompts::parse_extract()` reads the first `{…}`
 block through `Prompts::json_object()`, which the NER step shares, cuts the summary to 280 characters, reads an unknown kind as `other`,
 clamps the scores and keeps at most five claims with a predicate from the
@@ -741,8 +747,10 @@ the item links holding it at the item's time — and `search` adds `q`.
 free) and its description, and the call's filters, a lens's, `save_lens`,
 the schema's args and the page's `lensLists` vocabulary all iterate it.
 `search` reads in the order its `sort` names (`Graph_Query::sorts()`):
-`importance`, the highest importance first, then the newest, an unscored
-item last, or `time`, the newest first; any other is refused.
+`importance`, the highest importance first, then the most relevant, then
+the newest, an unscored item last, or `time`, the newest first; any other is
+refused. `Graph_Query::MOST_IMPORTANT` is that order, which the briefing
+reads by too.
 With none named it reads by `time` when it has words and no lens, else by
 `importance`, so a lens and a bare search rank by importance, and it answers
 the order it read in as `sort`. The arg declares no default, since a bound
@@ -945,16 +953,23 @@ through its own Fetcher, and refuses any other `what` (`what must be one
 of: changes, signals`); `SLICES` lists them once, as `health`'s do, each
 answered by the method of its name, and each reads through a read that
 already answers it. `changes` answers `{ groups: [ { entity_key, name,
-items } ], total, available }`: `Graph_Query::most_important()`, the
+role, items } ], total, available }`: `Graph_Query::most_important()`, the
 window's `Graph_Query::DEFAULT_LIMIT` (50) readable items holding a live
-about-link to any entity, so an item only `publisher`-linked never
-appears, by importance, then the newest, the unscored last, each as
-`search` answers it, and `total` counting every such item; each item sits
-under every entity holding an open `client` role, as its survivor, that it
-is about, and one that is not about an open client, only a former client or a
-topic, sits in a group whose `entity_key` and `name` are null. Groups follow the order
-of their most important item, so the cap ranks the whole window before it
-groups. `signals` answers `{ clients: [ { entity_key, name, signals } ],
+`subject` or `mention` link to any entity (`Intel_Event::NAMING_ROLES`),
+so an item only tagged with a topic or only `publisher`-linked never
+appears, by importance, then relevance, then the newest, the unscored last,
+each as `search` answers it, and `total` counting every such item; each
+item sits under every entity holding an open `client` role, as its
+survivor, that it is about, in a group of role `client` carrying the
+client's key and name. One that is not about an open client but is about an
+entity holding an open `newspack_product` role sits in one group of that
+role, and any other, such as one about a former client alone, in one group
+of role null; both carry a null `entity_key` and `name`. One statement reads
+every survivor holding an open `client` or `newspack_product` role
+(`Graph_Query::CLIENT`, `Graph_Query::NEWSPACK_PRODUCT`) with its role, and
+names only the clients. Groups follow the order of their most important
+item, so the cap ranks the whole window before it groups. `signals`
+answers `{ clients: [ { entity_key, name, signals } ],
 lenses: [ { lens_key, name, signals } ], available }`: every open client,
 by name, in one `signals_of()`, so both axes are read without a statement per client,
 and every lens, by name, through `spikes()` with its lens, each whose
@@ -1986,7 +2001,7 @@ its own one-shot commands; nothing polls.
 | `IntelligencePage.js` | default | Opens on Briefing, its first tab, and switches Briefing, Search, Entity, Lenses, Review, Collections and Watches in place; holds the submitted search, the open entity, lens, collection and watch, the watch form's draft and the item being saved, so a view returns as it was left, and a lens's "Watch this" opens the watch form on that lens; the Briefing opens an entity, a lens or the lens list, a watch, the watch form or Search; a URL carrying `watch=<key>`, as the watcher's email links it, opens the page on Watches with that watch open, or on the list when the reader's watches do not hold it; mounts `HealthStrip` above the tab bar, on every view; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the `NEWSPACK::NODES` header subtitled `Intelligence` and the debug overlay |
 | `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite`, `commandArgs` | `commandArgs()` names every value given, a list once per member, leaving out a blank value or an empty list; a read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments; a write sent once per `run()` to the `intelligence` CI or the `ci` it names, which answers the tokens it sent, running `refresh` once it lands, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal, answered arguments and `pending` |
 | `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_id`, `last_error` and `file`, reads it whole; while collection is off every other row is listed neutral, never a fault, and its Activate fix offers one button per composition the slice's `topologies` names, which leaves out any whose sources cannot collect on this host, labelled with the name and sharing one `activate` write, the row naming `wp nodes activate` as `<code>` when it names none; `unconfigured` is a fault naming the path the lists file belongs at and that an empty file will do, or, for a reader whose answer carries no `file`, that an administrator can create it and an empty one will do; the projector catching up on the ontology is neutral until its hold has stood five minutes (`BEHIND_FAULT_S`), then a fault; with nothing held the backlog row counts the later queue's entries as items waiting to resolve or retry; every time it shows renders in the browser's own zone through the substrate's `formatLocalDateTime()`, while the dropped days stay the UTC days the server names, read as "Items parked from <first_day> to <last_day> were dropped before they resolved.", true of an entry aged out and of one the full queue refused; the line names each source that has not reported yet ("Collecting from 5 of 6 sources; feed has not reported yet."), the names joined in the page's own language (`document.documentElement.lang`, else the browser's), and says the health is not fully known for any other unknown row, a source in a state it does not recognise included; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology`, `canManage` for the rest), and anyone else reads "An administrator can …" |
-| `views/Briefing.js` | default | The two `briefing` slices and `watches`, each its own read and card: "Last seven days", each client's items under its `EntityChip` and then the rest under "Industry", each an `ItemRow`, and, when the window held more than it shows, how many of how many; "Signals", each client's under its chip and each lens's under the button opening it, through `TrendTable`; "Your watches", each a `WatchRow` opening it; a card answering nothing says so and offers the one control that acts on it: Search everything, Open lenses or New watch |
+| `views/Briefing.js` | default | The two `briefing` slices and `watches`, each its own read and card: "Last seven days", each group in the answer's order and headed by its `role`: a `client` group under its `EntityChip`, the `newspack_product` group under "Newspack" and the group of role null under "Industry", each item an `ItemRow`, and, when the window held more than it shows, how many of how many; "Signals", each client's under its chip and each lens's under the button opening it, through `TrendTable`; "Your watches", each a `WatchRow` opening it; a card answering nothing says so and offers the one control that acts on it: Search everything, Open lenses or New watch |
 | `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time, in the order the answer's `sort` names, which the reader switches, sending `--sort` from the first page; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words, the order and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
 | `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens` above `search --lens` a page at a time, in the order the answer's `sort` names, which the reader switches, beside `trends --lens`; trend rows and signals citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
 | `views/Entity.js` | default | `entity`, headed, for a record answering a `status`, by the client's status line — client since, the first row of its own `signals` read once answered or "No signal", its feature requests and complaints, and the day of its last item or "No item about it yet" — then `signals --entity` under its header, both axes, each row's value its axis and kind and the value it counts, its count against its baseline, then `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |

@@ -94,13 +94,15 @@ final class IntelligenceBriefingTest extends TestCase {
 	}
 
 	/**
-	 * The window's items about any entity, ranked by importance and grouped
-	 * by the open clients each is about, each group in the order of its most
-	 * important item and its items by importance, then the newest; an item
-	 * about two clients sits under both, and one that is not about a
-	 * client, only about a former client or a topic, under no client. An item
-	 * its own site published, one linked to nothing, one whose only link a
-	 * curator rejected and one dated before the window are left out.
+	 * The window's items naming any entity as subject or mention, ranked by
+	 * importance and grouped by the open clients each is about, each group in
+	 * the order of its most important item and its items by importance, then
+	 * the newest; an item about two clients sits under both, and one that is
+	 * not about a client, only about a former client, under no client. An
+	 * item its own site published, one only tagged with a topic, one linked
+	 * to nothing, one whose only link a curator rejected and one dated before
+	 * the window are left out. Every group carries its role: `client` for a
+	 * client's, null for the no-client group.
 	 */
 	public function test_changes_rank_the_week_and_group_it_by_client(): void {
 		$this->about( 'linear:plover-churn', self::PLOVER, 'subject', 'churn_signal', 9.0, 1 );
@@ -111,6 +113,7 @@ final class IntelligenceBriefingTest extends TestCase {
 		$this->about( 'p2:sedge-bug', self::SEDGE, 'subject', 'complaint', 8.25, 2 );
 		$this->about( 'feed:wren-grant', self::WREN, 'subject', 'funding', 7.75, 3 );
 		$this->about( 'feed:paywall-study', self::PAYWALLS, 'topic', 'research', 4.0, 6 );
+		$this->about( 'feed:plover-tagged', self::PLOVER, 'topic', 'complaint', 9.6, 1 );
 		$this->about( 'feed:plover-own-story', self::PLOVER, Intel_Event::PUBLISHER, 'other', 9.5, 1 );
 		$this->about( 'slack:sedge-rumor', self::SEDGE, 'subject', 'churn_signal', 9.25, 1 );
 		$this->seed( self::judged( 'link_rejected', 'slack:sedge-rumor', self::SEDGE, 'user:41' ) );
@@ -123,13 +126,60 @@ final class IntelligenceBriefingTest extends TestCase {
 			[
 				[ self::PLOVER, 'Plover Quillpost', [ 'linear:plover-churn', 'unthread:plover-call', 'github:plover-ask', 'slack:joint-migration' ] ],
 				[ self::SEDGE, 'Sedgewick Inkfold', [ 'p2:sedge-bug', 'slack:joint-migration' ] ],
-				[ null, null, [ 'feed:wren-grant', 'feed:paywall-study' ] ],
+				[ null, null, [ 'feed:wren-grant' ] ],
 			],
 			\array_map( static fn ( array $group ): array => [ $group['entity_key'], $group['name'], \array_column( $group['items'], 'item_key' ) ], $answer['groups'] )
 		);
-		$this->assertSame( [ 7, true ], [ $answer['total'], $answer['available'] ] );
+		$this->assertSame( \array_fill( 0, 3, [ 'entity_key', 'name', 'role', 'items' ] ), \array_map( 'array_keys', $answer['groups'] ) );
+		$this->assertSame( [ 'client', 'client', null ], \array_column( $answer['groups'], 'role' ) );
+		$this->assertSame( [ 6, true ], [ $answer['total'], $answer['available'] ] );
 		$search = \array_column( $this->ci->dispatch( 'search', [ '--entity=' . self::SEDGE ] )['items'], null, 'item_key' );
 		$this->assertSame( $search['p2:sedge-bug'], $answer['groups'][1]['items'][0] );
+	}
+
+	/** Items of equal importance rank the more relevant first, however old it is. */
+	public function test_changes_break_an_importance_tie_by_relevance(): void {
+		$this->about( 'p2:plover-plugin-bug', self::PLOVER, 'subject', 'complaint', 8.0, 1, 2.0 );
+		$this->about( 'linear:plover-leaving', self::PLOVER, 'subject', 'churn_signal', 8.0, 4, 7.0 );
+
+		$this->assertSame( [ 'linear:plover-leaving', 'p2:plover-plugin-bug' ], \array_column( $this->ci->dispatch( 'briefing', [ 'changes' ] )['groups'][0]['items'], 'item_key' ) );
+	}
+
+	/**
+	 * An item about no open client but about an entity holding an open
+	 * `newspack_product` role, under any key merged into it, sits in that
+	 * role's group, in the order of its most important item; one about a
+	 * client too sits under the client alone, and one about a product whose
+	 * role ended sits in the no-client group.
+	 */
+	public function test_changes_group_newspack_work_under_its_role(): void {
+		$product = 'product:tern-newsletters';
+		$annex   = 'product:tern-mailer';
+		$retired = 'product:tern-classic';
+		$this->seed(
+			self::entity( $product, 'Tern Newsletters' ),
+			self::entity( $annex, 'Tern Mailer' ),
+			self::entity( $retired, 'Tern Classic' ),
+			self::merged( $annex, $product ),
+			self::role( $product, 'newspack_product' ),
+			[ Intel_Event::make( 'role_ended', [ 'entity_key' => $retired, 'role' => 'newspack_product', 'from_ts' => self::$jan_01, 'to_ts' => self::back( 30 ) ], 'user:41', 'fixture-9' ) ]
+		);
+		$this->about( 'github:tern-crash', $product, 'subject', 'incident', 8.5, 2 );
+		$this->about( 'github:tern-mailer-bug', $annex, 'mention', 'complaint', 6.0, 1 );
+		$this->about( 'linear:plover-tern-ask', self::PLOVER, 'subject', 'feature_request', 7.0, 3 );
+		$this->seed( self::link( 'link_asserted', 'linear:plover-tern-ask', $product, 'mention', 'name', 1.0, self::back( 3 ) ) );
+		$this->about( 'feed:tern-classic-sunset', $retired, 'subject', 'other', 9.0, 2 );
+
+		$groups = $this->ci->dispatch( 'briefing', [ 'changes' ] )['groups'];
+
+		$this->assertSame(
+			[
+				[ 'entity_key' => null, 'name' => null, 'role' => null, 'items' => [ 'feed:tern-classic-sunset' ] ],
+				[ 'entity_key' => null, 'name' => null, 'role' => 'newspack_product', 'items' => [ 'github:tern-crash', 'github:tern-mailer-bug' ] ],
+				[ 'entity_key' => self::PLOVER, 'name' => 'Plover Quillpost', 'role' => 'client', 'items' => [ 'linear:plover-tern-ask' ] ],
+			],
+			\array_map( static fn ( array $group ): array => \array_merge( $group, [ 'items' => \array_column( $group['items'], 'item_key' ) ] ), $groups )
+		);
 	}
 
 	/** The window opens at the first of the last seven UTC days, today the last. */
@@ -268,10 +318,11 @@ final class IntelligenceBriefingTest extends TestCase {
 	 * @param string $kind       Its kind.
 	 * @param float  $importance Its importance.
 	 * @param int    $days       How many days before the tick it is dated.
+	 * @param float  $relevance  Its relevance.
 	 */
-	private function about( string $key, string $entity, string $role, string $kind, float $importance, int $days ): void {
+	private function about( string $key, string $entity, string $role, string $kind, float $importance, int $days, float $relevance = 5.0 ): void {
 		$at = self::back( $days );
-		$this->seed( self::item( $key, "Item {$key}", \explode( ':', $key )[0], 'public', $at ), self::extraction( $key, "A {$kind}.", $kind, $at, [], 5.0, $importance ), self::link( 'link_asserted', $key, $entity, $role, 'name', 1.0, $at ) );
+		$this->seed( self::item( $key, "Item {$key}", \explode( ':', $key )[0], 'public', $at ), self::extraction( $key, "A {$kind}.", $kind, $at, [], $relevance, $importance ), self::link( 'link_asserted', $key, $entity, $role, 'name', 1.0, $at ) );
 	}
 
 	/**

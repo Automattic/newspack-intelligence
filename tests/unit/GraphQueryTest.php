@@ -149,6 +149,18 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [ 'feed:heron-newer', 'feed:heron-older', 'feed:heron-unscored' ], self::keys( self::search( [ 'sort' => 'importance' ] ) ) );
 	}
 
+	/** Equal importance ranks the more relevant first, however old it is. */
+	public function test_importance_breaks_ties_by_relevance_before_time(): void {
+		$this->seed(
+			self::item( 'linear:osprey-churn', 'Osprey Ledger weighs leaving', 'linear', 'public', self::$oct_01 ),
+			self::extraction( 'linear:osprey-churn', 'Osprey may leave.', 'churn_signal', self::$oct_01, [], 7.0, 8.0 ),
+			self::item( 'github:osprey-bug', 'A plugin bug report', 'github', 'public', self::$oct_13 ),
+			self::extraction( 'github:osprey-bug', 'A bug.', 'complaint', self::$oct_13, [], 2.0, 8.0 )
+		);
+
+		$this->assertSame( [ 'linear:osprey-churn', 'github:osprey-bug' ], self::keys( self::search( [ 'sort' => 'importance' ] ) ) );
+	}
+
 	/**
 	 * With no sort named, words rank by time and a query without words by
 	 * importance; the answer says which.

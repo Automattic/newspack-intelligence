@@ -84,6 +84,9 @@ final class Graph_Query {
 	/** The role an entity holds while it is a client. */
 	public const CLIENT = 'client';
 
+	/** The role an entity holds while it is Newspack's own work. */
+	public const NEWSPACK_PRODUCT = 'newspack_product';
+
 	/** The item kinds a client's status counts. */
 	private const STATUS_KINDS = [ 'feature_request', 'complaint' ];
 
@@ -164,12 +167,12 @@ final class Graph_Query {
 		'order'  => Intel_Graph_Row_Schema::ITEM_TIME . ' DESC, i.item_key DESC',
 	];
 
-	/** How a page of items reads by importance: the highest, then the newest, the unscored last. */
+	/** How a page of items reads by importance: the highest, then the most relevant, then the newest, the unscored last. */
 	private const MOST_IMPORTANT = [
 		'join'   => '',
 		'binds'  => [],
 		'fields' => [],
-		'order'  => 'x.importance DESC, ' . Intel_Graph_Row_Schema::ITEM_TIME . ' DESC, i.item_key DESC',
+		'order'  => 'x.importance DESC, x.relevance DESC, ' . Intel_Graph_Row_Schema::ITEM_TIME . ' DESC, i.item_key DESC',
 	];
 
 	/** Each order `search` takes, by its `sort`. */
@@ -343,8 +346,9 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The most important readable items about any entity dated in the last
-	 * `$days` UTC days, as `search` answers them, and how many there are.
+	 * The most important readable items naming any entity as their subject
+	 * or a mention, a topic tag aside, dated in the last `$days` UTC days, as
+	 * `search` answers them, and how many there are.
 	 *
 	 * @api Read by Intelligence_Briefing.
 	 * @param Row_Reader $r     The reader.
@@ -358,7 +362,7 @@ final class Graph_Query {
 			'about' => true,
 			'days'  => self::last_days( $days ),
 		] + self::filter_of( [] );
-		return self::items( $r, $g, $filter, $limit, 0, self::MOST_IMPORTANT );
+		return self::items( $r, $g, $filter, $limit, 0, self::MOST_IMPORTANT, Intel_Event::NAMING_ROLES );
 	}
 
 	/**

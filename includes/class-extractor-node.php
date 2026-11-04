@@ -10,13 +10,15 @@
  * the entities it was given as asserted, the set the Resolver settles links
  * by. Each extraction then forwards an `item_extracted` struct `{ item,
  * relevance, importance }` to its target, the deduper. Its importance is at
- * least the floor `add_importance_floor` sets for its kind, the heuristic
- * stand-in's `other` included. The Resolver forwards an item the projection
- * holds an extraction of only when it asserts a link that extraction was not
- * given, or when its record is owed an extraction (`extract`), so an item is
- * extracted again to record claims about a subject accepted or confirmed
- * since, or when `ontology reextract` asks; the projector replaces the
- * item's claims and topics with the new extraction's.
+ * least the floor `add_importance_floor` sets for its kind when its relevance
+ * is at least the floor's; the heuristic stand-in, kind `other` at relevance
+ * 0, takes only a floor that names no relevance. The Resolver forwards an
+ * item the projection holds an extraction of only when it asserts a link
+ * that extraction was not given, or when its record is owed an extraction
+ * (`extract`), so an item is extracted again to record claims about a
+ * subject accepted or confirmed since, or when `ontology reextract` asks;
+ * the projector replaces the item's claims and topics with the new
+ * extraction's.
  *
  * A claim's subject and object resolve through the entities whose names
  * spell the whole of them. The subject is the one of those the item links
@@ -73,8 +75,8 @@ class Extractor_Node extends Node {
 	/** The attempts after which a failed call is no longer retried. */
 	public const MAX_ATTEMPTS = 5;
 
-	/** The highest importance floor a kind takes. */
-	public const MAX_FLOOR = 9;
+	/** The highest importance floor a kind takes, one below the highest score. */
+	public const MAX_FLOOR = Prompts::MAX_SCORE - 1;
 
 	/** Every key a status carries, null, so each publish clears what its outcome leaves out. */
 	public const BLANK_STATUS = [
@@ -97,7 +99,7 @@ class Extractor_Node extends Node {
 	/** @var list<string> Relevance-profile lines add_profile registered and remove_profile left, in call order. */
 	protected array $profiles = [];
 
-	/** @var array<string,int> Each item kind's least importance, by add_importance_floor, in call order. */
+	/** @var array<string,array{0:int,1:int}> Each item kind's least importance and the relevance it asks, by add_importance_floor, in call order. */
 	protected array $importance_floors = [];
 
 	/** Wire the sibling `:config` interpreter for the LLM and prompt verbs. */
@@ -181,7 +183,10 @@ class Extractor_Node extends Node {
 		}
 		$stage    = null === $parsed ? self::HEURISTIC_STAGE : 'extract';
 		$parsed ??= [ 'summary' => self::heuristic_summary( $item ), 'kind' => 'other', 'topics' => [], 'relevance' => 0, 'importance' => 0, 'sentiment' => 0.0, 'claims' => [] ];
-		$parsed['importance'] = \max( $parsed['importance'], $this->importance_floors[ $parsed['kind'] ] ?? 0 );
+		[ $floor, $needs ] = $this->importance_floors[ $parsed['kind'] ] ?? [ 0, 0 ];
+		if ( $parsed['relevance'] >= $needs ) {
+			$parsed['importance'] = \max( $parsed['importance'], $floor );
+		}
 		$fields   = [
 			'item_key'     => $item_key,
 			'summary'      => $parsed['summary'],
@@ -338,25 +343,28 @@ class Extractor_Node extends Node {
 
 	/**
 	 * Replay the client and prompt verbs, then one `add_importance_floor`
-	 * line per floor, in the order they were set.
+	 * line per floor, in the order they were set, its relevance when not 0.
 	 */
 	public function dump_config(): string {
 		$out = $this->llm_dump_config();
-		foreach ( $this->importance_floors as $kind => $min ) {
-			$out .= $this->config_line( 'add_importance_floor', $kind, (string) $min );
+		foreach ( $this->importance_floors as $kind => [ $min, $relevance ] ) {
+			$out .= $this->config_line( 'add_importance_floor', $kind, (string) $min, ...( 0 === $relevance ? [] : [ (string) $relevance ] ) );
 		}
 		return $out;
 	}
 
 	/**
 	 * Set a kind's floor, replacing any it had: every extraction of that
-	 * kind, the heuristic stand-in's `other` included, scores at least $min.
+	 * kind at least $relevance relevant scores at least $min. The heuristic
+	 * stand-in, kind `other` at relevance 0, takes it only when $relevance
+	 * is 0.
 	 *
-	 * @param string $kind A kind from `Intel_Event::ITEM_KINDS`.
-	 * @param int    $min  From 0 to MAX_FLOOR.
-	 * @throws \InvalidArgumentException On any other kind or min.
+	 * @param string $kind      A kind from `Intel_Event::ITEM_KINDS`.
+	 * @param int    $min       From 0 to MAX_FLOOR.
+	 * @param int    $relevance From 0 to `Prompts::MAX_SCORE`.
+	 * @throws \InvalidArgumentException On any other kind, min or relevance.
 	 */
-	public function add_importance_floor( string $kind, int $min ): void {
+	public function add_importance_floor( string $kind, int $min, int $relevance = 0 ): void {
 		if ( ! \in_array( $kind, Intel_Event::ITEM_KINDS, true ) ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
 			throw new \InvalidArgumentException( "add_importance_floor: '{$kind}' is not an item kind" );
@@ -365,7 +373,11 @@ class Extractor_Node extends Node {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
 			throw new \InvalidArgumentException( 'add_importance_floor: a floor is 0 to ' . self::MAX_FLOOR . "; got {$min}" );
 		}
-		$this->importance_floors[ $kind ] = $min;
+		if ( $relevance < 0 || $relevance > Prompts::MAX_SCORE ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+			throw new \InvalidArgumentException( 'add_importance_floor: a relevance is 0 to ' . Prompts::MAX_SCORE . "; got {$relevance}" );
+		}
+		$this->importance_floors[ $kind ] = [ $min, $relevance ];
 	}
 
 	/**
@@ -405,13 +417,13 @@ class Extractor_Node extends Node {
 				...self::list_verbs( 'profile', 'profiles', [ 'name' => 'text', 'type' => 'string', 'required' => true, 'variadic' => true ], 'Add a relevance-profile line used to score items: <text>.' ),
 				[
 					'name'        => 'add_importance_floor',
-					'description' => 'Score every extraction of a kind at least <min>, 0 to ' . self::MAX_FLOOR . ', replacing its floor: <kind> <min>.',
-					'args'        => [ $kind, [ 'name' => 'min', 'type' => 'int', 'required' => true ] ],
+					'description' => 'Score every extraction of a kind at least <min>, 0 to ' . self::MAX_FLOOR . ', when its relevance is at least <relevance>, 0 to ' . Prompts::MAX_SCORE . ' and 0 when omitted, replacing its floor: <kind> <min> [<relevance>].',
+					'args'        => [ $kind, [ 'name' => 'min', 'type' => 'int', 'required' => true ], [ 'name' => 'relevance', 'type' => 'int', 'required' => false, 'default' => 0 ] ],
 					'multiple'    => true,
 					'handler'     => static function ( Command_Interpreter_Node $interpreter, array $args ): string {
 						/** @var self $extractor */
 						$extractor = $interpreter->patron();
-						$extractor->add_importance_floor( Core::as_string( $args['kind'] ), Core::as_int( $args['min'] ) );
+						$extractor->add_importance_floor( Core::as_string( $args['kind'] ), Core::as_int( $args['min'] ), Core::as_int( $args['relevance'] ) );
 						return "ok\n";
 					},
 				],

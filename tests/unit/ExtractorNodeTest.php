@@ -105,6 +105,30 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( [ 8, 8, 3 ], [ $this->written()[0]['importance'], $this->forwarded()[0]['importance'], $this->written()[0]['relevance'] ] );
 	}
 
+	/** A floor naming a relevance lifts only an extraction at least that relevant. */
+	public function test_an_importance_floor_lifts_only_at_its_relevance(): void {
+		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ) );
+		$this->assertSame( "ok\n", $this->extractor->interpreter()?->dispatch( 'add_importance_floor', [ 'churn_signal', '8', '5' ] ) );
+		$scored = [];
+		foreach ( [ 4, 5, 7 ] as $relevance ) {
+			$this->out->captured = [];
+			$this->answer( '{"summary":"The Gazette weighs leaving.","kind":"churn_signal","relevance":' . $relevance . ',"importance":2}' );
+			$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+			$scored[] = [ $this->written()[0]['importance'], $this->forwarded()[0]['importance'] ];
+		}
+
+		$this->assertSame( [ [ 2, 2 ], [ 8, 8 ], [ 8, 8 ] ], $scored );
+	}
+
+	/** The heuristic stand-in scores relevance 0, so a floor naming a relevance leaves it. */
+	public function test_the_heuristic_stand_in_misses_a_floor_naming_a_relevance(): void {
+		$this->extractor->interpreter()?->dispatch( 'add_importance_floor', [ 'other', '3', '1' ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$this->assertSame( [ 'other', 0, 0 ], [ $this->written()[0]['kind'], $this->written()[0]['importance'], $this->forwarded()[0]['importance'] ] );
+	}
+
 	/** A floor never lowers a score above it. */
 	public function test_an_importance_floor_keeps_a_higher_score(): void {
 		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ) );
@@ -131,16 +155,17 @@ final class ExtractorNodeTest extends TestCase {
 		$node->interpreter()->dispatch( 'add_importance_floor', [ 'complaint', '8' ] );
 		$node->interpreter()->dispatch( 'add_importance_floor', [ 'feature_request', '6' ] );
 		$node->interpreter()->dispatch( 'add_importance_floor', [ 'complaint', '5' ] );
-		$this->assertSame( [ 'complaint' => 5, 'feature_request' => 6 ], $this->read_private( $node, 'importance_floors' ) );
+		$this->assertSame( [ 'complaint' => [ 5, 0 ], 'feature_request' => [ 6, 0 ] ], $this->read_private( $node, 'importance_floors' ) );
 
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'remove_importance_floor', [ 'complaint' ] ) );
 
-		$this->assertSame( [ 'feature_request' => 6 ], $this->read_private( $node, 'importance_floors' ) );
+		$this->assertSame( [ 'feature_request' => [ 6, 0 ] ], $this->read_private( $node, 'importance_floors' ) );
 	}
 
 	/**
-	 * A floor naming a kind outside `Intel_Event::ITEM_KINDS`, or a min
-	 * outside 0 to 9, is refused; so is removing a kind with no floor.
+	 * A floor naming a kind outside `Intel_Event::ITEM_KINDS`, a min outside
+	 * 0 to 9 or a relevance outside 0 to 10 is refused; so is removing a kind
+	 * with no floor.
 	 *
 	 * @return array<string,array{0:string,1:list<string>,2:string}>
 	 */
@@ -148,6 +173,7 @@ final class ExtractorNodeTest extends TestCase {
 		return [
 			'an unknown kind'      => [ 'add_importance_floor', [ 'gossip', '4' ], "add_importance_floor: 'gossip' is not an item kind" ],
 			'a min above nine'     => [ 'add_importance_floor', [ 'complaint', '10' ], 'add_importance_floor: a floor is 0 to 9; got 10' ],
+			'a relevance above ten' => [ 'add_importance_floor', [ 'complaint', '6', '11' ], 'add_importance_floor: a relevance is 0 to 10; got 11' ],
 			'a kind with no floor' => [ 'remove_importance_floor', [ 'praise' ], "remove_importance_floor: 'praise' has no floor" ],
 		];
 	}
@@ -166,7 +192,7 @@ final class ExtractorNodeTest extends TestCase {
 
 		$this->assertInstanceOf( \InvalidArgumentException::class, $caught );
 		$this->assertSame( $refusal, $caught->getMessage() );
-		$this->assertSame( [ 'launch' => 4 ], $this->read_private( $node, 'importance_floors' ) );
+		$this->assertSame( [ 'launch' => [ 4, 0 ] ], $this->read_private( $node, 'importance_floors' ) );
 	}
 
 	/** A negative min, which the verb's int binding refuses first, is refused by the setter too. */
@@ -179,19 +205,38 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( [], $this->read_private( $node, 'importance_floors' ) );
 	}
 
-	/** Each floor dumps as one add line and replays to the same floors. */
+	/** A negative relevance, which the verb's int binding refuses first, is refused by the setter too. */
+	public function test_a_negative_floor_relevance_is_refused(): void {
+		$node = $this->prompt_node();
+
+		$caught = $this->caught_any( fn () => $node->add_importance_floor( 'complaint', 6, -1 ) );
+
+		$this->assertSame( 'add_importance_floor: a relevance is 0 to 10; got -1', $caught->getMessage() );
+		$this->assertSame( [], $this->read_private( $node, 'importance_floors' ) );
+	}
+
+	/** A floor may ask the highest relevance a call scores, 10, past the highest floor. */
+	public function test_a_floor_may_ask_relevance_ten(): void {
+		$node = $this->prompt_node();
+
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_importance_floor', [ 'praise', '7', '10' ] ) );
+
+		$this->assertSame( [ 'praise' => [ 7, 10 ] ], $this->read_private( $node, 'importance_floors' ) );
+	}
+
+	/** Each floor dumps as one add line, its relevance only when not 0, and replays to the same floors. */
 	public function test_floors_dump_and_replay(): void {
 		$node = $this->prompt_node();
 		$node->name( 'llmnode' );
-		$node->interpreter()->dispatch( 'add_importance_floor', [ 'churn_signal', '8' ] );
+		$node->interpreter()->dispatch( 'add_importance_floor', [ 'churn_signal', '8', '5' ] );
 		$node->interpreter()->dispatch( 'add_importance_floor', [ 'feature_request', '6' ] );
 
 		$dump = $node->dump_config();
 
-		$this->assertStringContainsString( "command_node llmnode:config add_importance_floor churn_signal 8\ncommand_node llmnode:config add_importance_floor feature_request 6\n", $dump );
+		$this->assertStringContainsString( "command_node llmnode:config add_importance_floor churn_signal 8 5\ncommand_node llmnode:config add_importance_floor feature_request 6\n", $dump );
 		$replayed = $this->prompt_node();
 		$this->replay_config( $dump, $replayed );
-		$this->assertSame( [ 'churn_signal' => 8, 'feature_request' => 6 ], $this->read_private( $replayed, 'importance_floors' ) );
+		$this->assertSame( [ 'churn_signal' => [ 8, 5 ], 'feature_request' => [ 6, 0 ] ], $this->read_private( $replayed, 'importance_floors' ) );
 	}
 
 	/** The audience a prompt is framed for is set in TSL, one quoted token, last write wins. */

@@ -2,10 +2,11 @@
 /**
  * Intelligence_Briefing: the `briefing` read verb's two slices, each what
  * changed in the last DAYS UTC days, through the reads that already answer
- * it. `changes` ranks the window's readable items about any entity by
- * importance and groups them under the clients each is about; `signals`
- * answers every client's signals on both axes and every lens's, each whose
- * bucket closed inside the window.
+ * it. `changes` ranks the window's readable items naming any entity by
+ * importance and groups them under the clients each is about, else under
+ * Newspack's own work, else under no one; `signals` answers every client's
+ * signals on both axes and every lens's, each whose bucket closed inside
+ * the window.
  *
  * @package Newspack_Intelligence
  */
@@ -41,12 +42,15 @@ final class Intelligence_Briefing {
 	}
 
 	/**
-	 * The window's `Graph_Query::DEFAULT_LIMIT` most important items about any entity, grouped
-	 * under each open client an item is about, an item about two under both
-	 * and one about none under a group with no client; each group in the
-	 * order of its most important item, and its items as they rank.
+	 * The window's `Graph_Query::DEFAULT_LIMIT` most important items naming
+	 * any entity as subject or mention, in three kinds of group: under each
+	 * open client an item is about, role `client`, an item about two under
+	 * both; one about no client but about an entity holding an open
+	 * `newspack_product` role under one group of that role; and any other
+	 * under one group of role null. Each group sits in the order of its most
+	 * important item, and its items as they rank.
 	 *
-	 * @return array<string,mixed> `{ groups: [ { entity_key, name, items } ], total, available }`.
+	 * @return array<string,mixed> `{ groups: [ { entity_key, name, role, items } ], total, available }`.
 	 */
 	private static function changes(): array {
 		return Graph_Query::answer(
@@ -55,18 +59,22 @@ final class Intelligence_Briefing {
 				'total'  => 0,
 			],
 			static function ( Row_Reader $r, array $g ): array {
-				$read    = Graph_Query::most_important( $r, $g, self::DAYS, Graph_Query::DEFAULT_LIMIT );
-				$clients = self::clients( $r, $g );
-				$groups  = [];
+				$read     = Graph_Query::most_important( $r, $g, self::DAYS, Graph_Query::DEFAULT_LIMIT );
+				$holders  = self::holders( $r, $g );
+				$clients  = $holders[ Graph_Query::CLIENT ];
+				$products = $holders[ Graph_Query::NEWSPACK_PRODUCT ];
+				$groups   = [];
 				foreach ( Core::arr( $read['items'] ) as $item ) {
 					$about = \array_map( Core::as_string( ... ), \array_column( Core::arr( Core::arr( $item )['entities'] ), 'entity_key' ) );
-					$under = \array_values( \array_intersect( \array_keys( $clients ), $about ) );
-					foreach ( [] === $under ? [ '' ] : $under as $key ) {
-						$groups[ $key ]          ??= [
-							'entity_key' => '' === $key ? null : $key,
-							'name'       => $clients[ $key ] ?? null,
-							'items'      => [],
-						];
+					$named = \array_flip( $about );
+					$under = \array_map( 'strval', \array_keys( \array_intersect_key( $named, $clients ) ) );
+					if ( [] === $under ) {
+						$under = [ [] === \array_intersect_key( $named, $products ) ? '' : Graph_Query::NEWSPACK_PRODUCT ];
+					}
+					foreach ( $under as $key ) {
+						$groups[ $key ]          ??= isset( $clients[ $key ] )
+							? [ 'entity_key' => $key, 'name' => $clients[ $key ], 'role' => Graph_Query::CLIENT, 'items' => [] ]
+							: [ 'entity_key' => null, 'name' => null, 'role' => '' === $key ? null : $key, 'items' => [] ];
 						$groups[ $key ]['items'][] = $item;
 					}
 				}
@@ -95,7 +103,7 @@ final class Intelligence_Briefing {
 			static function ( Row_Reader $r, array $g ): array {
 				// A bucket closing as the window opens counts.
 				$after   = (float) ( Graph_Query::last_days( self::DAYS )[0] - 1 );
-				$clients = self::clients( $r, $g );
+				$clients = self::holders( $r, $g )[ Graph_Query::CLIENT ];
 				$signals = Graph_Query::signals_of( $r, $g, \array_map( 'strval', \array_keys( $clients ) ), $after );
 				$lenses  = static fn ( string $key ): array => Graph_Query::spikes( $r, $g, [ 'lens' => $key ], $after );
 				return [
@@ -114,6 +122,20 @@ final class Intelligence_Briefing {
 	 */
 	private static function lenses( Row_Reader $r ): array {
 		return self::named( $r->rows( 'SELECT lens_key, name FROM ' . Intel_Graph_Row_Schema::all( $r, 'lenses' ) . ' l ORDER BY name, lens_key', [] ) );
+	}
+
+	/**
+	 * Rows of a key and a name, as each key => its name.
+	 *
+	 * @param list<list<mixed>> $rows The rows.
+	 * @return array<string,string>
+	 */
+	private static function named( array $rows ): array {
+		$named = [];
+		foreach ( $rows as [ $key, $name ] ) {
+			$named[ Core::as_string( $key ) ] = Core::as_string( $name );
+		}
+		return $named;
 	}
 
 	/**
@@ -140,33 +162,28 @@ final class Intelligence_Briefing {
 	}
 
 	/**
-	 * Every entity holding an open client role, as its survivor, by name.
+	 * Every entity holding an open client or `newspack_product` role, as its
+	 * survivor, in one statement: each client by name, ordered by it, and
+	 * each product with no name read.
 	 *
 	 * @param Row_Reader $r The reader.
 	 * @param Graph      $g The graph the read opened.
-	 * @return array<string,string> Each survivor => its name.
+	 * @return array<string,array<string,string>> Each role => each survivor => its name, '' for a product.
 	 */
-	private static function clients( Row_Reader $r, array $g ): array {
+	private static function holders( Row_Reader $r, array $g ): array {
+		$held = [
+			Graph_Query::CLIENT           => [],
+			Graph_Query::NEWSPACK_PRODUCT => [],
+		];
 		$rows = $r->rows(
-			"{$g['with']} SELECT c.entity_key, " . Graph_Query::name_of( $r, 'c.entity_key' ) . ' FROM ( SELECT DISTINCT COALESCE( mg.value, t.entity_key ) AS entity_key FROM '
-			. Intel_Graph_Row_Schema::all( $r, 'roles' ) . " t LEFT JOIN mg ON mg.key = t.entity_key WHERE t.role = ? AND t.to_ts = 0 ) c WHERE c.entity_key <> '' ORDER BY 2, 1",
-			[ ...$g['binds'], Graph_Query::CLIENT ]
+			"{$g['with']} SELECT c.entity_key, c.role, CASE WHEN c.role = ? THEN " . Graph_Query::name_of( $r, 'c.entity_key' ) . ' END FROM ( SELECT DISTINCT COALESCE( mg.value, t.entity_key ) AS entity_key, t.role FROM '
+			. Intel_Graph_Row_Schema::all( $r, 'roles' ) . " t LEFT JOIN mg ON mg.key = t.entity_key WHERE t.role IN ( ?, ? ) AND t.to_ts = 0 ) c WHERE c.entity_key <> '' ORDER BY 3, 1",
+			[ ...$g['binds'], Graph_Query::CLIENT, Graph_Query::CLIENT, Graph_Query::NEWSPACK_PRODUCT ]
 		);
-		return self::named( $rows );
-	}
-
-	/**
-	 * Rows of a key and a name, as each key => its name.
-	 *
-	 * @param list<list<mixed>> $rows The rows.
-	 * @return array<string,string>
-	 */
-	private static function named( array $rows ): array {
-		$named = [];
-		foreach ( $rows as [ $key, $name ] ) {
-			$named[ Core::as_string( $key ) ] = Core::as_string( $name );
+		foreach ( $rows as [ $key, $role, $name ] ) {
+			$held[ Core::as_string( $role ) ][ Core::as_string( $key ) ] = Core::as_string( $name );
 		}
-		return $named;
+		return $held;
 	}
 
 }
