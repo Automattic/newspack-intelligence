@@ -7,22 +7,21 @@
 # checkpoints the deduper's lookup with its cursor. intel:reresolve:resolve
 # feeds the resolver each item the reresolver names, so an item whose
 # resolution throws dead-letters alone. Both Consumers hand the resolver one
-# item a poll, so a burst never runs every item's LLM calls in one fill().
+# item a poll. Every model call, the resolver's NER step and each extraction,
+# goes through intel:llm, which queues it in its own Table and answers the
+# caller when the AI proxy does, so no call blocks the worker.
 var num_partitions = 1
 include topic-probe
 include newspack-intelligence-streams
 make_node Consumer intel:items:resolve <config:logs_dir>/intel-items.p{partition} <config:offsets_dir>/<topology>.intel-items-resolve.p{partition} <config:deadletter_dir>/<topology>.intel-items-resolve.p{partition}
 command_node intel:items:resolve:config set_line_mode true
-make_node Resolver resolver intel:writer intel:later
-cmd resolver:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1
-cmd resolver:config set_vault_id AI-proxy
-cmd resolver:config set_model gpt-oss-120b
-cmd resolver:config set_feature newspack-intelligence
-make_node Extractor extractor intel:writer intel:later
-cmd extractor:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1
-cmd extractor:config set_vault_id AI-proxy
-cmd extractor:config set_model gpt-oss-120b
-cmd extractor:config set_feature newspack-intelligence
+make_node LLM_Call intel:llm ai-proxy
+cmd intel:llm:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1
+cmd intel:llm:config set_model gpt-oss-120b
+cmd intel:llm:config set_feature newspack-intelligence
+cmd intel:llm:config set_concurrency 4
+make_node Resolver resolver intel:writer intel:later intel:llm
+make_node Extractor extractor intel:writer intel:later intel:llm
 make_node Deduper deduper intel:writer
 command_node intel:items:resolve:config add_snapshot_node deduper
 make_node Consumer intel:reresolve:resolve <config:logs_dir>/intel-reresolve.p{partition} <config:offsets_dir>/<topology>.intel-reresolve-resolve.p{partition} <config:deadletter_dir>/<topology>.intel-reresolve-resolve.p{partition}

@@ -2,7 +2,11 @@
 /**
  * Extractor_Node: extracts each resolved item that links something. Fed the
  * `{ item, links, proposals }` resolution the Resolver forwards, it skips an
- * item with no link and no candidate, and makes one LLM call for any other.
+ * item with no link and no candidate, and asks any other's extraction of
+ * the model-call node its `make_node` line names, `intel:llm`, naming the
+ * `extract` prompt, its inputs the topics it offers by name and key, the
+ * profile and the audience, and carrying the resolution less its item, so
+ * the answer finishes it (`Asks_Model`).
  * It writes an `extraction_recorded` naming topic keys plus a
  * `claim_asserted` per claim whose subject is an entity the item links,
  * addressed by TO to the writer its `make_node` line names (substrate
@@ -25,16 +29,18 @@
  * by an asserted link, so a claim about a merely proposed subject asserts
  * nothing; the object is the only one, or the only one the item links, and
  * otherwise stays text. A claim takes the confidence of its subject's link.
- * With no client, a thrown call or a reply that does not parse, an item that
- * has not been extracted by any call records a heuristic extraction under its
- * own actor, so it is marked extracted rather than retried in a loop. A call
- * made that fails also parks a re-resolution of the item on the Delay its
+ * When the vault group lends no credential, the call fails or its reply does
+ * not parse, an item that has not been extracted by any call records a
+ * heuristic extraction under its own actor, so it is marked extracted rather
+ * than retried in a loop. A call made that fails, or an answer whose
+ * extraction throws, also parks a re-resolution of the item on the Delay its
  * `make_node` line names after the writer, with exponential backoff, until
  * MAX_ATTEMPTS; the struct it reads carries the `attempt` that counts them, and
- * the retry stays owed its extraction when the struct was (`extract`). The
- * topics offered and the names claims resolve through come from the process's
- * shared `Entity_Index::current()`, the one the Resolver reads. Each
- * extraction publishes its status: heuristic with no client, a call that
+ * the retry stays owed its extraction when the struct was (`extract`), whose
+ * request waits behind new work. The topics offered come from the process's
+ * shared `Entity_Index::current()`, the one the Resolver reads, and the names
+ * claims resolve through from the one current when the answer lands. Each
+ * extraction publishes its status: heuristic, naming the group, a call that
  * answered, or the failure of one that did not.
  *
  * @package Newspack_Intelligence
@@ -54,10 +60,8 @@ use Newspack_Nodes\Worker_Should_Stop;
 
 class Extractor_Node extends Node {
 	use Schema_Reflection;
-	use LLM_Config {
-		dump_config as private llm_dump_config;
-	}
 	use Emits_Struct;
+	use Asks_Model;
 	use Publishes_Status;
 
 	/** The struct kind forwarded to the target once an item is extracted. */
@@ -81,7 +85,7 @@ class Extractor_Node extends Node {
 	/** Every key a status carries, null, so each publish clears what its outcome leaves out. */
 	public const BLANK_STATUS = [
 		'mode'          => null,
-		'vault_id'      => null,
+		'vault_group'   => null,
 		'last_ok_at'    => null,
 		'last_error'    => null,
 		'failing_since' => null,
@@ -102,86 +106,149 @@ class Extractor_Node extends Node {
 	/** @var array<string,array{0:int,1:int}> Each item kind's least importance and the relevance it asks, by add_importance_floor, in call order. */
 	protected array $importance_floors = [];
 
-	/** Wire the sibling `:config` interpreter for the LLM and prompt verbs. */
+	/** Wire the sibling `:config` interpreter for the prompt verbs. */
 	public function __construct() {
 		parent::__construct();
 		$this->auto_wire_interpreter();
 	}
 
 	/**
-	 * Extract one resolution. A resolution it cannot read is dropped with a
-	 * rate-limited line; an item linking nothing is skipped.
+	 * Ask for one resolution's extraction, or finish it with the answer
+	 * `intel:llm` sends back. A resolution or an answer it cannot read is
+	 * dropped with a rate-limited line; an item linking nothing is skipped.
 	 *
 	 * @param array<int,mixed> $message Incoming Message.
+	 * @throws Worker_Should_Stop When the worker is asked to stop.
 	 */
 	public function fill( array $message ): void {
-		$value     = Core::arr( $message[ Message::VALUE ] );
-		$item      = Intel_Event::item_of( Core::arr( $value['item'] ?? null ) );
-		$links     = $value['links'] ?? null;
-		$proposals = $value['proposals'] ?? null;
-		$extracted = $value['extracted'] ?? null;
-		$attempt   = $value['attempt'] ?? null;
-		$owed      = $value['extract'] ?? null;
-		if ( 0 === ( Core::int( $message[ Message::TYPE ] ) & Message::TM_STRUCT ) || null === $item || ! \is_array( $links ) || ! \is_array( $proposals ) || ! \is_bool( $extracted ) || ! \is_int( $attempt ) || ! \is_bool( $owed ) ) {
-			$this->print_less_often( 'dropping a resolution it cannot read from ', Core::as_string( $message[ Message::FROM ] ) );
+		if ( self::is_answer( $message ) ) {
+			$this->answered( $message );
 			return;
 		}
-		if ( [] === $links && [] === $proposals ) {
+		$value = $message[ Message::VALUE ];
+		$read  = 0 === ( Core::int( $message[ Message::TYPE ] ) & Message::TM_STRUCT ) ? null : self::resolution_of( $value );
+		if ( null === $read ) {
+			$this->print_less_often( 'dropping a resolution it cannot read from ', Core::terminal_safe( Core::as_string( $message[ Message::FROM ] ) ) );
 			return;
 		}
-		$linked = [];
-		foreach ( $links as $link ) {
-			$link = Core::arr( $link );
-			$key  = Core::as_string( $link['entity_key'] ?? null );
-			$asserted       = 'asserted' === ( $link['state'] ?? null );
-			$linked[ $key ] = [ Core::as_float( $link['confidence'] ?? null ), $asserted, $asserted && 'identifier' === ( $link['method'] ?? null ) ];
+		[ $item, $linked, , , $owed ] = $read;
+		if ( [] === $linked && [] === Core::arr( Core::arr( $value )['proposals'] ) ) {
+			return;
 		}
-		$this->extract( $item, $linked, $extracted, $owed, $attempt, Entity_Index::current() );
+		$inputs = [
+			'topics'   => Entity_Index::current()->topics(),
+			'profile'  => \implode( "\n", $this->profiles ),
+			'audience' => $this->audience,
+		];
+		$this->ask_model( 'extract', $item, $inputs, [ 'max_tokens' => 800, 'temperature' => 0.2 ], [ 'resolution' => \array_diff_key( Core::arr( $value ), [ 'item' => true ] ) ], $owed );
 	}
 
 	/**
-	 * Ask for the item's extraction and write it, or its heuristic stand-in
+	 * Finish the extraction an answer carries the resolution of; one whose
+	 * extraction throws is logged and parks the item's retry, so nothing
+	 * throws into the event loop but a cooperative stop (ADR-14).
+	 *
+	 * @param array<int,mixed> $message The answer: `{ content | error | unlent, item, inputs, carry }`.
+	 * @throws Worker_Should_Stop When the worker is asked to stop.
+	 */
+	private function answered( array $message ): void {
+		$answer = $this->answer_of( $message );
+		$read   = null === $answer ? null : self::resolution_of( [ 'item' => $answer[1] ] + Core::arr( $answer[3]['resolution'] ?? null ) );
+		$topics = $answer[2]['topics'] ?? null;
+		if ( null === $answer || null === $read || ! \is_array( $topics ) ) {
+			if ( null !== $answer ) {
+				$this->unreadable( $message );
+			}
+			return;
+		}
+		[ $item, $linked, $extracted, $attempt, $owed ] = $read;
+		$item_key                                        = Core::as_string( $item['item_key'] );
+		$retry = fn () => $this->retry( $item_key, $attempt, $owed );
+		$this->finish_answer(
+			$item_key,
+			function () use ( $item, $linked, $extracted, $owed, $attempt, $topics, $answer, $retry ): void {
+				if ( $this->extract( $item, $linked, $extracted, $owed, $attempt, \array_map( Core::as_string( ... ), $topics ), $answer[0] ) ) {
+					$retry();
+				}
+			},
+			$retry
+		);
+	}
+
+	/**
+	 * A resolution as the Resolver forwards it: the item, each linked entity
+	 * => its link's confidence, whether it is asserted, and whether by an
+	 * identifier, whether a call extracted the item before, the failed calls
+	 * made for it, and whether it is owed an extraction whatever it holds;
+	 * null when any of them does not read.
+	 *
+	 * @param mixed $value The resolution.
+	 * @return array{0:array<string,mixed>,1:array<string,array{0:float,1:bool,2:bool}>,2:bool,3:int,4:bool}|null
+	 */
+	private static function resolution_of( mixed $value ): ?array {
+		$value     = Core::arr( $value );
+		$item      = Intel_Event::item_of( Core::arr( $value['item'] ?? null ) );
+		$links     = $value['links'] ?? null;
+		$extracted = $value['extracted'] ?? null;
+		$attempt   = $value['attempt'] ?? null;
+		$owed      = $value['extract'] ?? null;
+		if ( null === $item || ! \is_array( $links ) || ! \is_array( $value['proposals'] ?? null ) || ! \is_bool( $extracted ) || ! \is_int( $attempt ) || ! \is_bool( $owed ) ) {
+			return null;
+		}
+		$linked = [];
+		foreach ( $links as $link ) {
+			$link           = Core::arr( $link );
+			$key            = Core::as_string( $link['entity_key'] ?? null );
+			$asserted       = 'asserted' === ( $link['state'] ?? null );
+			$linked[ $key ] = [ Core::as_float( $link['confidence'] ?? null ), $asserted, $asserted && 'identifier' === ( $link['method'] ?? null ) ];
+		}
+		return [ $item, $linked, $extracted, $attempt, $owed ];
+	}
+
+	/**
+	 * Write the item's extraction from the answer, or its heuristic stand-in
 	 * under its own stage, dated by the item's retrieval; an item a call
 	 * extracted before keeps that extraction when this call fails, which was
 	 * not given the link that sent it, so its next re-resolution tries again.
-	 * A call made that fails also parks the item's retry.
+	 * A call made that fails owes the item's retry, which the caller parks
+	 * once, after the write.
 	 *
-	 * @param array<string,mixed>                 $item      The item.
+	 * @param array<string,mixed>                        $item      The item.
 	 * @param array<string,array{0:float,1:bool,2:bool}> $linked    Each linked entity => its link's confidence, whether it is asserted, and whether by an identifier.
-	 * @param bool                                $extracted Whether a call extracted the item before.
-	 * @param bool                                $owed      Whether it was sent to be extracted whatever it holds.
-	 * @param int                                 $attempt   The failed calls made for the item so far.
-	 * @param Entity_Index                        $index     The entities claims resolve through.
+	 * @param bool                                       $extracted Whether a call extracted the item before.
+	 * @param bool                                       $owed      Whether it was sent to be extracted whatever it holds.
+	 * @param int                                        $attempt   The failed calls made for the item so far.
+	 * @param array<array-key,string>                    $topics    Each topic name the request offered => its key.
+	 * @param array<array-key,mixed>                     $answer    The answer: its `content`, `error` or `unlent`.
+	 * @return bool Whether a call was made and failed, so a retry is owed.
 	 */
-	private function extract( array $item, array $linked, bool $extracted, bool $owed, int $attempt, Entity_Index $index ): void {
-		$topics = $index->topics();
-		$client = $this->make_llm_client();
-		$parsed = null;
-		$fault  = 'AI proxy answer did not parse as an extraction';
-		if ( null !== $client ) {
-			try {
-				$names  = \array_keys( $topics );
-				$parsed = Prompts::parse_extract( $client->chat( Prompts::extract( $item, $names, \implode( "\n", $this->profiles ), $this->audience ), [ 'max_tokens' => 800, 'temperature' => 0.2 ] ), $names );
-			} catch ( Worker_Should_Stop $stop ) {
-				throw $stop;
-			} catch ( \RuntimeException $e ) {
-				$fault = $e->getMessage();
-				$this->print_less_often( 'extraction call failed: ', $fault );
-			}
+	private function extract( array $item, array $linked, bool $extracted, bool $owed, int $attempt, array $topics, array $answer ): bool {
+		$content = $answer['content'] ?? null;
+		$unlent  = $answer['unlent'] ?? null;
+		$parsed  = \is_string( $content ) ? Prompts::parse_extract( $content, \array_map( 'strval', \array_keys( $topics ) ) ) : null;
+		$fault   = Core::as_string( $answer['error'] ?? 'AI proxy answer did not parse as an extraction' );
+		if ( isset( $answer['error'] ) ) {
+			$this->print_less_often( 'extraction call failed: ', Core::terminal_safe( $fault ) );
 		}
 		$item_key = Core::as_string( $item['item_key'] );
-		if ( null === $client ) {
-			$this->publish_snapshot( [ 'mode' => 'heuristic' ] );
-		} elseif ( null === $parsed ) {
+		$failed   = ! \is_string( $unlent ) && null === $parsed;
+		if ( \is_string( $unlent ) ) {
+			$this->publish_snapshot(
+				[
+					'mode'        => 'heuristic',
+					'vault_group' => $unlent,
+				]
+			);
+		} elseif ( $failed ) {
 			$this->publish_failing( $fault );
-			$this->retry( $item_key, $attempt, $owed );
 		} else {
 			$this->publish_snapshot( [ 'mode' => 'call', 'last_ok_at' => (int) Core::$now ] );
 		}
 		if ( null === $parsed && $extracted ) {
 			$this->print_less_often( 'keeping the earlier extraction of ', Core::terminal_safe( $item_key ) . ': no call answered' );
-			return;
+			return $failed;
 		}
+		$index    = Entity_Index::current();
 		$stage    = null === $parsed ? self::HEURISTIC_STAGE : 'extract';
 		$parsed ??= [ 'summary' => self::heuristic_summary( $item ), 'kind' => 'other', 'topics' => [], 'relevance' => 0, 'importance' => 0, 'sentiment' => 0.0, 'claims' => [] ];
 		[ $floor, $needs ] = $this->importance_floors[ $parsed['kind'] ] ?? [ 0, 0 ];
@@ -226,6 +293,7 @@ class Extractor_Node extends Node {
 			];
 			$this->emit( $this->writer, Intel_Event::machine_event( 'extract', 'claim_asserted', $fields ) );
 		}
+		return $failed;
 	}
 
 	/**
@@ -246,13 +314,12 @@ class Extractor_Node extends Node {
 	}
 
 	/**
-	 * Publish a status of every key, the configured vault id among them,
-	 * those $fields leaves out null.
+	 * Publish a status of every key, those $fields leaves out null.
 	 *
 	 * @param array<string,mixed> $fields The keys the outcome carries.
 	 */
 	private function publish_snapshot( array $fields ): void {
-		$this->publish_status( [ ...self::BLANK_STATUS, 'vault_id' => $this->vault_id, ...$fields ] );
+		$this->publish_status( [ ...self::BLANK_STATUS, ...$fields ] );
 	}
 
 	/**
@@ -345,11 +412,11 @@ class Extractor_Node extends Node {
 	}
 
 	/**
-	 * Replay the client and prompt verbs, then one `add_importance_floor`
-	 * line per floor, in the order they were set, its relevance when not 0.
+	 * Replay the prompt verbs, then one `add_importance_floor` line per floor,
+	 * in the order they were set, its relevance when not 0.
 	 */
 	public function dump_config(): string {
-		$out = $this->llm_dump_config();
+		$out = parent::dump_config() . $this->dump_setters() . $this->dump_lists();
 		foreach ( $this->importance_floors as $kind => [ $min, $relevance ] ) {
 			$out .= $this->config_line( 'add_importance_floor', $kind, (string) $min, ...( 0 === $relevance ? [] : [ (string) $relevance ] ) );
 		}
@@ -406,9 +473,9 @@ class Extractor_Node extends Node {
 			'arguments'    => [
 				[ 'name' => 'writer', 'type' => 'node_name', 'required' => true, 'description' => 'The event writer every extraction and claim is addressed to: intel:writer.' ],
 				[ 'name' => 'later', 'type' => 'node_name', 'required' => true, 'description' => 'The Delay a failed call\'s retry parks on: intel:later.' ],
+				[ 'name' => 'llm', 'type' => 'node_name', 'required' => true, 'description' => 'The model-call node every extraction is asked of: intel:llm.' ],
 			],
 			'commands'     => [
-				...self::llm_config_commands(),
 				[
 					'name'        => 'set_audience',
 					'description' => 'Set who the prompt is framed for: <audience>.',

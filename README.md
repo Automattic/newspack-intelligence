@@ -43,9 +43,13 @@ the graph. Restricted items answer only a user granted the
 purges a source's recorded items outside the kept key globs; with
 `--dry-run` it only counts them.
 
-AI calls go through the Automattic **AI API Proxy** (OpenAI-compatible),
-defaulting to the `gpt-oss-120b` model. The bearer token is a substrate Vault
-entry: the node config holds only its id, resolved at use time.
+AI calls go through the Automattic **AI API Proxy** (OpenAI-compatible) on
+the `gpt-oss-120b` model, made by one `LLM_Call` node, `intel:llm`, without
+blocking the worker: it queues each call durably, new work ahead of a
+re-extraction backlog, and answers the resolver or the extractor when the
+proxy does. The bearer token is the entry of the `ai-proxy` Vault group on
+`https://public-api.wordpress.com`, header `Authorization`, scheme `Bearer`,
+which the node's Curl lends each call; it never rides in a message.
 
 ## Develop
 

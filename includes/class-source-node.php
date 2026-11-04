@@ -18,15 +18,12 @@ use Newspack_Nodes\Command_Args;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
-use Newspack_Nodes\Frontier;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Publishes_Status;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Schema_Reflection;
 use Newspack_Nodes\Shutdown_Sweeper;
-use Newspack_Nodes\Table_Client;
-use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Timer_Node;
 use Newspack_Nodes\Worker_Should_Stop;
 
@@ -39,6 +36,9 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	use Schema_Reflection;
 	use Emits_Struct;
 	use Publishes_Status;
+
+	/** @use Owns_Curl_Frontier<Request> */
+	use Owns_Curl_Frontier;
 
 	/** Requests an API source sends in one pass; the next is dropped, logged. */
 	public const MAX_REQUESTS_PER_PASS = 60;
@@ -55,9 +55,6 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 		'&lt;'  => '<',
 		'&gt;'  => '>',
 	];
-
-	/** Sibling kind of the Table a source keeps its passes' requests in. */
-	public const FRONTIER = 'frontier';
 
 	/** Rooms of requests one take moves into the queue, so a busy host's leave room for others'. */
 	private const TAKE_ROOMS = 4;
@@ -99,18 +96,6 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	/** Seconds between grid fetches, null for none: only TICK fetches. */
 	protected ?int $interval = null;
 
-	/** The Vault group whose entry on a request's origin lends it a credential; '' for none. */
-	protected string $vault_group = '';
-
-	/** Each pass's requests, in the source's Table, or in the process for a source owning none. */
-	private Frontier $frontier;
-
-	/** Asks the source's Table. */
-	protected Table_Client $tables;
-
-	/** The `{name}:curl` sibling that fetches. */
-	private Curl_Node $curl;
-
 	/** The tick clock, in whole seconds, at this process's last Router tick; null before the first. */
 	private ?int $checked = null;
 
@@ -119,9 +104,6 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/** @var array<string,Request> Requests taken to send, by subject, each waiting for a slot and its host. */
 	private array $queue = [];
-
-	/** @var array<string,Request> Requests sent and not yet answered, as the queue holds them. */
-	private array $in_flight = [];
 
 	/** Whether a pass is open: it took a request, and has not published. */
 	private bool $open = false;
@@ -151,19 +133,6 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	private bool $sending = false;
 
 	/**
-	 * Tachikoma-parity: no-arg ctor. Builds the Curl sibling first, because
-	 * naming the `:config` interpreter names every sibling, and a Frontier
-	 * over the Table the class's schema `owns`, else in the process.
-	 */
-	public function __construct() {
-		parent::__construct();
-		$this->tables   = new Table_Client( $this );
-		$this->frontier = self::owns_frontier() ? new Frontier( $this->tables, fn (): string => $this->sibling_name( self::FRONTIER ) ) : new Frontier();
-		$this->attach_curl();
-		$this->auto_wire_interpreter();
-	}
-
-	/**
 	 * `<tier> [vault_group]`: the tier, refused outside Intel_Event::TIERS, and
 	 * the group Curl runs under, building the owned Table once and Curl again,
 	 * resending its flight, on a new group.
@@ -183,15 +152,8 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 		}
 		$group = $this->vault_group;
 		$this->assign_schema_args( $args, $values );
-		if ( $group !== $this->vault_group ) {
-			$this->retract_sibling( 'curl' );
-			$this->attach_curl();
-			$this->queue     = [];
-			$this->in_flight = [];
-			$this->frontier->restart();
-		}
-		if ( self::owns_frontier() && ! isset( $this->siblings()[ self::FRONTIER ] ) ) {
-			$this->own_frontier();
+		if ( $this->adopt_group( $group ) ) {
+			$this->queue = [];
 		}
 		return parent::arguments( $args );
 	}
@@ -235,47 +197,6 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 			$this->print_less_often( 'a scheduled fetch failed; trying again at the next boundary: ', $e->getMessage() );
 			$this->publish_failing( $e->getMessage() );
 		}
-	}
-
-	/** Whether the class's schema `owns` a frontier Table. */
-	private static function owns_frontier(): bool {
-		return isset( Core::arr( static::node_schema()['owns'] ?? null )[ self::FRONTIER ] );
-	}
-
-	/**
-	 * Build and publish the frontier Table, as owned_table() declares it,
-	 * where the worker's partition is bound; one it refuses leaves none.
-	 *
-	 * @throws \Throwable What the Table refused.
-	 */
-	private function own_frontier(): void {
-		$table = new Table_Node();
-		$table->patron( $this );
-		$this->publish_sibling( self::FRONTIER, $table );
-		try {
-			$table->arguments( \array_values( static::owned_table( self::FRONTIER, $this->name, [] ) ) );
-		} catch ( \Throwable $e ) {
-			$this->retract_sibling( self::FRONTIER );
-			throw $e;
-		}
-		$table->sink( $this->sink );
-	}
-
-	/**
-	 * The frontier Table a source named `$owner` builds, which the analyzer
-	 * reads off its line: its own name as namespace, a year's TTL, sqlite.
-	 *
-	 * @param string       $suffix    The owned Table's suffix, `frontier`.
-	 * @param string       $owner     The source's name.
-	 * @param list<string> $arguments The source's `make_node` arguments.
-	 * @return array{namespace: string, ttl: string, backend: string}
-	 */
-	public static function owned_table( string $suffix, string $owner, array $arguments ): array {
-		return [
-			'namespace' => $owner,
-			'ttl'       => (string) Frontier::MEMBER_TTL,
-			'backend'   => 'sqlite',
-		];
 	}
 
 	/**
@@ -342,13 +263,10 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	 */
 	private function answer( array $message ): void {
 		$key     = Core::as_string( $message[ Message::KEY ] );
-		$request = $this->in_flight[ $key ] ?? null;
+		$request = $this->settled( $message );
 		if ( null === $request ) {
-			$this->drop_message( $message, 'no request in flight' );
 			return;
 		}
-		unset( $this->in_flight[ $key ] );
-		$this->frontier->settle( [ $key ] );
 		$this->answering = $request;
 		$this->fault     = null;
 		$hop             = false;
@@ -469,7 +387,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 					unset( $this->queue[ $key ] );
 					if ( $this->sent >= $this->max_requests() ) {
 						$this->print_less_often( 'a pass reached ' . $this->max_requests() . ' requests; sending no more: ', Core::terminal_safe( $request[0] ) );
-						$this->frontier->settle( [ $key ] );
+						$this->abandon( $key );
 						$this->abandoned( $key );
 						$this->drop_queue();
 						break 2;
@@ -599,26 +517,19 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * @param Request $request The hop's url, a POST's body or null, its hops and its note.
 	 */
 	private function dispatch( string $key, array $request ): void {
-		[ $url, $body ]          = $request;
-		$this->in_flight[ $key ] = $request;
-		$value                   = [
+		[ $url, $body ] = $request;
+		$value          = [
 			'url'    => $url,
 			'method' => null === $body ? 'GET' : 'POST',
 		];
 		if ( null !== $body ) {
 			$value['body'] = $body;
 		}
-		$value                     = [ ...$value, ...$this->request_options( $key ), 'public_only' => $this->public_only() ];
-		$message                   = Message::new_message();
-		$message[ Message::TYPE ]  = Message::TM_STRUCT;
-		$message[ Message::FROM ]  = $this->name;
-		$message[ Message::KEY ]   = $key;
-		$message[ Message::VALUE ] = $value;
+		$value = [ ...$value, ...$this->request_options( $key ), 'public_only' => $this->public_only() ];
 		try {
-			$this->curl->fill( $message );
+			$this->send_curl( $key, $value, $request );
 		} catch ( \Throwable $e ) {
-			unset( $this->in_flight[ $key ] );
-			$this->frontier->settle( [ $key ] );
+			$this->abandon( $key );
 			$this->abandoned( $key );
 			throw $e;
 		}
@@ -823,17 +734,12 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * Build and publish the Curl sibling under the vault group, following
-	 * redirects as follows_redirects() says, its answers coming back here.
+	 * Have Curl follow redirects as follows_redirects() says.
+	 *
+	 * @param Curl_Node $curl The sibling.
 	 */
-	private function attach_curl(): void {
-		$curl = new Curl_Node();
-		$curl->patron( $this );
-		$curl->arguments( '' === $this->vault_group ? [] : [ $this->vault_group ] );
+	protected function configure_curl( Curl_Node $curl ): void {
 		$curl->follow_redirects( $this->follows_redirects() );
-		$this->curl = $curl;
-		$this->publish_sibling( 'curl', $curl );
-		$curl->sink( $this->sink );
 	}
 
 	/** Whether Curl follows a redirect itself, or answers it for this source to re-queue. */
@@ -931,16 +837,6 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * On a clean stop, remove the answered requests from the Table, so the next
-	 * process sends none again.
-	 *
-	 * @api Used by substrate.
-	 */
-	public function shutdown_sweep(): void {
-		$this->frontier->flush();
-	}
-
-	/**
 	 * The url the answer being taken was fetched from: its request's, or the
 	 * last Location a redirect of it named.
 	 */
@@ -1007,17 +903,6 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 		if ( ! $this->timer_is_active() ) {
 			$this->set_timer();
 		}
-	}
-
-	/**
-	 * Name the Curl sibling through `parent::`, and point its answers at
-	 * this name.
-	 *
-	 * @api Used by substrate.
-	 */
-	protected function set_sibling_names(): void {
-		parent::set_sibling_names();
-		$this->curl->target( $this->name );
 	}
 
 	/** Emit the base config, each declared setter's line and one add line per list or checked list entry. */

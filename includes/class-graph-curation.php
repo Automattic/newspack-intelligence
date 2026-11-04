@@ -630,7 +630,7 @@ final class Graph_Curation {
 	/**
 	 * A value, refused past its cap in bytes as the stream writes it.
 	 *
-	 * @api Intel_Event bounds an optional field by it, and LLM_Entity_Extractor a name.
+	 * @api Intel_Event bounds an optional field by it, and Prompts::parse_entities() a name.
 	 * @param string $name  What the value is, for the refusal.
 	 * @param string $value The value.
 	 * @param int    $bytes The cap.

@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Intel_Event;
-use Newspack_Intelligence\LLM_Client;
 use Newspack_Intelligence\Reresolver_Node;
 use Newspack_Intelligence\Resolver_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
@@ -511,8 +510,7 @@ final class ReresolverNodeTest extends TestCase {
 		$this->sweep_at( self::NOW + Reresolver_Node::SWEEP_INTERVAL_S );
 		$stream->flush();
 
-		Resolver_Node::$llm_factory = static fn (): ?LLM_Client => null;
-		$downstream                 = new class() extends Node {
+		$downstream = new class() extends Node {
 			/** @var list<string> */
 			public array $resolved = [];
 
@@ -529,7 +527,7 @@ final class ReresolverNodeTest extends TestCase {
 		};
 		$resolver = new Resolver_Node();
 		$resolver->name( 'resolver' );
-		$resolver->arguments( [ 'intel:writer', 'intel:later' ] );
+		$resolver->arguments( [ 'intel:writer', 'intel:later', 'intel:llm' ] );
 		$resolver->target( 'extractor' );
 		$resolver->sink( $downstream );
 		$consumer = new Consumer_Node();
@@ -538,7 +536,6 @@ final class ReresolverNodeTest extends TestCase {
 		$consumer->sink( $resolver );
 		$this->pump_consumer( $consumer );
 		$consumer->checkpoint();
-		Resolver_Node::$llm_factory = null;
 
 		$this->assertSame( 1, $consumer->list_deadletter( 10 )['total'] );
 		$this->assertSame( [ 'feed:poison-2' ], $downstream->resolved );

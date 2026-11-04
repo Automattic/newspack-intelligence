@@ -54,8 +54,14 @@ trait Drives_Curl {
 	/** @var array<int,string> The url each handle fetches, by spl_object_id. */
 	private array $url_of = [];
 
+	/** @var list<\CurlHandle> Every handle a dispatch returned, in dispatch order. */
+	private array $easy = [];
+
 	/** @var array<string,array{0:int,1:string}> The status and body each url answers with. */
 	private array $answers = [];
+
+	/** @var array<int,array{0:int,1:string}> The status and body a handle answers with, by spl_object_id, over its url's. */
+	private array $answer_of = [];
 
 	/** @var array<string,string> The Location each url answers a 301 with. */
 	private array $locations = [];
@@ -86,6 +92,7 @@ trait Drives_Curl {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_init
 			$easy                                    = \curl_init();
 			$this->handles[ $url ]                   = $easy;
+			$this->easy[]                            = $easy;
 			$this->url_of[ \spl_object_id( $easy ) ] = $url;
 			return $easy;
 		};
@@ -100,7 +107,7 @@ trait Drives_Curl {
 					'ip'       => $ip,
 				];
 			}
-			[ $code, $body ] = $this->answers[ $url ];
+			[ $code, $body ] = $this->answer_of[ \spl_object_id( $easy ) ] ?? $this->answers[ $url ];
 			return [
 				'code'     => $code,
 				'body'     => $body,
@@ -129,9 +136,9 @@ trait Drives_Curl {
 
 	/**
 	 * Add a Vault entry in $group on $origin, beside any already stored,
-	 * lending each request there `<header>: <secret>`.
+	 * lending each request there `<header>: [<scheme> ]<secret>`.
 	 */
-	private function lend( string $group, string $origin, string $header = 'X-Lent-Key', string $secret = 'lent-secret-3390' ): void {
+	private function lend( string $group, string $origin, string $header = 'X-Lent-Key', string $secret = 'lent-secret-3390', string $scheme = '' ): void {
 		$seal                       = new \ReflectionMethod( Vault::class, 'encrypt' );
 		$servers                    = \Newspack_Nodes\Core::arr( \get_option( Vault::OPTION_KEY, [] ) );
 		$servers[ "{$group}-lent" ] = [
@@ -139,6 +146,7 @@ trait Drives_Curl {
 			'group'         => $group,
 			'auth_password' => $seal->invoke( null, $secret ),
 			'auth_header'   => $header,
+			'auth_scheme'   => $scheme,
 		];
 		\update_option( Vault::OPTION_KEY, $servers, false );
 		Vault::get_instance()->reset_cache();
@@ -284,6 +292,16 @@ trait Drives_Curl {
 		}
 		$this->answers[ $url ] = [ $code, $body ];
 		$this->in_drain( fn () => $this->complete_curl( $this->handles[ $url ], $result ) );
+	}
+
+	/**
+	 * Complete the transfer the $n-th dispatch started, counting from 0,
+	 * inside a drain: what a url cannot name when every request shares one.
+	 */
+	private function complete_nth( int $n, string $body, int $code = 200, int $result = \CURLE_OK ): void {
+		$easy                                       = $this->easy[ $n ];
+		$this->answer_of[ \spl_object_id( $easy ) ] = [ $code, $body ];
+		$this->in_drain( fn () => $this->complete_curl( $easy, $result ) );
 	}
 
 	/** Complete one url's transfer inside a drain as a 301 to $location. */

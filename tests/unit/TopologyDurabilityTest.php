@@ -114,7 +114,7 @@ class TopologyDurabilityTest extends TestCase {
 			[ $this->tmp . '/logs/intel-later.p0', $this->tmp . '/offsets/newspack-intelligence.intel-later.p0', $this->tmp . '/deadletter/newspack-intelligence.intel-later.p0', 60, 86400 ],
 			[ $this->read_private( $later, 'dir' ), $this->read_private( $later, 'offsets_dir' ), $this->read_private( $later, 'deadletter_dir' ), $this->read_private( $later, 'interval_s' ), $this->read_private( $later, 'max_age_s' ) ]
 		);
-		$this->assertSame( [ 'extractor', 'intel:writer', 'intel:later' ], Core::node( 'resolver' )->display_targets() );
+		$this->assertSame( [ 'extractor', 'intel:writer', 'intel:later', 'intel:llm' ], Core::node( 'resolver' )->display_targets() );
 	}
 
 	/**
@@ -193,7 +193,7 @@ class TopologyDurabilityTest extends TestCase {
 		return \is_file( $file ) ? (string) \file_get_contents( $file ) : 'missing';
 	}
 
-	/** An LLM call blocks inside one fill(), so a peer must not steal the lock at 60s. */
+	/** A pass holds work across ticks, so the lock stays ten minutes until a measured run shows less is safe. */
 	public function test_the_composed_topology_declares_a_ten_minute_stale_timeout(): void {
 		$this->assertSame( 600, Topology_Registry::synthesize_entry( 'newspack-intelligence' )['stale_timeout'] ?? null );
 	}

@@ -38,7 +38,7 @@ final class Intelligence_Health {
 	private const PARTITION = 0;
 
 	/** The fields of a source's, the extractor's or collection's row only a manager reads. */
-	private const OPERATOR_FIELDS = [ 'credential', 'vault_id', 'last_error', 'file' ];
+	private const OPERATOR_FIELDS = [ 'credential', 'vault_group', 'last_error', 'file' ];
 
 	/**
 	 * Warn, ahead of `wp nodes doctor`'s rows, where the lists file belongs

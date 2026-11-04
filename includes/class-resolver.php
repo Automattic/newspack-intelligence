@@ -8,14 +8,16 @@
  * own case, a name led by "the" only as it spells its words past it. (3) A
  * domain's stem in the title, behind the guards that keep prose from
  * reading as a masthead. (4) Only when the first three found
- * nothing, the organizations and products an Entity_Extractor names,
- * fuzzy-matched against every name: asserted at `assert_at`, proposed at
- * `propose_at`, and below that a candidate entity of the type it was named
- * as, unless one was rejected under that name. The caller hands each item
- * its NER step, or none, which runs the first three alone; `recognized`
- * says whether that step ran and answered, so a caller judging what it
- * looked for tells a call that failed, or one never made, from one that
- * named nothing.
+ * nothing, the organizations and products a model names, fuzzy-matched
+ * against every name: asserted at `assert_at`, proposed at `propose_at`,
+ * and below that a candidate entity of the type it was named as, unless
+ * one was rejected under that name. The caller hands each item the names
+ * its NER step answered, owes it the step, or hands none, which runs the
+ * first three alone; an owed step the first three leave to run answers
+ * nothing, so the caller asks the model and resolves again with its
+ * answer. `recognized` says whether that step ran and answered, so a
+ * caller judging what it looked for tells a call that failed, or one
+ * never made, from one that named nothing.
  *
  * A name, stem or fuzzy match never links an entity by a name a rejected
  * entity of its own type carries, a stem judged by its squashed spelling
@@ -33,7 +35,7 @@
  * evidence the first sentence of the title or the body, markup stripped,
  * that spells it, cut to `Intel_Event::EVIDENCE_BYTES` around the name; an
  * asserted link and one an identifier found carry none. Pure: it reads the
- * index and the extractor and writes nothing.
+ * index and writes nothing.
  *
  * @package Newspack_Intelligence
  */
@@ -164,13 +166,13 @@ final class Resolver {
 	 * the URL's path or the text earns, but a body-only mention of its own
 	 * publisher, which is not news about it; its candidate entities; and
 	 * whether the NER step ran and answered. A publisher spares the NER step
-	 * as any link does.
+	 * as any link does; an owed step that nothing spares answers none.
 	 *
-	 * @param array<string,mixed>   $item The `item_recorded` fields.
-	 * @param Entity_Extractor|null $ner  The NER step; none skips it.
-	 * @return array{links: list<Link>, proposals: list<Proposal>, recognized: bool}
+	 * @param array<string,mixed>                                                                                $item The `item_recorded` fields.
+	 * @param array{orgs:list<string>,products:list<string>,people:list<string>,locations:list<string>}|bool $ner  The names the NER step answered; true when the step is owed; false for none.
+	 * @return array{links: list<Link>, proposals: list<Proposal>, recognized: bool}|null
 	 */
-	public function resolve( array $item, ?Entity_Extractor $ner ): array {
+	public function resolve( array $item, array|bool $ner ): ?array {
 		$this->links     = [];
 		$title           = Core::as_string( $item['title'] );
 		$body            = Core::as_string( $item['body'] );
@@ -192,7 +194,10 @@ final class Resolver {
 			// A site naming itself in its own body, as a feed footer does.
 			unset( $this->links[ $publisher ] );
 		}
-		$named     = null !== $ner && [] === $published && [] === $this->links ? $ner->extract( $item ) : null;
+		$named = \is_array( $ner ) && [] === $published && [] === $this->links ? $ner : null;
+		if ( true === $ner && [] === $published && [] === $this->links ) {
+			return null;
+		}
 		$proposals = null === $named ? [] : $this->recognized( [ 'organization' => $named['orgs'], 'product' => $named['products'] ] );
 		return [
 			'links'      => [ ...$published, ...\array_values( $this->links ) ],

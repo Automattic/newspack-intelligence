@@ -16,7 +16,6 @@ use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-entity-index.php';
 require_once __DIR__ . '/../support/reads-ontology-log.php';
-require_once __DIR__ . '/../support/fake-entity-extractor.php';
 
 /**
  * The seeded ontology: the entities and lenses a seed file names, read from
@@ -264,7 +263,7 @@ final class OntologySeedTest extends TestCase {
 			self::proposed( 'organization:gull-rota', 'Gull Rota' ),
 			self::rejected( 'organization:gull-rota' )
 		);
-		$ner   = new Fake_Entity_Extractor( [ 'Tern Desk', 'Tern desk team', 'Gull Rota', 'Plover Wharf Trust' ] );
+		$ner   = self::named( [ 'Tern Desk', 'Tern desk team', 'Gull Rota', 'Plover Wharf Trust' ] );
 
 		$proposals = ( new Resolver( $index ) )->resolve( [ 'item_key' => 'feed:stop-1', 'url' => 'https://elsewhere.example/a', 'title' => 'Wharf news', 'body' => '', 'retrieved_ts' => 1793000000 ], $ner )['proposals'];
 

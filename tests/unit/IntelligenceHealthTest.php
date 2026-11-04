@@ -451,7 +451,7 @@ final class IntelligenceHealthTest extends TestCase {
 
 	/** The extractor's snapshot answers as published. */
 	public function test_extraction_reports_the_snapshot(): void {
-		$published = [ 'mode' => 'call', 'vault_id' => 'proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ];
+		$published = [ 'mode' => 'call', 'vault_group' => 'ai-proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ];
 		$this->snapshot( 'extractor', $published );
 
 		$this->assertSame( $published, $this->ci->dispatch( 'health', [ 'extraction' ] ) );
@@ -484,14 +484,14 @@ final class IntelligenceHealthTest extends TestCase {
 
 	/**
 	 * A reader below manage gets each source's and the extractor's state,
-	 * times, counts and idle reason, and no credential, Vault id or error
+	 * times, counts and idle reason, and no credential, Vault group or error
 	 * text.
 	 */
-	public function test_a_reader_below_manage_sees_no_credential_vault_id_or_error(): void {
+	public function test_a_reader_below_manage_sees_no_credential_vault_group_or_error(): void {
 		$this->collect( 'make_node Linear_Source kestrel-linear internal linear-t7', 'make_node Feed_Source grebe-feed public', 'make_node Context_A8C_Linear cormorant-linear internal /tmp/mcp-auth-7413' );
 		$this->snapshot( 'grebe-feed', [ 'state' => 'failing', 'last_ok_at' => 1792470021, 'last_error' => 'HTTP 404 https://grebe-5519.example/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 5 ] );
 		$this->snapshot( 'cormorant-linear', [ 'state' => 'idle', 'reason' => 'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host' ] );
-		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_id' => 'proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ] );
+		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_group' => 'ai-proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ] );
 		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::READ;
 
 		$this->assertSame(
@@ -505,25 +505,25 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( [ 'mode' => 'call', 'last_ok_at' => 1792491357, 'failing_since' => 1792493000 ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 	}
 
-	/** A manager sees the credential a source needs, the extractor's Vault id and every error text. */
-	public function test_a_manager_sees_credential_vault_id_and_error(): void {
+	/** A manager sees the credential a source needs, the extractor's Vault group and every error text. */
+	public function test_a_manager_sees_credential_vault_group_and_error(): void {
 		$this->collect( 'make_node Linear_Source kestrel-linear internal linear-t7', 'make_node Feed_Source grebe-feed public' );
 		$this->snapshot( 'grebe-feed', [ 'state' => 'failing', 'last_ok_at' => null, 'last_error' => 'HTTP 404 https://grebe-5519.example/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 3, 'reason' => null ] );
-		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_id' => 'proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ] );
+		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_group' => 'ai-proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ] );
 		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::MANAGE;
 
 		$sources = $this->ci->dispatch( 'health', [ 'sources' ] )['sources'];
 		$this->assertSame( [ 'url' => 'https://api.linear.app/graphql', 'group' => 'linear-t7' ], $sources[0]['credential'] );
 		$this->assertSame( 'HTTP 404 https://grebe-5519.example/feed/', $sources[1]['last_error'] );
-		$this->assertSame( [ 'proxy-k9', 'HTTP 502 https://proxy.test/v1' ], \array_values( \array_intersect_key( $this->ci->dispatch( 'health', [ 'extraction' ] ), [ 'vault_id' => 1, 'last_error' => 1 ] ) ) );
+		$this->assertSame( [ 'ai-proxy-k9', 'HTTP 502 https://proxy.test/v1' ], \array_values( \array_intersect_key( $this->ci->dispatch( 'health', [ 'extraction' ] ), [ 'vault_group' => 1, 'last_error' => 1 ] ) ) );
 	}
 
 	/** Each worker node's snapshot is read under the name the active topology gives it, the queue's under the one its resolver parks on. */
 	public function test_snapshots_are_read_under_the_names_the_topology_gives(): void {
-		$this->shadow( 'newspack-intelligence-resolve', 'make_node Resolver plover-resolver intel:writer plover-later', 'make_node Extractor plover-extractor intel:writer plover-later' );
-		$extraction = [ 'mode' => 'call', 'vault_id' => 'proxy-p3', 'last_ok_at' => 1792477001, 'last_error' => null, 'failing_since' => null ];
+		$this->shadow( 'newspack-intelligence-resolve', 'make_node Resolver plover-resolver intel:writer plover-later intel:llm', 'make_node Extractor plover-extractor intel:writer plover-later intel:llm' );
+		$extraction = [ 'mode' => 'call', 'vault_group' => 'ai-proxy-p3', 'last_ok_at' => 1792477001, 'last_error' => null, 'failing_since' => null ];
 		$this->snapshot( 'plover-extractor', $extraction );
-		$this->snapshot( 'extractor', [ 'mode' => 'heuristic', 'vault_id' => 'proxy-x1', 'last_ok_at' => null, 'last_error' => null, 'failing_since' => null ] );
+		$this->snapshot( 'extractor', [ 'mode' => 'heuristic', 'vault_group' => 'ai-proxy-x1', 'last_ok_at' => null, 'last_error' => null, 'failing_since' => null ] );
 		$this->snapshot( 'plover-resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400555 ] );
 		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400999 ] );
 		$this->snapshot( 'plover-later', self::queue( 77, null ) );
@@ -536,7 +536,7 @@ final class IntelligenceHealthTest extends TestCase {
 	/** A worker node the topology does not declare reads as unknown, not as an error. */
 	public function test_a_node_the_topology_lacks_reads_unknown(): void {
 		$this->shadow( 'newspack-intelligence-resolve', 'make_node Deduper deduper intel:writer' );
-		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_id' => 'proxy-x1', 'last_ok_at' => 1792477001, 'last_error' => null, 'failing_since' => null ] );
+		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_group' => 'ai-proxy-x1', 'last_ok_at' => 1792477001, 'last_error' => null, 'failing_since' => null ] );
 		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400999 ] );
 
 		$this->assertSame( [ 'mode' => 'unknown' ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );

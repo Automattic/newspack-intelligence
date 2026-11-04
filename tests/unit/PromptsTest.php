@@ -5,8 +5,8 @@
 
 namespace Newspack_Intelligence\Tests;
 
-use PHPUnit\Framework\TestCase;
 use Newspack_Intelligence\Prompts;
+use Newspack_Nodes\Tests\TestCase;
 
 final class PromptsTest extends TestCase {
 	/** A reply's first `{…}` block is read as JSON, whatever prose surrounds it; anything else that is not an array answers null. */
@@ -116,5 +116,76 @@ final class PromptsTest extends TestCase {
 	public function test_parse_extract_refuses_a_reply_without_a_summary(): void {
 		$this->assertNull( Prompts::parse_extract( 'I cannot help with that.', [ 'Awards' ] ) );
 		$this->assertNull( Prompts::parse_extract( '{"kind":"award"}', [ 'Awards' ] ) );
+	}
+
+	public function test_parse_entities_reads_clean_json(): void {
+		$out = Prompts::parse_entities( '{"orgs":["The Prairie Wendlemark"],"people":["Jane Doe"],"locations":["Millbrook"]}' );
+		$this->assertSame( [ 'orgs' => [ 'The Prairie Wendlemark' ], 'products' => [], 'people' => [ 'Jane Doe' ], 'locations' => [ 'Millbrook' ] ], $out );
+	}
+
+	/** A name past the bytes an entity's name may take is left out, logged, so a proposal fits one line. */
+	public function test_parse_entities_leaves_out_a_name_past_the_name_cap(): void {
+		$long   = \str_repeat( 'Kestrel "Mail" ', 40 );
+		$stderr = $this->capture_stderr();
+
+		$out = Prompts::parse_entities( (string) \json_encode( [ 'orgs' => [ $long, 'Plover Wharf Trust' ], 'products' => [ $long ], 'people' => [], 'locations' => [] ] ) );
+
+		$this->assertSame( [ [ 'Plover Wharf Trust' ], [] ], [ $out['orgs'] ?? null, $out['products'] ?? null ] );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER name left out: ' ) );
+	}
+
+	/** The products a reply names are read beside its organizations; a non-string or blank entry is dropped. */
+	public function test_parse_entities_reads_products_and_drops_what_is_not_a_name(): void {
+		$out = Prompts::parse_entities( '{"orgs":["Valid", 123, null, "  ", "Also"],"products":["Kestrel Mail", 7, "Wrenpay"],"people":[],"locations":[]}' );
+		$this->assertSame( [ [ 'Valid', 'Also' ], [ 'Kestrel Mail', 'Wrenpay' ] ], [ $out['orgs'] ?? null, $out['products'] ?? null ] );
+	}
+
+	public function test_parse_entities_reads_json_wrapped_in_prose_or_fences(): void {
+		$this->assertSame( [ 'PrairieFile' ], Prompts::parse_entities( "Here you go:\n```json\n{\"orgs\":[\"PrairieFile\"],\"people\":[],\"locations\":[]}\n```" )['orgs'] ?? null );
+	}
+
+	/** An answer naming nothing is an answer: an empty list, told apart from a reply that is not one. */
+	public function test_parse_entities_reads_an_empty_answer(): void {
+		$this->assertSame( [ 'orgs' => [], 'products' => [], 'people' => [ 'Ana Ruiz' ], 'locations' => [] ], Prompts::parse_entities( '{"orgs":[],"people":["Ana Ruiz"]}' ) );
+	}
+
+	/**
+	 * A reply is an answer only when its `orgs` is a list: prose, an empty
+	 * object, an error object or a scalar `orgs` answers none, logged.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public static function no_entity_answers(): array {
+		return [
+			'prose'           => [ 'no json here' ],
+			'an empty object' => [ '{}' ],
+			'an error object' => [ '{"error":"rate limited for 41s"}' ],
+			'a scalar orgs'   => [ '{"orgs":"The Prairie Wendlemark"}' ],
+			'an object orgs'  => [ '{"orgs":{"first":"The Prairie Wendlemark"}}' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'no_entity_answers' )]
+	public function test_parse_entities_answers_none_without_an_orgs_list( string $reply ): void {
+		$stderr = $this->capture_stderr();
+
+		$this->assertNull( Prompts::parse_entities( $reply ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER reply has no organization list' ) );
+	}
+
+	/** Each prompt a request may name builds its messages from the item and its inputs, `extract` offering the names of its topic map. */
+	public function test_messages_builds_each_named_prompt(): void {
+		$item = [ 'item_key' => 'feed:tern-8', 'source' => 'feed', 'url' => 'https://tern.example/a', 'title' => 'Tern Weekly expands', 'body' => 'The paper grows.' ];
+
+		$this->assertSame( [ 'extract', 'extract_entities' ], Prompts::PROMPTS );
+		$this->assertSame( Prompts::extract( $item, [ 'Awards' ], 'Readers care about terns.', 'the kite desk' ), Prompts::messages( 'extract', $item, [ 'topics' => [ 'Awards' => 'topic:awards' ], 'profile' => 'Readers care about terns.', 'audience' => 'the kite desk' ] ) );
+		$this->assertSame( Prompts::extract_entities( $item ), Prompts::messages( 'extract_entities', $item, [] ) );
+	}
+
+	/** A prompt no builder answers is refused, naming it. */
+	public function test_messages_refuses_an_unknown_prompt(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'no prompt: summarize' );
+		Prompts::messages( 'summarize', [], [] );
 	}
 }

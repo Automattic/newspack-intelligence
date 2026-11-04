@@ -8,8 +8,6 @@ use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Stream_Writer;
-use Newspack_Intelligence\LLM_Client;
-use Newspack_Intelligence\Proxy_LLM_Client;
 use Newspack_Intelligence\Resolver_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Consumer_Node;
@@ -20,12 +18,12 @@ use Newspack_Nodes\Router_Node;
 use Newspack_Nodes\Shell_Node;
 use Newspack_Nodes\Sqlite_Arm;
 use Newspack_Nodes\Table_Node;
-use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\Helpers\InMemoryMemcached;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-entity-index.php';
+require_once __DIR__ . '/../support/llm-answering-sink.php';
 
 /**
  * The resolver node: each recorded item resolved against the projection,
@@ -47,28 +45,23 @@ final class ResolverNodeTest extends TestCase {
 
 	private Resolver_Node $resolver;
 
-	private Capture_Sink_Node $out;
+	private Llm_Answering_Sink $out;
 
 	protected function setUp(): void {
 		parent::setUp();
 		$this->start_entity_graph();
 		Core::$now = self::NOW;
 		$this->activate( 'newspack-intelligence-project' );
-		Resolver_Node::$llm_factory = static fn (): ?LLM_Client => null;
-		$this->out                  = new Capture_Sink_Node();
-		$this->resolver             = new Resolver_Node();
+		$this->out      = new Llm_Answering_Sink();
+		$this->resolver = new Resolver_Node();
 		$this->resolver->name( 'resolver' );
-		$this->resolver->arguments( [ 'intel:writer', 'intel:later' ] );
+		$this->resolver->arguments( [ 'intel:writer', 'intel:later', 'intel:llm' ] );
 		$this->resolver->target( 'intel:resolved:null' );
 		$this->resolver->sink( $this->out );
 	}
 
 	protected function tearDown(): void {
 		Intel_Graph_Row_Schema::$read_rows = null;
-		Resolver_Node::$llm_factory  = null;
-		Proxy_LLM_Client::$http_post = null;
-		\delete_option( \Newspack_Nodes\Vault::OPTION_KEY );
-		\Newspack_Nodes\Vault::get_instance()->reset_cache();
 		Topology_Registry::reset();
 		parent::tearDown();
 	}
@@ -235,12 +228,11 @@ final class ResolverNodeTest extends TestCase {
 	/** A re-resolution runs the identifier, name and stem steps alone: NER ran when the item was first resolved. */
 	public function test_a_reresolve_skips_ner(): void {
 		$this->seed( self::gazette(), [ Intel_Event::make( 'item_recorded', self::item( [ 'title' => 'Regional publishers announce a merger' ] ), 'machine:source:feed@9.4.1', '9.4.1' ) ] );
-		$asked = 0;
-		$this->answer( '{"orgs": ["Harbor Gazette Weekly", "Acme Widgets Corporation"]}', $asked );
+		$this->answer( '{"orgs": ["Harbor Gazette Weekly", "Acme Widgets Corporation"]}' );
 
 		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
 
-		$this->assertSame( 0, $asked );
+		$this->assertCount( 0, $this->out->requests );
 		$this->assertSame( [], $this->written() );
 		$this->assertSame( [ [], [] ], [ $this->resolved()['links'], $this->resolved()['proposals'] ] );
 	}
@@ -446,26 +438,204 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $m ): bool => 'intel:resolved:null' === $m[ Message::TO ] ) );
 	}
 
-	/** The NER client is built from the node's configuration at each item, so a runtime set_api_url reaches the next item. */
-	public function test_a_runtime_api_url_change_reaches_the_next_items_ner_call(): void {
-		Resolver_Node::$llm_factory = null;
+	/**
+	 * An item owed its NER step that nothing else links asks `intel:llm`,
+	 * carrying the record it came in less the item, which rides beside it,
+	 * and writes nothing until the answer.
+	 */
+	public function test_an_owed_ner_step_asks_and_writes_nothing_yet(): void {
 		$this->seed( self::gazette() );
-		$this->seed_vault( 'ai-proxy-7', [ 'url' => 'https://proxy.test', 'auth_username' => 'u', 'auth_password' => 'proxy-token-7' ] );
-		$urls                        = [];
-		Proxy_LLM_Client::$http_post = static function ( string $url, array $args ) use ( &$urls ): array {
-			$urls[] = $url;
-			return [ 'response' => [ 'code' => 200 ], 'body' => (string) \json_encode( [ 'choices' => [ [ 'message' => [ 'content' => '{"orgs": []}' ] ] ] ] ) ];
+		$held = new class() extends Llm_Answering_Sink {
+			public function fill( array $message ): void {
+				if ( Llm_Answering_Sink::LLM === $message[ Message::TO ] ) {
+					$this->requests[] = $message;
+					return;
+				}
+				parent::fill( $message );
+			}
 		};
-		$config = $this->resolver->interpreter();
-		\assert( null !== $config );
-		$config->dispatch( 'set_vault_id', [ 'ai-proxy-7' ] );
-		$config->dispatch( 'set_api_url', [ 'https://first-proxy.test/v1' ] );
+		$this->resolver->sink( $held );
+		$recorded = self::recorded( [ 'title' => 'Regional publishers announce a merger' ] );
+
+		$this->resolver->fill( $recorded );
+
+		$this->assertSame( [], $held->captured );
+		$this->assertCount( 1, $held->requests );
+		$request = $held->requests[0];
+		$this->assertSame( [ Message::TM_STRUCT, 'resolver', self::ITEM ], [ $request[ Message::TYPE ], $request[ Message::FROM ], $request[ Message::KEY ] ] );
+		$this->assertSame(
+			[
+				'prompt'  => 'extract_entities',
+				'item'    => self::item( [ 'title' => 'Regional publishers announce a merger' ] ),
+				'inputs'  => [],
+				'options' => [ 'max_tokens' => 300, 'temperature' => 0.0 ],
+				'carry'   => \array_diff_key( $recorded[ Message::VALUE ], self::item( [] ) ),
+				'backlog' => false,
+			],
+			$request[ Message::VALUE ]
+		);
+	}
+
+	/** A re-extraction owed its NER step asks as backlog, behind new work. */
+	public function test_a_reextraction_owed_ner_asks_as_backlog(): void {
+		$this->seed( self::gazette(), [ Intel_Event::make( 'item_recorded', self::item( [ 'title' => 'Regional publishers announce a merger' ] ), 'machine:source:feed@9.4.1', '9.4.1' ) ] );
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0, [ 'ner' => true, 'extract' => true ] ) );
+
+		$this->assertSame( [ true ], \array_map( static fn ( array $m ): bool => $m[ Message::VALUE ]['backlog'], $this->out->requests ) );
+		$this->assertTrue( $this->resolved()['extract'] );
+	}
+
+	/**
+	 * An answer whose resolution throws is logged and parks the item on the
+	 * later queue, owed its NER step, so nothing throws into the event loop.
+	 */
+	public function test_an_answer_whose_resolution_throws_parks_the_item(): void {
+		$this->seed( self::gazette() );
+		$this->answer( '{"orgs": ["Harbor Gazette Weekly"], "people": [], "locations": []}' );
+		$throwing = new class() extends Llm_Answering_Sink {
+			public function fill( array $message ): void {
+				if ( 'intel:writer' === $message[ Message::TO ] ) {
+					throw new \RuntimeException( 'writer refused 6619' );
+				}
+				parent::fill( $message );
+			}
+		};
+		$throwing->outcome = $this->out->outcome;
+		$this->out         = $throwing;
+		$this->resolver->sink( $throwing );
+		$stderr = $this->capture_stderr();
 
 		$this->resolver->fill( self::recorded( [ 'title' => 'Regional publishers announce a merger' ] ) );
-		$config->dispatch( 'set_api_url', [ 'https://second-proxy.test/v1' ] );
-		$this->resolver->fill( self::recorded( [ 'item_key' => 'feed:resolve-4412', 'title' => 'Regional publishers announce a merger' ] ) );
 
-		$this->assertSame( [ 'https://first-proxy.test/v1/chat/completions', 'https://second-proxy.test/v1/chat/completions' ], $urls );
+		$this->assertSame( [ [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM, 'fresh_after' => 0, 'ner' => true, 'attempt' => 1, 'not_before' => self::NOW + 60 ] ], $this->parked() );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'an answer failed for ' . self::ITEM . ': writer refused 6619' ) );
+	}
+
+	/**
+	 * A re-resolution whose answer fails to resolve, again and again, is
+	 * parked as the record it was, keeping its `parked_at` and `fresh_after`
+	 * and counting each failure in its `attempt`, so the Delay ages it out a
+	 * day after it first parked rather than restarting its day at each one.
+	 */
+	public function test_a_record_failing_on_its_answer_keeps_its_first_park(): void {
+		$this->seed( self::gazette(), [ Intel_Event::make( 'item_recorded', self::item( [ 'title' => 'Regional publishers announce a merger' ] ), 'machine:source:feed@9.4.1', '9.4.1' ) ] );
+		$this->answer( '{"orgs": ["Harbor Gazette Weekly"], "people": [], "locations": []}' );
+		$throwing = new class() extends Llm_Answering_Sink {
+			public function fill( array $message ): void {
+				if ( 'intel:writer' === $message[ Message::TO ] ) {
+					throw new \RuntimeException( 'writer refused 6620' );
+				}
+				parent::fill( $message );
+			}
+		};
+		$throwing->outcome = $this->out->outcome;
+		$this->out         = $throwing;
+		$this->resolver->sink( $throwing );
+		$this->capture_stderr();
+		$record = [ 'ner' => true, 'extract' => true, 'attempt' => 2, 'parked_at' => self::NOW - 80000 ];
+
+		$this->resolver->fill( self::reresolve( self::ITEM, self::NOW - 40, $record ) );
+		$parked = $this->parked();
+		$this->resolver->fill( self::reresolve( self::ITEM, self::NOW - 40, \array_diff_key( $parked[0], [ 'event' => true, 'item_key' => true, 'fresh_after' => true, 'not_before' => true ] ) ) );
+
+		$expected = static fn ( int $attempt ): array => [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM, 'fresh_after' => self::NOW - 40, 'ner' => true, 'extract' => true, 'attempt' => $attempt, 'parked_at' => self::NOW - 80000, 'not_before' => self::NOW + 60 ];
+		$this->assertEquals( [ $expected( 3 ), $expected( 4 ) ], $this->parked() );
+	}
+
+	/**
+	 * A record whose answer keeps failing to resolve stops at
+	 * `Extractor_Node::MAX_ATTEMPTS`, logged, and is parked no more, so a
+	 * poisoned item cannot ask the model again every minute.
+	 */
+	public function test_a_record_failing_on_its_answer_gives_up_at_the_cap(): void {
+		$this->seed( self::gazette(), [ Intel_Event::make( 'item_recorded', self::item( [ 'title' => 'Regional publishers announce a merger' ] ), 'machine:source:feed@9.4.1', '9.4.1' ) ] );
+		$this->answer( '{"orgs": ["Harbor Gazette Weekly"], "people": [], "locations": []}' );
+		$throwing = new class() extends Llm_Answering_Sink {
+			public function fill( array $message ): void {
+				if ( 'intel:writer' === $message[ Message::TO ] ) {
+					throw new \RuntimeException( "writer \e[2Jrefused 6621" );
+				}
+				parent::fill( $message );
+			}
+		};
+		$throwing->outcome = $this->out->outcome;
+		$this->out         = $throwing;
+		$this->resolver->sink( $throwing );
+		$stderr = $this->capture_stderr();
+
+		$record = [ 'ner' => true, 'attempt' => \Newspack_Intelligence\Extractor_Node::MAX_ATTEMPTS - 1 ];
+		while ( \count( $this->out->requests ) < 10 ) {
+			$before = \count( $this->parked() );
+			$this->resolver->fill( self::reresolve( self::ITEM, 0.0, $record ) );
+			if ( \count( $this->parked() ) === $before ) {
+				break;
+			}
+			$record = \array_intersect_key( \array_values( \array_slice( $this->parked(), -1 ) )[0], [ 'ner' => true, 'attempt' => true ] );
+		}
+
+		$this->assertSame( [ \Newspack_Intelligence\Extractor_Node::MAX_ATTEMPTS ], \array_column( $this->parked(), 'attempt' ) );
+		$this->assertCount( 2, $this->out->requests, 'one call more, then none' );
+		$lines = self::stderr_lines( $stderr, 'giving up resolving ' . self::ITEM . ' after ' . \Newspack_Intelligence\Extractor_Node::MAX_ATTEMPTS . ' attempts' );
+		$this->assertCount( 1, $lines );
+		$failed = self::stderr_lines( $stderr, 'an answer failed for ' . self::ITEM );
+		$this->assertNotSame( [], $failed );
+		$this->assertStringNotContainsString( "\e", \implode( '', $failed ) );
+	}
+
+	/** A re-resolution it cannot read, or naming no stored item, is logged with its FROM and key made safe. */
+	public function test_a_reresolution_it_drops_is_logged_safely(): void {
+		$this->seed( self::gazette() );
+		$stderr                    = $this->capture_stderr();
+		$unreadable                = self::message( [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM ] );
+		$unreadable[ Message::FROM ] = "intel:\e[2Jforged";
+
+		$this->resolver->fill( $unreadable );
+		$this->resolver->fill( self::reresolve( "feed:\e[2Jpruned", 0.0 ) );
+		$this->resolver->fill( self::reresolve( "feed:\e[2Jnot-yet", 0.0, [ 'ner' => true ] ) );
+
+		foreach ( [ 'dropping a re-resolution it cannot read from ', 'no stored item to re-resolve: ', 'holding a re-resolution the projection does not hold yet: ' ] as $line ) {
+			$lines = self::stderr_lines( $stderr, $line );
+			$this->assertCount( 1, $lines, $line );
+			$this->assertStringNotContainsString( "\e", $lines[0], $line );
+		}
+	}
+
+	/** A failed NER call's error is logged with its control characters made safe. */
+	public function test_a_failed_ner_call_logs_its_error_safely(): void {
+		$this->seed( self::gazette(), [ Intel_Event::make( 'item_recorded', self::item( [ 'title' => 'Regional publishers announce a merger' ] ), 'machine:source:feed@9.4.1', '9.4.1' ) ] );
+		$this->out->outcome = [ 'error' => "HTTP 502 \e[2Jhttps://proxy.example" ];
+		$stderr             = $this->capture_stderr();
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0, [ 'ner' => true ] ) );
+
+		$lines = self::stderr_lines( $stderr, 'NER call failed: HTTP 502' );
+		$this->assertCount( 1, $lines );
+		$this->assertStringNotContainsString( "\e", $lines[0] );
+	}
+
+	/** An answer it cannot read is dropped with a line, never thrown. */
+	public function test_an_answer_it_cannot_read_is_dropped(): void {
+		$this->seed( self::gazette() );
+		$stderr                   = $this->capture_stderr();
+		$answer                   = Message::new_message();
+		$answer[ Message::TYPE ]  = Message::TM_STRUCT | Message::TM_RESPONSE;
+		$answer[ Message::FROM ]  = 'intel:llm';
+		$answer[ Message::KEY ]   = self::ITEM;
+		$answer[ Message::VALUE ] = [ 'carry' => self::recorded( [] )[ Message::VALUE ] ];
+
+		$this->resolver->fill( $answer );
+
+		$this->assertSame( [], $this->out->captured );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'dropping an answer it cannot read from intel:llm' ) );
+	}
+
+	/** Its line must name the node its model calls go to; it declares no verbs. */
+	public function test_a_load_without_a_model_call_node_is_refused(): void {
+		$this->assertSame( [], Resolver_Node::node_schema()['commands'] );
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'Missing required argument: llm' );
+		( new Resolver_Node() )->arguments( [ 'intel:writer', 'intel:later' ] );
 	}
 
 	/**
@@ -844,7 +1014,7 @@ final class ResolverNodeTest extends TestCase {
 
 		$this->resolver->fill( self::reresolve( self::ITEM, 0.0, [ 'ner' => true ] ) );
 
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER call failed: proxy 502' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER call failed: proxy 503' ) );
 		$this->assertSame( [], $this->written() );
 		$this->assertSame( [ [ 'organization:quarry-ledger', 'subject', 'ner_fuzzy', 0.85, 'asserted' ] ], \array_map( 'array_values', $this->resolved()['links'] ) );
 	}
@@ -1039,12 +1209,11 @@ final class ResolverNodeTest extends TestCase {
 				...self::extracted( 'organization:quarry-ledger' ),
 			]
 		);
-		$asked = 0;
-		$this->answer( '{"orgs": ["Quarry Ledger Weekly"], "people": [], "locations": []}', $asked );
+		$this->answer( '{"orgs": ["Quarry Ledger Weekly"], "people": [], "locations": []}' );
 
 		$this->resolver->fill( self::recorded( [ 'title' => 'Ferry operators publish a timetable' ] ) );
 
-		$this->assertSame( 0, $asked, 'no NER call' );
+		$this->assertCount( 0, $this->out->requests, 'no NER call' );
 		$this->assertSame( [], $this->written(), 'the unsearched NER row is kept' );
 		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $m ): bool => 'intel:resolved:null' === $m[ Message::TO ] ) );
 	}
@@ -1068,12 +1237,11 @@ final class ResolverNodeTest extends TestCase {
 				...self::extracted(),
 			]
 		);
-		$asked = 0;
-		$this->answer( '{"orgs": [], "people": [], "locations": []}', $asked );
+		$this->answer( '{"orgs": [], "people": [], "locations": []}' );
 
 		$this->resolver->fill( self::recorded( $over ) );
 
-		$this->assertSame( 0, $asked );
+		$this->assertCount( 0, $this->out->requests );
 		$this->assertSame(
 			[
 				'item'      => self::item( $over ),
@@ -1093,12 +1261,11 @@ final class ResolverNodeTest extends TestCase {
 	/** A first recording, whose item the projection does not hold yet, runs NER and is sent for extraction as never attempted. */
 	public function test_a_first_recording_runs_ner_and_forwards_unextracted(): void {
 		$this->seed( self::gazette(), [ self::stored_link( self::MESA, 'mention', 'name' ) ] );
-		$asked = 0;
-		$this->answer( '{"orgs": ["Harbor Gazette Weekly"], "people": [], "locations": []}', $asked );
+		$this->answer( '{"orgs": ["Harbor Gazette Weekly"], "people": [], "locations": []}' );
 
 		$this->resolver->fill( self::recorded( [ 'title' => 'Ferry operators publish a timetable' ] ) );
 
-		$this->assertSame( 1, $asked );
+		$this->assertCount( 1, $this->out->requests );
 		$this->assertSame( [ [ 'link_proposed', self::GAZETTE ], [ 'link_retracted', self::MESA ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'] ], $this->written() ) );
 		$this->assertSame( [ false, 0 ], [ $this->resolved()['extracted'], $this->resolved()['attempt'] ] );
 	}
@@ -1111,12 +1278,11 @@ final class ResolverNodeTest extends TestCase {
 	public function test_a_first_recording_already_projected_runs_ner(): void {
 		$over = [ 'title' => 'Coastal publishers form a press alliance' ];
 		$this->seed( self::gazette(), [ Intel_Event::make( 'item_recorded', self::item( $over ), 'machine:source:feed@9.4.1', '9.4.1' ) ] );
-		$asked = 0;
-		$this->answer( '{"orgs": ["Harbor Gazette Weekly"], "people": [], "locations": []}', $asked );
+		$this->answer( '{"orgs": ["Harbor Gazette Weekly"], "people": [], "locations": []}' );
 
 		$this->resolver->fill( self::recorded( $over ) );
 
-		$this->assertSame( 1, $asked );
+		$this->assertCount( 1, $this->out->requests );
 		$this->assertSame( [ [ 'link_proposed', self::GAZETTE, 'ner_fuzzy' ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['method'] ], $this->written() ) );
 		$this->assertSame( [ false, 0, [ self::GAZETTE ] ], [ $this->resolved()['extracted'], $this->resolved()['attempt'], \array_column( $this->resolved()['links'], 'entity_key' ) ] );
 	}
@@ -1144,13 +1310,12 @@ final class ResolverNodeTest extends TestCase {
 	public function test_a_repeat_of_an_item_never_linked_runs_ner_again(): void {
 		$over = [ 'title' => 'Coastal publishers form a press alliance' ];
 		$this->seed( self::gazette(), [ Intel_Event::make( 'item_recorded', self::item( $over ), 'machine:source:feed@9.4.1', '9.4.1' ) ] );
-		$asked = 0;
-		$this->answer( '{"orgs": [], "people": [], "locations": []}', $asked );
+		$this->answer( '{"orgs": [], "people": [], "locations": []}' );
 
 		$this->resolver->fill( self::recorded( $over ) );
 		$this->resolver->fill( self::recorded( $over ) );
 
-		$this->assertSame( 2, $asked );
+		$this->assertCount( 2, $this->out->requests );
 		$this->assertSame( [], $this->written() );
 	}
 
@@ -1178,8 +1343,8 @@ final class ResolverNodeTest extends TestCase {
 	}
 
 	public function test_the_writer_and_the_later_queue_are_declared_beside_the_target(): void {
-		$this->assertSame( [ 'intel:writer', 'intel:later' ], $this->resolver->arguments() );
-		$this->assertSame( [ 'intel:resolved:null', 'intel:writer', 'intel:later' ], $this->resolver->display_targets() );
+		$this->assertSame( [ 'intel:writer', 'intel:later', 'intel:llm' ], $this->resolver->arguments() );
+		$this->assertSame( [ 'intel:resolved:null', 'intel:writer', 'intel:later', 'intel:llm' ], $this->resolver->display_targets() );
 	}
 
 	public function test_a_load_without_a_writer_is_refused(): void {
@@ -1212,7 +1377,7 @@ final class ResolverNodeTest extends TestCase {
 
 		$resolver = Core::node( 'resolver' );
 		$this->assertInstanceOf( Resolver_Node::class, $resolver );
-		$this->assertSame( 'AI-proxy', $this->read_private( $resolver, 'vault_id' ) );
+		$this->assertSame( 'intel:llm', $this->read_private( $resolver, 'llm' ) );
 		$consumer = Core::node( 'intel:items:resolve' );
 		$this->assertInstanceOf( Consumer_Node::class, $consumer );
 		$this->assertSame( 'resolver', $consumer->target() );
@@ -1298,26 +1463,13 @@ final class ResolverNodeTest extends TestCase {
 	}
 
 	/**
-	 * Answer every NER call with one reply, or throw when the reply is `throw`,
-	 * counting each call.
+	 * Answer every NER request with one reply as its content, or with the
+	 * error `proxy 503` when the reply is `throw`.
 	 *
 	 * @param string $reply The model's reply.
-	 * @param int    $asked The calls made, counted up.
 	 */
-	private function answer( string $reply, int &$asked = 0 ): void {
-		Resolver_Node::$llm_factory = static function () use ( $reply, &$asked ): LLM_Client {
-			return new class( $reply, $asked ) implements LLM_Client {
-				public function __construct( private string $reply, private int &$asked ) {}
-
-				public function chat( array $messages, array $opts = [] ): string {
-					++$this->asked;
-					if ( 'throw' === $this->reply ) {
-						throw new \RuntimeException( 'proxy 502' );
-					}
-					return $this->reply;
-				}
-			};
-		};
+	private function answer( string $reply ): void {
+		$this->out->outcome = 'throw' === $reply ? [ 'error' => 'proxy 503' ] : [ 'content' => $reply ];
 	}
 
 	/**

@@ -778,17 +778,17 @@ describe( 'HealthStrip', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'names the missing Vault entry of a heuristic extractor', async () => {
+	it( 'names the Vault group of a heuristic extractor', async () => {
 		health.extraction = {
 			mode: 'heuristic',
-			vault_id: 'AI-proxy',
+			vault_group: 'ai-proxy',
 			last_ok_at: null,
 			last_error: null,
 			failing_since: null,
 		};
 		renderStrip( { canManage: true } );
 		await worstFault(
-			'Extracting with the heuristic only: no Vault entry AI-proxy.'
+			'Extracting with the heuristic only: Vault group ai-proxy holds no entry for the AI proxy.'
 		);
 		expect(
 			within( row( 'Extraction' ) ).getByRole( 'link', {
@@ -811,7 +811,7 @@ describe( 'HealthStrip', () => {
 	it( 'reads a failing extractor as a fault with its error', async () => {
 		health.extraction = {
 			mode: 'call',
-			vault_id: 'AI-proxy',
+			vault_group: 'ai-proxy',
 			last_ok_at: LAST_OK,
 			last_error: 'AI proxy answered HTTP 502',
 			failing_since: SINCE,

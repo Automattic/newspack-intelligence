@@ -7,8 +7,7 @@ use Newspack_Intelligence\Deduper_Node;
 use Newspack_Intelligence\Entity_Index;
 use Newspack_Intelligence\Extractor_Node;
 use Newspack_Intelligence\Intel_Event;
-use Newspack_Intelligence\LLM_Client;
-use Newspack_Intelligence\Proxy_LLM_Client;
+use Newspack_Intelligence\LLM_Call_Node;
 use Newspack_Intelligence\Resolver_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
@@ -23,11 +22,13 @@ use Newspack_Nodes\Worker_Should_Stop;
 use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-entity-index.php';
+require_once __DIR__ . '/../support/llm-answering-sink.php';
 
 /**
- * The extractor: one LLM call per resolved item that links something, its
- * extraction and the claims about entities the item links written as events
- * to the writer; a heuristic extraction when the call cannot answer.
+ * The extractor: one request to `intel:llm` per resolved item that links
+ * something, its answer's extraction and the claims about entities the item
+ * links written as events to the writer; a heuristic extraction when the
+ * call cannot answer.
  */
 final class ExtractorNodeTest extends TestCase {
 	use Seeds_Entity_Index;
@@ -45,33 +46,24 @@ final class ExtractorNodeTest extends TestCase {
 	/** The worker partition the extractor publishes its status from. */
 	private const PARTITION = 4;
 
-	/** The Vault entry the extractor's token resolves from; none exists. */
-	private const VAULT_ID = 'AI-proxy-test-9';
-
 	private Extractor_Node $extractor;
 
-	private Capture_Sink_Node $out;
-
-	/** @var list<list<array{role:string,content:string}>> Each chat call's messages. */
-	private array $asked = [];
+	private Llm_Answering_Sink $out;
 
 	protected function setUp(): void {
 		parent::setUp();
 		$this->start_entity_graph();
 		Core::$now = self::NOW;
 		$this->activate( 'newspack-intelligence-project' );
-		Extractor_Node::$llm_factory = static fn (): ?LLM_Client => null;
-		$this->out                   = new Capture_Sink_Node();
-		$this->extractor             = new Extractor_Node();
+		$this->out       = new Llm_Answering_Sink();
+		$this->extractor = new Extractor_Node();
 		$this->extractor->name( 'extractor' );
-		$this->extractor->arguments( [ 'intel:writer', 'intel:later' ] );
+		$this->extractor->arguments( [ 'intel:writer', 'intel:later', 'intel:llm' ] );
 		$this->extractor->target( 'deduper' );
 		$this->extractor->sink( $this->out );
 	}
 
 	protected function tearDown(): void {
-		Extractor_Node::$llm_factory = null;
-		Proxy_LLM_Client::$http_post = null;
 		Topology_Registry::reset();
 		parent::tearDown();
 	}
@@ -81,7 +73,7 @@ final class ExtractorNodeTest extends TestCase {
 		$prompt   = [ 'set_audience', 'add_profile', 'remove_profile', 'add_importance_floor', 'remove_importance_floor' ];
 		$commands = \array_column( Extractor_Node::node_schema()['commands'], null, 'name' );
 
-		$this->assertSame( [ 'set_api_url', 'set_vault_id', 'set_model', 'set_feature', ...$prompt ], \array_keys( $commands ) );
+		$this->assertSame( $prompt, \array_keys( $commands ) );
 		$this->assertSame( 'audience', $commands['set_audience']['setter'] );
 		$this->assertTrue( $commands['add_profile']['multiple'] );
 		$this->assertSame( 'profiles', $commands['remove_profile']['unlist'] );
@@ -393,7 +385,7 @@ final class ExtractorNodeTest extends TestCase {
 
 		$this->extractor->fill( self::resolved( [], [] ) );
 
-		$this->assertSame( [], $this->asked );
+		$this->assertSame( [], $this->out->requests );
 		$this->assertSame( [], $this->out->captured );
 	}
 
@@ -449,12 +441,18 @@ final class ExtractorNodeTest extends TestCase {
 			],
 			\array_map( static fn ( array $e ): array => [ $e['ord'], $e['subject_key'], $e['predicate'], $e['object_key'], $e['object_text'], $e['confidence'] ], \array_slice( $events, 2 ) )
 		);
-		$this->assertCount( 1, $this->asked );
-		$system = $this->asked[0][0]['content'];
+		$this->assertCount( 1, $this->out->requests );
+		$request = $this->out->requests[0];
+		$this->assertSame( [ Message::TM_STRUCT, 'extractor', self::ITEM ], [ $request[ Message::TYPE ], $request[ Message::FROM ], $request[ Message::KEY ] ] );
+		$this->assertSame( [ 'extract', self::item(), [ 'max_tokens' => 800, 'temperature' => 0.2 ], false ], [ $request[ Message::VALUE ]['prompt'], $request[ Message::VALUE ]['item'], $request[ Message::VALUE ]['options'], $request[ Message::VALUE ]['backlog'] ] );
+		$this->assertArrayNotHasKey( 'item', $request[ Message::VALUE ]['carry']['resolution'], 'the item rides once, beside the carry' );
+		$this->assertSame( [ 'Awards' => 'topic:awards', 'Podcasts' => 'topic:podcasts' ], $request[ Message::VALUE ]['inputs']['topics'] );
+		$this->assertSame( [ 'resolution' ], \array_keys( $request[ Message::VALUE ]['carry'] ), 'the topics ride once, as an input' );
+		$system = $this->out->asked()[0][0]['content'];
 		$this->assertStringContainsString( '["Awards","Podcasts"]', $system );
 		$this->assertStringContainsString( 'Quarry Ledger readers care about prizes.', $system );
 		$this->assertStringStartsWith( 'You are an analyst reading one item for the Quarry Ledger kite desk. ', $system );
-		$this->assertStringContainsString( 'Harbor Gazette wins a Peabody', $this->asked[0][1]['content'] );
+		$this->assertStringContainsString( 'Harbor Gazette wins a Peabody', $this->out->asked()[0][1]['content'] );
 	}
 
 	/** The model writes a claim's subject in any case, so a name led by "the" resolves however it is cased. */
@@ -626,17 +624,14 @@ final class ExtractorNodeTest extends TestCase {
 		);
 		$this->assertSame( [ [ 0, 0 ] ], \array_map( static fn ( array $v ): array => [ $v['relevance'], $v['importance'] ], $this->forwarded() ) );
 		$this->assertSame( 'Harbor Gazette wins a state award', $this->forwarded()[0]['item']['title'] );
-		$this->assertCount( null === $reply ? 0 : 1, $this->asked );
+		$this->assertCount( 1, $this->out->requests );
 		$this->assertCount( 'throw' === $reply ? 1 : 0, self::stderr_lines( $stderr, 'extraction call failed: proxy 503' ) );
 	}
 
-	/** A cooperative stop raised inside the call stops the worker; nothing is recorded, so the item is extracted on replay. */
-	public function test_a_cooperative_stop_inside_the_call_propagates(): void {
-		Extractor_Node::$llm_factory = static fn (): LLM_Client => new class() implements LLM_Client {
-				public function chat( array $messages, array $opts = [] ): string {
-					throw new Worker_Should_Stop( 'max_runtime 595 reached' );
-				}
-			};
+	/** A cooperative stop raised while an answer is written stops the worker; nothing is parked. */
+	public function test_a_cooperative_stop_while_writing_an_answer_propagates(): void {
+		$this->writer_throws( new Worker_Should_Stop( 'max_runtime 595 reached' ) );
+		$this->answer( '{"summary":"Harbor Gazette wins."}' );
 
 		try {
 			$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
@@ -644,7 +639,98 @@ final class ExtractorNodeTest extends TestCase {
 		} catch ( Worker_Should_Stop $stop ) {
 			$this->assertSame( 'max_runtime 595 reached', $stop->getMessage() );
 		}
+		$this->assertSame( [], $this->parked() );
+	}
+
+	/**
+	 * An answer whose extraction throws is logged and parks the item's retry,
+	 * as a failed call does, so nothing throws into the event loop.
+	 */
+	public function test_an_answer_that_throws_parks_a_retry(): void {
+		$this->writer_throws( new \RuntimeException( 'writer refused 7731' ) );
+		$this->answer( '{"summary":"Harbor Gazette wins."}' );
+		$stderr = $this->capture_stderr();
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], false, 2, true ) );
+
+		$this->assertSame(
+			[ [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM, 'fresh_after' => 0, 'attempt' => 3, 'extract' => true, 'not_before' => self::NOW + 1200 ] ],
+			$this->parked()
+		);
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'an answer failed for ' . self::ITEM . ': writer refused 7731' ) );
+	}
+
+	/**
+	 * A failed call whose heuristic stand-in then fails to write parks one
+	 * retry, not one for the call and another for the write.
+	 */
+	public function test_one_failure_parks_one_retry(): void {
+		$this->writer_throws( new \RuntimeException( 'writer refused 7732' ) );
+		$this->answer( 'throw' );
+		$this->capture_stderr();
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], false, 1 ) );
+
+		$this->assertSame(
+			[ [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM, 'fresh_after' => 0, 'attempt' => 2, 'not_before' => self::NOW + 600 ] ],
+			$this->parked()
+		);
+	}
+
+	/** An answer whose carry does not read is dropped with a line, never thrown. */
+	public function test_an_answer_it_cannot_read_is_dropped(): void {
+		$stderr                    = $this->capture_stderr();
+		$answer                    = Message::new_message();
+		$answer[ Message::TYPE ]   = Message::TM_STRUCT | Message::TM_RESPONSE;
+		$answer[ Message::FROM ]   = 'intel:llm';
+		$answer[ Message::KEY ]    = self::ITEM;
+		$answer[ Message::VALUE ]  = [ 'content' => '{}', 'carry' => [ 'resolution' => [ 'item' => self::item() ] ] ];
+
+		$this->extractor->fill( $answer );
+
 		$this->assertSame( [], $this->out->captured );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'dropping an answer it cannot read from intel:llm' ) );
+	}
+
+	/** A re-extraction's request waits behind new work; a first extraction's does not. */
+	public function test_a_reextraction_asks_as_backlog(): void {
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], true, 0, true ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$this->assertSame( [ true, false ], \array_map( static fn ( array $m ): bool => $m[ Message::VALUE ]['backlog'], $this->out->requests ) );
+	}
+
+	/**
+	 * Claims resolve through the topics the request offered, though the
+	 * index rotated before its answer came.
+	 */
+	public function test_an_answer_reads_the_topics_its_request_offered(): void {
+		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ), self::entity( 'topic:awards', 'Awards' ) );
+		$deferred = new class() extends Llm_Answering_Sink {
+			/** @var list<array<int,mixed>> Requests held back. */
+			public array $held = [];
+
+			public function fill( array $message ): void {
+				if ( Llm_Answering_Sink::LLM === $message[ Message::TO ] ) {
+					$this->held[] = $message;
+					return;
+				}
+				parent::fill( $message );
+			}
+		};
+		$this->extractor->sink( $deferred );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+		$this->activate();
+		Core::$now = self::NOW + Entity_Index::TTL_S;
+
+		$answer                   = Message::new_message();
+		$answer[ Message::TYPE ]  = Message::TM_STRUCT | Message::TM_RESPONSE;
+		$answer[ Message::FROM ]  = 'intel:llm';
+		$answer[ Message::KEY ]   = self::ITEM;
+		$answer[ Message::VALUE ] = [ 'content' => '{"summary":"Harbor Gazette wins.","topics":["Awards"]}', 'item' => $deferred->held[0][ Message::VALUE ]['item'], 'inputs' => $deferred->held[0][ Message::VALUE ]['inputs'], 'carry' => $deferred->held[0][ Message::VALUE ]['carry'] ];
+		$this->extractor->fill( $answer );
+
+		$this->assertSame( [ 'topic:awards' ], \array_values( \array_filter( \array_map( static fn ( array $m ): array => $m[ Message::VALUE ], $deferred->captured ), static fn ( array $e ): bool => 'extraction_recorded' === ( $e['event'] ?? null ) ) )[0]['topics'] );
 	}
 
 	/** The heuristic summary decodes entities and keeps a line break between the words it parted. */
@@ -677,7 +763,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], true ) );
 
 		$this->assertSame( [ [], [] ], [ $this->written(), $this->forwarded() ] );
-		$this->assertCount( null === $reply ? 0 : 1, $this->parked(), 'a failed call is retried; a missing call is not' );
+		$this->assertCount( null === $reply ? 0 : 1, $this->parked(), 'a failed call is retried; a group lending nothing is not' );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'keeping the earlier extraction of ' . self::ITEM ) );
 	}
 
@@ -709,17 +795,15 @@ final class ExtractorNodeTest extends TestCase {
 			[ Intel_Event::make( 'item_recorded', self::item(), 'machine:source:feed@9.4.1', '9.4.1' ) ]
 		);
 		Core::$now = self::NOW + 1;
-		Resolver_Node::$llm_factory = static fn (): ?LLM_Client => null;
-		$resolver                   = new Resolver_Node();
+		$resolver  = new Resolver_Node();
 		$resolver->name( 'resolver' );
-		$resolver->arguments( [ 'intel:writer', 'intel:later' ] );
+		$resolver->arguments( [ 'intel:writer', 'intel:later', 'intel:llm' ] );
 		$resolver->target( 'extractor' );
 		$resolver->sink( new Capture_Sink_Node() );
 		$message                   = Message::new_message();
 		$message[ Message::TYPE ]  = Message::TM_STRUCT;
 		$message[ Message::VALUE ] = [ 'event' => Resolver_Node::RERESOLVE, 'item_key' => self::ITEM, 'fresh_after' => self::NOW + 1 ];
 		$resolver->fill( $message );
-		Resolver_Node::$llm_factory = null;
 
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
 
@@ -743,8 +827,8 @@ final class ExtractorNodeTest extends TestCase {
 	}
 
 	public function test_the_writer_and_the_later_queue_are_declared_as_its_destinations(): void {
-		$this->assertSame( [ 'intel:writer', 'intel:later' ], $this->extractor->arguments() );
-		$this->assertSame( [ 'deduper', 'intel:writer', 'intel:later' ], $this->extractor->display_targets() );
+		$this->assertSame( [ 'intel:writer', 'intel:later', 'intel:llm' ], $this->extractor->arguments() );
+		$this->assertSame( [ 'deduper', 'intel:writer', 'intel:later', 'intel:llm' ], $this->extractor->display_targets() );
 	}
 
 	public function test_a_load_without_a_writer_is_refused(): void {
@@ -757,6 +841,12 @@ final class ExtractorNodeTest extends TestCase {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'Missing required argument: later' );
 		( new Extractor_Node() )->arguments( [ 'intel:writer' ] );
+	}
+
+	public function test_a_load_without_a_model_call_is_refused(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'Missing required argument: llm' );
+		( new Extractor_Node() )->arguments( [ 'intel:writer', 'intel:later' ] );
 	}
 
 	/**
@@ -803,10 +893,10 @@ final class ExtractorNodeTest extends TestCase {
 	}
 
 	/**
-	 * Without a client the extractor makes no call, so nothing fails and
-	 * nothing is retried.
+	 * Where the group lends no credential no call is made, so nothing fails
+	 * and nothing is retried.
 	 */
-	public function test_no_client_parks_no_retry(): void {
+	public function test_a_group_lending_nothing_parks_no_retry(): void {
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], false, 3 ) );
 
 		$this->assertSame( [], $this->parked() );
@@ -836,66 +926,61 @@ final class ExtractorNodeTest extends TestCase {
 	}
 
 	/**
-	 * Without a Vault entry the client is not built, so the extractor publishes
-	 * heuristic, clearing a call's state.
+	 * Where the group lends no credential the extractor publishes heuristic,
+	 * naming the group, clearing a call's state.
 	 */
-	public function test_no_client_publishes_heuristic_with_vault_id(): void {
-		$this->publishing( [ 'mode' => 'call', 'vault_id' => 'AI-proxy-old-2', 'last_ok_at' => 7000, 'last_error' => 'AI proxy returned HTTP 500', 'failing_since' => 6000 ] );
-		Extractor_Node::$llm_factory = null;
-		$this->extractor->interpreter()?->dispatch( 'set_vault_id', [ self::VAULT_ID ] );
+	public function test_a_group_lending_nothing_publishes_heuristic_with_its_group(): void {
+		$this->publishing( [ 'mode' => 'call', 'vault_group' => 'ai-proxy-old-2', 'last_ok_at' => 7000, 'last_error' => 'HTTP 500 https://proxy.example/v1', 'failing_since' => 6000 ] );
 
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
 
-		$this->assertSame( self::snapshot( [ 'mode' => 'heuristic', 'vault_id' => self::VAULT_ID ] ), $this->published() );
+		$this->assertSame( self::snapshot( [ 'mode' => 'heuristic', 'vault_group' => Llm_Answering_Sink::GROUP ] ), $this->published() );
 	}
 
 	/** A call that answers publishes call and the time, clearing the failure an earlier process published. */
 	public function test_answered_call_publishes_call_and_clears_error(): void {
-		$this->publishing( [ 'mode' => 'heuristic', 'vault_id' => 'AI-proxy-old-2', 'last_ok_at' => 7000, 'last_error' => 'AI proxy returned HTTP 500', 'failing_since' => 5100 ] );
-		$this->extractor->interpreter()?->dispatch( 'set_vault_id', [ self::VAULT_ID ] );
+		$this->publishing( [ 'mode' => 'heuristic', 'vault_group' => 'ai-proxy-old-2', 'last_ok_at' => 7000, 'last_error' => 'HTTP 500 https://proxy.example/v1', 'failing_since' => 5100 ] );
 		$this->answer( '{"summary":"Harbor Gazette wins."}' );
 		Core::$now = 9200.0;
 
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
 
-		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'vault_id' => self::VAULT_ID, 'last_ok_at' => 9200 ] ), $this->published() );
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'last_ok_at' => 9200 ] ), $this->published() );
 	}
 
-	/** A call that throws keeps the last answer, and a later failure keeps the first one's failing_since. */
+	/** A failed call keeps the last answer, and a later failure keeps the first one's failing_since. */
 	public function test_failed_call_publishes_error_and_keeps_failing_since(): void {
-		$this->publishing( [ 'mode' => 'call', 'vault_id' => self::VAULT_ID, 'last_ok_at' => 7000 ] );
-		$this->extractor->interpreter()?->dispatch( 'set_vault_id', [ self::VAULT_ID ] );
-		Proxy_LLM_Client::$http_post = static fn (): array => [ 'response' => [ 'code' => 502 ], 'body' => 'bad gateway' ];
-		Extractor_Node::$llm_factory = static fn (): LLM_Client => new Proxy_LLM_Client( 'https://proxy.test/v1', 'SEKRET-71', 'gpt-oss-120b', 'newspack-intelligence' );
+		$this->publishing( [ 'mode' => 'call', 'last_ok_at' => 7000 ] );
+		$this->out->outcome = [ 'error' => 'HTTP 502 https://proxy.example/v1/chat/completions' ];
 
 		Core::$now = 8100.0;
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
 		Core::$now = 8400.0;
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
 
-		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'vault_id' => self::VAULT_ID, 'last_ok_at' => 7000, 'last_error' => 'AI proxy returned HTTP 502', 'failing_since' => 8100 ] ), $this->published() );
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'last_ok_at' => 7000, 'last_error' => 'HTTP 502 https://proxy.example/v1/chat/completions', 'failing_since' => 8100 ] ), $this->published() );
 	}
 
 	/** A recycled worker's first failure keeps the failing_since its predecessor published, with the new error. */
 	public function test_failing_since_survives_a_worker_recycle(): void {
-		$this->publishing( [ 'mode' => 'call', 'vault_id' => self::VAULT_ID, 'last_ok_at' => 4800, 'last_error' => 'AI proxy returned HTTP 504', 'failing_since' => 5100 ] );
+		$this->publishing( [ 'mode' => 'call', 'last_ok_at' => 4800, 'last_error' => 'HTTP 504 https://proxy.example/v1/chat/completions', 'failing_since' => 5100 ] );
 		$this->answer( 'throw' );
 		Core::$now = 9300.0;
 
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
 
-		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'vault_id' => '', 'last_ok_at' => 4800, 'last_error' => 'proxy 503', 'failing_since' => 5100 ] ), $this->published() );
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'last_ok_at' => 4800, 'last_error' => 'proxy 503', 'failing_since' => 5100 ] ), $this->published() );
 	}
 
-	/** Once an entry exists a client is built, so a failing call publishes call over a held heuristic. */
+	/** Once the group lends a credential a call is made, so a failing call publishes call over a held heuristic. */
 	public function test_a_failed_call_after_heuristic_publishes_call(): void {
-		$this->publishing( [ 'mode' => 'heuristic', 'vault_id' => self::VAULT_ID ] );
+		$this->publishing( [ 'mode' => 'heuristic', 'vault_group' => Llm_Answering_Sink::GROUP ] );
 		$this->answer( 'throw' );
 		Core::$now = 8900.0;
 
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
 
-		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'vault_id' => '', 'last_error' => 'proxy 503', 'failing_since' => 8900 ] ), $this->published() );
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'last_error' => 'proxy 503', 'failing_since' => 8900 ] ), $this->published() );
 	}
 
 	/** An answer that does not parse is a failed call; with nothing published before, the mode is call. */
@@ -906,19 +991,20 @@ final class ExtractorNodeTest extends TestCase {
 
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
 
-		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'vault_id' => '', 'last_error' => 'AI proxy answer did not parse as an extraction', 'failing_since' => 8700 ] ), $this->published() );
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'last_error' => 'AI proxy answer did not parse as an extraction', 'failing_since' => 8700 ] ), $this->published() );
 	}
 
 	/** A failure's text is scrubbed for the terminal and cut to 500 bytes on a character boundary. */
 	public function test_a_failure_text_is_scrubbed_and_cut(): void {
 		$this->publishing( null );
-		Extractor_Node::$llm_factory = static fn (): LLM_Client => new class() implements LLM_Client {
-				public function chat( array $messages, array $opts = [] ): string {
-					throw new \RuntimeException( "\e[2Jproxy said " . \str_repeat( 'ü', 400 ) );
-				}
-			};
+		$this->out->outcome = [ 'error' => "\e[2Jproxy said " . \str_repeat( 'ü', 400 ) ];
+		$stderr             = $this->capture_stderr();
 
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$lines = self::stderr_lines( $stderr, 'extraction call failed: ' );
+		$this->assertCount( 1, $lines );
+		$this->assertStringNotContainsString( "\e", $lines[0] );
 
 		$error = Core::as_string( $this->published()['last_error'] ?? null );
 		$this->assertStringNotContainsString( "\e", $error );
@@ -946,17 +1032,20 @@ final class ExtractorNodeTest extends TestCase {
 
 		$resolver = Core::node( 'resolver' );
 		$this->assertInstanceOf( Resolver_Node::class, $resolver );
-		$this->assertSame( [ 'extractor', 'intel:writer', 'intel:later' ], $resolver->display_targets() );
+		$this->assertSame( [ 'extractor', 'intel:writer', 'intel:later', 'intel:llm' ], $resolver->display_targets() );
 		$extractor = Core::node( 'extractor' );
 		$this->assertInstanceOf( Extractor_Node::class, $extractor );
-		$this->assertSame( [ 'deduper', 'intel:writer', 'intel:later' ], $extractor->display_targets() );
+		$this->assertSame( [ 'deduper', 'intel:writer', 'intel:later', 'intel:llm' ], $extractor->display_targets() );
 		$deduper = Core::node( 'deduper' );
 		$this->assertInstanceOf( Deduper_Node::class, $deduper );
 		$this->assertSame( [ 'intel:writer' ], $deduper->display_targets() );
 		$this->assertSame( [ 'deduper' ], $this->read_private( Core::node( 'intel:items:resolve' ), 'snapshot_nodes' ) );
-		$this->assertSame( 'AI-proxy', $this->read_private( $extractor, 'vault_id' ) );
-		$this->assertSame( 'gpt-oss-120b', $this->read_private( $extractor, 'model' ) );
-		$this->assertSame( 'newspack-intelligence', $this->read_private( $extractor, 'feature' ) );
+		$llm = Core::node( 'intel:llm' );
+		$this->assertInstanceOf( LLM_Call_Node::class, $llm );
+		$this->assertSame(
+			[ 'ai-proxy', 'https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1', 'gpt-oss-120b', 'newspack-intelligence', 4 ],
+			[ $this->read_private( $llm, 'vault_group' ), $this->read_private( $llm, 'api_url' ), $this->read_private( $llm, 'model' ), $this->read_private( $llm, 'feature' ), $this->read_private( $llm, 'concurrency' ) ]
+		);
 		$this->assertSame( [ [], '' ], [ $this->read_private( $extractor, 'profiles' ), $this->read_private( $extractor, 'audience' ) ], 'a deployment supplies the profile and the audience' );
 		$this->assertNull( Core::node( 'intel:resolved:null' ) );
 	}
@@ -1002,29 +1091,32 @@ final class ExtractorNodeTest extends TestCase {
 	}
 
 	/**
-	 * Answer every chat call with one reply, or throw when the reply is `throw`.
+	 * Answer every request with one reply as its content, or with the error
+	 * `proxy 503` when the reply is `throw`.
 	 *
 	 * @param string $reply The model's reply.
 	 */
 	private function answer( string $reply ): void {
-		$asked                       = &$this->asked;
-		Extractor_Node::$llm_factory = static function () use ( $reply, &$asked ): LLM_Client {
-			return new class( $reply, $asked ) implements LLM_Client {
-			/**
-			 * @param string                                          $reply The reply.
-			 * @param list<list<array{role:string,content:string}>> $asked Each call's messages.
-			 */
-			public function __construct( private string $reply, private array &$asked ) {}
+		$this->out->outcome = 'throw' === $reply ? [ 'error' => 'proxy 503' ] : [ 'content' => $reply ];
+	}
 
-			public function chat( array $messages, array $opts = [] ): string {
-				$this->asked[] = $messages;
-				if ( 'throw' === $this->reply ) {
-					throw new \RuntimeException( 'proxy 503' );
-				}
-				return $this->reply;
+	/** Make every write addressed to the writer throw $e, and nothing else. */
+	private function writer_throws( \Throwable $e ): void {
+		$sink = new class( $e ) extends Llm_Answering_Sink {
+			public function __construct( private \Throwable $e ) {
+				parent::__construct();
 			}
-			};
+
+			public function fill( array $message ): void {
+				if ( 'intel:writer' === $message[ Message::TO ] ) {
+					throw $this->e;
+				}
+				parent::fill( $message );
+			}
 		};
+		$sink->outcome = $this->out->outcome;
+		$this->out     = $sink;
+		$this->extractor->sink( $sink );
 	}
 
 	/** @return list<array<string,mixed>> The events addressed to the writer. */

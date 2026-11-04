@@ -36,7 +36,7 @@ export const HEALTHY = {
 	backlog: { reason: '', held: 0, since: null, dropped: null },
 	extraction: {
 		mode: 'call',
-		vault_id: 'AI-proxy',
+		vault_group: 'ai-proxy',
 		last_ok_at: LAST_OK,
 		last_error: null,
 		failing_since: null,

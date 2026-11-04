@@ -11,7 +11,6 @@ use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-entity-index.php';
-require_once __DIR__ . '/../support/fake-entity-extractor.php';
 
 /**
  * The golden set: known items that must link to known entities, and known
@@ -386,7 +385,7 @@ final class ResolverTest extends TestCase {
 		$this->assertSame( [ self::link( $org, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://github.com/example' ], $entities )['links'] );
 		$this->assertSame(
 			[ self::link( $org, 'subject', 'identifier', 1.0 ), self::link( $product, 'subject', 'identifier', 1.0 ) ],
-			self::unevidenced( $this->resolver()->resolve( self::item( [ 'url' => 'https://github.com/Example/plugin/issues/9' ] ), null ) )['links']
+			self::unevidenced( $this->resolver()->resolve( self::item( [ 'url' => 'https://github.com/Example/plugin/issues/9' ] ), false ) )['links']
 		);
 	}
 
@@ -493,7 +492,7 @@ final class ResolverTest extends TestCase {
 		);
 		$this->assertSame(
 			[ self::link( 'organization:salem-ledger', 'publisher', 'identifier', 1.0, 'proposed' ) ],
-			self::unevidenced( $this->resolver()->resolve( self::item( [ 'url' => 'https://salemledger.example/a' ] ), null ) )['links']
+			self::unevidenced( $this->resolver()->resolve( self::item( [ 'url' => 'https://salemledger.example/a' ] ), false ) )['links']
 		);
 	}
 
@@ -503,7 +502,7 @@ final class ResolverTest extends TestCase {
 
 		$this->assertSame(
 			[ self::link( 'organization:salem-ledger', 'subject', 'ner_fuzzy', 1.0, 'proposed' ) ],
-			self::unevidenced( ( new Resolver( $index ) )->resolve( self::item( [ 'title' => 'Regional merger', 'url' => 'https://random.example/x' ] ), new Fake_Entity_Extractor( [ 'Salem Ledger' ] ) ) )['links']
+			self::unevidenced( ( new Resolver( $index ) )->resolve( self::item( [ 'title' => 'Regional merger', 'url' => 'https://random.example/x' ] ), self::named( [ 'Salem Ledger' ] ) ) )['links']
 		);
 	}
 
@@ -597,13 +596,13 @@ final class ResolverTest extends TestCase {
 		$entities = self::entity( $owl, 'Organized Writers League', [ 'acronym' => [ 'OWL' ] ] );
 
 		$this->assertSame( [ self::link( $owl, 'subject', 'acronym', 0.9 ) ], $this->resolve( [ 'title' => 'OWL summit opens', 'url' => 'https://random.example/x' ], $entities )['links'] );
-		$this->assertSame( [], $this->resolver()->resolve( self::item( [ 'title' => 'An owl escapes the zoo', 'url' => 'https://random.example/x' ] ), null )['links'] );
+		$this->assertSame( [], $this->resolver()->resolve( self::item( [ 'title' => 'An owl escapes the zoo', 'url' => 'https://random.example/x' ] ), false )['links'] );
 	}
 
 	public function test_ner_exact_org_asserts(): void {
 		$this->assertSame(
 			[ self::link( self::GAZETTE, 'subject', 'ner_fuzzy', 1.0 ) ],
-			$this->golden( [ 'title' => 'Nonprofit newsrooms expand', 'url' => 'https://elsewhere.example/x' ], [], new Fake_Entity_Extractor( [ 'The Harbor Gazette' ] ) )['links']
+			$this->golden( [ 'title' => 'Nonprofit newsrooms expand', 'url' => 'https://elsewhere.example/x' ], [], self::named( [ 'The Harbor Gazette' ] ) )['links']
 		);
 	}
 
@@ -611,7 +610,7 @@ final class ResolverTest extends TestCase {
 	public function test_ner_close_variant_asserts(): void {
 		$this->assertSame(
 			[ self::link( self::GAZETTE, 'subject', 'ner_fuzzy', 1.0 ) ],
-			$this->golden( [ 'title' => 'Coverage roundup', 'url' => 'https://elsewhere.example/x' ], [], new Fake_Entity_Extractor( [ 'Harbor Gazette' ] ) )['links']
+			$this->golden( [ 'title' => 'Coverage roundup', 'url' => 'https://elsewhere.example/x' ], [], self::named( [ 'Harbor Gazette' ] ) )['links']
 		);
 	}
 
@@ -619,19 +618,19 @@ final class ResolverTest extends TestCase {
 	public function test_ner_unrelated_org_becomes_a_proposal(): void {
 		$this->assertSame(
 			[ 'links' => [], 'proposals' => [ [ 'type' => 'organization', 'name' => 'Acme Widgets Corporation' ] ], 'recognized' => true ],
-			$this->golden( [ 'title' => 'Factory opens', 'url' => 'https://elsewhere.example/x' ], [], new Fake_Entity_Extractor( [ 'Acme Widgets Corporation' ] ) )
+			$this->golden( [ 'title' => 'Factory opens', 'url' => 'https://elsewhere.example/x' ], [], self::named( [ 'Acme Widgets Corporation' ] ) )
 		);
 	}
 
 	public function test_ner_midband_proposes_a_link(): void {
 		$this->assertSame(
 			[ self::link( self::GAZETTE, 'subject', 'ner_fuzzy', 0.8, 'proposed' ) ],
-			$this->golden( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ], [], new Fake_Entity_Extractor( [ 'Harbor Gazette Weekly' ] ), 0.99, 0.30 )['links']
+			$this->golden( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ], [], self::named( [ 'Harbor Gazette Weekly' ] ), 0.99, 0.30 )['links']
 		);
 	}
 
 	public function test_ner_bands_assert_propose_and_candidate(): void {
-		$extractor = new Fake_Entity_Extractor( [ 'Salem Ledg', 'Harbor Gazette Foundation', 'Acme Widgets Corporation' ] );
+		$extractor = self::named( [ 'Salem Ledg', 'Harbor Gazette Foundation', 'Acme Widgets Corporation' ] );
 		$index     = $this->index_of(
 			self::entity( 'organization:salem-ledger', 'Salem Ledger' ),
 			self::entity( self::GAZETTE, 'Harbor Gazette' ),
@@ -666,11 +665,11 @@ final class ResolverTest extends TestCase {
 		);
 		$item = self::item( [ 'title' => 'Regional merger', 'url' => 'https://random.example/x' ] );
 
-		$exact = ( new Resolver( $index ) )->resolve( $item, new Fake_Entity_Extractor( [ 'Quarry Ledger' ] ) );
+		$exact = ( new Resolver( $index ) )->resolve( $item, self::named( [ 'Quarry Ledger' ] ) );
 		$this->assertSame( [ self::link( 'organization:quarry-ledger', 'subject', 'ner_fuzzy', 1.0 ) ], self::unevidenced( $exact )['links'] );
 		$this->assertSame( [], $compared, 'an exact norm needs no scan' );
 
-		$near = ( new Resolver( $index ) )->resolve( $item, new Fake_Entity_Extractor( [ 'Quarry Ledgr' ] ) );
+		$near = ( new Resolver( $index ) )->resolve( $item, self::named( [ 'Quarry Ledgr' ] ) );
 		$this->assertSame( [ 'organization:quarry-ledger' ], \array_column( $near['links'], 'entity_key' ) );
 		$this->assertSame( [ 'quarry ledger' ], $compared, 'neither a 2-byte nor a 39-byte norm can reach 0.60 against 12 bytes' );
 	}
@@ -680,22 +679,22 @@ final class ResolverTest extends TestCase {
 	 * recognized as having answered.
 	 */
 	public function test_ner_no_orgs_links_nothing(): void {
-		$this->assertSame( [ 'links' => [], 'proposals' => [], 'recognized' => true ], $this->golden( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ], [], new Fake_Entity_Extractor( [] ) ) );
+		$this->assertSame( [ 'links' => [], 'proposals' => [], 'recognized' => true ], $this->golden( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ], [], self::named( [] ) ) );
 	}
 
-	/** A NER call that failed links and proposes nothing, and is not recognized. */
-	public function test_a_failed_ner_call_is_not_recognized(): void {
-		$extractor = new Fake_Entity_Extractor( null );
-
-		$this->assertSame( [ 'links' => [], 'proposals' => [], 'recognized' => false ], $this->golden( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ], [], $extractor ) );
-		$this->assertSame( 1, $extractor->calls );
+	/** With no NER step, an item nothing else linked links and proposes nothing, and is not recognized. */
+	public function test_without_a_ner_step_nothing_is_recognized(): void {
+		$this->assertSame( [ 'links' => [], 'proposals' => [], 'recognized' => false ], $this->golden( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ], [], false ) );
 	}
 
-	/** A deterministic link, a publisher's included, spares the model call, so NER is not recognized. */
+	/** A NER step owed where the first three steps found nothing answers none: the step is to be asked. */
+	public function test_an_owed_ner_step_answers_none(): void {
+		$this->assertNull( ( new Resolver( $this->index_of( self::golden_entities() ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), true ) );
+	}
+
+	/** A deterministic link, a publisher's included, spares the model call: an owed step answers, not recognized. */
 	public function test_a_deterministic_link_skips_the_extractor(): void {
-		$extractor = new Fake_Entity_Extractor( [ 'The Harbor Gazette' ] );
-		$this->assertFalse( $this->golden( [ 'url' => 'https://mesa-news.example/x' ], [], $extractor )['recognized'] );
-		$this->assertSame( 0, $extractor->calls );
+		$this->assertFalse( $this->golden( [ 'url' => 'https://mesa-news.example/x' ], [], true )['recognized'] );
 	}
 
 	public function test_a_rejected_name_is_never_proposed_again(): void {
@@ -706,7 +705,7 @@ final class ResolverTest extends TestCase {
 
 		$this->assertSame(
 			[ 'links' => [], 'proposals' => [ [ 'type' => 'organization', 'name' => 'Portland Timber Union', 'evidence' => '' ] ], 'recognized' => true ],
-			( new Resolver( $index ) )->resolve( self::item( [ 'title' => 'Factory opens', 'url' => 'https://random.example/x' ] ), new Fake_Entity_Extractor( [ 'Acme Widgets Corporation', 'Portland Timber Union' ] ) )
+			( new Resolver( $index ) )->resolve( self::item( [ 'title' => 'Factory opens', 'url' => 'https://random.example/x' ] ), self::named( [ 'Acme Widgets Corporation', 'Portland Timber Union' ] ) )
 		);
 	}
 
@@ -755,7 +754,7 @@ final class ResolverTest extends TestCase {
 
 		$this->assertSame(
 			[ 'links' => [], 'proposals' => [], 'recognized' => true ],
-			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Prize season opens on the coast', 'url' => 'https://elsewhere.example/x' ] ), new Fake_Entity_Extractor( [ 'Wharfside' ] ) ) )
+			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Prize season opens on the coast', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Wharfside' ] ) ) )
 		);
 	}
 
@@ -765,7 +764,7 @@ final class ResolverTest extends TestCase {
 
 		$this->assertSame(
 			[ self::link( 'product:kestrel-mail', 'subject', 'ner_fuzzy', 1.0 ) ],
-			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Mail outage', 'url' => 'https://elsewhere.example/x' ] ), new Fake_Entity_Extractor( [ 'Kestrel Mail' ] ) ) )['links']
+			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Mail outage', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Kestrel Mail' ] ) ) )['links']
 		);
 	}
 
@@ -828,7 +827,7 @@ final class ResolverTest extends TestCase {
 
 		$this->assertSame(
 			[ self::link( 'product:wharfside-co', 'subject', 'ner_fuzzy', 0.8571, 'proposed' ) ],
-			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Prize season opens on the coast', 'url' => 'https://elsewhere.example/x' ] ), new Fake_Entity_Extractor( [ 'Wharfside' ] ) ) )['links']
+			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Prize season opens on the coast', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Wharfside' ] ) ) )['links']
 		);
 	}
 
@@ -852,7 +851,7 @@ final class ResolverTest extends TestCase {
 
 	/** A tool the extractor names is proposed as a product, an organization beside it as an organization. */
 	public function test_a_tool_named_in_an_item_is_proposed_as_a_product(): void {
-		$extractor = new Fake_Entity_Extractor( [ 'Plover Wharf Trust' ], [ 'Kestrel Mail' ] );
+		$extractor = self::named( [ 'Plover Wharf Trust' ], [ 'Kestrel Mail' ] );
 
 		$this->assertSame(
 			[ [ 'organization', 'Plover Wharf Trust' ], [ 'product', 'Kestrel Mail' ] ],
@@ -862,7 +861,7 @@ final class ResolverTest extends TestCase {
 
 	/** A product the extractor names that an entity already carries links to it rather than being proposed. */
 	public function test_a_named_product_an_entity_carries_links_to_it(): void {
-		$resolved = $this->golden( [ 'title' => 'Mail outage', 'url' => 'https://random.example/x' ], self::entity( 'product:kestrel-mail', 'Kestrel Mail' ), new Fake_Entity_Extractor( [], [ 'Kestrel Mail' ] ) );
+		$resolved = $this->golden( [ 'title' => 'Mail outage', 'url' => 'https://random.example/x' ], self::entity( 'product:kestrel-mail', 'Kestrel Mail' ), self::named( [], [ 'Kestrel Mail' ] ) );
 
 		$this->assertSame( [ 'product:kestrel-mail' ], \array_column( $resolved['links'], 'entity_key' ) );
 		$this->assertSame( [], $resolved['proposals'] );
@@ -897,7 +896,7 @@ final class ResolverTest extends TestCase {
 		$resolved = $this->evidenced(
 			[ 'url' => 'https://random.example/x', 'title' => 'Ferry news', 'body' => 'Plover Wharf Trust bought a ferry. Staff at harbor gazete covered the sale!' ],
 			[],
-			new Fake_Entity_Extractor( [ 'Plover Wharf Trust', 'Harbor Gazete', 'Gull Rota' ] ),
+			self::named( [ 'Plover Wharf Trust', 'Harbor Gazete', 'Gull Rota' ] ),
 			0.99
 		);
 
@@ -925,7 +924,7 @@ final class ResolverTest extends TestCase {
 	}
 
 	public function test_no_more_than_three_proposals_per_item(): void {
-		$extractor = new Fake_Entity_Extractor( [ 'Acme Widgets Corporation', 'acme widgets corporation', 'Portland Timber Union', 'Pine Valley Radio', 'River City Times', 'Coastal Ferry Lines' ] );
+		$extractor = self::named( [ 'Acme Widgets Corporation', 'acme widgets corporation', 'Portland Timber Union', 'Pine Valley Radio', 'River City Times', 'Coastal Ferry Lines' ] );
 
 		$this->assertSame(
 			[ 'Acme Widgets Corporation', 'Portland Timber Union', 'Pine Valley Radio' ],
@@ -942,7 +941,7 @@ final class ResolverTest extends TestCase {
 	public function test_an_empty_index_links_nothing_and_still_proposes(): void {
 		$this->assertSame(
 			[ 'links' => [], 'proposals' => [ [ 'type' => 'organization', 'name' => 'Harbor Gazette', 'evidence' => 'Harbor Gazette' ] ], 'recognized' => true ],
-			( new Resolver( new Entity_Index() ) )->resolve( self::item( [ 'url' => 'https://harborgazette.example/x', 'title' => 'Harbor Gazette' ] ), new Fake_Entity_Extractor( [ 'Harbor Gazette' ] ) )
+			( new Resolver( new Entity_Index() ) )->resolve( self::item( [ 'url' => 'https://harborgazette.example/x', 'title' => 'Harbor Gazette' ] ), self::named( [ 'Harbor Gazette' ] ) )
 		);
 	}
 
@@ -954,13 +953,13 @@ final class ResolverTest extends TestCase {
 	 *
 	 * @param array<string,string>      $over      The item's fields.
 	 * @param list<array<string,mixed>> $extra     More entity events.
-	 * @param Fake_Entity_Extractor|null $extractor The NER seam.
+	 * @param array<string,list<string>>|bool $ner The names the NER step answered, true when it is owed, or false for none.
 	 * @param float                     $assert_at The asserting band.
 	 * @param float                     $propose_at The proposing band.
 	 * @return array{links: list<array<string,mixed>>, proposals: list<array<string,string>>}
 	 */
-	private function golden( array $over, array $extra = [], ?Fake_Entity_Extractor $extractor = null, float $assert_at = 0.85, float $propose_at = 0.60 ): array {
-		return self::unevidenced( $this->evidenced( $over, $extra, $extractor, $assert_at, $propose_at ) );
+	private function golden( array $over, array $extra = [], array|bool $ner = false, float $assert_at = 0.85, float $propose_at = 0.60 ): array {
+		return self::unevidenced( $this->evidenced( $over, $extra, $ner, $assert_at, $propose_at ) );
 	}
 
 	/**
@@ -969,14 +968,16 @@ final class ResolverTest extends TestCase {
 	 *
 	 * @param array<string,string>       $over       The item's fields.
 	 * @param list<array<string,mixed>>  $extra      More entity events.
-	 * @param Fake_Entity_Extractor|null $extractor  The NER seam.
+	 * @param array<string,list<string>>|bool $ner The names the NER step answered, true when it is owed, or false for none.
 	 * @param float                      $assert_at  The asserting band.
 	 * @param float                      $propose_at The proposing band.
 	 * @return array{links: list<array<string,mixed>>, proposals: list<array<string,string>>, recognized: bool}
 	 */
-	private function evidenced( array $over, array $extra = [], ?Fake_Entity_Extractor $extractor = null, float $assert_at = 0.85, float $propose_at = 0.60 ): array {
+	private function evidenced( array $over, array $extra = [], array|bool $ner = false, float $assert_at = 0.85, float $propose_at = 0.60 ): array {
 		$this->last = new Resolver( $this->index_of( self::golden_entities(), $extra ), $assert_at, $propose_at );
-		return $this->last->resolve( self::item( $over ), $extractor );
+		$resolution = $this->last->resolve( self::item( $over ), $ner );
+		\assert( null !== $resolution );
+		return $resolution;
 	}
 
 	/**
@@ -1000,7 +1001,7 @@ final class ResolverTest extends TestCase {
 	 */
 	private function resolve( array $over, array ...$events ): array {
 		$this->last = new Resolver( $this->index_of( ...$events ) );
-		return self::unevidenced( $this->last->resolve( self::item( $over ), null ) );
+		return self::unevidenced( $this->last->resolve( self::item( $over ), false ) );
 	}
 
 	/** The resolver the last golden() or resolve() built. */

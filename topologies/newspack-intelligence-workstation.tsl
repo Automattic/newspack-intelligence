@@ -4,7 +4,8 @@
 # token half, and the public sources and Unthread, which ContextA8C cannot
 # read, as shipped.
 var on_demand_idle = 0
-# An LLM call blocks one fill(); a 60s lock steal tears intel:items.
+# Stays 600 until a measured run shows a lower value is safe: a pass still
+# holds work across ticks.
 var stale_timeout = 600
 var num_partitions = 1
 include newspack-intelligence-core

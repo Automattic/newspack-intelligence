@@ -67,9 +67,14 @@
  * reads the process's shared `Entity_Index::current()`, again once a
  * re-resolution's signal settled after the shared index was read; while the
  * active topologies do not declare the `intel-graph` table, that index is
- * empty. The `LLM_Config` verbs configure the NER client, built from them for
- * each item owed NER, so a change reaches the next one; with none resolvable
- * the NER step is skipped.
+ * empty. An item its NER step is owed, which nothing else links, is asked of
+ * the model-call node its `make_node` line names, `intel:llm`, naming the
+ * `extract_entities` prompt with the item beside the record it came in,
+ * which rides as the carry without the item's fields, a re-extraction's
+ * request as backlog; the answer runs the same path again with the names
+ * in hand, a failed call or an unlent
+ * group as a step that did not answer. An answer whose resolution throws is
+ * logged and parks the item, owed its NER step, on the later queue.
  *
  * @package Newspack_Intelligence
  */
@@ -83,6 +88,7 @@ use Newspack_Nodes\Publishes_Status;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Schema_Reflection;
 use Newspack_Nodes\Table_Unavailable;
+use Newspack_Nodes\Worker_Should_Stop;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -95,8 +101,8 @@ use Newspack_Nodes\Table_Unavailable;
  */
 class Resolver_Node extends Node {
 	use Schema_Reflection;
-	use LLM_Config;
 	use Emits_Struct;
+	use Asks_Model;
 	use Publishes_Status;
 
 	/** The record kind the Reresolver appends, naming a stored item to resolve again. */
@@ -146,12 +152,6 @@ class Resolver_Node extends Node {
 	/** Whether the clear is published and nothing is held since. */
 	private bool $cleared = false;
 
-	/** Wire the sibling `:config` interpreter for the LLM verbs. */
-	public function __construct() {
-		parent::__construct();
-		$this->auto_wire_interpreter();
-	}
-
 	/**
 	 * Resolve one item: an `item_recorded` event, or an `item_reresolve`
 	 * record naming a stored item, which it reads from the projection.
@@ -169,7 +169,8 @@ class Resolver_Node extends Node {
 	 * does not validate throws, as does a re-resolution while the projection
 	 * will not open, so its Consumer dead-letters it (ADR-12); a
 	 * re-resolution it cannot read, or naming an item the projection no
-	 * longer holds, is dropped with a rate-limited line.
+	 * longer holds, is dropped with a rate-limited line. An answer from
+	 * `intel:llm` resolves the record it carries again.
 	 *
 	 * @param array<int,mixed> $message Incoming Message.
 	 * @throws \InvalidArgumentException When an item_recorded event does not validate.
@@ -181,6 +182,55 @@ class Resolver_Node extends Node {
 		if ( 0 === ( Core::int( $message[ Message::TYPE ] ) & Message::TM_STRUCT ) || ! \is_array( $value ) ) {
 			return;
 		}
+		if ( self::is_answer( $message ) ) {
+			$this->answered( $message );
+			return;
+		}
+		$this->resolve_record( $message, $value, null );
+	}
+
+	/**
+	 * Resolve again the record an answer carries, the carry with the item's
+	 * fields laid back on it, with the names it gave, or none when the call
+	 * failed or no credential was lent; a resolution that throws parks the
+	 * record as the resolver's hold parks it, its own `attempt`,
+	 * `parked_at` and `fresh_after` kept (`Asks_Model`).
+	 *
+	 * @param array<int,mixed> $message The answer.
+	 * @throws Worker_Should_Stop When the worker is asked to stop.
+	 */
+	private function answered( array $message ): void {
+		$read = $this->answer_of( $message );
+		if ( null === $read ) {
+			return;
+		}
+		[ $answer, $item, , $carry ] = $read;
+		if ( \is_string( $answer['error'] ?? null ) ) {
+			$this->print_less_often( 'NER call failed: ', Core::terminal_safe( $answer['error'] ) );
+		}
+		$content                   = $answer['content'] ?? null;
+		$record                    = $carry + $item;
+		$message[ Message::TYPE ]  = Message::TM_STRUCT;
+		$message[ Message::VALUE ] = $record;
+		$this->finish_answer(
+			Core::as_string( $item['item_key'] ?? null ),
+			fn () => $this->resolve_record( $message, $record, ( \is_string( $content ) ? Prompts::parse_entities( $content ) : null ) ?? false ),
+			fn () => $this->park( $record, true )
+		);
+	}
+
+	/**
+	 * Resolve one record, its NER step answered by `$answered` when an
+	 * answer carried it back, else owed as the record says.
+	 *
+	 * @param array<int,mixed>                                                                                    $message  The record's message.
+	 * @param array<array-key,mixed>                                                                              $value    Its VALUE.
+	 * @param array{orgs:list<string>,products:list<string>,people:list<string>,locations:list<string>}|false|null $answered The names its NER step answered, false for none, null when it was not asked.
+	 * @throws \InvalidArgumentException When an item_recorded event does not validate.
+	 * @throws Table_Unavailable When a re-resolution's item cannot be read.
+	 * @throws \LogicException When the process has no bound partition.
+	 */
+	private function resolve_record( array $message, array $value, array|false|null $answered ): void {
 		$kind = $value['event'] ?? null;
 		if ( 'item_recorded' === $kind ) {
 			$item     = Intel_Event::item_of( Intel_Event::from_message( $message ) ) ?? throw new \InvalidArgumentException( 'item_recorded: missing an item field' );
@@ -189,11 +239,11 @@ class Resolver_Node extends Node {
 			$reason   = $this->hold_reason( $resolver );
 			$this->publish_hold( $reason );
 			if ( '' !== $reason ) {
-				$this->hold( self::reresolve( $item_key, 0, [ 'ner' => true ] ) );
+				$this->park( $value );
 				return;
 			}
 			[ $held, $extracted, $judgment, $resolved ] = self::stored( $item_key, $resolver->index->merged(), self::own_alias(), 'no intel-graph to read the stored item from; resolving it fresh, retracting none: ' ) ?? self::NOTHING_STORED;
-			$this->resolve_again( $resolver, [ $held ?? $item, $extracted, $judgment ], $resolved ? null : $this->ner(), 0, false );
+			$this->resolve_again( $resolver, [ $held ?? $item, $extracted, $judgment ], $resolved ? false : ( $answered ?? true ), 0, false, $value );
 			return;
 		}
 		if ( self::RERESOLVE !== $kind ) {
@@ -201,7 +251,7 @@ class Resolver_Node extends Node {
 		}
 		$record = self::reresolve_of( $value );
 		if ( null === $record ) {
-			$this->print_less_often( 'dropping a re-resolution it cannot read from ', Core::as_string( $message[ Message::FROM ] ) );
+			$this->print_less_often( 'dropping a re-resolution it cannot read from ', Core::terminal_safe( Core::as_string( $message[ Message::FROM ] ) ) );
 			return;
 		}
 		$item_key = $record['item_key'];
@@ -215,32 +265,68 @@ class Resolver_Node extends Node {
 		}
 		$stored = self::stored( $item_key, $resolver->index->merged(), self::own_alias(), null );
 		if ( isset( $stored[0] ) ) {
-			$this->resolve_again( $resolver, $stored, $owes_ner ? $this->ner() : null, $record['attempt'] ?? 0, $record['extract'] ?? false );
+			$this->resolve_again( $resolver, $stored, $owes_ner ? ( $answered ?? true ) : false, $record['attempt'] ?? 0, $record['extract'] ?? false, $value );
 			return;
 		}
 		if ( $owes_ner ) {
-			$this->print_less_often( 'holding a re-resolution the projection does not hold yet: ', $item_key );
+			$this->print_less_often( 'holding a re-resolution the projection does not hold yet: ', Core::terminal_safe( $item_key ) );
 			$this->hold( $record );
 			return;
 		}
-		$this->print_less_often( 'no stored item to re-resolve: ', $item_key );
+		$this->print_less_often( 'no stored item to re-resolve: ', Core::terminal_safe( $item_key ) );
+	}
+
+	/**
+	 * Park a record on the later queue, as the hold parks it: an
+	 * `item_recorded` as a re-resolution owed its NER step, an
+	 * `item_reresolve` as it was read; one that reads as neither is dropped,
+	 * logged. A record parked because finishing its answer failed counts the
+	 * failure in its `attempt`, and from `Extractor_Node::MAX_ATTEMPTS` on
+	 * parks nothing, logged, so a poisoned item stops asking the model.
+	 *
+	 * @param array<array-key,mixed> $value  The record.
+	 * @param bool                   $failed Whether its answer failed to resolve.
+	 */
+	private function park( array $value, bool $failed = false ): void {
+		$item_key = $value['item_key'] ?? null;
+		$record   = 'item_recorded' === ( $value['event'] ?? null ) && \is_string( $item_key ) ? self::reresolve( $item_key, 0, [ 'ner' => true ] ) : self::reresolve_of( $value );
+		if ( null === $record ) {
+			$this->print_less_often( 'dropping a record it cannot park: ', Core::terminal_safe( Core::as_string( $item_key ) ) );
+			return;
+		}
+		if ( $failed ) {
+			$attempt = $record['attempt'] ?? 0;
+			if ( $attempt >= Extractor_Node::MAX_ATTEMPTS ) {
+				$this->print_less_often( 'giving up resolving ', Core::terminal_safe( $record['item_key'] ) . " after {$attempt} attempts" );
+				return;
+			}
+			$record['attempt'] = $attempt + 1;
+		}
+		$this->hold( $record );
 	}
 
 	/**
 	 * Resolve an item against what the projection holds of it: NER only when
 	 * handed the step, the curators' judgments in force, forwarded only while
 	 * still owed an extraction — asked for one, with no call extraction
-	 * projected, or a link asserted anew.
+	 * projected, or a link asserted anew. A NER step owed that nothing spares
+	 * is asked of `intel:llm`, the item beside the record less its fields,
+	 * and nothing is written.
 	 *
-	 * @param Resolver                                       $resolver The resolver over the shared index.
-	 * @param array{0:array<string,mixed>,1:bool,2:Judgment} $stored   The item, whether a call extracted it, and what settled() read.
-	 * @param LLM_Entity_Extractor|null                      $ner      The NER step, or none.
-	 * @param int                                            $attempt  The failed extraction calls behind it.
-	 * @param bool                                           $extract  Whether the record asks for an extraction whatever the item holds.
+	 * @param Resolver                                                                                         $resolver The resolver over the shared index.
+	 * @param array{0:array<string,mixed>,1:bool,2:Judgment}                                                   $stored   The item, whether a call extracted it, and what settled() read.
+	 * @param array{orgs:list<string>,products:list<string>,people:list<string>,locations:list<string>}|bool $ner      The names the NER step answered, true when it is owed, false for none.
+	 * @param int                                                                                              $attempt  The failed extraction calls behind it.
+	 * @param bool                                                                                             $extract  Whether the record asks for an extraction whatever the item holds.
+	 * @param array<array-key,mixed>                                                                           $value    The record, which a NER request carries.
 	 */
-	private function resolve_again( Resolver $resolver, array $stored, ?LLM_Entity_Extractor $ner, int $attempt, bool $extract ): void {
+	private function resolve_again( Resolver $resolver, array $stored, array|bool $ner, int $attempt, bool $extract, array $value ): void {
 		[ $item, $extracted, $judgment ] = $stored;
 		$resolution                      = $resolver->resolve( $item, $ner );
+		if ( null === $resolution ) {
+			$this->ask_model( 'extract_entities', $item, [], [ 'max_tokens' => 300, 'temperature' => 0.0 ], \array_diff_key( $value, $item ), $extract );
+			return;
+		}
 		$sent                            = self::judged( $resolution, $judgment );
 		$forward                         = $extract || ! $extracted || self::asserts_anew( $sent['links'], $judgment['known'] );
 		$forwarded                       = [
@@ -317,15 +403,6 @@ class Resolver_Node extends Node {
 	}
 
 	/**
-	 * The NER step, built from the node's configuration at each call, so a
-	 * runtime `set_api_url` reaches the next item; none without a client.
-	 */
-	private function ner(): ?LLM_Entity_Extractor {
-		$client = $this->make_llm_client();
-		return null === $client ? null : new LLM_Entity_Extractor( $client );
-	}
-
-	/**
 	 * Why to hold the record, '' when not: while the projector stood behind
 	 * the ontology stream just before the index was read, or while the
 	 * index holds no live entity, each logged naming its cause and the
@@ -333,8 +410,10 @@ class Resolver_Node extends Node {
 	 * has not flushed yet, only parks a record a minute. The resolver's own
 	 * `entity_proposed` events leave the projector's committed ontology
 	 * cursor short until its next checkpoint, up to 30 seconds, so items
-	 * following a proposal may park a minute; nothing is lost, and
-	 * parking spends no LLM call.
+	 * following a proposal may park a minute; nothing is lost. Parking
+	 * before the NER step was asked spends no call, but a hold met when a
+	 * NER answer comes back parks the record `{ ner: true }`, its answer
+	 * unused, so that item costs one call more.
 	 *
 	 * @param Resolver $resolver The resolver over the shared index.
 	 */
@@ -734,8 +813,9 @@ class Resolver_Node extends Node {
 			'arguments'    => [
 				[ 'name' => 'writer', 'type' => 'node_name', 'required' => true, 'description' => 'The event writer every link and candidate is addressed to: intel:writer.' ],
 				[ 'name' => 'later', 'type' => 'node_name', 'required' => true, 'description' => 'The Delay a record parks on while the index holds no live entity: intel:later.' ],
+				[ 'name' => 'llm', 'type' => 'node_name', 'required' => true, 'description' => 'The model-call node a NER step is asked of: intel:llm.' ],
 			],
-			'commands'     => self::llm_config_commands(),
+			'commands'     => [],
 			'accepts_fill' => true,
 			'has_target'   => true,
 		];

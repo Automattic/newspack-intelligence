@@ -591,15 +591,15 @@ const STATES = {
 			word: __( 'heuristic', 'newspack-intelligence' ),
 			tone: 'is-warning',
 			fault: true,
-			text: ( { vault_id: vaultId } ) =>
-				vaultId
+			text: ( { vault_group: vaultGroup } ) =>
+				vaultGroup
 					? sprintf(
-							/* translators: %s: the extractor's Vault entry id. */
+							/* translators: %s: the Vault group the model calls take their credential from. */
 							__(
-								'Extracting with the heuristic only: no Vault entry %s.',
+								'Extracting with the heuristic only: Vault group %s holds no entry for the AI proxy.',
 								'newspack-intelligence'
 							),
-							vaultId
+							vaultGroup
 					  )
 					: __(
 							'Extracting with the heuristic only: the AI proxy has no Vault entry.',

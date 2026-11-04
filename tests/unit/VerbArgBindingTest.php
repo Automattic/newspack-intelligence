@@ -7,6 +7,7 @@ use Newspack_Intelligence\Extractor_Node;
 use Newspack_Intelligence\Feed_Source_Node;
 use Newspack_Intelligence\Github_Source_Node;
 use Newspack_Intelligence\Linear_Source_Node;
+use Newspack_Intelligence\LLM_Call_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Node;
@@ -60,19 +61,14 @@ final class VerbArgBindingTest extends TestCase {
 		$this->assertSame( [ 'POS7', 'NAMED8' ], $this->prop( $node, 'teams' ) );
 	}
 
-	public function test_llm_config_verbs_bind_both_ways(): void {
-		$node    = new Extractor_Node();
-		$sibling = $this->sibling( $node, 'extractor' );
+	public function test_the_model_call_verbs_bind_both_ways(): void {
+		$node    = new LLM_Call_Node();
+		$sibling = $this->sibling( $node, 'intel:llm' );
 
-		$sibling->dispatch( 'set_api_url', [ 'https://pos.test/v9' ] );
-		$this->assertSame( 'https://pos.test/v9', $this->prop( $node, 'api_url' ) );
-		$sibling->dispatch( 'set_api_url', [ '--url=https://named.test/v8' ] );
-		$this->assertSame( 'https://named.test/v8', $this->prop( $node, 'api_url' ) );
-
-		$sibling->dispatch( 'set_vault_id', [ 'llm-pos' ] );
-		$this->assertSame( 'llm-pos', $this->prop( $node, 'vault_id' ) );
-		$sibling->dispatch( 'set_vault_id', [ '--vault_id=llm-named' ] );
-		$this->assertSame( 'llm-named', $this->prop( $node, 'vault_id' ) );
+		$sibling->dispatch( 'set_api_url', [ 'https://pos.example/v9' ] );
+		$this->assertSame( 'https://pos.example/v9', $this->prop( $node, 'api_url' ) );
+		$sibling->dispatch( 'set_api_url', [ '--url=https://named.example/v8/' ] );
+		$this->assertSame( 'https://named.example/v8', $this->prop( $node, 'api_url' ) );
 
 		$sibling->dispatch( 'set_model', [ 'model-pos' ] );
 		$this->assertSame( 'model-pos', $this->prop( $node, 'model' ) );
@@ -83,6 +79,26 @@ final class VerbArgBindingTest extends TestCase {
 		$this->assertSame( 'feat-pos', $this->prop( $node, 'feature' ) );
 		$sibling->dispatch( 'set_feature', [ '--feature=feat-named' ] );
 		$this->assertSame( 'feat-named', $this->prop( $node, 'feature' ) );
+
+		$sibling->dispatch( 'set_concurrency', [ '7' ] );
+		$this->assertSame( 7, $this->prop( $node, 'concurrency' ) );
+		$sibling->dispatch( 'set_concurrency', [ '--count=11' ] );
+		$this->assertSame( 11, $this->prop( $node, 'concurrency' ) );
+	}
+
+	/** An api url that is not an absolute http(s) url is refused, and the one set stands. */
+	public function test_a_bad_api_url_is_refused(): void {
+		$node    = new LLM_Call_Node();
+		$sibling = $this->sibling( $node, 'intel:llm' );
+		$sibling->dispatch( 'set_api_url', [ 'https://kept.example/v1' ] );
+
+		try {
+			$sibling->dispatch( 'set_api_url', [ 'relay.example/v1' ] );
+			$this->fail( 'a url with no scheme is refused' );
+		} catch ( \UnexpectedValueException $e ) {
+			$this->assertSame( 'invalid url relay.example/v1', $e->getMessage() );
+		}
+		$this->assertSame( 'https://kept.example/v1', $this->prop( $node, 'api_url' ) );
 	}
 
 	public function test_add_profile_joins_a_positional_tail_and_takes_it_by_name(): void {

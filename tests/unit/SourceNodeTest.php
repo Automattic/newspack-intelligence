@@ -1153,6 +1153,7 @@ final class SourceNodeTest extends TestCase {
 		$raw                     = "HTTP 500\x1b[31m {$url}";
 		$error                   = Message::new_message();
 		$error[ Message::TYPE ]  = Message::TM_ERROR;
+		$error[ Message::FROM ]  = 'fake-source-12';
 		$error[ Message::KEY ]   = $url;
 		$error[ Message::VALUE ] = $raw;
 

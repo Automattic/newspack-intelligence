@@ -88,6 +88,17 @@ trait Seeds_Entity_Index {
 	}
 
 	/**
+	 * What a NER step answered: the organizations and products it named.
+	 *
+	 * @param list<string> $orgs     The organizations.
+	 * @param list<string> $products The products.
+	 * @return array{orgs:list<string>,products:list<string>,people:list<string>,locations:list<string>}
+	 */
+	private static function named( array $orgs, array $products = [] ): array {
+		return [ 'orgs' => $orgs, 'products' => $products, 'people' => [], 'locations' => [] ];
+	}
+
+	/**
 	 * A person's entity: its creation, then each name or identifier, kind =>
 	 * values. A kind from NAME_KINDS writes a name, any other an identifier.
 	 *
