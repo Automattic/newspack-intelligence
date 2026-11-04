@@ -283,9 +283,19 @@ LinkedIn company, X handle, a Linear issue's team) at 1.0, the entity whose
 `domain` the host is, by `Entity_Index::by_host()`'s suffix walk, linked as
 the item's `publisher`; names and aliases
 as whole words in title and body at 1.0, an acronym only in its own case at
-0.9; a domain's stem in the title at 0.9, when it runs at least
-`MIN_STEM_LENGTH` (6) characters, aligns to word boundaries, capitalizes
-every word and is not led by an article, and never in a body, which is raw
+0.9, and a name led by `the`, which `norm()` drops, only where its first
+word past the article is capitalized, the rest in any case, and a single
+such word only right after `the` or `The` as `Entity_Index::plain()` reads
+the text, so markup or an entity between them never hides the article
+(`Entity_Index::names_in()`): neither "leaves no echo" nor "Leaves No Echo"
+names The Echo, while "the Echo", "THE ECHO", "Harbor Gazette" and "Grant
+To The Harbor Gazette" name theirs; a domain's stem in the title at 0.9,
+when it runs at least `MIN_STEM_LENGTH` (6) characters, aligns to word
+boundaries and reads as a name (`Resolver::reads_as_name()`), each word
+capitalized but a lowercase `de`, `in`, `of`, `and` or `the` between two
+that are, and a span of several words not led by "A" or "An", so
+`thecitizen.example`, whose label spells the article, reads "The Citizen"
+while "A Newsroom" never reads as `anewsroom.example`, and never in a body, which is raw
 markup where an href spells a domain; and only when those find nothing, the NER extractor's organizations and products fuzzy-matched
 against every name — asserted at 0.85, proposed at 0.60, below that a
 candidate entity of the type it was named as (at most `MAX_PROPOSALS`, 3,
@@ -536,7 +546,8 @@ closed set. It writes an `extraction_recorded` naming topic keys, then a
 link, taking that link's confidence; a subject linked only by
 `link_proposed` does not assert a claim. Subject and object resolve through every
 entity whose name spells the whole of them in `Entity_Index::names_in()`,
-a stoplisted hit aside unless the item asserts its entity by an
+read in any case, since the model writes them and not the item, a
+stoplisted hit aside unless the item asserts its entity by an
 identifier, so a client's own site naming it still asserts its claims:
 the subject is the one of those the item asserts, and the object is the
 only one, or the only one the item links, else it carries no key, so
@@ -897,7 +908,14 @@ complete bucket's count when it is at least `Graph_Query::SIGNAL_MIN` (3),
 above the mean of the `SIGNAL_BASELINE` (8) buckets before it, so a flat
 history never signals, and at least that mean plus `SIGNAL_SIGMAS` (2)
 population standard deviations of them, compared in whole numbers so the
-threshold itself counts. `baseline` is that mean, and
+threshold itself counts. Counting by kind, the about axis also spikes a
+value only when that same value was counted before the oldest baseline
+bucket, read across the whole retention whatever days a lens keeps,
+because a first appearance within the window is not a change: a client
+feed reaching back two weeks would otherwise spike every kind it first
+brings, and one stray item in a baseline would re-arm the rule. Counting
+by any other axis, a topic among them, a value needs no history of its
+own, so a new topic surging spikes. `baseline` is that mean, and
 `items` cite the bucket's five newest items. A story counts once, as its
 canonical, as `trends` counts it, on both axes, dated by its earliest
 admitted copy, so a story whose copy precedes the window is history and
@@ -905,16 +923,20 @@ leaves the window, even when its canonical falls inside it. The about axis
 counting by kind joins no extraction of kind `other`, the kind that says
 nothing (`Graph_Query::MUTE_KIND`), whatever the lens or entity, so
 `other` neither spikes nor counts as history there; the `publisher` axis
-keeps it. It counts those `SIGNAL_BASELINE + 2` buckets alone, and reads
-the stories before them only to know whether a history exists. A history
-holding no counted story before the oldest baseline bucket signals
-nothing, because its zeros are not a baseline: a story in that bucket
-answers it, else one dated earlier within the lens's own days, which the
-same statement reads. An
+keeps it. It counts those `SIGNAL_BASELINE + 2` buckets alone. Counting
+by kind on the about axis, it reads which values the stories before them
+counted, in the same statement when the lens keeps every day and in one
+more when it keeps fewer. On any other axis, and on the publisher axis, a
+history holding no counted story before the oldest baseline bucket
+signals nothing, because its zeros are not a baseline: a story in that
+bucket answers it, else one dated earlier within the lens's own days,
+which the same statement reads. An
 entity named with no lens answers the `publisher` axis after them, read
 from its `publisher` links per week: a
-`burst` for each item kind its own output spikes by the rule above, the
-short history included, so a steady publisher bursts nothing; and, for an
+`burst` for each item kind its own output spikes by the count rule above
+and the short history, no history of the kind itself required, so a
+steady publisher bursts nothing and a kind it never put out before
+bursts; and, for an
 entity holding an open `client` role now (`Graph_Query::open_roles()`, as
 the feed source reads it), a `drop` when the latest complete week falls
 (`fell()`), holding at most `SIGNAL_DROP` (0.5) of a baseline mean of at
@@ -1005,10 +1027,13 @@ appears, by importance, then relevance, then the newest, the unscored last,
 each as `search` answers it, and `total` counting every such item; each
 item sits under every entity holding an open `client` role, as its
 survivor, that it is about, in a group of role `client` carrying the
-client's key and name. One that is not about an open client but is about an
-entity holding an open `newspack_product` role sits in one group of that
-role, and any other, such as one about a former client alone, in one group
-of role null; both carry a null `entity_key` and `name`. One statement reads
+client's key and name, unless it is about more than
+`Intelligence_Briefing::MAX_CLIENT_GROUPS` (3) of them, when it is filed
+once as an item about no client is, its entities still naming every
+client. One that is not about an open client, or is about that many, but
+is about an entity holding an open `newspack_product` role sits in one
+group of that role, and any other, such as one about a former client
+alone, in one group of role null; both carry a null `entity_key` and `name`. One statement reads
 every survivor holding an open `client` or `newspack_product` role
 (`Graph_Query::CLIENT`, `Graph_Query::NEWSPACK_PRODUCT`) with its role, and
 names only the clients. Groups follow the order of their most important
@@ -1584,8 +1609,11 @@ spelled as `Entity_Index::identifier_value()` spells one, names no one; so
 does one that does not name the site (`Resolver::names_site()`), which is
 the resolver's own `domain_stem` match: the domain's registrable label, of
 at least `MIN_STEM_LENGTH` (6) characters, spelled by the title's letters
-and digits, lowercased, on word boundaries, every word of it capitalized.
-So "Harbor Gazette" names harborgazette.example, and "News", "Home",
+and digits, lowercased, on word boundaries, every word of it capitalized
+but a lowercase `de`, `in`, `of`, `and` or `the` between two that are
+(`Resolver::reads_as_name()`). So "Harbor Gazette" names
+harborgazette.example, "The Wren" thewren.example and "Pueblo de Cobre"
+pueblodecobre.example, and "News", "Home",
 "Kestrel Bayou News" for kestrelbay.example and "Lanternese Weekly" for
 lantern.example name nothing. Once
 is once: the feed remembers each entity it named for the life of its
@@ -2060,7 +2088,7 @@ its own one-shot commands; nothing polls.
 | `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty when every list its `rows` names is, its words and any control the view gives as `empty`, or its rows — as a stock `Card` section named by an optional title, which heads its `CardHeader`, with the state inset in its `CardBody`, or bare inside a dialog; the one alert every refusal, read or write, renders in |
 | `components/Pager.js` | default | How many of the matches a page shows, and Previous and Next over a stack of page starts, for Search, the Entity timeline and its published items, a lens's items and a watch's matches |
 | `components/ListField.js`, `lensDraft.js` | `ListField`; `lensDraft`, `newLens`, `draftLens`, `draftArgs`, `listOf`, `daysSince` | A comma-separated field naming the values a closed list allows; a lens read into a form's text and back into the lens and the options `save_lens` and `search` take, its list filters read from `vocabulary.lensLists` and its tiers kept beside them, the one place that knows the lens's shape; and the first UTC day of a lens's rolling window |
-| `components/ItemRow.js`, `Cite.js`, `format.js` | `ItemPage` | An item row, headed by any control the view passes as its children, and `ItemPage`, a page of rows above its `Pager`, which Search, a lens and the Entity timeline and published section render, and which, given `onSort`, says whether the page is ranked by importance or newest first and offers the other; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day (`utcDay()`), and `metaLine()`, which joins a row's meta parts and keeps a 0 |
+| `components/ItemRow.js`, `Cite.js`, `format.js` | `ItemPage` | An item row, headed by any control the view passes as its children, a chip per linked entity, leaving out a `proposed` one while another of its name is not proposed and keeping only the first of several proposals of one name, and `ItemPage`, a page of rows above its `Pager`, which Search, a lens and the Entity timeline and published section render, and which, given `onSort`, says whether the page is ranked by importance or newest first and offers the other; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day (`utcDay()`), and `metaLine()`, which joins a row's meta parts and keeps a 0 |
 | `styles/intelligence.scss` | — | Geometry only, emitted as `build/intelligence/index.css` |
 
 Each read is a `useCommandOnce` read with `retry`, under the `intelligence`

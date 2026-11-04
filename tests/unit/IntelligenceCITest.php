@@ -70,6 +70,8 @@ final class IntelligenceCITest extends TestCase {
 
 		$this->assertStringContainsString( 'kinds: { churn_signal, feature_request, complaint }', $described['entity'] );
 		$this->assertStringContainsString( 'other never signals on the about axis', $described['signals'] );
+		$this->assertStringContainsString( 'only a value counted before those buckets', $described['signals'] );
+		$this->assertStringContainsString( 'a kind it never put out before included', $described['signals'] );
 		$this->assertStringContainsString( 'a story counted once', $described['signals'] );
 
 		$this->assertStringContainsString( '{ claims: [ { subject, subject_name, predicate, object, object_name, confidence, item_key, url, title } ] }', $described['claims'] );

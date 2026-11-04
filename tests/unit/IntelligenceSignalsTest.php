@@ -18,8 +18,9 @@ require_once __DIR__ . '/../support/signs-in-users.php';
 /**
  * Signals: per value of the trend axis, the latest complete bucket's count
  * is a spike when it reaches SIGNAL_MIN and the mean plus SIGNAL_SIGMAS
- * standard deviations of the SIGNAL_BASELINE buckets before it, read from
- * the same trend rows, tiers and lens as `trends`.
+ * standard deviations of the SIGNAL_BASELINE buckets before it, and the
+ * same value was counted before them, read from the same trend rows, tiers
+ * and lens as `trends`.
  *
  * The fixture's tick is Tuesday 2026-10-20, so the current week opens on
  * Monday 2026-10-19, the latest complete one on 2026-10-12, and the eight
@@ -71,8 +72,8 @@ final class IntelligenceSignalsTest extends TestCase {
 	 * their five newest.
 	 */
 	public function test_a_count_at_the_threshold_is_a_signal(): void {
-		$this->weeks( 'complaint', [ 1 => 6, 2 => 1, 3 => 3, 4 => 1, 5 => 3, 6 => 1, 7 => 3, 8 => 1, 9 => 3 ] );
-		$this->weeks( 'praise', [ 1 => 4, 2 => 1, 3 => 3, 4 => 1, 5 => 3, 6 => 1, 7 => 3, 8 => 1, 9 => 3 ] );
+		$this->weeks( 'complaint', [ 1 => 6, 2 => 1, 3 => 3, 4 => 1, 5 => 3, 6 => 1, 7 => 3, 8 => 1, 9 => 3, 10 => 1 ] );
+		$this->weeks( 'praise', [ 1 => 4, 2 => 1, 3 => 3, 4 => 1, 5 => 3, 6 => 1, 7 => 3, 8 => 1, 9 => 3, 10 => 1 ] );
 
 		$answer = $this->ci->dispatch( 'signals', [] );
 
@@ -84,49 +85,89 @@ final class IntelligenceSignalsTest extends TestCase {
 
 	/** One short of the threshold is not a signal. */
 	public function test_a_count_just_under_the_threshold_is_none(): void {
-		$this->weeks( 'praise', [ 1 => 3, 2 => 1, 3 => 3, 4 => 1, 5 => 3, 6 => 1, 7 => 3, 8 => 1, 9 => 3 ] );
+		$this->weeks( 'praise', [ 1 => 3, 2 => 1, 3 => 3, 4 => 1, 5 => 3, 6 => 1, 7 => 3, 8 => 1, 9 => 3, 10 => 1 ] );
 
 		$this->assertSame( [], $this->ci->dispatch( 'signals', [] )['signals'] );
 	}
 
 	/** A flat history never signals: the latest count must pass the baseline mean, and one above a flat baseline does. */
 	public function test_a_flat_history_signals_nothing(): void {
-		$this->weeks( 'hire', [ 1 => 3, 2 => 3, 3 => 3, 4 => 3, 5 => 3, 6 => 3, 7 => 3, 8 => 3, 9 => 3 ] );
-		$this->weeks( 'release', [ 1 => 4, 2 => 3, 3 => 3, 4 => 3, 5 => 3, 6 => 3, 7 => 3, 8 => 3, 9 => 3 ] );
+		$this->weeks( 'hire', [ 1 => 3, 2 => 3, 3 => 3, 4 => 3, 5 => 3, 6 => 3, 7 => 3, 8 => 3, 9 => 3, 10 => 3 ] );
+		$this->weeks( 'release', [ 1 => 4, 2 => 3, 3 => 3, 4 => 3, 5 => 3, 6 => 3, 7 => 3, 8 => 3, 9 => 3, 10 => 3 ] );
 
 		$this->assertSame( [ [ '2026-10-12', 'kind', 'release', 4, 3.0 ] ], self::signals( $this->ci->dispatch( 'signals', [] ) ) );
 	}
 
 	/** Over a quiet baseline a count still needs SIGNAL_MIN; the current, incomplete week never signals. */
 	public function test_a_quiet_baseline_still_needs_the_minimum(): void {
-		$this->weeks( 'launch', [ 0 => 9, 1 => 3, 9 => 0 ] );
-		$this->weeks( 'hire', [ 1 => 2 ] );
-		$this->weeks( 'research', [ 10 => 1 ] );
+		$this->weeks( 'launch', [ 0 => 9, 1 => 3, 10 => 1 ] );
+		$this->weeks( 'hire', [ 1 => 2, 10 => 1 ] );
 
 		$this->assertSame( [ [ '2026-10-12', 'kind', 'launch', 3, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [] ) ) );
 	}
 
-	/** With no item before the oldest baseline week, the history is short and nothing signals. */
+	/**
+	 * A value spikes only when it was counted before the oldest baseline
+	 * week, because a first appearance within the window is not a change: a
+	 * backfill of one item in the baseline and five in the latest week does
+	 * not spike, nor does a value first counted in the oldest baseline week,
+	 * while the same counts after an earlier one do; through a lens too.
+	 */
+	public function test_a_value_first_counted_inside_the_window_never_spikes(): void {
+		$this->weeks( 'incident', [ 1 => 5, 2 => 1 ] );
+		$this->weeks( 'praise', [ 1 => 5, 9 => 1 ] );
+		$this->weeks( 'complaint', [ 1 => 5, 2 => 1, 20 => 1 ] );
+		$this->ci->dispatch( 'save_lens', [ 'harbor-desk', 'Harbor desk', '--source=feed' ] );
+		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
+
+		$this->assertSame( [ [ '2026-10-12', 'kind', 'complaint', 5, 0.125 ] ], self::signals( $this->ci->dispatch( 'signals', [] ) ) );
+		$this->assertSame( [ 'complaint' ], \array_column( $this->ci->dispatch( 'signals', [ '--lens=harbor-desk' ] )['signals'], 'value' ) );
+	}
+
+	/** With no item of its value before the oldest baseline week, the history is short and nothing signals. */
 	public function test_a_short_history_signals_nothing(): void {
 		$this->weeks( 'complaint', [ 1 => 7, 8 => 1 ] );
+		$this->weeks( 'research', [ 12 => 1 ] );
 
 		$this->assertSame( [], $this->ci->dispatch( 'signals', [] )['signals'] );
-		$this->weeks( 'research', [ 9 => 1 ] );
+		$this->weeks( 'complaint', [ 12 => 1 ] );
 		$this->assertSame( [ [ '2026-10-12', 'kind', 'complaint', 7, 0.125 ] ], self::signals( $this->ci->dispatch( 'signals', [] ) ) );
 	}
 
 	/**
-	 * An item older than every baseline week still makes the history long
-	 * enough, though the counts read only the baseline weeks; a lens's own
-	 * day window that leaves it out makes the history short again.
+	 * On the kind axis a value's history is read across the whole retention,
+	 * whatever days a lens keeps, so a 60-day lens spikes on a value counted
+	 * long before them; a value with no such history does not.
 	 */
-	public function test_history_before_the_baseline_counts_within_the_lens_window(): void {
+	public function test_a_values_history_reaches_past_a_lens_days(): void {
 		$this->weeks( 'complaint', [ 1 => 7, 20 => 1 ] );
+		$this->weeks( 'incident', [ 1 => 6 ] );
+		$this->ci->dispatch( 'save_lens', [ 'season-desk', 'Season desk', '--days=60' ] );
+		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
 
 		$this->assertSame( [ [ '2026-10-12', 'kind', 'complaint', 7, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [] ) ) );
-		$this->ci->dispatch( 'save_lens', [ 'month-desk', 'Month desk', '--days=30' ] );
+		$this->assertSame( [ [ '2026-10-12', 'kind', 'complaint', 7, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [ '--lens=season-desk' ] ) ) );
+	}
+
+	/**
+	 * On the topic axis a topic needs no history of its own: a new topic
+	 * surging through a topic lens spikes once the lens holds any story
+	 * before its oldest baseline week, read within the lens's own days, so
+	 * the same lens kept to 30 days signals nothing.
+	 */
+	public function test_a_new_topic_surging_through_a_topic_lens_spikes(): void {
+		$this->seed( self::entity( 'topic:squalls', 'Squalls' ), self::entity( 'topic:tides', 'Tides' ) );
+		for ( $n = 1; $n <= 12; $n++ ) {
+			$this->seed( ...self::counted( "feed:squall-{$n}", 'research', self::THIS_WEEK - self::WEEK + 2 * 86400 + $n * 60, 'public', 'feed', [ 'topic:squalls' ] ) );
+		}
+		$this->seed( ...self::counted( 'feed:tide-old', 'research', self::THIS_WEEK - 12 * self::WEEK, 'public', 'feed', [ 'topic:tides' ] ) );
+		$this->ci->dispatch( 'save_lens', [ 'surge-desk', 'Surge desk', '--by=topic' ] );
 		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
-		$this->assertSame( [], $this->ci->dispatch( 'signals', [ '--lens=month-desk' ] )['signals'] );
+		$this->ci->dispatch( 'save_lens', [ 'surge-month', 'Surge month', '--by=topic', '--days=30' ] );
+		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
+
+		$this->assertSame( [ [ '2026-10-12', 'topic', 'topic:squalls', 12, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [ '--lens=surge-desk' ] ) ) );
+		$this->assertSame( [], $this->ci->dispatch( 'signals', [ '--lens=surge-month' ] )['signals'] );
 	}
 
 	/**
@@ -135,9 +176,9 @@ final class IntelligenceSignalsTest extends TestCase {
 	 * a holder and not a reader.
 	 */
 	public function test_a_lens_filters_and_tiers_shape_its_signals(): void {
-		$this->weeks( 'complaint', [ 1 => 5, 9 => 1 ], 'restricted' );
-		$this->weeks( 'praise', [ 1 => 4, 9 => 1 ], 'internal', 'linear' );
-		$this->weeks( 'award', [ 1 => 8, 9 => 1 ], 'public', 'github' );
+		$this->weeks( 'complaint', [ 1 => 5, 10 => 1 ], 'restricted' );
+		$this->weeks( 'praise', [ 1 => 4, 10 => 1 ], 'internal', 'linear' );
+		$this->weeks( 'award', [ 1 => 8, 10 => 1 ], 'public', 'github' );
 		$this->ci->dispatch( 'save_lens', [ 'tidewater-desk', 'Tidewater desk', '--source=feed', '--source=linear' ] );
 		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
 
@@ -164,8 +205,8 @@ final class IntelligenceSignalsTest extends TestCase {
 
 	/** `other` is the kind that says nothing, so it never spikes on the about axis. */
 	public function test_other_never_signals(): void {
-		$this->weeks( 'other', [ 1 => 9, 9 => 1 ] );
-		$this->weeks( 'incident', [ 1 => 3, 9 => 1 ] );
+		$this->weeks( 'other', [ 1 => 9, 9 => 1, 10 => 1 ] );
+		$this->weeks( 'incident', [ 1 => 3, 9 => 1, 10 => 1 ] );
 
 		$this->assertSame( [ [ '2026-10-12', 'kind', 'incident', 3, 0.125 ] ], self::signals( $this->ci->dispatch( 'signals', [] ) ) );
 		$this->assertSame( [ 'incident' ], \array_column( Intel_Graph_Row_Schema::read( static fn ( $r ): array => Graph_Query::spikes( $r, Graph_Query::graph( $r ), [], 0.0 ) ), 'value' ) );
@@ -181,7 +222,7 @@ final class IntelligenceSignalsTest extends TestCase {
 
 		$this->assertSame( [], $this->ci->dispatch( 'signals', [] )['signals'] );
 		$this->assertContains( 'other', \array_column( $this->ci->dispatch( 'trends', [] )['rows'], 'value' ) );
-		$this->weeks( 'praise', [ 20 => 1 ] );
+		$this->weeks( 'incident', [ 20 => 1 ] );
 		$this->assertSame( [ [ '2026-10-12', 'kind', 'incident', 3, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [] ) ) );
 	}
 
@@ -207,7 +248,7 @@ final class IntelligenceSignalsTest extends TestCase {
 	 * canonical, which the signal cites, in `signals` and in `spikes()`.
 	 */
 	public function test_a_story_counts_once_as_its_canonical(): void {
-		$this->weeks( 'incident', [ 1 => 8, 9 => 1 ] );
+		$this->weeks( 'incident', [ 1 => 8, 9 => 1, 10 => 1 ] );
 		$copies = \array_map( static fn ( int $n ): string => "feed:incident-1-{$n}", \range( 1, 7 ) );
 		$this->seed( self::story( 'feed:incident-1-4', $copies, self::THIS_WEEK - self::WEEK + 2 * 86400 ) );
 
@@ -225,7 +266,7 @@ final class IntelligenceSignalsTest extends TestCase {
 	 * cites itself; a holder counts the story once, by its canonical.
 	 */
 	public function test_a_restricted_canonical_never_stands_for_its_copies(): void {
-		$this->weeks( 'incident', [ 1 => 3, 9 => 1 ] );
+		$this->weeks( 'incident', [ 1 => 3, 9 => 1, 10 => 1 ] );
 		$this->weeks( 'incident', [ 1 => 1 ], 'restricted', 'unthread' );
 		$this->seed( self::story( 'unthread:incident-1-1', [ 'unthread:incident-1-1', 'feed:incident-1-2', 'feed:incident-1-3' ], self::THIS_WEEK - self::WEEK + 2 * 86400 ) );
 

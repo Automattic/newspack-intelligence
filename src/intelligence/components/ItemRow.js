@@ -5,9 +5,10 @@ import { metaLine, utcDay } from './format';
 
 /**
  * One item as `search` and `timeline` answer it: its title citing its URL,
- * its source, kind and day, its summary, a chip per linked entity, and, for a
- * caller who may curate, the control saving it to a collection, then any
- * control the view adds.
+ * its source, kind and day, its summary, a chip per linked entity but a
+ * proposal another of its name stands for (`chips()`), and, for a caller who
+ * may curate, the control saving it to a collection, then any control the
+ * view adds.
  *
  * @param {Object}                    props
  * @param {Object}                    props.item         The item.
@@ -40,7 +41,7 @@ export default function ItemRow( { item, onOpenEntity, onSave, children } ) {
 			{ item.summary && <p>{ item.summary }</p> }
 			{ 0 < ( item.entities ?? [] ).length && (
 				<ul className="newspack-intelligence__chips">
-					{ item.entities.map( ( entity ) => (
+					{ chips( item.entities ).map( ( entity ) => (
 						<li key={ entity.entity_key }>
 							<EntityChip
 								entityKey={ entity.entity_key }
@@ -53,6 +54,34 @@ export default function ItemRow( { item, onOpenEntity, onSave, children } ) {
 			) }
 		</li>
 	);
+}
+
+/**
+ * An item's entities as chips, in the answer's order, a proposal left out
+ * when another entity of its name is not `proposed`, and only the first of
+ * several proposals of one name kept; two entities that are not proposed
+ * keep a chip each, whatever their names.
+ *
+ * @param {Object[]} entities The item's entities, in the answer's order.
+ * @return {Object[]} The entities to chip.
+ */
+function chips( entities ) {
+	const label = ( entity ) => entity.name || entity.entity_key;
+	const shown = new Set(
+		entities
+			.filter( ( entity ) => 'proposed' !== entity.state )
+			.map( label )
+	);
+	return entities.filter( ( entity ) => {
+		if ( 'proposed' !== entity.state ) {
+			return true;
+		}
+		if ( shown.has( label( entity ) ) ) {
+			return false;
+		}
+		shown.add( label( entity ) );
+		return true;
+	} );
 }
 
 /**

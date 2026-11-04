@@ -166,13 +166,110 @@ final class ResolverTest extends TestCase {
 		$this->assertSame( [], $this->golden( [ 'title' => 'Improvements to the Citizen Activation System shipped', 'url' => 'https://random.example/x' ] )['links'] );
 	}
 
-	/** A title capitalizes its first word, so an article-led span cannot vouch for a name. */
-	public function test_a_domain_stem_gives_up_on_article_led_names(): void {
-		$this->assertSame( [], $this->golden( [ 'title' => 'The Citizen announced a new editor', 'url' => 'https://random.example/x' ] )['links'] );
+	/** "thecitizen" spells its article, so "The Citizen" is the stem's whole span. */
+	public function test_a_domain_stem_reads_an_article_its_domain_spells(): void {
+		$this->assertSame( [ self::link( 'organization:atomic-3005', 'subject', 'domain_stem', 0.9 ) ], $this->golden( [ 'title' => 'The Citizen Offboarding Checklist', 'url' => 'https://random.example/x' ] )['links'] );
 	}
 
-	public function test_a_domain_stem_ignores_a_sentence_initial_the(): void {
-		$this->assertSame( [], $this->golden( [ 'title' => 'The Citizen Activation System shipped', 'url' => 'https://random.example/x' ] )['links'] );
+	/** "wren" does not spell the article, and "The" never lengthens a stem too short to read. */
+	public function test_a_domain_stem_not_spelling_the_article_never_reads_it(): void {
+		$item = [ 'title' => 'The Wren Offboarding Checklist', 'url' => 'https://random.example/x' ];
+
+		$this->assertSame( [], $this->resolve( $item, self::entity( 'organization:atomic-3101', 'Atomic site 3101', [ 'domain' => [ 'wren.example' ] ] ) )['links'] );
+		$this->assertSame(
+			[ self::link( 'organization:atomic-3102', 'subject', 'domain_stem', 0.9 ) ],
+			$this->resolve( $item, self::entity( 'organization:atomic-3102', 'Atomic site 3102', [ 'domain' => [ 'thewren.example' ] ] ) )['links']
+		);
+	}
+
+	/** "the" is the one article a stem's span may lead with: "A" or "An" opening a title never welds onto one. */
+	public function test_a_domain_stem_never_welds_on_a_or_an(): void {
+		$this->assertSame( [], $this->resolve( [ 'title' => 'A Newsroom Guide to Elections', 'url' => 'https://random.example/x' ], self::entity( 'organization:atomic-3103', 'Atomic site 3103', [ 'domain' => [ 'anewsroom.example' ] ] ) )['links'] );
+		$this->assertSame( [], $this->resolve( [ 'title' => 'An Ewsroom Guide to Elections', 'url' => 'https://random.example/x' ], self::entity( 'organization:atomic-3104', 'Atomic site 3104', [ 'domain' => [ 'anewsroom.example' ] ] ) )['links'] );
+		$this->assertFalse( Resolver::names_site( 'A Newsroom', 'anewsroom.example' ) );
+	}
+
+	/** A site title may join its capitalized words with a lowercase de, in, of, and or the. */
+	public function test_a_site_title_may_hold_lowercase_connecting_words(): void {
+		$this->assertTrue( Resolver::names_site( 'Pueblo de Cobre', 'pueblodecobre.example' ) );
+		$this->assertTrue( Resolver::names_site( 'Riders in TDW', 'ridersintdw.example' ) );
+		$this->assertTrue( Resolver::names_site( 'Friends of the Marsh', 'friendsofthemarsh.example' ) );
+		$this->assertTrue( Resolver::names_site( 'Salt and Ember', 'saltandember.example' ) );
+		$this->assertTrue( Resolver::names_site( 'The Wren', 'thewren.example' ) );
+	}
+
+	/** A lowercase word outside the connecting set, or one opening or closing the span, is prose. */
+	public function test_a_site_title_refuses_other_lowercase_words(): void {
+		$this->assertFalse( Resolver::names_site( 'Riders on Tidewater', 'ridersontidewater.example' ) );
+		$this->assertFalse( Resolver::names_site( 'the Wren Press', 'thewrenpress.example' ) );
+		$this->assertFalse( Resolver::names_site( 'Pueblo de', 'pueblode.example' ) );
+		$this->assertFalse( Resolver::names_site( 'News', 'kestrelbay.example' ) );
+		$this->assertFalse( Resolver::names_site( 'Kestrel Bayou News', 'kestrelbay.example' ) );
+		$this->assertFalse( Resolver::names_site( 'Lanternese Weekly', 'lantern.example' ) );
+	}
+
+	/**
+	 * A name of several words past its "the" names it where its first word
+	 * past the article is capitalized, the rest in any case: as written, in
+	 * Title Case or in ALL CAPS, but never all in lowercase.
+	 */
+	public function test_a_name_led_by_the_article_needs_its_first_word_capitalized(): void {
+		$center = self::entity( 'organization:center', 'The Center for Tidewater Integrity' );
+		$trust  = self::entity( 'organization:trust', "The Kestrel's Trust" );
+		$item   = static fn ( string $title ): array => [ 'title' => $title, 'url' => 'https://random.example/x' ];
+
+		$this->assertSame( [ self::link( 'organization:center', 'subject', 'name', 1.0 ) ], $this->resolve( $item( 'The Center for Tidewater Integrity reported a grant' ), $center )['links'] );
+		$this->assertSame( [ self::link( 'organization:center', 'subject', 'name', 1.0 ) ], $this->resolve( $item( 'A grant from Center for Tidewater Integrity' ), $center )['links'] );
+		$this->assertSame( [ self::link( 'organization:center', 'subject', 'name', 1.0 ) ], $this->resolve( $item( 'Grant To The Center For Tidewater Integrity' ), $center )['links'] );
+		$this->assertSame( [ self::link( 'organization:center', 'subject', 'name', 1.0 ) ], $this->resolve( $item( 'THE CENTER FOR TIDEWATER INTEGRITY REPORTED A GRANT' ), $center )['links'] );
+		$this->assertSame( [], $this->resolve( $item( 'A grant from the center for tidewater integrity' ), $center )['links'] );
+		$this->assertSame( [ self::link( 'organization:trust', 'subject', 'name', 1.0 ) ], $this->resolve( $item( "The Kestrel's Trust announced a fund" ), $trust )['links'] );
+		$this->assertSame( [ self::link( 'organization:trust', 'subject', 'name', 1.0 ) ], $this->resolve( $item( "The Kestrel\u{2019}s Trust announced a fund" ), $trust )['links'] );
+	}
+
+	/** A name the model proposed in lowercase still names its entity cased as a name. */
+	public function test_a_lowercase_name_led_by_the_article_matches_cased_text(): void {
+		$this->assertSame(
+			[ self::link( 'organization:trust', 'subject', 'name', 1.0, 'proposed' ) ],
+			$this->resolve( [ 'title' => "The Kestrel's Trust announced a fund", 'url' => 'https://random.example/x' ], self::proposed( 'organization:trust', "the kestrel's trust" ) )['links']
+		);
+	}
+
+	/**
+	 * "The Echo" folds to "echo", so its one word names it only cased as
+	 * written and right after "the" or "The": a title-case headline
+	 * capitalizes the bare word anyway.
+	 */
+	public function test_a_one_word_name_led_by_the_article_needs_the_article(): void {
+		$echo = self::entity( 'organization:the-echo', 'The Echo' );
+		$item = static fn ( string $title, string $body = '' ): array => [ 'title' => $title, 'body' => $body, 'url' => 'https://random.example/x' ];
+
+		foreach ( [ 'A refused wallet checkout shows the error and leaves no echo', 'Wallet Checkout Leaves No Echo', 'Echo Amounts Found' ] as $title ) {
+			$this->assertSame( [], $this->resolve( $item( $title ), $echo )['links'], $title );
+		}
+		$this->assertSame( [], $this->resolve( $item( 'Refunds', 'A refund left the echo of a charge behind.' ), $echo )['links'] );
+		$this->assertSame( [ self::link( 'organization:the-echo', 'subject', 'name', 1.0 ) ], $this->resolve( $item( 'The Echo wins a press award' ), $echo )['links'] );
+		$this->assertSame( [ self::link( 'organization:the-echo', 'subject', 'name', 1.0 ) ], $this->resolve( $item( 'the Echo reported a fire' ), $echo )['links'] );
+		$this->assertSame( [ self::link( 'organization:the-echo', 'mention', 'name', 1.0 ) ], $this->resolve( $item( 'Awards', 'Reported first by the Echo staff.' ), $echo )['links'] );
+		$this->assertSame( [ self::link( 'organization:the-echo', 'subject', 'name', 1.0 ) ], $this->resolve( $item( 'THE ECHO WINS A PRESS AWARD' ), $echo )['links'] );
+	}
+
+	/** A body is raw markup, so the article before a one-word name is read as prose reads it. */
+	public function test_markup_between_the_article_and_a_one_word_name_keeps_the_article(): void {
+		$echo = self::entity( 'organization:the-echo', 'The Echo' );
+		$item = static fn ( string $body ): array => [ 'title' => 'Awards', 'body' => $body, 'url' => 'https://random.example/x' ];
+
+		$this->assertSame( [ self::link( 'organization:the-echo', 'mention', 'name', 1.0 ) ], $this->resolve( $item( 'Reported first by the <a href="https://news.example/">Echo</a> staff.' ), $echo )['links'] );
+		$this->assertSame( [ self::link( 'organization:the-echo', 'mention', 'name', 1.0 ) ], $this->resolve( $item( 'Reported first by the&nbsp;Echo staff.' ), $echo )['links'] );
+		$this->assertSame( [], $this->resolve( $item( 'Reported first by <a href="https://news.example/the">Echo</a> staff.' ), $echo )['links'] );
+	}
+
+	/** A name not led by an article is still found in any case. */
+	public function test_a_name_without_an_article_matches_in_any_case(): void {
+		$this->assertSame(
+			[ self::link( self::MESA, 'mention', 'name', 1.0 ) ],
+			$this->golden( [ 'title' => 'Awards', 'body' => 'Reported first by mesa courier staff.', 'url' => 'https://random.example/x' ] )['links']
+		);
 	}
 
 	public function test_a_domain_stem_spanning_words_matches_a_real_name(): void {

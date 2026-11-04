@@ -457,6 +457,17 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertStringContainsString( 'Harbor Gazette wins a Peabody', $this->asked[0][1]['content'] );
 	}
 
+	/** The model writes a claim's subject in any case, so a name led by "the" resolves however it is cased. */
+	public function test_a_lowercase_claim_subject_led_by_the_article_resolves(): void {
+		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ), self::entity( self::PEABODY, 'Peabody Award' ) );
+		$this->answer( '{"summary":"A win.","kind":"award","claims":[{"subject":"the harbor gazette","predicate":"won","object":"peabody award"}]}' );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 0.9 ) ], [] ) );
+
+		$claims = \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'claim_asserted' === $e['event'] ) );
+		$this->assertSame( [ [ self::GAZETTE, 'won', self::PEABODY ] ], \array_map( static fn ( array $e ): array => [ $e['subject_key'], $e['predicate'], $e['object_key'] ], $claims ) );
+	}
+
 	/** A claim about an entity the item does not link, or about no entity, is dropped. */
 	public function test_a_claim_whose_subject_the_item_does_not_link_is_dropped(): void {
 		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette', [ 'locality' => [ 'Port Angeles' ] ] ), self::entity( self::MESA, 'Mesa Courier' ) );

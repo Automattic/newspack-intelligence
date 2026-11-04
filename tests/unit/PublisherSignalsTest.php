@@ -175,8 +175,8 @@ final class PublisherSignalsTest extends TestCase {
 	 * axis; what the entity published still bursts in it.
 	 */
 	public function test_other_never_signals_about_an_entity_and_still_bursts(): void {
-		$this->about( 'other', [ 1 => 5, 9 => 1 ] );
-		$this->about( 'praise', [ 1 => 4, 9 => 1 ] );
+		$this->about( 'other', [ 1 => 5, 9 => 1, 10 => 1 ] );
+		$this->about( 'praise', [ 1 => 4, 9 => 1, 10 => 1 ] );
 		$this->published( self::COURIER, 'other', [ 1 => 3, 9 => 1 ] );
 
 		$this->assertSame(
@@ -209,6 +209,20 @@ final class PublisherSignalsTest extends TestCase {
 		$this->assertSame( [ [ 'about', 'spike', '2026-10-12', 'kind', 'incident', 3, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [ '--entity=' . self::COURIER ] ) ) );
 	}
 
+	/**
+	 * A kind about an entity that was not counted before the oldest baseline
+	 * week does not spike, a backfill of one in the baseline and five in the
+	 * latest week included, while a kind new to its own output still bursts.
+	 */
+	public function test_a_kind_new_about_an_entity_never_spikes_and_still_bursts(): void {
+		$this->about( 'incident', [ 1 => 5, 2 => 1 ] );
+		$this->about( 'praise', [ 20 => 1 ] );
+		$this->published( self::COURIER, 'research', [ 9 => 1 ] );
+		$this->published( self::COURIER, 'partnership', [ 1 => 4 ] );
+
+		$this->assertSame( [ [ 'publisher', 'burst', '2026-10-12', 'kind', 'partnership', 4, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [ '--entity=' . self::COURIER ] ) ) );
+	}
+
 	/** `other` about an entity counts as no history of what is about it. */
 	public function test_other_is_no_history_about_an_entity(): void {
 		$this->about( 'praise', [ 1 => 3 ] );
@@ -224,7 +238,7 @@ final class PublisherSignalsTest extends TestCase {
 	public function test_a_story_counts_once_on_both_axes(): void {
 		$this->published( self::COURIER, 'research', [ 9 => 1 ] );
 		$this->published( self::COURIER, 'partnership', [ 1 => 3 ] );
-		$this->about( 'award', [ 1 => 3, 9 => 1 ] );
+		$this->about( 'award', [ 1 => 3, 9 => 1, 10 => 1 ] );
 		$this->assertSame( [ 'award', 'partnership' ], \array_column( $this->ci->dispatch( 'signals', [ '--entity=' . self::COURIER ] )['signals'], 'value' ) );
 
 		$at = self::THIS_WEEK - self::WEEK + 2 * 86400;
@@ -259,7 +273,7 @@ final class PublisherSignalsTest extends TestCase {
 	public function test_an_entity_answers_both_axes(): void {
 		$this->published( self::TERN, 'research', self::STEADY );
 		$this->published( self::COURIER, 'research', [ 1 => 2, 2 => 4, 3 => 4, 4 => 4, 5 => 4, 6 => 4, 7 => 4, 8 => 4, 9 => 4 ] );
-		$this->about( 'complaint', [ 1 => 4, 9 => 1 ] );
+		$this->about( 'complaint', [ 1 => 4, 9 => 1, 10 => 1 ] );
 
 		$this->assertSame(
 			[ [ 'about', 'spike', '2026-10-12', 'kind', 'complaint', 4, 0.125 ], [ 'publisher', 'drop', '2026-10-12', null, null, 2, 4.0 ] ],

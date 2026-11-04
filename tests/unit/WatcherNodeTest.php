@@ -414,7 +414,7 @@ final class WatcherNodeTest extends TestCase {
 	/** A digest names its lens's signals since the last digest, each against its baseline. */
 	public function test_a_digest_names_its_lens_signals(): void {
 		$week = 604800;
-		for ( $back = 1; $back <= 9; $back++ ) {
+		for ( $back = 1; $back <= 10; $back++ ) {
 			for ( $n = 1; $n <= ( 1 === $back ? 5 : 1 ); $n++ ) {
 				$at = 1792368000 - $back * $week + 2 * 86400 + $n * 60;
 				$this->seed( self::item( "feed:complaint-{$back}-{$n}", "Complaint {$n} of week {$back}", 'feed', 'internal', $at ), self::extraction( "feed:complaint-{$back}-{$n}", 'A complaint.', 'complaint', $at, [] ) );

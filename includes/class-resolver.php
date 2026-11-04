@@ -5,8 +5,9 @@
  * by suffix walk, the item's publisher, and a GitHub org or repo, a LinkedIn
  * company, an X handle or a Linear issue's team its path names. (2) Names
  * and aliases as whole words in the title and body, an acronym only in its
- * own case. (3) A domain's stem in the title, behind the guards that keep
- * prose from reading as a masthead. (4) Only when the first three found
+ * own case, a name led by "the" only as it spells its words past it. (3) A
+ * domain's stem in the title, behind the guards that keep prose from
+ * reading as a masthead. (4) Only when the first three found
  * nothing, the organizations and products an Entity_Extractor names,
  * fuzzy-matched against every name: asserted at `assert_at`, proposed at
  * `propose_at`, and below that a candidate entity of the type it was named
@@ -72,8 +73,11 @@ final class Resolver {
 	/** Filler labels of second-level registries, dropped along with the TLD. */
 	private const SECOND_LEVEL_LABELS = [ 'co', 'com', 'net', 'org', 'ac', 'gov', 'edu' ];
 
-	/** Leading words a title capitalizes anyway, so they cannot vouch for a name. */
-	private const ARTICLES = [ 'the', 'a', 'an' ];
+	/** Lowercase words a name may hold between two capitalized ones. */
+	private const CONNECTORS = [ 'de', 'in', 'of', 'and', 'the' ];
+
+	/** Articles a title capitalizes anyway, which no domain stem welds on. */
+	private const ARTICLES = [ 'a', 'an' ];
 
 	/** Below this length a domain stem ("abq", "kcur") collides with ordinary words. */
 	private const MIN_STEM_LENGTH = 6;
@@ -179,8 +183,8 @@ final class Resolver {
 		foreach ( $this->identified( $host, $url ) as $entity_key ) {
 			$this->link( $entity_key, 'subject', 'identifier', self::EXACT, 'asserted', '' );
 		}
-		$title_names = $this->index->names_in( $title );
-		$body_names  = $this->index->names_in( $body );
+		$title_names = $this->index->names_in( $title, true );
+		$body_names  = $this->index->names_in( $body, true );
 		$localities  = self::localities( [ ...$title_names, ...$body_names ] );
 		$this->clustered( [ ...self::named( $title_names ), ...$this->stemmed( $title ) ], $localities, 'subject' );
 		$this->clustered( self::named( $body_names ), $localities, 'mention' );
@@ -282,8 +286,9 @@ final class Resolver {
 
 	/**
 	 * Each domain stem the title spells, behind its guards: at least
-	 * MIN_STEM_LENGTH characters, aligned to word boundaries, every word
-	 * capitalized, and no article leading a welded span. Bodies are never
+	 * MIN_STEM_LENGTH characters, aligned to word boundaries, and read as a
+	 * name (`reads_as_name()`), so "The Citizen" reads as
+	 * thecitizen's stem, whose label spells the article. Bodies are never
 	 * read: they are raw markup, where an href spells a domain. A hit is
 	 * stoplisted when its squashed stem or its surface's norm is.
 	 *
@@ -542,7 +547,7 @@ final class Resolver {
 	 * Whether a text names a domain's site as a title's stem match does
 	 * (`stem_hit()`): its letters and digits, lowercased, spell the domain's
 	 * registrable label (`domain_stem()`), one at least MIN_STEM_LENGTH long,
-	 * on word boundaries, every word of it capitalized.
+	 * on word boundaries, read as a name (`reads_as_name()`).
 	 *
 	 * @api Feed_Source_Node names a client by a feed title only when it does.
 	 * @param string $text   The text.
@@ -610,8 +615,10 @@ final class Resolver {
 
 	/**
 	 * Whether a span reads as a name rather than ordinary prose: every word
-	 * capitalized, single words included, and a welded span not opening with
-	 * an article, because a title capitalizes its first word regardless.
+	 * capitalized or a number, but a lowercase connecting word (`de`, `in`,
+	 * `of`, `and`, `the`) between two that are, as in "Casa de Campo", and a
+	 * span of several words not led by "A" or "An", which a title capitalizes
+	 * regardless; "The" may lead one, since a domain may spell it.
 	 *
 	 * @param string $surface The span.
 	 */
@@ -620,12 +627,14 @@ final class Resolver {
 		if ( ! \is_array( $words ) || [] === $words ) {
 			return false;
 		}
-		foreach ( $words as $word ) {
-			if ( 1 !== \preg_match( '/^[\p{Lu}\p{N}]/u', $word ) ) {
+		$last = \count( $words ) - 1;
+		foreach ( $words as $n => $word ) {
+			$inner = 0 !== $n && $last !== $n;
+			if ( 1 !== \preg_match( '/^[\p{Lu}\p{N}]/u', $word ) && ! ( $inner && \in_array( $word, self::CONNECTORS, true ) ) ) {
 				return false;
 			}
 		}
-		return \count( $words ) < 2 || ! \in_array( \mb_strtolower( $words[0] ), self::ARTICLES, true );
+		return 0 === $last || ! \in_array( \mb_strtolower( $words[0] ), self::ARTICLES, true );
 	}
 
 	/**

@@ -77,17 +77,17 @@ final class EntityIndexTest extends TestCase {
 				[ 'entity_key' => self::GAZETTE, 'kind' => 'locality', 'surface' => 'Port Angeles', 'state' => 'accepted', 'at' => 32, 'stoplisted' => false ],
 				[ 'entity_key' => self::GAZETTE, 'kind' => 'alias', 'surface' => 'HarbGaz', 'state' => 'accepted', 'at' => 51, 'stoplisted' => false ],
 			],
-			$index->names_in( 'Award for The Harbor Gazette of Port Angeles, says HarbGaz.' )
+			$index->names_in( 'Award for The Harbor Gazette of Port Angeles, says HarbGaz.', true )
 		);
 	}
 
 	/** Every overlapping hit comes back with its byte offset, the longer of two at one word first. */
 	public function test_names_in_returns_every_overlapping_hit_at_its_offset(): void {
-		$index = $this->index_of( self::entity( 'organization:the-times', 'The Times' ), self::entity( 'organization:the-bayport-times', 'The Bayport Times' ) );
+		$index = $this->index_of( self::entity( 'organization:times', 'Times' ), self::entity( 'organization:the-bayport-times', 'The Bayport Times' ) );
 
 		$this->assertSame(
-			[ [ 'organization:the-bayport-times', 'The Bayport Times', 6 ], [ 'organization:the-bayport-times', 'Bayport Times', 10 ], [ 'organization:the-times', 'Times', 18 ] ],
-			\array_map( static fn ( array $hit ): array => [ $hit['entity_key'], $hit['surface'], $hit['at'] ], $index->names_in( 'Today The Bayport Times wins a Kestrel' ) )
+			[ [ 'organization:the-bayport-times', 'The Bayport Times', 6 ], [ 'organization:the-bayport-times', 'Bayport Times', 10 ], [ 'organization:times', 'Times', 18 ] ],
+			\array_map( static fn ( array $hit ): array => [ $hit['entity_key'], $hit['surface'], $hit['at'] ], $index->names_in( 'Today The Bayport Times wins a Kestrel', true ) )
 		);
 	}
 
@@ -100,7 +100,7 @@ final class EntityIndexTest extends TestCase {
 
 		$this->assertSame(
 			[ [ 'organization:port-angeles-gazette', 'canonical' ], [ self::GAZETTE, 'locality' ] ],
-			\array_map( static fn ( array $hit ): array => [ $hit['entity_key'], $hit['kind'] ], $index->names_in( 'Port Angeles Gazette wins' ) )
+			\array_map( static fn ( array $hit ): array => [ $hit['entity_key'], $hit['kind'] ], $index->names_in( 'Port Angeles Gazette wins', true ) )
 		);
 	}
 
@@ -108,7 +108,7 @@ final class EntityIndexTest extends TestCase {
 	public function test_a_name_matches_whole_words_only(): void {
 		$index = $this->index_of( self::entity( self::GAZETTE, 'Harbor Gazette', [ 'alias' => [ 'HarbGaz' ] ] ) );
 
-		$this->assertSame( [], $index->names_in( 'HarbGazette and HarborGazette launch' ) );
+		$this->assertSame( [], $index->names_in( 'HarbGazette and HarborGazette launch', true ) );
 	}
 
 	/** A name of six words matches; the walk reaches no further. */
@@ -120,7 +120,7 @@ final class EntityIndexTest extends TestCase {
 			self::entity( $seven, 'North Coast Public Media News Cooperative Trust' )
 		);
 
-		$this->assertSame( [ $six ], \array_column( $index->names_in( 'Today North Coast Public Media News Cooperative Trust grew.' ), 'entity_key' ) );
+		$this->assertSame( [ $six ], \array_column( $index->names_in( 'Today North Coast Public Media News Cooperative Trust grew.', true ), 'entity_key' ) );
 		$this->assertSame( 6, Entity_Index::MAX_NAME_WORDS );
 	}
 
@@ -128,14 +128,14 @@ final class EntityIndexTest extends TestCase {
 	public function test_an_acronym_answers_its_exact_case_only(): void {
 		$index = $this->index_of( self::entity( 'organization:owl-publishers', 'Organized Writers League', [ 'acronym' => [ 'OWL' ] ] ) );
 
-		$this->assertSame( [ [ 'entity_key' => 'organization:owl-publishers', 'kind' => 'acronym', 'surface' => 'OWL', 'state' => 'accepted', 'at' => 0, 'stoplisted' => false ] ], $index->names_in( 'OWL summit opens' ) );
-		$this->assertSame( [], $index->names_in( 'an owl escapes; Owl King' ) );
+		$this->assertSame( [ [ 'entity_key' => 'organization:owl-publishers', 'kind' => 'acronym', 'surface' => 'OWL', 'state' => 'accepted', 'at' => 0, 'stoplisted' => false ] ], $index->names_in( 'OWL summit opens', true ) );
+		$this->assertSame( [], $index->names_in( 'an owl escapes; Owl King', true ) );
 	}
 
 	public function test_a_folded_codepoint_keeps_the_surface_it_was_written_in(): void {
 		$index = $this->index_of( self::entity( 'organization:istanbul-gazette', 'İstanbul Gazette' ) );
 
-		$this->assertSame( [ 'İstanbul Gazette' ], \array_column( $index->names_in( 'Award: İstanbul Gazette wins' ), 'surface' ) );
+		$this->assertSame( [ 'İstanbul Gazette' ], \array_column( $index->names_in( 'Award: İstanbul Gazette wins', true ), 'surface' ) );
 	}
 
 	/** A merged entity's names and identifiers answer its survivor's key. */
@@ -146,7 +146,7 @@ final class EntityIndexTest extends TestCase {
 			self::merged( 'organization:gazette-harbor', self::GAZETTE )
 		);
 
-		$this->assertSame( [ self::GAZETTE, self::GAZETTE ], \array_column( $index->names_in( 'Gazette of the Harbor, or GH Daily' ), 'entity_key' ) );
+		$this->assertSame( [ self::GAZETTE, self::GAZETTE ], \array_column( $index->names_in( 'Gazette of the Harbor, or GH Daily', true ), 'entity_key' ) );
 		$this->assertSame( self::GAZETTE, $index->by_identifier( 'domain', 'ghdaily.example' ) );
 		$this->assertSame( [ 'ghdaily.example' => self::GAZETTE ], $index->identifiers( 'domain' ) );
 	}
@@ -161,7 +161,7 @@ final class EntityIndexTest extends TestCase {
 			self::merged( 'organization:ledger-salem', 'organization:salem-ledger' )
 		);
 
-		$this->assertSame( [ 'organization:salem-ledger' ], \array_values( \array_unique( \array_column( $index->names_in( 'Old Salem Ledger' ), 'entity_key' ) ) ) );
+		$this->assertSame( [ 'organization:salem-ledger' ], \array_values( \array_unique( \array_column( $index->names_in( 'Old Salem Ledger', true ), 'entity_key' ) ) ) );
 	}
 
 	/** A merge cycle drops the entities on it, logged once, and loads the rest. */
@@ -175,7 +175,7 @@ final class EntityIndexTest extends TestCase {
 			self::merged( 'organization:salem-ledger', 'organization:ledger-salem' )
 		);
 
-		$this->assertSame( [ self::GAZETTE ], \array_column( $index->names_in( 'Salem Ledger, Ledger of Salem and Harbor Gazette' ), 'entity_key' ) );
+		$this->assertSame( [ self::GAZETTE ], \array_column( $index->names_in( 'Salem Ledger, Ledger of Salem and Harbor Gazette', true ), 'entity_key' ) );
 		$this->assertNull( $index->by_identifier( 'domain', 'salemledger.example' ) );
 		$lines = self::stderr_lines( $stderr, 'entity merge cycle' );
 		$this->assertCount( 1, $lines );
@@ -210,7 +210,7 @@ final class EntityIndexTest extends TestCase {
 		}
 		$index = $this->index_of( ...$events );
 
-		$this->assertSame( [ 'organization:ledger-10' ], \array_column( $index->names_in( 'Ledger Zero' ), 'entity_key' ) );
+		$this->assertSame( [ 'organization:ledger-10' ], \array_column( $index->names_in( 'Ledger Zero', true ), 'entity_key' ) );
 	}
 
 	/** A chain past ten hops answers no survivor; the rest loads. */
@@ -222,7 +222,7 @@ final class EntityIndexTest extends TestCase {
 		}
 		$index = $this->index_of( ...$events );
 
-		$this->assertSame( [ self::GAZETTE ], \array_column( $index->names_in( 'Ledger Zero and Harbor Gazette' ), 'entity_key' ) );
+		$this->assertSame( [ self::GAZETTE ], \array_column( $index->names_in( 'Ledger Zero and Harbor Gazette', true ), 'entity_key' ) );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'past 10 hops' ) );
 	}
 
@@ -326,7 +326,7 @@ final class EntityIndexTest extends TestCase {
 			self::rejected( 'organization:faded-gazette' )
 		);
 
-		$this->assertSame( [], $index->names_in( 'Faded Gazette and FadeGaz return' ) );
+		$this->assertSame( [], $index->names_in( 'Faded Gazette and FadeGaz return', true ) );
 		$this->assertNull( $index->by_identifier( 'domain', 'fadedgazette.example' ) );
 		$this->assertSame( [], $index->identifiers( 'domain' ) );
 		$this->assertSame( [ 'fadedgazette.example' => 'organization:faded-gazette' ], $index->refused( 'domain' ) );
@@ -374,7 +374,7 @@ final class EntityIndexTest extends TestCase {
 	public function test_a_proposed_entity_answers_as_proposed(): void {
 		$index = $this->index_of( self::proposed( 'organization:salem-ledger', 'Salem Ledger' ) );
 
-		$this->assertSame( [ [ 'entity_key' => 'organization:salem-ledger', 'kind' => 'canonical', 'surface' => 'Salem Ledger', 'state' => 'proposed', 'at' => 0, 'stoplisted' => false ] ], $index->names_in( 'Salem Ledger' ) );
+		$this->assertSame( [ [ 'entity_key' => 'organization:salem-ledger', 'kind' => 'canonical', 'surface' => 'Salem Ledger', 'state' => 'proposed', 'at' => 0, 'stoplisted' => false ] ], $index->names_in( 'Salem Ledger', true ) );
 	}
 
 	/**
@@ -384,7 +384,7 @@ final class EntityIndexTest extends TestCase {
 	public function test_a_name_for_an_entity_that_does_not_exist_answers_nothing(): void {
 		$index = $this->index_of( self::facts( 'organization:ghost-gazette', [ 'alias' => [ 'Ghost Gazette' ], 'domain' => [ 'ghost.example' ] ] ) );
 
-		$this->assertSame( [], $index->names_in( 'Ghost Gazette' ) );
+		$this->assertSame( [], $index->names_in( 'Ghost Gazette', true ) );
 		$this->assertNull( $index->by_identifier( 'domain', 'ghost.example' ) );
 	}
 
@@ -434,7 +434,7 @@ final class EntityIndexTest extends TestCase {
 
 		$this->assertEqualsCanonicalizing(
 			[ [ 'organization:atomic-5121', true ], [ 'product:wharfside', false ] ],
-			\array_map( static fn ( array $hit ): array => [ $hit['entity_key'], $hit['stoplisted'] ], $index->names_in( 'Wharfside' ) )
+			\array_map( static fn ( array $hit ): array => [ $hit['entity_key'], $hit['stoplisted'] ], $index->names_in( 'Wharfside', true ) )
 		);
 	}
 
@@ -486,14 +486,14 @@ final class EntityIndexTest extends TestCase {
 		);
 
 		$this->assertSame( [ 'Fog desks' => 'topic:fog-desks', 'Tidal reporting' => 'topic:tidal-reporting' ], $index->topics() );
-		$this->assertSame( [ self::GAZETTE ], \array_column( $index->names_in( 'Harbor Gazette on Tidal reporting, Shoreline coverage, TR, Coastal beats and Fog desks' ), 'entity_key' ) );
+		$this->assertSame( [ self::GAZETTE ], \array_column( $index->names_in( 'Harbor Gazette on Tidal reporting, Shoreline coverage, TR, Coastal beats and Fog desks', true ), 'entity_key' ) );
 		$this->assertSame( [ 'harbor gazette' => [ self::GAZETTE ] ], $index->name_norms() );
 	}
 
 	public function test_an_empty_index_matches_nothing(): void {
 		$index = new Entity_Index();
 
-		$this->assertSame( [], $index->names_in( 'Harbor Gazette' ) );
+		$this->assertSame( [], $index->names_in( 'Harbor Gazette', true ) );
 		$this->assertSame( [], $index->identifiers( 'domain' ) );
 		$this->assertSame( [], $index->refused( 'domain' ) );
 		$this->assertSame( [], $index->name_norms() );

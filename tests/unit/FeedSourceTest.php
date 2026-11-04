@@ -808,6 +808,30 @@ XML;
 	}
 
 	/** @return array<string,array{0:string,1:string}> */
+	public static function titles_with_an_article_or_connecting_words(): array {
+		return [
+			'an article the label spells' => [ 'thewren.example', 'The Wren' ],
+			'a lowercase de'              => [ 'pueblodecobre.example', 'Pueblo de Cobre' ],
+			'a lowercase in'              => [ 'ridersintdw.example', 'Riders in TDW' ],
+		];
+	}
+
+	/**
+	 * A title leading with an article its label spells, or joining its
+	 * capitalized words with a lowercase connecting word, names the client.
+	 *
+	 * @dataProvider titles_with_an_article_or_connecting_words
+	 */
+	public function test_a_title_with_an_article_or_connecting_words_names_the_client( string $domain, string $title ): void {
+		$node = $this->titled_clients( 'organization:atomic-880088', $domain );
+
+		$this->tick( $node );
+		$this->complete( "https://{$domain}/feed/", self::titled_rss( $title, "https://{$domain}" ) );
+
+		$this->assertSame( [ [ 'organization:atomic-880088', 'canonical', $title ] ], self::brief_names( $this->names() ) );
+	}
+
+	/** @return array<string,array{0:string,1:string}> */
 	public static function titles_off_the_labels_word_boundaries(): array {
 		return [
 			'the label running into a word' => [ 'kestrelbay.example', 'Kestrel Bayou News' ],
@@ -1430,7 +1454,7 @@ XML;
 
 		$this->assertSame( 10, Feed_Source_Node::CONNECT_TIMEOUT );
 		foreach ( [ 'https://kite-2201.example/feed/', self::GAZETTE_FEED, self::GAZETTE_HOME ] as $url ) {
-			$this->assertSame( [ 10, Curl_Node::REQUEST_TIMEOUT ], [ $this->opts[ $url ][ \CURLOPT_CONNECTTIMEOUT ], $this->opts[ $url ][ \CURLOPT_TIMEOUT ] ], $url );
+			$this->assertSame( [ 10, Curl_Node::REQUEST_TIMEOUT * 1000 ], [ $this->opts[ $url ][ \CURLOPT_CONNECTTIMEOUT ], $this->opts[ $url ][ \CURLOPT_TIMEOUT_MS ] ], $url );
 		}
 	}
 

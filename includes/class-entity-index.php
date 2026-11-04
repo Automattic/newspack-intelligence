@@ -48,9 +48,10 @@ final class Entity_Index {
 	private const LIVE_STATES = [ 'accepted', 'proposed' ];
 
 	/**
-	 * Each matchable name by its norm: `entity|kind|value` => the name.
+	 * Each matchable name by its norm: `entity|kind|value` => the name, and
+	 * whether it led with the `the` its norm drops.
 	 *
-	 * @var array<string,array<string,array{entity_key:string,kind:string,value:string,state:string}>>
+	 * @var array<string,array<string,array{entity_key:string,kind:string,value:string,state:string,articled:bool}>>
 	 */
 	private array $names = [];
 
@@ -151,26 +152,27 @@ final class Entity_Index {
 			}
 		}
 		\ksort( $index->topics );
-		$add_name = static function ( string $key, string $kind, string $value, string $norm ) use ( $index, $topics, $types, $survivor, $state_of ): void {
+		$add_name = static function ( string $key, string $kind, string $value ) use ( $index, $topics, $types, $survivor, $state_of ): void {
 			if ( isset( $topics[ $key ] ) ) {
 				return;
 			}
-			$state = $state_of( $key );
+			[ $norm, $articled ] = self::normed( $value );
+			$state               = $state_of( $key );
 			if ( 'rejected' === $state && ! \in_array( $kind, [ 'locality', 'acronym' ], true ) ) {
 				$index->rejected[ $norm ][ $types[ Core::as_string( $survivor( $key ) ) ] ] = true;
 			} elseif ( \in_array( $state, self::LIVE_STATES, true ) ) {
 				$entity = Core::as_string( $survivor( $key ) );
-				$index->names[ $norm ][ "{$entity}|{$kind}|{$value}" ] = [ 'entity_key' => $entity, 'kind' => $kind, 'value' => $value, 'state' => $state ];
+				$index->names[ $norm ][ "{$entity}|{$kind}|{$value}" ] = [ 'entity_key' => $entity, 'kind' => $kind, 'value' => $value, 'state' => $state, 'articled' => $articled ];
 			}
 		};
 		foreach ( $entities as [ $key, $canonical ] ) {
 			$key = Core::as_string( $key );
 			if ( isset( $existing[ $key ] ) ) {
-				$add_name( $key, 'canonical', Core::as_string( $canonical ), self::norm( Core::as_string( $canonical ) ) );
+				$add_name( $key, 'canonical', Core::as_string( $canonical ) );
 			}
 		}
-		foreach ( $r->rows( 'SELECT entity_key, kind, value, norm FROM ' . Intel_Graph_Row_Schema::all( $r, 'names' ) . ' n ORDER BY 1', [] ) as [ $key, $kind, $value, $norm ] ) {
-			$add_name( Core::as_string( $key ), Core::as_string( $kind ), Core::as_string( $value ), Core::as_string( $norm ) );
+		foreach ( $r->rows( 'SELECT entity_key, kind, value FROM ' . Intel_Graph_Row_Schema::all( $r, 'names' ) . ' n ORDER BY 1', [] ) as [ $key, $kind, $value ] ) {
+			$add_name( Core::as_string( $key ), Core::as_string( $kind ), Core::as_string( $value ) );
 		}
 		foreach ( $r->rows( 'SELECT entity_key, kind, value FROM ' . Intel_Graph_Row_Schema::all( $r, 'identifiers' ) . ' i', [] ) as [ $key, $kind, $value ] ) {
 			$key   = Core::as_string( $key );
@@ -184,18 +186,6 @@ final class Entity_Index {
 			}
 		}
 		return $index;
-	}
-
-	/**
-	 * A name as matching compares it: lowercase, punctuation to one space,
-	 * whitespace collapsed, a leading `the` dropped.
-	 *
-	 * @param string $s Any text.
-	 */
-	public static function norm( string $s ): string {
-		$s = (string) \preg_replace( '/[^\p{L}\p{M}\p{N}\s]+/u', ' ', \mb_strtolower( $s ) );
-		$s = \trim( (string) \preg_replace( '/\s+/u', ' ', $s ) );
-		return (string) \preg_replace( '/^the /u', '', $s );
 	}
 
 	/**
@@ -275,6 +265,27 @@ final class Entity_Index {
 	}
 
 	/**
+	 * A name as matching compares it: lowercase, punctuation to one space,
+	 * whitespace collapsed, a leading `the` dropped.
+	 *
+	 * @param string $s Any text.
+	 */
+	public static function norm( string $s ): string {
+		return self::normed( $s )[0];
+	}
+
+	/**
+	 * A text's norm, and whether it dropped a leading `the`.
+	 *
+	 * @param string $s Any text.
+	 * @return array{0:string,1:bool}
+	 */
+	private static function normed( string $s ): array {
+		$s = (string) \preg_replace( '/[^\p{L}\p{M}\p{N}\s]+/u', ' ', \mb_strtolower( $s ) );
+		return self::unarticled( \trim( (string) \preg_replace( '/\s+/u', ' ', $s ) ) );
+	}
+
+	/**
 	 * Text's sentences as `plain()` reads it, split after each closing mark
 	 * a space follows.
 	 *
@@ -284,17 +295,6 @@ final class Entity_Index {
 	public static function sentences( string $text ): array {
 		$plain = self::plain( $text );
 		return '' === $plain ? [] : ( \preg_split( '/(?<=[.!?])\s+/u', $plain ) ?: [ $plain ] );
-	}
-
-	/**
-	 * Text as prose reads it: markup stripped with a space where each tag
-	 * stood, entities decoded, whitespace collapsed to one space.
-	 *
-	 * @param string $text A title, a body or a name found in one.
-	 */
-	public static function plain( string $text ): string {
-		$text = \html_entity_decode( \wp_strip_all_tags( \str_replace( '<', ' <', $text ) ), \ENT_QUOTES | \ENT_HTML5, 'UTF-8' );
-		return \trim( (string) \preg_replace( '/\s+/u', ' ', $text ) );
 	}
 
 	/**
@@ -460,15 +460,23 @@ final class Entity_Index {
 	 * to MAX_NAME_WORDS words is looked up by its norm. Each hit carries the
 	 * byte offset its surface starts at, and overlapping hits all come back,
 	 * for the caller to weigh. An acronym answers only the case it is
-	 * written in. Hits come in text order, the longer of two at one word
-	 * first. A hit `stoplisted()` holds is marked so, and still comes back,
-	 * because its span still outweighs the shorter hits inside it; an
-	 * acronym, matched in its own case alone, never is.
+	 * written in. Read as written, a name led by `the`, which its norm drops,
+	 * answers only where its first word past that article is capitalized,
+	 * and a single such word only right after a `the` in either case, read
+	 * as `plain()` reads the text, so neither "leaves no echo" nor "Leaves No
+	 * Echo" names The Echo, while "the Echo", "THE ECHO" and "Grant To The
+	 * Center For Tidewater Integrity" name theirs. Hits come in text
+	 * order, the longer of two at one word first. A hit `stoplisted()` holds
+	 * is marked so, and still comes back, because its span still outweighs
+	 * the shorter hits inside it; an acronym, matched in its own case alone,
+	 * never is.
 	 *
-	 * @param string $text Any text.
+	 * @param string $text       Any text.
+	 * @param bool   $as_written Whether the text is an item's own, cased as
+	 *                           written; a claim the model wrote is not.
 	 * @return list<array{entity_key:string,kind:string,surface:string,state:string,at:int,stoplisted:bool}>
 	 */
-	public function names_in( string $text ): array {
+	public function names_in( string $text, bool $as_written ): array {
 		if ( [] === $this->names || 0 === \preg_match_all( '/[\p{L}\p{M}\p{N}]+/u', $text, $m, \PREG_OFFSET_CAPTURE ) ) {
 			return [];
 		}
@@ -480,14 +488,25 @@ final class Entity_Index {
 			$ends = [];
 			for ( $j = $i; $j < $i + self::MAX_NAME_WORDS && isset( $words[ $j ] ); $j++ ) {
 				$run .= ( $j === $i ? '' : ' ' ) . $lower[ $j ];
-				$norm = \str_starts_with( $run, 'the ' ) ? \substr( $run, 4 ) : $run;
+				[ $norm, $article ] = self::unarticled( $run );
 				if ( ! isset( $this->names[ $norm ] ) ) {
 					continue;
 				}
-				$surface = \substr( $text, $start, $words[ $j ][1] + \strlen( $words[ $j ][0] ) - $start );
-				$hits    = [];
+				$surface  = \substr( $text, $start, $words[ $j ][1] + \strlen( $words[ $j ][0] ) - $start );
+				$from     = $article ? $i + 1 : $i;
+				$one_word = $from === $j;
+				$spelled  = null;
+				$hits     = [];
 				foreach ( $this->names[ $norm ] as $name ) {
-					if ( 'acronym' !== $name['kind'] || $surface === $name['value'] ) {
+					if ( 'acronym' === $name['kind'] ) {
+						$named = $surface === $name['value'];
+					} elseif ( ! $name['articled'] || ! $as_written ) {
+						$named = true;
+					} else {
+						$spelled ??= self::spells_led_by_the( $text, $words[ $from ], $one_word );
+						$named     = $spelled;
+					}
+					if ( $named ) {
 						$hits[ "{$name['entity_key']}|{$name['kind']}" ] = [ 'entity_key' => $name['entity_key'], 'kind' => $name['kind'], 'surface' => $surface, 'state' => $name['state'], 'at' => $start, 'stoplisted' => 'acronym' !== $name['kind'] && $this->stoplisted( $norm, $name['entity_key'] ) ];
 					}
 				}
@@ -509,6 +528,46 @@ final class Entity_Index {
 	public function stoplisted( string $norm, string $entity_key ): bool {
 		$type = $this->types[ $entity_key ] ?? null;
 		return null !== $type && isset( $this->rejected[ $norm ][ $type ] );
+	}
+
+	/**
+	 * Whether a run spells a name led by `the` as a name is written: its
+	 * first word past the article capitalized, and a single such word right
+	 * after a `the` in either case, read as `plain()` reads the text, so
+	 * markup or an entity between the two never hides the article.
+	 *
+	 * @param string                $text     The text.
+	 * @param array{0:string,1:int} $first    The first word past the article, and its byte offset.
+	 * @param bool                  $one_word Whether the name is that word alone.
+	 */
+	private static function spells_led_by_the( string $text, array $first, bool $one_word ): bool {
+		if ( 1 !== \preg_match( '/^[\p{Lu}\p{N}]/u', $first[0] ) ) {
+			return false;
+		}
+		return ! $one_word || 1 === \preg_match( '/(?:^|[^\p{L}\p{M}\p{N}])the[^\p{L}\p{M}\p{N}]*$/iu', self::plain( \substr( $text, 0, $first[1] ) ) );
+	}
+
+	/**
+	 * Text as prose reads it: markup stripped with a space where each tag
+	 * stood, entities decoded, whitespace collapsed to one space.
+	 *
+	 * @param string $text A title, a body or a name found in one.
+	 */
+	public static function plain( string $text ): string {
+		$text = \html_entity_decode( \wp_strip_all_tags( \str_replace( '<', ' <', $text ) ), \ENT_QUOTES | \ENT_HTML5, 'UTF-8' );
+		return \trim( (string) \preg_replace( '/\s+/u', ' ', $text ) );
+	}
+
+	/**
+	 * Lowercase words joined by one space without their leading `the`, and
+	 * whether they led with one: the one rule a name's norm and a run of text
+	 * are both read by.
+	 *
+	 * @param string $folded Lowercase words joined by one space.
+	 * @return array{0:string,1:bool}
+	 */
+	private static function unarticled( string $folded ): array {
+		return \str_starts_with( $folded, 'the ' ) ? [ \substr( $folded, 4 ), true ] : [ $folded, false ];
 	}
 
 	/**

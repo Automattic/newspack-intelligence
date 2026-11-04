@@ -308,7 +308,7 @@ class Extractor_Node extends Node {
 	private static function entities_named( Entity_Index $index, string $text, array $linked ): array {
 		$norm = Entity_Index::norm( $text );
 		$keys = [];
-		foreach ( $index->names_in( $text ) as $hit ) {
+		foreach ( $index->names_in( $text, false ) as $hit ) {
 			if ( 'locality' !== $hit['kind'] && ( ! $hit['stoplisted'] || ( $linked[ $hit['entity_key'] ][2] ?? false ) ) && Entity_Index::norm( $hit['surface'] ) === $norm ) {
 				$keys[ $hit['entity_key'] ] = $hit['entity_key'];
 			}

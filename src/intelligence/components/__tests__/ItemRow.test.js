@@ -67,6 +67,82 @@ describe( 'ItemRow', () => {
 		);
 	} );
 
+	/**
+	 * The answer lists an item's subjects before its mentions, and a link to a
+	 * proposed entity is itself `proposed`.
+	 */
+	it( 'drops a proposal sharing a name, keeping every entity that is not proposed', () => {
+		const chipsOf = (
+			[ firstKey, firstState ],
+			[ secondKey, secondState ]
+		) => {
+			const onOpenEntity = jest.fn();
+			const { unmount } = render(
+				<ItemRow
+					item={ {
+						...ITEM,
+						entities: [
+							{
+								entity_key: firstKey,
+								name: 'Quillmere',
+								state: firstState,
+							},
+							{
+								entity_key: 'person:ada-fenwick',
+								name: 'Ada Fenwick',
+								state: 'asserted',
+							},
+							{
+								entity_key: secondKey,
+								name: 'Quillmere',
+								state: secondState,
+							},
+						],
+					} }
+					onOpenEntity={ onOpenEntity }
+				/>
+			);
+			const shown = screen.getAllByRole( 'button' ).map( ( chip ) => {
+				fireEvent.click( chip );
+				return [
+					chip.textContent,
+					onOpenEntity.mock.calls.at( -1 )[ 0 ],
+				];
+			} );
+			unmount();
+			return shown;
+		};
+
+		expect(
+			chipsOf(
+				[ 'product:quillmere', 'proposed' ],
+				[ 'organization:quillmere', 'asserted' ]
+			)
+		).toEqual( [
+			[ 'Ada Fenwick', 'person:ada-fenwick' ],
+			[ 'Quillmere', 'organization:quillmere' ],
+		] );
+		expect(
+			chipsOf(
+				[ 'product:quillmere', 'confirmed' ],
+				[ 'organization:quillmere', 'asserted' ]
+			)
+		).toEqual( [
+			[ 'Quillmere', 'product:quillmere' ],
+			[ 'Ada Fenwick', 'person:ada-fenwick' ],
+			[ 'Quillmere', 'organization:quillmere' ],
+		] );
+		expect(
+			chipsOf(
+				[ 'organization:quillmere', 'proposed' ],
+				[ 'product:quillmere', 'proposed' ]
+			)
+		).toEqual( [
+			[ 'Quillmere', 'organization:quillmere' ],
+			[ 'Ada Fenwick', 'person:ada-fenwick' ],
+		] );
+	} );
+
 	it( 'offers save to collection only when given a save handler', () => {
 		const onSave = jest.fn();
 		const { rerender } = render(

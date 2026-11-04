@@ -182,6 +182,54 @@ final class IntelligenceBriefingTest extends TestCase {
 		);
 	}
 
+	/**
+	 * An item about more than three open clients is filed once: in the
+	 * `newspack_product` group when it is about a holder of that role, else
+	 * in the group of role null, its entities still naming every client. An
+	 * item about three still sits under each of them.
+	 */
+	public function test_an_item_about_many_clients_is_filed_once(): void {
+		$dunlin  = 'organization:dunlin-dispatch';
+		$godwit  = 'organization:godwit-gazette';
+		$product = 'product:tern-newsletters';
+		$this->seed(
+			self::entity( $dunlin, 'Dunlin Dispatch' ),
+			self::entity( $godwit, 'Godwit Gazette' ),
+			self::entity( $product, 'Tern Newsletters' ),
+			self::role( $dunlin, 'client' ),
+			self::role( $godwit, 'client' ),
+			self::role( $product, 'newspack_product' )
+		);
+		$this->about( 'p2:election-roundup', self::PLOVER, 'subject', 'launch', 8.5, 2 );
+		$this->about( 'p2:election-digest', self::PLOVER, 'subject', 'launch', 7.5, 2 );
+		$this->about( 'slack:trio-migration', self::PLOVER, 'subject', 'launch', 6.5, 3 );
+		foreach ( [ self::SEDGE, $dunlin, $godwit, $product ] as $entity ) {
+			$this->seed( self::link( 'link_asserted', 'p2:election-roundup', $entity, 'mention', 'name', 1.0, self::back( 2 ) ) );
+		}
+		foreach ( [ self::SEDGE, $dunlin, $godwit ] as $entity ) {
+			$this->seed( self::link( 'link_asserted', 'p2:election-digest', $entity, 'mention', 'name', 1.0, self::back( 2 ) ) );
+		}
+		foreach ( [ self::SEDGE, $dunlin ] as $entity ) {
+			$this->seed( self::link( 'link_asserted', 'slack:trio-migration', $entity, 'mention', 'name', 1.0, self::back( 3 ) ) );
+		}
+
+		$groups = $this->ci->dispatch( 'briefing', [ 'changes' ] )['groups'];
+
+		$this->assertSame(
+			[
+				[ null, 'newspack_product', [ 'p2:election-roundup' ] ],
+				[ null, null, [ 'p2:election-digest' ] ],
+				[ self::PLOVER, 'client', [ 'slack:trio-migration' ] ],
+				[ $dunlin, 'client', [ 'slack:trio-migration' ] ],
+				[ self::SEDGE, 'client', [ 'slack:trio-migration' ] ],
+			],
+			\array_map( static fn ( array $group ): array => [ $group['entity_key'], $group['role'], \array_column( $group['items'], 'item_key' ) ], $groups )
+		);
+		$named = \array_column( $groups[0]['items'][0]['entities'], 'entity_key' );
+		\sort( $named );
+		$this->assertSame( [ $dunlin, $godwit, self::PLOVER, self::SEDGE, $product ], $named );
+	}
+
 	/** The window opens at the first of the last seven UTC days, today the last. */
 	public function test_changes_open_at_the_windows_first_day(): void {
 		$this->about( 'linear:plover-first-day', self::PLOVER, 'subject', 'complaint', 6.0, 0 );
@@ -213,7 +261,7 @@ final class IntelligenceBriefingTest extends TestCase {
 	public function test_signals_answer_each_client_and_each_lens(): void {
 		$this->published( self::SEDGE, [ 0 => 5, 1 => 5, 2 => 5, 3 => 5, 4 => 5, 5 => 5, 6 => 5, 7 => 5, 8 => 5, 9 => 5 ] );
 		$this->published( self::PLOVER, [ 1 => 2, 2 => 4, 3 => 4, 4 => 4, 5 => 4, 6 => 4, 7 => 4, 8 => 4, 9 => 4 ] );
-		$this->complaints( self::PLOVER, [ 1 => 4, 9 => 1 ] );
+		$this->complaints( self::PLOVER, [ 1 => 4, 9 => 1, 10 => 1 ] );
 		$this->seed( self::lens( 'complaint-desk', 'Complaint desk', [ 'kinds' => [ 'complaint' ] ] ) );
 
 		$answer = $this->ci->dispatch( 'briefing', [ 'signals' ] );
@@ -241,7 +289,7 @@ final class IntelligenceBriefingTest extends TestCase {
 	/** A lens bucketing by month signals only when its month closed inside the window. */
 	public function test_a_signal_whose_bucket_closed_before_the_window_is_left_out(): void {
 		$this->seed( self::lens( 'monthly-desk', 'Monthly desk', [ 'kinds' => [ 'complaint' ], 'bucket' => 'month' ] ) );
-		$this->complaints( self::WREN, [ 4 => 4, 39 => 1 ] );
+		$this->complaints( self::WREN, [ 4 => 4, 39 => 1, 45 => 1 ] );
 
 		$this->assertSame( 'spike', $this->ci->dispatch( 'signals', [ '--lens=monthly-desk' ] )['signals'][0]['signal'] );
 		$this->assertSame( [], $this->ci->dispatch( 'briefing', [ 'signals' ] )['lenses'] );
@@ -281,7 +329,7 @@ final class IntelligenceBriefingTest extends TestCase {
 		$this->seed( self::entity( $annex, 'Plover Annex' ), self::merged( $annex, self::PLOVER ) );
 		$this->published( self::SEDGE, [ 0 => 5, 1 => 5, 2 => 5, 3 => 5, 4 => 5, 5 => 5, 6 => 5, 7 => 5, 8 => 5, 9 => 5 ] );
 		$this->published( $annex, [ 1 => 2, 2 => 4, 3 => 4, 4 => 4, 5 => 4, 6 => 4, 7 => 4, 8 => 4, 9 => 4 ] );
-		$this->complaints( $annex, [ 1 => 4, 9 => 1 ] );
+		$this->complaints( $annex, [ 1 => 4, 9 => 1, 10 => 1 ] );
 
 		$this->assertSame(
 			[ [ self::PLOVER, [ [ 'about', 'spike', '2026-10-12', 'complaint', 4, 0.125 ], [ 'publisher', 'drop', '2026-10-12', null, 2, 4.0 ] ] ] ],

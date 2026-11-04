@@ -845,7 +845,8 @@ final class Graph_Query {
 	 * is about the lens, its entity included, counted as `trends` counts for
 	 * the same lens and entity, so its filters, axis, bucket and tiers apply
 	 * alike: `spiking()` over `filtered()`, its one subject `''`, muted on
-	 * the kind axis; none unless the latest complete bucket closed after
+	 * the kind axis, where each value spikes only when it was counted before
+	 * the window; none unless the latest complete bucket closed after
 	 * `$after`.
 	 *
 	 * @param Row_Reader  $r     The reader.
@@ -871,7 +872,7 @@ final class Graph_Query {
 			static function ( Row_Reader $r, array $g, array $filter, array $lens ) use ( $after ): array {
 				[ $by, $span ] = self::axis( null, null, $lens );
 				$starts        = self::window( $r, $span, $after );
-				return null === $starts ? [] : self::spiking( $r, self::filtered( $r, $g, $filter ), $filter['days'] ?? self::all_days(), $starts, $by, $span, true )[''] ?? [];
+				return null === $starts ? [] : self::spiking( $r, self::filtered( $r, $g, $filter ), $filter['days'] ?? self::all_days(), $starts, $by, $span, true, 'kind' === $by )[''] ?? [];
 			}
 		);
 		return \array_map( static fn ( array $spike ): array => self::signal( 'about', 'spike', $spike ), $about );
@@ -1005,10 +1006,11 @@ final class Graph_Query {
 	/**
 	 * Each entity's signals, named with no lens, every entity read in the
 	 * same statements: the spikes of what is about it, per kind by week, a
-	 * MUTE_KIND one left out;
-	 * what its own site published, per week against its own baseline, a
-	 * `burst` for each kind spiking by the rule `spiked_in()` applies; and,
-	 * for a client, the `drop` or `silent` `falls()` reads.
+	 * MUTE_KIND one left out, each kind spiking only when it was counted
+	 * before the window; what its own site published, per week against its
+	 * own baseline, a `burst` for each kind spiking by the rule `spiked_in()`
+	 * applies, a kind it never put out before included; and, for a client,
+	 * the `drop` or `silent` `falls()` reads.
 	 *
 	 * @api Read by Intelligence_Briefing over every open client.
 	 * @param Row_Reader   $r         The reader.
@@ -1024,8 +1026,8 @@ final class Graph_Query {
 		if ( null === $starts ) {
 			return $signals;
 		}
-		$about  = self::spiking( $r, self::linking( $r, $g, $survivors, Intel_Event::ABOUT_ROLES ), self::all_days(), $starts, self::DEFAULT_AXIS, $span, true );
-		$bursts = self::spiking( $r, self::linking( $r, $g, $survivors, [ Intel_Event::PUBLISHER ] ), self::all_days(), $starts, self::DEFAULT_AXIS, $span, false );
+		$about  = self::spiking( $r, self::linking( $r, $g, $survivors, Intel_Event::ABOUT_ROLES ), self::all_days(), $starts, self::DEFAULT_AXIS, $span, true, true );
+		$bursts = self::spiking( $r, self::linking( $r, $g, $survivors, [ Intel_Event::PUBLISHER ] ), self::all_days(), $starts, self::DEFAULT_AXIS, $span, false, false );
 		$falls  = self::falls( $r, $g, $survivors, $starts, $span );
 		foreach ( $survivors as $survivor ) {
 			$signals[ $survivor ] = [
@@ -1325,15 +1327,6 @@ final class Graph_Query {
 	}
 
 	/**
-	 * Every UTC day, as `days` bounds them.
-	 *
-	 * @return array{0:int,1:int}
-	 */
-	private static function all_days(): array {
-		return Intel_Graph_Row_Schema::range( self::ALL_DAYS[0], self::ALL_DAYS[1] );
-	}
-
-	/**
 	 * The open rows of the roles, of each survivor's keys, as each survivor
 	 * => role => its rows, `[ the key it is held under, from_ts ]`, the
 	 * latest first.
@@ -1369,8 +1362,14 @@ final class Graph_Query {
 
 	/**
 	 * Each subject's spikes over what the scope admits in `$days`, counted
-	 * per value of the axis by the window's buckets alone (`spiked_in()`),
-	 * whether a story precedes the oldest of them read in the same statement.
+	 * per value of the axis by the window's buckets alone (`spiked_in()`).
+	 * With `$known`, as the about axis counting by kind sets it, a value
+	 * spikes only when the same value was counted before the oldest of them,
+	 * read across the whole retention whatever `$days` keeps: in the same
+	 * statement when `$days` is the whole retention, else in one more.
+	 * Without it, any axis but that one and the publisher axis, a subject
+	 * spikes only when a story precedes the oldest of them within `$days`,
+	 * read in the same statement.
 	 *
 	 * @param Row_Reader     $r      The reader.
 	 * @param Scope          $scope  The items read, by subject.
@@ -1379,13 +1378,19 @@ final class Graph_Query {
 	 * @param string         $by     The axis.
 	 * @param string         $span   A BUCKETS expression over `t`.
 	 * @param bool           $muted  Whether the kind axis leaves out MUTE_KIND.
+	 * @param bool           $known  Whether a value spikes only once counted before the window.
 	 * @return array<string,list<array<string,mixed>>> Each subject with a count => its spikes.
 	 */
-	private static function spiking( Row_Reader $r, \Closure $scope, array $days, array $starts, string $by, string $span, bool $muted ): array {
-		[ $tallied, $history ] = self::tally( $r, $scope, $days, $by, $span, Intel_Graph_Row_Schema::day( $starts[ self::SIGNAL_BASELINE + 1 ] ), $muted );
-		$spikes                = [];
+	private static function spiking( Row_Reader $r, \Closure $scope, array $days, array $starts, string $by, string $span, bool $muted, bool $known ): array {
+		$cut                   = Intel_Graph_Row_Schema::day( $starts[ self::SIGNAL_BASELINE + 1 ] );
+		$whole                 = self::all_days() === $days;
+		[ $tallied, $history ] = self::tally( $r, $scope, $days, $by, $span, $cut, $muted, $known && $whole );
+		if ( $known && ! $whole ) {
+			$history = self::tally( $r, $scope, self::all_days(), $by, $span, $cut, $muted, true )[1];
+		}
+		$spikes = [];
 		foreach ( $tallied as $subject => $rows ) {
-			$spikes[ $subject ] = self::spiked_in( $rows, $starts, $by, isset( $history[ $subject ] ) );
+			$spikes[ $subject ] = self::spiked_in( $rows, $starts, $by, $history[ $subject ] ?? [], $known );
 		}
 		return $spikes;
 	}
@@ -1395,18 +1400,21 @@ final class Graph_Query {
 	 * least SIGNAL_MIN, above the mean of the SIGNAL_BASELINE buckets before
 	 * it and at least that mean plus SIGNAL_SIGMAS standard deviations of
 	 * them (`spiked()`), each citing its row's items, the highest count
-	 * first. A history holding no counted item before the oldest of them
-	 * spikes nothing, since its zeros are not a baseline: an item in the
-	 * oldest bucket answers that, else `$history`.
+	 * first. With `$known`, a value `$history` does not hold spikes nothing,
+	 * since a first appearance within the window is not a change. Without
+	 * it, a history holding no counted item before the oldest of them spikes
+	 * nothing, since its zeros are not a baseline: an item in the oldest
+	 * bucket answers that, else a `$history` that is not empty.
 	 *
 	 * @param list<array{bucket:mixed,value:mixed,count:int,items:list<array{item_key:mixed,url:mixed,title:mixed}>}> $rows   The trend rows, the newest bucket first.
 	 * @param list<string>                                                                                          $starts The window's starts, newest first.
 	 * @param string                                                                                                $by     The axis.
-	 * @param bool                                                                                                  $history Whether a story precedes the oldest bucket.
+	 * @param array<string,true>                                                                                    $history Each value counted before the oldest bucket, or '' alone for a subject's history.
+	 * @param bool                                                                                                  $known   Whether a value spikes only when `$history` holds it.
 	 * @return list<array<string,mixed>>
 	 */
-	private static function spiked_in( array $rows, array $starts, string $by, bool $history ): array {
-		if ( [] === $rows || ( Core::as_string( $rows[ \count( $rows ) - 1 ]['bucket'] ) > $starts[ self::SIGNAL_BASELINE + 1 ] && ! $history ) ) {
+	private static function spiked_in( array $rows, array $starts, string $by, array $history, bool $known ): array {
+		if ( [] === $rows || ( ! $known && [] === $history && Core::as_string( $rows[ \count( $rows ) - 1 ]['bucket'] ) > $starts[ self::SIGNAL_BASELINE + 1 ] ) ) {
 			return [];
 		}
 		$counts = [];
@@ -1417,7 +1425,7 @@ final class Graph_Query {
 		foreach ( $counts as $value => $buckets ) {
 			$latest = $buckets[ $starts[1] ] ?? null;
 			$base   = \array_map( static fn ( string $start ): int => Core::as_int( $buckets[ $start ]['count'] ?? 0 ), \array_slice( $starts, 2 ) );
-			if ( null !== $latest && self::spiked( Core::as_int( $latest['count'] ), $base ) ) {
+			if ( null !== $latest && ( ! $known || isset( $history[ $value ] ) ) && self::spiked( Core::as_int( $latest['count'] ), $base ) ) {
 				$signals[] = [ 'bucket' => $starts[1], 'by' => $by, 'value' => $value, 'count' => $latest['count'], 'baseline' => \array_sum( $base ) / (float) self::SIGNAL_BASELINE, 'items' => $latest['items'] ];
 			}
 		}
@@ -1447,26 +1455,28 @@ final class Graph_Query {
 	 * to count every story, each citing its newest stories, of what the
 	 * scope admits in `$days` (`stories()`): those dated at or after `$cut`
 	 * per bucket, and, in the same statement, each subject holding a story
-	 * dated before it, its history. A story is cited by its key, URL and
-	 * title, each read once however many partitions hold it.
+	 * dated before it, its history, by each value it counted there when
+	 * `$values` asks. A story is cited by its key, URL and title, each read
+	 * once however many partitions hold it.
 	 *
-	 * @param Row_Reader     $r     The reader.
-	 * @param Scope          $scope The items read, by subject.
-	 * @param array{int,int} $days  The first second and the second after the last.
-	 * @param string|null    $by    The axis, null for none.
-	 * @param string         $span  A BUCKETS expression over `t`.
-	 * @param int            $cut   The first second a bucket counts.
-	 * @param bool           $muted Whether the kind axis leaves out MUTE_KIND.
-	 * @return array{0:array<string,list<array{bucket:mixed,value:mixed,count:int,items:list<array{item_key:mixed,url:mixed,title:mixed}>}>>,1:array<string,true>} Each subject => its rows, the newest bucket first, then the highest count; and each subject with a history.
+	 * @param Row_Reader     $r      The reader.
+	 * @param Scope          $scope  The items read, by subject.
+	 * @param array{int,int} $days   The first second and the second after the last.
+	 * @param string|null    $by     The axis, null for none.
+	 * @param string         $span   A BUCKETS expression over `t`.
+	 * @param int            $cut    The first second a bucket counts.
+	 * @param bool           $muted  Whether the kind axis leaves out MUTE_KIND.
+	 * @param bool           $values Whether the history is read per value.
+	 * @return array{0:array<string,list<array{bucket:mixed,value:mixed,count:int,items:list<array{item_key:mixed,url:mixed,title:mixed}>}>>,1:array<string,array<string,true>>} Each subject => its rows, the newest bucket first, then the highest count; and each subject with a history => each value in it, or '' alone.
 	 */
-	private static function tally( Row_Reader $r, \Closure $scope, array $days, ?string $by, string $span, int $cut, bool $muted = false ): array {
+	private static function tally( Row_Reader $r, \Closure $scope, array $days, ?string $by, string $span, int $cut, bool $muted = false, bool $values = false ): array {
 		[ $stories, $binds ] = self::stories( $r, $scope, $days, $by, $muted );
 		$rows                = $r->rows(
 			"{$stories}, ranked AS ( SELECT s.subject, {$span} AS bucket, s.value, s.item_key, c.url, c.title, ROW_NUMBER() OVER ( PARTITION BY s.subject, {$span}, s.value ORDER BY t DESC, s.item_key DESC ) AS rn,"
 			. " COUNT(*) OVER ( PARTITION BY s.subject, {$span}, s.value ) AS n FROM stories s"
 			. ' JOIN ( SELECT item_key, MAX( url ) AS url, MAX( title ) AS title FROM ri WHERE item_key IN ( SELECT item_key FROM stories ) GROUP BY item_key ) c ON c.item_key = s.item_key WHERE t >= ? )'
 			. ' SELECT subject, bucket, value, n, item_key, url, title, rn FROM ranked WHERE rn <= ?'
-			. ' UNION ALL SELECT DISTINCT subject, NULL, NULL, NULL, NULL, NULL, NULL, NULL FROM stories WHERE t < ? ORDER BY 1, 2 DESC, 4 DESC, 3, 8',
+			. ' UNION ALL SELECT DISTINCT subject, NULL, ' . ( $values ? 'value' : 'NULL' ) . ', NULL, NULL, NULL, NULL, NULL FROM stories WHERE t < ? ORDER BY 1, 2 DESC, 4 DESC, 3, 8',
 			[ ...$binds, $cut, self::CITATIONS, $cut ]
 		);
 		$out                 = [];
@@ -1474,7 +1484,7 @@ final class Graph_Query {
 		foreach ( $rows as [ $of, $day, $counted, $n, $item, $url, $title ] ) {
 			$of = Core::as_string( $of );
 			if ( null === $day ) {
-				$history[ $of ] = true;
+				$history[ $of ][ Core::as_string( $counted ) ] = true;
 				continue;
 			}
 			$at                          = Core::as_string( $day ) . '|' . Core::as_string( $counted );
@@ -1512,6 +1522,15 @@ final class Graph_Query {
 			. Intel_Graph_Row_Schema::all( $r, 'canonicals', true ) . ' k WHERE k.cluster_key IN ( SELECT cluster_key FROM sc ) ) k ON k.cluster_key = sc.cluster_key AND k.pick = 1 ),'
 			. ' stories AS ( SELECT h.subject, h.value, COALESCE( st.story, h.item_key ) AS item_key, MIN( h.t ) AS t FROM hits h LEFT JOIN st ON st.item_key = h.item_key GROUP BY 1, 2, 3 )';
 		return [ $sql, [ ...$lead, ...$binds ] ];
+	}
+
+	/**
+	 * Every UTC day, as `days` bounds them.
+	 *
+	 * @return array{0:int,1:int}
+	 */
+	private static function all_days(): array {
+		return Intel_Graph_Row_Schema::range( self::ALL_DAYS[0], self::ALL_DAYS[1] );
 	}
 
 	/**
