@@ -60,9 +60,12 @@ beforeEach( () => {
 describe( 'Collections', () => {
 	it( 'lists every collection with its count', async () => {
 		render( <Harness canTune={ false } /> );
-		expect(
-			await screen.findByRole( 'button', { name: 'Q4 client wins' } )
-		).toBeInTheDocument();
+		const open = await screen.findByRole( 'button', {
+			name: 'Q4 client wins',
+		} );
+		expect( open.closest( 'li' ) ).toHaveClass(
+			'newspack-intelligence__actions'
+		);
 		expect(
 			screen.getByText( /2 items · 2026-09-22/ )
 		).toBeInTheDocument();

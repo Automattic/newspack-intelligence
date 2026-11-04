@@ -100,9 +100,12 @@ const openSupport = async () =>
 describe( 'Lens', () => {
 	it( 'lists every lens with its description', async () => {
 		render( <Harness canTune={ false } /> );
-		expect(
-			await screen.findByRole( 'button', { name: 'Support desk' } )
-		).toBeInTheDocument();
+		const open = await screen.findByRole( 'button', {
+			name: 'Support desk',
+		} );
+		expect( open.closest( 'li' ) ).toHaveClass(
+			'newspack-intelligence__actions'
+		);
 		expect(
 			screen.getByRole( 'button', { name: 'Developer shipping' } )
 		).toBeInTheDocument();

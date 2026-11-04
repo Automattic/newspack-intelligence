@@ -129,9 +129,13 @@ describe( 'Entity — reads', () => {
 				name: 'Acme Quillsheet wins regional prize',
 			} )
 		).toBeInTheDocument();
-		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Jo Reporter' } )
+		const related = await screen.findByRole( 'button', {
+			name: 'Jo Reporter',
+		} );
+		expect( related.closest( 'li' ) ).toHaveClass(
+			'newspack-intelligence__actions'
 		);
+		fireEvent.click( related );
 		expect( onOpenEntity ).toHaveBeenCalledWith( 'person:jo-reporter' );
 		expect( screen.getByText( /4 shared items/ ) ).toBeInTheDocument();
 		const claims = await screen.findByRole( 'region', { name: 'Claims' } );
@@ -577,7 +581,11 @@ describe( 'Entity — curation', () => {
 		fireEvent.click(
 			within( form ).getByRole( 'button', { name: 'Assert role' } )
 		);
-		fireEvent.click( screen.getByRole( 'button', { name: 'End client' } ) );
+		const end = screen.getByRole( 'button', { name: 'End client' } );
+		expect( end.closest( 'li' ) ).toHaveClass(
+			'newspack-intelligence__actions'
+		);
+		fireEvent.click( end );
 		await waitFor( () => {
 			expect( wire.sent( 'assert_role' ) ).toEqual( [
 				[ `--key=${ KEY }`, '--role=competitor' ],

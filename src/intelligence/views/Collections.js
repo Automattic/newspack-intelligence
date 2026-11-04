@@ -142,7 +142,10 @@ export default function Collections( { canTune, opened, onOpen } ) {
 					<ul className="newspack-intelligence__facts">
 						{ answer.collections.map( ( collection ) =>
 							collection.collection_key ? (
-								<li key={ collection.collection_key }>
+								<li
+									key={ collection.collection_key }
+									className="newspack-intelligence__actions"
+								>
 									<button
 										type="button"
 										className={
@@ -154,7 +157,7 @@ export default function Collections( { canTune, opened, onOpen } ) {
 										onClick={ () => onOpen( collection ) }
 									>
 										{ collection.name }
-									</button>{ ' ' }
+									</button>
 									<span className="newspack-nodes-status is-muted">
 										{ metaLine(
 											sprintf(

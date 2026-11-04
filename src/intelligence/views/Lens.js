@@ -418,7 +418,10 @@ export default function Lens( {
 				{ ( answer ) => (
 					<ul className="newspack-intelligence__facts">
 						{ answer.lenses.map( ( one ) => (
-							<li key={ one.lens_key }>
+							<li
+								key={ one.lens_key }
+								className="newspack-intelligence__actions"
+							>
 								<button
 									type="button"
 									className={
@@ -434,7 +437,7 @@ export default function Lens( {
 									}
 								>
 									{ one.name }
-								</button>{ ' ' }
+								</button>
 								<span className="newspack-nodes-status is-muted">
 									{ one.description }
 								</span>

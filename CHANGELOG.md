@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **A row's control sits apart from its text and centred on it:** the Entity view's "End client" beside its role and its Related chips, and the Lenses and Collections lists' buttons, each row laid out as `newspack-intelligence__actions`.
+
 ## [0.33.3] - 2026-11-03
 
 ### Changed

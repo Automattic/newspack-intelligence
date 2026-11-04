@@ -423,6 +423,7 @@ export default function Entity( {
 							{ entity.roles.map( ( role ) => (
 								<li
 									key={ `role ${ role.role } ${ role.from_ts }` }
+									className="newspack-intelligence__actions"
 								>
 									{ roleText( role ) }
 									{ canTune && 0 === role.to_ts && (
@@ -573,12 +574,15 @@ export default function Entity( {
 				{ ( answer ) => (
 					<ul className="newspack-intelligence__facts">
 						{ answer.entities.map( ( other ) => (
-							<li key={ other.entity_key }>
+							<li
+								key={ other.entity_key }
+								className="newspack-intelligence__actions"
+							>
 								<EntityChip
 									entityKey={ other.entity_key }
 									name={ other.name }
 									onOpen={ onOpenEntity }
-								/>{ ' ' }
+								/>
 								{ metaLine(
 									other.type,
 									sprintf(
