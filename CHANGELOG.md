@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.3] - 2026-11-03
+
 ### Changed
 
 - **The floor rises to newspack-nodes 2.145.0.** The debug overlay this plugin inlines keeps its sampler under the page global `__newspackNodesOverviewSamplerTimer`, which that release introduces; a page mixing this bundle with an older substrate's would run two samplers.
