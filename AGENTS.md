@@ -1507,7 +1507,10 @@ from
 `Feed_Source_Node::CLIENT_FEED_DAYS` (7) days before the worker's clock to
 one day after it, the day ahead allowing for the publisher's own zone or
 clock; an undated one never records. A configured feed keys `feed:<guid>`
-and records every item, so an item two configured feeds list records once.
+and records every item, so an item two configured feeds list records once;
+a guid that a plain hostname and `:` lead, as a client's lane is spelled,
+is keyed `feed::<guid>`, so no configured feed takes a client's key or
+reads as its copy.
 
 A client's feed also names the client. The pass's read of the open
 clients notes each whose entity `Graph_Query::name_of()` still shows by one

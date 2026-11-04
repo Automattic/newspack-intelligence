@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A feed item whose copy is already held records nothing.** Two items are one copy when they come from the same source, their canonical URL (`Url_Canon::of()`) names a host, and their raw ids, the guid past `feed:` and a client lane's domain, are equal; a configured feed's item is judged by its key alone, so a third party's copy of a client's post never stands in for the client's own. `Source_Node::record()`'s one projection read also finds the source's items at those canonical URLs, and its bounded seen set remembers each item once, by its copy or else its key, so a post sister feeds list under one guid records once, while a podcast's episodes sharing one link each record. Only a source whose `raw_id()` names one judges copies, the feeds alone, because a P2 comment shares its post's canonical URL; an item whose URL is empty or names no host is judged by key alone.
 
 ### Fixed
+- **A configured feed can no longer take a client's item key.** A configured guid that a plain hostname and `:` lead, as `harborgazette.example:cup-73`, keyed `feed:harborgazette.example:cup-73`, the client's own key, so a third party's feed answering first recorded its title and body under it. Such a guid is now keyed `feed::<guid>`.
 - **A row's control sits apart from its text and centred on it:** the Entity view's "End client" beside its role and its Related chips, and the Lenses and Collections lists' buttons, each row laid out as `newspack-intelligence__actions`.
 
 ## [0.33.3] - 2026-11-03

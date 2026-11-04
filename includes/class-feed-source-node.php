@@ -402,7 +402,7 @@ class Feed_Source_Node extends Source_Node {
 			if ( '' === $when ) {
 				$when = (string) $item->children( self::DC_NS )->date;
 			}
-			$out[] = $this->normalize_item( 'feed', $prefix . $id, (string) $item->title, $link, (string) $item->description, $when );
+			$out[] = $this->normalize_item( 'feed', self::keyed( $prefix, $id ), (string) $item->title, $link, (string) $item->description, $when );
 		}
 		return $out;
 	}
@@ -425,7 +425,7 @@ class Feed_Source_Node extends Source_Node {
 			}
 			$summary = (string) $entry->summary;
 			$body    = '' !== $summary ? $summary : (string) $entry->content;
-			$out[]   = $this->normalize_item( 'feed', $prefix . $id, (string) $entry->title, $link, $body, (string) $entry->updated );
+			$out[]   = $this->normalize_item( 'feed', self::keyed( $prefix, $id ), (string) $entry->title, $link, $body, (string) $entry->updated );
 		}
 		return $out;
 	}
@@ -597,6 +597,43 @@ class Feed_Source_Node extends Source_Node {
 	}
 
 	/**
+	 * A client-lane key's guid, past `feed:` and the lane's domain; null for
+	 * a configured feed's key, judged by its key alone, since a configured
+	 * feed is anyone's and its copy of a client's post must never stand in
+	 * for the client's own.
+	 *
+	 * @param string $key An item key.
+	 */
+	protected function raw_id( string $key ): ?string {
+		$id   = \substr( $key, (int) \strpos( $key, ':' ) + 1 );
+		$lane = self::lane( $id );
+		return null === $lane ? null : \substr( $id, \strlen( $lane ) + 1 );
+	}
+
+	/**
+	 * An item's id past `feed:`: a client's lane leads its guid, and a
+	 * configured feed's guid that would read as a lane is led by `:`, so no
+	 * configured item takes a client's key or reads as its copy.
+	 *
+	 * @param string $prefix The lane's domain and `:`, or '' for a configured feed.
+	 * @param string $id     The guid, else the link.
+	 */
+	private static function keyed( string $prefix, string $id ): string {
+		return '' === $prefix && null !== self::lane( $id ) ? ":{$id}" : $prefix . $id;
+	}
+
+	/**
+	 * The plain hostname leading an id before its first `:`, which is how a
+	 * client's lane is spelled; null when none leads it.
+	 *
+	 * @param string $id An id past `feed:`.
+	 */
+	private static function lane( string $id ): ?string {
+		$lane = \strstr( $id, ':', true );
+		return false === $lane || null !== Entity_Index::hostname_fault( $lane ) ? null : $lane;
+	}
+
+	/**
 	 * Every feed request bounds its connection at CONNECT_TIMEOUT, so a host
 	 * that never answers holds its slot a third as long.
 	 *
@@ -615,21 +652,6 @@ class Feed_Source_Node extends Source_Node {
 	/** No cap: a pass sends every configured feed and every client's. */
 	protected function max_requests(): int {
 		return \PHP_INT_MAX;
-	}
-
-	/**
-	 * A client-lane key's guid, past `feed:` and the lane's domain, read as
-	 * one only when it is a plain hostname, so a guid's own colons stay its
-	 * own; null for a configured feed's key, judged by its key alone, since
-	 * a configured feed is anyone's and its copy of a client's post must
-	 * never stand in for the client's own.
-	 *
-	 * @param string $key An item key.
-	 */
-	protected function raw_id( string $key ): ?string {
-		$id   = \substr( $key, (int) \strpos( $key, ':' ) + 1 );
-		$lane = \strstr( $id, ':', true );
-		return false === $lane || null !== Entity_Index::hostname_fault( $lane ) ? null : \substr( $id, \strlen( $lane ) + 1 );
 	}
 
 	/** Curl follows no redirect: the feed re-queues each Location under the feed it redirects, keeping its lane. */

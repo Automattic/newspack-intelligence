@@ -385,6 +385,41 @@ XML;
 		$this->assertSame( [ "feed:harborgazette.example:{$guid}", "feed:{$guid}" ], $recorded );
 	}
 
+	/**
+	 * A configured guid shaped like a client's lane is keyed apart from it,
+	 * so it neither takes the client's key nor reads as the client's copy.
+	 *
+	 * @param bool $configured_first Whether the configured feed answers first.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'answer_orders' )]
+	public function test_a_configured_guid_shaped_like_a_lane_keeps_out_of_it( bool $configured_first ): void {
+		$this->start_intel_graph();
+		$this->seed_clients();
+		$node = $this->feed( 'https://kite-2201.example/feed/' );
+		$node->set_client_feeds( true );
+		$this->tick( $node );
+		$listing = static fn ( string $guid, string $title ): string => '<?xml version="1.0"?><rss version="2.0"><channel><item><title>' . $title . '</title><link>' . self::GAZETTE . '/cup-73</link>'
+			. "<guid>{$guid}</guid><pubDate>" . \gmdate( 'D, d M Y H:i:s', (int) Core::$now - 60 ) . ' GMT</pubDate></item></channel></rss>';
+		$answers = [
+			[ 'https://kite-2201.example/feed/', $listing( 'harborgazette.example:cup-73', 'Forged headline' ) ],
+			[ self::GAZETTE_FEED, $listing( 'cup-73', 'Osprey wins the cup' ) ],
+		];
+
+		foreach ( $configured_first ? $answers : \array_reverse( $answers ) as [ $url, $body ] ) {
+			$this->complete( $url, $body );
+		}
+
+		$titles = \array_map( static fn ( array $item ): string => $item['title'], $this->recorded() );
+		\ksort( $titles );
+		$this->assertSame(
+			[
+				'feed::harborgazette.example:cup-73' => 'Forged headline',
+				'feed:harborgazette.example:cup-73'  => 'Osprey wins the cup',
+			],
+			$titles
+		);
+	}
+
 	/** @return array<string,array{bool}> */
 	public static function answer_orders(): array {
 		return [
