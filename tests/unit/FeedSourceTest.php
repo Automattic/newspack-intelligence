@@ -356,7 +356,14 @@ XML;
 	 * and one canonical URL, records once, under the key that took it first;
 	 * a guid holding colons is read past the lane whole.
 	 */
-	public function test_a_post_two_lanes_list_records_once(): void {
+	/**
+	 * A configured feed is anyone's, so a copy it lists of a client's post
+	 * never stands in for the client's own, whichever answers first.
+	 *
+	 * @param bool $configured_first Whether the configured feed answers first.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'answer_orders' )]
+	public function test_a_configured_feed_never_suppresses_a_clients_copy( bool $configured_first ): void {
 		$this->start_intel_graph();
 		$this->seed_clients();
 		$node = $this->feed( 'https://kite-2201.example/feed/' );
@@ -364,11 +371,47 @@ XML;
 		$this->tick( $node );
 		$guid    = 'tag:harborgazette.example,2026:cup-61';
 		$listing = static fn ( string $link ): string => '<?xml version="1.0"?><rss version="2.0"><channel><item><title>Osprey wins the cup</title><link>' . $link . "</link><guid>{$guid}</guid><pubDate>" . \gmdate( 'D, d M Y H:i:s', (int) Core::$now - 60 ) . ' GMT</pubDate></item></channel></rss>';
+		$answers = [
+			[ 'https://kite-2201.example/feed/', $listing( 'https://www.harborgazette.example/cup/?utm_source=kite' ) ],
+			[ self::GAZETTE_FEED, $listing( self::GAZETTE . '/cup' ) ],
+		];
 
-		$this->complete( 'https://kite-2201.example/feed/', $listing( 'https://www.harborgazette.example/cup/?utm_source=kite' ) );
-		$this->complete( self::GAZETTE_FEED, $listing( self::GAZETTE . '/cup' ) );
+		foreach ( $configured_first ? $answers : \array_reverse( $answers ) as [ $url, $body ] ) {
+			$this->complete( $url, $body );
+		}
 
-		$this->assertSame( [ "feed:{$guid}" ], \array_keys( $this->recorded() ) );
+		$recorded = \array_keys( $this->recorded() );
+		\sort( $recorded );
+		$this->assertSame( [ "feed:harborgazette.example:{$guid}", "feed:{$guid}" ], $recorded );
+	}
+
+	/** @return array<string,array{bool}> */
+	public static function answer_orders(): array {
+		return [
+			'configured first' => [ true ],
+			'client first'     => [ false ],
+		];
+	}
+
+	/** Two clients' lanes listing one post under one guid record it once. */
+	public function test_a_post_two_client_lanes_list_records_once(): void {
+		$this->start_intel_graph();
+		$this->seed_clients();
+		$this->seed(
+			self::entity( 'organization:gazette-sports', 'Gazette Sports', [ 'domain' => [ 'sports.harborgazette.example' ] ] ),
+			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => 'organization:gazette-sports', 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ) ]
+		);
+		$node = $this->feed();
+		$node->set_client_feeds( true );
+		$this->tick( $node );
+		$guid    = 'https://sports.harborgazette.example/?p=4418';
+		$listing = '<?xml version="1.0"?><rss version="2.0"><channel><item><title>Osprey wins the cup</title><link>https://sports.harborgazette.example/cup-4418/</link>'
+			. "<guid>{$guid}</guid><pubDate>" . \gmdate( 'D, d M Y H:i:s', (int) Core::$now - 60 ) . ' GMT</pubDate></item></channel></rss>';
+
+		$this->complete( self::GAZETTE_FEED, $listing );
+		$this->complete( 'https://sports.harborgazette.example/feed/', $listing );
+
+		$this->assertSame( [ "feed:harborgazette.example:{$guid}" ], \array_keys( $this->recorded() ) );
 	}
 
 	/** A podcast's episodes share their show's one link under their own guids, so each records. */
@@ -927,8 +970,7 @@ XML;
 	/**
 	 * A configured feed redirected onto the very url a client's feed is
 	 * fetching keeps its own lane, and the client keeps its, though both
-	 * fetch the one url; the post both lanes take records once, under the
-	 * key that took it first.
+	 * fetch the one url.
 	 */
 	public function test_a_redirect_onto_a_client_feed_in_flight_keeps_both_lanes(): void {
 		$this->start_intel_graph();
@@ -942,7 +984,7 @@ XML;
 		$this->complete( 'https://harborgazette.example/feed/', $body );
 		$this->complete( 'https://harborgazette.example/feed/', $body );
 
-		$this->assertSame( [ 'feed:harborgazette.example:own-site', 'feed:offsite' ], \array_keys( $this->recorded() ) );
+		$this->assertSame( [ 'feed:harborgazette.example:own-site', 'feed:own-site', 'feed:offsite' ], \array_keys( $this->recorded() ) );
 	}
 
 	/** A redirect onto a link-local url is a public-only hop like any other, so Curl refuses it. */

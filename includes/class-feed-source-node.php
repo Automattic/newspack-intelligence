@@ -618,16 +618,18 @@ class Feed_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * A key's guid: what follows `feed:` and, in a client's lane, the
-	 * domain leading it, read as one only when it is a plain hostname, so a
-	 * guid's own colons stay its own.
+	 * A client-lane key's guid, past `feed:` and the lane's domain, read as
+	 * one only when it is a plain hostname, so a guid's own colons stay its
+	 * own; null for a configured feed's key, judged by its key alone, since
+	 * a configured feed is anyone's and its copy of a client's post must
+	 * never stand in for the client's own.
 	 *
 	 * @param string $key An item key.
 	 */
-	protected function raw_id( string $key ): string {
+	protected function raw_id( string $key ): ?string {
 		$id   = \substr( $key, (int) \strpos( $key, ':' ) + 1 );
 		$lane = \strstr( $id, ':', true );
-		return false === $lane || null !== Entity_Index::hostname_fault( $lane ) ? $id : \substr( $id, \strlen( $lane ) + 1 );
+		return false === $lane || null !== Entity_Index::hostname_fault( $lane ) ? null : \substr( $id, \strlen( $lane ) + 1 );
 	}
 
 	/** Curl follows no redirect: the feed re-queues each Location under the feed it redirects, keeping its lane. */

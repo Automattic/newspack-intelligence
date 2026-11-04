@@ -1451,10 +1451,13 @@ oldest evicted first), then reads, in one read through
 `Intel_Graph_Row_Schema::read()`, which of the rest the projection's `items`
 table holds in any partition, and remembers those without recording them, so a
 respawned worker records only items the graph lacks. A source whose
-`raw_id()` names a key's raw id, the feeds alone, also judges each item as
-a copy: two items are one when they come from the same source, their
-canonical URL (`Url_Canon::of()`) names a host, and their raw ids, the
-guid past the `feed:` and any lane's domain, are equal. The same read finds
+`raw_id()` names a key's raw id, a feed's client lanes alone, also judges
+each item as a copy: two items are one when they come from the same source,
+their canonical URL (`Url_Canon::of()`) names a host, and their raw ids,
+the guid past `feed:` and the lane's domain, are equal. A configured feed's
+item names none and is judged by its key alone, because a configured feed
+is anyone's and its copy of a client's post must never stand in for the
+client's own, whichever records first. The same read finds
 the items of that source the `items` table holds at those canonical URLs,
 the seen set remembers each item once, by its copy or else its key, and a
 copy held or recorded earlier in the process is remembered and not
