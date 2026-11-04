@@ -82,7 +82,7 @@ final class IntelligenceSignalsTest extends TestCase {
 		$this->assertSame( [ 'item_key' => 'feed:complaint-1-6', 'url' => 'https://news.example/feed/complaint-1-6', 'title' => 'complaint 6 of week 1' ], $answer['signals'][0]['items'][0] );
 	}
 
-	/** One short of the threshold is no signal. */
+	/** One short of the threshold is not a signal. */
 	public function test_a_count_just_under_the_threshold_is_none(): void {
 		$this->weeks( 'praise', [ 1 => 3, 2 => 1, 3 => 3, 4 => 1, 5 => 3, 6 => 1, 7 => 3, 8 => 1, 9 => 3 ] );
 

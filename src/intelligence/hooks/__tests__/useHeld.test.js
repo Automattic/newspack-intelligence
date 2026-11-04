@@ -67,7 +67,7 @@ describe( 'useHeld', () => {
 		expect( screen.getByText( 'Alpha|Bravo' ) ).toBeInTheDocument();
 	} );
 
-	it( 'puts a row no read lists after the rows', () => {
+	it( 'puts a row that is not in any read after the rows', () => {
 		const charlie = { key: 'charlie', label: 'Charlie' };
 		render( <Rows read={ answered( ALPHA ) } /> );
 		act( () => held.hold( 'charlie', charlie, () => [ '--key=charlie' ] ) );

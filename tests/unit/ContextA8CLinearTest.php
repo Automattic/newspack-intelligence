@@ -267,8 +267,8 @@ final class ContextA8CLinearTest extends TestCase {
 	}
 
 	/**
-	 * While a refresh is in flight, no property of the node or its Curl,
-	 * anywhere in either's class chain, holds the access token or the
+	 * While a refresh is in flight, none of the properties of the node or its
+	 * Curl, anywhere in either's class chain, holds the access token or the
 	 * refresh token, though the form Curl sent carries the refresh token.
 	 */
 	public function test_no_node_state_holds_a_token_while_a_refresh_is_in_flight(): void {
@@ -399,12 +399,15 @@ final class ContextA8CLinearTest extends TestCase {
 			],
 			$this->token_file()
 		);
-		$this->assertSame( [], \glob( \dirname( $this->token_path() ) . '/*.tmp' ), 'no temp file is left beside it' );
+		$this->assertSame( [], \glob( \dirname( $this->token_path() ) . '/*.tmp' ), 'a temp file is never left beside it' );
 		$this->assertSame( [ self::TOKEN, self::MCP ], $this->dispatched );
 		$this->assertContains( 'Authorization: Bearer acc-new-5120', $this->sent[1][ \CURLOPT_HTTPHEADER ] );
 	}
 
-	/** A refresh answering no new refresh token keeps the old one in the file. */
+	/**
+	 * A refresh whose answer carries no new refresh token keeps the old one in
+	 * the file.
+	 */
 	public function test_a_refresh_that_keeps_the_refresh_token_writes_the_new_access_token(): void {
 		$this->signed_in( 4000 );
 
@@ -552,7 +555,10 @@ final class ContextA8CLinearTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: could not write the refreshed ContextA8C token back: ' . $this->auth_dir . '/wordpress-remote-*/' . \md5( self::MCP ) . '_tokens.json' ) );
 	}
 
-	/** A refresh answered 200 with no access token is logged; nothing is written and no call goes out. */
+	/**
+	 * A refresh answered 200 with no access token is logged; nothing is written
+	 * or sent.
+	 */
 	public function test_a_refresh_answering_no_access_token_logs_and_calls_nothing(): void {
 		$stderr = $this->capture_stderr();
 		$this->signed_in( 4000 );
@@ -563,7 +569,7 @@ final class ContextA8CLinearTest extends TestCase {
 
 		$this->assertSame( [ self::TOKEN ], $this->dispatched );
 		$this->assertSame( $before, (string) \file_get_contents( $this->token_path() ) );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: the token endpoint answered no access token: ' . self::TOKEN ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: the token endpoint returned no access token: ' . self::TOKEN ) );
 	}
 
 	/** An expiring token with no refresh token is logged naming its file, and nothing is sent. */
@@ -577,7 +583,10 @@ final class ContextA8CLinearTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: the ContextA8C token has expired and holds no refresh token; sign in to ContextA8C on the host: ' . $this->token_path() ) );
 	}
 
-	/** No token file is logged naming the path it looked for, and nothing is sent. */
+	/**
+	 * A missing token file is logged naming the path it looked for, and nothing
+	 * is sent.
+	 */
 	public function test_no_token_file_logs_the_path_and_sends_nothing(): void {
 		$stderr = $this->capture_stderr();
 
@@ -598,7 +607,9 @@ final class ContextA8CLinearTest extends TestCase {
 		$this->assertSame( self::snapshot( [ 'state' => 'idle', 'reason' => $status['reason'] ] ), $status );
 	}
 
-	/** No token file publishes idle, saying ContextA8C is not signed in. */
+	/**
+	 * A missing token file publishes idle, saying ContextA8C is not signed in.
+	 */
 	public function test_missing_token_publishes_idle_with_sign_in_reason(): void {
 		$this->publishing();
 
@@ -711,7 +722,10 @@ final class ContextA8CLinearTest extends TestCase {
 		$this->assertSame( [ 'initialize', 'notifications/initialized', 'DELETE' ], $this->methods() );
 	}
 
-	/** A quiet pass, no data asked and nothing failed, is healthy: it publishes ok over a standing failure. */
+	/**
+	 * A quiet pass, which asked for no data and failed nothing, is healthy: it
+	 * publishes ok over a standing failure.
+	 */
 	public function test_a_pass_with_no_call_publishes_ok_over_a_failure(): void {
 		$this->quiet_pass_over( self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 503 https://heron-8812.example/', 'failing_since' => 4242, 'failed' => 7, 'requests' => 7 ] ) );
 
@@ -773,10 +787,13 @@ final class ContextA8CLinearTest extends TestCase {
 
 		$this->complete( self::TOKEN, '{"token_type":"bearer-6620"}' );
 
-		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'the token endpoint answered no access token: ' . self::TOKEN, 'failing_since' => (int) self::NOW, 'failed' => 1, 'requests' => 1 ] ), $this->published( 'linear' ) );
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'the token endpoint returned no access token: ' . self::TOKEN, 'failing_since' => (int) self::NOW, 'failed' => 1, 'requests' => 1 ] ), $this->published( 'linear' ) );
 	}
 
-	/** An `initialize` naming no session counts as failed, so the pass publishes failing. */
+	/**
+	 * An `initialize` that does not name a session counts as failed, so the
+	 * pass publishes failing.
+	 */
 	public function test_an_initialize_naming_no_session_publishes_failing(): void {
 		$this->publishing();
 		$this->signed_in();
@@ -838,7 +855,9 @@ final class ContextA8CLinearTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'linear: ContextA8C answered an error for linear/team-issues?team=KESTREL&limit=30: the text content holds no JSON object' ) );
 	}
 
-	/** With no proxy named, a call goes out direct, through no proxy of its own. */
+	/**
+	 * With no proxy named, a call goes out direct, without a proxy of its own.
+	 */
 	public function test_no_proxy_calls_direct(): void {
 		$this->signed_in();
 		$node = $this->wire( new Context_A8C_Linear_Node(), 'linear', [ 'internal', $this->auth_dir ] );

@@ -215,7 +215,7 @@ describe( 'Search', () => {
 		);
 	} );
 
-	it( 'returns to its own filters when no lens is picked', async () => {
+	it( 'returns to its own filters when the lens is cleared', async () => {
 		wire.replies.lenses = LENSES;
 		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
 		renderSearch();

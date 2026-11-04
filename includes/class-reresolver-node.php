@@ -14,8 +14,8 @@
  *
  * It ticks with the Router and appends `item_reresolve` records, each naming
  * a stored item, to the stream its `make_node` line names (substrate
- * ADR-19), whose own Consumer feeds the resolver one record a poll: so no
- * fill() makes more than one item's blocking LLM calls, and an item whose
+ * ADR-19), whose own Consumer feeds the resolver one record a poll: so a
+ * fill() never makes more than one item's blocking LLM calls, and an item whose
  * resolution throws dead-letters alone (ADR-12). Each tick takes the oldest
  * signal at least SWEEP_INTERVAL_S old, long after the projector has flushed
  * what it signalled, and only with none due, the next RERESOLVE_PAGE items
@@ -301,7 +301,7 @@ class Reresolver_Node extends Timer_Node {
 	/**
 	 * The LIKE patterns an identifier searches: its value, wildcards
 	 * escaped, in each URL spelling of its kind under each of that
-	 * spelling's anchors; none for a kind no URL spells.
+	 * spelling's anchors; none for a kind without a URL spelling.
 	 *
 	 * @param string $identifier The identifier, as `kind:value`.
 	 * @return list<string>
@@ -540,8 +540,8 @@ class Reresolver_Node extends Timer_Node {
 	}
 
 	/**
-	 * A checkpointed unit of work, typed; null when its key names no kind or
-	 * the entry is misshapen.
+	 * A checkpointed unit of work, typed; null when its key does not name a
+	 * kind or the entry is misshapen.
 	 *
 	 * @param string $key  Its queue key.
 	 * @param mixed  $work What the checkpoint holds.
@@ -598,8 +598,10 @@ class Reresolver_Node extends Timer_Node {
 	 * @param string                   $since   The first day, Y-m-d.
 	 * @param string                   $until   The last day, Y-m-d.
 	 * @return int The workers asked.
-	 * @throws \InvalidArgumentException When the request is no key of RANGES, a day does not parse or the range runs backwards.
-	 * @throws \RuntimeException When no worker of the topology is live.
+	 * @throws \InvalidArgumentException When the request is not a key of
+	 *                                   RANGES, a day does not parse or the
+	 *                                   range runs backwards.
+	 * @throws \RuntimeException When the topology has no live worker.
 	 */
 	public static function ask( Command_Interpreter_Node $graph, string $request, string $since, string $until ): int {
 		Graph_Query::one_of( 'request', $request, \array_keys( self::RANGES ) );

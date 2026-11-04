@@ -11,8 +11,8 @@
  * answers (ADR-7). A write is sent once per `run()` and refreshes what it
  * changed once it lands.
  *
- * No send names a subject: an item key spells a whole URL, past the length a
- * reply address carries, so a subject would be dropped for that one item. A
+ * A send never names a subject: an item key spells a whole URL, past the length
+ * a reply address carries, so a subject would be dropped for that one item. A
  * write's refusal names its send by the arguments it echoes instead.
  */
 

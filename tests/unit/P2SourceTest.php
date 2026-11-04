@@ -25,7 +25,10 @@ final class P2SourceTest extends TestCase {
 
 	private const KESTREL = 'kestrel-ops.wordpress.com';
 
-	/** The pinned clock: no default's, and a past instant, so the window arithmetic is fixed. */
+	/**
+	 * The pinned clock: distinct from every default, and a past instant, so the
+	 * window arithmetic is fixed.
+	 */
 	private const NOW = 1793088452.0;
 
 	protected function setUp(): void {
@@ -266,7 +269,10 @@ final class P2SourceTest extends TestCase {
 		$this->assertSame( 'restricted', $this->recorded()['p2:88120:4107:c7301']['tier'] );
 	}
 
-	/** An answer naming no site_ID records nothing for it, logged under its site. */
+	/**
+	 * An answer that does not name a site_ID records nothing for it, logged
+	 * under its site.
+	 */
 	public function test_an_answer_naming_no_site_id_is_logged_per_site(): void {
 		$stderr = $this->capture_stderr();
 		$node   = $this->p2( 'p2', 'internal', self::HERON, self::KESTREL );
@@ -278,8 +284,8 @@ final class P2SourceTest extends TestCase {
 		$this->complete( self::posts( self::KESTREL ), self::posts_answer( [ [ 'ID' => 4108, 'title' => 'No site', 'content' => '', 'date' => '2026-10-28T09:15:00+00:00', 'author' => [ 'name' => 'Dunlin Marsh' ] ] ] ) );
 
 		$this->assertSame( [], $this->recorded() );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'p2: WordPress.com named no site_ID for ' . self::HERON . ': ' . self::comments( self::HERON ) ) );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'p2: WordPress.com named no site_ID for ' . self::KESTREL . ': ' . self::posts( self::KESTREL ) ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'p2: WordPress.com returned no site_ID for ' . self::HERON . ': ' . self::comments( self::HERON ) ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'p2: WordPress.com returned no site_ID for ' . self::KESTREL . ': ' . self::posts( self::KESTREL ) ) );
 	}
 
 	/** A site is refused unless it is a wordpress.com host, naming the value; nothing is added. */

@@ -422,7 +422,10 @@ final class IntelligenceCurationTest extends TestCase {
 		$this->assertSame( [ [ 'kestrel-linear', 'TICK' ], [ 'heron-github', 'TICK' ] ], Intelligence_CI_Node::ticks() );
 	}
 
-	/** With no active topology declaring the event writer, fetch_now is refused naming why. */
+	/**
+	 * While the active topologies declare no event writer, fetch_now is refused
+	 * naming why.
+	 */
 	public function test_fetch_now_with_no_intelligence_topology_is_refused(): void {
 		self::live_worker( Config::get_base_directory(), 'newspack-intelligence.p3' );
 
@@ -504,9 +507,9 @@ final class IntelligenceCurationTest extends TestCase {
 	 * The curation world: the read fixture, two collections, a merge chain
 	 * into the Gazette holding a partner role, a ten-hop chain ending at an
 	 * entity, a proposal a public item cites and one only a restricted item
-	 * cites, a rejection of each kind, an accepted entity no item cites, a
-	 * rejected entity holding an X handle, and an item whose URL runs one
-	 * byte past its cap, and a lens.
+	 * cites, a rejection of each kind, an accepted entity that is not cited by
+	 * any item, a rejected entity holding an X handle, and an item whose URL
+	 * runs one byte past its cap, and a lens.
 	 */
 	private function seed_curation_world(): void {
 		$this->seed_world();

@@ -53,14 +53,13 @@ class Items_CLI_Command {
 
 	/**
 	 * Purge a source's stored items: every one whose key matches none of the
-	 * keep globs. It appends one `item_purged` per item to every live
-	 * worker's writer, a batch at a time, each once the workers have read
-	 * everything their input held. With --dry-run it writes nothing, and
-	 * prints the count per key prefix, up to the first `-`, the total, and
-	 * the command that purges them. Each worker's projector deletes the rows
-	 * its items stream has written about the item; rows other streams wrote
-	 * stay, and no read answers them. A source recording a purged key again
-	 * records it again.
+	 * keep globs. It appends one `item_purged` per item to every live worker's
+	 * writer, a batch at a time, each once the workers have read everything
+	 * their input held. With --dry-run it writes nothing, and prints the count
+	 * per key prefix, up to the first `-`, the total, and the command that
+	 * purges them. Each worker's projector deletes the rows its items stream
+	 * has written about the item; rows other streams wrote stay, and every read
+	 * leaves them out. A source recording a purged key again records it again.
 	 *
 	 * ## OPTIONS
 	 *
@@ -88,7 +87,7 @@ class Items_CLI_Command {
 	 * @param array<int,string>   $args       Positional args.
 	 * @param array<string,mixed> $assoc_args Flags.
 	 * @throws \Newspack_Nodes\Table_Unavailable When the projection cannot be read.
-	 * @throws \RuntimeException When no worker is live.
+	 * @throws \RuntimeException When there is no live worker.
 	 * @throws \LogicException When the process carries no argv.
 	 */
 	public function purge( array $args, array $assoc_args ): void {
@@ -142,7 +141,7 @@ class Items_CLI_Command {
 	 * @param list<string> $keys    The selected keys.
 	 * @param string       $reason  Why.
 	 * @param string       $dry_run The dry run, which counts what is left.
-	 * @throws \RuntimeException When no worker is live.
+	 * @throws \RuntimeException When there is no live worker.
 	 */
 	private static function append( array $keys, string $reason, string $dry_run ): void {
 		$events      = \array_map( static fn ( string $key ): array => Intel_Event::machine_event( 'purge', 'item_purged', [ 'item_key' => $key, 'reason' => $reason ] ), $keys );
@@ -202,8 +201,8 @@ class Items_CLI_Command {
 	}
 
 	/**
-	 * A source's stored item keys, across every partition, that no keep glob
-	 * matches, each once, in key order.
+	 * A source's stored item keys, across every partition, that do not
+	 * match any keep glob, each once, in key order.
 	 *
 	 * @param string       $source The source.
 	 * @param list<string> $keeps  The keep globs.

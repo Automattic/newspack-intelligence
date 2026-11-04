@@ -42,7 +42,7 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
  *
  * The shared `DashboardShell` supplies the skin, the positioned page surface,
  * the header naming this page and the debug overlay; the page scrolls in the
- * shell, since no view owns a scroller of its own.
+ * shell, since the views have no scroller of their own.
  *
  * @param {Object}  props
  * @param {boolean} props.canTune    Whether the caller may curate.

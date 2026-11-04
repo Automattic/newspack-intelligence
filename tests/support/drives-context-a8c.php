@@ -37,7 +37,7 @@ trait Drives_Context_A8C {
 	/** The protocol revision the server answers. */
 	private const REVISION = '2025-03-26';
 
-	/** The pinned clock: no default's, and a past instant. */
+	/** The pinned clock: distinct from every default, and a past instant. */
 	private const NOW = 1792999817.0;
 
 	/** The dir standing in for `~/.mcp-auth`. */

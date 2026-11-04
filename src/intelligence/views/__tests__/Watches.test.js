@@ -251,7 +251,7 @@ describe( 'Watches', () => {
 		expect( screen.getByText( 'javascript:alert(1)' ) ).toBeInTheDocument();
 	} );
 
-	it( 'returns to the first page once a mark lands, so no match is skipped', async () => {
+	it( 'returns to the first page once a mark lands, so a match is never skipped', async () => {
 		wire.replies.mark_seen = { ok: true, count: 1 };
 		wire.replies.watch_matches = ( args ) => ( {
 			items: [ 'a', 'b' ].map( ( n ) => ( {

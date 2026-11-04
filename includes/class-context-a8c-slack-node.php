@@ -103,7 +103,7 @@ class Context_A8C_Slack_Node extends Context_A8C_Source_Node {
 
 	/**
 	 * The workspace a message's permalink names, `https://<host>/`; '' when
-	 * the permalink is not https or names no host.
+	 * the permalink is not https or does not name a host.
 	 *
 	 * @param array<array-key,mixed> $message The message.
 	 */

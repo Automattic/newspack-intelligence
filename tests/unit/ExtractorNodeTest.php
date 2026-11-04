@@ -252,7 +252,7 @@ final class ExtractorNodeTest extends TestCase {
 		$caught = $this->caught_any( fn () => $node->interpreter()->dispatch( 'remove_profile', [ '--text=Cover ghosts.' ] ) );
 
 		$this->assertInstanceOf( \InvalidArgumentException::class, $caught );
-		$this->assertSame( "remove_profile 'Cover ghosts.' names no profile this node declares", $caught->getMessage() );
+		$this->assertSame( "remove_profile 'Cover ghosts.' names a profile this node does not declare", $caught->getMessage() );
 		$this->assertSame( 'Skip kite trivia.', $this->profile_of( $node ) );
 	}
 
@@ -477,7 +477,11 @@ final class ExtractorNodeTest extends TestCase {
 		);
 	}
 
-	/** A subject the item only proposes a link to asserts no claim and is not among the entities the extraction was given; the extraction is still recorded. */
+	/**
+	 * A subject the item only proposes a link to does not assert a claim and is
+	 * not among the entities the extraction was given; the extraction is still
+	 * recorded.
+	 */
 	public function test_a_claim_about_a_proposed_subject_is_dropped(): void {
 		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ) );
 		$this->answer( '{"summary":"Harbor Gazette wins.","kind":"award","claims":[{"subject":"Harbor Gazette","predicate":"won","object":"Peabody Award"}]}' );
@@ -488,8 +492,9 @@ final class ExtractorNodeTest extends TestCase {
 	}
 
 	/**
-	 * No client, a thrown call or an unparseable reply records one heuristic
-	 * extraction, so the item is marked extracted rather than retried.
+	 * A missing client, a thrown call or an unparseable reply records one
+	 * heuristic extraction, so the item is marked extracted rather than
+	 * retried.
 	 *
 	 * @return array<string,array{0:?string}>
 	 */
@@ -564,7 +569,7 @@ final class ExtractorNodeTest extends TestCase {
 
 	/**
 	 * An item already extracted by a call keeps that extraction when the
-	 * re-extraction's call fails: no heuristic stand-in replaces it, and
+	 * re-extraction's call fails: a heuristic stand-in never replaces it, and
 	 * nothing is written or forwarded; a failed call parks its retry.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider( 'failures' )]
@@ -578,7 +583,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], true ) );
 
 		$this->assertSame( [ [], [] ], [ $this->written(), $this->forwarded() ] );
-		$this->assertCount( null === $reply ? 0 : 1, $this->parked(), 'a failed call is retried; no call is not' );
+		$this->assertCount( null === $reply ? 0 : 1, $this->parked(), 'a failed call is retried; a missing call is not' );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'keeping the earlier extraction of ' . self::ITEM ) );
 	}
 
@@ -703,7 +708,10 @@ final class ExtractorNodeTest extends TestCase {
 		);
 	}
 
-	/** No client makes no call, so nothing fails and nothing is retried. */
+	/**
+	 * Without a client the extractor makes no call, so nothing fails and
+	 * nothing is retried.
+	 */
 	public function test_no_client_parks_no_retry(): void {
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [], false, 3 ) );
 
@@ -733,7 +741,10 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'giving up extracting ' . self::ITEM . ' after 5 attempts' ) );
 	}
 
-	/** With no Vault entry no client is built, so the extractor publishes heuristic, clearing a call's state. */
+	/**
+	 * Without a Vault entry the client is not built, so the extractor publishes
+	 * heuristic, clearing a call's state.
+	 */
 	public function test_no_client_publishes_heuristic_with_vault_id(): void {
 		$this->publishing( [ 'mode' => 'call', 'vault_id' => 'AI-proxy-old-2', 'last_ok_at' => 7000, 'last_error' => 'AI proxy returned HTTP 500', 'failing_since' => 6000 ] );
 		Extractor_Node::$llm_factory = null;

@@ -42,7 +42,8 @@ class P2_Source_Node extends Source_Node {
 	 * queuing the next page: a posts page's `meta.next_page` handle, or the
 	 * next number after a full page of comments, which carry no handle. An
 	 * answer carrying `error` logs its message and records nothing, and one
-	 * naming no `site_ID` logs that under its site and records none of it.
+	 * that does not name a `site_ID` logs that under its site and records
+	 * none of it.
 	 *
 	 * @param string $url  The endpoint's url, as it was queued.
 	 * @param string $body The JSON body.
@@ -116,9 +117,12 @@ class P2_Source_Node extends Source_Node {
 		);
 	}
 
-	/** Log, once a site, an answer for $host naming no site_ID to key its items by. */
+	/**
+	 * Log, once a site, an answer for $host that does not name a site_ID to key
+	 * its items by.
+	 */
 	private function unsited( string $host, string $url ): void {
-		$this->print_less_often( "WordPress.com named no site_ID for {$host}: ", Core::terminal_safe( $url ) );
+		$this->print_less_often( "WordPress.com returned no site_ID for {$host}: ", Core::terminal_safe( $url ) );
 	}
 
 	/**

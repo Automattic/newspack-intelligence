@@ -309,7 +309,7 @@ describe( 'Review — judgments', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'brings every judged link back on a refusal naming no send', async () => {
+	it( 'brings every judged link back on a refusal that does not name its send', async () => {
 		wire.replies.confirm_link = () => new Promise( () => {} );
 		wire.replies.reject_link = () => new Promise( () => {} );
 		renderReview( { canTune: true } );
@@ -529,7 +529,7 @@ describe( 'Review — evidence', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'quotes nothing for a proposal no sentence spells', async () => {
+	it( 'quotes nothing for a proposal that is not spelled in any sentence', async () => {
 		wire.replies.review = ( [ what ] ) =>
 			'links' === what
 				? { links: [ { ...LINK, evidence: '' } ], available: true }

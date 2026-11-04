@@ -46,12 +46,12 @@ function delete_prefixed_options( $wpdb, string $prefix ): int {
 /**
  * Delete, on every partition, the SQLite and WAL files of every Intel_Graph
  * Row_Table and frontier Table this plugin's own topologies declare, read
- * inside `Topology_Registry::with_stock_dir()` so no other plugin's can
- * block it; nothing under the default base every unconfigured install
- * shares, nor without the substrate. A composition that will not read
- * only because no lists file resolves to include is skipped, because the
- * parts it includes, each read on its own, declare its tables; any other
- * topology that will not read fails the uninstall.
+ * inside `Topology_Registry::with_stock_dir()` so another plugin's can never
+ * block it; nothing under the default base every unconfigured install shares,
+ * nor without the substrate. A composition that will not read only because the
+ * lists file it includes does not resolve is skipped, because the parts it
+ * includes, each read on its own, declare its tables; any other topology that
+ * will not read fails the uninstall.
  *
  * @param string $topologies_dir The plugin's shipped `.tsl` files.
  * @return int Files deleted.

@@ -230,7 +230,7 @@ XML;
 	}
 
 	/**
-	 * A body that is no RSS or Atom feed, malformed or another document,
+	 * A body that is not an RSS or Atom feed, malformed or another document,
 	 * counts as a failed answer naming its url.
 	 *
 	 * @return array<string,array{0:string}>
@@ -256,7 +256,7 @@ XML;
 	}
 
 	/**
-	 * A body that is no feed is logged under its own url, saying why: two
+	 * A body that is not a feed is logged under its own url, saying why: two
 	 * feeds failing log two lines, and a feed failing again logs none.
 	 */
 	public function test_each_body_that_is_no_feed_is_logged_once_under_its_url(): void {
@@ -407,7 +407,7 @@ XML;
 		$this->assertSame( [ [ 'verb' => 'TICK', 'data' => [ 'fetching' => 2 ] ] ], $this->answers() );
 	}
 
-	/** An answer naming no feed in flight is dropped. */
+	/** An answer that does not match a feed in flight is dropped. */
 	public function test_an_answer_for_no_feed_in_flight_records_nothing(): void {
 		$node                      = $this->feed( 'https://kite-2201.example/feed/' );
 		$stray                     = Message::new_message();
@@ -589,8 +589,8 @@ XML;
 	}
 
 	/**
-	 * A client feed's items are keyed by the client's domain, so no other
-	 * feed takes their keys; each must link to the client's own site or a
+	 * A client feed's items are keyed by the client's domain, so another
+	 * feed never takes their keys; each must link to the client's own site or a
 	 * subdomain of it, and be dated no more than a day past the fetch.
 	 */
 	public function test_a_client_feeds_items_stay_in_its_lane(): void {
@@ -1138,7 +1138,7 @@ XML;
 
 		$this->assertSame( [ 'failing', 3, 3 ], [ $this->published( 'feed' )['state'], $this->published( 'feed' )['requests'], $this->published( 'feed' )['failed'] ] );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: no RSS or Atom feed is advertised at https://harborgazette.example/: ' ) );
-		$this->assertCount( 3, $this->dispatched, 'nothing is fetched for a feed no page names' );
+		$this->assertCount( 3, $this->dispatched, 'nothing is fetched for a feed that is not named on any page' );
 	}
 
 	/**
@@ -1237,7 +1237,7 @@ XML;
 	}
 
 	/**
-	 * Failures no domain is to blame for, each backing nothing off.
+	 * Failures that are not any domain's fault, each backing nothing off.
 	 *
 	 * @return array<string,array{0:string|int}>
 	 */
@@ -1305,7 +1305,7 @@ XML;
 
 		$this->gazette_passes( $node, 1, [ 'curl 6' ] );
 
-		$this->assertContains( self::GAZETTE_FEED, $this->dispatched, 'no backoff holds the domain back' );
+		$this->assertContains( self::GAZETTE_FEED, $this->dispatched, 'the remembered backoff does not hold the domain back' );
 		$this->assertSame( [ 'GET domains' ], $recording->memory_asks() );
 		$this->assertSame( $row, self::domains() );
 	}
@@ -1534,7 +1534,7 @@ XML;
 			$node->interpreter()->dispatch( 'remove_url', [ 'https://ghost.test/feed.xml' ] );
 			$this->fail( 'an unregistered url was removed' );
 		} catch ( \InvalidArgumentException $e ) {
-			$this->assertSame( "remove_url 'https://ghost.test/feed.xml' names no url this node declares", $e->getMessage() );
+			$this->assertSame( "remove_url 'https://ghost.test/feed.xml' names a url this node does not declare", $e->getMessage() );
 		}
 		$this->assertSame( [ 'https://kite.test/feed.xml' ], $this->config_of( $node )['feeds'] );
 	}

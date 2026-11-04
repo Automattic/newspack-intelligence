@@ -107,20 +107,21 @@ final class Graph_Client_Roster implements Client_Roster {
 
 	/**
 	 * A client the roster lacks: the entity holding its domain, else a new
-	 * organization keyed by the atomic id and named by its domain, or by
-	 * the id when it has none. It gains the atomic id, the domain when no
-	 * entity holds it, and settle() opens its client role from start(). A
-	 * domain a refused entity holds leaves the client alone.
+	 * organization keyed by the atomic id and named by its domain, or by the id
+	 * when it has none. It gains the atomic id, the domain when it is not held
+	 * by any entity, and settle() opens its client role from start(). A domain
+	 * a refused entity holds leaves the client alone.
 	 *
 	 * @param array{atomic_site_id:string,domain_name:string,created:string} $row   The CSV row.
 	 * @param string                                                         $today YYYY-MM-DD, UTC.
-	 * @throws \InvalidArgumentException When the row names no atomic id.
+	 * @throws \InvalidArgumentException When the row does not name an atomic
+	 *                                   id.
 	 */
 	public function create( array $row, string $today ): void {
 		$this->load();
 		$id = self::id( $row['atomic_site_id'] );
 		if ( '' === $id ) {
-			throw new \InvalidArgumentException( 'client import: a row names no atomic site id' );
+			throw new \InvalidArgumentException( 'client import: a row has no atomic site id' );
 		}
 		$domain = Entity_Index::identifier_value( 'domain', $row['domain_name'] );
 		if ( $this->refused_domain( $domain ) ) {
@@ -157,7 +158,8 @@ final class Graph_Client_Roster implements Client_Roster {
 
 	/**
 	 * The client's entity is in the snapshot, its site Created on the row's
-	 * day. A domain no entity holds is one more identifier of it; the entity
+	 * day. A domain that is not held by any entity is one more
+	 * identifier of it; the entity
 	 * keeps its name and every earlier domain. A refused entity, or a domain
 	 * one holds, is left alone.
 	 *
@@ -279,7 +281,8 @@ final class Graph_Client_Roster implements Client_Roster {
 	/**
 	 * Read the projection, once an import.
 	 *
-	 * @throws \Newspack_Nodes\Table_Unavailable When no projection opens.
+	 * @throws \Newspack_Nodes\Table_Unavailable When the projection will not
+	 *                                           open.
 	 */
 	private function load(): void {
 		if ( null === $this->index ) {
@@ -294,7 +297,8 @@ final class Graph_Client_Roster implements Client_Roster {
 	 * and the latest end of one of those rows closed holding time.
 	 *
 	 * @return array{0:Entity_Index,1:array<string,string>,2:array<string,string>,3:Open_Roles,4:array<string,int>}
-	 * @throws \Newspack_Nodes\Table_Unavailable When no projection opens.
+	 * @throws \Newspack_Nodes\Table_Unavailable When the projection will not
+	 *                                           open.
 	 */
 	private static function read(): array {
 		return Intel_Graph_Row_Schema::read(
@@ -427,7 +431,7 @@ final class Graph_Client_Roster implements Client_Roster {
 	/**
 	 * When an entity is a client from: the earliest day its snapshot rows
 	 * were Created, or the latest end of a client or former_client row that
-	 * held time, when that is later, so no ended row is reopened.
+	 * held time, when that is later, so an ended row is never reopened.
 	 *
 	 * @param string $key The entity key.
 	 */

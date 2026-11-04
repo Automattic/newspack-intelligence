@@ -41,8 +41,8 @@ class Context_A8C_P2_Node extends Context_A8C_Source_Node {
 
 	/**
 	 * A page's posts and their comments as items, through the P2 source's
-	 * mappings, asking the next page while one is left; an answer naming no
-	 * `blog_id` is logged under its site and records none of them.
+	 * mappings, asking the next page while one is left; an answer that does not
+	 * name a `blog_id` is logged under its site and records none of them.
 	 *
 	 * @param string                 $subtool The provider's tool, `posts-text`.
 	 * @param array<array-key,mixed> $args    The call's arguments.
@@ -59,7 +59,7 @@ class Context_A8C_P2_Node extends Context_A8C_Source_Node {
 		$posts = Core::arr( $answer['posts'] ?? null );
 		if ( $blog <= 0 ) {
 			if ( [] !== $posts ) {
-				$this->print_less_often( "ContextA8C named no blog_id for {$site}: ", $site );
+				$this->print_less_often( "ContextA8C returned no blog_id for {$site}: ", $site );
 			}
 			return [];
 		}

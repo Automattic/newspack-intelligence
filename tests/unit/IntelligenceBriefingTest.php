@@ -97,10 +97,10 @@ final class IntelligenceBriefingTest extends TestCase {
 	 * The window's items about any entity, ranked by importance and grouped
 	 * by the open clients each is about, each group in the order of its most
 	 * important item and its items by importance, then the newest; an item
-	 * about two clients sits under both, and one about no client, a former
-	 * client's or a topic's alone, under no client. An item its own site
-	 * published, one linked to nothing, one whose only link a curator
-	 * rejected and one dated before the window are left out.
+	 * about two clients sits under both, and one that is not about a
+	 * client, only about a former client or a topic, under no client. An item
+	 * its own site published, one linked to nothing, one whose only link a
+	 * curator rejected and one dated before the window are left out.
 	 */
 	public function test_changes_rank_the_week_and_group_it_by_client(): void {
 		$this->about( 'linear:plover-churn', self::PLOVER, 'subject', 'churn_signal', 9.0, 1 );

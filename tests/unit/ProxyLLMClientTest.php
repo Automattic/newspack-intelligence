@@ -57,7 +57,7 @@ final class ProxyLLMClientTest extends TestCase {
 		try {
 			$client->chat( [ [ 'role' => 'user', 'content' => "bad byte \xE9" ] ] );
 		} finally {
-			$this->assertNull( $seen, 'no request may be sent when the body could not be encoded' );
+			$this->assertNull( $seen, 'a request must not be sent when the body could not be encoded' );
 		}
 	}
 

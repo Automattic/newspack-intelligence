@@ -10,7 +10,7 @@
  * writes it, JSON-escaped: a key, a name or a URL past its cap is refused,
  * and a collected title is cut. The caps hold every event inside one atomic
  * partition line whatever characters fill them, but a lens's, whose lists
- * no cap holds, so `Intel_Event::make()` refuses one past the line. Each
+ * carry no cap, so `Intel_Event::make()` refuses one past the line. Each
  * verb then reads the projection once at most, on the graph
  * `Graph_Query::graph()` opens: every entity key it names answers as the
  * survivor `Graph_Query::seen()` lets the caller see, and an item is read
@@ -55,7 +55,7 @@ final class Graph_Curation {
 	 * Judge the link a readable item has to an entity, by any role saying
 	 * the item is about it and under any of the entity's keys:
 	 * `link_confirmed` or `link_rejected`, carrying the item's URL. A
-	 * `publisher` link alone is no link to judge.
+	 * `publisher` link alone is not a link to judge.
 	 *
 	 * @param string                 $kind `link_confirmed` or `link_rejected`.
 	 * @param array<array-key,mixed> $args The bound verb args: `item`, `entity`.
@@ -95,7 +95,7 @@ final class Graph_Curation {
 			static function ( Row_Reader $r, array $g ) use ( $kind, $key ): array {
 				$entity = Graph_Query::seen( $r, $g, $key );
 				if ( 'entity_accepted' === $kind && ! self::open( $r, $g, $entity ) ) {
-					throw new \InvalidArgumentException( \esc_html( "{$entity} is cited by no item outside the restricted tier; accepting it would show it to every reader" ) );
+					throw new \InvalidArgumentException( \esc_html( "{$entity} is not cited by any item outside the restricted tier; accepting it would show it to every reader" ) );
 				}
 				return [ $entity ];
 			}
@@ -148,7 +148,7 @@ final class Graph_Curation {
 				}
 				$entity = Graph_Query::seen( $r, $g, $key );
 				if ( self::open( $r, $g, $entity ) && ! self::open( $r, $g, $tagged ) ) {
-					throw new \InvalidArgumentException( \esc_html( "tagging {$entity} with {$tagged} would show {$tagged} to every reader; no item outside the restricted tier cites it" ) );
+					throw new \InvalidArgumentException( \esc_html( "tagging {$entity} with {$tagged} would show {$tagged} to every reader; it is not cited by any item outside the restricted tier" ) );
 				}
 				return [ $entity, $tagged ];
 			}
@@ -185,7 +185,7 @@ final class Graph_Curation {
 		}
 		if ( $open[0] !== $open[1] ) {
 			$hidden = $open[0] ? $into : $from;
-			throw new \InvalidArgumentException( \esc_html( "merging {$from} into {$into} would show {$hidden} to every reader; no item outside the restricted tier cites it" ) );
+			throw new \InvalidArgumentException( \esc_html( "merging {$from} into {$into} would show {$hidden} to every reader; it is not cited by any item outside the restricted tier" ) );
 		}
 		foreach ( Entity_Index::walk( [ $from => $into ] + $merges )[0] as $key => $survivor ) {
 			if ( '' === $survivor && '' !== ( $before[ $key ] ?? $key ) ) {
@@ -266,7 +266,8 @@ final class Graph_Curation {
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`, `role`.
 	 * @return array<string,mixed>
-	 * @throws \InvalidArgumentException When no such role is open, or on a bad key or one the caller cannot see.
+	 * @throws \InvalidArgumentException When the role is not open, or on a bad
+	 *                                   key or one the caller cannot see.
 	 */
 	public static function end_role( array $args ): array {
 		[ $key, , $role, $open ] = self::open_role( $args );
@@ -341,7 +342,8 @@ final class Graph_Curation {
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `collection`, `item`.
 	 * @return array<string,mixed>
-	 * @throws \InvalidArgumentException When no collection has the key, or as `judge_link()`.
+	 * @throws \InvalidArgumentException When the key does not name a
+	 *                                   collection, or as `judge_link()`.
 	 */
 	public static function collect( array $args ): array {
 		$collection = self::key( $args, 'collection' );
@@ -385,7 +387,9 @@ final class Graph_Curation {
 	 * @param Graph      $g   The graph the read opened.
 	 * @param string     $key The item key.
 	 * @return array{url:string,title:string,tier:string}
-	 * @throws \InvalidArgumentException With its URL past URL_BYTES, or with no such item the caller may read.
+	 * @throws \InvalidArgumentException With its URL past URL_BYTES, or when
+	 *                                   the item is missing or the caller may
+	 *                                   not read it.
 	 */
 	private static function item( Row_Reader $r, array $g, string $key ): array {
 		$row = $r->rows( "{$g['with']} SELECT url, title, tier FROM ri WHERE item_key = ? LIMIT 1", [ ...$g['binds'], $key ] )[0] ?? throw new \InvalidArgumentException( \esc_html( "no item: {$key}" ) );
@@ -474,7 +478,7 @@ final class Graph_Curation {
 	private static function shown( Row_Reader $r, array $g, string $key ): string {
 		$survivor = Graph_Query::seen( $r, $g, $key );
 		if ( ! self::open( $r, $g, $survivor ) ) {
-			throw new \InvalidArgumentException( \esc_html( "a lens naming {$survivor} would show it to every reader; no item outside the restricted tier cites it" ) );
+			throw new \InvalidArgumentException( \esc_html( "a lens naming {$survivor} would show it to every reader; it is not cited by any item outside the restricted tier" ) );
 		}
 		return $survivor;
 	}
@@ -499,7 +503,8 @@ final class Graph_Curation {
 	 * @template T of array
 	 * @param \Closure(Row_Reader,Graph): T $read The read.
 	 * @return T
-	 * @throws \Newspack_Nodes\Table_Unavailable When no projection opens.
+	 * @throws \Newspack_Nodes\Table_Unavailable When the projection will not
+	 *                                           open.
 	 */
 	public static function on_graph( \Closure $read ): array {
 		return Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): array => $read( $r, Graph_Query::graph( $r ) ) );
@@ -507,12 +512,12 @@ final class Graph_Curation {
 
 	/**
 	 * A lens's filters in `Graph_Query::unfiltered()`'s shape, checked as far
-	 * as no projection is read: `days` from 1 to `RETAIN_DAYS`, `by` and
-	 * `bucket` against the trend sets, each `LENS_LISTS` list against its
-	 * vocabulary or bounded where it has none, each tier one of
-	 * `Intel_Event::TIERS`, and the entity bounded. `save_lens()` then reads
-	 * the entity and topics through the graph; the ontology seed, which reads
-	 * none, writes them as given.
+	 * as it can be without reading the projection: `days` from 1 to
+	 * `RETAIN_DAYS`, `by` and `bucket` against the trend sets, each
+	 * `LENS_LISTS` list against its vocabulary or bounded where it has none,
+	 * each tier one of `Intel_Event::TIERS`, and the entity bounded.
+	 * `save_lens()` then reads the entity and topics through the graph; the
+	 * ontology seed, which reads none, writes them as given.
 	 *
 	 * @api Ontology_Seed checks a seed's lenses by it.
 	 * @param array<array-key,mixed> $args `save_lens`'s bound args: `entity`, `days`, `by`, `bucket`, the lists by their option and `tier`.
@@ -611,7 +616,8 @@ final class Graph_Curation {
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`.
 	 * @return array<string,mixed> `{ ok, event_id }`.
-	 * @throws \InvalidArgumentException When the key sanitizes to nothing, or no lens has it.
+	 * @throws \InvalidArgumentException When the key sanitizes to nothing, or
+	 *                                   it does not name a lens.
 	 */
 	public static function remove_lens( array $args ): array {
 		$key = self::capped( 'key', Intel_Event::lens_key( Core::as_string( $args['key'] ) ), self::KEY_BYTES );

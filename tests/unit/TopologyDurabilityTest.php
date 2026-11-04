@@ -4,8 +4,8 @@
  * event streams must land where their request-side writer appends.
  *
  * The offsetlog and dead-letter dirs are arguments, and omitting one fails SILENT:
- * no cursor means the reader replays from the head after every restart; no
- * quarantine means poison is logged and dropped.
+ * a missing cursor means the reader replays from the head after every
+ * restart; a missing quarantine means poison is logged and dropped.
  *
  * The substrate owns the audit itself (it reads each node's own node_schema for the
  * argument positions); this pins THIS plugin's topologies to it.
@@ -173,7 +173,7 @@ class TopologyDurabilityTest extends TestCase {
 	}
 
 	/**
-	 * Append a line no reader can unpack to a log's newest segment.
+	 * Append a line that the readers cannot unpack to a log's newest segment.
 	 *
 	 * @param string $dir The log's dir.
 	 */
@@ -263,7 +263,10 @@ class TopologyDurabilityTest extends TestCase {
 	/** The verbs that name a deployment's lists, profile or audience. */
 	private const DEPLOYMENT_VERBS = '/:config\s+(add_repo|add_url|add_team|add_channel|add_site|add_profile|set_audience)\b/';
 
-	/** No shipped file names a list, a profile line or an audience: a deployment supplies them. */
+	/**
+	 * A shipped file never names a list, a profile line or an audience: a
+	 * deployment supplies them.
+	 */
 	public function test_no_shipped_topology_names_a_list_profile_or_audience(): void {
 		$files = \glob( \dirname( __DIR__, 2 ) . '/topologies/*.tsl' ) ?: [];
 		$this->assertNotEmpty( $files );
@@ -333,7 +336,10 @@ class TopologyDurabilityTest extends TestCase {
 		$this->assertEqualsCanonicalizing( $names( 'newspack-intelligence' ), \array_values( \array_unique( [ ...$core, ...$names( 'newspack-intelligence-collect' ) ] ) ) );
 	}
 
-	/** With no lists file in any topology dir the composition does not load, naming the include. */
+	/**
+	 * Without a lists file in any topology dir the composition does not load,
+	 * naming the include.
+	 */
 	public function test_the_composition_without_a_lists_file_fails_to_load(): void {
 		Topology_Registry::register_user_dir( $this->make_temp_dir( 'intelligence-durability-bare-' ) );
 

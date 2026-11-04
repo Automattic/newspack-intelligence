@@ -1,7 +1,7 @@
 # The projection: the three event streams replayed into the intel-graph
 # Row_Table. Each Consumer drains its stream and checkpoints the projector,
-# which writes its buffered rows before the cursor commits, and no other node
-# rides their cursors, so a reproject that resets them rebuilds the graph
+# which writes its buffered rows before the cursor commits, and their cursors
+# serve no other node, so a reproject that resets them rebuilds the graph
 # alone. The ontology and watches streams have more than one writer (the
 # worker and request-side Stream_Writer appends), so their Consumers seal a
 # segment only after the multi-writer grace.

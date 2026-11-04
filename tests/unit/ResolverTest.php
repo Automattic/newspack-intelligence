@@ -16,9 +16,9 @@ require_once __DIR__ . '/../support/fake-entity-extractor.php';
 /**
  * The golden set: known items that must link to known entities, and known
  * ones that must not, each resolved against fixture entities projected into
- * the graph. A name two entities share links to both, a name no entity
- * holds becomes a candidate entity, and GitHub and Linear items resolve like
- * any other.
+ * the graph. A name two entities share links to both, a name that is not
+ * held by any entity becomes a candidate entity, and GitHub and Linear items
+ * resolve like any other.
  */
 final class ResolverTest extends TestCase {
 	use Seeds_Entity_Index;
@@ -539,7 +539,10 @@ final class ResolverTest extends TestCase {
 		$this->assertSame( [ 'quarry ledger' ], $compared, 'neither a 2-byte nor a 39-byte norm can reach 0.60 against 12 bytes' );
 	}
 
-	/** NER that answered no organization links nothing, and is recognized as having answered. */
+	/**
+	 * NER that answered without an organization links nothing, and is
+	 * recognized as having answered.
+	 */
 	public function test_ner_no_orgs_links_nothing(): void {
 		$this->assertSame( [ 'links' => [], 'proposals' => [], 'recognized' => true ], $this->golden( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ], [], new Fake_Entity_Extractor( [] ) ) );
 	}

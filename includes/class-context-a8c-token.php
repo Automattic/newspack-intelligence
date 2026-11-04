@@ -3,15 +3,15 @@
  * Context_A8C_Token: the process's one hold on the ContextA8C relay's token,
  * shared by every ContextA8C source reading one token dir.
  *
- * The token lives here, keyed by the dir, and in no node's state, so no dump
- * of a node carries it. One refresh is in flight per dir at a time: the node
- * that claims it refreshes, and every other node finding the token due waits
- * for it to land. A claim re-reads the newest file under an exclusive lock
- * beside it first, so a token the host's relay refreshed in the meantime is
- * taken rather than refreshed again, and a refreshed token is written back
+ * The token lives here, keyed by the dir, and not in any node's state, so a
+ * dump of a node never carries it. One refresh is in flight per dir at a time:
+ * the node that claims it refreshes, and every other node finding the token due
+ * waits for it to land. A claim re-reads the newest file under an exclusive
+ * lock beside it first, so a token the host's relay refreshed in the meantime
+ * is taken rather than refreshed again, and a refreshed token is written back
  * under the same lock, through a rename beside the file. A refresh token the
- * endpoint refused is never spent again: the dir waits for the relay to sign
- * in again, which writes a newer file.
+ * endpoint refused is never spent again: the dir waits for the relay to sign in
+ * again, which writes a newer file.
  *
  * @package Newspack_Intelligence
  */
@@ -36,7 +36,10 @@ final class Context_A8C_Token {
 	/** The endpoint refused this refresh token; the relay must sign in again. */
 	public const REFUSED = 'refused';
 
-	/** The token holds no refresh token, or the relay's file names no client. */
+	/**
+	 * The token holds no refresh token, or the relay's file does not name a
+	 * client.
+	 */
 	public const UNREFRESHABLE = 'unrefreshable';
 
 	/** The lock beside the token file would not open or hold. */
@@ -59,7 +62,7 @@ final class Context_A8C_Token {
 
 	/**
 	 * The token held for $dir, the newest file read in when none is held;
-	 * null when no file reads as a JSON object carrying an access token.
+	 * null unless a file reads as a JSON object carrying an access token.
 	 *
 	 * @return array{path:string,token:array<array-key,mixed>}|null
 	 */
@@ -139,7 +142,7 @@ final class Context_A8C_Token {
 
 	/**
 	 * The relay's token file obtained last under $dir, by its `obtained_at`,
-	 * and what it holds; null when none reads as a JSON object carrying an
+	 * and what it holds; null unless a file reads as a JSON object carrying an
 	 * access token.
 	 *
 	 * @return array{path:string,token:array<array-key,mixed>}|null

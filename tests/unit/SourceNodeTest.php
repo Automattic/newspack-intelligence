@@ -35,7 +35,10 @@ final class SourceNodeTest extends TestCase {
 
 	private const RETRIEVED = 1793011234.5;
 
-	/** A source's fetch interval, in seconds: 1,700, no default's. */
+	/**
+	 * A source's fetch interval, in seconds: 1,700, distinct from every
+	 * default.
+	 */
 	private const INTERVAL = 1700;
 
 	/** A grid boundary: a whole multiple of INTERVAL. */
@@ -482,7 +485,7 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( [ [ 'verb' => 'TICK', 'data' => [ 'fetching' => 1 ] ], [ 'verb' => 'TICK', 'data' => [ 'fetching' => 0 ] ] ], $this->answers() );
 	}
 
-	/** An answer naming no request in flight is dropped. */
+	/** An answer that does not match a request in flight is dropped. */
 	public function test_an_answer_for_no_request_in_flight_records_nothing(): void {
 		$node                    = $this->fake();
 		$stray                   = Message::new_message();
@@ -599,7 +602,10 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( [], self::stderr_lines( $stderr ) );
 	}
 
-	/** A credentialed source naming no vault group sends nothing, whatever the Vault holds for its origin. */
+	/**
+	 * A credentialed source that does not name a vault group sends nothing,
+	 * whatever the Vault holds for its origin.
+	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider( 'credentialed_sources' )]
 	public function test_a_source_with_no_vault_group_sends_nothing( string $class, string $verb, string $value, string $origin ): void {
 		$this->lend( 'heron-vault-7731', $origin );
@@ -670,7 +676,7 @@ final class SourceNodeTest extends TestCase {
 	/**
 	 * An item whose key runs past Graph_Curation::ITEM_KEY_BYTES as the stream
 	 * writes it, JSON-escaped, is refused with a line naming the source and
-	 * the key's length, so no record naming it outgrows one line.
+	 * the key's length, so a record naming it never outgrows one line.
 	 */
 	public function test_an_item_key_past_its_cap_is_refused(): void {
 		$stderr = $this->capture_stderr();
@@ -793,7 +799,10 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( 2, $node->passes );
 	}
 
-	/** A boundary passed while no tick ran is skipped; the next tick past it fetches once. */
+	/**
+	 * A boundary passed while the source was not ticking is skipped; the next
+	 * tick past it fetches once.
+	 */
 	public function test_ticks_far_apart_fetch_once(): void {
 		$node = $this->scheduled();
 
@@ -935,7 +944,7 @@ final class SourceNodeTest extends TestCase {
 		$this->assertStringNotContainsString( 'set_tier', $dump );
 	}
 
-	/** No source fires a FIRE event, so none declares one. */
+	/** A source never fires a FIRE event, so none declares one. */
 	public function test_no_source_declares_a_fire_registration(): void {
 		foreach ( [ Fake_Source_Node::class, Github_Source_Node::class, Linear_Source_Node::class, Feed_Source_Node::class, Slack_Source_Node::class, P2_Source_Node::class, Unthread_Source_Node::class ] as $class ) {
 			$this->assertSame( [], $class::node_schema()['registrations'], $class );
@@ -974,7 +983,10 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( 7200, $memd->sets[0]['ttl'] );
 	}
 
-	/** A pass no request of which answered publishes failing, with the last failure's text. */
+	/**
+	 * A pass whose every request failed publishes failing, with the last
+	 * failure's text.
+	 */
 	public function test_pass_answering_nothing_publishes_failing_with_last_error(): void {
 		$this->publishing();
 		self::at( 5551.0 );
@@ -1146,7 +1158,10 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( [], Core::$recent_log );
 	}
 
-	/** A pass with nothing to ask, as a Linear source naming no team, publishes a quiet ok with both counts 0. */
+	/**
+	 * A pass with nothing to ask, as a Linear source without a team, publishes
+	 * a quiet ok with both counts 0.
+	 */
 	public function test_a_pass_with_nothing_to_ask_publishes_a_quiet_ok(): void {
 		$this->publishing();
 		self::at( 6273.0 );
@@ -1294,7 +1309,10 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( '', $schema['arguments'][1]['default'] );
 	}
 
-	/** A source no host limits runs anywhere, whatever its line names. */
+	/**
+	 * A source that is not limited to any host runs anywhere, whatever its line
+	 * names.
+	 */
 	public function test_a_source_runs_here_by_default(): void {
 		$this->assertTrue(
 			Linear_Source_Node::runs_here(

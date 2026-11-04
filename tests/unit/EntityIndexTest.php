@@ -302,7 +302,7 @@ final class EntityIndexTest extends TestCase {
 		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): mixed => $read( Sqlite_Arm::open_rows( $files, Intel_Graph_Row_Schema::version() ) );
 
 		$this->assertSame( [ $cause, $cause ], [ $loaded, Entity_Index::hold_cause_now() ] );
-		$this->assertNull( ( new \ReflectionProperty( Entity_Index::class, 'current' ) )->getValue(), 'no shared index is loaded' );
+		$this->assertNull( ( new \ReflectionProperty( Entity_Index::class, 'current' ) )->getValue(), 'the shared index is not loaded' );
 	}
 
 	/** An index read behind the ontology stream names that first, so a seed not yet projected never reads as an empty ontology. */
@@ -359,7 +359,10 @@ final class EntityIndexTest extends TestCase {
 		$this->assertSame( [ [ 'entity_key' => 'organization:salem-ledger', 'kind' => 'canonical', 'surface' => 'Salem Ledger', 'state' => 'proposed', 'at' => 0 ] ], $index->names_in( 'Salem Ledger' ) );
 	}
 
-	/** A name or identifier naming a key no entity row holds answers nothing. */
+	/**
+	 * A name or identifier naming a key that is not in any entity row answers
+	 * nothing.
+	 */
 	public function test_a_name_for_an_entity_that_does_not_exist_answers_nothing(): void {
 		$index = $this->index_of( self::facts( 'organization:ghost-gazette', [ 'alias' => [ 'Ghost Gazette' ], 'domain' => [ 'ghost.example' ] ] ) );
 

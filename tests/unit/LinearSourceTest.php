@@ -171,7 +171,7 @@ final class LinearSourceTest extends TestCase {
 			$node->interpreter()->dispatch( 'remove_team', [ 'GHOST' ] );
 			$this->fail( 'an unregistered team was removed' );
 		} catch ( \InvalidArgumentException $e ) {
-			$this->assertSame( "remove_team 'GHOST' names no team this node declares", $e->getMessage() );
+			$this->assertSame( "remove_team 'GHOST' names a team this node does not declare", $e->getMessage() );
 		}
 		$this->assertSame( [ 'WREN9' ], $this->read_private( $node, 'teams' ) );
 	}

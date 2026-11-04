@@ -216,7 +216,8 @@ class Watcher_Node extends Timer_Node {
 	 * @param Row_Reader     $r        The reader.
 	 * @param \WP_User       $user     The owner, signed in.
 	 * @param list<Standing> $watches  Their watches.
-	 * @param float|null     $digested When their last digest went, null when no digest is due.
+	 * @param float|null     $digested When their last digest went, null when a
+	 *                                 digest is not due.
 	 * @return Plan
 	 * @throws Worker_Should_Stop When the worker is asked to stop.
 	 */

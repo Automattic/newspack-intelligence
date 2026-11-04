@@ -429,7 +429,7 @@ final class DeduperNodeTest extends TestCase {
 	 * A full lookup checkpoints as positional entries under hashed spellings,
 	 * carrying no URL or title, so its size is the item keys it names. Every
 	 * miss finds nothing in a projection that will not open, as in an empty
-	 * one, so the LRU alone decides and no miss pays a SQLite read.
+	 * one, so the LRU alone decides and a miss never pays a SQLite read.
 	 */
 	public function test_a_full_lookup_checkpoints_compactly(): void {
 		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): never => throw new Table_Unavailable( 'no intel-graph in this test' );

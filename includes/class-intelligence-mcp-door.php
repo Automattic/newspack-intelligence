@@ -37,14 +37,17 @@ class Intelligence_Mcp_Door extends Mcp_Door {
 		. 'about an entity and the review queue leave it out, an entity counts what it published apart, its signals read '
 		. 'it on a publisher axis of their own, and a timeline with published pages those items. A claim is one '
 		. 'statement an item makes about an '
-		. 'entity, a subject, a predicate and an object, cited to that item. An item that links no entity was recorded '
+		. 'entity, a subject, a predicate and an object, cited to that item. An item without a link to an entity was recorded '
 		. 'but was not summarized, classified or read for claims, so it answers a search by its title and body alone. '
-		. 'Cite the URL of the item each statement rests on; a statement no item supports is not from the graph.';
+		. 'Cite the URL of the item each statement rests on; a statement without a supporting item is not from the graph.';
 
 	/** The CI node every tool addresses. */
 	private const NODE = 'intelligence';
 
-	/** The verbs no tool offers: the page's health read and its operator fixes. */
+	/**
+	 * The verbs that are not offered by any tool: the page's health read and
+	 * its operator fixes.
+	 */
 	private const NOT_TOOLS = [ 'fetch_now', 'health', 'seed_ontology', 'reresolve' ];
 
 	/** What closes a tool's summary, by its verb's role; any other role adds nothing. */

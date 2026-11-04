@@ -61,13 +61,16 @@ final class LlmEntityExtractorTest extends TestCase {
 		$this->assertSame( [ 'PrairieFile' ], $out['orgs'] );
 	}
 
-	/** A reply that does not parse is no answer, told apart from an empty one. */
+	/**
+	 * A reply that does not parse is not an answer, told apart from an empty
+	 * one.
+	 */
 	public function test_garbage_reply_answers_none(): void {
 		$this->respond( 'no json here' );
 		$stderr = $this->capture_stderr();
 
 		$this->assertNull( $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] ) );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER reply named no organization list' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER reply has no organization list' ) );
 	}
 
 	/** A failed call answers none without throwing, told apart from an empty answer. */
@@ -100,7 +103,7 @@ final class LlmEntityExtractorTest extends TestCase {
 		$stderr = $this->capture_stderr();
 
 		$this->assertNull( $this->extractor()->extract( [ 'title' => 'T', 'body' => 'B' ] ) );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER reply named no organization list' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER reply has no organization list' ) );
 	}
 
 	/** An answer naming nothing is an answer: an empty triple. */

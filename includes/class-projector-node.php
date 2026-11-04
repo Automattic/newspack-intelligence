@@ -1,21 +1,21 @@
 <?php
 /**
  * Projector_Node: replays the three event streams into the `intel-graph`
- * Row_Table (`Intel_Graph_Row_Schema`). Three Consumers, one per stream,
- * fill it with one event each; `projections()` declares, for each kind, the
- * row ops it writes and where each column comes from. Every op is an
- * `ignore` or a whole-row `set` on a keyed table but for the `delete`s:
- * the items stream's own — an extraction deletes the item's claims and
- * topic links, a `subjects_extracted` the item's extracted subjects, a
- * `link_retracted` the one link row it keys, and an `item_purged` the rows
- * that stream has written about its item by then — and the ontology
- * stream's `lens_removed` and `watch_removed`, the one lens or watch row
- * each keys.
- * Each table is written by one stream alone, so a replayed event writes what
- * it wrote before and the streams project the same rows in any order. A row naming an entity no `entities` row
- * holds yet is left to the readers' join. A machine's proposal writes with
- * `ignore` and a person's creation with `set`, so a machine never overwrites
- * a person. Every ontology event also lands in `events`, ignored by its id.
+ * Row_Table (`Intel_Graph_Row_Schema`). Three Consumers, one per stream, fill
+ * it with one event each; `projections()` declares, for each kind, the row ops
+ * it writes and where each column comes from. Every op is an `ignore` or a
+ * whole-row `set` on a keyed table but for the `delete`s: the items stream's
+ * own — an extraction deletes the item's claims and topic links, a
+ * `subjects_extracted` the item's extracted subjects, a `link_retracted` the
+ * one link row it keys, and an `item_purged` the rows that stream has written
+ * about its item by then — and the ontology stream's `lens_removed` and
+ * `watch_removed`, the one lens or watch row each keys. Each table is written
+ * by one stream alone, so a replayed event writes what it wrote before and the
+ * streams project the same rows in any order. A row naming an entity that has
+ * no `entities` row yet is left to the readers' join. A machine's proposal
+ * writes with `ignore` and a person's creation with `set`, so a machine never
+ * overwrites a person. Every ontology event also lands in `events`, ignored by
+ * its id.
  *
  * Ops buffer and leave as one `ROWS` batch, one transaction, every
  * FLUSH_INTERVAL_S on the Router tick, at MAX_BUFFERED_OPS or
@@ -166,25 +166,24 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * Each kind's op specs. A column spec is an event field's name, a
-	 * one-element list holding a literal, EACH for the element a fan-out op
-	 * is written for, or a closure computing the value from the event; a
-	 * `delete` names its columns, each mapped to such a spec. An extraction
-	 * deletes the item's claims and topic links before it writes its own, so
-	 * one yielding fewer leaves none of the earlier behind; both tables are
-	 * written by the items stream alone, so a replay deletes and writes in
-	 * the same order; the entities an extraction was given replace the
-	 * item's earlier set the same way. A retraction deletes the one link row
-	 * its item, entity and role key. A purge deletes the item's row, its
-	 * extraction, extracted subjects, links, claims and cluster membership,
-	 * and the canonical row of any cluster it heads, which no event elects
-	 * again; rows another stream wrote about it stay, and every read joins
-	 * the items, so they answer nothing, as do rows a later resolution of
-	 * the item writes. A heuristic stand-in only fills an item
-	 * no extraction holds yet (`STAND_IN`), so it never replaces a call's
-	 * extraction, its claims or its topics. A proposed link's evidence, which
-	 * one written before proposals carried it lacks, projects as '', as an
-	 * asserted link's always does. Every ontology kind also writes its
-	 * `events` row.
+	 * one-element list holding a literal, EACH for the element a fan-out op is
+	 * written for, or a closure computing the value from the event; a `delete`
+	 * names its columns, each mapped to such a spec. An extraction deletes the
+	 * item's claims and topic links before it writes its own, so one yielding
+	 * fewer leaves none of the earlier behind; both tables are written by the
+	 * items stream alone, so a replay deletes and writes in the same order; the
+	 * entities an extraction was given replace the item's earlier set the same
+	 * way. A retraction deletes the one link row its item, entity and role key.
+	 * A purge deletes the item's row, its extraction, extracted subjects,
+	 * links, claims and cluster membership, and the canonical row of any
+	 * cluster it heads, which an event never elects again; rows another stream
+	 * wrote about it stay, and every read joins the items, so they answer
+	 * nothing, as do rows a later resolution of the item writes. A heuristic
+	 * stand-in only fills an item that has no extraction yet (`STAND_IN`), so
+	 * it never replaces a call's extraction, its claims or its topics. A
+	 * proposed link's evidence, which one written before proposals carried it
+	 * lacks, projects as '', as an asserted link's always does. Every ontology
+	 * kind also writes its `events` row.
 	 *
 	 * @return array<string,list<array{0:string,1:string,2:array<mixed>,3?:string}>>
 	 */

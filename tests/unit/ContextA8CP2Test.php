@@ -171,7 +171,10 @@ final class ContextA8CP2Test extends TestCase {
 		$this->assertSame( 'Dunlin Teal: Agreed', $this->recorded()['p2:7781:512:c34']['title'] );
 	}
 
-	/** An answer naming no blog_id is logged under its site and records nothing. */
+	/**
+	 * An answer that does not name a blog_id is logged under its site and
+	 * records nothing.
+	 */
 	public function test_an_answer_naming_no_blog_id_records_nothing(): void {
 		$stderr = $this->capture_stderr();
 		$this->tick( $this->p2( 'internal', self::HERON ) );
@@ -179,7 +182,7 @@ final class ContextA8CP2Test extends TestCase {
 		$this->answer( [ 'site' => [], 'posts' => [ [ 'id' => 512, 'title' => 'Kestrel', 'content_text' => 'x' ] ], 'max_pages' => 1 ] );
 
 		$this->assertSame( [], $this->writer->captured );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'p2: ContextA8C named no blog_id for ' . self::HERON ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'p2: ContextA8C returned no blog_id for ' . self::HERON ) );
 	}
 
 	/** A site is refused unless it is a wordpress.com host, as the P2 source refuses it. */

@@ -64,7 +64,7 @@ final class WatcherNodeTest extends TestCase {
 	/** A gala the Gazette hosted, retrieved twenty minutes before the tick. */
 	private const GALA = 'feed:gazette-gala';
 
-	/** What the gala's own text says, which no email carries. */
+	/** What the gala's own text says, which an email never carries. */
 	private const GALA_BODY = 'Donors pledged a record sum at the waterfront.';
 
 	private Watcher_Node $watcher;

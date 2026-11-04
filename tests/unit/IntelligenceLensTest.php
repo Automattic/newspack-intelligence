@@ -101,7 +101,10 @@ final class IntelligenceLensTest extends TestCase {
 		);
 	}
 
-	/** A lens naming no filter stores every one empty, and a key merged away saves as its survivor. */
+	/**
+	 * A lens without a filter stores every one empty, and a key merged away
+	 * saves as its survivor.
+	 */
 	public function test_an_unfiltered_lens_stores_every_filter_empty(): void {
 		$this->seed( self::entity( 'organization:gazette-daily', 'Gazette Daily' ), self::merged( 'organization:gazette-daily', self::GAZETTE ) );
 
@@ -150,13 +153,13 @@ final class IntelligenceLensTest extends TestCase {
 			'days past the horizon'    => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--days=731' ], 'days must be between 1 and 730' ],
 			'an entity it cannot see'  => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--entity=' . self::QUIET ], 'no entity: ' . self::QUIET ],
 			'a topic it cannot see'    => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--topic=topic:ghost-beat' ], 'no entity: topic:ghost-beat' ],
-			'a restricted-only entity' => [ self::HOLDER, 'save_lens', [ 'odd', 'Odd', '--entity=' . self::QUIET ], 'a lens naming ' . self::QUIET . ' would show it to every reader; no item outside the restricted tier cites it' ],
+			'a restricted-only entity' => [ self::HOLDER, 'save_lens', [ 'odd', 'Odd', '--entity=' . self::QUIET ], 'a lens naming ' . self::QUIET . ' would show it to every reader; it is not cited by any item outside the restricted tier' ],
 			'a blank source'           => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--source= ' ], 'source is blank' ],
 			'a blank name'             => [ self::READER, 'save_lens', [ 'odd', ' ' ], 'name is blank' ],
 			'an unsluggable key'       => [ self::READER, 'save_lens', [ '!?!', 'Odd' ], 'lens key !?! sanitizes to nothing' ],
 			'an over-long lens'        => [ self::READER, 'save_lens', [ 'sprawl', 'Sprawl', ...$sprawl ], 'lens_saved: ' ],
 			'a missing lens removed'   => [ self::READER, 'remove_lens', [ 'Nowhere Desk' ], 'no lens: nowhere-desk' ],
-			'a topic that is no topic' => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--topic=topic:awards', '--topic=' . self::GAZETTE ], self::GAZETTE . ' is not a topic' ],
+			'a topic that is not a topic' => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--topic=topic:awards', '--topic=' . self::GAZETTE ], self::GAZETTE . ' is not a topic' ],
 		];
 	}
 
@@ -251,7 +254,10 @@ final class IntelligenceLensTest extends TestCase {
 		$this->assertSame( [ [ '2026-10-01', 'topic:ai' ], [ '2026-10-01', 'topic:awards' ] ], self::rows( $this->ci->dispatch( 'trends', [ 'topic', '--lens=no-axis', '--bucket=month' ] ) ) );
 	}
 
-	/** A read through a lens no one saved is refused, the key slugged as a save slugs it. */
+	/**
+	 * A read through a lens that was never saved is refused, the key slugged as
+	 * a save slugs it.
+	 */
 	public function test_a_missing_lens_is_refused(): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'no lens: ghost-desk' );

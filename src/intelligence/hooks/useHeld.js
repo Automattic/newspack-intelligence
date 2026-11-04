@@ -2,7 +2,7 @@ import { useEffect, useState } from '@wordpress/element';
 
 /**
  * The holds a read's rows do not yet reflect: a row taken out still listed,
- * or a row put in no listed row `matches`.
+ * or a row put in that `matches` does not find among the listed rows.
  *
  * @param {Map<string, {row: ?Object}>}               held    Each held key's hold.
  * @param {Array<Object>}                             listed  The rows read.

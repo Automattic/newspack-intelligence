@@ -6,7 +6,8 @@
  * saved and removed as ontology events under the caller's user id; the
  * matches the watcher appends and the marks a caller makes seen are
  * watches-stream events. A watch another user saved answers exactly as one
- * no one saved, `no watch: <key>`, so no verb tells the two apart. A match
+ * that was never saved, `no watch: <key>`, so the verbs never tell the
+ * two apart. A match
  * reads through the readable items, so one of a tier the caller does not
  * hold now is neither listed, counted nor marked. Every refusal throws
  * before anything is written.
@@ -140,7 +141,8 @@ final class Graph_Watches {
 	 * @param Graph      $g     The graph the read opened.
 	 * @param string     $kind  `lens`, `entity` or `collection`.
 	 * @param string     $given The key as given.
-	 * @throws \InvalidArgumentException When no such target is, or the caller may not see the entity.
+	 * @throws \InvalidArgumentException When the target does not exist, or the
+	 *                                   caller may not see the entity.
 	 */
 	private static function target( Row_Reader $r, array $g, string $kind, string $given ): string {
 		if ( 'entity' === $kind ) {
@@ -224,7 +226,8 @@ final class Graph_Watches {
 	}
 
 	/**
-	 * Every match no `watch_seen` marks, as a subquery over every partition.
+	 * Every match that is not marked by any `watch_seen`, as a subquery over
+	 * every partition.
 	 *
 	 * @param Row_Reader $r The reader.
 	 */
@@ -343,7 +346,7 @@ final class Graph_Watches {
 	 * watch afresh; and each owner's last digest.
 	 *
 	 * @api Read by the watcher at each pass.
-	 * @return array{owners:array<int,list<Standing>>,digests:array<int,float>}|null Null when no projection opens.
+	 * @return array{owners:array<int,list<Standing>>,digests:array<int,float>}|null Null when the projection will not open.
 	 */
 	public static function standing(): ?array {
 		return Intel_Graph_Row_Schema::read(

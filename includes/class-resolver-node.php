@@ -48,7 +48,8 @@
  * non-topic link, because the projector writes the `items` row whether or
  * not any resolution ran. So a fresh worker's repeat of a resolved item
  * runs no NER, while a first recording the projector flushed before the
- * resolver reached it, or an item no step ever linked, runs it. One the
+ * resolver reached it, or an item that was never linked by any step, runs
+ * it. One the
  * projection does not hold yet takes the same path from the event's item,
  * NER included, forwarded as never extracted, with the judgments the
  * projection already holds of it, since a replay can project the ontology
@@ -60,15 +61,15 @@
  * repeat path saves the NER and extraction calls every respawn would spend.
  *
  * A resolution retracts each stored non-topic link row of the item in this
- * worker's own partition's file, the one its projector deletes in, by its
- * raw entity key and role, that it does not write again, but a row whose
- * survivor a curator confirmed, or a NER row unless the NER step ran and
- * answered. It reads the process's shared `Entity_Index::current()`,
- * again once a re-resolution's signal settled after the shared index was
- * read; while no active topology declares the `intel-graph` table that index
- * is empty. The `LLM_Config` verbs configure the NER client, built from them
- * for each item owed NER, so a change reaches the next one; with none
- * resolvable the NER step is skipped.
+ * worker's own partition's file, the one its projector deletes in, by its raw
+ * entity key and role, that it does not write again, but a row whose survivor a
+ * curator confirmed, or a NER row unless the NER step ran and answered. It
+ * reads the process's shared `Entity_Index::current()`, again once a
+ * re-resolution's signal settled after the shared index was read; while the
+ * active topologies do not declare the `intel-graph` table, that index is
+ * empty. The `LLM_Config` verbs configure the NER client, built from them for
+ * each item owed NER, so a change reaches the next one; with none resolvable
+ * the NER step is skipped.
  *
  * @package Newspack_Intelligence
  */
@@ -173,7 +174,7 @@ class Resolver_Node extends Node {
 	 * @param array<int,mixed> $message Incoming Message.
 	 * @throws \InvalidArgumentException When an item_recorded event does not validate.
 	 * @throws Table_Unavailable When a re-resolution's item cannot be read.
-	 * @throws \LogicException When no partition is bound.
+	 * @throws \LogicException When the process has no bound partition.
 	 */
 	public function fill( array $message ): void {
 		$value = $message[ Message::VALUE ];
@@ -228,8 +229,8 @@ class Resolver_Node extends Node {
 	/**
 	 * Resolve an item against what the projection holds of it: NER only when
 	 * handed the step, the curators' judgments in force, forwarded only while
-	 * still owed an extraction — asked for one, no call extraction projected,
-	 * or a link asserted anew.
+	 * still owed an extraction — asked for one, with no call extraction
+	 * projected, or a link asserted anew.
 	 *
 	 * @param Resolver                                       $resolver The resolver over the shared index.
 	 * @param array{0:array<string,mixed>,1:bool,2:Judgment} $stored   The item, whether a call extracted it, and what settled() read.
@@ -332,8 +333,8 @@ class Resolver_Node extends Node {
 	 * has not flushed yet, only parks a record a minute. The resolver's own
 	 * `entity_proposed` events leave the projector's committed ontology
 	 * cursor short until its next checkpoint, up to 30 seconds, so items
-	 * following a proposal may park a minute; nothing is lost and no LLM
-	 * call is spent.
+	 * following a proposal may park a minute; nothing is lost, and
+	 * parking spends no LLM call.
 	 *
 	 * @param Resolver $resolver The resolver over the shared index.
 	 */
@@ -519,7 +520,7 @@ class Resolver_Node extends Node {
 	 * The alias this worker's own partition's file is attached as, the one
 	 * file its projector writes, so the only one a retraction reaches.
 	 *
-	 * @throws \LogicException When no partition is bound.
+	 * @throws \LogicException When the process has no bound partition.
 	 */
 	private static function own_alias(): string {
 		return 'p' . ( Core::bound_partition() ?? throw new \LogicException( 'Resolver: no partition is bound' ) );
@@ -527,13 +528,13 @@ class Resolver_Node extends Node {
 
 	/**
 	 * A stored item's `item_recorded` fields, as the projection holds them,
-	 * null when no partition's file holds the item; whether it holds an
+	 * null when the item is not in any partition's file; whether it holds an
 	 * extraction of the item a call made, a heuristic stand-in not counting;
 	 * what `settled()` reads of its links, judgments and the entities its
 	 * last extraction was given, each entity as its survivor in the
 	 * resolver's own index; and whether the item was resolved before, an
 	 * extraction from any actor or a non-topic link in any partition, false
-	 * when no file holds it. A projection that will not open answers null,
+	 * when it is not in any file. A projection that will not open answers null,
 	 * logged, given a line, and throws given none.
 	 *
 	 * @param string               $item_key    The item.
@@ -541,7 +542,8 @@ class Resolver_Node extends Node {
 	 * @param string               $own         This worker's own partition's alias.
 	 * @param string|null          $unavailable The line logging a projection that will not open, or null to throw.
 	 * @return array{0:array<string,mixed>|null,1:bool,2:Judgment,3:bool}|null
-	 * @throws Table_Unavailable When the projection will not open and no line is given.
+	 * @throws Table_Unavailable When the projection will not open and the
+	 *                           caller gives no line.
 	 */
 	private static function stored( string $item_key, array $merged, string $own, ?string $unavailable ): ?array {
 		return Intel_Graph_Row_Schema::read(

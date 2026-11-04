@@ -148,7 +148,7 @@ final class RestrictedTierTest extends TestCase {
 		$GLOBALS['_current_user_id'] = self::HOLDER;
 
 		$this->assertSame(
-			self::QUIET . ' is cited by no item outside the restricted tier; accepting it would show it to every reader',
+			self::QUIET . ' is not cited by any item outside the restricted tier; accepting it would show it to every reader',
 			self::refusal( fn () => $this->ci->dispatch( 'accept_entity', [ self::QUIET ] ) )
 		);
 		$this->assertSame( [], self::ontology_events() );
@@ -175,11 +175,11 @@ final class RestrictedTierTest extends TestCase {
 		$GLOBALS['_current_user_id'] = self::HOLDER;
 
 		$this->assertSame(
-			'merging ' . self::QUIET . ' into ' . self::GAZETTE . ' would show ' . self::QUIET . ' to every reader; no item outside the restricted tier cites it',
+			'merging ' . self::QUIET . ' into ' . self::GAZETTE . ' would show ' . self::QUIET . ' to every reader; it is not cited by any item outside the restricted tier',
 			self::refusal( fn () => $this->ci->dispatch( 'merge_entities', [ self::QUIET, self::GAZETTE ] ) )
 		);
 		$this->assertSame(
-			'merging organization:salem-ledger into ' . self::QUIET . ' would show ' . self::QUIET . ' to every reader; no item outside the restricted tier cites it',
+			'merging organization:salem-ledger into ' . self::QUIET . ' would show ' . self::QUIET . ' to every reader; it is not cited by any item outside the restricted tier',
 			self::refusal( fn () => $this->ci->dispatch( 'merge_entities', [ 'organization:salem-ledger', self::QUIET ] ) )
 		);
 		$this->assertSame( [], self::ontology_events() );
@@ -228,7 +228,7 @@ final class RestrictedTierTest extends TestCase {
 		$GLOBALS['_current_user_id'] = self::HOLDER;
 
 		$this->assertSame(
-			'tagging ' . self::GAZETTE . ' with ' . self::CHURN . ' would show ' . self::CHURN . ' to every reader; no item outside the restricted tier cites it',
+			'tagging ' . self::GAZETTE . ' with ' . self::CHURN . ' would show ' . self::CHURN . ' to every reader; it is not cited by any item outside the restricted tier',
 			self::refusal( fn () => $this->ci->dispatch( 'tag_topic', [ self::GAZETTE, self::CHURN ] ) )
 		);
 		$this->assertSame( [], self::ontology_events() );

@@ -3,7 +3,7 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 /**
  * How many of a page's matches it shows, and Previous and Next over the
  * stack of page starts the caller holds, so Previous returns to the page
- * before. Next starts past the rows shown, so no page size is assumed.
+ * before. Next starts past the rows shown, so it assumes no page size.
  *
  * @param {Object}                     props
  * @param {number[]}                   props.starts   Each page's first row, the current last.

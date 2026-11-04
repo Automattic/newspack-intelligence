@@ -33,7 +33,8 @@ class Intel_Event_Writer_Node extends Node {
 
 	/**
 	 * Route one TM_STRUCT event to its stream's partition. A message that is
-	 * not an event, or names no kind, is dropped with a rate-limited line.
+	 * not an event, or does not name a kind, is dropped with a rate-limited
+	 * line.
 	 *
 	 * @param array<int,mixed> $message Incoming Message.
 	 */
@@ -45,7 +46,7 @@ class Intel_Event_Writer_Node extends Node {
 		}
 		$kind = Core::as_string( $event['event'] ?? null );
 		if ( ! isset( Intel_Event::KINDS[ $kind ] ) ) {
-			$this->print_less_often( 'dropping an event of no known kind: ', $kind );
+			$this->print_less_often( 'dropping an event of an unknown kind: ', $kind );
 			return;
 		}
 		$message[ Message::TO ] = match ( Intel_Event::stream_of( $kind ) ) {

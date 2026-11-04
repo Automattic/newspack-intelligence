@@ -5,7 +5,7 @@
  * the worker's lock, the active topologies, the Vault and the projection —
  * is derived in the request; the rest is the snapshot a worker published
  * through `Publishes_Status`, which reads as unknown, never as healthy, when
- * no cache holds it.
+ * it is not in any cache.
  *
  * @package Newspack_Intelligence
  */
@@ -42,8 +42,8 @@ final class Intelligence_Health {
 
 	/**
 	 * Warn, ahead of `wp nodes doctor`'s rows, where the lists file belongs
-	 * while no topology dir holds one; doctor itself reports only that the
-	 * composition will not read. An unusable runtime base is left to
+	 * while every topology dir lacks one; doctor itself reports only
+	 * that the composition will not read. An unusable runtime base is left to
 	 * doctor's own filesystem row.
 	 */
 	public static function warn_missing_lists(): void {
@@ -53,7 +53,7 @@ final class Intelligence_Health {
 			return;
 		}
 		if ( null !== $missing ) {
-			\WP_CLI::warning( 'No ' . self::LISTS . ".tsl in any topology dir, so no topology composing Intelligence will load: create {$missing}, empty if this site has no settings of its own." );
+			\WP_CLI::warning( 'No ' . self::LISTS . ".tsl in any topology dir, so every topology composing Intelligence will fail to load: create {$missing}, empty if this site has no settings of its own." );
 		}
 	}
 
@@ -62,7 +62,7 @@ final class Intelligence_Health {
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args.
 	 * @return array<array-key,mixed>
-	 * @throws \InvalidArgumentException When `what` names no slice.
+	 * @throws \InvalidArgumentException When `what` does not name a slice.
 	 */
 	public static function answer( array $args ): array {
 		$what = Graph_Query::one_of( 'what', Core::as_string( $args['what'] ), self::SLICES );
@@ -73,7 +73,7 @@ final class Intelligence_Health {
 	 * How the extractor extracts: its snapshot, redacted below manage; else
 	 * unknown, beside `last_mode`, how the newest extraction's actor says it
 	 * was made, when the projection holds one. An actor cannot say why a
-	 * stand-in was written, so no fallback claims a missing Vault entry.
+	 * stand-in was written, so a fallback never claims a missing Vault entry.
 	 *
 	 * @return array<array-key,mixed>
 	 */
@@ -133,7 +133,7 @@ final class Intelligence_Health {
 
 	/**
 	 * The snapshot the topology's node of `$class` published, null when the
-	 * topology declares none or no cache holds one.
+	 * topology declares none or the snapshot is not in any cache.
 	 *
 	 * @param class-string<Extractor_Node|Reresolver_Node> $class The node's class.
 	 * @return array<array-key,mixed>|null
@@ -212,8 +212,9 @@ final class Intelligence_Health {
 	 * Collection's state: its worker's, the word `wp nodes status` reports,
 	 * when an active topology runs Intelligence, whatever the topology dirs
 	 * hold. Otherwise `unconfigured`, naming to a manager where the lists
-	 * file belongs, while no topology dir holds one; else `inactive`,
-	 * offering `Worker_Route::candidates()`. With no lists file missing, a
+	 * file belongs, while every topology dir lacks one; else
+	 * `inactive`, offering `Worker_Route::candidates()`. With the lists file
+	 * in place, a
 	 * topology that will not read is refused.
 	 *
 	 * @return array<array-key,mixed>
@@ -243,8 +244,8 @@ final class Intelligence_Health {
 	}
 
 	/**
-	 * The `unconfigured` row while no topology dir holds the lists file, its
-	 * path for a manager alone; null once one does.
+	 * The `unconfigured` row while every topology dir lacks the lists
+	 * file, its path for a manager alone; null once one does.
 	 *
 	 * @return array<array-key,mixed>|null
 	 */
@@ -273,8 +274,8 @@ final class Intelligence_Health {
 	}
 
 	/**
-	 * Where the lists file belongs, the user topology dir, while no topology
-	 * dir holds one; null once one does.
+	 * Where the lists file belongs, the user topology dir, while every
+	 * topology dir lacks one; null once one does.
 	 *
 	 * @throws \RuntimeException When the runtime base directory is unusable.
 	 */

@@ -35,7 +35,7 @@ class Feed_Source_Node extends Source_Node {
 	/** Passes a failing client domain sits out at most; each failure in a row doubles them up to it. */
 	public const MAX_SKIP_PASSES = 48;
 
-	/** Seconds a backoff counts a pass as while no interval is set. */
+	/** Seconds a backoff counts a pass as while the interval is unset. */
 	private const BACKOFF_PERIOD = 1800;
 
 	/** The memory row holding every client domain's found feed and backoff. */
@@ -75,7 +75,10 @@ class Feed_Source_Node extends Source_Node {
 	/** @var array<string,string> Each client domain whose entity every read shows by a domain => that entity, read each pass. */
 	private array $unnamed = [];
 
-	/** @var array<string,true> Each entity this process named, so no later pass names it again. */
+	/**
+	 * @var array<string,true> Each entity this process named, so a later pass
+	 *                         never names it again.
+	 */
 	private array $named = [];
 
 	/** Write the domains a pass changed, at most once a tick, so a recycle keeps them. */
@@ -112,8 +115,8 @@ class Feed_Source_Node extends Source_Node {
 
 	/**
 	 * A feed body's items; a client's only those in the lanes its note names,
-	 * its home page read for the feed it advertises, and its feed lost when no
-	 * feed or off its lanes.
+	 * its home page read for the feed it advertises, and its feed lost when the
+	 * body is not a feed or the feed is off its lanes.
 	 *
 	 * @return array<int,array<string,mixed>>
 	 */
@@ -357,7 +360,7 @@ class Feed_Source_Node extends Source_Node {
 	 */
 	private function parse( string $url, string $body, string $domain ): ?array {
 		$prev = \libxml_use_internal_errors( true );
-		// LIBXML_NONET: untrusted feed body — no SYSTEM ref may fetch a URL.
+		// LIBXML_NONET: untrusted feed body — a SYSTEM ref may not fetch a URL.
 		$xml   = \simplexml_load_string( $body, \SimpleXMLElement::class, LIBXML_NONET );
 		$error = \libxml_get_errors()[0] ?? null;
 		\libxml_clear_errors();
@@ -517,8 +520,8 @@ class Feed_Source_Node extends Source_Node {
 
 	/**
 	 * client_domains() less any that is not a plain hostname
-	 * (`Entity_Index::hostname_fault()`), each named; null when no projection
-	 * opens. Holds the domains whose client is still shown by a domain.
+	 * (`Entity_Index::hostname_fault()`), each named; null when the projection
+	 * will not open. Holds the domains whose client is still shown by a domain.
 	 *
 	 * @return list<string>|null
 	 */
@@ -542,8 +545,8 @@ class Feed_Source_Node extends Source_Node {
 	/**
 	 * Each domain of every entity holding an open `client` role, and each
 	 * of those whose entity `Graph_Query::name_of()` shows by one of its
-	 * domains => that entity, in one projection read; null, logged, when no
-	 * projection opens.
+	 * domains => that entity, in one projection read; null, logged, when the
+	 * projection will not open.
 	 *
 	 * @return array{0:list<string>,1:array<string,string>}|null
 	 */

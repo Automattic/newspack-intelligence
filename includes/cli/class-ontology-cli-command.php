@@ -53,23 +53,23 @@ class Ontology_CLI_Command {
 	 * @api WP-CLI dispatches this by reflection; nothing here calls it.
 	 * @param array<int,string>    $args       Positional args.
 	 * @param array<string,string> $assoc_args Flags.
-	 * @throws \RuntimeException When no worker is live.
+	 * @throws \RuntimeException When there is no live worker.
 	 */
 	public function reresolve( array $args, array $assoc_args ): void {
 		self::ask_range( 'reresolve', $assoc_args, static fn (): string => '' );
 	}
 
 	/**
-	 * Re-extract every stored item dated in a range of UTC days, an undated
-	 * one by when it was retrieved. Each live worker's reresolver is asked
-	 * through its input partition, as `reresolve` asks it, and sends each
-	 * item to the resolver owed an extraction, so each worker's extractor
-	 * calls the model for each item whatever it holds: the items times the
-	 * live workers, and a call that fails keeps the item's earlier extraction
-	 * and retries up to `Extractor_Node::MAX_ATTEMPTS` times. It counts those
-	 * calls first and refuses more than --limit, naming the items and the
-	 * workers; a range dating no item sends nothing. With --dry-run it sends
-	 * nothing and prints the calls and the command that runs them.
+	 * Re-extract every stored item dated in a range of UTC days, an undated one
+	 * by when it was retrieved. Each live worker's reresolver is asked through
+	 * its input partition, as `reresolve` asks it, and sends each item to the
+	 * resolver owed an extraction, so each worker's extractor calls the model
+	 * for each item whatever it holds: the items times the live workers, and a
+	 * call that fails keeps the item's earlier extraction and retries up to
+	 * `Extractor_Node::MAX_ATTEMPTS` times. It counts those calls first and
+	 * refuses more than --limit, naming the items and the workers; a range that
+	 * contains no item sends nothing. With --dry-run it sends nothing and
+	 * prints the calls and the command that runs them.
 	 *
 	 * ## OPTIONS
 	 *
@@ -92,7 +92,8 @@ class Ontology_CLI_Command {
 	 * @api WP-CLI dispatches this by reflection; nothing here calls it.
 	 * @param array<int,string>    $args       Positional args.
 	 * @param array<string,string> $assoc_args Flags.
-	 * @throws \RuntimeException When --limit is not a positive whole number, or no worker is live.
+	 * @throws \RuntimeException When --limit is not a positive whole number, or
+	 *                           there is no live worker.
 	 * @throws \Newspack_Nodes\Table_Unavailable When the projection cannot be read.
 	 */
 	public function reextract( array $args, array $assoc_args ): void {
@@ -133,7 +134,7 @@ class Ontology_CLI_Command {
 	 * @param string                                 $verb       `reresolve` or `reextract`.
 	 * @param array<string,string>                   $assoc_args Flags: `since`, and `until`, today when omitted.
 	 * @param \Closure(string,string): (string|null) $vet        Given the days, what the success line adds, or null to send nothing.
-	 * @throws \RuntimeException When no worker is live.
+	 * @throws \RuntimeException When there is no live worker.
 	 */
 	private static function ask_range( string $verb, array $assoc_args, \Closure $vet ): void {
 		if ( self::refused_root( "ontology {$verb}" ) ) {
@@ -183,7 +184,8 @@ class Ontology_CLI_Command {
 	 * @api WP-CLI dispatches this by reflection; nothing here calls it.
 	 * @param array<int,string>    $args       Positional args.
 	 * @param array<string,string> $assoc_args Flags.
-	 * @throws \Newspack_Nodes\Table_Unavailable When no active topology declares the graph.
+	 * @throws \Newspack_Nodes\Table_Unavailable When the active topologies do
+	 *                                           not declare the graph.
 	 * @throws \UnexpectedValueException When a file will not unlink; the hold is released first.
 	 */
 	public function reproject( array $args, array $assoc_args ): void {

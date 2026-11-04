@@ -148,7 +148,10 @@ final class ProjectorTest extends TestCase {
 		$this->assertSame( [ [ 'topic:awards', 'topic' ] ], self::graph_rows( 'links', 'entity_key', 'entity_key, role' ) );
 	}
 
-	/** An item no call has extracted records the heuristic stand-in, which a later call replaces. */
+	/**
+	 * An item that has not been extracted by any call records the heuristic
+	 * stand-in, which a later call replaces.
+	 */
 	public function test_a_heuristic_extraction_stands_until_a_call_replaces_it(): void {
 		$this->project( [ $this->item(), $this->stand_in() ] );
 
@@ -266,7 +269,7 @@ final class ProjectorTest extends TestCase {
 
 	public function test_an_entity_named_before_it_is_created_is_completed_by_its_creation(): void {
 		$this->project( [ $this->link( 'link_proposed' ) ] );
-		$this->assertSame( [], self::graph_rows( 'entities' ), 'the link names an entity no row holds yet' );
+		$this->assertSame( [], self::graph_rows( 'entities' ), 'the link names an entity that has no row yet' );
 
 		$this->project( [ $this->ontology( 'entity_created', [ 'entity_key' => self::GAZETTE, 'type' => 'organization', 'name' => 'Harbor Gazette' ] ) ] );
 
@@ -441,7 +444,7 @@ final class ProjectorTest extends TestCase {
 
 		$this->projector->shutdown_sweep();
 
-		$this->assertSame( [ [ 'urn:harbor-gazette:7731', 'urn:harbor-gazette:7731' ] ], self::graph_rows( 'items', '1', 'url, url_canonical' ), 'a URL naming no host is its own canonical' );
+		$this->assertSame( [ [ 'urn:harbor-gazette:7731', 'urn:harbor-gazette:7731' ] ], self::graph_rows( 'items', '1', 'url, url_canonical' ), 'a URL that does not name a host is its own canonical' );
 	}
 
 	public function test_a_write_with_no_graph_named_stops_the_worker(): void {
@@ -595,7 +598,10 @@ final class ProjectorTest extends TestCase {
 		);
 	}
 
-	/** @return array<string,mixed> The heuristic stand-in the extractor records when no call answers. */
+	/**
+	 * @return array<string,mixed> The heuristic stand-in the extractor records
+	 *                             when it gets no answer from a call.
+	 */
 	private function stand_in(): array {
 		return Intel_Event::make(
 			'extraction_recorded',

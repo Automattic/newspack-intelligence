@@ -32,7 +32,7 @@ require_once __DIR__ . '/../support/seeds-entity-index.php';
  * every link and candidate written as an event to the writer, and the
  * resolution forwarded to its target. The index reloads after its TTL, or
  * when a re-resolution's signal settled after it was read, and reads as
- * empty while no graph table exists.
+ * empty while the graph table does not exist.
  */
 final class ResolverNodeTest extends TestCase {
 	use Seeds_Entity_Index;
@@ -344,7 +344,10 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertSame( [ self::GAZETTE ], \array_column( $this->resolved()['links'], 'entity_key' ) );
 	}
 
-	/** A link a curator rejected is not new when the resolver now asserts it: no call is spent on a removed subject. */
+	/**
+	 * A link a curator rejected is not new when the resolver now asserts it:
+	 * the resolver spends no call on a removed subject.
+	 */
 	public function test_a_reresolved_item_asserting_a_link_a_curator_rejected_is_not_forwarded(): void {
 		$this->seed(
 			self::gazette(),

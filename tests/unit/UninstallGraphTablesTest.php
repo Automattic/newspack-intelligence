@@ -69,7 +69,7 @@ final class UninstallGraphTablesTest extends TestCase {
 			$this->assertFileDoesNotExist( $file );
 		}
 		foreach ( $kept as $file ) {
-			$this->assertFileExists( $file, 'a Table no shipped source owns stands' );
+			$this->assertFileExists( $file, 'a Table that is not owned by any shipped source stands' );
 		}
 	}
 

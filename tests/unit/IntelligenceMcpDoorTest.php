@@ -66,7 +66,7 @@ final class IntelligenceMcpDoorTest extends TestCase {
 	/**
 	 * Every read and curation verb is a tool named after it, whose args are
 	 * the verb's own, described as the verb describes them; a manage verb,
-	 * the health read and the seed are no tool.
+	 * the health read and the seed are not tools.
 	 */
 	public function test_every_tool_names_a_declared_verb(): void {
 		$tools    = \array_column( $this->call( Capabilities::TUNE, 'tools/list' )['result']['tools'], null, 'name' );

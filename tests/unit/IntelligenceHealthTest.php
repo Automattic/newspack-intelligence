@@ -28,7 +28,7 @@ require_once __DIR__ . '/../support/wp-cli-stub.php';
  * The `health` read verb: four slices, each derived from durable state where
  * that can answer — the worker's lock, the topology, the Vault and the
  * projection — and from the snapshots the workers publish for the rest, a
- * snapshot no cache holds reading as unknown, never as healthy.
+ * snapshot that is not in any cache reading as unknown, never as healthy.
  */
 final class IntelligenceHealthTest extends TestCase {
 	use Seeds_Intel_Graph;
@@ -91,8 +91,9 @@ final class IntelligenceHealthTest extends TestCase {
 	}
 
 	/**
-	 * With no active topology declaring the event writer collection is off,
-	 * offering every catalog composition no other includes, by name: the
+	 * While the active topologies declare no event writer,
+	 * collection is off, offering every catalog composition that is not
+	 * included by any other, by name: the
 	 * shipped one and, its token dir reading, the workstation's.
 	 */
 	public function test_collection_inactive_when_topology_off(): void {
@@ -137,7 +138,7 @@ final class IntelligenceHealthTest extends TestCase {
 	}
 
 	/**
-	 * With no lists file in any topology dir collection cannot run: the
+	 * Without a lists file in any topology dir, collection cannot run: the
 	 * slice names where it belongs, whether or not anything is active.
 	 */
 	public function test_collection_without_a_lists_file_names_where_it_belongs(): void {
@@ -150,7 +151,10 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( 'unconfigured', $this->ci->dispatch( 'health', [ 'collection' ] )['state'] );
 	}
 
-	/** A stale active name no `.tsl` resolves, beside no Intelligence topology, leaves collection off rather than refused. */
+	/**
+	 * A stale active name that does not resolve to any `.tsl`, without an
+	 * Intelligence topology, leaves collection off rather than refused.
+	 */
 	public function test_collection_inactive_beside_a_stale_active_name(): void {
 		$this->relay_at( $this->make_temp_dir( 'intelligence-health-relay-auth-' ) );
 		$this->activate( 'heron-old' );
@@ -178,7 +182,10 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( [ 'state' => 'unconfigured' ], $this->ci->dispatch( 'health', [ 'collection' ] ) );
 	}
 
-	/** `wp nodes doctor` opens with where the lists file belongs while no topology dir holds one, and that empty will do. */
+	/**
+	 * `wp nodes doctor` opens with where the lists file belongs while every
+	 * topology dir lacks one, and that empty will do.
+	 */
 	public function test_doctor_names_a_missing_lists_file(): void {
 		$bare = $this->make_temp_dir( 'intelligence-health-doctor-' );
 		\WP_CLI::reset();
@@ -193,7 +200,7 @@ final class IntelligenceHealthTest extends TestCase {
 		foreach ( \WP_CLI::$hooks['before_invoke:nodes doctor'] ?? [] as $hook ) {
 			$hook( 'nodes doctor' );
 		}
-		$this->assertSame( [ "No newspack-intelligence-lists.tsl in any topology dir, so no topology composing Intelligence will load: create {$bare}/newspack-intelligence-lists.tsl, empty if this site has no settings of its own." ], \WP_CLI::$warnings );
+		$this->assertSame( [ "No newspack-intelligence-lists.tsl in any topology dir, so every topology composing Intelligence will fail to load: create {$bare}/newspack-intelligence-lists.tsl, empty if this site has no settings of its own." ], \WP_CLI::$warnings );
 		\WP_CLI::reset();
 	}
 
@@ -206,7 +213,10 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->ci->dispatch( 'health', [ 'collection' ] );
 	}
 
-	/** Two active compositions are refused naming both, even while no lists file resolves, never read as unconfigured. */
+	/**
+	 * Two active compositions are refused naming both, even while the lists
+	 * file does not resolve, never read as unconfigured.
+	 */
 	public function test_two_compositions_without_a_lists_file_are_refused_not_unconfigured(): void {
 		Topology_Registry::register_user_dir( $this->make_temp_dir( 'intelligence-health-guillemot-' ) );
 		$this->activate();
@@ -306,7 +316,7 @@ final class IntelligenceHealthTest extends TestCase {
 		);
 	}
 
-	/** A source no pass has reported for is unknown, not ok. */
+	/** A source that has not reported yet is unknown, not ok. */
 	public function test_source_with_no_snapshot_is_unknown(): void {
 		$this->collect( 'make_node Github_Source egret-github public' );
 

@@ -80,7 +80,7 @@ class Linear_Source_Node extends Source_Node {
 		return self::API_URL;
 	}
 
-	/** Queue the one POST, unless no team is named. */
+	/** Queue the one POST when a team is named. */
 	protected function begin(): void {
 		if ( [] === $this->teams ) {
 			return;

@@ -131,7 +131,7 @@ final class IntelligenceCITest extends TestCase {
 		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'newspack-intelligence.p3' ) );
 	}
 
-	/** With no worker live, `reresolve` refuses naming the fix. */
+	/** While there is no live worker, `reresolve` refuses naming the fix. */
 	public function test_reresolve_refuses_with_no_live_worker(): void {
 		$this->expectException( \RuntimeException::class );
 		$this->expectExceptionMessage( 'No newspack-intelligence worker could be reached' );

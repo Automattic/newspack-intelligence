@@ -45,7 +45,10 @@ final class WorkerRouteTest extends TestCase {
 		$this->assertSame( 'tern-desk', Worker_Route::topology() );
 	}
 
-	/** With no active topology declaring the writer, routing is refused naming why. */
+	/**
+	 * While the active topologies declare no writer, routing is refused naming
+	 * why.
+	 */
 	public function test_no_active_topology_declaring_the_writer_is_refused(): void {
 		\update_option( 'newspack_nodes_topologies', [ 'topic-probe' ] );
 		\Newspack_Nodes\Config::reset();
@@ -80,7 +83,10 @@ final class WorkerRouteTest extends TestCase {
 		Worker_Route::running();
 	}
 
-	/** An active name no `.tsl` resolves declares nothing, so beside no Intelligence topology none runs. */
+	/**
+	 * An active name that does not resolve to any `.tsl` declares nothing, so
+	 * without an Intelligence topology none runs.
+	 */
 	public function test_a_stale_active_name_with_no_tsl_is_not_running(): void {
 		\update_option( 'newspack_nodes_topologies', [ 'heron-old' ] );
 		\Newspack_Nodes\Config::reset();
@@ -94,7 +100,7 @@ final class WorkerRouteTest extends TestCase {
 		foreach ( [ 'plover-intel.p0', 'plover-intel.p5', 'newspack-intelligence.p1', 'newspack-intelligence-collect.p2', 'other.p0' ] as $worker_id ) {
 			self::live_worker( $base, $worker_id );
 		}
-		// No worker id spells a padded partition, so no worker owns this lock.
+		// A worker id never spells a padded partition, so this lock is unowned.
 		\mkdir( $base . '/locks/plover-intel.p03.lock.d', 0777, true );
 
 		$reached = Worker_Route::send( $this->interpreter( 'route-asker-3' ), $base, [ [ 'feed', 'TICK' ] ] );
@@ -114,7 +120,10 @@ final class WorkerRouteTest extends TestCase {
 		$this->assertSame( 1, Worker_Route::send( $this->interpreter( 'route-asker-4' ), $base, [ [ 'github', 'TICK' ] ] ) );
 	}
 
-	/** Live workers none of which can be reached are refused like no worker at all. */
+	/**
+	 * When every live worker is unreachable, the send is refused as if there
+	 * were no worker at all.
+	 */
 	public function test_no_reachable_worker_is_refused(): void {
 		$base = $this->make_temp_dir( 'worker-route-none-reached-' );
 		\mkdir( $base . '/locks/plover-intel.p2.lock.d', 0777, true );

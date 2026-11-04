@@ -52,7 +52,9 @@ afterEach( () => {
 	window.history.replaceState( {}, '', '/' );
 } );
 
-/** A week whose one change sits under no client, so its chip is the only one. */
+/**
+ * A week whose one change is not under any client, so its chip is the only one.
+ */
 const WEEK = {
 	changes: {
 		groups: [ { entity_key: null, name: null, items: [ ITEM ] } ],

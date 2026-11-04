@@ -280,10 +280,12 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * Start a pass on a TICK or the grid, dropping what is still queued, unless
-	 * requests are in flight or no credential is lent on credential_url()'s
-	 * origin.
+	 * requests are in flight or its group lends no credential on
+	 * credential_url()'s origin.
 	 *
-	 * @return array{fetching:int} How many requests the pass opens on, 0 when one is still in flight or no credential is lent.
+	 * @return array{fetching:int} How many requests the pass opens on, 0 when
+	 *                             one is still in flight or its group lends no
+	 *                             credential.
 	 */
 	protected function tick(): array {
 		$credential = static::credential_url();
@@ -332,8 +334,8 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * Take Curl's answer, a body, a redirect or a TM_ERROR, count it toward the
-	 * pass and send the next (a stop propagates, ADR-14); one for no request in
-	 * flight is dropped.
+	 * pass and send the next (a stop propagates, ADR-14); one that does not
+	 * match a request in flight is dropped.
 	 *
 	 * @param array<int,mixed> $message The body as TM_BYTESTREAM, the Location as TM_RESPONSE, or the TM_ERROR, KEY the subject.
 	 * @throws Worker_Should_Stop When the worker is asked to stop.
@@ -729,8 +731,8 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * The keys of the items, not yet seen, that the projection's items hold
-	 * in any partition, in one read; none when every key is seen or no
-	 * projection opens, which is logged.
+	 * in any partition, in one read; none when every key is seen or the
+	 * projection will not open, which is logged.
 	 *
 	 * @param array<int,array<string,mixed>> $items Normalized items.
 	 * @return array<string,true>
@@ -839,8 +841,8 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * A JSON object or list $error reads no error off, decoded; null, logged
-	 * under the url and failed, for any other body.
+	 * A JSON object or list, decoded, when $error finds no error in it; null,
+	 * logged under the url and failed, for any other body.
 	 *
 	 * @param string                                  $api   The service, as the line names it.
 	 * @param string                                  $url   The request's url.
@@ -971,7 +973,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * Each row mapped to its item, a row the map answers null for left out;
-	 * a row that is no array reaches the map as an empty one.
+	 * a row that is not an array reaches the map as an empty one.
 	 *
 	 * @param mixed                                                       $rows The rows; anything but an array holds none.
 	 * @param \Closure(array<array-key,mixed>):(array<string,mixed>|null) $map  One row to its item, or null to leave it out.

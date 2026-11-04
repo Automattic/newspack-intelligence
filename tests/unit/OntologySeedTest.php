@@ -84,7 +84,7 @@ final class OntologySeedTest extends TestCase {
 		$second    = \array_map( self::fact( ... ), Ontology_Seed::load()->events( [] ) );
 
 		$this->assertSame( $first, $second );
-		$this->assertSame( \array_values( \array_unique( $first ) ), $first, 'no fact is stated twice' );
+		$this->assertSame( \array_values( \array_unique( $first ) ), $first, 'a fact is never stated twice' );
 		$created = \array_filter( $first, static fn ( string $fact ): bool => \str_starts_with( $fact, 'entity_created|' ) || \str_starts_with( $fact, 'lens_saved|' ) );
 		$this->assertCount( \count( \array_unique( \array_map( static fn ( string $fact ): string => \explode( '|', $fact )[1], $first ) ) ), $created, 'every key it names it creates, once' );
 	}

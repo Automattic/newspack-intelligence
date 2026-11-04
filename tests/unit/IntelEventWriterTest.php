@@ -12,7 +12,7 @@ use Newspack_Nodes\Tests\TestCase;
 
 /**
  * The writer addresses each event by TO to the partition its make_node line
- * names for its kind's stream, and drops what names no kind rather than
+ * names for its kind's stream, and drops what does not name a kind rather than
  * throwing out of fill().
  */
 final class IntelEventWriterTest extends TestCase {

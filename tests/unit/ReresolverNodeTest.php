@@ -157,7 +157,10 @@ final class ReresolverNodeTest extends TestCase {
 		$this->assertSame( [ 'feed:acronym-3', 'feed:acronym-1' ], $this->sent_keys() );
 	}
 
-	/** A curator's confirmation re-resolves its one item once its interval passes; no search runs. */
+	/**
+	 * A curator's confirmation re-resolves its one item once its interval
+	 * passes; it runs no search.
+	 */
 	public function test_a_confirmed_link_reresolves_its_item(): void {
 		$this->signal( 'link_confirmed', [ 'item_key' => 'feed:judged-17', 'entity_key' => self::GAZETTE, 'item_url' => 'https://news.example/j' ] );
 		$this->sweep_at( self::NOW + Reresolver_Node::SWEEP_INTERVAL_S - 1 );
@@ -625,7 +628,10 @@ final class ReresolverNodeTest extends TestCase {
 		$this->assertSame( [], $this->out->captured );
 	}
 
-	/** A range that does not parse is refused before anything is sent, so no missing worker is reported for it. */
+	/**
+	 * A range that does not parse is refused before anything is sent, so a
+	 * missing worker is never reported for it.
+	 */
 	public function test_ask_validates_the_range_before_it_sends(): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'since 2026-07-19 is after until 2026-07-04' );

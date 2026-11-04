@@ -72,7 +72,9 @@ final class Intel_Tiers {
 	 * The member of the current site a login names.
 	 *
 	 * @param string $login The login, as typed.
-	 * @throws \InvalidArgumentException When no user has it, or on a multisite when that user is not a member of this site.
+	 * @throws \InvalidArgumentException When the login does not name a user, or
+	 *                                   on a multisite when that user is not a
+	 *                                   member of this site.
 	 */
 	private static function user( string $login ): \WP_User {
 		$user = \get_user_by( 'login', $login ) ?: throw new \InvalidArgumentException( "no user: {$login}" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain text; each surface escapes it.

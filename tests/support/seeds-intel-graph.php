@@ -181,8 +181,8 @@ trait Seeds_Intel_Graph {
 	}
 
 	/**
-	 * Write a restricted item straight into partition 0's projection, as no
-	 * phase-1 source records one.
+	 * Write a restricted item straight into partition 0's projection, as the
+	 * phase-1 sources never record one.
 	 *
 	 * @param string $key   The item key.
 	 * @param string $title Its title.

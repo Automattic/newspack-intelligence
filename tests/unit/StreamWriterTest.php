@@ -103,7 +103,10 @@ final class StreamWriterTest extends TestCase {
 		$this->assertCount( 12, self::ontology_events() );
 	}
 
-	/** A tune-scoped caller appends too, and its writer still keeps everything: no role gate judges the caller. */
+	/**
+	 * A tune-scoped caller appends too, and its writer still keeps everything:
+	 * a role gate never judges the caller.
+	 */
 	public function test_a_tune_scoped_caller_appends_with_keep_everything(): void {
 		$this->shadow_streams( "command_node intel:ontology:config keep_everything true\n" );
 		Capabilities::$session_scope = Capabilities::TUNE;

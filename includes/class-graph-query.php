@@ -8,8 +8,9 @@
  * statement opens with, `mg`, each merged key's survivor in
  * `Entity_Index::survivors()`, and `ri`, the items of the tiers
  * `Intel_Tiers::readable()` grants. Every statement reads items through
- * `ri`, so no item, link, claim, count or citation rests on an item of
- * another tier, and an entity no person accepted answers only while a
+ * `ri`, so an item, link, claim, count or citation never rests on an item
+ * of another tier, and an entity that was never accepted by a person
+ * answers only while a
  * readable item cites it (`visible()`). A key a read names, and every key a
  * row names, answers as its survivor; a key whose chain cycles or runs too
  * long is refused, and its rows count nowhere. A link reads as one per item
@@ -29,9 +30,10 @@
  * tiers narrow the caller's readable ones, never widen them (`through()`).
  *
  * Every value a caller sends is bound, a blank one as given (ADR-25); `q`
- * reaches FTS5 only as quoted phrases, one per word. No answer carries an
- * item body. A projection that will not open answers `available: false`
- * beside empty rows; a graph no partition has written answers empty rows,
+ * reaches FTS5 only as quoted phrases, one per word. An answer never carries
+ * an item body. A projection that will not open answers `available: false`
+ * beside empty rows; a graph that has not been written by any partition answers
+ * empty rows,
  * available.
  *
  * @package Newspack_Intelligence
@@ -55,10 +57,10 @@ use Newspack_Nodes\Row_Reader;
  */
 final class Graph_Query {
 
-	/** Rows a listing verb answers when its caller names no limit. */
+	/** Rows a listing verb answers when its caller does not name a limit. */
 	public const DEFAULT_LIMIT = 50;
 
-	/** Entities `related` answers when its caller names no limit. */
+	/** Entities `related` answers when its caller does not name a limit. */
 	public const RELATED_LIMIT = 20;
 
 	/** The most rows any verb answers. */
@@ -176,7 +178,7 @@ final class Graph_Query {
 		'time'       => self::NEWEST,
 	];
 
-	/** The line logged when no projection opens. */
+	/** The line logged when the projection will not open. */
 	private const UNAVAILABLE = 'intelligence: no intel-graph to read; answering none: ';
 
 	/**
@@ -185,7 +187,8 @@ final class Graph_Query {
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`, `published`, `since`, `until`, `limit`, `offset`.
 	 * @return array<string,mixed> `{ items, total, available }`.
-	 * @throws \InvalidArgumentException On a key that names no entity the caller may see, or as `search()`.
+	 * @throws \InvalidArgumentException On a key that does not name an entity
+	 *                                   the caller may see, or as `search()`.
 	 */
 	public static function timeline( array $args ): array {
 		$key                = Core::as_string( $args['key'] );
@@ -210,7 +213,8 @@ final class Graph_Query {
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args.
 	 * @return array<string,mixed> `{ items, total, available, sort }`.
-	 * @throws \InvalidArgumentException On a bad page, day or sort, or a lens no one saved.
+	 * @throws \InvalidArgumentException On a bad page, day or sort, or a lens
+	 *                                   that was never saved.
 	 */
 	public static function search( array $args ): array {
 		[ $limit, $offset ] = self::page( $args );
@@ -257,7 +261,10 @@ final class Graph_Query {
 	 * @param float      $since The earliest entry read.
 	 * @param int        $limit The most items answered.
 	 * @return list<array{at:float,item:Item}>
-	 * @throws \InvalidArgumentException On a lens no one saved, a collection no one made, or an entity whose merge chain does not resolve.
+	 * @throws \InvalidArgumentException On a lens that was never saved, a
+	 *                                   collection that was never made, or an
+	 *                                   entity whose merge chain does not
+	 *                                   resolve.
 	 */
 	public static function arrivals( Row_Reader $r, array $g, string $kind, string $key, string $watch, float $since, int $limit ): array {
 		$tail = static fn ( string $at ): string => "{$at} >= ? AND NOT EXISTS ( SELECT 1 FROM " . Intel_Graph_Row_Schema::all( $r, 'watch_matches' ) . ' m WHERE m.watch_key = ? AND m.item_key = i.item_key ) ORDER BY at, i.item_key LIMIT ?';
@@ -457,7 +464,8 @@ final class Graph_Query {
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`.
 	 * @return array<string,mixed>
-	 * @throws \InvalidArgumentException When no entity has the key, or its merge chain does not resolve.
+	 * @throws \InvalidArgumentException When the key does not name an entity,
+	 *                                   or its merge chain does not resolve.
 	 */
 	public static function entity( array $args ): array {
 		$key   = Core::as_string( $args['key'] );
@@ -472,7 +480,8 @@ final class Graph_Query {
 	 * @param Graph      $g   The graph the read opened.
 	 * @param string     $key The key asked for.
 	 * @return array<string,mixed>
-	 * @throws \InvalidArgumentException When no entity has the key, or none this caller may read.
+	 * @throws \InvalidArgumentException When the key does not name an entity,
+	 *                                   or names one this caller may not read.
 	 */
 	private static function entity_record( Row_Reader $r, array $g, string $key ): array {
 		$survivor              = self::seen( $r, $g, $key );
@@ -707,7 +716,9 @@ final class Graph_Query {
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args.
 	 * @return array<string,mixed> `{ rows, available }`.
-	 * @throws \InvalidArgumentException On an unknown axis or bucket, a bad day, an unresolvable key, or a lens no one saved.
+	 * @throws \InvalidArgumentException On an unknown axis or bucket, a bad
+	 *                                   day, an unresolvable key, or a lens
+	 *                                   that was never saved.
 	 */
 	public static function trends( array $args ): array {
 		$by     = self::given( $args, 'by' );
@@ -724,7 +735,9 @@ final class Graph_Query {
 	 * @param array<string,mixed>                                          $empty The answer with no rows.
 	 * @param \Closure(Row_Reader,Graph,Filter,Lens): array<string,mixed> $read  The read.
 	 * @return array<string,mixed>
-	 * @throws \InvalidArgumentException On a bad day, a lens key that sanitizes to nothing, or a lens no one saved.
+	 * @throws \InvalidArgumentException On a bad day, a lens key that sanitizes
+	 *                                   to nothing, or a lens that was never
+	 *                                   saved.
 	 */
 	private static function through( array $args, array $empty, \Closure $read ): array {
 		[ $call, $name ] = self::asked( $args );
@@ -808,7 +821,9 @@ final class Graph_Query {
 	 * @param string|null $name  The lens key, null for none.
 	 * @param float       $after The instant, UTC seconds.
 	 * @return list<array<string,mixed>>
-	 * @throws \InvalidArgumentException On a lens no one saved, or an entity whose merge chain does not resolve.
+	 * @throws \InvalidArgumentException On a lens that was never saved, or an
+	 *                                   entity whose merge chain does not
+	 *                                   resolve.
 	 */
 	private static function signaled( Row_Reader $r, array $g, array $call, ?string $name, float $after ): array {
 		if ( null === $name && null !== $call['entity'] ) {
@@ -857,7 +872,7 @@ final class Graph_Query {
 	 * @param string|null                             $name The lens key, null for none.
 	 * @param \Closure(Row_Reader,Graph,Filter,Lens): T $read The read.
 	 * @return T
-	 * @throws \InvalidArgumentException On a lens no one saved.
+	 * @throws \InvalidArgumentException On a lens that was never saved.
 	 */
 	private static function lensed( Row_Reader $r, array $g, array $call, ?string $name, \Closure $read ): mixed {
 		$lens = null === $name ? self::no_lens() : self::lens( $r, $name );
@@ -907,7 +922,7 @@ final class Graph_Query {
 	 * @param Row_Reader $r   The reader.
 	 * @param string     $key The lens key.
 	 * @return Lens
-	 * @throws \InvalidArgumentException When no lens has the key.
+	 * @throws \InvalidArgumentException When the key does not name a lens.
 	 */
 	private static function lens( Row_Reader $r, string $key ): array {
 		$filters = $r->rows( 'SELECT filters FROM ' . Intel_Graph_Row_Schema::all( $r, 'lenses' ) . ' l WHERE lens_key = ? LIMIT 1', [ $key ] )[0][0] ?? throw new \InvalidArgumentException( \esc_html( "no lens: {$key}" ) );
@@ -1494,7 +1509,7 @@ final class Graph_Query {
 	/**
 	 * The filters a call names: `q`, `entity`, each list its repeatable arg
 	 * gives, and the UTC days `since` to `until`, null when it names neither;
-	 * no call names `about`.
+	 * a call never names `about`.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args.
 	 * @return Filter
@@ -1527,10 +1542,10 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The review queue: proposed links, newest item first, each with its
-	 * item and evidence; or proposed entities no merge took, the newest
-	 * proposal first, each with the readable items citing it, by a link or
-	 * as its source, and the sentence each quotes.
+	 * The review queue: proposed links, newest item first, each with its item
+	 * and evidence; or proposed entities that a merge never took, the newest
+	 * proposal first, each with the readable items citing it, by a link or as
+	 * its source, and the sentence each quotes.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `what`, `limit`.
 	 * @return array<string,mixed> `{ links|entities, available }`.
@@ -1619,7 +1634,7 @@ final class Graph_Query {
 
 	/**
 	 * An entity's type, as a scalar subquery on the key an expression names;
-	 * null where no `entities` row holds it.
+	 * null where it has no `entities` row.
 	 *
 	 * @param Row_Reader $r   The reader.
 	 * @param string     $key The SQL naming the entity key.
@@ -1653,11 +1668,12 @@ final class Graph_Query {
 	 * through, over the links of `$roles` and the judgments `$only` admits,
 	 * `{t}` naming either table: `live`, one link per item and survivor, a
 	 * topic link apart, at its effective state, on a readable item, with the
-	 * item's title, URL and time `t`. A judgment, which names no role, judges
-	 * an about-link; a `publisher` link keeps the machine's state. A rejected
-	 * link drops out before the pick, which takes subject over mention over
-	 * publisher, so a read of every role answers an entity's about-link where
-	 * one stands and its publisher link where a curator rejected the rest.
+	 * item's title, URL and time `t`. A judgment, which does not name a role,
+	 * judges an about-link; a `publisher` link keeps the machine's state. A
+	 * rejected link drops out before the pick, which takes subject over mention
+	 * over publisher, so a read of every role answers an entity's about-link
+	 * where one stands and its publisher link where a curator rejected the
+	 * rest.
 	 *
 	 * @param Row_Reader   $r     The reader.
 	 * @param string       $only  A condition on `{t}`, the links or judgments a read rests on.
@@ -1813,7 +1829,8 @@ final class Graph_Query {
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`, absent for every collection.
 	 * @return array<string,mixed>
-	 * @throws \InvalidArgumentException When no collection has the key.
+	 * @throws \InvalidArgumentException When the key does not name a
+	 *                                   collection.
 	 */
 	public static function collections( array $args ): array {
 		$key   = self::given( $args, 'key' );
@@ -1853,8 +1870,8 @@ final class Graph_Query {
 	}
 
 	/**
-	 * A collection's name and when it was created, or null when no
-	 * collection has the key.
+	 * A collection's name and when it was created, or null when the key
+	 * does not name a collection.
 	 *
 	 * @param Row_Reader $r   The reader.
 	 * @param string     $key The collection key.
@@ -1866,9 +1883,9 @@ final class Graph_Query {
 	}
 
 	/**
-	 * Run a read: its answer marked available, an empty one where no
-	 * partition has written, or the empty answer marked unavailable, logged,
-	 * where no projection opens.
+	 * Run a read: its answer marked available, an empty one where
+	 * every partition is unwritten, or the empty answer marked
+	 * unavailable, logged, where the projection will not open.
 	 *
 	 * @param array<string,mixed>                   $empty The answer with no rows.
 	 * @param \Closure(Row_Reader): array<string,mixed> $read  The read.

@@ -23,7 +23,10 @@ final class SlackSourceTest extends TestCase {
 
 	private const WORKSPACE = 'https://heron-4410.slack.com/';
 
-	/** The pinned clock: no default's, and a past instant, so the window arithmetic is fixed. */
+	/**
+	 * The pinned clock: distinct from every default, and a past instant, so the
+	 * window arithmetic is fixed.
+	 */
 	private const NOW = 1792999817.0;
 
 	protected function setUp(): void {
@@ -387,10 +390,13 @@ final class SlackSourceTest extends TestCase {
 		$this->complete( self::history( 'C0HERON11' ), self::ok( [ 'messages' => [ [ 'ts' => self::ts( 100 ), 'text' => 'unlinked', 'user' => 'U0A' ] ] ] ) );
 
 		$this->assertSame( '', $this->recorded()[ 'slack:C0HERON11:' . self::ts( 100 ) ]['url'] );
-		$this->assertCount( 1, self::stderr_lines( $stderr, "slack: Slack's auth.test named no https workspace url: http://heron-4410.slack.com/" ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, "slack: Slack's auth.test returned no https workspace url: http://heron-4410.slack.com/" ) );
 	}
 
-	/** auth.test is no data: a pass whose every history fails publishes failing though auth.test answered. */
+	/**
+	 * auth.test is not data: a pass whose every history fails publishes failing
+	 * though auth.test answered.
+	 */
 	public function test_a_pass_whose_every_history_fails_publishes_failing(): void {
 		$this->publishing();
 		$this->authed( $this->slack( 'C0HERON11' ) );
@@ -401,7 +407,10 @@ final class SlackSourceTest extends TestCase {
 		$this->assertSame( [ 'failing', 1, 1, 'Slack answered an error for ' . self::history( 'C0HERON11' ) . ': channel_not_found-7731' ], [ $status['state'], $status['requests'], $status['failed'], $status['last_error'] ] );
 	}
 
-	/** An auth.test naming no https url counts in the pass as failed. */
+	/**
+	 * An auth.test that does not name an https url counts in the pass as
+	 * failed.
+	 */
 	public function test_a_workspace_url_that_is_not_https_counts_as_failed(): void {
 		$this->publishing();
 		$this->tick( $this->slack( 'C0HERON11' ) );

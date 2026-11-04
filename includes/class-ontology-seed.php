@@ -77,7 +77,7 @@ final class Ontology_Seed {
 	 *
 	 * @return array{events:int,created:int,present:int} The events written, the keys they create and the keys left alone.
 	 * @throws Seed_Refused While the projector stands behind the ontology stream.
-	 * @throws Table_Unavailable When no projection can be read.
+	 * @throws Table_Unavailable When the projection cannot be read.
 	 */
 	public function seed(): array {
 		if ( Projector_Node::behind( Stream_Writer::stream_dir( Intel_Event::ONTOLOGY ) ) ) {
@@ -111,7 +111,7 @@ final class Ontology_Seed {
 	 * `lens_removed` names — in seed order.
 	 *
 	 * @return list<string>
-	 * @throws Table_Unavailable When no projection can be read.
+	 * @throws Table_Unavailable When the projection cannot be read.
 	 */
 	public function present(): array {
 		$lenses = \array_keys( $this->lenses );
@@ -139,7 +139,11 @@ final class Ontology_Seed {
 	 * refused here, naming the file and the field.
 	 *
 	 * @param string|null $path A seed file, or null for the site's.
-	 * @throws Seed_Refused When no file is found, naming a given file by its name, else where the site's belongs, by its path only to a manager, and the example to start from; or when the file does not parse or names what the graph has no word for, naming the field.
+	 * @throws Seed_Refused When the file is not found, naming a given file by
+	 *                      its name, else where the site's belongs, by its path
+	 *                      only to a manager, and the example to start from; or
+	 *                      when the file does not parse or names what the graph
+	 *                      has no word for, naming the field.
 	 */
 	public static function load( ?string $path = null ): self {
 		$at = $path ?? self::path();
@@ -343,7 +347,7 @@ final class Ontology_Seed {
 
 	/**
 	 * A seed key, refused unless the key its slug makes spells it the same,
-	 * so no key is written under another spelling than the file's.
+	 * so a key is never written under another spelling than the file's.
 	 *
 	 * @param string             $field Where it sits.
 	 * @param string             $key   The key as the file spells it.

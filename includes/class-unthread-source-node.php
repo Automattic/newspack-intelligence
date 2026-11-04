@@ -5,15 +5,15 @@
  * message into a recorded item.
  *
  * Extends Source_Node, which owns the trigger, the grid, the chain and the
- * record path. A pass POSTs `conversations/list`, the newest update first,
- * and reads each page until a conversation falls outside two intervals, or
- * WINDOW_SECONDS while no interval is set, asking the messages of each one
+ * record path. A pass POSTs `conversations/list`, the newest update first, and
+ * reads each page until a conversation falls outside two intervals, or
+ * WINDOW_SECONDS while the interval is unset, asking the messages of each one
  * inside; an answer's url names its endpoint and conversation, and its
  * `cursors` the next page. The published API reference documents a `where`
- * clause of `{ field, operator, value }` with `>` among its operators but
- * names no field it accepts, so the edge is read here, client-side, until a
- * live call shows whether `updatedAt` filters. Written against that
- * reference and not yet called live.
+ * clause of `{ field, operator, value }` with `>` among its operators but does
+ * not name a field it accepts, so the edge is read here, client-side, until a
+ * live call shows whether `updatedAt` filters. Written against that reference
+ * and not yet called live.
  *
  * @package Newspack_Intelligence
  */
@@ -26,7 +26,7 @@ use Newspack_Nodes\Core;
 
 class Unthread_Source_Node extends Source_Node {
 
-	/** Seconds back from the clock a pass reads while no interval is set. */
+	/** Seconds back from the clock a pass reads while the interval is unset. */
 	public const WINDOW_SECONDS = 2 * Intel_Graph_Row_Schema::DAY_SECONDS;
 
 	private const CONVERSATIONS = 'https://api.unthread.io/api/conversations/';
@@ -83,7 +83,7 @@ class Unthread_Source_Node extends Source_Node {
 
 	/**
 	 * Queue the messages of each conversation updated within two intervals,
-	 * or WINDOW_SECONDS while no interval is set, so a pass re-reads only
+	 * or WINDOW_SECONDS while the interval is unset, so a pass re-reads only
 	 * the conversations that moved since the pass before last; then, when
 	 * the page's last conversation with an `updatedAt` that parses is inside
 	 * that edge too, queue the next page, behind the first page of each
@@ -146,11 +146,11 @@ class Unthread_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * A messages page's messages as items, their mrkdwn decoded, each
-	 * titled by the friendly id its page notes and its own first line, so no
-	 * two messages share a title, its body its conversation's context line,
-	 * then its poster's name and its text, and dated by its Slack-style ts;
-	 * one missing its ts or text is logged and left out.
+	 * A messages page's messages as items, their mrkdwn decoded, each titled by
+	 * the friendly id its page notes and its own first line, so two messages
+	 * never share a title, its body its conversation's context line, then its
+	 * poster's name and its text, and dated by its Slack-style ts; one missing
+	 * its ts or text is logged and left out.
 	 *
 	 * @param string       $id   The conversation the page reads.
 	 * @param string       $url  The page's url.
@@ -209,7 +209,7 @@ class Unthread_Source_Node extends Source_Node {
 
 	public static function node_schema(): array {
 		return self::source_schema(
-			'Reads the Unthread conversations updated within two intervals, or the last ' . ( self::WINDOW_SECONDS / Intel_Graph_Row_Schema::DAY_SECONDS ) . ' days while no interval is set, and each one\'s messages, without blocking, one request at a time, on a TICK request (request_node unthread TICK).',
+			'Reads the Unthread conversations updated within two intervals, or the last ' . ( self::WINDOW_SECONDS / Intel_Graph_Row_Schema::DAY_SECONDS ) . ' days while the interval is unset, and each one\'s messages, without blocking, one request at a time, on a TICK request (request_node unthread TICK).',
 			'Start a pass over the conversations; each page records its new messages as it lands. Trigger with `request_node unthread TICK`.'
 		);
 	}

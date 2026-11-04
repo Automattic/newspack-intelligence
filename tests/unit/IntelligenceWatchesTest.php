@@ -21,8 +21,8 @@ require_once __DIR__ . '/../support/signs-in-users.php';
 /**
  * Watches: one person's standing question over a lens, an entity or a
  * collection, saved and removed as ontology events at `read`, its unseen
- * matches listed and marked seen as watches-stream events, and no verb
- * answering or changing another person's watch.
+ * matches listed and marked seen as watches-stream events, and a verb
+ * never answering or changing another person's watch.
  */
 final class IntelligenceWatchesTest extends TestCase {
 	use Seeds_Intel_Graph;
@@ -147,11 +147,11 @@ final class IntelligenceWatchesTest extends TestCase {
 			'two targets'                  => [ 'save_watch', [ 'Both', '--entity=' . self::GAZETTE, '--collection=harbor-reading' ], 'a watch follows exactly one of lens, entity or collection' ],
 			'no box ticked'                => [ 'save_watch', [ 'Mute', '--entity=' . self::GAZETTE, '--inbox=off' ], 'a watch delivers by digest, instant email or inbox; tick one' ],
 			'an entity it cannot see'      => [ 'save_watch', [ 'Quiet', '--entity=' . self::QUIET ], 'no entity: ' . self::QUIET ],
-			'a lens no one saved'          => [ 'save_watch', [ 'Ghost', '--lens=Ghost Desk' ], 'no lens: ghost-desk' ],
-			'a collection no one made'     => [ 'save_watch', [ 'Shelf', '--collection=empty-shelf' ], 'no collection: empty-shelf' ],
+			'a lens never saved'           => [ 'save_watch', [ 'Ghost', '--lens=Ghost Desk' ], 'no lens: ghost-desk' ],
+			'a collection never made'      => [ 'save_watch', [ 'Shelf', '--collection=empty-shelf' ], 'no collection: empty-shelf' ],
 			'a blank name'                 => [ 'save_watch', [ ' ', '--entity=' . self::GAZETTE ], 'name is blank' ],
 			'another\'s key replaced'      => [ 'save_watch', [ 'Mine now', '--entity=' . self::GAZETTE, '--key=' . self::THEIRS ], 'no watch: ' . self::THEIRS ],
-			'a key no one saved replaced'  => [ 'save_watch', [ 'Mine now', '--entity=' . self::GAZETTE, '--key=00000000deadbeef' ], 'no watch: 00000000deadbeef' ],
+			'a key never saved replaced'   => [ 'save_watch', [ 'Mine now', '--entity=' . self::GAZETTE, '--key=00000000deadbeef' ], 'no watch: 00000000deadbeef' ],
 			'another\'s watch removed'     => [ 'remove_watch', [ self::THEIRS ], 'no watch: ' . self::THEIRS ],
 			'another\'s matches read'      => [ 'watch_matches', [ self::THEIRS ], 'no watch: ' . self::THEIRS ],
 			'another\'s matches marked'    => [ 'mark_seen', [ self::THEIRS ], 'no watch: ' . self::THEIRS ],

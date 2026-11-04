@@ -110,7 +110,10 @@ final class PublisherSignalsTest extends TestCase {
 		$this->assertSame( [], $this->ci->dispatch( 'signals', [ '--entity=' . self::COURIER ] )['signals'] );
 	}
 
-	/** A week in which every client's output fell is collection failing: no client drops. */
+	/**
+	 * A week in which every client's output fell is collection failing: none of
+	 * the clients drops.
+	 */
 	public function test_an_outage_week_drops_no_client(): void {
 		$this->published( self::TERN, 'research', [ 1 => 1, 2 => 5, 3 => 5, 4 => 5, 5 => 5, 6 => 5, 7 => 5, 8 => 5, 9 => 5 ] );
 		$this->published( self::COURIER, 'research', [ 1 => 1, 2 => 4, 3 => 4, 4 => 4, 5 => 4, 6 => 4, 7 => 4, 8 => 4, 9 => 4 ] );
@@ -194,7 +197,10 @@ final class PublisherSignalsTest extends TestCase {
 		);
 	}
 
-	/** A lens's signals answer no publisher signal, its own entity's included. */
+	/**
+	 * A lens's signals leave out the publisher signal, its own entity's
+	 * included.
+	 */
 	public function test_a_lens_answers_no_publisher_signal(): void {
 		$this->published( self::TERN, 'research', self::STEADY );
 		$this->published( self::COURIER, 'research', [ 1 => 2, 2 => 4, 3 => 4, 4 => 4, 5 => 4, 6 => 4, 7 => 4, 8 => 4, 9 => 4 ] );

@@ -65,7 +65,7 @@ class Slack_Source_Node extends Source_Node {
 			if ( 'https' === \wp_parse_url( $workspace, \PHP_URL_SCHEME ) && '' !== Core::as_string( \wp_parse_url( $workspace, \PHP_URL_HOST ) ) ) {
 				$this->workspace = \trailingslashit( $workspace );
 			} elseif ( null !== $answer ) {
-				$this->fails( "Slack's auth.test named no https workspace url: ", $workspace );
+				$this->fails( "Slack's auth.test returned no https workspace url: ", $workspace );
 			}
 			$this->histories();
 			return [];

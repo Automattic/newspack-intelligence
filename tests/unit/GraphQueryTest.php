@@ -16,8 +16,8 @@ require_once __DIR__ . '/../support/seeds-intel-graph.php';
  * Graph_Query answers each read verb from the projection: items with their
  * extraction and the entities they link, an entity's record, its timeline,
  * related entities, claims, trends, the review queue and collections. A link
- * counts by its effective state, a merged key reads as its survivor, and no
- * answer carries an item body.
+ * counts by its effective state, a merged key reads as its survivor, and an
+ * answer never carries an item body.
  */
 final class GraphQueryTest extends TestCase {
 	use Seeds_Intel_Graph;
@@ -87,7 +87,10 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [], self::keys( self::search( [ 'q' => 'title:award' ] ) ) );
 	}
 
-	/** A word holding no letter or digit is no word: it neither narrows nor empties q. */
+	/**
+	 * A word holding no letter or digit is not a word: it neither narrows nor
+	 * empties q.
+	 */
 	public function test_search_drops_words_without_a_letter_or_digit(): void {
 		$this->seed_world();
 
@@ -130,7 +133,10 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [ 'feed:kestrel-appeal', 'linear:quarry-cancels' ], self::keys( self::search( [ 'sort' => 'time' ] ) ) );
 	}
 
-	/** Equal importance falls back to the newest, and an item no extraction scored ranks last. */
+	/**
+	 * Equal importance falls back to the newest, and an unscored item ranks
+	 * last.
+	 */
 	public function test_importance_breaks_ties_by_time_and_ranks_the_unscored_last(): void {
 		$this->seed(
 			self::item( 'feed:heron-older', 'Heron Post older note', 'feed', 'public', self::$oct_01 ),
@@ -143,7 +149,10 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [ 'feed:heron-newer', 'feed:heron-older', 'feed:heron-unscored' ], self::keys( self::search( [ 'sort' => 'importance' ] ) ) );
 	}
 
-	/** With no sort named, words rank by time and no words by importance; the answer says which. */
+	/**
+	 * With no sort named, words rank by time and a query without words by
+	 * importance; the answer says which.
+	 */
 	public function test_search_defaults_to_time_with_words_and_importance_without(): void {
 		$this->seed_world();
 
@@ -495,7 +504,7 @@ final class GraphQueryTest extends TestCase {
 	}
 
 	/**
-	 * A purged item answers no read — search, an entity's counts, trends,
+	 * Every read leaves a purged item out — search, an entity's counts, trends,
 	 * related, claims or the review queue — though its judgment and a
 	 * collection's saved copy stay, and the collection still lists the copy.
 	 */
@@ -622,7 +631,7 @@ final class GraphQueryTest extends TestCase {
 		$this->assertNotSame( [], self::stderr_lines( $stderr, 'intel-graph' ) );
 	}
 
-	/** A reader no partition file is attached to sees no entity. */
+	/** A reader that has no partition file attached sees no entity. */
 	public function test_no_entity_is_visible_before_any_partition_writes(): void {
 		$reader = \Newspack_Nodes\Sqlite_Arm::open_rows( [ 0 => $this->make_temp_dir( 'intel-unwritten-' ) . '/intel-graph.p0.sqlite' ], Intel_Graph_Row_Schema::version() );
 

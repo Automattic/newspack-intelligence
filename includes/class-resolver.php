@@ -421,7 +421,8 @@ final class Resolver {
 	/**
 	 * The first of the item's sentences spelling a name, both read as
 	 * `Entity_Index::plain()` reads text, case aside, cut to EVIDENCE_BYTES
-	 * around it; '' when none spells it, or for no name.
+	 * around it; '' when no sentence spells it, or for a name `plain()` reads
+	 * as empty.
 	 *
 	 * @param string $name The name as the text or the extractor gave it.
 	 */

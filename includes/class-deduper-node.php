@@ -24,7 +24,8 @@
  * checkpoints with the resolve Consumer's cursor (`save_state()`), so a
  * respawned deduper decides from what it had decided, and a miss reaches only
  * items older than the LRU's horizon, which the projection has long caught
- * up with. While no active topology declares the table, a miss finds nothing.
+ * up with. While the active topologies do not declare the table, a miss
+ * finds nothing.
  *
  * @package Newspack_Intelligence
  */
@@ -90,7 +91,7 @@ class Deduper_Node extends Node {
 	/** Hex digits of a spelling's hash that key its LRU entry. */
 	private const SPELLING_KEY_HEX = 16;
 
-	/** The line a read logs while no projection opens. */
+	/** The line a read logs while the projection will not open. */
 	private const UNAVAILABLE = 'no intel-graph to find copies in; reading none: ';
 
 	/** The writer every cluster event is addressed to. */
@@ -387,8 +388,9 @@ class Deduper_Node extends Node {
 
 	/**
 	 * A cluster's canonical: the LRU's, else the projection's, read again and
-	 * remembered. A cluster with no canonical row is a singleton when no
-	 * member row names it either; null when its canonical is unknown.
+	 * remembered. A cluster with no canonical row is a singleton when the
+	 * `clusters` table does not name it either; null when its canonical is
+	 * unknown.
 	 *
 	 * @param string $cluster The cluster key.
 	 * @return Cluster|null

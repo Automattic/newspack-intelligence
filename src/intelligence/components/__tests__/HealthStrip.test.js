@@ -403,7 +403,7 @@ describe( 'HealthStrip', () => {
 		).toBeNull();
 	} );
 
-	it( 'offers no Activate while no composition is known', async () => {
+	it( 'offers no Activate while the slice names no composition', async () => {
 		health.collection = { state: 'inactive', topologies: [] };
 		renderStrip( { canManage: true } );
 		await lineReads( 'Collection is off.' );
@@ -598,7 +598,7 @@ describe( 'HealthStrip', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'names a source no pass has reported, and stays neutral', async () => {
+	it( 'names a source that has not reported yet, and stays neutral', async () => {
 		health.sources.sources[ 2 ] = { name: 'news', state: 'unknown' };
 		renderStrip();
 		await lineReads(
@@ -611,7 +611,7 @@ describe( 'HealthStrip', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'names every source no pass has reported, as a list', async () => {
+	it( 'names every source that has not reported yet, as a list', async () => {
 		health.sources.sources[ 0 ] = { name: 'github', state: 'unknown' };
 		health.sources.sources[ 2 ] = { name: 'news', state: 'unknown' };
 		health.sources.sources.push( okSource( 'slack' ) );

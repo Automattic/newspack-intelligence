@@ -202,7 +202,7 @@ function mount_service_cis( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 
 /**
  * Register the `wp newspack-intelligence` verbs, and the line `wp nodes
- * doctor` opens with while no lists file resolves.
+ * doctor` opens with while the lists file does not resolve.
  *
  * @api Called by the plugins_loaded bootstrap; tests drive it against a recorder.
  */

@@ -43,7 +43,10 @@ final class RestrictedCliCommandTest extends TestCase {
 		$this->assertSame( '\\Newspack_Intelligence\\CLI\\Restricted_CLI_Command', \WP_CLI::$commands['newspack-intelligence restricted'] );
 	}
 
-	/** A grant names the user's own login, and logs the wp-cli uid when no user is signed in. */
+	/**
+	 * A grant names the user's own login, and logs the wp-cli uid when WP-CLI
+	 * runs without a signed-in user.
+	 */
 	public function test_grant_names_the_user_and_logs_the_cli_operator(): void {
 		$stderr = $this->capture_stderr();
 

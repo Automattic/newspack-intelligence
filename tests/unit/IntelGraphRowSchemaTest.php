@@ -52,7 +52,10 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'Intel_Graph' ], Core::node( 'intel-graph' )->arguments(), 'the Row_Table accepts the schema' );
 	}
 
-	/** A read given a line answers null while no projection opens, logged once; a read given none throws. */
+	/**
+	 * A read given a line answers null while the projection will not open,
+	 * logged once; a read given none throws.
+	 */
 	public function test_a_read_given_a_line_answers_null_while_no_projection_opens(): void {
 		$stderr = $this->capture_stderr();
 

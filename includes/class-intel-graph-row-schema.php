@@ -442,9 +442,11 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	 *
 	 * @template T
 	 * @param \Closure(Row_Reader): T $read        The read.
-	 * @param string|null             $unavailable The line logged when no projection opens.
+	 * @param string|null             $unavailable The line logged when the
+	 *                                             projection will not open.
 	 * @return ($unavailable is null ? T : T|null)
-	 * @throws Table_Unavailable When no projection opens and no line is given.
+	 * @throws Table_Unavailable When the projection will not open and the
+	 *                           caller gives no line.
 	 * @throws \RuntimeException As `Row_Table_Node::read()`, or what the read throws.
 	 */
 	public static function read( \Closure $read, ?string $unavailable = null ): mixed {

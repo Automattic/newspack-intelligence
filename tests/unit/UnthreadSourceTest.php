@@ -32,7 +32,10 @@ final class UnthreadSourceTest extends TestCase {
 	/** The context line every HERON message's body opens with. */
 	private const CONTEXT = '[in_progress] Heron Gazette: Heron Gazette paywall loop';
 
-	/** The pinned clock: no default's, and a past instant, so the window arithmetic is fixed. */
+	/**
+	 * The pinned clock: distinct from every default, and a past instant, so the
+	 * window arithmetic is fixed.
+	 */
 	private const NOW = 1793177263.0;
 
 	protected function setUp(): void {

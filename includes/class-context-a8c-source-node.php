@@ -42,7 +42,10 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	/** The token endpoint the authorization server's metadata names. */
 	public const TOKEN_URL = 'https://public-api.wordpress.com/oauth2-1/token';
 
-	/** Seconds before its expiry a token is refreshed, so no pass outlives it. */
+	/**
+	 * Seconds before its expiry a token is refreshed, so a pass never outlives
+	 * it.
+	 */
 	public const EXPIRY_MARGIN = 600;
 
 	/** The protocol revision `initialize` asks for. */
@@ -163,7 +166,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	private function refreshed( string $body ): void {
 		[ $landed, $written ] = Context_A8C_Token::landed( $this->auth_dir, $body, Core::$now );
 		if ( ! $landed ) {
-			$this->fails( 'the token endpoint answered no access token: ', self::TOKEN_URL );
+			$this->fails( 'the token endpoint returned no access token: ', self::TOKEN_URL );
 			return;
 		}
 		if ( ! $written ) {
@@ -198,7 +201,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	 * @param string $body The JSON-RPC body.
 	 */
 	private function initialized( string $body ): void {
-		$answer = $this->json_answer( 'ContextA8C', self::INITIALIZE, $body, static fn ( array $answer ): ?string => isset( $answer['error'] ) ? Core::as_string( Core::arr( $answer['error'] )['message'] ?? null, 'a JSON-RPC error' ) : ( \is_string( Core::arr( $answer['result'] ?? null )['protocolVersion'] ?? null ) ? null : 'initialize answered no protocolVersion' ) );
+		$answer = $this->json_answer( 'ContextA8C', self::INITIALIZE, $body, static fn ( array $answer ): ?string => isset( $answer['error'] ) ? Core::as_string( Core::arr( $answer['error'] )['message'] ?? null, 'a JSON-RPC error' ) : ( \is_string( Core::arr( $answer['result'] ?? null )['protocolVersion'] ?? null ) ? null : 'initialize returned no protocolVersion' ) );
 		if ( null === $answer ) {
 			return;
 		}
@@ -221,7 +224,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	/**
 	 * A call's answer: the provider's JSON object from the first text
 	 * content, or null, logged under the subject, for a JSON-RPC error, an
-	 * error result or a text that is no JSON object.
+	 * error result or a text that is not a JSON object.
 	 *
 	 * @param string $subject The call's subject.
 	 * @param string $body    The JSON-RPC body.

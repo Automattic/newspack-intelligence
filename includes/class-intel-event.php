@@ -306,7 +306,7 @@ final class Intel_Event {
 	 * label names, `agent:<login>:<label>`, the label as the substrate bounds
 	 * it; else the signed-in person, `user:<login>`.
 	 *
-	 * @throws \InvalidArgumentException When no person is signed in.
+	 * @throws \InvalidArgumentException When the current user is not signed in.
 	 */
 	public static function caller(): string {
 		$login = Core::as_string( \wp_get_current_user()->user_login );

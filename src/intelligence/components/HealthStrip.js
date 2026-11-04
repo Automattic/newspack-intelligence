@@ -173,7 +173,7 @@ function failingText( { last_error: error, failing_since: since } ) {
 }
 
 /**
- * Why items wait to resolve, the count unknown when no snapshot holds it.
+ * Why items wait to resolve, the count unknown when it is not in any snapshot.
  *
  * @param {{held: ?number, since: ?number}} backlog The slice.
  * @return {string} The cause.
@@ -284,8 +284,8 @@ const RUNNING = {
 };
 
 /**
- * Every row's states, by the word its slice answers. A state no table
- * holds reads as unknown, never as healthy.
+ * Every row's states, by the word its slice answers. A state that is not
+ * in any table reads as unknown, never as healthy.
  */
 const STATES = {
 	collection: {
@@ -790,7 +790,8 @@ function healthRows( { collection, backlog, extraction, sources }, ctx ) {
  * reported and the names of those that have not.
  *
  * @param {number}        total      Every source the slice lists.
- * @param {Array<string>} unreported The names of those no pass has reported.
+ * @param {Array<string>} unreported The names of those that have not reported
+ *                                   yet.
  * @return {string} The sentence.
  */
 function collectingText( total, unreported ) {
@@ -846,10 +847,10 @@ function listFormat() {
 
 /**
  * The strip's one line, the first that holds of: the worst fault; a slice
- * refused; a slice owed; collection off, which outranks the unknown rows
- * its expired snapshots leave; a row whose health is not known but a
- * source no pass has reported; else how many sources it collects from,
- * naming each source no pass has reported, and the backlog row's cause.
+ * refused; a slice owed; collection off, which outranks the unknown rows its
+ * expired snapshots leave; a row whose health is not known but a source that
+ * has not reported yet; else how many sources it collects from, naming each
+ * source that has not reported yet, and the backlog row's cause.
  *
  * @param {Object}           strip            What the line reads.
  * @param {Array<HealthRow>} strip.faults     The fault rows, worst first.
@@ -901,7 +902,7 @@ function healthLine( { faults, rows, reads, collection, sources } ) {
  * a reader holding its role, as a button whose answer shows beside it, and
  * as its text step for anyone else; the server's role gate decides.
  * Collection off is neutral: it neither opens nor colours the strip, and
- * while it is off no other row does either; nor does a projector catching
+ * while it is off the other rows do not either; nor does a projector catching
  * up on the ontology for under BEHIND_FAULT_S. A
  * reader's open or close holds until the set of faults changes.
  *

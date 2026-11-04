@@ -33,7 +33,7 @@ final class Intelligence_Briefing {
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args.
 	 * @return array<array-key,mixed>
-	 * @throws \InvalidArgumentException When `what` names no slice.
+	 * @throws \InvalidArgumentException When `what` does not name a slice.
 	 */
 	public static function answer( array $args ): array {
 		$what = Graph_Query::one_of( 'what', Core::as_string( $args['what'] ), self::SLICES );

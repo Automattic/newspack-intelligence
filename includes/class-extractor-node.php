@@ -23,14 +23,14 @@
  * by an asserted link, so a claim about a merely proposed subject asserts
  * nothing; the object is the only one, or the only one the item links, and
  * otherwise stays text. A claim takes the confidence of its subject's link.
- * With no client, a thrown call or a reply that does not parse, an item no
- * call has extracted records a heuristic extraction under its own actor, so
- * it is marked extracted rather than retried in a loop. A call made that
- * fails also parks a re-resolution of the item on the Delay its `make_node`
- * line names after the writer, with exponential backoff, until MAX_ATTEMPTS;
- * the struct it reads carries the `attempt` that counts them, and the retry
- * stays owed its extraction when the struct was (`extract`). The topics
- * offered and the names claims resolve through come from the process's
+ * With no client, a thrown call or a reply that does not parse, an item that
+ * has not been extracted by any call records a heuristic extraction under its
+ * own actor, so it is marked extracted rather than retried in a loop. A call
+ * made that fails also parks a re-resolution of the item on the Delay its
+ * `make_node` line names after the writer, with exponential backoff, until
+ * MAX_ATTEMPTS; the struct it reads carries the `attempt` that counts them, and
+ * the retry stays owed its extraction when the struct was (`extract`). The
+ * topics offered and the names claims resolve through come from the process's
  * shared `Entity_Index::current()`, the one the Resolver reads. Each
  * extraction publishes its status: heuristic with no client, a call that
  * answered, or the failure of one that did not.

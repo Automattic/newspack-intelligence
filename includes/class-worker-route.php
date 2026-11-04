@@ -45,7 +45,7 @@ final class Worker_Route {
 	 * @param string                     $base_dir    The substrate base directory (ipc/locks live under it).
 	 * @param list<array{0:string,1:string}> $requests Each `[ node, request line ]`.
 	 * @return int The workers reached.
-	 * @throws \RuntimeException When no worker of the topology is reached.
+	 * @throws \RuntimeException When the topology's workers cannot be reached.
 	 */
 	public static function send( Command_Interpreter_Node $interpreter, string $base_dir, array $requests ): int {
 		return self::deliver( $interpreter, $base_dir, \array_map( static fn ( array $request ): array => [ $request[0], Message::TM_REQUEST, $request[1] ], $requests ) );
@@ -61,7 +61,7 @@ final class Worker_Route {
 	 * @param string                    $node        The worker's node the events reach.
 	 * @param list<array<string,mixed>> $events      The events.
 	 * @return int The workers reached.
-	 * @throws \RuntimeException When no worker of the topology is reached.
+	 * @throws \RuntimeException When the topology's workers cannot be reached.
 	 */
 	public static function append( Command_Interpreter_Node $interpreter, string $base_dir, string $node, array $events ): int {
 		return self::deliver( $interpreter, $base_dir, \array_map( static fn ( array $event ): array => [ $node, Message::TM_STRUCT, $event ], $events ) );
@@ -76,7 +76,7 @@ final class Worker_Route {
 	 * @param string                               $base_dir    The substrate base directory.
 	 * @param list<array{0:string,1:int,2:mixed}> $messages    Each `[ node, TYPE, VALUE ]`.
 	 * @return int The workers reached.
-	 * @throws \RuntimeException When no worker of the topology is reached.
+	 * @throws \RuntimeException When the topology's workers cannot be reached.
 	 */
 	private static function deliver( Command_Interpreter_Node $interpreter, string $base_dir, array $messages ): int {
 		$topology = self::topology();
@@ -152,7 +152,8 @@ final class Worker_Route {
 	/**
 	 * Intelligence's topology, which every route reaches.
 	 *
-	 * @throws \RuntimeException When no active topology declares an `Intel_Event_Writer`, or several do.
+	 * @throws \RuntimeException When the active topologies declare no
+	 *                           `Intel_Event_Writer`, or several do.
 	 */
 	public static function topology(): string {
 		return self::running() ?? throw new \RuntimeException( 'No active topology declares an Intel_Event_Writer node: activate the topology that composes Intelligence.' );
@@ -161,7 +162,8 @@ final class Worker_Route {
 	/**
 	 * The one active topology declaring an `Intel_Event_Writer`; null while
 	 * none does and every active `.tsl` reads, which is collection off. An
-	 * active name no `.tsl` resolves declares nothing, so it counts as read.
+	 * active name that does not resolve to any `.tsl` declares nothing, so it
+	 * counts as read.
 	 *
 	 * @throws \RuntimeException When several do, naming them; or none does while an active `.tsl` will not read, naming it, its failure chained.
 	 */
@@ -198,9 +200,9 @@ final class Worker_Route {
 
 	/**
 	 * The topologies to activate, sorted: each catalog topology declaring an
-	 * `Intel_Event_Writer` that no other such topology includes, so a part a
-	 * composition includes is never offered. One that will not read is not
-	 * offered, nor one declaring a source that cannot collect on this host.
+	 * `Intel_Event_Writer` that is not included by any other such topology, so
+	 * a part a composition includes is never offered. One that will not read is
+	 * not offered, nor one declaring a source that cannot collect on this host.
 	 *
 	 * @return list<string>
 	 * @throws Worker_Should_Stop When reading a topology raises a cooperative stop.

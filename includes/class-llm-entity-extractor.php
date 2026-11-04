@@ -49,7 +49,7 @@ final class LLM_Entity_Extractor implements Entity_Extractor {
 		$d    = Prompts::json_object( $raw );
 		$orgs = $d['orgs'] ?? null;
 		if ( ! \is_array( $orgs ) || ! \array_is_list( $orgs ) ) {
-			Core::print_less_often( 'NER reply named no organization list' );
+			Core::print_less_often( 'NER reply has no organization list' );
 			return null;
 		}
 		return [

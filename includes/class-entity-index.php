@@ -83,10 +83,10 @@ final class Entity_Index {
 	 * The index this process shares, read again once TTL_S has passed or
 	 * when it was read before `$fresh_after`, the tick by which the
 	 * projection holds what a caller needs; an empty one, logged once, while
-	 * no `intel-graph` table can be read. Each read first takes whether the
-	 * projector stands behind the ontology stream, BEFORE the index, so a
-	 * flush and commit landing between the two reads can only make the index
-	 * fresher than the reading says, never staler.
+	 * the `intel-graph` tables cannot be read. Each read first takes
+	 * whether the projector stands behind the ontology stream, BEFORE the
+	 * index, so a flush and commit landing between the two reads can only make
+	 * the index fresher than the reading says, never staler.
 	 *
 	 * @param float $fresh_after The earliest read the caller accepts.
 	 */
@@ -334,7 +334,8 @@ final class Entity_Index {
 
 	/**
 	 * Why records would hold, by `cause()`'s rule, read now without loading
-	 * an index: no live entity while no `intel-graph` table can be read.
+	 * an index: no live entity while the `intel-graph` tables cannot be
+	 * read.
 	 *
 	 * @api Read by Intelligence_Health.
 	 */
@@ -348,7 +349,7 @@ final class Entity_Index {
 	 * Why records hold, '' when nothing holds: while a projector's reader of
 	 * the ontology stream had not committed its end just before the
 	 * projection was read, so a seed not yet projected never reads as an
-	 * empty ontology; then while no entity is live.
+	 * empty ontology; then while the index holds no live entity.
 	 *
 	 * @param bool $behind Whether the projector stood behind the stream.
 	 * @param bool $live   Whether a live entity is projected.
@@ -403,8 +404,8 @@ final class Entity_Index {
 	 * Why a domain, as `identifier_value()` spells it, is not a plain
 	 * hostname, or null when it is one: two or more labels of a-z, 0-9 and
 	 * hyphens, none starting or ending with one, each at most 63
-	 * characters, the last alphabetic, the whole at most 253. So no IP
-	 * literal, port, path, userinfo or trailing dot passes.
+	 * characters, the last alphabetic, the whole at most 253. So an IP
+	 * literal, port, path, userinfo or trailing dot never passes.
 	 *
 	 * @param string $domain A normalised domain.
 	 */

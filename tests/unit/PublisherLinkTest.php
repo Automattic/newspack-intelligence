@@ -38,7 +38,7 @@ final class PublisherLinkTest extends TestCase {
 
 	private const LEDGER = 'organization:salem-ledger';
 
-	/** A proposed entity no item cites but by publishing it. */
+	/** A proposed entity that items cite only by publishing it. */
 	private const TERN = 'organization:tern-weekly';
 
 	/** Monday 2026-10-19 00:00 UTC, when the fixture's current week opened. */
@@ -136,7 +136,10 @@ final class PublisherLinkTest extends TestCase {
 		$this->assertSame( [ [ '2026-09-28', 'award', 1 ], [ '2026-10-05', 'award', 1 ] ], self::rows( $this->ci->dispatch( 'trends', [ 'kind', '--role=client' ] ) ) );
 	}
 
-	/** A burst of what a client published is no signal about it; a week of one item about it each is none either. */
+	/**
+	 * A burst of what a client published is not a signal about it; a week of
+	 * one item about it each is not one either.
+	 */
 	public function test_signals_count_what_it_is_about(): void {
 		for ( $back = 1; $back <= 9; $back++ ) {
 			$key = "feed:gazette-week-{$back}";
@@ -211,8 +214,8 @@ final class PublisherLinkTest extends TestCase {
 	}
 
 	/**
-	 * A publisher link is no judgment's to make: confirming or rejecting an
-	 * item its entity only published is refused, and writes nothing.
+	 * A publisher link is not for a judgment to make: confirming or rejecting
+	 * an item its entity only published is refused, and writes nothing.
 	 *
 	 * @param string $verb The judging verb.
 	 */

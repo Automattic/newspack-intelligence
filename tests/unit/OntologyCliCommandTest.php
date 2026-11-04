@@ -303,7 +303,7 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame( [ 200, [] ], [ Ontology_CLI_Command::REEXTRACT_LIMIT, \WP_CLI::$successes ] );
 	}
 
-	/** A range dating no item sends nothing and says so. */
+	/** A range that contains no item sends nothing and says so. */
 	public function test_reextract_sends_nothing_for_a_range_dating_no_item(): void {
 		self::live_worker( Config::get_base_directory(), 'skua-intel.p3' );
 		$this->seed_dated( 'feed:kestrel-1' );
@@ -458,7 +458,10 @@ final class OntologyCliCommandTest extends TestCase {
 		}
 	}
 
-	/** Run as root, each verb refuses before it writes, so no root-owned segment, IPC file or hold is left for the workers. */
+	/**
+	 * Run as root, each verb refuses before it writes, so it leaves the workers
+	 * no root-owned segment, IPC file or hold.
+	 */
 	public function test_every_verb_refuses_root_before_any_write(): void {
 		self::live_worker( Config::get_base_directory(), 'skua-intel.p5' );
 		CLI::$uid_provider = static fn (): int => 0;

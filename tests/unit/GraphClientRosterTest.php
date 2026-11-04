@@ -228,7 +228,7 @@ final class GraphClientRosterTest extends TestCase {
 	/** A row with no atomic id is refused rather than keyed `organization:atomic-`. */
 	public function test_a_row_with_no_atomic_id_is_refused(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessage( 'client import: a row names no atomic site id' );
+		$this->expectExceptionMessage( 'client import: a row has no atomic site id' );
 		self::importer()->import( self::rows( [ '  ', 'blankpier.example' ] ), '2026-03-14' );
 	}
 

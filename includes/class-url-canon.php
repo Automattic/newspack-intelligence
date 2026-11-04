@@ -17,8 +17,8 @@ final class Url_Canon {
 
 	/**
 	 * The URL without its scheme, `www.`, fragment, tracking keys or trailing
-	 * slash, its host lowercased and its query keys sorted; a URL naming no
-	 * host is returned as given.
+	 * slash, its host lowercased and its query keys sorted; a URL that does not
+	 * name a host is returned as given.
 	 *
 	 * @param string $url A URL.
 	 */
