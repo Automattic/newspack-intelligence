@@ -90,7 +90,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 		'reason'        => null,
 	];
 
-	/** @var array<string,bool> Recorded item keys and keys refused for their size (insertion-ordered), for cross-tick dedup. */
+	/** @var array<string,bool> Each recorded item by copy_of(), and each key refused for its size (insertion-ordered), for cross-tick dedup. */
 	protected array $seen = [];
 
 	/** The access tier every item this source records carries. */
@@ -679,21 +679,22 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * Emit one `item_recorded` event per item neither seen nor held by the
-	 * projection, remembering each key but one make() refuses, so that one
-	 * retries; a key past Graph_Curation::ITEM_KEY_BYTES is logged and refused
-	 * once a process.
+	 * projection, by key or as a copy (copy_of()), remembering each but one
+	 * make() refuses, so that one retries; a key past
+	 * Graph_Curation::ITEM_KEY_BYTES is logged and refused once a process.
 	 *
 	 * @param array<int,array<string,mixed>> $items Normalized items.
 	 */
 	private function record( array $items ): void {
 		$held = $this->held( $items );
 		foreach ( $items as $item ) {
-			$key = Core::as_string( $item['item_key'] );
-			if ( isset( $this->seen[ $key ] ) ) {
+			$key  = Core::as_string( $item['item_key'] );
+			$copy = $this->copy_of( $item );
+			if ( isset( $this->seen[ $key ] ) || isset( $this->seen[ $copy ] ) ) {
 				continue;
 			}
-			if ( isset( $held[ $key ] ) ) {
-				$this->remember( $key );
+			if ( isset( $held[ $key ] ) || isset( $held[ $copy ] ) ) {
+				$this->remember( $copy );
 				continue;
 			}
 			$bytes = Graph_Curation::written_bytes( $key );
@@ -704,7 +705,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 			}
 			// Unlike a size refusal, a make() refusal is not kept: it retries.
 			if ( $this->write( 'item_recorded', $item, $key ) ) {
-				$this->remember( $key );
+				$this->remember( $copy );
 			}
 		}
 	}
@@ -730,37 +731,90 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * The keys of the items, not yet seen, that the projection's items hold
-	 * in any partition, in one read; none when every key is seen or the
-	 * projection will not open, which is logged.
+	 * Of the items not yet seen, the keys the projection's items hold in any
+	 * partition, and the copies, by copy(), its items of the same source
+	 * hold at the same canonical URL, in one read; none when every item is
+	 * seen or the projection will not open, which is logged.
 	 *
 	 * @param array<int,array<string,mixed>> $items Normalized items.
-	 * @return array<string,true>
+	 * @return array<string,true> Each held key and copy.
 	 */
 	private function held( array $items ): array {
-		$unseen = [];
+		$keys = [];
+		$urls = [];
 		foreach ( $items as $item ) {
-			$key = Core::as_string( $item['item_key'] );
-			if ( ! isset( $this->seen[ $key ] ) ) {
-				$unseen[ $key ] = true;
+			$key  = Core::as_string( $item['item_key'] );
+			$copy = $this->copy_of( $item );
+			if ( isset( $this->seen[ $key ] ) || isset( $this->seen[ $copy ] ) ) {
+				continue;
+			}
+			$keys[] = $key;
+			if ( $copy !== $key ) {
+				$urls[ Core::as_string( $item['source'] ) ][] = Url_Canon::of( Core::as_string( $item['url'] ) );
 			}
 		}
-		if ( [] === $unseen ) {
+		if ( [] === $keys ) {
 			return [];
 		}
-		$keys = \array_map( 'strval', \array_keys( $unseen ) );
+		$where = 'item_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' )';
+		$binds = $keys;
+		foreach ( $urls as $source => $canonicals ) {
+			$where .= ' OR ( source = ? AND url_canonical IN ( ' . Intel_Graph_Row_Schema::marks( $canonicals ) . ' ) )';
+			$binds  = [ ...$binds, $source, ...$canonicals ];
+		}
 		$rows = Intel_Graph_Row_Schema::read(
-			static fn ( Row_Reader $r ): array => $r->rows( 'SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' ) . ' i WHERE item_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' )', $keys ),
+			static fn ( Row_Reader $r ): array => $r->rows( 'SELECT item_key, url_canonical FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' ) . " i WHERE {$where}", $binds ),
 			"{$this->name}: no intel-graph to read recorded items from; recording every item fetched: "
 		) ?? [];
 		$held = [];
-		foreach ( $rows as [ $key ] ) {
-			$held[ Core::as_string( $key ) ] = true;
+		foreach ( $rows as [ $key, $url ] ) {
+			$key          = Core::as_string( $key );
+			$held[ $key ] = true;
+			$raw          = $this->raw_id( $key );
+			if ( null !== $raw ) {
+				$held[ self::copy( $raw, Core::as_string( $url ) ) ] = true;
+			}
 		}
 		return $held;
 	}
 
-	/** Record a key, evicting the oldest once the set exceeds MAX_SEEN. */
+	/**
+	 * What an item is remembered and matched by: as copy() spells its raw id
+	 * and canonical URL, which every copy of it shares, when its source names
+	 * a raw id and its URL names a host; else its key. A source's own copies
+	 * alone meet, since held() reads the projection's by source and a
+	 * node records one source.
+	 *
+	 * @param array<string,mixed> $item A normalized item.
+	 */
+	private function copy_of( array $item ): string {
+		$key = Core::as_string( $item['item_key'] );
+		$raw = $this->raw_id( $key );
+		if ( null === $raw ) {
+			return $key;
+		}
+		$url = Core::as_string( $item['url'] );
+		return '' === Core::as_string( \wp_parse_url( $url, \PHP_URL_HOST ) ) ? $key : self::copy( $raw, Url_Canon::of( $url ) );
+	}
+
+	/**
+	 * The id a key carries past its source and any lane, which a copy of its
+	 * item listed in another lane carries too; null for a source that judges
+	 * each item by its key alone, as one whose items share a canonical URL
+	 * must, a P2 post's comments sharing its own.
+	 *
+	 * @param string $key An item key.
+	 */
+	protected function raw_id( string $key ): ?string {
+		return null;
+	}
+
+	/** A copy's spelling: raw id and canonical URL, joined by NUL, which XML cannot carry and so no feed key holds. */
+	private static function copy( string $raw, string $url ): string {
+		return "{$raw}\0{$url}";
+	}
+
+	/** Record a key or a copy, evicting the oldest once the set exceeds MAX_SEEN. */
 	private function remember( string $key ): void {
 		$this->seen[ $key ] = true;
 		if ( \count( $this->seen ) > self::MAX_SEEN ) {

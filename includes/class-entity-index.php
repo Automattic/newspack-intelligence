@@ -290,13 +290,32 @@ final class Entity_Index {
 	}
 
 	/**
-	 * The entity an identifier names.
+	 * The entity whose domain the host is, by suffix walk, most specific
+	 * first: the site that publishes there, or none.
+	 *
+	 * @param string $host A host, without `www.`.
+	 */
+	public function by_host( string $host ): ?string {
+		$labels = \explode( '.', $host );
+		for ( $at = 0; $at < \count( $labels ) - 1; $at++ ) {
+			$entity_key = $this->by_identifier( 'domain', \implode( '.', \array_slice( $labels, $at ) ) );
+			if ( null !== $entity_key ) {
+				return $entity_key;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Who holds an identifier: the survivor of a live holder, else the key
+	 * of one the index leaves out, rejected or unresolvable; none when no
+	 * entity does.
 	 *
 	 * @param string $kind  An identifier kind.
 	 * @param string $value Its value, in any case.
 	 */
-	public function by_identifier( string $kind, string $value ): ?string {
-		return $this->identifiers[ $kind ][ self::identifier_value( $kind, $value ) ] ?? null;
+	public function holder( string $kind, string $value ): ?string {
+		return $this->by_identifier( $kind, $value ) ?? $this->held_by_refused( $kind, $value );
 	}
 
 	/**
@@ -308,6 +327,16 @@ final class Entity_Index {
 	 */
 	public function held_by_refused( string $kind, string $value ): ?string {
 		return $this->refused[ $kind ][ self::identifier_value( $kind, $value ) ] ?? null;
+	}
+
+	/**
+	 * The entity an identifier names.
+	 *
+	 * @param string $kind  An identifier kind.
+	 * @param string $value Its value, in any case.
+	 */
+	public function by_identifier( string $kind, string $value ): ?string {
+		return $this->identifiers[ $kind ][ self::identifier_value( $kind, $value ) ] ?? null;
 	}
 
 	/**

@@ -280,7 +280,8 @@ and, like `intel:reresolve:resolve`, hands it one record a poll
 (`set_line_mode true`), links each item to the entities it is about. `Resolver` holds the order:
 identifiers in the item's URL (host by suffix walk, GitHub org and repo,
 LinkedIn company, X handle, a Linear issue's team) at 1.0, the entity whose
-`domain` the host is linked as the item's `publisher`; names and aliases
+`domain` the host is, by `Entity_Index::by_host()`'s suffix walk, linked as
+the item's `publisher`; names and aliases
 as whole words in title and body at 1.0, an acronym only in its own case at
 0.9; a domain's stem in the title at 0.9, when it runs at least
 `MIN_STEM_LENGTH` (6) characters, aligns to word boundaries, capitalizes
@@ -305,8 +306,10 @@ scan; otherwise only names whose byte length can reach the proposing band
 are scored, because similar_text's ratio never passes 2·min/(sum). Name and stem hits whose spans overlap in one text settle
 together: the longest span wins and a shorter hit drops, while equal spans
 naming several entities assert the one whose locality the text also names,
-written capitalized, at 0.9, else propose each at 0.5. A locality never
-drops a name. The host's entity published the item and is linked
+written capitalized, at 0.9; else, when exactly one of them is accepted or
+created and the rest are machine proposals, assert that one at the strength
+its hit earns and link the proposals not at all; else propose each at 0.5.
+A locality never drops a name. The host's entity published the item and is linked
 `publisher`, never `subject`, apart from any link the text earns it, so a
 client's own story is about the client only when its text names it, and a
 publisher spares the NER step as any link does. An entity the URL's path or
@@ -1126,8 +1129,8 @@ hostname: <why>`, from `Entity_Index::hostname_fault()`: two or more labels
 of a-z, 0-9 and hyphens, none starting or ending with one, each at most 63
 characters, the last alphabetic, the whole at most 253, so an IP literal,
 port, path, userinfo or trailing dot never passes), because a client's domain becomes a
-URL the worker fetches, reads the holder by
-the `identifiers` primary key, and refuses one another entity holds: the
+URL the worker fetches, reads the holder through `Entity_Index::holder()`
+over the index it loads, and refuses one another entity holds: the
 holder's survivor, accepted or proposed, or the holding key itself when
 its survivor is rejected or its chain does not resolve. `create_entity` refuses
 a key `Graph_Query::taken()` finds taken — visible and no longer a
@@ -1447,7 +1450,20 @@ It drops the keys a bounded in-memory set already holds (`MAX_SEEN` 2000,
 oldest evicted first), then reads, in one read through
 `Intel_Graph_Row_Schema::read()`, which of the rest the projection's `items`
 table holds in any partition, and remembers those without recording them, so a
-respawned worker records only items the graph lacks. A projection that will
+respawned worker records only items the graph lacks. A source whose
+`raw_id()` names a key's raw id, the feeds alone, also judges each item as
+a copy: two items are one when they come from the same source, their
+canonical URL (`Url_Canon::of()`) names a host, and their raw ids, the
+guid past the `feed:` and any lane's domain, are equal. The same read finds
+the items of that source the `items` table holds at those canonical URLs,
+the seen set remembers each item once, by its copy or else its key, and a
+copy held or recorded earlier in the process is remembered and not
+recorded, so a post sister feeds list under one guid records once, under
+the key that took it first, while a podcast's episodes, sharing their
+show's one link under their own guids, each record. An item whose URL is
+empty or names no host is judged by its key alone, and so is every item of
+every other source, because a P2 comment's URL differs from its post's
+only by a fragment, which the canonical URL drops. A projection that will
 not open records everything, under a rate-limited line naming the source, so
 a broken projection costs repeats, not items. An item recorded twice, from
 two workers or past a projection still catching up, the resolver reads as a
@@ -1917,7 +1933,10 @@ missing from the snapshot. A churn writes `role_ended client` on the key each op
 held under, from that row's `from_ts`, and `role_asserted former_client` on
 the survivor; a return is the reverse. `Entity_Index::load()` leaves out an
 identifier whose survivor is rejected or whose merge chain cycles or runs
-past 10 hops, and `held_by_refused()` names the key holding it. A client
+past 10 hops, and `Entity_Index::holder()` answers the key holding it, as
+it answers a live holder's survivor, the one rule the roster and
+`add_identifier` read a holder by; a holder the index holds no state for
+is a refused one. A client
 whose atomic id such an entity holds — rejected, merged into a rejected
 survivor, or on a broken chain — is left alone: no event, counted
 `updated`, never churned. So is a new client whose domain such an entity

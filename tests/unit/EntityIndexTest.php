@@ -335,6 +335,24 @@ final class EntityIndexTest extends TestCase {
 		$this->assertFalse( $index->is_rejected_name( 'harbor gazette' ) );
 	}
 
+	/**
+	 * Who holds an identifier: a live holder's survivor, else the key of a
+	 * rejected or unresolvable holder, else none.
+	 */
+	public function test_holder_answers_a_live_survivor_else_a_refused_key(): void {
+		$index = $this->index_of(
+			self::entity( 'organization:quillmouth-herald', 'Quillmouth Herald', [ 'domain' => [ 'quillmouth.example' ] ] ),
+			self::rejected( 'organization:quillmouth-herald' ),
+			self::entity( 'organization:wren-desk-3381', 'Wren Desk', [ 'domain' => [ 'wrendesk-3381.example' ] ] ),
+			self::entity( 'organization:wren-press-3382', 'Wren Press' ),
+			self::merged( 'organization:wren-desk-3381', 'organization:wren-press-3382' )
+		);
+
+		$this->assertSame( 'organization:wren-press-3382', $index->holder( 'domain', 'WWW.WrenDesk-3381.example' ) );
+		$this->assertSame( 'organization:quillmouth-herald', $index->holder( 'domain', 'quillmouth.example' ) );
+		$this->assertNull( $index->holder( 'domain', 'nobody-3383.example' ) );
+	}
+
 	/** An identifier whose holder is rejected or unresolvable names its holding key; a live one names none. */
 	public function test_held_by_refused_names_the_rejected_or_unresolvable_holder(): void {
 		$index = $this->index_of(

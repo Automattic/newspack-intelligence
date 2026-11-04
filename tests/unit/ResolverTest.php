@@ -316,6 +316,45 @@ final class ResolverTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A name one accepted entity and one machine proposal share asserts the
+	 * accepted one at its name's strength and links the proposal not at all.
+	 */
+	public function test_an_accepted_entity_wins_a_name_over_a_proposal(): void {
+		$this->assertSame(
+			[ self::link( 'organization:osprey-ledger', 'subject', 'name', 1.0 ) ],
+			$this->resolve(
+				[ 'title' => 'Osprey Ledger wins a press award', 'url' => 'https://random.example/x' ],
+				self::proposed( 'organization:osprey-ledger-7720', 'Osprey Ledger' ),
+				self::entity( 'organization:osprey-ledger', 'Osprey Ledger' )
+			)['links']
+		);
+	}
+
+	/** The accepted entity takes the strength of the hit that found it: a stem's 0.9. */
+	public function test_an_accepted_stem_wins_a_surface_over_a_proposal_at_its_own_strength(): void {
+		$this->assertSame(
+			[ self::link( 'organization:atomic-3012', 'subject', 'domain_stem', 0.9 ) ],
+			$this->resolve(
+				[ 'title' => 'Sentinel names a new editor', 'url' => 'https://random.example/x' ],
+				self::proposed( 'organization:sentinel', 'Sentinel' ),
+				self::entity( 'organization:atomic-3012', 'Atomic site 3012', [ 'domain' => [ 'sentinel.example' ] ] )
+			)['links']
+		);
+	}
+
+	/** Two accepted entities beside a proposal still tell nothing apart: each proposed. */
+	public function test_two_accepted_entities_and_a_proposal_propose_all_three(): void {
+		$this->assertSame(
+			[
+				self::link( 'organization:bend-ledger', 'subject', 'name', 0.5, 'proposed' ),
+				self::link( 'organization:salem-ledger', 'subject', 'name', 0.5, 'proposed' ),
+				self::link( 'organization:ledger-4410', 'subject', 'name', 0.5, 'proposed' ),
+			],
+			$this->resolve( [ 'title' => 'Ledger wins a state award', 'url' => 'https://random.example/x' ], ...[ ...self::ledgers(), self::proposed( 'organization:ledger-4410', 'Ledger' ) ] )['links']
+		);
+	}
+
 	/** Name and locality together are sufficient: the one whose locality the text names. */
 	public function test_a_locality_in_the_text_settles_an_ambiguous_name(): void {
 		$this->assertSame(

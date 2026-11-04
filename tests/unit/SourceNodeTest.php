@@ -922,6 +922,91 @@ final class SourceNodeTest extends TestCase {
 		$this->assertCount( 1, $reads, 'every key is seen, so nothing is read' );
 	}
 
+	/**
+	 * A copy, of the same source, raw id and canonical URL, that the
+	 * projection holds under another lane's key records nothing, found in the
+	 * same one read and remembered, so the next answer reads nothing; one of
+	 * another source records.
+	 */
+	public function test_an_item_whose_copy_is_held_records_nothing(): void {
+		$this->start_intel_graph();
+		$this->seed(
+			self::item( 'fake:kite:sister-9', 'Osprey wins the cup', 'fake', 'public', self::$oct_13 ),
+			self::item( 'feed:kite:sister-5', 'Osprey signs a coach', 'feed', 'public', self::$oct_13 )
+		);
+		$reads       = self::counted_reads();
+		$node        = $this->fake();
+		$node->lanes = true;
+		$items       = [
+			[ 'id' => 'wren:sister-9', 'title' => 'Osprey wins the cup', 'url' => 'https://www.news.example/fake/kite/sister-9/?utm_source=rss-5521' ],
+			[ 'id' => 'wren:sister-5', 'title' => 'Osprey signs a coach', 'url' => 'https://news.example/feed/kite/sister-5' ],
+		];
+
+		$this->fetch_page( $node, $items );
+
+		$this->assertSame( [ 'fake:wren:sister-5' ], $this->recorded_keys() );
+		$this->assertCount( 1, $reads );
+
+		$this->fetch_page( $node, $items );
+		$this->assertSame( [ 'fake:wren:sister-5' ], $this->recorded_keys() );
+		$this->assertCount( 1, $reads, 'both are remembered, so nothing is read' );
+	}
+
+	/**
+	 * A copy recorded earlier in the process records nothing again, in the
+	 * same answer or a later one. Items sharing a URL but not a raw id, as a
+	 * podcast's episodes share their show's page, each record; so do items
+	 * whose URL is empty or names no host, judged by key alone.
+	 */
+	public function test_only_a_copy_recorded_in_the_process_records_nothing_again(): void {
+		$node        = $this->fake();
+		$node->lanes = true;
+
+		$this->fetch_page(
+			$node,
+			[
+				[ 'id' => 'kite:heron-7', 'title' => 'Heron', 'url' => 'https://heron-3307.example/story' ],
+				[ 'id' => 'wren:heron-7', 'title' => 'Heron', 'url' => 'http://heron-3307.example/story/#top' ],
+				[ 'id' => 'wren:heron-8', 'title' => 'Heron, part two', 'url' => 'https://heron-3307.example/story' ],
+				[ 'id' => 'kite:blank-1', 'title' => 'Blank' ],
+				[ 'id' => 'wren:blank-1', 'title' => 'Blank' ],
+				[ 'id' => 'kite:rel-2', 'title' => 'Relative', 'url' => '/rel-2' ],
+				[ 'id' => 'wren:rel-2', 'title' => 'Relative', 'url' => '/rel-2' ],
+			]
+		);
+		$this->fetch_page( $node, [ [ 'id' => 'osprey:heron-7', 'title' => 'Heron', 'url' => 'https://www.heron-3307.example/story?utm_medium=feed' ] ] );
+
+		$this->assertSame( [ 'fake:kite:heron-7', 'fake:wren:heron-8', 'fake:kite:blank-1', 'fake:wren:blank-1', 'fake:kite:rel-2', 'fake:wren:rel-2' ], $this->recorded_keys() );
+	}
+
+	/** A source judging copies remembers as many items as one judging keys: one entry an item. */
+	public function test_a_source_judging_copies_remembers_one_entry_an_item(): void {
+		$node        = $this->fake();
+		$node->lanes = true;
+		$items       = [];
+		for ( $i = 1; $i <= 1500; $i++ ) {
+			$items[] = [ 'id' => "kite:{$i}", 'title' => "Item {$i}", 'url' => "https://lane-6604.example/{$i}" ];
+		}
+		$this->fetch_page( $node, $items );
+
+		$this->fetch_page( $node, [ [ 'id' => 'kite:1', 'title' => 'Item 1 again', 'url' => 'https://lane-6604.example/1' ] ] );
+
+		$this->assertCount( 1500, $this->recorded_keys() );
+	}
+
+	/** A source naming no raw id, the base's default, records each key: a post's comments share its canonical URL. */
+	public function test_a_source_judges_by_key_alone_by_default(): void {
+		$this->fetch_page(
+			$this->fake(),
+			[
+				[ 'id' => 'comment-1', 'title' => 'Ada: agreed', 'url' => 'https://p2-8812.example/post/#comment-1' ],
+				[ 'id' => 'comment-2', 'title' => 'Bo: not yet', 'url' => 'https://p2-8812.example/post/#comment-2' ],
+			]
+		);
+
+		$this->assertSame( [ 'fake:comment-1', 'fake:comment-2' ], $this->recorded_keys() );
+	}
+
 	/** A projection that will not open costs repeats, not items: everything records, logged. */
 	public function test_a_projection_that_will_not_open_records_everything_logged(): void {
 		$stderr                            = $this->capture_stderr();
@@ -1367,6 +1452,9 @@ class Fake_Source_Node extends Source_Node {
 	/** Whether the next tick resumes a pass, off the grid, once. */
 	public bool $resumable = false;
 
+	/** Whether a key's raw id is the part after its last colon, past a lane; off, as on the base, unless a test turns it on. */
+	public bool $lanes = false;
+
 	/** What begin() throws, after counting the pass; null for none. */
 	public ?\Throwable $failure = null;
 
@@ -1395,6 +1483,10 @@ class Fake_Source_Node extends Source_Node {
 		$resume          = $this->resumable;
 		$this->resumable = false;
 		return $resume;
+	}
+
+	protected function raw_id( string $key ): ?string {
+		return $this->lanes ? \substr( $key, (int) \strrpos( $key, ':' ) + 1 ) : null;
 	}
 
 	/** @return array<string,mixed> */

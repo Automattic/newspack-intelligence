@@ -124,10 +124,10 @@ final class Graph_Client_Roster implements Client_Roster {
 			throw new \InvalidArgumentException( 'client import: a row has no atomic site id' );
 		}
 		$domain = Entity_Index::identifier_value( 'domain', $row['domain_name'] );
-		if ( $this->refused_domain( $domain ) ) {
+		$key    = $this->holder( $domain );
+		if ( $this->refused_domain( $domain, $key ) ) {
 			return;
 		}
-		$key = '' === $domain ? null : $this->holder( $domain );
 		if ( null === $key ) {
 			$key = Intel_Event::entity_key( 'organization', "atomic-{$id}" );
 			$this->mint( $id, 'entity_created', [ 'entity_key' => $key, 'type' => 'organization', 'name' => '' === $domain ? "Atomic site {$id}" : $domain ] );
@@ -179,7 +179,9 @@ final class Graph_Client_Roster implements Client_Roster {
 		$this->present[ $key ] = true;
 		$this->since[ $key ]   = \min( $this->since[ $key ] ?? [ \PHP_INT_MAX, $id ], [ self::created( $id, $row['created'] ), $id ] );
 		$domain                = Entity_Index::identifier_value( 'domain', $row['domain_name'] );
-		if ( '' === $domain || null !== $this->holder( $domain ) || $this->refused_domain( $domain ) ) {
+		$holder                = $this->holder( $domain );
+		if ( '' === $domain || null !== $holder ) {
+			$this->refused_domain( $domain, $holder );
 			return;
 		}
 		$this->added[ $domain ] = $key;
@@ -187,14 +189,15 @@ final class Graph_Client_Roster implements Client_Roster {
 	}
 
 	/**
-	 * Whether a refused entity holds a domain, which the import then leaves
-	 * alone and logs.
+	 * Whether a domain's holder is a refused entity, rejected or merged on a
+	 * broken chain, which the import then leaves alone and logs: one the
+	 * index answers by a key it holds no state for.
 	 *
-	 * @param string $domain A normalised domain.
+	 * @param string      $domain A normalised domain.
+	 * @param string|null $holder Its holder, as holder() answers it.
 	 */
-	private function refused_domain( string $domain ): bool {
-		$holder = '' === $domain ? null : $this->index?->held_by_refused( 'domain', $domain );
-		if ( null === $holder ) {
+	private function refused_domain( string $domain, ?string $holder ): bool {
+		if ( null === $holder || isset( $this->added[ $domain ] ) || null !== $this->index?->state( $holder ) ) {
 			return false;
 		}
 		$this->left_alone[ $holder ] = true;
@@ -203,12 +206,12 @@ final class Graph_Client_Roster implements Client_Roster {
 
 	/**
 	 * The entity holding a domain: one this import added it to, else the
-	 * survivor of the entity the projection holds it on.
+	 * one the index answers, a refused entity's key among them; none for ''.
 	 *
 	 * @param string $domain A normalised domain.
 	 */
 	private function holder( string $domain ): ?string {
-		return $this->added[ $domain ] ?? $this->index?->by_identifier( 'domain', $domain );
+		return '' === $domain ? null : $this->added[ $domain ] ?? $this->index?->holder( 'domain', $domain );
 	}
 
 	/**

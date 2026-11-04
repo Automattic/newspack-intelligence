@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The resolver prefers an accepted entity to a machine proposal for the same name.** When equal spans name several entities and no locality settles them, the one accepted or created entity among machine-`proposed` ones is asserted at the strength its hit earns, 1.0 for a name or 0.9 for a stem, and the proposals get no link. Two or more accepted entities still propose each at 0.5.
+- **`Entity_Index::holder()` answers who holds an identifier**: a live holder's survivor, else a rejected or unresolvable holder's key. `Graph_Client_Roster` and `Graph_Curation::add_identifier()` read a holder through it; `add_identifier` loads the index for it in place of its own `identifiers` query.
+- **A feed item whose copy is already held records nothing.** Two items are one copy when they come from the same source, their canonical URL (`Url_Canon::of()`) names a host, and their raw ids, the guid past `feed:` and any lane's domain, are equal. `Source_Node::record()`'s one projection read also finds the source's items at those canonical URLs, and its bounded seen set remembers each item once, by its copy or else its key, so a post sister feeds list under one guid records once, while a podcast's episodes sharing one link each record. Only a source whose `raw_id()` names one judges copies, the feeds alone, because a P2 comment shares its post's canonical URL; an item whose URL is empty or names no host is judged by key alone.
+
 ### Fixed
 - **A row's control sits apart from its text and centred on it:** the Entity view's "End client" beside its role and its Related chips, and the Lenses and Collections lists' buttons, each row laid out as `newspack-intelligence__actions`.
 

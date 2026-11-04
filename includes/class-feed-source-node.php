@@ -617,6 +617,19 @@ class Feed_Source_Node extends Source_Node {
 		return \PHP_INT_MAX;
 	}
 
+	/**
+	 * A key's guid: what follows `feed:` and, in a client's lane, the
+	 * domain leading it, read as one only when it is a plain hostname, so a
+	 * guid's own colons stay its own.
+	 *
+	 * @param string $key An item key.
+	 */
+	protected function raw_id( string $key ): string {
+		$id   = \substr( $key, (int) \strpos( $key, ':' ) + 1 );
+		$lane = \strstr( $id, ':', true );
+		return false === $lane || null !== Entity_Index::hostname_fault( $lane ) ? $id : \substr( $id, \strlen( $lane ) + 1 );
+	}
+
 	/** Curl follows no redirect: the feed re-queues each Location under the feed it redirects, keeping its lane. */
 	protected function follows_redirects(): bool {
 		return false;

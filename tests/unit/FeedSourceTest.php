@@ -351,6 +351,39 @@ XML;
 		$this->assertSame( 'item_recorded', $event[ Message::VALUE ]['event'] );
 	}
 
+	/**
+	 * A post a configured feed and a client's lane both list, under one guid
+	 * and one canonical URL, records once, under the key that took it first;
+	 * a guid holding colons is read past the lane whole.
+	 */
+	public function test_a_post_two_lanes_list_records_once(): void {
+		$this->start_intel_graph();
+		$this->seed_clients();
+		$node = $this->feed( 'https://kite-2201.example/feed/' );
+		$node->set_client_feeds( true );
+		$this->tick( $node );
+		$guid    = 'tag:harborgazette.example,2026:cup-61';
+		$listing = static fn ( string $link ): string => '<?xml version="1.0"?><rss version="2.0"><channel><item><title>Osprey wins the cup</title><link>' . $link . "</link><guid>{$guid}</guid><pubDate>" . \gmdate( 'D, d M Y H:i:s', (int) Core::$now - 60 ) . ' GMT</pubDate></item></channel></rss>';
+
+		$this->complete( 'https://kite-2201.example/feed/', $listing( 'https://www.harborgazette.example/cup/?utm_source=kite' ) );
+		$this->complete( self::GAZETTE_FEED, $listing( self::GAZETTE . '/cup' ) );
+
+		$this->assertSame( [ "feed:{$guid}" ], \array_keys( $this->recorded() ) );
+	}
+
+	/** A podcast's episodes share their show's one link under their own guids, so each records. */
+	public function test_a_podcasts_episodes_sharing_one_link_each_record(): void {
+		$node = $this->feed( 'https://podcast-7731.example/feed/' );
+		$this->tick( $node );
+
+		$this->complete( 'https://podcast-7731.example/feed/', '<?xml version="1.0"?><rss version="2.0"><channel>'
+			. '<item><title>Episode 1</title><link>https://podcast-7731.example/show</link><guid>ep-7731-1</guid></item>'
+			. '<item><title>Episode 2</title><link>https://podcast-7731.example/show</link><guid>ep-7731-2</guid></item>'
+			. '</channel></rss>' );
+
+		$this->assertSame( [ 'feed:ep-7731-1', 'feed:ep-7731-2' ], \array_keys( $this->recorded() ) );
+	}
+
 	/** A due fetch, by TICK or on the grid, starts nothing while a pass is in flight. */
 	public function test_no_second_pass_while_one_is_in_flight(): void {
 		$node = $this->feed( 'https://kite-2201.example/feed/' );
@@ -894,7 +927,8 @@ XML;
 	/**
 	 * A configured feed redirected onto the very url a client's feed is
 	 * fetching keeps its own lane, and the client keeps its, though both
-	 * fetch the one url.
+	 * fetch the one url; the post both lanes take records once, under the
+	 * key that took it first.
 	 */
 	public function test_a_redirect_onto_a_client_feed_in_flight_keeps_both_lanes(): void {
 		$this->start_intel_graph();
@@ -908,7 +942,7 @@ XML;
 		$this->complete( 'https://harborgazette.example/feed/', $body );
 		$this->complete( 'https://harborgazette.example/feed/', $body );
 
-		$this->assertSame( [ 'feed:harborgazette.example:own-site', 'feed:own-site', 'feed:offsite' ], \array_keys( $this->recorded() ) );
+		$this->assertSame( [ 'feed:harborgazette.example:own-site', 'feed:offsite' ], \array_keys( $this->recorded() ) );
 	}
 
 	/** A redirect onto a link-local url is a public-only hop like any other, so Curl refuses it. */

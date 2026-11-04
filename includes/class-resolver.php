@@ -18,7 +18,8 @@
  *
  * Name and stem hits whose spans overlap in one text settle together: the
  * longest span wins, and equal spans naming several entities assert the one
- * whose locality the text also names, else propose each. The entity whose
+ * whose locality the text also names, else the only accepted one among
+ * machine proposals, which link not at all, else propose each. The entity whose
  * domain the host is published the item, a `publisher` link apart from any
  * the text earns, so a site's own story is not about its site unless it
  * names it. An entity its path or the title names is the item's subject; one
@@ -168,7 +169,7 @@ final class Resolver {
 		$this->sentences = null;
 		$url             = Core::as_string( $item['url'] );
 		$host            = Url_Canon::host( Core::as_string( \wp_parse_url( $url, \PHP_URL_HOST ) ) );
-		$publisher       = $this->published_by( $host );
+		$publisher       = $this->index->by_host( $host );
 		$published       = null === $publisher ? [] : [ $this->linked( $publisher, Intel_Event::PUBLISHER, 'identifier', self::EXACT, 'asserted', '' ) ];
 		foreach ( $this->identified( $host, $url ) as $entity_key ) {
 			$this->link( $entity_key, 'subject', 'identifier', self::EXACT, 'asserted', '' );
@@ -354,19 +355,29 @@ final class Resolver {
 	/**
 	 * Link the entities one surface names, whichever step found them: the
 	 * only one at its own strength; of several, the one whose locality the
-	 * text names, guarded; else each, proposed.
+	 * text names, guarded; else the only accepted one beside machine
+	 * proposals, at its own strength; else each, proposed.
 	 *
 	 * @param array<string,array{kind:string,surface:string}> $hits       Entity key => the hit it was found by.
 	 * @param array<string,true>                              $localities The entities whose locality the text names.
 	 * @param string                                          $role       The link role.
 	 */
 	private function settle( array $hits, array $localities, string $role ): void {
-		$settled = 1 === \count( $hits ) ? $hits : \array_intersect_key( $hits, $localities );
+		$settled = $hits;
+		$guarded = false;
+		if ( 1 !== \count( $settled ) ) {
+			$settled = \array_intersect_key( $hits, $localities );
+			$guarded = true;
+		}
+		if ( 1 !== \count( $settled ) ) {
+			$settled = \array_filter( $hits, fn ( string $entity_key ): bool => 'accepted' === $this->index->state( $entity_key ), \ARRAY_FILTER_USE_KEY );
+			$guarded = false;
+		}
 		if ( 1 === \count( $settled ) ) {
 			$entity_key              = \array_key_first( $settled );
 			$hit                     = $settled[ $entity_key ];
 			[ $method, $confidence ] = self::STRENGTHS[ $hit['kind'] ];
-			$this->link( $entity_key, $role, $method, 1 === \count( $hits ) ? $confidence : self::GUARDED, 'asserted', $hit['surface'] );
+			$this->link( $entity_key, $role, $method, $guarded ? self::GUARDED : $confidence, 'asserted', $hit['surface'] );
 			return;
 		}
 		foreach ( $hits as $entity_key => $hit ) {
@@ -513,23 +524,6 @@ final class Resolver {
 			'linear.app' === $host                        => 'issue' === ( $path[1] ?? '' ) && 1 === \preg_match( '/^([A-Za-z0-9]+)-\d+$/', $path[2] ?? '', $team ) ? [ [ 'linear_team', $team[1] ] ] : [],
 			default                                       => [],
 		};
-	}
-
-	/**
-	 * The entity whose domain the host is, by suffix walk, most specific
-	 * first: the item's publisher, or none.
-	 *
-	 * @param string $host The item's host, without `www.`.
-	 */
-	private function published_by( string $host ): ?string {
-		$labels = \explode( '.', $host );
-		for ( $at = 0; $at < \count( $labels ) - 1; $at++ ) {
-			$entity_key = $this->index->by_identifier( 'domain', \implode( '.', \array_slice( $labels, $at ) ) );
-			if ( null !== $entity_key ) {
-				return $entity_key;
-			}
-		}
-		return null;
 	}
 
 	/**

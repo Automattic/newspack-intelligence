@@ -48,9 +48,6 @@ final class Graph_Curation {
 	/** The bytes a collected title is cut to. */
 	public const TITLE_BYTES = 512;
 
-	/** The states an entity holds an identifier in. */
-	private const HOLDING_STATES = [ 'accepted', 'proposed' ];
-
 	/**
 	 * Judge the link a readable item has to an entity, by any role saying
 	 * the item is about it and under any of the entity's keys:
@@ -198,9 +195,10 @@ final class Graph_Curation {
 	/**
 	 * Add an identifier to an entity, spelled as `Entity_Index` compares it,
 	 * unless it is a domain that is not a plain hostname
-	 * (`Entity_Index::hostname_fault()`), or another entity holds it: the survivor of the key the
-	 * identifiers row names, accepted or proposed, or that key itself when
-	 * its survivor is rejected or its merge chain does not resolve.
+	 * (`Entity_Index::hostname_fault()`), or another entity holds it, as
+	 * `Entity_Index::holder()` answers: the survivor of the key holding it,
+	 * accepted or proposed, or that key itself when its survivor is rejected
+	 * or its merge chain does not resolve.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`, `kind`, `value`.
 	 * @return array<string,mixed>
@@ -217,21 +215,8 @@ final class Graph_Curation {
 		[ $own, $held_by ] = self::on_graph(
 			static function ( Row_Reader $r, array $g ) use ( $key, $kind, $value ): array {
 				$own    = Graph_Query::seen( $r, $g, $key );
-				$holder = $r->rows( 'SELECT entity_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'identifiers' ) . ' i WHERE kind = ? AND value = ? LIMIT 1', [ $kind, $value ] )[0][0] ?? null;
-				if ( null === $holder ) {
-					return [ $own, null ];
-				}
-				$holder   = Core::as_string( $holder );
-				$survivor = $g['survivors'][ $holder ] ?? $holder;
-				$state    = '' === $survivor || $own === $survivor ? null : Graph_Query::state_of( $r, $survivor );
-				return [
-					$own,
-					match ( true ) {
-						'' === $survivor, 'rejected' === $state => $holder,
-						\in_array( $state, self::HOLDING_STATES, true ) => $survivor,
-						default => null,
-					},
-				];
+				$holder = Entity_Index::load( $r )->holder( $kind, $value );
+				return [ $own, null === $holder || $own === ( $g['survivors'][ $holder ] ?? $holder ) ? null : $holder ];
 			}
 		);
 		if ( null !== $held_by ) {
