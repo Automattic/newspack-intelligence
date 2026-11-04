@@ -157,6 +157,24 @@ trait Seeds_Intel_Graph {
 	}
 
 	/**
+	 * The deduper's placing of copies in one cluster, keyed by the first,
+	 * and its naming of the canonical.
+	 *
+	 * @param string       $canonical The canonical item key.
+	 * @param list<string> $copies    Every item in the cluster, the canonical among them.
+	 * @param int          $item_ts   The items' date.
+	 * @return list<array<string,mixed>>
+	 */
+	private static function story( string $canonical, array $copies, int $item_ts ): array {
+		$events = [];
+		foreach ( $copies as $copy ) {
+			$events[] = Intel_Event::make( 'cluster_joined', [ 'item_key' => $copy, 'cluster_key' => $copies[0], 'retrieved_ts' => $item_ts + 600 ], 'machine:dedup@9.4.1', 'fixture-9' );
+		}
+		$events[] = Intel_Event::make( 'cluster_superseded', [ 'cluster_key' => $copies[0], 'canonical_item_key' => $canonical, 'previous_item_key' => $copies[0], 'rank' => 13.5, 'retrieved_ts' => $item_ts + 600 ], 'machine:dedup@9.4.1', 'fixture-9' );
+		return $events;
+	}
+
+	/**
 	 * A machine's proposal of an entity, naming the item it came from.
 	 *
 	 * @param string $key      The entity key.

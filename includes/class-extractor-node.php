@@ -133,7 +133,8 @@ class Extractor_Node extends Node {
 		foreach ( $links as $link ) {
 			$link = Core::arr( $link );
 			$key  = Core::as_string( $link['entity_key'] ?? null );
-			$linked[ $key ] = [ Core::as_float( $link['confidence'] ?? null ), 'asserted' === ( $link['state'] ?? null ) ];
+			$asserted       = 'asserted' === ( $link['state'] ?? null );
+			$linked[ $key ] = [ Core::as_float( $link['confidence'] ?? null ), $asserted, $asserted && 'identifier' === ( $link['method'] ?? null ) ];
 		}
 		$this->extract( $item, $linked, $extracted, $owed, $attempt, Entity_Index::current() );
 	}
@@ -146,7 +147,7 @@ class Extractor_Node extends Node {
 	 * A call made that fails also parks the item's retry.
 	 *
 	 * @param array<string,mixed>                 $item      The item.
-	 * @param array<string,array{0:float,1:bool}> $linked    Each linked entity => its link's confidence and whether it is asserted.
+	 * @param array<string,array{0:float,1:bool,2:bool}> $linked    Each linked entity => its link's confidence, whether it is asserted, and whether by an identifier.
 	 * @param bool                                $extracted Whether a call extracted the item before.
 	 * @param bool                                $owed      Whether it was sent to be extracted whatever it holds.
 	 * @param int                                 $attempt   The failed calls made for the item so far.
@@ -205,12 +206,12 @@ class Extractor_Node extends Node {
 		$this->emit( '', [ 'event' => self::EXTRACTED, 'item' => $item, 'relevance' => $parsed['relevance'], 'importance' => $parsed['importance'] ] );
 		$ord = 0;
 		foreach ( $parsed['claims'] as $claim ) {
-			$subjects = \array_values( \array_filter( self::entities_named( $index, $claim['subject'] ), static fn ( string $key ): bool => $linked[ $key ][1] ?? false ) );
+			$subjects = \array_values( \array_filter( self::entities_named( $index, $claim['subject'], $linked ), static fn ( string $key ): bool => $linked[ $key ][1] ?? false ) );
 			if ( 1 !== \count( $subjects ) ) {
 				continue;
 			}
 			$subject = $subjects[0];
-			$objects = self::entities_named( $index, $claim['object'] );
+			$objects = self::entities_named( $index, $claim['object'], $linked );
 			$among   = \array_values( \array_filter( $objects, static fn ( string $key ): bool => isset( $linked[ $key ] ) ) );
 			$object  = 1 === \count( $objects ) ? $objects[0] : ( 1 === \count( $among ) ? $among[0] : null );
 			$fields  = [
@@ -296,17 +297,19 @@ class Extractor_Node extends Node {
 	}
 
 	/**
-	 * Every entity a name spells whole, localities aside, each once.
+	 * Every entity a name spells whole, each once: localities aside, and a
+	 * stoplisted name unless the item asserts its entity by an identifier.
 	 *
-	 * @param Entity_Index $index The entities.
-	 * @param string       $text  A claim's subject or object.
+	 * @param Entity_Index                               $index  The entities.
+	 * @param string                                     $text   A claim's subject or object.
+	 * @param array<string,array{0:float,1:bool,2:bool}> $linked The item's links, as `extract()` takes them.
 	 * @return list<string>
 	 */
-	private static function entities_named( Entity_Index $index, string $text ): array {
+	private static function entities_named( Entity_Index $index, string $text, array $linked ): array {
 		$norm = Entity_Index::norm( $text );
 		$keys = [];
 		foreach ( $index->names_in( $text ) as $hit ) {
-			if ( 'locality' !== $hit['kind'] && Entity_Index::norm( $hit['surface'] ) === $norm ) {
+			if ( 'locality' !== $hit['kind'] && ( ! $hit['stoplisted'] || ( $linked[ $hit['entity_key'] ][2] ?? false ) ) && Entity_Index::norm( $hit['surface'] ) === $norm ) {
 				$keys[ $hit['entity_key'] ] = $hit['entity_key'];
 			}
 		}

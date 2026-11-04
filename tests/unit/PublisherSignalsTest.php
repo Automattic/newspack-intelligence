@@ -170,6 +170,76 @@ final class PublisherSignalsTest extends TestCase {
 		$this->assertSame( [ 'feed:marsh-courier-partnership-1-3', 'feed:marsh-courier-partnership-1-2', 'feed:marsh-courier-partnership-1-1' ], \array_column( $answer['signals'][0]['items'], 'item_key' ) );
 	}
 
+	/**
+	 * `other` says nothing about an entity, so it never spikes on the about
+	 * axis; what the entity published still bursts in it.
+	 */
+	public function test_other_never_signals_about_an_entity_and_still_bursts(): void {
+		$this->about( 'other', [ 1 => 5, 9 => 1 ] );
+		$this->about( 'praise', [ 1 => 4, 9 => 1 ] );
+		$this->published( self::COURIER, 'other', [ 1 => 3, 9 => 1 ] );
+
+		$this->assertSame(
+			[ [ 'about', 'spike', '2026-10-12', 'kind', 'praise', 4, 0.125 ], [ 'publisher', 'burst', '2026-10-12', 'kind', 'other', 3, 0.125 ] ],
+			self::signals( $this->ci->dispatch( 'signals', [ '--entity=' . self::COURIER ] ) )
+		);
+	}
+
+	/**
+	 * A story's copy about the Courier before the window makes it history,
+	 * counted there once, though its canonical inside the window is not
+	 * about the Courier.
+	 */
+	public function test_a_story_first_about_an_entity_before_the_window_is_its_history(): void {
+		$this->about( 'incident', [ 1 => 3 ] );
+		$early = self::THIS_WEEK - 10 * self::WEEK + 3 * 86400;
+		$later = self::THIS_WEEK - self::WEEK + 3 * 86400;
+		$this->seed(
+			self::item( 'github:incident-early', 'An early incident', 'github', 'public', $early ),
+			self::extraction( 'github:incident-early', 'An incident.', 'incident', $early, [] ),
+			self::link( 'link_asserted', 'github:incident-early', self::COURIER, 'subject', 'name', 1.0, $early ),
+			self::item( 'github:incident-wire', 'A wire incident', 'github', 'public', $later + 600 ),
+			self::extraction( 'github:incident-wire', 'An incident.', 'incident', $later + 600, [] ),
+			self::link( 'link_asserted', 'github:incident-wire', self::COURIER, 'subject', 'name', 1.0, $later + 600 ),
+			self::item( 'github:incident-canon', 'The incident', 'github', 'public', $later + 900 ),
+			self::extraction( 'github:incident-canon', 'An incident.', 'incident', $later + 900, [] ),
+			self::story( 'github:incident-canon', [ 'github:incident-early', 'github:incident-wire', 'github:incident-canon' ], $early )
+		);
+
+		$this->assertSame( [ [ 'about', 'spike', '2026-10-12', 'kind', 'incident', 3, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [ '--entity=' . self::COURIER ] ) ) );
+	}
+
+	/** `other` about an entity counts as no history of what is about it. */
+	public function test_other_is_no_history_about_an_entity(): void {
+		$this->about( 'praise', [ 1 => 3 ] );
+		$this->about( 'other', [ 20 => 1 ] );
+
+		$this->assertSame( [], $this->ci->dispatch( 'signals', [ '--entity=' . self::COURIER ] )['signals'] );
+	}
+
+	/**
+	 * A story the Courier's sister feeds carry counts once on either axis, as
+	 * its canonical, which its signal cites.
+	 */
+	public function test_a_story_counts_once_on_both_axes(): void {
+		$this->published( self::COURIER, 'research', [ 9 => 1 ] );
+		$this->published( self::COURIER, 'partnership', [ 1 => 3 ] );
+		$this->about( 'award', [ 1 => 3, 9 => 1 ] );
+		$this->assertSame( [ 'award', 'partnership' ], \array_column( $this->ci->dispatch( 'signals', [ '--entity=' . self::COURIER ] )['signals'], 'value' ) );
+
+		$at = self::THIS_WEEK - self::WEEK + 2 * 86400;
+		$this->seed(
+			self::story( 'feed:marsh-courier-partnership-1-2', [ 'feed:marsh-courier-partnership-1-1', 'feed:marsh-courier-partnership-1-2', 'feed:marsh-courier-partnership-1-3' ], $at ),
+			self::story( 'github:award-1-1', [ 'github:award-1-1', 'github:award-1-3' ], $at )
+		);
+
+		$this->assertSame( [], $this->ci->dispatch( 'signals', [ '--entity=' . self::COURIER ] )['signals'] );
+		$this->about( 'award', [ 1 => 4 ] );
+		$answer = $this->ci->dispatch( 'signals', [ '--entity=' . self::COURIER ] );
+		$this->assertSame( [ [ 'about', 'spike', '2026-10-12', 'kind', 'award', 3, 0.125 ] ], self::signals( $answer ) );
+		$this->assertSame( [ 'github:award-1-4', 'github:award-1-2', 'github:award-1-1' ], \array_column( $answer['signals'][0]['items'], 'item_key' ) );
+	}
+
 	/** A steady publisher answers no publisher signal. */
 	public function test_a_steady_publisher_signals_nothing(): void {
 		$this->published( self::COURIER, 'research', [ 1 => 3, 2 => 3, 3 => 3, 4 => 3, 5 => 3, 6 => 3, 7 => 3, 8 => 3, 9 => 3 ] );
@@ -234,9 +304,10 @@ final class PublisherSignalsTest extends TestCase {
 		$this->about( 'feature_request', [ 2 => 2 ] );
 		$this->about( 'complaint', [ 3 => 3 ] );
 		$this->about( 'praise', [ 4 => 1 ] );
+		$this->about( 'churn_signal', [ 6 => 4 ] );
 
 		$this->assertSame(
-			[ 'client_since' => self::$jan_01, 'kinds' => [ 'feature_request' => 2, 'complaint' => 3 ], 'last_item_ts' => self::THIS_WEEK - 2 * self::WEEK + 3 * 86400 + 2 * 60 ],
+			[ 'client_since' => self::$jan_01, 'kinds' => [ 'churn_signal' => 4, 'feature_request' => 2, 'complaint' => 3 ], 'last_item_ts' => self::THIS_WEEK - 2 * self::WEEK + 3 * 86400 + 2 * 60 ],
 			$this->ci->dispatch( 'entity', [ self::COURIER ] )['status']
 		);
 	}
@@ -244,7 +315,7 @@ final class PublisherSignalsTest extends TestCase {
 	/** A client with nothing about it answers its start alone. */
 	public function test_a_quiet_clients_status_answers_its_start_alone(): void {
 		$this->assertSame(
-			[ 'client_since' => self::$jan_01, 'kinds' => [ 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => null ],
+			[ 'client_since' => self::$jan_01, 'kinds' => [ 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => null ],
 			$this->ci->dispatch( 'entity', [ self::TERN ] )['status']
 		);
 	}

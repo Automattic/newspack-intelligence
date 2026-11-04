@@ -1,4 +1,4 @@
-import { useState } from '@wordpress/element';
+import { useEffect, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import {
 	Card,
@@ -137,6 +137,25 @@ function roleText( role ) {
 }
 
 /**
+ * Whether a role row held any time; a closed row ending where it starts is
+ * an import's same-day correction, not a period the entity held the role.
+ * An open row, `to_ts` 0, always holds time, even one a seed asserted from 0.
+ *
+ * @param {Object} role The role row.
+ * @return {boolean} Whether it held time.
+ */
+const heldTime = ( role ) => 0 === role.to_ts || role.from_ts !== role.to_ts;
+
+/**
+ * What an entity is called where it heads its view and labels its tab: its
+ * name, else its key.
+ *
+ * @param {{name: ?string, entity_key: string}} entity The record.
+ * @return {string} The name.
+ */
+const entityName = ( entity ) => entity.name || entity.entity_key;
+
+/**
  * The entity's counts: readable items linking it and links awaiting review.
  *
  * @param {{items: number, proposed_links: number}} counts The counts.
@@ -188,15 +207,19 @@ function latestSignal( signals ) {
 
 /**
  * A client's status line: when it became a client, its latest signal, how
- * many items about it are feature requests and complaints, and when the
- * newest of them is dated.
+ * many items about it are churn signals, feature requests and complaints,
+ * and when the newest of them is dated.
  *
  * @param {Object}             status  The record's `status`.
  * @param {Object[]|undefined} signals The signals read's rows.
  * @return {string} The line.
  */
 function statusText( status, signals ) {
-	const { feature_request: asks, complaint: complaints } = status.kinds;
+	const {
+		churn_signal: churns,
+		feature_request: asks,
+		complaint: complaints,
+	} = status.kinds;
 	return metaLine(
 		sprintf(
 			/* translators: %s: the first UTC day of its client role. */
@@ -205,6 +228,16 @@ function statusText( status, signals ) {
 		),
 		latestSignal( signals ),
 		[
+			sprintf(
+				/* translators: %d: items about it that are churn signals. */
+				_n(
+					'%d churn signal',
+					'%d churn signals',
+					churns,
+					'newspack-intelligence'
+				),
+				churns
+			),
 			sprintf(
 				/* translators: %d: items about it that are feature requests. */
 				_n(
@@ -332,14 +365,17 @@ function Published( { entityKey, name, count, onOpenEntity, onSave } ) {
  * sharing its items and the claims naming it,
  * each from its own read; and, once the record has answered, for a
  * curator, the forms adding a name or identifier and asserting or ending a
- * role. Every edit that lands re-reads the record.
+ * role. Every edit that lands re-reads the record. A role row that held no
+ * time is left out. The name the record answers is handed to `onNamed` with
+ * the entity's key, so the page can label its tab without reading again.
  *
- * @param {Object}                 props
- * @param {string}                 props.entityKey    The entity shown.
- * @param {boolean}                props.canTune      Whether to offer curation.
- * @param {Object}                 props.vocabulary   The ontology's closed lists.
- * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
- * @param {(item: Object) => void} [props.onSave]     Saves an item; absent for a reader.
+ * @param {Object}                                       props
+ * @param {string}                                       props.entityKey    The entity shown.
+ * @param {boolean}                                      props.canTune      Whether to offer curation.
+ * @param {Object}                                       props.vocabulary   The ontology's closed lists.
+ * @param {(key: string) => void}                        props.onOpenEntity Opens an entity.
+ * @param {(named: {key: string, name: string}) => void} props.onNamed      Takes the name the record answers.
+ * @param {(item: Object) => void}                       [props.onSave]     Saves an item; absent for a reader.
  * @return {import('react').ReactElement} The view.
  */
 export default function Entity( {
@@ -347,6 +383,7 @@ export default function Entity( {
 	canTune,
 	vocabulary,
 	onOpenEntity,
+	onNamed,
 	onSave,
 } ) {
 	const about = [ entityKey ];
@@ -365,6 +402,13 @@ export default function Entity( {
 	);
 	const related = useIntelRead( 'entity:related', 'related', about );
 	const claims = useIntelRead( 'entity:claims', 'claims', about );
+	const named =
+		record.answer && ! record.error ? entityName( record.answer ) : null;
+	useEffect( () => {
+		if ( ! record.loading ) {
+			onNamed( { key: entityKey, name: named } );
+		}
+	}, [ entityKey, record.loading, named, onNamed ] );
 
 	const edit = { refresh: record.refresh };
 	const addName = useIntelWrite( 'add_name', edit );
@@ -378,7 +422,7 @@ export default function Entity( {
 			<Answer read={ record }>
 				{ ( entity ) => (
 					<>
-						<h2>{ entity.name || entity.entity_key }</h2>
+						<h2>{ entityName( entity ) }</h2>
 						{ entity.status && (
 							<p className="newspack-nodes-status">
 								{ statusText(
@@ -420,7 +464,7 @@ export default function Entity( {
 									{ `${ id.kind }: ${ id.value }` }
 								</li>
 							) ) }
-							{ entity.roles.map( ( role ) => (
+							{ entity.roles.filter( heldTime ).map( ( role ) => (
 								<li
 									key={ `role ${ role.role } ${ role.from_ts }` }
 									className="newspack-intelligence__actions"
@@ -554,7 +598,7 @@ export default function Entity( {
 			{ record.answer && 0 < record.answer.published.count && (
 				<Published
 					entityKey={ entityKey }
-					name={ record.answer.name || record.answer.entity_key }
+					name={ entityName( record.answer ) }
 					count={ record.answer.published.count }
 					onOpenEntity={ onOpenEntity }
 					onSave={ onSave }
@@ -615,12 +659,26 @@ export default function Entity( {
 				{ ( answer ) => (
 					<ul className="newspack-intelligence__facts">
 						{ answer.claims.map( ( claim, i ) => (
-							<li key={ `${ claim.item_key } ${ i }` }>
-								{ `${ claim.subject } ${ claim.predicate } ${ claim.object } ` }
-								<Cite
-									url={ claim.url }
-									title={ claim.item_key }
-								/>
+							<li
+								key={ `${ claim.item_key } ${ i }` }
+								className="newspack-intelligence__actions"
+							>
+								<EntityChip
+									entityKey={ claim.subject }
+									name={ claim.subject_name }
+									onOpen={ onOpenEntity }
+								/>{ ' ' }
+								<span>{ claim.predicate }</span>{ ' ' }
+								{ null === claim.object_name ? (
+									<span>{ claim.object }</span>
+								) : (
+									<EntityChip
+										entityKey={ claim.object }
+										name={ claim.object_name }
+										onOpen={ onOpenEntity }
+									/>
+								) }{ ' ' }
+								<Cite url={ claim.url } title={ claim.title } />
 							</li>
 						) ) }
 					</ul>

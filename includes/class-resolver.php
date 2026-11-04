@@ -16,6 +16,10 @@
  * looked for tells a call that failed, or one never made, from one that
  * named nothing.
  *
+ * A name, stem or fuzzy match never links an entity by a name a rejected
+ * entity of its own type carries, a stem judged by its squashed spelling
+ * too; an identifier still links it, and no candidate is proposed under
+ * such a name whatever its type. A stoplisted hit still claims its span.
  * Name and stem hits whose spans overlap in one text settle together: the
  * longest span wins, and equal spans naming several entities assert the one
  * whose locality the text also names, else the only accepted one among
@@ -91,9 +95,10 @@ final class Resolver {
 	public static ?\Closure $similar_text = null;
 
 	/**
-	 * Each domain's stem with the entity it names, built once per index.
+	 * Each domain's stem with the entity it names and whether the stem is
+	 * stoplisted for it, built once per index.
 	 *
-	 * @var list<array{0:string,1:string}>
+	 * @var list<array{0:string,1:string,2:bool}>
 	 */
 	private array $stems = [];
 
@@ -142,7 +147,7 @@ final class Resolver {
 		foreach ( $index->identifiers( 'domain' ) as $domain => $entity_key ) {
 			$stem = self::domain_stem( (string) $domain );
 			if ( '' !== $stem ) {
-				$this->stems[] = [ $entity_key, $stem ];
+				$this->stems[] = [ $entity_key, $stem, $index->stoplisted( $stem, $entity_key ) ];
 			}
 		}
 		foreach ( $index->name_norms() as $norm => $entity_keys ) {
@@ -213,7 +218,8 @@ final class Resolver {
 				[ $best, $winners ] = $this->best_norms( $name );
 				$confidence = \round( $best, 4 );
 				if ( $best >= $this->propose_at ) {
-					$state = $best >= $this->assert_at && 1 === \count( $winners ) ? 'asserted' : 'proposed';
+					$state   = $best >= $this->assert_at && 1 === \count( $winners ) ? 'asserted' : 'proposed';
+					$winners = \array_filter( $winners, fn ( string $entity_key ): bool => ! $this->index->stoplisted( $name, $entity_key ), \ARRAY_FILTER_USE_KEY );
 					foreach ( \array_keys( $winners ) as $entity_key ) {
 						$this->link( $entity_key, 'subject', 'ner_fuzzy', $confidence, $state, $given );
 					}
@@ -278,18 +284,20 @@ final class Resolver {
 	 * Each domain stem the title spells, behind its guards: at least
 	 * MIN_STEM_LENGTH characters, aligned to word boundaries, every word
 	 * capitalized, and no article leading a welded span. Bodies are never
-	 * read: they are raw markup, where an href spells a domain.
+	 * read: they are raw markup, where an href spells a domain. A hit is
+	 * stoplisted when its squashed stem or its surface's norm is.
 	 *
 	 * @param string $title The item's title.
-	 * @return list<array{entity_key:string,kind:string,surface:string,at:int}>
+	 * @return list<array{entity_key:string,kind:string,surface:string,at:int,stoplisted:bool}>
 	 */
 	private function stemmed( string $title ): array {
 		$hits     = [];
 		$haystack = [] === $this->stems ? [ '', [] ] : self::squash( $title );
-		foreach ( $this->stems as [ $entity_key, $stem ] ) {
+		foreach ( $this->stems as [ $entity_key, $stem, $stoplisted ] ) {
 			$found = self::stem_hit( $title, $haystack, $stem );
 			if ( null !== $found ) {
-				$hits[] = [ 'entity_key' => $entity_key, 'kind' => 'domain_stem', 'surface' => $found[0], 'at' => $found[1] ];
+				$stoplisted = $stoplisted || $this->index->stoplisted( Entity_Index::norm( $found[0] ), $entity_key );
+				$hits[]     = [ 'entity_key' => $entity_key, 'kind' => 'domain_stem', 'surface' => $found[0], 'at' => $found[1], 'stoplisted' => $stoplisted ];
 			}
 		}
 		return $hits;
@@ -298,8 +306,8 @@ final class Resolver {
 	/**
 	 * The hits that name an entity, its localities left out.
 	 *
-	 * @param list<array{entity_key:string,kind:string,surface:string,state:string,at:int}> $hits Name hits.
-	 * @return list<array{entity_key:string,kind:string,surface:string,state:string,at:int}>
+	 * @param list<array{entity_key:string,kind:string,surface:string,state:string,at:int,stoplisted:bool}> $hits Name hits.
+	 * @return list<array{entity_key:string,kind:string,surface:string,state:string,at:int,stoplisted:bool}>
 	 */
 	private static function named( array $hits ): array {
 		return \array_values( \array_filter( $hits, static fn ( array $hit ): bool => 'locality' !== $hit['kind'] ) );
@@ -309,11 +317,12 @@ final class Resolver {
 	 * Settle the name and stem hits one text holds. Hits whose spans overlap
 	 * form one cluster, settled once by its longest hits: a shorter hit
 	 * inside or across a longer one drops, so one span links one entity
-	 * unless equal spans name several. Localities never join a cluster.
+	 * unless equal spans name several. A stoplisted hit claims its span like
+	 * any other, then links nothing. Localities never join a cluster.
 	 *
-	 * @param list<array{entity_key:string,kind:string,surface:string,at:int}> $hits       The text's hits.
-	 * @param array<string,true>                                               $localities The entities whose locality the item names.
-	 * @param string                                                           $role       The link role the text gives.
+	 * @param list<array{entity_key:string,kind:string,surface:string,at:int,stoplisted:bool}> $hits       The text's hits.
+	 * @param array<string,true>                                                               $localities The entities whose locality the item names.
+	 * @param string                                                                           $role       The link role the text gives.
 	 */
 	private function clustered( array $hits, array $localities, string $role ): void {
 		\usort( $hits, static fn ( array $a, array $b ): int => $a['at'] <=> $b['at'] );
@@ -335,34 +344,37 @@ final class Resolver {
 
 	/**
 	 * The entities a cluster's longest hits name, each with the hit it was
-	 * first found by.
+	 * first found by, one not stoplisted over one that is.
 	 *
-	 * @param non-empty-list<array{entity_key:string,kind:string,surface:string,at:int}> $cluster Overlapping hits.
-	 * @return array<string,array{entity_key:string,kind:string,surface:string,at:int}>
+	 * @param non-empty-list<array{entity_key:string,kind:string,surface:string,at:int,stoplisted:bool}> $cluster Overlapping hits.
+	 * @return array<string,array{entity_key:string,kind:string,surface:string,at:int,stoplisted:bool}>
 	 */
 	private static function longest( array $cluster ): array {
 		$words = \array_map( static fn ( array $hit ): int => (int) \preg_match_all( '/[\p{L}\p{M}\p{N}]+/u', $hit['surface'] ), $cluster );
 		$most  = \max( $words );
 		$hits  = [];
 		foreach ( $cluster as $n => $hit ) {
-			if ( $most === $words[ $n ] ) {
-				$hits[ $hit['entity_key'] ] ??= $hit;
+			$held = $hits[ $hit['entity_key'] ] ?? null;
+			if ( $most === $words[ $n ] && ( null === $held || ( $held['stoplisted'] && ! $hit['stoplisted'] ) ) ) {
+				$hits[ $hit['entity_key'] ] = $hit;
 			}
 		}
 		return $hits;
 	}
 
 	/**
-	 * Link the entities one surface names, whichever step found them: the
-	 * only one at its own strength; of several, the one whose locality the
-	 * text names, guarded; else the only accepted one beside machine
-	 * proposals, at its own strength; else each, proposed.
+	 * Link the entities one surface names, whichever step found them, the
+	 * stoplisted ones aside: the only one at its own strength; of several,
+	 * the one whose locality the text names, guarded; else the only accepted
+	 * one beside machine proposals, at its own strength; else each, proposed.
+	 * A stoplisted co-winner leaves the rest ambiguous, each proposed.
 	 *
-	 * @param array<string,array{kind:string,surface:string}> $hits       Entity key => the hit it was found by.
-	 * @param array<string,true>                              $localities The entities whose locality the text names.
-	 * @param string                                          $role       The link role.
+	 * @param array<string,array{kind:string,surface:string,stoplisted:bool}> $hits       Entity key => the hit it was found by.
+	 * @param array<string,true>                                              $localities The entities whose locality the text names.
+	 * @param string                                                          $role       The link role.
 	 */
 	private function settle( array $hits, array $localities, string $role ): void {
+		$live    = \array_filter( $hits, static fn ( array $hit ): bool => ! $hit['stoplisted'] );
 		$settled = $hits;
 		$guarded = false;
 		if ( 1 !== \count( $settled ) ) {
@@ -373,14 +385,14 @@ final class Resolver {
 			$settled = \array_filter( $hits, fn ( string $entity_key ): bool => 'accepted' === $this->index->state( $entity_key ), \ARRAY_FILTER_USE_KEY );
 			$guarded = false;
 		}
-		if ( 1 === \count( $settled ) ) {
+		if ( $live === $hits && 1 === \count( $settled ) ) {
 			$entity_key              = \array_key_first( $settled );
 			$hit                     = $settled[ $entity_key ];
 			[ $method, $confidence ] = self::STRENGTHS[ $hit['kind'] ];
 			$this->link( $entity_key, $role, $method, $guarded ? self::GUARDED : $confidence, 'asserted', $hit['surface'] );
 			return;
 		}
-		foreach ( $hits as $entity_key => $hit ) {
+		foreach ( $live as $entity_key => $hit ) {
 			$this->link( $entity_key, $role, self::STRENGTHS[ $hit['kind'] ][0], self::AMBIGUOUS, 'proposed', $hit['surface'] );
 		}
 	}

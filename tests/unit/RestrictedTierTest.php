@@ -247,8 +247,8 @@ final class RestrictedTierTest extends TestCase {
 
 	/**
 	 * A public item's claim whose object only restricted items cite answers
-	 * a non-holder the object as the item spelled it, and no key; a holder
-	 * the key. A public object answers its key to both.
+	 * a non-holder the object as the item spelled it, and no key or name; a
+	 * holder the key and its name. A public object answers both to both.
 	 */
 	public function test_a_claims_object_answers_its_key_only_to_a_caller_who_sees_it(): void {
 		$this->seed_restricted_world();
@@ -256,13 +256,13 @@ final class RestrictedTierTest extends TestCase {
 			self::claim( 'feed:gazette-award', 1, self::GAZETTE, 'partners_with', self::QUIET, 'the Quiet Buyer consortium', self::$oct_06 ),
 			self::claim( 'feed:gazette-award', 2, self::GAZETTE, 'competes_with', 'organization:salem-ledger', 'the Ledger', self::$oct_06 )
 		);
-		$objects = fn (): array => \array_column( \array_filter( $this->ci->dispatch( 'claims', [ self::GAZETTE ] )['claims'], static fn ( array $c ): bool => 'feed:gazette-award' === $c['item_key'] ), 'object' );
+		$objects = fn (): array => \array_map( static fn ( array $c ): array => [ $c['object'], $c['object_name'] ], \array_values( \array_filter( $this->ci->dispatch( 'claims', [ self::GAZETTE ] )['claims'], static fn ( array $c ): bool => 'feed:gazette-award' === $c['item_key'] ) ) );
 
 		$GLOBALS['_current_user_id'] = self::HOLDER;
-		$this->assertSame( [ self::QUIET, 'organization:salem-ledger' ], $objects() );
+		$this->assertSame( [ [ self::QUIET, 'Quiet Buyer' ], [ 'organization:salem-ledger', 'Salem Ledger' ] ], $objects() );
 
 		$GLOBALS['_current_user_id'] = self::READER;
-		$this->assertSame( [ 'the Quiet Buyer consortium', 'organization:salem-ledger' ], $objects() );
+		$this->assertSame( [ [ 'the Quiet Buyer consortium', null ], [ 'organization:salem-ledger', 'Salem Ledger' ] ], $objects() );
 	}
 
 	/**

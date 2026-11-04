@@ -613,6 +613,146 @@ final class ResolverTest extends TestCase {
 		);
 	}
 
+	/** A word the stoplist rejects, said in a body, links no accepted entity that carries it as its name. */
+	public function test_a_rejected_name_in_a_body_links_nothing(): void {
+		$this->assertSame( [], $this->resolve( [ 'body' => 'Volunteers swept the wharfside on Sunday.', 'url' => 'https://elsewhere.example/x' ], ...self::wharfside() )['links'] );
+	}
+
+	/** A word the stoplist rejects, said in a title, links no accepted entity by its name or its domain's stem. */
+	public function test_a_rejected_name_in_a_title_links_nothing(): void {
+		$this->assertSame( [], $this->resolve( [ 'title' => 'Wharfside honours its volunteers', 'url' => 'https://elsewhere.example/x' ], ...self::wharfside() )['links'] );
+	}
+
+	/** A domain's stem spelling a rejected name links nothing, though the entity carries no name of it. */
+	public function test_a_domain_stem_spelling_a_rejected_name_links_nothing(): void {
+		$this->assertSame( [], $this->resolve( [ 'title' => 'Wharfside honours its volunteers', 'url' => 'https://elsewhere.example/x' ], ...self::wharfside( [ 'domain' => [ 'wharfside.co.nz' ] ] ) )['links'] );
+	}
+
+	/** The client whose name the stoplist rejects is still its own site's publisher. */
+	public function test_a_rejected_name_still_links_its_own_site_as_publisher(): void {
+		$this->assertSame(
+			[ self::link( 'organization:atomic-5121', 'publisher', 'identifier', 1.0 ) ],
+			$this->resolve( [ 'title' => 'Wharfside honours its volunteers', 'body' => 'Volunteers swept the wharfside.', 'url' => 'https://www.wharfside.co.nz/2026/11/awards' ], ...self::wharfside() )['links']
+		);
+	}
+
+	/** An alias the rejected entity does not carry links its entity as any alias does. */
+	public function test_an_alias_a_rejected_entity_does_not_carry_still_links(): void {
+		$this->assertSame(
+			[ self::link( 'organization:atomic-5121', 'subject', 'alias', 1.0 ) ],
+			$this->resolve( [ 'title' => 'Kaipara Wharf Press honours its volunteers', 'url' => 'https://elsewhere.example/x' ], ...self::wharfside() )['links']
+		);
+	}
+
+	/** A rejected organization's name blocks only organizations: a product carrying it still links by title. */
+	public function test_a_product_carrying_a_rejected_organizations_name_still_links_by_title(): void {
+		$this->assertSame(
+			[ self::link( 'product:kestrel-mail', 'subject', 'name', 1.0 ) ],
+			$this->resolve( [ 'title' => 'Kestrel Mail goes dark for an hour', 'url' => 'https://elsewhere.example/x' ], ...self::kestrel_mail() )['links']
+		);
+	}
+
+	/** The NER fallback never links an entity by a name a rejected entity of its own type carries, nor proposes it. */
+	public function test_the_ner_fallback_never_reaches_a_name_its_type_rejects(): void {
+		$this->last = new Resolver( $this->index_of( ...self::wharfside() ) );
+
+		$this->assertSame(
+			[ 'links' => [], 'proposals' => [], 'recognized' => true ],
+			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Prize season opens on the coast', 'url' => 'https://elsewhere.example/x' ] ), new Fake_Entity_Extractor( [ 'Wharfside' ] ) ) )
+		);
+	}
+
+	/** The NER fallback still links a product by a name only a rejected organization also carries. */
+	public function test_the_ner_fallback_still_reaches_another_type_carrying_a_rejected_name(): void {
+		$this->last = new Resolver( $this->index_of( ...self::kestrel_mail() ) );
+
+		$this->assertSame(
+			[ self::link( 'product:kestrel-mail', 'subject', 'ner_fuzzy', 1.0 ) ],
+			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Mail outage', 'url' => 'https://elsewhere.example/x' ] ), new Fake_Entity_Extractor( [ 'Kestrel Mail' ] ) ) )['links']
+		);
+	}
+
+	/** A stoplisted span still wins its overlap, so the shorter name inside it links nothing either. */
+	public function test_a_stoplisted_span_still_claims_its_span(): void {
+		$this->assertSame(
+			[],
+			$this->resolve(
+				[ 'title' => 'Kestrel Mail goes dark', 'url' => 'https://elsewhere.example/x' ],
+				self::entity( 'organization:kestrel-mail-service', 'Kestrel Mail' ),
+				self::entity( 'organization:kestrel', 'Kestrel' ),
+				self::proposed( 'organization:kestrel-mail', 'Kestrel Mail' ),
+				self::rejected( 'organization:kestrel-mail' )
+			)['links']
+		);
+	}
+
+	/** A stem spelled across a space is judged by its squashed spelling, so "Wharf Side" is the rejected Wharfside. */
+	public function test_a_stem_spelled_across_spacing_links_nothing(): void {
+		$this->assertSame(
+			[],
+			$this->resolve(
+				[ 'title' => 'Wharf Side Awards Open', 'url' => 'https://elsewhere.example/x' ],
+				self::entity( 'organization:atomic-6012', 'Atomic site 6012', [ 'domain' => [ 'wharfside.example' ] ] ),
+				self::entity( 'organization:wharfside', 'Wharfside' ),
+				self::rejected( 'organization:wharfside' )
+			)['links']
+		);
+	}
+
+	/** A rejected name does not stoplist an acronym spelled the same, which matches only in its own case. */
+	public function test_a_rejected_name_does_not_block_an_acronym(): void {
+		$this->assertSame(
+			[ self::link( 'organization:world-health', 'subject', 'acronym', 0.9 ) ],
+			$this->resolve(
+				[ 'title' => 'WHO warns of measles', 'url' => 'https://elsewhere.example/x' ],
+				self::entity( 'organization:world-health', 'World Health Organization', [ 'acronym' => [ 'WHO' ] ] ),
+				self::entity( 'organization:who', 'Who' ),
+				self::rejected( 'organization:who' )
+			)['links']
+		);
+	}
+
+	/** A rejected acronym does not stoplist a name spelled the same. */
+	public function test_a_rejected_acronym_does_not_block_a_name(): void {
+		$this->assertSame(
+			[ self::link( 'organization:owl', 'subject', 'name', 1.0 ) ],
+			$this->resolve(
+				[ 'title' => 'Owl opens a bureau', 'url' => 'https://elsewhere.example/x' ],
+				self::entity( 'organization:owl', 'Owl' ),
+				self::proposed( 'organization:owl-publishers', 'Owl Publishers', [ 'acronym' => [ 'OWL' ] ] ),
+				self::rejected( 'organization:owl-publishers' )
+			)['links']
+		);
+	}
+
+	/** A fuzzy tie is ambiguous before the stoplist drops a winner, so what remains is proposed, not asserted. */
+	public function test_a_fuzzy_tie_with_a_stoplisted_winner_stays_proposed(): void {
+		$this->last = new Resolver( $this->index_of( ...self::wharfside(), ...[ self::entity( 'product:wharfside-co', 'Wharfside Co' ) ] ) );
+
+		$this->assertSame(
+			[ self::link( 'product:wharfside-co', 'subject', 'ner_fuzzy', 0.8571, 'proposed' ) ],
+			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Prize season opens on the coast', 'url' => 'https://elsewhere.example/x' ] ), new Fake_Entity_Extractor( [ 'Wharfside' ] ) ) )['links']
+		);
+	}
+
+	/** Equal spans whose co-winner is stoplisted stay ambiguous: the rest is proposed at 0.5. */
+	public function test_an_equal_span_beside_a_stoplisted_hit_stays_ambiguous(): void {
+		$this->assertSame(
+			[ self::link( 'product:wharfside', 'subject', 'name', 0.5, 'proposed' ) ],
+			$this->resolve( [ 'title' => 'Wharfside honours its volunteers', 'url' => 'https://elsewhere.example/x' ], ...self::wharfside(), ...[ self::entity( 'product:wharfside', 'Wharfside' ) ] )['links']
+		);
+	}
+
+	/** Of one entity's equal-span hits, longest() keeps the one not stoplisted, in either order. */
+	public function test_longest_prefers_an_entitys_hit_that_is_not_stoplisted(): void {
+		$name    = [ 'entity_key' => 'organization:atomic-6012', 'kind' => 'canonical', 'surface' => 'News Room', 'at' => 0, 'stoplisted' => false ];
+		$stem    = [ 'entity_key' => 'organization:atomic-6012', 'kind' => 'domain_stem', 'surface' => 'News Room', 'at' => 0, 'stoplisted' => true ];
+		$longest = new \ReflectionMethod( Resolver::class, 'longest' );
+
+		$this->assertSame( [ 'organization:atomic-6012' => $name ], $longest->invoke( null, [ $name, $stem ] ) );
+		$this->assertSame( [ 'organization:atomic-6012' => $name ], $longest->invoke( null, [ $stem, $name ] ) );
+	}
+
 	/** A tool the extractor names is proposed as a product, an organization beside it as an organization. */
 	public function test_a_tool_named_in_an_item_is_proposed_as_a_product(): void {
 		$extractor = new Fake_Entity_Extractor( [ 'Plover Wharf Trust' ], [ 'Kestrel Mail' ] );
@@ -792,6 +932,36 @@ final class ResolverTest extends TestCase {
 			...$atomic( 3007, 'kxzt.example' ),
 			...$atomic( 3009, 'lantern.example' ),
 			...$atomic( 3010, 'kiwiledger.co.nz' ),
+		];
+	}
+
+	/**
+	 * A client the roster named by its site, which took the site's title,
+	 * Wharfside, as a canonical name, beside the stoplist's rejected
+	 * Wharfside; or, given facts, a client holding only those.
+	 *
+	 * @param array<string,list<string>> $facts The client's names and identifiers in place of the default.
+	 * @return list<list<array<string,mixed>>>
+	 */
+	private static function wharfside( array $facts = [ 'canonical' => [ 'Wharfside' ], 'alias' => [ 'Kaipara Wharf Press', 'Wharfside NZ' ], 'domain' => [ 'wharfside.co.nz' ] ] ): array {
+		return [
+			self::entity( 'organization:atomic-5121', 'Atomic site 5121', $facts ),
+			self::entity( 'organization:wharfside', 'Wharfside' ),
+			self::rejected( 'organization:wharfside' ),
+		];
+	}
+
+	/**
+	 * A product a curator created over a tool the model proposed as an
+	 * organization, and that organization, rejected.
+	 *
+	 * @return list<list<array<string,mixed>>>
+	 */
+	private static function kestrel_mail(): array {
+		return [
+			self::entity( 'product:kestrel-mail', 'Kestrel Mail' ),
+			self::proposed( 'organization:kestrel-mail', 'Kestrel Mail' ),
+			self::rejected( 'organization:kestrel-mail' ),
 		];
 	}
 

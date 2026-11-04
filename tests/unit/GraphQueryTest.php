@@ -6,6 +6,8 @@ namespace Newspack_Intelligence\Tests;
 use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
+use Newspack_Nodes\Sqlite_Arm;
+use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
@@ -246,7 +248,7 @@ final class GraphQueryTest extends TestCase {
 				'topics'      => [ [ 'topic_key' => 'topic:awards', 'name' => 'Awards' ] ],
 				'counts'      => [ 'items' => 2, 'proposed_links' => 0 ],
 				'published'   => [ 'count' => 0 ],
-				'status'      => [ 'client_since' => self::$jan_01, 'kinds' => [ 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => self::$oct_06 ],
+				'status'      => [ 'client_since' => self::$jan_01, 'kinds' => [ 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => self::$oct_06 ],
 				'available'   => true,
 			],
 			self::read( 'entity', [ 'key' => self::GAZETTE ] )
@@ -347,11 +349,30 @@ final class GraphQueryTest extends TestCase {
 			self::claim( 'linear:joint-grant', 0, self::GAZETTE, 'partners_with', self::LEDGER, 'Salem Ledger', self::$oct_01 )
 		);
 
-		$won      = [ 'subject' => self::GAZETTE, 'predicate' => 'won', 'object' => 'State Press Award', 'confidence' => 0.95, 'item_key' => 'feed:gazette-award', 'url' => 'https://news.example/feed/gazette-award' ];
-		$partners = [ 'subject' => self::GAZETTE, 'predicate' => 'partners_with', 'object' => self::LEDGER, 'confidence' => 0.95, 'item_key' => 'linear:joint-grant', 'url' => 'https://news.example/linear/joint-grant' ];
+		$won      = [ 'subject' => self::GAZETTE, 'subject_name' => 'Harbor Gazette', 'predicate' => 'won', 'object' => 'State Press Award', 'object_name' => null, 'confidence' => 0.95, 'item_key' => 'feed:gazette-award', 'url' => 'https://news.example/feed/gazette-award', 'title' => 'Harbor Gazette wins state award' ];
+		$partners = [ 'subject' => self::GAZETTE, 'subject_name' => 'Harbor Gazette', 'predicate' => 'partners_with', 'object' => self::LEDGER, 'object_name' => 'Salem Ledger', 'confidence' => 0.95, 'item_key' => 'linear:joint-grant', 'url' => 'https://news.example/linear/joint-grant', 'title' => 'Gazette and Ledger share a grant' ];
 		$this->assertSame( [ 'claims' => [ $won, $partners ], 'available' => true ], self::read( 'claims', [ 'key' => self::GAZETTE ] ) );
 		$this->assertSame( [ $partners ], self::read( 'claims', [ 'key' => self::LEDGER ] )['claims'] );
 		$this->assertSame( [ $won ], self::read( 'claims', [ 'key' => self::GAZETTE, 'predicate' => 'won' ] )['claims'] );
+	}
+
+	/**
+	 * A subject, and an object the caller may see, that hold no name answer
+	 * their keys as their names, so object_name is null for free text alone.
+	 */
+	public function test_a_claim_names_an_unnamed_entity_by_its_key(): void {
+		$subject = 'organization:egret-unnamed-press';
+		$object  = 'organization:egret-unnamed-fund';
+		$this->seed_world();
+		$this->seed(
+			self::link( 'link_asserted', 'feed:gazette-award', $subject, 'mention', 'name', 1.0, self::$oct_06 ),
+			[ Intel_Event::make( 'entity_accepted', [ 'entity_key' => $object ], 'user:41', 'fixture-9' ) ],
+			self::claim( 'feed:gazette-award', 3, $subject, 'funds', $object, 'the Egret fund', self::$oct_06 )
+		);
+
+		$claim = self::read( 'claims', [ 'key' => $subject ] )['claims'][0];
+
+		$this->assertSame( [ $subject, $subject, $object, $object ], [ $claim['subject'], $claim['subject_name'], $claim['object'], $claim['object_name'] ] );
 	}
 
 	public function test_trends_count_kinds_and_topics_per_bucket(): void {
@@ -360,9 +381,9 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame(
 			[
 				'rows'      => [
-					[ 'bucket' => '2026-09-28', 'value' => 'funding', 'count' => 1, 'items' => self::cited( 'linear:joint-grant' ) ],
-					[ 'bucket' => '2026-10-05', 'value' => 'award', 'count' => 1, 'items' => self::cited( 'feed:gazette-award' ) ],
 					[ 'bucket' => '2026-10-12', 'value' => 'launch', 'count' => 1, 'items' => self::cited( 'github:ledger-launch' ) ],
+					[ 'bucket' => '2026-10-05', 'value' => 'award', 'count' => 1, 'items' => self::cited( 'feed:gazette-award' ) ],
+					[ 'bucket' => '2026-09-28', 'value' => 'funding', 'count' => 1, 'items' => self::cited( 'linear:joint-grant' ) ],
 				],
 				'available' => true,
 			],
@@ -375,7 +396,102 @@ final class GraphQueryTest extends TestCase {
 			],
 			self::trends( [ 'by' => 'topic', 'bucket' => 'month' ] )['rows']
 		);
-		$this->assertSame( [ '2026-10-06', '2026-10-13' ], \array_column( self::trends( [ 'by' => 'kind', 'bucket' => 'day', 'since' => '2026-10-02' ] )['rows'], 'bucket' ) );
+		$this->assertSame( [ '2026-10-13', '2026-10-06' ], \array_column( self::trends( [ 'by' => 'kind', 'bucket' => 'day', 'since' => '2026-10-02' ] )['rows'], 'bucket' ) );
+	}
+
+	/** An item two partitions both hold counts once, and is cited once. */
+	public function test_an_item_two_partitions_hold_counts_once(): void {
+		$copy = [ self::item( 'feed:egret-gala', 'Egret gala', 'feed', 'public', self::$oct_06 ), self::extraction( 'feed:egret-gala', 'A gala.', 'award', self::$oct_06, [] ) ];
+		$this->seed( ...$copy );
+		$this->second_partition( ...$copy );
+
+		$this->assertSame(
+			[ [ 'bucket' => '2026-10-05', 'value' => 'award', 'count' => 1, 'items' => [ [ 'item_key' => 'feed:egret-gala', 'url' => self::url( 'feed:egret-gala' ), 'title' => 'Egret gala' ] ] ] ],
+			self::trends( [ 'by' => 'kind' ] )['rows']
+		);
+	}
+
+	/**
+	 * A story's canonical is the newest partition's; one the caller may not
+	 * read leaves every copy counting as itself, never an older partition's
+	 * readable canonical standing in.
+	 */
+	public function test_the_newest_partitions_canonical_names_the_story(): void {
+		$copies = [ 'feed:egret-wire-1', 'feed:egret-wire-2', 'feed:egret-wire-3' ];
+		$this->seed(
+			self::item( $copies[0], 'Egret wire one', 'feed', 'public', self::$oct_06 ),
+			self::extraction( $copies[0], 'A wire.', 'award', self::$oct_06, [] ),
+			self::item( $copies[1], 'Egret wire two', 'feed', 'restricted', self::$oct_06 + 60 ),
+			self::extraction( $copies[1], 'A wire.', 'award', self::$oct_06 + 60, [] ),
+			self::item( $copies[2], 'Egret wire three', 'feed', 'public', self::$oct_06 + 120 ),
+			self::extraction( $copies[2], 'A wire.', 'award', self::$oct_06 + 120, [] ),
+			self::story( $copies[0], $copies, self::$oct_06 )
+		);
+		$this->assertSame( [ [ 1, [ $copies[0] ] ] ], self::counted( self::trends( [ 'by' => 'kind' ] ) ) );
+
+		$this->second_partition( [ Intel_Event::make( 'cluster_superseded', [ 'cluster_key' => $copies[0], 'canonical_item_key' => $copies[1], 'previous_item_key' => $copies[0], 'rank' => 15.25, 'retrieved_ts' => self::$oct_06 + 600 ], 'machine:dedup@9.4.1', 'fixture-9' ) ] );
+
+		$this->assertSame( [ [ 2, [ $copies[2], $copies[0] ] ] ], self::counted( self::trends( [ 'by' => 'kind' ] ) ) );
+	}
+
+	/**
+	 * A story is dated by the earliest copy the days asked admit, and cited
+	 * by its canonical, so a canonical before or after those days never
+	 * moves it out of them.
+	 */
+	public function test_a_story_is_dated_by_its_earliest_admitted_copy(): void {
+		$canonical = 'feed:heron-flood-0';
+		$copies    = [ $canonical, 'feed:heron-flood-1', 'feed:heron-flood-2', 'feed:heron-flood-3' ];
+		$events    = [];
+		foreach ( $copies as $n => $copy ) {
+			$at       = self::$oct_13 - 2 * 86400 + $n * 86400;
+			$events[] = self::item( $copy, "Heron flood day {$n}", 'feed', 'public', $at );
+			$events[] = self::extraction( $copy, 'A flood.', 'incident', $at, [] );
+		}
+		$this->seed( ...$events );
+		$this->seed( self::story( $canonical, $copies, self::$oct_13 - 2 * 86400 ) );
+		$cited = [ [ 'item_key' => $canonical, 'url' => self::url( $canonical ), 'title' => 'Heron flood day 0' ] ];
+
+		$this->assertSame( [ [ 'bucket' => '2026-10-12', 'value' => 'incident', 'count' => 1, 'items' => $cited ] ], self::trends( [ 'by' => 'kind', 'since' => '2026-10-12' ] )['rows'] );
+		$this->assertSame( [ [ 'bucket' => '2026-10-12', 'value' => 'incident', 'count' => 1, 'items' => $cited ] ], self::trends( [ 'by' => 'kind', 'bucket' => 'day', 'since' => '2026-10-12' ] )['rows'] );
+		$this->assertSame( [ [ 'bucket' => '2026-10-05', 'value' => 'incident', 'count' => 1, 'items' => $cited ] ], self::trends( [ 'by' => 'kind' ] )['rows'] );
+
+		$this->seed( self::story( 'feed:heron-flood-3', $copies, self::$oct_13 - 2 * 86400 ) );
+		$cited = [ [ 'item_key' => 'feed:heron-flood-3', 'url' => self::url( 'feed:heron-flood-3' ), 'title' => 'Heron flood day 3' ] ];
+		$this->assertSame( [ [ 'bucket' => '2026-10-12', 'value' => 'incident', 'count' => 1, 'items' => $cited ] ], self::trends( [ 'by' => 'kind', 'bucket' => 'day', 'since' => '2026-10-12', 'until' => '2026-10-13' ] )['rows'] );
+	}
+
+	/**
+	 * A story counts once, as its cluster's canonical: its copies' rows
+	 * collapse into one, cited by the canonical.
+	 */
+	public function test_trends_count_a_story_once_as_its_canonical(): void {
+		$copies = [ 'feed:plover-wire-1', 'feed:plover-wire-2', 'feed:plover-wire-3', 'feed:plover-wire-4' ];
+		$events = [];
+		foreach ( $copies as $n => $copy ) {
+			$events[] = self::item( $copy, "Plover wire copy {$n}", 'feed', 'public', self::$oct_06 + $n * 60 );
+			$events[] = self::extraction( $copy, 'A syndicated award.', 'award', self::$oct_06 + $n * 60, [] );
+		}
+		$this->seed( ...$events );
+		$this->seed( self::item( 'feed:osprey-medal', 'Osprey medal', 'feed', 'public', self::$oct_06 - 3600 ), self::extraction( 'feed:osprey-medal', 'A medal.', 'award', self::$oct_06 - 3600, [] ) );
+		$this->assertSame( [ 5 ], \array_column( self::trends( [ 'by' => 'kind' ] )['rows'], 'count' ) );
+
+		$this->seed( self::story( 'feed:plover-wire-3', $copies, self::$oct_06 ) );
+
+		$this->assertSame(
+			[
+				[
+					'bucket' => '2026-10-05',
+					'value'  => 'award',
+					'count'  => 2,
+					'items'  => [
+						[ 'item_key' => 'feed:plover-wire-3', 'url' => self::url( 'feed:plover-wire-3' ), 'title' => 'Plover wire copy 2' ],
+						[ 'item_key' => 'feed:osprey-medal', 'url' => self::url( 'feed:osprey-medal' ), 'title' => 'Osprey medal' ],
+					],
+				],
+			],
+			self::trends( [ 'by' => 'kind' ] )['rows']
+		);
 	}
 
 	/** A role filter counts items linking an entity holding the role at the item's time. */
@@ -383,9 +499,9 @@ final class GraphQueryTest extends TestCase {
 		$this->seed_world();
 		$this->seed( [ Intel_Event::make( 'role_asserted', [ 'entity_key' => self::LEDGER, 'role' => 'client', 'from_ts' => self::$oct_06 ], 'user:41', 'fixture-9' ) ] );
 
-		$this->assertSame( [ 'funding', 'award', 'launch' ], \array_column( self::trends( [ 'by' => 'kind', 'role' => [ 'client' ] ] )['rows'], 'value' ) );
-		$this->assertSame( [ 'funding', 'award' ], \array_column( self::trends( [ 'by' => 'kind', 'role' => [ 'client' ], 'until' => '2026-10-10' ] )['rows'], 'value' ) );
-		$this->assertSame( [ 'funding', 'launch' ], \array_column( self::trends( [ 'by' => 'kind', 'entity' => self::LEDGER ] )['rows'], 'value' ) );
+		$this->assertSame( [ 'launch', 'award', 'funding' ], \array_column( self::trends( [ 'by' => 'kind', 'role' => [ 'client' ] ] )['rows'], 'value' ) );
+		$this->assertSame( [ 'award', 'funding' ], \array_column( self::trends( [ 'by' => 'kind', 'role' => [ 'client' ], 'until' => '2026-10-10' ] )['rows'], 'value' ) );
+		$this->assertSame( [ 'launch', 'funding' ], \array_column( self::trends( [ 'by' => 'kind', 'entity' => self::LEDGER ] )['rows'], 'value' ) );
 		$this->assertSame( [], self::trends( [ 'by' => 'kind', 'role' => [ 'funder' ] ] )['rows'] );
 	}
 
@@ -403,7 +519,7 @@ final class GraphQueryTest extends TestCase {
 		$whole = self::search( [ 'role' => [ 'client' ] ] )['items'];
 		$this->assertSame( [ 'feed:ledger-hire', 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], \array_column( $whole, 'item_key' ) );
 		$this->assertSame( $window( $whole ), self::search( [ 'role' => [ 'client' ], 'since' => '2026-10-06', 'until' => '2026-10-13' ] )['items'] );
-		$this->assertSame( [ 'award', 'launch' ], \array_column( self::trends( [ 'by' => 'kind', 'role' => [ 'client' ], 'since' => '2026-10-06', 'until' => '2026-10-13' ] )['rows'], 'value' ) );
+		$this->assertSame( [ 'launch', 'award' ], \array_column( self::trends( [ 'by' => 'kind', 'role' => [ 'client' ], 'since' => '2026-10-06', 'until' => '2026-10-13' ] )['rows'], 'value' ) );
 	}
 
 	public function test_a_trend_row_cites_its_five_newest_items(): void {
@@ -538,7 +654,7 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award' ], self::keys( self::search( [] ) ) );
 		$this->assertSame( [ 'items' => 1, 'proposed_links' => 0 ], self::read( 'entity', [ 'key' => self::GAZETTE ] )['counts'] );
 		$this->assertSame( [ 'items' => 1, 'proposed_links' => 0 ], self::read( 'entity', [ 'key' => self::LEDGER ] )['counts'] );
-		$this->assertSame( [ 'award', 'launch' ], \array_column( self::trends( [ 'by' => 'kind' ] )['rows'], 'value' ) );
+		$this->assertSame( [ 'launch', 'award' ], \array_column( self::trends( [ 'by' => 'kind' ] )['rows'], 'value' ) );
 		$this->assertSame( [ 'topic:awards' => 1 ], \array_column( self::read( 'related', [ 'key' => self::GAZETTE ] )['entities'], 'shared_items', 'entity_key' ) );
 		$this->assertSame( [], self::read( 'claims', [ 'key' => self::GAZETTE ] )['claims'] );
 		$this->assertSame( [], self::read( 'review', [ 'what' => 'links' ] )['links'] );
@@ -570,7 +686,7 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [ 'feed:old-ledger-hire', 'github:ledger-launch', 'linear:joint-grant' ], self::keys( self::search( [ 'entity' => 'organization:old-ledger' ] ) ) );
 		$this->assertSame( [ [ 'entity_key' => self::LEDGER, 'name' => 'Salem Ledger', 'state' => 'asserted' ], [ 'entity_key' => self::GAZETTE, 'name' => 'Harbor Gazette', 'state' => 'asserted' ] ], self::search( [ 'q' => 'editor' ] )['items'][0]['entities'] );
 		$this->assertSame( [ 'feed:old-ledger-hire', 'linear:joint-grant' ], \array_column( \array_column( self::read( 'related', [ 'key' => self::GAZETTE, 'limit' => 20 ] )['entities'], 'items', 'entity_key' )[ self::LEDGER ], 'item_key' ) );
-		$this->assertSame( [ 'funding', 'hire', 'launch' ], \array_column( self::trends( [ 'by' => 'kind', 'entity' => 'organization:ledger-of-salem' ] )['rows'], 'value' ) );
+		$this->assertSame( [ 'hire', 'launch', 'funding' ], \array_column( self::trends( [ 'by' => 'kind', 'entity' => 'organization:ledger-of-salem' ] )['rows'], 'value' ) );
 	}
 
 	/** A cycling merge chain answers no survivor, so a read naming it is refused. */
@@ -685,6 +801,32 @@ final class GraphQueryTest extends TestCase {
 	 */
 	private static function search( array $args ): array {
 		return Graph_Query::search( $args + [ 'q' => null, 'sort' => 'time', 'entity' => null, 'lens' => null, 'since' => null, 'until' => null, 'limit' => 50, 'offset' => 0, 'kind' => [], 'topic' => [], 'role' => [], 'source' => [] ] );
+	}
+
+	/**
+	 * Project events into a second partition's file, and read both from
+	 * here on, partition 1 the newer.
+	 *
+	 * @param list<array<string,mixed>> ...$events Events, in order.
+	 */
+	private function second_partition( array ...$events ): void {
+		$other = $this->projector_graph( 'intel-graph-b', 'projector-b' );
+		foreach ( \array_merge( ...$events ) as $event ) {
+			self::deliver( $other, $event );
+		}
+		$other->save_state();
+		$files                             = [ 0 => Table_Node::file( 'intel-graph', 0 ), 1 => Table_Node::file( 'intel-graph-b', 0 ) ];
+		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): mixed => $read( Sqlite_Arm::open_rows( $files, Intel_Graph_Row_Schema::version() ) );
+	}
+
+	/**
+	 * Each trend row's count and the keys it cites.
+	 *
+	 * @param array<string,mixed> $answer A trends answer.
+	 * @return list<array{0:int,1:list<string>}>
+	 */
+	private static function counted( array $answer ): array {
+		return \array_map( static fn ( array $row ): array => [ $row['count'], \array_column( $row['items'], 'item_key' ) ], $answer['rows'] );
 	}
 
 	/**

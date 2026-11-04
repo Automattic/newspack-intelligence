@@ -4,7 +4,9 @@
  * projection. It holds the accepted and proposed entities, each name by its
  * `norm()` and each identifier by `kind:value`; a merged entity's names and
  * identifiers answer its survivor's key, and a rejected entity's names are
- * kept only to refuse proposing them again. An identifier whose survivor is
+ * kept only as the stoplist, by type: no candidate is proposed under one,
+ * and none links an entity of the rejected entity's type by a match
+ * (`stoplisted()`). An identifier whose survivor is
  * rejected or unresolvable is left out too, and `held_by_refused()` names
  * the key holding it. An entity exists once it has
  * both an `entities` row and an `entity_states` row; a name or identifier
@@ -58,11 +60,14 @@ final class Entity_Index {
 	/** @var array<string,array<array-key,string>> Kind => value => the key holding it, whose survivor is rejected or unresolvable. */
 	private array $refused = [];
 
-	/** @var array<string,true> The norm of every rejected entity's names. */
+	/** @var array<string,array<string,true>> The norm of every rejected entity's names => each type rejecting it. */
 	private array $rejected = [];
 
 	/** @var array<string,string> Each indexed entity's state. */
 	private array $states = [];
+
+	/** @var array<string,string> Each indexed entity's type. */
+	private array $types = [];
 
 	/** @var array<string,string> Each live topic's canonical name => its key. */
 	private array $topics = [];
@@ -120,11 +125,13 @@ final class Entity_Index {
 		$index->merged = self::survivors( $r );
 		$entities      = $r->rows( 'SELECT entity_key, name, type FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e', [] );
 		$existing      = [];
+		$types         = [];
 		$topics        = [];
 		foreach ( $entities as [ $key, $name, $type ] ) {
 			$key = Core::as_string( $key );
 			if ( isset( $states[ $key ] ) ) {
 				$existing[ $key ] = $states[ $key ];
+				$types[ $key ]    = Core::as_string( $type );
 				if ( 'topic' === $type ) {
 					$topics[ $key ] = Core::as_string( $name );
 				}
@@ -138,18 +145,19 @@ final class Entity_Index {
 		foreach ( self::live( $r, false ) as [ $key, $state ] ) {
 			$key                   = Core::as_string( $key );
 			$index->states[ $key ] = Core::as_string( $state );
+			$index->types[ $key ]  = $types[ $key ];
 			if ( isset( $topics[ $key ] ) ) {
 				$index->topics[ $topics[ $key ] ] = $key;
 			}
 		}
 		\ksort( $index->topics );
-		$add_name = static function ( string $key, string $kind, string $value, string $norm ) use ( $index, $topics, $survivor, $state_of ): void {
+		$add_name = static function ( string $key, string $kind, string $value, string $norm ) use ( $index, $topics, $types, $survivor, $state_of ): void {
 			if ( isset( $topics[ $key ] ) ) {
 				return;
 			}
 			$state = $state_of( $key );
-			if ( 'rejected' === $state ) {
-				$index->rejected[ $norm ] = true;
+			if ( 'rejected' === $state && ! \in_array( $kind, [ 'locality', 'acronym' ], true ) ) {
+				$index->rejected[ $norm ][ $types[ Core::as_string( $survivor( $key ) ) ] ] = true;
 			} elseif ( \in_array( $state, self::LIVE_STATES, true ) ) {
 				$entity = Core::as_string( $survivor( $key ) );
 				$index->names[ $norm ][ "{$entity}|{$kind}|{$value}" ] = [ 'entity_key' => $entity, 'kind' => $kind, 'value' => $value, 'state' => $state ];
@@ -430,6 +438,80 @@ final class Entity_Index {
 	}
 
 	/**
+	 * Every matchable name's norm with the entities it names, for the fuzzy
+	 * step: localities excluded, and an entity whose type rejects the name.
+	 *
+	 * @return array<string,list<string>>
+	 */
+	public function name_norms(): array {
+		$norms = [];
+		foreach ( $this->names as $norm => $names ) {
+			foreach ( $names as $name ) {
+				if ( 'locality' !== $name['kind'] && ! $this->stoplisted( $norm, $name['entity_key'] ) ) {
+					$norms[ $norm ][ $name['entity_key'] ] = $name['entity_key'];
+				}
+			}
+		}
+		return \array_map( 'array_values', $norms );
+	}
+
+	/**
+	 * Every name the text spells as whole words, in one pass: each run of up
+	 * to MAX_NAME_WORDS words is looked up by its norm. Each hit carries the
+	 * byte offset its surface starts at, and overlapping hits all come back,
+	 * for the caller to weigh. An acronym answers only the case it is
+	 * written in. Hits come in text order, the longer of two at one word
+	 * first. A hit `stoplisted()` holds is marked so, and still comes back,
+	 * because its span still outweighs the shorter hits inside it; an
+	 * acronym, matched in its own case alone, never is.
+	 *
+	 * @param string $text Any text.
+	 * @return list<array{entity_key:string,kind:string,surface:string,state:string,at:int,stoplisted:bool}>
+	 */
+	public function names_in( string $text ): array {
+		if ( [] === $this->names || 0 === \preg_match_all( '/[\p{L}\p{M}\p{N}]+/u', $text, $m, \PREG_OFFSET_CAPTURE ) ) {
+			return [];
+		}
+		$words = $m[0];
+		$lower = \array_map( static fn ( array $word ): string => \mb_strtolower( $word[0] ), $words );
+		$found = [];
+		foreach ( $words as $i => [ , $start ] ) {
+			$run  = '';
+			$ends = [];
+			for ( $j = $i; $j < $i + self::MAX_NAME_WORDS && isset( $words[ $j ] ); $j++ ) {
+				$run .= ( $j === $i ? '' : ' ' ) . $lower[ $j ];
+				$norm = \str_starts_with( $run, 'the ' ) ? \substr( $run, 4 ) : $run;
+				if ( ! isset( $this->names[ $norm ] ) ) {
+					continue;
+				}
+				$surface = \substr( $text, $start, $words[ $j ][1] + \strlen( $words[ $j ][0] ) - $start );
+				$hits    = [];
+				foreach ( $this->names[ $norm ] as $name ) {
+					if ( 'acronym' !== $name['kind'] || $surface === $name['value'] ) {
+						$hits[ "{$name['entity_key']}|{$name['kind']}" ] = [ 'entity_key' => $name['entity_key'], 'kind' => $name['kind'], 'surface' => $surface, 'state' => $name['state'], 'at' => $start, 'stoplisted' => 'acronym' !== $name['kind'] && $this->stoplisted( $norm, $name['entity_key'] ) ];
+					}
+				}
+				\array_unshift( $ends, \array_values( $hits ) );
+			}
+			\array_push( $found, ...\array_merge( ...$ends ) );
+		}
+		return $found;
+	}
+
+	/**
+	 * Whether a rejected entity of this entity's type carries the name, so
+	 * the name never links it by a match; an identifier still does. A key
+	 * the index does not hold is never stoplisted.
+	 *
+	 * @param string $norm       A name's norm.
+	 * @param string $entity_key An entity key.
+	 */
+	public function stoplisted( string $norm, string $entity_key ): bool {
+		$type = $this->types[ $entity_key ] ?? null;
+		return null !== $type && isset( $this->rejected[ $norm ][ $type ] );
+	}
+
+	/**
 	 * Why a domain, as `identifier_value()` spells it, is not a plain
 	 * hostname, or null when it is one: two or more labels of a-z, 0-9 and
 	 * hyphens, none starting or ending with one, each at most 63
@@ -453,47 +535,6 @@ final class Entity_Index {
 	}
 
 	/**
-	 * Every name the text spells as whole words, in one pass: each run of up
-	 * to MAX_NAME_WORDS words is looked up by its norm. Each hit carries the
-	 * byte offset its surface starts at, and overlapping hits all come back,
-	 * for the caller to weigh. An acronym answers only the case it is
-	 * written in. Hits come in text order, the longer of two at one word
-	 * first.
-	 *
-	 * @param string $text Any text.
-	 * @return list<array{entity_key:string,kind:string,surface:string,state:string,at:int}>
-	 */
-	public function names_in( string $text ): array {
-		if ( [] === $this->names || 0 === \preg_match_all( '/[\p{L}\p{M}\p{N}]+/u', $text, $m, \PREG_OFFSET_CAPTURE ) ) {
-			return [];
-		}
-		$words = $m[0];
-		$lower = \array_map( static fn ( array $word ): string => \mb_strtolower( $word[0] ), $words );
-		$found = [];
-		foreach ( $words as $i => [ , $start ] ) {
-			$run  = '';
-			$ends = [];
-			for ( $j = $i; $j < $i + self::MAX_NAME_WORDS && isset( $words[ $j ] ); $j++ ) {
-				$run .= ( $j === $i ? '' : ' ' ) . $lower[ $j ];
-				$norm = \str_starts_with( $run, 'the ' ) ? \substr( $run, 4 ) : $run;
-				if ( ! isset( $this->names[ $norm ] ) ) {
-					continue;
-				}
-				$surface = \substr( $text, $start, $words[ $j ][1] + \strlen( $words[ $j ][0] ) - $start );
-				$hits    = [];
-				foreach ( $this->names[ $norm ] as $name ) {
-					if ( 'acronym' !== $name['kind'] || $surface === $name['value'] ) {
-						$hits[ "{$name['entity_key']}|{$name['kind']}" ] = [ 'entity_key' => $name['entity_key'], 'kind' => $name['kind'], 'surface' => $surface, 'state' => $name['state'], 'at' => $start ];
-					}
-				}
-				\array_unshift( $ends, \array_values( $hits ) );
-			}
-			\array_push( $found, ...\array_merge( ...$ends ) );
-		}
-		return $found;
-	}
-
-	/**
 	 * Each identifier of a kind the index holds: value => the entity it
 	 * names. A value of digits alone is an integer key.
 	 *
@@ -513,24 +554,6 @@ final class Entity_Index {
 	 */
 	public function refused( string $kind ): array {
 		return $this->refused[ $kind ] ?? [];
-	}
-
-	/**
-	 * Every matchable name's norm with the entities it names, localities
-	 * excluded, for the fuzzy step.
-	 *
-	 * @return array<string,list<string>>
-	 */
-	public function name_norms(): array {
-		$norms = [];
-		foreach ( $this->names as $norm => $names ) {
-			foreach ( $names as $name ) {
-				if ( 'locality' !== $name['kind'] ) {
-					$norms[ $norm ][ $name['entity_key'] ] = $name['entity_key'];
-				}
-			}
-		}
-		return \array_map( 'array_values', $norms );
 	}
 
 	/**
@@ -562,7 +585,8 @@ final class Entity_Index {
 	}
 
 	/**
-	 * Whether a rejected entity carries this name.
+	 * Whether a rejected entity of any type carries this name, so nothing
+	 * proposes it.
 	 *
 	 * @param string $norm A name's norm.
 	 */

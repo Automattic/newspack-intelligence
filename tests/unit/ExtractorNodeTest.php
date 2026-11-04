@@ -484,6 +484,44 @@ final class ExtractorNodeTest extends TestCase {
 		);
 	}
 
+	/** A claim object spelling a name a rejected entity of its type carries resolves to no entity of that type. */
+	public function test_a_claim_object_spelling_a_stoplisted_name_carries_no_key(): void {
+		$this->seed(
+			self::entity( self::GAZETTE, 'The Harbor Gazette' ),
+			self::entity( 'organization:atomic-5121', 'Atomic site 5121', [ 'canonical' => [ 'Wharfside' ] ] ),
+			self::entity( 'organization:wharfside', 'Wharfside' ),
+			self::rejected( 'organization:wharfside' )
+		);
+		$this->answer( (string) \json_encode( [ 'summary' => 'Harbor Gazette partners.', 'kind' => 'partnership', 'claims' => [ [ 'subject' => 'Harbor Gazette', 'predicate' => 'partners_with', 'object' => 'Wharfside' ] ] ] ) );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$claims = \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'claim_asserted' === $e['event'] ) );
+		$this->assertSame(
+			[ [ self::GAZETTE, 'partners_with', '', 'Wharfside' ] ],
+			\array_map( static fn ( array $e ): array => [ $e['subject_key'], $e['predicate'], $e['object_key'], $e['object_text'] ], $claims )
+		);
+	}
+
+	/** A client's own site naming it by a stoplisted name still asserts the claim, through its identifier link. */
+	public function test_a_stoplisted_name_still_resolves_an_entity_the_item_links_by_identifier(): void {
+		$this->seed(
+			self::entity( 'organization:atomic-5121', 'Atomic site 5121', [ 'canonical' => [ 'Wharfside' ] ] ),
+			self::entity( 'organization:wharfside', 'Wharfside' ),
+			self::rejected( 'organization:wharfside' ),
+			self::entity( self::MESA, 'Mesa Courier' )
+		);
+		$this->answer( (string) \json_encode( [ 'summary' => 'Wharfside partners.', 'kind' => 'partnership', 'claims' => [ [ 'subject' => 'Wharfside', 'predicate' => 'partners_with', 'object' => 'Mesa Courier' ] ] ] ) );
+
+		$this->extractor->fill( self::resolved( [ [ 'entity_key' => 'organization:atomic-5121', 'role' => 'publisher', 'method' => 'identifier', 'confidence' => 1.0, 'state' => 'asserted' ] ], [] ) );
+
+		$claims = \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'claim_asserted' === $e['event'] ) );
+		$this->assertSame(
+			[ [ 'organization:atomic-5121', 'partners_with', self::MESA ] ],
+			\array_map( static fn ( array $e ): array => [ $e['subject_key'], $e['predicate'], $e['object_key'] ], $claims )
+		);
+	}
+
 	/**
 	 * Two entities share a name: the subject is the one the item links, and an
 	 * object naming two entities the item links neither of stays text.

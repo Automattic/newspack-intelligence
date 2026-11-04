@@ -50,11 +50,25 @@ beforeEach( () => {
 		claims: [
 			{
 				subject: KEY,
+				subject_name: 'Acme Quillsheet',
 				predicate: 'won',
 				object: 'Regional Press Award',
+				object_name: null,
 				confidence: 0.9,
 				item_key: 'feed:inkfold-review-17',
 				url: 'https://inkfold-review.example/acme',
+				title: 'Acme Quillsheet wins regional prize',
+			},
+			{
+				subject: 'person:jo-reporter',
+				subject_name: 'Jo Reporter',
+				predicate: 'joined',
+				object: KEY,
+				object_name: 'Acme Quillsheet',
+				confidence: 0.8,
+				item_key: 'feed:inkfold-review-21',
+				url: 'https://inkfold-review.example/jo',
+				title: 'Jo Reporter joins the Quillsheet',
 			},
 		],
 		available: true,
@@ -68,6 +82,7 @@ function renderEntity( props = {} ) {
 			canTune={ false }
 			vocabulary={ VOCABULARY }
 			onOpenEntity={ jest.fn() }
+			onNamed={ jest.fn() }
 			{ ...props }
 		/>
 	);
@@ -121,32 +136,168 @@ describe( 'Entity — reads', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'renders the timeline, the related entities and the cited claims', async () => {
+	it( 'renders the timeline and the related entities', async () => {
 		const onOpenEntity = jest.fn();
 		renderEntity( { onOpenEntity } );
+		const timeline = await screen.findByRole( 'region', {
+			name: 'Timeline',
+		} );
 		expect(
-			await screen.findByRole( 'link', {
+			await within( timeline ).findByRole( 'link', {
 				name: 'Acme Quillsheet wins regional prize',
 			} )
 		).toBeInTheDocument();
-		const related = await screen.findByRole( 'button', {
-			name: 'Jo Reporter',
-		} );
+		const related = await within(
+			await screen.findByRole( 'region', { name: 'Related' } )
+		).findByRole( 'button', { name: 'Jo Reporter' } );
 		expect( related.closest( 'li' ) ).toHaveClass(
 			'newspack-intelligence__actions'
 		);
 		fireEvent.click( related );
 		expect( onOpenEntity ).toHaveBeenCalledWith( 'person:jo-reporter' );
 		expect( screen.getByText( /4 shared items/ ) ).toBeInTheDocument();
+	} );
+
+	it( 'reads each claim by name and cites its item by title', async () => {
+		renderEntity();
 		const claims = await screen.findByRole( 'region', { name: 'Claims' } );
+		const [ won, joined ] =
+			await within( claims ).findAllByRole( 'listitem' );
+		expect( won ).toHaveTextContent(
+			'Acme Quillsheet won Regional Press Award Acme Quillsheet wins regional prize'
+		);
+		expect( joined ).toHaveTextContent(
+			'Jo Reporter joined Acme Quillsheet Jo Reporter joins the Quillsheet'
+		);
 		expect(
-			within( claims ).getByText( /won Regional Press Award/ )
+			within( joined ).getByRole( 'link', {
+				name: 'Jo Reporter joins the Quillsheet',
+			} )
+		).toHaveAttribute( 'href', 'https://inkfold-review.example/jo' );
+		expect( claims ).not.toHaveTextContent( /person:|organization:|feed:/ );
+	} );
+
+	it( 'leaves out a role row that held no time', async () => {
+		wire.replies.entity = {
+			...ENTITY,
+			roles: [
+				...ENTITY.roles,
+				{ role: 'client', from_ts: 1793232000, to_ts: 1793232000 },
+				{ role: 'competitor', from_ts: 1785542400, to_ts: 1793232000 },
+			],
+		};
+		renderEntity();
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
+		const record = recordCard();
+		expect(
+			within( record ).getByText( /competitor 2026-08-01 – 2026-10-29/ )
 		).toBeInTheDocument();
 		expect(
-			within( claims ).getByRole( 'link', {
-				name: 'feed:inkfold-review-17',
+			within( record ).queryByText( /2026-10-29 – 2026-10-29/ )
+		).toBeNull();
+		expect( within( record ).getAllByText( /^client/ ) ).toHaveLength( 1 );
+	} );
+
+	it( 'keeps an open role a seed asserted from 0', async () => {
+		wire.replies.entity = {
+			...ENTITY,
+			roles: [ { role: 'client', from_ts: 0, to_ts: 0 } ],
+		};
+		renderEntity( { canTune: true } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
+		const end = within( recordCard() ).getByRole( 'button', {
+			name: 'End client',
+		} );
+		expect( end.closest( 'li' ) ).toHaveTextContent( /^client since/ );
+	} );
+
+	it( 'hands the page the name its record answers', async () => {
+		const onNamed = jest.fn();
+		wire.replies.entity = { ...ENTITY, name: 'Quillsheet Media Group' };
+		renderEntity( { onNamed } );
+		await screen.findByRole( 'heading', {
+			name: 'Quillsheet Media Group',
+		} );
+		await waitFor( () =>
+			expect( onNamed ).toHaveBeenLastCalledWith( {
+				key: KEY,
+				name: 'Quillsheet Media Group',
 			} )
-		).toHaveAttribute( 'href', 'https://inkfold-review.example/acme' );
+		);
+	} );
+
+	it( 'hands the page the key its heading falls back to for a nameless record', async () => {
+		const onNamed = jest.fn();
+		wire.replies.entity = { ...ENTITY, name: null };
+		renderEntity( { onNamed } );
+		await screen.findByRole( 'heading', { name: KEY } );
+		await waitFor( () =>
+			expect( onNamed ).toHaveBeenLastCalledWith( {
+				key: KEY,
+				name: KEY,
+			} )
+		);
+	} );
+
+	it( 'clears the name it handed the page once the record is refused', async () => {
+		const onNamed = jest.fn();
+		wire.replies.entity = () => new Error( `no entity: ${ KEY }` );
+		renderEntity( { onNamed } );
+		await screen.findByText( `no entity: ${ KEY }` );
+		await waitFor( () =>
+			expect( onNamed ).toHaveBeenLastCalledWith( {
+				key: KEY,
+				name: null,
+			} )
+		);
+		expect( onNamed ).not.toHaveBeenCalledWith(
+			expect.objectContaining( { name: expect.any( String ) } )
+		);
+	} );
+
+	it( 'opens a claim’s subject and its keyed object from their chips, the key standing in for a missing name', async () => {
+		const onOpenEntity = jest.fn();
+		wire.replies.claims = {
+			claims: [
+				{
+					subject: 'person:kit-sorrel',
+					subject_name: null,
+					predicate: 'founded',
+					object: KEY,
+					object_name: 'Acme Quillsheet',
+					confidence: 0.7,
+					item_key: 'feed:inkfold-review-30',
+					url: 'https://inkfold-review.example/kit',
+					title: 'Kit Sorrel looks back',
+				},
+			],
+			available: true,
+		};
+		renderEntity( { onOpenEntity } );
+		const claims = await screen.findByRole( 'region', { name: 'Claims' } );
+		fireEvent.click(
+			await within( claims ).findByRole( 'button', {
+				name: 'person:kit-sorrel',
+			} )
+		);
+		fireEvent.click(
+			within( claims ).getByRole( 'button', { name: 'Acme Quillsheet' } )
+		);
+		expect( onOpenEntity.mock.calls ).toEqual( [
+			[ 'person:kit-sorrel' ],
+			[ KEY ],
+		] );
+	} );
+
+	it( 'renders a claim’s free-text object as text, not a chip', async () => {
+		renderEntity();
+		const claims = await screen.findByRole( 'region', { name: 'Claims' } );
+		await within( claims ).findByText( 'Regional Press Award' );
+		expect(
+			within( claims ).queryByRole( 'button', {
+				name: 'Regional Press Award',
+			} )
+		).toBeNull();
 	} );
 
 	it( 'counts one of a thing in the singular', async () => {
@@ -331,7 +482,7 @@ describe( 'Entity — status', () => {
 	const heading = () =>
 		screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 
-	it( 'heads a client with its start, latest signal, asks and last item', async () => {
+	it( 'heads a client with its start, latest signal, churn signals, asks and last item', async () => {
 		wire.replies.signals = {
 			signals: [
 				{
@@ -351,7 +502,7 @@ describe( 'Entity — status', () => {
 		const status = ( await heading() ).nextElementSibling;
 		await waitFor( () =>
 			expect( status ).toHaveTextContent(
-				'Client since 2026-09-09 · Latest signal: publisher drop, week of 2026-10-12 · 2 feature requests, 5 complaints · Last item 2026-09-22'
+				'Client since 2026-09-09 · Latest signal: publisher drop, week of 2026-10-12 · 4 churn signals, 2 feature requests, 5 complaints · Last item 2026-09-22'
 			)
 		);
 		expect( wire.sent( 'signals' ) ).toHaveLength( 1 );
@@ -362,7 +513,7 @@ describe( 'Entity — status', () => {
 			...ENTITY,
 			status: {
 				client_since: 1791504000,
-				kinds: { feature_request: 1, complaint: 0 },
+				kinds: { churn_signal: 1, feature_request: 1, complaint: 0 },
 				last_item_ts: null,
 			},
 		};
@@ -370,7 +521,7 @@ describe( 'Entity — status', () => {
 		const status = ( await heading() ).nextElementSibling;
 		await waitFor( () =>
 			expect( status ).toHaveTextContent(
-				'Client since 2026-10-09 · No signal · 1 feature request, 0 complaints · No item about it yet'
+				'Client since 2026-10-09 · No signal · 1 churn signal, 1 feature request, 0 complaints · No item about it yet'
 			)
 		);
 	} );

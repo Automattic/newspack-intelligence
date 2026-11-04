@@ -162,6 +162,79 @@ final class IntelligenceSignalsTest extends TestCase {
 		$this->assertSame( [ [ '2026-10-19', 'topic', 'topic:storms', 5, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [ '--lens=storm-desk' ] ) ) );
 	}
 
+	/** `other` is the kind that says nothing, so it never spikes on the about axis. */
+	public function test_other_never_signals(): void {
+		$this->weeks( 'other', [ 1 => 9, 9 => 1 ] );
+		$this->weeks( 'incident', [ 1 => 3, 9 => 1 ] );
+
+		$this->assertSame( [ [ '2026-10-12', 'kind', 'incident', 3, 0.125 ] ], self::signals( $this->ci->dispatch( 'signals', [] ) ) );
+		$this->assertSame( [ 'incident' ], \array_column( Intel_Graph_Row_Schema::read( static fn ( $r ): array => Graph_Query::spikes( $r, Graph_Query::graph( $r ), [], 0.0 ) ), 'value' ) );
+	}
+
+	/**
+	 * `other` counts nowhere on the about axis, so it is no history either;
+	 * trends still count it.
+	 */
+	public function test_other_is_no_history(): void {
+		$this->weeks( 'incident', [ 1 => 3 ] );
+		$this->weeks( 'other', [ 9 => 1, 20 => 1 ] );
+
+		$this->assertSame( [], $this->ci->dispatch( 'signals', [] )['signals'] );
+		$this->assertContains( 'other', \array_column( $this->ci->dispatch( 'trends', [] )['rows'], 'value' ) );
+		$this->weeks( 'praise', [ 20 => 1 ] );
+		$this->assertSame( [ [ '2026-10-12', 'kind', 'incident', 3, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [] ) ) );
+	}
+
+	/**
+	 * A story is dated by its earliest copy, so one whose early copy precedes
+	 * the window is history and leaves the window, though its canonical
+	 * falls inside it.
+	 */
+	public function test_a_story_with_an_early_copy_is_history(): void {
+		$this->weeks( 'incident', [ 1 => 4 ] );
+		$early = self::THIS_WEEK - 10 * self::WEEK + 2 * 86400;
+		$this->seed( ...self::counted( 'feed:incident-early', 'incident', $early, 'internal', 'feed', [] ) );
+		$this->seed( self::story( 'feed:incident-1-1', [ 'feed:incident-early', 'feed:incident-1-1' ], $early ) );
+
+		$answer = $this->ci->dispatch( 'signals', [] );
+
+		$this->assertSame( [ [ '2026-10-12', 'kind', 'incident', 3, 0.0 ] ], self::signals( $answer ) );
+		$this->assertSame( [ 'feed:incident-1-4', 'feed:incident-1-3', 'feed:incident-1-2' ], \array_column( $answer['signals'][0]['items'], 'item_key' ) );
+	}
+
+	/**
+	 * Seven syndicated copies of one story count once, as their cluster's
+	 * canonical, which the signal cites, in `signals` and in `spikes()`.
+	 */
+	public function test_a_story_counts_once_as_its_canonical(): void {
+		$this->weeks( 'incident', [ 1 => 8, 9 => 1 ] );
+		$copies = \array_map( static fn ( int $n ): string => "feed:incident-1-{$n}", \range( 1, 7 ) );
+		$this->seed( self::story( 'feed:incident-1-4', $copies, self::THIS_WEEK - self::WEEK + 2 * 86400 ) );
+
+		$this->assertSame( [], $this->ci->dispatch( 'signals', [] )['signals'] );
+		$this->weeks( 'incident', [ 1 => 9 ] );
+		$answer = $this->ci->dispatch( 'signals', [] );
+		$this->assertSame( [ [ '2026-10-12', 'kind', 'incident', 3, 0.125 ] ], self::signals( $answer ) );
+		$this->assertSame( [ 'feed:incident-1-9', 'feed:incident-1-8', 'feed:incident-1-4' ], \array_column( $answer['signals'][0]['items'], 'item_key' ) );
+		$this->assertSame( [ 'item_key' => 'feed:incident-1-4', 'url' => 'https://news.example/feed/incident-1-4', 'title' => 'incident 4 of week 1' ], $answer['signals'][0]['items'][2] );
+		$this->assertSame( [ 3 ], \array_column( Intel_Graph_Row_Schema::read( static fn ( $r ): array => Graph_Query::spikes( $r, Graph_Query::graph( $r ), [], 0.0 ) ), 'count' ) );
+	}
+
+	/**
+	 * A copy whose canonical the caller may not read counts as itself and
+	 * cites itself; a holder counts the story once, by its canonical.
+	 */
+	public function test_a_restricted_canonical_never_stands_for_its_copies(): void {
+		$this->weeks( 'incident', [ 1 => 3, 9 => 1 ] );
+		$this->weeks( 'incident', [ 1 => 1 ], 'restricted', 'unthread' );
+		$this->seed( self::story( 'unthread:incident-1-1', [ 'unthread:incident-1-1', 'feed:incident-1-2', 'feed:incident-1-3' ], self::THIS_WEEK - self::WEEK + 2 * 86400 ) );
+
+		$this->assertSame( [ 'feed:incident-1-3', 'feed:incident-1-2', 'feed:incident-1-1' ], \array_column( $this->ci->dispatch( 'signals', [] )['signals'][0]['items'], 'item_key' ) );
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$this->assertSame( [], $this->ci->dispatch( 'signals', [] )['signals'] );
+		$this->assertSame( [ [ 'unthread:incident-1-1', 'feed:incident-1-1' ] ], \array_map( static fn ( array $row ): array => \array_column( $row['items'], 'item_key' ), \array_values( \array_filter( $this->ci->dispatch( 'trends', [ '--since=2026-10-12', '--until=2026-10-18' ] )['rows'], static fn ( array $row ): bool => 'incident' === $row['value'] ) ) ) );
+	}
+
 	/** With no projection to read, signals answer unavailable. */
 	public function test_no_table_answers_no_signal_unavailable(): void {
 		$this->activate();

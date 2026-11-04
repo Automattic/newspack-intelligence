@@ -72,10 +72,10 @@ final class EntityIndexTest extends TestCase {
 
 		$this->assertSame(
 			[
-				[ 'entity_key' => self::GAZETTE, 'kind' => 'canonical', 'surface' => 'The Harbor Gazette', 'state' => 'accepted', 'at' => 10 ],
-				[ 'entity_key' => self::GAZETTE, 'kind' => 'canonical', 'surface' => 'Harbor Gazette', 'state' => 'accepted', 'at' => 14 ],
-				[ 'entity_key' => self::GAZETTE, 'kind' => 'locality', 'surface' => 'Port Angeles', 'state' => 'accepted', 'at' => 32 ],
-				[ 'entity_key' => self::GAZETTE, 'kind' => 'alias', 'surface' => 'HarbGaz', 'state' => 'accepted', 'at' => 51 ],
+				[ 'entity_key' => self::GAZETTE, 'kind' => 'canonical', 'surface' => 'The Harbor Gazette', 'state' => 'accepted', 'at' => 10, 'stoplisted' => false ],
+				[ 'entity_key' => self::GAZETTE, 'kind' => 'canonical', 'surface' => 'Harbor Gazette', 'state' => 'accepted', 'at' => 14, 'stoplisted' => false ],
+				[ 'entity_key' => self::GAZETTE, 'kind' => 'locality', 'surface' => 'Port Angeles', 'state' => 'accepted', 'at' => 32, 'stoplisted' => false ],
+				[ 'entity_key' => self::GAZETTE, 'kind' => 'alias', 'surface' => 'HarbGaz', 'state' => 'accepted', 'at' => 51, 'stoplisted' => false ],
 			],
 			$index->names_in( 'Award for The Harbor Gazette of Port Angeles, says HarbGaz.' )
 		);
@@ -128,7 +128,7 @@ final class EntityIndexTest extends TestCase {
 	public function test_an_acronym_answers_its_exact_case_only(): void {
 		$index = $this->index_of( self::entity( 'organization:owl-publishers', 'Organized Writers League', [ 'acronym' => [ 'OWL' ] ] ) );
 
-		$this->assertSame( [ [ 'entity_key' => 'organization:owl-publishers', 'kind' => 'acronym', 'surface' => 'OWL', 'state' => 'accepted', 'at' => 0 ] ], $index->names_in( 'OWL summit opens' ) );
+		$this->assertSame( [ [ 'entity_key' => 'organization:owl-publishers', 'kind' => 'acronym', 'surface' => 'OWL', 'state' => 'accepted', 'at' => 0, 'stoplisted' => false ] ], $index->names_in( 'OWL summit opens' ) );
 		$this->assertSame( [], $index->names_in( 'an owl escapes; Owl King' ) );
 	}
 
@@ -374,7 +374,7 @@ final class EntityIndexTest extends TestCase {
 	public function test_a_proposed_entity_answers_as_proposed(): void {
 		$index = $this->index_of( self::proposed( 'organization:salem-ledger', 'Salem Ledger' ) );
 
-		$this->assertSame( [ [ 'entity_key' => 'organization:salem-ledger', 'kind' => 'canonical', 'surface' => 'Salem Ledger', 'state' => 'proposed', 'at' => 0 ] ], $index->names_in( 'Salem Ledger' ) );
+		$this->assertSame( [ [ 'entity_key' => 'organization:salem-ledger', 'kind' => 'canonical', 'surface' => 'Salem Ledger', 'state' => 'proposed', 'at' => 0, 'stoplisted' => false ] ], $index->names_in( 'Salem Ledger' ) );
 	}
 
 	/**
@@ -408,6 +408,69 @@ final class EntityIndexTest extends TestCase {
 			[ 'harbor gazette' => [ self::GAZETTE, 'organization:bend-gazette' ], 'harbgaz' => [ self::GAZETTE ] ],
 			$index->name_norms()
 		);
+	}
+
+	/** A name a rejected entity carries is offered to the fuzzy step for entities of other types alone, and is rejected for proposals whatever the type. */
+	public function test_name_norms_leaves_out_a_name_its_type_rejects(): void {
+		$index = $this->index_of(
+			self::entity( 'organization:atomic-5121', 'Atomic site 5121', [ 'canonical' => [ 'Wharfside' ] ] ),
+			self::entity( 'product:wharfside', 'Wharfside' ),
+			self::entity( 'organization:wharfside', 'Wharfside' ),
+			self::rejected( 'organization:wharfside' )
+		);
+
+		$this->assertEqualsCanonicalizing( [ 'atomic site 5121' => [ 'organization:atomic-5121' ], 'wharfside' => [ 'product:wharfside' ] ], $index->name_norms() );
+		$this->assertTrue( $index->is_rejected_name( 'wharfside' ) );
+	}
+
+	/** A hit whose name a rejected entity of its own type carries is marked stoplisted; another type's is not. */
+	public function test_names_in_marks_a_hit_its_type_rejects(): void {
+		$index = $this->index_of(
+			self::entity( 'organization:atomic-5121', 'Atomic site 5121', [ 'canonical' => [ 'Wharfside' ] ] ),
+			self::entity( 'product:wharfside', 'Wharfside' ),
+			self::entity( 'organization:wharfside', 'Wharfside' ),
+			self::rejected( 'organization:wharfside' )
+		);
+
+		$this->assertEqualsCanonicalizing(
+			[ [ 'organization:atomic-5121', true ], [ 'product:wharfside', false ] ],
+			\array_map( static fn ( array $hit ): array => [ $hit['entity_key'], $hit['stoplisted'] ], $index->names_in( 'Wharfside' ) )
+		);
+	}
+
+	/** A rejected entity's locality never enters the stoplist: it blocks neither a proposal nor a link. */
+	public function test_a_rejected_entitys_locality_is_not_stoplisted(): void {
+		$index = $this->index_of(
+			self::proposed( 'organization:tolaga-ledger', 'Tolaga Ledger', [ 'locality' => [ 'Tolaga' ] ] ),
+			self::rejected( 'organization:tolaga-ledger' ),
+			self::entity( 'organization:tolaga', 'Tolaga' )
+		);
+
+		$this->assertFalse( $index->is_rejected_name( 'tolaga' ) );
+		$this->assertTrue( $index->is_rejected_name( 'tolaga ledger' ) );
+		$this->assertFalse( $index->stoplisted( 'tolaga', 'organization:tolaga' ) );
+	}
+
+	/** A name on a key merged into a rejected entity stoplists the survivor's type, not the merged key's. */
+	public function test_a_name_merged_into_a_rejected_entity_stoplists_the_survivors_type(): void {
+		$index = $this->index_of(
+			self::entity( 'organization:wharfside', 'Wharfside' ),
+			self::rejected( 'organization:wharfside' ),
+			self::entity( 'product:wharf-board', 'Wharf Board' ),
+			self::merged( 'product:wharf-board', 'organization:wharfside' ),
+			self::entity( 'organization:harbour-trust', 'Harbour Trust', [ 'alias' => [ 'Wharf Board' ] ] ),
+			self::entity( 'product:wharf-board-kit', 'Wharf Board' )
+		);
+
+		$this->assertTrue( $index->stoplisted( 'wharf board', 'organization:harbour-trust' ) );
+		$this->assertFalse( $index->stoplisted( 'wharf board', 'product:wharf-board-kit' ) );
+	}
+
+	/** A key the index does not hold is never stoplisted, and asking raises no warning. */
+	public function test_stoplisted_answers_false_for_a_key_it_does_not_hold(): void {
+		$index = $this->index_of( self::entity( 'organization:wharfside', 'Wharfside' ), self::rejected( 'organization:wharfside' ) );
+
+		$this->assertFalse( $index->stoplisted( 'wharfside', 'organization:atomic-7781' ) );
 	}
 
 	/** A topic is offered by its name for extraction and never found in text; a merged or rejected one is not offered. */

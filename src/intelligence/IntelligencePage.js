@@ -33,6 +33,8 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
  * which view shows, the submitted search, the open entity, lens, collection
  * and watch, the watch form's draft and the item being saved, so a view
  * returns as it was left, and a lens's "Watch this" opens the form on it.
+ * The Entity tab reads the name the open entity's record answered, else its
+ * key.
  * Curation renders only for `canTune`, which hides controls and enforces
  * nothing: the server's role gate refuses a write the caller may not make.
  * Watches are every reader's own, so they are not gated on it. A link naming
@@ -55,6 +57,7 @@ export default function IntelligencePage( { canTune, canManage, vocabulary } ) {
 		linkedWatch() ? 'watches' : 'briefing'
 	);
 	const [ entityKey, setEntityKey ] = useState( null );
+	const [ named, setNamed ] = useState( null );
 	const [ saving, setSaving ] = useState( null );
 	const [ search, setSearch ] = useState( () =>
 		newSearch( vocabulary.lensLists )
@@ -94,9 +97,10 @@ export default function IntelligencePage( { canTune, canManage, vocabulary } ) {
 					{
 						id: 'entity',
 						label: sprintf(
-							/* translators: %s: the open entity's key. */
+							/* translators: %s: the open entity's name, else its key. */
 							__( 'Entity: %s', 'newspack-intelligence' ),
-							entityKey
+							( entityKey === named?.key && named.name ) ||
+								entityKey
 						),
 					},
 			  ]
@@ -162,6 +166,7 @@ export default function IntelligencePage( { canTune, canManage, vocabulary } ) {
 								canTune={ canTune }
 								vocabulary={ vocabulary }
 								onOpenEntity={ openEntity }
+								onNamed={ setNamed }
 								onSave={ onSave }
 							/>
 						) }

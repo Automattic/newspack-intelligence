@@ -196,7 +196,7 @@ final class IntelligenceLensTest extends TestCase {
 		$this->assertSame( [ 'feed:gazette-award', 'linear:joint-grant' ], \array_column( $lensed['items'], 'item_key' ) );
 		$this->assertSame( $this->ci->dispatch( 'search', $by_hand ), $lensed );
 		$trends = $this->ci->dispatch( 'trends', [ '--lens=deadline-desk' ] );
-		$this->assertSame( [ 'funding', 'award' ], \array_column( $trends['rows'], 'value' ) );
+		$this->assertSame( [ 'award', 'funding' ], \array_column( $trends['rows'], 'value' ) );
 		$this->assertSame( $this->ci->dispatch( 'trends', [ 'kind', '--bucket=day', ...$by_hand ] ), $trends );
 	}
 
@@ -248,7 +248,7 @@ final class IntelligenceLensTest extends TestCase {
 	public function test_trends_default_to_kinds_by_week(): void {
 		$this->save( 'no-axis', '--kind=award', '--kind=launch' );
 
-		$by_week = [ [ '2026-10-05', 'award' ], [ '2026-10-12', 'launch' ] ];
+		$by_week = [ [ '2026-10-12', 'launch' ], [ '2026-10-05', 'award' ] ];
 		$this->assertSame( $by_week, self::rows( $this->ci->dispatch( 'trends', [ '--lens=no-axis' ] ) ) );
 		$this->assertSame( $by_week, self::rows( $this->ci->dispatch( 'trends', [ '--kind=award', '--kind=launch' ] ) ) );
 		$this->assertSame( [ [ '2026-10-01', 'topic:ai' ], [ '2026-10-01', 'topic:awards' ] ], self::rows( $this->ci->dispatch( 'trends', [ 'topic', '--lens=no-axis', '--bucket=month' ] ) ) );
@@ -317,7 +317,7 @@ final class IntelligenceLensTest extends TestCase {
 		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ], $search( '--topic=topic:awards', '--topic=topic:ai' ) );
 		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award' ], $search( '--source=feed', '--source=github' ) );
 		$this->assertSame( [ 'feed:gazette-award' ], $search( '--source=feed', '--source=github', '--kind=award', '--kind=funding' ), 'filters still meet' );
-		$this->assertSame( [ 'award', 'launch' ], \array_column( $this->ci->dispatch( 'trends', [ 'kind', '--kind=award', '--kind=launch' ] )['rows'], 'value' ) );
+		$this->assertSame( [ 'launch', 'award' ], \array_column( $this->ci->dispatch( 'trends', [ 'kind', '--kind=award', '--kind=launch' ] )['rows'], 'value' ) );
 		$this->assertSame( [ 'topic:ai' ], \array_column( $this->ci->dispatch( 'trends', [ 'topic', '--source=github', '--source=hubspot' ] )['rows'], 'value' ) );
 	}
 

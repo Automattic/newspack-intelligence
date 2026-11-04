@@ -131,14 +131,14 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						],
 						Graph_Query::search( ... )
 					),
-					$verb( $read, 'entity', 'One entity as its merge survivor: { entity_key, type, name, state, merged_from, names, identifiers, roles, topics, counts: { items, proposed_links }, published: { count }, status }, name the one it was created with, or, for one created under its own domain, its newest canonical name, counts.items the items about it, published.count those its own site published, and status, for a client alone, { client_since, kinds: { feature_request, complaint }, last_item_ts } over the items about it, else null.', [ $about ], Graph_Query::entity( ... ) ),
+					$verb( $read, 'entity', 'One entity as its merge survivor: { entity_key, type, name, state, merged_from, names, identifiers, roles, topics, counts: { items, proposed_links }, published: { count }, status }, name the one it was created with, or, for one created under its own domain, its newest canonical name, counts.items the items about it, published.count those its own site published, and status, for a client alone, { client_since, kinds: { ' . \implode( ', ', Graph_Query::STATUS_KINDS ) . ' }, last_item_ts } over the items about it, else null.', [ $about ], Graph_Query::entity( ... ) ),
 					$verb( $read, 'timeline', 'The items about an entity, or with published those its own site published, newest first: { items, total }, each item as search answers it.', [ $about, $since, $until, $limit( Graph_Query::DEFAULT_LIMIT ), $page, $box( 'published', false, 'Page the items its own site published instead of those about it.' ) ], Graph_Query::timeline( ... ) ),
 					$verb( $read, 'related', 'The entities sharing the most items with one: { entities: [ { entity_key, name, type, shared_items, items: [ { item_key, url, title } ] } ] }, five newest shared items cited an entity.', [ $about, $limit( Graph_Query::RELATED_LIMIT ) ], Graph_Query::related( ... ) ),
-					$verb( $read, 'claims', 'The claims naming an entity, newest first: { claims: [ { subject, predicate, object, confidence, item_key, url } ] }.', [ $about, $text( 'predicate', 'Only claims of this predicate.' ), $limit( Graph_Query::DEFAULT_LIMIT ) ], Graph_Query::claims( ... ) ),
+					$verb( $read, 'claims', 'The claims naming an entity, newest first, object_name null where the object is as the item spelled it: { claims: [ { subject, subject_name, predicate, object, object_name, confidence, item_key, url, title } ] }.', [ $about, $text( 'predicate', 'Only claims of this predicate.' ), $limit( Graph_Query::DEFAULT_LIMIT ) ], Graph_Query::claims( ... ) ),
 					$verb(
 						$read,
 						'trends',
-						'Items counted by kind or topic per bucket: { rows: [ { bucket, value, count, items: [ { item_key, url, title } ] } ] }, five newest items cited a row.',
+						'Items counted by kind or topic per bucket, the newest bucket first, a story counted once as its canonical: { rows: [ { bucket, value, count, items: [ { item_key, url, title } ] } ] }, five newest items cited a row.',
 						[
 							$axis,
 							$text( 'entity', 'Only items linking this entity.' ),
@@ -153,7 +153,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					$verb(
 						$read,
 						'signals',
-						'The latest complete bucket\'s signals. On the about axis, spikes counted as trends counts: each value whose count reaches ' . Graph_Query::SIGNAL_MIN . ', passes the mean and reaches the mean plus ' . Graph_Query::SIGNAL_SIGMAS . ' standard deviations of the ' . Graph_Query::SIGNAL_BASELINE . ' buckets before it. For an entity named with no lens, also the publisher axis, what its own site published per week: a burst of one kind by the spike rule; and for a client, a drop to ' . Graph_Query::SIGNAL_DROP . ' of a baseline mean of at least ' . Graph_Query::SIGNAL_MIN . ', or silent on the first two empty weeks, neither in a week every client\'s output dropped: { signals: [ { axis, signal, bucket, by, value, count, baseline, items: [ { item_key, url, title } ] } ] }, signal spike, drop, silent or burst, by and value null for a drop or a silence, baseline the mean.',
+						'The latest complete bucket\'s signals, a story counted once as its canonical on both axes. On the about axis, spikes counted as trends counts, but other never signals on the about axis: each value whose count reaches ' . Graph_Query::SIGNAL_MIN . ', passes the mean and reaches the mean plus ' . Graph_Query::SIGNAL_SIGMAS . ' standard deviations of the ' . Graph_Query::SIGNAL_BASELINE . ' buckets before it. For an entity named with no lens, also the publisher axis, what its own site published per week: a burst of one kind by the spike rule; and for a client, a drop to ' . Graph_Query::SIGNAL_DROP . ' of a baseline mean of at least ' . Graph_Query::SIGNAL_MIN . ', or silent on the first two empty weeks, neither in a week every client\'s output dropped: { signals: [ { axis, signal, bucket, by, value, count, baseline, items: [ { item_key, url, title } ] } ] }, signal spike, drop, silent or burst, by and value null for a drop or a silence, baseline the mean.',
 						[ $lens, $text( 'entity', 'Only items linking this entity.' ) ],
 						Graph_Query::signals( ... )
 					),

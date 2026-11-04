@@ -272,10 +272,95 @@ describe( 'IntelligencePage', () => {
 			] )
 		);
 		fireEvent.click( nav( 'Review' ) );
-		fireEvent.click( nav( 'Entity: organization:acme-quillsheet' ) );
+		fireEvent.click( nav( 'Entity: Acme Quillsheet' ) );
 		expect(
 			await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } )
 		).toBeInTheDocument();
+	} );
+
+	it( 'labels the Entity tab by the key until the record names it', async () => {
+		wire.replies.entity = () =>
+			new Error( 'no entity: organization:acme-quillsheet' );
+		renderPage();
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
+		);
+		await screen.findByText( 'no entity: organization:acme-quillsheet' );
+		expect( nav( 'Entity: organization:acme-quillsheet' ) ).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+	} );
+
+	it( 'labels the Entity tab by the key again once a curator’s edit leaves the record refused', async () => {
+		let asked = 0;
+		wire.replies.entity = () =>
+			1 === ++asked
+				? ENTITY
+				: new Error( 'no entity: organization:acme-quillsheet' );
+		wire.replies.add_name = { ok: true, event_id: 'ev-merged' };
+		renderPage( true );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
+		);
+		await waitFor( () =>
+			expect( nav( 'Entity: Acme Quillsheet' ) ).toBeInTheDocument()
+		);
+		const form = screen.getByRole( 'group', { name: 'Add name' } );
+		fireEvent.change( within( form ).getByLabelText( 'Value' ), {
+			target: { value: 'Quillsheet' },
+		} );
+		fireEvent.click(
+			within( form ).getByRole( 'button', { name: 'Add name' } )
+		);
+		await screen.findByText( 'no entity: organization:acme-quillsheet' );
+		expect( nav( 'Entity: organization:acme-quillsheet' ) ).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+	} );
+
+	it( 'labels the Entity tab by the entity open now, not the one before', async () => {
+		wire.replies.entity = ( [ key ] ) =>
+			'person:jo-reporter' === key
+				? {
+						...ENTITY,
+						entity_key: key,
+						name: 'Jo Reporter',
+						type: 'person',
+						status: null,
+				  }
+				: ENTITY;
+		wire.replies.related = {
+			entities: [
+				{
+					entity_key: 'person:jo-reporter',
+					name: 'Jo Reporter',
+					type: 'person',
+					shared_items: 2,
+					items: [],
+				},
+			],
+			available: true,
+		};
+		renderPage();
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
+		);
+		await waitFor( () =>
+			expect( nav( 'Entity: Acme Quillsheet' ) ).toBeInTheDocument()
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Jo Reporter' } )
+		);
+		expect( nav( 'Entity: person:jo-reporter' ) ).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
+		await screen.findByRole( 'heading', { name: 'Jo Reporter' } );
+		await waitFor( () =>
+			expect( nav( 'Entity: Jo Reporter' ) ).toBeInTheDocument()
+		);
 	} );
 
 	it( 'restores the search filters and page after visiting an entity', async () => {

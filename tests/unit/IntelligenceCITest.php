@@ -64,6 +64,19 @@ final class IntelligenceCITest extends TestCase {
 		$this->assertSame( \array_fill_keys( self::VERBS, Capabilities::READ ), \array_slice( $roles, 0, \count( self::VERBS ) ) );
 	}
 
+	/** The entity, claims, trends and signals verbs describe the answer they give, field for field and in its order. */
+	public function test_reads_describe_their_answers(): void {
+		$described = \array_column( Intelligence_CI_Node::node_schema()['commands'], 'description', 'name' );
+
+		$this->assertStringContainsString( 'kinds: { churn_signal, feature_request, complaint }', $described['entity'] );
+		$this->assertStringContainsString( 'other never signals on the about axis', $described['signals'] );
+		$this->assertStringContainsString( 'a story counted once', $described['signals'] );
+
+		$this->assertStringContainsString( '{ claims: [ { subject, subject_name, predicate, object, object_name, confidence, item_key, url, title } ] }', $described['claims'] );
+		$this->assertStringContainsString( 'the newest bucket first', $described['trends'] );
+		$this->assertStringContainsString( 'a story counted once', $described['trends'] );
+	}
+
 	public function test_a_caller_below_read_is_refused(): void {
 		$GLOBALS['_current_user_id']          = 3371;
 		$GLOBALS['_wp_test_current_user_can'] = [];

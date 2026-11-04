@@ -132,8 +132,8 @@ final class PublisherLinkTest extends TestCase {
 	}
 
 	public function test_trends_by_entity_and_by_role_count_what_it_is_about(): void {
-		$this->assertSame( [ [ '2026-09-28', 'award', 1 ], [ '2026-10-05', 'award', 1 ] ], self::rows( $this->ci->dispatch( 'trends', [ 'kind', '--entity=' . self::GAZETTE ] ) ) );
-		$this->assertSame( [ [ '2026-09-28', 'award', 1 ], [ '2026-10-05', 'award', 1 ] ], self::rows( $this->ci->dispatch( 'trends', [ 'kind', '--role=client' ] ) ) );
+		$this->assertSame( [ [ '2026-10-05', 'award', 1 ], [ '2026-09-28', 'award', 1 ] ], self::rows( $this->ci->dispatch( 'trends', [ 'kind', '--entity=' . self::GAZETTE ] ) ) );
+		$this->assertSame( [ [ '2026-10-05', 'award', 1 ], [ '2026-09-28', 'award', 1 ] ], self::rows( $this->ci->dispatch( 'trends', [ 'kind', '--role=client' ] ) ) );
 	}
 
 	/**
