@@ -476,7 +476,8 @@ final class IntelligenceHealthTest extends TestCase {
 
 	/** A stopped worker's counts read as unknown once they are older than two heartbeats. */
 	public function test_a_stopped_workers_queue_reads_as_unknown_after_two_heartbeats(): void {
-		$beats = 2 * LLM_Call_Node::STATUS_HEARTBEAT_S;
+		Core::$clock = static fn (): float => 1794200000.0;
+		$beats       = 2 * LLM_Call_Node::STATUS_HEARTBEAT_S;
 		$this->snapshot( 'intel:llm', self::calls( 3, 418, 2, $beats ) );
 		$this->assertSame( [ 'new' => 3, 'backlog' => 418, 'in_flight' => 2 ], $this->ci->dispatch( 'health', [ 'extraction' ] )['queue'], 'two heartbeats old' );
 

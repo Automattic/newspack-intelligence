@@ -221,10 +221,24 @@ final class OntologyCliCommandTest extends TestCase {
 	public function test_reresolve_runs_through_today_by_default(): void {
 		self::live_worker( Config::get_base_directory(), 'skua-intel.p0' );
 
-		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2025-11-30' ] );
+		$days = self::days_around( static fn () => ( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2025-11-30' ] ) );
 
-		$today = \gmdate( 'Y-m-d' );
-		$this->assertSame( [ "RERESOLVE 2025-11-30 {$today}" ], \array_column( self::worker_input( Config::get_base_directory(), 'skua-intel.p0' ), Message::VALUE ) );
+		$sent = \array_column( self::worker_input( Config::get_base_directory(), 'skua-intel.p0' ), Message::VALUE );
+		$this->assertCount( 1, $sent );
+		$this->assertContains( $sent[0], \array_map( static fn ( string $day ): string => "RERESOLVE 2025-11-30 {$day}", $days ) );
+	}
+
+	/**
+	 * Run a command whose range ends today, and answer the UTC days it can
+	 * have read as today, since a midnight may fall inside it.
+	 *
+	 * @param \Closure $command Runs the command.
+	 * @return list<string>
+	 */
+	private static function days_around( \Closure $command ): array {
+		$before = \gmdate( 'Y-m-d' );
+		$command();
+		return \array_values( \array_unique( [ $before, \gmdate( 'Y-m-d' ) ] ) );
 	}
 
 	/**
@@ -283,10 +297,11 @@ final class OntologyCliCommandTest extends TestCase {
 		self::live_worker( Config::get_base_directory(), 'skua-intel.p2' );
 		$this->seed_dated( 'feed:kestrel-1', 'feed:kestrel-2', 'feed:kestrel-3' );
 
-		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'limit' => '5' ] );
+		$days = self::days_around( static fn () => ( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'limit' => '5' ] ) );
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'limit' => '6' ] );
 
-		$this->assertSame( [ 'ontology reextract would make 6 extraction calls, 3 items dated 2026-08-03 to ' . \gmdate( 'Y-m-d' ) . ' times 2 live workers, above --limit=5, and a failed call may retry up to 5 times; raise --limit to run it.' ], \WP_CLI::$errors );
+		$this->assertCount( 1, \WP_CLI::$errors );
+		$this->assertContains( \WP_CLI::$errors[0], \array_map( static fn ( string $day ): string => "ontology reextract would make 6 extraction calls, 3 items dated 2026-08-03 to {$day} times 2 live workers, above --limit=5, and a failed call may retry up to 5 times; raise --limit to run it.", $days ) );
 		$this->assertSame( [ 'Asked 2 workers to re-extract the items dated 2026-08-03 to 2026-08-03: 6 extraction calls, a failed one retried up to 5 times.' ], \WP_CLI::$successes );
 		$this->assertSame( [ 'REEXTRACT 2026-08-03 2026-08-03' ], \array_column( self::worker_input( Config::get_base_directory(), 'skua-intel.p2' ), Message::VALUE ) );
 	}
@@ -340,10 +355,9 @@ final class OntologyCliCommandTest extends TestCase {
 		self::live_worker( Config::get_base_directory(), 'skua-intel.p2' );
 		$this->seed_dated( ...\array_map( static fn ( int $i ): string => "feed:heron-{$i}", \range( 1, 101 ) ) );
 
-		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'dry-run' => true ] );
+		$days = self::days_around( static fn () => ( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'dry-run' => true ] ) );
 
-		$today = \gmdate( 'Y-m-d' );
-		$this->assertSame( "Re-extract them with: wp newspack-intelligence ontology reextract --since=2026-08-03 --until={$today} --limit=202", \WP_CLI::$logs[1] );
+		$this->assertContains( \WP_CLI::$logs[1], \array_map( static fn ( string $day ): string => "Re-extract them with: wp newspack-intelligence ontology reextract --since=2026-08-03 --until={$day} --limit=202", $days ) );
 	}
 
 	/** A bad range is refused before anything is read or sent. */
