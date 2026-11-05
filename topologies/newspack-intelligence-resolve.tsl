@@ -9,8 +9,9 @@
 # resolution throws dead-letters alone. Both Consumers hand the resolver one
 # item a poll. Every model call, the resolver's NER step and each extraction,
 # goes through intel:llm, which queues it in its own Table and answers the
-# caller when the AI proxy does, so no call blocks the worker; a client's own
-# article is also asked of the decision model whether it is about the client.
+# caller when the AI proxy does, so no call blocks the worker; the decision
+# model then reviews an unrestricted item's extraction, judging whether a
+# client's own article is about the client and picking among offered themes.
 var num_partitions = 1
 include topic-probe
 include newspack-intelligence-streams

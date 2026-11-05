@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The decision model picks an extraction's theme from the themes offered.** A parsed extraction of an item that is not restricted, and that the projection offers themes, asks the `theme_choice` question: a `choice` among the offered themes, keyed `t1` to `tN`, each told by its theme and example, and `none`. An offered theme chosen with a `confidence` of `Extractor_Node::THEME_CHOICE_MIN` (0.6) or more is the theme written; a weaker choice, `none`, or a failed review keeps the reply's own theme.
+
+### Changed
+
+- **One `extract_review` decision asks every question an extraction is owed.** `about_publisher` and `theme_choice` go in one `systemone` request, the reply carried once and finished once, and `Prompts::questions()` reads which apply from the review's inputs. The decision prompt is renamed from `about_publisher` to `extract_review`. A request queued under the old name before a deploy answers `no prompt: about_publisher`, and its extraction keeps the reply's kind and theme. A failed review logs `extract review failed for <item>: <why>`.
+- **A restricted item is never sent to the decision model.** Its data stays with the chat model alone, so it is asked neither question.
+- **`research`, `launch` and `other` leave internal work out.** `research` is a study, survey, report or analysis of the news industry, its audiences or its business, as published, and not Newspack's or Automattic's own engineering, audit, performance or planning work. `launch` is not an internal tool, process or deploy going live. `other` adds internal tooling, audits and engineering reports.
+
 ## [0.36.4] - 2026-11-05
 
 ### Added

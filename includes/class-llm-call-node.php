@@ -79,6 +79,12 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	/** The error a body naming no assistant content answers. */
 	private const NO_CONTENT = 'AI proxy answer names no choices[0].message.content';
 
+	/** What a decision answer that does not read names no more of, by its question's type. */
+	private const UNREAD = [
+		'noul'   => 'no noul from 0 to 1',
+		'choice' => 'no offered choice with a confidence from 0 to 1',
+	];
+
 	/** Each kind of call: the path it posts to under the api url, and the refusal of one asked before it is configured. */
 	private const CALLS = [
 		Prompts::CHAT     => [ 'chat/completions', 'set_api_url, set_model and set_feature before a call' ],
@@ -331,7 +337,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 			return;
 		}
 		$this->queue_moved = true;
-		$this->deliver( $value, self::outcome( $message, Core::as_string( $value[2] ?? null ) ) );
+		$this->deliver( $value, self::outcome( $message, Core::as_string( $value[2] ?? null ), Core::arr( $value[4] ?? null ) ) );
 		$this->pump();
 	}
 
@@ -453,22 +459,23 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * What Curl's answer says: its TM_ERROR text, else, for a decision, its
-	 * questions' nouls, else the content of the body's first choice, else
-	 * that it names none.
+	 * What Curl's answer says: its TM_ERROR text, else, for a decision, the
+	 * answer to each question its inputs asked, else the content of the
+	 * body's first choice, else that it names none.
 	 *
-	 * @param array<int,mixed> $message Curl's answer.
-	 * @param string           $prompt  The prompt the request named.
-	 * @return array{error:string}|array{content:string}|array{decision:array<string,float>}
+	 * @param array<int,mixed>       $message Curl's answer.
+	 * @param string                 $prompt  The prompt the request named.
+	 * @param array<array-key,mixed> $inputs  The request's inputs.
+	 * @return array{error:string}|array{content:string}|array{decision:array<string,float|array{choice:string,confidence:float}>}
 	 */
-	private static function outcome( array $message, string $prompt ): array {
+	private static function outcome( array $message, string $prompt, array $inputs ): array {
 		$value = Core::as_string( $message[ Message::VALUE ] );
 		if ( 0 !== ( Core::int( $message[ Message::TYPE ] ) & Message::TM_ERROR ) ) {
 			return [ 'error' => $value ];
 		}
 		$decoded = \json_decode( $value, true );
-		if ( isset( Prompts::QUESTIONS[ $prompt ] ) ) {
-			return self::decision_of( $decoded, $prompt );
+		if ( Prompts::DECISION === ( Prompts::PROMPTS[ $prompt ] ?? null ) ) {
+			return self::decision_of( $decoded, Prompts::questions( $inputs ) );
 		}
 		$choices = \is_array( $decoded ) ? ( $decoded['choices'] ?? null ) : null;
 		$choice  = \is_array( $choices ) ? ( $choices[0] ?? null ) : null;
@@ -478,26 +485,40 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * A decision's answer: each question the prompt asks => the noul the
-	 * body names for it under `answers`, or the error naming the first
-	 * question whose noul is missing or not a number from 0 to 1.
+	 * A decision's answer: each question asked => what the body names for it
+	 * under `answers`, a noul's probability, or a choice's key among its
+	 * criteria with its confidence; or the error naming the first question
+	 * whose answer is missing, out of range or not of its type.
 	 *
-	 * @param mixed  $decoded The decoded body.
-	 * @param string $prompt  The decision prompt the request named.
-	 * @return array{error:string}|array{decision:array<string,float>}
+	 * @param mixed                                                    $decoded   The decoded body.
+	 * @param array<string,array{type:string,criteria?:array<string,string>}> $questions The questions asked.
+	 * @return array{error:string}|array{decision:array<string,float|array{choice:string,confidence:float}>}
 	 */
-	private static function decision_of( mixed $decoded, string $prompt ): array {
-		$answers  = \is_array( $decoded ) ? ( $decoded['answers'] ?? null ) : null;
+	private static function decision_of( mixed $decoded, array $questions ): array {
+		$answers  = Core::arr( \is_array( $decoded ) ? ( $decoded['answers'] ?? null ) : null );
 		$decision = [];
-		foreach ( \array_keys( Prompts::QUESTIONS[ $prompt ] ) as $question ) {
-			$answer = \is_array( $answers ) ? ( $answers[ $question ] ?? null ) : null;
-			$noul   = \is_array( $answer ) ? ( $answer['noul'] ?? null ) : null;
-			if ( ! ( \is_int( $noul ) || \is_float( $noul ) ) || $noul < 0 || $noul > 1 ) {
-				return [ 'error' => "AI proxy decision names no noul from 0 to 1 for {$question}" ];
+		foreach ( $questions as $name => $question ) {
+			$answer     = Core::arr( $answers[ $name ] ?? null );
+			$choice     = $answer['choice'] ?? null;
+			$confidence = self::unit( $answer['confidence'] ?? null );
+			$read       = 'choice' === $question['type']
+				? ( \is_string( $choice ) && isset( $question['criteria'][ $choice ] ) && null !== $confidence ? [ 'choice' => $choice, 'confidence' => $confidence ] : null )
+				: self::unit( $answer['noul'] ?? null );
+			if ( null === $read ) {
+				return [ 'error' => 'AI proxy decision names ' . self::UNREAD[ $question['type'] ] . " for {$name}" ];
 			}
-			$decision[ $question ] = (float) $noul;
+			$decision[ $name ] = $read;
 		}
 		return [ 'decision' => $decision ];
+	}
+
+	/**
+	 * A number from 0 to 1 as a float; null for anything else.
+	 *
+	 * @param mixed $value The value an answer names.
+	 */
+	private static function unit( mixed $value ): ?float {
+		return ( \is_int( $value ) || \is_float( $value ) ) && $value >= 0 && $value <= 1 ? (float) $value : null;
 	}
 
 	/**

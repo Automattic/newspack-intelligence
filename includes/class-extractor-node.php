@@ -24,9 +24,12 @@
  * (`extract`), so an item is extracted again to record claims about a
  * subject accepted or confirmed since, or when `ontology reextract` asks;
  * the projector replaces the item's claims and topics with the new
- * extraction's. An extraction of an item an open client published, of any
- * kind but `other`, is first asked of the `about_publisher` decision, which
- * writes it as `other` when its noul falls below ABOUT_PUBLISHER_MIN.
+ * extraction's. A parsed extraction of an unrestricted item is first
+ * reviewed by the decision model, `extract_review`, when an open client
+ * published it and its kind is not `other` (`about_publisher`) or when the
+ * projection offers it themes (`theme_choice`): a noul below
+ * ABOUT_PUBLISHER_MIN writes its kind as `other`, and an offered theme
+ * chosen at THEME_CHOICE_MIN or more is the theme written.
  *
  * A claim's subject and object resolve through the entities whose names
  * spell the whole of them. The subject is the one of those the item links
@@ -88,6 +91,9 @@ class Extractor_Node extends Node {
 
 	/** The least probability that a client's own article is about the client or the news industry for it to keep its kind. */
 	public const ABOUT_PUBLISHER_MIN = 0.5;
+
+	/** The least confidence in an offered theme for it to replace the reply's own. */
+	public const THEME_CHOICE_MIN = 0.6;
 
 	/** The highest importance floor a kind takes, one below the highest score. */
 	public const MAX_FLOOR = Prompts::MAX_SCORE - 1;
@@ -255,10 +261,9 @@ class Extractor_Node extends Node {
 	 * extracted before keeps that extraction when this call fails, which was
 	 * not given the link that sent it, so its next re-resolution tries again.
 	 * A call made that fails owes the item's retry, which the caller parks
-	 * once, after the write. An answer that parses for an item an open
-	 * client published, of any kind but `other`, writes nothing yet: it asks
-	 * the publisher decision, carrying the reply, and the decision's answer
-	 * finishes it.
+	 * once, after the write. An answer that parses and is owed a review,
+	 * as review() reads it, writes nothing yet: it asks the review, carrying
+	 * the reply, and the review's answer finishes it.
 	 *
 	 * @param array<string,mixed>                        $item      The item.
 	 * @param array<string,array{0:float,1:bool,2:bool}> $linked    Each linked entity => its link's confidence, whether it is asserted, and whether by an identifier.
@@ -291,9 +296,9 @@ class Extractor_Node extends Node {
 		} else {
 			$this->publish_snapshot( [ 'mode' => 'call', 'last_ok_at' => (int) Core::$now ] );
 		}
-		$publisher = Core::as_string( Core::arr( $answer['inputs'] ?? null )['publisher'] ?? null );
-		if ( null !== $parsed && '' !== $publisher && 'other' !== $parsed['kind'] ) {
-			$this->ask_model( Prompts::ABOUT_PUBLISHER, $item, [ 'topics' => $topics, 'publisher' => $publisher ], [], [ 'resolution' => Core::arr( $answer['carry'] ?? null )['resolution'] ?? null, 'content' => $content ], $owed );
+		$review = null === $parsed ? null : self::review( $item, $parsed, Core::as_string( Core::arr( $answer['inputs'] ?? null )['publisher'] ?? null ), $topics );
+		if ( null !== $review ) {
+			$this->ask_model( Prompts::EXTRACT_REVIEW, $item, $review, [], [ 'resolution' => Core::arr( $answer['carry'] ?? null )['resolution'] ?? null, 'content' => $content ], $owed );
 			return false;
 		}
 		if ( null === $parsed && $extracted ) {
@@ -307,26 +312,73 @@ class Extractor_Node extends Node {
 	}
 
 	/**
-	 * Finish a client's own article with the publisher decision's answer:
-	 * the extraction it carries, re-read from its reply, takes the kind
-	 * `other` when the decision's noul falls below ABOUT_PUBLISHER_MIN, and
-	 * keeps its kind at or above it or when the decision failed, logged.
+	 * The inputs of the review a parsed reply is owed, or null for none: a
+	 * restricted item is never sent to the decision model, so its data stays
+	 * with the chat model alone; any other is asked `about_publisher` when
+	 * an open client published it and its kind is not `other`, and
+	 * `theme_choice` when the projection offers it themes, read now as an
+	 * extract prompt offers them, and owes none when it asks neither.
+	 *
+	 * @param array<string,mixed>     $item      The item.
+	 * @param array{kind:string,summary:string} $parsed The reply, parsed.
+	 * @param string                  $publisher The open client that published the item; '' for none.
+	 * @param array<array-key,string> $topics    Each topic name the request offered => its key.
+	 * @return array<string,mixed>|null
+	 */
+	private static function review( array $item, array $parsed, string $publisher, array $topics ): ?array {
+		if ( ! \in_array( $item['tier'] ?? null, Intel_Tiers::UNRESTRICTED, true ) ) {
+			return null;
+		}
+		$publisher = 'other' === $parsed['kind'] ? '' : $publisher;
+		$themes    = Prompts::offered_themes( $item );
+		if ( '' === $publisher && [] === $themes ) {
+			return null;
+		}
+		return [
+			'topics'    => $topics,
+			'publisher' => $publisher,
+			'themes'    => $themes,
+			'summary'   => $parsed['summary'],
+		];
+	}
+
+	/**
+	 * Finish an extraction with its review's answer, from the reply the
+	 * review carried, read again: a `noul` below ABOUT_PUBLISHER_MIN writes
+	 * the kind as `other`, and an offered theme chosen with a confidence of
+	 * THEME_CHOICE_MIN or more is the theme written. A review that failed,
+	 * or answered a question it asked with nothing that reads, keeps the
+	 * reply's kind and theme, logged.
 	 *
 	 * @param array<string,mixed>                        $item    The item.
 	 * @param array<string,array{0:float,1:bool,2:bool}> $linked  Each linked entity => its link's confidence, whether it is asserted, and whether by an identifier.
 	 * @param array<array-key,string>                    $topics  Each topic name the request offered => its key.
-	 * @param string                                     $content The extraction's reply the decision carried.
-	 * @param array<array-key,mixed>                     $answer  The decision's answer: its `decision`, `error` or `unlent`.
+	 * @param string                                     $content The extraction's reply the review carried.
+	 * @param array<array-key,mixed>                     $answer  The review's answer: its `decision`, `error` or `unlent`, and its inputs.
 	 * @throws \UnexpectedValueException When the carried reply no longer parses.
 	 */
 	private function decided( array $item, array $linked, array $topics, string $content, array $answer ): void {
-		$parsed = Prompts::parse_extract( $content, \array_map( 'strval', \array_keys( $topics ) ) ) ?? throw new \UnexpectedValueException( 'the extraction a decision carries does not parse' );
-		$noul   = Core::arr( $answer['decision'] ?? null )[ Prompts::ABOUT_PUBLISHER ] ?? null;
-		if ( \is_float( $noul ) || \is_int( $noul ) ) {
-			$parsed['kind'] = $noul < self::ABOUT_PUBLISHER_MIN ? 'other' : $parsed['kind'];
-		} else {
-			$why = isset( $answer['unlent'] ) ? 'group ' . Core::as_string( $answer['unlent'] ) . ' lends no credential' : Core::as_string( $answer['error'] ?? 'it names no noul' );
-			$this->print_less_often( 'publisher decision failed for ' . Core::terminal_safe( Core::as_string( $item['item_key'] ) ) . ': ', Core::terminal_safe( $why ) );
+		$parsed   = Prompts::parse_extract( $content, \array_map( 'strval', \array_keys( $topics ) ) ) ?? throw new \UnexpectedValueException( 'the extraction a review carries does not parse' );
+		$inputs   = Core::arr( $answer['inputs'] ?? null );
+		$asked    = Prompts::questions( $inputs );
+		$decision = Core::arr( $answer['decision'] ?? null );
+		$number   = static fn ( mixed $value ): ?float => \is_int( $value ) || \is_float( $value ) ? (float) $value : null;
+		$noul     = $number( $decision[ Prompts::ABOUT_PUBLISHER ] ?? null );
+		$choice   = Core::arr( $decision[ Prompts::THEME_CHOICE ] ?? null );
+		$sure     = $number( $choice['confidence'] ?? null );
+		$read     = isset( $answer['decision'] ) && ( ! isset( $asked[ Prompts::ABOUT_PUBLISHER ] ) || null !== $noul ) && ( ! isset( $asked[ Prompts::THEME_CHOICE ] ) || ( \is_string( $choice['choice'] ?? null ) && null !== $sure ) );
+		if ( ! $read ) {
+			$why = isset( $answer['unlent'] ) ? 'group ' . Core::as_string( $answer['unlent'] ) . ' lends no credential' : Core::as_string( $answer['error'] ?? 'it answers a question with nothing that reads' );
+			$this->print_less_often( 'extract review failed for ' . Core::terminal_safe( Core::as_string( $item['item_key'] ) ) . ': ', Core::terminal_safe( $why ) );
+			$this->record( $item, $linked, 'extract', $parsed, $topics );
+			return;
+		}
+		if ( null !== $noul && $noul < self::ABOUT_PUBLISHER_MIN ) {
+			$parsed['kind'] = 'other';
+		}
+		$theme = Prompts::chosen_theme( $inputs, Core::as_string( $choice['choice'] ?? null ) );
+		if ( null !== $theme && '' !== $theme && $sure >= self::THEME_CHOICE_MIN ) {
+			$parsed['theme'] = $theme;
 		}
 		$this->record( $item, $linked, 'extract', $parsed, $topics );
 	}

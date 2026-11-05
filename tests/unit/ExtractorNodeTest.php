@@ -8,6 +8,7 @@ use Newspack_Intelligence\Entity_Index;
 use Newspack_Intelligence\Extractor_Node;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\LLM_Call_Node;
+use Newspack_Intelligence\Prompts;
 use Newspack_Intelligence\Resolver_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
@@ -443,9 +444,10 @@ final class ExtractorNodeTest extends TestCase {
 		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), extract: true, publisher: self::LANTERN ) );
 
 		$asked = \array_column( $this->out->requests, Message::VALUE );
-		$this->assertSame( [ 'extract', 'about_publisher' ], \array_column( $asked, 'prompt' ) );
+		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( $asked, 'prompt' ) );
 		$this->assertSame( [ true, true ], \array_column( $asked, 'backlog' ) );
-		$this->assertSame( [ [], [ 'topics' => $asked[0]['inputs']['topics'], 'publisher' => 'Kestrel Lantern Harbor' ] ], [ $asked[1]['options'], $asked[1]['inputs'] ] );
+		$this->assertSame( [ [], [ 'topics' => $asked[0]['inputs']['topics'], 'publisher' => 'Kestrel Lantern Harbor', 'themes' => [], 'summary' => 'Mesa Courier wins a transit grant.' ] ], [ $asked[1]['options'], $asked[1]['inputs'] ] );
+		$this->assertSame( [ 'about_publisher' ], \array_keys( Prompts::questions( $asked[1]['inputs'] ) ), 'an item offered no theme is asked no theme question' );
 		$this->assertSame( [ [ 'other', 3 ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['importance'] ], $this->extractions() ) );
 		$this->assertSame( [ 3 ], \array_column( $this->forwarded(), 'importance' ) );
 	}
@@ -489,7 +491,7 @@ final class ExtractorNodeTest extends TestCase {
 
 		$this->assertSame( [ 'award' ], \array_column( $this->extractions(), 'kind' ) );
 		$this->assertSame( [], $this->parked() );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'publisher decision failed for feed:klharbor.example:transit-77' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'extract review failed for feed:klharbor.example:transit-77' ) );
 	}
 
 	/** No decision is asked for an item no open client published, one extracted as other, or a call that failed. */
@@ -518,9 +520,82 @@ final class ExtractorNodeTest extends TestCase {
 
 		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), attempt: 2, publisher: self::LANTERN ) );
 
-		$this->assertSame( [ 'extract', 'about_publisher' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
+		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
 		$this->assertSame( [ 3 ], \array_column( $this->parked(), 'attempt' ) );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'an answer failed for feed:klharbor.example:transit-77: writer full 4471' ) );
+	}
+
+	/**
+	 * A theme choice, its confidence, and the offered theme it writes by its
+	 * place, null for the reply's own.
+	 *
+	 * @return array<string,array{0:string,1:float,2:int|null}>
+	 */
+	public static function theme_choices(): array {
+		return [
+			'a theme chosen surely'   => [ 't2', 0.83, 1 ],
+			'a theme chosen weakly'   => [ 't2', 0.41, null ],
+			'none of the themes'      => [ 'none', 0.95, null ],
+		];
+	}
+
+	/**
+	 * An offered theme Lux chooses at THEME_CHOICE_MIN or more is the theme
+	 * written; a weaker choice, or none, keeps the reply's own. An item no
+	 * client published is asked the theme choice alone.
+	 *
+	 * @param int|null $offered The offered theme written, by its place; null for the reply's.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'theme_choices' )]
+	public function test_the_theme_choice_picks_an_offered_theme_when_sure( string $choice, float $confidence, ?int $offered ): void {
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ), ...self::themed_neighbours() );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award","theme":"grant step checklist"}' );
+		$this->decide( [ 'decision' => [ 'theme_choice' => [ 'choice' => $choice, 'confidence' => $confidence ] ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'title' => 'Mesa Courier wins a transit grant' ] ) );
+
+		$review = $this->out->requests[1][ Message::VALUE ]['inputs'];
+		$this->assertSame( [ 'transit funding round', 'regional transit grant' ], \array_column( $review['themes'], 'theme' ), 'the offered themes, the best title match first' );
+		$this->assertSame( [ 'theme_choice' ], \array_keys( Prompts::questions( $review ) ) );
+		$this->assertSame( [ null === $offered ? 'grant step checklist' : $review['themes'][ $offered ]['theme'] ], \array_column( $this->extractions(), 'theme' ) );
+		$this->assertSame( 0.6, Extractor_Node::THEME_CHOICE_MIN );
+	}
+
+	/** A client's article offered themes is asked both questions in one review, and both answers are taken. */
+	public function test_one_review_asks_both_questions_of_a_client_article(): void {
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ), ...self::themed_neighbours() );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award","theme":"grant step checklist"}' );
+		$this->decide( [ 'decision' => [ 'about_publisher' => 0.2, 'theme_choice' => [ 'choice' => 't1', 'confidence' => 0.9 ] ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+
+		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
+		$this->assertSame( [ 'about_publisher', 'theme_choice' ], \array_keys( Prompts::questions( $this->out->requests[1][ Message::VALUE ]['inputs'] ) ) );
+		$this->assertSame( [ [ 'other', 'transit funding round' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['theme'] ], $this->extractions() ) );
+	}
+
+	/** A restricted item is never sent to the decision model, whoever published it and whatever themes are offered. */
+	public function test_a_restricted_item_asks_no_decision(): void {
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ), ...self::themed_neighbours() );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award","theme":"grant step checklist"}' );
+		$this->decide( [ 'decision' => [ 'about_publisher' => 0.2, 'theme_choice' => [ 'choice' => 't1', 'confidence' => 0.9 ] ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'tier' => 'restricted' ] + self::lane_item(), publisher: self::LANTERN ) );
+
+		$this->assertSame( [ 'extract' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
+		$this->assertSame( [ [ 'award', 'grant step checklist' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['theme'] ], $this->extractions() ) );
+	}
+
+	/** A review that fails keeps both the reply's kind and its theme. */
+	public function test_a_failed_review_keeps_the_kind_and_the_theme(): void {
+		$this->capture_stderr();
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ), ...self::themed_neighbours() );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award","theme":"grant step checklist"}' );
+		$this->decide( [ 'error' => 'HTTP 502 https://proxy.example/systemone' ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+
+		$this->assertSame( [ [ 'award', 'grant step checklist' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['theme'] ], $this->extractions() ) );
 	}
 
 	/** The extraction names topic keys; each claim's subject and object resolve against the index. */
@@ -1258,12 +1333,12 @@ final class ExtractorNodeTest extends TestCase {
 	}
 
 	/**
-	 * Answer every publisher decision as $outcome says.
+	 * Answer every extract review as $outcome says.
 	 *
 	 * @param array<string,mixed> $outcome `decision`, `error` or `unlent`.
 	 */
 	private function decide( array $outcome ): void {
-		$this->out->outcomes['about_publisher'] = $outcome;
+		$this->out->outcomes['extract_review'] = $outcome;
 	}
 
 	/** @return list<array<string,mixed>> Each extraction written. */
@@ -1357,6 +1432,19 @@ final class ExtractorNodeTest extends TestCase {
 	 */
 	private static function resolved( array $links, array $proposals, array $over = [], bool $extracted = false, int $attempt = 0, bool $extract = false, string $publisher = '' ): array {
 		return self::message( [ 'item' => \array_merge( self::item(), $over ), 'links' => $links, 'proposals' => $proposals, 'extracted' => $extracted, 'attempt' => $attempt, 'extract' => $extract, 'publisher' => $publisher ] );
+	}
+
+	/** @return list<list<array<string,mixed>>> Two public items like a transit-grant story, each themed, retrieved two days before it. */
+	private static function themed_neighbours(): array {
+		$at     = 1794050000 - 2 * 86400;
+		$events = [];
+		foreach ( [ 'feed:heron-transit-1' => [ 'Transit grant for Heron Weekly routes', 'regional transit grant' ], 'feed:gull-transit-2' => [ 'Gull Post transit grant renewed', 'transit funding round' ] ] as $key => [ $title, $theme ] ) {
+			$events[] = [
+				Intel_Event::make( 'item_recorded', [ 'item_key' => $key, 'source' => 'feed', 'tier' => 'public', 'url' => "https://heron.example/{$key}", 'title' => $title, 'body' => 'Routes.', 'item_ts' => $at, 'retrieved_ts' => $at ], 'machine:source:feed@9.4.1', '' ),
+				Intel_Event::make( 'extraction_recorded', [ 'item_key' => $key, 'summary' => "A report: {$title}.", 'kind' => 'funding', 'relevance' => 5, 'importance' => 4, 'sentiment' => 0.1, 'topics' => [], 'theme' => $theme, 'retrieved_ts' => $at ], 'machine:extract@9.4.1', '' ),
+			];
+		}
+		return $events;
 	}
 
 	/** @return list<array<string,mixed>> The client newsroom: its name and its domain. */

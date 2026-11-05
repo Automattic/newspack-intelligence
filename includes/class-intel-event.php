@@ -28,7 +28,7 @@ final class Intel_Event {
 	/** Each of ITEM_KINDS, in its order, => the one line the extraction prompt defines it by. */
 	public const KIND_DEFINITIONS = [
 		'award'           => 'an award, prize or honor won, given or shortlisted for',
-		'launch'          => 'a site, product or publication going live, whether a client\'s or Newspack\'s. Not one step toward a launch',
+		'launch'          => 'a site, product or publication going live, whether a client\'s or Newspack\'s. Not one step toward a launch, nor an internal tool, process or deploy going live',
 		'release'         => 'a software release or version shipped; a GitHub release page always is one',
 		'funding'         => 'money raised, granted, invested or donated',
 		'hire'            => 'someone joining an organization or taking a new role',
@@ -40,8 +40,8 @@ final class Intel_Event {
 		'complaint'       => 'a client\'s dissatisfaction with Newspack: its service, price or support, or a defect as the client experiences it',
 		'praise'          => 'a client\'s satisfaction with Newspack or thanks for its work',
 		'churn_signal'    => 'a client leaving Newspack or saying it may; not a client adopting more Newspack, nor routine account or storage work',
-		'research'        => 'a study, survey, report or analysis',
-		'other'           => 'none of these, including routine service and onboarding work, internal planning, team updates and kudos, and a publication\'s own journalism about anyone else',
+		'research'        => 'a study, survey, report or analysis of the news industry, its audiences or its business, as published. Not Newspack\'s or Automattic\'s own engineering, audit, performance or planning work',
+		'other'           => 'none of these, including routine service and onboarding work, internal planning, internal tooling, audits and engineering reports, team updates and kudos, and a publication\'s own journalism about anyone else',
 	];
 	public const PREDICATES       = [ 'works_for', 'part_of', 'funds', 'partners_with', 'competes_with', 'uses_product', 'won', 'launched', 'located_in' ];
 	public const NAME_KINDS       = [ 'canonical', 'alias', 'acronym', 'locality' ];

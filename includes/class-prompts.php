@@ -45,25 +45,36 @@ class Prompts {
 	/** A prompt the model answers in words, posted to `chat/completions`. */
 	public const CHAT = 'chat';
 
-	/** A prompt the decision model answers with a probability per question, posted to `systemone`. */
+	/** A prompt the decision model answers question by question, posted to `systemone`. */
 	public const DECISION = 'decision';
 
-	/** The decision whether a client's article is about the client itself or the news industry. */
+	/** The decision prompt reviewing an extraction's reply, asking the questions its inputs call for. */
+	public const EXTRACT_REVIEW = 'extract_review';
+
+	/** The noul question whether a client's article is about the client itself or the news industry. */
 	public const ABOUT_PUBLISHER = 'about_publisher';
+
+	/** The choice question which offered theme names the event or initiative an item is part of. */
+	public const THEME_CHOICE = 'theme_choice';
 
 	/** The prompts a model-call request may name, by kind: messages() builds a chat prompt and decision() a decision prompt. */
 	public const PROMPTS = [
-		'extract'             => self::CHAT,
-		'extract_entities'    => self::CHAT,
-		self::ABOUT_PUBLISHER => self::DECISION,
+		'extract'            => self::CHAT,
+		'extract_entities'   => self::CHAT,
+		self::EXTRACT_REVIEW => self::DECISION,
 	];
 
-	/** Each decision prompt's questions, every one a `noul`: a probability from 0 to 1 that the answer is yes. */
-	public const QUESTIONS = [
-		self::ABOUT_PUBLISHER => [
-			self::ABOUT_PUBLISHER => 'Is this article about the publisher itself (its own awards, fundraising, launches, products, staff or finances) or about the news industry (journalism, publishing, funding for newsrooms, platforms newsrooms use)? Answer no when it is the publisher\'s reporting on someone else.',
-		],
-	];
+	/** What `about_publisher` asks. */
+	private const ABOUT_PUBLISHER_ASKS = 'Is this article about the publisher itself (its own awards, fundraising, launches, products, staff or finances) or about the news industry (journalism, publishing, funding for newsrooms, platforms newsrooms use)? Answer no when it is the publisher\'s reporting on someone else.';
+
+	/** What `theme_choice` asks. */
+	private const THEME_CHOICE_ASKS = 'Which of these themes names the event or initiative this item is part of?';
+
+	/** The `theme_choice` option choosing none of the offered themes. */
+	public const NO_THEME = 'none';
+
+	/** What the `none` option says. */
+	private const NO_THEME_SAYS = 'none of these: this item is part of a different event or initiative';
 
 	/**
 	 * Characters of an item's plain text a decision states: an article's
@@ -164,7 +175,7 @@ class Prompts {
 	 * @return list<array{theme:string,example:string}>
 	 * @throws \InvalidArgumentException When the item names no integer `retrieved_ts`.
 	 */
-	private static function offered_themes( array $item ): array {
+	public static function offered_themes( array $item ): array {
 		$retrieved = $item['retrieved_ts'] ?? null;
 		if ( ! \is_int( $retrieved ) ) {
 			throw new \InvalidArgumentException( 'an extract item names no integer retrieved_ts' );
@@ -293,32 +304,75 @@ class Prompts {
 
 	/**
 	 * The body of the decision prompt a model-call request names, less its
-	 * model, built from its item and inputs when the call is sent:
-	 * `about_publisher` states `publisher`, the item's title and its body as
-	 * plain text, cut to DECISION_TEXT_CHARS, and asks its one question.
+	 * model, built from its item and inputs when the call is sent: the
+	 * `extract_review` state names `publisher` when one is given, the
+	 * item's title, its body as plain text cut to DECISION_TEXT_CHARS, and
+	 * the reply's `summary` when one is given, and asks the questions
+	 * questions() reads off the inputs, at least one.
 	 *
 	 * @param string                 $prompt A decision prompt of PROMPTS.
 	 * @param array<array-key,mixed> $item   The item's fields.
 	 * @param array<array-key,mixed> $inputs The prompt's other inputs.
-	 * @return array{state:string,questions:array<string,array{type:string,instructions:string}>}
-	 * @throws \InvalidArgumentException For a prompt that is not a decision prompt.
+	 * @return array{state:string,questions:array<string,array{type:string,instructions:string,criteria?:array<string,string>}>}
+	 * @throws \InvalidArgumentException For a prompt that is not a decision prompt, or one asking no question.
 	 */
 	public static function decision( string $prompt, array $item, array $inputs ): array {
-		$state = match ( $prompt ) {
-			self::ABOUT_PUBLISHER => 'Publisher: ' . Core::as_string( $inputs['publisher'] ?? null ) . "\nTitle: " . self::field( $item, 'title' ) . "\nText: " . \mb_substr( Entity_Index::plain( self::field( $item, 'body' ) ), 0, self::DECISION_TEXT_CHARS ),
-			default               => throw self::refused( self::DECISION, $prompt ),
-		};
-		$questions = [];
-		foreach ( self::QUESTIONS[ $prompt ] as $name => $instructions ) {
-			$questions[ $name ] = [
-				'type'         => 'noul',
-				'instructions' => $instructions,
-			];
+		if ( self::EXTRACT_REVIEW !== $prompt ) {
+			throw self::refused( self::DECISION, $prompt );
 		}
+		$questions = self::questions( $inputs );
+		if ( [] === $questions ) {
+			throw new \InvalidArgumentException( 'an extract review asks no question' );
+		}
+		$publisher = Core::as_string( $inputs['publisher'] ?? null );
+		$summary   = Core::as_string( $inputs['summary'] ?? null );
 		return [
-			'state'     => $state,
+			'state'     => ( '' === $publisher ? '' : "Publisher: {$publisher}\n" ) . 'Title: ' . self::field( $item, 'title' ) . "\nText: " . \mb_substr( Entity_Index::plain( self::field( $item, 'body' ) ), 0, self::DECISION_TEXT_CHARS ) . ( '' === $summary ? '' : "\nSummary: {$summary}" ),
 			'questions' => $questions,
 		];
+	}
+
+	/**
+	 * Read a scalar item field as a string; absent or non-scalar values become ''.
+	 *
+	 * @param array<array-key,mixed> $item The item array.
+	 */
+	private static function field( array $item, string $key ): string {
+		$value = $item[ $key ] ?? '';
+		return Core::as_string( $value );
+	}
+
+	/**
+	 * The questions an extract review's inputs call for: `about_publisher`,
+	 * a noul, when they name a `publisher`, and `theme_choice`, a choice,
+	 * when they offer `themes`, its criteria each offered theme keyed `t1`
+	 * to `tN` and told by its theme and example, then `none`.
+	 *
+	 * @param array<array-key,mixed> $inputs The review's inputs.
+	 * @return array<string,array{type:string,instructions:string,criteria?:array<string,string>}>
+	 */
+	public static function questions( array $inputs ): array {
+		$questions = [];
+		if ( '' !== Core::as_string( $inputs['publisher'] ?? null ) ) {
+			$questions[ self::ABOUT_PUBLISHER ] = [
+				'type'         => 'noul',
+				'instructions' => self::ABOUT_PUBLISHER_ASKS,
+			];
+		}
+		$criteria = [];
+		foreach ( \array_values( Core::arr( $inputs['themes'] ?? null ) ) as $at => $offered ) {
+			$offered                  = Core::arr( $offered );
+			$example                  = Core::as_string( $offered['example'] ?? null );
+			$criteria[ 't' . ( $at + 1 ) ] = Core::as_string( $offered['theme'] ?? null ) . ( '' === $example ? '' : ": {$example}" );
+		}
+		if ( [] !== $criteria ) {
+			$questions[ self::THEME_CHOICE ] = [
+				'type'         => 'choice',
+				'instructions' => self::THEME_CHOICE_ASKS,
+				'criteria'     => $criteria + [ self::NO_THEME => self::NO_THEME_SAYS ],
+			];
+		}
+		return $questions;
 	}
 
 	/**
@@ -332,16 +386,6 @@ class Prompts {
 		$named = isset( self::PROMPTS[ $prompt ] ) ? "no {$kind} prompt: " : 'no prompt: ';
 		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
 		return new \InvalidArgumentException( $named . \mb_strcut( $prompt, 0, self::PROMPT_NAME_BYTES ) );
-	}
-
-	/**
-	 * Read a scalar item field as a string; absent or non-scalar values become ''.
-	 *
-	 * @param array<array-key,mixed> $item The item array.
-	 */
-	private static function field( array $item, string $key ): string {
-		$value = $item[ $key ] ?? '';
-		return Core::as_string( $value );
 	}
 
 	/**
@@ -484,5 +528,18 @@ class Prompts {
 	public static function json_object( string $raw ): ?array {
 		$d = \json_decode( 1 === \preg_match( '/\{.*\}/s', $raw, $m ) ? $m[0] : $raw, true );
 		return \is_array( $d ) ? $d : null;
+	}
+
+	/**
+	 * The offered theme a `theme_choice` key names, read back from the
+	 * review's inputs; null for `none` or a key it did not offer.
+	 *
+	 * @param array<array-key,mixed> $inputs The review's inputs.
+	 * @param string                 $key    The chosen key.
+	 */
+	public static function chosen_theme( array $inputs, string $key ): ?string {
+		$at      = 1 === \preg_match( '/^t([1-9][0-9]*)$/', $key, $index ) ? (int) $index[1] - 1 : -1;
+		$offered = \array_values( Core::arr( $inputs['themes'] ?? null ) )[ $at ] ?? null;
+		return null === $offered ? null : Core::as_string( Core::arr( $offered )['theme'] ?? null );
 	}
 }

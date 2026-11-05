@@ -553,7 +553,7 @@ makes every model call without blocking the worker. A caller sends it a
 TM_STRUCT whose KEY names its subject and whose VALUE is `{ prompt, item,
 inputs, options, carry, backlog }`, `prompt` one of `Prompts::PROMPTS`,
 which names each prompt's kind: the chat prompts `extract` and
-`extract_entities`, and the decision prompt `about_publisher`. `options`
+`extract_entities`, and the decision prompt `extract_review`. `options`
 holds nothing but an integer `max_tokens` and a numeric `temperature`, and
 nothing at all for a decision, and the carry what the caller
 needs back less the item and the inputs, which ride beside it once. One
@@ -596,14 +596,21 @@ body is built when the request is sent: a chat prompt's is `{ model,
 messages, ...options }`, the messages `Prompts::messages()` builds from the
 prompt, the item and the inputs; a decision's is `{ model, state,
 questions }`, the decision model's, the state and questions
-`Prompts::decision()` builds, every question a `noul` from
-`Prompts::QUESTIONS`. `about_publisher` states `Publisher: <name>`,
-`Title: <title>` and `Text: ` the body's plain text
-(`Entity_Index::plain()`) cut to `Prompts::DECISION_TEXT_CHARS` (2,000)
-characters, since an article's lede and first paragraphs say whom it is
-about, and asks whether the article is about the publisher itself or the
-news industry. Both bodies are JSON-encoded, so a name or a title carrying
-`</item>` is data. A stored request that will not send, its
+`Prompts::decision()` builds. `extract_review` asks the questions
+`Prompts::questions()` reads off its inputs, at least one, or it will not
+send: `about_publisher`, a `noul`, when they name a `publisher`, asking
+whether the article is about the publisher itself or the news industry;
+and `theme_choice`, a `choice`, when they offer `themes`, asking which
+names the event or initiative the item is part of, its `criteria` each
+offered theme keyed `t1` to `tN`, told as `<theme>: <example>`, then
+`none`, "none of these: this item is part of a different event or
+initiative", `Prompts::chosen_theme()` reading a key back as its theme.
+Its state is `Publisher: <name>` when one is given, `Title: <title>`,
+`Text: ` the body's plain text (`Entity_Index::plain()`) cut to
+`Prompts::DECISION_TEXT_CHARS` (2,000) characters, since an article's lede
+and first paragraphs say whom it is about, and `Summary: ` the reply's
+summary when one is given. Both bodies are JSON-encoded, so a name, a
+title, a theme or an example carrying `</item>` is data. A stored request that will not send, its
 prompt unknown, as a row of an older shape names none, its body
 unencodable or Curl throwing on it, is settled and answered `{ error }`,
 `<name>: a stored request could not be sent: <why>`, and the next one
@@ -627,10 +634,13 @@ VALUE is `{ content, item, inputs, carry }`, the first choice's
 text, such as `HTTP 502 <url>` or
 `curl error 28 (Timeout was reached) <url>`, or `AI proxy answer names no
 choices[0].message.content`. A decision answers `{ decision: { <question>:
-<noul> }, item, inputs, carry }`, each question's `noul` read from the
-body's `answers`, or `{ error, … }`, Curl's text, or `AI proxy decision
-names no noul from 0 to 1 for <question>` for one missing, out of range or
-not a number. Chat calls and decisions share the one frontier, window and
+<answer> }, item, inputs, carry }`, each question asked read from the
+body's `answers`: a noul's `noul` from 0 to 1, and a choice's `{ choice,
+confidence }`, its `choice` one of its criteria and its `confidence` from
+0 to 1. Otherwise it answers `{ error, … }`: Curl's text, `AI proxy
+decision names no noul from 0 to 1 for <question>`, or `AI proxy decision
+names no offered choice with a confidence from 0 to 1 for <question>`, for
+the first answer that is missing, out of range or not of its type. Chat calls and decisions share the one frontier, window and
 backlog order. A caller that throws on its answer is logged
 rate-limited, `answering <key> failed: <why>`, never thrown into the event
 loop; a cooperative stop propagates, and starts no new POST. Only an
@@ -710,11 +720,15 @@ client or user asking for a capability Newspack's product lacks, never a
 setup, styling, migration, onboarding, offboarding or configuration task
 for one site; `incident` leaves out a storage-quota warning, a legal
 notice and a delayed project; `launch` is a site, product or publication
-going live, a client's or Newspack's, never one step toward a launch;
+going live, a client's or Newspack's, never one step toward a launch nor
+an internal tool, process or deploy going live; `research` is a study,
+survey, report or analysis of the news industry, its audiences or its
+business, as published, never Newspack's or Automattic's own engineering,
+audit, performance or planning work;
 `release` always takes a GitHub release page; `churn_signal` leaves out a
 client adopting more Newspack and routine account and storage work; and
 `other` takes routine service and onboarding work, internal planning,
-team updates and kudos, and a publication's own journalism about anyone
+internal tooling, audits and engineering reports, team updates and kudos, and a publication's own journalism about anyone
 else; and it
 asks for a `theme`, two to six words naming the event or initiative the
 item is part of, at the level a reader tracks it across clients, with no
@@ -791,21 +805,30 @@ replay is a re-resolution, which forwards the item for extraction only
 while it is still owed one, and the resolution it reads carries that
 `attempt` and `extract`, which a resolution lacking either is dropped for.
 
-An answer that parses for an item whose `inputs.publisher` names an open
-client, of any kind but `other`, writes nothing yet: the extractor asks
-`intel:llm` for the `about_publisher` decision, its inputs the topics and
-the publisher, no options, its carry the resolution and the extraction's
-reply, as backlog when the extraction was. Its answer finishes the
-extraction from that reply, read again by `Prompts::parse_extract()`: a
-`noul` below `Extractor_Node::ABOUT_PUBLISHER_MIN` (0.5) writes the kind as
-`other`, before the importance floor applies, so the floor of the kind the
-model gave does not lift it, and one at or above it keeps the kind. A
-decision that fails, an unlent group or a noul that does not read keeps
-the kind, logged rate-limited `publisher decision failed for <item>:
-<why>`, and parks no retry; the extraction is still written, and a
-decision answer whose finish throws parks a retry as any answer does. No
-publisher, a kind of `other`, or a reply that does not parse asks no
-decision. Either way it then
+An answer that parses is owed a review by the decision model when its
+item is not restricted, since a restricted item's data stays with the
+chat model alone, and either question applies: `about_publisher` when the
+item's `inputs.publisher` names an open client and its kind is not
+`other`, and `theme_choice` when the projection offers it themes, read
+again as the answer lands through `Prompts::offered_themes()`, as an
+`extract` prompt offers them. Such an answer writes nothing yet: the
+extractor asks `intel:llm` for one `extract_review`, both questions in one
+request where both apply, its inputs the topics, the publisher, '' when
+that question does not apply, the themes and the reply's summary, no
+options, its carry the resolution and the extraction's reply, as backlog
+when the extraction was. Its answer finishes the extraction once, from
+that reply, read again by `Prompts::parse_extract()`: a `noul` below
+`Extractor_Node::ABOUT_PUBLISHER_MIN` (0.5) writes the kind as `other`,
+before the importance floor applies, so the floor of the kind the model
+gave does not lift it, and one at or above it keeps the kind; an offered
+theme chosen with a `confidence` of `Extractor_Node::THEME_CHOICE_MIN`
+(0.6) or more is the theme written, and a weaker choice, or `none`, keeps
+the reply's own. A review that fails, an unlent group, or an answer to a
+question it asked that does not read keeps the kind and the theme, logged
+rate-limited `extract review failed for <item>: <why>`, and parks no retry;
+the extraction is still written, and a review answer whose finish throws
+parks a retry as any answer does. A restricted item, a reply that does not
+parse, or one owed neither question asks no review. Either way it then
 forwards an `item_extracted` struct `{ item, relevance, importance }` to its
 target, `deduper`; it is a struct between two nodes, not an event kind.
 

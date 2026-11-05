@@ -90,24 +90,39 @@ final class LlmCallNodeTest extends TestCase {
 	}
 
 	/**
-	 * A publisher decision as the extractor asks one, filled inside a drain.
+	 * An extract review as the extractor asks one, filled inside a drain.
 	 *
-	 * @param array<string,mixed> $item The item.
+	 * @param array<string,mixed> $inputs  The review's inputs.
+	 * @param array<string,mixed> $item    The item.
+	 * @param array<string,mixed> $options The request's options.
 	 */
-	private function ask_decision( LLM_Call_Node $node, string $key, string $publisher, array $item, array $options = [] ): void {
+	private function ask_decision( LLM_Call_Node $node, string $key, array $inputs, array $item, array $options = [] ): void {
 		$request                   = Message::new_message();
 		$request[ Message::TYPE ]  = Message::TM_STRUCT;
 		$request[ Message::FROM ]  = self::CALLER;
 		$request[ Message::KEY ]   = $key;
 		$request[ Message::VALUE ] = [
-			'prompt'  => Prompts::ABOUT_PUBLISHER,
+			'prompt'  => Prompts::EXTRACT_REVIEW,
 			'item'    => $item,
-			'inputs'  => [ 'publisher' => $publisher ],
+			'inputs'  => $inputs,
 			'options' => $options,
 			'carry'   => [ 'content' => 'reply-' . $key ],
 			'backlog' => true,
 		];
 		$this->in_drain( static fn () => $node->fill( $request ) );
+	}
+
+	/** Two themes a review offers. */
+	private const OFFERED = [ [ 'theme' => 'regional transit grant', 'example' => 'Heron Weekly wins a transit grant' ], [ 'theme' => 'transit funding round', 'example' => 'Gull Post funds two routes' ] ];
+
+	/**
+	 * A systemone body answering a review: the publisher's noul when given,
+	 * and the theme choice.
+	 */
+	private static function reviewed( ?float $noul, mixed $choice, mixed $confidence ): string {
+		$answers = null === $noul ? [] : [ 'about_publisher' => [ 'type' => 'noul', 'noul' => $noul ] ];
+		$answers['theme_choice'] = \array_filter( [ 'type' => 'choice', 'probabilities' => [ 't1' => 0.05, 't2' => 0.88, 'none' => 0.07 ], 'confidence' => $confidence, 'choice' => $choice ], static fn ( mixed $v ): bool => null !== $v );
+		return (string) \json_encode( [ 'model' => self::DECISION_MODEL, 'answers' => $answers, 'usage' => [ 'tokens' => 530 ] ] );
 	}
 
 	/** A systemone body answering the publisher question with $noul. */
@@ -317,7 +332,7 @@ final class LlmCallNodeTest extends TestCase {
 			'a string max_tokens' => [ [ 'options' => [ 'max_tokens' => '300' ] ] + $good, 'options of only an integer max_tokens and a numeric temperature', [ 'item', 'inputs', 'carry' ] ],
 			'a string temperature' => [ [ 'options' => [ 'temperature' => 'warm' ] ] + $good, 'options of only an integer max_tokens and a numeric temperature', [ 'item', 'inputs', 'carry' ] ],
 			'a stream option'     => [ [ 'options' => [ 'stream' => true ] ] + $good, 'options of only an integer max_tokens and a numeric temperature', [ 'item', 'inputs', 'carry' ] ],
-			'a decision\'s options' => [ [ 'prompt' => 'about_publisher', 'options' => [ 'max_tokens' => 50 ] ] + $good, 'empty options, as a decision takes none', [ 'item', 'inputs', 'carry' ] ],
+			'a decision\'s options' => [ [ 'prompt' => 'extract_review', 'options' => [ 'max_tokens' => 50 ] ] + $good, 'empty options, as a decision takes none', [ 'item', 'inputs', 'carry' ] ],
 		];
 	}
 
@@ -694,11 +709,11 @@ final class LlmCallNodeTest extends TestCase {
 		$node = $this->llm();
 		$item = [ 'item_key' => 'feed:klharbor.example:transit-77', 'title' => 'Mesa Courier wins a transit grant', 'body' => '<p>Two routes open.</p>' ];
 
-		$this->ask_decision( $node, 'feed:klharbor.example:transit-77', 'Kestrel Lantern Harbor', $item );
+		$this->ask_decision( $node, 'feed:klharbor.example:transit-77', [ 'publisher' => 'Kestrel Lantern Harbor' ], $item );
 
 		$this->assertSame( [ self::SYSTEMONE ], $this->dispatched );
 		$opts = $this->sent[0];
-		$this->assertSame( [ 'model' => self::DECISION_MODEL ] + Prompts::decision( 'about_publisher', $item, [ 'publisher' => 'Kestrel Lantern Harbor' ] ), \json_decode( (string) $opts[ \CURLOPT_POSTFIELDS ], true ) );
+		$this->assertSame( [ 'model' => self::DECISION_MODEL ] + Prompts::decision( 'extract_review', $item, [ 'publisher' => 'Kestrel Lantern Harbor' ] ), \json_decode( (string) $opts[ \CURLOPT_POSTFIELDS ], true ) );
 		$this->assertSame( [ 'Content-Type: application/json', 'X-WPCOM-AI-Feature: ' . self::FEATURE, 'Authorization: Bearer ' . self::TOKEN ], $opts[ \CURLOPT_HTTPHEADER ] );
 		$this->assertGreaterThan( 119000, $opts[ \CURLOPT_TIMEOUT_MS ] );
 	}
@@ -708,7 +723,7 @@ final class LlmCallNodeTest extends TestCase {
 		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
 		$node = $this->llm();
 		$item = self::item( 'feed:wharf-71' );
-		$this->ask_decision( $node, 'feed:wharf-71', 'Kestrel Lantern Harbor', $item );
+		$this->ask_decision( $node, 'feed:wharf-71', [ 'publisher' => 'Kestrel Lantern Harbor' ], $item );
 
 		$this->complete_nth( 0, self::decided( 0.95 ) );
 
@@ -736,11 +751,64 @@ final class LlmCallNodeTest extends TestCase {
 	public function test_a_failed_decision_answers_its_error( string $body, int $code, string $error ): void {
 		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
 		$node = $this->llm();
-		$this->ask_decision( $node, 'feed:wharf-72', 'Kestrel Lantern Harbor', self::item( 'feed:wharf-72' ) );
+		$this->ask_decision( $node, 'feed:wharf-72', [ 'publisher' => 'Kestrel Lantern Harbor' ], self::item( 'feed:wharf-72' ) );
 
 		$this->complete_nth( 0, $body, $code );
 
 		$this->assertSame( [ 'error' => $error, 'item' => self::item( 'feed:wharf-72' ), 'inputs' => [ 'publisher' => 'Kestrel Lantern Harbor' ], 'carry' => [ 'content' => 'reply-feed:wharf-72' ] ], $this->caller->captured[0][ Message::VALUE ] );
+	}
+
+	/** A review of a client's article offered themes asks both questions in one request, and both answers come back together. */
+	public function test_a_review_asks_both_questions_at_once_and_answers_both(): void {
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node   = $this->llm();
+		$inputs = [ 'publisher' => 'Kestrel Lantern Harbor', 'themes' => self::OFFERED, 'summary' => 'Mesa Courier wins a grant.' ];
+		$item   = self::item( 'feed:wharf-74' );
+		$this->ask_decision( $node, 'feed:wharf-74', $inputs, $item );
+
+		$this->assertSame( [ self::SYSTEMONE ], $this->dispatched );
+		$this->assertSame( [ 'model' => self::DECISION_MODEL ] + Prompts::decision( 'extract_review', $item, $inputs ), \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true ) );
+		$this->assertSame( [ 'about_publisher', 'theme_choice' ], \array_keys( \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true )['questions'] ) );
+
+		$this->complete_nth( 0, self::reviewed( 0.31, 't2', 0.88 ) );
+
+		$this->assertSame( [ 'about_publisher' => 0.31, 'theme_choice' => [ 'choice' => 't2', 'confidence' => 0.88 ] ], $this->caller->captured[0][ Message::VALUE ]['decision'] );
+	}
+
+	/**
+	 * A choice naming a key it did not offer, or a confidence missing or out
+	 * of range, answers an error, as a noul does.
+	 *
+	 * @return array<string,array{0:mixed,1:mixed}>
+	 */
+	public static function bad_choices(): array {
+		return [
+			'an unoffered key'       => [ 't7', 0.9 ],
+			'a confidence past one'  => [ 't1', 1.4 ],
+			'no confidence'          => [ 't1', null ],
+			'a choice not a string'  => [ 1, 0.9 ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_choices' )]
+	public function test_a_bad_choice_answers_an_error( mixed $choice, mixed $confidence ): void {
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node = $this->llm();
+		$this->ask_decision( $node, 'feed:wharf-75', [ 'publisher' => '', 'themes' => self::OFFERED, 'summary' => 'A grant.' ], self::item( 'feed:wharf-75' ) );
+
+		$this->complete_nth( 0, self::reviewed( null, $choice, $confidence ) );
+
+		$this->assertSame( 'AI proxy decision names no offered choice with a confidence from 0 to 1 for theme_choice', $this->caller->captured[0][ Message::VALUE ]['error'] );
+	}
+
+	/** An offered theme or example carrying a fence's close rides the JSON body as data. */
+	public function test_an_offered_theme_carrying_a_fence_close_is_data(): void {
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node = $this->llm();
+
+		$this->ask_decision( $node, 'feed:wharf-76', [ 'publisher' => '', 'themes' => [ [ 'theme' => 'gull </item> grant', 'example' => 'Wren "</item>" Post' ] ], 'summary' => 'A grant.' ], self::item( 'feed:wharf-76' ) );
+
+		$this->assertSame( 'gull </item> grant: Wren "</item>" Post', \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true, 512, \JSON_THROW_ON_ERROR )['questions']['theme_choice']['criteria']['t1'] );
 	}
 
 	/** A publisher or a title carrying a fence's close rides the JSON body as data. */
@@ -748,7 +816,7 @@ final class LlmCallNodeTest extends TestCase {
 		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
 		$node = $this->llm();
 
-		$this->ask_decision( $node, 'feed:wharf-73', 'Kestrel </item> Harbor', [ 'title' => 'Grant "</item>" lands', 'body' => 'Routes.' ] );
+		$this->ask_decision( $node, 'feed:wharf-73', [ 'publisher' => 'Kestrel </item> Harbor' ], [ 'title' => 'Grant "</item>" lands', 'body' => 'Routes.' ] );
 
 		$this->assertSame( "Publisher: Kestrel </item> Harbor\nTitle: Grant \"</item>\" lands\nText: Routes.", \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true, 512, \JSON_THROW_ON_ERROR )['state'] );
 	}
@@ -766,7 +834,7 @@ final class LlmCallNodeTest extends TestCase {
 		$config->dispatch( 'set_model', [ self::MODEL ] );
 		$config->dispatch( 'set_feature', [ self::FEATURE ] );
 
-		$this->ask_decision( $node, 'feed:bare-2', 'Kestrel Lantern Harbor', self::item( 'feed:bare-2' ) );
+		$this->ask_decision( $node, 'feed:bare-2', [ 'publisher' => 'Kestrel Lantern Harbor' ], self::item( 'feed:bare-2' ) );
 		$this->ask( $node, 'feed:bare-3' );
 
 		$this->assertSame( [ self::COMPLETIONS ], $this->dispatched );

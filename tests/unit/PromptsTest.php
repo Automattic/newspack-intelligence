@@ -205,7 +205,7 @@ final class PromptsTest extends TestCase {
 		$item                              = [ 'item_key' => 'feed:tern-8', 'source' => 'feed', 'url' => 'https://tern.example/a', 'title' => 'Tern Weekly expands', 'body' => 'The paper grows.', 'retrieved_ts' => 1794000500 ];
 		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): array => [ [ 'theme' => 'newsletter sender rejected', 'example' => 'Tern Weekly sender bounced' ] ];
 
-		$this->assertSame( [ 'extract' => Prompts::CHAT, 'extract_entities' => Prompts::CHAT, 'about_publisher' => Prompts::DECISION ], Prompts::PROMPTS );
+		$this->assertSame( [ 'extract' => Prompts::CHAT, 'extract_entities' => Prompts::CHAT, 'extract_review' => Prompts::DECISION ], Prompts::PROMPTS );
 		$this->assertSame( Prompts::extract( $item, [ 'Awards' ], [ [ 'theme' => 'newsletter sender rejected', 'example' => 'Tern Weekly sender bounced' ] ], 'Readers care about terns.', 'the kite desk', 'Tern Weekly' ), Prompts::messages( 'extract', $item, [ 'topics' => [ 'Awards' => 'topic:awards' ], 'themes' => [ 'kite festival' ], 'profile' => 'Readers care about terns.', 'audience' => 'the kite desk', 'publisher' => 'Tern Weekly' ] ) );
 		$this->assertSame( Prompts::extract_entities( $item ), Prompts::messages( 'extract_entities', $item, [] ) );
 	}
@@ -249,8 +249,9 @@ final class PromptsTest extends TestCase {
 	}
 
 	/**
-	 * The publisher decision asks one noul question of a state naming the
-	 * publisher, the title and the body as plain text, cut to its bound.
+	 * A review naming a publisher and offering no theme asks the one noul
+	 * question of a state naming the publisher, the title and the body as
+	 * plain text, cut to its bound.
 	 */
 	public function test_the_publisher_decision_states_the_publisher_title_and_plain_text(): void {
 		$item = [ 'item_key' => 'feed:klharbor.example:transit-77', 'title' => 'Mesa Courier wins a transit grant', 'body' => "<p>The grant &amp; its two routes</p>\n<p>open in May.</p>" ];
@@ -265,25 +266,74 @@ final class PromptsTest extends TestCase {
 					],
 				],
 			],
-			Prompts::decision( 'about_publisher', $item, [ 'publisher' => 'Kestrel Lantern Harbor', 'topics' => [ 'Awards' => 'topic:awards' ] ] )
+			Prompts::decision( 'extract_review', $item, [ 'publisher' => 'Kestrel Lantern Harbor', 'topics' => [ 'Awards' => 'topic:awards' ] ] )
 		);
 	}
 
 	/** The decision's text is cut on a character boundary to its bound. */
 	public function test_the_publisher_decision_cuts_its_text(): void {
-		$state = Prompts::decision( 'about_publisher', [ 'title' => 'Heron count', 'body' => \str_repeat( 'é', Prompts::DECISION_TEXT_CHARS + 40 ) ], [ 'publisher' => 'Kestrel Lantern Harbor' ] )['state'];
+		$state = Prompts::decision( 'extract_review', [ 'title' => 'Heron count', 'body' => \str_repeat( 'é', Prompts::DECISION_TEXT_CHARS + 40 ) ], [ 'publisher' => 'Kestrel Lantern Harbor' ] )['state'];
 
 		$this->assertSame( "Publisher: Kestrel Lantern Harbor\nTitle: Heron count\nText: " . \str_repeat( 'é', Prompts::DECISION_TEXT_CHARS ), $state );
 	}
 
+	/**
+	 * A review offering themes asks a choice among them, each keyed t1 to tN
+	 * and told by its theme and example, beside `none`; its state adds the
+	 * reply's summary and names no publisher when none is given.
+	 */
+	public function test_a_review_offering_themes_asks_a_choice_among_them(): void {
+		$inputs = [
+			'publisher' => '',
+			'themes'    => [ [ 'theme' => 'regional transit grant', 'example' => 'Heron Weekly wins a transit grant' ], [ 'theme' => 'transit funding round', 'example' => '' ] ],
+			'summary'   => 'Mesa Courier wins a grant for two routes.',
+		];
+
+		$this->assertSame(
+			[
+				'state'     => "Title: Mesa Courier wins a transit grant\nText: Two routes open.\nSummary: Mesa Courier wins a grant for two routes.",
+				'questions' => [
+					'theme_choice' => [
+						'type'         => 'choice',
+						'instructions' => 'Which of these themes names the event or initiative this item is part of?',
+						'criteria'     => [
+							't1'   => 'regional transit grant: Heron Weekly wins a transit grant',
+							't2'   => 'transit funding round',
+							'none' => 'none of these: this item is part of a different event or initiative',
+						],
+					],
+				],
+			],
+			Prompts::decision( 'extract_review', [ 'title' => 'Mesa Courier wins a transit grant', 'body' => 'Two routes open.' ], $inputs )
+		);
+		$this->assertSame( [ 'about_publisher', 'theme_choice' ], \array_keys( Prompts::questions( [ 'publisher' => 'Kestrel Lantern Harbor' ] + $inputs ) ) );
+	}
+
+	/** A choice's key reads back as the theme it offered; `none`, and a key it did not offer, as none. */
+	public function test_a_chosen_key_reads_back_as_its_theme(): void {
+		$inputs = [ 'themes' => [ [ 'theme' => 'regional transit grant', 'example' => 'x' ], [ 'theme' => 'transit funding round', 'example' => 'y' ] ] ];
+
+		$this->assertSame(
+			[ 'regional transit grant', 'transit funding round', null, null, null ],
+			\array_map( static fn ( string $key ): ?string => Prompts::chosen_theme( $inputs, $key ), [ 't1', 't2', 'none', 't3', 't0' ] )
+		);
+	}
+
+	/** A review that asks no question is refused. */
+	public function test_a_review_asking_nothing_is_refused(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'an extract review asks no question' );
+		Prompts::decision( 'extract_review', [ 'title' => 'Heron count' ], [ 'publisher' => '', 'themes' => [], 'summary' => 'Herons.' ] );
+	}
+
 	/** A chat prompt builds no decision and a decision prompt no messages, each refused by name. */
 	public function test_each_builder_refuses_the_other_kind_of_prompt(): void {
-		foreach ( [ static fn () => Prompts::decision( 'extract', [], [] ), static fn () => Prompts::messages( 'about_publisher', [], [] ) ] as $build ) {
+		foreach ( [ static fn () => Prompts::decision( 'extract', [], [] ), static fn () => Prompts::messages( 'extract_review', [], [] ) ] as $build ) {
 			try {
 				$build();
 				$this->fail( 'a prompt of the other kind is refused' );
 			} catch ( \InvalidArgumentException $e ) {
-				$this->assertMatchesRegularExpression( '/^no (decision|chat) prompt: (extract|about_publisher)$/', $e->getMessage() );
+				$this->assertMatchesRegularExpression( '/^no (decision|chat) prompt: (extract|extract_review)$/', $e->getMessage() );
 			}
 		}
 	}
@@ -304,9 +354,10 @@ final class PromptsTest extends TestCase {
 			'feature_request' => [ 'a capability Newspack\'s product lacks', 'migration', 'onboarding, offboarding or configuration task for one site' ],
 			'bug'             => [ 'Newspack\'s shipped code', 'a CRM record', 'a launch snag list', 'internal tooling' ],
 			'incident'        => [ 'as it happens', 'a storage-quota warning', 'a legal notice', 'a delayed project' ],
-			'launch'          => [ 'going live', 'a client\'s or Newspack\'s', 'one step toward a launch' ],
+			'launch'          => [ 'going live', 'a client\'s or Newspack\'s', 'one step toward a launch', 'an internal tool, process or deploy going live' ],
+			'research'        => [ 'of the news industry, its audiences or its business, as published', 'Not Newspack\'s or Automattic\'s own engineering, audit, performance or planning work' ],
 			'release'         => [ 'a GitHub release page always is one' ],
-			'other'           => [ 'routine service and onboarding work', 'internal planning', 'team updates and kudos', 'a publication\'s own journalism about anyone else' ],
+			'other'           => [ 'routine service and onboarding work', 'internal planning', 'internal tooling, audits and engineering reports', 'team updates and kudos', 'a publication\'s own journalism about anyone else' ],
 		];
 		foreach ( $phrases as $kind => $needles ) {
 			$this->assertSame( 1, \preg_match( '/^' . $kind . ': (.*)$/m', $system, $line ), $kind );
