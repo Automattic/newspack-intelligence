@@ -978,6 +978,119 @@ final class ResolverTest extends TestCase {
 	private ?Resolver $last = null;
 
 	/**
+	 * Names that share only a word for a kind of publication do not match,
+	 * and a name holding no other word cannot; the extractor's name is
+	 * proposed instead.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public static function undistinctive_pairs(): array {
+		return [
+			'two journals'         => [ 'Harbor Journal', 'Kestrel Journal' ],
+			'two magazines'        => [ 'America Magazine', 'Mystery Magazine' ],
+			'nothing of its own'   => [ 'Daily Press', 'Daily Press News' ],
+			'an own word it lacks' => [ 'Weekly Tribune Review', 'Marsh Weekly Tribune Review' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'undistinctive_pairs' )]
+	public function test_a_fuzzy_match_needs_a_distinctive_shared_word( string $given, string $held ): void {
+		$resolution = ( new Resolver( $this->index_of( self::entity( 'organization:held-name', $held ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ $given ] ) );
+
+		$this->assertSame( [], $resolution['links'] ?? null );
+		$this->assertSame( [ $given ], \array_column( $resolution['proposals'] ?? [], 'name' ) );
+	}
+
+	/** Names sharing a distinctive word match, however generic the rest; an exact name scores 1.0 whatever its words. */
+	public function test_a_distinctive_shared_word_lets_a_name_match_and_an_exact_name_is_unchanged(): void {
+		$fuzzy = ( new Resolver( $this->index_of( self::entity( 'organization:harbor-news', 'The Harbor Gazette News' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Harbor Gazette' ] ) );
+		$exact = ( new Resolver( $this->index_of( self::entity( 'organization:daily-news', 'The Daily News' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Daily News' ] ) );
+
+		$this->assertSame( [ 'organization:harbor-news' ], \array_column( $fuzzy['links'] ?? [], 'entity_key' ) );
+		$this->assertSame( [ [ 'organization:daily-news', 1.0 ] ], \array_map( static fn ( array $l ): array => [ $l['entity_key'], $l['confidence'] ], $exact['links'] ?? [] ) );
+	}
+
+	/**
+	 * A name shaped like code or a file names no organization.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public static function code_shaped_names(): array {
+		return [
+			'an underscore'  => [ 'wp_mail_filter' ],
+			'a backtick'     => [ '`useSelect`' ],
+			'a scope'        => [ 'Heron::fetch' ],
+			'a call'         => [ 'render_block()' ],
+			'a bare call'    => [ 'renderBlock()' ],
+			'camelCase'      => [ 'apiFetch' ],
+			'a file name'    => [ 'DESIGN_SYSTEM.md' ],
+			'a plain file'   => [ 'readme.txt' ],
+			'a bare domain'  => [ 'kestrelbay.example' ],
+			'a subdomain'    => [ 'www.kestrelbay.example' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'code_shaped_names' )]
+	public function test_a_name_shaped_like_code_is_never_proposed( string $given ): void {
+		$stderr = $this->capture_stderr();
+
+		$resolution = ( new Resolver( $this->index_of( self::entity( self::MESA, 'Mesa Courier' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ $given, $given ] ) );
+
+		$this->assertSame( [ [], [] ], [ $resolution['links'] ?? null, $resolution['proposals'] ?? null ] );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER name left out, shaped like code: ' ) );
+	}
+
+	/** A name shaped like code links nothing by a likeness to a name. */
+	public function test_a_name_shaped_like_code_does_not_fuzzy_match(): void {
+		$this->capture_stderr();
+
+		$resolution = ( new Resolver( $this->index_of( self::entity( 'organization:mail-filter', 'Mail Filter' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'mail_filters' ] ) );
+
+		$this->assertSame( [], $resolution['links'] ?? null );
+	}
+
+	/**
+	 * Names of organizations stay proposable, a one-word brand and dotted
+	 * initials among them.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public static function name_shaped_names(): array {
+		return [
+			'two words'       => [ 'Rolling Coverage' ],
+			'led by the'      => [ 'The Marshall Project' ],
+			'a one-word name' => [ 'Automattic' ],
+			'all capitals'    => [ 'NPR' ],
+			'hyphenated'      => [ 'Tri-County Sentinel' ],
+			'initials'        => [ 'U.S. Heron Survey' ],
+			'an inner capital' => [ 'ProPublica' ],
+			'a Mc name'       => [ 'McClatchy' ],
+			'two capitals'    => [ 'PolitiFact' ],
+			'a joined brand'  => [ 'NewsGuard' ],
+			'a capitalized identifier' => [ 'CategoryAutocomplete' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'name_shaped_names' )]
+	public function test_a_name_shaped_like_a_name_is_proposed( string $given ): void {
+		$resolution = ( new Resolver( $this->index_of( self::entity( self::MESA, 'Mesa Courier' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ $given ] ) );
+
+		$this->assertSame( [ $given ], \array_column( $resolution['proposals'] ?? [], 'name' ) );
+	}
+
+	/** A lower-camelCase brand links the accepted entity holding its name, and a machine's proposal of it earns nothing. */
+	public function test_a_brand_spelled_like_code_links_its_accepted_holder(): void {
+		$this->capture_stderr();
+		$item = self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] );
+
+		$accepted = ( new Resolver( $this->index_of( self::entity( 'product:iheron', 'iHeron' ) ) ) )->resolve( $item, self::named( [ 'iHeron' ] ) );
+		$proposed = ( new Resolver( $this->index_of( self::entity( self::MESA, 'Mesa Courier' ), self::proposed( 'product:ikestrel', 'iKestrel' ) ) ) )->resolve( $item, self::named( [ 'iKestrel' ] ) );
+
+		$this->assertSame( [ [ 'product:iheron', 'ner_fuzzy', 1.0, 'asserted' ] ], \array_map( static fn ( array $l ): array => [ $l['entity_key'], $l['method'], $l['confidence'], $l['state'] ], $accepted['links'] ?? [] ) );
+		$this->assertSame( [ [], [] ], [ $proposed['links'] ?? null, $proposed['proposals'] ?? null ] );
+	}
+
+	/**
 	 * Resolve an item against the golden fixtures plus any extra entities.
 	 *
 	 * @param array<string,string>      $over      The item's fields.

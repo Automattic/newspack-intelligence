@@ -84,6 +84,22 @@ final class Resolver {
 	/** Below this length a domain stem ("abq", "kcur") collides with ordinary words. */
 	private const MIN_STEM_LENGTH = 6;
 
+	/**
+	 * Words that say what kind of publication or organization a name is, not
+	 * which one, and the small words between them: two names sharing only
+	 * these are not likely the same, so the fuzzy step never pairs them.
+	 */
+	public const GENERIC_NAME_WORDS = [ 'a', 'an', 'and', 'at', 'by', 'for', 'in', 'of', 'on', 'the', 'bulletin', 'chronicle', 'courier', 'daily', 'dispatch', 'foundation', 'gazette', 'group', 'herald', 'inc', 'journal', 'ledger', 'llc', 'magazine', 'media', 'monthly', 'network', 'news', 'newspaper', 'observer', 'post', 'press', 'project', 'reporter', 'review', 'sentinel', 'times', 'tribune', 'weekly' ];
+
+	/**
+	 * A name that reads as code or a file rather than an organization: a
+	 * `_`, a backtick, `::` or `()`; one lower-camelCase word (`apiFetch`);
+	 * or a bare domain or file name. A word led by a capital passes whatever
+	 * capitals it holds, because a real newsroom may be spelled so
+	 * (`ProPublica`, `McClatchy`), and a curator rejects an identifier.
+	 */
+	private const CODE_SHAPED = '/[_`]|::|\(\)|^\p{Ll}[\p{L}\p{N}]*\p{Lu}[\p{L}\p{N}]*$|^[\p{L}\p{N}\/-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}[\p{L}\p{N}]+$/u';
+
 	/** The characters of a long sentence kept ahead of the name it quotes. */
 	private const EVIDENCE_LEAD = 60;
 
@@ -115,6 +131,14 @@ final class Resolver {
 	 * @var array<int,array<string,list<string>>>
 	 */
 	private array $norms = [];
+
+	/**
+	 * Each distinctive word => the norms holding it with the entities they
+	 * name, the only norms the fuzzy step scores, built once per index.
+	 *
+	 * @var array<string,array<string,list<string>>>
+	 */
+	private array $by_word = [];
 
 	/**
 	 * The links found so far for the item being resolved, by entity key.
@@ -158,6 +182,9 @@ final class Resolver {
 		}
 		foreach ( $index->name_norms() as $norm => $entity_keys ) {
 			$this->norms[ \strlen( $norm ) ][ $norm ] = $entity_keys;
+			foreach ( self::distinctive( $norm ) as $word ) {
+				$this->by_word[ $word ][ $norm ] = $entity_keys;
+			}
 		}
 	}
 
@@ -211,7 +238,9 @@ final class Resolver {
 	 * names, scored against every name. Asserted at `assert_at` when one
 	 * entity holds the best score; proposed at `propose_at`, or when several
 	 * tie; below that, a candidate entity of the type it was named as, at
-	 * most MAX_PROPOSALS, never a name a rejected entity carries.
+	 * most MAX_PROPOSALS, never a name a rejected entity carries. A name
+	 * shaped like code is left out, logged, unless an entity past proposal
+	 * holds exactly it, as a lower-camelCase brand is spelled.
 	 *
 	 * @param array<string,array<int,string>> $named Each entity type => the names the extractor gave it.
 	 * @return list<Proposal>
@@ -222,6 +251,10 @@ final class Resolver {
 			foreach ( $names as $given ) {
 				$name = Entity_Index::norm( $given );
 				if ( '' === $name ) {
+					continue;
+				}
+				if ( 1 === \preg_match( self::CODE_SHAPED, $given ) && ! $this->held_past_proposal( $name ) ) {
+					Core::print_less_often( 'NER name left out, shaped like code: ', Core::terminal_safe( $given ) );
 					continue;
 				}
 				[ $best, $winners ] = $this->best_norms( $name );
@@ -243,8 +276,10 @@ final class Resolver {
 	/**
 	 * The best score any norm earns against a name, and the entities the
 	 * norms earning it name. An exact norm scores 1.0 with no scan; else
-	 * only norms whose length can reach `propose_at` are scored, because
-	 * similar_text's ratio never passes 2·min(la, lb) / (la + lb).
+	 * only norms sharing a distinctive word are scored, so a name holding
+	 * none cannot match, and of those only norms whose length can reach
+	 * `propose_at`, because similar_text's ratio never passes
+	 * 2·min(la, lb) / (la + lb).
 	 *
 	 * @param string $name A name's norm.
 	 * @return array{0:float,1:array<string,int>} The score, and the winners as keys.
@@ -257,19 +292,22 @@ final class Resolver {
 		}
 		$best    = 0.0;
 		$winners = [];
-		foreach ( $this->norms as $other => $norms ) {
+		$sharing = [];
+		foreach ( self::distinctive( $name ) as $word ) {
+			$sharing += $this->by_word[ $word ] ?? [];
+		}
+		foreach ( $sharing as $norm => $entity_keys ) {
+			$other = \strlen( $norm );
 			if ( 2 * \min( $length, $other ) / ( $length + $other ) < $this->propose_at ) {
 				continue;
 			}
-			foreach ( $norms as $norm => $entity_keys ) {
-				$score = self::similarity( $name, $norm );
-				if ( $score > $best ) {
-					$best    = $score;
-					$winners = [];
-				}
-				if ( $score === $best && $score > 0.0 ) {
-					$winners += \array_flip( $entity_keys );
-				}
+			$score = self::similarity( $name, $norm );
+			if ( $score > $best ) {
+				$best    = $score;
+				$winners = [];
+			}
+			if ( $score === $best && $score > 0.0 ) {
+				$winners += \array_flip( $entity_keys );
 			}
 		}
 		return [ $best, $winners ];
@@ -287,6 +325,30 @@ final class Resolver {
 			return $percent;
 		};
 		return $similar( $a, $b ) / 100.0;
+	}
+
+	/**
+	 * A norm's words outside GENERIC_NAME_WORDS.
+	 *
+	 * @param string $norm A name's norm, lowercase words joined by one space.
+	 * @return list<string>
+	 */
+	private static function distinctive( string $norm ): array {
+		return \array_values( \array_diff( \array_unique( \explode( ' ', $norm ) ), self::GENERIC_NAME_WORDS, [ '' ] ) );
+	}
+
+	/**
+	 * Whether an entity past proposal holds exactly this name.
+	 *
+	 * @param string $name A name's norm.
+	 */
+	private function held_past_proposal( string $name ): bool {
+		foreach ( $this->norms[ \strlen( $name ) ][ $name ] ?? [] as $entity_key ) {
+			if ( 'proposed' !== $this->index->state( $entity_key ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

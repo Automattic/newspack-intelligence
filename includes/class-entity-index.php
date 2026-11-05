@@ -425,9 +425,10 @@ final class Entity_Index {
 	 * Each entity's state as the highest partition holding one writes it,
 	 * one row per key, as a subquery.
 	 *
+	 * @api Graph_Query reads which entities a review leaves out.
 	 * @param Row_Reader $r The reader `Intel_Graph_Row_Schema::read()` hands over.
 	 */
-	private static function winning_states( Row_Reader $r ): string {
+	public static function winning_states( Row_Reader $r ): string {
 		return '( SELECT entity_key, state FROM ( SELECT entity_key, state, ROW_NUMBER() OVER ( PARTITION BY entity_key ORDER BY partition_ordinal DESC ) AS rn FROM '
 			. Intel_Graph_Row_Schema::all( $r, 'entity_states', true ) . ' a ) WHERE 1 = rn )';
 	}

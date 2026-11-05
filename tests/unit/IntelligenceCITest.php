@@ -12,6 +12,8 @@ use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Node_Names;
+use Newspack_Nodes\Sqlite_Arm;
+use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
@@ -326,4 +328,45 @@ final class IntelligenceCITest extends TestCase {
 		$keyed( $this->ci->dispatch( 'related', [ self::GAZETTE ] )['entities'] );
 		$keyed( $this->ci->dispatch( 'trends', [ 'topic' ] )['rows'] );
 	}
+
+	/** A link to an entity a curator rejected leaves the review, as does one to a key merged into it; a link to a live entity stays. */
+	public function test_review_leaves_out_links_to_a_rejected_entity(): void {
+		$this->seed_world();
+		$this->seed(
+			self::proposed( 'organization:gull-press', 'Gull Press' ),
+			self::proposed( 'organization:gull-pres', 'Gull Pres' ),
+			self::merged( 'organization:gull-pres', 'organization:gull-press' ),
+			self::rejected( 'organization:gull-press' ),
+			self::proposed( 'organization:tern-wire', 'Tern Wire' ),
+			self::link( 'link_proposed', 'feed:gazette-award', 'organization:gull-press', 'mention', 'ner_fuzzy', 0.7, self::$oct_06 ),
+			self::link( 'link_proposed', 'github:ledger-launch', 'organization:gull-pres', 'mention', 'ner_fuzzy', 0.7, self::$oct_13 ),
+			self::link( 'link_proposed', 'feed:gazette-award', 'organization:tern-wire', 'mention', 'ner_fuzzy', 0.7, self::$oct_06 )
+		);
+
+		$this->assertSame( [ 'organization:tern-wire', 'organization:salem-ledger' ], \array_column( $this->ci->dispatch( 'review', [ 'links' ] )['links'], 'entity_key' ) );
+	}
+
+	/** An entity's state in the review is the highest partition's holding one. */
+	public function test_review_reads_a_rejection_from_the_highest_partition(): void {
+		$this->seed_world();
+		$this->seed(
+			self::proposed( 'organization:gull-press', 'Gull Press' ),
+			self::link( 'link_proposed', 'feed:gazette-award', 'organization:gull-press', 'mention', 'ner_fuzzy', 0.7, self::$oct_06 )
+		);
+		$pending = Table_Node::file( 'intel-graph', 0 );
+		$copy    = $this->make_temp_dir( 'intel-p1-' ) . '/intel-graph.p1.sqlite';
+		( new \PDO( 'sqlite:' . $pending ) )->exec( 'VACUUM INTO ' . ( new \PDO( 'sqlite::memory:' ) )->quote( $copy ) );
+		$this->seed( self::rejected( 'organization:gull-press' ) );
+		$read = static fn ( array $files ): \Closure => static fn ( \Closure $read ): mixed => $read( Sqlite_Arm::open_rows( $files, Intel_Graph_Row_Schema::version() ) );
+
+		Intel_Graph_Row_Schema::$read_rows = $read( [ 0 => $copy, 1 => $pending ] );
+		$rejected_last                     = \array_column( $this->ci->dispatch( 'review', [ 'links' ] )['links'], 'entity_key' );
+		Intel_Graph_Row_Schema::$read_rows = $read( [ 0 => $pending, 1 => $copy ] );
+		$proposed_last                     = \array_column( $this->ci->dispatch( 'review', [ 'links' ] )['links'], 'entity_key' );
+		Intel_Graph_Row_Schema::$read_rows = null;
+
+		$this->assertNotContains( 'organization:gull-press', $rejected_last );
+		$this->assertContains( 'organization:gull-press', $proposed_last );
+	}
+
 }

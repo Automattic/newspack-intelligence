@@ -1861,7 +1861,9 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The proposed links, newest item first.
+	 * The proposed links, newest item first, but those to an entity whose
+	 * survivor is rejected: a `ner_fuzzy` row outlives a re-resolution that
+	 * did not run NER, and there is nothing left to judge of one.
 	 *
 	 * @param Row_Reader $r     The reader.
 	 * @param Graph      $g     The graph the read opened.
@@ -1873,7 +1875,7 @@ final class Graph_Query {
 		$links                 = [];
 		$rows                  = $r->rows(
 			"{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::name_of( $r, 'live.entity_key' ) . ', ' . self::type_of( $r, 'live.entity_key' )
-			. ", live.role, live.method, live.confidence, live.evidence, live.title, live.url FROM live WHERE live.state = 'proposed' ORDER BY live.t DESC, live.item_key, live.entity_key LIMIT ?",
+			. ", live.role, live.method, live.confidence, live.evidence, live.title, live.url FROM live WHERE live.state = 'proposed' AND live.entity_key NOT IN ( SELECT s.entity_key FROM " . Entity_Index::winning_states( $r ) . " s WHERE s.state = 'rejected' ) ORDER BY live.t DESC, live.item_key, live.entity_key LIMIT ?",
 			[ ...$g['binds'], ...$live_binds, $limit ]
 		);
 		foreach ( $rows as [ $item, $entity, $name, $type, $role, $method, $confidence, $evidence, $title, $url ] ) {

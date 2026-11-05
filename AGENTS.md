@@ -304,9 +304,22 @@ that are, and a span of several words not led by "A" or "An", so
 `thecitizen.example`, whose label spells the article, reads "The Citizen"
 while "A Newsroom" never reads as `anewsroom.example`, and never in a body, which is raw
 markup where an href spells a domain; and only when those find nothing, the NER extractor's organizations and products fuzzy-matched
-against every name — asserted at 0.85, proposed at 0.60, below that a
+against the names sharing a distinctive word with them — asserted at 0.85, proposed at 0.60, below that a
 candidate entity of the type it was named as (at most `MAX_PROPOSALS`, 3,
-and never a name a rejected entity carries). `Prompts::extract_entities()`
+and never a name a rejected entity carries). A distinctive word is one
+outside `Resolver::GENERIC_NAME_WORDS`, the words that say what kind of
+publication or organization a name is rather than which one, so "Harbor
+Journal" never pairs with "Kestrel Journal", and a name holding none cannot
+match. An exact name needs no such word and scores 1.0. A name shaped like
+code is refused before any of that, logged rate-limited `NER name left out,
+shaped like code: <name>`, in one place, `Resolver::recognized()`, because
+only the resolver sees the index: one holding a `_`, a backtick, `::` or
+`()`, one lower-camelCase word (`apiFetch`), or a bare domain or file name
+(`DESIGN_SYSTEM.md`). A word led by a capital passes whatever capitals it
+holds, so ProPublica and McClatchy are proposed, and a curator rejects an
+identifier spelled the same way (`CategoryAutocomplete`). An entity past
+proposal that holds exactly a refused name keeps it, so a lower-camelCase
+brand links its accepted entity. `Prompts::extract_entities()`
 asks for `orgs` and `products` apart, a tool, platform, vendor product or
 service being a product, never an organization, and
 `Prompts::parse_entities()` reads a missing `products` as none and leaves out,
@@ -1036,7 +1049,11 @@ counts in none of them. Any other entity answers `status: null`. The
 status carries no signal: the Entity view reads the latest from its own
 `signals` read. A link's state is the highest-ranked judgment's
 (`JUDGE_RANK`: a person over an agent), else the machine's, and a
-`rejected` link counts nowhere. Each read hands `live()` the links it rests
+`rejected` link counts nowhere. `review links` also leaves out a proposed
+link whose entity's survivor is rejected, read as
+`Entity_Index::winning_states()` reads a state, from the highest partition
+holding one, because a `ner_fuzzy` row outlives a re-resolution that did
+not run NER and nothing is left to judge of it. Each read hands `live()` the links it rests
 on — an entity's keys, a page's items, the items a claim or a proposal
 names — and windows only those; `search` and `trends` naming a role, or
 `trends` counting topics, without an entity or topic window the links of the

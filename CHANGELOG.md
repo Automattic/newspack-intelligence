@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`review links` leaves out a link whose entity was rejected.** A link to an entity whose survivor's state is `rejected`, read from the highest partition holding one, no longer lists, so a `ner_fuzzy` row a re-resolution keeps does not stand in the queue forever.
+- **A name shaped like code is never proposed or fuzzy-matched.** `Resolver::recognized()` refuses, logged rate-limited, a name holding a `_`, a backtick, `::` or `()`, one lower-camelCase word (`apiFetch`), or a bare domain or file name (`DESIGN_SYSTEM.md`), unless an entity past proposal holds exactly that name. A word led by a capital passes whatever capitals it holds, so ProPublica and McClatchy are proposed.
+- **A fuzzy match needs a distinctive shared word.** The NER step scores only names sharing a word outside `Resolver::GENERIC_NAME_WORDS`, so "Harbor Journal" no longer proposes a link to "Kestrel Journal", and a name holding no such word cannot fuzzy-match. An exact name still scores 1.0.
+
 ## [0.36.6] - 2026-11-05
 
 ### Fixed
