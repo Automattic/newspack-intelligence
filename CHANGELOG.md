@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.6] - 2026-11-05
+
 ### Fixed
 
 - **A cooperative stop no longer splits a finished extraction.** `Asks_Model::finish_answer()` runs each finish inside `Event_Framework::uninterruptible()`, for the extractor and the resolver alike. A stop falling due while an answer finishes lets every write land and raises at the first check after it; before, the extraction row could land while its subjects, its deduper forward and its claims were lost, with nothing to replay them.
