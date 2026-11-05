@@ -110,7 +110,9 @@ export default function TrendTable( {
 						].join( ' ' ) }
 					>
 						<td>{ row.bucket }</td>
-						<td>{ value( row ) }</td>
+						<td className="newspack-intelligence__value">
+							{ value( row ) }
+						</td>
 						<td>{ count( row ) }</td>
 						<td>
 							{ themes && row.clients?.length > 0 && (

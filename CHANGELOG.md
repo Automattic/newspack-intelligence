@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A lens's Value column is never narrower than its longest word.** `TrendTable` gives every Value cell, the signals tables' included, the class `newspack-intelligence__value`, which sets `overflow-wrap: normal` inside the lens over the lens's `overflow-wrap: anywhere`, so "release" and "incident" no longer break mid-word while a theme of several words still wraps between them.
+
 ## [0.36.2] - 2026-11-04
 
 ### Changed

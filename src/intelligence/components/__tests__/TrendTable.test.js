@@ -4,7 +4,9 @@
  * the value it counts, when it counts one. A trend table counting by theme
  * shows each row's client chips above its items in one column, every row,
  * one of a single item too, keeping its value under Value; counting by any
- * other axis it shows its items alone.
+ * other axis it shows its items alone. Every row's Value cell, a signal's
+ * included, carries the class that keeps its column as wide as its longest
+ * word.
  */
 
 import { render, screen, fireEvent, within } from '@testing-library/react';
@@ -206,6 +208,62 @@ describe( 'TrendTable', () => {
 		expect( cells[ 2 ] ).toHaveTextContent( '1' );
 		expect( within( cells[ 3 ] ).queryByRole( 'button' ) ).toBeNull();
 		expect( within( cells[ 3 ] ).queryByRole( 'link' ) ).toBeNull();
+	} );
+
+	it( 'marks the Value cell of a kind row, a theme row and a signal row', () => {
+		const valueCell = ( bucket ) =>
+			within( rowOf( bucket ) ).getAllByRole( 'cell' )[ 1 ];
+		const { unmount } = render(
+			<TrendTable
+				rows={ [
+					{
+						bucket: '2026-10-05',
+						value: 'incident',
+						count: 4,
+						items: [],
+					},
+				] }
+				by="kind"
+			/>
+		);
+		expect( valueCell( '2026-10-05' ) ).toHaveClass(
+			'newspack-intelligence__value'
+		);
+		unmount();
+
+		const themed = render(
+			<TrendTable rows={ THEMES } by="theme" onOpenEntity={ jest.fn() } />
+		);
+		expect( valueCell( '2026-09-21' ) ).toHaveClass(
+			'newspack-intelligence__value'
+		);
+		themed.unmount();
+
+		render(
+			<TrendTable
+				rows={ [
+					{
+						axis: 'about',
+						signal: 'spike',
+						bucket: '2026-10-12',
+						value: 'release',
+						count: 7,
+						baseline: 1.5,
+						items: [],
+					},
+				] }
+				value={ signalValue }
+			/>
+		);
+		expect( valueCell( '2026-10-12' ) ).toHaveTextContent(
+			'about spike: release'
+		);
+		expect( valueCell( '2026-10-12' ) ).toHaveClass(
+			'newspack-intelligence__value'
+		);
+		expect(
+			within( rowOf( '2026-10-12' ) ).getAllByRole( 'cell' )[ 0 ]
+		).not.toHaveClass( 'newspack-intelligence__value' );
 	} );
 
 	it( 'shows no clients on another axis', () => {

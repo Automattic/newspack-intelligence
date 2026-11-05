@@ -167,6 +167,11 @@
 		td {
 			overflow-wrap: anywhere;
 		}
+
+		// A value breaks only between words, so its column fits its longest one.
+		td.newspack-intelligence__value {
+			overflow-wrap: normal;
+		}
 	}
 
 	// The lens form's tier checkboxes: a fieldset laid out as one field.
