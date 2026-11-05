@@ -18,7 +18,7 @@ const BEHIND_FAULT_S = 300;
 /** The prefix of a source row's key, which its name follows. */
 const SOURCE_ROW = 'source:';
 
-/** @typedef {{key: string, label: string, state: string, tone: string, fault: boolean, unknown: boolean, text: import('react').ReactNode, fix: ?import('react').ReactNode}} HealthRow */
+/** @typedef {{key: string, label: string, state: string, tone: string, fault: boolean, unknown: boolean, idle: boolean, text: import('react').ReactNode, fix: ?import('react').ReactNode}} HealthRow */
 
 /** @typedef {{word: string, tone: string, fault?: boolean, unknown?: boolean, text: Function, fix?: Function}} HealthState */
 
@@ -236,6 +236,70 @@ function clearText( { held } ) {
 			'newspack-intelligence'
 		),
 		held
+	);
+}
+
+/**
+ * The model calls the extraction slice's queue counts, every NER and
+ * extraction call alike: "N calls waiting (N backlog, N new) · N in flight",
+ * a class or a part that holds no call left out, and '' while the queue
+ * holds none or is not known.
+ *
+ * @param {?{new: number, backlog: number, in_flight: number}} queue The queue.
+ * @return {string} The counts.
+ */
+function queueText( queue ) {
+	if ( ! queue ) {
+		return '';
+	}
+	const count = pageFormat( Intl.NumberFormat );
+	const waiting = queue.new + queue.backlog;
+	const classes = [
+		0 < queue.backlog &&
+			sprintf(
+				/* translators: %s: model calls waiting behind new work. */
+				__( '%s backlog', 'newspack-intelligence' ),
+				count.format( queue.backlog )
+			),
+		0 < queue.new &&
+			sprintf(
+				/* translators: %s: model calls for newly recorded items. */
+				__( '%s new', 'newspack-intelligence' ),
+				count.format( queue.new )
+			),
+	].filter( Boolean );
+	return metaLine(
+		0 < waiting
+			? sprintf(
+					/* translators: 1: model calls waiting, 2: the classes among them, as "5 backlog, 2 new". */
+					_n(
+						'%1$s call waiting (%2$s)',
+						'%1$s calls waiting (%2$s)',
+						waiting,
+						'newspack-intelligence'
+					),
+					count.format( waiting ),
+					pageFormat(
+						Intl.ListFormat,
+						/** @type {Intl.ListFormatOptions} */ ( {
+							type: 'unit',
+							style: 'short',
+						} )
+					).format( classes )
+			  )
+			: '',
+		0 < queue.in_flight
+			? sprintf(
+					/* translators: %s: model calls sent and not yet answered. */
+					_n(
+						'%s in flight',
+						'%s in flight',
+						queue.in_flight,
+						'newspack-intelligence'
+					),
+					count.format( queue.in_flight )
+			  )
+			: ''
 	);
 }
 
@@ -478,6 +542,7 @@ const STATES = {
 			word: __( 'clear', 'newspack-intelligence' ),
 			tone: 'is-success',
 			text: clearText,
+			idle: ( { held } ) => 0 === held,
 		},
 		no_live_entity: {
 			word: __( 'held', 'newspack-intelligence' ),
@@ -554,6 +619,13 @@ const STATES = {
 					} }
 				/>
 			),
+		},
+	},
+	calls: {
+		busy: {
+			word: __( 'busy', 'newspack-intelligence' ),
+			tone: 'is-neutral',
+			text: queueText,
 		},
 	},
 	extraction: {
@@ -674,6 +746,7 @@ function healthRow( key, label, table, state, answer, ctx ) {
 		tone: meant.tone,
 		fault: true === meant.fault,
 		unknown: true === meant.unknown,
+		idle: true === meant.idle?.( answer ),
 		text: meant.text( answer, ctx ),
 		fix: meant.fix?.( answer, ctx ) || null,
 	};
@@ -712,8 +785,8 @@ const offRow = ( row ) => ( { ...row, fault: false, tone: 'is-neutral' } );
 
 /**
  * Every row the answered slices hold: collection, the backlog and its
- * dropped days, extraction, then each source; all but collection's neutral
- * while collection is off.
+ * dropped days, extraction, the model calls while its queue holds any, then
+ * each source; all but collection's neutral while collection is off.
  *
  * @param {Object}  answers            The four slices' answers, each null while owed.
  * @param {?Object} answers.collection The collection slice.
@@ -764,6 +837,15 @@ function healthRows( { collection, backlog, extraction, sources }, ctx ) {
 				'extraction',
 				extractionState( extraction ),
 				extraction,
+				fixes
+			),
+		queueText( extraction?.queue ) &&
+			healthRow(
+				'calls',
+				__( 'Model calls', 'newspack-intelligence' ),
+				'calls',
+				'busy',
+				extraction.queue,
 				fixes
 			),
 		...listed.map( ( one ) =>
@@ -826,22 +908,36 @@ function collectingText( total, unreported ) {
 }
 
 /**
- * A conjunction list in the page's own language, `document.documentElement`'s
- * `lang`, or the default one when that is empty or not a language tag, the
- * one input the constructor's RangeError refuses here.
+ * A conjunction list in the page's own language.
  *
  * @return {Intl.ListFormat} The format.
  */
-function listFormat() {
-	/** @type {Intl.ListFormatOptions} */
-	const options = { type: 'conjunction' };
+const listFormat = () =>
+	pageFormat(
+		Intl.ListFormat,
+		/** @type {Intl.ListFormatOptions} */ ( {
+			type: 'conjunction',
+		} )
+	);
+
+/**
+ * An `Intl` format in the page's own language, `document.documentElement`'s
+ * `lang`, or the default one when that is empty or not a language tag, the
+ * one input the constructor's RangeError refuses here.
+ *
+ * @template T
+ * @param {new ( locale?: string, options?: Object ) => T} Format    The format's constructor.
+ * @param {Object}                                         [options] Its options.
+ * @return {T} The format.
+ */
+function pageFormat( Format, options ) {
 	try {
-		return new Intl.ListFormat(
+		return new Format(
 			document.documentElement.lang || undefined,
 			options
 		);
 	} catch {
-		return new Intl.ListFormat( undefined, options );
+		return new Format( undefined, options );
 	}
 }
 
@@ -850,7 +946,8 @@ function listFormat() {
  * refused; a slice owed; collection off, which outranks the unknown rows its
  * expired snapshots leave; a row whose health is not known but a source that
  * has not reported yet; else how many sources it collects from, naming each
- * source that has not reported yet, and the backlog row's cause.
+ * source that has not reported yet, the backlog row's cause, unless the row
+ * is idle while the model-call row stands, and that row's counts.
  *
  * @param {Object}           strip            What the line reads.
  * @param {Array<HealthRow>} strip.faults     The fault rows, worst first.
@@ -888,10 +985,15 @@ function healthLine( { faults, rows, reads, collection, sources } ) {
 			'newspack-intelligence'
 		);
 	}
-	const backlog = rows.find( ( row ) => 'backlog' === row.key );
-	return `${ collectingText( sources.sources.length, unreported ) } ${
-		backlog.text
-	}`;
+	const waiting = rows.find( ( row ) => 'backlog' === row.key );
+	const calls = rows.find( ( row ) => 'calls' === row.key );
+	return [
+		collectingText( sources.sources.length, unreported ),
+		waiting.idle && calls ? '' : waiting.text,
+		calls?.text,
+	]
+		.filter( Boolean )
+		.join( ' ' );
 }
 
 /**

@@ -70,14 +70,41 @@ final class Intelligence_Health {
 	}
 
 	/**
-	 * How the extractor extracts: its snapshot, redacted below manage; else
-	 * unknown, beside `last_mode`, how the newest extraction's actor says it
-	 * was made, when the projection holds one. An actor cannot say why a
-	 * stand-in was written, so a fallback never claims a missing Vault entry.
+	 * How the extractor extracts, beside the model calls its `LLM_Call`
+	 * holds, which every reader may see.
 	 *
 	 * @return array<array-key,mixed>
 	 */
 	private static function extraction(): array {
+		return self::extraction_mode() + [ 'queue' => self::model_calls() ];
+	}
+
+	/**
+	 * The calls the topology's `LLM_Call` holds, as its snapshot counts
+	 * them: those waiting, new work and backlog apart, and those in flight;
+	 * null with no snapshot, one older than two of its heartbeats, as a
+	 * stopped worker leaves, or one whose counts the Table did not answer,
+	 * never zero.
+	 *
+	 * @return array<array-key,mixed>|null
+	 */
+	private static function model_calls(): ?array {
+		$status = self::status_of( LLM_Call_Node::class );
+		if ( null === $status || (int) Core::right_now() - Core::as_int( $status['at'] ) > 2 * LLM_Call_Node::STATUS_HEARTBEAT_S ) {
+			return null;
+		}
+		return null === $status['queue'] ? null : Core::arr( $status['queue'] );
+	}
+
+	/**
+	 * The extractor's snapshot, redacted below manage; else unknown, beside
+	 * `last_mode`, how the newest extraction's actor says it was made, when
+	 * the projection holds one. An actor cannot say why a stand-in was
+	 * written, so a fallback never claims a missing Vault entry.
+	 *
+	 * @return array<array-key,mixed>
+	 */
+	private static function extraction_mode(): array {
 		$status = self::status_of( Extractor_Node::class );
 		if ( null !== $status ) {
 			return self::redacted( $status );
@@ -135,7 +162,7 @@ final class Intelligence_Health {
 	 * The snapshot the topology's node of `$class` published, null when the
 	 * topology declares none or the snapshot is not in any cache.
 	 *
-	 * @param class-string<Extractor_Node|Reresolver_Node> $class The node's class.
+	 * @param class-string<Extractor_Node|Reresolver_Node|LLM_Call_Node> $class The node's class.
 	 * @return array<array-key,mixed>|null
 	 */
 	private static function status_of( string $class ): ?array {

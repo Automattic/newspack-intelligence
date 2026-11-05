@@ -2,7 +2,7 @@
 /**
  * A healthy answer to each of the four `health` slices, as the strip and the
  * page both read it: a live worker on a staging topology, three sources that
- * answered, nothing held and the AI proxy extracting.
+ * answered, nothing held and the AI proxy extracting, no model call waiting.
  */
 
 /** 2026-10-31 09:41 UTC. */
@@ -40,5 +40,6 @@ export const HEALTHY = {
 		last_ok_at: LAST_OK,
 		last_error: null,
 		failing_since: null,
+		queue: { new: 0, backlog: 0, in_flight: 0 },
 	},
 };

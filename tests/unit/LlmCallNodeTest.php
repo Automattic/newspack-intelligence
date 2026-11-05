@@ -46,6 +46,9 @@ final class LlmCallNodeTest extends TestCase {
 
 	private const CALLER = 'caller-7730';
 
+	/** The invented second a stepped clock starts at. */
+	private const START = 1792511137;
+
 	private Capture_Sink_Node $caller;
 
 	protected function setUp(): void {
@@ -773,6 +776,317 @@ final class LlmCallNodeTest extends TestCase {
 			'extract'   => false,
 		];
 		return $resolution;
+	}
+
+	/**
+	 * A clock the test moves, from START; the loop reads it as it drains.
+	 *
+	 * @return \Closure(float): void Sets the clock to that many seconds past START.
+	 */
+	private function stepped_clock(): \Closure {
+		$at          = (float) self::START;
+		Core::$clock = static function () use ( &$at ): float {
+			return $at;
+		};
+		return static function ( float $seconds ) use ( &$at ): void {
+			$at = self::START + $seconds;
+		};
+	}
+
+	/** One Router tick of the node, inside a drain. */
+	private function tick( LLM_Call_Node $node ): void {
+		$this->in_drain( static fn () => $node->fire_cb() );
+	}
+
+	/** What the node last published at the worker partition. */
+	private function queue_status(): ?array {
+		return LLM_Call_Node::read_status( self::NAME, self::PARTITION );
+	}
+
+	/**
+	 * The snapshot the node publishes: its queue, or null, and the second it
+	 * was written, `$seconds` past START.
+	 *
+	 * @param array{0:int,1:int,2:int}|null $queue [ new, backlog, in_flight ].
+	 * @return array<string,mixed>
+	 */
+	private static function snap( ?array $queue, int $seconds ): array {
+		return [
+			'queue' => null === $queue ? null : [ 'new' => $queue[0], 'backlog' => $queue[1], 'in_flight' => $queue[2] ],
+			'at'    => self::START + $seconds,
+		];
+	}
+
+	/**
+	 * Four backlog requests and two new, one window: one backlog request in
+	 * flight, three backlog and two new waiting.
+	 */
+	private function queued_llm(): LLM_Call_Node {
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node = $this->llm( 1 );
+		foreach ( [ 'b1', 'b2', 'b3', 'b4' ] as $key ) {
+			$this->ask( $node, "feed:old-{$key}", [], true );
+		}
+		$this->ask( $node, 'feed:new-n1' );
+		$this->ask( $node, 'feed:new-n2' );
+		return $node;
+	}
+
+	/**
+	 * A sink in front of the interpreter that drops every string request
+	 * starting with `$verb`, as a Table that never answers it.
+	 */
+	private static function dropping( string $verb ): Node {
+		$interpreter = Core::node( Node_Names::COMMAND_INTERPRETER );
+		\assert( null !== $interpreter );
+		return new class( $interpreter, $verb ) extends Node {
+			public function __construct( private Node $next, private string $verb ) {
+				parent::__construct();
+			}
+
+			public function fill( array $message ): void {
+				if ( \is_string( $message[ Message::VALUE ] ) && \str_starts_with( $message[ Message::VALUE ], "{$this->verb} " ) ) {
+					return;
+				}
+				$this->next->fill( $message );
+			}
+		};
+	}
+
+	/** The tick publishes the calls waiting by priority class and those in flight, and when it wrote them. */
+	public function test_the_tick_publishes_the_queue_by_priority_and_in_flight(): void {
+		$this->stepped_clock();
+		$this->publishing();
+		$node = $this->queued_llm();
+		$this->assertNull( $this->queue_status(), 'nothing publishes on a request' );
+
+		$this->tick( $node );
+
+		$this->assertSame( self::snap( [ 2, 3, 1 ], 0 ), $this->queue_status() );
+	}
+
+	/** A settle and the take it frees are counted at the next tick past the interval. */
+	public function test_the_counts_follow_a_settle_and_a_take(): void {
+		$step = $this->stepped_clock();
+		$this->publishing();
+		$node = $this->queued_llm();
+		$this->tick( $node );
+
+		$this->complete_nth( 0, self::completion( 'settled' ) );
+		$step( 5 );
+		$this->tick( $node );
+
+		$this->assertSame( [ 'Item feed:old-b1', 'Item feed:new-n1' ], $this->posted() );
+		$this->assertSame( self::snap( [ 1, 3, 1 ], 5 ), $this->queue_status() );
+
+		$this->ask( $node, 'feed:new-n3' );
+		$step( 10 );
+		$this->tick( $node );
+
+		$this->assertSame( self::snap( [ 2, 3, 1 ], 10 ), $this->queue_status() );
+	}
+
+	/** A settle alone, with nothing left to take, is counted at the next tick past the interval. */
+	public function test_a_settle_alone_is_published(): void {
+		$step = $this->stepped_clock();
+		$this->publishing();
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node = $this->llm( 2 );
+		$this->ask( $node, 'feed:lone-7' );
+		$this->tick( $node );
+		$this->assertSame( self::snap( [ 0, 0, 1 ], 0 ), $this->queue_status() );
+
+		$this->complete_nth( 0, self::completion( 'alone' ) );
+		$step( 6 );
+		$this->tick( $node );
+
+		$this->assertSame( self::snap( [ 0, 0, 0 ], 6 ), $this->queue_status() );
+	}
+
+	/** A take the tick retries, after the Table refused the request's own, is counted at the next tick past the interval. */
+	public function test_a_take_alone_is_published(): void {
+		$step = $this->stepped_clock();
+		$this->publishing();
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node        = $this->llm( 2 );
+		$interpreter = $node->sink();
+		$this->ask( $node, 'feed:sent-2' );
+		$this->tick( $node );
+		$this->assertSame( self::snap( [ 0, 0, 1 ], 0 ), $this->queue_status() );
+
+		$node->sink( self::dropping( 'SMOVE' ) );
+		$this->ask( $node, 'feed:held-3', [], true );
+		$step( 5 );
+		$this->tick( $node );
+		$this->assertSame( self::snap( [ 0, 1, 1 ], 5 ), $this->queue_status() );
+
+		$node->sink( $interpreter );
+		$step( 11 );
+		$this->tick( $node );
+
+		$this->assertSame( [ 'Item feed:sent-2', 'Item feed:held-3' ], $this->posted() );
+		$this->assertSame( self::snap( [ 0, 0, 2 ], 11 ), $this->queue_status() );
+	}
+
+	/** With nothing queued, taken or settled, a tick inside the heartbeat counts and writes nothing. */
+	public function test_a_tick_with_no_change_publishes_nothing_inside_the_heartbeat(): void {
+		$step = $this->stepped_clock();
+		$memd = $this->publishing();
+		$node = $this->queued_llm();
+		$this->tick( $node );
+		$memd->set( LLM_Call_Node::status_key( self::NAME, self::PARTITION ), [ 'sentinel' => 4471 ], 600 );
+
+		$step( LLM_Call_Node::STATUS_HEARTBEAT_S - 1 );
+		$this->tick( $node );
+
+		$this->assertSame( [ 'sentinel' => 4471 ], $this->queue_status() );
+	}
+
+	/** An unmoving queue is counted and written again once a heartbeat has passed, so its `at` stays fresh while the worker lives. */
+	public function test_an_unmoving_queue_is_republished_on_the_heartbeat(): void {
+		$step = $this->stepped_clock();
+		$this->publishing();
+		$node = $this->queued_llm();
+		$this->tick( $node );
+
+		$step( LLM_Call_Node::STATUS_HEARTBEAT_S );
+		$this->tick( $node );
+
+		$this->assertSame( self::snap( [ 2, 3, 1 ], LLM_Call_Node::STATUS_HEARTBEAT_S ), $this->queue_status() );
+	}
+
+	/** The snapshot outlives a worker that stopped by a few heartbeats, not by days. */
+	public function test_the_snapshot_lives_three_heartbeats(): void {
+		$this->stepped_clock();
+		$memd = $this->publishing();
+		$node = $this->queued_llm();
+
+		$this->tick( $node );
+
+		$this->assertSame( 3 * LLM_Call_Node::STATUS_HEARTBEAT_S, \array_column( $memd->sets, 'ttl', 'key' )[ LLM_Call_Node::status_key( self::NAME, self::PARTITION ) ] );
+	}
+
+	/** A change inside the interval waits for the tick past it. */
+	public function test_a_change_inside_the_interval_waits_for_the_next(): void {
+		$step = $this->stepped_clock();
+		$this->publishing();
+		$node = $this->queued_llm();
+		$this->tick( $node );
+
+		$this->ask( $node, 'feed:old-b5', [], true );
+		$step( 4 );
+		$this->tick( $node );
+		$this->assertSame( self::snap( [ 2, 3, 1 ], 0 ), $this->queue_status(), 'inside the interval' );
+
+		$step( 5 );
+		$this->tick( $node );
+		$this->assertSame( self::snap( [ 2, 4, 1 ], 5 ), $this->queue_status() );
+	}
+
+	/** A clock stepped back counts as the interval having passed, so the throttle never stalls. */
+	public function test_a_clock_stepped_back_does_not_stall_the_throttle(): void {
+		$step = $this->stepped_clock();
+		$this->publishing();
+		$node = $this->queued_llm();
+		$this->tick( $node );
+
+		$this->ask( $node, 'feed:new-n4' );
+		$step( -90 );
+		$this->tick( $node );
+
+		$this->assertSame( self::snap( [ 3, 3, 1 ], -90 ), $this->queue_status() );
+	}
+
+	/** A count the Table does not answer publishes a null queue, never zero, and is counted again at the next tick past the interval. */
+	public function test_a_count_the_table_does_not_answer_publishes_null(): void {
+		$step = $this->stepped_clock();
+		$this->publishing();
+		$node        = $this->queued_llm();
+		$interpreter = $node->sink();
+		$node->sink( self::dropping( 'SCARD' ) );
+
+		$this->tick( $node );
+		$this->assertSame( self::snap( null, 0 ), $this->queue_status() );
+
+		$node->sink( $interpreter );
+		$step( 5 );
+		$this->tick( $node );
+		$this->assertSame( self::snap( [ 2, 3, 1 ], 5 ), $this->queue_status() );
+	}
+
+	/** A write that did not land, the cache down, keeps the change owed, so a later tick publishes it with nothing new. */
+	public function test_a_publish_with_the_cache_down_is_tried_again(): void {
+		$step = $this->stepped_clock();
+		$memd = $this->publishing();
+		$node = $this->queued_llm();
+		Core::$memd = null;
+
+		$this->tick( $node );
+
+		Core::$memd = $memd;
+		$this->assertNull( $this->queue_status() );
+		$step( 5 );
+		$this->tick( $node );
+		$this->assertSame( self::snap( [ 2, 3, 1 ], 5 ), $this->queue_status() );
+	}
+
+	/** A count that throws is logged and tried again at the next tick, never thrown into the loop. */
+	public function test_a_count_that_throws_is_logged_and_tried_at_the_next_tick(): void {
+		$step = $this->stepped_clock();
+		$this->publishing();
+		$node        = $this->queued_llm();
+		$interpreter = $node->sink();
+		\assert( null !== $interpreter );
+		$node->sink(
+			new class( $interpreter ) extends Node {
+				public function __construct( private Node $next ) {
+					parent::__construct();
+				}
+
+				public function fill( array $message ): void {
+					if ( \is_string( $message[ Message::VALUE ] ) && \str_starts_with( $message[ Message::VALUE ], 'SCARD ' ) ) {
+						throw new \RuntimeException( 'table down 5583' );
+					}
+					$this->next->fill( $message );
+				}
+			}
+		);
+		$stderr = $this->capture_stderr();
+
+		$this->tick( $node );
+
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'publishing the queue failed; trying again at the next tick: table down 5583' ) );
+		$this->assertNull( $this->queue_status() );
+		$node->sink( $interpreter );
+		$step( 1 );
+		$this->tick( $node );
+		$this->assertSame( self::snap( [ 2, 3, 1 ], 1 ), $this->queue_status() );
+	}
+
+	/** A cooperative stop met while counting propagates out of the tick. */
+	public function test_a_stop_while_counting_propagates(): void {
+		$this->stepped_clock();
+		$this->publishing();
+		$node        = $this->queued_llm();
+		$interpreter = $node->sink();
+		\assert( null !== $interpreter );
+		$node->sink(
+			new class( $interpreter ) extends Node {
+				public function __construct( private Node $next ) {
+					parent::__construct();
+				}
+
+				public function fill( array $message ): void {
+					if ( \is_string( $message[ Message::VALUE ] ) && \str_starts_with( $message[ Message::VALUE ], 'SCARD ' ) ) {
+						throw new Worker_Should_Stop( 'max_runtime 595 reached' );
+					}
+					$this->next->fill( $message );
+				}
+			}
+		);
+
+		$this->expectException( Worker_Should_Stop::class );
+		$this->tick( $node );
 	}
 
 	/** Its group is required, and it declares the frontier Table it owns. */

@@ -8,6 +8,7 @@ use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intel_Tiers;
 use Newspack_Intelligence\Intelligence_CI_Node;
+use Newspack_Intelligence\LLM_Call_Node;
 use Newspack_Intelligence\Source_Node;
 use Newspack_Intelligence\Stream_Writer;
 use Newspack_Nodes\Config;
@@ -454,7 +455,40 @@ final class IntelligenceHealthTest extends TestCase {
 		$published = [ 'mode' => 'call', 'vault_group' => 'ai-proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ];
 		$this->snapshot( 'extractor', $published );
 
-		$this->assertSame( $published, $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+		$this->assertSame( $published + [ 'queue' => null ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+	}
+
+	/** The model-call queue rides beside the extractor's snapshot, each priority class and the calls in flight. */
+	public function test_extraction_carries_the_model_call_queue(): void {
+		$published = [ 'mode' => 'call', 'vault_group' => 'ai-proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => null, 'failing_since' => null ];
+		$this->snapshot( 'extractor', $published );
+		$this->snapshot( 'intel:llm', self::calls( 17, 5741, 3 ) );
+
+		$this->assertSame( $published + [ 'queue' => [ 'new' => 17, 'backlog' => 5741, 'in_flight' => 3 ] ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+	}
+
+	/** A snapshot whose counts the Table did not answer reads as an unknown queue, never zero. */
+	public function test_an_uncounted_queue_reads_as_unknown(): void {
+		$this->snapshot( 'intel:llm', [ 'queue' => null, 'at' => (int) Core::right_now() ] );
+
+		$this->assertSame( [ 'mode' => 'unknown', 'queue' => null ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+	}
+
+	/** A stopped worker's counts read as unknown once they are older than two heartbeats. */
+	public function test_a_stopped_workers_queue_reads_as_unknown_after_two_heartbeats(): void {
+		$beats = 2 * LLM_Call_Node::STATUS_HEARTBEAT_S;
+		$this->snapshot( 'intel:llm', self::calls( 3, 418, 2, $beats ) );
+		$this->assertSame( [ 'new' => 3, 'backlog' => 418, 'in_flight' => 2 ], $this->ci->dispatch( 'health', [ 'extraction' ] )['queue'], 'two heartbeats old' );
+
+		$this->snapshot( 'intel:llm', self::calls( 3, 418, 2, $beats + 1 ) );
+		$this->assertNull( $this->ci->dispatch( 'health', [ 'extraction' ] )['queue'] );
+	}
+
+	/** With no extractor snapshot the queue still reads beside the unknown mode. */
+	public function test_an_unknown_mode_still_carries_the_queue(): void {
+		$this->snapshot( 'intel:llm', self::calls( 0, 29, 2 ) );
+
+		$this->assertSame( [ 'mode' => 'unknown', 'queue' => [ 'new' => 0, 'backlog' => 29, 'in_flight' => 2 ] ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 	}
 
 	/** With no snapshot the mode is unknown; the newest extraction's actor says only how the last one was made. */
@@ -465,11 +499,11 @@ final class IntelligenceHealthTest extends TestCase {
 			[ Intel_Event::make( 'extraction_recorded', [ 'item_key' => 'feed:quiet-note', 'summary' => 'A quiet note.', 'kind' => 'other', 'relevance' => 0.0, 'importance' => 0.0, 'sentiment' => 0.0, 'topics' => [], 'retrieved_ts' => self::$oct_13 + 600 ], Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE ) . '9.4.1', 'fixture-9' ) ]
 		);
 
-		$this->assertSame( [ 'mode' => 'unknown', 'last_mode' => 'heuristic' ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+		$this->assertSame( [ 'mode' => 'unknown', 'last_mode' => 'heuristic', 'queue' => null ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 
 		$this->seed( self::extraction( 'feed:quiet-note', 'A quiet note, read.', 'launch', self::$oct_13, [] ) );
 
-		$this->assertSame( [ 'mode' => 'unknown', 'last_mode' => 'call' ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+		$this->assertSame( [ 'mode' => 'unknown', 'last_mode' => 'call', 'queue' => null ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 	}
 
 	/** Review Focus 3: with no shared cache every published fact is unknown, the Vault still answers idle, and nothing throws. */
@@ -479,7 +513,7 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( 'down', $this->ci->dispatch( 'health', [ 'collection' ] )['state'] );
 		$this->assertSame( [ 'unknown', 'unknown', 'unknown', 'idle', 'idle', 'idle' ], \array_column( $this->ci->dispatch( 'health', [ 'sources' ] )['sources'], 'state' ) );
 		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => null, 'since' => null, 'dropped' => null ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
-		$this->assertSame( [ 'mode' => 'unknown' ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+		$this->assertSame( [ 'mode' => 'unknown', 'queue' => null ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 	}
 
 	/**
@@ -492,6 +526,7 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->snapshot( 'grebe-feed', [ 'state' => 'failing', 'last_ok_at' => 1792470021, 'last_error' => 'HTTP 404 https://grebe-5519.example/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 5 ] );
 		$this->snapshot( 'cormorant-linear', [ 'state' => 'idle', 'reason' => 'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host' ] );
 		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_group' => 'ai-proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ] );
+		$this->snapshot( 'intel:llm', self::calls( 6, 811, 1 ) );
 		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::READ;
 
 		$this->assertSame(
@@ -502,7 +537,7 @@ final class IntelligenceHealthTest extends TestCase {
 			],
 			$this->ci->dispatch( 'health', [ 'sources' ] )['sources']
 		);
-		$this->assertSame( [ 'mode' => 'call', 'last_ok_at' => 1792491357, 'failing_since' => 1792493000 ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+		$this->assertSame( [ 'mode' => 'call', 'last_ok_at' => 1792491357, 'failing_since' => 1792493000, 'queue' => [ 'new' => 6, 'backlog' => 811, 'in_flight' => 1 ] ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 	}
 
 	/** A manager sees the credential a source needs, the extractor's Vault group and every error text. */
@@ -520,7 +555,7 @@ final class IntelligenceHealthTest extends TestCase {
 
 	/** Each worker node's snapshot is read under the name the active topology gives it, the queue's under the one its resolver parks on. */
 	public function test_snapshots_are_read_under_the_names_the_topology_gives(): void {
-		$this->shadow( 'newspack-intelligence-resolve', 'make_node Resolver plover-resolver intel:writer plover-later intel:llm', 'make_node Extractor plover-extractor intel:writer plover-later intel:llm' );
+		$this->shadow( 'newspack-intelligence-resolve', 'make_node LLM_Call plover-llm ai-proxy', 'make_node Resolver plover-resolver intel:writer plover-later plover-llm', 'make_node Extractor plover-extractor intel:writer plover-later plover-llm' );
 		$extraction = [ 'mode' => 'call', 'vault_group' => 'ai-proxy-p3', 'last_ok_at' => 1792477001, 'last_error' => null, 'failing_since' => null ];
 		$this->snapshot( 'plover-extractor', $extraction );
 		$this->snapshot( 'extractor', [ 'mode' => 'heuristic', 'vault_group' => 'ai-proxy-x1', 'last_ok_at' => null, 'last_error' => null, 'failing_since' => null ] );
@@ -528,8 +563,10 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400999 ] );
 		$this->snapshot( 'plover-later', self::queue( 77, null ) );
 		$this->snapshot( 'intel:later', self::queue( 12, null ) );
+		$this->snapshot( 'plover-llm', self::calls( 4, 93, 2 ) );
+		$this->snapshot( 'intel:llm', self::calls( 8, 5000, 3 ) );
 
-		$this->assertSame( $extraction, $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+		$this->assertSame( $extraction + [ 'queue' => [ 'new' => 4, 'backlog' => 93, 'in_flight' => 2 ] ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => 77, 'since' => 1792400555, 'dropped' => null ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
 	}
 
@@ -538,8 +575,9 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->shadow( 'newspack-intelligence-resolve', 'make_node Deduper deduper intel:writer' );
 		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_group' => 'ai-proxy-x1', 'last_ok_at' => 1792477001, 'last_error' => null, 'failing_since' => null ] );
 		$this->snapshot( 'resolver', [ 'reason' => 'no_live_entity', 'since' => 1792400999 ] );
+		$this->snapshot( 'intel:llm', self::calls( 5, 61, 1 ) );
 
-		$this->assertSame( [ 'mode' => 'unknown' ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+		$this->assertSame( [ 'mode' => 'unknown', 'queue' => null ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 		$this->assertSame( [ 'reason' => 'no_live_entity', 'held' => null, 'since' => null, 'dropped' => null ], $this->ci->dispatch( 'health', [ 'backlog' ] ) );
 	}
 
@@ -607,6 +645,19 @@ final class IntelligenceHealthTest extends TestCase {
 			'oldest_parked_at' => 0 === $depth ? null : 1792399417,
 			'dropped'          => $dropped,
 			'dropped_count'    => null === $dropped ? 0 : 41,
+		];
+	}
+
+	/**
+	 * The model-call queue's snapshot, as `LLM_Call_Node` publishes it,
+	 * written `$age` seconds ago.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private static function calls( int $new, int $backlog, int $in_flight, int $age = 0 ): array {
+		return [
+			'queue' => [ 'new' => $new, 'backlog' => $backlog, 'in_flight' => $in_flight ],
+			'at'    => (int) Core::right_now() - $age,
 		];
 	}
 

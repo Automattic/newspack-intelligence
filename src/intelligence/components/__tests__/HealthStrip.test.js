@@ -704,6 +704,98 @@ describe( 'HealthStrip', () => {
 		expect( strip() ).not.toHaveClass( 'is-warning' );
 	} );
 
+	it( 'counts the model calls on a row of their own and on the line, never under Extraction', async () => {
+		health.extraction.queue = { new: 3, backlog: 5741, in_flight: 4 };
+		const calls =
+			'5,744 calls waiting (5,741 backlog, 3 new) · 4 in flight';
+		renderStrip();
+		await lineReads( `Collecting from 3 sources. ${ calls }` );
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+		fireEvent.click( toggle() );
+		expect(
+			within( row( 'Model calls' ) ).getByText( calls )
+		).toBeInTheDocument();
+		expect(
+			within( row( 'Model calls' ) ).getByText( 'busy' )
+		).toHaveClass( 'is-neutral' );
+		expect(
+			within( row( 'Extraction' ) ).getByText(
+				`By the AI proxy; last extraction ${ LAST_OK_LOCAL }.`
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'counts one model call waiting in the singular, leaving out a class it holds none of', async () => {
+		health.extraction.queue = { new: 1, backlog: 0, in_flight: 1 };
+		renderStrip();
+		await lineReads(
+			'Collecting from 3 sources. 1 call waiting (1 new) · 1 in flight'
+		);
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+	} );
+
+	it( 'names only the backlog when no new call waits', async () => {
+		health.extraction.queue = { new: 0, backlog: 27, in_flight: 0 };
+		renderStrip();
+		await lineReads(
+			'Collecting from 3 sources. 27 calls waiting (27 backlog)'
+		);
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+	} );
+
+	it( 'counts calls in flight with none waiting', async () => {
+		health.extraction.queue = { new: 0, backlog: 0, in_flight: 2 };
+		renderStrip();
+		await lineReads( 'Collecting from 3 sources. 2 in flight' );
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+	} );
+
+	it( 'shows no model-call row while the queue holds no call, or its count is not known', async () => {
+		for ( const queue of [ null, { new: 0, backlog: 0, in_flight: 0 } ] ) {
+			health.extraction.queue = queue;
+			const { unmount } = renderStrip();
+			await lineReads( HEALTHY_LINE );
+			fireEvent.click( toggle() );
+			expect( row( 'Extraction' ) ).toBeDefined();
+			expect( row( 'Model calls' ) ).toBeUndefined();
+			unmount();
+		}
+	} );
+
+	it( 'counts the model calls beside the items waiting to resolve', async () => {
+		health.backlog = { ...HEALTHY.backlog, held: 9 };
+		health.extraction.queue = { new: 0, backlog: 12, in_flight: 2 };
+		renderStrip();
+		await lineReads(
+			'Collecting from 3 sources. 9 items are waiting to resolve or retry. 12 calls waiting (12 backlog) · 2 in flight'
+		);
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+	} );
+
+	it( 'keeps the backlog row’s cause beside the calls while it is not idle', async () => {
+		health.backlog = { ...HEALTHY.backlog, held: null };
+		health.extraction.queue = { new: 5, backlog: 0, in_flight: 0 };
+		renderStrip();
+		await lineReads(
+			'Collecting from 3 sources. Resolving is running; how many items wait to retry is not known. 5 calls waiting (5 new)'
+		);
+		expect( strip() ).not.toHaveClass( 'is-warning' );
+	} );
+
+	it( 'counts the model calls in the page’s own language', async () => {
+		document.documentElement.lang = 'de-DE';
+		health.extraction.queue = { new: 2, backlog: 1309, in_flight: 3 };
+		try {
+			renderStrip();
+			await lineReads(
+				'Collecting from 3 sources. 1.311 calls waiting (1.309 backlog, 2 new) · 3 in flight'
+			);
+			expect( strip() ).not.toHaveClass( 'is-warning' );
+		} finally {
+			document.documentElement.lang = '';
+		}
+	} );
+
 	it( 'renders every time in the browser’s zone, a day ahead of UTC here', () => {
 		expect( formatLocalDateTime( SINCE ) ).toBe( SINCE_LOCAL );
 		expect( new Date( SINCE * 1000 ).toISOString().slice( 0, 10 ) ).toBe(

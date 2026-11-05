@@ -11,7 +11,9 @@ namespace Newspack_Intelligence;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
 use Newspack_Nodes\Event_Framework;
+use Newspack_Nodes\Frontier;
 use Newspack_Nodes\Message;
+use Newspack_Nodes\Publishes_Status;
 use Newspack_Nodes\Schema_Reflection;
 use Newspack_Nodes\Shutdown_Sweeper;
 use Newspack_Nodes\Timer_Node;
@@ -43,6 +45,8 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	/** @use Owns_Curl_Frontier<list<mixed>> */
 	use Owns_Curl_Frontier;
 
+	use Publishes_Status;
+
 	/**
 	 * Largest request body Curl sends, its 1 MiB ceiling: an extraction
 	 * request carries a 65,536-byte item body JSON-encoded twice, about 460 KB.
@@ -54,6 +58,19 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/** A request's member prefix: backlog, behind every new request. */
 	private const BACKLOG = '1';
+
+	/**
+	 * Seconds after which an unmoving queue is counted and written again, so
+	 * a reader can tell a live worker's snapshot from a stopped one's.
+	 */
+	public const STATUS_HEARTBEAT_S = 300;
+
+	/**
+	 * Least seconds between two publishes of a moving queue: the strip reads
+	 * it only on a load or a Refresh, so five seconds stale is current, and
+	 * a busy queue costs two counts and a cache write per five seconds.
+	 */
+	private const QUEUE_PUBLISH_S = 5;
 
 	/** The error a body naming no assistant content answers. */
 	private const NO_CONTENT = 'AI proxy answer names no choices[0].message.content';
@@ -75,6 +92,12 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/** The microsecond the last request arrived at, at least one past the one before. */
 	private int $arrived = 0;
+
+	/** Whether a request, take or settle came since the last publish landed; a new process owes one. */
+	private bool $queue_moved = true;
+
+	/** Wall-second the queue was last counted; 0 before the first. */
+	private int $queue_counted_at = 0;
 
 	/**
 	 * `<vault_group>`: Curl built again under a new group, dropping what it
@@ -118,12 +141,70 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * The Router's tick sends what the frontier holds, the first one after a
-	 * restart what the stopped process left in flight.
+	 * restart what the stopped process left in flight, then publishes the
+	 * queue.
 	 *
 	 * @api Used by substrate.
 	 */
 	protected function fire(): void {
 		$this->pump();
+		$this->publish_queue();
+	}
+
+	/**
+	 * Publish `{ queue, at }`: the calls waiting under each priority, as the
+	 * Table counts them, and those in flight, or null when a count is not
+	 * answered, and the second it was written. A moving queue publishes at
+	 * most every QUEUE_PUBLISH_S, an unmoving one every STATUS_HEARTBEAT_S,
+	 * and a clock stepped back counts as either having passed. A change is
+	 * owed until a counted snapshot lands; a throw is logged and tried
+	 * again at the next tick, never thrown into the loop, but for a
+	 * cooperative stop (ADR-14).
+	 *
+	 * @throws Worker_Should_Stop When the worker is asked to stop.
+	 */
+	private function publish_queue(): void {
+		$now     = (int) Core::$now;
+		$elapsed = $now - $this->queue_counted_at;
+		if ( 0 <= $elapsed && $elapsed < ( $this->queue_moved ? self::QUEUE_PUBLISH_S : self::STATUS_HEARTBEAT_S ) ) {
+			return;
+		}
+		try {
+			$queue  = $this->queue_counts();
+			$landed = $this->publish_status(
+				[
+					'queue' => $queue,
+					'at'    => $now,
+				]
+			);
+		} catch ( Worker_Should_Stop $stop ) {
+			throw $stop;
+		} catch ( \Throwable $e ) {
+			$this->print_less_often( 'publishing the queue failed; trying again at the next tick: ', Core::terminal_safe( $e->getMessage() ) );
+			return;
+		}
+		$this->queue_counted_at = $now;
+		$this->queue_moved      = ! $landed || null === $queue;
+	}
+
+	/**
+	 * The calls waiting under each priority, as the Table counts them, and
+	 * those this process has in flight; null when either count is not
+	 * answered.
+	 *
+	 * @return array{new:int,backlog:int,in_flight:int}|null
+	 */
+	private function queue_counts(): ?array {
+		$new     = $this->frontier->count( Frontier::PENDING, self::NEW_WORK . '/' );
+		$backlog = $this->frontier->count( Frontier::PENDING, self::BACKLOG . '/' );
+		if ( null === $new || null === $backlog ) {
+			return null;
+		}
+		return [
+			'new'       => $new,
+			'backlog'   => $backlog,
+			'in_flight' => \count( $this->in_flight ),
+		];
 	}
 
 	/**
@@ -162,6 +243,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 			$this->reply( $value, [ 'error' => 'the Table took no request: ' . $this->sibling_name( self::FRONTIER ) ] );
 			return;
 		}
+		$this->queue_moved = true;
 		$this->pump();
 	}
 
@@ -232,6 +314,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 		if ( null === $value ) {
 			return;
 		}
+		$this->queue_moved = true;
 		$this->deliver( $value, self::outcome( $message ) );
 		$this->pump();
 	}
@@ -256,7 +339,8 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 				if ( [] !== $this->in_flight && 2 * $free < $this->concurrency ) {
 					return;
 				}
-				$taken = $this->frontier->take( $free );
+				$taken              = $this->frontier->take( $free );
+				$this->queue_moved = $this->queue_moved || [] !== $taken;
 				foreach ( $taken as [ $member, $value ] ) {
 					$this->dispatch( $member, \array_values( Core::arr( $value ) ) );
 				}
@@ -441,6 +525,25 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	 */
 	public function set_concurrency( string $count ): void {
 		$this->concurrency = Curl_Node::concurrency_of( (int) $count );
+	}
+
+	/**
+	 * Seconds the cache keeps a status: three heartbeats, so a stopped
+	 * worker's counts are gone soon after a reader stops trusting them.
+	 *
+	 * @api Used by substrate.
+	 */
+	protected function status_ttl(): int {
+		return 3 * self::STATUS_HEARTBEAT_S;
+	}
+
+	/**
+	 * Seconds after which an unchanged status is written again.
+	 *
+	 * @api Used by substrate.
+	 */
+	protected function status_heartbeat(): int {
+		return self::STATUS_HEARTBEAT_S;
 	}
 
 	/** Emit the base config, then each verb's line. */
