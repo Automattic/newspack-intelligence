@@ -9,6 +9,7 @@
 namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Core;
+use Newspack_Nodes\Event_Framework;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Worker_Should_Stop;
 
@@ -90,8 +91,10 @@ trait Asks_Model {
 	}
 
 	/**
-	 * Finish an answer; one whose finish throws is logged, rate-limited,
-	 * and its item parked, but for a cooperative stop.
+	 * Finish an answer as one unit a cooperative stop may not split, since
+	 * the model call is settled and nothing replays its writes; a stop due
+	 * inside raises at the first check after it. One whose finish throws is
+	 * logged, rate-limited, and its item parked, but for a cooperative stop.
 	 *
 	 * @param string   $item_key The item.
 	 * @param \Closure $finish   Finishes the answer: `function (): void`.
@@ -100,7 +103,7 @@ trait Asks_Model {
 	 */
 	private function finish_answer( string $item_key, \Closure $finish, \Closure $park ): void {
 		try {
-			$finish();
+			Event_Framework::instance()->uninterruptible( $finish );
 		} catch ( Worker_Should_Stop $stop ) {
 			throw $stop;
 		} catch ( \Throwable $e ) {

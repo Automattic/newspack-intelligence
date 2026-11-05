@@ -307,14 +307,13 @@ final class Graph_Client_Roster implements Client_Roster {
 		return Intel_Graph_Row_Schema::read(
 			static function ( Row_Reader $r ): array {
 				$index     = Entity_Index::load( $r );
-				$keys      = Graph_Query::inverse( $index->merged() );
 				$atomic    = [];
 				$survivors = [];
 				foreach ( $index->identifiers( 'atomic_site_id' ) as $id => $entity ) {
 					$atomic[ (string) $id ] = $entity;
 				}
 				foreach ( [ ...$atomic, ...$index->identifiers( 'domain' ) ] as $entity ) {
-					$survivors[ $entity ] = $keys[ $entity ] ?? [ $entity ];
+					$survivors[ $entity ] = $index->keys_of( $entity );
 				}
 				$refused = [];
 				foreach ( $index->refused( 'atomic_site_id' ) as $id => $holder ) {

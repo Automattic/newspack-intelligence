@@ -29,7 +29,7 @@ use Newspack_Nodes\Sqlite_Arm;
 class Ontology_CLI_Command {
 	use Refuses_Root;
 
-	/** The most model calls `reextract` makes unless its --limit says more. */
+	/** The most extraction calls `reextract` makes unless its --limit says more. */
 	public const REEXTRACT_LIMIT = 200;
 
 	/**
@@ -71,10 +71,12 @@ class Ontology_CLI_Command {
 	 * resolver owed an extraction, so each worker's extractor calls the model
 	 * for each item whatever it holds: the items times the live workers, and a
 	 * call that fails keeps the item's earlier extraction and retries up to
-	 * `Extractor_Node::MAX_ATTEMPTS` times. It counts those calls first and
-	 * refuses more than --limit, naming the items and the workers; a range that
-	 * contains no item sends nothing. With --dry-run it sends nothing and
-	 * prints the calls and the command that runs them.
+	 * `Extractor_Node::MAX_ATTEMPTS` times. It counts those extraction calls
+	 * first and refuses more than --limit, naming the items and the workers; a
+	 * range that contains no item sends nothing. Each extraction can add one
+	 * decision-model call, its review, which the count leaves out. With
+	 * --dry-run it sends nothing and prints the calls, says so, and prints the
+	 * command that runs them.
 	 *
 	 * ## OPTIONS
 	 *
@@ -88,7 +90,7 @@ class Ontology_CLI_Command {
 	 * : Only the items of this source, as `slack` or `linear`; every source when omitted.
 	 *
 	 * [--limit=<n>]
-	 * : The most model calls it makes, retries aside; 200 when omitted.
+	 * : The most extraction calls it makes, retries and decision-model calls aside; 200 when omitted.
 	 *
 	 * [--dry-run]
 	 * : Print the calls and the command, and send nothing.
@@ -121,15 +123,15 @@ class Ontology_CLI_Command {
 					return null;
 				}
 				if ( isset( $assoc_args['dry-run'] ) ) {
-					\WP_CLI::log( "{$count} {$of}items {$range} would be re-extracted by " . self::workers( $workers, 'live ' ) . ": {$calls} model calls, {$retries}." );
+					\WP_CLI::log( "{$count} {$of}items {$range} would be re-extracted by " . self::workers( $workers, 'live ' ) . ": {$calls} extraction calls, each of which can add one decision-model call, {$retries}." );
 					\WP_CLI::log( "Re-extract them with: wp newspack-intelligence ontology reextract --since={$since} --until={$until}" . ( '' === $source ? '' : " --source={$source}" ) . ( $calls > self::REEXTRACT_LIMIT ? " --limit={$calls}" : '' ) );
 					return null;
 				}
 				if ( $calls > $limit ) {
-					\WP_CLI::error( "ontology reextract would make {$calls} model calls, {$count} {$of}items {$range} times " . self::workers( $workers, 'live ' ) . ", above --limit={$limit}, and a failed call may retry up to " . Extractor_Node::MAX_ATTEMPTS . ' times; raise --limit to run it.' );
+					\WP_CLI::error( "ontology reextract would make {$calls} extraction calls, {$count} {$of}items {$range} times " . self::workers( $workers, 'live ' ) . ", above --limit={$limit}, and a failed call may retry up to " . Extractor_Node::MAX_ATTEMPTS . ' times; raise --limit to run it.' );
 					return null;
 				}
-				return ": {$calls} model calls, {$retries}";
+				return ": {$calls} extraction calls, {$retries}";
 			}
 		);
 	}

@@ -504,4 +504,20 @@ final class EntityIndexTest extends TestCase {
 		$this->assertSame( 'harbor gazette s award', Entity_Index::norm( "  The HARBOR\tGazette's   award! " ) );
 		$this->assertSame( 'the', Entity_Index::norm( 'The' ) );
 	}
+
+	/** The keys an entity answers for: itself, then the keys merged into it, sorted; an unmerged key alone. */
+	public function test_keys_of_answers_a_survivor_and_what_merged_into_it(): void {
+		$index = $this->index_of(
+			self::entity( 'organization:lantern-weekly', 'Lantern Weekly' ),
+			self::entity( 'organization:lantern-daily', 'Lantern Daily' ),
+			self::entity( 'organization:lantern-post', 'Lantern Post' ),
+			self::merged( 'organization:lantern-weekly', 'organization:lantern-post' ),
+			self::merged( 'organization:lantern-daily', 'organization:lantern-post' ),
+			self::entity( 'organization:mesa-courier', 'Mesa Courier' )
+		);
+
+		$this->assertSame( [ 'organization:lantern-post', 'organization:lantern-daily', 'organization:lantern-weekly' ], $index->keys_of( 'organization:lantern-post' ) );
+		$this->assertSame( [ 'organization:mesa-courier' ], $index->keys_of( 'organization:mesa-courier' ) );
+	}
+
 }

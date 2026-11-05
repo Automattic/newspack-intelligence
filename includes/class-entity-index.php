@@ -76,6 +76,9 @@ final class Entity_Index {
 	/** @var array<string,string> Each merged key's survivor, '' where it does not resolve. */
 	private array $merged = [];
 
+	/** @var array<string,list<string>>|null Each survivor => its keys, built from $merged on first use. */
+	private ?array $keys = null;
+
 	/** Whether a projector's reader of the ontology stream stood short of its end just before this index was read. */
 	private bool $behind = false;
 
@@ -641,6 +644,18 @@ final class Entity_Index {
 	 */
 	public function merged(): array {
 		return $this->merged;
+	}
+
+	/**
+	 * The keys an entity answers for: itself, then the keys merged into it,
+	 * sorted; the inverse of merged(), built once per index.
+	 *
+	 * @param string $survivor The entity.
+	 * @return list<string>
+	 */
+	public function keys_of( string $survivor ): array {
+		$this->keys ??= Graph_Query::inverse( $this->merged );
+		return $this->keys[ $survivor ] ?? [ $survivor ];
 	}
 
 	/**

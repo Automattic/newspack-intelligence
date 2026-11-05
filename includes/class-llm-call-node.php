@@ -36,10 +36,10 @@ use Newspack_Nodes\Worker_Should_Stop;
  * `<api_url>/systemone`, the decision model's, as `Prompts::decision()`
  * builds it. The answer goes TO the request's FROM, keyed as asked, a
  * TM_STRUCT|TM_RESPONSE whose VALUE is `{ content, item, inputs, carry }`
- * for a chat prompt, `{ decision: { <question>: <noul> }, … }` for a
- * decision, `{ error, … }`, or, when no entry of the group lends the api
- * url's origin a credential, `{ unlent, … }` at once, `unlent` the group. A
- * stored request that will not send is settled and answered as an error. A
+ * for a chat prompt, `{ decision: { <question>: <noul> | { choice,
+ * confidence } }, … }` for a decision, `{ error, … }`, or, when no entry
+ * of the group lends the api url's origin a credential, `{ unlent, … }` at
+ * once, `unlent` the group. A stored request that will not send is settled and answered as an error. A
  * request in flight when the worker stops is sent again by the next one; a
  * clean stop sends none it answered again.
  */

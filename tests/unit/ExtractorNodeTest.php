@@ -7,11 +7,13 @@ use Newspack_Intelligence\Deduper_Node;
 use Newspack_Intelligence\Entity_Index;
 use Newspack_Intelligence\Extractor_Node;
 use Newspack_Intelligence\Intel_Event;
+use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\LLM_Call_Node;
 use Newspack_Intelligence\Prompts;
 use Newspack_Intelligence\Resolver_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
+use Newspack_Nodes\Event_Framework;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Node_Names;
 use Newspack_Nodes\Router_Node;
@@ -69,6 +71,7 @@ final class ExtractorNodeTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
+		Intel_Graph_Row_Schema::$read_rows = null;
 		Topology_Registry::reset();
 		parent::tearDown();
 	}
@@ -491,7 +494,8 @@ final class ExtractorNodeTest extends TestCase {
 
 		$this->assertSame( [ 'award' ], \array_column( $this->extractions(), 'kind' ) );
 		$this->assertSame( [], $this->parked() );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'extract review failed for feed:klharbor.example:transit-77' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'extract review failed: ' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed:klharbor.example:transit-77' ) );
 	}
 
 	/** No decision is asked for an item no open client published, one extracted as other, or a call that failed. */
@@ -596,6 +600,117 @@ final class ExtractorNodeTest extends TestCase {
 		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
 
 		$this->assertSame( [ [ 'award', 'grant step checklist' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['theme'] ], $this->extractions() ) );
+	}
+
+	/**
+	 * A stop falling due while an answer finishes splits nothing: every write
+	 * of the extraction lands, and the stop raises at the next check.
+	 */
+	public function test_a_stop_due_during_a_finish_lets_every_write_land(): void {
+		$this->seed( self::entity( self::GAZETTE, 'Harbor Gazette' ), self::entity( self::PEABODY, 'Peabody Award' ) );
+		$this->answer( '{"summary":"Harbor Gazette wins.","claims":[{"subject":"Harbor Gazette","predicate":"won","object":"Peabody Award"}]}' );
+		$this->writes_check_for_a_stop();
+
+		$stop = $this->with_stop_due(
+			function (): void {
+				$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+				Event_Framework::instance()->stop_check();
+			}
+		);
+
+		$this->assertNotNull( $stop, 'the stop raises once the finish closes' );
+		$this->assertSame( [ 'extraction_recorded', 'subjects_extracted', 'claim_asserted' ], \array_column( $this->written(), 'event' ) );
+		$this->assertCount( 1, $this->forwarded() );
+	}
+
+	/**
+	 * A read that throws starting the review, or a request that does, costs
+	 * the review alone: the paid reply is recorded, logged, and no retry
+	 * parks.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public static function review_starts(): array {
+		return [
+			'the themes read throws'   => [ 'read' ],
+			'the review request throws' => [ 'enqueue' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'review_starts' )]
+	public function test_a_review_that_will_not_start_records_the_paid_reply( string $fails ): void {
+		$stderr = $this->capture_stderr();
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ), ...self::themed_neighbours() );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award","theme":"grant step checklist"}' );
+		Entity_Index::current();
+		if ( 'read' === $fails ) {
+			Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): never => throw new \RuntimeException( 'graph file gone 7741' );
+		} else {
+			$this->review_requests_throw( new \RuntimeException( 'frontier refused 7742' ) );
+		}
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'title' => 'Mesa Courier wins a transit grant' ] ) );
+
+		$this->assertSame( [ [ 'award', 'grant step checklist' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['theme'] ], $this->extractions() ) );
+		$this->assertSame( [], $this->parked() );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'extract review failed: ' . ( 'read' === $fails ? 'graph file gone 7741' : 'frontier refused 7742' ) ) );
+	}
+
+	/** A cooperative stop while a review starts propagates, and records nothing. */
+	public function test_a_stop_while_a_review_starts_propagates(): void {
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ), ...self::themed_neighbours() );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award"}' );
+		$this->review_requests_throw( new Worker_Should_Stop( 'max_runtime 595 reached' ) );
+
+		try {
+			$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'title' => 'Mesa Courier wins a transit grant' ] ) );
+			$this->fail( 'the stop propagates' );
+		} catch ( Worker_Should_Stop $stop ) {
+			$this->assertSame( 'max_runtime 595 reached', $stop->getMessage() );
+		}
+		$this->assertSame( [], $this->extractions() );
+	}
+
+	/**
+	 * A review that fails publishes its text as last_error, keeping the mode
+	 * and last_ok_at; an extraction no review follows leaves it standing, and
+	 * a review that answers clears it.
+	 */
+	public function test_a_review_outage_reads_as_failing_until_a_review_answers(): void {
+		$this->publishing( null );
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award"}' );
+		$failing = self::snapshot( [ 'mode' => 'call', 'last_ok_at' => 8100, 'last_error' => 'HTTP 502 https://proxy.example/systemone', 'failing_since' => 8100 ] );
+
+		Core::$now = 8100.0;
+		$this->decide( [ 'error' => 'HTTP 502 https://proxy.example/systemone' ] );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->assertSame( $failing, $this->published() );
+
+		Core::$now = 8200.0;
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'item_key' => 'linear:SUP-413', 'source' => 'linear', 'url' => 'https://linear.example/SUP-413' ] ) );
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'last_ok_at' => 8200, 'last_error' => 'HTTP 502 https://proxy.example/systemone', 'failing_since' => 8100 ] ), $this->published(), 'a reply no review follows leaves the review failure standing' );
+
+		Core::$now = 8300.0;
+		$this->decide( [ 'decision' => [ 'about_publisher' => 0.83 ] ] );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'last_ok_at' => 8300 ] ), $this->published() );
+	}
+
+	/** A review failure's log line is limited by the failure, so two items failing alike log once and a new failure logs again. */
+	public function test_a_review_failure_logs_once_per_failure(): void {
+		$stderr = $this->capture_stderr();
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award"}' );
+		$this->decide( [ 'error' => 'HTTP 502 https://proxy.example/systemone' ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'item_key' => 'feed:klharbor.example:transit-78' ] + self::lane_item(), publisher: self::LANTERN ) );
+		$this->decide( [ 'error' => 'HTTP 504 https://proxy.example/systemone' ] );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'extract review failed: HTTP 502' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'extract review failed: HTTP 504' ) );
 	}
 
 	/** The extraction names topic keys; each claim's subject and object resolve against the index. */
@@ -1344,6 +1459,42 @@ final class ExtractorNodeTest extends TestCase {
 	/** @return list<array<string,mixed>> Each extraction written. */
 	private function extractions(): array {
 		return \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'extraction_recorded' === $e['event'] ) );
+	}
+
+	/** Make every write addressed to the writer check for a stop after it lands, as a Partition does. */
+	private function writes_check_for_a_stop(): void {
+		$sink = new class() extends Llm_Answering_Sink {
+			public function fill( array $message ): void {
+				parent::fill( $message );
+				if ( 'intel:writer' === $message[ Message::TO ] ) {
+					Event_Framework::instance()->stop_check();
+				}
+			}
+		};
+		$sink->outcome  = $this->out->outcome;
+		$sink->outcomes = $this->out->outcomes;
+		$this->out      = $sink;
+		$this->extractor->sink( $sink );
+	}
+
+	/** Make every extract review request throw $e. */
+	private function review_requests_throw( \Throwable $e ): void {
+		$sink = new class( $e ) extends Llm_Answering_Sink {
+			public function __construct( private \Throwable $e ) {
+				parent::__construct();
+			}
+
+			public function fill( array $message ): void {
+				if ( 'extract_review' === ( $message[ Message::VALUE ]['prompt'] ?? null ) ) {
+					throw $this->e;
+				}
+				parent::fill( $message );
+			}
+		};
+		$sink->outcome  = $this->out->outcome;
+		$sink->outcomes = $this->out->outcomes;
+		$this->out      = $sink;
+		$this->extractor->sink( $sink );
 	}
 
 	/** Make every write addressed to the writer throw $e, and nothing else. */

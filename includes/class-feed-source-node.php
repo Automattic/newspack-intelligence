@@ -576,11 +576,10 @@ class Feed_Source_Node extends Source_Node {
 		return Intel_Graph_Row_Schema::read(
 			static function ( Row_Reader $r ): array {
 				$index     = Entity_Index::load( $r );
-				$keys      = Graph_Query::inverse( $index->merged() );
 				$domains   = $index->identifiers( 'domain' );
 				$survivors = [];
 				foreach ( $domains as $entity ) {
-					$survivors[ $entity ] = $keys[ $entity ] ?? [ $entity ];
+					$survivors[ $entity ] = $index->keys_of( $entity );
 				}
 				$open    = Graph_Query::open_roles( $r, $survivors, [ 'client' ] );
 				$clients = [];

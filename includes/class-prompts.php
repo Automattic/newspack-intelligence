@@ -6,8 +6,10 @@
  * `LLM_Call` request carries: `extract()` (one resolved item → summary, kind,
  * theme, topics, sub-scores and claims, read back by `parse_extract()`), and
  * `extract_entities()` (an item's subject entities, for the resolver's NER
- * step, read back by `parse_entities()`). Only `messages()` reads: the
- * themes an `extract` offers, those of the themed items most like it.
+ * step, read back by `parse_entities()`). `decision()` builds a decision
+ * prompt's body. `offered_themes()` alone reads the projection: the themes
+ * of the themed items most like an item, which `messages()` offers an
+ * `extract` as it is sent and the extractor offers a review.
  *
  * @package Newspack_Intelligence
  */
@@ -89,6 +91,12 @@ class Prompts {
 	/** The most themed items whose themes an extraction is offered. */
 	public const THEME_NEIGHBOURS = 12;
 
+	/**
+	 * The most neighbours each partition reads for an extraction, a few times
+	 * THEME_NEIGHBOURS so a newer partition's refused theme leaves enough.
+	 */
+	public const THEME_CANDIDATES = 3 * self::THEME_NEIGHBOURS;
+
 	/** The most title words an extraction's neighbours are searched by. */
 	private const THEME_TERMS = 16;
 
@@ -166,8 +174,11 @@ class Prompts {
 	 * partition every topology runs. A neighbour is another item, retrieved
 	 * within THEME_DAYS either side of this item's own retrieval, of a tier
 	 * in `Intel_Tiers::UNRESTRICTED`, so a theme never travels from a
-	 * restricted item into one a lower tier reads; its theme is the newest
-	 * partition's, and one `refused_themes()` names is passed over. None for
+	 * restricted item into one a lower tier reads, holding a theme
+	 * `refused_themes()` does not name; each partition reads its
+	 * THEME_CANDIDATES best, so a title of common words costs no more than a
+	 * rare one past the match. Its theme is the newest partition's, and one
+	 * `refused_themes()` names is passed over. None for
 	 * a title holding no word to search by, which reads nothing, and none,
 	 * logged once, while the `intel-graph` tables cannot be read.
 	 *
@@ -188,20 +199,24 @@ class Prompts {
 		$days  = [ $day - self::THEME_DAYS, $day + self::THEME_DAYS ];
 		$match = '{title} : ( ' . \implode( ' OR ', \array_map( Intel_Graph_Row_Schema::fts_phrase( ... ), $terms ) ) . ' )';
 		$read  = static function ( Row_Reader $r ) use ( $match, $days, $item ): array {
-			$arms  = [];
-			$binds = [];
-			foreach ( $r->aliases() as $a ) {
-				$arms[] = "SELECT i.item_key, i.title, bm25( items_fts ) AS score FROM {$a}.items_fts JOIN {$a}.items i ON i.id = items_fts.rowid"
-					. ' WHERE items_fts MATCH ? AND i.retrieved_day > ? AND i.retrieved_day < ? AND i.tier IN ( ' . Intel_Graph_Row_Schema::marks( Intel_Tiers::UNRESTRICTED ) . ' ) AND i.item_key <> ?';
-				\array_push( $binds, $match, ...$days, ...Intel_Tiers::UNRESTRICTED );
-				$binds[] = self::field( $item, 'item_key' );
-			}
+			$arms    = [];
+			$binds   = [];
 			$refused = self::refused_themes();
-			$sql     = 'WITH n AS MATERIALIZED ( ' . \implode( ' UNION ALL ', $arms ) . ' ),'
+			$themes  = Intel_Graph_Row_Schema::all( $r, 'themes' );
+			foreach ( $r->aliases() as $a ) {
+				$arms[] = "SELECT * FROM ( SELECT i.item_key, i.title, bm25( items_fts ) AS score FROM {$a}.items_fts JOIN {$a}.items i ON i.id = items_fts.rowid"
+					. ' WHERE items_fts MATCH ? AND i.retrieved_day >= ? AND i.retrieved_day <= ? AND i.tier IN ( ' . Intel_Graph_Row_Schema::marks( Intel_Tiers::UNRESTRICTED ) . ' ) AND i.item_key <> ?'
+					. " AND EXISTS ( SELECT 1 FROM {$themes} c WHERE c.item_key = i.item_key AND c.item_day >= ? AND c.item_day <= ? AND c.theme NOT IN ( " . Intel_Graph_Row_Schema::marks( $refused ) . ' ) )'
+					. ' ORDER BY score, i.item_key LIMIT ? )';
+				\array_push( $binds, $match, ...$days, ...Intel_Tiers::UNRESTRICTED );
+				\array_push( $binds, self::field( $item, 'item_key' ), ...$days, ...$refused );
+				$binds[] = self::THEME_CANDIDATES;
+			}
+			$sql = 'WITH n AS MATERIALIZED ( ' . \implode( ' UNION ALL ', $arms ) . ' ),'
 				. ' th AS ( SELECT item_key, theme FROM ( SELECT t.item_key, t.theme, ROW_NUMBER() OVER ( PARTITION BY t.item_key ORDER BY t.partition_ordinal DESC ) AS pick FROM '
-				. Intel_Graph_Row_Schema::all( $r, 'themes', true ) . ' t WHERE t.item_key IN ( SELECT item_key FROM n ) AND t.item_day > ? AND t.item_day < ? ) WHERE pick = 1 ),'
+				. Intel_Graph_Row_Schema::all( $r, 'themes', true ) . ' t WHERE t.item_key IN ( SELECT item_key FROM n ) AND t.item_day >= ? AND t.item_day <= ? ) WHERE pick = 1 ),'
 				. ' sx AS ( SELECT item_key, summary FROM ( SELECT x.item_key, x.summary, ROW_NUMBER() OVER ( PARTITION BY x.item_key ORDER BY x.partition_ordinal DESC ) AS pick FROM '
-				. Intel_Graph_Row_Schema::all( $r, 'extractions', true ) . ' x WHERE x.item_key IN ( SELECT item_key FROM n ) AND x.item_day > ? AND x.item_day < ? ) WHERE pick = 1 )'
+				. Intel_Graph_Row_Schema::all( $r, 'extractions', true ) . ' x WHERE x.item_key IN ( SELECT item_key FROM n ) AND x.item_day >= ? AND x.item_day <= ? ) WHERE pick = 1 )'
 				. " SELECT th.theme, COALESCE( NULLIF( sx.summary, '' ), n.title ) FROM n JOIN th ON th.item_key = n.item_key LEFT JOIN sx ON sx.item_key = n.item_key"
 				. ' WHERE th.theme NOT IN ( ' . Intel_Graph_Row_Schema::marks( $refused ) . ' ) ORDER BY n.score, n.item_key LIMIT ?';
 			$offer   = [];

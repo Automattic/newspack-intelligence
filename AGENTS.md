@@ -561,7 +561,10 @@ it cannot read is refused TO its FROM, `{ error: "<name>: a request it
 cannot read: it carries no <what>", item?, inputs?, carry? }`, with
 whatever of the three reads, so the caller's own finish runs and parks the
 item; only one naming no FROM is logged and dropped. Both callers send
-and read through `Asks_Model`, which also catches what finishing an answer
+and read through `Asks_Model`, which runs each finish inside
+`Event_Framework::uninterruptible()`, since the call is settled and nothing
+replays its writes, so a stop falling due inside raises at the first check
+after it, and which also catches what finishing an answer
 throws, rethrowing a stop, logs it and has the caller park the item. With its `set_api_url`, `set_model` or `set_feature`
 unset it answers a chat request an error naming them, and with
 `set_api_url`, `set_decision_model` or `set_feature` unset a decision
@@ -663,8 +666,9 @@ carrying the resolution less its item, as backlog when the resolution carries
 `Prompts::messages()` offers the names of the topic map. The publisher is
 the name `Graph_Query::name_of()` shows for the survivor of the
 resolution's `publisher`, as the shared index reads it, when that survivor
-holds an open `client` role (`Graph_Query::open_roles()`), read when it
-asks; '' when no entity published the item, its survivor is not an open
+holds an open `client` role (`Graph_Query::open_roles()` over the keys
+`Entity_Index::keys_of()` answers, the inverse of its merges, built once
+per index), read when it asks; '' when no entity published the item, its survivor is not an open
 client, a former one among them, or the projection will not open, logged.
 A resolution whose `publisher` is not a string is dropped as unreadable. It offers the
 themes of the items most like this one as the projection holds them when
@@ -680,8 +684,8 @@ one quoted phrase (`Intel_Graph_Row_Schema::fts_phrase()`) joined by `OR`,
 so `bm25` rather than word length weighs how rare each is. bm25 ranks
 within one partition's index, so the rank assumes the single partition
 every topology runs. A neighbour is another item, retrieved within
-`THEME_DAYS` (30) days either side of this item's own retrieval, so a
-re-extraction of an old item reads its neighbours of that time, of a tier
+`THEME_DAYS` (30) days either side of this item's own retrieval, the last
+day included, so a re-extraction of an old item reads its neighbours of that time, of a tier
 in `Intel_Tiers::UNRESTRICTED`, so a theme never travels from a restricted
 item into one a lower tier reads. Its theme is the newest partition's, by
 `partition_ordinal`, as `Graph_Query::stories()` reads one, and a neighbour
@@ -691,7 +695,11 @@ each with that match's extraction summary as its example, the newest
 partition's, else its title when the summary is empty, cut to
 `Source_Node::TITLE_CHARS` (120) on a character boundary, since a title
 such as a bare domain says nothing. The read is one statement: the `MATCH`
-arms per partition, materialized once, and the themes and summaries of
+arms per partition, materialized once, each keeping the
+`Prompts::THEME_CANDIDATES` (36, three times `THEME_NEIGHBOURS`) best
+matches holding a theme it may offer, any partition's by an `EXISTS` over
+`all( 'themes' )`, so what follows costs the same on a title of common
+words as on a rare one, and the themes and summaries of
 those keys alone, each read through its table's key within the same days. Nothing is cached, a title holding no such word reads nothing, an
 item naming no integer `retrieved_ts` is refused, an item no themed item
 resembles is offered none, and none is offered, logged once, while the
@@ -825,9 +833,12 @@ theme chosen with a `confidence` of `Extractor_Node::THEME_CHOICE_MIN`
 (0.6) or more is the theme written, and a weaker choice, or `none`, keeps
 the reply's own. A review that fails, an unlent group, or an answer to a
 question it asked that does not read keeps the kind and the theme, logged
-rate-limited `extract review failed for <item>: <why>`, and parks no retry;
+`extract review failed: <why> for <item>`, rate-limited by the failure, so
+an outage across many items logs once, and parks no retry;
 the extraction is still written, and a review answer whose finish throws
-parks a retry as any answer does. A restricted item, a reply that does not
+parks a retry as any answer does. A failure to start a review, the themes
+read or the request throwing, is the same failure: the reply already paid
+for is recorded, and only a cooperative stop propagates. A restricted item, a reply that does not
 parse, or one owed neither question asks no review. Either way it then
 forwards an `item_extracted` struct `{ item, relevance, importance }` to its
 target, `deduper`; it is a struct between two nodes, not an event kind.
@@ -843,7 +854,13 @@ the failure; a call that fails or whose reply does not parse publishes
 `status_text()`, terminal-safe and cut to 500 bytes, with
 `status_since( 'failing_since' )`: the value already published, else now.
 The mode follows the answer, so a held `heuristic` gives way to `call` once
-the group lends a credential.
+the group lends a credential. A review that fails or will not start
+publishes the same way, so a `systemone` outage reads as `last_error` beside
+a fresh `last_ok_at`: while one stands a reply that parses moves
+`last_ok_at` and leaves `last_error` and `failing_since`, and only a review
+that answers clears them. The extractor holds that standing in the process,
+so a recycled worker's next parsed reply clears it until a review fails
+again.
 
 **Dedup.** `deduper` finds an earlier copy of each extracted item: the same
 `Url_Canon::of()` URL, or else the same `Entity_Index::norm()` title when that
@@ -923,16 +940,18 @@ is recorded under, in its own case, listing those sources sorted
 (`Items_CLI_Command::stored_sources()`, which reads every partition's
 `items` as `items purge` selects them). A node's name is not always its
 items' source: `news` records under `feed` and `p2-restricted` under `p2`.
-Every live worker re-extracts the whole range, so it counts its calls as
+Every live worker re-extracts the whole range, so it counts its extraction calls as
 the items of the source, or of every one, the range dates
 (`Reresolver_Node::count_dated()`) times the
-live workers (`Worker_Route::live_workers()`), refuses calls above
+live workers (`Worker_Route::live_workers()`), refuses extraction calls above
 `--limit`, `Ontology_CLI_Command::REEXTRACT_LIMIT` (200) when omitted and
 refused when not a positive whole number, naming the items and the workers
 and that a failed call may retry up to `Extractor_Node::MAX_ATTEMPTS` (5)
 times, sends nothing for a range that contains no item, and otherwise asks with
 `REEXTRACT`, which queues the range as a `reextract` unit whose records
-carry `extract: true`; `--dry-run` sends nothing and prints the calls and
+carry `extract: true`; `--dry-run` sends nothing and prints those calls,
+that each can add one decision-model call, its review, which neither the
+count nor `--limit` includes, and
 the command that runs them, with `--source` when given and `--limit` only
 past the default.
 `Reresolver_Node::RANGES` maps each range request to its queue kind, and

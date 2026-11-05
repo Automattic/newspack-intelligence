@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A cooperative stop no longer splits a finished extraction.** `Asks_Model::finish_answer()` runs each finish inside `Event_Framework::uninterruptible()`, for the extractor and the resolver alike. A stop falling due while an answer finishes lets every write land and raises at the first check after it; before, the extraction row could land while its subjects, its deduper forward and its claims were lost, with nothing to replay them.
+- **A failure to start a review no longer discards the paid reply.** When the themes read or the review request throws, the extractor logs it and records the parsed reply with its own kind and theme, where it parked and paid for another chat call, and at `MAX_ATTEMPTS` left the item with no extraction.
+- **A review outage shows in `health extraction`.** A failed review publishes its text as `last_error` and sets `failing_since`, keeping `mode` and `last_ok_at`. An extraction no review follows leaves it standing, and a review that answers clears it. A recycled worker forgets the failure until the next one. The log line is `extract review failed: <why> for <item>`, rate-limited by the failure rather than the item.
+- **A neighbour exactly `Prompts::THEME_DAYS` (30) days away is offered.** The window is inclusive on both sides, as "within 30 days" says.
+
+### Changed
+
+- **The theme read's work is bounded.** Each partition keeps its `Prompts::THEME_CANDIDATES` (36) best matches that hold a theme it may offer, so the themes and summaries are read for those keys alone. On eve's 16,578 items a title of common words falls from about 85 ms to about 9 ms a read.
+- **`Entity_Index::keys_of()` answers an entity's keys,** the inverse of its merges, built once per index, so the extractor no longer rebuilds it per request; the feed and the roster read it too.
+- **`ontology reextract` counts extraction calls.** The count, the `--limit` refusal, the success line and the dry run say "extraction calls", and the dry run adds that each can add one decision-model call, which `--limit` does not include.
+
 ## [0.36.5] - 2026-11-05
 
 ### Added

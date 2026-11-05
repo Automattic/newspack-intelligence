@@ -274,7 +274,7 @@ final class OntologyCliCommandTest extends TestCase {
 			[ [ Message::TM_REQUEST, 'reresolver', 'REEXTRACT 2026-08-03 2026-08-04' ] ],
 			\array_map( static fn ( array $m ): array => [ $m[ Message::TYPE ], $m[ Message::TO ], $m[ Message::VALUE ] ], self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ) )
 		);
-		$this->assertSame( [ 'Asked 1 worker to re-extract the items dated 2026-08-03 to 2026-08-04: 3 model calls, a failed one retried up to 5 times.' ], \WP_CLI::$successes );
+		$this->assertSame( [ 'Asked 1 worker to re-extract the items dated 2026-08-03 to 2026-08-04: 3 extraction calls, a failed one retried up to 5 times.' ], \WP_CLI::$successes );
 	}
 
 	/** Every live worker re-extracts the whole range, so its calls are the items times the workers. */
@@ -286,8 +286,8 @@ final class OntologyCliCommandTest extends TestCase {
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'limit' => '5' ] );
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'limit' => '6' ] );
 
-		$this->assertSame( [ 'ontology reextract would make 6 model calls, 3 items dated 2026-08-03 to ' . \gmdate( 'Y-m-d' ) . ' times 2 live workers, above --limit=5, and a failed call may retry up to 5 times; raise --limit to run it.' ], \WP_CLI::$errors );
-		$this->assertSame( [ 'Asked 2 workers to re-extract the items dated 2026-08-03 to 2026-08-03: 6 model calls, a failed one retried up to 5 times.' ], \WP_CLI::$successes );
+		$this->assertSame( [ 'ontology reextract would make 6 extraction calls, 3 items dated 2026-08-03 to ' . \gmdate( 'Y-m-d' ) . ' times 2 live workers, above --limit=5, and a failed call may retry up to 5 times; raise --limit to run it.' ], \WP_CLI::$errors );
+		$this->assertSame( [ 'Asked 2 workers to re-extract the items dated 2026-08-03 to 2026-08-03: 6 extraction calls, a failed one retried up to 5 times.' ], \WP_CLI::$successes );
 		$this->assertSame( [ 'REEXTRACT 2026-08-03 2026-08-03' ], \array_column( self::worker_input( Config::get_base_directory(), 'skua-intel.p2' ), Message::VALUE ) );
 	}
 
@@ -298,7 +298,7 @@ final class OntologyCliCommandTest extends TestCase {
 
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-04', 'limit' => '2' ] );
 
-		$this->assertSame( [ 'ontology reextract would make 3 model calls, 3 items dated 2026-08-03 to 2026-08-04 times 1 live worker, above --limit=2, and a failed call may retry up to 5 times; raise --limit to run it.' ], \WP_CLI::$errors );
+		$this->assertSame( [ 'ontology reextract would make 3 extraction calls, 3 items dated 2026-08-03 to 2026-08-04 times 1 live worker, above --limit=2, and a failed call may retry up to 5 times; raise --limit to run it.' ], \WP_CLI::$errors );
 		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ) );
 		$this->assertSame( [ 200, [] ], [ Ontology_CLI_Command::REEXTRACT_LIMIT, \WP_CLI::$successes ] );
 	}
@@ -326,7 +326,7 @@ final class OntologyCliCommandTest extends TestCase {
 
 		$this->assertSame(
 			[
-				'2 items dated 2026-08-03 to 2026-08-03 would be re-extracted by 1 live worker: 2 model calls, a failed one retried up to 5 times.',
+				'2 items dated 2026-08-03 to 2026-08-03 would be re-extracted by 1 live worker: 2 extraction calls, each of which can add one decision-model call, a failed one retried up to 5 times.',
 				'Re-extract them with: wp newspack-intelligence ontology reextract --since=2026-08-03 --until=2026-08-03',
 			],
 			\WP_CLI::$logs
@@ -435,8 +435,8 @@ final class OntologyCliCommandTest extends TestCase {
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'source' => 'slack', 'limit' => '3' ] );
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'source' => 'slack', 'limit' => '4' ] );
 
-		$this->assertSame( [ 'ontology reextract would make 4 model calls, 2 slack items dated 2026-08-03 to 2026-08-03 times 2 live workers, above --limit=3, and a failed call may retry up to 5 times; raise --limit to run it.' ], \WP_CLI::$errors );
-		$this->assertSame( [ 'Asked 2 workers to re-extract the slack items dated 2026-08-03 to 2026-08-03: 4 model calls, a failed one retried up to 5 times.' ], \WP_CLI::$successes );
+		$this->assertSame( [ 'ontology reextract would make 4 extraction calls, 2 slack items dated 2026-08-03 to 2026-08-03 times 2 live workers, above --limit=3, and a failed call may retry up to 5 times; raise --limit to run it.' ], \WP_CLI::$errors );
+		$this->assertSame( [ 'Asked 2 workers to re-extract the slack items dated 2026-08-03 to 2026-08-03: 4 extraction calls, a failed one retried up to 5 times.' ], \WP_CLI::$successes );
 		$this->assertSame( [ 'REEXTRACT 2026-08-03 2026-08-03 slack' ], \array_column( self::worker_input( Config::get_base_directory(), 'skua-intel.p2' ), Message::VALUE ) );
 	}
 
@@ -451,7 +451,7 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame( [ 'No feed item is dated 2026-08-04 to 2026-08-04; nothing to re-extract.' ], \WP_CLI::$successes );
 		$this->assertSame(
 			[
-				'1 linear items dated 2026-08-03 to 2026-08-03 would be re-extracted by 1 live worker: 1 model calls, a failed one retried up to 5 times.',
+				'1 linear items dated 2026-08-03 to 2026-08-03 would be re-extracted by 1 live worker: 1 extraction calls, each of which can add one decision-model call, a failed one retried up to 5 times.',
 				'Re-extract them with: wp newspack-intelligence ontology reextract --since=2026-08-03 --until=2026-08-03 --source=linear',
 			],
 			\WP_CLI::$logs

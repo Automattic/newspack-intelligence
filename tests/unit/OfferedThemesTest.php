@@ -132,21 +132,25 @@ final class OfferedThemesTest extends TestCase {
 	}
 
 	/**
-	 * The window is THEME_DAYS either side of the item's own retrieval, so
-	 * re-extracting an item fifty days old finds its neighbours of that time.
+	 * The window is THEME_DAYS either side of the item's own retrieval, its
+	 * last day included, so re-extracting an item fifty days old finds its
+	 * neighbours of that time.
 	 */
 	public function test_the_window_is_anchored_on_the_items_own_retrieval(): void {
 		$this->seed(
 			self::themed( 'feed:ibis-48', 'ibis colony flooded', 48, 'internal', 'Ibis colony flooding' ),
 			self::themed( 'feed:ibis-52', 'ibis colony abandoned', 52, 'internal', 'Ibis colony flooding' ),
 			self::themed( 'feed:ibis-80', 'ibis colony relocated', 80, 'internal', 'Ibis colony flooding' ),
+			self::themed( 'feed:ibis-81', 'ibis colony surveyed', 81, 'internal', 'Ibis colony flooding' ),
+			self::themed( 'feed:ibis-20', 'ibis colony recovers', 20, 'internal', 'Ibis colony flooding' ),
+			self::themed( 'feed:ibis-19', 'ibis colony banded', 19, 'internal', 'Ibis colony flooding' ),
 			self::themed( 'feed:ibis-00', 'ibis colony returns', 0, 'internal', 'Ibis colony flooding' )
 		);
 
 		$offered = self::offered( 'Ibis colony flooding worsens', 'feed:asking-1', (int) self::NOW - 50 * 86400 );
 		\sort( $offered );
 
-		$this->assertSame( [ 'ibis colony abandoned', 'ibis colony flooded' ], $offered );
+		$this->assertSame( [ 'ibis colony abandoned', 'ibis colony flooded', 'ibis colony recovers', 'ibis colony relocated' ], $offered );
 	}
 
 	/**
@@ -199,14 +203,55 @@ final class OfferedThemesTest extends TestCase {
 		Prompts::messages( 'extract', [ 'item_key' => 'feed:asking-1', 'title' => 'Heron count', 'body' => '' ], [ 'topics' => [], 'profile' => '', 'audience' => '' ] );
 	}
 
-	/** A neighbour retrieved THEME_DAYS or more from the item's retrieval is not offered. */
+	/** A neighbour retrieved exactly THEME_DAYS from the item's retrieval is offered, and one a day past it is not. */
 	public function test_a_neighbour_older_than_the_window_is_not_offered(): void {
 		$this->seed(
-			self::themed( 'feed:kite-29', 'kite festival permit', 29, 'internal', 'Kite festival permit renewed' ),
-			self::themed( 'feed:kite-30', 'kite festival cancelled', 30, 'internal', 'Kite festival cancelled' )
+			self::themed( 'feed:kite-30', 'kite festival permit', 30, 'internal', 'Kite festival permit renewed' ),
+			self::themed( 'feed:kite-31', 'kite festival cancelled', 31, 'internal', 'Kite festival cancelled' )
 		);
 
 		$this->assertSame( [ 'kite festival permit' ], self::offered( 'Kite festival permit delayed' ) );
+	}
+
+	/** Items naming no theme, or a theme that says nothing, take no candidate's place, however well they match. */
+	public function test_a_neighbour_that_offers_nothing_takes_no_candidates_place(): void {
+		$events = [];
+		for ( $at = 0; $at <= Prompts::THEME_CANDIDATES; $at++ ) {
+			$events[] = self::item( "feed:gull-plain-{$at}", 'Gull ledger', 2, 'internal' );
+			$events[] = self::themed( "feed:gull-said-{$at}", 'update', 2, 'internal', 'Gull ledger' );
+		}
+		$this->seed( ...$events );
+		$this->seed( self::themed( 'feed:gull-far', 'gull ledger audit', 2, 'internal', 'Gull ledger with a much longer title that matches far worse' ) );
+
+		$this->assertSame( [ 'gull ledger audit' ], self::offered( 'Gull ledger' ) );
+	}
+
+	/**
+	 * Each partition reads at most THEME_CANDIDATES neighbours, the best
+	 * matches first: when a newer partition refuses every one of those, a
+	 * neighbour past the cap is not read, and no theme is offered.
+	 */
+	public function test_each_partition_reads_at_most_its_candidates(): void {
+		$best = [];
+		for ( $at = 0; $at < Prompts::THEME_CANDIDATES; $at++ ) {
+			$best[] = self::themed( "feed:tern-{$at}", 'tern colony survey', 2, 'internal', 'Tern ledger' );
+		}
+		$this->seed( ...$best );
+		$this->seed( self::themed( 'feed:tern-far', 'tern ledger audit', 2, 'internal', 'Tern ledger with a much longer title that matches far worse' ) );
+		$live = Table_Node::file( 'intel-graph', 0 );
+		$copy = $this->make_temp_dir( 'intel-p0-' ) . '/intel-graph.p0.sqlite';
+		( new \PDO( 'sqlite:' . $live ) )->exec( 'VACUUM INTO ' . ( new \PDO( 'sqlite::memory:' ) )->quote( $copy ) );
+		$at = (int) self::NOW - 2 * 86400;
+		$this->seed(
+			...\array_map(
+				static fn ( int $n ): array => [ Intel_Event::make( 'extraction_recorded', [ 'item_key' => "feed:tern-{$n}", 'summary' => 'Re-read.', 'kind' => 'bug', 'relevance' => 6, 'importance' => 5, 'sentiment' => 0.0, 'topics' => [], 'theme' => 'update', 'retrieved_ts' => $at ], 'machine:extract@9.4.1', '' ) ],
+				\range( 0, Prompts::THEME_CANDIDATES - 1 )
+			)
+		);
+		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): mixed => $read( Sqlite_Arm::open_rows( [ 0 => $copy, 1 => $live ], Intel_Graph_Row_Schema::version() ) );
+
+		$this->assertSame( [], self::offered( 'Tern ledger' ) );
+		$this->assertSame( 3 * Prompts::THEME_NEIGHBOURS, Prompts::THEME_CANDIDATES );
 	}
 
 	/**

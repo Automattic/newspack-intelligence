@@ -113,6 +113,9 @@ class Extractor_Node extends Node {
 	/** The Delay a failed call's retry parks on. */
 	protected string $later = '';
 
+	/** Whether the last review failed, so a reply no review follows leaves its status standing. */
+	private bool $review_failing = false;
+
 	/** Who the prompt is framed for, set via set_audience; '' names no one. */
 	protected string $audience = '';
 
@@ -170,12 +173,12 @@ class Extractor_Node extends Node {
 	 * @param string $publisher The publisher's entity key; '' for none.
 	 */
 	private function client_name( string $publisher ): string {
-		$merged   = Entity_Index::current()->merged();
-		$survivor = '' === $publisher ? '' : ( $merged[ $publisher ] ?? $publisher );
+		$index    = Entity_Index::current();
+		$survivor = '' === $publisher ? '' : ( $index->merged()[ $publisher ] ?? $publisher );
 		if ( '' === $survivor ) {
 			return '';
 		}
-		$keys = Graph_Query::inverse( $merged )[ $survivor ] ?? [ $survivor ];
+		$keys = $index->keys_of( $survivor );
 		return Core::as_string(
 			Intel_Graph_Row_Schema::read(
 				static function ( Row_Reader $r ) use ( $survivor, $keys ): string {
@@ -294,11 +297,9 @@ class Extractor_Node extends Node {
 		} elseif ( $failed ) {
 			$this->publish_failing( $fault );
 		} else {
-			$this->publish_snapshot( [ 'mode' => 'call', 'last_ok_at' => (int) Core::$now ] );
+			$this->publish_snapshot( [ 'mode' => 'call', 'last_ok_at' => (int) Core::$now ] + ( $this->review_failing ? \array_intersect_key( $this->last_status(), [ 'last_error' => true, 'failing_since' => true ] ) : [] ) );
 		}
-		$review = null === $parsed ? null : self::review( $item, $parsed, Core::as_string( Core::arr( $answer['inputs'] ?? null )['publisher'] ?? null ), $topics );
-		if ( null !== $review ) {
-			$this->ask_model( Prompts::EXTRACT_REVIEW, $item, $review, [], [ 'resolution' => Core::arr( $answer['carry'] ?? null )['resolution'] ?? null, 'content' => $content ], $owed );
+		if ( null !== $parsed && $this->reviewing( $item, $parsed, $topics, $answer, $owed ) ) {
 			return false;
 		}
 		if ( null === $parsed && $extracted ) {
@@ -309,6 +310,34 @@ class Extractor_Node extends Node {
 		$parsed ??= [ 'summary' => self::heuristic_summary( $item ), 'kind' => 'other', 'topics' => [], 'relevance' => 0, 'importance' => 0, 'sentiment' => 0.0, 'claims' => [] ];
 		$this->record( $item, $linked, $stage, $parsed, $topics );
 		return $failed;
+	}
+
+	/**
+	 * Ask the review a parsed reply is owed; whether one was asked. A failure
+	 * to start one is the review's failure alone, so the reply already paid
+	 * for is recorded, but for a cooperative stop.
+	 *
+	 * @param array<string,mixed>     $item   The item.
+	 * @param array{summary:string,kind:string,theme?:string,topics:list<string>,relevance:int,importance:int,sentiment:float,claims:list<array{subject:string,predicate:string,object:string}>} $parsed The reply, parsed.
+	 * @param array<array-key,string> $topics Each topic name the request offered => its key.
+	 * @param array<array-key,mixed>  $answer The extraction's answer.
+	 * @param bool                    $owed   Whether it was sent to be extracted whatever it holds.
+	 * @throws Worker_Should_Stop When the worker is asked to stop.
+	 */
+	private function reviewing( array $item, array $parsed, array $topics, array $answer, bool $owed ): bool {
+		try {
+			$review = self::review( $item, $parsed, Core::as_string( Core::arr( $answer['inputs'] ?? null )['publisher'] ?? null ), $topics );
+			if ( null === $review ) {
+				return false;
+			}
+			$this->ask_model( Prompts::EXTRACT_REVIEW, $item, $review, [], [ 'resolution' => Core::arr( $answer['carry'] ?? null )['resolution'] ?? null, 'content' => $answer['content'] ?? null ], $owed );
+			return true;
+		} catch ( Worker_Should_Stop $stop ) {
+			throw $stop;
+		} catch ( \Throwable $e ) {
+			$this->review_failed( $e->getMessage(), $item );
+			return false;
+		}
 	}
 
 	/**
@@ -368,10 +397,13 @@ class Extractor_Node extends Node {
 		$sure     = $number( $choice['confidence'] ?? null );
 		$read     = isset( $answer['decision'] ) && ( ! isset( $asked[ Prompts::ABOUT_PUBLISHER ] ) || null !== $noul ) && ( ! isset( $asked[ Prompts::THEME_CHOICE ] ) || ( \is_string( $choice['choice'] ?? null ) && null !== $sure ) );
 		if ( ! $read ) {
-			$why = isset( $answer['unlent'] ) ? 'group ' . Core::as_string( $answer['unlent'] ) . ' lends no credential' : Core::as_string( $answer['error'] ?? 'it answers a question with nothing that reads' );
-			$this->print_less_often( 'extract review failed for ' . Core::terminal_safe( Core::as_string( $item['item_key'] ) ) . ': ', Core::terminal_safe( $why ) );
+			$this->review_failed( isset( $answer['unlent'] ) ? 'group ' . Core::as_string( $answer['unlent'] ) . ' lends no credential' : Core::as_string( $answer['error'] ?? 'it answers a question with nothing that reads' ), $item );
 			$this->record( $item, $linked, 'extract', $parsed, $topics );
 			return;
+		}
+		if ( $this->review_failing ) {
+			$this->review_failing = false;
+			$this->publish_snapshot( [ 'mode' => 'call', 'last_ok_at' => (int) Core::$now ] );
 		}
 		if ( null !== $noul && $noul < self::ABOUT_PUBLISHER_MIN ) {
 			$parsed['kind'] = 'other';
@@ -381,6 +413,21 @@ class Extractor_Node extends Node {
 			$parsed['theme'] = $theme;
 		}
 		$this->record( $item, $linked, 'extract', $parsed, $topics );
+	}
+
+	/**
+	 * Report a review that failed: its log line limited by the failure, so
+	 * an outage across many items logs once, and its text published as
+	 * `last_error` until a review answers.
+	 *
+	 * @param string              $fault Why it failed.
+	 * @param array<string,mixed> $item  The item.
+	 */
+	private function review_failed( string $fault, array $item ): void {
+		$fault = self::status_text( $fault );
+		$this->print_less_often( "extract review failed: {$fault}", ' for ' . Core::terminal_safe( Core::as_string( $item['item_key'] ) ) );
+		$this->review_failing = true;
+		$this->publish_failing( $fault );
 	}
 
 	/**

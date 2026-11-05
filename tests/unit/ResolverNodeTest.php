@@ -12,6 +12,7 @@ use Newspack_Intelligence\Resolver_Node;
 use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Consumer_Node;
 use Newspack_Nodes\Core;
+use Newspack_Nodes\Event_Framework;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Node_Names;
 use Newspack_Nodes\Router_Node;
@@ -131,6 +132,34 @@ final class ResolverNodeTest extends TestCase {
 
 		$this->assertSame( [ self::MESA ], \array_column( $this->resolved()['links'], 'entity_key' ) );
 		$this->assertSame( '', $this->resolved()['publisher'] );
+	}
+
+	/** A stop falling due while a NER answer finishes splits nothing: every write lands, and the stop raises at the next check. */
+	public function test_a_stop_due_during_a_finish_lets_every_write_land(): void {
+		$this->seed( self::gazette() );
+		$this->answer( '{"orgs": ["Harbor Gazette Weekly", "Acme Widgets Corporation"], "people": [], "locations": []}' );
+		$sink = new class() extends Llm_Answering_Sink {
+			public function fill( array $message ): void {
+				parent::fill( $message );
+				if ( 'intel:writer' === $message[ Message::TO ] ) {
+					Event_Framework::instance()->stop_check();
+				}
+			}
+		};
+		$sink->outcome = $this->out->outcome;
+		$this->out     = $sink;
+		$this->resolver->sink( $sink );
+
+		$stop = $this->with_stop_due(
+			function (): void {
+				$this->resolver->fill( self::recorded( [ 'title' => 'Regional publishers announce a merger' ] ) );
+				Event_Framework::instance()->stop_check();
+			}
+		);
+
+		$this->assertNotNull( $stop, 'the stop raises once the finish closes' );
+		$this->assertSame( [ 'link_proposed', 'entity_proposed' ], \array_column( $this->written(), 'event' ) );
+		$this->assertSame( self::ITEM, $this->resolved()['item']['item_key'] );
 	}
 
 	/** A proposed link and a candidate entity are written as their own kinds. */
