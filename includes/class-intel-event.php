@@ -28,7 +28,7 @@ final class Intel_Event {
 	/** Each of ITEM_KINDS, in its order, => the one line the extraction prompt defines it by. */
 	public const KIND_DEFINITIONS = [
 		'award'           => 'an award, prize or honor won, given or shortlisted for',
-		'launch'          => 'a site, product or publication going live, whether a client\'s or Newspack\'s. Not one step toward a launch, nor an internal tool, process or deploy going live',
+		'launch'          => 'a site, product or publication going live or being prepared to go live, whether a client\'s or Newspack\'s; not an internal tool, process or deploy going live',
 		'release'         => 'a software release or version shipped; a GitHub release page always is one',
 		'funding'         => 'money raised, granted, invested or donated',
 		'hire'            => 'someone joining an organization or taking a new role',

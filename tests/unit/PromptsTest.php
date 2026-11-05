@@ -354,7 +354,7 @@ final class PromptsTest extends TestCase {
 			'feature_request' => [ 'a capability Newspack\'s product lacks', 'migration', 'onboarding, offboarding or configuration task for one site' ],
 			'bug'             => [ 'Newspack\'s shipped code', 'a CRM record', 'a launch snag list', 'internal tooling' ],
 			'incident'        => [ 'as it happens', 'a storage-quota warning', 'a legal notice', 'a delayed project' ],
-			'launch'          => [ 'going live', 'a client\'s or Newspack\'s', 'one step toward a launch', 'an internal tool, process or deploy going live' ],
+			'launch'          => [ 'going live or being prepared to go live', 'a client\'s or Newspack\'s', 'not an internal tool, process or deploy going live' ],
 			'research'        => [ 'of the news industry, its audiences or its business, as published', 'Not Newspack\'s or Automattic\'s own engineering, audit, performance or planning work' ],
 			'release'         => [ 'a GitHub release page always is one' ],
 			'other'           => [ 'routine service and onboarding work', 'internal planning', 'internal tooling, audits and engineering reports', 'team updates and kudos', 'a publication\'s own journalism about anyone else' ],
@@ -365,6 +365,7 @@ final class PromptsTest extends TestCase {
 				$this->assertStringContainsString( $needle, $line[1], $kind );
 			}
 		}
+		$this->assertStringNotContainsString( 'one step toward a launch', $system, 'a launch checklist is a launch' );
 	}
 
 	/**

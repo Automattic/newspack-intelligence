@@ -720,7 +720,7 @@ client or user asking for a capability Newspack's product lacks, never a
 setup, styling, migration, onboarding, offboarding or configuration task
 for one site; `incident` leaves out a storage-quota warning, a legal
 notice and a delayed project; `launch` is a site, product or publication
-going live, a client's or Newspack's, never one step toward a launch nor
+going live or being prepared to go live, a client's or Newspack's, never
 an internal tool, process or deploy going live; `research` is a study,
 survey, report or analysis of the news industry, its audiences or its
 business, as published, never Newspack's or Automattic's own engineering,

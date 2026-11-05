@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **One `extract_review` decision asks every question an extraction is owed.** `about_publisher` and `theme_choice` go in one `systemone` request, the reply carried once and finished once, and `Prompts::questions()` reads which apply from the review's inputs. The decision prompt is renamed from `about_publisher` to `extract_review`. A request queued under the old name before a deploy answers `no prompt: about_publisher`, and its extraction keeps the reply's kind and theme. A failed review logs `extract review failed for <item>: <why>`.
 - **A restricted item is never sent to the decision model.** Its data stays with the chat model alone, so it is asked neither question.
+- **`launch` takes the preparation for a launch.** It is a site, product or publication going live or being prepared to go live, a client's or Newspack's, because excluding "one step toward a launch" read a client's launch checklist as a step and sent those tickets to `other`, while grouping by theme now folds the steps together.
 - **`research`, `launch` and `other` leave internal work out.** `research` is a study, survey, report or analysis of the news industry, its audiences or its business, as published, and not Newspack's or Automattic's own engineering, audit, performance or planning work. `launch` is not an internal tool, process or deploy going live. `other` adds internal tooling, audits and engineering reports.
 
 ## [0.36.4] - 2026-11-05
