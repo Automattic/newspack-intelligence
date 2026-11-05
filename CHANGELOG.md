@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.1] - 2026-11-04
+
 ### Changed
 
 - **A lens's theme trends table holds clients and items in one column,** headed "Clients and items", each row's client chips above its items, so the theme takes the width the Clients column held. A row with no clients shows its items alone; the kind and topic axes and the signals table keep their "Items" column.
