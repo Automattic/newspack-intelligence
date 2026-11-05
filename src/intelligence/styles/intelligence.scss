@@ -201,6 +201,7 @@
 	}
 
 	&__judgments,
+	&__chips + &__facts,
 	&__item-head + &__facts {
 		margin-top: base.$space-sm;
 	}

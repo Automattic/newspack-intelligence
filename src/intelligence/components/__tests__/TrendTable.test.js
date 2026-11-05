@@ -2,9 +2,9 @@
 /**
  * A signal's value names its axis and kind in the page's own language, then
  * the value it counts, when it counts one. A trend table counting by theme
- * shows each row's clients as chips beside its count, and every row, one of
- * a single item too, its value under Value and its items under Items;
- * counting by any other axis it shows no clients.
+ * shows each row's client chips above its items in one column, every row,
+ * one of a single item too, keeping its value under Value; counting by any
+ * other axis it shows its items alone.
  */
 
 import { render, screen, fireEvent, within } from '@testing-library/react';
@@ -91,7 +91,7 @@ describe( 'TrendTable', () => {
 	const rowOf = ( bucket ) =>
 		screen.getByRole( 'row', { name: new RegExp( bucket ) } );
 
-	it( 'shows a theme row’s clients as chips beside its count', () => {
+	it( 'shows a theme row’s client chips above its items in one cell', () => {
 		const onOpenEntity = jest.fn();
 		render(
 			<TrendTable
@@ -104,9 +104,10 @@ describe( 'TrendTable', () => {
 			screen
 				.getAllByRole( 'columnheader' )
 				.map( ( header ) => header.textContent )
-		).toEqual( [ 'Bucket', 'Value', 'Count', 'Clients', 'Items' ] );
+		).toEqual( [ 'Bucket', 'Value', 'Count', 'Clients and items' ] );
 		const row = rowOf( '2026-09-21' );
 		const cells = within( row ).getAllByRole( 'cell' );
+		expect( cells ).toHaveLength( 4 );
 		expect( cells[ 1 ] ).toHaveTextContent(
 			'site blocked from sending email'
 		);
@@ -116,6 +117,15 @@ describe( 'TrendTable', () => {
 				.getAllByRole( 'button' )
 				.map( ( chip ) => chip.textContent )
 		).toEqual( [ 'Harbor Ledger', 'Acme Quillsheet' ] );
+		const [ chips, facts ] = within( cells[ 3 ] ).getAllByRole( 'list' );
+		expect(
+			within( chips ).getByRole( 'button', { name: 'Acme Quillsheet' } )
+		).toBeInTheDocument();
+		expect(
+			within( facts ).getByRole( 'link', {
+				name: 'Acme mail bounces at the sender',
+			} )
+		).toHaveAttribute( 'href', 'https://linear.example/SUP-120' );
 		fireEvent.click(
 			within( cells[ 3 ] ).getByRole( 'button', {
 				name: 'Harbor Ledger',
@@ -124,11 +134,6 @@ describe( 'TrendTable', () => {
 		expect( onOpenEntity ).toHaveBeenCalledWith(
 			'organization:harbor-ledger'
 		);
-		expect(
-			within( cells[ 4 ] ).getByRole( 'link', {
-				name: 'Acme mail bounces at the sender',
-			} )
-		).toHaveAttribute( 'href', 'https://linear.example/SUP-120' );
 	} );
 
 	it( 'shows a theme row of one item under its theme, the item under Items', () => {
@@ -139,13 +144,45 @@ describe( 'TrendTable', () => {
 		expect( cells[ 1 ] ).toHaveTextContent( 'client offboarding' );
 		expect( within( cells[ 1 ] ).queryByRole( 'link' ) ).toBeNull();
 		expect(
-			within( cells[ 4 ] ).getByRole( 'link', {
+			within( cells[ 3 ] ).getByRole( 'link', {
 				name: 'Kestrel Bayou asks to export its archive',
 			} )
 		).toHaveAttribute( 'href', 'https://linear.example/SUP-64' );
 		expect(
 			within( cells[ 3 ] ).getByRole( 'button', {
 				name: 'Kestrel Bayou',
+			} )
+		).toBeInTheDocument();
+	} );
+
+	it( 'shows a theme row with no clients as its items alone', () => {
+		render(
+			<TrendTable
+				rows={ [
+					{
+						bucket: '2026-09-28',
+						value: 'kite permit backlog',
+						count: 1,
+						clients: [],
+						items: [
+							{
+								item_key: 'linear:SUP-77',
+								url: 'https://linear.example/SUP-77',
+								title: 'Kite permits wait a month',
+							},
+						],
+					},
+				] }
+				by="theme"
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		const cells = within( rowOf( '2026-09-28' ) ).getAllByRole( 'cell' );
+		expect( within( cells[ 3 ] ).queryByRole( 'button' ) ).toBeNull();
+		expect( within( cells[ 3 ] ).getAllByRole( 'list' ) ).toHaveLength( 1 );
+		expect(
+			within( cells[ 3 ] ).getByRole( 'link', {
+				name: 'Kite permits wait a month',
 			} )
 		).toBeInTheDocument();
 	} );
@@ -168,7 +205,7 @@ describe( 'TrendTable', () => {
 		expect( cells[ 1 ] ).toHaveTextContent( 'newsletter sender rejected' );
 		expect( cells[ 2 ] ).toHaveTextContent( '1' );
 		expect( within( cells[ 3 ] ).queryByRole( 'button' ) ).toBeNull();
-		expect( within( cells[ 4 ] ).queryByRole( 'link' ) ).toBeNull();
+		expect( within( cells[ 3 ] ).queryByRole( 'link' ) ).toBeNull();
 	} );
 
 	it( 'shows no clients on another axis', () => {

@@ -59,9 +59,9 @@ export const signalValue = ( signal ) => {
 
 /**
  * Trend rows, or signals: each bucket and value with its count, citing the
- * newest items the row counts. Counting by theme, each row also shows a chip
- * per client it is about beside its count. A row answering no `items` or
- * `clients` shows none.
+ * newest items the row counts. Counting by theme, its last column shows a
+ * chip per client it is about above those items.
+ * A row answering no `items` or `clients` shows none.
  *
  * @param {Object}                           props
  * @param {Array<Object>}                    props.rows           The rows `trends` or `signals` answers.
@@ -92,13 +92,10 @@ export default function TrendTable( {
 					<th scope="col">
 						{ __( 'Count', 'newspack-intelligence' ) }
 					</th>
-					{ themes && (
-						<th scope="col">
-							{ __( 'Clients', 'newspack-intelligence' ) }
-						</th>
-					) }
 					<th scope="col">
-						{ __( 'Items', 'newspack-intelligence' ) }
+						{ themes
+							? __( 'Clients and items', 'newspack-intelligence' )
+							: __( 'Items', 'newspack-intelligence' ) }
 					</th>
 				</tr>
 			</thead>
@@ -114,12 +111,11 @@ export default function TrendTable( {
 					>
 						<td>{ row.bucket }</td>
 						<td>{ value( row ) }</td>
-
 						<td>{ count( row ) }</td>
-						{ themes && (
-							<td>
+						<td>
+							{ themes && row.clients?.length > 0 && (
 								<ul className="newspack-intelligence__chips">
-									{ ( row.clients ?? [] ).map( ( client ) => (
+									{ row.clients.map( ( client ) => (
 										<li key={ client.entity_key }>
 											<EntityChip
 												entityKey={ client.entity_key }
@@ -129,9 +125,7 @@ export default function TrendTable( {
 										</li>
 									) ) }
 								</ul>
-							</td>
-						) }
-						<td>
+							) }
 							<ul className="newspack-intelligence__facts">
 								{ ( row.items ?? [] ).map( ( item ) => (
 									<li key={ item.item_key }>
