@@ -205,7 +205,7 @@ final class PromptsTest extends TestCase {
 		$item                              = [ 'item_key' => 'feed:tern-8', 'source' => 'feed', 'url' => 'https://tern.example/a', 'title' => 'Tern Weekly expands', 'body' => 'The paper grows.', 'retrieved_ts' => 1794000500 ];
 		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): array => [ [ 'theme' => 'newsletter sender rejected', 'example' => 'Tern Weekly sender bounced' ] ];
 
-		$this->assertSame( [ 'extract', 'extract_entities' ], Prompts::PROMPTS );
+		$this->assertSame( [ 'extract' => Prompts::CHAT, 'extract_entities' => Prompts::CHAT, 'about_publisher' => Prompts::DECISION ], Prompts::PROMPTS );
 		$this->assertSame( Prompts::extract( $item, [ 'Awards' ], [ [ 'theme' => 'newsletter sender rejected', 'example' => 'Tern Weekly sender bounced' ] ], 'Readers care about terns.', 'the kite desk', 'Tern Weekly' ), Prompts::messages( 'extract', $item, [ 'topics' => [ 'Awards' => 'topic:awards' ], 'themes' => [ 'kite festival' ], 'profile' => 'Readers care about terns.', 'audience' => 'the kite desk', 'publisher' => 'Tern Weekly' ] ) );
 		$this->assertSame( Prompts::extract_entities( $item ), Prompts::messages( 'extract_entities', $item, [] ) );
 	}
@@ -245,6 +245,46 @@ final class PromptsTest extends TestCase {
 		$this->assertStringNotContainsString( 'publisher', $system . $user );
 		foreach ( self::PUBLISHER_CLAUSE as $phrase ) {
 			$this->assertStringNotContainsString( $phrase, $system );
+		}
+	}
+
+	/**
+	 * The publisher decision asks one noul question of a state naming the
+	 * publisher, the title and the body as plain text, cut to its bound.
+	 */
+	public function test_the_publisher_decision_states_the_publisher_title_and_plain_text(): void {
+		$item = [ 'item_key' => 'feed:klharbor.example:transit-77', 'title' => 'Mesa Courier wins a transit grant', 'body' => "<p>The grant &amp; its two routes</p>\n<p>open in May.</p>" ];
+
+		$this->assertSame(
+			[
+				'state'     => "Publisher: Kestrel Lantern Harbor\nTitle: Mesa Courier wins a transit grant\nText: The grant & its two routes open in May.",
+				'questions' => [
+					'about_publisher' => [
+						'type'         => 'noul',
+						'instructions' => 'Is this article about the publisher itself (its own awards, fundraising, launches, products, staff or finances) or about the news industry (journalism, publishing, funding for newsrooms, platforms newsrooms use)? Answer no when it is the publisher\'s reporting on someone else.',
+					],
+				],
+			],
+			Prompts::decision( 'about_publisher', $item, [ 'publisher' => 'Kestrel Lantern Harbor', 'topics' => [ 'Awards' => 'topic:awards' ] ] )
+		);
+	}
+
+	/** The decision's text is cut on a character boundary to its bound. */
+	public function test_the_publisher_decision_cuts_its_text(): void {
+		$state = Prompts::decision( 'about_publisher', [ 'title' => 'Heron count', 'body' => \str_repeat( 'é', Prompts::DECISION_TEXT_CHARS + 40 ) ], [ 'publisher' => 'Kestrel Lantern Harbor' ] )['state'];
+
+		$this->assertSame( "Publisher: Kestrel Lantern Harbor\nTitle: Heron count\nText: " . \str_repeat( 'é', Prompts::DECISION_TEXT_CHARS ), $state );
+	}
+
+	/** A chat prompt builds no decision and a decision prompt no messages, each refused by name. */
+	public function test_each_builder_refuses_the_other_kind_of_prompt(): void {
+		foreach ( [ static fn () => Prompts::decision( 'extract', [], [] ), static fn () => Prompts::messages( 'about_publisher', [], [] ) ] as $build ) {
+			try {
+				$build();
+				$this->fail( 'a prompt of the other kind is refused' );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertMatchesRegularExpression( '/^no (decision|chat) prompt: (extract|about_publisher)$/', $e->getMessage() );
+			}
 		}
 	}
 

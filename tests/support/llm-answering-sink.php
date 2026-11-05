@@ -26,9 +26,16 @@ class Llm_Answering_Sink extends Capture_Sink_Node {
 	 * What every answer says: `content`, `error` or `unlent`; the group lends
 	 * nothing until a test says otherwise.
 	 *
-	 * @var array<string,string>
+	 * @var array<string,mixed>
 	 */
 	public array $outcome = [ 'unlent' => self::GROUP ];
+
+	/**
+	 * What an answer to a named prompt says instead, by prompt.
+	 *
+	 * @var array<string,array<string,mixed>>
+	 */
+	public array $outcomes = [];
 
 	/** @var list<array<int,mixed>> Every request sent to `intel:llm`, in order. */
 	public array $requests = [];
@@ -48,7 +55,7 @@ class Llm_Answering_Sink extends Capture_Sink_Node {
 		$answer[ Message::TYPE ]   = Message::TM_STRUCT | Message::TM_RESPONSE;
 		$answer[ Message::FROM ]   = self::LLM;
 		$answer[ Message::KEY ]    = $message[ Message::KEY ];
-		$answer[ Message::VALUE ]  = $this->outcome + [ 'item' => $message[ Message::VALUE ]['item'], 'inputs' => $message[ Message::VALUE ]['inputs'], 'carry' => $message[ Message::VALUE ]['carry'] ];
+		$answer[ Message::VALUE ]  = ( $this->outcomes[ $message[ Message::VALUE ]['prompt'] ] ?? $this->outcome ) + [ 'item' => $message[ Message::VALUE ]['item'], 'inputs' => $message[ Message::VALUE ]['inputs'], 'carry' => $message[ Message::VALUE ]['carry'] ];
 		Core::node( Core::as_string( $message[ Message::FROM ] ) )?->fill( $answer );
 	}
 

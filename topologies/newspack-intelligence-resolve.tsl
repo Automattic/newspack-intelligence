@@ -9,7 +9,8 @@
 # resolution throws dead-letters alone. Both Consumers hand the resolver one
 # item a poll. Every model call, the resolver's NER step and each extraction,
 # goes through intel:llm, which queues it in its own Table and answers the
-# caller when the AI proxy does, so no call blocks the worker.
+# caller when the AI proxy does, so no call blocks the worker; a client's own
+# article is also asked of the decision model whether it is about the client.
 var num_partitions = 1
 include topic-probe
 include newspack-intelligence-streams
@@ -18,6 +19,7 @@ command_node intel:items:resolve:config set_line_mode true
 make_node LLM_Call intel:llm ai-proxy
 cmd intel:llm:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1
 cmd intel:llm:config set_model gpt-oss-120b
+cmd intel:llm:config set_decision_model decision-lux-9b
 cmd intel:llm:config set_feature newspack-intelligence
 cmd intel:llm:config set_concurrency 4
 make_node Resolver resolver intel:writer intel:later intel:llm

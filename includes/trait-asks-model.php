@@ -61,8 +61,8 @@ trait Asks_Model {
 
 	/**
 	 * An answer read: its VALUE, its item, its inputs and its carry; null,
-	 * logged, for one naming no content, error or unlent group, or carrying
-	 * any of the three as anything but an array.
+	 * logged, for one naming no content, decision, error or unlent group, or
+	 * carrying any of the three as anything but an array.
 	 *
 	 * @param array<int,mixed> $message The answer.
 	 * @return array{0:array<array-key,mixed>,1:array<array-key,mixed>,2:array<array-key,mixed>,3:array<array-key,mixed>}|null
@@ -72,7 +72,8 @@ trait Asks_Model {
 		$item   = $answer['item'] ?? null;
 		$inputs = $answer['inputs'] ?? null;
 		$carry  = $answer['carry'] ?? null;
-		if ( ! \is_array( $item ) || ! \is_array( $inputs ) || ! \is_array( $carry ) || ! \is_string( $answer['content'] ?? $answer['error'] ?? $answer['unlent'] ?? null ) ) {
+		$says   = \is_string( $answer['content'] ?? $answer['error'] ?? $answer['unlent'] ?? null ) || \is_array( $answer['decision'] ?? null );
+		if ( ! \is_array( $item ) || ! \is_array( $inputs ) || ! \is_array( $carry ) || ! $says ) {
 			$this->unreadable( $message );
 			return null;
 		}

@@ -428,6 +428,101 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( [ '', '', '' ], \array_map( static fn ( array $request ): string => $request[ Message::VALUE ]['inputs']['publisher'], $this->out->requests ) );
 	}
 
+	/**
+	 * A client's own article the decision says is not about the client is
+	 * written as other, taking no floor of the kind the model gave it; the
+	 * decision is asked with the extraction's topics and publisher, no
+	 * options and its backlog flag.
+	 */
+	public function test_a_client_article_the_decision_finds_about_someone_else_is_other(): void {
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->extractor->add_importance_floor( 'award', 7 );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award","relevance":6,"importance":3}' );
+		$this->decide( [ 'decision' => [ 'about_publisher' => 0.12 ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), extract: true, publisher: self::LANTERN ) );
+
+		$asked = \array_column( $this->out->requests, Message::VALUE );
+		$this->assertSame( [ 'extract', 'about_publisher' ], \array_column( $asked, 'prompt' ) );
+		$this->assertSame( [ true, true ], \array_column( $asked, 'backlog' ) );
+		$this->assertSame( [ [], [ 'topics' => $asked[0]['inputs']['topics'], 'publisher' => 'Kestrel Lantern Harbor' ] ], [ $asked[1]['options'], $asked[1]['inputs'] ] );
+		$this->assertSame( [ [ 'other', 3 ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['importance'] ], $this->extractions() ) );
+		$this->assertSame( [ 3 ], \array_column( $this->forwarded(), 'importance' ) );
+	}
+
+	/** A client's article the decision says is about the client keeps its kind and that kind's floor. */
+	public function test_a_client_article_the_decision_finds_about_itself_keeps_its_kind(): void {
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->extractor->add_importance_floor( 'award', 7 );
+		$this->answer( '{"summary":"Kestrel Lantern Harbor wins a press award.","kind":"award","relevance":6,"importance":3}' );
+		$this->decide( [ 'decision' => [ 'about_publisher' => 0.83 ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+
+		$this->assertSame( [ [ 'award', 7 ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['importance'] ], $this->extractions() ) );
+		$this->assertSame( [ false, false ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'backlog' ) );
+	}
+
+	/**
+	 * A decision that fails, the group lending nothing or a noul that does
+	 * not read keeps the model's kind, logged, and parks no retry.
+	 *
+	 * @return array<string,array{0:array<string,mixed>}>
+	 */
+	public static function failed_decisions(): array {
+		return [
+			'a bad gateway'      => [ [ 'error' => 'HTTP 502 https://proxy.example/systemone' ] ],
+			'an unlent group'    => [ [ 'unlent' => 'ai-proxy-test-9' ] ],
+			'a noul not a float' => [ [ 'decision' => [ 'about_publisher' => 'high' ] ] ],
+		];
+	}
+
+	/** @param array<string,mixed> $outcome What the decision answered. */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'failed_decisions' )]
+	public function test_a_failed_decision_keeps_the_kind_and_parks_nothing( array $outcome ): void {
+		$stderr = $this->capture_stderr();
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award","relevance":6,"importance":3}' );
+		$this->decide( $outcome );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+
+		$this->assertSame( [ 'award' ], \array_column( $this->extractions(), 'kind' ) );
+		$this->assertSame( [], $this->parked() );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'publisher decision failed for feed:klharbor.example:transit-77' ) );
+	}
+
+	/** No decision is asked for an item no open client published, one extracted as other, or a call that failed. */
+	public function test_no_decision_is_asked_without_a_client_publisher_or_a_kind_to_doubt(): void {
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->decide( [ 'decision' => [ 'about_publisher' => 0.12 ] ] );
+
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award"}' );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'item_key' => 'linear:SUP-412', 'source' => 'linear', 'url' => 'https://linear.example/SUP-412' ] ) );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"other"}' );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->answer( 'throw' );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+
+		$this->assertSame( [ 'extract', 'extract', 'extract' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
+		$this->assertSame( [ 'award', 'other', 'other' ], \array_column( $this->extractions(), 'kind' ) );
+	}
+
+	/** A decision's answer whose extraction throws is logged and parks a retry, as any answer's does. */
+	public function test_a_decision_answer_that_throws_parks_a_retry(): void {
+		$stderr = $this->capture_stderr();
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award"}' );
+		$this->decide( [ 'decision' => [ 'about_publisher' => 0.12 ] ] );
+		$this->writer_throws( new \RuntimeException( 'writer full 4471' ) );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), attempt: 2, publisher: self::LANTERN ) );
+
+		$this->assertSame( [ 'extract', 'about_publisher' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
+		$this->assertSame( [ 3 ], \array_column( $this->parked(), 'attempt' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'an answer failed for feed:klharbor.example:transit-77: writer full 4471' ) );
+	}
+
 	/** The extraction names topic keys; each claim's subject and object resolve against the index. */
 	public function test_a_linked_item_records_its_extraction_and_resolved_claims(): void {
 		$this->seed(
@@ -1105,8 +1200,8 @@ final class ExtractorNodeTest extends TestCase {
 		$llm = Core::node( 'intel:llm' );
 		$this->assertInstanceOf( LLM_Call_Node::class, $llm );
 		$this->assertSame(
-			[ 'ai-proxy', 'https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1', 'gpt-oss-120b', 'newspack-intelligence', 4 ],
-			[ $this->read_private( $llm, 'vault_group' ), $this->read_private( $llm, 'api_url' ), $this->read_private( $llm, 'model' ), $this->read_private( $llm, 'feature' ), $this->read_private( $llm, 'concurrency' ) ]
+			[ 'ai-proxy', 'https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1', 'gpt-oss-120b', 'decision-lux-9b', 'newspack-intelligence', 4 ],
+			[ $this->read_private( $llm, 'vault_group' ), $this->read_private( $llm, 'api_url' ), $this->read_private( $llm, 'model' ), $this->read_private( $llm, 'decision_model' ), $this->read_private( $llm, 'feature' ), $this->read_private( $llm, 'concurrency' ) ]
 		);
 		$this->assertSame( [ [], '' ], [ $this->read_private( $extractor, 'profiles' ), $this->read_private( $extractor, 'audience' ) ], 'a deployment supplies the profile and the audience' );
 		$this->assertNull( Core::node( 'intel:resolved:null' ) );
@@ -1162,6 +1257,20 @@ final class ExtractorNodeTest extends TestCase {
 		$this->out->outcome = 'throw' === $reply ? [ 'error' => 'proxy 503' ] : [ 'content' => $reply ];
 	}
 
+	/**
+	 * Answer every publisher decision as $outcome says.
+	 *
+	 * @param array<string,mixed> $outcome `decision`, `error` or `unlent`.
+	 */
+	private function decide( array $outcome ): void {
+		$this->out->outcomes['about_publisher'] = $outcome;
+	}
+
+	/** @return list<array<string,mixed>> Each extraction written. */
+	private function extractions(): array {
+		return \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'extraction_recorded' === $e['event'] ) );
+	}
+
 	/** Make every write addressed to the writer throw $e, and nothing else. */
 	private function writer_throws( \Throwable $e ): void {
 		$sink = new class( $e ) extends Llm_Answering_Sink {
@@ -1176,8 +1285,9 @@ final class ExtractorNodeTest extends TestCase {
 				parent::fill( $message );
 			}
 		};
-		$sink->outcome = $this->out->outcome;
-		$this->out     = $sink;
+		$sink->outcome  = $this->out->outcome;
+		$sink->outcomes = $this->out->outcomes;
+		$this->out      = $sink;
 		$this->extractor->sink( $sink );
 	}
 

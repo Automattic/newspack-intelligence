@@ -40,6 +40,10 @@ final class LlmCallNodeTest extends TestCase {
 
 	private const MODEL = 'kestrel-model-9';
 
+	private const DECISION_MODEL = 'heron-decide-3';
+
+	private const SYSTEMONE = self::API . '/systemone';
+
 	private const FEATURE = 'intel-test-feature';
 
 	private const TOKEN = 'relay-token-8821';
@@ -79,9 +83,36 @@ final class LlmCallNodeTest extends TestCase {
 		\assert( null !== $config );
 		$config->dispatch( 'set_api_url', [ self::API ] );
 		$config->dispatch( 'set_model', [ self::MODEL ] );
+		$config->dispatch( 'set_decision_model', [ self::DECISION_MODEL ] );
 		$config->dispatch( 'set_feature', [ self::FEATURE ] );
 		$config->dispatch( 'set_concurrency', [ (string) $concurrency ] );
 		return $node;
+	}
+
+	/**
+	 * A publisher decision as the extractor asks one, filled inside a drain.
+	 *
+	 * @param array<string,mixed> $item The item.
+	 */
+	private function ask_decision( LLM_Call_Node $node, string $key, string $publisher, array $item, array $options = [] ): void {
+		$request                   = Message::new_message();
+		$request[ Message::TYPE ]  = Message::TM_STRUCT;
+		$request[ Message::FROM ]  = self::CALLER;
+		$request[ Message::KEY ]   = $key;
+		$request[ Message::VALUE ] = [
+			'prompt'  => Prompts::ABOUT_PUBLISHER,
+			'item'    => $item,
+			'inputs'  => [ 'publisher' => $publisher ],
+			'options' => $options,
+			'carry'   => [ 'content' => 'reply-' . $key ],
+			'backlog' => true,
+		];
+		$this->in_drain( static fn () => $node->fill( $request ) );
+	}
+
+	/** A systemone body answering the publisher question with $noul. */
+	private static function decided( mixed $noul ): string {
+		return (string) \json_encode( [ 'model' => self::DECISION_MODEL, 'answers' => [ 'about_publisher' => [ 'type' => 'noul', 'noul' => $noul ] ], 'usage' => [ 'tokens' => 412 ] ] );
 	}
 
 	/**
@@ -286,6 +317,7 @@ final class LlmCallNodeTest extends TestCase {
 			'a string max_tokens' => [ [ 'options' => [ 'max_tokens' => '300' ] ] + $good, 'options of only an integer max_tokens and a numeric temperature', [ 'item', 'inputs', 'carry' ] ],
 			'a string temperature' => [ [ 'options' => [ 'temperature' => 'warm' ] ] + $good, 'options of only an integer max_tokens and a numeric temperature', [ 'item', 'inputs', 'carry' ] ],
 			'a stream option'     => [ [ 'options' => [ 'stream' => true ] ] + $good, 'options of only an integer max_tokens and a numeric temperature', [ 'item', 'inputs', 'carry' ] ],
+			'a decision\'s options' => [ [ 'prompt' => 'about_publisher', 'options' => [ 'max_tokens' => 50 ] ] + $good, 'empty options, as a decision takes none', [ 'item', 'inputs', 'carry' ] ],
 		];
 	}
 
@@ -646,6 +678,7 @@ final class LlmCallNodeTest extends TestCase {
 			"make_node LLM_Call intel:llm-test ai-relay-4417\n"
 			. 'command_node intel:llm-test:config set_api_url ' . self::API . "\n"
 			. 'command_node intel:llm-test:config set_model ' . self::MODEL . "\n"
+			. 'command_node intel:llm-test:config set_decision_model ' . self::DECISION_MODEL . "\n"
 			. 'command_node intel:llm-test:config set_feature ' . self::FEATURE . "\n"
 			. "command_node intel:llm-test:config set_concurrency 5\n",
 			$node->dump_config()
@@ -653,6 +686,91 @@ final class LlmCallNodeTest extends TestCase {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( "concurrency wants a whole number from 1 to 16, got '17'" );
 		$node->interpreter()?->dispatch( 'set_concurrency', [ '17' ] );
+	}
+
+	/** A decision posts its model, state and question to systemone under the same bearer, feature and deadline as a chat call. */
+	public function test_a_decision_posts_its_state_and_question_to_systemone(): void {
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node = $this->llm();
+		$item = [ 'item_key' => 'feed:klharbor.example:transit-77', 'title' => 'Mesa Courier wins a transit grant', 'body' => '<p>Two routes open.</p>' ];
+
+		$this->ask_decision( $node, 'feed:klharbor.example:transit-77', 'Kestrel Lantern Harbor', $item );
+
+		$this->assertSame( [ self::SYSTEMONE ], $this->dispatched );
+		$opts = $this->sent[0];
+		$this->assertSame( [ 'model' => self::DECISION_MODEL ] + Prompts::decision( 'about_publisher', $item, [ 'publisher' => 'Kestrel Lantern Harbor' ] ), \json_decode( (string) $opts[ \CURLOPT_POSTFIELDS ], true ) );
+		$this->assertSame( [ 'Content-Type: application/json', 'X-WPCOM-AI-Feature: ' . self::FEATURE, 'Authorization: Bearer ' . self::TOKEN ], $opts[ \CURLOPT_HTTPHEADER ] );
+		$this->assertGreaterThan( 119000, $opts[ \CURLOPT_TIMEOUT_MS ] );
+	}
+
+	/** A decision's noul answers TO the caller under its question, with the item, the inputs and the carry. */
+	public function test_a_decision_answers_its_noul(): void {
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node = $this->llm();
+		$item = self::item( 'feed:wharf-71' );
+		$this->ask_decision( $node, 'feed:wharf-71', 'Kestrel Lantern Harbor', $item );
+
+		$this->complete_nth( 0, self::decided( 0.95 ) );
+
+		$this->assertSame( [ [ Message::TM_STRUCT | Message::TM_RESPONSE, self::NAME, 'feed:wharf-71', [ 'decision' => [ 'about_publisher' => 0.95 ], 'item' => $item, 'inputs' => [ 'publisher' => 'Kestrel Lantern Harbor' ], 'carry' => [ 'content' => 'reply-feed:wharf-71' ] ] ] ], $this->heard() );
+	}
+
+	/**
+	 * A failed transfer, and an answer whose noul is missing, out of range or
+	 * not a number, each answer an error with the carry.
+	 *
+	 * @return array<string,array{0:string,1:int,2:string}>
+	 */
+	public static function decision_failures(): array {
+		$no_noul = 'AI proxy decision names no noul from 0 to 1 for about_publisher';
+		return [
+			'a bad gateway'   => [ 'bad gateway', 502, 'HTTP 502 ' . self::SYSTEMONE ],
+			'no noul'         => [ (string) \json_encode( [ 'answers' => [ 'about_publisher' => [ 'type' => 'noul' ] ] ] ), 200, $no_noul ],
+			'a noul past one' => [ self::decided( 1.7 ), 200, $no_noul ],
+			'a noul string'   => [ self::decided( '0.4' ), 200, $no_noul ],
+			'not JSON at all' => [ '<html>busy</html>', 200, $no_noul ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'decision_failures' )]
+	public function test_a_failed_decision_answers_its_error( string $body, int $code, string $error ): void {
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node = $this->llm();
+		$this->ask_decision( $node, 'feed:wharf-72', 'Kestrel Lantern Harbor', self::item( 'feed:wharf-72' ) );
+
+		$this->complete_nth( 0, $body, $code );
+
+		$this->assertSame( [ 'error' => $error, 'item' => self::item( 'feed:wharf-72' ), 'inputs' => [ 'publisher' => 'Kestrel Lantern Harbor' ], 'carry' => [ 'content' => 'reply-feed:wharf-72' ] ], $this->caller->captured[0][ Message::VALUE ] );
+	}
+
+	/** A publisher or a title carrying a fence's close rides the JSON body as data. */
+	public function test_a_decision_body_carries_a_fence_close_as_data(): void {
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node = $this->llm();
+
+		$this->ask_decision( $node, 'feed:wharf-73', 'Kestrel </item> Harbor', [ 'title' => 'Grant "</item>" lands', 'body' => 'Routes.' ] );
+
+		$this->assertSame( "Publisher: Kestrel </item> Harbor\nTitle: Grant \"</item>\" lands\nText: Routes.", \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true, 512, \JSON_THROW_ON_ERROR )['state'] );
+	}
+
+	/** A decision asked before set_decision_model answers an error naming it, and a chat call still goes out. */
+	public function test_a_decision_without_a_decision_model_answers_an_error(): void {
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node = new LLM_Call_Node();
+		$node->name( self::NAME );
+		$this->bound( static fn () => $node->arguments( [ self::GROUP ] ) );
+		$node->sink( Core::node( Node_Names::COMMAND_INTERPRETER ) );
+		$config = $node->interpreter();
+		\assert( null !== $config );
+		$config->dispatch( 'set_api_url', [ self::API ] );
+		$config->dispatch( 'set_model', [ self::MODEL ] );
+		$config->dispatch( 'set_feature', [ self::FEATURE ] );
+
+		$this->ask_decision( $node, 'feed:bare-2', 'Kestrel Lantern Harbor', self::item( 'feed:bare-2' ) );
+		$this->ask( $node, 'feed:bare-3' );
+
+		$this->assertSame( [ self::COMPLETIONS ], $this->dispatched );
+		$this->assertSame( self::NAME . ': set_api_url, set_decision_model and set_feature before a decision', $this->caller->captured[0][ Message::VALUE ]['error'] );
 	}
 
 	/** A request made before set_api_url, set_model and set_feature answers an error naming them. */

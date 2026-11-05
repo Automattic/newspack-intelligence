@@ -25,19 +25,23 @@ use Newspack_Nodes\Worker_Should_Stop;
  * `make_node LLM_Call <name> <vault_group>`. A request is a TM_STRUCT whose
  * KEY names its subject and whose VALUE is `{ prompt, item, inputs,
  * options, carry, backlog }`, `prompt` one of `Prompts::PROMPTS` and
- * `options` only `max_tokens` and `temperature`; one it cannot read is
- * refused TO its FROM. It waits in the `{name}:frontier` Table it owns, a
- * backlog request behind every other and each in the order it arrived,
- * holding its item once, until its `{name}:curl` sibling POSTs `{ model,
- * messages, ...options }` to `<api_url>/chat/completions` under the vault
- * group, the messages `Prompts::messages()` builds as it is sent, at most
- * `set_concurrency` at once. The answer goes TO the request's FROM, keyed
- * as asked, a TM_STRUCT|TM_RESPONSE whose VALUE is `{ content, item,
- * inputs, carry }`, `{ error, … }`, or, when no entry of the group lends
- * the api url's origin a credential, `{ unlent, … }` at once, `unlent` the
- * group. A stored request that will not send is settled and answered as an
- * error. A request in flight when the worker stops is sent again by the
- * next one; a clean stop sends none it answered again.
+ * `options` only `max_tokens` and `temperature`, none for a decision; one
+ * it cannot read is refused TO its FROM. It waits in the `{name}:frontier`
+ * Table it owns, a backlog request behind every other and each in the
+ * order it arrived, holding its item once, until its `{name}:curl` sibling
+ * POSTs it under the vault group, at most `set_concurrency` at once: a chat
+ * prompt as `{ model, messages, ...options }` to
+ * `<api_url>/chat/completions`, the messages `Prompts::messages()` builds
+ * as it is sent, and a decision prompt as `{ model, state, questions }` to
+ * `<api_url>/systemone`, the decision model's, as `Prompts::decision()`
+ * builds it. The answer goes TO the request's FROM, keyed as asked, a
+ * TM_STRUCT|TM_RESPONSE whose VALUE is `{ content, item, inputs, carry }`
+ * for a chat prompt, `{ decision: { <question>: <noul> }, … }` for a
+ * decision, `{ error, … }`, or, when no entry of the group lends the api
+ * url's origin a credential, `{ unlent, … }` at once, `unlent` the group. A
+ * stored request that will not send is settled and answered as an error. A
+ * request in flight when the worker stops is sent again by the next one; a
+ * clean stop sends none it answered again.
  */
 final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	use Schema_Reflection;
@@ -75,11 +79,20 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	/** The error a body naming no assistant content answers. */
 	private const NO_CONTENT = 'AI proxy answer names no choices[0].message.content';
 
+	/** Each kind of call: the path it posts to under the api url, and the refusal of one asked before it is configured. */
+	private const CALLS = [
+		Prompts::CHAT     => [ 'chat/completions', 'set_api_url, set_model and set_feature before a call' ],
+		Prompts::DECISION => [ 'systemone', 'set_api_url, set_decision_model and set_feature before a decision' ],
+	];
+
 	/** The AI API Proxy base url, set via set_api_url; '' until set. */
 	protected string $api_url = '';
 
 	/** The model id, set via set_model; '' until set. */
 	protected string $model = '';
+
+	/** The decision model id, set via set_decision_model; '' until set. */
+	protected string $decision_model = '';
 
 	/** The X-WPCOM-AI-Feature value, set via set_feature; '' until set. */
 	protected string $feature = '';
@@ -230,8 +243,9 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 			return;
 		}
 		$value = [ $from, $key, $request['prompt'], $request['item'], $request['inputs'], $request['options'], $request['carry'] ];
-		if ( '' === $this->api_url || '' === $this->model || '' === $this->feature ) {
-			$this->reply( $value, [ 'error' => "{$this->name}: set_api_url, set_model and set_feature before a call" ] );
+		$kind  = Prompts::PROMPTS[ Core::as_string( $request['prompt'] ) ];
+		if ( '' === $this->api_url || '' === $this->model_for( $kind ) || '' === $this->feature ) {
+			$this->reply( $value, [ 'error' => "{$this->name}: " . self::CALLS[ $kind ][1] ] );
 			return;
 		}
 		if ( ! Curl_Node::lends_credential( $this->vault_group, $this->api_url ) ) {
@@ -250,16 +264,18 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	/**
 	 * What a request lacks, as its refusal names it; null for one it reads:
 	 * a prompt `Prompts::PROMPTS` names, an item and inputs as maps, options
-	 * `allowed()`, a carry and a backlog flag.
+	 * `allowed()`, none for a decision, a carry and a backlog flag.
 	 *
 	 * @param array<array-key,mixed> $request The request's VALUE.
 	 */
 	private static function lacks( array $request ): ?string {
+		$prompt = $request['prompt'] ?? null;
 		return match ( true ) {
-			! \in_array( $request['prompt'] ?? null, Prompts::PROMPTS, true ) => 'a prompt it knows',
+			! \is_string( $prompt ) || ! isset( Prompts::PROMPTS[ $prompt ] ) => 'a prompt it knows',
 			! \is_array( $request['item'] ?? null ) => 'an item',
 			! \is_array( $request['inputs'] ?? null ) => 'inputs',
 			! self::allowed( $request['options'] ?? null ) => 'options of only an integer max_tokens and a numeric temperature',
+			Prompts::DECISION === Prompts::PROMPTS[ $prompt ] && [] !== $request['options'] => 'empty options, as a decision takes none',
 			! \array_key_exists( 'carry', $request ) => 'a carry',
 			! \is_bool( $request['backlog'] ?? null ) => 'a backlog flag',
 			default => null,
@@ -315,7 +331,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 			return;
 		}
 		$this->queue_moved = true;
-		$this->deliver( $value, self::outcome( $message ) );
+		$this->deliver( $value, self::outcome( $message, Core::as_string( $value[2] ?? null ) ) );
 		$this->pump();
 	}
 
@@ -375,8 +391,10 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * Build one request's body, its messages from the prompt it names, and
-	 * hand Curl the POST, KEY its member, so its answer names it.
+	 * Build one request's body as the kind of its prompt says, a chat
+	 * prompt's messages or a decision's state and questions, and hand Curl
+	 * the POST, KEY its member, so its answer names it; a prompt no kind
+	 * names is refused as a chat prompt is.
 	 *
 	 * @param string      $member The frontier member.
 	 * @param list<mixed> $value  [ from, key, prompt, item, inputs, options, carry ].
@@ -385,14 +403,18 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * @throws Worker_Should_Stop When Curl's refusal, answered at once, meets a stop.
 	 */
 	private function post( string $member, array $value ): void {
-		$messages = Prompts::messages( Core::as_string( $value[2] ?? null ), Core::arr( $value[3] ?? null ), Core::arr( $value[4] ?? null ) );
-		$body     = \wp_json_encode( [ 'model' => $this->model, 'messages' => $messages ] + Core::arr( $value[5] ?? null ) );
+		$prompt = Core::as_string( $value[2] ?? null );
+		$kind   = Prompts::PROMPTS[ $prompt ] ?? Prompts::CHAT;
+		$item   = Core::arr( $value[3] ?? null );
+		$inputs = Core::arr( $value[4] ?? null );
+		$fields = Prompts::DECISION === $kind ? Prompts::decision( $prompt, $item, $inputs ) : [ 'messages' => Prompts::messages( $prompt, $item, $inputs ) ] + Core::arr( $value[5] ?? null );
+		$body   = \wp_json_encode( [ 'model' => $this->model_for( $kind ) ] + $fields );
 		if ( false === $body ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
 			throw new \UnexpectedValueException( 'the request body could not be encoded: ' . \json_last_error_msg() );
 		}
 		$request = [
-			'url'     => "{$this->api_url}/chat/completions",
+			'url'     => "{$this->api_url}/" . self::CALLS[ $kind ][0],
 			'method'  => 'POST',
 			'body'    => $body,
 			'headers' => [ "X-WPCOM-AI-Feature: {$this->feature}" ],
@@ -402,12 +424,22 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
+	 * The model a kind of call names: the decision model for a decision,
+	 * else the chat model.
+	 *
+	 * @param string $kind A kind of call, as `Prompts::PROMPTS` names one.
+	 */
+	private function model_for( string $kind ): string {
+		return Prompts::DECISION === $kind ? $this->decision_model : $this->model;
+	}
+
+	/**
 	 * Answer a settled request from inside the event loop: a caller that
 	 * throws on it is logged, never thrown into the loop, but for a
 	 * cooperative stop (ADR-14).
 	 *
-	 * @param list<mixed>          $value   The request's stored value.
-	 * @param array<string,string> $outcome `content` or `error`.
+	 * @param list<mixed>         $value   The request's stored value.
+	 * @param array<string,mixed> $outcome `content`, `decision` or `error`.
 	 * @throws Worker_Should_Stop When the worker is asked to stop.
 	 */
 	private function deliver( array $value, array $outcome ): void {
@@ -421,18 +453,23 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * What Curl's answer says: its TM_ERROR text, else the content of the
-	 * body's first choice, else that it names none.
+	 * What Curl's answer says: its TM_ERROR text, else, for a decision, its
+	 * questions' nouls, else the content of the body's first choice, else
+	 * that it names none.
 	 *
 	 * @param array<int,mixed> $message Curl's answer.
-	 * @return array{error:string}|array{content:string}
+	 * @param string           $prompt  The prompt the request named.
+	 * @return array{error:string}|array{content:string}|array{decision:array<string,float>}
 	 */
-	private static function outcome( array $message ): array {
+	private static function outcome( array $message, string $prompt ): array {
 		$value = Core::as_string( $message[ Message::VALUE ] );
 		if ( 0 !== ( Core::int( $message[ Message::TYPE ] ) & Message::TM_ERROR ) ) {
 			return [ 'error' => $value ];
 		}
 		$decoded = \json_decode( $value, true );
+		if ( isset( Prompts::QUESTIONS[ $prompt ] ) ) {
+			return self::decision_of( $decoded, $prompt );
+		}
 		$choices = \is_array( $decoded ) ? ( $decoded['choices'] ?? null ) : null;
 		$choice  = \is_array( $choices ) ? ( $choices[0] ?? null ) : null;
 		$said    = \is_array( $choice ) ? ( $choice['message'] ?? null ) : null;
@@ -441,11 +478,34 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
+	 * A decision's answer: each question the prompt asks => the noul the
+	 * body names for it under `answers`, or the error naming the first
+	 * question whose noul is missing or not a number from 0 to 1.
+	 *
+	 * @param mixed  $decoded The decoded body.
+	 * @param string $prompt  The decision prompt the request named.
+	 * @return array{error:string}|array{decision:array<string,float>}
+	 */
+	private static function decision_of( mixed $decoded, string $prompt ): array {
+		$answers  = \is_array( $decoded ) ? ( $decoded['answers'] ?? null ) : null;
+		$decision = [];
+		foreach ( \array_keys( Prompts::QUESTIONS[ $prompt ] ) as $question ) {
+			$answer = \is_array( $answers ) ? ( $answers[ $question ] ?? null ) : null;
+			$noul   = \is_array( $answer ) ? ( $answer['noul'] ?? null ) : null;
+			if ( ! ( \is_int( $noul ) || \is_float( $noul ) ) || $noul < 0 || $noul > 1 ) {
+				return [ 'error' => "AI proxy decision names no noul from 0 to 1 for {$question}" ];
+			}
+			$decision[ $question ] = (float) $noul;
+		}
+		return [ 'decision' => $decision ];
+	}
+
+	/**
 	 * Answer a request TO its caller, keyed as asked, with its item, inputs
 	 * and carry.
 	 *
-	 * @param list<mixed>          $value   [ from, key, prompt, item, inputs, options, carry ].
-	 * @param array<string,string> $outcome `content`, `error` or `unlent`.
+	 * @param list<mixed>         $value   [ from, key, prompt, item, inputs, options, carry ].
+	 * @param array<string,mixed> $outcome `content`, `decision`, `error` or `unlent`.
 	 */
 	private function reply( array $value, array $outcome ): void {
 		$answer = $outcome + [
@@ -507,6 +567,16 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
+	 * The `set_decision_model` verb's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param string $model The decision model id.
+	 */
+	public function set_decision_model( string $model ): void {
+		$this->decision_model = \trim( $model );
+	}
+
+	/**
 	 * The `set_feature` verb's entry point.
 	 *
 	 * @api Used by substrate.
@@ -563,7 +633,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 		];
 		return [
 			'category'     => 'I/O',
-			'description'  => 'Makes the model calls nodes ask for without blocking the worker: queues each request durably, new work ahead of a backlog, posts it to the AI API Proxy under its Vault group, and answers the caller with the content or the error and what the request carried.',
+			'description'  => 'Makes the model calls nodes ask for without blocking the worker: queues each request durably, new work ahead of a backlog, posts it to the AI API Proxy under its Vault group as a chat completion or a decision, and answers the caller with the content, the decision or the error and what the request carried.',
 			// The Table owned_table() declares, which the analyzer reads.
 			'owns'         => [ self::FRONTIER => 'Table' ],
 			'arguments'    => [
@@ -571,7 +641,8 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 			],
 			'commands'     => [
 				$verb( 'set_api_url', 'Set the AI API Proxy base url the calls post to: <url>.', 'url', 'string', 'api_url' ),
-				$verb( 'set_model', 'Set the model id every call names: <model>.', 'model', 'string', 'model' ),
+				$verb( 'set_model', 'Set the model id every chat call names: <model>.', 'model', 'string', 'model' ),
+				$verb( 'set_decision_model', 'Set the model id every decision call names: <model>.', 'model', 'string', 'decision_model' ),
 				$verb( 'set_feature', 'Set the X-WPCOM-AI-Feature value every call sends: <feature>.', 'feature', 'string', 'feature' ),
 				$verb( 'set_concurrency', 'Make at most <count> calls at once, from 1 to ' . Curl_Node::MAX_IN_FLIGHT . '; 1 until set.', 'count', 'int', 'concurrency' ),
 			],

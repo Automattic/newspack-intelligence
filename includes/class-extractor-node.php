@@ -24,7 +24,9 @@
  * (`extract`), so an item is extracted again to record claims about a
  * subject accepted or confirmed since, or when `ontology reextract` asks;
  * the projector replaces the item's claims and topics with the new
- * extraction's.
+ * extraction's. An extraction of an item an open client published, of any
+ * kind but `other`, is first asked of the `about_publisher` decision, which
+ * writes it as `other` when its noul falls below ABOUT_PUBLISHER_MIN.
  *
  * A claim's subject and object resolve through the entities whose names
  * spell the whole of them. The subject is the one of those the item links
@@ -83,6 +85,9 @@ class Extractor_Node extends Node {
 
 	/** The attempts after which a failed call is no longer retried. */
 	public const MAX_ATTEMPTS = 5;
+
+	/** The least probability that a client's own article is about the client or the news industry for it to keep its kind. */
+	public const ABOUT_PUBLISHER_MIN = 0.5;
 
 	/** The highest importance floor a kind takes, one below the highest score. */
 	public const MAX_FLOOR = Prompts::MAX_SCORE - 1;
@@ -198,11 +203,15 @@ class Extractor_Node extends Node {
 		}
 		[ $item, $linked, $extracted, $attempt, $owed ] = $read;
 		$item_key                                        = Core::as_string( $item['item_key'] );
+		$content                                         = $answer[3]['content'] ?? null;
 		$retry = fn () => $this->retry( $item_key, $attempt, $owed );
 		$this->finish_answer(
 			$item_key,
-			function () use ( $item, $linked, $extracted, $owed, $attempt, $topics, $answer, $retry ): void {
-				if ( $this->extract( $item, $linked, $extracted, $owed, $attempt, \array_map( Core::as_string( ... ), $topics ), $answer[0] ) ) {
+			function () use ( $item, $linked, $extracted, $owed, $attempt, $topics, $answer, $content, $retry ): void {
+				$topics = \array_map( Core::as_string( ... ), $topics );
+				if ( \is_string( $content ) ) {
+					$this->decided( $item, $linked, $topics, $content, $answer[0] );
+				} elseif ( $this->extract( $item, $linked, $extracted, $owed, $attempt, $topics, $answer[0] ) ) {
 					$retry();
 				}
 			},
@@ -246,7 +255,10 @@ class Extractor_Node extends Node {
 	 * extracted before keeps that extraction when this call fails, which was
 	 * not given the link that sent it, so its next re-resolution tries again.
 	 * A call made that fails owes the item's retry, which the caller parks
-	 * once, after the write.
+	 * once, after the write. An answer that parses for an item an open
+	 * client published, of any kind but `other`, writes nothing yet: it asks
+	 * the publisher decision, carrying the reply, and the decision's answer
+	 * finishes it.
 	 *
 	 * @param array<string,mixed>                        $item      The item.
 	 * @param array<string,array{0:float,1:bool,2:bool}> $linked    Each linked entity => its link's confidence, whether it is asserted, and whether by an identifier.
@@ -279,13 +291,61 @@ class Extractor_Node extends Node {
 		} else {
 			$this->publish_snapshot( [ 'mode' => 'call', 'last_ok_at' => (int) Core::$now ] );
 		}
+		$publisher = Core::as_string( Core::arr( $answer['inputs'] ?? null )['publisher'] ?? null );
+		if ( null !== $parsed && '' !== $publisher && 'other' !== $parsed['kind'] ) {
+			$this->ask_model( Prompts::ABOUT_PUBLISHER, $item, [ 'topics' => $topics, 'publisher' => $publisher ], [], [ 'resolution' => Core::arr( $answer['carry'] ?? null )['resolution'] ?? null, 'content' => $content ], $owed );
+			return false;
+		}
 		if ( null === $parsed && $extracted ) {
 			$this->print_less_often( 'keeping the earlier extraction of ', Core::terminal_safe( $item_key ) . ': no call answered' );
 			return $failed;
 		}
-		$index    = Entity_Index::current();
 		$stage    = null === $parsed ? self::HEURISTIC_STAGE : 'extract';
 		$parsed ??= [ 'summary' => self::heuristic_summary( $item ), 'kind' => 'other', 'topics' => [], 'relevance' => 0, 'importance' => 0, 'sentiment' => 0.0, 'claims' => [] ];
+		$this->record( $item, $linked, $stage, $parsed, $topics );
+		return $failed;
+	}
+
+	/**
+	 * Finish a client's own article with the publisher decision's answer:
+	 * the extraction it carries, re-read from its reply, takes the kind
+	 * `other` when the decision's noul falls below ABOUT_PUBLISHER_MIN, and
+	 * keeps its kind at or above it or when the decision failed, logged.
+	 *
+	 * @param array<string,mixed>                        $item    The item.
+	 * @param array<string,array{0:float,1:bool,2:bool}> $linked  Each linked entity => its link's confidence, whether it is asserted, and whether by an identifier.
+	 * @param array<array-key,string>                    $topics  Each topic name the request offered => its key.
+	 * @param string                                     $content The extraction's reply the decision carried.
+	 * @param array<array-key,mixed>                     $answer  The decision's answer: its `decision`, `error` or `unlent`.
+	 * @throws \UnexpectedValueException When the carried reply no longer parses.
+	 */
+	private function decided( array $item, array $linked, array $topics, string $content, array $answer ): void {
+		$parsed = Prompts::parse_extract( $content, \array_map( 'strval', \array_keys( $topics ) ) ) ?? throw new \UnexpectedValueException( 'the extraction a decision carries does not parse' );
+		$noul   = Core::arr( $answer['decision'] ?? null )[ Prompts::ABOUT_PUBLISHER ] ?? null;
+		if ( \is_float( $noul ) || \is_int( $noul ) ) {
+			$parsed['kind'] = $noul < self::ABOUT_PUBLISHER_MIN ? 'other' : $parsed['kind'];
+		} else {
+			$why = isset( $answer['unlent'] ) ? 'group ' . Core::as_string( $answer['unlent'] ) . ' lends no credential' : Core::as_string( $answer['error'] ?? 'it names no noul' );
+			$this->print_less_often( 'publisher decision failed for ' . Core::terminal_safe( Core::as_string( $item['item_key'] ) ) . ': ', Core::terminal_safe( $why ) );
+		}
+		$this->record( $item, $linked, 'extract', $parsed, $topics );
+	}
+
+	/**
+	 * Write an extraction under its stage, its importance lifted to its
+	 * kind's floor when its relevance reaches the floor's: the extraction,
+	 * the subjects a call was given, the struct the deduper reads and a
+	 * claim per claim whose subject the item asserts.
+	 *
+	 * @param array<string,mixed>                        $item   The item.
+	 * @param array<string,array{0:float,1:bool,2:bool}> $linked Each linked entity => its link's confidence, whether it is asserted, and whether by an identifier.
+	 * @param string                                     $stage  `extract`, or the heuristic stand-in's stage.
+	 * @param array{summary:string,kind:string,theme?:string,topics:list<string>,relevance:int,importance:int,sentiment:float,claims:list<array{subject:string,predicate:string,object:string}>} $parsed The extraction.
+	 * @param array<array-key,string>                    $topics Each topic name the request offered => its key.
+	 */
+	private function record( array $item, array $linked, string $stage, array $parsed, array $topics ): void {
+		$item_key = Core::as_string( $item['item_key'] );
+		$index    = Entity_Index::current();
 		[ $floor, $needs ] = $this->importance_floors[ $parsed['kind'] ] ?? [ 0, 0 ];
 		if ( $parsed['relevance'] >= $needs ) {
 			$parsed['importance'] = \max( $parsed['importance'], $floor );
@@ -328,7 +388,6 @@ class Extractor_Node extends Node {
 			];
 			$this->emit( $this->writer, Intel_Event::machine_event( 'extract', 'claim_asserted', $fields ) );
 		}
-		return $failed;
 	}
 
 	/**

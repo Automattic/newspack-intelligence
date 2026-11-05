@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A decision model judges whether a client's own article is about the client.** The 0.36.3 publisher clause still let the extraction model give a client's article about someone else a real kind. Now an extraction that parses for an item an open client published, of any kind but `other`, is first asked of the `about_publisher` decision. It posts `{ model, state, questions }` to `<api_url>/systemone` through `intel:llm`, under the same credential, frontier, window and backlog order as chat calls. A `noul` below `Extractor_Node::ABOUT_PUBLISHER_MIN` (0.5) writes the kind as `other`, before the importance floor applies; a `noul` at or above it keeps the kind. A decision that fails keeps the kind, logged, and parks no retry.
+- **`set_decision_model <model>` on `intel:llm`'s config,** which `dump_config()` replays and the resolve topology sets to `decision-lux-9b`. A decision asked before it is set answers `<name>: set_api_url, set_decision_model and set_feature before a decision`.
+
+### Changed
+
+- **`Prompts::PROMPTS` maps each prompt to its kind, `chat` or `decision`,** and `Prompts::decision()` builds a decision prompt's body as `Prompts::messages()` builds a chat prompt's messages. A decision request carrying options is refused.
+
 ## [0.36.3] - 2026-11-05
 
 ### Changed

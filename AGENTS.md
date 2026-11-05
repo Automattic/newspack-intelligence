@@ -552,8 +552,10 @@ Health).
 makes every model call without blocking the worker. A caller sends it a
 TM_STRUCT whose KEY names its subject and whose VALUE is `{ prompt, item,
 inputs, options, carry, backlog }`, `prompt` one of `Prompts::PROMPTS`,
-`extract` or `extract_entities`, `options` nothing but an integer
-`max_tokens` and a numeric `temperature`, and the carry what the caller
+which names each prompt's kind: the chat prompts `extract` and
+`extract_entities`, and the decision prompt `about_publisher`. `options`
+holds nothing but an integer `max_tokens` and a numeric `temperature`, and
+nothing at all for a decision, and the carry what the caller
 needs back less the item and the inputs, which ride beside it once. One
 it cannot read is refused TO its FROM, `{ error: "<name>: a request it
 cannot read: it carries no <what>", item?, inputs?, carry? }`, with
@@ -561,7 +563,9 @@ whatever of the three reads, so the caller's own finish runs and parks the
 item; only one naming no FROM is logged and dropped. Both callers send
 and read through `Asks_Model`, which also catches what finishing an answer
 throws, rethrowing a stop, logs it and has the caller park the item. With its `set_api_url`, `set_model` or `set_feature`
-unset it answers an error naming them; where no entry of its Vault group,
+unset it answers a chat request an error naming them, and with
+`set_api_url`, `set_decision_model` or `set_feature` unset a decision
+`<name>: set_api_url, set_decision_model and set_feature before a decision`; where no entry of its Vault group,
 its one argument, is on the api url's origin (`Curl_Node::lends_credential()`)
 it answers `{ unlent: <group>, item, inputs, carry }` at once and calls
 nothing. Otherwise it adds the request to the `{name}:frontier` sqlite
@@ -588,9 +592,18 @@ answers false) is tried again at the next tick past the interval, and a
 throw is logged, `publishing the queue failed; trying again at the next
 tick`, and tried at the next tick, a stop propagating. The snapshot lives
 three heartbeats; the `health extraction` slice reads it (see Health). The POST
-body, `{ model, messages, ...options }` with the messages
-`Prompts::messages()` builds from the prompt, the item and the inputs, is
-built when the request is sent. A stored request that will not send, its
+body is built when the request is sent: a chat prompt's is `{ model,
+messages, ...options }`, the messages `Prompts::messages()` builds from the
+prompt, the item and the inputs; a decision's is `{ model, state,
+questions }`, the decision model's, the state and questions
+`Prompts::decision()` builds, every question a `noul` from
+`Prompts::QUESTIONS`. `about_publisher` states `Publisher: <name>`,
+`Title: <title>` and `Text: ` the body's plain text
+(`Entity_Index::plain()`) cut to `Prompts::DECISION_TEXT_CHARS` (2,000)
+characters, since an article's lede and first paragraphs say whom it is
+about, and asks whether the article is about the publisher itself or the
+news industry. Both bodies are JSON-encoded, so a name or a title carrying
+`</item>` is data. A stored request that will not send, its
 prompt unknown, as a row of an older shape names none, its body
 unencodable or Curl throwing on it, is settled and answered `{ error }`,
 `<name>: a stored request could not be sent: <why>`, and the next one
@@ -601,7 +614,8 @@ goes ahead of every backlog request, `1`, queued before it, and within
 each the one that arrived first goes first: an item recorded now is never
 queued behind a re-extraction. Its `{name}:curl` sibling, built under
 the group with its body cap raised to 1 MiB (`Curl_Node::set_body_cap()`),
-POSTs each to `<api_url>/chat/completions` with `X-WPCOM-AI-Feature:
+POSTs a chat prompt to `<api_url>/chat/completions` and a decision to
+`<api_url>/systemone`, the same origin and credential, each with `X-WPCOM-AI-Feature:
 <feature>` and the group's credential, `Authorization: Bearer <token>`,
 and a `timeout` of `Curl_Node::MAX_REQUEST_TIMEOUT` (120) seconds, at most
 `set_concurrency` at once (1 until set, at most `Curl_Node::MAX_IN_FLIGHT`),
@@ -612,7 +626,12 @@ VALUE is `{ content, item, inputs, carry }`, the first choice's
 `message.content`, or `{ error, item, inputs, carry }`: Curl's TM_ERROR
 text, such as `HTTP 502 <url>` or
 `curl error 28 (Timeout was reached) <url>`, or `AI proxy answer names no
-choices[0].message.content`. A caller that throws on its answer is logged
+choices[0].message.content`. A decision answers `{ decision: { <question>:
+<noul> }, item, inputs, carry }`, each question's `noul` read from the
+body's `answers`, or `{ error, … }`, Curl's text, or `AI proxy decision
+names no noul from 0 to 1 for <question>` for one missing, out of range or
+not a number. Chat calls and decisions share the one frontier, window and
+backlog order. A caller that throws on its answer is logged
 rate-limited, `answering <key> failed: <why>`, never thrown into the event
 loop; a cooperative stop propagates, and starts no new POST. Only an
 answer under the FROM the node minted, which its Curl copies back, settles
@@ -770,7 +789,23 @@ throws, `{ event: item_reresolve, item_key, fresh_after: 0, attempt: attempt +
 inside the day the queue keeps; at the cap a line says it gave up. The
 replay is a re-resolution, which forwards the item for extraction only
 while it is still owed one, and the resolution it reads carries that
-`attempt` and `extract`, which a resolution lacking either is dropped for. Either way it then
+`attempt` and `extract`, which a resolution lacking either is dropped for.
+
+An answer that parses for an item whose `inputs.publisher` names an open
+client, of any kind but `other`, writes nothing yet: the extractor asks
+`intel:llm` for the `about_publisher` decision, its inputs the topics and
+the publisher, no options, its carry the resolution and the extraction's
+reply, as backlog when the extraction was. Its answer finishes the
+extraction from that reply, read again by `Prompts::parse_extract()`: a
+`noul` below `Extractor_Node::ABOUT_PUBLISHER_MIN` (0.5) writes the kind as
+`other`, before the importance floor applies, so the floor of the kind the
+model gave does not lift it, and one at or above it keeps the kind. A
+decision that fails, an unlent group or a noul that does not read keeps
+the kind, logged rate-limited `publisher decision failed for <item>:
+<why>`, and parks no retry; the extraction is still written, and a
+decision answer whose finish throws parks a retry as any answer does. No
+publisher, a kind of `other`, or a reply that does not parse asks no
+decision. Either way it then
 forwards an `item_extracted` struct `{ item, relevance, importance }` to its
 target, `deduper`; it is a struct between two nodes, not an event kind.
 
@@ -2223,7 +2258,7 @@ Read the counts, then run the command it prints, the same command without
 | `newspack-intelligence-collect-unthread.tsl` | `unthread` at the restricted tier on 900, under its Vault group, → `intel:writer`, an include of its own so a collect reading the rest of the token half another way can keep it; includes the streams |
 | `newspack-intelligence-deployment.tsl` | `include newspack-intelligence-lists` alone, which every composition includes last; it declares no `secure`, because the Shell skips one inside an include. The file it includes, `newspack-intelligence-lists`, is not shipped: what a site reads and cares about, which it keeps in the user topology dir, `<base_dir>/topologies/newspack-intelligence-lists.tsl`, empty when it has no settings of its own. The shipped topologies name no repo, feed, search, team, channel, site, profile line or audience, so with an empty file GitHub, Linear, Slack, both P2 nodes and `news` fetch nothing, `feed` reads only the open clients' feeds, Unthread, which takes no list, reads as it would anyway, and the extractor frames its prompt without an audience, scores without a profile and sets no importance floor. The lists' `cmd <node>:config add_…`, `add_profile`, `add_importance_floor` and `set_audience` lines reach every node the files before the deployment file declare, because every composition includes that last. Without a lists file in any topology dir, none of the compositions reads: the worker cannot load, `wp nodes doctor` fails worker liveness naming the include and opens with a warning naming the path and that an empty file will do (`Intelligence_Health::warn_missing_lists()`, on `before_invoke:nodes doctor`), and the health strip's `collection` row reads `no lists file` naming the path. The user dir resolves after every stock dir, so the plugin ships no lists file, which would win, and a user-dir `newspack-intelligence-deployment.tsl` is shadowed by this one |
 | `newspack-intelligence-project.tsl` | `intel:items:consumer`, `intel:ontology:consumer` and `intel:watches:consumer`, each → `projector`, writing the `intel-graph` Row_Table; their cursors serve no other node |
-| `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later` and asking `intel:llm`, an `LLM_Call` under the `ai-proxy` Vault group at concurrency 4, for every model call, the items Consumer checkpointing the deduper; includes the streams |
+| `newspack-intelligence-resolve.tsl` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later` and asking `intel:llm`, an `LLM_Call` under the `ai-proxy` Vault group at concurrency 4, its decision model `decision-lux-9b`, for every model call, the items Consumer checkpointing the deduper; includes the streams |
 
 ### Nodes
 
@@ -2241,7 +2276,7 @@ plugin adds:
 | `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_url`, `remove_url`, `set_client_feeds`, `set_concurrency`; owns `{name}:curl` and `{name}:frontier` |
 | `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
-| `LLM_Call` | `LLM_Call_Node` | `<vault_group>`; a caller's request, and the Router's tick, which sends what its Table holds and publishes `{ queue: { new, backlog, in_flight }, at }`, at most every 5 seconds once the queue moves and every 300 while it does not; `set_api_url`, `set_model`, `set_feature`, `set_concurrency`; owns `{name}:curl` and `{name}:frontier` |
+| `LLM_Call` | `LLM_Call_Node` | `<vault_group>`; a caller's request, and the Router's tick, which sends what its Table holds and publishes `{ queue: { new, backlog, in_flight }, at }`, at most every 5 seconds once the queue moves and every 300 while it does not; `set_api_url`, `set_model`, `set_decision_model`, `set_feature`, `set_concurrency`; owns `{name}:curl` and `{name}:frontier` |
 | `Resolver` | `Resolver_Node` | `<writer> <later> <llm>`; no verbs; publishes its hold (`reason`, `since`) through `Publishes_Status` |
 | `Extractor` | `Extractor_Node` | `<writer> <later> <llm>`; `set_audience`, `add_profile`, `remove_profile`, `add_importance_floor` and `remove_importance_floor` |
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |

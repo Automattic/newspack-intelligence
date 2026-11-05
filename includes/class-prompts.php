@@ -42,8 +42,35 @@ class Prompts {
 	/** Bytes of an unknown prompt's name its refusal shows. */
 	private const PROMPT_NAME_BYTES = 64;
 
-	/** The prompts a model-call request may name, each built by the method of its name. */
-	public const PROMPTS = [ 'extract', 'extract_entities' ];
+	/** A prompt the model answers in words, posted to `chat/completions`. */
+	public const CHAT = 'chat';
+
+	/** A prompt the decision model answers with a probability per question, posted to `systemone`. */
+	public const DECISION = 'decision';
+
+	/** The decision whether a client's article is about the client itself or the news industry. */
+	public const ABOUT_PUBLISHER = 'about_publisher';
+
+	/** The prompts a model-call request may name, by kind: messages() builds a chat prompt and decision() a decision prompt. */
+	public const PROMPTS = [
+		'extract'             => self::CHAT,
+		'extract_entities'    => self::CHAT,
+		self::ABOUT_PUBLISHER => self::DECISION,
+	];
+
+	/** Each decision prompt's questions, every one a `noul`: a probability from 0 to 1 that the answer is yes. */
+	public const QUESTIONS = [
+		self::ABOUT_PUBLISHER => [
+			self::ABOUT_PUBLISHER => 'Is this article about the publisher itself (its own awards, fundraising, launches, products, staff or finances) or about the news industry (journalism, publishing, funding for newsrooms, platforms newsrooms use)? Answer no when it is the publisher\'s reporting on someone else.',
+		],
+	];
+
+	/**
+	 * Characters of an item's plain text a decision states: an article's
+	 * lede and first paragraphs say whom it is about, and a short state
+	 * keeps a call the extraction already paid for cheap.
+	 */
+	public const DECISION_TEXT_CHARS = 2000;
 
 	/** The days either side of an item's retrieval its neighbours are retrieved within. */
 	public const THEME_DAYS = 30;
@@ -74,18 +101,18 @@ class Prompts {
 	 * most like it as the projection holds them when it is built, never any
 	 * its inputs carry; `extract_entities` reads nothing more.
 	 *
-	 * @param string                 $prompt One of PROMPTS.
+	 * @param string                 $prompt A chat prompt of PROMPTS.
 	 * @param array<array-key,mixed> $item   The item's fields.
 	 * @param array<array-key,mixed> $inputs The prompt's other inputs.
 	 * @return array<int,array{role:string,content:string}>
-	 * @throws \InvalidArgumentException For a prompt not in PROMPTS.
+	 * @throws \InvalidArgumentException For a prompt that is not a chat prompt.
 	 */
 	public static function messages( string $prompt, array $item, array $inputs ): array {
 		return match ( $prompt ) {
 			'extract'          => self::extract( $item, \array_map( 'strval', \array_keys( Core::arr( $inputs['topics'] ?? null ) ) ), self::offered_themes( $item ), Core::as_string( $inputs['profile'] ?? null ), Core::as_string( $inputs['audience'] ?? null ), Core::as_string( $inputs['publisher'] ?? null ) ),
 			'extract_entities' => self::extract_entities( $item ),
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
-			default            => throw new \InvalidArgumentException( 'no prompt: ' . \mb_strcut( $prompt, 0, self::PROMPT_NAME_BYTES ) ),
+			default            => throw self::refused( self::CHAT, $prompt ),
 		};
 	}
 
@@ -254,16 +281,6 @@ class Prompts {
 	}
 
 	/**
-	 * Read a scalar item field as a string; absent or non-scalar values become ''.
-	 *
-	 * @param array<array-key,mixed> $item The item array.
-	 */
-	private static function field( array $item, string $key ): string {
-		$value = $item[ $key ] ?? '';
-		return Core::as_string( $value );
-	}
-
-	/**
 	 * Every kind and its definition, `kind: definition`, one line each.
 	 */
 	private static function kind_lines(): string {
@@ -272,6 +289,59 @@ class Prompts {
 			$lines[] = "{$kind}: {$definition}";
 		}
 		return \implode( "\n", $lines );
+	}
+
+	/**
+	 * The body of the decision prompt a model-call request names, less its
+	 * model, built from its item and inputs when the call is sent:
+	 * `about_publisher` states `publisher`, the item's title and its body as
+	 * plain text, cut to DECISION_TEXT_CHARS, and asks its one question.
+	 *
+	 * @param string                 $prompt A decision prompt of PROMPTS.
+	 * @param array<array-key,mixed> $item   The item's fields.
+	 * @param array<array-key,mixed> $inputs The prompt's other inputs.
+	 * @return array{state:string,questions:array<string,array{type:string,instructions:string}>}
+	 * @throws \InvalidArgumentException For a prompt that is not a decision prompt.
+	 */
+	public static function decision( string $prompt, array $item, array $inputs ): array {
+		$state = match ( $prompt ) {
+			self::ABOUT_PUBLISHER => 'Publisher: ' . Core::as_string( $inputs['publisher'] ?? null ) . "\nTitle: " . self::field( $item, 'title' ) . "\nText: " . \mb_substr( Entity_Index::plain( self::field( $item, 'body' ) ), 0, self::DECISION_TEXT_CHARS ),
+			default               => throw self::refused( self::DECISION, $prompt ),
+		};
+		$questions = [];
+		foreach ( self::QUESTIONS[ $prompt ] as $name => $instructions ) {
+			$questions[ $name ] = [
+				'type'         => 'noul',
+				'instructions' => $instructions,
+			];
+		}
+		return [
+			'state'     => $state,
+			'questions' => $questions,
+		];
+	}
+
+	/**
+	 * The refusal of a prompt a builder does not build: one of the other
+	 * kind is named as not of this kind, any other as unknown.
+	 *
+	 * @param string $kind   The kind the builder builds.
+	 * @param string $prompt The prompt asked for.
+	 */
+	private static function refused( string $kind, string $prompt ): \InvalidArgumentException {
+		$named = isset( self::PROMPTS[ $prompt ] ) ? "no {$kind} prompt: " : 'no prompt: ';
+		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+		return new \InvalidArgumentException( $named . \mb_strcut( $prompt, 0, self::PROMPT_NAME_BYTES ) );
+	}
+
+	/**
+	 * Read a scalar item field as a string; absent or non-scalar values become ''.
+	 *
+	 * @param array<array-key,mixed> $item The item array.
+	 */
+	private static function field( array $item, string $key ): string {
+		$value = $item[ $key ] ?? '';
+		return Core::as_string( $value );
 	}
 
 	/**
