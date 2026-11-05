@@ -1,6 +1,6 @@
 {
 	"name": "newspack-intelligence",
-	"version": "0.36.3",
+	"version": "0.36.4",
 	"private": true,
 	"description": "Collects and curates intelligence as an entity graph, built on newspack-nodes.",
 	"author": "Automattic",

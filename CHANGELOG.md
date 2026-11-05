@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.4] - 2026-11-05
+
 ### Added
 
 - **A decision model judges whether a client's own article is about the client.** The 0.36.3 publisher clause still let the extraction model give a client's article about someone else a real kind. Now an extraction that parses for an item an open client published, of any kind but `other`, is first asked of the `about_publisher` decision. It posts `{ model, state, questions }` to `<api_url>/systemone` through `intel:llm`, under the same credential, frontier, window and backlog order as chat calls. A `noul` below `Extractor_Node::ABOUT_PUBLISHER_MIN` (0.5) writes the kind as `other`, before the importance floor applies; a `noul` at or above it keeps the kind. A decision that fails keeps the kind, logged, and parks no retry.
