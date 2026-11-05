@@ -667,10 +667,21 @@ of `{ theme, example }` in a `<themes>` fence, tags hex-escaped, which the
 system message names as untrusted as the item, and never in the system
 message itself, the examples with them. It defines
 every kind in one line each from `Intel_Event::KIND_DEFINITIONS`, which
-lists each of `ITEM_KINDS` in its order, and which tell `bug`, a
-defect in Newspack's own product as Newspack files or fixes it, from
-`complaint`, a client's dissatisfaction, and keep a client adopting more
-Newspack or routine account and storage work out of `churn_signal`; and it
+lists each of `ITEM_KINDS` in its order, and where a kind is often
+confused, says what it is not: `bug` is a defect in Newspack's shipped
+code as Newspack files or fixes it, never a CRM record, one site's content
+or configuration, a launch snag list or internal tooling, and is told
+apart from `complaint`, a client's dissatisfaction; `feature_request` is a
+client or user asking for a capability Newspack's product lacks, never a
+setup, styling, migration, onboarding, offboarding or configuration task
+for one site; `incident` leaves out a storage-quota warning, a legal
+notice and a delayed project; `launch` is a site, product or publication
+going live, a client's or Newspack's, never one step toward a launch;
+`release` always takes a GitHub release page; `churn_signal` leaves out a
+client adopting more Newspack and routine account and storage work; and
+`other` takes routine service and onboarding work, internal planning,
+team updates and kudos, and a publication's own journalism about anyone
+else; and it
 asks for a `theme`, two to six words naming the event or initiative the
 item is part of, at the level a reader tracks it across clients, with no
 client names, URLs or numbers, such as "community site launch" or "site

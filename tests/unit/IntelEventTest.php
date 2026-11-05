@@ -296,7 +296,7 @@ final class IntelEventTest extends TestCase {
 
 	/**
 	 * Every kind carries one line defining it, in the kinds' order; a defect
-	 * in Newspack's own product is a kind of its own, told apart from a
+	 * in Newspack's shipped code is a kind of its own, told apart from a
 	 * client's complaint, and churn leaves out a client adopting more.
 	 */
 	public function test_every_item_kind_is_defined_in_one_line(): void {
@@ -304,7 +304,7 @@ final class IntelEventTest extends TestCase {
 		foreach ( Intel_Event::KIND_DEFINITIONS as $kind => $definition ) {
 			$this->assertMatchesRegularExpression( '/^[^\n]+$/', $definition, $kind );
 		}
-		$this->assertSame( 'a defect in Newspack\'s own product, as filed or fixed by Newspack, whoever reported it', Intel_Event::KIND_DEFINITIONS['bug'] );
+		$this->assertSame( 'a defect in Newspack\'s shipped code, as Newspack files or fixes it, whoever reported it. Not a CRM record, one site\'s content or configuration, a launch snag list, or internal tooling', Intel_Event::KIND_DEFINITIONS['bug'] );
 		$this->assertSame( 'a client\'s dissatisfaction with Newspack: its service, price or support, or a defect as the client experiences it', Intel_Event::KIND_DEFINITIONS['complaint'] );
 		$this->assertSame( 'a client leaving Newspack or saying it may; not a client adopting more Newspack, nor routine account or storage work', Intel_Event::KIND_DEFINITIONS['churn_signal'] );
 	}

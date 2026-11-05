@@ -209,6 +209,26 @@ final class PromptsTest extends TestCase {
 		$this->assertStringContainsString( "kind is the one of these that fits best:\n" . \implode( "\n", $lines ) . "\n", $system );
 	}
 
+	/** Each kind's line names what it is and what it is not, on that kind's own line. */
+	public function test_the_kind_lines_say_what_each_kind_is_not(): void {
+		$system = Prompts::extract( [ 'title' => 'Heron count' ], [], [], 'Skip kite trivia.', '' )[0]['content'];
+
+		$phrases = [
+			'feature_request' => [ 'a capability Newspack\'s product lacks', 'migration', 'onboarding, offboarding or configuration task for one site' ],
+			'bug'             => [ 'Newspack\'s shipped code', 'a CRM record', 'a launch snag list', 'internal tooling' ],
+			'incident'        => [ 'as it happens', 'a storage-quota warning', 'a legal notice', 'a delayed project' ],
+			'launch'          => [ 'going live', 'a client\'s or Newspack\'s', 'one step toward a launch' ],
+			'release'         => [ 'a GitHub release page always is one' ],
+			'other'           => [ 'routine service and onboarding work', 'internal planning', 'team updates and kudos', 'a publication\'s own journalism about anyone else' ],
+		];
+		foreach ( $phrases as $kind => $needles ) {
+			$this->assertSame( 1, \preg_match( '/^' . $kind . ': (.*)$/m', $system, $line ), $kind );
+			foreach ( $needles as $needle ) {
+				$this->assertStringContainsString( $needle, $line[1], $kind );
+			}
+		}
+	}
+
 	/**
 	 * The reply names a theme; the themes offered ride in the user message
 	 * as fenced data the system message names as untrusted, and never in

@@ -28,20 +28,20 @@ final class Intel_Event {
 	/** Each of ITEM_KINDS, in its order, => the one line the extraction prompt defines it by. */
 	public const KIND_DEFINITIONS = [
 		'award'           => 'an award, prize or honor won, given or shortlisted for',
-		'launch'          => 'a new publication, product, section or service launched',
-		'release'         => 'a software release or version shipped',
+		'launch'          => 'a site, product or publication going live, whether a client\'s or Newspack\'s. Not one step toward a launch',
+		'release'         => 'a software release or version shipped; a GitHub release page always is one',
 		'funding'         => 'money raised, granted, invested or donated',
 		'hire'            => 'someone joining an organization or taking a new role',
 		'departure'       => 'someone leaving an organization or a role',
 		'partnership'     => 'organizations agreeing to work together',
-		'incident'        => 'an outage, breach or disruption of a service as it happens',
-		'bug'             => 'a defect in Newspack\'s own product, as filed or fixed by Newspack, whoever reported it',
-		'feature_request' => 'a request for something Newspack does not yet do',
+		'incident'        => 'an outage, breach or disruption of a service as it happens. Not a storage-quota warning, a legal notice or a delayed project',
+		'bug'             => 'a defect in Newspack\'s shipped code, as Newspack files or fixes it, whoever reported it. Not a CRM record, one site\'s content or configuration, a launch snag list, or internal tooling',
+		'feature_request' => 'a client or user asking for a capability Newspack\'s product lacks. Not a setup, styling, migration, onboarding, offboarding or configuration task for one site',
 		'complaint'       => 'a client\'s dissatisfaction with Newspack: its service, price or support, or a defect as the client experiences it',
 		'praise'          => 'a client\'s satisfaction with Newspack or thanks for its work',
 		'churn_signal'    => 'a client leaving Newspack or saying it may; not a client adopting more Newspack, nor routine account or storage work',
 		'research'        => 'a study, survey, report or analysis',
-		'other'           => 'none of these',
+		'other'           => 'none of these, including routine service and onboarding work, internal planning, team updates and kudos, and a publication\'s own journalism about anyone else',
 	];
 	public const PREDICATES       = [ 'works_for', 'part_of', 'funds', 'partners_with', 'competes_with', 'uses_product', 'won', 'launched', 'located_in' ];
 	public const NAME_KINDS       = [ 'canonical', 'alias', 'acronym', 'locality' ];
