@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-11-04
+
 ### Added
 
 - **`wp newspack-intelligence ontology reresolve` and `ontology reextract` take `--source=<name>`,** so only the items of that source in the range are counted and sent. The flag is read trimmed, as `items purge` reads it; one given empty is refused rather than widened to every source, and so is one that no stored item is recorded under, in its own case, the refusal listing those sources sorted, read across every partition by `Items_CLI_Command::stored_sources()`; a node's name such as `news`, whose items record under `feed`, is refused. `Reresolver_Node::ask()` takes the source, '' for every one, which the `reresolve` verb passes, and refuses one of more than one word before anything is sent; it sends `RERESOLVE <since> <until> [<source>]` or `REEXTRACT …` alike, and the reresolver queues the unit as `<kind>|<from> <to> <source>`, paged and checkpointed as before. `Reresolver_Node::count_dated()` takes the source, so `reextract`'s `--limit` refusal, its dry run and its "no item" line count only that source's items, and every line names it. A range naming a source answers `{ since, until, source }` and publishes no `last_range`, since it covers only some of its days' items, so the health strip's dropped days stay shown.
