@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.7] - 2026-11-05
+
 ### Fixed
 
 - **`review links` leaves out a link whose entity was rejected.** A link to an entity whose survivor's state is `rejected`, read from the highest partition holding one, no longer lists, so a `ner_fuzzy` row a re-resolution keeps does not stand in the queue forever.
