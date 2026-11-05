@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.5] - 2026-11-05
+
 ### Added
 
 - **The decision model picks an extraction's theme from the themes offered.** A parsed extraction of an item that is not restricted, and that the projection offers themes, asks the `theme_choice` question: a `choice` among the offered themes, keyed `t1` to `tN`, each told by its theme and example, and `none`. An offered theme chosen with a `confidence` of `Extractor_Node::THEME_CHOICE_MIN` (0.6) or more is the theme written; a weaker choice, `none`, or a failed review keeps the reply's own theme.
