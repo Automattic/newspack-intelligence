@@ -29,9 +29,6 @@ final class Intelligence_Briefing {
 	/** The UTC days the briefing reads, today the last. */
 	public const DAYS = 7;
 
-	/** The most open clients an item is filed under; one about more is filed once. */
-	public const MAX_CLIENT_GROUPS = 3;
-
 	/**
 	 * The slice `what` names.
 	 *
@@ -48,7 +45,8 @@ final class Intelligence_Briefing {
 	 * The window's `Graph_Query::DEFAULT_LIMIT` most important items naming
 	 * any entity as subject or mention, in three kinds of group: under each
 	 * open client an item is about, role `client`, an item about two under
-	 * both; one about no client, or about more than MAX_CLIENT_GROUPS, but
+	 * both; one about no client, or about more than
+	 * `Graph_Query::MAX_ITEM_CLIENTS`, but
 	 * about an entity holding an open `newspack_product` role under one
 	 * group of that role; and any other under one group of role null. Each
 	 * group sits in the order of its most important item, and its items as
@@ -72,7 +70,7 @@ final class Intelligence_Briefing {
 					$about = \array_map( Core::as_string( ... ), \array_column( Core::arr( Core::arr( $item )['entities'] ), 'entity_key' ) );
 					$named = \array_flip( $about );
 					$under = \array_map( 'strval', \array_keys( \array_intersect_key( $named, $clients ) ) );
-					if ( [] === $under || \count( $under ) > self::MAX_CLIENT_GROUPS ) {
+					if ( [] === $under || \count( $under ) > Graph_Query::MAX_ITEM_CLIENTS ) {
 						$under = [ [] === \array_intersect_key( $named, $products ) ? '' : Graph_Query::NEWSPACK_PRODUCT ];
 					}
 					foreach ( $under as $key ) {

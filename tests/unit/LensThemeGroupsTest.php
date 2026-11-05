@@ -373,6 +373,63 @@ final class LensThemeGroupsTest extends TestCase {
 	}
 
 	/**
+	 * An item about more than `Graph_Query::MAX_ITEM_CLIENTS` open clients
+	 * names none of them for its group, which still counts it: the sweep
+	 * group lists only the two clients its narrow item is about, and so
+	 * ranks below the outage group, whose one item is about three, though
+	 * the sweep's story is newer.
+	 */
+	public function test_an_item_about_too_many_clients_names_none_for_its_group(): void {
+		$this->seed_sweep();
+
+		$this->assertSame( 3, Graph_Query::MAX_ITEM_CLIENTS );
+		$this->assertSame(
+			[
+				[ 'kite outage', 1, [ 'organization:kite-c', 'organization:kite-d', 'organization:kite-e' ] ],
+				[ 'kite sweep', 2, [ 'organization:kite-a', 'organization:kite-b' ] ],
+			],
+			\array_map( static fn ( array $g ): array => [ $g['theme'], $g['count'], \array_column( $g['clients'], 'entity_key' ) ], $this->grouped( '--lens=sweep-desk' )['groups'] )
+		);
+	}
+
+	/** A theme trend row names the clients of its items about at most MAX_ITEM_CLIENTS, and counts every item. */
+	public function test_an_item_about_too_many_clients_names_none_for_its_trend_row(): void {
+		$this->seed_sweep();
+
+		$this->assertSame(
+			[
+				[ 'kite sweep', 2, [ 'organization:kite-a', 'organization:kite-b' ] ],
+				[ 'kite outage', 1, [ 'organization:kite-c', 'organization:kite-d', 'organization:kite-e' ] ],
+			],
+			\array_map( static fn ( array $row ): array => [ $row['value'], $row['count'], \array_column( $row['clients'], 'entity_key' ) ], $this->ci->dispatch( 'trends', [ '--lens=sweep-desk' ] )['rows'] )
+		);
+	}
+
+	/**
+	 * The sweep desk: five more open clients, a sweep item about all five
+	 * and one about two of them, and an older outage item about three.
+	 */
+	private function seed_sweep(): void {
+		$at      = static fn ( int $days ): int => self::$oct_01 + $days * self::DAY;
+		$clients = [];
+		foreach ( [ 'a', 'b', 'c', 'd', 'e' ] as $letter ) {
+			$key       = "organization:kite-{$letter}";
+			$clients[] = $key;
+			$this->seed(
+				self::entity( $key, 'Kite ' . \strtoupper( $letter ) ),
+				[ Intel_Event::make( 'role_asserted', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ) ]
+			);
+		}
+		$about = static fn ( array $keys ): array => \array_map( static fn ( string $key ): array => [ $key, 'subject' ], $keys );
+		$this->seed(
+			...$this->ticket( 'sweep:W-1', 'incident', $at( 22 ), 5.0, 'kite sweep', $about( $clients ) ),
+			...$this->ticket( 'sweep:W-2', 'incident', $at( 21 ), 5.0, 'kite sweep', $about( \array_slice( $clients, 0, 2 ) ) ),
+			...$this->ticket( 'sweep:W-3', 'incident', $at( 20 ), 5.0, 'kite outage', $about( \array_slice( $clients, 2 ) ) )
+		);
+		$this->save( 'sweep-desk', '--source=sweep', '--by=theme', '--bucket=month' );
+	}
+
+	/**
 	 * A grouped search.
 	 *
 	 * @param string ...$args Its options.

@@ -60,9 +60,8 @@ export const signalValue = ( signal ) => {
 /**
  * Trend rows, or signals: each bucket and value with its count, citing the
  * newest items the row counts. Counting by theme, each row also shows a chip
- * per client it is about beside its count, and a row counting one item whose
- * `items` hold it shows that item in place of its theme. A row answering no
- * `items` or `clients` shows none.
+ * per client it is about beside its count. A row answering no `items` or
+ * `clients` shows none.
  *
  * @param {Object}                           props
  * @param {Array<Object>}                    props.rows           The rows `trends` or `signals` answers.
@@ -80,8 +79,6 @@ export default function TrendTable( {
 	onOpenEntity,
 } ) {
 	const themes = 'theme' === by;
-	const alone = ( row ) =>
-		themes && 1 === row.count && 1 === row.items?.length;
 	return (
 		<table className="newspack-nodes-table">
 			<thead>
@@ -116,16 +113,8 @@ export default function TrendTable( {
 						].join( ' ' ) }
 					>
 						<td>{ row.bucket }</td>
-						<td>
-							{ alone( row ) ? (
-								<Cite
-									url={ row.items[ 0 ].url }
-									title={ row.items[ 0 ].title }
-								/>
-							) : (
-								value( row )
-							) }
-						</td>
+						<td>{ value( row ) }</td>
+
 						<td>{ count( row ) }</td>
 						{ themes && (
 							<td>
@@ -143,18 +132,16 @@ export default function TrendTable( {
 							</td>
 						) }
 						<td>
-							{ ! alone( row ) && (
-								<ul className="newspack-intelligence__facts">
-									{ ( row.items ?? [] ).map( ( item ) => (
-										<li key={ item.item_key }>
-											<Cite
-												url={ item.url }
-												title={ item.title }
-											/>
-										</li>
-									) ) }
-								</ul>
-							) }
+							<ul className="newspack-intelligence__facts">
+								{ ( row.items ?? [] ).map( ( item ) => (
+									<li key={ item.item_key }>
+										<Cite
+											url={ item.url }
+											title={ item.title }
+										/>
+									</li>
+								) ) }
+							</ul>
 						</td>
 					</tr>
 				) ) }

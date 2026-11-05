@@ -91,6 +91,9 @@ final class Graph_Query {
 	/** The days a grouped search reads when neither the call nor its lens bounds them. */
 	public const GROUP_DAYS = 30;
 
+	/** The most open clients an item is about and still names; one about more names none. */
+	public const MAX_ITEM_CLIENTS = 3;
+
 	/** The role an entity holds while it is a client. */
 	public const CLIENT = 'client';
 
@@ -270,7 +273,8 @@ final class Graph_Query {
 	 * place in the filters' `kinds`, most severe first, every kind alike
 	 * where they name none, the newest copy's among equals; how many stories
 	 * it holds; the open clients those copies are about by a subject or a
-	 * mention, by name; the time of its newest story, each dated by its
+	 * mention, by name, a copy about more than MAX_ITEM_CLIENTS naming none
+	 * though it still counts; the time of its newest story, each dated by its
 	 * earliest copy; and its CITATIONS newest stories as
 	 * `search` answers them, the most important first, as MOST_IMPORTANT
 	 * orders them. Groups rank by severity, then by clients, the most
@@ -291,7 +295,7 @@ final class Graph_Query {
 		$columns             = self::ITEM_COLUMNS;
 		$picked              = \implode( ', ', \array_map( static fn ( string $as, string $column ): string => "{$column} AS {$as}", \array_keys( $columns ), $columns ) );
 		$rows                = $r->rows(
-			"{$stories}, " . self::open_clients( $r )
+			"{$stories}, " . self::item_clients( $r )
 			. ', sev AS ( SELECT CAST( key AS INTEGER ) AS severity, value AS kind FROM json_each( ? ) ),'
 			. " gm AS ( SELECT DISTINCT CASE WHEN c.value IS NULL THEN 'item:' || c.story ELSE 'theme:' || c.value END AS gid, COALESCE( c.value, '' ) AS theme, c.story FROM copies c"
 			. ' WHERE c.value IS NOT NULL OR c.story NOT IN ( SELECT story FROM copies WHERE value IS NOT NULL ) ),'
@@ -299,7 +303,7 @@ final class Graph_Query {
 			. " gk AS ( SELECT ga.gid, ga.t, x.kind, COALESCE( sev.severity, ? ) AS severity FROM ga LEFT JOIN {$x} x ON x.item_key = ga.copy LEFT JOIN sev ON sev.kind = x.kind ),"
 			. ' gw AS ( SELECT gid, kind, severity FROM ( SELECT gid, kind, severity, ROW_NUMBER() OVER ( PARTITION BY gid ORDER BY severity, t DESC, kind ) AS pick FROM gk ) WHERE pick = 1 ),'
 			. ' gs AS ( SELECT gm.gid, MAX( gm.theme ) AS theme, gm.story, MIN( c.t ) AS t FROM gm JOIN copies c ON c.story = gm.story GROUP BY gm.gid, gm.story ),'
-			. ' gl AS ( SELECT DISTINCT ga.gid, l.entity_key FROM ga JOIN live l ON l.item_key = ga.copy AND NOT l.topical JOIN oc ON oc.entity_key = l.entity_key ),'
+			. ' gl AS ( SELECT DISTINCT ga.gid, ic.entity_key FROM ga JOIN ic ON ic.item_key = ga.copy ),'
 			. ' gn AS ( SELECT gid, COUNT(*) AS n FROM gl GROUP BY gid ),'
 			. ' ranked AS ( SELECT s.gid, MAX( s.theme ) AS theme, w.kind, COUNT(*) AS n, MAX( s.t ) AS newest,'
 			. ' ROW_NUMBER() OVER ( ORDER BY w.severity, COALESCE( gn.n, 0 ) DESC, MAX( s.t ) DESC, MAX( s.theme ), s.gid ) AS ord'
@@ -1591,15 +1595,15 @@ final class Graph_Query {
 	 * @param int            $cut    The first second a bucket counts.
 	 * @param bool           $muted  Whether the kind axis leaves out MUTE_KIND.
 	 * @param bool           $values Whether the history is read per value.
-	 * @param bool           $named  Whether each row names the open clients its stories' copies are about, by a subject or a mention, before its items.
+	 * @param bool           $named  Whether each row names the open clients its stories' copies are about, by a subject or a mention, before its items, a copy about more than MAX_ITEM_CLIENTS naming none.
 	 * @return array{0:array<string,list<array{bucket:mixed,value:mixed,count:int,items:list<array{item_key:mixed,url:mixed,title:mixed}>}>>,1:array<string,array<string,true>>} Each subject => its rows, the newest bucket first, then the highest count; and each subject with a history => each value in it, or '' alone.
 	 */
 	private static function tally( Row_Reader $r, \Closure $scope, array $days, ?string $by, string $span, int $cut, bool $muted = false, bool $values = false, bool $named = false ): array {
 		[ $stories, $binds ] = self::stories( $r, $scope, $days, $by, $muted );
 		$clients             = $named
-			? ', ' . self::open_clients( $r ) . ", named AS ( SELECT b.subject, b.bucket, b.value, json_group_array( json_object( 'entity_key', b.entity_key, 'name', " . self::name_of( $r, 'b.entity_key' ) . ' ) ) AS clients'
-				. " FROM ( SELECT DISTINCT s.subject, s.bucket, s.value, l.entity_key FROM ( SELECT subject, {$span} AS bucket, value, item_key FROM stories WHERE t >= ? AND value IS NOT NULL ) s"
-				. ' JOIN copies c ON c.subject = s.subject AND c.value = s.value AND c.story = s.item_key JOIN live l ON l.item_key = c.copy AND NOT l.topical JOIN oc ON oc.entity_key = l.entity_key ) b GROUP BY 1, 2, 3 )'
+			? ', ' . self::item_clients( $r ) . ", named AS ( SELECT b.subject, b.bucket, b.value, json_group_array( json_object( 'entity_key', b.entity_key, 'name', " . self::name_of( $r, 'b.entity_key' ) . ' ) ) AS clients'
+				. " FROM ( SELECT DISTINCT s.subject, s.bucket, s.value, ic.entity_key FROM ( SELECT subject, {$span} AS bucket, value, item_key FROM stories WHERE t >= ? AND value IS NOT NULL ) s"
+				. ' JOIN copies c ON c.subject = s.subject AND c.value = s.value AND c.story = s.item_key JOIN ic ON ic.item_key = c.copy ) b GROUP BY 1, 2, 3 )'
 			: '';
 		$rows                = $r->rows(
 			"{$stories}, ranked AS ( SELECT s.subject, {$span} AS bucket, s.value, s.item_key, c.url, c.title, ROW_NUMBER() OVER ( PARTITION BY s.subject, {$span}, s.value ORDER BY t DESC, s.item_key DESC ) AS rn,"
@@ -1644,14 +1648,19 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The `oc` CTE, to follow the graph's prelude: every survivor holding an
-	 * open client role under any of its keys, as `open_roles()` reads one.
+	 * The `oc` and `ic` CTEs, to follow `live`: every survivor holding an
+	 * open client role under any of its keys, as `open_roles()` reads one,
+	 * and each item with the open clients it is about by a subject or a
+	 * mention, an item about more than MAX_ITEM_CLIENTS naming none, as the
+	 * briefing files such an item once.
 	 *
 	 * @param Row_Reader $r The reader.
 	 */
-	private static function open_clients( Row_Reader $r ): string {
+	private static function item_clients( Row_Reader $r ): string {
 		return 'oc AS ( SELECT DISTINCT COALESCE( mg.value, ro.entity_key ) AS entity_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'roles' )
-			. " ro LEFT JOIN mg ON mg.key = ro.entity_key WHERE ro.role = '" . self::CLIENT . "' AND ro.to_ts = 0 )";
+			. " ro LEFT JOIN mg ON mg.key = ro.entity_key WHERE ro.role = '" . self::CLIENT . "' AND ro.to_ts = 0 ),"
+			. ' ic AS ( SELECT item_key, entity_key FROM ( SELECT item_key, entity_key, COUNT(*) OVER ( PARTITION BY item_key ) AS n'
+			. ' FROM ( SELECT DISTINCT l.item_key, l.entity_key FROM live l JOIN oc ON oc.entity_key = l.entity_key WHERE NOT l.topical ) ) WHERE n <= ' . self::MAX_ITEM_CLIENTS . ' )';
 	}
 
 	/**

@@ -211,18 +211,8 @@ class Items_CLI_Command {
 	 */
 	private static function selected( string $source, array $keeps ): array {
 		$keys = Intel_Graph_Row_Schema::read(
-			static function ( Row_Reader $r ) use ( $source ): array {
-				$keys = [];
-				foreach ( $r->aliases() as $a ) {
-					foreach ( $r->rows( "SELECT item_key FROM {$a}.items WHERE source = ?", [ $source ] ) as [ $key ] ) {
-						$keys[] = Core::as_string( $key );
-					}
-				}
-				return $keys;
-			}
+			static fn ( Row_Reader $r ): array => \array_map( static fn ( array $row ): string => Core::as_string( $row[0] ), $r->rows( 'SELECT DISTINCT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' ) . ' i WHERE source = ? ORDER BY item_key', [ $source ] ) )
 		);
-		$keys = \array_unique( $keys );
-		\sort( $keys, \SORT_STRING );
 		return \array_values( \array_filter( $keys, static fn ( string $key ): bool => [] === \array_filter( $keeps, static fn ( string $glob ): bool => \fnmatch( $glob, $key ) ) ) );
 	}
 
@@ -247,19 +237,8 @@ class Items_CLI_Command {
 	 * @throws \Newspack_Nodes\Table_Unavailable When the projection cannot be read.
 	 */
 	public static function stored_sources(): array {
-		$sources = Intel_Graph_Row_Schema::read(
-			static function ( Row_Reader $r ): array {
-				$sources = [];
-				foreach ( $r->aliases() as $a ) {
-					foreach ( $r->rows( "SELECT DISTINCT source FROM {$a}.items", [] ) as [ $source ] ) {
-						$sources[] = Core::as_string( $source );
-					}
-				}
-				return $sources;
-			}
+		return Intel_Graph_Row_Schema::read(
+			static fn ( Row_Reader $r ): array => \array_map( static fn ( array $row ): string => Core::as_string( $row[0] ), $r->rows( 'SELECT DISTINCT source FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' ) . ' i ORDER BY source', [] ) )
 		);
-		$sources = \array_values( \array_unique( $sources ) );
-		\sort( $sources, \SORT_STRING );
-		return $sources;
 	}
 }

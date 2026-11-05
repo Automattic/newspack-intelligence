@@ -991,7 +991,10 @@ kind's severity its place in the effective `kinds` list, a lens's
 replaced by the call's, the most severe first, every kind alike when the
 list is empty, the newest copy's kind among equals; `count` its stories;
 `clients` the open clients, as survivors, that those copies are about by
-a subject or a mention, by name; `newest_ts` its newest story's time; and
+a subject or a mention, by name, a copy about more than
+`Graph_Query::MAX_ITEM_CLIENTS` (3) of them naming none, though it still
+counts, as the briefing files such an item once, so an item naming dozens
+of clients neither lists them nor ranks its group by them; `newest_ts` its newest story's time; and
 `items` its `Graph_Query::CITATIONS` (5) newest stories, each as `search`
 answers an item, the most important first, in `MOST_IMPORTANT`'s order.
 Groups rank by severity, then by clients, the most first, then by newest
@@ -1250,7 +1253,7 @@ each as `search` answers it, and `total` counting every such item; each
 item sits under every entity holding an open `client` role, as its
 survivor, that it is about, in a group of role `client` carrying the
 client's key and name, unless it is about more than
-`Intelligence_Briefing::MAX_CLIENT_GROUPS` (3) of them, when it is filed
+`Graph_Query::MAX_ITEM_CLIENTS` (3) of them, when it is filed
 once as an item about no client is, its entities still naming every
 client. One that is not about an open client, or is about that many, but
 is about an entity holding an open `newspack_product` role sits in one
@@ -2312,7 +2315,7 @@ its own one-shot commands; nothing polls.
 | `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity and the sentence each link quotes, and `review entities`, a pill per entity, each citing item with the sentence it quotes; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`, its field focused; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back. Each queue's list, named for its queue and described by a visually hidden sentence of its keys, takes focus and the review keys while focus is in it and not in a field, as the substrate's `isTypingTarget()` reads it: `j` and `k` move between the link pills or the entity rows (`data-review-row`, `tabindex="-1"`, so the shared `[tabindex]:focus-visible` ring shows), and `y`, `n` and `m` press the focused row's control whose `aria-keyshortcuts` names the key (✓, ✕, Merge…), a judgment moving focus to the row then in its place, else the last |
 | `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection`, its collection shown saving through `useHeld` until a read lists it by name |
 | `views/Watches.js` | default, `CLOSED_WATCH`, `newWatch`, `WatchRow` | `watches`, the caller's own, each a `WatchRow`, the one row the Briefing lists too: the button opening it, its target, and its unseen count, or "Inbox off" for a watch without its inbox, or the words that a save of it is awaiting a read; opened onto `watch_matches --key` a page at a time, or onto the words that its inbox is off, each match with a "Mark seen" (`mark_seen --key --item`) and the page with "Mark these seen", naming each match it shows, a marked match hidden through `useHeld` until a read no longer lists it and a landed mark returning to the first page; for every reader, not gated on `canTune`, the form saving a new watch or the one opened through `save_watch` — its name, the kind it follows and exactly one target (a lens picked from `lenses`, an entity key, or a collection picked from `collections`), and the three deliveries as checkboxes, each sent as `true` or `false` — and `remove_watch`, each held until a read of `watches` lists the watch with the name, target kind and deliveries the save sent, an edit by its own key, the target's key uncompared because the server stores an entity as its survivor |
-| `components/TrendTable.js` | default, `againstBaseline`, `signalValue` | The table of trend rows or signals a lens and an entity render, each row's bucket, value, count and cited items; given `by` `theme`, a Clients column of `EntityChip`s beside the count, and a row counting one item showing that item in place of its theme, its Items cell empty; a signal's count against its baseline, and its axis and kind with the value it counts |
+| `components/TrendTable.js` | default, `againstBaseline`, `signalValue` | The table of trend rows or signals a lens and an entity render, each row's bucket, value, count and cited items; given `by` `theme`, a Clients column of `EntityChip`s beside the count, every row showing its value under Value and its items under Items; a signal's count against its baseline, and its axis and kind with the value it counts |
 | `hooks/useHeld.js` | `useHeld` | A read's rows with each write shown from the moment it is sent: a held key's row taken out until the reads stop listing it, or a held row put in its place until a read lists one `matches` says reflects it; a refusal undoes the hold whose send it echoes, and a bare refusal every hold |
 | `components/SaveToCollection.js` | default | The one dialog any result saves through, sending `collect` |
 | `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty when every list its `rows` names is, its words and any control the view gives as `empty`, or its rows — as a stock `Card` section named by an optional title, which heads its `CardHeader`, with the state inset in its `CardBody`, or bare inside a dialog; the one alert every refusal, read or write, renders in |

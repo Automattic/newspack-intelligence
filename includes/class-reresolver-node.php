@@ -609,13 +609,7 @@ class Reresolver_Node extends Timer_Node {
 		[ $of, $of_binds ] = self::of_source( $source );
 		$when              = Intel_Graph_Row_Schema::ITEM_TIME;
 		return Intel_Graph_Row_Schema::read(
-			static function ( Row_Reader $r ) use ( $from, $to, $of, $of_binds, $when ): int {
-				$count = 0;
-				foreach ( $r->aliases() as $a ) {
-					$count += Core::as_int( $r->rows( "SELECT COUNT(*) FROM {$a}.items i WHERE {$when} >= ? AND {$when} < ?{$of}", [ $from, $to, ...$of_binds ] )[0][0] ?? 0 );
-				}
-				return $count;
-			}
+			static fn ( Row_Reader $r ): int => Core::as_int( $r->rows( 'SELECT COUNT(*) FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' ) . " i WHERE {$when} >= ? AND {$when} < ?{$of}", [ $from, $to, ...$of_binds ] )[0][0] ?? 0 )
 		);
 	}
 
