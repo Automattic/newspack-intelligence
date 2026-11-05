@@ -499,19 +499,23 @@ class Resolver_Node extends Node {
 	 * so a retry reaches an item only NER linked; only the own partition's
 	 * rows are retracted. One link is sent per entity, an about-link over a
 	 * publisher one whatever their order, so a publisher the text also names
-	 * is sent as what the item is about. A link's evidence stays on its
-	 * event: the extractor reads the item itself.
+	 * is sent as what the item is about, and the entity whose site
+	 * published the item is sent apart, '' for none, so an extraction
+	 * knows its publisher whatever its links say. A link's evidence stays
+	 * on its event: the extractor reads the item itself.
 	 *
 	 * @param Resolution $resolution What resolve() answered.
 	 * @param Judgment   $judgment   What settled() read.
-	 * @return array{links: list<array{entity_key:string,role:string,method:string,confidence:float,state:string}>, proposals: list<array{type:string,name:string,evidence:string}>}
+	 * @return array{links: list<array{entity_key:string,role:string,method:string,confidence:float,state:string}>, proposals: list<array{type:string,name:string,evidence:string}>, publisher: string}
 	 */
 	private static function judged( array $resolution, array $judgment ): array {
-		$links = [];
+		$links     = [];
+		$publisher = '';
 		foreach ( $resolution['links'] as $link ) {
 			unset( $link['evidence'] );
 			$entity    = $link['entity_key'];
 			$published = Intel_Event::PUBLISHER === $link['role'];
+			$publisher = $published ? $entity : $publisher;
 			$verdict   = $published ? null : ( $judgment['verdicts'][ $entity ] ?? null );
 			if ( 'rejected' !== $verdict && ! ( $published && isset( $links[ $entity ] ) ) ) {
 				$links[ $entity ] = 'confirmed' === $verdict ? [ 'state' => 'asserted' ] + $link : $link;
@@ -533,6 +537,7 @@ class Resolver_Node extends Node {
 		return [
 			'links'     => \array_values( $links ),
 			'proposals' => $resolution['proposals'],
+			'publisher' => $publisher,
 		];
 	}
 

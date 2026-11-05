@@ -43,6 +43,10 @@ final class ExtractorNodeTest extends TestCase {
 
 	private const PEABODY = 'event:peabody-award';
 
+	private const LANTERN = 'organization:kestrel-lantern-harbor';
+
+	private const LANTERN_OLD = 'organization:lantern-harbor-weekly';
+
 	/** The worker partition the extractor publishes its status from. */
 	private const PARTITION = 4;
 
@@ -387,6 +391,41 @@ final class ExtractorNodeTest extends TestCase {
 
 		$this->assertSame( [], $this->out->requests );
 		$this->assertSame( [], $this->out->captured );
+	}
+
+	/**
+	 * The publisher an item names is the client the request asks for by
+	 * name, as its survivor shows: a client lane item names its client, and
+	 * one published by a key merged into a client names the survivor.
+	 */
+	public function test_a_client_publisher_is_named_in_the_request(): void {
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ), self::entity( self::LANTERN_OLD, 'Lantern Harbor Weekly' ), self::merged( self::LANTERN_OLD, self::LANTERN ) );
+		$this->answer( '{"summary":"A transit grant lands."}' );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN_OLD ) );
+
+		$this->assertSame( [ 'Kestrel Lantern Harbor', 'Kestrel Lantern Harbor' ], \array_map( static fn ( array $request ): string => $request[ Message::VALUE ]['inputs']['publisher'], $this->out->requests ) );
+	}
+
+	/**
+	 * An item a non-client published, one no entity published, as a Linear
+	 * issue, and one a former client published name no publisher.
+	 */
+	public function test_an_item_no_open_client_published_names_no_publisher(): void {
+		$this->seed(
+			self::lantern(),
+			self::client( self::LANTERN ),
+			[ Intel_Event::make( 'role_ended', [ 'entity_key' => self::LANTERN, 'role' => 'client', 'from_ts' => 1790000000, 'to_ts' => 1793000000 ], 'user:41', 'fixture-7' ) ],
+			self::entity( self::MESA, 'Mesa Courier', [ 'domain' => [ 'mesacourier.example' ] ] )
+		);
+		$this->answer( '{"summary":"A transit grant lands."}' );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [ 'item_key' => 'feed:mesa-transit-1', 'url' => 'https://mesacourier.example/transit' ], publisher: self::MESA ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [ 'item_key' => 'linear:SUP-412', 'source' => 'linear', 'url' => 'https://linear.example/SUP-412' ] ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+
+		$this->assertSame( [ '', '', '' ], \array_map( static fn ( array $request ): string => $request[ Message::VALUE ]['inputs']['publisher'], $this->out->requests ) );
 	}
 
 	/** The extraction names topic keys; each claim's subject and object resolve against the index. */
@@ -779,6 +818,8 @@ final class ExtractorNodeTest extends TestCase {
 		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [], 'extracted' => false, 'attempt' => '2', 'extract' => false ] ) );
 		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [], 'extracted' => false, 'attempt' => 2 ] ) );
 		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [], 'extracted' => false, 'attempt' => 2, 'extract' => 'yes' ] ) );
+		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [], 'extracted' => false, 'attempt' => 2, 'extract' => false ] ) );
+		$this->extractor->fill( self::message( [ 'item' => self::item(), 'links' => [ self::link( self::GAZETTE, 1.0 ) ], 'proposals' => [], 'extracted' => false, 'attempt' => 2, 'extract' => false, 'publisher' => 7 ] ) );
 		$this->extractor->fill( self::message( 'TICK' ) );
 
 		$this->assertSame( [], $this->out->captured );
@@ -829,7 +870,7 @@ final class ExtractorNodeTest extends TestCase {
 		$extractions = \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'extraction_recorded' === $e['event'] ) );
 		$this->assertSame( [ 'site blocked from sending email', null, null, null ], \array_map( static fn ( array $e ): ?string => $e['theme'] ?? null, $extractions ) );
 		$this->assertSame( [ 'bug', 'bug', 'bug', 'other' ], \array_column( $extractions, 'kind' ) );
-		$this->assertSame( [ 'topics', 'profile', 'audience' ], \array_keys( $this->out->requests[0][ Message::VALUE ]['inputs'] ) );
+		$this->assertSame( [ 'topics', 'profile', 'audience', 'publisher' ], \array_keys( $this->out->requests[0][ Message::VALUE ]['inputs'] ) );
 	}
 
 	/** The index is held for its TTL, then read again. */
@@ -1201,10 +1242,31 @@ final class ExtractorNodeTest extends TestCase {
 	 * @param bool                      $extracted Whether a call extracted the item before.
 	 * @param int                       $attempt   The extraction attempts made so far.
 	 * @param bool                      $extract   Whether it is owed an extraction whatever it holds.
+	 * @param string                    $publisher The entity whose site published the item; '' for none.
 	 * @return array<int,mixed>
 	 */
-	private static function resolved( array $links, array $proposals, array $over = [], bool $extracted = false, int $attempt = 0, bool $extract = false ): array {
-		return self::message( [ 'item' => \array_merge( self::item(), $over ), 'links' => $links, 'proposals' => $proposals, 'extracted' => $extracted, 'attempt' => $attempt, 'extract' => $extract ] );
+	private static function resolved( array $links, array $proposals, array $over = [], bool $extracted = false, int $attempt = 0, bool $extract = false, string $publisher = '' ): array {
+		return self::message( [ 'item' => \array_merge( self::item(), $over ), 'links' => $links, 'proposals' => $proposals, 'extracted' => $extracted, 'attempt' => $attempt, 'extract' => $extract, 'publisher' => $publisher ] );
+	}
+
+	/** @return list<array<string,mixed>> The client newsroom: its name and its domain. */
+	private static function lantern(): array {
+		return self::entity( self::LANTERN, 'Kestrel Lantern Harbor', [ 'domain' => [ 'klharbor.example' ] ] );
+	}
+
+	/**
+	 * An open client role, from before the item.
+	 *
+	 * @param string $key The entity holding it.
+	 * @return list<array<string,mixed>>
+	 */
+	private static function client( string $key ): array {
+		return [ Intel_Event::make( 'role_asserted', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => 1790000000 ], 'user:41', 'fixture-7' ) ];
+	}
+
+	/** @return array<string,mixed> A client lane item's fields: its own article about someone else. */
+	private static function lane_item(): array {
+		return [ 'item_key' => 'feed:klharbor.example:transit-77', 'url' => 'https://klharbor.example/2026/11/transit-grant', 'title' => 'Mesa Courier wins a transit grant' ];
 	}
 
 	/** @return array<string,mixed> The item every resolution carries. */

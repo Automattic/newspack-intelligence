@@ -364,7 +364,7 @@ writes a `link_asserted` or `link_proposed` per link, a `link_retracted` per
 stored link it no longer writes, and an `entity_proposed` per candidate,
 keyed `Intel_Event::entity_key()`, to the writer its `make_node` line names,
 by TO and declared as an extra target, then forwards `{ item, links,
-proposals, extracted, attempt, extract }` to its target, `extractor`. It resolves
+proposals, extracted, attempt, extract, publisher }` to its target, `extractor`. It resolves
 nothing while a projector's reader of the ontology stream
 `Stream_Writer::stream_dir()` names had not committed the stream's end
 (`Projector_Node::behind()`, over `Consumer_Node::lag_from_disk()`) just
@@ -419,7 +419,8 @@ earns, and so is a `ner_fuzzy` row unless the NER step ran and answered,
 since nothing else looked for it again. A judgment does not name a
 role, so it governs an item's about-links alone and never a `publisher` link, and
 the extractor is sent one link per entity, an about-link over a publisher
-one. Every resolution reads
+one, and, apart, as `publisher`, the entity the item's `publisher` link
+names, '' for none, so a publisher the text also names is not lost. Every resolution reads
 those rows with the rest of `settled()`; an `item_recorded` reads them
 through `Intel_Graph_Row_Schema::read()` given a line, so a projection that
 will not open resolves the item from the event, NER included, with no
@@ -627,10 +628,16 @@ body, up to 64 KiB, for as long as it waits.
 candidate; for any other it asks `intel:llm`, its third argument, also
 declared, for one call, 800 tokens at temperature 0.2, KEY the `item_key`,
 naming the `extract` prompt with the item, and as its inputs the topics it
-offers, by name and key, the profile and the audience, carrying the
-resolution less its item, as backlog when the resolution carries
+offers, by name and key, the profile, the audience and the publisher,
+carrying the resolution less its item, as backlog when the resolution carries
 `extract: true`; the answer hands the item and the inputs back, and
-`Prompts::messages()` offers the names of the topic map. It offers the
+`Prompts::messages()` offers the names of the topic map. The publisher is
+the name `Graph_Query::name_of()` shows for the survivor of the
+resolution's `publisher`, as the shared index reads it, when that survivor
+holds an open `client` role (`Graph_Query::open_roles()`), read when it
+asks; '' when no entity published the item, its survivor is not an open
+client, a former one among them, or the projection will not open, logged.
+A resolution whose `publisher` is not a string is dropped as unreadable. It offers the
 themes of the items most like this one as the projection holds them when
 it builds the messages, as `intel:llm` sends the request, so a request
 queued before a similar item was themed offers that theme, and never any
@@ -665,7 +672,15 @@ inside an `<item>` fence the system message names as untrusted and offers
 the index's topic names; any themes offered follow the item as a JSON list
 of `{ theme, example }` in a `<themes>` fence, tags hex-escaped, which the
 system message names as untrusted as the item, and never in the system
-message itself, the examples with them. It defines
+message itself, the examples with them. An item a client published names
+its publisher as `publisher` inside the item's fence, never in the system
+message, and the kind clause then says the publisher field names a Newspack
+client and reads an article a publication runs about anyone but itself as
+`other`, keeping its kind when it is about the publication itself (its
+awards, fundraising, launches, staff or finances) or about the news
+industry (journalism, publishing, funding for newsrooms, or the platforms
+and tools newsrooms use); an item no open client published carries
+neither, its prompt unchanged. It defines
 every kind in one line each from `Intel_Event::KIND_DEFINITIONS`, which
 lists each of `ITEM_KINDS` in its order, and where a kind is often
 confused, says what it is not: `bug` is a defect in Newspack's shipped

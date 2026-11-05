@@ -99,6 +99,7 @@ final class ResolverNodeTest extends TestCase {
 					[ 'entity_key' => self::MESA, 'role' => 'mention', 'method' => 'name', 'confidence' => 1.0, 'state' => 'asserted' ],
 				],
 				'proposals' => [],
+				'publisher' => self::GAZETTE,
 			],
 			$this->resolved()
 		);
@@ -106,7 +107,8 @@ final class ResolverNodeTest extends TestCase {
 
 	/**
 	 * An item its publisher's own site names is written twice, publisher and
-	 * subject, and sent to extract once per entity, as what it is about.
+	 * subject, and sent to extract once per entity, as what it is about,
+	 * still naming the entity that published it.
 	 */
 	public function test_a_publisher_the_item_names_is_written_twice_and_sent_once(): void {
 		$this->seed( self::gazette() );
@@ -118,6 +120,17 @@ final class ResolverNodeTest extends TestCase {
 			\array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['role'] ], $this->written() )
 		);
 		$this->assertSame( [ [ 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'name', 'confidence' => 1.0, 'state' => 'asserted' ] ], $this->resolved()['links'] );
+		$this->assertSame( self::GAZETTE, $this->resolved()['publisher'] );
+	}
+
+	/** An item whose host names no entity is sent naming no publisher. */
+	public function test_an_item_no_entity_published_names_no_publisher(): void {
+		$this->seed( self::gazette(), self::entity( self::MESA, 'Mesa Courier' ) );
+
+		$this->resolver->fill( self::recorded( [ 'url' => 'https://wire.example/2026/10/reprint', 'body' => 'Mesa Courier reprinted it.' ] ) );
+
+		$this->assertSame( [ self::MESA ], \array_column( $this->resolved()['links'], 'entity_key' ) );
+		$this->assertSame( '', $this->resolved()['publisher'] );
 	}
 
 	/** A proposed link and a candidate entity are written as their own kinds. */
@@ -1253,6 +1266,7 @@ final class ResolverNodeTest extends TestCase {
 					[ 'entity_key' => 'organization:quarry-ledger', 'role' => 'mention', 'method' => 'name', 'confidence' => 0.85, 'state' => 'asserted' ],
 				],
 				'proposals' => [],
+				'publisher' => self::GAZETTE,
 			],
 			$this->resolved()
 		);

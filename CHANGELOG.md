@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **An extraction knows when a client published the item, and reads that client's articles about anyone else as `other`.** The resolver forwards `publisher`, the entity the item's `publisher` link names, beside the links, so a publisher the text also names is no longer lost. The extractor, as it asks, names that entity's survivor in `inputs.publisher` when it holds an open `client` role, and `Prompts::extract()` puts the name in the item's fence and adds the clause: an article a publication runs about anyone but itself is `other`, unless it is about the publication itself or the news industry. An item a non-client, a former client or no entity published carries neither, and its prompt is unchanged. A resolution whose `publisher` is not a string is dropped.
 - **A lens's Value column is never narrower than its longest word.** `TrendTable` gives every Value cell, the signals tables' included, the class `newspack-intelligence__value`, which sets `overflow-wrap: normal` inside the lens over the lens's `overflow-wrap: anywhere`, so "release" and "incident" no longer break mid-word while a theme of several words still wraps between them.
 
 ## [0.36.2] - 2026-11-04

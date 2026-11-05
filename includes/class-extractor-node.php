@@ -5,7 +5,8 @@
  * item with no link and no candidate, and asks any other's extraction of
  * the model-call node its `make_node` line names, `intel:llm`, naming the
  * `extract` prompt, its inputs the topics it offers by name and key, the
- * profile and the audience, and carrying the resolution less its item, so
+ * profile, the audience and the name of the open client that published
+ * the item, '' for none, and carrying the resolution less its item, so
  * the answer finishes it (`Asks_Model`); the prompt offers the themes of
  * the items most like it as the projection holds them when it is sent.
  * It writes an `extraction_recorded` naming topic keys plus a
@@ -56,6 +57,7 @@ use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Publishes_Status;
+use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Schema_Reflection;
 use Newspack_Nodes\Worker_Should_Stop;
 
@@ -129,8 +131,9 @@ class Extractor_Node extends Node {
 			return;
 		}
 		$value = $message[ Message::VALUE ];
-		$read  = 0 === ( Core::int( $message[ Message::TYPE ] ) & Message::TM_STRUCT ) ? null : self::resolution_of( $value );
-		if ( null === $read ) {
+		$read      = 0 === ( Core::int( $message[ Message::TYPE ] ) & Message::TM_STRUCT ) ? null : self::resolution_of( $value );
+		$publisher = Core::arr( $value )['publisher'] ?? null;
+		if ( null === $read || ! \is_string( $publisher ) ) {
 			$this->print_less_often( 'dropping a resolution it cannot read from ', Core::terminal_safe( Core::as_string( $message[ Message::FROM ] ) ) );
 			return;
 		}
@@ -139,11 +142,40 @@ class Extractor_Node extends Node {
 			return;
 		}
 		$inputs = [
-			'topics'   => Entity_Index::current()->topics(),
-			'profile'  => \implode( "\n", $this->profiles ),
-			'audience' => $this->audience,
+			'topics'    => Entity_Index::current()->topics(),
+			'profile'   => \implode( "\n", $this->profiles ),
+			'audience'  => $this->audience,
+			'publisher' => $this->client_name( $publisher ),
 		];
 		$this->ask_model( 'extract', $item, $inputs, [ 'max_tokens' => 800, 'temperature' => 0.2 ], [ 'resolution' => \array_diff_key( Core::arr( $value ), [ 'item' => true ] ) ], $owed );
+	}
+
+	/**
+	 * The name of the open client whose site published the item, read as
+	 * the publisher's survivor in the shared index; '' when no entity
+	 * published it, its survivor holds no open `client` role, or the
+	 * projection will not open, logged.
+	 *
+	 * @param string $publisher The publisher's entity key; '' for none.
+	 */
+	private function client_name( string $publisher ): string {
+		$merged   = Entity_Index::current()->merged();
+		$survivor = '' === $publisher ? '' : ( $merged[ $publisher ] ?? $publisher );
+		if ( '' === $survivor ) {
+			return '';
+		}
+		$keys = Graph_Query::inverse( $merged )[ $survivor ] ?? [ $survivor ];
+		return Core::as_string(
+			Intel_Graph_Row_Schema::read(
+				static function ( Row_Reader $r ) use ( $survivor, $keys ): string {
+					if ( ! isset( Graph_Query::open_roles( $r, [ $survivor => $keys ], [ Graph_Query::CLIENT ] )[ $survivor ] ) ) {
+						return '';
+					}
+					return Core::as_string( $r->rows( 'SELECT ' . Graph_Query::name_of( $r, 'k.entity_key' ) . ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' k WHERE k.entity_key = ? LIMIT 1', [ $survivor ] )[0][0] ?? null );
+				},
+				"{$this->name}: no intel-graph to read the publisher from; naming none: "
+			)
+		);
 	}
 
 	/**

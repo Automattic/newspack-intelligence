@@ -773,6 +773,7 @@ final class LlmCallNodeTest extends TestCase {
 			'extracted' => false,
 			'attempt'   => 0,
 			'extract'   => false,
+			'publisher' => '',
 		];
 		return $resolution;
 	}
