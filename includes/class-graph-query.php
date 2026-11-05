@@ -101,7 +101,7 @@ final class Graph_Query {
 	public const NEWSPACK_PRODUCT = 'newspack_product';
 
 	/** The item kinds a client's status counts, in the order it answers them. */
-	public const STATUS_KINDS = [ 'churn_signal', 'feature_request', 'complaint' ];
+	public const STATUS_KINDS = [ 'churned', 'churn_signal', 'feature_request', 'complaint' ];
 
 	/** The item kind that says nothing, so it never signals about an entity. */
 	private const MUTE_KIND = 'other';
@@ -116,6 +116,12 @@ final class Graph_Query {
 		'month' => "date( t, 'unixepoch', 'start of month' )",
 	];
 
+	/** The characters of plain text an item's excerpt holds at most, the ellipsis aside. */
+	public const EXCERPT_CHARS = 800;
+
+	/** The characters of a body a list reads for its excerpt: enough past the markup, without moving 64 KiB a row. */
+	private const EXCERPT_READ_CHARS = 4096;
+
 	/** Each field a listed item answers, by the column it is read from. */
 	private const ITEM_COLUMNS = [
 		'item_key'   => 'i.item_key',
@@ -125,6 +131,7 @@ final class Graph_Query {
 		'tier'       => 'i.tier',
 		'item_ts'    => 'i.item_ts',
 		'summary'    => 'x.summary',
+		'excerpt'    => 'i.head',
 		'kind'       => 'x.kind',
 		'relevance'  => 'x.relevance',
 		'importance' => 'x.importance',
@@ -320,7 +327,7 @@ final class Graph_Query {
 			if ( null === $row[1] ) {
 				continue;
 			}
-			$item                         = \array_combine( \array_keys( $columns ), \array_slice( $row, 7, \count( $columns ) ) );
+			$item                         = self::excerpted( \array_combine( \array_keys( $columns ), \array_slice( $row, 7, \count( $columns ) ) ) );
 			$at                           = Core::as_int( $row[1] );
 			$groups[ $at ]              ??= [ 'theme' => Core::as_string( $row[2] ), 'kind' => $row[3], 'count' => Core::as_int( $row[4] ), 'clients' => self::clients_of( $row[6] ), 'newest_ts' => Core::as_int( $row[5] ), 'items' => [] ];
 			$groups[ $at ]['items'][ Core::as_string( $item['item_key'] ) ] ??= $item;
@@ -504,7 +511,7 @@ final class Graph_Query {
 			. " x ON x.item_key = i.item_key WHERE {$where} ORDER BY {$within['order']} LIMIT ? OFFSET ?",
 			[ ...$binds, $limit, $offset ]
 		);
-		$items                           = \array_map( static fn ( array $row ): array => \array_combine( \array_keys( $columns ), $row ), $page );
+		$items                           = \array_map( static fn ( array $row ): array => self::excerpted( \array_combine( \array_keys( $columns ), $row ) ), $page );
 		$linked                          = self::entities_of( $r, $g, \array_map( static fn ( array $item ): string => Core::as_string( $item['item_key'] ), $items ) );
 		return [
 			'items' => \array_map( static fn ( array $item ): array => \array_diff_key( $item, $within['fields'] ) + [ 'entities' => $linked[ Core::as_string( $item['item_key'] ) ] ?? [] ] + \array_intersect_key( $item, $within['fields'] ), $items ),
@@ -532,6 +539,35 @@ final class Graph_Query {
 			$linked[ Core::as_string( $item_key ) ][] = [ 'entity_key' => $entity, 'name' => $name, 'state' => $state ];
 		}
 		return $linked;
+	}
+
+	/**
+	 * A listed item with the body's opening its row read replaced by its
+	 * excerpt, so no answer carries the body itself.
+	 *
+	 * @param array<string,mixed> $item The item as its row read it.
+	 * @return array<string,mixed>
+	 */
+	private static function excerpted( array $item ): array {
+		$item['excerpt'] = self::excerpt( Core::as_string( $item['excerpt'] ) );
+		return $item;
+	}
+
+	/**
+	 * A body's opening as plain text, cut on a word boundary to
+	 * EXCERPT_CHARS with an ellipsis when cut, as it is when the read stopped
+	 * short of the body's end, whose last word may be partial.
+	 *
+	 * @param string $head The body's first EXCERPT_READ_CHARS characters.
+	 */
+	private static function excerpt( string $head ): string {
+		$plain = Entity_Index::plain( $head );
+		if ( '' === $plain || ( \mb_strlen( $plain ) <= self::EXCERPT_CHARS && \mb_strlen( $head ) < self::EXCERPT_READ_CHARS ) ) {
+			return $plain;
+		}
+		$kept  = \mb_substr( $plain, 0, self::EXCERPT_CHARS + 1 );
+		$space = \mb_strrpos( $kept, ' ' );
+		return \mb_substr( $kept, 0, false === $space ? self::EXCERPT_CHARS : $space ) . '…';
 	}
 
 	/**
@@ -1897,22 +1933,17 @@ final class Graph_Query {
 
 	/**
 	 * The name every read shows an entity by, as a scalar subquery on the key
-	 * an expression names: the name it was created with, unless that is one
-	 * of its own domains, as the roster names a client, and a canonical name
-	 * was added to it since, when the newest of those, the highest
-	 * partition's first, as `Entity_Index` reads states; null where it has
-	 * no `entities` row.
+	 * an expression names: the newest canonical name added to it, the highest
+	 * partition's first, as `Entity_Index` reads states, else the name it was
+	 * created with; null where it holds neither.
 	 *
 	 * @api Feed_Source_Node reads which clients are still named by a domain.
 	 * @param Row_Reader $r   The reader.
 	 * @param string     $key The SQL naming the entity key.
 	 */
 	public static function name_of( Row_Reader $r, string $key ): string {
-		$entities = Intel_Graph_Row_Schema::all( $r, 'entities' );
-		$created  = "( SELECT en.name FROM {$entities} en WHERE en.entity_key = {$key} LIMIT 1 )";
-		return "CASE WHEN EXISTS ( SELECT 1 FROM {$entities} ed JOIN " . Intel_Graph_Row_Schema::all( $r, 'identifiers' ) . " di ON di.entity_key = ed.entity_key AND di.kind = 'domain' AND LOWER( di.value ) = LOWER( ed.name ) WHERE ed.entity_key = {$key} )"
-			. ' THEN COALESCE( ( SELECT nm.value FROM ' . Intel_Graph_Row_Schema::all( $r, 'names', true ) . " nm WHERE nm.entity_key = {$key} AND nm.kind = 'canonical' ORDER BY nm.partition_ordinal DESC, nm.id DESC LIMIT 1 ), {$created} )"
-			. " ELSE {$created} END";
+		return 'COALESCE( ( SELECT nm.value FROM ' . Intel_Graph_Row_Schema::all( $r, 'names', true ) . " nm WHERE nm.entity_key = {$key} AND nm.kind = 'canonical' ORDER BY nm.partition_ordinal DESC, nm.id DESC LIMIT 1 ),"
+			. ' ( SELECT en.name FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . " en WHERE en.entity_key = {$key} LIMIT 1 ) )";
 	}
 
 	/**
@@ -2046,7 +2077,7 @@ final class Graph_Query {
 			'survivors' => $survivors,
 			'keys'      => self::inverse( $survivors ),
 			'with'      => 'WITH mg AS MATERIALIZED ( SELECT key, value FROM json_each( ? ) ),'
-				. ' ri AS NOT MATERIALIZED ( SELECT item_key, source, tier, url, title, item_ts, retrieved_ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' )
+				. ' ri AS NOT MATERIALIZED ( SELECT item_key, source, tier, url, title, item_ts, retrieved_ts, substr( body, 1, ' . self::EXCERPT_READ_CHARS . ' ) AS head FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' )
 				. ' a WHERE tier IN ( ' . Intel_Graph_Row_Schema::marks( $tiers ) . ' ) )',
 			'binds'     => [ \wp_json_encode( (object) $survivors, \JSON_THROW_ON_ERROR ), ...$tiers ],
 		];

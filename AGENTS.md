@@ -238,7 +238,9 @@ written by one stream alone, so a replay writes
 what it wrote before and the streams project the same rows in any order. The projector never reads
 before it writes: an entity is three rows — identity in `entities`, state in
 `entity_states`, merge in `entity_merges` — and an item's extraction sits in
-`extractions` beside its `items` row, which is written once. A link, claim,
+`extractions` beside its `items` row, which an `item_recorded` writes once,
+with `ignore`, so a repeat of the record changes nothing; only an
+`item_grown` replaces it (see The item contract). A link, claim,
 judgment or topic may name an entity that has no `entities` row yet; readers join
 to it. A machine's `entity_proposed` writes with `ignore` and a person's
 `entity_created` with `set`, so a machine never overwrites a person.
@@ -624,7 +626,10 @@ names the event or initiative the item is part of, its `criteria` each
 offered theme keyed `t1` to `tN`, told as `<theme>: <example>`, then
 `none`, "none of these: this item is part of a different event or
 initiative", `Prompts::chosen_theme()` reading a key back as its theme.
-Its state is `Publisher: <name>` when one is given, `Title: <title>`,
+Its state leads with `Source: <label>`, `Prompts::SOURCE_LABELS` saying what
+the item is (a ticket in a work tracker, an internal blog post or chat
+message, a published article), any other source its own name, since a ticket
+scored as news without it, then `Publisher: <name>` when one is given, `Title: <title>`,
 `Text: ` the body's plain text (`Entity_Index::plain()`) cut to
 `Prompts::DECISION_TEXT_CHARS` (2,000) characters, since an article's lede
 and first paragraphs say whom it is about, and `Summary: ` the reply's
@@ -720,7 +725,9 @@ those keys alone, each read through its table's key within the same days. Nothin
 item naming no integer `retrieved_ts` is refused, an item no themed item
 resembles is offered none, and none is offered, logged once, while the
 `intel-graph` tables cannot be read. `Prompts::extract()` builds the
-prompt, which carries the item as JSON (tags hex-escaped)
+prompt, which asks for a summary of two or three sentences, what happened,
+who it affects and why it matters, read from the item alone and saying only
+what a thin item says, and carries the item as JSON (tags hex-escaped)
 inside an `<item>` fence the system message names as untrusted and offers
 the index's topic names; any themes offered follow the item as a JSON list
 of `{ theme, example }` in a `<themes>` fence, tags hex-escaped, which the
@@ -749,8 +756,12 @@ an internal tool, process or deploy going live; `research` is a study,
 survey, report or analysis of the news industry, its audiences or its
 business, as published, never Newspack's or Automattic's own engineering,
 audit, performance or planning work;
-`release` always takes a GitHub release page; `churn_signal` leaves out a
-client adopting more Newspack and routine account and storage work; and
+`release` always takes a GitHub release page; `churned` is a client that
+has left Newspack or is leaving, offboarding underway or done, the decision
+already made; `churn_signal` is a hint that a client may leave, such as
+dissatisfaction with price or service, going quiet or weighing a
+competitor, and leaves out a client already offboarding, a client adopting
+more Newspack and routine account and storage work; and
 `other` takes routine service and onboarding work, internal planning,
 internal tooling, audits and engineering reports, team updates and kudos, and a publication's own journalism about anyone
 else; and it
@@ -781,7 +792,7 @@ importance written and forwarded is the greater of the score and its kind's
 floor when the relevance is at least the floor's, else the score, so the
 stand-in takes only a floor that names no relevance; the shipped
 topologies set none. `Prompts::parse_extract()` reads the first `{…}`
-block through `Prompts::json_object()`, which the NER step shares, cuts the summary to 280 characters, reads an unknown kind as `other`,
+block through `Prompts::json_object()`, which the NER step shares, cuts the summary to `Prompts::SUMMARY_CHARS` (600) characters, reads an unknown kind as `other`,
 reads the theme as inert words — lowercase, each run of anything but
 letters, hyphens and apostrophes one space, so no digit, quote or
 punctuation survives, its ends trimmed of spaces, hyphens and apostrophes,
@@ -1048,7 +1059,7 @@ answers `status: { client_since, kinds, last_item_ts }`
 (`Graph_Query::status()`): the earliest start of its open `client` rows,
 read off the role rows the record already holds, `kinds` counting the
 readable items about it extracted as each of `Graph_Query::STATUS_KINDS`
-(`churn_signal`, `feature_request` and `complaint`, in that order), and the time of the newest readable
+(`churned`, `churn_signal`, `feature_request` and `complaint`, in that order), and the time of the newest readable
 item about it, or null. Its window is the whole retention: every readable
 item counts, as the timeline pages them, and what its own site published
 counts in none of them. Any other entity answers `status: null`. The
@@ -1065,17 +1076,25 @@ names — and windows only those; `search` and `trends` naming a role, or
 `trends` counting topics, without an entity or topic window the links of the
 readable items inside their days. Summaries, kinds and scores come from
 `extractions`.
-Every read names an entity through `Graph_Query::name_of()`: the name it
-was created with, unless that is one of its own domains, as the roster
-names a client, and a `canonical` name was added since, when the newest of
-those, the highest partition's first; so a client the roster named by its
-domain shows its site's title once the feed adds it, and every other
-entity keeps its created name. `q` reaches FTS5 as one `fts_phrase()` per
+Every read names an entity through `Graph_Query::name_of()`: the newest
+`canonical` name added to it, the highest partition's first, else the name
+it was created with; so a client the roster named by its domain shows its
+site's title once the feed adds it, a machine's proposal shows the name a
+curator gave it, and an entity with no canonical name keeps its created
+one. Only a curator, a seed's `names` and the feed write one, and the feed
+only while `name_of()` still shows one of the entity's own domains, so a
+name someone chose is never replaced by a feed's title. `q` reaches FTS5 as one `fts_phrase()` per
 word over title, body and summary, and a word holding no letter or digit
 matches as an empty phrase, which FTS5 ignores; every other value binds,
 and a blank optional arg is a value read as given (substrate ADR-25), so a
 blank `q` or `source` matches nothing. Days parse through
-`Intel_Graph_Row_Schema::range()`. An answer never carries a body; `limit` is
+`Intel_Graph_Row_Schema::range()`. An answer never carries a body, but for an item's `excerpt`, its opening as
+plain text: `ri` reads `Graph_Query::EXCERPT_READ_CHARS` (4,096) characters of
+it as `head`, so a list moves no whole body, and `Graph_Query::excerpt()`
+strips the markup, decodes the entities, collapses the whitespace and cuts it
+on a word boundary to `EXCERPT_CHARS` (800), an ellipsis marking a cut. Every
+read answering through `ITEM_COLUMNS` carries it, `search`, a theme group, a
+timeline and watch matches, under the tiers `ri` admits; `limit` is
 capped at `Graph_Query::MAX_LIMIT` (200); trend rows, related entities and
 proposed entities cite their five newest items, the first two as `items: [
 { item_key, url, title } ]`, and items their URLs. A claim answers `{
@@ -1926,7 +1945,8 @@ redirects, note and all, and a configured feed redirected onto a client's
 `/feed/` keeps its own lane. A body that is not an RSS or Atom feed fails,
 logged once under its own url with libxml's first error or the root
 element found. Each body is parsed as RSS 2.0 or Atom when it lands and
-its items recorded then. An RSS item carrying a `<source>`, as a Google
+its items recorded then, an RSS item's body its `content:encoded`, else its
+`description`. An RSS item carrying a `<source>`, as a Google
 News copy does, whose title ends with ` - ` and that element's text,
 records its title without that exact suffix, so the deduper's title norm
 matches the publisher's own copy; any other title is kept as written. The `news` node is a second
@@ -2185,8 +2205,19 @@ moved, paged by `next_cursor`. `Context_A8C_P2_Node` reads `posts-text`
 over P2's window with each post's comments, every page to `max_pages`; a
 comment records with no url, and only comments on the window's posts
 arrive. `Context_A8C_Linear_Node` reads each team's newest 30 issues from
-`team-issues`, every status group's, whose `description` arrives
-truncated. `Context_A8C_P2_Node` carries the window its first page asked
+`team-issues`, every status group's, whose `description` arrives cut to 300
+characters ending `...`. An issue so cut that moved within two intervals, or
+the window with none set, waits while the node asks `issue { id }`, which
+answers the same fields flat with the whole description, and records from
+that, so its first extraction reads all of it; an issue that did not move, or
+past the pass's room, records as cut. Once the pass's team pages are in, the
+walk asks `issue` for the stored `linear` items of the last 30 days still cut
+short, newest first, as the room left under
+`Source_Node::MAX_REQUESTS_PER_PASS` allows, a process asking each once, so
+the backlog drains over passes and stops with no verb. What `issue` answers
+of a stored item grows it (see The item contract); what it does not answer,
+by a failed call or an answer naming no description, records as cut when the
+pass ends, logged. `Context_A8C_P2_Node` carries the window its first page asked
 forward to every later page of the pass.
 
 **Seams and the model-call contract.** Each seam is a static `?\Closure`
@@ -2220,6 +2251,17 @@ with `auth_header` `Authorization` and `auth_scheme` `Bearer`, which
 `intel:llm`'s Curl sibling lends each call.
 
 ### The item contract
+
+An item's row is written once, so a longer body reaches it only through
+`item_grown`, an items-stream kind carrying the `item_recorded` fields, which
+projects as `set`: `Sqlite_Arm` keeps the row's id and the `AFTER UPDATE`
+trigger keeps `items_fts` in step. Its one minter, `Context_A8C_Linear_Node`,
+writes the stored row's own fields, its first retrieval among them, with the
+longer body, and only when that is longer in bytes than the stored body and
+than any it has written in this process, so a body cannot shrink: `set` has
+no such guard of its own, so that check is the guard. The resolver acts on
+`item_recorded` alone, so a grown item spends no NER and no extraction until
+`ontology reextract` asks. A plain repeat of `item_recorded` stays `ignore`.
 
 `Source_Node::normalize_item()` mints every item as the `item_recorded` fields
 `{item_key, source, tier, url, title, body, item_ts, retrieved_ts}`: `item_key`
@@ -2454,7 +2496,7 @@ its own one-shot commands; nothing polls.
 | `views/Briefing.js` | default | The two `briefing` slices and `watches`, each its own read and card: "Last seven days", each group in the answer's order and headed by its `role`: a `client` group under its `EntityChip`, the `newspack_product` group under "Newspack" and the group of role null under "Industry", each item an `ItemRow`, and, when the window held more than it shows, how many of how many; "Signals", each client's under its chip and each lens's under the button opening it, through `TrendTable`; "Your watches", each a `WatchRow` opening it; a card answering nothing says so and offers the one control that acts on it: Search everything, Open lenses or New watch |
 | `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time, in the order the answer's `sort` names, which the reader switches, sending `--sort` from the first page; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words, the order and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
 | `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens` above `search --lens --group=theme`'s theme groups through `GroupPage`, a page of groups at a time in the order the server ranks them, beside `trends --lens`, which `TrendTable` shows by the lens's own `by`; trend rows and signals citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
-| `views/Entity.js` | default | `entity`, headed, for a record answering a `status`, by the client's status line — client since, the first row of its own `signals` read once answered or "No signal", its churn signals, feature requests and complaints, and the day of its last item or "No item about it yet" — then `signals --entity` under its header, both axes, each row's value its axis and kind and the value it counts, its count against its baseline, then `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`, each claim read as its subject's `EntityChip`, the predicate and its object, a chip when `object_name` is set and the item's spelling as text when it is null, each chip showing the key where the name is null, and cited by its item's title linking its URL; the record lists every role row but a closed one that held no time (`to_ts` not 0 and equal to `from_ts`), an import's same-day correction, so an open row a seed asserted from 0 stays; hands `onNamed` the entity's key with what its heading shows, its name else its key, whenever the record answers, and with null once it is refused; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
+| `views/Entity.js` | default | `entity`, headed, for a record answering a `status`, by the client's status line — client since, the first row of its own `signals` read once answered or "No signal", its churn reports, churn signals, feature requests and complaints, and the day of its last item or "No item about it yet" — then `signals --entity` under its header, both axes, each row's value its axis and kind and the value it counts, its count against its baseline, then `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`, each claim read as its subject's `EntityChip`, the predicate and its object, a chip when `object_name` is set and the item's spelling as text when it is null, each chip showing the key where the name is null, and cited by its item's title linking its URL; the record lists every role row but a closed one that held no time (`to_ts` not 0 and equal to `from_ts`), an import's same-day correction, so an open row a seed asserted from 0 stays; hands `onNamed` the entity's key with what its heading shows, its name else its key, whenever the record answers, and with null once it is refused; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
 | `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity and the sentence each link quotes, and `review entities`, a pill per entity, each citing item with the sentence it quotes; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`, its field focused; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back. Each queue's list, named for its queue and described by a visually hidden sentence of its keys, takes focus and the review keys while focus is in it and not in a field, as the substrate's `isTypingTarget()` reads it: `j` and `k` move between the link pills or the entity rows (`data-review-row`, `tabindex="-1"`, so the shared `[tabindex]:focus-visible` ring shows), and `y`, `n` and `m` press the focused row's control whose `aria-keyshortcuts` names the key (✓, ✕, Merge…), a judgment moving focus to the row then in its place, else the last |
 | `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection`, its collection shown saving through `useHeld` until a read lists it by name |
 | `views/Watches.js` | default, `CLOSED_WATCH`, `newWatch`, `WatchRow` | `watches`, the caller's own, each a `WatchRow`, the one row the Briefing lists too: the button opening it, its target, and its unseen count, or "Inbox off" for a watch without its inbox, or the words that a save of it is awaiting a read; opened onto `watch_matches --key` a page at a time, or onto the words that its inbox is off, each match with a "Mark seen" (`mark_seen --key --item`) and the page with "Mark these seen", naming each match it shows, a marked match hidden through `useHeld` until a read no longer lists it and a landed mark returning to the first page; for every reader, not gated on `canTune`, the form saving a new watch or the one opened through `save_watch` — its name, the kind it follows and exactly one target (a lens picked from `lenses`, an entity key, or a collection picked from `collections`), and the three deliveries as checkboxes, each sent as `true` or `false` — and `remove_watch`, each held until a read of `watches` lists the watch with the name, target kind and deliveries the save sent, an edit by its own key, the target's key uncompared because the server stores an entity as its survivor |
@@ -2465,7 +2507,7 @@ its own one-shot commands; nothing polls.
 | `components/Pager.js` | default | How many of the matches a page shows, as items unless `forms` names the plural forms of another noun, and Previous and Next over a stack of page starts, for Search, the Entity timeline and its published items, a lens's groups and a watch's matches |
 | `components/GroupPage.js` | default | A page of a lens's theme groups in the answer's order under the fixed line "Ranked by severity, clients affected, then recency": a group counting one item as that item's `ItemRow`, any other a row headed by its theme as an `h4`, its count, kind and newest UTC day, an `EntityChip` per client, and a "Show items" button carrying `aria-expanded` and naming the theme, which discloses its items as `ItemRow`s; then its `Pager`, counting groups through `forms`; each row keyed by its theme and first item's key, since a story can stand in two groups |
 | `components/ListField.js`, `lensDraft.js` | `ListField`; `lensDraft`, `newLens`, `draftLens`, `draftArgs`, `listOf`, `daysSince` | A comma-separated field naming the values a closed list allows; a lens read into a form's text and back into the lens and the options `save_lens` and `search` take, its list filters read from `vocabulary.lensLists` and its tiers kept beside them, the one place that knows the lens's shape; and the first UTC day of a lens's rolling window |
-| `components/ItemRow.js`, `Cite.js`, `format.js` | `ItemPage` | An item row, headed by any control the view passes as its children, a chip per linked entity, leaving out a `proposed` one while another of its name is not proposed and keeping only the first of several proposals of one name, and `ItemPage`, a page of rows above its `Pager`, which Search and the Entity timeline and published section render, and which, given `onSort`, says whether the page is ranked by importance or newest first and offers the other; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day (`utcDay()`), and `metaLine()`, which joins a row's meta parts and keeps a 0 |
+| `components/ItemRow.js`, `Cite.js`, `format.js` | `ItemPage` | An item row, headed by any control the view passes as its children, its excerpt behind a "Show more" toggle unless its summary or title holds it, a chip per linked entity, leaving out a `proposed` one while another of its name is not proposed and keeping only the first of several proposals of one name, and `ItemPage`, a page of rows above its `Pager`, which Search and the Entity timeline and published section render, and which, given `onSort`, says whether the page is ranked by importance or newest first and offers the other; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day (`utcDay()`), and `metaLine()`, which joins a row's meta parts and keeps a 0 |
 | `styles/intelligence.scss` | — | Geometry only, emitted as `build/intelligence/index.css` |
 
 Each read is a `useCommandOnce` read with `retry`, under the `intelligence`

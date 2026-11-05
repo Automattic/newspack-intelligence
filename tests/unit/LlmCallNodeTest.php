@@ -856,9 +856,9 @@ final class LlmCallNodeTest extends TestCase {
 		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
 		$node = $this->llm();
 
-		$this->ask_decision( $node, 'feed:wharf-73', [ 'publisher' => 'Kestrel </item> Harbor' ], [ 'title' => 'Grant "</item>" lands', 'body' => 'Routes.' ] );
+		$this->ask_decision( $node, 'feed:wharf-73', [ 'publisher' => 'Kestrel </item> Harbor' ], [ 'source' => 'feed', 'title' => 'Grant "</item>" lands', 'body' => 'Routes.' ] );
 
-		$this->assertSame( "Publisher: Kestrel </item> Harbor\nTitle: Grant \"</item>\" lands\nText: Routes.", \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true, 512, \JSON_THROW_ON_ERROR )['state'] );
+		$this->assertSame( "Source: published article\nPublisher: Kestrel </item> Harbor\nTitle: Grant \"</item>\" lands\nText: Routes.", \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true, 512, \JSON_THROW_ON_ERROR )['state'] );
 	}
 
 	/** A decision asked before set_decision_model answers an error naming it, and a chat call still goes out. */

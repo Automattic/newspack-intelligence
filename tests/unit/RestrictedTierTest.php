@@ -97,6 +97,18 @@ final class RestrictedTierTest extends TestCase {
 		$this->assertSame( [], $this->ci->dispatch( 'search', [ '--q=renewal clause' ] )['items'] );
 	}
 
+	/** A restricted item's excerpt reaches a holder alone, since no other reader is answered the item. */
+	public function test_an_excerpt_of_a_restricted_item_reaches_a_holder_alone(): void {
+		$this->seed_restricted_world();
+
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$this->assertContains( self::DEAL, \array_column( $this->ci->dispatch( 'search', [] )['items'], 'item_key' ) );
+		$this->assertArrayHasKey( 'excerpt', $this->ci->dispatch( 'search', [] )['items'][0] );
+
+		$GLOBALS['_current_user_id'] = self::READER;
+		$this->assertNotContains( self::DEAL, \array_column( $this->ci->dispatch( 'search', [] )['items'], 'item_key' ) );
+	}
+
 	/** An entity's counts and timeline include the restricted item for a holder alone. */
 	public function test_entity_and_timeline_count_a_restricted_item_for_a_holder_alone(): void {
 		$this->seed_restricted_world();

@@ -24,7 +24,7 @@ use Newspack_Nodes\Row_Reader;
 class Prompts {
 
 	/** The longest summary an extraction keeps, in characters. */
-	public const SUMMARY_CHARS = 280;
+	public const SUMMARY_CHARS = 600;
 
 	/** The most claims one extraction keeps. */
 	public const MAX_CLAIMS = 5;
@@ -71,6 +71,15 @@ class Prompts {
 
 	/** What `about_publisher` asks. */
 	private const ABOUT_PUBLISHER_ASKS = 'Is this article about the publisher itself (its own awards, fundraising, launches, products, staff or finances) or about the news industry (journalism, publishing, funding for newsrooms, platforms newsrooms use)? Answer no when it is the publisher\'s reporting on someone else.';
+
+	/** What each source's items are, as a review's state says, so a ticket does not read as news; any other shows as its own name. */
+	private const SOURCE_LABELS = [
+		'linear' => 'Linear issue, a ticket in a work tracker',
+		'github' => 'GitHub item',
+		'p2'     => 'internal blog post',
+		'slack'  => 'internal chat message',
+		'feed'   => 'published article',
+	];
 
 	/** What `went_live` asks. */
 	private const WENT_LIVE_ASKS = 'Does this item report that a site, product or publication has actually gone live or been publicly announced? Answer no when it is a ticket, checklist, plan or task preparing for a launch.';
@@ -286,6 +295,7 @@ class Prompts {
 			. '{"summary": "at most ' . self::SUMMARY_CHARS . ' characters", "kind": one kind, "theme": "two to six words", "topics": [topic names], '
 			. '"relevance": 0-' . self::MAX_SCORE . ' integer, "importance": 0-' . self::MAX_SCORE . ' integer, "sentiment": -1.0 to 1.0, '
 			. '"claims": [{"subject": "name", "predicate": one predicate, "object": "name or value"}]}. '
+			. 'summary is two or three sentences: what happened, who it affects and why it matters, read from the item alone, never inventing what it does not say. For a thin item, say only what it says. '
 			. "kind is the one of these that fits best:\n" . self::kind_lines() . "\n"
 			. ( '' === $publisher ? '' : self::PUBLISHED_BY_CLIENT )
 			. 'theme names the event or initiative the item is part of, at the level a reader tracks it across clients, in two to six words, with no client names, URLs or numbers, such as "community site launch" or "site blocked from sending email"; '
@@ -326,8 +336,9 @@ class Prompts {
 	/**
 	 * The body of the decision prompt a model-call request names, less its
 	 * model, built from its item and inputs when the call is sent: the
-	 * `extract_review` state names `publisher` when one is given, the
-	 * item's title, its body as plain text cut to DECISION_TEXT_CHARS, and
+	 * `extract_review` state says what the item's source is, by
+	 * SOURCE_LABELS, then names `publisher` when one is given, the item's
+	 * title, its body as plain text cut to DECISION_TEXT_CHARS, and
 	 * the reply's `summary` when one is given, and asks the questions
 	 * questions() reads off the inputs, at least one.
 	 *
@@ -347,8 +358,9 @@ class Prompts {
 		}
 		$publisher = Core::as_string( $inputs['publisher'] ?? null );
 		$summary   = Core::as_string( $inputs['summary'] ?? null );
+		$source    = self::field( $item, 'source' );
 		return [
-			'state'     => ( '' === $publisher ? '' : "Publisher: {$publisher}\n" ) . 'Title: ' . self::field( $item, 'title' ) . "\nText: " . \mb_substr( Entity_Index::plain( self::field( $item, 'body' ) ), 0, self::DECISION_TEXT_CHARS ) . ( '' === $summary ? '' : "\nSummary: {$summary}" ),
+			'state'     => 'Source: ' . ( self::SOURCE_LABELS[ $source ] ?? $source ) . "\n" . ( '' === $publisher ? '' : "Publisher: {$publisher}\n" ) . 'Title: ' . self::field( $item, 'title' ) . "\nText: " . \mb_substr( Entity_Index::plain( self::field( $item, 'body' ) ), 0, self::DECISION_TEXT_CHARS ) . ( '' === $summary ? '' : "\nSummary: {$summary}" ),
 			'questions' => $questions,
 		];
 	}

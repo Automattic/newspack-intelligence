@@ -70,7 +70,7 @@ final class IntelligenceCITest extends TestCase {
 	public function test_reads_describe_their_answers(): void {
 		$described = \array_column( Intelligence_CI_Node::node_schema()['commands'], 'description', 'name' );
 
-		$this->assertStringContainsString( 'kinds: { churn_signal, feature_request, complaint }', $described['entity'] );
+		$this->assertStringContainsString( 'kinds: { churned, churn_signal, feature_request, complaint }', $described['entity'] );
 		$this->assertStringContainsString( 'other never signals on the about axis', $described['signals'] );
 		$this->assertStringContainsString( 'only a value counted before those buckets', $described['signals'] );
 		$this->assertStringContainsString( 'a kind it never put out before included', $described['signals'] );
@@ -367,6 +367,27 @@ final class IntelligenceCITest extends TestCase {
 
 		$this->assertNotContains( 'organization:gull-press', $rejected_last );
 		$this->assertContains( 'organization:gull-press', $proposed_last );
+	}
+
+	/**
+	 * The newest canonical name wins whatever the entity was created as, a
+	 * machine's proposal, a person's name or one of its own domains; with
+	 * none it keeps its created name.
+	 */
+	public function test_an_entity_shows_its_newest_canonical_name(): void {
+		$this->seed_world();
+		$this->seed(
+			self::proposed( 'organization:kestrelweekly', 'Kestrelweekly', [ 'canonical' => [ 'Kestrel Weekly' ] ] ),
+			self::link( 'link_proposed', 'feed:gazette-award', 'organization:kestrelweekly', 'mention', 'ner_fuzzy', 0.7, self::$oct_06 ),
+			self::entity( 'organization:tern-desk', 'Tern Desk', [ 'canonical' => [ 'Tern Desk Weekly', 'Tern Desk Daily' ] ] ),
+			self::entity( 'organization:wrenpost', 'wrenpost.example', [ 'domain' => [ 'wrenpost.example' ], 'canonical' => [ 'Wren Post' ] ] ),
+			self::entity( 'organization:gull-post', 'Gull Post', [ 'alias' => [ 'The Gull' ] ] )
+		);
+
+		$this->assertSame( 'Kestrel Weekly', $this->ci->dispatch( 'entity', [ 'organization:kestrelweekly' ] )['name'] );
+		$this->assertSame( 'Tern Desk Daily', $this->ci->dispatch( 'entity', [ 'organization:tern-desk' ] )['name'] );
+		$this->assertSame( 'Wren Post', $this->ci->dispatch( 'entity', [ 'organization:wrenpost' ] )['name'] );
+		$this->assertSame( 'Gull Post', $this->ci->dispatch( 'entity', [ 'organization:gull-post' ] )['name'] );
 	}
 
 }

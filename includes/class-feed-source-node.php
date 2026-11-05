@@ -23,6 +23,9 @@ class Feed_Source_Node extends Source_Node {
 	private const ATOM_NS = 'http://www.w3.org/2005/Atom';
 	private const DC_NS   = 'http://purl.org/dc/elements/1.1/';
 
+	/** The namespace of `content:encoded`, an RSS item's full text. */
+	private const CONTENT_NS = 'http://purl.org/rss/1.0/modules/content/';
+
 	/** Days old a client feed's item may be and still record; an undated one never does. */
 	public const CLIENT_FEED_DAYS = 7;
 
@@ -410,7 +413,8 @@ class Feed_Source_Node extends Source_Node {
 			if ( '' === $when ) {
 				$when = (string) $item->children( self::DC_NS )->date;
 			}
-			$out[] = $this->normalize_item( 'feed', self::keyed( $prefix, $id ), self::unsourced( $item ), $link, (string) $item->description, $when );
+			$full  = (string) $item->children( self::CONTENT_NS )->encoded;
+			$out[] = $this->normalize_item( 'feed', self::keyed( $prefix, $id ), self::unsourced( $item ), $link, '' !== \trim( $full ) ? $full : (string) $item->description, $when );
 		}
 		return $out;
 	}

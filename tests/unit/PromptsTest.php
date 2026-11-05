@@ -105,12 +105,12 @@ final class PromptsTest extends TestCase {
 			[ 'subject' => 'E', 'predicate' => 'launched', 'object' => 'F' ],
 			[ 'subject' => 'G', 'predicate' => 'launched', 'object' => 'H' ],
 		];
-		$reply  = 'Sure: ' . \json_encode( [ 'summary' => \str_repeat( 'é', 300 ), 'kind' => 'scandal', 'topics' => [ 'awards', 'Weather', 'Local news', 7 ], 'relevance' => 14, 'importance' => -3, 'sentiment' => 2.5, 'claims' => $claims ] ) . ' done';
+		$reply  = 'Sure: ' . \json_encode( [ 'summary' => \str_repeat( 'é', 700 ), 'kind' => 'scandal', 'topics' => [ 'awards', 'Weather', 'Local news', 7 ], 'relevance' => 14, 'importance' => -3, 'sentiment' => 2.5, 'claims' => $claims ] ) . ' done';
 
 		$parsed = Prompts::parse_extract( $reply, [ 'Awards', 'Local news', 'Podcasts and audio' ] );
 
 		$this->assertNotNull( $parsed );
-		$this->assertSame( \str_repeat( 'é', 280 ), $parsed['summary'] );
+		$this->assertSame( \str_repeat( 'é', 600 ), $parsed['summary'] );
 		$this->assertSame( 'other', $parsed['kind'] );
 		$this->assertSame( [ 'Awards', 'Local news' ], $parsed['topics'] );
 		$this->assertSame( 10, $parsed['relevance'] );
@@ -254,11 +254,11 @@ final class PromptsTest extends TestCase {
 	 * plain text, cut to its bound.
 	 */
 	public function test_the_publisher_decision_states_the_publisher_title_and_plain_text(): void {
-		$item = [ 'item_key' => 'feed:klharbor.example:transit-77', 'title' => 'Mesa Courier wins a transit grant', 'body' => "<p>The grant &amp; its two routes</p>\n<p>open in May.</p>" ];
+		$item = [ 'item_key' => 'feed:klharbor.example:transit-77', 'source' => 'feed', 'title' => 'Mesa Courier wins a transit grant', 'body' => "<p>The grant &amp; its two routes</p>\n<p>open in May.</p>" ];
 
 		$this->assertSame(
 			[
-				'state'     => "Publisher: Kestrel Lantern Harbor\nTitle: Mesa Courier wins a transit grant\nText: The grant & its two routes open in May.",
+				'state'     => "Source: published article\nPublisher: Kestrel Lantern Harbor\nTitle: Mesa Courier wins a transit grant\nText: The grant & its two routes open in May.",
 				'questions' => [
 					'about_publisher' => [
 						'type'         => 'noul',
@@ -272,9 +272,9 @@ final class PromptsTest extends TestCase {
 
 	/** The decision's text is cut on a character boundary to its bound. */
 	public function test_the_publisher_decision_cuts_its_text(): void {
-		$state = Prompts::decision( 'extract_review', [ 'title' => 'Heron count', 'body' => \str_repeat( 'é', Prompts::DECISION_TEXT_CHARS + 40 ) ], [ 'publisher' => 'Kestrel Lantern Harbor' ] )['state'];
+		$state = Prompts::decision( 'extract_review', [ 'source' => 'github', 'title' => 'Heron count', 'body' => \str_repeat( 'é', Prompts::DECISION_TEXT_CHARS + 40 ) ], [ 'publisher' => 'Kestrel Lantern Harbor' ] )['state'];
 
-		$this->assertSame( "Publisher: Kestrel Lantern Harbor\nTitle: Heron count\nText: " . \str_repeat( 'é', Prompts::DECISION_TEXT_CHARS ), $state );
+		$this->assertSame( "Source: GitHub item\nPublisher: Kestrel Lantern Harbor\nTitle: Heron count\nText: " . \str_repeat( 'é', Prompts::DECISION_TEXT_CHARS ), $state );
 	}
 
 	/**
@@ -291,7 +291,7 @@ final class PromptsTest extends TestCase {
 
 		$this->assertSame(
 			[
-				'state'     => "Title: Mesa Courier wins a transit grant\nText: Two routes open.\nSummary: Mesa Courier wins a grant for two routes.",
+				'state'     => "Source: Linear issue, a ticket in a work tracker\nTitle: Mesa Courier wins a transit grant\nText: Two routes open.\nSummary: Mesa Courier wins a grant for two routes.",
 				'questions' => [
 					'theme_choice' => [
 						'type'         => 'choice',
@@ -304,9 +304,43 @@ final class PromptsTest extends TestCase {
 					],
 				],
 			],
-			Prompts::decision( 'extract_review', [ 'title' => 'Mesa Courier wins a transit grant', 'body' => 'Two routes open.' ], $inputs )
+			Prompts::decision( 'extract_review', [ 'source' => 'linear', 'title' => 'Mesa Courier wins a transit grant', 'body' => 'Two routes open.' ], $inputs )
 		);
 		$this->assertSame( [ 'about_publisher', 'theme_choice' ], \array_keys( Prompts::questions( [ 'publisher' => 'Kestrel Lantern Harbor' ] + $inputs ) ) );
+	}
+
+	/**
+	 * A review's state opens with what kind of thing the item is, so a ticket
+	 * does not read as news; a source with no label shows as its own name.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public static function source_lines(): array {
+		return [
+			'linear'   => [ 'linear', 'Source: Linear issue, a ticket in a work tracker' ],
+			'github'   => [ 'github', 'Source: GitHub item' ],
+			'p2'       => [ 'p2', 'Source: internal blog post' ],
+			'slack'    => [ 'slack', 'Source: internal chat message' ],
+			'feed'     => [ 'feed', 'Source: published article' ],
+			'unlabeled' => [ 'kestrel-wire', 'Source: kestrel-wire' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'source_lines' )]
+	public function test_a_reviews_state_leads_with_its_source( string $source, string $line ): void {
+		$state = Prompts::decision( 'extract_review', [ 'source' => $source, 'title' => 'Email Tern about the renewal', 'body' => 'Before Friday.' ], [ 'publisher' => '', 'kind' => 'launch' ] )['state'];
+
+		$this->assertSame( "{$line}\nTitle: Email Tern about the renewal\nText: Before Friday.", $state );
+	}
+
+	/** The prompt asks for a summary of two or three sentences read from the item alone, and says what to do with a thin one. */
+	public function test_the_prompt_asks_for_a_summary_from_the_item_alone(): void {
+		$system = Prompts::extract( [ 'title' => 'Heron count' ], [], [], 'Skip kite trivia.', '', '' )[0]['content'];
+
+		$this->assertStringContainsString( 'at most 600 characters', $system );
+		foreach ( [ 'summary is two or three sentences', 'what happened, who it affects and why it matters', 'read from the item alone', 'never inventing what it does not say', 'For a thin item, say only what it says' ] as $phrase ) {
+			$this->assertStringContainsString( $phrase, $system );
+		}
 	}
 
 	/** A review of a `launch` asks whether it went live, as a noul, and a review of any other kind does not. */
@@ -369,6 +403,8 @@ final class PromptsTest extends TestCase {
 			'bug'             => [ 'Newspack\'s shipped code', 'a CRM record', 'a launch snag list', 'internal tooling' ],
 			'incident'        => [ 'as it happens', 'a storage-quota warning', 'a legal notice', 'a delayed project' ],
 			'launch'          => [ 'going live or being prepared to go live', 'a client\'s or Newspack\'s', 'not an internal tool, process or deploy going live' ],
+			'churned'         => [ 'has left Newspack or is leaving', 'offboarding underway or done', 'the decision already made' ],
+			'churn_signal'    => [ 'a hint that a client may leave', 'dissatisfaction with price or service', 'going quiet', 'weighing a competitor', 'not a client already offboarding', 'nor a client adopting more Newspack', 'routine account or storage work' ],
 			'research'        => [ 'of the news industry, its audiences or its business, as published', 'Not Newspack\'s or Automattic\'s own engineering, audit, performance or planning work' ],
 			'release'         => [ 'a GitHub release page always is one' ],
 			'other'           => [ 'routine service and onboarding work', 'internal planning', 'internal tooling, audits and engineering reports', 'team updates and kudos', 'a publication\'s own journalism about anyone else' ],

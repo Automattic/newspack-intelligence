@@ -207,8 +207,8 @@ function latestSignal( signals ) {
 
 /**
  * A client's status line: when it became a client, its latest signal, how
- * many items about it are churn signals, feature requests and complaints,
- * and when the newest of them is dated.
+ * many items about it report it churned, are churn signals, feature
+ * requests and complaints, and when the newest of them is dated.
  *
  * @param {Object}             status  The record's `status`.
  * @param {Object[]|undefined} signals The signals read's rows.
@@ -216,6 +216,7 @@ function latestSignal( signals ) {
  */
 function statusText( status, signals ) {
 	const {
+		churned,
 		churn_signal: churns,
 		feature_request: asks,
 		complaint: complaints,
@@ -228,6 +229,16 @@ function statusText( status, signals ) {
 		),
 		latestSignal( signals ),
 		[
+			sprintf(
+				/* translators: %d: items about it reporting that it has left or is leaving. */
+				_n(
+					'%d churn report',
+					'%d churn reports',
+					churned,
+					'newspack-intelligence'
+				),
+				churned
+			),
 			sprintf(
 				/* translators: %d: items about it that are churn signals. */
 				_n(

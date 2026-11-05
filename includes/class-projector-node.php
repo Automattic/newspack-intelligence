@@ -200,10 +200,12 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			[ $verb, 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ],
 		];
 		$state_set = static fn ( string $state ): array => [ [ 'set', 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ] ];
+		$item       = [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ) ];
 		$extraction = [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'actor', $day( 'retrieved_ts' ) ];
 		$judgment = static fn ( string $state ): array => [ [ 'set', 'judgments', [ 'item_key', 'entity_key', static fn ( array $e ): string => \explode( ':', Core::as_string( $e['actor'] ), 2 )[0], [ $state ], 'actor', 'item_url', 'ts' ] ] ];
 		$table    = [
-			'item_recorded'       => [ [ 'ignore', 'items', [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ) ] ] ],
+			'item_recorded'       => [ [ 'ignore', 'items', $item ] ],
+			'item_grown'          => [ [ 'set', 'items', $item ] ],
 			'extraction_recorded' => [
 				[ 'delete', 'claims', [ 'item_key' => 'item_key' ] ],
 				[ 'delete', 'links', [ 'item_key' => 'item_key', 'role' => [ 'topic' ] ] ],

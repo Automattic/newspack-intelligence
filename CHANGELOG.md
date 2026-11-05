@@ -9,7 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Every listed item answers an `excerpt`,** the opening of its body as plain text, markup stripped, entities decoded and whitespace collapsed, cut on a word boundary to `Graph_Query::EXCERPT_CHARS` (800) with an ellipsis. `search`, theme groups, timelines and watch matches carry it, reading 4,096 characters of the body rather than all of it, and the MCP tools take it inside their fence. It is the one exception to an answer never carrying a body. `ItemRow` shows it behind a "Show more" toggle, collapsed at first, and offers none when the summary or title already holds it.
+- **ContextA8C's Linear issues record whole.** `team-issues` cuts a description at 300 characters, so `Context_A8C_Linear_Node` asks `issue` for one that moved, keeping within the request cap, and an `issue` call that fails leaves the cut description, logged.
+- **`item_grown` replaces a stored item's body with a longer one.** It projects as `set`, keeping the row's id and its FTS in step, and the resolver spends nothing on it. Each ContextA8C Linear pass walks the stored issues of the last 30 days still cut short, under the request cap across passes, so a re-extraction reads them whole. A plain repeat of `item_recorded` still changes nothing.
+- **The `churned` kind:** a client that has left Newspack or is leaving, offboarding underway or done, the decision already made. `churn_signal` now means a hint that a client may leave, such as dissatisfaction with price or service, going quiet or weighing a competitor, and leaves out a client already offboarding. `entity`'s `status.kinds` counts `churned` apart, ahead of `churn_signal`, and the status line reads "2 churn reports, 4 churn signals, …".
 - **A `launch` must have gone live.** `extract_review` also asks the noul question `went_live` of any reply of kind `launch`, in the same one request as `about_publisher` and `theme_choice`, so a launch no client published and offered no theme is now reviewed too. A `went_live` below `Extractor_Node::WENT_LIVE_MIN` (0.5) writes the kind as `other` before the importance floor applies, so a launch checklist or prep ticket leaves the `launch` kind while it keeps its theme. A missing or bad answer fails the review, which keeps the reply's kind and theme, and a restricted item is still never sent. `KIND_DEFINITIONS['launch']` is unchanged.
+
+### Changed
+
+- **Summaries run to two or three sentences.** `Prompts::SUMMARY_CHARS` rises to 600, and the prompt asks for what happened, who it affects and why it matters, read from the item alone, saying only what a thin item says.
+- **An RSS item's body is its `content:encoded`, else its `description`,** so a feed's full text is what is searched, resolved and extracted.
+- **`extract_review` states the item's source first,** `Source: <label>`, so a ticket is not read as news.
+- **A canonical name wins over the name an entity was created with.** `Graph_Query::name_of()` shows the newest `canonical` name whenever one exists, where it did so only for an entity created under one of its own domains, so a machine's proposal shows the name a curator gave it. The feed still writes a title only while the name shown is one of the entity's own domains.
 
 ## [0.36.8] - 2026-11-05
 

@@ -273,6 +273,27 @@ final class ProjectorTest extends TestCase {
 		$this->assertSame( $dumps['items-first'], $dumps['each-twice'] );
 	}
 
+	/** A grown item keeps its row and its id, every field but its body as recorded, and FTS follows the new text. */
+	public function test_a_grown_item_replaces_its_body_in_its_own_row(): void {
+		$this->project( [ $this->item() ] );
+		$before = self::graph_rows( 'items', 'item_key', 'id, item_key, title, retrieved_day' );
+
+		$this->project( [ $this->grown( 'The osprey wrack line report, whole.' ) ] );
+
+		$this->assertSame( $before, self::graph_rows( 'items', 'item_key', 'id, item_key, title, retrieved_day' ) );
+		$this->assertSame( [ [ 'The osprey wrack line report, whole.' ] ], self::graph_rows( 'items', 'item_key', 'body' ) );
+		$fts = new \PDO( 'sqlite:' . Table_Node::file( 'intel-graph', 0 ) );
+		$this->assertSame( [ $before[0][0] ], \array_column( $fts->query( "SELECT rowid FROM items_fts WHERE items_fts MATCH 'wrack'" )->fetchAll( \PDO::FETCH_NUM ), 0 ) );
+		$this->assertSame( [], $fts->query( "SELECT rowid FROM items_fts WHERE items_fts MATCH 'first'" )->fetchAll( \PDO::FETCH_NUM ) );
+	}
+
+	/** A plain repeat of a record, whose body may be cut, leaves a grown body alone. */
+	public function test_a_repeated_record_leaves_a_grown_body(): void {
+		$this->project( [ $this->item(), $this->grown( 'The osprey wrack line report, whole.' ), $this->item() ] );
+
+		$this->assertSame( [ [ 'The osprey wrack line report, whole.' ] ], self::graph_rows( 'items', 'item_key', 'body' ) );
+	}
+
 	/**
 	 * A proposed link's evidence is projected onto its row; a proposal
 	 * written before proposals carried one, an asserted link and a topic link
@@ -701,9 +722,20 @@ final class ProjectorTest extends TestCase {
 			$this->ontology( 'lens_saved', [ 'lens_key' => 'old-desk', 'name' => 'Old desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ] ),
 			$this->ontology( 'lens_removed', [ 'lens_key' => 'old-desk' ] ),
 			...$this->watch_events(),
+			$this->grown( 'The Gazette took first place, and the judges said why.' ),
 			$this->item( self::PURGED ),
 			$this->purge( self::PURGED ),
 		];
+	}
+
+	/**
+	 * The fixture item again with a longer body, as a source grows it.
+	 *
+	 * @param string $body The body.
+	 * @return array<string,mixed>
+	 */
+	private function grown( string $body ): array {
+		return Intel_Event::make( 'item_grown', [ 'body' => $body ] + \array_intersect_key( $this->item(), \array_flip( Intel_Event::KINDS['item_grown'][1] ) ), 'machine:source:linear@9.4.1', '' );
 	}
 
 	/**

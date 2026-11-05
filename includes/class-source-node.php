@@ -596,7 +596,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	 *
 	 * @param array<int,array<string,mixed>> $items Normalized items.
 	 */
-	private function record( array $items ): void {
+	protected function record( array $items ): void {
 		$held = $this->held( $items );
 		foreach ( $items as $item ) {
 			$key  = Core::as_string( $item['item_key'] );

@@ -502,7 +502,7 @@ describe( 'Entity — status', () => {
 		const status = ( await heading() ).nextElementSibling;
 		await waitFor( () =>
 			expect( status ).toHaveTextContent(
-				'Client since 2026-09-09 · Latest signal: publisher drop, week of 2026-10-12 · 4 churn signals, 2 feature requests, 5 complaints · Last item 2026-09-22'
+				'Client since 2026-09-09 · Latest signal: publisher drop, week of 2026-10-12 · 2 churn reports, 4 churn signals, 2 feature requests, 5 complaints · Last item 2026-09-22'
 			)
 		);
 		expect( wire.sent( 'signals' ) ).toHaveLength( 1 );
@@ -513,7 +513,12 @@ describe( 'Entity — status', () => {
 			...ENTITY,
 			status: {
 				client_since: 1791504000,
-				kinds: { churn_signal: 1, feature_request: 1, complaint: 0 },
+				kinds: {
+					churned: 1,
+					churn_signal: 1,
+					feature_request: 1,
+					complaint: 0,
+				},
 				last_item_ts: null,
 			},
 		};
@@ -521,7 +526,7 @@ describe( 'Entity — status', () => {
 		const status = ( await heading() ).nextElementSibling;
 		await waitFor( () =>
 			expect( status ).toHaveTextContent(
-				'Client since 2026-10-09 · No signal · 1 churn signal, 1 feature request, 0 complaints · No item about it yet'
+				'Client since 2026-10-09 · No signal · 1 churn report, 1 churn signal, 1 feature request, 0 complaints · No item about it yet'
 			)
 		);
 	} );

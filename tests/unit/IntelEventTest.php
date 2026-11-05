@@ -178,6 +178,7 @@ final class IntelEventTest extends TestCase {
 	/** A purge names its item and why, on the items stream, which only a machine writes. */
 	public function test_a_purge_names_its_item_and_why(): void {
 		$this->assertSame( [ Intel_Event::ITEMS, [ 'item_key', 'reason' ], [], [] ], Intel_Event::KINDS['item_purged'] );
+		$this->assertSame( Intel_Event::KINDS['item_recorded'], Intel_Event::KINDS['item_grown'] );
 		$event = Intel_Event::machine_event( 'purge', 'item_purged', [ 'item_key' => 'linear:WREN-4410', 'reason' => 'other team' ] );
 		$this->assertSame( [ 'machine:purge@' . \NEWSPACK_INTELLIGENCE_VERSION, 'linear:WREN-4410', 'other team' ], [ $event['actor'], $event['item_key'], $event['reason'] ] );
 
@@ -306,7 +307,9 @@ final class IntelEventTest extends TestCase {
 		}
 		$this->assertSame( 'a defect in Newspack\'s shipped code, as Newspack files or fixes it, whoever reported it. Not a CRM record, one site\'s content or configuration, a launch snag list, or internal tooling', Intel_Event::KIND_DEFINITIONS['bug'] );
 		$this->assertSame( 'a client\'s dissatisfaction with Newspack: its service, price or support, or a defect as the client experiences it', Intel_Event::KIND_DEFINITIONS['complaint'] );
-		$this->assertSame( 'a client leaving Newspack or saying it may; not a client adopting more Newspack, nor routine account or storage work', Intel_Event::KIND_DEFINITIONS['churn_signal'] );
+		$this->assertSame( 'a hint that a client may leave, such as dissatisfaction with price or service, going quiet, or weighing a competitor; not a client already offboarding, nor a client adopting more Newspack, nor routine account or storage work', Intel_Event::KIND_DEFINITIONS['churn_signal'] );
+		$this->assertSame( 'a client that has left Newspack or is leaving: offboarding underway or done, the decision already made', Intel_Event::KIND_DEFINITIONS['churned'] );
+		$this->assertSame( \array_search( 'churn_signal', Intel_Event::ITEM_KINDS, true ) - 1, \array_search( 'churned', Intel_Event::ITEM_KINDS, true ), 'churned sits beside churn_signal' );
 	}
 
 	/** An extraction's theme is optional: one written before extractions named one validates, and one naming it carries it. */

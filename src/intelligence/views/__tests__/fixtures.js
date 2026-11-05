@@ -57,7 +57,12 @@ export const ENTITY = {
 	published: { count: 0 },
 	status: {
 		client_since: 1788912000,
-		kinds: { churn_signal: 4, feature_request: 2, complaint: 5 },
+		kinds: {
+			churned: 2,
+			churn_signal: 4,
+			feature_request: 2,
+			complaint: 5,
+		},
 		last_item_ts: 1790035200,
 	},
 	available: true,

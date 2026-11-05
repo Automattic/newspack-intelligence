@@ -23,7 +23,7 @@ final class Intel_Event {
 
 	public const TYPES            = [ 'organization', 'person', 'place', 'product', 'topic', 'event' ];
 	public const ROLES            = [ 'client', 'former_client', 'prospect', 'competitor', 'partner', 'funder', 'industry_body', 'newspack_product' ];
-	public const ITEM_KINDS       = [ 'award', 'launch', 'release', 'funding', 'hire', 'departure', 'partnership', 'incident', 'bug', 'feature_request', 'complaint', 'praise', 'churn_signal', 'research', 'other' ];
+	public const ITEM_KINDS       = [ 'award', 'launch', 'release', 'funding', 'hire', 'departure', 'partnership', 'incident', 'bug', 'feature_request', 'complaint', 'praise', 'churned', 'churn_signal', 'research', 'other' ];
 
 	/** Each of ITEM_KINDS, in its order, => the one line the extraction prompt defines it by. */
 	public const KIND_DEFINITIONS = [
@@ -39,7 +39,8 @@ final class Intel_Event {
 		'feature_request' => 'a client or user asking for a capability Newspack\'s product lacks. Not a setup, styling, migration, onboarding, offboarding or configuration task for one site',
 		'complaint'       => 'a client\'s dissatisfaction with Newspack: its service, price or support, or a defect as the client experiences it',
 		'praise'          => 'a client\'s satisfaction with Newspack or thanks for its work',
-		'churn_signal'    => 'a client leaving Newspack or saying it may; not a client adopting more Newspack, nor routine account or storage work',
+		'churned'         => 'a client that has left Newspack or is leaving: offboarding underway or done, the decision already made',
+		'churn_signal'    => 'a hint that a client may leave, such as dissatisfaction with price or service, going quiet, or weighing a competitor; not a client already offboarding, nor a client adopting more Newspack, nor routine account or storage work',
 		'research'        => 'a study, survey, report or analysis of the news industry, its audiences or its business, as published. Not Newspack\'s or Automattic\'s own engineering, audit, performance or planning work',
 		'other'           => 'none of these, including routine service and onboarding work, internal planning, internal tooling, audits and engineering reports, team updates and kudos, and a publication\'s own journalism about anyone else',
 	];
@@ -76,6 +77,7 @@ final class Intel_Event {
 	 */
 	public const KINDS = [
 		'item_recorded'       => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ], [] ],
+		'item_grown'          => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ], [] ],
 		'extraction_recorded' => [ self::ITEMS, [ 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'topics', 'retrieved_ts' ], [ 'kind' => self::ITEM_KINDS ], [ 'theme' => self::THEME_BYTES ] ],
 		'subjects_extracted'  => [ self::ITEMS, [ 'item_key', 'entity_keys', 'retrieved_ts' ], [], [] ],
 		'link_asserted'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ], [] ],

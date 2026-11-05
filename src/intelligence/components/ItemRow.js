@@ -1,3 +1,4 @@
+import { useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import Cite, { EntityChip } from './Cite';
 import Pager from './Pager';
@@ -5,9 +6,9 @@ import { metaLine, utcDay } from './format';
 
 /**
  * One item as `search` and `timeline` answer it: its title citing its URL,
- * its source, kind and day, its summary, a chip per linked entity but a
- * proposal another of its name stands for (`chips()`), and, for a caller who
- * may curate, the control saving it to a collection, then any control the
+ * its source, kind and day, its summary, a toggle showing its excerpt (`Excerpt`),
+ * a chip per linked entity but a proposal another of its name stands for
+ * (`chips()`), and, for a caller who may curate, the control saving it to a collection, then any control the
  * view adds.
  *
  * @param {Object}                    props
@@ -39,6 +40,7 @@ export default function ItemRow( { item, onOpenEntity, onSave, children } ) {
 				{ metaLine( item.source, item.kind, utcDay( item.item_ts ) ) }
 			</p>
 			{ item.summary && <p>{ item.summary }</p> }
+			<Excerpt item={ item } />
 			{ 0 < ( item.entities ?? [] ).length && (
 				<ul className="newspack-intelligence__chips">
 					{ chips( item.entities ).map( ( entity ) => (
@@ -53,6 +55,50 @@ export default function ItemRow( { item, onOpenEntity, onSave, children } ) {
 				</ul>
 			) }
 		</li>
+	);
+}
+
+/**
+ * The body's opening behind a toggle, collapsed at first; none when it is
+ * empty or says nothing its summary or title does not (`repeats()`).
+ *
+ * @param {Object} props
+ * @param {Object} props.item The item.
+ * @return {?import('react').ReactElement} The toggle and the excerpt it shows.
+ */
+function Excerpt( { item } ) {
+	const [ open, setOpen ] = useState( false );
+	if ( ! item.excerpt || repeats( item ) ) {
+		return null;
+	}
+	return (
+		<>
+			<button
+				type="button"
+				className="button button-small"
+				aria-expanded={ open }
+				onClick={ () => setOpen( ! open ) }
+			>
+				{ open
+					? __( 'Show less', 'newspack-intelligence' )
+					: __( 'Show more', 'newspack-intelligence' ) }
+			</button>
+			{ open && <p>{ item.excerpt }</p> }
+		</>
+	);
+}
+
+/**
+ * Whether an item's summary or title already holds its whole excerpt, case
+ * aside.
+ *
+ * @param {Object} item The item.
+ * @return {boolean} Whether the excerpt adds nothing.
+ */
+function repeats( item ) {
+	const excerpt = item.excerpt.toLowerCase();
+	return [ item.summary, item.title ].some( ( shown ) =>
+		( shown ?? '' ).toLowerCase().includes( excerpt )
 	);
 }
 

@@ -6,6 +6,7 @@ namespace Newspack_Intelligence\Tests;
 use Newspack_Intelligence\Feed_Source_Node;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
+use Newspack_Intelligence\Source_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
 use Newspack_Nodes\Message;
@@ -129,6 +130,49 @@ XML;
 				. ( null === $when ? '' : '<pubDate>' . \gmdate( 'D, d M Y H:i:s', $when ) . ' GMT</pubDate>' ) . '</item>';
 		}
 		return $xml . '</channel></rss>';
+	}
+
+	/**
+	 * An RSS body with one item carrying `$fields` beside its title and guid.
+	 *
+	 * @param string $fields The item's other elements.
+	 */
+	private static function rss_with( string $fields ): string {
+		return '<?xml version="1.0"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel>'
+			. "<item><title>Heron count</title><link>https://example.com/heron</link><guid>heron-44</guid>{$fields}</item></channel></rss>";
+	}
+
+	/** An item's full `content:encoded` is its body, a CDATA one's markup kept, over its shorter `description`. */
+	public function test_rss_prefers_content_encoded_over_description(): void {
+		$item = $this->items_from( self::rss_with( '<description>Tide tables teaser</description><content:encoded><![CDATA[<p>The whole <em>tide</em> report &amp; its charts.</p>]]></content:encoded>' ) )['feed:heron-44'];
+
+		$this->assertSame( '<p>The whole <em>tide</em> report &amp; its charts.</p>', $item['body'] );
+	}
+
+	/**
+	 * An item with no `content:encoded`, or a blank one, keeps its
+	 * `description`.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public static function bodies_without_content(): array {
+		return [
+			'no element'    => [ '<description>Tide tables teaser</description>' ],
+			'a blank one'   => [ '<description>Tide tables teaser</description><content:encoded><![CDATA[  ]]></content:encoded>' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bodies_without_content' )]
+	public function test_rss_falls_back_to_description( string $fields ): void {
+		$this->assertSame( 'Tide tables teaser', $this->items_from( self::rss_with( $fields ) )['feed:heron-44']['body'] );
+	}
+
+	/** A `content:encoded` past the body cap is cut to it. */
+	public function test_rss_content_encoded_is_cut_to_the_body_cap(): void {
+		$item = $this->items_from( self::rss_with( '<content:encoded><![CDATA[' . \str_repeat( 'é', Source_Node::MAX_BODY_BYTES ) . ']]></content:encoded>' ) )['feed:heron-44'];
+
+		$this->assertSame( Source_Node::MAX_BODY_BYTES, \strlen( $item['body'] ) );
+		$this->assertTrue( \mb_check_encoding( $item['body'], 'UTF-8' ) );
 	}
 
 	public function test_rss_item_parses_to_item_with_guid_id(): void {
@@ -740,6 +784,30 @@ XML;
 	private const KESTREL_FEED = 'https://kestrelbay.example/feed/';
 
 	private const SANDPIPER_FEED = 'https://sandpipergazette.example/feed/';
+
+	/** A canonical name a curator gave stands: no feed title is written over it, whatever the client was created as. */
+	public function test_a_canonical_name_takes_no_feed_title(): void {
+		$node = $this->titled_clients();
+		$this->seed( self::facts( self::KESTREL, [ 'canonical' => [ 'Kestrel Bay Tribune' ] ] ), self::facts( 'organization:sandpiper-gazette', [ 'canonical' => [ 'Sandpiper Gazette Tribune' ] ] ) );
+
+		$this->tick( $node );
+		$this->complete( self::KESTREL_FEED, self::titled_rss( 'Kestrel Bay Courier', 'https://kestrelbay.example' ) );
+		$this->complete( self::SANDPIPER_FEED, self::titled_rss( 'Sandpiper Gazette Online', 'https://sandpipergazette.example' ) );
+
+		$this->assertSame( [], $this->names() );
+	}
+
+	/** A canonical that spells the client's own domain is no name, so its feed's title is written over it. */
+	public function test_a_canonical_spelling_a_domain_takes_the_feeds_title(): void {
+		$node = $this->titled_clients();
+		$this->seed( self::facts( 'organization:sandpiper-gazette', [ 'canonical' => [ 'sandpipergazette.example' ] ] ) );
+
+		$this->tick( $node );
+		$this->complete( self::KESTREL_FEED, self::titled_rss( 'Kestrel Bay Courier', 'https://kestrelbay.example' ) );
+		$this->complete( self::SANDPIPER_FEED, self::titled_rss( 'Sandpiper Gazette Online', 'https://sandpipergazette.example' ) );
+
+		$this->assertContains( [ 'organization:sandpiper-gazette', 'canonical', 'Sandpiper Gazette Online' ], self::brief_names( $this->names() ) );
+	}
 
 	/**
 	 * A client named by its own domain takes its feed's title as its

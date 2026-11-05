@@ -162,6 +162,16 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertSame( self::ITEM, $this->resolved()['item']['item_key'] );
 	}
 
+	/** A grown body is the projection's alone: the resolver spends nothing on it. */
+	public function test_a_grown_item_resolves_nothing(): void {
+		$this->seed( self::gazette() );
+		$this->answer( '{"orgs": ["Acme Widgets Corporation"], "people": [], "locations": []}' );
+
+		$this->resolver->fill( self::message( Intel_Event::make( 'item_grown', self::item( [ 'title' => 'Regional publishers announce a merger', 'body' => 'The whole of it, and The Harbor Gazette with it.' ] ), 'machine:source:linear@9.4.1', '9.4.1' ) ) );
+
+		$this->assertSame( [ [], [] ], [ $this->out->requests, $this->out->captured ] );
+	}
+
 	/** A proposed link and a candidate entity are written as their own kinds. */
 	public function test_a_proposed_link_and_a_candidate_entity_are_written(): void {
 		$this->seed( self::gazette() );

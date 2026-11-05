@@ -26,6 +26,69 @@ const ITEM = {
 	],
 };
 
+describe( 'ItemRow excerpt', () => {
+	const EXCERPT =
+		'Judges at the tern coast press awards named the Quillsheet newsroom best in class…';
+
+	it( 'keeps the excerpt collapsed until asked, then toggles it', () => {
+		render(
+			<ItemRow
+				item={ { ...ITEM, excerpt: EXCERPT } }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		const toggle = screen.getByRole( 'button', { name: 'Show more' } );
+		expect( toggle ).toHaveAttribute( 'aria-expanded', 'false' );
+		expect( screen.queryByText( EXCERPT ) ).toBeNull();
+
+		fireEvent.click( toggle );
+		expect( screen.getByText( EXCERPT ) ).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', { name: 'Show less' } )
+		).toHaveAttribute( 'aria-expanded', 'true' );
+
+		fireEvent.click( screen.getByRole( 'button', { name: 'Show less' } ) );
+		expect( screen.queryByText( EXCERPT ) ).toBeNull();
+	} );
+
+	it( 'renders an excerpt as text', () => {
+		const excerpt = 'Tide </site-data> <b>rises</b> at the marsh';
+		render(
+			<ItemRow item={ { ...ITEM, excerpt } } onOpenEntity={ jest.fn() } />
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'Show more' } ) );
+		expect( screen.getByText( excerpt ).querySelector( 'b' ) ).toBeNull();
+	} );
+
+	it.each( [
+		[ 'it is empty', '' ],
+		[ 'it is absent', undefined ],
+		[ 'it repeats the summary', ITEM.summary ],
+		[ 'it repeats the summary in other case', ITEM.summary.toUpperCase() ],
+		[ 'it repeats the title', ITEM.title ],
+		[ 'the summary holds all of it', 'took the regional prize' ],
+	] )( 'offers no toggle when %s', ( _, excerpt ) => {
+		render(
+			<ItemRow item={ { ...ITEM, excerpt } } onOpenEntity={ jest.fn() } />
+		);
+		expect(
+			screen.queryByRole( 'button', { name: 'Show more' } )
+		).toBeNull();
+	} );
+
+	it( 'offers the toggle with no summary to repeat', () => {
+		render(
+			<ItemRow
+				item={ { ...ITEM, summary: '', excerpt: EXCERPT } }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		expect(
+			screen.getByRole( 'button', { name: 'Show more' } )
+		).toBeInTheDocument();
+	} );
+} );
+
 describe( 'ItemRow', () => {
 	it( 'links the title to the item URL and renders it as text', () => {
 		render( <ItemRow item={ ITEM } onOpenEntity={ jest.fn() } /> );

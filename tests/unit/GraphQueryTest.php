@@ -56,6 +56,7 @@ final class GraphQueryTest extends TestCase {
 						'tier'       => 'public',
 						'item_ts'    => self::$oct_06,
 						'summary'    => 'Judges honored the Gazette newsroom.',
+						'excerpt'    => 'The Gazette took first place for investigative work.',
 						'kind'       => 'award',
 						'relevance'  => 8.5,
 						'importance' => 6.25,
@@ -247,7 +248,7 @@ final class GraphQueryTest extends TestCase {
 				'topics'      => [ [ 'topic_key' => 'topic:awards', 'name' => 'Awards' ] ],
 				'counts'      => [ 'items' => 2, 'proposed_links' => 0 ],
 				'published'   => [ 'count' => 0 ],
-				'status'      => [ 'client_since' => self::$jan_01, 'kinds' => [ 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => self::$oct_06 ],
+				'status'      => [ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 0, 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => self::$oct_06 ],
 				'available'   => true,
 			],
 			self::read( 'entity', [ 'key' => self::GAZETTE ] )
@@ -272,8 +273,8 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [ [ 'entity_key' => $key, 'name' => 'Kestrel Bay Courier Cooperative', 'state' => 'asserted' ] ], self::search( [ 'q' => 'ferry' ] )['items'][0]['entities'] );
 	}
 
-	/** An entity created under a name of its own keeps it, whatever canonical name is added. */
-	public function test_an_entity_created_under_a_name_keeps_it(): void {
+	/** An entity created under a name of its own shows a canonical name added since, in its record and in what lists it. */
+	public function test_an_entity_created_under_a_name_shows_a_canonical_added_since(): void {
 		$key = 'organization:osprey-times';
 		$this->seed(
 			self::entity( $key, 'Osprey Times', [ 'domain' => [ 'ospreytimes.example' ], 'canonical' => [ 'Osprey Times Media Group' ] ] ),
@@ -281,8 +282,54 @@ final class GraphQueryTest extends TestCase {
 			self::link( 'link_asserted', 'feed:osprey-tide', $key, 'subject', 'identifier', 1.0, self::$oct_13 )
 		);
 
-		$this->assertSame( 'Osprey Times', self::read( 'entity', [ 'key' => $key ] )['name'] );
-		$this->assertSame( 'Osprey Times', self::search( [ 'q' => 'tide' ] )['items'][0]['entities'][0]['name'] );
+		$this->assertSame( 'Osprey Times Media Group', self::read( 'entity', [ 'key' => $key ] )['name'] );
+		$this->assertSame( 'Osprey Times Media Group', self::search( [ 'q' => 'tide' ] )['items'][0]['entities'][0]['name'] );
+	}
+
+	/**
+	 * A listed item's excerpt is its body's opening as plain text.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public static function excerpts(): array {
+		$words = \trim( \str_repeat( 'marsh heron ', 90 ) );
+		return [
+			'markup and entities'  => [ "<p>Tide &amp; marsh</p>\n\n<p>tables&nbsp;rise</p>", 'Tide & marsh tables rise' ],
+			'an empty body'        => [ '', '' ],
+			'markup alone'         => [ '<img src="https://heron.example/a.png"><br>', '' ],
+			'just at the bound'    => [ \str_repeat( 'é', 800 ), \str_repeat( 'é', 800 ) ],
+			'cut on a word'        => [ $words, \substr( $words, 0, 797 ) . '…' ],
+			'one word past it'     => [ \str_repeat( 'é', 900 ), \str_repeat( 'é', 800 ) . '…' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'excerpts' )]
+	public function test_a_listed_item_answers_its_excerpt( string $body, string $excerpt ): void {
+		$this->seed( self::item( 'feed:osprey-excerpt', 'Osprey tide tables', 'feed', 'public', self::$oct_13, $body ) );
+
+		$this->assertSame( 800, Graph_Query::EXCERPT_CHARS );
+		$this->assertSame( $excerpt, self::search( [ 'q' => 'osprey' ] )['items'][0]['excerpt'] );
+	}
+
+	/** A body far past what is read still ends its excerpt on a word, and an answer still carries no body. */
+	public function test_an_excerpt_is_read_from_the_bodys_opening_alone(): void {
+		$this->seed( self::item( 'feed:osprey-long', 'Osprey tide tables', 'feed', 'public', self::$oct_13, '<div class="wrap">' . \str_repeat( '<span class="x">a</span>', 2000 ) ) );
+
+		$item = self::search( [ 'q' => 'osprey' ] )['items'][0];
+
+		$this->assertStringEndsWith( '…', $item['excerpt'] );
+		$this->assertLessThanOrEqual( 801, \mb_strlen( $item['excerpt'] ) );
+		$this->assertArrayNotHasKey( 'body', $item );
+	}
+
+	/** A theme group's items answer the excerpt too. */
+	public function test_a_grouped_item_answers_its_excerpt(): void {
+		$this->seed(
+			self::item( 'feed:osprey-group', 'Osprey tide tables', 'feed', 'public', self::$oct_13, '<p>Tide &amp; marsh</p>' ),
+			self::extraction( 'feed:osprey-group', 'Tide tables move.', 'research', self::$oct_13, [], 5.0, 5.0, 'tide table changes' )
+		);
+
+		$this->assertSame( 'Tide & marsh', self::search( [ 'group' => 'theme', 'sort' => null ] )['groups'][0]['items'][0]['excerpt'] );
 	}
 
 	public function test_an_unknown_entity_is_refused(): void {

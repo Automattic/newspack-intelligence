@@ -1187,9 +1187,9 @@ final class ExtractorNodeTest extends TestCase {
 
 	/** The heuristic summary keeps the summary's length, on a character boundary. */
 	public function test_a_heuristic_summary_is_cut_to_the_summary_length(): void {
-		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [ 'title' => \str_repeat( 'ü', 400 ), 'body' => '' ] ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [], [ 'title' => \str_repeat( 'ü', 700 ), 'body' => '' ] ) );
 
-		$this->assertSame( \str_repeat( 'ü', 280 ), $this->written()[0]['summary'] );
+		$this->assertSame( \str_repeat( 'ü', 600 ), $this->written()[0]['summary'] );
 	}
 
 	/**
