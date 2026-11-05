@@ -356,6 +356,109 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ) );
 	}
 
+	/** `--source` sends a range naming the source, and the success line names it. */
+	public function test_reresolve_names_the_source_it_is_given(): void {
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p3' );
+		$this->seed_dated( 'linear:KITE-4' );
+
+		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2026-03-09', 'until' => '2026-04-17', 'source' => 'linear' ] );
+
+		$this->assertSame( [ 'RERESOLVE 2026-03-09 2026-04-17 linear' ], \array_column( self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ), Message::VALUE ) );
+		$this->assertSame( [ 'Asked 1 worker to re-resolve the linear items dated 2026-03-09 to 2026-04-17.' ], \WP_CLI::$successes );
+	}
+
+	/**
+	 * A source no stored item is recorded under, in its own case or another,
+	 * a node's name that records under another source among them, or an
+	 * empty one, is refused before anything is counted or sent, listing the
+	 * sources items are recorded under, sorted; an empty one never widens to
+	 * every source.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public static function refused_sources(): array {
+		$known = 'one of: feed, slack';
+		return [
+			'reresolve, a node name' => [ 'reresolve', 'news', "--source must name a source items are recorded under, {$known}; got news." ],
+			'reextract, a node name' => [ 'reextract', 'news', "--source must name a source items are recorded under, {$known}; got news." ],
+			'reresolve, mis-cased'   => [ 'reresolve', 'Slack', "--source must name a source items are recorded under, {$known}; got Slack." ],
+			'reextract, mis-cased'   => [ 'reextract', 'Slack', "--source must name a source items are recorded under, {$known}; got Slack." ],
+			'reresolve, unknown'     => [ 'reresolve', 'kite feed', "--source must name a source items are recorded under, {$known}; got kite feed." ],
+			'reresolve, empty'       => [ 'reresolve', '', '--source is empty; name a source, or leave --source out for every source.' ],
+			'reextract, blank'       => [ 'reextract', '  ', '--source is empty; name a source, or leave --source out for every source.' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'refused_sources' )]
+	public function test_a_source_no_item_is_recorded_under_is_refused( string $verb, string $source, string $refusal ): void {
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p0' );
+		$this->seed_dated( 'feed:kestrel-1', 'slack:C0SKUA01:1785758400.0001' );
+
+		( new Ontology_CLI_Command() )->$verb( [], [ 'since' => '2026-08-03', 'source' => $source ] );
+
+		$this->assertSame( [ [ $refusal ], [], [] ], [ \WP_CLI::$errors, \WP_CLI::$successes, \WP_CLI::$logs ] );
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'skua-intel.p0' ) );
+	}
+
+	/** With no item stored, any source is refused, saying none is recorded. */
+	public function test_a_source_is_refused_while_no_item_is_stored(): void {
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p0' );
+
+		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2026-03-09', 'source' => 'feed' ] );
+
+		$this->assertSame( [ '--source must name a source items are recorded under, and no item is recorded yet; got feed.' ], \WP_CLI::$errors );
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'skua-intel.p0' ) );
+	}
+
+	/** A source items are recorded under is accepted on both verbs, read trimmed as `items purge` reads it. */
+	public function test_a_source_items_are_recorded_under_is_accepted_trimmed(): void {
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p0' );
+		$this->seed_dated( 'feed:kestrel-1', 'slack:C0SKUA01:1785758400.0001' );
+
+		( new Ontology_CLI_Command() )->reresolve( [], [ 'since' => '2026-03-09', 'until' => '2026-03-10', 'source' => ' feed ' ] );
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'source' => 'feed' ] );
+
+		$this->assertSame( [], \WP_CLI::$errors );
+		$this->assertSame( [ 'RERESOLVE 2026-03-09 2026-03-10 feed', 'REEXTRACT 2026-08-03 2026-08-03 feed' ], \array_column( self::worker_input( Config::get_base_directory(), 'skua-intel.p0' ), Message::VALUE ) );
+	}
+
+	/**
+	 * With `--source`, `reextract` counts only that source's items in the
+	 * range, refuses past its limit by that count, and sends the range
+	 * naming the source.
+	 */
+	public function test_reextract_counts_and_sends_only_the_source_named(): void {
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p1' );
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p2' );
+		$this->seed_dated( 'feed:kestrel-1', 'feed:kestrel-2', 'feed:kestrel-3', 'slack:C0SKUA01:1785758400.0001', 'slack:C0SKUA01:1785758400.0002' );
+
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'source' => 'slack', 'limit' => '3' ] );
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'source' => 'slack', 'limit' => '4' ] );
+
+		$this->assertSame( [ 'ontology reextract would make 4 model calls, 2 slack items dated 2026-08-03 to 2026-08-03 times 2 live workers, above --limit=3, and a failed call may retry up to 5 times; raise --limit to run it.' ], \WP_CLI::$errors );
+		$this->assertSame( [ 'Asked 2 workers to re-extract the slack items dated 2026-08-03 to 2026-08-03: 4 model calls, a failed one retried up to 5 times.' ], \WP_CLI::$successes );
+		$this->assertSame( [ 'REEXTRACT 2026-08-03 2026-08-03 slack' ], \array_column( self::worker_input( Config::get_base_directory(), 'skua-intel.p2' ), Message::VALUE ) );
+	}
+
+	/** A source with no item in the range sends nothing, and a dry run's command carries the source. */
+	public function test_reextract_with_a_source_reports_and_prints_it(): void {
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p3' );
+		$this->seed_dated( 'feed:kestrel-1', 'linear:KITE-7' );
+
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-04', 'until' => '2026-08-04', 'source' => 'feed' ] );
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'source' => 'linear', 'dry-run' => true ] );
+
+		$this->assertSame( [ 'No feed item is dated 2026-08-04 to 2026-08-04; nothing to re-extract.' ], \WP_CLI::$successes );
+		$this->assertSame(
+			[
+				'1 linear items dated 2026-08-03 to 2026-08-03 would be re-extracted by 1 live worker: 1 model calls, a failed one retried up to 5 times.',
+				'Re-extract them with: wp newspack-intelligence ontology reextract --since=2026-08-03 --until=2026-08-03 --source=linear',
+			],
+			\WP_CLI::$logs
+		);
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ) );
+	}
+
 	/** A limit that is not a positive whole number is refused. */
 	public function test_reextract_refuses_a_bad_limit(): void {
 		$this->expectException( \RuntimeException::class );
@@ -372,7 +475,7 @@ final class OntologyCliCommandTest extends TestCase {
 	private function seed_dated( string ...$keys ): void {
 		$this->seed(
 			\array_map(
-				static fn ( string $key ): array => Intel_Event::make( 'item_recorded', [ 'item_key' => $key, 'source' => 'feed', 'tier' => 'public', 'url' => "https://news.example/{$key}", 'title' => $key, 'body' => '', 'item_ts' => 1785758400, 'retrieved_ts' => 1785758400 ], 'machine:source:feed@9.4.1', '9.4.1' ),
+				static fn ( string $key ): array => Intel_Event::make( 'item_recorded', [ 'item_key' => $key, 'source' => \explode( ':', $key )[0], 'tier' => 'public', 'url' => "https://news.example/{$key}", 'title' => $key, 'body' => '', 'item_ts' => 1785758400, 'retrieved_ts' => 1785758400 ], 'machine:source:feed@9.4.1', '9.4.1' ),
 				$keys
 			)
 		);

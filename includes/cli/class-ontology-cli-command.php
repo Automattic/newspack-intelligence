@@ -34,9 +34,9 @@ class Ontology_CLI_Command {
 
 	/**
 	 * Re-resolve every stored item dated in a range of UTC days, an undated
-	 * one by when it was retrieved. Each live worker's reresolver is asked
-	 * through its input partition and sends the range to the resolver a page
-	 * at a time.
+	 * one by when it was retrieved, of one source when --source names it.
+	 * Each live worker's reresolver is asked through its input partition and
+	 * sends the range to the resolver a page at a time.
 	 *
 	 * ## OPTIONS
 	 *
@@ -46,6 +46,9 @@ class Ontology_CLI_Command {
 	 * [--until=<Y-m-d>]
 	 * : The last day, UTC; today when omitted.
 	 *
+	 * [--source=<name>]
+	 * : Only the items of this source, as `slack` or `linear`; every source when omitted.
+	 *
 	 * ## EXAMPLES
 	 *
 	 *     wp newspack-intelligence ontology reresolve --since=2026-09-01 --until=2026-09-30
@@ -54,6 +57,7 @@ class Ontology_CLI_Command {
 	 * @param array<int,string>    $args       Positional args.
 	 * @param array<string,string> $assoc_args Flags.
 	 * @throws \RuntimeException When there is no live worker.
+	 * @throws \Newspack_Nodes\Table_Unavailable When --source is given and the projection cannot be read.
 	 */
 	public function reresolve( array $args, array $assoc_args ): void {
 		self::ask_range( 'reresolve', $assoc_args, static fn (): string => '' );
@@ -61,8 +65,9 @@ class Ontology_CLI_Command {
 
 	/**
 	 * Re-extract every stored item dated in a range of UTC days, an undated one
-	 * by when it was retrieved. Each live worker's reresolver is asked through
-	 * its input partition, as `reresolve` asks it, and sends each item to the
+	 * by when it was retrieved, of one source when --source names it. Each
+	 * live worker's reresolver is asked through its input partition, as
+	 * `reresolve` asks it, and sends each item to the
 	 * resolver owed an extraction, so each worker's extractor calls the model
 	 * for each item whatever it holds: the items times the live workers, and a
 	 * call that fails keeps the item's earlier extraction and retries up to
@@ -78,6 +83,9 @@ class Ontology_CLI_Command {
 	 *
 	 * [--until=<Y-m-d>]
 	 * : The last day, UTC; today when omitted.
+	 *
+	 * [--source=<name>]
+	 * : Only the items of this source, as `slack` or `linear`; every source when omitted.
 	 *
 	 * [--limit=<n>]
 	 * : The most model calls it makes, retries aside; 200 when omitted.
@@ -100,24 +108,25 @@ class Ontology_CLI_Command {
 		self::ask_range(
 			'reextract',
 			$assoc_args,
-			static function ( string $since, string $until ) use ( $assoc_args ): ?string {
+			static function ( string $since, string $until, string $source ) use ( $assoc_args ): ?string {
 				$limit   = CLI::require_flag_int( $assoc_args, 'limit', self::REEXTRACT_LIMIT, false );
-				$count   = Reresolver_Node::count_dated( $since, $until );
+				$count   = Reresolver_Node::count_dated( $since, $until, $source );
 				$workers = \count( Worker_Route::live_workers( Config::get_base_directory() ) );
 				$calls   = $count * $workers;
+				$of      = '' === $source ? '' : "{$source} ";
 				$range   = "dated {$since} to {$until}";
 				$retries = 'a failed one retried up to ' . Extractor_Node::MAX_ATTEMPTS . ' times';
 				if ( 0 === $count ) {
-					\WP_CLI::success( "No item is {$range}; nothing to re-extract." );
+					\WP_CLI::success( "No {$of}item is {$range}; nothing to re-extract." );
 					return null;
 				}
 				if ( isset( $assoc_args['dry-run'] ) ) {
-					\WP_CLI::log( "{$count} items {$range} would be re-extracted by " . self::workers( $workers, 'live ' ) . ": {$calls} model calls, {$retries}." );
-					\WP_CLI::log( "Re-extract them with: wp newspack-intelligence ontology reextract --since={$since} --until={$until}" . ( $calls > self::REEXTRACT_LIMIT ? " --limit={$calls}" : '' ) );
+					\WP_CLI::log( "{$count} {$of}items {$range} would be re-extracted by " . self::workers( $workers, 'live ' ) . ": {$calls} model calls, {$retries}." );
+					\WP_CLI::log( "Re-extract them with: wp newspack-intelligence ontology reextract --since={$since} --until={$until}" . ( '' === $source ? '' : " --source={$source}" ) . ( $calls > self::REEXTRACT_LIMIT ? " --limit={$calls}" : '' ) );
 					return null;
 				}
 				if ( $calls > $limit ) {
-					\WP_CLI::error( "ontology reextract would make {$calls} model calls, {$count} items {$range} times " . self::workers( $workers, 'live ' ) . ", above --limit={$limit}, and a failed call may retry up to " . Extractor_Node::MAX_ATTEMPTS . ' times; raise --limit to run it.' );
+					\WP_CLI::error( "ontology reextract would make {$calls} model calls, {$count} {$of}items {$range} times " . self::workers( $workers, 'live ' ) . ", above --limit={$limit}, and a failed call may retry up to " . Extractor_Node::MAX_ATTEMPTS . ' times; raise --limit to run it.' );
 					return null;
 				}
 				return ": {$calls} model calls, {$retries}";
@@ -126,15 +135,17 @@ class Ontology_CLI_Command {
 	}
 
 	/**
-	 * Ask each live worker's reresolver for a range of UTC days, the request
-	 * the verb names upper-cased, once root is refused and `$vet` passes it,
-	 * and say how many workers it asked; a range that does not parse is
-	 * refused naming why.
+	 * Ask each live worker's reresolver for a range of UTC days, of one
+	 * source or of every one, the request the verb names upper-cased, once
+	 * root is refused and `$vet` passes it, and say how many workers it
+	 * asked; a range that does not parse, or a source no stored item is
+	 * recorded under, is refused naming why.
 	 *
-	 * @param string                                 $verb       `reresolve` or `reextract`.
-	 * @param array<string,string>                   $assoc_args Flags: `since`, and `until`, today when omitted.
-	 * @param \Closure(string,string): (string|null) $vet        Given the days, what the success line adds, or null to send nothing.
+	 * @param string                                        $verb       `reresolve` or `reextract`.
+	 * @param array<string,string>                          $assoc_args Flags: `since`, `until`, today when omitted, and `source`, every one when omitted.
+	 * @param \Closure(string,string,string): (string|null) $vet        Given the days and the source, what the success line adds, or null to send nothing.
 	 * @throws \RuntimeException When there is no live worker.
+	 * @throws \Newspack_Nodes\Table_Unavailable When --source is given and the projection cannot be read.
 	 */
 	private static function ask_range( string $verb, array $assoc_args, \Closure $vet ): void {
 		if ( self::refused_root( "ontology {$verb}" ) ) {
@@ -143,16 +154,18 @@ class Ontology_CLI_Command {
 		$since = $assoc_args['since'] ?? '';
 		$until = $assoc_args['until'] ?? \gmdate( 'Y-m-d' );
 		try {
-			$tail = $vet( $since, $until );
+			$source = self::source_of( $assoc_args );
+			$tail   = $vet( $since, $until, $source );
 			if ( null === $tail ) {
 				return;
 			}
-			$workers = Reresolver_Node::ask( Bootstrap::mount_request_graph(), \strtoupper( $verb ), $since, $until );
+			$workers = Reresolver_Node::ask( Bootstrap::mount_request_graph(), \strtoupper( $verb ), $since, $until, $source );
 		} catch ( \InvalidArgumentException $e ) {
 			\WP_CLI::error( $e->getMessage() );
 			return;
 		}
-		\WP_CLI::success( 'Asked ' . self::workers( $workers, '' ) . ' to ' . \substr_replace( $verb, 're-', 0, 2 ) . " the items dated {$since} to {$until}{$tail}." );
+		$of = '' === $source ? '' : "{$source} ";
+		\WP_CLI::success( 'Asked ' . self::workers( $workers, '' ) . ' to ' . \substr_replace( $verb, 're-', 0, 2 ) . " the {$of}items dated {$since} to {$until}{$tail}." );
 	}
 
 	/**
@@ -163,6 +176,32 @@ class Ontology_CLI_Command {
 	 */
 	private static function workers( int $count, string $kind ): string {
 		return "{$count} {$kind}" . ( 1 === $count ? 'worker' : 'workers' );
+	}
+
+	/**
+	 * The source `--source` names, trimmed as `items purge` reads it, or ''
+	 * for every source when the flag is left out; one given empty, or not
+	 * among the sources stored items are recorded under
+	 * (`Items_CLI_Command::stored_sources()`), is refused naming them.
+	 *
+	 * @param array<string,string> $assoc_args Flags.
+	 * @throws \InvalidArgumentException When the source is empty or no item is recorded under it.
+	 * @throws \Newspack_Nodes\Table_Unavailable When the projection cannot be read.
+	 */
+	private static function source_of( array $assoc_args ): string {
+		if ( ! \array_key_exists( 'source', $assoc_args ) ) {
+			return '';
+		}
+		$source = \trim( Core::as_string( $assoc_args['source'] ) );
+		if ( '' === $source ) {
+			throw new \InvalidArgumentException( '--source is empty; name a source, or leave --source out for every source.' );
+		}
+		$known = Items_CLI_Command::stored_sources();
+		if ( ! \in_array( $source, $known, true ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+			throw new \InvalidArgumentException( '--source must name a source items are recorded under, ' . ( [] === $known ? 'and no item is recorded yet' : 'one of: ' . \implode( ', ', $known ) ) . "; got {$source}." );
+		}
+		return $source;
 	}
 
 	/**

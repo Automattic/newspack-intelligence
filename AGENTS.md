@@ -631,30 +631,52 @@ offers, by name and key, the profile and the audience, carrying the
 resolution less its item, as backlog when the resolution carries
 `extract: true`; the answer hands the item and the inputs back, and
 `Prompts::messages()` offers the names of the topic map. It offers the
-themes current when it builds the messages, as `intel:llm` sends the
-request, so a request queued before a theme existed offers the themes of
-its send, and never any its inputs carry: the `Prompts::THEME_OFFER` (60)
-themes the most items retrieved in the last `THEME_DAYS` (30) days name,
-today among them, the most named first and a tie by name, an item counted
-only when its tier is one of `Intel_Tiers::UNRESTRICTED`, so a theme never
-travels from a restricted item into one a lower tier reads. The process
-reads them once per `Entity_Index::TTL_S` (60 seconds), as the index is
-read, and offers none, logged once, while the `intel-graph` tables cannot
-be read. `Prompts::extract()` builds the
+themes of the items most like this one as the projection holds them when
+it builds the messages, as `intel:llm` sends the request, so a request
+queued before a similar item was themed offers that theme, and never any
+its inputs carry. Similar items are the `Prompts::THEME_NEIGHBOURS` (12)
+themed items whose title best matches the item's title words, by `bm25`
+over `items_fts` under the `{title} :` column filter, since a title states
+the problem and a body drags in common words, a tie by key: the words are the title's runs of
+letters and digits, lowercased, each once, holding a letter, at least two
+characters long and not a stop word, the first sixteen in title order, each
+one quoted phrase (`Intel_Graph_Row_Schema::fts_phrase()`) joined by `OR`,
+so `bm25` rather than word length weighs how rare each is. bm25 ranks
+within one partition's index, so the rank assumes the single partition
+every topology runs. A neighbour is another item, retrieved within
+`THEME_DAYS` (30) days either side of this item's own retrieval, so a
+re-extraction of an old item reads its neighbours of that time, of a tier
+in `Intel_Tiers::UNRESTRICTED`, so a theme never travels from a restricted
+item into one a lower tier reads. Its theme is the newest partition's, by
+`partition_ordinal`, as `Graph_Query::stories()` reads one, and a neighbour
+whose theme names a kind or one of `Prompts::GENERIC_THEMES` is passed over.
+Their distinct themes are offered in the order of each one's best match,
+each with that match's title as its example, cut to
+`Source_Node::TITLE_CHARS` (120) on a character boundary. The read is one
+statement: the `MATCH` arms per partition, materialized once, and the
+themes of those keys alone, read through the `themes` key within the same
+days. Nothing is cached, a title holding no such word reads nothing, an
+item naming no integer `retrieved_ts` is refused, an item no themed item
+resembles is offered none, and none is offered, logged once, while the
+`intel-graph` tables cannot be read. `Prompts::extract()` builds the
 prompt, which carries the item as JSON (tags hex-escaped)
 inside an `<item>` fence the system message names as untrusted and offers
 the index's topic names; any themes offered follow the item as a JSON list
-in a `<themes>` fence, tags hex-escaped, which the system message names as
-untrusted as the item, and never in the system message itself. It defines
+of `{ theme, example }` in a `<themes>` fence, tags hex-escaped, which the
+system message names as untrusted as the item, and never in the system
+message itself, the examples with them. It defines
 every kind in one line each from `Intel_Event::KIND_DEFINITIONS`, which
 lists each of `ITEM_KINDS` in its order, and which tell `bug`, a
 defect in Newspack's own product as Newspack files or fixes it, from
 `complaint`, a client's dissatisfaction, and keep a client adopting more
 Newspack or routine account and storage work out of `churn_signal`; and it
-asks for a `theme`, two to six words naming the problem or event the item
-is an instance of, with no client names, URLs or numbers, adding the
-clause reusing one of the fenced themes when it fits only when there are
-themes to offer. The system message frames the reading for the
+asks for a `theme`, two to six words naming the one specific problem or
+event the item is about, with no client names, URLs or numbers, such as
+"site blocked from sending email", never a category of work such as "ui
+fixes" and never a kind, two items sharing a theme only when they are
+about the same problem or event; only when there are themes to offer does
+it add the clause reusing a fenced theme only when its example is about the
+same problem or event as this item, and writing a new one when none is. The system message frames the reading for the
 audience `set_audience` names, and without an audience while none is set, and scores
 against the `add_profile` lines; the shipped topologies set neither, so a
 deployment supplies both (see Topologies). `add_importance_floor <kind>
@@ -677,7 +699,11 @@ reads the theme as inert words — lowercase, each run of anything but
 letters, hyphens and apostrophes one space, so no digit, quote or
 punctuation survives, its ends trimmed of spaces, hyphens and apostrophes,
 cut on a character boundary to `Intel_Event::THEME_BYTES` (80) as the
-stream writes it — and leaves it out when that leaves nothing,
+stream writes it — and leaves it out when that leaves nothing, or when it
+names an item kind, its underscore a space, or one of
+`Prompts::GENERIC_THEMES` (`update`, `news`, `issue`, `bug report`,
+`general`, `misc`, `request`, `announcement`), which say nothing, `other`
+being a kind already,
 clamps the scores and keeps at most five claims with a predicate from the
 closed set. It writes an `extraction_recorded` naming topic keys, and its
 `theme` when the answer names one, then a
@@ -791,18 +817,27 @@ needs a case-sensitive `GLOB` on the title or body (`*`, `?` and `[`
 bracketed), as the resolver matches an acronym only in its own case. It appends its newest `MAX_ITEMS_PER_SIGNAL`
 (500) hits at once, newest first, and only on reaching that cap counts the
 rest, to log how many it skipped. `wp
-newspack-intelligence ontology reresolve --since=<Y-m-d> [--until=<Y-m-d>]`
-and the `reresolve` verb both call `Reresolver_Node::ask()` with their
-graph and `RERESOLVE`, which validates the days before it sends anything,
-then sends `RERESOLVE <since> <until>` through
-`Worker_Route` to each live worker's `reresolver`, answering how many it
-reached; with none live it throws, which the command lets fail and the
+newspack-intelligence ontology reresolve --since=<Y-m-d> [--until=<Y-m-d>]
+[--source=<name>]` and the `reresolve` verb both call `Reresolver_Node::ask()`
+with their graph, `RERESOLVE` and the source, '' for every one, which the
+verb always passes; `ask()` validates the days and refuses a source of more
+than one word before it sends anything, then sends `RERESOLVE <since>
+<until> [<source>]` through `Worker_Route` to each live worker's
+`reresolver`, answering how many it reached; with none live it throws, which the command lets fail and the
 verb answers as a refusal. `wp newspack-intelligence ontology reextract
---since=<Y-m-d> [--until=<Y-m-d>] [--limit=<n>] [--dry-run]` re-extracts the
-same range through the same path, sharing `reresolve`'s one helper for the
-root refusal, the days, the refusal of a bad range, `ask()` and the success
-line. Every live worker re-extracts the whole range, so it counts its calls
-as the items the range dates (`Reresolver_Node::count_dated()`) times the
+--since=<Y-m-d> [--until=<Y-m-d>] [--source=<name>] [--limit=<n>] [--dry-run]`
+re-extracts the same range through the same path, sharing `reresolve`'s one
+helper for the root refusal, the days, the source, the refusal of a bad
+range, `ask()` and the success line, which names the source when given.
+Both read `--source` trimmed, as `items purge` does, and refuse one given
+empty rather than widening it to every source, and one that no stored item
+is recorded under, in its own case, listing those sources sorted
+(`Items_CLI_Command::stored_sources()`, which reads every partition's
+`items` as `items purge` selects them). A node's name is not always its
+items' source: `news` records under `feed` and `p2-restricted` under `p2`.
+Every live worker re-extracts the whole range, so it counts its calls as
+the items of the source, or of every one, the range dates
+(`Reresolver_Node::count_dated()`) times the
 live workers (`Worker_Route::live_workers()`), refuses calls above
 `--limit`, `Ontology_CLI_Command::REEXTRACT_LIMIT` (200) when omitted and
 refused when not a positive whole number, naming the items and the workers
@@ -810,19 +845,23 @@ and that a failed call may retry up to `Extractor_Node::MAX_ATTEMPTS` (5)
 times, sends nothing for a range that contains no item, and otherwise asks with
 `REEXTRACT`, which queues the range as a `reextract` unit whose records
 carry `extract: true`; `--dry-run` sends nothing and prints the calls and
-the command that runs them, with `--limit` only past the default.
+the command that runs them, with `--source` when given and `--limit` only
+past the default.
 `Reresolver_Node::RANGES` maps each range request to its queue kind, and
 both the declared requests and `ask()`'s refusal of any other read it. A
 call that fails keeps the item's earlier extraction, and its retry stays
-owed one. The reresolver publishes a range it queues as `last_range {
-since, until }` through `Publishes_Status`, for a year, so it outlives the
-Delay's dropped days it covers,
-writing each one it is asked (no heartbeat), answers the range
-it queued, or the refusal, and
-sends every item dated in those UTC days, an undated one by its retrieval,
-partition by partition in row-id order. The queue checkpoints with
+owed one. The reresolver publishes a range it queues naming no source as
+`last_range { since, until }` through `Publishes_Status`, for a year, so it
+outlives the Delay's dropped days it covers, writing each one it is asked
+(no heartbeat); a range naming a source covers only some of its days' items
+and publishes nothing. It answers the range it queued, `{ since, until }`
+with `source` beside them when one is named, or the refusal, and sends
+every item dated in those UTC days, an undated one by its retrieval, of the
+named source alone when there is one (`i.source = ?`), partition by
+partition in row-id order. The queue checkpoints with
 `intel:ontology:reresolve` (`add_snapshot_node reresolver`), each unit by its
-key, `<kind>|<value>`, with when it was queued and a range's cursor, and an
+key, `<kind>|<value>`, a range's value `<from> <to>` or `<from> <to>
+<source>`, with when it was queued and a range's cursor, and an
 entry the checkpoint cannot read, or a checkpoint holding no queue, is
 dropped and logged; a signal leaves the queue once swept, a range once a
 page comes back short, and either waits, logged, while the projection will
@@ -2160,7 +2199,7 @@ plugin adds:
 | `Resolver` | `Resolver_Node` | `<writer> <later> <llm>`; no verbs; publishes its hold (`reason`, `since`) through `Publishes_Status` |
 | `Extractor` | `Extractor_Node` | `<writer> <later> <llm>`; `set_audience`, `add_profile`, `remove_profile`, `add_importance_floor` and `remove_importance_floor` |
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
-| `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until>`, `REEXTRACT <since> <until>`; publishes `last_range` through `Publishes_Status` |
+| `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until> [<source>]`, `REEXTRACT <since> <until> [<source>]`; publishes `last_range` through `Publishes_Status` |
 | `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no verbs |
 | `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `health`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
 

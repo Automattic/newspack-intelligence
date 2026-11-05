@@ -710,9 +710,9 @@ final class LlmCallNodeTest extends TestCase {
 	}
 
 	/**
-	 * A queued extraction stores no themes and offers the ones this process
-	 * reads as it is sent, so a request queued before a theme existed offers
-	 * the themes current when it goes out.
+	 * A queued extraction stores no themes and offers its neighbours' as the
+	 * projection holds them when it is sent, so a request queued before a
+	 * similar item was themed offers that theme when it goes out.
 	 */
 	public function test_a_queued_extraction_offers_the_themes_current_when_it_is_sent(): void {
 		[ $extractor ] = $this->extractor_on_llm( 1 );
@@ -722,13 +722,13 @@ final class LlmCallNodeTest extends TestCase {
 
 		$this->assertCount( 1, $this->sent, 'it waits behind the call in flight' );
 		$this->assertStringNotContainsString( 'themes', $this->stored( 'feed:heron-6' )[0] );
-		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): array => [ 'site blocked from sending email' ];
+		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): array => [ [ 'theme' => 'heron dispatch mail halted', 'example' => 'Heron Dispatch mail halts' ] ];
 
 		$this->complete_nth( 0, self::completion( 'done' ) );
 
 		$messages = \json_decode( (string) $this->sent[1][ \CURLOPT_POSTFIELDS ], true )['messages'];
-		$this->assertStringEndsWith( "\n</item>\n<themes>\n[\"site blocked from sending email\"]\n</themes>", $messages[1]['content'] );
-		$this->assertStringNotContainsString( 'site blocked from sending email', $messages[0]['content'] );
+		$this->assertStringEndsWith( "\n</item>\n<themes>\n[{\"theme\":\"heron dispatch mail halted\",\"example\":\"Heron Dispatch mail halts\"}]\n</themes>", $messages[1]['content'] );
+		$this->assertStringNotContainsString( 'heron dispatch mail halted', $messages[0]['content'] );
 	}
 
 	/**
@@ -743,7 +743,6 @@ final class LlmCallNodeTest extends TestCase {
 		Topology_Registry::register_builtin_dir( \dirname( __DIR__, 3 ) . '/newspack-nodes/topologies' );
 		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
 		( new \ReflectionProperty( Entity_Index::class, 'current' ) )->setValue( null, null );
-		( new \ReflectionProperty( Prompts::class, 'themes' ) )->setValue( null, null );
 		$writer = new Capture_Sink_Node();
 		$writer->name( 'intel:writer' );
 		$deduper = new Capture_Sink_Node();

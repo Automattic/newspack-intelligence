@@ -6,8 +6,8 @@
  * the model-call node its `make_node` line names, `intel:llm`, naming the
  * `extract` prompt, its inputs the topics it offers by name and key, the
  * profile and the audience, and carrying the resolution less its item, so
- * the answer finishes it (`Asks_Model`); the prompt offers the themes
- * current when it is sent.
+ * the answer finishes it (`Asks_Model`); the prompt offers the themes of
+ * the items most like it as the projection holds them when it is sent.
  * It writes an `extraction_recorded` naming topic keys plus a
  * `claim_asserted` per claim whose subject is an entity the item links,
  * addressed by TO to the writer its `make_node` line names (substrate

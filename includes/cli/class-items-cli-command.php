@@ -238,4 +238,28 @@ class Items_CLI_Command {
 		$argv = $_SERVER['argv'] ?? throw new \LogicException( 'items purge reads its flags off argv, which this process does not carry' );
 		return \count( \array_filter( Core::arr( $argv ), static fn ( mixed $token ): bool => "--{$flag}" === $token || \str_starts_with( Core::as_string( $token ), "--{$flag}=" ) ) );
 	}
+
+	/**
+	 * Every source a stored item is recorded under, across every partition,
+	 * each once, sorted: the names a `--source` flag may give.
+	 *
+	 * @return list<string>
+	 * @throws \Newspack_Nodes\Table_Unavailable When the projection cannot be read.
+	 */
+	public static function stored_sources(): array {
+		$sources = Intel_Graph_Row_Schema::read(
+			static function ( Row_Reader $r ): array {
+				$sources = [];
+				foreach ( $r->aliases() as $a ) {
+					foreach ( $r->rows( "SELECT DISTINCT source FROM {$a}.items", [] ) as [ $source ] ) {
+						$sources[] = Core::as_string( $source );
+					}
+				}
+				return $sources;
+			}
+		);
+		$sources = \array_values( \array_unique( $sources ) );
+		\sort( $sources, \SORT_STRING );
+		return $sources;
+	}
 }

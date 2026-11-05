@@ -8,7 +8,6 @@ use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Ontology_Seed;
 use Newspack_Intelligence\Projector_Node;
-use Newspack_Intelligence\Prompts;
 use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Consumer_Node;
@@ -47,7 +46,6 @@ trait Seeds_Entity_Index {
 		Topology_Registry::register_user_dir( \dirname( __DIR__ ) . '/fixtures/user-topologies' );
 		$this->seeder = $this->projector_graph();
 		( new \ReflectionProperty( Entity_Index::class, 'current' ) )->setValue( null, null );
-		( new \ReflectionProperty( Prompts::class, 'themes' ) )->setValue( null, null );
 	}
 
 	/** Install the fictional fixture seed where `Ontology_Seed` reads one. */

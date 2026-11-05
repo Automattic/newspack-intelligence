@@ -366,7 +366,76 @@ final class ReresolverNodeTest extends TestCase {
 			)
 		);
 
-		$this->assertSame( [ 2, 3 ], [ Reresolver_Node::count_dated( '2026-08-03', '2026-08-03' ), Reresolver_Node::count_dated( '2026-08-03', '2026-08-04' ) ] );
+		$this->assertSame( [ 2, 3 ], [ Reresolver_Node::count_dated( '2026-08-03', '2026-08-03', '' ), Reresolver_Node::count_dated( '2026-08-03', '2026-08-04', '' ) ] );
+	}
+
+	/** Given a source, a range counts only that source's items. */
+	public function test_count_dated_counts_only_the_source_named(): void {
+		$this->seed(
+			self::items(
+				[ 'feed:count-1', 'One', '', 'https://news.example/c1', 1785715200 ],
+				[ 'slack:C0WREN001:1785715300.0001', 'Two', '', 'https://wren.example/c2', 1785715300 ],
+				[ 'slack:C0WREN001:1785715400.0001', 'Three', '', 'https://wren.example/c3', 1785715400 ],
+				[ 'slack:C0WREN001:1785801700.0001', 'Out', '', 'https://wren.example/c4', 1785801700 ]
+			)
+		);
+
+		$this->assertSame( [ 2, 3, 0 ], [ Reresolver_Node::count_dated( '2026-08-03', '2026-08-03', 'slack' ), Reresolver_Node::count_dated( '2026-08-03', '2026-08-03', '' ), Reresolver_Node::count_dated( '2026-08-03', '2026-08-03', 'linear' ) ] );
+	}
+
+	/**
+	 * A range naming a source sends only that source's items, the unit
+	 * keyed and checkpointed with the source, and publishes no last range,
+	 * since it covers only some of the days' items.
+	 */
+	public function test_a_range_with_a_source_sends_only_that_sources_items(): void {
+		$memd       = new InMemoryMemcached();
+		Core::$memd = $memd;
+		$this->seed(
+			self::items(
+				[ 'feed:mixed-1', 'Feed story', '', 'https://news.example/m1', 1785715200 ],
+				[ 'slack:C0WREN001:1785715300.0001', 'Wren thread', '', 'https://wren.example/m2', 1785715300 ],
+				[ 'feed:mixed-3', 'Feed story again', '', 'https://news.example/m3', 1785715400 ],
+				[ 'slack:C0WREN001:1785715500.0001', 'Wren reply', '', 'https://wren.example/m4', 1785715500 ]
+			)
+		);
+
+		$asker = $this->request( 'REEXTRACT 2026-08-03 2026-08-03 slack' );
+		$this->assertSame( [ 'verb' => 'REEXTRACT', 'data' => [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'source' => 'slack' ] ], $asker[0][ Message::VALUE ] );
+		$this->assertSame( [ 'reextract|1785715200 1785801600 slack' => [ 'at' => self::NOW, 'after' => null ] ], $this->reresolver->save_state()['queue'] );
+		$this->sweep_at( self::NOW + 1 );
+
+		$this->assertSame(
+			[ Resolver_Node::reresolve( 'slack:C0WREN001:1785715300.0001', 0.0, [ 'extract' => true ] ), Resolver_Node::reresolve( 'slack:C0WREN001:1785715500.0001', 0.0, [ 'extract' => true ] ) ],
+			\array_column( $this->out->captured, Message::VALUE )
+		);
+		$this->assertSame( [], $this->reresolver->save_state()['queue'] );
+		$this->assertNull( Reresolver_Node::read_status( 'reresolver', 0 ) );
+	}
+
+	/** A sourced range pages past the other sources' items and resumes from its checkpoint. */
+	public function test_a_sourced_range_pages_and_resumes_its_checkpoint(): void {
+		$rows = [];
+		for ( $i = 0; $i < 25; $i++ ) {
+			$rows[] = [ \sprintf( 'linear:KITE-%02d', $i ), "Kite {$i}", '', "https://linear.example/{$i}", 1785715200 + $i ];
+			$rows[] = [ \sprintf( 'feed:kite-%02d', $i ), "Feed {$i}", '', "https://news.example/{$i}", 1785715200 + $i ];
+		}
+		$this->seed( self::items( ...$rows ) );
+		$this->request( 'RERESOLVE 2026-08-03 2026-08-03 linear' );
+
+		$this->sweep_at( self::NOW + 1 );
+		$this->assertSame( \array_map( static fn ( int $i ): string => \sprintf( 'linear:KITE-%02d', $i ), \range( 0, 19 ) ), $this->sent_keys() );
+		$saved = \json_decode( (string) \json_encode( $this->reresolver->save_state() ), true );
+		\assert( \is_array( $saved ) );
+		$this->assertSame( [ 'range|1785715200 1785801600 linear' ], \array_keys( $saved['queue'] ) );
+
+		$this->reresolver->remove_node();
+		$this->out = new Capture_Sink_Node();
+		$successor = $this->reresolver();
+		$successor->restore_state( $saved );
+		$this->sweep_at( self::NOW + 2, $successor );
+		$this->assertSame( \array_map( static fn ( int $i ): string => \sprintf( 'linear:KITE-%02d', $i ), \range( 20, 24 ) ), $this->sent_keys() );
+		$this->assertSame( [], $successor->save_state()['queue'] );
 	}
 
 	/** A due signal goes before any range, so a backfill never delays a curator's change. */
@@ -550,6 +619,7 @@ final class ReresolverNodeTest extends TestCase {
 			...$this->request( 'RERESOLVE 2026-02-30 2026-08-20' ),
 			...$this->request( 'RERESOLVE 2026-08-20 2026-08-03' ),
 			...$this->request( 'RERESOLVE 2026-08-03' ),
+			...$this->request( 'RERESOLVE 2026-08-03 2026-08-03 slack linear' ),
 		];
 		$this->sweep_at( self::NOW + 1 );
 
@@ -557,7 +627,8 @@ final class ReresolverNodeTest extends TestCase {
 			[
 				[ 'refused' => 'not a Y-m-d date: 2026-02-30' ],
 				[ 'refused' => 'since 2026-08-20 is after until 2026-08-03' ],
-				[ 'refused' => 'usage: RERESOLVE <since Y-m-d> <until Y-m-d>' ],
+				[ 'refused' => 'usage: RERESOLVE <since Y-m-d> <until Y-m-d> [<source>]' ],
+				[ 'refused' => 'usage: RERESOLVE <since Y-m-d> <until Y-m-d> [<source>]' ],
 			],
 			\array_map( static fn ( array $m ): mixed => $m[ Message::VALUE ]['data'], $replies )
 		);
@@ -633,7 +704,7 @@ final class ReresolverNodeTest extends TestCase {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'since 2026-07-19 is after until 2026-07-04' );
 
-		Reresolver_Node::ask( new Command_Interpreter_Node(), 'RERESOLVE', '2026-07-19', '2026-07-04' );
+		Reresolver_Node::ask( new Command_Interpreter_Node(), 'RERESOLVE', '2026-07-19', '2026-07-04', '' );
 	}
 
 	/** A request RANGES does not name is refused before the range is read. */
@@ -641,7 +712,15 @@ final class ReresolverNodeTest extends TestCase {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'request must be one of: RERESOLVE, REEXTRACT' );
 
-		Reresolver_Node::ask( new Command_Interpreter_Node(), 'REPROJECT', '2026-07-04', '2026-07-19' );
+		Reresolver_Node::ask( new Command_Interpreter_Node(), 'REPROJECT', '2026-07-04', '2026-07-19', '' );
+	}
+
+	/** A source is one word, refused before anything is sent when it is not. */
+	public function test_ask_refuses_a_source_of_more_than_one_word(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'a source is one word: kite feed' );
+
+		Reresolver_Node::ask( new Command_Interpreter_Node(), 'RERESOLVE', '2026-07-04', '2026-07-19', 'kite feed' );
 	}
 
 	/** Each range request is declared from RANGES, answering the same queue. */
@@ -777,7 +856,7 @@ final class ReresolverNodeTest extends TestCase {
 	private static function items( array ...$rows ): array {
 		$events = [];
 		foreach ( $rows as $row ) {
-			$fields   = [ 'item_key' => $row[0], 'source' => 'feed', 'tier' => 'internal', 'url' => $row[3], 'title' => $row[1], 'body' => $row[2], 'item_ts' => $row[4], 'retrieved_ts' => $row[5] ?? 1793900000 ];
+			$fields   = [ 'item_key' => $row[0], 'source' => \explode( ':', $row[0] )[0], 'tier' => 'internal', 'url' => $row[3], 'title' => $row[1], 'body' => $row[2], 'item_ts' => $row[4], 'retrieved_ts' => $row[5] ?? 1793900000 ];
 			$events[] = Intel_Event::make( 'item_recorded', $fields, 'machine:source:feed@9.4.1', '9.4.1' );
 		}
 		return $events;

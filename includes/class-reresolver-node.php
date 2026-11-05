@@ -25,11 +25,13 @@
  * wildcards escaped, and appends its newest MAX_ITEMS_PER_SIGNAL hits at
  * once, newest first; reaching that cap, it counts the rest and logs how many
  * it skipped. A `RERESOLVE <since>
- * <until>` request queues every item dated in those UTC days, an undated one
- * by its retrieval, sent in the order the projection recorded them, by a
- * cursor on each partition's row id, and publishes it as `last_range`; a
- * `REEXTRACT` request queues the same range with each record owed its
- * extraction, so the extractor calls the model whatever the item holds.
+ * <until> [<source>]` request queues every item dated in those UTC days, an
+ * undated one by its retrieval, of the source it names or of every source,
+ * sent in the order the projection recorded them, by a cursor on each
+ * partition's row id, and publishes a range naming no source as
+ * `last_range`; a `REEXTRACT` request queues the same range with each record
+ * owed its extraction, so the extractor calls the model whatever the item
+ * holds.
  *
  * The queue checkpoints with its Consumer's cursor, each unit by its
  * key, `<kind>|<value>`, with when it was queued and a range's cursor, so a
@@ -387,9 +389,9 @@ class Reresolver_Node extends Timer_Node {
 	 * @param Work   $work The range.
 	 */
 	private function page( string $key, array $work ): void {
-		[ $kind, $bounds ] = \explode( '|', $key, 2 );
-		[ $since, $until ] = \array_map( 'intval', \explode( ' ', $bounds ) );
-		$found             = $this->read( $key, static fn ( Row_Reader $r ): array => self::dated( $r, $since, $until, $work['after'] ) );
+		[ $kind, $bounds ]           = \explode( '|', $key, 2 );
+		[ $since, $until, $source ] = \explode( ' ', $bounds, 3 ) + [ 2 => '' ];
+		$found                       = $this->read( $key, static fn ( Row_Reader $r ): array => self::dated( $r, (int) $since, (int) $until, $source, $work['after'] ) );
 		if ( null === $found ) {
 			return;
 		}
@@ -403,18 +405,20 @@ class Reresolver_Node extends Timer_Node {
 	}
 
 	/**
-	 * The next page of a range: the items dated in it, partition by
-	 * partition in row-id order past the cursor, and the cursor after them;
-	 * none once the last partition is exhausted.
+	 * The next page of a range: the items dated in it, of its source when
+	 * it names one, partition by partition in row-id order past the cursor,
+	 * and the cursor after them; none once the last partition is exhausted.
 	 *
-	 * @param Row_Reader                 $r     The reader.
-	 * @param int                        $since The range's first second.
-	 * @param int                        $until The second after its last.
-	 * @param array{0:int,1:string}|null $after The row id and partition alias the last page ended at.
+	 * @param Row_Reader                 $r      The reader.
+	 * @param int                        $since  The range's first second.
+	 * @param int                        $until  The second after its last.
+	 * @param string                     $source The source, or '' for every one.
+	 * @param array{0:int,1:string}|null $after  The row id and partition alias the last page ended at.
 	 * @return array{0:list<string>,1:array{0:int,1:string}|null} The item keys, and the cursor.
 	 */
-	private static function dated( Row_Reader $r, int $since, int $until, ?array $after ): array {
-		$when    = Intel_Graph_Row_Schema::ITEM_TIME;
+	private static function dated( Row_Reader $r, int $since, int $until, string $source, ?array $after ): array {
+		[ $of, $of_binds ] = self::of_source( $source );
+		$when             = Intel_Graph_Row_Schema::ITEM_TIME;
 		$aliases          = $r->aliases();
 		[ $last, $alias ] = $after ?? [ 0, '' ];
 		$at               = \array_search( $alias, $aliases, true );
@@ -425,7 +429,7 @@ class Reresolver_Node extends Timer_Node {
 		for ( ; $at < \count( $aliases ); $at++ ) {
 			$a    = $aliases[ $at ];
 			$room = self::RERESOLVE_PAGE - \count( $keys );
-			foreach ( $r->rows( "SELECT i.id, i.item_key FROM {$a}.items i WHERE i.id > ? AND {$when} >= ? AND {$when} < ? ORDER BY i.id LIMIT {$room}", [ $last, $since, $until ] ) as [ $id, $item_key ] ) {
+			foreach ( $r->rows( "SELECT i.id, i.item_key FROM {$a}.items i WHERE i.id > ? AND {$when} >= ? AND {$when} < ?{$of} ORDER BY i.id LIMIT {$room}", [ $last, $since, $until, ...$of_binds ] ) as [ $id, $item_key ] ) {
 				$keys[] = Core::as_string( $item_key );
 				$last   = Core::as_int( $id );
 			}
@@ -476,28 +480,33 @@ class Reresolver_Node extends Timer_Node {
 	}
 
 	/**
-	 * Answer a range request: publish and queue the day range it names as
-	 * the kind RANGES gives it, or answer and log why it cannot.
+	 * Answer a range request: queue the day range it names, of the source
+	 * it names or of every source, as the kind RANGES gives it, or answer
+	 * and log why it cannot. A range of every source is published as the
+	 * last range; one of a source covers only some of its days' items.
 	 *
-	 * @return array{since:string,until:string}|array{refused:string}
+	 * @return array{since:string,until:string,source?:string}|array{refused:string}
 	 */
 	private function queue_range(): array {
 		$words   = \preg_split( '/\s+/', \trim( $this->asked ) ) ?: [ '' ];
 		$request = \strtoupper( $words[0] );
 		try {
-			if ( 3 !== \count( $words ) ) {
+			if ( 3 !== \count( $words ) && 4 !== \count( $words ) ) {
 				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
-				throw new \InvalidArgumentException( "usage: {$request} <since Y-m-d> <until Y-m-d>" );
+				throw new \InvalidArgumentException( "usage: {$request} <since Y-m-d> <until Y-m-d> [<source>]" );
 			}
-			[ , $since, $until ] = $words;
-			[ $from, $to ]       = Intel_Graph_Row_Schema::range( $since, $until );
+			[ , $since, $until, $source ] = $words + [ 3 => '' ];
+			[ $from, $to ]                = Intel_Graph_Row_Schema::range( $since, $until );
 		} catch ( \InvalidArgumentException $e ) {
 			$this->print_less_often( 'refusing a re-resolution: ', $e->getMessage() );
 			return [ 'refused' => $e->getMessage() ];
 		}
-		$this->publish_status( [ 'last_range' => [ 'since' => $since, 'until' => $until ] ] );
-		$this->queue_up( self::RANGES[ $request ], "{$from} {$to}" );
-		return [ 'since' => $since, 'until' => $until ];
+		$range = [ 'since' => $since, 'until' => $until ];
+		if ( '' === $source ) {
+			$this->publish_status( [ 'last_range' => $range ] );
+		}
+		$this->queue_up( self::RANGES[ $request ], \rtrim( "{$from} {$to} {$source}" ) );
+		return $range + ( '' === $source ? [] : [ 'source' => $source ] );
 	}
 
 	/**
@@ -559,6 +568,83 @@ class Reresolver_Node extends Timer_Node {
 	}
 
 	/**
+	 * Ask each live worker's reresolver to re-resolve, or with REEXTRACT
+	 * re-extract, every item dated in a range of UTC days, of one source or
+	 * of every one: the one request `wp newspack-intelligence ontology
+	 * reresolve` and `ontology reextract` and the `reresolve` verb send. A
+	 * range that does not parse, or a source of more than one word, is
+	 * refused before anything is sent.
+	 *
+	 * @param Command_Interpreter_Node $graph   The caller's interpreter; each request carries its name as FROM.
+	 * @param string                   $request A key of RANGES.
+	 * @param string                   $since   The first day, Y-m-d.
+	 * @param string                   $until   The last day, Y-m-d.
+	 * @param string                   $source  The source, or '' for every one.
+	 * @return int The workers asked.
+	 * @throws \InvalidArgumentException When the request is not a key of
+	 *                                   RANGES, a day does not parse, the
+	 *                                   range runs backwards or the source
+	 *                                   is not one word.
+	 * @throws \RuntimeException When the topology has no live worker.
+	 */
+	public static function ask( Command_Interpreter_Node $graph, string $request, string $since, string $until, string $source ): int {
+		Graph_Query::one_of( 'request', $request, \array_keys( self::RANGES ) );
+		Intel_Graph_Row_Schema::range( $since, $until );
+		return Worker_Route::send( $graph, Config::get_base_directory(), [ [ 'reresolver', \rtrim( "{$request} {$since} {$until} " . self::one_word( $source ) ) ] ] );
+	}
+
+	/**
+	 * How many stored items a range of UTC days dates, an undated one by its
+	 * retrieval, of one source or of every one, across every partition: what
+	 * a range request sends.
+	 *
+	 * @param string $since  The first day, Y-m-d.
+	 * @param string $until  The last day, Y-m-d.
+	 * @param string $source The source, or '' for every one.
+	 * @throws \InvalidArgumentException When a day does not parse or the range runs backwards.
+	 * @throws \Newspack_Nodes\Table_Unavailable When the projection will not open.
+	 */
+	public static function count_dated( string $since, string $until, string $source ): int {
+		[ $from, $to ]     = Intel_Graph_Row_Schema::range( $since, $until );
+		[ $of, $of_binds ] = self::of_source( $source );
+		$when              = Intel_Graph_Row_Schema::ITEM_TIME;
+		return Intel_Graph_Row_Schema::read(
+			static function ( Row_Reader $r ) use ( $from, $to, $of, $of_binds, $when ): int {
+				$count = 0;
+				foreach ( $r->aliases() as $a ) {
+					$count += Core::as_int( $r->rows( "SELECT COUNT(*) FROM {$a}.items i WHERE {$when} >= ? AND {$when} < ?{$of}", [ $from, $to, ...$of_binds ] )[0][0] ?? 0 );
+				}
+				return $count;
+			}
+		);
+	}
+
+	/**
+	 * The condition, after an `AND`, keeping `items i` to one source, and
+	 * its bind; none for every source.
+	 *
+	 * @param string $source The source, or ''.
+	 * @return array{0:string,1:list<string>}
+	 */
+	private static function of_source( string $source ): array {
+		return '' === $source ? [ '', [] ] : [ ' AND i.source = ?', [ $source ] ];
+	}
+
+	/**
+	 * A source as a request line carries it, one word or ''.
+	 *
+	 * @param string $source The source.
+	 * @throws \InvalidArgumentException When it holds whitespace.
+	 */
+	private static function one_word( string $source ): string {
+		if ( 1 === \preg_match( '/\s/', $source ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+			throw new \InvalidArgumentException( "a source is one word: {$source}" );
+		}
+		return $source;
+	}
+
+	/**
 	 * The queue, which the ontology Consumer co-commits with its cursor.
 	 *
 	 * @api Called by the substrate's Consumer at each checkpoint.
@@ -586,52 +672,6 @@ class Reresolver_Node extends Timer_Node {
 		return 0;
 	}
 
-	/**
-	 * Ask each live worker's reresolver to re-resolve, or with REEXTRACT
-	 * re-extract, every item dated in a range of UTC days: the one request
-	 * `wp newspack-intelligence ontology reresolve` and `ontology reextract`
-	 * and the `reresolve` verb send. A range that does not parse is refused
-	 * before anything is sent.
-	 *
-	 * @param Command_Interpreter_Node $graph   The caller's interpreter; each request carries its name as FROM.
-	 * @param string                   $request A key of RANGES.
-	 * @param string                   $since   The first day, Y-m-d.
-	 * @param string                   $until   The last day, Y-m-d.
-	 * @return int The workers asked.
-	 * @throws \InvalidArgumentException When the request is not a key of
-	 *                                   RANGES, a day does not parse or the
-	 *                                   range runs backwards.
-	 * @throws \RuntimeException When the topology has no live worker.
-	 */
-	public static function ask( Command_Interpreter_Node $graph, string $request, string $since, string $until ): int {
-		Graph_Query::one_of( 'request', $request, \array_keys( self::RANGES ) );
-		Intel_Graph_Row_Schema::range( $since, $until );
-		return Worker_Route::send( $graph, Config::get_base_directory(), [ [ 'reresolver', "{$request} {$since} {$until}" ] ] );
-	}
-
-	/**
-	 * How many stored items a range of UTC days dates, an undated one by its
-	 * retrieval, across every partition: what a range request sends.
-	 *
-	 * @param string $since The first day, Y-m-d.
-	 * @param string $until The last day, Y-m-d.
-	 * @throws \InvalidArgumentException When a day does not parse or the range runs backwards.
-	 * @throws \Newspack_Nodes\Table_Unavailable When the projection will not open.
-	 */
-	public static function count_dated( string $since, string $until ): int {
-		[ $from, $to ] = Intel_Graph_Row_Schema::range( $since, $until );
-		$when          = Intel_Graph_Row_Schema::ITEM_TIME;
-		return Intel_Graph_Row_Schema::read(
-			static function ( Row_Reader $r ) use ( $from, $to, $when ): int {
-				$count = 0;
-				foreach ( $r->aliases() as $a ) {
-					$count += Core::as_int( $r->rows( "SELECT COUNT(*) FROM {$a}.items i WHERE {$when} >= ? AND {$when} < ?", [ $from, $to ] )[0][0] ?? 0 );
-				}
-				return $count;
-			}
-		);
-	}
-
 	/** @return array<string,mixed> */
 	public static function node_schema(): array {
 		return [
@@ -643,8 +683,8 @@ class Reresolver_Node extends Timer_Node {
 			'requests'     => \array_map(
 				static fn ( string $request, string $kind ): array => [
 					'name'        => $request,
-					'description' => 'Re-resolve every item dated in a range of UTC days' . ( 'reextract' === $kind ? ', each owed an extraction call' : '' ) . ": {$request} <since Y-m-d> <until Y-m-d>.",
-					'reply_shape' => '{ since, until } or { refused }',
+					'description' => 'Re-resolve every item dated in a range of UTC days, of one source when it names one' . ( 'reextract' === $kind ? ', each owed an extraction call' : '' ) . ": {$request} <since Y-m-d> <until Y-m-d> [<source>].",
+					'reply_shape' => '{ since, until, source? } or { refused }',
 					'handler'     => static fn ( self $node ): array => $node->queue_range(),
 				],
 				\array_keys( self::RANGES ),
