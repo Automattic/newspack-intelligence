@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-11-04
+
 ### Added
 
 - **`LLM_Call_Node` publishes its queue,** `{ queue: { new, backlog, in_flight }, at }` through `Publishes_Status`, under its name and worker partition: `new` and `backlog` the requests its frontier Table counts waiting under each priority (`Frontier::count()`), `in_flight` the calls the process has sent and not settled, `queue` null when a count is not answered, never a zero, and `at` the second it was written. It publishes on the Router's tick, at most every `QUEUE_PUBLISH_S` (5) seconds after a request, a take or a settle and every `STATUS_HEARTBEAT_S` (300) while the queue does not move, a clock stepped back counting as the interval passed; a change stays owed until a counted snapshot lands, a throw while counting is logged and tried at the next tick, and the snapshot lives three heartbeats.
