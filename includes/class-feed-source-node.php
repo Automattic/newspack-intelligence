@@ -32,6 +32,9 @@ class Feed_Source_Node extends Source_Node {
 	/** Seconds a feed's connection may take, within Curl's 30 for the whole transfer. */
 	public const CONNECT_TIMEOUT = 10;
 
+	/** What sets a feed title's tagline apart: ` | `, ` - `, ` – `, ` — ` or `: `. */
+	private const TAGLINE = '/ [|\x{2013}\x{2014}-] |: /u';
+
 	/** Passes a failing client domain sits out at most; each failure in a row doubles them up to it. */
 	public const MAX_SKIP_PASSES = 48;
 
@@ -142,13 +145,18 @@ class Feed_Source_Node extends Source_Node {
 
 	/**
 	 * Name a client every read still shows by a domain after its own feed's
-	 * title, whitespace collapsed, as a canonical name, once; a title that
-	 * is blank, past Graph_Curation::NAME_BYTES, the domain again, or that
-	 * does not spell the site (`Resolver::names_site()`) names no one.
+	 * title, whitespace collapsed, as a canonical name, once; the part
+	 * before its first TAGLINE separator alone when that part names the
+	 * site, a tagline being no part of the name. A title that is blank, past
+	 * Graph_Curation::NAME_BYTES, the domain again, or that does not spell
+	 * the site (`Resolver::names_site()`) names no one.
 	 */
 	private function entitle( string $domain, string $title ): void {
 		$entity = $this->unnamed[ $domain ] ?? null;
 		$title  = \trim( (string) \preg_replace( '/\s+/u', ' ', $title ) );
+		$parts  = \preg_split( self::TAGLINE, $title, 2 );
+		$lead   = \is_array( $parts ) ? \trim( $parts[0] ) : '';
+		$title  = '' !== $lead && Resolver::names_site( $lead, $domain ) ? $lead : $title;
 		if ( null === $entity || isset( $this->named[ $entity ] ) || $domain === Entity_Index::identifier_value( 'domain', $title ) || ! Resolver::names_site( $title, $domain ) ) {
 			return;
 		}
@@ -402,9 +410,23 @@ class Feed_Source_Node extends Source_Node {
 			if ( '' === $when ) {
 				$when = (string) $item->children( self::DC_NS )->date;
 			}
-			$out[] = $this->normalize_item( 'feed', self::keyed( $prefix, $id ), (string) $item->title, $link, (string) $item->description, $when );
+			$out[] = $this->normalize_item( 'feed', self::keyed( $prefix, $id ), self::unsourced( $item ), $link, (string) $item->description, $when );
 		}
 		return $out;
+	}
+
+	/**
+	 * An RSS item's title less the ` - <source>` an aggregator such as
+	 * Google News appends, cut only when the item carries a `<source>` and
+	 * its title ends with exactly that, so the copy dedups against the
+	 * publisher's own.
+	 *
+	 * @param \SimpleXMLElement $item The item.
+	 */
+	private static function unsourced( \SimpleXMLElement $item ): string {
+		$title  = \rtrim( (string) $item->title );
+		$suffix = ' - ' . \trim( (string) $item->source );
+		return isset( $item->source ) && ' - ' !== $suffix && \str_ends_with( $title, $suffix ) ? \substr( $title, 0, -\strlen( $suffix ) ) : (string) $item->title;
 	}
 
 	/**

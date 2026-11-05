@@ -831,6 +831,64 @@ XML;
 		$this->assertSame( [ [ 'organization:atomic-880088', 'canonical', $title ] ], self::brief_names( $this->names() ) );
 	}
 
+	/**
+	 * A tagline after a separator is not part of the name: when the title's
+	 * part before its first separator names the site, that part alone is
+	 * written.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public static function titles_with_a_tagline(): array {
+		return [
+			'a colon'    => [ 'Wren Supper: Good Food For The Curious', 'Wren Supper' ],
+			'a pipe'     => [ 'Wren Supper | Good Food For The Curious', 'Wren Supper' ],
+			'a hyphen'   => [ 'Wren Supper - Good Food For The Curious', 'Wren Supper' ],
+			'an en dash' => [ 'Wren Supper – Good Food For The Curious', 'Wren Supper' ],
+			'an em dash' => [ 'Wren Supper — Good Food: For The Curious', 'Wren Supper' ],
+			'no tagline' => [ 'Wren Supper Kitchen', 'Wren Supper Kitchen' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'titles_with_a_tagline' )]
+	public function test_a_tagline_after_a_separator_is_not_written( string $title, string $written ): void {
+		$node = $this->titled_clients( 'organization:atomic-880099', 'wrensupper.example' );
+
+		$this->tick( $node );
+		$this->complete( 'https://wrensupper.example/feed/', self::titled_rss( $title, 'https://wrensupper.example' ) );
+
+		$this->assertSame( [ [ 'organization:atomic-880099', 'canonical', $written ] ], self::brief_names( $this->names() ) );
+	}
+
+	/** A title whose site name follows its separator is written whole, since its lead part names no site. */
+	public function test_a_title_naming_the_site_after_its_separator_is_written_whole(): void {
+		$node = $this->titled_clients( 'organization:atomic-880100', 'wrensupper.example' );
+
+		$this->tick( $node );
+		$this->complete( 'https://wrensupper.example/feed/', self::titled_rss( 'Recipes: Wren Supper', 'https://wrensupper.example' ) );
+
+		$this->assertSame( [ [ 'organization:atomic-880100', 'canonical', 'Recipes: Wren Supper' ] ], self::brief_names( $this->names() ) );
+	}
+
+	/**
+	 * A Google News copy's title ends with " - " and its `<source>`'s text;
+	 * that exact suffix is cut, so it dedups against the publisher's own,
+	 * while a title without a `<source>`, or with a different suffix, stays.
+	 */
+	public function test_a_source_suffix_is_cut_from_an_items_title(): void {
+		$by = $this->items_from(
+			'<?xml version="1.0"?><rss version="2.0"><channel>'
+			. '<item><title>Harbor Gazette Donors Honored - Harbor Gazette</title><link>https://news.example/a</link><guid>gn-a</guid><source url="https://harborgazette.example">Harbor Gazette</source></item>'
+			. '<item><title>Harbor Gazette Donors Honored - Harbor Gazette</title><link>https://news.example/b</link><guid>gn-b</guid></item>'
+			. '<item><title>Tern Weekly Opens - Tern Daily</title><link>https://news.example/c</link><guid>gn-c</guid><source url="https://ternweekly.example">Tern Weekly</source></item>'
+			. '</channel></rss>'
+		);
+
+		$this->assertSame(
+			[ 'Harbor Gazette Donors Honored', 'Harbor Gazette Donors Honored - Harbor Gazette', 'Tern Weekly Opens - Tern Daily' ],
+			[ $by['feed:gn-a']['title'], $by['feed:gn-b']['title'], $by['feed:gn-c']['title'] ]
+		);
+	}
+
 	/** @return array<string,array{0:string,1:string}> */
 	public static function titles_off_the_labels_word_boundaries(): array {
 		return [

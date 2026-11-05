@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A feed title names its site through its words' initials too.** `Resolver::names_site()` also accepts a title whose words, read from the first, each spell themselves or their first letter and spell the domain's label exactly, only trailing words left over and the words used reading as a name: "Plover Tern Courier" names ptcourier.example, "Gull Ridge Sand Lake Post" gullridgeslp.example. The resolver's `domain_stem` link does not take initials, since an item title's leading initials can spell a short label by chance.
+- **A tagline is not written as part of a client's name.** When the part of a feed title before its first ` | `, ` - `, ` – `, ` — ` or `: ` names the site, that part alone is written: "Wren Supper: Good Food For The Curious" writes "Wren Supper".
+- **A Google News copy dedups against the publisher's own.** An RSS item carrying `<source>` whose title ends with ` - ` and that element's text records its title without the suffix, so the deduper's title norm matches the client's copy.
+- **A theme names the event or initiative an item is part of, never a step within one.** The prompt asks for the level a reader tracks across clients ("community site launch"), never a step ("redirect rules for launch", "launch checklist"), a category of work or a kind.
+- **An offered theme's example is its neighbour's extraction summary,** read from the newest partition in the same statement through the `extractions` key, falling back to the title when the summary is empty and cut to `Source_Node::TITLE_CHARS` (120), since a title can be a bare domain that says nothing.
+
 ## [0.36.1] - 2026-11-04
 
 ### Changed

@@ -197,6 +197,35 @@ final class ResolverTest extends TestCase {
 		$this->assertTrue( Resolver::names_site( 'The Wren', 'thewren.example' ) );
 	}
 
+	/**
+	 * A site title names its domain through its words' initials too: read
+	 * from the first word, each word spells itself or its first letter, the
+	 * label spelled exactly and only trailing words left over.
+	 *
+	 * @return array<string,array{0:string,1:string,2:bool}>
+	 */
+	public static function initialled_titles(): array {
+		return [
+			'two initials, then a word'        => [ 'Kestrel Lantern Harbor Bay', 'klharbor.example', true ],
+			'two initials, then the last word' => [ 'Plover Tern Courier', 'ptcourier.example', true ],
+			'two words, then three initials'   => [ 'Gull Ridge Sand Lake Post', 'gullridgeslp.example', true ],
+			'a word running into another'      => [ 'Kestrel Bayou News', 'kestrelbay.example', false ],
+			'a word the label runs into'       => [ 'Lanternese Weekly', 'lantern.example', false ],
+			'a leading word skipped'           => [ 'Morning Kestrel Times', 'ktimes.example', false ],
+			'a lowercase word among initials'  => [ 'Wren harbor Times', 'whtimes.example', false ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'initialled_titles' )]
+	public function test_a_site_title_names_its_domain_through_initials( string $title, string $domain, bool $names ): void {
+		$this->assertSame( $names, Resolver::names_site( $title, $domain ) );
+	}
+
+	/** An item title's initials never link a domain by its stem: that weaker match only names a site from its own feed. */
+	public function test_initials_never_link_a_domain_stem(): void {
+		$this->assertSame( [], $this->resolve( [ 'title' => 'Plover Tern Courier reopens', 'url' => 'https://random.example/x' ], self::entity( 'organization:atomic-3110', 'Atomic site 3110', [ 'domain' => [ 'ptcourier.example' ] ] ) )['links'] );
+	}
+
 	/** A lowercase word outside the connecting set, or one opening or closing the span, is prose. */
 	public function test_a_site_title_refuses_other_lowercase_words(): void {
 		$this->assertFalse( Resolver::names_site( 'Riders on Tidewater', 'ridersontidewater.example' ) );

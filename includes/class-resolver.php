@@ -549,10 +549,15 @@ final class Resolver {
 	}
 
 	/**
-	 * Whether a text names a domain's site as a title's stem match does
-	 * (`stem_hit()`): its letters and digits, lowercased, spell the domain's
-	 * registrable label (`domain_stem()`), one at least MIN_STEM_LENGTH long,
-	 * on word boundaries, read as a name (`reads_as_name()`).
+	 * Whether a text names a domain's site: as a title's stem match does
+	 * (`stem_hit()`), its letters and digits, lowercased, spelling the
+	 * domain's registrable label (`domain_stem()`), one at least
+	 * MIN_STEM_LENGTH long, on word boundaries, read as a name
+	 * (`reads_as_name()`); or through its words' initials
+	 * (`initials_spell()`). Only naming takes initials: a site's own feed
+	 * title vouches for its domain, while an item title read for a
+	 * `domain_stem` link is any prose, whose leading initials spell a short
+	 * label by chance.
 	 *
 	 * @api Feed_Source_Node names a client by a feed title only when it does.
 	 * @param string $text   The text.
@@ -560,7 +565,43 @@ final class Resolver {
 	 */
 	public static function names_site( string $text, string $domain ): bool {
 		$stem = self::domain_stem( $domain );
-		return '' !== $stem && null !== self::stem_hit( $text, self::squash( $text ), $stem );
+		return '' !== $stem && ( null !== self::stem_hit( $text, self::squash( $text ), $stem ) || self::initials_spell( $text, $stem ) );
+	}
+
+	/**
+	 * Whether a text's words, read in order from the first, each spelling
+	 * itself or its first letter, spell the stem exactly, every word up to
+	 * the last one used taking part and only later ones left over, those
+	 * words read as a name (`reads_as_name()`): "Plover Tern Courier" spells
+	 * `ptcourier`.
+	 *
+	 * @param string $text The text.
+	 * @param string $stem A domain's stem.
+	 */
+	private static function initials_spell( string $text, string $stem ): bool {
+		$words   = \preg_split( '/[^\p{L}\p{N}]+/u', $text, -1, \PREG_SPLIT_NO_EMPTY );
+		$words   = \is_array( $words ) ? $words : [];
+		$length  = \mb_strlen( $stem );
+		$reached = [ 0 ];
+		foreach ( $words as $n => $word ) {
+			$lower = \mb_strtolower( $word );
+			$next  = [];
+			foreach ( $reached as $at ) {
+				foreach ( \array_unique( [ $lower, \mb_substr( $lower, 0, 1 ) ] ) as $piece ) {
+					if ( \mb_substr( $stem, $at, \mb_strlen( $piece ) ) === $piece ) {
+						$next[ $at + \mb_strlen( $piece ) ] = true;
+					}
+				}
+			}
+			if ( isset( $next[ $length ] ) ) {
+				return self::reads_as_name( \implode( ' ', \array_slice( $words, 0, $n + 1 ) ) );
+			}
+			$reached = \array_keys( $next );
+			if ( [] === $reached ) {
+				return false;
+			}
+		}
+		return false;
 	}
 
 	/**

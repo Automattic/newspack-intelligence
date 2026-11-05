@@ -651,11 +651,12 @@ item into one a lower tier reads. Its theme is the newest partition's, by
 `partition_ordinal`, as `Graph_Query::stories()` reads one, and a neighbour
 whose theme names a kind or one of `Prompts::GENERIC_THEMES` is passed over.
 Their distinct themes are offered in the order of each one's best match,
-each with that match's title as its example, cut to
-`Source_Node::TITLE_CHARS` (120) on a character boundary. The read is one
-statement: the `MATCH` arms per partition, materialized once, and the
-themes of those keys alone, read through the `themes` key within the same
-days. Nothing is cached, a title holding no such word reads nothing, an
+each with that match's extraction summary as its example, the newest
+partition's, else its title when the summary is empty, cut to
+`Source_Node::TITLE_CHARS` (120) on a character boundary, since a title
+such as a bare domain says nothing. The read is one statement: the `MATCH`
+arms per partition, materialized once, and the themes and summaries of
+those keys alone, each read through its table's key within the same days. Nothing is cached, a title holding no such word reads nothing, an
 item naming no integer `retrieved_ts` is refused, an item no themed item
 resembles is offered none, and none is offered, logged once, while the
 `intel-graph` tables cannot be read. `Prompts::extract()` builds the
@@ -670,13 +671,16 @@ lists each of `ITEM_KINDS` in its order, and which tell `bug`, a
 defect in Newspack's own product as Newspack files or fixes it, from
 `complaint`, a client's dissatisfaction, and keep a client adopting more
 Newspack or routine account and storage work out of `churn_signal`; and it
-asks for a `theme`, two to six words naming the one specific problem or
-event the item is about, with no client names, URLs or numbers, such as
-"site blocked from sending email", never a category of work such as "ui
-fixes" and never a kind, two items sharing a theme only when they are
-about the same problem or event; only when there are themes to offer does
-it add the clause reusing a fenced theme only when its example is about the
-same problem or event as this item, and writing a new one when none is. The system message frames the reading for the
+asks for a `theme`, two to six words naming the event or initiative the
+item is part of, at the level a reader tracks it across clients, with no
+client names, URLs or numbers, such as "community site launch" or "site
+blocked from sending email", never a step within one such as "redirect
+rules for launch" or "launch checklist", never a category of work such as
+"ui fixes" and never a kind, two items sharing a theme only when they are
+part of the same event or initiative; only when there are themes to offer
+does it add the clause reusing a fenced theme only when its example, a
+summary, is part of the same event or initiative as this item, and writing
+a new one when none is. The system message frames the reading for the
 audience `set_audience` names, and without an audience while none is set, and scores
 against the `add_profile` lines; the shipped topologies set neither, so a
 deployment supplies both (see Topologies). `add_importance_floor <kind>
@@ -1796,7 +1800,10 @@ redirects, note and all, and a configured feed redirected onto a client's
 `/feed/` keeps its own lane. A body that is not an RSS or Atom feed fails,
 logged once under its own url with libxml's first error or the root
 element found. Each body is parsed as RSS 2.0 or Atom when it lands and
-its items recorded then. The `news` node is a second
+its items recorded then. An RSS item carrying a `<source>`, as a Google
+News copy does, whose title ends with ` - ` and that element's text,
+records its title without that exact suffix, so the deduper's title norm
+matches the publisher's own copy; any other title is kept as written. The `news` node is a second
 `Feed_Source`, hourly, for the searches a deployment adds in place of the
 feeds an organization does not publish.
 
@@ -1828,7 +1835,9 @@ clients notes each whose entity `Graph_Query::name_of()` still shows by one
 of its own domains, as the roster import names a client; when such a
 client's feed lands in its lane, its RSS `<channel><title>` or Atom
 `<feed><title>`, whitespace collapsed, is written once through
-`Source_Node::write()` as a `name_added` of kind `canonical`. A title that
+`Source_Node::write()` as a `name_added` of kind `canonical`; when the part
+before its first ` | `, ` - `, ` – `, ` — ` or `: ` names the site, that
+part alone is written, a tagline being no part of the name. A title that
 is blank, past `Graph_Curation::NAME_BYTES`, or the client's domain again,
 spelled as `Entity_Index::identifier_value()` spells one, names no one; so
 does one that does not name the site (`Resolver::names_site()`), which is
@@ -1836,11 +1845,19 @@ the resolver's own `domain_stem` match: the domain's registrable label, of
 at least `MIN_STEM_LENGTH` (6) characters, spelled by the title's letters
 and digits, lowercased, on word boundaries, every word of it capitalized
 but a lowercase `de`, `in`, `of`, `and` or `the` between two that are
-(`Resolver::reads_as_name()`). So "Harbor Gazette" names
-harborgazette.example, "The Wren" thewren.example and "Pueblo de Cobre"
-pueblodecobre.example, and "News", "Home",
-"Kestrel Bayou News" for kestrelbay.example and "Lanternese Weekly" for
-lantern.example name nothing. Once
+(`Resolver::reads_as_name()`); or, for naming alone, through its words'
+initials: read from the first word, each word spelling itself or its first
+letter, the label spelled exactly, every word up to the last one used
+taking part and only trailing words left over, those words read as a
+name. The resolver's `domain_stem` link never takes initials, because an
+item title is any prose, whose leading initials spell a short label by
+chance, while a site's own feed title vouches for its domain. So "Harbor
+Gazette" names harborgazette.example, "The Wren" thewren.example, "Pueblo
+de Cobre" pueblodecobre.example, "Plover Tern Courier"
+ptcourier.example and "Gull Ridge Sand Lake Post" gullridgeslp.example,
+and "News", "Home", "Kestrel Bayou News" for kestrelbay.example,
+"Lanternese Weekly" for lantern.example and "Morning Kestrel Times" for
+ktimes.example, whose initials skip a leading word, name nothing. Once
 is once: the feed remembers each entity it named for the life of its
 process, and the next process reads the name off the projection, which
 then shows the client by it. The name joins the resolver's names like any
