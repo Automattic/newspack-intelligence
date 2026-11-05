@@ -990,6 +990,8 @@ final class ResolverTest extends TestCase {
 			'two magazines'        => [ 'America Magazine', 'Mystery Magazine' ],
 			'nothing of its own'   => [ 'Daily Press', 'Daily Press News' ],
 			'an own word it lacks' => [ 'Weekly Tribune Review', 'Marsh Weekly Tribune Review' ],
+			'two journalism projects' => [ 'Kestrel Journalism Project', 'Heron Journalism Project' ],
+			'two local sites'      => [ 'Kestrel Local', 'Heron Local' ],
 		];
 	}
 

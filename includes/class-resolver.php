@@ -89,7 +89,7 @@ final class Resolver {
 	 * which one, and the small words between them: two names sharing only
 	 * these are not likely the same, so the fuzzy step never pairs them.
 	 */
-	public const GENERIC_NAME_WORDS = [ 'a', 'an', 'and', 'at', 'by', 'for', 'in', 'of', 'on', 'the', 'bulletin', 'chronicle', 'courier', 'daily', 'dispatch', 'foundation', 'gazette', 'group', 'herald', 'inc', 'journal', 'ledger', 'llc', 'magazine', 'media', 'monthly', 'network', 'news', 'newspaper', 'observer', 'post', 'press', 'project', 'reporter', 'review', 'sentinel', 'times', 'tribune', 'weekly' ];
+	public const GENERIC_NAME_WORDS = [ 'a', 'an', 'and', 'at', 'by', 'for', 'in', 'of', 'on', 'the', 'association', 'bulletin', 'center', 'chronicle', 'community', 'company', 'courier', 'daily', 'dispatch', 'foundation', 'gazette', 'group', 'herald', 'inc', 'institute', 'journal', 'journalism', 'ledger', 'llc', 'local', 'magazine', 'media', 'monthly', 'network', 'news', 'newspaper', 'nonprofit', 'observer', 'online', 'post', 'press', 'project', 'public', 'reporter', 'review', 'school', 'sentinel', 'society', 'times', 'tribune', 'voice', 'weekly' ];
 
 	/**
 	 * A name that reads as code or a file rather than an organization: a

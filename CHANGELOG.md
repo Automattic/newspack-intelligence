@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **More words stop carrying a fuzzy match.** `Resolver::GENERIC_NAME_WORDS` adds `journalism`, `local`, `online`, `community`, `public`, `nonprofit`, `center`, `institute`, `association`, `society`, `school`, `voice` and `company`, so two names sharing only these, such as two `<place> Journalism Project` sites or two `<place> Local` sites, no longer pair.
+
 ## [0.36.7] - 2026-11-05
 
 ### Fixed
