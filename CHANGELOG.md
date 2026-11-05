@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.2] - 2026-11-04
+
 ### Changed
 
 - **Six kind definitions say what each kind is not.** `feature_request` is a client or user asking for a capability Newspack's product lacks, not a setup, styling, migration, onboarding, offboarding or configuration task for one site; `bug` is a defect in Newspack's shipped code, not a CRM record, one site's content or configuration, a launch snag list or internal tooling; `incident` leaves out a storage-quota warning, a legal notice and a delayed project; `launch` is a site, product or publication going live, a client's or Newspack's, and not one step toward a launch; `release` always takes a GitHub release page; and `other` names routine service and onboarding work, internal planning, team updates and kudos, and a publication's own journalism about anyone else. Each stays one line of `Intel_Event::KIND_DEFINITIONS`, and the kinds and their order are unchanged.
