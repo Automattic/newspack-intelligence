@@ -4,7 +4,9 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Intel_Event;
+use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Nodes\Core;
+use Newspack_Nodes\Sqlite_Arm;
 use Newspack_Nodes\Table_Node;
 
 require_once __DIR__ . '/seeds-entity-index.php';
@@ -104,10 +106,11 @@ trait Seeds_Intel_Graph {
 	 * @param list<string> $topics     Its topic keys.
 	 * @param float        $relevance  Its relevance.
 	 * @param float        $importance Its importance.
+	 * @param string       $theme      Its theme, or '' for none.
 	 * @return list<array<string,mixed>>
 	 */
-	private static function extraction( string $key, string $summary, string $kind, int $item_ts, array $topics, float $relevance = 5.0, float $importance = 5.0 ): array {
-		return [ Intel_Event::make( 'extraction_recorded', [ 'item_key' => $key, 'summary' => $summary, 'kind' => $kind, 'relevance' => $relevance, 'importance' => $importance, 'sentiment' => 0.25, 'topics' => $topics, 'retrieved_ts' => $item_ts + 600 ], 'machine:extract@9.4.1', 'fixture-9' ) ];
+	private static function extraction( string $key, string $summary, string $kind, int $item_ts, array $topics, float $relevance = 5.0, float $importance = 5.0, string $theme = '' ): array {
+		return [ Intel_Event::make( 'extraction_recorded', [ 'item_key' => $key, 'summary' => $summary, 'kind' => $kind, 'relevance' => $relevance, 'importance' => $importance, 'sentiment' => 0.25, 'topics' => $topics, 'retrieved_ts' => $item_ts + 600 ] + ( '' === $theme ? [] : [ 'theme' => $theme ] ), 'machine:extract@9.4.1', 'fixture-9' ) ];
 	}
 
 	/**
@@ -196,6 +199,22 @@ trait Seeds_Intel_Graph {
 	 */
 	private static function evidence( string $evidence ): array {
 		return '' === $evidence ? [] : [ 'evidence' => $evidence ];
+	}
+
+	/**
+	 * Project events into a second partition's file, and read both from
+	 * here on, partition 1 the newer.
+	 *
+	 * @param list<array<string,mixed>> ...$events Events, in order.
+	 */
+	private function second_partition( array ...$events ): void {
+		$other = $this->projector_graph( 'intel-graph-b', 'projector-b' );
+		foreach ( \array_merge( ...$events ) as $event ) {
+			self::deliver( $other, $event );
+		}
+		$other->save_state();
+		$files                             = [ 0 => Table_Node::file( 'intel-graph', 0 ), 1 => Table_Node::file( 'intel-graph-b', 0 ) ];
+		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): mixed => $read( Sqlite_Arm::open_rows( $files, Intel_Graph_Row_Schema::version() ) );
 	}
 
 	/**

@@ -113,6 +113,33 @@ final class ProjectorTest extends TestCase {
 	}
 
 	/**
+	 * An extraction naming a theme writes the item's one theme row, dated by
+	 * its retrieval; a re-extraction replaces it, and one naming none leaves
+	 * the item without a theme.
+	 */
+	public function test_an_extractions_theme_replaces_the_items_theme_row(): void {
+		$this->project( [ $this->item(), [ 'theme' => 'site blocked from sending email' ] + $this->extraction() ] );
+
+		$day = \intdiv( self::RETRIEVED, 86400 );
+		$this->assertSame( [ [ self::ITEM, 'site blocked from sending email', $day ] ], self::graph_rows( 'themes' ) );
+
+		$this->project( [ [ 'theme' => 'newsletter sender rejected' ] + $this->extraction() ] );
+
+		$this->assertSame( [ [ self::ITEM, 'newsletter sender rejected', $day ] ], self::graph_rows( 'themes' ) );
+
+		$this->project( [ $this->extraction() ] );
+
+		$this->assertSame( [], self::graph_rows( 'themes' ) );
+	}
+
+	/** A heuristic stand-in names no theme and leaves a call's theme as it was. */
+	public function test_a_heuristic_extraction_keeps_a_calls_theme(): void {
+		$this->project( [ $this->item(), [ 'theme' => 'bot registrations' ] + $this->extraction(), $this->stand_in() ] );
+
+		$this->assertSame( [ [ self::ITEM, 'bot registrations', \intdiv( self::RETRIEVED, 86400 ) ] ], self::graph_rows( 'themes' ) );
+	}
+
+	/**
 	 * The entities an extraction was given as asserted replace the item's
 	 * earlier set, so the resolver settles a link by what the last extraction
 	 * saw.
@@ -731,7 +758,7 @@ final class ProjectorTest extends TestCase {
 		$machine = static fn ( string $kind, array $fields ): array => Intel_Event::make( $kind, [ 'retrieved_ts' => self::RETRIEVED ] + $fields, self::MACHINE, '' );
 		$about   = static fn ( string $key ): array => [
 			$machine( 'link_asserted', [ 'item_key' => $key, 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'name', 'confidence' => 1.0 ] ),
-			$machine( 'extraction_recorded', [ 'item_key' => $key, 'summary' => "Summary of {$key}", 'kind' => 'award', 'relevance' => 3, 'importance' => 4, 'sentiment' => 0.0, 'topics' => [ 'topic:awards' ] ] ),
+			$machine( 'extraction_recorded', [ 'item_key' => $key, 'summary' => "Summary of {$key}", 'kind' => 'award', 'relevance' => 3, 'importance' => 4, 'sentiment' => 0.0, 'topics' => [ 'topic:awards' ], 'theme' => 'state press award' ] ),
 			$machine( 'subjects_extracted', [ 'item_key' => $key, 'entity_keys' => [ self::GAZETTE ] ] ),
 			$machine( 'claim_asserted', [ 'item_key' => $key, 'ord' => 0, 'subject_key' => self::GAZETTE, 'predicate' => 'won', 'object_key' => '', 'object_text' => 'A prize', 'confidence' => 0.9 ] ),
 			$machine( 'cluster_joined', [ 'item_key' => $key, 'cluster_key' => self::PURGED ] ),
@@ -756,12 +783,12 @@ final class ProjectorTest extends TestCase {
 
 		$after = self::dump();
 		$kept  = static fn ( array $rows, int $column ): array => \array_values( \array_filter( $rows, static fn ( array $row ): bool => self::PURGED !== $row[ $column ] ) );
-		foreach ( [ 'items' => 1, 'extractions' => 1, 'extracted_subjects' => 0, 'links' => 0, 'claims' => 0, 'clusters' => 0, 'canonicals' => 1 ] as $table => $column ) {
+		foreach ( [ 'items' => 1, 'extractions' => 1, 'extracted_subjects' => 0, 'themes' => 0, 'links' => 0, 'claims' => 0, 'clusters' => 0, 'canonicals' => 1 ] as $table => $column ) {
 			$this->assertNotSame( $kept( $before[ $table ], $column ), $before[ $table ], "{$table} held a row about the purged item" );
 			$this->assertSame( $kept( $before[ $table ], $column ), $after[ $table ], $table );
 		}
 		$this->assertSame( [ [ self::ITEM ] ], self::graph_rows( 'clusters', '1', 'item_key' ), 'a kept member keeps the cluster the purged item founded' );
-		foreach ( \array_diff_key( $before, \array_flip( [ 'items', 'extractions', 'extracted_subjects', 'links', 'claims', 'clusters', 'canonicals' ] ) ) as $table => $rows ) {
+		foreach ( \array_diff_key( $before, \array_flip( [ 'items', 'extractions', 'extracted_subjects', 'themes', 'links', 'claims', 'clusters', 'canonicals' ] ) ) as $table => $rows ) {
 			$this->assertSame( $rows, $after[ $table ], "{$table} is another stream's" );
 		}
 		$this->assertNotSame( [], $after['collected'] );

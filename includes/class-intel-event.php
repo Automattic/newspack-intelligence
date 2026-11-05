@@ -23,7 +23,26 @@ final class Intel_Event {
 
 	public const TYPES            = [ 'organization', 'person', 'place', 'product', 'topic', 'event' ];
 	public const ROLES            = [ 'client', 'former_client', 'prospect', 'competitor', 'partner', 'funder', 'industry_body', 'newspack_product' ];
-	public const ITEM_KINDS       = [ 'award', 'launch', 'release', 'funding', 'hire', 'departure', 'partnership', 'incident', 'feature_request', 'complaint', 'praise', 'churn_signal', 'research', 'other' ];
+	public const ITEM_KINDS       = [ 'award', 'launch', 'release', 'funding', 'hire', 'departure', 'partnership', 'incident', 'bug', 'feature_request', 'complaint', 'praise', 'churn_signal', 'research', 'other' ];
+
+	/** Each of ITEM_KINDS, in its order, => the one line the extraction prompt defines it by. */
+	public const KIND_DEFINITIONS = [
+		'award'           => 'an award, prize or honor won, given or shortlisted for',
+		'launch'          => 'a new publication, product, section or service launched',
+		'release'         => 'a software release or version shipped',
+		'funding'         => 'money raised, granted, invested or donated',
+		'hire'            => 'someone joining an organization or taking a new role',
+		'departure'       => 'someone leaving an organization or a role',
+		'partnership'     => 'organizations agreeing to work together',
+		'incident'        => 'an outage, breach or disruption of a service as it happens',
+		'bug'             => 'a defect in Newspack\'s own product, as filed or fixed by Newspack, whoever reported it',
+		'feature_request' => 'a request for something Newspack does not yet do',
+		'complaint'       => 'a client\'s dissatisfaction with Newspack: its service, price or support, or a defect as the client experiences it',
+		'praise'          => 'a client\'s satisfaction with Newspack or thanks for its work',
+		'churn_signal'    => 'a client leaving Newspack or saying it may; not a client adopting more Newspack, nor routine account or storage work',
+		'research'        => 'a study, survey, report or analysis',
+		'other'           => 'none of these',
+	];
 	public const PREDICATES       = [ 'works_for', 'part_of', 'funds', 'partners_with', 'competes_with', 'uses_product', 'won', 'launched', 'located_in' ];
 	public const NAME_KINDS       = [ 'canonical', 'alias', 'acronym', 'locality' ];
 	public const IDENTIFIER_KINDS = [ 'domain', 'github_org', 'github_repo', 'linkedin_company', 'x_handle', 'atomic_site_id', 'linear_team' ];
@@ -51,11 +70,13 @@ final class Intel_Event {
 	 * `retrieved_ts`, the canonical's for a supersession, which dates its
 	 * rows; a purge writes no row. A proposal's `evidence`, the sentence it
 	 * was found in, is optional: one written before proposals carried it has
-	 * none.
+	 * none. So is an extraction's `theme`, the problem or event its item is
+	 * an instance of: one naming none, or written before extractions named
+	 * one, has none, and a blank one is refused.
 	 */
 	public const KINDS = [
 		'item_recorded'       => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ], [] ],
-		'extraction_recorded' => [ self::ITEMS, [ 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'topics', 'retrieved_ts' ], [ 'kind' => self::ITEM_KINDS ], [] ],
+		'extraction_recorded' => [ self::ITEMS, [ 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'topics', 'retrieved_ts' ], [ 'kind' => self::ITEM_KINDS ], [ 'theme' => self::THEME_BYTES ] ],
 		'subjects_extracted'  => [ self::ITEMS, [ 'item_key', 'entity_keys', 'retrieved_ts' ], [], [] ],
 		'link_asserted'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ], [] ],
 		'link_proposed'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ], [ 'evidence' => self::EVIDENCE_BYTES ] ],
@@ -89,6 +110,12 @@ final class Intel_Event {
 
 	/** The longest evidence, in the bytes a packed message writes it in. */
 	public const EVIDENCE_BYTES = 512;
+
+	/** The longest theme, in the bytes a packed message writes it in. */
+	public const THEME_BYTES = 80;
+
+	/** The optional fields refused blank: one with nothing to say is left out. */
+	private const NON_BLANK = [ 'theme' => true ];
 
 	/** The actor classes an actor string may begin with. */
 	private const ACTOR_CLASSES = [ 'user', 'agent', 'machine' ];
@@ -222,7 +249,7 @@ final class Intel_Event {
 		}
 		foreach ( $bounded as $field => $bytes ) {
 			if ( \array_key_exists( $field, $event ) ) {
-				self::check_bounded( "{$kind}: {$field}", $event[ $field ], $bytes );
+				self::check_bounded( "{$kind}: {$field}", $event[ $field ], $bytes, isset( self::NON_BLANK[ $field ] ) );
 			}
 		}
 		if ( self::ITEMS === $stream && 'machine' !== $class ) {
@@ -232,16 +259,20 @@ final class Intel_Event {
 
 	/**
 	 * Refuse an optional field that is not a string within its bytes, as a
-	 * packed message writes it.
+	 * packed message writes it, or, for one that may not be, blank.
 	 *
-	 * @param string $what  The kind and field, for the refusal.
-	 * @param mixed  $value The value carried.
-	 * @param int    $bytes The most bytes it takes.
+	 * @param string $what     The kind and field, for the refusal.
+	 * @param mixed  $value    The value carried.
+	 * @param int    $bytes    The most bytes it takes.
+	 * @param bool   $nonblank Whether a blank value is refused.
 	 * @throws \InvalidArgumentException Naming the kind, the field and the fault.
 	 */
-	private static function check_bounded( string $what, mixed $value, int $bytes ): void {
+	private static function check_bounded( string $what, mixed $value, int $bytes, bool $nonblank ): void {
 		if ( ! \is_string( $value ) ) {
 			throw new \InvalidArgumentException( \esc_html( "{$what} is not a string" ) );
+		}
+		if ( $nonblank && '' === \trim( $value ) ) {
+			throw new \InvalidArgumentException( \esc_html( "{$what} is blank" ) );
 		}
 		Graph_Curation::capped( $what, $value, $bytes );
 	}

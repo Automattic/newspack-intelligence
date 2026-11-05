@@ -1,5 +1,5 @@
 import { __, sprintf } from '@wordpress/i18n';
-import Cite from './Cite';
+import Cite, { EntityChip } from './Cite';
 
 /**
  * A signal's count against the baseline it is read against, to one decimal.
@@ -59,19 +59,29 @@ export const signalValue = ( signal ) => {
 
 /**
  * Trend rows, or signals: each bucket and value with its count, citing the
- * newest items the row counts.
+ * newest items the row counts. Counting by theme, each row also shows a chip
+ * per client it is about beside its count, and a row counting one item whose
+ * `items` hold it shows that item in place of its theme. A row answering no
+ * `items` or `clients` shows none.
  *
  * @param {Object}                           props
- * @param {Array<Object>}                    props.rows    The rows `trends` or `signals` answers.
- * @param {(row: Object) => string}          [props.value] A row's value as shown.
- * @param {(row: Object) => (string|number)} [props.count] A row's count as shown.
+ * @param {Array<Object>}                    props.rows           The rows `trends` or `signals` answers.
+ * @param {(row: Object) => string}          [props.value]        A row's value as shown.
+ * @param {(row: Object) => (string|number)} [props.count]        A row's count as shown.
+ * @param {?string}                          [props.by]           The axis the rows count by.
+ * @param {(key: string) => void}            [props.onOpenEntity] Opens a client; given when counting by theme.
  * @return {import('react').ReactElement} The table.
  */
 export default function TrendTable( {
 	rows,
 	value = ( row ) => row.value,
 	count = ( row ) => row.count,
+	by,
+	onOpenEntity,
 } ) {
+	const themes = 'theme' === by;
+	const alone = ( row ) =>
+		themes && 1 === row.count && 1 === row.items?.length;
 	return (
 		<table className="newspack-nodes-table">
 			<thead>
@@ -85,6 +95,11 @@ export default function TrendTable( {
 					<th scope="col">
 						{ __( 'Count', 'newspack-intelligence' ) }
 					</th>
+					{ themes && (
+						<th scope="col">
+							{ __( 'Clients', 'newspack-intelligence' ) }
+						</th>
+					) }
 					<th scope="col">
 						{ __( 'Items', 'newspack-intelligence' ) }
 					</th>
@@ -101,19 +116,45 @@ export default function TrendTable( {
 						].join( ' ' ) }
 					>
 						<td>{ row.bucket }</td>
-						<td>{ value( row ) }</td>
-						<td>{ count( row ) }</td>
 						<td>
-							<ul className="newspack-intelligence__facts">
-								{ row.items.map( ( item ) => (
-									<li key={ item.item_key }>
-										<Cite
-											url={ item.url }
-											title={ item.title }
-										/>
-									</li>
-								) ) }
-							</ul>
+							{ alone( row ) ? (
+								<Cite
+									url={ row.items[ 0 ].url }
+									title={ row.items[ 0 ].title }
+								/>
+							) : (
+								value( row )
+							) }
+						</td>
+						<td>{ count( row ) }</td>
+						{ themes && (
+							<td>
+								<ul className="newspack-intelligence__chips">
+									{ ( row.clients ?? [] ).map( ( client ) => (
+										<li key={ client.entity_key }>
+											<EntityChip
+												entityKey={ client.entity_key }
+												name={ client.name }
+												onOpen={ onOpenEntity }
+											/>
+										</li>
+									) ) }
+								</ul>
+							</td>
+						) }
+						<td>
+							{ ! alone( row ) && (
+								<ul className="newspack-intelligence__facts">
+									{ ( row.items ?? [] ).map( ( item ) => (
+										<li key={ item.item_key }>
+											<Cite
+												url={ item.url }
+												title={ item.title }
+											/>
+										</li>
+									) ) }
+								</ul>
+							) }
 						</td>
 					</tr>
 				) ) }

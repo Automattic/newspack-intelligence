@@ -6,7 +6,6 @@ namespace Newspack_Intelligence\Tests;
 use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
-use Newspack_Nodes\Sqlite_Arm;
 use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
@@ -801,22 +800,6 @@ final class GraphQueryTest extends TestCase {
 	 */
 	private static function search( array $args ): array {
 		return Graph_Query::search( $args + [ 'q' => null, 'sort' => 'time', 'entity' => null, 'lens' => null, 'since' => null, 'until' => null, 'limit' => 50, 'offset' => 0, 'kind' => [], 'topic' => [], 'role' => [], 'source' => [] ] );
-	}
-
-	/**
-	 * Project events into a second partition's file, and read both from
-	 * here on, partition 1 the newer.
-	 *
-	 * @param list<array<string,mixed>> ...$events Events, in order.
-	 */
-	private function second_partition( array ...$events ): void {
-		$other = $this->projector_graph( 'intel-graph-b', 'projector-b' );
-		foreach ( \array_merge( ...$events ) as $event ) {
-			self::deliver( $other, $event );
-		}
-		$other->save_state();
-		$files                             = [ 0 => Table_Node::file( 'intel-graph', 0 ), 1 => Table_Node::file( 'intel-graph-b', 0 ) ];
-		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): mixed => $read( Sqlite_Arm::open_rows( $files, Intel_Graph_Row_Schema::version() ) );
 	}
 
 	/**

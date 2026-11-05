@@ -290,7 +290,51 @@ final class IntelEventTest extends TestCase {
 		$this->assertSame( [ ...\array_slice( Intel_Event::KINDS['link_asserted'], 0, 3 ), [ 'evidence' => 512 ] ], Intel_Event::KINDS['link_proposed'] );
 		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'entity_key', 'type', 'name', 'from_item_key' ], [ 'type' => Intel_Event::TYPES ], [ 'evidence' => 512 ] ], Intel_Event::KINDS['entity_proposed'] );
 		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'entity_key' ], [], [] ], Intel_Event::KINDS['entity_accepted'] );
-		$this->assertSame( [ 'link_proposed', 'entity_proposed' ], \array_keys( \array_filter( \array_map( static fn ( array $row ): array => $row[3], Intel_Event::KINDS ) ) ) );
+		$this->assertSame( [ 'theme' => 80 ], Intel_Event::KINDS['extraction_recorded'][3] );
+		$this->assertSame( [ 'extraction_recorded', 'link_proposed', 'entity_proposed' ], \array_keys( \array_filter( \array_map( static fn ( array $row ): array => $row[3], Intel_Event::KINDS ) ) ) );
+	}
+
+	/**
+	 * Every kind carries one line defining it, in the kinds' order; a defect
+	 * in Newspack's own product is a kind of its own, told apart from a
+	 * client's complaint, and churn leaves out a client adopting more.
+	 */
+	public function test_every_item_kind_is_defined_in_one_line(): void {
+		$this->assertSame( Intel_Event::ITEM_KINDS, \array_keys( Intel_Event::KIND_DEFINITIONS ) );
+		foreach ( Intel_Event::KIND_DEFINITIONS as $kind => $definition ) {
+			$this->assertMatchesRegularExpression( '/^[^\n]+$/', $definition, $kind );
+		}
+		$this->assertSame( 'a defect in Newspack\'s own product, as filed or fixed by Newspack, whoever reported it', Intel_Event::KIND_DEFINITIONS['bug'] );
+		$this->assertSame( 'a client\'s dissatisfaction with Newspack: its service, price or support, or a defect as the client experiences it', Intel_Event::KIND_DEFINITIONS['complaint'] );
+		$this->assertSame( 'a client leaving Newspack or saying it may; not a client adopting more Newspack, nor routine account or storage work', Intel_Event::KIND_DEFINITIONS['churn_signal'] );
+	}
+
+	/** An extraction's theme is optional: one written before extractions named one validates, and one naming it carries it. */
+	public function test_an_extraction_carries_an_optional_theme(): void {
+		$fields = [ 'item_key' => 'feed:wren-6610', 'summary' => 'Wren Ledger cannot send mail.', 'kind' => 'bug', 'relevance' => 7, 'importance' => 5, 'sentiment' => -0.4, 'topics' => [], 'retrieved_ts' => 1791300000 ];
+
+		$this->assertArrayNotHasKey( 'theme', Intel_Event::make( 'extraction_recorded', $fields, 'machine:extract@9.4.1', '' ) );
+		$this->assertSame( 'site blocked from sending email', Intel_Event::make( 'extraction_recorded', [ 'theme' => 'site blocked from sending email' ] + $fields, 'machine:extract@9.4.1', '' )['theme'] );
+	}
+
+	/**
+	 * An extraction's theme, when present, is a string within its cap.
+	 *
+	 * @return array<string,array{0:mixed,1:string}>
+	 */
+	public static function bad_themes(): array {
+		return [
+			'not a string' => [ [ 'bot registrations' ], 'extraction_recorded: theme is not a string' ],
+			'blank'        => [ '', 'extraction_recorded: theme is blank' ],
+			'past its cap' => [ \str_repeat( 'heron ', 14 ), 'extraction_recorded: theme runs past 80 bytes' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_themes' )]
+	public function test_an_extractions_theme_must_be_a_bounded_string( mixed $theme, string $why ): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( $why );
+		Intel_Event::make( 'extraction_recorded', [ 'item_key' => 'feed:wren-6610', 'summary' => 'Wren Ledger cannot send mail.', 'kind' => 'bug', 'relevance' => 7, 'importance' => 5, 'sentiment' => -0.4, 'topics' => [], 'theme' => $theme, 'retrieved_ts' => 1791300000 ], 'machine:extract@9.4.1', '' );
 	}
 
 	/** A proposal's evidence is optional: one written before proposals carried it validates. */

@@ -5,7 +5,7 @@
  * it with one event each; `projections()` declares, for each kind, the row ops
  * it writes and where each column comes from. Every op is an `ignore` or a
  * whole-row `set` on a keyed table but for the `delete`s: the items stream's
- * own — an extraction deletes the item's claims and topic links, a
+ * own — an extraction deletes the item's claims, topic links and theme, a
  * `subjects_extracted` the item's extracted subjects, a `link_retracted` the
  * one link row it keys, and an `item_purged` the rows that stream has written
  * about its item by then — and the ontology stream's `lens_removed` and
@@ -65,9 +65,9 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	private const STAND_IN = 'extraction_recorded/stand-in';
 
 	/**
-	 * Each kind's op specs, built once: `[ verb, table, columns, fan-out field? ]`.
+	 * Each kind's op specs, built once: `[ verb, table, columns, fan-out? ]`.
 	 *
-	 * @var array<string,list<array{0:string,1:string,2:list<mixed>,3?:string}>>|null
+	 * @var array<string,list<array{0:string,1:string,2:list<mixed>,3?:string|\Closure}>>|null
 	 */
 	private static ?array $projections = null;
 
@@ -167,25 +167,27 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	/**
 	 * Each kind's op specs. A column spec is an event field's name, a
 	 * one-element list holding a literal, EACH for the element a fan-out op is
-	 * written for, or a closure computing the value from the event; a `delete`
+	 * written for, or a closure computing the value from the event; a fan-out
+	 * is a list field's name or a closure answering the list; a `delete`
 	 * names its columns, each mapped to such a spec. An extraction deletes the
-	 * item's claims and topic links before it writes its own, so one yielding
-	 * fewer leaves none of the earlier behind; both tables are written by the
+	 * item's claims, topic links and theme before it writes its own, so one
+	 * yielding fewer leaves none of the earlier behind, and writes a theme
+	 * row only when it names a theme; each table is written by the
 	 * items stream alone, so a replay deletes and writes in the same order; the
 	 * entities an extraction was given replace the item's earlier set the same
 	 * way. A retraction deletes the one link row its item, entity and role key.
-	 * A purge deletes the item's row, its extraction, extracted subjects,
-	 * links, claims and cluster membership, and the canonical row of any
+	 * A purge deletes the item's row, its extraction, theme, extracted
+	 * subjects, links, claims and cluster membership, and the canonical row of any
 	 * cluster it heads, which an event never elects again; rows another stream
 	 * wrote about it stay, and every read joins the items, so they answer
 	 * nothing, as do rows a later resolution of the item writes. A heuristic
 	 * stand-in only fills an item that has no extraction yet (`STAND_IN`), so
-	 * it never replaces a call's extraction, its claims or its topics. A
+	 * it never replaces a call's extraction, its claims, topics or theme. A
 	 * proposed link's evidence, which one written before proposals carried it
 	 * lacks, projects as '', as an asserted link's always does. Every ontology
 	 * kind also writes its `events` row.
 	 *
-	 * @return array<string,list<array{0:string,1:string,2:array<mixed>,3?:string}>>
+	 * @return array<string,list<array{0:string,1:string,2:array<mixed>,3?:string|\Closure}>>
 	 */
 	private static function projections(): array {
 		if ( null !== self::$projections ) {
@@ -207,6 +209,8 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 				[ 'delete', 'links', [ 'item_key' => 'item_key', 'role' => [ 'topic' ] ] ],
 				[ 'set', 'extractions', $extraction ],
 				[ 'set', 'links', [ 'item_key', self::EACH, [ 'topic' ], [ 'extract' ], [ 1.0 ], [ 'asserted' ], [ '' ], 'actor', 'ts', $day( 'retrieved_ts' ) ], 'topics' ],
+				[ 'delete', 'themes', [ 'item_key' => 'item_key' ] ],
+				[ 'set', 'themes', [ 'item_key', self::EACH, $day( 'retrieved_ts' ) ], static fn ( array $e ): array => isset( $e['theme'] ) ? [ $e['theme'] ] : [] ],
 			],
 			'subjects_extracted'  => [
 				[ 'delete', 'extracted_subjects', [ 'item_key' => 'item_key' ] ],
@@ -222,6 +226,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 				[ 'delete', 'items', [ 'item_key' => 'item_key' ] ],
 				[ 'delete', 'extractions', [ 'item_key' => 'item_key' ] ],
 				[ 'delete', 'extracted_subjects', [ 'item_key' => 'item_key' ] ],
+				[ 'delete', 'themes', [ 'item_key' => 'item_key' ] ],
 				[ 'delete', 'links', [ 'item_key' => 'item_key' ] ],
 				[ 'delete', 'claims', [ 'item_key' => 'item_key' ] ],
 				[ 'delete', 'clusters', [ 'item_key' => 'item_key' ] ],
@@ -283,11 +288,11 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * The row ops one spec writes for an event: a delete, whose columns are
-	 * named; or one positional op, or one per element of its fan-out field.
+	 * named; or one positional op, or one per element of its fan-out.
 	 * Each value is typed by its column's declared type.
 	 *
-	 * @param array<array-key,mixed>                          $e    A validated event.
-	 * @param array{0:string,1:string,2:array<mixed>,3?:string} $spec The op spec.
+	 * @param array<array-key,mixed>                                   $e    A validated event.
+	 * @param array{0:string,1:string,2:array<mixed>,3?:string|\Closure} $spec The op spec.
 	 * @return list<Row_Op|Row_Delete>
 	 */
 	private static function ops( array $e, array $spec ): array {
@@ -302,7 +307,8 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			return [ [ 'delete', $table, $where ] ];
 		}
 		$ops = [];
-		foreach ( isset( $spec[3] ) ? Core::arr( $e[ $spec[3] ] ) : [ null ] as $element ) {
+		$fan = $spec[3] ?? null;
+		foreach ( null === $fan ? [ null ] : Core::arr( $fan instanceof \Closure ? $fan( $e ) : $e[ $fan ] ) as $element ) {
 			$row = [];
 			foreach ( \array_values( $columns ) as $at => $column ) {
 				$row[] = self::typed( self::value( $e, $column, $element ), $types[ $at ] );

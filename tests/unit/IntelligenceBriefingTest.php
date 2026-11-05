@@ -7,14 +7,13 @@ use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intelligence_CI_Node;
-use Newspack_Nodes\Row_Reader;
-use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
 require_once __DIR__ . '/../support/signs-in-users.php';
+require_once __DIR__ . '/../support/counts-statements.php';
 
 /**
  * The `briefing` read verb: what changed in the last seven UTC days, one
@@ -31,6 +30,7 @@ require_once __DIR__ . '/../support/signs-in-users.php';
  */
 final class IntelligenceBriefingTest extends TestCase {
 	use Seeds_Intel_Graph;
+	use Counts_Statements;
 	use Signs_In_Users;
 
 	private const PLOVER = 'organization:plover-quillpost';
@@ -435,22 +435,7 @@ final class IntelligenceBriefingTest extends TestCase {
 	 * @param string $what The slice.
 	 */
 	private function statements( string $what ): int {
-		$count                             = 0;
-		Intel_Graph_Row_Schema::$read_rows = static function ( \Closure $read ) use ( &$count ): mixed {
-			$db = new Counting_PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
-			$db->exec( 'ATTACH DATABASE ' . $db->quote( Table_Node::file( 'intel-graph', 0 ) ) . ' AS p0' );
-			try {
-				return $read( new Row_Reader( $db, [ 'p0' ] ) );
-			} finally {
-				$count += $db->prepared;
-			}
-		};
-		try {
-			$this->ci->dispatch( 'briefing', [ $what ] );
-		} finally {
-			Intel_Graph_Row_Schema::$read_rows = null;
-		}
-		return $count;
+		return $this->statements_of( fn () => $this->ci->dispatch( 'briefing', [ $what ] ) );
 	}
 
 	/**
@@ -464,20 +449,3 @@ final class IntelligenceBriefingTest extends TestCase {
 	}
 }
 
-/** A connection counting the statements it prepares. */
-final class Counting_PDO extends \PDO {
-
-	/** How many statements it has prepared. */
-	public int $prepared = 0;
-
-	/**
-	 * Prepare a statement, counting it.
-	 *
-	 * @param string             $query   The statement.
-	 * @param array<int,mixed>   $options Driver options.
-	 */
-	public function prepare( string $query, array $options = [] ): \PDOStatement|false {
-		++$this->prepared;
-		return parent::prepare( $query, $options );
-	}
-}

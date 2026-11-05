@@ -24,7 +24,13 @@ jest.mock( '@newspack-nodes/debug-overlay', () => ( {
 
 import { intelWire } from './intelWire';
 import { HEALTHY } from './healthFixture';
-import { ENTITY, ITEM, LENSES, VOCABULARY } from '../views/__tests__/fixtures';
+import {
+	ENTITY,
+	GROUPS,
+	ITEM,
+	LENSES,
+	VOCABULARY,
+} from '../views/__tests__/fixtures';
 import IntelligencePage from '../IntelligencePage';
 
 let wire;
@@ -33,7 +39,10 @@ beforeEach( () => {
 	Core.reset();
 	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
 	wire = intelWire();
-	wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+	wire.replies.search = ( args ) =>
+		args.includes( '--group=theme' )
+			? GROUPS
+			: { items: [ ITEM ], total: 1, available: true };
 	wire.replies.entity = ENTITY;
 	wire.replies.timeline = { items: [], total: 0, available: true };
 	wire.replies.related = { entities: [], available: true };
@@ -400,12 +409,47 @@ describe( 'IntelligencePage', () => {
 		);
 	} );
 
+	it( 'searches through a lens picked for its items, apart from the lens’s groups', async () => {
+		renderPage();
+		fireEvent.click( nav( 'Search' ) );
+		const form = screen.getByRole( 'search', { name: 'Filters' } );
+		await within( form ).findByRole( 'option', { name: 'Support desk' } );
+		fireEvent.change( within( form ).getByLabelText( 'Lens' ), {
+			target: { value: 'support-desk' },
+		} );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toContainEqual( [
+				'--lens=support-desk',
+			] )
+		);
+		expect(
+			await screen.findByRole( 'link', {
+				name: 'Acme Quillsheet wins regional prize',
+			} )
+		).toHaveAttribute( 'href', 'https://inkfold-review.example/acme' );
+		expect( screen.queryByRole( 'heading', { level: 4 } ) ).toBeNull();
+		fireEvent.click( nav( 'Lenses' ) );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Support desk' } )
+		);
+		expect(
+			await screen.findByRole( 'heading', {
+				level: 4,
+				name: 'site blocked from sending email',
+			} )
+		).toBeInTheDocument();
+		expect( wire.sent( 'search' ) ).toContainEqual( [
+			'--lens=support-desk',
+			'--group=theme',
+		] );
+	} );
+
 	it( 'reopens the lens it left, on the page it left', async () => {
 		wire.replies.search = ( args ) => ( {
-			items: [
+			groups: [
 				{
-					...ITEM,
-					title: `seen by ${ args.join( ' ' ) || 'nothing' }`,
+					...GROUPS.groups[ 0 ],
+					theme: `seen by ${ args.join( ' ' ) || 'nothing' }`,
 				},
 			],
 			total: 30,
@@ -416,13 +460,17 @@ describe( 'IntelligencePage', () => {
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Support desk' } )
 		);
-		await screen.findByText( 'seen by --lens=support-desk' );
+		await screen.findByText( 'seen by --lens=support-desk --group=theme' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
-		await screen.findByText( 'seen by --lens=support-desk --offset=1' );
+		await screen.findByText(
+			'seen by --lens=support-desk --group=theme --offset=1'
+		);
 		fireEvent.click( nav( 'Review' ) );
 		fireEvent.click( nav( 'Lenses' ) );
 		expect(
-			await screen.findByText( 'seen by --lens=support-desk --offset=1' )
+			await screen.findByText(
+				'seen by --lens=support-desk --group=theme --offset=1'
+			)
 		).toBeInTheDocument();
 	} );
 

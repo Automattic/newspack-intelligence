@@ -1,7 +1,7 @@
 /* eslint-env jest */
 /**
- * Lenses lists every lens, opens one onto its items a page at a time beside
- * its trend rows, and offers a curator the form saving a lens, every filter
+ * Lenses lists every lens, opens one onto its ranked theme groups a page of
+ * groups at a time beside its trend rows, and offers a curator the form saving a lens, every filter
  * named and each list repeated, and the control removing the one opened.
  */
 
@@ -15,7 +15,7 @@ import {
 import { Core } from '@newspack-nodes/runtime';
 import { useState } from '@wordpress/element';
 import { intelWire } from '../../__tests__/intelWire';
-import { ITEM, LENSES, VOCABULARY } from './fixtures';
+import { GROUPS, LENSES, VOCABULARY } from './fixtures';
 import Lens, { CLOSED_LENS } from '../Lens';
 
 const TRENDS = {
@@ -87,7 +87,7 @@ beforeEach( () => {
 	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
 	wire = intelWire();
 	wire.replies.lenses = LENSES;
-	wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+	wire.replies.search = GROUPS;
 	wire.replies.trends = TRENDS;
 	wire.replies.signals = SIGNALS;
 } );
@@ -121,7 +121,7 @@ describe( 'Lens', () => {
 		expect( await screen.findByText( 'No lens yet.' ) ).toBeInTheDocument();
 	} );
 
-	it( 'opens a lens onto its items and its trend rows, each citing its items', async () => {
+	it( 'opens a lens onto its groups and its trend rows, each citing its items', async () => {
 		render( <Harness canTune={ false } /> );
 		await openSupport();
 		const items = await screen.findByRole( 'region', {
@@ -132,6 +132,11 @@ describe( 'Lens', () => {
 				name: 'Acme Quillsheet wins regional prize',
 			} )
 		).toHaveAttribute( 'href', 'https://inkfold-review.example/acme' );
+		expect(
+			within( items )
+				.getAllByRole( 'heading', { level: 4 } )
+				.map( ( heading ) => heading.textContent )
+		).toEqual( [ 'site blocked from sending email', 'bot registrations' ] );
 		const trends = screen.getByRole( 'region', { name: 'Trends' } );
 		const row = await within( trends ).findByRole( 'row', {
 			name: /2026-09-21/,
@@ -147,7 +152,7 @@ describe( 'Lens', () => {
 			within( row ).getByText( 'javascript:alert(1)' ).closest( 'a' )
 		).toBeNull();
 		expect( wire.sent( 'search' ) ).toEqual( [
-			[ '--lens=support-desk' ],
+			[ '--lens=support-desk', '--group=theme' ],
 		] );
 		expect( wire.sent( 'trends' ) ).toEqual( [
 			[ '--lens=support-desk' ],
@@ -213,7 +218,7 @@ describe( 'Lens', () => {
 	} );
 
 	it( 'says a lens sees no item and no trend', async () => {
-		wire.replies.search = { items: [], total: 0, available: true };
+		wire.replies.search = { groups: [], total: 0, available: true };
 		wire.replies.trends = { rows: [], available: true };
 		render( <Harness canTune={ false } /> );
 		await openSupport();
@@ -227,26 +232,29 @@ describe( 'Lens', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'pages the lens items forward and back', async () => {
+	it( 'pages the lens groups forward and back', async () => {
 		wire.replies.search = ( args ) => ( {
-			items: [ 'a', 'b', 'c' ].map( ( n ) => ( {
-				...ITEM,
-				item_key: `feed:${ n }`,
-				title: `${ n } at ${ args.join( ' ' ) }`,
+			...GROUPS,
+			groups: GROUPS.groups.slice( 0, 3 ).map( ( group, n ) => ( {
+				...group,
+				count: 2,
+				theme: `${ 'abc'[ n ] } at ${ args.join( ' ' ) }`,
 			} ) ),
 			total: 70,
-			available: true,
 		} );
 		render( <Harness canTune={ false } /> );
 		await openSupport();
-		await screen.findByText( 'a at --lens=support-desk' );
+		await screen.findByText( 'a at --lens=support-desk --group=theme' );
+		expect( screen.getByText( '3 of 70 groups' ) ).toBeInTheDocument();
 		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
 		expect(
-			await screen.findByText( 'a at --lens=support-desk --offset=3' )
+			await screen.findByText(
+				'a at --lens=support-desk --group=theme --offset=3'
+			)
 		).toBeInTheDocument();
 		fireEvent.click( screen.getByRole( 'button', { name: 'Previous' } ) );
 		expect(
-			await screen.findByText( 'a at --lens=support-desk' )
+			await screen.findByText( 'a at --lens=support-desk --group=theme' )
 		).toBeInTheDocument();
 	} );
 
@@ -500,35 +508,87 @@ describe( 'Lens', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'ranks the lens items by importance and switches them to newest first', async () => {
-		wire.replies.search = ( args ) => ( {
-			items: [ 'a', 'b', 'c' ].map( ( n ) => ( {
-				...ITEM,
-				item_key: `feed:${ n }`,
-			} ) ),
-			total: 70,
-			available: true,
-			sort: args.includes( '--sort=time' ) ? 'time' : 'importance',
-		} );
+	it( 'ranks the groups in the answer’s order under a fixed line, asking no sort', async () => {
 		render( <Harness canTune={ false } /> );
 		await openSupport();
 		expect(
-			await screen.findByText( 'Ranked by importance' )
+			await screen.findByText(
+				'Ranked by severity, clients affected, then recency'
+			)
 		).toBeInTheDocument();
-		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
-		await waitFor( () =>
-			expect( wire.sent( 'search' ).at( -1 ) ).toEqual( [
-				'--lens=support-desk',
-				'--offset=3',
-			] )
-		);
+		expect(
+			screen.queryByRole( 'button', { name: 'Show newest first' } )
+		).toBeNull();
+		expect( wire.sent( 'search' ) ).toEqual( [
+			[ '--lens=support-desk', '--group=theme' ],
+		] );
+	} );
+
+	it( 'expands a group onto its items, saving one, and collapses it', async () => {
+		const onSave = jest.fn();
+		render( <Harness canTune={ false } onSave={ onSave } /> );
+		await openSupport();
+		const toggle = await screen.findByRole( 'button', {
+			name: 'Show items: bot registrations',
+		} );
+		fireEvent.click( toggle );
+		expect( toggle ).toHaveAttribute( 'aria-expanded', 'true' );
+		const group = toggle.closest( 'li' );
 		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Show newest first' } )
+			within( group ).getByRole( 'button', {
+				name: 'Save to collection',
+			} )
 		);
-		expect( await screen.findByText( 'Newest first' ) ).toBeInTheDocument();
-		expect( wire.sent( 'search' ).at( -1 ) ).toEqual( [
-			'--lens=support-desk',
-			'--sort=time',
+		expect( onSave ).toHaveBeenCalledWith( GROUPS.groups[ 1 ].items[ 0 ] );
+		fireEvent.click( toggle );
+		expect(
+			screen.queryByRole( 'link', {
+				name: 'Harbor Ledger floods with fake readers',
+			} )
+		).toBeNull();
+	} );
+
+	it( 'shows the trend rows of a lens counting by theme with their clients', async () => {
+		const [ support, ...rest ] = LENSES.lenses;
+		wire.replies.lenses = {
+			...LENSES,
+			lenses: [
+				{ ...support, filters: { ...support.filters, by: 'theme' } },
+				...rest,
+			],
+		};
+		wire.replies.trends = {
+			rows: [
+				{
+					bucket: '2026-09-21',
+					value: 'bot registrations',
+					count: 17,
+					clients: [
+						{
+							entity_key: 'organization:harbor-ledger',
+							name: 'Harbor Ledger',
+						},
+					],
+					items: TRENDS.rows[ 0 ].items,
+				},
+			],
+			available: true,
+		};
+		const onOpenEntity = jest.fn();
+		render( <Harness canTune={ false } onOpenEntity={ onOpenEntity } /> );
+		await openSupport();
+		const trends = screen.getByRole( 'region', { name: 'Trends' } );
+		const row = await within( trends ).findByRole( 'row', {
+			name: /2026-09-21/,
+		} );
+		fireEvent.click(
+			within( row ).getByRole( 'button', { name: 'Harbor Ledger' } )
+		);
+		expect( onOpenEntity ).toHaveBeenCalledWith(
+			'organization:harbor-ledger'
+		);
+		expect( wire.sent( 'trends' ) ).toEqual( [
+			[ '--lens=support-desk' ],
 		] );
 	} );
 } );

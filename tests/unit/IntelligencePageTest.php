@@ -159,7 +159,7 @@ final class IntelligencePageTest extends TestCase {
 				'identifierKinds' => Intel_Event::IDENTIFIER_KINDS,
 				'itemKinds'       => Intel_Event::ITEM_KINDS,
 				'tiers'           => Intel_Event::TIERS,
-				'trendAxes'       => [ 'kind', 'topic' ],
+				'trendAxes'       => [ 'kind', 'topic', 'theme' ],
 				'buckets'         => [ 'day', 'week', 'month' ],
 				'lensLists'       => [
 					[ 'field' => 'kinds', 'option' => 'kind', 'values' => Intel_Event::ITEM_KINDS ],

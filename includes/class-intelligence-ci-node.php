@@ -88,7 +88,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 		$verb  = self::verb( ... );
 		$arg   = static fn ( string $name, string $what ): array => [ 'name' => $name, 'type' => 'string', 'required' => true, 'description' => $what ];
 		$key   = static fn ( string $what ): array => $arg( 'key', $what );
-		$limit = static fn ( int $default ): array => [ 'name' => 'limit', 'type' => 'int', 'default' => $default, 'description' => 'The most rows answered, at most ' . Graph_Query::MAX_LIMIT . '.' ];
+		$limit = static fn ( ?int $default, string $else = '' ): array => [ 'name' => 'limit', 'type' => 'int' ] + ( null === $default ? [] : [ 'default' => $default ] ) + [ 'description' => 'The most rows answered, at most ' . Graph_Query::MAX_LIMIT . "{$else}." ];
 		$text  = static fn ( string $name, string $what ): array => [ 'name' => $name, 'type' => 'string', 'description' => $what ];
 		$any   = static fn ( string $name, string $what ): array => [ 'name' => $name, 'type' => 'string', 'variadic' => true, 'description' => "{$what} Repeat it to match any." ];
 		$lists = [];
@@ -96,7 +96,8 @@ class Intelligence_CI_Node extends Service_CI_Node {
 			$lists[] = $any( $option, $what . ( null === $values ? '.' : ': ' . \implode( ', ', $values ) . '.' ) );
 		}
 		$lens  = $text( 'lens', 'A lens whose filters apply; each filter the call names itself replaces the lens\'s, and since or until replaces its days.' );
-		$axis  = $text( 'by', 'What is counted: ' . \implode( ' or ', Graph_Query::trend_axes() ) . '; else the lens\'s, else ' . Graph_Query::DEFAULT_AXIS . '.' );
+		$axes  = \implode( ', ', Graph_Query::trend_axes() );
+		$axis  = $text( 'by', "What is counted, one of {$axes}; else the lens's, else " . Graph_Query::DEFAULT_AXIS . '.' );
 		$span  = $text( 'bucket', 'The span a row counts: ' . \implode( ', ', Graph_Query::buckets() ) . '; else the lens\'s, else ' . Graph_Query::DEFAULT_BUCKET . '.' );
 		$since = $text( 'since', 'The first UTC day, Y-m-d.' );
 		$until = $text( 'until', 'The last UTC day, Y-m-d.' );
@@ -117,15 +118,16 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					$verb(
 						$read,
 						'search',
-						'Items matching every filter given, in the order sort names: { items: [ { item_key, title, url, source, tier, item_ts, summary, kind, relevance, importance, entities } ], total, sort }.',
+						'Items matching every filter given, in the order sort names: { items: [ { item_key, title, url, source, tier, item_ts, summary, kind, relevance, importance, entities } ], total, sort }. With group=theme, through a lens or not, the same items as groups sharing a theme instead: { groups: [ { theme, kind, count, clients: [ { entity_key, name } ], newest_ts, items } ], total, available }, over the last ' . Graph_Query::GROUP_DAYS . ' days when neither the call nor its lens bounds the days, each story counted once as its canonical, an item with no theme a group of its own whose theme is \'\'; kind the most severe among every copy of its stories, by the kind\'s place in the kinds filter, most severe first, every kind alike when it names none; clients the open clients those copies are about; items its ' . Graph_Query::CITATIONS . ' newest stories, each as an item above, the most important first; groups ranked by kind, then clients, most first, then newest story, then theme; total, limit and offset counting groups.',
 						[
 							$text( 'q', 'Words every match holds in its title, body or summary.' ),
-							$text( 'sort', 'The order, one of ' . \implode( ', ', Graph_Query::sorts() ) . ': importance the highest first, then the most relevant, then the newest; time the newest first. With none, time for words without a lens, else importance.' ),
+							$text( 'sort', 'The order, one of ' . \implode( ', ', Graph_Query::sorts() ) . ': importance the highest first, then the most relevant, then the newest; time the newest first. With none, time for words without a lens, else importance. Refused beside group.' ),
+							$text( 'group', 'Answer groups instead of items, one of: ' . \implode( ', ', Graph_Query::groupings() ) . '.' ),
 							$text( 'entity', 'An entity the item links.' ),
 							$lens,
 							$since,
 							$until,
-							$limit( Graph_Query::DEFAULT_LIMIT ),
+							$limit( null, '; else ' . Graph_Query::DEFAULT_LIMIT . ' items, or ' . Graph_Query::GROUP_LIMIT . ' groups' ),
 							$page,
 							...$lists,
 						],
@@ -138,7 +140,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					$verb(
 						$read,
 						'trends',
-						'Items counted by kind or topic per bucket, the newest bucket first, a story counted once as its canonical: { rows: [ { bucket, value, count, items: [ { item_key, url, title } ] } ] }, five newest items cited a row.',
+						"Items counted by {$axes} per bucket, the newest bucket first, a story counted once as its canonical: { rows: [ { bucket, value, count, items: [ { item_key, url, title } ] } ] }, five newest items cited a row; counting by theme, each row also names clients: [ { entity_key, name } ], the open clients its items are about, before its items, and an item with no theme counts under none.",
 						[
 							$axis,
 							$text( 'entity', 'Only items linking this entity.' ),
@@ -229,7 +231,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 							[ 'name' => 'description', 'type' => 'string', 'default' => '', 'description' => 'What it is for.' ],
 							$text( 'entity', 'An entity every item links.' ),
 							[ 'name' => 'days', 'type' => 'int', 'description' => 'The last days it reads, today included, 1 to ' . Intel_Graph_Row_Schema::RETAIN_DAYS . '.' ],
-							$text( 'by', 'What its trends count: ' . \implode( ' or ', Graph_Query::trend_axes() ) . '.' ),
+							$text( 'by', "What its trends count, one of {$axes}." ),
 							$text( 'bucket', 'The span its trend rows count: ' . \implode( ', ', Graph_Query::buckets() ) . '.' ),
 							...$lists,
 							$any( 'tier', 'A tier it reads, narrowing what its reader may read: ' . \implode( ', ', Intel_Event::TIERS ) . '.' ),

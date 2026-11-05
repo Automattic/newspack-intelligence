@@ -147,7 +147,7 @@ final class IntelligenceLensTest extends TestCase {
 			'a kind outside its set'   => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--kind=rumor' ], 'kind must be one of: ' . \implode( ', ', Intel_Event::ITEM_KINDS ) ],
 			'a role outside its set'   => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--role=ally' ], 'role must be one of: ' . \implode( ', ', Intel_Event::ROLES ) ],
 			'a tier outside its set'   => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--tier=secret' ], 'tier must be one of: public, internal, restricted' ],
-			'an axis outside its set'  => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--by=sentiment' ], 'by must be one of: kind, topic' ],
+			'an axis outside its set'  => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--by=sentiment' ], 'by must be one of: kind, topic, theme' ],
 			'a bucket outside its set' => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--bucket=fortnight' ], 'bucket must be one of: day, week, month' ],
 			'no days'                  => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--days=0' ], 'days must be between 1 and 730' ],
 			'days past the horizon'    => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--days=731' ], 'days must be between 1 and 730' ],

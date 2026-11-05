@@ -66,8 +66,8 @@ final class Graph_Query {
 	/** The most rows any verb answers. */
 	public const MAX_LIMIT = 200;
 
-	/** Items a trend row, a related entity or a proposal cites, the newest. */
-	private const CITATIONS = 5;
+	/** Items a trend row, a related entity, a proposal or a group cites, the newest. */
+	public const CITATIONS = 5;
 
 	/** Each judging actor kind's rank; a person outranks an agent. */
 	private const JUDGE_RANK = [
@@ -75,11 +75,21 @@ final class Graph_Query {
 		'agent' => 1,
 	];
 
-	/** What a trend counts, as its value and the join reaching it. */
+	/** What a trend counts, as its value and the join reaching it; a theme `stories()` joins once the items are read. */
 	private const TREND_AXES = [
 		'kind'  => [ 'x.kind', 'JOIN {extractions} x ON x.item_key = i.item_key' ],
 		'topic' => [ 'tl.entity_key', 'JOIN live tl ON tl.item_key = i.item_key AND tl.topical' ],
+		'theme' => [ 'NULL', '' ],
 	];
+
+	/** The trend axes `search` may group its items by. */
+	private const GROUPINGS = [ 'theme' ];
+
+	/** Groups a grouped search answers when its caller does not name a limit. */
+	public const GROUP_LIMIT = 20;
+
+	/** The days a grouped search reads when neither the call nor its lens bounds them. */
+	public const GROUP_DAYS = 30;
 
 	/** The role an entity holds while it is a client. */
 	public const CLIENT = 'client';
@@ -162,6 +172,12 @@ final class Graph_Query {
 		'total' => 0,
 	];
 
+	/** The answer a grouped search gives with no rows. */
+	private const NO_GROUPS = [
+		'groups' => [],
+		'total'  => 0,
+	];
+
 	/** How a page of items reads with nothing joined to it: newest first. */
 	private const NEWEST = [
 		'join'   => '',
@@ -215,17 +231,108 @@ final class Graph_Query {
 	 * over title, body and summary, `entity` linked by any link, any `topic`
 	 * by a topic link, any `role` held at the item's time by an entity the
 	 * item links, any `kind`, any `source`, and the UTC days `since` to
-	 * `until`, each read through `lens` when the call names one.
+	 * `until`, each read through `lens` when the call names one; with
+	 * `group`, the same items as the groups `grouped()` ranks, which take no
+	 * sort, over the last GROUP_DAYS days when neither the call nor the lens
+	 * bounds them. A page holds `limit` items, DEFAULT_LIMIT when it names
+	 * none, or `limit` groups, GROUP_LIMIT when it names none.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args.
-	 * @return array<string,mixed> `{ items, total, available, sort }`.
-	 * @throws \InvalidArgumentException On a bad page, day or sort, or a lens
+	 * @return array<string,mixed> `{ items, total, available, sort }`, or `{ groups, total, available }` with `group`.
+	 * @throws \InvalidArgumentException On a bad page, day, sort or grouping,
+	 *                                   a sort beside a grouping, or a lens
 	 *                                   that was never saved.
 	 */
 	public static function search( array $args ): array {
-		[ $limit, $offset ] = self::page( $args );
-		$sort               = self::sort_of( $args );
-		return self::through( $args, self::NO_ITEMS, static fn ( Row_Reader $r, array $g, array $filter ): array => self::items( $r, $g, $filter, $limit, $offset, self::SORTS[ $sort ] ) ) + [ 'sort' => $sort ];
+		$group = self::given( $args, 'group' );
+		if ( null === $group ) {
+			[ $limit, $offset ] = self::page( [ 'limit' => $args['limit'] ?? self::DEFAULT_LIMIT ] + $args );
+			$sort               = self::sort_of( $args );
+			return self::through( $args, self::NO_ITEMS, static fn ( Row_Reader $r, array $g, array $filter ): array => self::items( $r, $g, $filter, $limit, $offset, self::SORTS[ $sort ] ) ) + [ 'sort' => $sort ];
+		}
+		self::one_of( 'group', $group, self::GROUPINGS );
+		if ( null !== $args['sort'] ) {
+			throw new \InvalidArgumentException( 'sort does not apply to groups, which rank by severity, then clients, then recency' );
+		}
+		[ $limit, $offset ] = self::page( [ 'limit' => $args['limit'] ?? self::GROUP_LIMIT ] + $args );
+		return self::through( $args, self::NO_GROUPS, static fn ( Row_Reader $r, array $g, array $filter ): array => self::grouped( $r, $g, [ 'days' => $filter['days'] ?? self::last_days( self::GROUP_DAYS ) ] + $filter, $group, $limit, $offset ) );
+	}
+
+	/**
+	 * One page of the groups the items the filters admit form, and how many
+	 * groups there are, in two statements: the page with its stories, then
+	 * their entities. Each item counts as its story (`stories()`), and a
+	 * group is the stories whose copies share a value of the axis; a story
+	 * none of whose copies has a value is a group of its own, its theme ''.
+	 * A group answers `{ theme, kind, count, clients, newest_ts, items }`,
+	 * each read over every copy of its stories, a copy with no value among
+	 * them: the most severe kind of those copies, a kind's severity its
+	 * place in the filters' `kinds`, most severe first, every kind alike
+	 * where they name none, the newest copy's among equals; how many stories
+	 * it holds; the open clients those copies are about by a subject or a
+	 * mention, by name; the time of its newest story, each dated by its
+	 * earliest copy; and its CITATIONS newest stories as
+	 * `search` answers them, the most important first, as MOST_IMPORTANT
+	 * orders them. Groups rank by severity, then by clients, the most
+	 * first, then by newest story, then by theme.
+	 *
+	 * @param Row_Reader $r      The reader.
+	 * @param Graph      $g      The graph the read opened.
+	 * @param Filter     $filter The filters.
+	 * @param string     $by     The trend axis it groups by, one of GROUPINGS.
+	 * @param int        $limit  The groups a page holds.
+	 * @param int        $offset The groups before the page.
+	 * @return array<string,mixed> `{ groups, total }`.
+	 */
+	private static function grouped( Row_Reader $r, array $g, array $filter, string $by, int $limit, int $offset ): array {
+		[ $stories, $binds ] = self::stories( $r, self::filtered( $r, $g, $filter ), $filter['days'] ?? self::all_days(), $by, false );
+		$kinds               = $filter['lists']['kinds'];
+		$x                   = Intel_Graph_Row_Schema::all( $r, 'extractions' );
+		$columns             = self::ITEM_COLUMNS;
+		$picked              = \implode( ', ', \array_map( static fn ( string $as, string $column ): string => "{$column} AS {$as}", \array_keys( $columns ), $columns ) );
+		$rows                = $r->rows(
+			"{$stories}, " . self::open_clients( $r )
+			. ', sev AS ( SELECT CAST( key AS INTEGER ) AS severity, value AS kind FROM json_each( ? ) ),'
+			. " gm AS ( SELECT DISTINCT CASE WHEN c.value IS NULL THEN 'item:' || c.story ELSE 'theme:' || c.value END AS gid, COALESCE( c.value, '' ) AS theme, c.story FROM copies c"
+			. ' WHERE c.value IS NOT NULL OR c.story NOT IN ( SELECT story FROM copies WHERE value IS NOT NULL ) ),'
+			. ' ga AS ( SELECT DISTINCT gm.gid, c.copy, c.t FROM gm JOIN copies c ON c.story = gm.story ),'
+			. " gk AS ( SELECT ga.gid, ga.t, x.kind, COALESCE( sev.severity, ? ) AS severity FROM ga LEFT JOIN {$x} x ON x.item_key = ga.copy LEFT JOIN sev ON sev.kind = x.kind ),"
+			. ' gw AS ( SELECT gid, kind, severity FROM ( SELECT gid, kind, severity, ROW_NUMBER() OVER ( PARTITION BY gid ORDER BY severity, t DESC, kind ) AS pick FROM gk ) WHERE pick = 1 ),'
+			. ' gs AS ( SELECT gm.gid, MAX( gm.theme ) AS theme, gm.story, MIN( c.t ) AS t FROM gm JOIN copies c ON c.story = gm.story GROUP BY gm.gid, gm.story ),'
+			. ' gl AS ( SELECT DISTINCT ga.gid, l.entity_key FROM ga JOIN live l ON l.item_key = ga.copy AND NOT l.topical JOIN oc ON oc.entity_key = l.entity_key ),'
+			. ' gn AS ( SELECT gid, COUNT(*) AS n FROM gl GROUP BY gid ),'
+			. ' ranked AS ( SELECT s.gid, MAX( s.theme ) AS theme, w.kind, COUNT(*) AS n, MAX( s.t ) AS newest,'
+			. ' ROW_NUMBER() OVER ( ORDER BY w.severity, COALESCE( gn.n, 0 ) DESC, MAX( s.t ) DESC, MAX( s.theme ), s.gid ) AS ord'
+			. ' FROM gs s JOIN gw w ON w.gid = s.gid LEFT JOIN gn ON gn.gid = s.gid GROUP BY s.gid ),'
+			. " page AS MATERIALIZED ( SELECT ranked.*, ( SELECT json_group_array( json_object( 'entity_key', gl.entity_key, 'name', " . self::name_of( $r, 'gl.entity_key' ) . ' ) ) FROM gl WHERE gl.gid = ranked.gid ) AS named FROM ranked WHERE ord > ? AND ord <= ? ),'
+			. ' cited AS ( SELECT gid, story, ROW_NUMBER() OVER ( PARTITION BY gid ORDER BY t DESC, story DESC ) AS rn FROM gs WHERE gid IN ( SELECT gid FROM page ) )'
+			. ' SELECT tot.total, q.* FROM ( SELECT COUNT(*) AS total FROM ranked ) tot LEFT JOIN ( SELECT p.ord, p.theme AS g_theme, p.kind AS g_kind, p.n AS g_count, p.newest AS g_newest, p.named AS g_clients, '
+			. $picked . ', ' . Intel_Graph_Row_Schema::ITEM_TIME . " AS t FROM page p JOIN cited ON cited.gid = p.gid AND cited.rn <= ? JOIN ri i ON i.item_key = cited.story LEFT JOIN {$x} x ON x.item_key = i.item_key ) q ON 1"
+			. ' ORDER BY q.ord, q.importance DESC, q.relevance DESC, q.t DESC, q.item_key DESC',
+			[ ...$binds, \wp_json_encode( $kinds, \JSON_THROW_ON_ERROR ), \count( $kinds ), $offset, $offset + $limit, self::CITATIONS ]
+		);
+		$groups              = [];
+		foreach ( $rows as $row ) {
+			if ( null === $row[1] ) {
+				continue;
+			}
+			$item                         = \array_combine( \array_keys( $columns ), \array_slice( $row, 7, \count( $columns ) ) );
+			$at                           = Core::as_int( $row[1] );
+			$groups[ $at ]              ??= [ 'theme' => Core::as_string( $row[2] ), 'kind' => $row[3], 'count' => Core::as_int( $row[4] ), 'clients' => self::clients_of( $row[6] ), 'newest_ts' => Core::as_int( $row[5] ), 'items' => [] ];
+			$groups[ $at ]['items'][ Core::as_string( $item['item_key'] ) ] ??= $item;
+		}
+		$keys   = [];
+		foreach ( $groups as $group ) {
+			\array_push( $keys, ...\array_map( 'strval', \array_keys( $group['items'] ) ) );
+		}
+		$linked = self::entities_of( $r, $g, \array_values( \array_unique( $keys ) ) );
+		foreach ( $groups as $at => $group ) {
+			$groups[ $at ]['items'] = \array_map( static fn ( array $item ): array => $item + [ 'entities' => $linked[ Core::as_string( $item['item_key'] ) ] ?? [] ], \array_values( $group['items'] ) );
+		}
+		return [
+			'groups' => \array_values( $groups ),
+			'total'  => Core::as_int( $rows[0][0] ?? 0 ),
+		];
 	}
 
 	/**
@@ -394,18 +501,33 @@ final class Graph_Query {
 			[ ...$binds, $limit, $offset ]
 		);
 		$items                           = \array_map( static fn ( array $row ): array => \array_combine( \array_keys( $columns ), $row ), $page );
-		$linked                          = [];
-		if ( [] !== $items ) {
-			$page_keys             = \array_map( static fn ( array $item ): string => Core::as_string( $item['item_key'] ), $items );
-			[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( ' . Intel_Graph_Row_Schema::marks( $page_keys ) . ' )', $page_keys );
-			foreach ( $r->rows( "{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::name_of( $r, 'live.entity_key' ) . " , live.state FROM live WHERE NOT live.topical ORDER BY live.role = 'subject' DESC, live.entity_key", [ ...$g['binds'], ...$live_binds ] ) as [ $item_key, $entity, $name, $state ] ) {
-				$linked[ Core::as_string( $item_key ) ][] = [ 'entity_key' => $entity, 'name' => $name, 'state' => $state ];
-			}
-		}
+		$linked                          = self::entities_of( $r, $g, \array_map( static fn ( array $item ): string => Core::as_string( $item['item_key'] ), $items ) );
 		return [
 			'items' => \array_map( static fn ( array $item ): array => \array_diff_key( $item, $within['fields'] ) + [ 'entities' => $linked[ Core::as_string( $item['item_key'] ) ] ?? [] ] + \array_intersect_key( $item, $within['fields'] ), $items ),
 			'total' => $total,
 		];
+	}
+
+	/**
+	 * The entities each item is about, but its topics, as `search` lists
+	 * them: by survivor, a subject first, each with its name and its link's
+	 * state, read in one statement; none for no items.
+	 *
+	 * @param Row_Reader   $r    The reader.
+	 * @param Graph        $g    The graph the read opened.
+	 * @param list<string> $keys The item keys.
+	 * @return array<string,list<array{entity_key:mixed,name:mixed,state:mixed}>> Each item with an entity => them.
+	 */
+	private static function entities_of( Row_Reader $r, array $g, array $keys ): array {
+		$linked = [];
+		if ( [] === $keys ) {
+			return $linked;
+		}
+		[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' )', $keys );
+		foreach ( $r->rows( "{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::name_of( $r, 'live.entity_key' ) . " , live.state FROM live WHERE NOT live.topical ORDER BY live.role = 'subject' DESC, live.entity_key", [ ...$g['binds'], ...$live_binds ] ) as [ $item_key, $entity, $name, $state ] ) {
+			$linked[ Core::as_string( $item_key ) ][] = [ 'entity_key' => $entity, 'name' => $name, 'state' => $state ];
+		}
+		return $linked;
 	}
 
 	/**
@@ -739,11 +861,12 @@ final class Graph_Query {
 	}
 
 	/**
-	 * Readable items counted by kind or by topic per day, week or month,
+	 * Readable items counted by kind, topic or theme per day, week or month,
 	 * the newest bucket first, filtered as `search` filters them but for
 	 * `q`, each read through `lens` when the call names one, and each
 	 * counted once per story (`stories()`); each row cites its newest items,
-	 * each its key, URL and title. The axis and the bucket are the call's,
+	 * each its key, URL and title, and a theme row first names its open
+	 * clients (`tally()`). The axis and the bucket are the call's,
 	 * else its lens's, else DEFAULT_AXIS and DEFAULT_BUCKET.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args.
@@ -1100,7 +1223,7 @@ final class Graph_Query {
 	/**
 	 * The trend rows: readable items the filters admit, counted per bucket
 	 * and value of the axis, or of none to count every item, each citing its
-	 * newest items (`tally()`).
+	 * newest items (`tally()`), a theme row naming its open clients first.
 	 *
 	 * @param Row_Reader   $r      The reader.
 	 * @param Graph        $g      The graph.
@@ -1112,7 +1235,7 @@ final class Graph_Query {
 	 */
 	private static function counts( Row_Reader $r, array $g, array $filter, ?string $by, string $span, array $links = Intel_Event::ABOUT_ROLES ): array {
 		$days = $filter['days'] ?? self::all_days();
-		return self::tally( $r, self::filtered( $r, $g, $filter, $links ), $days, $by, $span, $days[0] )[0][''] ?? [];
+		return self::tally( $r, self::filtered( $r, $g, $filter, $links ), $days, $by, $span, $days[0], false, false, 'theme' === $by )[0][''] ?? [];
 	}
 
 	/**
@@ -1457,7 +1580,8 @@ final class Graph_Query {
 	 * per bucket, and, in the same statement, each subject holding a story
 	 * dated before it, its history, by each value it counted there when
 	 * `$values` asks. A story is cited by its key, URL and title, each read
-	 * once however many partitions hold it.
+	 * once however many partitions hold it. A story with no value, one with
+	 * no theme on the theme axis, counts under none, and is no history.
 	 *
 	 * @param Row_Reader     $r      The reader.
 	 * @param Scope          $scope  The items read, by subject.
@@ -1467,41 +1591,80 @@ final class Graph_Query {
 	 * @param int            $cut    The first second a bucket counts.
 	 * @param bool           $muted  Whether the kind axis leaves out MUTE_KIND.
 	 * @param bool           $values Whether the history is read per value.
+	 * @param bool           $named  Whether each row names the open clients its stories' copies are about, by a subject or a mention, before its items.
 	 * @return array{0:array<string,list<array{bucket:mixed,value:mixed,count:int,items:list<array{item_key:mixed,url:mixed,title:mixed}>}>>,1:array<string,array<string,true>>} Each subject => its rows, the newest bucket first, then the highest count; and each subject with a history => each value in it, or '' alone.
 	 */
-	private static function tally( Row_Reader $r, \Closure $scope, array $days, ?string $by, string $span, int $cut, bool $muted = false, bool $values = false ): array {
+	private static function tally( Row_Reader $r, \Closure $scope, array $days, ?string $by, string $span, int $cut, bool $muted = false, bool $values = false, bool $named = false ): array {
 		[ $stories, $binds ] = self::stories( $r, $scope, $days, $by, $muted );
+		$clients             = $named
+			? ', ' . self::open_clients( $r ) . ", named AS ( SELECT b.subject, b.bucket, b.value, json_group_array( json_object( 'entity_key', b.entity_key, 'name', " . self::name_of( $r, 'b.entity_key' ) . ' ) ) AS clients'
+				. " FROM ( SELECT DISTINCT s.subject, s.bucket, s.value, l.entity_key FROM ( SELECT subject, {$span} AS bucket, value, item_key FROM stories WHERE t >= ? AND value IS NOT NULL ) s"
+				. ' JOIN copies c ON c.subject = s.subject AND c.value = s.value AND c.story = s.item_key JOIN live l ON l.item_key = c.copy AND NOT l.topical JOIN oc ON oc.entity_key = l.entity_key ) b GROUP BY 1, 2, 3 )'
+			: '';
 		$rows                = $r->rows(
 			"{$stories}, ranked AS ( SELECT s.subject, {$span} AS bucket, s.value, s.item_key, c.url, c.title, ROW_NUMBER() OVER ( PARTITION BY s.subject, {$span}, s.value ORDER BY t DESC, s.item_key DESC ) AS rn,"
 			. " COUNT(*) OVER ( PARTITION BY s.subject, {$span}, s.value ) AS n FROM stories s"
-			. ' JOIN ( SELECT item_key, MAX( url ) AS url, MAX( title ) AS title FROM ri WHERE item_key IN ( SELECT item_key FROM stories ) GROUP BY item_key ) c ON c.item_key = s.item_key WHERE t >= ? )'
-			. ' SELECT subject, bucket, value, n, item_key, url, title, rn FROM ranked WHERE rn <= ?'
-			. ' UNION ALL SELECT DISTINCT subject, NULL, ' . ( $values ? 'value' : 'NULL' ) . ', NULL, NULL, NULL, NULL, NULL FROM stories WHERE t < ? ORDER BY 1, 2 DESC, 4 DESC, 3, 8',
-			[ ...$binds, $cut, self::CITATIONS, $cut ]
+			. " JOIN ( SELECT item_key, MAX( url ) AS url, MAX( title ) AS title FROM ri WHERE item_key IN ( SELECT item_key FROM stories ) GROUP BY item_key ) c ON c.item_key = s.item_key WHERE t >= ? AND s.value IS NOT NULL ){$clients}"
+			. ' SELECT ranked.subject, ranked.bucket, ranked.value, ranked.n, ranked.item_key, ranked.url, ranked.title, ranked.rn, ' . ( $named ? 'nm.clients FROM ranked LEFT JOIN named nm ON nm.subject = ranked.subject AND nm.bucket = ranked.bucket AND nm.value = ranked.value' : 'NULL FROM ranked' )
+			. ' WHERE ranked.rn <= ?'
+			. ' UNION ALL SELECT DISTINCT subject, NULL, ' . ( $values ? 'value' : 'NULL' ) . ', NULL, NULL, NULL, NULL, NULL, NULL FROM stories WHERE t < ? AND value IS NOT NULL ORDER BY 1, 2 DESC, 4 DESC, 3, 8',
+			[ ...$binds, $cut, ...( $named ? [ $cut ] : [] ), self::CITATIONS, $cut ]
 		);
 		$out                 = [];
 		$history             = [];
-		foreach ( $rows as [ $of, $day, $counted, $n, $item, $url, $title ] ) {
+		foreach ( $rows as [ $of, $day, $counted, $n, $item, $url, $title, , $listed ] ) {
 			$of = Core::as_string( $of );
 			if ( null === $day ) {
 				$history[ $of ][ Core::as_string( $counted ) ] = true;
 				continue;
 			}
 			$at                          = Core::as_string( $day ) . '|' . Core::as_string( $counted );
-			$out[ $of ][ $at ]         ??= [ 'bucket' => $day, 'value' => $counted, 'count' => Core::as_int( $n ), 'items' => [] ];
+			$out[ $of ][ $at ]         ??= [ 'bucket' => $day, 'value' => $counted, 'count' => Core::as_int( $n ) ] + ( $named ? [ 'clients' => self::clients_of( $listed ) ] : [] ) + [ 'items' => [] ];
 			$out[ $of ][ $at ]['items'][] = [ 'item_key' => $item, 'url' => $url, 'title' => $title ];
 		}
 		return [ \array_map( \array_values( ... ), $out ), $history ];
 	}
 
 	/**
-	 * The `WITH` clauses ending in `stories ( subject, value, item_key, t )`:
-	 * each item the scope admits in `$days`, per value of the axis, as the
-	 * story it belongs to, dated by the earliest of its copies the scope
-	 * admits. The story is its cluster's canonical, the cluster and the
-	 * canonical each read from the newest partition holding a row, when the
-	 * caller may read the canonical, else the item itself. With `$muted`, the
-	 * kind axis admits no item extracted as MUTE_KIND.
+	 * Clients aggregated as JSON, each its key and name, by name, then key.
+	 *
+	 * @param mixed $named A `json_group_array` of `{ entity_key, name }`, or null for none.
+	 * @return list<array{entity_key:string,name:?string}>
+	 */
+	private static function clients_of( mixed $named ): array {
+		$clients = \array_map(
+			static function ( mixed $client ): array {
+				$client = Core::arr( $client );
+				return [ 'entity_key' => Core::as_string( $client['entity_key'] ), 'name' => null === $client['name'] ? null : Core::as_string( $client['name'] ) ];
+			},
+			null === $named ? [] : \array_values( Core::arr( \json_decode( Core::as_string( $named ), true, 512, \JSON_THROW_ON_ERROR ) ) )
+		);
+		\usort( $clients, static fn ( array $a, array $b ): int => [ $a['name'], $a['entity_key'] ] <=> [ $b['name'], $b['entity_key'] ] );
+		return $clients;
+	}
+
+	/**
+	 * The `oc` CTE, to follow the graph's prelude: every survivor holding an
+	 * open client role under any of its keys, as `open_roles()` reads one.
+	 *
+	 * @param Row_Reader $r The reader.
+	 */
+	private static function open_clients( Row_Reader $r ): string {
+		return 'oc AS ( SELECT DISTINCT COALESCE( mg.value, ro.entity_key ) AS entity_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'roles' )
+			. " ro LEFT JOIN mg ON mg.key = ro.entity_key WHERE ro.role = '" . self::CLIENT . "' AND ro.to_ts = 0 )";
+	}
+
+	/**
+	 * The `WITH` clauses ending in `copies ( subject, value, story, copy, t )`
+	 * and `stories ( subject, value, item_key, t )`: each item the scope
+	 * admits in `$days`, per value of the axis, as the story it belongs to,
+	 * and each story dated by the earliest of its copies the scope admits.
+	 * The story is its cluster's canonical, the cluster and the canonical
+	 * each read from the newest partition holding a row, when the caller may
+	 * read the canonical, else the item itself. On the theme axis a copy's
+	 * value is its theme, read from the newest partition holding a `themes`
+	 * row for it, null for a copy with none. With `$muted`, the kind axis
+	 * admits no item extracted as MUTE_KIND.
 	 *
 	 * @param Row_Reader     $r     The reader.
 	 * @param Scope          $scope The items read, by subject.
@@ -1511,7 +1674,8 @@ final class Graph_Query {
 	 * @return Sql The clauses and their binds.
 	 */
 	private static function stories( Row_Reader $r, \Closure $scope, array $days, ?string $by, bool $muted ): array {
-		[ $with, $lead, $subject, $join, $where, $binds ] = $scope( $days, 'topic' === $by );
+		$themed                                           = 'theme' === $by;
+		[ $with, $lead, $subject, $join, $where, $binds ] = $scope( $days, 'topic' === $by || $themed );
 		[ $value, $axis ]                                 = null === $by ? self::EVERY_ITEM : self::TREND_AXES[ $by ];
 		$axis = \str_replace( '{extractions}', Intel_Graph_Row_Schema::all( $r, 'extractions' ), $axis ) . ( $muted && 'kind' === $by ? " AND x.kind <> '" . self::MUTE_KIND . "'" : '' );
 		$sql  = "{$with}, hits AS ( SELECT {$subject} AS subject, {$value} AS value, i.item_key, MIN( " . Intel_Graph_Row_Schema::ITEM_TIME . " ) AS t FROM ri i {$join} {$axis} WHERE {$where} GROUP BY 1, 2, 3 ),"
@@ -1520,7 +1684,12 @@ final class Graph_Query {
 			. ' st AS ( SELECT sc.item_key, CASE WHEN EXISTS ( SELECT 1 FROM ri s WHERE s.item_key = k.canonical_item_key ) THEN k.canonical_item_key END AS story FROM sc JOIN'
 			. ' ( SELECT k.cluster_key, k.canonical_item_key, ROW_NUMBER() OVER ( PARTITION BY k.cluster_key ORDER BY k.partition_ordinal DESC ) AS pick FROM '
 			. Intel_Graph_Row_Schema::all( $r, 'canonicals', true ) . ' k WHERE k.cluster_key IN ( SELECT cluster_key FROM sc ) ) k ON k.cluster_key = sc.cluster_key AND k.pick = 1 ),'
-			. ' stories AS ( SELECT h.subject, h.value, COALESCE( st.story, h.item_key ) AS item_key, MIN( h.t ) AS t FROM hits h LEFT JOIN st ON st.item_key = h.item_key GROUP BY 1, 2, 3 )';
+			. ( $themed
+				? ' th AS ( SELECT item_key, theme FROM ( SELECT t.item_key, t.theme, ROW_NUMBER() OVER ( PARTITION BY t.item_key ORDER BY t.partition_ordinal DESC ) AS pick FROM '
+					. Intel_Graph_Row_Schema::all( $r, 'themes', true ) . ' t WHERE t.item_key IN ( SELECT item_key FROM hits ) ) WHERE pick = 1 ),'
+					. ' copies AS ( SELECT h.subject, th.theme AS value, COALESCE( st.story, h.item_key ) AS story, h.item_key AS copy, h.t FROM hits h LEFT JOIN st ON st.item_key = h.item_key LEFT JOIN th ON th.item_key = h.item_key ),'
+				: ' copies AS ( SELECT h.subject, h.value, COALESCE( st.story, h.item_key ) AS story, h.item_key AS copy, h.t FROM hits h LEFT JOIN st ON st.item_key = h.item_key ),' )
+			. ' stories AS ( SELECT subject, value, story AS item_key, MIN( t ) AS t FROM copies GROUP BY 1, 2, 3 )';
 		return [ $sql, [ ...$lead, ...$binds ] ];
 	}
 
@@ -1981,5 +2150,14 @@ final class Graph_Query {
 	private static function given( array $args, string $name ): ?string {
 		$value = $args[ $name ] ?? null;
 		return null === $value ? null : Core::as_string( $value );
+	}
+
+	/**
+	 * What `search` may group by, for the arg's description.
+	 *
+	 * @return list<string>
+	 */
+	public static function groupings(): array {
+		return self::GROUPINGS;
 	}
 }

@@ -10,7 +10,7 @@
  * state (`entity_states`) and its merge (`entity_merges`) are three rows, so
  * every event writes whole rows and the projector never reads before it
  * writes; an item's extraction is its own row beside the item for the same
- * reason.
+ * reason, and its theme its own row beside the extraction.
  *
  * @package Newspack_Intelligence
  */
@@ -57,6 +57,13 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	public static ?\Closure $read_rows = null;
 
 	/**
+	 * Each open reader's tables, by alias, read once per connection.
+	 *
+	 * @var \WeakMap<Row_Reader,array<string,array<string,true>>>|null
+	 */
+	private static ?\WeakMap $attached = null;
+
+	/**
 	 * A UTC day range as its first second and the second after its last.
 	 *
 	 * @param string $since The first day, Y-m-d.
@@ -88,17 +95,20 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	}
 
 	/**
-	 * A table's rows across every attached partition, as one subquery; with
-	 * no partition attached, an empty row set of its declared columns. Given
-	 * `$ordinal`, each row also carries `partition_ordinal`, its file's place
-	 * among the attached ones, for a read that takes a later partition's row.
+	 * A table's rows across every attached partition whose file holds it, as
+	 * one subquery, so a file opened before a table was declared at the same
+	 * version reads as holding none of it; with no such partition, an empty
+	 * row set of its declared columns. Given `$ordinal`, each row also
+	 * carries `partition_ordinal`, its file's place among the attached ones,
+	 * for a read that takes a later partition's row.
 	 *
 	 * @param Row_Reader $r       The reader.
 	 * @param string     $table   A declared table.
 	 * @param bool       $ordinal Whether each row carries its partition ordinal.
 	 */
 	public static function all( Row_Reader $r, string $table, bool $ordinal = false ): string {
-		if ( [] === $r->aliases() ) {
+		$holding = \array_filter( $r->aliases(), static fn ( string $alias ): bool => isset( self::tables_in( $r )[ $alias ][ $table ] ) );
+		if ( [] === $holding ) {
 			$columns = [];
 			foreach ( self::tables()[ $table ]['columns'] as $column => $type ) {
 				$columns[] = 'CAST( NULL AS ' . \explode( ' ', $type )[0] . " ) AS {$column}";
@@ -109,7 +119,7 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 			return '( SELECT ' . \implode( ', ', $columns ) . ' WHERE 0 )';
 		}
 		$arms = [];
-		foreach ( $r->aliases() as $at => $alias ) {
+		foreach ( $holding as $at => $alias ) {
 			$arms[] = 'SELECT *' . ( $ordinal ? ", {$at} AS partition_ordinal" : '' ) . " FROM {$alias}.{$table}";
 		}
 		return '( ' . \implode( ' UNION ALL ', $arms ) . ' )';
@@ -175,6 +185,16 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				],
 				'key'     => [ 'item_key', 'entity_key' ],
 				'indexes' => [ 'extracted_subjects_item_day' => [ 'item_day' ] ],
+				'retain'  => [ 'item_day', self::RETAIN_DAYS, self::DAY_SECONDS ],
+			],
+			'themes'        => [
+				'columns' => [
+					'item_key' => 'TEXT NOT NULL',
+					'theme'    => 'TEXT NOT NULL',
+					'item_day' => 'INTEGER NOT NULL',
+				],
+				'key'     => [ 'item_key' ],
+				'indexes' => [ 'themes_item_day' => [ 'item_day' ] ],
 				'retain'  => [ 'item_day', self::RETAIN_DAYS, self::DAY_SECONDS ],
 			],
 			'links'         => [
@@ -433,6 +453,28 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				'keep'    => true,
 			],
 		];
+	}
+
+	/**
+	 * The tables each of a reader's files holds, alias => table => true,
+	 * read from each file's `sqlite_master` on the connection's first ask.
+	 *
+	 * @param Row_Reader $r The reader.
+	 * @return array<string,array<string,true>>
+	 */
+	private static function tables_in( Row_Reader $r ): array {
+		self::$attached ??= new \WeakMap();
+		if ( ! isset( self::$attached[ $r ] ) ) {
+			$tables = [];
+			foreach ( $r->aliases() as $alias ) {
+				$tables[ $alias ] = [];
+				foreach ( $r->rows( "SELECT name FROM {$alias}.sqlite_master WHERE type = 'table'", [] ) as [ $name ] ) {
+					$tables[ $alias ][ Core::as_string( $name ) ] = true;
+				}
+			}
+			self::$attached[ $r ] = $tables;
+		}
+		return self::$attached[ $r ];
 	}
 
 	/**

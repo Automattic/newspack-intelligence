@@ -123,10 +123,21 @@
 		gap: base.$space-sm;
 	}
 
-	&__item-head strong {
+	&__item-head :is(strong, h4) {
 		flex: 1 1 auto;
 		min-width: 0;
 		overflow-wrap: anywhere;
+	}
+
+	// A theme group's heading sits in its row as an item's title does.
+	&__item-head h4 {
+		margin: 0;
+	}
+
+	// A theme group's items, disclosed under it, indented a step.
+	&__item > &__items {
+		margin-top: base.$space-sm;
+		padding-inline-start: base.$space-lg;
 	}
 
 	// A lens's filters span the filter grid, each term above its value.

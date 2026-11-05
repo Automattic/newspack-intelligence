@@ -52,6 +52,43 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'Intel_Graph' ], Core::node( 'intel-graph' )->arguments(), 'the Row_Table accepts the schema' );
 	}
 
+	/** An item's theme is one row keyed by the item, dated and kept like its extraction, at the same shape version. */
+	public function test_an_items_theme_is_a_keyed_item_scoped_row(): void {
+		$themes = Intel_Graph_Row_Schema::tables()['themes'];
+
+		$this->assertSame( [ 'item_key' => 'TEXT NOT NULL', 'theme' => 'TEXT NOT NULL', 'item_day' => 'INTEGER NOT NULL' ], $themes['columns'] );
+		$this->assertSame( [ 'item_key' ], $themes['key'] );
+		$this->assertSame( [ 'themes_item_day' => [ 'item_day' ] ], $themes['indexes'] );
+		$this->assertSame( [ 'item_day', 730, 86400 ], $themes['retain'] );
+		$this->assertSame( 3, Intel_Graph_Row_Schema::version() );
+	}
+
+	/**
+	 * An attached partition whose file lacks a table, as a file a worker
+	 * opened before the table was declared does, reads as holding none of
+	 * it, keeping every other partition's rows and ordinals; with no file
+	 * holding it, the table is an empty typed row set.
+	 */
+	public function test_a_partition_lacking_a_table_reads_as_holding_none_of_it(): void {
+		$graph = $this->projector_graph();
+		self::deliver( $graph, Intel_Event::make( 'item_recorded', [ 'item_key' => 'feed:wren-6610', 'source' => 'feed', 'tier' => 'public', 'url' => 'https://wren.example/a', 'title' => 'Wren Ledger mail stops', 'body' => 'Mail stopped.', 'item_ts' => 1791300000, 'retrieved_ts' => 1791300000 ], 'machine:source:feed@9.4.1', '9.4.1' ) );
+		self::deliver( $graph, Intel_Event::make( 'extraction_recorded', [ 'item_key' => 'feed:wren-6610', 'summary' => 'Mail stopped.', 'kind' => 'bug', 'relevance' => 6, 'importance' => 5, 'sentiment' => 0.0, 'topics' => [], 'theme' => 'site blocked from sending email', 'retrieved_ts' => 1791300000 ], 'machine:extract@9.4.1', '9.4.1' ) );
+		$graph->save_state();
+		$p0 = \Newspack_Nodes\Table_Node::file( 'intel-graph', 0 );
+		$p1 = \Newspack_Nodes\Table_Node::file( 'intel-graph', 1 );
+		( new \PDO( "sqlite:{$p0}" ) )->exec( "VACUUM INTO '{$p1}'" );
+		( new \PDO( "sqlite:{$p1}" ) )->exec( 'DROP TABLE themes' );
+
+		$both  = \Newspack_Nodes\Sqlite_Arm::open_rows( [ 0 => $p0, 1 => $p1 ], Intel_Graph_Row_Schema::version() );
+		$alone = \Newspack_Nodes\Sqlite_Arm::open_rows( [ 1 => $p1 ], Intel_Graph_Row_Schema::version() );
+
+		$this->assertSame( [ [ 'site blocked from sending email', 0 ] ], $both->rows( 'SELECT theme, partition_ordinal FROM ' . Intel_Graph_Row_Schema::all( $both, 'themes', true ) . ' t', [] ) );
+		$this->assertSame( [ [ 'site blocked from sending email' ] ], $both->rows( 'SELECT theme FROM ' . Intel_Graph_Row_Schema::all( $both, 'themes' ) . ' t', [] ), 'a second read of one connection answers alike' );
+		$this->assertSame( [ [ 0 ], [ 1 ] ], $both->rows( 'SELECT partition_ordinal FROM ' . Intel_Graph_Row_Schema::all( $both, 'items', true ) . ' i ORDER BY 1', [] ) );
+		$this->assertSame( [], $alone->rows( 'SELECT theme FROM ' . Intel_Graph_Row_Schema::all( $alone, 'themes' ) . ' t', [] ) );
+		$this->assertSame( [ [ 'feed:wren-6610' ] ], $alone->rows( 'SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $alone, 'items' ) . ' i', [] ) );
+	}
+
 	/**
 	 * A read given a line answers null while the projection will not open,
 	 * logged once; a read given none throws.

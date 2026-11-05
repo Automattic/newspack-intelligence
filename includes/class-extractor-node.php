@@ -6,7 +6,8 @@
  * the model-call node its `make_node` line names, `intel:llm`, naming the
  * `extract` prompt, its inputs the topics it offers by name and key, the
  * profile and the audience, and carrying the resolution less its item, so
- * the answer finishes it (`Asks_Model`).
+ * the answer finishes it (`Asks_Model`); the prompt offers the themes
+ * current when it is sent.
  * It writes an `extraction_recorded` naming topic keys plus a
  * `claim_asserted` per claim whose subject is an entity the item links,
  * addressed by TO to the writer its `make_node` line names (substrate
@@ -38,7 +39,9 @@
  * MAX_ATTEMPTS; the struct it reads carries the `attempt` that counts them, and
  * the retry stays owed its extraction when the struct was (`extract`), whose
  * request waits behind new work. The topics offered come from the process's
- * shared `Entity_Index::current()`, the one the Resolver reads, and the names
+ * shared `Entity_Index::current()`, the one the Resolver reads; an
+ * extraction's theme is written only when its answer names one; and the
+ * names
  * claims resolve through from the one current when the answer lands. Each
  * extraction publishes its status: heuristic, naming the group, a call that
  * answered, or the failure of one that did not.
@@ -264,7 +267,7 @@ class Extractor_Node extends Node {
 			'sentiment'    => $parsed['sentiment'],
 			'topics'       => \array_map( static fn ( string $name ): string => $topics[ $name ], $parsed['topics'] ),
 			'retrieved_ts' => $item['retrieved_ts'],
-		];
+		] + \array_intersect_key( $parsed, [ 'theme' => true ] );
 		$this->emit( $this->writer, Intel_Event::machine_event( $stage, 'extraction_recorded', $fields ) );
 		if ( self::HEURISTIC_STAGE !== $stage ) {
 			$given = \array_keys( \array_filter( $linked, static fn ( array $link ): bool => $link[1] ) );

@@ -811,6 +811,27 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( [ [ self::GAZETTE, 'won', self::PEABODY ] ], \array_map( static fn ( array $e ): array => [ $e['subject_key'], $e['predicate'], $e['object_key'] ], $claims ) );
 	}
 
+	/**
+	 * The theme an answer names is written normalized; an answer naming
+	 * none, and the heuristic stand-in, write none. The request carries no
+	 * themes: the prompt reads them as it is sent.
+	 */
+	public function test_an_extraction_records_the_theme_its_answer_names(): void {
+		$this->answer( '{"summary":"Harbor Gazette cannot send mail.","kind":"bug","theme":"  Site Blocked   from Sending EMAIL "}' );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+		$this->answer( '{"summary":"Harbor Gazette cannot send mail.","kind":"bug","theme":" "}' );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+		$this->answer( '{"summary":"Harbor Gazette cannot send mail.","kind":"bug"}' );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+		$this->answer( 'throw' );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$extractions = \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'extraction_recorded' === $e['event'] ) );
+		$this->assertSame( [ 'site blocked from sending email', null, null, null ], \array_map( static fn ( array $e ): ?string => $e['theme'] ?? null, $extractions ) );
+		$this->assertSame( [ 'bug', 'bug', 'bug', 'other' ], \array_column( $extractions, 'kind' ) );
+		$this->assertSame( [ 'topics', 'profile', 'audience' ], \array_keys( $this->out->requests[0][ Message::VALUE ]['inputs'] ) );
+	}
+
 	/** The index is held for its TTL, then read again. */
 	public function test_the_topics_reload_after_the_index_ttl(): void {
 		$this->answer( '{"summary":"Harbor Gazette wins.","topics":["Awards"]}' );
