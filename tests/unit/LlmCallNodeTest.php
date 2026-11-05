@@ -775,6 +775,46 @@ final class LlmCallNodeTest extends TestCase {
 		$this->assertSame( [ 'about_publisher' => 0.31, 'theme_choice' => [ 'choice' => 't2', 'confidence' => 0.88 ] ], $this->caller->captured[0][ Message::VALUE ]['decision'] );
 	}
 
+	/** A review of a client's launch offered themes asks all three questions in one request, and all three answers come back together. */
+	public function test_a_review_of_a_launch_asks_every_question_in_one_request(): void {
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node = $this->llm();
+		$this->ask_decision( $node, 'feed:wharf-77', [ 'publisher' => 'Kestrel Lantern Harbor', 'themes' => self::OFFERED, 'summary' => 'Heron Weekly goes live.', 'kind' => 'launch' ], self::item( 'feed:wharf-77' ) );
+
+		$this->assertSame( [ self::SYSTEMONE ], $this->dispatched );
+		$this->assertSame( [ 'about_publisher', 'went_live', 'theme_choice' ], \array_keys( \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true )['questions'] ) );
+
+		$body                                       = \json_decode( self::reviewed( 0.74, 't1', 0.92 ), true );
+		$body['answers']['went_live']               = [ 'type' => 'noul', 'noul' => 0.13 ];
+		$this->complete_nth( 0, (string) \json_encode( $body ) );
+
+		$this->assertSame( [ 'about_publisher' => 0.74, 'went_live' => 0.13, 'theme_choice' => [ 'choice' => 't1', 'confidence' => 0.92 ] ], $this->caller->captured[0][ Message::VALUE ]['decision'] );
+	}
+
+	/**
+	 * A `went_live` missing or out of range answers an error naming it.
+	 *
+	 * @return array<string,array{0:array<string,mixed>}>
+	 */
+	public static function bad_went_lives(): array {
+		return [
+			'no answer'       => [ [] ],
+			'a noul past one' => [ [ 'went_live' => [ 'type' => 'noul', 'noul' => 1.7 ] ] ],
+		];
+	}
+
+	/** @param array<string,mixed> $answers What the body answers. */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_went_lives' )]
+	public function test_a_bad_went_live_answers_an_error( array $answers ): void {
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node = $this->llm();
+		$this->ask_decision( $node, 'feed:wharf-78', [ 'publisher' => '', 'themes' => [], 'summary' => 'Heron Weekly goes live.', 'kind' => 'launch' ], self::item( 'feed:wharf-78' ) );
+
+		$this->complete_nth( 0, (string) \json_encode( [ 'answers' => $answers ] ) );
+
+		$this->assertSame( 'AI proxy decision names no noul from 0 to 1 for went_live', $this->caller->captured[0][ Message::VALUE ]['error'] );
+	}
+
 	/**
 	 * A choice naming a key it did not offer, or a confidence missing or out
 	 * of range, answers an error, as a noul does.
@@ -867,9 +907,9 @@ final class LlmCallNodeTest extends TestCase {
 		$this->assertSame( [ [], [ self::COMPLETIONS ] ], [ $writer->captured, $this->dispatched ], 'asked, and nothing written before the answer' );
 		$this->assertStringContainsString( 'Heron Dispatch opens a bureau', (string) $this->sent[0][ \CURLOPT_POSTFIELDS ] );
 
-		$this->complete_nth( 0, self::completion( '{"summary":"Heron Dispatch opens a coastal bureau.","kind":"launch","relevance":6,"importance":4}' ) );
+		$this->complete_nth( 0, self::completion( '{"summary":"Heron Dispatch opens a coastal bureau.","kind":"partnership","relevance":6,"importance":4}' ) );
 
-		$this->assertSame( [ [ 'extraction_recorded', 'Heron Dispatch opens a coastal bureau.', 'launch' ], [ 'subjects_extracted', null, null ] ], \array_map( static fn ( array $m ): array => [ $m[ Message::VALUE ]['event'], $m[ Message::VALUE ]['summary'] ?? null, $m[ Message::VALUE ]['kind'] ?? null ], $writer->captured ) );
+		$this->assertSame( [ [ 'extraction_recorded', 'Heron Dispatch opens a coastal bureau.', 'partnership' ], [ 'subjects_extracted', null, null ] ], \array_map( static fn ( array $m ): array => [ $m[ Message::VALUE ]['event'], $m[ Message::VALUE ]['summary'] ?? null, $m[ Message::VALUE ]['kind'] ?? null ], $writer->captured ) );
 		$this->assertSame( [ 'feed:heron-4' ], \array_map( static fn ( array $m ): string => $m[ Message::VALUE ]['item']['item_key'], $deduper->captured ) );
 	}
 

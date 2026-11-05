@@ -449,7 +449,7 @@ final class ExtractorNodeTest extends TestCase {
 		$asked = \array_column( $this->out->requests, Message::VALUE );
 		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( $asked, 'prompt' ) );
 		$this->assertSame( [ true, true ], \array_column( $asked, 'backlog' ) );
-		$this->assertSame( [ [], [ 'topics' => $asked[0]['inputs']['topics'], 'publisher' => 'Kestrel Lantern Harbor', 'themes' => [], 'summary' => 'Mesa Courier wins a transit grant.' ] ], [ $asked[1]['options'], $asked[1]['inputs'] ] );
+		$this->assertSame( [ [], [ 'topics' => $asked[0]['inputs']['topics'], 'publisher' => 'Kestrel Lantern Harbor', 'themes' => [], 'summary' => 'Mesa Courier wins a transit grant.', 'kind' => 'award' ] ], [ $asked[1]['options'], $asked[1]['inputs'] ] );
 		$this->assertSame( [ 'about_publisher' ], \array_keys( Prompts::questions( $asked[1]['inputs'] ) ), 'an item offered no theme is asked no theme question' );
 		$this->assertSame( [ [ 'other', 3 ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['importance'] ], $this->extractions() ) );
 		$this->assertSame( [ 3 ], \array_column( $this->forwarded(), 'importance' ) );
@@ -588,6 +588,127 @@ final class ExtractorNodeTest extends TestCase {
 
 		$this->assertSame( [ 'extract' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
 		$this->assertSame( [ [ 'award', 'grant step checklist' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['theme'] ], $this->extractions() ) );
+	}
+
+	/**
+	 * A `went_live` below WENT_LIVE_MIN, and a kind of `launch` below it
+	 * alone, writes the kind as `other`, the floor of `launch` not lifting
+	 * it; at WENT_LIVE_MIN or more the kind stands, with its floor.
+	 *
+	 * @return array<string,array{0:float,1:string,2:int}>
+	 */
+	public static function went_lives(): array {
+		return [
+			'a checklist'    => [ 0.12, 'other', 3 ],
+			'a real launch'  => [ 0.83, 'launch', 7 ],
+			'on the boundary' => [ 0.5, 'launch', 7 ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'went_lives' )]
+	public function test_a_launch_stands_only_when_it_went_live( float $went_live, string $kind, int $importance ): void {
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->extractor->add_importance_floor( 'launch', 7 );
+		$this->answer( '{"summary":"Mesa Courier site launch checklist.","kind":"launch","relevance":6,"importance":3,"theme":"community site launch"}' );
+		$this->decide( [ 'decision' => [ 'went_live' => $went_live ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [] ) );
+
+		$this->assertSame( [ [ $kind, $importance, 'community site launch' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['importance'], $e['theme'] ], $this->extractions() ) );
+		$this->assertSame( 0.5, Extractor_Node::WENT_LIVE_MIN );
+	}
+
+	/** A launch no client published and offered no theme is reviewed all the same, asked `went_live` alone. */
+	public function test_a_launch_owes_a_review_of_its_own(): void {
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier goes live.","kind":"launch"}' );
+		$this->decide( [ 'decision' => [ 'went_live' => 0.91 ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [] ) );
+
+		$asked = \array_column( $this->out->requests, Message::VALUE );
+		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( $asked, 'prompt' ) );
+		$this->assertSame( [ 'went_live' ], \array_keys( Prompts::questions( $asked[1]['inputs'] ) ) );
+	}
+
+	/** Any kind but `launch` is not asked `went_live`, whatever else its review asks. */
+	public function test_another_kind_is_not_asked_whether_it_went_live(): void {
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ), ...self::themed_neighbours() );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"funding"}' );
+		$this->decide( [ 'decision' => [ 'theme_choice' => [ 'choice' => 'none', 'confidence' => 0.9 ] ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'title' => 'Mesa Courier wins a transit grant' ] ) );
+
+		$this->assertSame( [ 'theme_choice' ], \array_keys( Prompts::questions( $this->out->requests[1][ Message::VALUE ]['inputs'] ) ) );
+		$this->assertSame( [ 'funding' ], \array_column( $this->extractions(), 'kind' ) );
+	}
+
+	/**
+	 * A client's launch offered themes asks all three questions in one
+	 * request, and takes each answer: either noul below its bar writes
+	 * `other`, and the theme choice stands either way.
+	 *
+	 * @return array<string,array{0:float,1:float,2:string}>
+	 */
+	public static function three_answers(): array {
+		return [
+			'not about the client' => [ 0.2, 0.9, 'other' ],
+			'not gone live'        => [ 0.9, 0.2, 'other' ],
+			'both clear'           => [ 0.9, 0.9, 'launch' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'three_answers' )]
+	public function test_a_clients_launch_asks_three_questions_in_one_request( float $about, float $went_live, string $kind ): void {
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ), ...self::themed_neighbours() );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"launch","theme":"grant step checklist"}' );
+		$this->decide( [ 'decision' => [ 'about_publisher' => $about, 'went_live' => $went_live, 'theme_choice' => [ 'choice' => 't1', 'confidence' => 0.9 ] ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+
+		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
+		$this->assertSame( [ 'about_publisher', 'went_live', 'theme_choice' ], \array_keys( Prompts::questions( $this->out->requests[1][ Message::VALUE ]['inputs'] ) ) );
+		$this->assertSame( [ [ $kind, 'transit funding round' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['theme'] ], $this->extractions() ) );
+	}
+
+	/**
+	 * A `went_live` missing or not a number fails the review, which keeps the
+	 * reply's kind and theme, logged, and parks no retry.
+	 *
+	 * @return array<string,array{0:array<string,mixed>}>
+	 */
+	public static function bad_went_lives(): array {
+		return [
+			'no answer'    => [ [] ],
+			'not a number' => [ [ 'went_live' => 'high' ] ],
+		];
+	}
+
+	/** @param array<string,mixed> $decision What the review answered. */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_went_lives' )]
+	public function test_a_bad_went_live_fails_the_review_and_keeps_the_kind( array $decision ): void {
+		$stderr = $this->capture_stderr();
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier site launch checklist.","kind":"launch","theme":"community site launch"}' );
+		$this->decide( [ 'decision' => $decision ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [] ) );
+
+		$this->assertSame( [ [ 'launch', 'community site launch' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['theme'] ], $this->extractions() ) );
+		$this->assertSame( [], $this->parked() );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'extract review failed: ' ) );
+	}
+
+	/** A restricted launch asks no decision. */
+	public function test_a_restricted_launch_asks_no_decision(): void {
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier goes live.","kind":"launch"}' );
+		$this->decide( [ 'decision' => [ 'went_live' => 0.12 ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'tier' => 'restricted' ] ) );
+
+		$this->assertSame( [ 'extract' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
+		$this->assertSame( [ 'launch' ], \array_column( $this->extractions(), 'kind' ) );
 	}
 
 	/** A review that fails keeps both the reply's kind and its theme. */

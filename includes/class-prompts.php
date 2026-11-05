@@ -56,6 +56,9 @@ class Prompts {
 	/** The noul question whether a client's article is about the client itself or the news industry. */
 	public const ABOUT_PUBLISHER = 'about_publisher';
 
+	/** The noul question whether an item of kind `launch` reports something that went live. */
+	public const WENT_LIVE = 'went_live';
+
 	/** The choice question which offered theme names the event or initiative an item is part of. */
 	public const THEME_CHOICE = 'theme_choice';
 
@@ -68,6 +71,9 @@ class Prompts {
 
 	/** What `about_publisher` asks. */
 	private const ABOUT_PUBLISHER_ASKS = 'Is this article about the publisher itself (its own awards, fundraising, launches, products, staff or finances) or about the news industry (journalism, publishing, funding for newsrooms, platforms newsrooms use)? Answer no when it is the publisher\'s reporting on someone else.';
+
+	/** What `went_live` asks. */
+	private const WENT_LIVE_ASKS = 'Does this item report that a site, product or publication has actually gone live or been publicly announced? Answer no when it is a ticket, checklist, plan or task preparing for a launch.';
 
 	/** What `theme_choice` asks. */
 	private const THEME_CHOICE_ASKS = 'Which of these themes names the event or initiative this item is part of?';
@@ -359,9 +365,10 @@ class Prompts {
 
 	/**
 	 * The questions an extract review's inputs call for: `about_publisher`,
-	 * a noul, when they name a `publisher`, and `theme_choice`, a choice,
-	 * when they offer `themes`, its criteria each offered theme keyed `t1`
-	 * to `tN` and told by its theme and example, then `none`.
+	 * a noul, when they name a `publisher`; `went_live`, a noul, when their
+	 * `kind` is `launch`; and `theme_choice`, a choice, when they offer
+	 * `themes`, its criteria each offered theme keyed `t1` to `tN` and told
+	 * by its theme and example, then `none`.
 	 *
 	 * @param array<array-key,mixed> $inputs The review's inputs.
 	 * @return array<string,array{type:string,instructions:string,criteria?:array<string,string>}>
@@ -372,6 +379,12 @@ class Prompts {
 			$questions[ self::ABOUT_PUBLISHER ] = [
 				'type'         => 'noul',
 				'instructions' => self::ABOUT_PUBLISHER_ASKS,
+			];
+		}
+		if ( 'launch' === ( $inputs['kind'] ?? null ) ) {
+			$questions[ self::WENT_LIVE ] = [
+				'type'         => 'noul',
+				'instructions' => self::WENT_LIVE_ASKS,
 			];
 		}
 		$criteria = [];

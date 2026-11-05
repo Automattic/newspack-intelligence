@@ -309,6 +309,20 @@ final class PromptsTest extends TestCase {
 		$this->assertSame( [ 'about_publisher', 'theme_choice' ], \array_keys( Prompts::questions( [ 'publisher' => 'Kestrel Lantern Harbor' ] + $inputs ) ) );
 	}
 
+	/** A review of a `launch` asks whether it went live, as a noul, and a review of any other kind does not. */
+	public function test_a_review_of_a_launch_asks_whether_it_went_live(): void {
+		$this->assertSame(
+			[
+				'went_live' => [
+					'type'         => 'noul',
+					'instructions' => 'Does this item report that a site, product or publication has actually gone live or been publicly announced? Answer no when it is a ticket, checklist, plan or task preparing for a launch.',
+				],
+			],
+			Prompts::questions( [ 'publisher' => '', 'themes' => [], 'summary' => 'Heron Weekly goes live.', 'kind' => 'launch' ] )
+		);
+		$this->assertSame( [], Prompts::questions( [ 'publisher' => '', 'themes' => [], 'summary' => 'Heron Weekly wins a grant.', 'kind' => 'funding' ] ) );
+	}
+
 	/** A choice's key reads back as the theme it offered; `none`, and a key it did not offer, as none. */
 	public function test_a_chosen_key_reads_back_as_its_theme(): void {
 		$inputs = [ 'themes' => [ [ 'theme' => 'regional transit grant', 'example' => 'x' ], [ 'theme' => 'transit funding round', 'example' => 'y' ] ] ];

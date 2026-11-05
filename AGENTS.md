@@ -616,6 +616,9 @@ questions }`, the decision model's, the state and questions
 `Prompts::questions()` reads off its inputs, at least one, or it will not
 send: `about_publisher`, a `noul`, when they name a `publisher`, asking
 whether the article is about the publisher itself or the news industry;
+`went_live`, a `noul`, when their `kind` is `launch`, asking whether the
+item reports that something actually went live or was publicly announced,
+rather than a ticket, checklist, plan or task preparing for a launch;
 and `theme_choice`, a `choice`, when they offer `themes`, asking which
 names the event or initiative the item is part of, its `criteria` each
 offered theme keyed `t1` to `tN`, told as `<theme>: <example>`, then
@@ -828,20 +831,23 @@ while it is still owed one, and the resolution it reads carries that
 
 An answer that parses is owed a review by the decision model when its
 item is not restricted, since a restricted item's data stays with the
-chat model alone, and either question applies: `about_publisher` when the
+chat model alone, and any question applies: `about_publisher` when the
 item's `inputs.publisher` names an open client and its kind is not
-`other`, and `theme_choice` when the projection offers it themes, read
+`other`, `went_live` when its kind is `launch`, because the extraction
+model types a launch checklist `launch`, and `theme_choice` when the
+projection offers it themes, read
 again as the answer lands through `Prompts::offered_themes()`, as an
 `extract` prompt offers them. Such an answer writes nothing yet: the
-extractor asks `intel:llm` for one `extract_review`, both questions in one
-request where both apply, its inputs the topics, the publisher, '' when
-that question does not apply, the themes and the reply's summary, no
+extractor asks `intel:llm` for one `extract_review`, every question that
+applies in one request, its inputs the topics, the publisher, '' when
+that question does not apply, the themes, the reply's summary and its kind, no
 options, its carry the resolution and the extraction's reply, as backlog
 when the extraction was. Its answer finishes the extraction once, from
-that reply, read again by `Prompts::parse_extract()`: a `noul` below
-`Extractor_Node::ABOUT_PUBLISHER_MIN` (0.5) writes the kind as `other`,
+that reply, read again by `Prompts::parse_extract()`: a noul below its
+bar, `Extractor_Node::ABOUT_PUBLISHER_MIN` or `WENT_LIVE_MIN` (each 0.5),
+writes the kind as `other`,
 before the importance floor applies, so the floor of the kind the model
-gave does not lift it, and one at or above it keeps the kind; an offered
+gave does not lift it, and at or above every bar asked the kind stands; an offered
 theme chosen with a `confidence` of `Extractor_Node::THEME_CHOICE_MIN`
 (0.6) or more is the theme written, and a weaker choice, or `none`, keeps
 the reply's own. A review that fails, an unlent group, or an answer to a
@@ -852,7 +858,7 @@ the extraction is still written, and a review answer whose finish throws
 parks a retry as any answer does. A failure to start a review, the themes
 read or the request throwing, is the same failure: the reply already paid
 for is recorded, and only a cooperative stop propagates. A restricted item, a reply that does not
-parse, or one owed neither question asks no review. Either way it then
+parse, or one owed no question asks no review. Either way it then
 forwards an `item_extracted` struct `{ item, relevance, importance }` to its
 target, `deduper`; it is a struct between two nodes, not an event kind.
 

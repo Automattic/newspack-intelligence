@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **A `launch` must have gone live.** `extract_review` also asks the noul question `went_live` of any reply of kind `launch`, in the same one request as `about_publisher` and `theme_choice`, so a launch no client published and offered no theme is now reviewed too. A `went_live` below `Extractor_Node::WENT_LIVE_MIN` (0.5) writes the kind as `other` before the importance floor applies, so a launch checklist or prep ticket leaves the `launch` kind while it keeps its theme. A missing or bad answer fails the review, which keeps the reply's kind and theme, and a restricted item is still never sent. `KIND_DEFINITIONS['launch']` is unchanged.
+
 ## [0.36.8] - 2026-11-05
 
 ### Fixed
