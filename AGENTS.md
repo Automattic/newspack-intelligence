@@ -1091,8 +1091,9 @@ blank `q` or `source` matches nothing. Days parse through
 `Intel_Graph_Row_Schema::range()`. An answer never carries a body, but for an item's `excerpt`, its opening as
 plain text: `ri` reads `Graph_Query::EXCERPT_READ_CHARS` (4,096) characters of
 it as `head`, so a list moves no whole body, and `Graph_Query::excerpt()`
-strips the markup, decodes the entities, collapses the whitespace and cuts it
-on a word boundary to `EXCERPT_CHARS` (800), an ellipsis marking a cut. Every
+cuts a `<script>` or `<style>` left open, since stripping keeps what an
+unclosed one holds, strips the markup, decodes the entities, collapses the
+whitespace and cuts it on a word boundary to `EXCERPT_CHARS` (800), an ellipsis marking a cut. Every
 read answering through `ITEM_COLUMNS` carries it, `search`, a theme group, a
 timeline and watch matches, under the tiers `ri` admits; `limit` is
 capped at `Graph_Query::MAX_LIMIT` (200); trend rows, related entities and
@@ -2211,13 +2212,19 @@ the window with none set, waits while the node asks `issue { id }`, which
 answers the same fields flat with the whole description, and records from
 that, so its first extraction reads all of it; an issue that did not move, or
 past the pass's room, records as cut. Once the pass's team pages are in, the
-walk asks `issue` for the stored `linear` items of the last 30 days still cut
-short, newest first, as the room left under
-`Source_Node::MAX_REQUESTS_PER_PASS` allows, a process asking each once, so
-the backlog drains over passes and stops with no verb. What `issue` answers
-of a stored item grows it (see The item contract); what it does not answer,
-by a failed call or an answer naming no description, records as cut when the
-pass ends, logged. `Context_A8C_P2_Node` carries the window its first page asked
+walk asks `issue` for stored `linear` items of the last 30 days still cut
+short, as many as the room left under
+`Source_Node::MAX_REQUESTS_PER_PASS` allows, drawn at random, because a worker
+lives 595 seconds and a pass comes every 900, so any order would let rows that
+never grow, a deleted issue or a genuine 300 characters, take the room every
+pass. The backlog drains over passes and stops with no verb, and the page's
+items record before it starts, so a walk that fails, logged, costs them
+nothing. What `issue` answers of a stored item grows it (see The item
+contract); a walk's answer for a row no longer stored writes nothing. The cut
+item rides as its `issue` request's note, through `call()` and `queue()`, so
+a request that fails, answers no description or is dropped, which `abandoned()`
+hears with its note, records as cut, logged, and a stop loses nothing the next
+page does not list again. `Context_A8C_P2_Node` carries the window its first page asked
 forward to every later page of the pass.
 
 **Seams and the model-call contract.** Each seam is a static `?\Closure`
@@ -2306,6 +2313,8 @@ rerun never selects them, since the selection reads that row. So purge only once
 the resolver has caught up — `wp nodes status` lists the reader
 `<topology>.intel-items-resolve.p<N>` with nothing behind, `<topology>`
 being the one it lists for Intelligence.
+An `item_grown` whose read of the row came just before the purge was
+projected restores that row; a rerun of `items purge` removes it.
 A worker running a release older than the one carrying `item_purged`
 drops every purge its writer receives as an unknown kind, so restart the
 workers (`wp nodes restart all`) after deploying that release and before

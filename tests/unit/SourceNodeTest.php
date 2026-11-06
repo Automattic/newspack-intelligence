@@ -1472,7 +1472,7 @@ class Fake_Source_Node extends Source_Node {
 		}
 	}
 
-	protected function abandoned( string $subject ): void {
+	protected function abandoned( string $subject, array $note ): void {
 		$failure               = $this->abandon_failure;
 		$this->abandon_failure = null;
 		if ( null !== $failure ) {

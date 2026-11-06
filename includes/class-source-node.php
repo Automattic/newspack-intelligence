@@ -24,6 +24,7 @@ use Newspack_Nodes\Publishes_Status;
 use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Schema_Reflection;
 use Newspack_Nodes\Shutdown_Sweeper;
+use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Timer_Node;
 use Newspack_Nodes\Worker_Should_Stop;
 
@@ -388,7 +389,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 					if ( $this->sent >= $this->max_requests() ) {
 						$this->print_less_often( 'a pass reached ' . $this->max_requests() . ' requests; sending no more: ', Core::terminal_safe( $request[0] ) );
 						$this->abandon( $key );
-						$this->abandoned( $key );
+						$this->abandoned( $key, $request[3] );
 						$this->drop_queue();
 						break 2;
 					}
@@ -530,7 +531,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 			$this->send_curl( $key, $value, $request );
 		} catch ( \Throwable $e ) {
 			$this->abandon( $key );
-			$this->abandoned( $key );
+			$this->abandoned( $key, $request[3] );
 			throw $e;
 		}
 	}
@@ -753,16 +754,24 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * Drop every request not in flight, each handed to abandoned(), since
-	 * none will answer: those queued since the last send, and every one the
-	 * frontier holds.
+	 * Drop every request not in flight, each handed to abandoned() with its
+	 * note, since none will answer: those queued since the last send, and
+	 * every one the frontier holds, taken first because `drain()` answers no
+	 * values.
 	 */
 	private function drop_queue(): void {
+		$notes = \array_map( static fn ( array $request ): array => $request[3], $this->queue + $this->adds );
+		do {
+			$page = $this->frontier->take( Table_Node::MAX_MEMBERS_LIMIT );
+			foreach ( $page as [ $subject, $value ] ) {
+				$notes[ $subject ] ??= Core::arr( Core::arr( $value )[3] ?? null );
+			}
+		} while ( Table_Node::MAX_MEMBERS_LIMIT === \count( $page ) );
 		$dropped     = [ ...\array_keys( $this->adds ), ...\array_diff( $this->frontier->drain(), \array_keys( $this->in_flight ) ) ];
 		$this->queue = [];
 		$this->adds  = [];
 		foreach ( \array_unique( \array_map( 'strval', $dropped ) ) as $subject ) {
-			$this->abandoned( $subject );
+			$this->abandoned( $subject, $notes[ $subject ] ?? [] );
 		}
 	}
 
@@ -770,9 +779,10 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * Take a request that will never answer; nothing unless a source holds
 	 * something for it.
 	 *
-	 * @param string $subject The request's subject.
+	 * @param string                 $subject The request's subject.
+	 * @param array<array-key,mixed> $note    What it was queued with.
 	 */
-	protected function abandoned( string $subject ): void {
+	protected function abandoned( string $subject, array $note ): void {
 	}
 
 	/**

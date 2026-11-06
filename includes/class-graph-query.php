@@ -31,7 +31,7 @@
  *
  * Every value a caller sends is bound, a blank one as given (ADR-25); `q`
  * reaches FTS5 only as quoted phrases, one per word. An answer never carries
- * an item body. A projection that will not open answers `available: false`
+ * an item's body, but its excerpt, the opening as plain text. A projection that will not open answers `available: false`
  * beside empty rows; a graph that has not been written by any partition answers
  * empty rows,
  * available.
@@ -556,18 +556,44 @@ final class Graph_Query {
 	/**
 	 * A body's opening as plain text, cut on a word boundary to
 	 * EXCERPT_CHARS with an ellipsis when cut, as it is when the read stopped
-	 * short of the body's end, whose last word may be partial.
+	 * short of the body's end, whose last word may be partial. A `<script>`
+	 * or `<style>` left open is cut first: stripping tags keeps what an
+	 * unclosed one holds, which is source, and what precedes it is whole.
 	 *
 	 * @param string $head The body's first EXCERPT_READ_CHARS characters.
 	 */
 	private static function excerpt( string $head ): string {
-		$plain = Entity_Index::plain( $head );
-		if ( '' === $plain || ( \mb_strlen( $plain ) <= self::EXCERPT_CHARS && \mb_strlen( $head ) < self::EXCERPT_READ_CHARS ) ) {
-			return $plain;
+		$text  = self::closed( $head );
+		$plain = Entity_Index::plain( $text );
+		if ( '' === $plain ) {
+			return '';
+		}
+		if ( \mb_strlen( $plain ) <= self::EXCERPT_CHARS ) {
+			if ( $text !== $head ) {
+				return "{$plain}…";
+			}
+			if ( \mb_strlen( $head ) < self::EXCERPT_READ_CHARS ) {
+				return $plain;
+			}
 		}
 		$kept  = \mb_substr( $plain, 0, self::EXCERPT_CHARS + 1 );
 		$space = \mb_strrpos( $kept, ' ' );
 		return \mb_substr( $kept, 0, false === $space ? self::EXCERPT_CHARS : $space ) . '…';
+	}
+
+	/**
+	 * Text up to any `<script` or `<style` left unclosed.
+	 *
+	 * @param string $text The text.
+	 */
+	private static function closed( string $text ): string {
+		foreach ( [ 'script', 'style' ] as $tag ) {
+			$open = \strripos( $text, "<{$tag}" );
+			if ( false !== $open && false === \stripos( $text, "</{$tag}", $open ) ) {
+				$text = \substr( $text, 0, $open );
+			}
+		}
+		return $text;
 	}
 
 	/**

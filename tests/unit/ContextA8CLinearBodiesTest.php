@@ -4,11 +4,15 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Context_A8C_Linear_Node;
+use Newspack_Intelligence\Intel_Event;
+use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Source_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
+use Newspack_Nodes\Row_Table_Node;
 use Newspack_Nodes\Tests\TestCase;
 use Newspack_Nodes\Topology_Registry;
+use Newspack_Nodes\Worker_Should_Stop;
 
 require_once __DIR__ . '/../support/drives-context-a8c.php';
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
@@ -40,6 +44,7 @@ final class ContextA8CLinearBodiesTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
+		Intel_Graph_Row_Schema::$read_rows = null;
 		Topology_Registry::reset();
 		$this->uninstall_curl();
 		parent::tearDown();
@@ -175,7 +180,7 @@ final class ContextA8CLinearBodiesTest extends TestCase {
 		$this->complete( self::MCP, $body, $code );
 
 		$this->assertSame( [ self::cut( 'Heron rollout' ) ], \array_column( $this->events( 'item_recorded' ), 'body' ) );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'recording 1 issues as team-issues cut them' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'recording an issue as team-issues cut it: linear:KESTREL-44' ) );
 	}
 
 	/**
@@ -264,31 +269,100 @@ final class ContextA8CLinearBodiesTest extends TestCase {
 		$this->assertSame( [ [ 'linear:WREN-1', self::whole( 'Heron rollout' ) ] ], \array_map( static fn ( array $e ): array => [ $e['item_key'], $e['body'] ], $this->events( 'item_grown' ) ) );
 	}
 
-	/** The walk takes what room a pass has and goes on where it stopped, the next pass, never asking again what it asked. */
-	public function test_the_walk_pages_across_passes(): void {
+	/**
+	 * Rows that never grow cannot pin the walk: a process starts with no
+	 * memory, every 595 seconds, and older rows are still reached.
+	 */
+	public function test_rows_that_never_grow_cannot_pin_the_walk(): void {
+		$room = Source_Node::MAX_REQUESTS_PER_PASS - 4;
 		$rows = [];
-		foreach ( \range( 1, 80 ) as $n ) {
-			$rows[] = self::item( "linear:WREN-{$n}", 'Cut short', 'linear', 'internal', (int) Core::$now - 86400, self::cut( 'Heron rollout' ) );
+		foreach ( \range( 1, $room ) as $n ) {
+			$rows[] = self::item( "linear:STUCK-{$n}", 'A genuine 300 characters', 'linear', 'internal', (int) Core::$now - 86400, self::cut( 'Heron rollout' ) );
+		}
+		foreach ( [ 'OLDER-1', 'OLDER-2' ] as $id ) {
+			$rows[] = self::item( "linear:{$id}", 'Cut short', 'linear', 'internal', (int) Core::$now - 20 * 86400, self::cut( 'Heron rollout' ) );
 		}
 		$this->seed( ...$rows );
 		$node = $this->linear( 'KESTREL' );
-		$room = Source_Node::MAX_REQUESTS_PER_PASS - 4;
 
-		$this->pass( $node );
-		for ( $n = 0; $n < $room; $n++ ) {
-			$this->complete( self::MCP, 'bad gateway', 502 );
-		}
-		$this->ended();
-		$first = $this->issue_calls();
-		$this->assertCount( $room, $first );
-
-		$this->pass( $node );
-		for ( $n = 0; $n < 80 - $room; $n++ ) {
-			$this->complete( self::MCP, 'bad gateway', 502 );
+		foreach ( \range( 1, 4 ) as $process ) {
+			$this->pass( $node );
+			for ( $n = 0; $n < $room; $n++ ) {
+				$this->complete( self::MCP, 'bad gateway', 502 );
+			}
+			$this->ended();
+			$node = $this->respawn( $node, new Context_A8C_Linear_Node() );
+			$node->interpreter()->dispatch( 'set_interval', [ (string) self::INTERVAL ] );
+			$node->interpreter()->dispatch( 'add_team', [ 'KESTREL' ] );
 		}
 
-		$second = \array_slice( $this->issue_calls(), $room );
-		$this->assertCount( 80 - $room, $second );
-		$this->assertSame( [], \array_intersect( $first, $second ) );
+		$this->assertSame( [ 'OLDER-1', 'OLDER-2' ], \array_values( \array_intersect( [ 'OLDER-1', 'OLDER-2' ], $this->issue_calls() ) ) );
+	}
+
+	/** An item purged while the walk's ask was out writes nothing: only a page's own issue records. */
+	public function test_a_walked_item_purged_before_its_answer_writes_nothing(): void {
+		$this->seed( self::item( 'linear:WREN-9', 'Cut short', 'linear', 'internal', (int) Core::$now - 86400, self::cut( 'Heron rollout' ) ) );
+		$node = $this->linear( 'KESTREL' );
+
+		$this->pass( $node );
+		$this->assertSame( [ 'WREN-9' ], $this->issue_calls() );
+		$this->seed( [ Intel_Event::make( 'item_purged', [ 'item_key' => 'linear:WREN-9', 'reason' => 'a team this site left' ], 'machine:purge@9.4.1', '' ) ] );
+
+		$this->answer( self::issue( 'WREN-9', self::QUIET, self::whole( 'Heron rollout' ) ) );
+
+		$this->assertSame( [ [], [] ], [ $this->events( 'item_recorded' ), $this->events( 'item_grown' ) ] );
+	}
+
+	/** A session refused mid-pass records every issue still waiting, the one in flight and those it dropped. */
+	public function test_a_refused_session_records_what_it_held_as_cut(): void {
+		$stderr = $this->capture_stderr();
+		$node   = $this->linear( 'KESTREL' );
+
+		$this->pass( $node, self::issue( 'KESTREL-61', self::MOVED, self::cut( 'First' ) ), self::issue( 'KESTREL-62', self::MOVED, self::cut( 'Second' ) ), self::issue( 'KESTREL-63', self::MOVED, self::cut( 'Third' ) ) );
+		$this->complete( self::MCP, 'gone', 404 );
+
+		$this->assertEqualsCanonicalizing( [ 'linear:KESTREL-61', 'linear:KESTREL-62', 'linear:KESTREL-63' ], \array_column( $this->events( 'item_recorded' ), 'item_key' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'recording an issue as team-issues cut it: ' ), 'one outage, one line' );
+	}
+
+	/** A walk that fails costs neither the last page's items nor the pass: they record first, and it is logged. */
+	public function test_a_failed_walk_costs_nothing_the_page_held(): void {
+		$stderr = $this->capture_stderr();
+		$node   = $this->linear( 'KESTREL' );
+		$this->throw_on_the_second_read( new \RuntimeException( 'graph file gone 7743' ) );
+
+		$this->pass( $node, self::issue( 'KESTREL-64', self::QUIET, 'A short description.' ) );
+
+		$this->assertSame( [ 'A short description.' ], \array_column( $this->events( 'item_recorded' ), 'body' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'the walk failed: graph file gone 7743' ) );
+	}
+
+	/** A stop falling in the walk propagates, and the page has already recorded. */
+	public function test_a_stop_in_the_walk_propagates_after_the_page_records(): void {
+		$node = $this->linear( 'KESTREL' );
+		$this->throw_on_the_second_read( new Worker_Should_Stop( 'max_runtime 595 reached' ) );
+
+		try {
+			$this->pass( $node, self::issue( 'KESTREL-65', self::QUIET, 'A short description.' ) );
+			$this->fail( 'the stop propagates' );
+		} catch ( Worker_Should_Stop $stop ) {
+			$this->assertSame( 'max_runtime 595 reached', $stop->getMessage() );
+		}
+		$this->assertSame( [ 'A short description.' ], \array_column( $this->events( 'item_recorded' ), 'body' ) );
+	}
+
+	/**
+	 * Let the projection's first read through, and throw on the next.
+	 *
+	 * @param \Throwable $e What the second read throws.
+	 */
+	private function throw_on_the_second_read( \Throwable $e ): void {
+		$reads                             = 0;
+		Intel_Graph_Row_Schema::$read_rows = static function ( \Closure $read ) use ( $e, &$reads ): mixed {
+			if ( 2 === ++$reads ) {
+				throw $e;
+			}
+			return Row_Table_Node::read( Intel_Graph_Row_Schema::class, $read );
+		};
 	}
 }

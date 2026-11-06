@@ -311,6 +311,29 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( $excerpt, self::search( [ 'q' => 'osprey' ] )['items'][0]['excerpt'] );
 	}
 
+	/**
+	 * A read that stops inside a `<style>` or `<script>` shows none of its
+	 * source: what precedes it stands whole, its last word kept, marked as
+	 * cut. A closed one is stripped as any tag is.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public static function bodies_with_source(): array {
+		return [
+			'an open style'   => [ '<p>Tide report</p><style>' . \str_repeat( '.marsh { color: red; } ', 300 ), 'Tide report…' ],
+			'an open script'  => [ '<p>Tide report</p><SCRIPT type="text/javascript">' . \str_repeat( 'var heron = 1; ', 400 ), 'Tide report…' ],
+			'closed'          => [ '<style>.marsh { color: red; }</style><p>Tide report</p><script>var heron = 1;</script> whole', 'Tide report whole' ],
+			'closed then open' => [ '<style>.a { }</style>Tide report<style>' . \str_repeat( '.marsh { color: red; } ', 300 ), 'Tide report…' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bodies_with_source' )]
+	public function test_an_excerpt_shows_no_style_or_script_source( string $body, string $excerpt ): void {
+		$this->seed( self::item( 'feed:osprey-source', 'Osprey tide tables', 'feed', 'public', self::$oct_13, $body ) );
+
+		$this->assertSame( $excerpt, self::search( [ 'q' => 'osprey' ] )['items'][0]['excerpt'] );
+	}
+
 	/** A body far past what is read still ends its excerpt on a word, and an answer still carries no body. */
 	public function test_an_excerpt_is_read_from_the_bodys_opening_alone(): void {
 		$this->seed( self::item( 'feed:osprey-long', 'Osprey tide tables', 'feed', 'public', self::$oct_13, '<div class="wrap">' . \str_repeat( '<span class="x">a</span>', 2000 ) ) );

@@ -11,11 +11,14 @@
  * `description` is cut at CUT_CHARS, so an issue that moved, cut short, is
  * asked of `issue`, which answers it whole, and recorded from that, as Slack
  * reads only the threads that moved; any other records as the page cut it.
- * Once a pass's team pages are in, it walks the stored items of the last
- * BACKFILL_DAYS still cut short, with the room the request cap leaves, a
- * process asking each once. What `issue` answers of a stored item is written
- * as an `item_grown`, the row's own fields with the longer body, only when it
- * is longer than what is stored and than what this process has written.
+ * The item a page cut rides as the `issue` request's note, so a call that
+ * does not answer records it as cut. Once a pass's team pages are in, it
+ * walks the stored items of the last BACKFILL_DAYS still cut short, drawn at
+ * random with the room the request cap leaves, so a row that never grows
+ * cannot pin the walk. What `issue` answers of a stored item is written as an
+ * `item_grown`, the row's own fields with the longer body, only when it is
+ * longer than what is stored and than what this process has written; a walk's
+ * answer for a row since purged writes nothing.
  *
  * @package Newspack_Intelligence
  */
@@ -24,6 +27,7 @@ namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Row_Reader;
+use Newspack_Nodes\Worker_Should_Stop;
 
 \defined( 'ABSPATH' ) || exit;
 
@@ -46,12 +50,6 @@ class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 
 	/** @var list<string> Team keys the `add_team` verb registered and `remove_team` left, in call order. */
 	protected array $teams = [];
-
-	/** @var array<string,array<string,mixed>> Each identifier asked of `issue` => the item as its page cut it, until it answers. */
-	private array $awaited = [];
-
-	/** @var array<string,true> Each identifier this process has asked of `issue`, which the walk asks no more. */
-	private array $asked = [];
 
 	/** @var array<string,int> Each item key's longest body this process has written, in bytes. */
 	private array $written = [];
@@ -76,12 +74,14 @@ class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 
 	/**
 	 * Every status group's issues as items, through the Linear source's
-	 * mapping, but an issue that moved, cut short, which waits for `issue`
-	 * while the pass has room; an issue with no string identifier is
-	 * skipped. The last page opens the walk.
+	 * mapping, recorded here, but an issue that moved, cut short, which rides
+	 * as its `issue` request's note while the pass has room; an issue with no
+	 * string identifier is skipped. The last page then opens the walk, whose
+	 * failure, logged, costs nothing the page held, a stop propagating.
 	 *
 	 * @param array<array-key,mixed> $answer The provider's answer.
-	 * @return array<int,array<string,mixed>>
+	 * @return array<int,array<string,mixed>> Nothing: the page's items are recorded.
+	 * @throws Worker_Should_Stop When the worker is asked to stop.
 	 */
 	private function page( array $answer ): array {
 		$issues = [];
@@ -98,17 +98,23 @@ class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 				}
 				$item = $this->normalize_item( 'linear', $identifier, $issue['title'] ?? '', $issue['url'] ?? '', $issue['description'] ?? '', $issue['updated_at'] ?? '' );
 				if ( 0 < $this->room && self::cut_short( Core::as_string( $issue['description'] ?? null ) ) && \strtotime( Core::as_string( $issue['updated_at'] ?? null ) ) >= $moved ) {
-					$this->awaited[ $identifier ] = $item;
-					$this->ask( $identifier );
+					$this->ask( $identifier, [ 'item' => $item ] );
 					return null;
 				}
 				return $item;
 			}
 		);
-		if ( 0 === --$this->pages ) {
-			$this->walk();
+		$this->record( $items );
+		try {
+			if ( 0 === --$this->pages ) {
+				$this->walk();
+			}
+		} catch ( Worker_Should_Stop $stop ) {
+			throw $stop;
+		} catch ( \Throwable $e ) {
+			$this->print_less_often( 'the walk failed: ', Core::terminal_safe( $e->getMessage() ) );
 		}
-		return $items;
+		return [];
 	}
 
 	/**
@@ -121,18 +127,19 @@ class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 	}
 
 	/**
-	 * Ask `issue` for the stored items of the last BACKFILL_DAYS still cut
-	 * short that this process has not asked, as the pass's room allows, so a
-	 * backlog drains over passes; none, logged, while the projection will not
-	 * open.
+	 * Ask `issue` for stored items of the last BACKFILL_DAYS still cut short,
+	 * as many as the pass's room allows, drawn at random: a worker's memory
+	 * lasts less than a pass's interval, so an order would let rows that
+	 * never grow, a deleted issue or a genuine 300 characters, take the room
+	 * every pass. None, logged, while the projection will not open.
 	 */
 	private function walk(): void {
 		$day   = \intdiv( (int) Core::$now, Intel_Graph_Row_Schema::DAY_SECONDS ) - self::BACKFILL_DAYS;
-		$limit = $this->room + \count( $this->asked );
+		$limit = $this->room;
 		$keys  = Intel_Graph_Row_Schema::read(
 			static fn ( Row_Reader $r ): array => \array_column(
 				$r->rows(
-					'SELECT DISTINCT i.item_key, i.retrieved_day FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' ) . " i WHERE i.source = 'linear' AND i.retrieved_day >= ? AND length( i.body ) = ? AND substr( i.body, -3 ) = ? ORDER BY i.retrieved_day DESC, i.item_key LIMIT ?",
+					'SELECT DISTINCT i.item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' ) . " i WHERE i.source = 'linear' AND i.retrieved_day >= ? AND length( i.body ) = ? AND substr( i.body, -3 ) = ? ORDER BY random() LIMIT ?",
 					[ $day, self::CUT_CHARS, self::CUT_TAIL, $limit ]
 				),
 				0
@@ -140,28 +147,26 @@ class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 			"{$this->name}: no intel-graph to read the issues cut short from; walking none: "
 		);
 		foreach ( $keys ?? [] as $key ) {
-			$identifier = \substr( Core::as_string( $key ), \strlen( 'linear:' ) );
-			if ( 0 < $this->room && ! isset( $this->asked[ $identifier ] ) && ! isset( $this->awaited[ $identifier ] ) ) {
-				$this->ask( $identifier );
-			}
+			$this->ask( \substr( Core::as_string( $key ), \strlen( 'linear:' ) ), [] );
 		}
 	}
 
 	/**
 	 * Ask `issue` for one issue, spending the pass's room.
 	 *
-	 * @param string $identifier The issue.
+	 * @param string                 $identifier The issue.
+	 * @param array<array-key,mixed> $note       The item a page held back, under `item`.
 	 */
-	private function ask( string $identifier ): void {
+	private function ask( string $identifier, array $note ): void {
 		--$this->room;
-		$this->asked[ $identifier ] = true;
-		$this->call( 'linear', 'issue', [ 'id' => $identifier ] );
+		$this->call( 'linear', 'issue', [ 'id' => $identifier ], $note );
 	}
 
 	/**
-	 * The whole of one issue: an item that is new to record, or nothing, its
-	 * stored row grown when this body is longer; an answer naming no
-	 * description leaves it to `pass_ended()`.
+	 * The whole of one issue: a page's new item to record, or nothing, its
+	 * stored row grown when this body is longer. A walk's answer for a row no
+	 * longer stored writes nothing, a purge having taken it; an answer naming
+	 * no description leaves a page's item as its page cut it.
 	 *
 	 * @param string                 $identifier The issue.
 	 * @param array<array-key,mixed> $issue      The provider's answer.
@@ -169,14 +174,13 @@ class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 	 */
 	private function whole( string $identifier, array $issue ): array {
 		if ( ! \is_string( $issue['description'] ?? null ) ) {
-			return [];
+			return $this->as_cut( $this->note() );
 		}
-		unset( $this->awaited[ $identifier ] );
 		$item   = $this->normalize_item( 'linear', $identifier, $issue['title'] ?? '', $issue['url'] ?? '', $issue['description'], $issue['updated_at'] ?? '' );
 		$key    = Core::as_string( $item['item_key'] );
 		$stored = self::stored( $key, $this->name );
 		if ( null === $stored ) {
-			return [ $item ];
+			return isset( $this->note()['item'] ) ? [ $item ] : [];
 		}
 		$bytes = \strlen( Core::as_string( $item['body'] ) );
 		if ( $bytes > \max( $stored['bytes'], $this->written[ $key ] ?? 0 ) && $this->write( 'item_grown', [ 'body' => $item['body'] ] + $stored['fields'], $key ) ) {
@@ -219,6 +223,48 @@ class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 		);
 	}
 
+	/** A call that failed in transport records its held item as cut. */
+	protected function failed( string $subject, string $error ): void {
+		parent::failed( $subject, $error );
+		$this->record( $this->as_cut( $this->note() ) );
+	}
+
+	/**
+	 * A call whose answer did not read records its held item as cut.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	protected function unanswered(): array {
+		return $this->as_cut( $this->note() );
+	}
+
+	/**
+	 * A request that will never answer records its held item as cut.
+	 *
+	 * @param string                 $subject The request's subject.
+	 * @param array<array-key,mixed> $note    What it was queued with.
+	 */
+	protected function abandoned( string $subject, array $note ): void {
+		parent::abandoned( $subject, $note );
+		$this->record( $this->as_cut( $note ) );
+	}
+
+	/**
+	 * The item a request's note holds, logged, as its page cut it; none for a
+	 * request the walk made.
+	 *
+	 * @param array<array-key,mixed> $note The request's note.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function as_cut( array $note ): array {
+		$item = Intel_Event::item_of( Core::arr( $note['item'] ?? null ) );
+		if ( null === $item ) {
+			return [];
+		}
+		$this->print_less_often( 'recording an issue as team-issues cut it: ', Core::terminal_safe( Core::as_string( $item['item_key'] ?? null ) ) );
+		return [ $item ];
+	}
+
 	/** Ask each team's newest page, leaving the rest of the request cap to `issue`. */
 	protected function calls(): void {
 		$this->pages = \count( $this->teams );
@@ -233,16 +279,6 @@ class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 				]
 			);
 		}
-	}
-
-	/** Record, logged, what `issue` did not answer, as its page cut it, then close the session. */
-	protected function pass_ended(): void {
-		if ( [] !== $this->awaited ) {
-			$this->print_less_often( 'recording ' . \count( $this->awaited ) . ' issues as team-issues cut them: ', 'issue did not answer them' );
-			$this->record( \array_values( $this->awaited ) );
-			$this->awaited = [];
-		}
-		parent::pass_ended();
 	}
 
 	public static function node_schema(): array {

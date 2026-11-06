@@ -149,7 +149,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 		}
 		$answer = $this->tool_answer( $subject, $body );
 		if ( null === $answer ) {
-			return [];
+			return $this->unanswered();
 		}
 		[ $call, $query ] = \explode( '?', $subject, 2 ) + [ '', '' ];
 		\parse_str( $query, $args );
@@ -328,6 +328,16 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 		$this->idle( 'not signed in to ContextA8C: the token has expired and holds no refresh token; sign in to ContextA8C on the host' );
 	}
 
+	/**
+	 * What a call whose answer did not read records; nothing unless a source
+	 * holds something for it, which it reads through `note()`.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	protected function unanswered(): array {
+		return [];
+	}
+
 	/** Resume, once, the pass another node's refresh held back. */
 	protected function resumes(): bool {
 		$resume        = $this->waiting;
@@ -347,8 +357,13 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 		}
 	}
 
-	/** Release the refresh claim of a refresh that will never answer. */
-	protected function abandoned( string $subject ): void {
+	/**
+	 * Release the refresh claim of a refresh that will never answer.
+	 *
+	 * @param string                 $subject The request's subject.
+	 * @param array<array-key,mixed> $note    What it was queued with.
+	 */
+	protected function abandoned( string $subject, array $note ): void {
 		if ( self::TOKEN_URL === $subject ) {
 			Context_A8C_Token::failed( $this->auth_dir, 0 );
 		}
@@ -369,11 +384,12 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	/**
 	 * Queue one `tools/call` of the tool, under the subject naming it.
 	 *
-	 * @param string              $provider The provider: slack, wpcom or linear.
-	 * @param string              $subtool  The provider's tool.
-	 * @param array<string,mixed> $args     Its arguments.
+	 * @param string                 $provider The provider: slack, wpcom or linear.
+	 * @param string                 $subtool  The provider's tool.
+	 * @param array<string,mixed>    $args     Its arguments.
+	 * @param array<array-key,mixed> $note     What the source reads with its answer.
 	 */
-	protected function call( string $provider, string $subtool, array $args ): void {
+	protected function call( string $provider, string $subtool, array $args, array $note = [] ): void {
 		$envelope = [
 			'jsonrpc' => '2.0',
 			'id'      => 1,
@@ -387,7 +403,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 				],
 			],
 		];
-		$this->queue( self::MCP_URL, (string) \wp_json_encode( $envelope ), "{$provider}/{$subtool}?" . \http_build_query( $args ) );
+		$this->queue( self::MCP_URL, (string) \wp_json_encode( $envelope ), "{$provider}/{$subtool}?" . \http_build_query( $args ), $note );
 	}
 
 	/**
