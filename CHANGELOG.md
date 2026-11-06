@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.9] - 2026-11-05
+
 ### Added
 
 - **Every listed item answers an `excerpt`,** the opening of its body as plain text, markup stripped, entities decoded and whitespace collapsed, cut on a word boundary to `Graph_Query::EXCERPT_CHARS` (800) with an ellipsis. `search`, theme groups, timelines and watch matches carry it, reading 4,096 characters of the body rather than all of it, and the MCP tools take it inside their fence. It is the one exception to an answer never carrying a body. `ItemRow` shows it behind a "Show more" toggle, collapsed at first, and offers none when the summary or title already holds it.
