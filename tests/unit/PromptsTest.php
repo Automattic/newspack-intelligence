@@ -403,6 +403,7 @@ final class PromptsTest extends TestCase {
 			'bug'             => [ 'Newspack\'s shipped code', 'a CRM record', 'a launch snag list', 'internal tooling' ],
 			'incident'        => [ 'as it happens', 'a storage-quota warning', 'a legal notice', 'a delayed project' ],
 			'launch'          => [ 'going live or being prepared to go live', 'a client\'s or Newspack\'s', 'not an internal tool, process or deploy going live' ],
+			'departure'       => [ 'a person leaving an organization or a role', 'not a client leaving Newspack, which is churned' ],
 			'churned'         => [ 'has left Newspack or is leaving', 'offboarding underway or done', 'the decision already made' ],
 			'churn_signal'    => [ 'a hint that a client may leave', 'dissatisfaction with price or service', 'going quiet', 'weighing a competitor', 'not a client already offboarding', 'nor a client adopting more Newspack', 'routine account or storage work' ],
 			'research'        => [ 'of the news industry, its audiences or its business, as published', 'Not Newspack\'s or Automattic\'s own engineering, audit, performance or planning work' ],

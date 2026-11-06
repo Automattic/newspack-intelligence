@@ -678,7 +678,7 @@ ones, so none is sent twice. The queue is durable and not capped by count;
 body, up to 64 KiB, for as long as it waits.
 
 **Extraction.** `extractor` skips a resolution with no link and no
-candidate; for any other it asks `intel:llm`, its third argument, also
+candidate, unless it carries `extract: true`, which is never skipped; for any other it asks `intel:llm`, its third argument, also
 declared, for one call, 800 tokens at temperature 0.2, KEY the `item_key`,
 naming the `extract` prompt with the item, and as its inputs the topics it
 offers, by name and key, the profile, the audience and the publisher,
@@ -756,7 +756,9 @@ an internal tool, process or deploy going live; `research` is a study,
 survey, report or analysis of the news industry, its audiences or its
 business, as published, never Newspack's or Automattic's own engineering,
 audit, performance or planning work;
-`release` always takes a GitHub release page; `churned` is a client that
+`release` always takes a GitHub release page; `departure` is a person
+leaving an organization or a role, never a client leaving Newspack, which is
+`churned`; `churned` is a client that
 has left Newspack or is leaving, offboarding underway or done, the decision
 already made; `churn_signal` is a hint that a client may leave, such as
 dissatisfaction with price or service, going quiet or weighing a

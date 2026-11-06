@@ -32,7 +32,7 @@ final class Intel_Event {
 		'release'         => 'a software release or version shipped; a GitHub release page always is one',
 		'funding'         => 'money raised, granted, invested or donated',
 		'hire'            => 'someone joining an organization or taking a new role',
-		'departure'       => 'someone leaving an organization or a role',
+		'departure'       => 'a person leaving an organization or a role; not a client leaving Newspack, which is churned',
 		'partnership'     => 'organizations agreeing to work together',
 		'incident'        => 'an outage, breach or disruption of a service as it happens. Not a storage-quota warning, a legal notice or a delayed project',
 		'bug'             => 'a defect in Newspack\'s shipped code, as Newspack files or fixes it, whoever reported it. Not a CRM record, one site\'s content or configuration, a launch snag list, or internal tooling',

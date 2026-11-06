@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`departure` leaves client offboardings to `churned`.** It now reads a person leaving an organization or a role, not a client leaving Newspack, where "someone leaving" took offboarding tickets.
+- **An explicit re-extraction reaches an item with no links.** The extractor skipped a resolution with no link and no candidate even when it carried `extract: true`, so an item whose links a sweep removed kept its stale kind through `ontology reextract`. Such a resolution is now never skipped; one without `extract: true` still is.
+
 ## [0.36.9] - 2026-11-05
 
 ### Added

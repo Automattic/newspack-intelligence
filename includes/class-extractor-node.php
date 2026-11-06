@@ -2,7 +2,8 @@
 /**
  * Extractor_Node: extracts each resolved item that links something. Fed the
  * `{ item, links, proposals }` resolution the Resolver forwards, it skips an
- * item with no link and no candidate, and asks any other's extraction of
+ * item with no link and no candidate, unless the resolution is owed an
+ * extraction (`extract`), and asks any other's extraction of
  * the model-call node its `make_node` line names, `intel:llm`, naming the
  * `extract` prompt, its inputs the topics it offers by name and key, the
  * profile, the audience and the name of the open client that published
@@ -161,7 +162,7 @@ class Extractor_Node extends Node {
 			return;
 		}
 		[ $item, $linked, , , $owed ] = $read;
-		if ( [] === $linked && [] === Core::arr( Core::arr( $value )['proposals'] ) ) {
+		if ( ! $owed && [] === $linked && [] === Core::arr( Core::arr( $value )['proposals'] ) ) {
 			return;
 		}
 		$inputs = [

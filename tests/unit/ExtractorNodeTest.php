@@ -834,6 +834,16 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'extract review failed: HTTP 504' ) );
 	}
 
+	/** A re-extraction asked for is never skipped: an item its links left is still called, and written. */
+	public function test_an_unlinked_item_owed_an_extraction_is_asked(): void {
+		$this->answer( '{"summary":"Tern Weekly closes its print edition.","kind":"incident"}' );
+
+		$this->extractor->fill( self::resolved( [], [], extracted: true, extract: true ) );
+
+		$this->assertSame( [ 'extract' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
+		$this->assertSame( [ 'incident' ], \array_column( \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'extraction_recorded' === $e['event'] ) ), 'kind' ) );
+	}
+
 	/** The extraction names topic keys; each claim's subject and object resolve against the index. */
 	public function test_a_linked_item_records_its_extraction_and_resolved_claims(): void {
 		$this->seed(
