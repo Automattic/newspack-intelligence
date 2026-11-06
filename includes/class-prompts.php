@@ -69,7 +69,7 @@ class Prompts {
 			'min'  => 0.7,
 		],
 		'funding' => [
-			'asks' => 'Does this item report money reaching an organization from a funder or investor: a grant, a fund, an investment or a foundation\'s gift? Answer no when a publication asks its own readers to donate, including a match on their gifts.',
+			'asks' => 'Does this item report money reaching an organization from a funder or investor: a grant, a fund, an investment, a foundation\'s gift or a funder\'s matching program? Answer no when a publication asks its own readers to donate, even with a match on their gifts.',
 			'min'  => 0.5,
 		],
 		'research' => [
@@ -85,7 +85,7 @@ class Prompts {
 			'min'  => 0.45,
 		],
 		'incident' => [
-			'asks' => 'Does this item report a service outage, breach, slowdown or other disruption of a running site as it happens? Answer no for a billing dispute, a legal notice, an abuse report, a storage warning or a list of past incidents.',
+			'asks' => 'Does this item report a service outage, breach, security vulnerability, slowdown or other disruption of a running site as it happens? Answer no for a billing dispute, a legal notice, an abuse report, a storage warning or a list of past incidents.',
 			'min'  => 0.45,
 		],
 	];
