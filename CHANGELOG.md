@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.10] - 2026-11-05
+
 ### Fixed
 
 - **`departure` leaves client offboardings to `churned`.** It now reads a person leaving an organization or a role, not a client leaving Newspack, where "someone leaving" took offboarding tickets.
