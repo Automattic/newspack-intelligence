@@ -67,10 +67,11 @@ the push:
 cd tests && WP_ABSPATH=<wordpress root> ../vendor/bin/phpunit --enforce-time-limit
 ```
 
-`--enforce-time-limit` is what makes the budget real: `phpunit.xml` sets no
-`defaultTimeLimit`, so every test gets PHPUnit's one second, and
-`failOnRisky="true"` beside `failOnWarning="true"` turns a breach into a failure
-rather than an `OK, but there were issues!` the push ignores. A class never buys more
+`phpunit.xml` sets `enforceTimeLimit="true"` and `defaultTimeLimit="10"`, so a
+test aborts at ten seconds with or without `--enforce-time-limit`, and
+`failOnRisky="true"` beside `failOnWarning="true"` makes a breach exit 1 beneath
+PHPUnit's own `OK, but there were issues!` line, which the push reads as a
+failure. A class never buys more
 with `#[Medium]` or `#[Large]`, because a test must not wait in real time — it
 drives a seam, as the substrate's curl seams, `Core::$clock` and
 `Event_Framework::$sleep` are there for.
