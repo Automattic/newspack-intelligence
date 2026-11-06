@@ -1,3 +1,4 @@
+# <?php \defined( 'ABSPATH' ) || exit; ?>
 # The sources, each recording item_recorded events at its tier into intel:writer:
 # the half that runs with no credential, and the half that needs one.
 var num_partitions = 1

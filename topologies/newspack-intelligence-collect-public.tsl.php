@@ -1,3 +1,4 @@
+# <?php \defined( 'ABSPATH' ) || exit; ?>
 # The sources that run with no credential: GitHub, whose public API answers
 # without its Vault entry, and the feeds, each recording item_recorded events
 # at its tier into intel:writer.

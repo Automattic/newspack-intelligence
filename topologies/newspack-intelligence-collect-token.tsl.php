@@ -1,3 +1,4 @@
+# <?php \defined( 'ABSPATH' ) || exit; ?>
 # The sources that read nothing without a credential from the Vault: Linear,
 # Slack, P2 and Unthread, each recording item_recorded events at its tier into
 # intel:writer, Unthread through its own include.

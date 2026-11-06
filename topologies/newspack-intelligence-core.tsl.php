@@ -1,3 +1,4 @@
+# <?php \defined( 'ABSPATH' ) || exit; ?>
 # Everything Intelligence runs but its collect: the streams, the projection,
 # resolution, re-resolution and the watcher. A composition includes this,
 # then its collect, then newspack-intelligence-deployment last, and sets its

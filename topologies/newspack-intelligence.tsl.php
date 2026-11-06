@@ -1,3 +1,4 @@
+# <?php \defined( 'ABSPATH' ) || exit; ?>
 var on_demand_idle = 0
 # Stays 600 until a measured run shows a lower value is safe: a pass still
 # holds work across ticks.

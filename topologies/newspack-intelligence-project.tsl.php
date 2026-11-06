@@ -1,3 +1,4 @@
+# <?php \defined( 'ABSPATH' ) || exit; ?>
 # The projection: the three event streams replayed into the intel-graph
 # Row_Table. Each Consumer drains its stream and checkpoints the projector,
 # which writes its buffered rows before the cursor commits, and their cursors

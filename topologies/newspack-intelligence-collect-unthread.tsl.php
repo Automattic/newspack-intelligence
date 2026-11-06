@@ -1,3 +1,4 @@
+# <?php \defined( 'ABSPATH' ) || exit; ?>
 # Unthread, recording item_recorded events at the restricted tier into
 # intel:writer under the unthread Vault group: an include of its own, so a
 # collect that reads the rest of the token half another way still includes

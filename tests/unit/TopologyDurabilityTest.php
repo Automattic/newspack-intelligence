@@ -268,7 +268,7 @@ class TopologyDurabilityTest extends TestCase {
 	 * deployment supplies them.
 	 */
 	public function test_no_shipped_topology_names_a_list_profile_or_audience(): void {
-		$files = \glob( \dirname( __DIR__, 2 ) . '/topologies/*.tsl' ) ?: [];
+		$files = \glob( \dirname( __DIR__, 2 ) . '/topologies/*.tsl.php' ) ?: [];
 		$this->assertNotEmpty( $files );
 		foreach ( $files as $file ) {
 			$this->assertSame( 0, \preg_match( self::DEPLOYMENT_VERBS, (string) \file_get_contents( $file ) ), \basename( $file ) );
@@ -292,7 +292,7 @@ class TopologyDurabilityTest extends TestCase {
 	public function test_the_shipped_topologies_hold_no_lists_file_and_no_seed(): void {
 		$shipped = \array_map( 'basename', \glob( \dirname( __DIR__, 2 ) . '/topologies/*' ) ?: [] );
 
-		$this->assertContains( 'newspack-intelligence-deployment.tsl', $shipped );
+		$this->assertContains( 'newspack-intelligence-deployment.tsl.php', $shipped );
 		$this->assertSame( [], \preg_grep( '/^newspack-intelligence-lists\b/', $shipped ) );
 		$this->assertNotContains( 'newspack-intelligence-ontology-seed.json', $shipped );
 	}
@@ -485,7 +485,7 @@ class TopologyDurabilityTest extends TestCase {
 	 * @return list<string>
 	 */
 	private static function statements( string $topology ): array {
-		return \array_values( \array_filter( \array_map( 'trim', \file( \dirname( __DIR__, 2 ) . "/topologies/{$topology}.tsl" ) ?: [] ), static fn ( string $line ): bool => '' !== $line && ! \str_starts_with( $line, '#' ) ) );
+		return \array_values( \array_filter( \array_map( 'trim', \file( \dirname( __DIR__, 2 ) . "/topologies/{$topology}.tsl.php" ) ?: [] ), static fn ( string $line ): bool => '' !== $line && ! \str_starts_with( $line, '#' ) ) );
 	}
 
 	/** Compose a topology the way a worker does, over the test base dir. */

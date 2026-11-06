@@ -73,7 +73,7 @@ final class IntelligenceHealthTest extends TestCase {
 	 */
 	private function relay_at( string $dir, bool $linear_unbound = false ): void {
 		$parts   = $this->make_temp_dir( 'intelligence-health-relay-' );
-		$shipped = (string) \file_get_contents( \dirname( __DIR__, 2 ) . '/topologies/newspack-intelligence-context-a8c.tsl' );
+		$shipped = (string) \file_get_contents( \dirname( __DIR__, 2 ) . '/topologies/newspack-intelligence-context-a8c.tsl.php' );
 		$part    = (string) \preg_replace( '/^(make_node Context_A8C_\S+ \S+ \S+) \/mcp-auth /m', "\$1 {$dir} ", $shipped, -1, $count );
 		$this->assertSame( 4, $count );
 		if ( $linear_unbound ) {

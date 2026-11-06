@@ -1,3 +1,4 @@
+# <?php \defined( 'ABSPATH' ) || exit; ?>
 # The three event streams and the writer that routes each event to its own.
 # intel:items keeps two years and takes large bodies from its one writer, the
 # worker. intel:ontology keeps every segment and has several writers, the

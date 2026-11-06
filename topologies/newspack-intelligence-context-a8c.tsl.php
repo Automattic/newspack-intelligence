@@ -1,3 +1,4 @@
+# <?php \defined( 'ABSPATH' ) || exit; ?>
 # Slack, P2 and Linear read through ContextA8C, for a workstation container
 # that mounts the ContextA8C relay's token dir at /mcp-auth and reaches the
 # server through a proxy at host.docker.internal:8080. Each node takes the

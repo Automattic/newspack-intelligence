@@ -1,3 +1,4 @@
+# <?php \defined( 'ABSPATH' ) || exit; ?>
 # Intelligence on a workstation, activated in place of newspack-intelligence:
 # the same core, with Slack, P2 and Linear read through ContextA8C
 # (newspack-intelligence-context-a8c) in place of the Vault-credentialed

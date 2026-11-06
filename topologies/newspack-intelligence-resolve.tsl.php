@@ -1,3 +1,4 @@
+# <?php \defined( 'ABSPATH' ) || exit; ?>
 # Resolution and extraction: each recorded item linked to the entities it is
 # about, then extracted. The Consumer reads the whole items stream; the
 # resolver acts on item_recorded alone, writes its links and candidates to
