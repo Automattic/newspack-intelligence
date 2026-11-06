@@ -46,3 +46,6 @@ README.md
 sync-shared.sh
 Thumbs.db
 webpack.config.js
+/tsconfig.check.json
+/phpstan-deadcode.neon
+/types
