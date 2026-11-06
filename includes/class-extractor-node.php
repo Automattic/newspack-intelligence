@@ -28,7 +28,7 @@
  * extraction's. A parsed extraction of an unrestricted item is first
  * reviewed by the decision model, `extract_review`, when an open client
  * published it and its kind is not `other` (`about_publisher`), when its
- * kind is `launch` (`went_live`), or when the projection offers it themes
+ * kind is in Prompts::KIND_CHECKS (`fits_kind`), or when the projection offers it themes
  * (`theme_choice`): a noul below its bar writes its kind as `other`, and an
  * offered theme chosen at THEME_CHOICE_MIN or more is the theme written.
  *
@@ -92,15 +92,6 @@ class Extractor_Node extends Node {
 
 	/** The least probability that a client's own article is about the client or the news industry for it to keep its kind. */
 	public const ABOUT_PUBLISHER_MIN = 0.5;
-
-	/** The least probability that a `launch` reports something that went live for it to keep its kind. */
-	public const WENT_LIVE_MIN = 0.5;
-
-	/** Each noul question a review may ask, and the least answer that keeps the reply's kind. */
-	private const NOUL_BARS = [
-		Prompts::ABOUT_PUBLISHER => self::ABOUT_PUBLISHER_MIN,
-		Prompts::WENT_LIVE       => self::WENT_LIVE_MIN,
-	];
 
 	/** The least confidence in an offered theme for it to replace the reply's own. */
 	public const THEME_CHOICE_MIN = 0.6;
@@ -354,8 +345,8 @@ class Extractor_Node extends Node {
 	 * The inputs of the review a parsed reply is owed, or null for none: a
 	 * restricted item is never sent to the decision model, so its data stays
 	 * with the chat model alone; any other is asked `about_publisher` when
-	 * an open client published it and its kind is not `other`, `went_live`
-	 * when its kind is `launch`, and `theme_choice` when the projection
+	 * an open client published it and its kind is not `other`, `fits_kind`
+	 * when Prompts::KIND_CHECKS holds its kind, and `theme_choice` when the projection
 	 * offers it themes, read now as an extract prompt offers them, and owes
 	 * none when it asks none of them.
 	 *
@@ -384,7 +375,7 @@ class Extractor_Node extends Node {
 	/**
 	 * Finish an extraction with its review's answer, from the reply the
 	 * review carried, read again: a noul below its bar, ABOUT_PUBLISHER_MIN
-	 * or WENT_LIVE_MIN, writes the kind as `other` before the importance
+	 * or the kind's in Prompts::KIND_CHECKS, writes the kind as `other` before the importance
 	 * floor applies, and an offered theme chosen with a confidence of
 	 * THEME_CHOICE_MIN or more is the theme written. A review that failed,
 	 * or answered a question it asked with nothing that reads, keeps the
@@ -407,7 +398,11 @@ class Extractor_Node extends Node {
 		$sure     = $number( $choice['confidence'] ?? null );
 		$read     = isset( $answer['decision'] ) && ( ! isset( $asked[ Prompts::THEME_CHOICE ] ) || ( \is_string( $choice['choice'] ?? null ) && null !== $sure ) );
 		$below    = false;
-		foreach ( \array_intersect_key( self::NOUL_BARS, $asked ) as $question => $bar ) {
+		$bars     = [
+			Prompts::ABOUT_PUBLISHER => self::ABOUT_PUBLISHER_MIN,
+			Prompts::FITS_KIND       => Prompts::KIND_CHECKS[ Core::as_string( $inputs['kind'] ?? null ) ]['min'] ?? 0.0,
+		];
+		foreach ( \array_intersect_key( $bars, $asked ) as $question => $bar ) {
 			$noul  = $number( $decision[ $question ] ?? null );
 			$read  = $read && null !== $noul;
 			$below = $below || ( null !== $noul && $noul < $bar );

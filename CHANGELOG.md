@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The review checks six kinds, not one.** `launch`, `funding`, `research`, `feature_request`, `bug` and `incident` each ask the decision model whether the item fits, and a low answer writes `other`, so a launch checklist, a reader appeal, an internal audit, a one-site task, a planned change or a legal notice leaves the lenses. `Prompts::KIND_CHECKS` holds each question and its bar, set against the items the lenses showed.
 - Stock topologies ship as `<name>.tsl.php`, so a web server runs their guard rather than serving them as text. Requires the substrate that resolves them.
 
 ## [0.36.10] - 2026-11-05

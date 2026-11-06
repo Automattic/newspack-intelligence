@@ -782,37 +782,37 @@ final class LlmCallNodeTest extends TestCase {
 		$this->ask_decision( $node, 'feed:wharf-77', [ 'publisher' => 'Kestrel Lantern Harbor', 'themes' => self::OFFERED, 'summary' => 'Heron Weekly goes live.', 'kind' => 'launch' ], self::item( 'feed:wharf-77' ) );
 
 		$this->assertSame( [ self::SYSTEMONE ], $this->dispatched );
-		$this->assertSame( [ 'about_publisher', 'went_live', 'theme_choice' ], \array_keys( \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true )['questions'] ) );
+		$this->assertSame( [ 'about_publisher', 'fits_kind', 'theme_choice' ], \array_keys( \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true )['questions'] ) );
 
 		$body                                       = \json_decode( self::reviewed( 0.74, 't1', 0.92 ), true );
-		$body['answers']['went_live']               = [ 'type' => 'noul', 'noul' => 0.13 ];
+		$body['answers']['fits_kind']               = [ 'type' => 'noul', 'noul' => 0.13 ];
 		$this->complete_nth( 0, (string) \json_encode( $body ) );
 
-		$this->assertSame( [ 'about_publisher' => 0.74, 'went_live' => 0.13, 'theme_choice' => [ 'choice' => 't1', 'confidence' => 0.92 ] ], $this->caller->captured[0][ Message::VALUE ]['decision'] );
+		$this->assertSame( [ 'about_publisher' => 0.74, 'fits_kind' => 0.13, 'theme_choice' => [ 'choice' => 't1', 'confidence' => 0.92 ] ], $this->caller->captured[0][ Message::VALUE ]['decision'] );
 	}
 
 	/**
-	 * A `went_live` missing or out of range answers an error naming it.
+	 * A `fits_kind` missing or out of range answers an error naming it.
 	 *
 	 * @return array<string,array{0:array<string,mixed>}>
 	 */
-	public static function bad_went_lives(): array {
+	public static function bad_kind_fits(): array {
 		return [
 			'no answer'       => [ [] ],
-			'a noul past one' => [ [ 'went_live' => [ 'type' => 'noul', 'noul' => 1.7 ] ] ],
+			'a noul past one' => [ [ 'fits_kind' => [ 'type' => 'noul', 'noul' => 1.7 ] ] ],
 		];
 	}
 
 	/** @param array<string,mixed> $answers What the body answers. */
-	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_went_lives' )]
-	public function test_a_bad_went_live_answers_an_error( array $answers ): void {
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_kind_fits' )]
+	public function test_a_bad_fits_kind_answers_an_error( array $answers ): void {
 		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
 		$node = $this->llm();
 		$this->ask_decision( $node, 'feed:wharf-78', [ 'publisher' => '', 'themes' => [], 'summary' => 'Heron Weekly goes live.', 'kind' => 'launch' ], self::item( 'feed:wharf-78' ) );
 
 		$this->complete_nth( 0, (string) \json_encode( [ 'answers' => $answers ] ) );
 
-		$this->assertSame( 'AI proxy decision names no noul from 0 to 1 for went_live', $this->caller->captured[0][ Message::VALUE ]['error'] );
+		$this->assertSame( 'AI proxy decision names no noul from 0 to 1 for fits_kind', $this->caller->captured[0][ Message::VALUE ]['error'] );
 	}
 
 	/**

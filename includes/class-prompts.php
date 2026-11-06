@@ -56,8 +56,39 @@ class Prompts {
 	/** The noul question whether a client's article is about the client itself or the news industry. */
 	public const ABOUT_PUBLISHER = 'about_publisher';
 
-	/** The noul question whether an item of kind `launch` reports something that went live. */
-	public const WENT_LIVE = 'went_live';
+	/** The noul question whether an item fits the kind its reply gave it. */
+	public const FITS_KIND = 'fits_kind';
+
+	/**
+	 * The kinds a reply gives items that do not fit: what the decision model
+	 * is asked of each, and the least answer that keeps the kind.
+	 */
+	public const KIND_CHECKS = [
+		'launch' => [
+			'asks' => 'Does this item announce that a product, publication or service is now available to its readers or customers? Answer no for a ticket or checklist tracking launch work, even one marked complete; a person\'s or team\'s status update, weekly note or retrospective; a deploy to one site; and an internal tool.',
+			'min'  => 0.7,
+		],
+		'funding' => [
+			'asks' => 'Does this item report money reaching an organization from a funder or investor: a grant, a fund, an investment or a foundation\'s gift? Answer no when a publication asks its own readers to donate, including a match on their gifts.',
+			'min'  => 0.5,
+		],
+		'research' => [
+			'asks' => 'Is this item a study, survey, report or analysis published for the news industry? Answer no for a team\'s own audit, investigation or engineering report.',
+			'min'  => 0.5,
+		],
+		'feature_request' => [
+			'asks' => 'Does this item ask for a capability the product lacks that would serve publishers generally? Answer no for work done for one site or a named few: a setting changed, a file removed, a site set up, migrated, styled or extended, a capacity increase, or a resource added.',
+			'min'  => 0.5,
+		],
+		'bug' => [
+			'asks' => 'Does this item report or fix a defect in shipped code, where the software does the wrong thing for a reader, a publisher or an admin? Answer no for a planned change, a configuration rollout, a data or content cleanup, a documentation change, a design refinement, or a catch-all list.',
+			'min'  => 0.45,
+		],
+		'incident' => [
+			'asks' => 'Does this item report a service outage, breach, slowdown or other disruption of a running site as it happens? Answer no for a billing dispute, a legal notice, an abuse report, a storage warning or a list of past incidents.',
+			'min'  => 0.45,
+		],
+	];
 
 	/** The choice question which offered theme names the event or initiative an item is part of. */
 	public const THEME_CHOICE = 'theme_choice';
@@ -80,9 +111,6 @@ class Prompts {
 		'slack'  => 'internal chat message',
 		'feed'   => 'published article',
 	];
-
-	/** What `went_live` asks. */
-	private const WENT_LIVE_ASKS = 'Does this item report that a site, product or publication has actually gone live or been publicly announced? Answer no when it is a ticket, checklist, plan or task preparing for a launch.';
 
 	/** What `theme_choice` asks. */
 	private const THEME_CHOICE_ASKS = 'Which of these themes names the event or initiative this item is part of?';
@@ -377,8 +405,8 @@ class Prompts {
 
 	/**
 	 * The questions an extract review's inputs call for: `about_publisher`,
-	 * a noul, when they name a `publisher`; `went_live`, a noul, when their
-	 * `kind` is `launch`; and `theme_choice`, a choice, when they offer
+	 * a noul, when they name a `publisher`; `fits_kind`, a noul, when
+	 * KIND_CHECKS holds their `kind`; and `theme_choice`, a choice, when they offer
 	 * `themes`, its criteria each offered theme keyed `t1` to `tN` and told
 	 * by its theme and example, then `none`.
 	 *
@@ -393,10 +421,11 @@ class Prompts {
 				'instructions' => self::ABOUT_PUBLISHER_ASKS,
 			];
 		}
-		if ( 'launch' === ( $inputs['kind'] ?? null ) ) {
-			$questions[ self::WENT_LIVE ] = [
+		$check = self::KIND_CHECKS[ Core::as_string( $inputs['kind'] ?? null ) ] ?? null;
+		if ( null !== $check ) {
+			$questions[ self::FITS_KIND ] = [
 				'type'         => 'noul',
-				'instructions' => self::WENT_LIVE_ASKS,
+				'instructions' => $check['asks'],
 			];
 		}
 		$criteria = [];

@@ -343,18 +343,26 @@ final class PromptsTest extends TestCase {
 		}
 	}
 
-	/** A review of a `launch` asks whether it went live, as a noul, and a review of any other kind does not. */
-	public function test_a_review_of_a_launch_asks_whether_it_went_live(): void {
-		$this->assertSame(
-			[
-				'went_live' => [
-					'type'         => 'noul',
-					'instructions' => 'Does this item report that a site, product or publication has actually gone live or been publicly announced? Answer no when it is a ticket, checklist, plan or task preparing for a launch.',
+	/** A review of a checked kind asks what KIND_CHECKS holds for it, as a noul; a review of any other kind does not. */
+	public function test_a_review_of_a_checked_kind_asks_whether_the_item_fits_it(): void {
+		foreach ( Prompts::KIND_CHECKS as $kind => $check ) {
+			$this->assertSame(
+				[
+					'fits_kind' => [
+						'type'         => 'noul',
+						'instructions' => $check['asks'],
+					],
 				],
-			],
-			Prompts::questions( [ 'publisher' => '', 'themes' => [], 'summary' => 'Heron Weekly goes live.', 'kind' => 'launch' ] )
-		);
-		$this->assertSame( [], Prompts::questions( [ 'publisher' => '', 'themes' => [], 'summary' => 'Heron Weekly wins a grant.', 'kind' => 'funding' ] ) );
+				Prompts::questions( [ 'publisher' => '', 'themes' => [], 'summary' => 'Heron Weekly goes live.', 'kind' => $kind ] )
+			);
+		}
+		$this->assertSame( [], Prompts::questions( [ 'publisher' => '', 'themes' => [], 'summary' => 'Heron Weekly wins a prize.', 'kind' => 'award' ] ) );
+	}
+
+	/** Every checked kind is an item kind, and no check is asked of `other`, which has nowhere to fall. */
+	public function test_every_kind_check_names_an_item_kind(): void {
+		$this->assertSame( [], \array_diff( \array_keys( Prompts::KIND_CHECKS ), \Newspack_Intelligence\Intel_Event::ITEM_KINDS ) );
+		$this->assertArrayNotHasKey( 'other', Prompts::KIND_CHECKS );
 	}
 
 	/** A choice's key reads back as the theme it offered; `none`, and a key it did not offer, as none. */

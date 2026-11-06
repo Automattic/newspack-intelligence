@@ -618,9 +618,10 @@ questions }`, the decision model's, the state and questions
 `Prompts::questions()` reads off its inputs, at least one, or it will not
 send: `about_publisher`, a `noul`, when they name a `publisher`, asking
 whether the article is about the publisher itself or the news industry;
-`went_live`, a `noul`, when their `kind` is `launch`, asking whether the
-item reports that something actually went live or was publicly announced,
-rather than a ticket, checklist, plan or task preparing for a launch;
+`fits_kind`, a `noul`, when `Prompts::KIND_CHECKS` holds their `kind`,
+asking that kind's question, which says what a reply gives the kind and it
+does not fit, such as a ticket tracking a launch, a publication asking its
+readers to donate or a setting changed for one site;
 and `theme_choice`, a `choice`, when they offer `themes`, asking which
 names the event or initiative the item is part of, its `criteria` each
 offered theme keyed `t1` to `tN`, told as `<theme>: <example>`, then
@@ -846,8 +847,10 @@ An answer that parses is owed a review by the decision model when its
 item is not restricted, since a restricted item's data stays with the
 chat model alone, and any question applies: `about_publisher` when the
 item's `inputs.publisher` names an open client and its kind is not
-`other`, `went_live` when its kind is `launch`, because the extraction
-model types a launch checklist `launch`, and `theme_choice` when the
+`other`, `fits_kind` when `Prompts::KIND_CHECKS` holds its kind, because
+the extraction model types a launch checklist `launch`, a reader appeal
+`funding` and a one-site task `feature_request` whatever its definitions
+say, and `theme_choice` when the
 projection offers it themes, read
 again as the answer lands through `Prompts::offered_themes()`, as an
 `extract` prompt offers them. Such an answer writes nothing yet: the
@@ -857,7 +860,8 @@ that question does not apply, the themes, the reply's summary and its kind, no
 options, its carry the resolution and the extraction's reply, as backlog
 when the extraction was. Its answer finishes the extraction once, from
 that reply, read again by `Prompts::parse_extract()`: a noul below its
-bar, `Extractor_Node::ABOUT_PUBLISHER_MIN` or `WENT_LIVE_MIN` (each 0.5),
+bar, `Extractor_Node::ABOUT_PUBLISHER_MIN` (0.5) or its kind's `min` in
+`Prompts::KIND_CHECKS`,
 writes the kind as `other`,
 before the importance floor applies, so the floor of the kind the model
 gave does not lift it, and at or above every bar asked the kind stands; an offered

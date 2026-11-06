@@ -591,56 +591,87 @@ final class ExtractorNodeTest extends TestCase {
 	}
 
 	/**
-	 * A `went_live` below WENT_LIVE_MIN, and a kind of `launch` below it
+	 * A `fits_kind` below its kind's bar, and a kind of `launch` below it
 	 * alone, writes the kind as `other`, the floor of `launch` not lifting
-	 * it; at WENT_LIVE_MIN or more the kind stands, with its floor.
+	 * it; at the bar or more the kind stands, with its floor.
 	 *
 	 * @return array<string,array{0:float,1:string,2:int}>
 	 */
-	public static function went_lives(): array {
+	public static function kind_fits(): array {
 		return [
 			'a checklist'    => [ 0.12, 'other', 3 ],
 			'a real launch'  => [ 0.83, 'launch', 7 ],
-			'on the boundary' => [ 0.5, 'launch', 7 ],
+			'on the boundary' => [ Prompts::KIND_CHECKS['launch']['min'], 'launch', 7 ],
 		];
 	}
 
-	#[\PHPUnit\Framework\Attributes\DataProvider( 'went_lives' )]
-	public function test_a_launch_stands_only_when_it_went_live( float $went_live, string $kind, int $importance ): void {
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'kind_fits' )]
+	public function test_a_launch_stands_only_when_it_fits_kind( float $fits_kind, string $kind, int $importance ): void {
 		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
 		$this->extractor->add_importance_floor( 'launch', 7 );
 		$this->answer( '{"summary":"Mesa Courier site launch checklist.","kind":"launch","relevance":6,"importance":3,"theme":"community site launch"}' );
-		$this->decide( [ 'decision' => [ 'went_live' => $went_live ] ] );
+		$this->decide( [ 'decision' => [ 'fits_kind' => $fits_kind ] ] );
 
 		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [] ) );
 
 		$this->assertSame( [ [ $kind, $importance, 'community site launch' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['importance'], $e['theme'] ], $this->extractions() ) );
-		$this->assertSame( 0.5, Extractor_Node::WENT_LIVE_MIN );
 	}
 
-	/** A launch no client published and offered no theme is reviewed all the same, asked `went_live` alone. */
+	/**
+	 * Each checked kind is held to its own bar, so a funding item reading
+	 * as a reader appeal drops to `other` as a checklist does.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public static function checked_kinds(): array {
+		return \array_map( static fn ( string $kind ): array => [ $kind ], \array_combine( \array_keys( Prompts::KIND_CHECKS ), \array_keys( Prompts::KIND_CHECKS ) ) );
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'checked_kinds' )]
+	public function test_each_checked_kind_falls_to_other_below_its_bar( string $kind ): void {
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier asks its readers for support.","kind":"' . $kind . '"}' );
+		$this->decide( [ 'decision' => [ 'fits_kind' => Prompts::KIND_CHECKS[ $kind ]['min'] - 0.01 ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [] ) );
+
+		$this->assertSame( [ 'other' ], \array_column( $this->extractions(), 'kind' ) );
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'checked_kinds' )]
+	public function test_each_checked_kind_stands_at_its_bar( string $kind ): void {
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier wins a grant.","kind":"' . $kind . '"}' );
+		$this->decide( [ 'decision' => [ 'fits_kind' => Prompts::KIND_CHECKS[ $kind ]['min'] ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [] ) );
+
+		$this->assertSame( [ $kind ], \array_column( $this->extractions(), 'kind' ) );
+	}
+
+	/** A launch no client published and offered no theme is reviewed all the same, asked `fits_kind` alone. */
 	public function test_a_launch_owes_a_review_of_its_own(): void {
 		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
 		$this->answer( '{"summary":"Mesa Courier goes live.","kind":"launch"}' );
-		$this->decide( [ 'decision' => [ 'went_live' => 0.91 ] ] );
+		$this->decide( [ 'decision' => [ 'fits_kind' => 0.91 ] ] );
 
 		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [] ) );
 
 		$asked = \array_column( $this->out->requests, Message::VALUE );
 		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( $asked, 'prompt' ) );
-		$this->assertSame( [ 'went_live' ], \array_keys( Prompts::questions( $asked[1]['inputs'] ) ) );
+		$this->assertSame( [ 'fits_kind' ], \array_keys( Prompts::questions( $asked[1]['inputs'] ) ) );
 	}
 
-	/** Any kind but `launch` is not asked `went_live`, whatever else its review asks. */
-	public function test_another_kind_is_not_asked_whether_it_went_live(): void {
+	/** A kind KIND_CHECKS does not name is not asked `fits_kind`, whatever else its review asks. */
+	public function test_another_kind_is_not_asked_whether_it_fits_kind(): void {
 		$this->seed( self::entity( self::MESA, 'Mesa Courier' ), ...self::themed_neighbours() );
-		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"funding"}' );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award"}' );
 		$this->decide( [ 'decision' => [ 'theme_choice' => [ 'choice' => 'none', 'confidence' => 0.9 ] ] ] );
 
 		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'title' => 'Mesa Courier wins a transit grant' ] ) );
 
 		$this->assertSame( [ 'theme_choice' ], \array_keys( Prompts::questions( $this->out->requests[1][ Message::VALUE ]['inputs'] ) ) );
-		$this->assertSame( [ 'funding' ], \array_column( $this->extractions(), 'kind' ) );
+		$this->assertSame( [ 'award' ], \array_column( $this->extractions(), 'kind' ) );
 	}
 
 	/**
@@ -659,34 +690,34 @@ final class ExtractorNodeTest extends TestCase {
 	}
 
 	#[\PHPUnit\Framework\Attributes\DataProvider( 'three_answers' )]
-	public function test_a_clients_launch_asks_three_questions_in_one_request( float $about, float $went_live, string $kind ): void {
+	public function test_a_clients_launch_asks_three_questions_in_one_request( float $about, float $fits_kind, string $kind ): void {
 		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ), ...self::themed_neighbours() );
 		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"launch","theme":"grant step checklist"}' );
-		$this->decide( [ 'decision' => [ 'about_publisher' => $about, 'went_live' => $went_live, 'theme_choice' => [ 'choice' => 't1', 'confidence' => 0.9 ] ] ] );
+		$this->decide( [ 'decision' => [ 'about_publisher' => $about, 'fits_kind' => $fits_kind, 'theme_choice' => [ 'choice' => 't1', 'confidence' => 0.9 ] ] ] );
 
 		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
 
 		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
-		$this->assertSame( [ 'about_publisher', 'went_live', 'theme_choice' ], \array_keys( Prompts::questions( $this->out->requests[1][ Message::VALUE ]['inputs'] ) ) );
+		$this->assertSame( [ 'about_publisher', 'fits_kind', 'theme_choice' ], \array_keys( Prompts::questions( $this->out->requests[1][ Message::VALUE ]['inputs'] ) ) );
 		$this->assertSame( [ [ $kind, 'transit funding round' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['theme'] ], $this->extractions() ) );
 	}
 
 	/**
-	 * A `went_live` missing or not a number fails the review, which keeps the
+	 * A `fits_kind` missing or not a number fails the review, which keeps the
 	 * reply's kind and theme, logged, and parks no retry.
 	 *
 	 * @return array<string,array{0:array<string,mixed>}>
 	 */
-	public static function bad_went_lives(): array {
+	public static function bad_kind_fits(): array {
 		return [
 			'no answer'    => [ [] ],
-			'not a number' => [ [ 'went_live' => 'high' ] ],
+			'not a number' => [ [ 'fits_kind' => 'high' ] ],
 		];
 	}
 
 	/** @param array<string,mixed> $decision What the review answered. */
-	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_went_lives' )]
-	public function test_a_bad_went_live_fails_the_review_and_keeps_the_kind( array $decision ): void {
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_kind_fits' )]
+	public function test_a_bad_fits_kind_fails_the_review_and_keeps_the_kind( array $decision ): void {
 		$stderr = $this->capture_stderr();
 		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
 		$this->answer( '{"summary":"Mesa Courier site launch checklist.","kind":"launch","theme":"community site launch"}' );
@@ -703,7 +734,7 @@ final class ExtractorNodeTest extends TestCase {
 	public function test_a_restricted_launch_asks_no_decision(): void {
 		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
 		$this->answer( '{"summary":"Mesa Courier goes live.","kind":"launch"}' );
-		$this->decide( [ 'decision' => [ 'went_live' => 0.12 ] ] );
+		$this->decide( [ 'decision' => [ 'fits_kind' => 0.12 ] ] );
 
 		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'tier' => 'restricted' ] ) );
 
@@ -836,12 +867,12 @@ final class ExtractorNodeTest extends TestCase {
 
 	/** A re-extraction asked for is never skipped: an item its links left is still called, and written. */
 	public function test_an_unlinked_item_owed_an_extraction_is_asked(): void {
-		$this->answer( '{"summary":"Tern Weekly closes its print edition.","kind":"incident"}' );
+		$this->answer( '{"summary":"Tern Weekly closes its print edition.","kind":"hire"}' );
 
 		$this->extractor->fill( self::resolved( [], [], extracted: true, extract: true ) );
 
 		$this->assertSame( [ 'extract' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
-		$this->assertSame( [ 'incident' ], \array_column( \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'extraction_recorded' === $e['event'] ) ), 'kind' ) );
+		$this->assertSame( [ 'hire' ], \array_column( \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'extraction_recorded' === $e['event'] ) ), 'kind' ) );
 	}
 
 	/** The extraction names topic keys; each claim's subject and object resolve against the index. */
