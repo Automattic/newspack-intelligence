@@ -327,7 +327,7 @@ final class Graph_Watches {
 
 	/**
 	 * A watch's match of an item: the one shape every match an email lists
-	 * takes, recorded or this pass's.
+	 * takes, recorded or found this pass.
 	 *
 	 * @api The watcher builds this pass's matches by it.
 	 * @param string $watch      The watch key.

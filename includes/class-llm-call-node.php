@@ -37,8 +37,8 @@ use Newspack_Nodes\Worker_Should_Stop;
  * builds it. The answer goes TO the request's FROM, keyed as asked, a
  * TM_STRUCT|TM_RESPONSE whose VALUE is `{ content, item, inputs, carry }`
  * for a chat prompt, `{ decision: { <question>: <noul> | { choice,
- * confidence } }, … }` for a decision, `{ error, … }`, or, when no entry
- * of the group lends the api url's origin a credential, `{ unlent, … }` at
+ * confidence } }, … }` for a decision, `{ error, … }`, or, when the group
+ * holds no entry lending the api url's origin a credential, `{ unlent, … }` at
  * once, `unlent` the group. A stored request that will not send is settled and answered as an error. A
  * request in flight when the worker stops is sent again by the next one; a
  * clean stop sends none it answered again.
@@ -399,8 +399,8 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	/**
 	 * Build one request's body as the kind of its prompt says, a chat
 	 * prompt's messages or a decision's state and questions, and hand Curl
-	 * the POST, KEY its member, so its answer names it; a prompt no kind
-	 * names is refused as a chat prompt is.
+	 * the POST, KEY its member, so its answer names it; a prompt
+	 * `Prompts::PROMPTS` does not list is refused as a chat prompt is.
 	 *
 	 * @param string      $member The frontier member.
 	 * @param list<mixed> $value  [ from, key, prompt, item, inputs, options, carry ].

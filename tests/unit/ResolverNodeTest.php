@@ -491,7 +491,7 @@ final class ResolverNodeTest extends TestCase {
 	}
 
 	/**
-	 * An item owed its NER step that nothing else links asks `intel:llm`,
+	 * An item owed its NER step with no other link asks `intel:llm`,
 	 * carrying the record it came in less the item, which rides beside it,
 	 * and writes nothing until the answer.
 	 */

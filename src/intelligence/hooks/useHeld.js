@@ -25,10 +25,11 @@ function unreflected( held, listed, keyOf, matches ) {
  *
  * A write holds one key. Holding it with no row takes that key's row out
  * until a read no longer lists it; holding it with a row shows that row in
- * place of the key's, or after the rows when none is listed, until a read
- * lists a row `matches` says reflects it. A hold the read reflects gives
- * way to the read. A refusal undoes the hold whose send it echoes, and a
- * refusal echoing none, such as a Router's NOT_AVAILABLE, undoes every hold.
+ * place of the key's row, or after the rows when the key's row is not listed,
+ * until a read lists a row `matches` says reflects it. A hold the read
+ * reflects gives way to the read. A refusal undoes the hold whose send it
+ * echoes, and a refusal echoing none, such as a Router's NOT_AVAILABLE, undoes
+ * every hold.
  *
  * @param {{answer: ?Object, error: ?string, loading: boolean}} read      What `useIntelRead` returned.
  * @param {string}                                              rows      The answer's row list.

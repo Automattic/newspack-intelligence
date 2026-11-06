@@ -9,8 +9,8 @@
  * Every string an event carries is bounded first, in bytes as the stream
  * writes it, JSON-escaped: a key, a name or a URL past its cap is refused,
  * and a collected title is cut. The caps hold every event inside one atomic
- * partition line whatever characters fill them, but a lens's, whose lists
- * carry no cap, so `Intel_Event::make()` refuses one past the line. Each
+ * partition line whatever characters fill them, except a lens's event, whose
+ * lists carry no cap, so `Intel_Event::make()` refuses one past the line. Each
  * verb then reads the projection once at most, on the graph
  * `Graph_Query::graph()` opens: every entity key it names answers as the
  * survivor `Graph_Query::seen()` lets the caller see, and an item is read
@@ -126,9 +126,9 @@ final class Graph_Curation {
 	}
 
 	/**
-	 * Tag an entity with a topic, an entity of type `topic`, unless the
-	 * entity is one every reader sees and the topic is not, which the tag
-	 * would show on the entity's record.
+	 * Tag an entity with a topic, an entity of type `topic`, unless every
+	 * reader sees the entity but not every reader sees the topic, which the
+	 * tag would show on the entity's record.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`, `topic`.
 	 * @return array<string,mixed>

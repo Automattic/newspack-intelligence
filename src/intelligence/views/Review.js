@@ -140,8 +140,8 @@ function Evidence( { text } ) {
 
 /**
  * One proposal as a single control: the entity's chip, then for a curator
- * the affirming and rejecting glyphs, joined into one pill. As a `row` it
- * is one the review keys move to.
+ * the affirming and rejecting glyphs, joined into one pill. As a `row` the
+ * review keys move to it.
  *
  * A curator's `judge` names the affirming glyph for the entity (`yes`),
  * affirms (`onYes`) and rejects (`onNo`).

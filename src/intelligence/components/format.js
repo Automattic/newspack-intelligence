@@ -16,7 +16,7 @@ export function safeHref( url ) {
 /**
  * The UTC day of a Unix time, Y-m-d, or '' for none.
  *
- * @param {?number} ts Seconds since the epoch; 0 is no time.
+ * @param {?number} ts Seconds since the epoch; 0 is not a time.
  * @return {string} The day.
  */
 export function utcDay( ts ) {

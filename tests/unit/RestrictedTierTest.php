@@ -97,7 +97,7 @@ final class RestrictedTierTest extends TestCase {
 		$this->assertSame( [], $this->ci->dispatch( 'search', [ '--q=renewal clause' ] )['items'] );
 	}
 
-	/** A restricted item's excerpt reaches a holder alone, since no other reader is answered the item. */
+	/** A restricted item's excerpt reaches a holder alone, since the item is not answered to any other reader. */
 	public function test_an_excerpt_of_a_restricted_item_reaches_a_holder_alone(): void {
 		$this->seed_restricted_world();
 

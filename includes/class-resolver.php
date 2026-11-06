@@ -61,7 +61,7 @@ final class Resolver {
 	/** An acronym, a domain stem or a locality-settled name: guarded, so never exact. */
 	private const GUARDED = 0.9;
 
-	/** A surface naming two entities that nothing tells apart. */
+	/** A surface naming two indistinguishable entities. */
 	private const AMBIGUOUS = 0.5;
 
 	/** Each kind a surface is found by: its link method and its confidence alone. */
@@ -78,7 +78,7 @@ final class Resolver {
 	/** Lowercase words a name may hold between two capitalized ones. */
 	private const CONNECTORS = [ 'de', 'in', 'of', 'and', 'the' ];
 
-	/** Articles a title capitalizes anyway, which no domain stem welds on. */
+	/** Articles a title capitalizes anyway, which a domain stem never welds on. */
 	private const ARTICLES = [ 'a', 'an' ];
 
 	/** Below this length a domain stem ("abq", "kcur") collides with ordinary words. */
@@ -193,7 +193,7 @@ final class Resolver {
 	 * the URL's path or the text earns, but a body-only mention of its own
 	 * publisher, which is not news about it; its candidate entities; and
 	 * whether the NER step ran and answered. A publisher spares the NER step
-	 * as any link does; an owed step that nothing spares answers none.
+	 * as any link does; an owed step that is not spared answers none.
 	 *
 	 * @param array<string,mixed>                                                                                $item The `item_recorded` fields.
 	 * @param array{orgs:list<string>,products:list<string>,people:list<string>,locations:list<string>}|bool $ner  The names the NER step answered; true when the step is owed; false for none.
@@ -516,8 +516,8 @@ final class Resolver {
 	/**
 	 * The first of the item's sentences spelling a name, both read as
 	 * `Entity_Index::plain()` reads text, case aside, cut to EVIDENCE_BYTES
-	 * around it; '' when no sentence spells it, or for a name `plain()` reads
-	 * as empty.
+	 * around it; '' when the item has no such sentence, or for a name
+	 * `plain()` reads as empty.
 	 *
 	 * @param string $name The name as the text or the extractor gave it.
 	 */

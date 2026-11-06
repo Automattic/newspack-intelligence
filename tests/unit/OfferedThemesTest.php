@@ -23,7 +23,7 @@ require_once __DIR__ . '/../support/counts-statements.php';
  * themed items whose titles best match this item's title words, each with
  * its best match's title as an example, read from the projection as the
  * prompt is built, no restricted or stale item's among them, and none when
- * no item is similar.
+ * the projection holds no similar item.
  */
 final class OfferedThemesTest extends TestCase {
 	use Seeds_Entity_Index;

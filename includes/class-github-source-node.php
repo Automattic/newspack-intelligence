@@ -73,7 +73,7 @@ class Github_Source_Node extends Source_Node {
 
 	/**
 	 * @param array<mixed> $rows The endpoint's rows.
-	 * @return array<int,array<string,mixed>> Closed PRs that actually merged.
+	 * @return array<int,array<string,mixed>> Closed PRs that merged.
 	 */
 	private function merged_prs( string $repo, array $rows ): array {
 		return self::items(

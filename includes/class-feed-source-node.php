@@ -3,8 +3,8 @@
  * Feed_Source_Node: pulls items from configured RSS 2.0 / Atom feeds, and
  * from each client's own feed, and normalizes them into recorded items.
  *
- * It fetches each configured feed, each client's, and the feed a client's
- * home page advertises once its own is lost, remembering each client
+ * It fetches each configured feed, each client's feed, and the feed a
+ * client's home page advertises once its own is lost, remembering each client
  * domain's found feed and backoff in one row of its Table. A client still
  * shown by its domain is named once by its own feed's title.
  *
@@ -104,8 +104,8 @@ class Feed_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * Queue every configured feed, then each client's, noting its domain and
-	 * found feed.
+	 * Queue every configured feed, then each client's feed, noting its domain
+	 * and found feed.
 	 */
 	protected function begin(): void {
 		$this->write_domains();
@@ -649,7 +649,7 @@ class Feed_Source_Node extends Source_Node {
 
 	/**
 	 * The plain hostname leading an id before its first `:`, which is how a
-	 * client's lane is spelled; null when none leads it.
+	 * client's lane is spelled; null when the id does not lead with one.
 	 *
 	 * @param string $id An id past `feed:`.
 	 */
@@ -674,7 +674,7 @@ class Feed_Source_Node extends Source_Node {
 		return $this->concurrency;
 	}
 
-	/** No cap: a pass sends every configured feed and every client's. */
+	/** No cap: a pass sends every configured feed and every client's feed. */
 	protected function max_requests(): int {
 		return \PHP_INT_MAX;
 	}

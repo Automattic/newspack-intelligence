@@ -1105,7 +1105,7 @@ final class Graph_Query {
 
 	/**
 	 * The call's filters over a lens's: each the call names replaces the
-	 * lens's; the call's days, from `since`, `until` or both, replace the
+	 * lens's filter; the call's days, from `since`, `until` or both, replace the
 	 * lens's window whole.
 	 *
 	 * @param Lens   $lens The lens, `no_lens()` for none.
@@ -1647,7 +1647,7 @@ final class Graph_Query {
 	 * dated before it, its history, by each value it counted there when
 	 * `$values` asks. A story is cited by its key, URL and title, each read
 	 * once however many partitions hold it. A story with no value, one with
-	 * no theme on the theme axis, counts under none, and is no history.
+	 * no theme on the theme axis, counts under none, and is not history.
 	 *
 	 * @param Row_Reader     $r      The reader.
 	 * @param Scope          $scope  The items read, by subject.
@@ -1791,7 +1791,7 @@ final class Graph_Query {
 	/**
 	 * The first day of the bucket holding now and of each before it, newest
 	 * first, as the bucket's own SQL spells them, in one statement: each
-	 * start is that of the bucket holding the second before the next's.
+	 * start is that of the bucket holding the second before the next start.
 	 *
 	 * @param Row_Reader $r     The reader.
 	 * @param string     $span  A BUCKETS expression over `t`.

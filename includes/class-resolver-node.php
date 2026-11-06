@@ -67,7 +67,7 @@
  * reads the process's shared `Entity_Index::current()`, again once a
  * re-resolution's signal settled after the shared index was read; while the
  * active topologies do not declare the `intel-graph` table, that index is
- * empty. An item its NER step is owed, which nothing else links, is asked of
+ * empty. An item its NER step is owed, which has no other link, is asked of
  * the model-call node its `make_node` line names, `intel:llm`, naming the
  * `extract_entities` prompt with the item beside the record it came in,
  * which rides as the carry without the item's fields, a re-extraction's
@@ -802,7 +802,7 @@ class Resolver_Node extends Node {
 	}
 
 	/**
-	 * Seconds the cache keeps a hold nothing rewrites.
+	 * Seconds the cache keeps a hold that is not rewritten.
 	 *
 	 * @api Used by substrate.
 	 */

@@ -337,8 +337,9 @@ acronym, domain-stem or NER fuzzy match, even an accepted one, while an
 entity of another type still links by it. `Entity_Index` keys each
 rejected name by its entity's type, `is_rejected_name()` answering for any
 type and `stoplisted()` for one entity's, a rejected entity's localities
-and acronyms never among them. `names_in()` marks each hit but an acronym's,
-which matches only in its own case, that `stoplisted()` holds, and
+and acronyms never among them. `names_in()` marks each hit that
+`stoplisted()` holds, except an acronym's hit, which matches only in its own
+case, and
 `Resolver::stemmed()` each stem hit whose squashed stem or surface's norm
 it holds, so "News Room" is the rejected Newsroom; a marked hit still
 claims its span, so a shorter name inside it drops, and then links
@@ -584,8 +585,8 @@ after it, and which also catches what finishing an answer
 throws, rethrowing a stop, logs it and has the caller park the item. With its `set_api_url`, `set_model` or `set_feature`
 unset it answers a chat request an error naming them, and with
 `set_api_url`, `set_decision_model` or `set_feature` unset a decision
-`<name>: set_api_url, set_decision_model and set_feature before a decision`; where no entry of its Vault group,
-its one argument, is on the api url's origin (`Curl_Node::lends_credential()`)
+`<name>: set_api_url, set_decision_model and set_feature before a decision`; where its Vault group,
+its one argument, holds no entry on the api url's origin (`Curl_Node::lends_credential()`)
 it answers `{ unlent: <group>, item, inputs, carry }` at once and calls
 nothing. Otherwise it adds the request to the `{name}:frontier` sqlite
 Table it owns, through the substrate's `Frontier`, as the member
@@ -691,7 +692,7 @@ the name `Graph_Query::name_of()` shows for the survivor of the
 resolution's `publisher`, as the shared index reads it, when that survivor
 holds an open `client` role (`Graph_Query::open_roles()` over the keys
 `Entity_Index::keys_of()` answers, the inverse of its merges, built once
-per index), read when it asks; '' when no entity published the item, its survivor is not an open
+per index), read when it asks; '' when the item has no publisher entity, the publisher's survivor is not an open
 client, a former one among them, or the projection will not open, logged.
 A resolution whose `publisher` is not a string is dropped as unreadable. It offers the
 themes of the items most like this one as the projection holds them when
@@ -778,8 +779,8 @@ rules for launch" or "launch checklist", never a category of work such as
 part of the same event or initiative; only when there are themes to offer
 does it add the clause reusing a fenced theme only when its example, a
 summary, is part of the same event or initiative as this item, and writing
-a new one when none is. The system message frames the reading for the
-audience `set_audience` names, and without an audience while none is set, and scores
+a new one otherwise. The system message frames the reading for the
+audience `set_audience` names, and without an audience while `set_audience` has set none, and scores
 against the `add_profile` lines; the shipped topologies set neither, so a
 deployment supplies both (see Topologies). `add_importance_floor <kind>
 <min> [<relevance>]` sets a kind's least importance, 0 to
@@ -972,8 +973,8 @@ re-extracts the same range through the same path, sharing `reresolve`'s one
 helper for the root refusal, the days, the source, the refusal of a bad
 range, `ask()` and the success line, which names the source when given.
 Both read `--source` trimmed, as `items purge` does, and refuse one given
-empty rather than widening it to every source, and one that no stored item
-is recorded under, in its own case, listing those sources sorted
+empty rather than widening it to every source, and one with no stored item
+recorded under it, in its own case, listing those sources sorted
 (`Items_CLI_Command::stored_sources()`, which reads every partition's
 `items` as `items purge` selects them). A node's name is not always its
 items' source: `news` records under `feed` and `p2-restricted` under `p2`.
@@ -1069,10 +1070,10 @@ readable items about it extracted as each of `Graph_Query::STATUS_KINDS`
 (`churned`, `churn_signal`, `feature_request` and `complaint`, in that order), and the time of the newest readable
 item about it, or null. Its window is the whole retention: every readable
 item counts, as the timeline pages them, and what its own site published
-counts in none of them. Any other entity answers `status: null`. The
+does not count in any of them. Any other entity answers `status: null`. The
 status carries no signal: the Entity view reads the latest from its own
-`signals` read. A link's state is the highest-ranked judgment's
-(`JUDGE_RANK`: a person over an agent), else the machine's, and a
+`signals` read. A link's state is the highest-ranked judgment's state
+(`JUDGE_RANK`: a person over an agent), else the machine's state, and a
 `rejected` link counts nowhere. `review links` also leaves out a proposed
 link whose entity's survivor is rejected, read as
 `Entity_Index::winning_states()` reads a state, from the highest partition
@@ -1162,12 +1163,12 @@ statement reads the page of groups with their stories, and one more those
 stories' entities, however many groups the page holds. `trends` counts by `by` per `bucket`, the call's, else its lens's,
 else `kind` (`Graph_Query::DEFAULT_AXIS`) per `week` (`DEFAULT_BUCKET`);
 neither arg declares a default, since a bound default would mask the
-lens's. The axes are `kind`, `topic` and `theme`, the theme an
+lens's values. The axes are `kind`, `topic` and `theme`, the theme an
 extraction names (`themes`), each item's read from the newest partition
 holding a row for it, as a cluster is, so a stale row in an older file
 makes no second value; counting by theme, each row is `{ bucket,
 value, count, clients, items }`, `clients` named as a group names them,
-and an item with no theme counts under none, and is no history to a
+and an item with no theme counts under none, and is not history to a
 signal. Its rows list the newest bucket first, then the highest count. A
 story counts once (`Graph_Query::stories()`): an item the deduper placed in
 a cluster counts as the cluster's canonical, the cluster read from the
@@ -1187,7 +1188,7 @@ topics only those the caller may see now (`visible()`), so one a judgment
 has since left to restricted items alone is left out for a non-holder.
 Given `lens`, slugged as `save_lens` slugs it, `search` and `trends` read
 through it (`Graph_Query::through()`):
-each list the call names, and `entity`, replaces the lens's; `since` or
+each list the call names, and `entity`, replaces the lens's value; `since` or
 `until`, or both, replace the lens's `days`, the last that many UTC days
 ending today, whole, the side the call leaves open staying open; and the
 graph opens with `ri` over the caller's readable tiers intersected with the
@@ -1210,7 +1211,7 @@ and a snapshot that is not in any cache reads as unknown or null, never as healt
 Intelligence it answers `{ state, topology }`, the `CLI::worker_states()`
 word `wp nodes status` reports for that topology's `.p0` against
 `Bootstrap::get_topologies()`, whatever the topology dirs hold. Only when
-none runs, or `running()` throws because an active `.tsl` will not read
+`running()` answers null, or throws because an active `.tsl` will not read
 (the one throw it chains a cause on), does it ask
 `Intelligence_Health::missing_lists()`: while
 `newspack-intelligence-lists` does not resolve in any topology dir it answers `{ state: unconfigured, file }`,
@@ -1296,7 +1297,7 @@ feed reaching back two weeks would otherwise spike every kind it first
 brings, and one stray item in a baseline would re-arm the rule. Counting
 by any other axis, a topic or a theme among them, a value needs no
 history of its own, so a new topic or a theme's first surge spikes, once
-a themed story precedes the window, since an unthemed one is no history
+a themed story precedes the window, since an unthemed one is not history
 there; a signal on the theme axis names no clients. `baseline` is that mean, and
 `items` cite the bucket's five newest items. A story counts once, as its
 canonical, as `trends` counts it, on both axes, dated by its earliest
@@ -1366,7 +1367,7 @@ answers the watch's unseen matches the caller may read now, the latest
 matched first, each as `search` answers it plus `matched_ts`, through
 `Graph_Query::listed()`, and `{ items: [], total: 0 }` for a watch whose
 `inbox` is off, whose matches the watcher still records for its email; and `mark_seen <key> [--item=…]` writes one
-`watch_seen` per named match, or per unseen match when none is named, a
+`watch_seen` per named match, or per unseen match when the call names none, a
 match already seen not again, and answers `{ ok, count }`. The three boxes
 are bools, `digest` and `instant` off and `inbox` on by default.
 `save_watch` refuses a blank name, not exactly one target (`a watch follows
@@ -1520,7 +1521,7 @@ capability, and on a multisite a super admin, who passes every
 operator surfaces a holder is one thing, a user's own grant on the current
 site (`WP_User::$caps`): `holders()` lists those alone, so every listed
 login is one `revoke()` takes, and `strip()` removes every one, leaving a
-role's. `grant()` and `revoke()` look the login up as WordPress does, through
+role's grant. `grant()` and `revoke()` look the login up as WordPress does, through
 `sanitize_user()`, and refuse an unknown one (`no user: <login>`), on a
 multisite a user who is not a member of the current site, so a grant never
 makes one, a grant to a user already granted it and a revoke from one
@@ -2351,7 +2352,7 @@ the command, naming how many it sent; running it again sends the rest,
 because it selects only what the projection still holds. Its success line
 names the dry run, the command with `--dry-run`, to run once the
 projectors have read the purges, which answers `Nothing to purge` when
-none is left. With `--dry-run` it writes nothing and prints the count per
+nothing is left. With `--dry-run` it writes nothing and prints the count per
 key prefix, up to the first `-` and its control characters rendered by
 `Core::terminal_safe()`, the total and the command that purges them, the
 same command without `--dry-run`, `--reason` carried when given.
@@ -2381,7 +2382,7 @@ Read the counts, then run the command it prints, the same command without
 | `newspack-intelligence-collect-unthread.tsl.php` | `unthread` at the restricted tier on 900, under its Vault group, → `intel:writer`, an include of its own so a collect reading the rest of the token half another way can keep it; includes the streams |
 | `newspack-intelligence-deployment.tsl.php` | `include newspack-intelligence-lists` alone, which every composition includes last; it declares no `secure`, because the Shell skips one inside an include. The file it includes, `newspack-intelligence-lists`, is not shipped: what a site reads and cares about, which it keeps in the user topology dir, `<base_dir>/topologies/newspack-intelligence-lists.tsl`, empty when it has no settings of its own. The shipped topologies name no repo, feed, search, team, channel, site, profile line or audience, so with an empty file GitHub, Linear, Slack, both P2 nodes and `news` fetch nothing, `feed` reads only the open clients' feeds, Unthread, which takes no list, reads as it would anyway, and the extractor frames its prompt without an audience, scores without a profile and sets no importance floor. The lists' `cmd <node>:config add_…`, `add_profile`, `add_importance_floor` and `set_audience` lines reach every node the files before the deployment file declare, because every composition includes that last. Without a lists file in any topology dir, none of the compositions reads: the worker cannot load, `wp nodes doctor` fails worker liveness naming the include and opens with a warning naming the path and that an empty file will do (`Intelligence_Health::warn_missing_lists()`, on `before_invoke:nodes doctor`), and the health strip's `collection` row reads `no lists file` naming the path. The user dir resolves after every stock dir, so the plugin ships no lists file, which would win, and a user-dir `newspack-intelligence-deployment.tsl.php` is shadowed by this one |
 | `newspack-intelligence-project.tsl.php` | `intel:items:consumer`, `intel:ontology:consumer` and `intel:watches:consumer`, each → `projector`, writing the `intel-graph` Row_Table; their cursors serve no other node |
-| `newspack-intelligence-resolve.tsl.php` | `intel:items:resolve` and `intel:reresolve:resolve` → `resolver` → `extractor` → `deduper`, each writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later` and asking `intel:llm`, an `LLM_Call` under the `ai-proxy` Vault group at concurrency 4, its decision model `decision-lux-9b`, for every model call, the items Consumer checkpointing the deduper; includes the streams |
+| `newspack-intelligence-resolve.tsl.php` | `intel:items:resolve` and `intel:reresolve:resolve` feed `resolver`, which feeds `extractor`, which feeds `deduper`, each of those three writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later` and asking `intel:llm`, an `LLM_Call` under the `ai-proxy` Vault group at concurrency 4, its decision model `decision-lux-9b`, for every model call, the items Consumer checkpointing the deduper; includes the streams |
 
 ### Nodes
 
@@ -2417,7 +2418,7 @@ which the resolver, building no extraction prompt, does not declare; its
 `dump_config()` replays every setter and list, then one
 `add_importance_floor` line per floor. An identical `add_*` repeat is
 a no-op, and each `remove_*` takes its `add_*`'s argument, drops that entry and
-is refused when none is. Every `Intelligence_CI` verb declares its role, and
+is refused when that entry is absent. Every `Intelligence_CI` verb declares its role, and
 the handlers never check a role of their own (substrate ADR-26).
 
 ### Client roster

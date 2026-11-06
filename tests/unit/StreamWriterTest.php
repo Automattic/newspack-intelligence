@@ -207,7 +207,7 @@ final class StreamWriterTest extends TestCase {
 	 * Shadow the streams topology with tiny segments, a count target of three
 	 * and a hard cap of five.
 	 *
-	 * @param string $config The config lines after the Partition's.
+	 * @param string $config The config lines after the Partition's `make_node` line.
 	 */
 	private function shadow_streams( string $config ): void {
 		\file_put_contents( "{$this->fixtures}/newspack-intelligence-streams.tsl", "make_node Partition intel:ontology <config:logs_dir>/intel-ontology.p{partition} 256 2 3 5 0 0\n{$config}" );

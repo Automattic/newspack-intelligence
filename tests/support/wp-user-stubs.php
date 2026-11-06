@@ -74,7 +74,7 @@ if ( ! class_exists( 'WP_User' ) ) {
 		/** @var array<string,bool> The user's own map on the current site, roles included. */
 		public array $caps;
 
-		/** The address in `_wp_test_user_emails`, '' when none. */
+		/** The address in `_wp_test_user_emails`, '' when it holds none. */
 		public string $user_email;
 
 		public function __construct( public int $ID, public string $user_login ) {

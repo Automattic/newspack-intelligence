@@ -319,8 +319,8 @@ final class Entity_Index {
 
 	/**
 	 * Who holds an identifier: the survivor of a live holder, else the key
-	 * of one the index leaves out, rejected or unresolvable; none when no
-	 * entity does.
+	 * of one the index leaves out, rejected or unresolvable; none when the
+	 * identifier has no holder.
 	 *
 	 * @param string $kind  An identifier kind.
 	 * @param string $value Its value, in any case.

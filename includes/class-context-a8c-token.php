@@ -61,7 +61,7 @@ final class Context_A8C_Token {
 	private static array $refused = [];
 
 	/**
-	 * The token held for $dir, the newest file read in when none is held;
+	 * The token held for $dir, else the newest file read in;
 	 * null unless a file reads as a JSON object carrying an access token.
 	 *
 	 * @return array{path:string,token:array<array-key,mixed>}|null

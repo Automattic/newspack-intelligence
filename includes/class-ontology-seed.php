@@ -138,7 +138,7 @@ final class Ontology_Seed {
 	 * type, kind or role outside its set, an event past one line — is
 	 * refused here, naming the file and the field.
 	 *
-	 * @param string|null $path A seed file, or null for the site's.
+	 * @param string|null $path A seed file, or null for the site's seed file.
 	 * @throws Seed_Refused When the file is not found, naming a given file by
 	 *                      its name, else where the site's belongs, by its path
 	 *                      only to a manager, and the example to start from; or
@@ -347,7 +347,7 @@ final class Ontology_Seed {
 
 	/**
 	 * A seed key, refused unless the key its slug makes spells it the same,
-	 * so a key is never written under another spelling than the file's.
+	 * so a key is never written in a spelling the file does not use.
 	 *
 	 * @param string             $field Where it sits.
 	 * @param string             $key   The key as the file spells it.

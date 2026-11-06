@@ -545,10 +545,10 @@ final class ExtractorNodeTest extends TestCase {
 
 	/**
 	 * An offered theme Lux chooses at THEME_CHOICE_MIN or more is the theme
-	 * written; a weaker choice, or none, keeps the reply's own. An item no
-	 * client published is asked the theme choice alone.
+	 * written; a weaker choice, or none, keeps the reply's own. An item
+	 * without a client publisher is asked the theme choice alone.
 	 *
-	 * @param int|null $offered The offered theme written, by its place; null for the reply's.
+	 * @param int|null $offered The offered theme written, by its place; null for the reply's theme.
 	 */
 	#[\PHPUnit\Framework\Attributes\DataProvider( 'theme_choices' )]
 	public function test_the_theme_choice_picks_an_offered_theme_when_sure( string $choice, float $confidence, ?int $offered ): void {
@@ -649,7 +649,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( [ $kind ], \array_column( $this->extractions(), 'kind' ) );
 	}
 
-	/** A launch no client published and offered no theme is reviewed all the same, asked `fits_kind` alone. */
+	/** A launch with no client publisher and no offered theme is reviewed all the same, asked `fits_kind` alone. */
 	public function test_a_launch_owes_a_review_of_its_own(): void {
 		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
 		$this->answer( '{"summary":"Mesa Courier goes live.","kind":"launch"}' );
@@ -825,8 +825,8 @@ final class ExtractorNodeTest extends TestCase {
 
 	/**
 	 * A review that fails publishes its text as last_error, keeping the mode
-	 * and last_ok_at; an extraction no review follows leaves it standing, and
-	 * a review that answers clears it.
+	 * and last_ok_at; an extraction not followed by a review leaves it standing,
+	 * and a review that answers clears it.
 	 */
 	public function test_a_review_outage_reads_as_failing_until_a_review_answers(): void {
 		$this->publishing( null );
@@ -979,7 +979,7 @@ final class ExtractorNodeTest extends TestCase {
 		);
 	}
 
-	/** A claim object spelling a name a rejected entity of its type carries resolves to no entity of that type. */
+	/** A claim object spelling a name a rejected entity of its type carries does not resolve to an entity of that type. */
 	public function test_a_claim_object_spelling_a_stoplisted_name_carries_no_key(): void {
 		$this->seed(
 			self::entity( self::GAZETTE, 'The Harbor Gazette' ),

@@ -401,7 +401,7 @@ XML;
 	 * a guid holding colons is read past the lane whole.
 	 */
 	/**
-	 * A configured feed is anyone's, so a copy it lists of a client's post
+	 * A configured feed belongs to anyone, so a copy it lists of a client's post
 	 * never stands in for the client's own, whichever answers first.
 	 *
 	 * @param bool $configured_first Whether the configured feed answers first.
@@ -797,7 +797,7 @@ XML;
 		$this->assertSame( [], $this->names() );
 	}
 
-	/** A canonical that spells the client's own domain is no name, so its feed's title is written over it. */
+	/** A canonical that spells the client's own domain is not a name, so its feed's title is written over it. */
 	public function test_a_canonical_spelling_a_domain_takes_the_feeds_title(): void {
 		$node = $this->titled_clients();
 		$this->seed( self::facts( 'organization:sandpiper-gazette', [ 'canonical' => [ 'sandpipergazette.example' ] ] ) );

@@ -114,7 +114,7 @@ class Extractor_Node extends Node {
 	/** The Delay a failed call's retry parks on. */
 	protected string $later = '';
 
-	/** Whether the last review failed, so a reply no review follows leaves its status standing. */
+	/** Whether the last review failed, so a reply not followed by a review leaves its status standing. */
 	private bool $review_failing = false;
 
 	/** Who the prompt is framed for, set via set_audience; '' names no one. */
@@ -167,9 +167,9 @@ class Extractor_Node extends Node {
 
 	/**
 	 * The name of the open client whose site published the item, read as
-	 * the publisher's survivor in the shared index; '' when no entity
-	 * published it, its survivor holds no open `client` role, or the
-	 * projection will not open, logged.
+	 * the publisher's survivor in the shared index; '' when the item
+	 * has no publisher entity, the publisher's survivor holds no open
+	 * `client` role, or the projection will not open, logged.
 	 *
 	 * @param string $publisher The publisher's entity key; '' for none.
 	 */

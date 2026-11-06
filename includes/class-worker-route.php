@@ -161,9 +161,9 @@ final class Worker_Route {
 
 	/**
 	 * The one active topology declaring an `Intel_Event_Writer`; null while
-	 * none does and every active `.tsl` reads, which is collection off. An
-	 * active name that does not resolve to any `.tsl` declares nothing, so it
-	 * counts as read.
+	 * the active topologies declare none and every active `.tsl` reads, which
+	 * is collection off. An active name that does not resolve to any `.tsl`
+	 * declares nothing, so it counts as read.
 	 *
 	 * @throws \RuntimeException When several do, naming them; or none does while an active `.tsl` will not read, naming it, its failure chained.
 	 */

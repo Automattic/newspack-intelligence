@@ -224,7 +224,7 @@ final class LensThemeGroupsTest extends TestCase {
 	}
 
 	/**
-	 * A grouped read that nothing else bounds keeps the last GROUP_DAYS
+	 * A grouped read with no other bound keeps the last GROUP_DAYS
 	 * days; a lens's days or a call's since widen it, and items still read
 	 * the whole retention.
 	 */
@@ -353,7 +353,7 @@ final class LensThemeGroupsTest extends TestCase {
 	}
 
 	/**
-	 * A story with no theme is no history on the theme axis, so a surge
+	 * A story with no theme is not history on the theme axis, so a surge
 	 * whose lens holds only unthemed stories before it spikes nothing.
 	 */
 	public function test_an_unthemed_story_is_no_theme_history(): void {

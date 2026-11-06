@@ -324,7 +324,7 @@ class TopologyDurabilityTest extends TestCase {
 		);
 	}
 
-	/** The core part declares every node but the collect's, the reresolver and the watcher among them. */
+	/** The core part declares every node but the collect part's nodes, the reresolver and the watcher among them. */
 	public function test_the_core_declares_every_node_but_the_collects(): void {
 		Topology_Registry::register_user_dir( \dirname( __DIR__ ) . '/fixtures/topologies' );
 		$names = static fn ( string $topology ): array => \array_column( Topology_Analyzer::graph_for( $topology )['nodes'], 'name' );

@@ -311,7 +311,7 @@ class Prompts {
 	 * @param list<array{theme:string,example:string}> $themes      The themes offered for reuse, each with an item's title it was given to.
 	 * @param string                                   $profile     The audience's relevance profile.
 	 * @param string                                   $audience    Who the analyst reads for; '' names no one.
-	 * @param string                                   $publisher   The client that published the item; '' when no client did.
+	 * @param string                                   $publisher   The client that published the item; '' when the item has no client publisher.
 	 * @return array<int,array{role:string,content:string}>
 	 */
 	public static function extract( array $item, array $topic_names, array $themes, string $profile, string $audience, string $publisher ): array {

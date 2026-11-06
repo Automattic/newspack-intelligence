@@ -755,7 +755,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * Drop every request not in flight, each handed to abandoned() with its
-	 * note, since none will answer: those queued since the last send, and
+	 * note, since it will not answer: those queued since the last send, and
 	 * every one the frontier holds, taken first because `drain()` answers no
 	 * values.
 	 */

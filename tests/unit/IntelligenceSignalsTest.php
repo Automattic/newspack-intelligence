@@ -213,7 +213,7 @@ final class IntelligenceSignalsTest extends TestCase {
 	}
 
 	/**
-	 * `other` counts nowhere on the about axis, so it is no history either;
+	 * `other` counts nowhere on the about axis, so it is not history either;
 	 * trends still count it.
 	 */
 	public function test_other_is_no_history(): void {

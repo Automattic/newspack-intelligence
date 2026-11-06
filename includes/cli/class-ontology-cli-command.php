@@ -277,7 +277,7 @@ class Ontology_CLI_Command {
 	 * ## OPTIONS
 	 *
 	 * [<file>]
-	 * : A seed file to read in place of the site's.
+	 * : A seed file to read in place of the site's seed file.
 	 *
 	 * ## EXAMPLES
 	 *

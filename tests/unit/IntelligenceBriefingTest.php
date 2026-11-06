@@ -18,8 +18,8 @@ require_once __DIR__ . '/../support/counts-statements.php';
 /**
  * The `briefing` read verb: what changed in the last seven UTC days, one
  * slice a call. `changes` ranks the window's items about any entity by
- * importance and groups them by the clients they are about, the rest under
- * no client; `signals` answers every client's signals on both axes and
+ * importance and groups them by the clients they are about, the rest in the
+ * no-client group; `signals` answers every client's signals on both axes and
  * every lens's, through the one read `signals` answers by, in as many
  * statements for twenty clients as for two.
  *
@@ -98,11 +98,11 @@ final class IntelligenceBriefingTest extends TestCase {
 	 * importance and grouped by the open clients each is about, each group in
 	 * the order of its most important item and its items by importance, then
 	 * the newest; an item about two clients sits under both, and one that is
-	 * not about a client, only about a former client, under no client. An
+	 * not about a client, only about a former client, in the no-client group. An
 	 * item its own site published, one only tagged with a topic, one linked
 	 * to nothing, one whose only link a curator rejected and one dated before
 	 * the window are left out. Every group carries its role: `client` for a
-	 * client's, null for the no-client group.
+	 * client's group, null for the no-client group.
 	 */
 	public function test_changes_rank_the_week_and_group_it_by_client(): void {
 		$this->about( 'linear:plover-churn', self::PLOVER, 'subject', 'churn_signal', 9.0, 1 );

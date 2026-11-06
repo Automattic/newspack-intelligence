@@ -238,7 +238,7 @@ final class PromptsTest extends TestCase {
 		}
 	}
 
-	/** An item no client publishes names no publisher and carries no publisher clause. */
+	/** An item without a client publisher names no publisher and carries no publisher clause. */
 	public function test_an_item_no_client_publishes_carries_no_publisher_clause(): void {
 		[ $system, $user ] = \array_column( Prompts::extract( [ 'title' => 'Transit grant lands' ], [], [], 'Skip kite trivia.', '', '' ), 'content' );
 
@@ -280,7 +280,7 @@ final class PromptsTest extends TestCase {
 	/**
 	 * A review offering themes asks a choice among them, each keyed t1 to tN
 	 * and told by its theme and example, beside `none`; its state adds the
-	 * reply's summary and names no publisher when none is given.
+	 * reply's summary and names no publisher when the call gives none.
 	 */
 	public function test_a_review_offering_themes_asks_a_choice_among_them(): void {
 		$inputs = [
@@ -540,7 +540,7 @@ final class PromptsTest extends TestCase {
 		$this->assertSame( 'bug report form broken', Prompts::parse_extract( '{"summary":"Kestrel Mail stalls.","theme":"bug report form broken"}', [] )['theme'] ?? null );
 	}
 
-	/** A prompt no builder answers is refused, naming it. */
+	/** A prompt without a builder is refused, naming it. */
 	public function test_messages_refuses_an_unknown_prompt(): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'no prompt: summarize' );
