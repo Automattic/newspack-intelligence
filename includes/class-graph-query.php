@@ -262,7 +262,7 @@ final class Graph_Query {
 		}
 		self::one_of( 'group', $group, self::GROUPINGS );
 		if ( null !== $args['sort'] ) {
-			throw new \InvalidArgumentException( 'sort does not apply to groups, which rank by severity, then clients, then recency' );
+			throw new \InvalidArgumentException( 'sort does not apply to groups, which rank by severity, then importance, then clients, then recency' );
 		}
 		[ $limit, $offset ] = self::page( [ 'limit' => $args['limit'] ?? self::GROUP_LIMIT ] + $args );
 		return self::through( $args, self::NO_GROUPS, static fn ( Row_Reader $r, array $g, array $filter ): array => self::grouped( $r, $g, [ 'days' => $filter['days'] ?? self::last_days( self::GROUP_DAYS ) ] + $filter, $group, $limit, $offset ) );
@@ -284,8 +284,10 @@ final class Graph_Query {
 	 * though it still counts; the time of its newest story, each dated by its
 	 * earliest copy; and its CITATIONS newest stories as
 	 * `search` answers them, the most important first, as MOST_IMPORTANT
-	 * orders them. Groups rank by severity, then by clients, the most
-	 * first, then by newest story, then by theme.
+	 * orders them. Groups rank by severity, then by the highest importance
+	 * of any copy, then by clients, the most first, then by newest story,
+	 * then by theme, so a grave unattributed bug outranks a named client's
+	 * styling fix.
 	 *
 	 * @param Row_Reader $r      The reader.
 	 * @param Graph      $g      The graph the read opened.
@@ -307,14 +309,15 @@ final class Graph_Query {
 			. " gm AS ( SELECT DISTINCT CASE WHEN c.value IS NULL THEN 'item:' || c.story ELSE 'theme:' || c.value END AS gid, COALESCE( c.value, '' ) AS theme, c.story FROM copies c"
 			. ' WHERE c.value IS NOT NULL OR c.story NOT IN ( SELECT story FROM copies WHERE value IS NOT NULL ) ),'
 			. ' ga AS ( SELECT DISTINCT gm.gid, c.copy, c.t FROM gm JOIN copies c ON c.story = gm.story ),'
-			. " gk AS ( SELECT ga.gid, ga.t, x.kind, COALESCE( sev.severity, ? ) AS severity FROM ga LEFT JOIN {$x} x ON x.item_key = ga.copy LEFT JOIN sev ON sev.kind = x.kind ),"
+			. " gk AS ( SELECT ga.gid, ga.t, x.kind, x.importance, COALESCE( sev.severity, ? ) AS severity FROM ga LEFT JOIN {$x} x ON x.item_key = ga.copy LEFT JOIN sev ON sev.kind = x.kind ),"
+			. ' gi AS ( SELECT gid, MAX( importance ) AS top FROM gk GROUP BY gid ),'
 			. ' gw AS ( SELECT gid, kind, severity FROM ( SELECT gid, kind, severity, ROW_NUMBER() OVER ( PARTITION BY gid ORDER BY severity, t DESC, kind ) AS pick FROM gk ) WHERE pick = 1 ),'
 			. ' gs AS ( SELECT gm.gid, MAX( gm.theme ) AS theme, gm.story, MIN( c.t ) AS t FROM gm JOIN copies c ON c.story = gm.story GROUP BY gm.gid, gm.story ),'
 			. ' gl AS ( SELECT DISTINCT ga.gid, ic.entity_key FROM ga JOIN ic ON ic.item_key = ga.copy ),'
 			. ' gn AS ( SELECT gid, COUNT(*) AS n FROM gl GROUP BY gid ),'
 			. ' ranked AS ( SELECT s.gid, MAX( s.theme ) AS theme, w.kind, COUNT(*) AS n, MAX( s.t ) AS newest,'
-			. ' ROW_NUMBER() OVER ( ORDER BY w.severity, COALESCE( gn.n, 0 ) DESC, MAX( s.t ) DESC, MAX( s.theme ), s.gid ) AS ord'
-			. ' FROM gs s JOIN gw w ON w.gid = s.gid LEFT JOIN gn ON gn.gid = s.gid GROUP BY s.gid ),'
+			. ' ROW_NUMBER() OVER ( ORDER BY w.severity, COALESCE( gi.top, -1 ) DESC, COALESCE( gn.n, 0 ) DESC, MAX( s.t ) DESC, MAX( s.theme ), s.gid ) AS ord'
+			. ' FROM gs s JOIN gw w ON w.gid = s.gid LEFT JOIN gi ON gi.gid = s.gid LEFT JOIN gn ON gn.gid = s.gid GROUP BY s.gid ),'
 			. " page AS MATERIALIZED ( SELECT ranked.*, ( SELECT json_group_array( json_object( 'entity_key', gl.entity_key, 'name', " . self::name_of( $r, 'gl.entity_key' ) . ' ) ) FROM gl WHERE gl.gid = ranked.gid ) AS named FROM ranked WHERE ord > ? AND ord <= ? ),'
 			. ' cited AS ( SELECT gid, story, ROW_NUMBER() OVER ( PARTITION BY gid ORDER BY t DESC, story DESC ) AS rn FROM gs WHERE gid IN ( SELECT gid FROM page ) )'
 			. ' SELECT tot.total, q.* FROM ( SELECT COUNT(*) AS total FROM ranked ) tot LEFT JOIN ( SELECT p.ord, p.theme AS g_theme, p.kind AS g_kind, p.n AS g_count, p.newest AS g_newest, p.named AS g_clients, '

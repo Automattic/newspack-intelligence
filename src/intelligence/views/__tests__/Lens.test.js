@@ -513,7 +513,7 @@ describe( 'Lens', () => {
 		await openSupport();
 		expect(
 			await screen.findByText(
-				'Ranked by severity, clients affected, then recency'
+				'Ranked by severity, importance, clients affected, then recency'
 			)
 		).toBeInTheDocument();
 		expect(

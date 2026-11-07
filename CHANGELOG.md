@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A lens's groups rank by importance before clients.** Within a kind, the group holding the most important story comes first, so a grave bug no client is named on outranks a named client's styling fix.
+
 ## [0.36.11] - 2026-11-06
 
 ### Changed

@@ -151,7 +151,7 @@ export default function GroupPage( {
 		<>
 			<p className="newspack-nodes-status is-muted">
 				{ __(
-					'Ranked by severity, clients affected, then recency',
+					'Ranked by severity, importance, clients affected, then recency',
 					'newspack-intelligence'
 				) }
 			</p>

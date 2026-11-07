@@ -91,17 +91,19 @@ final class LensThemeGroupsTest extends TestCase {
 	}
 
 	/**
-	 * Groups rank by their kind's place in the lens's kinds, then by open
-	 * clients, most first, then by newest story; an item with no theme is a
-	 * group of its own, its theme ''.
+	 * Groups rank by their kind's place in the lens's kinds, then by the
+	 * most important story they hold, then by open clients, most first,
+	 * then by newest story; an item with no theme is a group of its own,
+	 * its theme ''. So a group holding a 7 outranks one holding only 5s
+	 * however many clients the 5s name.
 	 */
-	public function test_groups_rank_by_severity_then_clients_then_recency(): void {
+	public function test_groups_rank_by_severity_then_importance_then_clients_then_recency(): void {
 		$groups = $this->grouped( '--lens=support-desk' );
 
 		$this->assertSame(
 			[
-				[ self::BILLING, 'complaint', 1, 2 ],
 				[ self::EMAIL, 'complaint', 3, 2 ],
+				[ self::BILLING, 'complaint', 1, 2 ],
 				[ self::SENDER, 'complaint', 1, 0 ],
 				[ self::BOTS, 'incident', 2, 1 ],
 				[ self::STORAGE, 'feature_request', 1, 1 ],
@@ -152,9 +154,10 @@ final class LensThemeGroupsTest extends TestCase {
 
 	/**
 	 * With no kinds every kind ranks alike, a group's kind its newest
-	 * item's, and groups level on clients and recency order by theme.
+	 * item's, and groups level on importance, clients and recency order by
+	 * theme.
 	 */
-	public function test_with_no_kinds_groups_rank_by_clients_then_recency_then_theme(): void {
+	public function test_with_no_kinds_groups_rank_by_importance_then_clients_then_recency_then_theme(): void {
 		$at = self::$oct_20 - 4 * self::DAY;
 		$this->seed(
 			self::item( 'news:tie-b', 'Tide report b', 'news', 'internal', $at ),
@@ -168,7 +171,7 @@ final class LensThemeGroupsTest extends TestCase {
 
 		$news = $this->grouped( '--lens=news-desk' )['groups'];
 		$this->assertSame( [ [ 'ferry reports', 'research' ], [ 'tide reports', 'research' ] ], \array_map( static fn ( array $g ): array => [ $g['theme'], $g['kind'] ], $news ) );
-		$this->assertSame( [ 'complaint', 'complaint', 'praise', 'feature_request', 'incident', 'complaint' ], \array_column( $this->grouped( '--source=linear' )['groups'], 'kind' ) );
+		$this->assertSame( [ 'complaint', 'incident', 'complaint', 'praise', 'feature_request', 'complaint' ], \array_column( $this->grouped( '--source=linear' )['groups'], 'kind' ) );
 	}
 
 	/** A group cites its five newest stories, the most important of them first. */
@@ -269,7 +272,7 @@ final class LensThemeGroupsTest extends TestCase {
 	/** A search that groups takes no sort, since the groups rank themselves. */
 	public function test_a_grouped_search_refuses_a_sort(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessage( 'sort does not apply to groups, which rank by severity, then clients, then recency' );
+		$this->expectExceptionMessage( 'sort does not apply to groups, which rank by severity, then importance, then clients, then recency' );
 		$this->ci->dispatch( 'search', [ '--lens=support-desk', '--group=theme', '--sort=time' ] );
 	}
 
