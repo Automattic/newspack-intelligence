@@ -437,6 +437,38 @@ final class Graph_Query {
 	}
 
 	/**
+	 * Those of `$keys` whose items sit in a watch's target now, read as
+	 * `arrivals()` reads the target: through the lens or the entity exactly
+	 * as `search` reads it, and for a collection every key, since a saved
+	 * item stays saved.
+	 *
+	 * @api Graph_Watches holds a watch's inbox to what its target shows.
+	 * @param Row_Reader   $r    The reader.
+	 * @param Graph        $g    The caller's graph.
+	 * @param string       $kind `lens`, `entity` or `collection`.
+	 * @param string       $key  The target's key.
+	 * @param list<string> $keys The item keys to test.
+	 * @return list<string>
+	 */
+	public static function in_target( Row_Reader $r, array $g, string $kind, string $key, array $keys ): array {
+		if ( 'collection' === $kind || [] === $keys ) {
+			return $keys;
+		}
+		[ $call, $name ] = self::asked( [ $kind => $key ] );
+		return self::lensed(
+			$r,
+			$g,
+			$call,
+			$name,
+			static function ( Row_Reader $r, array $g, array $filter ) use ( $keys ): array {
+				[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false );
+				$rows                            = $r->rows( "{$with} SELECT i.item_key FROM ri i WHERE {$where} AND i.item_key IN ( " . Intel_Graph_Row_Schema::marks( $keys ) . ' )', [ ...$lead, ...$binds, ...$keys ] );
+				return \array_map( static fn ( array $row ): string => Core::as_string( $row[0] ), $rows );
+			}
+		);
+	}
+
+	/**
 	 * A page of the readable items a join admits, each as `search` answers
 	 * it plus the join's fields, in the join's order, and their count.
 	 *

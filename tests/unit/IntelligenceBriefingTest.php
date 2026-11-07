@@ -97,7 +97,8 @@ final class IntelligenceBriefingTest extends TestCase {
 	 * The window's items naming any entity as subject or mention, ranked by
 	 * importance and grouped by the open clients each is about, each group in
 	 * the order of its most important item and its items by importance, then
-	 * the newest; an item about two clients sits under both, and one that is
+	 * the newest; an item about two clients sits once, under the first it
+	 * names, so the page lists each item once, and one that is
 	 * not about a client, only about a former client, in the no-client group. An
 	 * item its own site published, one only tagged with a topic, one linked
 	 * to nothing, one whose only link a curator rejected and one dated before
@@ -125,7 +126,7 @@ final class IntelligenceBriefingTest extends TestCase {
 		$this->assertSame(
 			[
 				[ self::PLOVER, 'Plover Quillpost', [ 'linear:plover-churn', 'unthread:plover-call', 'github:plover-ask', 'slack:joint-migration' ] ],
-				[ self::SEDGE, 'Sedgewick Inkfold', [ 'p2:sedge-bug', 'slack:joint-migration' ] ],
+				[ self::SEDGE, 'Sedgewick Inkfold', [ 'p2:sedge-bug' ] ],
 				[ null, null, [ 'feed:wren-grant' ] ],
 			],
 			\array_map( static fn ( array $group ): array => [ $group['entity_key'], $group['name'], \array_column( $group['items'], 'item_key' ) ], $answer['groups'] )
@@ -186,7 +187,7 @@ final class IntelligenceBriefingTest extends TestCase {
 	 * An item about more than three open clients is filed once: in the
 	 * `newspack_product` group when it is about a holder of that role, else
 	 * in the group of role null, its entities still naming every client. An
-	 * item about three still sits under each of them.
+	 * item about three sits once, under the first of them it names.
 	 */
 	public function test_an_item_about_many_clients_is_filed_once(): void {
 		$dunlin  = 'organization:dunlin-dispatch';
@@ -220,8 +221,6 @@ final class IntelligenceBriefingTest extends TestCase {
 				[ null, 'newspack_product', [ 'p2:election-roundup' ] ],
 				[ null, null, [ 'p2:election-digest' ] ],
 				[ self::PLOVER, 'client', [ 'slack:trio-migration' ] ],
-				[ $dunlin, 'client', [ 'slack:trio-migration' ] ],
-				[ self::SEDGE, 'client', [ 'slack:trio-migration' ] ],
 			],
 			\array_map( static fn ( array $group ): array => [ $group['entity_key'], $group['role'], \array_column( $group['items'], 'item_key' ) ], $groups )
 		);

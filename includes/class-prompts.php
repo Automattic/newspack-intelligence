@@ -65,11 +65,11 @@ class Prompts {
 	 */
 	public const KIND_CHECKS = [
 		'launch' => [
-			'asks' => 'Does this item announce that a product, publication or service is now available to its readers or customers? Answer no for a ticket or checklist tracking launch work, even one marked complete; a person\'s or team\'s status update, weekly note or retrospective; a deploy to one site; and an internal tool.',
+			'asks' => 'Does this item announce that a product, publication or service is now available to its readers or customers? Answer no for a ticket or checklist tracking launch work, even one marked complete; a person\'s or team\'s status update, weekly note or retrospective; a deploy to one site; an internal tool; and a publication\'s own contest, vote, event, quiz, club or column.',
 			'min'  => 0.7,
 		],
 		'funding' => [
-			'asks' => 'Does this item report money reaching an organization from a funder or investor: a grant, a fund, an investment, a foundation\'s gift or a funder\'s matching program? Answer no when a publication asks its own readers to donate, even with a match on their gifts.',
+			'asks' => 'Does this item report money reaching a news organization or journalism from a funder or investor: a grant, a fund, an investment, a foundation\'s gift or a funder\'s matching program? Answer no for an appeal asking readers to give, even one offering a funder\'s match on their gifts, and when the money goes to anything but news.',
 			'min'  => 0.5,
 		],
 		'research' => [
@@ -77,8 +77,8 @@ class Prompts {
 			'min'  => 0.5,
 		],
 		'feature_request' => [
-			'asks' => 'Does this item ask for a capability the product lacks that would serve publishers generally? Answer no for work done for one site or a named few: a setting changed, a file removed, a site set up, migrated, styled or extended, a capacity increase, or a resource added.',
-			'min'  => 0.5,
+			'asks' => 'Does this item ask for a capability the product lacks that would serve publishers generally? Answer no for work done for one site or a named few: a setting changed, a file removed, a site set up, migrated, styled or extended, a move between vendors, a data import, a capacity increase, or a resource added.',
+			'min'  => 0.55,
 		],
 		'bug' => [
 			'asks' => 'Does this item report or fix a defect in shipped code, where the software does the wrong thing for a reader, a publisher or an admin? Answer no for a planned change, a configuration rollout, a data or content cleanup, a documentation change, a design refinement, or a catch-all list.',

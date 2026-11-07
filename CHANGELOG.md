@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The Briefing lists each item once.** An item about two or three clients sits under the first it names, so "the 50 most important" shows 50 entries.
+- **A watch's inbox follows its target.** A match whose item has since left the lens or entity, as a re-extraction can move it, is neither listed nor counted.
+- **Three kind checks read tighter.** `launch` leaves out a publication's own contest, event, quiz, club or column; `funding` keeps money for news and drops reader appeals; `feature_request` leaves out a vendor move or a data import, at a bar of 0.55.
 - **A lens's groups rank by importance before clients.** Within a kind, the group holding the most important story comes first, so a grave bug no client is named on outranks a named client's styling fix.
 
 ## [0.36.11] - 2026-11-06

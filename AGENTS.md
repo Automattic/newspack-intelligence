@@ -1356,15 +1356,16 @@ lens, entity or collection. `Graph_Watches` holds its five verbs, each at
 `read`, each answering or changing the caller's own watches alone:
 `watches` lists them by name, `{ watches: [ { watch_key, name, target: {
 kind, key }, digest, instant, inbox, unseen } ], available }`, `unseen`
-counting the unseen matches the caller may read now, 0 for a watch whose
-`inbox` is off; `save_watch <name>
+counting the unseen matches the caller may read now whose items still sit
+in the target (`Graph_Query::in_target()`), 0 for a watch whose `inbox` is
+off; `save_watch <name>
 [--lens=] [--entity=] [--collection=] [--digest=] [--instant=] [--inbox=]
 [--key=]` writes `watch_saved` under a key it mints, sixteen hex
 characters, or under the key of one of the caller's own watches, which it
 replaces, and answers `{ ok, event_id, watch_key }`; `remove_watch <key>`
 writes `watch_removed`; `watch_matches <key> [--limit=] [--offset=]`
-answers the watch's unseen matches the caller may read now, the latest
-matched first, each as `search` answers it plus `matched_ts`, through
+answers the watch's unseen matches the caller may read now whose items
+still sit in the target, the latest matched first, each as `search` answers it plus `matched_ts`, through
 `Graph_Query::listed()`, and `{ items: [], total: 0 }` for a watch whose
 `inbox` is off, whose matches the watcher still records for its email; and `mark_seen <key> [--item=…]` writes one
 `watch_seen` per named match, or per unseen match when the call names none, a
@@ -1408,9 +1409,9 @@ window's `Graph_Query::DEFAULT_LIMIT` (50) readable items holding a live
 so an item only tagged with a topic or only `publisher`-linked never
 appears, by importance, then relevance, then the newest, the unscored last,
 each as `search` answers it, and `total` counting every such item; each
-item sits under every entity holding an open `client` role, as its
-survivor, that it is about, in a group of role `client` carrying the
-client's key and name, unless it is about more than
+item sits once, under the first entity holding an open `client` role,
+as its survivor, that it is about, in a group of role `client` carrying
+the client's key and name, unless it is about more than
 `Graph_Query::MAX_ITEM_CLIENTS` (3) of them, when it is filed
 once as an item about no client is, its entities still naming every
 client. One that is not about an open client, or is about that many, but

@@ -47,7 +47,8 @@ final class Graph_Watches {
 
 	/**
 	 * The caller's own watches, by name, each with its unseen matches the
-	 * caller may read now, none for a watch that does not ask for the inbox.
+	 * caller may read now of items still in its target, none for a watch
+	 * that does not ask for the inbox.
 	 *
 	 * @return array<string,mixed> `{ watches: [ { watch_key, name, target: { kind, key }, digest, instant, inbox, unseen } ], available }`.
 	 */
@@ -64,13 +65,9 @@ final class Graph_Watches {
 						'digest'    => (bool) $row[4],
 						'instant'   => (bool) $row[5],
 						'inbox'     => (bool) $row[6],
-						'unseen'    => Core::as_int( $row[7] ),
+						'unseen'    => $row[6] ? \count( self::inbox( $r, $g, Core::as_string( $row[0] ), Core::as_string( $row[2] ), Core::as_string( $row[3] ) ) ) : 0,
 					],
-					$r->rows(
-						"{$g['with']} SELECT w.watch_key, w.name, w.target_kind, w.target_key, w.digest, w.instant, w.inbox, CASE WHEN w.inbox THEN ( SELECT COUNT(*) FROM " . self::unseen( $r )
-						. ' u JOIN ri i ON i.item_key = u.item_key WHERE u.watch_key = w.watch_key ) ELSE 0 END FROM ' . Intel_Graph_Row_Schema::all( $r, 'watches' ) . ' w WHERE w.owner = ? ORDER BY w.name, w.watch_key',
-						[ ...$g['binds'], $owner ]
-					)
+					$r->rows( 'SELECT w.watch_key, w.name, w.target_kind, w.target_key, w.digest, w.instant, w.inbox FROM ' . Intel_Graph_Row_Schema::all( $r, 'watches' ) . ' w WHERE w.owner = ? ORDER BY w.name, w.watch_key', [ $owner ] )
 				),
 			]
 		);
@@ -207,15 +204,20 @@ final class Graph_Watches {
 		return Graph_Query::answer(
 			Graph_Query::NO_ITEMS,
 			static function ( Row_Reader $r, array $g ) use ( $key, $owner, $args ): array {
-				if ( ! self::own( $r, $key, $owner ) ) {
+				$target = self::own( $r, $key, $owner );
+				if ( null === $target ) {
+					return Graph_Query::NO_ITEMS;
+				}
+				$keys = self::inbox( $r, $g, $key, ...$target );
+				if ( [] === $keys ) {
 					return Graph_Query::NO_ITEMS;
 				}
 				return Graph_Query::listed(
 					$r,
 					$g,
 					[
-						'join'   => 'JOIN ( SELECT u.item_key, u.matched_ts FROM ' . self::unseen( $r ) . ' u WHERE u.watch_key = ? ) w ON w.item_key = i.item_key',
-						'binds'  => [ $key ],
+						'join'   => 'JOIN ( SELECT u.item_key, u.matched_ts FROM ' . self::unseen( $r ) . ' u WHERE u.watch_key = ? AND u.item_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) ) w ON w.item_key = i.item_key',
+						'binds'  => [ $key, ...$keys ],
 						'fields' => [ 'matched_ts' => 'w.matched_ts' ],
 						'order'  => 'w.matched_ts DESC, i.item_key DESC',
 					],
@@ -223,6 +225,22 @@ final class Graph_Watches {
 				);
 			}
 		);
+	}
+
+	/**
+	 * A watch's unseen matches the caller may read now whose items still
+	 * sit in its target, so the inbox reads what the target shows.
+	 *
+	 * @param Row_Reader $r      The reader.
+	 * @param Graph      $g      The caller's graph.
+	 * @param string     $watch  The watch key.
+	 * @param string     $kind   Its target's kind.
+	 * @param string     $target Its target's key.
+	 * @return list<string> The item keys.
+	 */
+	private static function inbox( Row_Reader $r, array $g, string $watch, string $kind, string $target ): array {
+		$keys = \array_map( static fn ( array $row ): string => Core::as_string( $row[0] ), $r->rows( "{$g['with']} SELECT u.item_key FROM " . self::unseen( $r ) . ' u JOIN ri i ON i.item_key = u.item_key WHERE u.watch_key = ?', [ ...$g['binds'], $watch ] ) );
+		return Graph_Query::in_target( $r, $g, $kind, $target, $keys );
 	}
 
 	/**
@@ -278,20 +296,22 @@ final class Graph_Watches {
 	}
 
 	/**
-	 * Whether one of the owner's own watches asks for the inbox, refusing a
-	 * key that is not one of them.
+	 * The target of one of the owner's own watches, as `[ kind, key ]`, or
+	 * null when the watch does not ask for the inbox, refusing a key that is
+	 * not one of them.
 	 *
 	 * @param Row_Reader $r     The reader.
 	 * @param string     $key   The watch key.
 	 * @param int        $owner The caller's user id.
+	 * @return array{0:string,1:string}|null
 	 * @throws \InvalidArgumentException As `no watch: <key>`, whoever else may own it.
 	 */
-	private static function own( Row_Reader $r, string $key, int $owner ): bool {
-		$inbox = $r->rows( 'SELECT inbox FROM ' . Intel_Graph_Row_Schema::all( $r, 'watches' ) . ' w WHERE watch_key = ? AND owner = ? LIMIT 1', [ $key, $owner ] )[0][0] ?? null;
-		if ( null === $inbox ) {
+	private static function own( Row_Reader $r, string $key, int $owner ): ?array {
+		$row = $r->rows( 'SELECT inbox, target_kind, target_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'watches' ) . ' w WHERE watch_key = ? AND owner = ? LIMIT 1', [ $key, $owner ] )[0] ?? null;
+		if ( null === $row ) {
 			throw new \InvalidArgumentException( \esc_html( "no watch: {$key}" ) );
 		}
-		return (bool) $inbox;
+		return $row[0] ? [ Core::as_string( $row[1] ), Core::as_string( $row[2] ) ] : null;
 	}
 
 	/**

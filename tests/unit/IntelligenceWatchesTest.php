@@ -307,6 +307,23 @@ final class IntelligenceWatchesTest extends TestCase {
 	}
 
 	/**
+	 * A match whose item no longer sits in the watch's target, as one a
+	 * re-extraction or a rejected link moved out of it, is neither listed
+	 * nor counted, so the inbox reads what the target shows now.
+	 */
+	public function test_a_match_that_left_its_target_is_neither_listed_nor_counted(): void {
+		$this->own_watches();
+		$this->seed(
+			self::item( 'feed:tern-ferry-4417', 'Tern ferry timetable', 'feed', 'public', self::$oct_06 ),
+			self::matched( self::OWN, 'feed:tern-ferry-4417', 4, self::$oct_06 ),
+			self::matched( self::OWN, 'feed:gazette-award', 2, self::$oct_06 )
+		);
+
+		$this->assertSame( [ [ 'feed:gazette-award' ], 1 ], [ \array_column( $this->ci->dispatch( 'watch_matches', [ self::OWN ] )['items'], 'item_key' ), $this->ci->dispatch( 'watch_matches', [ self::OWN ] )['total'] ] );
+		$this->assertSame( 1, $this->ci->dispatch( 'watches', [] )['watches'][0]['unseen'] );
+	}
+
+	/**
 	 * A watch that does not ask for the inbox counts no unseen match and
 	 * lists none, though the watcher records them for its email.
 	 */
