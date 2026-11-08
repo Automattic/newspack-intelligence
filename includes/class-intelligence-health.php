@@ -113,7 +113,7 @@ final class Intelligence_Health {
 		if ( null === $actor ) {
 			return [ 'mode' => 'unknown' ];
 		}
-		$heuristic = \str_starts_with( Core::as_string( $actor ), Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE ) );
+		$heuristic = Extractor_Node::stands_in( Core::as_string( $actor ) );
 		return [
 			'mode'      => 'unknown',
 			'last_mode' => $heuristic ? 'heuristic' : 'call',

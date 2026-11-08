@@ -224,7 +224,8 @@ its `filters` as JSON; and for a `watch_removed`, which deletes the one
 `watches` row its `watch_key` keys, a `watch_saved` setting that row whole,
 its three boxes as integers; and for an `item_purged`, which deletes the
 rows the items stream has written about its item in each table that stream
-writes (see Purging items). A heuristic stand-in is projected by
+writes (see Purging items). A stand-in, heuristic or gated
+(`Extractor_Node::stands_in()`), is projected by
 `STAND_IN` instead, one `ignore` of its `extractions` row, so it fills the
 extraction of an item that has none and never replaces a call's extraction, claims or
 topics, whatever the projection held when the extractor chose it. A
@@ -477,8 +478,9 @@ extraction calls the repeat path saves on every respawn. An
 `item_reresolve` record, fed by `intel:reresolve:resolve`, names a stored
 item, which it reads from
 the projection with whether the projection holds an extraction a call
-made — a `machine:extract-heuristic@…` stand-in does not count, matched
-through `Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE )` —
+made — a `machine:extract-heuristic@…` or `machine:extract-gated@…`
+stand-in does not count, matched through `Intel_Event::machine_prefix()`
+of each of `Extractor_Node::STAND_IN_STAGES` —
 its stored links, the judgments of them and the entities its last call
 extraction was given, each entity as its survivor in the resolver's own
 index, across every partition, a key whose merge chain is broken counting
@@ -598,7 +600,8 @@ makes every model call without blocking the worker. A caller sends it a
 TM_STRUCT whose KEY names its subject and whose VALUE is `{ prompt, item,
 inputs, options, carry, backlog }`, `prompt` one of `Prompts::PROMPTS`,
 which names each prompt's kind: the chat prompts `extract` and
-`extract_entities`, and the decision prompt `extract_review`. `options`
+`extract_entities`, and the decision prompts `extract_review` and
+`extract_gate`. `options`
 holds nothing but an integer `max_tokens` and a numeric `temperature`, and
 nothing at all for a decision, and the carry what the caller
 needs back less the item and the inputs, which ride beside it once. One
@@ -644,9 +647,10 @@ body is built when the request is sent: a chat prompt's is `{ model,
 messages, ...options }`, the messages `Prompts::messages()` builds from the
 prompt, the item and the inputs; a decision's is `{ model, state,
 questions }`, the decision model's, the state and questions
-`Prompts::decision()` builds. `extract_review` asks the questions
-`Prompts::questions()` reads off its inputs, at least one, or it will not
-send: `about_publisher`, a `noul`, when they name a `publisher`, asking
+`Prompts::decision()` builds. A decision prompt asks the questions
+`Prompts::questions()` reads off its inputs; one whose inputs call for
+none is refused as `<prompt> asks no question` and never sent. The
+questions are `about_publisher`, a `noul`, when the inputs name a `publisher`, asking
 whether the article is about the publisher itself or the news industry;
 `fits_kind`, a `noul`, when `Prompts::KIND_CHECKS` holds their `kind`,
 asking that kind's question, which says what a reply gives the kind and it
@@ -657,7 +661,10 @@ names the event or initiative the item is part of, its `criteria` each
 offered theme keyed `t1` to `tN`, told as `<theme>: <example>`, then
 `none`, "none of these: this item is part of a different event or
 initiative", `Prompts::chosen_theme()` reading a key back as its theme.
-Its state leads with `Source: <label>`, `Prompts::SOURCE_LABELS` saying what
+An `extract_gate` names the `publisher` alone in its inputs, so it asks
+`about_publisher` alone; an `extract_review` asks whichever its inputs
+call for.
+A decision's state leads with `Source: <label>`, `Prompts::SOURCE_LABELS` saying what
 the item is (a ticket in a work tracker, an internal blog post or chat
 message, a published article), any other source its own name, since a ticket
 scored as news without it, then `Publisher: <name>` when one is given, `Title: <title>`,
@@ -875,17 +882,46 @@ replay is a re-resolution, which forwards the item for extraction only
 while it is still owed one, and the resolution it reads carries that
 `attempt` and `extract`, which a resolution lacking either is dropped for.
 
+A client's own feed item is gated before its chat call: an item whose key
+reads as a client's lane, `feed:<domain>:<guid>`
+(`Feed_Source_Node::lane_of()`), whose publisher names an open client,
+whose tier is in `Intel_Tiers::UNRESTRICTED` (`Intel_Tiers::unrestricted()`,
+the test the review applies too) and whose resolution says no call
+extracted it (`extracted` false). A lane item a call extracted before is
+extracted again and reviewed, its review asking `about_publisher`, so a
+stand-in never stands in for an extraction it holds. The extractor first asks
+`intel:llm` for one `extract_gate`, its inputs the publisher alone, no
+options, its carry the resolution and `gate: true`, as backlog when the
+resolution is, so the decision states the source, the publisher, the title
+and the text and asks `about_publisher` alone, with no summary yet. A noul
+below `Extractor_Node::ABOUT_PUBLISHER_MIN` (0.5) spends no chat call: it
+writes the heuristic stand-in under `machine:extract-gated@<version>`
+(`Extractor_Node::GATED_STAGE`), kind `other`, no topics, scores 0 and no
+`subjects_extracted`, which, like the heuristic stand-in, the projector
+never lets replace a call's extraction and the resolver does not count as
+one, so a re-resolution, `ontology reextract` and `extract: true` reach the
+item again. A noul at the bar or above asks the `extract` call as any item
+does, its carry naming the `about_publisher` noul, so its review asks that
+question no more. A gate that fails, its group lending nothing, or one
+whose `about_publisher` does not read is logged `extract gate failed: <why>
+for <item>`, rate-limited by the failure, and the item is extracted as any
+other is, its review asking `about_publisher` itself; it parks no retry. A
+restricted item is never gated, so it never reaches the decision model, and
+a configured feed's item, `feed:<guid>`, which may carry any publication's
+article, is never gated.
+
 An answer that parses is owed a review by the decision model when its
 item is not restricted, since a restricted item's data stays with the
-chat model alone, and any question applies: `about_publisher` when the
-item's `inputs.publisher` names an open client and its kind is not
-`other`, `fits_kind` when `Prompts::KIND_CHECKS` holds its kind, because
-the extraction model types a launch checklist `launch`, a reader appeal
-`funding`, a one-site task `feature_request` and a pre-release `release`
-whatever its definitions say, and `theme_choice` when the
-projection offers it themes, read
-again as the answer lands through `Prompts::offered_themes()`, as an
-`extract` prompt offers them. Such an answer writes nothing yet: the
+chat model alone, and when any of three questions applies.
+`about_publisher` applies when the item's `inputs.publisher` names an
+open client, its kind is not `other`, and its gate has not already
+answered the question. `fits_kind` applies when `Prompts::KIND_CHECKS`
+holds its kind, because the extraction model types a launch checklist
+`launch`, a reader appeal `funding`, a one-site task `feature_request` and
+a pre-release `release` whatever its definitions say. `theme_choice`
+applies when the projection offers it themes, read again as the answer
+lands through `Prompts::offered_themes()`, as an `extract` prompt offers
+them. Such an answer writes nothing yet: the
 extractor asks `intel:llm` for one `extract_review`, every question that
 applies in one request, its inputs the topics, the publisher, '' when
 that question does not apply, the themes, the reply's summary and its kind, no
@@ -922,13 +958,13 @@ the failure; a call that fails or whose reply does not parse publishes
 `status_text()`, terminal-safe and cut to 500 bytes, with
 `status_since( 'failing_since' )`: the value already published, else now.
 The mode follows the answer, so a held `heuristic` gives way to `call` once
-the group lends a credential. A review that fails or will not start
-publishes the same way, so a `systemone` outage reads as `last_error` beside
-a fresh `last_ok_at`: while one stands a reply that parses moves
-`last_ok_at` and leaves `last_error` and `failing_since`, and only a review
-that answers clears them. The extractor holds that standing in the process,
-so a recycled worker's next parsed reply clears it until a review fails
-again.
+the group lends a credential. A gate that fails, and a review that fails
+or will not start, publish the same way, so a `systemone` outage reads as
+`last_error` beside a fresh `last_ok_at`: while one stands a reply that
+parses moves `last_ok_at` and leaves `last_error` and `failing_since`, and
+only a gate or a review that answers clears them. The extractor holds that
+standing in the process, so a recycled worker's next parsed reply clears it
+until a decision fails again. A gated stand-in publishes nothing of its own.
 
 **Dedup.** `deduper` finds an earlier copy of each extracted item: the same
 `Url_Canon::of()` URL, or else the same `Entity_Index::norm()` title when that
@@ -1298,7 +1334,8 @@ null with none or once the reresolver's `last_range` covers it, `since` on
 or before its first day and `until` on or after its last. The Delay read is
 the one the resolver's `make_node` line names as `later`.
 `extraction` answers the extractor's snapshot, else `{ mode: unknown,
-last_mode }`, `last_mode` `heuristic` or `call` from the actor of the
+last_mode }`, `last_mode` `heuristic` for an actor naming a stand-in stage,
+heuristic or gated, or `call`, from the actor of the
 newest `extractions` row, by row id, which says how that extraction was
 made and never why, else `{ mode: unknown }`. Beside any of the three,
 `queue` is the `LLM_Call` node's published `queue` (see Model calls),

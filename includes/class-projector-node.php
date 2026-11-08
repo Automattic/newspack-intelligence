@@ -155,13 +155,13 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * The projection an event is written by: its kind's, or `STAND_IN` for an
-	 * extraction the heuristic stage recorded.
+	 * extraction a stand-in stage recorded (`Extractor_Node::stands_in()`).
 	 *
 	 * @param array<array-key,mixed> $event A validated event.
 	 */
 	private static function projected_as( array $event ): string {
 		$kind = Core::as_string( $event['event'] );
-		return 'extraction_recorded' === $kind && \str_starts_with( Core::as_string( $event['actor'] ), Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE ) ) ? self::STAND_IN : $kind;
+		return 'extraction_recorded' === $kind && Extractor_Node::stands_in( Core::as_string( $event['actor'] ) ) ? self::STAND_IN : $kind;
 	}
 
 	/**
@@ -184,7 +184,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * cluster it heads, which an event never elects again; rows another stream
 	 * wrote about it stay, and every read joins the items, so they answer
 	 * nothing, as do rows a later resolution of the item writes. A heuristic
-	 * stand-in only fills an item that has no extraction yet (`STAND_IN`), so
+	 * or gated stand-in only fills an item that has no extraction yet (`STAND_IN`), so
 	 * it never replaces a call's extraction, its claims, topics or theme. A
 	 * proposed link's evidence, which one written before proposals carried it
 	 * lacks, projects as '', as an asserted link's always does. Every ontology

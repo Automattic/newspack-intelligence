@@ -31,6 +31,12 @@
  * kind is in Prompts::KIND_CHECKS (`fits_kind`), or when the projection offers it themes
  * (`theme_choice`): a noul below its bar writes its kind as `other`, and an
  * offered theme chosen at THEME_CHOICE_MIN or more is the theme written.
+ * An unrestricted item of a client's own feed lane that an open client
+ * published and no call extracted is gated before any chat call: one `extract_gate` decision asks
+ * `about_publisher` of the item alone, and a noul below ABOUT_PUBLISHER_MIN
+ * writes the heuristic stand-in under GATED_STAGE, while one at the bar or
+ * above is extracted and its review does not ask the question again; a gate
+ * that fails is logged and the item is extracted as any other is.
  *
  * A claim's subject and object resolve through the entities whose names
  * spell the whole of them. The subject is the one of those the item links
@@ -81,6 +87,12 @@ class Extractor_Node extends Node {
 	/** The stage a heuristic extraction is recorded under, standing in for a call. */
 	public const HEURISTIC_STAGE = 'extract-heuristic';
 
+	/** The stage a client's own feed item the gate finds about someone else is recorded under, standing in for a call. */
+	public const GATED_STAGE = 'extract-gated';
+
+	/** The stages a stand-in, never a call, records an extraction under. */
+	public const STAND_IN_STAGES = [ self::HEURISTIC_STAGE, self::GATED_STAGE ];
+
 	/** Seconds before the first retry of a failed call; each later one doubles it. */
 	public const RETRY_BASE_S = 300;
 
@@ -114,8 +126,8 @@ class Extractor_Node extends Node {
 	/** The Delay a failed call's retry parks on. */
 	protected string $later = '';
 
-	/** Whether the last review failed, so a reply not followed by a review leaves its status standing. */
-	private bool $review_failing = false;
+	/** Whether the last decision failed, so a reply not followed by a decision leaves its status standing. */
+	private bool $decision_failing = false;
 
 	/** Who the prompt is framed for, set via set_audience; '' names no one. */
 	protected string $audience = '';
@@ -152,17 +164,36 @@ class Extractor_Node extends Node {
 			$this->print_less_often( 'dropping a resolution it cannot read from ', Core::terminal_safe( Core::as_string( $message[ Message::FROM ] ) ) );
 			return;
 		}
-		[ $item, $linked, , , $owed ] = $read;
+		[ $item, $linked, $extracted, , $owed ] = $read;
 		if ( ! $owed && [] === $linked && [] === Core::arr( Core::arr( $value )['proposals'] ) ) {
 			return;
 		}
-		$inputs = [
-			'topics'    => Entity_Index::current()->topics(),
-			'profile'   => \implode( "\n", $this->profiles ),
-			'audience'  => $this->audience,
-			'publisher' => $this->client_name( $publisher ),
-		];
-		$this->ask_model( 'extract', $item, $inputs, [ 'max_tokens' => 800, 'temperature' => 0.0 ], [ 'resolution' => \array_diff_key( Core::arr( $value ), [ 'item' => true ] ) ], $owed );
+		$client = $this->client_name( $publisher );
+		$carry  = [ 'resolution' => \array_diff_key( Core::arr( $value ), [ 'item' => true ] ) ];
+		if ( self::gated( $item, $client, $extracted ) ) {
+			$this->ask_model( Prompts::EXTRACT_GATE, $item, [ 'publisher' => $client ], [], [ 'gate' => true ] + $carry, $owed );
+			return;
+		}
+		$this->ask_extraction( $item, $client, $carry, $owed );
+	}
+
+	/**
+	 * Whether an item is gated before its extraction: an unrestricted item
+	 * of a client's own feed lane (`Feed_Source_Node::lane_of()`) that an
+	 * open client published and no call extracted before. A restricted item
+	 * is never sent to the decision model, a configured feed may carry any
+	 * publication's article, and a call's extraction is never replaced by a
+	 * stand-in, so it is extracted again and reviewed.
+	 *
+	 * @param array<string,mixed> $item      The item.
+	 * @param string              $client    The open client that published it; '' for none.
+	 * @param bool                $extracted Whether a call extracted the item before.
+	 */
+	private static function gated( array $item, string $client, bool $extracted ): bool {
+		return ! $extracted
+			&& '' !== $client
+			&& null !== Feed_Source_Node::lane_of( Core::as_string( $item['item_key'] ) )
+			&& Intel_Tiers::unrestricted( $item );
 	}
 
 	/**
@@ -204,8 +235,9 @@ class Extractor_Node extends Node {
 	private function answered( array $message ): void {
 		$answer = $this->answer_of( $message );
 		$read   = null === $answer ? null : self::resolution_of( [ 'item' => $answer[1] ] + Core::arr( $answer[3]['resolution'] ?? null ) );
+		$gate   = true === ( $answer[3]['gate'] ?? null );
 		$topics = $answer[2]['topics'] ?? null;
-		if ( null === $answer || null === $read || ! \is_array( $topics ) ) {
+		if ( null === $answer || null === $read || ( ! $gate && ! \is_array( $topics ) ) ) {
 			if ( null !== $answer ) {
 				$this->unreadable( $message );
 			}
@@ -217,8 +249,12 @@ class Extractor_Node extends Node {
 		$retry = fn () => $this->retry( $item_key, $attempt, $owed );
 		$this->finish_answer(
 			$item_key,
-			function () use ( $item, $linked, $extracted, $owed, $attempt, $topics, $answer, $content, $retry ): void {
-				$topics = \array_map( Core::as_string( ... ), $topics );
+			function () use ( $item, $linked, $extracted, $owed, $attempt, $topics, $answer, $content, $gate, $retry ): void {
+				if ( $gate ) {
+					$this->gate_decided( $item, $linked, $owed, $answer );
+					return;
+				}
+				$topics = \array_map( Core::as_string( ... ), Core::arr( $topics ) );
 				if ( \is_string( $content ) ) {
 					$this->decided( $item, $linked, $topics, $content, $answer[0] );
 				} elseif ( $this->extract( $item, $linked, $extracted, $owed, $attempt, $topics, $answer[0] ) ) {
@@ -227,6 +263,57 @@ class Extractor_Node extends Node {
 			},
 			$retry
 		);
+	}
+
+	/**
+	 * Finish a gate with its answer: a client's own feed item whose
+	 * `about_publisher` noul is below ABOUT_PUBLISHER_MIN is written as the
+	 * stand-in under GATED_STAGE, spending no chat call; one at the bar or
+	 * above is asked its extraction, carrying the noul, so its review does
+	 * not ask the question again. A gate that failed, or answered with
+	 * nothing that reads, is logged and the extraction is asked as for any
+	 * item.
+	 *
+	 * @param array<string,mixed>                        $item   The item.
+	 * @param array<string,array{0:float,1:bool,2:bool}> $linked Each linked entity => its link's confidence, whether it is asserted, and whether by an identifier.
+	 * @param bool                                       $owed   Whether it was sent to be extracted whatever it holds.
+	 * @param array{0:array<array-key,mixed>,1:array<array-key,mixed>,2:array<array-key,mixed>,3:array<array-key,mixed>} $answer The gate's answer, item, inputs and carry.
+	 */
+	private function gate_decided( array $item, array $linked, bool $owed, array $answer ): void {
+		$client = Core::as_string( $answer[2]['publisher'] ?? null );
+		$carry  = [ 'resolution' => $answer[3]['resolution'] ?? null ];
+		$noul   = Core::arr( $answer[0]['decision'] ?? null )[ Prompts::ABOUT_PUBLISHER ] ?? null;
+		if ( ! \is_int( $noul ) && ! \is_float( $noul ) ) {
+			$this->decision_failed( 'extract gate', self::decision_fault( $answer[0] ), $item );
+			$this->ask_extraction( $item, $client, $carry, $owed );
+			return;
+		}
+		$this->decision_answered();
+		if ( $noul < self::ABOUT_PUBLISHER_MIN ) {
+			$this->record( $item, $linked, self::GATED_STAGE, self::stand_in( $item ), [] );
+			return;
+		}
+		$this->ask_extraction( $item, $client, [ Prompts::ABOUT_PUBLISHER => $noul ] + $carry, $owed );
+	}
+
+	/**
+	 * Ask one item's extraction: 800 tokens at temperature 0, its inputs the
+	 * topics the shared index offers, the profile, the audience and the
+	 * publisher.
+	 *
+	 * @param array<string,mixed>    $item   The item.
+	 * @param string                 $client The open client that published it; '' for none.
+	 * @param array<array-key,mixed> $carry  The resolution less its item, and whether the gate answered.
+	 * @param bool                   $owed   Whether it was sent to be extracted whatever it holds.
+	 */
+	private function ask_extraction( array $item, string $client, array $carry, bool $owed ): void {
+		$inputs = [
+			'topics'    => Entity_Index::current()->topics(),
+			'profile'   => \implode( "\n", $this->profiles ),
+			'audience'  => $this->audience,
+			'publisher' => $client,
+		];
+		$this->ask_model( 'extract', $item, $inputs, [ 'max_tokens' => 800, 'temperature' => 0.0 ], $carry, $owed );
 	}
 
 	/**
@@ -298,7 +385,7 @@ class Extractor_Node extends Node {
 		} elseif ( $failed ) {
 			$this->publish_failing( $fault );
 		} else {
-			$this->publish_snapshot( [ 'mode' => 'call', 'last_ok_at' => (int) Core::$now ] + ( $this->review_failing ? \array_intersect_key( $this->last_status(), [ 'last_error' => true, 'failing_since' => true ] ) : [] ) );
+			$this->publish_snapshot( [ 'mode' => 'call', 'last_ok_at' => (int) Core::$now ] + ( $this->decision_failing ? \array_intersect_key( $this->last_status(), [ 'last_error' => true, 'failing_since' => true ] ) : [] ) );
 		}
 		if ( null !== $parsed && $this->reviewing( $item, $parsed, $topics, $answer, $owed ) ) {
 			return false;
@@ -308,9 +395,20 @@ class Extractor_Node extends Node {
 			return $failed;
 		}
 		$stage    = null === $parsed ? self::HEURISTIC_STAGE : 'extract';
-		$parsed ??= [ 'summary' => self::heuristic_summary( $item ), 'kind' => 'other', 'topics' => [], 'relevance' => 0, 'importance' => 0, 'sentiment' => 0.0, 'claims' => [] ];
+		$parsed ??= self::stand_in( $item );
 		$this->record( $item, $linked, $stage, $parsed, $topics );
 		return $failed;
+	}
+
+	/**
+	 * The extraction a stand-in records: the heuristic summary, kind
+	 * `other`, no topics and every score 0.
+	 *
+	 * @param array<string,mixed> $item The item.
+	 * @return array{summary:string,kind:string,topics:list<string>,relevance:int,importance:int,sentiment:float,claims:list<array{subject:string,predicate:string,object:string}>}
+	 */
+	private static function stand_in( array $item ): array {
+		return [ 'summary' => self::heuristic_summary( $item ), 'kind' => 'other', 'topics' => [], 'relevance' => 0, 'importance' => 0, 'sentiment' => 0.0, 'claims' => [] ];
 	}
 
 	/**
@@ -327,16 +425,17 @@ class Extractor_Node extends Node {
 	 */
 	private function reviewing( array $item, array $parsed, array $topics, array $answer, bool $owed ): bool {
 		try {
-			$review = self::review( $item, $parsed, Core::as_string( Core::arr( $answer['inputs'] ?? null )['publisher'] ?? null ), $topics );
+			$carry  = Core::arr( $answer['carry'] ?? null );
+			$review = self::review( $item, $parsed, isset( $carry[ Prompts::ABOUT_PUBLISHER ] ) ? '' : Core::as_string( Core::arr( $answer['inputs'] ?? null )['publisher'] ?? null ), $topics );
 			if ( null === $review ) {
 				return false;
 			}
-			$this->ask_model( Prompts::EXTRACT_REVIEW, $item, $review, [], [ 'resolution' => Core::arr( $answer['carry'] ?? null )['resolution'] ?? null, 'content' => $answer['content'] ?? null ], $owed );
+			$this->ask_model( Prompts::EXTRACT_REVIEW, $item, $review, [], [ 'resolution' => $carry['resolution'] ?? null, 'content' => $answer['content'] ?? null ], $owed );
 			return true;
 		} catch ( Worker_Should_Stop $stop ) {
 			throw $stop;
 		} catch ( \Throwable $e ) {
-			$this->review_failed( $e->getMessage(), $item );
+			$this->decision_failed( 'extract review', $e->getMessage(), $item );
 			return false;
 		}
 	}
@@ -357,7 +456,7 @@ class Extractor_Node extends Node {
 	 * @return array<string,mixed>|null
 	 */
 	private static function review( array $item, array $parsed, string $publisher, array $topics ): ?array {
-		if ( ! \in_array( $item['tier'] ?? null, Intel_Tiers::UNRESTRICTED, true ) ) {
+		if ( ! Intel_Tiers::unrestricted( $item ) ) {
 			return null;
 		}
 		$publisher = 'other' === $parsed['kind'] ? '' : $publisher;
@@ -408,14 +507,11 @@ class Extractor_Node extends Node {
 			$below = $below || ( null !== $noul && $noul < $bar );
 		}
 		if ( ! $read ) {
-			$this->review_failed( isset( $answer['unlent'] ) ? 'group ' . Core::as_string( $answer['unlent'] ) . ' lends no credential' : Core::as_string( $answer['error'] ?? 'it answers a question with nothing that reads' ), $item );
+			$this->decision_failed( 'extract review', self::decision_fault( $answer ), $item );
 			$this->record( $item, $linked, 'extract', $parsed, $topics );
 			return;
 		}
-		if ( $this->review_failing ) {
-			$this->review_failing = false;
-			$this->publish_snapshot( [ 'mode' => 'call', 'last_ok_at' => (int) Core::$now ] );
-		}
+		$this->decision_answered();
 		if ( $below ) {
 			$parsed['kind'] = 'other';
 		}
@@ -427,18 +523,37 @@ class Extractor_Node extends Node {
 	}
 
 	/**
-	 * Report a review that failed: its log line limited by the failure, so
-	 * an outage across many items logs once, and its text published as
-	 * `last_error` until a review answers.
+	 * Why a decision that does not read failed: its group lending nothing,
+	 * its error, or an answer to a question asked with nothing that reads.
 	 *
+	 * @param array<array-key,mixed> $answer The decision's answer.
+	 */
+	private static function decision_fault( array $answer ): string {
+		return isset( $answer['unlent'] ) ? 'group ' . Core::as_string( $answer['unlent'] ) . ' lends no credential' : Core::as_string( $answer['error'] ?? 'it answers a question with nothing that reads' );
+	}
+
+	/**
+	 * Report a gate or a review that failed: its log line limited by the
+	 * failure, so an outage across many items logs once, and its text
+	 * published as `last_error` until a decision answers.
+	 *
+	 * @param string              $what  The decision: `extract gate` or `extract review`.
 	 * @param string              $fault Why it failed.
 	 * @param array<string,mixed> $item  The item.
 	 */
-	private function review_failed( string $fault, array $item ): void {
+	private function decision_failed( string $what, string $fault, array $item ): void {
 		$fault = self::status_text( $fault );
-		$this->print_less_often( "extract review failed: {$fault}", ' for ' . Core::terminal_safe( Core::as_string( $item['item_key'] ) ) );
-		$this->review_failing = true;
+		$this->print_less_often( "{$what} failed: {$fault}", ' for ' . Core::terminal_safe( Core::as_string( $item['item_key'] ) ) );
+		$this->decision_failing = true;
 		$this->publish_failing( $fault );
+	}
+
+	/** Clear a decision failure once a decision answers, publishing the call as answered now. */
+	private function decision_answered(): void {
+		if ( $this->decision_failing ) {
+			$this->decision_failing = false;
+			$this->publish_snapshot( [ 'mode' => 'call', 'last_ok_at' => (int) Core::$now ] );
+		}
 	}
 
 	/**
@@ -471,7 +586,7 @@ class Extractor_Node extends Node {
 			'retrieved_ts' => $item['retrieved_ts'],
 		] + \array_intersect_key( $parsed, [ 'theme' => true ] );
 		$this->emit( $this->writer, Intel_Event::machine_event( $stage, 'extraction_recorded', $fields ) );
-		if ( self::HEURISTIC_STAGE !== $stage ) {
+		if ( ! \in_array( $stage, self::STAND_IN_STAGES, true ) ) {
 			$given = \array_keys( \array_filter( $linked, static fn ( array $link ): bool => $link[1] ) );
 			$this->emit( $this->writer, Intel_Event::machine_event( $stage, 'subjects_extracted', [ 'item_key' => $item_key, 'entity_keys' => $given, 'retrieved_ts' => $item['retrieved_ts'] ] ) );
 		}
@@ -585,6 +700,21 @@ class Extractor_Node extends Node {
 			}
 		}
 		return \array_values( $keys );
+	}
+
+	/**
+	 * Whether an extraction's actor names a stand-in stage, one of
+	 * STAND_IN_STAGES, rather than a call.
+	 *
+	 * @param string $actor The extraction's actor.
+	 */
+	public static function stands_in( string $actor ): bool {
+		foreach ( self::STAND_IN_STAGES as $stage ) {
+			if ( \str_starts_with( $actor, Intel_Event::machine_prefix( $stage ) ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

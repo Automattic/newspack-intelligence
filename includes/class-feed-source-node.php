@@ -648,6 +648,16 @@ class Feed_Source_Node extends Source_Node {
 	}
 
 	/**
+	 * The client's domain whose lane an item key reads as,
+	 * `feed:<domain>:<guid>`; null for a configured feed's `feed:<guid>`.
+	 *
+	 * @param string $item_key An item key.
+	 */
+	public static function lane_of( string $item_key ): ?string {
+		return \str_starts_with( $item_key, 'feed:' ) ? self::lane( \substr( $item_key, \strlen( 'feed:' ) ) ) : null;
+	}
+
+	/**
 	 * The plain hostname leading an id before its first `:`, which is how a
 	 * client's lane is spelled; null when the id does not lead with one.
 	 *

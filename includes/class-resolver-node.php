@@ -617,7 +617,7 @@ class Resolver_Node extends Node {
 	/**
 	 * A stored item's `item_recorded` fields, as the projection holds them,
 	 * null when the item is not in any partition's file; whether it holds an
-	 * extraction of the item a call made, a heuristic stand-in not counting;
+	 * extraction of the item a call made, a stand-in not counting;
 	 * what `settled()` reads of its links, judgments and the entities its
 	 * last extraction was given, each entity as its survivor in the
 	 * resolver's own index; and whether the item was resolved before, an
@@ -639,10 +639,12 @@ class Resolver_Node extends Node {
 	private static function stored( string $item_key, ?array $recorded, array $merged, string $own, ?string $unavailable ): ?array {
 		return Intel_Graph_Row_Schema::read(
 			static function ( Row_Reader $r ) use ( $item_key, $recorded, $merged, $own ): array {
-				$links = Intel_Graph_Row_Schema::all( $r, 'links' );
+				$links    = Intel_Graph_Row_Schema::all( $r, 'links' );
+				$stand_in = \implode( ' AND ', \array_fill( 0, \count( Extractor_Node::STAND_IN_STAGES ), 'INSTR( e.actor, ? ) <> 1' ) );
+				$prefixes = \array_map( Intel_Event::machine_prefix( ... ), Extractor_Node::STAND_IN_STAGES );
 				foreach ( $r->aliases() as $a ) {
-					$sql = "SELECT i.item_key, i.source, i.tier, i.url, i.title, i.body, i.item_ts, i.retrieved_ts, EXISTS ( SELECT 1 FROM {$a}.extractions e WHERE e.item_key = i.item_key AND INSTR( e.actor, ? ) <> 1 ), EXISTS ( SELECT 1 FROM {$a}.extractions e WHERE e.item_key = i.item_key ) OR EXISTS ( SELECT 1 FROM {$links} l WHERE l.item_key = i.item_key AND l.role <> 'topic' ) FROM {$a}.items i WHERE i.item_key = ?";
-					foreach ( $r->rows( $sql, [ Intel_Event::machine_prefix( Extractor_Node::HEURISTIC_STAGE ), $item_key ] ) as [ $key, $source, $tier, $url, $title, $body, $item_ts, $retrieved_ts, $extracted, $resolved ] ) {
+					$sql = "SELECT i.item_key, i.source, i.tier, i.url, i.title, i.body, i.item_ts, i.retrieved_ts, EXISTS ( SELECT 1 FROM {$a}.extractions e WHERE e.item_key = i.item_key AND {$stand_in} ), EXISTS ( SELECT 1 FROM {$a}.extractions e WHERE e.item_key = i.item_key ) OR EXISTS ( SELECT 1 FROM {$links} l WHERE l.item_key = i.item_key AND l.role <> 'topic' ) FROM {$a}.items i WHERE i.item_key = ?";
+					foreach ( $r->rows( $sql, [ ...$prefixes, $item_key ] ) as [ $key, $source, $tier, $url, $title, $body, $item_ts, $retrieved_ts, $extracted, $resolved ] ) {
 						$item = [
 							'item_key'     => Core::as_string( $key ),
 							'source'       => Core::as_string( $source ),

@@ -134,4 +134,14 @@ final class Intel_Tiers {
 	public static function readable(): array {
 		return \current_user_can( self::CAPABILITY ) ? [ ...self::UNRESTRICTED, self::RESTRICTED ] : self::UNRESTRICTED;
 	}
+
+	/**
+	 * Whether an item's tier is one of UNRESTRICTED, so its data may leave
+	 * the chat model for the decision model.
+	 *
+	 * @param array<array-key,mixed> $item The item.
+	 */
+	public static function unrestricted( array $item ): bool {
+		return \in_array( $item['tier'] ?? null, self::UNRESTRICTED, true );
+	}
 }

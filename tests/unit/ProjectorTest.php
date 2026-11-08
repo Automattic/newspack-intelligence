@@ -157,11 +157,27 @@ final class ProjectorTest extends TestCase {
 	}
 
 	/**
-	 * A heuristic stand-in recorded after a call's extraction leaves the
-	 * call's row, claims and topics as they were, whatever the projection
-	 * held when the extractor chose the stand-in.
+	 * Each stand-in stage: the heuristic one a failed call writes, and the
+	 * gated one a client's own article about someone else is given.
+	 *
+	 * @return array<string,array{0:string}>
 	 */
-	public function test_a_heuristic_extraction_never_replaces_a_calls(): void {
+	public static function stand_in_stages(): array {
+		return [
+			'heuristic' => [ 'extract-heuristic' ],
+			'gated'     => [ 'extract-gated' ],
+		];
+	}
+
+	/**
+	 * A stand-in recorded after a call's extraction leaves the call's row,
+	 * claims and topics as they were, whatever the projection held when the
+	 * extractor chose the stand-in.
+	 *
+	 * @param string $stage The stand-in's stage.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'stand_in_stages' )]
+	public function test_a_stand_in_never_replaces_a_calls( string $stage ): void {
 		$this->project(
 			[
 				$this->item(),
@@ -169,7 +185,7 @@ final class ProjectorTest extends TestCase {
 				Intel_Event::make( 'claim_asserted', [ 'item_key' => self::ITEM, 'ord' => 0, 'subject_key' => self::GAZETTE, 'predicate' => 'won', 'object_key' => '', 'object_text' => 'Peabody Award', 'confidence' => 0.9, 'retrieved_ts' => self::RETRIEVED ], 'machine:extract@9.4.1', '' ),
 			]
 		);
-		$this->project( [ $this->stand_in() ] );
+		$this->project( [ $this->stand_in( $stage ) ] );
 
 		$this->assertSame( [ [ 'Harbor Gazette won the state award.', 'machine:extract@9.4.1' ] ], self::graph_rows( 'extractions', '1', 'summary, actor' ) );
 		$this->assertSame( [ [ 0, 'Peabody Award' ] ], self::graph_rows( 'claims', 'ord', 'ord, object_text' ) );
@@ -177,13 +193,16 @@ final class ProjectorTest extends TestCase {
 	}
 
 	/**
-	 * An item that has not been extracted by any call records the heuristic
-	 * stand-in, which a later call replaces.
+	 * An item that has not been extracted by any call records a stand-in,
+	 * which a later call replaces.
+	 *
+	 * @param string $stage The stand-in's stage.
 	 */
-	public function test_a_heuristic_extraction_stands_until_a_call_replaces_it(): void {
-		$this->project( [ $this->item(), $this->stand_in() ] );
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'stand_in_stages' )]
+	public function test_a_stand_in_stands_until_a_call_replaces_it( string $stage ): void {
+		$this->project( [ $this->item(), $this->stand_in( $stage ) ] );
 
-		$this->assertSame( [ [ 'The Harbor Gazette Wins a State Award!', 'machine:extract-heuristic@9.4.1' ] ], self::graph_rows( 'extractions', '1', 'summary, actor' ) );
+		$this->assertSame( [ [ 'The Harbor Gazette Wins a State Award!', "machine:{$stage}@9.4.1" ] ], self::graph_rows( 'extractions', '1', 'summary, actor' ) );
 
 		$this->project( [ $this->extraction() ] );
 
@@ -710,10 +729,12 @@ final class ProjectorTest extends TestCase {
 	}
 
 	/**
-	 * @return array<string,mixed> The heuristic stand-in the extractor records
-	 *                             when it gets no answer from a call.
+	 * A stand-in the extractor records in place of a call's extraction.
+	 *
+	 * @param string $stage Its stage: the heuristic one by default.
+	 * @return array<string,mixed>
 	 */
-	private function stand_in(): array {
+	private function stand_in( string $stage = 'extract-heuristic' ): array {
 		return Intel_Event::make(
 			'extraction_recorded',
 			[
@@ -726,7 +747,7 @@ final class ProjectorTest extends TestCase {
 				'topics'       => [],
 				'retrieved_ts' => self::RETRIEVED,
 			],
-			'machine:extract-heuristic@9.4.1',
+			"machine:{$stage}@9.4.1",
 			''
 		);
 	}

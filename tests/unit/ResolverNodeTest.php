@@ -502,13 +502,33 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertSame( [ self::GAZETTE ], \array_column( $this->resolved()['links'], 'entity_key' ) );
 	}
 
-	/** A re-resolved item whose only extraction is heuristic is forwarded, so a proxy outage does not degrade it for good. */
-	public function test_a_reresolved_item_with_only_a_heuristic_extraction_is_forwarded(): void {
+	/**
+	 * Each stand-in stage: the heuristic one a failed call writes, and the
+	 * gated one a client's own article about someone else is given.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public static function stand_in_stages(): array {
+		return [
+			'heuristic' => [ 'extract-heuristic' ],
+			'gated'     => [ 'extract-gated' ],
+		];
+	}
+
+	/**
+	 * A re-resolved item whose only extraction is a stand-in is forwarded, so
+	 * a proxy outage does not degrade it for good and a gated item is
+	 * reached again.
+	 *
+	 * @param string $stage The stand-in's stage.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'stand_in_stages' )]
+	public function test_a_reresolved_item_with_only_a_stand_in_is_forwarded( string $stage ): void {
 		$this->seed(
 			self::gazette(),
 			[
 				Intel_Event::make( 'item_recorded', self::item( [ 'url' => 'https://harborgazette.example/a' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
-				Intel_Event::make( 'extraction_recorded', [ 'item_key' => self::ITEM, 'summary' => 'A local bake sale.', 'kind' => 'other', 'relevance' => 0, 'importance' => 0, 'sentiment' => 0.0, 'topics' => [], 'retrieved_ts' => 1792950000 ], 'machine:extract-heuristic@9.4.1', '9.4.1' ),
+				Intel_Event::make( 'extraction_recorded', [ 'item_key' => self::ITEM, 'summary' => 'A local bake sale.', 'kind' => 'other', 'relevance' => 0, 'importance' => 0, 'sentiment' => 0.0, 'topics' => [], 'retrieved_ts' => 1792950000 ], "machine:{$stage}@9.4.1", '9.4.1' ),
 			]
 		);
 
@@ -516,6 +536,7 @@ final class ResolverNodeTest extends TestCase {
 
 		$this->assertSame( self::ITEM, $this->resolved()['item']['item_key'] );
 		$this->assertSame( [ self::GAZETTE ], \array_column( $this->resolved()['links'], 'entity_key' ) );
+		$this->assertFalse( $this->resolved()['extracted'], 'a stand-in is not a call extraction' );
 	}
 
 	/**

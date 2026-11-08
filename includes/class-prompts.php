@@ -53,6 +53,9 @@ class Prompts {
 	/** The decision prompt reviewing an extraction's reply, asking the questions its inputs call for. */
 	public const EXTRACT_REVIEW = 'extract_review';
 
+	/** The decision prompt asking, before any extraction, whether a client's own feed item is about the client itself or the news industry. */
+	public const EXTRACT_GATE = 'extract_gate';
+
 	/** The noul question whether a client's article is about the client itself or the news industry. */
 	public const ABOUT_PUBLISHER = 'about_publisher';
 
@@ -102,6 +105,7 @@ class Prompts {
 		'extract'            => self::CHAT,
 		'extract_entities'   => self::CHAT,
 		self::EXTRACT_REVIEW => self::DECISION,
+		self::EXTRACT_GATE   => self::DECISION,
 	];
 
 	/** What `about_publisher` asks. */
@@ -386,11 +390,12 @@ class Prompts {
 	/**
 	 * The body of the decision prompt a model-call request names, less its
 	 * model, built from its item and inputs when the call is sent: the
-	 * `extract_review` state says what the item's source is, by
-	 * SOURCE_LABELS, then names `publisher` when one is given, the item's
-	 * title, its body as plain text cut to DECISION_TEXT_CHARS, and
-	 * the reply's `summary` when one is given, and asks the questions
-	 * questions() reads off the inputs, at least one.
+	 * state says what the item's source is, by SOURCE_LABELS, then names
+	 * `publisher` when one is given, the item's title, its body as plain
+	 * text cut to DECISION_TEXT_CHARS, and the reply's `summary` when one
+	 * is given, and asks the questions questions() reads off the inputs, at
+	 * least one. `extract_review` reviews an extraction's reply; an
+	 * `extract_gate`'s inputs name the publisher alone, before any reply.
 	 *
 	 * @param string                 $prompt A decision prompt of PROMPTS.
 	 * @param array<array-key,mixed> $item   The item's fields.
@@ -399,12 +404,13 @@ class Prompts {
 	 * @throws \InvalidArgumentException For a prompt that is not a decision prompt, or one asking no question.
 	 */
 	public static function decision( string $prompt, array $item, array $inputs ): array {
-		if ( self::EXTRACT_REVIEW !== $prompt ) {
+		if ( self::DECISION !== ( self::PROMPTS[ $prompt ] ?? null ) ) {
 			throw self::refused( self::DECISION, $prompt );
 		}
 		$questions = self::questions( $inputs );
 		if ( [] === $questions ) {
-			throw new \InvalidArgumentException( 'an extract review asks no question' );
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+			throw new \InvalidArgumentException( "{$prompt} asks no question" );
 		}
 		$publisher = Core::as_string( $inputs['publisher'] ?? null );
 		$summary   = Core::as_string( $inputs['summary'] ?? null );

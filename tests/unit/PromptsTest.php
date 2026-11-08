@@ -213,7 +213,7 @@ final class PromptsTest extends TestCase {
 		$item                              = [ 'item_key' => 'feed:tern-8', 'source' => 'feed', 'url' => 'https://tern.example/a', 'title' => 'Tern Weekly expands', 'body' => 'The paper grows.', 'retrieved_ts' => 1794000500 ];
 		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): array => [ [ 'theme' => 'newsletter sender rejected', 'example' => 'Tern Weekly sender bounced' ] ];
 
-		$this->assertSame( [ 'extract' => Prompts::CHAT, 'extract_entities' => Prompts::CHAT, 'extract_review' => Prompts::DECISION ], Prompts::PROMPTS );
+		$this->assertSame( [ 'extract' => Prompts::CHAT, 'extract_entities' => Prompts::CHAT, 'extract_review' => Prompts::DECISION, 'extract_gate' => Prompts::DECISION ], Prompts::PROMPTS );
 		$this->assertSame( Prompts::extract( $item, [ 'Awards' ], [ [ 'theme' => 'newsletter sender rejected', 'example' => 'Tern Weekly sender bounced' ] ], 'Readers care about terns.', 'the kite desk', 'Tern Weekly' ), Prompts::messages( 'extract', $item, [ 'topics' => [ 'Awards' => 'topic:awards' ], 'themes' => [ 'kite festival' ], 'profile' => 'Readers care about terns.', 'audience' => 'the kite desk', 'publisher' => 'Tern Weekly' ] ) );
 		$this->assertSame( Prompts::extract_entities( $item, [] ), Prompts::messages( 'extract_entities', $item, [ 'boilerplate' => [] ] ) );
 	}
@@ -276,6 +276,26 @@ final class PromptsTest extends TestCase {
 			],
 			Prompts::decision( 'extract_review', $item, [ 'publisher' => 'Kestrel Lantern Harbor', 'topics' => [ 'Awards' => 'topic:awards' ] ] )
 		);
+	}
+
+	/**
+	 * The gate asks about_publisher alone of the item before any extraction,
+	 * so its state carries no summary.
+	 */
+	public function test_the_gate_asks_about_publisher_of_the_item_alone(): void {
+		$item = [ 'item_key' => 'feed:klharbor.example:transit-77', 'source' => 'feed', 'title' => 'Mesa Courier wins a transit grant', 'body' => '<p>Two routes open.</p>' ];
+
+		$gate = Prompts::decision( 'extract_gate', $item, [ 'publisher' => 'Kestrel Lantern Harbor' ] );
+
+		$this->assertSame( "Source: published article\nPublisher: Kestrel Lantern Harbor\nTitle: Mesa Courier wins a transit grant\nText: Two routes open.", $gate['state'] );
+		$this->assertSame( [ 'about_publisher' ], \array_keys( $gate['questions'] ) );
+	}
+
+	/** A gate naming no publisher asks nothing, and is refused by name. */
+	public function test_a_gate_asking_nothing_is_refused(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'extract_gate asks no question' );
+		Prompts::decision( 'extract_gate', [ 'title' => 'Heron count' ], [ 'publisher' => '' ] );
 	}
 
 	/** The decision's text is cut on a character boundary to its bound. */
@@ -391,7 +411,7 @@ final class PromptsTest extends TestCase {
 	/** A review that asks no question is refused. */
 	public function test_a_review_asking_nothing_is_refused(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessage( 'an extract review asks no question' );
+		$this->expectExceptionMessage( 'extract_review asks no question' );
 		Prompts::decision( 'extract_review', [ 'title' => 'Heron count' ], [ 'publisher' => '', 'themes' => [], 'summary' => 'Herons.' ] );
 	}
 

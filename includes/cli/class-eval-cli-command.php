@@ -113,7 +113,7 @@ final class Eval_CLI_Command {
 		if ( [] !== $missing ) {
 			throw new \InvalidArgumentException( \esc_html( 'The projection holds no item for ' . \implode( ', ', \array_map( static fn ( array $ask ): string => "{$ask[0]['item_key']} (line {$ask[0]['line']})", $missing ) ) . '.' ) );
 		}
-		$sent    = \array_values( \array_filter( $asking, static fn ( array $ask ): bool => \in_array( $items[ $ask[0]['item_key'] ]['tier'], Intel_Tiers::UNRESTRICTED, true ) ) );
+		$sent    = \array_values( \array_filter( $asking, static fn ( array $ask ): bool => Intel_Tiers::unrestricted( $items[ $ask[0]['item_key'] ] ) ) );
 		$skipped = \count( $asking ) - \count( $sent );
 		if ( 0 < $skipped ) {
 			\WP_CLI::log( 'Skipped ' . self::counted( $skipped, 'restricted label' ) . ': the decision model is never sent a restricted item.' );
@@ -305,7 +305,7 @@ final class Eval_CLI_Command {
 		foreach ( $rows as [ $key, $source, $tier, $title, $body, $summary ] ) {
 			$key  = Core::as_string( $key );
 			$tier = Core::as_string( $tier );
-			if ( isset( $items[ $key ] ) && ! \in_array( $items[ $key ]['tier'], Intel_Tiers::UNRESTRICTED, true ) ) {
+			if ( isset( $items[ $key ] ) && ! Intel_Tiers::unrestricted( $items[ $key ] ) ) {
 				$tier = $items[ $key ]['tier'];
 			}
 			$items[ $key ] = [

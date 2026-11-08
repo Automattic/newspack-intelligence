@@ -406,8 +406,8 @@ final class ExtractorNodeTest extends TestCase {
 		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ), self::entity( self::LANTERN_OLD, 'Lantern Harbor Weekly' ), self::merged( self::LANTERN_OLD, self::LANTERN ) );
 		$this->answer( '{"summary":"A transit grant lands."}' );
 
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN_OLD ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN_OLD ) );
 
 		$this->assertSame( [ 'Kestrel Lantern Harbor', 'Kestrel Lantern Harbor' ], \array_map( static fn ( array $request ): string => $request[ Message::VALUE ]['inputs']['publisher'], $this->out->requests ) );
 	}
@@ -444,7 +444,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award","relevance":6,"importance":3}' );
 		$this->decide( [ 'decision' => [ 'about_publisher' => 0.12 ] ] );
 
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), extract: true, publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), extract: true, publisher: self::LANTERN ) );
 
 		$asked = \array_column( $this->out->requests, Message::VALUE );
 		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( $asked, 'prompt' ) );
@@ -462,7 +462,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->answer( '{"summary":"Kestrel Lantern Harbor wins a press award.","kind":"award","relevance":6,"importance":3}' );
 		$this->decide( [ 'decision' => [ 'about_publisher' => 0.83 ] ] );
 
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN ) );
 
 		$this->assertSame( [ [ 'award', 7 ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['importance'] ], $this->extractions() ) );
 		$this->assertSame( [ false, false ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'backlog' ) );
@@ -490,12 +490,12 @@ final class ExtractorNodeTest extends TestCase {
 		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award","relevance":6,"importance":3}' );
 		$this->decide( $outcome );
 
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN ) );
 
 		$this->assertSame( [ 'award' ], \array_column( $this->extractions(), 'kind' ) );
 		$this->assertSame( [], $this->parked() );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'extract review failed: ' ) );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed:klharbor.example:transit-77' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed:klharbor-transit-77' ) );
 	}
 
 	/** No decision is asked for an item no open client published, one extracted as other, or a call that failed. */
@@ -506,9 +506,9 @@ final class ExtractorNodeTest extends TestCase {
 		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award"}' );
 		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'item_key' => 'linear:SUP-412', 'source' => 'linear', 'url' => 'https://linear.example/SUP-412' ] ) );
 		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"other"}' );
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN ) );
 		$this->answer( 'throw' );
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN ) );
 
 		$this->assertSame( [ 'extract', 'extract', 'extract' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
 		$this->assertSame( [ 'award', 'other', 'other' ], \array_column( $this->extractions(), 'kind' ) );
@@ -522,11 +522,11 @@ final class ExtractorNodeTest extends TestCase {
 		$this->decide( [ 'decision' => [ 'about_publisher' => 0.12 ] ] );
 		$this->writer_throws( new \RuntimeException( 'writer full 4471' ) );
 
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), attempt: 2, publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), attempt: 2, publisher: self::LANTERN ) );
 
 		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
 		$this->assertSame( [ 3 ], \array_column( $this->parked(), 'attempt' ) );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'an answer failed for feed:klharbor.example:transit-77: writer full 4471' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'an answer failed for feed:klharbor-transit-77: writer full 4471' ) );
 	}
 
 	/**
@@ -571,7 +571,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award","theme":"grant step checklist"}' );
 		$this->decide( [ 'decision' => [ 'about_publisher' => 0.2, 'theme_choice' => [ 'choice' => 't1', 'confidence' => 0.9 ] ] ] );
 
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN ) );
 
 		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
 		$this->assertSame( [ 'about_publisher', 'theme_choice' ], \array_keys( Prompts::questions( $this->out->requests[1][ Message::VALUE ]['inputs'] ) ) );
@@ -588,6 +588,173 @@ final class ExtractorNodeTest extends TestCase {
 
 		$this->assertSame( [ 'extract' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
 		$this->assertSame( [ [ 'award', 'grant step checklist' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['theme'] ], $this->extractions() ) );
+	}
+
+	/**
+	 * A client's own feed item the gate finds about someone else spends no
+	 * chat call: one decision asks about_publisher of the item and its
+	 * publisher alone, and the heuristic stand-in is written under the gated
+	 * stage, naming no subjects.
+	 */
+	public function test_a_client_lane_item_about_others_spends_no_chat_call(): void {
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Never asked.","kind":"award","relevance":6,"importance":3}' );
+		$this->gate( [ 'decision' => [ 'about_publisher' => 0.2 ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), extract: true, publisher: self::LANTERN ) );
+
+		$asked = \array_column( $this->out->requests, Message::VALUE );
+		$this->assertSame( [ 'extract_gate' ], \array_column( $asked, 'prompt' ) );
+		$this->assertSame( [ [ 'publisher' => 'Kestrel Lantern Harbor' ], [], true ], [ $asked[0]['inputs'], $asked[0]['options'], $asked[0]['backlog'] ] );
+		$this->assertSame( [ 'extraction_recorded' ], \array_column( $this->written(), 'event' ) );
+		$this->assertSame( [ [ 'other', 0, 0, 'Mesa Courier wins a transit grant. The port series won.' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['relevance'], $e['importance'], $e['summary'] ], $this->extractions() ) );
+		$this->assertSame( 'machine:extract-gated@', Intel_Event::machine_prefix( Extractor_Node::GATED_STAGE ) );
+		$this->assertStringStartsWith( 'machine:extract-gated@', $this->extractions()[0]['actor'] );
+		$this->assertSame( [ 0 ], \array_column( $this->forwarded(), 'importance' ) );
+		$this->assertSame( [], $this->parked() );
+	}
+
+	/**
+	 * One the gate finds about the publisher itself is extracted by the chat
+	 * model, its prompt naming the publisher, and its review does not ask
+	 * about_publisher again.
+	 */
+	public function test_a_client_lane_item_about_itself_is_extracted(): void {
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Kestrel Lantern Harbor launches its app.","kind":"launch","relevance":6,"importance":3}' );
+		$this->gate( [ 'decision' => [ 'about_publisher' => 0.83 ] ] );
+		$this->decide( [ 'decision' => [ 'fits_kind' => 0.91 ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+
+		$asked = \array_column( $this->out->requests, Message::VALUE );
+		$this->assertSame( [ 'extract_gate', 'extract', 'extract_review' ], \array_column( $asked, 'prompt' ) );
+		$this->assertSame( 'Kestrel Lantern Harbor', $asked[1]['inputs']['publisher'] );
+		$this->assertSame( [ 'fits_kind' ], \array_keys( Prompts::questions( $asked[2]['inputs'] ) ) );
+		$this->assertSame( [ [ 'launch', 3 ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['importance'] ], $this->extractions() ) );
+		$this->assertStringStartsWith( 'machine:extract@', $this->extractions()[0]['actor'] );
+	}
+
+	/**
+	 * A client-lane item a call already extracted is not gated: it is
+	 * extracted again by the chat model, its review asking about_publisher,
+	 * so a stand-in never stands in for an extraction it holds.
+	 */
+	public function test_a_client_lane_item_a_call_extracted_is_not_gated(): void {
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Kestrel Lantern Harbor wins a press award.","kind":"award","relevance":6,"importance":4}' );
+		$this->gate( [ 'decision' => [ 'about_publisher' => 0.2 ] ] );
+		$this->decide( [ 'decision' => [ 'about_publisher' => 0.83 ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), extracted: true, extract: true, publisher: self::LANTERN ) );
+
+		$asked = \array_column( $this->out->requests, Message::VALUE );
+		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( $asked, 'prompt' ) );
+		$this->assertSame( [ 'about_publisher' ], \array_keys( Prompts::questions( $asked[1]['inputs'] ) ) );
+		$this->assertSame( [ [ 'award', 6, 4 ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['relevance'], $e['importance'] ], $this->extractions() ) );
+		$this->assertStringStartsWith( 'machine:extract@', $this->extractions()[0]['actor'] );
+		$this->assertSame( [ [ 6, 4 ] ], \array_map( static fn ( array $f ): array => [ $f['relevance'], $f['importance'] ], $this->forwarded() ) );
+	}
+
+	/**
+	 * A configured feed's item is never gated, a guid escaped because it
+	 * reads as a lane included: its review asks about_publisher instead.
+	 */
+	public function test_a_configured_feed_item_is_not_gated(): void {
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award"}' );
+		$this->gate( [ 'decision' => [ 'about_publisher' => 0.2 ] ] );
+		$this->decide( [ 'decision' => [ 'about_publisher' => 0.12 ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'item_key' => 'feed::klharbor.example:transit-79' ] + self::lane_item(), publisher: self::LANTERN ) );
+
+		$this->assertSame( [ 'extract', 'extract_review', 'extract', 'extract_review' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
+		$this->assertSame( [ 'other', 'other' ], \array_column( $this->extractions(), 'kind' ) );
+	}
+
+	/** A restricted client-lane item is never gated, so it never reaches the decision model. */
+	public function test_a_restricted_feed_item_is_not_gated_and_never_asked(): void {
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award"}' );
+		$this->gate( [ 'decision' => [ 'about_publisher' => 0.2 ] ] );
+		$this->decide( [ 'decision' => [ 'about_publisher' => 0.12 ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'tier' => 'restricted' ] + self::lane_item(), publisher: self::LANTERN ) );
+
+		$this->assertSame( [ 'extract' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
+		$this->assertSame( [ 'award' ], \array_column( $this->extractions(), 'kind' ) );
+	}
+
+	/**
+	 * A gate that fails, the group lending nothing or a noul that does not
+	 * read, and why it is logged.
+	 *
+	 * @return array<string,array{0:array<string,mixed>,1:string}>
+	 */
+	public static function failed_gates(): array {
+		return [
+			'a bad gateway'      => [ [ 'error' => 'HTTP 502 https://proxy.example/systemone' ], 'HTTP 502 https://proxy.example/systemone' ],
+			'an unlent group'    => [ [ 'unlent' => 'ai-proxy-test-9' ], 'group ai-proxy-test-9 lends no credential' ],
+			'a noul not a float' => [ [ 'decision' => [ 'about_publisher' => 'high' ] ], 'it answers a question with nothing that reads' ],
+		];
+	}
+
+	/**
+	 * A gate that fails proceeds to the chat extraction, logged once, and
+	 * the review then asks about_publisher itself.
+	 *
+	 * @param array<string,mixed> $outcome What the gate answered.
+	 * @param string              $why     The failure logged.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'failed_gates' )]
+	public function test_a_failed_gate_proceeds_to_the_extraction( array $outcome, string $why ): void {
+		$stderr = $this->capture_stderr();
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award"}' );
+		$this->gate( $outcome );
+		$this->decide( [ 'decision' => [ 'about_publisher' => 0.12 ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+
+		$asked = \array_column( $this->out->requests, Message::VALUE );
+		$this->assertSame( [ 'extract_gate', 'extract', 'extract_review' ], \array_column( $asked, 'prompt' ) );
+		$this->assertSame( [ 'about_publisher' ], \array_keys( Prompts::questions( $asked[2]['inputs'] ) ) );
+		$this->assertSame( [ 'other' ], \array_column( $this->extractions(), 'kind' ) );
+		$this->assertSame( [], $this->parked() );
+		$this->assertCount( 1, self::stderr_lines( $stderr, "extract gate failed: {$why} for feed:klharbor.example:transit-77" ) );
+	}
+
+	/** A gate that fails publishes its text as last_error, as a review does, until a decision answers. */
+	public function test_a_gate_outage_reads_as_failing_until_a_decision_answers(): void {
+		$this->capture_stderr();
+		$this->publishing( null );
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Kestrel Lantern Harbor names an editor.","kind":"other"}' );
+
+		Core::$now = 8100.0;
+		$this->gate( [ 'error' => 'HTTP 502 https://proxy.example/systemone' ] );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'last_ok_at' => 8100, 'last_error' => 'HTTP 502 https://proxy.example/systemone', 'failing_since' => 8100 ] ), $this->published() );
+
+		Core::$now = 8300.0;
+		$this->gate( [ 'decision' => [ 'about_publisher' => 0.83 ] ] );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'item_key' => 'feed:klharbor.example:transit-78' ] + self::lane_item(), publisher: self::LANTERN ) );
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'last_ok_at' => 8300 ] ), $this->published() );
+	}
+
+	/** A gated answer whose stand-in write throws is logged and parks a retry, as any answer's does. */
+	public function test_a_gated_answer_that_throws_parks_a_retry(): void {
+		$stderr = $this->capture_stderr();
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->gate( [ 'decision' => [ 'about_publisher' => 0.2 ] ] );
+		$this->writer_throws( new \RuntimeException( 'writer full 4472' ) );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), attempt: 1, publisher: self::LANTERN ) );
+
+		$this->assertSame( [ 'extract_gate' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
+		$this->assertSame( [ 2 ], \array_column( $this->parked(), 'attempt' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'an answer failed for feed:klharbor.example:transit-77: writer full 4472' ) );
 	}
 
 	/**
@@ -707,7 +874,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"launch","theme":"grant step checklist"}' );
 		$this->decide( [ 'decision' => [ 'about_publisher' => $about, 'fits_kind' => $fits_kind, 'theme_choice' => [ 'choice' => 't1', 'confidence' => 0.9 ] ] ] );
 
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN ) );
 
 		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
 		$this->assertSame( [ 'about_publisher', 'fits_kind', 'theme_choice' ], \array_keys( Prompts::questions( $this->out->requests[1][ Message::VALUE ]['inputs'] ) ) );
@@ -761,7 +928,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award","theme":"grant step checklist"}' );
 		$this->decide( [ 'error' => 'HTTP 502 https://proxy.example/systemone' ] );
 
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN ) );
 
 		$this->assertSame( [ [ 'award', 'grant step checklist' ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['theme'] ], $this->extractions() ) );
 	}
@@ -848,7 +1015,7 @@ final class ExtractorNodeTest extends TestCase {
 
 		Core::$now = 8100.0;
 		$this->decide( [ 'error' => 'HTTP 502 https://proxy.example/systemone' ] );
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN ) );
 		$this->assertSame( $failing, $this->published() );
 
 		Core::$now = 8200.0;
@@ -857,7 +1024,7 @@ final class ExtractorNodeTest extends TestCase {
 
 		Core::$now = 8300.0;
 		$this->decide( [ 'decision' => [ 'about_publisher' => 0.83 ] ] );
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN ) );
 		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'last_ok_at' => 8300 ] ), $this->published() );
 	}
 
@@ -868,10 +1035,10 @@ final class ExtractorNodeTest extends TestCase {
 		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award"}' );
 		$this->decide( [ 'error' => 'HTTP 502 https://proxy.example/systemone' ] );
 
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'item_key' => 'feed:klharbor.example:transit-78' ] + self::lane_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'item_key' => 'feed:klharbor-transit-78' ] + self::published_item(), publisher: self::LANTERN ) );
 		$this->decide( [ 'error' => 'HTTP 504 https://proxy.example/systemone' ] );
-		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::lane_item(), publisher: self::LANTERN ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), publisher: self::LANTERN ) );
 
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'extract review failed: HTTP 502' ) );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'extract review failed: HTTP 504' ) );
@@ -1639,6 +1806,15 @@ final class ExtractorNodeTest extends TestCase {
 		$this->out->outcomes['extract_review'] = $outcome;
 	}
 
+	/**
+	 * Answer every extract gate as $outcome says.
+	 *
+	 * @param array<string,mixed> $outcome `decision`, `error` or `unlent`.
+	 */
+	private function gate( array $outcome ): void {
+		$this->out->outcomes['extract_gate'] = $outcome;
+	}
+
 	/** @return list<array<string,mixed>> Each extraction written. */
 	private function extractions(): array {
 		return \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'extraction_recorded' === $e['event'] ) );
@@ -1799,6 +1975,11 @@ final class ExtractorNodeTest extends TestCase {
 	/** @return array<string,mixed> A client lane item's fields: its own article about someone else. */
 	private static function lane_item(): array {
 		return [ 'item_key' => 'feed:klharbor.example:transit-77', 'url' => 'https://klharbor.example/2026/11/transit-grant', 'title' => 'Mesa Courier wins a transit grant' ];
+	}
+
+	/** @return array<string,mixed> A configured feed's copy of the client's own article about someone else, at the client's own url. */
+	private static function published_item(): array {
+		return [ 'item_key' => 'feed:klharbor-transit-77' ] + self::lane_item();
 	}
 
 	/** @return array<string,mixed> The item every resolution carries. */

@@ -70,6 +70,14 @@ final class RestrictedTierTest extends TestCase {
 		$this->assertSame( [ 'public', 'internal' ], Intel_Tiers::readable() );
 	}
 
+	/** An item's tier is unrestricted only when it is one of UNRESTRICTED; a restricted, missing or misspelled tier is not. */
+	public function test_an_item_is_unrestricted_only_at_an_unrestricted_tier(): void {
+		$this->assertSame(
+			[ true, true, false, false, false ],
+			\array_map( static fn ( array $item ): bool => Intel_Tiers::unrestricted( $item ), [ [ 'tier' => 'internal' ], [ 'tier' => 'public' ], [ 'tier' => 'restricted' ], [], [ 'tier' => 'Public' ] ] )
+		);
+	}
+
 	/** The tier is asked on each call, so a grant reaches the very next read. */
 	public function test_readable_is_asked_on_each_call(): void {
 		$GLOBALS['_current_user_id'] = self::READER;

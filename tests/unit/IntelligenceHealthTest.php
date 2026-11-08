@@ -505,6 +505,13 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->seed( self::extraction( 'feed:quiet-note', 'A quiet note, read.', 'launch', self::$oct_13, [] ) );
 
 		$this->assertSame( [ 'mode' => 'unknown', 'last_mode' => 'call', 'queue' => null ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+
+		$this->seed(
+			self::item( 'feed:gated-note', 'A gated note', 'feed', 'public', self::$oct_13 ),
+			[ Intel_Event::make( 'extraction_recorded', [ 'item_key' => 'feed:gated-note', 'summary' => 'A gated note.', 'kind' => 'other', 'relevance' => 0.0, 'importance' => 0.0, 'sentiment' => 0.0, 'topics' => [], 'retrieved_ts' => self::$oct_13 + 600 ], Intel_Event::machine_prefix( Extractor_Node::GATED_STAGE ) . '9.4.1', 'fixture-9' ) ]
+		);
+
+		$this->assertSame( [ 'mode' => 'unknown', 'last_mode' => 'heuristic', 'queue' => null ], $this->ci->dispatch( 'health', [ 'extraction' ] ), 'a gated stand-in was made by no call' );
 	}
 
 	/** Review Focus 3: with no shared cache every published fact is unknown, the Vault still answers idle, and nothing throws. */
