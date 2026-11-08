@@ -188,6 +188,17 @@ final class IntelligencePageTest extends TestCase {
 		$this->assertSame( [ '1', '1' ], [ $operator['canTune'], $operator['canManage'] ], 'an operator is sent the string 1' );
 	}
 
+	/** The page learns its reader's user id, as a string, so what it keeps in the browser is the reader's own. */
+	public function test_page_localizes_the_readers_user_id(): void {
+		Capabilities::$session_scope = Capabilities::READ;
+		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];
+		$GLOBALS['_current_user_id'] = 6143;
+
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+
+		$this->assertSame( '6143', $this->localized( 'newspack-intelligence' )['userId'] );
+	}
+
 	public function test_the_vocabulary_words_every_link_role_and_method(): void {
 		Capabilities::$session_scope = Capabilities::READ;
 		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];

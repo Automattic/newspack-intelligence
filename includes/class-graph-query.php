@@ -654,21 +654,23 @@ final class Graph_Query {
 	/**
 	 * The most important readable items naming any entity as their subject
 	 * or a mention, a topic tag aside, dated in the last `$days` UTC days, as
-	 * `search` answers them, and how many there are.
+	 * `search` answers them, how many there are, and what of them is dated
+	 * at or after `$since` (`summed()`).
 	 *
 	 * @api Read by Intelligence_Briefing.
 	 * @param Row_Reader $r     The reader.
 	 * @param Graph      $g     The graph the read opened.
 	 * @param int        $days  How many days, today the last.
 	 * @param int        $limit The most items answered.
-	 * @return array<string,mixed> `{ items, total }`.
+	 * @param int        $since The first instant the summary counts, UTC seconds.
+	 * @return array<string,mixed> `{ items, total, summary }`.
 	 */
-	public static function most_important( Row_Reader $r, array $g, int $days, int $limit ): array {
+	public static function most_important( Row_Reader $r, array $g, int $days, int $limit, int $since ): array {
 		$filter = [
 			'about' => true,
 			'days'  => self::last_days( $days ),
 		] + self::filter_of( [] );
-		return self::items( $r, $g, $filter, $limit, 0, self::MOST_IMPORTANT, Intel_Event::NAMING_ROLES );
+		return self::items( $r, $g, $filter, $limit, 0, self::MOST_IMPORTANT, Intel_Event::NAMING_ROLES, $since );
 	}
 
 	/**
@@ -684,13 +686,16 @@ final class Graph_Query {
 	 * @param int          $offset The page start.
 	 * @param Within       $within The join, its fields and the order.
 	 * @param list<string> $links  The link roles the filters read.
+	 * @param int|null     $since  With `about`, the first instant a summary counts, in the statement counting the total; null for none.
 	 * @return array<string,mixed>
 	 */
-	private static function items( Row_Reader $r, array $g, array $filter, int $limit, int $offset, array $within = self::NEWEST, array $links = Intel_Event::ABOUT_ROLES ): array {
+	private static function items( Row_Reader $r, array $g, array $filter, int $limit, int $offset, array $within = self::NEWEST, array $links = Intel_Event::ABOUT_ROLES, ?int $since = null ): array {
 		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false, $links );
 		$binds                           = [ ...$lead, ...$within['binds'], ...$binds ];
 		$columns                         = self::ITEM_COLUMNS + $within['fields'];
-		$total                           = Core::as_int( $r->rows( "{$with} SELECT COUNT(*) FROM ri i {$within['join']} WHERE {$where}", $binds )[0][0] ?? 0 );
+		[ $total, $summary ]             = null === $since
+			? [ Core::as_int( $r->rows( "{$with} SELECT COUNT(*) FROM ri i {$within['join']} WHERE {$where}", $binds )[0][0] ?? 0 ), null ]
+			: self::summed( $r, $with, $within['join'], $where, $binds, $since );
 		$page                            = $r->rows(
 			"{$with} SELECT " . \implode( ', ', $columns ) . " FROM ri i {$within['join']} LEFT JOIN " . Intel_Graph_Row_Schema::all( $r, 'extractions' )
 			. " x ON x.item_key = i.item_key WHERE {$where} ORDER BY {$within['order']} LIMIT ? OFFSET ?",
@@ -701,7 +706,7 @@ final class Graph_Query {
 		return [
 			'items' => \array_map( static fn ( array $item ): array => \array_diff_key( $item, $within['fields'] ) + [ 'entities' => $linked[ Core::as_string( $item['item_key'] ) ] ?? [] ] + \array_intersect_key( $item, $within['fields'] ), $items ),
 			'total' => $total,
-		];
+		] + ( null === $summary ? [] : [ 'summary' => $summary ] );
 	}
 
 	/**
@@ -786,6 +791,50 @@ final class Graph_Query {
 			}
 		}
 		return $text;
+	}
+
+	/**
+	 * How many items a read admits, and, of those dated at or after
+	 * `$since`, how many there are, how many open clients they are about by
+	 * a subject or a mention (`item_clients()`), and each kind's items and
+	 * clients, in the one statement that counts them.
+	 *
+	 * @param Row_Reader        $r     The reader.
+	 * @param string            $with  The read's `WITH` clauses, `live` among them.
+	 * @param string            $join  What it joins to `ri i`.
+	 * @param string            $where Its condition.
+	 * @param list<scalar|null> $binds Their binds.
+	 * @param int               $since The first instant counted, UTC seconds.
+	 * @return array{0:int,1:array{items:int,clients:int,kinds:array<string,array{items:int,clients:int}>}} The total and the summary, each kind by name.
+	 */
+	private static function summed( Row_Reader $r, string $with, string $join, string $where, array $binds, int $since ): array {
+		$time    = Intel_Graph_Row_Schema::ITEM_TIME;
+		$counts  = 'COUNT( DISTINCT item_key ), COUNT( DISTINCT CASE WHEN t >= ? THEN item_key END ), COUNT( DISTINCT CASE WHEN t >= ? THEN entity_key END ) FROM wc';
+		$rows    = $r->rows(
+			"{$with}, " . self::item_clients( $r ) . ", w AS MATERIALIZED ( SELECT i.item_key, x.kind, {$time} AS t FROM ri i {$join} LEFT JOIN " . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . " x ON x.item_key = i.item_key WHERE {$where} ),"
+			. ' wc AS MATERIALIZED ( SELECT w.item_key, w.kind, w.t, ic.entity_key FROM w LEFT JOIN ic ON ic.item_key = w.item_key )'
+			. " SELECT 1, NULL, {$counts} UNION ALL SELECT 0, kind, {$counts} WHERE kind IS NOT NULL GROUP BY kind",
+			[ ...$binds, $since, $since, $since, $since ]
+		);
+		$total   = 0;
+		$summary = [
+			'items'   => 0,
+			'clients' => 0,
+			'kinds'   => [],
+		];
+		foreach ( $rows as [ $every, $kind, $admitted, $items, $clients ] ) {
+			if ( 1 === Core::as_int( $every ) ) {
+				$total              = Core::as_int( $admitted );
+				$summary['items']   = Core::as_int( $items );
+				$summary['clients'] = Core::as_int( $clients );
+				continue;
+			}
+			$summary['kinds'][ Core::as_string( $kind ) ] = [
+				'items'   => Core::as_int( $items ),
+				'clients' => Core::as_int( $clients ),
+			];
+		}
+		return [ $total, $summary ];
 	}
 
 	/**
@@ -1843,7 +1892,7 @@ final class Graph_Query {
 	 * per bucket, and, in the same statement, each subject holding a story
 	 * dated before it, its history, by each value it counted there when
 	 * `$values` asks. A story is cited by its key, URL and title, each read
-	 * once however many partitions hold it. A story with no value, one with
+	 * once however many partitions hold it, and only for the stories cited. A story with no value, one with
 	 * no theme on the theme axis, counts under none, and is not history.
 	 *
 	 * @param Row_Reader     $r      The reader.
@@ -1865,13 +1914,13 @@ final class Graph_Query {
 				. ' JOIN copies c ON c.subject = s.subject AND c.value = s.value AND c.story = s.item_key JOIN ic ON ic.item_key = c.copy ) b GROUP BY 1, 2, 3 )'
 			: '';
 		$rows                = $r->rows(
-			"{$stories}, ranked AS ( SELECT s.subject, {$span} AS bucket, s.value, s.item_key, c.url, c.title, ROW_NUMBER() OVER ( PARTITION BY s.subject, {$span}, s.value ORDER BY t DESC, s.item_key DESC ) AS rn,"
-			. " COUNT(*) OVER ( PARTITION BY s.subject, {$span}, s.value ) AS n FROM stories s"
-			. " JOIN ( SELECT item_key, MAX( url ) AS url, MAX( title ) AS title FROM ri WHERE item_key IN ( SELECT item_key FROM stories ) GROUP BY item_key ) c ON c.item_key = s.item_key WHERE t >= ? AND s.value IS NOT NULL ){$clients}"
-			. ' SELECT ranked.subject, ranked.bucket, ranked.value, ranked.n, ranked.item_key, ranked.url, ranked.title, ranked.rn, ' . ( $named ? 'nm.clients FROM ranked LEFT JOIN named nm ON nm.subject = ranked.subject AND nm.bucket = ranked.bucket AND nm.value = ranked.value' : 'NULL FROM ranked' )
-			. ' WHERE ranked.rn <= ?'
+			"{$stories}, ranked AS ( SELECT s.subject, {$span} AS bucket, s.value, s.item_key, ROW_NUMBER() OVER ( PARTITION BY s.subject, {$span}, s.value ORDER BY t DESC, s.item_key DESC ) AS rn,"
+			. " COUNT(*) OVER ( PARTITION BY s.subject, {$span}, s.value ) AS n FROM stories s WHERE t >= ? AND s.value IS NOT NULL ),"
+			. ' cited AS ( SELECT ranked.*, c.url, c.title FROM ranked JOIN ( SELECT item_key, MAX( url ) AS url, MAX( title ) AS title FROM ri'
+			. " WHERE item_key IN ( SELECT item_key FROM ranked WHERE rn <= ? ) GROUP BY item_key ) c ON c.item_key = ranked.item_key WHERE ranked.rn <= ? ){$clients}"
+			. ' SELECT cited.subject, cited.bucket, cited.value, cited.n, cited.item_key, cited.url, cited.title, cited.rn, ' . ( $named ? 'nm.clients FROM cited LEFT JOIN named nm ON nm.subject = cited.subject AND nm.bucket = cited.bucket AND nm.value = cited.value' : 'NULL FROM cited' )
 			. ' UNION ALL SELECT DISTINCT subject, NULL, ' . ( $values ? 'value' : 'NULL' ) . ', NULL, NULL, NULL, NULL, NULL, NULL FROM stories WHERE t < ? AND value IS NOT NULL ORDER BY 1, 2 DESC, 4 DESC, 3, 8',
-			[ ...$binds, $cut, ...( $named ? [ $cut ] : [] ), self::CITATIONS, $cut ]
+			[ ...$binds, $cut, self::CITATIONS, self::CITATIONS, ...( $named ? [ $cut ] : [] ), $cut ]
 		);
 		$out                 = [];
 		$history             = [];

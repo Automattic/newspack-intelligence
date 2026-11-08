@@ -34,7 +34,7 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
  * and watch, the watch form's draft and the item being saved, so a view
  * returns as it was left, and a lens's "Watch this" opens the form on it.
  * The Entity tab reads the name the open entity's record answered, else its
- * key.
+ * key. A line of the Briefing's summary opens Search on its filters.
  * Curation renders only for `canTune`, which hides controls and enforces
  * nothing: the server's role gate refuses a write the caller may not make.
  * Watches are every reader's own, so they are not gated on it. A link naming
@@ -49,10 +49,16 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
  * @param {Object}  props
  * @param {boolean} props.canTune    Whether the caller may curate.
  * @param {boolean} props.canManage  Whether the caller is an operator.
+ * @param {string}  props.userId     The reader, whose last look the Briefing keeps.
  * @param {Object}  props.vocabulary The ontology's closed lists.
  * @return {import('react').ReactElement} The page.
  */
-export default function IntelligencePage( { canTune, canManage, vocabulary } ) {
+export default function IntelligencePage( {
+	canTune,
+	canManage,
+	userId,
+	vocabulary,
+} ) {
 	const [ view, setView ] = useState( () =>
 		linkedWatch() ? 'watches' : 'briefing'
 	);
@@ -87,6 +93,11 @@ export default function IntelligencePage( { canTune, canManage, vocabulary } ) {
 	const openWatch = ( key ) => {
 		setWatch( { ...CLOSED_WATCH, key } );
 		setView( 'watches' );
+	};
+	const searchFor = ( filters ) => {
+		const fresh = newSearch( vocabulary.lensLists );
+		setSearch( { ...fresh, filters: { ...fresh.filters, ...filters } } );
+		setView( 'search' );
 	};
 
 	const tabs = [
@@ -137,6 +148,8 @@ export default function IntelligencePage( { canTune, canManage, vocabulary } ) {
 					>
 						{ 'briefing' === view && (
 							<Briefing
+								userId={ userId }
+								onSearchFor={ searchFor }
 								onOpenEntity={ openEntity }
 								onOpenLens={ openLens }
 								onOpenWatch={ openWatch }

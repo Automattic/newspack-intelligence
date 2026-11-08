@@ -60,7 +60,8 @@ function register_intelligence_admin_page(): void {
 /**
  * Enqueue the Intelligence bundle on its own admin page, telling it the
  * plugin version the shared header stamps, whether to render curation
- * controls and the vocabulary those controls offer. The
+ * controls, the reader's user id, which keys what the page keeps in the
+ * browser, and the vocabulary those controls offer. The
  * server's role gate stays the authority; the flag only hides. WordPress
  * refuses the page to a caller its menu capability excludes before this
  * runs. `Admin::enqueue_react_page()` no-ops when
@@ -84,6 +85,7 @@ function enqueue_intelligence_assets( string $hook ): void {
 				'version'    => \NEWSPACK_INTELLIGENCE_VERSION,
 				'canTune'    => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::TUNE ) ? '1' : '',
 				'canManage'  => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) ? '1' : '',
+				'userId'     => (string) \get_current_user_id(),
 				'vocabulary' => [
 					'roles'           => Intel_Event::ROLES,
 					'nameKinds'       => Intel_Event::NAME_KINDS,

@@ -37,6 +37,7 @@ let wire;
 
 beforeEach( () => {
 	Core.reset();
+	window.localStorage.clear();
 	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
 	wire = intelWire();
 	wire.replies.search = ( args ) =>
@@ -68,6 +69,12 @@ const WEEK = {
 	changes: {
 		groups: [ { entity_key: null, name: null, items: [ ITEM ] } ],
 		total: 1,
+		summary: {
+			since: 1792000000,
+			items: 6,
+			clients: 4,
+			kinds: [ { kind: 'churned', items: 5, clients: 3 } ],
+		},
 		available: true,
 	},
 	signals: { clients: [], lenses: [], available: true },
@@ -90,9 +97,19 @@ const LINKED = {
 
 function renderPage( canTune = false ) {
 	return render(
-		<IntelligencePage canTune={ canTune } vocabulary={ VOCABULARY } />
+		<IntelligencePage
+			canTune={ canTune }
+			userId="6143"
+			vocabulary={ VOCABULARY }
+		/>
 	);
 }
+
+/** Open the Briefing's one group of the week, collapsed to its count. */
+const openWeek = async () =>
+	fireEvent.click(
+		await screen.findByRole( 'button', { name: 'Industry 1 item' } )
+	);
 
 const nav = ( name ) =>
 	within( screen.getByRole( 'tablist', { name: 'Views' } ) ).getByRole(
@@ -103,6 +120,7 @@ const nav = ( name ) =>
 describe( 'IntelligencePage', () => {
 	it( 'opens on the Briefing, its first tab', async () => {
 		renderPage();
+		await openWeek();
 		expect(
 			await screen.findByRole( 'link', {
 				name: 'Acme Quillsheet wins regional prize',
@@ -114,6 +132,26 @@ describe( 'IntelligencePage', () => {
 		expect( tabs[ 0 ] ).toBe( nav( 'Briefing' ) );
 		expect( nav( 'Briefing' ) ).toHaveAttribute( 'aria-selected', 'true' );
 		expect( wire.sent( 'search' ) ).toEqual( [] );
+	} );
+
+	it( 'opens Search on a line of what arrived since the last look', async () => {
+		window.localStorage.setItem(
+			'newspack-intelligence:briefing:last-view:6143',
+			'1792000000'
+		);
+		renderPage();
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: '3 clients started offboarding',
+			} )
+		);
+		expect( nav( 'Search' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toEqual( [
+				[ '--kind=churned', '--since=2026-10-14' ],
+			] )
+		);
+		expect( screen.getByLabelText( 'Since' ) ).toHaveValue( '2026-10-14' );
 	} );
 
 	it( 'opens a watch the Briefing lists, on its matches', async () => {
@@ -184,7 +222,17 @@ describe( 'IntelligencePage', () => {
 				  }
 				: {
 						...WEEK,
-						changes: { groups: [], total: 0, available: true },
+						changes: {
+							groups: [],
+							total: 0,
+							summary: {
+								since: 1792000000,
+								items: 0,
+								clients: 0,
+								kinds: [],
+							},
+							available: true,
+						},
 				  }[ what ];
 		renderPage();
 		fireEvent.click(
@@ -269,6 +317,7 @@ describe( 'IntelligencePage', () => {
 
 	it( 'opens an entity from a result chip and returns to it from the nav', async () => {
 		renderPage();
+		await openWeek();
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
 		);
@@ -291,6 +340,7 @@ describe( 'IntelligencePage', () => {
 		wire.replies.entity = () =>
 			new Error( 'no entity: organization:acme-quillsheet' );
 		renderPage();
+		await openWeek();
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
 		);
@@ -309,6 +359,7 @@ describe( 'IntelligencePage', () => {
 				: new Error( 'no entity: organization:acme-quillsheet' );
 		wire.replies.add_name = { ok: true, event_id: 'ev-merged' };
 		renderPage( true );
+		await openWeek();
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
 		);
@@ -354,6 +405,7 @@ describe( 'IntelligencePage', () => {
 			available: true,
 		};
 		renderPage();
+		await openWeek();
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
 		);
@@ -595,6 +647,7 @@ describe( 'IntelligencePage', () => {
 
 	it( 'offers a reader no save control and no curation', async () => {
 		renderPage( false );
+		await openWeek();
 		await screen.findByRole( 'link', {
 			name: 'Acme Quillsheet wins regional prize',
 		} );
@@ -605,6 +658,7 @@ describe( 'IntelligencePage', () => {
 
 	it( 'saves a result through the dialog for a curator', async () => {
 		renderPage( true );
+		await openWeek();
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: /save to collection/i } )
 		);
@@ -617,6 +671,7 @@ describe( 'IntelligencePage', () => {
 
 	it( 'renders inside the shared dashboard shell, headed by its subtitle', async () => {
 		const { container } = renderPage();
+		await openWeek();
 		await screen.findByRole( 'link', {
 			name: 'Acme Quillsheet wins regional prize',
 		} );
@@ -644,6 +699,7 @@ describe( 'IntelligencePage', () => {
 
 	it( 'mounts one debug overlay under its own storage key', async () => {
 		renderPage();
+		await openWeek();
 		await screen.findByRole( 'link', {
 			name: 'Acme Quillsheet wins regional prize',
 		} );

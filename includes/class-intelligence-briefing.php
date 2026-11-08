@@ -4,7 +4,8 @@
  * changed in the last DAYS UTC days, through the reads that already answer
  * it. `changes` ranks the window's readable items naming any entity by
  * importance and groups them under the clients each is about, else under
- * Newspack's own work, else under no one; `signals` answers every client's
+ * Newspack's own work, else under no one, and sums up what of them arrived
+ * since an instant the caller names; `signals` answers every client's
  * signals on both axes and every lens's, each whose bucket closed inside
  * the window.
  *
@@ -29,61 +30,21 @@ final class Intelligence_Briefing {
 	/** The UTC days the briefing reads, today the last. */
 	public const DAYS = 7;
 
+	/** The item kinds the summary counts, in the order it answers them. */
+	public const SUMMARY_KINDS = [ Graph_Query::CHURNED, 'churn_signal', 'incident', 'bug', 'launch', 'funding', 'award', 'feature_request', 'complaint' ];
+
 	/**
 	 * The slice `what` names.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args.
 	 * @return array<array-key,mixed>
-	 * @throws \InvalidArgumentException When `what` does not name a slice.
+	 * @throws \InvalidArgumentException When `what` does not name a slice, or `since` names an instant for `signals`.
 	 */
 	public static function answer( array $args ): array {
-		$what = Graph_Query::one_of( 'what', Core::as_string( $args['what'] ), self::SLICES );
-		return self::$what();
-	}
-
-	/**
-	 * The window's `Graph_Query::DEFAULT_LIMIT` most important items naming
-	 * any entity as subject or mention, in three kinds of group: under the
-	 * first open client an item is about, role `client`, so each item is
-	 * listed once; one about no client, or about more than
-	 * `Graph_Query::MAX_ITEM_CLIENTS`, but
-	 * about an entity holding an open `newspack_product` role under one
-	 * group of that role; and any other under one group of role null. Each
-	 * group sits in the order of its most important item, and its items as
-	 * they rank.
-	 *
-	 * @return array<string,mixed> `{ groups: [ { entity_key, name, role, items } ], total, available }`.
-	 */
-	private static function changes(): array {
-		return Graph_Query::answer(
-			[
-				'groups' => [],
-				'total'  => 0,
-			],
-			static function ( Row_Reader $r, array $g ): array {
-				$read     = Graph_Query::most_important( $r, $g, self::DAYS, Graph_Query::DEFAULT_LIMIT );
-				$holders  = self::holders( $r, $g );
-				$clients  = $holders[ Graph_Query::CLIENT ];
-				$products = $holders[ Graph_Query::NEWSPACK_PRODUCT ];
-				$groups   = [];
-				foreach ( Core::arr( $read['items'] ) as $item ) {
-					$about = \array_map( Core::as_string( ... ), \array_column( Core::arr( Core::arr( $item )['entities'] ), 'entity_key' ) );
-					$named = \array_flip( $about );
-					$under = \array_map( 'strval', \array_keys( \array_intersect_key( $named, $clients ) ) );
-					$key   = [] === $under || \count( $under ) > Graph_Query::MAX_ITEM_CLIENTS
-						? ( [] === \array_intersect_key( $named, $products ) ? '' : Graph_Query::NEWSPACK_PRODUCT )
-						: $under[0];
-					$groups[ $key ]          ??= isset( $clients[ $key ] )
-						? [ 'entity_key' => $key, 'name' => $clients[ $key ], 'role' => Graph_Query::CLIENT, 'items' => [] ]
-						: [ 'entity_key' => null, 'name' => null, 'role' => '' === $key ? null : $key, 'items' => [] ];
-					$groups[ $key ]['items'][] = $item;
-				}
-				return [
-					'groups' => \array_values( $groups ),
-					'total'  => $read['total'],
-				];
-			}
-		);
+		return match ( Graph_Query::one_of( 'what', Core::as_string( $args['what'] ), self::SLICES ) ) {
+			'changes' => self::changes( Core::as_int( $args['since'] ) ),
+			'signals' => 0 === Core::as_int( $args['since'] ) ? self::signals() : throw new \InvalidArgumentException( 'since applies to changes' ),
+		};
 	}
 
 	/**
@@ -159,6 +120,87 @@ final class Intelligence_Briefing {
 			}
 		}
 		return $rows;
+	}
+
+	/**
+	 * The window's `Graph_Query::DEFAULT_LIMIT` most important items naming
+	 * any entity as subject or mention, in three kinds of group: under the
+	 * first open client an item is about, role `client`, so each item is
+	 * listed once; one about no client, or about more than
+	 * `Graph_Query::MAX_ITEM_CLIENTS`, but
+	 * about an entity holding an open `newspack_product` role under one
+	 * group of that role; and any other under one group of role null. Each
+	 * group sits in the order of its most important item, and its items as
+	 * they rank. Its summary counts what of the window is dated at or after
+	 * `since`, the window's first instant at the latest: the items, the open
+	 * clients they are about, and each of SUMMARY_KINDS with any item, in
+	 * that order, with its items and clients.
+	 *
+	 * @param int $asked The instant `since` names, UTC seconds.
+	 * @return array<string,mixed> `{ groups: [ { entity_key, name, role, items } ], total, summary: { since, items, clients, kinds: [ { kind, items, clients } ] }, available }`.
+	 */
+	private static function changes( int $asked ): array {
+		$since = \max( $asked, Graph_Query::last_days( self::DAYS )[0] );
+		return Graph_Query::answer(
+			[
+				'groups'  => [],
+				'total'   => 0,
+				'summary' => [
+					'since'   => $since,
+					'items'   => 0,
+					'clients' => 0,
+					'kinds'   => [],
+				],
+			],
+			static function ( Row_Reader $r, array $g ) use ( $since ): array {
+				$read     = Graph_Query::most_important( $r, $g, self::DAYS, Graph_Query::DEFAULT_LIMIT, $since );
+				$holders  = self::holders( $r, $g );
+				$clients  = $holders[ Graph_Query::CLIENT ];
+				$products = $holders[ Graph_Query::NEWSPACK_PRODUCT ];
+				$groups   = [];
+				foreach ( Core::arr( $read['items'] ) as $item ) {
+					$about = \array_map( Core::as_string( ... ), \array_column( Core::arr( Core::arr( $item )['entities'] ), 'entity_key' ) );
+					$named = \array_flip( $about );
+					$under = \array_map( 'strval', \array_keys( \array_intersect_key( $named, $clients ) ) );
+					$key   = [] === $under || \count( $under ) > Graph_Query::MAX_ITEM_CLIENTS
+						? ( [] === \array_intersect_key( $named, $products ) ? '' : Graph_Query::NEWSPACK_PRODUCT )
+						: $under[0];
+					$groups[ $key ]          ??= isset( $clients[ $key ] )
+						? [ 'entity_key' => $key, 'name' => $clients[ $key ], 'role' => Graph_Query::CLIENT, 'items' => [] ]
+						: [ 'entity_key' => null, 'name' => null, 'role' => '' === $key ? null : $key, 'items' => [] ];
+					$groups[ $key ]['items'][] = $item;
+				}
+				return [
+					'groups'  => \array_values( $groups ),
+					'total'   => $read['total'],
+					'summary' => self::summary( $since, Core::arr( $read['summary'] ) ),
+				];
+			}
+		);
+	}
+
+	/**
+	 * A summary as the briefing answers it: from when it counts, then each
+	 * of SUMMARY_KINDS the read counted any item of, in that order.
+	 *
+	 * @param int                    $since   The first instant counted.
+	 * @param array<array-key,mixed> $counted The read's summary, each kind by name.
+	 * @return array<string,mixed>
+	 */
+	private static function summary( int $since, array $counted ): array {
+		$kinds = [];
+		foreach ( self::SUMMARY_KINDS as $kind ) {
+			$count = Core::arr( Core::arr( $counted['kinds'] )[ $kind ] ?? [ 'items' => 0 ] );
+			if ( 0 < Core::as_int( $count['items'] ) ) {
+				$kinds[] = [ 'kind' => $kind ] + $count;
+			}
+		}
+		return [
+			'since'   => $since,
+			'items'   => $counted['items'],
+			'clients' => $counted['clients'],
+			'kinds'   => $kinds,
+		];
 	}
 
 	/**

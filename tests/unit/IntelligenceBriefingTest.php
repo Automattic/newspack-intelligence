@@ -53,6 +53,8 @@ final class IntelligenceBriefingTest extends TestCase {
 
 	private const READER = 5521;
 
+	private const HOLDER = 5522;
+
 	private Intelligence_CI_Node $ci;
 
 	protected function setUp(): void {
@@ -136,6 +138,93 @@ final class IntelligenceBriefingTest extends TestCase {
 		$this->assertSame( [ 6, true ], [ $answer['total'], $answer['available'] ] );
 		$search = \array_column( $this->ci->dispatch( 'search', [ '--entity=' . self::SEDGE ] )['items'], null, 'item_key' );
 		$this->assertSame( $search['p2:sedge-bug'], $answer['groups'][1]['items'][0] );
+	}
+
+	/**
+	 * `changes` sums up what arrived since an instant inside the window: the
+	 * items and the open clients they are about, and each kind that matters,
+	 * in the order the briefing reads them, with its items and clients; a
+	 * kind with nothing since is left out, and so is a kind the summary does
+	 * not read, though its items count. `total` still counts the window.
+	 */
+	public function test_changes_answer_a_summary_of_counts(): void {
+		$this->about( 'linear:plover-offboard', self::PLOVER, 'subject', 'churned', 7.0, 1 );
+		$this->about( 'unthread:plover-exit-call', self::PLOVER, 'mention', 'churned', 6.0, 0 );
+		$this->about( 'p2:sedge-offboard', self::SEDGE, 'subject', 'churned', 8.0, 1 );
+		$this->about( 'github:wren-crash', self::WREN, 'subject', 'bug', 5.0, 1 );
+		$this->about( 'slack:plover-relaunch', self::PLOVER, 'subject', 'launch', 4.0, 1 );
+		$this->about( 'feed:sedge-study', self::SEDGE, 'mention', 'research', 3.0, 1 );
+		$this->about( 'linear:sedge-wobble', self::SEDGE, 'subject', 'churn_signal', 9.0, 4 );
+		$this->about( 'linear:plover-old-exit', self::PLOVER, 'subject', 'churned', 9.0, 8 );
+		$since = self::back( 2 ) + 3600;
+
+		$answer = $this->ci->dispatch( 'briefing', [ 'changes', '--since=' . $since ] );
+
+		$this->assertSame(
+			[
+				'since'   => $since,
+				'items'   => 6,
+				'clients' => 2,
+				'kinds'   => [
+					[ 'kind' => 'churned', 'items' => 3, 'clients' => 2 ],
+					[ 'kind' => 'bug', 'items' => 1, 'clients' => 0 ],
+					[ 'kind' => 'launch', 'items' => 1, 'clients' => 1 ],
+				],
+			],
+			$answer['summary']
+		);
+		$this->assertSame( 7, $answer['total'] );
+	}
+
+	/**
+	 * With no instant named, or one before the window, the summary counts
+	 * from the window's first instant.
+	 */
+	public function test_a_summary_counts_from_the_window_at_the_latest(): void {
+		$this->about( 'linear:sedge-wobble', self::SEDGE, 'subject', 'churn_signal', 9.0, 5 );
+		$this->about( 'p2:plover-offboard', self::PLOVER, 'subject', 'churned', 8.0, 6 );
+		$this->about( 'linear:plover-old-exit', self::PLOVER, 'subject', 'churned', 9.0, 8 );
+		$opens   = Graph_Query::last_days( 7 )[0];
+		$summary = [
+			'since'   => $opens,
+			'items'   => 2,
+			'clients' => 2,
+			'kinds'   => [
+				[ 'kind' => 'churned', 'items' => 1, 'clients' => 1 ],
+				[ 'kind' => 'churn_signal', 'items' => 1, 'clients' => 1 ],
+			],
+		];
+
+		$this->assertSame( $summary, $this->ci->dispatch( 'briefing', [ 'changes' ] )['summary'] );
+		$this->assertSame( $summary, $this->ci->dispatch( 'briefing', [ 'changes', '--since=' . ( $opens - 5 * self::DAY ) ] )['summary'] );
+	}
+
+	/**
+	 * A restricted item about a client counts in the summary only for a
+	 * reader who holds the restricted tier.
+	 */
+	public function test_a_summary_counts_a_restricted_item_only_for_its_holder(): void {
+		$key = 'hubspot:plover-renewal-lapse';
+		$at  = self::back( 1 );
+		$this->seed( self::item( $key, 'Plover renewal lapses', 'hubspot', 'restricted', $at ), self::extraction( $key, 'A churn.', 'churned', $at, [], 5.0, 8.0 ), self::link( 'link_asserted', $key, self::PLOVER, 'subject', 'name', 1.0, $at ) );
+		$this->about( 'p2:sedge-offboard', self::SEDGE, 'subject', 'churned', 7.0, 1 );
+		$since = self::back( 3 );
+
+		$reader = $this->ci->dispatch( 'briefing', [ 'changes', '--since=' . $since ] );
+		self::add_user( self::HOLDER, 'plover-analyst', 'manage_options', 'newspack_intelligence_restricted' );
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$holder = $this->ci->dispatch( 'briefing', [ 'changes', '--since=' . $since ] );
+
+		$this->assertSame( [ 1, 1, [ [ 'kind' => 'churned', 'items' => 1, 'clients' => 1 ] ], 1 ], [ $reader['summary']['items'], $reader['summary']['clients'], $reader['summary']['kinds'], $reader['total'] ] );
+		$this->assertSame( [ 2, 2, [ [ 'kind' => 'churned', 'items' => 2, 'clients' => 2 ] ], 2 ], [ $holder['summary']['items'], $holder['summary']['clients'], $holder['summary']['kinds'], $holder['total'] ] );
+	}
+
+	/** An instant to count from belongs to `changes`; `signals` refuses one. */
+	public function test_signals_refuse_an_instant(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'since applies to changes' );
+
+		$this->ci->dispatch( 'briefing', [ 'signals', '--since=1792000000' ] );
 	}
 
 	/** Items of equal importance rank the more relevant first, however old it is. */

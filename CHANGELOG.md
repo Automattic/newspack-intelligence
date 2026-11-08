@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Briefing opens with "Since you last looked".** `briefing changes` answers a `summary`: from `--since=<UTC seconds>`, the window's first instant at the latest and by default, how many items arrived, how many open clients they are about, and each of `churned`, `churn_signal`, `incident`, `bug`, `launch`, `funding`, `award`, `feature_request` and `complaint` with any item, in that order, with its items and clients. The statement counting `total` counts it too. The page keeps when each reader last looked in the browser, under a key naming the plugin and the reader's user id, which the page now localizes as `userId`, and shows up to 5 lines, such as "7 clients started offboarding" or "3 bugs filed", each opening Search on that kind from the day of the last look. A first visit, or storage that will not be read, shows the Briefing alone, and an answer from a graph that would not open keeps the last look where it was. `briefing signals` refuses a `since` as `since applies to changes`.
+
+### Changed
+
+- **The Briefing's groups open collapsed.** Each client, Newspack, Industry and lens group shows its heading and a count of its items or signals; a click on the count opens it. A screen reader hears the toggle as the heading and the count, such as "Industry 3 items".
+- **A trend or signal read looks up URLs and titles only for the stories it cites,** at most 5 per bucket and value, where it read them for every story it counted. On eve's projection the two reads of every client's own output in `briefing signals` drop from about 0.37 and 0.34 seconds to 0.30 and 0.28.
+
 ## [0.37.0] - 2026-11-08
 
 ### Added

@@ -1,10 +1,11 @@
 /* eslint-env jest */
 /**
  * Briefing reads the two `briefing` slices and the reader's watches, each
- * through its own read: the week's items grouped under the clients they are
- * about, every client's and lens's signals, and each watch with what it
- * follows and its unseen count. Each that answers nothing invites the
- * reader to act.
+ * through its own read: what arrived since the reader last looked, the
+ * week's items grouped under the clients they are about, every client's and
+ * lens's signals, each group collapsed to its heading and count, and each
+ * watch with what it follows and its unseen count. Each that answers
+ * nothing invites the reader to act.
  */
 
 import { render, screen, fireEvent, within } from '@testing-library/react';
@@ -68,8 +69,24 @@ const CHANGES = {
 		},
 	],
 	total: 61,
+	summary: {
+		since: 1792000000,
+		items: 23,
+		clients: 9,
+		kinds: [
+			{ kind: 'churned', items: 8, clients: 7 },
+			{ kind: 'incident', items: 4, clients: 1 },
+			{ kind: 'bug', items: 3, clients: 2 },
+			{ kind: 'launch', items: 2, clients: 2 },
+			{ kind: 'complaint', items: 5, clients: 3 },
+		],
+	},
 	available: true,
 };
+
+/** The reader the page names, and where it keeps when they last looked. */
+const USER = '6143';
+const LAST_VIEW = 'newspack-intelligence:briefing:last-view:6143';
 
 const SIGNAL = {
 	axis: 'publisher',
@@ -135,7 +152,12 @@ const WATCHES = {
 };
 
 const NONE = {
-	changes: { groups: [], total: 0, available: true },
+	changes: {
+		groups: [],
+		total: 0,
+		summary: { since: 1793000000, items: 0, clients: 0, kinds: [] },
+		available: true,
+	},
 	signals: { clients: [], lenses: [], available: true },
 };
 
@@ -144,6 +166,7 @@ let handlers;
 
 beforeEach( () => {
 	Core.reset();
+	window.localStorage.clear();
 	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
 	wire = intelWire();
 	const full = { changes: CHANGES, signals: SIGNALS };
@@ -155,10 +178,32 @@ beforeEach( () => {
 		onOpenWatch: jest.fn(),
 		onNewWatch: jest.fn(),
 		onSearch: jest.fn(),
+		onSearchFor: jest.fn(),
 	};
 } );
 
-const renderBriefing = () => render( <Briefing { ...handlers } /> );
+afterEach( () => jest.restoreAllMocks() );
+
+const renderBriefing = () =>
+	render( <Briefing userId={ USER } { ...handlers } /> );
+
+/**
+ * Open a collapsed group by its toggle, named by its heading and its count.
+ *
+ * @param {HTMLElement} heading The group's heading.
+ * @param {string}      count   The toggle's count.
+ */
+const expand = ( heading, count ) => {
+	const toggle = within( heading.closest( 'section' ) ).getByRole( 'button', {
+		name: `${ heading.textContent } ${ count }`,
+	} );
+	expect( toggle ).toHaveAttribute( 'aria-expanded', 'false' );
+	expect(
+		document.getElementById( toggle.getAttribute( 'aria-controls' ) )
+	).toBeInTheDocument();
+	fireEvent.click( toggle );
+	expect( toggle ).toHaveAttribute( 'aria-expanded', 'true' );
+};
 
 describe( 'Briefing', () => {
 	it( 'asks each slice through its own read', async () => {
@@ -176,11 +221,17 @@ describe( 'Briefing', () => {
 		const changes = await screen.findByRole( 'region', {
 			name: 'Last seven days',
 		} );
+		const groups = await within( changes ).findAllByRole( 'heading', {
+			level: 3,
+		} );
+		expect(
+			within( changes ).queryByRole( 'link', {
+				name: 'Kestrel Quillwork asks to cancel',
+			} )
+		).not.toBeInTheDocument();
+		groups.forEach( ( group ) => expand( group, '1 item' ) );
 		await within( changes ).findByRole( 'link', {
 			name: 'Kestrel Quillwork asks to cancel',
-		} );
-		const groups = within( changes ).getAllByRole( 'heading', {
-			level: 3,
 		} );
 		expect( groups.map( ( g ) => g.textContent ) ).toEqual( [
 			'Industry',
@@ -218,6 +269,13 @@ describe( 'Briefing', () => {
 		const signals = await screen.findByRole( 'region', {
 			name: 'Signals',
 		} );
+		const groups = await within( signals ).findAllByRole( 'heading', {
+			level: 3,
+		} );
+		expect(
+			within( signals ).queryByText( '2 against a baseline of 4' )
+		).not.toBeInTheDocument();
+		groups.forEach( ( group ) => expand( group, '1 signal' ) );
 		await within( signals ).findByText( '2 against a baseline of 4' );
 		expect(
 			within( signals ).getByText( 'publisher drop' )
@@ -256,6 +314,114 @@ describe( 'Briefing', () => {
 		expect( handlers.onOpenWatch ).toHaveBeenCalledWith(
 			'4c2e9a1f7b3d5e60'
 		);
+	} );
+
+	it( 'opens with what arrived since the reader last looked', async () => {
+		window.localStorage.setItem( LAST_VIEW, '1792000000' );
+		const before = Math.floor( Date.now() / 1000 );
+		renderBriefing();
+		const since = await screen.findByRole( 'region', {
+			name: 'Since you last looked',
+		} );
+		expect(
+			within( since )
+				.getAllByRole( 'button' )
+				.map( ( line ) => line.textContent )
+		).toEqual( [
+			'23 new items about 9 clients',
+			'7 clients started offboarding',
+			'4 incidents reported',
+			'3 bugs filed',
+			'2 launches',
+		] );
+		expect( wire.sent( 'briefing' ) ).toContainEqual( [
+			'changes',
+			'--since=1792000000',
+		] );
+		fireEvent.click(
+			within( since ).getByRole( 'button', {
+				name: '7 clients started offboarding',
+			} )
+		);
+		expect( handlers.onSearchFor ).toHaveBeenCalledWith( {
+			kind: 'churned',
+			since: '2026-10-14',
+		} );
+		fireEvent.click(
+			within( since ).getByRole( 'button', {
+				name: '23 new items about 9 clients',
+			} )
+		);
+		expect( handlers.onSearchFor ).toHaveBeenLastCalledWith( {
+			since: '2026-10-14',
+		} );
+		const stored = Number( window.localStorage.getItem( LAST_VIEW ) );
+		expect( stored ).toBeGreaterThanOrEqual( before );
+		expect( stored ).toBeLessThanOrEqual( Date.now() / 1000 );
+	} );
+
+	it( 'says so when nothing arrived since the reader last looked', async () => {
+		window.localStorage.setItem( LAST_VIEW, '1793000000' );
+		wire.replies.briefing = ( [ what ] ) => NONE[ what ];
+		renderBriefing();
+		expect(
+			await screen.findByText( 'Nothing new since you last looked.' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'shows the plain Briefing when storage will not be read', async () => {
+		const read = jest
+			.spyOn( window.Storage.prototype, 'getItem' )
+			.mockImplementation( () => {
+				throw new Error( 'site data blocked' );
+			} );
+		renderBriefing();
+		await screen.findByRole( 'region', { name: 'Last seven days' } );
+		await screen.findByRole( 'button', { name: 'Kestrel account' } );
+		await screen.findAllByRole( 'heading', { level: 3 } );
+		expect(
+			screen.queryByRole( 'region', { name: 'Since you last looked' } )
+		).not.toBeInTheDocument();
+		expect( wire.sent( 'briefing' ) ).toContainEqual( [ 'changes' ] );
+		expect( read ).toHaveBeenCalledWith( LAST_VIEW );
+	} );
+
+	it( 'reads only the reader’s own last look', async () => {
+		window.localStorage.setItem(
+			'newspack-intelligence:briefing:last-view:9999',
+			'1792000000'
+		);
+		renderBriefing();
+		await screen.findAllByRole( 'heading', { level: 3 } );
+		expect(
+			screen.queryByRole( 'region', { name: 'Since you last looked' } )
+		).not.toBeInTheDocument();
+		expect( wire.sent( 'briefing' ) ).toContainEqual( [ 'changes' ] );
+	} );
+
+	it( 'keeps the last look while the graph will not open', async () => {
+		window.localStorage.setItem( LAST_VIEW, '1792000000' );
+		wire.replies.briefing = ( [ what ] ) =>
+			'changes' === what
+				? { ...NONE.changes, available: false }
+				: SIGNALS;
+		renderBriefing();
+		await screen.findByText(
+			'The intelligence graph could not be opened, so this was not read.'
+		);
+		expect(
+			screen.queryByRole( 'region', { name: 'Since you last looked' } )
+		).not.toBeInTheDocument();
+		expect( window.localStorage.getItem( LAST_VIEW ) ).toBe( '1792000000' );
+	} );
+
+	it( 'shows the plain Briefing on a first visit, and remembers it', async () => {
+		renderBriefing();
+		await screen.findAllByRole( 'heading', { level: 3 } );
+		expect(
+			screen.queryByRole( 'region', { name: 'Since you last looked' } )
+		).not.toBeInTheDocument();
+		expect( window.localStorage.getItem( LAST_VIEW ) ).toMatch( /^\d+$/ );
 	} );
 
 	it( 'invites the reader to act where a slice answers nothing', async () => {
