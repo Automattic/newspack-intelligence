@@ -176,8 +176,11 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * items stream alone, so a replay deletes and writes in the same order; the
 	 * entities an extraction was given replace the item's earlier set the same
 	 * way. A retraction deletes the one link row its item, entity and role key.
+	 * A record or a growth writes one `boilerplate` row per distinct body
+	 * line (`Entity_Index::line_hashes()`), ignored when present, so a line
+	 * counts once per item.
 	 * A purge deletes the item's row, its extraction, theme, extracted
-	 * subjects, links, claims and cluster membership, and the canonical row of any
+	 * subjects, links, claims, lines and cluster membership, and the canonical row of any
 	 * cluster it heads, which an event never elects again; rows another stream
 	 * wrote about it stay, and every read joins the items, so they answer
 	 * nothing, as do rows a later resolution of the item writes. A heuristic
@@ -203,9 +206,10 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 		$item       = [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ) ];
 		$extraction = [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'actor', $day( 'retrieved_ts' ) ];
 		$judgment = static fn ( string $state ): array => [ [ 'set', 'judgments', [ 'item_key', 'entity_key', static fn ( array $e ): string => \explode( ':', Core::as_string( $e['actor'] ), 2 )[0], [ $state ], 'actor', 'item_url', 'ts' ] ] ];
+		$lines    = [ 'ignore', 'boilerplate', [ 'source', self::EACH, 'item_key', $day( 'retrieved_ts' ) ], static fn ( array $e ): array => Entity_Index::line_hashes( Core::as_string( $e['body'] ) ) ];
 		$table    = [
-			'item_recorded'       => [ [ 'ignore', 'items', $item ] ],
-			'item_grown'          => [ [ 'set', 'items', $item ] ],
+			'item_recorded'       => [ [ 'ignore', 'items', $item ], $lines ],
+			'item_grown'          => [ [ 'set', 'items', $item ], $lines ],
 			'extraction_recorded' => [
 				[ 'delete', 'claims', [ 'item_key' => 'item_key' ] ],
 				[ 'delete', 'links', [ 'item_key' => 'item_key', 'role' => [ 'topic' ] ] ],
@@ -233,6 +237,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 				[ 'delete', 'claims', [ 'item_key' => 'item_key' ] ],
 				[ 'delete', 'clusters', [ 'item_key' => 'item_key' ] ],
 				[ 'delete', 'canonicals', [ 'canonical_item_key' => 'item_key' ] ],
+				[ 'delete', 'boilerplate', [ 'item_key' => 'item_key' ] ],
 			],
 			'entity_created'      => $entity( 'set', 'accepted' ),
 			'entity_proposed'     => $entity( 'ignore', 'proposed' ),

@@ -25,6 +25,7 @@ use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-entity-index.php';
 require_once __DIR__ . '/../support/llm-answering-sink.php';
+require_once __DIR__ . '/../support/counts-statements.php';
 
 /**
  * The resolver node: each recorded item resolved against the projection,
@@ -35,6 +36,7 @@ require_once __DIR__ . '/../support/llm-answering-sink.php';
  */
 final class ResolverNodeTest extends TestCase {
 	use Seeds_Entity_Index;
+	use Counts_Statements;
 
 	private const NOW = 1793000000.0;
 
@@ -122,6 +124,134 @@ final class ResolverNodeTest extends TestCase {
 		);
 		$this->assertSame( [ [ 'entity_key' => self::GAZETTE, 'role' => 'subject', 'method' => 'name', 'confidence' => 1.0, 'state' => 'asserted' ] ], $this->resolved()['links'] );
 		$this->assertSame( self::GAZETTE, $this->resolved()['publisher'] );
+	}
+
+	/**
+	 * A body line `Resolver::BOILERPLATE_MIN_ITEMS` items of the item's
+	 * source carry, the item among them, is left out of what resolution and
+	 * the NER step read, so a name only it spells links nothing and the NER
+	 * request names the line's hash; one item fewer and the line is read.
+	 */
+	public function test_a_line_eight_items_of_its_source_share_links_nothing(): void {
+		$step = '- [ ] Revoke the Heron Ledger seat';
+		$this->seed( self::entity( 'product:heron-ledger', 'Heron Ledger' ), self::sharing( $step, 'feed', 7 ) );
+		$this->answer( '{"orgs": [], "products": [], "people": [], "locations": []}' );
+
+		$this->resolver->fill( self::recorded( [ 'body' => "Offboarding starts Monday.\n{$step}" ] ) );
+
+		$this->assertSame( [], $this->written() );
+		$this->assertCount( 1, $this->out->requests );
+		$this->assertSame( [ 'boilerplate' => Entity_Index::line_hashes( $step ) ], $this->out->requests[0][ Message::VALUE ]['inputs'] );
+		$this->assertStringNotContainsString( 'Heron Ledger', $this->out->asked()[0][1]['content'], 'the NER step reads no boilerplate' );
+		$this->assertStringContainsString( 'Offboarding starts Monday.', $this->out->asked()[0][1]['content'] );
+		$this->assertSame( "Offboarding starts Monday.\n{$step}", $this->resolved()['item']['body'], 'the extractor is sent the whole body' );
+	}
+
+	/**
+	 * A template of 300 lines its source's items share asks the NER step
+	 * with the hashes of the shared lines its body counts, fewer than
+	 * `Entity_Index::MAX_LINES`, and sends neither its first step nor its
+	 * last; the request rides in-process and into the model-call Table,
+	 * neither of which holds it to one line.
+	 */
+	public function test_a_long_shared_template_asks_with_its_counted_lines_alone(): void {
+		$template = \implode( "\n", \array_map( static fn ( int $n ): string => \sprintf( '- [ ] Step %03d: revoke the seat', $n ), \range( 1, 300 ) ) );
+		$this->seed( self::entity( 'product:heron-ledger', 'Heron Ledger' ), self::sharing( $template, 'feed', 7 ) );
+
+		$this->resolver->fill( self::recorded( [ 'body' => "Ticket 9 opened.\n{$template}" ] ) );
+
+		$this->assertCount( 1, $this->out->requests );
+		$hashes = $this->out->requests[0][ Message::VALUE ]['inputs']['boilerplate'];
+		$this->assertCount( Entity_Index::MAX_LINES - 1, $hashes, 'steps 1 to 99 and 201 to 300; each item counts its own opening line first' );
+		$asked = $this->out->asked()[0][1]['content'];
+		$this->assertStringNotContainsString( 'Step 001', $asked );
+		$this->assertStringNotContainsString( 'Step 300', $asked );
+		$this->assertStringContainsString( 'Step 150', $asked, 'a line past the count is read' );
+	}
+
+	/**
+	 * A line whose hash is all digits, which PHP would read back as an
+	 * integer key, is counted, stripped and asked about as the string it is:
+	 * the projector stores it as text, the count matches it, and the NER
+	 * request names it as a string.
+	 */
+	public function test_a_line_whose_hash_is_all_digits_counts_as_a_string(): void {
+		$step = self::digit_hash_line();
+		$hash = \substr( \md5( \strtolower( $step ) ), 0, 16 );
+		$this->seed( self::entity( 'product:heron-ledger', 'Heron Ledger' ), self::sharing( $step, 'feed', 7 ) );
+
+		$this->resolver->fill( self::recorded( [ 'body' => "Offboarding starts Monday.\n{$step}" ] ) );
+
+		$this->assertSame( [ $hash ], Entity_Index::line_hashes( $step ) );
+		$this->assertContains( [ $hash ], self::graph_rows( 'boilerplate', 'line_hash', 'line_hash' ), 'stored as text' );
+		$this->assertSame( [], $this->written(), 'the line is boilerplate, so Heron Ledger links nothing' );
+		$this->assertSame( [ 'boilerplate' => [ $hash ] ], $this->out->requests[0][ Message::VALUE ]['inputs'] );
+		$this->assertStringNotContainsString( 'Heron Ledger', $this->out->asked()[0][1]['content'] );
+	}
+
+	/**
+	 * A checklist line naming Heron Ledger whose 16-hex hash is all digits
+	 * and does not lead with a zero, so PHP would key it as an integer.
+	 */
+	private static function digit_hash_line(): string {
+		for ( $n = 1; ; $n++ ) {
+			$line = "- [ ] Revoke the Heron Ledger seat {$n}";
+			if ( 1 === \preg_match( '/^[1-9][0-9]{15}$/', \substr( \md5( \strtolower( $line ) ), 0, 16 ) ) ) {
+				return $line;
+			}
+		}
+	}
+
+	/** A line one item fewer than the floor carries, or that another source's items carry, is read. */
+	public function test_a_line_below_the_floor_or_in_another_source_still_links(): void {
+		$step = '- [ ] Revoke the Heron Ledger seat';
+		$this->seed( self::entity( 'product:heron-ledger', 'Heron Ledger' ), self::sharing( $step, 'feed', 6 ), self::sharing( $step, 'linear', 9 ) );
+
+		$this->resolver->fill( self::recorded( [ 'body' => "Offboarding starts Monday.\n{$step}" ] ) );
+
+		$this->assertSame( [ [ 'link_asserted', 'product:heron-ledger', 'mention' ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['role'] ], $this->written() ) );
+	}
+
+	/** The counts are one statement per resolution, however many lines the body holds, after the index is read. */
+	public function test_the_counts_cost_one_statement_whatever_the_lines(): void {
+		$this->seed( self::entity( 'product:heron-ledger', 'Heron Ledger', [ 'alias' => [ 'Heron' ] ] ), self::sharing( '- [ ] Revoke the Heron Ledger seat', 'feed', 7 ) );
+		$lines = static fn ( int $n ): string => \implode( "\n", \array_map( static fn ( int $i ): string => "Step {$i}: Heron Ledger audit", \range( 1, $n ) ) );
+
+		$this->resolver->fill( self::recorded( [ 'body' => $lines( 1 ) ] ) );
+		$none  = $this->statements_of( fn () => $this->resolver->fill( self::recorded( [ 'body' => 'Heron.' ] ) ) );
+		$two   = $this->statements_of( fn () => $this->resolver->fill( self::recorded( [ 'body' => $lines( 2 ) ] ) ) );
+		$forty = $this->statements_of( fn () => $this->resolver->fill( self::recorded( [ 'body' => $lines( 40 ) ] ) ) );
+
+		$this->assertSame( [ $none + 1, $none + 1 ], [ $two, $forty ], 'a body with no line long enough to count reads none' );
+	}
+
+	/**
+	 * The counts read each of the item's line hashes through the key over
+	 * `( source, line_hash )` in every partition's arm, each hash stopping
+	 * at `BOILERPLATE_MIN_ITEMS - 1` other items, so a footer every item of
+	 * the source carries costs no more than one eight carry: no group is
+	 * built over a line's rows, and the union holds at most the arms' caps.
+	 */
+	public function test_the_counts_reach_the_key_in_every_partition(): void {
+		$step = '- [ ] Revoke the Heron Ledger seat';
+		$this->seed( self::entity( 'product:heron-ledger', 'Heron Ledger' ), self::sharing( $step, 'feed', 7 ) );
+		$p0 = Table_Node::file( 'intel-graph', 0 );
+		$p1 = Table_Node::file( 'intel-graph', 1 );
+		( new \PDO( "sqlite:{$p0}" ) )->exec( "VACUUM INTO '{$p1}'" );
+		$db = new Counting_PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
+		$db->exec( 'ATTACH DATABASE ' . $db->quote( $p0 ) . ' AS p0' );
+		$db->exec( 'ATTACH DATABASE ' . $db->quote( $p1 ) . ' AS p1' );
+		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): mixed => $read( new \Newspack_Nodes\Row_Reader( $db, [ 'p0', 'p1' ] ) );
+
+		$this->resolver->fill( self::recorded( [ 'body' => "Offboarding starts Monday.\n{$step}" ] ) );
+
+		$this->assertSame( [], $this->written(), 'the line both partitions count is boilerplate' );
+		$counts = \array_values( \array_unique( \array_filter( $db->queries, static fn ( string $sql ): bool => \str_contains( $sql, '.boilerplate' ) ) ) );
+		$this->assertCount( 1, $counts, 'the record and its NER answer ask in one shape' );
+		$plan = \implode( "\n", \array_column( $db->query( 'EXPLAIN QUERY PLAN ' . $counts[0] )->fetchAll( \PDO::FETCH_ASSOC ), 'detail' ) );
+		$this->assertSame( 2, \preg_match_all( '/SEARCH p[01]\.boilerplate USING COVERING INDEX sqlite_autoindex_boilerplate_1 \(source=\? AND line_hash=\?\)/', $plan ), $plan );
+		$this->assertSame( 0, \preg_match( '/GROUP BY|count\(DISTINCT\)|AUTOMATIC|SCAN p[01]\.boilerplate/', $plan ), $plan );
+		$this->assertStringContainsString( 'LIMIT ?', $counts[0], 'each arm stops at the floor' );
 	}
 
 	/** An item whose host names no entity is sent naming no publisher. */
@@ -519,7 +649,7 @@ final class ResolverNodeTest extends TestCase {
 			[
 				'prompt'  => 'extract_entities',
 				'item'    => self::item( [ 'title' => 'Regional publishers announce a merger' ] ),
-				'inputs'  => [],
+				'inputs'  => [ 'boilerplate' => [] ],
 				'options' => [ 'max_tokens' => 300, 'temperature' => 0.0 ],
 				'carry'   => \array_diff_key( $recorded[ Message::VALUE ], self::item( [] ) ),
 				'backlog' => false,
@@ -1635,6 +1765,21 @@ final class ResolverNodeTest extends TestCase {
 	/** @return list<array<string,mixed>> The fixture client: a domain and an alias. */
 	private static function gazette(): array {
 		return self::entity( self::GAZETTE, 'The Harbor Gazette', [ 'alias' => [ 'HarbGaz' ], 'domain' => [ 'harborgazette.example' ] ] );
+	}
+
+	/**
+	 * Items of a source each carrying one line, recorded as the projector reads them.
+	 *
+	 * @param string $line   The shared line.
+	 * @param string $source Their source.
+	 * @param int    $count  How many.
+	 * @return list<array<string,mixed>>
+	 */
+	private static function sharing( string $line, string $source, int $count ): array {
+		return \array_map(
+			static fn ( int $n ): array => Intel_Event::make( 'item_recorded', self::item( [ 'item_key' => "{$source}:shared-{$n}", 'source' => $source, 'title' => "Offboarding {$n}", 'body' => "Ticket {$n} opened.\n{$line}" ] ), "machine:source:{$source}@9.4.1", '9.4.1' ),
+			\range( 1, $count )
+		);
 	}
 
 	/**

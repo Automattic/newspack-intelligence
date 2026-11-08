@@ -47,6 +47,69 @@ final class ResolverTest extends TestCase {
 		parent::tearDown();
 	}
 
+	/**
+	 * A name spelled only in a body line the source's items share, as a
+	 * checklist template spells each product its steps name, links nothing
+	 * and leaves the NER step owed; the same body with no line held as
+	 * boilerplate links it.
+	 */
+	public function test_a_name_only_in_boilerplate_links_nothing(): void {
+		$step     = '- [ ] Revoke the Heron Ledger seat';
+		$item     = self::item( [ 'title' => 'Offboard the dune desk', 'body' => "Offboarding starts Monday.\n{$step}\nArchive the backups." ] );
+		$resolver = new Resolver( $this->index_of( self::entity( 'product:heron-ledger', 'Heron Ledger' ) ) );
+
+		$this->assertSame( 8, Resolver::BOILERPLATE_MIN_ITEMS );
+		$this->assertSame( [], $resolver->resolve( $item, false, Entity_Index::line_hashes( $step ) )['links'] );
+		$this->assertNull( $resolver->resolve( $item, true, Entity_Index::line_hashes( $step ) ), 'nothing found, so the NER step is still owed' );
+		$this->assertSame( [ 'product:heron-ledger' ], \array_column( $resolver->resolve( $item, false, [] )['links'], 'entity_key' ) );
+	}
+
+	/**
+	 * A name the item spells outside its boilerplate still links: in a body
+	 * line of its own, and in the title, which is never boilerplate however
+	 * many items share it, since a title names the item's own subject.
+	 */
+	public function test_a_name_outside_boilerplate_still_links(): void {
+		$step     = '- [ ] Revoke the Heron Ledger seat';
+		$title    = 'Heron Ledger asks to keep its archive';
+		$resolver = new Resolver( $this->index_of( self::entity( 'product:heron-ledger', 'Heron Ledger' ) ) );
+		$shared   = Entity_Index::line_hashes( "{$step}\n{$title}" );
+
+		$this->assertSame(
+			[ self::link( 'product:heron-ledger', 'mention', 'name', 1.0 ) ],
+			self::unevidenced( $resolver->resolve( self::item( [ 'title' => 'Offboard the dune desk', 'body' => "{$step}\nThe Heron Ledger team asked for an export." ] ), false, $shared ) )['links']
+		);
+		$this->assertSame(
+			[ self::link( 'product:heron-ledger', 'subject', 'name', 1.0 ) ],
+			self::unevidenced( $resolver->resolve( self::item( [ 'title' => $title, 'body' => $step ] ), false, $shared ) )['links']
+		);
+	}
+
+	/**
+	 * An item whose body is all boilerplate, an unfilled template,
+	 * still links what its URL identifies; only the names its text spells
+	 * are left out.
+	 */
+	public function test_a_bare_template_still_links_by_its_url(): void {
+		$template = "## Steps\n- [ ] Revoke the Heron Ledger seat\n- [ ] Close the Dune Desk account";
+		$resolver = new Resolver(
+			$this->index_of(
+				self::entity( 'product:heron-ledger', 'Heron Ledger' ),
+				self::entity( 'organization:dune-desk', 'Dune Desk', [ 'linear_team' => [ 'DUNE' ], 'domain' => [ 'dunedesk.example' ] ] )
+			)
+		);
+		$shared = Entity_Index::line_hashes( $template );
+
+		$this->assertSame(
+			[ self::link( 'organization:dune-desk', 'subject', 'identifier', 1.0 ) ],
+			self::unevidenced( $resolver->resolve( self::item( [ 'url' => 'https://linear.app/heron-example/issue/DUNE-4410', 'title' => 'Offboarding', 'body' => $template ] ), false, $shared ) )['links']
+		);
+		$this->assertSame(
+			[ self::link( 'organization:dune-desk', 'publisher', 'identifier', 1.0 ) ],
+			self::unevidenced( $resolver->resolve( self::item( [ 'url' => 'https://dunedesk.example/offboarding', 'title' => 'Offboarding', 'body' => $template ] ), false, $shared ) )['links']
+		);
+	}
+
 	/** An item on an entity's own domain was published by it: the host links it as publisher. */
 	public function test_a_domain_url_links_its_entity_as_publisher(): void {
 		$this->assertSame( [ self::link( self::MESA, 'publisher', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://mesa-news.example/story/1' ] )['links'] );
@@ -414,7 +477,7 @@ final class ResolverTest extends TestCase {
 		$this->assertSame( [ self::link( $org, 'subject', 'identifier', 1.0 ) ], $this->golden( [ 'url' => 'https://github.com/example' ], $entities )['links'] );
 		$this->assertSame(
 			[ self::link( $org, 'subject', 'identifier', 1.0 ), self::link( $product, 'subject', 'identifier', 1.0 ) ],
-			self::unevidenced( $this->resolver()->resolve( self::item( [ 'url' => 'https://github.com/Example/plugin/issues/9' ] ), false ) )['links']
+			self::unevidenced( $this->resolver()->resolve( self::item( [ 'url' => 'https://github.com/Example/plugin/issues/9' ] ), false, [] ) )['links']
 		);
 	}
 
@@ -521,7 +584,7 @@ final class ResolverTest extends TestCase {
 		);
 		$this->assertSame(
 			[ self::link( 'organization:salem-ledger', 'publisher', 'identifier', 1.0, 'proposed' ) ],
-			self::unevidenced( $this->resolver()->resolve( self::item( [ 'url' => 'https://salemledger.example/a' ] ), false ) )['links']
+			self::unevidenced( $this->resolver()->resolve( self::item( [ 'url' => 'https://salemledger.example/a' ] ), false, [] ) )['links']
 		);
 	}
 
@@ -531,7 +594,7 @@ final class ResolverTest extends TestCase {
 
 		$this->assertSame(
 			[ self::link( 'organization:salem-ledger', 'subject', 'ner_fuzzy', 1.0, 'proposed' ) ],
-			self::unevidenced( ( new Resolver( $index ) )->resolve( self::item( [ 'title' => 'Regional merger', 'url' => 'https://random.example/x' ] ), self::named( [ 'Salem Ledger' ] ) ) )['links']
+			self::unevidenced( ( new Resolver( $index ) )->resolve( self::item( [ 'title' => 'Regional merger', 'url' => 'https://random.example/x' ] ), self::named( [ 'Salem Ledger' ] ), [] ) )['links']
 		);
 	}
 
@@ -625,7 +688,7 @@ final class ResolverTest extends TestCase {
 		$entities = self::entity( $owl, 'Organized Writers League', [ 'acronym' => [ 'OWL' ] ] );
 
 		$this->assertSame( [ self::link( $owl, 'subject', 'acronym', 0.9 ) ], $this->resolve( [ 'title' => 'OWL summit opens', 'url' => 'https://random.example/x' ], $entities )['links'] );
-		$this->assertSame( [], $this->resolver()->resolve( self::item( [ 'title' => 'An owl escapes the zoo', 'url' => 'https://random.example/x' ] ), false )['links'] );
+		$this->assertSame( [], $this->resolver()->resolve( self::item( [ 'title' => 'An owl escapes the zoo', 'url' => 'https://random.example/x' ] ), false, [] )['links'] );
 	}
 
 	public function test_ner_exact_org_asserts(): void {
@@ -675,7 +738,7 @@ final class ResolverTest extends TestCase {
 				'proposals'  => [ [ 'type' => 'organization', 'name' => 'Acme Widgets Corporation' ] ],
 				'recognized' => true,
 			],
-			self::unevidenced( ( new Resolver( $index ) )->resolve( self::item( [ 'title' => 'Regional publishers announce a merger', 'url' => 'https://random.example/x' ] ), $extractor ) )
+			self::unevidenced( ( new Resolver( $index ) )->resolve( self::item( [ 'title' => 'Regional publishers announce a merger', 'url' => 'https://random.example/x' ] ), $extractor, [] ) )
 		);
 	}
 
@@ -694,11 +757,11 @@ final class ResolverTest extends TestCase {
 		);
 		$item = self::item( [ 'title' => 'Regional merger', 'url' => 'https://random.example/x' ] );
 
-		$exact = ( new Resolver( $index ) )->resolve( $item, self::named( [ 'Quarry Ledger' ] ) );
+		$exact = ( new Resolver( $index ) )->resolve( $item, self::named( [ 'Quarry Ledger' ] ), [] );
 		$this->assertSame( [ self::link( 'organization:quarry-ledger', 'subject', 'ner_fuzzy', 1.0 ) ], self::unevidenced( $exact )['links'] );
 		$this->assertSame( [], $compared, 'an exact norm needs no scan' );
 
-		$near = ( new Resolver( $index ) )->resolve( $item, self::named( [ 'Quarry Ledgr' ] ) );
+		$near = ( new Resolver( $index ) )->resolve( $item, self::named( [ 'Quarry Ledgr' ] ), [] );
 		$this->assertSame( [ 'organization:quarry-ledger' ], \array_column( $near['links'], 'entity_key' ) );
 		$this->assertSame( [ 'quarry ledger' ], $compared, 'neither a 2-byte nor a 39-byte norm can reach 0.60 against 12 bytes' );
 	}
@@ -718,7 +781,7 @@ final class ResolverTest extends TestCase {
 
 	/** A NER step owed where the first three steps found nothing answers none: the step is to be asked. */
 	public function test_an_owed_ner_step_answers_none(): void {
-		$this->assertNull( ( new Resolver( $this->index_of( self::golden_entities() ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), true ) );
+		$this->assertNull( ( new Resolver( $this->index_of( self::golden_entities() ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), true, [] ) );
 	}
 
 	/** A deterministic link, a publisher's included, spares the model call: an owed step answers, not recognized. */
@@ -734,7 +797,7 @@ final class ResolverTest extends TestCase {
 
 		$this->assertSame(
 			[ 'links' => [], 'proposals' => [ [ 'type' => 'organization', 'name' => 'Portland Timber Union', 'evidence' => '' ] ], 'recognized' => true ],
-			( new Resolver( $index ) )->resolve( self::item( [ 'title' => 'Factory opens', 'url' => 'https://random.example/x' ] ), self::named( [ 'Acme Widgets Corporation', 'Portland Timber Union' ] ) )
+			( new Resolver( $index ) )->resolve( self::item( [ 'title' => 'Factory opens', 'url' => 'https://random.example/x' ] ), self::named( [ 'Acme Widgets Corporation', 'Portland Timber Union' ] ), [] )
 		);
 	}
 
@@ -783,7 +846,7 @@ final class ResolverTest extends TestCase {
 
 		$this->assertSame(
 			[ 'links' => [], 'proposals' => [], 'recognized' => true ],
-			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Prize season opens on the coast', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Wharfside' ] ) ) )
+			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Prize season opens on the coast', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Wharfside' ] ), [] ) )
 		);
 	}
 
@@ -793,7 +856,7 @@ final class ResolverTest extends TestCase {
 
 		$this->assertSame(
 			[ self::link( 'product:kestrel-mail', 'subject', 'ner_fuzzy', 1.0 ) ],
-			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Mail outage', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Kestrel Mail' ] ) ) )['links']
+			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Mail outage', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Kestrel Mail' ] ), [] ) )['links']
 		);
 	}
 
@@ -856,7 +919,7 @@ final class ResolverTest extends TestCase {
 
 		$this->assertSame(
 			[ self::link( 'product:wharfside-co', 'subject', 'ner_fuzzy', 0.8571, 'proposed' ) ],
-			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Prize season opens on the coast', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Wharfside' ] ) ) )['links']
+			self::unevidenced( $this->last->resolve( self::item( [ 'title' => 'Prize season opens on the coast', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Wharfside' ] ), [] ) )['links']
 		);
 	}
 
@@ -970,7 +1033,7 @@ final class ResolverTest extends TestCase {
 	public function test_an_empty_index_links_nothing_and_still_proposes(): void {
 		$this->assertSame(
 			[ 'links' => [], 'proposals' => [ [ 'type' => 'organization', 'name' => 'Harbor Gazette', 'evidence' => 'Harbor Gazette' ] ], 'recognized' => true ],
-			( new Resolver( new Entity_Index() ) )->resolve( self::item( [ 'url' => 'https://harborgazette.example/x', 'title' => 'Harbor Gazette' ] ), self::named( [ 'Harbor Gazette' ] ) )
+			( new Resolver( new Entity_Index() ) )->resolve( self::item( [ 'url' => 'https://harborgazette.example/x', 'title' => 'Harbor Gazette' ] ), self::named( [ 'Harbor Gazette' ] ), [] )
 		);
 	}
 
@@ -997,7 +1060,7 @@ final class ResolverTest extends TestCase {
 
 	#[\PHPUnit\Framework\Attributes\DataProvider( 'undistinctive_pairs' )]
 	public function test_a_fuzzy_match_needs_a_distinctive_shared_word( string $given, string $held ): void {
-		$resolution = ( new Resolver( $this->index_of( self::entity( 'organization:held-name', $held ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ $given ] ) );
+		$resolution = ( new Resolver( $this->index_of( self::entity( 'organization:held-name', $held ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ $given ] ), [] );
 
 		$this->assertSame( [], $resolution['links'] ?? null );
 		$this->assertSame( [ $given ], \array_column( $resolution['proposals'] ?? [], 'name' ) );
@@ -1005,8 +1068,8 @@ final class ResolverTest extends TestCase {
 
 	/** Names sharing a distinctive word match, however generic the rest; an exact name scores 1.0 whatever its words. */
 	public function test_a_distinctive_shared_word_lets_a_name_match_and_an_exact_name_is_unchanged(): void {
-		$fuzzy = ( new Resolver( $this->index_of( self::entity( 'organization:harbor-news', 'The Harbor Gazette News' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Harbor Gazette' ] ) );
-		$exact = ( new Resolver( $this->index_of( self::entity( 'organization:daily-news', 'The Daily News' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Daily News' ] ) );
+		$fuzzy = ( new Resolver( $this->index_of( self::entity( 'organization:harbor-news', 'The Harbor Gazette News' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Harbor Gazette' ] ), [] );
+		$exact = ( new Resolver( $this->index_of( self::entity( 'organization:daily-news', 'The Daily News' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'Daily News' ] ), [] );
 
 		$this->assertSame( [ 'organization:harbor-news' ], \array_column( $fuzzy['links'] ?? [], 'entity_key' ) );
 		$this->assertSame( [ [ 'organization:daily-news', 1.0 ] ], \array_map( static fn ( array $l ): array => [ $l['entity_key'], $l['confidence'] ], $exact['links'] ?? [] ) );
@@ -1036,7 +1099,7 @@ final class ResolverTest extends TestCase {
 	public function test_a_name_shaped_like_code_is_never_proposed( string $given ): void {
 		$stderr = $this->capture_stderr();
 
-		$resolution = ( new Resolver( $this->index_of( self::entity( self::MESA, 'Mesa Courier' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ $given, $given ] ) );
+		$resolution = ( new Resolver( $this->index_of( self::entity( self::MESA, 'Mesa Courier' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ $given, $given ] ), [] );
 
 		$this->assertSame( [ [], [] ], [ $resolution['links'] ?? null, $resolution['proposals'] ?? null ] );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'NER name left out, shaped like code: ' ) );
@@ -1046,7 +1109,7 @@ final class ResolverTest extends TestCase {
 	public function test_a_name_shaped_like_code_does_not_fuzzy_match(): void {
 		$this->capture_stderr();
 
-		$resolution = ( new Resolver( $this->index_of( self::entity( 'organization:mail-filter', 'Mail Filter' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'mail_filters' ] ) );
+		$resolution = ( new Resolver( $this->index_of( self::entity( 'organization:mail-filter', 'Mail Filter' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ 'mail_filters' ] ), [] );
 
 		$this->assertSame( [], $resolution['links'] ?? null );
 	}
@@ -1075,7 +1138,7 @@ final class ResolverTest extends TestCase {
 
 	#[\PHPUnit\Framework\Attributes\DataProvider( 'name_shaped_names' )]
 	public function test_a_name_shaped_like_a_name_is_proposed( string $given ): void {
-		$resolution = ( new Resolver( $this->index_of( self::entity( self::MESA, 'Mesa Courier' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ $given ] ) );
+		$resolution = ( new Resolver( $this->index_of( self::entity( self::MESA, 'Mesa Courier' ) ) ) )->resolve( self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] ), self::named( [ $given ] ), [] );
 
 		$this->assertSame( [ $given ], \array_column( $resolution['proposals'] ?? [], 'name' ) );
 	}
@@ -1085,8 +1148,8 @@ final class ResolverTest extends TestCase {
 		$this->capture_stderr();
 		$item = self::item( [ 'title' => 'x', 'url' => 'https://elsewhere.example/x' ] );
 
-		$accepted = ( new Resolver( $this->index_of( self::entity( 'product:iheron', 'iHeron' ) ) ) )->resolve( $item, self::named( [ 'iHeron' ] ) );
-		$proposed = ( new Resolver( $this->index_of( self::entity( self::MESA, 'Mesa Courier' ), self::proposed( 'product:ikestrel', 'iKestrel' ) ) ) )->resolve( $item, self::named( [ 'iKestrel' ] ) );
+		$accepted = ( new Resolver( $this->index_of( self::entity( 'product:iheron', 'iHeron' ) ) ) )->resolve( $item, self::named( [ 'iHeron' ] ), [] );
+		$proposed = ( new Resolver( $this->index_of( self::entity( self::MESA, 'Mesa Courier' ), self::proposed( 'product:ikestrel', 'iKestrel' ) ) ) )->resolve( $item, self::named( [ 'iKestrel' ] ), [] );
 
 		$this->assertSame( [ [ 'product:iheron', 'ner_fuzzy', 1.0, 'asserted' ] ], \array_map( static fn ( array $l ): array => [ $l['entity_key'], $l['method'], $l['confidence'], $l['state'] ], $accepted['links'] ?? [] ) );
 		$this->assertSame( [ [], [] ], [ $proposed['links'] ?? null, $proposed['proposals'] ?? null ] );
@@ -1119,7 +1182,7 @@ final class ResolverTest extends TestCase {
 	 */
 	private function evidenced( array $over, array $extra = [], array|bool $ner = false, float $assert_at = 0.85, float $propose_at = 0.60 ): array {
 		$this->last = new Resolver( $this->index_of( self::golden_entities(), $extra ), $assert_at, $propose_at );
-		$resolution = $this->last->resolve( self::item( $over ), $ner );
+		$resolution = $this->last->resolve( self::item( $over ), $ner, [] );
 		\assert( null !== $resolution );
 		return $resolution;
 	}
@@ -1145,7 +1208,7 @@ final class ResolverTest extends TestCase {
 	 */
 	private function resolve( array $over, array ...$events ): array {
 		$this->last = new Resolver( $this->index_of( ...$events ) );
-		return self::unevidenced( $this->last->resolve( self::item( $over ), false ) );
+		return self::unevidenced( $this->last->resolve( self::item( $over ), false, [] ) );
 	}
 
 	/** The resolver the last golden() or resolve() built. */

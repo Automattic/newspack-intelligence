@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Intelligence\Entity_Index;
 use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
@@ -287,6 +288,67 @@ final class ProjectorTest extends TestCase {
 		$this->assertSame( [], $fts->query( "SELECT rowid FROM items_fts WHERE items_fts MATCH 'first'" )->fetchAll( \PDO::FETCH_NUM ) );
 	}
 
+	/**
+	 * Each distinct body line of an item is one `boilerplate` row, by its
+	 * source and the hash of the line as prose reads it, lowercased: a footer
+	 * three items carry counts three however each spells its markup, spacing
+	 * and case, a line one item repeats counts once, and neither the title
+	 * nor a line shorter than `Entity_Index::MIN_LINE_CHARS` counts at all.
+	 */
+	public function test_a_line_counts_once_per_item(): void {
+		$footer = "\n\nGenerated with Quillwright Studio";
+		$this->project(
+			[
+				$this->item( 'linear:WREN-5101', "Ferry timetable moved.{$footer}{$footer}\nThanks!" ),
+				$this->item( 'linear:WREN-5102', "Dock lights fixed.<br>\n<p>Generated  with <b>Quillwright</b> STUDIO</p>" ),
+				$this->item( 'linear:WREN-5103', "Tide gauge replaced.\r\nGenerated with Quillwright Studio\r\n" ),
+			]
+		);
+
+		$hash  = static fn ( string $line ): string => \substr( \md5( $line ), 0, 16 );
+		$day   = \intdiv( self::RETRIEVED, 86400 );
+		$count = [];
+		foreach ( self::graph_rows( 'boilerplate', 'line_hash, item_key' ) as [ $source, $line_hash, $item_key, $item_day ] ) {
+			$this->assertSame( [ 'feed', $day ], [ $source, $item_day ], $item_key );
+			$count[ $line_hash ] = ( $count[ $line_hash ] ?? 0 ) + 1;
+		}
+		\ksort( $count );
+		$expected = [
+			$hash( 'generated with quillwright studio' ) => 3,
+			$hash( 'ferry timetable moved.' )            => 1,
+			$hash( 'dock lights fixed.' )                => 1,
+			$hash( 'tide gauge replaced.' )              => 1,
+		];
+		\ksort( $expected );
+		$this->assertSame( $expected, $count );
+	}
+
+	/**
+	 * A body counts at most `Entity_Index::MAX_LINES` distinct lines, its
+	 * first half and its last, so a template's opening and a footer both
+	 * count however long the body runs between them.
+	 */
+	public function test_a_long_body_counts_its_first_and_last_lines(): void {
+		$line = static fn ( int $n ): string => \sprintf( 'Checklist step %03d: verify', $n );
+		$this->project( [ $this->item( self::ITEM, \implode( "\n", \array_map( $line, \range( 1, 300 ) ) ) ) ] );
+
+		$hash   = static fn ( int $n ): string => \substr( \md5( \strtolower( $line( $n ) ) ), 0, 16 );
+		$hashes = \array_column( self::graph_rows( 'boilerplate', 'line_hash', 'line_hash' ), 0 );
+		$this->assertSame( 200, Entity_Index::MAX_LINES );
+		$this->assertCount( 200, $hashes );
+		$this->assertEqualsCanonicalizing( \array_map( $hash, [ ...\range( 1, 100 ), ...\range( 201, 300 ) ] ), $hashes );
+	}
+
+	/** A grown item counts the lines its longer body adds, and each line it kept once. */
+	public function test_a_grown_item_counts_its_new_lines(): void {
+		$this->project( [ $this->item(), $this->grown( "The Gazette took first place.\nGenerated with Quillwright Studio" ) ] );
+
+		$this->assertSame(
+			[ [ \substr( \md5( 'generated with quillwright studio' ), 0, 16 ) ], [ \substr( \md5( 'the gazette took first place.' ), 0, 16 ) ] ],
+			self::graph_rows( 'boilerplate', 'line_hash', 'line_hash' )
+		);
+	}
+
 	/** A plain repeat of a record, whose body may be cut, leaves a grown body alone. */
 	public function test_a_repeated_record_leaves_a_grown_body(): void {
 		$this->project( [ $this->item(), $this->grown( 'The osprey wrack line report, whole.' ), $this->item() ] );
@@ -364,7 +426,7 @@ final class ProjectorTest extends TestCase {
 		$this->assertFalse( Worker_Should_Stop::is_clean( $thrown ), 'the cursor must replay the batch' );
 		$this->assertStringContainsString( 'intel graph write failed', $thrown->getMessage() );
 		$this->assertStringContainsString( 'items', (string) $thrown->getPrevious()?->getMessage() );
-		$this->assertSame( 2, $held );
+		$this->assertSame( 3, $held, 'the item, its one body line and the link' );
 		$this->assertCount( $held, $this->read_private( $this->projector, 'rows' ), 'the buffer is kept' );
 
 		$this->mend_items();
@@ -433,7 +495,7 @@ final class ProjectorTest extends TestCase {
 	}
 
 	public function test_the_buffer_writes_at_its_op_cap(): void {
-		$item = $this->item();
+		$item = $this->item( self::ITEM, 'Won.' );
 		for ( $i = 1; $i < Projector_Node::MAX_BUFFERED_OPS; $i++ ) {
 			self::deliver( $this->projector, [ 'item_key' => "feed:cap-{$i}" ] + $item );
 		}
@@ -583,10 +645,11 @@ final class ProjectorTest extends TestCase {
 	/**
 	 * The fixture item's record, under its own key or another.
 	 *
-	 * @param string $key The item key.
+	 * @param string $key  The item key.
+	 * @param string $body Its body.
 	 * @return array<string,mixed>
 	 */
-	private function item( string $key = self::ITEM ): array {
+	private function item( string $key = self::ITEM, string $body = 'The Gazette took first place.' ): array {
 		return Intel_Event::make(
 			'item_recorded',
 			[
@@ -595,7 +658,7 @@ final class ProjectorTest extends TestCase {
 				'tier'         => 'public',
 				'url'          => 'https://www.HarborGazette.example/2026/10/award/?utm_source=np&b=2&a=1#top',
 				'title'        => 'The Harbor Gazette Wins a State Award!',
-				'body'         => 'The Gazette took first place.',
+				'body'         => $body,
 				'item_ts'      => 1792900000,
 				'retrieved_ts' => self::RETRIEVED,
 			],
@@ -815,12 +878,12 @@ final class ProjectorTest extends TestCase {
 
 		$after = self::dump();
 		$kept  = static fn ( array $rows, int $column ): array => \array_values( \array_filter( $rows, static fn ( array $row ): bool => self::PURGED !== $row[ $column ] ) );
-		foreach ( [ 'items' => 1, 'extractions' => 1, 'extracted_subjects' => 0, 'themes' => 0, 'links' => 0, 'claims' => 0, 'clusters' => 0, 'canonicals' => 1 ] as $table => $column ) {
+		foreach ( [ 'items' => 1, 'extractions' => 1, 'extracted_subjects' => 0, 'themes' => 0, 'links' => 0, 'claims' => 0, 'clusters' => 0, 'canonicals' => 1, 'boilerplate' => 2 ] as $table => $column ) {
 			$this->assertNotSame( $kept( $before[ $table ], $column ), $before[ $table ], "{$table} held a row about the purged item" );
 			$this->assertSame( $kept( $before[ $table ], $column ), $after[ $table ], $table );
 		}
 		$this->assertSame( [ [ self::ITEM ] ], self::graph_rows( 'clusters', '1', 'item_key' ), 'a kept member keeps the cluster the purged item founded' );
-		foreach ( \array_diff_key( $before, \array_flip( [ 'items', 'extractions', 'extracted_subjects', 'themes', 'links', 'claims', 'clusters', 'canonicals' ] ) ) as $table => $rows ) {
+		foreach ( \array_diff_key( $before, \array_flip( [ 'items', 'extractions', 'extracted_subjects', 'themes', 'links', 'claims', 'clusters', 'canonicals', 'boilerplate' ] ) ) as $table => $rows ) {
 			$this->assertSame( $rows, $after[ $table ], "{$table} is another stream's" );
 		}
 		$this->assertNotSame( [], $after['collected'] );

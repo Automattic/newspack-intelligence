@@ -34,8 +34,11 @@
  * link. Every proposed link a name earns, and every candidate, carries as
  * evidence the first sentence of the title or the body, markup stripped,
  * that spells it, cut to `Intel_Event::EVIDENCE_BYTES` around the name; an
- * asserted link and one an identifier found carry none. Pure: it reads the
- * index and writes nothing.
+ * asserted link and one an identifier found carry none. A body line the
+ * caller names as boilerplate, one at least BOILERPLATE_MIN_ITEMS items of
+ * the source carry, is not read by any step, so a template's checklist or
+ * a tool's footer links nothing; the title and the URL are always read. Pure:
+ * it reads the index and writes nothing.
  *
  * @package Newspack_Intelligence
  */
@@ -54,6 +57,9 @@ final class Resolver {
 
 	/** The most candidate entities one item proposes. */
 	public const MAX_PROPOSALS = 3;
+
+	/** Items of one source that carry a body line before it reads as boilerplate. */
+	public const BOILERPLATE_MIN_ITEMS = 8;
 
 	/** An identifier, a name or an alias: the entity itself. */
 	private const EXACT = 1.0;
@@ -193,16 +199,20 @@ final class Resolver {
 	 * the URL's path or the text earns, but a body-only mention of its own
 	 * publisher, which is not news about it; its candidate entities; and
 	 * whether the NER step ran and answered. A publisher spares the NER step
-	 * as any link does; an owed step that is not spared answers none.
+	 * as any link does; an owed step that is not spared answers none. The
+	 * body is read without its boilerplate, each line whose hash
+	 * `Entity_Index::line_hashes()` spells among those given; the title and
+	 * the URL are read whole.
 	 *
-	 * @param array<string,mixed>                                                                                $item The `item_recorded` fields.
-	 * @param array{orgs:list<string>,products:list<string>,people:list<string>,locations:list<string>}|bool $ner  The names the NER step answered; true when the step is owed; false for none.
+	 * @param array<string,mixed>                                                                                $item        The `item_recorded` fields.
+	 * @param array{orgs:list<string>,products:list<string>,people:list<string>,locations:list<string>}|bool $ner         The names the NER step answered; true when the step is owed; false for none.
+	 * @param list<string>                                                                                       $boilerplate The hashes of the body lines to leave out.
 	 * @return array{links: list<Link>, proposals: list<Proposal>, recognized: bool}|null
 	 */
-	public function resolve( array $item, array|bool $ner ): ?array {
+	public function resolve( array $item, array|bool $ner, array $boilerplate ): ?array {
 		$this->links     = [];
 		$title           = Core::as_string( $item['title'] );
-		$body            = Core::as_string( $item['body'] );
+		$body            = Entity_Index::without_lines( Core::as_string( $item['body'] ), $boilerplate );
 		$this->texts     = [ $title, $body ];
 		$this->sentences = null;
 		$url             = Core::as_string( $item['url'] );

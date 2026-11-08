@@ -44,6 +44,18 @@ final class Entity_Index {
 	/** The longest merge chain followed to its survivor. */
 	public const MAX_MERGE_HOPS = 10;
 
+	/** Characters a body line, read as prose reads it, needs before it counts. */
+	public const MIN_LINE_CHARS = 12;
+
+	/** The most distinct lines one body counts: its first half and its last. */
+	public const MAX_LINES = 200;
+
+	/** Hex digits of a line's hash. */
+	private const LINE_HASH_HEX = 16;
+
+	/** Where a body breaks into lines: a line break, a `<br>` or a closing block tag. */
+	private const LINE_BREAK = '~\R|<br\s*/?>|</(?:p|div|li|h[1-6]|tr|blockquote)\s*>~i';
+
 	/** The states an entity is indexed in. */
 	private const LIVE_STATES = [ 'accepted', 'proposed' ];
 
@@ -552,6 +564,65 @@ final class Entity_Index {
 	}
 
 	/**
+	 * Lowercase words joined by one space without their leading `the`, and
+	 * whether they led with one: the one rule a name's norm and a run of text
+	 * are both read by.
+	 *
+	 * @param string $folded Lowercase words joined by one space.
+	 * @return array{0:string,1:bool}
+	 */
+	private static function unarticled( string $folded ): array {
+		return \str_starts_with( $folded, 'the ' ) ? [ \substr( $folded, 4 ), true ] : [ $folded, false ];
+	}
+
+	/**
+	 * The hash of each distinct line of a body that counts toward
+	 * boilerplate, in body order, each a string even when it is all digits,
+	 * which a PHP array key would read back as an integer: a body breaks into lines at each line break, `<br>` and closing
+	 * block tag, and a line counts when its plain text (`plain()`),
+	 * lowercased, runs at least MIN_LINE_CHARS characters, so a one-word
+	 * line never does. Two lines differing only in markup, spacing or case
+	 * hash alike. A body holding more than MAX_LINES such lines counts its
+	 * first half of them and its last, where a template opens and a footer
+	 * closes, so one item writes at most MAX_LINES rows.
+	 *
+	 * @param string $body An item's body.
+	 * @return list<string>
+	 */
+	public static function line_hashes( string $body ): array {
+		$hashes = \array_values( \array_unique( \array_filter( \array_map( self::line_hash( ... ), self::lines( $body ) ), \is_string( ... ) ) ) );
+		$half   = \intdiv( self::MAX_LINES, 2 );
+		return \count( $hashes ) <= self::MAX_LINES ? $hashes : [ ...\array_slice( $hashes, 0, $half ), ...\array_slice( $hashes, -$half ) ];
+	}
+
+	/**
+	 * A body without the lines whose hash is among the given ones, the
+	 * lines it keeps joined by line breaks; the body itself, untouched, when
+	 * the hashes are empty.
+	 *
+	 * @param string       $body   An item's body.
+	 * @param list<string> $hashes The hashes of the lines to leave out.
+	 */
+	public static function without_lines( string $body, array $hashes ): string {
+		if ( [] === $hashes ) {
+			return $body;
+		}
+		$kept = \array_filter( self::lines( $body ), static fn ( string $line ): bool => ! \in_array( self::line_hash( $line ), $hashes, true ) );
+		return \implode( "\n", $kept );
+	}
+
+	/**
+	 * A line's hash, the first LINE_HASH_HEX digits of the md5 of its plain
+	 * text lowercased; none for one shorter than MIN_LINE_CHARS.
+	 *
+	 * @param string $line One line of a body.
+	 */
+	private static function line_hash( string $line ): ?string {
+		$read = \mb_strtolower( self::plain( $line ) );
+		return \mb_strlen( $read ) < self::MIN_LINE_CHARS ? null : \substr( \md5( $read ), 0, self::LINE_HASH_HEX );
+	}
+
+	/**
 	 * Text as prose reads it: markup stripped with a space where each tag
 	 * stood, entities decoded, whitespace collapsed to one space.
 	 *
@@ -563,15 +634,13 @@ final class Entity_Index {
 	}
 
 	/**
-	 * Lowercase words joined by one space without their leading `the`, and
-	 * whether they led with one: the one rule a name's norm and a run of text
-	 * are both read by.
+	 * A body's lines as LINE_BREAK splits it, the breaks dropped.
 	 *
-	 * @param string $folded Lowercase words joined by one space.
-	 * @return array{0:string,1:bool}
+	 * @param string $body An item's body.
+	 * @return list<string>
 	 */
-	private static function unarticled( string $folded ): array {
-		return \str_starts_with( $folded, 'the ' ) ? [ \substr( $folded, 4 ), true ] : [ $folded, false ];
+	private static function lines( string $body ): array {
+		return \preg_split( self::LINE_BREAK, $body ) ?: [ $body ];
 	}
 
 	/**

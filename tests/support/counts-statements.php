@@ -39,11 +39,14 @@ trait Counts_Statements {
 	}
 }
 
-/** A connection counting the statements it prepares. */
+/** A connection counting the statements it prepares, and keeping each. */
 final class Counting_PDO extends \PDO {
 
 	/** How many statements it has prepared. */
 	public int $prepared = 0;
+
+	/** @var list<string> Each statement it has prepared, in order. */
+	public array $queries = [];
 
 	/**
 	 * Prepare a statement, counting it.
@@ -53,6 +56,7 @@ final class Counting_PDO extends \PDO {
 	 */
 	public function prepare( string $query, array $options = [] ): \PDOStatement|false {
 		++$this->prepared;
+		$this->queries[] = $query;
 		return parent::prepare( $query, $options );
 	}
 }

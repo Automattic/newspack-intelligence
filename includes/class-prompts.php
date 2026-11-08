@@ -165,7 +165,8 @@ class Prompts {
 	 * item once: `extract` reads `topics`, the topic map whose names it
 	 * offers, `profile` and `audience`, and offers the themes of the items
 	 * most like it as the projection holds them when it is built, never any
-	 * its inputs carry; `extract_entities` reads nothing more.
+	 * its inputs carry; `extract_entities` reads `boilerplate`, the hashes of
+	 * the body lines it leaves out, and refuses inputs naming no such list.
 	 *
 	 * @param string                 $prompt A chat prompt of PROMPTS.
 	 * @param array<array-key,mixed> $item   The item's fields.
@@ -176,20 +177,37 @@ class Prompts {
 	public static function messages( string $prompt, array $item, array $inputs ): array {
 		return match ( $prompt ) {
 			'extract'          => self::extract( $item, \array_map( 'strval', \array_keys( Core::arr( $inputs['topics'] ?? null ) ) ), self::offered_themes( $item ), Core::as_string( $inputs['profile'] ?? null ), Core::as_string( $inputs['audience'] ?? null ), Core::as_string( $inputs['publisher'] ?? null ) ),
-			'extract_entities' => self::extract_entities( $item ),
+			'extract_entities' => self::extract_entities( $item, self::boilerplate_of( $inputs ) ),
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
 			default            => throw self::refused( self::CHAT, $prompt ),
 		};
 	}
 
 	/**
-	 * Build the NER chat messages: extract the item's SUBJECT entities as JSON,
-	 * a tool or service among them as a product rather than an organization.
+	 * The hashes a NER request's inputs name as boilerplate, each a string.
 	 *
-	 * @param array<array-key,mixed> $item The item (title/body).
+	 * @param array<array-key,mixed> $inputs The request's inputs.
+	 * @return list<string>
+	 * @throws \InvalidArgumentException When the inputs carry no boilerplate list.
+	 */
+	private static function boilerplate_of( array $inputs ): array {
+		$hashes = $inputs['boilerplate'] ?? null;
+		if ( ! \is_array( $hashes ) || ! \array_is_list( $hashes ) ) {
+			throw new \InvalidArgumentException( 'extract_entities: its inputs carry no boilerplate list' );
+		}
+		return \array_map( Core::as_string( ... ), $hashes );
+	}
+
+	/**
+	 * Build the NER chat messages: extract the item's SUBJECT entities as JSON,
+	 * a tool or service among them as a product rather than an organization,
+	 * from the title and the body less its boilerplate lines.
+	 *
+	 * @param array<array-key,mixed> $item        The item (title/body).
+	 * @param list<string>           $boilerplate The hashes of the body lines to leave out.
 	 * @return array<int,array{role:string,content:string}>
 	 */
-	public static function extract_entities( array $item ): array {
+	public static function extract_entities( array $item, array $boilerplate ): array {
 		$system = 'You are a named-entity extractor. From the item, extract ONLY the organizations, '
 			. 'products, people, and locations that are the SUBJECTS of the item (who or what it is about) — '
 			. 'not incidental mentions, bylines, or boilerplate. A tool, platform, vendor product or service '
@@ -202,7 +220,7 @@ class Prompts {
 		$user = \sprintf(
 			"Title: %s\nBody: %s",
 			self::field( $item, 'title' ),
-			self::field( $item, 'body' )
+			Entity_Index::without_lines( self::field( $item, 'body' ), $boilerplate )
 		);
 
 		return [

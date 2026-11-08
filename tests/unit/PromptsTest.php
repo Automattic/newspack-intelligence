@@ -40,7 +40,7 @@ final class PromptsTest extends TestCase {
 	}
 
 	public function test_extract_entities_demands_json_orgs_people_locations(): void {
-		$m = Prompts::extract_entities( [ 'title' => 'City Council votes', 'body' => 'The Prairie Wendlemark reported the vote in Millbrook.' ] );
+		$m = Prompts::extract_entities( [ 'title' => 'City Council votes', 'body' => 'The Prairie Wendlemark reported the vote in Millbrook.' ], [] );
 		$this->assertSame( 'system', $m[0]['role'] );
 		$this->assertStringContainsStringIgnoringCase( 'json', $m[0]['content'] );
 		$this->assertStringContainsStringIgnoringCase( 'orgs', $m[0]['content'] );
@@ -49,9 +49,17 @@ final class PromptsTest extends TestCase {
 		$this->assertStringContainsString( 'The Prairie Wendlemark reported', $user );
 	}
 
+	/** The NER prompt reads its `boilerplate` input strictly: a request naming none will not build. */
+	public function test_the_ner_prompt_refuses_inputs_naming_no_boilerplate(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'extract_entities: its inputs carry no boilerplate list' );
+
+		Prompts::messages( 'extract_entities', [ 'title' => 'Kestrel Mail outage', 'body' => 'Senders on Kestrel Mail saw delays.' ], [] );
+	}
+
 	/** A tool, platform, vendor product or service is asked for as a product, never an organization. */
 	public function test_extract_entities_asks_for_tools_as_products(): void {
-		$system = Prompts::extract_entities( [ 'title' => 'Kestrel Mail outage', 'body' => 'Senders on Kestrel Mail saw delays.' ] )[0]['content'];
+		$system = Prompts::extract_entities( [ 'title' => 'Kestrel Mail outage', 'body' => 'Senders on Kestrel Mail saw delays.' ], [] )[0]['content'];
 
 		$this->assertStringContainsString( '{"orgs": [], "products": [], "people": [], "locations": []}', $system );
 		$this->assertStringContainsString( 'A tool, platform, vendor product or service is a product, never an organization', $system );
@@ -207,7 +215,7 @@ final class PromptsTest extends TestCase {
 
 		$this->assertSame( [ 'extract' => Prompts::CHAT, 'extract_entities' => Prompts::CHAT, 'extract_review' => Prompts::DECISION ], Prompts::PROMPTS );
 		$this->assertSame( Prompts::extract( $item, [ 'Awards' ], [ [ 'theme' => 'newsletter sender rejected', 'example' => 'Tern Weekly sender bounced' ] ], 'Readers care about terns.', 'the kite desk', 'Tern Weekly' ), Prompts::messages( 'extract', $item, [ 'topics' => [ 'Awards' => 'topic:awards' ], 'themes' => [ 'kite festival' ], 'profile' => 'Readers care about terns.', 'audience' => 'the kite desk', 'publisher' => 'Tern Weekly' ] ) );
-		$this->assertSame( Prompts::extract_entities( $item ), Prompts::messages( 'extract_entities', $item, [] ) );
+		$this->assertSame( Prompts::extract_entities( $item, [] ), Prompts::messages( 'extract_entities', $item, [ 'boilerplate' => [] ] ) );
 	}
 
 	/** Every kind's one-line definition, from Intel_Event's map, in its order; bug, complaint and churn signal are told apart. */

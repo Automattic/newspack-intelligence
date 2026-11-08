@@ -151,6 +151,35 @@ final class IntelGraphRowSchemaTest extends TestCase {
 	}
 
 	/**
+	 * A body line's count is one row per item, keyed by the item's source,
+	 * the line's hash and the item, dated by the item's retrieval day, so
+	 * it leaves with its item when retention purges the item.
+	 */
+	public function test_boilerplate_expires_with_its_items(): void {
+		$boilerplate = Intel_Graph_Row_Schema::tables()['boilerplate'];
+		$this->assertSame( [ 'source' => 'TEXT NOT NULL', 'line_hash' => 'TEXT NOT NULL', 'item_key' => 'TEXT NOT NULL', 'item_day' => 'INTEGER NOT NULL' ], $boilerplate['columns'] );
+		$this->assertSame( [ 'source', 'line_hash', 'item_key' ], $boilerplate['key'] );
+		$this->assertSame( [ 'item_day', 730, 86400 ], $boilerplate['retain'] );
+		$this->assertSame( 3, Intel_Graph_Row_Schema::version(), 'a table added at the same shape version' );
+
+		$now       = 1793000000;
+		Core::$now = (float) ( $now - 731 * 86400 );
+		$projector = $this->projector_graph();
+		$old       = (int) Core::$now;
+		$recorded  = static fn ( string $key, int $at ): array => Intel_Event::make( 'item_recorded', [ 'item_key' => $key, 'source' => 'linear', 'tier' => 'internal', 'url' => "https://linear.app/heron-example/issue/{$key}", 'title' => 'Offboarding', 'body' => "Archive the site backups.\nNotify the Heron Ledger desk.", 'item_ts' => $at, 'retrieved_ts' => $at ], 'machine:source:linear@9.4.1', '9.4.1' );
+		self::deliver( $projector, $recorded( 'linear:WREN-7701', $old ) );
+		self::deliver( $projector, $recorded( 'linear:WREN-7702', $now - 86400 ) );
+		$projector->save_state();
+		$this->assertSame( [ 2, 4 ], self::counts( [ 'items', 'boilerplate' ] ) );
+
+		Core::$clock = static fn (): float => (float) $now;
+		Core::node( 'intel-graph' )->purge( 1000 );
+
+		$this->assertSame( [ 1, 2 ], self::counts( [ 'items', 'boilerplate' ] ) );
+		$this->assertSame( [ [ 'linear:WREN-7702' ], [ 'linear:WREN-7702' ] ], self::graph_rows( 'boilerplate', '1', 'item_key' ) );
+	}
+
+	/**
 	 * Row counts per table.
 	 *
 	 * @param list<string> $tables The tables.

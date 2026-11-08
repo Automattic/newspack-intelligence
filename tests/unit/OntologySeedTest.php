@@ -265,7 +265,7 @@ final class OntologySeedTest extends TestCase {
 		);
 		$ner   = self::named( [ 'Tern Desk', 'Tern desk team', 'Gull Rota', 'Plover Wharf Trust' ] );
 
-		$proposals = ( new Resolver( $index ) )->resolve( [ 'item_key' => 'feed:stop-1', 'url' => 'https://elsewhere.example/a', 'title' => 'Wharf news', 'body' => '', 'retrieved_ts' => 1793000000 ], $ner )['proposals'];
+		$proposals = ( new Resolver( $index ) )->resolve( [ 'item_key' => 'feed:stop-1', 'url' => 'https://elsewhere.example/a', 'title' => 'Wharf news', 'body' => '', 'retrieved_ts' => 1793000000 ], $ner, [] )['proposals'];
 
 		$this->assertSame( [ 'Plover Wharf Trust' ], \array_column( $proposals, 'name' ) );
 	}

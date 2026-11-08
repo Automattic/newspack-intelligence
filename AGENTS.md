@@ -234,7 +234,17 @@ was given as asserted, which the resolver settles links by. An extraction
 naming a `theme` writes the item's one `themes` row, `( item_key, theme,
 item_day )` keyed by `item_key`, a fan-out whose list is computed from the
 event; one naming none, the stand-in among them, writes no row, so a
-re-extraction naming none leaves the item without a theme. Each table is
+re-extraction naming none leaves the item without a theme. An
+`item_recorded` or an `item_grown` also writes, with `ignore`, one
+`boilerplate` row `( source, line_hash, item_key, item_day )` per distinct
+body line `Entity_Index::line_hashes()` counts: the body split at each line
+break, `<br>` and closing block tag, each line read as `plain()` reads it
+and lowercased, one shorter than `Entity_Index::MIN_LINE_CHARS` (12)
+characters left out, hashed to 16 hex digits of its md5, so a line counts
+once per item and a title never counts. A body holding more than
+`Entity_Index::MAX_LINES` (200) such lines counts its first 100 and its
+last 100, where a template opens and a footer closes, so one item writes
+at most 200 rows. Each table is
 written by one stream alone, so a replay writes
 what it wrote before and the streams project the same rows in any order. The projector never reads
 before it writes: an entity is three rows — identity in `entities`, state in
@@ -547,7 +557,25 @@ extractor share the process's one
 `Entity_Index::current()`, read again every `Entity_Index::TTL_S` (60
 seconds) and when an `item_reresolve` record's `fresh_after` falls after its
 last read, so one signal's records cost one read; with no `intel-graph`
-table it returns no entities and logs once. Every projection read goes
+table it returns no entities and logs once. Boilerplate is read with the
+item: `Resolver_Node::stored()`'s one read also answers which of the
+item's body lines at least `Resolver::BOILERPLATE_MIN_ITEMS` (8) items of
+its source carry, the item counted once whether or not it is projected
+yet, in one statement whatever the body's line count: per line hash, one
+arm per partition holding the table (`Intel_Graph_Row_Schema::holding()`,
+since SQLite pushes no correlated term into a compound), each a search of
+the key over `( source, line_hash )` stopping at 7 other items, so a footer
+every item carries costs what a line eight items carry does.
+`Resolver::resolve( $item, $ner, $boilerplate )` reads the body without
+those lines (`Entity_Index::without_lines()`), so a name, alias or acronym
+only a checklist template, a tool's footer or a ticket heading spells
+links nothing; the title, which names the item's own subject, and the URL
+are read whole, so an unfilled template still links what its URL
+identifies. The NER request carries the lines' hashes as its `boilerplate`
+input, at most 200, which `Prompts::messages()` refuses a request without,
+and `Prompts::extract_entities()` leaves them out of the body it sends; the extractor is sent the whole body. The table counts only items
+recorded after it was declared, so `ontology reproject` counts the rest.
+Every projection read goes
 through `Intel_Graph_Row_Schema::read()`, which given a line logs a
 projection that will not open and answers null, and given none throws. An `item_recorded` it cannot read
 throws, so the Consumer dead-letters it. A topic is never matched in text:
@@ -2346,8 +2374,8 @@ substrate's `delete` op the rows the items stream has written about its
 item by the time the projector reads it, in the tables that stream writes:
 `items`, which `items_fts` follows through its triggers, `extractions`,
 which `extractions_fts` follows, `extracted_subjects`, `themes`, `links`,
-`claims`, `clusters`, and the `canonicals` row of any cluster whose
-canonical it is.
+`claims`, `clusters`, `boilerplate`, and the `canonicals` row of any
+cluster whose canonical it is.
 Nothing elects that cluster another canonical; its kept members keep their
 `clusters` rows. Rows another stream wrote about the item — `judgments`,
 `collected`, `watch_matches`, `watch_seen` — stay, and every read leaves

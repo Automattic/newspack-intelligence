@@ -129,6 +129,7 @@ class Resolver_Node extends Node {
 			'rows'     => [],
 		],
 		false,
+		[],
 	];
 
 	/** What a hold line says of a record the later queue ages out. */
@@ -242,8 +243,9 @@ class Resolver_Node extends Node {
 				$this->park( $value );
 				return;
 			}
-			[ $held, $extracted, $judgment, $resolved ] = self::stored( $item_key, $resolver->index->merged(), self::own_alias(), 'no intel-graph to read the stored item from; resolving it fresh, retracting none: ' ) ?? self::NOTHING_STORED;
-			$this->resolve_again( $resolver, [ $held ?? $item, $extracted, $judgment ], $resolved ? false : ( $answered ?? true ), 0, false, $value );
+			$stored      = self::stored( $item_key, $item, $resolver->index->merged(), self::own_alias(), 'no intel-graph to read the stored item from; resolving it fresh, retracting none: ' ) ?? self::NOTHING_STORED;
+			$stored[0] ??= $item;
+			$this->resolve_again( $resolver, $stored, $stored[3] ? false : ( $answered ?? true ), 0, false, $value );
 			return;
 		}
 		if ( self::RERESOLVE !== $kind ) {
@@ -263,7 +265,7 @@ class Resolver_Node extends Node {
 			$this->hold( $record );
 			return;
 		}
-		$stored = self::stored( $item_key, $resolver->index->merged(), self::own_alias(), null );
+		$stored = self::stored( $item_key, null, $resolver->index->merged(), self::own_alias(), null );
 		if ( isset( $stored[0] ) ) {
 			$this->resolve_again( $resolver, $stored, $owes_ner ? ( $answered ?? true ) : false, $record['attempt'] ?? 0, $record['extract'] ?? false, $value );
 			return;
@@ -309,22 +311,24 @@ class Resolver_Node extends Node {
 	 * Resolve an item against what the projection holds of it: NER only when
 	 * handed the step, the curators' judgments in force, forwarded only while
 	 * still owed an extraction — asked for one, with no call extraction
-	 * projected, or a link asserted anew. A NER step owed that nothing spares
-	 * is asked of `intel:llm`, the item beside the record less its fields,
-	 * and nothing is written.
+	 * projected, or a link asserted anew. Its body lines the source's items
+	 * share are left out of what resolution reads. A NER step owed that
+	 * nothing spares is asked of `intel:llm`, the item beside the record
+	 * less its fields, the hashes of those lines as its inputs, and nothing
+	 * is written.
 	 *
 	 * @param Resolver                                                                                         $resolver The resolver over the shared index.
-	 * @param array{0:array<string,mixed>,1:bool,2:Judgment}                                                   $stored   The item, whether a call extracted it, and what settled() read.
+	 * @param array{0:array<string,mixed>,1:bool,2:Judgment,3:bool,4:list<string>}                             $stored   The item, whether a call extracted it, what settled() read, whether it was resolved before, and its boilerplate.
 	 * @param array{orgs:list<string>,products:list<string>,people:list<string>,locations:list<string>}|bool $ner      The names the NER step answered, true when it is owed, false for none.
 	 * @param int                                                                                              $attempt  The failed extraction calls behind it.
 	 * @param bool                                                                                             $extract  Whether the record asks for an extraction whatever the item holds.
 	 * @param array<array-key,mixed>                                                                           $value    The record, which a NER request carries.
 	 */
 	private function resolve_again( Resolver $resolver, array $stored, array|bool $ner, int $attempt, bool $extract, array $value ): void {
-		[ $item, $extracted, $judgment ] = $stored;
-		$resolution                      = $resolver->resolve( $item, $ner );
+		[ $item, $extracted, $judgment, , $boilerplate ] = $stored;
+		$resolution                                      = $resolver->resolve( $item, $ner, $boilerplate );
 		if ( null === $resolution ) {
-			$this->ask_model( 'extract_entities', $item, [], [ 'max_tokens' => 300, 'temperature' => 0.0 ], \array_diff_key( $value, $item ), $extract );
+			$this->ask_model( 'extract_entities', $item, [ 'boilerplate' => $boilerplate ], [ 'max_tokens' => 300, 'temperature' => 0.0 ], \array_diff_key( $value, $item ), $extract );
 			return;
 		}
 		$sent                            = self::judged( $resolution, $judgment );
@@ -618,20 +622,23 @@ class Resolver_Node extends Node {
 	 * last extraction was given, each entity as its survivor in the
 	 * resolver's own index; and whether the item was resolved before, an
 	 * extraction from any actor or a non-topic link in any partition, false
-	 * when it is not in any file. A projection that will not open answers null,
-	 * logged, given a line, and throws given none.
+	 * when it is not in any file; and the hashes of the body lines of that
+	 * item, else of the recorded one, that `boilerplate()` counts. A
+	 * projection that will not open answers null, logged, given a line, and
+	 * throws given none.
 	 *
-	 * @param string               $item_key    The item.
-	 * @param array<string,string> $merged      Each merged key's survivor, as the index read it.
-	 * @param string               $own         This worker's own partition's alias.
-	 * @param string|null          $unavailable The line logging a projection that will not open, or null to throw.
-	 * @return array{0:array<string,mixed>|null,1:bool,2:Judgment,3:bool}|null
+	 * @param string                   $item_key    The item.
+	 * @param array<string,mixed>|null $recorded    The item as its record carries it, or null for a re-resolution.
+	 * @param array<string,string>     $merged      Each merged key's survivor, as the index read it.
+	 * @param string                   $own         This worker's own partition's alias.
+	 * @param string|null              $unavailable The line logging a projection that will not open, or null to throw.
+	 * @return array{0:array<string,mixed>|null,1:bool,2:Judgment,3:bool,4:list<string>}|null
 	 * @throws Table_Unavailable When the projection will not open and the
 	 *                           caller gives no line.
 	 */
-	private static function stored( string $item_key, array $merged, string $own, ?string $unavailable ): ?array {
+	private static function stored( string $item_key, ?array $recorded, array $merged, string $own, ?string $unavailable ): ?array {
 		return Intel_Graph_Row_Schema::read(
-			static function ( Row_Reader $r ) use ( $item_key, $merged, $own ): array {
+			static function ( Row_Reader $r ) use ( $item_key, $recorded, $merged, $own ): array {
 				$links = Intel_Graph_Row_Schema::all( $r, 'links' );
 				foreach ( $r->aliases() as $a ) {
 					$sql = "SELECT i.item_key, i.source, i.tier, i.url, i.title, i.body, i.item_ts, i.retrieved_ts, EXISTS ( SELECT 1 FROM {$a}.extractions e WHERE e.item_key = i.item_key AND INSTR( e.actor, ? ) <> 1 ), EXISTS ( SELECT 1 FROM {$a}.extractions e WHERE e.item_key = i.item_key ) OR EXISTS ( SELECT 1 FROM {$links} l WHERE l.item_key = i.item_key AND l.role <> 'topic' ) FROM {$a}.items i WHERE i.item_key = ?";
@@ -646,13 +653,47 @@ class Resolver_Node extends Node {
 							'item_ts'      => Core::as_int( $item_ts ),
 							'retrieved_ts' => Core::as_int( $retrieved_ts ),
 						];
-						return [ $item, 0 !== Core::as_int( $extracted ), self::settled( $r, $item_key, $merged, $own ), 0 !== Core::as_int( $resolved ) ];
+						return [ $item, 0 !== Core::as_int( $extracted ), self::settled( $r, $item_key, $merged, $own ), 0 !== Core::as_int( $resolved ), self::boilerplate( $r, $item ) ];
 					}
 				}
-				return [ null, false, self::settled( $r, $item_key, $merged, $own ), false ];
+				return [ null, false, self::settled( $r, $item_key, $merged, $own ), false, null === $recorded ? [] : self::boilerplate( $r, $recorded ) ];
 			},
 			$unavailable
 		);
+	}
+
+	/**
+	 * The hashes of an item's body lines that at least
+	 * `Resolver::BOILERPLATE_MIN_ITEMS` items of its source carry, in body
+	 * order and each a string, json_each's value cast back, the item
+	 * counted once whether or not it is projected yet, so the answer never
+	 * waits on the projector's flush: one statement whatever the body's line
+	 * count, none for a body with no line to count or no partition holding
+	 * the table. Each hash reads one arm per partition, a search of the key
+	 * over `( source, line_hash )` stopping at the other items the floor
+	 * needs, so a line every item carries costs no more than one at the
+	 * floor; the arms' union counts an item two partitions hold once.
+	 *
+	 * @param Row_Reader          $r    The reader.
+	 * @param array<string,mixed> $item The item's fields.
+	 * @return list<string>
+	 */
+	private static function boilerplate( Row_Reader $r, array $item ): array {
+		$lines   = Entity_Index::line_hashes( Core::as_string( $item['body'] ) );
+		$holding = Intel_Graph_Row_Schema::holding( $r, 'boilerplate' );
+		if ( [] === $lines || [] === $holding ) {
+			return [];
+		}
+		$others = Resolver::BOILERPLATE_MIN_ITEMS - 1;
+		$arms   = [];
+		$params = [ (string) \wp_json_encode( $lines, \JSON_THROW_ON_ERROR ) ];
+		foreach ( $holding as $alias ) {
+			$arms[] = "SELECT item_key FROM ( SELECT item_key FROM {$alias}.boilerplate WHERE source = ? AND line_hash = j.value AND item_key <> ? LIMIT ? )";
+			\array_push( $params, Core::as_string( $item['source'] ), Core::as_string( $item['item_key'] ), $others );
+		}
+		$params[] = $others;
+		$sql      = 'SELECT j.value FROM json_each( ? ) j WHERE ( SELECT COUNT(*) FROM ( ' . \implode( ' UNION ', $arms ) . ' ) ) >= ? ORDER BY j.key';
+		return \array_map( static fn ( array $row ): string => Core::as_string( $row[0] ), $r->rows( $sql, $params ) );
 	}
 
 	/**

@@ -144,7 +144,7 @@ final class LlmCallNodeTest extends TestCase {
 		$request[ Message::VALUE ] = [
 			'prompt'  => 'extract_entities',
 			'item'    => self::item( $key ),
-			'inputs'  => [],
+			'inputs'  => [ 'boilerplate' => [] ],
 			'options' => [ 'max_tokens' => 333, 'temperature' => 0.4 ],
 			'carry'   => [ 'item_key' => $key ] + $carry,
 			'backlog' => $backlog,
@@ -248,7 +248,7 @@ final class LlmCallNodeTest extends TestCase {
 		$this->assertSame(
 			[
 				'model'       => self::MODEL,
-				'messages'    => Prompts::extract_entities( self::item( 'feed:wharf-31' ) ),
+				'messages'    => Prompts::extract_entities( self::item( 'feed:wharf-31' ), [] ),
 				'max_tokens'  => 333,
 				'temperature' => 0.4,
 			],
@@ -269,7 +269,7 @@ final class LlmCallNodeTest extends TestCase {
 		$this->complete_nth( 0, self::completion( '{"orgs":["Plover Wharf Trust"]}' ) );
 
 		$this->assertSame(
-			[ [ Message::TM_STRUCT | Message::TM_RESPONSE, self::NAME, 'feed:wharf-32', [ 'content' => '{"orgs":["Plover Wharf Trust"]}', 'item' => self::item( 'feed:wharf-32' ), 'inputs' => [], 'carry' => [ 'item_key' => 'feed:wharf-32', 'resolution' => [ 'attempt' => 3 ] ] ] ] ],
+			[ [ Message::TM_STRUCT | Message::TM_RESPONSE, self::NAME, 'feed:wharf-32', [ 'content' => '{"orgs":["Plover Wharf Trust"]}', 'item' => self::item( 'feed:wharf-32' ), 'inputs' => [ 'boilerplate' => [] ], 'carry' => [ 'item_key' => 'feed:wharf-32', 'resolution' => [ 'attempt' => 3 ] ] ] ] ],
 			$this->heard()
 		);
 	}
@@ -297,7 +297,7 @@ final class LlmCallNodeTest extends TestCase {
 
 		$this->complete_nth( 0, $body, $code, $result );
 
-		$this->assertSame( [ [ Message::TM_STRUCT | Message::TM_RESPONSE, self::NAME, 'feed:wharf-33', [ 'error' => $error, 'item' => self::item( 'feed:wharf-33' ), 'inputs' => [], 'carry' => [ 'item_key' => 'feed:wharf-33' ] ] ] ], $this->heard() );
+		$this->assertSame( [ [ Message::TM_STRUCT | Message::TM_RESPONSE, self::NAME, 'feed:wharf-33', [ 'error' => $error, 'item' => self::item( 'feed:wharf-33' ), 'inputs' => [ 'boilerplate' => [] ], 'carry' => [ 'item_key' => 'feed:wharf-33' ] ] ] ], $this->heard() );
 	}
 
 	/** With no entry of its group on the api url's origin it calls nothing and answers at once that the group lends none. */
@@ -308,7 +308,7 @@ final class LlmCallNodeTest extends TestCase {
 		$this->ask( $node, 'feed:wharf-34', [ 'note' => 'kept' ] );
 
 		$this->assertSame( [], $this->dispatched );
-		$this->assertSame( [ [ Message::TM_STRUCT | Message::TM_RESPONSE, self::NAME, 'feed:wharf-34', [ 'unlent' => self::GROUP, 'item' => self::item( 'feed:wharf-34' ), 'inputs' => [], 'carry' => [ 'item_key' => 'feed:wharf-34', 'note' => 'kept' ] ] ] ], $this->heard() );
+		$this->assertSame( [ [ Message::TM_STRUCT | Message::TM_RESPONSE, self::NAME, 'feed:wharf-34', [ 'unlent' => self::GROUP, 'item' => self::item( 'feed:wharf-34' ), 'inputs' => [ 'boilerplate' => [] ], 'carry' => [ 'item_key' => 'feed:wharf-34', 'note' => 'kept' ] ] ] ], $this->heard() );
 	}
 
 	/** A request it cannot read is dropped with a line, never thrown and never answered. */
@@ -320,7 +320,7 @@ final class LlmCallNodeTest extends TestCase {
 	 * @return array<string,array{0:array<string,mixed>,1:string,2:list<string>}>
 	 */
 	public static function unreadable_requests(): array {
-		$good = [ 'prompt' => 'extract_entities', 'item' => self::item( 'feed:wharf-35' ), 'inputs' => [], 'options' => [], 'carry' => [ 'note' => 'n-35' ], 'backlog' => false ];
+		$good = [ 'prompt' => 'extract_entities', 'item' => self::item( 'feed:wharf-35' ), 'inputs' => [ 'boilerplate' => [] ], 'options' => [], 'carry' => [ 'note' => 'n-35' ], 'backlog' => false ];
 		return [
 			'an unknown prompt'   => [ [ 'prompt' => 'summarize' ] + $good, 'a prompt it knows', [ 'item', 'inputs', 'carry' ] ],
 			'an item not a map'   => [ [ 'item' => 'hi' ] + $good, 'an item', [ 'inputs', 'carry' ] ],
@@ -666,7 +666,7 @@ final class LlmCallNodeTest extends TestCase {
 		$request[ Message::TYPE ]  = Message::TM_STRUCT;
 		$request[ Message::FROM ]  = self::CALLER;
 		$request[ Message::KEY ]   = 'feed:long-1';
-		$request[ Message::VALUE ] = [ 'prompt' => 'extract_entities', 'item' => self::item( 'feed:long-1', \str_repeat( 'Kestrel ', 60000 ) ), 'inputs' => [], 'options' => [], 'carry' => [], 'backlog' => false ];
+		$request[ Message::VALUE ] = [ 'prompt' => 'extract_entities', 'item' => self::item( 'feed:long-1', \str_repeat( 'Kestrel ', 60000 ) ), 'inputs' => [ 'boilerplate' => [] ], 'options' => [], 'carry' => [], 'backlog' => false ];
 
 		$this->in_drain( static fn () => $node->fill( $request ) );
 
@@ -906,7 +906,7 @@ final class LlmCallNodeTest extends TestCase {
 		$this->ask( $node, 'feed:bare-1' );
 
 		$this->assertSame( [], $this->dispatched );
-		$this->assertSame( [ 'error' => self::NAME . ': set_api_url, set_model and set_feature before a call', 'item' => self::item( 'feed:bare-1' ), 'inputs' => [], 'carry' => [ 'item_key' => 'feed:bare-1' ] ], $this->caller->captured[0][ Message::VALUE ] );
+		$this->assertSame( [ 'error' => self::NAME . ': set_api_url, set_model and set_feature before a call', 'item' => self::item( 'feed:bare-1' ), 'inputs' => [ 'boilerplate' => [] ], 'carry' => [ 'item_key' => 'feed:bare-1' ] ], $this->caller->captured[0][ Message::VALUE ] );
 	}
 
 	/**

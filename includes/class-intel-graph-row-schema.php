@@ -10,7 +10,9 @@
  * state (`entity_states`) and its merge (`entity_merges`) are three rows, so
  * every event writes whole rows and the projector never reads before it
  * writes; an item's extraction is its own row beside the item for the same
- * reason, and its theme its own row beside the extraction.
+ * reason, and its theme its own row beside the extraction. Each distinct
+ * line of an item's body is a `boilerplate` row of its own, so how many
+ * items of a source carry a line is a count of rows.
  *
  * @package Newspack_Intelligence
  */
@@ -107,7 +109,7 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	 * @param bool       $ordinal Whether each row carries its partition ordinal.
 	 */
 	public static function all( Row_Reader $r, string $table, bool $ordinal = false ): string {
-		$holding = \array_filter( $r->aliases(), static fn ( string $alias ): bool => isset( self::tables_in( $r )[ $alias ][ $table ] ) );
+		$holding = self::holding( $r, $table );
 		if ( [] === $holding ) {
 			$columns = [];
 			foreach ( self::tables()[ $table ]['columns'] as $column => $type ) {
@@ -258,6 +260,20 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				],
 				'key'     => [ 'cluster_key' ],
 				'indexes' => [ 'canonicals_item_day' => [ 'item_day' ] ],
+				'retain'  => [ 'item_day', self::RETAIN_DAYS, self::DAY_SECONDS ],
+			],
+			'boilerplate'   => [
+				'columns' => [
+					'source'    => 'TEXT NOT NULL',
+					'line_hash' => 'TEXT NOT NULL',
+					'item_key'  => 'TEXT NOT NULL',
+					'item_day'  => 'INTEGER NOT NULL',
+				],
+				'key'     => [ 'source', 'line_hash', 'item_key' ],
+				'indexes' => [
+					'boilerplate_item_key' => [ 'item_key' ],
+					'boilerplate_item_day' => [ 'item_day' ],
+				],
 				'retain'  => [ 'item_day', self::RETAIN_DAYS, self::DAY_SECONDS ],
 			],
 			'entities'      => [
@@ -453,6 +469,19 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				'keep'    => true,
 			],
 		];
+	}
+
+	/**
+	 * The attached partitions whose file holds a table, by ordinal => alias,
+	 * for a read that writes its own arm per partition, as a correlated
+	 * lookup must, since SQLite pushes no correlated term into a compound.
+	 *
+	 * @param Row_Reader $r     The reader.
+	 * @param string     $table A declared table.
+	 * @return array<int,string>
+	 */
+	public static function holding( Row_Reader $r, string $table ): array {
+		return \array_filter( $r->aliases(), static fn ( string $alias ): bool => isset( self::tables_in( $r )[ $alias ][ $table ] ) );
 	}
 
 	/**
