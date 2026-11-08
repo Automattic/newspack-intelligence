@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-11-08
+
 ### Added
 
 - **Themes merge.** `merge_theme <from> <into>`, at `tune`, records a `theme_merged` event on the ontology stream, so it outlives the items it touches, and the projection keeps it in a new `theme_merges` table at the same schema version, which a restarted worker creates. Every read of an item's theme reads the survivor: a theme group, a trend row, a signal on the theme axis, the extraction's offer and the review's `theme_choice`. No item's row is rewritten. Reads and curation resolve a chain with one walker, `Entity_Index::walk()`, so both read a cycling chain alike, as the theme itself. The verb refuses a blank theme or one past 80 bytes, a merge into itself, one naming a theme that is not the theme of any item the caller may read, as written or as its survivor (`no theme: <theme>`), so a caller without the restricted tier reads one refusal whether a restricted item carries the theme or no item does, one that would cycle or run past 10 hops, naming the first theme it breaks that the caller can see and otherwise none, one into a theme that itself merges away, naming its survivor, or whose own chain does not resolve, and one by a holder of the restricted tier that would make its target the theme of an unrestricted item for the first time, judged by each item's newest theme. The MCP door offers it as `intel_merge_theme` to a session whose role covers `tune`.
