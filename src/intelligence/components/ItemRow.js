@@ -108,9 +108,9 @@ function Chips( { entities, onOpenEntity } ) {
 				) ) }
 			</ul>
 			{ 0 < rest.length && (
-				<button
-					type="button"
-					className="button-link"
+				<Button
+					variant="link"
+					className="newspack-intelligence__more"
 					aria-expanded={ open }
 					onClick={ () => setOpen( ! open ) }
 				>
@@ -121,7 +121,7 @@ function Chips( { entities, onOpenEntity } ) {
 								__( '+%d more', 'newspack-intelligence' ),
 								rest.length
 						  ) }
-				</button>
+				</Button>
 			) }
 		</div>
 	);

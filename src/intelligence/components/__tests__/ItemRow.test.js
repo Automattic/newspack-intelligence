@@ -264,6 +264,8 @@ describe( 'ItemRow', () => {
 		expect( chips() ).toEqual( subjects );
 		const more = screen.getByRole( 'button', { name: '+9 more' } );
 		expect( more ).toHaveAttribute( 'aria-expanded', 'false' );
+		expect( more ).toHaveClass( 'is-link' );
+		expect( more ).toHaveClass( 'newspack-intelligence__more' );
 
 		fireEvent.click( more );
 		expect( chips() ).toEqual( [ ...subjects, ...mentions ] );
