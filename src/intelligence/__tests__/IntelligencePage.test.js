@@ -52,7 +52,11 @@ beforeEach( () => {
 	wire.replies.collections = { collections: [], available: true };
 	wire.replies.lenses = LENSES;
 	wire.replies.trends = { rows: [], available: true };
-	wire.replies.signals = { signals: [], available: true };
+	wire.replies.signals = {
+		signals: [],
+		trend: [ { bucket: '2026-10-12', count: 3 } ],
+		available: true,
+	};
 	wire.replies.watches = { watches: [], available: true };
 	wire.replies.health = ( [ what ] ) => HEALTHY[ what ];
 	wire.replies.briefing = ( [ what ] ) => WEEK[ what ];
@@ -544,7 +548,7 @@ describe( 'IntelligencePage', () => {
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Developer shipping' } )
 		);
-		await screen.findByText( 'No signal is seen through this lens.' );
+		await screen.findByText( 'Steady' );
 		await screen.findByText( 'No trend is seen through this lens.' );
 		await screen.findByText( 'Acme Quillsheet wins regional prize' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Watch this' } ) );

@@ -13,10 +13,7 @@ import {
 } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
 import Answer from '../components/Answer';
-import TrendTable, {
-	TrendChart,
-	againstBaseline,
-} from '../components/TrendTable';
+import { SignalTrend, TrendChart } from '../components/TrendTable';
 import GroupPage from '../components/GroupPage';
 import ListField from '../components/ListField';
 import Refusal from '../components/Refusal';
@@ -171,7 +168,8 @@ function LensForm( { initial, vocabulary, onSave, onCancel } ) {
 }
 
 /**
- * The lens opened: its signals, then its trend rows as one compact chart
+ * The lens opened: its signals beside its trend's sparkline, quiet or not
+ * (`SignalTrend`), then its trend rows as one compact chart
  * (`TrendChart`), then its theme groups, a page of groups at a time in the
  * order the server ranks them, each read through the lens.
  *
@@ -211,18 +209,8 @@ function Opened( { lens, starts, onStarts, onOpenEntity, onSave } ) {
 				title={ __( 'Signals', 'newspack-intelligence' ) }
 				level={ 3 }
 				read={ signals }
-				rows="signals"
-				empty={ __(
-					'No signal is seen through this lens.',
-					'newspack-intelligence'
-				) }
 			>
-				{ ( answer ) => (
-					<TrendTable
-						rows={ answer.signals }
-						count={ againstBaseline }
-					/>
-				) }
+				{ ( answer ) => <SignalTrend answer={ answer } /> }
 			</Answer>
 			<Answer
 				title={ __( 'Trends', 'newspack-intelligence' ) }

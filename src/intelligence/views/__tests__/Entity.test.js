@@ -19,6 +19,17 @@ import Entity from '../Entity';
 
 const KEY = 'organization:acme-quillsheet';
 
+const TREND = [
+	{ bucket: '2026-10-12', count: 5 },
+	{ bucket: '2026-10-05', count: 7 },
+	{ bucket: '2026-09-28', count: 2 },
+	{ bucket: '2026-09-21', count: 0 },
+	{ bucket: '2026-09-14', count: 4 },
+	{ bucket: '2026-09-07', count: 1 },
+	{ bucket: '2026-08-31', count: 3 },
+	{ bucket: '2026-08-24', count: 6 },
+];
+
 let wire;
 
 beforeEach( () => {
@@ -45,7 +56,7 @@ beforeEach( () => {
 		],
 		available: true,
 	};
-	wire.replies.signals = { signals: [], available: true };
+	wire.replies.signals = { signals: [], trend: TREND, available: true };
 	wire.replies.claims = {
 		claims: [
 			{
@@ -415,6 +426,7 @@ describe( 'Entity — reads', () => {
 
 	it( 'shows its signals under its header, each marked by its axis', async () => {
 		wire.replies.signals = {
+			trend: TREND,
 			signals: [
 				{
 					axis: 'about',
@@ -483,11 +495,19 @@ describe( 'Entity — reads', () => {
 		expect( wire.sent( 'signals' ) ).toEqual( [ [ `--entity=${ KEY }` ] ] );
 	} );
 
-	it( 'says it shows no signal', async () => {
+	it( 'reads an entity with no signal as steady beside its sparkline', async () => {
 		renderEntity();
-		expect(
-			await screen.findByText( 'No signal is seen for this entity.' )
-		).toBeInTheDocument();
+		const signals = await screen.findByRole( 'region', {
+			name: 'Signals',
+		} );
+		const line = ( await within( signals ).findByText( 'Steady' ) ).closest(
+			'p'
+		);
+		expect( within( line ).getByRole( 'img' ) ).toHaveAccessibleName(
+			'Stories in each of the last 8 buckets, oldest first: 6, 3, 1, 4, 0, 2, 7, 5; the latest, from 2026-10-12, counts 5'
+		);
+		expect( within( signals ).queryByRole( 'table' ) ).toBeNull();
+		expect( screen.queryByText( /No signal/ ) ).toBeNull();
 	} );
 
 	it( 'shows a refused read as the refusal', async () => {
@@ -505,6 +525,7 @@ describe( 'Entity — status', () => {
 
 	it( 'heads a client with its start, latest signal, churn signals, asks and last item', async () => {
 		wire.replies.signals = {
+			trend: TREND,
 			signals: [
 				{
 					axis: 'publisher',
@@ -529,7 +550,7 @@ describe( 'Entity — status', () => {
 		expect( wire.sent( 'signals' ) ).toHaveLength( 1 );
 	} );
 
-	it( 'says a client has no signal and no item yet, and counts one in the singular', async () => {
+	it( 'reads a client with no signal as steady, says it has no item yet, and counts one in the singular', async () => {
 		wire.replies.entity = {
 			...ENTITY,
 			status: {
@@ -547,7 +568,7 @@ describe( 'Entity — status', () => {
 		const status = ( await heading() ).nextElementSibling;
 		await waitFor( () =>
 			expect( status ).toHaveTextContent(
-				'Client since 2026-10-09 · No signal · 1 churn report, 1 churn signal, 1 feature request, 0 complaints · No item about it yet'
+				'Client since 2026-10-09 · Steady · 1 churn report, 1 churn signal, 1 feature request, 0 complaints · No item about it yet'
 			)
 		);
 	} );

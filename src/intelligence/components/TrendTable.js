@@ -3,6 +3,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import { VisuallyHidden } from '@wordpress/components';
 import * as d3 from 'd3';
 import AreaTimeChart from '@newspack-nodes/shared/components/AreaTimeChart';
+import Sparkline from '@newspack-nodes/shared/components/Sparkline';
 import { chartColor } from '@newspack-nodes/shared/hooks/useTimeChart';
 import { integerTicks } from '@newspack-nodes/shared/utils/axis-ticks';
 import Cite from './Cite';
@@ -15,6 +16,10 @@ const CHART_VALUES = 5;
 
 /** The trend chart's height in pixels, axis margins included. */
 const CHART_HEIGHT = 180;
+
+/** A signals card's sparkline box in pixels. */
+const SPARK_WIDTH = 96;
+const SPARK_HEIGHT = 24;
 
 /** Stories, whole ones, ticked at whole steps. */
 const formatStories = d3.format( 'd' );
@@ -152,6 +157,85 @@ export default function TrendTable( {
 				) ) }
 			</tbody>
 		</table>
+	);
+}
+
+/**
+ * A signals answer: its trend as a sparkline beside what the latest
+ * bucket says — each signal called out by its axis, kind and value, or
+ * "Steady" when nothing signals — then the signals as a table, each counted
+ * against its baseline. A trend holding no bucket draws no line.
+ *
+ * @param {Object}                  props
+ * @param {Object}                  props.answer  The answer `signals` gave: `signals` and `trend`.
+ * @param {(row: Object) => string} [props.value] A signal's value as its row shows it.
+ * @return {import('react').ReactElement} The signals.
+ */
+export function SignalTrend( { answer, value } ) {
+	const { signals, trend } = answer;
+	return (
+		<>
+			<p className="newspack-intelligence__pulse">
+				<Sparkline
+					values={ trend.map( ( point ) => point.count ).reverse() }
+					width={ SPARK_WIDTH }
+					height={ SPARK_HEIGHT }
+					label={ trendWords( trend ) }
+				/>
+				<span>
+					{ 0 === signals.length
+						? __( 'Steady', 'newspack-intelligence' )
+						: signals.map( signalValue ).join( ', ' ) }
+				</span>
+			</p>
+			{ 0 < signals.length && (
+				<TrendTable
+					rows={ signals }
+					value={ value }
+					count={ againstBaseline }
+				/>
+			) }
+		</>
+	);
+}
+
+/**
+ * A trend in words for a screen reader: every bucket's count, oldest first,
+ * then the latest bucket's first day and count; one bucket alone in the
+ * singular, and an empty trend as an empty string, because it draws nothing.
+ *
+ * @param {Array<{bucket: string, count: number}>} trend The trend `signals` answers, the latest bucket first.
+ * @return {string} The words.
+ */
+function trendWords( trend ) {
+	if ( 0 === trend.length ) {
+		return '';
+	}
+	const [ latest ] = trend;
+	if ( 1 === trend.length ) {
+		return sprintf(
+			/* translators: 1: the first day of the one bucket, 2: its count. */
+			__(
+				'Stories in the last bucket, from %1$s: %2$d',
+				'newspack-intelligence'
+			),
+			latest.bucket,
+			latest.count
+		);
+	}
+	return sprintf(
+		/* translators: 1: how many buckets, 2: each bucket's count, oldest first, 3: the first day of the latest bucket, 4: its count. */
+		__(
+			'Stories in each of the last %1$d buckets, oldest first: %2$s; the latest, from %3$s, counts %4$d',
+			'newspack-intelligence'
+		),
+		trend.length,
+		trend
+			.map( ( point ) => point.count )
+			.reverse()
+			.join( ', ' ),
+		latest.bucket,
+		latest.count
 	);
 }
 

@@ -157,6 +157,14 @@
 		}
 	}
 
+	// A signals card's sparkline sits beside what its latest bucket says.
+	&__pulse {
+		display: flex;
+		align-items: center;
+		gap: base.$space-sm;
+		margin: 0 0 base.$space-sm;
+	}
+
 	// A bucket's date reads as one token, so its column never wraps it.
 	&__date {
 		white-space: nowrap;

@@ -42,9 +42,23 @@ const TRENDS = {
 	available: true,
 };
 
+const TREND = [
+	{ bucket: '2026-09-28', count: 11 },
+	{ bucket: '2026-09-21', count: 4 },
+	{ bucket: '2026-09-14', count: 0 },
+	{ bucket: '2026-09-07', count: 2 },
+	{ bucket: '2026-08-31', count: 1 },
+	{ bucket: '2026-08-24', count: 0 },
+	{ bucket: '2026-08-17', count: 3 },
+	{ bucket: '2026-08-10', count: 1 },
+];
+
 const SIGNALS = {
+	trend: TREND,
 	signals: [
 		{
+			axis: 'about',
+			signal: 'spike',
 			bucket: '2026-09-28',
 			by: 'kind',
 			value: 'praise',
@@ -196,13 +210,35 @@ describe( 'Lens', () => {
 		] );
 	} );
 
-	it( 'says a lens shows no signal', async () => {
-		wire.replies.signals = { signals: [], available: true };
+	it( 'calls out the lens’s spike beside its sparkline', async () => {
 		render( <Harness canTune={ false } /> );
 		await openSupport();
-		expect(
-			await screen.findByText( 'No signal is seen through this lens.' )
-		).toBeInTheDocument();
+		const signals = await screen.findByRole( 'region', {
+			name: 'Signals',
+		} );
+		const line = (
+			await within( signals ).findByText( 'about spike: praise' )
+		).closest( 'p' );
+		expect( within( line ).getByRole( 'img' ) ).toHaveAccessibleName(
+			/oldest first: 1, 3, 0, 1, 2, 0, 4, 11; the latest, from 2026-09-28, counts 11/
+		);
+	} );
+
+	it( 'reads a quiet lens as steady beside its sparkline', async () => {
+		wire.replies.signals = { signals: [], trend: TREND, available: true };
+		render( <Harness canTune={ false } /> );
+		await openSupport();
+		const signals = await screen.findByRole( 'region', {
+			name: 'Signals',
+		} );
+		const line = ( await within( signals ).findByText( 'Steady' ) ).closest(
+			'p'
+		);
+		expect( within( line ).getByRole( 'img' ) ).toHaveAccessibleName(
+			/counts 11$/
+		);
+		expect( within( signals ).queryByRole( 'table' ) ).toBeNull();
+		expect( screen.queryByText( /No signal/ ) ).toBeNull();
 	} );
 
 	it( 'offers every reader a watch on the lens opened', async () => {

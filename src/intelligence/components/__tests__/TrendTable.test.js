@@ -6,12 +6,18 @@
  * wrap and its Value cell the class that keeps its column as wide as its
  * longest word. A trend chart draws the largest values over the latest
  * buckets as series of the shared time chart, and hands a screen reader
- * every row as a table.
+ * every row as a table. A signals answer reads "Steady" beside its
+ * sparkline when nothing signals, and otherwise calls out each signal there
+ * before listing them.
  */
 
 import { render, screen, within } from '@testing-library/react';
 import { resetLocaleData, setLocaleData } from '@wordpress/i18n';
-import TrendTable, { TrendChart, signalValue } from '../TrendTable';
+import TrendTable, {
+	SignalTrend,
+	TrendChart,
+	signalValue,
+} from '../TrendTable';
 
 const THEMES = [
 	{
@@ -289,5 +295,73 @@ describe( 'TrendChart', () => {
 		const { container } = render( <TrendChart rows={ [] } /> );
 		expect( container.querySelector( '.newspack-nodes-chart' ) ).toBeNull();
 		expect( container ).toBeEmptyDOMElement();
+	} );
+} );
+
+describe( 'SignalTrend', () => {
+	const trend = [
+		{ bucket: '2026-10-12', count: 9 },
+		{ bucket: '2026-10-05', count: 2 },
+	];
+	const spike = {
+		axis: 'about',
+		signal: 'spike',
+		bucket: '2026-10-12',
+		by: 'kind',
+		value: 'complaint',
+		count: 9,
+		baseline: 2,
+		items: [],
+	};
+
+	it( 'reads no spike as steady beside the sparkline, with no table', () => {
+		render( <SignalTrend answer={ { signals: [], trend } } /> );
+		const line = screen.getByText( 'Steady' ).closest( 'p' );
+		expect( within( line ).getByRole( 'img' ) ).toHaveAccessibleName(
+			/oldest first: 2, 9; the latest, from 2026-10-12, counts 9/
+		);
+		expect( screen.queryByRole( 'table' ) ).toBeNull();
+		expect( screen.queryByText( /No signal/ ) ).toBeNull();
+	} );
+
+	it( 'calls out each signal beside the sparkline, then lists them', () => {
+		render( <SignalTrend answer={ { signals: [ spike ], trend } } /> );
+		const line = screen
+			.getByText( 'about spike: complaint' )
+			.closest( 'p' );
+		expect( within( line ).getByRole( 'img' ) ).toBeInTheDocument();
+		expect( screen.queryByText( 'Steady' ) ).toBeNull();
+		expect(
+			screen.getByRole( 'row', { name: /2026-10-12/ } )
+		).toHaveTextContent( '9 against a baseline of 2' );
+	} );
+
+	it( 'names one bucket in the singular and draws no line for none', () => {
+		const { container, rerender } = render(
+			<SignalTrend
+				answer={ {
+					signals: [],
+					trend: [ { bucket: '2026-10-19', count: 7 } ],
+				} }
+			/>
+		);
+		expect( screen.getByRole( 'img' ) ).toHaveAccessibleName(
+			'Stories in the last bucket, from 2026-10-19: 7'
+		);
+		rerender( <SignalTrend answer={ { signals: [], trend: [] } } /> );
+		expect( container.querySelector( 'svg' ) ).toBeNull();
+		expect( screen.getByText( 'Steady' ) ).toBeInTheDocument();
+	} );
+
+	it( 'shows each row’s value as the caller names it', () => {
+		render(
+			<SignalTrend
+				answer={ { signals: [ spike ], trend } }
+				value={ signalValue }
+			/>
+		);
+		expect(
+			screen.getByRole( 'row', { name: /2026-10-12/ } )
+		).toHaveTextContent( 'about spike: complaint' );
 	} );
 } );

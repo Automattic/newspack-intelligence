@@ -8,10 +8,7 @@ import Cite, { EntityChip } from '../components/Cite';
 import EditDrawer from '../components/EditDrawer';
 import Refusal from '../components/Refusal';
 import { ItemPage } from '../components/ItemRow';
-import TrendTable, {
-	againstBaseline,
-	signalValue,
-} from '../components/TrendTable';
+import { SignalTrend, signalValue } from '../components/TrendTable';
 import { metaLine, roleText, utcDay } from '../components/format';
 
 /** The role a client that churned is given once its client role ends. */
@@ -67,8 +64,8 @@ function countsText( counts ) {
 }
 
 /**
- * A client's latest signal, the first the signals read lists; nothing
- * until that read answers.
+ * A client's latest signal, the first the signals read lists, or "Steady"
+ * when it lists none; nothing until that read answers.
  *
  * @param {Object[]|undefined} signals The signals read's rows.
  * @return {string|undefined} The part.
@@ -78,7 +75,7 @@ function latestSignal( signals ) {
 		return undefined;
 	}
 	return 0 === signals.length
-		? __( 'No signal', 'newspack-intelligence' )
+		? __( 'Steady', 'newspack-intelligence' )
 		: sprintf(
 				/* translators: 1: the signal's axis and kind, 2: the first UTC day of its week. */
 				__(
@@ -350,7 +347,8 @@ function Published( { entityKey, name, count, onOpenEntity, onSave } ) {
 
 /**
  * Entity: one entity's record, headed by its name and, for a client, its
- * status line, then its signals on both axes, its timeline of the items
+ * status line, then its signals on both axes beside its trend's sparkline,
+ * quiet or not (`SignalTrend`), its timeline of the items
  * about it a page at a time, what it holds (`Details`), then, collapsed,
  * the items its own site published, the entities sharing its items and the
  * claims naming it, each from its own read. Once the record has answered,
@@ -486,18 +484,9 @@ export default function Entity( {
 				title={ __( 'Signals', 'newspack-intelligence' ) }
 				level={ 3 }
 				read={ signals }
-				rows="signals"
-				empty={ __(
-					'No signal is seen for this entity.',
-					'newspack-intelligence'
-				) }
 			>
 				{ ( answer ) => (
-					<TrendTable
-						rows={ answer.signals }
-						value={ signalValue }
-						count={ againstBaseline }
-					/>
+					<SignalTrend answer={ answer } value={ signalValue } />
 				) }
 			</Answer>
 

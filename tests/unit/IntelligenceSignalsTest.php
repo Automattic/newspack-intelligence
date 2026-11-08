@@ -14,6 +14,7 @@ use Newspack_Nodes\Tests\TestCase;
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
 require_once __DIR__ . '/../support/reads-ontology-log.php';
 require_once __DIR__ . '/../support/signs-in-users.php';
+require_once __DIR__ . '/../support/counts-statements.php';
 
 /**
  * Signals: per value of the trend axis, the latest complete bucket's count
@@ -30,6 +31,7 @@ final class IntelligenceSignalsTest extends TestCase {
 	use Seeds_Intel_Graph;
 	use Reads_Ontology_Log;
 	use Signs_In_Users;
+	use Counts_Statements;
 
 	/** Monday 2026-10-19 00:00 UTC, when the current week opened. */
 	private const THIS_WEEK = 1792368000;
@@ -276,12 +278,115 @@ final class IntelligenceSignalsTest extends TestCase {
 		$this->assertSame( [ [ 'unthread:incident-1-1', 'feed:incident-1-1' ] ], \array_map( static fn ( array $row ): array => \array_column( $row['items'], 'item_key' ), \array_values( \array_filter( $this->ci->dispatch( 'trends', [ '--since=2026-10-12', '--until=2026-10-18' ] )['rows'], static fn ( array $row ): bool => 'incident' === $row['value'] ) ) ) );
 	}
 
+	/**
+	 * Beside its spikes a read answers its trend: the stories the spikes
+	 * count in each of the SIGNAL_TREND latest complete buckets, the latest
+	 * first, the current bucket left out, `other` muted as the spikes mute
+	 * it, a restricted story counted for a holder and never for a reader.
+	 */
+	public function test_signals_answer_the_trend_beside_the_spikes(): void {
+		$this->weeks( 'complaint', [ 0 => 4, 1 => 6, 2 => 1, 3 => 3, 4 => 1, 5 => 3, 6 => 1, 7 => 3, 8 => 1, 9 => 3, 10 => 1 ] );
+		$this->weeks( 'incident', [ 1 => 2, 4 => 5 ], 'restricted' );
+		$this->weeks( 'other', [ 2 => 5, 6 => 2 ] );
+
+		$answer = $this->ci->dispatch( 'signals', [] );
+
+		$this->assertSame( [ 'complaint' ], \array_column( $answer['signals'], 'value' ) );
+		$this->assertSame( self::trend( [ 6, 1, 3, 1, 3, 1, 3, 1 ] ), $answer['trend'] );
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$this->assertSame( self::trend( [ 8, 1, 3, 6, 3, 1, 3, 1 ] ), $this->ci->dispatch( 'signals', [] )['trend'] );
+	}
+
+	/**
+	 * A lens that does not spike still answers its trend, counted by its
+	 * bucket over its filters: by week, and by day back from yesterday.
+	 */
+	public function test_a_quiet_lens_answers_its_trend(): void {
+		$this->weeks( 'praise', [ 1 => 2, 3 => 4 ], 'internal', 'linear' );
+		$this->weeks( 'complaint', [ 1 => 5, 2 => 7 ] );
+		$this->ci->dispatch( 'save_lens', [ 'channel-desk', 'Channel desk', '--source=linear' ] );
+		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
+		$this->ci->dispatch( 'save_lens', [ 'channel-days', 'Channel days', '--source=linear', '--bucket=day' ] );
+		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
+
+		$weekly = $this->ci->dispatch( 'signals', [ '--lens=channel-desk' ] );
+
+		$this->assertSame( [], $weekly['signals'] );
+		$this->assertSame( self::trend( [ 2, 0, 4, 0, 0, 0, 0, 0 ] ), $weekly['trend'] );
+		$days = \array_map( static fn ( int $back ): string => \gmdate( 'Y-m-d', self::THIS_WEEK - $back * 86400 ), \range( 0, 7 ) );
+		$this->assertSame( \array_map( static fn ( string $day, int $count ): array => [ 'bucket' => $day, 'count' => $count ], $days, [ 0, 0, 0, 0, 0, 2, 0, 0 ] ), $this->ci->dispatch( 'signals', [ '--lens=channel-days' ] )['trend'] );
+	}
+
+	/**
+	 * An entity's trend counts what is about it by week, `other` muted as
+	 * its about spikes mute it, a restricted story for a holder and never
+	 * for a reader.
+	 */
+	public function test_an_entitys_trend_counts_what_is_about_it(): void {
+		$this->weeks( 'complaint', [ 1 => 3, 5 => 2 ], 'restricted' );
+		for ( $n = 1; $n <= 4; $n++ ) {
+			$at = self::THIS_WEEK - 2 * self::WEEK + 3 * 86400 + $n * 60;
+			$this->seed( ...[ ...self::counted( "feed:ledger-note-{$n}", 'research', $at, 'internal', 'feed', [] ), self::link( 'link_asserted', "feed:ledger-note-{$n}", 'organization:tidewater-ledger', 'mention', 'name', 1.0, $at ) ] );
+		}
+		$this->weeks( 'praise', [ 1 => 6 ] );
+		$at = self::THIS_WEEK - 3 * self::WEEK + 86400;
+		$this->seed( ...[ ...self::counted( 'feed:ledger-aside', 'other', $at, 'internal', 'feed', [] ), self::link( 'link_asserted', 'feed:ledger-aside', 'organization:tidewater-ledger', 'subject', 'name', 1.0, $at ) ] );
+
+		$this->assertSame( self::trend( [ 0, 4, 0, 0, 0, 0, 0, 0 ] ), $this->ci->dispatch( 'signals', [ '--entity=organization:tidewater-ledger' ] )['trend'] );
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$this->assertSame( self::trend( [ 3, 4, 0, 0, 2, 0, 0, 0 ] ), $this->ci->dispatch( 'signals', [ '--entity=organization:tidewater-ledger' ] )['trend'] );
+	}
+
+	/**
+	 * A topic lens's trend counts only stories tagged with a topic, as its
+	 * spikes count them.
+	 */
+	public function test_a_topic_lens_trend_counts_tagged_stories(): void {
+		$this->seed( self::entity( 'topic:currents', 'Currents' ) );
+		for ( $n = 1; $n <= 3; $n++ ) {
+			$this->seed( ...self::counted( "linear:current-{$n}", 'research', self::THIS_WEEK - 2 * self::WEEK + 86400 + $n, 'internal', 'linear', [ 'topic:currents' ] ) );
+		}
+		$this->weeks( 'research', [ 1 => 4 ], 'internal', 'linear' );
+		$this->ci->dispatch( 'save_lens', [ 'current-desk', 'Current desk', '--by=topic', '--source=linear' ] );
+		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
+
+		$this->assertSame( self::trend( [ 0, 3, 0, 0, 0, 0, 0, 0 ] ), $this->ci->dispatch( 'signals', [ '--lens=current-desk' ] )['trend'] );
+	}
+
+	/**
+	 * The trend rides the statement the spikes run, so a signals read costs
+	 * no statement over the spikes alone, through a lens on the kind axis
+	 * keeping fewer days, on the theme axis, and for an entity.
+	 */
+	public function test_the_trend_costs_no_statement_over_the_spikes(): void {
+		$this->weeks( 'complaint', [ 1 => 6, 3 => 2, 10 => 1 ] );
+		$this->ci->dispatch( 'save_lens', [ 'ledger-desk', 'Ledger desk', '--days=90' ] );
+		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
+		$this->ci->dispatch( 'save_lens', [ 'motif-desk', 'Motif desk', '--by=theme' ] );
+		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
+
+		foreach ( [ [ 'lens' => 'ledger-desk' ], [ 'lens' => 'motif-desk' ], [ 'entity' => 'organization:tidewater-ledger' ] ] as $args ) {
+			$spikes = $this->statements_of( static fn (): mixed => Intel_Graph_Row_Schema::read( static fn ( $r ): array => Graph_Query::spikes( $r, Graph_Query::graph( $r ), $args, 0.0 ) ) );
+			$this->assertSame( $spikes, $this->statements_of( static fn (): array => Graph_Query::signals( $args ) ), (string) \current( $args ) );
+		}
+	}
+
 	/** With no projection to read, signals answer unavailable. */
 	public function test_no_table_answers_no_signal_unavailable(): void {
 		$this->activate();
 		$this->capture_stderr();
 
-		$this->assertSame( [ 'signals' => [], 'available' => false ], Graph_Query::signals( [] ) );
+		$this->assertSame( [ 'signals' => [], 'trend' => [], 'available' => false ], Graph_Query::signals( [] ) );
+	}
+
+	/**
+	 * A weekly trend over the latest complete weeks, the latest first.
+	 *
+	 * @param list<int> $counts Each week's count, the latest first.
+	 * @return list<array{bucket:string,count:int}>
+	 */
+	private static function trend( array $counts ): array {
+		return \array_map( static fn ( int $back, int $count ): array => [ 'bucket' => \gmdate( 'Y-m-d', self::THIS_WEEK - $back * self::WEEK ), 'count' => $count ], \range( 1, \count( $counts ) ), $counts );
 	}
 
 	/**

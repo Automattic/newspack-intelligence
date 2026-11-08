@@ -176,6 +176,9 @@ final class Graph_Query {
 	/** How many buckets before the latest complete one a signal's baseline spans. */
 	public const SIGNAL_BASELINE = 8;
 
+	/** A signals read's trend buckets, latest first; at most SIGNAL_BASELINE + 1. */
+	public const SIGNAL_TREND = 8;
+
 	/** The share of its baseline mean at or below which a publisher's week drops. */
 	public const SIGNAL_DROP = 0.5;
 
@@ -1246,15 +1249,28 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The signals of the latest complete bucket (`signaled()`).
+	 * The signals of the latest complete bucket, and the trend they stand
+	 * in, both read by `signaled()`.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `lens`, `entity`.
-	 * @return array<string,mixed> `{ signals: [ { axis, signal, bucket, by, value, count, baseline, items } ], available }`.
+	 * @return array<string,mixed> `{ signals: [ { axis, signal, bucket, by, value, count, baseline, items } ], trend: [ { bucket, count } ], available }`.
 	 * @throws \InvalidArgumentException As `trends()`.
 	 */
 	public static function signals( array $args ): array {
 		[ $call, $name ] = self::asked( $args );
-		return self::available( [ 'signals' => [] ], static fn ( Row_Reader $r ): array => [ 'signals' => self::signaled( $r, self::graph( $r ), $call, $name, 0.0 ) ] );
+		return self::available(
+			[
+				'signals' => [],
+				'trend'   => [],
+			],
+			static function ( Row_Reader $r ) use ( $call, $name ): array {
+				[ $signals, $trend ] = self::signaled( $r, self::graph( $r ), $call, $name, 0.0 );
+				return [
+					'signals' => $signals,
+					'trend'   => $trend,
+				];
+			}
+		);
 	}
 
 	/**
@@ -1271,7 +1287,7 @@ final class Graph_Query {
 	 */
 	public static function spikes( Row_Reader $r, array $g, array $args, float $after ): array {
 		[ $call, $name ] = self::asked( $args );
-		return self::signaled( $r, $g, $call, $name, $after );
+		return self::signaled( $r, $g, $call, $name, $after )[0];
 	}
 
 	/**
@@ -1282,24 +1298,26 @@ final class Graph_Query {
 	 * alike: `spiking()` over `filtered()`, its one subject `''`, muted on
 	 * the kind axis, where each value spikes only when it was counted before
 	 * the window; none unless the latest complete bucket closed after
-	 * `$after`.
+	 * `$after`. Beside them, the trend they stand in (`trend_of()`), its
+	 * totals read in the statement that counts the spikes.
 	 *
 	 * @param Row_Reader  $r     The reader.
 	 * @param Graph       $g     The graph.
 	 * @param Filter      $call  The call's own filters.
 	 * @param string|null $name  The lens key, null for none.
 	 * @param float       $after The instant, UTC seconds.
-	 * @return list<array<string,mixed>>
+	 * @return array{0:list<array<string,mixed>>,1:list<array{bucket:string,count:int}>} The spikes, and the trend.
 	 * @throws \InvalidArgumentException On a lens that was never saved, or an
 	 *                                   entity whose merge chain does not
 	 *                                   resolve.
 	 */
 	private static function signaled( Row_Reader $r, array $g, array $call, ?string $name, float $after ): array {
 		if ( null === $name && null !== $call['entity'] ) {
-			$survivor = self::survivor( $call['entity'], $g );
-			return self::signals_of( $r, $g, [ $survivor ], $after )[ $survivor ];
+			$survivor             = self::survivor( $call['entity'], $g );
+			[ $signals, $trends ] = self::entities_read( $r, $g, [ $survivor ], $after );
+			return [ $signals[ $survivor ], $trends[ $survivor ] ];
 		}
-		$about = self::lensed(
+		return self::lensed(
 			$r,
 			$g,
 			$call,
@@ -1307,11 +1325,15 @@ final class Graph_Query {
 			static function ( Row_Reader $r, array $g, array $filter, array $lens ) use ( $after ): array {
 				[ $by, $span ] = self::axis( null, null, $lens );
 				$starts        = self::window( $r, $span, $after );
-				return null === $starts ? [] : self::spiking( $r, self::filtered( $r, $g, $filter ), $filter['days'] ?? self::all_days(), $starts, $by, $span, true, 'kind' === $by )[''] ?? [];
+				if ( null === $starts ) {
+					return [ [], [] ];
+				}
+				[ $spikes, $totals ] = self::spiking( $r, self::filtered( $r, $g, $filter ), $filter['days'] ?? self::all_days(), $starts, $by, $span, true, 'kind' === $by );
+				return [ \array_map( static fn ( array $spike ): array => self::signal( 'about', 'spike', $spike ), $spikes[''] ?? [] ), self::trend_of( $totals[''] ?? [], $starts ) ];
 			}
 		);
-		return \array_map( static fn ( array $spike ): array => self::signal( 'about', 'spike', $spike ), $about );
 	}
+
 	/**
 	 * What a trend counts and the bucket it counts by: the call's, else the
 	 * lens's, else DEFAULT_AXIS and DEFAULT_BUCKET.
@@ -1437,6 +1459,18 @@ final class Graph_Query {
 			'bucket' => null,
 		];
 	}
+	/**
+	 * The filters a call names and the lens it names, its key slugged as a
+	 * save slugs it.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @return array{0:Filter,1:?string}
+	 * @throws \InvalidArgumentException On a bad day, or a lens key that sanitizes to nothing.
+	 */
+	private static function asked( array $args ): array {
+		$name = self::given( $args, 'lens' );
+		return [ self::filter_of( $args ), null === $name ? null : Intel_Event::lens_key( $name ) ];
+	}
 
 	/**
 	 * Each entity's signals, named with no lens, every entity read in the
@@ -1455,23 +1489,54 @@ final class Graph_Query {
 	 * @return array<string,list<array<string,mixed>>> Each survivor => its signals, the about axis first.
 	 */
 	public static function signals_of( Row_Reader $r, array $g, array $survivors, float $after ): array {
+		return self::entities_read( $r, $g, $survivors, $after )[0];
+	}
+
+	/**
+	 * Each entity's signals, as `signals_of()` answers them, and the trend
+	 * of what is about it, per week by kind, `other` muted, its totals read
+	 * in the statement that counts the about spikes (`trend_of()`); none of
+	 * either unless the latest complete week closed after `$after`.
+	 *
+	 * @param Row_Reader   $r         The reader.
+	 * @param Graph        $g         The graph.
+	 * @param list<string> $survivors The entities, as survivors.
+	 * @param float        $after     The instant, UTC seconds.
+	 * @return array{0:array<string,list<array<string,mixed>>>,1:array<string,list<array{bucket:string,count:int}>>} Each survivor => its signals, the about axis first; and each survivor => its trend.
+	 */
+	private static function entities_read( Row_Reader $r, array $g, array $survivors, float $after ): array {
 		$signals = \array_fill_keys( $survivors, [] );
+		$trends  = $signals;
 		$span    = self::BUCKETS[ self::DEFAULT_BUCKET ];
 		$starts  = [] === $survivors ? null : self::window( $r, $span, $after );
 		if ( null === $starts ) {
-			return $signals;
+			return [ $signals, $trends ];
 		}
-		$about  = self::spiking( $r, self::linking( $r, $g, $survivors, Intel_Event::ABOUT_ROLES ), self::all_days(), $starts, self::DEFAULT_AXIS, $span, true, true );
-		$bursts = self::spiking( $r, self::linking( $r, $g, $survivors, [ Intel_Event::PUBLISHER ] ), self::all_days(), $starts, self::DEFAULT_AXIS, $span, false, false );
-		$falls  = self::falls( $r, $g, $survivors, $starts, $span );
+		[ $about, $totals ] = self::spiking( $r, self::linking( $r, $g, $survivors, Intel_Event::ABOUT_ROLES ), self::all_days(), $starts, self::DEFAULT_AXIS, $span, true, true );
+		[ $bursts ]         = self::spiking( $r, self::linking( $r, $g, $survivors, [ Intel_Event::PUBLISHER ] ), self::all_days(), $starts, self::DEFAULT_AXIS, $span, false, false );
+		$falls              = self::falls( $r, $g, $survivors, $starts, $span );
 		foreach ( $survivors as $survivor ) {
 			$signals[ $survivor ] = [
 				...\array_map( static fn ( array $spike ): array => self::signal( 'about', 'spike', $spike ), $about[ $survivor ] ?? [] ),
 				...( $falls[ $survivor ] ?? [] ),
 				...\array_map( static fn ( array $spike ): array => self::signal( 'publisher', 'burst', $spike ), $bursts[ $survivor ] ?? [] ),
 			];
+			$trends[ $survivor ]  = self::trend_of( $totals[ $survivor ] ?? [], $starts );
 		}
-		return $signals;
+		return [ $signals, $trends ];
+	}
+
+	/**
+	 * The trend a subject's spikes stand in: its stories in each of the
+	 * SIGNAL_TREND latest complete buckets of the window, the latest first,
+	 * 0 where a bucket counts none.
+	 *
+	 * @param array<string,int> $totals Each bucket's start => the subject's stories in it (`tally()`).
+	 * @param list<string>      $starts The window's starts, newest first.
+	 * @return list<array{bucket:string,count:int}>
+	 */
+	private static function trend_of( array $totals, array $starts ): array {
+		return \array_map( static fn ( string $start ): array => [ 'bucket' => $start, 'count' => $totals[ $start ] ?? 0 ], \array_slice( $starts, 1, self::SIGNAL_TREND ) );
 	}
 
 	/**
@@ -1530,6 +1595,41 @@ final class Graph_Query {
 			'axis'   => $axis,
 			'signal' => $signal,
 		] + $row;
+	}
+
+	/**
+	 * The filters a call names: `q`, `entity`, each list its repeatable arg
+	 * gives, and the UTC days `since` to `until`, null when it names neither;
+	 * a call never names `about`.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @return Filter
+	 * @throws \InvalidArgumentException On a bad day.
+	 */
+	private static function filter_of( array $args ): array {
+		$since = self::given( $args, 'since' );
+		$until = self::given( $args, 'until' );
+		$lists = [];
+		foreach ( self::LENS_LISTS as $field => [ $arg ] ) {
+			$lists[ $field ] = self::strings( $args[ $arg ] ?? [] );
+		}
+		return [
+			'q'      => self::given( $args, 'q' ),
+			'entity' => self::given( $args, 'entity' ),
+			'about'  => false,
+			'lists'  => $lists,
+			'days'   => null === $since && null === $until ? null : Intel_Graph_Row_Schema::range( $since ?? self::ALL_DAYS[0], $until ?? self::ALL_DAYS[1] ),
+		];
+	}
+
+	/**
+	 * A list of values as strings.
+	 *
+	 * @param mixed $values The values.
+	 * @return list<string>
+	 */
+	private static function strings( mixed $values ): array {
+		return \array_values( \array_map( static fn ( mixed $value ): string => Core::as_string( $value ), Core::arr( $values ) ) );
 	}
 
 	/**
@@ -1804,7 +1904,8 @@ final class Graph_Query {
 	 * statement when `$days` is the whole retention, else in one more.
 	 * Without it, any axis but that one and the publisher axis, a subject
 	 * spikes only when a story precedes the oldest of them within `$days`,
-	 * read in the same statement.
+	 * read in the same statement. Beside the spikes, each subject's stories
+	 * per bucket, counted in the statement that counts the window (`tally()`).
 	 *
 	 * @param Row_Reader     $r      The reader.
 	 * @param Scope          $scope  The items read, by subject.
@@ -1814,12 +1915,12 @@ final class Graph_Query {
 	 * @param string         $span   A BUCKETS expression over `t`.
 	 * @param bool           $muted  Whether the kind axis leaves out MUTE_KIND.
 	 * @param bool           $known  Whether a value spikes only once counted before the window.
-	 * @return array<string,list<array<string,mixed>>> Each subject with a count => its spikes.
+	 * @return array{0:array<string,list<array<string,mixed>>>,1:array<string,array<string,int>>} Each subject with a count => its spikes; and each subject => each bucket's start => its stories.
 	 */
 	private static function spiking( Row_Reader $r, \Closure $scope, array $days, array $starts, string $by, string $span, bool $muted, bool $known ): array {
 		$cut                   = Intel_Graph_Row_Schema::day( $starts[ self::SIGNAL_BASELINE + 1 ] );
 		$whole                 = self::all_days() === $days;
-		[ $tallied, $history ] = self::tally( $r, $scope, $days, $by, $span, $cut, $muted, $known && $whole );
+		[ $tallied, $history, $totals ] = self::tally( $r, $scope, $days, $by, $span, $cut, $muted, $known && $whole, totals: true );
 		if ( $known && ! $whole ) {
 			$history = self::tally( $r, $scope, self::all_days(), $by, $span, $cut, $muted, true )[1];
 		}
@@ -1827,7 +1928,7 @@ final class Graph_Query {
 		foreach ( $tallied as $subject => $rows ) {
 			$spikes[ $subject ] = self::spiked_in( $rows, $starts, $by, $history[ $subject ] ?? [], $known );
 		}
-		return $spikes;
+		return [ $spikes, $totals ];
 	}
 
 	/**
@@ -1894,6 +1995,9 @@ final class Graph_Query {
 	 * `$values` asks. A story is cited by its key, URL and title, each read
 	 * once however many partitions hold it, and only for the stories cited. A story with no value, one with
 	 * no theme on the theme axis, counts under none, and is not history.
+	 * With `$totals`, the same statement also counts each subject's stories
+	 * per bucket at or after `$cut`, a story once whatever values it holds,
+	 * dated by its earliest copy, counted only when it holds a value.
 	 *
 	 * @param Row_Reader     $r      The reader.
 	 * @param Scope          $scope  The items read, by subject.
@@ -1904,9 +2008,10 @@ final class Graph_Query {
 	 * @param bool           $muted  Whether the kind axis leaves out MUTE_KIND.
 	 * @param bool           $values Whether the history is read per value.
 	 * @param bool           $named  Whether each row names the open clients its stories' copies are about, by a subject or a mention, before its items, a copy about more than MAX_ITEM_CLIENTS naming none.
-	 * @return array{0:array<string,list<array{bucket:mixed,value:mixed,count:int,items:list<array{item_key:mixed,url:mixed,title:mixed}>}>>,1:array<string,array<string,true>>} Each subject => its rows, the newest bucket first, then the highest count; and each subject with a history => each value in it, or '' alone.
+	 * @param bool           $totals Whether to count each subject's stories per bucket too.
+	 * @return array{0:array<string,list<array{bucket:mixed,value:mixed,count:int,items:list<array{item_key:mixed,url:mixed,title:mixed}>}>>,1:array<string,array<string,true>>,2:array<string,array<string,int>>} Each subject => its rows, the newest bucket first, then the highest count; each subject with a history => each value in it, or '' alone; and, with `$totals`, each subject => each bucket's start => its stories.
 	 */
-	private static function tally( Row_Reader $r, \Closure $scope, array $days, ?string $by, string $span, int $cut, bool $muted = false, bool $values = false, bool $named = false ): array {
+	private static function tally( Row_Reader $r, \Closure $scope, array $days, ?string $by, string $span, int $cut, bool $muted = false, bool $values = false, bool $named = false, bool $totals = false ): array {
 		[ $stories, $binds ] = self::stories( $r, $scope, $days, $by, $muted );
 		$clients             = $named
 			? ', ' . self::item_clients( $r ) . ", named AS ( SELECT b.subject, b.bucket, b.value, json_group_array( json_object( 'entity_key', b.entity_key, 'name', " . self::name_of( $r, 'b.entity_key' ) . ' ) ) AS clients'
@@ -1919,22 +2024,29 @@ final class Graph_Query {
 			. ' cited AS ( SELECT ranked.*, c.url, c.title FROM ranked JOIN ( SELECT item_key, MAX( url ) AS url, MAX( title ) AS title FROM ri'
 			. " WHERE item_key IN ( SELECT item_key FROM ranked WHERE rn <= ? ) GROUP BY item_key ) c ON c.item_key = ranked.item_key WHERE ranked.rn <= ? ){$clients}"
 			. ' SELECT cited.subject, cited.bucket, cited.value, cited.n, cited.item_key, cited.url, cited.title, cited.rn, ' . ( $named ? 'nm.clients FROM cited LEFT JOIN named nm ON nm.subject = cited.subject AND nm.bucket = cited.bucket AND nm.value = cited.value' : 'NULL FROM cited' )
-			. ' UNION ALL SELECT DISTINCT subject, NULL, ' . ( $values ? 'value' : 'NULL' ) . ', NULL, NULL, NULL, NULL, NULL, NULL FROM stories WHERE t < ? AND value IS NOT NULL ORDER BY 1, 2 DESC, 4 DESC, 3, 8',
-			[ ...$binds, $cut, self::CITATIONS, self::CITATIONS, ...( $named ? [ $cut ] : [] ), $cut ]
+			. ' UNION ALL SELECT DISTINCT subject, NULL, ' . ( $values ? 'value' : 'NULL' ) . ', NULL, NULL, NULL, NULL, NULL, NULL FROM stories WHERE t < ? AND value IS NOT NULL'
+			. ( $totals ? " UNION ALL SELECT subject, {$span}, NULL, COUNT(*), NULL, NULL, NULL, NULL, NULL FROM ( SELECT subject, item_key, MIN( t ) AS t FROM stories WHERE value IS NOT NULL GROUP BY 1, 2 ) WHERE t >= ? GROUP BY 1, 2" : '' )
+			. ' ORDER BY 1, 2 DESC, 4 DESC, 3, 8',
+			[ ...$binds, $cut, self::CITATIONS, self::CITATIONS, ...( $named ? [ $cut ] : [] ), $cut, ...( $totals ? [ $cut ] : [] ) ]
 		);
 		$out                 = [];
 		$history             = [];
+		$counts              = [];
 		foreach ( $rows as [ $of, $day, $counted, $n, $item, $url, $title, , $listed ] ) {
 			$of = Core::as_string( $of );
 			if ( null === $day ) {
 				$history[ $of ][ Core::as_string( $counted ) ] = true;
 				continue;
 			}
+			if ( null === $item ) {
+				$counts[ $of ][ Core::as_string( $day ) ] = Core::as_int( $n );
+				continue;
+			}
 			$at                          = Core::as_string( $day ) . '|' . Core::as_string( $counted );
 			$out[ $of ][ $at ]         ??= [ 'bucket' => $day, 'value' => $counted, 'count' => Core::as_int( $n ) ] + ( $named ? [ 'clients' => self::clients_of( $listed ) ] : [] ) + [ 'items' => [] ];
 			$out[ $of ][ $at ]['items'][] = [ 'item_key' => $item, 'url' => $url, 'title' => $title ];
 		}
-		return [ \array_map( \array_values( ... ), $out ), $history ];
+		return [ \array_map( \array_values( ... ), $out ), $history, $counts ];
 	}
 
 	/**
@@ -2099,53 +2211,6 @@ final class Graph_Query {
 			[ Intel_Event::now(), $count ]
 		);
 		return \array_map( static fn ( array $row ): string => Core::as_string( $row[0] ), $rows );
-	}
-	/**
-	 * The filters a call names and the lens it names, its key slugged as a
-	 * save slugs it.
-	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
-	 * @return array{0:Filter,1:?string}
-	 * @throws \InvalidArgumentException On a bad day, or a lens key that sanitizes to nothing.
-	 */
-	private static function asked( array $args ): array {
-		$name = self::given( $args, 'lens' );
-		return [ self::filter_of( $args ), null === $name ? null : Intel_Event::lens_key( $name ) ];
-	}
-
-	/**
-	 * The filters a call names: `q`, `entity`, each list its repeatable arg
-	 * gives, and the UTC days `since` to `until`, null when it names neither;
-	 * a call never names `about`.
-	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
-	 * @return Filter
-	 * @throws \InvalidArgumentException On a bad day.
-	 */
-	private static function filter_of( array $args ): array {
-		$since = self::given( $args, 'since' );
-		$until = self::given( $args, 'until' );
-		$lists = [];
-		foreach ( self::LENS_LISTS as $field => [ $arg ] ) {
-			$lists[ $field ] = self::strings( $args[ $arg ] ?? [] );
-		}
-		return [
-			'q'      => self::given( $args, 'q' ),
-			'entity' => self::given( $args, 'entity' ),
-			'about'  => false,
-			'lists'  => $lists,
-			'days'   => null === $since && null === $until ? null : Intel_Graph_Row_Schema::range( $since ?? self::ALL_DAYS[0], $until ?? self::ALL_DAYS[1] ),
-		];
-	}
-
-	/**
-	 * A list of values as strings.
-	 *
-	 * @param mixed $values The values.
-	 * @return list<string>
-	 */
-	private static function strings( mixed $values ): array {
-		return \array_values( \array_map( static fn ( mixed $value ): string => Core::as_string( $value ), Core::arr( $values ) ) );
 	}
 
 	/**
