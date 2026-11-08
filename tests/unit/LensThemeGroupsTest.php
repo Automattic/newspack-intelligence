@@ -284,6 +284,32 @@ final class LensThemeGroupsTest extends TestCase {
 	}
 
 	/**
+	 * A theme merged into another reads as its survivor wherever a theme is
+	 * read: its stories join the survivor's group, trend row and signal,
+	 * while the item's own `themes` row keeps the theme it was extracted with.
+	 */
+	public function test_a_merged_theme_groups_under_its_survivor(): void {
+		$this->ci->dispatch( 'merge_theme', [ self::SENDER, self::EMAIL ] );
+		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
+
+		$this->assertSame(
+			[
+				[ self::EMAIL, 'complaint', 4, 2 ],
+				[ self::BILLING, 'complaint', 1, 2 ],
+				[ self::BOTS, 'incident', 2, 1 ],
+				[ self::STORAGE, 'feature_request', 1, 1 ],
+				[ '', 'praise', 1, 1 ],
+			],
+			\array_map( static fn ( array $g ): array => [ $g['theme'], $g['kind'], $g['count'], \count( $g['clients'] ) ], $this->grouped( '--lens=support-desk' )['groups'] )
+		);
+		$this->assertSame(
+			[ [ self::EMAIL, 4 ], [ self::BOTS, 2 ], [ self::BILLING, 1 ], [ self::STORAGE, 1 ] ],
+			\array_map( static fn ( array $row ): array => [ $row['value'], $row['count'] ], $this->ci->dispatch( 'trends', [ '--lens=support-desk' ] )['rows'] )
+		);
+		$this->assertContains( [ 'linear:SUP-6', self::SENDER ], self::graph_rows( 'themes', 'item_key', 'item_key, theme' ) );
+	}
+
+	/**
 	 * A page of groups costs the same statements whatever it holds: two
 	 * groups read as many as twenty.
 	 */
@@ -352,6 +378,54 @@ final class LensThemeGroupsTest extends TestCase {
 		$this->assertSame(
 			[ [ '2026-10-12', 'theme', 'paywall login loop', 9, 0.0 ] ],
 			\array_map( static fn ( array $s ): array => [ $s['bucket'], $s['by'], $s['value'], $s['count'], $s['baseline'] ], $this->ci->dispatch( 'signals', [ '--lens=surge-desk' ] )['signals'] )
+		);
+	}
+
+	/**
+	 * A theme whose merge chain cycles reads as itself, as
+	 * `Entity_Index::walk()` leaves it unresolved for curation too, and the
+	 * chain is logged once.
+	 */
+	public function test_a_theme_on_a_cycling_chain_reads_as_itself(): void {
+		$stderr = $this->capture_stderr();
+		$this->seed(
+			[
+				Intel_Event::make( 'theme_merged', [ 'from' => self::SENDER, 'into' => self::EMAIL ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'theme_merged', [ 'from' => self::EMAIL, 'into' => self::SENDER ], 'user:41', 'fixture-9' ),
+			]
+		);
+
+		$counts = \array_column( $this->grouped( '--lens=support-desk' )['groups'], 'count', 'theme' );
+		$this->grouped( '--lens=support-desk' );
+
+		$this->assertSame( [ 3, 1 ], [ $counts[ self::EMAIL ], $counts[ self::SENDER ] ] );
+		$lines = self::stderr_lines( $stderr, 'leaving theme merges that do not resolve unapplied: ' );
+		$this->assertCount( 1, $lines );
+		$this->assertStringContainsString( 'merge cycle ' . self::EMAIL . ' → ' . self::SENDER . ' → ' . self::EMAIL, $lines[0] );
+	}
+
+	/**
+	 * A surge split across a theme and the one merged into it signals once,
+	 * as the survivor, counting both.
+	 */
+	public function test_a_merged_themes_surge_signals_as_its_survivor(): void {
+		$week = 1792368000 - 604800;
+		for ( $n = 1; $n <= 9; $n++ ) {
+			$at = $week + 2 * self::DAY + $n * 60;
+			$this->seed(
+				self::item( "news:surge-{$n}", "Paywall loop {$n}", 'news', 'internal', $at ),
+				self::extraction( "news:surge-{$n}", 'Readers loop.', 'incident', $at, [], 5.0, 5.0, $n <= 5 ? 'paywall login loop' : 'login redirect loop' )
+			);
+		}
+		$old = $week - 12 * 604800;
+		$this->seed( self::item( 'news:old', 'An old note', 'news', 'internal', $old ), self::extraction( 'news:old', 'Old.', 'incident', $old, [], 5.0, 5.0, 'old note' ) );
+		$this->save( 'surge-desk', '--source=news', '--by=theme' );
+		$this->ci->dispatch( 'merge_theme', [ 'login redirect loop', 'paywall login loop' ] );
+		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
+
+		$this->assertSame(
+			[ [ 'paywall login loop', 9 ] ],
+			\array_map( static fn ( array $s ): array => [ $s['value'], $s['count'] ], $this->ci->dispatch( 'signals', [ '--lens=surge-desk' ] )['signals'] )
 		);
 	}
 

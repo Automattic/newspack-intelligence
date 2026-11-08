@@ -68,6 +68,15 @@ const PROPOSED = {
 	],
 };
 
+const PAIR = {
+	themes: [
+		{ theme: 'kiosk offboarding', stories: 4 },
+		{ theme: 'kiosk offboarding from platform', stories: 2 },
+	],
+	words: [ 'kiosk', 'offboarding' ],
+	shared: 3,
+};
+
 let wire;
 
 beforeEach( () => {
@@ -78,6 +87,7 @@ beforeEach( () => {
 		'links' === what
 			? { links: [ LINK, SIBLING ], available: true }
 			: { entities: [ PROPOSED ], available: true };
+	wire.replies.theme_suggestions = { suggestions: [ PAIR ], available: true };
 } );
 
 function renderReview( props = {} ) {
@@ -505,6 +515,105 @@ describe( 'Review — judgments', () => {
 		expect(
 			within( queue( 'Proposed entities' ) ).getByRole( 'button', {
 				name: 'Accept Valley Times',
+			} )
+		).toBeInTheDocument();
+	} );
+} );
+
+describe( 'Review — themes', () => {
+	const MERGE_INTO_FIRST =
+		'Merge kiosk offboarding from platform into kiosk offboarding';
+	const MERGE_INTO_SECOND =
+		'Merge kiosk offboarding into kiosk offboarding from platform';
+
+	it( 'lists each suggested pair with its stories, shared words and entities, and offers a reader no merge', async () => {
+		renderReview();
+		const themes = queue( 'Themes' );
+		expect(
+			await within( themes ).findByText( 'kiosk offboarding' )
+		).toBeInTheDocument();
+		expect(
+			within( themes ).getByText( 'kiosk offboarding from platform' )
+		).toBeInTheDocument();
+		expect(
+			within( themes ).getByText(
+				'4 stories and 2 stories, 3 entities in common, sharing kiosk, offboarding'
+			)
+		).toBeInTheDocument();
+		expect( within( themes ).queryAllByRole( 'button' ) ).toEqual( [] );
+		expect( wire.sent( 'theme_suggestions' ) ).toEqual( [ [] ] );
+	} );
+
+	it( 'says when no theme pair is suggested', async () => {
+		wire.replies.theme_suggestions = { suggestions: [], available: true };
+		renderReview();
+		expect(
+			await screen.findByText( 'No two themes look alike.' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'merges either theme into the other, hiding the pair, then re-reads', async () => {
+		wire.replies.merge_theme = { ok: true, event_id: 'ev-t' };
+		renderReview( { canTune: true } );
+		const themes = queue( 'Themes' );
+		const merge = await within( themes ).findByRole( 'button', {
+			name: MERGE_INTO_FIRST,
+		} );
+		expect( merge ).toHaveTextContent( 'Merge into kiosk offboarding' );
+		fireEvent.click( merge );
+		await waitFor( () =>
+			expect( wire.sent( 'merge_theme' ) ).toEqual( [
+				[
+					'--from=kiosk offboarding from platform',
+					'--into=kiosk offboarding',
+				],
+			] )
+		);
+		expect(
+			within( queue( 'Themes' ) ).queryByRole( 'button', {
+				name: MERGE_INTO_SECOND,
+			} )
+		).toBeNull();
+		await waitFor( () =>
+			expect( wire.sent( 'theme_suggestions' ) ).toHaveLength( 2 )
+		);
+	} );
+
+	it( 'merges the first theme into the second', async () => {
+		wire.replies.merge_theme = () => new Promise( () => {} );
+		renderReview( { canTune: true } );
+		fireEvent.click(
+			await within( queue( 'Themes' ) ).findByRole( 'button', {
+				name: MERGE_INTO_SECOND,
+			} )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'merge_theme' ) ).toEqual( [
+				[
+					'--from=kiosk offboarding',
+					'--into=kiosk offboarding from platform',
+				],
+			] )
+		);
+	} );
+
+	it( 'shows a refused merge as the refusal, the pair back in place', async () => {
+		wire.replies.merge_theme = () =>
+			new Error(
+				'kiosk offboarding merges into kiosk exit; merge kiosk offboarding from platform into kiosk exit instead'
+			);
+		renderReview( { canTune: true } );
+		fireEvent.click(
+			await within( queue( 'Themes' ) ).findByRole( 'button', {
+				name: MERGE_INTO_FIRST,
+			} )
+		);
+		expect(
+			await screen.findByText( /into kiosk exit instead/ )
+		).toBeInTheDocument();
+		expect(
+			within( queue( 'Themes' ) ).getByRole( 'button', {
+				name: MERGE_INTO_SECOND,
 			} )
 		).toBeInTheDocument();
 	} );

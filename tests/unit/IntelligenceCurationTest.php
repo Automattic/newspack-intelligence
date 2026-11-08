@@ -17,6 +17,8 @@ use Newspack_Nodes\Node_Names;
 use Newspack_Nodes\Partition_Node;
 use Newspack_Nodes\Row_Table_Node;
 use Newspack_Nodes\Sessions;
+use Newspack_Nodes\Sqlite_Arm;
+use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
@@ -46,13 +48,22 @@ final class IntelligenceCurationTest extends TestCase {
 
 	private const LOGIN = 'kinsey-reed';
 
+	private const OFFBOARDING = 'client offboarding';
+
+	private const PLATFORM = 'client offboarding from platform';
+
+	private const AUTOMATION = 'offboarding automation';
+
+	/** A theme only a restricted item is extracted with. */
+	private const SETTLEMENT = 'board settlement talks';
+
 	/** A proposal only a restricted item cites. */
 	private const HIDDEN = 'organization:hidden-buyer';
 
 	/** A rejected proposal only a restricted item cites. */
 	private const SHELVED = 'organization:shelved-buyer';
 
-	private const CURATION = [ 'confirm_link', 'reject_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'save_lens', 'remove_lens' ];
+	private const CURATION = [ 'confirm_link', 'reject_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'save_lens', 'remove_lens', 'merge_theme' ];
 
 	/** Each curation event kind, by the verb that writes it. */
 	private const VERB_OF = [
@@ -69,6 +80,7 @@ final class IntelligenceCurationTest extends TestCase {
 		'entity_created'     => 'create_entity',
 		'collection_created' => 'create_collection',
 		'collected'          => 'collect',
+		'theme_merged'       => 'merge_theme',
 	];
 
 	private Intelligence_CI_Node $ci;
@@ -127,6 +139,8 @@ final class IntelligenceCurationTest extends TestCase {
 			'collect'           => [ 'collect', [ 'col:october', 'github:ledger-launch' ], [ 'event' => 'collected', 'collection_key' => 'col:october', 'item_key' => 'github:ledger-launch', 'url' => 'https://news.example/github/ledger-launch', 'title' => 'Salem Ledger launches a newsletter tool', 'tier' => 'internal' ] ],
 			'save_lens'         => [ 'save_lens', [ 'Ledger Watch', 'Ledger watch', '--entity=organization:gazette-weekly', '--kind=launch' ], [ 'event' => 'lens_saved', 'lens_key' => 'ledger-watch', 'name' => 'Ledger watch', 'description' => '' ] ],
 			'remove_lens'       => [ 'remove_lens', [ 'harbor-desk' ], [ 'event' => 'lens_removed', 'lens_key' => 'harbor-desk' ] ],
+			'merge_theme'       => [ 'merge_theme', [ self::PLATFORM, self::OFFBOARDING ], [ 'event' => 'theme_merged', 'from' => self::PLATFORM, 'into' => self::OFFBOARDING ] ],
+			'merge a theme anew' => [ 'merge_theme', [ self::AUTOMATION, self::PLATFORM ], [ 'event' => 'theme_merged', 'from' => self::AUTOMATION, 'into' => self::PLATFORM ] ],
 		];
 	}
 
@@ -269,6 +283,15 @@ final class IntelligenceCurationTest extends TestCase {
 			'end a role not held'         => [ 'end_role', [ self::LEDGER, 'client' ], 'organization:salem-ledger holds no open client role' ],
 			'assert a role already held'  => [ 'assert_role', [ self::GAZETTE, 'client' ], 'organization:harbor-gazette already holds client' ],
 			'a name kind outside its set' => [ 'add_name', [ self::LEDGER, 'nickname', 'Led' ], 'name_added: field kind is outside its set' ],
+			'merge a blank theme'         => [ 'merge_theme', [ ' ', self::OFFBOARDING ], 'from is blank' ],
+			'merge into a blank theme'    => [ 'merge_theme', [ self::PLATFORM, "\t" ], 'into is blank' ],
+			'merge a theme past its cap'  => [ 'merge_theme', [ \str_repeat( 't', 81 ), self::OFFBOARDING ], 'from runs past 80 bytes' ],
+			'merge a theme into itself'   => [ 'merge_theme', [ self::OFFBOARDING, self::OFFBOARDING ], 'cannot merge theme client offboarding into itself' ],
+			'merge into a merged theme'   => [ 'merge_theme', [ self::PLATFORM, self::AUTOMATION ], 'offboarding automation merges into client offboarding; merge client offboarding from platform into client offboarding instead' ],
+			'merge a theme past the hops' => [ 'merge_theme', [ 'theme chain 10', self::OFFBOARDING ], 'merging theme chain 10 into client offboarding would leave theme chain 0 on a chain that cycles or runs past 10 hops' ],
+			'merge into a hidden theme'   => [ 'merge_theme', [ self::PLATFORM, self::SETTLEMENT ], 'merging client offboarding from platform into board settlement talks would show board settlement talks to every reader; it is not the theme of any item outside the restricted tier' ],
+			'merge into an unused theme'  => [ 'merge_theme', [ self::PLATFORM, 'client exit' ], 'merging client offboarding from platform into client exit would show client exit to every reader; it is not the theme of any readable item' ],
+			'merge into a cycling theme'  => [ 'merge_theme', [ 'theme loop a', 'theme loop b' ], 'theme loop b is on a merge chain that cycles or runs past 10 hops; merge theme loop a into a theme whose chain resolves instead' ],
 		];
 	}
 
@@ -290,6 +313,47 @@ final class IntelligenceCurationTest extends TestCase {
 			$this->assertSame( $message, $e->getMessage() );
 		}
 		$this->assertSame( [], self::ontology_events() );
+	}
+
+	/**
+	 * A theme merge that would close a cycle is refused before anything is
+	 * written: `offboarding automation` merges into `client offboarding`, so
+	 * merging `client offboarding` back into it would leave both on a chain
+	 * with no survivor.
+	 */
+	public function test_a_theme_merge_that_cycles_is_refused(): void {
+		$this->seed_curation_world();
+
+		try {
+			$this->ci->dispatch( 'merge_theme', [ self::OFFBOARDING, self::AUTOMATION ] );
+			$this->fail( 'a cycling theme merge was written' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( 'merging client offboarding into offboarding automation would leave client offboarding on a chain that cycles or runs past 10 hops', $e->getMessage() );
+		}
+		$this->assertSame( [], self::ontology_events() );
+	}
+
+	/**
+	 * Only each item's newest theme counts as shown: a theme an unrestricted
+	 * item carried in an older partition alone, and a restricted item still
+	 * carries, is refused as a merge target that would show it.
+	 */
+	public function test_a_theme_an_older_partition_alone_shows_counts_as_hidden(): void {
+		$this->seed_curation_world();
+		$this->seed(
+			self::item( 'feed:drift-1', 'Drift ledger', 'feed', 'public', self::$oct_13 ),
+			self::extraction( 'feed:drift-1', 'Drift.', 'other', self::$oct_13, [], 5.0, 5.0, 'drift ledger gap' ),
+			self::item( 'unthread:drift-2', 'Drift ledger', 'unthread', 'restricted', self::$oct_13 ),
+			self::extraction( 'unthread:drift-2', 'Drift.', 'other', self::$oct_13, [], 5.0, 5.0, 'drift ledger gap' )
+		);
+		$live  = Table_Node::file( 'intel-graph', 0 );
+		$older = $this->make_temp_dir( 'intel-older-' ) . '/intel-graph.p0.sqlite';
+		( new \PDO( 'sqlite:' . $live ) )->exec( 'VACUUM INTO ' . ( new \PDO( 'sqlite::memory:' ) )->quote( $older ) );
+		$this->seed( self::extraction( 'feed:drift-1', 'Drift.', 'other', self::$oct_13, [], 5.0, 5.0, 'drift census' ) );
+		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): mixed => $read( Sqlite_Arm::open_rows( [ 0 => $older, 1 => $live ], Intel_Graph_Row_Schema::version() ) );
+
+		$this->expectExceptionMessage( 'merging client offboarding from platform into drift ledger gap would show drift ledger gap to every reader; it is not the theme of any item outside the restricted tier' );
+		$this->ci->dispatch( 'merge_theme', [ self::PLATFORM, 'drift ledger gap' ] );
 	}
 
 	/** A key merged away answers as its survivor, so accepting it accepts the survivor. */
@@ -488,6 +552,7 @@ final class IntelligenceCurationTest extends TestCase {
 			[ 'create_entity', [ 'organization', $ascii ] ],
 			[ 'create_collection', [ $ascii ] ],
 			[ 'collect', [ $key( 'c' ), $item ] ],
+			[ 'merge_theme', [ $wide( Intel_Event::THEME_BYTES ), $wide( Intel_Event::THEME_BYTES - 1 ) . 'r' ] ],
 		];
 		foreach ( $calls as [ $verb, $args ] ) {
 			$this->ci->dispatch( $verb, $args );
@@ -542,5 +607,32 @@ final class IntelligenceCurationTest extends TestCase {
 			...$chain
 		);
 		self::write_restricted_item( 'hubspot:deal-9', 'Harbor Gazette deal at risk' );
+		$this->seed_theme_world();
+	}
+
+	/**
+	 * Three offboarding themes on items every reader reads, one merged into
+	 * another; a theme only a restricted item names; and a ten-hop chain of
+	 * theme merges.
+	 */
+	private function seed_theme_world(): void {
+		$themed = static fn ( string $key, string $tier, string $theme ): array => [
+			...self::item( $key, "Ticket {$key}", \explode( ':', $key )[0], $tier, self::$oct_13 ),
+			...self::extraction( $key, 'Offboarding.', 'churned', self::$oct_13, [], 5.0, 5.0, $theme ),
+		];
+		$chain  = [];
+		for ( $n = 0; $n < 10; $n++ ) {
+			$chain[] = [ Intel_Event::make( 'theme_merged', [ 'from' => "theme chain {$n}", 'into' => 'theme chain ' . ( $n + 1 ) ], 'user:41', 'fixture-9' ) ];
+		}
+		$this->seed(
+			$themed( 'linear:OFF-1', 'internal', self::OFFBOARDING ),
+			$themed( 'feed:off-2', 'public', self::PLATFORM ),
+			$themed( 'linear:OFF-3', 'internal', self::AUTOMATION ),
+			$themed( 'unthread:board-4', 'restricted', self::SETTLEMENT ),
+			[ Intel_Event::make( 'theme_merged', [ 'from' => self::AUTOMATION, 'into' => self::OFFBOARDING ], 'user:41', 'fixture-9' ) ],
+			[ Intel_Event::make( 'theme_merged', [ 'from' => 'theme loop a', 'into' => 'theme loop b' ], 'user:41', 'fixture-9' ) ],
+			[ Intel_Event::make( 'theme_merged', [ 'from' => 'theme loop b', 'into' => 'theme loop a' ], 'user:41', 'fixture-9' ) ],
+			...$chain
+		);
 	}
 }

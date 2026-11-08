@@ -193,6 +193,60 @@ final class Graph_Curation {
 	}
 
 	/**
+	 * Merge one theme into another, so every read of an item's theme reads
+	 * the survivor and no item's row is rewritten: `theme_merged`. Refused
+	 * for a merge into itself, one after which `Entity_Index::walk()` over
+	 * the projection's theme merges leaves a theme that resolved before on a
+	 * chain that cycles or runs past `Entity_Index::MAX_MERGE_HOPS`, naming
+	 * the first, one into a theme that itself merges away, naming its
+	 * survivor, or whose own chain does not resolve, and one that would make
+	 * `into` the theme of an item every reader reads for the first time,
+	 * each item's theme the newest partition's, naming whether only
+	 * restricted items carry `into` or no item does.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args: `from`, `into`.
+	 * @return array<string,mixed>
+	 * @throws \InvalidArgumentException On a blank theme or one past `Intel_Event::THEME_BYTES`, or a merge refused as above.
+	 */
+	public static function merge_theme( array $args ): array {
+		$from                = self::bounded( 'from', Core::as_string( $args['from'] ), Intel_Event::THEME_BYTES );
+		$into                = self::bounded( 'into', Core::as_string( $args['into'] ), Intel_Event::THEME_BYTES );
+		if ( $from === $into ) {
+			throw new \InvalidArgumentException( \esc_html( "cannot merge theme {$from} into itself" ) );
+		}
+		[ $merges, $carried ] = self::on_graph(
+			static function ( Row_Reader $r ): array {
+				$carried = [];
+				foreach ( $r->rows( 'SELECT DISTINCT t.theme, i.tier IN ( ' . Intel_Graph_Row_Schema::marks( Intel_Tiers::UNRESTRICTED ) . ' ) FROM ( ' . Intel_Graph_Row_Schema::newest( $r, 'themes', 'item_key', 'item_key, theme', '1' ) . ' ) t JOIN ' . Intel_Graph_Row_Schema::all( $r, 'items' ) . ' i ON i.item_key = t.item_key', Intel_Tiers::UNRESTRICTED ) as [ $theme, $open ] ) {
+					$theme             = Core::as_string( $theme );
+					$carried[ $theme ] = ( $carried[ $theme ] ?? false ) || (bool) $open;
+				}
+				return [ Graph_Query::theme_merges( $r ), $carried ];
+			}
+		);
+		$before = Entity_Index::walk( $merges )[0];
+		$after  = Entity_Index::walk( [ $from => $into ] + $merges )[0];
+		foreach ( $after as $theme => $survivor ) {
+			if ( '' === $survivor && '' !== ( $before[ $theme ] ?? $theme ) ) {
+				throw new \InvalidArgumentException( \esc_html( "merging {$from} into {$into} would leave {$theme} on a chain that cycles or runs past " . Entity_Index::MAX_MERGE_HOPS . ' hops' ) );
+			}
+		}
+		$survivor = $before[ $into ] ?? $into;
+		if ( '' === $survivor ) {
+			throw new \InvalidArgumentException( \esc_html( "{$into} is on a merge chain that cycles or runs past " . Entity_Index::MAX_MERGE_HOPS . " hops; merge {$from} into a theme whose chain resolves instead" ) );
+		}
+		if ( $survivor !== $into ) {
+			throw new \InvalidArgumentException( \esc_html( "{$into} merges into {$survivor}; merge {$from} into {$survivor} instead" ) );
+		}
+		$reads = static fn ( array $map, bool $open ): bool => [] !== \array_filter( $carried, static fn ( bool $unrestricted, string $theme ): bool => ( $unrestricted || ! $open ) && $into === ( $map[ $theme ] ?? $theme ), \ARRAY_FILTER_USE_BOTH );
+		if ( $reads( $after, true ) && ! $reads( $before, true ) ) {
+			$why = $reads( $before, false ) ? 'it is not the theme of any item outside the restricted tier' : 'it is not the theme of any readable item';
+			throw new \InvalidArgumentException( \esc_html( "merging {$from} into {$into} would show {$into} to every reader; {$why}" ) );
+		}
+		return self::write( 'theme_merged', [ 'from' => $from, 'into' => $into ] );
+	}
+
+	/**
 	 * Add an identifier to an entity, spelled as `Entity_Index` compares it,
 	 * unless it is a domain that is not a plain hostname
 	 * (`Entity_Index::hostname_fault()`), or another entity holds it, as

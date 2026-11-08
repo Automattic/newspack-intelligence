@@ -103,6 +103,7 @@ final class Intel_Event {
 		'collected'           => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'url', 'title', 'tier' ], [ 'tier' => self::TIERS ], [] ],
 		'lens_saved'          => [ self::ONTOLOGY, [ 'lens_key', 'name', 'description', 'filters' ], [], [] ],
 		'lens_removed'        => [ self::ONTOLOGY, [ 'lens_key' ], [], [] ],
+		'theme_merged'        => [ self::ONTOLOGY, [ 'from', 'into' ], [], [] ],
 		'watch_saved'         => [ self::ONTOLOGY, [ 'watch_key', 'owner', 'name', 'target_kind', 'target_key', 'digest', 'instant', 'inbox' ], [ 'target_kind' => self::WATCH_TARGETS, 'digest' => self::FLAG, 'instant' => self::FLAG, 'inbox' => self::FLAG ], [] ],
 		'watch_removed'       => [ self::ONTOLOGY, [ 'watch_key', 'owner' ], [], [] ],
 		'watch_matched'       => [ self::WATCHES, [ 'watch_key', 'owner', 'item_key', 'at', 'retrieved_ts', 'quiet' ], [ 'quiet' => self::FLAG ], [] ],

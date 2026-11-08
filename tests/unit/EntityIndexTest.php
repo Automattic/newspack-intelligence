@@ -177,7 +177,7 @@ final class EntityIndexTest extends TestCase {
 
 		$this->assertSame( [ self::GAZETTE ], \array_column( $index->names_in( 'Salem Ledger, Ledger of Salem and Harbor Gazette', true ), 'entity_key' ) );
 		$this->assertNull( $index->by_identifier( 'domain', 'salemledger.example' ) );
-		$lines = self::stderr_lines( $stderr, 'entity merge cycle' );
+		$lines = self::stderr_lines( $stderr, 'merge cycle' );
 		$this->assertCount( 1, $lines );
 		$this->assertStringContainsString( 'organization:ledger-salem → organization:salem-ledger → organization:ledger-salem', $lines[0] );
 	}
@@ -199,7 +199,7 @@ final class EntityIndexTest extends TestCase {
 			Entity_Index::survivors( $reader )
 		);
 		Entity_Index::survivors( $reader );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'entity merge cycle' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'merge cycle' ) );
 	}
 
 	/** A chain of exactly ten hops still answers its survivor. */

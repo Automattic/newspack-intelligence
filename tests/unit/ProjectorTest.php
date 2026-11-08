@@ -805,6 +805,7 @@ final class ProjectorTest extends TestCase {
 			$this->ontology( 'lens_saved', [ 'lens_key' => 'board-desk', 'name' => 'Board desk', 'description' => 'For the board.', 'filters' => [ 'kinds' => [ 'funding' ] ] + Graph_Query::unfiltered() ] ),
 			$this->ontology( 'lens_saved', [ 'lens_key' => 'old-desk', 'name' => 'Old desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ] ),
 			$this->ontology( 'lens_removed', [ 'lens_key' => 'old-desk' ] ),
+			$this->ontology( 'theme_merged', [ 'from' => 'kiosk offboarding from platform', 'into' => 'kiosk offboarding' ] ),
 			...$this->watch_events(),
 			$this->grown( 'The Gazette took first place, and the judges said why.' ),
 			$this->item( self::PURGED ),

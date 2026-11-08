@@ -10,7 +10,8 @@
  * state (`entity_states`) and its merge (`entity_merges`) are three rows, so
  * every event writes whole rows and the projector never reads before it
  * writes; an item's extraction is its own row beside the item for the same
- * reason, and its theme its own row beside the extraction. Each distinct
+ * reason, and its theme its own row beside the extraction; a theme merged
+ * into another is a `theme_merges` row, so no item's row is rewritten. Each distinct
  * line of an item's body is a `boilerplate` row of its own, so how many
  * items of a source carry a line is a count of rows.
  *
@@ -94,6 +95,21 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 			throw new \InvalidArgumentException( \esc_html( "not a Y-m-d date: {$ymd}" ) );
 		}
 		return $day->getTimestamp();
+	}
+
+	/**
+	 * A table's rows `$where` admits, one per `$key`, the newest partition's,
+	 * as a statement selecting `$columns`.
+	 *
+	 * @param Row_Reader $r       The reader.
+	 * @param string     $table   A declared table.
+	 * @param string     $key     The column a row is one per.
+	 * @param string     $columns The columns selected, comma-separated.
+	 * @param string     $where   The condition on its rows.
+	 */
+	public static function newest( Row_Reader $r, string $table, string $key, string $columns, string $where ): string {
+		return "SELECT {$columns} FROM ( SELECT {$columns}, ROW_NUMBER() OVER ( PARTITION BY {$key} ORDER BY partition_ordinal DESC ) AS pick FROM "
+			. self::all( $r, $table, true ) . " WHERE {$where} ) WHERE pick = 1";
 	}
 
 	/**
@@ -304,6 +320,16 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 					'ts'          => 'REAL NOT NULL',
 				],
 				'key'     => [ 'entity_key' ],
+				'keep'    => true,
+			],
+			'theme_merges'  => [
+				'columns' => [
+					'theme'      => 'TEXT NOT NULL',
+					'into_theme' => 'TEXT NOT NULL',
+					'actor'      => 'TEXT NOT NULL',
+					'ts'         => 'REAL NOT NULL',
+				],
+				'key'     => [ 'theme' ],
 				'keep'    => true,
 			],
 			'names'         => [

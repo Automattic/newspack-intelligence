@@ -235,7 +235,17 @@ was given as asserted, which the resolver settles links by. An extraction
 naming a `theme` writes the item's one `themes` row, `( item_key, theme,
 item_day )` keyed by `item_key`, a fan-out whose list is computed from the
 event; one naming none, the stand-in among them, writes no row, so a
-re-extraction naming none leaves the item without a theme. An
+re-extraction naming none leaves the item without a theme. A
+`theme_merged { from, into }`, an ontology event so it outlives the items
+it touches, sets the `theme_merges` row keyed by `from`, a curation table
+kept whole, and rewrites no item's row: every read of an item's theme reads
+it through `Graph_Query::theme_survivors()`, which reads the newest
+partition's `theme_merges` rows in one statement (`theme_merges()`), walks
+them with `Entity_Index::walk()`, the walker `merge_theme` judges a merge
+by and the entity map is built with, and binds the survivors as JSON in
+the clause `tm ( theme, survivor )`, so a theme merged into another reads
+as its survivor; a theme whose chain cycles or runs past
+`Entity_Index::MAX_MERGE_HOPS` reads as itself, its chain logged once. An
 `item_recorded` or an `item_grown` also writes, with `ignore`, one
 `boilerplate` row `( source, line_hash, item_key, item_day )` per distinct
 body line `Entity_Index::line_hashes()` counts: the body split at each line
@@ -261,7 +271,7 @@ retrieval `floor( retrieved_ts / 86400 )`, which every item-scoped event
 carries — a supersession its canonical's — so an item and every row about it
 expire together however late a re-resolution writes them; `watch_matches`
 and `watch_seen`, keyed by watch and item, are dated the same way, so a
-match expires with its item. The ontology and curation tables, `watches`
+match expires with its item. The ontology and curation tables, `theme_merges`, `watches`
 and `watch_deliveries` declare `keep`. Ops buffer and leave as
 one `ROWS` batch every 5 seconds, at 2,000 ops or 1 MiB of string values, at
 each checkpoint and on a clean stop; a failed batch raises a plain stop and
@@ -753,13 +763,30 @@ Their distinct themes are offered in the order of each one's best match,
 each with that match's extraction summary as its example, the newest
 partition's, else its title when the summary is empty, cut to
 `Source_Node::TITLE_CHARS` (120) on a character boundary, since a title
-such as a bare domain says nothing. The read is one statement: the `MATCH`
+such as a bare domain says nothing. After them the offer adds the
+`Prompts::THEME_POPULAR` (12) themes the window uses most, each one the
+neighbours have not already offered: of the other items of a tier in
+`Intel_Tiers::UNRESTRICTED` whose `themes` row, the newest partition's, is
+retrieved within the same days, restricted items counting nowhere, not even
+toward which themes are candidates, the themes counted by distinct stories, a
+story its cluster's canonical, each read from the newest partition, when the
+canonical's tier is unrestricted, else the item, the most stories first,
+then the newest story by its retrieval day, then by theme, each with its
+newest story's summary as its example, else that story's title. Every
+offered theme, a neighbour's or a popular one, reads as its survivor
+through `Graph_Query::theme_survivors()`, and one that names a kind or one
+of `GENERIC_THEMES` once read is passed over. The popular count is exact
+for the `THEME_CANDIDATES` themes that hold the most of the window's
+unrestricted items' `themes` rows and reads no other, so it costs the same on any window. The read is one statement: the `MATCH`
 arms per partition, materialized once, each keeping the
 `Prompts::THEME_CANDIDATES` (36, three times `THEME_NEIGHBOURS`) best
 matches holding a theme it may offer, any partition's by an `EXISTS` over
 `all( 'themes' )`, so what follows costs the same on a title of common
 words as on a rare one, and the themes and summaries of
-those keys alone, each read through its table's key within the same days. Nothing is cached, a title holding no such word reads nothing, an
+those keys alone, each read through its table's key, the themes within the same days; the popular themes read
+the window's `themes` rows through their day index and every item, cluster
+and canonical through its key, in the same statement, after the one that
+reads the theme merges. Nothing is cached, a title holding no such word reads nothing, an
 item naming no integer `retrieved_ts` is refused, an item no themed item
 resembles is offered none, and none is offered, logged once, while the
 `intel-graph` tables cannot be read. `Prompts::extract()` builds the
@@ -1086,10 +1113,10 @@ verbs do, because a root-owned segment or IPC file is one the workers
 cannot append to.
 
 **Reads.** `Intelligence_CI` (`intelligence`), mounted on every request
-graph, answers seventeen read verbs, each declaring `read` and its
+graph, answers eighteen read verbs, each declaring `read` and its
 args: `search`, `entity`, `timeline`, `related`, `claims`, `trends`,
-`signals`, `review`, `collections` and `lenses`, the five watch verbs,
-`briefing` and `health`, below. Each of the first ten hands its bound args to the
+`signals`, `review`, `collections` and `lenses`, `theme_suggestions`, the
+five watch verbs, `briefing` and `health`, below. Each of the first ten hands its bound args to the
 `Graph_Query` read of the same name, through `Intel_Graph_Row_Schema::read()`
 over every partition's file. A read opens on `Graph_Query::graph()`, which resolves
 the tiers once from `Intel_Tiers::readable()` — `public` and `internal`,
@@ -1233,7 +1260,9 @@ else `kind` (`Graph_Query::DEFAULT_AXIS`) per `week` (`DEFAULT_BUCKET`);
 neither arg declares a default, since a bound default would mask the
 lens's values. The axes are `kind`, `topic` and `theme`, the theme an
 extraction names (`themes`), each item's read from the newest partition
-holding a row for it, as a cluster is, so a stale row in an older file
+holding a row for it and read as its survivor (`theme_survivors()`), so a
+group, a trend row and a signal on the theme axis count a merged theme's
+stories under the theme it merged into, as a cluster is, so a stale row in an older file
 makes no second value; counting by theme, each row is `{ bucket,
 value, count, clients, items }`, `clients` named as a group names them,
 and an item with no theme counts under none, and is not history to a
@@ -1265,6 +1294,27 @@ lens's entity or topic the caller cannot see stays in the filter, where it
 matches no item the caller may read, so it narrows that caller to nothing
 rather than dropping out and widening. A lens that was never saved is refused as
 `no lens: <key>`.
+
+`theme_suggestions` (`Graph_Query::theme_suggestions()`) answers `{
+suggestions: [ { themes: [ { theme, stories }, { theme, stories } ], words,
+shared } ], available }`: of the readable items whose `themes` row, the
+newest partition's, was retrieved in the last `Graph_Query::GROUP_DAYS`
+(30) days, each theme read as its survivor, the pairs of themes whose items
+share an entity they are about by a `subject` or `mention` link, as a
+survivor, unless the highest-ranked judgment of that link rejects it, and
+whose names share a word `Prompts::theme_words()` keeps, the words
+`title_terms()` reads less every word of an item kind or of
+`GENERIC_THEMES`. `stories` counts each theme's distinct stories, as the
+offer counts them, the theme with more first, then by name; `words` are
+the words both names hold, sorted; and `shared` counts the entities both
+themes' items are about. Pairs rank by how alike the names are,
+`Graph_Query::alike()`: the weight of the words they share over the weight
+of every word either holds, a word weighing `log( 1 + themes / holding )`,
+so a rare word such as "offboarding" outweighs a common one such as
+"local"; then by `shared`, then by the two themes' stories, then by name;
+`Graph_Query::THEME_SUGGESTIONS` (10) are answered. One statement reads
+the theme merges, one every theme's stories and entities, and the pairs are
+made in PHP.
 
 **Health.** `health <what>` (`Intelligence_Health`), at `read`, answers
 one slice of pipeline health a call, so the strip asks each through its
@@ -1610,7 +1660,7 @@ dead-letter dir derived from them, are refused (see Streams). Uninstall reaches 
 the substrate possibly inactive, so it and everything it calls use no
 substrate class.
 
-**Curation.** `Intelligence_CI` also answers fifteen curation verbs, each
+**Curation.** `Intelligence_CI` also answers sixteen curation verbs, each
 declaring `tune`, each writing one ontology event through
 `Stream_Writer::append()` and answering `{ ok, event_id }`; the two
 creations add the key they minted. `Graph_Curation` holds them:
@@ -1620,7 +1670,7 @@ creations add the key they minted. `Graph_Curation` holds them:
 `Intel_Event::entity_key()`), `create_collection` (keyed
 `Intel_Event::collection_key()`, the same slug), `collect` (the item's
 URL, its title and its tier), `save_lens` (keyed `Intel_Event::lens_key()`,
-the given key slugged, answering it) and `remove_lens`. The actor is `Intel_Event::caller()`:
+the given key slugged, answering it), `remove_lens` and `merge_theme`. The actor is `Intel_Event::caller()`:
 `agent:<login>:<label>` when `Capabilities::$session_label` is non-empty,
 as for an MCP connection or an issued session, the label as
 `Sessions::clean_label()` bounded it, else `user:<login>`; a call with no
@@ -1701,6 +1751,26 @@ show it to every reader; it is not cited by any item outside the restricted tier
 the lists carry no cap, so `Intel_Event::make()` refuses an event past one
 line, before anything is written. `remove_lens` slugs its key as
 `save_lens` does and refuses `no lens: <key>`.
+`merge_theme <from> <into>` writes `theme_merged`, so every read of an
+item's theme reads `into` where it read `from` (see Projection). It bounds
+each theme at `Intel_Event::THEME_BYTES` (80) and reads the projection once:
+its `theme_merges` rows (`Graph_Query::theme_merges()`) and each item's
+theme with its tier, both the newest partition's. It refuses a merge into itself (`cannot
+merge theme <from> into itself`); one after which `Entity_Index::walk()`,
+over those rows plus the new one, leaves a theme that resolved before on a
+chain that cycles or runs past `MAX_MERGE_HOPS`, naming the first (`merging
+<from> into <into> would leave <theme> on a chain that cycles or runs past
+10 hops`); one into a theme that itself merges away, naming its survivor
+(`<into> merges into <survivor>; merge <from> into <survivor> instead`),
+or whose own chain cycles or runs past the cap (`<into> is on a merge chain
+that cycles or runs past 10 hops; merge <from> into a theme whose chain
+resolves instead`); and, since curation cannot declassify, one that would
+make `into` the theme of an unrestricted item for the first time, an item
+an older partition alone gives it not counting (`merging <from> into
+<into> would show <into> to every reader; it is not the theme of any item
+outside the restricted tier`, or `…; it is not the theme of any readable
+item` for a theme that is not the theme of any item of any tier). A theme merged away merges again, its row
+replaced.
 `fetch_now` TICKs every source in each live worker — each node of a
 `Source_Node` subclass Intelligence's topology declares, read through
 `Topology_Analyzer::nodes_of_type()` — through `Worker_Route` and
@@ -1738,8 +1808,9 @@ lists the entity types and link roles from `Intel_Event::TYPES` and
 `LINK_ROLES`. `intel_lenses`, `intel_save_lens`, `intel_remove_lens` and
 the `lens` and list args of `intel_search` and `intel_trends` come off the
 schema with no door code; a variadic arg is a JSON array. So do
-`intel_signals`, `intel_briefing` and the five watch tools, which a read
-session is offered;
+`intel_signals`, `intel_briefing`, `intel_theme_suggestions` and the five
+watch tools, which a read session is offered, and `intel_merge_theme`, which
+a session whose role covers `tune` is offered;
 the door becomes the session's minting user, so a watch tool answers and
 changes that user's own watches, and a watch saved through it emails that
 user.
@@ -2516,7 +2587,7 @@ plugin adds:
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until> [<source>]`, `REEXTRACT <since> <until> [<source>]`; publishes `last_range` through `Publishes_Status` |
 | `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no verbs |
-| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `health`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
+| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `theme_suggestions`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `health`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `merge_theme`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
 
 `LLM_Call_Node`'s four verbs are declared setters, replayed by its
 `dump_config()`; `set_api_url` refuses anything but an absolute http(s)
@@ -2632,7 +2703,7 @@ its own one-shot commands; nothing polls.
 | `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`), an entity and a day range, a page at a time, in the order the answer's `sort` names, which the reader switches, sending `--sort` from the first page; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words, the order and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
 | `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens` above `search --lens --group=theme`'s theme groups through `GroupPage`, a page of groups at a time in the order the server ranks them, beside `trends --lens`, which `TrendTable` shows by the lens's own `by`; trend rows and signals citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
 | `views/Entity.js` | default | `entity`, headed, for a record answering a `status`, by the client's status line — client since, the first row of its own `signals` read once answered or "No signal", its churn reports, churn signals, feature requests and complaints, and the day of its last item or "No item about it yet" — then `signals --entity` under its header, both axes, each row's value its axis and kind and the value it counts, its count against its baseline, then `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`, each claim read as its subject's `EntityChip`, the predicate and its object, a chip when `object_name` is set and the item's spelling as text when it is null, each chip showing the key where the name is null, and cited by its item's title linking its URL; the record lists every role row but a closed one that held no time (`to_ts` not 0 and equal to `from_ts`), an import's same-day correction, so an open row a seed asserted from 0 stays; hands `onNamed` the entity's key with what its heading shows, its name else its key, whenever the record answers, and with null once it is refused; once the record answers, for a curator, `add_name`, `add_identifier`, `assert_role` and `end_role` |
-| `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity and the sentence each link quotes, and `review entities`, a pill per entity, each citing item with the sentence it quotes; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`, its field focused; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back. Each queue's list, named for its queue and described by a visually hidden sentence of its keys, takes focus and the review keys while focus is in it and not in a field, as the substrate's `isTypingTarget()` reads it: `j` and `k` move between the link pills or the entity rows (`data-review-row`, `tabindex="-1"`, so the shared `[tabindex]:focus-visible` ring shows), and `y`, `n` and `m` press the focused row's control whose `aria-keyshortcuts` names the key (✓, ✕, Merge…), a judgment moving focus to the row then in its place, else the last |
+| `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity and the sentence each link quotes, and `review entities`, a pill per entity, each citing item with the sentence it quotes; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`, its field focused; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back. Each queue's list, named for its queue and described by a visually hidden sentence of its keys, takes focus and the review keys while focus is in it and not in a field, as the substrate's `isTypingTarget()` reads it: `j` and `k` move between the link pills or the entity rows (`data-review-row`, `tabindex="-1"`, so the shared `[tabindex]:focus-visible` ring shows), and `y`, `n` and `m` press the focused row's control whose `aria-keyshortcuts` names the key (✓, ✕, Merge…), a judgment moving focus to the row then in its place, else the last; then "Themes", `theme_suggestions`' pairs, each naming both themes, their stories, the entities they share and the words their names share, and for a curator "Merge into" each theme, which sends `merge_theme` from the other and hides the pair through `useHeld` as `merge_entities` does |
 | `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection`, its collection shown saving through `useHeld` until a read lists it by name |
 | `views/Watches.js` | default, `CLOSED_WATCH`, `newWatch`, `WatchRow` | `watches`, the caller's own, each a `WatchRow`, the one row the Briefing lists too: the button opening it, its target, and its unseen count, or "Inbox off" for a watch without its inbox, or the words that a save of it is awaiting a read; opened onto `watch_matches --key` a page at a time, or onto the words that its inbox is off, each match with a "Mark seen" (`mark_seen --key --item`) and the page with "Mark these seen", naming each match it shows, a marked match hidden through `useHeld` until a read no longer lists it and a landed mark returning to the first page; for every reader, not gated on `canTune`, the form saving a new watch or the one opened through `save_watch` — its name, the kind it follows and exactly one target (a lens picked from `lenses`, an entity key, or a collection picked from `collections`), and the three deliveries as checkboxes, each sent as `true` or `false` — and `remove_watch`, each held until a read of `watches` lists the watch with the name, target kind and deliveries the save sent, an edit by its own key, the target's key uncompared because the server stores an entity as its survivor |
 | `components/TrendTable.js` | default, `againstBaseline`, `signalValue` | The table of trend rows or signals a lens and an entity render, each row's bucket, value, count and cited items; given `by` `theme`, a last column headed "Clients and items" holding a row's `EntityChip`s above its cited items, a row with no clients its items alone, and "Items" on any other axis; a signal's count against its baseline, and its axis and kind with the value it counts |

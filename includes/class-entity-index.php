@@ -267,12 +267,12 @@ final class Entity_Index {
 		while ( isset( $merges[ $key ] ) ) {
 			$key = $merges[ $key ];
 			if ( \in_array( $key, $chain, true ) ) {
-				$broken[ 'entity merge cycle ' . \implode( ' → ', [ ...$chain, $key ] ) ] = true;
+				$broken[ 'merge cycle ' . \implode( ' → ', [ ...$chain, $key ] ) ] = true;
 				return null;
 			}
 			$chain[] = $key;
 			if ( \count( $chain ) > self::MAX_MERGE_HOPS + 1 ) {
-				$broken[ "entity merge chain from {$chain[0]} past " . self::MAX_MERGE_HOPS . ' hops' ] = true;
+				$broken[ "merge chain from {$chain[0]} past " . self::MAX_MERGE_HOPS . ' hops' ] = true;
 				return null;
 			}
 		}

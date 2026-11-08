@@ -58,23 +58,106 @@ final class OfferedThemesTest extends TestCase {
 
 	/**
 	 * An email-block item is offered the theme of an earlier email-block
-	 * item, and not the theme the most items share.
+	 * item first, and the theme the most items share only after it.
 	 */
-	public function test_an_item_is_offered_the_theme_of_a_similar_item_not_a_popular_one(): void {
+	public function test_a_similar_items_theme_is_offered_before_a_popular_one(): void {
 		$this->seed(
 			self::themed( 'github:email-1', 'email block drops inline images', 3, 'internal', 'Email block drops images in Gmail' ),
 			...self::popular()
 		);
 
-		$this->assertSame( [ 'email block drops inline images' ], self::offered( 'Email block loses images in Outlook' ) );
+		$this->assertSame( [ 'email block drops inline images', 'client styling implementation' ], self::offered( 'Email block loses images in Outlook' ) );
 		$this->assertSame( [ 30, 12 ], [ Prompts::THEME_DAYS, Prompts::THEME_NEIGHBOURS ] );
 	}
 
-	/** An item no themed item resembles is offered no theme, and its prompt carries no themes fence. */
-	public function test_an_item_with_no_similar_themed_neighbour_is_offered_none(): void {
+	/**
+	 * After its neighbours' themes the offer adds the THEME_POPULAR themes
+	 * most used in the window, by distinct stories, each once and each with
+	 * its newest story's summary: three copies of one story count once, a
+	 * restricted item's theme never counts, and one used only outside the
+	 * window is not offered.
+	 */
+	public function test_the_offer_includes_the_windows_popular_themes(): void {
+		$tide = [];
+		foreach ( [ 1, 2, 3 ] as $n ) {
+			$tide[] = self::themed( "feed:tide-{$n}", 'tide gauge outage', 5, 'internal', 'Tide gauge offline' );
+			$tide[] = [ Intel_Event::make( 'cluster_joined', [ 'item_key' => "feed:tide-{$n}", 'cluster_key' => 'feed:tide-1', 'retrieved_ts' => (int) self::NOW - 5 * 86400 ], 'machine:dedup@9.4.1', '' ) ];
+		}
+		$this->seed(
+			self::themed( 'feed:heron-1', 'heron census drop', 3, 'internal', 'Heron count falls' ),
+			self::themed( 'feed:tide-4', 'tide gauge outage', 6, 'internal', 'Tide gauge reading stuck' ),
+			self::themed( 'feed:board-1', 'marsh boardwalk repair', 2, 'internal', 'Boardwalk planks', 'Body.', 'Boardwalk planks replaced.' ),
+			self::themed( 'feed:board-2', 'marsh boardwalk repair', 3, 'internal', 'Boardwalk rails', 'Body.', 'Rails bolted down.' ),
+			self::themed( 'feed:board-3', 'marsh boardwalk repair', 4, 'internal', 'Boardwalk closed', 'Body.', 'Closed for a week.' ),
+			[ Intel_Event::make( 'cluster_superseded', [ 'cluster_key' => 'feed:tide-1', 'canonical_item_key' => 'feed:tide-1', 'previous_item_key' => 'feed:tide-1', 'rank' => 4.5, 'retrieved_ts' => (int) self::NOW - 5 * 86400 ], 'machine:dedup@9.4.1', '' ) ],
+			...self::popular(),
+			...$tide,
+			...\array_map( static fn ( int $n ): array => self::themed( "unthread:board-{$n}", 'board settlement talks', 2, 'restricted', "Settlement {$n}" ), \range( 1, 6 ) ),
+			...\array_map( static fn ( int $n ): array => self::themed( "feed:egret-{$n}", 'egret nesting season', 40, 'internal', "Egret nests {$n}" ), \range( 1, 7 ) )
+		);
+
+		$offer = self::fence( self::messages( 'Heron count falls at the marsh' )[1] );
+
+		$this->assertSame( [ 'heron census drop', 'client styling implementation', 'marsh boardwalk repair', 'tide gauge outage' ], \array_column( $offer, 'theme' ) );
+		$this->assertSame( 'Boardwalk planks replaced.', $offer[2]['example'] );
+		$this->assertSame( 12, Prompts::THEME_POPULAR );
+	}
+
+	/**
+	 * Popular themes are ranked among unrestricted items alone: themes only
+	 * restricted items carry, however many rows they hold, take no
+	 * candidate's place from a theme two internal items carry.
+	 */
+	public function test_restricted_volume_takes_no_popular_place(): void {
+		$events = [];
+		foreach ( \range( 1, Prompts::THEME_CANDIDATES ) as $n ) {
+			foreach ( [ 1, 2, 3 ] as $copy ) {
+				$events[] = self::themed( "unthread:vault-{$n}-{$copy}", "vault audit {$n}x", 2, 'restricted', "Vault {$n}" );
+			}
+		}
+		$this->seed(
+			self::themed( 'feed:sluice-1', 'sluice gate jam', 2, 'internal', 'Sluice gate' ),
+			self::themed( 'feed:sluice-2', 'sluice gate jam', 3, 'internal', 'Gate jammed' ),
+			...$events
+		);
+
+		$this->assertSame( [ 'sluice gate jam' ], self::offered( 'Heron count falls at the marsh' ) );
+	}
+
+	/**
+	 * A neighbour's theme, and a popular one, read as the survivor of their
+	 * merges: a merged theme is offered as its survivor, once, and its
+	 * stories count toward the survivor's use.
+	 */
+	public function test_an_offered_theme_reads_as_its_survivor(): void {
+		$merged = static fn ( string $from, string $into ): array => [ Intel_Event::make( 'theme_merged', [ 'from' => $from, 'into' => $into ], 'user:41', '' ) ];
+		$this->seed(
+			self::themed( 'feed:heron-7', 'heron tally gap', 3, 'internal', 'Heron count falls' ),
+			self::themed( 'feed:dune-1', 'dune fence washout', 2, 'internal', 'Dune fence' ),
+			self::themed( 'feed:dune-2', 'dune fencing lost', 2, 'internal', 'Fencing lost' ),
+			self::themed( 'feed:dune-3', 'dune fencing lost', 3, 'internal', 'Fencing gone' ),
+			$merged( 'heron tally gap', 'heron census drop' ),
+			$merged( 'dune fence washout', 'dune fencing lost' ),
+			$merged( 'dune fencing lost', 'dune erosion' ),
+			...self::popular(),
+			...self::crowd()
+		);
+
+		$offered = self::offered( 'Heron count falls at the marsh' );
+
+		$this->assertSame( [ 'heron census drop', 'client styling implementation', 'dune erosion' ], \array_slice( $offered, 0, 3 ) );
+		$this->assertSame( [], \array_intersect( [ 'heron tally gap', 'dune fence washout', 'dune fencing lost' ], $offered ) );
+	}
+
+	/**
+	 * An item no themed item in its window resembles, and whose window holds
+	 * no themed item at all, is offered no theme, and its prompt carries no
+	 * themes fence.
+	 */
+	public function test_an_item_with_no_themed_item_in_its_window_is_offered_none(): void {
 		$this->seed(
 			self::item( 'feed:heron-2', 'Heron count rises on the marsh', 1, 'internal' ),
-			...self::popular()
+			...self::popular( Prompts::THEME_DAYS + 1 )
 		);
 
 		$this->assertSame( [], self::offered( 'Heron count rises at the marsh' ) );
@@ -96,10 +179,11 @@ final class OfferedThemesTest extends TestCase {
 	public function test_a_body_only_match_is_not_a_neighbour(): void {
 		$this->seed(
 			self::themed( 'feed:egret-body', 'egret roost disturbance', 1, 'internal', 'Harbour dredging schedule', 'Egret roost survey counts dropped.' ),
-			self::themed( 'feed:egret-title', 'egret roost survey gap', 2, 'internal', 'Egret roost survey', 'Nothing more.' )
+			self::themed( 'feed:egret-title', 'egret roost survey gap', 2, 'internal', 'Egret roost survey', 'Nothing more.' ),
+			...self::crowd()
 		);
 
-		$this->assertSame( [ 'egret roost survey gap' ], self::offered( 'Egret roost survey counts dropped' ) );
+		$this->assertSame( [ 'egret roost survey gap' ], self::neighbours( 'Egret roost survey counts dropped' ) );
 	}
 
 	/**
@@ -237,7 +321,7 @@ final class OfferedThemesTest extends TestCase {
 			$best[] = self::themed( "feed:tern-{$at}", 'tern colony survey', 2, 'internal', 'Tern ledger' );
 		}
 		$this->seed( ...$best );
-		$this->seed( self::themed( 'feed:tern-far', 'tern ledger audit', 2, 'internal', 'Tern ledger with a much longer title that matches far worse' ) );
+		$this->seed( self::themed( 'feed:tern-far', 'tern ledger audit', 2, 'internal', 'Tern ledger with a much longer title that matches far worse' ), ...self::crowd() );
 		$live = Table_Node::file( 'intel-graph', 0 );
 		$copy = $this->make_temp_dir( 'intel-p0-' ) . '/intel-graph.p0.sqlite';
 		( new \PDO( 'sqlite:' . $live ) )->exec( 'VACUUM INTO ' . ( new \PDO( 'sqlite::memory:' ) )->quote( $copy ) );
@@ -250,7 +334,7 @@ final class OfferedThemesTest extends TestCase {
 		);
 		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): mixed => $read( Sqlite_Arm::open_rows( [ 0 => $copy, 1 => $live ], Intel_Graph_Row_Schema::version() ) );
 
-		$this->assertSame( [], self::offered( 'Tern ledger' ) );
+		$this->assertSame( [], self::neighbours( 'Tern ledger' ) );
 		$this->assertSame( 3 * Prompts::THEME_NEIGHBOURS, Prompts::THEME_CANDIDATES );
 	}
 
@@ -266,9 +350,9 @@ final class OfferedThemesTest extends TestCase {
 		foreach ( \range( 1, 14 ) as $i ) {
 			$events[] = self::themed( \sprintf( 'feed:outage-%02d', $i ), \sprintf( 'outage report %s', \str_repeat( 'x', $i ) ), 6, 'internal', 'Outage' );
 		}
-		$this->seed( ...$events );
+		$this->seed( ...$events, ...self::crowd() );
 
-		$themes = self::offered( 'Plover wharf ledger outage' );
+		$themes = self::neighbours( 'Plover wharf ledger outage' );
 
 		$this->assertCount( 11, $themes, 'twelve neighbours, two of them sharing one theme' );
 		$this->assertSame( 'wharf ledger outage', $themes[0] );
@@ -303,17 +387,21 @@ final class OfferedThemesTest extends TestCase {
 		$this->assertSame( [], self::offered( 'Is it in the? Or 42' ) );
 	}
 
-	/** One statement reads the neighbours, beside the one listing the file's tables. */
+	/**
+	 * One statement reads the theme merges and one the offer, beside the one
+	 * listing the file's tables.
+	 */
 	public function test_the_neighbours_are_one_statement(): void {
 		$this->seed( self::themed( 'feed:egret-1', 'egret nest survey', 1, 'internal', 'Egret nest survey' ) );
 
-		$this->assertSame( 2, $this->statements_of( static fn (): array => self::offered( 'Egret nest survey' ) ) );
+		$this->assertSame( 3, $this->statements_of( static fn (): array => self::offered( 'Egret nest survey' ) ) );
 	}
 
 	/**
 	 * The neighbours' match is scanned once, and each neighbour's theme and
 	 * summary are found through their tables' keys rather than by reading
-	 * every row.
+	 * every row; the popular themes read the window's themes by their day
+	 * index and every item, cluster and canonical by its key.
 	 */
 	public function test_the_neighbours_match_is_scanned_once_and_themes_by_key(): void {
 		$this->seed( self::themed( 'feed:egret-2', 'egret nest survey', 1, 'internal', 'Egret nest survey' ) );
@@ -345,6 +433,10 @@ final class OfferedThemesTest extends TestCase {
 		$this->assertStringNotContainsString( 'SCAN p0.themes', $plan );
 		$this->assertStringContainsString( 'SEARCH p0.extractions USING INDEX', $plan );
 		$this->assertStringNotContainsString( 'SCAN p0.extractions', $plan );
+		$this->assertStringContainsString( 'SEARCH p0.themes USING INDEX themes_item_day', $plan, 'the popular themes read the window by its day index' );
+		$this->assertDoesNotMatchRegularExpression( '/SCAN p0\.items(?!_fts)/', $plan );
+		$this->assertStringNotContainsString( 'SCAN p0.clusters', $plan );
+		$this->assertStringNotContainsString( 'SCAN p0.canonicals', $plan );
 	}
 
 	/** While the projection will not open, no theme is offered, logged once, and the prompt still builds. */
@@ -390,13 +482,50 @@ final class OfferedThemesTest extends TestCase {
 		return [ $built[0]['content'], $built[1]['content'] ];
 	}
 
-	/** @return list<list<array<string,mixed>>> The popular theme on unrelated items, a day old. */
-	private static function popular(): array {
+	/**
+	 * The popular theme on unrelated items.
+	 *
+	 * @param int $days_ago Whole days before NOW each was retrieved.
+	 * @return list<list<array<string,mixed>>>
+	 */
+	private static function popular( int $days_ago = 1 ): array {
 		$events = [];
 		foreach ( self::POPULAR as $key => $title ) {
-			$events[] = self::themed( $key, 'client styling implementation', 1, 'internal', $title );
+			$events[] = self::themed( $key, 'client styling implementation', $days_ago, 'internal', $title );
 		}
 		return $events;
+	}
+
+	/**
+	 * THEME_POPULAR themes of two unrelated stories each, a day old, which
+	 * fill every popular place an offer adds after its neighbours.
+	 *
+	 * @return list<list<array<string,mixed>>>
+	 */
+	private static function crowd(): array {
+		$events = [];
+		foreach ( \array_keys( self::crowd_themes() ) as $n ) {
+			foreach ( [ 1, 2 ] as $copy ) {
+				$events[] = self::themed( "feed:crowd-{$n}-{$copy}", self::crowd_themes()[ $n ], 1, 'internal', "Pavilion booking {$copy}" );
+			}
+		}
+		return $events;
+	}
+
+	/** @return list<string> The themes `crowd()` seeds. */
+	private static function crowd_themes(): array {
+		return \array_map( static fn ( int $n ): string => 'pavilion booking ' . \chr( 96 + $n ), \range( 1, Prompts::THEME_POPULAR ) );
+	}
+
+	/**
+	 * The themes an offer reads from an item's neighbours, `crowd()` holding
+	 * every popular place.
+	 *
+	 * @param string $title The item's title.
+	 * @return list<string>
+	 */
+	private static function neighbours( string $title ): array {
+		return \array_values( \array_diff( self::offered( $title ), self::crowd_themes() ) );
 	}
 
 	/**

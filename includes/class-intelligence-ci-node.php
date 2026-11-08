@@ -160,6 +160,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						Graph_Query::signals( ... )
 					),
 					$verb( $read, 'review', 'The review queue, each row with its citing items and the sentence each quotes as evidence: { links } or { entities }.', [ $arg( 'what', 'The queue: links or entities.' ), $limit( Graph_Query::DEFAULT_LIMIT ) ], Graph_Query::review( ... ) ),
+					$verb( $read, 'theme_suggestions', 'Pairs of themes worth merging: of the readable stories of the last ' . Graph_Query::GROUP_DAYS . ' days, two themes whose stories share an entity they are about and whose names share a word that is not generic, the most alike names first, at most ' . Graph_Query::THEME_SUGGESTIONS . ': { suggestions: [ { themes: [ { theme, stories } ], words, shared } ] }, the theme with more stories first, words those both names hold and shared the entities both themes\' stories are about.', [], static fn (): array => Graph_Query::theme_suggestions() ),
 					$verb( $read, 'collections', 'Every collection with its item count, or one with its saved items.', [ $text( 'key', 'One collection\'s key.' ) ], Graph_Query::collections( ... ) ),
 					$verb( $read, 'lenses', 'Every lens, by name: { lenses: [ { lens_key, name, description, filters: { kinds, topics, roles, sources, entity, days, tiers, by, bucket } } ] }.', [], Graph_Query::lenses( ... ) ),
 					$verb( $read, 'watches', 'The caller\'s own watches, by name, each with its unseen matches: { watches: [ { watch_key, name, target: { kind, key }, digest, instant, inbox, unseen } ] }.', [], Graph_Watches::watches( ... ) ),
@@ -239,6 +240,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						Graph_Curation::save_lens( ... )
 					),
 					$verb( $tune, 'remove_lens', 'Remove a lens: { ok, event_id }.', [ $key( 'The lens key.' ) ], Graph_Curation::remove_lens( ... ) ),
+					$verb( $tune, 'merge_theme', 'Merge one theme into another, so every read of an item\'s theme reads the survivor; refused when the merge would cycle, when into itself merges away, or when it would show a theme only restricted items carry to every reader: { ok, event_id }.', [ $arg( 'from', 'The theme merged away, at most ' . Intel_Event::THEME_BYTES . ' bytes.' ), $arg( 'into', 'The theme it survives as.' ) ], Graph_Curation::merge_theme( ... ) ),
 					$verb( $tune, 'seed_ontology', 'Write the site\'s seed ontology for the keys the projection lacks, refused while the projector has not read every ontology change: { ok, events, created, present }.', [], static fn (): array => [ 'ok' => true ] + Ontology_Seed::load()->seed() ),
 					[
 						'name'        => 'fetch_now',

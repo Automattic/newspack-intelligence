@@ -8,8 +8,9 @@
  * `extract_entities()` (an item's subject entities, for the resolver's NER
  * step, read back by `parse_entities()`). `decision()` builds a decision
  * prompt's body. `offered_themes()` alone reads the projection: the themes
- * of the themed items most like an item, which `messages()` offers an
- * `extract` as it is sent and the extractor offers a review.
+ * of the themed items most like an item, then the window's most used, which
+ * `messages()` offers an `extract` as it is sent and the extractor offers a
+ * review.
  *
  * @package Newspack_Intelligence
  */
@@ -142,9 +143,15 @@ class Prompts {
 	/** The most themed items whose themes an extraction is offered. */
 	public const THEME_NEIGHBOURS = 12;
 
+	/** The most of the window's most-used themes an extraction is also offered. */
+	public const THEME_POPULAR = 12;
+
 	/**
 	 * The most neighbours each partition reads for an extraction, a few times
-	 * THEME_NEIGHBOURS so a newer partition's refused theme leaves enough.
+	 * THEME_NEIGHBOURS so a newer partition's refused theme leaves enough;
+	 * and the most themes, those holding the most of the window's
+	 * unrestricted items' `themes` rows, whose stories the popular themes
+	 * are counted among.
 	 */
 	public const THEME_CANDIDATES = 3 * self::THEME_NEIGHBOURS;
 
@@ -247,7 +254,16 @@ class Prompts {
 	 * `refused_themes()` does not name; each partition reads its
 	 * THEME_CANDIDATES best, so a title of common words costs no more than a
 	 * rare one past the match. Its theme is the newest partition's, and one
-	 * `refused_themes()` names is passed over. None for
+	 * `refused_themes()` names is passed over. After them come the
+	 * THEME_POPULAR themes the window's other unrestricted items carry most,
+	 * by distinct stories, a story its cluster's canonical when that is
+	 * unrestricted, else the item, the most first, then the newest story by
+	 * retrieval day, then by theme, each with its newest story's summary,
+	 * else its title, as its example; each counted among the
+	 * THEME_CANDIDATES themes holding the most of the window's unrestricted
+	 * items' rows, so restricted volume decides nothing. Every
+	 * theme reads as its survivor (`Graph_Query::theme_survivors()`), and is
+	 * offered once. None for
 	 * a title holding no word to search by, which reads nothing, and none,
 	 * logged once, while the `intel-graph` tables cannot be read.
 	 *
@@ -271,25 +287,43 @@ class Prompts {
 			$arms    = [];
 			$binds   = [];
 			$refused = self::refused_themes();
+			$open    = Intel_Graph_Row_Schema::marks( Intel_Tiers::UNRESTRICTED );
+			$not     = 'NOT IN ( ' . Intel_Graph_Row_Schema::marks( $refused ) . ' )';
+			$self    = self::field( $item, 'item_key' );
 			$themes  = Intel_Graph_Row_Schema::all( $r, 'themes' );
+			$items   = Intel_Graph_Row_Schema::all( $r, 'items' );
 			foreach ( $r->aliases() as $a ) {
 				$arms[] = "SELECT * FROM ( SELECT i.item_key, i.title, bm25( items_fts ) AS score FROM {$a}.items_fts JOIN {$a}.items i ON i.id = items_fts.rowid"
-					. ' WHERE items_fts MATCH ? AND i.retrieved_day >= ? AND i.retrieved_day <= ? AND i.tier IN ( ' . Intel_Graph_Row_Schema::marks( Intel_Tiers::UNRESTRICTED ) . ' ) AND i.item_key <> ?'
-					. " AND EXISTS ( SELECT 1 FROM {$themes} c WHERE c.item_key = i.item_key AND c.item_day >= ? AND c.item_day <= ? AND c.theme NOT IN ( " . Intel_Graph_Row_Schema::marks( $refused ) . ' ) )'
+					. " WHERE items_fts MATCH ? AND i.retrieved_day >= ? AND i.retrieved_day <= ? AND i.tier IN ( {$open} ) AND i.item_key <> ?"
+					. " AND EXISTS ( SELECT 1 FROM {$themes} c WHERE c.item_key = i.item_key AND c.item_day >= ? AND c.item_day <= ? AND c.theme {$not} )"
 					. ' ORDER BY score, i.item_key LIMIT ? )';
 				\array_push( $binds, $match, ...$days, ...Intel_Tiers::UNRESTRICTED );
-				\array_push( $binds, self::field( $item, 'item_key' ), ...$days, ...$refused );
+				\array_push( $binds, $self, ...$days, ...$refused );
 				$binds[] = self::THEME_CANDIDATES;
 			}
-			$sql = 'WITH n AS MATERIALIZED ( ' . \implode( ' UNION ALL ', $arms ) . ' ),'
-				. ' th AS ( SELECT item_key, theme FROM ( SELECT t.item_key, t.theme, ROW_NUMBER() OVER ( PARTITION BY t.item_key ORDER BY t.partition_ordinal DESC ) AS pick FROM '
-				. Intel_Graph_Row_Schema::all( $r, 'themes', true ) . ' t WHERE t.item_key IN ( SELECT item_key FROM n ) AND t.item_day >= ? AND t.item_day <= ? ) WHERE pick = 1 ),'
-				. ' sx AS ( SELECT item_key, summary FROM ( SELECT x.item_key, x.summary, ROW_NUMBER() OVER ( PARTITION BY x.item_key ORDER BY x.partition_ordinal DESC ) AS pick FROM '
-				. Intel_Graph_Row_Schema::all( $r, 'extractions', true ) . ' x WHERE x.item_key IN ( SELECT item_key FROM n ) AND x.item_day >= ? AND x.item_day <= ? ) WHERE pick = 1 )'
-				. " SELECT th.theme, COALESCE( NULLIF( sx.summary, '' ), n.title ) FROM n JOIN th ON th.item_key = n.item_key LEFT JOIN sx ON sx.item_key = n.item_key"
-				. ' WHERE th.theme NOT IN ( ' . Intel_Graph_Row_Schema::marks( $refused ) . ' ) ORDER BY n.score, n.item_key LIMIT ?';
+			[ $tm, $map ] = Graph_Query::theme_survivors( $r );
+			$sql          = "WITH {$tm}, n AS MATERIALIZED ( " . \implode( ' UNION ALL ', $arms ) . ' ),'
+				. ' th AS ( ' . Intel_Graph_Row_Schema::newest( $r, 'themes', 'item_key', 'item_key, theme', 'item_key IN ( SELECT item_key FROM n ) AND item_day >= ? AND item_day <= ?' ) . ' ),'
+				. " pg AS MATERIALIZED ( SELECT COALESCE( tm.survivor, t.theme ) AS theme FROM {$themes} t JOIN {$items} i ON i.item_key = t.item_key LEFT JOIN tm ON tm.theme = t.theme"
+				. " WHERE t.item_day >= ? AND t.item_day <= ? AND i.tier IN ( {$open} ) AND t.item_key <> ? AND COALESCE( tm.survivor, t.theme ) {$not}"
+				. ' GROUP BY 1 ORDER BY COUNT(*) DESC, 1 LIMIT ? ),'
+				. ' pt AS ( ' . Intel_Graph_Row_Schema::newest( $r, 'themes', 'item_key', 'item_key, theme, item_day', "item_key IN ( SELECT t.item_key FROM {$themes} t LEFT JOIN tm ON tm.theme = t.theme WHERE t.item_day >= ? AND t.item_day <= ? AND COALESCE( tm.survivor, t.theme ) IN ( SELECT theme FROM pg ) ) AND item_day >= ? AND item_day <= ?" ) . ' ),'
+				. " pi AS ( SELECT DISTINCT pt.item_key, pt.item_day AS d, COALESCE( tm.survivor, pt.theme ) AS theme FROM pt JOIN {$items} i ON i.item_key = pt.item_key LEFT JOIN tm ON tm.theme = pt.theme"
+				. " WHERE COALESCE( tm.survivor, pt.theme ) IN ( SELECT theme FROM pg ) AND i.tier IN ( {$open} ) AND pt.item_key <> ? ),"
+				. ' pc AS MATERIALIZED ( ' . Intel_Graph_Row_Schema::newest( $r, 'clusters', 'item_key', 'item_key, cluster_key', 'item_key IN ( SELECT item_key FROM pi )' ) . ' ),'
+				. ' pk AS ( SELECT pc.item_key, k.canonical_item_key AS story FROM pc JOIN ( ' . Intel_Graph_Row_Schema::newest( $r, 'canonicals', 'cluster_key', 'cluster_key, canonical_item_key', 'cluster_key IN ( SELECT cluster_key FROM pc )' ) . ' ) k ON k.cluster_key = pc.cluster_key'
+				. " WHERE EXISTS ( SELECT 1 FROM {$items} s WHERE s.item_key = k.canonical_item_key AND s.tier IN ( {$open} ) ) ),"
+				. ' ps AS ( SELECT pi.theme, COALESCE( pk.story, pi.item_key ) AS story, MIN( pi.d ) AS d FROM pi LEFT JOIN pk ON pk.item_key = pi.item_key GROUP BY 1, 2 ),'
+				. ' pn AS ( SELECT theme, story, ROW_NUMBER() OVER ( PARTITION BY theme ORDER BY d DESC, story DESC ) AS pick, COUNT(*) OVER ( PARTITION BY theme ) AS stories, MAX( d ) OVER ( PARTITION BY theme ) AS latest FROM ps ),'
+				. ' pp AS ( SELECT theme, story, ROW_NUMBER() OVER ( ORDER BY stories DESC, latest DESC, theme ) AS ord FROM pn WHERE pick = 1 ),'
+				. ' sx AS ( ' . Intel_Graph_Row_Schema::newest( $r, 'extractions', 'item_key', 'item_key, summary', 'item_key IN ( SELECT item_key FROM n UNION ALL SELECT story FROM pp WHERE ord <= ? )' ) . ' ),'
+				. " nb AS ( SELECT COALESCE( tm.survivor, th.theme ) AS theme, COALESCE( NULLIF( sx.summary, '' ), n.title ) AS example, ROW_NUMBER() OVER ( ORDER BY n.score, n.item_key ) AS ord"
+				. " FROM n JOIN th ON th.item_key = n.item_key LEFT JOIN tm ON tm.theme = th.theme LEFT JOIN sx ON sx.item_key = n.item_key WHERE COALESCE( tm.survivor, th.theme ) {$not} )"
+				. ' SELECT theme, example FROM ( SELECT 0 AS arm, ord, theme, example FROM nb WHERE ord <= ?'
+				. " UNION ALL SELECT 1, pp.ord, pp.theme, COALESCE( NULLIF( sx.summary, '' ), ( SELECT s.title FROM {$items} s WHERE s.item_key = pp.story LIMIT 1 ) ) FROM pp LEFT JOIN sx ON sx.item_key = pp.story WHERE pp.ord <= ? )"
+				. ' ORDER BY arm, ord';
 			$offer   = [];
-			foreach ( $r->rows( $sql, [ ...$binds, ...$days, ...$days, ...$refused, self::THEME_NEIGHBOURS ] ) as [ $theme, $example ] ) {
+			foreach ( $r->rows( $sql, [ $map, ...$binds, ...$days, ...$days, ...Intel_Tiers::UNRESTRICTED, $self, ...$refused, self::THEME_CANDIDATES, ...$days, ...$days, ...Intel_Tiers::UNRESTRICTED, $self, ...Intel_Tiers::UNRESTRICTED, self::THEME_POPULAR, ...$refused, self::THEME_NEIGHBOURS, self::THEME_POPULAR ] ) as [ $theme, $example ] ) {
 				$theme           = Core::as_string( $theme );
 				$offer[ $theme ] ??= [
 					'theme'   => $theme,
@@ -299,24 +333,6 @@ class Prompts {
 			return \array_values( $offer );
 		};
 		return Intel_Graph_Row_Schema::read( $read, 'no intel-graph to read themes from; offering none: ' ) ?? [];
-	}
-
-	/**
-	 * A title's words to search neighbours by: its runs of letters and
-	 * digits, lowercased, each once, holding a letter, at least TERM_CHARS
-	 * long and no stop word, the first THEME_TERMS of them; bm25 weighs each
-	 * match by how rare its word is in the index.
-	 *
-	 * @param string $title The item's title.
-	 * @return list<string>
-	 */
-	private static function title_terms( string $title ): array {
-		\preg_match_all( '/[\p{L}\p{M}\p{N}]+/u', \mb_strtolower( $title ), $words );
-		$terms = \array_filter(
-			\array_unique( $words[0] ),
-			static fn ( string $word ): bool => \mb_strlen( $word ) >= self::TERM_CHARS && 1 === \preg_match( '/\p{L}/u', $word ) && ! \in_array( $word, self::TITLE_STOPWORDS, true )
-		);
-		return \array_slice( \array_values( $terms ), 0, self::THEME_TERMS );
 	}
 
 	/**
@@ -385,6 +401,38 @@ class Prompts {
 			$lines[] = "{$kind}: {$definition}";
 		}
 		return \implode( "\n", $lines );
+	}
+
+	/**
+	 * A theme's words that tell it from another: its words as `title_terms()`
+	 * reads a title, less every word of an item kind or one of
+	 * GENERIC_THEMES, which a theme names nothing by.
+	 *
+	 * @api Graph_Query pairs themes to merge by it.
+	 * @param string $theme The theme.
+	 * @return list<string>
+	 */
+	public static function theme_words( string $theme ): array {
+		$generic = \explode( ' ', \implode( ' ', self::refused_themes() ) );
+		return \array_values( \array_diff( self::title_terms( $theme ), $generic ) );
+	}
+
+	/**
+	 * A title's words to search neighbours by: its runs of letters and
+	 * digits, lowercased, each once, holding a letter, at least TERM_CHARS
+	 * long and no stop word, the first THEME_TERMS of them; bm25 weighs each
+	 * match by how rare its word is in the index.
+	 *
+	 * @param string $title The item's title.
+	 * @return list<string>
+	 */
+	private static function title_terms( string $title ): array {
+		\preg_match_all( '/[\p{L}\p{M}\p{N}]+/u', \mb_strtolower( $title ), $words );
+		$terms = \array_filter(
+			\array_unique( $words[0] ),
+			static fn ( string $word ): bool => \mb_strlen( $word ) >= self::TERM_CHARS && 1 === \preg_match( '/\p{L}/u', $word ) && ! \in_array( $word, self::TITLE_STOPWORDS, true )
+		);
+		return \array_slice( \array_values( $terms ), 0, self::THEME_TERMS );
 	}
 
 	/**

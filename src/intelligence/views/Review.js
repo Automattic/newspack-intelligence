@@ -5,7 +5,7 @@ import {
 	useRef,
 	useState,
 } from '@wordpress/element';
-import { __, sprintf } from '@wordpress/i18n';
+import { __, _n, sprintf } from '@wordpress/i18n';
 import { TextControl, VisuallyHidden } from '@wordpress/components';
 import { Icon, check, closeSmall } from '@wordpress/icons';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
@@ -289,6 +289,100 @@ const linkKey = ( link ) =>
 const entityKey = ( entity ) => entity.entity_key;
 
 /**
+ * A suggested pair of themes' key: its two themes.
+ *
+ * @param {Object} pair The pair.
+ * @return {string} The key.
+ */
+const pairKey = ( pair ) =>
+	JSON.stringify( pair.themes.map( ( side ) => side.theme ) );
+
+/**
+ * One suggested pair of themes: each theme, how many stories each holds,
+ * how many entities their stories share and the words their names share,
+ * and for a curator a merge of either theme into the other.
+ *
+ * @param {Object}                                      props
+ * @param {Object}                                      props.pair    The pair, as `theme_suggestions` answers it.
+ * @param {?(from: string, into: string) => void|false} props.onMerge Sends a merge, or none for a reader.
+ * @return {import('react').ReactElement} The row.
+ */
+function ThemePair( { pair, onMerge } ) {
+	const [ first, second ] = pair.themes;
+	const stories = ( side ) =>
+		sprintf(
+			/* translators: %d: how many stories carry the theme. */
+			_n(
+				'%d story',
+				'%d stories',
+				side.stories,
+				'newspack-intelligence'
+			),
+			side.stories
+		);
+	return (
+		<li className="newspack-intelligence__item">
+			<div className="newspack-intelligence__item-head">
+				<strong>{ first.theme }</strong>
+				<strong>{ second.theme }</strong>
+			</div>
+			<span className="newspack-nodes-status is-muted">
+				{ sprintf(
+					/* translators: 1: the first theme's stories, 2: the second theme's stories, 3: the entities their stories share, 4: the words their names share. */
+					__(
+						'%1$s and %2$s, %3$s in common, sharing %4$s',
+						'newspack-intelligence'
+					),
+					stories( first ),
+					stories( second ),
+					sprintf(
+						/* translators: %d: how many entities both themes' stories are about. */
+						_n(
+							'%d entity',
+							'%d entities',
+							pair.shared,
+							'newspack-intelligence'
+						),
+						pair.shared
+					),
+					pair.words.join( ', ' )
+				) }
+			</span>
+			{ onMerge && (
+				<div className="newspack-intelligence__judgments">
+					{ [
+						[ second, first ],
+						[ first, second ],
+					].map( ( [ from, into ] ) => (
+						<button
+							key={ into.theme }
+							type="button"
+							className="button button-small"
+							aria-label={ sprintf(
+								/* translators: 1: the theme merged away, 2: the theme it merges into. */
+								__(
+									'Merge %1$s into %2$s',
+									'newspack-intelligence'
+								),
+								from.theme,
+								into.theme
+							) }
+							onClick={ () => onMerge( from.theme, into.theme ) }
+						>
+							{ sprintf(
+								/* translators: %s: the theme the other merges into. */
+								__( 'Merge into %s', 'newspack-intelligence' ),
+								into.theme
+							) }
+						</button>
+					) ) }
+				</div>
+			) }
+		</li>
+	);
+}
+
+/**
  * Review: the proposed links and the proposed entities, each row with the
  * items citing it and the sentence each proposal was found in, and for a
  * curator the judgments each takes — confirm or reject a link; accept,
@@ -297,7 +391,9 @@ const entityKey = ( entity ) => entity.entity_key;
  * so the next can follow at once; one that lands re-reads its queue, and a
  * refused one shows the refusal and puts its row back. In either list `j`
  * and `k` move between the judgments, `y` confirms or accepts, `n` rejects
- * and `m` opens a merge.
+ * and `m` opens a merge. Below them, the pairs of themes `theme_suggestions`
+ * reads, each offering a curator a merge of either theme into the other,
+ * held as a judgment is.
  *
  * @param {Object}                props
  * @param {boolean}               props.canTune      Whether to offer judgments.
@@ -311,8 +407,11 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 		'entities',
 	] );
 
+	const themes = useIntelRead( 'review:themes', 'theme_suggestions', [] );
+
 	const judgedLinks = useHeld( links, 'links', linkKey );
 	const judgedEntities = useHeld( entities, 'entities', entityKey );
+	const judgedThemes = useHeld( themes, 'suggestions', pairKey );
 
 	const relink = {
 		refresh: links.refresh,
@@ -327,12 +426,17 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 	const acceptEntity = useIntelWrite( 'accept_entity', rejudge );
 	const rejectEntity = useIntelWrite( 'reject_entity', rejudge );
 	const mergeEntities = useIntelWrite( 'merge_entities', rejudge );
+	const mergeTheme = useIntelWrite( 'merge_theme', {
+		refresh: themes.refresh,
+		onRefused: judgedThemes.refused,
+	} );
 	const judgments = [
 		confirmLink,
 		rejectLink,
 		acceptEntity,
 		rejectEntity,
 		mergeEntities,
+		mergeTheme,
 	];
 
 	return (
@@ -513,6 +617,36 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 							);
 						} ) }
 					</ReviewList>
+				) }
+			</Answer>
+			<Answer
+				title={ __( 'Themes', 'newspack-intelligence' ) }
+				read={ judgedThemes.read }
+				rows="suggestions"
+				empty={ __(
+					'No two themes look alike.',
+					'newspack-intelligence'
+				) }
+			>
+				{ ( answer ) => (
+					<ul className="newspack-intelligence__items">
+						{ answer.suggestions.map( ( pair ) => (
+							<ThemePair
+								key={ pairKey( pair ) }
+								pair={ pair }
+								onMerge={
+									canTune &&
+									( ( from, into ) =>
+										judgedThemes.hold(
+											pairKey( pair ),
+											null,
+											() =>
+												mergeTheme.run( { from, into } )
+										) )
+								}
+							/>
+						) ) }
+					</ul>
 				) }
 			</Answer>
 		</div>

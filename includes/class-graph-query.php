@@ -91,6 +91,9 @@ final class Graph_Query {
 	/** The days a grouped search reads when neither the call nor its lens bounds them. */
 	public const GROUP_DAYS = 30;
 
+	/** The most pairs of themes `theme_suggestions` answers. */
+	public const THEME_SUGGESTIONS = 10;
+
 	/** The most open clients an item is about and still names; one about more names none. */
 	public const MAX_ITEM_CLIENTS = 3;
 
@@ -370,6 +373,127 @@ final class Graph_Query {
 	 */
 	public static function sorts(): array {
 		return \array_keys( self::SORTS );
+	}
+
+	/**
+	 * The pairs of themes worth merging: of the readable stories of the last
+	 * GROUP_DAYS days, each theme read as `theme_survivors()` answers it, two
+	 * themes whose stories share an entity they are about by a subject or a
+	 * mention, and whose names share a word `Prompts::theme_words()` keeps.
+	 * Each answers `{ themes: [ { theme, stories }, { theme, stories } ],
+	 * words, shared }`, the theme with more stories first, then by name, the
+	 * words the names share, sorted, and how many entities their stories
+	 * share. Pairs rank by how alike the names are (`alike()`), then by the
+	 * entities shared, then by their stories, then by name; THEME_SUGGESTIONS
+	 * are answered. One statement reads every theme's stories and entities.
+	 *
+	 * @return array<string,mixed> `{ suggestions, available }`.
+	 */
+	public static function theme_suggestions(): array {
+		return self::answer( [ 'suggestions' => [] ], static fn ( Row_Reader $r, array $g ): array => [ 'suggestions' => self::suggested( self::theme_entities( $r, $g ) ) ] );
+	}
+
+	/**
+	 * Each theme of the last GROUP_DAYS days' readable stories, as its
+	 * survivor, with how many stories carry it and the entities those
+	 * stories are about by a subject or a mention.
+	 *
+	 * @param Row_Reader $r The reader.
+	 * @param Graph      $g The graph the read opened.
+	 * @return array<string,array{stories:int,entities:array<string,true>}>
+	 */
+	private static function theme_entities( Row_Reader $r, array $g ): array {
+		$rank        = self::judge_rank( 'j.actor_kind' );
+		[ $tm, $map ] = self::theme_survivors( $r );
+		$rows        = $r->rows(
+			"{$g['with']}, {$tm},"
+			. ' w AS ( ' . Intel_Graph_Row_Schema::newest( $r, 'themes', 'item_key', 'item_key, theme', 'item_day >= ?' ) . ' ),'
+			. ' wi AS MATERIALIZED ( SELECT w.item_key, COALESCE( tm.survivor, w.theme ) AS theme FROM w JOIN ri i ON i.item_key = w.item_key LEFT JOIN tm ON tm.theme = w.theme ),'
+			. ' wc AS MATERIALIZED ( ' . Intel_Graph_Row_Schema::newest( $r, 'clusters', 'item_key', 'item_key, cluster_key', 'item_key IN ( SELECT item_key FROM wi )' ) . ' ),'
+			. ' ws AS ( SELECT wc.item_key, k.canonical_item_key AS story FROM wc JOIN ( ' . Intel_Graph_Row_Schema::newest( $r, 'canonicals', 'cluster_key', 'cluster_key, canonical_item_key', 'cluster_key IN ( SELECT cluster_key FROM wc )' ) . ' ) k ON k.cluster_key = wc.cluster_key'
+			. ' WHERE EXISTS ( SELECT 1 FROM ri s WHERE s.item_key = k.canonical_item_key ) ),'
+			. ' wn AS ( SELECT wi.theme, COUNT( DISTINCT COALESCE( ws.story, wi.item_key ) ) AS n FROM wi LEFT JOIN ws ON ws.item_key = wi.item_key GROUP BY 1 )'
+			. ' SELECT DISTINCT wi.theme, wn.n, COALESCE( mg.value, l.entity_key ) FROM wi JOIN wn ON wn.theme = wi.theme JOIN ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' l ON l.item_key = wi.item_key LEFT JOIN mg ON mg.key = l.entity_key'
+			. " WHERE l.role IN ( ?, ? ) AND COALESCE( mg.value, l.entity_key ) <> ''"
+			. " AND 'rejected' IS NOT ( SELECT state FROM ( SELECT j.state, {$rank} AS rank, j.ts FROM " . Intel_Graph_Row_Schema::all( $r, 'judgments' ) . ' j LEFT JOIN mg jm ON jm.key = j.entity_key'
+			. ' WHERE j.item_key = l.item_key AND COALESCE( jm.value, j.entity_key ) = COALESCE( mg.value, l.entity_key ) ) ORDER BY rank DESC, ts DESC LIMIT 1 )',
+			[ ...$g['binds'], $map, \intdiv( self::last_days( self::GROUP_DAYS )[0], Intel_Graph_Row_Schema::DAY_SECONDS ), ...Intel_Event::NAMING_ROLES ]
+		);
+		$themes = [];
+		foreach ( $rows as [ $theme, $count, $entity ] ) {
+			$theme                                                      = Core::as_string( $theme );
+			$themes[ $theme ]['stories']                                = Core::as_int( $count );
+			$themes[ $theme ]['entities'][ Core::as_string( $entity ) ] = true;
+		}
+		return $themes;
+	}
+
+	/**
+	 * The THEME_SUGGESTIONS pairs of themes sharing an entity and a kept word,
+	 * the most alike first, each as `theme_suggestions()` answers it.
+	 *
+	 * @param array<string,array{stories:int,entities:array<string,true>}> $themes Each theme's stories and entities.
+	 * @return list<array{themes:list<array{theme:string,stories:int}>,words:list<string>,shared:int}>
+	 */
+	private static function suggested( array $themes ): array {
+		$words = [];
+		$holds = [];
+		foreach ( \array_keys( $themes ) as $theme ) {
+			$holds[ $theme ] = \array_fill_keys( Prompts::theme_words( $theme ), true );
+			foreach ( \array_keys( $holds[ $theme ] ) as $word ) {
+				$words[ $word ][] = $theme;
+			}
+		}
+		$pairs = [];
+		foreach ( $words as $holding ) {
+			\sort( $holding );
+			foreach ( $holding as $at => $a ) {
+				foreach ( \array_slice( $holding, $at + 1 ) as $b ) {
+					$pairs[ "{$a}\0{$b}" ] ??= [ $a, $b ];
+				}
+			}
+		}
+		$weight = \array_map( static fn ( array $holding ): float => \log( 1 + \count( $themes ) / \count( $holding ) ), $words );
+		$ranked = [];
+		foreach ( $pairs as [ $a, $b ] ) {
+			$shared = \count( \array_intersect_key( $themes[ $a ]['entities'], $themes[ $b ]['entities'] ) );
+			if ( 0 === $shared ) {
+				continue;
+			}
+			$both     = \array_keys( \array_intersect_key( $holds[ $a ], $holds[ $b ] ) );
+			$sides    = [ [ 'theme' => $a, 'stories' => $themes[ $a ]['stories'] ], [ 'theme' => $b, 'stories' => $themes[ $b ]['stories'] ] ];
+			\usort( $sides, static fn ( array $x, array $y ): int => [ $y['stories'], $x['theme'] ] <=> [ $x['stories'], $y['theme'] ] );
+			\sort( $both );
+			$ranked[] = [
+				[ -self::alike( $both, \array_keys( $holds[ $a ] + $holds[ $b ] ), $weight ), -$shared, -( $sides[0]['stories'] + $sides[1]['stories'] ), $a, $b ],
+				[
+					'themes' => $sides,
+					'words'  => $both,
+					'shared' => $shared,
+				],
+			];
+		}
+		\usort( $ranked, static fn ( array $x, array $y ): int => $x[0] <=> $y[0] );
+		return \array_column( \array_slice( $ranked, 0, self::THEME_SUGGESTIONS ), 1 );
+	}
+
+	/**
+	 * How alike two theme names are, 0 to 1: the weight of the words they
+	 * share over the weight of every word either holds, each word weighing
+	 * the more the fewer themes hold it, `log( 1 + themes / holding )`.
+	 *
+	 * @param list<string>       $shared The words both names hold.
+	 * @param list<string>       $either The words either name holds.
+	 * @param array<string,float> $weight Each word's weight.
+	 */
+	private static function alike( array $shared, array $either, array $weight ): float {
+		$sum = [ 0.0, 0.0 ];
+		foreach ( [ $shared, $either ] as $at => $words ) {
+			foreach ( $words as $word ) {
+				$sum[ $at ] += $weight[ $word ];
+			}
+		}
+		return $sum[0] / $sum[1];
 	}
 
 	/**
@@ -1770,7 +1894,8 @@ final class Graph_Query {
 	 * each read from the newest partition holding a row, when the caller may
 	 * read the canonical, else the item itself. On the theme axis a copy's
 	 * value is its theme, read from the newest partition holding a `themes`
-	 * row for it, null for a copy with none. With `$muted`, the kind axis
+	 * row for it, as `theme_survivors()` answers it, null for a copy with
+	 * none. With `$muted`, the kind axis
 	 * admits no item extracted as MUTE_KIND.
 	 *
 	 * @param Row_Reader     $r     The reader.
@@ -1785,6 +1910,7 @@ final class Graph_Query {
 		[ $with, $lead, $subject, $join, $where, $binds ] = $scope( $days, 'topic' === $by || $themed );
 		[ $value, $axis ]                                 = null === $by ? self::EVERY_ITEM : self::TREND_AXES[ $by ];
 		$axis = \str_replace( '{extractions}', Intel_Graph_Row_Schema::all( $r, 'extractions' ), $axis ) . ( $muted && 'kind' === $by ? " AND x.kind <> '" . self::MUTE_KIND . "'" : '' );
+		[ $tm, $map ]                                     = $themed ? self::theme_survivors( $r ) : [ '', null ];
 		$sql  = "{$with}, hits AS ( SELECT {$subject} AS subject, {$value} AS value, i.item_key, MIN( " . Intel_Graph_Row_Schema::ITEM_TIME . " ) AS t FROM ri i {$join} {$axis} WHERE {$where} GROUP BY 1, 2, 3 ),"
 			. ' sc AS ( SELECT item_key, cluster_key FROM ( SELECT c.item_key, c.cluster_key, ROW_NUMBER() OVER ( PARTITION BY c.item_key ORDER BY c.partition_ordinal DESC ) AS pick FROM '
 			. Intel_Graph_Row_Schema::all( $r, 'clusters', true ) . ' c WHERE c.item_key IN ( SELECT item_key FROM hits ) ) WHERE pick = 1 ),'
@@ -1792,12 +1918,50 @@ final class Graph_Query {
 			. ' ( SELECT k.cluster_key, k.canonical_item_key, ROW_NUMBER() OVER ( PARTITION BY k.cluster_key ORDER BY k.partition_ordinal DESC ) AS pick FROM '
 			. Intel_Graph_Row_Schema::all( $r, 'canonicals', true ) . ' k WHERE k.cluster_key IN ( SELECT cluster_key FROM sc ) ) k ON k.cluster_key = sc.cluster_key AND k.pick = 1 ),'
 			. ( $themed
-				? ' th AS ( SELECT item_key, theme FROM ( SELECT t.item_key, t.theme, ROW_NUMBER() OVER ( PARTITION BY t.item_key ORDER BY t.partition_ordinal DESC ) AS pick FROM '
+				? " {$tm}, th AS ( SELECT item_key, theme FROM ( SELECT t.item_key, t.theme, ROW_NUMBER() OVER ( PARTITION BY t.item_key ORDER BY t.partition_ordinal DESC ) AS pick FROM "
 					. Intel_Graph_Row_Schema::all( $r, 'themes', true ) . ' t WHERE t.item_key IN ( SELECT item_key FROM hits ) ) WHERE pick = 1 ),'
-					. ' copies AS ( SELECT h.subject, th.theme AS value, COALESCE( st.story, h.item_key ) AS story, h.item_key AS copy, h.t FROM hits h LEFT JOIN st ON st.item_key = h.item_key LEFT JOIN th ON th.item_key = h.item_key ),'
+					. ' copies AS ( SELECT h.subject, COALESCE( tm.survivor, th.theme ) AS value, COALESCE( st.story, h.item_key ) AS story, h.item_key AS copy, h.t FROM hits h LEFT JOIN st ON st.item_key = h.item_key LEFT JOIN th ON th.item_key = h.item_key LEFT JOIN tm ON tm.theme = th.theme ),'
 				: ' copies AS ( SELECT h.subject, h.value, COALESCE( st.story, h.item_key ) AS story, h.item_key AS copy, h.t FROM hits h LEFT JOIN st ON st.item_key = h.item_key ),' )
 			. ' stories AS ( SELECT subject, value, story AS item_key, MIN( t ) AS t FROM copies GROUP BY 1, 2, 3 )';
-		return [ $sql, [ ...$lead, ...$binds ] ];
+		return [ $sql, [ ...$lead, ...$binds, ...( null === $map ? [] : [ $map ] ) ] ];
+	}
+
+	/**
+	 * The theme survivor map a read binds, as `[ clause, bind ]`: the clause
+	 * `tm ( theme, survivor )` over the JSON bind, each merged theme's
+	 * survivor as `Entity_Index::walk()` reads `theme_merges()`, the walker
+	 * curation judges a merge by. A theme whose chain cycles or runs past
+	 * `Entity_Index::MAX_MERGE_HOPS` has no `tm` row, so it reads as itself,
+	 * and its chain is logged once; a read takes a theme as
+	 * `COALESCE( tm.survivor, theme )`. One statement reads the merges.
+	 *
+	 * @api Prompts offers themes by it.
+	 * @param Row_Reader $r The reader.
+	 * @return array{0:string,1:string}
+	 */
+	public static function theme_survivors( Row_Reader $r ): array {
+		[ $survivors, $broken ] = Entity_Index::walk( self::theme_merges( $r ) );
+		if ( [] !== $broken ) {
+			Core::print_less_often( 'leaving theme merges that do not resolve unapplied: ', \implode( '; ', \array_keys( $broken ) ) );
+		}
+		return [ 'tm AS MATERIALIZED ( SELECT key AS theme, value AS survivor FROM json_each( ? ) )', (string) \wp_json_encode( (object) \array_filter( $survivors, static fn ( string $survivor ): bool => '' !== $survivor ), \JSON_THROW_ON_ERROR ) ];
+	}
+
+	/**
+	 * Each merged theme => the theme it merged into, the newest partition's
+	 * `theme_merges` row, by theme.
+	 *
+	 * @api Graph_Curation judges a theme merge by it.
+	 * @param Row_Reader $r The reader.
+	 * @return array<string,string>
+	 */
+	public static function theme_merges( Row_Reader $r ): array {
+		$merges = [];
+		foreach ( $r->rows( Intel_Graph_Row_Schema::newest( $r, 'theme_merges', 'theme', 'theme, into_theme', '1' ), [] ) as [ $theme, $into ] ) {
+			$merges[ Core::as_string( $theme ) ] = Core::as_string( $into );
+		}
+		\ksort( $merges );
+		return $merges;
 	}
 
 	/**
