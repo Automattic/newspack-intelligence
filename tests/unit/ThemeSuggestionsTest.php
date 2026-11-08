@@ -43,6 +43,9 @@ final class ThemeSuggestionsTest extends TestCase {
 
 	private const DAY = 86400;
 
+	/** Two-letter words, one per theme, that no theme shares. */
+	private const CODES = [ 'aa', 'bb', 'cc', 'dd', 'ee', 'ff', 'gg', 'hh', 'ii', 'jj', 'kk', 'll', 'mm', 'nn', 'oo', 'pp', 'qq', 'rr', 'ss', 'tt' ];
+
 	private Intelligence_CI_Node $ci;
 
 	protected function setUp(): void {
@@ -97,6 +100,47 @@ final class ThemeSuggestionsTest extends TestCase {
 		$this->assertSame( 10, Graph_Query::THEME_SUGGESTIONS );
 		$this->assertCount( 10, $answer['suggestions'] );
 		$this->assertSame( [ 'dredge', 'permit' ], $answer['suggestions'][0]['words'] );
+	}
+
+	/**
+	 * A word more than SUGGESTION_WORD_MAX_THEMES themes hold pairs none of
+	 * them; a rarer word two of them also share still pairs those two.
+	 */
+	public function test_a_word_too_many_themes_hold_makes_no_pair(): void {
+		$this->assertSame( 20, Graph_Query::SUGGESTION_WORD_MAX_THEMES );
+		foreach ( \array_slice( self::CODES, 0, Graph_Query::SUGGESTION_WORD_MAX_THEMES - 1 ) as $code ) {
+			$this->seed( ...$this->ticket( "linear:SEA-{$code}", "seawall {$code}", self::$oct_13, [ self::ACME ] ) );
+		}
+		$this->seed(
+			...$this->ticket( 'linear:SEA-yy', 'breakwater seawall yy', self::$oct_13, [ self::ACME ] ),
+			...$this->ticket( 'linear:SEA-zz', 'breakwater seawall zz', self::$oct_13, [ self::ACME ] )
+		);
+
+		$this->assertSame(
+			[ [ [ [ 'breakwater seawall yy', 1 ], [ 'breakwater seawall zz', 1 ] ], [ 'breakwater', 'seawall' ], 1 ] ],
+			self::pairs( $this->ci->dispatch( 'theme_suggestions', [] ) )
+		);
+	}
+
+	/**
+	 * However many pairs the themes make, THEME_SUGGESTIONS are answered,
+	 * ranked as if every pair were sorted: the pair sharing the rarest
+	 * words first, then the closest pairs by name.
+	 */
+	public function test_many_themes_answer_the_closest_pairs(): void {
+		foreach ( \array_slice( self::CODES, 0, Graph_Query::SUGGESTION_WORD_MAX_THEMES ) as $code ) {
+			$this->seed( ...$this->ticket( "linear:DRG-{$code}", "dredge permit {$code}", self::$oct_13, [ self::ACME ] ) );
+		}
+		$this->seed(
+			...$this->ticket( 'linear:SILT-1', 'silt curtain alpha', self::$oct_13, [ self::ACME ] ),
+			...$this->ticket( 'linear:SILT-2', 'silt curtain beta', self::$oct_13, [ self::ACME ] )
+		);
+
+		$expected = [ [ [ [ 'silt curtain alpha', 1 ], [ 'silt curtain beta', 1 ] ], [ 'curtain', 'silt' ], 1 ] ];
+		foreach ( \array_slice( self::CODES, 1, Graph_Query::THEME_SUGGESTIONS - 1 ) as $code ) {
+			$expected[] = [ [ [ 'dredge permit aa', 1 ], [ "dredge permit {$code}", 1 ] ], [ 'dredge', 'permit' ], 1 ];
+		}
+		$this->assertSame( $expected, self::pairs( $this->ci->dispatch( 'theme_suggestions', [] ) ) );
 	}
 
 	/** The read costs the same statements however many themes it pairs. */

@@ -94,6 +94,9 @@ final class Graph_Query {
 	/** The most pairs of themes `theme_suggestions` answers. */
 	public const THEME_SUGGESTIONS = 10;
 
+	/** The most themes a word may be held by and still pair them. */
+	public const SUGGESTION_WORD_MAX_THEMES = 20;
+
 	/** The most open clients an item is about and still names; one about more names none. */
 	public const MAX_ITEM_CLIENTS = 3;
 
@@ -433,7 +436,11 @@ final class Graph_Query {
 
 	/**
 	 * The THEME_SUGGESTIONS pairs of themes sharing an entity and a kept word,
-	 * the most alike first, each as `theme_suggestions()` answers it.
+	 * the most alike first, each as `theme_suggestions()` answers it. A word
+	 * more than SUGGESTION_WORD_MAX_THEMES themes hold pairs none of them, so
+	 * the pairs grow with the words rather than with the square of the
+	 * themes; each pair is scored once, from the first of its pairing words
+	 * in string order, and the best are kept as they are scored.
 	 *
 	 * @param array<string,array{stories:int,entities:array<string,true>}> $themes Each theme's stories and entities.
 	 * @return list<array{themes:list<array{theme:string,stories:int}>,words:list<string>,shared:int}>
@@ -447,37 +454,53 @@ final class Graph_Query {
 				$words[ $word ][] = $theme;
 			}
 		}
-		$pairs = [];
-		foreach ( $words as $holding ) {
+		$weight  = \array_map( static fn ( array $holding ): float => \log( 1 + \count( $themes ) / \count( $holding ) ), $words );
+		$pairing = \array_filter( $words, static fn ( array $holding ): bool => \count( $holding ) <= self::SUGGESTION_WORD_MAX_THEMES );
+		$ranked  = [];
+		foreach ( $pairing as $word => $holding ) {
 			\sort( $holding );
 			foreach ( $holding as $at => $a ) {
 				foreach ( \array_slice( $holding, $at + 1 ) as $b ) {
-					$pairs[ "{$a}\0{$b}" ] ??= [ $a, $b ];
+					$both     = \array_keys( \array_intersect_key( $holds[ $a ], $holds[ $b ] ) );
+					$eligible = \array_values( \array_filter( $both, static fn ( string $shared ): bool => isset( $pairing[ $shared ] ) ) );
+					\sort( $eligible, \SORT_STRING );
+					if ( $word !== $eligible[0] ) {
+						continue;
+					}
+					$shared = \count( \array_intersect_key( $themes[ $a ]['entities'], $themes[ $b ]['entities'] ) );
+					if ( 0 === $shared ) {
+						continue;
+					}
+					$sides = [ [ 'theme' => $a, 'stories' => $themes[ $a ]['stories'] ], [ 'theme' => $b, 'stories' => $themes[ $b ]['stories'] ] ];
+					\usort( $sides, static fn ( array $x, array $y ): int => [ $y['stories'], $x['theme'] ] <=> [ $x['stories'], $y['theme'] ] );
+					\sort( $both );
+					$ranked[] = [
+						[ -self::alike( $both, \array_keys( $holds[ $a ] + $holds[ $b ] ), $weight ), -$shared, -( $sides[0]['stories'] + $sides[1]['stories'] ), $a, $b ],
+						[
+							'themes' => $sides,
+							'words'  => $both,
+							'shared' => $shared,
+						],
+					];
+					if ( \count( $ranked ) >= 2 * self::THEME_SUGGESTIONS ) {
+						$ranked = self::best( $ranked );
+					}
 				}
 			}
 		}
-		$weight = \array_map( static fn ( array $holding ): float => \log( 1 + \count( $themes ) / \count( $holding ) ), $words );
-		$ranked = [];
-		foreach ( $pairs as [ $a, $b ] ) {
-			$shared = \count( \array_intersect_key( $themes[ $a ]['entities'], $themes[ $b ]['entities'] ) );
-			if ( 0 === $shared ) {
-				continue;
-			}
-			$both     = \array_keys( \array_intersect_key( $holds[ $a ], $holds[ $b ] ) );
-			$sides    = [ [ 'theme' => $a, 'stories' => $themes[ $a ]['stories'] ], [ 'theme' => $b, 'stories' => $themes[ $b ]['stories'] ] ];
-			\usort( $sides, static fn ( array $x, array $y ): int => [ $y['stories'], $x['theme'] ] <=> [ $x['stories'], $y['theme'] ] );
-			\sort( $both );
-			$ranked[] = [
-				[ -self::alike( $both, \array_keys( $holds[ $a ] + $holds[ $b ] ), $weight ), -$shared, -( $sides[0]['stories'] + $sides[1]['stories'] ), $a, $b ],
-				[
-					'themes' => $sides,
-					'words'  => $both,
-					'shared' => $shared,
-				],
-			];
-		}
+		return \array_column( self::best( $ranked ), 1 );
+	}
+
+	/**
+	 * The THEME_SUGGESTIONS best of scored pairs, the best first.
+	 *
+	 * @template T
+	 * @param list<array{0:array<int,float|int|string>,1:T}> $ranked Each pair's sort key and answer.
+	 * @return list<array{0:array<int,float|int|string>,1:T}>
+	 */
+	private static function best( array $ranked ): array {
 		\usort( $ranked, static fn ( array $x, array $y ): int => $x[0] <=> $y[0] );
-		return \array_column( \array_slice( $ranked, 0, self::THEME_SUGGESTIONS ), 1 );
+		return \array_slice( $ranked, 0, self::THEME_SUGGESTIONS );
 	}
 
 	/**

@@ -1317,9 +1317,13 @@ themes' items are about. Pairs rank by how alike the names are,
 of every word either holds, a word weighing `log( 1 + themes / holding )`,
 so a rare word such as "offboarding" outweighs a common one such as
 "local"; then by `shared`, then by the two themes' stories, then by name;
-`Graph_Query::THEME_SUGGESTIONS` (10) are answered. One statement reads
-the theme merges, one every theme's stories and entities, and the pairs are
-made in PHP.
+`Graph_Query::THEME_SUGGESTIONS` (10) are answered. A word more than
+`Graph_Query::SUGGESTION_WORD_MAX_THEMES` (20) themes hold pairs none of
+them, though it still counts in the weights and in `words`; each pair is
+scored once, from the first word in string order that pairs it, and the
+best are kept as they are scored, so the work grows with the words rather
+than with the square of the themes. One statement reads the theme merges,
+one every theme's stories and entities, and the pairs are made in PHP.
 
 **Health.** `health <what>` (`Intelligence_Health`), at `read`, answers
 one slice of pipeline health a call, so the strip asks each through its
@@ -1759,23 +1763,29 @@ line, before anything is written. `remove_lens` slugs its key as
 `merge_theme <from> <into>` writes `theme_merged`, so every read of an
 item's theme reads `into` where it read `from` (see Projection). It bounds
 each theme at `Intel_Event::THEME_BYTES` (80) and reads the projection once:
-its `theme_merges` rows (`Graph_Query::theme_merges()`) and each item's
-theme with its tier, both the newest partition's. It refuses a merge into itself (`cannot
-merge theme <from> into itself`); one after which `Entity_Index::walk()`,
+its `theme_merges` rows (`Graph_Query::theme_merges()`) and the theme of
+each item in the caller's `ri`, with its tier, both the newest partition's.
+It refuses a merge into itself (`cannot merge theme <from> into itself`);
+one naming a theme that is not the theme of any item the caller may read,
+neither as written nor as its survivor (`no theme: <theme>`), as
+`merge_entities` refuses an entity the caller cannot see, so a caller
+without restricted access reads one refusal for a theme only restricted
+items carry and for one that is not the theme of any item; one after which `Entity_Index::walk()`,
 over those rows plus the new one, leaves a theme that resolved before on a
-chain that cycles or runs past `MAX_MERGE_HOPS`, naming the first (`merging
-<from> into <into> would leave <theme> on a chain that cycles or runs past
-10 hops`); one into a theme that itself merges away, naming its survivor
+chain that cycles or runs past `MAX_MERGE_HOPS`, naming the first such
+theme the caller can see as the refusal above sees it (`merging <from>
+into <into> would leave <theme> on a chain that cycles or runs past 10
+hops`), or `a theme` where the caller can see none of them, since the
+merges carry no tier; one into a theme that itself merges away, naming its survivor
 (`<into> merges into <survivor>; merge <from> into <survivor> instead`),
 or whose own chain cycles or runs past the cap (`<into> is on a merge chain
 that cycles or runs past 10 hops; merge <from> into a theme whose chain
-resolves instead`); and, since curation cannot declassify, one that would
-make `into` the theme of an unrestricted item for the first time, an item
-an older partition alone gives it not counting (`merging <from> into
-<into> would show <into> to every reader; it is not the theme of any item
-outside the restricted tier`, or `…; it is not the theme of any readable
-item` for a theme that is not the theme of any item of any tier). A theme merged away merges again, its row
-replaced.
+resolves instead`); and, since curation cannot declassify, one by a
+holder of the restricted tier that would make `into` the theme of an
+unrestricted item for the first time, an item an older partition alone
+gives it not counting (`merging <from> into <into> would show <into> to
+every reader; it is not the theme of any item outside the restricted
+tier`). A theme merged away merges again, its row replaced.
 `fetch_now` TICKs every source in each live worker — each node of a
 `Source_Node` subclass Intelligence's topology declares, read through
 `Topology_Analyzer::nodes_of_type()` — through `Worker_Route` and

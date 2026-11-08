@@ -289,8 +289,11 @@ final class IntelligenceCurationTest extends TestCase {
 			'merge a theme into itself'   => [ 'merge_theme', [ self::OFFBOARDING, self::OFFBOARDING ], 'cannot merge theme client offboarding into itself' ],
 			'merge into a merged theme'   => [ 'merge_theme', [ self::PLATFORM, self::AUTOMATION ], 'offboarding automation merges into client offboarding; merge client offboarding from platform into client offboarding instead' ],
 			'merge a theme past the hops' => [ 'merge_theme', [ 'theme chain 10', self::OFFBOARDING ], 'merging theme chain 10 into client offboarding would leave theme chain 0 on a chain that cycles or runs past 10 hops' ],
-			'merge into a hidden theme'   => [ 'merge_theme', [ self::PLATFORM, self::SETTLEMENT ], 'merging client offboarding from platform into board settlement talks would show board settlement talks to every reader; it is not the theme of any item outside the restricted tier' ],
-			'merge into an unused theme'  => [ 'merge_theme', [ self::PLATFORM, 'client exit' ], 'merging client offboarding from platform into client exit would show client exit to every reader; it is not the theme of any readable item' ],
+			'merge into a hidden theme'   => [ 'merge_theme', [ self::PLATFORM, self::SETTLEMENT ], 'no theme: board settlement talks' ],
+			'merge from a hidden theme'   => [ 'merge_theme', [ self::SETTLEMENT, self::OFFBOARDING ], 'no theme: board settlement talks' ],
+			'merge into an unused theme'  => [ 'merge_theme', [ self::PLATFORM, 'client exit' ], 'no theme: client exit' ],
+			'merge from an unused theme'  => [ 'merge_theme', [ 'client exit', self::OFFBOARDING ], 'no theme: client exit' ],
+			'merge a hidden chain theme'  => [ 'merge_theme', [ 'theme chain 4', self::OFFBOARDING ], 'no theme: theme chain 4' ],
 			'merge into a cycling theme'  => [ 'merge_theme', [ 'theme loop a', 'theme loop b' ], 'theme loop b is on a merge chain that cycles or runs past 10 hops; merge theme loop a into a theme whose chain resolves instead' ],
 		];
 	}
@@ -334,12 +337,121 @@ final class IntelligenceCurationTest extends TestCase {
 	}
 
 	/**
+	 * A caller without restricted access reads one refusal for a theme only
+	 * a restricted item carries and for one no item carries, so the merge
+	 * cannot tell it whether a restricted item carries a theme.
+	 */
+	public function test_a_reader_cannot_tell_a_restricted_theme_from_none(): void {
+		$this->seed_curation_world();
+		$refusal = function (): string {
+			try {
+				$this->ci->dispatch( 'merge_theme', [ self::PLATFORM, 'harbor dredging dispute' ] );
+				$this->fail( 'a merge into a theme the reader cannot see was written' );
+			} catch ( \InvalidArgumentException $e ) {
+				return $e->getMessage();
+			}
+		};
+		$none = $refusal();
+
+		$this->seed(
+			self::item( 'unthread:dredge-5', 'Dredging dispute', 'unthread', 'restricted', self::$oct_13 ),
+			self::extraction( 'unthread:dredge-5', 'Dredging.', 'other', self::$oct_13, [], 5.0, 5.0, 'harbor dredging dispute' )
+		);
+
+		$this->assertSame( 'no theme: harbor dredging dispute', $none );
+		$this->assertSame( $none, $refusal() );
+		$this->assertSame( [], self::ontology_events() );
+	}
+
+	/**
+	 * A holder of the restricted tier sees a theme only restricted items
+	 * carry, and is refused merging an unrestricted theme into it, which
+	 * would show it to every reader; and it cannot see a theme that is not
+	 * the theme of any item.
+	 */
+	public function test_a_holder_cannot_show_a_restricted_theme_to_every_reader(): void {
+		$this->seed_curation_world();
+		self::sign_in( 38, 'quay-analyst', 'manage_options', Intel_Tiers::CAPABILITY );
+
+		foreach ( [ [ self::SETTLEMENT, 'merging client offboarding from platform into board settlement talks would show board settlement talks to every reader; it is not the theme of any item outside the restricted tier' ], [ 'client exit', 'no theme: client exit' ] ] as [ $into, $message ] ) {
+			try {
+				$this->ci->dispatch( 'merge_theme', [ self::PLATFORM, $into ] );
+				$this->fail( "a merge into {$into} was written" );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertSame( $message, $e->getMessage() );
+			}
+		}
+		$this->assertSame( [], self::ontology_events() );
+	}
+
+	/**
+	 * A chain past the hop limit is refused naming its first broken theme
+	 * only to a caller that may read it: a reader without the restricted
+	 * tier reads a refusal naming no theme, and a holder reads the theme.
+	 */
+	public function test_a_chain_refusal_names_only_a_theme_the_caller_reads(): void {
+		$this->seed_curation_world();
+		$chain = [];
+		for ( $n = 0; $n < 10; $n++ ) {
+			$chain[] = [ Intel_Event::make( 'theme_merged', [ 'from' => "silt chain {$n}", 'into' => 'silt chain ' . ( $n + 1 ) ], 'user:41', 'fixture-9' ) ];
+		}
+		$this->seed(
+			self::item( 'unthread:silt-1', 'Silt', 'unthread', 'restricted', self::$oct_13 ),
+			self::extraction( 'unthread:silt-1', 'Silt.', 'other', self::$oct_13, [], 5.0, 5.0, 'silt chain 0' ),
+			self::item( 'feed:silt-2', 'Silt', 'feed', 'public', self::$oct_13 ),
+			self::extraction( 'feed:silt-2', 'Silt.', 'other', self::$oct_13, [], 5.0, 5.0, 'silt chain 10' ),
+			...$chain
+		);
+		$refusal = function (): string {
+			try {
+				$this->ci->dispatch( 'merge_theme', [ 'silt chain 10', self::OFFBOARDING ] );
+				$this->fail( 'a merge past the hop limit was written' );
+			} catch ( \InvalidArgumentException $e ) {
+				return $e->getMessage();
+			}
+		};
+
+		$this->assertSame( 'merging silt chain 10 into client offboarding would leave a theme on a chain that cycles or runs past 10 hops', $refusal() );
+		self::sign_in( 38, 'quay-analyst', 'manage_options', Intel_Tiers::CAPABILITY );
+		$this->assertSame( 'merging silt chain 10 into client offboarding would leave silt chain 0 on a chain that cycles or runs past 10 hops', $refusal() );
+		$this->assertSame( [], self::ontology_events() );
+	}
+
+	/**
+	 * A theme that is a whole number stays a string throughout: a reader
+	 * merges one it can see, and its chain resolves as any theme's does.
+	 */
+	public function test_a_numeric_theme_merges_as_a_string(): void {
+		$this->seed_curation_world();
+		$this->seed(
+			self::item( 'feed:year-1', 'Year', 'feed', 'public', self::$oct_13 ),
+			self::extraction( 'feed:year-1', 'Year.', 'other', self::$oct_13, [], 5.0, 5.0, '2026' ),
+			[ Intel_Event::make( 'theme_merged', [ 'from' => '404', 'into' => '2026' ], 'user:41', 'fixture-9' ) ]
+		);
+
+		$this->ci->dispatch( 'merge_theme', [ '2026', self::OFFBOARDING ] );
+
+		$this->assertSame( [ [ '2026', self::OFFBOARDING ] ], \array_map( static fn ( array $e ): array => [ $e['from'], $e['into'] ], self::ontology_events() ) );
+	}
+
+	/** A holder merges a theme only restricted items carry into one every reader sees. */
+	public function test_a_holder_merges_a_restricted_theme_into_an_open_one(): void {
+		$this->seed_curation_world();
+		self::sign_in( 38, 'quay-analyst', 'manage_options', Intel_Tiers::CAPABILITY );
+
+		$this->ci->dispatch( 'merge_theme', [ self::SETTLEMENT, self::OFFBOARDING ] );
+
+		$this->assertSame( [ [ self::SETTLEMENT, self::OFFBOARDING ] ], \array_map( static fn ( array $e ): array => [ $e['from'], $e['into'] ], self::ontology_events() ) );
+	}
+
+	/**
 	 * Only each item's newest theme counts as shown: a theme an unrestricted
 	 * item carried in an older partition alone, and a restricted item still
-	 * carries, is refused as a merge target that would show it.
+	 * carries, is refused to a holder as a merge target that would show it.
 	 */
 	public function test_a_theme_an_older_partition_alone_shows_counts_as_hidden(): void {
 		$this->seed_curation_world();
+		self::sign_in( 38, 'quay-analyst', 'manage_options', Intel_Tiers::CAPABILITY );
 		$this->seed(
 			self::item( 'feed:drift-1', 'Drift ledger', 'feed', 'public', self::$oct_13 ),
 			self::extraction( 'feed:drift-1', 'Drift.', 'other', self::$oct_13, [], 5.0, 5.0, 'drift ledger gap' ),
@@ -536,6 +648,10 @@ final class IntelligenceCurationTest extends TestCase {
 			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => $entity, 'role' => 'newspack_product', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ) ],
 			self::link( 'link_asserted', $item, $entity, 'subject', 'name', 1.0, self::$oct_06 ),
 			self::entity( $topic, 'Wide' ),
+			self::item( 'feed:wide-from', 'Wide from', 'feed', 'public', self::$oct_06 ),
+			self::extraction( 'feed:wide-from', 'Wide.', 'other', self::$oct_06, [], 5.0, 5.0, $wide( Intel_Event::THEME_BYTES ) ),
+			self::item( 'feed:wide-into', 'Wide into', 'feed', 'public', self::$oct_06 ),
+			self::extraction( 'feed:wide-into', 'Wide.', 'other', self::$oct_06, [], 5.0, 5.0, $wide( Intel_Event::THEME_BYTES - 1 ) . 'r' ),
 			...\array_map( static fn ( string $tag ): array => self::entity( $key( $tag ), 'Wide' ), [ 'a', 'b', 'd' ] )
 		);
 		$calls = [
@@ -612,8 +728,10 @@ final class IntelligenceCurationTest extends TestCase {
 
 	/**
 	 * Three offboarding themes on items every reader reads, one merged into
-	 * another; a theme only a restricted item names; and a ten-hop chain of
-	 * theme merges.
+	 * another; a theme only a restricted item names; a ten-hop chain of
+	 * theme merges whose first theme an open item carries and whose fifth a
+	 * restricted item alone carries; and two themes merged into each other,
+	 * each carried by an open item.
 	 */
 	private function seed_theme_world(): void {
 		$themed = static fn ( string $key, string $tier, string $theme ): array => [
@@ -629,6 +747,10 @@ final class IntelligenceCurationTest extends TestCase {
 			$themed( 'feed:off-2', 'public', self::PLATFORM ),
 			$themed( 'linear:OFF-3', 'internal', self::AUTOMATION ),
 			$themed( 'unthread:board-4', 'restricted', self::SETTLEMENT ),
+			$themed( 'feed:chain-5', 'public', 'theme chain 0' ),
+			$themed( 'unthread:chain-6', 'restricted', 'theme chain 4' ),
+			$themed( 'feed:loop-7', 'public', 'theme loop a' ),
+			$themed( 'feed:loop-8', 'public', 'theme loop b' ),
 			[ Intel_Event::make( 'theme_merged', [ 'from' => self::AUTOMATION, 'into' => self::OFFBOARDING ], 'user:41', 'fixture-9' ) ],
 			[ Intel_Event::make( 'theme_merged', [ 'from' => 'theme loop a', 'into' => 'theme loop b' ], 'user:41', 'fixture-9' ) ],
 			[ Intel_Event::make( 'theme_merged', [ 'from' => 'theme loop b', 'into' => 'theme loop a' ], 'user:41', 'fixture-9' ) ],
