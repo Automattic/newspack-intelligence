@@ -3,8 +3,9 @@
  * Client_Importer: reconcile a parsed clients CSV against the client roster.
  *
  * Pure logic: depends only on a Client_Roster. Upserts by atomic_site_id,
- * marks churn for held ids absent from the CSV, reactivates returning
- * clients, then commits the roster's changes once.
+ * marks churn for active ids absent from the CSV, reactivates returning
+ * clients, leaves alone a client a curator ended, then commits the roster's
+ * changes once.
  *
  * @package Newspack_Intelligence
  */
@@ -20,20 +21,21 @@ final class Client_Importer {
 	/**
 	 * @param array<int,array{atomic_site_id:string,domain_name:string,created:string}> $rows
 	 * @param string $today YYYY-MM-DD.
-	 * @return array{created:int,updated:int,reactivated:int,churned:int,total_in_csv:int} Counts are
+	 * @return array{created:int,updated:int,reactivated:int,churned:int,held:int,total_in_csv:int} Counts are
 	 *         disjoint: an existing row that was churned is counted only in `reactivated`, never
-	 *         also in `updated`.
+	 *         also in `updated`, and one a curator ended only in `held`, which changes nothing.
 	 */
 	public function import( array $rows, string $today ): array {
 		$created     = 0;
 		$updated     = 0;
 		$reactivated = 0;
 		$churned     = 0;
+		$held        = 0;
 		$csv_ids     = [];
 
 		// Empty snapshot: the churn loop below would mark EVERY client churned.
 		if ( [] === $rows ) {
-			return [ 'created' => 0, 'updated' => 0, 'reactivated' => 0, 'churned' => 0, 'total_in_csv' => 0 ];
+			return [ 'created' => 0, 'updated' => 0, 'reactivated' => 0, 'churned' => 0, 'held' => 0, 'total_in_csv' => 0 ];
 		}
 
 		foreach ( $rows as $row ) {
@@ -43,6 +45,10 @@ final class Client_Importer {
 			if ( null === $existing ) {
 				$this->roster->create( $row, $today );
 				++$created;
+				continue;
+			}
+			if ( 'held' === $existing['status'] ) {
+				++$held;
 				continue;
 			}
 			$this->roster->update_atomic_fields( $id, $row, $today );
@@ -68,6 +74,7 @@ final class Client_Importer {
 			'updated'      => $updated,
 			'reactivated'  => $reactivated,
 			'churned'      => $churned,
+			'held'         => $held,
 			'total_in_csv' => \count( $csv_ids ),
 		];
 	}

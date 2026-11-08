@@ -61,12 +61,13 @@ class Clients_CLI_Command {
 		if ( \class_exists( '\WP_CLI' ) ) {
 			\WP_CLI::success(
 				\sprintf(
-					'Imported %d rows: %d created, %d updated, %d reactivated, %d churned.',
+					'Imported %d rows: %d created, %d updated, %d reactivated, %d churned, %d held by curation.',
 					$result['total_in_csv'],
 					$result['created'],
 					$result['updated'],
 					$result['reactivated'],
-					$result['churned']
+					$result['churned'],
+					$result['held']
 				)
 			);
 		}

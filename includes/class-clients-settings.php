@@ -33,7 +33,7 @@ class Clients_Settings {
 	 * Parse + import a CSV file at $path.
 	 *
 	 * @param string $path Path to the CSV file.
-	 * @return array{created:int,updated:int,reactivated:int,churned:int,total_in_csv:int}
+	 * @return array{created:int,updated:int,reactivated:int,churned:int,held:int,total_in_csv:int}
 	 * @throws \Newspack_Nodes\Table_Unavailable When the projection cannot be read.
 	 */
 	public function import_path( string $path ): array {
@@ -44,6 +44,7 @@ class Clients_Settings {
 				'updated'      => 0,
 				'reactivated'  => 0,
 				'churned'      => 0,
+				'held'         => 0,
 				'total_in_csv' => 0,
 			];
 		}

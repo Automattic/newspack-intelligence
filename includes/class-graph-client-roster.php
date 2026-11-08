@@ -11,7 +11,9 @@
  * a client from the earliest day its snapshot rows were Created, or from
  * the end of its latest ended client or former_client row when that is
  * later, and an import moves an open client role that starts on any other
- * day. A client whose entity, or
+ * day. A client a curator ended, holding neither role open after a client
+ * row that held time, is held: an import opens no role on it. A client
+ * whose entity, or
  * whose domain's holder, a person rejected or whose merge chain does not
  * resolve is left alone, and logged. Each change
  * is recorded as ontology events under the actor the roster was built with,
@@ -72,6 +74,9 @@ final class Graph_Client_Roster implements Client_Roster {
 	/** @var array<string,int> Each entity => the latest end of a closed client or former_client row holding time. */
 	private array $returned = [];
 
+	/** @var array<string,true> Each entity a curator ended: neither role open, and a client row closed holding time. */
+	private array $held = [];
+
 	/** @var list<array<string,mixed>> The events the import has minted. */
 	private array $events = [];
 
@@ -82,8 +87,8 @@ final class Graph_Client_Roster implements Client_Roster {
 
 	/**
 	 * The roster's record of an atomic id: active while its entity holds an
-	 * open client role, refused when its entity is rejected or its merge chain
-	 * does not resolve.
+	 * open client role, held when a curator ended it, refused when its entity
+	 * is rejected or its merge chain does not resolve.
 	 *
 	 * @param string $atomic_id The atomic site id.
 	 * @return array{status:string}|null
@@ -94,14 +99,14 @@ final class Graph_Client_Roster implements Client_Roster {
 	}
 
 	/**
-	 * Every atomic id an entity carries, active or churned, and every one a
-	 * refused entity holds.
+	 * Every atomic id an entity carries, active, churned or held, and every
+	 * one a refused entity holds.
 	 *
 	 * @return array<string,string>
 	 */
 	public function statuses(): array {
 		$this->load();
-		$statuses = \array_map( fn ( string $key ): string => isset( $this->open[ $key ]['client'] ) ? 'active' : 'churned', $this->atomic );
+		$statuses = \array_map( fn ( string $key ): string => isset( $this->open[ $key ]['client'] ) ? 'active' : ( isset( $this->held[ $key ] ) ? 'held' : 'churned' ), $this->atomic );
 		return \array_map( static fn (): string => 'refused', $this->refused ) + $statuses;
 	}
 
@@ -109,8 +114,8 @@ final class Graph_Client_Roster implements Client_Roster {
 	 * A client the roster lacks: the entity holding its domain, else a new
 	 * organization keyed by the atomic id and named by its domain, or by the id
 	 * when it has none. It gains the atomic id, the domain when it is not held
-	 * by any entity, and settle() opens its client role from start(). A domain
-	 * a refused entity holds leaves the client alone.
+	 * by any entity, and settle() opens its client role from start() unless
+	 * it is held. A domain a refused entity holds leaves the client alone.
 	 *
 	 * @param array{atomic_site_id:string,domain_name:string,created:string} $row   The CSV row.
 	 * @param string                                                         $today YYYY-MM-DD, UTC.
@@ -135,7 +140,7 @@ final class Graph_Client_Roster implements Client_Roster {
 		$this->atomic[ $id ] = $key;
 		$this->mint( $id, 'identifier_added', [ 'entity_key' => $key, 'kind' => 'atomic_site_id', 'value' => $id ] );
 		$this->update_atomic_fields( $id, $row, $today );
-		if ( ! isset( $this->open[ $key ]['client'] ) ) {
+		if ( ! isset( $this->open[ $key ]['client'] ) && ! isset( $this->held[ $key ] ) ) {
 			$this->set_active( $id, $today );
 		}
 	}
@@ -289,7 +294,7 @@ final class Graph_Client_Roster implements Client_Roster {
 	 */
 	private function load(): void {
 		if ( null === $this->index ) {
-			[ $this->index, $this->atomic, $this->refused, $this->open, $this->returned ] = self::read();
+			[ $this->index, $this->atomic, $this->refused, $this->open, $this->returned, $this->held ] = self::read();
 		}
 	}
 
@@ -297,9 +302,10 @@ final class Graph_Client_Roster implements Client_Roster {
 	 * The index, every atomic id by the entity it answers or by the refused
 	 * entity holding it, and, under its survivor, the open client and
 	 * former_client rows of every entity carrying an atomic id or a domain,
-	 * and the latest end of one of those rows closed holding time.
+	 * the latest end of one of those rows closed holding time, and the
+	 * entities a curator ended.
 	 *
-	 * @return array{0:Entity_Index,1:array<string,string>,2:array<string,string>,3:Open_Roles,4:array<string,int>}
+	 * @return array{0:Entity_Index,1:array<string,string>,2:array<string,string>,3:Open_Roles,4:array<string,int>,5:array<string,true>}
 	 * @throws \Newspack_Nodes\Table_Unavailable When the projection will not
 	 *                                           open.
 	 */
@@ -327,13 +333,15 @@ final class Graph_Client_Roster implements Client_Roster {
 	/**
 	 * Every client and former_client row of each survivor's keys, in one
 	 * read: the open ones, the latest first, as `[ the key it is held under,
-	 * from_ts ]`, and the latest end of those closed holding time, which a
-	 * client is a client from at the earliest. A row ended where it began
-	 * holds none, so it counts in neither.
+	 * from_ts ]`, the latest end of those closed holding time, which a
+	 * client is a client from at the earliest, and each survivor holding
+	 * neither role open whose client row closed holding time, which only a
+	 * curator leaves, since a churn opens former_client. A row ended where
+	 * it began holds none, so it is not counted in any of them.
 	 *
 	 * @param Row_Reader                 $r         The reader.
 	 * @param array<string,list<string>> $survivors Each survivor => the keys its rows sit under.
-	 * @return array{0:Open_Roles,1:array<string,int>}
+	 * @return array{0:Open_Roles,1:array<string,int>,2:array<string,true>}
 	 */
 	private static function roles( Row_Reader $r, array $survivors ): array {
 		$owner = [];
@@ -343,8 +351,9 @@ final class Graph_Client_Roster implements Client_Roster {
 		$keys     = \array_map( 'strval', \array_keys( $owner ) );
 		$open     = [];
 		$returned = [];
+		$ended    = [];
 		if ( [] === $keys ) {
-			return [ $open, $returned ];
+			return [ $open, $returned, $ended ];
 		}
 		$rows = $r->rows(
 			'SELECT entity_key, role, from_ts, to_ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'roles' ) . ' t WHERE role IN ( ' . Intel_Graph_Row_Schema::marks( self::ROLES )
@@ -359,9 +368,12 @@ final class Graph_Client_Roster implements Client_Roster {
 				$open[ $survivor ][ Core::as_string( $role ) ][] = [ $key, $from ];
 			} elseif ( $to > $from ) {
 				$returned[ $survivor ] = \max( $returned[ $survivor ] ?? 0, $to );
+				if ( 'client' === $role ) {
+					$ended[ $survivor ] = true;
+				}
 			}
 		}
-		return [ $open, $returned ];
+		return [ $open, $returned, \array_diff_key( $ended, $open ) ];
 	}
 
 	/**
@@ -384,6 +396,7 @@ final class Graph_Client_Roster implements Client_Roster {
 			$this->events     = [];
 			$this->since      = [];
 			$this->returned   = [];
+			$this->held       = [];
 			$this->index      = null;
 			$this->atomic     = [];
 			$this->refused    = [];
@@ -396,12 +409,12 @@ final class Graph_Client_Roster implements Client_Roster {
 
 	/**
 	 * Open each client in the snapshot from start(), once every row is
-	 * reconciled: an open client row starting on another day ends where it
-	 * began, holding no time, and a row opens from start() unless one
-	 * starts there already.
+	 * reconciled, but a held one: an open client row starting on another day
+	 * ends where it began, holding no time, and a row opens from start()
+	 * unless one starts there already.
 	 */
 	private function settle(): void {
-		foreach ( $this->since as $key => [ , $id ] ) {
+		foreach ( \array_diff_key( $this->since, $this->held ) as $key => [ , $id ] ) {
 			$start = $this->start( $key );
 			$rows  = $this->open[ $key ]['client'] ?? [];
 			$stale = \array_filter( $rows, static fn ( array $row ): bool => $start !== $row[1] );

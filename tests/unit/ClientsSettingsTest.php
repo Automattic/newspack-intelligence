@@ -64,7 +64,7 @@ final class ClientsSettingsTest extends TestCase {
 	public function test_import_path_returns_zeroes_for_unreadable_file(): void {
 		$settings = new Clients_Settings( new Client_Importer( new Fake_Client_Roster() ) );
 		$result   = $settings->import_path( '/no/such/file.csv' );
-		$this->assertSame( 0, $result['total_in_csv'] );
+		$this->assertSame( [ 'created' => 0, 'updated' => 0, 'reactivated' => 0, 'churned' => 0, 'held' => 0, 'total_in_csv' => 0 ], $result );
 	}
 
 	/** An upload imports into the ontology as the signed-in person. */

@@ -785,6 +785,19 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [], self::read( 'review', [ 'what' => 'links' ] )['links'] );
 	}
 
+	/** No item shows an entity whose survivor is rejected: its link stays stored, and lists no chip. */
+	public function test_entities_leave_out_a_rejected_survivor(): void {
+		$this->seed_world();
+		$this->seed(
+			self::entity( 'product:tern-relay', 'Tern Relay' ),
+			self::link( 'link_asserted', 'feed:gazette-award', 'product:tern-relay', 'mention', 'name', 1.0, self::$oct_06 ),
+			[ Intel_Event::make( 'entity_rejected', [ 'entity_key' => 'product:tern-relay' ], 'user:41', 'fixture-9' ) ]
+		);
+
+		$this->assertSame( [ self::GAZETTE ], \array_column( self::search( [ 'q' => 'state award' ] )['items'][0]['entities'], 'entity_key' ) );
+		$this->assertSame( [ self::GAZETTE ], \array_column( self::search( [ 'q' => 'state award', 'group' => 'theme', 'sort' => null ] )['groups'][0]['items'][0]['entities'], 'entity_key' ) );
+	}
+
 	/** A rejected topic link drops the item from that topic's trend and filter. */
 	public function test_a_rejected_topic_link_counts_nowhere(): void {
 		$this->seed_world();

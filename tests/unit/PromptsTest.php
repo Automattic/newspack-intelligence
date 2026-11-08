@@ -359,6 +359,11 @@ final class PromptsTest extends TestCase {
 		$this->assertSame( [], Prompts::questions( [ 'publisher' => '', 'themes' => [], 'summary' => 'Heron Weekly wins a prize.', 'kind' => 'award' ] ) );
 	}
 
+	/** A release is checked as a final one, at a bar of 0.5. */
+	public function test_a_release_check_answers_no_for_a_prerelease(): void {
+		$this->assertSame( 0.5, Prompts::KIND_CHECKS['release']['min'] ?? null );
+	}
+
 	/** Every checked kind is an item kind, and no check is asked of `other`, which has nowhere to fall. */
 	public function test_every_kind_check_names_an_item_kind(): void {
 		$this->assertSame( [], \array_diff( \array_keys( Prompts::KIND_CHECKS ), \Newspack_Intelligence\Intel_Event::ITEM_KINDS ) );
@@ -415,7 +420,7 @@ final class PromptsTest extends TestCase {
 			'churned'         => [ 'has left Newspack or is leaving', 'offboarding underway or done', 'the decision already made' ],
 			'churn_signal'    => [ 'a hint that a client may leave', 'dissatisfaction with price or service', 'going quiet', 'weighing a competitor', 'not a client already offboarding', 'nor a client adopting more Newspack', 'routine account or storage work' ],
 			'research'        => [ 'of the news industry, its audiences or its business, as published', 'Not Newspack\'s or Automattic\'s own engineering, audit, performance or planning work' ],
-			'release'         => [ 'a GitHub release page always is one' ],
+			'release'         => [ 'a software release or version shipped for general use', 'a pre-release, release candidate, alpha, beta or nightly build is other' ],
 			'other'           => [ 'routine service and onboarding work', 'internal planning', 'internal tooling, audits and engineering reports', 'team updates and kudos', 'a publication\'s own journalism about anyone else' ],
 		];
 		foreach ( $phrases as $kind => $needles ) {

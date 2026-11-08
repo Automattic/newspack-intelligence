@@ -623,7 +623,7 @@ whether the article is about the publisher itself or the news industry;
 `fits_kind`, a `noul`, when `Prompts::KIND_CHECKS` holds their `kind`,
 asking that kind's question, which says what a reply gives the kind and it
 does not fit, such as a ticket tracking a launch, a publication asking its
-readers to donate or a setting changed for one site;
+readers to donate, a setting changed for one site or a release candidate;
 and `theme_choice`, a `choice`, when they offer `themes`, asking which
 names the event or initiative the item is part of, its `criteria` each
 offered theme keyed `t1` to `tN`, told as `<theme>: <example>`, then
@@ -682,7 +682,7 @@ body, up to 64 KiB, for as long as it waits.
 
 **Extraction.** `extractor` skips a resolution with no link and no
 candidate, unless it carries `extract: true`, which is never skipped; for any other it asks `intel:llm`, its third argument, also
-declared, for one call, 800 tokens at temperature 0.2, KEY the `item_key`,
+declared, for one call, 800 tokens at temperature 0, KEY the `item_key`,
 naming the `extract` prompt with the item, and as its inputs the topics it
 offers, by name and key, the profile, the audience and the publisher,
 carrying the resolution less its item, as backlog when the resolution carries
@@ -759,7 +759,9 @@ an internal tool, process or deploy going live; `research` is a study,
 survey, report or analysis of the news industry, its audiences or its
 business, as published, never Newspack's or Automattic's own engineering,
 audit, performance or planning work;
-`release` always takes a GitHub release page; `departure` is a person
+`release` is a software release or version shipped for general use, and
+a pre-release, release candidate, alpha, beta or nightly build is `other`;
+`departure` is a person
 leaving an organization or a role, never a client leaving Newspack, which is
 `churned`; `churned` is a client that
 has left Newspack or is leaving, offboarding underway or done, the decision
@@ -851,8 +853,8 @@ chat model alone, and any question applies: `about_publisher` when the
 item's `inputs.publisher` names an open client and its kind is not
 `other`, `fits_kind` when `Prompts::KIND_CHECKS` holds its kind, because
 the extraction model types a launch checklist `launch`, a reader appeal
-`funding` and a one-site task `feature_request` whatever its definitions
-say, and `theme_choice` when the
+`funding`, a one-site task `feature_request` and a pre-release `release`
+whatever its definitions say, and `theme_choice` when the
 projection offers it themes, read
 again as the answer lands through `Prompts::offered_themes()`, as an
 `extract` prompt offers them. Such an answer writes nothing yet: the
@@ -1078,7 +1080,9 @@ status carries no signal: the Entity view reads the latest from its own
 link whose entity's survivor is rejected, read as
 `Entity_Index::winning_states()` reads a state, from the highest partition
 holding one, because a `ner_fuzzy` row outlives a re-resolution that did
-not run NER and nothing is left to judge of it. Each read hands `live()` the links it rests
+not run NER and nothing is left to judge of it; each listed item's
+entities leave out such an entity by the same read, so no item shows a stored
+link to it. Each read hands `live()` the links it rests
 on — an entity's keys, a page's items, the items a claim or a proposal
 names — and windows only those; `search` and `trends` naming a role, or
 `trends` counting topics, without an entity or topic window the links of the
@@ -2425,11 +2429,14 @@ the handlers never check a role of their own (substrate ADR-26).
 ### Client roster
 
 `Client_Importer` reconciles a client CSV against a `Client_Roster`. An
-import is a reconciliation against a full snapshot, reported as four
+import is a reconciliation against a full snapshot, reported as five
 disjoint counts. A CSV id absent from the roster is `created`; a present one
+the roster answers `held`, a client a curator ended, is left alone and
+counts as `held`; any other present one
 has its atomic fields updated and counts as `reactivated` if it was churned
 and `updated` otherwise; an `active` id the roster's `statuses()` holds
-that the CSV lacks is `churned`. The importer then calls the roster's
+that the CSV lacks is `churned`. The command's success line reports the
+fifth as `<n> held by curation`. The importer then calls the roster's
 `commit()` once. `CSV_Parser` reads the
 columns as `Atomic site ID, Created, Domain name` and returns null — never
 `[]` — for a file whose first non-blank line is not that header or that
@@ -2443,7 +2450,7 @@ client the first one created and lands in `updated`.
 `Graph_Client_Roster` keeps the roster in the entity graph. A client is an
 organization carrying its `atomic_site_id` as an identifier and an open
 `client` role; a churned one carries an open `former_client` role instead,
-and reads as `churned` whenever it holds no open `client` role. Its first call of
+and reads as `churned` whenever it holds no open `client` role and is not held (below). Its first call of
 an import reads the projection through `Intel_Graph_Row_Schema::read()`
 given no line, so a projection that will not open throws `Table_Unavailable`
 rather than reconciling against an empty roster and re-creating every
@@ -2479,7 +2486,12 @@ the snapshot were `Created` (`Y-m-d`, then optionally a time of day, which
 is dropped), or from the latest end of a `client` or `former_client` row
 that held time, its return or a curator's `end_role`, when that is later,
 so an ended row is never reopened; a churn and a return's `former_client` end
-date from the start of the import's day. A `Created` that is not a day, or
+date from the start of the import's day. A client holding neither role open
+whose `client` row closed holding time is a client a curator ended, since a churn
+always opens `former_client`: the roster answers its atomic ids `held`, and
+no import opens a role on it, not even through a new atomic id whose domain
+it holds, which gains the id alone. Such a new atomic id still counts as
+`created`, though it opens no role. A `Created` that is not a day, or
 whose time is not a time of day, refuses the import, naming the row's
 atomic id, before anything is written. One read of the `roles` table gives
 both the open rows and those ends. Once every row is reconciled,

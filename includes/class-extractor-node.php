@@ -162,7 +162,7 @@ class Extractor_Node extends Node {
 			'audience'  => $this->audience,
 			'publisher' => $this->client_name( $publisher ),
 		];
-		$this->ask_model( 'extract', $item, $inputs, [ 'max_tokens' => 800, 'temperature' => 0.2 ], [ 'resolution' => \array_diff_key( Core::arr( $value ), [ 'item' => true ] ) ], $owed );
+		$this->ask_model( 'extract', $item, $inputs, [ 'max_tokens' => 800, 'temperature' => 0.0 ], [ 'resolution' => \array_diff_key( Core::arr( $value ), [ 'item' => true ] ) ], $owed );
 	}
 
 	/**

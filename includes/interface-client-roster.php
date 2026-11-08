@@ -14,7 +14,7 @@ interface Client_Roster {
 	 * The roster's record of an atomic id.
 	 *
 	 * @param string $atomic_id The atomic site id.
-	 * @return array{status:string}|null `active`, `churned`, or `refused` for a client whose entity is rejected or unresolvably merged, which the import counts as present and the roster leaves alone; null when the roster lacks it.
+	 * @return array{status:string}|null `active`, `churned`, `held` for a client a curator ended, which the import leaves alone and counts apart, or `refused` for a client whose entity is rejected or unresolvably merged, which the import counts as present and the roster leaves alone; null when the roster lacks it.
 	 */
 	public function find_by_atomic_id( string $atomic_id ): ?array;
 
@@ -22,7 +22,7 @@ interface Client_Roster {
 	 * Every atomic id the roster holds, with its status as
 	 * `find_by_atomic_id()` gives it.
 	 *
-	 * @return array<string,string> Atomic id => `active`, `churned` or `refused`.
+	 * @return array<string,string> Atomic id => `active`, `churned`, `held` or `refused`.
 	 */
 	public function statuses(): array;
 

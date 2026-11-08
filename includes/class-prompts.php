@@ -68,6 +68,10 @@ class Prompts {
 			'asks' => 'Does this item announce that a product, publication or service is now available to its readers or customers? Answer no for a ticket or checklist tracking launch work, even one marked complete; a person\'s or team\'s status update, weekly note or retrospective; a deploy to one site; an internal tool; and a publication\'s own contest, vote, event, quiz, club or column.',
 			'min'  => 0.7,
 		],
+		'release' => [
+			'asks' => 'Does this item report a final software release, a version shipped for general use? Answer no for a pre-release, a release candidate, an alpha, a beta or a nightly build.',
+			'min'  => 0.5,
+		],
 		'funding' => [
 			'asks' => 'Does this item report money reaching a news organization or journalism from a funder or investor: a grant, a fund, an investment, a foundation\'s gift or a funder\'s matching program? Answer no for an appeal asking readers to give, even one offering a funder\'s match on their gifts, and when the money goes to anything but news.',
 			'min'  => 0.5,

@@ -555,9 +555,10 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The entities each item is about, but its topics, as `search` lists
-	 * them: by survivor, a subject first, each with its name and its link's
-	 * state, read in one statement; none for no items.
+	 * The entities each item is about, but its topics and any whose survivor
+	 * is rejected, as `search` lists them: by survivor, a subject first, each
+	 * with its name and its link's state, read in one statement; none for no
+	 * items.
 	 *
 	 * @param Row_Reader   $r    The reader.
 	 * @param Graph        $g    The graph the read opened.
@@ -570,7 +571,7 @@ final class Graph_Query {
 			return $linked;
 		}
 		[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' )', $keys );
-		foreach ( $r->rows( "{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::name_of( $r, 'live.entity_key' ) . " , live.state FROM live WHERE NOT live.topical ORDER BY live.role = 'subject' DESC, live.entity_key", [ ...$g['binds'], ...$live_binds ] ) as [ $item_key, $entity, $name, $state ] ) {
+		foreach ( $r->rows( "{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::name_of( $r, 'live.entity_key' ) . " , live.state FROM live WHERE NOT live.topical AND " . self::unrejected( $r, 'live.entity_key' ) . " ORDER BY live.role = 'subject' DESC, live.entity_key", [ ...$g['binds'], ...$live_binds ] ) as [ $item_key, $entity, $name, $state ] ) {
 			$linked[ Core::as_string( $item_key ) ][] = [ 'entity_key' => $entity, 'name' => $name, 'state' => $state ];
 		}
 		return $linked;
@@ -1972,13 +1973,24 @@ final class Graph_Query {
 		$links                 = [];
 		$rows                  = $r->rows(
 			"{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::name_of( $r, 'live.entity_key' ) . ', ' . self::type_of( $r, 'live.entity_key' )
-			. ", live.role, live.method, live.confidence, live.evidence, live.title, live.url FROM live WHERE live.state = 'proposed' AND live.entity_key NOT IN ( SELECT s.entity_key FROM " . Entity_Index::winning_states( $r ) . " s WHERE s.state = 'rejected' ) ORDER BY live.t DESC, live.item_key, live.entity_key LIMIT ?",
+			. ", live.role, live.method, live.confidence, live.evidence, live.title, live.url FROM live WHERE live.state = 'proposed' AND " . self::unrejected( $r, 'live.entity_key' ) . " ORDER BY live.t DESC, live.item_key, live.entity_key LIMIT ?",
 			[ ...$g['binds'], ...$live_binds, $limit ]
 		);
 		foreach ( $rows as [ $item, $entity, $name, $type, $role, $method, $confidence, $evidence, $title, $url ] ) {
 			$links[] = [ 'item_key' => $item, 'entity_key' => $entity, 'name' => $name, 'type' => $type, 'role' => $role, 'method' => $method, 'confidence' => $confidence, 'evidence' => $evidence, 'title' => $title, 'url' => $url ];
 		}
 		return $links;
+	}
+
+	/**
+	 * A condition holding where a survivor key's state, as
+	 * `Entity_Index::winning_states()` reads one, is not `rejected`.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param string     $key The SQL expression naming a survivor key.
+	 */
+	private static function unrejected( Row_Reader $r, string $key ): string {
+		return "{$key} NOT IN ( SELECT s.entity_key FROM " . Entity_Index::winning_states( $r ) . " s WHERE s.state = 'rejected' )";
 	}
 
 	/**

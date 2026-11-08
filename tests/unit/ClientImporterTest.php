@@ -71,6 +71,17 @@ final class ClientImporterTest extends TestCase {
 		$this->assertSame( '2026-06-30', $roster->store['9']['since'] );
 	}
 
+	/** A client a curator ended is held: the snapshot's row for it changes nothing, and counts in `held` alone. */
+	public function test_import_holds_a_role_a_curator_ended(): void {
+		$roster             = new Fake_Client_Roster();
+		$roster->store['7'] = [ 'domain_name' => 'kestrelledger.example', 'status' => 'held', 'since' => '2025-04-11' ];
+
+		$result = ( new Client_Importer( $roster ) )->import( $this->rows( [ '7', 'ledger-new.example', '2019-05-05' ] ), '2026-06-30' );
+
+		$this->assertSame( [ 'created' => 0, 'updated' => 0, 'reactivated' => 0, 'churned' => 0, 'held' => 1, 'total_in_csv' => 1 ], $result );
+		$this->assertSame( [ 'domain_name' => 'kestrelledger.example', 'status' => 'held', 'since' => '2025-04-11' ], $roster->store['7'] );
+	}
+
 	/** The churn pass reads every held id's status at once, and finds only the rows the snapshot names. */
 	public function test_the_churn_pass_reads_statuses_not_one_find_per_id(): void {
 		$roster             = new Fake_Client_Roster();

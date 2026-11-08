@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Extraction asks at temperature 0, down from 0.2,** so a re-run reads an item's kind the same way.
+- **The review checks `release` too.** It asks whether the item reports a final software release, answering no for a pre-release, a release candidate, an alpha, a beta or a nightly build, at a bar of 0.5, so `plover-sdk 3.1.0-rc.2` writes `other`. The extraction prompt's `release` line says the same: a software release or version shipped for general use, a pre-release, release candidate, alpha, beta or nightly build being `other`, where it called every GitHub release page a release.
+- **A client import holds a client a curator ended.** One holding neither `client` nor `former_client` open after a `client` row that held time is not reopened by a CSV row, nor through a new atomic id on its domain. `Client_Importer::import()` counts it in a new `held`, and `clients import` reports `<n> held by curation`.
+
+### Fixed
+
+- **A rejected entity shows on no item.** Each listed item's entities leave out one whose survivor is rejected, as `review links` already does, so a stored link to it no longer shows a chip.
+
 ## [0.36.12] - 2026-11-07
 
 ### Changed

@@ -80,7 +80,7 @@ final class ClientsCliCommandTest extends TestCase {
 		$events = self::ontology_events();
 		$this->assertSame( [ 'organization:atomic-91' ], \array_values( \array_unique( \array_column( $events, 'entity_key' ) ) ) );
 		$this->assertSame( [ 'machine:client-import@' . \NEWSPACK_INTELLIGENCE_VERSION ], \array_values( \array_unique( \array_column( $events, 'actor' ) ) ) );
-		$this->assertSame( [ 'Imported 1 rows: 1 created, 0 updated, 0 reactivated, 0 churned.' ], \WP_CLI::$successes );
+		$this->assertSame( [ 'Imported 1 rows: 1 created, 0 updated, 0 reactivated, 0 churned, 0 held by curation.' ], \WP_CLI::$successes );
 		\unlink( $tmp );
 	}
 

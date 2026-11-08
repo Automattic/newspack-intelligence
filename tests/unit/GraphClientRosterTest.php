@@ -345,24 +345,85 @@ final class GraphClientRosterTest extends TestCase {
 	}
 
 	/**
-	 * A client row a curator ended keeps its span when the client is in the
-	 * next snapshot: the import opens a new row from the end of it, never
-	 * reopening the ended one, whose start the Created day would name.
+	 * A client a curator ended, leaving it neither a client nor a former
+	 * client, is held: the snapshot's row for it writes nothing, so the
+	 * ended row stays ended and no new one opens.
 	 */
-	public function test_a_client_row_a_curator_ended_stays_ended(): void {
-		$this->seed(
-			self::client( '770022', 'tidewater.example', self::AUG_20 ),
-			[ Intel_Event::make( 'role_ended', [ 'entity_key' => 'organization:atomic-770022', 'role' => 'client', 'from_ts' => self::AUG_20, 'to_ts' => self::MAR_14 + 3600 ], 'user:41', 'fixture-7' ) ]
-		);
-		$key    = 'organization:atomic-770022';
+	public function test_import_holds_a_role_a_curator_ended(): void {
+		$this->seed( ...self::ended_ledger() );
 		$before = \count( self::ontology_events() );
 
-		$result = self::importer()->import( self::rows( [ '770022', 'tidewater.example' ] ), '2026-04-02' );
+		$result = self::importer()->import( self::rows( [ '660033', 'kestrelledger.example' ] ), '2026-04-02' );
 
-		$this->assertSame( [ [ 'role_asserted', $key, 'client', self::MAR_14 + 3600 ] ], \array_slice( self::brief( self::ontology_events() ), $before ) );
-		$this->assertSame( 1, $result['reactivated'] );
+		$this->assertSame( [], \array_slice( self::ontology_events(), $before ) );
+		$this->assertSame( [ 0, 0, 0, 0, 1 ], [ $result['created'], $result['updated'], $result['reactivated'], $result['churned'], $result['held'] ] );
+		$this->assertSame( [ [ 'client', self::AUG_20, self::MAR_14 + 3600 ] ], self::roles_of( 'organization:kestrel-ledger' ) );
+	}
+
+	/** A new atomic id whose domain a held client holds adds the id and opens no role on it. */
+	public function test_a_new_site_on_a_held_clients_domain_opens_no_role(): void {
+		$this->seed( ...self::ended_ledger() );
+		$before = \count( self::ontology_events() );
+
+		self::importer()->import( self::rows( [ '660034', 'kestrelledger.example' ] ), '2026-04-02' );
+
+		$this->assertSame( [ [ 'identifier_added', 'organization:kestrel-ledger', 'atomic_site_id', '660034' ] ], \array_slice( self::brief( self::ontology_events() ), $before ) );
+	}
+
+	/** A client an import churned holds former_client open, so it is not held: the next snapshot naming it reactivates it. */
+	public function test_a_client_an_import_churned_is_not_held(): void {
+		$key = 'organization:osprey-tribune';
+		$this->seed(
+			self::entity( $key, 'Osprey Tribune', [ 'atomic_site_id' => [ '550041' ], 'domain' => [ 'ospreytribune.example' ] ] ),
+			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => self::AUG_20 ], 'user:41', 'fixture-7' ) ]
+		);
+		$churn = self::importer()->import( self::rows( [ '550099', 'wrenpost.example' ] ), '2026-03-14' );
+		$this->assertSame( [ 1, 0 ], [ $churn['churned'], $churn['held'] ] );
 		$this->seed( self::ontology_events() );
-		$this->assertSame( [ [ 'client', self::AUG_20, self::MAR_14 + 3600 ], [ 'client', self::MAR_14 + 3600, 0 ] ], self::roles_of( $key ) );
+		$before = \count( self::ontology_events() );
+
+		$return = self::importer()->import( self::rows( [ '550041', 'ospreytribune.example' ], [ '550099', 'wrenpost.example' ] ), '2026-04-02' );
+
+		$this->assertSame( [ 1, 0 ], [ $return['reactivated'], $return['held'] ] );
+		$this->assertSame(
+			[
+				[ 'role_ended', $key, 'former_client', self::MAR_14, self::APR_02 ],
+				[ 'role_asserted', $key, 'client', self::APR_02 ],
+			],
+			\array_slice( self::brief( self::ontology_events() ), $before )
+		);
+	}
+
+	/** A churned client whose former_client row a curator ended holds neither role open, so it is held and not reopened. */
+	public function test_a_former_client_a_curator_ended_is_held(): void {
+		$key = 'organization:marten-signal';
+		$this->seed(
+			self::entity( $key, 'Marten Signal', [ 'atomic_site_id' => [ '550052' ], 'domain' => [ 'martensignal.example' ] ] ),
+			[
+				Intel_Event::make( 'role_asserted', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => self::AUG_20 ], 'user:41', 'fixture-7' ),
+				Intel_Event::make( 'role_ended', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => self::AUG_20, 'to_ts' => self::MAR_14 ], 'machine:client-import@9.4.1', 'fixture-7' ),
+				Intel_Event::make( 'role_asserted', [ 'entity_key' => $key, 'role' => 'former_client', 'from_ts' => self::MAR_14 ], 'machine:client-import@9.4.1', 'fixture-7' ),
+				Intel_Event::make( 'role_ended', [ 'entity_key' => $key, 'role' => 'former_client', 'from_ts' => self::MAR_14, 'to_ts' => self::MAR_14 + 7200 ], 'user:41', 'fixture-7' ),
+			]
+		);
+		$before = \count( self::ontology_events() );
+
+		$result = self::importer()->import( self::rows( [ '550052', 'martensignal.example' ] ), '2026-04-02' );
+
+		$this->assertSame( [], \array_slice( self::ontology_events(), $before ) );
+		$this->assertSame( [ 0, 1 ], [ $result['reactivated'], $result['held'] ] );
+	}
+
+	/** @return list<list<array<string,mixed>>> Kestrel Ledger, a client from AUG_20 whose role a curator ended an hour into MAR_14. */
+	private static function ended_ledger(): array {
+		$key = 'organization:kestrel-ledger';
+		return [
+			self::entity( $key, 'Kestrel Ledger', [ 'atomic_site_id' => [ '660033' ], 'domain' => [ 'kestrelledger.example' ] ] ),
+			[
+				Intel_Event::make( 'role_asserted', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => self::AUG_20 ], 'user:41', 'fixture-7' ),
+				Intel_Event::make( 'role_ended', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => self::AUG_20, 'to_ts' => self::MAR_14 + 3600 ], 'user:41', 'fixture-7' ),
+			],
+		];
 	}
 
 	/** A publisher running several sites is a client from the earliest one's Created day, opened once. */

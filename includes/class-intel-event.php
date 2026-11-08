@@ -29,7 +29,7 @@ final class Intel_Event {
 	public const KIND_DEFINITIONS = [
 		'award'           => 'an award, prize or honor won, given or shortlisted for',
 		'launch'          => 'a site, product or publication going live or being prepared to go live, whether a client\'s or Newspack\'s; not an internal tool, process or deploy going live',
-		'release'         => 'a software release or version shipped; a GitHub release page always is one',
+		'release'         => 'a software release or version shipped for general use; a pre-release, release candidate, alpha, beta or nightly build is other',
 		'funding'         => 'money raised, granted, invested or donated',
 		'hire'            => 'someone joining an organization or taking a new role',
 		'departure'       => 'a person leaving an organization or a role; not a client leaving Newspack, which is churned',

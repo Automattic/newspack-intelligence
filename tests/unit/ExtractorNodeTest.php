@@ -649,6 +649,18 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( [ $kind ], \array_column( $this->extractions(), 'kind' ) );
 	}
 
+	/** A release candidate is not a final release: its review answers low, and it writes `other`. */
+	public function test_a_release_candidate_falls_to_other(): void {
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"plover-sdk tags a release candidate.","kind":"release"}' );
+		$this->decide( [ 'decision' => [ 'fits_kind' => 0.12 ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'source' => 'github', 'title' => 'plover-sdk 3.1.0-rc.2' ] ) );
+
+		$this->assertSame( [ 'other' ], \array_column( $this->extractions(), 'kind' ) );
+		$this->assertSame( [ 'fits_kind' ], \array_keys( Prompts::questions( $this->out->requests[1][ Message::VALUE ]['inputs'] ) ) );
+	}
+
 	/** A launch with no client publisher and no offered theme is reviewed all the same, asked `fits_kind` alone. */
 	public function test_a_launch_owes_a_review_of_its_own(): void {
 		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
@@ -865,6 +877,15 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'extract review failed: HTTP 504' ) );
 	}
 
+	/** An extraction is asked at temperature 0, so a re-run reads the item the same way. */
+	public function test_extraction_asks_at_temperature_zero(): void {
+		$this->answer( '{"summary":"Harbor Gazette wins a Peabody.","kind":"award"}' );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$this->assertSame( 0.0, $this->out->requests[0][ Message::VALUE ]['options']['temperature'] );
+	}
+
 	/** A re-extraction asked for is never skipped: an item its links left is still called, and written. */
 	public function test_an_unlinked_item_owed_an_extraction_is_asked(): void {
 		$this->answer( '{"summary":"Tern Weekly closes its print edition.","kind":"hire"}' );
@@ -930,7 +951,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertCount( 1, $this->out->requests );
 		$request = $this->out->requests[0];
 		$this->assertSame( [ Message::TM_STRUCT, 'extractor', self::ITEM ], [ $request[ Message::TYPE ], $request[ Message::FROM ], $request[ Message::KEY ] ] );
-		$this->assertSame( [ 'extract', self::item(), [ 'max_tokens' => 800, 'temperature' => 0.2 ], false ], [ $request[ Message::VALUE ]['prompt'], $request[ Message::VALUE ]['item'], $request[ Message::VALUE ]['options'], $request[ Message::VALUE ]['backlog'] ] );
+		$this->assertSame( [ 'extract', self::item(), [ 'max_tokens' => 800, 'temperature' => 0.0 ], false ], [ $request[ Message::VALUE ]['prompt'], $request[ Message::VALUE ]['item'], $request[ Message::VALUE ]['options'], $request[ Message::VALUE ]['backlog'] ] );
 		$this->assertArrayNotHasKey( 'item', $request[ Message::VALUE ]['carry']['resolution'], 'the item rides once, beside the carry' );
 		$this->assertSame( [ 'Awards' => 'topic:awards', 'Podcasts' => 'topic:podcasts' ], $request[ Message::VALUE ]['inputs']['topics'] );
 		$this->assertSame( [ 'resolution' ], \array_keys( $request[ Message::VALUE ]['carry'] ), 'the topics ride once, as an input' );
