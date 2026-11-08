@@ -58,6 +58,7 @@ describe( 'ItemRow excerpt', () => {
 		const toggle = screen.getByRole( 'button', { name: 'Show more' } );
 		expect( toggle ).toHaveAttribute( 'aria-expanded', 'false' );
 		expect( toggle ).toHaveClass( 'is-link' );
+		expect( toggle ).toHaveClass( 'newspack-intelligence__more' );
 		expect( toggle ).not.toHaveClass( 'button' );
 		expect( screen.queryByText( EXCERPT ) ).toBeNull();
 

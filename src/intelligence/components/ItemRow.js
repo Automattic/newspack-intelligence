@@ -144,6 +144,7 @@ function Excerpt( { item } ) {
 		<>
 			<Button
 				variant="link"
+				className="newspack-intelligence__more"
 				aria-expanded={ open }
 				onClick={ () => setOpen( ! open ) }
 			>
