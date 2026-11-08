@@ -383,14 +383,21 @@ describe( 'SaveButton', () => {
 		title: 'Quill Ledger opens a bureau',
 	};
 
-	it( 'is a quiet icon and word, named for what it does', () => {
+	it( 'is a bare glyph, named and tooltipped for what it does', () => {
 		const onSave = jest.fn();
 		render( <SaveButton item={ KEPT } onSave={ onSave } /> );
 		const save = screen.getByRole( 'button', { name: 'Save to folder' } );
-		expect( save ).toHaveTextContent( /^Save$/ );
-		expect( save ).toHaveClass( 'is-tertiary' );
+		expect( save ).toHaveTextContent( /^$/ );
+		expect( save ).toHaveClass( 'has-icon' );
 		expect( save ).toHaveClass( 'newspack-intelligence__save' );
-		expect( save ).not.toHaveClass( 'button' );
+		for ( const boxed of [
+			'button',
+			'is-secondary',
+			'is-tertiary',
+			'is-primary',
+		] ) {
+			expect( save ).not.toHaveClass( boxed );
+		}
 		expect( save.querySelector( 'svg' ) ).not.toBeNull();
 		fireEvent.click( save );
 		expect( onSave ).toHaveBeenCalledWith( KEPT );

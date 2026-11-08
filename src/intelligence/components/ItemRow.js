@@ -18,15 +18,12 @@ import { metaLine, utcDay } from './format';
 export function SaveButton( { item, onSave } ) {
 	return onSave ? (
 		<Button
-			variant="tertiary"
 			size="small"
 			icon={ archive }
 			className="newspack-intelligence__save"
-			aria-label={ __( 'Save to folder', 'newspack-intelligence' ) }
+			label={ __( 'Save to folder', 'newspack-intelligence' ) }
 			onClick={ () => onSave( item ) }
-		>
-			{ __( 'Save', 'newspack-intelligence' ) }
-		</Button>
+		/>
 	) : null;
 }
 

@@ -155,18 +155,6 @@
 		gap: base.$space-sm;
 	}
 
-	&__save.components-button {
-		flex: none;
-		gap: base.$space-xs;
-		vertical-align: middle;
-		color: var(--muted-text, var(--np-text-secondary));
-
-		&:hover:not(:disabled),
-		&:focus-visible {
-			color: var(--cyan, var(--np-primary));
-		}
-	}
-
 	&__item-head :is(strong, h4) {
 		flex: 1 1 auto;
 		min-width: 0;
@@ -308,5 +296,21 @@
 		flex-wrap: wrap;
 		align-items: end;
 		gap: base.$space-sm;
+	}
+}
+
+// A bare glyph beside a title: no box, the secondary text colour until a
+// hover or focus asks for it. The tripled root out-specifies the shared
+// button reset and WordPress's runtime rules, as `_buttons.scss` does.
+.newspack-nodes-ui.newspack-nodes-ui.newspack-nodes-ui
+	.newspack-intelligence__save.components-button {
+	flex: none;
+	vertical-align: middle;
+	background: none;
+	color: var(--muted-text, var(--np-text-secondary));
+
+	&:hover:not(:disabled),
+	&:focus-visible {
+		color: var(--cyan, var(--np-primary));
 	}
 }

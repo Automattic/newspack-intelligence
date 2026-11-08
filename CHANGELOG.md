@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **"Save to folder" is a quiet control, and "Show more" a link.** Beside every item title, in a trend or signal's citations, Review's cited items and an entity's claims, Save reads as the archive icon and the word "Save" in the secondary text colour, turning the primary colour on hover and focus, centred on the line it shares; its name stays "Save to folder". An item's "Show more" and "Show less" are a link, with no border.
+- **"Save to folder" is a bare glyph, and "Show more" a link.** Beside every item title, in a trend or signal's citations, Review's cited items and an entity's claims, Save is the archive icon alone, with no box, in the secondary text colour, turning the primary colour on hover and focus, centred on the line it shares, with "Save to folder" as its name and tooltip. An item's "Show more" and "Show less" are a link, with no border.
 
 ### Added
 
