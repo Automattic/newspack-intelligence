@@ -155,6 +155,18 @@
 		gap: base.$space-sm;
 	}
 
+	&__save.components-button {
+		flex: none;
+		gap: base.$space-xs;
+		vertical-align: middle;
+		color: var(--muted-text, var(--np-text-secondary));
+
+		&:hover:not(:disabled),
+		&:focus-visible {
+			color: var(--cyan, var(--np-primary));
+		}
+	}
+
 	&__item-head :is(strong, h4) {
 		flex: 1 1 auto;
 		min-width: 0;

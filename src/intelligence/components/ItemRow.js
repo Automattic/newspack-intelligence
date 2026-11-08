@@ -1,4 +1,6 @@
+import { Button } from '@wordpress/components';
 import { useState } from '@wordpress/element';
+import { archive } from '@wordpress/icons';
 import { __, sprintf } from '@wordpress/i18n';
 import Cite, { EntityChip } from './Cite';
 import Pager from './Pager';
@@ -15,13 +17,16 @@ import { metaLine, utcDay } from './format';
  */
 export function SaveButton( { item, onSave } ) {
 	return onSave ? (
-		<button
-			type="button"
-			className="button button-small"
+		<Button
+			variant="tertiary"
+			size="small"
+			icon={ archive }
+			className="newspack-intelligence__save"
+			aria-label={ __( 'Save to folder', 'newspack-intelligence' ) }
 			onClick={ () => onSave( item ) }
 		>
-			{ __( 'Save to folder', 'newspack-intelligence' ) }
-		</button>
+			{ __( 'Save', 'newspack-intelligence' ) }
+		</Button>
 	) : null;
 }
 
@@ -140,16 +145,15 @@ function Excerpt( { item } ) {
 	}
 	return (
 		<>
-			<button
-				type="button"
-				className="button button-small"
+			<Button
+				variant="link"
 				aria-expanded={ open }
 				onClick={ () => setOpen( ! open ) }
 			>
 				{ open
 					? __( 'Show less', 'newspack-intelligence' )
 					: __( 'Show more', 'newspack-intelligence' ) }
-			</button>
+			</Button>
 			{ open && <p>{ item.excerpt }</p> }
 		</>
 	);

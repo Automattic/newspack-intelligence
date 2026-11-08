@@ -6,7 +6,7 @@
  */
 
 import { render, screen, fireEvent, within } from '@testing-library/react';
-import ItemRow, { ItemPage } from '../ItemRow';
+import ItemRow, { ItemPage, SaveButton } from '../ItemRow';
 
 const ITEM = {
 	item_key: 'feed:inkfold-review-17',
@@ -57,6 +57,8 @@ describe( 'ItemRow excerpt', () => {
 		);
 		const toggle = screen.getByRole( 'button', { name: 'Show more' } );
 		expect( toggle ).toHaveAttribute( 'aria-expanded', 'false' );
+		expect( toggle ).toHaveClass( 'is-link' );
+		expect( toggle ).not.toHaveClass( 'button' );
 		expect( screen.queryByText( EXCERPT ) ).toBeNull();
 
 		fireEvent.click( toggle );
@@ -371,5 +373,31 @@ describe( 'ItemPage', () => {
 		expect(
 			screen.queryByRole( 'button', { name: 'Show newest first' } )
 		).toBeNull();
+	} );
+} );
+
+describe( 'SaveButton', () => {
+	const KEPT = {
+		item_key: 'feed:quill-ledger.example:4471',
+		url: 'https://quill-ledger.example/4471',
+		title: 'Quill Ledger opens a bureau',
+	};
+
+	it( 'is a quiet icon and word, named for what it does', () => {
+		const onSave = jest.fn();
+		render( <SaveButton item={ KEPT } onSave={ onSave } /> );
+		const save = screen.getByRole( 'button', { name: 'Save to folder' } );
+		expect( save ).toHaveTextContent( /^Save$/ );
+		expect( save ).toHaveClass( 'is-tertiary' );
+		expect( save ).toHaveClass( 'newspack-intelligence__save' );
+		expect( save ).not.toHaveClass( 'button' );
+		expect( save.querySelector( 'svg' ) ).not.toBeNull();
+		fireEvent.click( save );
+		expect( onSave ).toHaveBeenCalledWith( KEPT );
+	} );
+
+	it( 'renders nothing for a reader who cannot curate', () => {
+		const { container } = render( <SaveButton item={ KEPT } /> );
+		expect( container ).toBeEmptyDOMElement();
 	} );
 } );
