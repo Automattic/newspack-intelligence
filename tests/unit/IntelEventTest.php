@@ -293,6 +293,10 @@ final class IntelEventTest extends TestCase {
 		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'entity_key' ], [], [] ], Intel_Event::KINDS['entity_accepted'] );
 		$this->assertSame( [ 'theme' => 80 ], Intel_Event::KINDS['extraction_recorded'][3] );
 		$this->assertSame( [ 'extraction_recorded', 'link_proposed', 'entity_proposed' ], \array_keys( \array_filter( \array_map( static fn ( array $row ): array => $row[3], Intel_Event::KINDS ) ) ) );
+		$this->assertSame( [ 'item_moved' => [ 'tiers' ] ], Intel_Event::LISTS, 'a move declares its one list field under its own kind' );
+		foreach ( Intel_Event::LISTS as $kind => $fields ) {
+			$this->assertSame( [], \array_diff( $fields, \array_keys( Intel_Event::KINDS[ $kind ][2] ) ), "every list field of {$kind} has a set" );
+		}
 	}
 
 	/**
@@ -331,6 +335,36 @@ final class IntelEventTest extends TestCase {
 			'blank'        => [ '', 'extraction_recorded: theme is blank' ],
 			'past its cap' => [ \str_repeat( 'heron ', 14 ), 'extraction_recorded: theme runs past 80 bytes' ],
 		];
+	}
+
+	/**
+	 * A move names the tiers of the copies it carries: a list of distinct
+	 * tiers, at least one, each from TIERS.
+	 *
+	 * @return array<string,array{0:mixed,1:string}>
+	 */
+	public static function bad_move_tiers(): array {
+		return [
+			'not a list'     => [ 'internal', 'item_moved: field tiers is not a list of distinct values' ],
+			'empty'          => [ [], 'item_moved: field tiers is not a list of distinct values' ],
+			'repeated'       => [ [ 'internal', 'internal' ], 'item_moved: field tiers is not a list of distinct values' ],
+			'keyed'          => [ [ 'a' => 'internal' ], 'item_moved: field tiers is not a list of distinct values' ],
+			'outside TIERS'  => [ [ 'internal', 'secret' ], 'item_moved: field tiers is outside its set' ],
+			'not a string'   => [ [ 'internal', 2 ], 'item_moved: field tiers is outside its set' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_move_tiers' )]
+	public function test_a_moves_tiers_are_distinct_tiers( mixed $tiers, string $why ): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( $why );
+		Intel_Event::make( 'item_moved', [ 'collection_key' => 'heron-shelf', 'item_key' => 'feed:heron-31', 'from' => 'heron-inbox', 'tiers' => $tiers ], 'user:41', '' );
+	}
+
+	public function test_a_move_of_every_tier_validates(): void {
+		$event = Intel_Event::make( 'item_moved', [ 'collection_key' => 'heron-shelf', 'item_key' => 'feed:heron-31', 'from' => 'heron-inbox', 'tiers' => [ 'restricted', 'internal', 'public' ] ], 'user:41', '' );
+
+		$this->assertSame( [ 'restricted', 'internal', 'public' ], $event['tiers'] );
 	}
 
 	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_themes' )]

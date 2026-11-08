@@ -222,7 +222,10 @@ partition that projects it, and for a `lens_removed`, which deletes the
 one `lenses` row its `lens_key` keys; a `lens_saved` sets that row whole,
 its `filters` as JSON; and for a `watch_removed`, which deletes the one
 `watches` row its `watch_key` keys, a `watch_saved` setting that row whole,
-its three boxes as integers; and for an `item_purged`, which deletes the
+its three boxes as integers; and for an `item_moved`, which deletes one
+`collected` placement per tier it names from the folder it leaves before
+it writes each one into the folder it enters with `ignore`; and for an
+`item_purged`, which deletes the
 rows the items stream has written about its item in each table that stream
 writes (see Purging items). A stand-in, heuristic or gated
 (`Extractor_Node::stands_in()`), is projected by
@@ -272,7 +275,21 @@ carries — a supersession its canonical's — so an item and every row about it
 expire together however late a re-resolution writes them; `watch_matches`
 and `watch_seen`, keyed by watch and item, are dated the same way, so a
 match expires with its item. The ontology and curation tables, `theme_merges`, `watches`
-and `watch_deliveries` declare `keep`. Ops buffer and leave as
+and `watch_deliveries` declare `keep`. Each tier's saved copy of an item
+is one `saved_copies` row, `( item_key, tier, url, title )` keyed by the
+item and the tier, and its place in a folder one `collected` row, `(
+collection_key, item_key, tier, actor, ts )` keyed by the first three, so
+a save at one tier never overwrites another's: a `collected` sets both,
+and an `item_moved` names the tier of each copy it carries in `tiers` and
+fans out over them, per tier one `delete` of the placement the `from`,
+`item_key` and that tier key, in the shape `link_retracted` deletes a
+link, then one `ignore` under the folder it enters, so every copy it
+names leaves the folder it was in with its own URL, title and marks, a
+placement the folder it enters holds already keeps its actor and `ts`, a
+copy of any other tier stays, and the event carries no copy, so it fits
+one line;
+a `delete` fans out as a write does. An `item_used` sets the one `item_marks` row its item, the tier of the copy
+it marks and its mark key, so a mark made again replaces its day. Ops buffer and leave as
 one `ROWS` batch every 5 seconds, at 2,000 ops or 1 MiB of string values, at
 each checkpoint and on a clean stop; a failed batch raises a plain stop and
 keeps the buffer, so the cursor replays it. A message that carries no valid
@@ -288,7 +305,7 @@ it leads by one range over `start`. A stale start, such as one a
 proposal's name wrote before a person's creation renamed the entity,
 names a norm no current row holds and matches nothing.
 
-**Rebuilding.** `Intel_Graph_Row_Schema::version()`, 4, versions the
+**Rebuilding.** `Intel_Graph_Row_Schema::version()`, 7, versions the
 projection's shape; the substrate discards a file at another version when
 the Row_Table opens it, and the projector's Consumers resume where they
 stopped, so the graph stays empty until it is rebuilt. A schema change bumps
@@ -1221,9 +1238,30 @@ object's key its name, else the key; null beside the item's spelling, so
 `object_name` is null for free text alone; and its item's URL and title. A projection that will not open answers `available: false` beside
 empty rows, logged; one that has not been written by any partition answers empty
 rows.
-A collection's saved items read from `collected` alone, at the tier each
-was saved at, so a saved item outlives its expiring `items` row; `collected`
-keeps its own tier filter, and `collections` opens no graph.
+A collection's saved items read from `collected`, `saved_copies` and
+`item_marks`, never from `items`, at the tier each was saved at, so a
+saved item outlives its expiring `items` row; `collected` keeps its own
+tier filter, and `collections` opens no graph. Every
+folder answers `{ collection_key, name, created_ts, items, recent_ts }`,
+`items` the distinct items it holds a readable copy of and `recent_ts`
+the caller's own latest `collected` or `item_moved` event into it, read
+from `events` by its subject and kind, an actor of `user:<login>` or
+`agent:<login>:…` counting and an event of a tier the caller does not
+read not counting. The `Graph_Query::RECENT_FOLDERS` (5) folders with the
+latest list first, the latest first; every other follows by name, case
+aside, its `recent_ts` null. That read searches `events` through its
+`( subject, kind )` index, which a query-plan test pins, and so assumes
+the single partition every topology runs, as `bm25` does: over several,
+`Intel_Graph_Row_Schema::all()` is a compound SQLite pushes no correlated
+term into. One folder answers its items as `{ item_key, url, title,
+actor, saved_ts, marks: [ { mark, day } ] }`, each item once, as the most
+restricted copy the caller reads (`Intel_Event::TIERS` order), with that
+copy's URL, title and marks alone, the marks in `Intel_Event::MARKS`
+order, from one statement joining `saved_copies` and `item_marks` by the
+item and the copy's tier; an item carrying no
+mark comes first, then each run by `saved_ts`, the latest first, a move
+counting as the save of each placement it adds, while a placement the
+folder already held keeps its own time.
 `search` and `trends` filter alike — `entity`, and the lists
 `Graph_Query::LENS_LISTS` declares once, `kind`, `topic`, `role` and
 `source`, each repeatable and matching any of its values, `role` an entity
@@ -1664,8 +1702,10 @@ watch's high-water mark, or before its saving on a first pass, the oldest
 first, at most `PASS_LIMIT` (200) a pass, so a backlog drains over passes.
 An item enters a lens or an entity at its retrieval, read through the lens
 or the entity exactly as `search` reads it, so an item an entity only
-published enters neither, and a collection at its saving, read through the
-readable items. Because an item can join its
+published enters neither, and a collection at its earliest saved or
+moved copy of a tier the owner reads, read through the readable items, so
+a reader's watch never matches an item when a holder saved a restricted
+copy of it. Because an item can join its
 target well after its retrieval — an extraction retried from
 `intel:later`, a resolver's 60-second hold, a curator's `confirm_link`, a
 re-resolution — the watch reads a day behind its mark, and its own match
@@ -1744,7 +1784,7 @@ dead-letter dir derived from them, are refused (see Streams). Uninstall reaches 
 the substrate possibly inactive, so it and everything it calls use no
 substrate class.
 
-**Curation.** `Intelligence_CI` also answers sixteen curation verbs, each
+**Curation.** `Intelligence_CI` also answers eighteen curation verbs, each
 declaring `tune`, each writing one ontology event through
 `Stream_Writer::append()` and answering `{ ok, event_id }`; the two
 creations add the key they minted. `Graph_Curation` holds them:
@@ -1753,7 +1793,7 @@ creations add the key they minted. `Graph_Curation` holds them:
 `assert_role`, `end_role`, `tag_topic`, `create_entity` (keyed
 `Intel_Event::entity_key()`), `create_collection` (keyed
 `Intel_Event::collection_key()`, the same slug), `collect` (the item's
-URL, its title and its tier), `save_lens` (keyed `Intel_Event::lens_key()`,
+URL, its title and its tier), `mark_used`, `move_item`, `save_lens` (keyed `Intel_Event::lens_key()`,
 the given key slugged, answering it), `remove_lens` and `merge_theme`. The actor is `Intel_Event::caller()`:
 `agent:<login>:<label>` when `Capabilities::$session_label` is non-empty,
 as for an MCP connection or an issued session, the label as
@@ -1814,7 +1854,33 @@ the role from this very second, because a role row is keyed by its
 `from_ts` and a new one would overwrite it (`try again in a second`);
 otherwise it opens it on the survivor from `Intel_Event::now()`, the tick
 clock's second, and `end_role` closes the latest open row now, on
-the key that holds it, and refuses when there is none. Every string is
+the key that holds it, and refuses when there is none. A save never
+overwrites or reveals another tier's saved copy: `collect` writes a copy
+of the item's own tier, beside any copy of another tier in the folder,
+and refuses only an item the caller reads a copy of there (`<item> is
+already in <folder>`). `mark_used <collection> <item> <mark> <day>` writes
+`item_used` on the copy the caller reads, carrying its tier, `mark` one of
+`Intel_Event::MARKS` (`newsletter`, `linkedin` and `site`) and `day` a
+Y-m-d date `Intel_Graph_Row_Schema::day()` reads back exactly; marking an
+item so again replaces the day, and no verb takes a mark back. `move_item
+<collection> <item> <into>` writes `item_moved`, naming in `tiers` every
+tier of the item's copies in that folder the caller reads, a list
+`Intel_Event::validate()` refuses unless it holds at least one tier, each
+of `TIERS` and none twice, the one list field `Intel_Event::LISTS`
+declares, for `item_moved` alone, so a move leaves none of the copies the
+caller reads behind: a holder's move takes a reader's copy with its own,
+a reader's move leaves a holder's restricted copy where it was, and a
+move whose every tier `into` holds already only empties the folder it
+leaves. Both read the copies through `Graph_Query::saved_tiers()`, the
+caller's readable tiers at which the folder holds the item, the most
+restricted first, `mark_used` marking that first one, so one saved only at
+a tier the caller does not read is refused as one never saved, and refuse, naming
+each folder by its name, a folder that was never made (`no collection:
+<key>`), an item not saved in the folder named (`<item> is not saved in
+<folder>`), a mark outside the set (`mark must be one of: newsletter,
+linkedin, site`), a day that is not a date (`not a Y-m-d date: <day>`)
+and a move into the folder the item is in (`<item> is already in
+<folder>`). Every string is
 bounded first: a key, a name or a value that trims to nothing is refused,
 and so is one past its cap in bytes as the stream writes it, JSON-escaped —
 keys at `Graph_Curation::KEY_BYTES` (320), item keys at `ITEM_KEY_BYTES`
@@ -1899,8 +1965,9 @@ lists the entity types and link roles from `Intel_Event::TYPES` and
 the `lens` and list args of `intel_search` and `intel_trends` come off the
 schema with no door code; a variadic arg is a JSON array. So do
 `intel_names`, `intel_signals`, `intel_briefing`, `intel_theme_suggestions` and the five
-watch tools, which a read session is offered, and `intel_merge_theme`, which
-a session whose role covers `tune` is offered;
+watch tools, which a read session is offered, and `intel_merge_theme`,
+`intel_mark_used` and `intel_move_item`, which a session whose role covers
+`tune` is offered;
 the door becomes the session's minting user, so a watch tool answers and
 changes that user's own watches, and a watch saved through it emails that
 user.
@@ -2588,7 +2655,8 @@ which `extractions_fts` follows, `extracted_subjects`, `themes`, `links`,
 cluster whose canonical it is.
 Nothing elects that cluster another canonical; its kept members keep their
 `clusters` rows. Rows another stream wrote about the item — `judgments`,
-`collected`, `watch_matches`, `watch_seen` — stay, and every read leaves
+`collected`, `saved_copies`, `item_marks`, `watch_matches`, `watch_seen`
+— stay, and every read leaves
 them out, because every read joins `ri`; a collection still lists its saved
 copy. An entity a machine proposed from the item (`entity_proposed`, on
 the ontology stream) stays in the entity index and goes on matching other

@@ -78,7 +78,9 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		$this->assertArrayNotHasKey( 'intel_health', $tools );
 		$this->assertArrayNotHasKey( 'intel_seed_ontology', $tools );
 		$this->assertArrayNotHasKey( 'intel_reresolve', $tools );
-		$this->assertCount( 34, $tools );
+		$this->assertCount( 36, $tools );
+		$this->assertSame( [ 'collection', 'item', 'mark', 'day' ], $tools['intel_mark_used']['inputSchema']['required'] );
+		$this->assertSame( [ 'collection', 'item', 'into' ], $tools['intel_move_item']['inputSchema']['required'] );
 		foreach ( $offered as $verb => $spec ) {
 			$properties = (array) $tools[ "intel_{$verb}" ]['inputSchema']['properties'];
 			$this->assertSame( \array_column( $spec['args'], 'name' ), \array_keys( $properties ), $verb );

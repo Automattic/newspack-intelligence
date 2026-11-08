@@ -505,12 +505,12 @@ describe( 'Search', () => {
 		);
 	} );
 
-	it( 'offers save to collection only to a curator', async () => {
+	it( 'offers save to folder only to a curator', async () => {
 		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
 		const onSave = jest.fn();
 		renderSearch( { onSave } );
 		fireEvent.click(
-			await screen.findByRole( 'button', { name: /save to collection/i } )
+			await screen.findByRole( 'button', { name: /save to folder/i } )
 		);
 		expect( onSave ).toHaveBeenCalledWith( ITEM );
 	} );
@@ -520,7 +520,7 @@ describe( 'Search', () => {
 		renderSearch();
 		await screen.findByText( /^1 of 1 item$/ );
 		expect(
-			screen.queryByRole( 'button', { name: /save to collection/i } )
+			screen.queryByRole( 'button', { name: /save to folder/i } )
 		).toBeNull();
 	} );
 

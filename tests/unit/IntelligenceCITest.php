@@ -267,6 +267,31 @@ final class IntelligenceCITest extends TestCase {
 		$this->assertSame( [ 'organization:kestrel-post' ], \array_column( $this->ci->dispatch( 'names', [ 'kestrel' ] )['entities'], 'entity_key' ) );
 	}
 
+	/**
+	 * The folder list reads each folder's recency from `events` through its
+	 * subject and kind, and its count from `collected` through its key, so
+	 * neither scans its table.
+	 */
+	public function test_the_folder_list_searches_events_by_subject_and_kind(): void {
+		$this->seed(
+			[
+				Intel_Event::make( 'collection_created', [ 'collection_key' => 'tern-desk', 'name' => 'Tern desk' ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'collected', [ 'collection_key' => 'tern-desk', 'item_key' => 'feed:tern-17', 'url' => 'https://tern.example/17', 'title' => 'Tern', 'tier' => 'public' ], 'user:41', 'fixture-9' ),
+			]
+		);
+
+		$queries = $this->queries_of( fn () => $this->ci->dispatch( 'collections', [] ) );
+
+		$listed = \array_values( \array_filter( $queries, static fn ( string $sql ): bool => \str_contains( $sql, '.events' ) ) );
+		$this->assertCount( 1, $listed );
+		$db = new \PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
+		$db->exec( 'ATTACH DATABASE ' . $db->quote( Table_Node::file( 'intel-graph', 0 ) ) . ' AS p0' );
+		$plan = \implode( "\n", \array_column( $db->query( 'EXPLAIN QUERY PLAN ' . $listed[0] )->fetchAll( \PDO::FETCH_ASSOC ), 'detail' ) );
+		$this->assertMatchesRegularExpression( '/SEARCH p0\.events USING INDEX events_subject_kind \(subject=\? AND kind=\?\)/', $plan );
+		$this->assertMatchesRegularExpression( '/SEARCH p0\.collected USING (COVERING )?INDEX sqlite_autoindex_collected_1 \(collection_key=\?\)/', $plan );
+		$this->assertDoesNotMatchRegularExpression( '/SCAN p0\.(events|collected)\b/', $plan );
+	}
+
 	/** A start a proposal's name left behind, once a person's creation renamed the entity, matches nothing. */
 	public function test_names_finds_nothing_by_a_start_its_entity_no_longer_spells(): void {
 		$this->seed(

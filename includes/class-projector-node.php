@@ -169,9 +169,13 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * one-element list holding a literal, EACH for the element a fan-out op is
 	 * written for, or a closure computing the value from the event; a fan-out
 	 * is a list field's name or a closure answering the list; a `delete`
-	 * names its columns, each mapped to such a spec. An extraction deletes the
-	 * item's claims, topic links and theme before it writes its own, so one
-	 * yielding fewer leaves none of the earlier behind, and writes a theme
+	 * names its columns, each mapped to such a spec, and fans out as a write
+	 * does. A move deletes one placement per tier it names from the folder
+	 * it leaves and writes one into the folder it enters with `ignore`, so a
+	 * placement there already keeps its actor and time. An extraction
+	 * deletes the item's claims, topic links and theme before it writes its
+	 * own, so one yielding fewer leaves none of the earlier behind, and
+	 * writes a theme
 	 * row only when it names a theme; each table is written by the
 	 * items stream alone, so a replay deletes and writes in the same order; the
 	 * entities an extraction was given replace the item's earlier set the same
@@ -258,7 +262,15 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			'link_confirmed'      => $judgment( 'confirmed' ),
 			'link_rejected'       => $judgment( 'rejected' ),
 			'collection_created'  => [ [ 'set', 'collections', [ 'collection_key', 'name', 'actor', 'ts' ] ] ],
-			'collected'           => [ [ 'set', 'collected', [ 'collection_key', 'item_key', 'url', 'title', 'tier', 'actor', 'ts' ] ] ],
+			'collected'           => [
+				[ 'set', 'saved_copies', [ 'item_key', 'tier', 'url', 'title' ] ],
+				[ 'set', 'collected', [ 'collection_key', 'item_key', 'tier', 'actor', 'ts' ] ],
+			],
+			'item_moved'          => [
+				[ 'delete', 'collected', [ 'collection_key' => 'from', 'item_key' => 'item_key', 'tier' => self::EACH ], 'tiers' ],
+				[ 'ignore', 'collected', [ 'collection_key', 'item_key', self::EACH, 'actor', 'ts' ], 'tiers' ],
+			],
+			'item_used'           => [ [ 'set', 'item_marks', [ 'item_key', 'tier', 'mark', 'day', 'actor', 'ts' ] ] ],
 			'lens_saved'          => [ [ 'set', 'lenses', [ 'lens_key', 'name', 'description', static fn ( array $e ): string => self::json( $e['filters'] ), 'actor', 'ts' ] ] ],
 			'lens_removed'        => [ [ 'delete', 'lenses', [ 'lens_key' => 'lens_key' ] ] ],
 			'theme_merged'        => [ [ 'set', 'theme_merges', [ 'from', 'into', 'actor', 'ts' ] ] ],
@@ -301,8 +313,8 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * The row ops one spec writes for an event: a delete, whose columns are
-	 * named; or one positional op, or one per element of its fan-out.
+	 * The row ops one spec writes for an event: one op, or one per element
+	 * of its fan-out, a delete's columns named and a write's positional.
 	 * Each value is typed by its column's declared type.
 	 *
 	 * @param array<array-key,mixed>                                   $e    A validated event.
@@ -312,17 +324,13 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	private static function ops( array $e, array $spec ): array {
 		[ $verb, $table, $columns ] = $spec;
 		$types                      = self::$types[ $table ] ??= self::types_of( $table );
+		$fan                        = $spec[3] ?? null;
+		$elements                   = null === $fan ? [ null ] : \array_values( Core::arr( $fan instanceof \Closure ? $fan( $e ) : $e[ $fan ] ) );
 		if ( 'delete' === $verb ) {
-			$where = [];
-			foreach ( $columns as $name => $column ) {
-				$name           = Core::as_string( $name );
-				$where[ $name ] = self::typed( self::value( $e, $column, null ), $types[ $name ] );
-			}
-			return [ [ 'delete', $table, $where ] ];
+			return \array_map( static fn ( mixed $element ): array => [ 'delete', $table, self::where( $e, $columns, $types, $element ) ], $elements );
 		}
 		$ops = [];
-		$fan = $spec[3] ?? null;
-		foreach ( null === $fan ? [ null ] : Core::arr( $fan instanceof \Closure ? $fan( $e ) : $e[ $fan ] ) as $element ) {
+		foreach ( $elements as $element ) {
 			$row = [];
 			foreach ( \array_values( $columns ) as $at => $column ) {
 				$row[] = self::typed( self::value( $e, $column, $element ), $types[ $at ] );
@@ -330,6 +338,25 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			$ops[] = [ $verb, $table, $row ];
 		}
 		return $ops;
+	}
+
+	/**
+	 * A delete's named columns for an event and one fan-out element, each
+	 * typed by its column's declared type.
+	 *
+	 * @param array<array-key,mixed>   $e       A validated event.
+	 * @param array<mixed>             $columns Column name => column spec.
+	 * @param array<int|string,string> $types   The table's column types.
+	 * @param mixed                    $element The fan-out element, or null.
+	 * @return array<string,int|float|string|null>
+	 */
+	private static function where( array $e, array $columns, array $types, mixed $element ): array {
+		$where = [];
+		foreach ( $columns as $name => $column ) {
+			$name           = Core::as_string( $name );
+			$where[ $name ] = self::typed( self::value( $e, $column, $element ), $types[ $name ] );
+		}
+		return $where;
 	}
 
 	/**

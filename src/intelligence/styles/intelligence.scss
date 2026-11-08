@@ -77,10 +77,27 @@
 
 	&__items,
 	&__facts,
-	&__chips {
+	&__chips,
+	&__board {
 		margin: 0;
 		padding: 0;
 		list-style: none;
+	}
+
+	// The folders lay out as a board of cards, each its name over its count.
+	&__board {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+		gap: base.$space-md;
+	}
+
+	&__folder {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: base.$space-xs;
+		margin: 0;
+		overflow-wrap: anywhere;
 	}
 
 	&__items {
@@ -258,7 +275,8 @@
 	}
 
 	&__merge,
-	&__create {
+	&__create,
+	&__use {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: end;

@@ -11,7 +11,7 @@
  * before listing them.
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import { resetLocaleData, setLocaleData } from '@wordpress/i18n';
 import TrendTable, {
 	SignalTrend,
@@ -161,6 +161,22 @@ describe( 'TrendTable', () => {
 				name: 'Kestrel Bayou asks to export its archive',
 			} )
 		).toBeInTheDocument();
+	} );
+
+	it( 'saves each cited item to a folder when given a save handler', () => {
+		const onSave = jest.fn();
+		render( <TrendTable rows={ THEMES } onSave={ onSave } /> );
+		const cells = within( rowOf( '2026-09-14' ) ).getAllByRole( 'cell' );
+		fireEvent.click(
+			within( cells[ 3 ] ).getAllByRole( 'button', {
+				name: 'Save to folder',
+			} )[ 0 ]
+		);
+		expect( onSave ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				title: 'Kestrel Bayou asks to export its archive',
+			} )
+		);
 	} );
 } );
 
@@ -313,6 +329,30 @@ describe( 'SignalTrend', () => {
 		baseline: 2,
 		items: [],
 	};
+
+	it( "hands its table the save handler, so each signal's items save to a folder", () => {
+		const onSave = jest.fn();
+		const cited = {
+			...spike,
+			items: [
+				{
+					item_key: 'linear:SUP-311',
+					url: 'https://tracker.example/SUP-311',
+					title: 'Heron Ledger asks for a refund',
+				},
+			],
+		};
+		render(
+			<SignalTrend
+				answer={ { signals: [ cited ], trend } }
+				onSave={ onSave }
+			/>
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Save to folder' } )
+		);
+		expect( onSave ).toHaveBeenCalledWith( cited.items[ 0 ] );
+	} );
 
 	it( 'reads no spike as steady beside the sparkline, with no table', () => {
 		render( <SignalTrend answer={ { signals: [], trend } } /> );

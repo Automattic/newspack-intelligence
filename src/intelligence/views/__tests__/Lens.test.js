@@ -566,6 +566,26 @@ describe( 'Lens', () => {
 		] );
 	} );
 
+	it( "saves a signal's cited item to a folder", async () => {
+		const onSave = jest.fn();
+		render( <Harness canTune={ false } onSave={ onSave } /> );
+		await openSupport();
+		const signals = await screen.findByRole( 'region', {
+			name: 'Signals',
+		} );
+		const cited = await within( signals ).findByRole( 'link', {
+			name: 'Acme thanks support for the fix',
+		} );
+		fireEvent.click(
+			within( cited.closest( 'li' ) ).getByRole( 'button', {
+				name: 'Save to folder',
+			} )
+		);
+		expect( onSave ).toHaveBeenCalledWith(
+			SIGNALS.signals[ 0 ].items[ 0 ]
+		);
+	} );
+
 	it( 'expands a group onto its items, saving one, and collapses it', async () => {
 		const onSave = jest.fn();
 		render( <Harness canTune={ false } onSave={ onSave } /> );
@@ -578,7 +598,7 @@ describe( 'Lens', () => {
 		const group = toggle.closest( 'li' );
 		fireEvent.click(
 			within( group ).getByRole( 'button', {
-				name: 'Save to collection',
+				name: 'Save to folder',
 			} )
 		);
 		expect( onSave ).toHaveBeenCalledWith( GROUPS.groups[ 1 ].items[ 0 ] );

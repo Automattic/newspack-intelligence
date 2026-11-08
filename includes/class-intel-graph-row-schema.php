@@ -11,7 +11,11 @@
  * every event writes whole rows and the projector never reads before it
  * writes; an item's extraction is its own row beside the item for the same
  * reason, and its theme its own row beside the extraction; a theme merged
- * into another is a `theme_merges` row, so no item's row is rewritten. Each distinct
+ * into another is a `theme_merges` row, so no item's row is rewritten. Each
+ * tier's saved copy of an item is a `saved_copies` row of its own, and its
+ * place in a folder a `collected` row, so a save never overwrites another
+ * tier's and a move carries no copy; each use mark is an `item_marks` row
+ * of the tier of the copy it marks. Each distinct
  * line of an item's body is a `boilerplate` row of its own, so how many
  * items of a source carry a line is a count of rows.
  *
@@ -415,13 +419,33 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				'columns' => [
 					'collection_key' => 'TEXT NOT NULL',
 					'item_key'       => 'TEXT NOT NULL',
-					'url'            => 'TEXT NOT NULL',
-					'title'          => 'TEXT NOT NULL',
 					'tier'           => 'TEXT NOT NULL',
 					'actor'          => 'TEXT NOT NULL',
 					'ts'             => 'REAL NOT NULL',
 				],
-				'key'     => [ 'collection_key', 'item_key' ],
+				'key'     => [ 'collection_key', 'item_key', 'tier' ],
+				'keep'    => true,
+			],
+			'saved_copies'  => [
+				'columns' => [
+					'item_key' => 'TEXT NOT NULL',
+					'tier'     => 'TEXT NOT NULL',
+					'url'      => 'TEXT NOT NULL',
+					'title'    => 'TEXT NOT NULL',
+				],
+				'key'     => [ 'item_key', 'tier' ],
+				'keep'    => true,
+			],
+			'item_marks'    => [
+				'columns' => [
+					'item_key' => 'TEXT NOT NULL',
+					'tier'     => 'TEXT NOT NULL',
+					'mark'     => 'TEXT NOT NULL',
+					'day'      => 'TEXT NOT NULL',
+					'actor'    => 'TEXT NOT NULL',
+					'ts'       => 'REAL NOT NULL',
+				],
+				'key'     => [ 'item_key', 'tier', 'mark' ],
 				'keep'    => true,
 			],
 			'lenses'        => [
@@ -604,6 +628,6 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	 * @api Read by the Row_Table that opens the file.
 	 */
 	public static function version(): int {
-		return 4;
+		return 7;
 	}
 }

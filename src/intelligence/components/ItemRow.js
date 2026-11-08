@@ -5,10 +5,31 @@ import Pager from './Pager';
 import { metaLine, utcDay } from './format';
 
 /**
+ * The control saving an item to a folder, for a caller who may curate;
+ * nothing for a reader.
+ *
+ * @param {Object}                 props
+ * @param {Object}                 props.item     The item.
+ * @param {(item: Object) => void} [props.onSave] Saves the item; absent for a reader.
+ * @return {?import('react').ReactElement} The button.
+ */
+export function SaveButton( { item, onSave } ) {
+	return onSave ? (
+		<button
+			type="button"
+			className="button button-small"
+			onClick={ () => onSave( item ) }
+		>
+			{ __( 'Save to folder', 'newspack-intelligence' ) }
+		</button>
+	) : null;
+}
+
+/**
  * One item as `search` and `timeline` answer it: its title citing its URL,
  * its source, kind and day, its summary, a toggle showing its excerpt (`Excerpt`),
  * its entities as chips (`Chips`), and, for a caller who may curate, the
- * control saving it to a collection, then any control the view adds.
+ * control saving it to a folder, then any control the view adds.
  *
  * @param {Object}                    props
  * @param {Object}                    props.item         The item.
@@ -24,15 +45,7 @@ export default function ItemRow( { item, onOpenEntity, onSave, children } ) {
 				<strong>
 					<Cite url={ item.url } title={ item.title } />
 				</strong>
-				{ onSave && (
-					<button
-						type="button"
-						className="button button-small"
-						onClick={ () => onSave( item ) }
-					>
-						{ __( 'Save to collection', 'newspack-intelligence' ) }
-					</button>
-				) }
+				<SaveButton item={ item } onSave={ onSave } />
 				{ children }
 			</div>
 			<p className="newspack-nodes-status is-muted">

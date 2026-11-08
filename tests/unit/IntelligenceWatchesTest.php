@@ -271,6 +271,30 @@ final class IntelligenceWatchesTest extends TestCase {
 	}
 
 	/**
+	 * A folder watch's inbox lists only the matches whose items sit in the
+	 * folder now, read at the tiers the caller reads: a match whose item a
+	 * curator moved out leaves the inbox and its unseen count.
+	 */
+	public function test_a_folder_watchs_inbox_drops_an_item_moved_out(): void {
+		$this->seed(
+			[
+				Intel_Event::make( 'collection_created', [ 'collection_key' => 'harbor-archive', 'name' => 'Harbor archive' ], 'user:quay-reader', 'fixture-9' ),
+				Intel_Event::make( 'collected', [ 'collection_key' => 'harbor-reading', 'item_key' => 'feed:gazette-award', 'url' => self::url( 'feed:gazette-award' ), 'title' => 'Award, as shelved', 'tier' => 'public' ], 'user:quay-reader', 'fixture-9' ),
+				self::saved( self::OWN, self::OWNER, 'Reading shelf', 'collection', 'harbor-reading' ),
+			],
+			self::matched( self::OWN, 'feed:gazette-award', 4, self::$oct_06 )
+		);
+		$this->assertSame( 1, $this->ci->dispatch( 'watches', [] )['watches'][0]['unseen'] );
+		$this->assertSame( [ 'feed:gazette-award' ], \array_column( $this->ci->dispatch( 'watch_matches', [ self::OWN ] )['items'], 'item_key' ) );
+
+		$this->ci->dispatch( 'move_item', [ 'harbor-reading', 'feed:gazette-award', 'harbor-archive' ] );
+		$this->seed( self::ontology_events() );
+
+		$this->assertSame( 0, $this->ci->dispatch( 'watches', [] )['watches'][0]['unseen'] );
+		$this->assertSame( [ 'items' => [], 'total' => 0 ], \array_intersect_key( $this->ci->dispatch( 'watch_matches', [ self::OWN ] ), [ 'items' => 0, 'total' => 0 ] ) );
+	}
+
+	/**
 	 * Marking named items seen writes one `watch_seen` each, an item already
 	 * seen not again; marking none marks every unseen match the caller reads.
 	 */

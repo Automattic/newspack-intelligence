@@ -14,7 +14,7 @@ import Answer, { AnswerBody } from '../components/Answer';
 import Cite, { EntityChip } from '../components/Cite';
 import EditDrawer from '../components/EditDrawer';
 import Refusal from '../components/Refusal';
-import { ItemPage } from '../components/ItemRow';
+import { ItemPage, SaveButton } from '../components/ItemRow';
 import { SignalTrend, signalValue } from '../components/TrendTable';
 import { metaLine, roleText, utcDay } from '../components/format';
 
@@ -501,7 +501,11 @@ export default function Entity( {
 				read={ signals }
 			>
 				{ ( answer ) => (
-					<SignalTrend answer={ answer } value={ signalValue } />
+					<SignalTrend
+						answer={ answer }
+						value={ signalValue }
+						onSave={ onSave }
+					/>
 				) }
 			</Answer>
 
@@ -616,7 +620,8 @@ export default function Entity( {
 										onOpen={ onOpenEntity }
 									/>
 								) }{ ' ' }
-								<Cite url={ claim.url } title={ claim.title } />
+								<Cite url={ claim.url } title={ claim.title } />{ ' ' }
+								<SaveButton item={ claim } onSave={ onSave } />
 							</li>
 						) ) }
 					</ul>

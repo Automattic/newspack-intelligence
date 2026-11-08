@@ -199,6 +199,7 @@ export default function IntelligencePage( {
 								canTune={ canTune }
 								vocabulary={ vocabulary }
 								onOpenEntity={ openEntity }
+								onSave={ onSave }
 							/>
 						) }
 						{ 'collections' === view && (
@@ -206,6 +207,7 @@ export default function IntelligencePage( {
 								canTune={ canTune }
 								opened={ collection }
 								onOpen={ setCollection }
+								vocabulary={ vocabulary }
 							/>
 						) }
 						{ 'watches' === view && (

@@ -8,6 +8,7 @@ use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intel_Tiers;
 use Newspack_Intelligence\Intelligence_CI_Node;
+use Newspack_Nodes\Core;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
@@ -365,6 +366,186 @@ final class RestrictedTierTest extends TestCase {
 		$GLOBALS['_current_user_id'] = self::READER;
 		$this->assertSame( [ 'col:renewals' => 1 ], \array_column( $this->ci->dispatch( 'collections', [] )['collections'], 'items', 'collection_key' ) );
 		$this->assertSame( [ 'feed:gazette-award' ], \array_column( $this->ci->dispatch( 'collections', [ 'col:renewals' ] )['items'], 'item_key' ) );
+	}
+
+	/**
+	 * A restricted item keeps its tier when it is marked and moved, so its
+	 * folder, its marks and the recency its move gives a folder answer a
+	 * holder alone; a reader, and the holder once the grant is gone, is
+	 * refused it as an item that is not saved there.
+	 */
+	public function test_a_saved_restricted_items_marks_and_move_answer_a_holder_alone(): void {
+		$this->seed_restricted_world();
+		$this->seed( [ Intel_Event::make( 'collection_created', [ 'collection_key' => 'col:settled', 'name' => 'Settled deals' ], 'user:41', 'fixture-9' ) ] );
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$this->ci->dispatch( 'collect', [ 'col:renewals', self::DEAL ] );
+		$this->seed( self::ontology_events() );
+		Core::$now = (float) self::$oct_20 + 300;
+		$this->ci->dispatch( 'mark_used', [ 'col:renewals', self::DEAL, 'linkedin', '2026-10-22' ] );
+		$this->ci->dispatch( 'move_item', [ 'col:renewals', self::DEAL, 'col:settled' ] );
+		$this->seed( \array_slice( self::ontology_events(), 1 ) );
+
+		$moved = \array_values( \array_filter( self::ontology_events(), static fn ( array $e ): bool => 'item_moved' === $e['event'] ) );
+		$this->assertSame( [ 'restricted' ], $moved[0]['tiers'] );
+		$settled = $this->ci->dispatch( 'collections', [ 'col:settled' ] )['items'];
+		$this->assertSame( [ [ self::DEAL, [ [ 'mark' => 'linkedin', 'day' => '2026-10-22' ] ] ] ], \array_map( static fn ( array $i ): array => [ $i['item_key'], $i['marks'] ], $settled ) );
+		$this->assertSame( [ 'col:settled' => 1, 'col:renewals' => 0 ], \array_column( $this->ci->dispatch( 'collections', [] )['collections'], 'items', 'collection_key' ) );
+
+		self::add_user( self::HOLDER, 'harbor-analyst', 'manage_options' );
+		$this->assertSame( [ 'col:renewals' => 0, 'col:settled' => 0 ], \array_column( $this->ci->dispatch( 'collections', [] )['collections'], 'items', 'collection_key' ), 'a revoked grant leaves the move out of the recency' );
+
+		$GLOBALS['_current_user_id'] = self::READER;
+		$this->assertSame( [], $this->ci->dispatch( 'collections', [ 'col:settled' ] )['items'] );
+		$written = \count( self::ontology_events() );
+		foreach ( [ 'mark_used' => [ 'col:settled', self::DEAL, 'site', '2026-10-23' ], 'move_item' => [ 'col:settled', self::DEAL, 'col:renewals' ] ] as $verb => $args ) {
+			$this->assertSame( self::DEAL . ' is not saved in Settled deals', self::refusal( fn () => $this->ci->dispatch( $verb, $args ) ), $verb );
+		}
+		$this->assertCount( $written, self::ontology_events() );
+	}
+
+	/**
+	 * Each tier's saved copy is its own row: a reader's save of an item into
+	 * a folder where a holder saved it at restricted leaves the holder's copy.
+	 * Each reads the item once, at the most restricted copy it may read, with
+	 * that copy's marks alone, and nothing the reader is answered says the
+	 * restricted copy exists.
+	 */
+	public function test_a_readers_save_never_overwrites_or_reveals_a_holders_restricted_copy(): void {
+		$this->seed_restricted_world();
+		$this->seed( [ Intel_Event::make( 'collected', [ 'collection_key' => 'col:renewals', 'item_key' => 'linear:joint-grant', 'url' => 'https://vault.example/joint-grant-terms', 'title' => 'Joint grant terms, held copy', 'tier' => 'restricted' ], 'user:harbor-analyst', 'fixture-9' ) ] );
+
+		$GLOBALS['_current_user_id'] = self::READER;
+		$this->assertSame( [], $this->ci->dispatch( 'collections', [ 'col:renewals' ] )['items'] );
+		$this->assertSame( 'linear:joint-grant is not saved in Renewals', self::refusal( fn () => $this->ci->dispatch( 'mark_used', [ 'col:renewals', 'linear:joint-grant', 'site', '2026-10-23' ] ) ) );
+		$this->ci->dispatch( 'collect', [ 'col:renewals', 'linear:joint-grant' ] );
+		$this->seed( self::ontology_events() );
+		$this->assertSame( 'linear:joint-grant is already in Renewals', self::refusal( fn () => $this->ci->dispatch( 'collect', [ 'col:renewals', 'linear:joint-grant' ] ) ) );
+		$this->ci->dispatch( 'mark_used', [ 'col:renewals', 'linear:joint-grant', 'linkedin', '2026-10-22' ] );
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$this->ci->dispatch( 'mark_used', [ 'col:renewals', 'linear:joint-grant', 'site', '2026-10-24' ] );
+		$this->seed( \array_slice( self::ontology_events(), 1 ) );
+
+		$this->assertSame(
+			[ [ 'internal', 'Gazette and Ledger share a grant' ], [ 'restricted', 'Joint grant terms, held copy' ] ],
+			self::graph_rows( 'saved_copies', 'tier', 'tier, title' ),
+			'the holder\'s copy survives the reader\'s save'
+		);
+		$shown = static fn ( array $answer ): array => \array_map( static fn ( array $i ): array => [ $i['item_key'], $i['title'], $i['marks'] ], $answer['items'] );
+		$this->assertSame( [ [ 'linear:joint-grant', 'Joint grant terms, held copy', [ [ 'mark' => 'site', 'day' => '2026-10-24' ] ] ] ], $shown( $this->ci->dispatch( 'collections', [ 'col:renewals' ] ) ) );
+		$this->assertSame( [ 'col:renewals' => 1 ], \array_column( $this->ci->dispatch( 'collections', [] )['collections'], 'items', 'collection_key' ) );
+		$this->assertSame( 'linear:joint-grant is already in Renewals', self::refusal( fn () => $this->ci->dispatch( 'collect', [ 'col:renewals', 'linear:joint-grant' ] ) ) );
+
+		$GLOBALS['_current_user_id'] = self::READER;
+		$this->assertSame( [ [ 'linear:joint-grant', 'Gazette and Ledger share a grant', [ [ 'mark' => 'linkedin', 'day' => '2026-10-22' ] ] ] ], $shown( $this->ci->dispatch( 'collections', [ 'col:renewals' ] ) ) );
+		$this->assertSame( [ 'col:renewals' => 1 ], \array_column( $this->ci->dispatch( 'collections', [] )['collections'], 'items', 'collection_key' ) );
+	}
+
+	/**
+	 * A move carries every copy of the item the caller reads, each keeping
+	 * its own title and marks: a holder's move takes the reader's copy and
+	 * its own, so the old folder holds neither, while a reader's move takes
+	 * the reader's copy alone and leaves the holder's restricted copy.
+	 */
+	public function test_a_move_carries_every_copy_the_caller_reads(): void {
+		$this->seed_restricted_world();
+		$copy = static fn ( string $tier, string $title, string $actor ): array => Intel_Event::make( 'collected', [ 'collection_key' => 'col:renewals', 'item_key' => 'linear:joint-grant', 'url' => "https://vault.example/joint-grant/{$tier}", 'title' => $title, 'tier' => $tier ], $actor, 'fixture-9' );
+		$mark = static fn ( string $tier, string $mark, string $day ): array => Intel_Event::make( 'item_used', [ 'collection_key' => 'col:renewals', 'item_key' => 'linear:joint-grant', 'tier' => $tier, 'mark' => $mark, 'day' => $day ], 'user:41', 'fixture-9' );
+		$this->seed(
+			[
+				Intel_Event::make( 'collection_created', [ 'collection_key' => 'col:settled', 'name' => 'Settled deals' ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'collection_created', [ 'collection_key' => 'col:lapsed', 'name' => 'Lapsed deals' ], 'user:41', 'fixture-9' ),
+				$copy( 'restricted', 'Joint grant terms, held copy', 'user:harbor-analyst' ),
+				$copy( 'internal', 'Joint grant, open copy', 'user:harbor-reader' ),
+				$mark( 'restricted', 'site', '2026-10-24' ),
+				$mark( 'internal', 'linkedin', '2026-10-22' ),
+			]
+		);
+		$shown = fn ( string $folder ): array => \array_map( static fn ( array $i ): array => [ $i['title'], $i['marks'] ], $this->ci->dispatch( 'collections', [ $folder ] )['items'] );
+
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$this->ci->dispatch( 'move_item', [ 'col:renewals', 'linear:joint-grant', 'col:settled' ] );
+		$this->seed( self::ontology_events() );
+
+		$this->assertSame( [ [ 'restricted', 'internal' ] ], \array_column( self::ontology_events(), 'tiers' ) );
+		$this->assertSame( [ [ 'col:settled', 'internal' ], [ 'col:settled', 'restricted' ] ], self::graph_rows( 'collected', 'tier', 'collection_key, tier' ) );
+		$this->assertSame( [], $shown( 'col:renewals' ) );
+		$this->assertSame( [ [ 'Joint grant terms, held copy', [ [ 'mark' => 'site', 'day' => '2026-10-24' ] ] ] ], $shown( 'col:settled' ) );
+		$GLOBALS['_current_user_id'] = self::READER;
+		$this->assertSame( [ [ 'Joint grant, open copy', [ [ 'mark' => 'linkedin', 'day' => '2026-10-22' ] ] ] ], $shown( 'col:settled' ) );
+
+		$this->ci->dispatch( 'move_item', [ 'col:settled', 'linear:joint-grant', 'col:lapsed' ] );
+		$this->seed( \array_slice( self::ontology_events(), 1 ) );
+
+		$this->assertSame( [ [ 'restricted', 'internal' ], [ 'internal' ] ], \array_column( self::ontology_events(), 'tiers' ) );
+		$this->assertSame( [ [ 'col:lapsed', 'internal' ], [ 'col:settled', 'restricted' ] ], self::graph_rows( 'collected', 'tier', 'collection_key, tier' ) );
+		$this->assertSame( [], $shown( 'col:settled' ) );
+		$this->assertSame( [ [ 'Joint grant, open copy', [ [ 'mark' => 'linkedin', 'day' => '2026-10-22' ] ] ] ], $shown( 'col:lapsed' ) );
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$this->assertSame( [ [ 'Joint grant terms, held copy', [ [ 'mark' => 'site', 'day' => '2026-10-24' ] ] ] ], $shown( 'col:settled' ) );
+	}
+
+	/**
+	 * A move leaves no copy behind: a holder's move names every tier it reads
+	 * in the folder it leaves, the one its target holds already among them,
+	 * so that folder holds nothing, the target holds both tiers, and the
+	 * placement the target held keeps its own actor and time; a replay
+	 * rebuilds the same rows.
+	 */
+	public function test_a_move_leaves_no_copy_behind(): void {
+		$this->seed_restricted_world();
+		$placed = static function ( string $folder, string $tier, string $actor, int $at ): array {
+			$event       = Intel_Event::make( 'collected', [ 'collection_key' => $folder, 'item_key' => 'linear:joint-grant', 'url' => "https://vault.example/grant-terms/{$tier}", 'title' => "Grant terms, {$tier} copy", 'tier' => $tier ], $actor, 'fixture-9' );
+			$event['ts'] = (float) $at;
+			return $event;
+		};
+		$world = [
+			Intel_Event::make( 'collection_created', [ 'collection_key' => 'col:settled', 'name' => 'Settled deals' ], 'user:41', 'fixture-9' ),
+			$placed( 'col:renewals', 'restricted', 'user:harbor-analyst', self::$oct_13 ),
+			$placed( 'col:renewals', 'internal', 'user:harbor-reader', self::$oct_13 + 1800 ),
+			$placed( 'col:settled', 'internal', 'user:dock-editor', self::$oct_13 + 5400 ),
+		];
+		$this->seed( $world );
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+
+		$this->ci->dispatch( 'move_item', [ 'col:renewals', 'linear:joint-grant', 'col:settled' ] );
+		$moves = self::ontology_events();
+		$this->seed( $moves );
+
+		$this->assertSame( [ [ 'restricted', 'internal' ] ], \array_column( $moves, 'tiers' ) );
+		$placements = static fn (): array => \array_map( static fn ( array $row ): array => [ $row[0], $row[1], $row[2], (float) $row[3] ], self::graph_rows( 'collected', 'collection_key, tier', 'collection_key, tier, actor, ts' ) );
+		$after      = [ [ 'col:settled', 'internal', 'user:dock-editor', (float) ( self::$oct_13 + 5400 ) ], [ 'col:settled', 'restricted', 'user:harbor-analyst', (float) self::$oct_20 ] ];
+		$this->assertSame( $after, $placements() );
+		$this->assertSame( [], $this->ci->dispatch( 'collections', [ 'col:renewals' ] )['items'] );
+		$this->assertSame( [ 'Grant terms, restricted copy' ], \array_column( $this->ci->dispatch( 'collections', [ 'col:settled' ] )['items'], 'title' ) );
+
+		$this->seed( $world, $moves );
+		$this->assertSame( $after, $placements(), 'a replay rebuilds the same rows' );
+	}
+
+	/**
+	 * A folder's arrivals for a watch read each item once, entering at its
+	 * earliest copy the owner may read, so a reader's watch never matches an
+	 * item at the moment a holder saved a restricted copy of it.
+	 */
+	public function test_a_folders_arrivals_read_only_the_copies_the_owner_may_read(): void {
+		$this->seed_restricted_world();
+		$copy = static function ( string $tier, string $actor, int $at ): array {
+			$event       = Intel_Event::make( 'collected', [ 'collection_key' => 'col:renewals', 'item_key' => 'linear:joint-grant', 'url' => 'https://vault.example/joint-grant', 'title' => "Grant, {$tier} copy", 'tier' => $tier ], $actor, 'fixture-9' );
+			$event['ts'] = (float) $at;
+			return $event;
+		};
+		$this->seed( [ $copy( 'restricted', 'user:harbor-analyst', self::$oct_13 ), $copy( 'internal', 'user:harbor-reader', self::$oct_20 - 3600 ) ] );
+		$arrivals = static fn (): array => Intel_Graph_Row_Schema::read(
+			static fn ( \Newspack_Nodes\Row_Reader $r ): array => \array_map(
+				static fn ( array $arrival ): array => [ $arrival['item']['item_key'], (int) $arrival['at'] ],
+				Graph_Query::arrivals( $r, Graph_Query::graph( $r ), 'collection', 'col:renewals', 'renewals-watch', 0.0, 50 )
+			)
+		);
+
+		$GLOBALS['_current_user_id'] = self::READER;
+		$this->assertSame( [ [ 'linear:joint-grant', self::$oct_20 - 3600 ] ], $arrivals() );
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$this->assertSame( [ [ 'linear:joint-grant', self::$oct_13 ] ], $arrivals() );
 	}
 
 	/** A grant adds the capability to the user and logs the operator and the user. */

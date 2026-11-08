@@ -296,13 +296,13 @@ describe( 'ItemRow', () => {
 		expect( screen.queryByRole( 'button', { name: /more$/ } ) ).toBeNull();
 	} );
 
-	it( 'offers save to collection only when given a save handler', () => {
+	it( 'offers save to folder only when given a save handler', () => {
 		const onSave = jest.fn();
 		const { rerender } = render(
 			<ItemRow item={ ITEM } onOpenEntity={ jest.fn() } />
 		);
 		expect(
-			screen.queryByRole( 'button', { name: /save to collection/i } )
+			screen.queryByRole( 'button', { name: /save to folder/i } )
 		).toBeNull();
 		rerender(
 			<ItemRow
@@ -312,7 +312,7 @@ describe( 'ItemRow', () => {
 			/>
 		);
 		fireEvent.click(
-			screen.getByRole( 'button', { name: /save to collection/i } )
+			screen.getByRole( 'button', { name: /save to folder/i } )
 		);
 		expect( onSave ).toHaveBeenCalledWith( ITEM );
 	} );

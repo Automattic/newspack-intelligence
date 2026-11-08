@@ -14,6 +14,7 @@ import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
 import Answer from '../components/Answer';
 import Cite, { EntityChip } from '../components/Cite';
+import { SaveButton } from '../components/ItemRow';
 import Refusal from '../components/Refusal';
 import { metaLine } from '../components/format';
 
@@ -393,15 +394,22 @@ function ThemePair( { pair, onMerge } ) {
  * and `k` move between the judgments, `y` confirms or accepts, `n` rejects
  * and `m` opens a merge. Below them, the pairs of themes `theme_suggestions`
  * reads, each offering a curator a merge of either theme into the other,
- * held as a judgment is.
+ * held as a judgment is. A link row's item saves to a folder as any item
+ * does.
  *
- * @param {Object}                props
- * @param {boolean}               props.canTune      Whether to offer judgments.
- * @param {Object}                props.vocabulary   The localized vocabulary.
- * @param {(key: string) => void} props.onOpenEntity Opens an entity.
+ * @param {Object}                 props
+ * @param {boolean}                props.canTune      Whether to offer judgments.
+ * @param {Object}                 props.vocabulary   The localized vocabulary.
+ * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
+ * @param {(item: Object) => void} [props.onSave]     Saves an item; absent for a reader.
  * @return {import('react').ReactElement} The view.
  */
-export default function Review( { canTune, vocabulary, onOpenEntity } ) {
+export default function Review( {
+	canTune,
+	vocabulary,
+	onOpenEntity,
+	onSave,
+} ) {
 	const links = useIntelRead( 'review:links', 'review', [ 'links' ] );
 	const entities = useIntelRead( 'review:entities', 'review', [
 		'entities',
@@ -465,12 +473,18 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 								key={ row[ 0 ].item_key }
 								className="newspack-intelligence__item"
 							>
-								<strong>
-									<Cite
-										url={ row[ 0 ].url }
-										title={ row[ 0 ].title }
+								<div className="newspack-intelligence__item-head">
+									<strong>
+										<Cite
+											url={ row[ 0 ].url }
+											title={ row[ 0 ].title }
+										/>
+									</strong>
+									<SaveButton
+										item={ row[ 0 ] }
+										onSave={ onSave }
 									/>
-								</strong>
+								</div>
 								<div className="newspack-intelligence__judgments">
 									{ row.map( ( link ) => {
 										const pair = {
@@ -606,6 +620,10 @@ export default function Review( { canTune, vocabulary, onOpenEntity } ) {
 												<Cite
 													url={ item.url }
 													title={ item.title }
+												/>{ ' ' }
+												<SaveButton
+													item={ item }
+													onSave={ onSave }
 												/>
 												<Evidence
 													text={ item.evidence }

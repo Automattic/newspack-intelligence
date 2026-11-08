@@ -7,6 +7,7 @@ import Sparkline from '@newspack-nodes/shared/components/Sparkline';
 import { chartColor } from '@newspack-nodes/shared/hooks/useTimeChart';
 import { integerTicks } from '@newspack-nodes/shared/utils/axis-ticks';
 import Cite from './Cite';
+import { SaveButton } from './ItemRow';
 
 /** The newest buckets a trend chart draws, as many as a signal's history. */
 const CHART_BUCKETS = 8;
@@ -99,19 +100,22 @@ export const signalValue = ( signal ) => {
 
 /**
  * Trend rows, or signals: each bucket, a date that does not wrap, and value
- * with its count, citing the newest items the row counts. A row answering no
- * `items` shows none.
+ * with its count, citing the newest items the row counts, each with the
+ * control saving it to a folder for a curator. A row answering no `items`
+ * shows none.
  *
  * @param {Object}                           props
- * @param {Array<Object>}                    props.rows    The rows `trends` or `signals` answers.
- * @param {(row: Object) => string}          [props.value] A row's value as shown.
- * @param {(row: Object) => (string|number)} [props.count] A row's count as shown.
+ * @param {Array<Object>}                    props.rows     The rows `trends` or `signals` answers.
+ * @param {(row: Object) => string}          [props.value]  A row's value as shown.
+ * @param {(row: Object) => (string|number)} [props.count]  A row's count as shown.
+ * @param {(item: Object) => void}           [props.onSave] Saves a cited item; absent for a reader.
  * @return {import('react').ReactElement} The table.
  */
 export default function TrendTable( {
 	rows,
 	value = ( row ) => row.value,
 	count = ( row ) => row.count,
+	onSave,
 } ) {
 	return (
 		<table className="newspack-nodes-table">
@@ -148,6 +152,10 @@ export default function TrendTable( {
 										<Cite
 											url={ item.url }
 											title={ item.title }
+										/>{ ' ' }
+										<SaveButton
+											item={ item }
+											onSave={ onSave }
 										/>
 									</li>
 								) ) }
@@ -167,11 +175,12 @@ export default function TrendTable( {
  * against its baseline. A trend holding no bucket draws no line.
  *
  * @param {Object}                  props
- * @param {Object}                  props.answer  The answer `signals` gave: `signals` and `trend`.
- * @param {(row: Object) => string} [props.value] A signal's value as its row shows it.
+ * @param {Object}                  props.answer   The answer `signals` gave: `signals` and `trend`.
+ * @param {(row: Object) => string} [props.value]  A signal's value as its row shows it.
+ * @param {(item: Object) => void}  [props.onSave] Saves a cited item; absent for a reader.
  * @return {import('react').ReactElement} The signals.
  */
-export function SignalTrend( { answer, value } ) {
+export function SignalTrend( { answer, value, onSave } ) {
 	const { signals, trend } = answer;
 	return (
 		<>
@@ -193,6 +202,7 @@ export function SignalTrend( { answer, value } ) {
 					rows={ signals }
 					value={ value }
 					count={ againstBaseline }
+					onSave={ onSave }
 				/>
 			) }
 		</>

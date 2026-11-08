@@ -187,12 +187,48 @@ describe( 'Review — reads', () => {
 		).toBeInTheDocument();
 	} );
 
+	it( "saves a proposed link's item to a folder when given a save handler", async () => {
+		const onSave = jest.fn();
+		renderReview( { canTune: true, onSave } );
+		const links = await screen.findByRole( 'region', {
+			name: 'Proposed links',
+		} );
+		fireEvent.click(
+			await within( links ).findByRole( 'button', {
+				name: 'Save to folder',
+			} )
+		);
+		expect( onSave ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				item_key: 'github:example/plugin#912',
+				title: 'Paywall bug reported by Acme',
+			} )
+		);
+	} );
+
+	it( "saves a proposed entity's cited item to a folder when given a save handler", async () => {
+		const onSave = jest.fn();
+		renderReview( { canTune: true, onSave } );
+		await screen.findByRole( 'button', { name: 'Valley Times' } );
+		fireEvent.click(
+			within( queue( 'Proposed entities' ) ).getByRole( 'button', {
+				name: 'Save to folder',
+			} )
+		);
+		expect( onSave ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				item_key: 'feed:valley-17',
+				title: 'Valley Times joins the network',
+			} )
+		);
+	} );
+
 	it( 'offers a reader no judgment', async () => {
 		renderReview();
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
 		expect(
 			screen.queryAllByRole( 'button', {
-				name: /^(Confirm|Reject|Accept|Merge)/,
+				name: /^(Confirm|Reject|Accept|Merge|Save to folder)/,
 			} )
 		).toEqual( [] );
 	} );

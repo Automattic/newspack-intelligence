@@ -48,7 +48,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'entity_key', 'type', 'name', 'norm', 'created_ts' ], \array_keys( $tables['entities']['columns'] ), 'an entity row carries no id' );
 		$this->assertSame( [ 'entities_norm' => [ 'norm' ] ], $tables['entities']['indexes'] );
 		$this->assertArrayNotHasKey( 'autoincrement', $tables['entities'] );
-		$this->assertSame( 4, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 7, Intel_Graph_Row_Schema::version() );
 		$this->projector_graph();
 		$this->assertSame( [ 'Intel_Graph' ], Core::node( 'intel-graph' )->arguments(), 'the Row_Table accepts the schema' );
 	}
@@ -70,7 +70,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'item_key' ], $themes['key'] );
 		$this->assertSame( [ 'themes_item_day' => [ 'item_day' ] ], $themes['indexes'] );
 		$this->assertSame( [ 'item_day', 730, 86400 ], $themes['retain'] );
-		$this->assertSame( 4, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 7, Intel_Graph_Row_Schema::version() );
 	}
 
 	/**
@@ -170,7 +170,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'source' => 'TEXT NOT NULL', 'line_hash' => 'TEXT NOT NULL', 'item_key' => 'TEXT NOT NULL', 'item_day' => 'INTEGER NOT NULL' ], $boilerplate['columns'] );
 		$this->assertSame( [ 'source', 'line_hash', 'item_key' ], $boilerplate['key'] );
 		$this->assertSame( [ 'item_day', 730, 86400 ], $boilerplate['retain'] );
-		$this->assertSame( 4, Intel_Graph_Row_Schema::version(), 'a table added at the same shape version' );
+		$this->assertSame( 7, Intel_Graph_Row_Schema::version() );
 
 		$now       = 1793000000;
 		Core::$now = (float) ( $now - 731 * 86400 );
@@ -199,13 +199,36 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		return \array_map( static fn ( string $t ): int => (int) self::graph_rows( $t, '1', 'COUNT(*)' )[0][0], $tables );
 	}
 
+	/**
+	 * Each tier's saved copy of an item is a kept `saved_copies` row keyed by
+	 * the item and the tier, holding its URL and title, and its place in a
+	 * folder a kept `collected` row keyed by the folder, the item and the
+	 * tier, which a folder's read leads by and a move rewrites carrying no
+	 * copy; each use mark is a kept row keyed by the item, the tier of the
+	 * copy it marks and the mark, so marking it again replaces the day.
+	 */
+	public function test_each_saved_copy_and_each_use_mark_is_a_row_of_its_tier(): void {
+		$tables = Intel_Graph_Row_Schema::tables();
+
+		$this->assertSame( [ 'collection_key' => 'TEXT NOT NULL', 'item_key' => 'TEXT NOT NULL', 'tier' => 'TEXT NOT NULL', 'actor' => 'TEXT NOT NULL', 'ts' => 'REAL NOT NULL' ], $tables['collected']['columns'] );
+		$this->assertSame( [ 'collection_key', 'item_key', 'tier' ], $tables['collected']['key'] );
+		$this->assertArrayNotHasKey( 'indexes', $tables['collected'] );
+		$this->assertSame( [ 'item_key' => 'TEXT NOT NULL', 'tier' => 'TEXT NOT NULL', 'url' => 'TEXT NOT NULL', 'title' => 'TEXT NOT NULL' ], $tables['saved_copies']['columns'] );
+		$this->assertSame( [ 'item_key', 'tier' ], $tables['saved_copies']['key'] );
+		$this->assertTrue( $tables['saved_copies']['keep'] );
+		$this->assertSame( [ 'item_key' => 'TEXT NOT NULL', 'tier' => 'TEXT NOT NULL', 'mark' => 'TEXT NOT NULL', 'day' => 'TEXT NOT NULL', 'actor' => 'TEXT NOT NULL', 'ts' => 'REAL NOT NULL' ], $tables['item_marks']['columns'] );
+		$this->assertSame( [ 'item_key', 'tier', 'mark' ], $tables['item_marks']['key'] );
+		$this->assertTrue( $tables['item_marks']['keep'] );
+		$this->assertTrue( $tables['collected']['keep'] );
+	}
+
 	/** The reads that open on a proposal's subject or a judged entity reach it by an index. */
 	public function test_events_and_judgments_are_indexed_where_the_reads_open(): void {
 		$tables = Intel_Graph_Row_Schema::tables();
 
 		$this->assertContains( [ 'subject', 'kind' ], $tables['events']['indexes'] ?? [] );
 		$this->assertContains( [ 'entity_key' ], $tables['judgments']['indexes'] ?? [] );
-		$this->assertSame( 4, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 7, Intel_Graph_Row_Schema::version() );
 	}
 
 	/** With no partition written, a table reads as an empty row set of its declared columns. */

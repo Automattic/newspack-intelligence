@@ -210,7 +210,9 @@ function Opened( { lens, starts, onStarts, onOpenEntity, onSave } ) {
 				level={ 3 }
 				read={ signals }
 			>
-				{ ( answer ) => <SignalTrend answer={ answer } /> }
+				{ ( answer ) => (
+					<SignalTrend answer={ answer } onSave={ onSave } />
+				) }
 			</Answer>
 			<Answer
 				title={ __( 'Trends', 'newspack-intelligence' ) }

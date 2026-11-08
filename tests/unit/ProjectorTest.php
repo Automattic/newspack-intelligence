@@ -241,6 +241,68 @@ final class ProjectorTest extends TestCase {
 		);
 	}
 
+	/** An item saved into two folders sits in both, and a move takes it out of the folder it leaves alone. */
+	public function test_a_move_takes_an_item_out_of_the_folder_it_leaves_alone(): void {
+		$copy = [ 'item_key' => self::ITEM, 'url' => 'https://harborgazette.example/a', 'title' => 'Award', 'tier' => 'internal' ];
+
+		$this->project(
+			[
+				$this->ontology( 'collected', [ 'collection_key' => 'awards-longlist' ] + $copy ),
+				$this->ontology( 'collected', [ 'collection_key' => 'awards-shortlist' ] + $copy ),
+				$this->ontology( 'item_moved', [ 'collection_key' => 'awards-winners', 'item_key' => self::ITEM, 'from' => 'awards-longlist', 'tiers' => [ 'internal' ] ] ),
+			]
+		);
+
+		$this->assertSame( [ [ 'awards-shortlist', self::ITEM ], [ 'awards-winners', self::ITEM ] ], self::graph_rows( 'collected', 'collection_key', 'collection_key, item_key' ) );
+	}
+
+	/**
+	 * Each tier's saved copy of an item is a row of its own, its URL and
+	 * title in `saved_copies` and its place in `collected`, so a save at one
+	 * tier never overwrites another's. A move carries every tier it names
+	 * and leaves the rest: each copy keeps its own title and marks, and a
+	 * replay rebuilds the same rows.
+	 */
+	public function test_a_move_carries_each_tier_it_names_and_leaves_the_rest(): void {
+		$copy   = static fn ( string $tier, string $title ): array => [ 'collection_key' => 'awards-longlist', 'item_key' => self::ITEM, 'url' => "https://harborgazette.example/{$tier}", 'title' => $title, 'tier' => $tier ];
+		$events = [
+			$this->ontology( 'collected', $copy( 'restricted', 'Award, held copy' ) ),
+			$this->ontology( 'collected', $copy( 'internal', 'Award, open copy' ) ),
+			$this->ontology( 'item_used', [ 'collection_key' => 'awards-longlist', 'item_key' => self::ITEM, 'tier' => 'restricted', 'mark' => 'site', 'day' => '2026-10-24' ] ),
+			$this->ontology( 'item_used', [ 'collection_key' => 'awards-longlist', 'item_key' => self::ITEM, 'tier' => 'internal', 'mark' => 'linkedin', 'day' => '2026-10-22' ] ),
+			$this->ontology( 'item_moved', [ 'collection_key' => 'awards-winners', 'item_key' => self::ITEM, 'from' => 'awards-longlist', 'tiers' => [ 'restricted', 'internal' ] ] ),
+		];
+
+		$this->project( $events );
+		$this->assertSame( [ [ 'awards-winners', 'internal' ], [ 'awards-winners', 'restricted' ] ], self::graph_rows( 'collected', 'tier', 'collection_key, tier' ) );
+		$this->project( [ $this->ontology( 'item_moved', [ 'collection_key' => 'awards-shortlist', 'item_key' => self::ITEM, 'from' => 'awards-winners', 'tiers' => [ 'internal' ] ] ) ] );
+
+		$rows = [
+			self::graph_rows( 'collected', 'tier', 'collection_key, tier' ),
+			self::graph_rows( 'saved_copies', 'tier', 'tier, url, title' ),
+			self::graph_rows( 'item_marks', 'tier', 'tier, mark, day' ),
+		];
+		$this->assertSame(
+			[
+				[ [ 'awards-shortlist', 'internal' ], [ 'awards-winners', 'restricted' ] ],
+				[ [ 'internal', 'https://harborgazette.example/internal', 'Award, open copy' ], [ 'restricted', 'https://harborgazette.example/restricted', 'Award, held copy' ] ],
+				[ [ 'internal', 'linkedin', '2026-10-22' ], [ 'restricted', 'site', '2026-10-24' ] ],
+			],
+			$rows
+		);
+		$this->project( $events );
+		$this->project( [ $this->ontology( 'item_moved', [ 'collection_key' => 'awards-shortlist', 'item_key' => self::ITEM, 'from' => 'awards-winners', 'tiers' => [ 'internal' ] ] ) ] );
+		$this->assertSame(
+			$rows,
+			[
+				self::graph_rows( 'collected', 'tier', 'collection_key, tier' ),
+				self::graph_rows( 'saved_copies', 'tier', 'tier, url, title' ),
+				self::graph_rows( 'item_marks', 'tier', 'tier, mark, day' ),
+			],
+			'a replay rebuilds the same rows'
+		);
+	}
+
 	public function test_replaying_the_same_events_twice_yields_identical_rows(): void {
 		$events = $this->every_kind();
 		$this->assertEqualsCanonicalizing( \array_keys( Intel_Event::KINDS ), \array_unique( \array_column( $events, 'event' ) ), 'the replay covers every kind' );
@@ -821,6 +883,9 @@ final class ProjectorTest extends TestCase {
 			$this->ontology( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => 'organization:salem-ledger', 'item_url' => 'https://harborgazette.example/a' ], 'agent:41:Claude desktop' ),
 			$this->ontology( 'collection_created', [ 'collection_key' => 'awards-2026', 'name' => 'Awards 2026' ] ),
 			$this->ontology( 'collected', [ 'collection_key' => 'awards-2026', 'item_key' => self::ITEM, 'url' => 'https://harborgazette.example/a', 'title' => 'Award', 'tier' => 'internal' ] ),
+			$this->ontology( 'item_used', [ 'collection_key' => 'awards-2026', 'item_key' => self::ITEM, 'tier' => 'internal', 'mark' => 'site', 'day' => '2026-10-21' ] ),
+			$this->ontology( 'collection_created', [ 'collection_key' => 'awards-shortlist', 'name' => 'Awards shortlist' ] ),
+			$this->ontology( 'item_moved', [ 'collection_key' => 'awards-shortlist', 'item_key' => self::ITEM, 'from' => 'awards-2026', 'tiers' => [ 'internal' ] ] ),
 			$this->ontology( 'lens_saved', [ 'lens_key' => 'board-desk', 'name' => 'Board desk', 'description' => 'For the board.', 'filters' => [ 'kinds' => [ 'funding' ] ] + Graph_Query::unfiltered() ] ),
 			$this->ontology( 'lens_saved', [ 'lens_key' => 'old-desk', 'name' => 'Old desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ] ),
 			$this->ontology( 'lens_removed', [ 'lens_key' => 'old-desk' ] ),

@@ -298,6 +298,31 @@ describe( 'Briefing', () => {
 		expect( handlers.onOpenLens ).toHaveBeenCalledWith( 'support-desk' );
 	} );
 
+	it( "saves a signal's cited item to a folder for a curator", async () => {
+		const onSave = jest.fn();
+		render(
+			<Briefing userId={ USER } { ...handlers } onSave={ onSave } />
+		);
+		const signals = await screen.findByRole( 'region', {
+			name: 'Signals',
+		} );
+		const groups = await within( signals ).findAllByRole( 'heading', {
+			level: 3,
+		} );
+		groups.forEach( ( group ) => expand( group, '1 signal' ) );
+		const story = await within( signals ).findByRole( 'link', {
+			name: 'Kestrel ticket eight',
+		} );
+		fireEvent.click(
+			within( story.closest( 'li' ) ).getByRole( 'button', {
+				name: 'Save to folder',
+			} )
+		);
+		expect( onSave ).toHaveBeenCalledWith(
+			expect.objectContaining( { item_key: 'unthread:kestrel-ticket-8' } )
+		);
+	} );
+
 	it( 'lists the reader’s watches with their unseen counts', async () => {
 		renderBriefing();
 		const watches = await screen.findByRole( 'region', {

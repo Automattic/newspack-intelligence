@@ -168,7 +168,7 @@ final class IntelligencePageTest extends TestCase {
 					[ 'field' => 'sources', 'option' => 'source', 'values' => null ],
 				],
 			],
-			\array_diff_key( $vocabulary, [ 'linkRoleWords' => 0, 'methodWords' => 0 ] )
+			\array_diff_key( $vocabulary, [ 'linkRoleWords' => 0, 'methodWords' => 0, 'markWords' => 0 ] )
 		);
 		$this->assertSame( [ 'wp-components', 'newspack-nodes-graph' ], $GLOBALS['_enqueued_styles']['newspack-intelligence']['deps'] );
 	}
@@ -199,7 +199,7 @@ final class IntelligencePageTest extends TestCase {
 		$this->assertSame( '6143', $this->localized( 'newspack-intelligence' )['userId'] );
 	}
 
-	public function test_the_vocabulary_words_every_link_role_and_method(): void {
+	public function test_the_vocabulary_words_every_link_role_method_and_mark(): void {
 		Capabilities::$session_scope = Capabilities::READ;
 		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];
 
@@ -211,6 +211,8 @@ final class IntelligencePageTest extends TestCase {
 		$this->assertSame( 'Mentioned', $vocabulary['linkRoleWords']['mention'] );
 		$this->assertSame( 'The publisher', $vocabulary['linkRoleWords']['publisher'] );
 		$this->assertSame( 'a similar name', $vocabulary['methodWords']['ner_fuzzy'] );
+		$this->assertSame( Intel_Event::MARKS, \array_keys( $vocabulary['markWords'] ) );
+		$this->assertSame( 'LinkedIn', $vocabulary['markWords']['linkedin'] );
 	}
 
 	public function test_the_bundle_stamps_this_plugins_version_in_the_header(): void {

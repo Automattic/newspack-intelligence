@@ -691,7 +691,7 @@ final class GraphQueryTest extends TestCase {
 			[
 				'collection_key' => 'col:october',
 				'name'           => 'October wins',
-				'items'          => [ [ 'item_key' => 'feed:gazette-award', 'url' => 'https://news.example/feed/gazette-award', 'title' => 'Harbor Gazette wins state award', 'actor' => 'user:41' ] ],
+				'items'          => [ [ 'item_key' => 'feed:gazette-award', 'url' => 'https://news.example/feed/gazette-award', 'title' => 'Harbor Gazette wins state award', 'actor' => 'user:41', 'saved_ts' => self::$oct_20, 'marks' => [] ] ],
 				'available'      => true,
 			],
 			\array_diff_key( self::read( 'collections', [ 'key' => 'col:october' ] ), [ 'created_ts' => true ] )

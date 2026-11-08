@@ -56,6 +56,8 @@ final class Intel_Event {
 	public const LINK_ROLES       = [ ...self::ABOUT_ROLES, self::PUBLISHER ];
 	public const METHODS          = [ 'identifier', 'name', 'alias', 'acronym', 'domain_stem', 'ner_fuzzy', 'human', 'extract' ];
 	public const WATCH_TARGETS    = [ 'lens', 'entity', 'collection' ];
+	/** Where a saved item was used, each mark carrying the day it was. */
+	public const MARKS            = [ 'newsletter', 'linkedin', 'site' ];
 	public const DELIVERIES       = [ 'scan', 'instant', 'digest' ];
 
 	/** The values a watch's checkbox holds. */
@@ -73,7 +75,10 @@ final class Intel_Event {
 	 * was found in, is optional: one written before proposals carried it has
 	 * none. So is an extraction's `theme`, the problem or event its item is
 	 * an instance of: one naming none, or written before extractions named
-	 * one, has none, and a blank one is refused.
+	 * one, has none, and a blank one is refused. A saved item's move names
+	 * the folder it leaves as `from`, the one it enters as `collection_key`
+	 * and the tier of each copy it carries, and a use mark the tier of the
+	 * copy it marks.
 	 */
 	public const KINDS = [
 		'item_recorded'       => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ], [] ],
@@ -101,6 +106,8 @@ final class Intel_Event {
 		'link_rejected'       => [ self::ONTOLOGY, [ 'item_key', 'entity_key', 'item_url' ], [], [] ],
 		'collection_created'  => [ self::ONTOLOGY, [ 'collection_key', 'name' ], [], [] ],
 		'collected'           => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'url', 'title', 'tier' ], [ 'tier' => self::TIERS ], [] ],
+		'item_used'           => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'tier', 'mark', 'day' ], [ 'tier' => self::TIERS, 'mark' => self::MARKS ], [] ],
+		'item_moved'          => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'from', 'tiers' ], [ 'tiers' => self::TIERS ], [] ],
 		'lens_saved'          => [ self::ONTOLOGY, [ 'lens_key', 'name', 'description', 'filters' ], [], [] ],
 		'lens_removed'        => [ self::ONTOLOGY, [ 'lens_key' ], [], [] ],
 		'theme_merged'        => [ self::ONTOLOGY, [ 'from', 'into' ], [], [] ],
@@ -116,6 +123,9 @@ final class Intel_Event {
 
 	/** The longest theme, in the bytes a packed message writes it in. */
 	public const THEME_BYTES = 80;
+
+	/** Each kind holding a list field => those fields, each a list of distinct members of its set. */
+	public const LISTS = [ 'item_moved' => [ 'tiers' ] ];
 
 	/** The optional fields refused blank: one with nothing to say is left out. */
 	private const NON_BLANK = [ 'theme' => true ];
@@ -224,6 +234,7 @@ final class Intel_Event {
 			throw new \InvalidArgumentException( 'unknown event kind: ' . ( \is_string( $kind ) ? $kind : \get_debug_type( $kind ) ) );
 		}
 		[ $stream, $fields, $sets, $bounded ] = self::KINDS[ $kind ];
+		$lists                                = self::LISTS[ $kind ] ?? [];
 		foreach ( self::$required[ $kind ] ??= [ ...self::ENVELOPE, ...$fields ] as $field ) {
 			if ( ! \array_key_exists( $field, $event ) ) {
 				throw new \InvalidArgumentException( "{$kind}: missing field {$field}" );
@@ -246,8 +257,11 @@ final class Intel_Event {
 			throw new \InvalidArgumentException( "{$kind}: unknown actor: {$event['actor']}" );
 		}
 		foreach ( $sets as $field => $set ) {
-			if ( ! \in_array( $event[ $field ], $set, true ) ) {
-				throw new \InvalidArgumentException( "{$kind}: field {$field} is outside its set" );
+			$values = \in_array( $field, $lists, true ) ? self::distinct( $kind, $field, $event[ $field ] ) : [ $event[ $field ] ];
+			foreach ( $values as $value ) {
+				if ( ! \in_array( $value, $set, true ) ) {
+					throw new \InvalidArgumentException( "{$kind}: field {$field} is outside its set" );
+				}
 			}
 		}
 		foreach ( $bounded as $field => $bytes ) {
@@ -278,6 +292,23 @@ final class Intel_Event {
 			throw new \InvalidArgumentException( \esc_html( "{$what} is blank" ) );
 		}
 		Graph_Curation::capped( $what, $value, $bytes );
+	}
+
+	/**
+	 * A list field's members, refused unless it is a list of at least one
+	 * value, none repeated.
+	 *
+	 * @param string $kind  The kind, for the refusal.
+	 * @param string $field The field, for the refusal.
+	 * @param mixed  $value The value carried.
+	 * @return list<mixed>
+	 * @throws \InvalidArgumentException Naming the kind and the field.
+	 */
+	private static function distinct( string $kind, string $field, mixed $value ): array {
+		if ( ! \is_array( $value ) || [] === $value || ! \array_is_list( $value ) || \count( $value ) !== \count( \array_unique( $value, \SORT_REGULAR ) ) ) {
+			throw new \InvalidArgumentException( "{$kind}: field {$field} is not a list of distinct values" );
+		}
+		return $value;
 	}
 
 	/**

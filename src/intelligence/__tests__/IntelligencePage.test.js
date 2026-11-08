@@ -270,7 +270,7 @@ describe( 'IntelligencePage', () => {
 		).toBeTruthy();
 		const views = [
 			[ 'Review', 'No proposed link awaits review.' ],
-			[ 'Collections', 'No collection yet.' ],
+			[ 'Collections', 'No folder yet.' ],
 			[ 'Watches', 'No watch yet.' ],
 		];
 		for ( const [ name, shown ] of views ) {
@@ -294,7 +294,7 @@ describe( 'IntelligencePage', () => {
 		expect( nav( 'Review' ) ).toHaveAttribute( 'aria-selected', 'true' );
 		fireEvent.click( nav( 'Collections' ) );
 		expect(
-			await screen.findByText( 'No collection yet.' )
+			await screen.findByText( 'No folder yet.' )
 		).toBeInTheDocument();
 	} );
 
@@ -656,7 +656,7 @@ describe( 'IntelligencePage', () => {
 			name: 'Acme Quillsheet wins regional prize',
 		} );
 		expect(
-			screen.queryByRole( 'button', { name: /save to collection/i } )
+			screen.queryByRole( 'button', { name: /save to folder/i } )
 		).toBeNull();
 	} );
 
@@ -664,10 +664,10 @@ describe( 'IntelligencePage', () => {
 		renderPage( true );
 		await openWeek();
 		fireEvent.click(
-			await screen.findByRole( 'button', { name: /save to collection/i } )
+			await screen.findByRole( 'button', { name: /save to folder/i } )
 		);
 		expect(
-			await screen.findByRole( 'dialog', { name: 'Save to collection' } )
+			await screen.findByRole( 'dialog', { name: 'Save to folder' } )
 		).toBeInTheDocument();
 		fireEvent.click( screen.getByRole( 'button', { name: 'Close' } ) );
 		expect( screen.queryByRole( 'dialog' ) ).toBeNull();

@@ -11,6 +11,11 @@ export const VOCABULARY = {
 	tiers: [ 'public', 'internal', 'restricted' ],
 	trendAxes: [ 'kind', 'topic' ],
 	buckets: [ 'day', 'week', 'month' ],
+	markWords: {
+		newsletter: 'Digest',
+		linkedin: 'LinkedIn post',
+		site: 'Homepage',
+	},
 };
 
 VOCABULARY.lensLists = [

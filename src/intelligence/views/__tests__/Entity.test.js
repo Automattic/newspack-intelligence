@@ -210,6 +210,31 @@ describe( 'Entity — reads', () => {
 		expect( claims ).not.toHaveTextContent( /person:|organization:|feed:/ );
 	} );
 
+	it( "saves a claim's item to a folder when given a save handler", async () => {
+		const onSave = jest.fn();
+		renderEntity( { onSave } );
+		const claims = await screen.findByRole( 'region', { name: 'Claims' } );
+		const saves = await within( claims ).findAllByRole( 'button', {
+			name: 'Save to folder',
+		} );
+		fireEvent.click( saves[ 1 ] );
+		expect( onSave ).toHaveBeenCalledWith(
+			expect.objectContaining( {
+				item_key: 'feed:inkfold-review-21',
+				title: 'Jo Reporter joins the Quillsheet',
+			} )
+		);
+	} );
+
+	it( "offers a reader no save on a claim's item", async () => {
+		renderEntity();
+		const claims = await screen.findByRole( 'region', { name: 'Claims' } );
+		await within( claims ).findAllByRole( 'listitem' );
+		expect(
+			within( claims ).queryByRole( 'button', { name: 'Save to folder' } )
+		).toBeNull();
+	} );
+
 	it( 'leaves out a role row that held no time', async () => {
 		wire.replies.entity = {
 			...ENTITY,

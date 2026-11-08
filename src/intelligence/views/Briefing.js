@@ -386,6 +386,7 @@ export default function Briefing( {
 			rows={ rows }
 			value={ signalValue }
 			count={ againstBaseline }
+			onSave={ onSave }
 		/>
 	);
 

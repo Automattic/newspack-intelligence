@@ -100,6 +100,9 @@ final class Graph_Query {
 	/** The most pairs of themes `theme_suggestions` answers. */
 	public const THEME_SUGGESTIONS = 10;
 
+	/** How many of the caller's most recent folders the folder list puts first. */
+	public const RECENT_FOLDERS = 5;
+
 	/** The most themes a word may be held by and still pair them. */
 	public const SUGGESTION_WORD_MAX_THEMES = 20;
 
@@ -536,7 +539,8 @@ final class Graph_Query {
 	 * watch has not matched, entering the target at or after `$since`, the
 	 * oldest first: a lens's or an entity's item at its retrieval, read
 	 * through the lens or the entity as `search` reads it, and a
-	 * collection's at its saving, through the readable items.
+	 * collection's at its earliest saved copy of a tier the owner reads,
+	 * through the readable items.
 	 *
 	 * @api Read by the watcher, as each watch's owner, inside its one read.
 	 * @param Row_Reader $r     The reader.
@@ -559,7 +563,13 @@ final class Graph_Query {
 			if ( null === self::collection( $r, $key ) ) {
 				throw new \InvalidArgumentException( \esc_html( "no collection: {$key}" ) );
 			}
-			$rows = $r->rows( "{$g['with']} SELECT " . self::ITEM_ROW . ', d.ts AS at FROM ' . Intel_Graph_Row_Schema::all( $r, 'collected' ) . ' d JOIN ri i ON i.item_key = d.item_key WHERE d.collection_key = ? AND ' . $tail( 'd.ts' ), [ ...$g['binds'], $key, ...$last ] );
+			$tiers = Intel_Tiers::readable();
+			// A bound float compares as text unless MIN() keeps REAL affinity.
+			$rows = $r->rows(
+				"{$g['with']} SELECT " . self::ITEM_ROW . ', d.ts AS at FROM ( SELECT item_key, CAST( MIN( ts ) AS REAL ) AS ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'collected' )
+				. ' WHERE collection_key = ? AND tier IN ( ' . Intel_Graph_Row_Schema::marks( $tiers ) . ' ) GROUP BY item_key ) d JOIN ri i ON i.item_key = d.item_key WHERE ' . $tail( 'd.ts' ),
+				[ ...$g['binds'], $key, ...$tiers, ...$last ]
+			);
 		} else {
 			[ $call, $name ] = self::asked( [ $kind => $key ] );
 			$rows            = self::lensed(
@@ -598,8 +608,8 @@ final class Graph_Query {
 	/**
 	 * Those of `$keys` whose items sit in a watch's target now, read as
 	 * `arrivals()` reads the target: through the lens or the entity exactly
-	 * as `search` reads it, and for a collection every key, since a saved
-	 * item stays saved.
+	 * as `search` reads it, and for a collection those it holds a copy of at
+	 * a tier the caller reads, since a move takes an item out.
 	 *
 	 * @api Graph_Watches holds a watch's inbox to what its target shows.
 	 * @param Row_Reader   $r    The reader.
@@ -610,8 +620,16 @@ final class Graph_Query {
 	 * @return list<string>
 	 */
 	public static function in_target( Row_Reader $r, array $g, string $kind, string $key, array $keys ): array {
-		if ( 'collection' === $kind || [] === $keys ) {
+		if ( [] === $keys ) {
 			return $keys;
+		}
+		if ( 'collection' === $kind ) {
+			$tiers = Intel_Tiers::readable();
+			$held  = $r->rows(
+				'SELECT DISTINCT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'collected' ) . ' d WHERE collection_key = ? AND tier IN ( ' . Intel_Graph_Row_Schema::marks( $tiers ) . ' ) AND item_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' )',
+				[ $key, ...$tiers, ...$keys ]
+			);
+			return \array_values( \array_intersect( $keys, \array_map( static fn ( array $row ): string => Core::as_string( $row[0] ), $held ) ) );
 		}
 		[ $call, $name ] = self::asked( [ $kind => $key ] );
 		return self::lensed(
@@ -2589,10 +2607,17 @@ final class Graph_Query {
 	}
 
 	/**
-	 * Every collection with how many readable items it holds, newest first;
-	 * or one collection with its readable items, the latest saved first.
-	 * Each saved item reads at the tier it was saved at, so it outlives its
-	 * item row.
+	 * Every folder with how many readable items it holds, the caller's
+	 * RECENT_FOLDERS most recent first, the latest first, then every other by
+	 * name; or one folder with its readable items, those not yet used first,
+	 * then each run by save time, the latest first, each with its use marks.
+	 * A saved copy reads at the tier it was saved at, so it outlives its item
+	 * row, and an item saved at several tiers reads once, as the most
+	 * restricted copy the caller may read, with that copy's marks alone. The
+	 * recency is read from the caller's own `collected` and `item_moved`
+	 * events of the tiers the caller reads, an agent's under the caller's
+	 * login among them; it assumes the single partition every topology runs,
+	 * since `events` is searched by its subject and kind only there.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `key`, absent for every collection.
 	 * @return array<string,mixed>
@@ -2604,15 +2629,21 @@ final class Graph_Query {
 		$tiers = Intel_Tiers::readable();
 		$in    = Intel_Graph_Row_Schema::marks( $tiers );
 		if ( null === $key ) {
+			$login = Core::as_string( \wp_get_current_user()->user_login );
+			$agent = "agent:{$login}:";
 			return self::available(
 				[ 'collections' => [] ],
 				static fn ( Row_Reader $r ): array => [
-					'collections' => \array_map(
-						static fn ( array $row ): array => [ 'collection_key' => $row[0], 'name' => $row[1], 'created_ts' => $row[2], 'items' => Core::as_int( $row[3] ) ],
-						$r->rows(
-							'SELECT c.collection_key, c.name, c.created_ts, ( SELECT COUNT(*) FROM ' . Intel_Graph_Row_Schema::all( $r, 'collected' )
-							. " d WHERE d.collection_key = c.collection_key AND d.tier IN ( {$in} ) ) FROM " . Intel_Graph_Row_Schema::all( $r, 'collections' ) . ' c ORDER BY c.created_ts DESC, c.collection_key',
-							$tiers
+					'collections' => self::recent_first(
+						\array_map(
+							static fn ( array $row ): array => [ 'collection_key' => $row[0], 'name' => $row[1], 'created_ts' => $row[2], 'items' => Core::as_int( $row[3] ), 'recent_ts' => null === $row[4] ? null : Core::as_int( $row[4] ) ],
+							$r->rows(
+								'SELECT c.collection_key, c.name, c.created_ts, ( SELECT COUNT( DISTINCT d.item_key ) FROM ' . Intel_Graph_Row_Schema::all( $r, 'collected' )
+								. " d WHERE d.collection_key = c.collection_key AND d.tier IN ( {$in} ) ), ( SELECT MAX( e.ts ) FROM " . Intel_Graph_Row_Schema::all( $r, 'events' )
+								. " e WHERE e.subject = c.collection_key AND e.kind IN ( 'collected', 'item_moved' ) AND ( e.actor = ? OR substr( e.actor, 1, length( ? ) ) = ? ) AND ( json_extract( e.detail, '$.tier' ) IN ( {$in} ) OR EXISTS ( SELECT 1 FROM json_each( e.detail, '$.tiers' ) t WHERE t.value IN ( {$in} ) ) ) ) FROM "
+								. Intel_Graph_Row_Schema::all( $r, 'collections' ) . ' c ORDER BY c.name COLLATE NOCASE, c.collection_key',
+								[ ...$tiers, "user:{$login}", $agent, $agent, ...$tiers, ...$tiers ]
+							)
 						)
 					),
 				]
@@ -2622,18 +2653,48 @@ final class Graph_Query {
 			[ 'collection_key' => $key, 'name' => null, 'created_ts' => null, 'items' => [] ],
 			static function ( Row_Reader $r ) use ( $key, $tiers, $in ): array {
 				[ $name, $created ] = self::collection( $r, $key ) ?? throw new \InvalidArgumentException( \esc_html( "no collection: {$key}" ) );
-				$items              = $r->rows(
-					'SELECT d.item_key, d.url, d.title, d.actor FROM ' . Intel_Graph_Row_Schema::all( $r, 'collected' ) . " d WHERE d.collection_key = ? AND d.tier IN ( {$in} ) ORDER BY d.ts DESC, d.item_key",
-					[ $key, ...$tiers ]
+				$rows               = $r->rows(
+					'SELECT d.item_key, s.url, s.title, d.actor, d.ts, m.mark, m.day FROM ( SELECT item_key, actor, ts, tier, ROW_NUMBER() OVER ( PARTITION BY item_key ORDER BY ' . self::restrictiveness() . ' DESC ) AS pick FROM '
+					. Intel_Graph_Row_Schema::all( $r, 'collected' ) . " WHERE collection_key = ? AND tier IN ( {$in} ) ) d JOIN " . Intel_Graph_Row_Schema::all( $r, 'saved_copies' )
+					. ' s ON s.item_key = d.item_key AND s.tier = d.tier LEFT JOIN ' . Intel_Graph_Row_Schema::all( $r, 'item_marks' )
+					. ' m ON m.item_key = d.item_key AND m.tier = d.tier WHERE d.pick = 1 ORDER BY d.ts DESC, d.item_key',
+					[ ...Intel_Event::TIERS, $key, ...$tiers ]
 				);
 				return [
 					'collection_key' => $key,
 					'name'           => $name,
 					'created_ts'     => $created,
-					'items'          => \array_map( static fn ( array $row ): array => [ 'item_key' => $row[0], 'url' => $row[1], 'title' => $row[2], 'actor' => $row[3] ], $items ),
+					'items'          => self::unused_first( $rows ),
 				];
 			}
 		);
+	}
+
+	/**
+	 * A folder's rows as its items, each once with its marks in
+	 * `Intel_Event::MARKS` order, those carrying no mark first, the rows'
+	 * order kept within each run.
+	 *
+	 * @param list<list<mixed>> $rows `item_key, url, title, actor, ts, mark, day`, a row per mark, or one with none.
+	 * @return list<array{item_key:mixed,url:mixed,title:mixed,actor:mixed,saved_ts:int,marks:list<array{mark:string,day:string}>}>
+	 */
+	private static function unused_first( array $rows ): array {
+		$items = [];
+		foreach ( $rows as [ $item_key, $url, $title, $actor, $ts, $mark, $day ] ) {
+			$at           = Core::as_string( $item_key );
+			$items[ $at ] ??= [ 'item_key' => $item_key, 'url' => $url, 'title' => $title, 'actor' => $actor, 'saved_ts' => Core::as_int( $ts ), 'marks' => [] ];
+			if ( null !== $mark ) {
+				$items[ $at ]['marks'][] = [ 'mark' => Core::as_string( $mark ), 'day' => Core::as_string( $day ) ];
+			}
+		}
+		$order = \array_flip( Intel_Event::MARKS );
+		foreach ( $items as &$item ) {
+			\usort( $item['marks'], static fn ( array $a, array $b ): int => $order[ $a['mark'] ] <=> $order[ $b['mark'] ] );
+		}
+		unset( $item );
+		$items = \array_values( $items );
+		\usort( $items, static fn ( array $a, array $b ): int => ( [] !== $a['marks'] ) <=> ( [] !== $b['marks'] ) );
+		return $items;
 	}
 
 	/**
@@ -2647,6 +2708,23 @@ final class Graph_Query {
 	public static function collection( Row_Reader $r, string $key ): ?array {
 		$row = $r->rows( 'SELECT name, created_ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'collections' ) . ' c WHERE collection_key = ? LIMIT 1', [ $key ] )[0] ?? null;
 		return null === $row ? null : [ Core::as_string( $row[0] ), Core::as_int( $row[1] ) ];
+	}
+
+	/**
+	 * Folders as the list reads them, by name: the RECENT_FOLDERS carrying
+	 * the latest recency first, the latest first, then every other, its
+	 * recency left out.
+	 *
+	 * @param list<array{collection_key:mixed,name:mixed,created_ts:mixed,items:int,recent_ts:int|null}> $folders By name.
+	 * @return list<array{collection_key:mixed,name:mixed,created_ts:mixed,items:int,recent_ts:int|null}>
+	 */
+	private static function recent_first( array $folders ): array {
+		$recent = \array_values( \array_filter( $folders, static fn ( array $f ): bool => null !== $f['recent_ts'] ) );
+		\usort( $recent, static fn ( array $a, array $b ): int => $b['recent_ts'] <=> $a['recent_ts'] );
+		$recent = \array_slice( $recent, 0, self::RECENT_FOLDERS );
+		$first  = \array_flip( \array_map( Core::as_string( ... ), \array_column( $recent, 'collection_key' ) ) );
+		$rest   = \array_filter( $folders, static fn ( array $f ): bool => ! isset( $first[ Core::as_string( $f['collection_key'] ) ] ) );
+		return [ ...$recent, ...\array_map( static fn ( array $f ): array => [ 'recent_ts' => null ] + $f, $rest ) ];
 	}
 
 	/**
@@ -2676,6 +2754,33 @@ final class Graph_Query {
 	private static function given( array $args, string $name ): ?string {
 		$value = $args[ $name ] ?? null;
 		return null === $value ? null : Core::as_string( $value );
+	}
+
+	/**
+	 * The tiers of `$tiers` at which a folder holds a copy of an item, the
+	 * most restricted first; empty while it holds the item at another tier
+	 * alone or not at all.
+	 *
+	 * @param Row_Reader   $r          The reader.
+	 * @param string       $collection The collection key.
+	 * @param string       $item_key   The item key.
+	 * @param list<string> $tiers      The tiers the caller reads.
+	 * @return list<string>
+	 */
+	public static function saved_tiers( Row_Reader $r, string $collection, string $item_key, array $tiers ): array {
+		$rows = $r->rows(
+			'SELECT tier FROM ' . Intel_Graph_Row_Schema::all( $r, 'collected' ) . ' d WHERE collection_key = ? AND item_key = ? AND tier IN ( ' . Intel_Graph_Row_Schema::marks( $tiers ) . ' ) ORDER BY ' . self::restrictiveness() . ' DESC',
+			[ $collection, $item_key, ...$tiers, ...Intel_Event::TIERS ]
+		);
+		return \array_values( \array_unique( \array_map( static fn ( array $row ): string => Core::as_string( $row[0] ), $rows ) ) );
+	}
+
+	/**
+	 * A saved copy's tier as its place in `Intel_Event::TIERS`, the most
+	 * restricted the highest, one `?` bound per tier in that order.
+	 */
+	private static function restrictiveness(): string {
+		return 'CASE tier ' . \implode( ' ', \array_map( static fn ( int $at ): string => "WHEN ? THEN {$at}", \array_keys( Intel_Event::TIERS ) ) ) . ' END';
 	}
 
 	/**

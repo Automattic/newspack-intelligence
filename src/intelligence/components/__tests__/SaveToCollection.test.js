@@ -1,8 +1,9 @@
 /* eslint-env jest */
 /**
- * SaveToCollection is the one dialog any result saves through: it lists the
- * collections, sends `collect` with the chosen one and the item, and says
- * which kind of nothing it holds when there is no collection to pick.
+ * SaveToCollection is the one dialog any result saves to a folder through:
+ * it offers the reader's recent folders first, then the rest, sends
+ * `collect` with the chosen one and the item, and says which kind of
+ * nothing it holds when there is no folder to pick.
  */
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -17,11 +18,23 @@ const ITEM = {
 
 const LIST = {
 	collections: [
-		{ collection_key: 'q4-client-wins', name: 'Q4 client wins', items: 2 },
+		{
+			collection_key: 'q4-client-wins',
+			name: 'Q4 client wins',
+			items: 2,
+			recent_ts: 1792497600,
+		},
 		{
 			collection_key: 'paywall-complaints',
 			name: 'Paywall complaints',
 			items: 0,
+			recent_ts: null,
+		},
+		{
+			collection_key: 'awards-shortlist',
+			name: 'Awards shortlist',
+			items: 1,
+			recent_ts: null,
 		},
 	],
 	available: true,
@@ -37,10 +50,10 @@ beforeEach( () => {
 } );
 
 describe( 'SaveToCollection', () => {
-	it( 'saves the item into the chosen collection and says so', async () => {
+	it( 'saves the item into the chosen folder and says so', async () => {
 		wire.replies.collect = { ok: true, event_id: 'ev-s' };
 		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
-		const select = await screen.findByLabelText( 'Collection' );
+		const select = await screen.findByLabelText( 'Folder' );
 		fireEvent.change( select, { target: { value: 'paywall-complaints' } } );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Save' } ) );
 		await waitFor( () =>
@@ -57,6 +70,48 @@ describe( 'SaveToCollection', () => {
 		expect( wire.sent( 'collections' ) ).toEqual( [ [] ] );
 	} );
 
+	it( "offers the reader's recent folders first, the latest chosen", async () => {
+		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		const select = await screen.findByLabelText( 'Folder' );
+		expect(
+			[ ...select.querySelectorAll( 'optgroup' ) ].map( ( group ) => [
+				group.label,
+				[ ...group.querySelectorAll( 'option' ) ].map(
+					( option ) => option.value
+				),
+			] )
+		).toEqual( [
+			[ 'Recent', [ 'q4-client-wins' ] ],
+			[
+				'Every other folder',
+				[ 'paywall-complaints', 'awards-shortlist' ],
+			],
+		] );
+		expect( select ).toHaveValue( 'q4-client-wins' );
+	} );
+
+	it( 'lists the folders alone while the reader has saved into none', async () => {
+		wire.replies.collections = {
+			...LIST,
+			collections: LIST.collections.map( ( one ) => ( {
+				...one,
+				recent_ts: null,
+			} ) ),
+		};
+		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		const select = await screen.findByLabelText( 'Folder' );
+		expect( select.querySelectorAll( 'optgroup' ) ).toHaveLength( 0 );
+		expect(
+			[ ...select.querySelectorAll( 'option' ) ].map(
+				( option ) => option.value
+			)
+		).toEqual( [
+			'q4-client-wins',
+			'paywall-complaints',
+			'awards-shortlist',
+		] );
+	} );
+
 	it( 'names the item it saves, as text', async () => {
 		render(
 			<SaveToCollection
@@ -68,26 +123,26 @@ describe( 'SaveToCollection', () => {
 			screen.getByText( '<img src=x onerror=alert(1)>' )
 		).toBeInTheDocument();
 		expect( document.querySelector( 'img' ) ).toBeNull();
-		await screen.findByLabelText( 'Collection' );
+		await screen.findByLabelText( 'Folder' );
 	} );
 
 	it( 'shows a refused save as the refusal', async () => {
 		wire.replies.collect = () =>
 			new Error( 'no item: feed:inkfold-review-17' );
 		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
-		await screen.findByLabelText( 'Collection' );
+		await screen.findByLabelText( 'Folder' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Save' } ) );
 		expect(
 			await screen.findByText( 'no item: feed:inkfold-review-17' )
 		).toBeInTheDocument();
 	} );
 
-	it( 'says there is no collection to save into', async () => {
+	it( 'says there is no folder to save into', async () => {
 		wire.replies.collections = { collections: [], available: true };
 		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
 		expect(
 			await screen.findByText(
-				'No collection yet. Create one under Collections first.'
+				'No folder yet. Create one under Collections first.'
 			)
 		).toBeInTheDocument();
 		expect( screen.queryByRole( 'button', { name: 'Save' } ) ).toBeNull();
@@ -103,7 +158,7 @@ describe( 'SaveToCollection', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'focuses its close button, then the collection once the list loads', async () => {
+	it( 'focuses its close button, then the folder once the list loads', async () => {
 		let answer;
 		wire.replies.collections = () =>
 			new Promise( ( resolve ) => {
@@ -113,14 +168,14 @@ describe( 'SaveToCollection', () => {
 		expect( screen.getByRole( 'button', { name: 'Close' } ) ).toHaveFocus();
 		await waitFor( () => expect( answer ).toBeDefined() );
 		answer( LIST );
-		const select = await screen.findByLabelText( 'Collection' );
+		const select = await screen.findByLabelText( 'Folder' );
 		await waitFor( () => expect( select ).toHaveFocus() );
 	} );
 
 	it( 'closes from its close button', async () => {
 		const onClose = jest.fn();
 		render( <SaveToCollection item={ ITEM } onClose={ onClose } /> );
-		await screen.findByLabelText( 'Collection' );
+		await screen.findByLabelText( 'Folder' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Close' } ) );
 		expect( onClose ).toHaveBeenCalled();
 	} );

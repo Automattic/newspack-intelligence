@@ -119,6 +119,11 @@ function enqueue_intelligence_assets( string $hook ): void {
 						'human'       => \__( 'a person', 'newspack-intelligence' ),
 						'extract'     => \__( 'extraction', 'newspack-intelligence' ),
 					],
+					'markWords'       => [
+						'newsletter' => \__( 'Newsletter', 'newspack-intelligence' ),
+						'linkedin'   => \__( 'LinkedIn', 'newspack-intelligence' ),
+						'site'       => \__( 'Site', 'newspack-intelligence' ),
+					],
 				],
 			],
 		]

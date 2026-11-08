@@ -93,7 +93,7 @@ describe( 'GroupPage', () => {
 		).toBeInTheDocument();
 		fireEvent.click(
 			within( group ).getAllByRole( 'button', {
-				name: 'Save to collection',
+				name: 'Save to folder',
 			} )[ 1 ]
 		);
 		expect( onSave ).toHaveBeenCalledWith( GROUPS.groups[ 0 ].items[ 1 ] );

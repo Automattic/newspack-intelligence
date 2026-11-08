@@ -393,21 +393,22 @@ final class Graph_Curation {
 
 	/**
 	 * Save a readable item into a collection, with its URL, its title cut at
-	 * TITLE_BYTES and its tier.
+	 * TITLE_BYTES and its tier, unless the caller reads a copy of it saved
+	 * there already. A copy saved at a tier the caller does not read is left
+	 * as it is, and the save writes a copy of its own tier beside it.
 	 *
 	 * @param array<array-key,mixed> $args The bound verb args: `collection`, `item`.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException When the key does not name a
-	 *                                   collection, or as `judge_link()`.
+	 *                                   collection, the caller reads the item
+	 *                                   saved there, or as `judge_link()`.
 	 */
 	public static function collect( array $args ): array {
 		$collection = self::key( $args, 'collection' );
 		$item_key   = self::item_key( $args );
 		$item       = self::on_graph(
 			static function ( Row_Reader $r, array $g ) use ( $collection, $item_key ): array {
-				if ( null === Graph_Query::collection( $r, $collection ) ) {
-					throw new \InvalidArgumentException( \esc_html( "no collection: {$collection}" ) );
-				}
+				self::not_in( $r, self::folder( $r, $collection ), $collection, $item_key );
 				return self::item( $r, $g, $item_key );
 			}
 		);
@@ -449,6 +450,107 @@ final class Graph_Curation {
 	private static function item( Row_Reader $r, array $g, string $key ): array {
 		$row = $r->rows( "{$g['with']} SELECT url, title, tier FROM ri WHERE item_key = ? LIMIT 1", [ ...$g['binds'], $key ] )[0] ?? throw new \InvalidArgumentException( \esc_html( "no item: {$key}" ) );
 		return [ 'url' => self::capped( "{$key} url", Core::as_string( $row[0] ), self::URL_BYTES ), 'title' => Core::as_string( $row[1] ), 'tier' => Core::as_string( $row[2] ) ];
+	}
+
+	/**
+	 * Refuse an item the caller reads a copy of saved in a collection,
+	 * naming the collection.
+	 *
+	 * @param Row_Reader $r          The reader.
+	 * @param string     $name       The collection's name.
+	 * @param string     $collection The collection key.
+	 * @param string     $item_key   The item key.
+	 * @throws \InvalidArgumentException When the caller reads one there.
+	 */
+	private static function not_in( Row_Reader $r, string $name, string $collection, string $item_key ): void {
+		if ( [] !== Graph_Query::saved_tiers( $r, $collection, $item_key, Intel_Tiers::readable() ) ) {
+			throw new \InvalidArgumentException( \esc_html( "{$item_key} is already in {$name}" ) );
+		}
+	}
+
+	/**
+	 * Mark a saved item used in a newsletter, on LinkedIn or on the site, on
+	 * a day, on the copy the caller reads, at that copy's tier; marking it so
+	 * again replaces the day, and a mark is never taken back.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args: `collection`, `item`, `mark`, `day`.
+	 * @return array<string,mixed> `{ ok, event_id }`.
+	 * @throws \InvalidArgumentException On a mark outside `Intel_Event::MARKS`,
+	 *                                   a day that is not a Y-m-d date, or as
+	 *                                   `saved_in()`.
+	 */
+	public static function mark_used( array $args ): array {
+		$collection = self::key( $args, 'collection' );
+		$item_key   = self::item_key( $args );
+		$mark       = Graph_Query::one_of( 'mark', Core::as_string( $args['mark'] ), Intel_Event::MARKS );
+		$day        = Core::as_string( $args['day'] );
+		Intel_Graph_Row_Schema::day( $day );
+		$tiers      = Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): array => self::saved_in( $r, $collection, $item_key ) );
+		return self::write( 'item_used', [ 'collection_key' => $collection, 'item_key' => $item_key, 'tier' => $tiers[0], 'mark' => $mark, 'day' => $day ] );
+	}
+
+	/**
+	 * Move every copy of a saved item the caller reads from its folder into
+	 * another, naming each copy's tier, so the folder it leaves holds none of
+	 * them and each keeps its own saved URL, title and marks. A copy of a
+	 * tier the caller does not read stays where it is, and a placement `into`
+	 * holds already keeps its actor and time.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args: `collection`, `item`, `into`.
+	 * @return array<string,mixed> `{ ok, event_id }`.
+	 * @throws \InvalidArgumentException As `saved_in()`, when `into` names no
+	 *                                   collection, or when it is the folder
+	 *                                   the item is in.
+	 */
+	public static function move_item( array $args ): array {
+		$collection = self::key( $args, 'collection' );
+		$item_key   = self::item_key( $args );
+		$into       = self::key( $args, 'into' );
+		$tiers      = Intel_Graph_Row_Schema::read(
+			static function ( Row_Reader $r ) use ( $collection, $item_key, $into ): array {
+				$tiers = self::saved_in( $r, $collection, $item_key );
+				$name  = self::folder( $r, $into );
+				if ( $into === $collection ) {
+					throw new \InvalidArgumentException( \esc_html( "{$item_key} is already in {$name}" ) );
+				}
+				return $tiers;
+			}
+		);
+		return self::write( 'item_moved', [ 'collection_key' => $into, 'item_key' => $item_key, 'from' => $collection, 'tiers' => $tiers ] );
+	}
+
+	/**
+	 * The tiers of the copies of an item saved in a collection the caller
+	 * reads, the most restricted first, refused, naming the collection, when
+	 * there is none: one saved at a tier the caller does not read alone is
+	 * refused exactly as one never saved.
+	 *
+	 * @param Row_Reader $r          The reader.
+	 * @param string     $collection The collection key.
+	 * @param string     $item_key   The item key.
+	 * @return non-empty-list<string>
+	 * @throws \InvalidArgumentException When the key does not name a
+	 *                                   collection, or the item is not saved
+	 *                                   in it.
+	 */
+	private static function saved_in( Row_Reader $r, string $collection, string $item_key ): array {
+		$name  = self::folder( $r, $collection );
+		$tiers = Graph_Query::saved_tiers( $r, $collection, $item_key, Intel_Tiers::readable() );
+		if ( [] === $tiers ) {
+			throw new \InvalidArgumentException( \esc_html( "{$item_key} is not saved in {$name}" ) );
+		}
+		return $tiers;
+	}
+
+	/**
+	 * A collection's name, refused when the key does not name a collection.
+	 *
+	 * @param Row_Reader $r          The reader.
+	 * @param string     $collection The collection key.
+	 * @throws \InvalidArgumentException When it names none.
+	 */
+	private static function folder( Row_Reader $r, string $collection ): string {
+		return ( Graph_Query::collection( $r, $collection ) ?? throw new \InvalidArgumentException( \esc_html( "no collection: {$collection}" ) ) )[0];
 	}
 
 	/**

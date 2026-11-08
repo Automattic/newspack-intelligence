@@ -54,6 +54,9 @@ final class IntelligenceCurationTest extends TestCase {
 
 	private const AUTOMATION = 'offboarding automation';
 
+	/** The title the grant was saved under, apart from its item row's. */
+	private const SAVED_TITLE = 'Grant for two newsrooms, as saved';
+
 	/** A theme only a restricted item is extracted with. */
 	private const SETTLEMENT = 'board settlement talks';
 
@@ -63,7 +66,7 @@ final class IntelligenceCurationTest extends TestCase {
 	/** A rejected proposal only a restricted item cites. */
 	private const SHELVED = 'organization:shelved-buyer';
 
-	private const CURATION = [ 'confirm_link', 'reject_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'save_lens', 'remove_lens', 'merge_theme' ];
+	private const CURATION = [ 'confirm_link', 'reject_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'mark_used', 'move_item', 'save_lens', 'remove_lens', 'merge_theme' ];
 
 	/** Each curation event kind, by the verb that writes it. */
 	private const VERB_OF = [
@@ -80,6 +83,8 @@ final class IntelligenceCurationTest extends TestCase {
 		'entity_created'     => 'create_entity',
 		'collection_created' => 'create_collection',
 		'collected'          => 'collect',
+		'item_used'          => 'mark_used',
+		'item_moved'         => 'move_item',
 		'theme_merged'       => 'merge_theme',
 	];
 
@@ -137,6 +142,9 @@ final class IntelligenceCurationTest extends TestCase {
 			'create over a hidden rejection' => [ 'create_entity', [ 'organization', 'Shelved Buyer' ], [ 'event' => 'entity_created', 'entity_key' => self::SHELVED, 'type' => 'organization', 'name' => 'Shelved Buyer' ] ],
 			'accept a cited rejection'       => [ 'accept_entity', [ 'organization:open-buyer' ], [ 'event' => 'entity_accepted', 'entity_key' => 'organization:open-buyer' ] ],
 			'collect'           => [ 'collect', [ 'col:october', 'github:ledger-launch' ], [ 'event' => 'collected', 'collection_key' => 'col:october', 'item_key' => 'github:ledger-launch', 'url' => 'https://news.example/github/ledger-launch', 'title' => 'Salem Ledger launches a newsletter tool', 'tier' => 'internal' ] ],
+			'mark_used'         => [ 'mark_used', [ 'col-october', 'linear:joint-grant', 'newsletter', '2026-10-19' ], [ 'event' => 'item_used', 'collection_key' => 'col-october', 'item_key' => 'linear:joint-grant', 'tier' => 'internal', 'mark' => 'newsletter', 'day' => '2026-10-19' ] ],
+			'collect into a second folder' => [ 'collect', [ 'col:october', 'linear:joint-grant' ], [ 'event' => 'collected', 'collection_key' => 'col:october', 'item_key' => 'linear:joint-grant', 'url' => 'https://news.example/linear/joint-grant', 'title' => 'Gazette and Ledger share a grant', 'tier' => 'internal' ] ],
+			'move_item'         => [ 'move_item', [ 'col-october', 'linear:joint-grant', 'col:october' ], [ 'event' => 'item_moved', 'collection_key' => 'col:october', 'item_key' => 'linear:joint-grant', 'from' => 'col-october', 'tiers' => [ 'internal' ] ] ],
 			'save_lens'         => [ 'save_lens', [ 'Ledger Watch', 'Ledger watch', '--entity=organization:gazette-weekly', '--kind=launch' ], [ 'event' => 'lens_saved', 'lens_key' => 'ledger-watch', 'name' => 'Ledger watch', 'description' => '' ] ],
 			'remove_lens'       => [ 'remove_lens', [ 'harbor-desk' ], [ 'event' => 'lens_removed', 'lens_key' => 'harbor-desk' ] ],
 			'merge_theme'       => [ 'merge_theme', [ self::PLATFORM, self::OFFBOARDING ], [ 'event' => 'theme_merged', 'from' => self::PLATFORM, 'into' => self::OFFBOARDING ] ],
@@ -280,6 +288,17 @@ final class IntelligenceCurationTest extends TestCase {
 			'no such item'                => [ 'confirm_link', [ 'feed:never-recorded', self::LEDGER ], 'no item: feed:never-recorded' ],
 			'no such collection'          => [ 'collect', [ 'col:missing', 'feed:gazette-award' ], 'no collection: col:missing' ],
 			'collect a missing item'      => [ 'collect', [ 'col:october', 'feed:never-recorded' ], 'no item: feed:never-recorded' ],
+			'collect one saved there'     => [ 'collect', [ 'col-october', 'linear:joint-grant' ], 'linear:joint-grant is already in Col October' ],
+			'mark one not saved there'    => [ 'mark_used', [ 'col:october', 'linear:joint-grant', 'newsletter', '2026-10-19' ], 'linear:joint-grant is not saved in October wins' ],
+			'mark one never saved'        => [ 'mark_used', [ 'col:october', 'feed:gazette-award', 'site', '2026-10-19' ], 'feed:gazette-award is not saved in October wins' ],
+			'mark outside its set'        => [ 'mark_used', [ 'col-october', 'linear:joint-grant', 'podcast', '2026-10-19' ], 'mark must be one of: newsletter, linkedin, site' ],
+			'mark in no folder'           => [ 'mark_used', [ 'col:missing', 'linear:joint-grant', 'linkedin', '2026-10-19' ], 'no collection: col:missing' ],
+			'mark on a day that is not'   => [ 'mark_used', [ 'col-october', 'linear:joint-grant', 'site', '2026-02-30' ], 'not a Y-m-d date: 2026-02-30' ],
+			'mark on a day misspelled'    => [ 'mark_used', [ 'col-october', 'linear:joint-grant', 'site', '19/10/2026' ], 'not a Y-m-d date: 19/10/2026' ],
+			'move from no folder'         => [ 'move_item', [ 'col:missing', 'linear:joint-grant', 'col:october' ], 'no collection: col:missing' ],
+			'move into no folder'         => [ 'move_item', [ 'col-october', 'linear:joint-grant', 'col:missing' ], 'no collection: col:missing' ],
+			'move one not saved there'    => [ 'move_item', [ 'col:october', 'linear:joint-grant', 'col-october' ], 'linear:joint-grant is not saved in October wins' ],
+			'move into its own folder'    => [ 'move_item', [ 'col-october', 'linear:joint-grant', 'col-october' ], 'linear:joint-grant is already in Col October' ],
 			'end a role not held'         => [ 'end_role', [ self::LEDGER, 'client' ], 'organization:salem-ledger holds no open client role' ],
 			'assert a role already held'  => [ 'assert_role', [ self::GAZETTE, 'client' ], 'organization:harbor-gazette already holds client' ],
 			'a name kind outside its set' => [ 'add_name', [ self::LEDGER, 'nickname', 'Led' ], 'name_added: field kind is outside its set' ],
@@ -568,7 +587,137 @@ final class IntelligenceCurationTest extends TestCase {
 
 		$listed = Graph_Query::collections( [ 'key' => 'col:october' ] );
 		$this->assertSame( [ 'feed:gazette-award' ], \array_column( $listed['items'], 'item_key' ) );
-		$this->assertSame( [ 'col-october' => 0, 'col:october' => 1 ], \array_column( Graph_Query::collections( [] )['collections'], 'items', 'collection_key' ) );
+		$this->assertSame( [ 'col:october' => 1, 'col-october' => 1 ], \array_column( Graph_Query::collections( [] )['collections'], 'items', 'collection_key' ) );
+	}
+
+	/** Each use mark carries the day it was used, a mark made again replacing its day, and reads beside its item in its folder. */
+	public function test_an_item_carries_its_use_marks(): void {
+		$this->seed_curation_world();
+
+		$this->ci->dispatch( 'mark_used', [ 'col-october', 'linear:joint-grant', 'site', '2026-10-17' ] );
+		$this->ci->dispatch( 'mark_used', [ 'col-october', 'linear:joint-grant', 'newsletter', '2026-10-19' ] );
+		$this->ci->dispatch( 'mark_used', [ 'col-october', 'linear:joint-grant', 'newsletter', '2026-10-21' ] );
+		$this->seed( self::ontology_events() );
+
+		$items = Graph_Query::collections( [ 'key' => 'col-october' ] )['items'];
+		$this->assertSame( [ 'linear:joint-grant' ], \array_column( $items, 'item_key' ) );
+		$this->assertSame( [ [ 'mark' => 'newsletter', 'day' => '2026-10-21' ], [ 'mark' => 'site', 'day' => '2026-10-17' ] ], $items[0]['marks'] );
+	}
+
+	/** A move rewrites the saved item's folder: it leaves the first, keeping its saved copy and its marks. */
+	public function test_an_item_moves_between_folders(): void {
+		$this->seed_curation_world();
+		$this->ci->dispatch( 'mark_used', [ 'col-october', 'linear:joint-grant', 'linkedin', '2026-10-18' ] );
+		$this->seed( self::ontology_events() );
+		Core::$now = (float) self::$oct_20 + 900;
+
+		$this->ci->dispatch( 'move_item', [ 'col-october', 'linear:joint-grant', 'col:october' ] );
+		$this->seed( \array_slice( self::ontology_events(), 1 ) );
+
+		$this->assertSame( [], Graph_Query::collections( [ 'key' => 'col-october' ] )['items'] );
+		$moved = Graph_Query::collections( [ 'key' => 'col:october' ] )['items'];
+		$this->assertSame(
+			[ [ 'linear:joint-grant', self::SAVED_TITLE, 'user:' . self::LOGIN, self::$oct_20 + 900, [ [ 'mark' => 'linkedin', 'day' => '2026-10-18' ] ] ] ],
+			\array_map( static fn ( array $i ): array => [ $i['item_key'], $i['title'], $i['actor'], $i['saved_ts'], $i['marks'] ], $moved )
+		);
+		$this->assertSame( [ [ 'col:october', 'linear:joint-grant', 'internal' ] ], self::graph_rows( 'collected', 'item_key', 'collection_key, item_key, tier' ) );
+		$this->assertSame( [ 'col:october' => 1, 'col-october' => 0 ], \array_column( Graph_Query::collections( [] )['collections'], 'items', 'collection_key' ) );
+	}
+
+	/** A folder lists the items not yet used first, then each run by save time, the latest first. */
+	public function test_a_folder_lists_unused_items_first_then_by_save_time(): void {
+		$this->seed_curation_world();
+		$this->seed(
+			[
+				self::saved_at( 'col-october', 'feed:gazette-award', 'user:41', self::$oct_20 - 3600 ),
+				self::saved_at( 'col-october', 'github:ledger-launch', 'user:41', self::$oct_20 - 7200 ),
+				self::saved_at( 'col-october', 'feed:off-2', 'user:41', self::$oct_20 - 5400 ),
+			]
+		);
+		$this->ci->dispatch( 'mark_used', [ 'col-october', 'linear:joint-grant', 'site', '2026-10-20' ] );
+		$this->ci->dispatch( 'mark_used', [ 'col-october', 'github:ledger-launch', 'newsletter', '2026-10-14' ] );
+		$this->seed( self::ontology_events() );
+
+		$items = Graph_Query::collections( [ 'key' => 'col-october' ] )['items'];
+		$this->assertSame(
+			[ [ 'feed:gazette-award', self::$oct_20 - 3600 ], [ 'feed:off-2', self::$oct_20 - 5400 ], [ 'linear:joint-grant', self::$oct_20 ], [ 'github:ledger-launch', self::$oct_20 - 7200 ] ],
+			\array_map( static fn ( array $i ): array => [ $i['item_key'], $i['saved_ts'] ], $items )
+		);
+		$this->assertSame( [ [], [] ], \array_column( \array_slice( $items, 0, 2 ), 'marks' ) );
+	}
+
+	/**
+	 * A move into a folder already holding a copy at every tier it carries
+	 * only empties the folder it leaves; the target's placement stays as it
+	 * was.
+	 */
+	public function test_a_move_into_a_folder_holding_the_item_only_empties_the_one_it_leaves(): void {
+		$this->seed_curation_world();
+		$this->seed( [ self::placed_at( 'col:october', 'linear:joint-grant', 'internal', 'user:dock-editor', self::$oct_13 ) ] );
+
+		$this->ci->dispatch( 'move_item', [ 'col-october', 'linear:joint-grant', 'col:october' ] );
+		$this->seed( self::ontology_events() );
+
+		$this->assertSame( [ [ 'internal' ] ], \array_column( self::ontology_events(), 'tiers' ) );
+		$this->assertSame( [ [ 'col:october', 'internal', 'user:dock-editor', (float) self::$oct_13 ] ], \array_map( static fn ( array $row ): array => [ $row[0], $row[1], $row[2], (float) $row[3] ], self::graph_rows( 'collected', 'collection_key', 'collection_key, tier, actor, ts' ) ) );
+		$this->assertSame( [], Graph_Query::collections( [ 'key' => 'col-october' ] )['items'] );
+	}
+
+	/**
+	 * The recent folders are the caller's five latest saves or moves into a
+	 * folder; every other folder follows by name, its recency left out.
+	 */
+	public function test_recent_folders_are_the_callers_five_latest(): void {
+		$this->seed_curation_world();
+		$shelves = [];
+		foreach ( [ 'a', 'b', 'c', 'd', 'e', 'f', 'g' ] as $tag ) {
+			$shelves[] = Intel_Event::make( 'collection_created', [ 'collection_key' => "shelf-{$tag}", 'name' => 'Shelf ' . \strtoupper( $tag ) ], 'user:41', 'fixture-9' );
+		}
+		$ago   = [ 'f' => 60, 'c' => 120, 'e' => 180, 'a' => 240, 'd' => 300, 'b' => 360 ];
+		$saves = \array_map( static fn ( string $tag, int $seconds ): array => self::saved_at( "shelf-{$tag}", 'feed:off-2', 'user:' . self::LOGIN, self::$oct_20 - $seconds ), \array_keys( $ago ), $ago );
+		$this->seed( $shelves, $saves );
+
+		$listed = Graph_Query::collections( [] )['collections'];
+		$this->assertSame( 5, Graph_Query::RECENT_FOLDERS );
+		$this->assertSame(
+			[
+				[ 'shelf-f', self::$oct_20 - 60 ],
+				[ 'shelf-c', self::$oct_20 - 120 ],
+				[ 'shelf-e', self::$oct_20 - 180 ],
+				[ 'shelf-a', self::$oct_20 - 240 ],
+				[ 'shelf-d', self::$oct_20 - 300 ],
+				[ 'col-october', null ],
+				[ 'col:october', null ],
+				[ 'shelf-b', null ],
+				[ 'shelf-g', null ],
+			],
+			\array_map( static fn ( array $c ): array => [ $c['collection_key'], $c['recent_ts'] ], $listed )
+		);
+	}
+
+	/**
+	 * Folders list by the caller's own latest save or move into each, an
+	 * agent's under the caller's login counting as the caller's, then by name.
+	 */
+	public function test_folders_list_the_callers_recent_first_then_by_name(): void {
+		$this->seed_curation_world();
+		$moved = Intel_Event::make( 'item_moved', [ 'collection_key' => 'zeta-picks', 'item_key' => 'feed:off-2', 'from' => 'archive', 'tiers' => [ 'public' ] ], 'agent:' . self::LOGIN . ':Desk Claude', 'fixture-9' );
+		$moved['ts'] = (float) self::$oct_20 - 60;
+		$this->seed(
+			[
+				Intel_Event::make( 'collection_created', [ 'collection_key' => 'archive', 'name' => 'Archive' ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'collection_created', [ 'collection_key' => 'zeta-picks', 'name' => 'Zeta picks' ], 'user:41', 'fixture-9' ),
+				self::saved_at( 'archive', 'feed:off-2', 'user:' . self::LOGIN, self::$oct_20 - 600 ),
+				$moved,
+				self::saved_at( 'col:october', 'github:ledger-launch', 'user:' . self::LOGIN . 'y', self::$oct_20 + 60 ),
+			]
+		);
+
+		$listed = Graph_Query::collections( [] )['collections'];
+		$this->assertSame(
+			[ [ 'zeta-picks', self::$oct_20 - 60 ], [ 'archive', self::$oct_20 - 600 ], [ 'col-october', null ], [ 'col:october', null ] ],
+			\array_map( static fn ( array $c ): array => [ $c['collection_key'], $c['recent_ts'] ], $listed )
+		);
 	}
 
 	/** fetch_now TICKs every source in each live worker of Intelligence's topology, whatever its name. */
@@ -636,6 +785,7 @@ final class IntelligenceCurationTest extends TestCase {
 		$wide   = static fn ( int $bytes ): string => \str_repeat( "\u{1F600}", \intdiv( $bytes, 12 ) ) . \str_repeat( 'q', $bytes % 12 );
 		$key    = static fn ( string $tag ): string => "organization:{$tag}" . $wide( Graph_Curation::KEY_BYTES - \strlen( "organization:{$tag}" ) );
 		$item   = 'feed:' . $wide( Graph_Curation::ITEM_KEY_BYTES - 5 );
+		$saved  = 'linear:' . $wide( Graph_Curation::ITEM_KEY_BYTES - 7 );
 		$name   = $wide( Graph_Curation::NAME_BYTES );
 		$ascii  = \str_repeat( 'm', Graph_Curation::NAME_BYTES );
 		$entity = $key( 'a' );
@@ -645,6 +795,8 @@ final class IntelligenceCurationTest extends TestCase {
 		$this->seed(
 			[ Intel_Event::make( 'item_recorded', [ 'item_key' => $item, 'source' => 'feed', 'tier' => 'public', 'url' => 'https://news.example/' . $wide( Graph_Curation::URL_BYTES - 21 ), 'title' => \str_repeat( "\u{1F600}", 600 ), 'body' => '', 'item_ts' => self::$oct_06, 'retrieved_ts' => self::$oct_06 ], self::$machine, 'fixture-9' ) ],
 			[ Intel_Event::make( 'collection_created', [ 'collection_key' => $key( 'c' ), 'name' => 'Wide' ], 'user:41', 'fixture-9' ) ],
+			[ Intel_Event::make( 'collection_created', [ 'collection_key' => $key( 'e' ), 'name' => 'Wider' ], 'user:41', 'fixture-9' ) ],
+			[ Intel_Event::make( 'collected', [ 'collection_key' => $key( 'c' ), 'item_key' => $saved, 'url' => 'https://news.example/' . $wide( Graph_Curation::URL_BYTES - 21 ), 'title' => Graph_Curation::cut( \str_repeat( "\u{1F600}", 600 ), Graph_Curation::TITLE_BYTES ), 'tier' => 'public' ], 'user:41', 'fixture-9' ) ],
 			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => $entity, 'role' => 'newspack_product', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ) ],
 			self::link( 'link_asserted', $item, $entity, 'subject', 'name', 1.0, self::$oct_06 ),
 			self::entity( $topic, 'Wide' ),
@@ -668,6 +820,8 @@ final class IntelligenceCurationTest extends TestCase {
 			[ 'create_entity', [ 'organization', $ascii ] ],
 			[ 'create_collection', [ $ascii ] ],
 			[ 'collect', [ $key( 'c' ), $item ] ],
+			[ 'mark_used', [ $key( 'c' ), $saved, 'newsletter', '2026-10-19' ] ],
+			[ 'move_item', [ $key( 'c' ), $saved, $key( 'e' ) ] ],
 			[ 'merge_theme', [ $wide( Intel_Event::THEME_BYTES ), $wide( Intel_Event::THEME_BYTES - 1 ) . 'r' ] ],
 		];
 		foreach ( $calls as [ $verb, $args ] ) {
@@ -685,7 +839,39 @@ final class IntelligenceCurationTest extends TestCase {
 	}
 
 	/**
-	 * The curation world: the read fixture, two collections, a merge chain
+	 * An item a person saved into a folder at a tier, at a moment.
+	 *
+	 * @param string $collection The folder's key.
+	 * @param string $item       The item key.
+	 * @param string $tier       The copy's tier.
+	 * @param string $actor      Who saved it.
+	 * @param int    $at         When.
+	 * @return array<string,mixed>
+	 */
+	private static function placed_at( string $collection, string $item, string $tier, string $actor, int $at ): array {
+		$event       = Intel_Event::make( 'collected', [ 'collection_key' => $collection, 'item_key' => $item, 'url' => self::url( $item ), 'title' => "Shelved {$item}", 'tier' => $tier ], $actor, 'fixture-9' );
+		$event['ts'] = (float) $at;
+		return $event;
+	}
+
+	/**
+	 * An item a person saved into a folder at a moment.
+	 *
+	 * @param string $collection The folder's key.
+	 * @param string $item       The item key.
+	 * @param string $actor      Who saved it.
+	 * @param int    $at         When.
+	 * @return array<string,mixed>
+	 */
+	private static function saved_at( string $collection, string $item, string $actor, int $at ): array {
+		$event       = Intel_Event::make( 'collected', [ 'collection_key' => $collection, 'item_key' => $item, 'url' => self::url( $item ), 'title' => "Saved {$item}", 'tier' => 'public' ], $actor, 'fixture-9' );
+		$event['ts'] = (float) $at;
+		return $event;
+	}
+
+	/**
+	 * The curation world: the read fixture, two collections, the grant saved
+	 * into one of them under a title of its own, a merge chain
 	 * into the Gazette holding a partner role, a ten-hop chain ending at an
 	 * entity, a proposal a public item cites and one only a restricted item
 	 * cites, a rejection of each kind, an accepted entity that is not cited by
@@ -718,6 +904,7 @@ final class IntelligenceCurationTest extends TestCase {
 			[
 				Intel_Event::make( 'collection_created', [ 'collection_key' => 'col:october', 'name' => 'October wins' ], 'user:41', 'fixture-9' ),
 				Intel_Event::make( 'collection_created', [ 'collection_key' => 'col-october', 'name' => 'Col October' ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'collected', [ 'collection_key' => 'col-october', 'item_key' => 'linear:joint-grant', 'url' => self::url( 'linear:joint-grant' ), 'title' => self::SAVED_TITLE, 'tier' => 'internal' ], 'user:41', 'fixture-9' ),
 				Intel_Event::make( 'lens_saved', [ 'lens_key' => 'harbor-desk', 'name' => 'Harbor desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ], 'user:41', 'fixture-9' ),
 			],
 			...$chain

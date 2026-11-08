@@ -162,7 +162,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					),
 					$verb( $read, 'review', 'The review queue, each row with its citing items and the sentence each quotes as evidence: { links } or { entities }.', [ $arg( 'what', 'The queue: links or entities.' ), $limit( Graph_Query::DEFAULT_LIMIT ) ], Graph_Query::review( ... ) ),
 					$verb( $read, 'theme_suggestions', 'Pairs of themes worth merging: of the readable stories of the last ' . Graph_Query::GROUP_DAYS . ' days, two themes whose stories share an entity they are about and whose names share a word that is not generic, the most alike names first, at most ' . Graph_Query::THEME_SUGGESTIONS . ': { suggestions: [ { themes: [ { theme, stories } ], words, shared } ] }, the theme with more stories first, words those both names hold and shared the entities both themes\' stories are about.', [], static fn (): array => Graph_Query::theme_suggestions() ),
-					$verb( $read, 'collections', 'Every collection with its item count, or one with its saved items.', [ $text( 'key', 'One collection\'s key.' ) ], Graph_Query::collections( ... ) ),
+					$verb( $read, 'collections', 'Every collection with its item count, those the caller saved or moved an item into first, the latest first, then by name: { collections: [ { collection_key, name, created_ts, items, recent_ts } ] }; or one with its saved items, those not yet used first, then by save time, the latest first: { collection_key, name, created_ts, items: [ { item_key, url, title, actor, saved_ts, marks: [ { mark, day } ] } ] }.', [ $text( 'key', 'One collection\'s key.' ) ], Graph_Query::collections( ... ) ),
 					$verb( $read, 'lenses', 'Every lens, by name: { lenses: [ { lens_key, name, description, filters: { kinds, topics, roles, sources, entity, days, tiers, by, bucket } } ] }.', [], Graph_Query::lenses( ... ) ),
 					$verb( $read, 'watches', 'The caller\'s own watches, by name, each with its unseen matches: { watches: [ { watch_key, name, target: { kind, key }, digest, instant, inbox, unseen } ] }.', [], Graph_Watches::watches( ... ) ),
 					$verb(
@@ -225,7 +225,15 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						Graph_Curation::create_entity( ... )
 					),
 					$verb( $tune, 'create_collection', 'Create a collection keyed by its name, refused when the key is taken: { ok, event_id, collection_key }.', [ $arg( 'name', 'Its name, at most ' . Graph_Curation::NAME_BYTES . ' bytes.' ) ], Graph_Curation::create_collection( ... ) ),
-					$verb( $tune, 'collect', 'Save a readable item into a collection, its title cut at ' . Graph_Curation::TITLE_BYTES . ' bytes: { ok, event_id }.', [ $arg( 'collection', 'The collection key.' ), $item ], Graph_Curation::collect( ... ) ),
+					$verb( $tune, 'collect', 'Save a readable item into a collection, its title cut at ' . Graph_Curation::TITLE_BYTES . ' bytes, refused when it is saved already: { ok, event_id }.', [ $arg( 'collection', 'The collection key.' ), $item ], Graph_Curation::collect( ... ) ),
+					$verb(
+						$tune,
+						'mark_used',
+						'Mark an item saved in a collection used, on a day; marking it so again replaces the day: { ok, event_id }.',
+						[ $arg( 'collection', 'The collection key.' ), $item, $arg( 'mark', 'Where it was used: ' . \implode( ', ', Intel_Event::MARKS ) . '.' ), $arg( 'day', 'The day it was used, Y-m-d.' ) ],
+						Graph_Curation::mark_used( ... )
+					),
+					$verb( $tune, 'move_item', 'Move an item saved in a collection into another: every copy of it the caller reads, each with its own tier and marks: { ok, event_id }.', [ $arg( 'collection', 'The collection it is in.' ), $item, $arg( 'into', 'The collection it moves into.' ) ], Graph_Curation::move_item( ... ) ),
 					$verb(
 						$tune,
 						'save_lens',
