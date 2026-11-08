@@ -1188,7 +1188,7 @@ final class Graph_Query {
 	 * @param list<string> $keys Entity keys.
 	 * @return array<string,string>
 	 */
-	private static function names_of( Row_Reader $r, array $keys ): array {
+	public static function names_of( Row_Reader $r, array $keys ): array {
 		$names = [];
 		if ( [] === $keys ) {
 			return $names;
@@ -1231,7 +1231,7 @@ final class Graph_Query {
 	 * @param list<string> $survivors Survivors, each the end of its chain.
 	 * @return array<string,true>
 	 */
-	private static function visible_of( Row_Reader $r, array $g, array $survivors ): array {
+	public static function visible_of( Row_Reader $r, array $g, array $survivors ): array {
 		$seen  = [];
 		$owing = [];
 		$rows  = [] === $survivors ? [] : $r->rows(

@@ -644,28 +644,63 @@ describe( 'Entity — churn', () => {
 		expect( wire.sent( 'assert_role' ) ).toEqual( [] );
 		expect(
 			screen.getByRole( 'button', { name: 'End client?' } )
-		).toHaveAttribute( 'aria-disabled', 'false' );
+		).toBeInTheDocument();
 	} );
 
-	it( 'holds the prompt while its end is owed a reply, so a second click sends nothing', async () => {
+	it( 'hides the prompt from the click while a read still lists the client', async () => {
+		wire.replies.entity = churning;
+		wire.replies.end_role = { ok: true, event_id: 'ev-end-6630' };
+		wire.replies.assert_role = { ok: true, event_id: 'ev-former-6630' };
+		renderEntity( { canTune: true } );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'End client?' } )
+		);
+		expect(
+			screen.queryByRole( 'button', { name: 'End client?' } )
+		).toBeNull();
+		await waitFor( () =>
+			expect( wire.sent( 'entity' ).length ).toBeGreaterThan( 1 )
+		);
+		expect( wire.sent( 'assert_role' ) ).toHaveLength( 1 );
+		expect( screen.queryByText( /churn report\./ ) ).toBeNull();
+		expect(
+			screen.queryByRole( 'button', { name: 'End client?' } )
+		).toBeNull();
+	} );
+
+	it( 'keeps a refused assert on screen after the status goes', async () => {
+		wire.replies.entity = churning;
+		wire.replies.end_role = { ok: true, event_id: 'ev-end-6631' };
+		wire.replies.assert_role = () => {
+			wire.replies.entity = { ...ENTITY, status: null };
+			return new Error( `${ KEY } already holds former_client` );
+		};
+		renderEntity( { canTune: true } );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'End client?' } )
+		);
+		const alert = await screen.findByText(
+			`Acme Quillsheet (${ KEY }) is no longer a client, but former_client was not recorded: ${ KEY } already holds former_client`
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'entity' ).length ).toBeGreaterThan( 1 )
+		);
+		expect( screen.queryByText( /churn report\./ ) ).toBeNull();
+		expect( alert ).toBeInTheDocument();
+		expect( alert ).toHaveAttribute( 'role', 'alert' );
+	} );
+
+	it( 'moves focus to the heading when the prompt leaves', async () => {
 		wire.replies.entity = churning;
 		renderEntity( { canTune: true } );
 		const prompt = await screen.findByRole( 'button', {
 			name: 'End client?',
 		} );
-		const asks = () =>
-			Core.node( 'intelligence:end_role:fetch' ).outbox.length;
+		prompt.focus();
 		fireEvent.click( prompt );
-		expect( prompt ).toHaveAttribute( 'aria-disabled', 'true' );
-		expect( asks() ).toBe( 1 );
-		fireEvent.click( prompt );
-		expect( asks() ).toBe( 1 );
-		await waitFor( () =>
-			expect( wire.sent( 'end_role' ) ).toHaveLength( 1 )
+		expect( document.activeElement ).toBe(
+			screen.getByRole( 'heading', { name: 'Acme Quillsheet' } )
 		);
-		fireEvent.click( prompt );
-		expect( asks() ).toBe( 1 );
-		expect( wire.sent( 'assert_role' ) ).toEqual( [] );
 	} );
 
 	it( 'asks a reader nothing', async () => {

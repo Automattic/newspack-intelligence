@@ -2,7 +2,8 @@
 /**
  * A healthy answer to each of the four `health` slices, as the strip and the
  * page both read it: a live worker on a staging topology, three sources that
- * answered, nothing held and the AI proxy extracting, no model call waiting.
+ * answered and no client feed dead, nothing held and the AI proxy extracting,
+ * no model call waiting.
  */
 
 /** 2026-10-31 09:41 UTC. */
@@ -32,6 +33,7 @@ export const HEALTHY = {
 			okSource( 'feed' ),
 			okSource( 'news' ),
 		],
+		dead_clients: [],
 	},
 	backlog: { reason: '', held: 0, since: null, dropped: null },
 	extraction: {

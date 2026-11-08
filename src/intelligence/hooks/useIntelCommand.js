@@ -111,13 +111,21 @@ export function commandArgs( options ) {
  * @param {string}                     command          The write verb.
  * @param {Object}                     [opts]           Options.
  * @param {string}                     [opts.ci]        The CI the verb lives on.
+ * @param {string}                     [opts.scope]     Names this write's nodes, a
+ *                                                      subject naming what it is
+ *                                                      for, so two writes of one verb
+ *                                                      on a page never share a Fetcher;
+ *                                                      `<ci>:<command>` when omitted.
  * @param {() => void}                 [opts.refresh]   Runs once a send lands.
  * @param {(tokens: string[]) => void} [opts.onRefused] Runs once a send is refused.
  * @return {{run: (args: Object<string, string|Array<string>>) => string[], refusal: ?string, answeredArgs: ?string[], pending: boolean}}
  *   `run()`, the last refusal, the arguments the last reply answered, and
  *   whether a send is still owed its reply.
  */
-export function useIntelWrite( command, { ci = CI, refresh, onRefused } = {} ) {
+export function useIntelWrite(
+	command,
+	{ ci = CI, scope = `${ ci }:${ command }`, refresh, onRefused } = {}
+) {
 	const {
 		run: send,
 		error,
@@ -127,6 +135,7 @@ export function useIntelWrite( command, { ci = CI, refresh, onRefused } = {} ) {
 		group: GROUP,
 		ci,
 		command,
+		scope,
 		subjectOf: NO_SUBJECT,
 		onDone: ( { error: refused, args } ) =>
 			refused ? onRefused?.( args ) : refresh?.(),

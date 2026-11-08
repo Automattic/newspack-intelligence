@@ -493,21 +493,24 @@ describe( 'HealthStrip', () => {
 		).toBeNull();
 	} );
 
-	it( 'idle source links to the Vault tab with group', async () => {
+	it( 'offers Add credential on an idle source, linking the Vault tab', async () => {
 		health.sources.sources.push( {
-			name: 'linear',
-			class: 'Linear_Source',
-			tier: 'internal',
+			name: 'unthread',
+			class: 'Unthread_Source',
+			tier: 'restricted',
 			state: 'idle',
-			credential: { url: 'https://api.linear.app', group: 'linear-crew' },
+			credential: {
+				url: 'https://api.unthread.io',
+				group: 'unthread-desk',
+			},
 		} );
 		renderStrip( { canManage: true } );
 		await worstFault(
-			'No Vault entry for https://api.linear.app in group linear-crew.'
+			'No Vault entry for https://api.unthread.io in group unthread-desk.'
 		);
 		expect(
-			within( row( 'linear' ) ).getByRole( 'link', {
-				name: 'Open the Vault',
+			within( row( 'unthread' ) ).getByRole( 'link', {
+				name: 'Add credential',
 			} )
 		).toHaveAttribute( 'href', VAULT );
 	} );
@@ -1005,6 +1008,247 @@ describe( 'HealthStrip', () => {
 		await waitFor( () =>
 			expect( toggle() ).toHaveAttribute( 'aria-expanded', 'true' )
 		);
+	} );
+
+	describe( 'a dead client feed', () => {
+		const KEY = 'organization:shoal-crier';
+		const DOMAIN = 'shoalcrier.example';
+		const DEAD = `Shoal Crier (${ DOMAIN }) has not resolved since ${ SINCE_LOCAL }.`;
+		const OTHER = 'organization:kittiwake-mail';
+		const deadRows = () =>
+			within( rows() )
+				.getAllByRole( 'listitem' )
+				.filter(
+					( item ) =>
+						'Client feed' ===
+						item.querySelector( 'strong' ).textContent
+				);
+		const markIn = ( item ) =>
+			within( item ).getByRole( 'button', {
+				name: 'Mark former client',
+			} );
+		const mark = () => markIn( row( 'Client feed' ) );
+		const dead = ( entityKey, name, domain ) => ( {
+			entity_key: entityKey,
+			name,
+			domain,
+			since: SINCE,
+		} );
+
+		beforeEach( () => {
+			health.sources.dead_clients = [
+				dead( KEY, 'Shoal Crier', DOMAIN ),
+			];
+		} );
+
+		it( 'is a fault naming its client, its host and since when', async () => {
+			renderStrip();
+			await worstFault( DEAD );
+			expect(
+				within( row( 'Client feed' ) ).getByText( 'dead' )
+			).toHaveClass( 'is-error' );
+		} );
+
+		it( 'marks a former client: end_role, then assert_role former_client, then reads again', async () => {
+			wire.replies.end_role = { ok: true, event_id: 'ev-end-5520' };
+			wire.replies.assert_role = { ok: true, event_id: 'ev-former-5520' };
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			fireEvent.click( mark() );
+			await waitFor( () => {
+				expect( wire.sent( 'end_role' ) ).toEqual( [
+					[ `--key=${ KEY }`, '--role=client' ],
+				] );
+				expect( wire.sent( 'assert_role' ) ).toEqual( [
+					[ `--key=${ KEY }`, '--role=former_client' ],
+				] );
+				expect( reads( 'sources' ) ).toBe( 2 );
+			} );
+		} );
+
+		it( 'hides the client from the click while a read still lists it', async () => {
+			wire.replies.end_role = { ok: true, event_id: 'ev-end-5521' };
+			wire.replies.assert_role = { ok: true, event_id: 'ev-former-5521' };
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			fireEvent.click( mark() );
+			expect( screen.queryByText( /Shoal Crier/ ) ).toBeNull();
+			await waitFor( () => expect( reads( 'sources' ) ).toBe( 2 ) );
+			expect( screen.queryByText( /Shoal Crier/ ) ).toBeNull();
+			expect( wire.sent( 'end_role' ) ).toHaveLength( 1 );
+		} );
+
+		it( 'hides every dead domain of the client it ends', async () => {
+			health.sources.dead_clients.push(
+				dead( KEY, 'Shoal Crier', 'shoal-archive-3310.example' ),
+				dead( OTHER, 'Kittiwake Mail', 'kittiwakemail.example' )
+			);
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			expect( deadRows() ).toHaveLength( 3 );
+			fireEvent.click( mark() );
+			expect( deadRows() ).toHaveLength( 1 );
+			expect( deadRows()[ 0 ] ).toHaveTextContent( 'Kittiwake Mail' );
+		} );
+
+		it( 'shows the client again once a read stops listing it and lists it anew', async () => {
+			wire.replies.end_role = { ok: true, event_id: 'ev-end-5522' };
+			wire.replies.assert_role = { ok: true, event_id: 'ev-former-5522' };
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			fireEvent.click( mark() );
+			await waitFor( () => expect( reads( 'sources' ) ).toBe( 2 ) );
+			health.sources.dead_clients = [];
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Refresh' } )
+			);
+			await waitFor( () => expect( reads( 'sources' ) ).toBe( 3 ) );
+			health.sources.dead_clients = [
+				dead( KEY, 'Shoal Crier', DOMAIN ),
+			];
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Refresh' } )
+			);
+			await worstFault( DEAD );
+		} );
+
+		it( 'asserts former_client only once the end lands', async () => {
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			fireEvent.click( mark() );
+			await waitFor( () =>
+				expect( wire.sent( 'end_role' ) ).toHaveLength( 1 )
+			);
+			expect( wire.sent( 'assert_role' ) ).toEqual( [] );
+		} );
+
+		it( 'holds every other client\u2019s button while a pair is owed', async () => {
+			health.sources.dead_clients.push(
+				dead( OTHER, 'Kittiwake Mail', 'kittiwakemail.example' )
+			);
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			fireEvent.click( markIn( deadRows()[ 0 ] ) );
+			const other = markIn( deadRows()[ 0 ] );
+			expect( other ).toHaveAttribute( 'aria-disabled', 'true' );
+			fireEvent.click( other );
+			await waitFor( () =>
+				expect( wire.sent( 'end_role' ) ).toHaveLength( 1 )
+			);
+			expect( deadRows() ).toHaveLength( 1 );
+		} );
+
+		it( 'shows a refused end on its row again and asserts nothing', async () => {
+			wire.replies.end_role = () =>
+				new Error( `${ KEY } holds no open client role` );
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			fireEvent.click( mark() );
+			expect(
+				await screen.findByText( `${ KEY } holds no open client role` )
+			).toHaveClass( 'is-error' );
+			expect(
+				within( row( 'Client feed' ) ).getByText(
+					`${ KEY } holds no open client role`
+				)
+			).toBeInTheDocument();
+			expect( wire.sent( 'assert_role' ) ).toEqual( [] );
+			expect( mark() ).toHaveAttribute( 'aria-disabled', 'false' );
+		} );
+
+		it( 'keeps the client hidden and names it on the strip when its assert is refused', async () => {
+			wire.replies.end_role = { ok: true, event_id: 'ev-end-5523' };
+			wire.replies.assert_role = () => {
+				health.sources.dead_clients = [];
+				return new Error( `${ KEY } already holds former_client` );
+			};
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			fireEvent.click( mark() );
+			const alert = await screen.findByRole( 'alert' );
+			await waitFor( () => expect( reads( 'sources' ) ).toBe( 2 ) );
+			expect( screen.queryByText( /has not resolved/ ) ).toBeNull();
+			expect( alert ).toHaveTextContent(
+				`Shoal Crier (${ KEY }) is no longer a client, but former_client was not recorded: ${ KEY } already holds former_client`
+			);
+			expect( strip() ).toContainElement( alert );
+		} );
+
+		it( 'moves focus to the next row when the marked row leaves', async () => {
+			health.sources.dead_clients.push(
+				dead( OTHER, 'Kittiwake Mail', 'kittiwakemail.example' )
+			);
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			const button = markIn( deadRows()[ 0 ] );
+			button.focus();
+			fireEvent.click( button );
+			expect( document.activeElement ).toBe( deadRows()[ 0 ] );
+			expect( document.activeElement ).toHaveTextContent(
+				'Kittiwake Mail'
+			);
+		} );
+
+		it( 'leaves focus alone on a click while a pair is owed', async () => {
+			wire.replies.end_role = { ok: true, event_id: 'ev-end-5524' };
+			wire.replies.assert_role = { ok: true, event_id: 'ev-former-5524' };
+			health.sources.dead_clients.push(
+				dead( OTHER, 'Kittiwake Mail', 'kittiwakemail.example' ),
+				dead(
+					'organization:gannet-post',
+					'Gannet Post',
+					'gannetpost.example'
+				)
+			);
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			fireEvent.click( markIn( deadRows()[ 0 ] ) );
+			const waiting = markIn( deadRows()[ 1 ] );
+			waiting.focus();
+			fireEvent.click( waiting );
+			await waitFor( () => expect( reads( 'sources' ) ).toBe( 2 ) );
+			expect( wire.sent( 'end_role' ) ).toHaveLength( 1 );
+			expect( document.activeElement ).toBe( waiting );
+		} );
+
+		it( 'moves focus to the strip when the marked row was its last fault', async () => {
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			const button = mark();
+			button.focus();
+			fireEvent.click( button );
+			expect( document.activeElement ).toBe( strip() );
+		} );
+
+		it( 'shows a refusal on the row of the client it refused alone', async () => {
+			health.sources.dead_clients.push(
+				dead( OTHER, 'Kittiwake Mail', 'kittiwakemail.example' )
+			);
+			wire.replies.end_role = () =>
+				new Error( `${ KEY } holds no open client role` );
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			fireEvent.click( markIn( deadRows()[ 0 ] ) );
+			await screen.findByText( `${ KEY } holds no open client role` );
+			const [ shoal, kittiwake ] = deadRows();
+			expect( shoal ).toHaveTextContent(
+				`${ KEY } holds no open client role`
+			);
+			expect( kittiwake ).not.toHaveTextContent( 'holds no open' );
+		} );
+
+		it( 'gives a reader without TUNE the step as text, mounting no write', async () => {
+			renderStrip( { canManage: true } );
+			await worstFault( DEAD );
+			expect(
+				within( row( 'Client feed' ) ).getByText(
+					'An administrator can mark it a former client.'
+				)
+			).toBeInTheDocument();
+			expect(
+				Core.node( 'health:former-client:end_role:fetch' )
+			).toBeFalsy();
+		} );
 	} );
 
 	it( 'mounts a write only for a fix the reader may send', async () => {

@@ -802,12 +802,23 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * Publish a status of every key, those $fields leaves out null.
+	 * Publish a status of every key, those $fields leaves out null, beside
+	 * the facts the source adds to every status.
 	 *
 	 * @param array<string,mixed> $fields The keys the state carries.
 	 */
 	private function publish_snapshot( array $fields ): void {
-		$this->publish_status( [ ...self::BLANK_STATUS, ...$fields ] );
+		$this->publish_status( [ ...self::BLANK_STATUS, ...$this->status_facts(), ...$fields ] );
+	}
+
+	/**
+	 * The keys a source adds to every status it publishes, whatever its
+	 * state; none unless a source reports more.
+	 *
+	 * @return array<string,mixed>
+	 */
+	protected function status_facts(): array {
+		return [];
 	}
 
 	/**

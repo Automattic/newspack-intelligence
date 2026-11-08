@@ -187,15 +187,17 @@ final class Intelligence_Health {
 	 * whose row's tier (`Source_Node::graph_facts()`) the caller cannot
 	 * read: idle with the credential it needs
 	 * when its group lends none on the origin it fetches, whatever its
-	 * snapshot says; else its snapshot; else unknown; each redacted for a
-	 * caller below manage.
+	 * snapshot says; else its snapshot, less its dead client feeds; else
+	 * unknown; each redacted for a caller below manage. Beside them, the
+	 * clients of the dead client feeds those snapshots name (`dead_clients()`).
 	 *
-	 * @return array{sources:list<array<array-key,mixed>>}
+	 * @return array{sources:list<array<array-key,mixed>>,dead_clients:list<array{entity_key:string,name:string,domain:string,since:int}>}
 	 */
 	private static function sources(): array {
 		$readable = Intel_Tiers::readable();
 		$sources  = [];
 		$lent     = [];
+		$dead     = [];
 		foreach ( Intelligence_CI_Node::sources() as $node ) {
 			$type = Core::as_string( $node['type'] );
 			/** @var class-string<Source_Node> $class nodes_of_type() kept only Source_Node types. */
@@ -204,11 +206,65 @@ final class Intelligence_Health {
 			if ( ! \in_array( $tier, $readable, true ) ) {
 				continue;
 			}
-			$name      = Core::as_string( $node['name'] );
-			$sources[] = [ 'name' => $name, 'class' => $type, 'tier' => $tier ]
-				+ self::redacted( self::idle( $class, Core::as_string( Worker_Route::line( $class, $node )['vault_group'] ?? '' ), $lent ) ?? Source_Node::read_status( $name, self::PARTITION ) ?? [ 'state' => 'unknown' ] );
+			$name   = Core::as_string( $node['name'] );
+			$status = self::idle( $class, Core::as_string( Worker_Route::line( $class, $node )['vault_group'] ?? '' ), $lent ) ?? Source_Node::read_status( $name, self::PARTITION ) ?? [ 'state' => 'unknown' ];
+			foreach ( Core::arr( $status['dead_clients'] ?? null ) as $domain => $since ) {
+				$dead[ (string) $domain ] = \min( Core::as_int( $since ), $dead[ (string) $domain ] ?? \PHP_INT_MAX );
+			}
+			unset( $status['dead_clients'] );
+			$sources[] = [ 'name' => $name, 'class' => $type, 'tier' => $tier ] + self::redacted( $status );
 		}
-		return [ 'sources' => $sources ];
+		return [
+			'sources'      => $sources,
+			'dead_clients' => self::dead_clients( $dead ),
+		];
+	}
+
+	/**
+	 * The client of each dead client feed, as the survivor of the entity
+	 * holding its domain: one holding an open `client` role that the caller
+	 * may see (`Graph_Query::visible_of()`), by its key and the name every
+	 * read shows it by (`Graph_Query::names_of()`), its key where it holds
+	 * none, beside the domain and the start of its run, the oldest first,
+	 * then by domain; none, logged, when the projection will not open.
+	 *
+	 * @param array<string,int> $dead Each dead client feed's domain => the start of its run.
+	 * @return list<array{entity_key:string,name:string,domain:string,since:int}>
+	 */
+	private static function dead_clients( array $dead ): array {
+		if ( [] === $dead ) {
+			return [];
+		}
+		return Intel_Graph_Row_Schema::read(
+			static function ( Row_Reader $r ) use ( $dead ): array {
+				if ( [] === $r->aliases() ) {
+					return [];
+				}
+				$g       = Graph_Query::graph( $r );
+				$domains = \array_map( 'strval', \array_keys( $dead ) );
+				$holders = [];
+				foreach ( $r->rows( 'SELECT i.value, i.entity_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'identifiers', true ) . " i WHERE i.kind = 'domain' AND i.value IN ( " . Intel_Graph_Row_Schema::marks( $domains ) . ' ) ORDER BY i.partition_ordinal, i.entity_key', $domains ) as [ $domain, $key ] ) {
+					$survivor = $g['survivors'][ Core::as_string( $key ) ] ?? Core::as_string( $key );
+					if ( '' !== $survivor ) {
+						$holders[ Core::as_string( $domain ) ] = $survivor;
+					}
+				}
+				$survivors = \array_values( \array_unique( $holders ) );
+				$keys      = \array_combine( $survivors, \array_map( static fn ( string $survivor ): array => Graph_Query::keys_of( $survivor, $g ), $survivors ) );
+				$open      = Graph_Query::open_roles( $r, $keys, [ Graph_Query::CLIENT ] );
+				$seen      = Graph_Query::visible_of( $r, $g, \array_values( \array_filter( $survivors, static fn ( string $survivor ): bool => isset( $open[ $survivor ] ) ) ) );
+				$names     = Graph_Query::names_of( $r, \array_map( 'strval', \array_keys( $seen ) ) );
+				$listed    = [];
+				foreach ( $holders as $domain => $survivor ) {
+					if ( isset( $seen[ $survivor ] ) ) {
+						$listed[] = [ 'entity_key' => $survivor, 'name' => $names[ $survivor ] ?? $survivor, 'domain' => $domain, 'since' => $dead[ $domain ] ];
+					}
+				}
+				\usort( $listed, static fn ( array $a, array $b ): int => [ $a['since'], $a['domain'] ] <=> [ $b['since'], $b['domain'] ] );
+				return $listed;
+			},
+			'no intel-graph to name the clients of dead client feeds from: '
+		) ?? [];
 	}
 
 	/**

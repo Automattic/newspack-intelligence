@@ -1,8 +1,15 @@
-import { useEffect, useState } from '@wordpress/element';
+import {
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { Card, CardBody, CardHeader } from '@wordpress/components';
 import { formatCommandArgs } from '@newspack-nodes/runtime';
 import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
+import { unrecordedText, useEndClient } from '../hooks/useEndClient';
 import Answer, { AnswerBody } from '../components/Answer';
 import Cite, { EntityChip } from '../components/Cite';
 import EditDrawer from '../components/EditDrawer';
@@ -10,13 +17,6 @@ import Refusal from '../components/Refusal';
 import { ItemPage } from '../components/ItemRow';
 import { SignalTrend, signalValue } from '../components/TrendTable';
 import { metaLine, roleText, utcDay } from '../components/format';
-
-/** The role a client that churned is given once its client role ends. */
-const FORMER_CLIENT = 'former_client';
-
-/** The churn prompt's steps: its end owed a reply, then its assert. */
-const ENDING = 'ending';
-const ASSERTING = 'asserting';
 
 /**
  * Whether a role row held any time; a closed row ending where it starts is
@@ -165,15 +165,15 @@ function statusText( status, signals ) {
 /**
  * The question a client with a churn report raises, for a curator: one
  * click ends its client role, and only once that lands opens a former
- * client one. While the pair is owed its replies the button stays
- * focusable and does nothing, so a second click sends nothing.
+ * client one (`useEndClient`), the prompt leaving the status line from
+ * the click until a read no longer lists the client, and focus moving to
+ * the entity's heading.
  *
  * @param {Object}     props
- * @param {boolean}    props.busy  Whether the pair is still owed its replies.
  * @param {() => void} props.onEnd Ends the client role.
  * @return {import('react').ReactElement} The prompt.
  */
-function ChurnPrompt( { busy, onEnd } ) {
+function ChurnPrompt( { onEnd } ) {
 	return (
 		<>
 			{ ' · ' }
@@ -186,8 +186,7 @@ function ChurnPrompt( { busy, onEnd } ) {
 			<button
 				type="button"
 				className="button button-small"
-				aria-disabled={ busy }
-				onClick={ () => ! busy && onEnd() }
+				onClick={ onEnd }
 			>
 				{ __( 'End client?', 'newspack-intelligence' ) }
 			</button>
@@ -399,54 +398,70 @@ export default function Entity( {
 		}
 	}, [ entityKey, record.loading, named, onNamed ] );
 
-	// The churn prompt's pair: null, or the step owed its reply.
-	const [ churn, setChurn ] = useState( null );
+	// The record lists its entity as a client while its status answers.
+	const clients = useMemo(
+		() =>
+			record.answer && {
+				clients: record.answer.status
+					? [ { entity_key: entityKey } ]
+					: [],
+			},
+		[ record.answer, entityKey ]
+	);
+	const churn = useEndClient(
+		'entity:churn',
+		{ ...record, answer: clients },
+		'clients',
+		record.refresh
+	);
 	const edit = { refresh: record.refresh };
 	const addName = useIntelWrite( 'add_name', edit );
 	const addIdentifier = useIntelWrite( 'add_identifier', edit );
-	const assertRole = useIntelWrite( 'assert_role', {
-		refresh: () => {
-			setChurn( null );
-			record.refresh();
-		},
-		onRefused: () => setChurn( null ),
+	const assertRole = useIntelWrite( 'assert_role', edit );
+	const endRole = useIntelWrite( 'end_role', edit );
+	const refusals = [ addName, addIdentifier, assertRole, endRole ]
+		.map( ( write ) => write.refusal )
+		.concat(
+			churn.refused,
+			churn.unrecorded && unrecordedText( churn.unrecorded )
+		);
+	// The heading takes focus once the churn prompt the reader pressed leaves.
+	const heading = useRef( null );
+	const ended = useRef( false );
+	useLayoutEffect( () => {
+		if ( ended.current && heading.current ) {
+			heading.current.focus();
+			ended.current = false;
+		}
 	} );
-	const endRole = useIntelWrite( 'end_role', {
-		refresh: () => {
-			if ( ENDING === churn ) {
-				setChurn( ASSERTING );
-				assertRole.run( { key: entityKey, role: FORMER_CLIENT } );
-			}
-			record.refresh();
-		},
-		onRefused: () => setChurn( null ),
-	} );
-	const edits = [ addName, addIdentifier, assertRole, endRole ];
 
 	return (
 		<div className="newspack-intelligence__view">
 			<Answer read={ record }>
 				{ ( entity ) => (
 					<>
-						<h2>{ entityName( entity ) }</h2>
+						<h2 ref={ heading } tabIndex={ -1 }>
+							{ entityName( entity ) }
+						</h2>
 						{ entity.status && (
 							<p className="newspack-nodes-status">
 								{ statusText(
 									entity.status,
 									signals.answer?.signals
 								) }
-								{ canTune && entity.status.churn_open && (
-									<ChurnPrompt
-										busy={ null !== churn }
-										onEnd={ () => {
-											setChurn( ENDING );
-											endRole.run( {
-												key: entityKey,
-												role: 'client',
-											} );
-										} }
-									/>
-								) }
+								{ canTune &&
+									entity.status.churn_open &&
+									0 < churn.read.answer.clients.length && (
+										<ChurnPrompt
+											onEnd={ () => {
+												ended.current = true;
+												churn.run( {
+													entity_key: entityKey,
+													name: entityName( entity ),
+												} );
+											} }
+										/>
+									) }
 							</p>
 						) }
 						<p className="newspack-nodes-status is-muted">
@@ -473,8 +488,8 @@ export default function Entity( {
 								} }
 							/>
 						) }
-						{ edits.map( ( write, i ) => (
-							<Refusal key={ i } error={ write.refusal } />
+						{ refusals.map( ( refusal, i ) => (
+							<Refusal key={ i } error={ refusal } />
 						) ) }
 					</>
 				) }

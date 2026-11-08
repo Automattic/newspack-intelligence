@@ -242,7 +242,7 @@ XML;
 			$this->complete( $url, 1 === $i % 2 ? '' : self::RSS, 1 === $i % 2 ? 404 : 200 );
 		}
 
-		$this->assertSame( self::snapshot( [ 'state' => 'ok', 'last_ok_at' => 6262, 'failed' => 2, 'requests' => 5 ] ), $this->published( 'feed' ) );
+		$this->assertSame( self::snapshot( [ 'state' => 'ok', 'last_ok_at' => 6262, 'failed' => 2, 'requests' => 5, 'dead_clients' => [] ] ), $this->published( 'feed' ) );
 	}
 
 	/** A redirect is a hop, not an answer: a feed moved to a 404 publishes failing, its one request counted once. */
@@ -256,7 +256,7 @@ XML;
 		$this->redirect( 'https://moved-7720.example/feed/', 'https://moved-7721.example/feed/' );
 		$this->complete( 'https://moved-7721.example/feed/', '', 404 );
 
-		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 404 https://moved-7721.example/feed/', 'failing_since' => 6262, 'failed' => 1, 'requests' => 1 ] ), $this->published( 'feed' ) );
+		$this->assertSame( self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 404 https://moved-7721.example/feed/', 'failing_since' => 6262, 'failed' => 1, 'requests' => 1, 'dead_clients' => [] ] ), $this->published( 'feed' ) );
 	}
 
 	/** A redirect not followed records nothing, so its request counts as failed, naming why. */
@@ -1431,11 +1431,12 @@ XML;
 	 * `curl <code>`.
 	 *
 	 * @param list<string|int> $answers How each Gazette fetch is answered, in order.
-	 * @return list<int> The passes, from 1, that fetched the Gazette.
+	 * @param int              $from    The first pass run.
+	 * @return list<int> The passes, counted from 1, that fetched the Gazette.
 	 */
-	private function gazette_passes( Feed_Source_Node $node, int $passes, array $answers ): array {
+	private function gazette_passes( Feed_Source_Node $node, int $passes, array $answers, int $from = 1 ): array {
 		$fetched = [];
-		for ( $pass = 1; $pass <= $passes; $pass++ ) {
+		for ( $pass = $from; $pass < $from + $passes; $pass++ ) {
 			$at          = (float) ( self::$oct_20 + $pass * 1800 + 5 );
 			Core::$now   = $at;
 			Core::$clock = static fn (): float => $at;
@@ -1468,15 +1469,68 @@ XML;
 		$this->assertSame( [ 1, 3, 6, 11, 12, 13 ], $fetched );
 	}
 
+	/**
+	 * A client domain whose host does not resolve three fetches running is
+	 * published dead, since the first of the three, and an answering feed
+	 * takes it off the list.
+	 */
+	public function test_a_host_unresolved_three_passes_running_is_published_dead(): void {
+		$node = $this->client_feed();
+		$this->publishing();
+
+		$this->assertSame( [ 1, 3 ], $this->gazette_passes( $node, 5, [ 'curl 6', 'curl 6' ] ) );
+		$this->assertSame( [], $this->published( 'feed' )['dead_clients'], 'two fetches are not three' );
+		$this->assertSame( [ 6 ], $this->gazette_passes( $node, 1, [ 'curl 6' ], 6 ) );
+		$this->assertSame( [ 'harborgazette.example' => self::$oct_20 + 1800 + 5 ], $this->published( 'feed' )['dead_clients'] );
+
+		$this->assertSame( [ 11 ], $this->gazette_passes( $node, 5, [ 'feed' ], 7 ) );
+		$this->assertSame( [], $this->published( 'feed' )['dead_clients'] );
+	}
+
+	/**
+	 * A domain that answers anything breaks its run, even a body that is not
+	 * a feed, so a found feed on another host that does not resolve starts a
+	 * run of its own.
+	 */
+	public function test_an_answered_fetch_breaks_the_unresolved_run(): void {
+		$node = $this->client_feed();
+		$this->publishing();
+		$this->gazette_passes( $node, 5, [ 'curl 6', 'curl 6' ] );
+		$at          = (float) ( self::$oct_20 + 6 * 1800 + 5 );
+		Core::$now   = $at;
+		Core::$clock = static fn (): float => $at;
+		$this->tick( $node );
+
+		$this->complete( self::GAZETTE_FEED, '<html>not-a-feed-2290</html>' );
+		$this->complete( self::GAZETTE_HOME, self::home_page( 'application/rss+xml', self::GAZETTE_FOUND ) );
+		$this->complete( self::GAZETTE_FOUND, '', 0, \CURLE_COULDNT_RESOLVE_HOST );
+		$this->complete( self::PELICAN_FEED, self::rss( [] ) );
+
+		$this->assertSame( [ 1, (int) $at ], [ self::domains()['harborgazette.example']['unresolved'], self::domains()['harborgazette.example']['unresolved_since'] ] );
+		$this->assertSame( [], $this->published( 'feed' )['dead_clients'] );
+	}
+
+	/** A 5xx, a timeout or another curl error between two unresolved fetches breaks the run, so three never list the domain. */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'passing_failures' )]
+	public function test_only_an_unresolved_host_counts_toward_dead( string|int $failure ): void {
+		$node = $this->client_feed();
+		$this->publishing();
+
+		$fetched = $this->gazette_passes( $node, 7, [ 'curl 6', 'curl 6', $failure, 'curl 6' ] );
+
+		$this->assertSame( [ 1, 3, 6, 7 ], $fetched );
+		$this->assertSame( [], $this->published( 'feed' )['dead_clients'] );
+	}
+
 	/** A domain's backoff stops doubling at 48 passes, kept as the moment it may be fetched again. */
 	public function test_a_domains_backoff_is_capped_at_48_passes(): void {
 		$node = $this->client_feed();
-		$this->remembered( [ 'harborgazette.example' => [ 'feed' => '', 'failures' => 9, 'retry_at' => 0 ] ] );
+		$this->remembered( [ 'harborgazette.example' => [ 'feed' => '', 'failures' => 9, 'retry_at' => 0, 'unresolved' => 4, 'unresolved_since' => self::$oct_01 ] ] );
 
 		$this->gazette_passes( $node, 1, [ 'curl 6' ] );
 
 		$this->assertSame( 48, Feed_Source_Node::MAX_SKIP_PASSES );
-		$this->assertSame( [ 'feed' => '', 'failures' => 10, 'retry_at' => self::$oct_20 + ( 1 + 48 + 1 ) * 1800 ], self::domains()['harborgazette.example'] );
+		$this->assertSame( [ 'feed' => '', 'failures' => 10, 'retry_at' => self::$oct_20 + ( 1 + 48 + 1 ) * 1800, 'unresolved' => 5, 'unresolved_since' => self::$oct_01 ], self::domains()['harborgazette.example'] );
 	}
 
 	/**
@@ -1618,7 +1672,7 @@ XML;
 		$this->tick( $successor );
 
 		$this->assertSame( [ 'feed:harborgazette.example:found-9' ], \array_keys( $this->recorded() ) );
-		$this->assertSame( [ 'feed' => self::GAZETTE_FOUND, 'failures' => 0, 'retry_at' => 0 ], self::domains()['harborgazette.example'] );
+		$this->assertSame( [ 'feed' => self::GAZETTE_FOUND, 'failures' => 0, 'retry_at' => 0, 'unresolved' => 0, 'unresolved_since' => 0 ], self::domains()['harborgazette.example'] );
 		$this->assertSame( [ self::GAZETTE_FOUND, self::PELICAN_FEED ], \array_slice( $this->dispatched, -2 ) );
 	}
 

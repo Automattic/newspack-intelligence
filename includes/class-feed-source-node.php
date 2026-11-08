@@ -53,11 +53,16 @@ class Feed_Source_Node extends Source_Node {
 	/** The types a home page's alternate link names a feed by. */
 	private const FEED_TYPES = [ 'application/rss+xml', 'application/atom+xml' ];
 
+	/** Fetches of a client domain running, not passes, that did not resolve its host, past which its feed is dead. */
+	public const DEAD_PASSES = 3;
+
 	/** What a client domain's memory holds when nothing is remembered of it. */
 	private const BLANK_DOMAIN = [
-		'feed'     => '',
-		'failures' => 0,
-		'retry_at' => 0,
+		'feed'             => '',
+		'failures'         => 0,
+		'retry_at'         => 0,
+		'unresolved'       => 0,
+		'unresolved_since' => 0,
 	];
 
 	/** @var list<string> Feed URLs the `add_url` verb registered and `remove_url` left, in call order. */
@@ -121,8 +126,9 @@ class Feed_Source_Node extends Source_Node {
 
 	/**
 	 * A feed body's items; a client's only those in the lanes its note names,
-	 * its home page read for the feed it advertises, and its feed lost when the
-	 * body is not a feed or the feed is off its lanes.
+	 * its unresolved run ended, its home page read for the feed it
+	 * advertises, and its feed lost when the body is not a feed or the feed
+	 * is off its lanes.
 	 *
 	 * @return array<int,array<string,mixed>>
 	 */
@@ -131,6 +137,7 @@ class Feed_Source_Node extends Source_Node {
 		if ( '' === $domain ) {
 			return $this->parse( $url, $body, '' )[0] ?? [];
 		}
+		$this->resolved( $domain );
 		if ( self::home_of( $domain ) === $url ) {
 			$this->discovered( $domain, $body );
 			return [];
@@ -191,19 +198,47 @@ class Feed_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * Lose a client's feed on a 4xx, and back the domain off on an unresolved
-	 * host or a 4xx of its home page.
+	 * Back a client domain off on an unresolved host, one fetch longer in its
+	 * unresolved run; any other failure ends the run, a 4xx also losing its
+	 * feed, or backing it off when its home page answered it.
 	 */
 	protected function failed( string $subject, string $error ): void {
 		$domain = Core::as_string( $this->note()['domain'] ?? '' );
-		if ( '' === $domain || 1 !== \preg_match( '/^(?:HTTP 4\d\d|(curl) error ' . \CURLE_COULDNT_RESOLVE_HOST . ') /', $error, $match ) ) {
+		if ( '' === $domain ) {
 			return;
 		}
-		if ( self::home_of( $domain ) === $subject || isset( $match[1] ) ) {
+		if ( \str_starts_with( $error, 'curl error ' . \CURLE_COULDNT_RESOLVE_HOST . ' ' ) ) {
+			$this->backs_off( $domain, $this->unresolved_again( $domain ) );
+			return;
+		}
+		$this->resolved( $domain );
+		if ( 1 !== \preg_match( '/^HTTP 4\d\d /', $error ) ) {
+			return;
+		}
+		if ( self::home_of( $domain ) === $subject ) {
 			$this->backs_off( $domain );
 			return;
 		}
 		$this->lost( $domain );
+	}
+
+	/** End a client domain's unresolved run: its host answered. */
+	private function resolved( string $domain ): void {
+		$this->keep( $domain, \array_replace( $this->remembered( $domain ), [ 'unresolved' => 0, 'unresolved_since' => 0 ] ) );
+	}
+
+	/**
+	 * A client domain's unresolved run one fetch longer, since its first fetch.
+	 *
+	 * @return array{unresolved:int,unresolved_since:int}
+	 */
+	private function unresolved_again( string $domain ): array {
+		$memory = $this->remembered( $domain );
+		$run    = Core::as_int( $memory['unresolved'] );
+		return [
+			'unresolved'       => $run + 1,
+			'unresolved_since' => 0 === $run ? (int) Core::$now : Core::as_int( $memory['unresolved_since'] ),
+		];
 	}
 
 	/**
@@ -275,9 +310,12 @@ class Feed_Source_Node extends Source_Node {
 
 	/**
 	 * Back a client domain off and forget its found feed: it sits out 1, 2, 4 …
-	 * passes, up to MAX_SKIP_PASSES.
+	 * passes, up to MAX_SKIP_PASSES. Its unresolved run is $run, none unless
+	 * its host did not resolve.
+	 *
+	 * @param array{unresolved:int,unresolved_since:int}|array{} $run The run.
 	 */
-	private function backs_off( string $domain ): void {
+	private function backs_off( string $domain, array $run = [] ): void {
 		$failures = Core::as_int( $this->remembered( $domain )['failures'] ) + 1;
 		$period   = $this->interval ?? self::BACKOFF_PERIOD;
 		$skip     = (int) \min( 2 ** ( $failures - 1 ), self::MAX_SKIP_PASSES );
@@ -287,7 +325,7 @@ class Feed_Source_Node extends Source_Node {
 				'feed'     => '',
 				'failures' => $failures,
 				'retry_at' => ( \intdiv( (int) Core::$now, $period ) + $skip + 1 ) * $period,
-			]
+			] + $run
 		);
 	}
 
@@ -300,7 +338,7 @@ class Feed_Source_Node extends Source_Node {
 	 * Remember a client domain's entry, blank where it leaves a key out,
 	 * forgetting one left blank.
 	 *
-	 * @param array<array-key,mixed> $entry Its feed, failures and retry_at.
+	 * @param array<array-key,mixed> $entry Its feed, failures, retry_at and unresolved run.
 	 */
 	private function keep( string $domain, array $entry ): void {
 		$entry   += self::BLANK_DOMAIN;
@@ -530,21 +568,6 @@ class Feed_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * Every remembered client domain, read from the row the first time a
-	 * pass asks; a read the Table does not answer remembers none.
-	 *
-	 * @return array<array-key,mixed>
-	 */
-	private function domains(): array {
-		if ( null === $this->domains ) {
-			$this->domains  = Core::arr( $this->tables->get( $this->sibling_name( self::FRONTIER ), self::DOMAINS, $failed ) );
-			$this->writable = ! $failed;
-			$this->dirty    = false;
-		}
-		return $this->domains;
-	}
-
-	/**
 	 * client_domains() less any that is not a plain hostname
 	 * (`Entity_Index::hostname_fault()`), each named; null when the projection
 	 * will not open. Holds the domains whose client is still shown by a domain.
@@ -609,6 +632,40 @@ class Feed_Source_Node extends Source_Node {
 	/** Write the domains back as the pass ends. */
 	protected function pass_ended(): void {
 		$this->write_domains();
+	}
+
+	/**
+	 * Every status also names each client domain whose host has not resolved
+	 * DEAD_PASSES fetches running, by domain, with the start of its run;
+	 * none while client feeds are off.
+	 *
+	 * @return array{dead_clients:array<string,int>}
+	 */
+	protected function status_facts(): array {
+		$dead = [];
+		foreach ( $this->client_feeds ? $this->domains() : [] as $domain => $memory ) {
+			$memory = Core::arr( $memory ) + self::BLANK_DOMAIN;
+			if ( Core::as_int( $memory['unresolved'] ) >= self::DEAD_PASSES ) {
+				$dead[ (string) $domain ] = Core::as_int( $memory['unresolved_since'] );
+			}
+		}
+		\ksort( $dead );
+		return [ 'dead_clients' => $dead ];
+	}
+
+	/**
+	 * Every remembered client domain, read from the row the first time a
+	 * pass asks; a read the Table does not answer remembers none.
+	 *
+	 * @return array<array-key,mixed>
+	 */
+	private function domains(): array {
+		if ( null === $this->domains ) {
+			$this->domains  = Core::arr( $this->tables->get( $this->sibling_name( self::FRONTIER ), self::DOMAINS, $failed ) );
+			$this->writable = ! $failed;
+			$this->dirty    = false;
+		}
+		return $this->domains;
 	}
 
 	/** Write the domains over the row when they changed and the row was read, again until an ADD takes them; none left removes it. */

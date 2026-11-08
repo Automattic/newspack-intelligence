@@ -327,6 +327,74 @@ final class IntelligenceHealthTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A client feed the feed source publishes dead names its client, as the
+	 * survivor of the entity holding the domain, by key and by the name every
+	 * read shows it by, beside the domain and the start of its run, oldest
+	 * first; the feed's own row carries no list.
+	 */
+	public function test_a_client_feed_dead_three_passes_is_listed(): void {
+		$this->seed(
+			self::entity( 'organization:wren-ledger', 'Wren Ledger', [ 'domain' => [ 'wrenledger.example' ] ] ),
+			self::entity( 'organization:wren-ledger-old', 'Wren Ledger Archive', [ 'domain' => [ 'wren-archive-4418.example' ] ] ),
+			self::merged( 'organization:wren-ledger-old', 'organization:wren-ledger' ),
+			self::entity( 'organization:shoal-crier', 'Shoal Crier', [ 'domain' => [ 'shoalcrier.example' ] ] ),
+			self::client_role( 'organization:wren-ledger' ),
+			self::client_role( 'organization:shoal-crier' )
+		);
+		$this->snapshot( 'feed', [ 'state' => 'ok', 'last_ok_at' => 1792495678, 'failed' => 3, 'requests' => 40, 'dead_clients' => [ 'wrenledger.example' => 1792461117, 'wren-archive-4418.example' => 1792388020, 'shoalcrier.example' => 1792402263 ] ] );
+
+		$health = $this->ci->dispatch( 'health', [ 'sources' ] );
+
+		$this->assertSame(
+			[
+				[ 'entity_key' => 'organization:wren-ledger', 'name' => 'Wren Ledger', 'domain' => 'wren-archive-4418.example', 'since' => 1792388020 ],
+				[ 'entity_key' => 'organization:shoal-crier', 'name' => 'Shoal Crier', 'domain' => 'shoalcrier.example', 'since' => 1792402263 ],
+				[ 'entity_key' => 'organization:wren-ledger', 'name' => 'Wren Ledger', 'domain' => 'wrenledger.example', 'since' => 1792461117 ],
+			],
+			$health['dead_clients']
+		);
+		$this->assertArrayNotHasKey( 'dead_clients', $health['sources'][1] );
+		$this->assertSame( 'feed', $health['sources'][1]['name'] );
+	}
+
+	/**
+	 * A dead feed does not list a client where the domain is not any entity's
+	 * identifier, where a curator already ended the client role, or where the
+	 * entity holding it was never a client.
+	 */
+	public function test_a_dead_feed_without_an_open_client_is_not_listed(): void {
+		$this->seed(
+			self::entity( 'organization:tern-weekly', 'Tern Weekly', [ 'domain' => [ 'ternweekly.example' ] ] ),
+			self::entity( 'organization:gannet-post', 'Gannet Post', [ 'domain' => [ 'gannetpost.example' ] ] ),
+			self::client_role( 'organization:tern-weekly' ),
+			[ Intel_Event::make( 'role_ended', [ 'entity_key' => 'organization:tern-weekly', 'role' => 'client', 'from_ts' => self::$jan_01, 'to_ts' => self::$oct_13 ], 'user:41', 'fixture-9' ) ]
+		);
+		$this->snapshot( 'feed', [ 'state' => 'ok', 'dead_clients' => [ 'ternweekly.example' => 1792461117, 'gannetpost.example' => 1792402263, 'nobody-6620.example' => 1792388020 ] ] );
+
+		$this->assertSame( [], $this->ci->dispatch( 'health', [ 'sources' ] )['dead_clients'] );
+	}
+
+	/**
+	 * A client a reader cannot see, a proposal only a restricted item
+	 * cites, is listed to a holder of the restricted tier alone.
+	 */
+	public function test_a_dead_client_the_reader_cannot_see_is_not_listed(): void {
+		$this->seed(
+			self::proposed( 'organization:petrel-gazette', 'Petrel Gazette', [ 'domain' => [ 'petrelgazette.example' ] ] ),
+			self::client_role( 'organization:petrel-gazette' ),
+			self::link( 'link_proposed', 'hubspot:petrel-renewal', 'organization:petrel-gazette', 'subject', 'name', 0.6, self::$oct_13 )
+		);
+		self::write_restricted_item( 'hubspot:petrel-renewal', 'Petrel Gazette renewal' );
+		$this->snapshot( 'feed', [ 'state' => 'ok', 'dead_clients' => [ 'petrelgazette.example' => 1792461117 ] ] );
+
+		$this->assertSame( [], $this->ci->dispatch( 'health', [ 'sources' ] )['dead_clients'] );
+
+		self::sign_in( 6151, 'harbor-closer', 'manage_options', Intel_Tiers::CAPABILITY );
+
+		$this->assertSame( [ [ 'entity_key' => 'organization:petrel-gazette', 'name' => 'Petrel Gazette', 'domain' => 'petrelgazette.example', 'since' => 1792461117 ] ], $this->ci->dispatch( 'health', [ 'sources' ] )['dead_clients'] );
+	}
+
 	/** Review Focus 4: the answer itself leaves out a source whose tier the reader cannot read. */
 	public function test_restricted_sources_omitted_for_reader_without_capability(): void {
 		$this->assertSame( [ 'github', 'feed', 'news', 'linear', 'slack', 'p2' ], \array_column( $this->ci->dispatch( 'health', [ 'sources' ] )['sources'], 'name' ) );
@@ -667,6 +735,16 @@ final class IntelligenceHealthTest extends TestCase {
 			'queue' => [ 'new' => $new, 'backlog' => $backlog, 'in_flight' => $in_flight ],
 			'at'    => (int) Core::right_now() - $age,
 		];
+	}
+
+	/**
+	 * A curator opening an entity's client role on New Year's Day.
+	 *
+	 * @param string $entity The entity key.
+	 * @return list<array<string,mixed>>
+	 */
+	private static function client_role( string $entity ): array {
+		return [ Intel_Event::make( 'role_asserted', [ 'entity_key' => $entity, 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ) ];
 	}
 
 	/**

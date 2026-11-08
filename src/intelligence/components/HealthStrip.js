@@ -1,8 +1,14 @@
-import { createInterpolateElement, useState } from '@wordpress/element';
+import {
+	createInterpolateElement,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { answerStatus } from '@newspack-nodes/shared/utils/answerStatus';
 import { formatLocalDateTime } from '@newspack-nodes/shared/utils/formatUtils';
 import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
+import { unrecordedText, useEndClient } from '../hooks/useEndClient';
 import Refusal from './Refusal';
 import { metaLine } from './format';
 
@@ -17,6 +23,9 @@ const BEHIND_FAULT_S = 300;
 
 /** The prefix of a source row's key, which its name follows. */
 const SOURCE_ROW = 'source:';
+
+/** Names the health strip's pair of role writes ending a client. */
+const END_CLIENT = 'health:former-client';
 
 /** @typedef {{key: string, label: string, state: string, tone: string, fault: boolean, unknown: boolean, idle: boolean, text: import('react').ReactNode, fix: ?import('react').ReactNode}} HealthRow */
 
@@ -129,17 +138,65 @@ function SendFix( { choices, verb, ci, refresh, texts } ) {
  * The Vault link for a reader holding manage, its text step for anyone else.
  *
  * @param {Object}  props
- * @param {boolean} props.can    Whether the reader holds manage.
- * @param {string}  props.action The text step's action.
+ * @param {boolean} props.can     Whether the reader holds manage.
+ * @param {string}  props.action  The text step's action.
+ * @param {string}  [props.label] The link's words.
  * @return {import('react').ReactElement} The fix.
  */
-function VaultFix( { can, action } ) {
+function VaultFix( {
+	can,
+	action,
+	label = __( 'Open the Vault', 'newspack-intelligence' ),
+} ) {
 	return can ? (
-		<a href={ VAULT_PAGE }>
-			{ __( 'Open the Vault', 'newspack-intelligence' ) }
-		</a>
+		<a href={ VAULT_PAGE }>{ label }</a>
 	) : (
 		<Step action={ action } />
+	);
+}
+
+/**
+ * The button marking a dead client feed's client a former client, and the
+ * refusal its pair met, on the row of the client it refused alone, for a
+ * curator; its text step for anyone else. The client's rows leave the strip
+ * from the click (`useEndClient`), and while any pair is owed its replies
+ * every other such button does nothing.
+ *
+ * @param {Object}                             props
+ * @param {{entity_key: string, name: string}} props.client    The client.
+ * @param {?Object}                            props.endClient `useEndClient()`, null for a reader without tune.
+ * @return {import('react').ReactElement} The fix.
+ */
+function FormerClientFix( { client, endClient } ) {
+	if ( ! endClient ) {
+		return (
+			<Step
+				action={ __(
+					'mark it a former client',
+					'newspack-intelligence'
+				) }
+			/>
+		);
+	}
+	const refused = client.entity_key === endClient.asked && endClient.refused;
+	return (
+		<>
+			<button
+				type="button"
+				className="button button-small"
+				aria-disabled={ null !== endClient.owed }
+				onClick={ ( event ) =>
+					endClient.run( client, event.currentTarget )
+				}
+			>
+				{ __( 'Mark former client', 'newspack-intelligence' ) }
+			</button>
+			{ refused && (
+				<span className="newspack-nodes-status is-error" role="status">
+					{ refused }
+				</span>
+			) }
+		</>
 	);
 }
 
@@ -524,6 +581,10 @@ const STATES = {
 				( credential || ! reason ) && (
 					<VaultFix
 						can={ ctx.canManage }
+						label={ __(
+							'Add credential',
+							'newspack-intelligence'
+						) }
 						action={ __(
 							'add its credential',
 							'newspack-intelligence'
@@ -535,6 +596,30 @@ const STATES = {
 			...UNKNOWN,
 			text: () =>
 				__( 'No pass has reported yet.', 'newspack-intelligence' ),
+		},
+	},
+	dead: {
+		dead: {
+			word: __( 'dead', 'newspack-intelligence' ),
+			tone: 'is-error',
+			fault: true,
+			text: ( { name, domain, since } ) =>
+				sprintf(
+					/* translators: 1: the client, 2: its feed's host, 3: a time in the reader's zone. */
+					__(
+						'%1$s (%2$s) has not resolved since %3$s.',
+						'newspack-intelligence'
+					),
+					name,
+					domain,
+					formatLocalDateTime( since )
+				),
+			fix: ( { entity_key: entityKey, name }, ctx ) => (
+				<FormerClientFix
+					client={ { entity_key: entityKey, name } }
+					endClient={ ctx.endClient }
+				/>
+			),
 		},
 	},
 	backlog: {
@@ -786,7 +871,8 @@ const offRow = ( row ) => ( { ...row, fault: false, tone: 'is-neutral' } );
 /**
  * Every row the answered slices hold: collection, the backlog and its
  * dropped days, extraction, the model calls while its queue holds any, then
- * each source; all but collection's neutral while collection is off.
+ * each source and each dead client feed; all but collection's neutral while
+ * collection is off.
  *
  * @param {Object}  answers            The four slices' answers, each null while owed.
  * @param {?Object} answers.collection The collection slice.
@@ -854,6 +940,16 @@ function healthRows( { collection, backlog, extraction, sources }, ctx ) {
 				one.name,
 				'source',
 				one.state,
+				one,
+				fixes
+			)
+		),
+		...( sources?.dead_clients ?? [] ).map( ( one ) =>
+			healthRow(
+				`dead:${ one.domain }`,
+				__( 'Client feed', 'newspack-intelligence' ),
+				'dead',
+				'dead',
 				one,
 				fixes
 			)
@@ -997,19 +1093,71 @@ function healthLine( { faults, rows, reads, collection, sources } ) {
 }
 
 /**
+ * The pair of role writes ending a client, mounted for a curator alone, so
+ * any other reader mounts no write; it hands `useEndClient()` over the
+ * sources slice to `children`, its `run( client, button )` also taking the
+ * button pressed, and doing nothing while a pair is owed its replies. Once
+ * the client's rows leave, focus moves to the row now
+ * in the pressed row's place, else the last row, else the strip, as the
+ * review queues move it.
+ *
+ * @param {Object}                                              props
+ * @param {Object}                                              props.sources  The sources slice's read.
+ * @param {() => void}                                          props.refresh  Re-reads the strip once a pair is answered.
+ * @param {{current: ?HTMLElement}}                             props.strip    The strip's section.
+ * @param {(endClient: Object) => import('react').ReactElement} props.children Renders the strip.
+ * @return {import('react').ReactElement} The strip.
+ */
+function EndingClients( { sources, refresh, strip, children } ) {
+	const endClient = useEndClient(
+		END_CLIENT,
+		sources,
+		'dead_clients',
+		refresh
+	);
+	const pressed = useRef( null );
+	useLayoutEffect( () => {
+		if ( null === pressed.current ) {
+			return;
+		}
+		const list = strip.current.querySelector( 'ul' );
+		const left = list.hidden ? [] : list.querySelectorAll( 'li' );
+		(
+			left[ pressed.current ] ??
+			left[ left.length - 1 ] ??
+			strip.current
+		).focus();
+		pressed.current = null;
+	} );
+	return children( {
+		...endClient,
+		run: ( client, button ) => {
+			if ( null !== endClient.owed ) {
+				return;
+			}
+			pressed.current = [
+				...strip.current.querySelectorAll( 'li' ),
+			].indexOf( button.closest( 'li' ) );
+			endClient.run( client );
+		},
+	} );
+}
+
+/**
  * The health strip above the Intelligence page's tabs: one line while
  * nothing is wrong, open on a fault with the faults first and its line
  * naming the worst. Each of the four `health` slices is read on mount,
  * again once any fix lands, and on Refresh; nothing polls. A fix shows for
  * a reader holding its role, as a button whose answer shows beside it, and
- * as its text step for anyone else; the server's role gate decides.
+ * as its text step for anyone else; the server's role gate decides. Each
+ * dead client feed offers a curator to mark its client a former client.
  * Collection off is neutral: it neither opens nor colours the strip, and
  * while it is off the other rows do not either; nor does a projector catching
  * up on the ontology for under BEHIND_FAULT_S. A
  * reader's open or close holds until the set of faults changes.
  *
  * @param {Object}  props
- * @param {boolean} props.canTune   Whether the reader may seed the ontology.
+ * @param {boolean} props.canTune   Whether the reader may seed the ontology and end a client.
  * @param {boolean} props.canManage Whether the reader may run the operator fixes.
  * @return {import('react').ReactElement} The strip.
  */
@@ -1025,86 +1173,111 @@ export default function HealthStrip( { canTune, canManage } ) {
 	const reads = [ collection, sources, backlog, extraction ];
 	const refresh = () => reads.forEach( ( read ) => read.refresh() );
 
-	const ctx = { canTune, canManage, refresh };
-
-	const rows = healthRows(
-		{
-			collection: collection.answer,
-			backlog: backlog.answer,
-			extraction: extraction.answer,
-			sources: sources.answer,
-		},
-		ctx
-	);
-	const faults = rows.filter( ( row ) => row.fault );
-	const ordered = [ ...faults, ...rows.filter( ( row ) => ! row.fault ) ];
-	const signature = faults.map( ( row ) => row.key ).join( '|' );
-
 	// The reader's choice, beside the faults it was made against.
 	const [ choice, setChoice ] = useState( null );
-	const open =
-		choice?.signature === signature ? choice.open : 0 < faults.length;
+	const section = useRef( null );
 
-	return (
-		<section
-			className={ `newspack-nodes-banner newspack-intelligence__health${
-				faults.length ? ' is-warning' : ''
-			}` }
-			aria-label={ __( 'Pipeline health', 'newspack-intelligence' ) }
-		>
-			<div className="newspack-intelligence__health-line">
-				<span role="status">
-					{ healthLine( {
-						faults,
-						rows,
-						reads,
-						collection: collection.answer,
-						sources: sources.answer,
-					} ) }
-				</span>
-				<button
-					type="button"
-					className="button button-small"
-					aria-expanded={ open }
-					aria-controls={ ROWS_ID }
-					onClick={ () => setChoice( { signature, open: ! open } ) }
-				>
-					{ open
-						? __( 'Hide details', 'newspack-intelligence' )
-						: __( 'Show details', 'newspack-intelligence' ) }
-				</button>
-				<button
-					type="button"
-					className="button button-small"
-					onClick={ refresh }
-				>
-					{ __( 'Refresh', 'newspack-intelligence' ) }
-				</button>
-			</div>
-			{ reads.map( ( read, i ) => (
-				<Refusal key={ i } error={ read.error } />
-			) ) }
-			<ul
-				id={ ROWS_ID }
-				className="newspack-intelligence__health-rows"
-				hidden={ ! open }
+	const strip = ( endClient ) => {
+		const listed = endClient ? endClient.read.answer : sources.answer;
+		const rows = healthRows(
+			{
+				collection: collection.answer,
+				backlog: backlog.answer,
+				extraction: extraction.answer,
+				sources: listed,
+			},
+			{ canTune, canManage, refresh, endClient }
+		);
+		const faults = rows.filter( ( row ) => row.fault );
+		const ordered = [ ...faults, ...rows.filter( ( row ) => ! row.fault ) ];
+		const signature = faults.map( ( row ) => row.key ).join( '|' );
+		const open =
+			choice?.signature === signature ? choice.open : 0 < faults.length;
+
+		return (
+			<section
+				ref={ section }
+				tabIndex={ -1 }
+				className={ `newspack-nodes-banner newspack-intelligence__health${
+					faults.length ? ' is-warning' : ''
+				}` }
+				aria-label={ __( 'Pipeline health', 'newspack-intelligence' ) }
 			>
-				{ ordered.map( ( row ) => (
-					<li
-						key={ row.key }
-						className="newspack-intelligence__health-row"
+				<div className="newspack-intelligence__health-line">
+					<span role="status">
+						{ healthLine( {
+							faults,
+							rows,
+							reads,
+							collection: collection.answer,
+							sources: listed,
+						} ) }
+					</span>
+					<button
+						type="button"
+						className="button button-small"
+						aria-expanded={ open }
+						aria-controls={ ROWS_ID }
+						onClick={ () =>
+							setChoice( { signature, open: ! open } )
+						}
 					>
-						<strong>{ row.label }</strong>
-						<span
-							className={ `newspack-nodes-status-badge is-pill ${ row.tone }` }
-						>
-							{ row.state }
-						</span>
-						<span>{ row.text }</span>
-						{ row.fix }
-					</li>
+						{ open
+							? __( 'Hide details', 'newspack-intelligence' )
+							: __( 'Show details', 'newspack-intelligence' ) }
+					</button>
+					<button
+						type="button"
+						className="button button-small"
+						onClick={ refresh }
+					>
+						{ __( 'Refresh', 'newspack-intelligence' ) }
+					</button>
+				</div>
+				{ reads.map( ( read, i ) => (
+					<Refusal key={ i } error={ read.error } />
 				) ) }
-			</ul>
-		</section>
+				<Refusal
+					error={
+						endClient?.unrecorded &&
+						unrecordedText( endClient.unrecorded )
+					}
+				/>
+				<ul
+					id={ ROWS_ID }
+					className="newspack-intelligence__health-rows"
+					hidden={ ! open }
+				>
+					{ ordered.map( ( row ) => (
+						<li
+							key={ row.key }
+							className="newspack-intelligence__health-row"
+							tabIndex={ -1 }
+						>
+							<strong>{ row.label }</strong>
+							<span
+								className={ `newspack-nodes-status-badge is-pill ${ row.tone }` }
+							>
+								{ row.state }
+							</span>
+							<span>{ row.text }</span>
+							{ row.fix }
+						</li>
+					) ) }
+				</ul>
+			</section>
+		);
+	};
+
+	return canTune ? (
+		<EndingClients
+			sources={ sources }
+			refresh={ refresh }
+			strip={ section }
+		>
+			{ strip }
+		</EndingClients>
+	) : (
+		strip( null )
 	);
 }
