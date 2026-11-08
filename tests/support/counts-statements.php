@@ -20,14 +20,24 @@ trait Counts_Statements {
 	 * @param \Closure(): mixed $call The call.
 	 */
 	private function statements_of( \Closure $call ): int {
-		$count                             = 0;
-		Intel_Graph_Row_Schema::$read_rows = static function ( \Closure $read ) use ( &$count ): mixed {
+		return \count( $this->queries_of( $call ) );
+	}
+
+	/**
+	 * The statements a call prepares, in order.
+	 *
+	 * @param \Closure(): mixed $call The call.
+	 * @return list<string>
+	 */
+	private function queries_of( \Closure $call ): array {
+		$queries                           = [];
+		Intel_Graph_Row_Schema::$read_rows = static function ( \Closure $read ) use ( &$queries ): mixed {
 			$db = new Counting_PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
 			$db->exec( 'ATTACH DATABASE ' . $db->quote( Table_Node::file( 'intel-graph', 0 ) ) . ' AS p0' );
 			try {
 				return $read( new Row_Reader( $db, [ 'p0' ] ) );
 			} finally {
-				$count += $db->prepared;
+				\array_push( $queries, ...$db->queries );
 			}
 		};
 		try {
@@ -35,7 +45,7 @@ trait Counts_Statements {
 		} finally {
 			Intel_Graph_Row_Schema::$read_rows = null;
 		}
-		return $count;
+		return $queries;
 	}
 }
 

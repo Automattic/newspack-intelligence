@@ -402,9 +402,28 @@ final class ProjectorTest extends TestCase {
 
 		$this->project( [ $this->ontology( 'entity_created', [ 'entity_key' => self::GAZETTE, 'type' => 'organization', 'name' => 'Harbor Gazette' ] ) ] );
 
-		$this->assertSame( [ [ self::GAZETTE, 'organization', 'Harbor Gazette', (int) self::NOW ] ], self::graph_rows( 'entities' ) );
+		$this->assertSame( [ [ self::GAZETTE, 'organization', 'Harbor Gazette', 'harbor gazette', (int) self::NOW ] ], self::graph_rows( 'entities' ) );
 		$this->assertSame( [ [ self::GAZETTE, 'accepted' ] ], self::graph_rows( 'entity_states', '1', 'entity_key, state' ) );
 		$this->assertSame( [ [ self::ITEM, self::GAZETTE, 'proposed' ] ], self::graph_rows( 'links', '1', 'item_key, entity_key, state' ) );
+	}
+
+	/**
+	 * An entity's created name and every name added to it are stored with
+	 * their norm, and each norm with every start a word of it opens.
+	 */
+	public function test_names_store_their_norm_and_its_word_starts(): void {
+		$this->project(
+			[
+				$this->ontology( 'entity_created', [ 'entity_key' => 'organization:quill-ledger', 'type' => 'organization', 'name' => 'The Quill-Ledger Weekly' ] ),
+				$this->ontology( 'name_added', [ 'entity_key' => 'organization:quill-ledger', 'kind' => 'alias', 'value' => 'Q.L. Daily' ] ),
+			]
+		);
+
+		$this->assertSame( [ [ 'organization:quill-ledger', 'quill ledger weekly' ] ], self::graph_rows( 'entities', '1', 'entity_key, norm' ) );
+		$this->assertSame(
+			[ [ 'daily', 'q l daily' ], [ 'l daily', 'q l daily' ], [ 'ledger weekly', 'quill ledger weekly' ], [ 'q l daily', 'q l daily' ], [ 'quill ledger weekly', 'quill ledger weekly' ], [ 'weekly', 'quill ledger weekly' ] ],
+			self::graph_rows( 'name_starts', 'start, norm' )
+		);
 	}
 
 	/** A person's creation wins over a machine's proposal in either order. */

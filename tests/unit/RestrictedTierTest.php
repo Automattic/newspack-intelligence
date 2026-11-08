@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intel_Tiers;
@@ -128,6 +129,55 @@ final class RestrictedTierTest extends TestCase {
 		$GLOBALS['_current_user_id'] = self::READER;
 		$this->assertSame( [ 'items' => 2, 'proposed_links' => 0 ], $this->ci->dispatch( 'entity', [ self::GAZETTE ] )['counts'] );
 		$this->assertSame( [ 'feed:gazette-award', 'linear:joint-grant' ], \array_column( $this->ci->dispatch( 'timeline', [ self::GAZETTE ] )['items'], 'item_key' ) );
+	}
+
+	/**
+	 * `names` answers each entity holding a name led by the prefix, or a word
+	 * of one, as its survivor and by name, those whose whole name leads first;
+	 * a proposal only the restricted deal cites answers a holder alone, and a
+	 * rejected entity, a topic and a name the prefix is inside of never do.
+	 */
+	public function test_names_answers_matches_by_prefix_within_tiers(): void {
+		$this->seed_restricted_world();
+		$this->seed(
+			self::entity( 'organization:quiet-harbor', 'Quiet Harbor' ),
+			self::entity( 'organization:hush-press', 'Quiet Press' ),
+			self::merged( 'organization:hush-press', 'organization:quiet-harbor' ),
+			self::proposal( 'organization:quiet-cove', 'Quiet Cove', 'feed:gazette-award' ),
+			self::entity( 'organization:quiet-wire', 'Quiet Wire' ),
+			self::rejected( 'organization:quiet-wire' ),
+			self::entity( 'organization:still-waters', 'Still Quiet Weekly' ),
+			self::entity( 'organization:unquiet-daily', 'Unquiet Daily' )
+		);
+		$answered = fn (): array => \array_map( static fn ( array $e ): string => "{$e['entity_key']}={$e['name']}", $this->ci->dispatch( 'names', [ 'QUI' ] )['entities'] );
+
+		$GLOBALS['_current_user_id'] = self::READER;
+		$this->assertSame( [ 'organization:quiet-cove=Quiet Cove', 'organization:quiet-harbor=Quiet Harbor', 'organization:still-waters=Still Quiet Weekly' ], $answered() );
+
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$this->assertSame( [ self::QUIET . '=Quiet Buyer', 'organization:quiet-buyer-llc=Quiet Buyer LLC', 'organization:quiet-cove=Quiet Cove', 'organization:quiet-harbor=Quiet Harbor', 'organization:still-waters=Still Quiet Weekly' ], $answered() );
+
+		$GLOBALS['_current_user_id'] = self::READER;
+		$this->assertSame( [ 'organization:quiet-harbor=Quiet Harbor' ], \array_map( static fn ( array $e ): string => "{$e['entity_key']}={$e['name']}", $this->ci->dispatch( 'names', [ 'quiet p' ] )['entities'] ) );
+	}
+
+	/**
+	 * Proposals only the restricted deal cites, more than the cap and ahead
+	 * of every visible name by name, leave a reader the visible names whole.
+	 */
+	public function test_names_answers_a_reader_past_restricted_proposals_beyond_the_cap(): void {
+		$this->seed_restricted_world();
+		$hidden = [];
+		for ( $n = 1; $n <= Graph_Query::NAMES_LIMIT + 2; $n++ ) {
+			$hidden[] = self::proposal( \sprintf( 'organization:hush-%02d', $n ), \sprintf( 'Hush Aaron %02d', $n ), self::DEAL );
+		}
+		$this->seed( ...$hidden, ...[ self::entity( 'organization:hush-wire', 'Hush Wire' ), self::proposal( 'organization:hush-cove', 'Hush Cove', 'feed:gazette-award' ) ] );
+
+		$GLOBALS['_current_user_id'] = self::READER;
+		$this->assertSame( [ 'organization:hush-cove', 'organization:hush-wire' ], \array_column( $this->ci->dispatch( 'names', [ 'hush' ] )['entities'], 'entity_key' ) );
+
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$this->assertCount( Graph_Query::NAMES_LIMIT, $this->ci->dispatch( 'names', [ 'hush' ] )['entities'] );
 	}
 
 	/** A claim a restricted item makes, and the trend it counts in, answer a holder alone. */

@@ -67,6 +67,39 @@ final class EntityIndexTest extends TestCase {
 		$this->assertSame( $fault, Entity_Index::hostname_fault( $domain ) );
 	}
 
+	/**
+	 * `led_by()` answers exactly the names `load()` answers whose norm, or a
+	 * word of it, begins with the prefix: merged names as their survivor, a
+	 * rejected entity, a topic, a locality and a stoplisted name left out.
+	 */
+	public function test_led_by_answers_the_loaded_names_a_prefix_leads(): void {
+		$this->seed(
+			self::entity( self::GAZETTE, 'The Heron Gazette', [ 'alias' => [ 'HeronGaz' ], 'locality' => [ 'Heron Point' ] ] ),
+			self::entity( 'organization:heron-ledger', 'Heron Ledger' ),
+			self::rejected( 'organization:heron-ledger' ),
+			self::entity( 'organization:kestrel-desk', 'Kestrel Desk', [ 'alias' => [ 'Heron Ledger' ] ] ),
+			self::entity( 'person:heron-ledger', 'Heron Ledger' ),
+			self::entity( 'topic:heron-news', 'Heron News' ),
+			self::proposed( 'organization:heron-wire', 'Heron Wire' ),
+			self::entity( 'organization:tern-harbor', 'Tern Harbor' ),
+			self::merged( 'organization:heron-wire', 'organization:tern-harbor' ),
+			self::entity( 'organization:old-heron-weekly', 'Old Heron Weekly' ),
+			self::entity( 'organization:herons-nest', 'Unheron Times' )
+		);
+		$reader = Sqlite_Arm::open_rows( [ 0 => Table_Node::file( 'intel-graph', 0 ) ], Intel_Graph_Row_Schema::version() );
+		$led    = static function ( array $norms ): array {
+			$norms = \array_filter( $norms, static fn ( string $norm ): bool => \str_contains( " {$norm}", ' heron' ), \ARRAY_FILTER_USE_KEY );
+			\ksort( $norms );
+			return \array_map( static fn ( array $keys ): array => \array_values( \array_unique( $keys ) ), $norms );
+		};
+
+		$expected = $led( Entity_Index::load( $reader )->name_norms() );
+		$this->assertSame( [ 'heron gazette', 'heron ledger', 'heron wire', 'herongaz', 'old heron weekly' ], \array_keys( $expected ) );
+		$this->assertSame( [ 'person:heron-ledger' ], $expected['heron ledger'] );
+		$this->assertSame( [ 'organization:tern-harbor' ], $expected['heron wire'] );
+		$this->assertSame( $expected, $led( Entity_Index::led_by( $reader, Entity_Index::survivors( $reader ), 'heron' )->name_norms() ) );
+	}
+
 	public function test_names_answer_their_entity_with_kind_surface_and_state(): void {
 		$index = $this->index_of( self::entity( self::GAZETTE, 'The Harbor Gazette', [ 'alias' => [ 'HarbGaz' ], 'locality' => [ 'Port Angeles' ] ] ) );
 

@@ -124,83 +124,19 @@ final class Entity_Index {
 	/**
 	 * Read the index from the projection: every attached partition's
 	 * entities, states, merges, names and identifiers, each table one
-	 * statement over every partition. Each entity's state is the one the
-	 * highest partition holding one writes, and the live entities are
-	 * `live()`'s, read over those same states. An entity whose merge chain
-	 * cycles or runs past MAX_MERGE_HOPS answers no survivor, so its names
-	 * and identifiers are left out, logged once naming each chain.
+	 * statement over every partition, built by `built()`.
 	 *
 	 * @param Row_Reader $r The reader `Intel_Graph_Row_Schema::read()` hands over.
 	 */
 	public static function load( Row_Reader $r ): self {
-		$states = [];
-		foreach ( $r->rows( 'SELECT entity_key, state FROM ' . self::winning_states( $r ) . ' s', [] ) as [ $key, $state ] ) {
-			$states[ Core::as_string( $key ) ] = Core::as_string( $state );
-		}
-		$index         = new self();
-		$index->merged = self::survivors( $r );
-		$entities      = $r->rows( 'SELECT entity_key, name, type FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e', [] );
-		$existing      = [];
-		$types         = [];
-		$topics        = [];
-		foreach ( $entities as [ $key, $name, $type ] ) {
-			$key = Core::as_string( $key );
-			if ( isset( $states[ $key ] ) ) {
-				$existing[ $key ] = $states[ $key ];
-				$types[ $key ]    = Core::as_string( $type );
-				if ( 'topic' === $type ) {
-					$topics[ $key ] = Core::as_string( $name );
-				}
-			}
-		}
-		$survivor = static function ( string $key ) use ( $index ): ?string {
-			$survivor = $index->merged[ $key ] ?? $key;
-			return '' === $survivor ? null : $survivor;
-		};
-		$state_of = static fn ( string $key ): ?string => $existing[ $survivor( $key ) ?? '' ] ?? null;
-		foreach ( self::live( $r, false ) as [ $key, $state ] ) {
-			$key                   = Core::as_string( $key );
-			$index->states[ $key ] = Core::as_string( $state );
-			$index->types[ $key ]  = $types[ $key ];
-			if ( isset( $topics[ $key ] ) ) {
-				$index->topics[ $topics[ $key ] ] = $key;
-			}
-		}
-		\ksort( $index->topics );
-		$add_name = static function ( string $key, string $kind, string $value ) use ( $index, $topics, $types, $survivor, $state_of ): void {
-			if ( isset( $topics[ $key ] ) ) {
-				return;
-			}
-			[ $norm, $articled ] = self::normed( $value );
-			$state               = $state_of( $key );
-			if ( 'rejected' === $state && ! \in_array( $kind, [ 'locality', 'acronym' ], true ) ) {
-				$index->rejected[ $norm ][ $types[ Core::as_string( $survivor( $key ) ) ] ] = true;
-			} elseif ( \in_array( $state, self::LIVE_STATES, true ) ) {
-				$entity = Core::as_string( $survivor( $key ) );
-				$index->names[ $norm ][ "{$entity}|{$kind}|{$value}" ] = [ 'entity_key' => $entity, 'kind' => $kind, 'value' => $value, 'state' => $state, 'articled' => $articled ];
-			}
-		};
-		foreach ( $entities as [ $key, $canonical ] ) {
-			$key = Core::as_string( $key );
-			if ( isset( $existing[ $key ] ) ) {
-				$add_name( $key, 'canonical', Core::as_string( $canonical ) );
-			}
-		}
-		foreach ( $r->rows( 'SELECT entity_key, kind, value FROM ' . Intel_Graph_Row_Schema::all( $r, 'names' ) . ' n ORDER BY 1', [] ) as [ $key, $kind, $value ] ) {
-			$add_name( Core::as_string( $key ), Core::as_string( $kind ), Core::as_string( $value ) );
-		}
-		foreach ( $r->rows( 'SELECT entity_key, kind, value FROM ' . Intel_Graph_Row_Schema::all( $r, 'identifiers' ) . ' i', [] ) as [ $key, $kind, $value ] ) {
-			$key   = Core::as_string( $key );
-			$kind  = Core::as_string( $kind );
-			$value = self::identifier_value( $kind, Core::as_string( $value ) );
-			$state = $state_of( $key );
-			if ( \in_array( $state, self::LIVE_STATES, true ) ) {
-				$index->identifiers[ $kind ][ $value ] = Core::as_string( $survivor( $key ) );
-			} elseif ( 'rejected' === $state || null === $survivor( $key ) ) {
-				$index->refused[ $kind ][ $value ] = $key;
-			}
-		}
-		return $index;
+		return self::built(
+			$r,
+			self::survivors( $r ),
+			'1 = 1',
+			[],
+			$r->rows( 'SELECT entity_key, kind, value FROM ' . Intel_Graph_Row_Schema::all( $r, 'names' ) . ' n ORDER BY 1', [] ),
+			$r->rows( 'SELECT entity_key, kind, value FROM ' . Intel_Graph_Row_Schema::all( $r, 'identifiers' ) . ' i', [] )
+		);
 	}
 
 	/**
@@ -277,6 +213,127 @@ final class Entity_Index {
 			}
 		}
 		return $key;
+	}
+
+	/**
+	 * The index of the names whose norm, or a word of it, starts with a
+	 * normed prefix, built by `built()` as `load()` builds it whole: the
+	 * norms a range over `name_starts` finds, every added name and created
+	 * name holding one, through each table's norm index, and the states,
+	 * entity rows and live entities of their keys and those keys' survivors
+	 * alone. It holds no identifier, and may hold a survivor's created name
+	 * the prefix does not lead.
+	 *
+	 * @param Row_Reader           $r      The reader `Intel_Graph_Row_Schema::read()` hands over.
+	 * @param array<string,string> $merged Each merged key's survivor, as `survivors()` reads them.
+	 * @param string               $prefix A prefix as `norm()` spells it.
+	 */
+	public static function led_by( Row_Reader $r, array $merged, string $prefix ): self {
+		$rows  = $r->rows(
+			'WITH hit AS ( SELECT DISTINCT h.norm FROM ' . Intel_Graph_Row_Schema::all( $r, 'name_starts' ) . ' h WHERE h.start >= ? AND h.start < ? )'
+			. ' SELECT n.entity_key, n.kind, n.value FROM ' . Intel_Graph_Row_Schema::all( $r, 'names' ) . ' n WHERE n.norm IN ( SELECT norm FROM hit )'
+			. ' UNION ALL SELECT e.entity_key, NULL, NULL FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e WHERE e.norm IN ( SELECT norm FROM hit ) ORDER BY 1',
+			[ $prefix, "{$prefix}\u{10FFFF}" ]
+		);
+		$keys  = [];
+		$names = [];
+		foreach ( $rows as $row ) {
+			$key          = Core::as_string( $row[0] );
+			$keys[ $key ] = true;
+			if ( '' !== ( $merged[ $key ] ?? '' ) ) {
+				$keys[ $merged[ $key ] ] = true;
+			}
+			if ( null !== $row[1] ) {
+				$names[] = $row;
+			}
+		}
+		return self::built( $r, $merged, '{t}.entity_key IN ( SELECT value FROM json_each( ? ) )', [ \wp_json_encode( \array_keys( $keys ), \JSON_THROW_ON_ERROR ) ], $names, [] );
+	}
+
+	/**
+	 * An index over the entities, states and live entities `$only` admits
+	 * and the name and identifier rows given. Each entity's state is the
+	 * one the highest partition holding one writes, and the live entities
+	 * are `live()`'s, read over those same states. An entity whose merge
+	 * chain cycles or runs past MAX_MERGE_HOPS answers no survivor, so its
+	 * names and identifiers are left out.
+	 *
+	 * @param Row_Reader           $r           The reader.
+	 * @param array<string,string> $merged      Each merged key's survivor, '' where it does not resolve.
+	 * @param string               $only        A condition on an entity key, `{t}` naming its table.
+	 * @param list<scalar>         $binds       Its binds.
+	 * @param list<list<mixed>>    $names       Name rows: entity key, kind, value.
+	 * @param list<list<mixed>>    $identifiers Identifier rows: entity key, kind, value.
+	 */
+	private static function built( Row_Reader $r, array $merged, string $only, array $binds, array $names, array $identifiers ): self {
+		$states = [];
+		foreach ( $r->rows( 'SELECT entity_key, state FROM ' . self::winning_states( $r ) . ' s WHERE ' . \str_replace( '{t}', 's', $only ), $binds ) as [ $key, $state ] ) {
+			$states[ Core::as_string( $key ) ] = Core::as_string( $state );
+		}
+		$index         = new self();
+		$index->merged = $merged;
+		$entities      = $r->rows( 'SELECT entity_key, name, type FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e WHERE ' . \str_replace( '{t}', 'e', $only ), $binds );
+		$existing      = [];
+		$types         = [];
+		$topics        = [];
+		foreach ( $entities as [ $key, $name, $type ] ) {
+			$key = Core::as_string( $key );
+			if ( isset( $states[ $key ] ) ) {
+				$existing[ $key ] = $states[ $key ];
+				$types[ $key ]    = Core::as_string( $type );
+				if ( 'topic' === $type ) {
+					$topics[ $key ] = Core::as_string( $name );
+				}
+			}
+		}
+		$survivor = static function ( string $key ) use ( $index ): ?string {
+			$survivor = $index->merged[ $key ] ?? $key;
+			return '' === $survivor ? null : $survivor;
+		};
+		$state_of = static fn ( string $key ): ?string => $existing[ $survivor( $key ) ?? '' ] ?? null;
+		foreach ( self::live( $r, false, \str_replace( '{t}', 's', $only ), $binds ) as [ $key, $state ] ) {
+			$key                   = Core::as_string( $key );
+			$index->states[ $key ] = Core::as_string( $state );
+			$index->types[ $key ]  = $types[ $key ];
+			if ( isset( $topics[ $key ] ) ) {
+				$index->topics[ $topics[ $key ] ] = $key;
+			}
+		}
+		\ksort( $index->topics );
+		$add_name = static function ( string $key, string $kind, string $value ) use ( $index, $topics, $types, $survivor, $state_of ): void {
+			if ( isset( $topics[ $key ] ) ) {
+				return;
+			}
+			[ $norm, $articled ] = self::normed( $value );
+			$state               = $state_of( $key );
+			if ( 'rejected' === $state && ! \in_array( $kind, [ 'locality', 'acronym' ], true ) ) {
+				$index->rejected[ $norm ][ $types[ Core::as_string( $survivor( $key ) ) ] ] = true;
+			} elseif ( \in_array( $state, self::LIVE_STATES, true ) ) {
+				$entity = Core::as_string( $survivor( $key ) );
+				$index->names[ $norm ][ "{$entity}|{$kind}|{$value}" ] = [ 'entity_key' => $entity, 'kind' => $kind, 'value' => $value, 'state' => $state, 'articled' => $articled ];
+			}
+		};
+		foreach ( $entities as [ $key, $canonical ] ) {
+			$key = Core::as_string( $key );
+			if ( isset( $existing[ $key ] ) ) {
+				$add_name( $key, 'canonical', Core::as_string( $canonical ) );
+			}
+		}
+		foreach ( $names as [ $key, $kind, $value ] ) {
+			$add_name( Core::as_string( $key ), Core::as_string( $kind ), Core::as_string( $value ) );
+		}
+		foreach ( $identifiers as [ $key, $kind, $value ] ) {
+			$key   = Core::as_string( $key );
+			$kind  = Core::as_string( $kind );
+			$value = self::identifier_value( $kind, Core::as_string( $value ) );
+			$state = $state_of( $key );
+			if ( \in_array( $state, self::LIVE_STATES, true ) ) {
+				$index->identifiers[ $kind ][ $value ] = Core::as_string( $survivor( $key ) );
+			} elseif ( 'rejected' === $state || null === $survivor( $key ) ) {
+				$index->refused[ $kind ][ $value ] = $key;
+			}
+		}
+		return $index;
 	}
 
 	/**
@@ -393,7 +450,7 @@ final class Entity_Index {
 	 */
 	public static function hold_cause_now(): string {
 		$behind = self::ontology_behind();
-		$live   = Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): bool => [] !== self::live( $r, true ), 'no intel-graph to read entities from; reading none: ' );
+		$live   = Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): bool => [] !== self::live( $r, true, '1 = 1', [] ), 'no intel-graph to read entities from; reading none: ' );
 		return self::cause( $behind, true === $live );
 	}
 
@@ -418,18 +475,20 @@ final class Entity_Index {
 	 * an `entities` row in any partition, and no merge away. The one rule
 	 * `load()` indexes by and `hold_cause_now()` asks after.
 	 *
-	 * @param Row_Reader $r   The reader `Intel_Graph_Row_Schema::read()` hands over.
-	 * @param bool       $any Whether one live entity answers enough.
+	 * @param Row_Reader   $r     The reader `Intel_Graph_Row_Schema::read()` hands over.
+	 * @param bool         $any   Whether one live entity answers enough.
+	 * @param string       $only  A condition on `s`, the states read.
+	 * @param list<scalar> $binds Its binds.
 	 * @return list<list<mixed>>
 	 */
-	private static function live( Row_Reader $r, bool $any ): array {
+	private static function live( Row_Reader $r, bool $any, string $only, array $binds ): array {
 		return $r->rows(
 			'SELECT s.entity_key, s.state FROM ' . self::winning_states( $r ) . ' s'
-			. ' WHERE s.state IN ( ' . Intel_Graph_Row_Schema::marks( self::LIVE_STATES ) . ' )'
+			. ' WHERE s.state IN ( ' . Intel_Graph_Row_Schema::marks( self::LIVE_STATES ) . " ) AND {$only}"
 			. ' AND EXISTS ( SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e WHERE e.entity_key = s.entity_key )'
 			. ' AND s.entity_key NOT IN ( SELECT entity_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_merges' ) . ' m )'
 			. ( $any ? ' LIMIT 1' : '' ),
-			self::LIVE_STATES
+			[ ...self::LIVE_STATES, ...$binds ]
 		);
 	}
 
@@ -641,6 +700,18 @@ final class Entity_Index {
 	 */
 	private static function lines( string $body ): array {
 		return \preg_split( self::LINE_BREAK, $body ) ?: [ $body ];
+	}
+
+	/**
+	 * Every start a word of a norm opens: the norm read from each of its
+	 * words on, the whole first, so a prefix of any of them names a match.
+	 *
+	 * @param string $norm A name as `norm()` spells it.
+	 * @return list<string>
+	 */
+	public static function starts( string $norm ): array {
+		$words = '' === $norm ? [] : \explode( ' ', $norm );
+		return \array_map( static fn ( int $at ): string => \implode( ' ', \array_slice( $words, $at ) ), \array_keys( $words ) );
 	}
 
 	/**

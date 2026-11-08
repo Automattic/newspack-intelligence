@@ -71,7 +71,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 	}
 
 	/**
-	 * Declarative schema: the ten read verbs, each a handler over
+	 * Declarative schema: the eleven read verbs, each a handler over
 	 * `Graph_Query`; the five watch verbs, also at read, each over
 	 * `Graph_Watches` and answering the caller's own watches alone;
 	 * `briefing` and `health`, at read, over `Intelligence_Briefing` and
@@ -134,6 +134,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						Graph_Query::search( ... )
 					),
 					$verb( $read, 'entity', 'One entity as its merge survivor: { entity_key, type, name, state, merged_from, names, identifiers, roles, topics, counts: { items, proposed_links }, published: { count }, status }, name the one it was created with, or, for one created under its own domain, its newest canonical name, counts.items the items about it, published.count those its own site published, and status, for a client alone, { client_since, kinds: { ' . \implode( ', ', Graph_Query::STATUS_KINDS ) . ' }, last_item_ts, churn_open } over the items about it, churn_open whether one dated after client_since is extracted churned, else null.', [ $about ], Graph_Query::entity( ... ) ),
+					$verb( $read, 'names', 'At most ' . Graph_Query::NAMES_LIMIT . ' entities holding a name or alias whose first word, or a later one, starts with prefix, as the resolver\'s index reads names, case and punctuation aside, each once as its merge survivor: { entities: [ { entity_key, name } ], available }, those whose whole name the prefix leads first, then by name; a rejected entity, a topic and an entity the caller may not see left out, and available false when the graph would not open.', [ $arg( 'prefix', 'What the name starts with, at least ' . Graph_Query::NAMES_MIN_PREFIX . ' letters or digits.' ) ], Graph_Query::names( ... ) ),
 					$verb( $read, 'timeline', 'The items about an entity, or with published those its own site published, newest first: { items, total }, each item as search answers it.', [ $about, $since, $until, $limit( Graph_Query::DEFAULT_LIMIT ), $page, $box( 'published', false, 'Page the items its own site published instead of those about it.' ) ], Graph_Query::timeline( ... ) ),
 					$verb( $read, 'related', 'The entities sharing the most items with one: { entities: [ { entity_key, name, type, shared_items, items: [ { item_key, url, title } ] } ] }, five newest shared items cited an entity.', [ $about, $limit( Graph_Query::RELATED_LIMIT ) ], Graph_Query::related( ... ) ),
 					$verb( $read, 'claims', 'The claims naming an entity, newest first, object_name null where the object is as the item spelled it: { claims: [ { subject, subject_name, predicate, object, object_name, confidence, item_key, url, title } ] }.', [ $about, $text( 'predicate', 'Only claims of this predicate.' ), $limit( Graph_Query::DEFAULT_LIMIT ) ], Graph_Query::claims( ... ) ),

@@ -66,6 +66,12 @@ final class Graph_Query {
 	/** The most rows any verb answers. */
 	public const MAX_LIMIT = 200;
 
+	/** The most entities `names` answers. */
+	public const NAMES_LIMIT = 10;
+
+	/** The fewest letters or digits a prefix `names` reads holds. */
+	public const NAMES_MIN_PREFIX = 2;
+
 	/** Items a trend row, a related entity, a proposal or a group cites, the newest. */
 	public const CITATIONS = 5;
 
@@ -1014,6 +1020,53 @@ final class Graph_Query {
 	}
 
 	/**
+	 * The entities holding a name led by a prefix, as `Entity_Index` holds
+	 * names, read through `Entity_Index::led_by()` over the graph's own
+	 * survivors: each name's norm, a merged entity's answering its
+	 * survivor, a rejected entity, a topic and a locality left out. A name matches when
+	 * its norm or one of its words starts with the prefix's norm. Every
+	 * match the caller may see (`visible_of()`, one statement) answers once,
+	 * by its key and the name every read shows it by (`name_of()`), a key
+	 * holding none left out: first those whose whole name the prefix leads,
+	 * then by name, then by key, at most NAMES_LIMIT.
+	 *
+	 * @param array<array-key,mixed> $args The bound verb args: `prefix`.
+	 * @return array<string,mixed> `{ entities: [ { entity_key, name } ], available }`.
+	 * @throws \InvalidArgumentException When the prefix's norm holds fewer
+	 *                                   than NAMES_MIN_PREFIX letters or digits.
+	 */
+	public static function names( array $args ): array {
+		$prefix = Entity_Index::norm( Core::as_string( $args['prefix'] ) );
+		if ( \mb_strlen( \str_replace( ' ', '', $prefix ) ) < self::NAMES_MIN_PREFIX ) {
+			throw new \InvalidArgumentException( 'prefix must hold at least ' . self::NAMES_MIN_PREFIX . ' letters or digits' );
+		}
+		return self::answer(
+			[ 'entities' => [] ],
+			static function ( Row_Reader $r, array $g ) use ( $prefix ): array {
+				$leads = [];
+				foreach ( Entity_Index::led_by( $r, $g['survivors'], $prefix )->name_norms() as $norm => $keys ) {
+					if ( \str_contains( " {$norm}", " {$prefix}" ) ) {
+						foreach ( $keys as $key ) {
+							$leads[ $key ] = ( $leads[ $key ] ?? false ) || \str_starts_with( $norm, $prefix );
+						}
+					}
+				}
+				$keys  = \array_map( 'strval', \array_keys( $leads ) );
+				$names = self::names_of( $r, $keys );
+				$seen  = self::visible_of( $r, $g, $keys );
+				$order = [];
+				foreach ( $keys as $key ) {
+					if ( isset( $names[ $key ], $seen[ $key ] ) ) {
+						$order[] = [ ! $leads[ $key ], $names[ $key ], $key ];
+					}
+				}
+				\usort( $order, static fn ( array $a, array $b ): int => $a[0] <=> $b[0] ?: \strcmp( $a[1], $b[1] ) ?: \strcmp( $a[2], $b[2] ) );
+				return [ 'entities' => \array_map( static fn ( array $row ): array => [ 'entity_key' => $row[2], 'name' => $row[1] ], \array_slice( $order, 0, self::NAMES_LIMIT ) ) ];
+			}
+		);
+	}
+
+	/**
 	 * Whether a key is taken: visible to the caller and no longer a
 	 * machine's proposal. A key the caller cannot see is free, so a person's
 	 * creation over it answers as one over a missing key.
@@ -1026,6 +1079,17 @@ final class Graph_Query {
 	public static function taken( Row_Reader $r, array $g, string $key ): bool {
 		$survivor = self::visible( $r, $g, $key );
 		return null !== $survivor && 'proposed' !== self::state_of( $r, $survivor );
+	}
+
+	/**
+	 * An entity's latest state, or null when it has none.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param string     $key The entity key.
+	 */
+	public static function state_of( Row_Reader $r, string $key ): ?string {
+		$state = $r->rows( 'SELECT state FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_states' ) . ' s WHERE entity_key = ? ORDER BY ts DESC LIMIT 1', [ $key ] )[0][0] ?? null;
+		return null === $state ? null : Core::as_string( $state );
 	}
 
 	/**
@@ -1150,29 +1214,52 @@ final class Graph_Query {
 	 */
 	public static function visible( Row_Reader $r, array $g, string $key ): ?string {
 		$survivor = self::survivor( $key, $g );
-		$state    = self::state_of( $r, $survivor );
-		if ( null === $state && [] === $r->rows( 'SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e WHERE entity_key = ? LIMIT 1', [ $survivor ] ) ) {
-			return null;
-		}
-		if ( 'accepted' === $state ) {
-			return $survivor;
-		}
-		$keys                  = self::keys_of( $survivor, $g );
-		$in                    = Intel_Graph_Row_Schema::marks( $keys );
-		[ $live, $live_binds ] = self::live( $r, "{t}.entity_key IN ( {$in} )", $keys, Intel_Event::LINK_ROLES );
-		[ $cites, $cited ]     = self::cites( $r, "ev.subject IN ( {$in} )", $keys );
-		return [] === $r->rows( "{$g['with']}{$live}, {$cites} SELECT 1 FROM cites WHERE entity_key = ? LIMIT 1", [ ...$g['binds'], ...$live_binds, ...$cited, $survivor ] ) ? null : $survivor;
+		return isset( self::visible_of( $r, $g, [ $survivor ] )[ $survivor ] ) ? $survivor : null;
 	}
 
 	/**
-	 * An entity's latest state, or null when it has none.
+	 * The survivors among those given the caller may see, by the rule
+	 * `visible()` states, in two statements however many are given: the
+	 * first reads each one's latest state and whether it has an `entities`
+	 * row, and an accepted one is seen there; the second, only for those
+	 * holding a state or a row short of accepted, which a readable item
+	 * cites, by a link of any role among its keys or as the item a proposal
+	 * under them came from.
 	 *
-	 * @param Row_Reader $r   The reader.
-	 * @param string     $key The entity key.
+	 * @param Row_Reader   $r         The reader.
+	 * @param Graph        $g         The graph the read opened.
+	 * @param list<string> $survivors Survivors, each the end of its chain.
+	 * @return array<string,true>
 	 */
-	public static function state_of( Row_Reader $r, string $key ): ?string {
-		$state = $r->rows( 'SELECT state FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_states' ) . ' s WHERE entity_key = ? ORDER BY ts DESC LIMIT 1', [ $key ] )[0][0] ?? null;
-		return null === $state ? null : Core::as_string( $state );
+	private static function visible_of( Row_Reader $r, array $g, array $survivors ): array {
+		$seen  = [];
+		$owing = [];
+		$rows  = [] === $survivors ? [] : $r->rows(
+			'WITH k AS ( SELECT DISTINCT value AS key FROM json_each( ? ) ), st AS ( SELECT entity_key, state FROM ( SELECT s.entity_key, s.state,'
+			. ' ROW_NUMBER() OVER ( PARTITION BY s.entity_key ORDER BY s.ts DESC ) AS rn FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_states' )
+			. ' s WHERE s.entity_key IN ( SELECT key FROM k ) ) WHERE 1 = rn ) SELECT k.key, st.state, EXISTS ( SELECT 1 FROM '
+			. Intel_Graph_Row_Schema::all( $r, 'entities' ) . ' e WHERE e.entity_key = k.key ) FROM k LEFT JOIN st ON st.entity_key = k.key',
+			[ \wp_json_encode( $survivors, \JSON_THROW_ON_ERROR ) ]
+		);
+		foreach ( $rows as [ $key, $state, $exists ] ) {
+			$key = Core::as_string( $key );
+			if ( 'accepted' === $state ) {
+				$seen[ $key ] = true;
+			} elseif ( null !== $state || 1 === Core::as_int( $exists ) ) {
+				$owing[] = $key;
+			}
+		}
+		if ( [] === $owing ) {
+			return $seen;
+		}
+		$keys                  = \wp_json_encode( \array_merge( ...\array_map( static fn ( string $survivor ): array => self::keys_of( $survivor, $g ), $owing ) ), \JSON_THROW_ON_ERROR );
+		$among                 = 'IN ( SELECT value FROM json_each( ? ) )';
+		[ $live, $live_binds ] = self::live( $r, "{t}.entity_key {$among}", [ $keys ], Intel_Event::LINK_ROLES );
+		[ $cites, $cited ]     = self::cites( $r, "ev.subject {$among}", [ $keys ] );
+		foreach ( $r->rows( "{$g['with']}{$live}, {$cites} SELECT DISTINCT entity_key FROM cites WHERE entity_key IN ( SELECT value FROM json_each( ? ) )", [ ...$g['binds'], ...$live_binds, ...$cited, \wp_json_encode( $owing, \JSON_THROW_ON_ERROR ) ] ) as [ $key ] ) {
+			$seen[ Core::as_string( $key ) ] = true;
+		}
+		return $seen;
 	}
 
 	/**

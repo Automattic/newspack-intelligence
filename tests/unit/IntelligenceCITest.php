@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intelligence_CI_Node;
@@ -21,6 +22,7 @@ use Newspack_Nodes\Tests\TestCase;
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
 require_once __DIR__ . '/../support/routes-to-workers.php';
 require_once __DIR__ . '/../support/signs-in-users.php';
+require_once __DIR__ . '/../support/counts-statements.php';
 
 /**
  * The `intelligence` service CI: nine read verbs over the projection, each
@@ -28,13 +30,14 @@ require_once __DIR__ . '/../support/signs-in-users.php';
  * tiers a read caller holds, every answer carrying its citations.
  */
 final class IntelligenceCITest extends TestCase {
+	use Counts_Statements;
 	use Routes_To_Workers;
 	use Seeds_Intel_Graph;
 	use Signs_In_Users;
 
 	private const GAZETTE = 'organization:harbor-gazette';
 
-	private const VERBS = [ 'search', 'entity', 'timeline', 'related', 'claims', 'trends', 'signals', 'review', 'theme_suggestions', 'collections', 'lenses', 'watches', 'save_watch', 'remove_watch', 'watch_matches', 'mark_seen', 'briefing', 'health' ];
+	private const VERBS = [ 'search', 'entity', 'names', 'timeline', 'related', 'claims', 'trends', 'signals', 'review', 'theme_suggestions', 'collections', 'lenses', 'watches', 'save_watch', 'remove_watch', 'watch_matches', 'mark_seen', 'briefing', 'health' ];
 
 	private Intelligence_CI_Node $ci;
 
@@ -210,6 +213,128 @@ final class IntelligenceCITest extends TestCase {
 
 		$this->assertCount( 200, $answer['items'] );
 		$this->assertSame( 201, $answer['total'] );
+	}
+
+	/** `names` answers at most NAMES_LIMIT entities, the first by name. */
+	public function test_names_answers_at_most_the_cap(): void {
+		$events = [];
+		for ( $n = 1; $n <= Graph_Query::NAMES_LIMIT + 3; $n++ ) {
+			$events[] = self::entity( \sprintf( 'organization:gull-%02d', $n ), \sprintf( 'Gull Wire %02d', $n ) );
+		}
+		$this->seed( ...$events );
+
+		$answer = $this->ci->dispatch( 'names', [ '--prefix=gull w' ] )['entities'];
+
+		$this->assertSame( \array_map( static fn ( int $n ): string => \sprintf( 'organization:gull-%02d', $n ), \range( 1, Graph_Query::NAMES_LIMIT ) ), \array_column( $answer, 'entity_key' ) );
+	}
+
+	/** A prefix whose norm holds fewer than two characters is refused, punctuation and spaces aside. */
+	public function test_names_refuses_a_prefix_under_two_characters(): void {
+		$this->seed_world();
+
+		foreach ( [ ' h. ', ' -- ' ] as $prefix ) {
+			try {
+				$this->ci->dispatch( 'names', [ "--prefix={$prefix}" ] );
+				$this->fail( "names answers the prefix '{$prefix}'" );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertSame( 'prefix must hold at least 2 letters or digits', $e->getMessage() );
+			}
+		}
+		$this->assertSame( [ 'organization:harbor-gazette' ], \array_column( $this->ci->dispatch( 'names', [ 'ha' ] )['entities'], 'entity_key' ) );
+	}
+
+	/**
+	 * `names` reads the names a prefix leads through the stored word starts,
+	 * searched by their key, and the norms they name through each table's
+	 * norm index, and reads no identifier, so it never loads the index whole.
+	 */
+	public function test_names_reads_by_stored_starts_and_never_loads_the_index(): void {
+		$this->seed_world();
+		$this->seed( self::entity( 'organization:kestrel-post', 'Old Kestrel Post' ) );
+
+		$queries = $this->queries_of( fn () => $this->ci->dispatch( 'names', [ 'kestrel' ] ) );
+
+		$this->assertSame( [], \array_values( \array_filter( $queries, static fn ( string $sql ): bool => \str_contains( $sql, '.identifiers' ) ) ) );
+		$starts = \array_values( \array_filter( $queries, static fn ( string $sql ): bool => \str_contains( $sql, '.name_starts' ) ) );
+		$this->assertCount( 1, $starts );
+		$db   = new \PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
+		$db->exec( 'ATTACH DATABASE ' . $db->quote( Table_Node::file( 'intel-graph', 0 ) ) . ' AS p0' );
+		$plan = \implode( "\n", \array_column( $db->query( 'EXPLAIN QUERY PLAN ' . $starts[0] )->fetchAll( \PDO::FETCH_ASSOC ), 'detail' ) );
+		$this->assertMatchesRegularExpression( '/SEARCH p0\.name_starts USING COVERING INDEX sqlite_autoindex_name_starts_1 \(start>\? AND start<\?\)/', $plan );
+		$this->assertMatchesRegularExpression( '/SEARCH p0\.entities USING INDEX entities_norm \(norm=\?\)/', $plan );
+		$this->assertMatchesRegularExpression( '/SEARCH p0\.names USING INDEX names_norm \(norm=\?\)/', $plan );
+		$this->assertDoesNotMatchRegularExpression( '/SCAN p0\.(name_starts|entities|names)\b/', $plan );
+		$this->assertSame( [ 'organization:kestrel-post' ], \array_column( $this->ci->dispatch( 'names', [ 'kestrel' ] )['entities'], 'entity_key' ) );
+	}
+
+	/** A start a proposal's name left behind, once a person's creation renamed the entity, matches nothing. */
+	public function test_names_finds_nothing_by_a_start_its_entity_no_longer_spells(): void {
+		$this->seed(
+			[ Intel_Event::make( 'entity_proposed', [ 'entity_key' => 'organization:quill-ledger', 'type' => 'organization', 'name' => 'Quill Co', 'from_item_key' => 'feed:seed-1' ], 'machine:resolve@0.0.1', 'fixture-7' ) ],
+			self::entity( 'organization:quill-ledger', 'Quill Ledger' )
+		);
+
+		$this->assertSame( [], $this->ci->dispatch( 'names', [ 'quill c' ] )['entities'] );
+		$this->assertSame( [ 'organization:quill-ledger=Quill Ledger' ], \array_map( static fn ( array $e ): string => "{$e['entity_key']}={$e['name']}", $this->ci->dispatch( 'names', [ 'quill l' ] )['entities'] ) );
+	}
+
+	/** A prefix matches every norm it leads, a character past the BMP after it included, and nothing past its range. */
+	public function test_names_matches_a_prefix_exactly_at_its_range_bound(): void {
+		$this->seed(
+			self::entity( 'organization:quill-fraktur', "Quill \u{1D50F}edger" ),
+			self::entity( 'organization:quillon', 'Quillon Desk' ),
+			self::entity( 'organization:quilm-post', 'Quilm Post' ),
+			self::entity( 'organization:quilk-post', 'Quilk Post' )
+		);
+
+		$this->assertSame( [ 'organization:quill-fraktur', 'organization:quillon' ], \array_column( $this->ci->dispatch( 'names', [ 'quill' ] )['entities'], 'entity_key' ) );
+		$this->assertSame( [ 'organization:quill-fraktur' ], \array_column( $this->ci->dispatch( 'names', [ "quill \u{1D50F}" ] )['entities'], 'entity_key' ) );
+	}
+
+	/**
+	 * With two partitions attached, so `all()` reads each table as a
+	 * compound, every arm still searches its own index.
+	 */
+	public function test_names_searches_every_partitions_indexes(): void {
+		$this->seed_world();
+		$this->seed( self::entity( 'organization:kestrel-post', 'Old Kestrel Post' ) );
+		$p0 = Table_Node::file( 'intel-graph', 0 );
+		$p1 = Table_Node::file( 'intel-graph', 1 );
+		( new \PDO( "sqlite:{$p0}" ) )->exec( "VACUUM INTO '{$p1}'" );
+		$db = new Counting_PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
+		$db->exec( 'ATTACH DATABASE ' . $db->quote( $p0 ) . ' AS p0' );
+		$db->exec( 'ATTACH DATABASE ' . $db->quote( $p1 ) . ' AS p1' );
+		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): mixed => $read( new \Newspack_Nodes\Row_Reader( $db, [ 'p0', 'p1' ] ) );
+
+		$this->assertSame( [ 'organization:kestrel-post' ], \array_column( $this->ci->dispatch( 'names', [ 'kestrel' ] )['entities'], 'entity_key' ) );
+		$starts = \array_values( \array_filter( $db->queries, static fn ( string $sql ): bool => \str_contains( $sql, '.name_starts' ) ) );
+		$this->assertCount( 1, $starts );
+		$plan = \implode( "\n", \array_column( $db->query( 'EXPLAIN QUERY PLAN ' . $starts[0] )->fetchAll( \PDO::FETCH_ASSOC ), 'detail' ) );
+		$this->assertSame( 2, \preg_match_all( '/SEARCH p[01]\.name_starts USING COVERING INDEX sqlite_autoindex_name_starts_1 \(start>\? AND start<\?\)/', $plan ), $plan );
+		$this->assertSame( 2, \preg_match_all( '/SEARCH p[01]\.entities USING INDEX entities_norm \(norm=\?\)/', $plan ), $plan );
+		$this->assertSame( 2, \preg_match_all( '/SEARCH p[01]\.names USING INDEX names_norm \(norm=\?\)/', $plan ), $plan );
+		$this->assertDoesNotMatchRegularExpression( '/SCAN p[01]\.(name_starts|entities|names)\b/', $plan );
+	}
+
+	/** `names` reads the same number of statements whatever the number of names it weighs. */
+	public function test_names_statements_hold_whatever_the_candidates(): void {
+		$few = [];
+		for ( $n = 1; $n <= 2; $n++ ) {
+			$few[] = self::proposal( "organization:tern-{$n}", "Tern Post {$n}", 'feed:gazette-award' );
+		}
+		$this->seed_world();
+		$this->seed( ...$few );
+		$two = $this->statements_of( fn () => $this->ci->dispatch( 'names', [ 'tern' ] ) );
+
+		$many = [];
+		for ( $n = 3; $n <= Graph_Query::NAMES_LIMIT + 4; $n++ ) {
+			$many[] = self::proposal( "organization:tern-{$n}", "Tern Post {$n}", 'feed:gazette-award' );
+			$many[] = self::entity( "organization:tern-desk-{$n}", "Tern Desk {$n}" );
+		}
+		$this->seed( ...$many );
+
+		$this->assertCount( Graph_Query::NAMES_LIMIT, $this->ci->dispatch( 'names', [ 'tern' ] )['entities'] );
+		$this->assertSame( $two, $this->statements_of( fn () => $this->ci->dispatch( 'names', [ 'tern' ] ) ) );
 	}
 
 	/** Review Focus 4: a restricted item never reaches a read caller, alone or through an aggregate. */

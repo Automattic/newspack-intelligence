@@ -1,13 +1,26 @@
 import { useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
-import { SelectControl, TextControl } from '@wordpress/components';
+import {
+	FormTokenField,
+	SelectControl,
+	TextControl,
+} from '@wordpress/components';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
 import Answer from '../components/Answer';
 import { ItemPage } from '../components/ItemRow';
+import EntityPicker, { useEntityNames } from '../components/EntityPicker';
 import ListField from '../components/ListField';
 import Refusal from '../components/Refusal';
-import { daysSince, draftArgs, lensDraft } from '../components/lensDraft';
+import {
+	daysSince,
+	draftArgs,
+	lensDraft,
+	listOf,
+} from '../components/lensDraft';
+
+/** The list filters picked as tokens, by option; any other is typed. */
+const PICKED = new Set( [ 'kind', 'role', 'source' ] );
 
 /**
  * What each list filter is called, by option.
@@ -116,7 +129,10 @@ function LensRuns( { lens, lists } ) {
 /**
  * Search: the readable items matching every filter given, a page at a time,
  * in the order the answer names, which the reader may switch, each with its
- * linked entities as chips. A lens picked shows every
+ * linked entities as chips. Kinds, roles and sources are multi-selects, a
+ * closed list taking only its own values, and the entity suggests the
+ * entities whose names its text leads, a name picked searching its key. A
+ * lens picked shows every
  * filter it searches with, read-only, and sends only the lens, the words,
  * the order and the page; "Edit as my own search" copies its filters into
  * Search's own fields, its days as the day they start from and without its
@@ -155,6 +171,7 @@ export default function Search( {
 		} )
 	);
 	const lenses = useIntelRead( 'search:lenses', 'lenses', [] );
+	const names = useEntityNames( draft.entity );
 	const lens = lenses.answer?.lenses.find(
 		( one ) => one.lens_key === draft.lens
 	);
@@ -184,6 +201,28 @@ export default function Search( {
 		onChange: ( value ) => setDraft( { ...draft, [ name ]: value } ),
 		__next40pxDefaultSize: true,
 	} );
+	const picker = ( name, values ) => {
+		const allowed = ( token ) => ! values || values.includes( token );
+		return (
+			<FormTokenField
+				key={ name }
+				label={ labels[ name ] }
+				value={ listOf( draft[ name ] ) }
+				suggestions={ values ?? [] }
+				__experimentalValidateInput={ allowed }
+				__experimentalExpandOnFocus={ !! values }
+				tokenizeOnBlur
+				// A token typed with a comma skips the field's own validation.
+				onChange={ ( picked ) =>
+					setDraft( {
+						...draft,
+						[ name ]: picked.filter( allowed ).join( ', ' ),
+					} )
+				}
+				__next40pxDefaultSize
+			/>
+		);
+	};
 
 	return (
 		<div className="newspack-intelligence__view">
@@ -191,7 +230,9 @@ export default function Search( {
 				className="newspack-intelligence__filters"
 				role="search"
 				aria-label={ __( 'Filters', 'newspack-intelligence' ) }
-				{ ...submitProps( () => submit( draft ) ) }
+				{ ...submitProps( () =>
+					submit( { ...draft, entity: names.keyOf( draft.entity ) } )
+				) }
 			>
 				<SelectControl
 					label={ __( 'Lens', 'newspack-intelligence' ) }
@@ -216,18 +257,23 @@ export default function Search( {
 					<LensRuns lens={ lens } lists={ lists } />
 				) : (
 					<>
-						{ lists.map( ( { option, values } ) => (
-							<ListField
-								key={ option }
-								label={ labels[ option ] }
-								choices={ values }
-								{ ...field( option ) }
-							/>
-						) ) }
-						<TextControl
+						{ lists.map( ( { option, values } ) =>
+							PICKED.has( option ) ? (
+								picker( option, values )
+							) : (
+								<ListField
+									key={ option }
+									label={ labels[ option ] }
+									choices={ values }
+									{ ...field( option ) }
+								/>
+							)
+						) }
+						<EntityPicker
 							label={ __( 'Entity', 'newspack-intelligence' ) }
-							placeholder="organization:acme-gazette"
-							{ ...field( 'entity' ) }
+							value={ draft.entity }
+							onChange={ field( 'entity' ).onChange }
+							names={ names }
 						/>
 						<TextControl
 							type="date"

@@ -2,7 +2,9 @@
 /**
  * Search asks `search` on mount and on every submit, with each filter given
  * as a named option and each list value repeated, and renders the items it
- * answers; its two kinds of nothing say which they are. A lens picked shows
+ * answers; its two kinds of nothing say which they are. Kinds, roles and
+ * sources are multi-selects, and the entity suggests the entities whose names
+ * it leads, through `names`. A lens picked shows
  * every filter it runs with, read-only, and sends only the lens, the words
  * and the page; "Edit as my own search" copies them into Search's fields.
  */
@@ -48,6 +50,69 @@ function renderSearch( props = {} ) {
 	return render( <Harness { ...props } /> );
 }
 
+/**
+ * The multi-select a label names.
+ *
+ * @param {string} label Its label.
+ * @return {HTMLElement} The field.
+ */
+const tokenField = ( label ) =>
+	screen.getByLabelText( label ).closest( '.components-form-token-field' );
+
+/**
+ * The tokens a multi-select holds, in order.
+ *
+ * @param {string} label Its label.
+ * @return {string[]} The tokens.
+ */
+const tokens = ( label ) =>
+	[
+		...tokenField( label ).querySelectorAll(
+			'.components-form-token-field__token-text [aria-hidden="true"]'
+		),
+	].map( ( one ) => one.textContent );
+
+/**
+ * Type each value into a multi-select and enter it.
+ *
+ * @param {string}    label  Its label.
+ * @param {...string} values The values.
+ */
+const pick = ( label, ...values ) => {
+	const box = screen.getByLabelText( label );
+	for ( const value of values ) {
+		fireEvent.change( box, { target: { value } } );
+		fireEvent.keyDown( box, { key: 'Enter' } );
+	}
+};
+
+/**
+ * What an input's suggestion list offers, each its value and its label.
+ *
+ * @param {HTMLElement} input The input.
+ * @return {string[][]} Each offer.
+ */
+const offered = ( input ) =>
+	[
+		...( document
+			.getElementById( input.getAttribute( 'list' ) )
+			?.querySelectorAll( 'option' ) ?? [] ),
+	].map( ( one ) => [ one.value, one.label ] );
+
+/**
+ * Remove every token a multi-select holds.
+ *
+ * @param {string} label Its label.
+ */
+const clearTokens = ( label ) => {
+	for ( const remove of within( tokenField( label ) ).getAllByRole(
+		'button',
+		{ name: 'Remove item' }
+	) ) {
+		fireEvent.click( remove );
+	}
+};
+
 describe( 'Search', () => {
 	it( 'asks for the newest items on mount and renders them', async () => {
 		wire.replies.search = { items: [ ITEM ], total: 9, available: true };
@@ -68,18 +133,12 @@ describe( 'Search', () => {
 		fireEvent.change( screen.getByLabelText( 'Words' ), {
 			target: { value: 'regional prize' },
 		} );
-		fireEvent.change( screen.getByLabelText( 'Kinds' ), {
-			target: { value: 'funding, launch' },
-		} );
+		pick( 'Kinds', 'funding', 'launch' );
 		fireEvent.change( screen.getByLabelText( 'Topics' ), {
 			target: { value: 'topic:local-news' },
 		} );
-		fireEvent.change( screen.getByLabelText( 'Roles' ), {
-			target: { value: 'competitor' },
-		} );
-		fireEvent.change( screen.getByLabelText( 'Sources' ), {
-			target: { value: 'github,' },
-		} );
+		pick( 'Roles', 'competitor' );
+		pick( 'Sources', 'github' );
 		fireEvent.change( screen.getByLabelText( 'Entity' ), {
 			target: { value: 'organization:valley-ledger' },
 		} );
@@ -103,6 +162,182 @@ describe( 'Search', () => {
 				'--until=2026-09-30',
 			] )
 		);
+	} );
+
+	it( 'sends the kinds multi-select as repeated --kind= args, refusing a kind outside the vocabulary', async () => {
+		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+		renderSearch();
+		await screen.findByText( /^1 of 1 item$/ );
+		pick( 'Kinds', 'funding', 'gossip', 'award' );
+		expect( tokens( 'Kinds' ) ).toEqual( [ 'funding', 'award' ] );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Search' } ) );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toContainEqual( [
+				'--kind=funding',
+				'--kind=award',
+			] )
+		);
+	} );
+
+	it( 'refuses a kind or a role outside its vocabulary typed with a comma', async () => {
+		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+		renderSearch();
+		await screen.findByText( /^1 of 1 item$/ );
+		fireEvent.change( screen.getByLabelText( 'Kinds' ), {
+			target: { value: 'gossip,launch,' },
+		} );
+		fireEvent.change( screen.getByLabelText( 'Roles' ), {
+			target: { value: 'rival,' },
+		} );
+		expect( tokens( 'Kinds' ) ).toEqual( [ 'launch' ] );
+		expect( tokens( 'Roles' ) ).toEqual( [] );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Search' } ) );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toContainEqual( [
+				'--kind=launch',
+			] )
+		);
+		expect( wire.sent( 'search' ).flat() ).not.toContain( '--kind=gossip' );
+	} );
+
+	it( 'takes a role from its vocabulary alone and a source as typed', async () => {
+		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+		renderSearch();
+		await screen.findByText( /^1 of 1 item$/ );
+		pick( 'Roles', 'former_client', 'rival' );
+		pick( 'Sources', 'linear', 'unthread' );
+		expect( tokens( 'Roles' ) ).toEqual( [ 'former_client' ] );
+		expect( tokens( 'Sources' ) ).toEqual( [ 'linear', 'unthread' ] );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Search' } ) );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toContainEqual( [
+				'--role=former_client',
+				'--source=linear',
+				'--source=unthread',
+			] )
+		);
+	} );
+
+	it( 'suggests the entities whose names the entity typed leads, and searches the one picked', async () => {
+		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+		wire.replies.names = ( args ) => ( {
+			entities:
+				'--prefix=Valley' === args[ 0 ]
+					? [
+							{
+								entity_key: 'organization:valley-ledger',
+								name: 'Valley Ledger',
+							},
+							{
+								entity_key: 'organization:valley-times',
+								name: 'Valley Times',
+							},
+							{
+								entity_key: 'person:valley-times',
+								name: 'Valley Times',
+							},
+					  ]
+					: [],
+			available: true,
+		} );
+		renderSearch();
+		await screen.findByText( /^1 of 1 item$/ );
+		const entity = screen.getByLabelText( 'Entity' );
+		fireEvent.change( entity, { target: { value: 'V' } } );
+		expect( wire.sent( 'names' ) ).toEqual( [] );
+		fireEvent.change( entity, { target: { value: 'Valley' } } );
+		await waitFor( () =>
+			expect( offered( entity ) ).toEqual( [
+				[ 'Valley Ledger', 'organization:valley-ledger' ],
+				[ 'organization:valley-times', 'Valley Times' ],
+				[ 'person:valley-times', 'Valley Times' ],
+			] )
+		);
+		fireEvent.change( entity, { target: { value: 'Valley Ledger' } } );
+		expect( entity ).toHaveValue( 'Valley Ledger' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Search' } ) );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toContainEqual( [
+				'--entity=organization:valley-ledger',
+			] )
+		);
+		expect( entity ).toHaveValue( 'organization:valley-ledger' );
+		expect( wire.sent( 'names' ) ).toEqual( [ [ '--prefix=Valley' ] ] );
+	} );
+
+	it( 'lets a name that leads another be typed past, searching the longer one', async () => {
+		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+		wire.replies.names = ( args ) => ( {
+			entities: args[ 0 ].startsWith( '--prefix=Quiet H' )
+				? [
+						{
+							entity_key: 'organization:quiet-harbor',
+							name: 'Quiet Harbor',
+						},
+						{
+							entity_key: 'organization:quiet-harbor-weekly',
+							name: 'Quiet Harbor Weekly',
+						},
+				  ]
+				: [],
+			available: true,
+		} );
+		renderSearch();
+		await screen.findByText( /^1 of 1 item$/ );
+		const entity = screen.getByLabelText( 'Entity' );
+		fireEvent.change( entity, { target: { value: 'Quiet H' } } );
+		await waitFor( () => expect( offered( entity ) ).toHaveLength( 2 ) );
+		fireEvent.change( entity, { target: { value: 'Quiet Harbor' } } );
+		expect( entity ).toHaveValue( 'Quiet Harbor' );
+		fireEvent.change( entity, {
+			target: { value: 'Quiet Harbor Weekly' },
+		} );
+		expect( entity ).toHaveValue( 'Quiet Harbor Weekly' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Search' } ) );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toContainEqual( [
+				'--entity=organization:quiet-harbor-weekly',
+			] )
+		);
+	} );
+
+	it( 'asks names only past two letters or digits, and shows its refusal', async () => {
+		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+		wire.replies.names = () =>
+			new Error( 'names could not be read for Harb' );
+		renderSearch();
+		await screen.findByText( /^1 of 1 item$/ );
+		const entity = screen.getByLabelText( 'Entity' );
+		fireEvent.change( entity, { target: { value: 'h.' } } );
+		fireEvent.change( entity, { target: { value: ' -h- ' } } );
+		expect( wire.sent( 'names' ) ).toEqual( [] );
+		fireEvent.change( entity, { target: { value: 'Harb' } } );
+		expect(
+			await screen.findByText( 'names could not be read for Harb' )
+		).toBeInTheDocument();
+		expect( wire.sent( 'names' ) ).toEqual( [ [ '--prefix=Harb' ] ] );
+	} );
+
+	it( 'asks nothing for an entity box emptied', async () => {
+		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
+		wire.replies.names = {
+			entities: [
+				{ entity_key: 'topic:harbor-news', name: 'Harbor News' },
+			],
+			available: true,
+		};
+		renderSearch();
+		await screen.findByText( /^1 of 1 item$/ );
+		const entity = screen.getByLabelText( 'Entity' );
+		fireEvent.change( entity, { target: { value: 'Harb' } } );
+		await waitFor( () =>
+			expect( offered( entity ) ).toEqual( [
+				[ 'Harbor News', 'topic:harbor-news' ],
+			] )
+		);
+		fireEvent.change( entity, { target: { value: ' ' } } );
+		await waitFor( () => expect( offered( entity ) ).toEqual( [] ) );
+		expect( wire.sent( 'names' ) ).toEqual( [ [ '--prefix=Harb' ] ] );
 	} );
 
 	it( 'shows a lens picked read-only and searches only through it, with the words', async () => {
@@ -158,10 +393,8 @@ describe( 'Search', () => {
 		);
 		const since = daysSince( 21, Date.now() );
 		expect( screen.getByLabelText( 'Lens' ) ).toHaveValue( '' );
-		expect( screen.getByLabelText( 'Kinds' ) ).toHaveValue(
-			'complaint, praise'
-		);
-		expect( screen.getByLabelText( 'Roles' ) ).toHaveValue( 'client' );
+		expect( tokens( 'Kinds' ) ).toEqual( [ 'complaint', 'praise' ] );
+		expect( tokens( 'Roles' ) ).toEqual( [ 'client' ] );
 		expect( screen.getByLabelText( 'Entity' ) ).toHaveValue(
 			'organization:acme-quillsheet'
 		);
@@ -175,9 +408,7 @@ describe( 'Search', () => {
 				`--since=${ since }`,
 			] )
 		);
-		fireEvent.change( screen.getByLabelText( 'Kinds' ), {
-			target: { value: '' },
-		} );
+		clearTokens( 'Kinds' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Search' } ) );
 		await waitFor( () =>
 			expect( wire.sent( 'search' ) ).toContainEqual( [
@@ -220,16 +451,14 @@ describe( 'Search', () => {
 		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
 		renderSearch();
 		await screen.findByRole( 'option', { name: 'Support desk' } );
-		fireEvent.change( screen.getByLabelText( 'Kinds' ), {
-			target: { value: 'award' },
-		} );
+		pick( 'Kinds', 'award' );
 		fireEvent.change( screen.getByLabelText( 'Lens' ), {
 			target: { value: 'support-desk' },
 		} );
 		fireEvent.change( screen.getByLabelText( 'Lens' ), {
 			target: { value: '' },
 		} );
-		expect( screen.getByLabelText( 'Kinds' ) ).toHaveValue( 'award' );
+		expect( tokens( 'Kinds' ) ).toEqual( [ 'award' ] );
 		await waitFor( () =>
 			expect( wire.sent( 'search' ) ).toContainEqual( [ '--kind=award' ] )
 		);

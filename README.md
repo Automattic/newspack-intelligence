@@ -28,7 +28,7 @@ identifier, by name and, failing both, by an LLM's named-entity extraction; an
 recording each new item a watched lens, entity or collection gains and
 emailing it, or a daily digest of it, when the watch asks.
 
-`Intelligence_CI` answers the graph's read verbs (search, entity, timeline,
+`Intelligence_CI` answers the graph's read verbs (search, entity, names, timeline,
 related, claims, trends, signals, review, collections, lenses), each reader's
 own watches (watches, save_watch, remove_watch, watch_matches, mark_seen) and
 its curation verbs, which the

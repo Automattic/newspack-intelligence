@@ -45,11 +45,21 @@ final class IntelGraphRowSchemaTest extends TestCase {
 			}
 		}
 		$this->assertSame( [ 'retrieved_day', 730, 86400 ], $tables['items']['retain'] );
-		$this->assertSame( [ 'entity_key', 'type', 'name', 'created_ts' ], \array_keys( $tables['entities']['columns'] ), 'an entity row carries no id' );
+		$this->assertSame( [ 'entity_key', 'type', 'name', 'norm', 'created_ts' ], \array_keys( $tables['entities']['columns'] ), 'an entity row carries no id' );
+		$this->assertSame( [ 'entities_norm' => [ 'norm' ] ], $tables['entities']['indexes'] );
 		$this->assertArrayNotHasKey( 'autoincrement', $tables['entities'] );
-		$this->assertSame( 3, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 4, Intel_Graph_Row_Schema::version() );
 		$this->projector_graph();
 		$this->assertSame( [ 'Intel_Graph' ], Core::node( 'intel-graph' )->arguments(), 'the Row_Table accepts the schema' );
+	}
+
+	/** A name's word starts are kept rows keyed by the start and the norm it begins in, carrying nothing else. */
+	public function test_name_starts_key_each_start_to_its_norm(): void {
+		$starts = Intel_Graph_Row_Schema::tables()['name_starts'];
+
+		$this->assertSame( [ 'start' => 'TEXT NOT NULL', 'norm' => 'TEXT NOT NULL' ], $starts['columns'] );
+		$this->assertSame( [ 'start', 'norm' ], $starts['key'] );
+		$this->assertTrue( $starts['keep'] );
 	}
 
 	/** An item's theme is one row keyed by the item, dated and kept like its extraction, at the same shape version. */
@@ -60,7 +70,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'item_key' ], $themes['key'] );
 		$this->assertSame( [ 'themes_item_day' => [ 'item_day' ] ], $themes['indexes'] );
 		$this->assertSame( [ 'item_day', 730, 86400 ], $themes['retain'] );
-		$this->assertSame( 3, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 4, Intel_Graph_Row_Schema::version() );
 	}
 
 	/**
@@ -160,7 +170,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'source' => 'TEXT NOT NULL', 'line_hash' => 'TEXT NOT NULL', 'item_key' => 'TEXT NOT NULL', 'item_day' => 'INTEGER NOT NULL' ], $boilerplate['columns'] );
 		$this->assertSame( [ 'source', 'line_hash', 'item_key' ], $boilerplate['key'] );
 		$this->assertSame( [ 'item_day', 730, 86400 ], $boilerplate['retain'] );
-		$this->assertSame( 3, Intel_Graph_Row_Schema::version(), 'a table added at the same shape version' );
+		$this->assertSame( 4, Intel_Graph_Row_Schema::version(), 'a table added at the same shape version' );
 
 		$now       = 1793000000;
 		Core::$now = (float) ( $now - 731 * 86400 );
@@ -195,7 +205,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 
 		$this->assertContains( [ 'subject', 'kind' ], $tables['events']['indexes'] ?? [] );
 		$this->assertContains( [ 'entity_key' ], $tables['judgments']['indexes'] ?? [] );
-		$this->assertSame( 3, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 4, Intel_Graph_Row_Schema::version() );
 	}
 
 	/** With no partition written, a table reads as an empty row set of its declared columns. */
@@ -213,8 +223,8 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$graph->save_state();
 		$reader = \Newspack_Nodes\Sqlite_Arm::open_rows( [ 0 => \Newspack_Nodes\Table_Node::file( 'intel-graph', 0 ) ], Intel_Graph_Row_Schema::version() );
 
-		$this->assertCount( 4, $reader->rows( 'SELECT * FROM ' . Intel_Graph_Row_Schema::all( $reader, 'entities' ) . ' e', [] )[0] );
-		$this->assertSame( [ 0 ], \array_slice( $reader->rows( 'SELECT * FROM ' . Intel_Graph_Row_Schema::all( $reader, 'entities', true ) . ' e', [] )[0], 4 ) );
+		$this->assertCount( 5, $reader->rows( 'SELECT * FROM ' . Intel_Graph_Row_Schema::all( $reader, 'entities' ) . ' e', [] )[0] );
+		$this->assertSame( [ 0 ], \array_slice( $reader->rows( 'SELECT * FROM ' . Intel_Graph_Row_Schema::all( $reader, 'entities', true ) . ' e', [] )[0], 5 ) );
 	}
 
 	public function test_the_range_bounds_are_whole_utc_days(): void {

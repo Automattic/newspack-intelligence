@@ -176,6 +176,10 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * items stream alone, so a replay deletes and writes in the same order; the
 	 * entities an extraction was given replace the item's earlier set the same
 	 * way. A retraction deletes the one link row its item, entity and role key.
+	 * An entity's created name and every added name write their norm and
+	 * one `name_starts` row per word their norm holds, the norm read from
+	 * that word on, ignored when present, so a prefix finds a name by a
+	 * range over the starts.
 	 * A record or a growth writes one `boilerplate` row per distinct body
 	 * line (`Entity_Index::line_hashes()`), ignored when present, so a line
 	 * counts once per item.
@@ -198,9 +202,11 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 		}
 		$day    = static fn ( string $field ): \Closure => static fn ( array $e ): int => (int) \floor( Core::as_float( $e[ $field ] ) / Intel_Graph_Row_Schema::DAY_SECONDS );
 		$link   = static fn ( string $state, mixed $evidence ): array => [ [ 'set', 'links', [ 'item_key', 'entity_key', 'role', 'method', 'confidence', [ $state ], $evidence, 'actor', 'ts', $day( 'retrieved_ts' ) ] ] ];
+		$starts = static fn ( string $field ): array => [ 'ignore', 'name_starts', [ self::EACH, static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e[ $field ] ) ) ], static fn ( array $e ): array => Entity_Index::starts( Entity_Index::norm( Core::as_string( $e[ $field ] ) ) ) ];
 		$entity = static fn ( string $verb, string $state ): array => [
-			[ $verb, 'entities', [ 'entity_key', 'type', 'name', 'ts' ] ],
+			[ $verb, 'entities', [ 'entity_key', 'type', 'name', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['name'] ) ), 'ts' ] ],
 			[ $verb, 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ],
+			$starts( 'name' ),
 		];
 		$state_set = static fn ( string $state ): array => [ [ 'set', 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ] ];
 		$item       = [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ) ];
@@ -244,7 +250,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			'entity_accepted'     => $state_set( 'accepted' ),
 			'entity_rejected'     => $state_set( 'rejected' ),
 			'entity_merged'       => [ [ 'set', 'entity_merges', [ 'entity_key', 'into_key', 'actor', 'ts' ] ] ],
-			'name_added'          => [ [ 'set', 'names', [ [ null ], 'entity_key', 'kind', 'value', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['value'] ) ) ] ] ],
+			'name_added'          => [ [ 'set', 'names', [ [ null ], 'entity_key', 'kind', 'value', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['value'] ) ) ] ], $starts( 'value' ) ],
 			'identifier_added'    => [ [ 'set', 'identifiers', [ 'entity_key', 'kind', 'value' ] ] ],
 			'role_asserted'       => [ [ 'set', 'roles', [ 'entity_key', 'role', 'from_ts', [ 0 ], 'actor' ] ] ],
 			'role_ended'          => [ [ 'set', 'roles', [ 'entity_key', 'role', 'from_ts', 'to_ts', 'actor' ] ] ],

@@ -30,20 +30,21 @@ const CI = 'intelligence';
 const NO_SUBJECT = () => null;
 
 /**
- * Ask one read verb, again whenever `args` changes.
+ * Ask one read verb, again whenever `args` changes. Null `args` asks
+ * nothing and withdraws the ask outstanding, so its late answer never shows.
  *
- * @param {string}   scope   Names this read's nodes, a subject naming what
- *                           the slice shows, so two reads of one verb on a
- *                           page never share a Fetcher.
- * @param {string}   command The read verb.
- * @param {string[]} args    Its argument tokens.
+ * @param {string}    scope   Names this read's nodes, a subject naming what
+ *                            the slice shows, so two reads of one verb on a
+ *                            page never share a Fetcher.
+ * @param {string}    command The read verb.
+ * @param {?string[]} args    Its argument tokens, or null to ask nothing.
  * @return {{answer: ?Object, error: ?string, loading: boolean, refresh: () => void}}
  *   The answer to `args`, or the refusal; `loading` while it is owed; and
  *   `refresh()`, which asks the same question again.
  */
 export function useIntelRead( scope, command, args ) {
 	const key = JSON.stringify( args );
-	const { run, result, error, answeredArgs } = useCommandOnce( {
+	const { run, abandon, result, error, answeredArgs } = useCommandOnce( {
 		group: GROUP,
 		ci: CI,
 		command,
@@ -52,9 +53,21 @@ export function useIntelRead( scope, command, args ) {
 		subjectOf: NO_SUBJECT,
 	} );
 
-	useEffect( () => run( JSON.parse( key ) ), [ key, run ] );
+	useEffect( () => {
+		const asked = JSON.parse( key );
+		if ( null === asked ) {
+			abandon();
+		} else {
+			run( asked );
+		}
+	}, [ key, run, abandon ] );
 
-	const refresh = useCallback( () => run( JSON.parse( key ) ), [ key, run ] );
+	const refresh = useCallback( () => {
+		const asked = JSON.parse( key );
+		if ( null !== asked ) {
+			run( asked );
+		}
+	}, [ key, run ] );
 
 	// A bare refusal, such as a Router's NOT_AVAILABLE, answers this ask.
 	const current =
@@ -64,7 +77,7 @@ export function useIntelRead( scope, command, args ) {
 	return {
 		answer: current ? result : null,
 		error: current ? error : null,
-		loading: ! current,
+		loading: null !== args && ! current,
 		refresh,
 	};
 }

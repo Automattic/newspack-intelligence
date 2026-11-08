@@ -297,9 +297,11 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 					'entity_key' => 'TEXT NOT NULL',
 					'type'       => 'TEXT NOT NULL',
 					'name'       => 'TEXT NOT NULL',
+					'norm'       => 'TEXT NOT NULL',
 					'created_ts' => 'INTEGER NOT NULL',
 				],
 				'key'     => [ 'entity_key' ],
+				'indexes' => [ 'entities_norm' => [ 'norm' ] ],
 				'keep'    => true,
 			],
 			'entity_states' => [
@@ -344,6 +346,14 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				'indexes'       => [ 'names_norm' => [ 'norm' ] ],
 				'autoincrement' => 'id',
 				'fts'           => [ 'value' ],
+				'keep'    => true,
+			],
+			'name_starts'   => [
+				'columns' => [
+					'start' => 'TEXT NOT NULL',
+					'norm'  => 'TEXT NOT NULL',
+				],
+				'key'     => [ 'start', 'norm' ],
 				'keep'    => true,
 			],
 			'identifiers'   => [
@@ -594,6 +604,6 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	 * @api Read by the Row_Table that opens the file.
 	 */
 	public static function version(): int {
-		return 3;
+		return 4;
 	}
 }
