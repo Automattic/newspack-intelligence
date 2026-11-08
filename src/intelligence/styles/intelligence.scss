@@ -157,21 +157,15 @@
 		}
 	}
 
-	// A lens's items and its trend rows sit side by side where both fit.
-	&__lens {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
-		gap: base.$space-xl;
-		align-items: start;
+	// A bucket's date reads as one token, so its column never wraps it.
+	&__date {
+		white-space: nowrap;
+	}
 
-		td {
-			overflow-wrap: anywhere;
-		}
-
-		// A value breaks only between words, so its column fits its longest one.
-		td.newspack-intelligence__value {
-			overflow-wrap: normal;
-		}
+	// The Edit drawer opens under the record's header, a step in from it.
+	&__drawer {
+		margin-top: base.$space-lg;
+		padding-inline-start: base.$space-lg;
 	}
 
 	// The lens form's tier checkboxes: a fieldset laid out as one field.

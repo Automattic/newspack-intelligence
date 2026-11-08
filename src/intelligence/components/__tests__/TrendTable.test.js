@@ -1,17 +1,17 @@
 /* eslint-env jest */
 /**
  * A signal's value names its axis and kind in the page's own language, then
- * the value it counts, when it counts one. A trend table counting by theme
- * shows each row's client chips above its items in one column, every row,
- * one of a single item too, keeping its value under Value; counting by any
- * other axis it shows its items alone. Every row's Value cell, a signal's
- * included, carries the class that keeps its column as wide as its longest
- * word.
+ * the value it counts, when it counts one. A trend table shows each row's
+ * bucket, value, count and cited items, its bucket a date that does not
+ * wrap and its Value cell the class that keeps its column as wide as its
+ * longest word. A trend chart draws the largest values over the latest
+ * buckets as series of the shared time chart, and hands a screen reader
+ * every row as a table.
  */
 
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { resetLocaleData, setLocaleData } from '@wordpress/i18n';
-import TrendTable, { signalValue } from '../TrendTable';
+import TrendTable, { TrendChart, signalValue } from '../TrendTable';
 
 const THEMES = [
 	{
@@ -93,124 +93,7 @@ describe( 'TrendTable', () => {
 	const rowOf = ( bucket ) =>
 		screen.getByRole( 'row', { name: new RegExp( bucket ) } );
 
-	it( 'shows a theme row’s client chips above its items in one cell', () => {
-		const onOpenEntity = jest.fn();
-		render(
-			<TrendTable
-				rows={ THEMES }
-				by="theme"
-				onOpenEntity={ onOpenEntity }
-			/>
-		);
-		expect(
-			screen
-				.getAllByRole( 'columnheader' )
-				.map( ( header ) => header.textContent )
-		).toEqual( [ 'Bucket', 'Value', 'Count', 'Clients and items' ] );
-		const row = rowOf( '2026-09-21' );
-		const cells = within( row ).getAllByRole( 'cell' );
-		expect( cells ).toHaveLength( 4 );
-		expect( cells[ 1 ] ).toHaveTextContent(
-			'site blocked from sending email'
-		);
-		expect( cells[ 2 ] ).toHaveTextContent( '12' );
-		expect(
-			within( cells[ 3 ] )
-				.getAllByRole( 'button' )
-				.map( ( chip ) => chip.textContent )
-		).toEqual( [ 'Harbor Ledger', 'Acme Quillsheet' ] );
-		const [ chips, facts ] = within( cells[ 3 ] ).getAllByRole( 'list' );
-		expect(
-			within( chips ).getByRole( 'button', { name: 'Acme Quillsheet' } )
-		).toBeInTheDocument();
-		expect(
-			within( facts ).getByRole( 'link', {
-				name: 'Acme mail bounces at the sender',
-			} )
-		).toHaveAttribute( 'href', 'https://linear.example/SUP-120' );
-		fireEvent.click(
-			within( cells[ 3 ] ).getByRole( 'button', {
-				name: 'Harbor Ledger',
-			} )
-		);
-		expect( onOpenEntity ).toHaveBeenCalledWith(
-			'organization:harbor-ledger'
-		);
-	} );
-
-	it( 'shows a theme row of one item under its theme, the item under Items', () => {
-		render(
-			<TrendTable rows={ THEMES } by="theme" onOpenEntity={ jest.fn() } />
-		);
-		const cells = within( rowOf( '2026-09-14' ) ).getAllByRole( 'cell' );
-		expect( cells[ 1 ] ).toHaveTextContent( 'client offboarding' );
-		expect( within( cells[ 1 ] ).queryByRole( 'link' ) ).toBeNull();
-		expect(
-			within( cells[ 3 ] ).getByRole( 'link', {
-				name: 'Kestrel Bayou asks to export its archive',
-			} )
-		).toHaveAttribute( 'href', 'https://linear.example/SUP-64' );
-		expect(
-			within( cells[ 3 ] ).getByRole( 'button', {
-				name: 'Kestrel Bayou',
-			} )
-		).toBeInTheDocument();
-	} );
-
-	it( 'shows a theme row with no clients as its items alone', () => {
-		render(
-			<TrendTable
-				rows={ [
-					{
-						bucket: '2026-09-28',
-						value: 'kite permit backlog',
-						count: 1,
-						clients: [],
-						items: [
-							{
-								item_key: 'linear:SUP-77',
-								url: 'https://linear.example/SUP-77',
-								title: 'Kite permits wait a month',
-							},
-						],
-					},
-				] }
-				by="theme"
-				onOpenEntity={ jest.fn() }
-			/>
-		);
-		const cells = within( rowOf( '2026-09-28' ) ).getAllByRole( 'cell' );
-		expect( within( cells[ 3 ] ).queryByRole( 'button' ) ).toBeNull();
-		expect( within( cells[ 3 ] ).getAllByRole( 'list' ) ).toHaveLength( 1 );
-		expect(
-			within( cells[ 3 ] ).getByRole( 'link', {
-				name: 'Kite permits wait a month',
-			} )
-		).toBeInTheDocument();
-	} );
-
-	it( 'shows a theme row that answers no items and no clients as its theme', () => {
-		render(
-			<TrendTable
-				rows={ [
-					{
-						bucket: '2026-09-07',
-						value: 'newsletter sender rejected',
-						count: 1,
-					},
-				] }
-				by="theme"
-				onOpenEntity={ jest.fn() }
-			/>
-		);
-		const cells = within( rowOf( '2026-09-07' ) ).getAllByRole( 'cell' );
-		expect( cells[ 1 ] ).toHaveTextContent( 'newsletter sender rejected' );
-		expect( cells[ 2 ] ).toHaveTextContent( '1' );
-		expect( within( cells[ 3 ] ).queryByRole( 'button' ) ).toBeNull();
-		expect( within( cells[ 3 ] ).queryByRole( 'link' ) ).toBeNull();
-	} );
-
-	it( 'marks the Value cell of a kind row, a theme row and a signal row', () => {
+	it( 'marks the Value cell of a trend row and a signal row', () => {
 		const valueCell = ( bucket ) =>
 			within( rowOf( bucket ) ).getAllByRole( 'cell' )[ 1 ];
 		const { unmount } = render(
@@ -223,21 +106,12 @@ describe( 'TrendTable', () => {
 						items: [],
 					},
 				] }
-				by="kind"
 			/>
 		);
 		expect( valueCell( '2026-10-05' ) ).toHaveClass(
 			'newspack-intelligence__value'
 		);
 		unmount();
-
-		const themed = render(
-			<TrendTable rows={ THEMES } by="theme" onOpenEntity={ jest.fn() } />
-		);
-		expect( valueCell( '2026-09-21' ) ).toHaveClass(
-			'newspack-intelligence__value'
-		);
-		themed.unmount();
 
 		render(
 			<TrendTable
@@ -266,7 +140,7 @@ describe( 'TrendTable', () => {
 		).not.toHaveClass( 'newspack-intelligence__value' );
 	} );
 
-	it( 'shows no clients on another axis', () => {
+	it( 'shows a row’s items under Items and none of its clients', () => {
 		render( <TrendTable rows={ THEMES } /> );
 		expect(
 			screen
@@ -281,5 +155,139 @@ describe( 'TrendTable', () => {
 				name: 'Kestrel Bayou asks to export its archive',
 			} )
 		).toBeInTheDocument();
+	} );
+} );
+
+describe( 'TrendTable dates', () => {
+	it( 'marks every bucket cell as a date that does not wrap', () => {
+		render( <TrendTable rows={ THEMES } /> );
+		for ( const bucket of [ '2026-09-21', '2026-09-14' ] ) {
+			expect( screen.getByText( bucket ) ).toHaveClass(
+				'newspack-intelligence__date'
+			);
+		}
+	} );
+} );
+
+describe( 'TrendChart', () => {
+	/**
+	 * Trend rows, newest bucket first, as `trends` answers them: nine weekly
+	 * buckets, so the oldest falls outside the latest eight, and six values,
+	 * so the smallest falls outside the top five.
+	 */
+	const WEEKS = [
+		'2026-10-26',
+		'2026-10-19',
+		'2026-10-12',
+		'2026-10-05',
+		'2026-09-28',
+		'2026-09-21',
+		'2026-09-14',
+		'2026-09-07',
+		'2026-08-31',
+	];
+	const ROWS = [
+		...WEEKS.slice( 0, 8 ).map( ( bucket ) => ( {
+			bucket,
+			value: 'complaint',
+			count: 3,
+			items: [],
+		} ) ),
+		{ bucket: WEEKS[ 0 ], value: 'praise', count: 6, items: [] },
+		{ bucket: WEEKS[ 3 ], value: 'praise', count: 2, items: [] },
+		{ bucket: WEEKS[ 1 ], value: 'incident', count: 5, items: [] },
+		{ bucket: WEEKS[ 2 ], value: 'bug', count: 4, items: [] },
+		{ bucket: WEEKS[ 4 ], value: 'launch', count: 3, items: [] },
+		{ bucket: WEEKS[ 5 ], value: 'hire', count: 1, items: [] },
+		{ bucket: WEEKS[ 8 ], value: 'release', count: 40, items: [] },
+	];
+
+	const legend = ( container ) =>
+		Array.from(
+			container.querySelectorAll( '.newspack-nodes-chart-legend button' )
+		).map( ( row ) => row.textContent );
+
+	/**
+	 * Every number the drawn SVG carries in a path or an attribute.
+	 *
+	 * @param {Element} container The rendered chart.
+	 * @return {string} The SVG's markup.
+	 */
+	const markup = ( container ) =>
+		Array.from( container.querySelectorAll( 'svg' ) )
+			.map( ( svg ) => svg.outerHTML )
+			.join( '' );
+
+	it( 'draws the five largest values over the latest eight buckets as series of one shared time chart', () => {
+		const { container } = render( <TrendChart rows={ ROWS } /> );
+		expect(
+			container.querySelectorAll( '.newspack-nodes-chart' )
+		).toHaveLength( 1 );
+		expect( legend( container ) ).toEqual( [
+			'complaint',
+			'praise',
+			'incident',
+			'bug',
+			'launch',
+		] );
+		expect(
+			screen.getByRole( 'heading', {
+				name: 'From 2026-09-07 to 2026-10-26',
+			} )
+		).toBeInTheDocument();
+		expect( markup( container ) ).toMatch( /<path / );
+		expect( markup( container ) ).not.toMatch( /NaN/ );
+	} );
+
+	it( 'hands a screen reader every row as a table', () => {
+		render( <TrendChart rows={ ROWS } /> );
+		const table = screen.getByRole( 'table' );
+		expect( within( table ).getAllByRole( 'row' ) ).toHaveLength(
+			ROWS.length + 1
+		);
+		expect(
+			within( table ).getByRole( 'row', { name: /2026-08-31/ } )
+		).toHaveTextContent( 'release' );
+		expect( within( table ).queryByRole( 'link' ) ).toBeNull();
+	} );
+
+	it( 'draws counts that are all zero without a NaN', () => {
+		const { container } = render(
+			<TrendChart
+				rows={ WEEKS.slice( 0, 3 ).map( ( bucket ) => ( {
+					bucket,
+					value: 'complaint',
+					count: 0,
+					items: [],
+				} ) ) }
+			/>
+		);
+		expect( legend( container ) ).toEqual( [ 'complaint' ] );
+		expect( markup( container ) ).toMatch( /<path / );
+		expect( markup( container ) ).not.toMatch( /NaN/ );
+	} );
+
+	it( 'draws one bucket without a NaN', () => {
+		const { container } = render(
+			<TrendChart
+				rows={ [
+					{
+						bucket: WEEKS[ 0 ],
+						value: 'complaint',
+						count: 7,
+						items: [],
+					},
+				] }
+			/>
+		);
+		expect( legend( container ) ).toEqual( [ 'complaint' ] );
+		expect( markup( container ) ).toMatch( /<path / );
+		expect( markup( container ) ).not.toMatch( /NaN/ );
+	} );
+
+	it( 'draws nothing for no rows', () => {
+		const { container } = render( <TrendChart rows={ [] } /> );
+		expect( container.querySelector( '.newspack-nodes-chart' ) ).toBeNull();
+		expect( container ).toBeEmptyDOMElement();
 	} );
 } );

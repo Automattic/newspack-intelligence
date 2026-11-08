@@ -1,8 +1,9 @@
 /* eslint-env jest */
 /**
- * Lenses lists every lens, opens one onto its ranked theme groups a page of
- * groups at a time beside its trend rows, and offers a curator the form saving a lens, every filter
- * named and each list repeated, and the control removing the one opened.
+ * Lenses lists every lens, opens one onto its signals, its trends as one
+ * compact chart, and its ranked theme groups a page of groups at a time, and
+ * offers a curator the form saving a lens, every filter named and each list
+ * repeated, and the control removing the one opened.
  */
 
 import {
@@ -121,7 +122,7 @@ describe( 'Lens', () => {
 		expect( await screen.findByText( 'No lens yet.' ) ).toBeInTheDocument();
 	} );
 
-	it( 'opens a lens onto its groups and its trend rows, each citing its items', async () => {
+	it( 'opens a lens onto its trend chart above its groups', async () => {
 		render( <Harness canTune={ false } /> );
 		await openSupport();
 		const items = await screen.findByRole( 'region', {
@@ -138,19 +139,24 @@ describe( 'Lens', () => {
 				.map( ( heading ) => heading.textContent )
 		).toEqual( [ 'site blocked from sending email', 'bot registrations' ] );
 		const trends = screen.getByRole( 'region', { name: 'Trends' } );
-		const row = await within( trends ).findByRole( 'row', {
-			name: /2026-09-21/,
+		await within( trends ).findByRole( 'heading', {
+			name: 'From 2026-09-21 to 2026-09-21',
 		} );
-		expect( within( row ).getByText( 'complaint' ) ).toBeInTheDocument();
-		expect( within( row ).getByText( '4' ) ).toBeInTheDocument();
 		expect(
-			within( row ).getByRole( 'link', {
-				name: 'Paywall login loops for Acme',
-			} )
-		).toHaveAttribute( 'href', 'https://linear.example/SUP-88' );
+			trends.querySelectorAll( '.newspack-nodes-chart' )
+		).toHaveLength( 1 );
 		expect(
-			within( row ).getByText( 'javascript:alert(1)' ).closest( 'a' )
-		).toBeNull();
+			within( trends ).getByRole( 'button', { name: 'complaint' } )
+		).toBeInTheDocument();
+		expect( within( trends ).getAllByRole( 'table' ) ).toHaveLength( 1 );
+		expect(
+			within( trends ).getByRole( 'row', { name: /2026-09-21/ } )
+		).toHaveTextContent( 'complaint' );
+		expect( within( trends ).queryByRole( 'link' ) ).toBeNull();
+		expect(
+			trends.compareDocumentPosition( items ) &
+				window.Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
 		expect( wire.sent( 'search' ) ).toEqual( [
 			[ '--lens=support-desk', '--group=theme' ],
 		] );
@@ -208,7 +214,7 @@ describe( 'Lens', () => {
 		).toBeNull();
 		await openSupport();
 		await screen.findByText( '11 against a baseline of 1.7' );
-		await screen.findByText( 'Paywall login loops for Acme' );
+		await screen.findByText( 'From 2026-09-21 to 2026-09-21' );
 		await screen.findByText( 'Acme Quillsheet wins regional prize' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Watch this' } ) );
 		expect( onWatch ).toHaveBeenCalledWith(
@@ -548,7 +554,7 @@ describe( 'Lens', () => {
 		).toBeNull();
 	} );
 
-	it( 'shows the trend rows of a lens counting by theme with their clients', async () => {
+	it( 'draws a lens counting by theme as a series per theme, leaving its clients to the groups', async () => {
 		const [ support, ...rest ] = LENSES.lenses;
 		wire.replies.lenses = {
 			...LENSES,
@@ -574,19 +580,18 @@ describe( 'Lens', () => {
 			],
 			available: true,
 		};
-		const onOpenEntity = jest.fn();
-		render( <Harness canTune={ false } onOpenEntity={ onOpenEntity } /> );
+		render( <Harness canTune={ false } /> );
 		await openSupport();
 		const trends = screen.getByRole( 'region', { name: 'Trends' } );
-		const row = await within( trends ).findByRole( 'row', {
-			name: /2026-09-21/,
-		} );
-		fireEvent.click(
-			within( row ).getByRole( 'button', { name: 'Harbor Ledger' } )
-		);
-		expect( onOpenEntity ).toHaveBeenCalledWith(
-			'organization:harbor-ledger'
-		);
+		await within( trends ).findByRole( 'row', { name: /2026-09-21/ } );
+		expect(
+			within( trends ).getByRole( 'button', {
+				name: 'bot registrations',
+			} )
+		).toBeInTheDocument();
+		expect(
+			within( trends ).queryByRole( 'button', { name: 'Harbor Ledger' } )
+		).toBeNull();
 		expect( wire.sent( 'trends' ) ).toEqual( [
 			[ '--lens=support-desk' ],
 		] );

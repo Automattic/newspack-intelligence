@@ -23,7 +23,13 @@ const CHURN = {
 	kind: 'churn_signal',
 	importance: 9,
 	entities: [
-		{ entity_key: CLIENT, name: 'Kestrel Quillwork', state: 'asserted' },
+		{
+			entity_key: CLIENT,
+			name: 'Kestrel Quillwork',
+			state: 'asserted',
+			role: 'subject',
+			client: true,
+		},
 	],
 };
 
@@ -39,6 +45,8 @@ const PRODUCT_BUG = {
 			entity_key: 'product:tern-mailer',
 			name: 'Tern Mailer',
 			state: 'asserted',
+			role: 'subject',
+			client: false,
 		},
 	],
 };

@@ -36,6 +36,8 @@ export const ITEM = {
 			entity_key: 'organization:acme-quillsheet',
 			name: 'Acme Quillsheet',
 			state: 'asserted',
+			role: 'subject',
+			client: true,
 		},
 	],
 };
@@ -64,6 +66,7 @@ export const ENTITY = {
 			complaint: 5,
 		},
 		last_item_ts: 1790035200,
+		churn_open: false,
 	},
 	available: true,
 };
@@ -143,7 +146,14 @@ export const GROUPS = {
 					title: 'Harbor Ledger newsletters held',
 					url: 'https://linear.example/SUP-118',
 					kind: 'complaint',
-					entities: [ { ...HARBOR, state: 'asserted' } ],
+					entities: [
+						{
+							...HARBOR,
+							state: 'asserted',
+							role: 'mention',
+							client: true,
+						},
+					],
 				},
 			],
 		},

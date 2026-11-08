@@ -1,140 +1,25 @@
 import { useEffect, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
-import {
-	Card,
-	CardBody,
-	CardHeader,
-	SelectControl,
-	TextControl,
-} from '@wordpress/components';
-import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
+import { Card, CardBody, CardHeader } from '@wordpress/components';
 import { formatCommandArgs } from '@newspack-nodes/runtime';
 import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
 import Answer, { AnswerBody } from '../components/Answer';
 import Cite, { EntityChip } from '../components/Cite';
+import EditDrawer from '../components/EditDrawer';
 import Refusal from '../components/Refusal';
 import { ItemPage } from '../components/ItemRow';
 import TrendTable, {
 	againstBaseline,
 	signalValue,
 } from '../components/TrendTable';
-import { metaLine, utcDay } from '../components/format';
+import { metaLine, roleText, utcDay } from '../components/format';
 
-/**
- * The options a closed list offers a select.
- *
- * @param {string[]} values The list.
- * @return {{label: string, value: string}[]} The options.
- */
-const optionsOf = ( values ) =>
-	values.map( ( value ) => ( { label: value, value } ) );
+/** The role a client that churned is given once its client role ends. */
+const FORMER_CLIENT = 'former_client';
 
-/**
- * One curation form: a legend naming it, the fields it collects and the
- * button sending them. Enter in a field sends too.
- *
- * @param {Object}                    props
- * @param {string}                    props.legend   Names the form and its button.
- * @param {() => void}                props.onSubmit Sends the form.
- * @param {import('react').ReactNode} props.children The fields.
- * @return {import('react').ReactElement} The form.
- */
-function EditForm( { legend, onSubmit, children } ) {
-	return (
-		<form
-			className="newspack-intelligence__edit"
-			role="group"
-			aria-label={ legend }
-			{ ...submitProps( onSubmit ) }
-		>
-			<strong>{ legend }</strong>
-			{ children }
-			<button type="submit" className="button">
-				{ legend }
-			</button>
-		</form>
-	);
-}
-
-/**
- * A form adding a value of one kind to the entity: a name or an identifier.
- *
- * @param {Object}                                props
- * @param {string}                                props.legend   Names the form.
- * @param {string[]}                              props.kinds    The kinds it offers.
- * @param {(kind: string, value: string) => void} props.onSubmit Sends the pair.
- * @return {import('react').ReactElement} The form.
- */
-function KindValueForm( { legend, kinds, onSubmit } ) {
-	const [ kind, setKind ] = useState( kinds[ 0 ] );
-	const [ value, setValue ] = useState( '' );
-	return (
-		<EditForm legend={ legend } onSubmit={ () => onSubmit( kind, value ) }>
-			<SelectControl
-				__next40pxDefaultSize
-				label={ __( 'Kind', 'newspack-intelligence' ) }
-				options={ optionsOf( kinds ) }
-				value={ kind }
-				onChange={ setKind }
-			/>
-			<TextControl
-				__next40pxDefaultSize
-				label={ __( 'Value', 'newspack-intelligence' ) }
-				value={ value }
-				onChange={ setValue }
-			/>
-		</EditForm>
-	);
-}
-
-/**
- * The form opening a role on the entity from now.
- *
- * @param {Object}                 props
- * @param {string[]}               props.roles    The roles it offers.
- * @param {(role: string) => void} props.onSubmit Sends the role.
- * @return {import('react').ReactElement} The form.
- */
-function RoleForm( { roles, onSubmit } ) {
-	const [ role, setRole ] = useState( roles[ 0 ] );
-	return (
-		<EditForm
-			legend={ __( 'Assert role', 'newspack-intelligence' ) }
-			onSubmit={ () => onSubmit( role ) }
-		>
-			<SelectControl
-				__next40pxDefaultSize
-				label={ __( 'Role', 'newspack-intelligence' ) }
-				options={ optionsOf( roles ) }
-				value={ role }
-				onChange={ setRole }
-			/>
-		</EditForm>
-	);
-}
-
-/**
- * One role row: open from its first day, or held between two.
- *
- * @param {Object} role The role, `to_ts` 0 while open.
- * @return {string} The row's text.
- */
-function roleText( role ) {
-	return 0 === role.to_ts
-		? sprintf(
-				/* translators: 1: role, 2: first UTC day. */
-				__( '%1$s since %2$s', 'newspack-intelligence' ),
-				role.role,
-				utcDay( role.from_ts )
-		  )
-		: sprintf(
-				/* translators: 1: role, 2: first UTC day, 3: last UTC day. */
-				__( '%1$s %2$s – %3$s', 'newspack-intelligence' ),
-				role.role,
-				utcDay( role.from_ts ),
-				utcDay( role.to_ts )
-		  );
-}
+/** The churn prompt's steps: its end owed a reply, then its assert. */
+const ENDING = 'ending';
+const ASSERTING = 'asserting';
 
 /**
  * Whether a role row held any time; a closed row ending where it starts is
@@ -281,6 +166,100 @@ function statusText( status, signals ) {
 }
 
 /**
+ * The question a client with a churn report raises, for a curator: one
+ * click ends its client role, and only once that lands opens a former
+ * client one. While the pair is owed its replies the button stays
+ * focusable and does nothing, so a second click sends nothing.
+ *
+ * @param {Object}     props
+ * @param {boolean}    props.busy  Whether the pair is still owed its replies.
+ * @param {() => void} props.onEnd Ends the client role.
+ * @return {import('react').ReactElement} The prompt.
+ */
+function ChurnPrompt( { busy, onEnd } ) {
+	return (
+		<>
+			{ ' · ' }
+			<span>
+				{ __(
+					'This client has a churn report.',
+					'newspack-intelligence'
+				) }
+			</span>{ ' ' }
+			<button
+				type="button"
+				className="button button-small"
+				aria-disabled={ busy }
+				onClick={ () => ! busy && onEnd() }
+			>
+				{ __( 'End client?', 'newspack-intelligence' ) }
+			</button>
+		</>
+	);
+}
+
+/**
+ * What an entity holds: the keys merged into it, its names, identifiers and
+ * every role row that held time, and the topics it is tagged with.
+ *
+ * @param {Object}                props
+ * @param {Object}                props.entity       The record.
+ * @param {(key: string) => void} props.onOpenEntity Opens an entity.
+ * @return {import('react').ReactElement} The section.
+ */
+function Details( { entity, onOpenEntity } ) {
+	const title = __( 'Details', 'newspack-intelligence' );
+	return (
+		<Card as="section" aria-label={ title }>
+			<CardHeader>
+				<h3>{ title }</h3>
+			</CardHeader>
+			<CardBody>
+				{ 0 < entity.merged_from.length && (
+					<p>
+						{ sprintf(
+							/* translators: %s: the keys merged into this entity. */
+							__( 'Merged from %s', 'newspack-intelligence' ),
+							entity.merged_from.join( ', ' )
+						) }
+					</p>
+				) }
+				<ul className="newspack-intelligence__facts">
+					{ entity.names.map( ( name ) => (
+						<li key={ `name ${ name.kind } ${ name.value }` }>
+							{ `${ name.kind }: ${ name.value }` }
+						</li>
+					) ) }
+					{ entity.identifiers.map( ( id ) => (
+						<li key={ `id ${ id.kind } ${ id.value }` }>
+							{ `${ id.kind }: ${ id.value }` }
+						</li>
+					) ) }
+					{ entity.roles.filter( heldTime ).map( ( role ) => (
+						<li key={ `role ${ role.role } ${ role.from_ts }` }>
+							{ roleText( role ) }
+						</li>
+					) ) }
+				</ul>
+				{ 0 < entity.topics.length && (
+					<ul className="newspack-intelligence__chips">
+						{ entity.topics.map( ( topic ) => (
+							<li key={ topic.topic_key }>
+								<EntityChip
+									entityKey={ topic.topic_key }
+									name={ topic.name }
+									onOpen={ onOpenEntity }
+								/>
+							</li>
+						) ) }
+					</ul>
+				) }
+			</CardBody>
+		</Card>
+	);
+}
+
+/**
  * The items an entity's own site published, newest first, a page at a time.
  *
  * @param {Object}                 props
@@ -370,15 +349,16 @@ function Published( { entityKey, name, count, onOpenEntity, onSave } ) {
 }
 
 /**
- * Entity: one entity's record, headed for a client by its status line, its
- * signals on both axes, its timeline of the items about it a page at a
- * time, then, collapsed, the items its own site published, the entities
- * sharing its items and the claims naming it,
- * each from its own read; and, once the record has answered, for a
- * curator, the forms adding a name or identifier and asserting or ending a
- * role. Every edit that lands re-reads the record. A role row that held no
- * time is left out. The name the record answers is handed to `onNamed` with
- * the entity's key, so the page can label its tab without reading again.
+ * Entity: one entity's record, headed by its name and, for a client, its
+ * status line, then its signals on both axes, its timeline of the items
+ * about it a page at a time, what it holds (`Details`), then, collapsed,
+ * the items its own site published, the entities sharing its items and the
+ * claims naming it, each from its own read. Once the record has answered,
+ * a curator finds its curation in the Edit drawer (`EditDrawer`), and, for
+ * a client with a churn report since it began, the question in its status
+ * line ending its client role (`ChurnPrompt`). Every edit that lands re-reads
+ * the record. The name the record answers is handed to `onNamed` with the
+ * entity's key, so the page can label its tab without reading again.
  *
  * @param {Object}                                       props
  * @param {string}                                       props.entityKey    The entity shown.
@@ -421,11 +401,28 @@ export default function Entity( {
 		}
 	}, [ entityKey, record.loading, named, onNamed ] );
 
+	// The churn prompt's pair: null, or the step owed its reply.
+	const [ churn, setChurn ] = useState( null );
 	const edit = { refresh: record.refresh };
 	const addName = useIntelWrite( 'add_name', edit );
 	const addIdentifier = useIntelWrite( 'add_identifier', edit );
-	const assertRole = useIntelWrite( 'assert_role', edit );
-	const endRole = useIntelWrite( 'end_role', edit );
+	const assertRole = useIntelWrite( 'assert_role', {
+		refresh: () => {
+			setChurn( null );
+			record.refresh();
+		},
+		onRefused: () => setChurn( null ),
+	} );
+	const endRole = useIntelWrite( 'end_role', {
+		refresh: () => {
+			if ( ENDING === churn ) {
+				setChurn( ASSERTING );
+				assertRole.run( { key: entityKey, role: FORMER_CLIENT } );
+			}
+			record.refresh();
+		},
+		onRefused: () => setChurn( null ),
+	} );
 	const edits = [ addName, addIdentifier, assertRole, endRole ];
 
 	return (
@@ -440,6 +437,18 @@ export default function Entity( {
 									entity.status,
 									signals.answer?.signals
 								) }
+								{ canTune && entity.status.churn_open && (
+									<ChurnPrompt
+										busy={ null !== churn }
+										onEnd={ () => {
+											setChurn( ENDING );
+											endRole.run( {
+												key: entityKey,
+												role: 'client',
+											} );
+										} }
+									/>
+								) }
 							</p>
 						) }
 						<p className="newspack-nodes-status is-muted">
@@ -449,115 +458,22 @@ export default function Entity( {
 								entity.entity_key
 							) }
 						</p>
-						{ 0 < entity.merged_from.length && (
-							<p>
-								{ sprintf(
-									/* translators: %s: the keys merged into this entity. */
-									__(
-										'Merged from %s',
-										'newspack-intelligence'
-									),
-									entity.merged_from.join( ', ' )
-								) }
-							</p>
-						) }
 						<p>{ countsText( entity.counts ) }</p>
-						<ul className="newspack-intelligence__facts">
-							{ entity.names.map( ( name ) => (
-								<li
-									key={ `name ${ name.kind } ${ name.value }` }
-								>
-									{ `${ name.kind }: ${ name.value }` }
-								</li>
-							) ) }
-							{ entity.identifiers.map( ( id ) => (
-								<li key={ `id ${ id.kind } ${ id.value }` }>
-									{ `${ id.kind }: ${ id.value }` }
-								</li>
-							) ) }
-							{ entity.roles.filter( heldTime ).map( ( role ) => (
-								<li
-									key={ `role ${ role.role } ${ role.from_ts }` }
-									className="newspack-intelligence__actions"
-								>
-									{ roleText( role ) }
-									{ canTune && 0 === role.to_ts && (
-										<button
-											type="button"
-											className="button button-small"
-											onClick={ () =>
-												endRole.run( {
-													key: entityKey,
-													role: role.role,
-												} )
-											}
-										>
-											{ sprintf(
-												/* translators: %s: the role ended. */
-												__(
-													'End %s',
-													'newspack-intelligence'
-												),
-												role.role
-											) }
-										</button>
-									) }
-								</li>
-							) ) }
-						</ul>
-						{ 0 < entity.topics.length && (
-							<ul className="newspack-intelligence__chips">
-								{ entity.topics.map( ( topic ) => (
-									<li key={ topic.topic_key }>
-										<EntityChip
-											entityKey={ topic.topic_key }
-											name={ topic.name }
-											onOpen={ onOpenEntity }
-										/>
-									</li>
-								) ) }
-							</ul>
-						) }
 						{ canTune && (
-							<div className="newspack-intelligence__edits">
-								<KindValueForm
-									legend={ __(
-										'Add name',
-										'newspack-intelligence'
-									) }
-									kinds={ vocabulary.nameKinds }
-									onSubmit={ ( kind, value ) =>
-										addName.run( {
-											key: entityKey,
-											kind,
-											value,
-										} )
-									}
-								/>
-								<KindValueForm
-									legend={ __(
-										'Add identifier',
-										'newspack-intelligence'
-									) }
-									kinds={ vocabulary.identifierKinds }
-									onSubmit={ ( kind, value ) =>
-										addIdentifier.run( {
-											key: entityKey,
-											kind,
-											value,
-										} )
-									}
-								/>
-								<RoleForm
-									roles={ vocabulary.roles }
-									onSubmit={ ( role ) =>
-										assertRole.run( {
-											key: entityKey,
-											role,
-										} )
-									}
-								/>
-							</div>
+							<EditDrawer
+								entityKey={ entityKey }
+								name={ entityName( entity ) }
+								openRoles={ entity.roles.filter(
+									( role ) => 0 === role.to_ts
+								) }
+								vocabulary={ vocabulary }
+								writes={ {
+									addName,
+									addIdentifier,
+									assertRole,
+									endRole,
+								} }
+							/>
 						) }
 						{ edits.map( ( write, i ) => (
 							<Refusal key={ i } error={ write.refusal } />
@@ -605,6 +521,13 @@ export default function Entity( {
 					/>
 				) }
 			</Answer>
+
+			{ record.answer?.available && (
+				<Details
+					entity={ record.answer }
+					onOpenEntity={ onOpenEntity }
+				/>
+			) }
 
 			{ record.answer && 0 < record.answer.published.count && (
 				<Published

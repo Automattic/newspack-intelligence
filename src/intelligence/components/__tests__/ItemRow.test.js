@@ -5,7 +5,7 @@
  * chip opening it, and the save control only for a caller who may curate.
  */
 
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import ItemRow, { ItemPage } from '../ItemRow';
 
 const ITEM = {
@@ -22,9 +22,27 @@ const ITEM = {
 			entity_key: 'organization:acme-quillsheet',
 			name: 'Acme Quillsheet',
 			state: 'asserted',
+			role: 'subject',
+			client: false,
 		},
 	],
 };
+
+/**
+ * An entity as an item lists it, linked by its role.
+ *
+ * @param {string}  slug   Its key's slug and name.
+ * @param {string}  role   Its link's role.
+ * @param {boolean} client Whether it holds an open client role.
+ * @return {Object} The entity.
+ */
+const linked = ( slug, role, client = false ) => ( {
+	entity_key: `organization:${ slug }`,
+	name: slug,
+	state: 'asserted',
+	role,
+	client,
+} );
 
 describe( 'ItemRow excerpt', () => {
 	const EXCERPT =
@@ -149,16 +167,22 @@ describe( 'ItemRow', () => {
 								entity_key: firstKey,
 								name: 'Quillmere',
 								state: firstState,
+								role: 'subject',
+								client: false,
 							},
 							{
 								entity_key: 'person:ada-fenwick',
 								name: 'Ada Fenwick',
 								state: 'asserted',
+								role: 'subject',
+								client: false,
 							},
 							{
 								entity_key: secondKey,
 								name: 'Quillmere',
 								state: secondState,
+								role: 'subject',
+								client: false,
 							},
 						],
 					} }
@@ -204,6 +228,72 @@ describe( 'ItemRow', () => {
 			[ 'Quillmere', 'organization:quillmere' ],
 			[ 'Ada Fenwick', 'person:ada-fenwick' ],
 		] );
+	} );
+
+	it( 'chips its subjects and holds its mentions behind a toggle', () => {
+		const subjects = [ 'tern-desk', 'auk-post' ];
+		const mentions = [ 1, 2, 3, 4, 5, 6, 7, 8, 9 ].map(
+			( n ) => `gull-${ n }`
+		);
+		render(
+			<ItemRow
+				item={ {
+					...ITEM,
+					entities: [
+						...subjects.map( ( slug ) =>
+							linked( slug, 'subject' )
+						),
+						...mentions.map( ( slug ) =>
+							linked( slug, 'mention' )
+						),
+					],
+				} }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		const chips = () =>
+			screen
+				.getAllByRole( 'button' )
+				.filter( ( chip ) =>
+					chip.closest( '.newspack-intelligence__chips li' )
+				)
+				.map( ( chip ) => chip.textContent );
+		expect( chips() ).toEqual( subjects );
+		const more = screen.getByRole( 'button', { name: '+9 more' } );
+		expect( more ).toHaveAttribute( 'aria-expanded', 'false' );
+
+		fireEvent.click( more );
+		expect( chips() ).toEqual( [ ...subjects, ...mentions ] );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Show fewer' } ) );
+		expect( chips() ).toEqual( subjects );
+	} );
+
+	it( 'chips a client it mentions, first, and never an entity no naming role links', () => {
+		render(
+			<ItemRow
+				item={ {
+					...ITEM,
+					entities: [
+						linked( 'heron-weekly', 'mention', true ),
+						linked( 'tern-desk', 'subject' ),
+						linked( 'gull-press', 'mention' ),
+						linked( 'skua-times', 'publisher' ),
+					],
+				} }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: '+1 more' } ) );
+		expect(
+			within( screen.getByRole( 'list' ) )
+				.getAllByRole( 'listitem' )
+				.map( ( chip ) => chip.textContent )
+		).toEqual( [ 'heron-weekly', 'tern-desk', 'gull-press' ] );
+	} );
+
+	it( 'offers no toggle when it mentions nothing past its chips', () => {
+		render( <ItemRow item={ ITEM } onOpenEntity={ jest.fn() } /> );
+		expect( screen.queryByRole( 'button', { name: /more$/ } ) ).toBeNull();
 	} );
 
 	it( 'offers save to collection only when given a save handler', () => {

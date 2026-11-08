@@ -93,6 +93,19 @@ const recordCard = () =>
 		.getByRole( 'heading', { name: 'Acme Quillsheet' } )
 		.closest( 'section' );
 
+const details = () => screen.getByRole( 'region', { name: 'Details' } );
+
+/**
+ * Open the Edit drawer once the record answers.
+ *
+ * @return {Promise<HTMLElement>} The drawer.
+ */
+async function openDrawer() {
+	await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
+	fireEvent.click( screen.getByRole( 'button', { name: 'Edit' } ) );
+	return screen.getByRole( 'region', { name: 'Edit Acme Quillsheet' } );
+}
+
 describe( 'Entity — reads', () => {
 	it( 'asks each read verb about the entity', async () => {
 		renderEntity();
@@ -109,10 +122,22 @@ describe( 'Entity — reads', () => {
 		} );
 	} );
 
-	it( 'renders the record: names, identifiers, roles, topics and counts', async () => {
+	it( 'heads with its counts and lists its names, identifiers, roles and topics after the timeline', async () => {
 		renderEntity();
 		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
-		const record = recordCard();
+		expect(
+			within( recordCard() ).getByText( /12 items, 3 proposed links/ )
+		).toBeInTheDocument();
+		expect(
+			within( recordCard() ).queryByText( /alias: The Quillsheet/ )
+		).toBeNull();
+		const record = details();
+		expect(
+			screen
+				.getByRole( 'region', { name: 'Timeline' } )
+				.compareDocumentPosition( record ) &
+				window.Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
 		expect(
 			within( record ).getByText( /alias: The Quillsheet/ )
 		).toBeInTheDocument();
@@ -127,9 +152,6 @@ describe( 'Entity — reads', () => {
 		).toBeInTheDocument();
 		expect(
 			within( record ).getByText( /organization:acme-quillsheet-inc/ )
-		).toBeInTheDocument();
-		expect(
-			within( record ).getByText( /12 items, 3 proposed links/ )
 		).toBeInTheDocument();
 		expect(
 			within( record ).getByRole( 'button', { name: 'Local news' } )
@@ -188,7 +210,7 @@ describe( 'Entity — reads', () => {
 		};
 		renderEntity();
 		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
-		const record = recordCard();
+		const record = details();
 		expect(
 			within( record ).getByText( /competitor 2026-08-01 – 2026-10-29/ )
 		).toBeInTheDocument();
@@ -204,8 +226,7 @@ describe( 'Entity — reads', () => {
 			roles: [ { role: 'client', from_ts: 0, to_ts: 0 } ],
 		};
 		renderEntity( { canTune: true } );
-		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
-		const end = within( recordCard() ).getByRole( 'button', {
+		const end = within( await openDrawer() ).getByRole( 'button', {
 			name: 'End client',
 		} );
 		expect( end.closest( 'li' ) ).toHaveTextContent( /^client since/ );
@@ -544,6 +565,107 @@ describe( 'Entity — status', () => {
 	} );
 } );
 
+describe( 'Entity — churn', () => {
+	const churning = {
+		...ENTITY,
+		status: { ...ENTITY.status, churn_open: true },
+	};
+
+	it( 'asks a curator in the status line whether to end a client with a churn report', async () => {
+		wire.replies.entity = churning;
+		wire.replies.end_role = { ok: true, event_id: 'ev-end-client' };
+		wire.replies.assert_role = { ok: true, event_id: 'ev-former' };
+		renderEntity( { canTune: true } );
+		const heading = await screen.findByRole( 'heading', {
+			name: 'Acme Quillsheet',
+		} );
+		const status = heading.nextElementSibling;
+		expect( status ).toHaveTextContent(
+			/This client has a churn report\. End client\?$/
+		);
+		fireEvent.click(
+			within( status ).getByRole( 'button', { name: 'End client?' } )
+		);
+		await waitFor( () => {
+			expect( wire.sent( 'end_role' ) ).toEqual( [
+				[ `--key=${ KEY }`, '--role=client' ],
+			] );
+			expect( wire.sent( 'assert_role' ) ).toEqual( [
+				[ `--key=${ KEY }`, '--role=former_client' ],
+			] );
+		} );
+	} );
+
+	it( 'asserts the former client role only once the end lands', async () => {
+		wire.replies.entity = churning;
+		renderEntity( { canTune: true } );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'End client?' } )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'end_role' ) ).toHaveLength( 1 )
+		);
+		expect( wire.sent( 'assert_role' ) ).toEqual( [] );
+	} );
+
+	it( 'shows a refused end as the refusal and asserts nothing', async () => {
+		wire.replies.entity = churning;
+		wire.replies.end_role = () =>
+			new Error( `${ KEY } holds no open client role` );
+		wire.replies.assert_role = { ok: true, event_id: 'ev-former' };
+		renderEntity( { canTune: true } );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'End client?' } )
+		);
+		expect(
+			await screen.findByText( `${ KEY } holds no open client role` )
+		).toBeInTheDocument();
+		expect( wire.sent( 'assert_role' ) ).toEqual( [] );
+		expect(
+			screen.getByRole( 'button', { name: 'End client?' } )
+		).toHaveAttribute( 'aria-disabled', 'false' );
+	} );
+
+	it( 'holds the prompt while its end is owed a reply, so a second click sends nothing', async () => {
+		wire.replies.entity = churning;
+		renderEntity( { canTune: true } );
+		const prompt = await screen.findByRole( 'button', {
+			name: 'End client?',
+		} );
+		const asks = () =>
+			Core.node( 'intelligence:end_role:fetch' ).outbox.length;
+		fireEvent.click( prompt );
+		expect( prompt ).toHaveAttribute( 'aria-disabled', 'true' );
+		expect( asks() ).toBe( 1 );
+		fireEvent.click( prompt );
+		expect( asks() ).toBe( 1 );
+		await waitFor( () =>
+			expect( wire.sent( 'end_role' ) ).toHaveLength( 1 )
+		);
+		fireEvent.click( prompt );
+		expect( asks() ).toBe( 1 );
+		expect( wire.sent( 'assert_role' ) ).toEqual( [] );
+	} );
+
+	it( 'asks a reader nothing', async () => {
+		wire.replies.entity = churning;
+		renderEntity();
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
+		expect( screen.queryByText( /churn report\./ ) ).toBeNull();
+		expect(
+			screen.queryByRole( 'button', { name: 'End client?' } )
+		).toBeNull();
+	} );
+
+	it( 'asks nothing about a client with no churn report since it began', async () => {
+		renderEntity( { canTune: true } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
+		expect(
+			screen.queryByRole( 'button', { name: 'End client?' } )
+		).toBeNull();
+	} );
+} );
+
 describe( 'Entity — published', () => {
 	const published = () =>
 		screen.getByRole( 'button', {
@@ -633,6 +755,7 @@ describe( 'Entity — curation', () => {
 		renderEntity();
 		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		for ( const name of [
+			'Edit',
 			'Add name',
 			'Add identifier',
 			'Assert role',
@@ -640,6 +763,38 @@ describe( 'Entity — curation', () => {
 		] ) {
 			expect( screen.queryByRole( 'button', { name } ) ).toBeNull();
 		}
+	} );
+
+	it( 'keeps every curation form in the Edit drawer, closed until opened', async () => {
+		renderEntity( { canTune: true } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
+		const toggle = screen.getByRole( 'button', { name: 'Edit' } );
+		expect( toggle ).toHaveAttribute( 'aria-expanded', 'false' );
+		for ( const name of [ 'Add name', 'Add identifier', 'Assert role' ] ) {
+			expect( screen.queryByRole( 'group', { name } ) ).toBeNull();
+		}
+		expect(
+			screen.queryByRole( 'button', { name: 'End client' } )
+		).toBeNull();
+
+		const drawer = await openDrawer();
+		expect( toggle ).toHaveAttribute( 'aria-expanded', 'true' );
+		expect( toggle ).toHaveAttribute( 'aria-controls', drawer.id );
+		expect( drawer.id ).not.toBe( '' );
+		expect( recordCard() ).toContainElement( drawer );
+		for ( const name of [ 'Add name', 'Add identifier', 'Assert role' ] ) {
+			expect(
+				within( drawer ).getByRole( 'group', { name } )
+			).toBeInTheDocument();
+		}
+		expect(
+			within( drawer ).getByRole( 'button', { name: 'End client' } )
+		).toBeInTheDocument();
+
+		fireEvent.click( toggle );
+		expect(
+			screen.queryByRole( 'region', { name: 'Edit Acme Quillsheet' } )
+		).toBeNull();
 	} );
 
 	it( 'offers no edit until the record answers', async () => {
@@ -652,13 +807,15 @@ describe( 'Entity — curation', () => {
 		expect(
 			screen.queryByRole( 'group', { name: 'Assert role' } )
 		).toBeNull();
+		expect( screen.queryByRole( 'button', { name: 'Edit' } ) ).toBeNull();
 	} );
 
 	it( 'adds a name of the chosen kind and re-reads the record', async () => {
 		wire.replies.add_name = { ok: true, event_id: 'ev-name' };
 		renderEntity( { canTune: true } );
-		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
-		const form = screen.getByRole( 'group', { name: 'Add name' } );
+		const form = within( await openDrawer() ).getByRole( 'group', {
+			name: 'Add name',
+		} );
 		fireEvent.change( within( form ).getByLabelText( 'Kind' ), {
 			target: { value: 'acronym' },
 		} );
@@ -681,8 +838,9 @@ describe( 'Entity — curation', () => {
 	it( 'sends a value that reads like an option as the value', async () => {
 		wire.replies.add_name = { ok: true, event_id: 'ev-dash' };
 		renderEntity( { canTune: true } );
-		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
-		const form = screen.getByRole( 'group', { name: 'Add name' } );
+		const form = within( await openDrawer() ).getByRole( 'group', {
+			name: 'Add name',
+		} );
 		fireEvent.change( within( form ).getByLabelText( 'Value' ), {
 			target: { value: '--kind=acronym' },
 		} );
@@ -703,8 +861,9 @@ describe( 'Entity — curation', () => {
 	it( 'adds an identifier of the chosen kind', async () => {
 		wire.replies.add_identifier = { ok: true, event_id: 'ev-id' };
 		renderEntity( { canTune: true } );
-		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
-		const form = screen.getByRole( 'group', { name: 'Add identifier' } );
+		const form = within( await openDrawer() ).getByRole( 'group', {
+			name: 'Add identifier',
+		} );
 		fireEvent.change( within( form ).getByLabelText( 'Kind' ), {
 			target: { value: 'github_org' },
 		} );
@@ -729,8 +888,9 @@ describe( 'Entity — curation', () => {
 		wire.replies.assert_role = { ok: true, event_id: 'ev-role' };
 		wire.replies.end_role = { ok: true, event_id: 'ev-end' };
 		renderEntity( { canTune: true } );
-		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
-		const form = screen.getByRole( 'group', { name: 'Assert role' } );
+		const form = within( await openDrawer() ).getByRole( 'group', {
+			name: 'Assert role',
+		} );
 		fireEvent.change( within( form ).getByLabelText( 'Role' ), {
 			target: { value: 'competitor' },
 		} );
@@ -759,8 +919,9 @@ describe( 'Entity — curation', () => {
 		wire.replies.assert_role = () =>
 			new Error( `${ KEY } already holds client` );
 		renderEntity( { canTune: true } );
-		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
-		const form = screen.getByRole( 'group', { name: 'Assert role' } );
+		const form = within( await openDrawer() ).getByRole( 'group', {
+			name: 'Assert role',
+		} );
 		fireEvent.click(
 			within( form ).getByRole( 'button', { name: 'Assert role' } )
 		);

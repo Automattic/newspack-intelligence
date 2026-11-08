@@ -60,7 +60,7 @@ final class GraphQueryTest extends TestCase {
 						'kind'       => 'award',
 						'relevance'  => 8.5,
 						'importance' => 6.25,
-						'entities'   => [ [ 'entity_key' => self::GAZETTE, 'name' => 'Harbor Gazette', 'state' => 'asserted' ] ],
+						'entities'   => [ [ 'entity_key' => self::GAZETTE, 'name' => 'Harbor Gazette', 'state' => 'asserted', 'role' => 'subject', 'client' => true ] ],
 					],
 				],
 				'total'     => 1,
@@ -248,7 +248,7 @@ final class GraphQueryTest extends TestCase {
 				'topics'      => [ [ 'topic_key' => 'topic:awards', 'name' => 'Awards' ] ],
 				'counts'      => [ 'items' => 2, 'proposed_links' => 0 ],
 				'published'   => [ 'count' => 0 ],
-				'status'      => [ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 0, 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => self::$oct_06 ],
+				'status'      => [ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 0, 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => self::$oct_06, 'churn_open' => false ],
 				'available'   => true,
 			],
 			self::read( 'entity', [ 'key' => self::GAZETTE ] )
@@ -270,7 +270,7 @@ final class GraphQueryTest extends TestCase {
 		);
 
 		$this->assertSame( 'Kestrel Bay Courier Cooperative', self::read( 'entity', [ 'key' => $key ] )['name'] );
-		$this->assertSame( [ [ 'entity_key' => $key, 'name' => 'Kestrel Bay Courier Cooperative', 'state' => 'asserted' ] ], self::search( [ 'q' => 'ferry' ] )['items'][0]['entities'] );
+		$this->assertSame( [ [ 'entity_key' => $key, 'name' => 'Kestrel Bay Courier Cooperative', 'state' => 'asserted', 'role' => 'subject', 'client' => false ] ], self::search( [ 'q' => 'ferry' ] )['items'][0]['entities'] );
 	}
 
 	/** An entity created under a name of its own shows a canonical name added since, in its record and in what lists it. */
@@ -753,7 +753,7 @@ final class GraphQueryTest extends TestCase {
 			$this->assertSame( [ 'feed:old-ledger-hire', 'github:ledger-launch', 'linear:joint-grant' ], self::keys( self::read( 'timeline', [ 'key' => $merged, 'limit' => 50, 'offset' => 0 ] ) ) );
 		}
 		$this->assertSame( [ 'feed:old-ledger-hire', 'github:ledger-launch', 'linear:joint-grant' ], self::keys( self::search( [ 'entity' => 'organization:old-ledger' ] ) ) );
-		$this->assertSame( [ [ 'entity_key' => self::LEDGER, 'name' => 'Salem Ledger', 'state' => 'asserted' ], [ 'entity_key' => self::GAZETTE, 'name' => 'Harbor Gazette', 'state' => 'asserted' ] ], self::search( [ 'q' => 'editor' ] )['items'][0]['entities'] );
+		$this->assertSame( [ [ 'entity_key' => self::GAZETTE, 'name' => 'Harbor Gazette', 'state' => 'asserted', 'role' => 'mention', 'client' => true ], [ 'entity_key' => self::LEDGER, 'name' => 'Salem Ledger', 'state' => 'asserted', 'role' => 'subject', 'client' => false ] ], self::search( [ 'q' => 'editor' ] )['items'][0]['entities'] );
 		$this->assertSame( [ 'feed:old-ledger-hire', 'linear:joint-grant' ], \array_column( \array_column( self::read( 'related', [ 'key' => self::GAZETTE, 'limit' => 20 ] )['entities'], 'items', 'entity_key' )[ self::LEDGER ], 'item_key' ) );
 		$this->assertSame( [ 'hire', 'launch', 'funding' ], \array_column( self::trends( [ 'by' => 'kind', 'entity' => 'organization:ledger-of-salem' ] )['rows'], 'value' ) );
 	}
@@ -778,11 +778,58 @@ final class GraphQueryTest extends TestCase {
 
 		$this->assertSame( [ 'github:ledger-launch' ], self::keys( self::search( [ 'entity' => self::LEDGER ] ) ) );
 		$this->assertSame( [ 'github:ledger-launch' ], self::keys( self::read( 'timeline', [ 'key' => self::LEDGER, 'limit' => 50, 'offset' => 0 ] ) ) );
-		$this->assertSame( [ [ 'entity_key' => self::GAZETTE, 'name' => 'Harbor Gazette', 'state' => 'asserted' ] ], self::search( [ 'q' => 'grant' ] )['items'][0]['entities'] );
+		$this->assertSame( [ [ 'entity_key' => self::GAZETTE, 'name' => 'Harbor Gazette', 'state' => 'asserted', 'role' => 'subject', 'client' => true ] ], self::search( [ 'q' => 'grant' ] )['items'][0]['entities'] );
 		$this->assertSame( [ 'items' => 1, 'proposed_links' => 0 ], self::read( 'entity', [ 'key' => self::LEDGER ] )['counts'] );
 		$this->assertSame( [ 'topic:awards' ], \array_column( self::read( 'related', [ 'key' => self::GAZETTE, 'limit' => 20 ] )['entities'], 'entity_key' ) );
 		$this->assertSame( [ 'launch' ], \array_column( self::trends( [ 'by' => 'kind', 'entity' => self::LEDGER ] )['rows'], 'value' ) );
 		$this->assertSame( [], self::read( 'review', [ 'what' => 'links' ] )['links'] );
+	}
+
+	/**
+	 * An item's entities each name the role their link holds and whether the
+	 * entity is an open client, an open client first, then a subject, then a
+	 * mention; a client whose role ended is a client no longer.
+	 */
+	public function test_an_items_entities_name_their_link_role_and_lead_with_a_client(): void {
+		$this->seed_world();
+		$this->seed(
+			self::entity( 'organization:auk-courier', 'Auk Courier' ),
+			[
+				Intel_Event::make( 'role_asserted', [ 'entity_key' => 'organization:auk-courier', 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'role_ended', [ 'entity_key' => 'organization:auk-courier', 'role' => 'client', 'from_ts' => self::$jan_01, 'to_ts' => self::$oct_01 ], 'user:41', 'fixture-9' ),
+			],
+			self::item( 'feed:tern-ferry', 'Ferry pilots strike', 'feed', 'public', self::$oct_13 ),
+			self::link( 'link_asserted', 'feed:tern-ferry', 'organization:auk-courier', 'mention', 'name', 1.0, self::$oct_13 ),
+			self::link( 'link_asserted', 'feed:tern-ferry', self::GAZETTE, 'mention', 'name', 1.0, self::$oct_13 ),
+			self::link( 'link_asserted', 'feed:tern-ferry', self::LEDGER, 'subject', 'name', 1.0, self::$oct_13 )
+		);
+
+		$this->assertSame(
+			[
+				[ 'entity_key' => self::GAZETTE, 'name' => 'Harbor Gazette', 'state' => 'asserted', 'role' => 'mention', 'client' => true ],
+				[ 'entity_key' => self::LEDGER, 'name' => 'Salem Ledger', 'state' => 'asserted', 'role' => 'subject', 'client' => false ],
+				[ 'entity_key' => 'organization:auk-courier', 'name' => 'Auk Courier', 'state' => 'asserted', 'role' => 'mention', 'client' => false ],
+			],
+			self::search( [ 'q' => 'ferry' ] )['items'][0]['entities']
+		);
+	}
+
+	/**
+	 * An item's entity is a client when the open client role sits on a key
+	 * merged into it, read through the survivor map the statement binds, in
+	 * a plain search and in a theme group alike.
+	 */
+	public function test_an_items_client_reads_through_a_key_merged_into_it(): void {
+		$this->seed_world();
+		$this->seed(
+			self::entity( 'organization:old-ledger', 'Old Salem Ledger' ),
+			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => 'organization:old-ledger', 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ) ],
+			self::merged( 'organization:old-ledger', self::LEDGER )
+		);
+
+		$client = static fn ( array $items ): array => \array_column( $items[0]['entities'], 'client', 'entity_key' );
+		$this->assertSame( [ self::LEDGER => true ], $client( self::search( [ 'q' => 'newsletter tool' ] )['items'] ) );
+		$this->assertSame( [ self::LEDGER => true ], $client( self::search( [ 'q' => 'newsletter tool', 'group' => 'theme', 'sort' => null ] )['groups'][0]['items'] ) );
 	}
 
 	/** No item shows an entity whose survivor is rejected: its link stays stored, and lists no chip. */

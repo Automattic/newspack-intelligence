@@ -7,6 +7,7 @@ use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intelligence_CI_Node;
+use Newspack_Intelligence\Intel_Tiers;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
@@ -47,6 +48,9 @@ final class PublisherSignalsTest extends TestCase {
 	private const WEEK = 604800;
 
 	private const READER = 6614;
+
+	/** A curator holding the restricted tier. */
+	private const HOLDER = 6615;
 
 	/** The Tern Ledger's steady output: five items each week, the current one included. */
 	private const STEADY = [ 0 => 5, 1 => 5, 2 => 5, 3 => 5, 4 => 5, 5 => 5, 6 => 5, 7 => 5, 8 => 5, 9 => 5 ];
@@ -322,7 +326,7 @@ final class PublisherSignalsTest extends TestCase {
 		$this->about( 'churned', [ 7 => 5 ] );
 
 		$this->assertSame(
-			[ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 5, 'churn_signal' => 4, 'feature_request' => 2, 'complaint' => 3 ], 'last_item_ts' => self::THIS_WEEK - 2 * self::WEEK + 3 * 86400 + 2 * 60 ],
+			[ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 5, 'churn_signal' => 4, 'feature_request' => 2, 'complaint' => 3 ], 'last_item_ts' => self::THIS_WEEK - 2 * self::WEEK + 3 * 86400 + 2 * 60, 'churn_open' => true ],
 			$this->ci->dispatch( 'entity', [ self::COURIER ] )['status']
 		);
 	}
@@ -330,9 +334,51 @@ final class PublisherSignalsTest extends TestCase {
 	/** A client with nothing about it answers its start alone. */
 	public function test_a_quiet_clients_status_answers_its_start_alone(): void {
 		$this->assertSame(
-			[ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 0, 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => null ],
+			[ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 0, 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => null, 'churn_open' => false ],
 			$this->ci->dispatch( 'entity', [ self::TERN ] )['status']
 		);
+	}
+
+	/**
+	 * A client's status names a churn report: an item about it extracted
+	 * churned after its open client role began. One dated before the role
+	 * began, as a client that left and signed again carries, names none, and
+	 * neither does a churn signal.
+	 */
+	public function test_status_names_an_open_client_with_a_churn_report(): void {
+		$kite = 'organization:kite-herald';
+		$this->seed(
+			self::entity( $kite, 'Kite Herald' ),
+			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => $kite, 'role' => 'client', 'from_ts' => self::THIS_WEEK ], 'user:41', 'fixture-9' ) ]
+		);
+		$before = self::THIS_WEEK - 3 * self::WEEK;
+		$this->seed( self::item( 'github:kite-left', 'The Kite Herald left', 'github', 'public', $before ), self::extraction( 'github:kite-left', 'It left.', 'churned', $before, [] ), self::link( 'link_asserted', 'github:kite-left', $kite, 'subject', 'name', 1.0, $before ) );
+		$this->about( 'churn_signal', [ 3 => 2 ] );
+
+		$this->assertFalse( $this->ci->dispatch( 'entity', [ self::COURIER ] )['status']['churn_open'], 'a churn signal is not a churn report' );
+		$this->assertSame( 1, $this->ci->dispatch( 'entity', [ $kite ] )['status']['kinds']['churned'] );
+		$this->assertFalse( $this->ci->dispatch( 'entity', [ $kite ] )['status']['churn_open'], 'a report before the role began names none' );
+
+		$this->about( 'churned', [ 1 => 1 ] );
+
+		$this->assertTrue( $this->ci->dispatch( 'entity', [ self::COURIER ] )['status']['churn_open'] );
+	}
+
+	/**
+	 * A churn report rests only on an item the caller may read: one only a
+	 * restricted item makes names none to a caller without the restricted
+	 * tier, and names it to one holding it.
+	 */
+	public function test_a_restricted_churn_report_names_one_only_to_a_holder(): void {
+		$at = self::THIS_WEEK - self::WEEK;
+		$this->seed( self::item( 'github:courier-leaving', 'The Courier is leaving', 'github', 'restricted', $at ), self::extraction( 'github:courier-leaving', 'It is leaving.', 'churned', $at, [] ), self::link( 'link_asserted', 'github:courier-leaving', self::COURIER, 'subject', 'name', 1.0, $at ) );
+
+		$this->assertFalse( $this->ci->dispatch( 'entity', [ self::COURIER ] )['status']['churn_open'] );
+
+		self::add_user( self::HOLDER, 'marsh-analyst', 'manage_options', Intel_Tiers::CAPABILITY );
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+
+		$this->assertTrue( $this->ci->dispatch( 'entity', [ self::COURIER ] )['status']['churn_open'] );
 	}
 
 	/** An entity holding no client role, a former client's included, answers no status. */

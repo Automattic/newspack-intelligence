@@ -100,11 +100,14 @@ final class Graph_Query {
 	/** The role an entity holds while it is a client. */
 	public const CLIENT = 'client';
 
+	/** The item kind reporting that a client has left or is leaving. */
+	public const CHURNED = 'churned';
+
 	/** The role an entity holds while it is Newspack's own work. */
 	public const NEWSPACK_PRODUCT = 'newspack_product';
 
 	/** The item kinds a client's status counts, in the order it answers them. */
-	public const STATUS_KINDS = [ 'churned', 'churn_signal', 'feature_request', 'complaint' ];
+	public const STATUS_KINDS = [ self::CHURNED, 'churn_signal', 'feature_request', 'complaint' ];
 
 	/** The item kind that says nothing, so it never signals about an entity. */
 	private const MUTE_KIND = 'other';
@@ -680,14 +683,15 @@ final class Graph_Query {
 
 	/**
 	 * The entities each item is about, but its topics and any whose survivor
-	 * is rejected, as `search` lists them: by survivor, a subject first, each
-	 * with its name and its link's state, read in one statement; none for no
-	 * items.
+	 * is rejected, as `search` lists them: by survivor, an open client
+	 * (`open_clients()`) first, then a subject, each with its name, its
+	 * link's state and role, and whether it is an open client, read in one
+	 * statement; none for no items.
 	 *
 	 * @param Row_Reader   $r    The reader.
 	 * @param Graph        $g    The graph the read opened.
 	 * @param list<string> $keys The item keys.
-	 * @return array<string,list<array{entity_key:mixed,name:mixed,state:mixed}>> Each item with an entity => them.
+	 * @return array<string,list<array{entity_key:mixed,name:mixed,state:mixed,role:mixed,client:bool}>> Each item with an entity => them.
 	 */
 	private static function entities_of( Row_Reader $r, array $g, array $keys ): array {
 		$linked = [];
@@ -695,8 +699,13 @@ final class Graph_Query {
 			return $linked;
 		}
 		[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' )', $keys );
-		foreach ( $r->rows( "{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::name_of( $r, 'live.entity_key' ) . " , live.state FROM live WHERE NOT live.topical AND " . self::unrejected( $r, 'live.entity_key' ) . " ORDER BY live.role = 'subject' DESC, live.entity_key", [ ...$g['binds'], ...$live_binds ] ) as [ $item_key, $entity, $name, $state ] ) {
-			$linked[ Core::as_string( $item_key ) ][] = [ 'entity_key' => $entity, 'name' => $name, 'state' => $state ];
+		$rows                  = $r->rows(
+			"{$g['with']}{$live}, " . self::open_clients( $r ) . ' SELECT live.item_key, live.entity_key, ' . self::name_of( $r, 'live.entity_key' ) . ', live.state, live.role, oc.entity_key IS NOT NULL AS client'
+			. ' FROM live LEFT JOIN oc ON oc.entity_key = live.entity_key WHERE NOT live.topical AND ' . self::unrejected( $r, 'live.entity_key' ) . " ORDER BY client DESC, live.role = 'subject' DESC, live.entity_key",
+			[ ...$g['binds'], ...$live_binds ]
+		);
+		foreach ( $rows as [ $item_key, $entity, $name, $state, $role, $client ] ) {
+			$linked[ Core::as_string( $item_key ) ][] = [ 'entity_key' => $entity, 'name' => $name, 'state' => $state, 'role' => $role, 'client' => 1 === Core::as_int( $client ) ];
 		}
 		return $linked;
 	}
@@ -881,33 +890,38 @@ final class Graph_Query {
 
 	/**
 	 * A client's status: when its open client role began, how many readable
-	 * items about it are of each STATUS_KINDS kind, and when the newest of
-	 * them is dated; null for an entity holding no open client role. Its
-	 * signals are the `signals` read's, which the page already makes.
+	 * items about it are of each STATUS_KINDS kind, when the newest of them
+	 * is dated, and whether one about it dated after that start is extracted
+	 * as CHURNED, which the Entity view offers to end the role on; null for
+	 * an entity holding no open client role. Its signals are the `signals`
+	 * read's, which the page already makes.
 	 *
 	 * @param Row_Reader                                            $r        The reader.
 	 * @param Graph                                                 $g        The graph the read opened.
 	 * @param string                                                $survivor The entity.
 	 * @param list<array{role:mixed,from_ts:mixed,to_ts:mixed}> $roles    Every role row of its keys.
-	 * @return array{client_since:int,kinds:array<string,int>,last_item_ts:int|null}|null
+	 * @return array{client_since:int,kinds:array<string,int>,last_item_ts:int|null,churn_open:bool}|null
 	 */
 	private static function status( Row_Reader $r, array $g, string $survivor, array $roles ): ?array {
 		$open = \array_filter( $roles, static fn ( array $row ): bool => self::CLIENT === $row['role'] && 0 === Core::as_int( $row['to_ts'] ) );
 		if ( [] === $open ) {
 			return null;
 		}
+		$since                           = \min( \array_map( static fn ( array $row ): int => Core::as_int( $row['from_ts'] ), $open ) );
 		$filter                          = self::filter_of( [ 'entity' => $survivor ] );
 		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false );
+		$time                            = Intel_Graph_Row_Schema::ITEM_TIME;
 		$counted                         = \implode( ', ', \array_fill( 0, \count( self::STATUS_KINDS ), 'COUNT( DISTINCT CASE WHEN x.kind = ? THEN i.item_key END )' ) );
 		$row                             = $r->rows(
-			"{$with} SELECT MAX( " . Intel_Graph_Row_Schema::ITEM_TIME . " ), {$counted} FROM ri i LEFT JOIN " . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . " x ON x.item_key = i.item_key WHERE {$where}",
-			[ ...$lead, ...self::STATUS_KINDS, ...$binds ]
+			"{$with} SELECT MAX( {$time} ), COUNT( CASE WHEN x.kind = ? AND {$time} > ? THEN 1 END ) > 0, {$counted} FROM ri i LEFT JOIN " . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . " x ON x.item_key = i.item_key WHERE {$where}",
+			[ ...$lead, self::CHURNED, $since, ...self::STATUS_KINDS, ...$binds ]
 		)[0];
-		$last                            = \array_shift( $row );
+		[ $last, $churned ]              = \array_splice( $row, 0, 2 );
 		return [
-			'client_since' => \min( \array_map( static fn ( array $row ): int => Core::as_int( $row['from_ts'] ), $open ) ),
+			'client_since' => $since,
 			'kinds'        => \array_combine( self::STATUS_KINDS, \array_map( Core::as_int( ... ), $row ) ),
 			'last_item_ts' => null === $last ? null : Core::as_int( $last ),
+			'churn_open'   => 1 === Core::as_int( $churned ),
 		];
 	}
 
@@ -1870,19 +1884,28 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The `oc` and `ic` CTEs, to follow `live`: every survivor holding an
-	 * open client role under any of its keys, as `open_roles()` reads one,
-	 * and each item with the open clients it is about by a subject or a
-	 * mention, an item about more than MAX_ITEM_CLIENTS naming none, as the
-	 * briefing files such an item once.
+	 * The `oc` and `ic` CTEs, to follow `live`: every open client
+	 * (`open_clients()`), and each item with the open clients it is about by
+	 * a subject or a mention, an item about more than MAX_ITEM_CLIENTS
+	 * naming none, as the briefing files such an item once.
 	 *
 	 * @param Row_Reader $r The reader.
 	 */
 	private static function item_clients( Row_Reader $r ): string {
-		return 'oc AS ( SELECT DISTINCT COALESCE( mg.value, ro.entity_key ) AS entity_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'roles' )
-			. " ro LEFT JOIN mg ON mg.key = ro.entity_key WHERE ro.role = '" . self::CLIENT . "' AND ro.to_ts = 0 ),"
+		return self::open_clients( $r ) . ','
 			. ' ic AS ( SELECT item_key, entity_key FROM ( SELECT item_key, entity_key, COUNT(*) OVER ( PARTITION BY item_key ) AS n'
 			. ' FROM ( SELECT DISTINCT l.item_key, l.entity_key FROM live l JOIN oc ON oc.entity_key = l.entity_key WHERE NOT l.topical ) ) WHERE n <= ' . self::MAX_ITEM_CLIENTS . ' )';
+	}
+
+	/**
+	 * The `oc` CTE, to follow `mg`: every survivor holding an open client
+	 * role under any of its keys, as `open_roles()` reads one.
+	 *
+	 * @param Row_Reader $r The reader.
+	 */
+	private static function open_clients( Row_Reader $r ): string {
+		return 'oc AS ( SELECT DISTINCT COALESCE( mg.value, ro.entity_key ) AS entity_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'roles' )
+			. " ro LEFT JOIN mg ON mg.key = ro.entity_key WHERE ro.role = '" . self::CLIENT . "' AND ro.to_ts = 0 )";
 	}
 
 	/**

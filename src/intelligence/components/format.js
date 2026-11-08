@@ -3,6 +3,8 @@
  * wrote: an item's URL becomes an href only when it is http or https.
  */
 
+import { __, sprintf } from '@wordpress/i18n';
+
 /**
  * The URL as an href, or null for any other scheme.
  *
@@ -36,4 +38,27 @@ export function metaLine( ...parts ) {
 			( part ) => null !== part && undefined !== part && '' !== part
 		)
 		.join( ' · ' );
+}
+
+/**
+ * One role row: open from its first day, or held between two.
+ *
+ * @param {Object} role The role, `to_ts` 0 while open.
+ * @return {string} The row's text.
+ */
+export function roleText( role ) {
+	return 0 === role.to_ts
+		? sprintf(
+				/* translators: 1: role, 2: first UTC day. */
+				__( '%1$s since %2$s', 'newspack-intelligence' ),
+				role.role,
+				utcDay( role.from_ts )
+		  )
+		: sprintf(
+				/* translators: 1: role, 2: first UTC day, 3: last UTC day. */
+				__( '%1$s %2$s – %3$s', 'newspack-intelligence' ),
+				role.role,
+				utcDay( role.from_ts ),
+				utcDay( role.to_ts )
+		  );
 }

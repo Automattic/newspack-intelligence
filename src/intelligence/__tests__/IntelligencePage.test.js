@@ -315,6 +315,7 @@ describe( 'IntelligencePage', () => {
 		await waitFor( () =>
 			expect( nav( 'Entity: Acme Quillsheet' ) ).toBeInTheDocument()
 		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'Edit' } ) );
 		const form = screen.getByRole( 'group', { name: 'Add name' } );
 		fireEvent.change( within( form ).getByLabelText( 'Value' ), {
 			target: { value: 'Quillsheet' },

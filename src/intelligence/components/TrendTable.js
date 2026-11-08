@@ -1,5 +1,40 @@
+import { useMemo } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
-import Cite, { EntityChip } from './Cite';
+import { VisuallyHidden } from '@wordpress/components';
+import * as d3 from 'd3';
+import AreaTimeChart from '@newspack-nodes/shared/components/AreaTimeChart';
+import { chartColor } from '@newspack-nodes/shared/hooks/useTimeChart';
+import { integerTicks } from '@newspack-nodes/shared/utils/axis-ticks';
+import Cite from './Cite';
+
+/** The newest buckets a trend chart draws, as many as a signal's history. */
+const CHART_BUCKETS = 8;
+
+/** The most values a trend chart draws a series for, the largest first. */
+const CHART_VALUES = 5;
+
+/** The trend chart's height in pixels, axis margins included. */
+const CHART_HEIGHT = 180;
+
+/** Stories, whole ones, ticked at whole steps. */
+const formatStories = d3.format( 'd' );
+formatStories.tickValues = integerTicks;
+
+/**
+ * The axis formatter whatever the peak: every count is whole stories.
+ *
+ * @return {import('@newspack-nodes/shared/utils/axis-ticks').AxisFormatter} The formatter.
+ */
+const storiesFor = () => formatStories;
+
+/**
+ * The colour a value takes from its rank in the chart.
+ *
+ * @param {string} _value The value; the rank alone decides.
+ * @param {number} index  Its rank.
+ * @return {string} A CSS colour value.
+ */
+const rankColor = ( _value, index ) => chartColor( index );
 
 /**
  * A signal's count against the baseline it is read against, to one decimal.
@@ -58,27 +93,21 @@ export const signalValue = ( signal ) => {
 };
 
 /**
- * Trend rows, or signals: each bucket and value with its count, citing the
- * newest items the row counts. Counting by theme, its last column shows a
- * chip per client it is about above those items.
- * A row answering no `items` or `clients` shows none.
+ * Trend rows, or signals: each bucket, a date that does not wrap, and value
+ * with its count, citing the newest items the row counts. A row answering no
+ * `items` shows none.
  *
  * @param {Object}                           props
- * @param {Array<Object>}                    props.rows           The rows `trends` or `signals` answers.
- * @param {(row: Object) => string}          [props.value]        A row's value as shown.
- * @param {(row: Object) => (string|number)} [props.count]        A row's count as shown.
- * @param {?string}                          [props.by]           The axis the rows count by.
- * @param {(key: string) => void}            [props.onOpenEntity] Opens a client; given when counting by theme.
+ * @param {Array<Object>}                    props.rows    The rows `trends` or `signals` answers.
+ * @param {(row: Object) => string}          [props.value] A row's value as shown.
+ * @param {(row: Object) => (string|number)} [props.count] A row's count as shown.
  * @return {import('react').ReactElement} The table.
  */
 export default function TrendTable( {
 	rows,
 	value = ( row ) => row.value,
 	count = ( row ) => row.count,
-	by,
-	onOpenEntity,
 } ) {
-	const themes = 'theme' === by;
 	return (
 		<table className="newspack-nodes-table">
 			<thead>
@@ -93,41 +122,21 @@ export default function TrendTable( {
 						{ __( 'Count', 'newspack-intelligence' ) }
 					</th>
 					<th scope="col">
-						{ themes
-							? __( 'Clients and items', 'newspack-intelligence' )
-							: __( 'Items', 'newspack-intelligence' ) }
+						{ __( 'Items', 'newspack-intelligence' ) }
 					</th>
 				</tr>
 			</thead>
 			<tbody>
 				{ rows.map( ( row ) => (
-					<tr
-						key={ [
-							row.axis,
-							row.signal,
-							row.bucket,
-							row.value,
-						].join( ' ' ) }
-					>
-						<td>{ row.bucket }</td>
+					<tr key={ rowKey( row ) }>
+						<td className="newspack-intelligence__date">
+							{ row.bucket }
+						</td>
 						<td className="newspack-intelligence__value">
 							{ value( row ) }
 						</td>
 						<td>{ count( row ) }</td>
 						<td>
-							{ themes && row.clients?.length > 0 && (
-								<ul className="newspack-intelligence__chips">
-									{ row.clients.map( ( client ) => (
-										<li key={ client.entity_key }>
-											<EntityChip
-												entityKey={ client.entity_key }
-												name={ client.name }
-												onOpen={ onOpenEntity }
-											/>
-										</li>
-									) ) }
-								</ul>
-							) }
 							<ul className="newspack-intelligence__facts">
 								{ ( row.items ?? [] ).map( ( item ) => (
 									<li key={ item.item_key }>
@@ -143,5 +152,120 @@ export default function TrendTable( {
 				) ) }
 			</tbody>
 		</table>
+	);
+}
+
+/**
+ * A row's key: its axis and kind when a signal, its bucket and its value.
+ *
+ * @param {Object} row A trend row or a signal.
+ * @return {string} The key.
+ */
+const rowKey = ( row ) =>
+	[ row.axis, row.signal, row.bucket, row.value ].join( ' ' );
+
+/**
+ * Trend rows as the series the shared time chart draws: the CHART_BUCKETS
+ * newest buckets, oldest first, each a UTC day, and the CHART_VALUES values
+ * counting the most over them, the largest first, then by value, each a
+ * count per bucket, 0 where a bucket counts none.
+ *
+ * @param {Array<Object>} rows The rows `trends` answers, newest bucket first.
+ * @return {{buckets: string[], series: Array<{label: string, values: Array<{date: Date, value: number}>}>}} The series.
+ */
+function trendSeries( rows ) {
+	const buckets = [ ...new Set( rows.map( ( row ) => row.bucket ) ) ]
+		.slice( 0, CHART_BUCKETS )
+		.reverse();
+	const counts = new Map();
+	for ( const row of rows ) {
+		if ( buckets.includes( row.bucket ) ) {
+			const value = String( row.value );
+			counts.set( value, {
+				...counts.get( value ),
+				[ row.bucket ]: row.count,
+			} );
+		}
+	}
+	const total = ( per ) =>
+		Object.values( per ).reduce( ( sum, n ) => sum + n, 0 );
+	const series = [ ...counts ]
+		.sort(
+			( [ a, x ], [ b, y ] ) =>
+				total( y ) - total( x ) || a.localeCompare( b )
+		)
+		.slice( 0, CHART_VALUES )
+		.map( ( [ label, per ] ) => ( {
+			label,
+			values: buckets.map( ( bucket ) => ( {
+				date: new Date( `${ bucket }T00:00:00Z` ),
+				value: per[ bucket ] ?? 0,
+			} ) ),
+		} ) );
+	return { buckets, series };
+}
+
+/**
+ * Trend rows as one compact time chart, the shared `AreaTimeChart`: a
+ * series per value over the newest buckets (`trendSeries()`), titled by the
+ * span it covers, its legend picking a value. A screen reader is handed
+ * every row as a visually hidden table of its bucket, value and count; no
+ * rows draw nothing.
+ *
+ * @param {Object}        props
+ * @param {Array<Object>} props.rows The rows `trends` answers, newest bucket first.
+ * @return {?import('react').ReactElement} The chart.
+ */
+export function TrendChart( { rows } ) {
+	const { buckets, series } = useMemo( () => trendSeries( rows ), [ rows ] );
+	if ( 0 === rows.length ) {
+		return null;
+	}
+	return (
+		<>
+			<AreaTimeChart
+				series={ series }
+				yFormatFor={ storiesFor }
+				colorAt={ rankColor }
+				title={ sprintf(
+					/* translators: 1: the oldest bucket drawn, 2: the newest. */
+					__( 'From %1$s to %2$s', 'newspack-intelligence' ),
+					buckets[ 0 ],
+					buckets[ buckets.length - 1 ]
+				) }
+				height={ CHART_HEIGHT }
+				storageKey="newspack-intelligence:lens-trends"
+				yLabel={ __( 'Stories', 'newspack-intelligence' ) }
+			/>
+			<VisuallyHidden>
+				<table>
+					<caption>
+						{ __( 'Trend rows', 'newspack-intelligence' ) }
+					</caption>
+					<thead>
+						<tr>
+							<th scope="col">
+								{ __( 'Bucket', 'newspack-intelligence' ) }
+							</th>
+							<th scope="col">
+								{ __( 'Value', 'newspack-intelligence' ) }
+							</th>
+							<th scope="col">
+								{ __( 'Count', 'newspack-intelligence' ) }
+							</th>
+						</tr>
+					</thead>
+					<tbody>
+						{ rows.map( ( row ) => (
+							<tr key={ rowKey( row ) }>
+								<td>{ row.bucket }</td>
+								<td>{ row.value }</td>
+								<td>{ row.count }</td>
+							</tr>
+						) ) }
+					</tbody>
+				</table>
+			</VisuallyHidden>
+		</>
 	);
 }

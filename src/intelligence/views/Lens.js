@@ -13,7 +13,10 @@ import {
 } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
 import Answer from '../components/Answer';
-import TrendTable, { againstBaseline } from '../components/TrendTable';
+import TrendTable, {
+	TrendChart,
+	againstBaseline,
+} from '../components/TrendTable';
 import GroupPage from '../components/GroupPage';
 import ListField from '../components/ListField';
 import Refusal from '../components/Refusal';
@@ -168,9 +171,9 @@ function LensForm( { initial, vocabulary, onSave, onCancel } ) {
 }
 
 /**
- * The lens opened: its signals above its theme groups, a page of groups at a
- * time in the order the server ranks them, beside its trend rows, each read
- * through the lens.
+ * The lens opened: its signals, then its trend rows as one compact chart
+ * (`TrendChart`), then its theme groups, a page of groups at a time in the
+ * order the server ranks them, each read through the lens.
  *
  * @param {Object}                     props
  * @param {Object}                     props.lens         The listed lens opened.
@@ -221,53 +224,45 @@ function Opened( { lens, starts, onStarts, onOpenEntity, onSave } ) {
 					/>
 				) }
 			</Answer>
-			<div className="newspack-intelligence__lens">
-				<Answer
-					title={ lens.name }
-					level={ 3 }
-					read={ items }
-					rows="groups"
-					empty={ __(
-						'No readable item is seen through this lens.',
-						'newspack-intelligence'
-					) }
-				>
-					{ ( answer ) => (
-						<GroupPage
-							answer={ answer }
-							starts={ starts }
-							onStarts={ onStarts }
-							onOpenEntity={ onOpenEntity }
-							onSave={ onSave }
-						/>
-					) }
-				</Answer>
-				<Answer
-					title={ __( 'Trends', 'newspack-intelligence' ) }
-					level={ 3 }
-					read={ trends }
-					rows="rows"
-					empty={ __(
-						'No trend is seen through this lens.',
-						'newspack-intelligence'
-					) }
-				>
-					{ ( answer ) => (
-						<TrendTable
-							rows={ answer.rows }
-							by={ lens.filters.by }
-							onOpenEntity={ onOpenEntity }
-						/>
-					) }
-				</Answer>
-			</div>
+			<Answer
+				title={ __( 'Trends', 'newspack-intelligence' ) }
+				level={ 3 }
+				read={ trends }
+				rows="rows"
+				empty={ __(
+					'No trend is seen through this lens.',
+					'newspack-intelligence'
+				) }
+			>
+				{ ( answer ) => <TrendChart rows={ answer.rows } /> }
+			</Answer>
+			<Answer
+				title={ lens.name }
+				level={ 3 }
+				read={ items }
+				rows="groups"
+				empty={ __(
+					'No readable item is seen through this lens.',
+					'newspack-intelligence'
+				) }
+			>
+				{ ( answer ) => (
+					<GroupPage
+						answer={ answer }
+						starts={ starts }
+						onStarts={ onStarts }
+						onOpenEntity={ onOpenEntity }
+						onSave={ onSave }
+					/>
+				) }
+			</Answer>
 		</>
 	);
 }
 
 /**
- * Lenses: every lens, the one opened with its signals, theme groups and trend rows
- * read through it and, for every reader, the control watching it; and for a
+ * Lenses: every lens, the one opened with its signals, trend chart and theme
+ * groups read through it and, for every reader, the control watching it; and for a
  * curator the form saving a new lens or the one opened, and the control
  * removing it. A save shows its lens and a removal
  * takes its lens out from the moment each is sent, until a read of `lenses`

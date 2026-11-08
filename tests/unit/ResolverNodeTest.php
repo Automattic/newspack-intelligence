@@ -1073,7 +1073,7 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertSame( [ [ 'link_asserted', self::GAZETTE, 'publisher' ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['role'] ], $this->written() ) );
 		$this->seed( $this->written() );
 		$about = Graph_Query::timeline( [ 'key' => self::GAZETTE, 'published' => false, 'since' => null, 'until' => null, 'limit' => 50, 'offset' => 0 ] );
-		$this->assertSame( [ [ self::ITEM, [ [ 'entity_key' => self::GAZETTE, 'name' => 'The Harbor Gazette', 'state' => 'confirmed' ] ] ] ], \array_map( static fn ( array $item ): array => [ $item['item_key'], $item['entities'] ], $about['items'] ) );
+		$this->assertSame( [ [ self::ITEM, [ [ 'entity_key' => self::GAZETTE, 'name' => 'The Harbor Gazette', 'state' => 'confirmed', 'role' => 'subject', 'client' => false ] ] ] ], \array_map( static fn ( array $item ): array => [ $item['item_key'], $item['entities'] ], $about['items'] ) );
 		$this->assertSame( [ [ 'items' => 1, 'proposed_links' => 0 ], [ 'count' => 1 ] ], \array_values( \array_intersect_key( Graph_Query::entity( [ 'key' => self::GAZETTE ] ), [ 'counts' => 1, 'published' => 1 ] ) ) );
 	}
 

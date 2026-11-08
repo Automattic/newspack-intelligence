@@ -1,5 +1,5 @@
 import { useState } from '@wordpress/element';
-import { __ } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 import Cite, { EntityChip } from './Cite';
 import Pager from './Pager';
 import { metaLine, utcDay } from './format';
@@ -7,9 +7,8 @@ import { metaLine, utcDay } from './format';
 /**
  * One item as `search` and `timeline` answer it: its title citing its URL,
  * its source, kind and day, its summary, a toggle showing its excerpt (`Excerpt`),
- * a chip per linked entity but a proposal another of its name stands for
- * (`chips()`), and, for a caller who may curate, the control saving it to a collection, then any control the
- * view adds.
+ * its entities as chips (`Chips`), and, for a caller who may curate, the
+ * control saving it to a collection, then any control the view adds.
  *
  * @param {Object}                    props
  * @param {Object}                    props.item         The item.
@@ -41,20 +40,75 @@ export default function ItemRow( { item, onOpenEntity, onSave, children } ) {
 			</p>
 			{ item.summary && <p>{ item.summary }</p> }
 			<Excerpt item={ item } />
-			{ 0 < ( item.entities ?? [] ).length && (
-				<ul className="newspack-intelligence__chips">
-					{ chips( item.entities ).map( ( entity ) => (
-						<li key={ entity.entity_key }>
-							<EntityChip
-								entityKey={ entity.entity_key }
-								name={ entity.name }
-								onOpen={ onOpenEntity }
-							/>
-						</li>
-					) ) }
-				</ul>
-			) }
+			<Chips
+				entities={ item.entities ?? [] }
+				onOpenEntity={ onOpenEntity }
+			/>
 		</li>
+	);
+}
+
+/** The link roles naming an entity an item is about, as the server spells them. */
+const NAMING_ROLES = [ 'subject', 'mention' ];
+
+/**
+ * Whether an entity leads an item's chips: an open client, or a subject.
+ *
+ * @param {{client: boolean, role: string}} entity The entity.
+ * @return {boolean} Whether it leads.
+ */
+const leads = ( entity ) => entity.client || 'subject' === entity.role;
+
+/**
+ * An item's entities as chips (`chips()`): each it is about as a client or a
+ * subject, then its mentions behind a "+N more" toggle; none for an entity
+ * linked by a role that does not name it.
+ *
+ * @param {Object}                props
+ * @param {Object[]}              props.entities     The item's entities, in the answer's order.
+ * @param {(key: string) => void} props.onOpenEntity Opens an entity.
+ * @return {?import('react').ReactElement} The chips.
+ */
+function Chips( { entities, onOpenEntity } ) {
+	const [ open, setOpen ] = useState( false );
+	const named = chips( entities ).filter( ( entity ) =>
+		NAMING_ROLES.includes( entity.role )
+	);
+	if ( 0 === named.length ) {
+		return null;
+	}
+	const lead = named.filter( leads );
+	const rest = named.filter( ( entity ) => ! leads( entity ) );
+	return (
+		<div className="newspack-intelligence__actions">
+			<ul className="newspack-intelligence__chips">
+				{ ( open ? [ ...lead, ...rest ] : lead ).map( ( entity ) => (
+					<li key={ entity.entity_key }>
+						<EntityChip
+							entityKey={ entity.entity_key }
+							name={ entity.name }
+							onOpen={ onOpenEntity }
+						/>
+					</li>
+				) ) }
+			</ul>
+			{ 0 < rest.length && (
+				<button
+					type="button"
+					className="button-link"
+					aria-expanded={ open }
+					onClick={ () => setOpen( ! open ) }
+				>
+					{ open
+						? __( 'Show fewer', 'newspack-intelligence' )
+						: sprintf(
+								/* translators: %d: entities the item mentions, hidden. */
+								__( '+%d more', 'newspack-intelligence' ),
+								rest.length
+						  ) }
+				</button>
+			) }
+		</div>
 	);
 }
 
