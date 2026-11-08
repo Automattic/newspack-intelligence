@@ -209,6 +209,7 @@ function mount_service_cis( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 function register_cli_commands(): void {
 	\WP_CLI::add_hook( 'before_invoke:nodes doctor', [ Intelligence_Health::class, 'warn_missing_lists' ] );
 	\WP_CLI::add_command( 'newspack-intelligence clients', '\\Newspack_Intelligence\\CLI\\Clients_CLI_Command' );
+	\WP_CLI::add_command( 'newspack-intelligence eval', '\\Newspack_Intelligence\\CLI\\Eval_CLI_Command' );
 	\WP_CLI::add_command( 'newspack-intelligence items', '\\Newspack_Intelligence\\CLI\\Items_CLI_Command' );
 	\WP_CLI::add_command( 'newspack-intelligence ontology', '\\Newspack_Intelligence\\CLI\\Ontology_CLI_Command' );
 	\WP_CLI::add_command( 'newspack-intelligence restricted', '\\Newspack_Intelligence\\CLI\\Restricted_CLI_Command' );

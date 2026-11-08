@@ -8,6 +8,8 @@
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Command_Args;
+use Newspack_Nodes\Command_Interpreter_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
 use Newspack_Nodes\Event_Framework;
@@ -89,6 +91,13 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	private const CALLS = [
 		Prompts::CHAT     => [ 'chat/completions', 'set_api_url, set_model and set_feature before a call' ],
 		Prompts::DECISION => [ 'systemone', 'set_api_url, set_decision_model and set_feature before a decision' ],
+	];
+
+	/** The verbs whose values a decision call posts with, each => the topology fact naming it. */
+	private const DECISION_FACTS = [
+		'set_api_url'        => 'api_url',
+		'set_decision_model' => 'decision_model',
+		'set_feature'        => 'feature',
 	];
 
 	/** The AI API Proxy base url, set via set_api_url; '' until set. */
@@ -397,10 +406,8 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * Build one request's body as the kind of its prompt says, a chat
-	 * prompt's messages or a decision's state and questions, and hand Curl
-	 * the POST, KEY its member, so its answer names it; a prompt
-	 * `Prompts::PROMPTS` does not list is refused as a chat prompt is.
+	 * Hand Curl one stored request's POST, as `curl_request()` builds it,
+	 * KEY its member, so its answer names it.
 	 *
 	 * @param string      $member The frontier member.
 	 * @param list<mixed> $value  [ from, key, prompt, item, inputs, options, carry ].
@@ -411,22 +418,42 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	private function post( string $member, array $value ): void {
 		$prompt = Core::as_string( $value[2] ?? null );
 		$kind   = Prompts::PROMPTS[ $prompt ] ?? Prompts::CHAT;
-		$item   = Core::arr( $value[3] ?? null );
-		$inputs = Core::arr( $value[4] ?? null );
-		$fields = Prompts::DECISION === $kind ? Prompts::decision( $prompt, $item, $inputs ) : [ 'messages' => Prompts::messages( $prompt, $item, $inputs ) ] + Core::arr( $value[5] ?? null );
-		$body   = \wp_json_encode( [ 'model' => $this->model_for( $kind ) ] + $fields );
+		$this->send_curl( $member, self::curl_request( $this->api_url, $this->model_for( $kind ), $this->feature, $prompt, Core::arr( $value[3] ?? null ), Core::arr( $value[4] ?? null ), Core::arr( $value[5] ?? null ) ), $value );
+	}
+
+	/**
+	 * The POST Curl runs for one call, its body as the kind of its prompt
+	 * says: a chat prompt's messages and options to `chat/completions`, or a
+	 * decision's state and questions to `systemone`, each naming `$model`;
+	 * a prompt `Prompts::PROMPTS` does not list is refused as a chat prompt is.
+	 *
+	 * @api Read by Eval_CLI_Command, which asks the decision model as this node does.
+	 * @param string                 $api_url The AI API Proxy base url.
+	 * @param string                 $model   The model the call names.
+	 * @param string                 $feature The X-WPCOM-AI-Feature value.
+	 * @param string                 $prompt  The prompt.
+	 * @param array<array-key,mixed> $item    The item.
+	 * @param array<array-key,mixed> $inputs  The prompt's other inputs.
+	 * @param array<array-key,mixed> $options A chat prompt's options.
+	 * @return array{url:string,method:string,body:string,headers:list<string>,timeout:int}
+	 * @throws \InvalidArgumentException When the prompt is unknown.
+	 * @throws \UnexpectedValueException When the body will not encode.
+	 */
+	public static function curl_request( string $api_url, string $model, string $feature, string $prompt, array $item, array $inputs, array $options ): array {
+		$kind   = Prompts::PROMPTS[ $prompt ] ?? Prompts::CHAT;
+		$fields = Prompts::DECISION === $kind ? Prompts::decision( $prompt, $item, $inputs ) : [ 'messages' => Prompts::messages( $prompt, $item, $inputs ) ] + $options;
+		$body   = \wp_json_encode( [ 'model' => $model ] + $fields );
 		if ( false === $body ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
 			throw new \UnexpectedValueException( 'the request body could not be encoded: ' . \json_last_error_msg() );
 		}
-		$request = [
-			'url'     => "{$this->api_url}/" . self::CALLS[ $kind ][0],
+		return [
+			'url'     => "{$api_url}/" . self::CALLS[ $kind ][0],
 			'method'  => 'POST',
 			'body'    => $body,
-			'headers' => [ "X-WPCOM-AI-Feature: {$this->feature}" ],
+			'headers' => [ "X-WPCOM-AI-Feature: {$feature}" ],
 			'timeout' => Curl_Node::MAX_REQUEST_TIMEOUT,
 		];
-		$this->send_curl( $member, $request, $value );
 	}
 
 	/**
@@ -463,12 +490,13 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * answer to each question its inputs asked, else the content of the
 	 * body's first choice, else that it names none.
 	 *
+	 * @api Read by Eval_CLI_Command, which asks the decision model as this node does.
 	 * @param array<int,mixed>       $message Curl's answer.
 	 * @param string                 $prompt  The prompt the request named.
 	 * @param array<array-key,mixed> $inputs  The request's inputs.
 	 * @return array{error:string}|array{content:string}|array{decision:array<string,float|array{choice:string,confidence:float}>}
 	 */
-	private static function outcome( array $message, string $prompt, array $inputs ): array {
+	public static function outcome( array $message, string $prompt, array $inputs ): array {
 		$value = Core::as_string( $message[ Message::VALUE ] );
 		if ( 0 !== ( Core::int( $message[ Message::TYPE ] ) & Message::TM_ERROR ) ) {
 			return [ 'error' => $value ];
@@ -556,15 +584,6 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * Raise Curl's body cap to BODY_CAP.
-	 *
-	 * @param Curl_Node $curl The sibling.
-	 */
-	protected function configure_curl( Curl_Node $curl ): void {
-		$curl->set_body_cap( self::BODY_CAP );
-	}
-
-	/**
 	 * The `set_api_url` verb's entry point.
 	 *
 	 * @api Used by substrate.
@@ -572,9 +591,60 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * @throws \UnexpectedValueException When it is not one.
 	 */
 	public function set_api_url( string $url ): void {
+		$this->api_url = self::api_url_of( $url );
+	}
+
+	/**
+	 * The node's topology row names what a decision call posts with: the
+	 * `api_url`, `decision_model` and `feature` its last `set_api_url`,
+	 * `set_decision_model` and `set_feature` lines leave, each bound by its
+	 * verb's own args and kept as the setter keeps it, '' while unset.
+	 *
+	 * @api Read by the substrate's Topology_Analyzer::graph_for(), for Eval_CLI_Command.
+	 * @param list<string>                         $args     The `make_node` arguments, quotes stripped.
+	 * @param list<array{0:string,1:list<string>}> $commands Each verb and its argument tokens, in the order sent.
+	 * @return array{api_url:string,decision_model:string,feature:string}
+	 * @throws \InvalidArgumentException When one of those lines does not bind.
+	 * @throws \UnexpectedValueException When the api url is not an absolute http(s) url.
+	 */
+	public static function graph_facts( array $args, array $commands ): array {
+		$facts = [
+			'api_url'        => '',
+			'decision_model' => '',
+			'feature'        => '',
+		];
+		$verbs = Command_Interpreter_Node::declared_verbs( self::class );
+		foreach ( $commands as [ $verb, $tokens ] ) {
+			$fact = self::DECISION_FACTS[ $verb ] ?? null;
+			if ( null === $fact ) {
+				continue;
+			}
+			$value          = Core::as_string( \current( Command_Args::bind( Core::arr( $verbs[ $verb ]['args'] ), $tokens ) ) );
+			$facts[ $fact ] = 'api_url' === $fact ? self::api_url_of( $value ) : \trim( $value );
+		}
+		return $facts;
+	}
+
+	/**
+	 * An api url as `set_api_url` keeps it: trimmed, checked as an absolute
+	 * http(s) url, its trailing slash dropped.
+	 *
+	 * @param string $url The url given.
+	 * @throws \UnexpectedValueException When it is not one.
+	 */
+	private static function api_url_of( string $url ): string {
 		$url = \trim( $url );
 		Curl_Node::origin_of( $url );
-		$this->api_url = \rtrim( $url, '/' );
+		return \rtrim( $url, '/' );
+	}
+
+	/**
+	 * Raise Curl's body cap to BODY_CAP.
+	 *
+	 * @param Curl_Node $curl The sibling.
+	 */
+	protected function configure_curl( Curl_Node $curl ): void {
+		$curl->set_body_cap( self::BODY_CAP );
 	}
 
 	/**

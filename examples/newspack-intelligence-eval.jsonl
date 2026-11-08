@@ -1,0 +1,6 @@
+{"item_key":"feed:heronweekly.example:https://heronweekly.example/?p=1180","kind":"launch","fits_kind":true,"about_publisher":true,"publisher":"Heron Weekly"}
+{"item_key":"linear:KITE-214","kind":"launch","fits_kind":false}
+{"item_key":"github:kite-ledger/releases/v4.2.0-rc.1","kind":"release","fits_kind":false}
+{"item_key":"github:kite-ledger/releases/v4.2.0","kind":"release","fits_kind":true}
+{"item_key":"feed:quarrywire.example:https://quarrywire.example/?p=77","kind":"funding","fits_kind":false,"about_publisher":true,"publisher":"Quarry Wire"}
+{"item_key":"linear:KITE-301","kind":"feature_request","fits_kind":false}

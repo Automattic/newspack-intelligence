@@ -685,6 +685,21 @@ final class LlmCallNodeTest extends TestCase {
 		$this->assertSame( [ self::COMPLETIONS, self::ORIGIN . '/second/v2/chat/completions' ], $this->dispatched );
 	}
 
+	/** The topology row names what a decision posts with: each setter's last value, bound by name or position and kept as the setter keeps it. */
+	public function test_the_topology_row_names_the_decision_config(): void {
+		$commands = [
+			[ 'set_api_url', [ 'https://stale.example/v0' ] ],
+			[ 'set_model', [ self::MODEL ] ],
+			[ 'set_api_url', [ '--url= ' . self::API . '/ ' ] ],
+			[ 'set_decision_model', [ ' ' . self::DECISION_MODEL . ' ' ] ],
+			[ 'set_feature', [ self::FEATURE ] ],
+			[ 'set_concurrency', [ '4' ] ],
+		];
+
+		$this->assertSame( [ 'api_url' => self::API, 'decision_model' => self::DECISION_MODEL, 'feature' => self::FEATURE ], LLM_Call_Node::graph_facts( [ self::GROUP ], $commands ) );
+		$this->assertSame( [ 'api_url' => '', 'decision_model' => '', 'feature' => '' ], LLM_Call_Node::graph_facts( [ self::GROUP ], [] ) );
+	}
+
 	/** The verbs replay through dump_config; a concurrency outside Curl's window is refused. */
 	public function test_the_verbs_dump_and_a_bad_concurrency_is_refused(): void {
 		$node = $this->llm( 5 );

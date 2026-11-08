@@ -1762,6 +1762,46 @@ segment only after the grace a shared log needs. Every machine stage mints throu
 version>` and that version as the `config_version`; `make()` stamps the
 tick clock, which the substrate pins at class load.
 
+**Evaluation.** `wp newspack-intelligence eval <file> [--check=<kind>]
+[--dry-run]` (`Eval_CLI_Command`) measures the review's checks against
+labelled items, so a change to a question or a bar in `Prompts::KIND_CHECKS`
+is scored before it ships. The file is JSONL, one label a line: `{
+item_key, kind, fits_kind }`, `kind` a kind `KIND_CHECKS` holds and
+`fits_kind` whether the item truly fits it, and optionally `about_publisher`
+with `publisher`, the client's name, which come together. A line naming any
+other field, a kind without a check, a value of the wrong type, or one of
+the publisher pair alone is refused, naming the line, before anything is
+read or sent; so is a label whose item the projection does not hold, all
+such labels named at once. Each label makes one call, asking the questions
+`Prompts::questions()` builds from its inputs: the label's `kind`, its
+`publisher` when it names one, and the stored extraction's summary, ''
+for an item never extracted, so `fits_kind` and `about_publisher` share
+the call, and `--check=<kind>`, a kind check or `about_publisher`, asks
+that question alone of the labels holding it. A restricted item is never
+sent, and an item any partition holds at a tier outside
+`Intel_Tiers::UNRESTRICTED` is restricted, whichever partition's row reads
+last: its labels are skipped, and the command says how many. `--dry-run`
+prints the calls it would make and makes none. Otherwise it reads the
+first `LLM_Call` node `Worker_Route::topology()` declares, whose topology
+row (`LLM_Call_Node::graph_facts()`) names the `api_url`, `decision_model`
+and `feature` its `set_*` lines leave, kept as each setter keeps it, and
+binds its `vault_group` through `Worker_Route::line()`; one unset, or a
+group lending no credential on the api url, is refused before any call.
+Each request is built by `LLM_Call_Node::curl_request()` and each answer
+read by `LLM_Call_Node::outcome()`, as the node builds and reads them, and
+the calls go one at a time through a Curl under that group, named
+`intel:eval:curl`, inside the event loop, on the request graph
+`Bootstrap::mount_request_graph()` builds. A check keeps the kind when its
+noul is at its bar or above, as the extractor judges it, and scores as
+`<check>: <n> labels, precision <p>, recall <r> at the bar <bar>`, kind
+checks in `KIND_CHECKS` order then `about_publisher`, each ratio to two
+places and `n/a` over nothing; each miss follows as `<item_key> <check>
+answered <noul> wanted <keep|drop>`, the noul to three places, so a
+miss within a hundredth of its bar reads as a miss. A call that fails is named with its
+line, left out of the scores, and fails the run. The plugin ships a
+fictional example, `examples/newspack-intelligence-eval.jsonl`; a site
+keeps its own golden set beside its seed, never in the plugin.
+
 **Collect.** The connector **Source nodes** (`github`, `linear`, `slack`,
 `p2`, `p2-restricted`, `unthread`, `feed`, `news`) fetch inside the background worker
 without blocking it and emit one `item_recorded` event per new item to
@@ -2588,9 +2628,9 @@ sibling checkout locally.
 | `includes/` (LLM) | `LLM_Call_Node`, every model call; the `Asks_Model` trait, its callers' half; `Prompts`, the requests' messages and the parse of their replies; the `Owns_Curl_Frontier` trait, the Curl and Frontier half it shares with `Source_Node` |
 | `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Briefing`, `Intelligence_Health`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
 | `includes/` (watches) | `Watcher_Node` |
-| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed [<file>]`, `ontology reresolve`, `ontology reextract` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; the `Refuses_Root` trait they share |
+| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed [<file>]`, `ontology reresolve`, `ontology reextract` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; `Eval_CLI_Command` — `wp newspack-intelligence eval <file>`; the `Refuses_Root` trait they share |
 | `topologies/` | The `.tsl` node-graph topologies |
-| `examples/` | The fictional ontology seed, the shape a deployment starts its own from |
+| `examples/` | The fictional ontology seed and eval labels, the shapes a deployment starts its own from |
 | `src/intelligence/` | The Intelligence page's React bundle |
 | `tests/` | PHPUnit (`unit/` + `bootstrap.php` + `support/` + `run-coverage.sh`; `integration/` exists but is empty) |
 | `scripts/` | Git hooks, the shared tooling copies, `bump-version.sh`, `build.mjs`, the lint and coverage gates |

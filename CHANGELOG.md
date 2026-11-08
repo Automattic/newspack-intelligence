@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`wp newspack-intelligence eval <file> [--check=<kind>] [--dry-run]` scores the review's checks against labelled items.** Each line of the JSONL file names an `item_key`, its `kind` and whether it `fits_kind`, and optionally `about_publisher` with the `publisher`. The command asks the decision model each label's questions over the stored item, through the `LLM_Call` node the topology configures, one call at a time, then prints each check's precision and recall at its bar and every miss. It never sends a restricted item, and says how many labels it skipped. `examples/newspack-intelligence-eval.jsonl` shows the shape. `LLM_Call`'s topology row now names its `api_url`, `decision_model` and `feature`.
+
 ### Changed
 
 - **Extraction asks at temperature 0, down from 0.2,** so a re-run reads an item's kind the same way.
