@@ -75,7 +75,8 @@ class Intelligence_CI_Node extends Service_CI_Node {
 	 * `Graph_Query`; the five watch verbs, also at read, each over
 	 * `Graph_Watches` and answering the caller's own watches alone;
 	 * `briefing` and `health`, at read, over `Intelligence_Briefing` and
-	 * `Intelligence_Health`; the fifteen curation
+	 * `Intelligence_Health`; `ask` and `ask_result`, at read, over
+	 * `Graph_Asks`; the fifteen curation
 	 * verbs, each over `Graph_Curation` and seeing only the
 	 * entities and items a read caller sees; `seed_ontology`, at tune, over
 	 * `Ontology_Seed::load()->seed()`; and `fetch_now` and `reresolve`, at manage,
@@ -194,6 +195,8 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						],
 						Intelligence_Briefing::answer( ... )
 					),
+					$verb( $read, 'ask', 'Ask a question the graph answers as a worker job, from at most ' . Ask_Node::MAX_ITEMS . ' items the caller may read, every sentence citing them: { ask_key }; read the answer with ask_result.', [ $arg( 'question', 'The question, at most ' . Graph_Asks::QUESTION_BYTES . ' bytes.' ) ], Graph_Asks::ask( ... ) ),
+					$verb( $read, 'ask_result', 'One of the caller\'s own asks: { ask_key, state, reason, found, dropped, sentences: [ { text, cites } ], items, searches, wait_s, available }. state is asked while it is owed its answer; answered; failed, with its reason, an ask still owed past wait_s, ' . Ask_Node::MAX_WAIT_S . ' seconds, among them, so poll it no longer than that; or withheld, with its reason, when the answer was written from an item of a tier the caller no longer reads, since every sentence may carry what that item said. found counts the items the answer was written from and dropped the sentences left out; each sentence cites items by their place in items from 1, each item as search answers it, and a sentence citing an item the caller cannot read now, as one expired since, is left out. searches are the searches the ask ran, each { words, lens, entity, kinds, roles, days } as its plan named them, and available is false when the graph would not open.', [ $key( 'The ask key.' ) ], Graph_Asks::result( ... ) ),
 					$verb( $read, 'health', 'Pipeline health, one slice a call: collection { state, topology }; sources { sources: [ { name, class, tier, state, reason, credential: { url, group }, last_ok_at, last_error, failing_since, failed, requests } ] }; backlog { reason, held, since, dropped: { first_day, last_day } }; extraction { mode, vault_group, last_ok_at, last_error, failing_since }. An unpublished fact reads as unknown or null.', [ $arg( 'what', 'The slice, one of: ' . \implode( ', ', Intelligence_Health::SLICES ) . '.' ) ], Intelligence_Health::answer( ... ) ),
 					$verb( $tune, 'confirm_link', 'Confirm a readable item\'s link to an entity: { ok, event_id }.', $link, static fn ( array $args ): array => Graph_Curation::judge_link( 'link_confirmed', $args ) ),
 					$verb( $tune, 'reject_link', 'Reject a readable item\'s link to an entity: { ok, event_id }.', $link, static fn ( array $args ): array => Graph_Curation::judge_link( 'link_rejected', $args ) ),

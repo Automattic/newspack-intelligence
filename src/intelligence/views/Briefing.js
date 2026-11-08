@@ -6,6 +6,7 @@ import {
 } from '@newspack-nodes/shared/utils/storage';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import Answer from '../components/Answer';
+import AskBox from '../components/AskBox';
 import ItemRow from '../components/ItemRow';
 import { EntityChip } from '../components/Cite';
 import { utcDay } from '../components/format';
@@ -351,6 +352,8 @@ function Changes( { answer, onOpenEntity, onSave } ) {
  * @param {() => void}                props.onNewWatch   Opens the form for a new watch.
  * @param {() => void}                props.onSearch     Opens Search.
  * @param {(item: Object) => void}    [props.onSave]     Saves an item; absent for a reader.
+ * @param {?Object}                   props.asked        The ask the page holds, which its AskBox shows.
+ * @param {(asked: ?Object) => void}  props.onAsked      Holds a new one.
  * @return {import('react').ReactElement} The view.
  */
 export default function Briefing( {
@@ -362,6 +365,8 @@ export default function Briefing( {
 	onNewWatch,
 	onSearch,
 	onSave,
+	asked,
+	onAsked,
 } ) {
 	const [ seen ] = useState( () => lastView( userId ) );
 	const [ opened ] = useState( () => Math.floor( Date.now() / 1000 ) );
@@ -392,6 +397,12 @@ export default function Briefing( {
 
 	return (
 		<div className="newspack-intelligence__view">
+			<AskBox
+				asked={ asked }
+				onAsked={ onAsked }
+				onOpenEntity={ onOpenEntity }
+				onSave={ onSave }
+			/>
 			{ null !== seen && read && (
 				<Answer
 					title={ __(

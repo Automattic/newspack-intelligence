@@ -159,14 +159,14 @@ and a build. The two coverage gates hold every JS file and every PHP class at 90
 
 ## Architecture
 
-Everything the graph knows is an event on one of three streams. The sources
+Everything the graph knows is an event on one of four streams. The sources
 record items; the resolver, the extractor and the deduper record what they
 make of each; the seed, the client import, people and agents record the
 ontology and every judgment, each reader's watches among them; the watcher
 records what each watch matched and how far it has delivered, and each
-reader the matches they have seen. The projector replays the three streams
-into one SQLite Row_Table, which every read queries and the streams can
-rebuild.
+reader the matches they have seen; and each reader's questions and their
+answers ride the fourth. The projector replays the four streams into one
+SQLite Row_Table, which every read queries and the streams can rebuild.
 
 **Streams.** `intel:items` holds `item_recorded` and the other per-item events
 for two years (16 MiB segments, both retention rules at 63,072,000 seconds,
@@ -179,14 +179,20 @@ stored item. `intel:watches` holds each watch's `watch_matched`,
 (4 MiB segments, both retention rules at 63,072,000 seconds, a hard cap of
 8,192 segments), as long as the items they name, so a replay rebuilds every
 match row a retained item still has; the watcher and request-side appends
-both write it. `intel:later`, a substrate Delay
+both write it. `intel:asks` holds each question an Ask writes as
+`ask_asked` and its outcome, `ask_answered` or `ask_failed`, one line each,
+for `Ask_Node::KEEP_DAYS` (7) days (1 MiB segments, both retention rules at
+604,800 seconds): an answer is read while its asker waits on the page or a
+session reads it back, and an answer is not a record the graph keeps, so a
+week covers a reader returning to one they asked days before; the request
+side and the worker both write it. `intel:later`, a substrate Delay
 (`make_node Delay intel:later <dir> <offsets_dir> <deadletter_dir> 60 86400`),
 parks the `item_reresolve` records the resolver and the extractor want to
 reprocess later, each due at its `not_before`; every minute it sends each
 one due to `intel:reresolve`, its target, and drops one parked longer than a
 day, a record parked again keeping its first `parked_at`. Each record parks
 with KEY its `item_key`, so the Delay's age-out line names the item. Each
-of the five carries restricted items whole or names them, so each declares `command_node
+of the six carries restricted items whole or names them, so each declares `command_node
 <name>:config set_read_capability newspack_intelligence_restricted`
 (substrate ADR-39): each writes a `.read-capability` marker naming it into
 its own dir on the write that opens it, every reader of it copies the
@@ -197,7 +203,7 @@ capability out; a test writes through each stream, checkpoints and
 quarantines through each reader, and holds every marker to
 `Intel_Tiers::CAPABILITY`.
 `Intel_Event_Writer_Node` (`intel:writer intel:items intel:ontology
-intel:watches`) addresses
+intel:watches intel:asks`) addresses
 each event by TO to the partition its `make_node` line names for the stream
 `Intel_Event::stream_of()` gives its kind, and drops a message that does not name a
 kind with a rate-limited line; it validates nothing, because `Intel_Event::make()`
@@ -206,10 +212,14 @@ validated the event at mint and the projector validates it where it reads.
 pack into one 4,096-byte line, because only the items stream takes a large
 write.
 
-**Projection.** `projector` replays the three streams into the `intel-graph`
+**Projection.** `projector` replays the four streams into the `intel-graph`
 Row_Table (`Intel_Graph_Row_Schema`), fed by `intel:items:consumer`,
-`intel:ontology:consumer` and `intel:watches:consumer`, which drain in
-batches and each checkpoint it.
+`intel:ontology:consumer`, `intel:watches:consumer` and
+`intel:asks:consumer`, which drain in batches and each checkpoint it. Each
+ask is one `asks` row keyed by its `ask_key`, kept `Ask_Node::KEEP_DAYS` by
+its `ask_day`: an `ask_asked` writes it with `ignore` as `asked`, and an
+`ask_answered` or `ask_failed` sets it whole, its sentences and items as
+JSON, so the outcome stands whichever is projected first.
 `projections()` declares, per kind, the row ops it writes and where each column
 comes from — an event field, a literal, a computed closure, or each element of
 a fan-out field — and every value is typed by its column's declared type. Every
@@ -634,9 +644,26 @@ Health).
 makes every model call without blocking the worker. A caller sends it a
 TM_STRUCT whose KEY names its subject and whose VALUE is `{ prompt, item,
 inputs, options, carry, backlog }`, `prompt` one of `Prompts::PROMPTS`,
-which names each prompt's kind: the chat prompts `extract` and
-`extract_entities`, and the decision prompts `extract_review` and
-`extract_gate`. `options`
+which names each prompt's kind: the chat prompts `extract`,
+`extract_entities`, and the Ask's `ask_plan` and `ask_answer`, which
+`Ask_Prompts` builds, and the decision prompts `extract_review` and
+`extract_gate`. Every prompt tells the model which system it serves,
+outside every fence, naming no client. A chat prompt's system message
+leads with `Prompts::framed()`: `Prompts::SELF`, a generic statement that
+the request comes from Newspack Intelligence, a WordPress plugin built on
+the newspack-nodes substrate, which records GitHub, Linear, Slack, P2,
+Unthread and feed items as events, links each to the organizations,
+people and topics it concerns, and extracts summaries, kinds, themes and
+claims, then what that prompt's call does in the pipeline, read from
+`Prompts::PURPOSES`, which names the chat prompts alone and refuses any
+other. A decision's state ends with one line, `Prompts::ASKED_BY`: `Asked
+by: Newspack Intelligence, a plugin built on newspack-nodes, which tracks
+Newspack's publishing platform, the publications Newspack serves as
+clients, and the news industry.`, under a fifth of the text the state
+already carries; its item fields keep the first lines, since the whole
+statement and a purpose leading the state moved the decision model's
+answers on the measured eval set.
+`options`
 holds nothing but an integer `max_tokens` and a numeric `temperature`, and
 nothing at all for a decision, and the carry what the caller
 needs back less the item and the inputs, which ride beside it once. One
@@ -699,14 +726,14 @@ initiative", `Prompts::chosen_theme()` reading a key back as its theme.
 An `extract_gate` names the `publisher` alone in its inputs, so it asks
 `about_publisher` alone; an `extract_review` asks whichever its inputs
 call for.
-A decision's state leads with `Source: <label>`, `Prompts::SOURCE_LABELS` saying what
+A decision's state leads with `Source: <label>`, `Prompts::source_label()` reading `Prompts::SOURCE_LABELS` saying what
 the item is (a ticket in a work tracker, an internal blog post or chat
 message, a published article), any other source its own name, since a ticket
 scored as news without it, then `Publisher: <name>` when one is given, `Title: <title>`,
 `Text: ` the body's plain text (`Entity_Index::plain()`) cut to
 `Prompts::DECISION_TEXT_CHARS` (2,000) characters, since an article's lede
-and first paragraphs say whom it is about, and `Summary: ` the reply's
-summary when one is given. Both bodies are JSON-encoded, so a name, a
+and first paragraphs say whom it is about, `Summary: ` the reply's
+summary when one is given, and `ASKED_BY` last. Both bodies are JSON-encoded, so a name, a
 title, a theme or an example carrying `</item>` is data. A stored request that will not send, its
 prompt unknown, as a row of an older shape names none, its body
 unencodable or Curl throwing on it, is settled and answered `{ error }`,
@@ -1138,10 +1165,10 @@ verbs do, because a root-owned segment or IPC file is one the workers
 cannot append to.
 
 **Reads.** `Intelligence_CI` (`intelligence`), mounted on every request
-graph, answers nineteen read verbs, each declaring `read` and its
+graph, answers twenty-one read verbs, each declaring `read` and its
 args: `search`, `entity`, `names`, `timeline`, `related`, `claims`, `trends`,
 `signals`, `review`, `collections` and `lenses`, `theme_suggestions`, the
-five watch verbs, `briefing` and `health`, below. Each of the first eleven hands its bound args to the
+five watch verbs, `briefing`, `ask` and `ask_result` (see Ask) and `health`, below. Each of the first eleven hands its bound args to the
 `Graph_Query` read of the same name, through `Intel_Graph_Row_Schema::read()`
 over every partition's file. A read opens on `Graph_Query::graph()`, which resolves
 the tiers once from `Intel_Tiers::readable()` — `public` and `internal`,
@@ -1753,6 +1780,147 @@ signal with the items it cites; and a link to the Intelligence page naming
 the watch, `admin.php?page=newspack-intelligence&watch=<key>`. It never
 carries an item's body.
 
+**Ask.** A reader asks the graph one question and is answered from
+items they may read, every sentence citing them. `Graph_Asks` holds the
+two verbs, each at `read`, and `Ask_Node` the worker half, as
+`Graph_Watches` and `Watcher_Node` split the watches. `ask <question>`
+bounds the question at `Graph_Asks::QUESTION_BYTES` (1,000) as the stream
+writes it, refusing a blank one, appends one `ask_asked { ask_key, owner,
+question }` to the asks stream through `Stream_Writer::append()`, as
+`Intel_Event::caller()` with the caller's user id as `owner`, under a key
+it mints, sixteen hex characters, and answers `{ ask_key }`. Nothing runs
+in the request, because both model calls block: a read-role verb cannot
+mount a worker's input (`Worker_Route` is `manage`, substrate ADR-23), so
+the question rides the stream, as a watch does. `ask` (`make_node Ask ask
+intel:writer intel:llm`), fed by its own `intel:asks:ask` Consumer
+(`set_multi_writer true`), takes each `ask_asked`, lets the stream's other
+kinds pass, and writes every outcome to `intel:writer`. An `ask_asked`
+read more than `Ask_Node::MAX_WAIT_S` (900) seconds after it was asked is
+dropped, logged rate-limited, `dropping an ask that waited past 900
+seconds: <key>`, and writes nothing, so a replayed or long-parked stream
+spends no call and never overwrites an answer the question already has.
+Each model call carries the ask's time, and a reply landing after the ask
+has waited past `MAX_WAIT_S` is dropped the same way, with no second call
+after a late plan, so an ask taken in just inside the wait never writes
+past it, and its row keeps reading `failed`.
+The node signs in as the asker exactly as the watcher signs in an owner:
+it drops the user's cached record, signs in inside a `try`, and signs back
+in as whoever was signed in before in a `finally` that covers the sign-in
+itself; an asker who no longer exists fails the ask, `the asker no longer
+exists`, and one who no longer holds `read`, `the asker no longer reads`,
+before any call. Signed in, it reads every lens's key, name and
+description, and asks `intel:llm` for one `ask_plan` call, 600 tokens at
+temperature 0, KEY the ask's key, its item `{ item_key: <ask_key>,
+question }` and its inputs today's UTC day and the lenses, carrying the
+owner and the step. The plan's system message asks for `{ searches: [ …
+] }`, one to `Ask_Prompts::MAX_SEARCHES` (3), each naming only the fields
+it needs of `Ask_Prompts::SEARCH_FIELDS` — `words`, `lens`, `entity`,
+`kinds`, `roles` and `days` — defines every kind from
+`Intel_Event::KIND_DEFINITIONS`, says that `entity` names one
+organization, person or product by its name, never a role or a category,
+and that `roles` match an item when an entity it links held one at the
+item's time, so "our clients" is `roles: ["client"]`; the question and the lenses ride as JSON,
+tags hex-escaped, in `<question>` and `<lenses>` fences it names as
+untrusted. `Ask_Prompts::parse_plan()` refuses the plan whole, and the ask
+fails `the plan was refused: <why>`, for a field beside `searches`, a count
+of searches outside one to three, a search naming none of the six or any
+other field (`a search names only words, lens, entity, kinds, roles and
+days, not <field>`, the field's name terminal-safe and cut at 64 bytes), words, a
+lens or an entity that is not text, blank or past
+`Ask_Prompts::PLAN_TEXT_BYTES` (80), so a plan fits beside an answer in
+one line, a kind or a role that is not a list of the closed vocabulary
+`Graph_Query::LENS_LISTS` gives Search's picker (`Intel_Event::ITEM_KINDS`,
+`Intel_Event::ROLES`), or days that are not a whole number from 1 to
+`RETAIN_DAYS`. Signed in as the asker again, each
+search becomes the `search` verb's own tokens — `words` as `q`, each kind
+as `kind`, each role as `role`, `days` as `since`, the first of that many UTC days ending today
+(`Graph_Query::last_days()`), a lens as `lens`, and a page of
+`Ask_Node::MAX_ITEMS` (40) — bound through `Command_Args::bind()` against
+`search`'s declared args and read through `Graph_Query::search()`, so
+every item is one of the asker's readable tiers now, under the same `ri` a
+search reads. An entity is named, not keyed: the node reads `names` for it
+as the asker and takes the entity whose shown name is the whole of it,
+case and punctuation aside, else passes the name as given, which matches
+no entity the asker cannot see, so the search narrows to nothing rather
+than widening; a role written as an entity name narrows the same way,
+because the name is not one any entity carries; a search the verb refuses, as a lens never saved, fails the
+ask `a search was refused: <why>`. The searches' items interleave, each
+once, at most `MAX_ITEMS`, read to the longest list. Nothing found is
+answered at once, `{ found: 0, sentences: [], items: [], tiers: [] }`,
+with no second call. Else the node asks one `ask_answer` call, 1,500
+tokens at temperature 0, its inputs the items numbered from 1, each `{ n,
+what, tier, source, day, kind, title, summary, excerpt, about }`, `what`
+what its source's items are (`Prompts::source_label()`, the one reader of
+`Prompts::SOURCE_LABELS` a decision's state also reads), `about` the
+names of the entities it is about, an open client marked `(client)`,
+carrying their keys in that order, their tiers and the searches. The
+question and the items ride as JSON, tags hex-escaped, in `<question>`
+and `<items>` fences named as untrusted, and the system message says the
+answer is for someone on the Newspack team, that "our clients" are the
+entities an item marks as clients and that a ticket, chat message or
+internal post records Newspack's own work, never a client's action
+(`Ask_Prompts::TEAM`), and asks for at most `Ask_Prompts::MAX_SENTENCES`
+(8) sentences of plain text, each ending in the numbers of the items it
+rests on, each in its own brackets, and for nothing unless an item
+answers. Both calls go as new work, `backlog` false, so an Ask never waits
+behind a backfill, and both are chat calls: nothing an Ask sends reaches
+the decision model. `Ask_Prompts::parse_answer()` splits the reply at
+each line break, at a sentence's end not followed by its citations, and
+after citations a capital or a digit follows, drops a list marker leading
+a line, and keeps the first `MAX_SENTENCES` sentences that end in
+citations whose every number is from 1 to the items given, its citations
+read out of its text into `cites`; every other is dropped and counted.
+The node records only the items the kept sentences cite, numbered again
+from 1 in the order first cited, each sentence's `cites` those numbers,
+and drops trailing sentences, counting each, until `Intel_Event::fits()`
+measures the event inside one 4,096-byte line, the searches always kept:
+`ask_answered { ask_key, owner, found, dropped, sentences: [ { text,
+cites } ], items, tiers, searches }`, `found` the items it was given,
+`tiers` the distinct tiers of those items in `Intel_Event::TIERS` order, a
+list `Intel_Event::LISTS` declares with no fewest member, and `searches`
+the plan's searches as it named them. A call that fails or an unlent group
+fails the ask `the model call failed`, and only the log, `ask <key>
+failed: <why>`, terminal-safe and rate-limited by the ask, names the url,
+the group or the error; a finish or a sign-in that throws fails it `the
+ask could not be finished`, logged, a cooperative stop propagating
+(substrate ADR-14). Every `ask_failed { ask_key, owner, reason, searches
+}` carries a terminal-safe reason cut at 512 bytes and the searches its
+plan ran, none before a plan, and nothing retries. `ask_result <key>`
+answers the caller's own ask as `{ ask_key, state, reason, found, dropped,
+sentences, items, searches, wait_s, available }`, `state` `asked`,
+`answered`, `failed` or `withheld`, and `wait_s` `MAX_WAIT_S`: a key that
+is not one of the caller's asks is refused as `no ask: <key>` whoever else
+asked it, so the verb never tells the two apart, except that one the
+projection does not hold yet reads as `asked` while a projector's reader
+of the asks stream has not committed its end (`Projector_Node::behind()`),
+so an ask polled before its first flush is owed, not refused. An ask still
+`asked` more than `MAX_WAIT_S` after it was asked reads as `failed`, `the
+ask waited past 900 seconds; ask again`. An answer whose `tiers` hold one
+`Intel_Tiers::readable()` does not grant the caller now reads as
+`withheld`, `the answer was written from items you can no longer read`,
+with no sentence, item or count, because the model wrote every sentence
+from every item it was given, so a sentence citing a public item alone
+may carry what a restricted one said: a revoked grant withholds every
+answer a restricted item went into. Otherwise it re-reads each cited item
+through `Graph_Query::listed()` under the caller's tiers now, keeps a
+sentence only while the caller may read every item it cites, so an
+expired or purged item hides its sentences, and numbers the kept
+sentences' items again in citation order, each as `search` answers it.
+The MCP door offers `intel_ask` and `intel_ask_result` to a read session;
+the door becomes the minting user, so an ask through it is that user's own
+and its answer that user's tiers. The page's `AskBox` heads the Briefing
+and Search, "Ask about clients, the industry or Newspack…", and
+`IntelligencePage` holds the ask, `{ key, at, gaveUp }`, so a switch
+between the two keeps it: the box sends `ask` through `useIntelWrite`,
+holds the key the answer hands `refresh` with the substrate clock's second
+it landed, reads `ask_result` through `useIntelRead`, and asks it again
+every 3 seconds on the Router's tick (`useRouterTick`) while it reads
+`asked` from a graph that opened, until the ask has waited the `wait_s`
+the answer names, when it stops and says no answer came back within that
+time. It shows the sentences, each followed by its numbers, above the
+cited items as `ItemRow`s in that numbering, or why there is none, and the
+searches the ask ran beneath as plain text, `Searched: …`.
+
 **Restricted tier.** `Intel_Tiers::CAPABILITY`,
 `newspack_intelligence_restricted`, is a WordPress user capability, granted
 per user and per site, and the one spelling every reader uses. `readable()`
@@ -1779,7 +1947,7 @@ Settings page's "Restricted access" section (`Restricted_Settings`) are the
 two operator surfaces, both at MANAGE, and each says that a role and a
 super admin read the tier without a grant. The raw-log surface is gated on
 the same capability, so a non-holder's `raw-logs` reads and SSE
-subscriptions of the five intel streams, and of every cursor and
+subscriptions of the six intel streams, and of every cursor and
 dead-letter dir derived from them, are refused (see Streams). Uninstall reaches `strip()` with
 the substrate possibly inactive, so it and everything it calls use no
 substrate class.
@@ -1964,8 +2132,8 @@ lists the entity types and link roles from `Intel_Event::TYPES` and
 `LINK_ROLES`. `intel_lenses`, `intel_save_lens`, `intel_remove_lens` and
 the `lens` and list args of `intel_search` and `intel_trends` come off the
 schema with no door code; a variadic arg is a JSON array. So do
-`intel_names`, `intel_signals`, `intel_briefing`, `intel_theme_suggestions` and the five
-watch tools, which a read session is offered, and `intel_merge_theme`,
+`intel_names`, `intel_signals`, `intel_briefing`, `intel_theme_suggestions`, the five
+watch tools, `intel_ask` and `intel_ask_result`, which a read session is offered, and `intel_merge_theme`,
 `intel_mark_used` and `intel_move_item`, which a session whose role covers
 `tune` is offered;
 the door becomes the session's minting user, so a watch tool answers and
@@ -2727,12 +2895,12 @@ Read the counts, then run the command it prints, the same command without
 | `newspack-intelligence.tsl.php` | Its frontmatter, then `-core`, `-collect` and `-deployment` last: `on_demand_idle 0` keeps the worker resident, which the scheduled sources need, and `stale_timeout 600` stays until a measured run shows a lower value is safe, because a pass still holds work across ticks. Frontmatter is read from the activated file alone, so a part cannot carry it — the composition a deployment activates, though nothing finds Intelligence by this name. `Worker_Route::running()` takes Intelligence's topology to be the one active topology declaring an `Intel_Event_Writer` node (every composition includes `-streams`, through `-core`), so a deployment may compose its own under another name, holding its frontmatter, `-core`, its own collect and `-deployment` last, and activate that instead; routing, `fetch_now`, `Intelligence_CI_Node::sources()` and every `health` slice read that one. Two active topologies declaring the writer are refused naming both, and none read as collection off, which routing refuses (`Worker_Route::topology()`) and `health` answers `inactive`; with none declaring it while an active `.tsl` will not read, both are refused naming that topology and why, while an active name that does not resolve to any `.tsl` (`Topology_Missing`) declares nothing and is passed over. Uninstall skips a composition while it will not read only because the lists file does not resolve, because its parts declare its tables, and fails on any other shipped topology that will not read |
 | `newspack-intelligence-workstation.tsl.php` | The composition a workstation activates in place of `newspack-intelligence`: the same frontmatter and `-core`, then `-collect-public`, `-context-a8c` in place of the token half and `-collect-unthread`, then `-deployment`, then `cmd feed:config set_concurrency 6`, because a workstation's Docker resolver fails lookups at sixteen. The `cmd` applies after the include, so it lands after the site's lists |
 | `newspack-intelligence-context-a8c.tsl.php` | `linear`, `slack`, `p2` and `p2-restricted` as ContextA8C nodes, each under the name, tier and interval of the token source it stands in for, so the site's lists reach it and its items record under that source's keys, reading the relay's token dir at `/mcp-auth` through the proxy at `host.docker.internal:8080`; includes the streams |
-| `newspack-intelligence-core.tsl.php` | Everything but the collect: `-streams`, `-project` and `-resolve`, then `reresolver`, which spans the project and streams files, fed by its own `intel:ontology:reresolve` Consumer, and `watcher`, which reads the projection and writes to `intel:writer`; every composition includes it first |
-| `newspack-intelligence-streams.tsl.php` | `intel:items`, `intel:ontology`, `intel:reresolve`, `intel:watches`, `intel:writer`, and `intel:later`, the Delay whose due records go to `intel:reresolve` |
+| `newspack-intelligence-core.tsl.php` | Everything but the collect: `-streams`, `-project` and `-resolve`, then `reresolver`, which spans the project and streams files, fed by its own `intel:ontology:reresolve` Consumer, `watcher`, which reads the projection and writes to `intel:writer`, and `ask`, fed by its own `intel:asks:ask` Consumer, which asks `intel:llm` and writes to `intel:writer`; every composition includes it first |
+| `newspack-intelligence-streams.tsl.php` | `intel:items`, `intel:ontology`, `intel:reresolve`, `intel:watches`, `intel:asks`, `intel:writer`, and `intel:later`, the Delay whose due records go to `intel:reresolve` |
 | `newspack-intelligence-collect.tsl.php` | The eight sources → `intel:writer`, as two halves it includes: `-collect-public`, GitHub on a 900-second grid, `feed` on 1,800 with client feeds on and `news`, a second feed node for searches, on 3,600; and `-collect-token`, Linear, Slack and Unthread on 900, `p2` and `p2-restricted` on 1,800, each under its Vault group, the two P2 nodes sharing `p2`, Unthread through `-collect-unthread`; includes the streams |
 | `newspack-intelligence-collect-unthread.tsl.php` | `unthread` at the restricted tier on 900, under its Vault group, → `intel:writer`, an include of its own so a collect reading the rest of the token half another way can keep it; includes the streams |
 | `newspack-intelligence-deployment.tsl.php` | `include newspack-intelligence-lists` alone, which every composition includes last; it declares no `secure`, because the Shell skips one inside an include. The file it includes, `newspack-intelligence-lists`, is not shipped: what a site reads and cares about, which it keeps in the user topology dir, `<base_dir>/topologies/newspack-intelligence-lists.tsl`, empty when it has no settings of its own. The shipped topologies name no repo, feed, search, team, channel, site, profile line or audience, so with an empty file GitHub, Linear, Slack, both P2 nodes and `news` fetch nothing, `feed` reads only the open clients' feeds, Unthread, which takes no list, reads as it would anyway, and the extractor frames its prompt without an audience, scores without a profile and sets no importance floor. The lists' `cmd <node>:config add_…`, `add_profile`, `add_importance_floor` and `set_audience` lines reach every node the files before the deployment file declare, because every composition includes that last. Without a lists file in any topology dir, none of the compositions reads: the worker cannot load, `wp nodes doctor` fails worker liveness naming the include and opens with a warning naming the path and that an empty file will do (`Intelligence_Health::warn_missing_lists()`, on `before_invoke:nodes doctor`), and the health strip's `collection` row reads `no lists file` naming the path. The user dir resolves after every stock dir, so the plugin ships no lists file, which would win, and a user-dir `newspack-intelligence-deployment.tsl.php` is shadowed by this one |
-| `newspack-intelligence-project.tsl.php` | `intel:items:consumer`, `intel:ontology:consumer` and `intel:watches:consumer`, each → `projector`, writing the `intel-graph` Row_Table; their cursors serve no other node |
+| `newspack-intelligence-project.tsl.php` | `intel:items:consumer`, `intel:ontology:consumer`, `intel:watches:consumer` and `intel:asks:consumer`, each → `projector`, writing the `intel-graph` Row_Table; their cursors serve no other node |
 | `newspack-intelligence-resolve.tsl.php` | `intel:items:resolve` and `intel:reresolve:resolve` feed `resolver`, which feeds `extractor`, which feeds `deduper`, each of those three writing its events to `intel:writer`, the resolver and the extractor parking on `intel:later` and asking `intel:llm`, an `LLM_Call` under the `ai-proxy` Vault group at concurrency 4, its decision model `decision-lux-9b`, for every model call, the items Consumer checkpointing the deduper; includes the streams |
 
 ### Nodes
@@ -2749,7 +2917,7 @@ plugin adds:
 | `Unthread_Source` | `Unthread_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`; owns `{name}:curl` and `{name}:frontier` |
 | `Context_A8C_Slack`, `Context_A8C_P2`, `Context_A8C_Linear` | `Context_A8C_*_Node` over `Context_A8C_Source_Node` | `<tier> <auth_dir> [proxy]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, and the list verbs of the source each stands in for; owns `{name}:curl` |
 | `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_url`, `remove_url`, `set_client_feeds`, `set_concurrency`; owns `{name}:curl` and `{name}:frontier` |
-| `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition>`; no verbs |
+| `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition> <asks_partition>`; no verbs |
 | `Projector` | `Projector_Node` | `set_graph_target` |
 | `LLM_Call` | `LLM_Call_Node` | `<vault_group>`; a caller's request, and the Router's tick, which sends what its Table holds and publishes `{ queue: { new, backlog, in_flight }, at }`, at most every 5 seconds once the queue moves and every 300 while it does not; `set_api_url`, `set_model`, `set_decision_model`, `set_feature`, `set_concurrency`; owns `{name}:curl` and `{name}:frontier` |
 | `Resolver` | `Resolver_Node` | `<writer> <later> <llm>`; no verbs; publishes its hold (`reason`, `since`) through `Publishes_Status` |
@@ -2757,7 +2925,8 @@ plugin adds:
 | `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until> [<source>]`, `REEXTRACT <since> <until> [<source>]`; publishes `last_range` through `Publishes_Status` |
 | `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no verbs |
-| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `theme_suggestions`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `health`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `merge_theme`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
+| `Ask` | `Ask_Node` | `<writer> <llm>`; each `ask_asked` its Consumer reads, and the model-call node's answers; no verbs |
+| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `theme_suggestions`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `ask`, `ask_result`, `health`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `merge_theme`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
 
 `LLM_Call_Node`'s four verbs are declared setters, replayed by its
 `dump_config()`; `set_api_url` refuses anything but an absolute http(s)
@@ -2861,16 +3030,17 @@ the upload runs as the web user.
 
 `src/intelligence/` builds one bundle, `build/intelligence/index.js`, mounted on
 the Intelligence admin page. Every view reads the `intelligence` verbs through
-its own one-shot commands; nothing polls.
+its own one-shot commands, and only the `AskBox` polls: it asks
+`ask_result` again on the Router's tick while an ask is owed its answer.
 
 | Module | Export | What it does |
 |--------|--------|--------------|
 | `index.js` | — | Mounts `IntelligencePage` on `#newspack-intelligence-app`, handing it `canTune`, `canManage`, `userId` and `vocabulary` from `NewspackNodesData` |
-| `IntelligencePage.js` | default | Opens on Briefing, its first tab, and switches Briefing, Search, Entity, Lenses, Review, Collections and Watches in place; holds the submitted search, the open entity, lens, collection and watch, the watch form's draft and the item being saved, so a view returns as it was left, and a lens's "Watch this" opens the watch form on that lens; labels the Entity tab "Entity: <name>" with what the open entity's heading shows, which `Entity` hands back through `onNamed` paired with its key, so a name answered for an entity opened before never labels the next, else, before the record answers or once it is refused, "Entity: <key>"; the Briefing opens an entity, a lens or the lens list, a watch, the watch form or Search, and a line of its summary opens Search on a fresh query holding that line's filters; a URL carrying `watch=<key>`, as the watcher's email links it, opens the page on Watches with that watch open, or on the list when the reader's watches do not hold it; mounts `HealthStrip` above the tab bar, on every view; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the `NEWSPACK::NODES` header subtitled `Intelligence` and the debug overlay |
-| `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite`, `commandArgs` | `commandArgs()` names every value given, a list once per member, leaving out a blank value or an empty list; a read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments, and null arguments asking nothing and withdrawing the ask outstanding; a write sent once per `run()` to the `intelligence` CI or the `ci` it names, its nodes named by the `scope` it is given, else `<ci>:<command>`, so two writes of one verb on a page never share a Fetcher, which answers the tokens it sent, running `refresh` once it lands, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal, answered arguments and `pending` |
+| `IntelligencePage.js` | default | Opens on Briefing, its first tab, and switches Briefing, Search, Entity, Lenses, Review, Collections and Watches in place; holds the ask both views' `AskBox` shows, the submitted search, the open entity, lens, collection and watch, the watch form's draft and the item being saved, so a view returns as it was left, and a lens's "Watch this" opens the watch form on that lens; labels the Entity tab "Entity: <name>" with what the open entity's heading shows, which `Entity` hands back through `onNamed` paired with its key, so a name answered for an entity opened before never labels the next, else, before the record answers or once it is refused, "Entity: <key>"; the Briefing opens an entity, a lens or the lens list, a watch, the watch form or Search, and a line of its summary opens Search on a fresh query holding that line's filters; a URL carrying `watch=<key>`, as the watcher's email links it, opens the page on Watches with that watch open, or on the list when the reader's watches do not hold it; mounts `HealthStrip` above the tab bar, on every view; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the `NEWSPACK::NODES` header subtitled `Intelligence` and the debug overlay |
+| `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite`, `commandArgs` | `commandArgs()` names every value given, a list once per member, leaving out a blank value or an empty list; a read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments, and null arguments asking nothing and withdrawing the ask outstanding; a write sent once per `run()` to the `intelligence` CI or the `ci` it names, its nodes named by the `scope` it is given, else `<ci>:<command>`, so two writes of one verb on a page never share a Fetcher, which answers the tokens it sent, handing `refresh` the landed answer once it lands, so a write that answers a key, as `ask` does, gives it to its caller, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal, answered arguments and `pending` |
 | `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_group`, `last_error` and `file`, reads it whole; while collection is off every other row is listed neutral, never a fault, and its Activate fix offers one button per composition the slice's `topologies` names, which leaves out any whose sources cannot collect on this host, labelled with the name and sharing one `activate` write, the row naming `wp nodes activate` as `<code>` when it names none; `unconfigured` is a fault naming the path the lists file belongs at and that an empty file will do, or, for a reader whose answer carries no `file`, that an administrator can create it and an empty one will do; the projector catching up on the ontology is neutral until its hold has stood five minutes (`BEHIND_FAULT_S`), then a fault; with nothing held the backlog row counts the later queue's entries as items waiting to resolve or retry; while the extraction slice's `queue` holds a call, a neutral "Model calls" row, pill `busy`, counts them, grouped in the page's own language, a class or a part holding none left out ("5,735 calls waiting (5,735 backlog) · 4 in flight", "1 call waiting (1 new)", "2 in flight"), for every reader, and the line follows the backlog row's cause with that row's counts, dropping the cause while the backlog row reads idle (nothing held, `held` 0), so it never says "Nothing waiting." beside queued calls; every time it shows renders in the browser's own zone through the substrate's `formatLocalDateTime()`, while the dropped days stay the UTC days the server names, read as "Items parked from <first_day> to <last_day> were dropped before they resolved.", true of an entry aged out and of one the full queue refused; the line names each source that has not reported yet ("Collecting from 5 of 6 sources; feed has not reported yet."), the names joined in the page's own language (`document.documentElement.lang`, else the browser's), and says the health is not fully known for any other unknown row, a source in a state it does not recognise included; a source idle for want of its credential, Unthread's among them, offers a manager "Add credential", linking the substrate's Vault tab (`admin.php?page=newspack-nodes-station&tab=vault`, the station's `STATION_MENU_SLUG` and the Vault tab's slug); each of the `sources` slice's `dead_clients` is a "Client feed" fault, pill `dead`, reading "<name> (<domain>) has not resolved since <since>.", and offers a curator "Mark former client", which ends the client through `useEndClient` under the `health:former-client` scope over the sources read, every row of that client leaving the strip from the click until a read no longer lists it, focus then moving to the row in the pressed row's place, else the last row, else the strip's section, every other such button `aria-disabled` while a pair is owed its replies, a refused end returning the client's rows with the refusal on the row of the client it refused alone, a refused assert keeping them hidden and showing `unrecordedText()` as an alert on the strip, the strip read again once the pair is answered; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology` and marking a former client, which mounts its pair for a curator alone, `canManage` for the rest), and anyone else reads "An administrator can …" |
-| `views/Briefing.js` | default | The two `briefing` slices and `watches`, each its own read and card: "Since you last looked", first, for a reader the browser holds a last look for under `newspack-intelligence:briefing:last-view:<userId>`, read through the shared `readStorage()`, whose refusal reads as never, so storage that will not be read shows the Briefing alone; `changes` is asked with `--since=<that instant>`, and once it answers from a graph that opened (`available` true) the instant the view opened is kept, so an answer from a graph that would not open shows no summary and keeps the old instant; the summary's lines, at most 5, each a button opening Search on its filters (`onSearchFor`, `since` the UTC day of the summary's `since`): how many new items about how many clients, then each kind it answers, counted in clients for `churned` and `churn_signal` and in items for the rest, a kind counting none left out ("7 clients started offboarding", "3 bugs filed"), or that nothing is new; "Last seven days", each group in the answer's order and headed by its `role`: a `client` group under its `EntityChip`, the `newspack_product` group under "Newspack" and the group of role null under "Industry", each item an `ItemRow`, and, when the window held more than it shows, how many of how many; "Signals", each client's under its chip and each lens's under the button opening it, through `TrendTable`; every group collapsed to its heading and a button counting its items or signals, which opens it, named by the heading and the count through `aria-labelledby` and controlling the group's rows through `aria-controls`; "Your watches", each a `WatchRow` opening it; a card answering nothing says so and offers the one control that acts on it: Search everything, Open lenses or New watch |
-| `views/Search.js` | default, `newSearch` | `search` with words, the lens's list filters (`vocabulary.lensLists`) — kinds, roles and sources each a `FormTokenField`, a closed list taking only its own values, topics comma-separated through `ListField` — an entity through `EntityPicker` and a day range, a page at a time, in the order the answer's `sort` names, which the reader switches, sending `--sort` from the first page; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words, the order and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
+| `views/Briefing.js` | default | The `AskBox`, first, then the two `briefing` slices and `watches`, each its own read and card: "Since you last looked", for a reader the browser holds a last look for under `newspack-intelligence:briefing:last-view:<userId>`, read through the shared `readStorage()`, whose refusal reads as never, so storage that will not be read shows the Briefing alone; `changes` is asked with `--since=<that instant>`, and once it answers from a graph that opened (`available` true) the instant the view opened is kept, so an answer from a graph that would not open shows no summary and keeps the old instant; the summary's lines, at most 5, each a button opening Search on its filters (`onSearchFor`, `since` the UTC day of the summary's `since`): how many new items about how many clients, then each kind it answers, counted in clients for `churned` and `churn_signal` and in items for the rest, a kind counting none left out ("7 clients started offboarding", "3 bugs filed"), or that nothing is new; "Last seven days", each group in the answer's order and headed by its `role`: a `client` group under its `EntityChip`, the `newspack_product` group under "Newspack" and the group of role null under "Industry", each item an `ItemRow`, and, when the window held more than it shows, how many of how many; "Signals", each client's under its chip and each lens's under the button opening it, through `TrendTable`; every group collapsed to its heading and a button counting its items or signals, which opens it, named by the heading and the count through `aria-labelledby` and controlling the group's rows through `aria-controls`; "Your watches", each a `WatchRow` opening it; a card answering nothing says so and offers the one control that acts on it: Search everything, Open lenses or New watch |
+| `views/Search.js` | default, `newSearch` | The `AskBox`, above `search` with words, the lens's list filters (`vocabulary.lensLists`) — kinds, roles and sources each a `FormTokenField`, a closed list taking only its own values, topics comma-separated through `ListField` — an entity through `EntityPicker` and a day range, a page at a time, in the order the answer's `sort` names, which the reader switches, sending `--sort` from the first page; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words, the order and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
 | `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens`, then `trends --lens` as one `TrendChart`, then `search --lens --group=theme`'s theme groups through `GroupPage`, a page of groups at a time in the order the server ranks them; signals through `SignalTrend`, citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
 | `views/Entity.js` | default | `entity`, headed, for a record answering a `status`, by the client's status line — client since, the first row of its own `signals` read once answered or "Steady", its churn reports, churn signals, feature requests and complaints, and the day of its last item or "No item about it yet" — then `signals --entity` under its header through `SignalTrend`, both axes, each row's value its axis and kind and the value it counts, its count against its baseline, then `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`, each claim read as its subject's `EntityChip`, the predicate and its object, a chip when `object_name` is set and the item's spelling as text when it is null, each chip showing the key where the name is null, and cited by its item's title linking its URL; after the timeline, a "Details" section lists the keys merged into it, its names, identifiers, topics and every role row but a closed one that held no time (`to_ts` not 0 and equal to `from_ts`), an import's same-day correction, so an open row a seed asserted from 0 stays; hands `onNamed` the entity's key with what its heading shows, its name else its key, whenever the record answers, and with null once it is refused; once the record answers, for a curator, `EditDrawer` under its counts and, when its `status` answers `churn_open`, "This client has a churn report." and an "End client?" button in its status line, which ends the client through `useEndClient` under the `entity:churn` scope over the record, which lists the entity as a client while its `status` answers, the prompt leaving the status line from the click until a read no longer lists it and focus moving to the entity's heading, a refused end returning it, a refused end asserting nothing, and a refused assert shown beside every edit's refusal through `unrecordedText()`, which stands after the status goes |
 | `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity and the sentence each link quotes, and `review entities`, a pill per entity, each citing item with the sentence it quotes; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`, its field focused; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back. Each queue's list, named for its queue and described by a visually hidden sentence of its keys, takes focus and the review keys while focus is in it and not in a field, as the substrate's `isTypingTarget()` reads it: `j` and `k` move between the link pills or the entity rows (`data-review-row`, `tabindex="-1"`, so the shared `[tabindex]:focus-visible` ring shows), and `y`, `n` and `m` press the focused row's control whose `aria-keyshortcuts` names the key (✓, ✕, Merge…), a judgment moving focus to the row then in its place, else the last; then "Themes", `theme_suggestions`' pairs, each naming both themes, their stories, the entities they share and the words their names share, and for a curator "Merge into" each theme, which sends `merge_theme` from the other and hides the pair through `useHeld` as `merge_entities` does |
@@ -2883,6 +3053,7 @@ its own one-shot commands; nothing polls.
 | `components/SaveToCollection.js` | default | The one dialog any result saves through, sending `collect` |
 | `components/Answer.js`, `Refusal.js` | `Answer`, `AnswerBody`, `Refusal` | One read in exactly one state — owed, refused, unavailable (one sentence for every read), empty when every list its `rows` names is, its words and any control the view gives as `empty`, or its rows — as a stock `Card` section named by an optional title, which heads its `CardHeader`, with the state inset in its `CardBody`, or bare inside a dialog; the one alert every refusal, read or write, renders in |
 | `components/EntityPicker.js` | default, `useEntityNames`, `MIN_PREFIX` | `useEntityNames( text )` asks `names` for the text an entity box holds and answers its suggestions, `keyOf()` and the latest refusal: each entity offered under the name the reader types toward, its key as the label, and a name two of them share under each key. A text holding fewer than `MIN_PREFIX` (2) letters, marks or digits as `Entity_Index::norm()` counts them, or naming an offered entity by its name or key, asks nothing. The component is the shared `CommitInput`, labelled through `BaseControl`, handing every edit on as typed, so a name leading another can be typed past, with the refusal beneath it; Search maps a name to its key through `keyOf()` only when it runs the search |
+| `components/AskBox.js` | default | The question field heading the Briefing and Search, "Ask about clients, the industry or Newspack…", over the ask `IntelligencePage` holds, `{ key, at, gaveUp }`: `ask` through `useIntelWrite`, whose `refresh` hands it the key, held with the substrate clock's second it landed, then `ask_result` through `useIntelRead`, asked again every 3 seconds on the Router's tick (`useRouterTick`) while it reads `asked` from a graph that opened, shown as "Working on it…", until the ask has waited the `wait_s` the answer names, when it says no answer came back within that time; an answer's sentences, each followed by the numbers of the items it cites, above those items as `ItemRow`s in an ordered list, how many sentences were left out, and, for an answer with none, whether nothing the reader may read matched or the answer cited none of the items it read; a failure's or a withheld answer's reason; a graph that would not open; the searches the ask ran as `Searched: …`; a refusal; Ask disabled for a blank question |
 | `components/Pager.js` | default | How many of the matches a page shows, as items unless `forms` names the plural forms of another noun, and Previous and Next over a stack of page starts, for Search, the Entity timeline and its published items, a lens's groups and a watch's matches |
 | `components/GroupPage.js` | default | A page of a lens's theme groups in the answer's order under the fixed line "Ranked by severity, importance, clients affected, then recency": a group counting one item as that item's `ItemRow`, any other a row headed by its theme as an `h4`, its count, kind and newest UTC day, an `EntityChip` per client, and a "Show items" button carrying `aria-expanded` and naming the theme, which discloses its items as `ItemRow`s; then its `Pager`, counting groups through `forms`; each row keyed by its theme and first item's key, since a story can stand in two groups |
 | `components/ListField.js`, `lensDraft.js` | `ListField`; `lensDraft`, `newLens`, `draftLens`, `draftArgs`, `listOf`, `daysSince` | A comma-separated field naming the values a closed list allows; a lens read into a form's text and back into the lens and the options `save_lens` and `search` take, its list filters read from `vocabulary.lensLists` and its tiers kept beside them, the one place that knows the lens's shape; and the first UTC day of a lens's rolling window |
@@ -2939,6 +3110,7 @@ sibling checkout locally.
 | `includes/` (LLM) | `LLM_Call_Node`, every model call; the `Asks_Model` trait, its callers' half; `Prompts`, the requests' messages and the parse of their replies; the `Owns_Curl_Frontier` trait, the Curl and Frontier half it shares with `Source_Node` |
 | `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Briefing`, `Intelligence_Health`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
 | `includes/` (watches) | `Watcher_Node` |
+| `includes/` (ask) | `Ask_Node`, the Ask's worker half; `Graph_Asks`, its `ask` and `ask_result` verbs; `Ask_Prompts`, its two prompts and the parse of their replies |
 | `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed [<file>]`, `ontology reresolve`, `ontology reextract` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; `Eval_CLI_Command` — `wp newspack-intelligence eval <file>`; the `Refuses_Root` trait they share |
 | `topologies/` | The `.tsl` node-graph topologies |
 | `examples/` | The fictional ontology seed and eval labels, the shapes a deployment starts its own from |

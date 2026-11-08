@@ -106,6 +106,21 @@
 		gap: base.$space-lg;
 	}
 
+	// The question takes the row; the Ask button sits at its end.
+	&__ask {
+		display: flex;
+		gap: base.$space-md;
+		align-items: center;
+
+		> :first-child {
+			flex: 1;
+		}
+	}
+
+	&__answer {
+		margin-block: base.$space-md;
+	}
+
 	&__facts,
 	&__chips {
 		display: flex;

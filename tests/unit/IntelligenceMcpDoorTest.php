@@ -24,6 +24,7 @@ use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
 require_once __DIR__ . '/../support/signs-in-users.php';
+require_once __DIR__ . '/../support/reads-ontology-log.php';
 require_once \dirname( __DIR__, 3 ) . '/newspack-nodes/tests/Helpers/McpRequests.php';
 
 /**
@@ -35,6 +36,7 @@ final class IntelligenceMcpDoorTest extends TestCase {
 	use Seeds_Intel_Graph;
 	use Mcp_Requests;
 	use Signs_In_Users;
+	use Reads_Ontology_Log;
 
 	private const GAZETTE = 'organization:harbor-gazette';
 
@@ -78,7 +80,7 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		$this->assertArrayNotHasKey( 'intel_health', $tools );
 		$this->assertArrayNotHasKey( 'intel_seed_ontology', $tools );
 		$this->assertArrayNotHasKey( 'intel_reresolve', $tools );
-		$this->assertCount( 36, $tools );
+		$this->assertCount( 38, $tools );
 		$this->assertSame( [ 'collection', 'item', 'mark', 'day' ], $tools['intel_mark_used']['inputSchema']['required'] );
 		$this->assertSame( [ 'collection', 'item', 'into' ], $tools['intel_move_item']['inputSchema']['required'] );
 		foreach ( $offered as $verb => $spec ) {
@@ -105,9 +107,27 @@ final class IntelligenceMcpDoorTest extends TestCase {
 	public function test_a_read_scope_lists_no_curation_tool(): void {
 		$names = \array_column( $this->call( Capabilities::READ, 'tools/list' )['result']['tools'], 'name' );
 
-		$this->assertSame( [ 'intel_search', 'intel_entity', 'intel_names', 'intel_timeline', 'intel_related', 'intel_claims', 'intel_trends', 'intel_signals', 'intel_review', 'intel_theme_suggestions', 'intel_collections', 'intel_lenses', 'intel_watches', 'intel_save_watch', 'intel_remove_watch', 'intel_watch_matches', 'intel_mark_seen', 'intel_briefing' ], $names );
+		$this->assertSame( [ 'intel_search', 'intel_entity', 'intel_names', 'intel_timeline', 'intel_related', 'intel_claims', 'intel_trends', 'intel_signals', 'intel_review', 'intel_theme_suggestions', 'intel_collections', 'intel_lenses', 'intel_watches', 'intel_save_watch', 'intel_remove_watch', 'intel_watch_matches', 'intel_mark_seen', 'intel_briefing', 'intel_ask', 'intel_ask_result' ], $names );
 		$refused = $this->call( Capabilities::READ, 'tools/call', [ 'name' => 'intel_confirm_link', 'arguments' => [ 'item' => 'feed:gazette-award', 'entity' => self::GAZETTE ] ] );
 		$this->assertSame( 'Unknown tool: intel_confirm_link', $refused['error']['message'] );
+	}
+
+	/**
+	 * A read session is offered `intel_ask` and `intel_ask_result`, each the
+	 * verb's own args, and an ask through the door is the minting user's
+	 * own, its reply fenced.
+	 */
+	public function test_mcp_door_offers_intel_ask_to_a_read_session(): void {
+		$tools = \array_column( $this->call( Capabilities::READ, 'tools/list' )['result']['tools'], null, 'name' );
+
+		$this->assertSame( [ 'question' ], $tools['intel_ask']['inputSchema']['required'] );
+		$this->assertSame( [ 'key' ], $tools['intel_ask_result']['inputSchema']['required'] );
+		$reply = $this->call( Capabilities::READ, 'tools/call', [ 'name' => 'intel_ask', 'arguments' => [ 'question' => 'Which clients won awards?' ] ] );
+		$text  = $reply['result']['content'][0]['text'];
+		$this->assertStringStartsWith( "<site-data>\n", $text );
+		$key    = \json_decode( \substr( $text, \strlen( "<site-data>\n" ), -\strlen( "\n</site-data>" ) ), true )['ask_key'];
+		$events = self::events_in( \Newspack_Nodes\Config::get_logs_directory() . '/intel-asks.p0' );
+		$this->assertSame( [ $key, 5129, 'user:kinsey-desk' ], [ $events[0]['ask_key'], $events[0]['owner'], $events[0]['actor'] ] );
 	}
 
 	/** The seed is an operator's fix on the Intelligence page, so a tune session cannot call it through the door. */

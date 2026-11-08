@@ -179,6 +179,8 @@ beforeEach( () => {
 		onNewWatch: jest.fn(),
 		onSearch: jest.fn(),
 		onSearchFor: jest.fn(),
+		asked: null,
+		onAsked: jest.fn(),
 	};
 } );
 
@@ -206,6 +208,19 @@ const expand = ( heading, count ) => {
 };
 
 describe( 'Briefing', () => {
+	it( 'opens with the Ask box, which asks nothing until a question is sent', async () => {
+		renderBriefing();
+		await screen.findByRole( 'button', { name: 'Kestrel account' } );
+		const sections = document.querySelectorAll( 'section' );
+		expect(
+			within( sections[ 0 ] ).getByPlaceholderText(
+				'Ask about clients, the industry or Newspack…'
+			)
+		).toBeInTheDocument();
+		expect( wire.sent( 'ask' ) ).toEqual( [] );
+		expect( wire.sent( 'ask_result' ) ).toEqual( [] );
+	} );
+
 	it( 'asks each slice through its own read', async () => {
 		renderBriefing();
 		await screen.findByRole( 'button', { name: 'Kestrel account' } );

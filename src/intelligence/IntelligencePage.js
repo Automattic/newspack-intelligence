@@ -75,6 +75,7 @@ export default function IntelligencePage( {
 		key: linkedWatch(),
 	} ) );
 	const [ watchDraft, setWatchDraft ] = useState( null );
+	const [ asked, setAsked ] = useState( null );
 
 	const openEntity = ( key ) => {
 		setEntityKey( key );
@@ -161,6 +162,8 @@ export default function IntelligencePage( {
 								}
 								onSearch={ () => setView( 'search' ) }
 								onSave={ onSave }
+								asked={ asked }
+								onAsked={ setAsked }
 							/>
 						) }
 						{ 'search' === view && (
@@ -170,6 +173,8 @@ export default function IntelligencePage( {
 								vocabulary={ vocabulary }
 								onOpenEntity={ openEntity }
 								onSave={ onSave }
+								asked={ asked }
+								onAsked={ setAsked }
 							/>
 						) }
 						{ 'entity' === view && (

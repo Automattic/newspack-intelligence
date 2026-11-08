@@ -1,8 +1,8 @@
 # <?php \defined( 'ABSPATH' ) || exit; ?>
 # Everything Intelligence runs but its collect: the streams, the projection,
-# resolution, re-resolution and the watcher. A composition includes this,
-# then its collect, then newspack-intelligence-deployment last, and sets its
-# own frontmatter, which a part cannot.
+# resolution, re-resolution, the watcher and the Ask. A composition includes
+# this, then its collect, then newspack-intelligence-deployment last, and sets
+# its own frontmatter, which a part cannot.
 var num_partitions = 1
 include topic-probe
 include newspack-intelligence-streams
@@ -20,4 +20,11 @@ connect_node intel:ontology:reresolve reresolver
 # and writes its matches and marks to intel:writer, which the streams file
 # declares.
 make_node Watcher watcher intel:writer
+# The Ask reads each question from the asks stream through its own Consumer,
+# plans and answers it through intel:llm as new work, reads as the asker, and
+# writes the outcome to intel:writer; request-side appends share the stream.
+make_node Consumer intel:asks:ask <config:logs_dir>/intel-asks.p{partition} <config:offsets_dir>/<topology>.intel-asks-ask.p{partition} <config:deadletter_dir>/<topology>.intel-asks-ask.p{partition}
+command_node intel:asks:ask:config set_multi_writer true
+make_node Ask ask intel:writer intel:llm
+connect_node intel:asks:ask ask
 secure

@@ -1,6 +1,6 @@
 <?php
 /**
- * Intel_Graph_Row_Schema: the tables the projector replays both event streams
+ * Intel_Graph_Row_Schema: the tables the projector replays the event streams
  * into, declared as `make_node Row_Table intel-graph Intel_Graph`.
  *
  * The item-scoped tables keep `RETAIN_DAYS` by a day column, the item's
@@ -17,7 +17,8 @@
  * tier's and a move carries no copy; each use mark is an `item_marks` row
  * of the tier of the copy it marks. Each distinct
  * line of an item's body is a `boilerplate` row of its own, so how many
- * items of a source carry a line is a count of rows.
+ * items of a source carry a line is a count of rows. Each ask is one `asks`
+ * row, kept `Ask_Node::KEEP_DAYS` by the day it was last written.
  *
  * @package Newspack_Intelligence
  */
@@ -513,6 +514,25 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				],
 				'key'     => [ 'owner', 'mode', 'watch_key' ],
 				'keep'    => true,
+			],
+			'asks'          => [
+				'columns' => [
+					'ask_key'   => 'TEXT NOT NULL',
+					'owner'     => 'INTEGER NOT NULL',
+					'state'     => 'TEXT NOT NULL',
+					'reason'    => 'TEXT NOT NULL',
+					'found'     => 'INTEGER NOT NULL',
+					'dropped'   => 'INTEGER NOT NULL',
+					'sentences' => 'TEXT NOT NULL',
+					'items'     => 'TEXT NOT NULL',
+					'tiers'     => 'TEXT NOT NULL',
+					'searches'  => 'TEXT NOT NULL',
+					'ts'        => 'REAL NOT NULL',
+					'ask_day'   => 'INTEGER NOT NULL',
+				],
+				'key'     => [ 'ask_key' ],
+				'indexes' => [ 'asks_ask_day' => [ 'ask_day' ] ],
+				'retain'  => [ 'ask_day', Ask_Node::KEEP_DAYS, self::DAY_SECONDS ],
 			],
 			'events'        => [
 				'columns' => [

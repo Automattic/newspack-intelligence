@@ -76,7 +76,7 @@ class TopologyDurabilityTest extends TestCase {
 		$this->assertTrue( $this->read_private( $ontology, 'keep_everything' ) );
 		$this->assertSame( Partition_Node::LARGE_WRITE_NONE, $this->read_private( $ontology, 'large_write_mode' ) );
 		$this->assertInstanceOf( Intel_Event_Writer_Node::class, Core::node( 'intel:writer' ) );
-		$this->assertSame( [ 'intel:items', 'intel:ontology', 'intel:watches' ], Core::node( 'intel:writer' )->display_targets() );
+		$this->assertSame( [ 'intel:items', 'intel:ontology', 'intel:watches', 'intel:asks' ], Core::node( 'intel:writer' )->display_targets() );
 		$this->assertInstanceOf( Projector_Node::class, Core::node( 'projector' ), 'the composed graph projects both streams' );
 	}
 
@@ -120,14 +120,14 @@ class TopologyDurabilityTest extends TestCase {
 	/**
 	 * Every intel stream gates a raw read on the restricted tier's own
 	 * capability, `Intel_Tiers::CAPABILITY`, which the TSL spells out: once
-	 * each of the four Partitions and the later Delay's queue writes, its dir
+	 * each of the five Partitions and the later Delay's queue writes, its dir
 	 * holds the `.read-capability` marker naming it, and so do the cursor and
 	 * the dead letters of every reader of them, once each has checkpointed and
 	 * quarantined a torn line.
 	 */
 	public function test_every_intel_stream_and_its_readers_carry_the_restricted_marker(): void {
 		$this->load( 'newspack-intelligence' );
-		foreach ( [ 'intel:items', 'intel:ontology', 'intel:reresolve', 'intel:watches' ] as $stream ) {
+		foreach ( [ 'intel:items', 'intel:ontology', 'intel:reresolve', 'intel:watches', 'intel:asks' ] as $stream ) {
 			$partition                 = Core::node( $stream );
 			$probe                     = Message::new_message();
 			$probe[ Message::TYPE ]    = Message::TM_BYTESTREAM;
@@ -151,7 +151,7 @@ class TopologyDurabilityTest extends TestCase {
 		self::tear( "{$this->tmp}/logs/intel-later.p0" );
 		$at( 1793278070.0 );
 		$later->fire_cb();
-		foreach ( [ 'intel:items:consumer', 'intel:items:resolve', 'intel:ontology:consumer', 'intel:watches:consumer' ] as $name ) {
+		foreach ( [ 'intel:items:consumer', 'intel:items:resolve', 'intel:ontology:consumer', 'intel:watches:consumer', 'intel:asks:consumer', 'intel:asks:ask' ] as $name ) {
 			$reader = Core::node( $name );
 			$reader->poll();
 			while ( $reader->poll() > 0 ) {
@@ -161,10 +161,10 @@ class TopologyDurabilityTest extends TestCase {
 		}
 
 		$marked = [];
-		foreach ( [ 'logs/intel-items.p0', 'logs/intel-ontology.p0', 'logs/intel-reresolve.p0', 'logs/intel-later.p0', 'logs/intel-watches.p0' ] as $dir ) {
+		foreach ( [ 'logs/intel-items.p0', 'logs/intel-ontology.p0', 'logs/intel-reresolve.p0', 'logs/intel-later.p0', 'logs/intel-watches.p0', 'logs/intel-asks.p0' ] as $dir ) {
 			$marked[ $dir ] = self::marker( "{$this->tmp}/{$dir}" );
 		}
-		foreach ( [ 'intel-items', 'intel-items-resolve', 'intel-ontology', 'intel-later', 'intel-watches' ] as $reader ) {
+		foreach ( [ 'intel-items', 'intel-items-resolve', 'intel-ontology', 'intel-later', 'intel-watches', 'intel-asks', 'intel-asks-ask' ] as $reader ) {
 			foreach ( [ 'offsets', 'deadletter' ] as $root ) {
 				$marked[ "{$root}/newspack-intelligence.{$reader}.p0" ] = self::marker( "{$this->tmp}/{$root}/newspack-intelligence.{$reader}.p0" );
 			}

@@ -20,6 +20,7 @@ final class Intel_Event {
 	public const ITEMS    = 'items';
 	public const ONTOLOGY = 'ontology';
 	public const WATCHES  = 'watches';
+	public const ASKS     = 'asks';
 
 	public const TYPES            = [ 'organization', 'person', 'place', 'product', 'topic', 'event' ];
 	public const ROLES            = [ 'client', 'former_client', 'prospect', 'competitor', 'partner', 'funder', 'industry_body', 'newspack_product' ];
@@ -78,7 +79,8 @@ final class Intel_Event {
 	 * one, has none, and a blank one is refused. A saved item's move names
 	 * the folder it leaves as `from`, the one it enters as `collection_key`
 	 * and the tier of each copy it carries, and a use mark the tier of the
-	 * copy it marks.
+	 * copy it marks. An ask's answer names the items its sentences cite by
+	 * key, each sentence citing them by their place in that list from 1.
 	 */
 	public const KINDS = [
 		'item_recorded'       => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ], [] ],
@@ -116,6 +118,9 @@ final class Intel_Event {
 		'watch_matched'       => [ self::WATCHES, [ 'watch_key', 'owner', 'item_key', 'at', 'retrieved_ts', 'quiet' ], [ 'quiet' => self::FLAG ], [] ],
 		'watch_seen'          => [ self::WATCHES, [ 'watch_key', 'owner', 'item_key', 'retrieved_ts' ], [], [] ],
 		'watch_delivered'     => [ self::WATCHES, [ 'owner', 'mode', 'watch_key', 'through' ], [ 'mode' => self::DELIVERIES ], [] ],
+		'ask_asked'           => [ self::ASKS, [ 'ask_key', 'owner', 'question' ], [], [] ],
+		'ask_answered'        => [ self::ASKS, [ 'ask_key', 'owner', 'found', 'dropped', 'sentences', 'items', 'tiers', 'searches' ], [ 'tiers' => self::TIERS ], [] ],
+		'ask_failed'          => [ self::ASKS, [ 'ask_key', 'owner', 'reason', 'searches' ], [], [] ],
 	];
 
 	/** The longest evidence, in the bytes a packed message writes it in. */
@@ -124,8 +129,15 @@ final class Intel_Event {
 	/** The longest theme, in the bytes a packed message writes it in. */
 	public const THEME_BYTES = 80;
 
-	/** Each kind holding a list field => those fields, each a list of distinct members of its set. */
-	public const LISTS = [ 'item_moved' => [ 'tiers' ] ];
+	/**
+	 * Each kind holding a list field => each such field => the fewest
+	 * members it holds, each a distinct member of its set: a move carries
+	 * at least one tier, and an answer given no item names none.
+	 */
+	public const LISTS = [
+		'item_moved'   => [ 'tiers' => 1 ],
+		'ask_answered' => [ 'tiers' => 0 ],
+	];
 
 	/** The optional fields refused blank: one with nothing to say is left out. */
 	private const NON_BLANK = [ 'theme' => true ];
@@ -182,25 +194,63 @@ final class Intel_Event {
 	 * @throws \InvalidArgumentException When the event does not satisfy its kind, or one outside the items stream does not fit one line.
 	 */
 	public static function make( string $kind, array $fields, string $actor, string $config_version ): array {
-		$event = [
-			'event'          => $kind,
-			'event_id'       => \bin2hex( \random_bytes( 16 ) ),
-			'ts'             => Core::$now,
-			'actor'          => $actor,
-			'config_version' => $config_version,
-		] + $fields;
+		$event = self::enveloped( $kind, $fields, $actor, $config_version, \bin2hex( \random_bytes( 16 ) ) );
 		self::validate( $event );
 		$stream = self::KINDS[ $kind ][0];
 		if ( self::ITEMS !== $stream ) {
-			$message                   = Message::new_message();
-			$message[ Message::TYPE ]  = Message::TM_STRUCT;
-			$message[ Message::VALUE ] = $event;
-			$size                      = Message::packed_size( $message ) + 1;
+			$size = self::line_bytes( $event );
 			if ( $size > Partition_Node::MAX_LINE_SIZE ) {
 				throw new \InvalidArgumentException( \esc_html( "{$kind}: {$size} bytes packed, past the " . Partition_Node::MAX_LINE_SIZE . "-byte line the {$stream} stream takes" ) );
 			}
 		}
 		return $event;
+	}
+
+	/**
+	 * Whether an event `make()` would mint from these fields fits one
+	 * partition line, measured before anything is minted.
+	 *
+	 * @api The Ask node fits an answer to one line by it.
+	 * @param string              $kind           An event kind from KINDS.
+	 * @param array<string,mixed> $fields         The kind's fields.
+	 * @param string              $actor          The actor string.
+	 * @param string              $config_version The config version in force.
+	 */
+	public static function fits( string $kind, array $fields, string $actor, string $config_version ): bool {
+		return self::line_bytes( self::enveloped( $kind, $fields, $actor, $config_version, \str_repeat( '0', 32 ) ) ) <= Partition_Node::MAX_LINE_SIZE;
+	}
+
+	/**
+	 * An event's envelope, stamped on the tick clock, then its fields.
+	 *
+	 * @param string              $kind           An event kind.
+	 * @param array<string,mixed> $fields         The kind's fields.
+	 * @param string              $actor          The actor string.
+	 * @param string              $config_version The config version in force.
+	 * @param string              $event_id       Its id, 32 lowercase hex.
+	 * @return array<string,mixed>
+	 */
+	private static function enveloped( string $kind, array $fields, string $actor, string $config_version, string $event_id ): array {
+		return [
+			'event'          => $kind,
+			'event_id'       => $event_id,
+			'ts'             => Core::$now,
+			'actor'          => $actor,
+			'config_version' => $config_version,
+		] + $fields;
+	}
+
+	/**
+	 * The bytes an event takes as one partition line: its packed message and
+	 * the newline ending it.
+	 *
+	 * @param array<string,mixed> $event An event VALUE.
+	 */
+	private static function line_bytes( array $event ): int {
+		$message                   = Message::new_message();
+		$message[ Message::TYPE ]  = Message::TM_STRUCT;
+		$message[ Message::VALUE ] = $event;
+		return Message::packed_size( $message ) + 1;
 	}
 
 	/**
@@ -257,7 +307,7 @@ final class Intel_Event {
 			throw new \InvalidArgumentException( "{$kind}: unknown actor: {$event['actor']}" );
 		}
 		foreach ( $sets as $field => $set ) {
-			$values = \in_array( $field, $lists, true ) ? self::distinct( $kind, $field, $event[ $field ] ) : [ $event[ $field ] ];
+			$values = isset( $lists[ $field ] ) ? self::distinct( $kind, $field, $event[ $field ], $lists[ $field ] ) : [ $event[ $field ] ];
 			foreach ( $values as $value ) {
 				if ( ! \in_array( $value, $set, true ) ) {
 					throw new \InvalidArgumentException( "{$kind}: field {$field} is outside its set" );
@@ -295,17 +345,18 @@ final class Intel_Event {
 	}
 
 	/**
-	 * A list field's members, refused unless it is a list of at least one
-	 * value, none repeated.
+	 * A list field's members, refused unless it is a list of at least
+	 * `$fewest` values, none repeated.
 	 *
-	 * @param string $kind  The kind, for the refusal.
-	 * @param string $field The field, for the refusal.
-	 * @param mixed  $value The value carried.
+	 * @param string $kind   The kind, for the refusal.
+	 * @param string $field  The field, for the refusal.
+	 * @param mixed  $value  The value carried.
+	 * @param int    $fewest The fewest members it holds.
 	 * @return list<mixed>
 	 * @throws \InvalidArgumentException Naming the kind and the field.
 	 */
-	private static function distinct( string $kind, string $field, mixed $value ): array {
-		if ( ! \is_array( $value ) || [] === $value || ! \array_is_list( $value ) || \count( $value ) !== \count( \array_unique( $value, \SORT_REGULAR ) ) ) {
+	private static function distinct( string $kind, string $field, mixed $value, int $fewest ): array {
+		if ( ! \is_array( $value ) || \count( $value ) < $fewest || ! \array_is_list( $value ) || \count( $value ) !== \count( \array_unique( $value, \SORT_REGULAR ) ) ) {
 			throw new \InvalidArgumentException( "{$kind}: field {$field} is not a list of distinct values" );
 		}
 		return $value;
@@ -406,7 +457,7 @@ final class Intel_Event {
 	 * The stream a kind is written to.
 	 *
 	 * @param string $kind An event kind.
-	 * @return self::ITEMS|self::ONTOLOGY|self::WATCHES
+	 * @return self::ITEMS|self::ONTOLOGY|self::WATCHES|self::ASKS
 	 * @throws \InvalidArgumentException On an unknown kind.
 	 */
 	public static function stream_of( string $kind ): string {

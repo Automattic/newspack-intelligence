@@ -33,18 +33,19 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		parent::tearDown();
 	}
 
-	public function test_the_schema_retains_item_rows_for_730_days(): void {
+	public function test_the_schema_retains_item_rows_for_730_days_and_asks_for_a_week(): void {
 		$tables = Intel_Graph_Row_Schema::tables();
 
 		foreach ( $tables as $table => $spec ) {
 			$this->assertNotSame( isset( $spec['retain'] ), isset( $spec['keep'] ), "{$table} is retained or kept, never both" );
 			if ( isset( $spec['retain'] ) ) {
 				[ $day, $window, $unit ] = $spec['retain'];
-				$this->assertSame( [ 730, 86400 ], [ $window, $unit ], $table );
+				$this->assertSame( [ 'asks' === $table ? \Newspack_Intelligence\Ask_Node::KEEP_DAYS : 730, 86400 ], [ $window, $unit ], $table );
 				$this->assertContains( [ $day ], $spec['indexes'] ?? [], "{$table} indexes the day it is retained by" );
 			}
 		}
 		$this->assertSame( [ 'retrieved_day', 730, 86400 ], $tables['items']['retain'] );
+		$this->assertSame( [ 'ask_day', 7, 86400 ], $tables['asks']['retain'] );
 		$this->assertSame( [ 'entity_key', 'type', 'name', 'norm', 'created_ts' ], \array_keys( $tables['entities']['columns'] ), 'an entity row carries no id' );
 		$this->assertSame( [ 'entities_norm' => [ 'norm' ] ], $tables['entities']['indexes'] );
 		$this->assertArrayNotHasKey( 'autoincrement', $tables['entities'] );

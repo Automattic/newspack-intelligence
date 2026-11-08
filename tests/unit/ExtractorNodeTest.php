@@ -1125,7 +1125,7 @@ final class ExtractorNodeTest extends TestCase {
 		$system = $this->out->asked()[0][0]['content'];
 		$this->assertStringContainsString( '["Awards","Podcasts"]', $system );
 		$this->assertStringContainsString( 'Quarry Ledger readers care about prizes.', $system );
-		$this->assertStringStartsWith( 'You are an analyst reading one item for the Quarry Ledger kite desk. ', $system );
+		$this->assertStringStartsWith( Prompts::framed( 'extract' ) . ' You are an analyst reading one item for the Quarry Ledger kite desk. ', $system );
 		$this->assertStringContainsString( 'Harbor Gazette wins a Peabody', $this->out->asked()[0][1]['content'] );
 	}
 

@@ -31,6 +31,9 @@ class Intel_Event_Writer_Node extends Node {
 	/** The partition a watches-stream event is addressed to. */
 	protected string $watches_partition = '';
 
+	/** The partition an asks-stream event is addressed to. */
+	protected string $asks_partition = '';
+
 	/**
 	 * Route one TM_STRUCT event to its stream's partition. A message that is
 	 * not an event, or does not name a kind, is dropped with a rate-limited
@@ -53,6 +56,7 @@ class Intel_Event_Writer_Node extends Node {
 			Intel_Event::ITEMS    => $this->items_partition,
 			Intel_Event::ONTOLOGY => $this->ontology_partition,
 			Intel_Event::WATCHES  => $this->watches_partition,
+			Intel_Event::ASKS     => $this->asks_partition,
 		};
 		parent::fill( $message );
 	}
@@ -61,11 +65,12 @@ class Intel_Event_Writer_Node extends Node {
 	public static function node_schema(): array {
 		return [
 			'category'     => 'Transform',
-			'description'  => 'Writes each intelligence event to the items, ontology or watches partition by its kind.',
+			'description'  => 'Writes each intelligence event to the items, ontology, watches or asks partition by its kind.',
 			'arguments'    => [
 				[ 'name' => 'items_partition', 'type' => 'node_name', 'required' => true, 'description' => 'The partition items-stream events are written to: intel:items.' ],
 				[ 'name' => 'ontology_partition', 'type' => 'node_name', 'required' => true, 'description' => 'The partition ontology-stream events are written to: intel:ontology.' ],
 				[ 'name' => 'watches_partition', 'type' => 'node_name', 'required' => true, 'description' => 'The partition watches-stream events are written to: intel:watches.' ],
+				[ 'name' => 'asks_partition', 'type' => 'node_name', 'required' => true, 'description' => 'The partition asks-stream events are written to: intel:asks.' ],
 			],
 			'commands'     => [],
 			'accepts_fill' => true,

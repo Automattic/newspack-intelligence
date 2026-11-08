@@ -1,5 +1,5 @@
 # <?php \defined( 'ABSPATH' ) || exit; ?>
-# The three event streams and the writer that routes each event to its own.
+# The four event streams and the writer that routes each event to its own.
 # intel:items keeps two years and takes large bodies from its one writer, the
 # worker. intel:ontology keeps every segment and has several writers, the
 # worker and request-side Stream_Writer appends, so it takes no large write
@@ -9,8 +9,10 @@
 # want to reprocess later, keeps each a day at most, and every minute sends
 # each one due to intel:reresolve. intel:watches holds each watch's matches,
 # seen marks and deliveries, one line each, for as long as the items they
-# name, and has two writers, the worker and request-side appends. Each of the
-# five names restricted items, so a raw read of it, or of any dir a reader of
+# name, and has two writers, the worker and request-side appends. intel:asks
+# holds each reader's questions and their answers, one line each, for
+# Ask_Node::KEEP_DAYS (7) days, and has the same two writers. Each of the
+# six names restricted items, so a raw read of it, or of any dir a reader of
 # it derives, needs the restricted tier's capability, Intel_Tiers::CAPABILITY
 # (ADR-39).
 var num_partitions = 1
@@ -25,7 +27,9 @@ make_node Partition intel:reresolve <config:logs_dir>/intel-reresolve.p{partitio
 command_node intel:reresolve:config set_read_capability newspack_intelligence_restricted
 make_node Partition intel:watches <config:logs_dir>/intel-watches.p{partition} 4194304 2 4096 8192 63072000 63072000
 command_node intel:watches:config set_read_capability newspack_intelligence_restricted
-make_node Intel_Event_Writer intel:writer intel:items intel:ontology intel:watches
+make_node Partition intel:asks <config:logs_dir>/intel-asks.p{partition} 1048576 2 4 0 604800 604800
+command_node intel:asks:config set_read_capability newspack_intelligence_restricted
+make_node Intel_Event_Writer intel:writer intel:items intel:ontology intel:watches intel:asks
 make_node Delay intel:later <config:logs_dir>/intel-later.p{partition} <config:offsets_dir>/<topology>.intel-later.p{partition} <config:deadletter_dir>/<topology>.intel-later.p{partition} 60 86400
 command_node intel:later:config set_read_capability newspack_intelligence_restricted
 connect_node intel:later intel:reresolve

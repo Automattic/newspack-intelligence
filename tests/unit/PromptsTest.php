@@ -85,7 +85,7 @@ final class PromptsTest extends TestCase {
 		$this->assertStringContainsString( 'churn_signal', $system, 'every kind is listed' );
 		$this->assertStringContainsString( 'uses_product', $system, 'every predicate is listed' );
 		$this->assertStringContainsString( 'Readers of the Quarry Ledger brief', $system );
-		$this->assertStringStartsWith( 'You are an analyst reading one item for the Quarry Ledger kite desk. ', $system );
+		$this->assertStringStartsWith( Prompts::framed( 'extract' ) . ' You are an analyst reading one item for the Quarry Ledger kite desk. ', $system );
 		$user = $m[1]['content'];
 		$this->assertStringStartsWith( "<item>\n", $user );
 		$this->assertSame( 1, \substr_count( $user, '</item>' ), 'the body cannot close the fence' );
@@ -98,7 +98,7 @@ final class PromptsTest extends TestCase {
 	public function test_an_unset_audience_frames_the_prompt_for_no_one(): void {
 		$system = Prompts::extract( [ 'title' => 'Heron count' ], [ 'Awards' ], [], 'Skip kite trivia.', '', '' )[0]['content'];
 
-		$this->assertStringStartsWith( 'You are an analyst reading one item. The item is between', $system );
+		$this->assertStringStartsWith( Prompts::framed( 'extract' ) . ' You are an analyst reading one item. The item is between', $system );
 	}
 
 	/** Numbers clamp; a kind outside its set reads as other; unknown topics, predicates and blank claims drop; at most five claims. */
@@ -205,6 +205,63 @@ final class PromptsTest extends TestCase {
 	}
 
 	/**
+	 * Every prompt a request may name tells the model which system it serves,
+	 * outside every fence: a chat prompt leads its system message with the
+	 * whole statement and what this call does, and a decision ends its state
+	 * with the one line naming who asks, its first line still its source. A
+	 * prompt added without a fixture here, a purpose, or the statement fails.
+	 */
+	public function test_every_prompt_names_the_system_it_serves(): void {
+		$item                              = [ 'item_key' => 'feed:tern-9', 'source' => 'feed', 'url' => 'https://tern.example/b', 'title' => 'Tern Weekly wins', 'body' => 'An award.', 'retrieved_ts' => 1794000500 ];
+		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): array => [];
+		$inputs                            = [
+			'extract'          => [ 'topics' => [], 'profile' => '', 'audience' => '', 'publisher' => '' ],
+			'extract_entities' => [ 'boilerplate' => [] ],
+			'extract_review'   => [ 'publisher' => 'Kestrel Lantern Harbor' ],
+			'extract_gate'     => [ 'publisher' => 'Kestrel Lantern Harbor' ],
+			'ask_plan'         => [ 'today' => '2026-10-20', 'lenses' => [] ],
+			'ask_answer'       => [ 'items' => [] ],
+		];
+
+		$this->assertStringContainsString( 'Newspack Intelligence', Prompts::SELF );
+		$this->assertStringContainsString( 'newspack-nodes', Prompts::SELF );
+		$this->assertStringStartsWith( 'Asked by: Newspack Intelligence, a plugin built on newspack-nodes, ', Prompts::ASKED_BY );
+		$this->assertLessThanOrEqual( \intdiv( Prompts::DECISION_TEXT_CHARS, 5 ), \mb_strlen( Prompts::ASKED_BY ), 'the line adds at most a fifth of the text a decision\'s state already carries' );
+		foreach ( Prompts::PROMPTS as $prompt => $kind ) {
+			$this->assertArrayHasKey( $prompt, $inputs, "{$prompt} has no fixture here, so nothing holds it to the statement" );
+			if ( Prompts::CHAT === $kind ) {
+				$framed = Prompts::framed( $prompt );
+				$this->assertStringStartsWith( Prompts::SELF . ' ', $framed, $prompt );
+				$this->assertStringStartsWith( "{$framed} ", Prompts::messages( $prompt, $item, $inputs[ $prompt ] )[0]['content'], $prompt );
+			} else {
+				$state = Prompts::decision( $prompt, $item, $inputs[ $prompt ] )['state'];
+				$this->assertStringStartsWith( 'Source: published article', $state, $prompt );
+				$this->assertStringEndsWith( "\n" . Prompts::ASKED_BY, $state, $prompt );
+				$this->assertStringNotContainsString( Prompts::SELF, $state, $prompt );
+			}
+		}
+	}
+
+	/** A decision prompt names no purpose: its state carries the one line naming who asks. */
+	public function test_a_decision_prompt_has_no_purpose(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'no purpose for the prompt: extract_gate' );
+		Prompts::framed( Prompts::EXTRACT_GATE );
+	}
+
+	/** Each source reads as what its items are, any other as its own name. */
+	public function test_a_source_label_names_what_its_items_are(): void {
+		$this->assertSame( [ 'Linear issue, a ticket in a work tracker', 'published article', 'kestrel-wire' ], [ Prompts::source_label( 'linear' ), Prompts::source_label( 'feed' ), Prompts::source_label( 'kestrel-wire' ) ] );
+	}
+
+	/** A prompt that names no purpose is refused, so none goes out without the statement. */
+	public function test_a_prompt_without_a_purpose_is_refused(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'no purpose for the prompt: heron_count' );
+		Prompts::framed( 'heron_count' );
+	}
+
+	/**
 	 * Each prompt a request may name builds its messages from the item and
 	 * its inputs, `extract` offering the names of its topic map and the
 	 * themes this process reads as it builds them, never any its inputs carry.
@@ -213,7 +270,7 @@ final class PromptsTest extends TestCase {
 		$item                              = [ 'item_key' => 'feed:tern-8', 'source' => 'feed', 'url' => 'https://tern.example/a', 'title' => 'Tern Weekly expands', 'body' => 'The paper grows.', 'retrieved_ts' => 1794000500 ];
 		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): array => [ [ 'theme' => 'newsletter sender rejected', 'example' => 'Tern Weekly sender bounced' ] ];
 
-		$this->assertSame( [ 'extract' => Prompts::CHAT, 'extract_entities' => Prompts::CHAT, 'extract_review' => Prompts::DECISION, 'extract_gate' => Prompts::DECISION ], Prompts::PROMPTS );
+		$this->assertSame( [ 'extract' => Prompts::CHAT, 'extract_entities' => Prompts::CHAT, 'extract_review' => Prompts::DECISION, 'extract_gate' => Prompts::DECISION, 'ask_plan' => Prompts::CHAT, 'ask_answer' => Prompts::CHAT ], Prompts::PROMPTS );
 		$this->assertSame( Prompts::extract( $item, [ 'Awards' ], [ [ 'theme' => 'newsletter sender rejected', 'example' => 'Tern Weekly sender bounced' ] ], 'Readers care about terns.', 'the kite desk', 'Tern Weekly' ), Prompts::messages( 'extract', $item, [ 'topics' => [ 'Awards' => 'topic:awards' ], 'themes' => [ 'kite festival' ], 'profile' => 'Readers care about terns.', 'audience' => 'the kite desk', 'publisher' => 'Tern Weekly' ] ) );
 		$this->assertSame( Prompts::extract_entities( $item, [] ), Prompts::messages( 'extract_entities', $item, [ 'boilerplate' => [] ] ) );
 	}
@@ -266,7 +323,7 @@ final class PromptsTest extends TestCase {
 
 		$this->assertSame(
 			[
-				'state'     => "Source: published article\nPublisher: Kestrel Lantern Harbor\nTitle: Mesa Courier wins a transit grant\nText: The grant & its two routes open in May.",
+				'state'     => "Source: published article\nPublisher: Kestrel Lantern Harbor\nTitle: Mesa Courier wins a transit grant\nText: The grant & its two routes open in May.\n" . Prompts::ASKED_BY,
 				'questions' => [
 					'about_publisher' => [
 						'type'         => 'noul',
@@ -287,7 +344,7 @@ final class PromptsTest extends TestCase {
 
 		$gate = Prompts::decision( 'extract_gate', $item, [ 'publisher' => 'Kestrel Lantern Harbor' ] );
 
-		$this->assertSame( "Source: published article\nPublisher: Kestrel Lantern Harbor\nTitle: Mesa Courier wins a transit grant\nText: Two routes open.", $gate['state'] );
+		$this->assertSame( "Source: published article\nPublisher: Kestrel Lantern Harbor\nTitle: Mesa Courier wins a transit grant\nText: Two routes open.\n" . Prompts::ASKED_BY, $gate['state'] );
 		$this->assertSame( [ 'about_publisher' ], \array_keys( $gate['questions'] ) );
 	}
 
@@ -302,7 +359,7 @@ final class PromptsTest extends TestCase {
 	public function test_the_publisher_decision_cuts_its_text(): void {
 		$state = Prompts::decision( 'extract_review', [ 'source' => 'github', 'title' => 'Heron count', 'body' => \str_repeat( 'é', Prompts::DECISION_TEXT_CHARS + 40 ) ], [ 'publisher' => 'Kestrel Lantern Harbor' ] )['state'];
 
-		$this->assertSame( "Source: GitHub item\nPublisher: Kestrel Lantern Harbor\nTitle: Heron count\nText: " . \str_repeat( 'é', Prompts::DECISION_TEXT_CHARS ), $state );
+		$this->assertSame( "Source: GitHub item\nPublisher: Kestrel Lantern Harbor\nTitle: Heron count\nText: " . \str_repeat( 'é', Prompts::DECISION_TEXT_CHARS ) . "\n" . Prompts::ASKED_BY, $state );
 	}
 
 	/**
@@ -319,7 +376,7 @@ final class PromptsTest extends TestCase {
 
 		$this->assertSame(
 			[
-				'state'     => "Source: Linear issue, a ticket in a work tracker\nTitle: Mesa Courier wins a transit grant\nText: Two routes open.\nSummary: Mesa Courier wins a grant for two routes.",
+				'state'     => "Source: Linear issue, a ticket in a work tracker\nTitle: Mesa Courier wins a transit grant\nText: Two routes open.\nSummary: Mesa Courier wins a grant for two routes.\n" . Prompts::ASKED_BY,
 				'questions' => [
 					'theme_choice' => [
 						'type'         => 'choice',
@@ -358,7 +415,7 @@ final class PromptsTest extends TestCase {
 	public function test_a_reviews_state_leads_with_its_source( string $source, string $line ): void {
 		$state = Prompts::decision( 'extract_review', [ 'source' => $source, 'title' => 'Email Tern about the renewal', 'body' => 'Before Friday.' ], [ 'publisher' => '', 'kind' => 'launch' ] )['state'];
 
-		$this->assertSame( "{$line}\nTitle: Email Tern about the renewal\nText: Before Friday.", $state );
+		$this->assertSame( "{$line}\nTitle: Email Tern about the renewal\nText: Before Friday.\n" . Prompts::ASKED_BY, $state );
 	}
 
 	/** The prompt asks for a summary of two or three sentences read from the item alone, and says what to do with a thin one. */

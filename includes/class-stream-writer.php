@@ -1,6 +1,6 @@
 <?php
 /**
- * Stream_Writer: appends ontology and watches events from outside the
+ * Stream_Writer: appends ontology, watches and asks events from outside the
  * worker — a WP-CLI run or a request. Each append builds, per stream, a
  * transient Partition exactly as the streams topology declares that
  * stream's: its directory and its `make_node` arguments, read from the
@@ -42,6 +42,7 @@ final class Stream_Writer {
 	private const PARTITIONS = [
 		Intel_Event::ONTOLOGY => 'intel:ontology',
 		Intel_Event::WATCHES  => 'intel:watches',
+		Intel_Event::ASKS     => 'intel:asks',
 	];
 
 	/** The config verbs this writer honours. */
@@ -159,7 +160,7 @@ final class Stream_Writer {
 	 * A stream's directory these appends write, the streams topology's
 	 * declaration of its Partition resolved for partition 0.
 	 *
-	 * @param string $stream `Intel_Event::ONTOLOGY` or `Intel_Event::WATCHES`.
+	 * @param string $stream `Intel_Event::ONTOLOGY`, `Intel_Event::WATCHES` or `Intel_Event::ASKS`.
 	 * @throws \RuntimeException When the topology declares no such Partition.
 	 */
 	public static function stream_dir( string $stream ): string {

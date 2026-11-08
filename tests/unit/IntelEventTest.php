@@ -293,10 +293,30 @@ final class IntelEventTest extends TestCase {
 		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'entity_key' ], [], [] ], Intel_Event::KINDS['entity_accepted'] );
 		$this->assertSame( [ 'theme' => 80 ], Intel_Event::KINDS['extraction_recorded'][3] );
 		$this->assertSame( [ 'extraction_recorded', 'link_proposed', 'entity_proposed' ], \array_keys( \array_filter( \array_map( static fn ( array $row ): array => $row[3], Intel_Event::KINDS ) ) ) );
-		$this->assertSame( [ 'item_moved' => [ 'tiers' ] ], Intel_Event::LISTS, 'a move declares its one list field under its own kind' );
+		$this->assertSame( [ 'item_moved' => [ 'tiers' => 1 ], 'ask_answered' => [ 'tiers' => 0 ] ], Intel_Event::LISTS, 'each kind declares its list fields and the fewest members each holds' );
 		foreach ( Intel_Event::LISTS as $kind => $fields ) {
-			$this->assertSame( [], \array_diff( $fields, \array_keys( Intel_Event::KINDS[ $kind ][2] ) ), "every list field of {$kind} has a set" );
+			$this->assertSame( [], \array_diff( \array_keys( $fields ), \array_keys( Intel_Event::KINDS[ $kind ][2] ) ), "every list field of {$kind} has a set" );
 		}
+	}
+
+	/**
+	 * An answer's tiers are distinct tiers, none when it was given no item;
+	 * a move's carry at least one.
+	 */
+	public function test_an_answers_tiers_may_be_empty_and_a_moves_may_not(): void {
+		$answered = static fn ( array $tiers ): array => Intel_Event::make( 'ask_answered', [ 'ask_key' => '2b4d6f8a0c1e3579', 'owner' => 7, 'found' => 0, 'dropped' => 0, 'sentences' => [], 'items' => [], 'tiers' => $tiers, 'searches' => [] ], 'machine:ask@9.4.1', '' );
+
+		$this->assertSame( [], $answered( [] )['tiers'] );
+		foreach ( [ [ 'public', 'public' ], [ 'secret' ] ] as $tiers ) {
+			try {
+				$answered( $tiers );
+				$this->fail( \implode( ',', $tiers ) . ' is refused' );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertMatchesRegularExpression( '/^ask_answered: field tiers is (not a list of distinct values|outside its set)$/', $e->getMessage() );
+			}
+		}
+		$this->expectExceptionMessage( 'item_moved: field tiers is not a list of distinct values' );
+		Intel_Event::make( 'item_moved', [ 'collection_key' => 'q4', 'item_key' => 'feed:a', 'from' => 'q3', 'tiers' => [] ], 'user:41', '' );
 	}
 
 	/**

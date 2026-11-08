@@ -1,7 +1,7 @@
 <?php
 /**
- * Projector_Node: replays the three event streams into the `intel-graph`
- * Row_Table (`Intel_Graph_Row_Schema`). Three Consumers, one per stream, fill
+ * Projector_Node: replays the four event streams into the `intel-graph`
+ * Row_Table (`Intel_Graph_Row_Schema`). Four Consumers, one per stream, fill
  * it with one event each; `projections()` declares, for each kind, the row ops
  * it writes and where each column comes from. Every op is an `ignore` or a
  * whole-row `set` on a keyed table but for the `delete`s: the items stream's
@@ -195,8 +195,10 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * or gated stand-in only fills an item that has no extraction yet (`STAND_IN`), so
 	 * it never replaces a call's extraction, its claims, topics or theme. A
 	 * proposed link's evidence, which one written before proposals carried it
-	 * lacks, projects as '', as an asserted link's always does. Every ontology
-	 * kind also writes its `events` row.
+	 * lacks, projects as '', as an asserted link's always does. An ask writes
+	 * its row with `ignore`, so its answer or failure, a whole-row `set`,
+	 * stands whichever lands first. Every ontology kind also writes its
+	 * `events` row.
 	 *
 	 * @return array<string,list<array{0:string,1:string,2:array<mixed>,3?:string|\Closure}>>
 	 */
@@ -205,6 +207,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			return self::$projections;
 		}
 		$day    = static fn ( string $field ): \Closure => static fn ( array $e ): int => (int) \floor( Core::as_float( $e[ $field ] ) / Intel_Graph_Row_Schema::DAY_SECONDS );
+		$json   = static fn ( string $field ): \Closure => static fn ( array $e ): string => self::json( $e[ $field ] );
 		$link   = static fn ( string $state, mixed $evidence ): array => [ [ 'set', 'links', [ 'item_key', 'entity_key', 'role', 'method', 'confidence', [ $state ], $evidence, 'actor', 'ts', $day( 'retrieved_ts' ) ] ] ];
 		$starts = static fn ( string $field ): array => [ 'ignore', 'name_starts', [ self::EACH, static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e[ $field ] ) ) ], static fn ( array $e ): array => Entity_Index::starts( Entity_Index::norm( Core::as_string( $e[ $field ] ) ) ) ];
 		$entity = static fn ( string $verb, string $state ): array => [
@@ -279,6 +282,9 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			'watch_matched'       => [ [ 'set', 'watch_matches', [ 'watch_key', 'owner', 'item_key', 'at', 'ts', 'quiet', $day( 'retrieved_ts' ) ] ] ],
 			'watch_seen'          => [ [ 'set', 'watch_seen', [ 'watch_key', 'owner', 'item_key', 'ts', $day( 'retrieved_ts' ) ] ] ],
 			'watch_delivered'     => [ [ 'set', 'watch_deliveries', [ 'owner', 'mode', 'watch_key', 'through', 'ts' ] ] ],
+			'ask_asked'           => [ [ 'ignore', 'asks', [ 'ask_key', 'owner', [ Graph_Asks::ASKED ], [ '' ], [ 0 ], [ 0 ], [ '[]' ], [ '[]' ], [ '[]' ], [ '[]' ], 'ts', $day( 'ts' ) ] ] ],
+			'ask_answered'        => [ [ 'set', 'asks', [ 'ask_key', 'owner', [ Graph_Asks::ANSWERED ], [ '' ], 'found', 'dropped', $json( 'sentences' ), $json( 'items' ), $json( 'tiers' ), $json( 'searches' ), 'ts', $day( 'ts' ) ] ] ],
+			'ask_failed'          => [ [ 'set', 'asks', [ 'ask_key', 'owner', [ Graph_Asks::FAILED ], 'reason', [ 0 ], [ 0 ], [ '[]' ], [ '[]' ], [ '[]' ], $json( 'searches' ), 'ts', $day( 'ts' ) ] ] ],
 		];
 		$event_row = [
 			'ignore',
@@ -549,7 +555,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	public static function node_schema(): array {
 		return [
 			'category'    => 'Transform',
-			'description' => 'Replays the intel:items, intel:ontology and intel:watches events into an Intel_Graph Row_Table.',
+			'description' => 'Replays the intel:items, intel:ontology, intel:watches and intel:asks events into an Intel_Graph Row_Table.',
 			'arguments'   => [],
 			'commands'    => [
 				[

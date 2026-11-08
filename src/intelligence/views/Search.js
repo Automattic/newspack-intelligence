@@ -8,6 +8,7 @@ import {
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
 import Answer from '../components/Answer';
+import AskBox from '../components/AskBox';
 import { ItemPage } from '../components/ItemRow';
 import EntityPicker, { useEntityNames } from '../components/EntityPicker';
 import ListField from '../components/ListField';
@@ -139,12 +140,14 @@ function LensRuns( { lens, lists } ) {
  * tiers, and drops the lens. The page holds the submitted search and its
  * order, so they outlive a visit to another view.
  *
- * @param {Object}                  props
- * @param {Object}                  props.query        The submitted filters, and each page's start.
- * @param {(query: Object) => void} props.onQuery      Replaces the query.
- * @param {Object}                  props.vocabulary   The ontology's closed lists.
- * @param {(key: string) => void}   props.onOpenEntity Opens an entity.
- * @param {(item: Object) => void}  [props.onSave]     Saves an item; absent for a reader.
+ * @param {Object}                   props
+ * @param {Object}                   props.query        The submitted filters, and each page's start.
+ * @param {(query: Object) => void}  props.onQuery      Replaces the query.
+ * @param {Object}                   props.vocabulary   The ontology's closed lists.
+ * @param {(key: string) => void}    props.onOpenEntity Opens an entity.
+ * @param {(item: Object) => void}   [props.onSave]     Saves an item; absent for a reader.
+ * @param {?Object}                  props.asked        The ask the page holds, which its AskBox shows.
+ * @param {(asked: ?Object) => void} props.onAsked      Holds a new one.
  * @return {import('react').ReactElement} The view.
  */
 export default function Search( {
@@ -153,6 +156,8 @@ export default function Search( {
 	vocabulary,
 	onOpenEntity,
 	onSave,
+	asked,
+	onAsked,
 } ) {
 	const lists = vocabulary.lensLists;
 	const { filters, starts, sort } = query;
@@ -226,6 +231,12 @@ export default function Search( {
 
 	return (
 		<div className="newspack-intelligence__view">
+			<AskBox
+				asked={ asked }
+				onAsked={ onAsked }
+				onOpenEntity={ onOpenEntity }
+				onSave={ onSave }
+			/>
 			<form
 				className="newspack-intelligence__filters"
 				role="search"

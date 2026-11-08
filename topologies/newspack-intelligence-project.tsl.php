@@ -1,9 +1,9 @@
 # <?php \defined( 'ABSPATH' ) || exit; ?>
-# The projection: the three event streams replayed into the intel-graph
+# The projection: the four event streams replayed into the intel-graph
 # Row_Table. Each Consumer drains its stream and checkpoints the projector,
 # which writes its buffered rows before the cursor commits, and their cursors
 # serve no other node, so a reproject that resets them rebuilds the graph
-# alone. The ontology and watches streams have more than one writer (the
+# alone. The ontology, watches and asks streams have more than one writer (the
 # worker and request-side Stream_Writer appends), so their Consumers seal a
 # segment only after the multi-writer grace.
 var num_partitions = 1
@@ -12,6 +12,7 @@ include table-probe
 make_node Consumer intel:items:consumer <config:logs_dir>/intel-items.p{partition} <config:offsets_dir>/<topology>.intel-items.p{partition} <config:deadletter_dir>/<topology>.intel-items.p{partition}
 make_node Consumer intel:ontology:consumer <config:logs_dir>/intel-ontology.p{partition} <config:offsets_dir>/<topology>.intel-ontology.p{partition} <config:deadletter_dir>/<topology>.intel-ontology.p{partition}
 make_node Consumer intel:watches:consumer <config:logs_dir>/intel-watches.p{partition} <config:offsets_dir>/<topology>.intel-watches.p{partition} <config:deadletter_dir>/<topology>.intel-watches.p{partition}
+make_node Consumer intel:asks:consumer <config:logs_dir>/intel-asks.p{partition} <config:offsets_dir>/<topology>.intel-asks.p{partition} <config:deadletter_dir>/<topology>.intel-asks.p{partition}
 make_node Projector projector
 make_node Row_Table intel-graph Intel_Graph
 command_node intel:items:consumer:config add_snapshot_node projector
@@ -19,8 +20,11 @@ command_node intel:ontology:consumer:config add_snapshot_node projector
 command_node intel:ontology:consumer:config set_multi_writer true
 command_node intel:watches:consumer:config add_snapshot_node projector
 command_node intel:watches:consumer:config set_multi_writer true
+command_node intel:asks:consumer:config add_snapshot_node projector
+command_node intel:asks:consumer:config set_multi_writer true
 command_node projector:config set_graph_target intel-graph
 connect_node intel:items:consumer projector
 connect_node intel:ontology:consumer projector
 connect_node intel:watches:consumer projector
+connect_node intel:asks:consumer projector
 secure

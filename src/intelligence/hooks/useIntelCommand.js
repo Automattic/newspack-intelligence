@@ -103,7 +103,7 @@ export function commandArgs( options ) {
  * One curation verb, sent once per `run( args )` with every arg named
  * through `commandArgs()`, so a curator's value that begins `--name=` binds
  * as the value it is rather than as an option. `run()` answers the tokens it sent;
- * a landed send runs `refresh`, and a refused one hands `onRefused` the
+ * a landed send hands `refresh` its answer, and a refused one hands `onRefused` the
  * tokens its reply echoes, which say which send it was. The last reply's
  * refusal, the arguments it answered and whether a send is still owed its
  * reply are `useCommandOnce`'s own.
@@ -116,7 +116,7 @@ export function commandArgs( options ) {
  *                                                      for, so two writes of one verb
  *                                                      on a page never share a Fetcher;
  *                                                      `<ci>:<command>` when omitted.
- * @param {() => void}                 [opts.refresh]   Runs once a send lands.
+ * @param {(answer: Object) => void}   [opts.refresh]   Runs once a send lands, given its answer.
  * @param {(tokens: string[]) => void} [opts.onRefused] Runs once a send is refused.
  * @return {{run: (args: Object<string, string|Array<string>>) => string[], refusal: ?string, answeredArgs: ?string[], pending: boolean}}
  *   `run()`, the last refusal, the arguments the last reply answered, and
@@ -137,8 +137,8 @@ export function useIntelWrite(
 		command,
 		scope,
 		subjectOf: NO_SUBJECT,
-		onDone: ( { error: refused, args } ) =>
-			refused ? onRefused?.( args ) : refresh?.(),
+		onDone: ( { error: refused, args, result } ) =>
+			refused ? onRefused?.( args ) : refresh?.( result ),
 	} );
 	const run = useCallback(
 		( args ) => {

@@ -35,10 +35,13 @@ function Harness( props ) {
 	const [ query, setQuery ] = useState( () =>
 		newSearch( VOCABULARY.lensLists )
 	);
+	const [ asked, setAsked ] = useState( null );
 	return (
 		<Search
 			query={ query }
 			onQuery={ setQuery }
+			asked={ asked }
+			onAsked={ setAsked }
 			vocabulary={ VOCABULARY }
 			onOpenEntity={ jest.fn() }
 			{ ...props }
@@ -114,6 +117,17 @@ const clearTokens = ( label ) => {
 };
 
 describe( 'Search', () => {
+	it( 'opens with the Ask box above the filters', async () => {
+		renderSearch();
+		const box = await screen.findByPlaceholderText(
+			'Ask about clients, the industry or Newspack…'
+		);
+		expect( document.querySelectorAll( 'section' )[ 0 ] ).toContainElement(
+			box
+		);
+		expect( wire.sent( 'ask' ) ).toEqual( [] );
+	} );
+
 	it( 'asks for the newest items on mount and renders them', async () => {
 		wire.replies.search = { items: [ ITEM ], total: 9, available: true };
 		renderSearch();

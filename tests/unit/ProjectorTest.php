@@ -856,6 +856,39 @@ final class ProjectorTest extends TestCase {
 		return Intel_Event::make( 'entity_proposed', [ 'entity_key' => $entity_key, 'type' => 'organization', 'name' => $name, 'from_item_key' => self::ITEM ], self::MACHINE, '' );
 	}
 
+	/**
+	 * An ask answered and another failed, as the verb and the Ask node write them.
+	 *
+	 * @return list<array<string,mixed>>
+	 */
+	private static function ask_events(): array {
+		return [
+			Intel_Event::make( 'ask_asked', [ 'ask_key' => '6b1d3f5a7c9e2048', 'owner' => 4113, 'question' => 'Who won awards?' ], 'user:harbor-desk', '' ),
+			Intel_Event::make( 'ask_answered', [ 'ask_key' => '6b1d3f5a7c9e2048', 'owner' => 4113, 'found' => 4, 'dropped' => 2, 'sentences' => [ [ 'text' => 'The Gazette won.', 'cites' => [ 1 ] ] ], 'items' => [ self::ITEM ], 'tiers' => [ 'internal' ], 'searches' => [ [ 'kinds' => [ 'award' ], 'days' => 30 ] ] ], 'machine:ask@9.4.1', '' ),
+			Intel_Event::make( 'ask_asked', [ 'ask_key' => '8d2f4a6c1e3b5079', 'owner' => 4113, 'question' => 'Who left?' ], 'user:harbor-desk', '' ),
+			Intel_Event::make( 'ask_failed', [ 'ask_key' => '8d2f4a6c1e3b5079', 'owner' => 4113, 'reason' => 'the model call failed', 'searches' => [] ], 'machine:ask@9.4.1', '' ),
+		];
+	}
+
+	/**
+	 * An ask's row reads its outcome whichever of the question and the
+	 * outcome is projected first, and the question alone reads as asked.
+	 */
+	public function test_an_asks_outcome_stands_whichever_lands_first(): void {
+		[ $asked, $answered, $waiting, $failed ] = self::ask_events();
+		$this->project( [ $answered, $asked, $waiting, $failed, $waiting ] );
+		$this->project( [ Intel_Event::make( 'ask_asked', [ 'ask_key' => '0a9b8c7d6e5f4132', 'owner' => 4117, 'question' => 'Any launches?' ], 'user:harbor-desk', '' ) ] );
+
+		$this->assertSame(
+			[
+				[ '0a9b8c7d6e5f4132', 4117, 'asked', '', 0, 0, '[]', '[]', '[]', '[]' ],
+				[ '6b1d3f5a7c9e2048', 4113, 'answered', '', 4, 2, '[{"text":"The Gazette won.","cites":[1]}]', '["' . self::ITEM . '"]', '["internal"]', '[{"kinds":["award"],"days":30}]' ],
+				[ '8d2f4a6c1e3b5079', 4113, 'failed', 'the model call failed', 0, 0, '[]', '[]', '[]', '[]' ],
+			],
+			self::graph_rows( 'asks', 'ask_key', 'ask_key, owner, state, reason, found, dropped, sentences, items, tiers, searches' )
+		);
+	}
+
 	/** @return list<array<string,mixed>> One event of every kind. */
 	private function every_kind(): array {
 		$machine = static fn ( string $kind, array $fields ): array => Intel_Event::make( $kind, $fields, self::MACHINE, '' );
@@ -891,6 +924,7 @@ final class ProjectorTest extends TestCase {
 			$this->ontology( 'lens_removed', [ 'lens_key' => 'old-desk' ] ),
 			$this->ontology( 'theme_merged', [ 'from' => 'kiosk offboarding from platform', 'into' => 'kiosk offboarding' ] ),
 			...$this->watch_events(),
+			...self::ask_events(),
 			$this->grown( 'The Gazette took first place, and the judges said why.' ),
 			$this->item( self::PURGED ),
 			$this->purge( self::PURGED ),

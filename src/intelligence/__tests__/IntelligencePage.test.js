@@ -285,6 +285,42 @@ describe( 'IntelligencePage', () => {
 		).toHaveLength( 1 );
 	} );
 
+	it( 'keeps an ask in flight across a switch from the Briefing to Search', async () => {
+		wire.replies.ask = { ask_key: '4c2e6a8b0d1f3957' };
+		wire.replies.ask_result = {
+			ask_key: '4c2e6a8b0d1f3957',
+			state: 'answered',
+			reason: '',
+			found: 1,
+			dropped: 0,
+			sentences: [ { text: 'Quillsheet won a prize.', cites: [ 1 ] } ],
+			items: [ ITEM ],
+			searches: [],
+			wait_s: 900,
+			available: true,
+		};
+		renderPage();
+		fireEvent.change(
+			await screen.findByPlaceholderText(
+				'Ask about clients, the industry or Newspack…'
+			),
+			{ target: { value: 'Who won a prize?' } }
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'Ask' } ) );
+		expect(
+			await screen.findByText( 'Quillsheet won a prize.' )
+		).toBeInTheDocument();
+
+		fireEvent.click( nav( 'Search' ) );
+
+		expect(
+			await screen.findByText( 'Quillsheet won a prize.' )
+		).toBeInTheDocument();
+		expect( wire.sent( 'ask' ) ).toEqual( [
+			[ '--question=Who won a prize?' ],
+		] );
+	} );
+
 	it( 'switches to Review and Collections in place', async () => {
 		renderPage();
 		fireEvent.click( nav( 'Review' ) );
