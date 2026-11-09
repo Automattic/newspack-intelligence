@@ -248,7 +248,12 @@ was given as asserted, which the resolver settles links by. An extraction
 naming a `theme` writes the item's one `themes` row, `( item_key, theme,
 item_day )` keyed by `item_key`, a fan-out whose list is computed from the
 event; one naming none, the stand-in among them, writes no row, so a
-re-extraction naming none leaves the item without a theme. A
+re-extraction naming none leaves the item without a theme.
+An extraction carrying a `kind_check` writes the kind checked, the verdict
+and its second on its `extractions` row (`checked_kind`, `kind_verdict`,
+`checked_ts`), each null for one carrying none, the stand-in among them;
+`Intel_Graph_Row_Schema::kind_check_sql()` reads the three back as the
+record. A
 `theme_merged { from, into }`, an ontology event so it outlives the items
 it touches, sets the `theme_merges` row keyed by `from`, a curation table
 kept whole, and rewrites no item's row: every read of an item's theme reads
@@ -315,8 +320,7 @@ it leads by one range over `start`. A stale start, such as one a
 proposal's name wrote before a person's creation renamed the entity,
 names a norm no current row holds and matches nothing.
 
-**Rebuilding.** `Intel_Graph_Row_Schema::version()`, 7, versions the
-projection's shape; the substrate discards a file at another version when
+**Rebuilding.** `Intel_Graph_Row_Schema::version()`, 8, versions the projection's shape; the substrate discards a file at another version when
 the Row_Table opens it, and the projector's Consumers resume where they
 stopped, so the graph stays empty until it is rebuilt. A schema change bumps
 the version, and the upgrade runs `wp newspack-intelligence ontology
@@ -610,7 +614,12 @@ refuses one that is present and not a string within the cap, and the
 projector writes a missing one, and every asserted link's, as ''. An
 `extraction_recorded` carries `theme` the same way, at
 `Intel_Event::THEME_BYTES` (80), and `validate()` also refuses one that is
-blank, so an extraction naming no theme leaves the field out. The
+blank, so an extraction naming no theme leaves the field out.
+An `extraction_recorded` also carries an optional `kind_check { kind,
+verdict, ts }`, the record `Intel_Event::RECORDS` declares, its `kind` from
+`ITEM_KINDS`, its `verdict` from `Intel_Event::VERDICTS` (`passed`,
+`failed`) and its `ts` an integer; `Intel_Event::record_fault()` is its one
+reader, and `validate()` refuses one that is not exactly that record. The
 extractor is sent each link without it. The resolver and the
 extractor share the process's one
 `Entity_Index::current()`, read again every `Entity_Index::TTL_S` (60
@@ -1084,7 +1093,28 @@ before the importance floor applies, so the floor of the kind the model
 gave does not lift it, and at or above every bar asked the kind stands; an offered
 theme chosen with a `confidence` of `Extractor_Node::THEME_CHOICE_MIN`
 (0.6) or more is the theme written, and a weaker choice, or `none`, keeps
-the reply's own. A review that fails, an unlent group, or an answer to a
+the reply's own.
+A `fits_kind` asked records the extraction's kind check, `kind_check { kind,
+verdict, ts }`: the reply's kind, `passed` at its bar or above and `failed`
+below, and the second it answered (`Intel_Event::now()`); a review that
+fails records none. A call's extraction of an item whose stored extraction
+holds a check that passed for the very kind it stores keeps that kind and
+that check, whatever the new reply or its own review says, before the
+importance floor applies, so the floor is the kept kind's; the extractor
+reads the stored check as it records the answer
+(`Extractor_Node::passed_check()`), and while the projection will not open
+the new kind is written, logged `no intel-graph to read the stored kind
+check from; replacing the kind: <why>`. A reply that could be asked a kind
+question, `about_publisher` or `fits_kind`, reads the same check before its
+review is built, and an item whose stored kind passed asks neither, since
+the keep fixes the kind whatever they answer: its review goes with an empty
+`publisher` and `kind`, so it asks the theme choice alone, and none goes at
+all when that leaves no question. That read precedes the review by its whole
+latency, so a check a concurrent extraction of the same item replaces in
+between, or a projection that will not read at record time, leaves the
+reply's own kind recorded unreviewed and unchecked; the next re-extraction
+asks again. The extractor keeps the kind as it writes, so the event carries the kind kept and
+a reproject replays it. A review that fails, an unlent group, or an answer to a
 question it asked that does not read keeps the kind and the theme, logged
 `extract review failed: <why> for <item>`, rate-limited by the failure, so
 an outage across many items logs once, and parks no retry;
@@ -1308,6 +1338,14 @@ names — and windows only those; `search` and `trends` naming a role, or
 `trends` counting topics, without an entity or topic window the links of the
 readable items inside their days. Summaries, kinds and scores come from
 `extractions`.
+A listed item also answers `kind_check`, `{ kind, verdict, ts }`, beside its
+kind, null for an extraction never checked: `Graph_Query::item_columns()`
+adds it to `ITEM_COLUMNS`, read through
+`Intel_Graph_Row_Schema::kind_check_sql()`, the one fragment reading an
+`extractions` row's `checked_kind`, `kind_verdict` and `checked_ts` back as
+the record, which `Extractor_Node::passed_check()` reads too. Each item row
+on the page shows it after its day: `<kind> passed its kind check on <day>`
+or `<kind> failed its kind check on <day>`.
 Every read names an entity through `Graph_Query::name_of()`: the newest
 `canonical` name added to it, the highest partition's first, else the name
 it was created with; so a client the roster named by its domain shows its

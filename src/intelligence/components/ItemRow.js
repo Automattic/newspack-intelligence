@@ -29,7 +29,7 @@ export function SaveButton( { item, onSave } ) {
 
 /**
  * One item as `search` and `timeline` answer it: its title citing its URL,
- * its source, kind and day, its summary, a toggle showing its excerpt (`Excerpt`),
+ * its source, kind, day and kind check (`kindCheckText()`), its summary, a toggle showing its excerpt (`Excerpt`),
  * its entities as chips (`Chips`), and, for a caller who may curate, the
  * control saving it to a folder, then any control the view adds.
  *
@@ -51,7 +51,12 @@ export default function ItemRow( { item, onOpenEntity, onSave, children } ) {
 				{ children }
 			</div>
 			<p className="newspack-nodes-status is-muted">
-				{ metaLine( item.source, item.kind, utcDay( item.item_ts ) ) }
+				{ metaLine(
+					item.source,
+					item.kind,
+					utcDay( item.item_ts ),
+					kindCheckText( item.kind_check )
+				) }
 			</p>
 			{ item.summary && <p>{ item.summary }</p> }
 			<Excerpt item={ item } />
@@ -61,6 +66,32 @@ export default function ItemRow( { item, onOpenEntity, onSave, children } ) {
 			/>
 		</li>
 	);
+}
+
+/**
+ * An item's kind check as its meta line says it: the kind checked, whether
+ * it passed or failed, and its UTC day; '' for an item never checked.
+ *
+ * @param {?{kind: string, verdict: string, ts: number}} check The item's kind check.
+ * @return {string} The text.
+ */
+function kindCheckText( check ) {
+	if ( ! check ) {
+		return '';
+	}
+	const format =
+		'passed' === check.verdict
+			? /* translators: 1: item kind, 2: UTC day. */
+			  __(
+					'%1$s passed its kind check on %2$s',
+					'newspack-intelligence'
+			  )
+			: /* translators: 1: item kind, 2: UTC day. */
+			  __(
+					'%1$s failed its kind check on %2$s',
+					'newspack-intelligence'
+			  );
+	return sprintf( format, check.kind, utcDay( check.ts ) );
 }
 
 /** The link roles naming an entity an item is about, as the server spells them. */

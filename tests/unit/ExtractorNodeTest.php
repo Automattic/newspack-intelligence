@@ -17,7 +17,9 @@ use Newspack_Nodes\Event_Framework;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Node_Names;
 use Newspack_Nodes\Router_Node;
+use Newspack_Nodes\Row_Table_Node;
 use Newspack_Nodes\Shell_Node;
+use Newspack_Nodes\Table_Unavailable;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\Helpers\InMemoryMemcached;
 use Newspack_Nodes\Topology_Registry;
@@ -935,6 +937,230 @@ final class ExtractorNodeTest extends TestCase {
 	}
 
 	/**
+	 * A review that asks `fits_kind` records its answer on the extraction:
+	 * the kind it checked, `passed` at its bar or more and `failed` below,
+	 * and the second it answered.
+	 *
+	 * @return array<string,array{0:float,1:string,2:string}>
+	 */
+	public static function kind_checks(): array {
+		return [
+			'fits'         => [ 0.83, 'launch', Intel_Event::PASSED ],
+			'on the bar'   => [ Prompts::KIND_CHECKS['launch']['min'], 'launch', Intel_Event::PASSED ],
+			'does not fit' => [ 0.12, 'other', Intel_Event::FAILED ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'kind_checks' )]
+	public function test_a_kind_check_records_the_kind_checked_its_verdict_and_when( float $fits_kind, string $kind, string $verdict ): void {
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier goes live.","kind":"launch"}' );
+		$this->decide( [ 'decision' => [ 'fits_kind' => $fits_kind ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [] ) );
+
+		$this->assertSame( [ [ $kind, [ 'kind' => 'launch', 'verdict' => $verdict, 'ts' => (int) self::NOW ] ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['kind_check'] ], $this->extractions() ) );
+	}
+
+	/** An extraction its review never asked `fits_kind`, whose review failed, or that a stand-in records carries no kind check. */
+	public function test_an_extraction_never_checked_carries_no_kind_check(): void {
+		$this->capture_stderr();
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ), ...self::themed_neighbours() );
+		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award"}' );
+		$this->decide( [ 'decision' => [ 'theme_choice' => [ 'choice' => 'none', 'confidence' => 0.9 ] ] ] );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'title' => 'Mesa Courier wins a transit grant' ] ) );
+		$this->answer( '{"summary":"Mesa Courier goes live.","kind":"launch"}' );
+		$this->decide( [ 'decision' => [ 'fits_kind' => 'high' ] ] );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [] ) );
+		$this->answer( 'throw' );
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [] ) );
+
+		$this->assertSame( [ 'award', 'launch', 'other' ], \array_column( $this->extractions(), 'kind' ) );
+		$this->assertSame( [], \array_column( $this->extractions(), 'kind_check' ) );
+	}
+
+	/**
+	 * A re-extraction keeps the stored kind when that kind passed its check,
+	 * carrying the stored check; a stored kind whose check of that very kind
+	 * failed, one never checked, or one that is not the kind its check
+	 * passed is replaced, so the verdict and the kind each refuse alone.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>|null,2:string,3:array<string,mixed>|null}>
+	 */
+	public static function stored_kinds(): array {
+		$at = 1794060000;
+		return [
+			'passed'                  => [ 'release', [ 'kind' => 'release', 'verdict' => Intel_Event::PASSED, 'ts' => $at ], 'release', [ 'kind' => 'release', 'verdict' => Intel_Event::PASSED, 'ts' => $at ] ],
+			'failed'                  => [ 'release', [ 'kind' => 'release', 'verdict' => Intel_Event::FAILED, 'ts' => $at ], 'research', null ],
+			'never checked'           => [ 'award', null, 'research', null ],
+			'passed, kind not stored' => [ 'other', [ 'kind' => 'launch', 'verdict' => Intel_Event::PASSED, 'ts' => $at ], 'research', null ],
+		];
+	}
+
+	/**
+	 * @param string                   $stored  The kind the projection holds.
+	 * @param array<string,mixed>|null $check   Its stored kind check.
+	 * @param string                   $kind    The kind written.
+	 * @param array<string,mixed>|null $written The kind check written.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'stored_kinds' )]
+	public function test_a_reextraction_keeps_a_kind_that_passed_its_check( string $stored, ?array $check, string $kind, ?array $written ): void {
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ), self::stored( $stored, $check ) );
+		$this->extractor->add_importance_floor( 'release', 6 );
+		$this->answer( '{"summary":"Mesa Courier publishes a readership study.","kind":"research","relevance":5,"importance":2}' );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], extracted: true, extract: true ) );
+
+		$this->assertSame( [ [ $kind, $written ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['kind_check'] ?? null ], $this->extractions() ) );
+		$this->assertSame( [ 'release' === $kind ? 6 : 2 ], \array_column( $this->forwarded(), 'importance' ), 'the floor is the kept kind\'s' );
+	}
+
+	/** A reply whose stored kind passed its check, owed no other question, sends no review, and the stored kind and check are recorded. */
+	public function test_a_settled_kind_with_no_other_question_sends_no_review(): void {
+		$stored = [ 'kind' => 'launch', 'verdict' => Intel_Event::PASSED, 'ts' => 1794060000 ];
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ), self::stored( 'launch', $stored ) );
+		$this->answer( '{"summary":"Mesa Courier site launch checklist.","kind":"launch"}' );
+		$this->decide( [ 'decision' => [ 'fits_kind' => 0.12 ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], extracted: true, extract: true ) );
+
+		$this->assertSame( [ 'extract' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
+		$this->assertSame( [ [ 'launch', $stored ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['kind_check'] ], $this->extractions() ) );
+	}
+
+	/**
+	 * The accepted window: a stored check read as passed before the review
+	 * is built skips its questions, and when the record-time read then
+	 * finds no check, here a projection that will not read, the reply's
+	 * own kind is recorded unreviewed and unchecked until the next
+	 * re-extraction asks again.
+	 */
+	public function test_a_check_lost_between_the_reads_records_the_reply_unchecked(): void {
+		$this->capture_stderr();
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ), self::stored( 'release', [ 'kind' => 'release', 'verdict' => Intel_Event::PASSED, 'ts' => 1794060000 ] ) );
+		Entity_Index::current();
+		$reads                             = 0;
+		Intel_Graph_Row_Schema::$read_rows = static function ( \Closure $read ) use ( &$reads ): mixed {
+			return 1 === ++$reads ? Row_Table_Node::read( Intel_Graph_Row_Schema::class, $read ) : throw new Table_Unavailable( 'intel-graph p0 gone 6614' );
+		};
+		$this->answer( '{"summary":"Mesa Courier goes live.","kind":"launch"}' );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], extracted: true, extract: true ) );
+
+		$this->assertSame( [ 'extract' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ), 'the passed read skipped the review' );
+		$this->assertSame( [ [ 'launch', null ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['kind_check'] ?? null ], $this->extractions() ) );
+	}
+
+	/** A stored check the projection will not answer keeps nothing: the reply's kind is written, the read logged once. */
+	public function test_a_stored_check_the_projection_will_not_read_is_replaced(): void {
+		$stderr = $this->capture_stderr();
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ), self::stored( 'release', [ 'kind' => 'release', 'verdict' => Intel_Event::PASSED, 'ts' => 1794060000 ] ) );
+		Entity_Index::current();
+		Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): never => throw new Table_Unavailable( 'intel-graph p0 gone 6613' );
+		$this->answer( '{"summary":"Mesa Courier publishes a readership study.","kind":"research","relevance":5,"importance":2}' );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], extracted: true, extract: true ) );
+
+		$this->assertSame( [ [ 'research', null ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['kind_check'] ?? null ], $this->extractions() ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'no intel-graph to read the stored kind check from; replacing the kind: intel-graph p0 gone 6613' ) );
+	}
+
+	/**
+	 * A review of an item whose stored kind passed its check asks no
+	 * `fits_kind`, since the keep decides the kind; without one stored it
+	 * asks it as before, beside the theme choice.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|null,1:list<string>}>
+	 */
+	public static function settled_kinds(): array {
+		return [
+			'passed before' => [ [ 'kind' => 'release', 'verdict' => Intel_Event::PASSED, 'ts' => 1794060000 ], [ 'theme_choice' ] ],
+			'never checked' => [ null, [ 'fits_kind', 'theme_choice' ] ],
+		];
+	}
+
+	/**
+	 * @param array<string,mixed>|null $check The stored kind check.
+	 * @param list<string>             $asked The questions the sent review asks.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'settled_kinds' )]
+	public function test_a_kind_that_passed_its_check_is_not_asked_whether_it_fits( ?array $check, array $asked ): void {
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ), self::stored( 'release', $check ), ...self::themed_neighbours() );
+		$this->answer( '{"summary":"Mesa Courier ships plover-sdk 3.1 for its transit grant.","kind":"release"}' );
+		$this->decide( [ 'decision' => [ 'fits_kind' => 0.91, 'theme_choice' => [ 'choice' => 'none', 'confidence' => 0.9 ] ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'title' => 'Mesa Courier wins a transit grant' ], extracted: true, extract: true ) );
+
+		$sent = \array_column( $this->out->requests, Message::VALUE );
+		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( $sent, 'prompt' ) );
+		$this->assertSame( $asked, \array_keys( Prompts::questions( $sent[1]['inputs'] ) ) );
+		$this->assertSame( [ 'release' ], \array_column( $this->extractions(), 'kind' ) );
+	}
+
+	/**
+	 * A client's article whose stored kind passed its check is asked only
+	 * the theme choice: `about_publisher` and `fits_kind` decide the kind
+	 * alone, which the keep fixes; without one stored it is asked all three.
+	 *
+	 * @return array<string,array{0:array<string,mixed>|null,1:list<string>}>
+	 */
+	public static function settled_client_kinds(): array {
+		return [
+			'passed before' => [ [ 'kind' => 'release', 'verdict' => Intel_Event::PASSED, 'ts' => 1794060000 ], [ 'theme_choice' ] ],
+			'never checked' => [ null, [ 'about_publisher', 'fits_kind', 'theme_choice' ] ],
+		];
+	}
+
+	/**
+	 * @param array<string,mixed>|null $check The stored kind check.
+	 * @param list<string>             $asked The questions the sent review asks.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'settled_client_kinds' )]
+	public function test_a_client_article_whose_kind_passed_is_asked_only_its_theme( ?array $check, array $asked ): void {
+		$this->seed( self::lantern(), self::client( self::LANTERN ), self::entity( self::MESA, 'Mesa Courier' ), self::stored( 'release', $check, self::published_item() ), ...self::themed_neighbours() );
+		$this->answer( '{"summary":"Mesa Courier ships plover-sdk 3.1 for its transit grant.","kind":"release"}' );
+		$this->decide( [ 'decision' => [ 'about_publisher' => 0.9, 'fits_kind' => 0.91, 'theme_choice' => [ 'choice' => 'none', 'confidence' => 0.9 ] ] ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], self::published_item(), extracted: true, extract: true, publisher: self::LANTERN ) );
+
+		$sent = \array_column( $this->out->requests, Message::VALUE );
+		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( $sent, 'prompt' ) );
+		$this->assertSame( $asked, \array_keys( Prompts::questions( $sent[1]['inputs'] ) ) );
+		$this->assertSame( [ 'release' ], \array_column( $this->extractions(), 'kind' ) );
+	}
+
+	/** A review that fails, here its theme choice, keeps a stored kind that passed its check, with the stored check, as a review that answers does. */
+	public function test_a_failed_review_keeps_a_kind_that_passed_its_check(): void {
+		$this->capture_stderr();
+		$stored = [ 'kind' => 'release', 'verdict' => Intel_Event::PASSED, 'ts' => 1794060000 ];
+		$this->seed( self::entity( self::MESA, 'Mesa Courier' ), self::stored( 'release', $stored ), ...self::themed_neighbours() );
+		$this->answer( '{"summary":"Mesa Courier site launch checklist.","kind":"launch"}' );
+		$this->decide( [ 'error' => 'HTTP 502 https://proxy.example/systemone' ] );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::MESA, 1.0 ) ], [], [ 'title' => 'Mesa Courier wins a transit grant' ], extracted: true, extract: true ) );
+
+		$this->assertSame( [ 'extract', 'extract_review' ], \array_column( \array_column( $this->out->requests, Message::VALUE ), 'prompt' ) );
+		$this->assertSame( [ [ 'release', $stored ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['kind_check'] ], $this->extractions() ) );
+	}
+
+	/**
+	 * The fixture item's record and a call's extraction of it, of `$kind`,
+	 * carrying `$check` when one is given.
+	 *
+	 * @param string                   $kind  The stored kind.
+	 * @param array<string,mixed>|null $check The stored kind check.
+	 * @param array<string,mixed>      $over  Item fields to set.
+	 * @return list<array<string,mixed>>
+	 */
+	private static function stored( string $kind, ?array $check, array $over = [] ): array {
+		$item = \array_merge( self::item(), $over );
+		return [
+			Intel_Event::make( 'item_recorded', $item, 'machine:source:feed@9.4.1', '' ),
+			Intel_Event::make( 'extraction_recorded', [ 'item_key' => $item['item_key'], 'summary' => 'Mesa Courier, earlier.', 'kind' => $kind, 'relevance' => 4, 'importance' => 3, 'sentiment' => 0.0, 'topics' => [], 'retrieved_ts' => $item['retrieved_ts'] ] + ( null === $check ? [] : [ 'kind_check' => $check ] ), 'machine:extract@9.4.1', '' ),
+		];
+	}
+
+	/**
 	 * A stop falling due while an answer finishes splits nothing: every write
 	 * of the extraction lands, and the stop raises at the next check.
 	 */
@@ -958,7 +1184,7 @@ final class ExtractorNodeTest extends TestCase {
 	/**
 	 * A read that throws starting the review, or a request that does, costs
 	 * the review alone: the paid reply is recorded, logged, and no retry
-	 * parks.
+	 * parks. The themes read alone throws, so the record reads as it would.
 	 *
 	 * @return array<string,array{0:string}>
 	 */
@@ -976,7 +1202,10 @@ final class ExtractorNodeTest extends TestCase {
 		$this->answer( '{"summary":"Mesa Courier wins a transit grant.","kind":"award","theme":"grant step checklist"}' );
 		Entity_Index::current();
 		if ( 'read' === $fails ) {
-			Intel_Graph_Row_Schema::$read_rows = static fn ( \Closure $read ): never => throw new \RuntimeException( 'graph file gone 7741' );
+			Intel_Graph_Row_Schema::$read_rows = static function ( \Closure $read ): never {
+				Intel_Graph_Row_Schema::$read_rows = null;
+				throw new \RuntimeException( 'graph file gone 7741' );
+			};
 		} else {
 			$this->review_requests_throw( new \RuntimeException( 'frontier refused 7742' ) );
 		}
@@ -1689,7 +1918,7 @@ final class ExtractorNodeTest extends TestCase {
 
 		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
 
-		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'last_error' => 'AI proxy answer did not parse as an extraction', 'failing_since' => 8700 ] ), $this->published() );
+		$this->assertSame( self::snapshot( [ 'mode' => 'call', 'last_error' => 'the model\'s answer did not parse as an extraction', 'failing_since' => 8700 ] ), $this->published() );
 	}
 
 	/** A failure's text is scrubbed for the terminal and cut to 500 bytes on a character boundary. */

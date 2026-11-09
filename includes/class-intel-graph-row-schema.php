@@ -184,15 +184,18 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 			],
 			'extractions'   => [
 				'columns'       => [
-					'id'         => 'INTEGER',
-					'item_key'   => 'TEXT NOT NULL',
-					'summary'    => 'TEXT NOT NULL',
-					'kind'       => 'TEXT NOT NULL',
-					'relevance'  => 'REAL NOT NULL',
-					'importance' => 'REAL NOT NULL',
-					'sentiment'  => 'REAL NOT NULL',
-					'actor'      => 'TEXT NOT NULL',
-					'item_day'   => 'INTEGER NOT NULL',
+					'id'           => 'INTEGER',
+					'item_key'     => 'TEXT NOT NULL',
+					'summary'      => 'TEXT NOT NULL',
+					'kind'         => 'TEXT NOT NULL',
+					'relevance'    => 'REAL NOT NULL',
+					'importance'   => 'REAL NOT NULL',
+					'sentiment'    => 'REAL NOT NULL',
+					'checked_kind' => 'TEXT',
+					'kind_verdict' => 'TEXT',
+					'checked_ts'   => 'INTEGER',
+					'actor'        => 'TEXT NOT NULL',
+					'item_day'     => 'INTEGER NOT NULL',
 				],
 				'key'           => [ 'item_key' ],
 				'autoincrement' => 'id',
@@ -613,6 +616,16 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	}
 
 	/**
+	 * An extraction row's kind check as the JSON record its event carried,
+	 * `{ kind, verdict, ts }`, or null for one never checked.
+	 *
+	 * @param string $alias The `extractions` row's alias.
+	 */
+	public static function kind_check_sql( string $alias ): string {
+		return "CASE WHEN {$alias}.kind_verdict IS NOT NULL THEN json_object( 'kind', {$alias}.checked_kind, 'verdict', {$alias}.kind_verdict, 'ts', {$alias}.checked_ts ) END";
+	}
+
+	/**
 	 * Text as one quoted FTS5 phrase, its quotes doubled, so a MATCH reads
 	 * it as words and never as query syntax.
 	 *
@@ -648,6 +661,6 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	 * @api Read by the Row_Table that opens the file.
 	 */
 	public static function version(): int {
-		return 7;
+		return 8;
 	}
 }

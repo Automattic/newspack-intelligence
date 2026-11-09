@@ -49,7 +49,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'entity_key', 'type', 'name', 'norm', 'created_ts' ], \array_keys( $tables['entities']['columns'] ), 'an entity row carries no id' );
 		$this->assertSame( [ 'entities_norm' => [ 'norm' ] ], $tables['entities']['indexes'] );
 		$this->assertArrayNotHasKey( 'autoincrement', $tables['entities'] );
-		$this->assertSame( 7, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 8, Intel_Graph_Row_Schema::version() );
 		$this->projector_graph();
 		$this->assertSame( [ 'Intel_Graph' ], Core::node( 'intel-graph' )->arguments(), 'the Row_Table accepts the schema' );
 	}
@@ -71,7 +71,34 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'item_key' ], $themes['key'] );
 		$this->assertSame( [ 'themes_item_day' => [ 'item_day' ] ], $themes['indexes'] );
 		$this->assertSame( [ 'item_day', 730, 86400 ], $themes['retain'] );
-		$this->assertSame( 7, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 8, Intel_Graph_Row_Schema::version() );
+	}
+
+	/**
+	 * An item's extraction row carries its kind check, null when it was never
+	 * checked, at the shape version that first holds it.
+	 */
+	public function test_an_extraction_row_carries_its_kind_check(): void {
+		$columns = Intel_Graph_Row_Schema::tables()['extractions']['columns'];
+
+		$this->assertSame( [ 'id', 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'checked_kind', 'kind_verdict', 'checked_ts', 'actor', 'item_day' ], \array_keys( $columns ) );
+		$this->assertSame( [ 'TEXT', 'TEXT', 'INTEGER' ], [ $columns['checked_kind'], $columns['kind_verdict'], $columns['checked_ts'] ] );
+		$this->assertSame( 8, Intel_Graph_Row_Schema::version() );
+	}
+
+	/** One fragment reads an extraction row's kind check back as the record its event carried, null for one never checked. */
+	public function test_the_kind_check_reads_back_as_its_record(): void {
+		$projector = $this->projector_graph();
+		$extracted = static fn ( string $key, array $check ): array => Intel_Event::make( 'extraction_recorded', [ 'item_key' => $key, 'summary' => 'Wren Ledger goes live.', 'kind' => 'launch', 'relevance' => 6, 'importance' => 4, 'sentiment' => 0.3, 'topics' => [], 'retrieved_ts' => 1791300000 ] + $check, 'machine:extract@9.4.1', '' );
+		self::deliver( $projector, $extracted( 'feed:wren-6611', [ 'kind_check' => [ 'kind' => 'launch', 'verdict' => Intel_Event::PASSED, 'ts' => 1791300450 ] ] ) );
+		self::deliver( $projector, $extracted( 'feed:wren-6612', [] ) );
+		$projector->save_state();
+
+		$reader = \Newspack_Nodes\Sqlite_Arm::open_rows( [ 0 => \Newspack_Nodes\Table_Node::file( 'intel-graph', 0 ) ], Intel_Graph_Row_Schema::version() );
+		$this->assertSame(
+			[ [ '{"kind":"launch","verdict":"passed","ts":1791300450}' ], [ null ] ],
+			$reader->rows( 'SELECT ' . Intel_Graph_Row_Schema::kind_check_sql( 'k' ) . ' FROM p0.extractions k ORDER BY k.item_key', [] )
+		);
 	}
 
 	/**
@@ -171,7 +198,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'source' => 'TEXT NOT NULL', 'line_hash' => 'TEXT NOT NULL', 'item_key' => 'TEXT NOT NULL', 'item_day' => 'INTEGER NOT NULL' ], $boilerplate['columns'] );
 		$this->assertSame( [ 'source', 'line_hash', 'item_key' ], $boilerplate['key'] );
 		$this->assertSame( [ 'item_day', 730, 86400 ], $boilerplate['retain'] );
-		$this->assertSame( 7, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 8, Intel_Graph_Row_Schema::version() );
 
 		$now       = 1793000000;
 		Core::$now = (float) ( $now - 731 * 86400 );
@@ -229,7 +256,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 
 		$this->assertContains( [ 'subject', 'kind' ], $tables['events']['indexes'] ?? [] );
 		$this->assertContains( [ 'entity_key' ], $tables['judgments']['indexes'] ?? [] );
-		$this->assertSame( 7, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 8, Intel_Graph_Row_Schema::version() );
 	}
 
 	/** With no partition written, a table reads as an empty row set of its declared columns. */

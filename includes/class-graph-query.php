@@ -140,7 +140,7 @@ final class Graph_Query {
 	/** The characters of a body a list reads for its excerpt: enough past the markup, without moving 64 KiB a row. */
 	private const EXCERPT_READ_CHARS = 4096;
 
-	/** Each field a listed item answers, by the column it is read from. */
+	/** Each field a listed item answers but its kind check, by the column it is read from. */
 	private const ITEM_COLUMNS = [
 		'item_key'   => 'i.item_key',
 		'title'      => 'i.title',
@@ -322,7 +322,7 @@ final class Graph_Query {
 		[ $stories, $binds ] = self::stories( $r, self::filtered( $r, $g, $filter ), $filter['days'] ?? self::all_days(), $by, false );
 		$kinds               = $filter['lists']['kinds'];
 		$x                   = Intel_Graph_Row_Schema::all( $r, 'extractions' );
-		$columns             = self::ITEM_COLUMNS;
+		$columns             = self::item_columns();
 		$picked              = \implode( ', ', \array_map( static fn ( string $as, string $column ): string => "{$column} AS {$as}", \array_keys( $columns ), $columns ) );
 		$rows                = $r->rows(
 			"{$stories}, " . self::item_clients( $r )
@@ -719,7 +719,7 @@ final class Graph_Query {
 	private static function items( Row_Reader $r, array $g, array $filter, int $limit, int $offset, array $within = self::NEWEST, array $links = Intel_Event::ABOUT_ROLES, ?int $since = null ): array {
 		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false, $links );
 		$binds                           = [ ...$lead, ...$within['binds'], ...$binds ];
-		$columns                         = self::ITEM_COLUMNS + $within['fields'];
+		$columns                         = self::item_columns() + $within['fields'];
 		[ $total, $summary ]             = null === $since
 			? [ Core::as_int( $r->rows( "{$with} SELECT COUNT(*) FROM ri i {$within['join']} WHERE {$where}", $binds )[0][0] ?? 0 ), null ]
 			: self::summed( $r, $with, $within['join'], $where, $binds, $since );
@@ -767,13 +767,15 @@ final class Graph_Query {
 
 	/**
 	 * A listed item with the body's opening its row read replaced by its
-	 * excerpt, so no answer carries the body itself.
+	 * excerpt, so no answer carries the body itself, and its kind check
+	 * read as `{ kind, verdict, ts }`, null for an extraction never checked.
 	 *
 	 * @param array<string,mixed> $item The item as its row read it.
 	 * @return array<string,mixed>
 	 */
 	private static function excerpted( array $item ): array {
-		$item['excerpt'] = self::excerpt( Core::as_string( $item['excerpt'] ) );
+		$item['excerpt']    = self::excerpt( Core::as_string( $item['excerpt'] ) );
+		$item['kind_check'] = null === $item['kind_check'] ? null : \json_decode( Core::as_string( $item['kind_check'] ), true, 2, \JSON_THROW_ON_ERROR );
 		return $item;
 	}
 
@@ -862,6 +864,16 @@ final class Graph_Query {
 			];
 		}
 		return [ $total, $summary ];
+	}
+
+	/**
+	 * Each field a listed item answers, by the column it is read from, its
+	 * kind check last as `Intel_Graph_Row_Schema::kind_check_sql()` reads it.
+	 *
+	 * @return array<string,string>
+	 */
+	private static function item_columns(): array {
+		return self::ITEM_COLUMNS + [ 'kind_check' => Intel_Graph_Row_Schema::kind_check_sql( 'x' ) ];
 	}
 
 	/**

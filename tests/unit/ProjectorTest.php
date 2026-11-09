@@ -86,7 +86,7 @@ final class ProjectorTest extends TestCase {
 			],
 			self::graph_rows( 'links', 'entity_key' )
 		);
-		$this->assertSame( [ [ 1, self::ITEM, 'Harbor Gazette won the state award.', 'award', 8.0, 6.0, 0.5, 'machine:extract@9.4.1', $day ] ], self::graph_rows( 'extractions' ) );
+		$this->assertSame( [ [ 1, self::ITEM, 'Harbor Gazette won the state award.', 'award', 8.0, 6.0, 0.5, null, null, null, 'machine:extract@9.4.1', $day ] ], self::graph_rows( 'extractions' ) );
 		$this->assertSame( [], self::graph_rows( 'entities' ), 'a link writes no entity row; readers join to one' );
 		$this->assertSame( [], self::graph_rows( 'entity_states' ) );
 		$this->assertSame( [], self::graph_rows( 'events' ), 'items-stream events are not kept in events' );
@@ -134,6 +134,26 @@ final class ProjectorTest extends TestCase {
 		$this->project( [ $this->extraction() ] );
 
 		$this->assertSame( [], self::graph_rows( 'themes' ) );
+	}
+
+	/**
+	 * An extraction's kind check writes the kind checked, the verdict and
+	 * when on the item's extraction row; a re-extraction checked of none
+	 * leaves the row without one, as a stand-in's is.
+	 */
+	public function test_an_extractions_kind_check_rides_its_row(): void {
+		$check = [ 'kind' => 'launch', 'verdict' => Intel_Event::PASSED, 'ts' => self::RETRIEVED + 615 ];
+		$this->project( [ $this->item(), [ 'kind_check' => $check ] + $this->extraction() ] );
+
+		$this->assertSame( [ [ 'award', 'launch', 'passed', self::RETRIEVED + 615 ] ], self::graph_rows( 'extractions', '1', 'kind, checked_kind, kind_verdict, checked_ts' ) );
+
+		$this->project( [ $this->extraction() ] );
+
+		$this->assertSame( [ [ 'award', null, null, null ] ], self::graph_rows( 'extractions', '1', 'kind, checked_kind, kind_verdict, checked_ts' ) );
+
+		$this->project( [ $this->purge( self::ITEM ), $this->item(), $this->stand_in() ] );
+
+		$this->assertSame( [ [ 'other', null, null, null ] ], self::graph_rows( 'extractions', '1', 'kind, checked_kind, kind_verdict, checked_ts' ) );
 	}
 
 	/** A heuristic stand-in names no theme and leaves a call's theme as it was. */

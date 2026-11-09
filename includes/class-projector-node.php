@@ -178,8 +178,9 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * it leaves and writes one into the folder it enters with `ignore`, so a
 	 * placement there already keeps its actor and time. An extraction
 	 * deletes the item's claims, topic links and theme before it writes its
-	 * own, so one yielding fewer leaves none of the earlier behind, and
-	 * writes a theme
+	 * own, so one yielding fewer leaves none of the earlier behind, writes
+	 * its kind check, the kind checked, the verdict and when, on its row,
+	 * null where it carries none, and writes a theme
 	 * row only when it names a theme; each table is written by the
 	 * items stream alone, so a replay deletes and writes in the same order; the
 	 * entities an extraction was given replace the item's earlier set the same
@@ -221,7 +222,8 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 		];
 		$state_set = static fn ( string $state ): array => [ [ 'set', 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ] ];
 		$item       = [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ) ];
-		$extraction = [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'actor', $day( 'retrieved_ts' ) ];
+		$checked    = \array_map( static fn ( string $member ): \Closure => static fn ( array $e ): mixed => Core::arr( $e['kind_check'] ?? null )[ $member ] ?? null, \array_keys( Intel_Event::RECORDS['extraction_recorded']['kind_check'] ) );
+		$extraction = [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', ...$checked, 'actor', $day( 'retrieved_ts' ) ];
 		$judgment = static fn ( string $state ): array => [ [ 'set', 'judgments', [ 'item_key', 'entity_key', static fn ( array $e ): string => \explode( ':', Core::as_string( $e['actor'] ), 2 )[0], [ $state ], 'actor', 'item_url', 'ts' ] ] ];
 		$lines    = [ 'ignore', 'boilerplate', [ 'source', self::EACH, 'item_key', $day( 'retrieved_ts' ) ], static fn ( array $e ): array => Entity_Index::line_hashes( Core::as_string( $e['body'] ) ) ];
 		$table    = [

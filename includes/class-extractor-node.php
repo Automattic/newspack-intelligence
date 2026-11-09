@@ -30,7 +30,9 @@
  * published it and its kind is not `other` (`about_publisher`), when its
  * kind is in Prompts::KIND_CHECKS (`fits_kind`), or when the projection offers it themes
  * (`theme_choice`): a noul below its bar writes its kind as `other`, and an
- * offered theme chosen at THEME_CHOICE_MIN or more is the theme written.
+ * offered theme chosen at THEME_CHOICE_MIN or more is the theme written; a
+ * `fits_kind` answer rides the extraction as its `kind_check`, and a call's
+ * re-extraction of an item whose stored kind passed its check keeps it.
  * An unrestricted item of a client's own feed lane that an open client
  * published and no call extracted is gated before any chat call: one `extract_gate` decision asks
  * `about_publisher` of the item alone, and a noul below ABOUT_PUBLISHER_MIN
@@ -370,7 +372,7 @@ class Extractor_Node extends Node {
 		$content = $answer['content'] ?? null;
 		$unlent  = $answer['unlent'] ?? null;
 		$parsed  = \is_string( $content ) ? Prompts::parse_extract( $content, \array_map( 'strval', \array_keys( $topics ) ) ) : null;
-		$fault   = Core::as_string( $answer['error'] ?? 'AI proxy answer did not parse as an extraction' );
+		$fault   = Core::as_string( $answer['error'] ?? 'the model\'s answer did not parse as an extraction' );
 		if ( isset( $answer['error'] ) ) {
 			$this->print_less_often( 'extraction call failed: ', Core::terminal_safe( $fault ) );
 		}
@@ -414,9 +416,19 @@ class Extractor_Node extends Node {
 	}
 
 	/**
-	 * Ask the review a parsed reply is owed; whether one was asked. A failure
-	 * to start one is the review's failure alone, so the reply already paid
-	 * for is recorded, but for a cooperative stop.
+	 * Ask the review a parsed reply is owed; whether one was asked. A
+	 * restricted item is never sent to the decision model, so its data stays
+	 * with the chat model alone. `about_publisher` is owed when an open
+	 * client published the item, its gate has not answered it and its kind
+	 * is not `other`. A reply that could be asked a kind question,
+	 * `about_publisher` or `fits_kind`, asks neither when the item's stored
+	 * kind passed its check (`passed_check()`), since record() keeps that
+	 * kind whatever they answer. That read precedes the review by its whole
+	 * latency: a check a concurrent extraction replaces in between, or a
+	 * projection that will not read at record time, leaves the reply's own
+	 * kind recorded unreviewed and unchecked until the next re-extraction
+	 * asks again. A failure to start a review is the review's failure alone,
+	 * so the reply already paid for is recorded, but for a cooperative stop.
 	 *
 	 * @param array<string,mixed>     $item   The item.
 	 * @param array{summary:string,kind:string,theme?:string,topics:list<string>,relevance:int,importance:int,sentiment:float,claims:list<array{subject:string,predicate:string,object:string}>} $parsed The reply, parsed.
@@ -427,8 +439,13 @@ class Extractor_Node extends Node {
 	 */
 	private function reviewing( array $item, array $parsed, array $topics, array $answer, bool $owed ): bool {
 		try {
-			$carry  = Core::arr( $answer['carry'] ?? null );
-			$review = self::review( $item, $parsed, isset( $carry[ Prompts::ABOUT_PUBLISHER ] ) ? '' : Core::as_string( Core::arr( $answer['inputs'] ?? null )['publisher'] ?? null ), $topics );
+			if ( ! Intel_Tiers::unrestricted( $item ) ) {
+				return false;
+			}
+			$carry     = Core::arr( $answer['carry'] ?? null );
+			$publisher = isset( $carry[ Prompts::ABOUT_PUBLISHER ] ) || 'other' === $parsed['kind'] ? '' : Core::as_string( Core::arr( $answer['inputs'] ?? null )['publisher'] ?? null );
+			$settled   = ( '' !== $publisher || isset( Prompts::KIND_CHECKS[ $parsed['kind'] ] ) ) && null !== $this->passed_check( Core::as_string( $item['item_key'] ) );
+			$review    = self::review( $item, $parsed, $publisher, $topics, $settled );
 			if ( null === $review ) {
 				return false;
 			}
@@ -443,32 +460,28 @@ class Extractor_Node extends Node {
 	}
 
 	/**
-	 * The inputs of the review a parsed reply is owed, or null for none: a
-	 * restricted item is never sent to the decision model, so its data stays
-	 * with the chat model alone; any other is asked `about_publisher` when
-	 * an open client published it and its kind is not `other`, `fits_kind`
-	 * when Prompts::KIND_CHECKS holds its kind, and `theme_choice` when the projection
-	 * offers it themes, read now as an extract prompt offers them, and owes
-	 * none when it asks none of them.
+	 * The inputs of the review an unrestricted item's parsed reply is owed,
+	 * or null for none: unless its kind is settled, it is asked
+	 * `about_publisher` when `$publisher` names one, and `fits_kind` when
+	 * Prompts::KIND_CHECKS holds its kind; it is asked `theme_choice` when
+	 * the projection offers it themes, read now as an extract prompt offers
+	 * them, and owes none when it asks none.
 	 *
 	 * @param array<string,mixed>     $item      The item.
 	 * @param array{kind:string,summary:string} $parsed The reply, parsed.
-	 * @param string                  $publisher The open client that published the item; '' for none.
+	 * @param string                  $publisher The open client `about_publisher` asks of; '' unless one is owed.
 	 * @param array<array-key,string> $topics    Each topic name the request offered => its key.
+	 * @param bool                    $settled   Whether the item's stored kind passed its check, so no kind question is asked.
 	 * @return array<string,mixed>|null
 	 */
-	private static function review( array $item, array $parsed, string $publisher, array $topics ): ?array {
-		if ( ! Intel_Tiers::unrestricted( $item ) ) {
-			return null;
-		}
-		$publisher = 'other' === $parsed['kind'] ? '' : $publisher;
-		$themes    = Prompts::offered_themes( $item );
-		$review    = [
+	private static function review( array $item, array $parsed, string $publisher, array $topics, bool $settled ): ?array {
+		$themes = Prompts::offered_themes( $item );
+		$review = [
 			'topics'    => $topics,
-			'publisher' => $publisher,
+			'publisher' => $settled ? '' : $publisher,
 			'themes'    => $themes,
 			'summary'   => $parsed['summary'],
-			'kind'      => $parsed['kind'],
+			'kind'      => $settled ? '' : $parsed['kind'],
 		];
 		return [] === Prompts::questions( $review ) ? null : $review;
 	}
@@ -478,9 +491,11 @@ class Extractor_Node extends Node {
 	 * review carried, read again: a noul below its bar, ABOUT_PUBLISHER_MIN
 	 * or the kind's in Prompts::KIND_CHECKS, writes the kind as `other` before the importance
 	 * floor applies, and an offered theme chosen with a confidence of
-	 * THEME_CHOICE_MIN or more is the theme written. A review that failed,
+	 * THEME_CHOICE_MIN or more is the theme written. A `fits_kind` asked
+	 * records its kind check: the reply's kind, `passed` at its bar or more
+	 * and `failed` below, and the second it answered. A review that failed,
 	 * or answered a question it asked with nothing that reads, keeps the
-	 * reply's kind and theme, logged.
+	 * reply's kind and theme, logged, and records no check.
 	 *
 	 * @param array<string,mixed>                        $item    The item.
 	 * @param array<string,array{0:float,1:bool,2:bool}> $linked  Each linked entity => its link's confidence, whether it is asserted, and whether by an identifier.
@@ -498,15 +513,15 @@ class Extractor_Node extends Node {
 		$choice   = Core::arr( $decision[ Prompts::THEME_CHOICE ] ?? null );
 		$sure     = $number( $choice['confidence'] ?? null );
 		$read     = isset( $answer['decision'] ) && ( ! isset( $asked[ Prompts::THEME_CHOICE ] ) || ( \is_string( $choice['choice'] ?? null ) && null !== $sure ) );
-		$below    = false;
+		$fits     = [];
 		$bars     = [
 			Prompts::ABOUT_PUBLISHER => self::ABOUT_PUBLISHER_MIN,
 			Prompts::FITS_KIND       => Prompts::KIND_CHECKS[ Core::as_string( $inputs['kind'] ?? null ) ]['min'] ?? 0.0,
 		];
 		foreach ( \array_intersect_key( $bars, $asked ) as $question => $bar ) {
-			$noul  = $number( $decision[ $question ] ?? null );
-			$read  = $read && null !== $noul;
-			$below = $below || ( null !== $noul && $noul < $bar );
+			$noul               = $number( $decision[ $question ] ?? null );
+			$read               = $read && null !== $noul;
+			$fits[ $question ] = null !== $noul && $noul >= $bar;
 		}
 		if ( ! $read ) {
 			$this->decision_failed( 'extract review', self::decision_fault( $answer ), $item );
@@ -514,7 +529,10 @@ class Extractor_Node extends Node {
 			return;
 		}
 		$this->decision_answered();
-		if ( $below ) {
+		if ( isset( $fits[ Prompts::FITS_KIND ] ) ) {
+			$parsed['kind_check'] = [ 'kind' => $parsed['kind'], 'verdict' => $fits[ Prompts::FITS_KIND ] ? Intel_Event::PASSED : Intel_Event::FAILED, 'ts' => Intel_Event::now() ];
+		}
+		if ( \in_array( false, $fits, true ) ) {
 			$parsed['kind'] = 'other';
 		}
 		$theme = Prompts::chosen_theme( $inputs, Core::as_string( $choice['choice'] ?? null ) );
@@ -561,19 +579,26 @@ class Extractor_Node extends Node {
 
 	/**
 	 * Write an extraction under its stage, its importance lifted to its
-	 * kind's floor when its relevance reaches the floor's: the extraction,
-	 * the subjects a call was given, the struct the deduper reads and a
-	 * claim per claim whose subject the item asserts.
+	 * kind's floor when its relevance reaches the floor's. A call's
+	 * extraction of an item whose stored kind passed its check keeps that
+	 * kind and that check, so the floor is the kept kind's. It writes the
+	 * extraction, the subjects a call was given, the struct the deduper
+	 * reads and a claim per claim whose subject the item asserts.
 	 *
 	 * @param array<string,mixed>                        $item   The item.
 	 * @param array<string,array{0:float,1:bool,2:bool}> $linked Each linked entity => its link's confidence, whether it is asserted, and whether by an identifier.
 	 * @param string                                     $stage  `extract`, or the heuristic stand-in's stage.
-	 * @param array{summary:string,kind:string,theme?:string,topics:list<string>,relevance:int,importance:int,sentiment:float,claims:list<array{subject:string,predicate:string,object:string}>} $parsed The extraction.
+	 * @param array{summary:string,kind:string,theme?:string,kind_check?:array<array-key,mixed>,topics:list<string>,relevance:int,importance:int,sentiment:float,claims:list<array{subject:string,predicate:string,object:string}>} $parsed The extraction.
 	 * @param array<array-key,string>                    $topics Each topic name the request offered => its key.
 	 */
 	private function record( array $item, array $linked, string $stage, array $parsed, array $topics ): void {
 		$item_key = Core::as_string( $item['item_key'] );
 		$index    = Entity_Index::current();
+		$call     = ! \in_array( $stage, self::STAND_IN_STAGES, true );
+		$passed   = $call ? $this->passed_check( $item_key ) : null;
+		if ( null !== $passed ) {
+			$parsed = [ 'kind' => Core::as_string( $passed['kind'] ), 'kind_check' => $passed ] + $parsed;
+		}
 		[ $floor, $needs ] = $this->importance_floors[ $parsed['kind'] ] ?? [ 0, 0 ];
 		if ( $parsed['relevance'] >= $needs ) {
 			$parsed['importance'] = \max( $parsed['importance'], $floor );
@@ -587,9 +612,9 @@ class Extractor_Node extends Node {
 			'sentiment'    => $parsed['sentiment'],
 			'topics'       => \array_map( static fn ( string $name ): string => $topics[ $name ], $parsed['topics'] ),
 			'retrieved_ts' => $item['retrieved_ts'],
-		] + \array_intersect_key( $parsed, [ 'theme' => true ] );
+		] + \array_intersect_key( $parsed, [ 'theme' => true, 'kind_check' => true ] );
 		$this->emit( $this->writer, Intel_Event::machine_event( $stage, 'extraction_recorded', $fields ) );
-		if ( ! \in_array( $stage, self::STAND_IN_STAGES, true ) ) {
+		if ( $call ) {
 			$given = \array_keys( \array_filter( $linked, static fn ( array $link ): bool => $link[1] ) );
 			$this->emit( $this->writer, Intel_Event::machine_event( $stage, 'subjects_extracted', [ 'item_key' => $item_key, 'entity_keys' => $given, 'retrieved_ts' => $item['retrieved_ts'] ] ) );
 		}
@@ -616,6 +641,34 @@ class Extractor_Node extends Node {
 			];
 			$this->emit( $this->writer, Intel_Event::machine_event( 'extract', 'claim_asserted', $fields ) );
 		}
+	}
+
+	/**
+	 * The item's stored kind check when it passed for the kind its stored
+	 * extraction holds, read as the answer is recorded, which a call's
+	 * extraction keeps; null for none, or while the projection will not
+	 * open, logged, so the kind is replaced.
+	 *
+	 * @param string $item_key The item.
+	 * @return array<array-key,mixed>|null
+	 */
+	private function passed_check( string $item_key ): ?array {
+		$stored = Intel_Graph_Row_Schema::read(
+			static fn ( Row_Reader $r ): mixed => $r->rows( 'SELECT ' . Intel_Graph_Row_Schema::kind_check_sql( 'x' ) . ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . ' x WHERE x.item_key = ? AND x.checked_kind = x.kind LIMIT 1', [ $item_key ] )[0][0] ?? null,
+			"{$this->name}: no intel-graph to read the stored kind check from; replacing the kind: "
+		);
+		$check  = null === $stored ? null : \json_decode( Core::as_string( $stored ), true, 2, \JSON_THROW_ON_ERROR );
+		return self::is_passed( $check ) ? Core::arr( $check ) : null;
+	}
+
+	/**
+	 * Whether a value is a kind check, as `Intel_Event::record_fault()`
+	 * reads one, that passed.
+	 *
+	 * @param mixed $check The value.
+	 */
+	private static function is_passed( mixed $check ): bool {
+		return null === Intel_Event::record_fault( 'extraction_recorded', 'kind_check', $check ) && Intel_Event::PASSED === Core::arr( $check )['verdict'];
 	}
 
 	/**

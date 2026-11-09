@@ -60,6 +60,7 @@ final class GraphQueryTest extends TestCase {
 						'kind'       => 'award',
 						'relevance'  => 8.5,
 						'importance' => 6.25,
+						'kind_check' => null,
 						'entities'   => [ [ 'entity_key' => self::GAZETTE, 'name' => 'Harbor Gazette', 'state' => 'asserted', 'role' => 'subject', 'client' => true ] ],
 					],
 				],
@@ -69,6 +70,20 @@ final class GraphQueryTest extends TestCase {
 			],
 			$answer
 		);
+	}
+
+	/**
+	 * An item answers its extraction's kind check beside its kind: the kind
+	 * checked, the verdict and when, in a list and in a theme group alike.
+	 */
+	public function test_an_item_answers_its_kind_check(): void {
+		$this->seed_world();
+		$this->seed( [ Intel_Event::make( 'extraction_recorded', [ 'item_key' => 'github:ledger-launch', 'summary' => 'The Ledger shipped a newsletter tool.', 'kind' => 'launch', 'relevance' => 7.0, 'importance' => 5.5, 'sentiment' => 0.25, 'topics' => [], 'kind_check' => [ 'kind' => 'launch', 'verdict' => Intel_Event::PASSED, 'ts' => self::$oct_13 + 907 ], 'retrieved_ts' => self::$oct_13 + 600 ], 'machine:extract@9.4.1', 'fixture-9' ) ] );
+
+		$check = [ 'kind' => 'launch', 'verdict' => 'passed', 'ts' => self::$oct_13 + 907 ];
+		$item  = self::search( [ 'q' => 'newsletter' ] )['items'][0];
+		$this->assertSame( [ 'launch', $check ], [ $item['kind'], $item['kind_check'] ] );
+		$this->assertSame( $check, self::search( [ 'q' => 'newsletter', 'group' => 'theme', 'sort' => null ] )['groups'][0]['items'][0]['kind_check'] );
 	}
 
 	/** The body and the summary are searched; neither is ever answered. */

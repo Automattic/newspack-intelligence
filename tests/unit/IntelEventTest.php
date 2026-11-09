@@ -346,6 +346,46 @@ final class IntelEventTest extends TestCase {
 		$this->assertSame( 'site blocked from sending email', Intel_Event::make( 'extraction_recorded', [ 'theme' => 'site blocked from sending email' ] + $fields, 'machine:extract@9.4.1', '' )['theme'] );
 	}
 
+	/** An extraction's kind check is optional: one never checked carries none, and one checked carries the kind, the verdict and when. */
+	public function test_an_extraction_carries_an_optional_kind_check(): void {
+		$fields = [ 'item_key' => 'feed:wren-6611', 'summary' => 'Wren Ledger goes live.', 'kind' => 'launch', 'relevance' => 6, 'importance' => 4, 'sentiment' => 0.3, 'topics' => [], 'retrieved_ts' => 1791300000 ];
+		$check  = [ 'kind' => 'launch', 'verdict' => Intel_Event::PASSED, 'ts' => 1791300450 ];
+
+		$this->assertSame( [ 'passed', 'failed' ], Intel_Event::VERDICTS );
+		$this->assertSame( [ 'extraction_recorded' => [ 'kind_check' => [ 'kind' => Intel_Event::ITEM_KINDS, 'verdict' => Intel_Event::VERDICTS, 'ts' => null ] ] ], Intel_Event::RECORDS );
+		$this->assertNull( Intel_Event::record_fault( 'extraction_recorded', 'kind_check', $check ) );
+		$this->assertSame( 'ts is not an integer', Intel_Event::record_fault( 'extraction_recorded', 'kind_check', \array_replace( $check, [ 'ts' => 1791300450.5 ] ) ) );
+		$this->assertArrayNotHasKey( 'kind_check', Intel_Event::make( 'extraction_recorded', $fields, 'machine:extract@9.4.1', '' ) );
+		$this->assertSame( $check, Intel_Event::make( 'extraction_recorded', [ 'kind_check' => $check ] + $fields, 'machine:extract@9.4.1', '' )['kind_check'] );
+	}
+
+	/**
+	 * An extraction's kind check, when present, is a record of exactly its
+	 * kind, from ITEM_KINDS, its verdict, from VERDICTS, and its whole second.
+	 *
+	 * @return array<string,array{0:mixed,1:string}>
+	 */
+	public static function bad_kind_checks(): array {
+		$check = [ 'kind' => 'release', 'verdict' => 'failed', 'ts' => 1791300450 ];
+		return [
+			'not a record'      => [ 'release', 'extraction_recorded: kind_check is not a record of kind, verdict, ts' ],
+			'a member missing'  => [ \array_diff_key( $check, [ 'ts' => true ] ), 'extraction_recorded: kind_check is not a record of kind, verdict, ts' ],
+			'a member too many' => [ $check + [ 'noul' => 0.4 ], 'extraction_recorded: kind_check is not a record of kind, verdict, ts' ],
+			'out of order'      => [ \array_reverse( $check ), 'extraction_recorded: kind_check is not a record of kind, verdict, ts' ],
+			'an unknown kind'   => [ \array_replace( $check, [ 'kind' => 'rumor' ] ), 'extraction_recorded: kind_check kind is outside its set' ],
+			'an unknown verdict' => [ \array_replace( $check, [ 'verdict' => 'unsure' ] ), 'extraction_recorded: kind_check verdict is outside its set' ],
+			'a ts not a number' => [ \array_replace( $check, [ 'ts' => '1791300450' ] ), 'extraction_recorded: kind_check ts is not an integer' ],
+			'a ts not whole'    => [ \array_replace( $check, [ 'ts' => 1791300450.5 ] ), 'extraction_recorded: kind_check ts is not an integer' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_kind_checks' )]
+	public function test_an_extractions_kind_check_must_be_its_record( mixed $check, string $why ): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( $why );
+		Intel_Event::make( 'extraction_recorded', [ 'item_key' => 'feed:wren-6611', 'summary' => 'Wren Ledger goes live.', 'kind' => 'launch', 'relevance' => 6, 'importance' => 4, 'sentiment' => 0.3, 'topics' => [], 'kind_check' => $check, 'retrieved_ts' => 1791300000 ], 'machine:extract@9.4.1', '' );
+	}
+
 	/**
 	 * An extraction's theme, when present, is a string within its cap.
 	 *

@@ -127,6 +127,63 @@ describe( 'ItemRow', () => {
 		).toBeInTheDocument();
 	} );
 
+	it( 'renders a kind check that passed beside the kind, with its day', () => {
+		render(
+			<ItemRow
+				item={ {
+					...ITEM,
+					kind: 'release',
+					kind_check: {
+						kind: 'release',
+						verdict: 'passed',
+						ts: 1790123456,
+					},
+				} }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		expect(
+			screen.getByText(
+				'feed · release · 2026-09-22 · release passed its kind check on 2026-09-23'
+			)
+		).toHaveClass( 'newspack-nodes-status', 'is-muted' );
+	} );
+
+	it( 'renders a kind check that failed, naming the kind it checked', () => {
+		render(
+			<ItemRow
+				item={ {
+					...ITEM,
+					kind: 'other',
+					kind_check: {
+						kind: 'launch',
+						verdict: 'failed',
+						ts: 1790123456,
+					},
+				} }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		expect(
+			screen.getByText(
+				'feed · other · 2026-09-22 · launch failed its kind check on 2026-09-23'
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'renders no kind check for an item never checked', () => {
+		render(
+			<ItemRow
+				item={ { ...ITEM, kind_check: null } }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		expect(
+			screen.getByText( 'feed · award · 2026-09-22' )
+		).toBeInTheDocument();
+		expect( screen.queryByText( /kind check/ ) ).toBeNull();
+	} );
+
 	it( 'never links a URL that is not http or https', () => {
 		render(
 			<ItemRow

@@ -139,6 +139,26 @@ final class Intel_Event {
 		'ask_answered' => [ 'tiers' => 0 ],
 	];
 
+	/** A kind check's verdict: the kind its review checked fits it. */
+	public const PASSED = 'passed';
+
+	/** A kind check's verdict: the kind its review checked does not fit it. */
+	public const FAILED = 'failed';
+
+	/** The verdicts a kind check gives. */
+	public const VERDICTS = [ self::PASSED, self::FAILED ];
+
+	/**
+	 * Each kind holding an optional record field => each such field => its
+	 * members in order, each drawn from its set, or an integer where the set
+	 * is null; one written without it has none. An extraction's
+	 * `kind_check` is the kind its review asked `fits_kind` of, the verdict
+	 * and the second it was answered: one never checked carries none.
+	 */
+	public const RECORDS = [
+		'extraction_recorded' => [ 'kind_check' => [ 'kind' => self::ITEM_KINDS, 'verdict' => self::VERDICTS, 'ts' => null ] ],
+	];
+
 	/** The optional fields refused blank: one with nothing to say is left out. */
 	private const NON_BLANK = [ 'theme' => true ];
 
@@ -319,9 +339,40 @@ final class Intel_Event {
 				self::check_bounded( "{$kind}: {$field}", $event[ $field ], $bytes, isset( self::NON_BLANK[ $field ] ) );
 			}
 		}
+		foreach ( \array_keys( self::RECORDS[ $kind ] ?? [] ) as $field ) {
+			if ( \array_key_exists( $field, $event ) ) {
+				$fault = self::record_fault( $kind, $field, $event[ $field ] );
+				if ( null !== $fault ) {
+					throw new \InvalidArgumentException( \esc_html( "{$kind}: {$field} {$fault}" ) );
+				}
+			}
+		}
 		if ( self::ITEMS === $stream && 'machine' !== $class ) {
 			throw new \InvalidArgumentException( "{$kind}: only a machine writes the items stream" );
 		}
+	}
+
+	/**
+	 * Why a value is not the record RECORDS declares for a kind's field:
+	 * not exactly its members in order, a member outside its set, or one
+	 * not an integer where the set is null; null when it is that record.
+	 *
+	 * @api The extractor reads a stored kind check back through it.
+	 * @param string $kind  A kind RECORDS names.
+	 * @param string $field The kind's record field.
+	 * @param mixed  $value The value.
+	 */
+	public static function record_fault( string $kind, string $field, mixed $value ): ?string {
+		$members = self::RECORDS[ $kind ][ $field ];
+		if ( ! \is_array( $value ) || \array_keys( $value ) !== \array_keys( $members ) ) {
+			return 'is not a record of ' . \implode( ', ', \array_keys( $members ) );
+		}
+		foreach ( $members as $member => $set ) {
+			if ( null === $set ? ! \is_int( $value[ $member ] ) : ! \in_array( $value[ $member ], $set, true ) ) {
+				return "{$member} " . ( null === $set ? 'is not an integer' : 'is outside its set' );
+			}
+		}
+		return null;
 	}
 
 	/**
