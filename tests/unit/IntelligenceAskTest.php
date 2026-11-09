@@ -22,7 +22,7 @@ require_once __DIR__ . '/../support/reads-ontology-log.php';
 require_once __DIR__ . '/../support/signs-in-users.php';
 
 /**
- * The Ask's two verbs, each at `read`: `ask` appends one question to the
+ * The Ask's two commands, each at `read`: `ask` appends one question to the
  * asks stream and answers its key, and `ask_result` reads the caller's own
  * ask back, re-reading every item its answer cites under the caller's tiers
  * now, so a sentence resting on an item the caller cannot read is not shown.
@@ -69,8 +69,8 @@ final class IntelligenceAskTest extends TestCase {
 		parent::tearDown();
 	}
 
-	/** Anyone who reads may ask: both verbs declare read. */
-	public function test_both_verbs_declare_read(): void {
+	/** Anyone who reads may ask: both commands declare read. */
+	public function test_both_commands_declare_read(): void {
 		$roles = \array_column( Intelligence_CI_Node::node_schema()['commands'], 'capability', 'name' );
 
 		$this->assertSame( [ Capabilities::READ, Capabilities::READ ], [ $roles['ask'], $roles['ask_result'] ] );
@@ -136,7 +136,7 @@ final class IntelligenceAskTest extends TestCase {
 	 * every key an answer carries and every state, so an agent learns that
 	 * an answer can be withheld and how long to poll; `ask`'s names no cap.
 	 */
-	public function test_the_verb_descriptions_name_every_key_and_state(): void {
+	public function test_the_command_descriptions_name_every_key_and_state(): void {
 		$this->seed( self::asked( self::KEY, self::READER ), self::answered( self::KEY, self::READER, [ [ 'The Gazette won a state award.', [ 1 ] ] ], [ 'feed:gazette-award' ] ) );
 		$described = \array_column( Intelligence_CI_Node::node_schema()['commands'], 'description', 'name' );
 
@@ -182,7 +182,7 @@ final class IntelligenceAskTest extends TestCase {
 	}
 
 	/**
-	 * Another reader's ask is refused exactly as one never asked, so the verb
+	 * Another reader's ask is refused exactly as one never asked, so the command
 	 * never tells the two apart.
 	 */
 	public function test_ask_result_answers_only_the_callers_own_ask(): void {
@@ -264,7 +264,7 @@ final class IntelligenceAskTest extends TestCase {
 	}
 
 	/**
-	 * An `ask_asked` as the verb writes it.
+	 * An `ask_asked` as the command writes it.
 	 *
 	 * @param string   $key   The ask's key.
 	 * @param int      $owner Who asked.

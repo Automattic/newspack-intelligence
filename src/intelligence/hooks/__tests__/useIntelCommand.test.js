@@ -1,6 +1,6 @@
 /* eslint-env jest */
 /**
- * useIntelRead sends its verb whenever its arguments change and shows only
+ * useIntelRead sends its command whenever its arguments change and shows only
  * the answer to the question it is asking now; useIntelWrite sends once per
  * run and hands each reply to its caller.
  */
@@ -128,7 +128,7 @@ describe( 'useIntelRead', () => {
 } );
 
 describe( 'useIntelWrite', () => {
-	it( 'sends its verb once per run and refreshes with its answer once it lands', async () => {
+	it( 'sends its command once per run and refreshes with its answer once it lands', async () => {
 		wire.replies.accept_entity = { ok: true, event_id: 'ev-41' };
 		const refresh = jest.fn();
 		render( <Writer refresh={ refresh } /> );

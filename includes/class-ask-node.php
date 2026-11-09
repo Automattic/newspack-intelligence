@@ -9,7 +9,7 @@
  * three searches, refused whole when one names anything but the `search`
  * filters `Ask_Prompts::SEARCH_FIELDS` lists. Read: signed in as the asker,
  * exactly as the watcher signs in each owner, each search binds against the
- * `search` verb's own declared args and runs through `Graph_Query::search()`,
+ * `search` command's own declared args and runs through `Graph_Query::search()`,
  * so every item read is one of the asker's readable tiers now; their union,
  * interleaved, holds at most MAX_ITEMS. Nothing found answers so, with no
  * second call. Answer: one chat call (`Ask_Prompts::ANSWER`) given those
@@ -18,7 +18,7 @@
  * are recorded, numbered again in citation order. Both calls go to the
  * model-call node as new work, never backlog, and neither is a decision, so
  * a restricted item reaches the chat model alone.
- * `Graph_Asks` holds the `ask` and `ask_result` verbs.
+ * `Graph_Asks` holds the `ask` and `ask_result` commands.
  *
  * @package Newspack_Intelligence
  */
@@ -310,10 +310,10 @@ class Ask_Node extends Node {
 	 *
 	 * @param list<Search> $searches The plan's searches.
 	 * @return array{0:list<string>,1:list<array<string,mixed>>,2:list<string>}
-	 * @throws \InvalidArgumentException When the search verb refuses one.
+	 * @throws \InvalidArgumentException When the search command refuses one.
 	 */
 	private static function read( array $searches ): array {
-		$args  = Core::arr( Command_Interpreter_Node::declared_verbs( Intelligence_CI_Node::class )['search']['args'] ?? null );
+		$args  = Core::arr( Command_Interpreter_Node::declared_commands( Intelligence_CI_Node::class )['search']['args'] ?? null );
 		$found = [];
 		foreach ( $searches as $search ) {
 			$found[] = \array_values( Core::arr( Graph_Query::search( Command_Args::bind( $args, self::tokens( $search ) ) )['items'] ) );
@@ -336,7 +336,7 @@ class Ask_Node extends Node {
 	}
 
 	/**
-	 * A planned search as the `search` verb's tokens: each field as the arg
+	 * A planned search as the `search` command's tokens: each field as the arg
 	 * SEARCH_FIELDS names, an entity named by its key, days as the first of
 	 * that many UTC days ending today, and a page of MAX_ITEMS.
 	 *

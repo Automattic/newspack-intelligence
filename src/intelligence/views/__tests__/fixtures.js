@@ -1,5 +1,5 @@
 /**
- * Verb answers the view suites render, shaped as `Graph_Query` answers them,
+ * Command answers the view suites render, shaped as `Graph_Query` answers them,
  * every value distinct from the views' empty defaults.
  */
 

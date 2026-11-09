@@ -12,7 +12,7 @@ use Newspack_Nodes\Table_Node;
 require_once __DIR__ . '/seeds-entity-index.php';
 
 /**
- * The read-verb fixture: a small world of items, extractions, links, claims
+ * The read-command fixture: a small world of items, extractions, links, claims
  * and entities, every row written through the projector from fixture events.
  * Three items sit in three ISO weeks of October 2026 and two entities share
  * one of them.

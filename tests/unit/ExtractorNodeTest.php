@@ -76,8 +76,8 @@ final class ExtractorNodeTest extends TestCase {
 		parent::tearDown();
 	}
 
-	/** The prompt verbs are the extractor's alone: the resolver, which builds no extraction prompt, declares none. */
-	public function test_only_the_extractor_declares_the_prompt_verbs(): void {
+	/** The prompt commands are the extractor's alone: the resolver, which builds no extraction prompt, declares none. */
+	public function test_only_the_extractor_declares_the_prompt_commands(): void {
 		$prompt   = [ 'set_audience', 'add_profile', 'remove_profile', 'add_importance_floor', 'remove_importance_floor' ];
 		$commands = \array_column( Extractor_Node::node_schema()['commands'], null, 'name' );
 
@@ -195,7 +195,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( [ 'launch' => [ 4, 0 ] ], $this->read_private( $node, 'importance_floors' ) );
 	}
 
-	/** A negative min, which the verb's int binding refuses first, is refused by the setter too. */
+	/** A negative min, which the command's int binding refuses first, is refused by the setter too. */
 	public function test_a_negative_floor_is_refused(): void {
 		$node = $this->prompt_node();
 
@@ -205,7 +205,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( [], $this->read_private( $node, 'importance_floors' ) );
 	}
 
-	/** A negative relevance, which the verb's int binding refuses first, is refused by the setter too. */
+	/** A negative relevance, which the command's int binding refuses first, is refused by the setter too. */
 	public function test_a_negative_floor_relevance_is_refused(): void {
 		$node = $this->prompt_node();
 
@@ -356,7 +356,7 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( '', $this->profile_of( $node ) );
 	}
 
-	/** An extractor for the prompt verbs, its interpreter wired. */
+	/** An extractor for the prompt commands, its interpreter wired. */
 	private function prompt_node(): Extractor_Node {
 		return new Extractor_Node();
 	}

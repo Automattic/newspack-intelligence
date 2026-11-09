@@ -26,7 +26,7 @@ require_once __DIR__ . '/../support/routes-to-workers.php';
 require_once __DIR__ . '/../support/wp-cli-stub.php';
 
 /**
- * The `health` read verb: four slices, each derived from durable state where
+ * The `health` read command: four slices, each derived from durable state where
  * that can answer — the worker's lock, the topology, the Vault and the
  * projection — and from the snapshots the workers publish for the rest, a
  * snapshot that is not in any cache reading as unknown, never as healthy.

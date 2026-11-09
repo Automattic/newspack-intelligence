@@ -28,11 +28,11 @@ identifier, by name and, failing both, by an LLM's named-entity extraction; an
 recording each new item a watched lens, entity or collection gains and
 emailing it, or a daily digest of it, when the watch asks.
 
-`Intelligence_CI` answers the graph's read verbs (search, entity, names, timeline,
+`Intelligence_CI` answers the graph's read commands (search, entity, names, timeline,
 related, claims, trends, signals, review, collections, lenses), each reader's
 own watches (watches, save_watch, remove_watch, watch_matches, mark_seen) and
-its curation verbs, which the
-Intelligence page sends; the same verbs reach agents through the plugin's MCP
+its curation commands, which the
+Intelligence page sends; the same commands reach agents through the plugin's MCP
 door. Nothing is compiled: a person or an agent asks, and the graph answers.
 A client CSV, imported on the Settings page or with
 `wp newspack-intelligence clients import`, keeps a deployment's clients in

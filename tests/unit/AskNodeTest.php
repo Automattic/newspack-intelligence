@@ -91,7 +91,7 @@ final class AskNodeTest extends TestCase {
 	}
 
 	/**
-	 * Each plan that leaves the search verb's schema, or the fields the Ask
+	 * Each plan that leaves the search command's schema, or the fields the Ask
 	 * may name, and the words its refusal carries.
 	 *
 	 * @return array<string,array{0:string,1:string}>
@@ -113,7 +113,7 @@ final class AskNodeTest extends TestCase {
 	}
 
 	/**
-	 * A plan naming anything the search verb's schema and the Ask's five
+	 * A plan naming anything the search command's schema and the Ask's five
 	 * fields do not admit is refused whole: the ask fails naming why, and
 	 * the answer is never asked for.
 	 *
@@ -121,7 +121,7 @@ final class AskNodeTest extends TestCase {
 	 * @param string $reason The failure's reason.
 	 */
 	#[DataProvider( 'refused_plans' )]
-	public function test_a_plan_outside_the_verb_schemas_is_refused( string $plan, string $reason ): void {
+	public function test_a_plan_outside_the_command_schemas_is_refused( string $plan, string $reason ): void {
 		$this->out->outcomes[ Ask_Prompts::PLAN ] = [ 'content' => $plan ];
 
 		$this->asked( self::READER );
@@ -211,11 +211,11 @@ final class AskNodeTest extends TestCase {
 	}
 
 	/**
-	 * The plan's fields reach the search verb as its own args: words as q,
+	 * The plan's fields reach the search command as its own args: words as q,
 	 * kinds as kind, days as since, and an entity named as its key; three
 	 * searches' items interleave, each once, and at most MAX_ITEMS are given.
 	 */
-	public function test_each_search_reads_through_the_search_verb(): void {
+	public function test_each_search_reads_through_the_search_command(): void {
 		$this->out->outcomes[ Ask_Prompts::PLAN ]   = [ 'content' => '{"searches":[{"words":"newsletter"},{"entity":"Harbor Gazette","days":30},{"kinds":["launch"]}]}' ];
 		$this->out->outcomes[ Ask_Prompts::ANSWER ] = [ 'content' => 'The Ledger launched a tool [1].' ];
 
@@ -484,8 +484,8 @@ final class AskNodeTest extends TestCase {
 		$this->assertSame( [ 'feed:gazette-award' ], $this->given_keys( 1 ) );
 	}
 
-	/** A search the search verb refuses, as a lens never saved, fails the ask naming why and the searches. */
-	public function test_a_search_the_verb_refuses_fails_the_ask(): void {
+	/** A search the search command refuses, as a lens never saved, fails the ask naming why and the searches. */
+	public function test_a_search_the_command_refuses_fails_the_ask(): void {
 		$this->out->outcomes[ Ask_Prompts::PLAN ] = [ 'content' => '{"searches":[{"lens":"ghost-desk"}]}' ];
 
 		$this->asked( self::READER );
@@ -526,11 +526,11 @@ final class AskNodeTest extends TestCase {
 	}
 
 	/**
-	 * A plan's roles reach the search verb as repeated `--role=` args, so
+	 * A plan's roles reach the search command as repeated `--role=` args, so
 	 * "our clients" reads the items about an entity holding the client role
 	 * at the item's time, and the role is recorded with the search.
 	 */
-	public function test_a_plans_roles_bind_as_the_search_verbs_role_args(): void {
+	public function test_a_plans_roles_bind_as_the_search_commands_role_args(): void {
 		$this->out->outcomes[ Ask_Prompts::PLAN ]   = [ 'content' => '{"searches":[{"roles":["client"],"days":30}]}' ];
 		$this->out->outcomes[ Ask_Prompts::ANSWER ] = [ 'content' => 'The Gazette won a state award [1].' ];
 

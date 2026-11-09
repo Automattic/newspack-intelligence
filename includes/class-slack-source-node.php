@@ -1,7 +1,7 @@
 <?php
 /**
  * Slack_Source_Node: reads the messages of the Slack channels the
- * `add_channel` verb names, and the replies of each thread active in its
+ * `add_channel` commands name, and the replies of each thread active in its
  * window, and normalizes them into recorded items.
  *
  * A pass asks `auth.test` for the workspace's url while it holds none, then
@@ -33,7 +33,7 @@ class Slack_Source_Node extends Source_Node {
 	/** Notices of membership and channel settings, which record nothing. */
 	private const SKIPPED = [ 'channel_join', 'channel_leave', 'channel_topic', 'channel_purpose' ];
 
-	/** @var list<string> Channel ids the `add_channel` verb registered and `remove_channel` left, in call order. */
+	/** @var list<string> Channel ids the `add_channel` commands registered and the `remove_channel` commands left, in call order. */
 	protected array $channels = [];
 
 	/** The workspace's url, `https://<team>.slack.com/`, as auth.test answers it; '' until it has. */
@@ -199,13 +199,13 @@ class Slack_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * The `add_channel` and `remove_channel` verbs, the add refusing anything
+	 * The `add_channel` and `remove_channel` commands, the add refusing anything
 	 * but a Slack channel id.
 	 *
 	 * @api Context_A8C_Slack_Node
 	 * @return list<array<string,mixed>>
 	 */
-	public static function channel_verbs(): array {
+	public static function channel_commands(): array {
 		return self::checked_list( 'channel', 'channels', '/^[CG][A-Z0-9]{8,}\z/', 'a Slack channel id', 'Register a channel to read on TICK by its id: <C… or G…>.' );
 	}
 
@@ -213,7 +213,7 @@ class Slack_Source_Node extends Source_Node {
 		return self::source_schema(
 			'Reads the messages of the configured Slack channels over the last ' . ( self::WINDOW_SECONDS / Intel_Graph_Row_Schema::DAY_SECONDS ) . ' days, and the replies of each thread active in them, without blocking, one request at a time, on a TICK request (request_node slack TICK).',
 			'Start a pass over the channels; each page records its new messages as it lands. Trigger with `request_node slack TICK`.',
-			self::channel_verbs()
+			self::channel_commands()
 		);
 	}
 }

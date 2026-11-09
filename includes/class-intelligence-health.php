@@ -1,6 +1,6 @@
 <?php
 /**
- * Intelligence_Health: the `health` read verb's four slices, each answering
+ * Intelligence_Health: the `health` read command's four slices, each answering
  * one row set the health strip lays out. What durable state can answer —
  * the worker's lock, the active topologies, the Vault and the projection —
  * is derived in the request; the rest is the snapshot a worker published
@@ -60,7 +60,7 @@ final class Intelligence_Health {
 	/**
 	 * The slice `what` names.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @param array<array-key,mixed> $args The bound command args.
 	 * @return array<array-key,mixed>
 	 * @throws \InvalidArgumentException When `what` does not name a slice.
 	 */
@@ -346,7 +346,7 @@ final class Intelligence_Health {
 	 * A row as the caller may read it: whole for a manager, else without
 	 * the credential, Vault id, error text and lists file's path,
 	 * leaving the state, times, counts and an idle source's reason, which is
-	 * fixed text naming at most an HTTP status. Field redaction; the verb's
+	 * fixed text naming at most an HTTP status. Field redaction; the command's
 	 * role stays read (ADR-26).
 	 *
 	 * @param array<array-key,mixed> $row A source's, the extractor's or collection's row.

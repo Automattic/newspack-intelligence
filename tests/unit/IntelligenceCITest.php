@@ -25,7 +25,7 @@ require_once __DIR__ . '/../support/signs-in-users.php';
 require_once __DIR__ . '/../support/counts-statements.php';
 
 /**
- * The `intelligence` service CI: nine read verbs over the projection, each
+ * The `intelligence` service CI: nine read commands over the projection, each
  * gated at `read`, its args bound by the schema, answering only rows of the
  * tiers a read caller holds, every answer carrying its citations.
  */
@@ -63,13 +63,13 @@ final class IntelligenceCITest extends TestCase {
 		parent::tearDown();
 	}
 
-	public function test_every_read_verb_is_a_read(): void {
+	public function test_every_read_command_is_a_read(): void {
 		$roles = \array_column( Intelligence_CI_Node::node_schema()['commands'], 'capability', 'name' );
 
 		$this->assertSame( \array_fill_keys( self::VERBS, Capabilities::READ ), \array_slice( $roles, 0, \count( self::VERBS ) ) );
 	}
 
-	/** The entity, claims, trends and signals verbs describe the answer they give, field for field and in its order. */
+	/** The entity, claims, trends and signals commands describe the answer they give, field for field and in its order. */
 	public function test_reads_describe_their_answers(): void {
 		$described = \array_column( Intelligence_CI_Node::node_schema()['commands'], 'description', 'name' );
 
@@ -171,8 +171,8 @@ final class IntelligenceCITest extends TestCase {
 		$this->assertSame( $first, Core::node( 'intelligence' ) );
 	}
 
-	/** Args bind by position or by name, as each verb declares them. */
-	public function test_verbs_bind_their_args(): void {
+	/** Args bind by position or by name, as each command declares them. */
+	public function test_commands_bind_their_args(): void {
 		$this->seed_world();
 		$this->seed( self::claim( 'feed:gazette-award', 0, self::GAZETTE, 'won', '', 'State Press Award', self::$oct_06 ) );
 

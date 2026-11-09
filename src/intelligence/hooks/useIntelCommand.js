@@ -23,14 +23,14 @@ import { useCommandOnce } from '@newspack-nodes/shared/hooks/useCommandOnce';
 /** The surface every command here is sent under. */
 const GROUP = 'intelligence';
 
-/** The server CI mount a verb here lives on unless a write names another. */
+/** The server CI mount a command here lives on unless a write names another. */
 const CI = 'intelligence';
 
 /** Every send here is about nothing narrower than its verb. */
 const NO_SUBJECT = () => null;
 
 /**
- * Ask one read verb, again whenever `args` changes. Null `args` asks
+ * Ask one read command, again whenever `args` changes. Null `args` asks
  * nothing and withdraws the ask outstanding, so its late answer never shows.
  *
  * @param {string}    scope   Names this read's nodes, a subject naming what
@@ -84,8 +84,8 @@ export function useIntelRead( scope, command, args ) {
 
 /**
  * The tokens naming every value given (`--key=value`), a list once per
- * member, as a verb's repeatable option binds them. A blank value and an
- * empty list are left out, so the verb reads its own default for them.
+ * member, as a command's repeatable option binds them. A blank value and an
+ * empty list are left out, so the command reads its own default for them.
  *
  * @param {Object<string, string|number|Array<string>>} options By name.
  * @return {string[]} The tokens.
@@ -100,7 +100,7 @@ export function commandArgs( options ) {
 }
 
 /**
- * One curation verb, sent once per `run( args )` with every arg named
+ * One curation command, sent once per `run( args )` with every arg named
  * through `commandArgs()`, so a curator's value that begins `--name=` binds
  * as the value it is rather than as an option. `run()` answers the tokens it sent;
  * a landed send hands `refresh` its answer, and a refused one hands `onRefused` the
@@ -110,7 +110,7 @@ export function commandArgs( options ) {
  *
  * @param {string}                     command          The write verb.
  * @param {Object}                     [opts]           Options.
- * @param {string}                     [opts.ci]        The CI the verb lives on.
+ * @param {string}                     [opts.ci]        The CI the command lives on.
  * @param {string}                     [opts.scope]     Names this write's nodes, a
  *                                                      subject naming what it is
  *                                                      for, so two writes of one verb

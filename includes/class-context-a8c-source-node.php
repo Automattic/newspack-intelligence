@@ -461,7 +461,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	 * since its session cannot outlive the process, with no vault group, the
 	 * token dir after the tier, and the proxy after it.
 	 *
-	 * @param list<array<string,mixed>> $commands The source's own verbs.
+	 * @param list<array<string,mixed>> $commands The source's own commands.
 	 * @return array<string,mixed>
 	 */
 	protected static function context_schema( string $description, string $tick_description, array $commands ): array {

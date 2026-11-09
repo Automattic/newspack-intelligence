@@ -36,8 +36,8 @@ final class RestrictedCliCommandTest extends TestCase {
 		parent::tearDown();
 	}
 
-	/** The loader registers the verbs under `newspack-intelligence restricted`. */
-	public function test_the_verbs_register_under_restricted(): void {
+	/** The loader registers the commands under `newspack-intelligence restricted`. */
+	public function test_the_commands_register_under_restricted(): void {
 		\Newspack_Intelligence\register_cli_commands();
 
 		$this->assertSame( '\\Newspack_Intelligence\\CLI\\Restricted_CLI_Command', \WP_CLI::$commands['newspack-intelligence restricted'] );
@@ -109,8 +109,8 @@ final class RestrictedCliCommandTest extends TestCase {
 		$this->assertSame( [ 'No user holds a restricted access grant.', self::UNGRANTED ], \WP_CLI::$logs );
 	}
 
-	/** Run as root, every verb refuses before it reads or changes anything. */
-	public function test_every_verb_refuses_root(): void {
+	/** Run as root, every command refuses before it reads or changes anything. */
+	public function test_every_command_refuses_root(): void {
 		CLI::$uid_provider = static fn (): int => 0;
 		$command           = new Restricted_CLI_Command();
 

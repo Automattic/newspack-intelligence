@@ -197,7 +197,7 @@ of the six carries restricted items whole or names them, so each declares `comma
 (substrate ADR-39): each writes a `.read-capability` marker naming it into
 its own dir on the write that opens it, every reader of it copies the
 marker into its cursor and dead-letter dirs as it next writes them, and
-the substrate's raw-log verbs, its catalog and an SSE subscription refuse
+the substrate's raw-log commands, its catalog and an SSE subscription refuse
 a marked dir to a caller without the capability. The TSL spells the
 capability out; a test writes through each stream, checkpoints and
 quarantines through each reader, and holds every marker to
@@ -1106,13 +1106,13 @@ bracketed), as the resolver matches an acronym only in its own case. It appends 
 (500) hits at once, newest first, and only on reaching that cap counts the
 rest, to log how many it skipped. `wp
 newspack-intelligence ontology reresolve --since=<Y-m-d> [--until=<Y-m-d>]
-[--source=<name>]` and the `reresolve` verb both call `Reresolver_Node::ask()`
+[--source=<name>]` and the `reresolve` command both call `Reresolver_Node::ask()`
 with their graph, `RERESOLVE` and the source, '' for every one, which the
-verb always passes; `ask()` validates the days and refuses a source of more
+CI command always passes; `ask()` validates the days and refuses a source of more
 than one word before it sends anything, then sends `RERESOLVE <since>
 <until> [<source>]` through `Worker_Route` to each live worker's
-`reresolver`, answering how many it reached; with none live it throws, which the command lets fail and the
-verb answers as a refusal. `wp newspack-intelligence ontology reextract
+`reresolver`, answering how many it reached; with none live it throws, which the CLI command lets fail and the
+CI command answers as a refusal. `wp newspack-intelligence ontology reextract
 --since=<Y-m-d> [--until=<Y-m-d>] [--source=<name>] [--limit=<n>] [--dry-run]`
 re-extracts the same range through the same path, sharing `reresolve`'s one
 helper for the root refusal, the days, the source, the refusal of a bad
@@ -1159,16 +1159,16 @@ not open. Any other failure of a unit's projection
 read drops that unit with a rate-limited line naming it and the cause, so a
 respawn cannot restore the same head and fail on it again; a cooperative stop
 propagates first. `Intel_Graph_Row_Schema::$read_rows` is the read's test
-seam. Every `wp newspack-intelligence` verb refuses to run as root
+seam. Every `wp newspack-intelligence` command refuses to run as root
 before it reads or writes, through the `Refuses_Root` trait, as `wp nodes`
-verbs do, because a root-owned segment or IPC file is one the workers
+commands do, because a root-owned segment or IPC file is one the workers
 cannot append to.
 
 **Reads.** `Intelligence_CI` (`intelligence`), mounted on every request
-graph, answers twenty-one read verbs, each declaring `read` and its
+graph, answers twenty-one read commands, each declaring `read` and its
 args: `search`, `entity`, `names`, `timeline`, `related`, `claims`, `trends`,
 `signals`, `review`, `collections` and `lenses`, `theme_suggestions`, the
-five watch verbs, `briefing`, `ask` and `ask_result` (see Ask) and `health`, below. Each of the first eleven hands its bound args to the
+five watch commands, `briefing`, `ask` and `ask_result` (see Ask) and `health`, below. Each of the first eleven hands its bound args to the
 `Graph_Query` read of the same name, through `Intel_Graph_Row_Schema::read()`
 over every partition's file. A read opens on `Graph_Query::graph()`, which resolves
 the tiers once from `Intel_Tiers::readable()` — `public` and `internal`,
@@ -1180,7 +1180,7 @@ count or citation never rests on an item of another tier, and an entity short of
 `accepted` — proposed, or rejected — answers `entity` only while a readable
 item cites it, by a link or as the item it was proposed from.
 `Graph_Query::visible()` is that rule, and `seen()` refuses what it hides
-as `no entity: <key>`; `entity`, `timeline` and every curation verb resolve
+as `no entity: <key>`; `entity`, `timeline` and every curation command resolve
 their entity keys through it. Names, identifiers and roles carry no
 tier and are not filtered: they are the entity's own, under the keys
 merged into it. Every other entity a read names passes the same rule: an
@@ -1468,7 +1468,7 @@ so `tier` and `vault_group` are read by name, a class declaring no group,
 as a ContextA8C one, reading as ''. A source's `tier` is the one its
 topology row carries, which `Source_Node::graph_facts()` answers to
 `Topology_Analyzer`: the last `set_tier` its config is sent, bound by
-that verb's own args, else its line's. A source whose class's `credential_url()` is not empty and
+that command's own args, else its line's. A source whose class's `credential_url()` is not empty and
 whose group lends nothing on that url's origin
 (`Curl_Node::lends_credential()`, asked once per group and url a call) is
 `{ state: idle, credential: { url, group } }` whatever its snapshot says;
@@ -1491,7 +1491,7 @@ without `file` (`Intelligence_Health::OPERATOR_FIELDS`), so an absolute
 path never reaches it, and it reads their state, times,
 counts and an idle ContextA8C source's `reason`, fixed text naming at most
 an HTTP status, and a source idle for want of a credential still reads `idle`;
-that is field redaction through `Capabilities::can( MANAGE )`, and the verb
+that is field redaction through `Capabilities::can( MANAGE )`, and the command
 stays at `read` (substrate ADR-26). `backlog`
 answers `{ reason, held, since, dropped }`: `reason` is
 `Entity_Index::hold_cause_now()`, which answers what the resolver's
@@ -1609,7 +1609,7 @@ window's bucket starts are one recursive statement, so a week lens costs
 two statements.
 
 **Watches.** A watch is one reader's standing question over exactly one
-lens, entity or collection. `Graph_Watches` holds its five verbs, each at
+lens, entity or collection. `Graph_Watches` holds its five commands, each at
 `read`, each answering or changing the caller's own watches alone:
 `watches` lists them by name, `{ watches: [ { watch_key, name, target: {
 kind, key }, digest, instant, inbox, unseen } ], available }`, `unseen`
@@ -1644,9 +1644,9 @@ accepted: the cap bounds what one reader's watches cost each pass, and
 holding it exactly would need a second count of the ontology stream's
 unprojected tail. A
 key that is not one of the caller's own watches is refused as `no watch:
-<key>` whether another reader saved it or it was never saved, so the verbs never tell
+<key>` whether another reader saved it or it was never saved, so the commands never tell
 the two apart, and `mark_seen` refuses an item the watch never matched, or one
-of a tier the caller does not hold now, as `no match: <item>`. Each verb
+of a tier the caller does not hold now, as `no match: <item>`. Each command
 reads the projection once, writes as `Intel_Event::caller()` with the
 caller's user id as `owner`, and refuses before anything is written. A
 watch's definition rides the ontology stream, which keeps every segment,
@@ -1697,7 +1697,7 @@ and every lens, by name, through `spikes()` with its lens, each whose
 latest complete bucket closed at or after the window's first instant, so a
 week bucket always shows its latest week and a month bucket only in the
 week its month closed; a subject without a signal is left out. The
-reader's watches are the `watches` verb's, which the Briefing tab reads
+reader's watches are the `watches` command's, which the Briefing tab reads
 itself.
 
 **Watcher.** `watcher` (`make_node Watcher watcher intel:writer`) rides the
@@ -1782,14 +1782,14 @@ carries an item's body.
 
 **Ask.** A reader asks the graph one question and is answered from
 items they may read, every sentence citing them. `Graph_Asks` holds the
-two verbs, each at `read`, and `Ask_Node` the worker half, as
+two commands, each at `read`, and `Ask_Node` the worker half, as
 `Graph_Watches` and `Watcher_Node` split the watches. `ask <question>`
 bounds the question at `Graph_Asks::QUESTION_BYTES` (1,000) as the stream
 writes it, refusing a blank one, appends one `ask_asked { ask_key, owner,
 question }` to the asks stream through `Stream_Writer::append()`, as
 `Intel_Event::caller()` with the caller's user id as `owner`, under a key
 it mints, sixteen hex characters, and answers `{ ask_key }`. Nothing runs
-in the request, because both model calls block: a read-role verb cannot
+in the request, because both model calls block: a read-role command cannot
 mount a worker's input (`Worker_Route` is `manage`, substrate ADR-23), so
 the question rides the stream, as a watch does. `ask` (`make_node Ask ask
 intel:writer intel:llm`), fed by its own `intel:asks:ask` Consumer
@@ -1832,7 +1832,7 @@ one line, a kind or a role that is not a list of the closed vocabulary
 `Graph_Query::LENS_LISTS` gives Search's picker (`Intel_Event::ITEM_KINDS`,
 `Intel_Event::ROLES`), or days that are not a whole number from 1 to
 `RETAIN_DAYS`. Signed in as the asker again, each
-search becomes the `search` verb's own tokens — `words` as `q`, each kind
+search becomes the `search` command's own tokens — `words` as `q`, each kind
 as `kind`, each role as `role`, `days` as `since`, the first of that many UTC days ending today
 (`Graph_Query::last_days()`), a lens as `lens`, and a page of
 `Ask_Node::MAX_ITEMS` (40) — bound through `Command_Args::bind()` against
@@ -1843,7 +1843,7 @@ as the asker and takes the entity whose shown name is the whole of it,
 case and punctuation aside, else passes the name as given, which matches
 no entity the asker cannot see, so the search narrows to nothing rather
 than widening; a role written as an entity name narrows the same way,
-because the name is not one any entity carries; a search the verb refuses, as a lens never saved, fails the
+because the name is not one any entity carries; a search the command refuses, as a lens never saved, fails the
 ask `a search was refused: <why>`. The searches' items interleave, each
 once, at most `MAX_ITEMS`, read to the longest list. Nothing found is
 answered at once, `{ found: 0, sentences: [], items: [], tiers: [] }`,
@@ -1890,7 +1890,7 @@ answers the caller's own ask as `{ ask_key, state, reason, found, dropped,
 sentences, items, searches, wait_s, available }`, `state` `asked`,
 `answered`, `failed` or `withheld`, and `wait_s` `MAX_WAIT_S`: a key that
 is not one of the caller's asks is refused as `no ask: <key>` whoever else
-asked it, so the verb never tells the two apart, except that one the
+asked it, so the command never tells the two apart, except that one the
 projection does not hold yet reads as `asked` while a projector's reader
 of the asks stream has not committed its end (`Projector_Node::behind()`),
 so an ask polled before its first flush is owed, not refused. An ask still
@@ -1926,7 +1926,7 @@ searches the ask ran beneath as plain text, `Searched: …`.
 per user and per site, and the one spelling every reader uses. `readable()`
 adds `restricted` when `current_user_can()` answers for it, asked on each
 call and cached nowhere, so a grant or a revoke reaches the very next read.
-It adds a tier, never a verb: a verb's own role gate runs first, and holding
+It adds a tier, never a command: a command's own role gate runs first, and holding
 the capability without `read` reads nothing. A role carrying the
 capability, and on a multisite a super admin, who passes every
 `current_user_can()` check, also reads the tier without a grant. To the
@@ -1952,7 +1952,7 @@ dead-letter dir derived from them, are refused (see Streams). Uninstall reaches 
 the substrate possibly inactive, so it and everything it calls use no
 substrate class.
 
-**Curation.** `Intelligence_CI` also answers eighteen curation verbs, each
+**Curation.** `Intelligence_CI` also answers eighteen curation commands, each
 declaring `tune`, each writing one ontology event through
 `Stream_Writer::append()` and answering `{ ok, event_id }`; the two
 creations add the key they minted. `Graph_Curation` holds them:
@@ -1969,12 +1969,12 @@ as for an MCP connection or an issued session, the label as
 signed-in user is refused before it writes. Every refusal throws before
 anything is written, and the handlers never check a role (substrate
 ADR-26).
-Each verb reads the projection once, `save_lens` only when it names an
+Each command reads the projection once, `save_lens` only when it names an
 entity or a topic. Every entity key it names — both
 sides of a merge, a link's entity, a tagged topic — must be one
 `Graph_Query::seen()` lets the caller see, any other key is refused as
-`no entity: <key>`, and the verb acts on the survivor it answers as, so a
-key merged away accepts, merges or tags its survivor; a curation verb
+`no entity: <key>`, and the command acts on the survivor it answers as, so a
+key merged away accepts, merges or tags its survivor; a curation command
 answers no more than a read does. An item is read through `ri`, and one
 outside the readable tiers is refused as `no item: <key>`, exactly as a
 missing one. Curation cannot declassify: `accept_entity` refuses an entity
@@ -2030,7 +2030,7 @@ already in <folder>`). `mark_used <collection> <item> <mark> <day>` writes
 `item_used` on the copy the caller reads, carrying its tier, `mark` one of
 `Intel_Event::MARKS` (`newsletter`, `linkedin` and `site`) and `day` a
 Y-m-d date `Intel_Graph_Row_Schema::day()` reads back exactly; marking an
-item so again replaces the day, and no verb takes a mark back. `move_item
+item so again replaces the day, and no command takes a mark back. `move_item
 <collection> <item> <into>` writes `item_moved`, naming in `tiers` every
 tier of the item's copies in that folder the caller reads, a list
 `Intel_Event::validate()` refuses unless it holds at least one tier, each
@@ -2104,7 +2104,7 @@ partition — durable and synchronous, with no live-worker
 dependency on read — carrying the CI's own name as FROM, which the worker's
 input reader stamps under `_repl`, so each source's answer lands on the
 worker's output partition, where an attached `wp nodes cli` reads it.
-Two operator fixes share their implementation with a WP-CLI verb:
+Two operator fixes share their implementation with a WP-CLI command:
 `seed_ontology`, at `tune`, runs `Ontology_Seed::load()->seed()` as `ontology
 seed` does and answers `{ ok, events, created, present }`; `reresolve
 <since> <until>`, at `manage`, both days required, runs
@@ -2114,10 +2114,10 @@ workers }`.
 **MCP door.** `Intelligence_Mcp_Door`, wired by the loader, is a declaration
 on the substrate's `Mcp_Door` (substrate ADR-38), serving
 `POST /wp-json/newspack-intelligence/v1/mcp`. Its tools are read off
-`Intelligence_CI_Node`'s schema, one `intel_<verb>` per verb but
+`Intelligence_CI_Node`'s schema, one `intel_<verb>` per command but
 `fetch_now`, `health`, `seed_ontology` and `reresolve`, which it leaves
 out by name (`NOT_TOOLS`), each offering every declared arg
-under the verb's own description. Its glossary says what a `publisher`
+under the command's own description. Its glossary says what a `publisher`
 link means and which reads leave it out. The door owns the session check, the
 scope ceiling, the meter, the OAuth resource and the `<site-data>` fence,
 and offers a session only the tools its role covers, so a read session is
@@ -2172,7 +2172,7 @@ entities.organization.<slug>.roles: role_asserted: field role is outside
 its set`), before anything is written, as is a file that does not parse
 or holds a field neither shape takes. `wp newspack-intelligence ontology
 seed [<file>]` reads the file given, else the one at
-`Ontology_Seed::path()`, and the `seed_ontology` verb the one at `path()`;
+`Ontology_Seed::path()`, and the `seed_ontology` command the one at `path()`;
 both run `load()->seed()`, which
 writes `events()` — per entity its creation, its names, its identifiers,
 its roles from 0 and an `entity_rejected` when its `state` says so, then
@@ -2207,7 +2207,7 @@ in `newspack-intelligence-streams.tsl.php` read through `Topology_Analyzer` —
 its directory and its arguments — then filled, flushed and removed in a
 `finally`, so a failure propagates and a second append finds the name free.
 The declared `keep_everything` and `set_read_capability` are bound
-against the Partition's own declaration of each verb, by position or by
+against the Partition's own declaration of each command, by position or by
 name (`Command_Args::bind()`), and honoured through the Partition's own
 setters, never replayed as commands, because a command's role gate judges
 the caller and would refuse a curator below MANAGE; any other
@@ -2292,7 +2292,7 @@ or list or one its source's closure reads an error off, logs
 `<api> answered an error for <url>: <error>` and answers null; `items()`
 maps each row to an item through its source's closure, leaving out a row
 the closure answers null for; and `checked_list()` declares a validated
-add verb, below. Two more serve a title and a body: `first_line()` cuts a
+add command, below. Two more serve a title and a body: `first_line()` cuts a
 text's first line to `TITLE_CHARS` (120), and `mrkdwn()` decodes Slack's
 three escapes in one pass. `dump_config()` replays every declared setter, list and
 checked list. Three hooks tune it: `max_in_flight()`, `max_requests()`
@@ -2568,7 +2568,7 @@ url, through one pattern built from `ENDPOINTS`, keeping a closed PR only when i
 issue carrying a `pull_request` key, because the issues endpoint lists PRs
 too. `add_repo` refuses anything but one `owner/name` pair of letters,
 digits, `_`, `.` and `-`, naming the value: it and the other sources' checked
-adds are declared by `Source_Node::checked_list()`, `list_verbs()`'s pair
+adds are declared by `Source_Node::checked_list()`, `list_commands()`'s pair
 with an add that refuses a value its pattern does not match, which
 `dump_config()` replays one add line per entry. Each endpoint takes the 30
 most recent results and pages no further, so an update that falls past that
@@ -2743,7 +2743,7 @@ short, as many as the room left under
 `Source_Node::MAX_REQUESTS_PER_PASS` allows, drawn at random, because a worker
 lives 595 seconds and a pass comes every 900, so any order would let rows that
 never grow, a deleted issue or a genuine 300 characters, take the room every
-pass. The backlog drains over passes and stops with no verb, and the page's
+pass. The backlog drains over passes and stops with no command, and the page's
 items record before it starts, so a walk that fails, logged, costs them
 nothing. What `issue` answers of a stored item grows it (see The item
 contract); a walk's answer for a row no longer stored writes nothing. The cut
@@ -2908,37 +2908,37 @@ Read the counts, then run the command it prints, the same command without
 `Consumer`, `Partition`, `Row_Table` and `Delay` come from the substrate. This
 plugin adds:
 
-| Type | Class | Runtime triggers and verbs |
+| Type | Class | Runtime triggers and commands |
 |------|-------|----------------------------|
 | `Github_Source` | `Github_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_repo`, `remove_repo`; owns `{name}:curl` and `{name}:frontier` |
 | `Linear_Source` | `Linear_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_team`, `remove_team`; owns `{name}:curl` and `{name}:frontier` |
 | `Slack_Source` | `Slack_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_channel`, `remove_channel`; owns `{name}:curl` and `{name}:frontier` |
 | `P2_Source` | `P2_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_site`, `remove_site`; owns `{name}:curl` and `{name}:frontier` |
 | `Unthread_Source` | `Unthread_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`; owns `{name}:curl` and `{name}:frontier` |
-| `Context_A8C_Slack`, `Context_A8C_P2`, `Context_A8C_Linear` | `Context_A8C_*_Node` over `Context_A8C_Source_Node` | `<tier> <auth_dir> [proxy]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, and the list verbs of the source each stands in for; owns `{name}:curl` |
+| `Context_A8C_Slack`, `Context_A8C_P2`, `Context_A8C_Linear` | `Context_A8C_*_Node` over `Context_A8C_Source_Node` | `<tier> <auth_dir> [proxy]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, and the list commands of the source each stands in for; owns `{name}:curl` |
 | `Feed_Source` | `Feed_Source_Node` | `<tier>`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_url`, `remove_url`, `set_client_feeds`, `set_concurrency`; owns `{name}:curl` and `{name}:frontier` |
-| `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition> <asks_partition>`; no verbs |
+| `Intel_Event_Writer` | `Intel_Event_Writer_Node` | `<items_partition> <ontology_partition> <watches_partition> <asks_partition>`; no commands |
 | `Projector` | `Projector_Node` | `set_graph_target` |
 | `LLM_Call` | `LLM_Call_Node` | `<vault_group>`; a caller's request, and the Router's tick, which sends what its Table holds and publishes `{ queue: { new, backlog, in_flight }, at }`, at most every 5 seconds once the queue moves and every 300 while it does not; `set_api_url`, `set_model`, `set_decision_model`, `set_feature`, `set_concurrency`; owns `{name}:curl` and `{name}:frontier` |
-| `Resolver` | `Resolver_Node` | `<writer> <later> <llm>`; no verbs; publishes its hold (`reason`, `since`) through `Publishes_Status` |
+| `Resolver` | `Resolver_Node` | `<writer> <later> <llm>`; no commands; publishes its hold (`reason`, `since`) through `Publishes_Status` |
 | `Extractor` | `Extractor_Node` | `<writer> <later> <llm>`; `set_audience`, `add_profile`, `remove_profile`, `add_importance_floor` and `remove_importance_floor` |
-| `Deduper` | `Deduper_Node` | `<writer>`; no verbs |
+| `Deduper` | `Deduper_Node` | `<writer>`; no commands |
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until> [<source>]`, `REEXTRACT <since> <until> [<source>]`; publishes `last_range` through `Publishes_Status` |
-| `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no verbs |
-| `Ask` | `Ask_Node` | `<writer> <llm>`; each `ask_asked` its Consumer reads, and the model-call node's answers; no verbs |
+| `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no commands |
+| `Ask` | `Ask_Node` | `<writer> <llm>`; each `ask_asked` its Consumer reads, and the model-call node's answers; no commands |
 | `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `theme_suggestions`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `ask`, `ask_result`, `health`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `merge_theme`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
 
-`LLM_Call_Node`'s four verbs are declared setters, replayed by its
+`LLM_Call_Node`'s four commands are declared setters, replayed by its
 `dump_config()`; `set_api_url` refuses anything but an absolute http(s)
 url, naming it, and drops a trailing slash, and `set_concurrency` refuses a
 count outside 1 to `Curl_Node::MAX_IN_FLIGHT`. `Extractor_Node` declares
-the prompt verbs, `set_audience`, `add_profile` and `remove_profile`, and
-the floor verbs, `add_importance_floor` and `remove_importance_floor`,
+the prompt commands, `set_audience`, `add_profile` and `remove_profile`, and
+the floor commands, `add_importance_floor` and `remove_importance_floor`,
 which the resolver, building no extraction prompt, does not declare; its
 `dump_config()` replays every setter and list, then one
 `add_importance_floor` line per floor. An identical `add_*` repeat is
 a no-op, and each `remove_*` takes its `add_*`'s argument, drops that entry and
-is refused when that entry is absent. Every `Intelligence_CI` verb declares its role, and
+is refused when that entry is absent. Every `Intelligence_CI` command declares its role, and
 the handlers never check a role of their own (substrate ADR-26).
 
 ### Client roster
@@ -3023,13 +3023,13 @@ from `wp newspack-intelligence clients import <csv>`, and
 `Intel_Event::caller()`, the signed-in user, from the CSV upload on the
 Settings page. Both build their importer and roster per import, so a
 failed import's read and buffered events never reach the next. The command
-refuses to run as root before it reads the CSV, as the `ontology` verbs do;
+refuses to run as root before it reads the CSV, as the `ontology` commands do;
 the upload runs as the web user.
 
 ### Dashboard
 
 `src/intelligence/` builds one bundle, `build/intelligence/index.js`, mounted on
-the Intelligence admin page. Every view reads the `intelligence` verbs through
+the Intelligence admin page. Every view reads the `intelligence` CI through
 its own one-shot commands, and only the `AskBox` polls: it asks
 `ask_result` again on the Router's tick while an ask is owed its answer.
 
@@ -3110,7 +3110,7 @@ sibling checkout locally.
 | `includes/` (LLM) | `LLM_Call_Node`, every model call; the `Asks_Model` trait, its callers' half; `Prompts`, the requests' messages and the parse of their replies; the `Owns_Curl_Frontier` trait, the Curl and Frontier half it shares with `Source_Node` |
 | `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Briefing`, `Intelligence_Health`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
 | `includes/` (watches) | `Watcher_Node` |
-| `includes/` (ask) | `Ask_Node`, the Ask's worker half; `Graph_Asks`, its `ask` and `ask_result` verbs; `Ask_Prompts`, its two prompts and the parse of their replies |
+| `includes/` (ask) | `Ask_Node`, the Ask's worker half; `Graph_Asks`, its `ask` and `ask_result` commands; `Ask_Prompts`, its two prompts and the parse of their replies |
 | `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed [<file>]`, `ontology reresolve`, `ontology reextract` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; `Eval_CLI_Command` — `wp newspack-intelligence eval <file>`; the `Refuses_Root` trait they share |
 | `topologies/` | The `.tsl` node-graph topologies |
 | `examples/` | The fictional ontology seed and eval labels, the shapes a deployment starts its own from |
@@ -3199,4 +3199,4 @@ declares no hook or filter of its own for others to extend.
     `plans/2026-06-15-newspack-ai-newsletter-foundation.md` and
     `plans/2026-06-15-newspack-ai-newsletter-ai-core.md`
   - `specs/2026-07-06-ai-newsletter-topology-config-migration-design.md` — why
-    node config lives in the topology verbs
+    node config lives in the topology commands

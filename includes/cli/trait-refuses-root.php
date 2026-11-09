@@ -1,7 +1,7 @@
 <?php
 /**
- * Refuses_Root: every `wp newspack-intelligence` verb refuses to run as
- * root, as the `wp nodes` verbs do.
+ * Refuses_Root: every `wp newspack-intelligence` command refuses to run as
+ * root, as the `wp nodes` commands do.
  *
  * @package Newspack_Intelligence
  */
@@ -20,14 +20,14 @@ trait Refuses_Root {
 	 * a stderr line reaches root-owned, which the workers, running as the web
 	 * user, then cannot append to.
 	 *
-	 * @param string $command The command and verb, for the message.
+	 * @param string $verb The subcommand's name, for the message.
 	 * @return bool Whether it refused.
 	 */
-	private static function refused_root( string $command ): bool {
+	private static function refused_root( string $verb ): bool {
 		if ( 0 !== CLI::uid() ) {
 			return false;
 		}
-		\WP_CLI::error( "wp newspack-intelligence {$command} must run as the same user as the workers, not root." );
+		\WP_CLI::error( "wp newspack-intelligence {$verb} must run as the same user as the workers, not root." );
 		return true;
 	}
 }

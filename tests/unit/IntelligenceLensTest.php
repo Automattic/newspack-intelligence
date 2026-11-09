@@ -63,8 +63,8 @@ final class IntelligenceLensTest extends TestCase {
 		parent::tearDown();
 	}
 
-	/** The lens verbs declare their roles: the list a read, saving and removing tune. */
-	public function test_the_lens_verbs_declare_their_roles(): void {
+	/** The lens commands declare their roles: the list a read, saving and removing tune. */
+	public function test_the_lens_commands_declare_their_roles(): void {
 		$roles = \array_column( Intelligence_CI_Node::node_schema()['commands'], 'capability', 'name' );
 
 		$this->assertSame( [ Capabilities::READ, Capabilities::TUNE, Capabilities::TUNE ], [ $roles['lenses'], $roles['save_lens'], $roles['remove_lens'] ] );
@@ -220,7 +220,7 @@ final class IntelligenceLensTest extends TestCase {
 		$this->assertSame( [ 'time', [ 'github:ledger-launch', 'feed:gazette-award', 'linear:joint-grant' ] ], [ $timed['sort'], self::keys( $timed ) ] );
 	}
 
-	/** The search verb declares `sort` once, with no default, so the door and the page read the same arg. */
+	/** The search command declares `sort` once, with no default, so the door and the page read the same arg. */
 	public function test_search_declares_its_sort(): void {
 		$search = \array_column( Intelligence_CI_Node::node_schema()['commands'], null, 'name' )['search'];
 		$sort   = \array_column( $search['args'], null, 'name' )['sort'];

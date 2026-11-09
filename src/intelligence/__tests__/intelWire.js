@@ -1,7 +1,7 @@
 /* eslint-env jest */
 /**
  * The `/command` double the Intelligence suites answer through: the page's
- * graph packs, POSTs, unpacks and routes for real, and each verb answers what
+ * graph packs, POSTs, unpacks and routes for real, and each command answers what
  * its suite set, as a payload, an `Error` (a refusal) or a function of the
  * argument tokens it was sent.
  */

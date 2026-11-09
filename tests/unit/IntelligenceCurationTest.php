@@ -30,7 +30,7 @@ require_once __DIR__ . '/../support/routes-to-workers.php';
 require_once __DIR__ . '/../support/signs-in-users.php';
 
 /**
- * The `intelligence` curation verbs: each writes its judgment as one
+ * The `intelligence` curation commands: each writes its judgment as one
  * ontology event under the caller's actor, a person or the agent a labelled
  * session names, and answers `{ ok, event_id }`. Each refusal throws before
  * anything is written, and every event fits one atomic partition line at
@@ -68,7 +68,7 @@ final class IntelligenceCurationTest extends TestCase {
 
 	private const CURATION = [ 'confirm_link', 'reject_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'mark_used', 'move_item', 'save_lens', 'remove_lens', 'merge_theme' ];
 
-	/** Each curation event kind, by the verb that writes it. */
+	/** Each curation event kind, by the command that writes it. */
 	private const VERB_OF = [
 		'link_confirmed'     => 'confirm_link',
 		'link_rejected'      => 'reject_link',
@@ -109,8 +109,8 @@ final class IntelligenceCurationTest extends TestCase {
 		parent::tearDown();
 	}
 
-	/** Every curation verb declares tune; fetch_now mounts a worker's input, so it declares manage. */
-	public function test_each_curation_verb_declares_its_role(): void {
+	/** Every curation command declares tune; fetch_now mounts a worker's input, so it declares manage. */
+	public function test_each_curation_command_declares_its_role(): void {
 		$roles = \array_column( Intelligence_CI_Node::node_schema()['commands'], 'capability', 'name' );
 
 		$this->assertSame( \array_fill_keys( self::CURATION, Capabilities::TUNE ), \array_intersect_key( $roles, \array_flip( self::CURATION ) ) );
@@ -122,7 +122,7 @@ final class IntelligenceCurationTest extends TestCase {
 	 *
 	 * @return array<string,array{0:string,1:list<string>,2:array<string,mixed>}>
 	 */
-	public static function verbs(): array {
+	public static function commands(): array {
 		return [
 			'confirm_link'      => [ 'confirm_link', [ 'linear:joint-grant', self::LEDGER ], [ 'event' => 'link_confirmed', 'item_key' => 'linear:joint-grant', 'entity_key' => self::LEDGER, 'item_url' => 'https://news.example/linear/joint-grant' ] ],
 			'reject_link'       => [ 'reject_link', [ '--item=linear:joint-grant', '--entity=' . self::LEDGER ], [ 'event' => 'link_rejected', 'item_key' => 'linear:joint-grant', 'entity_key' => self::LEDGER, 'item_url' => 'https://news.example/linear/joint-grant' ] ],
@@ -153,15 +153,15 @@ final class IntelligenceCurationTest extends TestCase {
 	}
 
 	/**
-	 * Each verb writes exactly one event with its fields, as the person
+	 * Each command writes exactly one event with its fields, as the person
 	 * calling, and answers its id.
 	 *
 	 * @param string              $verb   The verb.
 	 * @param list<string>        $args   Its tokens.
 	 * @param array<string,mixed> $fields The event's fields.
 	 */
-	#[DataProvider( 'verbs' )]
-	public function test_each_verb_writes_one_event( string $verb, array $args, array $fields ): void {
+	#[DataProvider( 'commands' )]
+	public function test_each_command_writes_one_event( string $verb, array $args, array $fields ): void {
 		$this->seed_curation_world();
 
 		$answer = $this->ci->dispatch( $verb, $args );
@@ -176,14 +176,14 @@ final class IntelligenceCurationTest extends TestCase {
 	}
 
 	/**
-	 * Each verb reads the projection once, however many keys and items it
+	 * Each command reads the projection once, however many keys and items it
 	 * names.
 	 *
 	 * @param string       $verb The verb.
 	 * @param list<string> $args Its tokens.
 	 */
-	#[DataProvider( 'verbs' )]
-	public function test_each_verb_reads_the_projection_once( string $verb, array $args ): void {
+	#[DataProvider( 'commands' )]
+	public function test_each_command_reads_the_projection_once( string $verb, array $args ): void {
 		$this->seed_curation_world();
 		$reads                             = 0;
 		Intel_Graph_Row_Schema::$read_rows = static function ( \Closure $read ) use ( &$reads ): mixed {
@@ -196,7 +196,7 @@ final class IntelligenceCurationTest extends TestCase {
 		$this->assertSame( 1, $reads );
 	}
 
-	/** Each creation answers the key it minted, which every later verb names. */
+	/** Each creation answers the key it minted, which every later command names. */
 	public function test_a_creation_answers_its_key(): void {
 		$this->seed_curation_world();
 
@@ -228,7 +228,7 @@ final class IntelligenceCurationTest extends TestCase {
 		$this->assertSame( [ 'user:kinsey-reed', 'user:kinsey-reed' ], \array_column( self::ontology_events(), 'actor' ) );
 	}
 
-	/** With no signed-in user there is no actor, so the verb throws before it appends. */
+	/** With no signed-in user there is no actor, so the command throws before it appends. */
 	public function test_a_call_with_no_user_is_refused_before_it_writes(): void {
 		$this->seed_curation_world();
 		unset( $GLOBALS['_current_user_id'] );
@@ -544,7 +544,7 @@ final class IntelligenceCurationTest extends TestCase {
 		$this->assertSame( [ 'harborgazette.example', 'harborgazette.example' ], \array_column( self::ontology_events(), 'value' ) );
 	}
 
-	/** An item outside the readable tiers is refused exactly as a missing one, by every verb that reads one. */
+	/** An item outside the readable tiers is refused exactly as a missing one, by every command that reads one. */
 	public function test_an_unreadable_item_is_refused_as_missing(): void {
 		$this->seed_curation_world();
 		$this->assertNotContains( 'restricted', Intel_Tiers::readable() );
@@ -759,7 +759,7 @@ final class IntelligenceCurationTest extends TestCase {
 		$this->ci->dispatch( 'fetch_now', [] );
 	}
 
-	/** A caller below tune is refused every curation verb; one below manage is refused fetch_now. */
+	/** A caller below tune is refused every curation command; one below manage is refused fetch_now. */
 	public function test_a_caller_below_the_declared_role_is_refused(): void {
 		unset( $GLOBALS['_current_user_id'] );
 		Capabilities::$session_scope = Capabilities::READ;

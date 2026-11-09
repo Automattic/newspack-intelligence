@@ -1,7 +1,7 @@
 <?php
 /**
  * Context_A8C_P2_Node: reads the posts and comments of the P2s the
- * `add_site` verb names through ContextA8C's `wpcom` / `posts-text`, and
+ * `add_site` commands name through ContextA8C's `wpcom` / `posts-text`, and
  * records each as P2_Source_Node records the same post or comment.
  *
  * Extends Context_A8C_Source_Node, which owns the token, the JSON-RPC
@@ -29,7 +29,7 @@ class Context_A8C_P2_Node extends Context_A8C_Source_Node {
 	/** Comments a post brings, the most `posts-text` answers. */
 	private const COMMENTS_PER_POST = 500;
 
-	/** @var list<string> Sites (`<name>.wordpress.com`) the `add_site` verb registered and `remove_site` left, in call order. */
+	/** @var list<string> Sites (`<name>.wordpress.com`) the `add_site` commands registered and the `remove_site` commands left, in call order. */
 	protected array $sites = [];
 
 	/** Ask each site's first page since the window opened. */
@@ -125,7 +125,7 @@ class Context_A8C_P2_Node extends Context_A8C_Source_Node {
 		return self::context_schema(
 			'Reads the posts and comments of the configured P2s over the last ' . ( P2_Source_Node::WINDOW_SECONDS / Intel_Graph_Row_Schema::DAY_SECONDS ) . ' days through ContextA8C, as the person signed in to it on the host, without blocking, on a TICK request (request_node p2 TICK). Local workstation only.',
 			'Start a pass over the sites; each page records its new posts and comments as it lands. Trigger with `request_node p2 TICK`.',
-			P2_Source_Node::site_verbs()
+			P2_Source_Node::site_commands()
 		);
 	}
 }

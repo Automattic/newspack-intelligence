@@ -259,7 +259,7 @@ final class LensThemeGroupsTest extends TestCase {
 		$this->assertSame( [ 'new theme' ], \array_column( $this->ci->dispatch( 'trends', [ 'theme', '--source=news' ] )['rows'], 'value' ) );
 	}
 
-	/** The search verb's description names the grouped answer whole, `available` included. */
+	/** The search command's description names the grouped answer whole, `available` included. */
 	public function test_search_describes_its_grouped_answer(): void {
 		$search = \array_column( Intelligence_CI_Node::node_schema()['commands'], null, 'name' )['search'];
 

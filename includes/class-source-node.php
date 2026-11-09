@@ -161,7 +161,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * A TICK request is answered from the declared `requests` handler (NOT a
-	 * TM_COMMAND verb); anything else is Curl's answer to a request.
+	 * TM_COMMAND message); anything else is Curl's answer to a request.
 	 *
 	 * @param array<int,mixed> $message Incoming Message.
 	 */
@@ -908,7 +908,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * The `set_interval` verb's entry point: fetch on the wall-clock grid
+	 * The `set_interval` command's entry point: fetch on the wall-clock grid
 	 * every `$seconds`, riding the Router's tick.
 	 *
 	 * @api Used by substrate.
@@ -987,7 +987,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * A source's topology row names the tier it records at: the last
-	 * `set_tier` its config is sent, bound by that verb's own args, else its
+	 * `set_tier` its config is sent, bound by that command's own args, else its
 	 * make_node line's, the first positional every source declares.
 	 *
 	 * @api Read by the substrate's Topology_Analyzer::graph_for().
@@ -1000,7 +1000,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 		$tier = $args[0] ?? '';
 		foreach ( $commands as [ $verb, $tokens ] ) {
 			if ( 'set_tier' === $verb ) {
-				$tier = Core::as_string( Command_Args::bind( Core::arr( Command_Interpreter_Node::declared_verbs( static::class )['set_tier']['args'] ), $tokens )['tier'] );
+				$tier = Core::as_string( Command_Args::bind( Core::arr( Command_Interpreter_Node::declared_commands( static::class )['set_tier']['args'] ), $tokens )['tier'] );
 			}
 		}
 		return [ 'tier' => $tier ];
@@ -1021,9 +1021,9 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * A connector's node_schema from the shared Source shape: category Source,
 	 * the frontier Table it owns, `tier` and, for a source sending a
 	 * credential, `vault_group`, one TICK request, and `set_tier` and
-	 * `set_interval` ahead of the connector's own verbs.
+	 * `set_interval` ahead of the connector's own commands.
 	 *
-	 * @param list<array<string,mixed>> $commands     The connector's own verbs.
+	 * @param list<array<string,mixed>> $commands     The connector's own commands.
 	 * @param bool                      $credentialed Whether the source takes a vault group.
 	 * @return array<string,mixed>
 	 */
@@ -1072,19 +1072,19 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * list_verbs()'s `add_<noun>` and `remove_<noun>` over a list whose every
+	 * list_commands()'s `add_<noun>` and `remove_<noun>` over a list whose every
 	 * entry matches $pattern, the add refusing a value that does not, naming it
 	 * as not $kind, and dumped one add line per entry.
 	 *
-	 * @param string $noun        The verbs' suffix, and the one arg they take.
+	 * @param string $noun        The commands' suffix, and the one arg they take.
 	 * @param string $property    The list property, a `list<string>`.
 	 * @param string $pattern     The regex every entry matches.
 	 * @param string $kind        What an entry is, as a refusal names it.
-	 * @param string $description The add verb's description.
+	 * @param string $description The add command's description.
 	 * @return list<array<string,mixed>>
 	 */
 	protected static function checked_list( string $noun, string $property, string $pattern, string $kind, string $description ): array {
-		[ $add, $remove ] = self::list_verbs( $noun, $property, [ 'name' => $noun, 'type' => 'string', 'required' => true ], $description );
+		[ $add, $remove ] = self::list_commands( $noun, $property, [ 'name' => $noun, 'type' => 'string', 'required' => true ], $description );
 		unset( $add['list'] );
 		$add['checked'] = $property;
 		$add['handler'] = static function ( Command_Interpreter_Node $interpreter, array $args ) use ( $noun, $property, $pattern, $kind ): string {

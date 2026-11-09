@@ -1,6 +1,6 @@
 <?php
 /**
- * Intelligence_Briefing: the `briefing` read verb's two slices, each what
+ * Intelligence_Briefing: the `briefing` read command's two slices, each what
  * changed in the last DAYS UTC days, through the reads that already answer
  * it. `changes` ranks the window's readable items naming any entity by
  * importance and groups them under the clients each is about, else under
@@ -36,7 +36,7 @@ final class Intelligence_Briefing {
 	/**
 	 * The slice `what` names.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @param array<array-key,mixed> $args The bound command args.
 	 * @return array<array-key,mixed>
 	 * @throws \InvalidArgumentException When `what` does not name a slice, or `since` names an instant for `signals`.
 	 */

@@ -857,7 +857,7 @@ final class ProjectorTest extends TestCase {
 	}
 
 	/**
-	 * An ask answered and another failed, as the verb and the Ask node write them.
+	 * An ask answered and another failed, as the command and the Ask node write them.
 	 *
 	 * @return list<array<string,mixed>>
 	 */

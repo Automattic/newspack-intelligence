@@ -1,7 +1,7 @@
 <?php
 /**
  * Context_A8C_Slack_Node: reads the messages of the Slack channels the
- * `add_channel` verb names, and the replies of each thread that moved,
+ * `add_channel` commands name, and the replies of each thread that moved,
  * through ContextA8C's `slack` provider, and records each as
  * Slack_Source_Node records the same message.
  *
@@ -27,7 +27,7 @@ class Context_A8C_Slack_Node extends Context_A8C_Source_Node {
 	/** Messages a page asks for, the most `messages` answers. */
 	private const PAGE = 100;
 
-	/** @var list<string> Channel ids the `add_channel` verb registered and `remove_channel` left, in call order. */
+	/** @var list<string> Channel ids the `add_channel` commands registered and the `remove_channel` commands left, in call order. */
 	protected array $channels = [];
 
 	/**
@@ -133,7 +133,7 @@ class Context_A8C_Slack_Node extends Context_A8C_Source_Node {
 		return self::context_schema(
 			'Reads the messages of the configured Slack channels over the last ' . ( Slack_Source_Node::WINDOW_SECONDS / Intel_Graph_Row_Schema::DAY_SECONDS ) . ' days, and the replies of each thread that moved, through ContextA8C, as the person signed in to it on the host, without blocking, on a TICK request (request_node slack TICK). Local workstation only.',
 			'Start a pass over the channels; each page records its new messages as it lands. Trigger with `request_node slack TICK`.',
-			Slack_Source_Node::channel_verbs()
+			Slack_Source_Node::channel_commands()
 		);
 	}
 }

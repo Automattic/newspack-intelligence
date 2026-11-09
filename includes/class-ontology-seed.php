@@ -70,7 +70,7 @@ final class Ontology_Seed {
 	/**
 	 * Write the seed events for the keys the projection does not settle, the
 	 * one seed `wp newspack-intelligence ontology seed` and the
-	 * `seed_ontology` verb run. It refuses while the projector has not read
+	 * `seed_ontology` command run. It refuses while the projector has not read
 	 * the ontology stream to its end, whoever wrote what it has not read, so
 	 * a seed never reads a projection that lacks keys already written and
 	 * writes them again.

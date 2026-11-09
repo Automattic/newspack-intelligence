@@ -75,7 +75,7 @@ final class OntologyCliCommandTest extends TestCase {
 	}
 
 	/**
-	 * With no seed in the data dir, the command and the `seed_ontology` verb
+	 * With no seed in the data dir, the command and the `seed_ontology` command
 	 * each refuse naming, to a manager, the path it belongs at, and write
 	 * nothing.
 	 */
@@ -89,14 +89,14 @@ final class OntologyCliCommandTest extends TestCase {
 		( new Ontology_CLI_Command() )->seed( [], [] );
 		try {
 			$ci->dispatch( 'seed_ontology', [] );
-			$this->fail( 'the verb seeds with no seed file' );
+			$this->fail( 'the command seeds with no seed file' );
 		} catch ( \Newspack_Intelligence\Seed_Refused $e ) {
-			$verb = $e->getMessage();
+			$message = $e->getMessage();
 		}
 
 		$this->assertCount( 1, \WP_CLI::$errors );
 		$this->assertSame( 'No newspack-intelligence-ontology-seed.json: write a seed for this site to ' . Ontology_Seed::path() . ', starting from the example the plugin ships at examples/newspack-intelligence-ontology-seed.json.', \WP_CLI::$errors[0] );
-		$this->assertSame( \WP_CLI::$errors[0], $verb );
+		$this->assertSame( \WP_CLI::$errors[0], $message );
 		$this->assertSame( [], self::ontology_events() );
 	}
 
@@ -111,7 +111,7 @@ final class OntologyCliCommandTest extends TestCase {
 
 		try {
 			$ci->dispatch( 'seed_ontology', [] );
-			$this->fail( 'the verb seeds with no seed file' );
+			$this->fail( 'the command seeds with no seed file' );
 		} catch ( \Newspack_Intelligence\Seed_Refused $e ) {
 			$refusal = $e->getMessage();
 		}
@@ -132,7 +132,7 @@ final class OntologyCliCommandTest extends TestCase {
 
 		try {
 			$ci->dispatch( 'seed_ontology', [] );
-			$this->fail( 'the verb seeds a bad file' );
+			$this->fail( 'the command seeds a bad file' );
 		} catch ( \Newspack_Intelligence\Seed_Refused $e ) {
 			$refusal = $e->getMessage();
 		}
@@ -153,8 +153,8 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame( [], \WP_CLI::$successes );
 	}
 
-	/** The CLI and the `seed_ontology` verb run one seed, so each reports the same counts. */
-	public function test_cli_seed_and_verb_share_seed(): void {
+	/** The CLI and the `seed_ontology` command run one seed, so each reports the same counts. */
+	public function test_cli_seed_and_command_share_seed(): void {
 		$this->seed( self::entity( 'product:kite-ledger', 'Ledger (curated)' ), self::entity( 'organization:quarry-guild', 'Quarry (curated)' ) );
 		self::sign_in( 5153, 'tern-curator', 'manage_options' );
 		$GLOBALS['_current_user_can'] = true;
@@ -424,7 +424,7 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'skua-intel.p0' ) );
 	}
 
-	/** A source items are recorded under is accepted on both verbs, read trimmed as `items purge` reads it. */
+	/** A source items are recorded under is accepted on both commands, read trimmed as `items purge` reads it. */
 	public function test_a_source_items_are_recorded_under_is_accepted_trimmed(): void {
 		self::live_worker( Config::get_base_directory(), 'skua-intel.p0' );
 		$this->seed_dated( 'feed:kestrel-1', 'slack:C0SKUA01:1785758400.0001' );
@@ -576,10 +576,10 @@ final class OntologyCliCommandTest extends TestCase {
 	}
 
 	/**
-	 * Run as root, each verb refuses before it writes, so it leaves the workers
+	 * Run as root, each command refuses before it writes, so it leaves the workers
 	 * no root-owned segment, IPC file or hold.
 	 */
-	public function test_every_verb_refuses_root_before_any_write(): void {
+	public function test_every_command_refuses_root_before_any_write(): void {
 		self::live_worker( Config::get_base_directory(), 'skua-intel.p5' );
 		CLI::$uid_provider = static fn (): int => 0;
 

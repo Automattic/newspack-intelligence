@@ -28,7 +28,7 @@ class Github_Source_Node extends Source_Node {
 		'issues'   => 'issues?state=all&sort=updated&direction=desc&per_page=' . self::PER_PAGE,
 	];
 
-	/** @var list<string> Repos (owner/name) the `add_repo` verb registered and `remove_repo` left, in call order. */
+	/** @var list<string> Repos (owner/name) the `add_repo` command registered and `remove_repo` left, in call order. */
 	protected array $repos = [];
 
 	/**

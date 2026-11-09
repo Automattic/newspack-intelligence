@@ -1,8 +1,8 @@
 <?php
 /**
- * Graph_Query: every read the `intelligence` verbs answer from the
+ * Graph_Query: every read the `intelligence` commands answer from the
  * intel-graph projection, through `Intel_Graph_Row_Schema::read()`. Each
- * takes its verb's bound args.
+ * takes its command's bound args.
  *
  * A read opens on `graph()`, which binds once, as the prelude every
  * statement opens with, `mg`, each merged key's survivor in
@@ -57,13 +57,13 @@ use Newspack_Nodes\Row_Reader;
  */
 final class Graph_Query {
 
-	/** Rows a listing verb answers when its caller does not name a limit. */
+	/** Rows a listing command answers when its caller does not name a limit. */
 	public const DEFAULT_LIMIT = 50;
 
 	/** Entities `related` answers when its caller does not name a limit. */
 	public const RELATED_LIMIT = 20;
 
-	/** The most rows any verb answers. */
+	/** The most rows any command answers. */
 	public const MAX_LIMIT = 200;
 
 	/** The most entities `names` answers. */
@@ -238,7 +238,7 @@ final class Graph_Query {
 	 * An entity's items, newest first, as `search` answers them: those about
 	 * it, or with `published` those its own site published.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, `published`, `since`, `until`, `limit`, `offset`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`, `published`, `since`, `until`, `limit`, `offset`.
 	 * @return array<string,mixed> `{ items, total, available }`.
 	 * @throws \InvalidArgumentException On a key that does not name an entity
 	 *                                   the caller may see, or as `search()`.
@@ -268,7 +268,7 @@ final class Graph_Query {
 	 * bounds them. A page holds `limit` items, DEFAULT_LIMIT when it names
 	 * none, or `limit` groups, GROUP_LIMIT when it names none.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @param array<array-key,mixed> $args The bound command args.
 	 * @return array<string,mixed> `{ items, total, available, sort }`, or `{ groups, total, available }` with `group`.
 	 * @throws \InvalidArgumentException On a bad page, day, sort or grouping,
 	 *                                   a sort beside a grouping, or a lens
@@ -374,7 +374,7 @@ final class Graph_Query {
 	 * The order a search reads in: the `sort` it names, else `time` for
 	 * words with no lens, else `importance`.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `sort`, `q`, `lens`.
+	 * @param array<array-key,mixed> $args The bound command args: `sort`, `q`, `lens`.
 	 * @throws \InvalidArgumentException On a sort SORTS does not hold.
 	 */
 	private static function sort_of( array $args ): string {
@@ -653,7 +653,7 @@ final class Graph_Query {
 	 * @param Row_Reader             $r      The reader.
 	 * @param Graph                  $g      The graph the read opened.
 	 * @param Within                 $within The join, its fields and the order.
-	 * @param array<array-key,mixed> $args   The bound verb args: `limit`, `offset`.
+	 * @param array<array-key,mixed> $args   The bound command args: `limit`, `offset`.
 	 * @return array<string,mixed> `{ items, total }`.
 	 * @throws \InvalidArgumentException On a bad page.
 	 */
@@ -665,7 +665,7 @@ final class Graph_Query {
 	/**
 	 * A page's size and start, checked.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `limit`, `offset`.
+	 * @param array<array-key,mixed> $args The bound command args: `limit`, `offset`.
 	 * @return array{0:int,1:int}
 	 * @throws \InvalidArgumentException On a limit below 1 or a negative offset.
 	 */
@@ -925,7 +925,7 @@ final class Graph_Query {
 	 * items are about it and how many of those links are proposed, how
 	 * many its own site published, and a client's `status()`.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException When the key does not name an entity,
 	 *                                   or its merge chain does not resolve.
@@ -1048,7 +1048,7 @@ final class Graph_Query {
 	 * holding none left out: first those whose whole name the prefix leads,
 	 * then by name, then by key, at most NAMES_LIMIT.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `prefix`.
+	 * @param array<array-key,mixed> $args The bound command args: `prefix`.
 	 * @return array<string,mixed> `{ entities: [ { entity_key, name } ], available }`.
 	 * @throws \InvalidArgumentException When the prefix's norm holds fewer
 	 *                                   than NAMES_MIN_PREFIX letters or digits.
@@ -1115,7 +1115,7 @@ final class Graph_Query {
 	 * many it shares and the newest it shares as citations, each its key,
 	 * URL and title.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, `limit`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`, `limit`.
 	 * @return array<string,mixed> `{ entities, available }`.
 	 * @throws \InvalidArgumentException On a bad limit or an unresolvable key.
 	 */
@@ -1157,7 +1157,7 @@ final class Graph_Query {
 	 * spelling of it and a null name; a claim holding neither for the caller
 	 * is left out.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, `predicate`, `limit`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`, `predicate`, `limit`.
 	 * @return array<string,mixed> `{ claims: [ { subject, subject_name, predicate, object, object_name, confidence, item_key, url, title } ], available }`.
 	 * @throws \InvalidArgumentException On a bad limit or an unresolvable key.
 	 */
@@ -1289,7 +1289,7 @@ final class Graph_Query {
 	 * clients (`tally()`). The axis and the bucket are the call's,
 	 * else its lens's, else DEFAULT_AXIS and DEFAULT_BUCKET.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @param array<array-key,mixed> $args The bound command args.
 	 * @return array<string,mixed> `{ rows, available }`.
 	 * @throws \InvalidArgumentException On an unknown axis or bucket, a bad
 	 *                                   day, an unresolvable key, or a lens
@@ -1306,7 +1306,7 @@ final class Graph_Query {
 	 * Run a read through the lens the call names, on the graph the read
 	 * opens (`lensed()`).
 	 *
-	 * @param array<array-key,mixed>                                       $args  The bound verb args.
+	 * @param array<array-key,mixed>                                       $args  The bound command args.
 	 * @param array<string,mixed>                                          $empty The answer with no rows.
 	 * @param \Closure(Row_Reader,Graph,Filter,Lens): array<string,mixed> $read  The read.
 	 * @return array<string,mixed>
@@ -1357,7 +1357,7 @@ final class Graph_Query {
 	 * The signals of the latest complete bucket, and the trend they stand
 	 * in, both read by `signaled()`.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `lens`, `entity`.
+	 * @param array<array-key,mixed> $args The bound command args: `lens`, `entity`.
 	 * @return array<string,mixed> `{ signals: [ { axis, signal, bucket, by, value, count, baseline, items } ], trend: [ { bucket, count } ], available }`.
 	 * @throws \InvalidArgumentException As `trends()`.
 	 */
@@ -1568,7 +1568,7 @@ final class Graph_Query {
 	 * The filters a call names and the lens it names, its key slugged as a
 	 * save slugs it.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @param array<array-key,mixed> $args The bound command args.
 	 * @return array{0:Filter,1:?string}
 	 * @throws \InvalidArgumentException On a bad day, or a lens key that sanitizes to nothing.
 	 */
@@ -1707,7 +1707,7 @@ final class Graph_Query {
 	 * gives, and the UTC days `since` to `until`, null when it names neither;
 	 * a call never names `about`.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @param array<array-key,mixed> $args The bound command args.
 	 * @return Filter
 	 * @throws \InvalidArgumentException On a bad day.
 	 */
@@ -2324,7 +2324,7 @@ final class Graph_Query {
 	 * proposal first, each with the readable items citing it, by a link or as
 	 * its source, and the sentence each quotes.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `what`, `limit`.
+	 * @param array<array-key,mixed> $args The bound command args: `what`, `limit`.
 	 * @return array<string,mixed> `{ links|entities, available }`.
 	 * @throws \InvalidArgumentException On an unknown queue or a bad limit.
 	 */
@@ -2524,9 +2524,9 @@ final class Graph_Query {
 	}
 
 	/**
-	 * A verb's limit: at least 1, at most MAX_LIMIT.
+	 * A command's limit: at least 1, at most MAX_LIMIT.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @param array<array-key,mixed> $args The bound command args.
 	 * @throws \InvalidArgumentException Below 1.
 	 */
 	private static function limit( array $args ): int {
@@ -2619,7 +2619,7 @@ final class Graph_Query {
 	 * login among them; it assumes the single partition every topology runs,
 	 * since `events` is searched by its subject and kind only there.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, absent for every collection.
+	 * @param array<array-key,mixed> $args The bound command args: `key`, absent for every collection.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException When the key does not name a
 	 *                                   collection.
@@ -2748,7 +2748,7 @@ final class Graph_Query {
 	 * An optional string arg as given, a blank one included (ADR-25), or
 	 * null when it is absent.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @param array<array-key,mixed> $args The bound command args.
 	 * @param string                 $name The arg.
 	 */
 	private static function given( array $args, string $name ): ?string {

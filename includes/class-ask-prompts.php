@@ -2,7 +2,7 @@
 /**
  * Ask_Prompts: the Ask's two chat prompts and the readers of their replies.
  *
- * `plan()` asks for one to three searches over the `search` verb's own
+ * `plan()` asks for one to three searches over the `search` command's own
  * filters, and `parse_plan()` refuses a reply naming anything else. `answer()`
  * asks for sentences written from numbered items alone, each ending in the
  * numbers of the items it rests on, and `parse_answer()` keeps only the

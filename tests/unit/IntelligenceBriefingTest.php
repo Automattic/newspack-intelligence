@@ -16,7 +16,7 @@ require_once __DIR__ . '/../support/signs-in-users.php';
 require_once __DIR__ . '/../support/counts-statements.php';
 
 /**
- * The `briefing` read verb: what changed in the last seven UTC days, one
+ * The `briefing` read command: what changed in the last seven UTC days, one
  * slice a call. `changes` ranks the window's items about any entity by
  * importance and groups them by the clients they are about, the rest in the
  * no-client group; `signals` answers every client's signals on both axes and

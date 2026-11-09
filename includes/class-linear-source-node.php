@@ -1,7 +1,7 @@
 <?php
 /**
  * Linear_Source_Node: pulls the recently-updated issues of the Linear teams the
- * `add_team` verb names via the Linear GraphQL API and normalizes them into
+ * `add_team` commands name via the Linear GraphQL API and normalizes them into
  * recorded items.
  *
  * Extends Source_Node, which owns the trigger, the grid, the chain and the
@@ -24,7 +24,7 @@ class Linear_Source_Node extends Source_Node {
 
 	private const QUERY = 'query ($teams: [String!]) { issues(first: 30, orderBy: updatedAt, filter: { team: { key: { in: $teams } } }) { nodes { identifier title url description updatedAt } } }';
 
-	/** @var list<string> Team keys the `add_team` verb registered and `remove_team` left, in call order. */
+	/** @var list<string> Team keys the `add_team` commands registered and the `remove_team` commands left, in call order. */
 	protected array $teams = [];
 
 	/**
@@ -97,20 +97,20 @@ class Linear_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * The `add_team` and `remove_team` verbs.
+	 * The `add_team` and `remove_team` commands.
 	 *
 	 * @api Context_A8C_Linear_Node
 	 * @return list<array<string,mixed>>
 	 */
-	public static function team_verbs(): array {
-		return self::list_verbs( 'team', 'teams', [ 'name' => 'team', 'type' => 'string', 'required' => true ], 'Register a Linear team to fetch on TICK by its key: <KEY>.' );
+	public static function team_commands(): array {
+		return self::list_commands( 'team', 'teams', [ 'name' => 'team', 'type' => 'string', 'required' => true ], 'Register a Linear team to fetch on TICK by its key: <KEY>.' );
 	}
 
 	public static function node_schema(): array {
 		return self::source_schema(
 			'Fetches recently-updated Linear issues of the configured teams without blocking, one GraphQL POST a pass, on a TICK request (request_node linear TICK).',
 			'Start a pass over the teams; the page records its new issues as it lands. Trigger with `request_node linear TICK`.',
-			self::team_verbs()
+			self::team_commands()
 		);
 	}
 }

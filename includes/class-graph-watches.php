@@ -1,12 +1,12 @@
 <?php
 /**
- * Graph_Watches: the `intelligence` watch verbs, each at `read`, each
+ * Graph_Watches: the `intelligence` watch commands, each at `read`, each
  * answering or changing the caller's own watches alone. A watch is one
  * person's standing question over exactly one lens, entity or collection,
  * saved and removed as ontology events under the caller's user id; the
  * matches the watcher appends and the marks a caller makes seen are
  * watches-stream events. A watch another user saved answers exactly as one
- * that was never saved, `no watch: <key>`, so the verbs never tell the
+ * that was never saved, `no watch: <key>`, so the commands never tell the
  * two apart. A match
  * reads through the readable items, so one of a tier the caller does not
  * hold now is neither listed, counted nor marked. Every refusal throws
@@ -39,10 +39,10 @@ final class Graph_Watches {
 	/** Random bytes a minted watch key spells in hex. */
 	private const KEY_BYTES = 8;
 
-	/** The verb args naming a target, one per kind. */
+	/** The command args naming a target, one per kind. */
 	private const TARGETS = Intel_Event::WATCH_TARGETS;
 
-	/** The verb args naming a delivery box. */
+	/** The command args naming a delivery box. */
 	private const BOXES = [ 'digest', 'instant', 'inbox' ];
 
 	/**
@@ -81,7 +81,7 @@ final class Graph_Watches {
 	 * `Graph_Query::seen()` answers.
 	 *
 	 * A new watch is refused once the caller owns MAX_PER_OWNER, counted
-	 * from the projection as every verb reads the caller's watches. A save
+	 * from the projection as every command reads the caller's watches. A save
 	 * the projector has not recorded counts only from its next flush, up to
 	 * five seconds on, so a burst can pass the cap by the saves inside one
 	 * flush window. That is accepted: the cap bounds what one reader's
@@ -89,7 +89,7 @@ final class Graph_Watches {
 	 * reader's own requests in seconds, and holding it exactly would need a
 	 * second count of the ontology stream's unprojected tail.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `name`, `lens`, `entity`, `collection`, `digest`, `instant`, `inbox`, `key`.
+	 * @param array<array-key,mixed> $args The bound command args: `name`, `lens`, `entity`, `collection`, `digest`, `instant`, `inbox`, `key`.
 	 * @return array<string,mixed> `{ ok, event_id, watch_key }`.
 	 * @throws \InvalidArgumentException On a blank name, not exactly one target, no delivery, a target the caller cannot see, a key that is not one of the caller's watches, or a new watch past MAX_PER_OWNER.
 	 */
@@ -172,7 +172,7 @@ final class Graph_Watches {
 	/**
 	 * Remove one of the caller's own watches.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`.
 	 * @return array<string,mixed> `{ ok, event_id }`.
 	 * @throws \InvalidArgumentException When it is not one of the caller's watches.
 	 */
@@ -194,7 +194,7 @@ final class Graph_Watches {
 	 * when it matched; none, `{ items: [], total: 0 }`, for a watch that does
 	 * not ask for the inbox.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, `limit`, `offset`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`, `limit`, `offset`.
 	 * @return array<string,mixed> `{ items, total, available }`.
 	 * @throws \InvalidArgumentException When it is not one of the caller's watches, or on a bad page.
 	 */
@@ -259,7 +259,7 @@ final class Graph_Watches {
 	 * with none named every unseen one the caller may read now: one
 	 * `watch_seen` each, a match already seen not again.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, `item`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`, `item`.
 	 * @return array<string,mixed> `{ ok, count }`.
 	 * @throws \InvalidArgumentException When it is not one of the caller's watches, or a named item is not a match of it the caller may read.
 	 */

@@ -1,7 +1,7 @@
 <?php
 /**
  * P2_Source_Node: reads the posts and comments of the P2s the `add_site`
- * verb names through the WordPress.com REST API, and normalizes them into
+ * commands name through the WordPress.com REST API, and normalizes them into
  * recorded items.
  *
  * Extends Source_Node, which owns the trigger, the grid, the chain and the
@@ -34,7 +34,7 @@ class P2_Source_Node extends Source_Node {
 		'comments' => 'comments/?after=%s&number=' . self::PER_PAGE . '&fields=ID,post,content,date,author,URL',
 	];
 
-	/** @var list<string> Sites (`<name>.wordpress.com`) the `add_site` verb registered and `remove_site` left, in call order. */
+	/** @var list<string> Sites (`<name>.wordpress.com`) the `add_site` commands registered and the `remove_site` commands left, in call order. */
 	protected array $sites = [];
 
 	/**
@@ -203,13 +203,13 @@ class P2_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * The `add_site` and `remove_site` verbs, the add refusing anything but a
+	 * The `add_site` and `remove_site` commands, the add refusing anything but a
 	 * wordpress.com host.
 	 *
 	 * @api Context_A8C_P2_Node
 	 * @return list<array<string,mixed>>
 	 */
-	public static function site_verbs(): array {
+	public static function site_commands(): array {
 		return self::checked_list( 'site', 'sites', '/^[a-z0-9-]+\.wordpress\.com\z/', 'a wordpress.com site', 'Register a P2 to read on TICK by its host: <name>.wordpress.com.' );
 	}
 
@@ -217,7 +217,7 @@ class P2_Source_Node extends Source_Node {
 		return self::source_schema(
 			'Reads the posts and comments of the configured P2s over the last ' . ( self::WINDOW_SECONDS / Intel_Graph_Row_Schema::DAY_SECONDS ) . ' days through the WordPress.com REST API, without blocking, one request at a time, on a TICK request (request_node p2 TICK).',
 			'Start a pass over the sites; each page records its new posts and comments as it lands. Trigger with `request_node p2 TICK`.',
-			self::site_verbs()
+			self::site_commands()
 		);
 	}
 }

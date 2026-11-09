@@ -197,7 +197,7 @@ function return_to_settings( array $args = [] ): never {
 }
 
 /**
- * Mount `intelligence`, the graph's read and curation verbs, into the
+ * Mount `intelligence`, the graph's read and curation commands, into the
  * per-request graph, the same way the substrate mounts its own CIs.
  * Idempotent: a second call in one request finds it mounted.
  */
@@ -208,7 +208,7 @@ function mount_service_cis( \Newspack_Nodes\Command_Interpreter_Node $base_inter
 }
 
 /**
- * Register the `wp newspack-intelligence` verbs, and the line `wp nodes
+ * Register the `wp newspack-intelligence` commands, and the line `wp nodes
  * doctor` opens with while the lists file does not resolve.
  *
  * @api Called by the plugins_loaded bootstrap; tests drive it against a recorder.

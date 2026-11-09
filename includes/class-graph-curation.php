@@ -1,6 +1,6 @@
 <?php
 /**
- * Graph_Curation: the `intelligence` curation verbs. Each writes its
+ * Graph_Curation: the `intelligence` curation commands. Each writes its
  * judgment as one ontology event through `Stream_Writer::append()`, under
  * `Intel_Event::caller()` — the agent a labelled session names, else the
  * person — and answers `{ ok, event_id }`. A refusal throws before anything
@@ -11,7 +11,7 @@
  * and a collected title is cut. The caps hold every event inside one atomic
  * partition line whatever characters fill them, except a lens's event, whose
  * lists carry no cap, so `Intel_Event::make()` refuses one past the line. Each
- * verb then reads the projection once at most, on the graph
+ * command then reads the projection once at most, on the graph
  * `Graph_Query::graph()` opens: every entity key it names answers as the
  * survivor `Graph_Query::seen()` lets the caller see, and an item is read
  * through the readable items, so one outside them is refused exactly as a
@@ -55,7 +55,7 @@ final class Graph_Curation {
 	 * `publisher` link alone is not a link to judge.
 	 *
 	 * @param string                 $kind `link_confirmed` or `link_rejected`.
-	 * @param array<array-key,mixed> $args The bound verb args: `item`, `entity`.
+	 * @param array<array-key,mixed> $args The bound command args: `item`, `entity`.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException On a bad arg, an entity the caller cannot see, an item it cannot read, or no link between them.
 	 */
@@ -82,7 +82,7 @@ final class Graph_Curation {
 	 * cannot see, since accepting it would show it to every reader.
 	 *
 	 * @param string                 $kind `entity_accepted` or `entity_rejected`.
-	 * @param array<array-key,mixed> $args The bound verb args: `key`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException On a bad key, one the caller cannot see, or an accept that would declassify it.
 	 */
@@ -103,7 +103,7 @@ final class Graph_Curation {
 	/**
 	 * Add a name to an entity, its value bounded at NAME_BYTES.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, `kind`, `value`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`, `kind`, `value`.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException On a bad arg, an entity the caller cannot see, or a kind outside NAME_KINDS.
 	 */
@@ -116,7 +116,7 @@ final class Graph_Curation {
 	 * The survivor an entity key arg answers as, when the caller may see the
 	 * entity it names.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @param array<array-key,mixed> $args The bound command args.
 	 * @param string                 $name The arg.
 	 * @throws \InvalidArgumentException On a bad key, or `no entity` for one the caller cannot see.
 	 */
@@ -130,7 +130,7 @@ final class Graph_Curation {
 	 * reader sees the entity but not every reader sees the topic, which the
 	 * tag would show on the entity's record.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, `topic`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`, `topic`.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException On a bad key, one the caller cannot see, a topic that is not one, or a tag across the restricted line.
 	 */
@@ -160,7 +160,7 @@ final class Graph_Curation {
 	 * leave any key on a chain that cycles or runs past
 	 * `Entity_Index::MAX_MERGE_HOPS` that resolved before it.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `from`, `into`.
+	 * @param array<array-key,mixed> $args The bound command args: `from`, `into`.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException On a merge into itself or across types, one naming an entity the caller cannot see, one across the restricted line, or one that breaks a chain, naming its first key.
 	 */
@@ -206,7 +206,7 @@ final class Graph_Curation {
 	 * `into` the theme of an item every reader reads for the first time,
 	 * which only a holder of the restricted tier can ask.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `from`, `into`.
+	 * @param array<array-key,mixed> $args The bound command args: `from`, `into`.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException On a blank theme or one past `Intel_Event::THEME_BYTES`, or a merge refused as above.
 	 */
@@ -270,7 +270,7 @@ final class Graph_Curation {
 	 * accepted or proposed, or that key itself when its survivor is rejected
 	 * or its merge chain does not resolve.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, `kind`, `value`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`, `kind`, `value`.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException Naming the entity that holds it, or on a bad arg or an entity the caller cannot see.
 	 */
@@ -300,7 +300,7 @@ final class Graph_Curation {
 	 * holds it open, or holds a row of it from this second, which a row
 	 * keyed by the same second would overwrite.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, `role`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`, `role`.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException When the role is open or has a row from this second, or on a bad key or one the caller cannot see.
 	 */
@@ -319,7 +319,7 @@ final class Graph_Curation {
 	 * Close, now, the latest open row of a role a key the entity answers for
 	 * holds, on the key that holds it.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, `role`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`, `role`.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException When the role is not open, or on a bad
 	 *                                   key or one the caller cannot see.
@@ -338,7 +338,7 @@ final class Graph_Curation {
 	 * `[ held key, from_ts ]`, and whether any row of it there opened at
 	 * `Intel_Event::now()`.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, `role`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`, `role`.
 	 * @return array{0:string,1:string,2:string,3:array{0:string,1:int}|null,4:bool}
 	 * @throws \InvalidArgumentException On a bad key, or one the caller cannot see.
 	 */
@@ -361,7 +361,7 @@ final class Graph_Curation {
 	 * (`Graph_Query::taken()`). A creation over a key the caller cannot see,
 	 * or over a proposal, replaces it.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `type`, `name`.
+	 * @param array<array-key,mixed> $args The bound command args: `type`, `name`.
 	 * @return array<string,mixed> `{ ok, event_id, entity_key }`.
 	 * @throws \InvalidArgumentException When the key is taken, or as `Intel_Event::entity_key()`.
 	 */
@@ -378,7 +378,7 @@ final class Graph_Curation {
 	/**
 	 * Create a collection keyed by its sanitized name, unless the key is taken.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `name`.
+	 * @param array<array-key,mixed> $args The bound command args: `name`.
 	 * @return array<string,mixed> `{ ok, event_id, collection_key }`.
 	 * @throws \InvalidArgumentException When the name sanitizes to nothing or the key is taken.
 	 */
@@ -397,7 +397,7 @@ final class Graph_Curation {
 	 * there already. A copy saved at a tier the caller does not read is left
 	 * as it is, and the save writes a copy of its own tier beside it.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `collection`, `item`.
+	 * @param array<array-key,mixed> $args The bound command args: `collection`, `item`.
 	 * @return array<string,mixed>
 	 * @throws \InvalidArgumentException When the key does not name a
 	 *                                   collection, the caller reads the item
@@ -473,7 +473,7 @@ final class Graph_Curation {
 	 * a day, on the copy the caller reads, at that copy's tier; marking it so
 	 * again replaces the day, and a mark is never taken back.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `collection`, `item`, `mark`, `day`.
+	 * @param array<array-key,mixed> $args The bound command args: `collection`, `item`, `mark`, `day`.
 	 * @return array<string,mixed> `{ ok, event_id }`.
 	 * @throws \InvalidArgumentException On a mark outside `Intel_Event::MARKS`,
 	 *                                   a day that is not a Y-m-d date, or as
@@ -496,7 +496,7 @@ final class Graph_Curation {
 	 * tier the caller does not read stays where it is, and a placement `into`
 	 * holds already keeps its actor and time.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `collection`, `item`, `into`.
+	 * @param array<array-key,mixed> $args The bound command args: `collection`, `item`, `into`.
 	 * @return array<string,mixed> `{ ok, event_id }`.
 	 * @throws \InvalidArgumentException As `saved_in()`, when `into` names no
 	 *                                   collection, or when it is the folder
@@ -556,7 +556,7 @@ final class Graph_Curation {
 	/**
 	 * The `item` arg, bounded at ITEM_KEY_BYTES.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args, `item` among them.
+	 * @param array<array-key,mixed> $args The bound command args, `item` among them.
 	 * @throws \InvalidArgumentException When blank or past its cap.
 	 */
 	private static function item_key( array $args ): string {
@@ -573,7 +573,7 @@ final class Graph_Curation {
 	 * lens. An event past one ontology line is refused as
 	 * `Intel_Event::make()` refuses it.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`, `name`, `description`, `entity`, `days`, `by`, `bucket`, and the lists `kind`, `topic`, `role`, `source`, `tier`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`, `name`, `description`, `entity`, `days`, `by`, `bucket`, and the lists `kind`, `topic`, `role`, `source`, `tier`.
 	 * @return array<string,mixed> `{ ok, event_id, lens_key }`.
 	 * @throws \InvalidArgumentException On a value outside its vocabulary, a bad key, an entity or topic the caller cannot see or every reader could not, a topic that is not one, or an event past one line.
 	 */
@@ -653,7 +653,7 @@ final class Graph_Curation {
 	}
 
 	/**
-	 * The verb's one read of the projection, on the graph it opens; one that
+	 * The command's one read of the projection, on the graph it opens; one that
 	 * will not open throws.
 	 *
 	 * @api Graph_Watches reads through it too.
@@ -701,7 +701,7 @@ final class Graph_Curation {
 	/**
 	 * A key arg, bounded at KEY_BYTES.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @param array<array-key,mixed> $args The bound command args.
 	 * @param string                 $name The arg.
 	 * @throws \InvalidArgumentException When blank or past its cap.
 	 */
@@ -713,7 +713,7 @@ final class Graph_Curation {
 	 * Each of `Graph_Query::LENS_LISTS` by its field, read from its arg:
 	 * each value of its vocabulary, or bounded where it has none.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @param array<array-key,mixed> $args The bound command args.
 	 * @return array<string,list<string>>
 	 * @throws \InvalidArgumentException On a value outside its vocabulary, blank or past its cap.
 	 */
@@ -728,7 +728,7 @@ final class Graph_Curation {
 	/**
 	 * A list arg's values, each one of its vocabulary.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args.
+	 * @param array<array-key,mixed> $args The bound command args.
 	 * @param string                 $name The arg.
 	 * @param list<string>           $set  Its vocabulary.
 	 * @return list<string>
@@ -741,7 +741,7 @@ final class Graph_Curation {
 	/**
 	 * A list arg's values, each bounded, a value repeated kept once.
 	 *
-	 * @param array<array-key,mixed> $args  The bound verb args.
+	 * @param array<array-key,mixed> $args  The bound command args.
 	 * @param string                 $name  The arg.
 	 * @param int                    $bytes Each value's cap.
 	 * @return list<string>
@@ -771,7 +771,7 @@ final class Graph_Curation {
 	/**
 	 * Remove the lens a key names, slugged as `save_lens()` slugs it.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`.
 	 * @return array<string,mixed> `{ ok, event_id }`.
 	 * @throws \InvalidArgumentException When the key sanitizes to nothing, or
 	 *                                   it does not name a lens.

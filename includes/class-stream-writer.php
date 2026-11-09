@@ -9,7 +9,7 @@
  * it rotates, and `set_read_capability`, the raw-read gate, whose marker the
  * writer leaves in the shared directory when it flushes, so the directory is
  * gated whichever writer opens it first.
- * Each line binds against the Partition's own declaration of its verb, by
+ * Each line binds against the Partition's own declaration of its command, by
  * position or by name, as a load binds it, and is honoured through the
  * Partition's own setter, not replayed as a command, because a command's
  * role gate judges the caller and would refuse a curator below MANAGE; any
@@ -45,7 +45,7 @@ final class Stream_Writer {
 		Intel_Event::ASKS     => 'intel:asks',
 	];
 
-	/** The config verbs this writer honours. */
+	/** The config commands this writer honours. */
 	private const HONOURED = [ 'keep_everything', 'set_read_capability' ];
 
 	/**
@@ -128,7 +128,7 @@ final class Stream_Writer {
 	 * The setter call a config line makes: `keep_everything` turned on, or
 	 * `set_read_capability` naming one capability, the two lines this writer
 	 * honours, each bound against the Partition's own declaration of the
-	 * verb, by position or by name, as a topology load binds it.
+	 * command, by position or by name, as a topology load binds it.
 	 *
 	 * @param string       $partition The Partition the line configures.
 	 * @param list<string> $line      The verb and its tokens.
@@ -142,7 +142,7 @@ final class Stream_Writer {
 			throw new \RuntimeException( \esc_html( 'the stream writer honours only ' . \implode( ' and ', self::HONOURED ) . "; refusing {$written}" ) );
 		}
 		try {
-			$args = Command_Args::bind( Core::arr( Command_Interpreter_Node::declared_verbs( Partition_Node::class )[ $verb ]['args'] ?? [] ), \array_slice( $line, 1 ) );
+			$args = Command_Args::bind( Core::arr( Command_Interpreter_Node::declared_commands( Partition_Node::class )[ $verb ]['args'] ?? [] ), \array_slice( $line, 1 ) );
 		} catch ( \InvalidArgumentException $e ) {
 			throw new \RuntimeException( \esc_html( "the stream writer refuses {$written}: {$e->getMessage()}" ), 0, $e );
 		}

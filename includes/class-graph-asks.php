@@ -1,11 +1,11 @@
 <?php
 /**
- * Graph_Asks: the Ask's two verbs, each at `read`, each answering the
+ * Graph_Asks: the Ask's two commands, each at `read`, each answering the
  * caller's own asks alone. `ask` appends a question to the asks stream for
  * `Ask_Node` to answer as a worker job, and `ask_result` reads the caller's
  * ask back from the projection, every cited item re-read under the caller's
  * tiers now. An ask another user made answers exactly as one never made,
- * `no ask: <key>`, so the verbs never tell the two apart.
+ * `no ask: <key>`, so the commands never tell the two apart.
  *
  * @package Newspack_Intelligence
  */
@@ -45,7 +45,7 @@ final class Graph_Asks {
 	private const UNAVAILABLE = 'ask: no intel-graph to read an ask from; answering none: ';
 
 	/**
-	 * The `ask_result` verb: the caller's own ask, with the searches it ran
+	 * The `ask_result` command: the caller's own ask, with the searches it ran
 	 * and how long an ask may wait, `wait_s`. An answer written from an item
 	 * of a tier the caller does not read now is withheld whole, since the
 	 * model wrote every sentence from every item it was given; else its
@@ -57,7 +57,7 @@ final class Graph_Asks {
 	 * read the asks stream to its end, else is refused as `no ask: <key>`,
 	 * whoever else may have asked it.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `key`.
+	 * @param array<array-key,mixed> $args The bound command args: `key`.
 	 * @return array<string,mixed> `{ ask_key, state, reason, found, dropped, sentences, items, searches, wait_s, available }`.
 	 * @throws \InvalidArgumentException When the key is not one of the caller's asks.
 	 */
@@ -176,10 +176,10 @@ final class Graph_Asks {
 	}
 
 	/**
-	 * The `ask` verb: append a question under a key it mints, its owner the
+	 * The `ask` command: append a question under a key it mints, its owner the
 	 * caller, and answer the key.
 	 *
-	 * @param array<array-key,mixed> $args The bound verb args: `question`.
+	 * @param array<array-key,mixed> $args The bound command args: `question`.
 	 * @return array{ask_key:string}
 	 * @throws \InvalidArgumentException On a blank question, or one past QUESTION_BYTES.
 	 */

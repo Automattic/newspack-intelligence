@@ -571,7 +571,7 @@ class Reresolver_Node extends Timer_Node {
 	 * Ask each live worker's reresolver to re-resolve, or with REEXTRACT
 	 * re-extract, every item dated in a range of UTC days, of one source or
 	 * of every one: the one request `wp newspack-intelligence ontology
-	 * reresolve` and `ontology reextract` and the `reresolve` verb send. A
+	 * reresolve` and `ontology reextract` and the `reresolve` command send. A
 	 * range that does not parse, or a source of more than one word, is
 	 * refused before anything is sent.
 	 *

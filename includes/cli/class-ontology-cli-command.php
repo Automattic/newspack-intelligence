@@ -211,7 +211,7 @@ class Ontology_CLI_Command {
 	 * with `wp nodes stop`, deletes the `intel-graph` Row_Table's files and
 	 * the cursor of every Consumer the projector checkpoints with, then
 	 * releases the hold with `wp nodes start`, so the projector replays every
-	 * stream from its oldest segment. Each verb runs in its own process,
+	 * stream from its oldest segment. Each command runs in its own process,
 	 * so whatever it throws reaches this one as an exit code and stderr. A
 	 * fleet that does not stop has nothing deleted under it, and the hold is
 	 * released all the same. The streams and every other

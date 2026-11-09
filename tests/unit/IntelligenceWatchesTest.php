@@ -21,7 +21,7 @@ require_once __DIR__ . '/../support/signs-in-users.php';
 /**
  * Watches: one person's standing question over a lens, an entity or a
  * collection, saved and removed as ontology events at `read`, its unseen
- * matches listed and marked seen as watches-stream events, and a verb
+ * matches listed and marked seen as watches-stream events, and a command
  * never answering or changing another person's watch.
  */
 final class IntelligenceWatchesTest extends TestCase {
@@ -77,8 +77,8 @@ final class IntelligenceWatchesTest extends TestCase {
 		parent::tearDown();
 	}
 
-	/** Anyone who reads keeps watches: every watch verb declares read. */
-	public function test_every_watch_verb_declares_read(): void {
+	/** Anyone who reads keeps watches: every watch command declares read. */
+	public function test_every_watch_command_declares_read(): void {
 		$roles = \array_column( Intelligence_CI_Node::node_schema()['commands'], 'capability', 'name' );
 
 		$this->assertSame( \array_fill( 0, 5, Capabilities::READ ), [ $roles['watches'], $roles['save_watch'], $roles['remove_watch'], $roles['watch_matches'], $roles['mark_seen'] ] );

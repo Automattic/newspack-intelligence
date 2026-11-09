@@ -93,7 +93,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 		Prompts::DECISION => [ 'systemone', 'set_api_url, set_decision_model and set_feature before a decision' ],
 	];
 
-	/** The verbs whose values a decision call posts with, each => the topology fact naming it. */
+	/** The commands whose values a decision call posts with, each => the topology fact naming it. */
 	private const DECISION_FACTS = [
 		'set_api_url'        => 'api_url',
 		'set_decision_model' => 'decision_model',
@@ -584,7 +584,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * The `set_api_url` verb's entry point.
+	 * The `set_api_url` command's entry point.
 	 *
 	 * @api Used by substrate.
 	 * @param string $url An absolute http(s) url, its trailing slash dropped.
@@ -598,7 +598,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * The node's topology row names what a decision call posts with: the
 	 * `api_url`, `decision_model` and `feature` its last `set_api_url`,
 	 * `set_decision_model` and `set_feature` lines leave, each bound by its
-	 * verb's own args and kept as the setter keeps it, '' while unset.
+	 * command's own args and kept as the setter keeps it, '' while unset.
 	 *
 	 * @api Read by the substrate's Topology_Analyzer::graph_for(), for Eval_CLI_Command.
 	 * @param list<string>                         $args     The `make_node` arguments, quotes stripped.
@@ -613,13 +613,13 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 			'decision_model' => '',
 			'feature'        => '',
 		];
-		$verbs = Command_Interpreter_Node::declared_verbs( self::class );
+		$declared = Command_Interpreter_Node::declared_commands( self::class );
 		foreach ( $commands as [ $verb, $tokens ] ) {
 			$fact = self::DECISION_FACTS[ $verb ] ?? null;
 			if ( null === $fact ) {
 				continue;
 			}
-			$value          = Core::as_string( \current( Command_Args::bind( Core::arr( $verbs[ $verb ]['args'] ), $tokens ) ) );
+			$value          = Core::as_string( \current( Command_Args::bind( Core::arr( $declared[ $verb ]['args'] ), $tokens ) ) );
 			$facts[ $fact ] = 'api_url' === $fact ? self::api_url_of( $value ) : \trim( $value );
 		}
 		return $facts;
@@ -648,7 +648,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * The `set_model` verb's entry point.
+	 * The `set_model` command's entry point.
 	 *
 	 * @api Used by substrate.
 	 * @param string $model The model id.
@@ -658,7 +658,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * The `set_decision_model` verb's entry point.
+	 * The `set_decision_model` command's entry point.
 	 *
 	 * @api Used by substrate.
 	 * @param string $model The decision model id.
@@ -668,7 +668,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * The `set_feature` verb's entry point.
+	 * The `set_feature` command's entry point.
 	 *
 	 * @api Used by substrate.
 	 * @param string $feature The X-WPCOM-AI-Feature value.
@@ -678,7 +678,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * The `set_concurrency` verb's entry point.
+	 * The `set_concurrency` command's entry point.
 	 *
 	 * @api Used by substrate.
 	 * @param string $count A whole number from 1 to Curl_Node::MAX_IN_FLIGHT.
@@ -707,14 +707,14 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 		return self::STATUS_HEARTBEAT_S;
 	}
 
-	/** Emit the base config, then each verb's line. */
+	/** Emit the base config, then each command's line. */
 	public function dump_config(): string {
 		return parent::dump_config() . $this->dump_setters();
 	}
 
 	/** @return array<string,mixed> */
 	public static function node_schema(): array {
-		$verb = static fn ( string $name, string $description, string $arg, string $type, string $setter ): array => [
+		$command = static fn ( string $name, string $description, string $arg, string $type, string $setter ): array => [
 			'name'        => $name,
 			'description' => $description,
 			'args'        => [
@@ -731,11 +731,11 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 				[ 'name' => 'vault_group', 'type' => 'vault_group', 'required' => true, 'description' => 'The Vault group whose entry on the api url\'s origin lends each call its credential: ai-proxy.' ],
 			],
 			'commands'     => [
-				$verb( 'set_api_url', 'Set the AI API Proxy base url the calls post to: <url>.', 'url', 'string', 'api_url' ),
-				$verb( 'set_model', 'Set the model id every chat call names: <model>.', 'model', 'string', 'model' ),
-				$verb( 'set_decision_model', 'Set the model id every decision call names: <model>.', 'model', 'string', 'decision_model' ),
-				$verb( 'set_feature', 'Set the X-WPCOM-AI-Feature value every call sends: <feature>.', 'feature', 'string', 'feature' ),
-				$verb( 'set_concurrency', 'Make at most <count> calls at once, from 1 to ' . Curl_Node::MAX_IN_FLIGHT . '; 1 until set.', 'count', 'int', 'concurrency' ),
+				$command( 'set_api_url', 'Set the AI API Proxy base url the calls post to: <url>.', 'url', 'string', 'api_url' ),
+				$command( 'set_model', 'Set the model id every chat call names: <model>.', 'model', 'string', 'model' ),
+				$command( 'set_decision_model', 'Set the model id every decision call names: <model>.', 'model', 'string', 'decision_model' ),
+				$command( 'set_feature', 'Set the X-WPCOM-AI-Feature value every call sends: <feature>.', 'feature', 'string', 'feature' ),
+				$command( 'set_concurrency', 'Make at most <count> calls at once, from 1 to ' . Curl_Node::MAX_IN_FLIGHT . '; 1 until set.', 'count', 'int', 'concurrency' ),
 			],
 			'accepts_fill' => true,
 		];

@@ -70,7 +70,7 @@ final class LlmCallNodeTest extends TestCase {
 	}
 
 	/**
-	 * The node as the resolve topology builds it, its four verbs set.
+	 * The node as the resolve topology builds it, its four commands set.
 	 *
 	 * @param int $concurrency Requests in flight at once.
 	 */
@@ -700,8 +700,8 @@ final class LlmCallNodeTest extends TestCase {
 		$this->assertSame( [ 'api_url' => '', 'decision_model' => '', 'feature' => '' ], LLM_Call_Node::graph_facts( [ self::GROUP ], [] ) );
 	}
 
-	/** The verbs replay through dump_config; a concurrency outside Curl's window is refused. */
-	public function test_the_verbs_dump_and_a_bad_concurrency_is_refused(): void {
+	/** The commands replay through dump_config; a concurrency outside Curl's window is refused. */
+	public function test_the_commands_dump_and_a_bad_concurrency_is_refused(): void {
 		$node = $this->llm( 5 );
 
 		$this->assertSame(

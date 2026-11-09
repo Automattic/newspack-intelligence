@@ -29,8 +29,8 @@ require_once \dirname( __DIR__, 3 ) . '/newspack-nodes/tests/Helpers/McpRequests
 
 /**
  * The intelligence MCP door: a declaration over the substrate's server, one
- * tool per read and curation verb, each tool's role and args read from the
- * verb, every reply fenced, and only the rows a read caller's tiers allow.
+ * tool per read and curation command, each tool's role and args read from the
+ * command, every reply fenced, and only the rows a read caller's tiers allow.
  */
 final class IntelligenceMcpDoorTest extends TestCase {
 	use Seeds_Intel_Graph;
@@ -72,7 +72,7 @@ final class IntelligenceMcpDoorTest extends TestCase {
 	 */
 	public function test_every_tool_names_a_declared_verb(): void {
 		$tools    = \array_column( $this->call( Capabilities::TUNE, 'tools/list' )['result']['tools'], null, 'name' );
-		$declared = Command_Interpreter_Node::declared_verbs( Intelligence_CI_Node::class );
+		$declared = Command_Interpreter_Node::declared_commands( Intelligence_CI_Node::class );
 		$offered  = \array_filter( $declared, static fn ( array $verb, string $name ): bool => Capabilities::MANAGE !== $verb['capability'] && ! \in_array( $name, [ 'health', 'seed_ontology' ], true ), \ARRAY_FILTER_USE_BOTH );
 
 		$this->assertSame( \array_map( static fn ( string $verb ): string => "intel_{$verb}", \array_keys( $offered ) ), \array_keys( $tools ) );

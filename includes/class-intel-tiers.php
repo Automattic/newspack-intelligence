@@ -1,7 +1,7 @@
 <?php
 /**
  * Intel_Tiers: the item tiers a read caller may see, and who holds a grant
- * of the restricted one. Every caller past a verb's role gate reads
+ * of the restricted one. Every caller past a command's role gate reads
  * `public` and `internal`; a caller WordPress answers `CAPABILITY` for reads
  * `restricted` too, asked on each call. An operator grants and revokes that
  * capability per user, as the user's own on the current site, and each

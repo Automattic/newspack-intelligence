@@ -1,7 +1,7 @@
 <?php
 /**
  * Context_A8C_Linear_Node: reads the newest issues of the Linear teams the
- * `add_team` verb names through ContextA8C's `linear` / `team-issues`, and
+ * `add_team` commands name through ContextA8C's `linear` / `team-issues`, and
  * records each as Linear_Source_Node records the same issue.
  *
  * Extends Context_A8C_Source_Node, which owns the token, the JSON-RPC
@@ -48,7 +48,7 @@ class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 	/** The requests a pass spends besides its calls: a refresh, `initialize` and its notification. */
 	private const PASS_OVERHEAD = 3;
 
-	/** @var list<string> Team keys the `add_team` verb registered and `remove_team` left, in call order. */
+	/** @var list<string> Team keys the `add_team` commands registered and the `remove_team` commands left, in call order. */
 	protected array $teams = [];
 
 	/** @var array<string,int> Each item key's longest body this process has written, in bytes. */
@@ -285,7 +285,7 @@ class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 		return self::context_schema(
 			'Reads the newest issues of the configured Linear teams through ContextA8C, as the person signed in to it on the host, one call a team, without blocking, on a TICK request (request_node linear TICK). Local workstation only.',
 			'Start a pass over the teams; each page records its new issues as it lands. Trigger with `request_node linear TICK`.',
-			Linear_Source_Node::team_verbs()
+			Linear_Source_Node::team_commands()
 		);
 	}
 }

@@ -456,7 +456,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	/**
 	 * The Row_Table `set_graph_target` named, which every write needs.
 	 *
-	 * @throws \LogicException When the verb named none.
+	 * @throws \LogicException When the command named none.
 	 */
 	private function graph_table(): string {
 		return '' === $this->graph_target ? throw new \LogicException( 'Projector: no Row_Table named by set_graph_target' ) : $this->graph_target;
@@ -518,7 +518,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * The `set_graph_target` verb's entry point, which the declared setter
+	 * The `set_graph_target` command's entry point, which the declared setter
 	 * calls by name.
 	 *
 	 * @param string $table The Row_Table the rows are written to.
@@ -528,7 +528,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * The Row_Table the verb named, which the flush writes past any target.
+	 * The Row_Table the command named, which the flush writes past any target.
 	 *
 	 * @api Unioned into display_targets() by the substrate's Node.
 	 * @return list<string>
@@ -547,7 +547,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * Declarative schema: the `:config` verb and the palette metadata.
+	 * Declarative schema: the `:config` command and the palette metadata.
 	 *
 	 * @api Used by the substrate to provide UI etc.
 	 * @return array<string,mixed>

@@ -138,7 +138,7 @@ class Extractor_Node extends Node {
 	/** @var array<string,array{0:int,1:int}> Each item kind's least importance and the relevance it asks, by add_importance_floor, in call order. */
 	protected array $importance_floors = [];
 
-	/** Wire the sibling `:config` interpreter for the prompt verbs. */
+	/** Wire the sibling `:config` interpreter for the prompt commands. */
 	public function __construct() {
 		parent::__construct();
 		$this->auto_wire_interpreter();
@@ -737,7 +737,7 @@ class Extractor_Node extends Node {
 	}
 
 	/**
-	 * The `set_audience` verb's entry point, which the declared setter calls.
+	 * The `set_audience` command's entry point, which the declared setter calls.
 	 *
 	 * @param string $audience Who the prompt is framed for.
 	 */
@@ -746,7 +746,7 @@ class Extractor_Node extends Node {
 	}
 
 	/**
-	 * Replay the prompt verbs, then one `add_importance_floor` line per floor,
+	 * Replay the prompt commands, then one `add_importance_floor` line per floor,
 	 * in the order they were set, its relevance when not 0.
 	 */
 	public function dump_config(): string {
@@ -818,7 +818,7 @@ class Extractor_Node extends Node {
 					],
 					'setter'      => 'audience',
 				],
-				...self::list_verbs( 'profile', 'profiles', [ 'name' => 'text', 'type' => 'string', 'required' => true, 'variadic' => true ], 'Add a relevance-profile line used to score items: <text>.' ),
+				...self::list_commands( 'profile', 'profiles', [ 'name' => 'text', 'type' => 'string', 'required' => true, 'variadic' => true ], 'Add a relevance-profile line used to score items: <text>.' ),
 				[
 					'name'        => 'add_importance_floor',
 					'description' => 'Score every extraction of a kind at least <min>, 0 to ' . self::MAX_FLOOR . ', when its relevance is at least <relevance>, 0 to ' . Prompts::MAX_SCORE . ' and 0 when omitted, replacing its floor: <kind> <min> [<relevance>].',

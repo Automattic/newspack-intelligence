@@ -20,7 +20,7 @@ class Restricted_CLI_Command {
 
 	/**
 	 * Grant a user restricted access on this site: the user then reads
-	 * restricted items through every read and curation verb and the MCP
+	 * restricted items through every read and curation command and the MCP
 	 * door. Logged naming the operator and the user.
 	 *
 	 * ## OPTIONS

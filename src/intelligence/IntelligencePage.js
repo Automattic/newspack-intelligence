@@ -29,7 +29,7 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
  * The Intelligence page: Briefing, the view it opens on, then Search,
  * Entity, Lenses, Review, Collections and Watches, switched in place. The
  * Briefing opens an entity, a lens, a watch, the watch form or Search. Each
- * view reads its own verbs; the page holds
+ * view reads its own commands; the page holds
  * which view shows, the submitted search, the open entity, lens, collection
  * and watch, the watch form's draft and the item being saved, so a view
  * returns as it was left, and a lens's "Watch this" opens the form on it.

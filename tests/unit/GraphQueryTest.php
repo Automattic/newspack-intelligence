@@ -14,7 +14,7 @@ use Newspack_Nodes\Tests\TestCase;
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
 
 /**
- * Graph_Query answers each read verb from the projection: items with their
+ * Graph_Query answers each read command from the projection: items with their
  * extraction and the entities they link, an entity's record, its timeline,
  * related entities, claims, trends, the review queue and collections. A link
  * counts by its effective state, a merged key reads as its survivor, and an
@@ -903,10 +903,10 @@ final class GraphQueryTest extends TestCase {
 	}
 
 	/**
-	 * A verb's read over the readable tiers, its defaults filled in.
+	 * A command's read over the readable tiers, its defaults filled in.
 	 *
 	 * @param string              $verb The Graph_Query read.
-	 * @param array<string,mixed> $args The verb's args.
+	 * @param array<string,mixed> $args The command's args.
 	 * @return array<string,mixed>
 	 */
 	private static function read( string $verb, array $args ): array {
@@ -922,10 +922,10 @@ final class GraphQueryTest extends TestCase {
 	}
 
 	/**
-	 * A search over the readable tiers, the verb's defaults filled in, by
+	 * A search over the readable tiers, the command's defaults filled in, by
 	 * time unless the args name a sort, so a filter's test reads one order.
 	 *
-	 * @param array<string,mixed> $args The verb's args.
+	 * @param array<string,mixed> $args The command's args.
 	 * @return array<string,mixed>
 	 */
 	private static function search( array $args ): array {
@@ -943,9 +943,9 @@ final class GraphQueryTest extends TestCase {
 	}
 
 	/**
-	 * Trends over the readable tiers, the verb's defaults filled in.
+	 * Trends over the readable tiers, the command's defaults filled in.
 	 *
-	 * @param array<string,mixed> $args The verb's args.
+	 * @param array<string,mixed> $args The command's args.
 	 * @return array<string,mixed>
 	 */
 	private static function trends( array $args ): array {

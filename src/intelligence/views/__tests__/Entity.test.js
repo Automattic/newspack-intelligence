@@ -1,6 +1,6 @@
 /* eslint-env jest */
 /**
- * Entity reads one entity through four verbs — its record, its timeline, the
+ * Entity reads one entity through four commands — its record, its timeline, the
  * entities sharing its items and the claims naming it — and offers a curator
  * the four edits a record takes, each re-reading the record once it lands.
  */
@@ -118,7 +118,7 @@ async function openDrawer() {
 }
 
 describe( 'Entity — reads', () => {
-	it( 'asks each read verb about the entity', async () => {
+	it( 'asks each read command about the entity', async () => {
 		renderEntity();
 		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		await waitFor( () => {

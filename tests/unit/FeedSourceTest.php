@@ -1806,7 +1806,7 @@ XML;
 		$this->assertStringContainsString( 'command_node feed:config add_url https://example.com/b.xml', $dump );
 	}
 
-	public function test_add_url_verb_dispatches_through_sibling_interpreter(): void {
+	public function test_add_url_command_dispatches_through_sibling_interpreter(): void {
 		$node = new Feed_Source_Node();
 		$node->name( 'feed' );
 

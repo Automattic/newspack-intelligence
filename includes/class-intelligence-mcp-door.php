@@ -45,7 +45,7 @@ class Intelligence_Mcp_Door extends Mcp_Door {
 	private const NODE = 'intelligence';
 
 	/**
-	 * The verbs that are not offered by any tool: the page's health read and
+	 * The commands that are not offered by any tool: the page's health read and
 	 * its operator fixes.
 	 */
 	private const NOT_TOOLS = [ 'fetch_now', 'health', 'seed_ontology', 'reresolve' ];
@@ -64,7 +64,7 @@ class Intelligence_Mcp_Door extends Mcp_Door {
 	 */
 	protected function tools(): array {
 		$tools = [];
-		foreach ( Command_Interpreter_Node::declared_verbs( Intelligence_CI_Node::class ) as $verb => $declared ) {
+		foreach ( Command_Interpreter_Node::declared_commands( Intelligence_CI_Node::class ) as $verb => $declared ) {
 			if ( \in_array( $verb, self::NOT_TOOLS, true ) ) {
 				continue;
 			}

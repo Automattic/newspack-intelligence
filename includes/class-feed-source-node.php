@@ -65,7 +65,7 @@ class Feed_Source_Node extends Source_Node {
 		'unresolved_since' => 0,
 	];
 
-	/** @var list<string> Feed URLs the `add_url` verb registered and `remove_url` left, in call order. */
+	/** @var list<string> Feed URLs the `add_url` command registered and `remove_url` left, in call order. */
 	protected array $urls = [];
 
 	/** Whether a pass also fetches `https://<domain>/feed/` for each open client's domain. */
@@ -752,7 +752,7 @@ class Feed_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * The `set_concurrency` verb's entry point.
+	 * The `set_concurrency` command's entry point.
 	 *
 	 * @api Used by substrate.
 	 * @throws \InvalidArgumentException Outside 1 to Curl_Node::MAX_IN_FLIGHT.
@@ -762,7 +762,7 @@ class Feed_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * The `set_client_feeds` verb's entry point.
+	 * The `set_client_feeds` command's entry point.
 	 *
 	 * @api Used by substrate.
 	 * @param bool $on Whether a pass fetches each open client's feed.
@@ -781,7 +781,7 @@ class Feed_Source_Node extends Source_Node {
 			'Fetches items from the configured RSS 2.0 / Atom feeds, and each open client\'s feed when asked, without blocking, on a TICK request (request_node feed TICK).',
 			'Start a pass over the feeds; each body records its new items as it lands. Trigger with `request_node feed TICK`.',
 			[
-				...self::list_verbs( 'url', 'urls', [ 'name' => 'url', 'type' => 'string', 'required' => true ], 'Register a feed URL to fetch on each pass: <url>.' ),
+				...self::list_commands( 'url', 'urls', [ 'name' => 'url', 'type' => 'string', 'required' => true ], 'Register a feed URL to fetch on each pass: <url>.' ),
 				[
 					'name'        => 'set_client_feeds',
 					'description' => 'Also fetch https://<domain>/feed/ for each plain-hostname domain of every entity holding an open client role, keying its items feed:<domain>:<guid> and recording only those linking to that domain or a subdomain, dated within ' . self::CLIENT_FEED_DAYS . ' days before the fetch and one after.',

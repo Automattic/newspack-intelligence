@@ -482,8 +482,8 @@ final class UnthreadSourceTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'unthread: Unthread named a conversation whose id is not a uuid: ../users/list' ) );
 	}
 
-	/** The source declares no verbs beyond the base's verbs. */
-	public function test_it_declares_only_the_base_verbs(): void {
+	/** The source declares no commands beyond the base's commands. */
+	public function test_it_declares_only_the_base_commands(): void {
 		$this->assertSame( [ 'set_tier', 'set_interval' ], \array_column( Unthread_Source_Node::node_schema()['commands'], 'name' ) );
 	}
 }

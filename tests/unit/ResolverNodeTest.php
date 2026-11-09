@@ -833,7 +833,7 @@ final class ResolverNodeTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'dropping an answer it cannot read from intel:llm' ) );
 	}
 
-	/** Its line must name the node its model calls go to; it declares no verbs. */
+	/** Its line must name the node its model calls go to; it declares no commands. */
 	public function test_a_load_without_a_model_call_node_is_refused(): void {
 		$this->assertSame( [], Resolver_Node::node_schema()['commands'] );
 		$this->expectException( \InvalidArgumentException::class );

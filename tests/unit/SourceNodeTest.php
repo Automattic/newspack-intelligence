@@ -118,7 +118,7 @@ final class SourceNodeTest extends TestCase {
 
 	/**
 	 * A topology's row for a source names the tier it records at: the last
-	 * `set_tier` its config is sent, bound by that verb's own args, else its
+	 * `set_tier` its config is sent, bound by that command's own args, else its
 	 * make_node line's.
 	 */
 	public function test_the_graph_row_names_the_last_set_tier_else_the_lines(): void {

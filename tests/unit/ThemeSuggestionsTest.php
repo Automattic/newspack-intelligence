@@ -155,7 +155,7 @@ final class ThemeSuggestionsTest extends TestCase {
 		$this->assertSame( $few, $this->statements_of( fn () => $this->ci->dispatch( 'theme_suggestions', [] ) ) );
 	}
 
-	/** It is a read verb, and a projection that will not open answers none, unavailable. */
+	/** It is a read command, and a projection that will not open answers none, unavailable. */
 	public function test_it_is_a_read_and_answers_unavailable_without_a_graph(): void {
 		$this->assertSame( Capabilities::READ, \array_column( Intelligence_CI_Node::node_schema()['commands'], 'capability', 'name' )['theme_suggestions'] );
 

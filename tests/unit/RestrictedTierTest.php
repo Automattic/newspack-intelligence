@@ -20,7 +20,7 @@ require_once __DIR__ . '/../support/signs-in-users.php';
 /**
  * The restricted tier: a user holding `newspack_intelligence_restricted`
  * reads restricted items, their links, claims and counts, through every
- * read and curation verb, checked on each call; a user without it reads
+ * read and curation command, checked on each call; a user without it reads
  * public and internal items alone. An operator grants and revokes it per
  * user, each change logged naming the operator and the user.
  */
@@ -194,7 +194,7 @@ final class RestrictedTierTest extends TestCase {
 		$this->assertNotContains( 'churn_signal', \array_column( $this->ci->dispatch( 'trends', [ 'kind' ] )['rows'], 'value' ) );
 	}
 
-	/** A curation verb naming a restricted item refuses a reader as a missing item, and acts for a holder. */
+	/** A curation command naming a restricted item refuses a reader as a missing item, and acts for a holder. */
 	public function test_curation_of_a_restricted_item_answers_a_holder_alone(): void {
 		$this->seed_restricted_world();
 

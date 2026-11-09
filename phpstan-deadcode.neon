@@ -39,10 +39,10 @@ parameters:
             identifier: shipmonk.deadMethod
             message: '#::(__construct|fill|arguments|node_schema|dump_config|declared_targets|save_state|restore_state|set_sibling_names)$#'
             path: includes/*.php
-        # A verb declared `setter` in node_schema() has no handler of its own:
+        # A command declared `setter` in node_schema() has no handler of its own:
         # the substrate's Schema_Reflection synthesizes one that calls
         # `$patron->{"set_{$prop}"}( … )`, so the setter reads as dead. It IS
-        # the verb's implementation.
+        # the command's implementation.
         -
             identifier: shipmonk.deadMethod
             message: '#::set_audience$#'
