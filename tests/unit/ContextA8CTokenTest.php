@@ -61,6 +61,17 @@ final class ContextA8CTokenTest extends TestCase {
 		$this->assertStringContainsString( 'refresh_token=ref-osprey-6614', Context_A8C_Token::form( $this->dir, self::OSPREY ) );
 	}
 
+	/**
+	 * A token dir that will not list raises, naming it, rather than reading as
+	 * signed out; nothing is held, so the next read finds the token.
+	 */
+	public function test_a_token_dir_that_will_not_list_raises_and_holds_nothing(): void {
+		$e = $this->unlistable( $this->dir, fn () => Context_A8C_Token::held( $this->dir, self::HERON ) );
+
+		$this->assertSame( "dir {$this->dir} will not list", $e->getMessage() );
+		$this->assertSame( 'acc-heron-3307', Context_A8C_Token::held( $this->dir, self::HERON )['token']['access_token'] ?? null );
+	}
+
 	/** Write a relay's token file and client file for the server at $url. */
 	private function seed( string $url, string $access, string $refresh ): void {
 		$at = "{$this->dir}/wordpress-remote-0.5.4/" . \md5( $url );

@@ -69,6 +69,7 @@ final class Context_A8C_Token {
 	 * reads as a JSON object carrying an access token.
 	 *
 	 * @return array{path:string,token:array<array-key,mixed>}|null
+	 * @throws \RuntimeException As `newest()`; nothing is held.
 	 */
 	public static function held( string $dir, string $url ): ?array {
 		$key = self::key( $dir, $url );
@@ -150,13 +151,20 @@ final class Context_A8C_Token {
 	/**
 	 * The relay's token file obtained last under $dir, by its `obtained_at`,
 	 * and what it holds; null unless a file reads as a JSON object carrying an
-	 * access token.
+	 * access token. Each relay dir `pattern()` names is listed once, so $dir
+	 * that will not list raises rather than reading as signed out.
 	 *
 	 * @return array{path:string,token:array<array-key,mixed>}|null
+	 * @throws \RuntimeException As `Core::dir_entries()`, when $dir will not list.
 	 */
 	private static function newest( string $dir, string $url ): ?array {
-		$newest = null;
-		foreach ( \glob( self::pattern( $dir, $url ) ) ?: [] as $path ) {
+		$newest  = null;
+		$pattern = self::pattern( $dir, $url );
+		foreach ( Core::dir_entries( $dir, \basename( \dirname( $pattern ) ), only_dirs: true ) as $relay ) {
+			$path = "{$relay}/" . \basename( $pattern );
+			if ( ! \is_file( $path ) ) {
+				continue;
+			}
 			// phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- a local token file the operator's relay writes.
 			$token = \json_decode( (string) @\file_get_contents( $path ), true );
 			if ( ! \is_array( $token ) || '' === Core::str( $token['access_token'] ?? null ) ) {
