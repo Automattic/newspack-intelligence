@@ -223,7 +223,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			$starts( 'name' ),
 		];
 		$state_set = static fn ( string $state ): array => [ [ 'set', 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ] ];
-		$item       = [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ) ];
+		$item       = [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ), static fn ( array $e ): int => Intel_Graph_Row_Schema::item_time( Core::as_int( $e['item_ts'] ), Core::as_int( $e['retrieved_ts'] ) ) ];
 		$checked    = \array_map( static fn ( string $member ): \Closure => static fn ( array $e ): mixed => Core::arr( $e['kind_check'] ?? null )[ $member ] ?? null, \array_keys( Intel_Event::RECORDS['extraction_recorded']['kind_check'] ) );
 		$extraction = [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', ...$checked, 'actor', $day( 'retrieved_ts' ) ];
 		$judgment = static fn ( string $state ): array => [ [ 'set', 'judgments', [ 'item_key', 'entity_key', static fn ( array $e ): string => \explode( ':', Core::as_string( $e['actor'] ), 2 )[0], [ $state ], 'actor', 'item_url', 'ts' ] ] ];

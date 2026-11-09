@@ -76,7 +76,7 @@ final class ProjectorTest extends TestCase {
 
 		$day = \intdiv( self::RETRIEVED, 86400 );
 		$this->assertSame(
-			[ [ 1, self::ITEM, 'feed', 'public', 'https://www.HarborGazette.example/2026/10/award/?utm_source=np&b=2&a=1#top', 'harborgazette.example/2026/10/award?a=1&b=2', 'The Harbor Gazette Wins a State Award!', 'harbor gazette wins a state award', 'The Gazette took first place.', 1792900000, self::RETRIEVED, $day ] ],
+			[ [ 1, self::ITEM, 'feed', 'public', 'https://www.HarborGazette.example/2026/10/award/?utm_source=np&b=2&a=1#top', 'harborgazette.example/2026/10/award?a=1&b=2', 'The Harbor Gazette Wins a State Award!', 'harbor gazette wins a state award', 'The Gazette took first place.', 1792900000, self::RETRIEVED, $day, 1792900000 ] ],
 			self::graph_rows( 'items' )
 		);
 		$this->assertSame(
@@ -376,6 +376,18 @@ final class ProjectorTest extends TestCase {
 		$this->assertNotSame( [], $dumps['items-first']['entities'] );
 		$this->assertSame( $dumps['items-first'], $dumps['ontology-first'] );
 		$this->assertSame( $dumps['items-first'], $dumps['each-twice'] );
+	}
+
+	/**
+	 * The projector writes an item's time once, on its row: its own date,
+	 * else, for an undated item, when it was retrieved; a growth keeps it.
+	 */
+	public function test_an_items_time_is_written_on_its_row(): void {
+		$undated = Intel_Event::make( 'item_recorded', [ 'item_key' => 'feed:undated-4417', 'source' => 'feed', 'tier' => 'public', 'url' => 'https://tern.example/undated', 'title' => 'An undated tern count', 'body' => 'No date.', 'item_ts' => 0, 'retrieved_ts' => 1792913333 ], 'machine:source:feed@9.4.1', '9.4.1' );
+		$this->project( [ $this->item(), $undated ] );
+		$this->project( [ $this->grown( 'The osprey wrack line report, whole.' ) ] );
+
+		$this->assertSame( [ [ self::ITEM, 1792900000 ], [ 'feed:undated-4417', 1792913333 ] ], self::graph_rows( 'items', 'item_key', 'item_key, item_time' ) );
 	}
 
 	/** A grown item keeps its row and its id, every field but its body as recorded, and FTS follows the new text. */

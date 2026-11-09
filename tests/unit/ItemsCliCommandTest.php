@@ -326,7 +326,8 @@ final class ItemsCliCommandTest extends TestCase {
 
 	/**
 	 * `items exclude`, `items include` and `items excluded` run the
-	 * `intelligence` CI's own commands, as the person `--user` signs in.
+	 * `intelligence` CI's own commands, as the person `--user` signs in, and
+	 * `excluded` prints the item's current title terminal-safe.
 	 */
 	public function test_exclude_include_and_excluded_run_the_curation_commands(): void {
 		$this->seed_teams();
@@ -338,7 +339,8 @@ final class ItemsCliCommandTest extends TestCase {
 		$cli->include_item( [ 'linear:WREN-2' ], [] );
 		$this->seed(
 			[
-				Intel_Event::make( 'item_excluded', [ 'item_key' => 'linear:HERON-7', 'url' => self::url( 'linear:HERON-7' ), 'title' => "Newsletter\tblock\e[2J", 'tier' => 'internal', 'why' => 'A duplicate.' ], 'user:heron-curator', 'fixture-9' ),
+				Intel_Event::make( 'item_grown', [ 'item_key' => 'linear:HERON-7', 'source' => 'linear', 'tier' => 'internal', 'url' => self::url( 'linear:HERON-7' ), 'title' => "Newsletter\tblock\e[2J", 'body' => '', 'item_ts' => self::$oct_06, 'retrieved_ts' => self::$oct_06 + 600 ], self::$machine, 'fixture-9' ),
+				Intel_Event::make( 'item_excluded', [ 'item_key' => 'linear:HERON-7', 'url' => self::url( 'linear:HERON-7' ), 'title' => 'Newsletter block', 'tier' => 'internal', 'why' => 'A duplicate.' ], 'user:heron-curator', 'fixture-9' ),
 				Intel_Event::make( 'item_excluded', [ 'item_key' => 'linear:WREN-2', 'url' => self::url( 'linear:WREN-2' ), 'title' => 'Checkout flow', 'tier' => 'internal' ], 'user:heron-curator', 'fixture-9' ),
 			]
 		);
@@ -349,6 +351,26 @@ final class ItemsCliCommandTest extends TestCase {
 		$this->assertSame( [ 'Excluded linear:EGRET-9 from every view; bring it back with: wp newspack-intelligence items include \'linear:EGRET-9\'' ], \WP_CLI::$successes );
 		$this->assertSame( [ 'linear:WREN-2 is not excluded' ], \WP_CLI::$errors );
 		$this->assertSame( [ "linear:HERON-7\tNewsletter block<1B>[2J\t" . self::url( 'linear:HERON-7' ) . "\tuser:heron-curator\t2026-10-20 12:00\tA duplicate." ], \WP_CLI::$logs );
+	}
+
+	/**
+	 * An exclusion whose item's rows are gone prints the copy it stored,
+	 * its title terminal-safe and its URL as stored.
+	 */
+	public function test_excluded_prints_the_stored_copy_of_a_purged_item(): void {
+		$this->seed_teams();
+		self::sign_in( 52, 'heron-curator', 'manage_options' );
+		$GLOBALS['_current_user_can'] = true;
+		$this->seed(
+			[
+				Intel_Event::make( 'item_excluded', [ 'item_key' => 'linear:PLOVER-3', 'url' => 'https://plover.example/stored-3', 'title' => "Stored\e[1m summaries", 'tier' => 'internal', 'why' => 'Gone for good.' ], 'user:heron-curator', 'fixture-9' ),
+				Intel_Event::make( 'item_purged', [ 'item_key' => 'linear:PLOVER-3', 'reason' => 'plover desk retired' ], 'machine:purge@9.4.1', 'fixture-9' ),
+			]
+		);
+
+		( new Items_CLI_Command() )->excluded( [], [ 'limit' => '5' ] );
+
+		$this->assertSame( [ "linear:PLOVER-3\tStored<1B>[1m summaries\thttps://plover.example/stored-3\tuser:heron-curator\t2026-10-20 12:00\tGone for good." ], \WP_CLI::$logs );
 	}
 
 	/** An exclusion records who made it, so a run with no `--user` is refused before it reads. */

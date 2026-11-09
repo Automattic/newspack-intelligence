@@ -54,7 +54,7 @@ use Newspack_Nodes\Row_Reader;
  * @phpstan-type Lens array{lists:array<string,list<string>>,entity:?string,days:?int,tiers:list<string>,by:?string,bucket:?string}
  * @phpstan-type Within array{join:string,binds:list<scalar>,fields:array<string,string>,order:string}
  * @phpstan-type Item array{item_key:string,url:string,title:string,source:string,item_ts:int,retrieved_ts:int}
- * @phpstan-type Scope \Closure(array{0:int,1:int}, bool): array{0:string,1:list<scalar|null>,2:string,3:string,4:string,5:list<scalar|null>}
+ * @phpstan-type Scope \Closure(array{0:int,1:int}, bool, bool): array{0:string,1:list<scalar|null>,2:string,3:string,4:string,5:list<scalar|null>}
  * @phpstan-type Series list<array{bucket:string,count:int,in_window:bool}>
  * @phpstan-type Usual array{mean:float,low:float,high:float}
  * @phpstan-type Pulse array{trend:Series,partial:array{bucket:string,count:int}|null,judged:bool,bucket:string|null}
@@ -334,7 +334,8 @@ final class Graph_Query {
 	 * @return array<string,mixed> `{ groups, total }`.
 	 */
 	private static function grouped( Row_Reader $r, array $g, array $filter, string $by, int $limit, int $offset ): array {
-		[ $stories, $binds ] = self::stories( $r, self::filtered( $r, $g, $filter ), $filter['days'] ?? self::all_days(), $by, false );
+		$days                = $filter['days'] ?? self::all_days();
+		[ $stories, $binds ] = self::stories( $r, self::filtered( $r, $g, $filter ), $days, $by, false, $days[0] );
 		$kinds               = $filter['lists']['kinds'];
 		$x                   = Intel_Graph_Row_Schema::all( $r, 'extractions' );
 		$columns             = self::item_columns();
@@ -593,7 +594,7 @@ final class Graph_Query {
 				$call,
 				$name,
 				static function ( Row_Reader $r, array $g, array $filter ) use ( $tail, $last ): array {
-					[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false );
+					[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false, Intel_Event::ABOUT_ROLES, false );
 					return $r->rows( "{$with} SELECT " . self::ITEM_ROW . ", i.retrieved_ts AS at FROM ri i WHERE {$where} AND " . $tail( 'i.retrieved_ts' ), [ ...$lead, ...$binds, ...$last ] );
 				}
 			);
@@ -653,7 +654,7 @@ final class Graph_Query {
 			$call,
 			$name,
 			static function ( Row_Reader $r, array $g, array $filter ) use ( $keys ): array {
-				[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false );
+				[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false, Intel_Event::ABOUT_ROLES, false );
 				$rows                            = $r->rows( "{$with} SELECT i.item_key FROM ri i WHERE {$where} AND i.item_key IN ( " . Intel_Graph_Row_Schema::marks( $keys ) . ' )', [ ...$lead, ...$binds, ...$keys ] );
 				return \array_map( static fn ( array $row ): string => Core::as_string( $row[0] ), $rows );
 			}
@@ -732,7 +733,7 @@ final class Graph_Query {
 	 * @return array<string,mixed>
 	 */
 	private static function items( Row_Reader $r, array $g, array $filter, int $limit, int $offset, array $within = self::NEWEST, array $links = Intel_Event::ABOUT_ROLES, ?int $since = null ): array {
-		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false, $links );
+		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false, $links, false );
 		$binds                           = [ ...$lead, ...$within['binds'], ...$binds ];
 		$columns                         = self::item_columns() + $within['fields'];
 		[ $total, $summary ]             = null === $since
@@ -1038,7 +1039,7 @@ final class Graph_Query {
 		}
 		$since                           = \min( \array_map( static fn ( array $row ): int => Core::as_int( $row['from_ts'] ), $open ) );
 		$filter                          = self::filter_of( [ 'entity' => $survivor ] );
-		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false, [ self::SUBJECT ] );
+		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false, [ self::SUBJECT ], false );
 		$time                            = Intel_Graph_Row_Schema::ITEM_TIME;
 		$x                               = Intel_Graph_Row_Schema::all( $r, 'extractions' );
 		$counted                         = \implode( ', ', \array_fill( 0, \count( self::STATUS_KINDS ), 'COUNT( DISTINCT CASE WHEN x.kind = ? THEN i.item_key END )' ) );
@@ -1689,7 +1690,7 @@ final class Graph_Query {
 	 *
 	 * @param array<string,int> $totals Each bucket's start => the subject's stories in it (`tally()`).
 	 * @param list<string>      $starts The window's starts, newest first.
-	 * @param array{int,int}    $days   The first second read and the second after the last.
+	 * @param array{int,int}    $days   The days the view looks back over: the first second and the second after the last.
 	 * @param bool              $judged Whether any of its axes was judged.
 	 * @param string            $bucket The span, one of BUCKETS.
 	 * @return Pulse
@@ -1732,7 +1733,7 @@ final class Graph_Query {
 			return [];
 		}
 		$weeks  = self::weeks_of( $starts );
-		$weekly = self::tally( $r, self::linking( $r, $g, $clients, [ Intel_Event::PUBLISHER ] ), $weeks, null, $span, $weeks[0] )[0];
+		$weekly = self::tally( $r, self::linking( $r, $g, $clients, [ Intel_Event::PUBLISHER ] ), $weeks, null, $span, $weeks[0], $weeks[0] )[0];
 		$outage = null;
 		$falls  = [];
 		foreach ( $clients as $client ) {
@@ -1820,12 +1821,13 @@ final class Graph_Query {
 	 */
 	private static function counts( Row_Reader $r, array $g, array $filter, ?string $by, string $span, array $links = Intel_Event::ABOUT_ROLES ): array {
 		$days = $filter['days'] ?? self::all_days();
-		return self::tally( $r, self::filtered( $r, $g, $filter, $links ), $days, $by, $span, $days[0], false, false, 'theme' === $by )[0][''] ?? [];
+		return self::tally( $r, self::filtered( $r, $g, $filter, $links ), $days, $by, $span, $days[0], $days[0], false, false, 'theme' === $by )[0][''] ?? [];
 	}
 
 	/**
 	 * A scope over the readable items the filters admit, under the one
-	 * subject `''`, as `narrowed()` builds it for the days asked.
+	 * subject `''`, as `narrowed()` builds it for the days asked, inline
+	 * when the read asks it to read no `live`.
 	 *
 	 * @param Row_Reader   $r      The reader.
 	 * @param Graph        $g      The graph.
@@ -1834,9 +1836,9 @@ final class Graph_Query {
 	 * @return Scope
 	 */
 	private static function filtered( Row_Reader $r, array $g, array $filter, array $links = Intel_Event::ABOUT_ROLES ): \Closure {
-		return static function ( array $days, bool $linked ) use ( $r, $g, $filter, $links ): array {
+		return static function ( array $days, bool $linked, bool $inline ) use ( $r, $g, $filter, $links ): array {
 			$days                            = [ Core::as_int( $days[0] ), Core::as_int( $days[1] ) ];
-			[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, [ 'days' => $days ] + $filter, $linked, $links );
+			[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, [ 'days' => $days ] + $filter, $linked, $links, $inline );
 			return [ $with, $lead, "''", '', $where, $binds ];
 		};
 	}
@@ -1850,15 +1852,19 @@ final class Graph_Query {
 	 * filter reads links or `$linked` asks for it, over the links of the items linking a named entity or topic,
 	 * else of the readable items inside `days`, over the link roles named;
 	 * `rl`, each role row under its survivor, follows it when a role is named.
+	 * With `$inline`, no `live` is built: each filter reading links is an
+	 * existence test on the item's own links (`link_filter()`), so a read
+	 * over many items never materializes their links.
 	 *
 	 * @param Row_Reader   $r      The reader.
 	 * @param Graph        $g      The graph the read opened.
 	 * @param Filter       $filter The filters.
 	 * @param bool         $linked Whether the read joins `live` itself.
 	 * @param list<string> $links  The link roles `live` reads.
+	 * @param bool         $inline Whether the condition reads each item's links itself, never `live`.
 	 * @return array{0:string,1:string,2:list<scalar|null>,3:list<scalar|null>} The `WITH` clauses, the condition, the clauses' binds and the condition's.
 	 */
-	private static function narrowed( Row_Reader $r, array $g, array $filter, bool $linked, array $links = Intel_Event::ABOUT_ROLES ): array {
+	private static function narrowed( Row_Reader $r, array $g, array $filter, bool $linked, array $links, bool $inline ): array {
 		$time  = Intel_Graph_Row_Schema::ITEM_TIME;
 		$where = [ "{$time} >= ?", "{$time} < ?" ];
 		$days  = $filter['days'] ?? self::all_days();
@@ -1868,29 +1874,32 @@ final class Graph_Query {
 			$where[]                    = "i.item_key IN {$matching}";
 			\array_push( $binds, ...$match_binds );
 		}
+		$link_filters = [];
 		if ( $filter['about'] ) {
-			$where[] = 'i.item_key IN ( SELECT item_key FROM live )';
+			$link_filters[] = self::link_filter( $r, $links, $inline, 'i.item_key IN ( SELECT item_key FROM live )', '1', [] );
 		}
 		$keys = [];
 		if ( null !== $filter['entity'] ) {
 			$survivor = self::survivor( $filter['entity'], $g );
-			$where[]  = 'i.item_key IN ( SELECT item_key FROM live WHERE entity_key = ? )';
-			$binds[]  = $survivor;
+			$link_filters[] = self::link_filter( $r, $links, $inline, 'i.item_key IN ( SELECT item_key FROM live WHERE entity_key = ? )', '{e} = ?', [ $survivor ] );
 			\array_push( $keys, ...self::keys_of( $survivor, $g ) );
 		}
 		[ 'kinds' => $kinds, 'topics' => $topics, 'roles' => $roles, 'sources' => $sources ] = $filter['lists'];
 		if ( [] !== $topics ) {
-			$topics  = \array_map( static fn ( string $topic ): string => self::survivor( $topic, $g ), $topics );
-			$where[] = 'i.item_key IN ( SELECT item_key FROM live WHERE topical AND entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $topics ) . ' ) )';
-			\array_push( $binds, ...$topics );
+			$topics = \array_map( static fn ( string $topic ): string => self::survivor( $topic, $g ), $topics );
+			$marks  = Intel_Graph_Row_Schema::marks( $topics );
+			$link_filters[] = self::link_filter( $r, $links, $inline, "i.item_key IN ( SELECT item_key FROM live WHERE topical AND entity_key IN ( {$marks} ) )", "{l}.role = 'topic' AND {e} IN ( {$marks} )", $topics );
 			foreach ( $topics as $topic ) {
 				\array_push( $keys, ...self::keys_of( $topic, $g ) );
 			}
 		}
 		if ( [] !== $roles ) {
-			$where[] = 'EXISTS ( SELECT 1 FROM live JOIN rl ON rl.entity_key = live.entity_key WHERE live.item_key = i.item_key AND NOT live.topical AND rl.role IN ( '
-				. Intel_Graph_Row_Schema::marks( $roles ) . " ) AND rl.from_ts <= {$time} AND ( 0 = rl.to_ts OR {$time} < rl.to_ts ) )";
-			\array_push( $binds, ...$roles );
+			$held = 'rl.role IN ( ' . Intel_Graph_Row_Schema::marks( $roles ) . " ) AND rl.from_ts <= {$time} AND ( 0 = rl.to_ts OR {$time} < rl.to_ts )";
+			$link_filters[] = self::link_filter( $r, $links, $inline, "EXISTS ( SELECT 1 FROM live JOIN rl ON rl.entity_key = live.entity_key WHERE live.item_key = i.item_key AND NOT live.topical AND {$held} )", "{l}.role <> 'topic' AND EXISTS ( SELECT 1 FROM rl WHERE rl.entity_key = {e} AND {$held} )", $roles );
+		}
+		foreach ( $link_filters as [ $condition, $condition_binds ] ) {
+			$where[] = $condition;
+			\array_push( $binds, ...$condition_binds );
 		}
 		if ( [] !== $kinds ) {
 			$where[] = 'i.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . ' xk WHERE kind IN ( ' . Intel_Graph_Row_Schema::marks( $kinds ) . ' ) )';
@@ -1902,7 +1911,7 @@ final class Graph_Query {
 		}
 		$with = $g['with'];
 		$lead = $g['binds'];
-		if ( $linked || $filter['about'] || [] !== $keys || [] !== $roles ) {
+		if ( ! $inline && ( $linked || $filter['about'] || [] !== $keys || [] !== $roles ) ) {
 			$only                  = [] === $keys
 				? [ "{t}.item_key IN ( SELECT item_key FROM ri i WHERE {$time} >= ? AND {$time} < ? )", $days ]
 				: self::linked_to( $r, $keys, $links );
@@ -1929,6 +1938,34 @@ final class Graph_Query {
 			throw new \InvalidArgumentException( \esc_html( "entity {$key}: its merge chain cycles or runs past " . Entity_Index::MAX_MERGE_HOPS . ' hops' ) );
 		}
 		return $survivor;
+	}
+
+	/**
+	 * A filter on the item `i`'s links: through `live` as `$live` reads
+	 * them, else, inline, on its own links by their key: a link of one of
+	 * `$roles` whose survivor is not '' and whose state is not `rejected`
+	 * (`link_state()`), meeting `$match`, where `{l}` names the link and
+	 * `{e}` its survivor.
+	 *
+	 * @param Row_Reader        $r           The reader.
+	 * @param list<string>      $roles       The link roles read.
+	 * @param bool              $inline      Whether to read the links inline.
+	 * @param string            $live        The condition through `live`.
+	 * @param string            $match       The inline condition over `{l}` and `{e}`.
+	 * @param list<scalar|null> $match_binds The binds both conditions read.
+	 * @return Sql The condition and its binds.
+	 */
+	private static function link_filter( Row_Reader $r, array $roles, bool $inline, string $live, string $match, array $match_binds ): array {
+		if ( ! $inline ) {
+			return [ $live, $match_binds ];
+		}
+		$e = 'COALESCE( lnm.value, ln.entity_key )';
+		return [
+			'EXISTS ( SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' ln LEFT JOIN mg lnm ON lnm.key = ln.entity_key WHERE ln.item_key = i.item_key AND ln.role IN ( '
+				. Intel_Graph_Row_Schema::marks( $roles ) . " ) AND {$e} <> '' AND " . self::link_state( $r, 'ln', $e ) . " <> 'rejected' AND "
+				. \str_replace( [ '{l}', '{e}' ], [ 'ln', $e ], $match ) . ' )',
+			[ ...$roles, ...$match_binds ],
+		];
 	}
 
 	/**
@@ -1993,7 +2030,8 @@ final class Graph_Query {
 	/**
 	 * A scope over each entity's readable items linked by `$links`, under
 	 * its survivor: each statement's `live` reads the links of the items
-	 * linking any of their keys, joined as `l`.
+	 * linking any of their keys, joined as `l`; inline, the item's own
+	 * links by those keys, as `live` would read them (`link_state()`).
 	 *
 	 * @param Row_Reader   $r         The reader.
 	 * @param Graph        $g         The graph.
@@ -2009,8 +2047,14 @@ final class Graph_Query {
 		[ $only, $only_binds ] = self::linked_to( $r, $keys, $links );
 		[ $live, $live_binds ] = self::live( $r, $only, $only_binds, $links );
 		$time                  = Intel_Graph_Row_Schema::ITEM_TIME;
-		$where                 = 'l.entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $survivors ) . " ) AND {$time} >= ? AND {$time} < ?";
-		return static fn ( array $days ): array => [ $g['with'] . $live, [ ...$g['binds'], ...$live_binds ], 'l.entity_key', 'JOIN live l ON l.item_key = i.item_key', $where, [ ...$survivors, Core::as_int( $days[0] ), Core::as_int( $days[1] ) ] ];
+		$marks                 = Intel_Graph_Row_Schema::marks( $survivors );
+		$where                 = "l.entity_key IN ( {$marks} ) AND {$time} >= ? AND {$time} < ?";
+		$survivor              = 'COALESCE( lm.value, l.entity_key )';
+		$inline                = 'l.entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) AND l.role IN ( ' . Intel_Graph_Row_Schema::marks( $links ) . " ) AND {$survivor} IN ( {$marks} )"
+			. ' AND ' . self::link_state( $r, 'l', $survivor ) . " <> 'rejected' AND {$time} >= ? AND {$time} < ?";
+		return static fn ( array $days, bool $linked, bool $read_inline ): array => $read_inline
+			? [ $g['with'], $g['binds'], $survivor, 'JOIN ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . ' l ON l.item_key = i.item_key LEFT JOIN mg lm ON lm.key = l.entity_key', $inline, [ ...$keys, ...$links, ...$survivors, Core::as_int( $days[0] ), Core::as_int( $days[1] ) ] ]
+			: [ $g['with'] . $live, [ ...$g['binds'], ...$live_binds ], 'l.entity_key', 'JOIN live l ON l.item_key = i.item_key', $where, [ ...$survivors, Core::as_int( $days[0] ), Core::as_int( $days[1] ) ] ];
 	}
 	/**
 	 * The condition on `{t}` admitting the items any of the keys is linked
@@ -2081,22 +2125,22 @@ final class Graph_Query {
 	}
 
 	/**
-	 * Each subject's spikes over what the scope admits in `$days`, counted
-	 * per value of the axis by the window's buckets alone (`spiked_in()`),
-	 * null for a subject too new to judge and absent for one holding no
-	 * story at all.
+	 * Each subject's spikes over what the scope admits across the whole
+	 * retention, whatever days a view looks back over, counted per value of
+	 * the axis by the window's buckets alone (`spiked_in()`), null for a
+	 * subject too new to judge and absent for one holding no story at all;
+	 * `$days` marks which buckets of each series the view looks at, which
+	 * bucket it may signal, and which stories a signal cites (`tally()`).
 	 * With `$known`, as the about axis counting by kind sets it, a value
-	 * spikes only when the same value was counted before the oldest of them,
-	 * read across the whole retention whatever `$days` keeps: in the same
-	 * statement when `$days` is the whole retention, else in one more.
+	 * spikes only when the same value was counted before the oldest of them.
 	 * Without it, any axis but that one and the publisher axis, a subject
-	 * spikes only when a story precedes the oldest of them within `$days`,
-	 * read in the same statement. Beside the spikes, each subject's stories
-	 * per bucket, counted in the statement that counts the window (`tally()`).
+	 * spikes only when a story precedes the oldest of them. Either history
+	 * is read from the admitted copies in the statement that counts the
+	 * window, beside each subject's stories per bucket.
 	 *
 	 * @param Row_Reader     $r      The reader.
 	 * @param Scope          $scope  The items read, by subject.
-	 * @param array{int,int} $days   The first second and the second after the last.
+	 * @param array{int,int} $days   The days the view looks back over: the first second and the second after the last.
 	 * @param list<string>   $starts The window's starts, newest first.
 	 * @param string         $by     The axis.
 	 * @param string         $span   A BUCKETS expression over `t`.
@@ -2105,13 +2149,9 @@ final class Graph_Query {
 	 * @return array{0:array<string,list<array<string,mixed>>|null>,1:array<string,array<string,int>>} Each subject with a story => its spikes, null when not judged; and each subject => each bucket's start => its stories.
 	 */
 	private static function spiking( Row_Reader $r, \Closure $scope, array $days, array $starts, string $by, string $span, bool $muted, bool $known ): array {
-		$cut                   = Intel_Graph_Row_Schema::day( $starts[ self::SIGNAL_BASELINE + 1 ] );
-		$whole                 = self::all_days() === $days;
-		[ $tallied, $history, $totals ] = self::tally( $r, $scope, $days, $by, $span, $cut, $muted, $known && $whole, totals: true );
-		if ( $known && ! $whole ) {
-			$history = self::tally( $r, $scope, self::all_days(), $by, $span, $cut, $muted, true )[1];
-		}
-		$spikes = [];
+		$cut                            = Intel_Graph_Row_Schema::day( $starts[ self::SIGNAL_BASELINE + 1 ] );
+		[ $tallied, $history, $totals ] = self::tally( $r, $scope, self::all_days(), $by, $span, $cut, $days[0], $muted, $known, totals: true );
+		$spikes                         = [];
 		foreach ( \array_keys( $tallied + $history ) as $subject ) {
 			$spikes[ $subject ] = self::spiked_in( $tallied[ $subject ] ?? [], $starts, $days, $by, $history[ $subject ] ?? [], $known );
 		}
@@ -2127,11 +2167,13 @@ final class Graph_Query {
 	 * empty `$history` judges nothing. Without it, a history holding no
 	 * counted item before the oldest of them judges nothing, since its zeros
 	 * are not a baseline: an item in the oldest bucket answers that, else a
-	 * `$history` that is not empty. A subject not judged answers null.
+	 * `$history` that is not empty. A subject not judged answers null, and
+	 * one judged whose latest complete bucket holds no day of `$days`
+	 * signals nothing, since a view signals only what it looks back over.
 	 *
 	 * @param list<array{bucket:mixed,value:mixed,count:int,items:list<array{item_key:mixed,url:mixed,title:mixed}>}> $rows   The trend rows, the newest bucket first.
 	 * @param list<string>                                                                                          $starts The window's starts, newest first.
-	 * @param array{int,int}                                                                                        $days   The first second read and the second after the last.
+	 * @param array{int,int}                                                                                        $days   The days the view looks back over: the first second and the second after the last.
 	 * @param string                                                                                                $by     The axis.
 	 * @param array<string,true>                                                                                    $history Each value counted before the oldest bucket, or '' alone for a subject's history.
 	 * @param bool                                                                                                  $known   Whether a value spikes only when `$history` holds it.
@@ -2140,6 +2182,9 @@ final class Graph_Query {
 	private static function spiked_in( array $rows, array $starts, array $days, string $by, array $history, bool $known ): ?array {
 		if ( [] === $history && ( $known || [] === $rows || Core::as_string( $rows[ \count( $rows ) - 1 ]['bucket'] ) > $starts[ self::SIGNAL_BASELINE + 1 ] ) ) {
 			return null;
+		}
+		if ( ! self::looked_at( $starts, 1, $days ) ) {
+			return [];
 		}
 		$counts = [];
 		foreach ( $rows as $row ) {
@@ -2161,12 +2206,12 @@ final class Graph_Query {
 	/**
 	 * A series over the SIGNAL_TREND latest complete buckets of the window,
 	 * the latest first, 0 where a bucket counts none, each `in_window` when
-	 * it holds a day of `$days`, since a bucket the read never reached is
-	 * not a zero.
+	 * it holds a day of `$days`, the days the view looks back over, since a
+	 * view shows only those though its rules judge by every bucket.
 	 *
 	 * @param array<string,int> $counts Each bucket's start => its count.
 	 * @param list<string>      $starts The window's starts, newest first.
-	 * @param array{int,int}    $days   The first second read and the second after the last.
+	 * @param array{int,int}    $days   The days the view looks back over: the first second and the second after the last.
 	 * @return Series
 	 */
 	private static function series( array $counts, array $starts, array $days ): array {
@@ -2175,10 +2220,22 @@ final class Graph_Query {
 			$series[] = [
 				'bucket'    => $starts[ $i ],
 				'count'     => $counts[ $starts[ $i ] ] ?? 0,
-				'in_window' => Intel_Graph_Row_Schema::day( $starts[ $i ] ) < $days[1] && Intel_Graph_Row_Schema::day( $starts[ $i - 1 ] ) > $days[0],
+				'in_window' => self::looked_at( $starts, $i, $days ),
 			];
 		}
 		return $series;
+	}
+
+	/**
+	 * Whether the window's `$i`th bucket holds a day of `$days`: it opens
+	 * before their end, and the bucket after it opens after their first.
+	 *
+	 * @param list<string>   $starts The window's starts, newest first.
+	 * @param int            $i      The bucket, 1 the latest complete.
+	 * @param array{int,int} $days   The days the view looks back over: the first second and the second after the last.
+	 */
+	private static function looked_at( array $starts, int $i, array $days ): bool {
+		return Intel_Graph_Row_Schema::day( $starts[ $i ] ) < $days[1] && Intel_Graph_Row_Schema::day( $starts[ $i - 1 ] ) > $days[0];
 	}
 
 	/**
@@ -2213,47 +2270,61 @@ final class Graph_Query {
 	}
 
 	/**
+	 * Every UTC day, as `days` bounds them.
+	 *
+	 * @return array{0:int,1:int}
+	 */
+	private static function all_days(): array {
+		return Intel_Graph_Row_Schema::range( self::ALL_DAYS[0], self::ALL_DAYS[1] );
+	}
+
+	/**
 	 * Stories counted per subject, bucket and value of the axis, or of none
-	 * to count every story, each citing its newest stories, of what the
-	 * scope admits in `$days` (`stories()`): those dated at or after `$cut`
-	 * per bucket, and, in the same statement, each subject holding a story
-	 * dated before it, its history, by each value it counted there when
-	 * `$values` asks. A story is cited by its key, URL and title, each read
-	 * once however many partitions hold it, and only for the stories cited. A story with no value, one with
-	 * no theme on the theme axis, counts under none, and is not history.
-	 * With `$totals`, the same statement also counts each subject's stories
-	 * per bucket at or after `$cut`, a story once whatever values it holds,
-	 * dated by its earliest copy, counted only when it holds a value.
+	 * to count every story, each citing its newest stories dated at or after
+	 * `$since`, of what the scope admits in `$days` (`stories()`): those
+	 * dated at or after `$cut` per bucket, and, in the same statement, each
+	 * subject with an admitted copy dated before it, its history, by each
+	 * value that copy holds when `$values` asks, read from the copies alone,
+	 * since any such copy dates its story before `$cut`. A story is cited by
+	 * its key, URL and title, each read once however many partitions hold
+	 * it, and only for the stories cited; a bucket holding none since
+	 * `$since` keeps its count and cites nothing. A story with no value, one
+	 * with no theme on the theme axis, counts under none, and is not
+	 * history. With `$totals`, the same statement also counts each subject's
+	 * stories per bucket at or after `$cut`, a story once whatever values it
+	 * holds, dated by its earliest copy, counted only when it holds a value.
 	 *
 	 * @param Row_Reader     $r      The reader.
 	 * @param Scope          $scope  The items read, by subject.
-	 * @param array{int,int} $days   The first second and the second after the last.
+	 * @param array{int,int} $days   The first second read and the second after the last.
 	 * @param string|null    $by     The axis, null for none.
 	 * @param string         $span   A BUCKETS expression over `t`.
 	 * @param int            $cut    The first second a bucket counts.
+	 * @param int            $since  The first second a cited story is dated at.
 	 * @param bool           $muted  Whether the kind axis leaves out MUTE_KIND.
-	 * @param bool           $values Whether the history is read per value.
+	 * @param bool           $values Whether the history is read per value, off the theme axis.
 	 * @param bool           $named  Whether each row names the open clients its stories' copies name as their subject, before its items, a copy about more than MAX_ITEM_CLIENTS naming none.
 	 * @param bool           $totals Whether to count each subject's stories per bucket too.
 	 * @return array{0:array<string,list<array{bucket:mixed,value:mixed,count:int,items:list<array{item_key:mixed,url:mixed,title:mixed}>}>>,1:array<string,array<string,true>>,2:array<string,array<string,int>>} Each subject => its rows, the newest bucket first, then the highest count; each subject with a history => each value in it, or '' alone; and, with `$totals`, each subject => each bucket's start => its stories.
 	 */
-	private static function tally( Row_Reader $r, \Closure $scope, array $days, ?string $by, string $span, int $cut, bool $muted = false, bool $values = false, bool $named = false, bool $totals = false ): array {
-		[ $stories, $binds ] = self::stories( $r, $scope, $days, $by, $muted );
+	private static function tally( Row_Reader $r, \Closure $scope, array $days, ?string $by, string $span, int $cut, int $since, bool $muted = false, bool $values = false, bool $named = false, bool $totals = false ): array {
+		[ $stories, $binds ] = self::stories( $r, $scope, $days, $by, $muted, $cut );
+		$admitted            = 'theme' === $by ? 'EXISTS ( SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'themes' ) . ' th WHERE th.item_key = h.item_key )' : 'h.value IS NOT NULL';
 		$clients             = $named
 			? ', ' . self::item_clients( $r ) . ", named AS ( SELECT b.subject, b.bucket, b.value, json_group_array( json_object( 'entity_key', b.entity_key, 'name', " . self::name_of( $r, 'b.entity_key' ) . ' ) ) AS clients'
 				. " FROM ( SELECT DISTINCT s.subject, s.bucket, s.value, ic.entity_key FROM ( SELECT subject, {$span} AS bucket, value, item_key FROM stories WHERE t >= ? AND value IS NOT NULL ) s"
 				. ' JOIN copies c ON c.subject = s.subject AND c.value = s.value AND c.story = s.item_key JOIN ic ON ic.item_key = c.copy AND ic.subject ) b GROUP BY 1, 2, 3 )'
 			: '';
 		$rows                = $r->rows(
-			"{$stories}, ranked AS ( SELECT s.subject, {$span} AS bucket, s.value, s.item_key, ROW_NUMBER() OVER ( PARTITION BY s.subject, {$span}, s.value ORDER BY t DESC, s.item_key DESC ) AS rn,"
+			"{$stories}, ranked AS ( SELECT s.subject, {$span} AS bucket, s.value, s.item_key, s.t, ROW_NUMBER() OVER ( PARTITION BY s.subject, {$span}, s.value ORDER BY t DESC, s.item_key DESC ) AS rn,"
 			. " COUNT(*) OVER ( PARTITION BY s.subject, {$span}, s.value ) AS n FROM stories s WHERE t >= ? AND s.value IS NOT NULL ),"
-			. ' cited AS ( SELECT ranked.*, c.url, c.title FROM ranked JOIN ( SELECT item_key, MAX( url ) AS url, MAX( title ) AS title FROM ri'
-			. " WHERE item_key IN ( SELECT item_key FROM ranked WHERE rn <= ? ) GROUP BY item_key ) c ON c.item_key = ranked.item_key WHERE ranked.rn <= ? ){$clients}"
+			. ' cited AS ( SELECT ranked.subject, ranked.bucket, ranked.value, ranked.n, ranked.rn, c.item_key, c.url, c.title FROM ranked LEFT JOIN ( SELECT item_key, MAX( url ) AS url, MAX( title ) AS title FROM ri'
+			. " WHERE item_key IN ( SELECT item_key FROM ranked WHERE rn <= ? AND t >= ? ) GROUP BY item_key ) c ON c.item_key = ranked.item_key WHERE ranked.rn <= ? AND ( ranked.t >= ? OR ranked.rn = 1 ) ){$clients}"
 			. ' SELECT cited.subject, cited.bucket, cited.value, cited.n, cited.item_key, cited.url, cited.title, cited.rn, ' . ( $named ? 'nm.clients FROM cited LEFT JOIN named nm ON nm.subject = cited.subject AND nm.bucket = cited.bucket AND nm.value = cited.value' : 'NULL FROM cited' )
-			. ' UNION ALL SELECT DISTINCT subject, NULL, ' . ( $values ? 'value' : 'NULL' ) . ', NULL, NULL, NULL, NULL, NULL, NULL FROM stories WHERE t < ? AND value IS NOT NULL'
+			. ' UNION ALL SELECT DISTINCT h.subject, NULL, ' . ( $values ? 'h.value' : 'NULL' ) . ", NULL, NULL, NULL, NULL, NULL, NULL FROM pc h WHERE {$admitted}"
 			. ( $totals ? " UNION ALL SELECT subject, {$span}, NULL, COUNT(*), NULL, NULL, NULL, NULL, NULL FROM ( SELECT subject, item_key, MIN( t ) AS t FROM stories WHERE value IS NOT NULL GROUP BY 1, 2 ) WHERE t >= ? GROUP BY 1, 2" : '' )
 			. ' ORDER BY 1, 2 DESC, 4 DESC, 3, 8',
-			[ ...$binds, $cut, self::CITATIONS, self::CITATIONS, ...( $named ? [ $cut ] : [] ), $cut, ...( $totals ? [ $cut ] : [] ) ]
+			[ ...$binds, $cut, self::CITATIONS, $since, self::CITATIONS, $since, ...( $named ? [ $cut ] : [] ), ...( $totals ? [ $cut ] : [] ) ]
 		);
 		$out                 = [];
 		$history             = [];
@@ -2264,13 +2335,15 @@ final class Graph_Query {
 				$history[ $of ][ Core::as_string( $counted ) ] = true;
 				continue;
 			}
-			if ( null === $item ) {
+			if ( null === $counted ) {
 				$counts[ $of ][ Core::as_string( $day ) ] = Core::as_int( $n );
 				continue;
 			}
-			$at                          = Core::as_string( $day ) . '|' . Core::as_string( $counted );
-			$out[ $of ][ $at ]         ??= [ 'bucket' => $day, 'value' => $counted, 'count' => Core::as_int( $n ) ] + ( $named ? [ 'clients' => self::clients_of( $listed ) ] : [] ) + [ 'items' => [] ];
-			$out[ $of ][ $at ]['items'][] = [ 'item_key' => $item, 'url' => $url, 'title' => $title ];
+			$at                  = Core::as_string( $day ) . '|' . Core::as_string( $counted );
+			$out[ $of ][ $at ] ??= [ 'bucket' => $day, 'value' => $counted, 'count' => Core::as_int( $n ) ] + ( $named ? [ 'clients' => self::clients_of( $listed ) ] : [] ) + [ 'items' => [] ];
+			if ( null !== $item ) {
+				$out[ $of ][ $at ]['items'][] = [ 'item_key' => $item, 'url' => $url, 'title' => $title ];
+			}
 		}
 		return [ \array_map( \array_values( ... ), $out ), $history, $counts ];
 	}
@@ -2322,9 +2395,13 @@ final class Graph_Query {
 
 	/**
 	 * The `WITH` clauses ending in `copies ( subject, value, story, copy, t )`
-	 * and `stories ( subject, value, item_key, t )`: each item the scope
-	 * admits in `$days`, per value of the axis, as the story it belongs to,
-	 * and each story dated by the earliest of its copies the scope admits.
+	 * and `stories ( subject, value, item_key, t )`, beside `hits ( subject,
+	 * value, item_key, t )`, every item the scope admits in `$days`, its
+	 * value null on the theme axis: each item admitted at or after `$cut`,
+	 * and each copy sharing a cluster with one, found by the cluster key,
+	 * per value of the axis, as the story it belongs to, and each story
+	 * dated by the earliest of its copies the scope admits, so only the
+	 * stories reaching `$cut` are resolved.
 	 * The story is its cluster's canonical, the cluster and the canonical
 	 * each read from the newest partition holding a row, when the caller may
 	 * read the canonical, else the item itself. On the theme axis a copy's
@@ -2338,27 +2415,39 @@ final class Graph_Query {
 	 * @param array{int,int} $days  The first second and the second after the last.
 	 * @param string|null    $by    The axis, null for none.
 	 * @param bool           $muted Whether the kind axis leaves out MUTE_KIND.
+	 * @param int            $cut   The first second a story it resolves reaches.
 	 * @return Sql The clauses and their binds.
 	 */
-	private static function stories( Row_Reader $r, \Closure $scope, array $days, ?string $by, bool $muted ): array {
+	private static function stories( Row_Reader $r, \Closure $scope, array $days, ?string $by, bool $muted, int $cut ): array {
 		$themed                                           = 'theme' === $by;
-		[ $with, $lead, $subject, $join, $where, $binds ] = $scope( $days, 'topic' === $by || $themed );
-		[ $value, $axis ]                                 = null === $by ? self::EVERY_ITEM : self::TREND_AXES[ $by ];
-		$axis = \str_replace( '{extractions}', Intel_Graph_Row_Schema::all( $r, 'extractions' ), $axis ) . ( $muted && 'kind' === $by ? " AND x.kind <> '" . self::MUTE_KIND . "'" : '' );
-		[ $tm, $map ]                                     = $themed ? self::theme_survivors( $r ) : [ '', null ];
-		$sql  = "{$with}, hits AS ( SELECT {$subject} AS subject, {$value} AS value, i.item_key, MIN( " . Intel_Graph_Row_Schema::ITEM_TIME . " ) AS t FROM ri i {$join} {$axis} WHERE {$where} GROUP BY 1, 2, 3 ),"
-			. ' sc AS ( SELECT item_key, cluster_key FROM ( SELECT c.item_key, c.cluster_key, ROW_NUMBER() OVER ( PARTITION BY c.item_key ORDER BY c.partition_ordinal DESC ) AS pick FROM '
-			. Intel_Graph_Row_Schema::all( $r, 'clusters', true ) . ' c WHERE c.item_key IN ( SELECT item_key FROM hits ) ) WHERE pick = 1 ),'
+		$time                                             = Intel_Graph_Row_Schema::ITEM_TIME;
+		[ $with, $lead, $subject, $join, $where, $binds ] = $scope( [ \max( $days[0], $cut ), $days[1] ], 'topic' === $by || $themed, false );
+		[ $value, $axis ]                                 = self::axis_sql( $r, $by, $muted, false );
+		$before                                           = 'SELECT NULL AS subject, NULL AS value, NULL AS item_key, NULL AS t WHERE 0';
+		$before_binds                                     = [];
+		if ( $days[0] < $cut ) {
+			[ , , $early, $early_join, $early_where, $before_binds ] = $scope( [ $days[0], $cut ], false, true );
+			[ $early_value, $early_axis ]                             = self::axis_sql( $r, $by, $muted, true );
+			$before = "SELECT {$early} AS subject, {$early_value} AS value, i.item_key, MIN( {$time} ) AS t FROM ri i {$early_join} {$early_axis} WHERE {$early_where} GROUP BY 1, 2, 3";
+		}
+		[ $tm, $map ] = $themed ? self::theme_survivors( $r ) : [ '', null ];
+		$clusters     = Intel_Graph_Row_Schema::all( $r, 'clusters', true );
+		$sql          = "{$with}, hits AS ( SELECT {$subject} AS subject, {$value} AS value, i.item_key, MIN( {$time} ) AS t FROM ri i {$join} {$axis} WHERE {$where} GROUP BY 1, 2, 3 ),"
+			. " pc AS ( {$before} ),"
+			. ' wh AS ( SELECT DISTINCT item_key FROM hits ),'
+			. " sc AS ( SELECT item_key, cluster_key FROM ( SELECT c.item_key, c.cluster_key, ROW_NUMBER() OVER ( PARTITION BY c.item_key ORDER BY c.partition_ordinal DESC ) AS pick FROM {$clusters} c"
+			. " WHERE c.item_key IN ( SELECT item_key FROM wh UNION SELECT m.item_key FROM {$clusters} m WHERE m.cluster_key IN ( SELECT w.cluster_key FROM {$clusters} w WHERE w.item_key IN ( SELECT item_key FROM wh ) ) ) ) WHERE pick = 1 ),"
+			. ' rh AS ( SELECT * FROM hits UNION ALL SELECT * FROM pc WHERE item_key IN ( SELECT item_key FROM sc WHERE cluster_key IN ( SELECT sc.cluster_key FROM sc JOIN wh ON wh.item_key = sc.item_key ) ) ),'
 			. ' st AS ( SELECT sc.item_key, CASE WHEN EXISTS ( SELECT 1 FROM ri s WHERE s.item_key = k.canonical_item_key ) THEN k.canonical_item_key END AS story FROM sc JOIN'
 			. ' ( SELECT k.cluster_key, k.canonical_item_key, ROW_NUMBER() OVER ( PARTITION BY k.cluster_key ORDER BY k.partition_ordinal DESC ) AS pick FROM '
 			. Intel_Graph_Row_Schema::all( $r, 'canonicals', true ) . ' k WHERE k.cluster_key IN ( SELECT cluster_key FROM sc ) ) k ON k.cluster_key = sc.cluster_key AND k.pick = 1 ),'
 			. ( $themed
 				? " {$tm}, th AS ( SELECT item_key, theme FROM ( SELECT t.item_key, t.theme, ROW_NUMBER() OVER ( PARTITION BY t.item_key ORDER BY t.partition_ordinal DESC ) AS pick FROM "
-					. Intel_Graph_Row_Schema::all( $r, 'themes', true ) . ' t WHERE t.item_key IN ( SELECT item_key FROM hits ) ) WHERE pick = 1 ),'
-					. ' copies AS ( SELECT h.subject, COALESCE( tm.survivor, th.theme ) AS value, COALESCE( st.story, h.item_key ) AS story, h.item_key AS copy, h.t FROM hits h LEFT JOIN st ON st.item_key = h.item_key LEFT JOIN th ON th.item_key = h.item_key LEFT JOIN tm ON tm.theme = th.theme ),'
-				: ' copies AS ( SELECT h.subject, h.value, COALESCE( st.story, h.item_key ) AS story, h.item_key AS copy, h.t FROM hits h LEFT JOIN st ON st.item_key = h.item_key ),' )
+					. Intel_Graph_Row_Schema::all( $r, 'themes', true ) . ' t WHERE t.item_key IN ( SELECT item_key FROM rh ) ) WHERE pick = 1 ),'
+					. ' copies AS ( SELECT h.subject, COALESCE( tm.survivor, th.theme ) AS value, COALESCE( st.story, h.item_key ) AS story, h.item_key AS copy, h.t FROM rh h LEFT JOIN st ON st.item_key = h.item_key LEFT JOIN th ON th.item_key = h.item_key LEFT JOIN tm ON tm.theme = th.theme ),'
+				: ' copies AS ( SELECT h.subject, h.value, COALESCE( st.story, h.item_key ) AS story, h.item_key AS copy, h.t FROM rh h LEFT JOIN st ON st.item_key = h.item_key ),' )
 			. ' stories AS ( SELECT subject, value, story AS item_key, MIN( t ) AS t FROM copies GROUP BY 1, 2, 3 )';
-		return [ $sql, [ ...$lead, ...$binds, ...( null === $map ? [] : [ $map ] ) ] ];
+		return [ $sql, [ ...$lead, ...$binds, ...$before_binds, ...( null === $map ? [] : [ $map ] ) ] ];
 	}
 
 	/**
@@ -2400,12 +2489,42 @@ final class Graph_Query {
 	}
 
 	/**
-	 * Every UTC day, as `days` bounds them.
+	 * An axis's value and the join reaching it over `ri i`: the kind's
+	 * extraction, `other` left out with `$muted`; a topic's link through
+	 * `live`, else, inline, through the item's own topic links as `live`
+	 * reads them; no value on the theme axis, which `stories()` joins once
+	 * the items are read; and one value for every item with no axis.
 	 *
-	 * @return array{0:int,1:int}
+	 * @param Row_Reader  $r      The reader.
+	 * @param string|null $by     The axis, null for none.
+	 * @param bool        $muted  Whether the kind axis leaves out MUTE_KIND.
+	 * @param bool        $inline Whether the join reads no `live`.
+	 * @return array{0:string,1:string} The value and the join.
 	 */
-	private static function all_days(): array {
-		return Intel_Graph_Row_Schema::range( self::ALL_DAYS[0], self::ALL_DAYS[1] );
+	private static function axis_sql( Row_Reader $r, ?string $by, bool $muted, bool $inline ): array {
+		if ( $inline && 'topic' === $by ) {
+			$e = 'COALESCE( tlm.value, tln.entity_key )';
+			return [ 'tl.entity_key', "JOIN ( SELECT tln.item_key, {$e} AS entity_key FROM " . Intel_Graph_Row_Schema::all( $r, 'links' ) . " tln LEFT JOIN mg tlm ON tlm.key = tln.entity_key WHERE tln.role = 'topic' AND {$e} <> '' AND "
+				. self::link_state( $r, 'tln', $e ) . " <> 'rejected' ) tl ON tl.item_key = i.item_key" ];
+		}
+		[ $value, $axis ] = null === $by ? self::EVERY_ITEM : self::TREND_AXES[ $by ];
+		return [ $value, \str_replace( '{extractions}', Intel_Graph_Row_Schema::all( $r, 'extractions' ), $axis ) . ( $muted && 'kind' === $by ? " AND x.kind <> '" . self::MUTE_KIND . "'" : '' ) ];
+	}
+
+	/**
+	 * A link's state as `live` reads it, over the link `$l` and its
+	 * survivor `$e`: a `publisher` link's own, else that of the
+	 * highest-ranked judgment of the item and that survivor, the latest
+	 * among equals, else its own.
+	 *
+	 * @param Row_Reader $r The reader.
+	 * @param string     $l The link's alias.
+	 * @param string     $e Its survivor's expression.
+	 */
+	private static function link_state( Row_Reader $r, string $l, string $e ): string {
+		return "CASE WHEN {$l}.role = '" . Intel_Event::PUBLISHER . "' THEN {$l}.state ELSE COALESCE( ( SELECT {$l}j.state FROM " . Intel_Graph_Row_Schema::all( $r, 'judgments' )
+			. " {$l}j LEFT JOIN mg {$l}jm ON {$l}jm.key = {$l}j.entity_key WHERE {$l}j.item_key = {$l}.item_key AND COALESCE( {$l}jm.value, {$l}j.entity_key ) = {$e}"
+			. ' ORDER BY ' . self::judge_rank( "{$l}j.actor_kind" ) . " DESC, {$l}j.ts DESC LIMIT 1 ), {$l}.state ) END";
 	}
 
 	/**
@@ -2699,7 +2818,7 @@ final class Graph_Query {
 			'survivors' => $survivors,
 			'keys'      => self::inverse( $survivors ),
 			'with'      => 'WITH mg AS MATERIALIZED ( SELECT key, value FROM json_each( ? ) ),'
-				. ' ti AS NOT MATERIALIZED ( SELECT item_key, source, tier, url, title, item_ts, retrieved_ts, substr( body, 1, ' . self::EXCERPT_READ_CHARS . ' ) AS head FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' )
+				. ' ti AS NOT MATERIALIZED ( SELECT item_key, source, tier, url, title, item_ts, retrieved_ts, item_time, substr( body, 1, ' . self::EXCERPT_READ_CHARS . ' ) AS head FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' )
 				. ' a WHERE tier IN ( ' . Intel_Graph_Row_Schema::marks( $tiers ) . ' ) ),'
 				. ' ri AS NOT MATERIALIZED ( SELECT * FROM ti WHERE ' . ( $kept ? self::kept( $r, 'item_key' ) : '1' ) . ' )',
 			'binds'     => [ \wp_json_encode( (object) $survivors, \JSON_THROW_ON_ERROR ), ...$tiers ],

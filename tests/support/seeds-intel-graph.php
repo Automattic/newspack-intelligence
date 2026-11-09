@@ -226,7 +226,7 @@ trait Seeds_Intel_Graph {
 	 */
 	private static function write_restricted_item( string $key, string $title ): void {
 		$db = new \PDO( 'sqlite:' . Table_Node::file( 'intel-graph', 0 ), null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
-		$db->prepare( 'INSERT INTO items ( item_key, source, tier, url, url_canonical, title, title_norm, body, item_ts, retrieved_ts, retrieved_day ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )' )
-			->execute( [ $key, 'hubspot', 'restricted', self::url( $key ), self::url( $key ), $title, \strtolower( $title ), 'The renewal is at risk.', self::$oct_13, self::$oct_13 + 600, \intdiv( self::$oct_13 + 600, 86400 ) ] );
+		$db->prepare( 'INSERT INTO items ( item_key, source, tier, url, url_canonical, title, title_norm, body, item_ts, retrieved_ts, retrieved_day, item_time ) VALUES ( ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? )' )
+			->execute( [ $key, 'hubspot', 'restricted', self::url( $key ), self::url( $key ), $title, \strtolower( $title ), 'The renewal is at risk.', self::$oct_13, self::$oct_13 + 600, \intdiv( self::$oct_13 + 600, 86400 ), self::$oct_13 ] );
 	}
 }

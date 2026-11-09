@@ -8,6 +8,8 @@ use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intelligence_CI_Node;
 use Newspack_Nodes\Capabilities;
+use Newspack_Nodes\Core;
+use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
@@ -165,8 +167,8 @@ final class IntelligenceSignalsTest extends TestCase {
 	/**
 	 * On the topic axis a topic needs no history of its own: a new topic
 	 * surging through a topic lens spikes once the lens holds any story
-	 * before its oldest baseline week, read within the lens's own days, so
-	 * the same lens kept to 30 days signals nothing.
+	 * before its oldest baseline week, read across the whole retention, so
+	 * the same lens kept to 30 days spikes alike.
 	 */
 	public function test_a_new_topic_surging_through_a_topic_lens_spikes(): void {
 		$this->seed( self::entity( 'topic:squalls', 'Squalls' ), self::entity( 'topic:tides', 'Tides' ) );
@@ -180,7 +182,7 @@ final class IntelligenceSignalsTest extends TestCase {
 		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
 
 		$this->assertSame( [ [ '2026-10-12', 'topic', 'topic:squalls', 12, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [ '--lens=surge-desk' ] ) ) );
-		$this->assertSame( [], $this->ci->dispatch( 'signals', [ '--lens=surge-month' ] )['signals'] );
+		$this->assertSame( [ [ '2026-10-12', 'topic', 'topic:squalls', 12, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [ '--lens=surge-month' ] ) ) );
 	}
 
 	/**
@@ -483,11 +485,11 @@ final class IntelligenceSignalsTest extends TestCase {
 	}
 
 	/**
-	 * A signal's own series is out of its window where the view's days never
-	 * reach: a 30-day view counting kinds spikes on a kind counted long
-	 * before it, and its series breaks before 2026-09-21.
+	 * A signal's own series is out of its window before the view's first
+	 * day: a 30-day view counting kinds spikes on a kind counted long before
+	 * it, and its series breaks before 2026-09-21.
 	 */
-	public function test_a_signals_series_is_out_of_window_where_the_view_never_reads(): void {
+	public function test_a_signals_series_is_out_of_window_before_the_views_first_day(): void {
 		$this->weeks( 'complaint', [ 1 => 5, 2 => 1, 20 => 1 ] );
 		$this->save( 'month-desk', '--days=30' );
 
@@ -542,6 +544,204 @@ final class IntelligenceSignalsTest extends TestCase {
 		$this->assertSame( [ 4, 2, 3, 2, 3, 2, 3, 2 ], \array_column( $answer['signals'][0]['trend'], 'count' ) );
 		$this->assertSame( [ 4, 3, 3, 7, 3, 3, 3, 2 ], \array_column( $answer['trend'], 'count' ) );
 		$this->assertArrayNotHasKey( 'usual', $answer );
+	}
+
+	/**
+	 * A view's baseline reads across the retention, past its own days: a
+	 * 30-day weekly view counting themes, its baseline weeks 2, 3, 2, 3, 2,
+	 * 3, 2, 3 running back before its first day, signals nine stories last
+	 * week against a mean of 2.5, as the same view with no days does.
+	 */
+	public function test_a_thirty_day_view_signals_against_older_history(): void {
+		$this->themed( 'ferry closures', [ 1 => 9, 2 => 2, 3 => 3, 4 => 2, 5 => 3, 6 => 2, 7 => 3, 8 => 2, 9 => 3, 10 => 2 ] );
+		$this->save( 'crossing-month', '--days=30', '--by=theme' );
+		$this->save( 'crossing-ever', '--by=theme' );
+
+		$month = $this->ci->dispatch( 'signals', [ '--lens=crossing-month' ] );
+
+		$this->assertSame( [ [ '2026-10-12', 'theme', 'ferry closures', 9, 2.5 ] ], self::signals( $month ) );
+		$this->assertTrue( $month['judged'] );
+		$this->assertSame( self::signals( $this->ci->dispatch( 'signals', [ '--lens=crossing-ever' ] ) ), self::signals( $month ) );
+	}
+
+	/**
+	 * Look back still bounds what the view lists and charts: the 30-day view
+	 * that signals on older history searches, trends and cites no story
+	 * before its first day, 2026-09-21, and its pulse marks the weeks before
+	 * that day out of its window.
+	 */
+	public function test_look_back_still_bounds_the_listed_items(): void {
+		$this->themed( 'ferry closures', [ 1 => 9, 2 => 2, 3 => 3, 4 => 2, 5 => 3, 6 => 2, 7 => 3, 8 => 2, 9 => 3, 10 => 2 ] );
+		$this->save( 'crossing-month', '--days=30', '--by=theme' );
+		$first = self::THIS_WEEK - 4 * self::WEEK;
+
+		$listed  = \array_column( $this->ci->dispatch( 'search', [ '--lens=crossing-month', '--limit=200' ] )['items'], 'item_ts' );
+		$charted = \array_column( $this->ci->dispatch( 'trends', [ '--lens=crossing-month' ] )['rows'], 'bucket' );
+		$signals = $this->ci->dispatch( 'signals', [ '--lens=crossing-month' ] );
+
+		$this->assertSame( 9 + 2 + 3 + 2, \count( $listed ) );
+		$this->assertGreaterThanOrEqual( $first, \min( $listed ) );
+		$this->assertSame( [ '2026-10-12', '2026-10-05', '2026-09-28', '2026-09-21' ], \array_values( \array_unique( $charted ) ) );
+		$this->assertCount( Graph_Query::CITATIONS, $signals['signals'][0]['items'] );
+		foreach ( $signals['signals'][0]['items'] as $item ) {
+			$this->assertStringEndsWith( ' of week 1', $item['title'] );
+		}
+		$this->assertSame( [ true, true, true, true, false, false, false, false ], \array_column( $signals['trend'], 'in_window' ) );
+		$this->assertSame( [ true, true, true, true, false, false, false, false ], \array_column( $signals['signals'][0]['trend'], 'in_window' ) );
+	}
+
+	/**
+	 * A view whose filters match no item is not judged, however much history
+	 * the graph holds outside it, and draws no zero it did not read nor any
+	 * usual range.
+	 */
+	public function test_a_view_matching_nothing_is_not_judged(): void {
+		$this->themed( 'ferry closures', [ 1 => 9, 2 => 2, 3 => 3, 4 => 2, 5 => 3, 6 => 2, 7 => 3, 8 => 2, 9 => 3, 10 => 2 ] );
+		$this->save( 'empty-month', '--days=30', '--by=theme', '--source=github' );
+
+		$answer = $this->ci->dispatch( 'signals', [ '--lens=empty-month' ] );
+
+		$this->assertSame( [ false, [] ], [ $answer['judged'], $answer['signals'] ] );
+		$this->assertSame( [ true, true, true, true, false, false, false, false ], \array_column( $answer['trend'], 'in_window' ) );
+		$this->assertSame( \array_fill( 0, Graph_Query::SIGNAL_TREND, 0 ), \array_column( $answer['trend'], 'count' ) );
+		$this->assertArrayNotHasKey( 'usual', $answer );
+	}
+
+	/**
+	 * A view signals only a bucket its look back overlaps: a day lens
+	 * looking back one day never signals yesterday, though it is judged,
+	 * and looking back two days it does.
+	 */
+	public function test_a_day_view_looking_back_one_day_signals_nothing(): void {
+		$day = 86400;
+		$this->seed( self::entity( 'topic:gales', 'Gales' ) );
+		for ( $n = 0; $n < 6; $n++ ) {
+			$this->seed( ...self::counted( "feed:gale-{$n}", 'research', self::THIS_WEEK + 7 * 3600 + $n, 'public', 'feed', [ 'topic:gales' ] ) );
+		}
+		$this->seed( ...self::counted( 'feed:gale-old', 'research', self::THIS_WEEK - 15 * $day, 'public', 'feed', [ 'topic:gales' ] ) );
+		$this->save( 'gale-today', '--by=topic', '--bucket=day', '--days=1' );
+		$this->save( 'gale-two-days', '--by=topic', '--bucket=day', '--days=2' );
+
+		$today = $this->ci->dispatch( 'signals', [ '--lens=gale-today' ] );
+
+		$this->assertSame( [ true, [] ], [ $today['judged'], $today['signals'] ] );
+		$this->assertFalse( $today['trend'][0]['in_window'] );
+		$this->assertSame( [ [ '2026-10-19', 'topic', 'topic:gales', 6, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [ '--lens=gale-two-days' ] ) ) );
+	}
+
+	/**
+	 * On Sunday 2026-10-25 a week lens looking back seven days opens on
+	 * Monday 2026-10-19, after the latest complete week closed, so it
+	 * signals nothing that week; looking back eight days it does.
+	 */
+	public function test_a_week_view_looking_back_seven_days_on_a_sunday_signals_nothing(): void {
+		$this->weeks( 'complaint', [ 1 => 6, 20 => 1 ] );
+		$this->save( 'squall-week', '--days=7' );
+		$this->save( 'squall-eight', '--days=8' );
+		Core::$now = (float) ( self::THIS_WEEK + 6 * 86400 + 12 * 3600 );
+
+		$week = $this->ci->dispatch( 'signals', [ '--lens=squall-week' ] );
+
+		$this->assertSame( [ true, [], '2026-10-19' ], [ $week['judged'], $week['signals'], $week['partial']['bucket'] ] );
+		$this->assertFalse( $week['trend'][0]['in_window'] );
+		$this->assertSame( [ [ '2026-10-12', 'kind', 'complaint', 6, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [ '--lens=squall-eight' ] ) ) );
+	}
+
+	/**
+	 * A signal counts its whole bucket but cites only the stories its view's
+	 * look back reaches: a lens looking back three days, from Sunday
+	 * 2026-10-18, counts seven complaints last week and cites the two from
+	 * that Sunday.
+	 */
+	public function test_a_signal_cites_only_what_its_look_back_lists(): void {
+		$this->weeks( 'complaint', [ 1 => 5, 20 => 1 ] );
+		for ( $n = 1; $n <= 2; $n++ ) {
+			$this->seed( ...self::counted( "feed:complaint-sunday-{$n}", 'complaint', self::THIS_WEEK - 86400 + $n * 60, 'internal', 'feed', [] ) );
+		}
+		$this->save( 'squall-three', '--days=3' );
+
+		$signal = $this->ci->dispatch( 'signals', [ '--lens=squall-three' ] )['signals'][0];
+
+		$this->assertSame( [ 'complaint', 7 ], [ $signal['value'], $signal['count'] ] );
+		$this->assertSame( [ 'feed:complaint-sunday-2', 'feed:complaint-sunday-1' ], \array_column( $signal['items'], 'item_key' ) );
+		$this->assertSame( 7, $signal['trend'][0]['count'] );
+	}
+
+	/**
+	 * A view filtering by role reads its history before the window as one
+	 * existence test per subject, on each item's links, judgments and roles
+	 * by their keys: the statement builds `live` over the window's items
+	 * alone, and scans neither links nor judgments.
+	 */
+	public function test_the_history_reads_links_by_their_keys(): void {
+		$this->about_ledger( 'complaint', 'subject', [ 1 => 5, 20 => 1 ] );
+		$this->seed( [ Intel_Event::make( 'role_asserted', [ 'entity_key' => 'organization:tidewater-ledger', 'role' => 'client', 'from_ts' => self::THIS_WEEK - 30 * self::WEEK ], 'user:41', 'fixture-9' ) ] );
+		$this->save( 'ledger-clients', '--days=30', '--role=client' );
+
+		$queries = $this->queries_of( fn () => $this->ci->dispatch( 'signals', [ '--lens=ledger-clients' ] ) );
+
+		$spikes = \array_values( \array_filter( $queries, static fn ( string $sql ): bool => \str_contains( $sql, 'ranked AS' ) ) );
+		$this->assertCount( 1, $spikes );
+		$this->assertMatchesRegularExpression( '/ pc AS \( (?:(?! live\b).)*\), wh AS/s', $spikes[0] );
+		$db = new \PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
+		$db->exec( 'ATTACH DATABASE ' . $db->quote( Table_Node::file( 'intel-graph', 0 ) ) . ' AS p0' );
+		$plan = \implode( "\n", \array_column( $db->query( 'EXPLAIN QUERY PLAN ' . $spikes[0] )->fetchAll( \PDO::FETCH_ASSOC ), 'detail' ) );
+		$this->assertMatchesRegularExpression( '/SEARCH (p0\.judgments|\w+) USING (COVERING )?INDEX sqlite_autoindex_judgments_1 \(item_key=\?\)/', $plan );
+		$this->assertDoesNotMatchRegularExpression( '/SCAN (p0\.)?(links|judgments)\b/', $plan );
+		$this->assertSame( [ [ '2026-10-12', 'kind', 'complaint', 5, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [ '--lens=ledger-clients' ] ) ) );
+	}
+
+	/**
+	 * No statement a team view's signals, the briefing or a search read
+	 * scans items or extractions: the signals and the briefing search item
+	 * time through `items_item_time`, and the signals and a search by kind
+	 * search `extractions_kind`.
+	 */
+	public function test_the_reads_search_item_time_and_kind_by_their_indexes(): void {
+		$this->themed( 'ferry closures', [ 1 => 9, 2 => 2, 10 => 2 ] );
+		$this->save( 'crossing-clients', '--days=30', '--by=theme', '--kind=research', '--kind=complaint', '--role=client' );
+		$reads = [
+			'signals'  => fn () => $this->ci->dispatch( 'signals', [ '--lens=crossing-clients' ] ),
+			'briefing' => fn () => $this->ci->dispatch( 'briefing', [ 'changes' ] ),
+			'search'   => fn () => $this->ci->dispatch( 'search', [ '--since=2026-09-21', '--kind=research', '--sort=time' ] ),
+		];
+		$db = new \PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
+		$db->exec( 'ATTACH DATABASE ' . $db->quote( Table_Node::file( 'intel-graph', 0 ) ) . ' AS p0' );
+
+		foreach ( $reads as $name => $read ) {
+			$timed = \array_values( \array_filter( $this->queries_of( $read ), static fn ( string $sql ): bool => \str_contains( $sql, Intel_Graph_Row_Schema::ITEM_TIME . ' >= ?' ) ) );
+			$this->assertNotSame( [], $timed, $name );
+			foreach ( $timed as $sql ) {
+				$plan = \implode( "\n", \array_column( $db->query( 'EXPLAIN QUERY PLAN ' . $sql )->fetchAll( \PDO::FETCH_ASSOC ), 'detail' ) );
+				$this->assertDoesNotMatchRegularExpression( '/SCAN p0\.(items|extractions)\b/', $plan, $name );
+				if ( 'search' !== $name ) {
+					$this->assertMatchesRegularExpression( '/USING (COVERING )?INDEX items_item_time \(item_time>\? AND item_time<\?\)/', $plan, $name );
+				}
+				if ( 'briefing' !== $name ) {
+					$this->assertMatchesRegularExpression( '/USING (COVERING )?INDEX extractions_kind \(kind=\?\)/', $plan, $name );
+				}
+			}
+		}
+	}
+
+	/**
+	 * The spike read resolves stories only for the window's items and the
+	 * copies sharing their clusters, which it finds through the clusters'
+	 * cluster key rather than by reading every cluster row.
+	 */
+	public function test_the_spike_read_resolves_stories_through_the_cluster_key(): void {
+		$this->weeks( 'incident', [ 1 => 4, 20 => 1 ] );
+		$this->seed( self::story( 'feed:incident-1-1', [ 'feed:incident-1-1', 'feed:incident-1-2' ], self::THIS_WEEK - self::WEEK + 2 * 86400 ) );
+		$this->save( 'tide-month', '--days=30' );
+
+		$queries = $this->queries_of( fn () => $this->ci->dispatch( 'signals', [ '--lens=tide-month' ] ) );
+
+		$spikes = \array_values( \array_filter( $queries, static fn ( string $sql ): bool => \str_contains( $sql, '.clusters' ) ) );
+		$this->assertCount( 1, $spikes );
+		$db = new \PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
+		$db->exec( 'ATTACH DATABASE ' . $db->quote( Table_Node::file( 'intel-graph', 0 ) ) . ' AS p0' );
+		$plan = \implode( "\n", \array_column( $db->query( 'EXPLAIN QUERY PLAN ' . $spikes[0] )->fetchAll( \PDO::FETCH_ASSOC ), 'detail' ) );
+		$this->assertMatchesRegularExpression( '/SEARCH (m|p0\.clusters) USING (COVERING )?INDEX clusters_cluster_key \(cluster_key=\?\)/', $plan );
 	}
 
 	/** A signal's usual range never runs below zero stories. */
@@ -643,6 +843,20 @@ final class IntelligenceSignalsTest extends TestCase {
 	}
 
 	/**
+	 * Seed research items of one theme per week back from the current one.
+	 *
+	 * @param string         $theme  The theme every item is extracted with.
+	 * @param array<int,int> $counts Weeks back => how many items.
+	 */
+	private function themed( string $theme, array $counts ): void {
+		foreach ( $counts as $back => $count ) {
+			for ( $n = 1; $n <= $count; $n++ ) {
+				$this->seed( ...self::counted( "feed:themed-{$back}-{$n}", 'research', self::THIS_WEEK - $back * self::WEEK + 2 * 86400 + $n * 60, 'internal', 'feed', [], "{$theme} {$n} of week {$back}", $theme ) );
+			}
+		}
+	}
+
+	/**
 	 * Seed items of one kind per week back from the current one, each linked
 	 * to the Tidewater Ledger in one role.
 	 *
@@ -671,12 +885,13 @@ final class IntelligenceSignalsTest extends TestCase {
 	 * @param string       $source Its source.
 	 * @param list<string> $topics Its topics.
 	 * @param string       $title  Its title.
+	 * @param string       $theme  Its theme, or '' for none.
 	 * @return list<list<array<string,mixed>>>
 	 */
-	private static function counted( string $key, string $kind, int $at, string $tier, string $source, array $topics, string $title = '' ): array {
+	private static function counted( string $key, string $kind, int $at, string $tier, string $source, array $topics, string $title = '', string $theme = '' ): array {
 		$events = [
 			[ \Newspack_Intelligence\Intel_Event::make( 'item_recorded', [ 'item_key' => $key, 'source' => $source, 'tier' => $tier, 'url' => self::url( $key ), 'title' => '' === $title ? $key : $title, 'body' => '', 'item_ts' => $at, 'retrieved_ts' => $at + 600 ], self::$machine, 'fixture-9' ) ],
-			self::extraction( $key, "A {$kind}.", $kind, $at, $topics ),
+			self::extraction( $key, "A {$kind}.", $kind, $at, $topics, 5.0, 5.0, $theme ),
 		];
 		if ( 'restricted' === $tier ) {
 			$events[] = self::link( 'link_asserted', $key, 'organization:tidewater-ledger', 'subject', 'name', 1.0, $at );

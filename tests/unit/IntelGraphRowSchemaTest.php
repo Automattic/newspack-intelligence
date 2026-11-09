@@ -49,7 +49,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'entity_key', 'type', 'name', 'norm', 'created_ts' ], \array_keys( $tables['entities']['columns'] ), 'an entity row carries no id' );
 		$this->assertSame( [ 'entities_norm' => [ 'norm' ] ], $tables['entities']['indexes'] );
 		$this->assertArrayNotHasKey( 'autoincrement', $tables['entities'] );
-		$this->assertSame( 9, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 10, Intel_Graph_Row_Schema::version() );
 		$this->projector_graph();
 		$this->assertSame( [ 'Intel_Graph' ], Core::node( 'intel-graph' )->arguments(), 'the Row_Table accepts the schema' );
 	}
@@ -71,7 +71,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'item_key' ], $themes['key'] );
 		$this->assertSame( [ 'themes_item_day' => [ 'item_day' ] ], $themes['indexes'] );
 		$this->assertSame( [ 'item_day', 730, 86400 ], $themes['retain'] );
-		$this->assertSame( 9, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 10, Intel_Graph_Row_Schema::version() );
 	}
 
 	/**
@@ -83,7 +83,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 
 		$this->assertSame( [ 'id', 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'checked_kind', 'kind_verdict', 'checked_ts', 'actor', 'item_day' ], \array_keys( $columns ) );
 		$this->assertSame( [ 'TEXT', 'TEXT', 'INTEGER' ], [ $columns['checked_kind'], $columns['kind_verdict'], $columns['checked_ts'] ] );
-		$this->assertSame( 9, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 10, Intel_Graph_Row_Schema::version() );
 	}
 
 	/** One fragment reads an extraction row's kind check back as the record its event carried, null for one never checked. */
@@ -150,19 +150,21 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'seamed', 17 ], Intel_Graph_Row_Schema::read( static fn (): int => 41, 'never logged: ' ) );
 	}
 
-	/** An item's time is its item_ts, or its retrieved_ts when undated, alike in SQL and in PHP. */
-	public function test_an_items_time_is_one_rule_in_sql_and_php(): void {
-		$pdo = new \PDO( 'sqlite::memory:' );
-		$sql = $pdo->prepare( 'SELECT ' . Intel_Graph_Row_Schema::ITEM_TIME . ' FROM ( SELECT ? AS item_ts, ? AS retrieved_ts ) i' );
-		$at  = [];
-		foreach ( [ [ 0, 1793000017 ], [ 1792000041, 1793000017 ] ] as [ $item_ts, $retrieved_ts ] ) {
-			$sql->bindValue( 1, $item_ts, \PDO::PARAM_INT );
-			$sql->bindValue( 2, $retrieved_ts, \PDO::PARAM_INT );
-			$sql->execute();
-			$this->assertSame( Intel_Graph_Row_Schema::item_time( $item_ts, $retrieved_ts ), (int) $sql->fetchColumn() );
-			$at[] = Intel_Graph_Row_Schema::item_time( $item_ts, $retrieved_ts );
-		}
-		$this->assertSame( [ 1793000017, 1792000041 ], $at );
+	/**
+	 * An item's time is one indexed column, `item_time`, which every read
+	 * compares as ITEM_TIME: its item_ts, or its retrieved_ts when undated,
+	 * as `item_time()` computes it; and an extraction's kind is indexed, so
+	 * a kinds filter searches it.
+	 */
+	public function test_an_items_time_is_one_indexed_column(): void {
+		$tables = Intel_Graph_Row_Schema::tables();
+
+		$this->assertSame( 'INTEGER NOT NULL', $tables['items']['columns']['item_time'] );
+		$this->assertSame( [ 'item_time' ], $tables['items']['indexes']['items_item_time'] );
+		$this->assertSame( [ 'kind' ], $tables['extractions']['indexes']['extractions_kind'] );
+		$this->assertSame( 'i.item_time', Intel_Graph_Row_Schema::ITEM_TIME );
+		$this->assertSame( [ 1793000017, 1792000041 ], [ Intel_Graph_Row_Schema::item_time( 0, 1793000017 ), Intel_Graph_Row_Schema::item_time( 1792000041, 1793000017 ) ] );
+		$this->assertSame( 10, Intel_Graph_Row_Schema::version() );
 	}
 
 	public function test_judgments_and_collected_outlive_their_items(): void {
@@ -198,7 +200,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'source' => 'TEXT NOT NULL', 'line_hash' => 'TEXT NOT NULL', 'item_key' => 'TEXT NOT NULL', 'item_day' => 'INTEGER NOT NULL' ], $boilerplate['columns'] );
 		$this->assertSame( [ 'source', 'line_hash', 'item_key' ], $boilerplate['key'] );
 		$this->assertSame( [ 'item_day', 730, 86400 ], $boilerplate['retain'] );
-		$this->assertSame( 9, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 10, Intel_Graph_Row_Schema::version() );
 
 		$now       = 1793000000;
 		Core::$now = (float) ( $now - 731 * 86400 );
@@ -260,7 +262,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'item_key' => 'TEXT NOT NULL', 'tier' => 'TEXT NOT NULL', 'url' => 'TEXT NOT NULL', 'title' => 'TEXT NOT NULL', 'why' => 'TEXT NOT NULL', 'actor' => 'TEXT NOT NULL', 'ts' => 'REAL NOT NULL' ], $excluded['columns'] );
 		$this->assertSame( [ 'item_key' ], $excluded['key'] );
 		$this->assertTrue( $excluded['keep'] );
-		$this->assertSame( 9, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 10, Intel_Graph_Row_Schema::version() );
 	}
 
 	/** The reads that open on a proposal's subject or a judged entity reach it by an index. */
@@ -269,7 +271,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 
 		$this->assertContains( [ 'subject', 'kind' ], $tables['events']['indexes'] ?? [] );
 		$this->assertContains( [ 'entity_key' ], $tables['judgments']['indexes'] ?? [] );
-		$this->assertSame( 9, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 10, Intel_Graph_Row_Schema::version() );
 	}
 
 	/** With no partition written, a table reads as an empty row set of its declared columns. */

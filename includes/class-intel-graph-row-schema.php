@@ -53,8 +53,8 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	/** Seconds in the unit a day column counts. */
 	public const DAY_SECONDS = 86400;
 
-	/** An item's time in SQL over `items i`: its item_ts, or its retrieved_ts when undated. */
-	public const ITEM_TIME = 'COALESCE( NULLIF( i.item_ts, 0 ), i.retrieved_ts )';
+	/** An item's time in SQL over `items i`: the indexed column `item_time()` writes. */
+	public const ITEM_TIME = 'i.item_time';
 
 	/**
 	 * Projection-read seam: replaces the one `Row_Table_Node::read()` call
@@ -173,12 +173,14 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 					'item_ts'       => 'INTEGER NOT NULL',
 					'retrieved_ts'  => 'INTEGER NOT NULL',
 					'retrieved_day' => 'INTEGER NOT NULL',
+					'item_time'     => 'INTEGER NOT NULL',
 				],
 				'key'           => [ 'item_key' ],
 				'indexes'       => [
 					'items_url_canonical' => [ 'url_canonical' ],
 					'items_title_norm'    => [ 'title_norm' ],
 					'items_retrieved_day' => [ 'retrieved_day' ],
+					'items_item_time'     => [ 'item_time' ],
 				],
 				'autoincrement' => 'id',
 				'fts'           => [ 'title', 'body' ],
@@ -202,7 +204,10 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				'key'           => [ 'item_key' ],
 				'autoincrement' => 'id',
 				'fts'           => [ 'summary' ],
-				'indexes' => [ 'extractions_item_day' => [ 'item_day' ] ],
+				'indexes' => [
+					'extractions_item_day' => [ 'item_day' ],
+					'extractions_kind'     => [ 'kind' ],
+				],
 				'retain'  => [ 'item_day', self::RETAIN_DAYS, self::DAY_SECONDS ],
 			],
 			'extracted_subjects' => [
@@ -660,8 +665,8 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	}
 
 	/**
-	 * An item's time: its item_ts, or its retrieved_ts when undated; the PHP
-	 * twin of ITEM_TIME.
+	 * An item's time: its item_ts, or its retrieved_ts when undated, as the
+	 * projector writes it to `item_time`, which ITEM_TIME reads.
 	 *
 	 * @param int $item_ts      The item's own date, 0 when it has none.
 	 * @param int $retrieved_ts When it was retrieved.
@@ -676,6 +681,6 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	 * @api Read by the Row_Table that opens the file.
 	 */
 	public static function version(): int {
-		return 9;
+		return 10;
 	}
 }
