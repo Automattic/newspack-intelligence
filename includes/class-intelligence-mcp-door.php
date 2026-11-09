@@ -6,8 +6,8 @@
  * The door is a declaration on the substrate's `Mcp_Door`, which owns the
  * protocol, the session ceiling, the meter, the OAuth resource and the
  * `<site-data>` fence. Its tools are the `intelligence` CI's read and
- * curation verbs, read off that CI's schema, so a tool's role, its args and
- * their descriptions are the verb's own and cannot drift from it.
+ * curation commands, read off that CI's schema, so a tool's role, its args and
+ * their descriptions are the command's own and cannot drift from it.
  *
  * @package Newspack_Intelligence
  */
@@ -50,35 +50,24 @@ class Intelligence_Mcp_Door extends Mcp_Door {
 	 */
 	private const NOT_TOOLS = [ 'fetch_now', 'health', 'seed_ontology', 'reresolve' ];
 
-	/** What closes a tool's summary, by its verb's role; any other role adds nothing. */
+	/** What closes a tool's summary, by its command's role; any other role adds nothing. */
 	private const SUMMARY_TAILS = [
 		Capabilities::READ => ' An item is kept {horizon} after it was retrieved; past that it answers only from a collection it was saved to.',
 	];
 
 	/**
-	 * One `intel_<verb>` tool per verb but those NOT_TOOLS names, in declared
-	 * order, each offering every arg its verb declares, described as it does;
-	 * the substrate offers a session only the tools its scope's role covers.
+	 * One `intel_<verb>` tool per command but those NOT_TOOLS names, in declared
+	 * order, each offering every arg its command declares, described as it does,
+	 * its summary closed by the SUMMARY_TAILS entry of its command's role; the
+	 * substrate offers a session only the tools its scope's role covers.
 	 *
 	 * @api Read by the substrate's Mcp_Door.
 	 */
 	protected function tools(): array {
-		$tools = [];
-		foreach ( Command_Interpreter_Node::declared_commands( Intelligence_CI_Node::class ) as $verb => $declared ) {
-			if ( \in_array( $verb, self::NOT_TOOLS, true ) ) {
-				continue;
-			}
-			$args = [];
-			foreach ( Core::arr( $declared['args'] ?? [] ) as $arg ) {
-				$args[ Core::as_string( Core::arr( $arg )['name'] ?? '' ) ] = '{declared}';
-			}
-			$tools[ "intel_{$verb}" ] = [
-				'node'    => self::NODE,
-				'class'   => Intelligence_CI_Node::class,
-				'verb'    => $verb,
-				'summary' => Core::as_string( $declared['description'] ?? '' ) . ( self::SUMMARY_TAILS[ Core::as_string( $declared['capability'] ?? '' ) ] ?? '' ),
-				'args'    => $args,
-			];
+		$declared = Command_Interpreter_Node::declared_commands( Intelligence_CI_Node::class );
+		$tools    = self::declared_tools( self::NODE, Intelligence_CI_Node::class, 'intel', self::NOT_TOOLS );
+		foreach ( $tools as $name => $tool ) {
+			$tools[ $name ]['summary'] .= self::SUMMARY_TAILS[ Core::as_string( $declared[ $tool['verb'] ]['capability'] ?? '' ) ] ?? '';
 		}
 		return $tools;
 	}
