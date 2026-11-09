@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Switching views on the Intelligence page adds a browser history entry, so Back and Forward step through them.** Each switch, from the tab bar or from a link inside a view, pushes `?view=<tab id>` through the substrate's `useQueryParamState` with its new `push` option, and Back or Forward reopens the view that entry names, which keeps the state it was left in. A link naming `?view=` opens that view; one naming a view the page does not offer, or `entity` with no entity open, opens the default: Watches for a `?watch=` link, else the Briefing. The default view is left out of the bar, so loading the page writes no history entry. `?watch=` links work as before. Building it needs the substrate's `src/` from this change.
+
 ## [0.39.1] - 2026-11-09
 
 ### Fixed

@@ -2,6 +2,7 @@ import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import DashboardShell from '@newspack-nodes/shared/components/DashboardShell';
 import { getQueryParam } from '@newspack-nodes/shared/utils/queryParams';
+import { useQueryParamState } from '@newspack-nodes/shared/hooks/useQueryParamState';
 import TabBar, { useTabPanelProps } from '@newspack-nodes/shared/tabs/TabBar';
 import Briefing from './views/Briefing';
 import Search, { newSearch } from './views/Search';
@@ -25,6 +26,14 @@ import './styles/intelligence.scss';
 const linkedWatch = () => getQueryParam( 'watch' ) || null;
 
 /**
+ * The view a bar without `?view=` opens: Watches for a linked watch, else
+ * the Briefing.
+ *
+ * @return {string} The view's tab id.
+ */
+const defaultView = () => ( linkedWatch() ? 'watches' : 'briefing' );
+
+/**
  * The Intelligence page: Briefing, the view it opens on, then Search,
  * Entity, Team views, Review, Folders and Watches, switched in place. The
  * Briefing opens an entity, a lens, a watch, the watch form or Search. Each
@@ -42,7 +51,10 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
  * a watch opens the page on Watches with that watch open; a key the reader's
  * watches do not hold opens nothing, leaving the list. The health strip sits
  * above the tabs on every view, offering the operator fixes for `canManage`,
- * which the page also provides to every answer through `CanManage`.
+ * which the page also provides to every answer through `CanManage`. Each
+ * switch of view pushes `?view=<tab id>`, so Back and Forward step through
+ * the views and a link opens on one; a view the page does not offer opens
+ * the default.
  *
  * The shared `DashboardShell` supplies the skin, the positioned page surface,
  * the header naming this page and the debug overlay; the page scrolls in the
@@ -63,10 +75,6 @@ export default function IntelligencePage( {
 	operator,
 	vocabulary,
 } ) {
-	const [ view, setView ] = useState( () =>
-		linkedWatch() ? 'watches' : 'briefing'
-	);
-	const panelProps = useTabPanelProps( 'intelligence', view, true );
 	const [ entityKey, setEntityKey ] = useState( null );
 	const [ named, setNamed ] = useState( null );
 	const [ saving, setSaving ] = useState( null );
@@ -82,30 +90,6 @@ export default function IntelligencePage( {
 	const [ watchDraft, setWatchDraft ] = useState( null );
 	const [ asked, setAsked ] = useState( null );
 	const lastLook = useLastLook( userId );
-
-	const openEntity = ( key ) => {
-		setEntityKey( key );
-		setView( 'entity' );
-	};
-	const onSave = canTune ? setSaving : undefined;
-	const openWatchForm = ( target, name ) => {
-		setWatchDraft( newWatch( target, name ) );
-		setView( 'watches' );
-	};
-
-	const openLens = ( key ) => {
-		setLens( { ...CLOSED_LENS, key } );
-		setView( 'lenses' );
-	};
-	const openWatch = ( key ) => {
-		setWatch( { ...CLOSED_WATCH, key } );
-		setView( 'watches' );
-	};
-	const searchFor = ( filters ) => {
-		const fresh = newSearch( vocabulary.lensLists );
-		setSearch( { ...fresh, filters: { ...fresh.filters, ...filters } } );
-		setView( 'search' );
-	};
 
 	const tabs = [
 		{ id: 'briefing', label: __( 'Briefing', 'newspack-intelligence' ) },
@@ -131,6 +115,38 @@ export default function IntelligencePage( {
 		},
 		{ id: 'watches', label: __( 'Watches', 'newspack-intelligence' ) },
 	];
+	const [ view, setView ] = useQueryParamState(
+		'view',
+		( raw ) =>
+			tabs.some( ( tab ) => tab.id === raw ) ? raw : defaultView(),
+		( id ) => ( defaultView() === id ? null : id ),
+		{ push: true }
+	);
+	const panelProps = useTabPanelProps( 'intelligence', view, true );
+
+	const openEntity = ( key ) => {
+		setEntityKey( key );
+		setView( 'entity' );
+	};
+	const onSave = canTune ? setSaving : undefined;
+	const openWatchForm = ( target, name ) => {
+		setWatchDraft( newWatch( target, name ) );
+		setView( 'watches' );
+	};
+
+	const openLens = ( key ) => {
+		setLens( { ...CLOSED_LENS, key } );
+		setView( 'lenses' );
+	};
+	const openWatch = ( key ) => {
+		setWatch( { ...CLOSED_WATCH, key } );
+		setView( 'watches' );
+	};
+	const searchFor = ( filters ) => {
+		const fresh = newSearch( vocabulary.lensLists );
+		setSearch( { ...fresh, filters: { ...fresh.filters, ...filters } } );
+		setView( 'search' );
+	};
 
 	return (
 		<DashboardShell

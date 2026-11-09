@@ -1,4 +1,5 @@
 /* eslint-env jest */
+/* global PopStateEvent */
 /**
  * IntelligencePage opens on the Briefing, switches among its seven views in
  * place, opens an entity from any chip, saves an item through one dialog only for a curator, and
@@ -6,6 +7,7 @@
  */
 
 import {
+	act,
 	render,
 	screen,
 	fireEvent,
@@ -795,6 +797,7 @@ describe( 'IntelligencePage', () => {
 		await waitFor( () => expect( excludes() ).toHaveLength( 1 ) );
 		unmount();
 
+		window.history.replaceState( {}, '', '/' );
 		renderPage( false );
 		await openWeek();
 		await screen.findByRole( 'link', {
@@ -848,6 +851,108 @@ describe( 'IntelligencePage', () => {
 				'.newspack-nodes-page-content .newspack-intelligence'
 			)
 		).not.toBeNull();
+	} );
+
+	describe( 'the address bar', () => {
+		const PAGE = '/wp-admin/admin.php?page=newspack-intelligence';
+		const view = () =>
+			new URLSearchParams( window.location.search ).get( 'view' );
+		const popTo = ( url ) => {
+			window.history.replaceState( {}, '', url );
+			act( () => {
+				window.dispatchEvent( new PopStateEvent( 'popstate' ) );
+			} );
+		};
+		let pushSpy;
+		let replaceSpy;
+
+		beforeEach( () => {
+			window.history.replaceState( {}, '', PAGE );
+			pushSpy = jest.spyOn( window.history, 'pushState' );
+			replaceSpy = jest.spyOn( window.history, 'replaceState' );
+		} );
+
+		afterEach( () => {
+			pushSpy.mockRestore();
+			replaceSpy.mockRestore();
+		} );
+
+		it( 'pushes one entry naming each tab switched to', async () => {
+			renderPage();
+			expect( pushSpy ).not.toHaveBeenCalled();
+			expect( replaceSpy ).not.toHaveBeenCalled();
+
+			fireEvent.click( nav( 'Review' ) );
+			expect( pushSpy ).toHaveBeenCalledTimes( 1 );
+			expect( view() ).toBe( 'review' );
+
+			fireEvent.click( nav( 'Review' ) );
+			fireEvent.click( nav( 'Folders' ) );
+			expect( pushSpy ).toHaveBeenCalledTimes( 2 );
+			expect( view() ).toBe( 'collections' );
+			expect( replaceSpy ).not.toHaveBeenCalled();
+			await screen.findByText( 'No folder yet.' );
+		} );
+
+		it( 'restores the tab of the entry Back or Forward lands on', async () => {
+			renderPage();
+			fireEvent.click( nav( 'Review' ) );
+			fireEvent.click( nav( 'Folders' ) );
+			replaceSpy.mockClear();
+
+			popTo( `${ PAGE }&view=review` );
+			expect( nav( 'Review' ) ).toHaveAttribute(
+				'aria-selected',
+				'true'
+			);
+			await screen.findByText( 'No suggested match awaits review.' );
+
+			popTo( PAGE );
+			expect( nav( 'Briefing' ) ).toHaveAttribute(
+				'aria-selected',
+				'true'
+			);
+			expect( pushSpy ).toHaveBeenCalledTimes( 2 );
+			expect( replaceSpy ).toHaveBeenCalledTimes( 2 );
+			await openWeek();
+		} );
+
+		it( 'opens the tab a link names', async () => {
+			window.history.replaceState( {}, '', `${ PAGE }&view=review` );
+			renderPage();
+			expect( nav( 'Review' ) ).toHaveAttribute(
+				'aria-selected',
+				'true'
+			);
+			expect( view() ).toBe( 'review' );
+			expect( pushSpy ).not.toHaveBeenCalled();
+			await screen.findByText( 'No suggested match awaits review.' );
+		} );
+
+		it( 'opens the default tab for a view the page does not offer', async () => {
+			window.history.replaceState(
+				{},
+				'',
+				`${ PAGE }&view=entity&watch=9f3a51c07be2d468`
+			);
+			wire.replies.watches = LINKED;
+			wire.replies.watch_matches = {
+				items: [ ITEM ],
+				total: 1,
+				available: true,
+			};
+			renderPage();
+			expect( nav( 'Watches' ) ).toHaveAttribute(
+				'aria-selected',
+				'true'
+			);
+			expect( view() ).toBeNull();
+			expect(
+				new URLSearchParams( window.location.search ).get( 'watch' )
+			).toBe( '9f3a51c07be2d468' );
+			expect( pushSpy ).not.toHaveBeenCalled();
+			await screen.findByRole( 'region', { name: 'Quillsheet group' } );
+		} );
 	} );
 
 	it( 'mounts one debug overlay under its own storage key', async () => {
