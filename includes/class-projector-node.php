@@ -29,6 +29,7 @@
 namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Bootstrap;
+use Newspack_Nodes\Config;
 use Newspack_Nodes\Consumer_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
@@ -73,6 +74,9 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/** @var array<string,array<int|string,string>> Each table's column types, by position and by name. */
 	private static array $types = [];
+
+	/** @var array{0:float|null,1:string,2:list<array{0:array{source:string,offsets:string},1:array<string,mixed>}>} The last reading(): its tick, its runtime base and each reader with its lag. */
+	private static array $reading = [ null, '', [] ];
 
 	/** Node NAME of the Row_Table the rows are written to ('' = unnamed). */
 	private string $graph_target = '';
@@ -465,18 +469,102 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	/**
 	 * Whether a projector's reader of a stream has a committed cursor short
 	 * of its end. The projector flushes at every checkpoint, so a cursor at
-	 * the end means every event the stream holds is projected.
+	 * the end means every event the stream holds is projected. It reads the
+	 * disk on every call, since a caller may ask again after it appends.
 	 *
 	 * @api Read by the resolver's hold and the watcher's pass.
 	 * @param string $stream_dir The stream's directory.
 	 */
 	public static function behind( string $stream_dir ): bool {
-		foreach ( self::readers() as $reader ) {
-			if ( $stream_dir === $reader['source'] && ! Consumer_Node::lag_from_disk( $reader['source'], $reader['offsets'] )['caught_up'] ) {
+		$readers = \array_values( \array_filter( self::readers(), static fn ( array $reader ): bool => $stream_dir === $reader['source'] ) );
+		foreach ( self::lags( $readers ) as [ , $lag ] ) {
+			if ( ! $lag['caught_up'] ) {
 				return true;
 			}
 		}
 		return false;
+	}
+
+	/**
+	 * The end each projector reader's stream holds, its last segment and
+	 * that segment's size, by the reader's cursor dir: what short_of()
+	 * measures the readers against. Read as reading() reads, once a tick.
+	 *
+	 * @api Read by Source_Node, which waits on it before a pass.
+	 * @return array<string,array{0:int,1:int}>
+	 */
+	public static function ends(): array {
+		$ends = [];
+		foreach ( self::reading() as [ $reader, $lag ] ) {
+			$ends[ $reader['offsets'] ] = [ Core::as_int( $lag['end_segment'] ), Core::as_int( $lag['end_size'] ) ];
+		}
+		return $ends;
+	}
+
+	/**
+	 * The stream of the first projector reader whose committed cursor stands
+	 * short of the end `$ends` names for it, null once every one has reached
+	 * it. The projector flushes at every checkpoint, so a reader that has
+	 * reached its end has projected every event its stream held there. A
+	 * stream that now ends before its mark was recreated, so its reader is
+	 * judged by whether it has read the stream to its end now; a reader
+	 * `$ends` does not name is not waited for. Read as reading() reads.
+	 *
+	 * @api Read by Source_Node, which waits on it before a pass.
+	 * @param array<string,array{0:int,1:int}> $ends The ends ends() answered, by cursor dir.
+	 */
+	public static function short_of( array $ends ): ?string {
+		foreach ( self::reading() as [ $reader, $lag ] ) {
+			if ( ! isset( $ends[ $reader['offsets'] ] ) ) {
+				continue;
+			}
+			$mark = $ends[ $reader['offsets'] ];
+			$end  = [ Core::as_int( $lag['end_segment'] ), Core::as_int( $lag['end_size'] ) ];
+			$at   = [ Core::as_int( $lag['cursor_segment'] ), Core::as_int( $lag['cursor_offset'] ) ];
+			if ( self::before( $end, $mark ) ? ! $lag['caught_up'] : self::before( $at, $mark ) ) {
+				return $reader['source'];
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Every projector reader and its lag, read once per tick of the tick
+	 * clock, the readers among them, since readers() parses every active
+	 * topology: the sources waiting in one Router tick share one reading.
+	 * The runtime base keys it too, which a worker never changes.
+	 *
+	 * @return list<array{0:array{source:string,offsets:string},1:array<string,mixed>}>
+	 */
+	private static function reading(): array {
+		$base = Config::get_base_directory();
+		if ( Core::$now !== self::$reading[0] || $base !== self::$reading[1] ) {
+			self::$reading = [ Core::$now, $base, \iterator_to_array( self::lags( self::readers() ), false ) ];
+		}
+		return self::$reading[2];
+	}
+
+	/**
+	 * Each reader with its lag as the disk holds it now.
+	 *
+	 * @param list<array{source:string,offsets:string}> $readers The readers, as readers() answers them.
+	 * @return \Generator<int,array{0:array{source:string,offsets:string},1:array<string,mixed>}>
+	 */
+	private static function lags( array $readers ): \Generator {
+		foreach ( $readers as $reader ) {
+			yield [ $reader, Consumer_Node::lag_from_disk( $reader['source'], $reader['offsets'] ) ];
+		}
+	}
+
+	/**
+	 * Whether one stream position, a segment and an offset in it, lies
+	 * before another.
+	 *
+	 * @param array{0:int,1:int} $position The position.
+	 * @param array{0:int,1:int} $other    The position it is measured against.
+	 */
+	private static function before( array $position, array $other ): bool {
+		return $position[0] < $other[0] || ( $position[0] === $other[0] && $position[1] < $other[1] );
 	}
 
 	/**

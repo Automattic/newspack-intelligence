@@ -3,25 +3,32 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Intelligence\CLI\Ontology_CLI_Command;
 use Newspack_Intelligence\Feed_Source_Node;
 use Newspack_Intelligence\Github_Source_Node;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Linear_Source_Node;
 use Newspack_Intelligence\P2_Source_Node;
+use Newspack_Intelligence\Projector_Node;
 use Newspack_Intelligence\Slack_Source_Node;
 use Newspack_Intelligence\Unthread_Source_Node;
 use Newspack_Intelligence\Source_Node;
+use Newspack_Nodes\Config;
+use Newspack_Nodes\Consumer_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Curl_Node;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Row_Table_Node;
 use Newspack_Nodes\Table_Unavailable;
 use Newspack_Nodes\Tests\TestCase;
+use Newspack_Nodes\Topic_Node;
 use Newspack_Nodes\Topology_Registry;
+use Newspack_Nodes\Vault;
 use Newspack_Nodes\Worker_Should_Stop;
 
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
 require_once __DIR__ . '/../support/drives-curl.php';
+require_once __DIR__ . '/../support/wp-cli-stub.php';
 
 /**
  * The chain every source rides: a due tick queues the pass's first
@@ -898,6 +905,316 @@ final class SourceNodeTest extends TestCase {
 	}
 
 	/**
+	 * A reproject empties the projection while the items stream still holds
+	 * what it recorded: until the projector has read every stream to its
+	 * end, a source opens no pass, by TICK or at a boundary, and records
+	 * nothing. The pass a boundary deferred opens on the Router tick after
+	 * the replay, and records only what the replayed projection lacks.
+	 */
+	public function test_after_a_reproject_a_source_records_nothing_until_the_projector_has_replayed(): void {
+		\WP_CLI::reset();
+		$stderr = $this->capture_stderr();
+		$this->start_intel_graph();
+		self::append_items( self::item( 'fake:heron-held', 'Heron Courier already recorded', 'fake', 'public', self::$oct_13 ) );
+		$this->replay_items();
+		( new Ontology_CLI_Command() )->reproject( [], [] );
+		$this->assertSame( [ 'nodes stop', 'nodes start' ], \array_column( \WP_CLI::$ran, 0 ) );
+		$this->restart_projector();
+		$node = $this->scheduled();
+		$items = [
+			[ 'id' => 'heron-held', 'title' => 'Heron Courier already recorded' ],
+			[ 'id' => 'heron-fresh', 'title' => 'Heron Courier names an editor' ],
+		];
+
+		$this->tick_at( $node, self::BOUNDARY - 6.0 );
+		$this->tick_at( $node, self::BOUNDARY + 2.0 );
+		$this->tick( $node );
+		$this->tick_at( $node, self::BOUNDARY + 3.0 );
+
+		$this->assertSame( 0, $node->passes, 'no pass opens on a projection the projector has not replayed' );
+		$this->assertSame( [], $this->dispatched );
+		$this->assertSame( [], $this->recorded_keys() );
+		$this->assertSame( [ [ 'verb' => 'TICK', 'data' => [ 'fetching' => 0 ] ] ], $this->answers() );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'fake-source-12: waiting for the projector to read its streams to the end; opening no pass: ' . Config::get_base_directory() . '/logs/intel-items.p0' ) );
+
+		$this->replay_items();
+		$this->tick_at( $node, self::BOUNDARY + 4.0 );
+		$this->assertSame( 1, $node->passes, 'the deferred pass opens off the grid' );
+		$this->complete( Fake_Source_Node::PAGE . '1', self::page( $items ) );
+
+		$this->assertSame( [ 'fake:heron-fresh' ], $this->recorded_keys() );
+		$this->tick_at( $node, self::BOUNDARY + 5.0 );
+		$this->assertSame( 1, $node->passes, 'the pass that ran waits for the next boundary' );
+	}
+
+	/**
+	 * A deferred pass waits for the ends the streams held when it came due,
+	 * not for what is appended after, so a stream written while it waits
+	 * never starves it.
+	 */
+	public function test_a_deferred_pass_waits_only_for_the_ends_it_came_due_at(): void {
+		$this->start_intel_graph();
+		self::append_items( self::item( 'fake:plover-1', 'Plover Post opens a bureau', 'fake', 'public', self::$oct_13 ) );
+		$node = $this->scheduled();
+		$this->tick_at( $node, self::BOUNDARY - 8.0 );
+		$this->tick_at( $node, self::BOUNDARY + 1.0 );
+		$this->assertSame( 0, $node->passes );
+
+		$this->replay_items();
+		self::append_items( self::item( 'fake:plover-2', 'Plover Post hires a desk', 'fake', 'public', self::$oct_13 ) );
+		$this->tick_at( $node, self::BOUNDARY + 2.0 );
+
+		$this->assertSame( 1, $node->passes, 'the item appended after it came due is not waited for' );
+	}
+
+	/**
+	 * A pass a reproject's stop cut short waits in the source's Table: the
+	 * process after it sends nothing of it while the projector replays,
+	 * then resumes it, and records only what the replayed projection lacks.
+	 */
+	public function test_a_pass_a_reproject_cut_resumes_only_after_the_replay(): void {
+		\WP_CLI::reset();
+		$this->start_intel_graph();
+		self::append_items( self::item( 'fake:egret-held', 'Egret Herald already recorded', 'fake', 'public', self::$oct_13 ) );
+		$this->replay_items();
+		$urls = [ Fake_Source_Node::PAGE . 'egret-1', Fake_Source_Node::PAGE . 'egret-2' ];
+		$node = $this->fake( [ 'public' ], $urls );
+		$this->tick( $node );
+		$this->complete( $urls[0], self::page( [] ) );
+		( new Ontology_CLI_Command() )->reproject( [], [] );
+		$this->restart_projector();
+		$successor = $this->respawn( $node, new Fake_Source_Node() );
+
+		$this->tick_at( $successor, self::BOUNDARY + 17.0 );
+		$this->tick_at( $successor, self::BOUNDARY + 18.0 );
+		$this->assertSame( [ $urls[0], $urls[1] ], $this->dispatched, 'nothing of the cut pass is sent while the projector replays' );
+
+		$this->replay_items();
+		$this->tick_at( $successor, self::BOUNDARY + 19.0 );
+		$this->assertSame( [ $urls[0], $urls[1], $urls[1] ], $this->dispatched );
+		$this->complete( $urls[1], self::page( [ [ 'id' => 'egret-held', 'title' => 'Egret Herald already recorded' ], [ 'id' => 'egret-fresh', 'title' => 'Egret Herald names a desk' ] ] ) );
+
+		$this->assertSame( 0, $successor->passes, 'the pass resumed, not begun' );
+		$this->assertSame( [ 'fake:egret-fresh' ], $this->recorded_keys() );
+	}
+
+	/**
+	 * A TICK that its unlent group stops before it waits leaves the wait
+	 * armed, so the next Router tick sends nothing of a cut pass while the
+	 * projector replays.
+	 */
+	public function test_a_tick_refused_for_its_group_leaves_a_cut_pass_waiting(): void {
+		\WP_CLI::reset();
+		$this->start_intel_graph();
+		$this->lend( 'stilt-vault-5108', Fake_Credentialed_Source_Node::ORIGIN );
+		$urls = [ Fake_Source_Node::PAGE . 'stilt-1', Fake_Source_Node::PAGE . 'stilt-2' ];
+		$node = $this->wire( new Fake_Credentialed_Source_Node(), 'fake-source-12', [ 'public', 'stilt-vault-5108' ] );
+		$node->first = $urls;
+		$this->tick( $node );
+		$this->complete( $urls[0], self::page( [] ) );
+		self::append_items( self::item( 'fake:stilt-held', 'Stilt Ledger already recorded', 'fake', 'public', self::$oct_13 ) );
+		( new Ontology_CLI_Command() )->reproject( [], [] );
+		$this->restart_projector();
+		\update_option( Vault::OPTION_KEY, [], false );
+		Vault::get_instance()->reset_cache();
+		$successor = $this->respawn( $node, new Fake_Credentialed_Source_Node() );
+
+		$this->tick( $successor );
+		$this->tick_at( $successor, self::BOUNDARY + 23.0 );
+
+		$this->assertSame( [ $urls[0], $urls[1] ], $this->dispatched, 'nothing of the cut pass is sent while the projector replays' );
+	}
+
+	/**
+	 * A TICK takes the ends its streams hold as it is asked, so a TICK
+	 * after one refused waits for what was appended since; a source with
+	 * no interval has no tick to open the refused one on.
+	 */
+	public function test_a_tick_waits_for_the_ends_it_is_asked_at(): void {
+		$this->start_intel_graph();
+		self::append_items( self::item( 'fake:tern-1', 'Tern Weekly opens a desk', 'fake', 'public', self::$oct_13 ) );
+		$node = $this->fake();
+		$this->tick( $node );
+		$this->replay_items();
+		self::append_items( self::item( 'fake:tern-2', 'Tern Weekly hires an editor', 'fake', 'public', self::$oct_13 ) );
+		Core::$clock = static fn (): float => self::RETRIEVED + 1.0;
+
+		$this->tick( $node );
+		$this->assertSame( 0, $node->passes, 'the second TICK waits for the item appended after the first' );
+
+		$this->replay_items();
+		Core::$clock = static fn (): float => self::RETRIEVED + 2.0;
+		$this->tick( $node );
+		$this->assertSame( 1, $node->passes );
+		$this->assertSame( [ [ 'fetching' => 0 ], [ 'fetching' => 0 ], [ 'fetching' => 1 ] ], \array_column( $this->answers(), 'data' ) );
+	}
+
+	/**
+	 * A projector reader that appears while a pass waits, as a topology
+	 * activated then, is waited for to the end its stream held when the
+	 * pass first saw it.
+	 */
+	public function test_a_reader_added_while_a_pass_waits_is_waited_for(): void {
+		$this->start_intel_graph();
+		self::append_items( self::item( 'fake:avocet-1', 'Avocet Times opens a bureau', 'fake', 'public', self::$oct_13 ) );
+		$node = $this->scheduled();
+		$this->tick_at( $node, self::BOUNDARY - 4.0 );
+		$this->tick_at( $node, self::BOUNDARY + 1.0 );
+		$probe = $this->activate_probe();
+
+		$this->replay_items();
+		$this->tick_at( $node, self::BOUNDARY + 2.0 );
+		$this->assertSame( 0, $node->passes, 'the reader the probe topology adds has not read its stream' );
+
+		$probe();
+		$this->tick_at( $node, self::BOUNDARY + 3.0 );
+		$this->assertSame( 1, $node->passes );
+	}
+
+	/**
+	 * A fresh source holding nothing to resume reads no projector reader and
+	 * logs nothing on a Router tick that is not due, however far the
+	 * projector lags.
+	 */
+	public function test_an_idle_fresh_source_reads_no_reader_and_logs_nothing(): void {
+		$stderr = $this->capture_stderr();
+		$this->start_intel_graph();
+		self::append_items( self::item( 'fake:curlew-1', 'Curlew Courier opens a desk', 'fake', 'public', self::$oct_13 ) );
+		$reading = new \ReflectionProperty( Projector_Node::class, 'reading' );
+		$reading->setValue( null, [ null, '', [] ] );
+		$node = $this->scheduled();
+
+		$this->tick_at( $node, self::BOUNDARY + 11.0 );
+		$this->tick_at( $node, self::BOUNDARY + 12.0 );
+
+		$this->assertSame( [ null, '', [] ], $reading->getValue(), 'no reader was read' );
+		$this->assertSame( [], self::stderr_lines( $stderr, 'fake-source-12' ) );
+		$this->assertSame( [], $this->dispatched );
+	}
+
+	/**
+	 * A deferred pass whose group stops lending its credential is not kept
+	 * due: once the credential and the projector are back, the next pass
+	 * waits for the grid.
+	 */
+	public function test_a_deferred_pass_refused_its_credential_waits_for_the_grid(): void {
+		$this->start_intel_graph();
+		self::append_items( self::item( 'fake:godwit-1', 'Godwit Gazette opens a desk', 'fake', 'public', self::$oct_13 ) );
+		$this->lend( 'godwit-vault-6243', Fake_Credentialed_Source_Node::ORIGIN );
+		$node        = $this->wire( new Fake_Credentialed_Source_Node(), 'fake-source-12', [ 'public', 'godwit-vault-6243' ] );
+		$node->first = [ Fake_Source_Node::PAGE . '1' ];
+		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'set_interval', [ (string) self::INTERVAL ] ) );
+		$this->tick_at( $node, self::BOUNDARY - 9.0 );
+		$this->tick_at( $node, self::BOUNDARY + 1.0 );
+		$this->assertSame( 0, $node->passes, 'the boundary deferred its pass' );
+
+		\update_option( Vault::OPTION_KEY, [], false );
+		Vault::get_instance()->reset_cache();
+		$this->tick_at( $node, self::BOUNDARY + 2.0 );
+		$this->replay_items();
+		$this->lend( 'godwit-vault-6243', Fake_Credentialed_Source_Node::ORIGIN );
+		$this->tick_at( $node, self::BOUNDARY + 3.0 );
+		$this->assertSame( 0, $node->passes, 'the refused credential ended the deferral' );
+
+		$this->tick_at( $node, self::BOUNDARY + self::INTERVAL + 1.0 );
+		$this->assertSame( 1, $node->passes );
+	}
+
+	/**
+	 * A deferred pass that a tick finds requests in flight for is not kept
+	 * due: once they answer, the next pass waits for the grid.
+	 */
+	public function test_a_deferred_pass_found_in_flight_waits_for_the_grid(): void {
+		$node = $this->scheduled();
+		$this->tick( $node );
+		( new \ReflectionProperty( Source_Node::class, 'deferred' ) )->setValue( $node, true );
+
+		$this->tick_at( $node, self::BOUNDARY + 5.0 );
+		$this->settle();
+		$this->tick_at( $node, self::BOUNDARY + 6.0 );
+		$this->assertSame( 1, $node->passes, 'the requests in flight ended the deferral' );
+
+		$this->tick_at( $node, self::BOUNDARY + self::INTERVAL + 1.0 );
+		$this->assertSame( 2, $node->passes );
+	}
+
+	/**
+	 * Activate, beside the project topology, one more whose Consumer
+	 * checkpoints a projector, over a stream holding one record.
+	 *
+	 * @return \Closure(): void Read that stream to its end and commit its cursor there.
+	 */
+	private function activate_probe(): \Closure {
+		$dir = $this->make_temp_dir( 'intel-probe-' );
+		\file_put_contents( "{$dir}/intel-probe-12.tsl", "make_node Projector projector\nmake_node Consumer probe:consumer <config:logs_dir>/intel-probe.p{partition} <config:offsets_dir>/<topology>.intel-probe.p{partition} <config:deadletter_dir>/<topology>.intel-probe.p{partition}\ncommand_node probe:consumer:config add_snapshot_node projector\n" );
+		Topology_Registry::register_stock_dir( $dir );
+		$this->activate( 'newspack-intelligence-project', 'intel-probe-12' );
+		$base  = Config::get_base_directory();
+		$topic = new Topic_Node();
+		$topic->arguments( [ "{$base}/logs/intel-probe.p{partition}", '1', '1048576' ] );
+		$record                   = Message::new_message();
+		$record[ Message::TYPE ]  = Message::TM_STRUCT;
+		$record[ Message::VALUE ] = [ 'event' => 'probe', 'n' => 7 ];
+		$topic->fill( $record );
+		$topic->flush();
+		return function () use ( $base ): void {
+			$consumer = new Consumer_Node();
+			$consumer->name( 'probe:consumer' );
+			$consumer->sink( $this->writer );
+			$consumer->arguments( [ "{$base}/logs/intel-probe.p0", "{$base}/offsets/intel-probe-12.intel-probe.p0", "{$base}/deadletter/intel-probe-12.intel-probe.p0" ] );
+			$this->pump_consumer( $consumer );
+			$consumer->checkpoint( true );
+			$consumer->remove_node();
+		};
+	}
+
+	/**
+	 * Build the projector and its graph again, as the fleet a reproject
+	 * restarts does, so the projection opens the graph file afresh.
+	 */
+	private function restart_projector(): void {
+		\assert( null !== $this->seeder );
+		Core::node( 'intel-graph' )?->remove_node();
+		$this->seeder->remove_node();
+		$this->seeder = $this->projector_graph();
+	}
+
+	/**
+	 * Append events to partition 0 of the items stream, as the worker's
+	 * writer does.
+	 *
+	 * @param list<array<string,mixed>> ...$events The events, in order.
+	 */
+	private static function append_items( array ...$events ): void {
+		$topic = new Topic_Node();
+		$topic->arguments( [ Config::get_base_directory() . '/logs/intel-items.p{partition}', '1', '1048576' ] );
+		foreach ( \array_merge( ...$events ) as $event ) {
+			$record                   = Message::new_message();
+			$record[ Message::TYPE ]  = Message::TM_STRUCT;
+			$record[ Message::VALUE ] = $event;
+			$topic->fill( $record );
+		}
+		$topic->flush();
+	}
+
+	/**
+	 * Replay the items stream into the projection from the project
+	 * topology's cursor, and commit it at the end, as the projector's
+	 * Consumer does.
+	 */
+	private function replay_items(): void {
+		$base     = Config::get_base_directory();
+		$consumer = new Consumer_Node();
+		$consumer->name( 'intel:items:consumer' );
+		$consumer->sink( $this->seeder );
+		$consumer->arguments( [ "{$base}/logs/intel-items.p0", "{$base}/offsets/newspack-intelligence-project.intel-items.p0", "{$base}/deadletter/newspack-intelligence-project.intel-items.p0" ] );
+		$consumer->add_snapshot_node( 'projector' );
+		$this->pump_consumer( $consumer );
+		$consumer->checkpoint( true );
+		$consumer->remove_node();
+	}
+
+	/**
 	 * A respawned source, its seen set empty, records only what the
 	 * projection lacks, reading the projection once for the answer; the held
 	 * item is remembered, so the next answer reads nothing.
@@ -1528,6 +1845,16 @@ class Fake_Unfollowing_Source_Node extends Fake_Source_Node {
 
 	protected function follows_redirects(): bool {
 		return false;
+	}
+}
+
+/** A fake source that sends nothing unless its group lends a credential on ORIGIN. */
+class Fake_Credentialed_Source_Node extends Fake_Source_Node {
+
+	public const ORIGIN = 'https://fake-4471.example';
+
+	public static function credential_url(): string {
+		return self::ORIGIN . '/page/';
 	}
 }
 

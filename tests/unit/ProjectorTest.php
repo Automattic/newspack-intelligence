@@ -8,7 +8,9 @@ use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Projector_Node;
+use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\Command_Interpreter_Node;
+use Newspack_Nodes\Config;
 use Newspack_Nodes\Consumer_Node;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
@@ -21,6 +23,7 @@ use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Topic_Node;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Worker_Should_Stop;
+use Newspack_Nodes\Tests\Capture_Sink_Node;
 use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/projects-intel-graph.php';
@@ -1070,5 +1073,135 @@ final class ProjectorTest extends TestCase {
 
 	private function mend_items(): void {
 		( new \PDO( 'sqlite:' . Table_Node::file( 'intel-graph', 0 ) ) )->exec( 'ALTER TABLE items_broken RENAME TO items' );
+	}
+
+	/** ends() names each reader's stream end, its last segment and size, by the reader's cursor dir. */
+	public function test_ends_name_each_readers_stream_end_by_its_cursor_dir(): void {
+		$this->activate_project();
+		self::append_items( 3 );
+
+		$ends = Projector_Node::ends();
+
+		$this->assertSame( [ 0, \filesize( "{$this->base}/logs/intel-items.p0/0.log" ) ], $ends[ self::items_cursor( $this->base ) ] );
+		$this->assertSame( [ 0, 0 ], $ends[ "{$this->base}/offsets/newspack-intelligence-project.intel-ontology.p0" ], 'an empty stream ends at its start' );
+	}
+
+	/**
+	 * A reader stands short of its mark until it commits it, and not of
+	 * what is appended after; a reader the marks do not name is not
+	 * waited for.
+	 */
+	public function test_short_of_waits_for_the_mark_alone(): void {
+		$this->activate_project();
+		self::append_items( 2 );
+		$ends = Projector_Node::ends();
+
+		$this->assertSame( "{$this->base}/logs/intel-items.p0", Projector_Node::short_of( $ends ) );
+		$this->assertNull( Projector_Node::short_of( [] ), 'a reader the marks do not name is not waited for' );
+
+		$this->commit_items();
+		self::append_items( 4 );
+		Core::$now += 1.0;
+		$this->assertNull( Projector_Node::short_of( $ends ), 'what was appended after the mark is not waited for' );
+	}
+
+	/** A cursor in a segment past the mark's has reached it, whatever its offset. */
+	public function test_a_cursor_in_a_later_segment_has_reached_the_mark(): void {
+		$this->activate_project();
+		self::append_items( 1, 64 );
+		$ends = Projector_Node::ends();
+		self::append_items( 3, 64 );
+		Core::$now += 1.0;
+		$this->assertGreaterThan( 0, Projector_Node::ends()[ self::items_cursor( $this->base ) ][0], 'the stream rotated' );
+
+		$this->commit_items();
+		Core::$now += 1.0;
+
+		$this->assertNull( Projector_Node::short_of( $ends ) );
+	}
+
+	/**
+	 * A stream that now ends before its mark was recreated, so its reader
+	 * is judged by whether it has read the stream to its end now.
+	 */
+	public function test_a_recreated_stream_is_judged_by_its_end_now(): void {
+		$this->activate_project();
+		self::append_items( 2 );
+		$ends = [ self::items_cursor( $this->base ) => [ 9, 4096 ] ];
+
+		$this->assertSame( "{$this->base}/logs/intel-items.p0", Projector_Node::short_of( $ends ) );
+
+		$this->commit_items();
+		Core::$now += 1.0;
+		$this->assertNull( Projector_Node::short_of( $ends ) );
+	}
+
+	/** The readers' lags are read once a tick, so a commit landing within it is read on the next. */
+	public function test_the_readers_are_read_once_a_tick(): void {
+		$this->activate_project();
+		self::append_items( 2 );
+		$ends = Projector_Node::ends();
+		$this->assertNotNull( Projector_Node::short_of( $ends ) );
+
+		$this->commit_items();
+		$this->assertNotNull( Projector_Node::short_of( $ends ), 'the same tick reads what it read' );
+
+		Core::$now += 1.0;
+		$this->assertNull( Projector_Node::short_of( $ends ) );
+	}
+
+	/** The readers too are read once a tick, so one a topology change removes within it goes on the next. */
+	public function test_the_readers_themselves_are_read_once_a_tick(): void {
+		$this->activate_project();
+		$this->assertArrayHasKey( self::items_cursor( $this->base ), Projector_Node::ends() );
+
+		\update_option( 'newspack_nodes_topologies', [] );
+		Config::reset();
+		$this->assertArrayHasKey( self::items_cursor( $this->base ), Projector_Node::ends(), 'the same tick reads the readers it read' );
+
+		Core::$now += 1.0;
+		$this->assertSame( [], Projector_Node::ends() );
+	}
+
+	/** Activate the project topology, whose four Consumers checkpoint the projector. */
+	private function activate_project(): void {
+		Topology_Registry::register_builtin_dir( \dirname( __DIR__, 3 ) . '/newspack-nodes/topologies' );
+		\update_option( 'newspack_nodes_topologies', [ 'newspack-intelligence-project' ] );
+		Config::reset();
+		Bootstrap::forget_node_tables();
+	}
+
+	/** The project topology's items cursor dir, for partition 0. */
+	private static function items_cursor( string $base ): string {
+		return "{$base}/offsets/newspack-intelligence-project.intel-items.p0";
+	}
+
+	/**
+	 * Append item records to partition 0 of the items stream.
+	 *
+	 * @param int $count        How many.
+	 * @param int $segment_size The stream's segment size, in bytes.
+	 */
+	private static function append_items( int $count, int $segment_size = 1048576 ): void {
+		$topic = new Topic_Node();
+		$topic->arguments( [ Config::get_base_directory() . '/logs/intel-items.p{partition}', '1', (string) $segment_size ] );
+		for ( $i = 0; $i < $count; $i++ ) {
+			$record                   = Message::new_message();
+			$record[ Message::TYPE ]  = Message::TM_STRUCT;
+			$record[ Message::VALUE ] = [ 'event' => 'item_recorded', 'item_key' => "feed:sandpiper-{$i}" ];
+			$topic->fill( $record );
+			$topic->flush();
+		}
+	}
+
+	/** Read the items stream to its end and commit the project topology's cursor there. */
+	private function commit_items(): void {
+		$consumer = new Consumer_Node();
+		$consumer->name( 'intel:items:probe-reader' );
+		$consumer->sink( new Capture_Sink_Node() );
+		$consumer->arguments( [ "{$this->base}/logs/intel-items.p0", self::items_cursor( $this->base ), "{$this->base}/deadletter/newspack-intelligence-project.intel-items.p0" ] );
+		$this->pump_consumer( $consumer );
+		$consumer->checkpoint( true );
+		$consumer->remove_node();
 	}
 }

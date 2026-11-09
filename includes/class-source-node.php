@@ -106,7 +106,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	/** @var array<string,Request> Requests taken to send, by subject, each waiting for a slot and its host. */
 	private array $queue = [];
 
-	/** Whether a pass is open: it took a request, and has not published. */
+	/** Whether a pass is open: it took a request behind_projector() let through, and has not published. */
 	private bool $open = false;
 
 	/** @var Request The request whose answer is being taken. */
@@ -132,6 +132,12 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/** True while send() runs; an answer arriving inside it does not re-enter. */
 	private bool $sending = false;
+
+	/** @var array<string,array{0:int,1:int}>|null The ends the next pass waits for the projector to read, by cursor dir, as behind_projector() takes them, [] for a wait that has taken none yet; null once it let one through, which alone lifts send()'s gate. A process starts waiting, so what a stopped one left sends only once behind_projector() lets it. */
+	private ?array $awaiting = [];
+
+	/** Whether a pass came due while behind_projector(), which fire() opens on the tick it lets it. */
+	private bool $deferred = false;
 
 	/**
 	 * `<tier> [vault_group]`: the tier, refused outside Intel_Event::TIERS, and
@@ -175,9 +181,10 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * On the Router's tick, start a pass at each grid boundary, else send what
-	 * the frontier holds while nothing is in flight; a failure is logged and
-	 * published (a stop propagates, ADR-14).
+	 * On the Router's tick, start a pass at each grid boundary, or the one
+	 * that waits for the projector, else send what the frontier holds while
+	 * nothing is in flight; a failure is logged and published (a stop
+	 * propagates, ADR-14).
 	 *
 	 * @api Used by substrate.
 	 * @throws Worker_Should_Stop When the worker is asked to stop.
@@ -186,7 +193,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 		$now           = (int) Core::$now;
 		$last          = $this->checked;
 		$this->checked = $now;
-		$due           = $this->resumes() || ( null !== $last && null !== $this->interval && \intdiv( $now, $this->interval ) > \intdiv( $last, $this->interval ) );
+		$due           = $this->resumes() || $this->deferred || ( null !== $last && null !== $this->interval && \intdiv( $now, $this->interval ) > \intdiv( $last, $this->interval ) );
 		if ( ! $due && [] !== $this->in_flight ) {
 			return;
 		}
@@ -202,16 +209,24 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * Start a pass on a TICK or the grid, dropping what is still queued, unless
-	 * requests are in flight or its group lends no credential on
-	 * credential_url()'s origin.
+	 * requests are in flight, its group lends no credential on
+	 * credential_url()'s origin, or behind_projector() holds it, when fire()
+	 * opens it on the first Router tick behind_projector() lets it; either
+	 * of the first two ends that deferral, so the next pass waits for the
+	 * grid.
 	 *
 	 * @return array{fetching:int} How many requests the pass opens on, 0 when
-	 *                             one is still in flight or its group lends no
-	 *                             credential.
+	 *                             one is still in flight, its group lends no
+	 *                             credential or it waits for the projector.
 	 */
 	protected function tick(): array {
-		$credential = static::credential_url();
+		$credential     = static::credential_url();
+		$this->deferred = false;
 		if ( [] !== $this->in_flight || ( '' !== $credential && ! Curl_Node::lends_credential( $this->vault_group, $credential ) ) ) {
+			return [ 'fetching' => 0 ];
+		}
+		$this->deferred = $this->behind_projector();
+		if ( $this->deferred ) {
 			return [ 'fetching' => 0 ];
 		}
 		$this->sent       = 0;
@@ -377,7 +392,11 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 			}
 			do {
 				$took = $this->stage( $room );
-				$sent = false;
+				if ( $this->holds_leftover() ) {
+					break;
+				}
+				$this->open = $this->open || [] !== $this->queue;
+				$sent       = false;
 				foreach ( $this->queue as $key => $request ) {
 					if ( \count( $this->in_flight ) >= $room ) {
 						break 2;
@@ -410,6 +429,35 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 		if ( $this->open && [] === $this->queue && [] === $this->in_flight ) {
 			$this->close_pass();
 		}
+	}
+
+	/**
+	 * Whether behind_projector() holds what the queue took with no pass open,
+	 * as a stopped process or a refused TICK leaves a cut pass, which waits
+	 * in the queue.
+	 */
+	private function holds_leftover(): bool {
+		return ! $this->open && [] !== $this->queue && null !== $this->awaiting && $this->behind_projector();
+	}
+
+	/**
+	 * Whether the next pass waits for the projector: while a reader has not
+	 * committed the end its stream held when this wait first saw it
+	 * (Projector_Node::short_of()), logged. A projection short of its
+	 * streams, as a reproject leaves it, reads every item it lacks as new,
+	 * so a pass begun or resumed on it would record them again. Once every
+	 * reader has reached its end the wait is over, and the next takes ends
+	 * of its own.
+	 */
+	private function behind_projector(): bool {
+		$this->awaiting = ( $this->awaiting ?? [] ) + Projector_Node::ends();
+		$short          = Projector_Node::short_of( $this->awaiting );
+		if ( null === $short ) {
+			$this->awaiting = null;
+			return false;
+		}
+		$this->print_less_often( 'waiting for the projector to read its streams to the end; opening no pass: ', $short );
+		return true;
 	}
 
 	/**
@@ -491,7 +539,6 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 			[ $url, $body, $hops, $note ] = Core::arr( $value );
 			$this->queue[ $subject ]      = [ Core::as_string( $url ), \is_string( $body ) ? $body : null, Core::as_int( $hops ), Core::arr( $note ) ];
 		}
-		$this->open = $this->open || [] !== $this->queue;
 		return [] !== $taken;
 	}
 
@@ -1043,7 +1090,11 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 					'name'        => 'TICK',
 					'description' => $tick_description,
 					'reply_shape' => '{ fetching }',
-					'handler'     => static fn ( self $node ): array => $node->tick(),
+					// A TICK waits, armed, for the ends its streams hold now.
+					'handler'     => static function ( self $node ): array {
+						$node->awaiting = [];
+						return $node->tick();
+					},
 				],
 			],
 			'commands'     => [

@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An idle source offers "Add credential".** A source idle for want of its Vault credential, Unthread's among them, links the Vault tab under "Add credential" where it read "Open the Vault".
 - **A trend or signal read looks up URLs and titles only for the stories it cites,** at most 5 per bucket and value, where it read them for every story it counted. On eve's projection the two reads of every client's own output in `briefing signals` drop from about 0.37 and 0.34 seconds to 0.30 and 0.28.
 
+### Fixed
+
+- **A source no longer re-records items an `ontology reproject` left out of the empty projection.** A pass, begun or resumed from what a stopped process left in the source's Table, waits until every projector reader has committed the end its stream held when the wait first saw it (`Projector_Node::ends()`, `short_of()`), logged as `waiting for the projector to read its streams to the end; opening no pass: <stream>`, and opens on the first Router tick after; a reader that appears while it waits is waited for too, and a stream recreated under its mark is judged by whether its reader has read it to its end. A TICK takes fresh ends and answers `fetching: 0` while it waits. The readers and their lags are read once a tick, however many sources wait, and a source with nothing left in its Table reads none. `reproject`'s success line says sources wait for the replay.
+
 ## [0.37.0] - 2026-11-08
 
 ### Added

@@ -340,6 +340,18 @@ attached partition whose file does not hold it, read from that file's
 `sqlite_master` once per connection, so a read meets an empty table
 rather than `no such table`.
 
+A source opens no pass, and resumes none a stopped process left in its
+Table, until every projector reader has committed the end its stream held
+when the wait first saw it (`Projector_Node::ends()` and `short_of()`, read
+once a tick through `reading()`), because a pass reads what the projection
+lacks as new and would record it again; the pass waits, logged, and opens on
+the first Router tick once the readers reach those ends. The ends stay fixed
+while it waits, so a stream written meanwhile never starves it; a reader
+that appears meanwhile is waited for to its own end then, and a stream that
+now ends before its mark, recreated, is judged by whether its reader has
+read it to its end. A TICK takes fresh ends, and a source with nothing left
+in its Table reads no reader at all.
+
 **Resolution.** `resolver`, fed `item_recorded` events by its own
 `intel:items:resolve` Consumer, which skips every other kind on the stream
 and, like `intel:reresolve:resolve`, hands it one record a poll
