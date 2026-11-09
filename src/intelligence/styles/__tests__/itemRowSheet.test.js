@@ -95,7 +95,7 @@ describe( 'the item row sheet', () => {
 		} );
 		expect( declared( `${ ROOT }__item-title a` ) ).toEqual(
 			expect.objectContaining( {
-				color: 'var(--np-text)',
+				color: 'var(--ink, var(--np-text))',
 				'text-decoration': 'none',
 			} )
 		);

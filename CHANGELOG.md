@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An item's title follows the skin's ink.** It was drawn in `--np-text`, which no skin redefines, so on a dark skin a title sat near-black on a dark ground. It reads `var(--ink, var(--np-text))`, as the substrate's own text does.
+
 ## [0.39.2] - 2026-11-09
 
 ### Changed

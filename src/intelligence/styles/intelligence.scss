@@ -239,7 +239,7 @@
 
 	// A list of titles is not a wall of links: Ink at rest, the accent on hover.
 	&__item-title a {
-		color: var(--np-text);
+		color: var(--ink, var(--np-text));
 		text-decoration: none;
 	}
 
