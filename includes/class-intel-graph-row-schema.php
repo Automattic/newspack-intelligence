@@ -15,7 +15,9 @@
  * tier's saved copy of an item is a `saved_copies` row of its own, and its
  * place in a folder a `collected` row, so a save never overwrites another
  * tier's and a move carries no copy; each use mark is an `item_marks` row
- * of the tier of the copy it marks. Each distinct
+ * of the tier of the copy it marks. An item a curator excluded is one
+ * kept `excluded_items` row, written by the ontology stream, so it
+ * outlives the item's own rows, their expiry and a purge. Each distinct
  * line of an item's body is a `boilerplate` row of its own, so how many
  * items of a source carry a line is a count of rows. Each ask is one `asks`
  * row, kept `Ask_Node::KEEP_DAYS` by the day it was last written.
@@ -409,6 +411,19 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				'indexes' => [ 'judgments_entity_key' => [ 'entity_key' ] ],
 				'keep'    => true,
 			],
+			'excluded_items' => [
+				'columns' => [
+					'item_key' => 'TEXT NOT NULL',
+					'tier'     => 'TEXT NOT NULL',
+					'url'      => 'TEXT NOT NULL',
+					'title'    => 'TEXT NOT NULL',
+					'why'      => 'TEXT NOT NULL',
+					'actor'    => 'TEXT NOT NULL',
+					'ts'       => 'REAL NOT NULL',
+				],
+				'key'     => [ 'item_key' ],
+				'keep'    => true,
+			],
 			'collections'   => [
 				'columns' => [
 					'collection_key' => 'TEXT NOT NULL',
@@ -661,6 +676,6 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	 * @api Read by the Row_Table that opens the file.
 	 */
 	public static function version(): int {
-		return 8;
+		return 9;
 	}
 }

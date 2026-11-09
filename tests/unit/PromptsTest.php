@@ -677,11 +677,6 @@ final class PromptsTest extends TestCase {
 	}
 
 	/**
-	 * The operator the cases configure.
-	 *
-	 * @param string $tracks What it tracks, '' for its own work.
-	 */
-	/**
 	 * A decision asked through a chat protocol answers one schema in the
 	 * shape a systemone body answers: under `answers`, each noul an object
 	 * holding its number, each choice its criteria's keys as an enum beside
@@ -751,6 +746,11 @@ final class PromptsTest extends TestCase {
 		Prompts::decision_messages( 'extract', [], [], self::operator() );
 	}
 
+	/**
+	 * The operator the cases configure.
+	 *
+	 * @param string $tracks What it tracks, '' for its own work.
+	 */
 	private static function operator( string $tracks = '' ): Operator {
 		return new Operator( self::OPERATOR, $tracks );
 	}

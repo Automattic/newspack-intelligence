@@ -2,11 +2,27 @@
 /**
  * ItemRow renders one item from the graph: its title as a link to its own
  * URL when that URL is http(s), every string as text, each linked entity as a
- * chip opening it, and the save control only for a caller who may curate.
+ * chip opening it, the save control only for a caller who may curate, and
+ * the exclusion only for a reader holding tune: a text action that holds
+ * its write behind an Undo, puts the row back on Undo or a refusal, and
+ * sends a pending write when the row leaves the page.
  */
 
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import {
+	render,
+	screen,
+	fireEvent,
+	within,
+	act,
+	waitFor,
+} from '@testing-library/react';
+import { Core } from '@newspack-nodes/runtime';
+import { speak } from '@wordpress/a11y';
+import { intelWire } from '../../__tests__/intelWire';
+import { UNDO_MS } from '../../hooks/useDeferredWrite';
 import ItemRow, { ItemPage, SaveButton } from '../ItemRow';
+
+jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
 
 const ITEM = {
 	item_key: 'feed:inkfold-review-17',
@@ -466,5 +482,168 @@ describe( 'SaveButton', () => {
 	it( 'renders nothing for a reader who cannot curate', () => {
 		const { container } = render( <SaveButton item={ KEPT } /> );
 		expect( container ).toBeEmptyDOMElement();
+	} );
+} );
+
+describe( 'ItemRow exclusion', () => {
+	const WIRE_COPY = {
+		...ITEM,
+		item_key: 'feed:tern-wire-copy-31',
+		title: 'Tern wire copy of the prize story',
+	};
+	let wire;
+
+	beforeEach( () => {
+		Core.reset();
+		window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+		wire = intelWire();
+		wire.replies.exclude_item = { ok: true, event_id: 'ev-x' };
+	} );
+
+	afterEach( () => {
+		jest.useRealTimers();
+	} );
+
+	// Only the undo window's own timer is faked; the wire runs as it does.
+	const fakeUndoClock = () =>
+		jest.useFakeTimers( {
+			doNotFake: [
+				'Date',
+				'hrtime',
+				'nextTick',
+				'performance',
+				'queueMicrotask',
+				'requestAnimationFrame',
+				'cancelAnimationFrame',
+				'requestIdleCallback',
+				'cancelIdleCallback',
+				'setImmediate',
+				'clearImmediate',
+				'setInterval',
+				'clearInterval',
+			],
+		} );
+	const elapse = ( ms ) =>
+		act( async () => {
+			jest.advanceTimersByTime( ms );
+		} );
+
+	const renderRow = ( props = {} ) =>
+		render(
+			<ItemRow
+				item={ WIRE_COPY }
+				onOpenEntity={ jest.fn() }
+				onSave={ jest.fn() }
+				canTune={ true }
+				{ ...props }
+			/>
+		);
+	const exclude = () =>
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Exclude from every view' } )
+		);
+
+	it( 'offers a curator the exclusion and a reader none', () => {
+		const { unmount } = renderRow();
+		expect(
+			screen.getByRole( 'button', { name: 'Exclude from every view' } )
+		).toBeInTheDocument();
+		unmount();
+		renderRow( { canTune: false } );
+		expect(
+			screen.getByRole( 'button', { name: 'Save to folder' } )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', { name: 'Exclude from every view' } )
+		).toBeNull();
+	} );
+
+	it( "names the exclusion in the design system's text-button role, a class of its own beside Save", () => {
+		renderRow();
+		const action = screen.getByRole( 'button', {
+			name: 'Exclude from every view',
+		} );
+		expect( action ).toHaveTextContent( 'Exclude from every view' );
+		expect( action ).toHaveAttribute( 'type', 'button' );
+		expect( action ).toHaveClass(
+			'button-link',
+			'newspack-intelligence__exclude'
+		);
+		for ( const other of [
+			'newspack-intelligence__save',
+			'components-button',
+			'is-link',
+			'button',
+		] ) {
+			expect( action ).not.toHaveClass( other );
+		}
+	} );
+
+	it( 'hides the row behind its Undo and sends the exclusion once the window closes', async () => {
+		renderRow();
+		fakeUndoClock();
+		exclude();
+
+		expect(
+			screen.queryByRole( 'link', { name: WIRE_COPY.title } )
+		).toBeNull();
+		expect( screen.getByText( 'Excluded.' ) ).toBeInTheDocument();
+		expect( speak ).toHaveBeenCalledWith(
+			`Excluded “${ WIRE_COPY.title }” from every view.`,
+			'polite'
+		);
+		await elapse( UNDO_MS - 1 );
+		expect( wire.sent( 'exclude_item' ) ).toEqual( [] );
+		await elapse( 1 );
+		await waitFor( () =>
+			expect( wire.sent( 'exclude_item' ) ).toEqual( [
+				[ `--item=${ WIRE_COPY.item_key }` ],
+			] )
+		);
+		expect( screen.queryByRole( 'button', { name: 'Undo' } ) ).toBeNull();
+		expect( screen.getByText( 'Excluded.' ) ).toBeInTheDocument();
+	} );
+
+	it( 'sends a pending exclusion when the row leaves the page', async () => {
+		const { unmount } = renderRow();
+		fakeUndoClock();
+		exclude();
+		unmount();
+
+		await waitFor( () =>
+			expect( wire.sent( 'exclude_item' ) ).toEqual( [
+				[ `--item=${ WIRE_COPY.item_key }` ],
+			] )
+		);
+	} );
+
+	it( 'puts the row back on Undo and sends nothing', async () => {
+		renderRow();
+		fakeUndoClock();
+		exclude();
+		fireEvent.click( screen.getByRole( 'button', { name: 'Undo' } ) );
+
+		expect(
+			screen.getByRole( 'link', { name: WIRE_COPY.title } )
+		).toBeInTheDocument();
+		await elapse( UNDO_MS );
+		expect( wire.sent( 'exclude_item' ) ).toEqual( [] );
+	} );
+
+	it( 'puts the row back with the refusal when the exclusion is refused', async () => {
+		wire.replies.exclude_item = new Error(
+			`${ WIRE_COPY.item_key } is excluded from every view`
+		);
+		renderRow();
+		fakeUndoClock();
+		exclude();
+		await elapse( UNDO_MS );
+
+		expect(
+			await screen.findByRole( 'link', { name: WIRE_COPY.title } )
+		).toBeInTheDocument();
+		expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
+			`${ WIRE_COPY.item_key } is excluded from every view`
+		);
 	} );
 } );

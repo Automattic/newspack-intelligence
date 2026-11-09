@@ -15,7 +15,7 @@
  * `Graph_Query::graph()` opens: every entity key it names answers as the
  * survivor `Graph_Query::seen()` lets the caller see, and an item is read
  * through the readable items, so one outside them is refused exactly as a
- * missing one.
+ * missing one, and one a curator excluded is refused naming it.
  *
  * @package Newspack_Intelligence
  */
@@ -204,7 +204,9 @@ final class Graph_Curation {
 	 * else naming none; one into a theme that itself merges away, naming its
 	 * survivor, or whose own chain does not resolve; and one that would make
 	 * `into` the theme of an item every reader reads for the first time,
-	 * which only a holder of the restricted tier can ask.
+	 * which only a holder of the restricted tier can ask. Both read every item
+	 * the caller may read, an excluded one among them, since an inclusion
+	 * undoes an exclusion.
 	 *
 	 * @param array<array-key,mixed> $args The bound command args: `from`, `into`.
 	 * @return array<string,mixed>
@@ -219,7 +221,7 @@ final class Graph_Curation {
 		[ $merges, $carried ] = self::on_graph(
 			static function ( Row_Reader $r, array $g ): array {
 				$carried = [];
-				foreach ( $r->rows( "{$g['with']} SELECT DISTINCT t.theme, ri.tier IN ( " . Intel_Graph_Row_Schema::marks( Intel_Tiers::UNRESTRICTED ) . ' ) FROM ( ' . Intel_Graph_Row_Schema::newest( $r, 'themes', 'item_key', 'item_key, theme', '1' ) . ' ) t JOIN ri ON ri.item_key = t.item_key', [ ...$g['binds'], ...Intel_Tiers::UNRESTRICTED ] ) as [ $theme, $open ] ) {
+				foreach ( $r->rows( "{$g['with']} SELECT DISTINCT t.theme, ti.tier IN ( " . Intel_Graph_Row_Schema::marks( Intel_Tiers::UNRESTRICTED ) . ' ) FROM ( ' . Intel_Graph_Row_Schema::newest( $r, 'themes', 'item_key', 'item_key, theme', '1' ) . ' ) t JOIN ti ON ti.item_key = t.item_key', [ ...$g['binds'], ...Intel_Tiers::UNRESTRICTED ] ) as [ $theme, $open ] ) {
 					$theme             = Core::as_string( $theme );
 					$carried[ $theme ] = ( $carried[ $theme ] ?? false ) || (bool) $open;
 				}
@@ -416,6 +418,40 @@ final class Graph_Curation {
 	}
 
 	/**
+	 * Refuse an item the caller reads a copy of saved in a collection,
+	 * naming the collection.
+	 *
+	 * @param Row_Reader $r          The reader.
+	 * @param string     $name       The collection's name.
+	 * @param string     $collection The collection key.
+	 * @param string     $item_key   The item key.
+	 * @throws \InvalidArgumentException When the caller reads one there.
+	 */
+	private static function not_in( Row_Reader $r, string $name, string $collection, string $item_key ): void {
+		if ( [] !== Graph_Query::saved_tiers( $r, $collection, $item_key, Intel_Tiers::readable() ) ) {
+			throw new \InvalidArgumentException( \esc_html( "{$item_key} is already in {$name}" ) );
+		}
+	}
+
+	/**
+	 * Exclude a readable item from every view: `item_excluded`, carrying
+	 * its URL, its title cut at TITLE_BYTES and its tier, so the excluded
+	 * list outlives the item's own rows, and `why` when the call gives one,
+	 * bounded at `Intel_Event::WHY_BYTES`. Refused, as `item()` refuses, for
+	 * an item excluded already and for one the caller cannot read.
+	 *
+	 * @param array<array-key,mixed> $args The bound command args: `item`, `why`.
+	 * @return array<string,mixed> `{ ok, event_id }`.
+	 * @throws \InvalidArgumentException On a bad arg, or as `item()`.
+	 */
+	public static function exclude_item( array $args ): array {
+		$item_key = self::item_key( $args );
+		$why      = null === $args['why'] ? [] : [ 'why' => self::bounded( 'why', Core::as_string( $args['why'] ), Intel_Event::WHY_BYTES ) ];
+		$item     = self::on_graph( static fn ( Row_Reader $r, array $g ): array => self::item( $r, $g, $item_key ) );
+		return self::write( 'item_excluded', [ 'item_key' => $item_key, 'url' => $item['url'], 'title' => self::cut( $item['title'], self::TITLE_BYTES ), 'tier' => $item['tier'] ] + $why );
+	}
+
+	/**
 	 * Text cut to its longest prefix of whole characters whose written
 	 * bytes fit the cap.
 	 *
@@ -437,35 +473,41 @@ final class Graph_Curation {
 	}
 
 	/**
-	 * A readable item, as `collected` and a judged link carry it.
+	 * A readable item a curator has not excluded, as `collected`, a judged
+	 * link and an exclusion carry it. It is read from `ti`, the readable
+	 * items before the exclusion, so an excluded one is refused naming it.
 	 *
 	 * @param Row_Reader $r   The reader.
 	 * @param Graph      $g   The graph the read opened.
 	 * @param string     $key The item key.
 	 * @return array{url:string,title:string,tier:string}
-	 * @throws \InvalidArgumentException With its URL past URL_BYTES, or when
-	 *                                   the item is missing or the caller may
-	 *                                   not read it.
+	 * @throws \InvalidArgumentException With its URL past URL_BYTES, when the
+	 *                                   item is missing or the caller may not
+	 *                                   read it, or when it is excluded.
 	 */
 	private static function item( Row_Reader $r, array $g, string $key ): array {
-		$row = $r->rows( "{$g['with']} SELECT url, title, tier FROM ri WHERE item_key = ? LIMIT 1", [ ...$g['binds'], $key ] )[0] ?? throw new \InvalidArgumentException( \esc_html( "no item: {$key}" ) );
+		$row = $r->rows( "{$g['with']} SELECT url, title, tier FROM ti WHERE item_key = ? LIMIT 1", [ ...$g['binds'], $key ] )[0] ?? throw new \InvalidArgumentException( \esc_html( "no item: {$key}" ) );
+		self::unexcluded( $r, $key );
 		return [ 'url' => self::capped( "{$key} url", Core::as_string( $row[0] ), self::URL_BYTES ), 'title' => Core::as_string( $row[1] ), 'tier' => Core::as_string( $row[2] ) ];
 	}
 
 	/**
-	 * Refuse an item the caller reads a copy of saved in a collection,
-	 * naming the collection.
+	 * Include an excluded item again: `item_included`. Refused unless the
+	 * excluded list the caller reads holds it (`Graph_Query::exclusions()`),
+	 * so an exclusion of a tier it does not read is refused exactly as none,
+	 * and an exclusion outliving its item's rows is still included.
 	 *
-	 * @param Row_Reader $r          The reader.
-	 * @param string     $name       The collection's name.
-	 * @param string     $collection The collection key.
-	 * @param string     $item_key   The item key.
-	 * @throws \InvalidArgumentException When the caller reads one there.
+	 * @param array<array-key,mixed> $args The bound command args: `item`.
+	 * @return array<string,mixed> `{ ok, event_id }`.
+	 * @throws \InvalidArgumentException When the item is not excluded, or on a bad arg.
 	 */
-	private static function not_in( Row_Reader $r, string $name, string $collection, string $item_key ): void {
-		if ( [] !== Graph_Query::saved_tiers( $r, $collection, $item_key, Intel_Tiers::readable() ) ) {
-			throw new \InvalidArgumentException( \esc_html( "{$item_key} is already in {$name}" ) );
+	public static function include_item( array $args ): array {
+		$item_key = self::item_key( $args );
+		$tiers    = Intel_Tiers::readable();
+		if ( ! Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): bool => [] !== $r->rows( 'SELECT 1 FROM ( ' . Graph_Query::exclusions( $r ) . ' ) WHERE item_key = ? AND tier IN ( ' . Intel_Graph_Row_Schema::marks( $tiers ) . ' ) LIMIT 1', [ $item_key, ...$tiers ] ) ) ) {
+			throw new \InvalidArgumentException( \esc_html( "{$item_key} is not excluded" ) );
 		}
+		return self::write( 'item_included', [ 'item_key' => $item_key ] );
 	}
 
 	/**
@@ -485,7 +527,13 @@ final class Graph_Curation {
 		$mark       = Graph_Query::one_of( 'mark', Core::as_string( $args['mark'] ), Intel_Event::MARKS );
 		$day        = Core::as_string( $args['day'] );
 		Intel_Graph_Row_Schema::day( $day );
-		$tiers      = Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): array => self::saved_in( $r, $collection, $item_key ) );
+		$tiers      = Intel_Graph_Row_Schema::read(
+			static function ( Row_Reader $r ) use ( $collection, $item_key ): array {
+				$tiers = self::saved_in( $r, $collection, $item_key );
+				self::unexcluded( $r, $item_key );
+				return $tiers;
+			}
+		);
 		return self::write( 'item_used', [ 'collection_key' => $collection, 'item_key' => $item_key, 'tier' => $tiers[0], 'mark' => $mark, 'day' => $day ] );
 	}
 
@@ -509,6 +557,7 @@ final class Graph_Curation {
 		$tiers      = Intel_Graph_Row_Schema::read(
 			static function ( Row_Reader $r ) use ( $collection, $item_key, $into ): array {
 				$tiers = self::saved_in( $r, $collection, $item_key );
+				self::unexcluded( $r, $item_key );
 				$name  = self::folder( $r, $into );
 				if ( $into === $collection ) {
 					throw new \InvalidArgumentException( \esc_html( "{$item_key} is already in {$name}" ) );
@@ -517,6 +566,20 @@ final class Graph_Curation {
 			}
 		);
 		return self::write( 'item_moved', [ 'collection_key' => $into, 'item_key' => $item_key, 'from' => $collection, 'tiers' => $tiers ] );
+	}
+
+	/**
+	 * Refuse an item a curator excluded, naming it, by the one rule every
+	 * read leaves it out by (`Graph_Query::kept()`).
+	 *
+	 * @param Row_Reader $r        The reader.
+	 * @param string     $item_key The item key.
+	 * @throws \InvalidArgumentException When the item is excluded.
+	 */
+	private static function unexcluded( Row_Reader $r, string $item_key ): void {
+		if ( [] === $r->rows( 'SELECT 1 WHERE ' . Graph_Query::kept( $r, '?' ), [ $item_key ] ) ) {
+			throw new \InvalidArgumentException( \esc_html( "{$item_key} is excluded from every view" ) );
+		}
 	}
 
 	/**

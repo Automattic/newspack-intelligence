@@ -227,6 +227,18 @@ final class IntelligenceBriefingTest extends TestCase {
 		$this->ci->dispatch( 'briefing', [ 'signals', '--since=1792000000' ] );
 	}
 
+	/** An item a curator excluded is not among the week's changes, its count or its summary. */
+	public function test_changes_leave_out_an_excluded_item(): void {
+		$this->about( 'linear:plover-churn', self::PLOVER, 'subject', 'churn_signal', 9.0, 1 );
+		$this->about( 'unthread:plover-call', self::PLOVER, 'subject', 'feature_request', 6.5, 2 );
+		$this->seed( [ Intel_Event::make( 'item_excluded', [ 'item_key' => 'linear:plover-churn', 'url' => self::url( 'linear:plover-churn' ), 'title' => 'Item linear:plover-churn', 'tier' => 'public' ], 'user:plover-desk', 'fixture-9' ) ] );
+
+		$answer = $this->ci->dispatch( 'briefing', [ 'changes' ] );
+
+		$this->assertSame( [ [ 'unthread:plover-call' ] ], \array_map( static fn ( array $group ): array => \array_column( $group['items'], 'item_key' ), $answer['groups'] ) );
+		$this->assertSame( [ 1, 1 ], [ $answer['total'], $answer['summary']['items'] ] );
+	}
+
 	/** Items of equal importance rank the more relevant first, however old it is. */
 	public function test_changes_break_an_importance_tie_by_relevance(): void {
 		$this->about( 'p2:plover-plugin-bug', self::PLOVER, 'subject', 'complaint', 8.0, 1, 2.0 );

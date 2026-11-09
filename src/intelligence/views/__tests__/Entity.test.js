@@ -169,6 +169,38 @@ describe( 'Entity — reads', () => {
 		).toBeInTheDocument();
 	} );
 
+	it( 'offers a curator the exclusion on its timeline, and a reader none', async () => {
+		const { unmount } = renderEntity( {
+			canTune: true,
+			onSave: jest.fn(),
+		} );
+		const timeline = await screen.findByRole( 'region', {
+			name: 'Timeline',
+		} );
+		const row = (
+			await within( timeline ).findByRole( 'link', {
+				name: 'Acme Quillsheet wins regional prize',
+			} )
+		).closest( 'li' );
+		expect(
+			within( row ).getByRole( 'button', {
+				name: 'Exclude from every view',
+			} )
+		).toBeInTheDocument();
+		unmount();
+
+		renderEntity( { onSave: jest.fn() } );
+		const read = await screen.findByRole( 'region', { name: 'Timeline' } );
+		await within( read ).findByRole( 'link', {
+			name: 'Acme Quillsheet wins regional prize',
+		} );
+		expect(
+			within( read ).queryByRole( 'button', {
+				name: 'Exclude from every view',
+			} )
+		).toBeNull();
+	} );
+
 	it( 'renders the timeline and the related entities', async () => {
 		const onOpenEntity = jest.fn();
 		renderEntity( { onOpenEntity } );

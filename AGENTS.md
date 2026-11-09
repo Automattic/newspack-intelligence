@@ -237,7 +237,14 @@ its three boxes as integers; and for an `item_moved`, which deletes one
 it writes each one into the folder it enters with `ignore`; and for an
 `item_purged`, which deletes the
 rows the items stream has written about its item in each table that stream
-writes (see Purging items). A stand-in, heuristic or gated
+writes (see Purging items). An `item_excluded { item_key, url, title,
+tier, why? }`, an ontology kind, sets the item's one `excluded_items` row
+`( item_key, tier, url, title, why, actor, ts )`, keyed by `item_key`, a
+kept curation table, `why` '' when it names none, and an `item_included {
+item_key }` deletes it, so an exclusion outlives the item's expiry, its
+re-extraction and its purge. An ontology event's `events` row is filed
+under the item's key when it names no entity, collection, lens, watch or
+`from`. A stand-in, heuristic or gated
 (`Extractor_Node::stands_in()`), is projected by
 `STAND_IN` instead, one `ignore` of its `extractions` row, so it fills the
 extraction of an item that has none and never replaces a call's extraction, claims or
@@ -320,7 +327,7 @@ it leads by one range over `start`. A stale start, such as one a
 proposal's name wrote before a person's creation renamed the entity,
 names a norm no current row holds and matches nothing.
 
-**Rebuilding.** `Intel_Graph_Row_Schema::version()`, 8, versions the projection's shape; the substrate discards a file at another version when
+**Rebuilding.** `Intel_Graph_Row_Schema::version()`, 9, versions the projection's shape; the substrate discards a file at another version when
 the Row_Table opens it, and the projector's Consumers resume where they
 stopped, so the graph stays empty until it is rebuilt. A schema change bumps
 the version, and the upgrade runs `wp newspack-intelligence ontology
@@ -1275,10 +1282,22 @@ five watch commands, `briefing`, `ask` and `ask_result` (see Ask) and `health`, 
 over every partition's file. A read opens on `Graph_Query::graph()`, which resolves
 the tiers once from `Intel_Tiers::readable()` — `public` and `internal`,
 and `restricted` for a caller holding the restricted tier (below) — and
-binds the prelude every statement opens with: `mg`, the survivor map,
-and `ri`, the items of those tiers. Every statement reads items through
-`ri`, never `items` with a filter of its own, so an item, link, claim,
-count or citation never rests on an item of another tier, and an entity short of
+binds the prelude every statement opens with: `mg`, the survivor map;
+`ti`, the items of those tiers; and `ri`, those of them a curator has not
+excluded, `ti` filtered by `Graph_Query::kept()`. Every statement reads
+items through `ri`, never `items` or `ti` with a filter of its own, so an
+excluded item answers no read, and no link, claim, count or citation rests
+on it. Only the curation commands read `ti`: `Graph_Curation::item()`, so a
+command names an excluded item the caller may read rather than calling it
+missing, and the guards asking whether a curation would show a name to
+every reader (see Curation). `Graph_Query::exclusions()` is the one
+definition of an excluded item: one row per item, the newest partition's
+exclusion, its `tier` the one the item's row reads at now, else, once every
+partition has dropped that row, the one it was excluded at. `kept()` leaves
+out its keys, and the `excluded` list and `include_item` read its rows of
+the caller's tiers, so a reader of an item's tier lists and includes every
+exclusion hiding it. No item, link, claim,
+count or citation rests on an item of another tier either, and an entity short of
 `accepted` — proposed, or rejected — answers `entity` only while a readable
 item cites it, by a link or as the item it was proposed from.
 `Graph_Query::visible()` is that rule, and `seen()` refuses what it hides
@@ -1377,7 +1396,10 @@ empty rows, logged; one that has not been written by any partition answers empty
 rows.
 A collection's saved items read from `collected`, `saved_copies` and
 `item_marks`, never from `items`, at the tier each was saved at, so a
-saved item outlives its expiring `items` row; `collected` keeps its own
+saved item outlives its expiring `items` row; the folder count and the
+folder's items apply `kept()` too, so an excluded item drops out of its
+folders, neither listed nor counted, while a purged item's saved copy still
+lists; `collected` keeps its own
 tier filter, and `collections` opens no graph. Every
 folder answers `{ collection_key, name, created_ts, items, recent_ts }`,
 `items` the distinct items it holds a readable copy of and `recent_ts`
@@ -2063,7 +2085,7 @@ dead-letter dir derived from them, are refused (see Streams). Uninstall reaches 
 the substrate possibly inactive, so it and everything it calls use no
 substrate class.
 
-**Curation.** `Intelligence_CI` also answers eighteen curation commands, each
+**Curation.** `Intelligence_CI` also answers twenty curation commands, each
 declaring `tune`, each writing one ontology event through
 `Stream_Writer::append()` and answering `{ ok, event_id }`; the two
 creations add the key they minted. `Graph_Curation` holds them:
@@ -2073,7 +2095,21 @@ creations add the key they minted. `Graph_Curation` holds them:
 `Intel_Event::entity_key()`), `create_collection` (keyed
 `Intel_Event::collection_key()`, the same slug), `collect` (the item's
 URL, its title and its tier), `mark_used`, `move_item`, `save_lens` (keyed `Intel_Event::lens_key()`,
-the given key slugged, answering it), `remove_lens` and `merge_theme`. The actor is `Intel_Event::caller()`:
+the given key slugged, answering it), `remove_lens`, `merge_theme`,
+`exclude_item <item> [--why=<text>]` (the item's URL, its title cut at
+`TITLE_BYTES`, its tier and a `why` bounded at `Intel_Event::WHY_BYTES`
+(512), refused blank) and `include_item <item>`. Every command naming an
+item key refuses an excluded one as `<item> is excluded from every view`,
+through `Graph_Curation::unexcluded()`, which asks `Graph_Query::kept()`.
+`confirm_link`, `reject_link`, `collect` and `exclude_item` ask after the
+item reads from `ti`, so an item the caller may not read is still `no
+item: <key>`. `mark_used` and `move_item` ask after `saved_in()`, so a copy
+of a tier the caller does not read is still `not saved`. `include_item`
+refuses `<item> is not excluded` unless `Graph_Query::exclusions()` holds a
+row of the caller's tiers for it. `excluded [--limit]`, also at `tune`, is
+the one read that lists excluded items: `{ items: [ { item_key, title,
+url, actor, excluded_ts, why } ], available }`, each exclusion of a tier
+the caller reads, the latest first. The actor is `Intel_Event::caller()`:
 `agent:<login>:<label>` when `Capabilities::$session_label` is non-empty,
 as for an MCP connection or an issued session, the label as
 `Sessions::clean_label()` bounded it, else `user:<login>`; a call with no
@@ -2086,7 +2122,7 @@ sides of a merge, a link's entity, a tagged topic — must be one
 `Graph_Query::seen()` lets the caller see, any other key is refused as
 `no entity: <key>`, and the command acts on the survivor it answers as, so a
 key merged away accepts, merges or tags its survivor; a curation command
-answers no more than a read does. An item is read through `ri`, and one
+answers no more than a read does. An item is read through `ti`, and one
 outside the readable tiers is refused as `no item: <key>`, exactly as a
 missing one. Curation cannot declassify: `accept_entity` refuses an entity
 a caller without restricted access cannot see (`<key> is not cited by any
@@ -2101,7 +2137,13 @@ it is not cited by any item outside the restricted tier`). All three ask `Graph_
 `Graph_Query::unrestricted()`, the read's own graph with `ri` bound to
 `Intel_Tiers::UNRESTRICTED`, so an accepted or created entity passes, and
 so does one an unrestricted item cites by a link or as the item it was
-proposed from. Two entities only restricted items cite merge, and a holder
+proposed from. The guards asking whether a curation would show a name to
+every reader — `Graph_Query::unrestricted()`, which `accept_entity`,
+`merge_entities`, `tag_topic` and a lens's `shown()` read through, and
+`merge_theme`'s carried themes — judge over `ti`, never the
+exclusion-filtered `ri`, because an inclusion undoes an exclusion: an
+exclusion is not a tier boundary, and a curation it let through would show
+a restricted name the moment the excluded item came back. Two entities only restricted items cite merge, and a holder
 still rejects one, or creates a public entity over its key on purpose with
 `create_entity`. A judged link must exist: `confirm_link` and `reject_link`
 refuse `no link: <item> <entity>` unless a `links` row of a role in
@@ -2242,7 +2284,8 @@ read's summary names the 730-day item horizon,
 lists the entity types and link roles from `Intel_Event::TYPES` and
 `LINK_ROLES`. `intel_lenses`, `intel_save_lens`, `intel_remove_lens` and
 the `lens` and list args of `intel_search` and `intel_trends` come off the
-schema with no door code; a variadic arg is a JSON array. So do
+schema with no door code, as do `intel_exclude_item`, `intel_include_item`
+and `intel_excluded`, offered to a tune session alone; a variadic arg is a JSON array. So do
 `intel_names`, `intel_signals`, `intel_briefing`, `intel_theme_suggestions`, the five
 watch tools, `intel_ask` and `intel_ask_result`, which a read session is offered, and `intel_merge_theme`,
 `intel_mark_used` and `intel_move_item`, which a session whose role covers
@@ -3160,7 +3203,7 @@ its own one-shot commands, and only the `AskBox` polls: it asks
 | `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens`, then `trends --lens` as one `TrendChart`, then `search --lens --group=theme`'s theme groups through `GroupPage`, a page of groups at a time in the order the server ranks them; signals through `SignalTrend`, citing their items, each signal's count shown against its baseline; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens or the one opened — kinds, topics, roles and sources comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set" — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
 | `views/Entity.js` | default | `entity`, headed, for a record answering a `status`, by the client's status line — client since, the first row of its own `signals` read once answered or "Steady", its churn reports, churn signals, feature requests and complaints, and the day of its last item or "No item about it yet" — then `signals --entity` under its header through `SignalTrend`, both axes, each row's value its axis and kind and the value it counts, its count against its baseline, then `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`, each claim read as its subject's `EntityChip`, the predicate and its object, a chip when `object_name` is set and the item's spelling as text when it is null, each chip showing the key where the name is null, and cited by its item's title linking its URL; after the timeline, a "Details" section lists the keys merged into it, its names, identifiers, topics and every role row but a closed one that held no time (`to_ts` not 0 and equal to `from_ts`), an import's same-day correction, so an open row a seed asserted from 0 stays; hands `onNamed` the entity's key with what its heading shows, its name else its key, whenever the record answers, and with null once it is refused; once the record answers, for a curator, `EditDrawer` under its counts and, when its `status` answers `churn_open`, "This client has a churn report." and an "End client?" button in its status line, which ends the client through `useEndClient` under the `entity:churn` scope over the record, which lists the entity as a client while its `status` answers, the prompt leaving the status line from the click until a read no longer lists it and focus moving to the entity's heading, a refused end returning it, a refused end asserting nothing, and a refused assert shown beside every edit's refusal through `unrecordedText()`, which stands after the status goes |
 | `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity and the sentence each link quotes, and `review entities`, a pill per entity, each citing item with the sentence it quotes; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's Merge… opens `merge_entities`, its field focused; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back. Each queue's list, named for its queue and described by a visually hidden sentence of its keys, takes focus and the review keys while focus is in it and not in a field, as the substrate's `isTypingTarget()` reads it: `j` and `k` move between the link pills or the entity rows (`data-review-row`, `tabindex="-1"`, so the shared `[tabindex]:focus-visible` ring shows), and `y`, `n` and `m` press the focused row's control whose `aria-keyshortcuts` names the key (✓, ✕, Merge…), a judgment moving focus to the row then in its place, else the last; then "Themes", `theme_suggestions`' pairs, each naming both themes, their stories, the entities they share and the words their names share, and for a curator "Merge into" each theme, which sends `merge_theme` from the other and hides the pair through `useHeld` as `merge_entities` does |
-| `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection`, its collection shown saving through `useHeld` until a read lists it by name |
+| `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection`, its collection shown saving through `useHeld` until a read lists it by name, and the "Excluded" card listing `excluded` with "Include again", which holds the row out through `useHeld` until a read no longer lists it |
 | `views/Watches.js` | default, `CLOSED_WATCH`, `newWatch`, `WatchRow` | `watches`, the caller's own, each a `WatchRow`, the one row the Briefing lists too: the button opening it, its target, and its unseen count, or "Inbox off" for a watch without its inbox, or the words that a save of it is awaiting a read; opened onto `watch_matches --key` a page at a time, or onto the words that its inbox is off, each match with a "Mark seen" (`mark_seen --key --item`) and the page with "Mark these seen", naming each match it shows, a marked match hidden through `useHeld` until a read no longer lists it and a landed mark returning to the first page; for every reader, not gated on `canTune`, the form saving a new watch or the one opened through `save_watch` — its name, the kind it follows and exactly one target (a lens picked from `lenses`, an entity key, or a collection picked from `collections`), and the three deliveries as checkboxes, each sent as `true` or `false` — and `remove_watch`, each held until a read of `watches` lists the watch with the name, target kind and deliveries the save sent, an edit by its own key, the target's key uncompared because the server stores an entity as its survivor |
 | `components/TrendTable.js` | default, `SignalTrend`, `TrendChart`, `againstBaseline`, `signalValue` | The table of signals a lens, an entity and the Briefing render, each row's bucket, a date that does not wrap, value, count and cited items; `SignalTrend`, a lens's or an entity's `signals` answer as its `trend` drawn by the shared `Sparkline`, 96 by 24 pixels and named for a screen reader by every bucket's count, beside each signal called out by `signalValue` or "Steady" when nothing signals, then the signals as the table, none for no signal and no line for no bucket; `TrendChart`, a lens's trend rows as one compact shared `AreaTimeChart`, a series per value over the 8 newest buckets, each a UTC day, at most 5 values, those counting the most over them first, titled by the span it covers, every row also a visually hidden table of bucket, value and count, and nothing for no rows; a signal's count against its baseline, and its axis and kind with the value it counts |
 | `components/EditDrawer.js` | default | An entity's curation behind an "Edit" toggle carrying `aria-expanded` and `aria-controls`, closed until opened onto a region "Edit <name>": each role it holds open with "End <role>" (`end_role`), then the forms `add_name`, `add_identifier` and `assert_role`, each through the write the Entity view hands it |
@@ -3174,7 +3217,7 @@ its own one-shot commands, and only the `AskBox` polls: it asks
 | `components/Pager.js` | default | How many of the matches a page shows, as items unless `forms` names the plural forms of another noun, and Previous and Next over a stack of page starts, for Search, the Entity timeline and its published items, a lens's groups and a watch's matches |
 | `components/GroupPage.js` | default | A page of a lens's theme groups in the answer's order under the fixed line "Ranked by severity, importance, clients affected, then recency": a group counting one item as that item's `ItemRow`, any other a row headed by its theme as an `h4`, its count, kind and newest UTC day, an `EntityChip` per client, and a "Show items" button carrying `aria-expanded` and naming the theme, which discloses its items as `ItemRow`s; then its `Pager`, counting groups through `forms`; each row keyed by its theme and first item's key, since a story can stand in two groups |
 | `components/ListField.js`, `lensDraft.js` | `ListField`; `lensDraft`, `newLens`, `draftLens`, `draftArgs`, `listOf`, `daysSince` | A comma-separated field naming the values a closed list allows; a lens read into a form's text and back into the lens and the options `save_lens` and `search` take, its list filters read from `vocabulary.lensLists` and its tiers kept beside them, the one place that knows the lens's shape; and the first UTC day of a lens's rolling window |
-| `components/ItemRow.js`, `Cite.js`, `format.js` | `ItemPage` | An item row, headed by any control the view passes as its children, its excerpt behind a "Show more" toggle unless its summary or title holds it, its entities as chips, leaving out a `proposed` one while another of its name is not proposed and keeping only the first of several proposals of one name, and any whose `role` is neither `subject` nor `mention`: an open client and a subject each chip, in the answer's order, and its mentions sit behind a "+N more" toggle carrying `aria-expanded`, which shows them after the rest and reads "Show fewer"; and `ItemPage`, a page of rows above its `Pager`, which Search and the Entity timeline and published section render, and which, given `onSort`, says whether the page is ranked by importance or newest first and offers the other; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day (`utcDay()`), `metaLine()`, which joins a row's meta parts and keeps a 0, and `roleText()`, a role row as open since its first day or held between two |
+| `components/ItemRow.js`, `Cite.js`, `format.js` | `ItemPage` | An item row, headed by any control the view passes as its children, its excerpt behind a "Show more" toggle unless its summary or title holds it, its entities as chips, leaving out a `proposed` one while another of its name is not proposed and keeping only the first of several proposals of one name, and any whose `role` is neither `subject` nor `mention`: an open client and a subject each chip, in the answer's order, and its mentions sit behind a "+N more" toggle carrying `aria-expanded`, which shows them after the rest and reads "Show fewer"; and `ItemPage`, a page of rows above its `Pager`, which Search and the Entity timeline and published section render, and which, given `onSort`, says whether the page is ranked by importance or newest first and offers the other; a citation linking only an http or https URL, and `EntityChip`, the one chip opening an entity; the UTC day (`utcDay()`), `metaLine()`, which joins a row's meta parts and keeps a 0, and `roleText()`, a role row as open since its first day or held between two; for a reader holding tune (`canTune`, passed down from `IntelligencePage` through every view and component hosting a row), "Exclude from every view" is a native `button-link`, the shared text-button role, with `newspack-intelligence__exclude` adding only `flex: none`, which puts the row behind "Excluded." and an Undo button while `useDeferredWrite` holds `exclude_item` for `UNDO_MS`, each pending exclusion mounting its own write under `exclude-item:<useId>`, and a refused exclusion puts the row back with the refusal |
 | `styles/intelligence.scss` | — | Geometry only, emitted as `build/intelligence/index.css` |
 
 Each read is a `useCommandOnce` read with `retry`, under the `intelligence`
@@ -3236,7 +3279,7 @@ sibling checkout locally.
 | `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Briefing`, `Intelligence_Health`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
 | `includes/` (watches) | `Watcher_Node` |
 | `includes/` (ask) | `Ask_Node`, the Ask's worker half; `Graph_Asks`, its `ask` and `ask_result` commands; `Ask_Prompts`, its two prompts and the parse of their replies |
-| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed [<file>]`, `ontology reresolve`, `ontology reextract` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; `Eval_CLI_Command` — `wp newspack-intelligence eval <file>`; the `Refuses_Root` trait they share |
+| `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`, and `items exclude <item> [--why=]`, `items include <item>` and `items excluded [--limit=]`, each running the `intelligence` CI's command through `dispatch()` on the mounted request graph as the MCP door does, exclude and include refusing a run with no `--user`, since an exclusion records who made it, and `excluded` printing one tab-separated, terminal-safe line per item: key, title, URL, who, when (UTC) and why; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed [<file>]`, `ontology reresolve`, `ontology reextract` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; `Eval_CLI_Command` — `wp newspack-intelligence eval <file>`; the `Refuses_Root` trait they share |
 | `topologies/` | The `.tsl` node-graph topologies |
 | `examples/` | The fictional ontology seed and eval labels, the shapes a deployment starts its own from |
 | `src/intelligence/` | The Intelligence page's React bundle |

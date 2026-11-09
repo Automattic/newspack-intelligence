@@ -49,7 +49,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'entity_key', 'type', 'name', 'norm', 'created_ts' ], \array_keys( $tables['entities']['columns'] ), 'an entity row carries no id' );
 		$this->assertSame( [ 'entities_norm' => [ 'norm' ] ], $tables['entities']['indexes'] );
 		$this->assertArrayNotHasKey( 'autoincrement', $tables['entities'] );
-		$this->assertSame( 8, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 9, Intel_Graph_Row_Schema::version() );
 		$this->projector_graph();
 		$this->assertSame( [ 'Intel_Graph' ], Core::node( 'intel-graph' )->arguments(), 'the Row_Table accepts the schema' );
 	}
@@ -71,7 +71,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'item_key' ], $themes['key'] );
 		$this->assertSame( [ 'themes_item_day' => [ 'item_day' ] ], $themes['indexes'] );
 		$this->assertSame( [ 'item_day', 730, 86400 ], $themes['retain'] );
-		$this->assertSame( 8, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 9, Intel_Graph_Row_Schema::version() );
 	}
 
 	/**
@@ -83,7 +83,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 
 		$this->assertSame( [ 'id', 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'checked_kind', 'kind_verdict', 'checked_ts', 'actor', 'item_day' ], \array_keys( $columns ) );
 		$this->assertSame( [ 'TEXT', 'TEXT', 'INTEGER' ], [ $columns['checked_kind'], $columns['kind_verdict'], $columns['checked_ts'] ] );
-		$this->assertSame( 8, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 9, Intel_Graph_Row_Schema::version() );
 	}
 
 	/** One fragment reads an extraction row's kind check back as the record its event carried, null for one never checked. */
@@ -198,7 +198,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'source' => 'TEXT NOT NULL', 'line_hash' => 'TEXT NOT NULL', 'item_key' => 'TEXT NOT NULL', 'item_day' => 'INTEGER NOT NULL' ], $boilerplate['columns'] );
 		$this->assertSame( [ 'source', 'line_hash', 'item_key' ], $boilerplate['key'] );
 		$this->assertSame( [ 'item_day', 730, 86400 ], $boilerplate['retain'] );
-		$this->assertSame( 8, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 9, Intel_Graph_Row_Schema::version() );
 
 		$now       = 1793000000;
 		Core::$now = (float) ( $now - 731 * 86400 );
@@ -250,13 +250,26 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertTrue( $tables['collected']['keep'] );
 	}
 
+	/**
+	 * An exclusion is one kept row keyed by its item, so it outlives the
+	 * item's expiry and its purge, holding what the excluded list answers.
+	 */
+	public function test_an_exclusion_is_a_kept_row_keyed_by_its_item(): void {
+		$excluded = Intel_Graph_Row_Schema::tables()['excluded_items'];
+
+		$this->assertSame( [ 'item_key' => 'TEXT NOT NULL', 'tier' => 'TEXT NOT NULL', 'url' => 'TEXT NOT NULL', 'title' => 'TEXT NOT NULL', 'why' => 'TEXT NOT NULL', 'actor' => 'TEXT NOT NULL', 'ts' => 'REAL NOT NULL' ], $excluded['columns'] );
+		$this->assertSame( [ 'item_key' ], $excluded['key'] );
+		$this->assertTrue( $excluded['keep'] );
+		$this->assertSame( 9, Intel_Graph_Row_Schema::version() );
+	}
+
 	/** The reads that open on a proposal's subject or a judged entity reach it by an index. */
 	public function test_events_and_judgments_are_indexed_where_the_reads_open(): void {
 		$tables = Intel_Graph_Row_Schema::tables();
 
 		$this->assertContains( [ 'subject', 'kind' ], $tables['events']['indexes'] ?? [] );
 		$this->assertContains( [ 'entity_key' ], $tables['judgments']['indexes'] ?? [] );
-		$this->assertSame( 8, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 9, Intel_Graph_Row_Schema::version() );
 	}
 
 	/** With no partition written, a table reads as an empty row set of its declared columns. */

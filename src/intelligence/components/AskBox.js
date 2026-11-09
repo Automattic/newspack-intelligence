@@ -127,9 +127,10 @@ function waitText( seconds ) {
  * @param {Object}                 props.answer       What `ask_result` answered.
  * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void} [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactElement} The answer.
  */
-function Answered( { answer, onOpenEntity, onSave } ) {
+function Answered( { answer, onOpenEntity, onSave, canTune } ) {
 	if ( 0 === answer.found ) {
 		return (
 			<p className="newspack-nodes-empty-state is-quiet">
@@ -191,6 +192,7 @@ function Answered( { answer, onOpenEntity, onSave } ) {
 						item={ item }
 						onOpenEntity={ onOpenEntity }
 						onSave={ onSave }
+						canTune={ canTune }
 					/>
 				) ) }
 			</ol>
@@ -207,9 +209,10 @@ function Answered( { answer, onOpenEntity, onSave } ) {
  * @param {boolean}                                             props.gaveUp       Whether the page stopped waiting for it.
  * @param {(key: string) => void}                               props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void}                              [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                                             [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactNode} The state.
  */
-function AskState( { read, gaveUp, onOpenEntity, onSave } ) {
+function AskState( { read, gaveUp, onOpenEntity, onSave, canTune } ) {
 	const { answer, error, loading } = read;
 	if ( error ) {
 		return <Refusal error={ error } />;
@@ -256,6 +259,7 @@ function AskState( { read, gaveUp, onOpenEntity, onSave } ) {
 					answer={ answer }
 					onOpenEntity={ onOpenEntity }
 					onSave={ onSave }
+					canTune={ canTune }
 				/>
 			) : (
 				<p className="newspack-nodes-banner is-warning">
@@ -289,6 +293,7 @@ function AskState( { read, gaveUp, onOpenEntity, onSave } ) {
  * @param {(asked: ?Object) => void}                    props.onAsked      Holds a new one.
  * @param {(key: string) => void}                       props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void}                      [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                                     [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactElement} The box.
  */
 export default function AskBox( {
@@ -297,6 +302,7 @@ export default function AskBox( {
 	onAsked,
 	onOpenEntity,
 	onSave,
+	canTune,
 } ) {
 	const [ question, setQuestion ] = useState( '' );
 	const ask = useIntelWrite( 'ask', {
@@ -372,6 +378,7 @@ export default function AskBox( {
 						gaveUp={ asked.gaveUp }
 						onOpenEntity={ onOpenEntity }
 						onSave={ onSave }
+						canTune={ canTune }
 					/>
 				) }
 			</CardBody>

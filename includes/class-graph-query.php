@@ -2526,27 +2526,18 @@ final class Graph_Query {
 	/**
 	 * The graph a read opens on: each merged key's survivor, each survivor's
 	 * keys, and the prelude every statement opens with, binding the survivor
-	 * map as `mg` and the caller's readable tiers' items as `ri`.
+	 * map as `mg`, the caller's readable tiers' items as `ti`, and those a
+	 * curator has not excluded (`kept()`) as `ri`, which every read reads
+	 * items through; only the curation commands read `ti`, the item lookup so
+	 * it names an excluded item the caller may read, and each guard asking
+	 * whether a curation would show a name to every reader, since an
+	 * inclusion undoes an exclusion.
 	 *
 	 * @param Row_Reader $r The reader.
 	 * @return Graph
 	 */
 	public static function graph( Row_Reader $r ): array {
 		return self::bound( $r, Entity_Index::survivors( $r ), Intel_Tiers::readable() );
-	}
-
-	/**
-	 * A command's limit: at least 1, at most MAX_LIMIT.
-	 *
-	 * @param array<array-key,mixed> $args The bound command args.
-	 * @throws \InvalidArgumentException Below 1.
-	 */
-	private static function limit( array $args ): int {
-		$limit = Core::as_int( $args['limit'] );
-		if ( $limit < 1 ) {
-			throw new \InvalidArgumentException( 'limit must be at least 1' );
-		}
-		return \min( $limit, self::MAX_LIMIT );
 	}
 
 	/**
@@ -2567,32 +2558,39 @@ final class Graph_Query {
 	}
 
 	/**
-	 * A graph as a caller without restricted access reads it: its survivors,
-	 * its `ri` the items of `Intel_Tiers::UNRESTRICTED` alone.
+	 * A graph as a caller without restricted access reads it, for the guards
+	 * asking whether a curation would show a name to every reader: its
+	 * survivors, its `ri` every item of `Intel_Tiers::UNRESTRICTED`, an
+	 * excluded one among them, since an inclusion undoes an exclusion, so
+	 * an exclusion is not a tier boundary.
 	 *
 	 * @param Row_Reader $r The reader.
 	 * @param Graph      $g The graph the read opened.
 	 * @return Graph
 	 */
 	public static function unrestricted( Row_Reader $r, array $g ): array {
-		return self::bound( $r, $g['survivors'], Intel_Tiers::UNRESTRICTED );
+		return self::bound( $r, $g['survivors'], Intel_Tiers::UNRESTRICTED, false );
 	}
 
 	/**
-	 * The graph over a survivor map, its `ri` the items of `$tiers`.
+	 * The graph over a survivor map, its `ti` the items of `$tiers` and its
+	 * `ri` those a curator has not excluded, or every one of `ti` when
+	 * `$kept` is false.
 	 *
 	 * @param Row_Reader           $r         The reader.
 	 * @param array<string,string> $survivors Each merged key's survivor, '' where it does not resolve.
 	 * @param list<string>         $tiers     The tiers `ri` holds.
+	 * @param bool                 $kept      Whether `ri` leaves out an excluded item.
 	 * @return Graph
 	 */
-	private static function bound( Row_Reader $r, array $survivors, array $tiers ): array {
+	private static function bound( Row_Reader $r, array $survivors, array $tiers, bool $kept = true ): array {
 		return [
 			'survivors' => $survivors,
 			'keys'      => self::inverse( $survivors ),
 			'with'      => 'WITH mg AS MATERIALIZED ( SELECT key, value FROM json_each( ? ) ),'
-				. ' ri AS NOT MATERIALIZED ( SELECT item_key, source, tier, url, title, item_ts, retrieved_ts, substr( body, 1, ' . self::EXCERPT_READ_CHARS . ' ) AS head FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' )
-				. ' a WHERE tier IN ( ' . Intel_Graph_Row_Schema::marks( $tiers ) . ' ) )',
+				. ' ti AS NOT MATERIALIZED ( SELECT item_key, source, tier, url, title, item_ts, retrieved_ts, substr( body, 1, ' . self::EXCERPT_READ_CHARS . ' ) AS head FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' )
+				. ' a WHERE tier IN ( ' . Intel_Graph_Row_Schema::marks( $tiers ) . ' ) ),'
+				. ' ri AS NOT MATERIALIZED ( SELECT * FROM ti WHERE ' . ( $kept ? self::kept( $r, 'item_key' ) : '1' ) . ' )',
 			'binds'     => [ \wp_json_encode( (object) $survivors, \JSON_THROW_ON_ERROR ), ...$tiers ],
 		];
 	}
@@ -2625,7 +2623,8 @@ final class Graph_Query {
 	 * then each run by save time, the latest first, each with its use marks.
 	 * A saved copy reads at the tier it was saved at, so it outlives its item
 	 * row, and an item saved at several tiers reads once, as the most
-	 * restricted copy the caller may read, with that copy's marks alone. The
+	 * restricted copy the caller may read, with that copy's marks alone; an
+	 * item a curator excluded is neither listed nor counted. The
 	 * recency is read from the caller's own `collected` and `item_moved`
 	 * events of the tiers the caller reads, an agent's under the caller's
 	 * login among them; it assumes the single partition every topology runs,
@@ -2651,7 +2650,7 @@ final class Graph_Query {
 							static fn ( array $row ): array => [ 'collection_key' => $row[0], 'name' => $row[1], 'created_ts' => $row[2], 'items' => Core::as_int( $row[3] ), 'recent_ts' => null === $row[4] ? null : Core::as_int( $row[4] ) ],
 							$r->rows(
 								'SELECT c.collection_key, c.name, c.created_ts, ( SELECT COUNT( DISTINCT d.item_key ) FROM ' . Intel_Graph_Row_Schema::all( $r, 'collected' )
-								. " d WHERE d.collection_key = c.collection_key AND d.tier IN ( {$in} ) ), ( SELECT MAX( e.ts ) FROM " . Intel_Graph_Row_Schema::all( $r, 'events' )
+								. " d WHERE d.collection_key = c.collection_key AND d.tier IN ( {$in} ) AND " . self::kept( $r, 'd.item_key' ) . ' ), ( SELECT MAX( e.ts ) FROM ' . Intel_Graph_Row_Schema::all( $r, 'events' )
 								. " e WHERE e.subject = c.collection_key AND e.kind IN ( 'collected', 'item_moved' ) AND ( e.actor = ? OR substr( e.actor, 1, length( ? ) ) = ? ) AND ( json_extract( e.detail, '$.tier' ) IN ( {$in} ) OR EXISTS ( SELECT 1 FROM json_each( e.detail, '$.tiers' ) t WHERE t.value IN ( {$in} ) ) ) ) FROM "
 								. Intel_Graph_Row_Schema::all( $r, 'collections' ) . ' c ORDER BY c.name COLLATE NOCASE, c.collection_key',
 								[ ...$tiers, "user:{$login}", $agent, $agent, ...$tiers, ...$tiers ]
@@ -2667,7 +2666,7 @@ final class Graph_Query {
 				[ $name, $created ] = self::collection( $r, $key ) ?? throw new \InvalidArgumentException( \esc_html( "no collection: {$key}" ) );
 				$rows               = $r->rows(
 					'SELECT d.item_key, s.url, s.title, d.actor, d.ts, m.mark, m.day FROM ( SELECT item_key, actor, ts, tier, ROW_NUMBER() OVER ( PARTITION BY item_key ORDER BY ' . self::restrictiveness() . ' DESC ) AS pick FROM '
-					. Intel_Graph_Row_Schema::all( $r, 'collected' ) . " WHERE collection_key = ? AND tier IN ( {$in} ) ) d JOIN " . Intel_Graph_Row_Schema::all( $r, 'saved_copies' )
+					. Intel_Graph_Row_Schema::all( $r, 'collected' ) . " WHERE collection_key = ? AND tier IN ( {$in} ) AND " . self::kept( $r, 'item_key' ) . ' ) d JOIN ' . Intel_Graph_Row_Schema::all( $r, 'saved_copies' )
 					. ' s ON s.item_key = d.item_key AND s.tier = d.tier LEFT JOIN ' . Intel_Graph_Row_Schema::all( $r, 'item_marks' )
 					. ' m ON m.item_key = d.item_key AND m.tier = d.tier WHERE d.pick = 1 ORDER BY d.ts DESC, d.item_key',
 					[ ...Intel_Event::TIERS, $key, ...$tiers ]
@@ -2723,6 +2722,19 @@ final class Graph_Query {
 	}
 
 	/**
+	 * The condition keeping a row whose item a curator has not excluded,
+	 * the one place every read leaves an excluded item out and every
+	 * curation command refuses one.
+	 *
+	 * @api Graph_Curation refuses an excluded item by it.
+	 * @param Row_Reader $r      The reader.
+	 * @param string     $column The column, or a `?`, naming the row's item.
+	 */
+	public static function kept( Row_Reader $r, string $column ): string {
+		return "{$column} NOT IN ( SELECT item_key FROM ( " . self::exclusions( $r ) . ' ) )';
+	}
+
+	/**
 	 * Folders as the list reads them, by name: the RECENT_FOLDERS carrying
 	 * the latest recency first, the latest first, then every other, its
 	 * recency left out.
@@ -2737,6 +2749,62 @@ final class Graph_Query {
 		$first  = \array_flip( \array_map( Core::as_string( ... ), \array_column( $recent, 'collection_key' ) ) );
 		$rest   = \array_filter( $folders, static fn ( array $f ): bool => ! isset( $first[ Core::as_string( $f['collection_key'] ) ] ) );
 		return [ ...$recent, ...\array_map( static fn ( array $f ): array => [ 'recent_ts' => null ] + $f, $rest ) ];
+	}
+
+	/**
+	 * An optional string arg as given, a blank one included (ADR-25), or
+	 * null when it is absent.
+	 *
+	 * @param array<array-key,mixed> $args The bound command args.
+	 * @param string                 $name The arg.
+	 */
+	private static function given( array $args, string $name ): ?string {
+		$value = $args[ $name ] ?? null;
+		return null === $value ? null : Core::as_string( $value );
+	}
+
+	/**
+	 * Every exclusion of a tier the caller reads, the latest first, at most
+	 * `limit`, each as its item was when it was excluded, so the list
+	 * outlives the item's own rows: `{ items: [ { item_key, title, url,
+	 * actor, excluded_ts, why } ] }`, `why` '' unless the curator gave one.
+	 * It is the one read that does not leave an excluded item out.
+	 *
+	 * @param array<array-key,mixed> $args The bound command args: `limit`.
+	 * @return array<string,mixed>
+	 * @throws \InvalidArgumentException On a limit below 1.
+	 */
+	public static function excluded( array $args ): array {
+		$limit = self::limit( $args );
+		$tiers = Intel_Tiers::readable();
+		return self::available(
+			[ 'items' => [] ],
+			static fn ( Row_Reader $r ): array => [
+				'items' => \array_map(
+					static fn ( array $row ): array => [ 'item_key' => $row[0], 'title' => $row[1], 'url' => $row[2], 'actor' => $row[3], 'excluded_ts' => Core::as_int( $row[4] ), 'why' => $row[5] ],
+					$r->rows( 'SELECT item_key, title, url, actor, ts, why FROM ( ' . self::exclusions( $r ) . ' ) WHERE tier IN ( ' . Intel_Graph_Row_Schema::marks( $tiers ) . ' ) ORDER BY ts DESC, item_key LIMIT ?', [ ...$tiers, $limit ] )
+				),
+			]
+		);
+	}
+
+	/**
+	 * Every exclusion as a statement, one row per item, the newest
+	 * partition's: `item_key, tier, title, url, actor, ts, why`, `tier` the
+	 * one its item reads at now, and the one it was excluded at only once
+	 * every partition has dropped the item's row. It is the one definition of an
+	 * excluded item: `kept()` leaves out its keys, and the excluded list and
+	 * an inclusion read it by that tier, so a reader who reads an item's
+	 * tier lists and includes every exclusion hiding it.
+	 *
+	 * @api Graph_Curation reads an exclusion it includes again by it.
+	 * @param Row_Reader $r The reader.
+	 */
+	public static function exclusions( Row_Reader $r ): string {
+		$keys = 'item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'excluded_items' ) . ' e )';
+		return 'SELECT x.item_key, COALESCE( i.tier, x.tier ) AS tier, x.title, x.url, x.actor, x.ts, x.why FROM ( '
+			. Intel_Graph_Row_Schema::newest( $r, 'excluded_items', 'item_key', 'item_key, tier, title, url, actor, ts, why', '1' )
+			. ' ) x LEFT JOIN ( ' . Intel_Graph_Row_Schema::newest( $r, 'items', 'item_key', 'item_key, tier', $keys ) . ' ) i ON i.item_key = x.item_key';
 	}
 
 	/**
@@ -2757,15 +2825,17 @@ final class Graph_Query {
 	}
 
 	/**
-	 * An optional string arg as given, a blank one included (ADR-25), or
-	 * null when it is absent.
+	 * A command's limit: at least 1, at most MAX_LIMIT.
 	 *
 	 * @param array<array-key,mixed> $args The bound command args.
-	 * @param string                 $name The arg.
+	 * @throws \InvalidArgumentException Below 1.
 	 */
-	private static function given( array $args, string $name ): ?string {
-		$value = $args[ $name ] ?? null;
-		return null === $value ? null : Core::as_string( $value );
+	private static function limit( array $args ): int {
+		$limit = Core::as_int( $args['limit'] );
+		if ( $limit < 1 ) {
+			throw new \InvalidArgumentException( 'limit must be at least 1' );
+		}
+		return \min( $limit, self::MAX_LIMIT );
 	}
 
 	/**

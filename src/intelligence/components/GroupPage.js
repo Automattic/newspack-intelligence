@@ -15,9 +15,10 @@ import { metaLine, utcDay } from './format';
  * @param {Object}                 props.group        The group as `search --lens --group=theme` answers it.
  * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void} [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactElement} The row.
  */
-function GroupRow( { group, onOpenEntity, onSave } ) {
+function GroupRow( { group, onOpenEntity, onSave, canTune } ) {
 	const [ open, setOpen ] = useState( false );
 	const clients = group.clients ?? [];
 	const items = group.items ?? [];
@@ -92,6 +93,7 @@ function GroupRow( { group, onOpenEntity, onSave } ) {
 							item={ item }
 							onOpenEntity={ onOpenEntity }
 							onSave={ onSave }
+							canTune={ canTune }
 						/>
 					) ) }
 				</ul>
@@ -138,6 +140,7 @@ const rowKey = ( group ) =>
  * @param {(starts: number[]) => void}        props.onStarts     Replaces the stack.
  * @param {(key: string) => void}             props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void}            [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                           [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactElement} The page.
  */
 export default function GroupPage( {
@@ -146,6 +149,7 @@ export default function GroupPage( {
 	onStarts,
 	onOpenEntity,
 	onSave,
+	canTune,
 } ) {
 	return (
 		<>
@@ -163,6 +167,7 @@ export default function GroupPage( {
 							item={ group.items[ 0 ] }
 							onOpenEntity={ onOpenEntity }
 							onSave={ onSave }
+							canTune={ canTune }
 						/>
 					) : (
 						<GroupRow
@@ -170,6 +175,7 @@ export default function GroupPage( {
 							group={ group }
 							onOpenEntity={ onOpenEntity }
 							onSave={ onSave }
+							canTune={ canTune }
 						/>
 					)
 				) }

@@ -165,6 +165,7 @@ export default function IntelligencePage( {
 								}
 								onSearch={ () => setView( 'search' ) }
 								onSave={ onSave }
+								canTune={ canTune }
 								asked={ asked }
 								onAsked={ setAsked }
 							/>
@@ -177,6 +178,7 @@ export default function IntelligencePage( {
 								vocabulary={ vocabulary }
 								onOpenEntity={ openEntity }
 								onSave={ onSave }
+								canTune={ canTune }
 								asked={ asked }
 								onAsked={ setAsked }
 							/>
@@ -227,6 +229,7 @@ export default function IntelligencePage( {
 								onDraft={ setWatchDraft }
 								onOpenEntity={ openEntity }
 								onSave={ onSave }
+								canTune={ canTune }
 							/>
 						) }
 					</div>

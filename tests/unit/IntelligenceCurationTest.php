@@ -60,13 +60,19 @@ final class IntelligenceCurationTest extends TestCase {
 	/** A theme only a restricted item is extracted with. */
 	private const SETTLEMENT = 'board settlement talks';
 
+	/** An item a curator excluded, the wire copy of a story. */
+	private const WIRE = 'feed:harbor-wire-copy';
+
+	/** An exclusion of a restricted item no reader without the tier reads. */
+	private const HIDDEN_EXCLUSION = 'hubspot:deal-12';
+
 	/** A proposal only a restricted item cites. */
 	private const HIDDEN = 'organization:hidden-buyer';
 
 	/** A rejected proposal only a restricted item cites. */
 	private const SHELVED = 'organization:shelved-buyer';
 
-	private const CURATION = [ 'confirm_link', 'reject_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'mark_used', 'move_item', 'save_lens', 'remove_lens', 'merge_theme' ];
+	private const CURATION = [ 'confirm_link', 'reject_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'mark_used', 'move_item', 'save_lens', 'remove_lens', 'merge_theme', 'exclude_item', 'include_item', 'excluded' ];
 
 	/** Each curation event kind, by the command that writes it. */
 	private const VERB_OF = [
@@ -86,6 +92,8 @@ final class IntelligenceCurationTest extends TestCase {
 		'item_used'          => 'mark_used',
 		'item_moved'         => 'move_item',
 		'theme_merged'       => 'merge_theme',
+		'item_excluded'      => 'exclude_item',
+		'item_included'      => 'include_item',
 	];
 
 	private Intelligence_CI_Node $ci;
@@ -149,6 +157,9 @@ final class IntelligenceCurationTest extends TestCase {
 			'remove_lens'       => [ 'remove_lens', [ 'harbor-desk' ], [ 'event' => 'lens_removed', 'lens_key' => 'harbor-desk' ] ],
 			'merge_theme'       => [ 'merge_theme', [ self::PLATFORM, self::OFFBOARDING ], [ 'event' => 'theme_merged', 'from' => self::PLATFORM, 'into' => self::OFFBOARDING ] ],
 			'merge a theme anew' => [ 'merge_theme', [ self::AUTOMATION, self::PLATFORM ], [ 'event' => 'theme_merged', 'from' => self::AUTOMATION, 'into' => self::PLATFORM ] ],
+			'exclude_item'      => [ 'exclude_item', [ 'github:ledger-launch', '--why=Repeats the launch notice.' ], [ 'event' => 'item_excluded', 'item_key' => 'github:ledger-launch', 'url' => 'https://news.example/github/ledger-launch', 'title' => 'Salem Ledger launches a newsletter tool', 'tier' => 'internal', 'why' => 'Repeats the launch notice.' ] ],
+			'exclude a public item' => [ 'exclude_item', [ '--item=feed:gazette-award' ], [ 'event' => 'item_excluded', 'item_key' => 'feed:gazette-award', 'url' => 'https://news.example/feed/gazette-award', 'title' => 'Harbor Gazette wins state award', 'tier' => 'public' ] ],
+			'include_item'      => [ 'include_item', [ self::WIRE ], [ 'event' => 'item_included', 'item_key' => self::WIRE ] ],
 		];
 	}
 
@@ -226,6 +237,135 @@ final class IntelligenceCurationTest extends TestCase {
 		$this->ci->dispatch( 'reject_entity', [ self::LEDGER ] );
 
 		$this->assertSame( [ 'user:kinsey-reed', 'user:kinsey-reed' ], \array_column( self::ontology_events(), 'actor' ) );
+	}
+
+	/**
+	 * A saved copy of an excluded item is neither marked nor moved, refused
+	 * naming the item; a copy of a tier the caller does not read is refused
+	 * as one never saved, so the refusal tells it nothing of the exclusion.
+	 */
+	public function test_a_saved_copy_of_an_excluded_item_is_neither_marked_nor_moved(): void {
+		$this->seed_curation_world();
+		$this->seed(
+			[
+				Intel_Event::make( 'collected', [ 'collection_key' => 'col-october', 'item_key' => self::WIRE, 'url' => self::url( self::WIRE ), 'title' => 'Harbor wire copy', 'tier' => 'public' ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'collected', [ 'collection_key' => 'col-october', 'item_key' => self::HIDDEN_EXCLUSION, 'url' => self::url( self::HIDDEN_EXCLUSION ), 'title' => 'Deal 12', 'tier' => 'restricted' ], 'user:41', 'fixture-9' ),
+			]
+		);
+		$refusal = function ( string $verb, array $args ): string {
+			try {
+				$this->ci->dispatch( $verb, $args );
+				$this->fail( "{$verb} {$args[1]} was written" );
+			} catch ( \InvalidArgumentException $e ) {
+				return $e->getMessage();
+			}
+		};
+
+		$this->assertSame(
+			[
+				self::WIRE . ' is excluded from every view',
+				self::WIRE . ' is excluded from every view',
+				self::HIDDEN_EXCLUSION . ' is not saved in Col October',
+			],
+			[
+				$refusal( 'mark_used', [ 'col-october', self::WIRE, 'site', '2026-10-19' ] ),
+				$refusal( 'move_item', [ 'col-october', self::WIRE, 'col:october' ] ),
+				$refusal( 'mark_used', [ 'col-october', self::HIDDEN_EXCLUSION, 'site', '2026-10-19' ] ),
+			]
+		);
+		$this->assertSame( [], self::ontology_events() );
+	}
+
+	/**
+	 * An exclusion can be undone, so the guards asking whether a curation
+	 * would show a restricted name to every reader count every item of the
+	 * unrestricted tiers, an excluded one among them. With public item P,
+	 * which cites Pier Trust and carries the dredging theme, excluded, a
+	 * merge of a name only restricted item R1 cites into Pier Trust, a tag
+	 * of it with a topic only R1 cites, and a merge of the dredging theme
+	 * into one only R1 carries are each refused, since including P again
+	 * would show them; and accepting Pier Trust, which P cites, is allowed.
+	 */
+	public function test_the_every_reader_guards_count_an_excluded_public_item(): void {
+		$r1 = 'hubspot:pier-sale-71';
+		$r2 = 'hubspot:pier-bid-72';
+		$p  = 'feed:pier-notice-73';
+		$this->seed(
+			self::item( $p, 'Pier Trust posts a dredging notice', 'feed', 'public', self::$oct_13 ),
+			self::proposal( 'organization:quay-holdings', 'Quay Holdings', $r1 ),
+			self::proposal( 'organization:pier-trust', 'Pier Trust', $r2 ),
+			self::proposal( 'topic:pier-sale-bids', 'Pier sale bids', $r1 ),
+			self::link( 'link_proposed', $p, 'organization:pier-trust', 'mention', 'ner_fuzzy', 0.6, self::$oct_13 ),
+			self::extraction( $r1, 'A sale.', 'other', self::$oct_13, [], 5.0, 5.0, 'pier sale talks' ),
+			self::extraction( $r2, 'A bid.', 'other', self::$oct_13, [], 5.0, 5.0, 'harbor dredging plan' ),
+			self::extraction( $p, 'A notice.', 'other', self::$oct_13, [], 5.0, 5.0, 'harbor dredging plan' ),
+			[ Intel_Event::make( 'item_excluded', [ 'item_key' => $p, 'url' => self::url( $p ), 'title' => 'Pier Trust posts a dredging notice', 'tier' => 'public' ], 'user:41', 'fixture-9' ) ]
+		);
+		self::write_restricted_item( $r1, 'Quay Holdings weighs the pier sale' );
+		self::write_restricted_item( $r2, 'Pier Trust weighs a bid' );
+		self::sign_in( 38, 'quay-analyst', 'manage_options', Intel_Tiers::CAPABILITY );
+		$refusal = function ( string $verb, array $args ): string {
+			try {
+				$this->ci->dispatch( $verb, $args );
+				$this->fail( "{$verb} was written" );
+			} catch ( \InvalidArgumentException $e ) {
+				return $e->getMessage();
+			}
+		};
+
+		$this->assertSame(
+			[
+				'merging organization:quay-holdings into organization:pier-trust would show organization:quay-holdings to every reader; it is not cited by any item outside the restricted tier',
+				'tagging organization:pier-trust with topic:pier-sale-bids would show topic:pier-sale-bids to every reader; it is not cited by any item outside the restricted tier',
+				'merging harbor dredging plan into pier sale talks would show pier sale talks to every reader; it is not the theme of any item outside the restricted tier',
+			],
+			[
+				$refusal( 'merge_entities', [ 'organization:quay-holdings', 'organization:pier-trust' ] ),
+				$refusal( 'tag_topic', [ 'organization:pier-trust', 'topic:pier-sale-bids' ] ),
+				$refusal( 'merge_theme', [ 'harbor dredging plan', 'pier sale talks' ] ),
+			]
+		);
+		$this->assertSame( [], self::ontology_events() );
+		$this->assertTrue( $this->ci->dispatch( 'accept_entity', [ 'organization:pier-trust' ] )['ok'] );
+	}
+
+	/**
+	 * An item excluded at one tier and recorded since at another is listed,
+	 * included and read again at the tier it reads at now, so a reader who
+	 * reads that tier is never left with an item hidden from it that it can
+	 * neither list nor include.
+	 */
+	public function test_an_exclusion_is_judged_at_the_tier_its_item_reads_at_now(): void {
+		$key = 'linear:tern-ledger-14';
+		$this->seed(
+			self::item( $key, 'Tern Ledger opens a bureau', 'linear', 'internal', self::$oct_13 ),
+			[ Intel_Event::make( 'item_excluded', [ 'item_key' => $key, 'url' => self::url( $key ), 'title' => 'Tern Ledger opens a bureau', 'tier' => 'restricted' ], 'user:41', 'fixture-9' ) ]
+		);
+		$found = fn (): array => \array_column( $this->ci->dispatch( 'search', [ '--q=Tern bureau' ] )['items'], 'item_key' );
+
+		$this->assertSame( [], $found() );
+		$this->assertSame( [ $key ], \array_column( $this->ci->dispatch( 'excluded', [ '--limit=9' ] )['items'], 'item_key' ) );
+		$this->ci->dispatch( 'include_item', [ $key ] );
+		$this->seed( self::ontology_events() );
+
+		$this->assertSame( [ $key ], $found() );
+	}
+
+	/** An exclusion naming no why carries none, so its row reads ''. */
+	public function test_an_exclusion_without_a_why_carries_none(): void {
+		$this->seed_curation_world();
+
+		$this->ci->dispatch( 'exclude_item', [ 'linear:joint-grant' ] );
+
+		$this->assertArrayNotHasKey( 'why', self::ontology_events()[0] );
+	}
+
+	/** The excluded list answers at tune what the curator may read, and nothing else excluded. */
+	public function test_the_excluded_list_answers_the_readable_exclusions(): void {
+		$this->seed_curation_world();
+
+		$this->assertSame( [ self::WIRE ], \array_column( $this->ci->dispatch( 'excluded', [ '--limit=7' ] )['items'], 'item_key' ) );
+		$this->assertSame( [], self::ontology_events() );
 	}
 
 	/** With no signed-in user there is no actor, so the command throws before it appends. */
@@ -314,6 +454,16 @@ final class IntelligenceCurationTest extends TestCase {
 			'merge from an unused theme'  => [ 'merge_theme', [ 'client exit', self::OFFBOARDING ], 'no theme: client exit' ],
 			'merge a hidden chain theme'  => [ 'merge_theme', [ 'theme chain 4', self::OFFBOARDING ], 'no theme: theme chain 4' ],
 			'merge into a cycling theme'  => [ 'merge_theme', [ 'theme loop a', 'theme loop b' ], 'theme loop b is on a merge chain that cycles or runs past 10 hops; merge theme loop a into a theme whose chain resolves instead' ],
+			'exclude one excluded'        => [ 'exclude_item', [ self::WIRE ], self::WIRE . ' is excluded from every view' ],
+			'confirm an excluded item'    => [ 'confirm_link', [ self::WIRE, self::GAZETTE ], self::WIRE . ' is excluded from every view' ],
+			'reject an excluded item'     => [ 'reject_link', [ self::WIRE, self::GAZETTE ], self::WIRE . ' is excluded from every view' ],
+			'collect an excluded item'    => [ 'collect', [ 'col:october', self::WIRE ], self::WIRE . ' is excluded from every view' ],
+			'exclude no item'             => [ 'exclude_item', [ 'feed:never-recorded' ], 'no item: feed:never-recorded' ],
+			'exclude a restricted item'   => [ 'exclude_item', [ 'hubspot:deal-9' ], 'no item: hubspot:deal-9' ],
+			'exclude with a blank why'    => [ 'exclude_item', [ 'github:ledger-launch', "--why=\t" ], 'why is blank' ],
+			'exclude past the why cap'    => [ 'exclude_item', [ 'github:ledger-launch', '--why=' . \str_repeat( 'w', 513 ) ], 'why runs past 512 bytes' ],
+			'include one not excluded'    => [ 'include_item', [ 'github:ledger-launch' ], 'github:ledger-launch is not excluded' ],
+			'include a hidden exclusion'  => [ 'include_item', [ self::HIDDEN_EXCLUSION ], self::HIDDEN_EXCLUSION . ' is not excluded' ],
 		];
 	}
 
@@ -786,6 +936,7 @@ final class IntelligenceCurationTest extends TestCase {
 		$key    = static fn ( string $tag ): string => "organization:{$tag}" . $wide( Graph_Curation::KEY_BYTES - \strlen( "organization:{$tag}" ) );
 		$item   = 'feed:' . $wide( Graph_Curation::ITEM_KEY_BYTES - 5 );
 		$saved  = 'linear:' . $wide( Graph_Curation::ITEM_KEY_BYTES - 7 );
+		$gone   = 'unthread:' . $wide( Graph_Curation::ITEM_KEY_BYTES - 9 );
 		$name   = $wide( Graph_Curation::NAME_BYTES );
 		$ascii  = \str_repeat( 'm', Graph_Curation::NAME_BYTES );
 		$entity = $key( 'a' );
@@ -798,6 +949,7 @@ final class IntelligenceCurationTest extends TestCase {
 			[ Intel_Event::make( 'collection_created', [ 'collection_key' => $key( 'e' ), 'name' => 'Wider' ], 'user:41', 'fixture-9' ) ],
 			[ Intel_Event::make( 'collected', [ 'collection_key' => $key( 'c' ), 'item_key' => $saved, 'url' => 'https://news.example/' . $wide( Graph_Curation::URL_BYTES - 21 ), 'title' => Graph_Curation::cut( \str_repeat( "\u{1F600}", 600 ), Graph_Curation::TITLE_BYTES ), 'tier' => 'public' ], 'user:41', 'fixture-9' ) ],
 			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => $entity, 'role' => 'operator_product', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ) ],
+			[ Intel_Event::make( 'item_excluded', [ 'item_key' => $gone, 'url' => 'https://news.example/' . $wide( Graph_Curation::URL_BYTES - 21 ), 'title' => 'Wide', 'tier' => 'public' ], 'user:41', 'fixture-9' ) ],
 			self::link( 'link_asserted', $item, $entity, 'subject', 'name', 1.0, self::$oct_06 ),
 			self::entity( $topic, 'Wide' ),
 			self::item( 'feed:wide-from', 'Wide from', 'feed', 'public', self::$oct_06 ),
@@ -823,6 +975,8 @@ final class IntelligenceCurationTest extends TestCase {
 			[ 'mark_used', [ $key( 'c' ), $saved, 'newsletter', '2026-10-19' ] ],
 			[ 'move_item', [ $key( 'c' ), $saved, $key( 'e' ) ] ],
 			[ 'merge_theme', [ $wide( Intel_Event::THEME_BYTES ), $wide( Intel_Event::THEME_BYTES - 1 ) . 'r' ] ],
+			[ 'exclude_item', [ $item, '--why=' . $wide( Intel_Event::WHY_BYTES ) ] ],
+			[ 'include_item', [ $gone ] ],
 		];
 		foreach ( $calls as [ $verb, $args ] ) {
 			$this->ci->dispatch( $verb, $args );
@@ -906,7 +1060,10 @@ final class IntelligenceCurationTest extends TestCase {
 				Intel_Event::make( 'collection_created', [ 'collection_key' => 'col-october', 'name' => 'Col October' ], 'user:41', 'fixture-9' ),
 				Intel_Event::make( 'collected', [ 'collection_key' => 'col-october', 'item_key' => 'linear:joint-grant', 'url' => self::url( 'linear:joint-grant' ), 'title' => self::SAVED_TITLE, 'tier' => 'internal' ], 'user:41', 'fixture-9' ),
 				Intel_Event::make( 'lens_saved', [ 'lens_key' => 'harbor-desk', 'name' => 'Harbor desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'item_excluded', [ 'item_key' => self::WIRE, 'url' => self::url( self::WIRE ), 'title' => 'Harbor wire copy', 'tier' => 'public' ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'item_excluded', [ 'item_key' => self::HIDDEN_EXCLUSION, 'url' => self::url( self::HIDDEN_EXCLUSION ), 'title' => 'Deal 12', 'tier' => 'restricted' ], 'user:41', 'fixture-9' ),
 			],
+			self::item( self::WIRE, 'Harbor wire copy', 'feed', 'public', self::$oct_06 ),
 			...$chain
 		);
 		self::write_restricted_item( 'hubspot:deal-9', 'Harbor Gazette deal at risk' );

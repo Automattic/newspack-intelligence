@@ -603,6 +603,32 @@ final class ProjectorTest extends TestCase {
 		$this->assertSame( [ [ $spurious, 'rejected' ], [ self::GAZETTE, 'accepted' ], [ $survivor, 'accepted' ] ], self::graph_rows( 'entity_states', 'entity_key', 'entity_key, state' ), 'a merge leaves the state where it was' );
 	}
 
+	/**
+	 * An exclusion is one kept row per item, holding the URL, title and tier
+	 * it was excluded at, who excluded it, when and why, '' for none; an
+	 * inclusion deletes it, and each is an event row under the item's key.
+	 */
+	public function test_an_exclusion_is_one_kept_row_an_inclusion_deletes(): void {
+		$wire = 'feed:heron-wire-9';
+		$this->project(
+			[
+				$this->ontology( 'item_excluded', [ 'item_key' => self::ITEM, 'url' => 'https://harborgazette.example/a', 'title' => 'Gazette wins, wire copy', 'tier' => 'internal', 'why' => 'The wire copy of the award story.' ], 'agent:41:Claude desktop' ),
+				$this->ontology( 'item_excluded', [ 'item_key' => $wire, 'url' => 'https://heron.example/w', 'title' => 'Heron wire', 'tier' => 'public' ] ),
+				$this->ontology( 'item_excluded', [ 'item_key' => self::PURGED, 'url' => 'https://linear.example/WREN-4410', 'title' => 'Wren ticket', 'tier' => 'internal' ] ),
+				$this->ontology( 'item_included', [ 'item_key' => self::PURGED ] ),
+			]
+		);
+
+		$this->assertSame(
+			[
+				[ self::ITEM, 'internal', 'https://harborgazette.example/a', 'Gazette wins, wire copy', 'The wire copy of the award story.', 'agent:41:Claude desktop', self::NOW ],
+				[ $wire, 'public', 'https://heron.example/w', 'Heron wire', '', 'user:41', self::NOW ],
+			],
+			self::graph_rows( 'excluded_items', 'item_key' )
+		);
+		$this->assertSame( [ [ 'item_excluded', self::ITEM ], [ 'item_excluded', $wire ], [ 'item_excluded', self::PURGED ], [ 'item_included', self::PURGED ] ], self::graph_rows( 'events', 'kind, subject', 'kind, subject' ) );
+	}
+
 	public function test_judgments_are_kept_per_actor_kind(): void {
 		$this->project(
 			[
@@ -946,6 +972,9 @@ final class ProjectorTest extends TestCase {
 			$this->ontology( 'lens_saved', [ 'lens_key' => 'old-desk', 'name' => 'Old desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ] ),
 			$this->ontology( 'lens_removed', [ 'lens_key' => 'old-desk' ] ),
 			$this->ontology( 'theme_merged', [ 'from' => 'kiosk offboarding from platform', 'into' => 'kiosk offboarding' ] ),
+			$this->ontology( 'item_excluded', [ 'item_key' => self::ITEM, 'url' => 'https://harborgazette.example/a', 'title' => 'Award', 'tier' => 'public', 'why' => 'Shown twice.' ] ),
+			$this->ontology( 'item_excluded', [ 'item_key' => self::PURGED, 'url' => 'https://linear.example/WREN-4410', 'title' => 'Wren ticket', 'tier' => 'internal' ] ),
+			$this->ontology( 'item_included', [ 'item_key' => self::PURGED ] ),
 			...$this->watch_events(),
 			...self::ask_events(),
 			$this->grown( 'The Gazette took first place, and the judges said why.' ),

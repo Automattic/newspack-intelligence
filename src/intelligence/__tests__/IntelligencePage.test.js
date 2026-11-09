@@ -700,6 +700,34 @@ describe( 'IntelligencePage', () => {
 		).toBeNull();
 	} );
 
+	it( 'offers a curator the exclusion on the Briefing and Search rows, and a reader none', async () => {
+		const excludes = () =>
+			screen.queryAllByRole( 'button', {
+				name: 'Exclude from every view',
+			} );
+		const { unmount } = renderPage( true );
+		await openWeek();
+		await screen.findByRole( 'link', {
+			name: 'Acme Quillsheet wins regional prize',
+		} );
+		expect( excludes() ).toHaveLength( 1 );
+		fireEvent.click( nav( 'Search' ) );
+		await waitFor( () => expect( excludes() ).toHaveLength( 1 ) );
+		unmount();
+
+		renderPage( false );
+		await openWeek();
+		await screen.findByRole( 'link', {
+			name: 'Acme Quillsheet wins regional prize',
+		} );
+		expect( excludes() ).toHaveLength( 0 );
+		fireEvent.click( nav( 'Search' ) );
+		await screen.findAllByRole( 'link', {
+			name: 'Acme Quillsheet wins regional prize',
+		} );
+		expect( excludes() ).toHaveLength( 0 );
+	} );
+
 	it( 'saves a result through the dialog for a curator', async () => {
 		renderPage( true );
 		await openWeek();

@@ -9,6 +9,8 @@ use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intelligence_CI_Node;
 use Newspack_Nodes\Capabilities;
+use Newspack_Nodes\Core;
+use Newspack_Nodes\Row_Reader;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
@@ -328,6 +330,45 @@ final class IntelligenceWatchesTest extends TestCase {
 		$this->assertSame( [ [ 'feed:gazette-award' ], 1 ], [ \array_column( $this->ci->dispatch( 'watch_matches', [ self::OWN ] )['items'], 'item_key' ), $this->ci->dispatch( 'watch_matches', [ self::OWN ] )['total'] ] );
 		$this->assertSame( 1, $this->ci->dispatch( 'watches', [] )['watches'][0]['unseen'] );
 		$this->assertCount( 2, self::graph_rows( 'watch_matches' ), 'the watches stream\'s rows stay' );
+	}
+
+	/**
+	 * A match whose item a curator excluded leaves the inbox: neither listed
+	 * nor counted, not owed to an instant email and never an arrival of
+	 * another watch; included again, it is back in all three.
+	 */
+	public function test_an_excluded_items_match_leaves_the_inbox_until_it_is_included(): void {
+		$this->own_watches();
+		$this->seed(
+			self::matched( self::OWN, 'linear:joint-grant', 3, self::$oct_01 ),
+			self::matched( self::OWN, 'feed:gazette-award', 2, self::$oct_06 ),
+			[ Intel_Event::make( 'item_excluded', [ 'item_key' => 'linear:joint-grant', 'url' => self::url( 'linear:joint-grant' ), 'title' => 'Gazette and Ledger share a grant', 'tier' => 'internal' ], 'user:quay-reader', 'fixture-9' ) ]
+		);
+		$read = function (): array {
+			$matches = $this->ci->dispatch( 'watch_matches', [ self::OWN, '--limit=7', '--offset=0' ] );
+			[ $owed, $arrived ] = Intel_Graph_Row_Schema::read(
+				static function ( Row_Reader $r ): array {
+					$g = Graph_Query::graph( $r );
+					return [
+						Graph_Watches::owed( $r, $g, [ [ self::OWN, 0.0 ] ] ),
+						Graph_Query::arrivals( $r, $g, 'entity', self::GAZETTE, 'c4d5e6f708192a3b', 0.0, 9 ),
+					];
+				}
+			);
+			return [
+				\array_column( $matches['items'], 'item_key' ),
+				$matches['total'],
+				$this->ci->dispatch( 'watches', [] )['watches'][0]['unseen'],
+				\array_map( static fn ( array $m ): string => Core::as_string( Core::arr( $m['item'] )['item_key'] ), $owed ),
+				\array_map( static fn ( array $a ): string => Core::as_string( Core::arr( $a['item'] )['item_key'] ), $arrived ),
+			];
+		};
+
+		$this->assertSame( [ [ 'feed:gazette-award' ], 1, 1, [ 'feed:gazette-award' ], [ 'feed:gazette-award' ] ], $read() );
+
+		$this->seed( [ Intel_Event::make( 'item_included', [ 'item_key' => 'linear:joint-grant' ], 'user:quay-reader', 'fixture-9' ) ] );
+
+		$this->assertSame( [ [ 'linear:joint-grant', 'feed:gazette-award' ], 2, 2, [ 'feed:gazette-award', 'linear:joint-grant' ], [ 'linear:joint-grant', 'feed:gazette-award' ] ], $read() );
 	}
 
 	/**

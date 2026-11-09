@@ -321,6 +321,11 @@
 	text-decoration: none;
 }
 
+// Exclude takes the shared text-button role; here it only keeps one line.
+.newspack-intelligence__exclude {
+	flex: none;
+}
+
 // Review's key legend leads its switch on one row, wrapping when narrow.
 .newspack-intelligence__keys {
 	display: flex;

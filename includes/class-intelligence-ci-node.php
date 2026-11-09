@@ -76,9 +76,10 @@ class Intelligence_CI_Node extends Service_CI_Node {
 	 * `Graph_Watches` and answering the caller's own watches alone;
 	 * `briefing` and `health`, at read, over `Intelligence_Briefing` and
 	 * `Intelligence_Health`; `ask` and `ask_result`, at read, over
-	 * `Graph_Asks`; the fifteen curation
-	 * commands, each over `Graph_Curation` and seeing only the
-	 * entities and items a read caller sees; `seed_ontology`, at tune, over
+	 * `Graph_Asks`; the curation commands, each at tune over
+	 * `Graph_Curation` and seeing only the entities and items a read caller
+	 * sees, `excluded` beside them, the one read listing the items a curator
+	 * excluded; `seed_ontology`, at tune, over
 	 * `Ontology_Seed::load()->seed()`; and `fetch_now` and `reresolve`, at manage,
 	 * each sending to every live worker through `Worker_Route`.
 	 *
@@ -256,6 +257,9 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					),
 					$command( $tune, 'remove_lens', 'Remove a lens: { ok, event_id }.', [ $key( 'The lens key.' ) ], Graph_Curation::remove_lens( ... ) ),
 					$command( $tune, 'merge_theme', 'Merge one theme into another, so every read of an item\'s theme reads the survivor; refused when the merge would cycle, when into itself merges away, or when it would show a theme only restricted items carry to every reader: { ok, event_id }.', [ $arg( 'from', 'The theme merged away, at most ' . Intel_Event::THEME_BYTES . ' bytes.' ), $arg( 'into', 'The theme it survives as.' ) ], Graph_Curation::merge_theme( ... ) ),
+					$command( $tune, 'exclude_item', 'Exclude a readable item from every view — search, the briefing, signals, trends, watches and their matches, collections, an entity, an ask and this door — keeping its URL, title, tier, who excluded it, when and why; refused when it is excluded already: { ok, event_id }.', [ $item, $text( 'why', 'Why it is excluded, at most ' . Intel_Event::WHY_BYTES . ' bytes.' ) ], Graph_Curation::exclude_item( ... ) ),
+					$command( $tune, 'include_item', 'Include an excluded item again, so every view reads it: { ok, event_id }.', [ $item ], Graph_Curation::include_item( ... ) ),
+					$command( $tune, 'excluded', 'The excluded items of the tiers the caller reads, the latest excluded first, the one read that lists them: { items: [ { item_key, title, url, actor, excluded_ts, why } ], available }, each as it was when excluded and why \'\' unless the curator gave one.', [ $limit( Graph_Query::DEFAULT_LIMIT ) ], Graph_Query::excluded( ... ) ),
 					$command( $tune, 'seed_ontology', 'Write the site\'s seed ontology for the keys the projection lacks, refused while the projector has not read every ontology change: { ok, events, created, present }.', [], static fn (): array => [ 'ok' => true ] + Ontology_Seed::load()->seed() ),
 					[
 						'name'        => 'fetch_now',

@@ -235,6 +235,20 @@ final class IntelligenceAskTest extends TestCase {
 		$this->assertSame( [ 'feed:gazette-award' ], \array_column( $answer['items'], 'item_key' ) );
 	}
 
+	/** A sentence citing an item a curator excluded since is not shown, and the rest are numbered again from 1. */
+	public function test_a_sentence_citing_an_excluded_item_is_not_shown(): void {
+		$this->seed(
+			self::asked( self::KEY, self::READER ),
+			self::answered( self::KEY, self::READER, [ [ 'The Ledger launched a newsletter tool.', [ 1 ] ], [ 'The Gazette won a state award.', [ 2 ] ] ], [ 'github:ledger-launch', 'feed:gazette-award' ] ),
+			[ Intel_Event::make( 'item_excluded', [ 'item_key' => 'github:ledger-launch', 'url' => self::url( 'github:ledger-launch' ), 'title' => 'Salem Ledger launches a newsletter tool', 'tier' => 'internal' ], 'user:41', 'fixture-9' ) ]
+		);
+
+		$answer = $this->ci->dispatch( 'ask_result', [ self::KEY ] );
+
+		$this->assertSame( [ [ 'text' => 'The Gazette won a state award.', 'cites' => [ 1 ] ] ], $answer['sentences'] );
+		$this->assertSame( [ 'feed:gazette-award' ], \array_column( $answer['items'], 'item_key' ) );
+	}
+
 	/** An ask the node never answered reads as failed once it has waited past MAX_WAIT_S, so nothing polls it forever. */
 	public function test_an_ask_waiting_past_its_wait_reads_failed(): void {
 		$this->seed( self::asked( self::KEY, self::READER, self::$oct_20 - Ask_Node::MAX_WAIT_S - 30 ) );

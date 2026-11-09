@@ -1,9 +1,12 @@
 import { Button } from '@wordpress/components';
-import { useState } from '@wordpress/element';
+import { useEffect, useId, useRef, useState } from '@wordpress/element';
 import { archive } from '@wordpress/icons';
 import { __, sprintf } from '@wordpress/i18n';
+import { useDeferredWrite } from '../hooks/useDeferredWrite';
+import { useIntelWrite } from '../hooks/useIntelCommand';
 import Cite, { EntityChip } from './Cite';
 import Pager from './Pager';
+import Refusal from './Refusal';
 import { metaLine, utcDay } from './format';
 
 /**
@@ -31,23 +34,63 @@ export function SaveButton( { item, onSave } ) {
  * One item as `search` and `timeline` answer it: its title citing its URL,
  * its source, kind, day and kind check (`kindCheckText()`), its summary, a toggle showing its excerpt (`Excerpt`),
  * its entities as chips (`Chips`), and, for a caller who may curate, the
- * control saving it to a folder, then any control the view adds.
+ * control saving it to a folder and, for one holding tune, the text action
+ * excluding it from every view, then any control the view adds. An exclusion
+ * puts the row behind its Undo (`Excluding`) until it is sent; a refused one
+ * puts the row back with the refusal.
  *
  * @param {Object}                    props
  * @param {Object}                    props.item         The item.
  * @param {(key: string) => void}     props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void}    [props.onSave]     Saves the item; absent for a reader.
+ * @param {boolean}                   [props.canTune]    Whether the reader holds tune, which offers the exclusion.
  * @param {import('react').ReactNode} [props.children]   The view's own controls for the item.
  * @return {import('react').ReactElement} The row.
  */
-export default function ItemRow( { item, onOpenEntity, onSave, children } ) {
+export default function ItemRow( {
+	item,
+	onOpenEntity,
+	onSave,
+	canTune,
+	children,
+} ) {
+	const [ excluding, setExcluding ] = useState( false );
+	const [ refusal, setRefusal ] = useState( null );
+	if ( excluding ) {
+		return (
+			<Excluding
+				item={ item }
+				onUndo={ () => setExcluding( false ) }
+				onRefused={ ( why ) => {
+					setRefusal( why );
+					setExcluding( false );
+				} }
+			/>
+		);
+	}
 	return (
 		<li className="newspack-intelligence__item">
+			<Refusal error={ refusal } />
 			<div className="newspack-intelligence__item-head">
 				<strong>
 					<Cite url={ item.url } title={ item.title } />
 				</strong>
 				<SaveButton item={ item } onSave={ onSave } />
+				{ canTune && (
+					<button
+						type="button"
+						className="button-link newspack-intelligence__exclude"
+						onClick={ () => {
+							setRefusal( null );
+							setExcluding( true );
+						} }
+					>
+						{ __(
+							'Exclude from every view',
+							'newspack-intelligence'
+						) }
+					</button>
+				) }
 				{ children }
 			</div>
 			<p className="newspack-nodes-status is-muted">
@@ -64,6 +107,64 @@ export default function ItemRow( { item, onOpenEntity, onSave, children } ) {
 				entities={ item.entities ?? [] }
 				onOpenEntity={ onOpenEntity }
 			/>
+		</li>
+	);
+}
+
+/**
+ * A row excluded from every view: "Excluded." and its Undo while
+ * `useDeferredWrite` holds the `exclude_item` write, then "Excluded." alone
+ * once it is sent. Each mounts its own write under a scope of its own, since
+ * two rows may be excluded at once.
+ *
+ * @param {Object}                props
+ * @param {Object}                props.item      The item.
+ * @param {() => void}            props.onUndo    Puts the row back.
+ * @param {(why: string) => void} props.onRefused Puts the row back with the refusal.
+ * @return {import('react').ReactElement} The notice.
+ */
+function Excluding( { item, onUndo, onRefused } ) {
+	const scope = `exclude-item:${ useId().replace( /[^a-z0-9]/gi, '' ) }`;
+	const exclude = useIntelWrite( 'exclude_item', { scope } );
+	const deferred = useDeferredWrite();
+	const asked = useRef( false );
+	useEffect( () => {
+		if ( asked.current ) {
+			return;
+		}
+		asked.current = true;
+		deferred.defer(
+			item.item_key,
+			() => exclude.run( { item: item.item_key } ),
+			sprintf(
+				/* translators: %s: the item's title. */
+				__( 'Excluded “%s” from every view.', 'newspack-intelligence' ),
+				item.title
+			)
+		);
+	}, [ deferred, exclude, item ] );
+	useEffect( () => {
+		if ( exclude.refusal ) {
+			onRefused( exclude.refusal );
+		}
+	}, [ exclude.refusal, onRefused ] );
+	return (
+		<li className="newspack-intelligence__item">
+			<p className="newspack-nodes-status is-muted" role="status">
+				<span>{ __( 'Excluded.', 'newspack-intelligence' ) }</span>{ ' ' }
+				{ deferred.latest && (
+					<button
+						type="button"
+						className="button button-small"
+						onClick={ () => {
+							deferred.undo();
+							onUndo();
+						} }
+					>
+						{ __( 'Undo', 'newspack-intelligence' ) }
+					</button>
+				) }
+			</p>
 		</li>
 	);
 }
@@ -260,6 +361,7 @@ const sorts = () => ( {
  * @param {(starts: number[]) => void}                      props.onStarts     Replaces the stack.
  * @param {(key: string) => void}                           props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void}                          [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                                         [props.canTune]    Whether the reader holds tune, which offers each row's exclusion.
  * @param {(sort: string) => void}                          [props.onSort]     Asks for the other order; absent for a page that does not sort.
  * @return {import('react').ReactElement} The page.
  */
@@ -269,6 +371,7 @@ export function ItemPage( {
 	onStarts,
 	onOpenEntity,
 	onSave,
+	canTune,
 	onSort,
 } ) {
 	const order = onSort && sorts()[ answer.sort ];
@@ -293,6 +396,7 @@ export function ItemPage( {
 						item={ item }
 						onOpenEntity={ onOpenEntity }
 						onSave={ onSave }
+						canTune={ canTune }
 					/>
 				) ) }
 			</ul>

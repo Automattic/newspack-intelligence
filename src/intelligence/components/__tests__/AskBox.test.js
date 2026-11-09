@@ -81,9 +81,11 @@ const ANSWERED = {
 /**
  * The box as a view mounts it, the ask held above it as the page holds it.
  *
+ * @param {Object}  props
+ * @param {boolean} [props.canTune] Whether the reader holds tune.
  * @return {import('react').ReactElement} The box.
  */
-function Held() {
+function Held( { canTune = false } ) {
 	const [ asked, setAsked ] = useState( null );
 	return (
 		<AskBox
@@ -91,6 +93,8 @@ function Held() {
 			asked={ asked }
 			onAsked={ setAsked }
 			onOpenEntity={ jest.fn() }
+			onSave={ jest.fn() }
+			canTune={ canTune }
 		/>
 	);
 }
@@ -176,6 +180,24 @@ describe( 'AskBox', () => {
 		await clock.tick( 5 );
 		await clock.tick( 5 );
 		expect( wire.sent( 'ask_result' ) ).toHaveLength( polls );
+	} );
+
+	it( "offers a curator the exclusion on an answer's cited items, and a reader none", async () => {
+		wire.replies.ask_result = ANSWERED;
+		const { unmount } = render( <Held canTune={ true } /> );
+		ask( 'What did clients launch this month?' );
+		await screen.findByText( 'Quillsheet launched a newsletter tool.' );
+		expect(
+			screen.getAllByRole( 'button', { name: 'Exclude from every view' } )
+		).toHaveLength( 2 );
+		unmount();
+
+		render( <Held /> );
+		ask( 'What did clients launch this month?' );
+		await screen.findByText( 'Quillsheet launched a newsletter tool.' );
+		expect(
+			screen.queryByRole( 'button', { name: 'Exclude from every view' } )
+		).toBeNull();
 	} );
 
 	it( 'says the graph could not be opened, and stops asking', async () => {

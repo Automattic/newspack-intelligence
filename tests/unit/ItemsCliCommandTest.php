@@ -20,6 +20,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 require_once __DIR__ . '/../support/wp-cli-stub.php';
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
 require_once __DIR__ . '/../support/routes-to-workers.php';
+require_once __DIR__ . '/../support/reads-ontology-log.php';
+require_once __DIR__ . '/../support/signs-in-users.php';
 
 /**
  * `wp newspack-intelligence items purge` selects a source's stored items its
@@ -30,6 +32,8 @@ require_once __DIR__ . '/../support/routes-to-workers.php';
 final class ItemsCliCommandTest extends TestCase {
 	use Routes_To_Workers;
 	use Seeds_Intel_Graph;
+	use Reads_Ontology_Log;
+	use Signs_In_Users;
 
 	private const WORKER = 'newspack-intelligence.p0';
 
@@ -53,6 +57,8 @@ final class ItemsCliCommandTest extends TestCase {
 
 	protected function tearDown(): void {
 		$_SERVER['argv']          = $this->argv;
+		self::forget_users();
+		$GLOBALS['_current_user_can'] = false;
 		Items_CLI_Command::$sleep = null;
 		CLI::$uid_provider        = null;
 		Topology_Registry::reset();
@@ -316,6 +322,52 @@ final class ItemsCliCommandTest extends TestCase {
 		\Newspack_Intelligence\register_cli_commands();
 
 		$this->assertSame( '\\Newspack_Intelligence\\CLI\\Items_CLI_Command', \WP_CLI::$commands['newspack-intelligence items'] ?? null );
+	}
+
+	/**
+	 * `items exclude`, `items include` and `items excluded` run the
+	 * `intelligence` CI's own commands, as the person `--user` signs in.
+	 */
+	public function test_exclude_include_and_excluded_run_the_curation_commands(): void {
+		$this->seed_teams();
+		self::sign_in( 52, 'heron-curator', 'manage_options' );
+		$GLOBALS['_current_user_can'] = true;
+		$cli                          = new Items_CLI_Command();
+
+		$cli->exclude_item( [ 'linear:EGRET-9' ], [ 'why' => 'Belongs to another desk.' ] );
+		$cli->include_item( [ 'linear:WREN-2' ], [] );
+		$this->seed(
+			[
+				Intel_Event::make( 'item_excluded', [ 'item_key' => 'linear:HERON-7', 'url' => self::url( 'linear:HERON-7' ), 'title' => "Newsletter\tblock\e[2J", 'tier' => 'internal', 'why' => 'A duplicate.' ], 'user:heron-curator', 'fixture-9' ),
+				Intel_Event::make( 'item_excluded', [ 'item_key' => 'linear:WREN-2', 'url' => self::url( 'linear:WREN-2' ), 'title' => 'Checkout flow', 'tier' => 'internal' ], 'user:heron-curator', 'fixture-9' ),
+			]
+		);
+		$cli->excluded( [], [ 'limit' => '1' ] );
+
+		$events = self::ontology_events();
+		$this->assertSame( [ [ 'item_excluded', 'linear:EGRET-9', 'Belongs to another desk.', 'user:heron-curator' ] ], \array_map( static fn ( array $e ): array => [ $e['event'], $e['item_key'], $e['why'], $e['actor'] ], \array_slice( $events, 0, 1 ) ) );
+		$this->assertSame( [ 'Excluded linear:EGRET-9 from every view; bring it back with: wp newspack-intelligence items include \'linear:EGRET-9\'' ], \WP_CLI::$successes );
+		$this->assertSame( [ 'linear:WREN-2 is not excluded' ], \WP_CLI::$errors );
+		$this->assertSame( [ "linear:HERON-7\tNewsletter block<1B>[2J\t" . self::url( 'linear:HERON-7' ) . "\tuser:heron-curator\t2026-10-20 12:00\tA duplicate." ], \WP_CLI::$logs );
+	}
+
+	/** An exclusion records who made it, so a run with no `--user` is refused before it reads. */
+	public function test_an_exclusion_without_a_user_is_refused(): void {
+		$this->seed_teams();
+
+		( new Items_CLI_Command() )->exclude_item( [ 'linear:EGRET-9' ], [] );
+
+		$this->assertSame( [ 'wp newspack-intelligence items exclude records who excluded the item; run it with --user=<login>.' ], \WP_CLI::$errors );
+		$this->assertSame( [], self::ontology_events() );
+	}
+
+	/** With nothing excluded, the list says so. */
+	public function test_an_empty_excluded_list_says_so(): void {
+		$this->seed_teams();
+
+		( new Items_CLI_Command() )->excluded( [], [] );
+
+		$this->assertSame( [ 'No item is excluded.' ], \WP_CLI::$successes );
 	}
 
 	/** Linear issues of two kept teams and two others, and a GitHub item. */

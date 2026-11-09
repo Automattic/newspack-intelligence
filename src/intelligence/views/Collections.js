@@ -377,6 +377,83 @@ function Opened( { collection, folders, canTune, markWords, onMoved } ) {
 }
 
 /**
+ * The items a curator excluded from every view, the latest first, each with
+ * its title citing its URL, who excluded it, its UTC day and why, and the
+ * control including it again, which takes it off the list from the moment
+ * it is sent until a read no longer lists it; a refusal puts it back.
+ *
+ * @return {import('react').ReactElement} The list.
+ */
+function Excluded() {
+	const read = useIntelRead( 'collections:excluded', 'excluded', [] );
+	const listed = useHeld( read, 'items', itemKey );
+	const include = useIntelWrite( 'include_item', {
+		refresh: read.refresh,
+		onRefused: listed.refused,
+	} );
+	return (
+		<>
+			<Refusal error={ include.refusal } />
+			<Answer
+				title={ __( 'Excluded', 'newspack-intelligence' ) }
+				read={ listed.read }
+				rows="items"
+				empty={ __(
+					'No item is excluded from every view.',
+					'newspack-intelligence'
+				) }
+			>
+				{ ( answer ) => (
+					<ul className="newspack-intelligence__items">
+						{ answer.items.map( ( item ) => (
+							<li
+								key={ item.item_key }
+								className="newspack-intelligence__item"
+							>
+								<div className="newspack-intelligence__item-head">
+									<strong>
+										<Cite
+											url={ item.url }
+											title={ item.title }
+										/>
+									</strong>
+									<button
+										type="button"
+										className="button button-small"
+										onClick={ () =>
+											listed.hold(
+												item.item_key,
+												null,
+												() =>
+													include.run( {
+														item: item.item_key,
+													} )
+											)
+										}
+									>
+										{ __(
+											'Include again',
+											'newspack-intelligence'
+										) }
+									</button>
+								</div>
+								<p className="newspack-nodes-status is-muted">
+									{ metaLine(
+										item.actor,
+										utcDay( item.excluded_ts ),
+										item.why
+									) }
+								</p>
+							</li>
+						) ) }
+					</ul>
+				) }
+			</Answer>
+		</>
+	);
+}
+
+/**
  * A listed collection's key.
  *
  * @param {Object} collection The collection.
@@ -396,7 +473,9 @@ const sameName = ( listed, created ) => listed.name === created.name;
 /**
  * Collections: a board of folders, each with its count, those the reader
  * saved or moved into most recently first, as the read orders them; the one
- * opened, with its saved items; and for a curator, the form creating one. A
+ * opened, with its saved items; and for a curator, the form creating one and
+ * the items excluded from every view (`Excluded`), the one place they are
+ * listed and included again. A
  * folder created shows, saving and unopened, from the moment it is sent
  * until a read lists it by name, since the projector records it seconds
  * after it lands; a refusal takes it out. One that lands lists again. The
@@ -506,6 +585,7 @@ export default function Collections( { canTune, opened, onOpen, vocabulary } ) {
 					onMoved={ list.refresh }
 				/>
 			) }
+			{ canTune && <Excluded /> }
 		</div>
 	);
 }

@@ -202,8 +202,10 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * proposed link's evidence, which one written before proposals carried it
 	 * lacks, projects as '', as an asserted link's always does. An ask writes
 	 * its row with `ignore`, so its answer or failure, a whole-row `set`,
-	 * stands whichever lands first. Every ontology kind also writes its
-	 * `events` row.
+	 * stands whichever lands first. An exclusion sets its item's one
+	 * `excluded_items` row, its why '' when it names none, and an inclusion
+	 * deletes it. Every ontology kind also writes its `events` row, under
+	 * the key it names, an item's when it names nothing else.
 	 *
 	 * @return array<string,list<array{0:string,1:string,2:array<mixed>,3?:string|\Closure}>>
 	 */
@@ -270,6 +272,8 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			'topic_tagged'        => [ [ 'set', 'entity_topics', [ 'entity_key', 'topic_key', 'actor' ] ] ],
 			'link_confirmed'      => $judgment( 'confirmed' ),
 			'link_rejected'       => $judgment( 'rejected' ),
+			'item_excluded'       => [ [ 'set', 'excluded_items', [ 'item_key', 'tier', 'url', 'title', static fn ( array $e ): string => Core::as_string( $e['why'] ?? '' ), 'actor', 'ts' ] ] ],
+			'item_included'       => [ [ 'delete', 'excluded_items', [ 'item_key' => 'item_key' ] ] ],
 			'collection_created'  => [ [ 'set', 'collections', [ 'collection_key', 'name', 'actor', 'ts' ] ] ],
 			'collected'           => [
 				[ 'set', 'saved_copies', [ 'item_key', 'tier', 'url', 'title' ] ],
@@ -299,7 +303,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 				'event_id',
 				'event',
 				'actor',
-				static fn ( array $e ): string => Core::as_string( $e['entity_key'] ?? $e['collection_key'] ?? $e['lens_key'] ?? $e['watch_key'] ?? $e['from'] ?? null ),
+				static fn ( array $e ): string => Core::as_string( $e['entity_key'] ?? $e['collection_key'] ?? $e['lens_key'] ?? $e['watch_key'] ?? $e['from'] ?? $e['item_key'] ?? null ),
 				static fn ( array $e ): string => self::json( \array_diff_key( $e, \array_flip( Intel_Event::ENVELOPE ) ) ),
 				'config_version',
 				'ts',

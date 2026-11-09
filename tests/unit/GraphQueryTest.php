@@ -745,6 +745,72 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [ 'linear:joint-grant' ], \array_column( self::read( 'collections', [ 'key' => 'col:grants' ] )['items'], 'item_key' ) );
 	}
 
+	/**
+	 * Every read leaves an excluded item out — search, an entity's counts,
+	 * trends, related, claims, the review queue and a collection holding
+	 * its saved copy — and answers it again once it is included.
+	 */
+	public function test_an_excluded_item_answers_no_read_until_it_is_included(): void {
+		$this->seed_world();
+		$this->seed(
+			self::claim( 'linear:joint-grant', 0, self::GAZETTE, 'partners_with', self::LEDGER, 'Salem Ledger', self::$oct_01 ),
+			[
+				Intel_Event::make( 'collection_created', [ 'collection_key' => 'col:grants', 'name' => 'Grants' ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'collected', [ 'collection_key' => 'col:grants', 'item_key' => 'linear:joint-grant', 'url' => self::url( 'linear:joint-grant' ), 'title' => 'Gazette and Ledger share a grant', 'tier' => 'internal' ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'item_excluded', [ 'item_key' => 'linear:joint-grant', 'url' => self::url( 'linear:joint-grant' ), 'title' => 'Gazette and Ledger share a grant', 'tier' => 'internal', 'why' => 'A duplicate of the grant notice.' ], 'user:41', 'fixture-9' ),
+			]
+		);
+
+		$this->assertSame( [], self::keys( self::search( [ 'q' => 'grant' ] ) ) );
+		$this->assertSame( [ 'github:ledger-launch', 'feed:gazette-award' ], self::keys( self::search( [] ) ) );
+		$this->assertSame( [ 'items' => 1, 'proposed_links' => 0 ], self::read( 'entity', [ 'key' => self::GAZETTE ] )['counts'] );
+		$this->assertSame( [ 'launch', 'award' ], \array_column( self::trends( [ 'by' => 'kind' ] )['rows'], 'value' ) );
+		$this->assertSame( [ 'topic:awards' => 1 ], \array_column( self::read( 'related', [ 'key' => self::GAZETTE ] )['entities'], 'shared_items', 'entity_key' ) );
+		$this->assertSame( [], self::read( 'claims', [ 'key' => self::GAZETTE ] )['claims'] );
+		$this->assertSame( [], self::read( 'review', [ 'what' => 'links' ] )['links'] );
+		$this->assertSame( [], self::read( 'collections', [ 'key' => 'col:grants' ] )['items'] );
+		$this->assertSame( [ 'col:grants' => 0 ], \array_column( self::read( 'collections', [] )['collections'], 'items', 'collection_key' ) );
+
+		$this->seed( [ Intel_Event::make( 'item_included', [ 'item_key' => 'linear:joint-grant' ], 'user:41', 'fixture-9' ) ] );
+
+		$this->assertSame( [ 'linear:joint-grant' ], self::keys( self::search( [ 'q' => 'grant' ] ) ) );
+		$this->assertSame( [ 'items' => 2, 'proposed_links' => 0 ], self::read( 'entity', [ 'key' => self::GAZETTE ] )['counts'] );
+		$this->assertSame( [ 'linear:joint-grant' ], \array_column( self::read( 'collections', [ 'key' => 'col:grants' ] )['items'], 'item_key' ) );
+	}
+
+	/**
+	 * The excluded list names each exclusion of a tier the caller reads,
+	 * the latest first, with who excluded it, when and why, an item the
+	 * graph no longer holds among them, and caps its rows at the limit.
+	 */
+	public function test_the_excluded_list_names_each_readable_exclusion_latest_first(): void {
+		$this->seed_world();
+		$excluded = static function ( string $key, string $tier, int $at, array $why ): array {
+			$event       = Intel_Event::make( 'item_excluded', [ 'item_key' => $key, 'url' => self::url( $key ), 'title' => "Copy of {$key}", 'tier' => $tier ] + $why, 'user:kinsey-reed', 'fixture-9' );
+			$event['ts'] = (float) $at;
+			return $event;
+		};
+		$this->seed(
+			[
+				$excluded( 'feed:gazette-award', 'public', self::$oct_13, [ 'why' => 'Shown twice.' ] ),
+				$excluded( 'linear:expired-9', 'internal', self::$oct_20, [] ),
+				$excluded( 'hubspot:deal-9', 'restricted', self::$oct_20 + 60, [ 'why' => 'Restricted.' ] ),
+			]
+		);
+
+		$this->assertSame(
+			[
+				'items'     => [
+					[ 'item_key' => 'linear:expired-9', 'title' => 'Copy of linear:expired-9', 'url' => self::url( 'linear:expired-9' ), 'actor' => 'user:kinsey-reed', 'excluded_ts' => self::$oct_20, 'why' => '' ],
+					[ 'item_key' => 'feed:gazette-award', 'title' => 'Copy of feed:gazette-award', 'url' => self::url( 'feed:gazette-award' ), 'actor' => 'user:kinsey-reed', 'excluded_ts' => self::$oct_13, 'why' => 'Shown twice.' ],
+				],
+				'available' => true,
+			],
+			Graph_Query::excluded( [ 'limit' => 50 ] )
+		);
+		$this->assertSame( [ 'linear:expired-9' ], \array_column( Graph_Query::excluded( [ 'limit' => 1 ] )['items'], 'item_key' ) );
+	}
+
 	/** Review Focus 3: A into B into C reads as C everywhere, and links to A count for C. */
 	public function test_a_merge_chain_reads_as_its_survivor(): void {
 		$this->seed_world();

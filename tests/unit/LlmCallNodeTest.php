@@ -323,7 +323,6 @@ final class LlmCallNodeTest extends TestCase {
 		$this->assertSame( [ [ Message::TM_STRUCT | Message::TM_RESPONSE, self::NAME, 'feed:wharf-34', [ 'unlent' => self::GROUP, 'item' => self::item( 'feed:wharf-34' ), 'inputs' => [ 'boilerplate' => [] ], 'carry' => [ 'item_key' => 'feed:wharf-34', 'note' => 'kept' ] ] ] ], $this->heard() );
 	}
 
-	/** A request it cannot read is dropped with a line, never thrown and never answered. */
 	/**
 	 * A request it cannot read is refused TO its caller with whatever of its
 	 * item, inputs and carry it could read, so the caller's own finish runs;
@@ -349,6 +348,9 @@ final class LlmCallNodeTest extends TestCase {
 	}
 
 	/**
+	 * A request it cannot read is refused TO its caller, naming what it
+	 * lacks and handing back what it could read; nothing is thrown or sent.
+	 *
 	 * @param array<string,mixed> $value The request's VALUE.
 	 * @param string              $lacks What the refusal says it lacks.
 	 * @param list<string>        $kept  What the refusal hands back.

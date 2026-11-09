@@ -265,9 +265,10 @@ function Details( { entity, vocabulary, onOpenEntity } ) {
  * @param {string}                 props.entityKey    The entity.
  * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void} [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactElement} The page.
  */
-function PublishedItems( { entityKey, onOpenEntity, onSave } ) {
+function PublishedItems( { entityKey, onOpenEntity, onSave, canTune } ) {
 	const [ starts, setStarts ] = useState( [ 0 ] );
 	const offset = starts[ starts.length - 1 ];
 	const read = useIntelRead(
@@ -294,6 +295,7 @@ function PublishedItems( { entityKey, onOpenEntity, onSave } ) {
 					onStarts={ setStarts }
 					onOpenEntity={ onOpenEntity }
 					onSave={ onSave }
+					canTune={ canTune }
 				/>
 			) }
 		</AnswerBody>
@@ -310,9 +312,17 @@ function PublishedItems( { entityKey, onOpenEntity, onSave } ) {
  * @param {number}                 props.count        How many items it published.
  * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void} [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactElement} The section.
  */
-function Published( { entityKey, name, count, onOpenEntity, onSave } ) {
+function Published( {
+	entityKey,
+	name,
+	count,
+	onOpenEntity,
+	onSave,
+	canTune,
+} ) {
 	const [ open, setOpen ] = useState( false );
 	const title = sprintf(
 		/* translators: 1: the entity's name, 2: items its own site published. */
@@ -340,6 +350,7 @@ function Published( { entityKey, name, count, onOpenEntity, onSave } ) {
 						entityKey={ entityKey }
 						onOpenEntity={ onOpenEntity }
 						onSave={ onSave }
+						canTune={ canTune }
 					/>
 				</CardBody>
 			) }
@@ -529,6 +540,7 @@ export default function Entity( {
 						onStarts={ setStarts }
 						onOpenEntity={ onOpenEntity }
 						onSave={ onSave }
+						canTune={ canTune }
 					/>
 				) }
 			</Answer>
@@ -548,6 +560,7 @@ export default function Entity( {
 					count={ record.answer.published.count }
 					onOpenEntity={ onOpenEntity }
 					onSave={ onSave }
+					canTune={ canTune }
 				/>
 			) }
 

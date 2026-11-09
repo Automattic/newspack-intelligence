@@ -147,6 +147,7 @@ function LensRuns( { lens, lists } ) {
  * @param {Object}                   props.vocabulary   The ontology's closed lists.
  * @param {(key: string) => void}    props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void}   [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                  [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @param {?Object}                  props.asked        The ask the page holds, which its AskBox shows.
  * @param {(asked: ?Object) => void} props.onAsked      Holds a new one.
  * @return {import('react').ReactElement} The view.
@@ -158,6 +159,7 @@ export default function Search( {
 	vocabulary,
 	onOpenEntity,
 	onSave,
+	canTune,
 	asked,
 	onAsked,
 } ) {
@@ -242,6 +244,7 @@ export default function Search( {
 				onAsked={ onAsked }
 				onOpenEntity={ onOpenEntity }
 				onSave={ onSave }
+				canTune={ canTune }
 			/>
 			<form
 				className="newspack-intelligence__filters"
@@ -338,6 +341,7 @@ export default function Search( {
 						onStarts={ setStarts }
 						onOpenEntity={ onOpenEntity }
 						onSave={ onSave }
+						canTune={ canTune }
 						onSort={ ( next ) =>
 							onQuery( { ...query, sort: next, starts: [ 0 ] } )
 						}

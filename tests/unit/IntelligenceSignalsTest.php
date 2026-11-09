@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Graph_Query;
+use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intelligence_CI_Node;
 use Newspack_Nodes\Capabilities;
@@ -83,6 +84,16 @@ final class IntelligenceSignalsTest extends TestCase {
 		$this->assertSame( [ [ '2026-10-12', 'kind', 'complaint', 6, 2.0 ], [ '2026-10-12', 'kind', 'praise', 4, 2.0 ] ], self::signals( $answer ) );
 		$this->assertSame( [ 'feed:complaint-1-6', 'feed:complaint-1-5', 'feed:complaint-1-4', 'feed:complaint-1-3', 'feed:complaint-1-2' ], \array_column( $answer['signals'][0]['items'], 'item_key' ) );
 		$this->assertSame( [ 'item_key' => 'feed:complaint-1-6', 'url' => 'https://news.example/feed/complaint-1-6', 'title' => 'complaint 6 of week 1' ], $answer['signals'][0]['items'][0] );
+	}
+
+	/** An item a curator excluded counts toward no signal: four praise items less one excluded is three, under the threshold. */
+	public function test_an_excluded_item_counts_toward_no_signal(): void {
+		$this->weeks( 'praise', [ 1 => 4, 2 => 1, 3 => 3, 4 => 1, 5 => 3, 6 => 1, 7 => 3, 8 => 1, 9 => 3, 10 => 1 ] );
+		$this->assertCount( 1, $this->ci->dispatch( 'signals', [] )['signals'] );
+
+		$this->seed( [ Intel_Event::make( 'item_excluded', [ 'item_key' => 'feed:praise-1-4', 'url' => self::url( 'feed:praise-1-4' ), 'title' => 'praise 4 of week 1', 'tier' => 'internal' ], 'user:tidewater-reader', 'fixture-9' ) ] );
+
+		$this->assertSame( [], $this->ci->dispatch( 'signals', [] )['signals'] );
 	}
 
 	/** One short of the threshold is not a signal. */

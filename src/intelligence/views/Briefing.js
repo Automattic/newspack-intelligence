@@ -266,9 +266,10 @@ const signalCount = ( n ) =>
  * @param {Object}                          props.answer       The `briefing changes` answer.
  * @param {(key: string) => void}           props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void}          [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                         [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactElement} The groups.
  */
-function Changes( { operator, answer, onOpenEntity, onSave } ) {
+function Changes( { operator, answer, onOpenEntity, onSave, canTune } ) {
 	const heading = ( group ) => {
 		switch ( group.role ) {
 			case 'client':
@@ -319,6 +320,7 @@ function Changes( { operator, answer, onOpenEntity, onSave } ) {
 								item={ item }
 								onOpenEntity={ onOpenEntity }
 								onSave={ onSave }
+								canTune={ canTune }
 							/>
 						) ) }
 					</ul>
@@ -355,6 +357,7 @@ function Changes( { operator, answer, onOpenEntity, onSave } ) {
  * @param {() => void}                      props.onNewWatch   Opens the form for a new watch.
  * @param {() => void}                      props.onSearch     Opens Search.
  * @param {(item: Object) => void}          [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                         [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @param {?Object}                         props.asked        The ask the page holds, which its AskBox shows.
  * @param {(asked: ?Object) => void}        props.onAsked      Holds a new one.
  * @return {import('react').ReactElement} The view.
@@ -369,6 +372,7 @@ export default function Briefing( {
 	onNewWatch,
 	onSearch,
 	onSave,
+	canTune,
 	asked,
 	onAsked,
 } ) {
@@ -407,6 +411,7 @@ export default function Briefing( {
 				onAsked={ onAsked }
 				onOpenEntity={ onOpenEntity }
 				onSave={ onSave }
+				canTune={ canTune }
 			/>
 			{ null !== seen && read && (
 				<Answer
@@ -452,6 +457,7 @@ export default function Briefing( {
 						answer={ answer }
 						onOpenEntity={ onOpenEntity }
 						onSave={ onSave }
+						canTune={ canTune }
 					/>
 				) }
 			</Answer>

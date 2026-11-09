@@ -345,9 +345,18 @@ function WatchForm( { draft, onDraft, onSave, onCancel } ) {
  * @param {() => void}                 props.onSeen       Runs once a mark lands.
  * @param {(key: string) => void}      props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void}     [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                    [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactElement} The matches.
  */
-function Opened( { watch, starts, onStarts, onSeen, onOpenEntity, onSave } ) {
+function Opened( {
+	watch,
+	starts,
+	onStarts,
+	onSeen,
+	onOpenEntity,
+	onSave,
+	canTune,
+} ) {
 	const key = watch.watch_key;
 	const offset = starts[ starts.length - 1 ];
 	const read = useIntelRead(
@@ -413,6 +422,7 @@ function Opened( { watch, starts, onStarts, onSeen, onOpenEntity, onSave } ) {
 									item={ item }
 									onOpenEntity={ onOpenEntity }
 									onSave={ onSave }
+									canTune={ canTune }
 								>
 									<button
 										type="button"
@@ -467,6 +477,7 @@ function Opened( { watch, starts, onStarts, onSeen, onOpenEntity, onSave } ) {
  * @param {(draft: ?Object) => void}                           props.onDraft      Replaces the draft; null closes the form.
  * @param {(key: string) => void}                              props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void}                             [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                                            [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactElement} The view.
  */
 export default function Watches( {
@@ -476,6 +487,7 @@ export default function Watches( {
 	onDraft,
 	onOpenEntity,
 	onSave,
+	canTune,
 } ) {
 	const list = useIntelRead( 'watch:list', 'watches', [] );
 	const watches = useHeld( list, 'watches', watchKey, sameWatch );
@@ -587,6 +599,7 @@ export default function Watches( {
 					onSeen={ list.refresh }
 					onOpenEntity={ onOpenEntity }
 					onSave={ onSave }
+					canTune={ canTune }
 				/>
 			) }
 		</div>

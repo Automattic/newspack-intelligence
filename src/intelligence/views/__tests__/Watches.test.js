@@ -7,6 +7,7 @@
  */
 
 import {
+	cleanup,
 	render,
 	screen,
 	fireEvent,
@@ -77,7 +78,7 @@ const COLLECTIONS = {
 
 let wire;
 
-function Harness( { initialDraft = null } ) {
+function Harness( { initialDraft = null, canTune = false } ) {
 	const [ opened, setOpened ] = useState( CLOSED_WATCH );
 	const [ draft, setDraft ] = useState( initialDraft );
 	return (
@@ -87,6 +88,8 @@ function Harness( { initialDraft = null } ) {
 			draft={ draft }
 			onDraft={ setDraft }
 			onOpenEntity={ jest.fn() }
+			onSave={ jest.fn() }
+			canTune={ canTune }
 		/>
 	);
 }
@@ -171,6 +174,31 @@ describe( 'Watches', () => {
 		expect( wire.sent( 'watch_matches' ) ).toEqual( [
 			[ '--key=acme-complaints' ],
 		] );
+	} );
+
+	it( "offers a curator the exclusion on a watch's matches, and a reader none", async () => {
+		const region = async ( canTune ) => {
+			render( <Harness canTune={ canTune } /> );
+			await openAcme();
+			const found = await screen.findByRole( 'region', {
+				name: 'Acme complaints',
+			} );
+			await within( found ).findByRole( 'link', {
+				name: 'Acme Quillsheet wins regional prize',
+			} );
+			return found;
+		};
+		expect(
+			within( await region( true ) ).getAllByRole( 'button', {
+				name: 'Exclude from every view',
+			} ).length
+		).toBeGreaterThan( 0 );
+		cleanup();
+		expect(
+			within( await region( false ) ).queryByRole( 'button', {
+				name: 'Exclude from every view',
+			} )
+		).toBeNull();
 	} );
 
 	it( 'says the inbox is off for a watch that does not list its matches', async () => {

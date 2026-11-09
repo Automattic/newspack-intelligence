@@ -179,9 +179,10 @@ function LensForm( { initial, vocabulary, onSave, onCancel } ) {
  * @param {(starts: number[]) => void} props.onStarts     Replaces the page starts.
  * @param {(key: string) => void}      props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void}     [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                    [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactElement} The lens's reads.
  */
-function Opened( { lens, starts, onStarts, onOpenEntity, onSave } ) {
+function Opened( { lens, starts, onStarts, onOpenEntity, onSave, canTune } ) {
 	const through = { lens: lens.lens_key };
 	const offset = starts[ starts.length - 1 ];
 	const items = useIntelRead(
@@ -243,6 +244,7 @@ function Opened( { lens, starts, onStarts, onOpenEntity, onSave } ) {
 						onStarts={ onStarts }
 						onOpenEntity={ onOpenEntity }
 						onSave={ onSave }
+						canTune={ canTune }
 					/>
 				) }
 			</Answer>
@@ -438,6 +440,7 @@ export default function Lens( {
 					onStarts={ ( starts ) => onOpen( { ...opened, starts } ) }
 					onOpenEntity={ onOpenEntity }
 					onSave={ onSave }
+					canTune={ canTune }
 				/>
 			) }
 		</div>

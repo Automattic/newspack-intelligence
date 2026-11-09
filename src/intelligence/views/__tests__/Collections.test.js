@@ -85,11 +85,30 @@ function Harness( props ) {
 	);
 }
 
+const WIRE_COPY = {
+	item_key: 'feed:tern-wire-copy-31',
+	title: 'Tern wire copy of the prize story',
+	url: 'https://tern-wire.example/31',
+	actor: 'user:tern-desk',
+	excluded_ts: 1792411200,
+	why: 'The wire copy of a story we hold.',
+};
+
+const UNSAID = {
+	item_key: 'linear:heron-stray-8',
+	title: 'Heron stray ticket',
+	url: 'https://tracker.example/heron-stray-8',
+	actor: 'agent:tern-desk:Claude',
+	excluded_ts: 1792497600,
+	why: '',
+};
+
 beforeEach( () => {
 	Core.reset();
 	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
 	wire = intelWire();
 	wire.replies.collections = ( args ) => ( 0 === args.length ? LIST : ONE );
+	wire.replies.excluded = { items: [ UNSAID, WIRE_COPY ], available: true };
 } );
 
 describe( 'Collections', () => {
@@ -456,5 +475,101 @@ describe( 'Collections', () => {
 		expect(
 			within( folder ).queryByRole( 'button', { name: 'Move' } )
 		).toBeNull();
+	} );
+} );
+
+describe( 'Collections — excluded items', () => {
+	const excluded = () => screen.findByRole( 'region', { name: 'Excluded' } );
+
+	it( 'lists a curator every excluded item, who excluded it, when and why', async () => {
+		render( <Harness canTune={ true } /> );
+		const section = await excluded();
+
+		expect(
+			await within( section ).findByRole( 'link', {
+				name: WIRE_COPY.title,
+			} )
+		).toHaveAttribute( 'href', WIRE_COPY.url );
+		expect(
+			within( section ).getByText(
+				'user:tern-desk · 2026-10-19 · The wire copy of a story we hold.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( section ).getByText( 'agent:tern-desk:Claude · 2026-10-20' )
+		).toBeInTheDocument();
+		expect( wire.sent( 'excluded' ) ).toEqual( [ [] ] );
+	} );
+
+	it( 'says when nothing is excluded', async () => {
+		wire.replies.excluded = { items: [], available: true };
+		render( <Harness canTune={ true } /> );
+		expect(
+			await within( await excluded() ).findByText(
+				'No item is excluded from every view.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'includes an item again, takes it off the list and reads it again', async () => {
+		wire.replies.include_item = { ok: true, event_id: 'ev-i' };
+		render( <Harness canTune={ true } /> );
+		const section = await excluded();
+		const row = (
+			await within( section ).findByRole( 'link', {
+				name: WIRE_COPY.title,
+			} )
+		).closest( 'li' );
+		fireEvent.click(
+			within( row ).getByRole( 'button', { name: 'Include again' } )
+		);
+
+		expect(
+			within( section ).queryByRole( 'link', { name: WIRE_COPY.title } )
+		).toBeNull();
+		await waitFor( () =>
+			expect( wire.sent( 'include_item' ) ).toEqual( [
+				[ `--item=${ WIRE_COPY.item_key }` ],
+			] )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'excluded' ) ).toHaveLength( 2 )
+		);
+		expect(
+			within( section ).queryByRole( 'link', { name: WIRE_COPY.title } )
+		).toBeNull();
+	} );
+
+	it( 'puts a refused inclusion back with the refusal', async () => {
+		wire.replies.include_item = () =>
+			new Error( `${ WIRE_COPY.item_key } is not excluded` );
+		render( <Harness canTune={ true } /> );
+		const section = await excluded();
+		const row = (
+			await within( section ).findByRole( 'link', {
+				name: WIRE_COPY.title,
+			} )
+		).closest( 'li' );
+		fireEvent.click(
+			within( row ).getByRole( 'button', { name: 'Include again' } )
+		);
+
+		expect(
+			await screen.findByText( `${ WIRE_COPY.item_key } is not excluded` )
+		).toBeInTheDocument();
+		expect(
+			await within( section ).findByRole( 'link', {
+				name: WIRE_COPY.title,
+			} )
+		).toBeInTheDocument();
+	} );
+
+	it( 'shows a reader no excluded list and asks for none', async () => {
+		render( <Harness canTune={ false } /> );
+		await screen.findByRole( 'button', { name: 'Q4 client wins' } );
+		expect(
+			screen.queryByRole( 'region', { name: 'Excluded' } )
+		).toBeNull();
+		expect( wire.sent( 'excluded' ) ).toEqual( [] );
 	} );
 } );

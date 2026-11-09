@@ -79,8 +79,10 @@ final class Intel_Event {
 	 * one, has none, and a blank one is refused. A saved item's move names
 	 * the folder it leaves as `from`, the one it enters as `collection_key`
 	 * and the tier of each copy it carries, and a use mark the tier of the
-	 * copy it marks. An ask's answer names the items its sentences cite by
-	 * key, each sentence citing them by their place in that list from 1.
+	 * copy it marks. An exclusion names the URL, title and tier its item had,
+	 * so its list outlives the item, and why when a curator says. An ask's
+	 * answer names the items its sentences cite by key, each sentence citing
+	 * them by their place in that list from 1.
 	 */
 	public const KINDS = [
 		'item_recorded'       => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ], [] ],
@@ -108,6 +110,8 @@ final class Intel_Event {
 		'link_rejected'       => [ self::ONTOLOGY, [ 'item_key', 'entity_key', 'item_url' ], [], [] ],
 		'collection_created'  => [ self::ONTOLOGY, [ 'collection_key', 'name' ], [], [] ],
 		'collected'           => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'url', 'title', 'tier' ], [ 'tier' => self::TIERS ], [] ],
+		'item_excluded'       => [ self::ONTOLOGY, [ 'item_key', 'url', 'title', 'tier' ], [ 'tier' => self::TIERS ], [ 'why' => self::WHY_BYTES ] ],
+		'item_included'       => [ self::ONTOLOGY, [ 'item_key' ], [], [] ],
 		'item_used'           => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'tier', 'mark', 'day' ], [ 'tier' => self::TIERS, 'mark' => self::MARKS ], [] ],
 		'item_moved'          => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'from', 'tiers' ], [ 'tiers' => self::TIERS ], [] ],
 		'lens_saved'          => [ self::ONTOLOGY, [ 'lens_key', 'name', 'description', 'filters' ], [], [] ],
@@ -128,6 +132,9 @@ final class Intel_Event {
 
 	/** The longest theme, in the bytes a packed message writes it in. */
 	public const THEME_BYTES = 80;
+
+	/** The longest reason an item is excluded for, in the bytes a packed message writes it in. */
+	public const WHY_BYTES = 512;
 
 	/**
 	 * Each kind holding a list field => each such field => the fewest
@@ -160,7 +167,7 @@ final class Intel_Event {
 	];
 
 	/** The optional fields refused blank: one with nothing to say is left out. */
-	private const NON_BLANK = [ 'theme' => true ];
+	private const NON_BLANK = [ 'theme' => true, 'why' => true ];
 
 	/** The actor classes an actor string may begin with. */
 	private const ACTOR_CLASSES = [ 'user', 'agent', 'machine' ];

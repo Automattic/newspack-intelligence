@@ -7,6 +7,7 @@
  */
 
 import {
+	cleanup,
 	render,
 	screen,
 	fireEvent,
@@ -584,6 +585,29 @@ describe( 'Lens', () => {
 		expect( onSave ).toHaveBeenCalledWith(
 			SIGNALS.signals[ 0 ].items[ 0 ]
 		);
+	} );
+
+	it( "offers a curator the exclusion on a group's items, and a reader none", async () => {
+		const opened = async ( canTune ) => {
+			render( <Harness canTune={ canTune } onSave={ jest.fn() } /> );
+			await openSupport();
+			const toggle = await screen.findByRole( 'button', {
+				name: 'Show items: bot registrations',
+			} );
+			fireEvent.click( toggle );
+			return toggle.closest( 'li' );
+		};
+		expect(
+			within( await opened( true ) ).getByRole( 'button', {
+				name: 'Exclude from every view',
+			} )
+		).toBeInTheDocument();
+		cleanup();
+		expect(
+			within( await opened( false ) ).queryByRole( 'button', {
+				name: 'Exclude from every view',
+			} )
+		).toBeNull();
 	} );
 
 	it( 'expands a group onto its items, saving one, and collapses it', async () => {

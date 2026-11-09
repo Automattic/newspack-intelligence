@@ -1,6 +1,7 @@
 <?php
 /**
- * Items_CLI_Command: `wp newspack-intelligence items purge`.
+ * Items_CLI_Command: `wp newspack-intelligence items purge`, `items exclude`,
+ * `items include` and `items excluded`.
  *
  * @package Newspack_Intelligence
  */
@@ -10,8 +11,10 @@ namespace Newspack_Intelligence\CLI;
 use Newspack_Intelligence\Graph_Curation;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
+use Newspack_Intelligence\Intelligence_CI_Node;
 use Newspack_Intelligence\Worker_Route;
 use Newspack_Nodes\Bootstrap;
+use Newspack_Nodes\Command_Args;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Row_Reader;
@@ -227,6 +230,130 @@ class Items_CLI_Command {
 		// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- counted, never output.
 		$argv = $_SERVER['argv'] ?? throw new \LogicException( 'items purge reads its flags off argv, which this process does not carry' );
 		return \count( \array_filter( Core::arr( $argv ), static fn ( mixed $token ): bool => "--{$flag}" === $token || \str_starts_with( Core::as_string( $token ), "--{$flag}=" ) ) );
+	}
+
+	/**
+	 * Exclude an item from every view, through the `intelligence` CI's
+	 * `exclude_item`, as the person `--user` signs in, who the exclusion
+	 * records; `items include` brings it back.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <item>
+	 * : The item key.
+	 *
+	 * [--why=<text>]
+	 * : Why it is excluded, up to 512 bytes as the stream writes it.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp newspack-intelligence items exclude feed:wire-copy-31 --why='The wire copy of a story we hold.' --user=curator
+	 *
+	 * @subcommand exclude
+	 * @api WP-CLI dispatches this by reflection; nothing here calls it.
+	 * @param array<int,string>   $args       Positional args.
+	 * @param array<string,mixed> $assoc_args Flags.
+	 */
+	public function exclude_item( array $args, array $assoc_args ): void {
+		$answer = self::curate( 'exclude', 'exclude_item', $args, $assoc_args );
+		if ( null !== $answer ) {
+			$key = Core::as_string( $args[0] );
+			\WP_CLI::success( 'Excluded ' . Core::terminal_safe( $key ) . ' from every view; bring it back with: wp newspack-intelligence items include ' . \escapeshellarg( $key ) );
+		}
+	}
+
+	/**
+	 * Include an excluded item again, through the `intelligence` CI's
+	 * `include_item`, as the person `--user` signs in.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <item>
+	 * : The item key.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp newspack-intelligence items include feed:wire-copy-31 --user=curator
+	 *
+	 * @subcommand include
+	 * @api WP-CLI dispatches this by reflection; nothing here calls it.
+	 * @param array<int,string>   $args       Positional args.
+	 * @param array<string,mixed> $assoc_args Flags.
+	 */
+	public function include_item( array $args, array $assoc_args ): void {
+		if ( null !== self::curate( 'include', 'include_item', $args, $assoc_args ) ) {
+			\WP_CLI::success( 'Included ' . Core::terminal_safe( Core::as_string( $args[0] ) ) . ' again in every view.' );
+		}
+	}
+
+	/**
+	 * List the excluded items the reader may read, the latest excluded
+	 * first, through the `intelligence` CI's `excluded`: one line each of
+	 * the key, title, URL, who excluded it, when (UTC) and why, tab-separated,
+	 * a tab or line break inside one a space.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--limit=<n>]
+	 * : The most items listed, at most 200; 50 by default.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp newspack-intelligence items excluded --limit=20 --user=curator
+	 *
+	 * @api WP-CLI dispatches this by reflection; nothing here calls it.
+	 * @param array<int,string>   $args       Positional args.
+	 * @param array<string,mixed> $assoc_args Flags.
+	 */
+	public function excluded( array $args, array $assoc_args ): void {
+		$answer = self::curate( 'excluded', 'excluded', $args, $assoc_args );
+		if ( null === $answer ) {
+			return;
+		}
+		$items = Core::arr( $answer['items'] ?? null );
+		if ( [] === $items ) {
+			\WP_CLI::success( 'No item is excluded.' );
+			return;
+		}
+		foreach ( $items as $item ) {
+			$item  = Core::arr( $item );
+			$cells = [ $item['item_key'], $item['title'], $item['url'], $item['actor'], \gmdate( 'Y-m-d H:i', Core::as_int( $item['excluded_ts'] ) ), $item['why'] ];
+			\WP_CLI::log( \implode( "\t", \array_map( static fn ( mixed $cell ): string => Core::terminal_safe( (string) \preg_replace( '/[\t\r\n]+/', ' ', Core::as_string( $cell ) ) ), $cells ) ) );
+		}
+	}
+
+	/**
+	 * Run one of the `intelligence` CI's commands on the request graph, as
+	 * the MCP door runs a tool, its role and args checked as every caller's
+	 * are; a refusal is the command's error. An exclusion or an inclusion
+	 * records who made it, so one run with no `--user` is refused first.
+	 *
+	 * @param string              $subcommand The subcommand, for its messages.
+	 * @param string              $command    The CI command.
+	 * @param array<int,string>   $args       Positional args.
+	 * @param array<string,mixed> $assoc_args Flags.
+	 * @return array<array-key,mixed>|null The answer, or null once refused.
+	 */
+	private static function curate( string $subcommand, string $command, array $args, array $assoc_args ): ?array {
+		if ( self::refused_root( "items {$subcommand}" ) ) {
+			return null;
+		}
+		if ( 'excluded' !== $command && 0 === Core::current_user_id() ) {
+			\WP_CLI::error( "wp newspack-intelligence items {$subcommand} records who excluded the item; run it with --user=<login>." );
+			return null;
+		}
+		\Newspack_Intelligence\mount_service_cis( Bootstrap::mount_request_graph() );
+		$ci = Core::node( 'intelligence' );
+		if ( ! $ci instanceof Intelligence_CI_Node ) {
+			\WP_CLI::error( 'The request graph mounted no intelligence CI.' );
+			return null;
+		}
+		try {
+			return Core::arr( $ci->dispatch( $command, Command_Args::format( \array_values( $args ), \array_map( Core::as_string( ... ), $assoc_args ) ) ) );
+		} catch ( \InvalidArgumentException | \RuntimeException $e ) {
+			\WP_CLI::error( Core::message_of( $e ) );
+			return null;
+		}
 	}
 
 	/**

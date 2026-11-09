@@ -293,7 +293,7 @@ final class IntelEventTest extends TestCase {
 		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'entity_key', 'type', 'name', 'from_item_key' ], [ 'type' => Intel_Event::TYPES ], [ 'evidence' => 512 ] ], Intel_Event::KINDS['entity_proposed'] );
 		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'entity_key' ], [], [] ], Intel_Event::KINDS['entity_accepted'] );
 		$this->assertSame( [ 'theme' => 80 ], Intel_Event::KINDS['extraction_recorded'][3] );
-		$this->assertSame( [ 'extraction_recorded', 'link_proposed', 'entity_proposed' ], \array_keys( \array_filter( \array_map( static fn ( array $row ): array => $row[3], Intel_Event::KINDS ) ) ) );
+		$this->assertSame( [ 'extraction_recorded', 'link_proposed', 'entity_proposed', 'item_excluded' ], \array_keys( \array_filter( \array_map( static fn ( array $row ): array => $row[3], Intel_Event::KINDS ) ) ) );
 		$this->assertSame( [ 'item_moved' => [ 'tiers' => 1 ], 'ask_answered' => [ 'tiers' => 0 ] ], Intel_Event::LISTS, 'each kind declares its list fields and the fewest members each holds' );
 		foreach ( Intel_Event::LISTS as $kind => $fields ) {
 			$this->assertSame( [], \array_diff( \array_keys( $fields ), \array_keys( Intel_Event::KINDS[ $kind ][2] ) ), "every list field of {$kind} has a set" );
@@ -568,5 +568,42 @@ final class IntelEventTest extends TestCase {
 		);
 		unset( $fields['item_ts'] );
 		$this->assertNull( Intel_Event::item_of( $fields ) );
+	}
+
+	/**
+	 * An exclusion names its item with the URL, title and tier it was
+	 * excluded at, and optionally why, on the ontology stream a person
+	 * writes; an inclusion names the item alone.
+	 */
+	public function test_an_exclusion_names_its_item_and_an_inclusion_takes_it_back(): void {
+		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'item_key', 'url', 'title', 'tier' ], [ 'tier' => Intel_Event::TIERS ], [ 'why' => 512 ] ], Intel_Event::KINDS['item_excluded'] );
+		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'item_key' ], [], [] ], Intel_Event::KINDS['item_included'] );
+
+		$excluded = Intel_Event::make( 'item_excluded', [ 'item_key' => 'feed:heron-8812', 'url' => 'https://heron.example/wire', 'title' => 'Heron wire copy', 'tier' => 'internal', 'why' => 'The wire copy of a story we hold.' ], 'user:4217', '9.4.1' );
+		$bare     = Intel_Event::make( 'item_excluded', [ 'item_key' => 'feed:heron-8813', 'url' => 'https://heron.example/b', 'title' => 'Heron b', 'tier' => 'public' ], 'user:4217', '9.4.1' );
+
+		$this->assertSame( [ 'feed:heron-8812', 'The wire copy of a story we hold.' ], [ $excluded['item_key'], $excluded['why'] ] );
+		$this->assertArrayNotHasKey( 'why', $bare );
+		$this->assertSame( 'feed:heron-8812', Intel_Event::make( 'item_included', [ 'item_key' => 'feed:heron-8812' ], 'user:4217', '9.4.1' )['item_key'] );
+	}
+
+	/**
+	 * An exclusion's why, when given, says something within its cap.
+	 *
+	 * @return array<string,array{0:mixed,1:string}>
+	 */
+	public static function bad_whys(): array {
+		return [
+			'blank'        => [ " \t", 'item_excluded: why is blank' ],
+			'not a string' => [ 7, 'item_excluded: why is not a string' ],
+			'past its cap' => [ \str_repeat( 'Heron "wire" ', 60 ), 'item_excluded: why runs past 512 bytes' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_whys' )]
+	public function test_an_exclusions_why_must_say_something_within_its_cap( mixed $why, string $refusal ): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( $refusal );
+		Intel_Event::make( 'item_excluded', [ 'item_key' => 'feed:heron-8812', 'url' => 'https://heron.example/wire', 'title' => 'Heron wire copy', 'tier' => 'internal', 'why' => $why ], 'user:4217', '9.4.1' );
 	}
 }

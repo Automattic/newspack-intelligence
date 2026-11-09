@@ -396,11 +396,6 @@ XML;
 	}
 
 	/**
-	 * A post a configured feed and a client's lane both list, under one guid
-	 * and one canonical URL, records once, under the key that took it first;
-	 * a guid holding colons is read past the lane whole.
-	 */
-	/**
 	 * A configured feed belongs to anyone, so a copy it lists of a client's post
 	 * never stands in for the client's own, whichever answers first.
 	 *
