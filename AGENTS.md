@@ -694,8 +694,9 @@ is generic unless the active topologies name the one running Intelligence
 and its LLM_Call names an operator; the health strip's `collection` row
 says why the active topologies cannot name it.
 `options`
-holds nothing but an integer `max_tokens` and a numeric `temperature`, and
-nothing at all for a decision, and the carry what the caller
+holds nothing but an integer `max_tokens` and a numeric `temperature`,
+which only a chat-completions wire sends, and nothing at all for a
+decision, and the carry what the caller
 needs back less the item and the inputs, which ride beside it once. One
 it cannot read is refused TO its FROM, `{ error: "<name>: a request it
 cannot read: it carries no <what>", item?, inputs?, carry? }`, with
@@ -705,11 +706,14 @@ and read through `Asks_Model`, which runs each finish inside
 `Event_Framework::uninterruptible()`, since the call is settled and nothing
 replays its writes, so a stop falling due inside raises at the first check
 after it, and which also catches what finishing an answer
-throws, rethrowing a stop, logs it and has the caller park the item. With any of `set_api_url`, `set_model` and
-`set_feature` unset it answers a chat request, and with any of
-`set_api_url`, `set_decision_model` and `set_feature` unset a decision,
-`{ unlent: <group>, unset: [ <setter>, … ], item, inputs, carry }` at
-once, `unset` each setter the call's kind lacks in that order, so a
+throws, rethrowing a stop, logs it and has the caller park the item. A
+call whose transport lacks a setter, as `LLM_Call_Node::unset_of()` reads
+it, is answered `{ unlent: <group>, unset: [ <setter>, … ], item, inputs,
+carry }` at once, `unset` naming in this order `set_decision_protocol` for
+a decision, `set_protocol` unless the decision goes to systemone,
+`set_api_url`, the call's model, `set_model` or `set_decision_model`, and
+then `set_feature` on the `ai-proxy` and `systemone` routes alone, each
+one left unset, so a
 caller reads a transport whose setters are unset as one no credential reaches
 and parks no retry of a call that cannot be made; where its Vault group,
 its one argument, holds no entry on the api url's origin (`Curl_Node::lends_credential()`)
@@ -738,11 +742,30 @@ answers false) is tried again at the next tick past the interval, and a
 throw is logged, `publishing the queue failed; trying again at the next
 tick`, and tried at the next tick, a stop propagating. The snapshot lives
 three heartbeats; the `health extraction` slice reads it (see Health). The POST
-body is built when the request is sent: a chat prompt's is `{ model,
-messages, ...options }`, the messages `Prompts::messages()` builds from the
-prompt, the item and the inputs; a decision's is `{ model, state,
-questions }`, the decision model's, the state and questions
-`Prompts::decision()` builds. A decision prompt asks the questions
+is built when the request is sent, in the wire its route names, one row of
+`LLM_Call_Node::wires()` carrying its path, the setters it needs, its
+headers, its body, its answer's reader and its per-prompt budgets. A chat
+prompt's route is `set_protocol`'s, and a decision's is `systemone` under
+`set_decision_protocol systemone`, else the chat protocol's. On
+`ai-proxy` and `openai` a chat prompt's body is `{ model, messages,
+...options }`, the messages `Prompts::messages()` builds from the prompt,
+the item and the inputs, and a `chat` decision's is `{ model, messages,
+response_format: { type: json_schema, json_schema: { name: decision,
+strict: true, schema } } }`, the messages `Prompts::decision_messages()`
+builds and the schema `Prompts::decision_schema()`. On `anthropic` either
+kind's body is `{ model, max_tokens, system: [ { type: text, text,
+cache_control: { type: ephemeral } } ], messages: [ { role: user, content
+} ], output_config: { effort, format? }, fallbacks? }`: the system text as
+the one cached block, the user message as the one turn, the max_tokens
+and effort the row names for the prompt (8,192 for `extract` and
+`ask_answer`, 4,096 for the rest; `low`, but `medium` for `ask_answer`)
+unless `set_effort` names an effort, a decision's schema as
+`output_config.format`, `fallbacks: "default"` unless `set_fallbacks
+none`, and none of the caller's options; a prompt the row does not budget
+is refused, `the anthropic wire budgets no prompt: <prompt>`. A
+`systemone` decision's body is `{ model, state, questions }`, the
+decision model's, the state and questions `Prompts::decision()` builds.
+Every decision names the decision model. A decision prompt asks the questions
 `Prompts::questions()` reads off its inputs; one whose inputs call for
 none is refused as `<prompt> asks no question` and never sent. The
 questions are `about_publisher`, a `noul`, when the inputs name a `publisher`, asking
@@ -778,26 +801,39 @@ goes ahead of every backlog request, `1`, queued before it, and within
 each the one that arrived first goes first: an item recorded now is never
 queued behind a re-extraction. Its `{name}:curl` sibling, built under
 the group with its body cap raised to 1 MiB (`Curl_Node::set_body_cap()`),
-POSTs a chat prompt to `<api_url>/chat/completions` and a decision to
-`<api_url>/systemone`, the same origin and credential, each with `X-WPCOM-AI-Feature:
-<feature>` and the group's credential, `Authorization: Bearer <token>`,
+POSTs each call to its wire's path under the api url, the same origin and
+credential: `<api_url>/chat/completions` on `ai-proxy` and `openai`,
+`<api_url>/v1/messages` on `anthropic` and `<api_url>/systemone` for a
+`systemone` decision. Beside the group's credential, whose header the
+Vault entry names (`Authorization: Bearer <token>` for the proxy,
+`x-api-key: <key>` with no scheme for the Messages API), `ai-proxy` and
+`systemone` send `X-WPCOM-AI-Feature: <feature>`, `openai` sends nothing
+more, and `anthropic` sends `anthropic-version: <set_api_version, else
+2026-10-21>` and, unless `set_fallbacks none`, `anthropic-beta:
+server-side-fallback-2026-07-01`, all with
 and a `timeout` of `Curl_Node::MAX_REQUEST_TIMEOUT` (120) seconds, at most
 `set_concurrency` at once (1 until set, at most `Curl_Node::MAX_IN_FLIGHT`),
 refilling the window once half of it, or all of it, is free, on a request,
 an answer and the Router's tick. Each answer is settled in the frontier and
 sent TO the request's FROM, keyed as asked, a TM_STRUCT|TM_RESPONSE whose
-VALUE is `{ content, item, inputs, carry }`, the first choice's
-`message.content`, or `{ error, item, inputs, carry }`: Curl's TM_ERROR
-text, such as `HTTP 502 <url>` or
-`curl error 28 (Timeout was reached) <url>`, or `AI proxy answer names no
-choices[0].message.content`. A decision answers `{ decision: { <question>:
-<answer> }, item, inputs, carry }`, each question asked read from the
-body's `answers`: a noul's `noul` from 0 to 1, and a choice's `{ choice,
-confidence }`, its `choice` one of its criteria and its `confidence` from
-0 to 1. Otherwise it answers `{ error, … }`: Curl's text, `AI proxy
-decision names no noul from 0 to 1 for <question>`, or `AI proxy decision
-names no offered choice with a confidence from 0 to 1 for <question>`, for
-the first answer that is missing, out of range or not of its type. Chat calls and decisions share the one frontier, window and
+VALUE is `{ content, item, inputs, carry }`, the text the wire reads (the
+first choice's `message.content` on chat completions; on the Messages API
+every `text` block joined, thinking skipped), or `{ error, item, inputs,
+carry }`: Curl's TM_ERROR text, such as `HTTP 502 <url>` or
+`curl error 28 (Timeout was reached) <url>`; `the answer names no
+choices[0].message.content` or `the answer names no text content block`;
+`the answer stopped at refusal`, with its category in brackets when the
+body names one, or `the answer stopped at max_tokens`; or `<name>: an
+answer could not be read: no protocol: '<route>'` when the transport no
+longer names a wire to read it by. A decision answers `{ decision: {
+<question>: <answer> }, item, inputs, carry }`, each question asked read
+from `answers` in the JSON of that text, which for systemone is the body
+itself: a noul's `noul` from 0 to 1, and a choice's `{ choice, confidence
+}`, its `choice` one of its criteria and its `confidence` from 0 to 1.
+Otherwise it answers `{ error, … }`: the texts above, `the decision names
+no noul from 0 to 1 for <question>`, or `the decision names no offered
+choice with a confidence from 0 to 1 for <question>`, for the first
+answer that is missing, out of range or not of its type. Chat calls and decisions share the one frontier, window and
 backlog order. A caller that throws on its answer is logged
 rate-limited, `answering <key> failed: <why>`, never thrown into the event
 loop; a cooperative stop propagates, and starts no new POST. Only an
@@ -2281,8 +2317,10 @@ sent, and an item any partition holds at a tier outside
 last: its labels are skipped, and the command says how many. `--dry-run`
 prints the calls it would make and makes none. Otherwise it reads the
 first `LLM_Call` node `Worker_Route::topology()` declares, whose topology
-row (`LLM_Call_Node::graph_facts()`) names the `api_url`, `decision_model`
-and `feature` its `set_*` lines leave, kept as each setter keeps it, and
+row (`LLM_Call_Node::graph_facts()`) names what its `set_*` lines leave
+(`protocol`, `decision_protocol`, `api_url`, `model`, `decision_model`,
+`feature`, `api_version`, `effort`, `fallbacks`, `operator` and `tracks`),
+kept as each setter keeps it, and
 binds its `vault_group` through `Worker_Route::line()`; one unset, or a
 group lending no credential on the api url, is refused before any call.
 Each request is built by `LLM_Call_Node::curl_request()` and each answer

@@ -78,17 +78,21 @@ final class LlmCallNodeTest extends TestCase {
 	}
 
 	/**
-	 * The node as the resolve topology builds it, its four commands set.
+	 * The node as the resolve topology builds it, its transport set.
 	 *
-	 * @param int $concurrency Requests in flight at once.
+	 * @param int    $concurrency Requests in flight at once.
+	 * @param string $protocol    The wire its chat calls speak.
+	 * @param string $decisions   Where its decisions go: systemone or chat.
 	 */
-	private function llm( int $concurrency = 3 ): LLM_Call_Node {
+	private function llm( int $concurrency = 3, string $protocol = 'ai-proxy', string $decisions = 'systemone' ): LLM_Call_Node {
 		$node = new LLM_Call_Node();
 		$node->name( self::NAME );
 		$this->bound( static fn () => $node->arguments( [ self::GROUP ] ) );
 		$node->sink( Core::node( Node_Names::COMMAND_INTERPRETER ) );
 		$config = $node->interpreter();
 		\assert( null !== $config );
+		$config->dispatch( 'set_protocol', [ $protocol ] );
+		$config->dispatch( 'set_decision_protocol', [ $decisions ] );
 		$config->dispatch( 'set_api_url', [ self::API ] );
 		$config->dispatch( 'set_model', [ self::MODEL ] );
 		$config->dispatch( 'set_decision_model', [ self::DECISION_MODEL ] );
@@ -292,8 +296,8 @@ final class LlmCallNodeTest extends TestCase {
 		return [
 			'a bad gateway'      => [ 'bad gateway', 502, \CURLE_OK, 'HTTP 502 ' . self::COMPLETIONS ],
 			'a timeout'          => [ '', 200, \CURLE_OPERATION_TIMEDOUT, 'curl error 28 (Timeout was reached) ' . self::COMPLETIONS ],
-			'no content'         => [ '{"choices":[{"message":{"role":"assistant"}}]}', 200, \CURLE_OK, 'AI proxy answer names no choices[0].message.content' ],
-			'not JSON at all'    => [ '<html>busy</html>', 200, \CURLE_OK, 'AI proxy answer names no choices[0].message.content' ],
+			'no content'         => [ '{"choices":[{"message":{"role":"assistant"}}]}', 200, \CURLE_OK, 'the answer names no choices[0].message.content' ],
+			'not JSON at all'    => [ '<html>busy</html>', 200, \CURLE_OK, 'the answer names no choices[0].message.content' ],
 		];
 	}
 
@@ -702,8 +706,35 @@ final class LlmCallNodeTest extends TestCase {
 			[ 'set_concurrency', [ '4' ] ],
 		];
 
-		$this->assertSame( [ 'api_url' => self::API, 'decision_model' => self::DECISION_MODEL, 'feature' => self::FEATURE, 'operator' => self::OPERATOR, 'tracks' => self::TRACKS ], LLM_Call_Node::graph_facts( [ self::GROUP ], [ ...$commands, [ 'set_operator', [ ' ' . self::OPERATOR . ' ' ] ], [ 'set_tracks', [ '--tracks=' . self::TRACKS ] ] ] ) );
-		$this->assertSame( [ 'api_url' => '', 'decision_model' => '', 'feature' => '', 'operator' => '', 'tracks' => '' ], LLM_Call_Node::graph_facts( [ self::GROUP ], [] ) );
+		$commands = [
+			[ 'set_protocol', [ 'openai' ] ],
+			...$commands,
+			[ 'set_protocol', [ '--protocol= anthropic ' ] ],
+			[ 'set_decision_protocol', [ 'chat' ] ],
+			[ 'set_api_version', [ '2027-03-14' ] ],
+			[ 'set_effort', [ 'medium' ] ],
+			[ 'set_fallbacks', [ 'none' ] ],
+			[ 'set_operator', [ ' ' . self::OPERATOR . ' ' ] ],
+			[ 'set_tracks', [ '--tracks=' . self::TRACKS ] ],
+		];
+
+		$this->assertSame(
+			[
+				'protocol'          => 'anthropic',
+				'decision_protocol' => 'chat',
+				'api_url'           => self::API,
+				'model'             => self::MODEL,
+				'decision_model'    => self::DECISION_MODEL,
+				'feature'           => self::FEATURE,
+				'api_version'       => '2027-03-14',
+				'effort'            => 'medium',
+				'fallbacks'         => 'none',
+				'operator'          => self::OPERATOR,
+				'tracks'            => self::TRACKS,
+			],
+			LLM_Call_Node::graph_facts( [ self::GROUP ], $commands )
+		);
+		$this->assertSame( [ 'protocol' => '', 'decision_protocol' => '', 'api_url' => '', 'model' => '', 'decision_model' => '', 'feature' => '', 'api_version' => '', 'effort' => '', 'fallbacks' => '', 'operator' => '', 'tracks' => '' ], LLM_Call_Node::graph_facts( [ self::GROUP ], [] ) );
 	}
 
 	/**
@@ -745,6 +776,8 @@ final class LlmCallNodeTest extends TestCase {
 
 		$this->assertSame(
 			"make_node LLM_Call intel:llm-test ai-relay-4417\n"
+			. "command_node intel:llm-test:config set_protocol ai-proxy\n"
+			. "command_node intel:llm-test:config set_decision_protocol systemone\n"
 			. 'command_node intel:llm-test:config set_api_url ' . self::API . "\n"
 			. 'command_node intel:llm-test:config set_model ' . self::MODEL . "\n"
 			. 'command_node intel:llm-test:config set_decision_model ' . self::DECISION_MODEL . "\n"
@@ -791,7 +824,7 @@ final class LlmCallNodeTest extends TestCase {
 	 * @return array<string,array{0:string,1:int,2:string}>
 	 */
 	public static function decision_failures(): array {
-		$no_noul = 'AI proxy decision names no noul from 0 to 1 for about_publisher';
+		$no_noul = 'the decision names no noul from 0 to 1 for about_publisher';
 		return [
 			'a bad gateway'   => [ 'bad gateway', 502, 'HTTP 502 ' . self::SYSTEMONE ],
 			'no noul'         => [ (string) \json_encode( [ 'answers' => [ 'about_publisher' => [ 'type' => 'noul' ] ] ] ), 200, $no_noul ],
@@ -866,7 +899,7 @@ final class LlmCallNodeTest extends TestCase {
 
 		$this->complete_nth( 0, (string) \json_encode( [ 'answers' => $answers ] ) );
 
-		$this->assertSame( 'AI proxy decision names no noul from 0 to 1 for fits_kind', $this->caller->captured[0][ Message::VALUE ]['error'] );
+		$this->assertSame( 'the decision names no noul from 0 to 1 for fits_kind', $this->caller->captured[0][ Message::VALUE ]['error'] );
 	}
 
 	/**
@@ -892,7 +925,7 @@ final class LlmCallNodeTest extends TestCase {
 
 		$this->complete_nth( 0, self::reviewed( null, $choice, $confidence ) );
 
-		$this->assertSame( 'AI proxy decision names no offered choice with a confidence from 0 to 1 for theme_choice', $this->caller->captured[0][ Message::VALUE ]['error'] );
+		$this->assertSame( 'the decision names no offered choice with a confidence from 0 to 1 for theme_choice', $this->caller->captured[0][ Message::VALUE ]['error'] );
 	}
 
 	/** An offered theme or example carrying a fence's close rides the JSON body as data. */
@@ -924,6 +957,8 @@ final class LlmCallNodeTest extends TestCase {
 		$node->sink( Core::node( Node_Names::COMMAND_INTERPRETER ) );
 		$config = $node->interpreter();
 		\assert( null !== $config );
+		$config->dispatch( 'set_protocol', [ 'ai-proxy' ] );
+		$config->dispatch( 'set_decision_protocol', [ 'systemone' ] );
 		$config->dispatch( 'set_api_url', [ self::API ] );
 		$config->dispatch( 'set_model', [ self::MODEL ] );
 		$config->dispatch( 'set_feature', [ self::FEATURE ] );
@@ -936,7 +971,7 @@ final class LlmCallNodeTest extends TestCase {
 	}
 
 	/**
-	 * A request made before set_api_url, set_model and set_feature answers
+	 * A request made before set_protocol, set_api_url and set_model answers
 	 * unlent, naming the setters it lacks, so a caller treats a transport
 	 * whose setters are unset as one its group lends nothing to: it retries
 	 * nothing.
@@ -950,7 +985,7 @@ final class LlmCallNodeTest extends TestCase {
 		$this->ask( $node, 'feed:bare-1' );
 
 		$this->assertSame( [], $this->dispatched );
-		$this->assertSame( [ 'unlent' => self::GROUP, 'unset' => [ 'set_api_url', 'set_model', 'set_feature' ], 'item' => self::item( 'feed:bare-1' ), 'inputs' => [ 'boilerplate' => [] ], 'carry' => [ 'item_key' => 'feed:bare-1' ] ], $this->caller->captured[0][ Message::VALUE ] );
+		$this->assertSame( [ 'unlent' => self::GROUP, 'unset' => [ 'set_protocol', 'set_api_url', 'set_model' ], 'item' => self::item( 'feed:bare-1' ), 'inputs' => [ 'boilerplate' => [] ], 'carry' => [ 'item_key' => 'feed:bare-1' ] ], $this->caller->captured[0][ Message::VALUE ] );
 	}
 
 	/**
@@ -987,7 +1022,7 @@ final class LlmCallNodeTest extends TestCase {
 		$this->assertSame( [], $this->dispatched );
 		$this->assertSame( [ [ 'extraction_recorded', 'machine:extract-heuristic@' . \NEWSPACK_INTELLIGENCE_VERSION, 'other' ] ], \array_map( static fn ( array $m ): array => [ $m[ Message::VALUE ]['event'], $m[ Message::VALUE ]['actor'], $m[ Message::VALUE ]['kind'] ], $writer->captured ) );
 		$this->assertSame( [], $later->captured, 'no retry is parked' );
-		$this->assertSame( [ 'heuristic', self::GROUP, [ 'set_api_url', 'set_model', 'set_feature' ] ], \array_values( \array_intersect_key( Extractor_Node::read_status( 'extractor', 0 ) ?? [], [ 'mode' => true, 'vault_group' => true, 'unset' => true ] ) ) );
+		$this->assertSame( [ 'heuristic', self::GROUP, [ 'set_protocol', 'set_api_url', 'set_model' ] ], \array_values( \array_intersect_key( Extractor_Node::read_status( 'extractor', 0 ) ?? [], [ 'mode' => true, 'vault_group' => true, 'unset' => true ] ) ) );
 	}
 
 	/**
@@ -1408,5 +1443,376 @@ final class LlmCallNodeTest extends TestCase {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'Missing required argument: vault_group' );
 		( new LLM_Call_Node() )->arguments( [] );
+	}
+
+	/** The Messages API url under the api url. */
+	private const MESSAGES = self::API . '/v1/messages';
+
+	/** The current stable `anthropic-version` a deployment naming none sends. */
+	private const STABLE_VERSION = '2026-10-21';
+
+	/** The header `fallbacks: "default"` rides with. */
+	private const FALLBACK_BETA = 'anthropic-beta: server-side-fallback-2026-07-01';
+
+	/** The node speaking the Messages API, its credential lent as `x-api-key`. */
+	private function claude( string $decisions = 'chat' ): LLM_Call_Node {
+		$this->lend( self::GROUP, self::ORIGIN, 'x-api-key', self::TOKEN );
+		return $this->llm( 3, 'anthropic', $decisions );
+	}
+
+	/**
+	 * A Messages API body holding `$content`, stopped at `$stop`.
+	 *
+	 * @param list<array<string,mixed>> $content The content blocks.
+	 * @param array<string,mixed>       $extra   Any other top-level field.
+	 */
+	private static function message( array $content, string $stop = 'end_turn', array $extra = [] ): string {
+		return (string) \json_encode(
+			[
+				'id'          => 'msg_heron01',
+				'type'        => 'message',
+				'role'        => 'assistant',
+				'model'       => self::MODEL,
+				'content'     => $content,
+				'stop_reason' => $stop,
+				'usage'       => [ 'input_tokens' => 914, 'cache_read_input_tokens' => 812, 'output_tokens' => 41 ],
+			] + $extra
+		);
+	}
+
+	/** @return array<string,mixed> The n-th POST's body, decoded. */
+	private function body( int $n = 0 ): array {
+		return \json_decode( (string) $this->sent[ $n ][ \CURLOPT_POSTFIELDS ], true, 512, \JSON_THROW_ON_ERROR );
+	}
+
+	/**
+	 * A chat call over the Messages API posts to `v1/messages` with the
+	 * version, the fallback beta and the lent `x-api-key`, never the
+	 * feature header: the system text, its one cache-control block, the
+	 * item in the user turn, the prompt's own max_tokens and low effort in
+	 * place of the caller's options, and fallbacks by default.
+	 */
+	public function test_a_messages_call_caches_the_system_text_and_carries_the_item_in_the_user_turn(): void {
+		$node     = $this->claude();
+		$messages = Prompts::extract_entities( self::item( 'feed:wharf-81' ), [] );
+
+		$this->ask( $node, 'feed:wharf-81' );
+
+		$this->assertSame( [ self::MESSAGES ], $this->dispatched );
+		$this->assertSame(
+			[
+				'model'         => self::MODEL,
+				'max_tokens'    => 4096,
+				'system'        => [ [ 'type' => 'text', 'text' => $messages[0]['content'], 'cache_control' => [ 'type' => 'ephemeral' ] ] ],
+				'messages'      => [ [ 'role' => 'user', 'content' => $messages[1]['content'] ] ],
+				'output_config' => [ 'effort' => 'low' ],
+				'fallbacks'     => 'default',
+			],
+			$this->body()
+		);
+		$this->assertSame( [ 'Content-Type: application/json', 'anthropic-version: ' . self::STABLE_VERSION, self::FALLBACK_BETA, 'x-api-key: ' . self::TOKEN ], $this->sent[0][ \CURLOPT_HTTPHEADER ] );
+	}
+
+	/**
+	 * Every prompt over the Messages API sends no sampling parameter, which
+	 * the API refuses, caches the system text alone and asks its own effort:
+	 * a chat prompt and a decision alike.
+	 *
+	 * @return array<string,array{0:string,1:array<string,mixed>,2:array<string,mixed>,3:string}>
+	 */
+	public static function messages_prompts(): array {
+		return [
+			'the NER prompt'     => [ 'extract_entities', self::item( 'feed:wharf-82' ), [ 'boilerplate' => [] ], 'low' ],
+			'the extraction'     => [ 'extract', [ 'item_key' => 'feed:wharf-91', 'title' => 'Of the', 'body' => 'A body.', 'retrieved_ts' => self::START ], [ 'topics' => [ 'Awards' => 'topic:awards' ], 'profile' => 'Score kite news highest.', 'audience' => 'a heron desk', 'publisher' => '' ], 'low' ],
+			'the ask plan'       => [ 'ask_plan', [ 'item_key' => 'ask-7c21', 'question' => 'Who launched?' ], [ 'today' => '2026-11-08', 'lenses' => [] ], 'low' ],
+			'the ask answer'     => [ 'ask_answer', [ 'item_key' => 'ask-7c22', 'question' => 'Who launched?' ], [ 'items' => [] ], 'medium' ],
+			'an extract review'  => [ Prompts::EXTRACT_REVIEW, self::item( 'feed:wharf-83' ), [ 'kind' => 'launch', 'summary' => 'Heron Weekly goes live.' ], 'low' ],
+			'an extract gate'    => [ Prompts::EXTRACT_GATE, self::item( 'feed:wharf-84' ), [ 'publisher' => 'Kestrel Lantern Harbor' ], 'low' ],
+		];
+	}
+
+	/**
+	 * @param array<string,mixed> $item   The item.
+	 * @param array<string,mixed> $inputs The prompt's inputs.
+	 * @param string              $effort The effort the prompt asks.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'messages_prompts' )]
+	public function test_no_messages_call_sends_a_sampling_parameter( string $prompt, array $item, array $inputs, string $effort ): void {
+		$node                      = $this->claude();
+		$request                   = Message::new_message();
+		$request[ Message::TYPE ]  = Message::TM_STRUCT;
+		$request[ Message::FROM ]  = self::CALLER;
+		$request[ Message::KEY ]   = Core::as_string( $item['item_key'] );
+		$request[ Message::VALUE ] = [
+			'prompt'  => $prompt,
+			'item'    => $item,
+			'inputs'  => $inputs,
+			'options' => Prompts::DECISION === Prompts::PROMPTS[ $prompt ] ? [] : [ 'max_tokens' => 333, 'temperature' => 0.4 ],
+			'carry'   => [],
+			'backlog' => false,
+		];
+
+		$this->in_drain( static fn () => $node->fill( $request ) );
+
+		$raw = (string) $this->sent[0][ \CURLOPT_POSTFIELDS ];
+		foreach ( [ 'temperature', 'top_p', 'top_k' ] as $sampling ) {
+			$this->assertStringNotContainsString( "\"{$sampling}\"", $raw );
+		}
+		$this->assertSame( 1, \substr_count( $raw, 'cache_control' ) );
+		$this->assertArrayHasKey( 'cache_control', $this->body()['system'][0] );
+		$this->assertSame( [ 'user' ], \array_column( $this->body()['messages'], 'role' ) );
+		$this->assertSame( $effort, $this->body()['output_config']['effort'] );
+		$this->assertGreaterThan( 1000, $this->body()['max_tokens'], 'room for the thinking a current model does by default' );
+	}
+
+	/**
+	 * The Messages cases send every prompt `Prompts::PROMPTS` names, each
+	 * building a real body, so a prompt the row does not budget fails there.
+	 */
+	public function test_the_messages_cases_cover_every_prompt(): void {
+		$sent = \array_column( self::messages_prompts(), 0 );
+		\sort( $sent );
+		$named = \array_keys( Prompts::PROMPTS );
+		\sort( $named );
+
+		$this->assertSame( $named, $sent );
+	}
+
+	/** A prompt the Messages row does not budget is refused by name, never sent without a max_tokens. */
+	public function test_a_prompt_the_messages_row_does_not_budget_is_refused(): void {
+		$facts = LLM_Call_Node::graph_facts( [ self::GROUP ], [ [ 'set_protocol', [ 'anthropic' ] ], [ 'set_api_url', [ self::API ] ], [ 'set_model', [ self::MODEL ] ] ] );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'the anthropic wire budgets no prompt: summarize' );
+		LLM_Call_Node::curl_request( $facts, 'summarize', self::item( 'feed:wharf-93' ), [], [] );
+	}
+
+	/** A deployment's version, effort and fallback switch replace the shipped defaults: no fallback beta, no fallbacks. */
+	public function test_a_deployment_names_the_version_the_effort_and_no_fallbacks(): void {
+		$node   = $this->claude();
+		$config = $node->interpreter();
+		\assert( null !== $config );
+		$config->dispatch( 'set_api_version', [ '2027-03-14' ] );
+		$config->dispatch( 'set_effort', [ 'high' ] );
+		$config->dispatch( 'set_fallbacks', [ 'none' ] );
+
+		$this->ask( $node, 'feed:wharf-85' );
+
+		$this->assertSame( [ 'effort' => 'high' ], $this->body()['output_config'] );
+		$this->assertArrayNotHasKey( 'fallbacks', $this->body() );
+		$this->assertSame( [ 'Content-Type: application/json', 'anthropic-version: 2027-03-14', 'x-api-key: ' . self::TOKEN ], $this->sent[0][ \CURLOPT_HTTPHEADER ] );
+		$this->assertStringContainsString( "command_node intel:llm-test:config set_api_version 2027-03-14\ncommand_node intel:llm-test:config set_effort high\ncommand_node intel:llm-test:config set_fallbacks none\n", $node->dump_config() );
+	}
+
+	/**
+	 * A Messages answer is read from its text blocks: thinking skipped and
+	 * text joined; a refusal or a max_tokens stop is an error naming it,
+	 * never an answer, as is a body holding no text.
+	 *
+	 * @return array<string,array{0:string,1:array<string,string>}>
+	 */
+	public static function messages_answers(): array {
+		$orgs     = '{"orgs":["Plover Wharf Trust"]}';
+		$thinking = [ 'type' => 'thinking', 'thinking' => '', 'signature' => 'sig-heron-1' ];
+		return [
+			'one text block'       => [ self::message( [ [ 'type' => 'text', 'text' => $orgs ] ] ), [ 'content' => $orgs ] ],
+			'thinking then text'   => [ self::message( [ $thinking, [ 'type' => 'text', 'text' => $orgs ] ] ), [ 'content' => $orgs ] ],
+			'two text blocks'      => [ self::message( [ [ 'type' => 'text', 'text' => '{"orgs":' ], [ 'type' => 'text', 'text' => '["Plover Wharf Trust"]}' ] ] ), [ 'content' => $orgs ] ],
+			'a refusal'            => [ self::message( [], 'refusal', [ 'stop_details' => [ 'type' => 'refusal', 'category' => 'cyber', 'explanation' => 'Declined.' ] ] ), [ 'error' => 'the answer stopped at refusal (cyber)' ] ],
+			'a refusal, no detail' => [ self::message( [], 'refusal' ), [ 'error' => 'the answer stopped at refusal' ] ],
+			'a max_tokens stop'    => [ self::message( [ $thinking, [ 'type' => 'text', 'text' => '{"orgs":["Plo' ] ], 'max_tokens' ), [ 'error' => 'the answer stopped at max_tokens' ] ],
+			'thinking alone'       => [ self::message( [ $thinking ] ), [ 'error' => 'the answer names no text content block' ] ],
+			'not JSON at all'      => [ '<html>busy</html>', [ 'error' => 'the answer names no text content block' ] ],
+		];
+	}
+
+	/** @param array<string,string> $outcome What the caller hears. */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'messages_answers' )]
+	public function test_a_messages_answer_reads_its_text_blocks( string $body, array $outcome ): void {
+		$node = $this->claude();
+		$this->ask( $node, 'feed:wharf-86' );
+
+		$this->complete_nth( 0, $body );
+
+		$this->assertSame( $outcome + [ 'item' => self::item( 'feed:wharf-86' ), 'inputs' => [ 'boilerplate' => [] ], 'carry' => [ 'item_key' => 'feed:wharf-86' ] ], $this->caller->captured[0][ Message::VALUE ] );
+	}
+
+	/**
+	 * Under `chat` decisions over the Messages API a decision is one
+	 * structured-output call to the decision model: its messages
+	 * `Prompts::decision_messages()` builds, the system text cached, and
+	 * the questions' schema as the output format beside the effort; the
+	 * JSON it answers is read to the decision a systemone body gives.
+	 */
+	public function test_a_chat_decision_over_messages_asks_one_schema_and_answers_the_decision(): void {
+		$node      = $this->claude();
+		$inputs    = [ 'publisher' => 'Kestrel Lantern Harbor', 'themes' => self::OFFERED, 'summary' => 'Mesa Courier wins a grant.' ];
+		$item      = self::item( 'feed:wharf-87' );
+		$messages  = Prompts::decision_messages( Prompts::EXTRACT_REVIEW, $item, $inputs, new Operator( '', '' ) );
+		$questions = Prompts::questions( $inputs );
+
+		$this->ask_decision( $node, 'feed:wharf-87', $inputs, $item );
+
+		$this->assertSame( [ self::MESSAGES ], $this->dispatched );
+		$this->assertSame(
+			[
+				'model'         => self::DECISION_MODEL,
+				'max_tokens'    => 4096,
+				'system'        => [ [ 'type' => 'text', 'text' => $messages[0]['content'], 'cache_control' => [ 'type' => 'ephemeral' ] ] ],
+				'messages'      => [ [ 'role' => 'user', 'content' => $messages[1]['content'] ] ],
+				'output_config' => [
+					'effort' => 'low',
+					'format' => [ 'type' => 'json_schema', 'schema' => Prompts::decision_schema( $questions ) ],
+				],
+				'fallbacks'     => 'default',
+			],
+			$this->body()
+		);
+
+		$this->complete_nth( 0, self::message( [ [ 'type' => 'thinking', 'thinking' => '', 'signature' => 'sig-heron-2' ], [ 'type' => 'text', 'text' => '{"answers":{"about_publisher":{"noul":0.31},"theme_choice":{"choice":"t2","confidence":0.88}}}' ] ] ) );
+
+		$this->assertSame( [ 'about_publisher' => 0.31, 'theme_choice' => [ 'choice' => 't2', 'confidence' => 0.88 ] ], $this->caller->captured[0][ Message::VALUE ]['decision'] );
+	}
+
+	/**
+	 * A chat decision whose text is not the JSON asked for, or that stops
+	 * early, answers the error a systemone body that will not read does.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public static function chat_decision_failures(): array {
+		return [
+			'malformed JSON'   => [ self::message( [ [ 'type' => 'text', 'text' => '{"answers":{"about_publisher":' ] ] ), 'the decision names no noul from 0 to 1 for about_publisher' ],
+			'a noul past one'  => [ self::message( [ [ 'type' => 'text', 'text' => '{"answers":{"about_publisher":{"noul":1.6}}}' ] ] ), 'the decision names no noul from 0 to 1 for about_publisher' ],
+			'a refusal'        => [ self::message( [], 'refusal' ), 'the answer stopped at refusal' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'chat_decision_failures' )]
+	public function test_a_chat_decision_that_will_not_read_answers_an_error( string $body, string $error ): void {
+		$node = $this->claude();
+		$this->ask_decision( $node, 'feed:wharf-88', [ 'publisher' => 'Kestrel Lantern Harbor' ], self::item( 'feed:wharf-88' ) );
+
+		$this->complete_nth( 0, $body );
+
+		$this->assertSame( $error, $this->caller->captured[0][ Message::VALUE ]['error'] );
+	}
+
+	/**
+	 * Plain `openai` is today's chat shape without the proxy's feature
+	 * header, which it neither sends nor needs; its `chat` decision is one
+	 * call carrying the questions' schema as its response format, read to
+	 * the same decision.
+	 */
+	public function test_plain_openai_sends_no_feature_and_asks_a_decision_as_a_response_format(): void {
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node   = new LLM_Call_Node();
+		$node->name( self::NAME );
+		$this->bound( static fn () => $node->arguments( [ self::GROUP ] ) );
+		$node->sink( Core::node( Node_Names::COMMAND_INTERPRETER ) );
+		$config = $node->interpreter();
+		\assert( null !== $config );
+		foreach ( [ 'set_protocol' => 'openai', 'set_decision_protocol' => 'chat', 'set_api_url' => self::API, 'set_model' => self::MODEL, 'set_decision_model' => self::DECISION_MODEL, 'set_concurrency' => '3' ] as $verb => $value ) {
+			$config->dispatch( $verb, [ $value ] );
+		}
+		$inputs = [ 'publisher' => 'Kestrel Lantern Harbor' ];
+		$item   = self::item( 'feed:wharf-89' );
+
+		$this->ask( $node, 'feed:wharf-90' );
+		$this->ask_decision( $node, 'feed:wharf-89', $inputs, $item );
+
+		$this->assertSame( [ self::COMPLETIONS, self::COMPLETIONS ], $this->dispatched );
+		$this->assertSame( [ 'model' => self::MODEL, 'messages' => Prompts::extract_entities( self::item( 'feed:wharf-90' ), [] ), 'max_tokens' => 333, 'temperature' => 0.4 ], $this->body( 0 ) );
+		$this->assertSame( [ 'Content-Type: application/json', 'Authorization: Bearer ' . self::TOKEN ], $this->sent[0][ \CURLOPT_HTTPHEADER ] );
+		$this->assertSame(
+			[
+				'model'           => self::DECISION_MODEL,
+				'messages'        => Prompts::decision_messages( Prompts::EXTRACT_REVIEW, $item, $inputs, new Operator( '', '' ) ),
+				'response_format' => [
+					'type'        => 'json_schema',
+					'json_schema' => [ 'name' => 'decision', 'strict' => true, 'schema' => Prompts::decision_schema( Prompts::questions( $inputs ) ) ],
+				],
+			],
+			$this->body( 1 )
+		);
+
+		$this->complete_nth( 1, self::completion( '{"answers":{"about_publisher":{"noul":0.64}}}' ) );
+
+		$this->assertSame( [ 'about_publisher' => 0.64 ], $this->caller->captured[0][ Message::VALUE ]['decision'] );
+	}
+
+	/**
+	 * Each call's kind lacks what its transport needs: a protocol and, for a
+	 * decision, where decisions go first, the feature header only on a
+	 * route that sends it, so the Messages API asks no feature while
+	 * systemone still does.
+	 *
+	 * @return array<string,array{0:array<string,string>,1:list<string>,2:list<string>}>
+	 */
+	public static function unset_transports(): array {
+		return [
+			'nothing set'                   => [ [], [ 'set_protocol', 'set_api_url', 'set_model' ], [ 'set_decision_protocol', 'set_protocol', 'set_api_url', 'set_decision_model' ] ],
+			'the proxy, no feature'         => [ [ 'set_protocol' => 'ai-proxy', 'set_decision_protocol' => 'systemone', 'set_api_url' => self::API, 'set_model' => self::MODEL, 'set_decision_model' => self::DECISION_MODEL ], [ 'set_feature' ], [ 'set_feature' ] ],
+			'messages, systemone decisions' => [ [ 'set_protocol' => 'anthropic', 'set_decision_protocol' => 'systemone', 'set_api_url' => self::API, 'set_model' => self::MODEL, 'set_decision_model' => self::DECISION_MODEL ], [], [ 'set_feature' ] ],
+			'systemone, no protocol'        => [ [ 'set_decision_protocol' => 'systemone', 'set_api_url' => self::API, 'set_decision_model' => self::DECISION_MODEL, 'set_feature' => self::FEATURE ], [ 'set_protocol', 'set_model' ], [] ],
+		];
+	}
+
+	/**
+	 * @param array<string,string> $set      The setters dispatched.
+	 * @param list<string>         $chat     What a chat call lacks.
+	 * @param list<string>         $decision What a decision lacks.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'unset_transports' )]
+	public function test_each_kind_names_the_setters_its_route_lacks( array $set, array $chat, array $decision ): void {
+		$facts = [];
+		foreach ( $set as $verb => $value ) {
+			$facts[] = [ $verb, [ $value ] ];
+		}
+		$wire = LLM_Call_Node::graph_facts( [ self::GROUP ], $facts );
+
+		$this->assertSame( [ $chat, $decision ], [ LLM_Call_Node::unset_of( $wire, Prompts::CHAT ), LLM_Call_Node::unset_of( $wire, Prompts::DECISION ) ] );
+	}
+
+	/** An answer landing after the protocol is cleared answers an error naming why, never thrown into the loop. */
+	public function test_an_answer_with_no_wire_left_to_read_it_answers_an_error(): void {
+		$node = $this->claude();
+		$this->ask( $node, 'feed:wharf-92' );
+		$node->set_protocol( '' );
+
+		$this->complete_nth( 0, self::message( [ [ 'type' => 'text', 'text' => '{"orgs":[]}' ] ] ) );
+
+		$this->assertSame( self::NAME . ": an answer could not be read: no protocol: ''", $this->caller->captured[0][ Message::VALUE ]['error'] );
+	}
+
+	/**
+	 * A protocol, a decision route, an effort, a fallback switch or a
+	 * version outside its set is refused naming the set, by the command and
+	 * by the topology row alike.
+	 *
+	 * @return array<string,array{0:string,1:string,2:string}>
+	 */
+	public static function refused_settings(): array {
+		return [
+			'a protocol'          => [ 'set_protocol', 'gull-wire', "protocol must be one of: ai-proxy, openai, anthropic, got 'gull-wire'" ],
+			'a decision protocol' => [ 'set_decision_protocol', 'oracle', "decision_protocol must be one of: systemone, chat, got 'oracle'" ],
+			'an effort'           => [ 'set_effort', 'turbo', "effort must be one of: low, medium, high, xhigh, max, got 'turbo'" ],
+			'a fallback switch'   => [ 'set_fallbacks', 'always', "fallbacks must be one of: default, none, got 'always'" ],
+			'a version'           => [ 'set_api_version', '21-10-2026', "api_version must be a Y-m-d date, got '21-10-2026'" ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'refused_settings' )]
+	public function test_a_setting_outside_its_set_is_refused( string $verb, string $value, string $error ): void {
+		$node = $this->llm();
+		try {
+			$node->interpreter()?->dispatch( $verb, [ $value ] );
+			$this->fail( 'the command refuses it' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( $error, $e->getMessage() );
+		}
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( $error );
+		LLM_Call_Node::graph_facts( [ self::GROUP ], [ [ $verb, [ $value ] ] ] );
 	}
 }

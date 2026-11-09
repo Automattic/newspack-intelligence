@@ -12,7 +12,6 @@ use Newspack_Intelligence\Extractor_Node;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intel_Tiers;
 use Newspack_Intelligence\LLM_Call_Node;
-use Newspack_Intelligence\Operator;
 use Newspack_Intelligence\Prompts;
 use Newspack_Intelligence\Worker_Route;
 use Newspack_Nodes\Bootstrap;
@@ -128,8 +127,9 @@ final class Eval_CLI_Command {
 
 	/**
 	 * Ask the decision model each label's questions, one call at a time,
-	 * through a Curl under the topology's LLM_Call vault group; each answer
-	 * read as the LLM_Call node reads one, by the label's place.
+	 * through a Curl under the topology's LLM_Call vault group, in the wire
+	 * its protocols name; each answer read as the LLM_Call node reads one,
+	 * by the label's place.
 	 *
 	 * @param list<array{0:Label,1:Asked}> $sent  The labels to ask, with their checks.
 	 * @param array<string,Item>           $items The items, by key.
@@ -138,7 +138,7 @@ final class Eval_CLI_Command {
 	 * @throws \RuntimeException As `Worker_Route::topology()`.
 	 */
 	private static function decide( array $sent, array $items ): array {
-		[ $group, $api_url, $model, $feature, $operator ] = self::llm();
+		[ $group, $facts ] = self::llm();
 		$inputs   = [];
 		$requests = [];
 		foreach ( $sent as [ $label, $asked ] ) {
@@ -148,10 +148,10 @@ final class Eval_CLI_Command {
 				+ ( \in_array( Prompts::FITS_KIND, $questions, true ) ? [ 'kind' => $label['kind'] ] : [] )
 				+ ( \in_array( Prompts::ABOUT_PUBLISHER, $questions, true ) ? [ 'publisher' => $label['publisher'] ?? '' ] : [] );
 			$inputs[]   = $input;
-			$requests[] = LLM_Call_Node::curl_request( $api_url, $model, $feature, $operator, Prompts::EXTRACT_REVIEW, $item, $input, [] );
+			$requests[] = LLM_Call_Node::curl_request( $facts, Prompts::EXTRACT_REVIEW, $item, $input, [] );
 		}
 		$answers = self::fetch( $group, $requests );
-		return \array_map( static fn ( int $at ): array => LLM_Call_Node::outcome( $answers[ $at ], Prompts::EXTRACT_REVIEW, $inputs[ $at ] ), \array_keys( $requests ) );
+		return \array_map( static fn ( int $at ): array => LLM_Call_Node::outcome( $answers[ $at ], $facts, Prompts::EXTRACT_REVIEW, $inputs[ $at ] ), \array_keys( $requests ) );
 	}
 
 	/**
@@ -203,28 +203,27 @@ final class Eval_CLI_Command {
 
 	/**
 	 * What Intelligence's topology's LLM_Call posts a decision with: its
-	 * vault group, api url, decision model and feature, and the operator its
-	 * prompts name.
+	 * vault group, and its row's facts, which name the wire, the decision
+	 * model and the operator its prompts name.
 	 *
-	 * @return array{0:string,1:string,2:string,3:string,4:Operator}
-	 * @throws \InvalidArgumentException When it declares none, one unset, or a group lending no credential on the api url.
+	 * @return array{0:string,1:array<string,mixed>}
+	 * @throws \InvalidArgumentException When it declares none, a setter a decision needs unset, or a group lending no credential on the api url.
 	 * @throws \RuntimeException As `Worker_Route::topology()`.
 	 */
 	private static function llm(): array {
 		$topology = Worker_Route::topology();
 		$node     = Topology_Analyzer::nodes_of_type( $topology, LLM_Call_Node::class )[0] ?? throw new \InvalidArgumentException( \esc_html( "{$topology} declares no LLM_Call node to ask the decision model through." ) );
-		$name     = Core::as_string( $node['name'] );
-		$api_url  = Core::as_string( $node['api_url'] );
-		$model    = Core::as_string( $node['decision_model'] );
-		$feature  = Core::as_string( $node['feature'] );
-		if ( '' === $api_url || '' === $model || '' === $feature ) {
-			throw new \InvalidArgumentException( \esc_html( "{$name}: set_api_url, set_decision_model and set_feature before a decision." ) );
+		$unset    = LLM_Call_Node::unset_of( $node, Prompts::DECISION );
+		if ( [] !== $unset ) {
+			$last = \array_pop( $unset );
+			throw new \InvalidArgumentException( \esc_html( Core::as_string( $node['name'] ) . ': ' . ( [] === $unset ? '' : \implode( ', ', $unset ) . ' and ' ) . "{$last} before a decision." ) );
 		}
-		$group = Core::as_string( Worker_Route::line( LLM_Call_Node::class, $node )['vault_group'] );
+		$api_url = Core::as_string( $node['api_url'] );
+		$group   = Core::as_string( Worker_Route::line( LLM_Call_Node::class, $node )['vault_group'] );
 		if ( ! Curl_Node::lends_credential( $group, $api_url ) ) {
 			throw new \InvalidArgumentException( \esc_html( "The {$group} Vault group lends no credential on {$api_url}: lend one before an eval." ) );
 		}
-		return [ $group, $api_url, $model, $feature, new Operator( Core::as_string( $node['operator'] ), Core::as_string( $node['tracks'] ) ) ];
+		return [ $group, $node ];
 	}
 
 	/**

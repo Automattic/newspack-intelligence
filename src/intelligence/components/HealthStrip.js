@@ -720,19 +720,19 @@ const STATES = {
 	},
 	extraction: {
 		call: {
-			word: __( 'AI proxy', 'newspack-intelligence' ),
+			word: __( 'model', 'newspack-intelligence' ),
 			tone: 'is-success',
 			text: ( { last_ok_at: lastOk } ) =>
 				lastOk
 					? sprintf(
 							/* translators: %s: a time in the reader's zone. */
 							__(
-								'By the AI proxy; last extraction %s.',
+								'By the model; last extraction %s.',
 								'newspack-intelligence'
 							),
 							formatLocalDateTime( lastOk )
 					  )
-					: __( 'By the AI proxy.', 'newspack-intelligence' ),
+					: __( 'By the model.', 'newspack-intelligence' ),
 		},
 		failing: {
 			word: __( 'failing', 'newspack-intelligence' ),
@@ -758,7 +758,7 @@ const STATES = {
 					return sprintf(
 						/* translators: %s: the model-call node's setters left unset, comma-separated. */
 						__(
-							'Extracting with the heuristic only: the AI proxy is not configured; the lists file sets no %s.',
+							'Extracting with the heuristic only: the model call is not configured; the lists file sets no %s.',
 							'newspack-intelligence'
 						),
 						unset.join( ', ' )
@@ -768,13 +768,13 @@ const STATES = {
 					? sprintf(
 							/* translators: %s: the Vault group the model calls take their credential from. */
 							__(
-								'Extracting with the heuristic only: Vault group %s holds no entry for the AI proxy.',
+								'Extracting with the heuristic only: Vault group %s holds no entry for the model call.',
 								'newspack-intelligence'
 							),
 							vaultGroup
 					  )
 					: __(
-							'Extracting with the heuristic only: the AI proxy has no Vault entry.',
+							'Extracting with the heuristic only: the model call has no Vault entry.',
 							'newspack-intelligence'
 					  );
 			},
@@ -807,7 +807,7 @@ const STATES = {
 				}
 				if ( 'call' === lastMode ) {
 					return __(
-						'No extraction has reported since the cache was cleared; the newest used the AI proxy.',
+						'No extraction has reported since the cache was cleared; the newest used the model.',
 						'newspack-intelligence'
 					);
 				}

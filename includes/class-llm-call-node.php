@@ -31,12 +31,12 @@ use Newspack_Nodes\Worker_Should_Stop;
  * it cannot read is refused TO its FROM. It waits in the `{name}:frontier`
  * Table it owns, a backlog request behind every other and each in the
  * order it arrived, holding its item once, until its `{name}:curl` sibling
- * POSTs it under the vault group, at most `set_concurrency` at once: a chat
- * prompt as `{ model, messages, ...options }` to
- * `<api_url>/chat/completions`, the messages `Prompts::messages()` builds
- * as it is sent, and a decision prompt as `{ model, state, questions }` to
- * `<api_url>/systemone`, the decision model's, as `Prompts::decision()`
- * builds it. The answer goes TO the request's FROM, keyed as asked, a
+ * POSTs it under the vault group, at most `set_concurrency` at once, in
+ * the wire `wires()` names for its route, built as it is sent: a chat prompt's
+ * route is `set_protocol`'s, and a decision's is `systemone` under
+ * `set_decision_protocol systemone`, else the chat protocol's, asked as
+ * one structured-output call whose schema `Prompts::decision_schema()`
+ * builds. The answer goes TO the request's FROM, keyed as asked, a
  * TM_STRUCT|TM_RESPONSE whose VALUE is `{ content, item, inputs, carry }`
  * for a chat prompt, `{ decision: { <question>: <noul> | { choice,
  * confidence } }, … }` for a decision, `{ error, … }`, or, when the group
@@ -46,6 +46,8 @@ use Newspack_Nodes\Worker_Should_Stop;
  * caller retries a call that cannot be made. A stored request that will not send is settled and answered as an error. A
  * request in flight when the worker stops is sent again by the next one; a
  * clean stop sends none it answered again.
+ *
+ * @phpstan-type Wire array{path:string,needs:array<string,string>,headers:\Closure(array<array-key,mixed>):list<string>,body:\Closure(array<array-key,mixed>,string,string,Operator,array<array-key,mixed>,array<array-key,mixed>,array<array-key,mixed>):array<array-key,mixed>,read:\Closure(string):(array{content:string}|array{error:string}),prompts:array<string,array{max_tokens:int,effort:string}>}
  */
 final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	use Schema_Reflection;
@@ -80,8 +82,14 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	 */
 	private const QUEUE_PUBLISH_S = 5;
 
-	/** The error a body naming no assistant content answers. */
-	private const NO_CONTENT = 'AI proxy answer names no choices[0].message.content';
+	/** The error a chat-completions body naming no assistant content answers. */
+	private const NO_CONTENT = 'the answer names no choices[0].message.content';
+
+	/** The error a Messages body holding no text block answers. */
+	private const NO_TEXT = 'the answer names no text content block';
+
+	/** The Messages stops whose text is not an answer. */
+	private const UNANSWERED_STOPS = [ 'refusal', 'max_tokens' ];
 
 	/** What a decision answer that does not read names no more of, by its question's type. */
 	private const UNREAD = [
@@ -89,36 +97,46 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 		'choice' => 'no offered choice with a confidence from 0 to 1',
 	];
 
-	/** Each kind of call: the path it posts to under the api url, and the setters it needs, each => the property it sets. */
-	private const CALLS = [
-		Prompts::CHAT     => [
-			'chat/completions',
-			[
-				'set_api_url' => 'api_url',
-				'set_model'   => 'model',
-				'set_feature' => 'feature',
-			],
-		],
-		Prompts::DECISION => [
-			'systemone',
-			[
-				'set_api_url'        => 'api_url',
-				'set_decision_model' => 'decision_model',
-				'set_feature'        => 'feature',
-			],
-		],
-	];
+	/** The route a decision takes under `set_decision_protocol systemone`: the proxy's decision endpoint. */
+	private const SYSTEMONE = 'systemone';
 
-	/** The commands whose values its topology row names, each => the fact naming it. */
+	/** Where `set_decision_protocol` sends decisions: systemone, or the chat protocol. */
+	private const DECISION_PROTOCOLS = [ self::SYSTEMONE, 'chat' ];
+
+	/** The Messages API efforts `set_effort` may name. */
+	private const EFFORTS = [ 'low', 'medium', 'high', 'xhigh', 'max' ];
+
+	/** `set_fallbacks`: Anthropic's refusal fallbacks, or none. */
+	private const FALLBACKS = [ 'default', 'none' ];
+
+	/** The current stable `anthropic-version`, sent while `set_api_version` names none. */
+	public const ANTHROPIC_VERSION = '2026-10-21';
+
+	/** The beta header `fallbacks: "default"` rides with. */
+	private const FALLBACK_BETA = 'anthropic-beta: server-side-fallback-2026-07-01';
+
+	/** The commands whose values its topology row names, each => the fact, and the property, it sets. */
 	private const FACTS = [
-		'set_api_url'        => 'api_url',
-		'set_decision_model' => 'decision_model',
-		'set_feature'        => 'feature',
-		'set_operator'       => 'operator',
-		'set_tracks'         => 'tracks',
+		'set_protocol'          => 'protocol',
+		'set_decision_protocol' => 'decision_protocol',
+		'set_api_url'           => 'api_url',
+		'set_model'             => 'model',
+		'set_decision_model'    => 'decision_model',
+		'set_feature'           => 'feature',
+		'set_api_version'       => 'api_version',
+		'set_effort'            => 'effort',
+		'set_fallbacks'         => 'fallbacks',
+		'set_operator'          => 'operator',
+		'set_tracks'            => 'tracks',
 	];
 
-	/** The AI API Proxy base url, set via set_api_url; '' until set. */
+	/** The wire chat calls speak, a `wires()` route but systemone, set via set_protocol; '' until set. */
+	protected string $protocol = '';
+
+	/** Where decisions go, systemone or chat, set via set_decision_protocol; '' until set. */
+	protected string $decision_protocol = '';
+
+	/** The base url the calls post under, set via set_api_url; '' until set. */
 	protected string $api_url = '';
 
 	/** The model id, set via set_model; '' until set. */
@@ -129,6 +147,22 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/** The X-WPCOM-AI-Feature value, set via set_feature; '' until set. */
 	protected string $feature = '';
+
+	/** The `anthropic-version` sent, set via set_api_version; '' sends ANTHROPIC_VERSION. */
+	protected string $api_version = '';
+
+	/** The Messages effort every prompt asks, set via set_effort; '' asks each prompt's own. */
+	protected string $effort = '';
+
+	/** Whether Messages calls ask refusal fallbacks, set via set_fallbacks; '' asks them. */
+	protected string $fallbacks = '';
+
+	/**
+	 * The wire table `wires()` builds once a process.
+	 *
+	 * @var array<string,Wire>|null
+	 */
+	private static ?array $wires = null;
 
 	/** Who runs the deployment, set via set_operator; '' names generic wording. */
 	protected string $operator = '';
@@ -282,8 +316,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 			return;
 		}
 		$value = [ $from, $key, $request['prompt'], $request['item'], $request['inputs'], $request['options'], $request['carry'] ];
-		$kind  = Prompts::PROMPTS[ Core::as_string( $request['prompt'] ) ];
-		$unset = \array_keys( \array_filter( self::CALLS[ $kind ][1], fn ( string $property ): bool => '' === $this->{$property} ) );
+		$unset = self::unset_of( $this->facts(), Prompts::PROMPTS[ Core::as_string( $request['prompt'] ) ] );
 		if ( [] !== $unset ) {
 			$this->reply(
 				$value,
@@ -363,7 +396,8 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * Settle Curl's answer and send its outcome to the request's caller; a
+	 * Settle Curl's answer and send its outcome to the request's caller, an
+	 * error when the transport no longer names a wire to read it by; a
 	 * caller that throws on it is logged, never thrown into the event loop,
 	 * and the window refills, but a cooperative stop propagates (ADR-14) and
 	 * sends nothing more.
@@ -377,7 +411,12 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 			return;
 		}
 		$this->queue_moved = true;
-		$this->deliver( $value, self::outcome( $message, Core::as_string( $value[2] ?? null ), Core::arr( $value[4] ?? null ) ) );
+		try {
+			$outcome = self::outcome( $message, $this->facts(), Core::as_string( $value[2] ?? null ), Core::arr( $value[4] ?? null ) );
+		} catch ( \InvalidArgumentException $e ) {
+			$outcome = [ 'error' => "{$this->name}: an answer could not be read: " . $e->getMessage() ];
+		}
+		$this->deliver( $value, $outcome );
 		$this->pump();
 	}
 
@@ -447,56 +486,77 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * @throws Worker_Should_Stop When Curl's refusal, answered at once, meets a stop.
 	 */
 	private function post( string $member, array $value ): void {
-		$prompt = Core::as_string( $value[2] ?? null );
-		$kind   = Prompts::PROMPTS[ $prompt ] ?? Prompts::CHAT;
-		$this->send_curl( $member, self::curl_request( $this->api_url, $this->model_for( $kind ), $this->feature, new Operator( $this->operator, $this->tracks ), $prompt, Core::arr( $value[3] ?? null ), Core::arr( $value[4] ?? null ), Core::arr( $value[5] ?? null ) ), $value );
+		$this->send_curl( $member, self::curl_request( $this->facts(), Core::as_string( $value[2] ?? null ), Core::arr( $value[3] ?? null ), Core::arr( $value[4] ?? null ), Core::arr( $value[5] ?? null ) ), $value );
 	}
 
 	/**
-	 * The POST Curl runs for one call, its body as the kind of its prompt
-	 * says: a chat prompt's messages and options to `chat/completions`, or a
-	 * decision's state and questions to `systemone`, each naming `$model`
-	 * and the prompt naming `$operator`; a prompt `Prompts::PROMPTS` does
-	 * not list is refused as a chat prompt is.
+	 * What the node posts with, as its topology row names it.
+	 *
+	 * @return array<string,string>
+	 */
+	private function facts(): array {
+		$facts = [];
+		foreach ( self::FACTS as $fact ) {
+			$facts[ $fact ] = Core::as_string( $this->{$fact} );
+		}
+		return $facts;
+	}
+
+	/**
+	 * The POST Curl runs for one call, in the wire its route names: the url
+	 * its path under the api url, the headers and the body its methods
+	 * build, the body naming the call's model, the decision model for a
+	 * decision, and its prompt the operator `$facts` names; a prompt
+	 * `Prompts::PROMPTS` does not list is refused as a chat prompt is.
 	 *
 	 * @api Read by Eval_CLI_Command, which asks the decision model as this node does.
-	 * @param string                 $api_url  The AI API Proxy base url.
-	 * @param string                 $model    The model the call names.
-	 * @param string                 $feature  The X-WPCOM-AI-Feature value.
-	 * @param Operator               $operator The deployment's operator.
-	 * @param string                 $prompt   The prompt.
-	 * @param array<array-key,mixed> $item     The item.
-	 * @param array<array-key,mixed> $inputs   The prompt's other inputs.
-	 * @param array<array-key,mixed> $options  A chat prompt's options.
+	 * @param array<array-key,mixed> $facts   What the call posts with, as `graph_facts()` names it.
+	 * @param string                 $prompt  The prompt.
+	 * @param array<array-key,mixed> $item    The item.
+	 * @param array<array-key,mixed> $inputs  The prompt's other inputs.
+	 * @param array<array-key,mixed> $options A chat prompt's options, which only a chat-completions wire sends.
 	 * @return array{url:string,method:string,body:string,headers:list<string>,timeout:int}
-	 * @throws \InvalidArgumentException When the prompt is unknown.
+	 * @throws \InvalidArgumentException When the prompt is unknown, or the route names no wire.
 	 * @throws \UnexpectedValueException When the body will not encode.
 	 */
-	public static function curl_request( string $api_url, string $model, string $feature, Operator $operator, string $prompt, array $item, array $inputs, array $options ): array {
-		$kind   = Prompts::PROMPTS[ $prompt ] ?? Prompts::CHAT;
-		$fields = Prompts::DECISION === $kind ? Prompts::decision( $prompt, $item, $inputs, $operator ) : [ 'messages' => Prompts::messages( $prompt, $item, $inputs, $operator ) ] + $options;
-		$body   = \wp_json_encode( [ 'model' => $model ] + $fields );
+	public static function curl_request( array $facts, string $prompt, array $item, array $inputs, array $options ): array {
+		$kind     = Prompts::PROMPTS[ $prompt ] ?? Prompts::CHAT;
+		$wire     = self::wire( $facts, $kind );
+		$operator = new Operator( Core::as_string( $facts['operator'] ), Core::as_string( $facts['tracks'] ) );
+		$model    = Core::as_string( $facts[ Prompts::DECISION === $kind ? 'decision_model' : 'model' ] );
+		$body     = \wp_json_encode( [ 'model' => $model ] + $wire['body']( $facts, $prompt, $kind, $operator, $item, $inputs, $options ) );
 		if ( false === $body ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
 			throw new \UnexpectedValueException( 'the request body could not be encoded: ' . \json_last_error_msg() );
 		}
 		return [
-			'url'     => "{$api_url}/" . self::CALLS[ $kind ][0],
+			'url'     => Core::as_string( $facts['api_url'] ) . "/{$wire['path']}",
 			'method'  => 'POST',
 			'body'    => $body,
-			'headers' => [ "X-WPCOM-AI-Feature: {$feature}" ],
+			'headers' => $wire['headers']( $facts ),
 			'timeout' => Curl_Node::MAX_REQUEST_TIMEOUT,
 		];
 	}
 
 	/**
-	 * The model a kind of call names: the decision model for a decision,
-	 * else the chat model.
+	 * The setters a call of `$kind` lacks under `$facts`, in this order:
+	 * where a decision goes, the chat protocol unless it goes to systemone,
+	 * the api url, the call's model, then what its wire needs.
 	 *
-	 * @param string $kind A kind of call, as `Prompts::PROMPTS` names one.
+	 * @api Read by Eval_CLI_Command, which refuses a decision its LLM_Call cannot make.
+	 * @param array<array-key,mixed> $facts What the call posts with, as `graph_facts()` names it.
+	 * @param string                 $kind  A kind of call, as `Prompts::PROMPTS` names one.
+	 * @return list<string>
 	 */
-	private function model_for( string $kind ): string {
-		return Prompts::DECISION === $kind ? $this->decision_model : $this->model;
+	public static function unset_of( array $facts, string $kind ): array {
+		$decision = Prompts::DECISION === $kind;
+		$route    = self::route( $facts, $kind );
+		$needs    = ( $decision ? [ 'set_decision_protocol' => 'decision_protocol' ] : [] )
+			+ ( self::SYSTEMONE === $route ? [] : [ 'set_protocol' => 'protocol' ] )
+			+ [ 'set_api_url' => 'api_url' ]
+			+ ( $decision ? [ 'set_decision_model' => 'decision_model' ] : [ 'set_model' => 'model' ] )
+			+ ( self::wires()[ $route ]['needs'] ?? [] );
+		return \array_keys( \array_filter( $needs, static fn ( string $fact ): bool => '' === $facts[ $fact ] ) );
 	}
 
 	/**
@@ -519,30 +579,54 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * What Curl's answer says: its TM_ERROR text, else, for a decision, the
-	 * answer to each question its inputs asked, else the content of the
-	 * body's first choice, else that it names none.
+	 * What Curl's answer says: its TM_ERROR text, else the text its wire
+	 * reads or the error it names, and for a decision the answer to each
+	 * question its inputs asked, read from that text as JSON.
 	 *
 	 * @api Read by Eval_CLI_Command, which asks the decision model as this node does.
 	 * @param array<int,mixed>       $message Curl's answer.
+	 * @param array<array-key,mixed> $facts   What the call posted with, as `graph_facts()` names it.
 	 * @param string                 $prompt  The prompt the request named.
 	 * @param array<array-key,mixed> $inputs  The request's inputs.
 	 * @return array{error:string}|array{content:string}|array{decision:array<string,float|array{choice:string,confidence:float}>}
+	 * @throws \InvalidArgumentException When the route names no wire.
 	 */
-	public static function outcome( array $message, string $prompt, array $inputs ): array {
+	public static function outcome( array $message, array $facts, string $prompt, array $inputs ): array {
 		$value = Core::as_string( $message[ Message::VALUE ] );
 		if ( 0 !== ( Core::int( $message[ Message::TYPE ] ) & Message::TM_ERROR ) ) {
 			return [ 'error' => $value ];
 		}
-		$decoded = \json_decode( $value, true );
-		if ( Prompts::DECISION === ( Prompts::PROMPTS[ $prompt ] ?? null ) ) {
-			return self::decision_of( $decoded, Prompts::questions( $inputs ) );
+		$kind = Prompts::PROMPTS[ $prompt ] ?? Prompts::CHAT;
+		$read = self::wire( $facts, $kind )['read']( $value );
+		if ( Prompts::DECISION !== $kind || ! isset( $read['content'] ) ) {
+			return $read;
 		}
-		$choices = \is_array( $decoded ) ? ( $decoded['choices'] ?? null ) : null;
-		$choice  = \is_array( $choices ) ? ( $choices[0] ?? null ) : null;
-		$said    = \is_array( $choice ) ? ( $choice['message'] ?? null ) : null;
-		$content = \is_array( $said ) ? ( $said['content'] ?? null ) : null;
-		return \is_string( $content ) ? [ 'content' => $content ] : [ 'error' => self::NO_CONTENT ];
+		return self::decision_of( Prompts::json_object( $read['content'] ), Prompts::questions( $inputs ) );
+	}
+
+	/**
+	 * The `wires()` row a call of `$kind` posts in under `$facts`.
+	 *
+	 * @param array<array-key,mixed> $facts What the call posts with.
+	 * @param string                 $kind  A kind of call, as `Prompts::PROMPTS` names one.
+	 * @return Wire
+	 * @throws \InvalidArgumentException When the route names no wire.
+	 */
+	private static function wire( array $facts, string $kind ): array {
+		$route = self::route( $facts, $kind );
+		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+		return self::wires()[ $route ] ?? throw new \InvalidArgumentException( "no protocol: '{$route}'" );
+	}
+
+	/**
+	 * The route a call of `$kind` takes: systemone for a decision under
+	 * `set_decision_protocol systemone`, else the chat protocol.
+	 *
+	 * @param array<array-key,mixed> $facts What the call posts with.
+	 * @param string                 $kind  A kind of call.
+	 */
+	private static function route( array $facts, string $kind ): string {
+		return Prompts::DECISION === $kind && self::SYSTEMONE === $facts['decision_protocol'] ? self::SYSTEMONE : Core::as_string( $facts['protocol'] );
 	}
 
 	/**
@@ -566,7 +650,7 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 				? ( \is_string( $choice ) && isset( $question['criteria'][ $choice ] ) && null !== $confidence ? [ 'choice' => $choice, 'confidence' => $confidence ] : null )
 				: self::unit( $answer['noul'] ?? null );
 			if ( null === $read ) {
-				return [ 'error' => 'AI proxy decision names ' . self::UNREAD[ $question['type'] ] . " for {$name}" ];
+				return [ 'error' => 'the decision names ' . self::UNREAD[ $question['type'] ] . " for {$name}" ];
 			}
 			$decision[ $name ] = $read;
 		}
@@ -617,6 +701,28 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
+	 * The `set_protocol` command's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param string $protocol The wire chat calls speak: ai-proxy, openai or anthropic.
+	 * @throws \InvalidArgumentException When it names no other.
+	 */
+	public function set_protocol( string $protocol ): void {
+		$this->protocol = self::setting( 'protocol', $protocol );
+	}
+
+	/**
+	 * The `set_decision_protocol` command's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param string $protocol Where decisions go: systemone, or chat through the protocol.
+	 * @throws \InvalidArgumentException When it names neither.
+	 */
+	public function set_decision_protocol( string $protocol ): void {
+		$this->decision_protocol = self::setting( 'decision_protocol', $protocol );
+	}
+
+	/**
 	 * The `set_api_url` command's entry point.
 	 *
 	 * @api Used by substrate.
@@ -624,54 +730,412 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * @throws \UnexpectedValueException When it is not one.
 	 */
 	public function set_api_url( string $url ): void {
-		$this->api_url = self::api_url_of( $url );
+		$this->api_url = self::setting( 'api_url', $url );
 	}
 
 	/**
-	 * The node's topology row names what its calls post with: the
-	 * `api_url`, `decision_model`, `feature`, `operator` and `tracks` its
-	 * last `set_api_url`, `set_decision_model`, `set_feature`,
-	 * `set_operator` and `set_tracks` lines leave, each bound by its command's
-	 * own args and kept as the setter keeps it, '' while unset.
+	 * The `set_model` command's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param string $model The model id.
+	 */
+	public function set_model( string $model ): void {
+		$this->model = self::setting( 'model', $model );
+	}
+
+	/**
+	 * The `set_decision_model` command's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param string $model The decision model id.
+	 */
+	public function set_decision_model( string $model ): void {
+		$this->decision_model = self::setting( 'decision_model', $model );
+	}
+
+	/**
+	 * The `set_feature` command's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param string $feature The X-WPCOM-AI-Feature value.
+	 */
+	public function set_feature( string $feature ): void {
+		$this->feature = self::setting( 'feature', $feature );
+	}
+
+	/**
+	 * The `set_api_version` command's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param string $version The `anthropic-version`, a Y-m-d date.
+	 * @throws \InvalidArgumentException When it is not one.
+	 */
+	public function set_api_version( string $version ): void {
+		$this->api_version = self::setting( 'api_version', $version );
+	}
+
+	/**
+	 * The `set_effort` command's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param string $effort The Messages effort every prompt asks, one of EFFORTS.
+	 * @throws \InvalidArgumentException When it names none of them.
+	 */
+	public function set_effort( string $effort ): void {
+		$this->effort = self::setting( 'effort', $effort );
+	}
+
+	/**
+	 * The `set_fallbacks` command's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param string $fallbacks default to ask refusal fallbacks, none to ask none.
+	 * @throws \InvalidArgumentException When it names neither.
+	 */
+	public function set_fallbacks( string $fallbacks ): void {
+		$this->fallbacks = self::setting( 'fallbacks', $fallbacks );
+	}
+
+	/**
+	 * The `set_operator` command's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param string $name Who runs the deployment.
+	 */
+	public function set_operator( string $name ): void {
+		$this->operator = self::setting( 'operator', $name );
+	}
+
+	/**
+	 * The `set_tracks` command's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param string $tracks What the deployment's graph tracks, as one phrase.
+	 */
+	public function set_tracks( string $tracks ): void {
+		$this->tracks = self::setting( 'tracks', $tracks );
+	}
+
+	/**
+	 * The node's topology row names what its calls post with: each fact
+	 * FACTS names, as its command's last line leaves it, bound by that
+	 * command's own args and kept as its setter keeps it, '' while unset.
 	 *
 	 * @api Read by the substrate's Topology_Analyzer::graph_for(), for Eval_CLI_Command and Operator::configured().
 	 * @param list<string>                         $args     The `make_node` arguments, quotes stripped.
 	 * @param list<array{0:string,1:list<string>}> $commands Each verb and its argument tokens, in the order sent.
-	 * @return array{api_url:string,decision_model:string,feature:string,operator:string,tracks:string}
-	 * @throws \InvalidArgumentException When one of those lines does not bind.
+	 * @return array<string,string>
+	 * @throws \InvalidArgumentException When one of those lines does not bind, or names a value outside its set.
 	 * @throws \UnexpectedValueException When the api url is not an absolute http(s) url.
 	 */
 	public static function graph_facts( array $args, array $commands ): array {
-		$facts = [
-			'api_url'        => '',
-			'decision_model' => '',
-			'feature'        => '',
-			'operator'       => '',
-			'tracks'         => '',
-		];
+		$facts    = \array_fill_keys( self::FACTS, '' );
 		$declared = Command_Interpreter_Node::declared_commands( self::class );
 		foreach ( $commands as [ $verb, $tokens ] ) {
 			$fact = self::FACTS[ $verb ] ?? null;
-			if ( null === $fact ) {
-				continue;
+			if ( null !== $fact ) {
+				$facts[ $fact ] = self::setting( $fact, Core::as_string( \current( Command_Args::bind( Core::arr( $declared[ $verb ]['args'] ), $tokens ) ) ) );
 			}
-			$value          = Core::as_string( \current( Command_Args::bind( Core::arr( $declared[ $verb ]['args'] ), $tokens ) ) );
-			$facts[ $fact ] = 'api_url' === $fact ? self::api_url_of( $value ) : \trim( $value );
 		}
 		return $facts;
 	}
 
 	/**
-	 * An api url as `set_api_url` keeps it: trimmed, checked as an absolute
-	 * http(s) url, its trailing slash dropped.
+	 * A fact as its setter keeps it, trimmed: an api url checked, and a
+	 * protocol, a decision route, an effort, a fallback switch or a version
+	 * held to its set, '' for unset.
 	 *
-	 * @param string $url The url given.
+	 * @param string $fact  One of FACTS.
+	 * @param string $value The value given.
+	 * @throws \InvalidArgumentException When it names a value outside its set.
+	 * @throws \UnexpectedValueException When an api url is not an absolute http(s) url.
+	 */
+	private static function setting( string $fact, string $value ): string {
+		$value = \trim( $value );
+		return match ( $fact ) {
+			'api_url'           => self::api_url_of( $value ),
+			'protocol'          => self::one_of( $fact, $value, \array_values( \array_diff( \array_keys( self::wires() ), [ self::SYSTEMONE ] ) ) ),
+			'decision_protocol' => self::one_of( $fact, $value, self::DECISION_PROTOCOLS ),
+			'effort'            => self::one_of( $fact, $value, self::EFFORTS ),
+			'fallbacks'         => self::one_of( $fact, $value, self::FALLBACKS ),
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+			'api_version'       => '' === $value || 1 === \preg_match( '/^\d{4}-\d{2}-\d{2}$/D', $value ) ? $value : throw new \InvalidArgumentException( "api_version must be a Y-m-d date, got '{$value}'" ),
+			default             => $value,
+		};
+	}
+
+	/**
+	 * A value held to its set: '' or one of `$set`.
+	 *
+	 * @param string       $fact  The fact, as the refusal names it.
+	 * @param string       $value The trimmed value.
+	 * @param list<string> $set   What it may name.
+	 * @throws \InvalidArgumentException When it names none of them.
+	 */
+	private static function one_of( string $fact, string $value, array $set ): string {
+		if ( '' !== $value && ! \in_array( $value, $set, true ) ) {
+			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+			throw new \InvalidArgumentException( "{$fact} must be one of: " . \implode( ', ', $set ) . ", got '{$value}'" );
+		}
+		return $value;
+	}
+
+	/**
+	 * An api url as `set_api_url` keeps it: checked as an absolute http(s)
+	 * url, its trailing slash dropped.
+	 *
+	 * @param string $url The trimmed url.
 	 * @throws \UnexpectedValueException When it is not one.
 	 */
 	private static function api_url_of( string $url ): string {
-		$url = \trim( $url );
 		Curl_Node::origin_of( $url );
 		return \rtrim( $url, '/' );
+	}
+
+	/**
+	 * Each wire a call is posted in, by route, built once a process: the
+	 * path under the api url, the setters it needs beside the url and the
+	 * model, each => its fact, what builds its headers beside the
+	 * credential and its body beside the model, what reads its answer's
+	 * text, and each prompt's max_tokens and effort where the wire sends
+	 * them: the Messages API's are roomy, because a current model thinks by
+	 * default and its thinking counts against max_tokens, and low but for
+	 * the Ask's answer, which writes for a reader.
+	 *
+	 * @return array<string,Wire>
+	 */
+	private static function wires(): array {
+		$proxy = [ 'set_feature' => 'feature' ];
+		return self::$wires ??= [
+			'ai-proxy'      => [
+				'path'    => 'chat/completions',
+				'needs'   => $proxy,
+				'headers' => self::feature_headers( ... ),
+				'body'    => self::openai_body( ... ),
+				'read'    => self::openai_text( ... ),
+				'prompts' => [],
+			],
+			'openai'        => [
+				'path'    => 'chat/completions',
+				'needs'   => [],
+				'headers' => self::no_headers( ... ),
+				'body'    => self::openai_body( ... ),
+				'read'    => self::openai_text( ... ),
+				'prompts' => [],
+			],
+			'anthropic'     => [
+				'path'    => 'v1/messages',
+				'needs'   => [],
+				'headers' => self::messages_headers( ... ),
+				'body'    => self::messages_body( ... ),
+				'read'    => self::messages_text( ... ),
+				'prompts' => [
+					'extract'               => [ 'max_tokens' => 8192, 'effort' => 'low' ],
+					'extract_entities'      => [ 'max_tokens' => 4096, 'effort' => 'low' ],
+					Prompts::EXTRACT_REVIEW => [ 'max_tokens' => 4096, 'effort' => 'low' ],
+					Prompts::EXTRACT_GATE   => [ 'max_tokens' => 4096, 'effort' => 'low' ],
+					Ask_Prompts::PLAN       => [ 'max_tokens' => 4096, 'effort' => 'low' ],
+					Ask_Prompts::ANSWER     => [ 'max_tokens' => 8192, 'effort' => 'medium' ],
+				],
+			],
+			self::SYSTEMONE => [
+				'path'    => 'systemone',
+				'needs'   => $proxy,
+				'headers' => self::feature_headers( ... ),
+				'body'    => self::systemone_body( ... ),
+				'read'    => self::systemone_text( ... ),
+				'prompts' => [],
+			],
+		];
+	}
+
+	/**
+	 * A Messages body less its model: the prompt's system text as the one
+	 * cached block, its user message as the one turn, its max_tokens and
+	 * effort, the deployment's effort in place of the prompt's when it names
+	 * one, and for a decision its questions' schema as the output format;
+	 * refusal fallbacks unless the deployment turns them off. The caller's
+	 * options are not sent: the API refuses temperature.
+	 *
+	 * @param array<array-key,mixed> $facts    What the call posts with.
+	 * @param string                 $prompt   The prompt.
+	 * @param string                 $kind     Its kind.
+	 * @param Operator               $operator The deployment's operator.
+	 * @param array<array-key,mixed> $item     The item.
+	 * @param array<array-key,mixed> $inputs   The prompt's other inputs.
+	 * @param array<array-key,mixed> $options  A chat prompt's options, unsent.
+	 * @return array<array-key,mixed>
+	 * @throws \InvalidArgumentException When the row budgets no such prompt.
+	 */
+	private static function messages_body( array $facts, string $prompt, string $kind, Operator $operator, array $item, array $inputs, array $options ): array {
+		unset( $options );
+		// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
+		$asks              = self::wires()['anthropic']['prompts'][ $prompt ] ?? throw new \InvalidArgumentException( 'the anthropic wire budgets no prompt: ' . \mb_strcut( $prompt, 0, Prompts::PROMPT_NAME_BYTES ) );
+		$decision          = Prompts::DECISION === $kind;
+		[ $system, $user ] = $decision ? Prompts::decision_messages( $prompt, $item, $inputs, $operator ) : Prompts::messages( $prompt, $item, $inputs, $operator );
+		$effort            = Core::as_string( $facts['effort'] );
+		$output            = [ 'effort' => '' === $effort ? $asks['effort'] : $effort ]
+			+ ( $decision ? [ 'format' => [ 'type' => 'json_schema', 'schema' => Prompts::decision_schema( Prompts::questions( $inputs ) ) ] ] : [] );
+		return [
+			'max_tokens'    => $asks['max_tokens'],
+			'system'        => [
+				[
+					'type'          => 'text',
+					'text'          => $system['content'],
+					'cache_control' => [ 'type' => 'ephemeral' ],
+				],
+			],
+			'messages'      => [
+				[
+					'role'    => 'user',
+					'content' => $user['content'],
+				],
+			],
+			'output_config' => $output,
+		] + ( self::fallbacks_asked( $facts ) ? [ 'fallbacks' => 'default' ] : [] );
+	}
+
+	/**
+	 * The Messages API's headers beside the credential: the version the
+	 * deployment names, else ANTHROPIC_VERSION, and the fallback beta
+	 * while fallbacks are asked.
+	 *
+	 * @param array<array-key,mixed> $facts What the call posts with.
+	 * @return list<string>
+	 */
+	private static function messages_headers( array $facts ): array {
+		$version = Core::as_string( $facts['api_version'] );
+		return [ 'anthropic-version: ' . ( '' === $version ? self::ANTHROPIC_VERSION : $version ), ...( self::fallbacks_asked( $facts ) ? [ self::FALLBACK_BETA ] : [] ) ];
+	}
+
+	/**
+	 * Whether a Messages call asks refusal fallbacks: unless `set_fallbacks`
+	 * names none.
+	 *
+	 * @param array<array-key,mixed> $facts What the call posts with.
+	 */
+	private static function fallbacks_asked( array $facts ): bool {
+		return 'none' !== $facts['fallbacks'];
+	}
+
+	/**
+	 * A chat-completions body less its model: a chat prompt's messages and
+	 * options, or a decision's messages with its questions' schema as the
+	 * response format.
+	 *
+	 * @param array<array-key,mixed> $facts    What the call posts with.
+	 * @param string                 $prompt   The prompt.
+	 * @param string                 $kind     Its kind.
+	 * @param Operator               $operator The deployment's operator.
+	 * @param array<array-key,mixed> $item     The item.
+	 * @param array<array-key,mixed> $inputs   The prompt's other inputs.
+	 * @param array<array-key,mixed> $options  A chat prompt's options.
+	 * @return array<array-key,mixed>
+	 * @throws \InvalidArgumentException When the prompt is unknown.
+	 */
+	private static function openai_body( array $facts, string $prompt, string $kind, Operator $operator, array $item, array $inputs, array $options ): array {
+		if ( Prompts::DECISION !== $kind ) {
+			return [ 'messages' => Prompts::messages( $prompt, $item, $inputs, $operator ) ] + $options;
+		}
+		return [
+			'messages'        => Prompts::decision_messages( $prompt, $item, $inputs, $operator ),
+			'response_format' => [
+				'type'        => 'json_schema',
+				'json_schema' => [
+					'name'   => 'decision',
+					'strict' => true,
+					'schema' => Prompts::decision_schema( Prompts::questions( $inputs ) ),
+				],
+			],
+		];
+	}
+
+	/**
+	 * A systemone body less its model: the decision's state and questions,
+	 * as `Prompts::decision()` builds them.
+	 *
+	 * @param array<array-key,mixed> $facts    What the call posts with.
+	 * @param string                 $prompt   The prompt.
+	 * @param string                 $kind     Its kind.
+	 * @param Operator               $operator The deployment's operator.
+	 * @param array<array-key,mixed> $item     The item.
+	 * @param array<array-key,mixed> $inputs   The prompt's other inputs.
+	 * @param array<array-key,mixed> $options  None, as a decision takes none.
+	 * @return array<array-key,mixed>
+	 * @throws \InvalidArgumentException When the prompt is not a decision prompt, or asks no question.
+	 */
+	private static function systemone_body( array $facts, string $prompt, string $kind, Operator $operator, array $item, array $inputs, array $options ): array {
+		unset( $facts, $kind, $options );
+		return Prompts::decision( $prompt, $item, $inputs, $operator );
+	}
+
+	/**
+	 * The proxy's header beside the credential: the feature it bills.
+	 *
+	 * @param array<array-key,mixed> $facts What the call posts with.
+	 * @return list<string>
+	 */
+	private static function feature_headers( array $facts ): array {
+		return [ 'X-WPCOM-AI-Feature: ' . Core::as_string( $facts['feature'] ) ];
+	}
+
+	/**
+	 * A plain chat-completions server's headers beside the credential: none.
+	 *
+	 * @param array<array-key,mixed> $facts What the call posts with.
+	 * @return list<string>
+	 */
+	private static function no_headers( array $facts ): array {
+		unset( $facts );
+		return [];
+	}
+
+	/**
+	 * A chat-completions answer's text: its first choice's content.
+	 *
+	 * @param string $body The answer's body.
+	 * @return array{content:string}|array{error:string}
+	 */
+	private static function openai_text( string $body ): array {
+		$choice  = Core::arr( Core::arr( Core::arr( \json_decode( $body, true ) )['choices'] ?? null )[0] ?? null );
+		$content = Core::arr( $choice['message'] ?? null )['content'] ?? null;
+		return \is_string( $content ) ? [ 'content' => $content ] : [ 'error' => self::NO_CONTENT ];
+	}
+
+	/**
+	 * A Messages answer's text: its text blocks joined, thinking skipped; a
+	 * refusal or a max_tokens stop is the error naming it and the refusal's
+	 * category, never an answer.
+	 *
+	 * @param string $body The answer's body.
+	 * @return array{content:string}|array{error:string}
+	 */
+	private static function messages_text( string $body ): array {
+		$decoded = Core::arr( \json_decode( $body, true ) );
+		$stop    = $decoded['stop_reason'] ?? null;
+		if ( \in_array( $stop, self::UNANSWERED_STOPS, true ) ) {
+			$category = Core::arr( $decoded['stop_details'] ?? null )['category'] ?? null;
+			return [ 'error' => "the answer stopped at {$stop}" . ( \is_string( $category ) ? " ({$category})" : '' ) ];
+		}
+		$text = null;
+		foreach ( Core::arr( $decoded['content'] ?? null ) as $block ) {
+			$block = Core::arr( $block );
+			$said  = $block['text'] ?? null;
+			if ( 'text' === ( $block['type'] ?? null ) && \is_string( $said ) ) {
+				$text = ( $text ?? '' ) . $said;
+			}
+		}
+		return null === $text ? [ 'error' => self::NO_TEXT ] : [ 'content' => $text ];
+	}
+
+	/**
+	 * A systemone answer's text: the body, whose JSON is the decision.
+	 *
+	 * @param string $body The answer's body.
+	 * @return array{content:string}
+	 */
+	private static function systemone_text( string $body ): array {
+		return [ 'content' => $body ];
 	}
 
 	/**
@@ -694,56 +1158,6 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	 */
 	protected function configure_curl( Curl_Node $curl ): void {
 		$curl->set_body_cap( self::BODY_CAP );
-	}
-
-	/**
-	 * The `set_model` command's entry point.
-	 *
-	 * @api Used by substrate.
-	 * @param string $model The model id.
-	 */
-	public function set_model( string $model ): void {
-		$this->model = \trim( $model );
-	}
-
-	/**
-	 * The `set_decision_model` command's entry point.
-	 *
-	 * @api Used by substrate.
-	 * @param string $model The decision model id.
-	 */
-	public function set_decision_model( string $model ): void {
-		$this->decision_model = \trim( $model );
-	}
-
-	/**
-	 * The `set_feature` command's entry point.
-	 *
-	 * @api Used by substrate.
-	 * @param string $feature The X-WPCOM-AI-Feature value.
-	 */
-	public function set_feature( string $feature ): void {
-		$this->feature = \trim( $feature );
-	}
-
-	/**
-	 * The `set_operator` command's entry point.
-	 *
-	 * @api Used by substrate.
-	 * @param string $name Who runs the deployment.
-	 */
-	public function set_operator( string $name ): void {
-		$this->operator = \trim( $name );
-	}
-
-	/**
-	 * The `set_tracks` command's entry point.
-	 *
-	 * @api Used by substrate.
-	 * @param string $tracks What the deployment's graph tracks, as one phrase.
-	 */
-	public function set_tracks( string $tracks ): void {
-		$this->tracks = \trim( $tracks );
 	}
 
 	/**
@@ -793,17 +1207,22 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 		];
 		return [
 			'category'     => 'I/O',
-			'description'  => 'Makes the model calls nodes ask for without blocking the worker: queues each request durably, new work ahead of a backlog, posts it to the AI API Proxy under its Vault group as a chat completion or a decision, and answers the caller with the content, the decision or the error and what the request carried.',
+			'description'  => 'Makes the model calls nodes ask for without blocking the worker: queues each request durably, new work ahead of a backlog, posts it under its Vault group in the wire its protocol names, the AI API Proxy, plain chat completions or the Messages API, as a chat call or a decision, and answers the caller with the content, the decision or the error and what the request carried.',
 			// The Table owned_table() declares, which the analyzer reads.
 			'owns'         => [ self::FRONTIER => 'Table' ],
 			'arguments'    => [
 				[ 'name' => 'vault_group', 'type' => 'vault_group', 'required' => true, 'description' => 'The Vault group whose entry on the api url\'s origin lends each call its credential: ai-proxy.' ],
 			],
 			'commands'     => [
-				$command( 'set_api_url', 'Set the AI API Proxy base url the calls post to: <url>.', 'url', 'string', 'api_url' ),
+				$command( 'set_protocol', 'Set the wire every chat call speaks: ai-proxy, the AI API Proxy\'s chat completions with its feature header; openai, plain chat completions; or anthropic, the Messages API.', 'protocol', 'string', 'protocol' ),
+				$command( 'set_decision_protocol', 'Set where every decision goes: systemone, the AI API Proxy\'s decision endpoint, or chat, one structured-output call through the protocol.', 'protocol', 'string', 'decision_protocol' ),
+				$command( 'set_api_url', 'Set the base url the calls post under: <url>.', 'url', 'string', 'api_url' ),
 				$command( 'set_model', 'Set the model id every chat call names: <model>.', 'model', 'string', 'model' ),
 				$command( 'set_decision_model', 'Set the model id every decision call names: <model>.', 'model', 'string', 'decision_model' ),
-				$command( 'set_feature', 'Set the X-WPCOM-AI-Feature value every call sends: <feature>.', 'feature', 'string', 'feature' ),
+				$command( 'set_feature', 'Set the X-WPCOM-AI-Feature value every call to the AI API Proxy sends: <feature>.', 'feature', 'string', 'feature' ),
+				$command( 'set_api_version', 'Set the anthropic-version every Messages call sends: <version>, a Y-m-d date; ' . self::ANTHROPIC_VERSION . ' until set.', 'version', 'string', 'api_version' ),
+				$command( 'set_effort', 'Set the effort every Messages call asks: <effort>, one of ' . \implode( ', ', self::EFFORTS ) . '; each prompt\'s own until set.', 'effort', 'string', 'effort' ),
+				$command( 'set_fallbacks', 'Set whether Messages calls ask refusal fallbacks: default, as until set, or none, for a model that takes none.', 'fallbacks', 'string', 'fallbacks' ),
 				$command( 'set_operator', 'Name who runs the deployment, whom every prompt saying whom the graph serves names: <name>; generic wording until set.', 'name', 'string', 'operator' ),
 				$command( 'set_tracks', 'Say what the deployment\'s graph tracks, as one phrase every decision names: <tracks>; the operator\'s own work and clients until set.', 'tracks', 'string', 'tracks' ),
 				$command( 'set_concurrency', 'Make at most <count> calls at once, from 1 to ' . Curl_Node::MAX_IN_FLIGHT . '; 1 until set.', 'count', 'int', 'concurrency' ),

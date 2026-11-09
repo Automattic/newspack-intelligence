@@ -158,7 +158,7 @@ describe( 'HealthStrip', () => {
 		).toBeInTheDocument();
 		expect(
 			within( row( 'Extraction' ) ).getByText(
-				`By the AI proxy; last extraction ${ LAST_OK_LOCAL }.`
+				`By the model; last extraction ${ LAST_OK_LOCAL }.`
 			)
 		).toBeInTheDocument();
 		expect( within( row( 'github' ) ).getByText( 'ok' ) ).toHaveClass(
@@ -819,7 +819,7 @@ describe( 'HealthStrip', () => {
 		).toHaveClass( 'is-neutral' );
 		expect(
 			within( row( 'Extraction' ) ).getByText(
-				`By the AI proxy; last extraction ${ LAST_OK_LOCAL }.`
+				`By the model; last extraction ${ LAST_OK_LOCAL }.`
 			)
 		).toBeInTheDocument();
 	} );
@@ -979,7 +979,7 @@ describe( 'HealthStrip', () => {
 		};
 		renderStrip( { canManage: true } );
 		await worstFault(
-			'Extracting with the heuristic only: Vault group ai-proxy holds no entry for the AI proxy.'
+			'Extracting with the heuristic only: Vault group ai-proxy holds no entry for the model call.'
 		);
 		expect(
 			within( row( 'Extraction' ) ).getByRole( 'link', {
@@ -988,18 +988,18 @@ describe( 'HealthStrip', () => {
 		).toHaveAttribute( 'href', VAULT );
 	} );
 
-	it( 'says the AI proxy is not configured, naming each setter left unset', async () => {
+	it( 'says the model call is not configured, naming each setter left unset', async () => {
 		health.extraction = {
 			mode: 'heuristic',
 			vault_group: 'ai-relay-7731',
-			unset: [ 'set_api_url', 'set_feature' ],
+			unset: [ 'set_protocol', 'set_api_url' ],
 			last_ok_at: null,
 			last_error: null,
 			failing_since: null,
 		};
 		renderStrip( { canManage: true } );
 		await worstFault(
-			'Extracting with the heuristic only: the AI proxy is not configured; the lists file sets no set_api_url, set_feature.'
+			'Extracting with the heuristic only: the model call is not configured; the lists file sets no set_protocol, set_api_url.'
 		);
 		expect(
 			within( row( 'Extraction' ) ).queryByRole( 'link', {
@@ -1017,7 +1017,7 @@ describe( 'HealthStrip', () => {
 		health.extraction = { mode: 'heuristic' };
 		renderStrip();
 		await worstFault(
-			'Extracting with the heuristic only: the AI proxy has no Vault entry.'
+			'Extracting with the heuristic only: the model call has no Vault entry.'
 		);
 		expect(
 			screen.getByText( 'An administrator can add its Vault entry.' )
@@ -1029,12 +1029,12 @@ describe( 'HealthStrip', () => {
 			mode: 'call',
 			vault_group: 'ai-proxy',
 			last_ok_at: LAST_OK,
-			last_error: 'AI proxy answered HTTP 502',
+			last_error: 'HTTP 502 https://models.example/v1/messages',
 			failing_since: SINCE,
 		};
 		renderStrip( { canManage: true } );
 		await worstFault(
-			`AI proxy answered HTTP 502 · failing since ${ SINCE_LOCAL }`
+			`HTTP 502 https://models.example/v1/messages · failing since ${ SINCE_LOCAL }`
 		);
 		expect( strip() ).toHaveClass( 'is-warning' );
 		expect(
@@ -1048,8 +1048,11 @@ describe( 'HealthStrip', () => {
 		await lineReads( HEALTHY_LINE );
 		fireEvent.click( toggle() );
 		expect(
-			within( row( 'Extraction' ) ).getByText( 'By the AI proxy.' )
+			within( row( 'Extraction' ) ).getByText( 'By the model.' )
 		).toBeInTheDocument();
+		expect(
+			within( row( 'Extraction' ) ).getByText( 'model' )
+		).toHaveClass( 'is-success' );
 	} );
 
 	it( 'reads an extractor that has not reported as unknown', async () => {
@@ -1082,14 +1085,14 @@ describe( 'HealthStrip', () => {
 		expect( within( extraction ).queryByRole( 'link' ) ).toBeNull();
 	} );
 
-	it( 'reads an unknown extractor whose newest extraction used the AI proxy as unknown', async () => {
+	it( 'reads an unknown extractor whose newest extraction used the model as unknown', async () => {
 		health.extraction = { mode: 'unknown', last_mode: 'call' };
 		renderStrip();
 		await lineReads( 'The pipeline’s health is not fully known.' );
 		fireEvent.click( toggle() );
 		expect(
 			within( row( 'Extraction' ) ).getByText(
-				'No extraction has reported since the cache was cleared; the newest used the AI proxy.'
+				'No extraction has reported since the cache was cleared; the newest used the model.'
 			)
 		).toBeInTheDocument();
 	} );

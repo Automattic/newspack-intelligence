@@ -2,7 +2,7 @@
 /**
  * A healthy answer to each of the four `health` slices, as the strip and the
  * page both read it: a live worker on a staging topology, three sources that
- * answered and no client feed dead, nothing held and the AI proxy extracting,
+ * answered and no client feed dead, nothing held and the model extracting,
  * no model call waiting.
  */
 

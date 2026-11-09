@@ -44,7 +44,7 @@ trait Asks_Model {
 	 * @param string                 $prompt  One of `Prompts::PROMPTS`.
 	 * @param array<string,mixed>    $item    The item.
 	 * @param array<string,mixed>    $inputs  The prompt's other inputs.
-	 * @param array<string,int|float> $options `max_tokens` and `temperature`.
+	 * @param array<string,int|float> $options `max_tokens` and `temperature`, sent by a chat-completions wire alone.
 	 * @param array<array-key,mixed> $carry   What the answer needs that the item and inputs do not hold.
 	 * @param bool                   $backlog Whether it waits behind every new request.
 	 */

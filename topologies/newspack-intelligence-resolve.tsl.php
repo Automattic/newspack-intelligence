@@ -10,7 +10,7 @@
 # resolution throws dead-letters alone. Both Consumers hand the resolver one
 # item a poll. Every model call, the resolver's NER step and each extraction,
 # goes through intel:llm, which queues it in its own Table and answers the
-# caller when the AI proxy does, so no call blocks the worker; the decision
+# caller when the model does, so no call blocks the worker; the decision
 # model then reviews an unrestricted item's extraction, judging whether a
 # client's own article is about the client and picking among offered themes.
 var num_partitions = 1
@@ -18,7 +18,7 @@ include topic-probe
 include newspack-intelligence-streams
 make_node Consumer intel:items:resolve <config:logs_dir>/intel-items.p{partition} <config:offsets_dir>/<topology>.intel-items-resolve.p{partition} <config:deadletter_dir>/<topology>.intel-items-resolve.p{partition}
 command_node intel:items:resolve:config set_line_mode true
-# A deployment's lists name the proxy's url, the two models and the feature.
+# A deployment's lists name the protocols, the url, the two models and more.
 make_node LLM_Call intel:llm ai-proxy
 cmd intel:llm:config set_concurrency 4
 make_node Resolver resolver intel:writer intel:later intel:llm

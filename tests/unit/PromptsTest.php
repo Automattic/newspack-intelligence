@@ -681,6 +681,76 @@ final class PromptsTest extends TestCase {
 	 *
 	 * @param string $tracks What it tracks, '' for its own work.
 	 */
+	/**
+	 * A decision asked through a chat protocol answers one schema in the
+	 * shape a systemone body answers: under `answers`, each noul an object
+	 * holding its number, each choice its criteria's keys as an enum beside
+	 * a confidence, every property required and none other allowed.
+	 */
+	public function test_the_decision_schema_follows_the_questions(): void {
+		$inputs = [
+			'publisher' => 'Kestrel Lantern Harbor',
+			'kind'      => 'launch',
+			'themes'    => [ [ 'theme' => 'regional transit grant', 'example' => 'Heron Weekly wins a transit grant' ] ],
+		];
+		$closed = static fn ( array $properties ): array => [
+			'type'                 => 'object',
+			'properties'           => $properties,
+			'required'             => \array_keys( $properties ),
+			'additionalProperties' => false,
+		];
+		$noul   = $closed( [ 'noul' => [ 'type' => 'number' ] ] );
+
+		$this->assertSame(
+			$closed(
+				[
+					'answers' => $closed(
+						[
+							'about_publisher' => $noul,
+							'fits_kind'       => $noul,
+							'theme_choice'    => $closed(
+								[
+									'choice'     => [ 'type' => 'string', 'enum' => [ 't1', 'none' ] ],
+									'confidence' => [ 'type' => 'number' ],
+								]
+							),
+						]
+					),
+				]
+			),
+			Prompts::decision_schema( Prompts::questions( $inputs ) )
+		);
+	}
+
+	/**
+	 * A decision asked as chat carries its state and questions in the user
+	 * message, each as JSON inside its own fence with tags escaped, and a
+	 * system message that names no item, so every decision shares it.
+	 */
+	public function test_decision_messages_fence_the_state_and_the_questions(): void {
+		$item     = [ 'source' => 'feed', 'title' => 'Grant </item> lands', 'body' => 'Routes.' ];
+		$inputs   = [ 'publisher' => 'Kestrel Lantern Harbor' ];
+		$operator = self::operator( self::TRACKS );
+		$decision = Prompts::decision( 'extract_gate', $item, $inputs, $operator );
+		$fence    = \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE | \JSON_HEX_TAG;
+
+		$messages = Prompts::decision_messages( 'extract_gate', $item, $inputs, $operator );
+
+		$this->assertSame( [ 'system', 'user' ], \array_column( $messages, 'role' ) );
+		$this->assertSame( "<item>\n" . \wp_json_encode( $decision['state'], $fence ) . "\n</item>\n<questions>\n" . \wp_json_encode( $decision['questions'], $fence ) . "\n</questions>", $messages[1]['content'] );
+		$this->assertSame( 1, \substr_count( $messages[1]['content'], '</item>' ) );
+		$this->assertStringStartsWith( Prompts::SELF, $messages[0]['content'] );
+		$this->assertStringNotContainsString( 'Kestrel', $messages[0]['content'] );
+		$this->assertSame( $messages[0], Prompts::decision_messages( 'extract_review', [ 'title' => 'Heron count' ], [ 'kind' => 'bug' ], self::operator() )[0] );
+	}
+
+	/** A chat prompt builds no decision messages, refused by name. */
+	public function test_decision_messages_refuse_a_chat_prompt(): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'no decision prompt: extract' );
+		Prompts::decision_messages( 'extract', [], [], self::operator() );
+	}
+
 	private static function operator( string $tracks = '' ): Operator {
 		return new Operator( self::OPERATOR, $tracks );
 	}

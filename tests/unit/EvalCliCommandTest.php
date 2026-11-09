@@ -43,6 +43,8 @@ final class EvalCliCommandTest extends TestCase {
 	private const TOPOLOGY = "include newspack-intelligence-streams\n"
 		. "include newspack-intelligence-project\n"
 		. "make_node LLM_Call intel:llm " . self::GROUP . "\n"
+		. "cmd intel:llm:config set_protocol ai-proxy\n"
+		. "cmd intel:llm:config set_decision_protocol systemone\n"
 		. "cmd intel:llm:config set_api_url https://relay.example/wpcom/v2/ai-relay/v1/\n"
 		. "cmd intel:llm:config set_model kestrel-model-9\n"
 		. "cmd intel:llm:config set_decision_model " . self::DECISION_MODEL . "\n"
@@ -196,6 +198,42 @@ final class EvalCliCommandTest extends TestCase {
 		$this->assertStringEndsWith( "\nAsked by: Newspack Intelligence, a plugin built on newspack-nodes, which tracks {$tracks}.", $this->bodies()[0]['state'] );
 	}
 
+	/**
+	 * The eval asks through the wire the topology's LLM_Call names: under
+	 * the Messages API with `chat` decisions, each label is one
+	 * structured-output call to `v1/messages` carrying the version and the
+	 * lent `x-api-key` and no feature header, its answer's text read to the
+	 * same decision and scored the same way.
+	 */
+	public function test_eval_asks_through_the_protocol_the_topology_names(): void {
+		$topology = \str_replace(
+			[ 'set_protocol ai-proxy', 'set_decision_protocol systemone', 'cmd intel:llm:config set_feature ' . self::FEATURE . "\n" ],
+			[ 'set_protocol anthropic', 'set_decision_protocol chat', "cmd intel:llm:config set_api_version 2027-03-14\n" ],
+			self::TOPOLOGY
+		);
+		\file_put_contents( Topology_Registry::user_dir() . '/heron-eval.tsl', $topology );
+		Topology_Analyzer::reset_caches();
+		$this->lend( self::GROUP, self::ORIGIN, 'x-api-key', 'claude-token-5512' );
+		Curl_Node::$curl_result = function ( \CurlHandle $easy ): array {
+			$body = \json_decode( (string) $this->sent[ $this->index_of[ \spl_object_id( $easy ) ] ][ \CURLOPT_POSTFIELDS ], true );
+			\preg_match( '/^<item>\n(.*)\n<\/item>/s', $body['messages'][0]['content'], $fenced );
+			$noul    = $this->nouls[ self::state_line( (string) \json_decode( $fenced[1] ), 'Title: ' ) ];
+			$answers = \array_map( static fn (): array => [ 'noul' => $noul ], $body['output_config']['format']['schema']['properties']['answers']['properties'] );
+			$text    = (string) \json_encode( [ 'answers' => $answers ] );
+			return [ 'code' => 200, 'body' => (string) \json_encode( [ 'type' => 'message', 'content' => [ [ 'type' => 'thinking', 'thinking' => '', 'signature' => 'sig-kite-1' ], [ 'type' => 'text', 'text' => $text ] ], 'stop_reason' => 'end_turn' ] ), 'redirect' => '', 'ip' => self::CONNECTED ];
+		};
+
+		( new Eval_CLI_Command() )( [ $this->labels( self::LAUNCHES ) ], [] );
+
+		$this->assertSame( [], \WP_CLI::$errors );
+		$this->assertSame( [ 'launch: 3 labels, precision 1.00, recall 0.50 at the bar 0.7', 'linear:HERON-42 launch answered 0.310 wanted keep' ], \WP_CLI::$logs );
+		$first = $this->sent[0];
+		$this->assertSame( self::API . '/v1/messages', $first[ \CURLOPT_URL ] );
+		$this->assertSame( [ 'Content-Type: application/json', 'anthropic-version: 2027-03-14', 'anthropic-beta: server-side-fallback-2026-07-01', 'x-api-key: claude-token-5512' ], $first[ \CURLOPT_HTTPHEADER ] );
+		$this->assertSame( self::DECISION_MODEL, $this->bodies()[0]['model'] );
+		$this->assertArrayNotHasKey( 'temperature', $this->bodies()[0] );
+	}
+
 	public function test_eval_refuses_a_label_naming_no_item(): void {
 		$labels = [ self::LAUNCHES[0], [ 'item_key' => 'linear:HERON-99', 'kind' => 'launch', 'fits_kind' => true ] ];
 
@@ -315,9 +353,11 @@ final class EvalCliCommandTest extends TestCase {
 	public static function unready_topologies(): array {
 		return [
 			'no LLM_Call'          => [ "include newspack-intelligence-streams\ninclude newspack-intelligence-project\nsecure\n", 'heron-eval declares no LLM_Call node to ask the decision model through.' ],
-			'no decision model'    => [ \str_replace( 'cmd intel:llm:config set_decision_model ' . self::DECISION_MODEL . "\n", '', self::TOPOLOGY ), 'intel:llm: set_api_url, set_decision_model and set_feature before a decision.' ],
-			'no api url'           => [ \str_replace( "cmd intel:llm:config set_api_url https://relay.example/wpcom/v2/ai-relay/v1/\n", '', self::TOPOLOGY ), 'intel:llm: set_api_url, set_decision_model and set_feature before a decision.' ],
-			'no feature'           => [ \str_replace( 'cmd intel:llm:config set_feature ' . self::FEATURE . "\n", '', self::TOPOLOGY ), 'intel:llm: set_api_url, set_decision_model and set_feature before a decision.' ],
+			'no decision model'    => [ \str_replace( 'cmd intel:llm:config set_decision_model ' . self::DECISION_MODEL . "\n", '', self::TOPOLOGY ), 'intel:llm: set_decision_model before a decision.' ],
+			'no api url'           => [ \str_replace( "cmd intel:llm:config set_api_url https://relay.example/wpcom/v2/ai-relay/v1/\n", '', self::TOPOLOGY ), 'intel:llm: set_api_url before a decision.' ],
+			'no feature'           => [ \str_replace( 'cmd intel:llm:config set_feature ' . self::FEATURE . "\n", '', self::TOPOLOGY ), 'intel:llm: set_feature before a decision.' ],
+			'no decision route'    => [ \str_replace( "cmd intel:llm:config set_decision_protocol systemone\n", '', self::TOPOLOGY ), 'intel:llm: set_decision_protocol before a decision.' ],
+			'chat, no protocol'    => [ \str_replace( [ "cmd intel:llm:config set_protocol ai-proxy\n", 'set_decision_protocol systemone', "cmd intel:llm:config set_api_url https://relay.example/wpcom/v2/ai-relay/v1/\n" ], [ '', 'set_decision_protocol chat', '' ], self::TOPOLOGY ), 'intel:llm: set_protocol and set_api_url before a decision.' ],
 		];
 	}
 
