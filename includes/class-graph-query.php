@@ -3010,7 +3010,7 @@ final class Graph_Query {
 							$r->rows(
 								'SELECT c.collection_key, c.name, c.created_ts, ( SELECT COUNT( DISTINCT d.item_key ) FROM ' . Intel_Graph_Row_Schema::all( $r, 'collected' )
 								. " d WHERE d.collection_key = c.collection_key AND d.tier IN ( {$in} ) AND " . self::kept( $r, 'd.item_key' ) . ' ), ( SELECT MAX( e.ts ) FROM ' . Intel_Graph_Row_Schema::all( $r, 'events' )
-								. " e WHERE e.subject = c.collection_key AND e.kind IN ( 'collected', 'item_moved' ) AND ( e.actor = ? OR substr( e.actor, 1, length( ? ) ) = ? ) AND ( json_extract( e.detail, '$.tier' ) IN ( {$in} ) OR EXISTS ( SELECT 1 FROM json_each( e.detail, '$.tiers' ) t WHERE t.value IN ( {$in} ) ) ) ) FROM "
+								. " e WHERE e.subject = c.collection_key AND e.kind IN ( 'collected', 'item_moved', 'collection_created' ) AND ( e.actor = ? OR substr( e.actor, 1, length( ? ) ) = ? ) AND ( COALESCE( json_extract( e.detail, '$.tier' ), json_extract( e.detail, '$.item.tier' ) ) IN ( {$in} ) OR EXISTS ( SELECT 1 FROM json_each( e.detail, '$.tiers' ) t WHERE t.value IN ( {$in} ) ) ) ) FROM "
 								. Intel_Graph_Row_Schema::all( $r, 'collections' ) . ' c ORDER BY c.name COLLATE NOCASE, c.collection_key',
 								[ ...$tiers, "user:{$login}", $agent, $agent, ...$tiers, ...$tiers ]
 							)

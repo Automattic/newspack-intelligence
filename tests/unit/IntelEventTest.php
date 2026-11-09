@@ -5,6 +5,7 @@ namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Ask_Node;
 use Newspack_Intelligence\Ask_Prompts;
+use Newspack_Intelligence\Graph_Curation;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Nodes\Capabilities;
@@ -370,7 +371,7 @@ final class IntelEventTest extends TestCase {
 		$check  = [ 'kind' => 'launch', 'verdict' => Intel_Event::PASSED, 'ts' => 1791300450 ];
 
 		$this->assertSame( [ 'passed', 'failed' ], Intel_Event::VERDICTS );
-		$this->assertSame( [ 'extraction_recorded' => [ 'kind_check' => [ 'kind' => Intel_Event::ITEM_KINDS, 'verdict' => Intel_Event::VERDICTS, 'ts' => null ] ] ], Intel_Event::RECORDS );
+		$this->assertSame( [ 'kind' => Intel_Event::ITEM_KINDS, 'verdict' => Intel_Event::VERDICTS, 'ts' => null ], Intel_Event::RECORDS['extraction_recorded']['kind_check'] );
 		$this->assertNull( Intel_Event::record_fault( 'extraction_recorded', 'kind_check', $check ) );
 		$this->assertSame( 'ts is not an integer', Intel_Event::record_fault( 'extraction_recorded', 'kind_check', \array_replace( $check, [ 'ts' => 1791300450.5 ] ) ) );
 		$this->assertArrayNotHasKey( 'kind_check', Intel_Event::make( 'extraction_recorded', $fields, 'machine:extract@9.4.1', '' ) );
@@ -402,6 +403,44 @@ final class IntelEventTest extends TestCase {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( $why );
 		Intel_Event::make( 'extraction_recorded', [ 'item_key' => 'feed:wren-6611', 'summary' => 'Wren Ledger goes live.', 'kind' => 'launch', 'relevance' => 6, 'importance' => 4, 'sentiment' => 0.3, 'topics' => [], 'kind_check' => $check, 'retrieved_ts' => 1791300000 ], 'machine:extract@9.4.1', '' );
+	}
+
+	/**
+	 * A folder's creation may carry the item it is created with, as a save
+	 * carries its copy: its key, URL, title and tier. One created empty
+	 * carries none.
+	 */
+	public function test_a_folders_creation_carries_an_optional_item(): void {
+		$fields = [ 'collection_key' => 'quarry-notes', 'name' => 'Quarry notes' ];
+		$item   = [ 'key' => 'feed:inkfold-review-17', 'url' => 'https://inkfold.example/review-17', 'title' => 'Acme Quillsheet wins regional prize', 'tier' => 'internal' ];
+
+		$this->assertSame( [ 'key' => Graph_Curation::ITEM_KEY_BYTES, 'url' => Graph_Curation::URL_BYTES, 'title' => Graph_Curation::TITLE_BYTES, 'tier' => Intel_Event::TIERS ], Intel_Event::RECORDS['collection_created']['item'] );
+		$this->assertArrayNotHasKey( 'item', Intel_Event::make( 'collection_created', $fields, 'user:41', '' ) );
+		$this->assertSame( $item, Intel_Event::make( 'collection_created', [ 'item' => $item ] + $fields, 'user:41', '' )['item'] );
+	}
+
+	/**
+	 * A folder's item, when present, is a record of exactly its key, URL
+	 * and title, each a string within its cap, and its tier.
+	 *
+	 * @return array<string,array{0:mixed,1:string}>
+	 */
+	public static function bad_folder_items(): array {
+		$item = [ 'key' => 'feed:inkfold-review-17', 'url' => 'https://inkfold.example/review-17', 'title' => 'Prize', 'tier' => 'public' ];
+		return [
+			'not a record'       => [ 'feed:inkfold-review-17', 'collection_created: item is not a record of key, url, title, tier' ],
+			'a member missing'   => [ \array_diff_key( $item, [ 'url' => true ] ), 'collection_created: item is not a record of key, url, title, tier' ],
+			'an unknown tier'    => [ \array_replace( $item, [ 'tier' => 'secret' ] ), 'collection_created: item tier is outside its set' ],
+			'a key not a string' => [ \array_replace( $item, [ 'key' => 17 ] ), 'collection_created: item key is not a string within 512 bytes' ],
+			'a title past a cut' => [ \array_replace( $item, [ 'title' => \str_repeat( 't', 513 ) ] ), 'collection_created: item title is not a string within 512 bytes' ],
+		];
+	}
+
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_folder_items' )]
+	public function test_a_folders_item_must_be_its_record( mixed $item, string $why ): void {
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( $why );
+		Intel_Event::make( 'collection_created', [ 'collection_key' => 'quarry-notes', 'name' => 'Quarry notes', 'item' => $item ], 'user:41', '' );
 	}
 
 	/**

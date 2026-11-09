@@ -295,6 +295,25 @@ final class ProjectorTest extends TestCase {
 	}
 
 	/**
+	 * A folder created with an item holds it as a save into it would: its
+	 * saved copy and its placement, under the creator and the creation's
+	 * time. A folder created empty places nothing.
+	 */
+	public function test_a_folder_created_with_an_item_places_it_as_a_save_does(): void {
+		Core::$now = 1792911234.0;
+		$this->project(
+			[
+				$this->ontology( 'collection_created', [ 'collection_key' => 'quarry-notes', 'name' => 'Quarry notes', 'item' => [ 'key' => self::ITEM, 'url' => 'https://harborgazette.example/q', 'title' => 'Award, as created', 'tier' => 'internal' ] ], 'user:58' ),
+				$this->ontology( 'collection_created', [ 'collection_key' => 'empty-shelf', 'name' => 'Empty shelf' ] ),
+			]
+		);
+
+		$this->assertSame( [ [ 'empty-shelf', 'Empty shelf' ], [ 'quarry-notes', 'Quarry notes' ] ], self::graph_rows( 'collections', 'collection_key', 'collection_key, name' ) );
+		$this->assertSame( [ [ self::ITEM, 'internal', 'https://harborgazette.example/q', 'Award, as created' ] ], self::graph_rows( 'saved_copies', 'item_key', 'item_key, tier, url, title' ) );
+		$this->assertSame( [ [ 'quarry-notes', self::ITEM, 'internal', 'user:58', 1792911234.0 ] ], self::graph_rows( 'collected', 'collection_key', 'collection_key, item_key, tier, actor, ts' ) );
+	}
+
+	/**
 	 * Taking an item out of a folder deletes the placements of the tiers it
 	 * names in that folder alone: the item stays in another folder, a copy of
 	 * a tier it does not name stays where it was, and the saved copies and
@@ -1034,6 +1053,7 @@ final class ProjectorTest extends TestCase {
 			$this->ontology( 'collected', [ 'collection_key' => 'awards-2026', 'item_key' => self::ITEM, 'url' => 'https://harborgazette.example/a', 'title' => 'Award', 'tier' => 'internal' ] ),
 			$this->ontology( 'item_used', [ 'collection_key' => 'awards-2026', 'item_key' => self::ITEM, 'tier' => 'internal', 'mark' => 'site', 'day' => '2026-10-21' ] ),
 			$this->ontology( 'collection_created', [ 'collection_key' => 'awards-shortlist', 'name' => 'Awards shortlist' ] ),
+			$this->ontology( 'collection_created', [ 'collection_key' => 'awards-winners', 'name' => 'Awards winners', 'item' => [ 'key' => self::ITEM, 'url' => 'https://harborgazette.example/w', 'title' => 'Award, as won', 'tier' => 'public' ] ] ),
 			$this->ontology( 'item_moved', [ 'collection_key' => 'awards-shortlist', 'item_key' => self::ITEM, 'from' => 'awards-2026', 'tiers' => [ 'internal' ] ] ),
 			$this->ontology( 'lens_saved', [ 'lens_key' => 'board-desk', 'name' => 'Board desk', 'description' => 'For the board.', 'filters' => [ 'kinds' => [ 'funding' ] ] + Graph_Query::unfiltered() ] ),
 			$this->ontology( 'lens_saved', [ 'lens_key' => 'old-desk', 'name' => 'Old desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ] ),

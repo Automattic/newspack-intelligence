@@ -319,6 +319,9 @@ is one `saved_copies` row, `( item_key, tier, url, title )` keyed by the
 item and the tier, and its place in a folder one `collected` row, `(
 collection_key, item_key, tier, actor, ts )` keyed by the first three, so
 a save at one tier never overwrites another's: a `collected` sets both,
+and a `collection_created` carrying an `item { key, url, title, tier }`
+writes the same two rows through `collected`'s own specs
+(`Projector_Node::placed()`), so one declaration writes every placement,
 and an `item_moved` names the tier of each copy it carries in `tiers` and
 fans out over them, per tier one `delete` of the placement the `from`,
 `item_key` and that tier key, in the shape `link_retracted` deletes a
@@ -1453,7 +1456,8 @@ lists; `collected` keeps its own
 tier filter, and `collections` opens no graph. Every
 folder answers `{ collection_key, name, created_ts, items, recent_ts }`,
 `items` the distinct items it holds a readable copy of and `recent_ts`
-the caller's own latest `collected` or `item_moved` event into it, read
+the caller's own latest `collected`, `item_moved` or item-carrying
+`collection_created` event into it, read
 from `events` by its subject and kind, an actor of `user:<login>` or
 `agent:<login>:…` counting and an event of a tier the caller does not
 read not counting. The `Graph_Query::RECENT_FOLDERS` (5) folders with the
@@ -2304,7 +2308,10 @@ its survivor is rejected or its chain does not resolve. `create_entity` refuses
 a key `Graph_Query::taken()` finds taken — visible and no longer a
 machine's `proposed` — and over any other key, a proposal or one the caller
 cannot see, writes `entity_created` as it would for a new key; `create_collection` refuses a taken
-collection key. A role counts as held when any key resolving to the
+collection key, and `create_collection <name> [--item=]` saves a readable,
+unexcluded item into the folder it creates, read through
+`Graph_Curation::item()` as `collect` reads it, in the one event, so a
+refused item leaves no folder. A role counts as held when any key resolving to the
 entity's survivor holds it open, as `Graph_Query::open_roles()` reads it:
 `assert_role` refuses it then, and when any of those keys holds a row of
 the role from this very second, because a role row is keyed by its

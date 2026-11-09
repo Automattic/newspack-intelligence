@@ -230,7 +230,13 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						[ $arg( 'type', 'The entity type: ' . \implode( ', ', Intel_Event::TYPES ) . '.' ), $arg( 'name', 'Its name, at most ' . Graph_Curation::NAME_BYTES . ' bytes.' ) ],
 						Graph_Curation::create_entity( ... )
 					),
-					$command( $tune, 'create_collection', 'Create a collection keyed by its name, refused when the key is taken: { ok, event_id, collection_key }.', [ $arg( 'name', 'Its name, at most ' . Graph_Curation::NAME_BYTES . ' bytes.' ) ], Graph_Curation::create_collection( ... ) ),
+					$command(
+						$tune,
+						'create_collection',
+						'Create a collection keyed by its name, refused when the key is taken, and save a readable item into it as collect does, the folder and the save written together or neither: { ok, event_id, collection_key }.',
+						[ $arg( 'name', 'Its name, at most ' . Graph_Curation::NAME_BYTES . ' bytes.' ), $text( 'item', 'An item key to save into it.' ) ],
+						Graph_Curation::create_collection( ... )
+					),
 					$command( $tune, 'collect', 'Save a readable item into a collection, its title cut at ' . Graph_Curation::TITLE_BYTES . ' bytes, refused when it is saved already: { ok, event_id }.', [ $arg( 'collection', 'The collection key.' ), $item ], Graph_Curation::collect( ... ) ),
 					$command(
 						$tune,

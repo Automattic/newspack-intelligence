@@ -227,7 +227,9 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * `ask_steps` row of their own, keyed by the ask and the step's stage, so
 	 * neither touches the outcome and the steps read the same in any order. An exclusion sets its item's one
 	 * `excluded_items` row, its why '' when it names none, and an inclusion
-	 * deletes it. A removal from a folder deletes the placement of each tier
+	 * deletes it. A save writes its saved copy and its placement, and a
+	 * folder created with an item writes the save's own specs, each reading
+	 * the item's record. A removal from a folder deletes the placement of each tier
 	 * it names there, as a move deletes the ones it leaves, and keeps the saved
 	 * copies. A churn note deletes its client's `churn_notes` row and,
 	 * unless its text is '', writes it again, so an empty note clears it.
@@ -255,6 +257,10 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 		$extraction = [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', ...$checked, static fn ( array $e ): ?string => isset( $e['kind_subject'] ) ? Core::as_string( $e['kind_subject'] ) : null, static fn ( array $e ): string => Core::as_string( $e['rank_reason'] ?? '' ), 'actor', 'ts', $day( 'retrieved_ts' ) ];
 		$judgment = static fn ( string $state ): array => [ [ 'set', 'judgments', [ 'item_key', 'entity_key', static fn ( array $e ): string => \explode( ':', Core::as_string( $e['actor'] ), 2 )[0], [ $state ], 'actor', 'item_url', 'ts' ] ] ];
 		$lines    = [ 'ignore', 'boilerplate', [ 'source', self::EACH, 'item_key', $day( 'retrieved_ts' ) ], static fn ( array $e ): array => Entity_Index::line_hashes( Core::as_string( $e['body'] ) ) ];
+		$placement = [
+			[ 'set', 'saved_copies', [ 'item_key', 'tier', 'url', 'title' ] ],
+			[ 'set', 'collected', [ 'collection_key', 'item_key', 'tier', 'actor', 'ts' ] ],
+		];
 		$table    = [
 			'item_recorded'       => [ [ 'ignore', 'items', $item ], $lines ],
 			'item_grown'          => [ [ 'set', 'items', $item ], $lines ],
@@ -301,11 +307,8 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			'link_rejected'       => $judgment( 'rejected' ),
 			'item_excluded'       => [ [ 'set', 'excluded_items', [ 'item_key', 'tier', 'url', 'title', static fn ( array $e ): string => Core::as_string( $e['why'] ?? '' ), 'actor', 'ts' ] ] ],
 			'item_included'       => [ [ 'delete', 'excluded_items', [ 'item_key' => 'item_key' ] ] ],
-			'collection_created'  => [ [ 'set', 'collections', [ 'collection_key', 'name', 'actor', 'ts' ] ] ],
-			'collected'           => [
-				[ 'set', 'saved_copies', [ 'item_key', 'tier', 'url', 'title' ] ],
-				[ 'set', 'collected', [ 'collection_key', 'item_key', 'tier', 'actor', 'ts' ] ],
-			],
+			'collection_created'  => [ [ 'set', 'collections', [ 'collection_key', 'name', 'actor', 'ts' ] ], ...\array_map( self::placed( ... ), $placement ) ],
+			'collected'           => $placement,
 			'item_moved'          => [
 				[ 'delete', 'collected', [ 'collection_key' => 'from', 'item_key' => 'item_key', 'tier' => self::EACH ], 'tiers' ],
 				[ 'ignore', 'collected', [ 'collection_key', 'item_key', self::EACH, 'actor', 'ts' ], 'tiers' ],
@@ -332,6 +335,20 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 		];
 		$table[ self::STAND_IN ] = [ [ 'ignore', 'extractions', $extraction ] ];
 		return self::$projections = $table;
+	}
+
+	/**
+	 * A save's op spec as a folder created with an item writes it: each
+	 * column a save reads off its own fields read off the folder's `item`
+	 * record instead, written once when the event carries one, else not.
+	 *
+	 * @param array{0:string,1:string,2:list<string>} $spec A save's op spec.
+	 * @return array{0:string,1:string,2:list<string|\Closure>,3:\Closure}
+	 */
+	private static function placed( array $spec ): array {
+		$members = [ 'item_key' => 'key', 'url' => 'url', 'title' => 'title', 'tier' => 'tier' ];
+		$columns = \array_map( static fn ( string $column ): string|\Closure => isset( $members[ $column ] ) ? static fn ( array $e ): mixed => Core::arr( $e['item'] )[ $members[ $column ] ] : $column, $spec[2] );
+		return [ $spec[0], $spec[1], $columns, static fn ( array $e ): array => isset( $e['item'] ) ? [ null ] : [] ];
 	}
 
 	/**

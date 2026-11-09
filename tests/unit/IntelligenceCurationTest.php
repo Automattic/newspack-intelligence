@@ -208,6 +208,7 @@ final class IntelligenceCurationTest extends TestCase {
 			'tag_topic'         => [ 'tag_topic', [ self::LEDGER, 'topic:ai' ], [ 'event' => 'topic_tagged', 'entity_key' => self::LEDGER, 'topic_key' => 'topic:ai' ] ],
 			'create_entity'     => [ 'create_entity', [ 'person', 'Marisol Okafor' ], [ 'event' => 'entity_created', 'entity_key' => 'person:marisol-okafor', 'type' => 'person', 'name' => 'Marisol Okafor' ] ],
 			'create_collection' => [ 'create_collection', [ 'Grant Watch' ], [ 'event' => 'collection_created', 'collection_key' => 'grant-watch', 'name' => 'Grant Watch' ] ],
+			'create a folder with an item' => [ 'create_collection', [ 'Launch Desk', '--item=github:ledger-launch' ], [ 'event' => 'collection_created', 'collection_key' => 'launch-desk', 'name' => 'Launch Desk', 'item' => [ 'key' => 'github:ledger-launch', 'url' => 'https://news.example/github/ledger-launch', 'title' => 'Salem Ledger launches a newsletter tool', 'tier' => 'internal' ] ] ],
 			'accept a proposal' => [ 'accept_entity', [ 'organization:tidewater-times' ], [ 'event' => 'entity_accepted', 'entity_key' => 'organization:tidewater-times' ] ],
 			'end a merged role' => [ 'end_role', [ self::GAZETTE, 'partner' ], [ 'event' => 'role_ended', 'entity_key' => 'organization:gazette-daily', 'role' => 'partner', 'from_ts' => 1790856000, 'to_ts' => 1792497600 ] ],
 			'create over one'   => [ 'create_entity', [ 'organization', 'Hidden Buyer' ], [ 'event' => 'entity_created', 'entity_key' => self::HIDDEN, 'type' => 'organization', 'name' => 'Hidden Buyer' ] ],
@@ -503,6 +504,11 @@ final class IntelligenceCurationTest extends TestCase {
 			'merged-away entity taken'    => [ 'create_entity', [ 'organization', 'Chain 0' ], 'organization:chain-0 is taken' ],
 			'collection taken'            => [ 'create_collection', [ 'col october' ], 'collection col-october is taken' ],
 			'collection name unsluggable' => [ 'create_collection', [ '!?!' ], 'collection name !?! sanitizes to nothing' ],
+			'create with an excluded item' => [ 'create_collection', [ 'Wire desk', '--item=' . self::WIRE ], self::WIRE . ' is excluded from every view' ],
+			'create with an unread item'  => [ 'create_collection', [ 'Deal desk', '--item=hubspot:deal-9' ], 'no item: hubspot:deal-9' ],
+			'create with a missing item'  => [ 'create_collection', [ 'Lost desk', '--item=feed:never-recorded' ], 'no item: feed:never-recorded' ],
+			'create taken with an item'   => [ 'create_collection', [ 'col october', '--item=feed:gazette-award' ], 'collection col-october is taken' ],
+			'create with a sprawling URL' => [ 'create_collection', [ 'Sprawl desk', '--item=feed:sprawling-url' ], 'feed:sprawling-url url runs past 1024 bytes' ],
 			'item URL past its cap'       => [ 'collect', [ 'col:october', 'feed:sprawling-url' ], 'feed:sprawling-url url runs past 1024 bytes' ],
 			'name past its cap'           => [ 'add_name', [ self::LEDGER, 'alias', $long ], 'value runs past 256 bytes' ],
 			'item key past its cap'       => [ 'confirm_link', [ \str_repeat( 'k', 513 ), self::LEDGER ], 'item runs past 512 bytes' ],
@@ -812,10 +818,33 @@ final class IntelligenceCurationTest extends TestCase {
 
 		$this->ci->dispatch( 'collect', [ 'col:october', 'feed:long-ascii' ] );
 		$this->ci->dispatch( 'collect', [ 'col:october', 'feed:long-accented' ] );
+		$this->ci->dispatch( 'create_collection', [ 'Long reads', '--item=feed:long-accented' ] );
 
-		$titles = \array_column( self::ontology_events(), 'title' );
+		$events = self::ontology_events();
+		$titles = \array_column( $events, 'title' );
 		$this->assertSame( \str_repeat( 'w', 512 ), $titles[0] );
 		$this->assertSame( \str_repeat( 'é', 85 ), $titles[1], 'each é is six bytes escaped' );
+		$this->assertSame( $titles[1], $events[2]['item']['title'], 'a folder created with an item cuts it as a save does' );
+	}
+
+	/**
+	 * A folder created with an item lists it as a save into it would: under
+	 * the creator, at the copy's tier, and counted in the folder list.
+	 */
+	public function test_a_folder_created_with_an_item_holds_it(): void {
+		$this->seed_curation_world();
+		Core::$now = (float) self::$oct_20 + 600;
+
+		$this->ci->dispatch( 'create_collection', [ 'Launch Desk', '--item=github:ledger-launch' ] );
+		$this->seed( self::ontology_events() );
+
+		$this->assertSame(
+			[ [ 'github:ledger-launch', 'Salem Ledger launches a newsletter tool', 'user:' . self::LOGIN, self::$oct_20 + 600 ] ],
+			\array_map( static fn ( array $i ): array => [ $i['item_key'], $i['title'], $i['actor'], $i['saved_ts'] ], Graph_Query::collections( [ 'key' => 'launch-desk' ] )['items'] )
+		);
+		$this->assertSame( [ [ 'col-october', 'linear:joint-grant', 'internal' ], [ 'launch-desk', 'github:ledger-launch', 'internal' ] ], self::graph_rows( 'collected', 'collection_key', 'collection_key, item_key, tier' ) );
+		$this->assertSame( 1, \array_column( Graph_Query::collections( [] )['collections'], 'items', 'collection_key' )['launch-desk'] );
+		$this->assertSame( self::$oct_20 + 600, \array_column( Graph_Query::collections( [] )['collections'], 'recent_ts', 'collection_key' )['launch-desk'] );
 	}
 
 	/** A collected item lists in its collection, at its tier, after its item row expires. */
@@ -1109,6 +1138,7 @@ final class IntelligenceCurationTest extends TestCase {
 			[ 'tag_topic', [ $entity, $topic ] ],
 			[ 'create_entity', [ 'organization', $ascii ] ],
 			[ 'create_collection', [ $ascii ] ],
+			[ 'create_collection', [ \str_repeat( 'n', Graph_Curation::NAME_BYTES ), '--item=' . $item ] ],
 			[ 'collect', [ $key( 'c' ), $item ] ],
 			[ 'mark_used', [ $key( 'c' ), $saved, 'newsletter', '2026-10-19' ] ],
 			[ 'move_item', [ $key( 'c' ), $saved, $key( 'e' ) ] ],

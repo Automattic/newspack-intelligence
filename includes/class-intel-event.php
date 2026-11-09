@@ -78,7 +78,9 @@ final class Intel_Event {
 	 * an instance of: one naming none, or written before extractions named
 	 * one, has none, and a blank one is refused; and so are its
 	 * `kind_subject`, the linked entity whose churn a CHURN_KINDS item
-	 * reports, and its `rank_reason`, the sentence saying why it ranks. A saved item's move names
+	 * reports, and its `rank_reason`, the sentence saying why it ranks. A
+	 * folder's creation may carry the item it is created with, its `item`
+	 * record. A saved item's move names
 	 * the folder it leaves as `from`, the one it enters as `collection_key`
 	 * and the tier of each copy it carries, a removal from a folder the tier
 	 * of each copy it takes out, and a use mark the tier of the copy it marks. An exclusion names the URL, title and tier its item had,
@@ -173,13 +175,16 @@ final class Intel_Event {
 
 	/**
 	 * Each kind holding an optional record field => each such field => its
-	 * members in order, each drawn from its set, or an integer where the set
-	 * is null; one written without it has none. An extraction's
-	 * `kind_check` is the kind its review asked `fits_kind` of, the verdict
-	 * and the second it was answered: one never checked carries none.
+	 * members in order, each drawn from its set, an integer where the set
+	 * is null, or a string within that many bytes where it is a number; one
+	 * written without it has none. An extraction's `kind_check` is the kind
+	 * its review asked `fits_kind` of, the verdict and the second it was
+	 * answered: one never checked carries none. A folder's `item` is the
+	 * copy of the item it is created with, as `collected` carries one.
 	 */
 	public const RECORDS = [
 		'extraction_recorded' => [ 'kind_check' => [ 'kind' => self::ITEM_KINDS, 'verdict' => self::VERDICTS, 'ts' => null ] ],
+		'collection_created'  => [ 'item' => [ 'key' => Graph_Curation::ITEM_KEY_BYTES, 'url' => Graph_Curation::URL_BYTES, 'title' => Graph_Curation::TITLE_BYTES, 'tier' => self::TIERS ] ],
 	];
 
 	/** The optional fields refused blank: one with nothing to say is left out. */
@@ -377,8 +382,9 @@ final class Intel_Event {
 
 	/**
 	 * Why a value is not the record RECORDS declares for a kind's field:
-	 * not exactly its members in order, a member outside its set, or one
-	 * not an integer where the set is null; null when it is that record.
+	 * not exactly its members in order, a member outside its set, one not
+	 * an integer where the set is null, or one not a string within its bytes
+	 * where the set is a number; null when it is that record.
 	 *
 	 * @api The extractor reads a stored kind check back through it.
 	 * @param string $kind  A kind RECORDS names.
@@ -391,8 +397,14 @@ final class Intel_Event {
 			return 'is not a record of ' . \implode( ', ', \array_keys( $members ) );
 		}
 		foreach ( $members as $member => $set ) {
-			if ( null === $set ? ! \is_int( $value[ $member ] ) : ! \in_array( $value[ $member ], $set, true ) ) {
-				return "{$member} " . ( null === $set ? 'is not an integer' : 'is outside its set' );
+			$held = $value[ $member ];
+			$fault = match ( true ) {
+				null === $set   => \is_int( $held ) ? null : 'is not an integer',
+				\is_int( $set ) => \is_string( $held ) && Graph_Curation::written_bytes( $held ) <= $set ? null : "is not a string within {$set} bytes",
+				default         => \in_array( $held, $set, true ) ? null : 'is outside its set',
+			};
+			if ( null !== $fault ) {
+				return "{$member} {$fault}";
 			}
 		}
 		return null;

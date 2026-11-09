@@ -381,19 +381,28 @@ final class Graph_Curation {
 	}
 
 	/**
-	 * Create a collection keyed by its sanitized name, unless the key is taken.
+	 * Create a collection keyed by its sanitized name, unless the key is
+	 * taken, carrying the item it is created with, when the call names one,
+	 * as `collect()` saves it: one event, so a refused item leaves no folder.
 	 *
-	 * @param array<array-key,mixed> $args The bound command args: `name`.
+	 * @param array<array-key,mixed> $args The bound command args: `name`, `item`.
 	 * @return array<string,mixed> `{ ok, event_id, collection_key }`.
-	 * @throws \InvalidArgumentException When the name sanitizes to nothing or the key is taken.
+	 * @throws \InvalidArgumentException When the name sanitizes to nothing,
+	 *                                   the key is taken, or as `item()`.
 	 */
 	public static function create_collection( array $args ): array {
-		$name = self::bounded( 'name', Core::as_string( $args['name'] ), self::NAME_BYTES );
-		$key  = self::capped( 'key', Intel_Event::collection_key( $name ), self::KEY_BYTES );
-		if ( null !== Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): ?array => Graph_Query::collection( $r, $key ) ) ) {
-			throw new \InvalidArgumentException( \esc_html( "collection {$key} is taken" ) );
-		}
-		return self::write( 'collection_created', [ 'collection_key' => $key, 'name' => $name ] ) + [ 'collection_key' => $key ];
+		$name     = self::bounded( 'name', Core::as_string( $args['name'] ), self::NAME_BYTES );
+		$key      = self::capped( 'key', Intel_Event::collection_key( $name ), self::KEY_BYTES );
+		$item_key = null === $args['item'] ? null : self::item_key( $args );
+		$item     = Intel_Graph_Row_Schema::read(
+			static function ( Row_Reader $r ) use ( $key, $item_key ): array {
+				if ( null !== Graph_Query::collection( $r, $key ) ) {
+					throw new \InvalidArgumentException( \esc_html( "collection {$key} is taken" ) );
+				}
+				return null === $item_key ? [] : [ 'item' => [ 'key' => $item_key ] + self::item( $r, Graph_Query::graph( $r ), $item_key ) ];
+			}
+		);
+		return self::write( 'collection_created', [ 'collection_key' => $key, 'name' => $name ] + $item ) + [ 'collection_key' => $key ];
 	}
 
 	/**
@@ -417,7 +426,7 @@ final class Graph_Curation {
 				return self::item( $r, $g, $item_key );
 			}
 		);
-		return self::write( 'collected', [ 'collection_key' => $collection, 'item_key' => $item_key, 'url' => $item['url'], 'title' => self::cut( $item['title'], self::TITLE_BYTES ), 'tier' => $item['tier'] ] );
+		return self::write( 'collected', [ 'collection_key' => $collection, 'item_key' => $item_key ] + $item );
 	}
 
 	/**
@@ -451,7 +460,27 @@ final class Graph_Curation {
 		$item_key = self::item_key( $args );
 		$why      = null === $args['why'] ? [] : [ 'why' => self::bounded( 'why', Core::as_string( $args['why'] ), Intel_Event::WHY_BYTES ) ];
 		$item     = self::on_graph( static fn ( Row_Reader $r, array $g ): array => self::item( $r, $g, $item_key ) );
-		return self::write( 'item_excluded', [ 'item_key' => $item_key, 'url' => $item['url'], 'title' => self::cut( $item['title'], self::TITLE_BYTES ), 'tier' => $item['tier'] ] + $why );
+		return self::write( 'item_excluded', [ 'item_key' => $item_key ] + $item + $why );
+	}
+
+	/**
+	 * A readable item a curator has not excluded, as `collected`, a folder
+	 * created with it, a judged link and an exclusion carry it, its title
+	 * cut at TITLE_BYTES. It is read from `ti`, the readable items before
+	 * the exclusion, so an excluded one is refused naming it.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param Graph      $g   The graph the read opened.
+	 * @param string     $key The item key.
+	 * @return array{url:string,title:string,tier:string}
+	 * @throws \InvalidArgumentException With its URL past URL_BYTES, when the
+	 *                                   item is missing or the caller may not
+	 *                                   read it, or when it is excluded.
+	 */
+	private static function item( Row_Reader $r, array $g, string $key ): array {
+		$row = $r->rows( "{$g['with']} SELECT url, title, tier FROM ti WHERE item_key = ? LIMIT 1", [ ...$g['binds'], $key ] )[0] ?? throw new \InvalidArgumentException( \esc_html( "no item: {$key}" ) );
+		self::unexcluded( $r, $key );
+		return [ 'url' => self::capped( "{$key} url", Core::as_string( $row[0] ), self::URL_BYTES ), 'title' => self::cut( Core::as_string( $row[1] ), self::TITLE_BYTES ), 'tier' => Core::as_string( $row[2] ) ];
 	}
 
 	/**
@@ -473,25 +502,6 @@ final class Graph_Curation {
 			}
 		}
 		return \mb_substr( $text, 0, $fits );
-	}
-
-	/**
-	 * A readable item a curator has not excluded, as `collected`, a judged
-	 * link and an exclusion carry it. It is read from `ti`, the readable
-	 * items before the exclusion, so an excluded one is refused naming it.
-	 *
-	 * @param Row_Reader $r   The reader.
-	 * @param Graph      $g   The graph the read opened.
-	 * @param string     $key The item key.
-	 * @return array{url:string,title:string,tier:string}
-	 * @throws \InvalidArgumentException With its URL past URL_BYTES, when the
-	 *                                   item is missing or the caller may not
-	 *                                   read it, or when it is excluded.
-	 */
-	private static function item( Row_Reader $r, array $g, string $key ): array {
-		$row = $r->rows( "{$g['with']} SELECT url, title, tier FROM ti WHERE item_key = ? LIMIT 1", [ ...$g['binds'], $key ] )[0] ?? throw new \InvalidArgumentException( \esc_html( "no item: {$key}" ) );
-		self::unexcluded( $r, $key );
-		return [ 'url' => self::capped( "{$key} url", Core::as_string( $row[0] ), self::URL_BYTES ), 'title' => Core::as_string( $row[1] ), 'tier' => Core::as_string( $row[2] ) ];
 	}
 
 	/**
