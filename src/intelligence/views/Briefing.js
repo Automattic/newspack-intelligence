@@ -1,15 +1,11 @@
-import { useEffect, useId, useRef, useState } from '@wordpress/element';
+import { useEffect, useId, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
-import {
-	readStorage,
-	writeStorage,
-} from '@newspack-nodes/shared/utils/storage';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import Answer from '../components/Answer';
 import AskBox from '../components/AskBox';
 import ItemRow from '../components/ItemRow';
 import { EntityChip } from '../components/Cite';
-import { utcDay } from '../components/format';
+import { sinceLabel, utcDay } from '../components/format';
 import TrendTable, {
 	againstBaseline,
 	signalValue,
@@ -38,27 +34,6 @@ function Invitation( { text, label, onClick } ) {
 
 /** The most lines the summary shows: the whole, then the kinds. */
 const SUMMARY_LINES = 5;
-
-/**
- * Where the page keeps when a reader last looked at the Briefing.
- *
- * @param {string} userId The reader.
- * @return {string} The storage key.
- */
-const lastViewKey = ( userId ) =>
-	`newspack-intelligence:briefing:last-view:${ userId }`;
-
-/**
- * When the reader last looked, UTC seconds, or null for never, or for
- * storage that will not be read.
- *
- * @param {string} userId The reader.
- * @return {?number} The instant.
- */
-function lastView( userId ) {
-	const stored = readStorage( lastViewKey( userId ) );
-	return null !== stored && /^\d+$/.test( stored ) ? Number( stored ) : null;
-}
 
 /** The kinds whose line counts the clients their items are about. */
 const CLIENT_KINDS = [ 'churned', 'churn_signal' ];
@@ -127,14 +102,15 @@ const kindLines = () => ( {
  * What arrived since the reader last looked: how many items and the clients
  * they are about, then each kind the answer counts, in its order, each a
  * line opening the search for it, at most SUMMARY_LINES in all; when
- * nothing arrived since, it says so.
+ * nothing arrived since, it says so, naming the instant as the heading does.
  *
  * @param {Object}                    props
  * @param {Object}                    props.summary     The `changes` answer's summary.
+ * @param {string}                    props.label       Its instant, as `sinceLabel()` names it.
  * @param {(filters: Object) => void} props.onSearchFor Opens Search on filters.
  * @return {import('react').ReactElement} The summary.
  */
-function Summary( { summary, onSearchFor } ) {
+function Summary( { summary, label, onSearchFor } ) {
 	const since = utcDay( summary.since );
 	const words = kindLines();
 	const kinds = summary.kinds
@@ -157,9 +133,10 @@ function Summary( { summary, onSearchFor } ) {
 	);
 	return 0 === summary.items ? (
 		<p className="newspack-nodes-status is-muted">
-			{ __(
-				'Nothing new since you last looked.',
-				'newspack-intelligence'
+			{ sprintf(
+				/* translators: %s: when the reader last looked, e.g. "Tuesday at 14:31". */
+				__( 'Nothing new since %s.', 'newspack-intelligence' ),
+				label
 			) }
 		</p>
 	) : (
@@ -340,15 +317,17 @@ function Changes( { operator, answer, onOpenEntity, onSave, canTune } ) {
  * client, its lens or its watch; each empty slice invites the one thing
  * the reader can do about it. Nothing polls.
  *
- * It opens with what arrived since the reader last looked, counted from
- * the instant the page keeps in the browser for that reader, and keeps the
- * instant this view opened once `changes` answers from the graph; a reader
- * who never looked, or whose storage will not be read, sees the Briefing
- * alone, and an answer from a graph that would not open keeps the old
- * instant.
+ * It opens with what arrived since the reader last looked, the session's
+ * baseline the page holds, headed "Since" the instant the answer counts
+ * from; a reader who never looked sees the week's arrivals headed "This
+ * week", and a reader whose storage refuses sees the Briefing without
+ * them. It tells the page it is seen while mounted, so the page knows when
+ * a leave marks a new look.
  *
  * @param {Object}                          props
- * @param {string}                          props.userId       The reader, whose last look is kept.
+ * @param {?number}                         props.since        The last look, UTC seconds, or null for none.
+ * @param {boolean}                         props.kept         Whether the browser keeps the last look.
+ * @param {(visible: boolean) => void}      props.noteVisible  Tells the page whether it is seen.
  * @param {{name: string, heading: string}} props.operator     Who runs the deployment, by name and as a heading.
  * @param {(filters: Object) => void}       props.onSearchFor  Opens Search on filters.
  * @param {(key: string) => void}           props.onOpenEntity Opens an entity.
@@ -363,7 +342,9 @@ function Changes( { operator, answer, onOpenEntity, onSave, canTune } ) {
  * @return {import('react').ReactElement} The view.
  */
 export default function Briefing( {
-	userId,
+	since,
+	kept,
+	noteVisible,
 	operator,
 	onSearchFor,
 	onOpenEntity,
@@ -376,24 +357,25 @@ export default function Briefing( {
 	asked,
 	onAsked,
 } ) {
-	const [ seen ] = useState( () => lastView( userId ) );
-	const [ opened ] = useState( () => Math.floor( Date.now() / 1000 ) );
-	const kept = useRef( false );
+	useEffect( () => {
+		noteVisible( true );
+		return () => noteVisible( false );
+	}, [ noteVisible ] );
 	const changes = useIntelRead( 'briefing:changes', 'briefing', [
 		'changes',
-		...( null === seen ? [] : [ `--since=${ seen }` ] ),
+		...( null === since ? [] : [ `--since=${ since }` ] ),
 	] );
 	const signals = useIntelRead( 'briefing:signals', 'briefing', [
 		'signals',
 	] );
 	const watches = useIntelRead( 'briefing:watches', 'watches', [] );
 	const read = true === changes.answer?.available;
-	useEffect( () => {
-		if ( read && ! kept.current ) {
-			kept.current = true;
-			writeStorage( lastViewKey( userId ), String( opened ) );
-		}
-	}, [ read, userId, opened ] );
+	const label = read
+		? sinceLabel(
+				changes.answer.summary.since,
+				Math.floor( Date.now() / 1000 )
+		  )
+		: '';
 	const table = ( rows ) => (
 		<TrendTable
 			rows={ rows }
@@ -413,17 +395,23 @@ export default function Briefing( {
 				onSave={ onSave }
 				canTune={ canTune }
 			/>
-			{ null !== seen && read && (
+			{ kept && read && (
 				<Answer
-					title={ __(
-						'Since you last looked',
-						'newspack-intelligence'
-					) }
+					title={
+						null === since
+							? __( 'This week', 'newspack-intelligence' )
+							: sprintf(
+									/* translators: %s: when the reader last looked, e.g. "Tuesday at 14:31". */
+									__( 'Since %s', 'newspack-intelligence' ),
+									label
+							  )
+					}
 					read={ changes }
 				>
 					{ ( answer ) => (
 						<Summary
 							summary={ answer.summary }
+							label={ label }
 							onSearchFor={ onSearchFor }
 						/>
 					) }

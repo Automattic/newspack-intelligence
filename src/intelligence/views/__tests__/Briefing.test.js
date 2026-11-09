@@ -12,6 +12,7 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { ITEM } from './fixtures';
+import { sinceLabel } from '../../components/format';
 import Briefing from '../Briefing';
 
 const CLIENT = 'organization:kestrel-quillwork';
@@ -84,9 +85,8 @@ const CHANGES = {
 	available: true,
 };
 
-/** The reader the page names, and where it keeps when they last looked. */
-const USER = '6143';
-const LAST_VIEW = 'newspack-intelligence:briefing:last-view:6143';
+/** A last look the page holds, before the window's first instant. */
+const LAST_LOOK = 1791999000;
 
 const SIGNAL = {
 	axis: 'publisher',
@@ -166,7 +166,6 @@ let handlers;
 
 beforeEach( () => {
 	Core.reset();
-	window.localStorage.clear();
 	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
 	wire = intelWire();
 	const full = { changes: CHANGES, signals: SIGNALS };
@@ -181,6 +180,9 @@ beforeEach( () => {
 		onSearchFor: jest.fn(),
 		asked: null,
 		onAsked: jest.fn(),
+		since: null,
+		kept: true,
+		noteVisible: jest.fn(),
 	};
 } );
 
@@ -192,9 +194,7 @@ const OPERATOR = {
 };
 
 const renderBriefing = ( operator = OPERATOR ) =>
-	render(
-		<Briefing userId={ USER } operator={ operator } { ...handlers } />
-	);
+	render( <Briefing operator={ operator } { ...handlers } /> );
 
 /**
  * Open a collapsed group by its toggle, named by its heading and its count.
@@ -339,12 +339,7 @@ describe( 'Briefing', () => {
 	it( "saves a signal's cited item to a folder for a curator", async () => {
 		const onSave = jest.fn();
 		render(
-			<Briefing
-				userId={ USER }
-				operator={ OPERATOR }
-				{ ...handlers }
-				onSave={ onSave }
-			/>
+			<Briefing operator={ OPERATOR } { ...handlers } onSave={ onSave } />
 		);
 		const signals = await screen.findByRole( 'region', {
 			name: 'Signals',
@@ -384,12 +379,14 @@ describe( 'Briefing', () => {
 		);
 	} );
 
-	it( 'opens with what arrived since the reader last looked', async () => {
-		window.localStorage.setItem( LAST_VIEW, '1792000000' );
-		const before = Math.floor( Date.now() / 1000 );
+	it( 'opens with what arrived since the reader last looked, named by the instant the answer counts from', async () => {
+		handlers.since = LAST_LOOK;
 		renderBriefing();
 		const since = await screen.findByRole( 'region', {
-			name: 'Since you last looked',
+			name: `Since ${ sinceLabel(
+				CHANGES.summary.since,
+				Math.floor( Date.now() / 1000 )
+			) }`,
 		} );
 		expect(
 			within( since )
@@ -404,7 +401,7 @@ describe( 'Briefing', () => {
 		] );
 		expect( wire.sent( 'briefing' ) ).toContainEqual( [
 			'changes',
-			'--since=1792000000',
+			`--since=${ LAST_LOOK }`,
 		] );
 		fireEvent.click(
 			within( since ).getByRole( 'button', {
@@ -423,73 +420,71 @@ describe( 'Briefing', () => {
 		expect( handlers.onSearchFor ).toHaveBeenLastCalledWith( {
 			since: '2026-10-14',
 		} );
-		const stored = Number( window.localStorage.getItem( LAST_VIEW ) );
-		expect( stored ).toBeGreaterThanOrEqual( before );
-		expect( stored ).toBeLessThanOrEqual( Date.now() / 1000 );
 	} );
 
 	it( 'says so when nothing arrived since the reader last looked', async () => {
-		window.localStorage.setItem( LAST_VIEW, '1793000000' );
+		handlers.since = LAST_LOOK;
 		wire.replies.briefing = ( [ what ] ) => NONE[ what ];
 		renderBriefing();
+		const label = sinceLabel(
+			NONE.changes.summary.since,
+			Math.floor( Date.now() / 1000 )
+		);
+		const lede = await screen.findByRole( 'region', {
+			name: `Since ${ label }`,
+		} );
 		expect(
-			await screen.findByText( 'Nothing new since you last looked.' )
+			within( lede ).getByText( `Nothing new since ${ label }.` )
 		).toBeInTheDocument();
 	} );
 
-	it( 'shows the plain Briefing when storage will not be read', async () => {
-		const read = jest
-			.spyOn( window.Storage.prototype, 'getItem' )
-			.mockImplementation( () => {
-				throw new Error( 'site data blocked' );
-			} );
+	it( 'shows the plain Briefing when the last look is not kept', async () => {
+		handlers.kept = false;
 		renderBriefing();
 		await screen.findByRole( 'region', { name: 'Last seven days' } );
 		await screen.findByRole( 'button', { name: 'Kestrel account' } );
 		await screen.findAllByRole( 'heading', { level: 3 } );
 		expect(
-			screen.queryByRole( 'region', { name: 'Since you last looked' } )
-		).not.toBeInTheDocument();
-		expect( wire.sent( 'briefing' ) ).toContainEqual( [ 'changes' ] );
-		expect( read ).toHaveBeenCalledWith( LAST_VIEW );
-	} );
-
-	it( 'reads only the reader’s own last look', async () => {
-		window.localStorage.setItem(
-			'newspack-intelligence:briefing:last-view:9999',
-			'1792000000'
-		);
-		renderBriefing();
-		await screen.findAllByRole( 'heading', { level: 3 } );
-		expect(
-			screen.queryByRole( 'region', { name: 'Since you last looked' } )
+			screen.queryByText( '23 new items about 9 clients' )
 		).not.toBeInTheDocument();
 		expect( wire.sent( 'briefing' ) ).toContainEqual( [ 'changes' ] );
 	} );
 
-	it( 'keeps the last look while the graph will not open', async () => {
-		window.localStorage.setItem( LAST_VIEW, '1792000000' );
+	it( 'shows no summary while the graph will not open', async () => {
+		handlers.since = LAST_LOOK;
 		wire.replies.briefing = ( [ what ] ) =>
 			'changes' === what
 				? { ...NONE.changes, available: false }
 				: SIGNALS;
 		renderBriefing();
-		await screen.findByText(
-			'The intelligence graph could not be opened, so this was not read.'
-		);
+		await screen.findByText( /so this was not read/ );
 		expect(
-			screen.queryByRole( 'region', { name: 'Since you last looked' } )
+			screen.queryByRole( 'heading', { name: /^Since / } )
 		).not.toBeInTheDocument();
-		expect( window.localStorage.getItem( LAST_VIEW ) ).toBe( '1792000000' );
 	} );
 
-	it( 'shows the plain Briefing on a first visit, and remembers it', async () => {
+	it( 'a reader with no mark sees the heading "This week"', async () => {
 		renderBriefing();
-		await screen.findAllByRole( 'heading', { level: 3 } );
+		const week = await screen.findByRole( 'region', {
+			name: 'This week',
+		} );
 		expect(
-			screen.queryByRole( 'region', { name: 'Since you last looked' } )
-		).not.toBeInTheDocument();
-		expect( window.localStorage.getItem( LAST_VIEW ) ).toMatch( /^\d+$/ );
+			within( week ).getByRole( 'button', {
+				name: '23 new items about 9 clients',
+			} )
+		).toBeInTheDocument();
+		expect( wire.sent( 'briefing' ) ).toContainEqual( [ 'changes' ] );
+	} );
+
+	it( 'tells the page it is seen while mounted, and not once unmounted', async () => {
+		const { unmount } = renderBriefing();
+		await screen.findAllByRole( 'heading', { level: 3 } );
+		expect( handlers.noteVisible.mock.calls ).toEqual( [ [ true ] ] );
+		unmount();
+		expect( handlers.noteVisible.mock.calls ).toEqual( [
+			[ true ],
+			[ false ],
+		] );
 	} );
 
 	it( 'invites the reader to act where a slice answers nothing', async () => {

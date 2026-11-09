@@ -38,6 +38,7 @@ let wire;
 beforeEach( () => {
 	Core.reset();
 	window.localStorage.clear();
+	window.sessionStorage.clear();
 	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
 	wire = intelWire();
 	wire.replies.search = ( args ) =>
@@ -144,8 +145,8 @@ describe( 'IntelligencePage', () => {
 
 	it( 'opens Search on a line of what arrived since the last look', async () => {
 		window.localStorage.setItem(
-			'newspack-intelligence:briefing:last-view:6143',
-			'1792000000'
+			'newspack-intelligence:last-look:6143',
+			'1791999000'
 		);
 		renderPage();
 		fireEvent.click(

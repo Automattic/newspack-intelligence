@@ -15,6 +15,7 @@ import Lens, { CLOSED_LENS } from './views/Lens';
 import Watches, { CLOSED_WATCH, newWatch } from './views/Watches';
 import SaveToCollection from './components/SaveToCollection';
 import HealthStrip from './components/HealthStrip';
+import { useLastLook } from './hooks/useLastLook';
 import './styles/intelligence.scss';
 
 /**
@@ -34,7 +35,9 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
  * and watch, the watch form's draft and the item being saved, so a view
  * returns as it was left, and a lens's "Watch this" opens the form on it.
  * The Entity tab reads the name the open entity's record answered, else its
- * key. A line of the Briefing's summary opens Search on its filters.
+ * key. The page holds the reader's last look, fixed for the browser session,
+ * so a return to the Briefing reads changes since the same instant. A line
+ * of the Briefing's summary opens Search on its filters.
  * Curation renders only for `canTune`, which hides controls and enforces
  * nothing: the server's role gate refuses a write the caller may not make.
  * Watches are every reader's own, so they are not gated on it. A link naming
@@ -49,7 +52,7 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
  * @param {Object}  props
  * @param {boolean} props.canTune    Whether the caller may curate.
  * @param {boolean} props.canManage  Whether the caller is an operator.
- * @param {string}  props.userId     The reader, whose last look the Briefing keeps.
+ * @param {string}  props.userId     The reader, whose last look the page holds for the session.
  * @param {Object}  props.operator   Who runs the deployment, `{ name, heading }`, whom the copy names.
  * @param {Object}  props.vocabulary The ontology's closed lists.
  * @return {import('react').ReactElement} The page.
@@ -78,6 +81,7 @@ export default function IntelligencePage( {
 	} ) );
 	const [ watchDraft, setWatchDraft ] = useState( null );
 	const [ asked, setAsked ] = useState( null );
+	const lastLook = useLastLook( userId );
 
 	const openEntity = ( key ) => {
 		setEntityKey( key );
@@ -151,7 +155,9 @@ export default function IntelligencePage( {
 					>
 						{ 'briefing' === view && (
 							<Briefing
-								userId={ userId }
+								since={ lastLook.since }
+								kept={ lastLook.kept }
+								noteVisible={ lastLook.noteVisible }
 								operator={ operator }
 								onSearchFor={ searchFor }
 								onOpenEntity={ openEntity }
