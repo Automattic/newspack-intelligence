@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.4] - 2026-11-09
+
 ### Fixed
 
 - **A feed item whose guid would pass the item-key cap records instead of being refused.** A key `feed:<guid>`, or a client's `feed:<domain>:<guid>`, that would run past `Graph_Curation::ITEM_KEY_BYTES` (512) as the stream writes it takes the guid's sha256 in the guid's place, in its lane, so one guid always keys alike and `Feed_Source_Node::lane_of()` still reads a client item's domain. Google News guids run past the cap, so each such story was logged `refused an item whose key runs …` and lost. A key within the cap is unchanged.
