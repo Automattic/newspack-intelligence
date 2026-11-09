@@ -428,6 +428,29 @@ final class SourceNodeTest extends TestCase {
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'fake-source-12: an answer failed for ' . $urls[0] . ': page-broke-3307' ) );
 	}
 
+	/**
+	 * A failure's detail logs as one line whatever source fails: each
+	 * whitespace run one space, cut to 500 bytes on a character boundary.
+	 */
+	public function test_a_failures_detail_logs_as_one_bounded_line(): void {
+		$stderr               = $this->capture_stderr();
+		$node                 = $this->fake();
+		$node->answer_failure = new \RuntimeException( "page-broke-5513\r\n\t<div>" . \str_repeat( "<p>é tide</p>\n", 300 ) );
+		$this->tick( $node );
+
+		$this->complete( Fake_Source_Node::PAGE . '1', self::page( [] ) );
+
+		$prefix = 'fake-source-12: an answer failed for ' . Fake_Source_Node::PAGE . '1: ';
+		$lines  = self::stderr_lines( $stderr, $prefix );
+		$this->assertCount( 1, $lines );
+		$detail = \substr( $lines[0], (int) \strpos( $lines[0], $prefix ) + \strlen( $prefix ) );
+		$this->assertStringStartsWith( 'page-broke-5513 <div><p>é tide</p> <p>é tide</p> ', $detail );
+		$this->assertStringNotContainsString( "\n", $lines[0] );
+		$this->assertLessThanOrEqual( 500, \strlen( $detail ) );
+		$this->assertGreaterThanOrEqual( 490, \strlen( $detail ) );
+		$this->assertTrue( \mb_check_encoding( $detail, 'UTF-8' ) );
+	}
+
 	/** A cooperative stop inside an answer stops the worker. */
 	public function test_a_stop_inside_an_answer_propagates(): void {
 		$node                 = $this->fake();

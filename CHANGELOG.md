@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A feed item whose guid would pass the item-key cap records instead of being refused.** A key `feed:<guid>`, or a client's `feed:<domain>:<guid>`, that would run past `Graph_Curation::ITEM_KEY_BYTES` (512) as the stream writes it takes the guid's sha256 in the guid's place, in its lane, so one guid always keys alike and `Feed_Source_Node::lane_of()` still reads a client item's domain. Google News guids run past the cap, so each such story was logged `refused an item whose key runs …` and lost. A key within the cap is unchanged.
+- **A source's failure logs as one line.** `Source_Node::fails()` and a Curl error's text turn each run of whitespace into one space, scrub invalid UTF-8, render controls terminal-safe and cut the text to 500 bytes on a character boundary, for every source. A feed parse error such as `CData section not finished` carried a line break and the feed's markup, so one failure wrote a second log line holding page HTML.
+
 ## [0.39.3] - 2026-11-09
 
 ### Fixed

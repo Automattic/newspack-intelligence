@@ -398,7 +398,7 @@ class Feed_Source_Node extends Source_Node {
 
 	/**
 	 * A feed body's items, RSS 2.0 or Atom, a client's keyed
-	 * `feed:<domain>:<id>`, a configured feed's `feed:<id>`, and the feed's
+	 * `feed:<domain>:<id>`, a configured feed's `feed:<id>` (keyed()), and the feed's
 	 * own title; null, failing once under its url, for a body that is
 	 * neither.
 	 *
@@ -695,13 +695,16 @@ class Feed_Source_Node extends Source_Node {
 	/**
 	 * An item's id past `feed:`: a client's lane leads its guid, and a
 	 * configured feed's guid that would read as a lane is led by `:`, so no
-	 * configured item takes a client's key or reads as its copy.
+	 * configured item takes a client's key or reads as its copy. A key that
+	 * would pass Graph_Curation::ITEM_KEY_BYTES takes the guid's sha256 in
+	 * its place, in its lane, so one guid always keys alike within the cap.
 	 *
 	 * @param string $prefix The lane's domain and `:`, or '' for a configured feed.
 	 * @param string $id     The guid, else the link.
 	 */
 	private static function keyed( string $prefix, string $id ): string {
-		return '' === $prefix && null !== self::lane( $id ) ? ":{$id}" : $prefix . $id;
+		$key = '' === $prefix && null !== self::lane( $id ) ? ":{$id}" : $prefix . $id;
+		return Graph_Curation::written_bytes( "feed:{$key}" ) > Graph_Curation::ITEM_KEY_BYTES ? $prefix . \hash( 'sha256', $id ) : $key;
 	}
 
 	/**

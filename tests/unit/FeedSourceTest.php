@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Feed_Source_Node;
+use Newspack_Intelligence\Graph_Curation;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Source_Node;
@@ -316,6 +317,23 @@ XML;
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: no RSS or Atom feed at https://heron-4471.example/feed/: its root element is <html>' ) );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: no RSS or Atom feed at https://grebe-4472.example/feed/: Extra content at the end of the document' ) );
 		$this->assertCount( 2, self::stderr_lines( $stderr, 'feed: no RSS or Atom feed at ' ) );
+	}
+
+	/**
+	 * A parse error carrying a line break and the feed's markup logs and
+	 * publishes as one line, its whitespace runs one space.
+	 */
+	public function test_a_parse_error_carrying_markup_logs_one_line(): void {
+		$this->publishing();
+		$stderr = $this->capture_stderr();
+		$node   = $this->feed( 'https://heron-4471.example/feed/' );
+		$this->tick( $node );
+
+		$this->complete( 'https://heron-4471.example/feed/', "<rss><channel><item><description><![CDATA[<img src=\"https://storage.example/heron-4471.png\">\n<p>tide</p>" );
+
+		$line = 'feed: no RSS or Atom feed at https://heron-4471.example/feed/: CData section not finished <img src="https://storage.example/heron-4471.png">';
+		$this->assertSame( [ $line ], self::stderr_lines( $stderr, 'no RSS or Atom feed' ) );
+		$this->assertSame( \substr( $line, \strlen( 'feed: ' ) ), $this->published( 'feed' )['last_error'] );
 	}
 
 	public function test_malformed_xml_contributes_nothing(): void {
@@ -1048,8 +1066,11 @@ XML;
 		return \array_map( static fn ( array $name ): array => [ $name['entity_key'], $name['kind'], $name['value'] ], $names );
 	}
 
-	/** A client item's key counts its domain against the key cap, through the one record path. */
-	public function test_a_client_items_key_counts_its_domain_against_the_cap(): void {
+	/**
+	 * A client item whose `feed:<domain>:<guid>` key would pass the cap is
+	 * keyed by its guid's hash in its lane, so lane_of() still reads its domain.
+	 */
+	public function test_a_client_items_long_guid_keys_by_its_hash_in_its_lane(): void {
 		$stderr = $this->capture_stderr();
 		$this->start_intel_graph();
 		$this->seed_clients();
@@ -1060,8 +1081,46 @@ XML;
 
 		$this->complete( 'https://harborgazette.example/feed/', self::rss( [ [ $guid, 'Long', (int) Core::$now - 60, self::GAZETTE ] ] ) );
 
-		$this->assertSame( [], $this->recorded() );
-		$this->assertCount( 1, self::stderr_lines( $stderr, 'feed: refused an item whose key runs 513 bytes, past 512: feed:harborgazette.example:ggg' ) );
+		$key = 'feed:harborgazette.example:' . \hash( 'sha256', $guid );
+		$this->assertSame( [ $key ], \array_keys( $this->recorded() ) );
+		$this->assertSame( 'harborgazette.example', Feed_Source_Node::lane_of( $key ) );
+		$this->assertSame( [], self::stderr_lines( $stderr, 'refused an item whose key runs' ) );
+	}
+
+	/**
+	 * A configured feed's guid past the cap, as Google News spells one,
+	 * records under `feed:<hash>`, within the cap and out of every lane.
+	 */
+	public function test_a_configured_items_long_guid_keys_by_its_hash(): void {
+		$guid  = 'CBMitwFBVV95cUxP' . \str_repeat( 'Qk9uLTQ0NzE', 48 );
+		$items = $this->items_from( self::rss( [ [ $guid, 'Heron wins', null ] ] ) );
+
+		$key = 'feed:' . \hash( 'sha256', $guid );
+		$this->assertGreaterThan( Graph_Curation::ITEM_KEY_BYTES, \strlen( "feed:{$guid}" ) );
+		$this->assertSame( [ $key ], \array_keys( $items ) );
+		$this->assertLessThanOrEqual( Graph_Curation::ITEM_KEY_BYTES, Graph_Curation::written_bytes( $key ) );
+		$this->assertNull( Feed_Source_Node::lane_of( $key ) );
+	}
+
+	/** One long guid listed on two passes records once, under the one hashed key. */
+	public function test_a_long_guid_keys_the_same_on_every_pass(): void {
+		$guid = \str_repeat( 'kestrel-4473-', 40 );
+		$body = self::rss( [ [ $guid, 'Kestrel returns', null ] ] );
+		$node = $this->feed( 'https://example.com/feed.xml' );
+		$this->tick( $node );
+		$this->complete( 'https://example.com/feed.xml', $body );
+		$this->tick( $node );
+		$this->complete( 'https://example.com/feed.xml', $body );
+
+		$this->assertSame( [ 'feed:' . \hash( 'sha256', $guid ) ], $this->recorded_keys() );
+		$this->assertSame( 2, \count( \array_filter( $this->dispatched, static fn ( string $url ): bool => 'https://example.com/feed.xml' === $url ) ) );
+	}
+
+	/** A guid whose key fits the cap to the byte keeps its own spelling. */
+	public function test_a_guid_whose_key_fits_the_cap_keeps_it(): void {
+		$guid = \str_repeat( 'w', Graph_Curation::ITEM_KEY_BYTES - \strlen( 'feed:' ) );
+
+		$this->assertSame( [ "feed:{$guid}" ], \array_keys( $this->items_from( self::rss( [ [ $guid, 'Wren', null ] ] ) ) ) );
 	}
 
 	/** A stored client domain that is not a plain hostname is never fetched, and is named. */
