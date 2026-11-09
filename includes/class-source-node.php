@@ -910,6 +910,29 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 		$this->fault = $prefix . $detail;
 	}
 
+	/** Emit the base config, each declared setter's line and one add line per list or checked list entry. */
+	public function dump_config(): string {
+		return parent::dump_config() . $this->dump_setters() . $this->dump_lists() . $this->dump_checked();
+	}
+
+	/** One add line per checked list entry, in order, a flagged entry's carrying its `--<flag>`. */
+	private function dump_checked(): string {
+		$out = '';
+		foreach ( Command_Interpreter_Node::declared_commands( static::class ) as $name => $command ) {
+			$property = Core::as_string( $command['checked'] ?? '' );
+			if ( '' === $property ) {
+				continue;
+			}
+			$flag    = Core::arr( $command['flag'] ?? null );
+			$flagged = [] === $flag ? [] : Core::arr( $this->{Core::as_string( $flag['property'] )} );
+			foreach ( Core::arr( $this->{$property} ) as $entry ) {
+				$entry = Core::as_string( $entry );
+				$out  .= \in_array( $entry, $flagged, true ) ? $this->config_line( $name, $entry, '--' . Core::as_string( $flag['name'] ) ) : $this->config_line( $name, $entry );
+			}
+		}
+		return $out;
+	}
+
 	/**
 	 * The url the answer being taken was fetched from: its request's, or the
 	 * last Location a redirect of it named.
@@ -977,11 +1000,6 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 		if ( ! $this->timer_is_active() ) {
 			$this->set_timer();
 		}
-	}
-
-	/** Emit the base config, each declared setter's line and one add line per list or checked list entry. */
-	public function dump_config(): string {
-		return parent::dump_config() . $this->dump_setters() . $this->dump_lists() . $this->dump_declared( 'checked', static fn ( mixed $entries ): array => \array_map( Core::as_string( ... ), \array_values( Core::arr( $entries ) ) ) );
 	}
 
 	/**
@@ -1131,20 +1149,24 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	/**
 	 * list_commands()'s `add_<noun>` and `remove_<noun>` over a list whose every
 	 * entry matches $pattern, the add refusing a value that does not, naming it
-	 * as not $kind, and dumped one add line per entry.
+	 * as not $kind, and dumped one add line per entry. A $flag adds the bool
+	 * `--<name>` to the add, keeping each entry added with it in its
+	 * `property` list, which an add without it and the remove drop it from.
 	 *
-	 * @param string $noun        The commands' suffix, and the one arg they take.
-	 * @param string $property    The list property, a `list<string>`.
-	 * @param string $pattern     The regex every entry matches.
-	 * @param string $kind        What an entry is, as a refusal names it.
-	 * @param string $description The add command's description.
+	 * @param string                                                  $noun        The commands' suffix, and the one arg they take.
+	 * @param string                                                  $property    The list property, a `list<string>`.
+	 * @param string                                                  $pattern     The regex every entry matches.
+	 * @param string                                                  $kind        What an entry is, as a refusal names it.
+	 * @param string                                                  $description The add command's description.
+	 * @param array{name:string,property:string,description:string}|null $flag        The add's flag, or null for none.
 	 * @return list<array<string,mixed>>
 	 */
-	protected static function checked_list( string $noun, string $property, string $pattern, string $kind, string $description ): array {
-		[ $add, $remove ] = self::list_commands( $noun, $property, [ 'name' => $noun, 'type' => 'string', 'required' => true ], $description );
+	protected static function checked_list( string $noun, string $property, string $pattern, string $kind, string $description, ?array $flag = null ): array {
+		$arg              = [ 'name' => $noun, 'type' => 'string', 'required' => true ];
+		[ $add, $remove ] = self::list_commands( $noun, $property, $arg, $description );
 		unset( $add['list'] );
 		$add['checked'] = $property;
-		$add['handler'] = static function ( Command_Interpreter_Node $interpreter, array $args ) use ( $noun, $property, $pattern, $kind ): string {
+		$add['handler'] = static function ( Command_Interpreter_Node $interpreter, array $args ) use ( $noun, $property, $pattern, $kind, $flag ): string {
 			$value = Core::as_string( $args[ $noun ] );
 			if ( 1 !== \preg_match( $pattern, $value ) ) {
 				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
@@ -1155,6 +1177,27 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 			if ( ! \in_array( $value, $entries, true ) ) {
 				$source->{$property} = [ ...$entries, $value ];
 			}
+			if ( null !== $flag ) {
+				$flagged                     = Core::without( \array_values( Core::arr( $source->{$flag['property']} ) ), $value );
+				$source->{$flag['property']} = true === $args[ $flag['name'] ] ? [ ...$flagged, $value ] : $flagged;
+			}
+			return "ok\n";
+		};
+		if ( null === $flag ) {
+			return [ $add, $remove ];
+		}
+		$add['args'] = [ $arg, [ 'name' => $flag['name'], 'type' => 'bool', 'default' => false, 'description' => $flag['description'] ] ];
+		$add['flag'] = $flag;
+		unset( $remove['unlist'] );
+		$remove['handler'] = static function ( Command_Interpreter_Node $interpreter, array $args ) use ( $noun, $property, $flag ): string {
+			$value   = \trim( Core::as_string( $args[ $noun ] ) );
+			$source  = $interpreter->patron();
+			$entries = \array_values( Core::arr( $source->{$property} ) );
+			if ( ! \in_array( $value, $entries, true ) ) {
+				throw Command_Args::undeclared( "remove_{$noun}", [ $value ], $noun, 'node' );
+			}
+			$source->{$property}         = Core::without( $entries, $value );
+			$source->{$flag['property']} = Core::without( \array_values( Core::arr( $source->{$flag['property']} ) ), $value );
 			return "ok\n";
 		};
 		return [ $add, $remove ];

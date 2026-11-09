@@ -6,7 +6,9 @@
  *
  * A pass asks `auth.test` for the workspace's url while it holds none, then
  * each channel's `conversations.history`, every page noting the workspace;
- * an answer's url names its endpoint, channel, thread and cursor.
+ * an answer's url names its endpoint, channel, thread and cursor. A channel
+ * added with `--skip-bots` records no bot post, though a bot's thread is
+ * still read for its people's replies.
  *
  * @package Newspack_Intelligence
  */
@@ -35,6 +37,9 @@ class Slack_Source_Node extends Source_Node {
 
 	/** @var list<string> Channel ids the `add_channel` commands registered and the `remove_channel` commands left, in call order. */
 	protected array $channels = [];
+
+	/** @var list<string> Channel ids added with `--skip-bots`, whose bot posts record nothing. */
+	protected array $skip_bots = [];
 
 	/** The workspace's url, `https://<team>.slack.com/`, as auth.test answers it; '' until it has. */
 	private string $workspace = '';
@@ -114,8 +119,8 @@ class Slack_Source_Node extends Source_Node {
 		return self::items(
 			$messages,
 			function ( array $message ) use ( $channel, $thread, $oldest, $moved, $note, $workspace ): ?array {
-				$fields = self::fields( $channel, $message, $workspace );
-				if ( null !== $fields && '' === $thread && self::moved( $message, $moved ) ) {
+				$fields = self::fields( $channel, $message, $workspace, \in_array( $channel, $this->skip_bots, true ) );
+				if ( '' === $thread && self::moved( $message, $moved ) ) {
 					$this->queue( self::page( 'replies', $channel, $oldest, Core::as_string( $message['ts'] ) ), null, null, $note );
 				}
 				return null === $fields ? null : $this->normalize_item( 'slack', ...$fields );
@@ -135,31 +140,34 @@ class Slack_Source_Node extends Source_Node {
 	}
 
 	/**
-	 * Whether a message heads a thread whose latest reply is newer than $after.
+	 * Whether a message, a notice aside, heads a thread whose latest reply is
+	 * newer than $after; a bot's post heads one as any other does.
 	 *
 	 * @api Context_A8C_Slack_Node
 	 * @param array<array-key,mixed> $message The message.
 	 * @param float                  $after   What moved_after() answers.
 	 */
 	public static function moved( array $message, float $after ): bool {
-		return Core::as_int( $message['reply_count'] ?? null ) > 0 && (float) Core::as_string( $message['latest_reply'] ?? null ) > $after;
+		return '' !== self::posted_ts( $message ) && Core::as_int( $message['reply_count'] ?? null ) > 0 && (float) Core::as_string( $message['latest_reply'] ?? null ) > $after;
 	}
 
 	/**
 	 * A message's item fields after the source, as normalize_item() takes
 	 * them: its id `<channel>:<ts>`, its first line as title, its permalink on
 	 * the workspace, '' for none, its poster leading its text, dated by its
-	 * ts; null for a notice, or a ts that is not Slack's.
+	 * ts; null for a notice, a ts that is not Slack's, or with $skip_bots a
+	 * bot's post: one carrying a `bot_id`, or a `bot_message`.
 	 *
 	 * @api Context_A8C_Slack_Node
 	 * @param string                 $channel   The channel the message is in.
 	 * @param array<array-key,mixed> $message   The message.
 	 * @param string                 $workspace The workspace's url with its trailing slash, or ''.
+	 * @param bool                   $skip_bots Whether the channel records no bot post.
 	 * @return array{0:string,1:string,2:string,3:string,4:string}|null
 	 */
-	public static function fields( string $channel, array $message, string $workspace ): ?array {
-		$ts = Core::str( $message['ts'] ?? null );
-		if ( 1 !== \preg_match( '/^\d+\.\d+$/', $ts ) || \in_array( $message['subtype'] ?? null, self::SKIPPED, true ) ) {
+	public static function fields( string $channel, array $message, string $workspace, bool $skip_bots ): ?array {
+		$ts = self::posted_ts( $message );
+		if ( '' === $ts || ( $skip_bots && ( '' !== Core::str( $message['bot_id'] ?? null ) || 'bot_message' === ( $message['subtype'] ?? null ) ) ) ) {
 			return null;
 		}
 		$text = self::mrkdwn( Core::str( $message['text'] ?? null ) );
@@ -170,6 +178,16 @@ class Slack_Source_Node extends Source_Node {
 			self::poster( $message ) . ": {$text}",
 			'@' . (int) $ts,
 		];
+	}
+
+	/**
+	 * A message's ts; '' for a notice, or a ts that is not Slack's.
+	 *
+	 * @param array<array-key,mixed> $message The message.
+	 */
+	private static function posted_ts( array $message ): string {
+		$ts = Core::str( $message['ts'] ?? null );
+		return 1 === \preg_match( '/^\d+\.\d+$/', $ts ) && ! \in_array( $message['subtype'] ?? null, self::SKIPPED, true ) ? $ts : '';
 	}
 
 	/** The first page of a channel's history, or with $thread the replies of that thread, since $oldest. */
@@ -200,13 +218,24 @@ class Slack_Source_Node extends Source_Node {
 
 	/**
 	 * The `add_channel` and `remove_channel` commands, the add refusing anything
-	 * but a Slack channel id.
+	 * but a Slack channel id, and with `--skip-bots` recording no bot post.
 	 *
 	 * @api Context_A8C_Slack_Node
 	 * @return list<array<string,mixed>>
 	 */
 	public static function channel_commands(): array {
-		return self::checked_list( 'channel', 'channels', '/^[CG][A-Z0-9]{8,}\z/', 'a Slack channel id', 'Register a channel to read on TICK by its id: <C… or G…>.' );
+		return self::checked_list(
+			'channel',
+			'channels',
+			'/^[CG][A-Z0-9]{8,}\z/',
+			'a Slack channel id',
+			'Register a channel to read on TICK by its id: <C… or G…>. Adding it again replaces its --skip-bots.',
+			[
+				'name'        => 'skip-bots',
+				'property'    => 'skip_bots',
+				'description' => 'Record none of the channel\'s bot posts: a message carrying a bot_id, or a bot_message.',
+			]
+		);
 	}
 
 	public static function node_schema(): array {

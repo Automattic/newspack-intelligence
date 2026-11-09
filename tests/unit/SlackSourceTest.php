@@ -445,4 +445,97 @@ final class SlackSourceTest extends TestCase {
 		$this->assertStringContainsString( 'command_node slack:config add_channel C0HERON11', $dump );
 		$this->assertSame( [ 'C0HERON11', 'C0PLOVER22' ], $this->read_private( $replayed, 'channels' ) );
 	}
+
+	/**
+	 * A channel added with `--skip-bots` records neither a message carrying a
+	 * `bot_id` nor a `bot_message`, and still records its people; a channel
+	 * added without it records the bot.
+	 */
+	public function test_a_skip_bots_channel_records_no_bot_post(): void {
+		$node = $this->slack();
+		$node->interpreter()->dispatch( 'add_channel', [ 'C0SANDPIPER3', '--skip-bots' ] );
+		$node->interpreter()->dispatch( 'add_channel', [ 'G0TERN44X' ] );
+		$this->authed( $node );
+
+		$this->complete(
+			self::history( 'C0SANDPIPER3' ),
+			self::ok(
+				[
+					'messages' => [
+						[ 'ts' => self::ts( 110 ), 'text' => 'Deploy 7.3 done', 'user' => 'U0SANDBOT', 'bot_id' => 'B0SANDPIPER' ],
+						[ 'ts' => self::ts( 120 ), 'subtype' => 'bot_message', 'text' => 'Nightly 7.3', 'username' => 'nightly' ],
+						[ 'ts' => self::ts( 130 ), 'text' => 'Sandpiper launch moved', 'user' => 'U0TERN' ],
+					],
+				]
+			)
+		);
+		$this->complete( self::history( 'G0TERN44X' ), self::ok( [ 'messages' => [ [ 'ts' => self::ts( 140 ), 'text' => 'Tern build green', 'user' => 'U0TERNBOT', 'bot_id' => 'B0TERN' ] ] ] ) );
+
+		$this->assertSame( [ 'slack:C0SANDPIPER3:' . self::ts( 130 ), 'slack:G0TERN44X:' . self::ts( 140 ) ], $this->recorded_keys() );
+	}
+
+	/**
+	 * In a skip-bots channel a bot parent still opens its thread: the people
+	 * replying record, and a bot reply does not.
+	 */
+	public function test_a_skip_bots_thread_records_its_people_under_a_bot_parent(): void {
+		$node = $this->slack();
+		$node->interpreter()->dispatch( 'add_channel', [ 'C0SANDPIPER3', '--skip-bots' ] );
+		$this->authed( $node );
+		$parent = self::ts( 5400, '003100' );
+		$human  = self::ts( 700, '003200' );
+		$bot    = self::ts( 650, '003300' );
+
+		$this->complete( self::history( 'C0SANDPIPER3' ), self::ok( [ 'messages' => [ [ 'ts' => $parent, 'text' => 'Alert: queue lag', 'bot_id' => 'B0SANDPIPER', 'reply_count' => 2, 'latest_reply' => $bot ] ] ] ) );
+		$this->complete(
+			self::replies( 'C0SANDPIPER3', $parent ),
+			self::ok(
+				[
+					'messages' => [
+						[ 'ts' => $parent, 'text' => 'Alert: queue lag', 'bot_id' => 'B0SANDPIPER' ],
+						[ 'ts' => $human, 'text' => 'Looking at the lag', 'user' => 'U0TERN' ],
+						[ 'ts' => $bot, 'subtype' => 'bot_message', 'text' => 'Resolved', 'username' => 'pager' ],
+					],
+				]
+			)
+		);
+
+		$this->assertSame( [ self::AUTH, self::history( 'C0SANDPIPER3' ), self::replies( 'C0SANDPIPER3', $parent ) ], $this->dispatched );
+		$this->assertSame( [ "slack:C0SANDPIPER3:{$human}" ], $this->recorded_keys() );
+	}
+
+	/** Adding a channel again replaces its skip-bots setting and keeps its place; removing it drops both. */
+	public function test_re_adding_a_channel_replaces_its_skip_bots(): void {
+		$node = $this->slack( 'G0TERN44X' );
+		$node->interpreter()->dispatch( 'add_channel', [ 'C0SANDPIPER3', '--skip-bots' ] );
+		$this->assertSame( [ 'C0SANDPIPER3' ], $this->read_private( $node, 'skip_bots' ) );
+
+		$node->interpreter()->dispatch( 'add_channel', [ 'C0SANDPIPER3' ] );
+		$this->assertSame( [], $this->read_private( $node, 'skip_bots' ) );
+
+		$node->interpreter()->dispatch( 'add_channel', [ 'C0SANDPIPER3', '--skip-bots' ] );
+		$node->interpreter()->dispatch( 'add_channel', [ 'G0TERN44X', '--skip-bots' ] );
+		$this->assertSame( [ 'G0TERN44X', 'C0SANDPIPER3' ], $this->read_private( $node, 'channels' ) );
+		$this->assertSame( [ 'C0SANDPIPER3', 'G0TERN44X' ], $this->read_private( $node, 'skip_bots' ) );
+
+		$node->interpreter()->dispatch( 'remove_channel', [ 'C0SANDPIPER3' ] );
+		$this->assertSame( [ 'G0TERN44X' ], $this->read_private( $node, 'channels' ) );
+		$this->assertSame( [ 'G0TERN44X' ], $this->read_private( $node, 'skip_bots' ) );
+	}
+
+	/** A channel's skip-bots setting round-trips through the dump, in the channels' order. */
+	public function test_skip_bots_round_trips_through_the_dump(): void {
+		$node = $this->slack( 'G0TERN44X' );
+		$node->interpreter()->dispatch( 'add_channel', [ 'C0SANDPIPER3', '--skip-bots' ] );
+		$dump = $node->dump_config();
+
+		Core::reset();
+		$replayed = new Slack_Source_Node();
+		$replayed->name( 'slack' );
+		$this->replay_config( $dump, $replayed );
+
+		$this->assertStringContainsString( "command_node slack:config add_channel G0TERN44X\ncommand_node slack:config add_channel C0SANDPIPER3 --skip-bots\n", $dump );
+		$this->assertSame( [ 'G0TERN44X', 'C0SANDPIPER3' ], $this->read_private( $replayed, 'channels' ) );
+		$this->assertSame( [ 'C0SANDPIPER3' ], $this->read_private( $replayed, 'skip_bots' ) );
+	}
 }

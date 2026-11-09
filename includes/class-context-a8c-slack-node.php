@@ -11,7 +11,8 @@
  * answer's `next_latest` while it `has_more`; a message whose thread moved,
  * by the Slack source's rule, has its `thread` read, paged by `next_cursor`.
  * Each message's url is the Slack source's permalink, on the workspace its
- * own `permalink` names, which stands in for auth.test's.
+ * own `permalink` names, which stands in for auth.test's. A channel added
+ * with `--skip-bots` records no bot post, by the Slack source's rule.
  *
  * @package Newspack_Intelligence
  */
@@ -29,6 +30,9 @@ class Context_A8C_Slack_Node extends Context_A8C_Source_Node {
 
 	/** @var list<string> Channel ids the `add_channel` commands registered and the `remove_channel` commands left, in call order. */
 	protected array $channels = [];
+
+	/** @var list<string> Channel ids added with `--skip-bots`, whose bot posts record nothing. */
+	protected array $skip_bots = [];
 
 	/**
 	 * A page's messages as items, through the Slack source's mapping, asking
@@ -48,8 +52,8 @@ class Context_A8C_Slack_Node extends Context_A8C_Source_Node {
 		return self::items(
 			$answer['messages'] ?? null,
 			function ( array $message ) use ( $subtool, $channel, $moved ): ?array {
-				$fields = Slack_Source_Node::fields( $channel, $message, self::workspace( $message ) );
-				if ( null !== $fields && 'messages' === $subtool && Slack_Source_Node::moved( $message, $moved ) ) {
+				$fields = Slack_Source_Node::fields( $channel, $message, self::workspace( $message ), \in_array( $channel, $this->skip_bots, true ) );
+				if ( 'messages' === $subtool && Slack_Source_Node::moved( $message, $moved ) ) {
 					$this->call(
 						'slack',
 						'thread',

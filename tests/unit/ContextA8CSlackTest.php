@@ -196,4 +196,57 @@ final class ContextA8CSlackTest extends TestCase {
 
 		$this->assertSame( [ 'C0HERON11', 'G0KESTREL7' ], $this->read_private( $replayed, 'channels' ) );
 	}
+
+	/**
+	 * A channel added with `--skip-bots` records neither a `bot_id` message
+	 * nor a `bot_message`, while a bot parent still opens its thread, whose
+	 * people record; a channel added without it records the bot.
+	 */
+	public function test_a_skip_bots_channel_records_no_bot_post(): void {
+		$node = $this->slack();
+		$node->interpreter()->dispatch( 'add_channel', [ 'C0SANDPIPER3', '--skip-bots' ] );
+		$node->interpreter()->dispatch( 'add_channel', [ 'G0TERN44X' ] );
+		$parent = self::ts( 5400, '003100' );
+		$human  = self::ts( 700, '003200' );
+
+		$this->tick( $node );
+		$this->initialized();
+		$this->answer(
+			[
+				'messages' => [
+					self::message( 'C0SANDPIPER3', $parent, 'Alert: queue lag', [ 'bot_id' => 'B0SANDPIPER', 'reply_count' => 2, 'latest_reply' => self::ts( 650 ) ] ),
+					self::message( 'C0SANDPIPER3', self::ts( 120 ), 'Nightly 7.3', [ 'subtype' => 'bot_message', 'username' => 'nightly' ] ),
+					self::message( 'C0SANDPIPER3', self::ts( 130 ), 'Sandpiper launch moved' ),
+				],
+			]
+		);
+		$this->answer( [ 'messages' => [ self::message( 'G0TERN44X', self::ts( 140 ), 'Tern build green', [ 'bot_id' => 'B0TERN' ] ) ] ] );
+		$this->answer(
+			[
+				'messages' => [
+					self::message( 'C0SANDPIPER3', $parent, 'Alert: queue lag', [ 'bot_id' => 'B0SANDPIPER' ] ),
+					self::message( 'C0SANDPIPER3', $human, 'Looking at the lag' ),
+					self::message( 'C0SANDPIPER3', self::ts( 650 ), 'Resolved', [ 'bot_id' => 'B0PAGER' ] ),
+				],
+			]
+		);
+
+		$this->assertSame( [ 'channel' => 'C0SANDPIPER3', 'thread_ts' => $parent ], $this->calls()[2]['subtool_args'] );
+		$this->assertSame( [ 'slack:C0SANDPIPER3:' . self::ts( 130 ), 'slack:G0TERN44X:' . self::ts( 140 ), "slack:C0SANDPIPER3:{$human}" ], $this->recorded_keys() );
+	}
+
+	/** A channel's skip-bots setting round-trips through the dump. */
+	public function test_skip_bots_round_trips_through_the_dump(): void {
+		$node = $this->slack( 'G0TERN44X' );
+		$node->interpreter()->dispatch( 'add_channel', [ 'C0SANDPIPER3', '--skip-bots' ] );
+		$dump = $node->dump_config();
+
+		Core::reset();
+		$replayed = new Context_A8C_Slack_Node();
+		$replayed->name( 'slack' );
+		$this->replay_config( $dump, $replayed );
+
+		$this->assertSame( [ 'G0TERN44X', 'C0SANDPIPER3' ], $this->read_private( $replayed, 'channels' ) );
+		$this->assertSame( [ 'C0SANDPIPER3' ], $this->read_private( $replayed, 'skip_bots' ) );
+	}
 }

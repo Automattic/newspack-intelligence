@@ -2873,7 +2873,10 @@ too. `add_repo` refuses anything but one `owner/name` pair of letters,
 digits, `_`, `.` and `-`, naming the value: it and the other sources' checked
 adds are declared by `Source_Node::checked_list()`, `list_commands()`'s pair
 with an add that refuses a value its pattern does not match, which
-`dump_config()` replays one add line per entry. Each endpoint takes the 30
+`dump_config()` replays one add line per entry. A checked list may declare
+one bool flag on its add, as Slack's `--skip-bots`: the entries added with
+it are kept in a second list, which an add without it and the remove drop
+the entry from, and the flagged entry's add line carries the flag. Each endpoint takes the 30
 most recent results and pages no further, so an update that falls past that
 window between passes is missed outright. A TM_ERROR makes that one
 endpoint contribute nothing, logged rate-limited, and the pass goes on to
@@ -2906,7 +2909,14 @@ line, cut to `Source_Node::TITLE_CHARS` (120) by `Source_Node::first_line()`,
 its poster leading its text, its url
 `<workspace>archives/<channel>/p<ts without the dot>`; `channel_join`,
 `channel_leave`, `channel_topic` and `channel_purpose` notices record
-nothing. The poster is the message's `user_profile.real_name`, else
+nothing. A channel added with `add_channel <id> --skip-bots` records no bot
+post either, a message carrying a `bot_id` or of subtype `bot_message`,
+in its history or its threads, while a bot's thread is still read, so the
+people replying under it record. Adding a channel again replaces its
+setting, `remove_channel` drops the channel and its setting, and
+`dump_config()` writes the flag on the channel's add line.
+`Slack_Source_Node::fields()` holds the rule, so the ContextA8C Slack
+node applies it as well. The poster is the message's `user_profile.real_name`, else
 `bot_profile.name`, else `username`, else `user`: the source makes no
 `users.info` request, which would hold each message until its poster's name arrived.
 Slack answers a refusal with a 200 and `ok` false, which logs its `error`,
@@ -3224,7 +3234,7 @@ plugin adds:
 |------|-------|----------------------------|
 | `Github_Source` | `Github_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_repo`, `remove_repo`; owns `{name}:curl` and `{name}:frontier` |
 | `Linear_Source` | `Linear_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_team`, `remove_team`; owns `{name}:curl` and `{name}:frontier` |
-| `Slack_Source` | `Slack_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_channel`, `remove_channel`; owns `{name}:curl` and `{name}:frontier` |
+| `Slack_Source` | `Slack_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_channel [--skip-bots]`, `remove_channel`; owns `{name}:curl` and `{name}:frontier` |
 | `P2_Source` | `P2_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, `add_site`, `remove_site`; owns `{name}:curl` and `{name}:frontier` |
 | `Unthread_Source` | `Unthread_Source_Node` | `<tier> [vault_group]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`; owns `{name}:curl` and `{name}:frontier` |
 | `Context_A8C_Slack`, `Context_A8C_P2`, `Context_A8C_Linear` | `Context_A8C_*_Node` over `Context_A8C_Source_Node` | `<tier> <mcp_url> <auth_dir> [<proxy>]`; `TICK`, and the Router's tick once `set_interval` is set; `set_tier`, `set_interval`, and the list commands of the source each stands in for; owns `{name}:curl` |
