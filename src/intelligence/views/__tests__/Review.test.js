@@ -915,7 +915,7 @@ describe( 'Review — keyboard', () => {
 		);
 	} );
 
-	it( 'ignores a key with a modifier, and every key outside the list', async () => {
+	it( 'ignores a key with a modifier, and a judgment key on no row', async () => {
 		wire.replies.confirm_link = () => new Promise( () => {} );
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
@@ -927,7 +927,6 @@ describe( 'Review — keyboard', () => {
 			metaKey: true,
 		} );
 		key( document.body, 'y' );
-		key( document.body, 'j' );
 		focusedHolds( 'Acme Quillsheet' );
 		expect( wire.sent( 'confirm_link' ) ).toEqual( [] );
 	} );
@@ -941,6 +940,113 @@ describe( 'Review — keyboard', () => {
 		key( document.activeElement, 'y' );
 		focusedHolds( 'Acme Quillsheet' );
 		expect( wire.sent( 'confirm_link' ) ).toEqual( [] );
+	} );
+} );
+
+describe( 'Review — the keys from anywhere on the page', () => {
+	const key = ( target, k ) => fireEvent.keyDown( target, { key: k } );
+	const row = ( name ) =>
+		screen
+			.queryByRole( 'button', { name } )
+			?.closest( '[data-review-row]' ) ?? null;
+	const rejectAcme = () =>
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Reject Acme Quillsheet' } )
+		);
+
+	beforeEach( () => {
+		window.localStorage.clear();
+		wire.replies.reject_link = { ok: true, event_id: 'ev-r' };
+	} );
+
+	function renderOnPage() {
+		return render(
+			<>
+				<button type="button">Briefing</button>
+				<input aria-label="Search the graph" />
+				<div role="dialog" aria-label="Save to folder">
+					<button type="button">Close</button>
+				</div>
+				<Review canTune onOpenEntity={ jest.fn() } />
+			</>
+		);
+	}
+
+	it( 'focuses the first row with j or k pressed outside every row', async () => {
+		renderOnPage();
+		await screen.findByRole( 'button', { name: 'Valley Times' } );
+		key( document.body, 'k' );
+		expect( document.activeElement ).toBe( row( 'Acme Quillsheet' ) );
+		key( document.activeElement, 'j' );
+		expect( document.activeElement ).toBe( row( 'Valley Ledger' ) );
+		const tab = screen.getByRole( 'button', { name: 'Briefing' } );
+		tab.focus();
+		key( tab, 'j' );
+		expect( document.activeElement ).toBe( row( 'Acme Quillsheet' ) );
+	} );
+
+	it( 'undoes with z pressed outside every row', async () => {
+		renderOnPage();
+		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
+		fakeUndoClock();
+		rejectAcme();
+		expect( row( 'Acme Quillsheet' ) ).toBeNull();
+		expect( document.activeElement ).toBe( document.body );
+		await act( async () => key( document.body, 'z' ) );
+		expect( document.activeElement ).toBe( row( 'Acme Quillsheet' ) );
+		await elapse( UNDO_MS * 2 );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+	} );
+
+	it( 'leaves a key alone in a text field and in a dialog', async () => {
+		renderOnPage();
+		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
+		fakeUndoClock();
+		rejectAcme();
+		const field = screen.getByRole( 'textbox', {
+			name: 'Search the graph',
+		} );
+		const close = screen.getByRole( 'button', { name: 'Close' } );
+		for ( const target of [ field, close ] ) {
+			target.focus();
+			key( target, 'j' );
+			await act( async () => key( target, 'z' ) );
+			expect( document.activeElement ).toBe( target );
+			expect( row( 'Acme Quillsheet' ) ).toBeNull();
+		}
+	} );
+
+	it( 'captures no key anywhere while the keys are off', async () => {
+		renderOnPage();
+		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
+		fireEvent.click(
+			screen.getByRole( 'checkbox', {
+				name: 'Turn off single-key shortcuts',
+			} )
+		);
+		fakeUndoClock();
+		rejectAcme();
+		document.activeElement.blur();
+		key( document.body, 'j' );
+		await act( async () => key( document.body, 'z' ) );
+		expect( document.activeElement ).toBe( document.body );
+		expect( row( 'Acme Quillsheet' ) ).toBeNull();
+	} );
+
+	it( 'removes its page listener when it unmounts', async () => {
+		const added = jest.spyOn( document, 'addEventListener' );
+		const removed = jest.spyOn( document, 'removeEventListener' );
+		const { unmount } = renderOnPage();
+		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
+		const listeners = added.mock.calls
+			.filter( ( [ type ] ) => 'keydown' === type )
+			.map( ( [ , listener ] ) => listener );
+		expect( listeners ).toHaveLength( 1 );
+		unmount();
+		expect( removed ).toHaveBeenCalledWith( 'keydown', listeners[ 0 ] );
+		added.mockRestore();
+		removed.mockRestore();
 	} );
 } );
 

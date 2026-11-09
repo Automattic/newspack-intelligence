@@ -1,4 +1,6 @@
+/* global Element */
 import {
+	useCallback,
 	useEffect,
 	useId,
 	useLayoutEffect,
@@ -55,6 +57,9 @@ function howFound( link ) {
 /** A row the review keys move between, by its attribute. */
 const ROW = '[data-review-row]';
 
+/** A queue's list of rows, by its attribute. */
+const LIST = '[data-review-list]';
+
 /** The keys that press a row's control, each the `aria-keyshortcuts` of one. */
 const JUDGMENT_KEYS = [ 'y', 'n', 'm' ];
 
@@ -62,81 +67,119 @@ const JUDGMENT_KEYS = [ 'y', 'n', 'm' ];
 const KEYS_OFF_KEY = 'newspack-intelligence:review:single-keys-off';
 
 /**
- * One queue's rows as a list the review keys work in: `j` and `k` focus the
- * next and the previous row, `y`, `n` and `m` press the focused row's
- * control whose `aria-keyshortcuts` names that key, and `z` undoes the most
- * recent judgment still pending. A key typed in a field, or with a modifier,
- * is left alone, and every key is while the keys are off. A judgment takes
- * its row out, so once the list renders without it focus moves to the row
- * in its place, else the last. The list is named for its queue and
- * described by the legend naming its keys.
+ * Whether an element sits in an open dialog, where the review keys stay out.
  *
- * @param {Object}                    props
- * @param {string}                    props.label       The queue's name.
- * @param {boolean}                   props.keys        Whether it takes the keys.
- * @param {string}                    props.describedBy The legend's id.
- * @param {() => void}                props.onUndo      Undoes the latest judgment.
- * @param {import('react').ReactNode} props.children    Its rows.
- * @return {import('react').ReactElement} The list.
+ * @param {?EventTarget} element The element.
+ * @return {boolean} Whether it does.
  */
-function ReviewList( { label, keys, describedBy, onUndo, children } ) {
-	const list = useRef( null );
+const inDialog = ( element ) =>
+	element instanceof Element && null !== element.closest( '[role="dialog"]' );
+
+/**
+ * The review keys, on the page while the view is mounted and they are on:
+ * `j` and `k` focus the next and the previous row of the focused row's
+ * list, else the view's first row; `y`, `n` and `m` press the focused row's
+ * control whose `aria-keyshortcuts` names that key; and `z` undoes the most
+ * recent judgment still pending. A key typed in a field or in a dialog, or
+ * with a modifier, is left alone. A judgment takes its row out, so once the
+ * view renders without it focus moves to the row in its place in its list,
+ * else that list's last.
+ *
+ * @param {import('react').RefObject<HTMLElement>} view   The view's element.
+ * @param {boolean}                                keys   Whether the keys are on.
+ * @param {() => void}                             onUndo Undoes the latest judgment.
+ */
+function useReviewKeys( view, keys, onUndo ) {
 	const judged = useRef( null );
 	useLayoutEffect( () => {
 		if ( null === judged.current ) {
 			return;
 		}
-		const left = list.current.querySelectorAll( ROW );
-		( left[ judged.current ] ?? left[ left.length - 1 ] )?.focus();
+		const { list, at } = judged.current;
 		judged.current = null;
+		const left = list.querySelectorAll( ROW );
+		( left[ at ] ?? left[ left.length - 1 ] )?.focus();
 	} );
 
-	const onKeyDown = ( event ) => {
-		const { key, target } = event;
-		if (
-			! keys ||
-			event.altKey ||
-			event.ctrlKey ||
-			event.metaKey ||
-			isTypingTarget( target )
-		) {
-			return;
+	useEffect( () => {
+		if ( ! keys ) {
+			return undefined;
 		}
-		if ( 'z' === key ) {
+		const onKeyDown = ( event ) => {
+			const { key, target } = event;
+			if (
+				event.altKey ||
+				event.ctrlKey ||
+				event.metaKey ||
+				isTypingTarget( target ) ||
+				inDialog( target ) ||
+				inDialog( target.ownerDocument?.activeElement )
+			) {
+				return;
+			}
+			if ( 'z' === key ) {
+				event.preventDefault();
+				onUndo();
+				return;
+			}
+			const list =
+				( target instanceof Element && target.closest( LIST ) ) ||
+				view.current;
+			const rows = /** @type {HTMLElement[]} */ ( [
+				...list.querySelectorAll( ROW ),
+			] );
+			const at = rows.findIndex( ( row ) => row.contains( target ) );
+			if ( 'j' === key || 'k' === key ) {
+				const step = 'j' === key ? 1 : -1;
+				const next =
+					rows[
+						Math.min( Math.max( at + step, 0 ), rows.length - 1 )
+					];
+				if ( next ) {
+					event.preventDefault();
+					next.focus();
+				}
+				return;
+			}
+			const control =
+				JUDGMENT_KEYS.includes( key ) &&
+				/** @type {?HTMLElement} */ (
+					rows[ at ]?.querySelector(
+						`[aria-keyshortcuts="${ key }"]`
+					)
+				);
+			if ( ! control ) {
+				return;
+			}
 			event.preventDefault();
-			onUndo();
-			return;
-		}
-		const rows = [ ...list.current.querySelectorAll( ROW ) ];
-		const at = rows.findIndex( ( row ) => row.contains( target ) );
-		if ( 'j' === key || 'k' === key ) {
-			event.preventDefault();
-			const step = 'j' === key ? 1 : -1;
-			rows[
-				Math.min( Math.max( at + step, 0 ), rows.length - 1 )
-			]?.focus();
-			return;
-		}
-		const control =
-			JUDGMENT_KEYS.includes( key ) &&
-			rows[ at ]?.querySelector( `[aria-keyshortcuts="${ key }"]` );
-		if ( ! control ) {
-			return;
-		}
-		event.preventDefault();
-		judged.current = 'm' === key ? null : at;
-		control.click();
-	};
+			judged.current = 'm' === key ? null : { list, at };
+			control.click();
+		};
+		document.addEventListener( 'keydown', onKeyDown );
+		return () => document.removeEventListener( 'keydown', onKeyDown );
+	}, [ view, keys, onUndo ] );
+}
 
+/**
+ * One queue's rows as a list the review keys work in, named for its queue
+ * and, while the keys are on, described by the legend naming them.
+ *
+ * @param {Object}                    props
+ * @param {string}                    props.label       The queue's name.
+ * @param {boolean}                   props.keys        Whether it takes the keys.
+ * @param {string}                    props.describedBy The legend's id.
+ * @param {import('react').ReactNode} props.children    Its rows.
+ * @return {import('react').ReactElement} The list.
+ */
+function ReviewList( { label, keys, describedBy, children } ) {
 	return (
-		// eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex, jsx-a11y/no-noninteractive-element-interactions -- the review keys move between its rows.
+		// eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the review keys move between its rows.
 		<ul
-			ref={ list }
 			className="newspack-intelligence__items"
+			data-review-list=""
 			tabIndex={ 0 }
 			aria-label={ label }
 			aria-describedby={ keys ? describedBy : undefined }
-			onKeyDown={ onKeyDown }
 		>
 			{ children }
 		</ul>
@@ -487,9 +530,10 @@ function ThemePair( { pair, onMerge } ) {
  * offering its Undo meanwhile; a merge of two entities is sent at once,
  * because a merge cannot be taken back. One that lands re-reads its queue, and a
  * refused one shows the refusal and puts its row back. In either list `j`
- * and `k` move between the judgments, `y` confirms or accepts, `n` rejects,
- * `m` opens a merge and `z` undoes the latest judgment still pending, unless
- * the reader turned the keys off. Below them, the pairs of themes
+ * and `k` move between the judgments, and from anywhere else on the page
+ * focus the first; `y` confirms or accepts, `n` rejects, `m` opens a merge
+ * and `z` undoes the latest judgment still pending, unless the reader turned
+ * the keys off. Below them, the pairs of themes
  * `theme_suggestions` reads, each offering a curator a merge of either theme
  * into the other, deferred as a judgment is. A link row's item saves to a
  * folder as any item does.
@@ -516,9 +560,11 @@ export default function Review( { canTune, onOpenEntity, onSave } ) {
 			.find( ( row ) => key === row.dataset.reviewKey )
 			?.focus();
 	} );
-	const undo = () => {
-		restored.current = deferred.undo();
-	};
+	const undoWrite = deferred.undo;
+	const undo = useCallback( () => {
+		restored.current = undoWrite();
+	}, [ undoWrite ] );
+	useReviewKeys( view, ! keysOff, undo );
 
 	const links = useIntelRead( 'review:links', 'review', [ 'links' ] );
 	const entities = useIntelRead( 'review:entities', 'review', [
@@ -551,7 +597,6 @@ export default function Review( { canTune, onOpenEntity, onSave } ) {
 	const keyProps = {
 		keys: ! keysOff,
 		describedBy: keysId,
-		onUndo: undo,
 	};
 	const judgments = [
 		confirmLink,
