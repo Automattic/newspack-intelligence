@@ -62,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A refusal naming several unreadable topologies chains every one of them.** `Worker_Route::running()` chained only the first, so an engine error behind a later one kept its file and line in the refusal a read caller received; it now chains `Worker_Should_Stop::combine()` of them all, and the substrate's `Core::caller_message()` holds the words back below manage.
 - **The excluded list shows a reader only what its tier reads.** An item excluded at one tier that reads at another now is listed with the title and URL its row reads now, the copy captured at the exclusion only once the item's rows are gone, and its `why` only to a caller who reads the tier it was written at; an internal reader no longer sees a restricted copy's title, URL or reason.
 - **Save to folder returns to the folder select after Create and save.** The new folder is chosen and held in the select until a read lists it, a reader's first folder included, and the name field clears. The dialog used to stay on the name field, where a second Enter re-sent `create_collection`, refused as taken or sent with a blank name.
 - **A health row whose fix landed stays a fault until Refresh.** It shows the fix's answer and "Fix sent; Refresh to check." where its button was, so the same fix is not sent twice while health still answers the state it fixed; Refresh, or a read in another state, gives the row back with its button.

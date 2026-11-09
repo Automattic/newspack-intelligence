@@ -5,6 +5,7 @@ namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Worker_Route;
 use Newspack_Nodes\Command_Interpreter_Node;
+use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Router_Node;
 use Newspack_Nodes\Topology_Analyzer;
@@ -81,6 +82,29 @@ final class WorkerRouteTest extends TestCase {
 		$this->expectException( \RuntimeException::class );
 		$this->expectExceptionMessage( 'No active topology declares an Intel_Event_Writer node, and gannet-intel will not read: unknown topology in include: gannet-intel-absent' );
 		Worker_Route::running();
+	}
+
+	/**
+	 * Every unreadable topology rides the refusal's chain, so a caller below
+	 * manage reads a fixed line wherever among them an engine error sits.
+	 */
+	public function test_an_engine_error_behind_any_unreadable_topology_is_held_back_below_manage(): void {
+		require_once \dirname( __DIR__, 3 ) . '/newspack-nodes/tests/Helpers/EngineFaultNode.php';
+		Command_Interpreter_Node::register_namespace( 'Newspack_Nodes\\Tests\\' );
+		$dir = $this->make_temp_dir( 'worker-route-fault-' );
+		\file_put_contents( "{$dir}/gannet-intel.tsl", "include gannet-intel-absent\n" );
+		\file_put_contents( "{$dir}/shag-intel.tsl", "make_node Engine_Fault shag-3317\n" );
+		Topology_Registry::register_stock_dir( $dir );
+		\update_option( 'newspack_nodes_topologies', [ 'gannet-intel', 'shag-intel' ] );
+		\Newspack_Nodes\Config::reset();
+
+		try {
+			Worker_Route::running();
+			$this->fail( 'two unreadable topologies must refuse' );
+		} catch ( \RuntimeException $e ) {
+			\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::READ;
+			$this->assertSame( 'health: internal error; the reason is in the server\'s log', Core::caller_message( $e, 'health' ) );
+		}
 	}
 
 	/**

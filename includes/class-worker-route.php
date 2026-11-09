@@ -165,7 +165,7 @@ final class Worker_Route {
 	 * is collection off. An active name that does not resolve to any `.tsl`
 	 * declares nothing, so it counts as read.
 	 *
-	 * @throws \RuntimeException When several do, naming them; or none does while an active `.tsl` will not read, naming it, its failure chained.
+	 * @throws \RuntimeException When several do, naming them; or none does while an active `.tsl` will not read, naming it, every failure chained.
 	 */
 	public static function running(): ?string {
 		[ $readable, $unreadable ] = Bootstrap::active_topologies();
@@ -176,7 +176,7 @@ final class Worker_Route {
 		}
 		if ( [] === $declaring && [] !== $unreadable ) {
 			$why = \array_map( static fn ( string $name, \Throwable $e ): string => "{$name} will not read: {$e->getMessage()}", \array_keys( $unreadable ), $unreadable );
-			throw new \RuntimeException( \esc_html( 'No active topology declares an Intel_Event_Writer node, and ' . \implode( '; ', $why ) ), 0, \reset( $unreadable ) );
+			throw new \RuntimeException( \esc_html( 'No active topology declares an Intel_Event_Writer node, and ' . \implode( '; ', $why ) ), 0, Worker_Should_Stop::combine( $unreadable ) );
 		}
 		return $declaring[0] ?? null;
 	}
