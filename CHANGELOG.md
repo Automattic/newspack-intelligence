@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-11-09
+
 ### Changed
 
 - **Create and save is one command.** `create_collection` takes an optional `item` and saves it into the new folder as `collect` does, in one `collection_created` event the projector fans out into the folder and the item's placement, so the save no longer waits on the projector's flush; a refused item leaves no folder, and the new folder heads the dialog's Recent group.
