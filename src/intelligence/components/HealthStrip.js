@@ -9,9 +9,17 @@ import {
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { answerStatus } from '@newspack-nodes/shared/utils/answerStatus';
 import { formatLocalDateTime } from '@newspack-nodes/shared/utils/formatUtils';
-import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
+import {
+	HEALTH_READS,
+	useIntelRead,
+	useIntelWrite,
+} from '../hooks/useIntelCommand';
 import { unrecordedText, useEndClient } from '../hooks/useEndClient';
+import EndClientDialog from './EndClientDialog';
 import Refusal from './Refusal';
+import { Unread } from './Answer';
+import Skeleton from './Skeleton';
+import UndoSnackbar from './UndoSnackbar';
 import { metaLine } from './format';
 
 /** The Vault tab of the substrate's Nodes station, where a credential is added. */
@@ -63,7 +71,7 @@ function Step( { action } ) {
  * @param {string}                     props.action    The text step's action.
  * @param {string}                     props.verb      The write verb.
  * @param {string}                     [props.ci]      The CI it lives on.
- * @param {(ok: string) => void}       props.refresh   Holds its row and re-reads the strip once it lands.
+ * @param {(ok: string) => void}       props.refresh   Holds its row once it lands; its write re-reads the strip.
  * @param {Object<string, string>}     [props.args]    Its named args.
  * @param {Array<FixChoice>}           [props.choices] One button each, in place of `label` and `args`.
  * @param {{busy: string, ok: string}} props.texts     Its answer's words.
@@ -100,13 +108,14 @@ function Fix( {
  * @param {Array<FixChoice>}           props.choices The buttons.
  * @param {string}                     props.verb    The write verb.
  * @param {string}                     [props.ci]    The CI it lives on.
- * @param {(ok: string) => void}       props.refresh Holds its row and re-reads the strip once it lands.
+ * @param {(ok: string) => void}       props.refresh Holds its row once it lands; its write re-reads the strip.
  * @param {{busy: string, ok: string}} props.texts   Its answer's words.
  * @return {import('react').ReactElement} The buttons and their answer.
  */
 function SendFix( { choices, verb, ci, refresh, texts } ) {
 	const write = useIntelWrite( verb, {
 		ci,
+		dirties: HEALTH_READS,
 		refresh: () => refresh( texts.ok ),
 	} );
 	const status = answerStatus(
@@ -161,15 +170,15 @@ function VaultFix( {
 }
 
 /**
- * The button marking a dead client feed's client a former client, and the
- * refusal its pair met, on the row of the client it refused alone, for a
- * curator; its text step for anyone else. The client's rows leave the strip
- * from the click (`useEndClient`), and while any pair is owed its replies
- * every other such button does nothing.
+ * The button asking whether to mark a dead client feed's client a former
+ * client, and the refusal its pair met, on the row of the client it refused
+ * alone, for a curator; its text step for anyone else. The client's rows
+ * leave the strip once the dialog confirms (`useEndClient`), and while any
+ * pair is owed its replies every other such button does nothing.
  *
- * @param {Object}                             props
- * @param {{entity_key: string, name: string}} props.client    The client.
- * @param {?Object}                            props.endClient `useEndClient()`, null for a reader without tune.
+ * @param {Object}                                                            props
+ * @param {{entity_key: string, name: string, domain: string, since: number}} props.client    The client, by its dead feed.
+ * @param {?Object}                                                           props.endClient `useEndClient()`, null for a reader without tune.
  * @return {import('react').ReactElement} The fix.
  */
 function FormerClientFix( { client, endClient } ) {
@@ -191,7 +200,7 @@ function FormerClientFix( { client, endClient } ) {
 				className="button button-small"
 				aria-disabled={ null !== endClient.owed }
 				onClick={ ( event ) =>
-					endClient.run( client, event.currentTarget )
+					endClient.ask( client, event.currentTarget )
 				}
 			>
 				{ __( 'Mark former client', 'newspack-intelligence' ) }
@@ -619,11 +628,8 @@ const STATES = {
 					domain,
 					formatLocalDateTime( since )
 				),
-			fix: ( { entity_key: entityKey, name }, ctx ) => (
-				<FormerClientFix
-					client={ { entity_key: entityKey, name } }
-					endClient={ ctx.endClient }
-				/>
+			fix: ( one, ctx ) => (
+				<FormerClientFix client={ one } endClient={ ctx.endClient } />
 			),
 		},
 	},
@@ -1150,26 +1156,23 @@ function healthLine( { faults, rows, reads, collection, sources } ) {
 /**
  * The pair of role writes ending a client, mounted for a curator alone, so
  * any other reader mounts no write; it hands `useEndClient()` over the
- * sources slice to `children`, its `run( client, button )` also taking the
- * button pressed, and doing nothing while a pair is owed its replies. Once
- * the client's rows leave, focus moves to the row now
- * in the pressed row's place, else the last row, else the strip, as the
- * review queues move it.
+ * sources slice to `children`, its `ask( client, button )` also taking the
+ * button pressed, and doing nothing while a pair is owed its replies, and
+ * shows the End client dialog it asks, the client's dead feed its evidence,
+ * and the snackbar saying a client it ended is now a former one.
+ * Once the dialog confirms and the client's rows leave, focus moves to the
+ * row now in the pressed row's place, else the last row, else the strip,
+ * as the review queues move it.
  *
  * @param {Object}                                              props
  * @param {Object}                                              props.sources  The sources slice's read.
- * @param {() => void}                                          props.refresh  Re-reads the strip once a pair is answered.
  * @param {{current: ?HTMLElement}}                             props.strip    The strip's section.
  * @param {(endClient: Object) => import('react').ReactElement} props.children Renders the strip.
  * @return {import('react').ReactElement} The strip.
  */
-function EndingClients( { sources, refresh, strip, children } ) {
-	const endClient = useEndClient(
-		END_CLIENT,
-		sources,
-		'dead_clients',
-		refresh
-	);
+function EndingClients( { sources, strip, children } ) {
+	const endClient = useEndClient( END_CLIENT, sources, 'dead_clients' );
+	const asked = useRef( null );
 	const pressed = useRef( null );
 	useLayoutEffect( () => {
 		if ( null === pressed.current ) {
@@ -1184,18 +1187,51 @@ function EndingClients( { sources, refresh, strip, children } ) {
 		).focus();
 		pressed.current = null;
 	} );
-	return children( {
-		...endClient,
-		run: ( client, button ) => {
-			if ( null !== endClient.owed ) {
-				return;
-			}
-			pressed.current = [
-				...strip.current.querySelectorAll( 'li' ),
-			].indexOf( button.closest( 'li' ) );
-			endClient.run( client );
-		},
-	} );
+	// A dead feed's fix asks about the feed's whole row.
+	const asking =
+		/** @type {?{entity_key: string, name: string, domain: string, since: number}} */ (
+			endClient.asking
+		);
+	return (
+		<>
+			{ children( {
+				...endClient,
+				ask: ( client, button ) => {
+					if ( null !== endClient.owed ) {
+						return;
+					}
+					asked.current = [
+						...strip.current.querySelectorAll( 'li' ),
+					].indexOf( button.closest( 'li' ) );
+					endClient.ask( client );
+				},
+			} ) }
+			{ asking && (
+				<EndClientDialog
+					name={ asking.name }
+					evidence={ [
+						{
+							item_key: null,
+							title: asking.domain,
+							url: null,
+							source: __(
+								'Client feed',
+								'newspack-intelligence'
+							),
+							day: formatLocalDateTime( asking.since ),
+							role: null,
+						},
+					] }
+					onEnd={ () => {
+						pressed.current = asked.current;
+						endClient.end();
+					} }
+					onClose={ endClient.cancel }
+				/>
+			) }
+			<UndoSnackbar latest={ endClient.ended } />
+		</>
+	);
 }
 
 /**
@@ -1239,11 +1275,7 @@ export default function HealthStrip( { canTune, canManage } ) {
 	);
 
 	return canTune ? (
-		<EndingClients
-			sources={ sources }
-			refresh={ refresh }
-			strip={ section }
-		>
+		<EndingClients sources={ sources } strip={ section }>
 			{ strip }
 		</EndingClients>
 	) : (
@@ -1281,10 +1313,8 @@ function Strip( { reads, refresh, roles, section, endClient } ) {
 	);
 	// Each row whose fix landed => the state it fixed and the fix's answer.
 	const [ fixed, setFixed ] = useState( () => new Map() );
-	const landed = ( key, state, text ) => {
+	const landed = ( key, state, text ) =>
 		setFixed( ( was ) => new Map( was ).set( key, { state, text } ) );
-		refresh();
-	};
 	useEffect( () => {
 		setFixed( ( was ) => {
 			if ( 0 === was.size ) {
@@ -1352,7 +1382,11 @@ function Strip( { reads, refresh, roles, section, endClient } ) {
 				</button>
 			</div>
 			{ all.map( ( read, i ) => (
-				<Refusal key={ i } error={ read.error } />
+				<Unread
+					key={ i }
+					error={ read.error }
+					refresh={ read.refresh }
+				/>
 			) ) }
 			<Refusal
 				error={
@@ -1381,6 +1415,16 @@ function Strip( { reads, refresh, roles, section, endClient } ) {
 						{ row.fix }
 					</li>
 				) ) }
+				{ Object.entries( reads )
+					.filter( ( [ , read ] ) => read.loading )
+					.map( ( [ slice ] ) => (
+						<li
+							key={ `owed-${ slice }` }
+							className="newspack-intelligence__health-row"
+						>
+							<Skeleton shape="line" count={ 1 } />
+						</li>
+					) ) }
 			</ul>
 		</section>
 	);

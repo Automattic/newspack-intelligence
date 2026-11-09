@@ -10,6 +10,7 @@ import {
 } from '../hooks/useIntelCommand';
 import ItemRow from './ItemRow';
 import Refusal from './Refusal';
+import { Unread } from './Answer';
 
 /** How often an ask still owed its answer is read again, on the Router's tick. */
 const POLL_MS = 3000;
@@ -204,18 +205,18 @@ function Answered( { answer, onOpenEntity, onSave, canTune } ) {
  * The ask's state: refused, unreadable, owed, given up on, failed,
  * withheld or answered, the searches it ran beneath.
  *
- * @param {Object}                                              props
- * @param {{answer: ?Object, error: ?string, loading: boolean}} props.read         What `useIntelRead` returned for `ask_result`.
- * @param {boolean}                                             props.gaveUp       Whether the page stopped waiting for it.
- * @param {(key: string) => void}                               props.onOpenEntity Opens an entity.
- * @param {(item: Object) => void}                              [props.onSave]     Saves an item; absent for a reader.
- * @param {boolean}                                             [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
+ * @param {Object}                                                                   props
+ * @param {{answer: ?Object, error: ?string, loading: boolean, refresh: () => void}} props.read         What `useIntelRead` returned for `ask_result`.
+ * @param {boolean}                                                                  props.gaveUp       Whether the page stopped waiting for it.
+ * @param {(key: string) => void}                                                    props.onOpenEntity Opens an entity.
+ * @param {(item: Object) => void}                                                   [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                                                                  [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactNode} The state.
  */
 function AskState( { read, gaveUp, onOpenEntity, onSave, canTune } ) {
 	const { answer, error, loading } = read;
 	if ( error ) {
-		return <Refusal error={ error } />;
+		return <Unread error={ error } refresh={ read.refresh } />;
 	}
 	if ( loading ) {
 		return (
@@ -307,6 +308,8 @@ export default function AskBox( {
 	const [ question, setQuestion ] = useState( '' );
 	const ask = useIntelWrite( 'ask', {
 		scope: 'ask-box:ask',
+		// A new ask changes no answer read before it.
+		dirties: [],
 		refresh: ( landed ) =>
 			onAsked( { key: landed.ask_key, at: Core.now(), gaveUp: false } ),
 	} );

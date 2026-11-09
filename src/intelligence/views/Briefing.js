@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import Answer from '../components/Answer';
+import Skeleton from '../components/Skeleton';
 import AskBox from '../components/AskBox';
 import ItemRow from '../components/ItemRow';
 import { EntityChip } from '../components/Cite';
@@ -453,6 +454,7 @@ export default function Briefing( {
 			<Answer
 				title={ __( 'Signals', 'newspack-intelligence' ) }
 				read={ signals }
+				skeleton={ <Skeleton shape="line" count={ 3 } /> }
 				rows={ [ 'clients', 'lenses' ] }
 				empty={
 					<Invitation

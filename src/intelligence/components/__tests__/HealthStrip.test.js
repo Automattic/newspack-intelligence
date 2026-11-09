@@ -8,6 +8,7 @@
  */
 
 import {
+	act,
 	render,
 	screen,
 	fireEvent,
@@ -19,6 +20,17 @@ import { intelWire } from '../../__tests__/intelWire';
 import { HEALTHY, LAST_OK, okSource } from '../../__tests__/healthFixture';
 import { formatLocalDateTime } from '@newspack-nodes/shared/utils/formatUtils';
 import HealthStrip from '../HealthStrip';
+
+/**
+ * The line bars standing in for a card's prose while its read is owed.
+ *
+ * @param {HTMLElement} card The card.
+ * @return {number} How many.
+ */
+const owedLines = ( card ) =>
+	card.querySelectorAll(
+		'[role=status] .newspack-intelligence__skeleton-bar.is-line'
+	).length;
 
 /** 2026-10-30 14:05 UTC, the next day in Auckland. */
 const SINCE = Date.UTC( 2026, 9, 30, 14, 5 ) / 1000;
@@ -120,6 +132,14 @@ function renderStrip( { canTune = false, canManage = false } = {} ) {
 }
 
 describe( 'HealthStrip', () => {
+	it( 'stands a line in for each slice still owed among its rows', async () => {
+		renderStrip();
+		fireEvent.click( toggle() );
+		expect( owedLines( rows() ) ).toBe( 4 );
+		await lineReads( HEALTHY_LINE );
+		expect( owedLines( rows() ) ).toBe( 0 );
+	} );
+
 	it( 'renders collapsed healthy line', async () => {
 		renderStrip();
 		await lineReads( HEALTHY_LINE );
@@ -1152,6 +1172,19 @@ describe( 'HealthStrip', () => {
 				name: 'Mark former client',
 			} );
 		const mark = () => markIn( row( 'Client feed' ) );
+		const asked = () =>
+			screen.getByRole( 'dialog', {
+				name: 'End Shoal Crier as a client?',
+			} );
+		// Mark a client, then confirm the end in the dialog it opens.
+		const markAndEnd = ( button ) => {
+			fireEvent.click( button );
+			fireEvent.click(
+				within( screen.getByRole( 'dialog' ) ).getByRole( 'button', {
+					name: 'End client',
+				} )
+			);
+		};
 		const dead = ( entityKey, name, domain ) => ( {
 			entity_key: entityKey,
 			name,
@@ -1173,12 +1206,46 @@ describe( 'HealthStrip', () => {
 			).toHaveClass( 'is-error' );
 		} );
 
+		it( 'asks before it marks a former client, naming the dead feed, and sends nothing until End client', async () => {
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			fireEvent.click( mark() );
+			expect( asked() ).toHaveTextContent(
+				`“${ DOMAIN }”, Client feed, ${ SINCE_LOCAL }`
+			);
+			expect(
+				within( asked() ).queryByRole( 'button', {
+					name: 'Not about this client',
+				} )
+			).toBeNull();
+			await act(
+				() => new Promise( ( resolve ) => setTimeout( resolve, 300 ) )
+			);
+			expect( wire.sent( 'end_role' ) ).toEqual( [] );
+			expect( deadRows() ).toHaveLength( 1 );
+		} );
+
+		it( 'closes its dialog with nothing sent and the client still listed', async () => {
+			renderStrip( { canTune: true } );
+			await worstFault( DEAD );
+			fireEvent.click( mark() );
+			fireEvent.click(
+				within( asked() ).getByRole( 'button', { name: 'Close' } )
+			);
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+			await act(
+				() => new Promise( ( resolve ) => setTimeout( resolve, 300 ) )
+			);
+			expect( wire.sent( 'end_role' ) ).toEqual( [] );
+			expect( mark() ).toBeInTheDocument();
+		} );
+
 		it( 'marks a former client: end_role, then assert_role former_client, then reads again', async () => {
 			wire.replies.end_role = { ok: true, event_id: 'ev-end-5520' };
 			wire.replies.assert_role = { ok: true, event_id: 'ev-former-5520' };
 			renderStrip( { canTune: true } );
 			await worstFault( DEAD );
-			fireEvent.click( mark() );
+			markAndEnd( mark() );
 			await waitFor( () => {
 				expect( wire.sent( 'end_role' ) ).toEqual( [
 					[ `--key=${ KEY }`, '--role=client' ],
@@ -1188,6 +1255,9 @@ describe( 'HealthStrip', () => {
 				] );
 				expect( reads( 'sources' ) ).toBe( 2 );
 			} );
+			expect(
+				document.querySelector( '.components-snackbar' )
+			).toHaveTextContent( 'Shoal Crier is now a former client.' );
 		} );
 
 		it( 'hides the client from the click while a read still lists it', async () => {
@@ -1195,10 +1265,10 @@ describe( 'HealthStrip', () => {
 			wire.replies.assert_role = { ok: true, event_id: 'ev-former-5521' };
 			renderStrip( { canTune: true } );
 			await worstFault( DEAD );
-			fireEvent.click( mark() );
-			expect( screen.queryByText( /Shoal Crier/ ) ).toBeNull();
+			markAndEnd( mark() );
+			expect( within( strip() ).queryByText( /Shoal Crier/ ) ).toBeNull();
 			await waitFor( () => expect( reads( 'sources' ) ).toBe( 2 ) );
-			expect( screen.queryByText( /Shoal Crier/ ) ).toBeNull();
+			expect( within( strip() ).queryByText( /Shoal Crier/ ) ).toBeNull();
 			expect( wire.sent( 'end_role' ) ).toHaveLength( 1 );
 		} );
 
@@ -1210,7 +1280,7 @@ describe( 'HealthStrip', () => {
 			renderStrip( { canTune: true } );
 			await worstFault( DEAD );
 			expect( deadRows() ).toHaveLength( 3 );
-			fireEvent.click( mark() );
+			markAndEnd( mark() );
 			expect( deadRows() ).toHaveLength( 1 );
 			expect( deadRows()[ 0 ] ).toHaveTextContent( 'Kittiwake Mail' );
 		} );
@@ -1220,7 +1290,7 @@ describe( 'HealthStrip', () => {
 			wire.replies.assert_role = { ok: true, event_id: 'ev-former-5522' };
 			renderStrip( { canTune: true } );
 			await worstFault( DEAD );
-			fireEvent.click( mark() );
+			markAndEnd( mark() );
 			await waitFor( () => expect( reads( 'sources' ) ).toBe( 2 ) );
 			health.sources.dead_clients = [];
 			fireEvent.click(
@@ -1239,7 +1309,7 @@ describe( 'HealthStrip', () => {
 		it( 'asserts former_client only once the end lands', async () => {
 			renderStrip( { canTune: true } );
 			await worstFault( DEAD );
-			fireEvent.click( mark() );
+			markAndEnd( mark() );
 			await waitFor( () =>
 				expect( wire.sent( 'end_role' ) ).toHaveLength( 1 )
 			);
@@ -1252,10 +1322,11 @@ describe( 'HealthStrip', () => {
 			);
 			renderStrip( { canTune: true } );
 			await worstFault( DEAD );
-			fireEvent.click( markIn( deadRows()[ 0 ] ) );
+			markAndEnd( markIn( deadRows()[ 0 ] ) );
 			const other = markIn( deadRows()[ 0 ] );
 			expect( other ).toHaveAttribute( 'aria-disabled', 'true' );
 			fireEvent.click( other );
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 			await waitFor( () =>
 				expect( wire.sent( 'end_role' ) ).toHaveLength( 1 )
 			);
@@ -1267,7 +1338,7 @@ describe( 'HealthStrip', () => {
 				new Error( `${ KEY } holds no open client role` );
 			renderStrip( { canTune: true } );
 			await worstFault( DEAD );
-			fireEvent.click( mark() );
+			markAndEnd( mark() );
 			expect(
 				await screen.findByText( `${ KEY } holds no open client role` )
 			).toHaveClass( 'is-error' );
@@ -1278,6 +1349,9 @@ describe( 'HealthStrip', () => {
 			).toBeInTheDocument();
 			expect( wire.sent( 'assert_role' ) ).toEqual( [] );
 			expect( mark() ).toHaveAttribute( 'aria-disabled', 'false' );
+			expect(
+				document.querySelector( '.components-snackbar' )
+			).toBeNull();
 		} );
 
 		it( 'keeps the client hidden and names it on the strip when its assert is refused', async () => {
@@ -1288,7 +1362,7 @@ describe( 'HealthStrip', () => {
 			};
 			renderStrip( { canTune: true } );
 			await worstFault( DEAD );
-			fireEvent.click( mark() );
+			markAndEnd( mark() );
 			const alert = await screen.findByRole( 'alert' );
 			await waitFor( () => expect( reads( 'sources' ) ).toBe( 2 ) );
 			expect( screen.queryByText( /has not resolved/ ) ).toBeNull();
@@ -1306,7 +1380,7 @@ describe( 'HealthStrip', () => {
 			await worstFault( DEAD );
 			const button = markIn( deadRows()[ 0 ] );
 			button.focus();
-			fireEvent.click( button );
+			markAndEnd( button );
 			expect( document.activeElement ).toBe( deadRows()[ 0 ] );
 			expect( document.activeElement ).toHaveTextContent(
 				'Kittiwake Mail'
@@ -1326,7 +1400,7 @@ describe( 'HealthStrip', () => {
 			);
 			renderStrip( { canTune: true } );
 			await worstFault( DEAD );
-			fireEvent.click( markIn( deadRows()[ 0 ] ) );
+			markAndEnd( markIn( deadRows()[ 0 ] ) );
 			const waiting = markIn( deadRows()[ 1 ] );
 			waiting.focus();
 			fireEvent.click( waiting );
@@ -1340,7 +1414,7 @@ describe( 'HealthStrip', () => {
 			await worstFault( DEAD );
 			const button = mark();
 			button.focus();
-			fireEvent.click( button );
+			markAndEnd( button );
 			expect( document.activeElement ).toBe( strip() );
 		} );
 
@@ -1352,7 +1426,7 @@ describe( 'HealthStrip', () => {
 				new Error( `${ KEY } holds no open client role` );
 			renderStrip( { canTune: true } );
 			await worstFault( DEAD );
-			fireEvent.click( markIn( deadRows()[ 0 ] ) );
+			markAndEnd( markIn( deadRows()[ 0 ] ) );
 			await screen.findByText( `${ KEY } holds no open client role` );
 			const [ shoal, kittiwake ] = deadRows();
 			expect( shoal ).toHaveTextContent(
@@ -1417,9 +1491,13 @@ describe( 'HealthStrip', () => {
 			'sources' === what ? new Error( 'NOT_AVAILABLE' ) : health[ what ];
 		renderStrip();
 		expect( line().textContent ).toBe( 'Reading the pipeline’s health…' );
-		expect( await screen.findByRole( 'alert' ) ).toHaveTextContent(
-			'NOT_AVAILABLE'
-		);
+		expect(
+			await screen.findByText(
+				'Intelligence could not be read just now. Try again.'
+			)
+		).toBeInTheDocument();
+		expect( screen.queryByText( 'NOT_AVAILABLE' ) ).toBeNull();
+		expect( screen.queryByRole( 'alert' ) ).toBeNull();
 		await lineReads( 'The pipeline’s health could not be read in full.' );
 	} );
 } );

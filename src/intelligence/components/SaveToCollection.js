@@ -2,7 +2,12 @@ import { useEffect, useRef, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { SelectControl, TextControl } from '@wordpress/components';
 import Modal, { ModalHeader } from '@newspack-nodes/shared/components/Modal';
-import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
+import {
+	FOLDER_READS,
+	WATCH_READS,
+	useIntelRead,
+	useIntelWrite,
+} from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
 import { AnswerBody } from './Answer';
 import Refusal from './Refusal';
@@ -84,16 +89,18 @@ export default function SaveToCollection( { item, onClose } ) {
 	const [ chosen, setChosen ] = useState( '' );
 	const [ asked, setAsked ] = useState( false );
 	const [ name, setName ] = useState( '' );
-	const collect = useIntelWrite( 'collect' );
+	const collect = useIntelWrite( 'collect', {
+		dirties: [ ...FOLDER_READS, ...WATCH_READS ],
+	} );
 	const save = ( key ) =>
 		collect.run( { collection: key, item: item.item_key } );
 	const create = useIntelWrite( 'create_collection', {
 		scope: 'save:create_collection',
+		dirties: FOLDER_READS,
 		refresh: ( { collection_key: key } ) => {
 			setChosen( key );
 			setAsked( false );
 			setName( '' );
-			list.refresh();
 			folders.hold(
 				key,
 				{

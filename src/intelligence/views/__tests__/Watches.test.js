@@ -149,12 +149,15 @@ describe( 'Watches', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'shows a refused read of watches as the refusal', async () => {
+	it( 'says a refused read of watches was not read, its words kept from a reader', async () => {
 		wire.replies.watches = () => new Error( 'not signed in' );
 		render( <Harness /> );
 		expect(
-			await screen.findByText( 'not signed in' )
+			await screen.findByText(
+				'Intelligence could not be read just now. Try again.'
+			)
 		).toBeInTheDocument();
+		expect( screen.queryByText( 'not signed in' ) ).toBeNull();
 	} );
 
 	it( 'opens a watch onto its unseen matches, linking only a safe URL', async () => {
@@ -302,8 +305,10 @@ describe( 'Watches', () => {
 		expect(
 			await screen.findByText( 'b at --key=acme-complaints' )
 		).toBeInTheDocument();
+		// The landed mark dirties the page it was made on, which asks again.
 		expect( wire.sent( 'watch_matches' ) ).toEqual( [
 			[ '--key=acme-complaints' ],
+			[ '--key=acme-complaints', '--offset=2' ],
 			[ '--key=acme-complaints', '--offset=2' ],
 			[ '--key=acme-complaints' ],
 		] );
@@ -574,6 +579,29 @@ describe( 'Watches', () => {
 		expect(
 			within( form() ).getByLabelText( 'Email me a daily digest' )
 		).not.toBeChecked();
+	} );
+
+	it( 'says a refused lens or folder list in the form was not read', async () => {
+		wire.replies.lenses = () =>
+			new Error( 'lenses refused for Harbor Ledger' );
+		wire.replies.collections = () =>
+			new Error( 'folders refused for Harbor Ledger' );
+		render( <Harness /> );
+		await screen.findByRole( 'button', { name: 'Acme complaints' } );
+		fireEvent.click( screen.getByRole( 'button', { name: 'New watch' } ) );
+		await waitFor( () =>
+			expect(
+				within( form() ).getAllByText(
+					'Intelligence could not be read just now. Try again.'
+				)
+			).toHaveLength( 2 )
+		);
+		expect(
+			screen.queryByText( 'lenses refused for Harbor Ledger' )
+		).toBeNull();
+		expect(
+			screen.queryByText( 'folders refused for Harbor Ledger' )
+		).toBeNull();
 	} );
 
 	it( 'opens the form on a target it is handed', async () => {

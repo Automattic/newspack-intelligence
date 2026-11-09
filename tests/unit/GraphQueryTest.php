@@ -27,6 +27,10 @@ final class GraphQueryTest extends TestCase {
 
 	private const LEDGER = 'organization:salem-ledger';
 
+	private const HARBOR = 'organization:harbor-ledger';
+
+	private const PRAIRIE = 'organization:prairie-signal';
+
 	protected function setUp(): void {
 		parent::setUp();
 		Topology_Analyzer::reset_caches();
@@ -263,12 +267,42 @@ final class GraphQueryTest extends TestCase {
 				'topics'      => [ [ 'topic_key' => 'topic:awards', 'name' => 'Awards' ] ],
 				'counts'      => [ 'items' => 2, 'proposed_links' => 0 ],
 				'published'   => [ 'count' => 0 ],
-				'status'      => [ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 0, 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => self::$oct_06, 'churn_open' => false ],
+				'status'      => [ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 0, 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => self::$oct_06, 'churn_open' => false, 'churn_items' => [] ],
 				'available'   => true,
 			],
 			self::read( 'entity', [ 'key' => self::GAZETTE ] )
 		);
 		$this->assertSame( [ 'items' => 2, 'proposed_links' => 1 ], self::read( 'entity', [ 'key' => self::LEDGER ] )['counts'] );
+	}
+
+	/**
+	 * A churn report counts against a client only as its item's subject: an
+	 * item extracted churned that names Harbor Ledger as subject and Prairie
+	 * Signal as a mention opens Harbor Ledger's churn and counts nothing for
+	 * Prairie Signal.
+	 */
+	public function test_churn_open_reads_subject_links_only(): void {
+		$this->seed_offboarding();
+
+		$harbor  = self::read( 'entity', [ 'key' => self::HARBOR ] )['status'];
+		$prairie = self::read( 'entity', [ 'key' => self::PRAIRIE ] )['status'];
+
+		$this->assertSame( [ true, 3 ], [ $harbor['churn_open'], $harbor['kinds']['churned'] ] );
+		$this->assertSame( [ false, 0 ], [ $prairie['churn_open'], $prairie['kinds']['churned'] ] );
+	}
+
+	/** A client's status names each churn report it rests on, the newest first. */
+	public function test_status_names_its_churn_items(): void {
+		$this->seed_offboarding();
+
+		$this->assertSame(
+			[
+				[ 'item_key' => 'linear:harbor-exit-call', 'title' => 'Harbor Ledger exit call', 'url' => self::url( 'linear:harbor-exit-call' ), 'source' => 'linear', 'day' => '2026-10-13' ],
+				[ 'item_key' => 'linear:harbor-offboard', 'title' => 'Harbor Ledger offboarding checklist', 'url' => self::url( 'linear:harbor-offboard' ), 'source' => 'linear', 'day' => '2026-10-06' ],
+			],
+			self::read( 'entity', [ 'key' => self::HARBOR ] )['status']['churn_items']
+		);
+		$this->assertSame( [], self::read( 'entity', [ 'key' => self::PRAIRIE ] )['status']['churn_items'] );
 	}
 
 	/**
@@ -1001,6 +1035,34 @@ final class GraphQueryTest extends TestCase {
 			'collections' => [ 'key' => null ],
 		];
 		return Graph_Query::$verb( $args + $defaults[ $verb ] );
+	}
+
+	/**
+	 * Harbor Ledger and Prairie Signal, both clients since 1 January, and two
+	 * churn reports naming Harbor Ledger as subject, the first also naming
+	 * Prairie Signal as a mention, with a churn report from before the year
+	 * about Harbor Ledger, which names nothing.
+	 */
+	private function seed_offboarding(): void {
+		$before = self::$jan_01 - 86400;
+		$this->seed(
+			self::entity( self::HARBOR, 'Harbor Ledger', [ 'domain' => [ 'harborledger.example' ] ] ),
+			self::entity( self::PRAIRIE, 'Prairie Signal', [ 'domain' => [ 'prairiesignal.example' ] ] ),
+			[
+				Intel_Event::make( 'role_asserted', [ 'entity_key' => self::HARBOR, 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ),
+				Intel_Event::make( 'role_asserted', [ 'entity_key' => self::PRAIRIE, 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ),
+			],
+			self::item( 'linear:harbor-offboard', 'Harbor Ledger offboarding checklist', 'linear', 'internal', self::$oct_06 ),
+			self::extraction( 'linear:harbor-offboard', 'Harbor Ledger is leaving.', 'churned', self::$oct_06, [] ),
+			self::link( 'link_asserted', 'linear:harbor-offboard', self::HARBOR, 'subject', 'name', 1.0, self::$oct_06 ),
+			self::link( 'link_asserted', 'linear:harbor-offboard', self::PRAIRIE, 'mention', 'name', 1.0, self::$oct_06 ),
+			self::item( 'linear:harbor-exit-call', 'Harbor Ledger exit call', 'linear', 'internal', self::$oct_13 ),
+			self::extraction( 'linear:harbor-exit-call', 'Harbor Ledger confirmed it leaves.', 'churned', self::$oct_13, [] ),
+			self::link( 'link_asserted', 'linear:harbor-exit-call', self::HARBOR, 'subject', 'name', 1.0, self::$oct_13 ),
+			self::item( 'linear:harbor-old-exit', 'Harbor Ledger left once', 'linear', 'internal', $before ),
+			self::extraction( 'linear:harbor-old-exit', 'Harbor Ledger left.', 'churned', $before, [] ),
+			self::link( 'link_asserted', 'linear:harbor-old-exit', self::HARBOR, 'subject', 'name', 1.0, $before )
+		);
 	}
 
 	/**

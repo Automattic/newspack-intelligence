@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from '@wordpress/element';
 import { BaseControl } from '@wordpress/components';
 import CommitInput from '@newspack-nodes/shared/components/CommitInput';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
-import Refusal from './Refusal';
+import { Unread } from './Answer';
 
 /** The fewest letters, marks or digits a prefix `names` is asked about holds. */
 export const MIN_PREFIX = 2;
@@ -31,9 +31,10 @@ const significant = ( text ) =>
  * by its name or its key, asks nothing.
  *
  * @param {string} text The text the box holds.
- * @return {{suggestions: Array<{value: string, label: string}>, keyOf: (text: string) => string, error: ?string}}
+ * @return {{suggestions: Array<{value: string, label: string}>, keyOf: (text: string) => string, error: ?string, refresh: () => void}}
  *   The suggestions; `keyOf()`, the key an offered name stands for, any
- *   other text as given; and the refusal of the latest ask.
+ *   other text as given; the refusal of the latest ask; and `refresh()`,
+ *   which asks it again.
  */
 export function useEntityNames( text ) {
 	const [ entities, setEntities ] = useState( [] );
@@ -75,6 +76,7 @@ export function useEntityNames( text ) {
 		suggestions,
 		keyOf: ( typed ) => keys[ typed.trim() ] ?? typed,
 		error: names.error,
+		refresh: names.refresh,
 	};
 }
 
@@ -104,7 +106,7 @@ export default function EntityPicker( { label, value, onChange, names } ) {
 				suggestions={ names.suggestions }
 				placeholder="organization:acme-gazette"
 			/>
-			<Refusal error={ names.error } />
+			<Unread error={ names.error } refresh={ names.refresh } />
 		</BaseControl>
 	);
 }

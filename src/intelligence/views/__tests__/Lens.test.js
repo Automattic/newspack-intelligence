@@ -20,6 +20,20 @@ import { intelWire } from '../../__tests__/intelWire';
 import { GROUPS, LENSES, VOCABULARY } from './fixtures';
 import Lens, { CLOSED_LENS } from '../Lens';
 
+/**
+ * The line bars standing in for a card's prose while its read is owed.
+ *
+ * @param {HTMLElement} card The card.
+ * @return {number} How many.
+ */
+const owedLines = ( card ) =>
+	card.querySelectorAll(
+		'[role=status] .newspack-intelligence__skeleton-bar.is-line'
+	).length;
+
+/** A reply that never comes, so its read stays owed. */
+const owed = () => new Promise( () => {} );
+
 const TRENDS = {
 	rows: [
 		{
@@ -114,6 +128,17 @@ const openSupport = async () =>
 	);
 
 describe( 'Lens', () => {
+	it( 'stands a line in for its signals while they are owed', async () => {
+		wire.replies.signals = owed;
+		render( <Harness canTune={ false } /> );
+		await openSupport();
+		await waitFor( () =>
+			expect(
+				owedLines( screen.getByRole( 'region', { name: 'Signals' } ) )
+			).toBe( 1 )
+		);
+	} );
+
 	it( 'lists every lens with its description', async () => {
 		render( <Harness canTune={ false } /> );
 		const open = await screen.findByRole( 'button', {
@@ -301,14 +326,19 @@ describe( 'Lens', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'shows a refused trend read as the refusal', async () => {
+	it( 'says a refused trend read was not read, its words kept from a reader', async () => {
 		wire.replies.trends = () =>
 			new Error( 'by must be one of: kind, topic' );
 		render( <Harness canTune={ false } /> );
 		await openSupport();
 		expect(
-			await screen.findByText( 'by must be one of: kind, topic' )
+			await screen.findByText(
+				'Intelligence could not be read just now. Try again.'
+			)
 		).toBeInTheDocument();
+		expect(
+			screen.queryByText( 'by must be one of: kind, topic' )
+		).toBeNull();
 	} );
 
 	it( 'offers a reader no curation', async () => {

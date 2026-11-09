@@ -20,9 +20,31 @@ import { Core } from '@newspack-nodes/runtime';
 import { speak } from '@wordpress/a11y';
 import { intelWire } from '../../__tests__/intelWire';
 import { UNDO_MS } from '../../hooks/useDeferredWrite';
+import { useIntelRead } from '../../hooks/useIntelCommand';
 import ItemRow, { ItemPage, SaveButton } from '../ItemRow';
 
 jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
+
+/**
+ * A read whose rendering says whether its answer is owed, remembered or
+ * read, so a test sees what the cache holds for it.
+ *
+ * @param {Object}   props
+ * @param {string}   props.scope   The read's scope.
+ * @param {string}   props.command The read verb.
+ * @param {string[]} props.args    Its tokens.
+ * @return {import('react').ReactElement} Its state.
+ */
+function Probe( { scope, command, args } ) {
+	const { loading, stale } = useIntelRead( scope, command, args );
+	if ( loading ) {
+		return <p>{ `${ command } owed` }</p>;
+	}
+	return <p>{ `${ command } ${ stale ? 'remembered' : 'read' }` }</p>;
+}
+
+/** A reply that never comes, so a read stays owed. */
+const never = () => new Promise( () => {} );
 
 const ITEM = {
 	item_key: 'feed:inkfold-review-17',
@@ -615,6 +637,40 @@ describe( 'ItemRow exclusion', () => {
 				[ `--item=${ WIRE_COPY.item_key }` ],
 			] )
 		);
+	} );
+
+	it( 'drops a remembered Briefing once an exclusion from a Search row lands', async () => {
+		wire.replies.briefing = { groups: [], total: 0, available: true };
+		const seeded = render(
+			<Probe
+				scope="briefing:changes"
+				command="briefing"
+				args={ [ 'changes' ] }
+			/>
+		);
+		await screen.findByText( 'briefing read' );
+		seeded.unmount();
+		renderRow();
+		fakeUndoClock();
+		exclude();
+		await elapse( UNDO_MS );
+		await waitFor( () =>
+			expect( wire.sent( 'exclude_item' ) ).toHaveLength( 1 )
+		);
+		await screen.findByText( 'Excluded.' );
+		jest.useRealTimers();
+		await act(
+			() => new Promise( ( resolve ) => setTimeout( resolve, 300 ) )
+		);
+		wire.replies.briefing = never;
+		render(
+			<Probe
+				scope="briefing:changes"
+				command="briefing"
+				args={ [ 'changes' ] }
+			/>
+		);
+		expect( screen.getByText( 'briefing owed' ) ).toBeInTheDocument();
 	} );
 
 	it( 'puts the row back on Undo and sends nothing', async () => {

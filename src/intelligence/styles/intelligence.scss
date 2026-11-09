@@ -139,6 +139,28 @@
 		margin: base.$space-xs 0;
 	}
 
+	// A skeleton bar is one line tall and as wide as the part it stands for.
+	&__skeleton-bar {
+		display: inline-block;
+		height: 1em;
+
+		&.is-title {
+			width: 60%;
+		}
+
+		&.is-meta {
+			width: 35%;
+		}
+
+		&.is-summary {
+			width: 90%;
+		}
+
+		&.is-line {
+			width: 80%;
+		}
+	}
+
 	// The sentence a proposal quotes sits under its row, indented a step.
 	&__evidence {
 		margin: base.$space-xs 0 0;

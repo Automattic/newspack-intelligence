@@ -2,7 +2,13 @@ import { useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { SelectControl, TextControl } from '@wordpress/components';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
-import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
+import {
+	FOLDER_READS,
+	ITEM_READS,
+	WATCH_READS,
+	useIntelRead,
+	useIntelWrite,
+} from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
 import Answer from '../components/Answer';
 import Cite from '../components/Cite';
@@ -276,14 +282,12 @@ function Opened( { collection, folders, canTune, markWords, onMoved } ) {
 	const saved = useHeld( read, 'items', itemKey, reflects );
 	const [ show, setShow ] = useState( ALL );
 	const markUsed = useIntelWrite( 'mark_used', {
-		refresh: read.refresh,
+		dirties: FOLDER_READS,
 		onRefused: saved.refused,
 	} );
 	const move = useIntelWrite( 'move_item', {
-		refresh: () => {
-			read.refresh();
-			onMoved();
-		},
+		dirties: [ ...FOLDER_READS, ...WATCH_READS ],
+		refresh: onMoved,
 		onRefused: saved.refused,
 	} );
 	const others = folders.filter(
@@ -388,7 +392,7 @@ function Excluded() {
 	const read = useIntelRead( 'collections:excluded', 'excluded', [] );
 	const listed = useHeld( read, 'items', itemKey );
 	const include = useIntelWrite( 'include_item', {
-		refresh: read.refresh,
+		dirties: ITEM_READS,
 		onRefused: listed.refused,
 	} );
 	return (
@@ -492,7 +496,7 @@ export default function Collections( { canTune, opened, onOpen, vocabulary } ) {
 	const list = useIntelRead( 'collections:list', 'collections', [] );
 	const listed = useHeld( list, 'collections', collectionKey, sameName );
 	const create = useIntelWrite( 'create_collection', {
-		refresh: list.refresh,
+		dirties: FOLDER_READS,
 		onRefused: listed.refused,
 	} );
 

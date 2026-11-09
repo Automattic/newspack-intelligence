@@ -2,6 +2,7 @@ import { useId, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { SelectControl, TextControl } from '@wordpress/components';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
+import { CLIENT } from '../hooks/useEndClient';
 import { roleText } from './format';
 
 /**
@@ -108,14 +109,16 @@ function RoleForm( { roles, words, onSubmit } ) {
  * An entity's curation behind an "Edit" toggle, closed until opened: each
  * role it holds open with the control ending it, then the forms adding a
  * name or an identifier and asserting a role. Each edit goes through the
- * write the view hands it, which re-reads the record once it lands.
+ * write the view hands it, which re-reads the record once it lands, but
+ * the client role, whose control asks first through `onEndClient`.
  *
  * @param {Object}                                     props
- * @param {string}                                     props.entityKey  The entity.
- * @param {string}                                     props.name       What its heading shows.
- * @param {Object[]}                                   props.openRoles  The role rows it holds open.
- * @param {Object}                                     props.vocabulary The ontology's closed lists.
- * @param {Object<string, {run: (args: Object) => *}>} props.writes     `addName`, `addIdentifier`, `assertRole` and `endRole`.
+ * @param {string}                                     props.entityKey   The entity.
+ * @param {string}                                     props.name        What its heading shows.
+ * @param {Object[]}                                   props.openRoles   The role rows it holds open.
+ * @param {Object}                                     props.vocabulary  The ontology's closed lists.
+ * @param {Object<string, {run: (args: Object) => *}>} props.writes      `addName`, `addIdentifier`, `assertRole` and `endRole`.
+ * @param {() => void}                                 props.onEndClient Asks whether to end the client role.
  * @return {import('react').ReactElement} The toggle and the drawer it opens.
  */
 export default function EditDrawer( {
@@ -124,6 +127,7 @@ export default function EditDrawer( {
 	openRoles,
 	vocabulary,
 	writes,
+	onEndClient,
 } ) {
 	const [ open, setOpen ] = useState( false );
 	const drawerId = useId();
@@ -158,25 +162,44 @@ export default function EditDrawer( {
 									className="newspack-intelligence__actions"
 								>
 									{ roleText( role, vocabulary.roleWords ) }
-									<button
-										type="button"
-										className="button button-small"
-										onClick={ () =>
-											endRole.run( {
-												key: entityKey,
-												role: role.role,
-											} )
-										}
-									>
-										{ sprintf(
-											/* translators: %s: the role ended. */
-											__(
-												'End %s',
-												'newspack-intelligence'
-											),
-											vocabulary.roleWords[ role.role ]
-										) }
-									</button>
+									{ CLIENT === role.role ? (
+										<button
+											type="button"
+											className="button button-small"
+											onClick={ onEndClient }
+										>
+											{ sprintf(
+												/* translators: %s: the client role's label. */
+												__(
+													'End %s…',
+													'newspack-intelligence'
+												),
+												vocabulary.roleWords[ CLIENT ]
+											) }
+										</button>
+									) : (
+										<button
+											type="button"
+											className="button button-small"
+											onClick={ () =>
+												endRole.run( {
+													key: entityKey,
+													role: role.role,
+												} )
+											}
+										>
+											{ sprintf(
+												/* translators: %s: the role ended. */
+												__(
+													'End %s',
+													'newspack-intelligence'
+												),
+												vocabulary.roleWords[
+													role.role
+												]
+											) }
+										</button>
+									) }
 								</li>
 							) ) }
 						</ul>

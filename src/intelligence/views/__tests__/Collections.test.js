@@ -160,7 +160,7 @@ describe( 'Collections', () => {
 		render( <Harness canTune={ false } /> );
 		expect(
 			await screen.findByText(
-				'The intelligence graph could not be opened, so this was not read.'
+				'The intelligence store did not open, so this was not read. An administrator can check the status above.'
 			)
 		).toBeInTheDocument();
 	} );

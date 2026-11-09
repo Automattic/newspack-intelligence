@@ -6,12 +6,13 @@ import {
 } from '@wordpress/components';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import {
+	WATCH_READS,
 	commandArgs,
 	useIntelRead,
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
-import Answer from '../components/Answer';
+import Answer, { Unread } from '../components/Answer';
 import ItemRow from '../components/ItemRow';
 import Pager from '../components/Pager';
 import Refusal from '../components/Refusal';
@@ -316,8 +317,11 @@ function WatchForm( { draft, onDraft, onSave, onCancel } ) {
 					/>
 				) ) }
 			</fieldset>
-			<Refusal error={ lenses.error } />
-			<Refusal error={ collections.error } />
+			<Unread error={ lenses.error } refresh={ lenses.refresh } />
+			<Unread
+				error={ collections.error }
+				refresh={ collections.refresh }
+			/>
 			<div className="newspack-intelligence__actions">
 				<button type="submit" className="button button-primary">
 					{ legend }
@@ -366,12 +370,11 @@ function Opened( {
 	);
 	const matches = useHeld( read, 'items', itemKey );
 	const markSeen = useIntelWrite( 'mark_seen', {
+		dirties: WATCH_READS,
 		refresh: () => {
 			// A mark shortens the unseen list, so a later page would skip some.
 			if ( 0 < offset ) {
 				onStarts( [ 0 ] );
-			} else {
-				read.refresh();
 			}
 			onSeen();
 		},
@@ -492,17 +495,13 @@ export default function Watches( {
 	const list = useIntelRead( 'watch:list', 'watches', [] );
 	const watches = useHeld( list, 'watches', watchKey, sameWatch );
 	const save = useIntelWrite( 'save_watch', {
-		refresh: () => {
-			onDraft( null );
-			list.refresh();
-		},
+		dirties: WATCH_READS,
+		refresh: () => onDraft( null ),
 		onRefused: watches.refused,
 	} );
 	const remove = useIntelWrite( 'remove_watch', {
-		refresh: () => {
-			onOpen( CLOSED_WATCH );
-			list.refresh();
-		},
+		dirties: WATCH_READS,
+		refresh: () => onOpen( CLOSED_WATCH ),
 		onRefused: watches.refused,
 	} );
 	const watch = watches.read.answer?.watches.find(

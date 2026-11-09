@@ -14,10 +14,18 @@
  * A send never names a subject: an item key spells a whole URL, past the length
  * a reply address carries, so a subject would be dropped for that one item. A
  * write's refusal names its send by the arguments it echoes instead.
+ *
+ * Every answer is remembered in memory, keyed by verb, scope and arguments, so
+ * a read mounting again paints its last answer at once, marked stale, while it
+ * asks afresh. A refusal forgets the answer it would have replaced, so an item
+ * a reader may no longer see never paints after the server has said so. The
+ * memory lives in the page alone and is never written to browser storage,
+ * because an answer carries items under the reader's tiers; a page load starts
+ * empty.
  */
 
-import { useCallback, useEffect } from '@wordpress/element';
-import { formatCommandArgs } from '@newspack-nodes/runtime';
+import { useCallback, useEffect, useRef } from '@wordpress/element';
+import { Core, formatCommandArgs } from '@newspack-nodes/runtime';
 import { useCommandOnce } from '@newspack-nodes/shared/hooks/useCommandOnce';
 
 /** The surface every command here is sent under. */
@@ -29,21 +37,172 @@ const CI = 'intelligence';
 /** Every send here is about nothing narrower than its verb. */
 const NO_SUBJECT = () => null;
 
+/** The most answers remembered; the least recently used goes first. */
+const CACHE_MAX = 64;
+
+/** The folders, one folder's items, and the folder pickers. */
+export const FOLDER_READS = [ 'collections:' ];
+
+/** The watches, with their unseen counts, and each watch's matches. */
+export const WATCH_READS = [ 'watches:', 'watch_matches:' ];
+
+/** The health strip's slices. */
+export const HEALTH_READS = [ 'health:' ];
+
+/** Every read listing or counting items, so resting on which items show. */
+export const ITEM_READS = [
+	'search:',
+	'briefing:',
+	'timeline:',
+	'signals:',
+	'trends:',
+	'related:',
+	'claims:',
+	'review:',
+	'entity:',
+	'theme_suggestions:',
+	'ask_result:',
+	'excluded:',
+	...FOLDER_READS,
+	...WATCH_READS,
+];
+
+/** Every read naming an entity, its links, names, identifiers or roles. */
+export const ENTITY_READS = [ ...ITEM_READS, 'names:' ];
+
+/** Those, and the health strip's dead clients, named by role and domain. */
+export const CLIENT_READS = [ ...ENTITY_READS, ...HEALTH_READS ];
+
+/** Those, and the lens list, whose entity and topics show only while seen. */
+export const JUDGED_READS = [ ...CLIENT_READS, 'lenses:' ];
+
+/** The lens list, and every read a lens's filters shape. */
+export const LENS_READS = [
+	'lenses:',
+	'search:',
+	'trends:',
+	'signals:',
+	'briefing:',
+	...WATCH_READS,
+];
+
+/** Every read a theme's merge regroups. */
+export const THEME_READS = [
+	'theme_suggestions:',
+	'search:',
+	'trends:',
+	'signals:',
+	'briefing:',
+];
+
+/**
+ * Each page process's remembered answers, by the node registry `Core` boots
+ * with, so a page load, or a `Core.reset()`, starts with none.
+ *
+ * @type {WeakMap<Object, Map<string, {answer: Object, at: number}>>}
+ */
+const memories = new WeakMap();
+
+/**
+ * This page's remembered answers, `{ answer, at }` by cache key, oldest use
+ * first.
+ *
+ * @return {Map<string, {answer: Object, at: number}>} The answers.
+ */
+function answers() {
+	if ( ! memories.has( Core.registry ) ) {
+		memories.set( Core.registry, new Map() );
+	}
+	return memories.get( Core.registry );
+}
+
+/**
+ * Each mounted read's re-ask, handed the test of whether a write dirtied it.
+ *
+ * @type {Set<(dirtied: (key: string) => boolean) => void>}
+ */
+const revalidators = new Set();
+
+/**
+ * The key an answer is remembered under, its verb first, so a write dirties
+ * every read of a verb by the prefix `<verb>:`.
+ *
+ * @param {string}   command The read verb.
+ * @param {string}   scope   The read's scope.
+ * @param {string[]} args    Its argument tokens.
+ * @return {string} The key.
+ */
+const cacheKey = ( command, scope, args ) =>
+	`${ command }:${ scope }:${ JSON.stringify( args ) }`;
+
+/**
+ * Mark a remembered answer as used now, so it is the last to be evicted.
+ *
+ * @param {string} key The cache key.
+ */
+function touch( key ) {
+	const memory = answers();
+	const entry = memory.get( key );
+	if ( entry ) {
+		memory.delete( key );
+		memory.set( key, entry );
+	}
+}
+
+/**
+ * Remember an answer as the newest, evicting the least recently used past
+ * `CACHE_MAX`.
+ *
+ * @param {string} key    The cache key.
+ * @param {Object} answer The answer.
+ */
+function remember( key, answer ) {
+	const memory = answers();
+	memory.delete( key );
+	memory.set( key, { answer, at: Core.now() } );
+	if ( CACHE_MAX < memory.size ) {
+		memory.delete( memory.keys().next().value );
+	}
+}
+
+/**
+ * Forget every answer whose key starts with one of `prefixes`, and have each
+ * mounted read so keyed ask again.
+ *
+ * @param {string[]} prefixes Cache-key prefixes, such as `collections:`.
+ */
+function dirty( prefixes ) {
+	const dirtied = ( key ) =>
+		prefixes.some( ( prefix ) => key.startsWith( prefix ) );
+	const memory = answers();
+	for ( const key of memory.keys() ) {
+		if ( dirtied( key ) ) {
+			memory.delete( key );
+		}
+	}
+	revalidators.forEach( ( revalidate ) => revalidate( dirtied ) );
+}
+
 /**
  * Ask one read command, again whenever `args` changes. Null `args` asks
  * nothing and withdraws the ask outstanding, so its late answer never shows.
+ * Until the answer to `args` lands, a remembered one paints, marked stale.
  *
  * @param {string}    scope   Names this read's nodes, a subject naming what
  *                            the slice shows, so two reads of one verb on a
  *                            page never share a Fetcher.
  * @param {string}    command The read verb.
  * @param {?string[]} args    Its argument tokens, or null to ask nothing.
- * @return {{answer: ?Object, error: ?string, loading: boolean, refresh: () => void}}
- *   The answer to `args`, or the refusal; `loading` while it is owed; and
- *   `refresh()`, which asks the same question again.
+ * @return {{answer: ?Object, error: ?string, loading: boolean, stale: boolean, updatedAt: ?number, refresh: () => void}}
+ *   The answer to `args`, or the refusal alone; `loading` while it is owed
+ *   with nothing remembered; `stale` while a remembered answer stands in,
+ *   received at `updatedAt` (epoch seconds); and `refresh()`, which asks the
+ *   same question again.
  */
 export function useIntelRead( scope, command, args ) {
 	const key = JSON.stringify( args );
+	const keyRef = useRef( key );
+	keyRef.current = key;
 	const { run, abandon, result, error, answeredArgs } = useCommandOnce( {
 		group: GROUP,
 		ci: CI,
@@ -51,16 +210,39 @@ export function useIntelRead( scope, command, args ) {
 		scope,
 		retry: true,
 		subjectOf: NO_SUBJECT,
+		onDone: ( { result: landed, error: refused, args: answered } ) => {
+			// A bare refusal answers whatever is being asked now.
+			const asked =
+				refused && 0 === answered.length
+					? JSON.parse( keyRef.current )
+					: answered;
+			if ( null === asked ) {
+				return;
+			}
+			const entry = cacheKey( command, scope, asked );
+			if ( refused ) {
+				answers().delete( entry );
+			} else {
+				remember( entry, landed );
+			}
+		},
 	} );
 
 	useEffect( () => {
 		const asked = JSON.parse( key );
 		if ( null === asked ) {
 			abandon();
-		} else {
-			run( asked );
+			return undefined;
 		}
-	}, [ key, run, abandon ] );
+		const entry = cacheKey( command, scope, asked );
+		touch( entry );
+		run( asked );
+		const revalidate = ( dirtied ) => dirtied( entry ) && run( asked );
+		revalidators.add( revalidate );
+		return () => {
+			revalidators.delete( revalidate );
+		};
+	}, [ key, command, scope, run, abandon ] );
 
 	const refresh = useCallback( () => {
 		const asked = JSON.parse( key );
@@ -74,10 +256,16 @@ export function useIntelRead( scope, command, args ) {
 		null !== answeredArgs &&
 		( JSON.stringify( answeredArgs ) === key ||
 			( null !== error && 0 === answeredArgs.length ) );
+	const remembered =
+		current || null === args
+			? undefined
+			: answers().get( cacheKey( command, scope, args ) );
 	return {
-		answer: current ? result : null,
+		answer: current ? result : remembered?.answer ?? null,
 		error: current ? error : null,
-		loading: null !== args && ! current,
+		loading: null !== args && ! current && ! remembered,
+		stale: Boolean( remembered ),
+		updatedAt: remembered?.at ?? null,
 		refresh,
 	};
 }
@@ -104,7 +292,9 @@ export function commandArgs( options ) {
  * through `commandArgs()`, so a curator's value that begins `--name=` binds
  * as the value it is rather than as an option. `run()` answers the tokens it sent;
  * a landed send hands `refresh` its answer, and a refused one hands `onRefused` the
- * tokens its reply echoes, which say which send it was. The last reply's
+ * tokens its reply echoes, which say which send it was. A landed send first
+ * forgets every remembered answer under the prefixes it `dirties`, and every
+ * mounted read so keyed asks again. The last reply's
  * refusal, the arguments it answered and whether a send is still owed its
  * reply are `useCommandOnce`'s own. A send still queued when the hook unmounts
  * or the page is left goes all the same, because a write declares it.
@@ -118,6 +308,9 @@ export function commandArgs( options ) {
  *                                                      on a page never share a Fetcher;
  *                                                      `<ci>:<command>` when omitted.
  * @param {(answer: Object) => void}   [opts.refresh]   Runs once a send lands, given its answer.
+ * @param {string[]}                   [opts.dirties]   Cache-key prefixes a landed send
+ *                                                      forgets and re-reads, such as
+ *                                                      `collections:`.
  * @param {(tokens: string[]) => void} [opts.onRefused] Runs once a send is refused.
  * @return {{run: (args: Object<string, string|Array<string>>) => string[], refusal: ?string, answeredArgs: ?string[], pending: boolean}}
  *   `run()`, the last refusal, the arguments the last reply answered, and
@@ -125,7 +318,13 @@ export function commandArgs( options ) {
  */
 export function useIntelWrite(
 	command,
-	{ ci = CI, scope = `${ ci }:${ command }`, refresh, onRefused } = {}
+	{
+		ci = CI,
+		scope = `${ ci }:${ command }`,
+		refresh,
+		onRefused,
+		dirties = [],
+	} = {}
 ) {
 	const {
 		run: send,
@@ -139,8 +338,14 @@ export function useIntelWrite(
 		scope,
 		subjectOf: NO_SUBJECT,
 		sendsOnRemoval: true,
-		onDone: ( { error: refused, args, result } ) =>
-			refused ? onRefused?.( args ) : refresh?.( result ),
+		onDone: ( { error: refused, args, result } ) => {
+			if ( refused ) {
+				onRefused?.( args );
+				return;
+			}
+			dirty( dirties );
+			refresh?.( result );
+		},
 	} );
 	const run = useCallback(
 		( args ) => {

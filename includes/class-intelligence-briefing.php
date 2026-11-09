@@ -134,7 +134,8 @@ final class Intelligence_Briefing {
 	 * they rank. Its summary counts what of the window is dated at or after
 	 * `since`, the window's first instant at the latest: the items, the open
 	 * clients they are about, and each of SUMMARY_KINDS with any item, in
-	 * that order, with its items and clients.
+	 * that order, with its items and the open clients they name as their
+	 * subject, so a churn report counts only the client that is leaving.
 	 *
 	 * @param int $asked The instant `since` names, UTC seconds.
 	 * @return array<string,mixed> `{ groups: [ { entity_key, name, role, items } ], total, summary: { since, items, clients, kinds: [ { kind, items, clients } ] }, available }`.

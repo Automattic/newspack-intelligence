@@ -7,12 +7,14 @@ import {
 } from '@wordpress/components';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import {
+	LENS_READS,
 	commandArgs,
 	useIntelRead,
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
 import Answer from '../components/Answer';
+import Skeleton from '../components/Skeleton';
 import { SignalTrend, TrendChart } from '../components/TrendTable';
 import GroupPage from '../components/GroupPage';
 import ListField from '../components/ListField';
@@ -210,6 +212,7 @@ function Opened( { lens, starts, onStarts, onOpenEntity, onSave, canTune } ) {
 				title={ __( 'Signals', 'newspack-intelligence' ) }
 				level={ 3 }
 				read={ signals }
+				skeleton={ <Skeleton shape="line" count={ 1 } /> }
 			>
 				{ ( answer ) => (
 					<SignalTrend answer={ answer } onSave={ onSave } />
@@ -296,17 +299,13 @@ export default function Lens( {
 	);
 	const lenses = useHeld( list, 'lenses', lensKey, matches );
 	const save = useIntelWrite( 'save_lens', {
-		refresh: () => {
-			setEditing( null );
-			list.refresh();
-		},
+		dirties: LENS_READS,
+		refresh: () => setEditing( null ),
 		onRefused: lenses.refused,
 	} );
 	const remove = useIntelWrite( 'remove_lens', {
-		refresh: () => {
-			onOpen( CLOSED_LENS );
-			list.refresh();
-		},
+		dirties: LENS_READS,
+		refresh: () => onOpen( CLOSED_LENS ),
 		onRefused: lenses.refused,
 	} );
 	const lens = lenses.read.answer?.lenses.find(

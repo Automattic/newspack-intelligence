@@ -1,23 +1,29 @@
 /* eslint-env jest */
 /**
  * Answer renders a read in exactly one of its states, and each kind of
- * nothing says which kind it is: still asking, refused, a graph that would
- * not open, or a graph that holds no rows. As a card it names itself by its
- * title, heads itself in a header band and insets its rows in a body.
+ * nothing says which kind it is: still asking, refused, a store that would
+ * not open, or a graph that holds no rows. A remembered answer says when it
+ * was read. As a card it names itself by its title, heads itself in a header
+ * band and insets its rows in a body.
  */
 
-import { render, screen } from '@testing-library/react';
-import Answer, { AnswerBody } from '../Answer';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { Core } from '@newspack-nodes/runtime';
+import Answer, { AnswerBody, CanManage, Unread } from '../Answer';
+import { sinceLabel } from '../format';
+import Skeleton from '../Skeleton';
 
 const UNAVAILABLE =
-	'The intelligence graph could not be opened, so this was not read.';
+	'The intelligence store did not open, so this was not read. An administrator can check the status above.';
+
+const UNREAD = 'Intelligence could not be read just now. Try again.';
 
 const props = { rows: 'leads', empty: 'No lead holds this.' };
 
 const answered = ( answer ) => ( { answer, error: null, loading: false } );
 
 describe( 'AnswerBody', () => {
-	it( 'shows that the answer is still owed', () => {
+	it( 'stands skeleton rows in for an answer still owed, and says no "Loading…"', () => {
 		render(
 			<AnswerBody
 				read={ { answer: null, error: null, loading: true } }
@@ -26,25 +32,91 @@ describe( 'AnswerBody', () => {
 				{ () => 'rows' }
 			</AnswerBody>
 		);
-		expect( screen.getByRole( 'status' ) ).toHaveTextContent( /loading/i );
+		const status = screen.getByRole( 'status', { name: 'Loading' } );
+		expect(
+			status.querySelectorAll( '.newspack-intelligence__item' )
+		).toHaveLength( 3 );
+		expect( screen.queryByText( /Loading/ ) ).toBeNull();
 	} );
 
-	it( 'shows a refusal as an alert', () => {
+	it( 'stands in the skeleton it is given for an answer still owed', () => {
 		render(
 			<AnswerBody
-				read={ {
-					answer: null,
-					error: 'limit must be positive',
-					loading: false,
-				} }
+				read={ { answer: null, error: null, loading: true } }
+				skeleton={ <Skeleton shape="line" count={ 2 } /> }
 				{ ...props }
 			>
 				{ () => 'rows' }
 			</AnswerBody>
 		);
-		expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
-			'limit must be positive'
-		);
+		expect(
+			screen
+				.getByRole( 'status', { name: 'Loading' } )
+				.querySelectorAll( '.newspack-nodes-skeleton' )
+		).toHaveLength( 2 );
+	} );
+
+	describe( 'a refused read', () => {
+		const refused = ( refresh ) => ( {
+			answer: null,
+			error: 'limit must be positive',
+			loading: false,
+			refresh,
+		} );
+
+		afterEach( () => {
+			delete window.NewspackNodesData;
+		} );
+
+		it( 'says it could not be read, offers Try again, and hides the refusal from a reader', () => {
+			const refresh = jest.fn();
+			render(
+				<CanManage.Provider value={ false }>
+					<AnswerBody read={ refused( refresh ) } { ...props }>
+						{ () => 'rows' }
+					</AnswerBody>
+				</CanManage.Provider>
+			);
+			expect( screen.getByRole( 'status' ) ).toHaveTextContent( UNREAD );
+			expect( screen.queryByRole( 'alert' ) ).toBeNull();
+			expect( screen.queryByText( 'limit must be positive' ) ).toBeNull();
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Try again' } )
+			);
+			expect( refresh ).toHaveBeenCalledTimes( 1 );
+		} );
+
+		it( 'shows an operator the refusal in muted words', () => {
+			render(
+				<CanManage.Provider value={ true }>
+					<AnswerBody read={ refused( jest.fn() ) } { ...props }>
+						{ () => 'rows' }
+					</AnswerBody>
+				</CanManage.Provider>
+			);
+			expect( screen.getByRole( 'status' ) ).toHaveTextContent( UNREAD );
+			expect( screen.queryByRole( 'alert' ) ).toBeNull();
+			expect( screen.getByText( 'limit must be positive' ) ).toHaveClass(
+				'is-muted'
+			);
+		} );
+
+		it( 'renders nothing without an error, as a refusal does', () => {
+			const { container } = render(
+				<Unread error={ null } refresh={ jest.fn() } />
+			);
+			expect( container ).toBeEmptyDOMElement();
+		} );
+
+		it( 'reads the operator from the page alone, never the localized global', () => {
+			window.NewspackNodesData = { canManage: '1' };
+			render(
+				<AnswerBody read={ refused( jest.fn() ) } { ...props }>
+					{ () => 'rows' }
+				</AnswerBody>
+			);
+			expect( screen.queryByText( 'limit must be positive' ) ).toBeNull();
+		} );
 	} );
 
 	it( 'says the graph is unavailable rather than empty', () => {
@@ -71,6 +143,36 @@ describe( 'AnswerBody', () => {
 		);
 		expect( screen.getByText( 'No lead holds this.' ) ).toBeInTheDocument();
 		expect( screen.queryByText( UNAVAILABLE ) ).toBeNull();
+	} );
+
+	it( 'says when a remembered answer was read', () => {
+		const at = Core.now() - 3 * 86400;
+		const shown = sinceLabel( at, Core.now() );
+		const { rerender } = render(
+			<AnswerBody
+				read={ {
+					...answered( { leads: [ 'a' ], available: true } ),
+					stale: true,
+					updatedAt: at,
+				} }
+				{ ...props }
+			>
+				{ () => 'rows' }
+			</AnswerBody>
+		);
+		expect( screen.getByText( `Updated ${ shown }` ) ).toHaveClass(
+			'is-muted'
+		);
+		expect( screen.getByText( 'rows' ) ).toBeInTheDocument();
+		rerender(
+			<AnswerBody
+				read={ answered( { leads: [ 'a' ], available: true } ) }
+				{ ...props }
+			>
+				{ () => 'rows' }
+			</AnswerBody>
+		);
+		expect( screen.queryByText( /^Updated / ) ).toBeNull();
 	} );
 
 	it( 'renders the answer when its rows hold some', () => {

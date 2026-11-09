@@ -74,6 +74,8 @@ final class IntelligenceCITest extends TestCase {
 		$described = \array_column( Intelligence_CI_Node::node_schema()['commands'], 'description', 'name' );
 
 		$this->assertStringContainsString( 'kinds: { churned, churn_signal, feature_request, complaint }', $described['entity'] );
+		$this->assertStringContainsString( 'churn_items: [ { item_key, title, url, source, day } ] } over the items naming it as their subject', $described['entity'] );
+		$this->assertStringContainsString( 'for an entity named with no lens, only the items naming it as their subject', $described['signals'] );
 		$this->assertStringContainsString( 'other never signals on the about axis', $described['signals'] );
 		$this->assertStringContainsString( 'only a value counted before those buckets', $described['signals'] );
 		$this->assertStringContainsString( 'a kind it never put out before included', $described['signals'] );

@@ -100,10 +100,11 @@ const LINKED = {
 	available: true,
 };
 
-function renderPage( canTune = false ) {
+function renderPage( canTune = false, canManage = false ) {
 	return render(
 		<IntelligencePage
 			canTune={ canTune }
+			canManage={ canManage }
 			userId="6143"
 			operator={ {
 				name: 'Quillmere Cooperative',
@@ -389,7 +390,9 @@ describe( 'IntelligencePage', () => {
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
 		);
-		await screen.findByText( 'no entity: organization:acme-quillsheet' );
+		await screen.findByText(
+			'Intelligence could not be read just now. Try again.'
+		);
 		expect( nav( 'Entity: organization:acme-quillsheet' ) ).toHaveAttribute(
 			'aria-selected',
 			'true'
@@ -419,11 +422,42 @@ describe( 'IntelligencePage', () => {
 		fireEvent.click(
 			within( form ).getByRole( 'button', { name: 'Add name' } )
 		);
-		await screen.findByText( 'no entity: organization:acme-quillsheet' );
+		await screen.findByText(
+			'Intelligence could not be read just now. Try again.'
+		);
 		expect( nav( 'Entity: organization:acme-quillsheet' ) ).toHaveAttribute(
 			'aria-selected',
 			'true'
 		);
+	} );
+
+	it( 'names the operator in an entity’s churn notice', async () => {
+		wire.replies.entity = {
+			...ENTITY,
+			status: {
+				...ENTITY.status,
+				churn_open: true,
+				churn_items: [
+					{
+						item_key: 'linear:acme-offboard',
+						title: 'Acme Quillsheet offboarding checklist',
+						url: 'https://tracker.example/acme-offboard',
+						source: 'linear',
+						day: '2026-10-06',
+					},
+				],
+			},
+		};
+		renderPage( true );
+		await openWeek();
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
+		);
+		expect(
+			await screen.findByText(
+				'“Acme Quillsheet offboarding checklist” (linear, 2026-10-06) says this client is leaving Quillmere Cooperative.'
+			)
+		).toBeInTheDocument();
 	} );
 
 	it( 'labels the Entity tab by the entity open now, not the one before', async () => {
@@ -570,6 +604,40 @@ describe( 'IntelligencePage', () => {
 				'seen by --lens=support-desk --group=theme --offset=1'
 			)
 		).toBeInTheDocument();
+	} );
+
+	it( 'shows an operator the words of a refused read, muted', async () => {
+		wire.replies.collections = () =>
+			new Error( 'collections refused for Harbor Ledger' );
+		renderPage( false, true );
+		fireEvent.click( nav( 'Collections' ) );
+		expect(
+			await screen.findByText( 'collections refused for Harbor Ledger' )
+		).toHaveClass( 'is-muted' );
+		expect(
+			screen
+				.getByText(
+					'Intelligence could not be read just now. Try again.'
+				)
+				.closest( '[role=status]' )
+		).not.toBeNull();
+	} );
+
+	it( 'keeps the words of a refused read from a reader', async () => {
+		wire.replies.collections = () =>
+			new Error( 'collections refused for Harbor Ledger' );
+		renderPage( false, false );
+		fireEvent.click( nav( 'Collections' ) );
+		expect(
+			(
+				await screen.findByText(
+					'Intelligence could not be read just now. Try again.'
+				)
+			).closest( '[role=status]' )
+		).not.toBeNull();
+		expect(
+			screen.queryByText( 'collections refused for Harbor Ledger' )
+		).toBeNull();
 	} );
 
 	it( 'switches to Watches for every reader', async () => {

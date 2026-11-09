@@ -6,6 +6,7 @@
  */
 
 import {
+	act,
 	render,
 	screen,
 	fireEvent,
@@ -15,7 +16,44 @@ import {
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { ENTITY, ITEM, VOCABULARY } from './fixtures';
+import { UNDO_MS } from '../../hooks/useDeferredWrite';
+import { useIntelRead } from '../../hooks/useIntelCommand';
 import Entity from '../Entity';
+
+/**
+ * A read whose rendering says whether its answer is owed, remembered or
+ * read, so a test sees what the cache holds for it.
+ *
+ * @param {Object}   props
+ * @param {string}   props.scope   The read's scope.
+ * @param {string}   props.command The read verb.
+ * @param {string[]} props.args    Its tokens.
+ * @return {import('react').ReactElement} Its state.
+ */
+function Probe( { scope, command, args } ) {
+	const { loading, stale } = useIntelRead( scope, command, args );
+	if ( loading ) {
+		return <p>{ `${ command } owed` }</p>;
+	}
+	return <p>{ `${ command } ${ stale ? 'remembered' : 'read' }` }</p>;
+}
+
+/** A reply that never comes, so a read stays owed. */
+const never = () => new Promise( () => {} );
+
+/**
+ * The line bars standing in for a card's prose while its read is owed.
+ *
+ * @param {HTMLElement} card The card.
+ * @return {number} How many.
+ */
+const owedLines = ( card ) =>
+	card.querySelectorAll(
+		'[role=status] .newspack-intelligence__skeleton-bar.is-line'
+	).length;
+
+/** A reply that never comes, so its read stays owed. */
+const owed = () => new Promise( () => {} );
 
 const KEY = 'organization:acme-quillsheet';
 
@@ -92,6 +130,7 @@ function renderEntity( props = {} ) {
 			entityKey={ KEY }
 			canTune={ false }
 			vocabulary={ VOCABULARY }
+			operator={ { name: 'Cobalt Desk', heading: 'Cobalt Desk' } }
 			onOpenEntity={ jest.fn() }
 			onNamed={ jest.fn() }
 			{ ...props }
@@ -297,7 +336,7 @@ describe( 'Entity — reads', () => {
 		};
 		renderEntity( { canTune: true } );
 		const end = within( await openDrawer() ).getByRole( 'button', {
-			name: 'End Paying member',
+			name: 'End Paying member…',
 		} );
 		expect( end.closest( 'li' ) ).toHaveTextContent(
 			/^Paying member since/
@@ -336,7 +375,9 @@ describe( 'Entity — reads', () => {
 		const onNamed = jest.fn();
 		wire.replies.entity = () => new Error( `no entity: ${ KEY }` );
 		renderEntity( { onNamed } );
-		await screen.findByText( `no entity: ${ KEY }` );
+		await screen.findByText(
+			'Intelligence could not be read just now. Try again.'
+		);
 		await waitFor( () =>
 			expect( onNamed ).toHaveBeenLastCalledWith( {
 				key: KEY,
@@ -455,6 +496,21 @@ describe( 'Entity — reads', () => {
 		] );
 	} );
 
+	it( 'stands lines in for its prose cards while they are owed', async () => {
+		wire.replies.entity = owed;
+		wire.replies.signals = owed;
+		wire.replies.related = owed;
+		wire.replies.claims = owed;
+		const { container } = renderEntity();
+		const card = ( name ) => screen.getByRole( 'region', { name } );
+		await waitFor( () =>
+			expect( owedLines( card( 'Signals' ) ) ).toBe( 1 )
+		);
+		expect( owedLines( container.querySelector( 'section' ) ) ).toBe( 2 );
+		expect( owedLines( card( 'Related' ) ) ).toBe( 3 );
+		expect( owedLines( card( 'Claims' ) ) ).toBe( 3 );
+	} );
+
 	it( 'says which kind of nothing each section holds', async () => {
 		wire.replies.timeline = { items: [], total: 0, available: true };
 		wire.replies.related = { entities: [], available: true };
@@ -470,7 +526,7 @@ describe( 'Entity — reads', () => {
 		).toBeInTheDocument();
 		expect(
 			await screen.findByText(
-				'The intelligence graph could not be opened, so this was not read.'
+				'The intelligence store did not open, so this was not read. An administrator can check the status above.'
 			)
 		).toBeInTheDocument();
 	} );
@@ -480,7 +536,7 @@ describe( 'Entity — reads', () => {
 		renderEntity();
 		expect(
 			await screen.findByText(
-				'The intelligence graph could not be opened, so this was not read.'
+				'The intelligence store did not open, so this was not read. An administrator can check the status above.'
 			)
 		).toBeInTheDocument();
 	} );
@@ -571,11 +627,13 @@ describe( 'Entity — reads', () => {
 		expect( screen.queryByText( /No signal/ ) ).toBeNull();
 	} );
 
-	it( 'shows a refused read as the refusal', async () => {
+	it( 'says a refused read was not read', async () => {
 		wire.replies.entity = () => new Error( `no entity: ${ KEY }` );
 		renderEntity();
 		expect(
-			await screen.findByText( `no entity: ${ KEY }` )
+			await screen.findByText(
+				'Intelligence could not be read just now. Try again.'
+			)
 		).toBeInTheDocument();
 	} );
 } );
@@ -648,42 +706,160 @@ describe( 'Entity — status', () => {
 } );
 
 describe( 'Entity — churn', () => {
+	const REPORT = {
+		item_key: 'linear:acme-offboard',
+		title: 'Acme Quillsheet offboarding checklist',
+		url: 'https://tracker.example/acme-offboard',
+		source: 'linear',
+		day: '2026-10-06',
+	};
 	const churning = {
 		...ENTITY,
-		status: { ...ENTITY.status, churn_open: true },
+		status: { ...ENTITY.status, churn_open: true, churn_items: [ REPORT ] },
 	};
+	const notice = async () =>
+		( await screen.findByText( 'Possible churn' ) ).closest(
+			'.components-notice'
+		);
+	const dialog = () =>
+		screen.getByRole( 'dialog', {
+			name: 'End Acme Quillsheet as a client?',
+		} );
+	const openDialog = async () => {
+		fireEvent.click(
+			within( await notice() ).getByRole( 'button', {
+				name: 'End client…',
+			} )
+		);
+		return dialog();
+	};
+	const endFromDialog = async () =>
+		fireEvent.click(
+			within( await openDialog() ).getByRole( 'button', {
+				name: 'End client',
+			} )
+		);
+	const snackbar = () => document.querySelector( '.components-snackbar' );
+	// Long enough for a write the click sent to reach the wire.
+	const pause = () =>
+		act( () => new Promise( ( resolve ) => setTimeout( resolve, 300 ) ) );
 
-	it( 'asks a curator in the status line whether to end a client with a churn report', async () => {
+	it( 'names each churn report in a notice for a curator', async () => {
+		wire.replies.entity = churning;
+		renderEntity( { canTune: true } );
+		const shown = await notice();
+		expect( shown ).toHaveClass( 'is-warning' );
+		expect( shown ).toHaveTextContent(
+			'“Acme Quillsheet offboarding checklist” (linear, 2026-10-06) says this client is leaving Cobalt Desk.'
+		);
+		expect(
+			within( shown ).getByRole( 'link', { name: 'Open item' } )
+		).toHaveAttribute( 'href', REPORT.url );
+	} );
+
+	it( 'sends nothing when End client… is pressed', async () => {
+		wire.replies.entity = churning;
+		renderEntity( { canTune: true } );
+		const asked = await openDialog();
+		expect( asked ).toHaveTextContent(
+			'“Acme Quillsheet offboarding checklist”, linear, 2026-10-06'
+		);
+		expect( asked ).toHaveTextContent( 'Main subject of the item.' );
+		await pause();
+		expect( wire.sent( 'end_role' ) ).toEqual( [] );
+		expect( wire.sent( 'assert_role' ) ).toEqual( [] );
+	} );
+
+	it( 'ends the client from its dialog: end_role, then assert_role former_client', async () => {
 		wire.replies.entity = churning;
 		wire.replies.end_role = { ok: true, event_id: 'ev-end-client' };
 		wire.replies.assert_role = { ok: true, event_id: 'ev-former' };
 		renderEntity( { canTune: true } );
-		const heading = await screen.findByRole( 'heading', {
-			name: 'Acme Quillsheet',
-		} );
-		const status = heading.nextElementSibling;
-		expect( status ).toHaveTextContent(
-			/This client has a churn report\. End client\?$/
-		);
-		fireEvent.click(
-			within( status ).getByRole( 'button', { name: 'End client?' } )
-		);
-		await waitFor( () => {
-			expect( wire.sent( 'end_role' ) ).toEqual( [
-				[ `--key=${ KEY }`, '--role=client' ],
-			] );
+		await endFromDialog();
+		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		await pause();
+		expect( wire.sent( 'end_role' ) ).toEqual( [
+			[ `--key=${ KEY }`, '--role=client' ],
+		] );
+		await waitFor( () =>
 			expect( wire.sent( 'assert_role' ) ).toEqual( [
 				[ `--key=${ KEY }`, '--role=former_client' ],
-			] );
-		} );
+			] )
+		);
+		await waitFor( () =>
+			expect( snackbar() ).toHaveTextContent(
+				'Acme Quillsheet is now a former client.'
+			)
+		);
+	} );
+
+	it( 'drops a remembered Briefing and entity once ending the client lands', async () => {
+		wire.replies.briefing = { groups: [], total: 0, available: true };
+		const remembered = [
+			[ 'probe:briefing', 'briefing', [ 'changes' ] ],
+			[ 'probe:entity', 'entity', [ 'person:harbor-ledger-editor' ] ],
+		];
+		const seeded = render(
+			<>
+				{ remembered.map( ( [ scope, command, args ] ) => (
+					<Probe
+						key={ scope }
+						scope={ scope }
+						command={ command }
+						args={ args }
+					/>
+				) ) }
+			</>
+		);
+		await screen.findByText( 'briefing read' );
+		await screen.findByText( 'entity read' );
+		seeded.unmount();
+		wire.replies.entity = churning;
+		wire.replies.end_role = { ok: true, event_id: 'ev-end-harbor' };
+		wire.replies.assert_role = { ok: true, event_id: 'ev-former-harbor' };
+		const view = renderEntity( { canTune: true } );
+		await endFromDialog();
+		await waitFor( () =>
+			expect( wire.sent( 'assert_role' ) ).toHaveLength( 1 )
+		);
+		await pause();
+		view.unmount();
+		wire.replies.briefing = never;
+		wire.replies.entity = never;
+		render(
+			<>
+				{ remembered.map( ( [ scope, command, args ] ) => (
+					<Probe
+						key={ scope }
+						scope={ scope }
+						command={ command }
+						args={ args }
+					/>
+				) ) }
+			</>
+		);
+		expect( screen.getByText( 'briefing owed' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'entity owed' ) ).toBeInTheDocument();
+	} );
+
+	it( 'closes its dialog with nothing sent', async () => {
+		wire.replies.entity = churning;
+		renderEntity( { canTune: true } );
+		fireEvent.click(
+			within( await openDialog() ).getByRole( 'button', {
+				name: 'Close',
+			} )
+		);
+		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		await pause();
+		expect( wire.sent( 'end_role' ) ).toEqual( [] );
+		expect( await notice() ).toBeInTheDocument();
 	} );
 
 	it( 'asserts the former client role only once the end lands', async () => {
 		wire.replies.entity = churning;
 		renderEntity( { canTune: true } );
-		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'End client?' } )
-		);
+		await endFromDialog();
 		await waitFor( () =>
 			expect( wire.sent( 'end_role' ) ).toHaveLength( 1 )
 		);
@@ -696,37 +872,27 @@ describe( 'Entity — churn', () => {
 			new Error( `${ KEY } holds no open client role` );
 		wire.replies.assert_role = { ok: true, event_id: 'ev-former' };
 		renderEntity( { canTune: true } );
-		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'End client?' } )
-		);
+		await endFromDialog();
 		expect(
 			await screen.findByText( `${ KEY } holds no open client role` )
 		).toBeInTheDocument();
 		expect( wire.sent( 'assert_role' ) ).toEqual( [] );
-		expect(
-			screen.getByRole( 'button', { name: 'End client?' } )
-		).toBeInTheDocument();
+		expect( await notice() ).toBeInTheDocument();
+		expect( snackbar() ).toBeNull();
 	} );
 
-	it( 'hides the prompt from the click while a read still lists the client', async () => {
+	it( 'hides the notice from the end while a read still lists the client', async () => {
 		wire.replies.entity = churning;
 		wire.replies.end_role = { ok: true, event_id: 'ev-end-6630' };
 		wire.replies.assert_role = { ok: true, event_id: 'ev-former-6630' };
 		renderEntity( { canTune: true } );
-		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'End client?' } )
-		);
-		expect(
-			screen.queryByRole( 'button', { name: 'End client?' } )
-		).toBeNull();
+		await endFromDialog();
+		expect( screen.queryByText( 'Possible churn' ) ).toBeNull();
 		await waitFor( () =>
 			expect( wire.sent( 'entity' ).length ).toBeGreaterThan( 1 )
 		);
 		expect( wire.sent( 'assert_role' ) ).toHaveLength( 1 );
-		expect( screen.queryByText( /churn report\./ ) ).toBeNull();
-		expect(
-			screen.queryByRole( 'button', { name: 'End client?' } )
-		).toBeNull();
+		expect( screen.queryByText( 'Possible churn' ) ).toBeNull();
 	} );
 
 	it( 'keeps a refused assert on screen after the status goes', async () => {
@@ -737,49 +903,140 @@ describe( 'Entity — churn', () => {
 			return new Error( `${ KEY } already holds former_client` );
 		};
 		renderEntity( { canTune: true } );
-		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'End client?' } )
-		);
+		await endFromDialog();
 		const alert = await screen.findByText(
 			`Acme Quillsheet (${ KEY }) is no longer a client, but former_client was not recorded: ${ KEY } already holds former_client`
 		);
 		await waitFor( () =>
 			expect( wire.sent( 'entity' ).length ).toBeGreaterThan( 1 )
 		);
-		expect( screen.queryByText( /churn report\./ ) ).toBeNull();
+		expect( screen.queryByText( 'Possible churn' ) ).toBeNull();
 		expect( alert ).toBeInTheDocument();
 		expect( alert ).toHaveAttribute( 'role', 'alert' );
 	} );
 
-	it( 'moves focus to the heading when the prompt leaves', async () => {
+	it( 'moves focus to the heading when the notice leaves', async () => {
 		wire.replies.entity = churning;
 		renderEntity( { canTune: true } );
-		const prompt = await screen.findByRole( 'button', {
-			name: 'End client?',
-		} );
-		prompt.focus();
-		fireEvent.click( prompt );
+		await endFromDialog();
 		expect( document.activeElement ).toBe(
 			screen.getByRole( 'heading', { name: 'Acme Quillsheet' } )
 		);
+	} );
+
+	describe( 'not about this client', () => {
+		// Only the undo window's own timer is faked; the wire runs as it does.
+		const fakeUndoClock = () =>
+			jest.useFakeTimers( {
+				doNotFake: [
+					'Date',
+					'hrtime',
+					'nextTick',
+					'performance',
+					'queueMicrotask',
+					'requestAnimationFrame',
+					'cancelAnimationFrame',
+					'requestIdleCallback',
+					'cancelIdleCallback',
+					'setImmediate',
+					'clearImmediate',
+					'setInterval',
+					'clearInterval',
+				],
+			} );
+		const elapse = ( ms ) =>
+			act( async () => {
+				jest.advanceTimersByTime( ms );
+			} );
+		const REJECTED = [
+			[ `--item=${ REPORT.item_key }`, `--entity=${ KEY }` ],
+		];
+
+		afterEach( () => {
+			jest.useRealTimers();
+		} );
+
+		it( 'sends reject_link for the item and the client after the undo window', async () => {
+			wire.replies.entity = churning;
+			wire.replies.reject_link = { ok: true, event_id: 'ev-reject' };
+			renderEntity( { canTune: true } );
+			const asked = await openDialog();
+			fakeUndoClock();
+			fireEvent.click(
+				within( asked ).getByRole( 'button', {
+					name: 'Not about this client',
+				} )
+			);
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+			expect( screen.queryByText( 'Possible churn' ) ).toBeNull();
+			expect(
+				snackbar().querySelector( '.components-snackbar__content' )
+					.firstChild
+			).toHaveTextContent( /^Removed the link to Acme Quillsheet\.$/ );
+			expect(
+				within( snackbar() ).getByRole( 'button', { name: 'Undo' } )
+			).toBeInTheDocument();
+			expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+			await elapse( UNDO_MS );
+			await waitFor( () =>
+				expect( wire.sent( 'reject_link' ) ).toEqual( REJECTED )
+			);
+			expect( wire.sent( 'end_role' ) ).toEqual( [] );
+		} );
+
+		it( 'sends it from the notice too', async () => {
+			wire.replies.entity = churning;
+			wire.replies.reject_link = { ok: true, event_id: 'ev-reject-2' };
+			renderEntity( { canTune: true } );
+			const shown = await notice();
+			fakeUndoClock();
+			fireEvent.click(
+				within( shown ).getByRole( 'button', {
+					name: 'Not about this client',
+				} )
+			);
+			expect( screen.queryByText( 'Possible churn' ) ).toBeNull();
+			await elapse( UNDO_MS );
+			await waitFor( () =>
+				expect( wire.sent( 'reject_link' ) ).toEqual( REJECTED )
+			);
+		} );
+
+		it( 'puts the report back on Undo and sends nothing', async () => {
+			wire.replies.entity = churning;
+			renderEntity( { canTune: true } );
+			const shown = await notice();
+			fakeUndoClock();
+			fireEvent.click(
+				within( shown ).getByRole( 'button', {
+					name: 'Not about this client',
+				} )
+			);
+			fireEvent.click( screen.getByRole( 'button', { name: 'Undo' } ) );
+			expect( screen.getByText( 'Possible churn' ) ).toBeInTheDocument();
+			await elapse( UNDO_MS );
+			expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+		} );
 	} );
 
 	it( 'asks a reader nothing', async () => {
 		wire.replies.entity = churning;
 		renderEntity();
 		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
-		expect( screen.queryByText( /churn report\./ ) ).toBeNull();
+		expect( screen.queryByText( 'Possible churn' ) ).toBeNull();
 		expect(
-			screen.queryByRole( 'button', { name: 'End client?' } )
+			screen.queryByRole( 'button', { name: 'End client…' } )
 		).toBeNull();
 	} );
 
 	it( 'asks nothing about a client with no churn report since it began', async () => {
+		wire.replies.entity = {
+			...ENTITY,
+			status: { ...ENTITY.status, churn_items: [] },
+		};
 		renderEntity( { canTune: true } );
 		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
-		expect(
-			screen.queryByRole( 'button', { name: 'End client?' } )
-		).toBeNull();
+		expect( screen.queryByText( 'Possible churn' ) ).toBeNull();
 	} );
 } );
 
@@ -876,7 +1133,7 @@ describe( 'Entity — curation', () => {
 			'Add name',
 			'Add identifier',
 			'Assert role',
-			'End Paying member',
+			'End Paying member…',
 		] ) {
 			expect( screen.queryByRole( 'button', { name } ) ).toBeNull();
 		}
@@ -906,7 +1163,7 @@ describe( 'Entity — curation', () => {
 			expect( screen.queryByRole( 'group', { name } ) ).toBeNull();
 		}
 		expect(
-			screen.queryByRole( 'button', { name: 'End Paying member' } )
+			screen.queryByRole( 'button', { name: 'End Paying member…' } )
 		).toBeNull();
 
 		const drawer = await openDrawer();
@@ -921,7 +1178,7 @@ describe( 'Entity — curation', () => {
 		}
 		expect(
 			within( drawer ).getByRole( 'button', {
-				name: 'End Paying member',
+				name: 'End Paying member…',
 			} )
 		).toBeInTheDocument();
 
@@ -934,7 +1191,9 @@ describe( 'Entity — curation', () => {
 	it( 'offers no edit until the record answers', async () => {
 		wire.replies.entity = () => new Error( `no entity: ${ KEY }` );
 		renderEntity( { canTune: true } );
-		await screen.findByText( `no entity: ${ KEY }` );
+		await screen.findByText(
+			'Intelligence could not be read just now. Try again.'
+		);
 		expect(
 			screen.queryByRole( 'group', { name: 'Add name' } )
 		).toBeNull();
@@ -1018,9 +1277,8 @@ describe( 'Entity — curation', () => {
 		);
 	} );
 
-	it( 'asserts the chosen role and ends an open one', async () => {
+	it( 'asserts the chosen role and offers an end only for a role held open', async () => {
 		wire.replies.assert_role = { ok: true, event_id: 'ev-role' };
-		wire.replies.end_role = { ok: true, event_id: 'ev-end' };
 		renderEntity( { canTune: true } );
 		const form = within( await openDrawer() ).getByRole( 'group', {
 			name: 'Assert role',
@@ -1031,22 +1289,53 @@ describe( 'Entity — curation', () => {
 		fireEvent.click(
 			within( form ).getByRole( 'button', { name: 'Assert role' } )
 		);
-		const end = screen.getByRole( 'button', { name: 'End Paying member' } );
-		expect( end.closest( 'li' ) ).toHaveClass(
-			'newspack-intelligence__actions'
-		);
-		fireEvent.click( end );
-		await waitFor( () => {
+		await waitFor( () =>
 			expect( wire.sent( 'assert_role' ) ).toEqual( [
 				[ `--key=${ KEY }`, '--role=competitor' ],
-			] );
-			expect( wire.sent( 'end_role' ) ).toEqual( [
-				[ `--key=${ KEY }`, '--role=client' ],
-			] );
-		} );
+			] )
+		);
+		expect(
+			screen
+				.getByRole( 'button', { name: 'End Paying member…' } )
+				.closest( 'li' )
+		).toHaveClass( 'newspack-intelligence__actions' );
 		expect(
 			screen.queryByRole( 'button', { name: 'End Lead' } )
 		).toBeNull();
+	} );
+
+	it( 'ends the client role through the End client dialog, never on one click', async () => {
+		wire.replies.end_role = { ok: true, event_id: 'ev-end' };
+		wire.replies.assert_role = { ok: true, event_id: 'ev-former' };
+		renderEntity( { canTune: true } );
+		fireEvent.click(
+			within( await openDrawer() ).getByRole( 'button', {
+				name: 'End Paying member…',
+			} )
+		);
+		const asked = screen.getByRole( 'dialog', {
+			name: 'End Acme Quillsheet as a client?',
+		} );
+		expect(
+			within( asked ).queryByRole( 'button', {
+				name: 'Not about this client',
+			} )
+		).toBeNull();
+		await act(
+			() => new Promise( ( resolve ) => setTimeout( resolve, 300 ) )
+		);
+		expect( wire.sent( 'end_role' ) ).toEqual( [] );
+		fireEvent.click(
+			within( asked ).getByRole( 'button', { name: 'End client' } )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'assert_role' ) ).toEqual( [
+				[ `--key=${ KEY }`, '--role=former_client' ],
+			] )
+		);
+		expect( wire.sent( 'end_role' ) ).toEqual( [
+			[ `--key=${ KEY }`, '--role=client' ],
+		] );
 	} );
 
 	it( 'shows a refused edit as the refusal', async () => {

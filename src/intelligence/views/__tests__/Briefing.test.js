@@ -8,12 +8,32 @@
  * nothing invites the reader to act.
  */
 
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import {
+	render,
+	screen,
+	fireEvent,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { ITEM } from './fixtures';
 import { sinceLabel } from '../../components/format';
 import Briefing from '../Briefing';
+
+/**
+ * The line bars standing in for a card's prose while its read is owed.
+ *
+ * @param {HTMLElement} card The card.
+ * @return {number} How many.
+ */
+const owedLines = ( card ) =>
+	card.querySelectorAll(
+		'[role=status] .newspack-intelligence__skeleton-bar.is-line'
+	).length;
+
+/** A reply that never comes, so its read stays owed. */
+const owed = () => new Promise( () => {} );
 
 const CLIENT = 'organization:kestrel-quillwork';
 
@@ -215,6 +235,17 @@ const expand = ( heading, count ) => {
 };
 
 describe( 'Briefing', () => {
+	it( 'stands three lines in for its signals while they are owed', async () => {
+		wire.replies.briefing = ( [ what ] ) =>
+			'signals' === what ? owed() : CHANGES;
+		renderBriefing();
+		await waitFor( () =>
+			expect(
+				owedLines( screen.getByRole( 'region', { name: 'Signals' } ) )
+			).toBe( 3 )
+		);
+	} );
+
 	it( 'opens with the Ask box, which asks nothing until a question is sent', async () => {
 		renderBriefing();
 		await screen.findByRole( 'button', { name: 'Kestrel account' } );

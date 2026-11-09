@@ -20,8 +20,9 @@
  * it can rest on and windows only those; `trends` with no entity reads all.
  * A read counts the links saying an item is about its entity
  * (`Intel_Event::ABOUT_ROLES`) unless it names other roles: an entity's
- * publishing reads its `publisher` links, and visibility and a claim's
- * subject rest on any link.
+ * publishing reads its `publisher` links, a client's status and the clients
+ * a kind or theme is counted against read `subject` links, and visibility
+ * and a claim's subject rest on any link.
  * Summaries, kinds and scores come from `extractions`, a name from
  * `name_of()`, joined, since a link may name an entity with no row.
  *
@@ -114,6 +115,9 @@ final class Graph_Query {
 
 	/** The item kind reporting that a client has left or is leaving. */
 	public const CHURNED = 'churned';
+
+	/** The link role a read turning an item's kind or theme into a claim about a client rests on. */
+	private const SUBJECT = 'subject';
 
 	/** The role an entity holds while it is the operator's own work. */
 	public const OPERATOR_PRODUCT = 'operator_product';
@@ -300,8 +304,8 @@ final class Graph_Query {
 	 * them: the most severe kind of those copies, a kind's severity its
 	 * place in the filters' `kinds`, most severe first, every kind alike
 	 * where they name none, the newest copy's among equals; how many stories
-	 * it holds; the open clients those copies are about by a subject or a
-	 * mention, by name, a copy about more than MAX_ITEM_CLIENTS naming none
+	 * it holds; the open clients those copies name as their subject, by
+	 * name, a copy about more than MAX_ITEM_CLIENTS naming none
 	 * though it still counts; the time of its newest story, each dated by its
 	 * earliest copy; and its CITATIONS newest stories as
 	 * `search` answers them, the most important first, as MOST_IMPORTANT
@@ -334,7 +338,7 @@ final class Graph_Query {
 			. ' gi AS ( SELECT gid, MAX( importance ) AS top FROM gk GROUP BY gid ),'
 			. ' gw AS ( SELECT gid, kind, severity FROM ( SELECT gid, kind, severity, ROW_NUMBER() OVER ( PARTITION BY gid ORDER BY severity, t DESC, kind ) AS pick FROM gk ) WHERE pick = 1 ),'
 			. ' gs AS ( SELECT gm.gid, MAX( gm.theme ) AS theme, gm.story, MIN( c.t ) AS t FROM gm JOIN copies c ON c.story = gm.story GROUP BY gm.gid, gm.story ),'
-			. ' gl AS ( SELECT DISTINCT ga.gid, ic.entity_key FROM ga JOIN ic ON ic.item_key = ga.copy ),'
+			. ' gl AS ( SELECT DISTINCT ga.gid, ic.entity_key FROM ga JOIN ic ON ic.item_key = ga.copy AND ic.subject ),'
 			. ' gn AS ( SELECT gid, COUNT(*) AS n FROM gl GROUP BY gid ),'
 			. ' ranked AS ( SELECT s.gid, MAX( s.theme ) AS theme, w.kind, COUNT(*) AS n, MAX( s.t ) AS newest,'
 			. ' ROW_NUMBER() OVER ( ORDER BY w.severity, COALESCE( gi.top, -1 ) DESC, COALESCE( gn.n, 0 ) DESC, MAX( s.t ) DESC, MAX( s.theme ), s.gid ) AS ord'
@@ -826,7 +830,8 @@ final class Graph_Query {
 	 * How many items a read admits, and, of those dated at or after
 	 * `$since`, how many there are, how many open clients they are about by
 	 * a subject or a mention (`item_clients()`), and each kind's items and
-	 * clients, in the one statement that counts them.
+	 * the clients they name as their subject, in the one statement that
+	 * counts them.
 	 *
 	 * @param Row_Reader        $r     The reader.
 	 * @param string            $with  The read's `WITH` clauses, `live` among them.
@@ -838,11 +843,11 @@ final class Graph_Query {
 	 */
 	private static function summed( Row_Reader $r, string $with, string $join, string $where, array $binds, int $since ): array {
 		$time    = Intel_Graph_Row_Schema::ITEM_TIME;
-		$counts  = 'COUNT( DISTINCT item_key ), COUNT( DISTINCT CASE WHEN t >= ? THEN item_key END ), COUNT( DISTINCT CASE WHEN t >= ? THEN entity_key END ) FROM wc';
+		$counts  = static fn ( string $client ): string => "COUNT( DISTINCT item_key ), COUNT( DISTINCT CASE WHEN t >= ? THEN item_key END ), COUNT( DISTINCT CASE WHEN t >= ? AND {$client} THEN entity_key END ) FROM wc";
 		$rows    = $r->rows(
 			"{$with}, " . self::item_clients( $r ) . ", w AS MATERIALIZED ( SELECT i.item_key, x.kind, {$time} AS t FROM ri i {$join} LEFT JOIN " . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . " x ON x.item_key = i.item_key WHERE {$where} ),"
-			. ' wc AS MATERIALIZED ( SELECT w.item_key, w.kind, w.t, ic.entity_key FROM w LEFT JOIN ic ON ic.item_key = w.item_key )'
-			. " SELECT 1, NULL, {$counts} UNION ALL SELECT 0, kind, {$counts} WHERE kind IS NOT NULL GROUP BY kind",
+			. ' wc AS MATERIALIZED ( SELECT w.item_key, w.kind, w.t, ic.entity_key, ic.subject FROM w LEFT JOIN ic ON ic.item_key = w.item_key )'
+			. ' SELECT 1, NULL, ' . $counts( '1' ) . ' UNION ALL SELECT 0, kind, ' . $counts( 'subject' ) . ' WHERE kind IS NOT NULL GROUP BY kind',
 			[ ...$binds, $since, $since, $since, $since ]
 		);
 		$total   = 0;
@@ -1000,18 +1005,20 @@ final class Graph_Query {
 	}
 
 	/**
-	 * A client's status: when its open client role began, how many readable
-	 * items about it are of each STATUS_KINDS kind, when the newest of them
-	 * is dated, and whether one about it dated after that start is extracted
-	 * as CHURNED, which the Entity view offers to end the role on; null for
-	 * an entity holding no open client role. Its signals are the `signals`
-	 * read's, which the page already makes.
+	 * A client's status, over the readable items naming it as their subject:
+	 * when its open client role began, how many of them are of each
+	 * STATUS_KINDS kind, when the newest of them is dated, and the CITATIONS
+	 * newest extracted as CHURNED dated after that start, its churn items,
+	 * each as `{ item_key, title, url, source, day }` read once however many
+	 * partitions hold it, which the Entity view names when it offers to end
+	 * the role; null for an entity holding no open client role. Its signals
+	 * are the `signals` read's, which the page already makes.
 	 *
 	 * @param Row_Reader                                            $r        The reader.
 	 * @param Graph                                                 $g        The graph the read opened.
 	 * @param string                                                $survivor The entity.
 	 * @param list<array{role:mixed,from_ts:mixed,to_ts:mixed}> $roles    Every role row of its keys.
-	 * @return array{client_since:int,kinds:array<string,int>,last_item_ts:int|null,churn_open:bool}|null
+	 * @return array{client_since:int,kinds:array<string,int>,last_item_ts:int|null,churn_open:bool,churn_items:list<array{item_key:mixed,title:mixed,url:mixed,source:mixed,day:mixed}>}|null
 	 */
 	private static function status( Row_Reader $r, array $g, string $survivor, array $roles ): ?array {
 		$open = \array_filter( $roles, static fn ( array $row ): bool => self::CLIENT === $row['role'] && 0 === Core::as_int( $row['to_ts'] ) );
@@ -1020,19 +1027,26 @@ final class Graph_Query {
 		}
 		$since                           = \min( \array_map( static fn ( array $row ): int => Core::as_int( $row['from_ts'] ), $open ) );
 		$filter                          = self::filter_of( [ 'entity' => $survivor ] );
-		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false );
+		[ $with, $where, $lead, $binds ] = self::narrowed( $r, $g, $filter, false, [ self::SUBJECT ] );
 		$time                            = Intel_Graph_Row_Schema::ITEM_TIME;
+		$x                               = Intel_Graph_Row_Schema::all( $r, 'extractions' );
 		$counted                         = \implode( ', ', \array_fill( 0, \count( self::STATUS_KINDS ), 'COUNT( DISTINCT CASE WHEN x.kind = ? THEN i.item_key END )' ) );
-		$row                             = $r->rows(
-			"{$with} SELECT MAX( {$time} ), COUNT( CASE WHEN x.kind = ? AND {$time} > ? THEN 1 END ) > 0, {$counted} FROM ri i LEFT JOIN " . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . " x ON x.item_key = i.item_key WHERE {$where}",
-			[ ...$lead, self::CHURNED, $since, ...self::STATUS_KINDS, ...$binds ]
-		)[0];
-		[ $last, $churned ]              = \array_splice( $row, 0, 2 );
+		$row                             = $r->rows( "{$with} SELECT MAX( {$time} ), {$counted} FROM ri i LEFT JOIN {$x} x ON x.item_key = i.item_key WHERE {$where}", [ ...$lead, ...self::STATUS_KINDS, ...$binds ] )[0];
+		$last                            = \array_shift( $row );
+		$churn                           = \array_map(
+			static fn ( array $row ): array => [ 'item_key' => $row[0], 'title' => $row[1], 'url' => $row[2], 'source' => $row[3], 'day' => $row[4] ],
+			$r->rows(
+				"{$with} SELECT i.item_key, MAX( i.title ), MAX( i.url ), MAX( i.source ), date( MIN( {$time} ), 'unixepoch' ) FROM ri i JOIN {$x} x ON x.item_key = i.item_key"
+				. " WHERE x.kind = ? AND {$time} > ? AND {$where} GROUP BY i.item_key ORDER BY MIN( {$time} ) DESC, i.item_key LIMIT ?",
+				[ ...$lead, self::CHURNED, $since, ...$binds, self::CITATIONS ]
+			)
+		);
 		return [
 			'client_since' => $since,
 			'kinds'        => \array_combine( self::STATUS_KINDS, \array_map( Core::as_int( ... ), $row ) ),
 			'last_item_ts' => null === $last ? null : Core::as_int( $last ),
-			'churn_open'   => 1 === Core::as_int( $churned ),
+			'churn_open'   => [] !== $churn,
+			'churn_items'  => $churn,
 		];
 	}
 
@@ -1591,7 +1605,8 @@ final class Graph_Query {
 
 	/**
 	 * Each entity's signals, named with no lens, every entity read in the
-	 * same statements: the spikes of what is about it, per kind by week, a
+	 * same statements: the spikes of the items naming it as their subject,
+	 * per kind by week, a
 	 * MUTE_KIND one left out, each kind spiking only when it was counted
 	 * before the window; what its own site published, per week against its
 	 * own baseline, a `burst` for each kind spiking by the rule `spiked_in()`
@@ -1611,7 +1626,8 @@ final class Graph_Query {
 
 	/**
 	 * Each entity's signals, as `signals_of()` answers them, and the trend
-	 * of what is about it, per week by kind, `other` muted, its totals read
+	 * of the items naming it as their subject, per week by kind, `other`
+	 * muted, its totals read
 	 * in the statement that counts the about spikes (`trend_of()`); none of
 	 * either unless the latest complete week closed after `$after`.
 	 *
@@ -1629,7 +1645,7 @@ final class Graph_Query {
 		if ( null === $starts ) {
 			return [ $signals, $trends ];
 		}
-		[ $about, $totals ] = self::spiking( $r, self::linking( $r, $g, $survivors, Intel_Event::ABOUT_ROLES ), self::all_days(), $starts, self::DEFAULT_AXIS, $span, true, true );
+		[ $about, $totals ] = self::spiking( $r, self::linking( $r, $g, $survivors, [ self::SUBJECT ] ), self::all_days(), $starts, self::DEFAULT_AXIS, $span, true, true );
 		[ $bursts ]         = self::spiking( $r, self::linking( $r, $g, $survivors, [ Intel_Event::PUBLISHER ] ), self::all_days(), $starts, self::DEFAULT_AXIS, $span, false, false );
 		$falls              = self::falls( $r, $g, $survivors, $starts, $span );
 		foreach ( $survivors as $survivor ) {
@@ -2124,7 +2140,7 @@ final class Graph_Query {
 	 * @param int            $cut    The first second a bucket counts.
 	 * @param bool           $muted  Whether the kind axis leaves out MUTE_KIND.
 	 * @param bool           $values Whether the history is read per value.
-	 * @param bool           $named  Whether each row names the open clients its stories' copies are about, by a subject or a mention, before its items, a copy about more than MAX_ITEM_CLIENTS naming none.
+	 * @param bool           $named  Whether each row names the open clients its stories' copies name as their subject, before its items, a copy about more than MAX_ITEM_CLIENTS naming none.
 	 * @param bool           $totals Whether to count each subject's stories per bucket too.
 	 * @return array{0:array<string,list<array{bucket:mixed,value:mixed,count:int,items:list<array{item_key:mixed,url:mixed,title:mixed}>}>>,1:array<string,array<string,true>>,2:array<string,array<string,int>>} Each subject => its rows, the newest bucket first, then the highest count; each subject with a history => each value in it, or '' alone; and, with `$totals`, each subject => each bucket's start => its stories.
 	 */
@@ -2133,7 +2149,7 @@ final class Graph_Query {
 		$clients             = $named
 			? ', ' . self::item_clients( $r ) . ", named AS ( SELECT b.subject, b.bucket, b.value, json_group_array( json_object( 'entity_key', b.entity_key, 'name', " . self::name_of( $r, 'b.entity_key' ) . ' ) ) AS clients'
 				. " FROM ( SELECT DISTINCT s.subject, s.bucket, s.value, ic.entity_key FROM ( SELECT subject, {$span} AS bucket, value, item_key FROM stories WHERE t >= ? AND value IS NOT NULL ) s"
-				. ' JOIN copies c ON c.subject = s.subject AND c.value = s.value AND c.story = s.item_key JOIN ic ON ic.item_key = c.copy ) b GROUP BY 1, 2, 3 )'
+				. ' JOIN copies c ON c.subject = s.subject AND c.value = s.value AND c.story = s.item_key JOIN ic ON ic.item_key = c.copy AND ic.subject ) b GROUP BY 1, 2, 3 )'
 			: '';
 		$rows                = $r->rows(
 			"{$stories}, ranked AS ( SELECT s.subject, {$span} AS bucket, s.value, s.item_key, ROW_NUMBER() OVER ( PARTITION BY s.subject, {$span}, s.value ORDER BY t DESC, s.item_key DESC ) AS rn,"
@@ -2187,15 +2203,17 @@ final class Graph_Query {
 	/**
 	 * The `oc` and `ic` CTEs, to follow `live`: every open client
 	 * (`open_clients()`), and each item with the open clients it is about by
-	 * a subject or a mention, an item about more than MAX_ITEM_CLIENTS
-	 * naming none, as the briefing files such an item once.
+	 * a subject or a mention, `subject` true where the client is its
+	 * subject, the only client a read turning its kind or theme into a claim
+	 * about a client counts, an item about more than MAX_ITEM_CLIENTS naming
+	 * none, as the briefing files such an item once.
 	 *
 	 * @param Row_Reader $r The reader.
 	 */
 	private static function item_clients( Row_Reader $r ): string {
 		return self::open_clients( $r ) . ','
-			. ' ic AS ( SELECT item_key, entity_key FROM ( SELECT item_key, entity_key, COUNT(*) OVER ( PARTITION BY item_key ) AS n'
-			. ' FROM ( SELECT DISTINCT l.item_key, l.entity_key FROM live l JOIN oc ON oc.entity_key = l.entity_key WHERE NOT l.topical ) ) WHERE n <= ' . self::MAX_ITEM_CLIENTS . ' )';
+			. ' ic AS ( SELECT item_key, entity_key, subject FROM ( SELECT item_key, entity_key, subject, COUNT(*) OVER ( PARTITION BY item_key ) AS n'
+			. " FROM ( SELECT DISTINCT l.item_key, l.entity_key, l.role = '" . self::SUBJECT . "' AS subject FROM live l JOIN oc ON oc.entity_key = l.entity_key WHERE NOT l.topical ) ) WHERE n <= " . self::MAX_ITEM_CLIENTS . ' )';
 	}
 
 	/**

@@ -329,15 +329,15 @@ final class IntelligenceSignalsTest extends TestCase {
 	}
 
 	/**
-	 * An entity's trend counts what is about it by week, `other` muted as
-	 * its about spikes mute it, a restricted story for a holder and never
-	 * for a reader.
+	 * An entity's trend counts the items naming it as their subject by
+	 * week, `other` muted as its about spikes mute it, a restricted story for
+	 * a holder and never for a reader.
 	 */
 	public function test_an_entitys_trend_counts_what_is_about_it(): void {
 		$this->weeks( 'complaint', [ 1 => 3, 5 => 2 ], 'restricted' );
 		for ( $n = 1; $n <= 4; $n++ ) {
 			$at = self::THIS_WEEK - 2 * self::WEEK + 3 * 86400 + $n * 60;
-			$this->seed( ...[ ...self::counted( "feed:ledger-note-{$n}", 'research', $at, 'internal', 'feed', [] ), self::link( 'link_asserted', "feed:ledger-note-{$n}", 'organization:tidewater-ledger', 'mention', 'name', 1.0, $at ) ] );
+			$this->seed( ...[ ...self::counted( "feed:ledger-note-{$n}", 'research', $at, 'internal', 'feed', [] ), self::link( 'link_asserted', "feed:ledger-note-{$n}", 'organization:tidewater-ledger', 'subject', 'name', 1.0, $at ) ] );
 		}
 		$this->weeks( 'praise', [ 1 => 6 ] );
 		$at = self::THIS_WEEK - 3 * self::WEEK + 86400;
@@ -346,6 +346,25 @@ final class IntelligenceSignalsTest extends TestCase {
 		$this->assertSame( self::trend( [ 0, 4, 0, 0, 0, 0, 0, 0 ] ), $this->ci->dispatch( 'signals', [ '--entity=organization:tidewater-ledger' ] )['trend'] );
 		$GLOBALS['_current_user_id'] = self::HOLDER;
 		$this->assertSame( self::trend( [ 3, 4, 0, 0, 2, 0, 0, 0 ] ), $this->ci->dispatch( 'signals', [ '--entity=organization:tidewater-ledger' ] )['trend'] );
+	}
+
+	/**
+	 * An entity's about signals and its trend rest on the items naming it as
+	 * their subject: a burst of complaints that only mention the Tidewater
+	 * Ledger spikes nothing and leaves its trend flat, and the same burst as
+	 * its subject spikes.
+	 */
+	public function test_an_entitys_about_signals_rest_on_its_subject_links(): void {
+		$this->about_ledger( 'complaint', 'subject', [ 2 => 1, 3 => 1, 4 => 1, 5 => 1, 6 => 1, 7 => 1, 8 => 1, 9 => 1, 10 => 1 ] );
+		$this->about_ledger( 'complaint', 'mention', [ 1 => 5 ] );
+		$read = fn (): array => $this->ci->dispatch( 'signals', [ '--entity=organization:tidewater-ledger' ] );
+
+		$this->assertSame( [], $read()['signals'] );
+		$this->assertSame( self::trend( [ 0, 1, 1, 1, 1, 1, 1, 1 ] ), $read()['trend'] );
+
+		$this->about_ledger( 'complaint', 'subject', [ 1 => 5 ] );
+
+		$this->assertSame( [ [ \gmdate( 'Y-m-d', self::THIS_WEEK - self::WEEK ), 'kind', 'complaint', 5, 1.0 ] ], self::signals( $read() ) );
 	}
 
 	/**
@@ -412,6 +431,24 @@ final class IntelligenceSignalsTest extends TestCase {
 		foreach ( $counts as $back => $count ) {
 			for ( $n = 1; $n <= $count; $n++ ) {
 				$this->seed( ...self::counted( "{$source}:{$kind}-{$back}-{$n}", $kind, self::THIS_WEEK - $back * self::WEEK + 2 * 86400 + $n * 60, $tier, $source, [], "{$kind} {$n} of week {$back}" ) );
+			}
+		}
+	}
+
+	/**
+	 * Seed items of one kind per week back from the current one, each linked
+	 * to the Tidewater Ledger in one role.
+	 *
+	 * @param string         $kind   The kind every item is extracted as.
+	 * @param string         $role   The link's role.
+	 * @param array<int,int> $counts Weeks back => how many items.
+	 */
+	private function about_ledger( string $kind, string $role, array $counts ): void {
+		foreach ( $counts as $back => $count ) {
+			for ( $n = 1; $n <= $count; $n++ ) {
+				$key = "feed:ledger-{$role}-{$kind}-{$back}-{$n}";
+				$at  = self::THIS_WEEK - $back * self::WEEK + 2 * 86400 + $n * 60;
+				$this->seed( ...[ ...self::counted( $key, $kind, $at, 'internal', 'feed', [] ), self::link( 'link_asserted', $key, 'organization:tidewater-ledger', $role, 'name', 1.0, $at ) ] );
 			}
 		}
 	}

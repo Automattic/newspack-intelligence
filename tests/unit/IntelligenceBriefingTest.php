@@ -177,6 +177,25 @@ final class IntelligenceBriefingTest extends TestCase {
 	}
 
 	/**
+	 * The summary counts a client under a kind only where its item names the
+	 * client as its subject: a churn report about the Plover that mentions the
+	 * Sedgewick counts one churned client, though the items are about two.
+	 */
+	public function test_the_summary_counts_churn_by_subject(): void {
+		$at = self::back( 1 );
+		$this->seed(
+			self::item( 'linear:plover-exit', 'Plover offboarding', 'linear', 'public', $at ),
+			self::extraction( 'linear:plover-exit', 'The Plover is leaving.', 'churned', $at, [], 5.0, 7.0 ),
+			self::link( 'link_asserted', 'linear:plover-exit', self::PLOVER, 'subject', 'name', 1.0, $at ),
+			self::link( 'link_asserted', 'linear:plover-exit', self::SEDGE, 'mention', 'name', 1.0, $at )
+		);
+
+		$summary = $this->ci->dispatch( 'briefing', [ 'changes' ] )['summary'];
+
+		$this->assertSame( [ 1, 2, [ [ 'kind' => 'churned', 'items' => 1, 'clients' => 1 ] ] ], [ $summary['items'], $summary['clients'], $summary['kinds'] ] );
+	}
+
+	/**
 	 * With no instant named, or one before the window, the summary counts
 	 * from the window's first instant.
 	 */

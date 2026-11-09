@@ -6,18 +6,25 @@ import {
 	useState,
 } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
-import { Snackbar, TextControl, ToggleControl } from '@wordpress/components';
+import { TextControl, ToggleControl } from '@wordpress/components';
 import { Icon, check, closeSmall } from '@wordpress/icons';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { isTypingTarget } from '@newspack-nodes/shared/utils/isTypingTarget';
 import { usePersistedFlag } from '@newspack-nodes/shared/hooks/usePersistedState';
-import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
+import {
+	ENTITY_READS,
+	JUDGED_READS,
+	THEME_READS,
+	useIntelRead,
+	useIntelWrite,
+} from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
 import { useDeferredWrite } from '../hooks/useDeferredWrite';
 import Answer from '../components/Answer';
 import Cite, { EntityChip } from '../components/Cite';
 import { SaveButton } from '../components/ItemRow';
 import Refusal from '../components/Refusal';
+import UndoSnackbar from '../components/UndoSnackbar';
 import { metaLine } from '../components/format';
 
 /**
@@ -160,40 +167,6 @@ function KeysLegend( { id, keys, onToggle } ) {
 				checked={ ! keys }
 				onChange={ onToggle }
 			/>
-		</div>
-	);
-}
-
-/**
- * The most recent judgment still pending, as a snackbar offering its Undo,
- * until it is sent, undone or dismissed. Its message is not spoken here:
- * `useDeferredWrite` announced it as it was deferred.
- *
- * @param {Object}                         props
- * @param {?{id: number, message: string}} props.latest The pending write.
- * @param {() => void}                     props.onUndo Undoes it.
- * @return {?import('react').ReactElement} The snackbar.
- */
-function UndoSnackbar( { latest, onUndo } ) {
-	const [ dismissed, setDismissed ] = useState( null );
-	if ( ! latest || latest.id === dismissed ) {
-		return null;
-	}
-	return (
-		<div className="newspack-intelligence__undo">
-			<Snackbar
-				explicitDismiss
-				spokenMessage=""
-				actions={ [
-					{
-						label: __( 'Undo', 'newspack-intelligence' ),
-						onClick: onUndo,
-					},
-				] }
-				onRemove={ () => setDismissed( latest.id ) }
-			>
-				{ latest.message }
-			</Snackbar>
 		</div>
 	);
 }
@@ -559,11 +532,11 @@ export default function Review( {
 	const judgedThemes = useHeld( themes, 'suggestions', pairKey );
 
 	const relink = {
-		refresh: links.refresh,
+		dirties: ENTITY_READS,
 		onRefused: judgedLinks.refused,
 	};
 	const rejudge = {
-		refresh: entities.refresh,
+		dirties: JUDGED_READS,
 		onRefused: judgedEntities.refused,
 	};
 	const confirmLink = useIntelWrite( 'confirm_link', relink );
@@ -572,7 +545,7 @@ export default function Review( {
 	const rejectEntity = useIntelWrite( 'reject_entity', rejudge );
 	const mergeEntities = useIntelWrite( 'merge_entities', rejudge );
 	const mergeTheme = useIntelWrite( 'merge_theme', {
-		refresh: themes.refresh,
+		dirties: THEME_READS,
 		onRefused: judgedThemes.refused,
 	} );
 	const keyProps = {

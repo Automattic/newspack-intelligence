@@ -217,6 +217,23 @@ describe( 'AskBox', () => {
 		expect( wire.sent( 'ask_result' ) ).toHaveLength( polls );
 	} );
 
+	it( 'says a refused answer read was not read, its words kept from a reader', async () => {
+		wire.replies.ask_result = () =>
+			new Error( 'ask_result refused for Harbor Ledger' );
+		render( <Held /> );
+
+		ask( 'Who won?' );
+
+		expect(
+			await screen.findByText(
+				'Intelligence could not be read just now. Try again.'
+			)
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText( 'ask_result refused for Harbor Ledger' )
+		).toBeNull();
+	} );
+
 	it( 'stops asking once the ask has waited as long as the server allows', async () => {
 		wire.replies.ask_result = { ...WAITING, wait_s: 120 };
 		render( <Held /> );

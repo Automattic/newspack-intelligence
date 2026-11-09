@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState } from '@wordpress/element';
 import { archive } from '@wordpress/icons';
 import { __, sprintf } from '@wordpress/i18n';
 import { useDeferredWrite } from '../hooks/useDeferredWrite';
-import { useIntelWrite } from '../hooks/useIntelCommand';
+import { ITEM_READS, useIntelWrite } from '../hooks/useIntelCommand';
 import Cite, { EntityChip } from './Cite';
 import Pager from './Pager';
 import Refusal from './Refusal';
@@ -125,7 +125,10 @@ export default function ItemRow( {
  */
 function Excluding( { item, onUndo, onRefused } ) {
 	const scope = `exclude-item:${ useId().replace( /[^a-z0-9]/gi, '' ) }`;
-	const exclude = useIntelWrite( 'exclude_item', { scope } );
+	const exclude = useIntelWrite( 'exclude_item', {
+		scope,
+		dirties: ITEM_READS,
+	} );
 	const deferred = useDeferredWrite();
 	const asked = useRef( false );
 	useEffect( () => {

@@ -69,6 +69,23 @@ function Writer( { refresh, onRefused, onSent = () => {}, ci } ) {
 	);
 }
 
+function Dirtier( { command, dirties, refresh } ) {
+	const { run } = useIntelWrite( command, {
+		scope: `probe:${ command }`,
+		dirties,
+		refresh,
+	} );
+	return (
+		<button
+			type="button"
+			className="button"
+			onClick={ () => run( { item: 'harbor-ledger:memo' } ) }
+		>
+			{ command }
+		</button>
+	);
+}
+
 describe( 'useIntelRead', () => {
 	it( 'sends its verb with its arguments and shows the answer', async () => {
 		wire.replies.entity = ( [ key ] ) => ( {
@@ -124,6 +141,255 @@ describe( 'useIntelRead', () => {
 		expect(
 			await screen.findByText( /refused: NOT_AVAILABLE/ )
 		).toBeInTheDocument();
+	} );
+} );
+
+/**
+ * A read whose rows say which items it holds, and whether it is stale.
+ *
+ * @param {Object}   props
+ * @param {string}   props.scope   The read's scope.
+ * @param {string}   props.command The read verb.
+ * @param {string[]} props.args    Its tokens.
+ * @return {import('react').ReactElement} The read's state.
+ */
+function Lister( { scope, command, args } ) {
+	const { answer, error, loading, stale } = useIntelRead(
+		scope,
+		command,
+		args
+	);
+	// Every field it is handed renders, so a refusal beside rows would show.
+	return (
+		<>
+			{ error && <p>refused: { error }</p> }
+			{ loading && <p>loading</p> }
+			{ answer && (
+				<>
+					<p>{ stale ? 'stale' : 'fresh' }</p>
+					<ul>
+						{ answer.items.map( ( title ) => (
+							<li key={ title }>{ title }</li>
+						) ) }
+					</ul>
+				</>
+			) }
+		</>
+	);
+}
+
+/** A reply the suite holds open until it answers it. */
+function held() {
+	let answer;
+	const reply = new Promise( ( resolve ) => ( answer = resolve ) );
+	return { reply: () => reply, answer: ( value ) => answer( value ) };
+}
+
+describe( 'useIntelRead from memory', () => {
+	it( 'a cached read paints at once and revalidates', async () => {
+		wire.replies.lighthouse = { items: [ 'Tide table for Harbor Ledger' ] };
+		const first = render(
+			<Lister
+				scope="probe:tide"
+				command="lighthouse"
+				args={ [ 'tide' ] }
+			/>
+		);
+		await screen.findByText( 'fresh' );
+		first.unmount();
+
+		const later = held();
+		wire.replies.lighthouse = later.reply;
+		render(
+			<Lister
+				scope="probe:tide"
+				command="lighthouse"
+				args={ [ 'tide' ] }
+			/>
+		);
+		expect( screen.getByText( 'stale' ) ).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Tide table for Harbor Ledger' )
+		).toBeInTheDocument();
+		await waitFor( () =>
+			expect( wire.sent( 'lighthouse' ) ).toHaveLength( 2 )
+		);
+		await act( async () =>
+			later.answer( { items: [ 'Spring tide for Harbor Ledger' ] } )
+		);
+		expect( await screen.findByText( 'fresh' ) ).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Spring tide for Harbor Ledger' )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText( 'Tide table for Harbor Ledger' )
+		).toBeNull();
+	} );
+
+	it( 'the 65th answer evicts the least recently used', async () => {
+		wire.replies.buoy = ( [ n ] ) => ( { items: [ `buoy ${ n }` ] } );
+		const view = render(
+			<Lister scope="probe:buoy" command="buoy" args={ [ '1' ] } />
+		);
+		await screen.findByText( 'buoy 1' );
+		for ( let n = 2; n <= 65; n++ ) {
+			view.rerender(
+				<Lister
+					scope="probe:buoy"
+					command="buoy"
+					args={ [ `${ n }` ] }
+				/>
+			);
+			await screen.findByText( `buoy ${ n }` );
+		}
+		view.unmount();
+
+		wire.replies.buoy = held().reply;
+		const second = render(
+			<Lister scope="probe:buoy" command="buoy" args={ [ '2' ] } />
+		);
+		expect( screen.getByText( 'stale' ) ).toBeInTheDocument();
+		second.unmount();
+		render( <Lister scope="probe:buoy" command="buoy" args={ [ '1' ] } /> );
+		expect( screen.getByText( 'loading' ) ).toBeInTheDocument();
+	} );
+
+	it( 'nothing the cache holds reaches storage', async () => {
+		const stored = jest.spyOn( window.Storage.prototype, 'setItem' );
+		wire.replies.ledger = { items: [ 'Harbor Ledger restricted memo' ] };
+		wire.replies.collect = { ok: true };
+		const read = render(
+			<Lister scope="probe:ledger" command="ledger" args={ [ 'memo' ] } />
+		);
+		await screen.findByText( 'Harbor Ledger restricted memo' );
+		read.unmount();
+		render(
+			<Lister scope="probe:ledger" command="ledger" args={ [ 'memo' ] } />
+		);
+		const refresh = jest.fn();
+		render(
+			<Dirtier
+				command="collect"
+				dirties={ [ 'ledger:' ] }
+				refresh={ refresh }
+			/>
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'collect' } ) );
+		await waitFor( () => expect( refresh ).toHaveBeenCalledTimes( 1 ) );
+		expect( stored ).not.toHaveBeenCalled();
+		stored.mockRestore();
+	} );
+
+	it( 'a landed write drops the prefixes it dirties', async () => {
+		wire.replies.collections = { items: [ 'Harbor Ledger folder' ] };
+		wire.replies.briefing = { items: [ 'Harbor Ledger brief' ] };
+		wire.replies.collect = { ok: true, event_id: 'ev-77' };
+		const folders = render(
+			<Lister scope="probe:folders" command="collections" args={ [] } />
+		);
+		await screen.findByText( 'Harbor Ledger folder' );
+		folders.unmount();
+		const brief = render(
+			<Lister
+				scope="probe:brief"
+				command="briefing"
+				args={ [ 'signals' ] }
+			/>
+		);
+		await screen.findByText( 'Harbor Ledger brief' );
+		brief.unmount();
+
+		const refresh = jest.fn();
+		const writer = render(
+			<Dirtier
+				command="collect"
+				dirties={ [ 'collections:' ] }
+				refresh={ refresh }
+			/>
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'collect' } ) );
+		await waitFor( () => expect( refresh ).toHaveBeenCalledTimes( 1 ) );
+		writer.unmount();
+
+		wire.replies.collections = held().reply;
+		wire.replies.briefing = held().reply;
+		const again = render(
+			<Lister scope="probe:folders" command="collections" args={ [] } />
+		);
+		expect( screen.getByText( 'loading' ) ).toBeInTheDocument();
+		again.unmount();
+		render(
+			<Lister
+				scope="probe:brief"
+				command="briefing"
+				args={ [ 'signals' ] }
+			/>
+		);
+		expect( screen.getByText( 'stale' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'Harbor Ledger brief' ) ).toBeInTheDocument();
+	} );
+
+	it( 'a landed write re-reads a mounted read it dirties', async () => {
+		let folder = 'Harbor Ledger folder';
+		wire.replies.collections = () => ( { items: [ folder ] } );
+		wire.replies.collect = { ok: true, event_id: 'ev-78' };
+		render(
+			<Lister scope="probe:shelf" command="collections" args={ [] } />
+		);
+		await screen.findByText( 'Harbor Ledger folder' );
+		folder = 'Harbor Ledger folder, two items';
+		render( <Dirtier command="collect" dirties={ [ 'collections:' ] } /> );
+		fireEvent.click( screen.getByRole( 'button', { name: 'collect' } ) );
+		expect(
+			await screen.findByText( 'Harbor Ledger folder, two items' )
+		).toBeInTheDocument();
+		expect( wire.sent( 'collections' ) ).toHaveLength( 2 );
+	} );
+
+	it( 'a revoked grant never shows a stale restricted item', async () => {
+		const restricted = 'Harbor Ledger restricted board memo';
+		const open = 'Harbor Ledger open release note';
+		wire.replies.tiers = { items: [ open, restricted ] };
+		const first = render(
+			<Lister scope="probe:tiers" command="tiers" args={ [ 'week' ] } />
+		);
+		await screen.findByText( restricted );
+		first.unmount();
+
+		// The grant is gone: the revalidation answers without the item.
+		wire.replies.tiers = { items: [ open ] };
+		const narrowed = render(
+			<Lister scope="probe:tiers" command="tiers" args={ [ 'week' ] } />
+		);
+		await screen.findByText( 'fresh' );
+		expect( screen.queryByText( restricted ) ).toBeNull();
+		narrowed.unmount();
+
+		// Seed the restricted answer again, then refuse its revalidation.
+		wire.replies.tiers = { items: [ open, restricted ] };
+		const seeded = render(
+			<Lister scope="probe:tiers" command="tiers" args={ [ 'month' ] } />
+		);
+		await screen.findByText( restricted );
+		seeded.unmount();
+		wire.replies.tiers = () => new Error( 'not permitted: restricted' );
+		const refused = render(
+			<Lister scope="probe:tiers" command="tiers" args={ [ 'month' ] } />
+		);
+		expect(
+			await screen.findByText( 'refused: not permitted: restricted' )
+		).toBeInTheDocument();
+		expect( screen.queryByText( restricted ) ).toBeNull();
+		expect( screen.queryByText( open ) ).toBeNull();
+		refused.unmount();
+
+		// The refusal evicted the entry: nothing paints from memory.
+		wire.replies.tiers = held().reply;
+		render(
+			<Lister scope="probe:tiers" command="tiers" args={ [ 'month' ] } />
+		);
+		expect( screen.getByText( 'loading' ) ).toBeInTheDocument();
+		expect( screen.queryByText( restricted ) ).toBeNull();
 	} );
 } );
 

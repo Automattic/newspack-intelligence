@@ -319,7 +319,7 @@ describe( 'Search', () => {
 		);
 	} );
 
-	it( 'asks names only past two letters or digits, and shows its refusal', async () => {
+	it( 'asks names only past two letters or digits, and says a refusal was not read', async () => {
 		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
 		wire.replies.names = () =>
 			new Error( 'names could not be read for Harb' );
@@ -331,8 +331,13 @@ describe( 'Search', () => {
 		expect( wire.sent( 'names' ) ).toEqual( [] );
 		fireEvent.change( entity, { target: { value: 'Harb' } } );
 		expect(
-			await screen.findByText( 'names could not be read for Harb' )
+			await screen.findByText(
+				'Intelligence could not be read just now. Try again.'
+			)
 		).toBeInTheDocument();
+		expect(
+			screen.queryByText( 'names could not be read for Harb' )
+		).toBeNull();
 		expect( wire.sent( 'names' ) ).toEqual( [ [ '--prefix=Harb' ] ] );
 	} );
 
@@ -482,13 +487,17 @@ describe( 'Search', () => {
 		);
 	} );
 
-	it( 'shows a refused lens list as the refusal', async () => {
+	it( 'says a refused lens list was not read, its words kept from a reader', async () => {
 		wire.replies.lenses = () => new Error( 'unknown command: lenses' );
 		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
 		renderSearch();
 		expect(
-			await screen.findByText( 'unknown command: lenses' )
+			await screen.findByText(
+				'Intelligence could not be read just now. Try again.'
+			)
 		).toBeInTheDocument();
+		expect( screen.queryByText( 'unknown command: lenses' ) ).toBeNull();
+		expect( screen.queryByRole( 'alert' ) ).toBeNull();
 	} );
 
 	it( 'pages forward past the rows shown, and back', async () => {
@@ -555,7 +564,7 @@ describe( 'Search', () => {
 		renderSearch();
 		expect(
 			await screen.findByText(
-				'The intelligence graph could not be opened, so this was not read.'
+				'The intelligence store did not open, so this was not read. An administrator can check the status above.'
 			)
 		).toBeInTheDocument();
 		expect(

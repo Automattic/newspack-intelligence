@@ -20,8 +20,8 @@ require_once __DIR__ . '/../support/counts-statements.php';
  * Theme groups: `search --group=theme` answers the items it reads as one
  * group per theme, each story counted once, ranked by the severity of the
  * group's kind in the effective kinds list, then the open clients its items
- * are about, then its newest story, then its theme; and `trends` counts by
- * theme, each row naming its open clients.
+ * name as their subject, then its newest story, then its theme; and `trends`
+ * counts by theme, each row naming those clients.
  *
  * The support desk lists its kinds most severe first: complaint, incident,
  * feature_request, churn_signal, praise.
@@ -102,8 +102,8 @@ final class LensThemeGroupsTest extends TestCase {
 
 		$this->assertSame(
 			[
-				[ self::EMAIL, 'complaint', 3, 2 ],
-				[ self::BILLING, 'complaint', 1, 2 ],
+				[ self::EMAIL, 'complaint', 3, 1 ],
+				[ self::BILLING, 'complaint', 1, 1 ],
 				[ self::SENDER, 'complaint', 1, 0 ],
 				[ self::BOTS, 'incident', 2, 1 ],
 				[ self::STORAGE, 'feature_request', 1, 1 ],
@@ -141,7 +141,7 @@ final class LensThemeGroupsTest extends TestCase {
 		$email = \array_column( $this->grouped( '--lens=support-desk' )['groups'], null, 'theme' )[ self::EMAIL ];
 
 		$this->assertSame( 'complaint', $email['kind'] );
-		$this->assertSame( [ [ 'entity_key' => self::ACME, 'name' => 'Acme Quill' ], [ 'entity_key' => self::HARBOR, 'name' => 'Harbor Ledger' ] ], $email['clients'] );
+		$this->assertSame( [ [ 'entity_key' => self::ACME, 'name' => 'Acme Quill' ] ], $email['clients'] );
 		$this->assertSame( [ 'linear:SUP-2', 'linear:SUP-3', 'linear:SUP-1' ], \array_column( $email['items'], 'item_key' ) );
 	}
 
@@ -171,7 +171,7 @@ final class LensThemeGroupsTest extends TestCase {
 
 		$news = $this->grouped( '--lens=news-desk' )['groups'];
 		$this->assertSame( [ [ 'ferry reports', 'research' ], [ 'tide reports', 'research' ] ], \array_map( static fn ( array $g ): array => [ $g['theme'], $g['kind'] ], $news ) );
-		$this->assertSame( [ 'complaint', 'incident', 'complaint', 'praise', 'feature_request', 'complaint' ], \array_column( $this->grouped( '--source=linear' )['groups'], 'kind' ) );
+		$this->assertSame( [ 'complaint', 'incident', 'praise', 'complaint', 'feature_request', 'complaint' ], \array_column( $this->grouped( '--source=linear' )['groups'], 'kind' ) );
 	}
 
 	/** A group cites its five newest stories, the most important of them first. */
@@ -294,8 +294,8 @@ final class LensThemeGroupsTest extends TestCase {
 
 		$this->assertSame(
 			[
-				[ self::EMAIL, 'complaint', 4, 2 ],
-				[ self::BILLING, 'complaint', 1, 2 ],
+				[ self::EMAIL, 'complaint', 4, 1 ],
+				[ self::BILLING, 'complaint', 1, 1 ],
 				[ self::BOTS, 'incident', 2, 1 ],
 				[ self::STORAGE, 'feature_request', 1, 1 ],
 				[ '', 'praise', 1, 1 ],
@@ -325,7 +325,7 @@ final class LensThemeGroupsTest extends TestCase {
 
 	/**
 	 * Trends count stories by theme, each row naming the open clients its
-	 * stories are about; an item with no theme counts under none, and the
+	 * stories name as their subject; an item with no theme counts under none, and the
 	 * kind axis keeps its own shape.
 	 */
 	public function test_trends_count_themes_with_their_clients(): void {
@@ -333,9 +333,9 @@ final class LensThemeGroupsTest extends TestCase {
 
 		$this->assertSame(
 			[
-				[ '2026-10-01', self::EMAIL, 3, [ self::ACME, self::HARBOR ] ],
+				[ '2026-10-01', self::EMAIL, 3, [ self::ACME ] ],
 				[ '2026-10-01', self::BOTS, 2, [ self::HARBOR ] ],
-				[ '2026-10-01', self::BILLING, 1, [ self::ACME, self::HARBOR ] ],
+				[ '2026-10-01', self::BILLING, 1, [ self::ACME ] ],
 				[ '2026-10-01', self::SENDER, 1, [] ],
 				[ '2026-10-01', self::STORAGE, 1, [ self::ACME ] ],
 			],
@@ -345,6 +345,25 @@ final class LensThemeGroupsTest extends TestCase {
 		$this->assertSame( [ [ 'entity_key' => self::HARBOR, 'name' => 'Harbor Ledger' ] ], $rows[1]['clients'] );
 		$this->assertSame( [ 'linear:SUP-5', 'linear:SUP-4' ], \array_column( $rows[1]['items'], 'item_key' ) );
 		$this->assertSame( [ 'bucket', 'value', 'count', 'items' ], \array_keys( $this->ci->dispatch( 'trends', [ 'kind', '--lens=support-desk' ] )['rows'][0] ) );
+	}
+
+	/**
+	 * A theme row's clients are the open clients its stories name as their
+	 * subject: Prairie Signal, which the story only mentions, is in neither
+	 * the group's clients nor the trend row's.
+	 */
+	public function test_a_theme_rows_clients_are_its_subjects(): void {
+		$prairie = 'organization:prairie-signal';
+		$at      = self::$oct_01 + 9 * self::DAY;
+		$this->seed(
+			self::entity( $prairie, 'Prairie Signal' ),
+			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => $prairie, 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ) ],
+			...$this->ticket( 'exits:EX-1', 'churned', $at, 6.0, 'leaving the platform', [ [ self::HARBOR, 'subject' ], [ $prairie, 'mention' ] ] )
+		);
+		$this->save( 'exit-desk', '--source=exits', '--by=theme', '--bucket=month' );
+
+		$this->assertSame( [ [ 'leaving the platform', [ self::HARBOR ] ] ], \array_map( static fn ( array $g ): array => [ $g['theme'], \array_column( $g['clients'], 'entity_key' ) ], $this->grouped( '--lens=exit-desk' )['groups'] ) );
+		$this->assertSame( [ [ 'leaving the platform', [ self::HARBOR ] ] ], \array_map( static fn ( array $row ): array => [ $row['value'], \array_column( $row['clients'], 'entity_key' ) ], $this->ci->dispatch( 'trends', [ '--lens=exit-desk' ] )['rows'] ) );
 	}
 
 	/** A lens saves `by: theme`, and the axis and save refusals name it. */

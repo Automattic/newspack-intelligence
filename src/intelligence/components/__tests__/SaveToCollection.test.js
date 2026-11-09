@@ -77,7 +77,10 @@ describe( 'SaveToCollection', () => {
 		expect(
 			await screen.findByText( 'Saved to Paywall complaints.' )
 		).toBeInTheDocument();
-		expect( wire.sent( 'collections' ) ).toEqual( [ [] ] );
+		// The landed save dirties the folder list, which asks again.
+		await waitFor( () =>
+			expect( wire.sent( 'collections' ) ).toEqual( [ [], [] ] )
+		);
 	} );
 
 	it( "offers the reader's recent folders first, the latest chosen", async () => {
@@ -285,8 +288,9 @@ describe( 'SaveToCollection', () => {
 		expect(
 			await screen.findByText( 'Saved to Tidewater leads.' )
 		).toBeInTheDocument();
+		// The new folder's landing and the save's each re-read the list.
 		await waitFor( () =>
-			expect( wire.sent( 'collections' ) ).toEqual( [ [], [] ] )
+			expect( wire.sent( 'collections' ) ).toEqual( [ [], [], [] ] )
 		);
 		expect( screen.queryByLabelText( 'Folder name' ) ).toBeNull();
 		expect(
@@ -333,7 +337,7 @@ describe( 'SaveToCollection', () => {
 		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
 		expect(
 			await screen.findByText(
-				'The intelligence graph could not be opened, so this was not read.'
+				'The intelligence store did not open, so this was not read. An administrator can check the status above.'
 			)
 		).toBeInTheDocument();
 	} );

@@ -7,12 +7,11 @@ import {
 } from '@wordpress/components';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
-import Answer from '../components/Answer';
+import Answer, { Unread } from '../components/Answer';
 import AskBox from '../components/AskBox';
 import { ItemPage } from '../components/ItemRow';
 import EntityPicker, { useEntityNames } from '../components/EntityPicker';
 import ListField from '../components/ListField';
-import Refusal from '../components/Refusal';
 import {
 	daysSince,
 	draftArgs,
@@ -325,7 +324,7 @@ export default function Search( {
 					) }
 				</div>
 			</form>
-			<Refusal error={ lenses.error } />
+			<Unread error={ lenses.error } refresh={ lenses.refresh } />
 			<Answer
 				read={ read }
 				rows="items"

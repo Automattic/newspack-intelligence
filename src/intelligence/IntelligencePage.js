@@ -11,6 +11,7 @@ import Collections from './views/Collections';
 import Lens, { CLOSED_LENS } from './views/Lens';
 import Watches, { CLOSED_WATCH, newWatch } from './views/Watches';
 import SaveToCollection from './components/SaveToCollection';
+import { CanManage } from './components/Answer';
 import HealthStrip from './components/HealthStrip';
 import { useLastLook } from './hooks/useLastLook';
 import './styles/intelligence.scss';
@@ -40,7 +41,8 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
  * Watches are every reader's own, so they are not gated on it. A link naming
  * a watch opens the page on Watches with that watch open; a key the reader's
  * watches do not hold opens nothing, leaving the list. The health strip sits
- * above the tabs on every view, offering the operator fixes for `canManage`.
+ * above the tabs on every view, offering the operator fixes for `canManage`,
+ * which the page also provides to every answer through `CanManage`.
  *
  * The shared `DashboardShell` supplies the skin, the positioned page surface,
  * the header naming this page and the debug overlay; the page scrolls in the
@@ -137,109 +139,115 @@ export default function IntelligencePage( {
 			overflowY="auto"
 		>
 			{ () => (
-				<div className="newspack-intelligence">
-					<HealthStrip canTune={ canTune } canManage={ canManage } />
-					<TabBar
-						scope="intelligence"
-						label={ __( 'Views', 'newspack-intelligence' ) }
-						tabs={ tabs }
-						activeId={ view }
-						onPick={ setView }
-					/>
-					<div { ...panelProps }>
-						{ 'briefing' === view && (
-							<Briefing
-								since={ lastLook.since }
-								kept={ lastLook.kept }
-								noteVisible={ lastLook.noteVisible }
-								operator={ operator }
-								onSearchFor={ searchFor }
-								onOpenEntity={ openEntity }
-								onOpenLens={ openLens }
-								onOpenWatch={ openWatch }
-								onNewWatch={ () =>
-									openWatchForm(
-										{ kind: 'lens', key: '' },
-										''
-									)
-								}
-								onSearch={ () => setView( 'search' ) }
-								onSave={ onSave }
-								canTune={ canTune }
-								asked={ asked }
-								onAsked={ setAsked }
-							/>
-						) }
-						{ 'search' === view && (
-							<Search
-								operator={ operator }
-								query={ search }
-								onQuery={ setSearch }
-								vocabulary={ vocabulary }
-								onOpenEntity={ openEntity }
-								onSave={ onSave }
-								canTune={ canTune }
-								asked={ asked }
-								onAsked={ setAsked }
-							/>
-						) }
-						{ 'entity' === view && (
-							<Entity
-								key={ entityKey }
-								entityKey={ entityKey }
-								canTune={ canTune }
-								vocabulary={ vocabulary }
-								onOpenEntity={ openEntity }
-								onNamed={ setNamed }
-								onSave={ onSave }
-							/>
-						) }
-						{ 'lenses' === view && (
-							<Lens
-								canTune={ canTune }
-								vocabulary={ vocabulary }
-								opened={ lens }
-								onOpen={ setLens }
-								onOpenEntity={ openEntity }
-								onWatch={ openWatchForm }
-								onSave={ onSave }
-							/>
-						) }
-						{ 'review' === view && (
-							<Review
-								canTune={ canTune }
-								vocabulary={ vocabulary }
-								onOpenEntity={ openEntity }
-								onSave={ onSave }
-							/>
-						) }
-						{ 'collections' === view && (
-							<Collections
-								canTune={ canTune }
-								opened={ collection }
-								onOpen={ setCollection }
-								vocabulary={ vocabulary }
-							/>
-						) }
-						{ 'watches' === view && (
-							<Watches
-								opened={ watch }
-								onOpen={ setWatch }
-								draft={ watchDraft }
-								onDraft={ setWatchDraft }
-								onOpenEntity={ openEntity }
-								onSave={ onSave }
-								canTune={ canTune }
+				<CanManage.Provider value={ canManage }>
+					<div className="newspack-intelligence">
+						<HealthStrip
+							canTune={ canTune }
+							canManage={ canManage }
+						/>
+						<TabBar
+							scope="intelligence"
+							label={ __( 'Views', 'newspack-intelligence' ) }
+							tabs={ tabs }
+							activeId={ view }
+							onPick={ setView }
+						/>
+						<div { ...panelProps }>
+							{ 'briefing' === view && (
+								<Briefing
+									since={ lastLook.since }
+									kept={ lastLook.kept }
+									noteVisible={ lastLook.noteVisible }
+									operator={ operator }
+									onSearchFor={ searchFor }
+									onOpenEntity={ openEntity }
+									onOpenLens={ openLens }
+									onOpenWatch={ openWatch }
+									onNewWatch={ () =>
+										openWatchForm(
+											{ kind: 'lens', key: '' },
+											''
+										)
+									}
+									onSearch={ () => setView( 'search' ) }
+									onSave={ onSave }
+									canTune={ canTune }
+									asked={ asked }
+									onAsked={ setAsked }
+								/>
+							) }
+							{ 'search' === view && (
+								<Search
+									operator={ operator }
+									query={ search }
+									onQuery={ setSearch }
+									vocabulary={ vocabulary }
+									onOpenEntity={ openEntity }
+									onSave={ onSave }
+									canTune={ canTune }
+									asked={ asked }
+									onAsked={ setAsked }
+								/>
+							) }
+							{ 'entity' === view && (
+								<Entity
+									key={ entityKey }
+									entityKey={ entityKey }
+									canTune={ canTune }
+									vocabulary={ vocabulary }
+									operator={ operator }
+									onOpenEntity={ openEntity }
+									onNamed={ setNamed }
+									onSave={ onSave }
+								/>
+							) }
+							{ 'lenses' === view && (
+								<Lens
+									canTune={ canTune }
+									vocabulary={ vocabulary }
+									opened={ lens }
+									onOpen={ setLens }
+									onOpenEntity={ openEntity }
+									onWatch={ openWatchForm }
+									onSave={ onSave }
+								/>
+							) }
+							{ 'review' === view && (
+								<Review
+									canTune={ canTune }
+									vocabulary={ vocabulary }
+									onOpenEntity={ openEntity }
+									onSave={ onSave }
+								/>
+							) }
+							{ 'collections' === view && (
+								<Collections
+									canTune={ canTune }
+									opened={ collection }
+									onOpen={ setCollection }
+									vocabulary={ vocabulary }
+								/>
+							) }
+							{ 'watches' === view && (
+								<Watches
+									opened={ watch }
+									onOpen={ setWatch }
+									draft={ watchDraft }
+									onDraft={ setWatchDraft }
+									onOpenEntity={ openEntity }
+									onSave={ onSave }
+									canTune={ canTune }
+								/>
+							) }
+						</div>
+						{ saving && (
+							<SaveToCollection
+								item={ saving }
+								onClose={ () => setSaving( null ) }
 							/>
 						) }
 					</div>
-					{ saving && (
-						<SaveToCollection
-							item={ saving }
-							onClose={ () => setSaving( null ) }
-						/>
-					) }
-				</div>
+				</CanManage.Provider>
 			) }
 		</DashboardShell>
 	);

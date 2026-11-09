@@ -6,17 +6,27 @@ import {
 	useState,
 } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
-import { Card, CardBody, CardHeader } from '@wordpress/components';
+import { Card, CardBody, CardHeader, Notice } from '@wordpress/components';
 import { formatCommandArgs } from '@newspack-nodes/runtime';
-import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
+import {
+	CLIENT_READS,
+	ENTITY_READS,
+	useIntelRead,
+	useIntelWrite,
+} from '../hooks/useIntelCommand';
 import { unrecordedText, useEndClient } from '../hooks/useEndClient';
+import { useDeferredWrite } from '../hooks/useDeferredWrite';
+import { useHeld } from '../hooks/useHeld';
 import Answer, { AnswerBody } from '../components/Answer';
+import Skeleton from '../components/Skeleton';
 import Cite, { EntityChip } from '../components/Cite';
 import EditDrawer from '../components/EditDrawer';
+import EndClientDialog from '../components/EndClientDialog';
 import Refusal from '../components/Refusal';
+import UndoSnackbar from '../components/UndoSnackbar';
 import { ItemPage, SaveButton } from '../components/ItemRow';
 import { SignalTrend, signalValue } from '../components/TrendTable';
-import { metaLine, roleText, utcDay } from '../components/format';
+import { metaLine, roleText, safeHref, utcDay } from '../components/format';
 
 /**
  * Whether a role row held any time; a closed row ending where it starts is
@@ -27,6 +37,14 @@ import { metaLine, roleText, utcDay } from '../components/format';
  * @return {boolean} Whether it held time.
  */
 const heldTime = ( role ) => 0 === role.to_ts || role.from_ts !== role.to_ts;
+
+/**
+ * A churn report's key.
+ *
+ * @param {{item_key: string}} item A churn report.
+ * @return {string} Its key.
+ */
+const reportKey = ( item ) => item.item_key;
 
 /**
  * What an entity is called where it heads its view and labels its tab: its
@@ -163,34 +181,72 @@ function statusText( status, signals ) {
 }
 
 /**
- * The question a client with a churn report raises, for a curator: one
- * click ends its client role, and only once that lands opens a former
- * client one (`useEndClient`), the prompt leaving the status line from
- * the click until a read no longer lists the client, and focus moving to
- * the entity's heading.
+ * The churn reports a client's status names, for a curator: each report
+ * with a link to its item and the way out, **Not about this client**, and
+ * **End client…**, which asks first (`EndClientDialog`).
  *
- * @param {Object}     props
- * @param {() => void} props.onEnd Ends the client role.
- * @return {import('react').ReactElement} The prompt.
+ * @param {Object}                 props
+ * @param {Object[]}               props.reports    The churn reports shown.
+ * @param {string}                 props.operator   Who runs the deployment, whom a client leaves.
+ * @param {() => void}             props.onEnd      Asks whether to end the client.
+ * @param {(item: Object) => void} props.onNotAbout Says a report is not about the client.
+ * @return {import('react').ReactElement} The notice.
  */
-function ChurnPrompt( { onEnd } ) {
+function ChurnNotice( { reports, operator, onEnd, onNotAbout } ) {
 	return (
-		<>
-			{ ' · ' }
-			<span>
-				{ __(
-					'This client has a churn report.',
-					'newspack-intelligence'
-				) }
-			</span>{ ' ' }
+		<Notice status="warning" isDismissible={ false }>
+			<strong>{ __( 'Possible churn', 'newspack-intelligence' ) }</strong>
+			{ reports.map( ( item ) => {
+				const href = safeHref( item.url );
+				return (
+					<p
+						key={ item.item_key }
+						className="newspack-intelligence__actions"
+					>
+						<span>
+							{ sprintf(
+								/* translators: 1: the item's title, 2: its source, 3: its UTC day, 4: who runs the deployment. */
+								__(
+									'“%1$s” (%2$s, %3$s) says this client is leaving %4$s.',
+									'newspack-intelligence'
+								),
+								item.title,
+								item.source,
+								item.day,
+								operator
+							) }
+						</span>{ ' ' }
+						{ href && (
+							<a
+								href={ href }
+								className="button button-small"
+								target="_blank"
+								rel="noopener noreferrer"
+							>
+								{ __( 'Open item', 'newspack-intelligence' ) }
+							</a>
+						) }{ ' ' }
+						<button
+							type="button"
+							className="button button-small"
+							onClick={ () => onNotAbout( item ) }
+						>
+							{ __(
+								'Not about this client',
+								'newspack-intelligence'
+							) }
+						</button>
+					</p>
+				);
+			} ) }
 			<button
 				type="button"
 				className="button button-small"
 				onClick={ onEnd }
 			>
-				{ __( 'End client?', 'newspack-intelligence' ) }
+				{ __( 'End client…', 'newspack-intelligence' ) }
 			</button>
-		</>
+		</Notice>
 	);
 }
 
@@ -366,8 +422,10 @@ function Published( {
  * the items its own site published, the entities sharing its items and the
  * claims naming it, each from its own read. Once the record has answered,
  * a curator finds its curation in the Edit drawer (`EditDrawer`), and, for
- * a client with a churn report since it began, the question in its status
- * line ending its client role (`ChurnPrompt`). Every edit that lands re-reads
+ * a client with a churn report since it began, a notice naming each report
+ * (`ChurnNotice`). Ending the client, from the notice or the drawer, asks
+ * first (`EndClientDialog`); **Not about this client** rejects a report's
+ * link to the client after the undo window. Every edit that lands re-reads
  * the record. The name the record answers is handed to `onNamed` with the
  * entity's key, so the page can label its tab without reading again.
  *
@@ -375,6 +433,7 @@ function Published( {
  * @param {string}                                       props.entityKey    The entity shown.
  * @param {boolean}                                      props.canTune      Whether to offer curation.
  * @param {Object}                                       props.vocabulary   The ontology's closed lists.
+ * @param {{name: string, heading: string}}              props.operator     Who runs the deployment, whom the churn notice names.
  * @param {(key: string) => void}                        props.onOpenEntity Opens an entity.
  * @param {(named: {key: string, name: string}) => void} props.onNamed      Takes the name the record answers.
  * @param {(item: Object) => void}                       [props.onSave]     Saves an item; absent for a reader.
@@ -384,6 +443,7 @@ export default function Entity( {
 	entityKey,
 	canTune,
 	vocabulary,
+	operator,
 	onOpenEntity,
 	onNamed,
 	onSave,
@@ -425,33 +485,86 @@ export default function Entity( {
 	const churn = useEndClient(
 		'entity:churn',
 		{ ...record, answer: clients },
-		'clients',
-		record.refresh
+		'clients'
 	);
-	const edit = { refresh: record.refresh };
-	const addName = useIntelWrite( 'add_name', edit );
-	const addIdentifier = useIntelWrite( 'add_identifier', edit );
-	const assertRole = useIntelWrite( 'assert_role', edit );
-	const endRole = useIntelWrite( 'end_role', edit );
-	const refusals = [ addName, addIdentifier, assertRole, endRole ]
+	// The record lists its churn reports while its status answers.
+	const listed = useMemo(
+		() =>
+			record.answer && {
+				items: record.answer.status
+					? record.answer.status.churn_items
+					: [],
+			},
+		[ record.answer ]
+	);
+	const reports = useHeld(
+		{ ...record, answer: listed },
+		'items',
+		reportKey
+	);
+	const deferred = useDeferredWrite();
+	const rejectLink = useIntelWrite( 'reject_link', {
+		dirties: ENTITY_READS,
+		scope: 'entity:churn:reject_link',
+		onRefused: reports.refused,
+	} );
+	const evidence = ( reports.read.answer?.items ?? [] ).filter(
+		( item ) =>
+			! deferred.hidden.has( item.item_key ) &&
+			! deferred.hidden.has( entityKey )
+	);
+	const notAbout = ( key, items, name ) =>
+		deferred.defer(
+			key,
+			() =>
+				items.forEach( ( item ) =>
+					reports.hold( item.item_key, null, () =>
+						rejectLink.run( {
+							item: item.item_key,
+							entity: entityKey,
+						} )
+					)
+				),
+			sprintf(
+				/* translators: %s: the client's name. */
+				__( 'Removed the link to %s.', 'newspack-intelligence' ),
+				name
+			)
+		);
+	const addName = useIntelWrite( 'add_name', {
+		dirties: CLIENT_READS,
+	} );
+	const addIdentifier = useIntelWrite( 'add_identifier', {
+		dirties: CLIENT_READS,
+	} );
+	const assertRole = useIntelWrite( 'assert_role', {
+		dirties: CLIENT_READS,
+	} );
+	const endRole = useIntelWrite( 'end_role', {
+		dirties: CLIENT_READS,
+	} );
+	const refusals = [ addName, addIdentifier, assertRole, endRole, rejectLink ]
 		.map( ( write ) => write.refusal )
 		.concat(
 			churn.refused,
 			churn.unrecorded && unrecordedText( churn.unrecorded )
 		);
-	// The heading takes focus once the churn prompt the reader pressed leaves.
+	// The heading takes focus once the churn notice the reader ended leaves.
 	const heading = useRef( null );
-	const ended = useRef( false );
+	const ending = useRef( false );
 	useLayoutEffect( () => {
-		if ( ended.current && heading.current ) {
+		if ( ending.current && heading.current ) {
 			heading.current.focus();
-			ended.current = false;
+			ending.current = false;
 		}
 	} );
 
 	return (
 		<div className="newspack-intelligence__view">
-			<Answer read={ record }>
+			<Answer
+				read={ record }
+				skeleton={ <Skeleton shape="line" count={ 2 } /> }
+			>
 				{ ( entity ) => (
 					<>
 						<h2 ref={ heading } tabIndex={ -1 }>
@@ -463,21 +576,29 @@ export default function Entity( {
 									entity.status,
 									signals.answer?.signals
 								) }
-								{ canTune &&
-									entity.status.churn_open &&
-									0 < churn.read.answer.clients.length && (
-										<ChurnPrompt
-											onEnd={ () => {
-												ended.current = true;
-												churn.run( {
-													entity_key: entityKey,
-													name: entityName( entity ),
-												} );
-											} }
-										/>
-									) }
 							</p>
 						) }
+						{ canTune &&
+							0 < evidence.length &&
+							0 < churn.read.answer.clients.length && (
+								<ChurnNotice
+									reports={ evidence }
+									operator={ operator.name }
+									onEnd={ () =>
+										churn.ask( {
+											entity_key: entityKey,
+											name: entityName( entity ),
+										} )
+									}
+									onNotAbout={ ( item ) =>
+										notAbout(
+											item.item_key,
+											[ item ],
+											entityName( entity )
+										)
+									}
+								/>
+							) }
 						<p className="newspack-nodes-status is-muted">
 							{ metaLine(
 								entity.type,
@@ -500,6 +621,12 @@ export default function Entity( {
 									assertRole,
 									endRole,
 								} }
+								onEndClient={ () =>
+									churn.ask( {
+										entity_key: entityKey,
+										name: entityName( entity ),
+									} )
+								}
 							/>
 						) }
 						{ refusals.map( ( refusal, i ) => (
@@ -509,10 +636,46 @@ export default function Entity( {
 				) }
 			</Answer>
 
+			{ churn.asking && (
+				<EndClientDialog
+					name={ churn.asking.name }
+					evidence={ evidence.map( ( item ) => ( {
+						...item,
+						role: 'subject',
+					} ) ) }
+					onEnd={ () => {
+						ending.current = true;
+						churn.end();
+					} }
+					onNotAbout={
+						0 < evidence.length
+							? () => {
+									churn.cancel();
+									notAbout(
+										entityKey,
+										evidence,
+										churn.asking.name
+									);
+							  }
+							: undefined
+					}
+					onClose={ churn.cancel }
+				/>
+			) }
+			{ deferred.latest ? (
+				<UndoSnackbar
+					latest={ deferred.latest }
+					onUndo={ deferred.undo }
+				/>
+			) : (
+				<UndoSnackbar latest={ churn.ended } />
+			) }
+
 			<Answer
 				title={ __( 'Signals', 'newspack-intelligence' ) }
 				level={ 3 }
 				read={ signals }
+				skeleton={ <Skeleton shape="line" count={ 1 } /> }
 			>
 				{ ( answer ) => (
 					<SignalTrend
@@ -568,6 +731,7 @@ export default function Entity( {
 				title={ __( 'Related', 'newspack-intelligence' ) }
 				level={ 3 }
 				read={ related }
+				skeleton={ <Skeleton shape="line" count={ 3 } /> }
 				rows="entities"
 				empty={ __(
 					'No other entity shares an item with this one.',
@@ -609,6 +773,7 @@ export default function Entity( {
 				title={ __( 'Claims', 'newspack-intelligence' ) }
 				level={ 3 }
 				read={ claims }
+				skeleton={ <Skeleton shape="line" count={ 3 } /> }
 				rows="claims"
 				empty={ __(
 					'No claim names this entity.',

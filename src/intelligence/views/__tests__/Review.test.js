@@ -25,6 +25,7 @@ import {
 import { speak } from '@wordpress/a11y';
 import { intelWire } from '../../__tests__/intelWire';
 import { UNDO_MS } from '../../hooks/useDeferredWrite';
+import { useIntelRead } from '../../hooks/useIntelCommand';
 import Review from '../Review';
 
 jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
@@ -136,6 +137,39 @@ afterEach( () => {
 	jest.useRealTimers();
 } );
 
+/**
+ * A read whose rendering says whether its answer is owed, remembered or
+ * read, so a test sees what the cache holds for it.
+ *
+ * @param {Object}   props
+ * @param {string}   props.scope   The read's scope.
+ * @param {string}   props.command The read verb.
+ * @param {string[]} props.args    Its tokens.
+ * @return {import('react').ReactElement} Its state.
+ */
+function Probe( { scope, command, args } ) {
+	const { loading, stale } = useIntelRead( scope, command, args );
+	if ( loading ) {
+		return <p>{ `${ command } owed` }</p>;
+	}
+	return <p>{ `${ command } ${ stale ? 'remembered' : 'read' }` }</p>;
+}
+
+/** A reply that never comes, so a read stays owed. */
+const never = () => new Promise( () => {} );
+
+const healthProbe = () => (
+	<Probe scope="probe:health" command="health" args={ [ 'sources' ] } />
+);
+
+/** Seed a remembered health slice, as the strip leaves one behind. */
+const rememberHealth = async () => {
+	wire.replies.health = { sources: [], dead_clients: [] };
+	const seeded = render( healthProbe() );
+	await screen.findByText( 'health read' );
+	seeded.unmount();
+};
+
 describe( 'Review — reads', () => {
 	it( 'reads both queues and renders each row with its citing item', async () => {
 		renderReview();
@@ -215,7 +249,7 @@ describe( 'Review — reads', () => {
 		).toBeInTheDocument();
 		expect(
 			await screen.findByText(
-				'The intelligence graph could not be opened, so this was not read.'
+				'The intelligence store did not open, so this was not read. An administrator can check the status above.'
 			)
 		).toBeInTheDocument();
 	} );
@@ -1189,5 +1223,68 @@ describe( 'Review — the keys legend and switch', () => {
 			window.dispatchEvent( new Event( 'pagehide' ) );
 		} );
 		expect( wire.sent( 'confirm_link' ) ).toEqual( [] );
+	} );
+} );
+
+describe( 'Review — what a judgment dirties', () => {
+	const linksRead = () =>
+		wire.sent( 'review' ).filter( ( [ w ] ) => 'links' === w );
+
+	it( 'leaves the health strip remembered once a link judgment lands', async () => {
+		wire.replies.confirm_link = { ok: true, event_id: 'ev-harbor-c' };
+		await rememberHealth();
+		const view = renderReview( { canTune: true } );
+		await screen.findByRole( 'link', {
+			name: 'Paywall bug reported by Acme',
+		} );
+		fakeUndoClock();
+		fireEvent.click(
+			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+				name: 'Confirm Acme Quillsheet',
+			} )
+		);
+		await elapse( UNDO_MS );
+		await waitFor( () => expect( linksRead() ).toHaveLength( 2 ) );
+		view.unmount();
+		jest.useRealTimers();
+		wire.replies.health = never;
+		render( healthProbe() );
+		expect( screen.getByText( 'health remembered' ) ).toBeInTheDocument();
+	} );
+
+	it( 'drops the health strip and re-reads a mounted lens list once an accept lands', async () => {
+		wire.replies.accept_entity = { ok: true, event_id: 'ev-harbor-a' };
+		wire.replies.lenses = { lenses: [], available: true };
+		await rememberHealth();
+		const view = render(
+			<>
+				<Probe scope="probe:lenses" command="lenses" args={ [] } />
+				<Review
+					canTune={ true }
+					vocabulary={ VOCABULARY }
+					onOpenEntity={ jest.fn() }
+				/>
+			</>
+		);
+		await screen.findByText( 'lenses read' );
+		await screen.findByRole( 'button', { name: 'Valley Times' } );
+		fakeUndoClock();
+		fireEvent.click(
+			within( queue( 'Proposed entities' ) ).getByRole( 'button', {
+				name: 'Accept Valley Times',
+			} )
+		);
+		await elapse( UNDO_MS );
+		await waitFor( () =>
+			expect( wire.sent( 'accept_entity' ) ).toHaveLength( 1 )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'lenses' ) ).toHaveLength( 2 )
+		);
+		view.unmount();
+		jest.useRealTimers();
+		wire.replies.health = never;
+		render( healthProbe() );
+		expect( screen.getByText( 'health owed' ) ).toBeInTheDocument();
 	} );
 } );
