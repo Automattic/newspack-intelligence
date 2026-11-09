@@ -1,6 +1,8 @@
 import {
 	createInterpolateElement,
+	useEffect,
 	useLayoutEffect,
+	useMemo,
 	useRef,
 	useState,
 } from '@wordpress/element';
@@ -61,7 +63,7 @@ function Step( { action } ) {
  * @param {string}                     props.action    The text step's action.
  * @param {string}                     props.verb      The write verb.
  * @param {string}                     [props.ci]      The CI it lives on.
- * @param {() => void}                 props.refresh   Re-reads the strip once it lands.
+ * @param {(ok: string) => void}       props.refresh   Holds its row and re-reads the strip once it lands.
  * @param {Object<string, string>}     [props.args]    Its named args.
  * @param {Array<FixChoice>}           [props.choices] One button each, in place of `label` and `args`.
  * @param {{busy: string, ok: string}} props.texts     Its answer's words.
@@ -98,12 +100,15 @@ function Fix( {
  * @param {Array<FixChoice>}           props.choices The buttons.
  * @param {string}                     props.verb    The write verb.
  * @param {string}                     [props.ci]    The CI it lives on.
- * @param {() => void}                 props.refresh Re-reads the strip once it lands.
+ * @param {(ok: string) => void}       props.refresh Holds its row and re-reads the strip once it lands.
  * @param {{busy: string, ok: string}} props.texts   Its answer's words.
  * @return {import('react').ReactElement} The buttons and their answer.
  */
 function SendFix( { choices, verb, ci, refresh, texts } ) {
-	const write = useIntelWrite( verb, { ci, refresh } );
+	const write = useIntelWrite( verb, {
+		ci,
+		refresh: () => refresh( texts.ok ),
+	} );
 	const status = answerStatus(
 		null !== write.answeredArgs ? { error: write.refusal } : null,
 		texts,
@@ -817,14 +822,16 @@ const STATES = {
 
 /**
  * One row, built from the state its table holds for `state`, or a neutral
- * unknown row naming a state the table does not hold.
+ * unknown row naming a state the table does not hold. A row whose fix landed
+ * while it still reads the state the fix was sent against keeps its fault,
+ * and shows the fix's answer where the fix was, so it is not sent twice.
  *
  * @param {string} key    Unique among the rows.
  * @param {string} label  What the row is about.
  * @param {string} table  The row's table in `STATES`.
  * @param {*}      state  The state its slice answers.
  * @param {Object} answer What the row's cause and fix read.
- * @param {Object} ctx    The roles and refresh the fixes take.
+ * @param {Object} ctx    The roles, the holds and `landed` the fixes take.
  * @return {HealthRow} The row.
  */
 function healthRow( key, label, table, state, answer, ctx ) {
@@ -843,6 +850,8 @@ function healthRow( key, label, table, state, answer, ctx ) {
 						String( state )
 					),
 		  };
+	const hold = ctx.fixed.get( key );
+	const refresh = ( ok ) => ctx.landed( key, state, ok );
 	return {
 		key,
 		label,
@@ -852,7 +861,21 @@ function healthRow( key, label, table, state, answer, ctx ) {
 		unknown: true === meant.unknown,
 		idle: true === meant.idle?.( answer ),
 		text: meant.text( answer, ctx ),
-		fix: meant.fix?.( answer, ctx ) || null,
+		fix:
+			hold?.state === state ? (
+				<span className="newspack-nodes-status is-muted" role="status">
+					{ sprintf(
+						/* translators: %s: the fix's answer, such as "Seeded.". */
+						__(
+							'%s Fix sent; Refresh to check.',
+							'newspack-intelligence'
+						),
+						hold.text
+					) }
+				</span>
+			) : (
+				meant.fix?.( answer, { ...ctx, refresh } ) || null
+			),
 	};
 }
 
@@ -888,93 +911,106 @@ const backlogState = ( { reason, since }, now ) =>
 const offRow = ( row ) => ( { ...row, fault: false, tone: 'is-neutral' } );
 
 /**
- * Every row the answered slices hold: collection, the backlog and its
- * dropped days, extraction, the model calls while its queue holds any, then
- * each source and each dead client feed; all but collection's neutral while
- * collection is off.
+ * Every row the answered slices hold, as `healthRow()` takes it: collection,
+ * the backlog and its dropped days, extraction, the model calls while its
+ * queue holds any, then each source and each dead client feed.
  *
  * @param {Object}  answers            The four slices' answers, each null while owed.
  * @param {?Object} answers.collection The collection slice.
  * @param {?Object} answers.backlog    The backlog slice.
  * @param {?Object} answers.extraction The extraction slice.
  * @param {?Object} answers.sources    The sources slice.
- * @param {Object}  ctx                The roles and refresh the fixes take.
- * @return {Array<HealthRow>} The rows.
+ * @return {Array<{key: string, label: string, table: string, state: *, answer: Object}>} The rows' specs.
  */
-function healthRows( { collection, backlog, extraction, sources }, ctx ) {
-	const listed = sources?.sources ?? [];
-	const fixes = {
-		...ctx,
-		firstFailing: listed.find( ( one ) => 'failing' === one.state ),
-	};
-	const rows = [
+function rowSpecs( { collection, backlog, extraction, sources } ) {
+	const spec = ( key, label, table, state, answer ) => ( {
+		key,
+		label,
+		table,
+		state,
+		answer,
+	} );
+	return [
 		collection &&
-			healthRow(
+			spec(
 				'collection',
 				__( 'Collection', 'newspack-intelligence' ),
 				'collection',
 				collection.state,
-				collection,
-				fixes
+				collection
 			),
 		backlog &&
-			healthRow(
+			spec(
 				'backlog',
 				__( 'Waiting to resolve', 'newspack-intelligence' ),
 				'backlog',
 				backlogState( backlog, Math.floor( Date.now() / 1000 ) ),
-				backlog,
-				fixes
+				backlog
 			),
 		backlog?.dropped &&
-			healthRow(
+			spec(
 				'dropped',
 				__( 'Dropped', 'newspack-intelligence' ),
 				'dropped',
 				'dropped',
-				backlog.dropped,
-				fixes
+				backlog.dropped
 			),
 		extraction &&
-			healthRow(
+			spec(
 				'extraction',
 				__( 'Extraction', 'newspack-intelligence' ),
 				'extraction',
 				extractionState( extraction ),
-				extraction,
-				fixes
+				extraction
 			),
 		queueText( extraction?.queue ) &&
-			healthRow(
+			spec(
 				'calls',
 				__( 'Model calls', 'newspack-intelligence' ),
 				'calls',
 				'busy',
-				extraction.queue,
-				fixes
+				extraction.queue
 			),
-		...listed.map( ( one ) =>
-			healthRow(
+		...( sources?.sources ?? [] ).map( ( one ) =>
+			spec(
 				`${ SOURCE_ROW }${ one.name }`,
 				one.name,
 				'source',
 				one.state,
-				one,
-				fixes
+				one
 			)
 		),
 		...( sources?.dead_clients ?? [] ).map( ( one ) =>
-			healthRow(
+			spec(
 				`dead:${ one.domain }`,
 				__( 'Client feed', 'newspack-intelligence' ),
 				'dead',
 				'dead',
-				one,
-				fixes
+				one
 			)
 		),
 	].filter( Boolean );
-	if ( 'inactive' !== collection?.state ) {
+}
+
+/**
+ * Every row the answered slices hold, built; all but collection's neutral
+ * while collection is off.
+ *
+ * @param {Object} answers The four slices' answers, as `rowSpecs()` takes them.
+ * @param {Object} ctx     The roles, the holds and `landed` the fixes take.
+ * @return {Array<HealthRow>} The rows.
+ */
+function healthRows( answers, ctx ) {
+	const fixes = {
+		...ctx,
+		firstFailing: ( answers.sources?.sources ?? [] ).find(
+			( one ) => 'failing' === one.state
+		),
+	};
+	const rows = rowSpecs( answers ).map( ( one ) =>
+		healthRow( one.key, one.label, one.table, one.state, one.answer, fixes )
+	);
+	if ( 'inactive' !== answers.collection?.state ) {
 		return rows;
 	}
 	return rows.map( ( one ) =>
@@ -1172,8 +1208,7 @@ function EndingClients( { sources, refresh, strip, children } ) {
  * dead client feed offers a curator to mark its client a former client.
  * Collection off is neutral: it neither opens nor colours the strip, and
  * while it is off the other rows do not either; nor does a projector catching
- * up on the ontology for under BEHIND_FAULT_S. A
- * reader's open or close holds until the set of faults changes.
+ * up on the ontology for under BEHIND_FAULT_S.
  *
  * @param {Object}  props
  * @param {boolean} props.canTune   Whether the reader may seed the ontology and end a client.
@@ -1189,104 +1224,19 @@ export default function HealthStrip( { canTune, canManage } ) {
 	const extraction = useIntelRead( 'health:extraction', 'health', [
 		'extraction',
 	] );
-	const reads = [ collection, sources, backlog, extraction ];
-	const refresh = () => reads.forEach( ( read ) => read.refresh() );
-
-	// The reader's choice, beside the faults it was made against.
-	const [ choice, setChoice ] = useState( null );
+	const reads = { collection, sources, backlog, extraction };
+	const refresh = () =>
+		Object.values( reads ).forEach( ( read ) => read.refresh() );
 	const section = useRef( null );
-
-	const strip = ( endClient ) => {
-		const listed = endClient ? endClient.read.answer : sources.answer;
-		const rows = healthRows(
-			{
-				collection: collection.answer,
-				backlog: backlog.answer,
-				extraction: extraction.answer,
-				sources: listed,
-			},
-			{ canTune, canManage, refresh, endClient }
-		);
-		const faults = rows.filter( ( row ) => row.fault );
-		const ordered = [ ...faults, ...rows.filter( ( row ) => ! row.fault ) ];
-		const signature = faults.map( ( row ) => row.key ).join( '|' );
-		const open =
-			choice?.signature === signature ? choice.open : 0 < faults.length;
-
-		return (
-			<section
-				ref={ section }
-				tabIndex={ -1 }
-				className={ `newspack-nodes-banner newspack-intelligence__health${
-					faults.length ? ' is-warning' : ''
-				}` }
-				aria-label={ __( 'Pipeline health', 'newspack-intelligence' ) }
-			>
-				<div className="newspack-intelligence__health-line">
-					<span role="status">
-						{ healthLine( {
-							faults,
-							rows,
-							reads,
-							collection: collection.answer,
-							sources: listed,
-						} ) }
-					</span>
-					<button
-						type="button"
-						className="button button-small"
-						aria-expanded={ open }
-						aria-controls={ ROWS_ID }
-						onClick={ () =>
-							setChoice( { signature, open: ! open } )
-						}
-					>
-						{ open
-							? __( 'Hide details', 'newspack-intelligence' )
-							: __( 'Show details', 'newspack-intelligence' ) }
-					</button>
-					<button
-						type="button"
-						className="button button-small"
-						onClick={ refresh }
-					>
-						{ __( 'Refresh', 'newspack-intelligence' ) }
-					</button>
-				</div>
-				{ reads.map( ( read, i ) => (
-					<Refusal key={ i } error={ read.error } />
-				) ) }
-				<Refusal
-					error={
-						endClient?.unrecorded &&
-						unrecordedText( endClient.unrecorded )
-					}
-				/>
-				<ul
-					id={ ROWS_ID }
-					className="newspack-intelligence__health-rows"
-					hidden={ ! open }
-				>
-					{ ordered.map( ( row ) => (
-						<li
-							key={ row.key }
-							className="newspack-intelligence__health-row"
-							tabIndex={ -1 }
-						>
-							<strong>{ row.label }</strong>
-							<span
-								className={ `newspack-nodes-status-badge is-pill ${ row.tone }` }
-							>
-								{ row.state }
-							</span>
-							<span>{ row.text }</span>
-							{ row.fix }
-						</li>
-					) ) }
-				</ul>
-			</section>
-		);
-	};
+	const strip = ( endClient ) => (
+		<Strip
+			reads={ reads }
+			refresh={ refresh }
+			roles={ { canTune, canManage } }
+			section={ section }
+			endClient={ endClient }
+		/>
+	);
 
 	return canTune ? (
 		<EndingClients
@@ -1298,5 +1248,140 @@ export default function HealthStrip( { canTune, canManage } ) {
 		</EndingClients>
 	) : (
 		strip( null )
+	);
+}
+
+/**
+ * The strip itself, over the four reads, the sources slice read through
+ * `endClient` for a curator. Once a fix lands its row stays a fault and shows
+ * the fix's answer where the fix was, for as long as a read still answers the
+ * state it fixed, since the strip reads again only on a landed fix or on
+ * Refresh; a read answering another state, or Refresh, ends the hold. A
+ * reader's open or close holds until the set of faults changes.
+ *
+ * @param {Object}                                 props
+ * @param {Object<string, Object>}                 props.reads     The four reads, by slice.
+ * @param {() => void}                             props.refresh   Re-reads every slice.
+ * @param {{canTune: boolean, canManage: boolean}} props.roles     The reader's roles.
+ * @param {{current: ?HTMLElement}}                props.section   The strip's section.
+ * @param {?Object}                                props.endClient `useEndClient()`, null for a reader without tune.
+ * @return {import('react').ReactElement} The strip.
+ */
+function Strip( { reads, refresh, roles, section, endClient } ) {
+	const { collection, sources, backlog, extraction } = reads;
+	const listed = endClient ? endClient.read.answer : sources.answer;
+	const answers = useMemo(
+		() => ( {
+			collection: collection.answer,
+			backlog: backlog.answer,
+			extraction: extraction.answer,
+			sources: listed,
+		} ),
+		[ collection.answer, backlog.answer, extraction.answer, listed ]
+	);
+	// Each row whose fix landed => the state it fixed and the fix's answer.
+	const [ fixed, setFixed ] = useState( () => new Map() );
+	const landed = ( key, state, text ) => {
+		setFixed( ( was ) => new Map( was ).set( key, { state, text } ) );
+		refresh();
+	};
+	useEffect( () => {
+		setFixed( ( was ) => {
+			if ( 0 === was.size ) {
+				return was;
+			}
+			const now = new Map(
+				rowSpecs( answers ).map( ( one ) => [ one.key, one.state ] )
+			);
+			const kept = [ ...was ].filter(
+				( [ key, { state } ] ) => now.get( key ) === state
+			);
+			return kept.length === was.size ? was : new Map( kept );
+		} );
+	}, [ answers ] );
+
+	// The reader's choice, beside the faults it was made against.
+	const [ choice, setChoice ] = useState( null );
+	const rows = healthRows( answers, { ...roles, fixed, landed, endClient } );
+	const faults = rows.filter( ( row ) => row.fault );
+	const ordered = [ ...faults, ...rows.filter( ( row ) => ! row.fault ) ];
+	const signature = faults.map( ( row ) => row.key ).join( '|' );
+	const open =
+		choice?.signature === signature ? choice.open : 0 < faults.length;
+	const all = Object.values( reads );
+
+	return (
+		<section
+			ref={ section }
+			tabIndex={ -1 }
+			className={ `newspack-nodes-banner newspack-intelligence__health${
+				faults.length ? ' is-warning' : ''
+			}` }
+			aria-label={ __( 'Pipeline health', 'newspack-intelligence' ) }
+		>
+			<div className="newspack-intelligence__health-line">
+				<span role="status">
+					{ healthLine( {
+						faults,
+						rows,
+						reads: all,
+						collection: collection.answer,
+						sources: listed,
+					} ) }
+				</span>
+				<button
+					type="button"
+					className="button button-small"
+					aria-expanded={ open }
+					aria-controls={ ROWS_ID }
+					onClick={ () => setChoice( { signature, open: ! open } ) }
+				>
+					{ open
+						? __( 'Hide details', 'newspack-intelligence' )
+						: __( 'Show details', 'newspack-intelligence' ) }
+				</button>
+				<button
+					type="button"
+					className="button button-small"
+					onClick={ () => {
+						setFixed( new Map() );
+						refresh();
+					} }
+				>
+					{ __( 'Refresh', 'newspack-intelligence' ) }
+				</button>
+			</div>
+			{ all.map( ( read, i ) => (
+				<Refusal key={ i } error={ read.error } />
+			) ) }
+			<Refusal
+				error={
+					endClient?.unrecorded &&
+					unrecordedText( endClient.unrecorded )
+				}
+			/>
+			<ul
+				id={ ROWS_ID }
+				className="newspack-intelligence__health-rows"
+				hidden={ ! open }
+			>
+				{ ordered.map( ( row ) => (
+					<li
+						key={ row.key }
+						className="newspack-intelligence__health-row"
+						tabIndex={ -1 }
+					>
+						<strong>{ row.label }</strong>
+						<span
+							className={ `newspack-nodes-status-badge is-pill ${ row.tone }` }
+						>
+							{ row.state }
+						</span>
+						<span>{ row.text }</span>
+						{ row.fix }
+					</li>
+				) ) }
+			</ul>
+		</section>
 	);
 }

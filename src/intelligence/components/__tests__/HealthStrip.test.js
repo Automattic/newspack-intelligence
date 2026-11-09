@@ -56,6 +56,8 @@ const STOPPED = {
 	dropped: null,
 };
 
+const STOPPED_LINE = `Resolving is stopped: the ontology is empty. 47 items are waiting, since ${ SINCE_LOCAL }.`;
+
 let wire;
 let health;
 
@@ -225,7 +227,37 @@ describe( 'HealthStrip', () => {
 		expect( reads( 'sources' ) ).toBe( 2 );
 	} );
 
-	it( 'shows the refusal of a second seed while the first is processing', async () => {
+	it( 'keeps a fixed row a fault, its button replaced, while the re-read still answers it', async () => {
+		health.backlog = STOPPED;
+		wire.replies.seed_ontology = {
+			ok: true,
+			events: 81,
+			created: 79,
+			present: 2,
+		};
+		renderStrip( { canTune: true } );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Seed the ontology' } )
+		);
+		await waitFor( () => expect( reads( 'backlog' ) ).toBe( 2 ) );
+		const waiting = row( 'Waiting to resolve' );
+		expect(
+			await within( waiting ).findByText(
+				'Seeded. Fix sent; Refresh to check.'
+			)
+		).toBeInTheDocument();
+		await worstFault( STOPPED_LINE );
+		expect( strip() ).toHaveClass( 'is-warning' );
+		expect( within( waiting ).getByText( 'held' ) ).toHaveClass(
+			'is-warning'
+		);
+		expect(
+			screen.queryByRole( 'button', { name: 'Seed the ontology' } )
+		).toBeNull();
+		expect( wire.sent( 'seed_ontology' ) ).toEqual( [ [] ] );
+	} );
+
+	it( 'gives a held fix its button back on Refresh, where a second seed is refused', async () => {
 		health.backlog = STOPPED;
 		let seeds = 0;
 		wire.replies.seed_ontology = () =>
@@ -235,18 +267,74 @@ describe( 'HealthStrip', () => {
 				  )
 				: { ok: true, events: 81, created: 79, present: 2 };
 		renderStrip( { canTune: true } );
-		const seed = await screen.findByRole( 'button', {
-			name: 'Seed the ontology',
-		} );
-		fireEvent.click( seed );
-		expect( await screen.findByText( 'Seeded.' ) ).toBeInTheDocument();
-		fireEvent.click( seed );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Seed the ontology' } )
+		);
+		expect(
+			await screen.findByText( 'Seeded. Fix sent; Refresh to check.' )
+		).toBeInTheDocument();
+		fireEvent.click(
+			within( strip() ).getByRole( 'button', { name: 'Refresh' } )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Seed the ontology' } )
+		);
+		expect(
+			screen.queryByText( 'Seeded. Fix sent; Refresh to check.' )
+		).toBeNull();
 		expect(
 			await screen.findByText(
 				'Recent ontology changes are still being processed; try again in a minute.'
 			)
 		).toHaveClass( 'newspack-nodes-status', 'is-error' );
 		expect( wire.sent( 'seed_ontology' ) ).toEqual( [ [], [] ] );
+	} );
+
+	it( 'lets a hold go once its row reads another state, so the fault can return', async () => {
+		const dropped = { first_day: '2026-10-27', last_day: '2026-10-28' };
+		health.backlog = { ...STOPPED, dropped };
+		wire.replies.seed_ontology = {
+			ok: true,
+			events: 81,
+			created: 79,
+			present: 2,
+		};
+		renderStrip( { canTune: true, canManage: true } );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Seed the ontology' } )
+		);
+		expect(
+			await screen.findByText( 'Seeded. Fix sent; Refresh to check.' )
+		).toBeInTheDocument();
+
+		health.backlog = { ...HEALTHY.backlog, dropped };
+		health.collection = { state: 'stale', topology: 'intel-staging' };
+		wire.replies.reresolve = { ok: true, workers: 1 };
+		fireEvent.click( screen.getByRole( 'button', { name: 'Re-resolve' } ) );
+		await waitFor( () =>
+			expect(
+				within( row( 'Waiting to resolve' ) ).getByText( 'clear' )
+			).toBeInTheDocument()
+		);
+
+		health.backlog = STOPPED;
+		wire.replies.restart = { restarted: 1 };
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Restart' } )
+		);
+		await waitFor( () => expect( reads( 'backlog' ) ).toBe( 4 ) );
+		const waiting = row( 'Waiting to resolve' );
+		await waitFor( () =>
+			expect( within( waiting ).getByText( STOPPED_LINE ) ).toBeVisible()
+		);
+		expect(
+			within( waiting ).getByRole( 'button', {
+				name: 'Seed the ontology',
+			} )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText( 'Seeded. Fix sent; Refresh to check.' )
+		).toBeNull();
 	} );
 
 	it( 'reader without TUNE sees seed as text step', async () => {
@@ -331,7 +419,9 @@ describe( 'HealthStrip', () => {
 		);
 		fireEvent.click( screen.getByRole( 'button', { name: 'Re-resolve' } ) );
 		expect(
-			await screen.findByText( 'Re-resolving.' )
+			await screen.findByText(
+				'Re-resolving. Fix sent; Refresh to check.'
+			)
 		).toBeInTheDocument();
 		expect( wire.sent( 'reresolve' ) ).toEqual( [
 			[ '--since=2026-10-27', '--until=2026-10-28' ],
@@ -379,7 +469,9 @@ describe( 'HealthStrip', () => {
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'intel-workbench' } )
 		);
-		expect( await screen.findByText( 'Activated.' ) ).toBeInTheDocument();
+		expect(
+			await screen.findByText( 'Activated. Fix sent; Refresh to check.' )
+		).toBeInTheDocument();
 		expect( wire.sent( 'activate' ) ).toEqual( [
 			[ '--name=intel-workbench' ],
 		] );
@@ -451,7 +543,9 @@ describe( 'HealthStrip', () => {
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Restart' } )
 		);
-		expect( await screen.findByText( 'Restarted.' ) ).toBeInTheDocument();
+		expect(
+			await screen.findByText( 'Restarted. Fix sent; Refresh to check.' )
+		).toBeInTheDocument();
 		expect( wire.sent( 'restart' ) ).toEqual( [
 			[ '--types=intel-staging' ],
 		] );
@@ -584,7 +678,9 @@ describe( 'HealthStrip', () => {
 				name: 'Fetch all sources now',
 			} )
 		);
-		expect( await screen.findByText( 'Fetching.' ) ).toBeInTheDocument();
+		expect(
+			await screen.findByText( 'Fetching. Fix sent; Refresh to check.' )
+		).toBeInTheDocument();
 		expect( wire.sent( 'fetch_now' ) ).toEqual( [ [] ] );
 	} );
 

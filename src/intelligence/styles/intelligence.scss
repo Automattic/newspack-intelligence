@@ -320,3 +320,39 @@
 	.newspack-intelligence__more.components-button.is-link {
 	text-decoration: none;
 }
+
+// Review's key legend leads its switch on one row, wrapping when narrow.
+.newspack-intelligence__keys {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: base.$space-sm base.$space-lg;
+	margin: 0 0 base.$space-lg;
+
+	> p {
+		margin: 0;
+	}
+}
+
+// A pending judgment's Undo stays in view at the foot of the window.
+.newspack-intelligence__undo {
+	position: fixed;
+	z-index: 100000;
+	inset-block-end: base.$space-xl;
+	inset-inline-start: 50%;
+	transform: translateX(-50%);
+	max-inline-size: calc(100vw - 2 * #{base.$space-lg});
+	animation: newspack-intelligence-undo-in 150ms ease-out;
+
+	@media (prefers-reduced-motion: reduce) {
+		animation: none;
+	}
+}
+
+@keyframes newspack-intelligence-undo-in {
+	from {
+		opacity: 0;
+		transform: translate(-50%, base.$space-sm);
+	}
+}

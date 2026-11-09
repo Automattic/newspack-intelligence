@@ -6,12 +6,14 @@ import {
 	useState,
 } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
-import { TextControl, VisuallyHidden } from '@wordpress/components';
+import { Snackbar, TextControl, ToggleControl } from '@wordpress/components';
 import { Icon, check, closeSmall } from '@wordpress/icons';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { isTypingTarget } from '@newspack-nodes/shared/utils/isTypingTarget';
+import { usePersistedFlag } from '@newspack-nodes/shared/hooks/usePersistedState';
 import { useIntelRead, useIntelWrite } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
+import { useDeferredWrite } from '../hooks/useDeferredWrite';
 import Answer from '../components/Answer';
 import Cite, { EntityChip } from '../components/Cite';
 import { SaveButton } from '../components/ItemRow';
@@ -43,24 +45,30 @@ const ROW = '[data-review-row]';
 /** The keys that press a row's control, each the `aria-keyshortcuts` of one. */
 const JUDGMENT_KEYS = [ 'y', 'n', 'm' ];
 
+/** Where this browser keeps whether the single-key shortcuts are off. */
+const KEYS_OFF_KEY = 'newspack-intelligence:review:single-keys-off';
+
 /**
  * One queue's rows as a list the review keys work in: `j` and `k` focus the
- * next and the previous row, and `y`, `n` and `m` press the focused row's
- * control whose `aria-keyshortcuts` names that key. A key typed in a field,
- * or with a modifier, is left alone. A judgment takes its row out, so once
- * the list renders without it focus moves to the row in its place, else the
- * last. The list is named for its queue and described, for a screen reader,
- * by the keys it takes.
+ * next and the previous row, `y`, `n` and `m` press the focused row's
+ * control whose `aria-keyshortcuts` names that key, and `z` undoes the most
+ * recent judgment still pending. A key typed in a field, or with a modifier,
+ * is left alone, and every key is while the keys are off. A judgment takes
+ * its row out, so once the list renders without it focus moves to the row
+ * in its place, else the last. The list is named for its queue and
+ * described by the legend naming its keys.
  *
  * @param {Object}                    props
- * @param {string}                    props.label    The queue's name.
- * @param {import('react').ReactNode} props.children Its rows.
+ * @param {string}                    props.label       The queue's name.
+ * @param {boolean}                   props.keys        Whether it takes the keys.
+ * @param {string}                    props.describedBy The legend's id.
+ * @param {() => void}                props.onUndo      Undoes the latest judgment.
+ * @param {import('react').ReactNode} props.children    Its rows.
  * @return {import('react').ReactElement} The list.
  */
-function ReviewList( { label, children } ) {
+function ReviewList( { label, keys, describedBy, onUndo, children } ) {
 	const list = useRef( null );
 	const judged = useRef( null );
-	const keysId = useId();
 	useLayoutEffect( () => {
 		if ( null === judged.current ) {
 			return;
@@ -73,11 +81,17 @@ function ReviewList( { label, children } ) {
 	const onKeyDown = ( event ) => {
 		const { key, target } = event;
 		if (
+			! keys ||
 			event.altKey ||
 			event.ctrlKey ||
 			event.metaKey ||
 			isTypingTarget( target )
 		) {
+			return;
+		}
+		if ( 'z' === key ) {
+			event.preventDefault();
+			onUndo();
 			return;
 		}
 		const rows = [ ...list.current.querySelectorAll( ROW ) ];
@@ -102,25 +116,85 @@ function ReviewList( { label, children } ) {
 	};
 
 	return (
-		<>
-			<VisuallyHidden id={ keysId }>
-				{ __(
-					'Press j and k to move between proposals, y to confirm or accept, n to reject and m to merge.',
+		// eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex, jsx-a11y/no-noninteractive-element-interactions -- the review keys move between its rows.
+		<ul
+			ref={ list }
+			className="newspack-intelligence__items"
+			tabIndex={ 0 }
+			aria-label={ label }
+			aria-describedby={ keys ? describedBy : undefined }
+			onKeyDown={ onKeyDown }
+		>
+			{ children }
+		</ul>
+	);
+}
+
+/**
+ * The review keys' legend, visible, and the switch turning them off, which
+ * this browser remembers.
+ *
+ * @param {Object}     props
+ * @param {string}     props.id       The legend's id, which each list cites.
+ * @param {boolean}    props.keys     Whether the keys are on.
+ * @param {() => void} props.onToggle Turns them off, or back on.
+ * @return {import('react').ReactElement} The legend and the switch.
+ */
+function KeysLegend( { id, keys, onToggle } ) {
+	return (
+		<div className="newspack-intelligence__keys">
+			{ keys && (
+				<p id={ id } className="newspack-nodes-status is-muted">
+					{ __(
+						'Keys: J and K to move, Y yes, N no, M same as…, Z undo.',
+						'newspack-intelligence'
+					) }
+				</p>
+			) }
+			<ToggleControl
+				__nextHasNoMarginBottom
+				label={ __(
+					'Turn off single-key shortcuts',
 					'newspack-intelligence'
 				) }
-			</VisuallyHidden>
-			{ /* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex, jsx-a11y/no-noninteractive-element-interactions -- the review keys move between its rows. */ }
-			<ul
-				ref={ list }
-				className="newspack-intelligence__items"
-				tabIndex={ 0 }
-				aria-label={ label }
-				aria-describedby={ keysId }
-				onKeyDown={ onKeyDown }
+				checked={ ! keys }
+				onChange={ onToggle }
+			/>
+		</div>
+	);
+}
+
+/**
+ * The most recent judgment still pending, as a snackbar offering its Undo,
+ * until it is sent, undone or dismissed. Its message is not spoken here:
+ * `useDeferredWrite` announced it as it was deferred.
+ *
+ * @param {Object}                         props
+ * @param {?{id: number, message: string}} props.latest The pending write.
+ * @param {() => void}                     props.onUndo Undoes it.
+ * @return {?import('react').ReactElement} The snackbar.
+ */
+function UndoSnackbar( { latest, onUndo } ) {
+	const [ dismissed, setDismissed ] = useState( null );
+	if ( ! latest || latest.id === dismissed ) {
+		return null;
+	}
+	return (
+		<div className="newspack-intelligence__undo">
+			<Snackbar
+				explicitDismiss
+				spokenMessage=""
+				actions={ [
+					{
+						label: __( 'Undo', 'newspack-intelligence' ),
+						onClick: onUndo,
+					},
+				] }
+				onRemove={ () => setDismissed( latest.id ) }
 			>
-				{ children }
-			</ul>
-		</>
+				{ latest.message }
+			</Snackbar>
+		</div>
 	);
 }
 
@@ -154,14 +228,27 @@ function Evidence( { text } ) {
  * @param {(key: string) => void}                                                        props.onOpen        Opens the entity.
  * @param {?{yes: (label: string) => string, onYes: () => void, onNo: () => void}|false} props.judge         A curator's judgment, or none.
  * @param {boolean}                                                                      [props.row]         Whether it is a review row.
+ * @param {string}                                                                       [props.reviewKey]   A row's deferred-write key.
  * @return {import('react').ReactElement} The pill.
  */
-function Judgment( { entityKey, name, description, onOpen, judge, row } ) {
+function Judgment( {
+	entityKey,
+	name,
+	description,
+	onOpen,
+	judge,
+	row,
+	reviewKey,
+} ) {
 	const label = name || entityKey;
 	return (
 		<span
 			className="newspack-intelligence__judgment"
-			{ ...( row && { tabIndex: -1, 'data-review-row': '' } ) }
+			{ ...( row && {
+				tabIndex: -1,
+				'data-review-row': '',
+				'data-review-key': reviewKey,
+			} ) }
 		>
 			<EntityChip
 				entityKey={ entityKey }
@@ -299,6 +386,30 @@ const pairKey = ( pair ) =>
 	JSON.stringify( pair.themes.map( ( side ) => side.theme ) );
 
 /**
+ * A read with every row whose key `hidden` holds taken out.
+ *
+ * @param {{answer: ?Object}}       read   What `useHeld` returned as its read.
+ * @param {string}                  rows   The answer's row list.
+ * @param {(row: Object) => string} keyOf  A row's key.
+ * @param {Set<string>}             hidden The keys a deferred write hides.
+ * @return {Object} The read without those rows.
+ */
+function without( read, rows, keyOf, hidden ) {
+	const listed = read.answer?.[ rows ];
+	return listed
+		? {
+				...read,
+				answer: {
+					...read.answer,
+					[ rows ]: listed.filter(
+						( row ) => ! hidden.has( keyOf( row ) )
+					),
+				},
+		  }
+		: read;
+}
+
+/**
  * One suggested pair of themes: each theme, how many stories each holds,
  * how many entities their stories share and the words their names share,
  * and for a curator a merge of either theme into the other.
@@ -322,7 +433,11 @@ function ThemePair( { pair, onMerge } ) {
 			side.stories
 		);
 	return (
-		<li className="newspack-intelligence__item">
+		<li
+			className="newspack-intelligence__item"
+			tabIndex={ -1 }
+			data-review-key={ pairKey( pair ) }
+		>
 			<div className="newspack-intelligence__item-head">
 				<strong>{ first.theme }</strong>
 				<strong>{ second.theme }</strong>
@@ -388,14 +503,17 @@ function ThemePair( { pair, onMerge } ) {
  * items citing it and the sentence each proposal was found in, and for a
  * curator the judgments each takes — confirm or reject a link; accept,
  * reject or merge an entity. A link row is one item with a pill per entity
- * proposed for it. A judgment takes its row out of the queue as it is sent,
- * so the next can follow at once; one that lands re-reads its queue, and a
+ * proposed for it. A judgment takes its row out of the queue at once, so the
+ * next can follow, and waits `UNDO_MS` before it is sent, a snackbar
+ * offering its Undo meanwhile; a merge of two entities is sent at once,
+ * because a merge cannot be taken back. One that lands re-reads its queue, and a
  * refused one shows the refusal and puts its row back. In either list `j`
- * and `k` move between the judgments, `y` confirms or accepts, `n` rejects
- * and `m` opens a merge. Below them, the pairs of themes `theme_suggestions`
- * reads, each offering a curator a merge of either theme into the other,
- * held as a judgment is. A link row's item saves to a folder as any item
- * does.
+ * and `k` move between the judgments, `y` confirms or accepts, `n` rejects,
+ * `m` opens a merge and `z` undoes the latest judgment still pending, unless
+ * the reader turned the keys off. Below them, the pairs of themes
+ * `theme_suggestions` reads, each offering a curator a merge of either theme
+ * into the other, deferred as a judgment is. A link row's item saves to a
+ * folder as any item does.
  *
  * @param {Object}                 props
  * @param {boolean}                props.canTune      Whether to offer judgments.
@@ -410,6 +528,26 @@ export default function Review( {
 	onOpenEntity,
 	onSave,
 } ) {
+	// Before the writes: its unmount flush must run while their nodes stand.
+	const deferred = useDeferredWrite();
+	const [ keysOff, , toggleKeys ] = usePersistedFlag( KEYS_OFF_KEY, false );
+	const keysId = useId();
+	const view = useRef( null );
+	const restored = useRef( null );
+	useLayoutEffect( () => {
+		const key = restored.current;
+		if ( null === key ) {
+			return;
+		}
+		restored.current = null;
+		[ ...view.current.querySelectorAll( '[data-review-key]' ) ]
+			.find( ( row ) => key === row.dataset.reviewKey )
+			?.focus();
+	} );
+	const undo = () => {
+		restored.current = deferred.undo();
+	};
+
 	const links = useIntelRead( 'review:links', 'review', [ 'links' ] );
 	const entities = useIntelRead( 'review:entities', 'review', [
 		'entities',
@@ -438,6 +576,11 @@ export default function Review( {
 		refresh: themes.refresh,
 		onRefused: judgedThemes.refused,
 	} );
+	const keyProps = {
+		keys: ! keysOff,
+		describedBy: keysId,
+		onUndo: undo,
+	};
 	const judgments = [
 		confirmLink,
 		rejectLink,
@@ -448,13 +591,23 @@ export default function Review( {
 	];
 
 	return (
-		<div className="newspack-intelligence__view">
+		<div ref={ view } className="newspack-intelligence__view">
 			{ judgments.map( ( write, i ) => (
 				<Refusal key={ i } error={ write.refusal } />
 			) ) }
+			<KeysLegend
+				id={ keysId }
+				keys={ ! keysOff }
+				onToggle={ toggleKeys }
+			/>
 			<Answer
 				title={ __( 'Proposed links', 'newspack-intelligence' ) }
-				read={ judgedLinks.read }
+				read={ without(
+					judgedLinks.read,
+					'links',
+					linkKey,
+					deferred.hidden
+				) }
 				rows="links"
 				empty={ __(
 					'No proposed link awaits review.',
@@ -467,6 +620,7 @@ export default function Review( {
 							'Proposed links',
 							'newspack-intelligence'
 						) }
+						{ ...keyProps }
 					>
 						{ byItem( answer.links ).map( ( row ) => (
 							<li
@@ -491,16 +645,26 @@ export default function Review( {
 											item: link.item_key,
 											entity: link.entity_key,
 										};
-										const judge = ( write ) =>
-											judgedLinks.hold(
-												linkKey( link ),
-												null,
-												() => write.run( pair )
+										const key = linkKey( link );
+										const judge = ( write, said ) =>
+											deferred.defer(
+												key,
+												() =>
+													judgedLinks.hold(
+														key,
+														null,
+														() => write.run( pair )
+													),
+												sprintf(
+													said,
+													link.name || link.entity_key
+												)
 											);
 										return (
 											<Judgment
 												key={ link.entity_key }
 												row
+												reviewKey={ key }
 												entityKey={ link.entity_key }
 												name={ link.name }
 												description={ howFound(
@@ -521,10 +685,22 @@ export default function Review( {
 															),
 														onYes: () =>
 															judge(
-																confirmLink
+																confirmLink,
+																/* translators: %s: the entity's name. */
+																__(
+																	'Confirmed %s.',
+																	'newspack-intelligence'
+																)
 															),
 														onNo: () =>
-															judge( rejectLink ),
+															judge(
+																rejectLink,
+																/* translators: %s: the entity's name. */
+																__(
+																	'Rejected %s.',
+																	'newspack-intelligence'
+																)
+															),
 													}
 												}
 											/>
@@ -545,7 +721,12 @@ export default function Review( {
 			</Answer>
 			<Answer
 				title={ __( 'Proposed entities', 'newspack-intelligence' ) }
-				read={ judgedEntities.read }
+				read={ without(
+					judgedEntities.read,
+					'entities',
+					entityKey,
+					deferred.hidden
+				) }
 				rows="entities"
 				empty={ __(
 					'No proposed entity awaits review.',
@@ -558,12 +739,19 @@ export default function Review( {
 							'Proposed entities',
 							'newspack-intelligence'
 						) }
+						{ ...keyProps }
 					>
 						{ answer.entities.map( ( entity ) => {
 							const key = entity.entity_key;
-							const judge = ( write, args ) =>
+							const hold = ( write, args ) =>
 								judgedEntities.hold( key, null, () =>
 									write.run( args )
+								);
+							const judge = ( write, said ) =>
+								deferred.defer(
+									key,
+									() => hold( write, { key } ),
+									sprintf( said, entity.name || key )
 								);
 							return (
 								<li
@@ -571,6 +759,7 @@ export default function Review( {
 									className="newspack-intelligence__item"
 									tabIndex={ -1 }
 									data-review-row=""
+									data-review-key={ key }
 								>
 									<div className="newspack-intelligence__item-head">
 										<Judgment
@@ -589,13 +778,23 @@ export default function Review( {
 															label
 														),
 													onYes: () =>
-														judge( acceptEntity, {
-															key,
-														} ),
+														judge(
+															acceptEntity,
+															/* translators: %s: the entity's name. */
+															__(
+																'Accepted %s.',
+																'newspack-intelligence'
+															)
+														),
 													onNo: () =>
-														judge( rejectEntity, {
-															key,
-														} ),
+														judge(
+															rejectEntity,
+															/* translators: %s: the entity's name. */
+															__(
+																'Rejected %s.',
+																'newspack-intelligence'
+															)
+														),
 												}
 											}
 										/>
@@ -606,7 +805,7 @@ export default function Review( {
 											<Merge
 												label={ entity.name || key }
 												onMerge={ ( into ) =>
-													judge( mergeEntities, {
+													hold( mergeEntities, {
 														from: key,
 														into,
 													} )
@@ -639,7 +838,12 @@ export default function Review( {
 			</Answer>
 			<Answer
 				title={ __( 'Themes', 'newspack-intelligence' ) }
-				read={ judgedThemes.read }
+				read={ without(
+					judgedThemes.read,
+					'suggestions',
+					pairKey,
+					deferred.hidden
+				) }
 				rows="suggestions"
 				empty={ __(
 					'No two themes look alike.',
@@ -655,11 +859,27 @@ export default function Review( {
 								onMerge={
 									canTune &&
 									( ( from, into ) =>
-										judgedThemes.hold(
+										deferred.defer(
 											pairKey( pair ),
-											null,
 											() =>
-												mergeTheme.run( { from, into } )
+												judgedThemes.hold(
+													pairKey( pair ),
+													null,
+													() =>
+														mergeTheme.run( {
+															from,
+															into,
+														} )
+												),
+											sprintf(
+												/* translators: 1: the theme merged away, 2: the theme it merges into. */
+												__(
+													'Merged %1$s into %2$s.',
+													'newspack-intelligence'
+												),
+												from,
+												into
+											)
 										) )
 								}
 							/>
@@ -667,6 +887,7 @@ export default function Review( {
 					</ul>
 				) }
 			</Answer>
+			<UndoSnackbar latest={ deferred.latest } onUndo={ undo } />
 		</div>
 	);
 }

@@ -22,8 +22,12 @@ import {
 	VALUE,
 	TM_ERROR,
 } from '@newspack-nodes/runtime';
+import { speak } from '@wordpress/a11y';
 import { intelWire } from '../../__tests__/intelWire';
+import { UNDO_MS } from '../../hooks/useDeferredWrite';
 import Review from '../Review';
+
+jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
 
 const LINK = {
 	item_key: 'github:example/plugin#912',
@@ -102,6 +106,35 @@ function renderReview( props = {} ) {
 }
 
 const queue = ( name ) => screen.getByRole( 'region', { name } );
+
+// Only the undo window's own timer is faked; the wire runs as it does.
+const fakeUndoClock = () =>
+	jest.useFakeTimers( {
+		doNotFake: [
+			'Date',
+			'hrtime',
+			'nextTick',
+			'performance',
+			'queueMicrotask',
+			'requestAnimationFrame',
+			'cancelAnimationFrame',
+			'requestIdleCallback',
+			'cancelIdleCallback',
+			'setImmediate',
+			'clearImmediate',
+			'setInterval',
+			'clearInterval',
+		],
+	} );
+const elapse = ( ms ) =>
+	act( async () => {
+		jest.advanceTimersByTime( ms );
+	} );
+const settle = () => act( async () => {} );
+
+afterEach( () => {
+	jest.useRealTimers();
+} );
 
 describe( 'Review — reads', () => {
 	it( 'reads both queues and renders each row with its citing item', async () => {
@@ -245,11 +278,13 @@ describe( 'Review — judgments', () => {
 		await screen.findByRole( 'link', {
 			name: 'Paywall bug reported by Acme',
 		} );
+		fakeUndoClock();
 		fireEvent.click(
 			within( queue( 'Proposed links' ) ).getByRole( 'button', {
 				name: 'Confirm Acme Quillsheet',
 			} )
 		);
+		await elapse( UNDO_MS );
 		await waitFor( () =>
 			expect( wire.sent( 'confirm_link' ) ).toEqual( [
 				[
@@ -264,6 +299,7 @@ describe( 'Review — judgments', () => {
 				name: 'Reject Valley Ledger',
 			} )
 		);
+		await elapse( UNDO_MS );
 		await waitFor( () =>
 			expect( wire.sent( 'reject_link' ) ).toEqual( [
 				[
@@ -280,6 +316,7 @@ describe( 'Review — judgments', () => {
 		await screen.findByRole( 'link', {
 			name: 'Paywall bug reported by Acme',
 		} );
+		fakeUndoClock();
 		const links = queue( 'Proposed links' );
 		fireEvent.click(
 			within( links ).getByRole( 'button', {
@@ -289,6 +326,7 @@ describe( 'Review — judgments', () => {
 		expect(
 			within( links ).queryByRole( 'button', { name: 'Acme Quillsheet' } )
 		).toBeNull();
+		await elapse( UNDO_MS );
 		await waitFor( () => expect( linksRead() ).toHaveLength( 2 ) );
 		expect(
 			within( queue( 'Proposed links' ) ).queryByRole( 'button', {
@@ -309,6 +347,7 @@ describe( 'Review — judgments', () => {
 		await screen.findByRole( 'link', {
 			name: 'Paywall bug reported by Acme',
 		} );
+		fakeUndoClock();
 		const links = queue( 'Proposed links' );
 		fireEvent.click(
 			within( links ).getByRole( 'button', {
@@ -320,6 +359,7 @@ describe( 'Review — judgments', () => {
 				name: 'Reject Valley Ledger',
 			} )
 		);
+		await elapse( UNDO_MS );
 		await waitFor( () =>
 			expect( wire.sent( 'reject_link' ) ).toEqual( [
 				[
@@ -340,11 +380,13 @@ describe( 'Review — judgments', () => {
 		await screen.findByRole( 'link', {
 			name: 'Paywall bug reported by Acme',
 		} );
+		fakeUndoClock();
 		fireEvent.click(
 			within( queue( 'Proposed links' ) ).getByRole( 'button', {
 				name: 'Confirm Acme Quillsheet',
 			} )
 		);
+		await elapse( UNDO_MS );
 		expect(
 			await screen.findByText( /no link: github:example\/plugin/ )
 		).toBeInTheDocument();
@@ -362,6 +404,7 @@ describe( 'Review — judgments', () => {
 		await screen.findByRole( 'link', {
 			name: 'Paywall bug reported by Acme',
 		} );
+		fakeUndoClock();
 		const links = queue( 'Proposed links' );
 		fireEvent.click(
 			within( links ).getByRole( 'button', {
@@ -373,6 +416,7 @@ describe( 'Review — judgments', () => {
 				name: 'Reject Valley Ledger',
 			} )
 		);
+		await elapse( UNDO_MS );
 		await waitFor( () =>
 			expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 )
 		);
@@ -413,17 +457,20 @@ describe( 'Review — judgments', () => {
 		await screen.findByRole( 'link', {
 			name: 'Paywall bug reported by Acme',
 		} );
+		fakeUndoClock();
 		fireEvent.click(
 			within( queue( 'Proposed links' ) ).getByRole( 'button', {
 				name: 'Confirm Acme Quillsheet',
 			} )
 		);
+		await elapse( UNDO_MS );
 		await waitFor( () => expect( linksRead() ).toHaveLength( 2 ) );
 		fireEvent.click(
 			await within( queue( 'Proposed links' ) ).findByRole( 'button', {
 				name: 'Reject Valley Ledger',
 			} )
 		);
+		await elapse( UNDO_MS );
 		expect(
 			await within( queue( 'Proposed links' ) ).findByRole( 'button', {
 				name: 'Acme Quillsheet',
@@ -445,12 +492,14 @@ describe( 'Review — judgments', () => {
 		await screen.findByRole( 'link', {
 			name: 'Paywall bug reported by Acme',
 		} );
+		fakeUndoClock();
 		const links = queue( 'Proposed links' );
 		fireEvent.click(
 			within( links ).getByRole( 'button', {
 				name: 'Confirm Acme Quillsheet',
 			} )
 		);
+		await elapse( UNDO_MS );
 		await waitFor( () =>
 			expect( wire.sent( 'confirm_link' ) ).toEqual( [
 				[ `--item=${ itemKey }`, `--entity=${ LINK.entity_key }` ],
@@ -478,11 +527,13 @@ describe( 'Review — judgments', () => {
 			wire.replies[ verb ] = { ok: true, event_id: 'ev-e' };
 			renderReview( { canTune: true } );
 			await screen.findByRole( 'button', { name: 'Valley Times' } );
+			fakeUndoClock();
 			fireEvent.click(
 				within( queue( 'Proposed entities' ) ).getByRole( 'button', {
 					name,
 				} )
 			);
+			await elapse( UNDO_MS );
 			await waitFor( () =>
 				expect( wire.sent( verb ) ).toEqual( [ tokens ] )
 			);
@@ -596,7 +647,9 @@ describe( 'Review — themes', () => {
 			name: MERGE_INTO_FIRST,
 		} );
 		expect( merge ).toHaveTextContent( 'Merge into kiosk offboarding' );
+		fakeUndoClock();
 		fireEvent.click( merge );
+		await elapse( UNDO_MS );
 		await waitFor( () =>
 			expect( wire.sent( 'merge_theme' ) ).toEqual( [
 				[
@@ -618,11 +671,12 @@ describe( 'Review — themes', () => {
 	it( 'merges the first theme into the second', async () => {
 		wire.replies.merge_theme = () => new Promise( () => {} );
 		renderReview( { canTune: true } );
-		fireEvent.click(
-			await within( queue( 'Themes' ) ).findByRole( 'button', {
-				name: MERGE_INTO_SECOND,
-			} )
-		);
+		const merge = await within( queue( 'Themes' ) ).findByRole( 'button', {
+			name: MERGE_INTO_SECOND,
+		} );
+		fakeUndoClock();
+		fireEvent.click( merge );
+		await elapse( UNDO_MS );
 		await waitFor( () =>
 			expect( wire.sent( 'merge_theme' ) ).toEqual( [
 				[
@@ -639,11 +693,12 @@ describe( 'Review — themes', () => {
 				'kiosk offboarding merges into kiosk exit; merge kiosk offboarding from platform into kiosk exit instead'
 			);
 		renderReview( { canTune: true } );
-		fireEvent.click(
-			await within( queue( 'Themes' ) ).findByRole( 'button', {
-				name: MERGE_INTO_FIRST,
-			} )
-		);
+		const merge = await within( queue( 'Themes' ) ).findByRole( 'button', {
+			name: MERGE_INTO_FIRST,
+		} );
+		fakeUndoClock();
+		fireEvent.click( merge );
+		await elapse( UNDO_MS );
 		expect(
 			await screen.findByText( /into kiosk exit instead/ )
 		).toBeInTheDocument();
@@ -705,7 +760,7 @@ describe( 'Review — keyboard', () => {
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
 		for ( const name of [ 'Proposed links', 'Proposed entities' ] ) {
 			expect( list( name ) ).toHaveAccessibleDescription(
-				'Press j and k to move between proposals, y to confirm or accept, n to reject and m to merge.'
+				'Keys: J and K to move, Y yes, N no, M same as…, Z undo.'
 			);
 		}
 		expect(
@@ -740,10 +795,13 @@ describe( 'Review — keyboard', () => {
 		wire.replies.reject_link = () => new Promise( () => {} );
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
+		fakeUndoClock();
 		const links = list( 'Proposed links' );
 		links.focus();
 		key( links, 'j' );
 		await act( async () => key( document.activeElement, 'y' ) );
+		focusedHolds( 'Valley Ledger' );
+		await elapse( UNDO_MS );
 		await waitFor( () =>
 			expect( wire.sent( 'confirm_link' ) ).toEqual( [
 				[
@@ -754,6 +812,7 @@ describe( 'Review — keyboard', () => {
 		);
 		focusedHolds( 'Valley Ledger' );
 		await act( async () => key( document.activeElement, 'n' ) );
+		await elapse( UNDO_MS );
 		await waitFor( () =>
 			expect( wire.sent( 'reject_link' ) ).toEqual( [
 				[
@@ -773,11 +832,14 @@ describe( 'Review — keyboard', () => {
 		wire.replies.reject_link = () => new Promise( () => {} );
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Valley Ledger' } );
+		fakeUndoClock();
 		const links = list( 'Proposed links' );
 		links.focus();
 		key( links, 'k' );
 		key( document.activeElement, 'j' );
 		await act( async () => key( document.activeElement, 'n' ) );
+		focusedHolds( 'Acme Quillsheet' );
+		await elapse( UNDO_MS );
 		expect( wire.sent( 'reject_link' ) ).toEqual( [
 			[
 				`--item=${ SIBLING.item_key }`,
@@ -791,6 +853,7 @@ describe( 'Review — keyboard', () => {
 		wire.replies.accept_entity = () => new Promise( () => {} );
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
+		fakeUndoClock();
 		const entities = list( 'Proposed entities' );
 		entities.focus();
 		key( entities, 'j' );
@@ -808,6 +871,7 @@ describe( 'Review — keyboard', () => {
 		expect( wire.sent( 'reject_entity' ) ).toEqual( [] );
 		into.closest( '[tabindex="-1"]' ).focus();
 		await act( async () => key( document.activeElement, 'y' ) );
+		await elapse( UNDO_MS );
 		await waitFor( () =>
 			expect( wire.sent( 'accept_entity' ) ).toEqual( [
 				[ `--key=${ PROPOSED.entity_key }` ],
@@ -840,6 +904,290 @@ describe( 'Review — keyboard', () => {
 		key( links, 'j' );
 		key( document.activeElement, 'y' );
 		focusedHolds( 'Acme Quillsheet' );
+		expect( wire.sent( 'confirm_link' ) ).toEqual( [] );
+	} );
+} );
+
+describe( 'Review — undo', () => {
+	const HARBOR = {
+		...LINK,
+		entity_key: 'organization:harbor-ledger',
+		name: 'Harbor Ledger',
+	};
+	const list = ( name ) =>
+		within( queue( name ) ).getByRole( 'list', { name } );
+	const key = ( target, k ) => fireEvent.keyDown( target, { key: k } );
+	const harborRow = () =>
+		within( queue( 'Proposed links' ) )
+			.queryByRole( 'button', { name: 'Harbor Ledger' } )
+			?.closest( '[data-review-row]' ) ?? null;
+
+	beforeEach( () => {
+		speak.mockClear();
+		window.localStorage.clear();
+		wire.replies.review = ( [ what ] ) =>
+			'links' === what
+				? { links: [ HARBOR, SIBLING ], available: true }
+				: { entities: [ PROPOSED ], available: true };
+		wire.replies.reject_link = { ok: true, event_id: 'ev-r' };
+		wire.replies.confirm_link = { ok: true, event_id: 'ev-c' };
+		wire.replies.accept_entity = { ok: true, event_id: 'ev-a' };
+		wire.replies.merge_theme = { ok: true, event_id: 'ev-t' };
+	} );
+
+	async function focusHarbor() {
+		await screen.findByRole( 'button', { name: 'Harbor Ledger' } );
+		fakeUndoClock();
+		const links = list( 'Proposed links' );
+		links.focus();
+		key( links, 'j' );
+		expect( document.activeElement ).toBe( harborRow() );
+	}
+
+	it( 'hides a row judged with n, and z brings it and its focus back with nothing sent', async () => {
+		renderReview( { canTune: true } );
+		await focusHarbor();
+		await act( async () => key( document.activeElement, 'n' ) );
+		expect( harborRow() ).toBeNull();
+		await elapse( UNDO_MS - 1 );
+		expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+		await act( async () => key( document.activeElement, 'z' ) );
+		expect( harborRow() ).not.toBeNull();
+		expect( document.activeElement ).toBe( harborRow() );
+		await elapse( UNDO_MS * 2 );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+	} );
+
+	it( 'sends a judgment once, after the undo window', async () => {
+		renderReview( { canTune: true } );
+		await focusHarbor();
+		await act( async () => key( document.activeElement, 'n' ) );
+		await elapse( UNDO_MS - 1 );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+		await elapse( 1 );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toEqual( [
+			[
+				`--item=${ HARBOR.item_key }`,
+				`--entity=${ HARBOR.entity_key }`,
+			],
+		] );
+		await elapse( UNDO_MS * 2 );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 );
+		expect( harborRow() ).toBeNull();
+	} );
+
+	it( 'offers the undo in a snackbar and announces it politely', async () => {
+		renderReview( { canTune: true } );
+		await focusHarbor();
+		await act( async () => key( document.activeElement, 'n' ) );
+		const snackbar = screen.getByText( 'Rejected Harbor Ledger.' );
+		expect( snackbar.closest( '.components-snackbar' ) ).toHaveTextContent(
+			'Rejected Harbor Ledger.Undo'
+		);
+		expect( speak ).toHaveBeenCalledWith(
+			'Rejected Harbor Ledger.',
+			'polite'
+		);
+		expect( speak ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'undoes the judgment from the snackbar, the row focused again', async () => {
+		renderReview( { canTune: true } );
+		await focusHarbor();
+		await act( async () => key( document.activeElement, 'y' ) );
+		expect(
+			screen.getByText( 'Confirmed Harbor Ledger.' )
+		).toBeInTheDocument();
+		fireEvent.click( screen.getByRole( 'button', { name: 'Undo' } ) );
+		expect( document.activeElement ).toBe( harborRow() );
+		expect( screen.queryByText( 'Confirmed Harbor Ledger.' ) ).toBeNull();
+		await elapse( UNDO_MS );
+		await settle();
+		expect( wire.sent( 'confirm_link' ) ).toEqual( [] );
+	} );
+
+	it( 'undoes only the most recent judgment still pending', async () => {
+		const prairie = {
+			...SIBLING,
+			entity_key: 'organization:prairie-signal',
+			name: 'Prairie Signal',
+		};
+		wire.replies.review = ( [ what ] ) =>
+			'links' === what
+				? { links: [ HARBOR, SIBLING, prairie ], available: true }
+				: { entities: [], available: true };
+		renderReview( { canTune: true } );
+		await focusHarbor();
+		await act( async () => key( document.activeElement, 'n' ) );
+		await act( async () => key( document.activeElement, 'y' ) );
+		expect(
+			screen.getByText( 'Confirmed Valley Ledger.' )
+		).toBeInTheDocument();
+		await act( async () => key( document.activeElement, 'z' ) );
+		expect(
+			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+				name: 'Valley Ledger',
+			} )
+		).toBeInTheDocument();
+		expect(
+			screen.getByText( 'Rejected Harbor Ledger.' )
+		).toBeInTheDocument();
+		await elapse( UNDO_MS );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 );
+		expect( wire.sent( 'confirm_link' ) ).toEqual( [] );
+	} );
+
+	it( 'sends a pending judgment once on a tab switch, and withdraws its undo', async () => {
+		const { unmount } = renderReview( { canTune: true } );
+		await focusHarbor();
+		await act( async () => key( document.activeElement, 'n' ) );
+		expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+		unmount();
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toEqual( [
+			[
+				`--item=${ HARBOR.item_key }`,
+				`--entity=${ HARBOR.entity_key }`,
+			],
+		] );
+		await elapse( UNDO_MS * 2 );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 );
+		expect( screen.queryByRole( 'button', { name: 'Undo' } ) ).toBeNull();
+	} );
+
+	it( 'sends every pending judgment once when the page is left', async () => {
+		renderReview( { canTune: true } );
+		await focusHarbor();
+		await act( async () => key( document.activeElement, 'n' ) );
+		await act( async () => key( document.activeElement, 'y' ) );
+		await act( async () => {
+			window.dispatchEvent( new Event( 'pagehide' ) );
+		} );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 );
+		expect( wire.sent( 'confirm_link' ) ).toHaveLength( 1 );
+		expect( screen.queryByRole( 'button', { name: 'Undo' } ) ).toBeNull();
+		await elapse( UNDO_MS * 2 );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 );
+		expect( wire.sent( 'confirm_link' ) ).toHaveLength( 1 );
+	} );
+
+	it( 'holds an accepted entity and a theme merge for the undo window too', async () => {
+		renderReview( { canTune: true } );
+		await screen.findByRole( 'button', { name: 'Valley Times' } );
+		const merge = await within( queue( 'Themes' ) ).findByRole( 'button', {
+			name: 'Merge kiosk offboarding from platform into kiosk offboarding',
+		} );
+		fakeUndoClock();
+		fireEvent.click(
+			within( queue( 'Proposed entities' ) ).getByRole( 'button', {
+				name: 'Accept Valley Times',
+			} )
+		);
+		expect(
+			screen.getByText( 'Accepted Valley Times.' )
+		).toBeInTheDocument();
+		fireEvent.click( merge );
+		expect(
+			screen.getByText(
+				'Merged kiosk offboarding from platform into kiosk offboarding.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( queue( 'Themes' ) ).getByText( 'No two themes look alike.' )
+		).toBeInTheDocument();
+		await elapse( UNDO_MS - 1 );
+		await settle();
+		expect( wire.sent( 'accept_entity' ) ).toEqual( [] );
+		expect( wire.sent( 'merge_theme' ) ).toEqual( [] );
+		await elapse( 1 );
+		await settle();
+		expect( wire.sent( 'accept_entity' ) ).toEqual( [
+			[ `--key=${ PROPOSED.entity_key }` ],
+		] );
+		expect( wire.sent( 'merge_theme' ) ).toEqual( [
+			[
+				'--from=kiosk offboarding from platform',
+				'--into=kiosk offboarding',
+			],
+		] );
+	} );
+
+	it( 'brings a theme pair back with its focus on an undo', async () => {
+		renderReview( { canTune: true } );
+		const merge = await within( queue( 'Themes' ) ).findByRole( 'button', {
+			name: 'Merge kiosk offboarding from platform into kiosk offboarding',
+		} );
+		fakeUndoClock();
+		fireEvent.click( merge );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Undo' } ) );
+		expect( document.activeElement ).toHaveTextContent(
+			'kiosk offboardingkiosk offboarding from platform'
+		);
+		expect( document.activeElement.tagName ).toBe( 'LI' );
+	} );
+} );
+
+describe( 'Review — the keys legend and switch', () => {
+	const LEGEND = 'Keys: J and K to move, Y yes, N no, M same as…, Z undo.';
+	const SWITCH = 'Turn off single-key shortcuts';
+	const list = ( name ) =>
+		within( queue( name ) ).getByRole( 'list', { name } );
+	const key = ( target, k ) => fireEvent.keyDown( target, { key: k } );
+
+	beforeEach( () => {
+		window.localStorage.clear();
+		wire.replies.confirm_link = { ok: true, event_id: 'ev-c' };
+	} );
+
+	it( 'shows the legend as visible text describing each list', async () => {
+		renderReview( { canTune: true } );
+		await screen.findByRole( 'button', { name: 'Valley Times' } );
+		const legend = screen.getByText( LEGEND );
+		expect( legend.closest( '.components-visually-hidden' ) ).toBeNull();
+		for ( const name of [ 'Proposed links', 'Proposed entities' ] ) {
+			expect( list( name ) ).toHaveAccessibleDescription( LEGEND );
+		}
+	} );
+
+	it( 'takes no single key while shortcuts are turned off, remembered per browser', async () => {
+		const { unmount } = renderReview( { canTune: true } );
+		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
+		const off = screen.getByRole( 'checkbox', { name: SWITCH } );
+		expect( off ).not.toBeChecked();
+		fireEvent.click( off );
+		expect( off ).toBeChecked();
+		expect( screen.queryByText( LEGEND ) ).toBeNull();
+		unmount();
+
+		renderReview( { canTune: true } );
+		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
+		expect(
+			screen.getByRole( 'checkbox', { name: SWITCH } )
+		).toBeChecked();
+		const links = list( 'Proposed links' );
+		links.focus();
+		key( links, 'j' );
+		expect( document.activeElement ).toBe( links );
+		const row = screen
+			.getByRole( 'button', { name: 'Acme Quillsheet' } )
+			.closest( '[data-review-row]' );
+		row.focus();
+		await act( async () => key( row, 'y' ) );
+		expect(
+			screen.getByRole( 'button', { name: 'Acme Quillsheet' } )
+		).toBeInTheDocument();
+		expect( screen.queryByRole( 'button', { name: 'Undo' } ) ).toBeNull();
+		await act( async () => {
+			window.dispatchEvent( new Event( 'pagehide' ) );
+		} );
 		expect( wire.sent( 'confirm_link' ) ).toEqual( [] );
 	} );
 } );
