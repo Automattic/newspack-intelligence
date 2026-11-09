@@ -780,8 +780,9 @@ final class GraphQueryTest extends TestCase {
 
 	/**
 	 * The excluded list names each exclusion of a tier the caller reads,
-	 * the latest first, with who excluded it, when and why, an item the
-	 * graph no longer holds among them, and caps its rows at the limit.
+	 * the latest first, with who excluded it, when and why, by the title its
+	 * item reads now, and by the title captured at the exclusion for an item
+	 * the graph no longer holds, and caps its rows at the limit.
 	 */
 	public function test_the_excluded_list_names_each_readable_exclusion_latest_first(): void {
 		$this->seed_world();
@@ -802,7 +803,7 @@ final class GraphQueryTest extends TestCase {
 			[
 				'items'     => [
 					[ 'item_key' => 'linear:expired-9', 'title' => 'Copy of linear:expired-9', 'url' => self::url( 'linear:expired-9' ), 'actor' => 'user:kinsey-reed', 'excluded_ts' => self::$oct_20, 'why' => '' ],
-					[ 'item_key' => 'feed:gazette-award', 'title' => 'Copy of feed:gazette-award', 'url' => self::url( 'feed:gazette-award' ), 'actor' => 'user:kinsey-reed', 'excluded_ts' => self::$oct_13, 'why' => 'Shown twice.' ],
+					[ 'item_key' => 'feed:gazette-award', 'title' => 'Harbor Gazette wins state award', 'url' => self::url( 'feed:gazette-award' ), 'actor' => 'user:kinsey-reed', 'excluded_ts' => self::$oct_13, 'why' => 'Shown twice.' ],
 				],
 				'available' => true,
 			],

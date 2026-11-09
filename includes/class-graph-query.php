@@ -2765,10 +2765,11 @@ final class Graph_Query {
 
 	/**
 	 * Every exclusion of a tier the caller reads, the latest first, at most
-	 * `limit`, each as its item was when it was excluded, so the list
-	 * outlives the item's own rows: `{ items: [ { item_key, title, url,
-	 * actor, excluded_ts, why } ] }`, `why` '' unless the curator gave one.
-	 * It is the one read that does not leave an excluded item out.
+	 * `limit`, each with the title and URL its item reads now, else, once
+	 * the item's rows are gone, as it was when excluded: `{ items: [ {
+	 * item_key, title, url, actor, excluded_ts, why } ] }`, `why` '' unless
+	 * the curator gave one at a tier the caller reads. It is the one read
+	 * that does not leave an excluded item out.
 	 *
 	 * @param array<array-key,mixed> $args The bound command args: `limit`.
 	 * @return array<string,mixed>
@@ -2777,12 +2778,13 @@ final class Graph_Query {
 	public static function excluded( array $args ): array {
 		$limit = self::limit( $args );
 		$tiers = Intel_Tiers::readable();
+		$in    = Intel_Graph_Row_Schema::marks( $tiers );
 		return self::available(
 			[ 'items' => [] ],
 			static fn ( Row_Reader $r ): array => [
 				'items' => \array_map(
 					static fn ( array $row ): array => [ 'item_key' => $row[0], 'title' => $row[1], 'url' => $row[2], 'actor' => $row[3], 'excluded_ts' => Core::as_int( $row[4] ), 'why' => $row[5] ],
-					$r->rows( 'SELECT item_key, title, url, actor, ts, why FROM ( ' . self::exclusions( $r ) . ' ) WHERE tier IN ( ' . Intel_Graph_Row_Schema::marks( $tiers ) . ' ) ORDER BY ts DESC, item_key LIMIT ?', [ ...$tiers, $limit ] )
+					$r->rows( "SELECT item_key, title, url, actor, ts, CASE WHEN why_tier IN ( {$in} ) THEN why ELSE '' END FROM ( " . self::exclusions( $r ) . " ) WHERE tier IN ( {$in} ) ORDER BY ts DESC, item_key LIMIT ?", [ ...$tiers, ...$tiers, $limit ] )
 				),
 			]
 		);
@@ -2790,11 +2792,13 @@ final class Graph_Query {
 
 	/**
 	 * Every exclusion as a statement, one row per item, the newest
-	 * partition's: `item_key, tier, title, url, actor, ts, why`, `tier` the
-	 * one its item reads at now, and the one it was excluded at only once
-	 * every partition has dropped the item's row. It is the one definition of an
-	 * excluded item: `kept()` leaves out its keys, and the excluded list and
-	 * an inclusion read it by that tier, so a reader who reads an item's
+	 * partition's: `item_key, tier, title, url, actor, ts, why, why_tier`.
+	 * `tier`, `title` and `url` are what the item's row reads now, and what
+	 * was captured at the exclusion only once every partition has dropped
+	 * that row; `why_tier` is the tier the exclusion was written at, which a
+	 * caller must read to be answered its `why`. It is the one definition of
+	 * an excluded item: `kept()` leaves out its keys, and the excluded list
+	 * and an inclusion read it by `tier`, so a reader who reads an item's
 	 * tier lists and includes every exclusion hiding it.
 	 *
 	 * @api Graph_Curation reads an exclusion it includes again by it.
@@ -2802,9 +2806,9 @@ final class Graph_Query {
 	 */
 	public static function exclusions( Row_Reader $r ): string {
 		$keys = 'item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'excluded_items' ) . ' e )';
-		return 'SELECT x.item_key, COALESCE( i.tier, x.tier ) AS tier, x.title, x.url, x.actor, x.ts, x.why FROM ( '
+		return 'SELECT x.item_key, COALESCE( i.tier, x.tier ) AS tier, COALESCE( i.title, x.title ) AS title, COALESCE( i.url, x.url ) AS url, x.actor, x.ts, x.why, x.tier AS why_tier FROM ( '
 			. Intel_Graph_Row_Schema::newest( $r, 'excluded_items', 'item_key', 'item_key, tier, title, url, actor, ts, why', '1' )
-			. ' ) x LEFT JOIN ( ' . Intel_Graph_Row_Schema::newest( $r, 'items', 'item_key', 'item_key, tier', $keys ) . ' ) i ON i.item_key = x.item_key';
+			. ' ) x LEFT JOIN ( ' . Intel_Graph_Row_Schema::newest( $r, 'items', 'item_key', 'item_key, tier, title, url', $keys ) . ' ) i ON i.item_key = x.item_key';
 	}
 
 	/**

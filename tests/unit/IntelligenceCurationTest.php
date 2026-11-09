@@ -351,6 +351,24 @@ final class IntelligenceCurationTest extends TestCase {
 		$this->assertSame( [ $key ], $found() );
 	}
 
+	/**
+	 * An item excluded while restricted that reads internal now is listed
+	 * with the title and URL its row reads now, never the restricted copy's,
+	 * and its why only to a caller who reads the tier it was written at.
+	 */
+	public function test_an_exclusion_shows_a_reader_only_what_its_tier_reads(): void {
+		$key = 'linear:tern-ledger-14';
+		$this->seed(
+			self::item( $key, 'Tern Ledger opens a bureau', 'linear', 'internal', self::$oct_13 ),
+			[ Intel_Event::make( 'item_excluded', [ 'item_key' => $key, 'url' => 'https://deals.example/tern-14', 'title' => 'Tern Ledger renewal memo', 'tier' => 'restricted', 'why' => 'Renewal terms under negotiation.' ], 'user:41', 'fixture-9' ) ]
+		);
+		$listed = fn (): array => \array_map( static fn ( array $row ): array => [ $row['title'], $row['url'], $row['why'] ], $this->ci->dispatch( 'excluded', [ '--limit=9' ] )['items'] );
+
+		$this->assertSame( [ [ 'Tern Ledger opens a bureau', self::url( $key ), '' ] ], $listed() );
+		self::sign_in( 38, 'quay-analyst', 'manage_options', Intel_Tiers::CAPABILITY );
+		$this->assertSame( [ [ 'Tern Ledger opens a bureau', self::url( $key ), 'Renewal terms under negotiation.' ] ], $listed() );
+	}
+
 	/** An exclusion naming no why carries none, so its row reads ''. */
 	public function test_an_exclusion_without_a_why_carries_none(): void {
 		$this->seed_curation_world();
