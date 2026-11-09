@@ -12,6 +12,7 @@ use Newspack_Intelligence\Extractor_Node;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intel_Tiers;
 use Newspack_Intelligence\LLM_Call_Node;
+use Newspack_Intelligence\Operator;
 use Newspack_Intelligence\Prompts;
 use Newspack_Intelligence\Worker_Route;
 use Newspack_Nodes\Bootstrap;
@@ -137,7 +138,7 @@ final class Eval_CLI_Command {
 	 * @throws \RuntimeException As `Worker_Route::topology()`.
 	 */
 	private static function decide( array $sent, array $items ): array {
-		[ $group, $api_url, $model, $feature ] = self::llm();
+		[ $group, $api_url, $model, $feature, $operator ] = self::llm();
 		$inputs   = [];
 		$requests = [];
 		foreach ( $sent as [ $label, $asked ] ) {
@@ -147,7 +148,7 @@ final class Eval_CLI_Command {
 				+ ( \in_array( Prompts::FITS_KIND, $questions, true ) ? [ 'kind' => $label['kind'] ] : [] )
 				+ ( \in_array( Prompts::ABOUT_PUBLISHER, $questions, true ) ? [ 'publisher' => $label['publisher'] ?? '' ] : [] );
 			$inputs[]   = $input;
-			$requests[] = LLM_Call_Node::curl_request( $api_url, $model, $feature, Prompts::EXTRACT_REVIEW, $item, $input, [] );
+			$requests[] = LLM_Call_Node::curl_request( $api_url, $model, $feature, $operator, Prompts::EXTRACT_REVIEW, $item, $input, [] );
 		}
 		$answers = self::fetch( $group, $requests );
 		return \array_map( static fn ( int $at ): array => LLM_Call_Node::outcome( $answers[ $at ], Prompts::EXTRACT_REVIEW, $inputs[ $at ] ), \array_keys( $requests ) );
@@ -202,9 +203,10 @@ final class Eval_CLI_Command {
 
 	/**
 	 * What Intelligence's topology's LLM_Call posts a decision with: its
-	 * vault group, api url, decision model and feature.
+	 * vault group, api url, decision model and feature, and the operator its
+	 * prompts name.
 	 *
-	 * @return array{0:string,1:string,2:string,3:string}
+	 * @return array{0:string,1:string,2:string,3:string,4:Operator}
 	 * @throws \InvalidArgumentException When it declares none, one unset, or a group lending no credential on the api url.
 	 * @throws \RuntimeException As `Worker_Route::topology()`.
 	 */
@@ -222,7 +224,7 @@ final class Eval_CLI_Command {
 		if ( ! Curl_Node::lends_credential( $group, $api_url ) ) {
 			throw new \InvalidArgumentException( \esc_html( "The {$group} Vault group lends no credential on {$api_url}: lend one before an eval." ) );
 		}
-		return [ $group, $api_url, $model, $feature ];
+		return [ $group, $api_url, $model, $feature, new Operator( Core::as_string( $node['operator'] ), Core::as_string( $node['tracks'] ) ) ];
 	}
 
 	/**

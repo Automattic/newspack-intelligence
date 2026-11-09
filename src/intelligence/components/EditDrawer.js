@@ -5,13 +5,18 @@ import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { roleText } from './format';
 
 /**
- * The options a closed list offers a select.
+ * The options a closed list offers a select, each shown by its label where
+ * the list has labels.
  *
- * @param {string[]} values The list.
+ * @param {string[]}               values  The list.
+ * @param {Object<string, string>} [words] Each value's label.
  * @return {{label: string, value: string}[]} The options.
  */
-const optionsOf = ( values ) =>
-	values.map( ( value ) => ( { label: value, value } ) );
+const optionsOf = ( values, words ) =>
+	values.map( ( value ) => ( {
+		label: words ? words[ value ] : value,
+		value,
+	} ) );
 
 /**
  * One curation form: a legend naming it, the fields it collects and the
@@ -46,10 +51,11 @@ function EditForm( { legend, onSubmit, children } ) {
  * @param {Object}                                props
  * @param {string}                                props.legend   Names the form.
  * @param {string[]}                              props.kinds    The kinds it offers.
+ * @param {Object<string, string>}                [props.words]  Each kind's label.
  * @param {(kind: string, value: string) => void} props.onSubmit Sends the pair.
  * @return {import('react').ReactElement} The form.
  */
-function KindValueForm( { legend, kinds, onSubmit } ) {
+function KindValueForm( { legend, kinds, words, onSubmit } ) {
 	const [ kind, setKind ] = useState( kinds[ 0 ] );
 	const [ value, setValue ] = useState( '' );
 	return (
@@ -57,7 +63,7 @@ function KindValueForm( { legend, kinds, onSubmit } ) {
 			<SelectControl
 				__next40pxDefaultSize
 				label={ __( 'Kind', 'newspack-intelligence' ) }
-				options={ optionsOf( kinds ) }
+				options={ optionsOf( kinds, words ) }
 				value={ kind }
 				onChange={ setKind }
 			/>
@@ -76,10 +82,11 @@ function KindValueForm( { legend, kinds, onSubmit } ) {
  *
  * @param {Object}                 props
  * @param {string[]}               props.roles    The roles it offers.
+ * @param {Object<string, string>} props.words    Each role's label.
  * @param {(role: string) => void} props.onSubmit Sends the role.
  * @return {import('react').ReactElement} The form.
  */
-function RoleForm( { roles, onSubmit } ) {
+function RoleForm( { roles, words, onSubmit } ) {
 	const [ role, setRole ] = useState( roles[ 0 ] );
 	return (
 		<EditForm
@@ -89,7 +96,7 @@ function RoleForm( { roles, onSubmit } ) {
 			<SelectControl
 				__next40pxDefaultSize
 				label={ __( 'Role', 'newspack-intelligence' ) }
-				options={ optionsOf( roles ) }
+				options={ optionsOf( roles, words ) }
 				value={ role }
 				onChange={ setRole }
 			/>
@@ -150,7 +157,7 @@ export default function EditDrawer( {
 									key={ `${ role.role } ${ role.from_ts }` }
 									className="newspack-intelligence__actions"
 								>
-									{ roleText( role ) }
+									{ roleText( role, vocabulary.roleWords ) }
 									<button
 										type="button"
 										className="button button-small"
@@ -167,7 +174,7 @@ export default function EditDrawer( {
 												'End %s',
 												'newspack-intelligence'
 											),
-											role.role
+											vocabulary.roleWords[ role.role ]
 										) }
 									</button>
 								</li>
@@ -188,6 +195,7 @@ export default function EditDrawer( {
 								'newspack-intelligence'
 							) }
 							kinds={ vocabulary.identifierKinds }
+							words={ vocabulary.identifierWords }
 							onSubmit={ ( kind, value ) =>
 								addIdentifier.run( {
 									key: entityKey,
@@ -198,6 +206,7 @@ export default function EditDrawer( {
 						/>
 						<RoleForm
 							roles={ vocabulary.roles }
+							words={ vocabulary.roleWords }
 							onSubmit={ ( role ) =>
 								assertRole.run( { key: entityKey, role } )
 							}

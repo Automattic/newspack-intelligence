@@ -18,11 +18,8 @@ include topic-probe
 include newspack-intelligence-streams
 make_node Consumer intel:items:resolve <config:logs_dir>/intel-items.p{partition} <config:offsets_dir>/<topology>.intel-items-resolve.p{partition} <config:deadletter_dir>/<topology>.intel-items-resolve.p{partition}
 command_node intel:items:resolve:config set_line_mode true
+# A deployment's lists name the proxy's url, the two models and the feature.
 make_node LLM_Call intel:llm ai-proxy
-cmd intel:llm:config set_api_url https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1
-cmd intel:llm:config set_model gpt-oss-120b
-cmd intel:llm:config set_decision_model decision-lux-9b
-cmd intel:llm:config set_feature newspack-intelligence
 cmd intel:llm:config set_concurrency 4
 make_node Resolver resolver intel:writer intel:later intel:llm
 make_node Extractor extractor intel:writer intel:later intel:llm

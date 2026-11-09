@@ -31,6 +31,10 @@ describe( 'intelligence index', () => {
 			canTune: '1',
 			canManage: '1',
 			userId: '6143',
+			operator: {
+				name: 'Quillmere Cooperative',
+				heading: 'Quillmere Cooperative',
+			},
 			vocabulary: { roles: [ 'funder' ] },
 		};
 	} );
@@ -50,6 +54,10 @@ describe( 'intelligence index', () => {
 			canTune: true,
 			canManage: true,
 			userId: '6143',
+			operator: {
+				name: 'Quillmere Cooperative',
+				heading: 'Quillmere Cooperative',
+			},
 			vocabulary: { roles: [ 'funder' ] },
 		} );
 	} );

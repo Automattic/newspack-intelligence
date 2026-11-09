@@ -4,7 +4,7 @@
  * changed in the last DAYS UTC days, through the reads that already answer
  * it. `changes` ranks the window's readable items naming any entity by
  * importance and groups them under the clients each is about, else under
- * Newspack's own work, else under no one, and sums up what of them arrived
+ * the operator's own work, else under no one, and sums up what of them arrived
  * since an instant the caller names; `signals` answers every client's
  * signals on both axes and every lens's, each whose bucket closed inside
  * the window.
@@ -128,7 +128,7 @@ final class Intelligence_Briefing {
 	 * first open client an item is about, role `client`, so each item is
 	 * listed once; one about no client, or about more than
 	 * `Graph_Query::MAX_ITEM_CLIENTS`, but
-	 * about an entity holding an open `newspack_product` role under one
+	 * about an entity holding an open `operator_product` role under one
 	 * group of that role; and any other under one group of role null. Each
 	 * group sits in the order of its most important item, and its items as
 	 * they rank. Its summary counts what of the window is dated at or after
@@ -156,14 +156,14 @@ final class Intelligence_Briefing {
 				$read     = Graph_Query::most_important( $r, $g, self::DAYS, Graph_Query::DEFAULT_LIMIT, $since );
 				$holders  = self::holders( $r, $g );
 				$clients  = $holders[ Graph_Query::CLIENT ];
-				$products = $holders[ Graph_Query::NEWSPACK_PRODUCT ];
+				$products = $holders[ Graph_Query::OPERATOR_PRODUCT ];
 				$groups   = [];
 				foreach ( Core::arr( $read['items'] ) as $item ) {
 					$about = \array_map( Core::as_string( ... ), \array_column( Core::arr( Core::arr( $item )['entities'] ), 'entity_key' ) );
 					$named = \array_flip( $about );
 					$under = \array_map( 'strval', \array_keys( \array_intersect_key( $named, $clients ) ) );
 					$key   = [] === $under || \count( $under ) > Graph_Query::MAX_ITEM_CLIENTS
-						? ( [] === \array_intersect_key( $named, $products ) ? '' : Graph_Query::NEWSPACK_PRODUCT )
+						? ( [] === \array_intersect_key( $named, $products ) ? '' : Graph_Query::OPERATOR_PRODUCT )
 						: $under[0];
 					$groups[ $key ]          ??= isset( $clients[ $key ] )
 						? [ 'entity_key' => $key, 'name' => $clients[ $key ], 'role' => Graph_Query::CLIENT, 'items' => [] ]
@@ -204,7 +204,7 @@ final class Intelligence_Briefing {
 	}
 
 	/**
-	 * Every entity holding an open client or `newspack_product` role, as its
+	 * Every entity holding an open client or `operator_product` role, as its
 	 * survivor, in one statement: each client by name, ordered by it, and
 	 * each product with no name read.
 	 *
@@ -215,12 +215,12 @@ final class Intelligence_Briefing {
 	private static function holders( Row_Reader $r, array $g ): array {
 		$held = [
 			Graph_Query::CLIENT           => [],
-			Graph_Query::NEWSPACK_PRODUCT => [],
+			Graph_Query::OPERATOR_PRODUCT => [],
 		];
 		$rows = $r->rows(
 			"{$g['with']} SELECT c.entity_key, c.role, CASE WHEN c.role = ? THEN " . Graph_Query::name_of( $r, 'c.entity_key' ) . ' END FROM ( SELECT DISTINCT COALESCE( mg.value, t.entity_key ) AS entity_key, t.role FROM '
 			. Intel_Graph_Row_Schema::all( $r, 'roles' ) . " t LEFT JOIN mg ON mg.key = t.entity_key WHERE t.role IN ( ?, ? ) AND t.to_ts = 0 ) c WHERE c.entity_key <> '' ORDER BY 3, 1",
-			[ ...$g['binds'], Graph_Query::CLIENT, Graph_Query::CLIENT, Graph_Query::NEWSPACK_PRODUCT ]
+			[ ...$g['binds'], Graph_Query::CLIENT, Graph_Query::CLIENT, Graph_Query::OPERATOR_PRODUCT ]
 		);
 		foreach ( $rows as [ $key, $role, $name ] ) {
 			$held[ Core::as_string( $role ) ][ Core::as_string( $key ) ] = Core::as_string( $name );

@@ -115,6 +115,7 @@ class Extractor_Node extends Node {
 	public const BLANK_STATUS = [
 		'mode'          => null,
 		'vault_group'   => null,
+		'unset'         => null,
 		'last_ok_at'    => null,
 		'last_error'    => null,
 		'failing_since' => null,
@@ -380,6 +381,7 @@ class Extractor_Node extends Node {
 				[
 					'mode'        => 'heuristic',
 					'vault_group' => $unlent,
+					'unset'       => isset( $answer['unset'] ) ? \array_values( \array_map( Core::as_string( ... ), Core::arr( $answer['unset'] ) ) ) : null,
 				]
 			);
 		} elseif ( $failed ) {
@@ -523,13 +525,14 @@ class Extractor_Node extends Node {
 	}
 
 	/**
-	 * Why a decision that does not read failed: its group lending nothing,
-	 * its error, or an answer to a question asked with nothing that reads.
+	 * Why a decision that does not read failed: unlent, as
+	 * `LLM_Call_Node::unlent_why()` says why, its error, or an answer to a
+	 * question asked with nothing that reads.
 	 *
 	 * @param array<array-key,mixed> $answer The decision's answer.
 	 */
 	private static function decision_fault( array $answer ): string {
-		return isset( $answer['unlent'] ) ? 'group ' . Core::as_string( $answer['unlent'] ) . ' lends no credential' : Core::as_string( $answer['error'] ?? 'it answers a question with nothing that reads' );
+		return isset( $answer['unlent'] ) ? LLM_Call_Node::unlent_why( $answer ) : Core::as_string( $answer['error'] ?? 'it answers a question with nothing that reads' );
 	}
 
 	/**

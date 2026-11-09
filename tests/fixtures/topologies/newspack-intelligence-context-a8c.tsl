@@ -1,0 +1,18 @@
+# A fictional deployment's ContextA8C part: the MCP server, the relay's
+# token dir and the proxy each Context_A8C node reads through.
+var num_partitions = 1
+include topic-probe
+include newspack-intelligence-streams
+make_node Context_A8C_Linear linear internal https://mcp-relay.example/heron/v1 /relay-auth socks5h://proxy-heron.example:1088
+cmd linear:config set_interval 900
+make_node Context_A8C_Slack slack internal https://mcp-relay.example/heron/v1 /relay-auth socks5h://proxy-heron.example:1088
+cmd slack:config set_interval 900
+make_node Context_A8C_P2 p2 internal https://mcp-relay.example/heron/v1 /relay-auth socks5h://proxy-heron.example:1088
+cmd p2:config set_interval 1800
+make_node Context_A8C_P2 p2-restricted restricted https://mcp-relay.example/heron/v1 /relay-auth socks5h://proxy-heron.example:1088
+cmd p2-restricted:config set_interval 1800
+connect_node linear intel:writer
+connect_node slack intel:writer
+connect_node p2 intel:writer
+connect_node p2-restricted intel:writer
+secure

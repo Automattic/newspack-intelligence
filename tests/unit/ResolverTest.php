@@ -26,13 +26,13 @@ final class ResolverTest extends TestCase {
 
 	private const GAZETTE = 'organization:harbor-gazette';
 
-	private const PLAINSFILE = 'organization:atomic-3003';
+	private const PLAINSFILE = 'organization:site-3003';
 
-	private const BAYSHORE = 'organization:atomic-3006';
+	private const BAYSHORE = 'organization:site-3006';
 
-	private const LANTERN = 'organization:atomic-3009';
+	private const LANTERN = 'organization:site-3009';
 
-	private const KIWILEDGER = 'organization:atomic-3010';
+	private const KIWILEDGER = 'organization:site-3010';
 
 	private const TERN = 'organization:tern-weekly';
 
@@ -230,24 +230,24 @@ final class ResolverTest extends TestCase {
 
 	/** "thecitizen" spells its article, so "The Citizen" is the stem's whole span. */
 	public function test_a_domain_stem_reads_an_article_its_domain_spells(): void {
-		$this->assertSame( [ self::link( 'organization:atomic-3005', 'subject', 'domain_stem', 0.9 ) ], $this->golden( [ 'title' => 'The Citizen Offboarding Checklist', 'url' => 'https://random.example/x' ] )['links'] );
+		$this->assertSame( [ self::link( 'organization:site-3005', 'subject', 'domain_stem', 0.9 ) ], $this->golden( [ 'title' => 'The Citizen Offboarding Checklist', 'url' => 'https://random.example/x' ] )['links'] );
 	}
 
 	/** "wren" does not spell the article, and "The" never lengthens a stem too short to read. */
 	public function test_a_domain_stem_not_spelling_the_article_never_reads_it(): void {
 		$item = [ 'title' => 'The Wren Offboarding Checklist', 'url' => 'https://random.example/x' ];
 
-		$this->assertSame( [], $this->resolve( $item, self::entity( 'organization:atomic-3101', 'Atomic site 3101', [ 'domain' => [ 'wren.example' ] ] ) )['links'] );
+		$this->assertSame( [], $this->resolve( $item, self::entity( 'organization:site-3101', 'Site 3101', [ 'domain' => [ 'wren.example' ] ] ) )['links'] );
 		$this->assertSame(
-			[ self::link( 'organization:atomic-3102', 'subject', 'domain_stem', 0.9 ) ],
-			$this->resolve( $item, self::entity( 'organization:atomic-3102', 'Atomic site 3102', [ 'domain' => [ 'thewren.example' ] ] ) )['links']
+			[ self::link( 'organization:site-3102', 'subject', 'domain_stem', 0.9 ) ],
+			$this->resolve( $item, self::entity( 'organization:site-3102', 'Site 3102', [ 'domain' => [ 'thewren.example' ] ] ) )['links']
 		);
 	}
 
 	/** "the" is the one article a stem's span may lead with: "A" or "An" opening a title never welds onto one. */
 	public function test_a_domain_stem_never_welds_on_a_or_an(): void {
-		$this->assertSame( [], $this->resolve( [ 'title' => 'A Newsroom Guide to Elections', 'url' => 'https://random.example/x' ], self::entity( 'organization:atomic-3103', 'Atomic site 3103', [ 'domain' => [ 'anewsroom.example' ] ] ) )['links'] );
-		$this->assertSame( [], $this->resolve( [ 'title' => 'An Ewsroom Guide to Elections', 'url' => 'https://random.example/x' ], self::entity( 'organization:atomic-3104', 'Atomic site 3104', [ 'domain' => [ 'anewsroom.example' ] ] ) )['links'] );
+		$this->assertSame( [], $this->resolve( [ 'title' => 'A Newsroom Guide to Elections', 'url' => 'https://random.example/x' ], self::entity( 'organization:site-3103', 'Site 3103', [ 'domain' => [ 'anewsroom.example' ] ] ) )['links'] );
+		$this->assertSame( [], $this->resolve( [ 'title' => 'An Ewsroom Guide to Elections', 'url' => 'https://random.example/x' ], self::entity( 'organization:site-3104', 'Site 3104', [ 'domain' => [ 'anewsroom.example' ] ] ) )['links'] );
 		$this->assertFalse( Resolver::names_site( 'A Newsroom', 'anewsroom.example' ) );
 	}
 
@@ -286,7 +286,7 @@ final class ResolverTest extends TestCase {
 
 	/** An item title's initials never link a domain by its stem: that weaker match only names a site from its own feed. */
 	public function test_initials_never_link_a_domain_stem(): void {
-		$this->assertSame( [], $this->resolve( [ 'title' => 'Plover Tern Courier reopens', 'url' => 'https://random.example/x' ], self::entity( 'organization:atomic-3110', 'Atomic site 3110', [ 'domain' => [ 'ptcourier.example' ] ] ) )['links'] );
+		$this->assertSame( [], $this->resolve( [ 'title' => 'Plover Tern Courier reopens', 'url' => 'https://random.example/x' ], self::entity( 'organization:site-3110', 'Site 3110', [ 'domain' => [ 'ptcourier.example' ] ] ) )['links'] );
 	}
 
 	/** A lowercase word outside the connecting set, or one opening or closing the span, is prose. */
@@ -420,10 +420,10 @@ final class ResolverTest extends TestCase {
 
 	/** A subdomain names its group, not the generic first label. */
 	public function test_a_domain_stem_uses_the_registrable_label_of_a_subdomain(): void {
-		$group = 'organization:atomic-3011';
+		$group = 'organization:site-3011';
 		$this->assertSame(
 			[ self::link( $group, 'subject', 'domain_stem', 0.9 ) ],
-			$this->golden( [ 'title' => 'Harborviewmediagroup names an editor', 'url' => 'https://random.example/x' ], self::entity( $group, 'Atomic site 3011', [ 'domain' => [ 'newsroom.harborviewmediagroup.example' ] ] ) )['links']
+			$this->golden( [ 'title' => 'Harborviewmediagroup names an editor', 'url' => 'https://random.example/x' ], self::entity( $group, 'Site 3011', [ 'domain' => [ 'newsroom.harborviewmediagroup.example' ] ] ) )['links']
 		);
 	}
 
@@ -522,11 +522,11 @@ final class ResolverTest extends TestCase {
 	/** The accepted entity takes the strength of the hit that found it: a stem's 0.9. */
 	public function test_an_accepted_stem_wins_a_surface_over_a_proposal_at_its_own_strength(): void {
 		$this->assertSame(
-			[ self::link( 'organization:atomic-3012', 'subject', 'domain_stem', 0.9 ) ],
+			[ self::link( 'organization:site-3012', 'subject', 'domain_stem', 0.9 ) ],
 			$this->resolve(
 				[ 'title' => 'Sentinel names a new editor', 'url' => 'https://random.example/x' ],
 				self::proposed( 'organization:sentinel', 'Sentinel' ),
-				self::entity( 'organization:atomic-3012', 'Atomic site 3012', [ 'domain' => [ 'sentinel.example' ] ] )
+				self::entity( 'organization:site-3012', 'Site 3012', [ 'domain' => [ 'sentinel.example' ] ] )
 			)['links']
 		);
 	}
@@ -601,10 +601,10 @@ final class ResolverTest extends TestCase {
 	/** A stem's span is the longest, so the name inside it drops: one span, one entity. */
 	public function test_a_name_inside_a_stem_span_drops(): void {
 		$this->assertSame(
-			[ self::link( 'organization:atomic-3014', 'subject', 'domain_stem', 0.9 ) ],
+			[ self::link( 'organization:site-3014', 'subject', 'domain_stem', 0.9 ) ],
 			$this->resolve(
 				[ 'title' => 'Bay Shore Report cuts staff', 'url' => 'https://random.example/x' ],
-				self::entity( 'organization:atomic-3014', 'Atomic site 3014', [ 'domain' => [ 'bayshorereport.test' ] ] ),
+				self::entity( 'organization:site-3014', 'Site 3014', [ 'domain' => [ 'bayshorereport.test' ] ] ),
 				self::entity( 'organization:shore-report', 'Shore Report' )
 			)['links']
 		);
@@ -657,11 +657,11 @@ final class ResolverTest extends TestCase {
 	/** A name and another entity's stem on one surface are one ambiguity: both proposed. */
 	public function test_a_name_and_a_stem_on_one_surface_propose_both(): void {
 		$this->assertSame(
-			[ self::link( 'organization:sentinel', 'subject', 'name', 0.5, 'proposed' ), self::link( 'organization:atomic-3012', 'subject', 'domain_stem', 0.5, 'proposed' ) ],
+			[ self::link( 'organization:sentinel', 'subject', 'name', 0.5, 'proposed' ), self::link( 'organization:site-3012', 'subject', 'domain_stem', 0.5, 'proposed' ) ],
 			$this->resolve(
 				[ 'title' => 'Sentinel names a new editor', 'url' => 'https://random.example/x' ],
 				self::entity( 'organization:sentinel', 'Sentinel' ),
-				self::entity( 'organization:atomic-3012', 'Atomic site 3012', [ 'domain' => [ 'sentinel.example' ] ] )
+				self::entity( 'organization:site-3012', 'Site 3012', [ 'domain' => [ 'sentinel.example' ] ] )
 			)['links']
 		);
 	}
@@ -669,11 +669,11 @@ final class ResolverTest extends TestCase {
 	/** Two stems on one surface are settled by a locality the text names. */
 	public function test_a_locality_settles_a_stem_ambiguity(): void {
 		$this->assertSame(
-			[ self::link( 'organization:atomic-3013', 'subject', 'domain_stem', 0.9 ) ],
+			[ self::link( 'organization:site-3013', 'subject', 'domain_stem', 0.9 ) ],
 			$this->resolve(
 				[ 'title' => 'Sentinel names a new editor', 'body' => 'The Salem paper announced it Monday.', 'url' => 'https://random.example/x' ],
-				self::entity( 'organization:atomic-3012', 'Atomic site 3012', [ 'domain' => [ 'sentinel.example' ], 'locality' => [ 'Bend' ] ] ),
-				self::entity( 'organization:atomic-3013', 'Atomic site 3013', [ 'domain' => [ 'sentinel.test' ], 'locality' => [ 'Salem' ] ] )
+				self::entity( 'organization:site-3012', 'Site 3012', [ 'domain' => [ 'sentinel.example' ], 'locality' => [ 'Bend' ] ] ),
+				self::entity( 'organization:site-3013', 'Site 3013', [ 'domain' => [ 'sentinel.test' ], 'locality' => [ 'Salem' ] ] )
 			)['links']
 		);
 	}
@@ -819,7 +819,7 @@ final class ResolverTest extends TestCase {
 	/** The client whose name the stoplist rejects is still its own site's publisher. */
 	public function test_a_rejected_name_still_links_its_own_site_as_publisher(): void {
 		$this->assertSame(
-			[ self::link( 'organization:atomic-5121', 'publisher', 'identifier', 1.0 ) ],
+			[ self::link( 'organization:site-5121', 'publisher', 'identifier', 1.0 ) ],
 			$this->resolve( [ 'title' => 'Wharfside honours its volunteers', 'body' => 'Volunteers swept the wharfside.', 'url' => 'https://www.wharfside.co.nz/2026/11/awards' ], ...self::wharfside() )['links']
 		);
 	}
@@ -827,7 +827,7 @@ final class ResolverTest extends TestCase {
 	/** An alias the rejected entity does not carry links its entity as any alias does. */
 	public function test_an_alias_a_rejected_entity_does_not_carry_still_links(): void {
 		$this->assertSame(
-			[ self::link( 'organization:atomic-5121', 'subject', 'alias', 1.0 ) ],
+			[ self::link( 'organization:site-5121', 'subject', 'alias', 1.0 ) ],
 			$this->resolve( [ 'title' => 'Kaipara Wharf Press honours its volunteers', 'url' => 'https://elsewhere.example/x' ], ...self::wharfside() )['links']
 		);
 	}
@@ -880,7 +880,7 @@ final class ResolverTest extends TestCase {
 			[],
 			$this->resolve(
 				[ 'title' => 'Wharf Side Awards Open', 'url' => 'https://elsewhere.example/x' ],
-				self::entity( 'organization:atomic-6012', 'Atomic site 6012', [ 'domain' => [ 'wharfside.example' ] ] ),
+				self::entity( 'organization:site-6012', 'Site 6012', [ 'domain' => [ 'wharfside.example' ] ] ),
 				self::entity( 'organization:wharfside', 'Wharfside' ),
 				self::rejected( 'organization:wharfside' )
 			)['links']
@@ -933,12 +933,12 @@ final class ResolverTest extends TestCase {
 
 	/** Of one entity's equal-span hits, longest() keeps the one not stoplisted, in either order. */
 	public function test_longest_prefers_an_entitys_hit_that_is_not_stoplisted(): void {
-		$name    = [ 'entity_key' => 'organization:atomic-6012', 'kind' => 'canonical', 'surface' => 'News Room', 'at' => 0, 'stoplisted' => false ];
-		$stem    = [ 'entity_key' => 'organization:atomic-6012', 'kind' => 'domain_stem', 'surface' => 'News Room', 'at' => 0, 'stoplisted' => true ];
+		$name    = [ 'entity_key' => 'organization:site-6012', 'kind' => 'canonical', 'surface' => 'News Room', 'at' => 0, 'stoplisted' => false ];
+		$stem    = [ 'entity_key' => 'organization:site-6012', 'kind' => 'domain_stem', 'surface' => 'News Room', 'at' => 0, 'stoplisted' => true ];
 		$longest = new \ReflectionMethod( Resolver::class, 'longest' );
 
-		$this->assertSame( [ 'organization:atomic-6012' => $name ], $longest->invoke( null, [ $name, $stem ] ) );
-		$this->assertSame( [ 'organization:atomic-6012' => $name ], $longest->invoke( null, [ $stem, $name ] ) );
+		$this->assertSame( [ 'organization:site-6012' => $name ], $longest->invoke( null, [ $name, $stem ] ) );
+		$this->assertSame( [ 'organization:site-6012' => $name ], $longest->invoke( null, [ $stem, $name ] ) );
 	}
 
 	/** A tool the extractor names is proposed as a product, an organization beside it as an organization. */
@@ -1224,19 +1224,19 @@ final class ResolverTest extends TestCase {
 	 * @return list<array<string,mixed>>
 	 */
 	private static function golden_entities(): array {
-		$atomic = static fn ( int $id, string $domain ): array => self::entity( "organization:atomic-{$id}", "Atomic site {$id}", [ 'domain' => [ $domain ] ] );
+		$sites = static fn ( int $id, string $domain ): array => self::entity( "organization:site-{$id}", "Site {$id}", [ 'domain' => [ $domain ] ] );
 		return [
 			...self::entity( self::MESA, 'Mesa Courier', [ 'alias' => [ 'MDC', 'Mesa Daily Courier' ], 'domain' => [ 'mesa-news.example' ] ] ),
 			...self::entity( self::GAZETTE, 'The Harbor Gazette', [ 'alias' => [ 'HarbGaz' ], 'domain' => [ 'harborgazette.example' ] ] ),
 			...self::proposed( 'organization:faded-gazette', 'Faded Gazette', [ 'domain' => [ 'fadedgazette.example' ] ] ),
 			...self::rejected( 'organization:faded-gazette' ),
-			...$atomic( 3003, 'plainsfile.example' ),
-			...$atomic( 3004, 'tidewater.co.nz' ),
-			...$atomic( 3005, 'thecitizen.example' ),
-			...$atomic( 3006, 'bayshorereport.example' ),
-			...$atomic( 3007, 'kxzt.example' ),
-			...$atomic( 3009, 'lantern.example' ),
-			...$atomic( 3010, 'kiwiledger.co.nz' ),
+			...$sites( 3003, 'plainsfile.example' ),
+			...$sites( 3004, 'tidewater.co.nz' ),
+			...$sites( 3005, 'thecitizen.example' ),
+			...$sites( 3006, 'bayshorereport.example' ),
+			...$sites( 3007, 'kxzt.example' ),
+			...$sites( 3009, 'lantern.example' ),
+			...$sites( 3010, 'kiwiledger.co.nz' ),
 		];
 	}
 
@@ -1250,7 +1250,7 @@ final class ResolverTest extends TestCase {
 	 */
 	private static function wharfside( array $facts = [ 'canonical' => [ 'Wharfside' ], 'alias' => [ 'Kaipara Wharf Press', 'Wharfside NZ' ], 'domain' => [ 'wharfside.co.nz' ] ] ): array {
 		return [
-			self::entity( 'organization:atomic-5121', 'Atomic site 5121', $facts ),
+			self::entity( 'organization:site-5121', 'Site 5121', $facts ),
 			self::entity( 'organization:wharfside', 'Wharfside' ),
 			self::rejected( 'organization:wharfside' ),
 		];

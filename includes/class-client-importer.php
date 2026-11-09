@@ -2,7 +2,7 @@
 /**
  * Client_Importer: reconcile a parsed clients CSV against the client roster.
  *
- * Pure logic: depends only on a Client_Roster. Upserts by atomic_site_id,
+ * Pure logic: depends only on a Client_Roster. Upserts by site_id,
  * marks churn for active ids absent from the CSV, reactivates returning
  * clients, leaves alone a client a curator ended, then commits the roster's
  * changes once.
@@ -19,7 +19,7 @@ final class Client_Importer {
 	public function __construct( private Client_Roster $roster ) {}
 
 	/**
-	 * @param array<int,array{atomic_site_id:string,domain_name:string,created:string}> $rows
+	 * @param array<int,array{site_id:string,domain_name:string,created:string}> $rows
 	 * @param string $today YYYY-MM-DD.
 	 * @return array{created:int,updated:int,reactivated:int,churned:int,held:int,total_in_csv:int} Counts are
 	 *         disjoint: an existing row that was churned is counted only in `reactivated`, never
@@ -39,9 +39,9 @@ final class Client_Importer {
 		}
 
 		foreach ( $rows as $row ) {
-			$id             = $row['atomic_site_id'];
+			$id             = $row['site_id'];
 			$csv_ids[ $id ] = true;
-			$existing       = $this->roster->find_by_atomic_id( $id );
+			$existing       = $this->roster->find_by_site_id( $id );
 			if ( null === $existing ) {
 				$this->roster->create( $row, $today );
 				++$created;
@@ -51,7 +51,7 @@ final class Client_Importer {
 				++$held;
 				continue;
 			}
-			$this->roster->update_atomic_fields( $id, $row, $today );
+			$this->roster->update_site_fields( $id, $row, $today );
 			if ( 'churned' === $existing['status'] ) {
 				$this->roster->set_active( $id, $today );
 				++$reactivated;

@@ -10,8 +10,13 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Intel_Event;
+use Newspack_Intelligence\Intelligence_Health;
 use Newspack_Intelligence\Restricted_Settings;
+use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\Capabilities;
+use Newspack_Nodes\Config;
+use Newspack_Nodes\Topology_Analyzer;
+use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
 use function Newspack_Intelligence\enqueue_intelligence_assets;
 use function Newspack_Intelligence\register_intelligence_admin_page;
@@ -54,6 +59,8 @@ final class IntelligencePageTest extends TestCase {
 			$_POST
 		);
 		self::forget_users();
+		Topology_Registry::reset();
+		Topology_Analyzer::reset_caches();
 		parent::tearDown();
 	}
 
@@ -168,7 +175,7 @@ final class IntelligencePageTest extends TestCase {
 					[ 'field' => 'sources', 'option' => 'source', 'values' => null ],
 				],
 			],
-			\array_diff_key( $vocabulary, [ 'linkRoleWords' => 0, 'methodWords' => 0, 'markWords' => 0 ] )
+			\array_diff_key( $vocabulary, [ 'linkRoleWords' => 0, 'methodWords' => 0, 'markWords' => 0, 'roleWords' => 0, 'identifierWords' => 0 ] )
 		);
 		$this->assertSame( [ 'wp-components', 'newspack-nodes-graph' ], $GLOBALS['_enqueued_styles']['newspack-intelligence']['deps'] );
 	}
@@ -212,7 +219,77 @@ final class IntelligencePageTest extends TestCase {
 		$this->assertSame( 'The publisher', $vocabulary['linkRoleWords']['publisher'] );
 		$this->assertSame( 'a similar name', $vocabulary['methodWords']['ner_fuzzy'] );
 		$this->assertSame( Intel_Event::MARKS, \array_keys( $vocabulary['markWords'] ) );
+		$this->assertSame( Intel_Event::ROLES, \array_keys( $vocabulary['roleWords'] ) );
+		$this->assertSame( Intel_Event::IDENTIFIER_KINDS, \array_keys( $vocabulary['identifierWords'] ) );
+		$this->assertSame( 'Former client', $vocabulary['roleWords']['former_client'] );
+		$this->assertSame( 'Product of the organization', $vocabulary['roleWords']['operator_product'] );
+		$this->assertSame( 'Site ID', $vocabulary['identifierWords']['site_id'] );
 		$this->assertSame( 'LinkedIn', $vocabulary['markWords']['linkedin'] );
+	}
+
+	/** The page names the operator the running topology's LLM_Call node names, else generic wording. */
+	public function test_page_localizes_the_operator(): void {
+		Capabilities::$session_scope = Capabilities::READ;
+		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+		$this->assertSame( [ 'name' => 'the organization', 'heading' => 'The organization' ], $this->localized( 'newspack-intelligence' )['operator'], 'no topology runs' );
+
+		$dir = $this->make_temp_dir( 'intel-page-topologies-' );
+		\file_put_contents( "{$dir}/heron-page.tsl", "make_node Intel_Event_Writer intel:writer intel:items intel:ontology intel:watches intel:asks\nmake_node LLM_Call intel:llm ai-relay-4417\ncmd intel:llm:config set_operator \"Quillmere Cooperative\"\nsecure\n" );
+		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
+		Topology_Registry::register_user_dir( $dir );
+		\update_option( 'newspack_nodes_topologies', [ 'heron-page' ] );
+		Config::reset();
+		Bootstrap::forget_node_tables();
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+
+		$data = $this->localized( 'newspack-intelligence' );
+		$this->assertSame( [ 'name' => 'Quillmere Cooperative', 'heading' => 'Quillmere Cooperative' ], $data['operator'] );
+		$this->assertSame( 'Product of Quillmere Cooperative', $data['vocabulary']['roleWords']['operator_product'] );
+	}
+
+	/**
+	 * A topology whose graph will not read still renders the page, under the
+	 * generic name, while the health strip's slices name the line at fault.
+	 *
+	 * @dataProvider unreadable_llm_lines
+	 *
+	 * @param string $line The LLM_Call config line that will not read.
+	 * @param string $why  What the health strip names.
+	 */
+	public function test_a_graph_that_will_not_read_renders_the_page_and_the_strip_names_it( string $line, string $why ): void {
+		Capabilities::$session_scope = Capabilities::READ;
+		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];
+		$dir                         = $this->make_temp_dir( 'intel-page-unread-' );
+		\file_put_contents( "{$dir}/heron-unread.tsl", "make_node Intel_Event_Writer intel:writer intel:items intel:ontology intel:watches intel:asks\nmake_node LLM_Call intel:llm ai-relay-4417\n{$line}\nsecure\n" );
+		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
+		Topology_Registry::register_user_dir( $dir );
+		\update_option( 'newspack_nodes_topologies', [ 'heron-unread' ] );
+		Config::reset();
+		Bootstrap::forget_node_tables();
+
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+
+		$this->assertSame( [ 'name' => 'the organization', 'heading' => 'The organization' ], $this->localized( 'newspack-intelligence' )['operator'] );
+		try {
+			Intelligence_Health::answer( [ 'what' => 'extraction' ] );
+			$this->fail( 'the health strip answered past a line that will not read' );
+		} catch ( \RuntimeException | \InvalidArgumentException $e ) {
+			$this->assertStringContainsString( 'heron-unread will not read', $e->getMessage() );
+			$this->assertStringContainsString( $why, $e->getMessage() );
+		}
+	}
+
+	/**
+	 * LLM_Call lines a graph cannot read, each beside what the strip names.
+	 *
+	 * @return array<string,array{string,string}>
+	 */
+	public static function unreadable_llm_lines(): array {
+		return [
+			'an operator with no name' => [ 'cmd intel:llm:config set_operator', 'missing required argument' ],
+			'a non-http api url'       => [ 'cmd intel:llm:config set_api_url ftp://relay-4417.example', 'ftp://relay-4417.example' ],
+		];
 	}
 
 	public function test_the_bundle_stamps_this_plugins_version_in_the_header(): void {

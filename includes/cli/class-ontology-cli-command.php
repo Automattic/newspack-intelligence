@@ -211,12 +211,15 @@ class Ontology_CLI_Command {
 	 * with `wp nodes stop`, deletes the `intel-graph` Row_Table's files and
 	 * the cursor of every Consumer the projector checkpoints with, then
 	 * releases the hold with `wp nodes start`, so the projector replays every
-	 * stream from its oldest segment. Each command runs in its own process,
-	 * so whatever it throws reaches this one as an exit code and stderr. A
-	 * fleet that does not stop has nothing deleted under it, and the hold is
-	 * released all the same. The streams and every other
-	 * reader's cursor stay. Run it after an upgrade that changes the graph
-	 * schema's version, which leaves the projection empty until it runs.
+	 * stream from its oldest segment. A source opens no pass until every
+	 * projector reader has read its stream to the end it held when the pass
+	 * came due, so nothing the empty projection lacks is recorded again.
+	 * Each command runs in its own process, so whatever it throws reaches
+	 * this one as an exit code and stderr. A fleet that does not stop has
+	 * nothing deleted under it, and the hold is released all the same. The
+	 * streams and every other reader's cursor stay. Run it after an upgrade
+	 * that changes the graph schema's version, which leaves the projection
+	 * empty until it runs.
 	 *
 	 * ## EXAMPLES
 	 *
@@ -233,7 +236,7 @@ class Ontology_CLI_Command {
 		if ( self::refused_root( 'ontology reproject' ) ) {
 			return;
 		}
-		$table   = Bootstrap::row_table( Intel_Graph_Row_Schema::class );
+		$table   = Bootstrap::resolve_row_table( Intel_Graph_Row_Schema::class );
 		$cursors = \array_values( \array_unique( \array_column( Projector_Node::readers(), 'offsets' ) ) );
 		$base    = Config::get_base_directory();
 		$stopped = false;
@@ -260,7 +263,7 @@ class Ontology_CLI_Command {
 			\WP_CLI::error( \trim( "The fleet did not stop, so reproject deleted nothing; the hold is released. {$why}" ) );
 			return;
 		}
-		\WP_CLI::success( \sprintf( 'Deleted the %s projection and %d projector cursors; the projector replays every stream.', $table['name'], \count( $cursors ) ) );
+		\WP_CLI::success( \sprintf( 'Deleted the %s projection and %d projector cursors; the projector replays every stream, and sources wait for it.', $table['name'], \count( $cursors ) ) );
 	}
 
 	/**

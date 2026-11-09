@@ -185,6 +185,17 @@ final class EvalCliCommandTest extends TestCase {
 		$this->assertSame( 'The Ledger made its reader app available.', self::state_line( $body['state'], 'Summary: ' ) );
 	}
 
+	/** The eval states what the topology's LLM_Call says the deployment tracks, as the node's own decisions do. */
+	public function test_eval_states_what_the_topology_says_it_tracks(): void {
+		$tracks = 'the heron wire, the kite desks Quillmere supplies, and coastal birding';
+		\file_put_contents( Topology_Registry::user_dir() . '/heron-eval.tsl', \str_replace( "secure\n", "cmd intel:llm:config set_tracks \"{$tracks}\"\nsecure\n", self::TOPOLOGY ) );
+		Topology_Analyzer::reset_caches();
+
+		( new Eval_CLI_Command() )( [ $this->labels( [ self::LAUNCHES[0] ] ) ], [] );
+
+		$this->assertStringEndsWith( "\nAsked by: Newspack Intelligence, a plugin built on newspack-nodes, which tracks {$tracks}.", $this->bodies()[0]['state'] );
+	}
+
 	public function test_eval_refuses_a_label_naming_no_item(): void {
 		$labels = [ self::LAUNCHES[0], [ 'item_key' => 'linear:HERON-99', 'kind' => 'launch', 'fits_kind' => true ] ];
 

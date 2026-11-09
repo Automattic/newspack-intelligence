@@ -779,7 +779,7 @@ XML;
 	}
 
 	/** The Kestrel, a client the roster named by its domain. */
-	private const KESTREL = 'organization:atomic-880044';
+	private const KESTREL = 'organization:site-880044';
 
 	private const KESTREL_FEED = 'https://kestrelbay.example/feed/';
 
@@ -867,12 +867,12 @@ XML;
 	 * domain's registrable label, its spacing and case aside.
 	 */
 	public function test_a_title_spelling_the_domains_label_names_the_client(): void {
-		$node = $this->titled_clients( 'organization:atomic-880055', 'harborgazette.example' );
+		$node = $this->titled_clients( 'organization:site-880055', 'harborgazette.example' );
 
 		$this->tick( $node );
 		$this->complete( self::GAZETTE_FEED, self::titled_rss( 'Harbor Gazette', self::GAZETTE ) );
 
-		$this->assertSame( [ [ 'organization:atomic-880055', 'canonical', 'Harbor Gazette' ] ], self::brief_names( $this->names() ) );
+		$this->assertSame( [ [ 'organization:site-880055', 'canonical', 'Harbor Gazette' ] ], self::brief_names( $this->names() ) );
 	}
 
 	/** @return array<string,array{0:string,1:string}> */
@@ -891,12 +891,12 @@ XML;
 	 * @dataProvider titles_with_an_article_or_connecting_words
 	 */
 	public function test_a_title_with_an_article_or_connecting_words_names_the_client( string $domain, string $title ): void {
-		$node = $this->titled_clients( 'organization:atomic-880088', $domain );
+		$node = $this->titled_clients( 'organization:site-880088', $domain );
 
 		$this->tick( $node );
 		$this->complete( "https://{$domain}/feed/", self::titled_rss( $title, "https://{$domain}" ) );
 
-		$this->assertSame( [ [ 'organization:atomic-880088', 'canonical', $title ] ], self::brief_names( $this->names() ) );
+		$this->assertSame( [ [ 'organization:site-880088', 'canonical', $title ] ], self::brief_names( $this->names() ) );
 	}
 
 	/**
@@ -919,22 +919,22 @@ XML;
 
 	#[\PHPUnit\Framework\Attributes\DataProvider( 'titles_with_a_tagline' )]
 	public function test_a_tagline_after_a_separator_is_not_written( string $title, string $written ): void {
-		$node = $this->titled_clients( 'organization:atomic-880099', 'wrensupper.example' );
+		$node = $this->titled_clients( 'organization:site-880099', 'wrensupper.example' );
 
 		$this->tick( $node );
 		$this->complete( 'https://wrensupper.example/feed/', self::titled_rss( $title, 'https://wrensupper.example' ) );
 
-		$this->assertSame( [ [ 'organization:atomic-880099', 'canonical', $written ] ], self::brief_names( $this->names() ) );
+		$this->assertSame( [ [ 'organization:site-880099', 'canonical', $written ] ], self::brief_names( $this->names() ) );
 	}
 
 	/** A title whose site name follows its separator is written whole, since its lead part names no site. */
 	public function test_a_title_naming_the_site_after_its_separator_is_written_whole(): void {
-		$node = $this->titled_clients( 'organization:atomic-880100', 'wrensupper.example' );
+		$node = $this->titled_clients( 'organization:site-880100', 'wrensupper.example' );
 
 		$this->tick( $node );
 		$this->complete( 'https://wrensupper.example/feed/', self::titled_rss( 'Recipes: Wren Supper', 'https://wrensupper.example' ) );
 
-		$this->assertSame( [ [ 'organization:atomic-880100', 'canonical', 'Recipes: Wren Supper' ] ], self::brief_names( $this->names() ) );
+		$this->assertSame( [ [ 'organization:site-880100', 'canonical', 'Recipes: Wren Supper' ] ], self::brief_names( $this->names() ) );
 	}
 
 	/**
@@ -972,7 +972,7 @@ XML;
 	 * @dataProvider titles_off_the_labels_word_boundaries
 	 */
 	public function test_a_label_off_a_word_boundary_names_no_one( string $domain, string $title ): void {
-		$node = $this->titled_clients( 'organization:atomic-880077', $domain );
+		$node = $this->titled_clients( 'organization:site-880077', $domain );
 
 		$this->tick( $node );
 		$this->complete( "https://{$domain}/feed/", self::titled_rss( $title, "https://{$domain}" ) );
@@ -982,7 +982,7 @@ XML;
 
 	/** A label shorter than the resolver's least stem is too common a word to vouch for a title. */
 	public function test_a_short_label_names_no_one(): void {
-		$node = $this->titled_clients( 'organization:atomic-880066', 'abq.example' );
+		$node = $this->titled_clients( 'organization:site-880066', 'abq.example' );
 
 		$this->tick( $node );
 		$this->complete( 'https://abq.example/feed/', self::titled_rss( 'ABQ Tide Desk', 'https://abq.example' ) );

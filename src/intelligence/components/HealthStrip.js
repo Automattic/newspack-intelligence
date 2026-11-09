@@ -748,8 +748,18 @@ const STATES = {
 			word: __( 'heuristic', 'newspack-intelligence' ),
 			tone: 'is-warning',
 			fault: true,
-			text: ( { vault_group: vaultGroup } ) =>
-				vaultGroup
+			text: ( { vault_group: vaultGroup, unset } ) => {
+				if ( unset?.length ) {
+					return sprintf(
+						/* translators: %s: the model-call node's setters left unset, comma-separated. */
+						__(
+							'Extracting with the heuristic only: the AI proxy is not configured; the lists file sets no %s.',
+							'newspack-intelligence'
+						),
+						unset.join( ', ' )
+					);
+				}
+				return vaultGroup
 					? sprintf(
 							/* translators: %s: the Vault group the model calls take their credential from. */
 							__(
@@ -761,16 +771,25 @@ const STATES = {
 					: __(
 							'Extracting with the heuristic only: the AI proxy has no Vault entry.',
 							'newspack-intelligence'
-					  ),
-			fix: ( extraction, ctx ) => (
-				<VaultFix
-					can={ ctx.canManage }
-					action={ __(
-						'add its Vault entry',
-						'newspack-intelligence'
-					) }
-				/>
-			),
+					  );
+			},
+			fix: ( { unset }, ctx ) =>
+				unset?.length ? (
+					<Step
+						action={ __(
+							'set them on intel:llm in the site’s lists file',
+							'newspack-intelligence'
+						) }
+					/>
+				) : (
+					<VaultFix
+						can={ ctx.canManage }
+						action={ __(
+							'add its Vault entry',
+							'newspack-intelligence'
+						) }
+					/>
+				),
 		},
 		unknown: {
 			...UNKNOWN,

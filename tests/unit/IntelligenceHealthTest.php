@@ -68,13 +68,13 @@ final class IntelligenceHealthTest extends TestCase {
 
 	/**
 	 * Point the workstation's ContextA8C sources at `$dir`, as a site's own
-	 * copy of their part, shadowing the shipped one, would; with
+	 * copy of their part, shadowing the fixture's, would; with
 	 * `$linear_unbound`, its `linear` line names no token dir at all.
 	 */
 	private function relay_at( string $dir, bool $linear_unbound = false ): void {
 		$parts   = $this->make_temp_dir( 'intelligence-health-relay-' );
-		$shipped = (string) \file_get_contents( \dirname( __DIR__, 2 ) . '/topologies/newspack-intelligence-context-a8c.tsl.php' );
-		$part    = (string) \preg_replace( '/^(make_node Context_A8C_\S+ \S+ \S+) \/mcp-auth /m', "\$1 {$dir} ", $shipped, -1, $count );
+		$fixture = (string) \file_get_contents( \dirname( __DIR__ ) . '/fixtures/user-topologies/newspack-intelligence-context-a8c.tsl' );
+		$part    = (string) \preg_replace( '/^(make_node Context_A8C_\S+ \S+ \S+ \S+) \/relay-auth /m', "\$1 {$dir} ", $fixture, -1, $count );
 		$this->assertSame( 4, $count );
 		if ( $linear_unbound ) {
 			$part = (string) \preg_replace( '/^(make_node Context_A8C_Linear linear internal) .*$/m', '$1', $part, -1, $count );
@@ -121,9 +121,9 @@ final class IntelligenceHealthTest extends TestCase {
 			$this->ci->dispatch( 'health', [ 'collection' ] );
 			$this->fail( 'collection answered past a line that will not bind' );
 		} catch ( \InvalidArgumentException $e ) {
-			$this->assertSame( 'newspack-intelligence-workstation: Context_A8C_Linear linear: missing required argument: auth_dir', $e->getMessage() );
-			$this->assertSame( 'Context_A8C_Linear linear: missing required argument: auth_dir', $e->getPrevious()?->getMessage() );
-			$this->assertSame( 'missing required argument: auth_dir', $e->getPrevious()->getPrevious()?->getMessage() );
+			$this->assertSame( 'newspack-intelligence-workstation: Context_A8C_Linear linear: missing required argument: mcp_url', $e->getMessage() );
+			$this->assertSame( 'Context_A8C_Linear linear: missing required argument: mcp_url', $e->getPrevious()?->getMessage() );
+			$this->assertSame( 'missing required argument: mcp_url', $e->getPrevious()->getPrevious()?->getMessage() );
 		}
 	}
 
@@ -297,7 +297,7 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->activate( 'newspack-intelligence-workstation' );
 
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessage( 'Context_A8C_Linear linear: missing required argument: auth_dir' );
+		$this->expectExceptionMessage( 'Context_A8C_Linear linear: missing required argument: mcp_url' );
 		$this->ci->dispatch( 'health', [ 'sources' ] );
 	}
 
@@ -307,7 +307,7 @@ final class IntelligenceHealthTest extends TestCase {
 	 * answers the idle it published itself.
 	 */
 	public function test_a_context_a8c_source_reads_its_tier_by_name(): void {
-		$this->collect( 'make_node Context_A8C_Linear cormorant-linear internal /tmp/mcp-auth-7413' );
+		$this->collect( 'make_node Context_A8C_Linear cormorant-linear internal https://mcp-relay.example/heron/v1 /tmp/mcp-auth-7413' );
 		$idle = [ 'state' => 'idle', 'last_ok_at' => null, 'last_error' => null, 'failing_since' => null, 'failed' => null, 'requests' => null, 'reason' => 'not signed in to ContextA8C: no token in /tmp/mcp-auth-7413' ];
 		$this->snapshot( 'cormorant-linear', $idle );
 
@@ -526,6 +526,18 @@ final class IntelligenceHealthTest extends TestCase {
 		$this->assertSame( $published + [ 'queue' => null ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
 	}
 
+	/**
+	 * An extractor whose transport nobody configured reports heuristic and
+	 * the setters left unset, which every reader reads: they name no
+	 * credential, unlike the Vault group a reader below manage never sees.
+	 */
+	public function test_extraction_reports_an_unconfigured_transport_to_every_reader(): void {
+		$this->snapshot( 'extractor', [ 'mode' => 'heuristic', 'vault_group' => 'ai-relay-7731', 'unset' => [ 'set_api_url', 'set_model' ], 'last_ok_at' => null, 'last_error' => null, 'failing_since' => null ] );
+		\Newspack_Nodes\Capabilities::$session_scope = \Newspack_Nodes\Capabilities::READ;
+
+		$this->assertSame( [ 'mode' => 'heuristic', 'unset' => [ 'set_api_url', 'set_model' ], 'last_ok_at' => null, 'failing_since' => null, 'queue' => null ], $this->ci->dispatch( 'health', [ 'extraction' ] ) );
+	}
+
 	/** The model-call queue rides beside the extractor's snapshot, each priority class and the calls in flight. */
 	public function test_extraction_carries_the_model_call_queue(): void {
 		$published = [ 'mode' => 'call', 'vault_group' => 'ai-proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => null, 'failing_since' => null ];
@@ -598,7 +610,7 @@ final class IntelligenceHealthTest extends TestCase {
 	 * text.
 	 */
 	public function test_a_reader_below_manage_sees_no_credential_vault_group_or_error(): void {
-		$this->collect( 'make_node Linear_Source kestrel-linear internal linear-t7', 'make_node Feed_Source grebe-feed public', 'make_node Context_A8C_Linear cormorant-linear internal /tmp/mcp-auth-7413' );
+		$this->collect( 'make_node Linear_Source kestrel-linear internal linear-t7', 'make_node Feed_Source grebe-feed public', 'make_node Context_A8C_Linear cormorant-linear internal https://mcp-relay.example/heron/v1 /tmp/mcp-auth-7413' );
 		$this->snapshot( 'grebe-feed', [ 'state' => 'failing', 'last_ok_at' => 1792470021, 'last_error' => 'HTTP 404 https://grebe-5519.example/feed/', 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 5 ] );
 		$this->snapshot( 'cormorant-linear', [ 'state' => 'idle', 'reason' => 'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host' ] );
 		$this->snapshot( 'extractor', [ 'mode' => 'call', 'vault_group' => 'ai-proxy-k9', 'last_ok_at' => 1792491357, 'last_error' => 'HTTP 502 https://proxy.test/v1', 'failing_since' => 1792493000 ] );

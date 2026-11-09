@@ -115,8 +115,8 @@ final class Graph_Query {
 	/** The item kind reporting that a client has left or is leaving. */
 	public const CHURNED = 'churned';
 
-	/** The role an entity holds while it is Newspack's own work. */
-	public const NEWSPACK_PRODUCT = 'newspack_product';
+	/** The role an entity holds while it is the operator's own work. */
+	public const OPERATOR_PRODUCT = 'operator_product';
 
 	/** The item kinds a client's status counts, in the order it answers them. */
 	public const STATUS_KINDS = [ self::CHURNED, 'churn_signal', 'feature_request', 'complaint' ];

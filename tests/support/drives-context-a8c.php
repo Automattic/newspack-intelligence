@@ -18,7 +18,7 @@ require_once __DIR__ . '/drives-curl.php';
 trait Drives_Context_A8C {
 	use Drives_Curl;
 
-	private const MCP = Context_A8C_Source_Node::MCP_URL;
+	private const MCP = 'https://mcp-relay.example/heron/v1';
 
 	private const TOKEN = Context_A8C_Source_Node::TOKEN_URL;
 

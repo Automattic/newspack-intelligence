@@ -695,7 +695,8 @@ final class ExtractorNodeTest extends TestCase {
 	public static function failed_gates(): array {
 		return [
 			'a bad gateway'      => [ [ 'error' => 'HTTP 502 https://proxy.example/systemone' ], 'HTTP 502 https://proxy.example/systemone' ],
-			'an unlent group'    => [ [ 'unlent' => 'ai-proxy-test-9' ], 'group ai-proxy-test-9 lends no credential' ],
+			'an unlent group'    => [ [ 'unlent' => 'ai-proxy-test-9' ], 'the ai-proxy-test-9 Vault group lends no credential' ],
+			'an unset transport' => [ [ 'unlent' => 'ai-proxy-test-9', 'unset' => [ 'set_decision_model' ] ], 'the model call lacks set_decision_model' ],
 			'a noul not a float' => [ [ 'decision' => [ 'about_publisher' => 'high' ] ], 'it answers a question with nothing that reads' ],
 		];
 	}
@@ -1171,7 +1172,7 @@ final class ExtractorNodeTest extends TestCase {
 	public function test_a_claim_object_spelling_a_stoplisted_name_carries_no_key(): void {
 		$this->seed(
 			self::entity( self::GAZETTE, 'The Harbor Gazette' ),
-			self::entity( 'organization:atomic-5121', 'Atomic site 5121', [ 'canonical' => [ 'Wharfside' ] ] ),
+			self::entity( 'organization:site-5121', 'Site 5121', [ 'canonical' => [ 'Wharfside' ] ] ),
 			self::entity( 'organization:wharfside', 'Wharfside' ),
 			self::rejected( 'organization:wharfside' )
 		);
@@ -1189,18 +1190,18 @@ final class ExtractorNodeTest extends TestCase {
 	/** A client's own site naming it by a stoplisted name still asserts the claim, through its identifier link. */
 	public function test_a_stoplisted_name_still_resolves_an_entity_the_item_links_by_identifier(): void {
 		$this->seed(
-			self::entity( 'organization:atomic-5121', 'Atomic site 5121', [ 'canonical' => [ 'Wharfside' ] ] ),
+			self::entity( 'organization:site-5121', 'Site 5121', [ 'canonical' => [ 'Wharfside' ] ] ),
 			self::entity( 'organization:wharfside', 'Wharfside' ),
 			self::rejected( 'organization:wharfside' ),
 			self::entity( self::MESA, 'Mesa Courier' )
 		);
 		$this->answer( (string) \json_encode( [ 'summary' => 'Wharfside partners.', 'kind' => 'partnership', 'claims' => [ [ 'subject' => 'Wharfside', 'predicate' => 'partners_with', 'object' => 'Mesa Courier' ] ] ] ) );
 
-		$this->extractor->fill( self::resolved( [ [ 'entity_key' => 'organization:atomic-5121', 'role' => 'publisher', 'method' => 'identifier', 'confidence' => 1.0, 'state' => 'asserted' ] ], [] ) );
+		$this->extractor->fill( self::resolved( [ [ 'entity_key' => 'organization:site-5121', 'role' => 'publisher', 'method' => 'identifier', 'confidence' => 1.0, 'state' => 'asserted' ] ], [] ) );
 
 		$claims = \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'claim_asserted' === $e['event'] ) );
 		$this->assertSame(
-			[ [ 'organization:atomic-5121', 'partners_with', self::MESA ] ],
+			[ [ 'organization:site-5121', 'partners_with', self::MESA ] ],
 			\array_map( static fn ( array $e ): array => [ $e['subject_key'], $e['predicate'], $e['object_key'] ], $claims )
 		);
 	}
@@ -1740,10 +1741,11 @@ final class ExtractorNodeTest extends TestCase {
 		$llm = Core::node( 'intel:llm' );
 		$this->assertInstanceOf( LLM_Call_Node::class, $llm );
 		$this->assertSame(
-			[ 'ai-proxy', 'https://public-api.wordpress.com/wpcom/v2/ai-api-proxy/v1', 'gpt-oss-120b', 'decision-lux-9b', 'newspack-intelligence', 4 ],
+			[ 'ai-proxy', '', '', '', '', 4 ],
 			[ $this->read_private( $llm, 'vault_group' ), $this->read_private( $llm, 'api_url' ), $this->read_private( $llm, 'model' ), $this->read_private( $llm, 'decision_model' ), $this->read_private( $llm, 'feature' ), $this->read_private( $llm, 'concurrency' ) ]
 		);
 		$this->assertSame( [ [], '' ], [ $this->read_private( $extractor, 'profiles' ), $this->read_private( $extractor, 'audience' ) ], 'a deployment supplies the profile and the audience' );
+		$this->assertSame( [ '', '' ], [ $this->read_private( $llm, 'operator' ), $this->read_private( $llm, 'tracks' ) ], 'a deployment supplies the operator and its model transport' );
 		$this->assertNull( Core::node( 'intel:resolved:null' ) );
 	}
 

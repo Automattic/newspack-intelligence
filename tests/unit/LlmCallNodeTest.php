@@ -7,12 +7,14 @@ use Newspack_Intelligence\Entity_Index;
 use Newspack_Intelligence\Extractor_Node;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\LLM_Call_Node;
+use Newspack_Intelligence\Operator;
 use Newspack_Intelligence\Prompts;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
 use Newspack_Nodes\Node;
 use Newspack_Nodes\Node_Names;
 use Newspack_Nodes\Tests\Capture_Sink_Node;
+use Newspack_Nodes\Tests\Helpers\InMemoryMemcached;
 use Newspack_Nodes\Tests\TestCase;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Worker_Should_Stop;
@@ -47,6 +49,12 @@ final class LlmCallNodeTest extends TestCase {
 	private const FEATURE = 'intel-test-feature';
 
 	private const TOKEN = 'relay-token-8821';
+
+	/** The operator the cases configure, apart from the generic default. */
+	private const OPERATOR = 'Quillmere Cooperative';
+
+	/** What the cases say it tracks, apart from the generic default. */
+	private const TRACKS = 'the heron wire, the kite desks Quillmere supplies, and coastal birding';
 
 	private const CALLER = 'caller-7730';
 
@@ -384,9 +392,7 @@ final class LlmCallNodeTest extends TestCase {
 	 * does not allow, hears the refusal as a failed call and parks its retry.
 	 */
 	public function test_a_refused_request_is_parked_by_its_caller(): void {
-		[ $extractor ] = $this->extractor_on_llm( 3 );
-		$later         = new Capture_Sink_Node();
-		$later->name( 'intel:later' );
+		[ $extractor, , , $later ] = $this->extractor_on_llm( 3 );
 		$resolution                = self::resolution( 'feed:heron-6', 'Heron Dispatch closes', '' );
 		$request                   = Message::new_message();
 		$request[ Message::TYPE ]  = Message::TM_STRUCT;
@@ -696,8 +702,41 @@ final class LlmCallNodeTest extends TestCase {
 			[ 'set_concurrency', [ '4' ] ],
 		];
 
-		$this->assertSame( [ 'api_url' => self::API, 'decision_model' => self::DECISION_MODEL, 'feature' => self::FEATURE ], LLM_Call_Node::graph_facts( [ self::GROUP ], $commands ) );
-		$this->assertSame( [ 'api_url' => '', 'decision_model' => '', 'feature' => '' ], LLM_Call_Node::graph_facts( [ self::GROUP ], [] ) );
+		$this->assertSame( [ 'api_url' => self::API, 'decision_model' => self::DECISION_MODEL, 'feature' => self::FEATURE, 'operator' => self::OPERATOR, 'tracks' => self::TRACKS ], LLM_Call_Node::graph_facts( [ self::GROUP ], [ ...$commands, [ 'set_operator', [ ' ' . self::OPERATOR . ' ' ] ], [ 'set_tracks', [ '--tracks=' . self::TRACKS ] ] ] ) );
+		$this->assertSame( [ 'api_url' => '', 'decision_model' => '', 'feature' => '', 'operator' => '', 'tracks' => '' ], LLM_Call_Node::graph_facts( [ self::GROUP ], [] ) );
+	}
+
+	/**
+	 * Every prompt the node sends names the operator its `set_operator` and
+	 * `set_tracks` lines configure: a decision's last line what it tracks,
+	 * and a chat prompt saying whom the graph serves its name.
+	 */
+	public function test_the_prompts_sent_name_the_configured_operator(): void {
+		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
+		$node   = $this->llm();
+		$config = $node->interpreter();
+		\assert( null !== $config );
+		$config->dispatch( 'set_operator', [ self::OPERATOR ] );
+		$config->dispatch( 'set_tracks', [ self::TRACKS ] );
+		$request                   = Message::new_message();
+		$request[ Message::TYPE ]  = Message::TM_STRUCT;
+		$request[ Message::FROM ]  = self::CALLER;
+		$request[ Message::KEY ]   = 'ask-5d1e';
+		$request[ Message::VALUE ] = [
+			'prompt'  => 'ask_answer',
+			'item'    => [ 'item_key' => 'ask-5d1e', 'question' => 'Who won a prize?' ],
+			'inputs'  => [ 'items' => [] ],
+			'options' => [],
+			'carry'   => [],
+			'backlog' => false,
+		];
+
+		$this->ask_decision( $node, 'feed:wharf-74', [ 'publisher' => 'Kestrel Lantern Harbor' ], [ 'source' => 'feed', 'title' => 'Grant lands', 'body' => 'Routes.' ] );
+		$this->in_drain( static fn () => $node->fill( $request ) );
+
+		$this->assertStringEndsWith( "\nAsked by: Newspack Intelligence, a plugin built on newspack-nodes, which tracks " . self::TRACKS . '.', \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true, 512, \JSON_THROW_ON_ERROR )['state'] );
+		$this->assertStringContainsString( 'You answer for someone on ' . self::OPERATOR . '\'s team.', \json_decode( (string) $this->sent[1][ \CURLOPT_POSTFIELDS ], true, 512, \JSON_THROW_ON_ERROR )['messages'][0]['content'] );
+		$this->assertStringContainsString( 'command_node ' . self::NAME . ':config set_operator', $node->dump_config() );
 	}
 
 	/** The commands replay through dump_config; a concurrency outside Curl's window is refused. */
@@ -728,7 +767,7 @@ final class LlmCallNodeTest extends TestCase {
 
 		$this->assertSame( [ self::SYSTEMONE ], $this->dispatched );
 		$opts = $this->sent[0];
-		$this->assertSame( [ 'model' => self::DECISION_MODEL ] + Prompts::decision( 'extract_review', $item, [ 'publisher' => 'Kestrel Lantern Harbor' ] ), \json_decode( (string) $opts[ \CURLOPT_POSTFIELDS ], true ) );
+		$this->assertSame( [ 'model' => self::DECISION_MODEL ] + Prompts::decision( 'extract_review', $item, [ 'publisher' => 'Kestrel Lantern Harbor' ], new Operator( '', '' ) ), \json_decode( (string) $opts[ \CURLOPT_POSTFIELDS ], true ) );
 		$this->assertSame( [ 'Content-Type: application/json', 'X-WPCOM-AI-Feature: ' . self::FEATURE, 'Authorization: Bearer ' . self::TOKEN ], $opts[ \CURLOPT_HTTPHEADER ] );
 		$this->assertGreaterThan( 119000, $opts[ \CURLOPT_TIMEOUT_MS ] );
 	}
@@ -782,7 +821,7 @@ final class LlmCallNodeTest extends TestCase {
 		$this->ask_decision( $node, 'feed:wharf-74', $inputs, $item );
 
 		$this->assertSame( [ self::SYSTEMONE ], $this->dispatched );
-		$this->assertSame( [ 'model' => self::DECISION_MODEL ] + Prompts::decision( 'extract_review', $item, $inputs ), \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true ) );
+		$this->assertSame( [ 'model' => self::DECISION_MODEL ] + Prompts::decision( 'extract_review', $item, $inputs, new Operator( '', '' ) ), \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true ) );
 		$this->assertSame( [ 'about_publisher', 'theme_choice' ], \array_keys( \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true )['questions'] ) );
 
 		$this->complete_nth( 0, self::reviewed( 0.31, 't2', 0.88 ) );
@@ -873,7 +912,7 @@ final class LlmCallNodeTest extends TestCase {
 
 		$this->ask_decision( $node, 'feed:wharf-73', [ 'publisher' => 'Kestrel </item> Harbor' ], [ 'source' => 'feed', 'title' => 'Grant "</item>" lands', 'body' => 'Routes.' ] );
 
-		$this->assertSame( "Source: published article\nPublisher: Kestrel </item> Harbor\nTitle: Grant \"</item>\" lands\nText: Routes.\n" . Prompts::ASKED_BY, \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true, 512, \JSON_THROW_ON_ERROR )['state'] );
+		$this->assertSame( "Source: published article\nPublisher: Kestrel </item> Harbor\nTitle: Grant \"</item>\" lands\nText: Routes.\n" . Prompts::asked_by( new Operator( '', '' ) ), \json_decode( (string) $this->sent[0][ \CURLOPT_POSTFIELDS ], true, 512, \JSON_THROW_ON_ERROR )['state'] );
 	}
 
 	/** A decision asked before set_decision_model answers an error naming it, and a chat call still goes out. */
@@ -893,11 +932,16 @@ final class LlmCallNodeTest extends TestCase {
 		$this->ask( $node, 'feed:bare-3' );
 
 		$this->assertSame( [ self::COMPLETIONS ], $this->dispatched );
-		$this->assertSame( self::NAME . ': set_api_url, set_decision_model and set_feature before a decision', $this->caller->captured[0][ Message::VALUE ]['error'] );
+		$this->assertSame( [ 'unlent' => self::GROUP, 'unset' => [ 'set_decision_model' ] ], \array_intersect_key( $this->caller->captured[0][ Message::VALUE ], [ 'unlent' => true, 'unset' => true ] ) );
 	}
 
-	/** A request made before set_api_url, set_model and set_feature answers an error naming them. */
-	public function test_an_unconfigured_node_answers_an_error(): void {
+	/**
+	 * A request made before set_api_url, set_model and set_feature answers
+	 * unlent, naming the setters it lacks, so a caller treats a transport
+	 * whose setters are unset as one its group lends nothing to: it retries
+	 * nothing.
+	 */
+	public function test_an_unconfigured_node_answers_unlent_naming_its_unset_setters(): void {
 		$node = new LLM_Call_Node();
 		$node->name( self::NAME );
 		$this->bound( static fn () => $node->arguments( [ self::GROUP ] ) );
@@ -906,7 +950,7 @@ final class LlmCallNodeTest extends TestCase {
 		$this->ask( $node, 'feed:bare-1' );
 
 		$this->assertSame( [], $this->dispatched );
-		$this->assertSame( [ 'error' => self::NAME . ': set_api_url, set_model and set_feature before a call', 'item' => self::item( 'feed:bare-1' ), 'inputs' => [ 'boilerplate' => [] ], 'carry' => [ 'item_key' => 'feed:bare-1' ] ], $this->caller->captured[0][ Message::VALUE ] );
+		$this->assertSame( [ 'unlent' => self::GROUP, 'unset' => [ 'set_api_url', 'set_model', 'set_feature' ], 'item' => self::item( 'feed:bare-1' ), 'inputs' => [ 'boilerplate' => [] ], 'carry' => [ 'item_key' => 'feed:bare-1' ] ], $this->caller->captured[0][ Message::VALUE ] );
 	}
 
 	/**
@@ -926,6 +970,24 @@ final class LlmCallNodeTest extends TestCase {
 
 		$this->assertSame( [ [ 'extraction_recorded', 'Heron Dispatch opens a coastal bureau.', 'partnership' ], [ 'subjects_extracted', null, null ] ], \array_map( static fn ( array $m ): array => [ $m[ Message::VALUE ]['event'], $m[ Message::VALUE ]['summary'] ?? null, $m[ Message::VALUE ]['kind'] ?? null ], $writer->captured ) );
 		$this->assertSame( [ 'feed:heron-4' ], \array_map( static fn ( array $m ): string => $m[ Message::VALUE ]['item']['item_key'], $deduper->captured ) );
+	}
+
+	/**
+	 * An extractor whose model-call node has its setters unset records the
+	 * heuristic stand-in and parks no retry, because a retry could never be
+	 * answered, and publishes heuristic naming the setters left unset.
+	 */
+	public function test_an_unconfigured_transport_writes_the_stand_in_and_parks_nothing(): void {
+		[ $extractor, $writer, , $later ] = $this->extractor_on_llm( 1, false );
+		Core::$memd             = new InMemoryMemcached();
+		Core::$var['partition'] = '0';
+
+		$this->in_drain( static fn () => $extractor->fill( self::resolution( 'feed:heron-8', 'Heron Dispatch closes a bureau', 'The wharf office shuts.' ) ) );
+
+		$this->assertSame( [], $this->dispatched );
+		$this->assertSame( [ [ 'extraction_recorded', 'machine:extract-heuristic@' . \NEWSPACK_INTELLIGENCE_VERSION, 'other' ] ], \array_map( static fn ( array $m ): array => [ $m[ Message::VALUE ]['event'], $m[ Message::VALUE ]['actor'], $m[ Message::VALUE ]['kind'] ], $writer->captured ) );
+		$this->assertSame( [], $later->captured, 'no retry is parked' );
+		$this->assertSame( [ 'heuristic', self::GROUP, [ 'set_api_url', 'set_model', 'set_feature' ] ], \array_values( \array_intersect_key( Extractor_Node::read_status( 'extractor', 0 ) ?? [], [ 'mode' => true, 'vault_group' => true, 'unset' => true ] ) ) );
 	}
 
 	/**
@@ -976,9 +1038,9 @@ final class LlmCallNodeTest extends TestCase {
 	 * A real extractor asking this node through the Router, with a writer and
 	 * a deduper to capture what it sends.
 	 *
-	 * @return array{0:Extractor_Node,1:Capture_Sink_Node,2:Capture_Sink_Node}
+	 * @return array{0:Extractor_Node,1:Capture_Sink_Node,2:Capture_Sink_Node,3:Capture_Sink_Node}
 	 */
-	private function extractor_on_llm( int $concurrency ): array {
+	private function extractor_on_llm( int $concurrency, bool $configured = true ): array {
 		$this->lend( self::GROUP, self::ORIGIN, 'Authorization', self::TOKEN, 'Bearer' );
 		Topology_Registry::reset();
 		Topology_Registry::register_builtin_dir( \dirname( __DIR__, 3 ) . '/newspack-nodes/topologies' );
@@ -988,14 +1050,23 @@ final class LlmCallNodeTest extends TestCase {
 		$writer->name( 'intel:writer' );
 		$deduper = new Capture_Sink_Node();
 		$deduper->name( 'deduper' );
-		$this->llm( $concurrency );
+		$later = new Capture_Sink_Node();
+		$later->name( 'intel:later' );
+		if ( $configured ) {
+			$this->llm( $concurrency );
+		} else {
+			$bare = new LLM_Call_Node();
+			$bare->name( self::NAME );
+			$this->bound( static fn () => $bare->arguments( [ self::GROUP ] ) );
+			$bare->sink( Core::node( Node_Names::COMMAND_INTERPRETER ) );
+		}
 		$extractor = new Extractor_Node();
 		$extractor->name( 'extractor' );
 		$extractor->arguments( [ 'intel:writer', 'intel:later', self::NAME ] );
 		$extractor->target( 'deduper' );
 		$extractor->sink( Core::node( Node_Names::COMMAND_INTERPRETER ) );
 		$this->capture_stderr();
-		return [ $extractor, $writer, $deduper ];
+		return [ $extractor, $writer, $deduper, $later ];
 	}
 
 	/**

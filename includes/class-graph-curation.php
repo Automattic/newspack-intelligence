@@ -8,7 +8,7 @@
  *
  * Every string an event carries is bounded first, in bytes as the stream
  * writes it, JSON-escaped: a key, a name or a URL past its cap is refused,
- * and a collected title is cut. The caps hold every event inside one atomic
+ * and a collected title is cut. The caps hold every event inside one
  * partition line whatever characters fill them, except a lens's event, whose
  * lists carry no cap, so `Intel_Event::make()` refuses one past the line. Each
  * command then reads the projection once at most, on the graph

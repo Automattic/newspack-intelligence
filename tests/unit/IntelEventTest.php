@@ -16,7 +16,7 @@ final class IntelEventTest extends TestCase {
 		$event     = Intel_Event::make(
 			'name_added',
 			[
-				'entity_key' => 'organization:atomic-149378595',
+				'entity_key' => 'organization:site-149378595',
 				'kind'       => 'alias',
 				'value'      => 'Atomic Co',
 			],
@@ -218,6 +218,7 @@ final class IntelEventTest extends TestCase {
 	public function test_entity_and_collection_keys_share_one_slug(): void {
 		$this->assertSame( 'person:marisol-okafor', Intel_Event::entity_key( 'person', 'Marisol Okafor' ) );
 		$this->assertSame( 'grant-watch', Intel_Event::collection_key( 'Grant Watch' ) );
+		$this->assertSame( 'person:obrien-co-wire', Intel_Event::entity_key( 'person', "O'Brien & Co. Wire" ), 'punctuation is dropped and a dot is a dash, as WordPress slugs' );
 		$refusals = [];
 		foreach ( [ static fn (): string => Intel_Event::entity_key( 'person', '!?!' ), static fn (): string => Intel_Event::collection_key( '!?!' ) ] as $key ) {
 			try {
@@ -320,19 +321,20 @@ final class IntelEventTest extends TestCase {
 	}
 
 	/**
-	 * Every kind carries one line defining it, in the kinds' order; a defect
-	 * in Newspack's shipped code is a kind of its own, told apart from a
-	 * client's complaint, and churn leaves out a client adopting more.
+	 * Every kind carries one line defining it, in the kinds' order, naming the
+	 * deployment's operator as `{operator}`; a defect in the operator's
+	 * shipped code is a kind of its own, told apart from a client's
+	 * complaint, and churn leaves out a client adopting more.
 	 */
 	public function test_every_item_kind_is_defined_in_one_line(): void {
 		$this->assertSame( Intel_Event::ITEM_KINDS, \array_keys( Intel_Event::KIND_DEFINITIONS ) );
 		foreach ( Intel_Event::KIND_DEFINITIONS as $kind => $definition ) {
 			$this->assertMatchesRegularExpression( '/^[^\n]+$/', $definition, $kind );
 		}
-		$this->assertSame( 'a defect in Newspack\'s shipped code, as Newspack files or fixes it, whoever reported it. Not a CRM record, one site\'s content or configuration, a launch snag list, or internal tooling', Intel_Event::KIND_DEFINITIONS['bug'] );
-		$this->assertSame( 'a client\'s dissatisfaction with Newspack: its service, price or support, or a defect as the client experiences it', Intel_Event::KIND_DEFINITIONS['complaint'] );
-		$this->assertSame( 'a hint that a client may leave, such as dissatisfaction with price or service, going quiet, or weighing a competitor; not a client already offboarding, nor a client adopting more Newspack, nor routine account or storage work', Intel_Event::KIND_DEFINITIONS['churn_signal'] );
-		$this->assertSame( 'a client that has left Newspack or is leaving: offboarding underway or done, the decision already made', Intel_Event::KIND_DEFINITIONS['churned'] );
+		$this->assertSame( 'a defect in {operator}\'s shipped code, as {operator} files or fixes it, whoever reported it. Not a CRM record, one site\'s content or configuration, a launch snag list, or internal tooling', Intel_Event::KIND_DEFINITIONS['bug'] );
+		$this->assertSame( 'a client\'s dissatisfaction with {operator}: its service, price or support, or a defect as the client experiences it', Intel_Event::KIND_DEFINITIONS['complaint'] );
+		$this->assertSame( 'a hint that a client may leave, such as dissatisfaction with price or service, going quiet, or weighing a competitor; not a client already offboarding, nor a client adopting more of {operator}\'s products, nor routine account or storage work', Intel_Event::KIND_DEFINITIONS['churn_signal'] );
+		$this->assertSame( 'a client that has left {operator} or is leaving: offboarding underway or done, the decision already made', Intel_Event::KIND_DEFINITIONS['churned'] );
 		$this->assertSame( \array_search( 'churn_signal', Intel_Event::ITEM_KINDS, true ) - 1, \array_search( 'churned', Intel_Event::ITEM_KINDS, true ), 'churned sits beside churn_signal' );
 	}
 

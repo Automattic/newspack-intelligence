@@ -892,6 +892,31 @@ describe( 'HealthStrip', () => {
 		).toHaveAttribute( 'href', VAULT );
 	} );
 
+	it( 'says the AI proxy is not configured, naming each setter left unset', async () => {
+		health.extraction = {
+			mode: 'heuristic',
+			vault_group: 'ai-relay-7731',
+			unset: [ 'set_api_url', 'set_feature' ],
+			last_ok_at: null,
+			last_error: null,
+			failing_since: null,
+		};
+		renderStrip( { canManage: true } );
+		await worstFault(
+			'Extracting with the heuristic only: the AI proxy is not configured; the lists file sets no set_api_url, set_feature.'
+		);
+		expect(
+			within( row( 'Extraction' ) ).queryByRole( 'link', {
+				name: 'Open the Vault',
+			} )
+		).toBeNull();
+		expect(
+			within( row( 'Extraction' ) ).getByText(
+				'An administrator can set them on intel:llm in the site’s lists file.'
+			)
+		).toBeInTheDocument();
+	} );
+
 	it( 'gives a redacted heuristic extractor plain copy and the text step', async () => {
 		health.extraction = { mode: 'heuristic' };
 		renderStrip();

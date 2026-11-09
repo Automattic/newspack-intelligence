@@ -374,7 +374,7 @@ final class UnthreadSourceTest extends TestCase {
 	public function test_one_macro_in_two_tickets_is_titled_apart(): void {
 		$node  = $this->unthread();
 		$this->tick( $node );
-		$macro = 'Thanks for reaching out to Newspack support! An engineer will reply within one business day.';
+		$macro = 'Thanks for reaching out to Quillmere support! An engineer will reply within one business day.';
 		$this->complete( self::LIST, self::page( [ self::conversation( self::HERON, 600 ), self::conversation( self::KESTREL, 700, [ 'friendlyId' => 5120 ] ) ] ) );
 
 		$this->complete( self::messages_url( self::HERON ), self::page( [ self::message( self::HERON, '1793170000.001600', 900, [ 'text' => $macro ] ) ] ) );

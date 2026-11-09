@@ -6,7 +6,7 @@ Linear and feeds, links each to the organizations, people and topics it
 concerns, and answers questions about them with citations, on the Intelligence
 admin page and to agents over MCP.
 
-**Requires** WordPress 6.5, PHP 8.2, and the `newspack-nodes` substrate at 2.148.0
+**Requires** WordPress 6.5, PHP 8.2, and the `newspack-nodes` substrate at 2.150.0
 or newer. Below that floor the plugin stays dormant.
 
 ## How it works
@@ -43,13 +43,14 @@ the graph. Restricted items answer only a user granted the
 purges a source's recorded items outside the kept key globs; with
 `--dry-run` it only counts them.
 
-AI calls go through the Automattic **AI API Proxy** (OpenAI-compatible) on
-the `gpt-oss-120b` model, made by one `LLM_Call` node, `intel:llm`, without
-blocking the worker: it queues each call durably, new work ahead of a
-re-extraction backlog, and answers the resolver or the extractor when the
-proxy does. The bearer token is the entry of the `ai-proxy` Vault group on
-`https://public-api.wordpress.com`, header `Authorization`, scheme `Bearer`,
-which the node's Curl lends each call; it never rides in a message.
+AI calls go through an OpenAI-compatible **AI API Proxy**, whose url, chat
+and decision models and feature a site's lists name, made by one `LLM_Call`
+node, `intel:llm`, without blocking the worker: it queues each call
+durably, new work ahead of a re-extraction backlog, and answers the
+resolver or the extractor when the proxy does. The bearer token is the
+entry of the `ai-proxy` Vault group on the proxy's origin, header
+`Authorization`, scheme `Bearer`, which the node's Curl lends each call; it
+never rides in a message.
 
 ## Develop
 
@@ -66,4 +67,4 @@ cd tests && ../vendor/bin/phpunit --enforce-time-limit   # PHP; needs newspack-n
 - Working guide: [`AGENTS.md`](AGENTS.md) — the streams, the node catalogue,
   the topologies, the Intelligence page, the WordPress surface and the release
   order
-- Substrate: [`newspack-nodes`](https://github.com/Automattic/newspack-nodes)
+- Substrate: `newspack-nodes`, the sibling plugin this one requires

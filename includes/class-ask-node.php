@@ -222,8 +222,7 @@ class Ask_Node extends Node {
 	private function settled( string $key, int $owner, string $step, array $value, array $item, array $carry ): void {
 		$content = $value['content'] ?? null;
 		if ( ! \is_string( $content ) ) {
-			$unlent = $value['unlent'] ?? null;
-			$why    = \is_string( $unlent ) ? "the {$unlent} Vault group lends no credential" : Core::as_string( $value['error'] ?? null );
+			$why = \is_string( $value['unlent'] ?? null ) ? LLM_Call_Node::unlent_why( $value ) : Core::as_string( $value['error'] ?? null );
 			$this->print_less_often( "ask {$key} failed: ", Core::terminal_safe( $why ) );
 			$this->fail( $key, $owner, self::CALL_FAILED, Core::arr( $carry['searches'] ?? null ) );
 			return;

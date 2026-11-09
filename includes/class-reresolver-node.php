@@ -99,7 +99,7 @@ class Reresolver_Node extends Timer_Node {
 		'linkedin_company' => [ [ 'linkedin.com/company/%s', 'path' ] ],
 		'x_handle'         => [ [ 'x.com/%s', 'path' ], [ 'twitter.com/%s', 'path' ] ],
 		'linear_team'      => [ [ '/issue/%s-', 'inner' ] ],
-		'atomic_site_id'   => [],
+		'site_id'   => [],
 	];
 
 	/**

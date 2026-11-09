@@ -61,7 +61,8 @@ function register_intelligence_admin_page(): void {
  * Enqueue the Intelligence bundle on its own admin page, telling it the
  * plugin version the shared header stamps, whether to render curation
  * controls, the reader's user id, which keys what the page keeps in the
- * browser, and the vocabulary those controls offer. The
+ * browser, the operator the running topology names (`Operator::configured()`),
+ * which the page's copy names, and the vocabulary those controls offer. The
  * server's role gate stays the authority; the flag only hides. WordPress
  * refuses the page to a caller its menu capability excludes before this
  * runs. `Admin::enqueue_react_page()` no-ops when
@@ -73,6 +74,7 @@ function enqueue_intelligence_assets( string $hook ): void {
 	if ( 'toplevel_page_' . INTELLIGENCE_MENU_SLUG !== $hook || ! \class_exists( '\Newspack_Nodes\Admin\Admin' ) ) {
 		return;
 	}
+	$operator = Operator::configured();
 	\Newspack_Nodes\Admin\Admin::enqueue_react_page(
 		[
 			'handle'           => 'newspack-intelligence',
@@ -86,6 +88,7 @@ function enqueue_intelligence_assets( string $hook ): void {
 				'canTune'    => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::TUNE ) ? '1' : '',
 				'canManage'  => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) ? '1' : '',
 				'userId'     => (string) \get_current_user_id(),
+				'operator'   => $operator->shown(),
 				'vocabulary' => [
 					'roles'           => Intel_Event::ROLES,
 					'nameKinds'       => Intel_Event::NAME_KINDS,
@@ -118,6 +121,26 @@ function enqueue_intelligence_assets( string $hook ): void {
 						'ner_fuzzy'   => \__( 'a similar name', 'newspack-intelligence' ),
 						'human'       => \__( 'a person', 'newspack-intelligence' ),
 						'extract'     => \__( 'extraction', 'newspack-intelligence' ),
+					],
+					'roleWords'       => [
+						'client'           => \__( 'Client', 'newspack-intelligence' ),
+						'former_client'    => \__( 'Former client', 'newspack-intelligence' ),
+						'prospect'         => \__( 'Prospect', 'newspack-intelligence' ),
+						'competitor'       => \__( 'Competitor', 'newspack-intelligence' ),
+						'partner'          => \__( 'Partner', 'newspack-intelligence' ),
+						'funder'           => \__( 'Funder', 'newspack-intelligence' ),
+						'industry_body'    => \__( 'Industry body', 'newspack-intelligence' ),
+						/* translators: %s: who runs the deployment. */
+						'operator_product' => \sprintf( \__( 'Product of %s', 'newspack-intelligence' ), $operator->shown()['name'] ),
+					],
+					'identifierWords' => [
+						'domain'           => \__( 'Domain', 'newspack-intelligence' ),
+						'github_org'       => \__( 'GitHub organization', 'newspack-intelligence' ),
+						'github_repo'      => \__( 'GitHub repository', 'newspack-intelligence' ),
+						'linkedin_company' => \__( 'LinkedIn company', 'newspack-intelligence' ),
+						'x_handle'         => \__( 'X handle', 'newspack-intelligence' ),
+						'site_id'          => \__( 'Site ID', 'newspack-intelligence' ),
+						'linear_team'      => \__( 'Linear team', 'newspack-intelligence' ),
 					],
 					'markWords'       => [
 						'newsletter' => \__( 'Newsletter', 'newspack-intelligence' ),
@@ -235,7 +258,7 @@ function register_cli_commands(): void {
 		// floor set too low does not degrade: it activates, then fatals on a
 		// missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
-			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.148.0', 'Newspack Intelligence' ) ) {
+			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.150.0', 'Newspack Intelligence' ) ) {
 			return;
 		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.

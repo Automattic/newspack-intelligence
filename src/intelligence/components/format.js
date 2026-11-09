@@ -41,23 +41,24 @@ export function metaLine( ...parts ) {
 }
 
 /**
- * One role row: open from its first day, or held between two.
+ * One role row by its label: open from its first day, or held between two.
  *
- * @param {Object} role The role, `to_ts` 0 while open.
+ * @param {Object}                 role  The role, `to_ts` 0 while open.
+ * @param {Object<string, string>} words Each role's label.
  * @return {string} The row's text.
  */
-export function roleText( role ) {
+export function roleText( role, words ) {
 	return 0 === role.to_ts
 		? sprintf(
 				/* translators: 1: role, 2: first UTC day. */
 				__( '%1$s since %2$s', 'newspack-intelligence' ),
-				role.role,
+				words[ role.role ],
 				utcDay( role.from_ts )
 		  )
 		: sprintf(
 				/* translators: 1: role, 2: first UTC day, 3: last UTC day. */
 				__( '%1$s %2$s – %3$s', 'newspack-intelligence' ),
-				role.role,
+				words[ role.role ],
 				utcDay( role.from_ts ),
 				utcDay( role.to_ts )
 		  );

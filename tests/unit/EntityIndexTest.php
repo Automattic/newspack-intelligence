@@ -446,27 +446,27 @@ final class EntityIndexTest extends TestCase {
 	/** A name a rejected entity carries is offered to the fuzzy step for entities of other types alone, and is rejected for proposals whatever the type. */
 	public function test_name_norms_leaves_out_a_name_its_type_rejects(): void {
 		$index = $this->index_of(
-			self::entity( 'organization:atomic-5121', 'Atomic site 5121', [ 'canonical' => [ 'Wharfside' ] ] ),
+			self::entity( 'organization:site-5121', 'Site 5121', [ 'canonical' => [ 'Wharfside' ] ] ),
 			self::entity( 'product:wharfside', 'Wharfside' ),
 			self::entity( 'organization:wharfside', 'Wharfside' ),
 			self::rejected( 'organization:wharfside' )
 		);
 
-		$this->assertEqualsCanonicalizing( [ 'atomic site 5121' => [ 'organization:atomic-5121' ], 'wharfside' => [ 'product:wharfside' ] ], $index->name_norms() );
+		$this->assertEqualsCanonicalizing( [ 'site 5121' => [ 'organization:site-5121' ], 'wharfside' => [ 'product:wharfside' ] ], $index->name_norms() );
 		$this->assertTrue( $index->is_rejected_name( 'wharfside' ) );
 	}
 
 	/** A hit whose name a rejected entity of its own type carries is marked stoplisted; another type's is not. */
 	public function test_names_in_marks_a_hit_its_type_rejects(): void {
 		$index = $this->index_of(
-			self::entity( 'organization:atomic-5121', 'Atomic site 5121', [ 'canonical' => [ 'Wharfside' ] ] ),
+			self::entity( 'organization:site-5121', 'Site 5121', [ 'canonical' => [ 'Wharfside' ] ] ),
 			self::entity( 'product:wharfside', 'Wharfside' ),
 			self::entity( 'organization:wharfside', 'Wharfside' ),
 			self::rejected( 'organization:wharfside' )
 		);
 
 		$this->assertEqualsCanonicalizing(
-			[ [ 'organization:atomic-5121', true ], [ 'product:wharfside', false ] ],
+			[ [ 'organization:site-5121', true ], [ 'product:wharfside', false ] ],
 			\array_map( static fn ( array $hit ): array => [ $hit['entity_key'], $hit['stoplisted'] ], $index->names_in( 'Wharfside', true ) )
 		);
 	}
@@ -503,7 +503,7 @@ final class EntityIndexTest extends TestCase {
 	public function test_stoplisted_answers_false_for_a_key_it_does_not_hold(): void {
 		$index = $this->index_of( self::entity( 'organization:wharfside', 'Wharfside' ), self::rejected( 'organization:wharfside' ) );
 
-		$this->assertFalse( $index->stoplisted( 'wharfside', 'organization:atomic-7781' ) );
+		$this->assertFalse( $index->stoplisted( 'wharfside', 'organization:site-7781' ) );
 	}
 
 	/** A topic is offered by its name for extraction and never found in text; a merged or rejected one is not offered. */

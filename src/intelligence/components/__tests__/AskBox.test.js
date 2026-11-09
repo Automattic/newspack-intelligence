@@ -15,7 +15,12 @@ import AskBox from '../AskBox';
 
 const KEY = '5d1e9a7c3b2f4086';
 
-const PLACEHOLDER = 'Ask about clients, the industry or Newspack…';
+const OPERATOR = {
+	name: 'Quillmere Cooperative',
+	heading: 'Quillmere Cooperative',
+};
+
+const PLACEHOLDER = `Ask about clients, the industry or ${ OPERATOR.name }…`;
 
 const WAITING = {
 	ask_key: KEY,
@@ -82,6 +87,7 @@ function Held() {
 	const [ asked, setAsked ] = useState( null );
 	return (
 		<AskBox
+			operator={ OPERATOR }
 			asked={ asked }
 			onAsked={ setAsked }
 			onOpenEntity={ jest.fn() }

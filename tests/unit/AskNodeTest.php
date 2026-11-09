@@ -296,6 +296,24 @@ final class AskNodeTest extends TestCase {
 	}
 
 	/**
+	 * A model call whose transport setters are unset fails the ask as unlent,
+	 * and the log names the setters it lacks rather than the Vault.
+	 */
+	public function test_an_unset_transport_fails_the_ask_naming_its_setters(): void {
+		$stderr                                   = $this->capture_stderr();
+		$this->out->outcomes[ Ask_Prompts::PLAN ] = [
+			'unlent' => Llm_Answering_Sink::GROUP,
+			'unset'  => [ 'set_model', 'set_feature' ],
+		];
+
+		$this->asked( self::READER );
+
+		$this->assertSame( [ 'the model call failed' ], \array_column( $this->outcomes(), 'reason' ) );
+		$this->assertCount( 1, self::stderr_lines( $stderr, 'ask ' . self::KEY . ' failed: the model call lacks set_model, set_feature' ) );
+		$this->assertSame( [], self::stderr_lines( $stderr, 'lends no credential' ) );
+	}
+
+	/**
 	 * An ask read long after it was asked, as a replayed stream delivers
 	 * it, spends no call and writes nothing, so the answer it may already
 	 * hold stands; it is logged.
@@ -348,7 +366,7 @@ final class AskNodeTest extends TestCase {
 
 		$given = $this->out->requests[1][ Message::VALUE ]['inputs']['items'];
 		$this->assertSame( [ [ 'unthread', 'restricted' ], [ 'published article', 'public' ], [ 'GitHub item', 'internal' ] ], \array_map( static fn ( array $item ): array => [ $item['what'], $item['tier'] ], $given ) );
-		$this->assertStringContainsString( Ask_Prompts::TEAM, $this->out->asked()[1][0]['content'] );
+		$this->assertStringContainsString( 'You answer for someone on the organization\'s team.', $this->out->asked()[1][0]['content'] );
 	}
 
 	/** An answer keeps its first MAX_SENTENCES cited sentences and counts the rest dropped. */

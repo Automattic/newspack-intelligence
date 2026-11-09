@@ -104,6 +104,10 @@ function renderPage( canTune = false ) {
 		<IntelligencePage
 			canTune={ canTune }
 			userId="6143"
+			operator={ {
+				name: 'Quillmere Cooperative',
+				heading: 'Quillmere Cooperative',
+			} }
 			vocabulary={ VOCABULARY }
 		/>
 	);
@@ -302,7 +306,7 @@ describe( 'IntelligencePage', () => {
 		renderPage();
 		fireEvent.change(
 			await screen.findByPlaceholderText(
-				'Ask about clients, the industry or Newspack…'
+				'Ask about clients, the industry or Quillmere Cooperative…'
 			),
 			{ target: { value: 'Who won a prize?' } }
 		);

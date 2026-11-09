@@ -50,6 +50,7 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
  * @param {boolean} props.canTune    Whether the caller may curate.
  * @param {boolean} props.canManage  Whether the caller is an operator.
  * @param {string}  props.userId     The reader, whose last look the Briefing keeps.
+ * @param {Object}  props.operator   Who runs the deployment, `{ name, heading }`, whom the copy names.
  * @param {Object}  props.vocabulary The ontology's closed lists.
  * @return {import('react').ReactElement} The page.
  */
@@ -57,6 +58,7 @@ export default function IntelligencePage( {
 	canTune,
 	canManage,
 	userId,
+	operator,
 	vocabulary,
 } ) {
 	const [ view, setView ] = useState( () =>
@@ -150,6 +152,7 @@ export default function IntelligencePage( {
 						{ 'briefing' === view && (
 							<Briefing
 								userId={ userId }
+								operator={ operator }
 								onSearchFor={ searchFor }
 								onOpenEntity={ openEntity }
 								onOpenLens={ openLens }
@@ -168,6 +171,7 @@ export default function IntelligencePage( {
 						) }
 						{ 'search' === view && (
 							<Search
+								operator={ operator }
 								query={ search }
 								onQuery={ setSearch }
 								vocabulary={ vocabulary }

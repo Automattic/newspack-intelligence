@@ -37,7 +37,7 @@ final class ContextA8CSlackTest extends TestCase {
 	 * @param string ...$channels The channels it reads.
 	 */
 	private function slack( string ...$channels ): Context_A8C_Slack_Node {
-		$node = $this->wire( new Context_A8C_Slack_Node(), 'slack', [ 'internal', $this->auth_dir ] );
+		$node = $this->wire( new Context_A8C_Slack_Node(), 'slack', [ 'internal', self::MCP, $this->auth_dir ] );
 		foreach ( $channels as $channel ) {
 			$node->interpreter()->dispatch( 'add_channel', [ $channel ] );
 		}

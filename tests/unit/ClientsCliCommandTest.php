@@ -32,7 +32,7 @@ final class ClientsCliCommandTest extends TestCase {
 	}
 
 	public function test_import_reads_file_and_populates_repo(): void {
-		$csv = "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"1\",\"2020-01-01\",\"a.example\"\n\"2\",\"2021-01-01\",\"b.example\"\n";
+		$csv = "\"Site ID\",\"Created\",\"Domain name\"\n\"1\",\"2020-01-01\",\"a.example\"\n\"2\",\"2021-01-01\",\"b.example\"\n";
 		$tmp = \tempnam( \sys_get_temp_dir(), 'clients' );
 		\file_put_contents( $tmp, $csv );
 
@@ -54,7 +54,7 @@ final class ClientsCliCommandTest extends TestCase {
 	}
 
 	public function test_import_reports_wp_cli_success_summary_with_counts(): void {
-		$csv = "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"11\",\"2020-01-01\",\"aaa.example\"\n\"22\",\"2021-01-01\",\"bbb.example\"\n\"33\",\"2021-01-01\",\"ccc.example\"\n";
+		$csv = "\"Site ID\",\"Created\",\"Domain name\"\n\"11\",\"2020-01-01\",\"aaa.example\"\n\"22\",\"2021-01-01\",\"bbb.example\"\n\"33\",\"2021-01-01\",\"ccc.example\"\n";
 		$tmp = \tempnam( \sys_get_temp_dir(), 'clients' );
 		\file_put_contents( $tmp, $csv );
 
@@ -71,14 +71,14 @@ final class ClientsCliCommandTest extends TestCase {
 		Topology_Analyzer::reset_caches();
 		$this->start_entity_graph();
 		$this->activate( 'newspack-intelligence-project' );
-		$csv = "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"91\",\"2023-03-03\",\"gallup.example\"\n";
+		$csv = "\"Site ID\",\"Created\",\"Domain name\"\n\"91\",\"2023-03-03\",\"gallup.example\"\n";
 		$tmp = \tempnam( \sys_get_temp_dir(), 'clients' );
 		\file_put_contents( $tmp, $csv );
 
 		( new Clients_CLI_Command() )->import( [ $tmp ], [] );
 
 		$events = self::ontology_events();
-		$this->assertSame( [ 'organization:atomic-91' ], \array_values( \array_unique( \array_column( $events, 'entity_key' ) ) ) );
+		$this->assertSame( [ 'organization:site-91' ], \array_values( \array_unique( \array_column( $events, 'entity_key' ) ) ) );
 		$this->assertSame( [ 'machine:client-import@' . \NEWSPACK_INTELLIGENCE_VERSION ], \array_values( \array_unique( \array_column( $events, 'actor' ) ) ) );
 		$this->assertSame( [ 'Imported 1 rows: 1 created, 0 updated, 0 reactivated, 0 churned, 0 held by curation.' ], \WP_CLI::$successes );
 		\unlink( $tmp );
@@ -90,19 +90,19 @@ final class ClientsCliCommandTest extends TestCase {
 		$this->start_entity_graph();
 		$this->activate( 'newspack-intelligence-project' );
 		$failing = \tempnam( \sys_get_temp_dir(), 'clients' );
-		\file_put_contents( $failing, "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"990021\",\"2023-03-03\",\"cormorant.example\"\n\"\",\"2023-03-03\",\"blankpier.example\"\n" );
+		\file_put_contents( $failing, "\"Site ID\",\"Created\",\"Domain name\"\n\"990021\",\"2023-03-03\",\"cormorant.example\"\n\"\",\"2023-03-03\",\"blankpier.example\"\n" );
 		$good = \tempnam( \sys_get_temp_dir(), 'clients' );
-		\file_put_contents( $good, "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"990022\",\"2023-03-03\",\"pelican.example\"\n" );
+		\file_put_contents( $good, "\"Site ID\",\"Created\",\"Domain name\"\n\"990022\",\"2023-03-03\",\"pelican.example\"\n" );
 		$command = new Clients_CLI_Command();
 
 		try {
 			$command->import( [ $failing ], [] );
-			$this->fail( 'the import refuses a row with no atomic id' );
+			$this->fail( 'the import refuses a row with no site id' );
 		} catch ( \InvalidArgumentException ) {
 			$command->import( [ $good ], [] );
 		}
 
-		$this->assertSame( [ 'organization:atomic-990022' ], \array_values( \array_unique( \array_column( self::ontology_events(), 'entity_key' ) ) ) );
+		$this->assertSame( [ 'organization:site-990022' ], \array_values( \array_unique( \array_column( self::ontology_events(), 'entity_key' ) ) ) );
 		\unlink( $failing );
 		\unlink( $good );
 	}
@@ -110,7 +110,7 @@ final class ClientsCliCommandTest extends TestCase {
 	/** Run as root, the import refuses before it reads the CSV or writes a segment the workers could not append to. */
 	public function test_import_refuses_root_before_any_write(): void {
 		CLI::$uid_provider = static fn (): int => 0;
-		$csv               = "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"57\",\"2023-03-03\",\"rootless.example\"\n";
+		$csv               = "\"Site ID\",\"Created\",\"Domain name\"\n\"57\",\"2023-03-03\",\"rootless.example\"\n";
 		$tmp               = \tempnam( \sys_get_temp_dir(), 'clients' );
 		\file_put_contents( $tmp, $csv );
 		$roster = new Fake_Client_Roster();

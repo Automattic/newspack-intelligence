@@ -56,11 +56,11 @@ final class GraphClientRosterTest extends TestCase {
 	public function test_creating_a_client_emits_entity_identifiers_and_role(): void {
 		$result = self::importer()->import( self::rows( [ '990011', 'harborgazette.example' ] ), '2026-03-14' );
 
-		$key = 'organization:atomic-990011';
+		$key = 'organization:site-990011';
 		$this->assertSame(
 			[
 				[ 'entity_created', $key, 'organization', 'harborgazette.example' ],
-				[ 'identifier_added', $key, 'atomic_site_id', '990011' ],
+				[ 'identifier_added', $key, 'site_id', '990011' ],
 				[ 'identifier_added', $key, 'domain', 'harborgazette.example' ],
 				[ 'role_asserted', $key, 'client', self::AUG_20 ],
 			],
@@ -71,7 +71,7 @@ final class GraphClientRosterTest extends TestCase {
 		$this->assertSame( 1, $result['created'] );
 	}
 
-	/** A client whose domain a curated entity holds becomes that entity: no new entity, its atomic id added, its role asserted. */
+	/** A client whose domain a curated entity holds becomes that entity: no new entity, its site id added, its role asserted. */
 	public function test_a_curated_entity_holding_the_domain_becomes_the_client(): void {
 		$this->seed( self::entity( 'organization:harbor-gazette', 'Harbor Gazette', [ 'domain' => [ 'harborgazette.example' ] ] ) );
 		$before = \count( self::ontology_events() );
@@ -80,7 +80,7 @@ final class GraphClientRosterTest extends TestCase {
 
 		$this->assertSame(
 			[
-				[ 'identifier_added', 'organization:harbor-gazette', 'atomic_site_id', '990011' ],
+				[ 'identifier_added', 'organization:harbor-gazette', 'site_id', '990011' ],
 				[ 'role_asserted', 'organization:harbor-gazette', 'client', self::AUG_20 ],
 			],
 			\array_slice( self::brief( self::ontology_events() ), $before )
@@ -93,7 +93,7 @@ final class GraphClientRosterTest extends TestCase {
 		$this->seed(
 			self::client( '770022', 'tidewater.example', self::AUG_20 ),
 			self::entity( 'organization:tidewater-times', 'Tidewater Times', [ 'domain' => [ 'tidewatertimes.example' ] ] ),
-			self::merged( 'organization:atomic-770022', 'organization:tidewater-times' )
+			self::merged( 'organization:site-770022', 'organization:tidewater-times' )
 		);
 		$before = \count( self::ontology_events() );
 
@@ -101,20 +101,20 @@ final class GraphClientRosterTest extends TestCase {
 
 		$this->assertSame(
 			[
-				[ 'role_ended', 'organization:atomic-770022', 'client', self::AUG_20, self::MAR_14 ],
+				[ 'role_ended', 'organization:site-770022', 'client', self::AUG_20, self::MAR_14 ],
 				[ 'role_asserted', 'organization:tidewater-times', 'former_client', self::MAR_14 ],
-				[ 'role_asserted', 'organization:atomic-990011', 'client', self::AUG_20 ],
+				[ 'role_asserted', 'organization:site-990011', 'client', self::AUG_20 ],
 			],
 			\array_slice( self::brief( self::ontology_events() ), $before + 3 )
 		);
 		$this->assertSame( 1, $result['churned'] );
 	}
 
-	/** A publisher running several sites stays a client until every one of its atomic ids leaves the snapshot. */
-	public function test_a_shared_survivor_churns_only_when_every_atomic_id_leaves(): void {
+	/** A publisher running several sites stays a client until every one of its site ids leaves the snapshot. */
+	public function test_a_shared_survivor_churns_only_when_every_site_id_leaves(): void {
 		$key = 'organization:harbor-media';
 		$this->seed(
-			self::entity( $key, 'Harbor Media', [ 'atomic_site_id' => [ '990011', '990012' ], 'domain' => [ 'harbormedia.example' ] ] ),
+			self::entity( $key, 'Harbor Media', [ 'site_id' => [ '990011', '990012' ], 'domain' => [ 'harbormedia.example' ] ] ),
 			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => self::AUG_20 ], 'user:41', 'fixture-7' ) ]
 		);
 		$before = \count( self::ontology_events() );
@@ -129,7 +129,7 @@ final class GraphClientRosterTest extends TestCase {
 			[
 				[ 'role_ended', $key, 'client', self::AUG_20, self::APR_02 ],
 				[ 'role_asserted', $key, 'former_client', self::APR_02 ],
-				[ 'role_asserted', 'organization:atomic-330044', 'client', self::AUG_20 ],
+				[ 'role_asserted', 'organization:site-330044', 'client', self::AUG_20 ],
 			],
 			\array_slice( self::brief( self::ontology_events() ), $before + 3 )
 		);
@@ -138,7 +138,7 @@ final class GraphClientRosterTest extends TestCase {
 	/** A client role held under a key merged into the client's entity is the client's own. */
 	public function test_a_role_a_merged_key_holds_is_the_clients(): void {
 		$this->seed(
-			self::entity( 'organization:quayside-herald', 'Quayside Herald', [ 'atomic_site_id' => [ '990066' ], 'domain' => [ 'quaysideherald.example' ] ] ),
+			self::entity( 'organization:quayside-herald', 'Quayside Herald', [ 'site_id' => [ '990066' ], 'domain' => [ 'quaysideherald.example' ] ] ),
 			self::entity( 'organization:quayside-old', 'Quayside Old' ),
 			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => 'organization:quayside-old', 'role' => 'client', 'from_ts' => self::AUG_20 ], 'user:41', 'fixture-7' ) ],
 			self::merged( 'organization:quayside-old', 'organization:quayside-herald' )
@@ -153,7 +153,7 @@ final class GraphClientRosterTest extends TestCase {
 
 	/** A client whose entity a person rejected is left alone, counted as present, and logged once. */
 	public function test_a_rejected_client_writes_nothing_and_still_counts(): void {
-		$this->seed( self::client( '990013', 'saltmarsh.example', self::AUG_20 ), self::rejected( 'organization:atomic-990013' ) );
+		$this->seed( self::client( '990013', 'saltmarsh.example', self::AUG_20 ), self::rejected( 'organization:site-990013' ) );
 		$before   = \count( self::ontology_events() );
 		$captured = $this->capture_stderr();
 
@@ -161,7 +161,7 @@ final class GraphClientRosterTest extends TestCase {
 
 		$this->assertSame( [], \array_slice( self::ontology_events(), $before ) );
 		$this->assertSame( [ 0, 2, 0, 0 ], [ $result['created'], $result['updated'], $result['reactivated'], $result['churned'] ] );
-		$this->assertCount( 1, self::stderr_lines( $captured, 'organization:atomic-990013' ) );
+		$this->assertCount( 1, self::stderr_lines( $captured, 'organization:site-990013' ) );
 	}
 
 	/** A client merged into a rejected survivor is left alone. */
@@ -170,7 +170,7 @@ final class GraphClientRosterTest extends TestCase {
 			self::client( '990077', 'brackwater.example', self::AUG_20 ),
 			self::entity( 'organization:brackwater-group', 'Brackwater Group' ),
 			self::rejected( 'organization:brackwater-group' ),
-			self::merged( 'organization:atomic-990077', 'organization:brackwater-group' )
+			self::merged( 'organization:site-990077', 'organization:brackwater-group' )
 		);
 		$before   = \count( self::ontology_events() );
 		$captured = $this->capture_stderr();
@@ -179,7 +179,7 @@ final class GraphClientRosterTest extends TestCase {
 
 		$this->assertSame( [], \array_slice( self::ontology_events(), $before ) );
 		$this->assertSame( [ 0, 1 ], [ $result['created'], $result['updated'] ] );
-		$this->assertCount( 1, self::stderr_lines( $captured, 'organization:atomic-990077' ) );
+		$this->assertCount( 1, self::stderr_lines( $captured, 'organization:site-990077' ) );
 	}
 
 	/** A new client whose domain a rejected entity holds is left alone, logged once with the others. */
@@ -188,7 +188,7 @@ final class GraphClientRosterTest extends TestCase {
 			self::entity( 'organization:fenwick-courier', 'Fenwick Courier', [ 'domain' => [ 'fenwickcourier.example' ] ] ),
 			self::rejected( 'organization:fenwick-courier' ),
 			self::client( '990013', 'saltmarsh.example', self::AUG_20 ),
-			self::rejected( 'organization:atomic-990013' )
+			self::rejected( 'organization:site-990013' )
 		);
 		$before   = \count( self::ontology_events() );
 		$captured = $this->capture_stderr();
@@ -199,7 +199,7 @@ final class GraphClientRosterTest extends TestCase {
 		$lines = self::stderr_lines( $captured, 'client import' );
 		$this->assertCount( 1, $lines );
 		$this->assertStringContainsString( 'organization:fenwick-courier', $lines[0] );
-		$this->assertStringContainsString( 'organization:atomic-990013', $lines[0] );
+		$this->assertStringContainsString( 'organization:site-990013', $lines[0] );
 	}
 
 	/** A client on a merge cycle answers no survivor and is left alone. */
@@ -207,8 +207,8 @@ final class GraphClientRosterTest extends TestCase {
 		$this->seed(
 			self::client( '990099', 'gullhaven.example', self::AUG_20 ),
 			self::entity( 'organization:gullhaven-press', 'Gullhaven Press' ),
-			self::merged( 'organization:atomic-990099', 'organization:gullhaven-press' ),
-			self::merged( 'organization:gullhaven-press', 'organization:atomic-990099' )
+			self::merged( 'organization:site-990099', 'organization:gullhaven-press' ),
+			self::merged( 'organization:gullhaven-press', 'organization:site-990099' )
 		);
 		$before = \count( self::ontology_events() );
 
@@ -218,29 +218,29 @@ final class GraphClientRosterTest extends TestCase {
 		$this->assertSame( [ 0, 1, 0 ], [ $result['created'], $result['updated'], $result['churned'] ] );
 	}
 
-	/** An event the roster cannot mint names the atomic id of its row. */
-	public function test_an_event_that_will_not_mint_names_its_atomic_id(): void {
+	/** An event the roster cannot mint names the site id of its row. */
+	public function test_an_event_that_will_not_mint_names_its_site_id(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessage( 'atomic site 990031' );
+		$this->expectExceptionMessage( 'site 990031' );
 		self::importer()->import( self::rows( [ '990031', \str_repeat( 'longwharf', 600 ) . '.example' ] ), '2026-03-14' );
 	}
 
-	/** A row with no atomic id is refused rather than keyed `organization:atomic-`. */
-	public function test_a_row_with_no_atomic_id_is_refused(): void {
+	/** A row with no site id is refused rather than keyed `organization:site-`. */
+	public function test_a_row_with_no_site_id_is_refused(): void {
 		$this->expectException( \InvalidArgumentException::class );
-		$this->expectExceptionMessage( 'client import: a row has no atomic site id' );
+		$this->expectExceptionMessage( 'client import: a row has no site id' );
 		self::importer()->import( self::rows( [ '  ', 'blankpier.example' ] ), '2026-03-14' );
 	}
 
-	/** A client with no domain is named by its atomic id and carries no domain identifier. */
-	public function test_an_empty_domain_names_the_entity_by_its_atomic_id(): void {
+	/** A client with no domain is named by its site id and carries no domain identifier. */
+	public function test_an_empty_domain_names_the_entity_by_its_site_id(): void {
 		self::importer()->import( self::rows( [ '440055', '' ] ), '2026-03-14' );
 
-		$key = 'organization:atomic-440055';
+		$key = 'organization:site-440055';
 		$this->assertSame(
 			[
-				[ 'entity_created', $key, 'organization', 'Atomic site 440055' ],
-				[ 'identifier_added', $key, 'atomic_site_id', '440055' ],
+				[ 'entity_created', $key, 'organization', 'Site 440055' ],
+				[ 'identifier_added', $key, 'site_id', '440055' ],
 				[ 'role_asserted', $key, 'client', self::AUG_20 ],
 			],
 			self::brief( self::ontology_events() )
@@ -263,7 +263,7 @@ final class GraphClientRosterTest extends TestCase {
 	/** A churn closes the open client role and opens a former_client one; a return reverses it. */
 	public function test_churn_and_return_are_role_events(): void {
 		$this->seed( self::client( '770022', 'tidewater.example', self::AUG_20 ) );
-		$key = 'organization:atomic-770022';
+		$key = 'organization:site-770022';
 
 		$churn = self::importer()->import( self::rows( [ '990011', 'harborgazette.example' ] ), '2026-03-14' );
 
@@ -271,7 +271,7 @@ final class GraphClientRosterTest extends TestCase {
 			[
 				[ 'role_ended', $key, 'client', self::AUG_20, self::MAR_14 ],
 				[ 'role_asserted', $key, 'former_client', self::MAR_14 ],
-				[ 'role_asserted', 'organization:atomic-990011', 'client', self::AUG_20 ],
+				[ 'role_asserted', 'organization:site-990011', 'client', self::AUG_20 ],
 			],
 			\array_slice( self::brief( self::ontology_events() ), 3 )
 		);
@@ -311,7 +311,7 @@ final class GraphClientRosterTest extends TestCase {
 	public function test_a_new_client_is_a_client_from_its_created_day(): void {
 		self::importer()->import( [ self::row( '990011', 'harborgazette.example', '2021-03-14 09:26:53' ) ], '2026-03-14' );
 
-		$this->assertSame( [ 'role_asserted', 'organization:atomic-990011', 'client', self::CREATED_2021 ], self::brief( self::ontology_events() )[3] );
+		$this->assertSame( [ 'role_asserted', 'organization:site-990011', 'client', self::CREATED_2021 ], self::brief( self::ontology_events() )[3] );
 	}
 
 	/**
@@ -321,7 +321,7 @@ final class GraphClientRosterTest extends TestCase {
 	 */
 	public function test_a_reimport_moves_a_clients_start_to_its_created_day(): void {
 		$this->seed( self::client( '770022', 'tidewater.example', self::AUG_20 ) );
-		$key    = 'organization:atomic-770022';
+		$key    = 'organization:site-770022';
 		$before = \count( self::ontology_events() );
 		$rows   = [ self::row( '770022', 'tidewater.example', '2021-03-14 09:26:53' ) ];
 
@@ -360,21 +360,21 @@ final class GraphClientRosterTest extends TestCase {
 		$this->assertSame( [ [ 'client', self::AUG_20, self::MAR_14 + 3600 ] ], self::roles_of( 'organization:kestrel-ledger' ) );
 	}
 
-	/** A new atomic id whose domain a held client holds adds the id and opens no role on it. */
+	/** A new site id whose domain a held client holds adds the id and opens no role on it. */
 	public function test_a_new_site_on_a_held_clients_domain_opens_no_role(): void {
 		$this->seed( ...self::ended_ledger() );
 		$before = \count( self::ontology_events() );
 
 		self::importer()->import( self::rows( [ '660034', 'kestrelledger.example' ] ), '2026-04-02' );
 
-		$this->assertSame( [ [ 'identifier_added', 'organization:kestrel-ledger', 'atomic_site_id', '660034' ] ], \array_slice( self::brief( self::ontology_events() ), $before ) );
+		$this->assertSame( [ [ 'identifier_added', 'organization:kestrel-ledger', 'site_id', '660034' ] ], \array_slice( self::brief( self::ontology_events() ), $before ) );
 	}
 
 	/** A client an import churned holds former_client open, so it is not held: the next snapshot naming it reactivates it. */
 	public function test_a_client_an_import_churned_is_not_held(): void {
 		$key = 'organization:osprey-tribune';
 		$this->seed(
-			self::entity( $key, 'Osprey Tribune', [ 'atomic_site_id' => [ '550041' ], 'domain' => [ 'ospreytribune.example' ] ] ),
+			self::entity( $key, 'Osprey Tribune', [ 'site_id' => [ '550041' ], 'domain' => [ 'ospreytribune.example' ] ] ),
 			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => self::AUG_20 ], 'user:41', 'fixture-7' ) ]
 		);
 		$churn = self::importer()->import( self::rows( [ '550099', 'wrenpost.example' ] ), '2026-03-14' );
@@ -398,7 +398,7 @@ final class GraphClientRosterTest extends TestCase {
 	public function test_a_former_client_a_curator_ended_is_held(): void {
 		$key = 'organization:marten-signal';
 		$this->seed(
-			self::entity( $key, 'Marten Signal', [ 'atomic_site_id' => [ '550052' ], 'domain' => [ 'martensignal.example' ] ] ),
+			self::entity( $key, 'Marten Signal', [ 'site_id' => [ '550052' ], 'domain' => [ 'martensignal.example' ] ] ),
 			[
 				Intel_Event::make( 'role_asserted', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => self::AUG_20 ], 'user:41', 'fixture-7' ),
 				Intel_Event::make( 'role_ended', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => self::AUG_20, 'to_ts' => self::MAR_14 ], 'machine:client-import@9.4.1', 'fixture-7' ),
@@ -418,7 +418,7 @@ final class GraphClientRosterTest extends TestCase {
 	private static function ended_ledger(): array {
 		$key = 'organization:kestrel-ledger';
 		return [
-			self::entity( $key, 'Kestrel Ledger', [ 'atomic_site_id' => [ '660033' ], 'domain' => [ 'kestrelledger.example' ] ] ),
+			self::entity( $key, 'Kestrel Ledger', [ 'site_id' => [ '660033' ], 'domain' => [ 'kestrelledger.example' ] ] ),
 			[
 				Intel_Event::make( 'role_asserted', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => self::AUG_20 ], 'user:41', 'fixture-7' ),
 				Intel_Event::make( 'role_ended', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => self::AUG_20, 'to_ts' => self::MAR_14 + 3600 ], 'user:41', 'fixture-7' ),
@@ -430,13 +430,13 @@ final class GraphClientRosterTest extends TestCase {
 	public function test_several_sites_open_one_role_from_the_earliest_created(): void {
 		self::importer()->import( [ self::row( '990011', 'harborgazette.example', '2021-03-14 09:26:53' ), self::row( '990012', 'HarborGazette.example', '2020-02-02' ) ], '2026-03-14' );
 
-		$key = 'organization:atomic-990011';
+		$key = 'organization:site-990011';
 		$this->assertSame(
 			[
 				[ 'entity_created', $key, 'organization', 'harborgazette.example' ],
-				[ 'identifier_added', $key, 'atomic_site_id', '990011' ],
+				[ 'identifier_added', $key, 'site_id', '990011' ],
 				[ 'identifier_added', $key, 'domain', 'harborgazette.example' ],
-				[ 'identifier_added', $key, 'atomic_site_id', '990012' ],
+				[ 'identifier_added', $key, 'site_id', '990012' ],
 				[ 'role_asserted', $key, 'client', self::CREATED_2020 ],
 			],
 			self::brief( self::ontology_events() )
@@ -455,7 +455,7 @@ final class GraphClientRosterTest extends TestCase {
 
 	/**
 	 * A Created that is not a day, or whose time is not a time of day, is
-	 * refused naming its row's atomic id, and the import writes nothing.
+	 * refused naming its row's site id, and the import writes nothing.
 	 *
 	 * @dataProvider createds_that_are_not_dates
 	 */
@@ -464,7 +464,7 @@ final class GraphClientRosterTest extends TestCase {
 			self::importer()->import( [ self::row( '990031', 'longwharf.example', $created ) ], '2026-03-14' );
 			$this->fail( 'the import refuses' );
 		} catch ( \InvalidArgumentException $refused ) {
-			$this->assertSame( "client import: atomic site 990031: Created is not a date: {$created}", $refused->getMessage() );
+			$this->assertSame( "client import: site 990031: Created is not a date: {$created}", $refused->getMessage() );
 			$this->assertSame( [], self::ontology_events() );
 		}
 	}
@@ -476,11 +476,11 @@ final class GraphClientRosterTest extends TestCase {
 
 		$result = self::importer()->import( self::rows( [ '990011', 'harborgazette-news.example' ], [ '330044', 'WWW.Pinecrest.example' ] ), '2026-03-14' );
 
-		$this->assertSame( [ [ 'identifier_added', 'organization:atomic-990011', 'domain', 'harborgazette-news.example' ] ], \array_slice( self::brief( self::ontology_events() ), $before ) );
+		$this->assertSame( [ [ 'identifier_added', 'organization:site-990011', 'domain', 'harborgazette-news.example' ] ], \array_slice( self::brief( self::ontology_events() ), $before ) );
 		$this->assertSame( 2, $result['updated'] );
 
 		$this->seed( self::ontology_events() );
-		$this->assertSame( [ [ 'harborgazette.example', 'organization:atomic-990011' ] ], \array_values( \array_filter( self::graph_rows( 'entities', '1', 'name, entity_key' ), static fn ( array $row ): bool => 'organization:atomic-990011' === $row[1] ) ) );
+		$this->assertSame( [ [ 'harborgazette.example', 'organization:site-990011' ] ], \array_values( \array_filter( self::graph_rows( 'entities', '1', 'name, entity_key' ), static fn ( array $row ): bool => 'organization:site-990011' === $row[1] ) ) );
 	}
 
 	/** One import reads the projection once, however many rows it reconciles. */
@@ -529,11 +529,11 @@ final class GraphClientRosterTest extends TestCase {
 	}
 
 	/**
-	 * CSV rows, each an atomic id and a domain, its site Created on the day
+	 * CSV rows, each an site id and a domain, its site Created on the day
 	 * client() opens a seeded client's role.
 	 *
 	 * @param array{0:string,1:string} ...$pairs The rows.
-	 * @return list<array{atomic_site_id:string,domain_name:string,created:string}>
+	 * @return list<array{site_id:string,domain_name:string,created:string}>
 	 */
 	private static function rows( array ...$pairs ): array {
 		return \array_map( static fn ( array $p ): array => self::row( $p[0], $p[1], '2025-08-20 16:12:09' ), $pairs );
@@ -542,28 +542,28 @@ final class GraphClientRosterTest extends TestCase {
 	/**
 	 * One CSV row.
 	 *
-	 * @param string $id      The atomic site id.
+	 * @param string $id      The site id.
 	 * @param string $domain  Its domain.
 	 * @param string $created When its site was Created.
-	 * @return array{atomic_site_id:string,domain_name:string,created:string}
+	 * @return array{site_id:string,domain_name:string,created:string}
 	 */
 	private static function row( string $id, string $domain, string $created ): array {
-		return [ 'atomic_site_id' => $id, 'domain_name' => $domain, 'created' => $created ];
+		return [ 'site_id' => $id, 'domain_name' => $domain, 'created' => $created ];
 	}
 
 	/**
 	 * A client the projection already holds: its entity, both identifiers
 	 * and an open client role.
 	 *
-	 * @param string $id     The atomic site id.
+	 * @param string $id     The site id.
 	 * @param string $domain Its domain.
 	 * @param int    $from   When its client role opened.
 	 * @return list<array<string,mixed>>
 	 */
 	private static function client( string $id, string $domain, int $from ): array {
-		$key = "organization:atomic-{$id}";
+		$key = "organization:site-{$id}";
 		return [
-			...self::entity( $key, $domain, [ 'atomic_site_id' => [ $id ], 'domain' => [ $domain ] ] ),
+			...self::entity( $key, $domain, [ 'site_id' => [ $id ], 'domain' => [ $domain ] ] ),
 			Intel_Event::make( 'role_asserted', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => $from ], 'user:41', 'fixture-7' ),
 		];
 	}

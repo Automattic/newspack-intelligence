@@ -11,6 +11,16 @@ export const VOCABULARY = {
 	tiers: [ 'public', 'internal', 'restricted' ],
 	trendAxes: [ 'kind', 'topic' ],
 	buckets: [ 'day', 'week', 'month' ],
+	roleWords: {
+		client: 'Paying member',
+		former_client: 'Lapsed member',
+		competitor: 'Rival',
+		prospect: 'Lead',
+	},
+	identifierWords: {
+		domain: 'Web address',
+		github_org: 'Code org',
+	},
 	markWords: {
 		newsletter: 'Digest',
 		linkedin: 'LinkedIn post',

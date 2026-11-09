@@ -1,8 +1,9 @@
 <?php
 /**
  * Context_A8C_Source_Node: abstract base for the local workstation's
- * sources, which read Slack, P2 and Linear through ContextA8C, Automattic's
- * MCP server, as the person signed in to it on the host.
+ * sources, which read Slack, P2 and Linear through ContextA8C, an MCP
+ * server its `make_node` line names, as the person signed in to it on the
+ * host.
  *
  * Extends Source_Node, which owns the trigger, the grid, the chain and the
  * record path. The relay's token lives in Context_A8C_Token, the process's
@@ -35,9 +36,6 @@ use Newspack_Nodes\Core;
 \defined( 'ABSPATH' ) || exit;
 
 abstract class Context_A8C_Source_Node extends Source_Node {
-
-	/** The MCP server; the relay names its token file by this url's md5. */
-	public const MCP_URL = 'https://public-api.wordpress.com/wpcom/v2/context-a8c-mcp/v1';
 
 	/** The token endpoint the authorization server's metadata names. */
 	public const TOKEN_URL = 'https://public-api.wordpress.com/oauth2-1/token';
@@ -75,6 +73,9 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	/** The refresh's body type. */
 	private const FORM = 'Content-Type: application/x-www-form-urlencoded';
 
+	/** The MCP server's url; the relay names its token file by this url's md5. */
+	protected string $mcp_url = '';
+
 	/** The dir holding the relay's `wordpress-remote-*` token dirs. */
 	protected string $auth_dir = '';
 
@@ -100,21 +101,21 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	protected function begin(): void {
 		$this->session  = '';
 		$this->revision = '';
-		$held           = Context_A8C_Token::held( $this->auth_dir );
+		$held           = Context_A8C_Token::held( $this->auth_dir, $this->mcp_url );
 		if ( null === $held ) {
-			$this->print_less_often( 'no readable ContextA8C token: ', Context_A8C_Token::pattern( $this->auth_dir ) );
+			$this->print_less_often( 'no readable ContextA8C token: ', Context_A8C_Token::pattern( $this->auth_dir, $this->mcp_url ) );
 			$this->idle( 'not signed in to ContextA8C: no token file; sign in to ContextA8C on the host' );
 			return;
 		}
-		if ( ! Context_A8C_Token::due( $this->auth_dir, Core::$now, self::EXPIRY_MARGIN ) ) {
+		if ( ! Context_A8C_Token::due( $this->auth_dir, $this->mcp_url, Core::$now, self::EXPIRY_MARGIN ) ) {
 			$this->open();
 			return;
 		}
-		match ( Context_A8C_Token::claim( $this->auth_dir ) ) {
+		match ( Context_A8C_Token::claim( $this->auth_dir, $this->mcp_url ) ) {
 			Context_A8C_Token::FRESH         => $this->open(),
 			Context_A8C_Token::REFRESH       => $this->queue( self::TOKEN_URL, '', self::TOKEN_URL ),
 			Context_A8C_Token::WAIT          => $this->waiting = true,
-			Context_A8C_Token::REFUSED       => $this->refused( Context_A8C_Token::refused_status( $this->auth_dir ) ),
+			Context_A8C_Token::REFUSED       => $this->refused( Context_A8C_Token::refused_status( $this->auth_dir, $this->mcp_url ) ),
 			Context_A8C_Token::UNREFRESHABLE => $this->unrefreshable( $held['path'] ),
 			default                          => $this->fails( 'could not lock the ContextA8C token: ', $held['path'] ),
 		};
@@ -164,13 +165,13 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	 * @param string $body The JSON body.
 	 */
 	private function refreshed( string $body ): void {
-		[ $landed, $written ] = Context_A8C_Token::landed( $this->auth_dir, $body, Core::$now );
+		[ $landed, $written ] = Context_A8C_Token::landed( $this->auth_dir, $this->mcp_url, $body, Core::$now );
 		if ( ! $landed ) {
 			$this->fails( 'the token endpoint returned no access token: ', self::TOKEN_URL );
 			return;
 		}
 		if ( ! $written ) {
-			$this->print_less_often( 'could not write the refreshed ContextA8C token back: ', Context_A8C_Token::pattern( $this->auth_dir ) );
+			$this->print_less_often( 'could not write the refreshed ContextA8C token back: ', Context_A8C_Token::pattern( $this->auth_dir, $this->mcp_url ) );
 		}
 		$this->open();
 	}
@@ -190,7 +191,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 				],
 			],
 		];
-		$this->queue( self::MCP_URL, (string) \wp_json_encode( $envelope ), self::INITIALIZE );
+		$this->queue( $this->mcp_url, (string) \wp_json_encode( $envelope ), self::INITIALIZE );
 	}
 
 	/**
@@ -206,7 +207,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 			return;
 		}
 		if ( '' === $this->session ) {
-			$this->fails( 'ContextA8C answered initialize with no Mcp-Session-Id: ', self::MCP_URL );
+			$this->fails( 'ContextA8C answered initialize with no Mcp-Session-Id: ', $this->mcp_url );
 			return;
 		}
 		$this->revision = Core::as_string( Core::arr( $answer['result'] ?? null )['protocolVersion'] ?? null );
@@ -214,7 +215,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 			'jsonrpc' => '2.0',
 			'method'  => 'notifications/initialized',
 		];
-		$this->queue( self::MCP_URL, (string) \wp_json_encode( $notification ), self::INITIALIZED );
+		$this->queue( $this->mcp_url, (string) \wp_json_encode( $notification ), self::INITIALIZED );
 		$this->calls();
 	}
 
@@ -292,7 +293,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	protected function failed( string $subject, string $error ): void {
 		$status = 1 === \preg_match( '/^HTTP (\d{3}) /', $error, $match ) ? (int) $match[1] : 0;
 		if ( self::TOKEN_URL === $subject ) {
-			Context_A8C_Token::failed( $this->auth_dir, $status );
+			Context_A8C_Token::failed( $this->auth_dir, $this->mcp_url, $status );
 			if ( 400 === $status || 401 === $status ) {
 				$this->refused( $status );
 			}
@@ -309,7 +310,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 		}
 		$this->end_pass();
 		if ( 401 === $status ) {
-			Context_A8C_Token::stale( $this->auth_dir );
+			Context_A8C_Token::stale( $this->auth_dir, $this->mcp_url );
 			$this->print_less_often( 'ContextA8C refused the token; refreshing it next pass: ', Core::terminal_safe( $error ) );
 			return;
 		}
@@ -353,7 +354,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	/** Close the pass's session, once nothing is left to send, with a DELETE naming it. */
 	protected function pass_ended(): void {
 		if ( '' !== $this->session ) {
-			$this->send_closing( self::MCP_URL, null, self::CLOSE );
+			$this->send_closing( $this->mcp_url, null, self::CLOSE );
 		}
 	}
 
@@ -365,7 +366,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	 */
 	protected function abandoned( string $subject, array $note ): void {
 		if ( self::TOKEN_URL === $subject ) {
-			Context_A8C_Token::failed( $this->auth_dir, 0 );
+			Context_A8C_Token::failed( $this->auth_dir, $this->mcp_url, 0 );
 		}
 	}
 
@@ -384,7 +385,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	/**
 	 * Queue one `tools/call` of the tool, under the subject naming it.
 	 *
-	 * @param string                 $provider The provider: slack, wpcom or linear.
+	 * @param string                 $provider The provider: `slack`, `linear`, or the P2 node's `PROVIDER`.
 	 * @param string                 $subtool  The provider's tool.
 	 * @param array<string,mixed>    $args     Its arguments.
 	 * @param array<array-key,mixed> $note     What the source reads with its answer.
@@ -403,7 +404,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 				],
 			],
 		];
-		$this->queue( self::MCP_URL, (string) \wp_json_encode( $envelope ), "{$provider}/{$subtool}?" . \http_build_query( $args ), $note );
+		$this->queue( $this->mcp_url, (string) \wp_json_encode( $envelope ), "{$provider}/{$subtool}?" . \http_build_query( $args ), $note );
 	}
 
 	/**
@@ -420,11 +421,11 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 		$proxy = '' === $this->proxy ? [] : [ 'proxy' => $this->proxy ];
 		if ( self::TOKEN_URL === $subject ) {
 			return [
-				'body'    => Context_A8C_Token::form( $this->auth_dir ),
+				'body'    => Context_A8C_Token::form( $this->auth_dir, $this->mcp_url ),
 				'headers' => [ self::FORM ],
 			] + $proxy;
 		}
-		$headers = [ 'Authorization: Bearer ' . Context_A8C_Token::access( $this->auth_dir ), self::ACCEPT ];
+		$headers = [ 'Authorization: Bearer ' . Context_A8C_Token::access( $this->auth_dir, $this->mcp_url ), self::ACCEPT ];
 		if ( self::INITIALIZE === $subject ) {
 			return [
 				'headers'          => $headers,
@@ -459,7 +460,8 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 	/**
 	 * A ContextA8C source's node_schema: the Source shape, owning no Table,
 	 * since its session cannot outlive the process, with no vault group, the
-	 * token dir after the tier, and the proxy after it.
+	 * MCP server's url after the tier, the token dir after it, and the proxy
+	 * after that.
 	 *
 	 * @param list<array<string,mixed>> $commands The source's own commands.
 	 * @return array<string,mixed>
@@ -469,6 +471,7 @@ abstract class Context_A8C_Source_Node extends Source_Node {
 		unset( $schema['owns'] );
 		$schema['arguments'] = [
 			...\array_values( Core::arr( $schema['arguments'] ?? null ) ),
+			[ 'name' => 'mcp_url', 'type' => 'string', 'required' => true, 'description' => 'The ContextA8C MCP server\'s url, whose md5 names the relay\'s token files.' ],
 			[ 'name' => 'auth_dir', 'type' => 'string', 'required' => true, 'description' => 'The dir holding the ContextA8C relay\'s wordpress-remote-* token dirs.' ],
 			[ 'name' => 'proxy', 'type' => 'string', 'default' => '', 'description' => 'Optional proxy every request goes through, <scheme>://<host>:<port>, as Curl takes it.' ],
 		];

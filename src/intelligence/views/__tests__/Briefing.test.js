@@ -64,7 +64,7 @@ const CHANGES = {
 		{
 			entity_key: null,
 			name: null,
-			role: 'newspack_product',
+			role: 'operator_product',
 			items: [ PRODUCT_BUG ],
 		},
 	],
@@ -186,8 +186,15 @@ beforeEach( () => {
 
 afterEach( () => jest.restoreAllMocks() );
 
-const renderBriefing = () =>
-	render( <Briefing userId={ USER } { ...handlers } /> );
+const OPERATOR = {
+	name: 'Quillmere Cooperative',
+	heading: 'Quillmere Heading',
+};
+
+const renderBriefing = ( operator = OPERATOR ) =>
+	render(
+		<Briefing userId={ USER } operator={ operator } { ...handlers } />
+	);
 
 /**
  * Open a collapsed group by its toggle, named by its heading and its count.
@@ -214,11 +221,27 @@ describe( 'Briefing', () => {
 		const sections = document.querySelectorAll( 'section' );
 		expect(
 			within( sections[ 0 ] ).getByPlaceholderText(
-				'Ask about clients, the industry or Newspack…'
+				`Ask about clients, the industry or ${ OPERATOR.name }…`
 			)
 		).toBeInTheDocument();
 		expect( wire.sent( 'ask' ) ).toEqual( [] );
 		expect( wire.sent( 'ask_result' ) ).toEqual( [] );
+	} );
+
+	it( "heads the operator's own work by the heading it is localized, a lowercase name as given", async () => {
+		renderBriefing( { name: 'quillmere', heading: 'quillmere' } );
+		const changes = await screen.findByRole( 'region', {
+			name: 'Last seven days',
+		} );
+		await within( changes ).findByRole( 'heading', {
+			level: 3,
+			name: 'quillmere',
+		} );
+		expect(
+			within( changes ).getByText(
+				'The 3 most important of 61 items about clients, quillmere and the industry in the last seven days.'
+			)
+		).toBeInTheDocument();
 	} );
 
 	it( 'asks each slice through its own read', async () => {
@@ -251,7 +274,7 @@ describe( 'Briefing', () => {
 		expect( groups.map( ( g ) => g.textContent ) ).toEqual( [
 			'Industry',
 			'Kestrel Quillwork',
-			'Newspack',
+			OPERATOR.heading,
 		] );
 		expect(
 			within( groups[ 2 ].closest( 'section' ) ).getByRole( 'link', {
@@ -263,7 +286,7 @@ describe( 'Briefing', () => {
 		);
 		expect(
 			within( changes ).getByText(
-				'The 3 most important of 61 items about clients, Newspack and the industry in the last seven days.'
+				`The 3 most important of 61 items about clients, ${ OPERATOR.name } and the industry in the last seven days.`
 			)
 		).toBeInTheDocument();
 		expect(
@@ -316,7 +339,12 @@ describe( 'Briefing', () => {
 	it( "saves a signal's cited item to a folder for a curator", async () => {
 		const onSave = jest.fn();
 		render(
-			<Briefing userId={ USER } { ...handlers } onSave={ onSave } />
+			<Briefing
+				userId={ USER }
+				operator={ OPERATOR }
+				{ ...handlers }
+				onSave={ onSave }
+			/>
 		);
 		const signals = await screen.findByRole( 'region', {
 			name: 'Signals',
@@ -469,7 +497,7 @@ describe( 'Briefing', () => {
 		wire.replies.watches = { watches: [], available: true };
 		renderBriefing();
 		await screen.findByText(
-			'Nothing about a client, Newspack or the industry arrived in the last seven days.',
+			`Nothing about a client, ${ OPERATOR.name } or the industry arrived in the last seven days.`,
 			{ exact: false }
 		);
 		fireEvent.click(

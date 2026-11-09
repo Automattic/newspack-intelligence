@@ -35,11 +35,25 @@ if ( ! function_exists( 'plugin_dir_url' ) ) {
 	}
 }
 
-// Stand-in for sanitize_title(): transliterate, lowercase, dash non-alphanumerics.
+// Stand-in for sanitize_title(), as sanitize_title_with_dashes() spells a
+// slug: a Latin letter transliterated, any other script's character
+// percent-encoded, lowercased, a dot a dash, every character but a letter,
+// digit, percent, space, underscore or dash dropped, then each run of
+// spaces and dashes one dash.
 if ( ! function_exists( 'sanitize_title' ) ) {
 	function sanitize_title( string $title ): string {
-		$ascii = (string) iconv( 'UTF-8', 'ASCII//TRANSLIT//IGNORE', $title );
-		return trim( (string) preg_replace( '/[^a-z0-9]+/', '-', strtolower( $ascii ) ), '-' );
+		$spelled = '';
+		foreach ( (array) preg_split( '//u', $title, -1, PREG_SPLIT_NO_EMPTY ) as $char ) {
+			$char = (string) $char;
+			if ( 1 === strlen( $char ) ) {
+				$spelled .= $char;
+				continue;
+			}
+			$latin    = (string) iconv( 'UTF-8', 'ASCII//TRANSLIT//IGNORE', $char );
+			$spelled .= '' !== $latin && ! str_contains( $latin, '?' ) ? $latin : implode( '', array_map( static fn ( string $byte ): string => '%' . bin2hex( $byte ), str_split( $char ) ) );
+		}
+		$kept = (string) preg_replace( '/[^%a-z0-9 _-]/', '', str_replace( '.', '-', strtolower( $spelled ) ) );
+		return trim( (string) preg_replace( '/-+/', '-', (string) preg_replace( '/\s+/', '-', $kept ) ), '-' );
 	}
 }
 

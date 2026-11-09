@@ -1,17 +1,20 @@
 <?php
 /**
- * Context_A8C_Token: the process's one hold on the ContextA8C relay's token,
- * shared by every ContextA8C source reading one token dir.
+ * Context_A8C_Token: the process's one hold on the ContextA8C relay's token
+ * for one MCP server, shared by every ContextA8C source reading that server's
+ * token from one token dir.
  *
- * The token lives here, keyed by the dir, and not in any node's state, so a
- * dump of a node never carries it. One refresh is in flight per dir at a time:
+ * The token lives here, keyed by the dir and the server's url, as the relay
+ * names its file, and not in any node's state, so a dump of a node never
+ * carries it, and two servers sharing a dir never share a token. One refresh
+ * is in flight per dir and url at a time:
  * the node that claims it refreshes, and every other node finding the token due
  * waits for it to land. A claim re-reads the newest file under an exclusive
  * lock beside it first, so a token the host's relay refreshed in the meantime
  * is taken rather than refreshed again, and a refreshed token is written back
  * under the same lock, through a rename beside the file. A refresh token the
- * endpoint refused is never spent again: the dir waits for the relay to sign in
- * again, which writes a newer file.
+ * endpoint refused is never spent again: the token waits for the relay to sign
+ * in again, which writes a newer file.
  *
  * @package Newspack_Intelligence
  */
@@ -48,80 +51,84 @@ final class Context_A8C_Token {
 	/** The fields a token endpoint's answer may replace in the file. */
 	private const ANSWERED = [ 'access_token', 'refresh_token', 'expires_in', 'token_type', 'scope' ];
 
-	/** @var array<string,array{path:string,token:array<array-key,mixed>}> The token held, and the file it came from, by dir. */
+	/** @var array<string,array{path:string,token:array<array-key,mixed>}> The token held, and the file it came from, by `key()`. */
 	private static array $held = [];
 
-	/** @var array<string,true> The dirs whose refresh is in flight. */
+	/** @var array<string,true> The `key()`s whose refresh is in flight. */
 	private static array $refreshing = [];
 
-	/** @var array<string,true> The dirs whose token a server refused before its expiry. */
+	/** @var array<string,true> The `key()`s whose token a server refused before its expiry. */
 	private static array $stale = [];
 
-	/** @var array<string,array{0:int,1:int}> Each dir's refused refresh: the token's `obtained_at` and the HTTP status. */
+	/** @var array<string,array{0:int,1:int}> Each `key()`'s refused refresh: the token's `obtained_at` and the HTTP status. */
 	private static array $refused = [];
 
 	/**
-	 * The token held for $dir, else the newest file read in;
-	 * null unless a file reads as a JSON object carrying an access token.
+	 * The token held for $dir and the MCP server at $url, else the newest
+	 * file the relay wrote there for that server read in; null unless a file
+	 * reads as a JSON object carrying an access token.
 	 *
 	 * @return array{path:string,token:array<array-key,mixed>}|null
 	 */
-	public static function held( string $dir ): ?array {
-		if ( ! isset( self::$held[ $dir ] ) ) {
-			$newest = self::newest( $dir );
+	public static function held( string $dir, string $url ): ?array {
+		$key = self::key( $dir, $url );
+		if ( ! isset( self::$held[ $key ] ) ) {
+			$newest = self::newest( $dir, $url );
 			if ( null === $newest ) {
 				return null;
 			}
-			self::adopt( $dir, $newest );
+			self::adopt( $key, $newest );
 		}
-		return self::$held[ $dir ];
+		return self::$held[ $key ];
 	}
 
 	/**
 	 * Whether the held token wants refreshing: a server refused it, or it
 	 * expires within $margin seconds of $now.
 	 */
-	public static function due( string $dir, float $now, int $margin ): bool {
-		$token   = self::$held[ $dir ]['token'] ?? [];
+	public static function due( string $dir, string $url, float $now, int $margin ): bool {
+		$key     = self::key( $dir, $url );
+		$token   = self::$held[ $key ]['token'] ?? [];
 		$expires = self::obtained( $token ) / 1000 + Core::as_int( $token['expires_in'] ?? null );
-		return isset( self::$stale[ $dir ] ) || $expires - $margin <= $now;
+		return isset( self::$stale[ $key ] ) || $expires - $margin <= $now;
 	}
 
 	/**
-	 * Claim the refresh of $dir's token, under the lock: FRESH when the file
+	 * Claim the refresh of the token for $dir and $url, under the lock: FRESH when the file
 	 * holds a newer token, now held; WAIT while another refresh is in flight;
 	 * REFUSED when the endpoint refused this refresh token; UNREFRESHABLE with
 	 * no refresh token or client; UNLOCKED when the lock would not hold; else
 	 * REFRESH, and the caller owns the refresh until it lands or fails.
 	 */
-	public static function claim( string $dir ): string {
-		if ( isset( self::$refreshing[ $dir ] ) ) {
+	public static function claim( string $dir, string $url ): string {
+		$key = self::key( $dir, $url );
+		if ( isset( self::$refreshing[ $key ] ) ) {
 			return self::WAIT;
 		}
-		$path = self::$held[ $dir ]['path'] ?? '';
+		$path = self::$held[ $key ]['path'] ?? '';
 		return self::locked(
 			$path,
-			static function () use ( $dir ): string {
-				$newest = self::newest( $dir );
-				$held   = self::$held[ $dir ]['token'] ?? [];
+			static function () use ( $dir, $url, $key ): string {
+				$newest = self::newest( $dir, $url );
+				$held   = self::$held[ $key ]['token'] ?? [];
 				if ( null !== $newest && self::obtained( $newest['token'] ) > self::obtained( $held ) ) {
-					self::adopt( $dir, $newest );
+					self::adopt( $key, $newest );
 					return self::FRESH;
 				}
-				if ( isset( self::$refused[ $dir ] ) && self::obtained( $held ) <= self::$refused[ $dir ][0] ) {
+				if ( isset( self::$refused[ $key ] ) && self::obtained( $held ) <= self::$refused[ $key ][0] ) {
 					return self::REFUSED;
 				}
-				if ( '' === Core::str( $held['refresh_token'] ?? null ) || '' === self::client_id( $dir ) ) {
+				if ( '' === Core::str( $held['refresh_token'] ?? null ) || '' === self::client_id( $key, $url ) ) {
 					return self::UNREFRESHABLE;
 				}
-				self::$refreshing[ $dir ] = true;
+				self::$refreshing[ $key ] = true;
 				return self::REFRESH;
 			}
 		) ?? self::UNLOCKED;
 	}
 
 	/**
-	 * Hold $newest for $dir. While a refusal stands, only a token obtained
+	 * Hold $newest under $key. While a refusal stands, only a token obtained
 	 * after the refused one clears it and the stale mark, so a file still
 	 * holding an older token, its refresh token spent, never refreshes
 	 * again; with none, a token obtained at another moment than the one held
@@ -129,15 +136,15 @@ final class Context_A8C_Token {
 	 *
 	 * @param array{path:string,token:array<array-key,mixed>} $newest The token and its file.
 	 */
-	private static function adopt( string $dir, array $newest ): void {
+	private static function adopt( string $key, array $newest ): void {
 		$at    = self::obtained( $newest['token'] );
-		$fresh = isset( self::$refused[ $dir ] )
-			? $at > self::$refused[ $dir ][0]
-			: ! isset( self::$held[ $dir ] ) || $at !== self::obtained( self::$held[ $dir ]['token'] );
+		$fresh = isset( self::$refused[ $key ] )
+			? $at > self::$refused[ $key ][0]
+			: ! isset( self::$held[ $key ] ) || $at !== self::obtained( self::$held[ $key ]['token'] );
 		if ( $fresh ) {
-			unset( self::$stale[ $dir ], self::$refused[ $dir ] );
+			unset( self::$stale[ $key ], self::$refused[ $key ] );
 		}
-		self::$held[ $dir ] = $newest;
+		self::$held[ $key ] = $newest;
 	}
 
 	/**
@@ -147,9 +154,9 @@ final class Context_A8C_Token {
 	 *
 	 * @return array{path:string,token:array<array-key,mixed>}|null
 	 */
-	private static function newest( string $dir ): ?array {
+	private static function newest( string $dir, string $url ): ?array {
 		$newest = null;
-		foreach ( \glob( self::pattern( $dir ) ) ?: [] as $path ) {
+		foreach ( \glob( self::pattern( $dir, $url ) ) ?: [] as $path ) {
 			// phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- a local token file the operator's relay writes.
 			$token = \json_decode( (string) @\file_get_contents( $path ), true );
 			if ( ! \is_array( $token ) || '' === Core::str( $token['access_token'] ?? null ) ) {
@@ -165,28 +172,29 @@ final class Context_A8C_Token {
 		return $newest;
 	}
 
-	/** The path pattern the relay's token files match under $dir. */
-	public static function pattern( string $dir ): string {
-		return "{$dir}/wordpress-remote-*/" . \md5( Context_A8C_Source_Node::MCP_URL ) . '_tokens.json';
+	/** The path pattern the relay's token files for the MCP server at $url match under $dir. */
+	public static function pattern( string $dir, string $url ): string {
+		return "{$dir}/wordpress-remote-*/" . \md5( $url ) . '_tokens.json';
 	}
 
 	/**
 	 * The refresh's form body, built as it goes out: the held refresh token,
-	 * the relay's client and the MCP url as the resource.
+	 * the relay's client and the MCP url, $url, as the resource.
 	 */
-	public static function form( string $dir ): string {
+	public static function form( string $dir, string $url ): string {
+		$key  = self::key( $dir, $url );
 		$form = [
 			'grant_type'    => 'refresh_token',
-			'refresh_token' => Core::str( ( self::$held[ $dir ]['token'] ?? [] )['refresh_token'] ?? null ),
-			'client_id'     => self::client_id( $dir ),
-			'resource'      => Context_A8C_Source_Node::MCP_URL,
+			'refresh_token' => Core::str( ( self::$held[ $key ]['token'] ?? [] )['refresh_token'] ?? null ),
+			'client_id'     => self::client_id( $key, $url ),
+			'resource'      => $url,
 		];
 		return \http_build_query( $form );
 	}
 
 	/** The relay's OAuth client, from the client file beside the held token; '' for none. */
-	private static function client_id( string $dir ): string {
-		$path = \dirname( self::$held[ $dir ]['path'] ?? '' ) . '/' . \md5( Context_A8C_Source_Node::MCP_URL ) . '_client_info.json';
+	private static function client_id( string $key, string $url ): string {
+		$path = \dirname( self::$held[ $key ]['path'] ?? '' ) . '/' . \md5( $url ) . '_client_info.json';
 		// phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- a local client file the operator's relay writes.
 		$client = \json_decode( (string) @\file_get_contents( $path ), true );
 		return \is_array( $client ) ? Core::as_string( $client['client_id'] ?? null ) : '';
@@ -200,20 +208,21 @@ final class Context_A8C_Token {
 	 *
 	 * @return array{0:bool,1:bool} Whether the answer held an access token, and whether it reached the file.
 	 */
-	public static function landed( string $dir, string $body, float $now ): array {
-		unset( self::$refreshing[ $dir ] );
+	public static function landed( string $dir, string $url, string $body, float $now ): array {
+		$key = self::key( $dir, $url );
+		unset( self::$refreshing[ $key ] );
 		$answer = \json_decode( $body, true );
-		if ( ! \is_array( $answer ) || '' === Core::str( $answer['access_token'] ?? null ) || ! isset( self::$held[ $dir ] ) ) {
+		if ( ! \is_array( $answer ) || '' === Core::str( $answer['access_token'] ?? null ) || ! isset( self::$held[ $key ] ) ) {
 			return [ false, false ];
 		}
-		$token                = \array_merge( self::$held[ $dir ]['token'], \array_intersect_key( $answer, \array_flip( self::ANSWERED ) ) );
+		$token                = \array_merge( self::$held[ $key ]['token'], \array_intersect_key( $answer, \array_flip( self::ANSWERED ) ) );
 		$token['obtained_at'] = (int) ( $now * 1000 );
-		$path                 = self::$held[ $dir ]['path'];
-		self::$held[ $dir ]   = [
+		$path                 = self::$held[ $key ]['path'];
+		self::$held[ $key ]   = [
 			'path'  => $path,
 			'token' => $token,
 		];
-		unset( self::$stale[ $dir ] );
+		unset( self::$stale[ $key ] );
 		return [ true, true === self::locked( $path, static fn (): bool => self::write( $path, $token ) ) ];
 	}
 
@@ -229,7 +238,7 @@ final class Context_A8C_Token {
 		$text       = (string) \wp_json_encode( $token );
 		$prev_umask = \umask( 0077 );
 		try {
-			// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_file_put_contents, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_rename -- the relay's own token file; one atomic rename.
+			// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_file_put_contents, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_rename -- the relay's own token file; one rename replaces it whole.
 			$landed = \strlen( $text ) === @\file_put_contents( $temp, $text ) && @\rename( $temp, $path );
 		} finally {
 			\umask( $prev_umask );
@@ -273,11 +282,12 @@ final class Context_A8C_Token {
 	 *
 	 * @param int $status The HTTP status, 0 for a transport failure.
 	 */
-	public static function failed( string $dir, int $status ): void {
-		unset( self::$refreshing[ $dir ] );
+	public static function failed( string $dir, string $url, int $status ): void {
+		$key = self::key( $dir, $url );
+		unset( self::$refreshing[ $key ] );
 		if ( 400 === $status || 401 === $status ) {
-			self::$refused[ $dir ] = [ self::obtained( self::$held[ $dir ]['token'] ?? [] ), $status ];
-			unset( self::$held[ $dir ] );
+			self::$refused[ $key ] = [ self::obtained( self::$held[ $key ]['token'] ?? [] ), $status ];
+			unset( self::$held[ $key ] );
 		}
 	}
 
@@ -290,18 +300,23 @@ final class Context_A8C_Token {
 		return Core::as_int( $token['obtained_at'] ?? null );
 	}
 
-	/** The access token held for $dir; '' for none. */
-	public static function access( string $dir ): string {
-		return Core::str( ( self::$held[ $dir ]['token'] ?? [] )['access_token'] ?? null );
+	/** The access token held for $dir and $url; '' for none. */
+	public static function access( string $dir, string $url ): string {
+		return Core::str( ( self::$held[ self::key( $dir, $url ) ]['token'] ?? [] )['access_token'] ?? null );
 	}
 
-	/** The HTTP status the endpoint refused $dir's refresh token with, 0 for none. */
-	public static function refused_status( string $dir ): int {
-		return self::$refused[ $dir ][1] ?? 0;
+	/** The HTTP status the endpoint refused the refresh token for $dir and $url with, 0 for none. */
+	public static function refused_status( string $dir, string $url ): int {
+		return self::$refused[ self::key( $dir, $url ) ][1] ?? 0;
 	}
 
-	/** Mark $dir's token refused by a server, so the next pass refreshes it. */
-	public static function stale( string $dir ): void {
-		self::$stale[ $dir ] = true;
+	/** Mark the token for $dir and $url refused by a server, so the next pass refreshes it. */
+	public static function stale( string $dir, string $url ): void {
+		self::$stale[ self::key( $dir, $url ) ] = true;
+	}
+
+	/** The key holding the token for the MCP server at $url under $dir. */
+	private static function key( string $dir, string $url ): string {
+		return "{$dir}/" . \md5( $url );
 	}
 }

@@ -54,7 +54,7 @@ class Clients_Settings {
 
 	/** Render the upload form (called from the Settings page). */
 	public function render_upload_section(): void {
-		echo '<h2>' . \esc_html__( 'Import Newspack Clients', 'newspack-intelligence' ) . '</h2>';
+		echo '<h2>' . \esc_html__( 'Import Clients', 'newspack-intelligence' ) . '</h2>';
 		open_settings_form( self::ADMIN_POST_ACTION, true );
 		echo '<input type="file" name="clients_csv" accept=".csv" required /> ';
 		\submit_button( \__( 'Import CSV', 'newspack-intelligence' ), 'secondary', 'submit', false );
@@ -68,6 +68,6 @@ class Clients_Settings {
 		if ( '1' !== $flag ) {
 			return;
 		}
-		echo '<div class="notice notice-success is-dismissible"><p>' . \esc_html__( 'Newspack clients imported.', 'newspack-intelligence' ) . '</p></div>';
+		echo '<div class="notice notice-success is-dismissible"><p>' . \esc_html__( 'Clients imported.', 'newspack-intelligence' ) . '</p></div>';
 	}
 }

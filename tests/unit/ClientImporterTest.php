@@ -12,7 +12,7 @@ final class ClientImporterTest extends TestCase {
 
 	private function rows( array ...$triples ): array {
 		return \array_map(
-			static fn ( array $t ): array => [ 'atomic_site_id' => $t[0], 'domain_name' => $t[1], 'created' => $t[2] ],
+			static fn ( array $t ): array => [ 'site_id' => $t[0], 'domain_name' => $t[1], 'created' => $t[2] ],
 			$triples
 		);
 	}
@@ -40,7 +40,7 @@ final class ClientImporterTest extends TestCase {
 		$this->assertSame( '2026-06-30', $roster->store['1']['since'] );
 	}
 
-	public function test_upsert_refreshes_atomic_fields(): void {
+	public function test_upsert_refreshes_site_fields(): void {
 		$roster               = new Fake_Client_Roster();
 		$roster->store['1']   = [ 'domain_name' => 'old.example', 'status' => 'active', 'since' => '2026-01-01' ];
 		$result               = ( new Client_Importer( $roster ) )->import( $this->rows( [ '1', 'new.example', '2020-01-01' ] ), '2026-06-30' );

@@ -48,7 +48,7 @@ final class ClientsSettingsTest extends TestCase {
 	}
 
 	public function test_import_path_parses_and_imports(): void {
-		$csv = "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"1\",\"2020-01-01\",\"a.example\"\n";
+		$csv = "\"Site ID\",\"Created\",\"Domain name\"\n\"1\",\"2020-01-01\",\"a.example\"\n";
 		$tmp = \tempnam( \sys_get_temp_dir(), 'clients' );
 		\file_put_contents( $tmp, $csv );
 
@@ -74,7 +74,7 @@ final class ClientsSettingsTest extends TestCase {
 		$this->activate( 'newspack-intelligence-project' );
 		$GLOBALS['_current_user_id']          = 37;
 		$GLOBALS['_wp_test_user_logins'][37]  = 'tidewater-editor';
-		$csv = "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"64\",\"2022-02-02\",\"tidewater.example\"\n";
+		$csv = "\"Site ID\",\"Created\",\"Domain name\"\n\"64\",\"2022-02-02\",\"tidewater.example\"\n";
 		$tmp = \tempnam( \sys_get_temp_dir(), 'clients' );
 		\file_put_contents( $tmp, $csv );
 
@@ -147,7 +147,7 @@ final class ClientsSettingsTest extends TestCase {
 		$GLOBALS['_check_admin_referer'] = true;
 		$GLOBALS['_wp_referer']         = 'http://localhost/wp-admin/options-general.php?page=x';
 
-		$csv = "\"Atomic site ID\",\"Created\",\"Domain name\"\n\"7\",\"2022-02-02\",\"taos.example\"\n";
+		$csv = "\"Site ID\",\"Created\",\"Domain name\"\n\"7\",\"2022-02-02\",\"taos.example\"\n";
 		$tmp = \tempnam( \sys_get_temp_dir(), 'clients' );
 		\file_put_contents( $tmp, $csv );
 		$_FILES = [ 'clients_csv' => [ 'tmp_name' => $tmp, 'name' => 'clients.csv' ] ];

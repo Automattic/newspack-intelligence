@@ -24,7 +24,7 @@ class Clients_CLI_Command {
 	public function __construct( private ?Client_Importer $importer = null ) {}
 
 	/**
-	 * Import a Newspack-clients CSV as the client roster: each new client,
+	 * Import a client CSV as the client roster: each new client,
 	 * churn, return and new domain becomes an ontology event, recorded as
 	 * the client-import machine. A projection that will not open fails the
 	 * command rather than re-creating every client.
@@ -32,11 +32,11 @@ class Clients_CLI_Command {
 	 * ## OPTIONS
 	 *
 	 * <csv>
-	 * : Path to the CSV produced by fetch-newspack-clients.sh.
+	 * : Path to a CSV of every client, headed "Site ID","Created","Domain name".
 	 *
 	 * ## EXAMPLES
 	 *
-	 *     wp newspack-intelligence clients import newspack_clients.csv
+	 *     wp newspack-intelligence clients import clients.csv
 	 *
 	 * @api WP-CLI dispatches this by reflection; nothing here calls it.
 	 * @param array<int,string>    $args       Positional args.

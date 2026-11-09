@@ -39,7 +39,7 @@ final class ContextA8CP2Test extends TestCase {
 	 * @param string ...$sites The sites it reads.
 	 */
 	private function p2( string $tier, string ...$sites ): Context_A8C_P2_Node {
-		$node = $this->wire( new Context_A8C_P2_Node(), 'p2', [ $tier, $this->auth_dir ] );
+		$node = $this->wire( new Context_A8C_P2_Node(), 'p2', [ $tier, self::MCP, $this->auth_dir ] );
 		foreach ( $sites as $site ) {
 			$node->interpreter()->dispatch( 'add_site', [ $site ] );
 		}

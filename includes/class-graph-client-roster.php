@@ -1,12 +1,12 @@
 <?php
 /**
  * Graph_Client_Roster: the client roster as the entity graph holds it. A
- * client is an organization carrying its atomic site id as an identifier and
+ * client is an organization carrying its site id as an identifier and
  * an open `client` role; a churned one carries an open `former_client` role
  * instead. The roster reads the projection on its first call of an import,
  * through `Entity_Index::load()`, so every identifier answers the survivor
- * of any merge. A new client resolves first by its atomic id, else by its
- * domain, and only one found by neither creates `organization:atomic-<id>`,
+ * of any merge. A new client resolves first by its site id, else by its
+ * domain, and only one found by neither creates `organization:site-<id>`,
  * so an import never moves an entity's domain onto a new one. A client is
  * a client from the earliest day its snapshot rows were Created, or from
  * the end of its latest ended client or former_client row when that is
@@ -45,10 +45,10 @@ final class Graph_Client_Roster implements Client_Roster {
 	/** The index this import resolves identifiers through; null until read. */
 	private ?Entity_Index $index = null;
 
-	/** @var array<string,string> Atomic id => the entity it answers. */
-	private array $atomic = [];
+	/** @var array<string,string> Site id => the entity it answers. */
+	private array $sites = [];
 
-	/** @var array<string,string> Atomic id => the refused entity holding it. */
+	/** @var array<string,string> Site id => the refused entity holding it. */
 	private array $refused = [];
 
 	/** @var array<string,true> Each entity a row of this import's snapshot names. */
@@ -68,7 +68,7 @@ final class Graph_Client_Roster implements Client_Roster {
 	 */
 	private array $open = [];
 
-	/** @var array<string,array{0:int,1:string}> Each entity in the snapshot => the earliest day its rows were Created, and that row's atomic id. */
+	/** @var array<string,array{0:int,1:string}> Each entity in the snapshot => the earliest day its rows were Created, and that row's site id. */
 	private array $since = [];
 
 	/** @var array<string,int> Each entity => the latest end of a closed client or former_client row holding time. */
@@ -86,47 +86,46 @@ final class Graph_Client_Roster implements Client_Roster {
 	public function __construct( private string $actor ) {}
 
 	/**
-	 * The roster's record of an atomic id: active while its entity holds an
+	 * The roster's record of an site id: active while its entity holds an
 	 * open client role, held when a curator ended it, refused when its entity
 	 * is rejected or its merge chain does not resolve.
 	 *
-	 * @param string $atomic_id The atomic site id.
+	 * @param string $site_id The site id.
 	 * @return array{status:string}|null
 	 */
-	public function find_by_atomic_id( string $atomic_id ): ?array {
-		$status = $this->statuses()[ self::id( $atomic_id ) ] ?? null;
+	public function find_by_site_id( string $site_id ): ?array {
+		$status = $this->statuses()[ self::id( $site_id ) ] ?? null;
 		return null === $status ? null : [ 'status' => $status ];
 	}
 
 	/**
-	 * Every atomic id an entity carries, active, churned or held, and every
+	 * Every site id an entity carries, active, churned or held, and every
 	 * one a refused entity holds.
 	 *
 	 * @return array<string,string>
 	 */
 	public function statuses(): array {
 		$this->load();
-		$statuses = \array_map( fn ( string $key ): string => isset( $this->open[ $key ]['client'] ) ? 'active' : ( isset( $this->held[ $key ] ) ? 'held' : 'churned' ), $this->atomic );
+		$statuses = \array_map( fn ( string $key ): string => isset( $this->open[ $key ]['client'] ) ? 'active' : ( isset( $this->held[ $key ] ) ? 'held' : 'churned' ), $this->sites );
 		return \array_map( static fn (): string => 'refused', $this->refused ) + $statuses;
 	}
 
 	/**
 	 * A client the roster lacks: the entity holding its domain, else a new
-	 * organization keyed by the atomic id and named by its domain, or by the id
-	 * when it has none. It gains the atomic id, the domain when it is not held
+	 * organization keyed by the site id and named by its domain, or by the id
+	 * when it has none. It gains the site id, the domain when it is not held
 	 * by any entity, and settle() opens its client role from start() unless
 	 * it is held. A domain a refused entity holds leaves the client alone.
 	 *
-	 * @param array{atomic_site_id:string,domain_name:string,created:string} $row   The CSV row.
+	 * @param array{site_id:string,domain_name:string,created:string} $row   The CSV row.
 	 * @param string                                                         $today YYYY-MM-DD, UTC.
-	 * @throws \InvalidArgumentException When the row does not name an atomic
-	 *                                   id.
+	 * @throws \InvalidArgumentException When the row does not name a site id.
 	 */
 	public function create( array $row, string $today ): void {
 		$this->load();
-		$id = self::id( $row['atomic_site_id'] );
+		$id = self::id( $row['site_id'] );
 		if ( '' === $id ) {
-			throw new \InvalidArgumentException( 'client import: a row has no atomic site id' );
+			throw new \InvalidArgumentException( 'client import: a row has no site id' );
 		}
 		$domain = Entity_Index::identifier_value( 'domain', $row['domain_name'] );
 		$key    = $this->holder( $domain );
@@ -134,12 +133,12 @@ final class Graph_Client_Roster implements Client_Roster {
 			return;
 		}
 		if ( null === $key ) {
-			$key = Intel_Event::entity_key( 'organization', "atomic-{$id}" );
-			$this->mint( $id, 'entity_created', [ 'entity_key' => $key, 'type' => 'organization', 'name' => '' === $domain ? "Atomic site {$id}" : $domain ] );
+			$key = Intel_Event::entity_key( 'organization', "site-{$id}" );
+			$this->mint( $id, 'entity_created', [ 'entity_key' => $key, 'type' => 'organization', 'name' => '' === $domain ? "Site {$id}" : $domain ] );
 		}
-		$this->atomic[ $id ] = $key;
-		$this->mint( $id, 'identifier_added', [ 'entity_key' => $key, 'kind' => 'atomic_site_id', 'value' => $id ] );
-		$this->update_atomic_fields( $id, $row, $today );
+		$this->sites[ $id ] = $key;
+		$this->mint( $id, 'identifier_added', [ 'entity_key' => $key, 'kind' => 'site_id', 'value' => $id ] );
+		$this->update_site_fields( $id, $row, $today );
 		if ( ! isset( $this->open[ $key ]['client'] ) && ! isset( $this->held[ $key ] ) ) {
 			$this->set_active( $id, $today );
 		}
@@ -149,13 +148,13 @@ final class Graph_Client_Roster implements Client_Roster {
 	 * A former client is a client again: its former_client row ends at the
 	 * start of today, and settle() opens its client row from start().
 	 *
-	 * @param string $atomic_id The atomic site id.
+	 * @param string $site_id The site id.
 	 * @param string $today     YYYY-MM-DD, UTC.
 	 */
-	public function set_active( string $atomic_id, string $today ): void {
+	public function set_active( string $site_id, string $today ): void {
 		$this->load();
-		$id  = self::id( $atomic_id );
-		$key = $this->atomic[ $id ];
+		$id  = self::id( $site_id );
+		$key = $this->sites[ $id ];
 		$this->close( $id, $key, 'former_client', $today );
 		// settle() mints the row once the client's start is known.
 		$this->open[ $key ]['client'] ??= [];
@@ -168,19 +167,19 @@ final class Graph_Client_Roster implements Client_Roster {
 	 * keeps its name and every earlier domain. A refused entity, or a domain
 	 * one holds, is left alone.
 	 *
-	 * @param string                                                         $atomic_id The atomic site id.
-	 * @param array{atomic_site_id:string,domain_name:string,created:string} $row       The CSV row.
+	 * @param string                                                         $site_id The site id.
+	 * @param array{site_id:string,domain_name:string,created:string} $row       The CSV row.
 	 * @param string                                                         $today     YYYY-MM-DD, UTC.
-	 * @throws \InvalidArgumentException Naming the atomic id, when its Created is not a day.
+	 * @throws \InvalidArgumentException Naming the site id, when its Created is not a day.
 	 */
-	public function update_atomic_fields( string $atomic_id, array $row, string $today ): void {
+	public function update_site_fields( string $site_id, array $row, string $today ): void {
 		$this->load();
-		$id = self::id( $atomic_id );
+		$id = self::id( $site_id );
 		if ( isset( $this->refused[ $id ] ) ) {
 			$this->left_alone[ $this->refused[ $id ] ] = true;
 			return;
 		}
-		$key                   = $this->atomic[ $id ];
+		$key                   = $this->sites[ $id ];
 		$this->present[ $key ] = true;
 		$this->since[ $key ]   = \min( $this->since[ $key ] ?? [ \PHP_INT_MAX, $id ], [ self::created( $id, $row['created'] ), $id ] );
 		$domain                = Entity_Index::identifier_value( 'domain', $row['domain_name'] );
@@ -222,9 +221,9 @@ final class Graph_Client_Roster implements Client_Roster {
 	/**
 	 * The day a CSV row's site was Created, as a UTC day's start.
 	 *
-	 * @param string $id      The atomic site id, for the refusal.
+	 * @param string $id      The site id, for the refusal.
 	 * @param string $created The row's `Created`.
-	 * @throws \InvalidArgumentException Naming the atomic id, when it is not a day.
+	 * @throws \InvalidArgumentException Naming the site id, when it is not a day.
 	 */
 	private static function created( string $id, string $created ): int {
 		try {
@@ -234,20 +233,20 @@ final class Graph_Client_Roster implements Client_Roster {
 		} catch ( \InvalidArgumentException ) {
 			// A day the calendar lacks is refused below, as any other.
 		}
-		throw new \InvalidArgumentException( \esc_html( "client import: atomic site {$id}: Created is not a date: {$created}" ) );
+		throw new \InvalidArgumentException( \esc_html( "client import: site {$id}: Created is not a date: {$created}" ) );
 	}
 
 	/**
 	 * A client is a former client from the start of today, unless another
-	 * of its atomic ids is in the snapshot or churned it already.
+	 * of its site ids is in the snapshot or churned it already.
 	 *
-	 * @param string $atomic_id The atomic site id.
+	 * @param string $site_id The site id.
 	 * @param string $today     YYYY-MM-DD, UTC.
 	 */
-	public function mark_churned( string $atomic_id, string $today ): void {
+	public function mark_churned( string $site_id, string $today ): void {
 		$this->load();
-		$id  = self::id( $atomic_id );
-		$key = $this->atomic[ $id ];
+		$id  = self::id( $site_id );
+		$key = $this->sites[ $id ];
 		if ( isset( $this->present[ $key ] ) || ! isset( $this->open[ $key ]['client'] ) ) {
 			return;
 		}
@@ -261,7 +260,7 @@ final class Graph_Client_Roster implements Client_Roster {
 	 * End each open row of a role at the start of today, on the key the row
 	 * is held under; a role not open is left alone.
 	 *
-	 * @param string $id    The atomic site id the change is for.
+	 * @param string $id    The site id the change is for.
 	 * @param string $key   The entity key.
 	 * @param string $role  The role.
 	 * @param string $today YYYY-MM-DD, UTC.
@@ -278,12 +277,12 @@ final class Graph_Client_Roster implements Client_Roster {
 	}
 
 	/**
-	 * An atomic id as an identifier value.
+	 * An site id as an identifier value.
 	 *
-	 * @param string $atomic_id The atomic site id.
+	 * @param string $site_id The site id.
 	 */
-	private static function id( string $atomic_id ): string {
-		return Entity_Index::identifier_value( 'atomic_site_id', $atomic_id );
+	private static function id( string $site_id ): string {
+		return Entity_Index::identifier_value( 'site_id', $site_id );
 	}
 
 	/**
@@ -294,14 +293,14 @@ final class Graph_Client_Roster implements Client_Roster {
 	 */
 	private function load(): void {
 		if ( null === $this->index ) {
-			[ $this->index, $this->atomic, $this->refused, $this->open, $this->returned, $this->held ] = self::read();
+			[ $this->index, $this->sites, $this->refused, $this->open, $this->returned, $this->held ] = self::read();
 		}
 	}
 
 	/**
-	 * The index, every atomic id by the entity it answers or by the refused
+	 * The index, every site id by the entity it answers or by the refused
 	 * entity holding it, and, under its survivor, the open client and
-	 * former_client rows of every entity carrying an atomic id or a domain,
+	 * former_client rows of every entity carrying an site id or a domain,
 	 * the latest end of one of those rows closed holding time, and the
 	 * entities a curator ended.
 	 *
@@ -313,19 +312,19 @@ final class Graph_Client_Roster implements Client_Roster {
 		return Intel_Graph_Row_Schema::read(
 			static function ( Row_Reader $r ): array {
 				$index     = Entity_Index::load( $r );
-				$atomic    = [];
+				$sites    = [];
 				$survivors = [];
-				foreach ( $index->identifiers( 'atomic_site_id' ) as $id => $entity ) {
-					$atomic[ (string) $id ] = $entity;
+				foreach ( $index->identifiers( 'site_id' ) as $id => $entity ) {
+					$sites[ (string) $id ] = $entity;
 				}
-				foreach ( [ ...$atomic, ...$index->identifiers( 'domain' ) ] as $entity ) {
+				foreach ( [ ...$sites, ...$index->identifiers( 'domain' ) ] as $entity ) {
 					$survivors[ $entity ] = $index->keys_of( $entity );
 				}
 				$refused = [];
-				foreach ( $index->refused( 'atomic_site_id' ) as $id => $holder ) {
+				foreach ( $index->refused( 'site_id' ) as $id => $holder ) {
 					$refused[ (string) $id ] = $holder;
 				}
-				return [ $index, $atomic, $refused, ...self::roles( $r, $survivors ) ];
+				return [ $index, $sites, $refused, ...self::roles( $r, $survivors ) ];
 			}
 		);
 	}
@@ -398,7 +397,7 @@ final class Graph_Client_Roster implements Client_Roster {
 			$this->returned   = [];
 			$this->held       = [];
 			$this->index      = null;
-			$this->atomic     = [];
+			$this->sites     = [];
 			$this->refused    = [];
 			$this->present    = [];
 			$this->left_alone = [];
@@ -430,16 +429,16 @@ final class Graph_Client_Roster implements Client_Roster {
 	/**
 	 * One event, under the roster's actor at the plugin version.
 	 *
-	 * @param string              $id     The atomic site id the event is for.
+	 * @param string              $id     The site id the event is for.
 	 * @param string              $kind   The event kind.
 	 * @param array<string,mixed> $fields Its fields.
-	 * @throws \InvalidArgumentException Naming the atomic id, when the event does not mint.
+	 * @throws \InvalidArgumentException Naming the site id, when the event does not mint.
 	 */
 	private function mint( string $id, string $kind, array $fields ): void {
 		try {
 			$this->events[] = Intel_Event::make( $kind, $fields, $this->actor, \NEWSPACK_INTELLIGENCE_VERSION );
 		} catch ( \InvalidArgumentException $e ) {
-			throw new \InvalidArgumentException( \esc_html( "client import: atomic site {$id}: " . $e->getMessage() ), 0, $e );
+			throw new \InvalidArgumentException( \esc_html( "client import: site {$id}: " . $e->getMessage() ), 0, $e );
 		}
 	}
 

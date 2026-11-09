@@ -40,6 +40,10 @@ function Harness( props ) {
 		<Search
 			query={ query }
 			onQuery={ setQuery }
+			operator={ {
+				name: 'Quillmere Cooperative',
+				heading: 'Quillmere Cooperative',
+			} }
 			asked={ asked }
 			onAsked={ setAsked }
 			vocabulary={ VOCABULARY }
@@ -120,7 +124,7 @@ describe( 'Search', () => {
 	it( 'opens with the Ask box above the filters', async () => {
 		renderSearch();
 		const box = await screen.findByPlaceholderText(
-			'Ask about clients, the industry or Newspack…'
+			'Ask about clients, the industry or Quillmere Cooperative…'
 		);
 		expect( document.querySelectorAll( 'section' )[ 0 ] ).toContainElement(
 			box
@@ -220,7 +224,7 @@ describe( 'Search', () => {
 		await screen.findByText( /^1 of 1 item$/ );
 		pick( 'Roles', 'former_client', 'rival' );
 		pick( 'Sources', 'linear', 'unthread' );
-		expect( tokens( 'Roles' ) ).toEqual( [ 'former_client' ] );
+		expect( tokens( 'Roles' ) ).toEqual( [ 'Lapsed member' ] );
 		expect( tokens( 'Sources' ) ).toEqual( [ 'linear', 'unthread' ] );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Search' } ) );
 		await waitFor( () =>
@@ -408,7 +412,7 @@ describe( 'Search', () => {
 		const since = daysSince( 21, Date.now() );
 		expect( screen.getByLabelText( 'Lens' ) ).toHaveValue( '' );
 		expect( tokens( 'Kinds' ) ).toEqual( [ 'complaint', 'praise' ] );
-		expect( tokens( 'Roles' ) ).toEqual( [ 'client' ] );
+		expect( tokens( 'Roles' ) ).toEqual( [ 'Paying member' ] );
 		expect( screen.getByLabelText( 'Entity' ) ).toHaveValue(
 			'organization:acme-quillsheet'
 		);

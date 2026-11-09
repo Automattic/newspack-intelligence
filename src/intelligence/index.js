@@ -9,8 +9,8 @@ document.addEventListener( 'DOMContentLoaded', () => {
 		return;
 	}
 	// wp_localize_script() sends each flag as a string: '1' or ''.
-	const { canTune, canManage, userId, vocabulary } =
-		/** @type {{NewspackNodesData: {canTune: string, canManage: string, userId: string, vocabulary: Object}}} */ (
+	const { canTune, canManage, userId, operator, vocabulary } =
+		/** @type {{NewspackNodesData: {canTune: string, canManage: string, userId: string, operator: {name: string, heading: string}, vocabulary: Object}}} */ (
 			/** @type {unknown} */ ( window )
 		).NewspackNodesData;
 	createRoot( el ).render(
@@ -18,6 +18,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 			canTune={ '1' === canTune }
 			canManage={ '1' === canManage }
 			userId={ userId }
+			operator={ operator }
 			vocabulary={ vocabulary }
 		/>
 	);

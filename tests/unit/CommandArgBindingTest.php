@@ -14,10 +14,10 @@ use Newspack_Nodes\Node;
 use Newspack_Nodes\Tests\TestCase;
 
 /**
- * Every schema-declared verb binds its tokens by position or by `--name=`
+ * Every schema-declared command binds its tokens by position or by `--name=`
  * through the sibling `:config` interpreter, and reads them by name.
  */
-final class VerbArgBindingTest extends TestCase {
+final class CommandArgBindingTest extends TestCase {
 
 	private function sibling( Node $node, string $name ): Command_Interpreter_Node {
 		$node->name( $name );
@@ -61,7 +61,7 @@ final class VerbArgBindingTest extends TestCase {
 		$this->assertSame( [ 'POS7', 'NAMED8' ], $this->prop( $node, 'teams' ) );
 	}
 
-	public function test_the_model_call_verbs_bind_both_ways(): void {
+	public function test_the_model_call_commands_bind_both_ways(): void {
 		$node    = new LLM_Call_Node();
 		$sibling = $this->sibling( $node, 'intel:llm' );
 
@@ -111,7 +111,7 @@ final class VerbArgBindingTest extends TestCase {
 		$this->assertSame( [ 'Cover zebra migrations.', 'Skip lunar trivia.' ], $this->prop( $node, 'profiles' ) );
 	}
 
-	public function test_a_verb_missing_its_argument_is_refused_by_the_binder(): void {
+	public function test_a_command_missing_its_argument_is_refused_by_the_binder(): void {
 		$node    = new Feed_Source_Node();
 		$sibling = $this->sibling( $node, 'feed' );
 

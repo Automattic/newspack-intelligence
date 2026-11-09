@@ -522,7 +522,7 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame( [ [ 'launch' => true, 'exit_error' => false, 'return' => 'all' ], [ 'launch' => true, 'exit_error' => true ] ], \array_column( \WP_CLI::$ran, 1 ), 'each runs in its own process, so a throw in it leaves this one\'s WP-CLI state alone' );
 		$this->assertSame( [ false, false, false, false, false, false ], [ \file_exists( $graph ), \file_exists( "{$graph}-wal" ), \file_exists( "{$graph}-shm" ), \is_dir( $cursors[1] ), \is_dir( $cursors[2] ), \is_dir( $cursors[3] ) ] );
 		$this->assertSame( [ true, true ], \array_map( 'is_dir', $kept ) );
-		$this->assertSame( [ 'Deleted the intel-graph projection and 4 projector cursors; the projector replays every stream.' ], \WP_CLI::$successes );
+		$this->assertSame( [ 'Deleted the intel-graph projection and 4 projector cursors; the projector replays every stream, and sources wait for it.' ], \WP_CLI::$successes );
 	}
 
 	/** A fleet that will not stop deletes nothing, and the hold is released before the refusal. */

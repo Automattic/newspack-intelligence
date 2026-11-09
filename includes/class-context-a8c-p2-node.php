@@ -1,7 +1,7 @@
 <?php
 /**
  * Context_A8C_P2_Node: reads the posts and comments of the P2s the
- * `add_site` commands name through ContextA8C's `wpcom` / `posts-text`, and
+ * `add_site` commands name through ContextA8C's P2 provider's `posts-text`, and
  * records each as P2_Source_Node records the same post or comment.
  *
  * Extends Context_A8C_Source_Node, which owns the token, the JSON-RPC
@@ -22,6 +22,9 @@ use Newspack_Nodes\Core;
 \defined( 'ABSPATH' ) || exit;
 
 class Context_A8C_P2_Node extends Context_A8C_Source_Node {
+
+	/** ContextA8C's provider for P2, whose `posts-text` tool the pass calls. */
+	private const PROVIDER = 'wpcom';
 
 	/** Posts a page asks for, the most `posts-text` answers. */
 	private const PER_PAGE = 100;
@@ -73,7 +76,7 @@ class Context_A8C_P2_Node extends Context_A8C_Source_Node {
 	/** Ask one page of a site's posts since $after, the pass's window, with their comments. */
 	private function page( string $site, int $page, string $after ): void {
 		$this->call(
-			'wpcom',
+			self::PROVIDER,
 			'posts-text',
 			[
 				'site'                  => $site,

@@ -262,7 +262,7 @@ final class GraphQueryTest extends TestCase {
 	 * nothing.
 	 */
 	public function test_an_entity_is_shown_by_its_newest_canonical_name(): void {
-		$key = 'organization:atomic-880044';
+		$key = 'organization:site-880044';
 		$this->seed(
 			self::entity( $key, 'kestrelbay.example', [ 'domain' => [ 'kestrelbay.example' ], 'canonical' => [ 'Kestrel Bay Courier', 'Kestrel Bay Courier Cooperative' ], 'alias' => [ 'KBC' ] ] ),
 			self::item( 'feed:kestrel-ferry', 'Ferry schedule set', 'feed', 'public', self::$oct_13 ),

@@ -5,6 +5,7 @@ namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
+use Newspack_Intelligence\Operator;
 use Newspack_Intelligence\Prompts;
 use Newspack_Intelligence\Source_Node;
 use Newspack_Nodes\Core;
@@ -37,7 +38,7 @@ final class OfferedThemesTest extends TestCase {
 	/** Unrelated items sharing one popular theme, none naming email. */
 	private const POPULAR = [
 		'feed:style-1' => 'Share button focus ring too faint',
-		'feed:style-2' => 'Newspack UI buttons lose their padding',
+		'feed:style-2' => 'Quillmere UI buttons lose their padding',
 		'feed:style-3' => 'InDesign print setting for spot colours',
 		'feed:style-4' => 'Cloudflare caching Worker purges too often',
 		'feed:style-5' => 'Header logo alignment on narrow screens',
@@ -284,7 +285,7 @@ final class OfferedThemesTest extends TestCase {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'an extract item names no integer retrieved_ts' );
 
-		Prompts::messages( 'extract', [ 'item_key' => 'feed:asking-1', 'title' => 'Heron count', 'body' => '' ], [ 'topics' => [], 'profile' => '', 'audience' => '' ] );
+		Prompts::messages( 'extract', [ 'item_key' => 'feed:asking-1', 'title' => 'Heron count', 'body' => '' ], [ 'topics' => [], 'profile' => '', 'audience' => '' ], new Operator( '', '' ) );
 	}
 
 	/** A neighbour retrieved exactly THEME_DAYS from the item's retrieval is offered, and one a day past it is not. */
@@ -478,7 +479,7 @@ final class OfferedThemesTest extends TestCase {
 	 * @return array{0:string,1:string}
 	 */
 	private static function messages( string $title, string $item_key = 'feed:asking-1', int $retrieved = self::NOW_TS ): array {
-		$built = Prompts::messages( 'extract', [ 'item_key' => $item_key, 'title' => $title, 'body' => 'Asked about.', 'retrieved_ts' => $retrieved ], [ 'topics' => [], 'profile' => '', 'audience' => '' ] );
+		$built = Prompts::messages( 'extract', [ 'item_key' => $item_key, 'title' => $title, 'body' => 'Asked about.', 'retrieved_ts' => $retrieved ], [ 'topics' => [], 'profile' => '', 'audience' => '' ], new Operator( '', '' ) );
 		return [ $built[0]['content'], $built[1]['content'] ];
 	}
 

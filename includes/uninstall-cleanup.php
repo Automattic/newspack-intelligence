@@ -48,14 +48,14 @@ function delete_prefixed_options( $wpdb, string $prefix ): int {
  * Row_Table and frontier Table this plugin's own topologies declare, read
  * inside `Topology_Registry::with_stock_dir()` so another plugin's can never
  * block it; nothing under the default base every unconfigured install shares,
- * nor without the substrate. A composition that will not read only because the
- * lists file it includes does not resolve is skipped, because the parts it
- * includes, each read on its own, declare its tables; any other topology that
- * will not read fails the uninstall.
+ * nor without the substrate. A composition that will not read only because a
+ * part a site supplies (`Intelligence_Health::SITE_PARTS`) does not resolve is
+ * skipped, because the parts it includes, each read on its own, declare its
+ * tables; any other topology that will not read fails the uninstall.
  *
  * @param string $topologies_dir The plugin's shipped `.tsl` files.
  * @return int Files deleted.
- * @throws \Throwable What a shipped topology that will not read threw, but the missing lists include.
+ * @throws \Throwable What a shipped topology that will not read threw, but a missing site part's include.
  */
 function delete_tables( string $topologies_dir ): int {
 	if ( ! \class_exists( '\Newspack_Nodes\Table_Node' ) ) {
@@ -77,8 +77,8 @@ function delete_tables( string $topologies_dir ): int {
 				}
 			}
 			$failed = \Newspack_Nodes\Worker_Should_Stop::attempt_each( \array_combine( $shipped, $shipped ), \Newspack_Nodes\Topology_Analyzer::graph_for( ... ) );
-			$absent = null === \Newspack_Nodes\Topology_Registry::resolve( Intelligence_Health::LISTS );
-			$skip   = static fn ( \Throwable $e ): bool => $absent && 'unknown topology in include: ' . Intelligence_Health::LISTS === $e->getMessage();
+			$absent = \array_filter( Intelligence_Health::SITE_PARTS, static fn ( string $part ): bool => null === \Newspack_Nodes\Topology_Registry::resolve( $part ) );
+			$skip   = static fn ( \Throwable $e ): bool => \in_array( $e->getMessage(), \array_map( static fn ( string $part ): string => "unknown topology in include: {$part}", $absent ), true );
 			\Newspack_Nodes\Worker_Should_Stop::raise( \array_filter( $failed, static fn ( \Throwable $e ): bool => ! $skip( $e ) ) );
 			$shipped = \array_values( \array_diff( $shipped, \array_keys( $failed ) ) );
 			$tables  = \Newspack_Nodes\Bootstrap::row_tables_of( Intel_Graph_Row_Schema::class, ...$shipped );

@@ -284,13 +284,20 @@ function AskState( { read, gaveUp, onOpenEntity, onSave } ) {
  * stops asking once the ask has waited the `wait_s` the server answers.
  *
  * @param {Object}                                      props
+ * @param {{name: string, heading: string}}             props.operator     Who runs the deployment, whom the box offers to ask about by name.
  * @param {?{key: string, at: number, gaveUp: boolean}} props.asked        The ask the page holds, or null.
  * @param {(asked: ?Object) => void}                    props.onAsked      Holds a new one.
  * @param {(key: string) => void}                       props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void}                      [props.onSave]     Saves an item; absent for a reader.
  * @return {import('react').ReactElement} The box.
  */
-export default function AskBox( { asked, onAsked, onOpenEntity, onSave } ) {
+export default function AskBox( {
+	operator,
+	asked,
+	onAsked,
+	onOpenEntity,
+	onSave,
+} ) {
 	const [ question, setQuestion ] = useState( '' );
 	const ask = useIntelWrite( 'ask', {
 		scope: 'ask-box:ask',
@@ -339,9 +346,13 @@ export default function AskBox( { asked, onAsked, onOpenEntity, onSave } ) {
 						__next40pxDefaultSize
 						hideLabelFromVision
 						label={ __( 'Question', 'newspack-intelligence' ) }
-						placeholder={ __(
-							'Ask about clients, the industry or Newspack…',
-							'newspack-intelligence'
+						placeholder={ sprintf(
+							/* translators: %s: who runs the deployment. */
+							__(
+								'Ask about clients, the industry or %s…',
+								'newspack-intelligence'
+							),
+							operator.name
 						) }
 						value={ question }
 						onChange={ setQuestion }

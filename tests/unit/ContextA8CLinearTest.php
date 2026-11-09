@@ -36,7 +36,7 @@ final class ContextA8CLinearTest extends TestCase {
 	 * @param string ...$teams The team keys it reads.
 	 */
 	private function linear( string ...$teams ): Context_A8C_Linear_Node {
-		$node = $this->wire( new Context_A8C_Linear_Node(), 'linear', [ 'internal', $this->auth_dir, self::PROXY ] );
+		$node = $this->wire( new Context_A8C_Linear_Node(), 'linear', [ 'internal', self::MCP, $this->auth_dir, self::PROXY ] );
 		foreach ( $teams as $team ) {
 			$node->interpreter()->dispatch( 'add_team', [ $team ] );
 		}
@@ -305,6 +305,34 @@ final class ContextA8CLinearTest extends TestCase {
 	}
 
 	/**
+	 * Two nodes sharing one token dir but naming two MCP servers each send
+	 * the token the relay wrote for its own server.
+	 */
+	public function test_nodes_sharing_a_token_dir_send_each_servers_own_token(): void {
+		$this->signed_in();
+		$osprey = 'https://mcp-osprey.example/wren/v2';
+		$path   = "{$this->auth_dir}/wordpress-remote-0.5.4/" . \md5( $osprey ) . '_tokens.json';
+		\file_put_contents( $path, (string) \json_encode( [ 'access_token' => 'acc-osprey-2208', 'refresh_token' => 'ref-osprey-6614', 'expires_in' => 3599, 'obtained_at' => (int) ( ( self::NOW - 600 ) * 1000 ) ] ) );
+		$second = $this->wire( new Context_A8C_Linear_Node(), 'linear-osprey', [ 'internal', $osprey, $this->auth_dir, self::PROXY ] );
+		$second->interpreter()->dispatch( 'add_team', [ 'WREN9' ] );
+
+		$this->tick( $this->linear( 'KESTREL' ) );
+		$this->tick( $second );
+
+		$bearers = [];
+		foreach ( $this->sent as $opts ) {
+			$bearers[ $opts[ \CURLOPT_URL ] ] = \array_values( \preg_grep( '/^Authorization: /', $opts[ \CURLOPT_HTTPHEADER ] ) );
+		}
+		$this->assertSame(
+			[
+				self::MCP => [ 'Authorization: Bearer ' . self::ACCESS ],
+				$osprey   => [ 'Authorization: Bearer acc-osprey-2208' ],
+			],
+			$bearers
+		);
+	}
+
+	/**
 	 * Of two nodes reading one token dir, one refreshes the expiring token
 	 * and the other waits: it starts its pass on its next tick once the
 	 * refresh lands, under the new token, and the refresh token is spent once.
@@ -312,7 +340,7 @@ final class ContextA8CLinearTest extends TestCase {
 	public function test_one_refresh_serves_every_node_reading_the_token(): void {
 		$this->signed_in( 4000 );
 		$first  = $this->linear( 'KESTREL' );
-		$second = $this->wire( new Context_A8C_Linear_Node(), 'linear-wren', [ 'internal', $this->auth_dir, self::PROXY ] );
+		$second = $this->wire( new Context_A8C_Linear_Node(), 'linear-wren', [ 'internal', self::MCP, $this->auth_dir, self::PROXY ] );
 		$second->interpreter()->dispatch( 'add_team', [ 'WREN9' ] );
 
 		$this->tick( $first );
@@ -646,7 +674,7 @@ final class ContextA8CLinearTest extends TestCase {
 		$failing = self::snapshot( [ 'state' => 'failing', 'last_error' => 'HTTP 502 https://mcp.test/wren-8812', 'failing_since' => 4417, 'failed' => 2, 'requests' => 2 ] );
 		$memd->set( Source_Node::status_key( 'linear-wren-52', self::PARTITION ), $failing, 600 );
 		$first  = $this->linear( 'KESTREL' );
-		$second = $this->wire( new Context_A8C_Linear_Node(), 'linear-wren-52', [ 'internal', $this->auth_dir, self::PROXY ] );
+		$second = $this->wire( new Context_A8C_Linear_Node(), 'linear-wren-52', [ 'internal', self::MCP, $this->auth_dir, self::PROXY ] );
 		$second->interpreter()->dispatch( 'add_team', [ 'WREN9' ] );
 
 		$this->tick( $first );
@@ -678,7 +706,7 @@ final class ContextA8CLinearTest extends TestCase {
 		$this->signed_in( 4000 );
 		$this->tick( $this->linear( 'KESTREL' ) );
 		$this->complete( self::TOKEN, '', 401 );
-		$other = $this->wire( new Context_A8C_Linear_Node(), 'linear-wren-41', [ 'internal', $this->auth_dir, self::PROXY ] );
+		$other = $this->wire( new Context_A8C_Linear_Node(), 'linear-wren-41', [ 'internal', self::MCP, $this->auth_dir, self::PROXY ] );
 		$other->interpreter()->dispatch( 'add_team', [ 'WREN9' ] );
 
 		$this->tick( $other );
@@ -860,7 +888,7 @@ final class ContextA8CLinearTest extends TestCase {
 	 */
 	public function test_no_proxy_calls_direct(): void {
 		$this->signed_in();
-		$node = $this->wire( new Context_A8C_Linear_Node(), 'linear', [ 'internal', $this->auth_dir ] );
+		$node = $this->wire( new Context_A8C_Linear_Node(), 'linear', [ 'internal', self::MCP, $this->auth_dir ] );
 		$node->interpreter()->dispatch( 'add_team', [ 'KESTREL' ] );
 
 		$this->tick( $node );
@@ -878,6 +906,16 @@ final class ContextA8CLinearTest extends TestCase {
 		$this->assertSame( [ self::MCP ], \array_column( $this->sent, \CURLOPT_URL ) );
 	}
 
+	/** The MCP server's url is required at load, and names the server every request goes to. */
+	public function test_the_mcp_url_is_required(): void {
+		$node = new Context_A8C_Linear_Node();
+		$node->name( 'linear' );
+
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'Missing required argument: mcp_url' );
+		$node->arguments( [ 'internal' ] );
+	}
+
 	/** The token dir is required at load. */
 	public function test_the_token_dir_is_required(): void {
 		$node = new Context_A8C_Linear_Node();
@@ -885,7 +923,7 @@ final class ContextA8CLinearTest extends TestCase {
 
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'Missing required argument: auth_dir' );
-		$node->arguments( [ 'internal' ] );
+		$node->arguments( [ 'internal', self::MCP ] );
 	}
 
 	/** The teams and the token dir round-trip through the dump. */
@@ -898,7 +936,7 @@ final class ContextA8CLinearTest extends TestCase {
 		$replayed->name( 'linear' );
 		$this->replay_config( $dump, $replayed );
 
-		$this->assertStringContainsString( "make_node Context_A8C_Linear linear internal {$this->auth_dir} " . self::PROXY, $dump );
+		$this->assertStringContainsString( "make_node Context_A8C_Linear linear internal " . self::MCP . " {$this->auth_dir} " . self::PROXY, $dump );
 		$this->assertSame( [ 'KESTREL', 'WREN9' ], $this->read_private( $replayed, 'teams' ) );
 	}
 

@@ -31,6 +31,9 @@ final class Intelligence_Health {
 	/** The topology the shipped deployment file includes, which a site supplies. */
 	public const LISTS = 'newspack-intelligence-lists';
 
+	/** The parts a shipped composition includes that a site supplies: its lists, and the workstation's ContextA8C relay. */
+	public const SITE_PARTS = [ self::LISTS, 'newspack-intelligence-context-a8c' ];
+
 	/** The slices `what` names, each answered by the method of its name. */
 	public const SLICES = [ 'collection', 'sources', 'backlog', 'extraction' ];
 

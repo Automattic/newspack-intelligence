@@ -153,13 +153,13 @@ describe( 'Entity — reads', () => {
 			within( record ).getByText( /alias: The Quillsheet/ )
 		).toBeInTheDocument();
 		expect(
-			within( record ).getByText( /domain: acmequillsheet\.example/ )
+			within( record ).getByText( /Web address: acmequillsheet\.example/ )
 		).toBeInTheDocument();
 		expect(
-			within( record ).getByText( /client since 2026-09-09/ )
+			within( record ).getByText( /Paying member since 2026-09-09/ )
 		).toBeInTheDocument();
 		expect(
-			within( record ).getByText( /prospect 2026-05-28 – 2026-09-09/ )
+			within( record ).getByText( /Lead 2026-05-28 – 2026-09-09/ )
 		).toBeInTheDocument();
 		expect(
 			within( record ).getByText( /organization:acme-quillsheet-inc/ )
@@ -248,12 +248,14 @@ describe( 'Entity — reads', () => {
 		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		const record = details();
 		expect(
-			within( record ).getByText( /competitor 2026-08-01 – 2026-10-29/ )
+			within( record ).getByText( /Rival 2026-08-01 – 2026-10-29/ )
 		).toBeInTheDocument();
 		expect(
 			within( record ).queryByText( /2026-10-29 – 2026-10-29/ )
 		).toBeNull();
-		expect( within( record ).getAllByText( /^client/ ) ).toHaveLength( 1 );
+		expect(
+			within( record ).getAllByText( /^Paying member/ )
+		).toHaveLength( 1 );
 	} );
 
 	it( 'keeps an open role a seed asserted from 0', async () => {
@@ -263,9 +265,11 @@ describe( 'Entity — reads', () => {
 		};
 		renderEntity( { canTune: true } );
 		const end = within( await openDrawer() ).getByRole( 'button', {
-			name: 'End client',
+			name: 'End Paying member',
 		} );
-		expect( end.closest( 'li' ) ).toHaveTextContent( /^client since/ );
+		expect( end.closest( 'li' ) ).toHaveTextContent(
+			/^Paying member since/
+		);
 	} );
 
 	it( 'hands the page the name its record answers', async () => {
@@ -840,10 +844,25 @@ describe( 'Entity — curation', () => {
 			'Add name',
 			'Add identifier',
 			'Assert role',
-			'End client',
+			'End Paying member',
 		] ) {
 			expect( screen.queryByRole( 'button', { name } ) ).toBeNull();
 		}
+	} );
+
+	it( 'offers each role and identifier kind by its label, sending its token', async () => {
+		renderEntity( { canTune: true } );
+		const drawer = await openDrawer();
+		const option = ( group, label ) =>
+			within(
+				within( within( drawer ).getByRole( 'group', { name: group } ) )
+					.getAllByRole( 'combobox' )
+					.at( 0 )
+			).getByRole( 'option', { name: label } );
+		expect( option( 'Assert role', 'Rival' ) ).toHaveValue( 'competitor' );
+		expect( option( 'Add identifier', 'Code org' ) ).toHaveValue(
+			'github_org'
+		);
 	} );
 
 	it( 'keeps every curation form in the Edit drawer, closed until opened', async () => {
@@ -855,7 +874,7 @@ describe( 'Entity — curation', () => {
 			expect( screen.queryByRole( 'group', { name } ) ).toBeNull();
 		}
 		expect(
-			screen.queryByRole( 'button', { name: 'End client' } )
+			screen.queryByRole( 'button', { name: 'End Paying member' } )
 		).toBeNull();
 
 		const drawer = await openDrawer();
@@ -869,7 +888,9 @@ describe( 'Entity — curation', () => {
 			).toBeInTheDocument();
 		}
 		expect(
-			within( drawer ).getByRole( 'button', { name: 'End client' } )
+			within( drawer ).getByRole( 'button', {
+				name: 'End Paying member',
+			} )
 		).toBeInTheDocument();
 
 		fireEvent.click( toggle );
@@ -978,7 +999,7 @@ describe( 'Entity — curation', () => {
 		fireEvent.click(
 			within( form ).getByRole( 'button', { name: 'Assert role' } )
 		);
-		const end = screen.getByRole( 'button', { name: 'End client' } );
+		const end = screen.getByRole( 'button', { name: 'End Paying member' } );
 		expect( end.closest( 'li' ) ).toHaveClass(
 			'newspack-intelligence__actions'
 		);
@@ -992,7 +1013,7 @@ describe( 'Entity — curation', () => {
 			] );
 		} );
 		expect(
-			screen.queryByRole( 'button', { name: 'End prospect' } )
+			screen.queryByRole( 'button', { name: 'End Lead' } )
 		).toBeNull();
 	} );
 

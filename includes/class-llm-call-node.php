@@ -41,7 +41,9 @@ use Newspack_Nodes\Worker_Should_Stop;
  * for a chat prompt, `{ decision: { <question>: <noul> | { choice,
  * confidence } }, … }` for a decision, `{ error, … }`, or, when the group
  * holds no entry lending the api url's origin a credential, `{ unlent, … }` at
- * once, `unlent` the group. A stored request that will not send is settled and answered as an error. A
+ * once, `unlent` the group; a transport whose setters are unset answers
+ * the same at once, `unset` naming each setter the call's kind lacks, so no
+ * caller retries a call that cannot be made. A stored request that will not send is settled and answered as an error. A
  * request in flight when the worker stops is sent again by the next one; a
  * clean stop sends none it answered again.
  */
@@ -87,17 +89,33 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 		'choice' => 'no offered choice with a confidence from 0 to 1',
 	];
 
-	/** Each kind of call: the path it posts to under the api url, and the refusal of one asked before it is configured. */
+	/** Each kind of call: the path it posts to under the api url, and the setters it needs, each => the property it sets. */
 	private const CALLS = [
-		Prompts::CHAT     => [ 'chat/completions', 'set_api_url, set_model and set_feature before a call' ],
-		Prompts::DECISION => [ 'systemone', 'set_api_url, set_decision_model and set_feature before a decision' ],
+		Prompts::CHAT     => [
+			'chat/completions',
+			[
+				'set_api_url' => 'api_url',
+				'set_model'   => 'model',
+				'set_feature' => 'feature',
+			],
+		],
+		Prompts::DECISION => [
+			'systemone',
+			[
+				'set_api_url'        => 'api_url',
+				'set_decision_model' => 'decision_model',
+				'set_feature'        => 'feature',
+			],
+		],
 	];
 
-	/** The commands whose values a decision call posts with, each => the topology fact naming it. */
-	private const DECISION_FACTS = [
+	/** The commands whose values its topology row names, each => the fact naming it. */
+	private const FACTS = [
 		'set_api_url'        => 'api_url',
 		'set_decision_model' => 'decision_model',
 		'set_feature'        => 'feature',
+		'set_operator'       => 'operator',
+		'set_tracks'         => 'tracks',
 	];
 
 	/** The AI API Proxy base url, set via set_api_url; '' until set. */
@@ -111,6 +129,12 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/** The X-WPCOM-AI-Feature value, set via set_feature; '' until set. */
 	protected string $feature = '';
+
+	/** Who runs the deployment, set via set_operator; '' names generic wording. */
+	protected string $operator = '';
+
+	/** What the deployment's graph tracks, set via set_tracks; '' for the operator's own work. */
+	protected string $tracks = '';
 
 	/** Most calls in flight at once, 1 to `Curl_Node::MAX_IN_FLIGHT`. */
 	protected int $concurrency = 1;
@@ -259,8 +283,15 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 		}
 		$value = [ $from, $key, $request['prompt'], $request['item'], $request['inputs'], $request['options'], $request['carry'] ];
 		$kind  = Prompts::PROMPTS[ Core::as_string( $request['prompt'] ) ];
-		if ( '' === $this->api_url || '' === $this->model_for( $kind ) || '' === $this->feature ) {
-			$this->reply( $value, [ 'error' => "{$this->name}: " . self::CALLS[ $kind ][1] ] );
+		$unset = \array_keys( \array_filter( self::CALLS[ $kind ][1], fn ( string $property ): bool => '' === $this->{$property} ) );
+		if ( [] !== $unset ) {
+			$this->reply(
+				$value,
+				[
+					'unlent' => $this->vault_group,
+					'unset'  => $unset,
+				]
+			);
 			return;
 		}
 		if ( ! Curl_Node::lends_credential( $this->vault_group, $this->api_url ) ) {
@@ -418,30 +449,32 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	private function post( string $member, array $value ): void {
 		$prompt = Core::as_string( $value[2] ?? null );
 		$kind   = Prompts::PROMPTS[ $prompt ] ?? Prompts::CHAT;
-		$this->send_curl( $member, self::curl_request( $this->api_url, $this->model_for( $kind ), $this->feature, $prompt, Core::arr( $value[3] ?? null ), Core::arr( $value[4] ?? null ), Core::arr( $value[5] ?? null ) ), $value );
+		$this->send_curl( $member, self::curl_request( $this->api_url, $this->model_for( $kind ), $this->feature, new Operator( $this->operator, $this->tracks ), $prompt, Core::arr( $value[3] ?? null ), Core::arr( $value[4] ?? null ), Core::arr( $value[5] ?? null ) ), $value );
 	}
 
 	/**
 	 * The POST Curl runs for one call, its body as the kind of its prompt
 	 * says: a chat prompt's messages and options to `chat/completions`, or a
-	 * decision's state and questions to `systemone`, each naming `$model`;
-	 * a prompt `Prompts::PROMPTS` does not list is refused as a chat prompt is.
+	 * decision's state and questions to `systemone`, each naming `$model`
+	 * and the prompt naming `$operator`; a prompt `Prompts::PROMPTS` does
+	 * not list is refused as a chat prompt is.
 	 *
 	 * @api Read by Eval_CLI_Command, which asks the decision model as this node does.
-	 * @param string                 $api_url The AI API Proxy base url.
-	 * @param string                 $model   The model the call names.
-	 * @param string                 $feature The X-WPCOM-AI-Feature value.
-	 * @param string                 $prompt  The prompt.
-	 * @param array<array-key,mixed> $item    The item.
-	 * @param array<array-key,mixed> $inputs  The prompt's other inputs.
-	 * @param array<array-key,mixed> $options A chat prompt's options.
+	 * @param string                 $api_url  The AI API Proxy base url.
+	 * @param string                 $model    The model the call names.
+	 * @param string                 $feature  The X-WPCOM-AI-Feature value.
+	 * @param Operator               $operator The deployment's operator.
+	 * @param string                 $prompt   The prompt.
+	 * @param array<array-key,mixed> $item     The item.
+	 * @param array<array-key,mixed> $inputs   The prompt's other inputs.
+	 * @param array<array-key,mixed> $options  A chat prompt's options.
 	 * @return array{url:string,method:string,body:string,headers:list<string>,timeout:int}
 	 * @throws \InvalidArgumentException When the prompt is unknown.
 	 * @throws \UnexpectedValueException When the body will not encode.
 	 */
-	public static function curl_request( string $api_url, string $model, string $feature, string $prompt, array $item, array $inputs, array $options ): array {
+	public static function curl_request( string $api_url, string $model, string $feature, Operator $operator, string $prompt, array $item, array $inputs, array $options ): array {
 		$kind   = Prompts::PROMPTS[ $prompt ] ?? Prompts::CHAT;
-		$fields = Prompts::DECISION === $kind ? Prompts::decision( $prompt, $item, $inputs ) : [ 'messages' => Prompts::messages( $prompt, $item, $inputs ) ] + $options;
+		$fields = Prompts::DECISION === $kind ? Prompts::decision( $prompt, $item, $inputs, $operator ) : [ 'messages' => Prompts::messages( $prompt, $item, $inputs, $operator ) ] + $options;
 		$body   = \wp_json_encode( [ 'model' => $model ] + $fields );
 		if ( false === $body ) {
 			// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
@@ -595,15 +628,16 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * The node's topology row names what a decision call posts with: the
-	 * `api_url`, `decision_model` and `feature` its last `set_api_url`,
-	 * `set_decision_model` and `set_feature` lines leave, each bound by its
-	 * command's own args and kept as the setter keeps it, '' while unset.
+	 * The node's topology row names what its calls post with: the
+	 * `api_url`, `decision_model`, `feature`, `operator` and `tracks` its
+	 * last `set_api_url`, `set_decision_model`, `set_feature`,
+	 * `set_operator` and `set_tracks` lines leave, each bound by its command's
+	 * own args and kept as the setter keeps it, '' while unset.
 	 *
-	 * @api Read by the substrate's Topology_Analyzer::graph_for(), for Eval_CLI_Command.
+	 * @api Read by the substrate's Topology_Analyzer::graph_for(), for Eval_CLI_Command and Operator::configured().
 	 * @param list<string>                         $args     The `make_node` arguments, quotes stripped.
 	 * @param list<array{0:string,1:list<string>}> $commands Each verb and its argument tokens, in the order sent.
-	 * @return array{api_url:string,decision_model:string,feature:string}
+	 * @return array{api_url:string,decision_model:string,feature:string,operator:string,tracks:string}
 	 * @throws \InvalidArgumentException When one of those lines does not bind.
 	 * @throws \UnexpectedValueException When the api url is not an absolute http(s) url.
 	 */
@@ -612,10 +646,12 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 			'api_url'        => '',
 			'decision_model' => '',
 			'feature'        => '',
+			'operator'       => '',
+			'tracks'         => '',
 		];
 		$declared = Command_Interpreter_Node::declared_commands( self::class );
 		foreach ( $commands as [ $verb, $tokens ] ) {
-			$fact = self::DECISION_FACTS[ $verb ] ?? null;
+			$fact = self::FACTS[ $verb ] ?? null;
 			if ( null === $fact ) {
 				continue;
 			}
@@ -636,6 +672,19 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 		$url = \trim( $url );
 		Curl_Node::origin_of( $url );
 		return \rtrim( $url, '/' );
+	}
+
+	/**
+	 * Why an `unlent` answer was not sent, as a caller logs it: the setters
+	 * its call lacks when it names them, else its group lending nothing.
+	 *
+	 * @param array<array-key,mixed> $answer An answer carrying `unlent`.
+	 */
+	public static function unlent_why( array $answer ): string {
+		$unset = Core::arr( $answer['unset'] ?? [] );
+		return [] === $unset
+			? 'the ' . Core::as_string( $answer['unlent'] ) . ' Vault group lends no credential'
+			: 'the model call lacks ' . \implode( ', ', \array_map( Core::as_string( ... ), $unset ) );
 	}
 
 	/**
@@ -675,6 +724,26 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 	 */
 	public function set_feature( string $feature ): void {
 		$this->feature = \trim( $feature );
+	}
+
+	/**
+	 * The `set_operator` command's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param string $name Who runs the deployment.
+	 */
+	public function set_operator( string $name ): void {
+		$this->operator = \trim( $name );
+	}
+
+	/**
+	 * The `set_tracks` command's entry point.
+	 *
+	 * @api Used by substrate.
+	 * @param string $tracks What the deployment's graph tracks, as one phrase.
+	 */
+	public function set_tracks( string $tracks ): void {
+		$this->tracks = \trim( $tracks );
 	}
 
 	/**
@@ -735,6 +804,8 @@ final class LLM_Call_Node extends Timer_Node implements Shutdown_Sweeper {
 				$command( 'set_model', 'Set the model id every chat call names: <model>.', 'model', 'string', 'model' ),
 				$command( 'set_decision_model', 'Set the model id every decision call names: <model>.', 'model', 'string', 'decision_model' ),
 				$command( 'set_feature', 'Set the X-WPCOM-AI-Feature value every call sends: <feature>.', 'feature', 'string', 'feature' ),
+				$command( 'set_operator', 'Name who runs the deployment, whom every prompt saying whom the graph serves names: <name>; generic wording until set.', 'name', 'string', 'operator' ),
+				$command( 'set_tracks', 'Say what the deployment\'s graph tracks, as one phrase every decision names: <tracks>; the operator\'s own work and clients until set.', 'tracks', 'string', 'tracks' ),
 				$command( 'set_concurrency', 'Make at most <count> calls at once, from 1 to ' . Curl_Node::MAX_IN_FLIGHT . '; 1 until set.', 'count', 'int', 'concurrency' ),
 			],
 			'accepts_fill' => true,

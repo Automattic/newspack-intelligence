@@ -260,12 +260,13 @@ class TopologyDurabilityTest extends TestCase {
 	/** The token half's sources, which the workstation reads through ContextA8C. */
 	private const TOKEN_HALF = [ 'linear', 'slack', 'p2', 'p2-restricted' ];
 
-	/** The verbs that name a deployment's lists, profile or audience. */
-	private const DEPLOYMENT_VERBS = '/:config\s+(add_repo|add_url|add_team|add_channel|add_site|add_profile|set_audience)\b/';
+	/** The lines that name a deployment's lists, profile, audience, operator, model transport or ContextA8C relay. */
+	private const DEPLOYMENT_VERBS = '/:config\s+(add_repo|add_url|add_team|add_channel|add_site|add_profile|set_audience|set_operator|set_tracks|set_api_url|set_model|set_decision_model|set_feature)\b|make_node Context_A8C_/';
 
 	/**
-	 * A shipped file never names a list, a profile line or an audience: a
-	 * deployment supplies them.
+	 * A shipped file never names a list, a profile line, an audience, the
+	 * operator, the model transport or a ContextA8C relay: a deployment
+	 * supplies them.
 	 */
 	public function test_no_shipped_topology_names_a_list_profile_or_audience(): void {
 		$files = \glob( \dirname( __DIR__, 2 ) . '/topologies/*.tsl.php' ) ?: [];
@@ -440,9 +441,10 @@ class TopologyDurabilityTest extends TestCase {
 	}
 
 	/**
-	 * Each ContextA8C node stands in for a token source under its name,
-	 * tier and interval, reading the token dir the container mounts through
-	 * the proxy, and records into the writer.
+	 * Each ContextA8C node of a deployment's part stands in for a token
+	 * source under its name, tier and interval, reading the MCP server its
+	 * line names from the token dir it names through the proxy, and records
+	 * into the writer.
 	 */
 	public function test_the_context_a8c_nodes_stand_in_for_the_token_half(): void {
 		$this->load( 'newspack-intelligence-collect-token' );
@@ -458,8 +460,9 @@ class TopologyDurabilityTest extends TestCase {
 			$node = Core::node( $name );
 			$this->assertSame( $declared, [ $this->read_private( $node, 'tier' ), $this->read_private( $node, 'interval' ) ], $name );
 			$this->assertSame( 'intel:writer', $node->target(), $name );
-			$this->assertSame( '/mcp-auth', $this->read_private( $node, 'auth_dir' ), $name );
-			$this->assertSame( 'socks5h://host.docker.internal:8080', $this->read_private( $node, 'proxy' ), $name );
+			$this->assertSame( 'https://mcp-relay.example/heron/v1', $this->read_private( $node, 'mcp_url' ), $name );
+			$this->assertSame( '/relay-auth', $this->read_private( $node, 'auth_dir' ), $name );
+			$this->assertSame( 'socks5h://proxy-heron.example:1088', $this->read_private( $node, 'proxy' ), $name );
 		}
 		$this->assertNull( Core::node( 'unthread' ) );
 	}

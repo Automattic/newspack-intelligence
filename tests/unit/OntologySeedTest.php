@@ -109,7 +109,7 @@ final class OntologySeedTest extends TestCase {
 				'entity_created|product:kite-ledger|product|Kite Ledger',
 				'identifier_added|product:kite-ledger|github_repo|heron-example/kite-ledger',
 				'identifier_added|product:kite-ledger|linear_team|KITE',
-				'role_asserted|product:kite-ledger|newspack_product|0',
+				'role_asserted|product:kite-ledger|operator_product|0',
 			],
 			$ledger
 		);

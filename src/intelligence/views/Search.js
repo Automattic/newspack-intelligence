@@ -141,6 +141,7 @@ function LensRuns( { lens, lists } ) {
  * order, so they outlive a visit to another view.
  *
  * @param {Object}                   props
+ * @param {Object}                   props.operator     Who runs the deployment, as the page is localized it.
  * @param {Object}                   props.query        The submitted filters, and each page's start.
  * @param {(query: Object) => void}  props.onQuery      Replaces the query.
  * @param {Object}                   props.vocabulary   The ontology's closed lists.
@@ -151,6 +152,7 @@ function LensRuns( { lens, lists } ) {
  * @return {import('react').ReactElement} The view.
  */
 export default function Search( {
+	operator,
 	query,
 	onQuery,
 	vocabulary,
@@ -214,6 +216,9 @@ export default function Search( {
 				label={ labels[ name ] }
 				value={ listOf( draft[ name ] ) }
 				suggestions={ values ?? [] }
+				displayTransform={ ( token ) =>
+					'role' === name ? vocabulary.roleWords[ token ] : token
+				}
 				__experimentalValidateInput={ allowed }
 				__experimentalExpandOnFocus={ !! values }
 				tokenizeOnBlur
@@ -232,6 +237,7 @@ export default function Search( {
 	return (
 		<div className="newspack-intelligence__view">
 			<AskBox
+				operator={ operator }
 				asked={ asked }
 				onAsked={ onAsked }
 				onOpenEntity={ onOpenEntity }

@@ -23,31 +23,31 @@ final class Intel_Event {
 	public const ASKS     = 'asks';
 
 	public const TYPES            = [ 'organization', 'person', 'place', 'product', 'topic', 'event' ];
-	public const ROLES            = [ 'client', 'former_client', 'prospect', 'competitor', 'partner', 'funder', 'industry_body', 'newspack_product' ];
+	public const ROLES            = [ 'client', 'former_client', 'prospect', 'competitor', 'partner', 'funder', 'industry_body', 'operator_product' ];
 	public const ITEM_KINDS       = [ 'award', 'launch', 'release', 'funding', 'hire', 'departure', 'partnership', 'incident', 'bug', 'feature_request', 'complaint', 'praise', 'churned', 'churn_signal', 'research', 'other' ];
 
-	/** Each of ITEM_KINDS, in its order, => the one line the extraction prompt defines it by. */
+	/** Each of ITEM_KINDS, in its order, => the one line the prompts define it by, `{operator}` the deployment's operator. */
 	public const KIND_DEFINITIONS = [
 		'award'           => 'an award, prize or honor won, given or shortlisted for',
-		'launch'          => 'a site, product or publication going live or being prepared to go live, whether a client\'s or Newspack\'s; not an internal tool, process or deploy going live',
+		'launch'          => 'a site, product or publication going live or being prepared to go live, whether a client\'s or {operator}\'s; not an internal tool, process or deploy going live',
 		'release'         => 'a software release or version shipped for general use; a pre-release, release candidate, alpha, beta or nightly build is other',
 		'funding'         => 'money raised, granted, invested or donated',
 		'hire'            => 'someone joining an organization or taking a new role',
-		'departure'       => 'a person leaving an organization or a role; not a client leaving Newspack, which is churned',
+		'departure'       => 'a person leaving an organization or a role; not a client leaving {operator}, which is churned',
 		'partnership'     => 'organizations agreeing to work together',
 		'incident'        => 'an outage, breach or disruption of a service as it happens. Not a storage-quota warning, a legal notice or a delayed project',
-		'bug'             => 'a defect in Newspack\'s shipped code, as Newspack files or fixes it, whoever reported it. Not a CRM record, one site\'s content or configuration, a launch snag list, or internal tooling',
-		'feature_request' => 'a client or user asking for a capability Newspack\'s product lacks. Not a setup, styling, migration, onboarding, offboarding or configuration task for one site',
-		'complaint'       => 'a client\'s dissatisfaction with Newspack: its service, price or support, or a defect as the client experiences it',
-		'praise'          => 'a client\'s satisfaction with Newspack or thanks for its work',
-		'churned'         => 'a client that has left Newspack or is leaving: offboarding underway or done, the decision already made',
-		'churn_signal'    => 'a hint that a client may leave, such as dissatisfaction with price or service, going quiet, or weighing a competitor; not a client already offboarding, nor a client adopting more Newspack, nor routine account or storage work',
-		'research'        => 'a study, survey, report or analysis of the news industry, its audiences or its business, as published. Not Newspack\'s or Automattic\'s own engineering, audit, performance or planning work',
+		'bug'             => 'a defect in {operator}\'s shipped code, as {operator} files or fixes it, whoever reported it. Not a CRM record, one site\'s content or configuration, a launch snag list, or internal tooling',
+		'feature_request' => 'a client or user asking for a capability {operator}\'s product lacks. Not a setup, styling, migration, onboarding, offboarding or configuration task for one site',
+		'complaint'       => 'a client\'s dissatisfaction with {operator}: its service, price or support, or a defect as the client experiences it',
+		'praise'          => 'a client\'s satisfaction with {operator} or thanks for its work',
+		'churned'         => 'a client that has left {operator} or is leaving: offboarding underway or done, the decision already made',
+		'churn_signal'    => 'a hint that a client may leave, such as dissatisfaction with price or service, going quiet, or weighing a competitor; not a client already offboarding, nor a client adopting more of {operator}\'s products, nor routine account or storage work',
+		'research'        => 'a study, survey, report or analysis of the news industry, its audiences or its business, as published. Not engineering, audit, performance or planning work by {operator} or an organization it belongs to',
 		'other'           => 'none of these, including routine service and onboarding work, internal planning, internal tooling, audits and engineering reports, team updates and kudos, and a publication\'s own journalism about anyone else',
 	];
 	public const PREDICATES       = [ 'works_for', 'part_of', 'funds', 'partners_with', 'competes_with', 'uses_product', 'won', 'launched', 'located_in' ];
 	public const NAME_KINDS       = [ 'canonical', 'alias', 'acronym', 'locality' ];
-	public const IDENTIFIER_KINDS = [ 'domain', 'github_org', 'github_repo', 'linkedin_company', 'x_handle', 'atomic_site_id', 'linear_team' ];
+	public const IDENTIFIER_KINDS = [ 'domain', 'github_org', 'github_repo', 'linkedin_company', 'x_handle', 'site_id', 'linear_team' ];
 	public const TIERS            = [ 'public', 'internal', 'restricted' ];
 	/** The link roles saying an item's text names its entity; `topic` only tags it. */
 	public const NAMING_ROLES     = [ 'subject', 'mention' ];

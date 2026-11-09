@@ -57,7 +57,7 @@ final class ContextA8CLinearBodiesTest extends TestCase {
 	 */
 	private function linear( string ...$teams ): Context_A8C_Linear_Node {
 		$this->signed_in();
-		$node = $this->wire( new Context_A8C_Linear_Node(), 'linear', [ 'internal', $this->auth_dir, self::PROXY ] );
+		$node = $this->wire( new Context_A8C_Linear_Node(), 'linear', [ 'internal', self::MCP, $this->auth_dir, self::PROXY ] );
 		$node->interpreter()->dispatch( 'set_interval', [ (string) self::INTERVAL ] );
 		foreach ( $teams as $team ) {
 			$node->interpreter()->dispatch( 'add_team', [ $team ] );

@@ -237,12 +237,12 @@ final class IntelligenceBriefingTest extends TestCase {
 
 	/**
 	 * An item about no open client but about an entity holding an open
-	 * `newspack_product` role, under any key merged into it, sits in that
+	 * `operator_product` role, under any key merged into it, sits in that
 	 * role's group, in the order of its most important item; one about a
 	 * client too sits under the client alone, and one about a product whose
 	 * role ended sits in the no-client group.
 	 */
-	public function test_changes_group_newspack_work_under_its_role(): void {
+	public function test_changes_group_operator_work_under_its_role(): void {
 		$product = 'product:tern-newsletters';
 		$annex   = 'product:tern-mailer';
 		$retired = 'product:tern-classic';
@@ -251,8 +251,8 @@ final class IntelligenceBriefingTest extends TestCase {
 			self::entity( $annex, 'Tern Mailer' ),
 			self::entity( $retired, 'Tern Classic' ),
 			self::merged( $annex, $product ),
-			self::role( $product, 'newspack_product' ),
-			[ Intel_Event::make( 'role_ended', [ 'entity_key' => $retired, 'role' => 'newspack_product', 'from_ts' => self::$jan_01, 'to_ts' => self::back( 30 ) ], 'user:41', 'fixture-9' ) ]
+			self::role( $product, 'operator_product' ),
+			[ Intel_Event::make( 'role_ended', [ 'entity_key' => $retired, 'role' => 'operator_product', 'from_ts' => self::$jan_01, 'to_ts' => self::back( 30 ) ], 'user:41', 'fixture-9' ) ]
 		);
 		$this->about( 'github:tern-crash', $product, 'subject', 'incident', 8.5, 2 );
 		$this->about( 'github:tern-mailer-bug', $annex, 'mention', 'complaint', 6.0, 1 );
@@ -265,7 +265,7 @@ final class IntelligenceBriefingTest extends TestCase {
 		$this->assertSame(
 			[
 				[ 'entity_key' => null, 'name' => null, 'role' => null, 'items' => [ 'feed:tern-classic-sunset' ] ],
-				[ 'entity_key' => null, 'name' => null, 'role' => 'newspack_product', 'items' => [ 'github:tern-crash', 'github:tern-mailer-bug' ] ],
+				[ 'entity_key' => null, 'name' => null, 'role' => 'operator_product', 'items' => [ 'github:tern-crash', 'github:tern-mailer-bug' ] ],
 				[ 'entity_key' => self::PLOVER, 'name' => 'Plover Quillpost', 'role' => 'client', 'items' => [ 'linear:plover-tern-ask' ] ],
 			],
 			\array_map( static fn ( array $group ): array => \array_merge( $group, [ 'items' => \array_column( $group['items'], 'item_key' ) ] ), $groups )
@@ -274,7 +274,7 @@ final class IntelligenceBriefingTest extends TestCase {
 
 	/**
 	 * An item about more than three open clients is filed once: in the
-	 * `newspack_product` group when it is about a holder of that role, else
+	 * `operator_product` group when it is about a holder of that role, else
 	 * in the group of role null, its entities still naming every client. An
 	 * item about three sits once, under the first of them it names.
 	 */
@@ -288,7 +288,7 @@ final class IntelligenceBriefingTest extends TestCase {
 			self::entity( $product, 'Tern Newsletters' ),
 			self::role( $dunlin, 'client' ),
 			self::role( $godwit, 'client' ),
-			self::role( $product, 'newspack_product' )
+			self::role( $product, 'operator_product' )
 		);
 		$this->about( 'p2:election-roundup', self::PLOVER, 'subject', 'launch', 8.5, 2 );
 		$this->about( 'p2:election-digest', self::PLOVER, 'subject', 'launch', 7.5, 2 );
@@ -307,7 +307,7 @@ final class IntelligenceBriefingTest extends TestCase {
 
 		$this->assertSame(
 			[
-				[ null, 'newspack_product', [ 'p2:election-roundup' ] ],
+				[ null, 'operator_product', [ 'p2:election-roundup' ] ],
 				[ null, null, [ 'p2:election-digest' ] ],
 				[ self::PLOVER, 'client', [ 'slack:trio-migration' ] ],
 			],

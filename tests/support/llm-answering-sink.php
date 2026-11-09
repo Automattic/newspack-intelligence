@@ -9,6 +9,7 @@
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Intelligence\Operator;
 use Newspack_Intelligence\Prompts;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
@@ -61,6 +62,6 @@ class Llm_Answering_Sink extends Capture_Sink_Node {
 
 	/** @return list<array<int,array{role:string,content:string}>> Each request's messages, built as `intel:llm` builds them. */
 	public function asked(): array {
-		return \array_map( static fn ( array $m ): array => Prompts::messages( $m[ Message::VALUE ]['prompt'], $m[ Message::VALUE ]['item'], $m[ Message::VALUE ]['inputs'] ), $this->requests );
+		return \array_map( static fn ( array $m ): array => Prompts::messages( $m[ Message::VALUE ]['prompt'], $m[ Message::VALUE ]['item'], $m[ Message::VALUE ]['inputs'], new Operator( '', '' ) ), $this->requests );
 	}
 }

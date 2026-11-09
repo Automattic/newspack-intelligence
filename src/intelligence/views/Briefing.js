@@ -199,8 +199,8 @@ function Summary( { summary, onSearchFor } ) {
 }
 
 /**
- * A run of the briefing's rows under its heading: a client, a lens,
- * Newspack or Industry, collapsed to the heading and its count until the
+ * A run of the briefing's rows under its heading: a client, a lens, the
+ * operator or Industry, collapsed to the heading and its count until the
  * count is clicked; the toggle is named by both, and controls the rows.
  *
  * @param {Object}                    props
@@ -257,17 +257,18 @@ const signalCount = ( n ) =>
 
 /**
  * The week's changes, each group in the answer's order, by its most
- * important item: a client's items under its chip, Newspack's own work
- * under Newspack and the rest under Industry, and how many the week held
- * when the briefing shows fewer.
+ * important item: a client's items under its chip, the operator's own work
+ * under the operator's heading and the rest under Industry, and how many
+ * the week held when the briefing shows fewer.
  *
- * @param {Object}                 props
- * @param {Object}                 props.answer       The `briefing changes` answer.
- * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
- * @param {(item: Object) => void} [props.onSave]     Saves an item; absent for a reader.
+ * @param {Object}                          props
+ * @param {{name: string, heading: string}} props.operator     Who runs the deployment.
+ * @param {Object}                          props.answer       The `briefing changes` answer.
+ * @param {(key: string) => void}           props.onOpenEntity Opens an entity.
+ * @param {(item: Object) => void}          [props.onSave]     Saves an item; absent for a reader.
  * @return {import('react').ReactElement} The groups.
  */
-function Changes( { answer, onOpenEntity, onSave } ) {
+function Changes( { operator, answer, onOpenEntity, onSave } ) {
 	const heading = ( group ) => {
 		switch ( group.role ) {
 			case 'client':
@@ -278,8 +279,8 @@ function Changes( { answer, onOpenEntity, onSave } ) {
 						onOpen={ onOpenEntity }
 					/>
 				);
-			case 'newspack_product':
-				return __( 'Newspack', 'newspack-intelligence' );
+			case 'operator_product':
+				return operator.heading;
 			default:
 				return __( 'Industry', 'newspack-intelligence' );
 		}
@@ -294,13 +295,14 @@ function Changes( { answer, onOpenEntity, onSave } ) {
 			{ shown < answer.total && (
 				<p className="newspack-nodes-status is-muted">
 					{ sprintf(
-						/* translators: 1: items shown, 2: items naming any entity in the window. */
+						/* translators: 1: items shown, 2: items naming any entity in the window, 3: who runs the deployment. */
 						__(
-							'The %1$d most important of %2$d items about clients, Newspack and the industry in the last seven days.',
+							'The %1$d most important of %2$d items about clients, %3$s and the industry in the last seven days.',
 							'newspack-intelligence'
 						),
 						shown,
-						answer.total
+						answer.total,
+						operator.name
 					) }
 				</p>
 			) }
@@ -328,8 +330,8 @@ function Changes( { answer, onOpenEntity, onSave } ) {
 
 /**
  * Briefing: what changed in the last seven days, each its own read — the
- * two `briefing` slices, the week's items about clients, Newspack and the
- * industry, ranked by importance and grouped by client, Newspack or
+ * two `briefing` slices, the week's items about clients, the operator and
+ * the industry, ranked by importance and grouped by client, the operator or
  * Industry, and every client's and lens's signals; and `watches`, the
  * reader's own, each as the Watches view lists it. Each group shows its
  * heading and count until it is opened. Each row opens the item, its
@@ -343,21 +345,23 @@ function Changes( { answer, onOpenEntity, onSave } ) {
  * alone, and an answer from a graph that would not open keeps the old
  * instant.
  *
- * @param {Object}                    props
- * @param {string}                    props.userId       The reader, whose last look is kept.
- * @param {(filters: Object) => void} props.onSearchFor  Opens Search on filters.
- * @param {(key: string) => void}     props.onOpenEntity Opens an entity.
- * @param {(key: ?string) => void}    props.onOpenLens   Opens a lens, or the list for null.
- * @param {(key: string) => void}     props.onOpenWatch  Opens a watch.
- * @param {() => void}                props.onNewWatch   Opens the form for a new watch.
- * @param {() => void}                props.onSearch     Opens Search.
- * @param {(item: Object) => void}    [props.onSave]     Saves an item; absent for a reader.
- * @param {?Object}                   props.asked        The ask the page holds, which its AskBox shows.
- * @param {(asked: ?Object) => void}  props.onAsked      Holds a new one.
+ * @param {Object}                          props
+ * @param {string}                          props.userId       The reader, whose last look is kept.
+ * @param {{name: string, heading: string}} props.operator     Who runs the deployment, by name and as a heading.
+ * @param {(filters: Object) => void}       props.onSearchFor  Opens Search on filters.
+ * @param {(key: string) => void}           props.onOpenEntity Opens an entity.
+ * @param {(key: ?string) => void}          props.onOpenLens   Opens a lens, or the list for null.
+ * @param {(key: string) => void}           props.onOpenWatch  Opens a watch.
+ * @param {() => void}                      props.onNewWatch   Opens the form for a new watch.
+ * @param {() => void}                      props.onSearch     Opens Search.
+ * @param {(item: Object) => void}          [props.onSave]     Saves an item; absent for a reader.
+ * @param {?Object}                         props.asked        The ask the page holds, which its AskBox shows.
+ * @param {(asked: ?Object) => void}        props.onAsked      Holds a new one.
  * @return {import('react').ReactElement} The view.
  */
 export default function Briefing( {
 	userId,
+	operator,
 	onSearchFor,
 	onOpenEntity,
 	onOpenLens,
@@ -398,6 +402,7 @@ export default function Briefing( {
 	return (
 		<div className="newspack-intelligence__view">
 			<AskBox
+				operator={ operator }
 				asked={ asked }
 				onAsked={ onAsked }
 				onOpenEntity={ onOpenEntity }
@@ -425,9 +430,13 @@ export default function Briefing( {
 				rows="groups"
 				empty={
 					<Invitation
-						text={ __(
-							'Nothing about a client, Newspack or the industry arrived in the last seven days.',
-							'newspack-intelligence'
+						text={ sprintf(
+							/* translators: %s: who runs the deployment. */
+							__(
+								'Nothing about a client, %s or the industry arrived in the last seven days.',
+								'newspack-intelligence'
+							),
+							operator.name
 						) }
 						label={ __(
 							'Search everything',
@@ -439,6 +448,7 @@ export default function Briefing( {
 			>
 				{ ( answer ) => (
 					<Changes
+						operator={ operator }
 						answer={ answer }
 						onOpenEntity={ onOpenEntity }
 						onSave={ onSave }

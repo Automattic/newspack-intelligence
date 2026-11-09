@@ -200,10 +200,11 @@ function ChurnPrompt( { onEnd } ) {
  *
  * @param {Object}                props
  * @param {Object}                props.entity       The record.
+ * @param {Object}                props.vocabulary   The ontology's closed lists, whose labels name each identifier kind and role.
  * @param {(key: string) => void} props.onOpenEntity Opens an entity.
  * @return {import('react').ReactElement} The section.
  */
-function Details( { entity, onOpenEntity } ) {
+function Details( { entity, vocabulary, onOpenEntity } ) {
 	const title = __( 'Details', 'newspack-intelligence' );
 	return (
 		<Card as="section" aria-label={ title }>
@@ -228,12 +229,14 @@ function Details( { entity, onOpenEntity } ) {
 					) ) }
 					{ entity.identifiers.map( ( id ) => (
 						<li key={ `id ${ id.kind } ${ id.value }` }>
-							{ `${ id.kind }: ${ id.value }` }
+							{ `${ vocabulary.identifierWords[ id.kind ] }: ${
+								id.value
+							}` }
 						</li>
 					) ) }
 					{ entity.roles.filter( heldTime ).map( ( role ) => (
 						<li key={ `role ${ role.role } ${ role.from_ts }` }>
-							{ roleText( role ) }
+							{ roleText( role, vocabulary.roleWords ) }
 						</li>
 					) ) }
 				</ul>
@@ -533,6 +536,7 @@ export default function Entity( {
 			{ record.answer?.available && (
 				<Details
 					entity={ record.answer }
+					vocabulary={ vocabulary }
 					onOpenEntity={ onOpenEntity }
 				/>
 			) }
