@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.1] - 2026-11-09
+
 ### Fixed
 
 - **Review's single keys work from anywhere on the page.** While the Review view shows and the keys are on, `j` or `k` pressed outside every row, on the tab bar or the page body, focuses the view's first row, and `z` undoes the latest pending judgment from anywhere; `y`, `n` and `m` still act only on a focused row, and `j` and `k` still move within that row's list. A key typed in a field or inside a dialog, or with a modifier, is left alone, and with the keys off nothing is captured. One page listener, registered while the view is mounted, replaces each list's own handler.
