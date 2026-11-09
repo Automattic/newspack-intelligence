@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intelligence_Health;
 use Newspack_Intelligence\Restricted_Settings;
@@ -175,7 +176,7 @@ final class IntelligencePageTest extends TestCase {
 					[ 'field' => 'sources', 'option' => 'source', 'values' => null ],
 				],
 			],
-			\array_diff_key( $vocabulary, [ 'linkRoleWords' => 0, 'methodWords' => 0, 'markWords' => 0, 'roleWords' => 0, 'identifierWords' => 0 ] )
+			\array_filter( $vocabulary, static fn ( string $map ): bool => ! \str_ends_with( $map, 'Words' ), ARRAY_FILTER_USE_KEY )
 		);
 		$this->assertSame( [ 'wp-components', 'newspack-nodes-graph' ], $GLOBALS['_enqueued_styles']['newspack-intelligence']['deps'] );
 	}
@@ -222,9 +223,111 @@ final class IntelligencePageTest extends TestCase {
 		$this->assertSame( Intel_Event::ROLES, \array_keys( $vocabulary['roleWords'] ) );
 		$this->assertSame( Intel_Event::IDENTIFIER_KINDS, \array_keys( $vocabulary['identifierWords'] ) );
 		$this->assertSame( 'Former client', $vocabulary['roleWords']['former_client'] );
-		$this->assertSame( 'Product of the organization', $vocabulary['roleWords']['operator_product'] );
 		$this->assertSame( 'Site ID', $vocabulary['identifierWords']['site_id'] );
 		$this->assertSame( 'LinkedIn', $vocabulary['markWords']['linkedin'] );
+	}
+
+	/** Every closed list a screen shows has a word for each of its values, none spelled as a key. */
+	public function test_vocabulary_words_every_kind_role_type_and_identifier(): void {
+		$vocabulary = $this->vocabulary();
+
+		$this->assertSame( Intel_Event::ITEM_KINDS, \array_keys( $vocabulary['kindWords'] ) );
+		$this->assertSame( Intel_Event::ROLES, \array_keys( $vocabulary['roleWords'] ) );
+		$this->assertSame( Intel_Event::TYPES, \array_keys( $vocabulary['typeWords'] ) );
+		$this->assertSame( Intel_Event::NAME_KINDS, \array_keys( $vocabulary['nameKindWords'] ) );
+		$this->assertSame( Intel_Event::IDENTIFIER_KINDS, \array_keys( $vocabulary['identifierWords'] ) );
+		$this->assertSame( Intel_Event::PREDICATES, \array_keys( $vocabulary['predicateWords'] ) );
+		$this->assertSame( Intel_Event::TIERS, \array_keys( $vocabulary['tierWords'] ) );
+		$this->assertSame( Graph_Query::buckets(), \array_keys( $vocabulary['spanWords'] ) );
+		$this->assertSame( Graph_Query::trend_axes(), \array_keys( $vocabulary['axisWords'] ) );
+		$this->assertSame( [ 'accepted', 'proposed', 'rejected' ], \array_keys( $vocabulary['stateWords'] ) );
+		$this->assertSame( [ 'github', 'feed', 'p2', 'linear', 'slack', 'unthread' ], \array_keys( $vocabulary['sourceWords'] ) );
+		$this->assertSame( [ 'spike', 'burst', 'drop', 'silent' ], \array_keys( $vocabulary['signalWords'] ) );
+		$this->assertSame( [ 'collection', 'backlog', 'dropped', 'extraction', 'calls' ], \array_keys( $vocabulary['healthWords'] ) );
+		foreach ( $vocabulary as $map => $words ) {
+			if ( \str_ends_with( $map, 'Words' ) ) {
+				foreach ( $words as $key => $word ) {
+					$this->assertDoesNotMatchRegularExpression( '/[_:]/', $word, "{$map}.{$key} is worded as a key" );
+				}
+			}
+		}
+		$this->assertSame( 'Churn risk', $vocabulary['kindWords']['churn_signal'] );
+		$this->assertSame( 'Feature request', $vocabulary['kindWords']['feature_request'] );
+		$this->assertSame( 'Industry group', $vocabulary['roleWords']['industry_body'] );
+		$this->assertSame( 'Company', $vocabulary['typeWords']['organization'] );
+		$this->assertSame( 'Also known as', $vocabulary['nameKindWords']['alias'] );
+		$this->assertSame( 'Website', $vocabulary['identifierWords']['domain'] );
+		$this->assertSame( 'is part of', $vocabulary['predicateWords']['part_of'] );
+		$this->assertSame( 'RSS feed', $vocabulary['sourceWords']['feed'] );
+		$this->assertSame( 'Suggested', $vocabulary['stateWords']['proposed'] );
+		$this->assertSame( 'Went quiet', $vocabulary['signalWords']['silent'] );
+		$this->assertSame( 'Matching items to clients', $vocabulary['healthWords']['backlog'] );
+		$this->assertSame( 'Internal', $vocabulary['tierWords']['internal'] );
+		$this->assertSame( 'Month', $vocabulary['spanWords']['month'] );
+		$this->assertSame( 'Kind of news', $vocabulary['axisWords']['kind'] );
+	}
+
+	/** A deployment that names no operator words the kinds and roles that would name it without a name. */
+	public function test_unnamed_operator_words(): void {
+		$vocabulary = $this->vocabulary();
+
+		$this->assertSame( '', $this->localized( 'newspack-intelligence' )['operatorName'] );
+		$this->assertSame( 'Leaving', $vocabulary['kindWords']['churned'] );
+		$this->assertSame( 'Own product', $vocabulary['roleWords']['operator_product'] );
+	}
+
+	/** A deployment naming its operator on its LLM_Call node words those kinds and roles with the name. */
+	public function test_named_operator_words(): void {
+		$this->run_operator( 'Lakeside Works' );
+
+		$vocabulary = $this->vocabulary();
+
+		$this->assertSame( 'Lakeside Works', $this->localized( 'newspack-intelligence' )['operatorName'] );
+		$this->assertSame( 'Leaving Lakeside Works', $vocabulary['kindWords']['churned'] );
+		$this->assertSame( 'Lakeside Works product', $vocabulary['roleWords']['operator_product'] );
+	}
+
+	/** Every word the page is sent passes through translation. */
+	public function test_vocabulary_is_translated(): void {
+		\add_filter( 'gettext', static fn ( string $text ): string => "⟦{$text}⟧" );
+
+		$vocabulary = $this->vocabulary();
+
+		foreach ( $vocabulary as $map => $words ) {
+			if ( \str_ends_with( $map, 'Words' ) ) {
+				foreach ( $words as $key => $word ) {
+					$this->assertMatchesRegularExpression( '/^⟦.*⟧$/u', $word, "{$map}.{$key} is not translated" );
+				}
+			}
+		}
+		$this->assertSame( '⟦Leaving⟧', $vocabulary['kindWords']['churned'] );
+	}
+
+	/**
+	 * The vocabulary a reader's page is sent.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function vocabulary(): array {
+		Capabilities::$session_scope = Capabilities::READ;
+		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+		return $this->localized( 'newspack-intelligence' )['vocabulary'];
+	}
+
+	/**
+	 * Run a topology whose LLM_Call node names `$name` its operator.
+	 *
+	 * @param string $name Who runs the deployment.
+	 */
+	private function run_operator( string $name ): void {
+		$dir = $this->make_temp_dir( 'intel-page-operator-' );
+		\file_put_contents( "{$dir}/heron-operator.tsl", "make_node Intel_Event_Writer intel:writer intel:items intel:ontology intel:watches intel:asks\nmake_node LLM_Call intel:llm ai-relay-4417\ncmd intel:llm:config set_operator \"{$name}\"\nsecure\n" );
+		Topology_Registry::register_plugin( 'Newspack_Intelligence\\', \dirname( __DIR__, 2 ) . '/topologies' );
+		Topology_Registry::register_user_dir( $dir );
+		\update_option( 'newspack_nodes_topologies', [ 'heron-operator' ] );
+		Config::reset();
+		Bootstrap::forget_node_tables();
 	}
 
 	/** The page names the operator the running topology's LLM_Call node names, else generic wording. */
@@ -245,7 +348,7 @@ final class IntelligencePageTest extends TestCase {
 
 		$data = $this->localized( 'newspack-intelligence' );
 		$this->assertSame( [ 'name' => 'Quillmere Cooperative', 'heading' => 'Quillmere Cooperative' ], $data['operator'] );
-		$this->assertSame( 'Product of Quillmere Cooperative', $data['vocabulary']['roleWords']['operator_product'] );
+		$this->assertSame( 'Quillmere Cooperative product', $data['vocabulary']['roleWords']['operator_product'] );
 	}
 
 	/**

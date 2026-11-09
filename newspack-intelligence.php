@@ -62,7 +62,9 @@ function register_intelligence_admin_page(): void {
  * plugin version the shared header stamps, whether to render curation
  * controls, the reader's user id, which keys what the page keeps in the
  * browser, the operator the running topology names (`Operator::configured()`),
- * which the page's copy names, and the vocabulary those controls offer. The
+ * which the page's copy names, as `operatorName` the name it configures, ''
+ * for none, and the vocabulary: the closed lists those controls offer and
+ * the word each key is shown as (`screen_words()`). The
  * server's role gate stays the authority; the flag only hides. WordPress
  * refuses the page to a caller its menu capability excludes before this
  * runs. `Admin::enqueue_react_page()` no-ops when
@@ -84,12 +86,13 @@ function enqueue_intelligence_assets( string $hook ): void {
 			'version_fallback' => \NEWSPACK_INTELLIGENCE_VERSION,
 			'style_deps'       => [ 'wp-components', 'newspack-nodes-graph' ],
 			'localize'         => [
-				'version'    => \NEWSPACK_INTELLIGENCE_VERSION,
-				'canTune'    => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::TUNE ) ? '1' : '',
-				'canManage'  => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) ? '1' : '',
-				'userId'     => (string) \get_current_user_id(),
-				'operator'   => $operator->shown(),
-				'vocabulary' => [
+				'version'      => \NEWSPACK_INTELLIGENCE_VERSION,
+				'canTune'      => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::TUNE ) ? '1' : '',
+				'canManage'    => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) ? '1' : '',
+				'userId'       => (string) \get_current_user_id(),
+				'operator'     => $operator->shown(),
+				'operatorName' => $operator->named ? $operator->name : '',
+				'vocabulary'   => [
 					'roles'           => Intel_Event::ROLES,
 					'nameKinds'       => Intel_Event::NAME_KINDS,
 					'identifierKinds' => Intel_Event::IDENTIFIER_KINDS,
@@ -106,51 +109,152 @@ function enqueue_intelligence_assets( string $hook ): void {
 						\array_keys( Graph_Query::LENS_LISTS ),
 						Graph_Query::LENS_LISTS
 					),
-					'linkRoleWords'   => [
-						'subject'   => \__( 'The subject', 'newspack-intelligence' ),
-						'mention'   => \__( 'Mentioned', 'newspack-intelligence' ),
-						'topic'     => \__( 'A topic', 'newspack-intelligence' ),
-						'publisher' => \__( 'The publisher', 'newspack-intelligence' ),
-					],
-					'methodWords'     => [
-						'identifier'  => \__( 'its identifier', 'newspack-intelligence' ),
-						'name'        => \__( 'its name', 'newspack-intelligence' ),
-						'alias'       => \__( 'an alias', 'newspack-intelligence' ),
-						'acronym'     => \__( 'its acronym', 'newspack-intelligence' ),
-						'domain_stem' => \__( 'its domain', 'newspack-intelligence' ),
-						'ner_fuzzy'   => \__( 'a similar name', 'newspack-intelligence' ),
-						'human'       => \__( 'a person', 'newspack-intelligence' ),
-						'extract'     => \__( 'extraction', 'newspack-intelligence' ),
-					],
-					'roleWords'       => [
-						'client'           => \__( 'Client', 'newspack-intelligence' ),
-						'former_client'    => \__( 'Former client', 'newspack-intelligence' ),
-						'prospect'         => \__( 'Prospect', 'newspack-intelligence' ),
-						'competitor'       => \__( 'Competitor', 'newspack-intelligence' ),
-						'partner'          => \__( 'Partner', 'newspack-intelligence' ),
-						'funder'           => \__( 'Funder', 'newspack-intelligence' ),
-						'industry_body'    => \__( 'Industry body', 'newspack-intelligence' ),
-						/* translators: %s: who runs the deployment. */
-						'operator_product' => \sprintf( \__( 'Product of %s', 'newspack-intelligence' ), $operator->shown()['name'] ),
-					],
-					'identifierWords' => [
-						'domain'           => \__( 'Domain', 'newspack-intelligence' ),
-						'github_org'       => \__( 'GitHub organization', 'newspack-intelligence' ),
-						'github_repo'      => \__( 'GitHub repository', 'newspack-intelligence' ),
-						'linkedin_company' => \__( 'LinkedIn company', 'newspack-intelligence' ),
-						'x_handle'         => \__( 'X handle', 'newspack-intelligence' ),
-						'site_id'          => \__( 'Site ID', 'newspack-intelligence' ),
-						'linear_team'      => \__( 'Linear team', 'newspack-intelligence' ),
-					],
-					'markWords'       => [
-						'newsletter' => \__( 'Newsletter', 'newspack-intelligence' ),
-						'linkedin'   => \__( 'LinkedIn', 'newspack-intelligence' ),
-						'site'       => \__( 'Site', 'newspack-intelligence' ),
-					],
+					...screen_words( $operator ),
 				],
 			],
 		]
 	);
+}
+
+/**
+ * The word a reader sees for each stored key the page shows, one map per
+ * closed list, each localized; the words that would name the operator name
+ * it where the deployment does, and stand without a name where it does not.
+ *
+ * @param Operator $operator Who runs the deployment.
+ * @return array<string,array<string,string>>
+ */
+function screen_words( Operator $operator ): array {
+	$named = $operator->named;
+	return [
+		'kindWords'       => [
+			'award'           => \__( 'Award', 'newspack-intelligence' ),
+			'launch'          => \__( 'Launch', 'newspack-intelligence' ),
+			'release'         => \__( 'Release', 'newspack-intelligence' ),
+			'funding'         => \__( 'Funding', 'newspack-intelligence' ),
+			'hire'            => \__( 'Hire', 'newspack-intelligence' ),
+			'departure'       => \__( 'Departure', 'newspack-intelligence' ),
+			'partnership'     => \__( 'Partnership', 'newspack-intelligence' ),
+			'incident'        => \__( 'Incident', 'newspack-intelligence' ),
+			'bug'             => \__( 'Bug', 'newspack-intelligence' ),
+			'feature_request' => \__( 'Feature request', 'newspack-intelligence' ),
+			'complaint'       => \__( 'Complaint', 'newspack-intelligence' ),
+			'praise'          => \__( 'Praise', 'newspack-intelligence' ),
+			/* translators: %s: who runs the deployment. */
+			'churned'         => $named ? \sprintf( \__( 'Leaving %s', 'newspack-intelligence' ), $operator->name ) : \__( 'Leaving', 'newspack-intelligence' ),
+			'churn_signal'    => \__( 'Churn risk', 'newspack-intelligence' ),
+			'research'        => \__( 'Research', 'newspack-intelligence' ),
+			'other'           => \__( 'Other', 'newspack-intelligence' ),
+		],
+		'roleWords'       => [
+			'client'           => \__( 'Client', 'newspack-intelligence' ),
+			'former_client'    => \__( 'Former client', 'newspack-intelligence' ),
+			'prospect'         => \__( 'Prospect', 'newspack-intelligence' ),
+			'competitor'       => \__( 'Competitor', 'newspack-intelligence' ),
+			'partner'          => \__( 'Partner', 'newspack-intelligence' ),
+			'funder'           => \__( 'Funder', 'newspack-intelligence' ),
+			'industry_body'    => \__( 'Industry group', 'newspack-intelligence' ),
+			/* translators: %s: who runs the deployment. */
+			'operator_product' => $named ? \sprintf( \__( '%s product', 'newspack-intelligence' ), $operator->name ) : \__( 'Own product', 'newspack-intelligence' ),
+		],
+		'typeWords'       => [
+			'organization' => \__( 'Company', 'newspack-intelligence' ),
+			'person'       => \__( 'Person', 'newspack-intelligence' ),
+			'place'        => \__( 'Place', 'newspack-intelligence' ),
+			'product'      => \__( 'Product', 'newspack-intelligence' ),
+			'topic'        => \__( 'Topic', 'newspack-intelligence' ),
+			'event'        => \__( 'Event', 'newspack-intelligence' ),
+		],
+		'stateWords'      => [
+			'accepted' => \__( 'Accepted', 'newspack-intelligence' ),
+			'proposed' => \__( 'Suggested', 'newspack-intelligence' ),
+			'rejected' => \__( 'Rejected', 'newspack-intelligence' ),
+		],
+		'nameKindWords'   => [
+			'canonical' => \__( 'Official name', 'newspack-intelligence' ),
+			'alias'     => \__( 'Also known as', 'newspack-intelligence' ),
+			'acronym'   => \__( 'Short name', 'newspack-intelligence' ),
+			'locality'  => \__( 'Place', 'newspack-intelligence' ),
+		],
+		'identifierWords' => [
+			'domain'           => \__( 'Website', 'newspack-intelligence' ),
+			'github_org'       => \__( 'GitHub organization', 'newspack-intelligence' ),
+			'github_repo'      => \__( 'GitHub repository', 'newspack-intelligence' ),
+			'linkedin_company' => \__( 'LinkedIn page', 'newspack-intelligence' ),
+			'x_handle'         => \__( 'X account', 'newspack-intelligence' ),
+			'site_id'          => \__( 'Site ID', 'newspack-intelligence' ),
+			'linear_team'      => \__( 'Linear team', 'newspack-intelligence' ),
+		],
+		'predicateWords'  => [
+			'works_for'     => \__( 'works for', 'newspack-intelligence' ),
+			'part_of'       => \__( 'is part of', 'newspack-intelligence' ),
+			'funds'         => \__( 'funds', 'newspack-intelligence' ),
+			'partners_with' => \__( 'partners with', 'newspack-intelligence' ),
+			'competes_with' => \__( 'competes with', 'newspack-intelligence' ),
+			'uses_product'  => \__( 'uses', 'newspack-intelligence' ),
+			'won'           => \__( 'won', 'newspack-intelligence' ),
+			'launched'      => \__( 'launched', 'newspack-intelligence' ),
+			'located_in'    => \__( 'is in', 'newspack-intelligence' ),
+		],
+		'sourceWords'     => [
+			'github'   => \__( 'GitHub', 'newspack-intelligence' ),
+			'feed'     => \__( 'RSS feed', 'newspack-intelligence' ),
+			'p2'       => \__( 'P2', 'newspack-intelligence' ),
+			'linear'   => \__( 'Linear', 'newspack-intelligence' ),
+			'slack'    => \__( 'Slack', 'newspack-intelligence' ),
+			'unthread' => \__( 'Unthread', 'newspack-intelligence' ),
+		],
+		'signalWords'     => [
+			/* translators: %s: what jumped, a kind of news, a topic or a theme. */
+			'spike'  => \__( '%s jumped', 'newspack-intelligence' ),
+			'burst'  => \__( 'Published more than usual', 'newspack-intelligence' ),
+			'drop'   => \__( 'Published less than usual', 'newspack-intelligence' ),
+			'silent' => \__( 'Went quiet', 'newspack-intelligence' ),
+		],
+		'healthWords'     => [
+			'collection' => \__( 'Collecting', 'newspack-intelligence' ),
+			'backlog'    => \__( 'Matching items to clients', 'newspack-intelligence' ),
+			'dropped'    => \__( 'Skipped', 'newspack-intelligence' ),
+			'extraction' => \__( 'Summaries', 'newspack-intelligence' ),
+			'calls'      => \__( 'AI requests waiting', 'newspack-intelligence' ),
+		],
+		'tierWords'       => [
+			'public'     => \__( 'Public', 'newspack-intelligence' ),
+			'internal'   => \__( 'Internal', 'newspack-intelligence' ),
+			'restricted' => \__( 'Restricted', 'newspack-intelligence' ),
+		],
+		'spanWords'       => [
+			'day'   => \__( 'Day', 'newspack-intelligence' ),
+			'week'  => \__( 'Week', 'newspack-intelligence' ),
+			'month' => \__( 'Month', 'newspack-intelligence' ),
+		],
+		'axisWords'       => [
+			'kind'  => \__( 'Kind of news', 'newspack-intelligence' ),
+			'topic' => \__( 'Topic', 'newspack-intelligence' ),
+			'theme' => \__( 'Theme', 'newspack-intelligence' ),
+		],
+		'linkRoleWords'   => [
+			'subject'   => \__( 'The subject', 'newspack-intelligence' ),
+			'mention'   => \__( 'Mentioned', 'newspack-intelligence' ),
+			'topic'     => \__( 'A topic', 'newspack-intelligence' ),
+			'publisher' => \__( 'The publisher', 'newspack-intelligence' ),
+		],
+		'methodWords'     => [
+			'identifier'  => \__( 'its identifier', 'newspack-intelligence' ),
+			'name'        => \__( 'its name', 'newspack-intelligence' ),
+			'alias'       => \__( 'an alias', 'newspack-intelligence' ),
+			'acronym'     => \__( 'its acronym', 'newspack-intelligence' ),
+			'domain_stem' => \__( 'its domain', 'newspack-intelligence' ),
+			'ner_fuzzy'   => \__( 'a similar name', 'newspack-intelligence' ),
+			'human'       => \__( 'a person', 'newspack-intelligence' ),
+			'extract'     => \__( 'extraction', 'newspack-intelligence' ),
+		],
+		'markWords'       => [
+			'newsletter' => \__( 'Newsletter', 'newspack-intelligence' ),
+			'linkedin'   => \__( 'LinkedIn', 'newspack-intelligence' ),
+			'site'       => \__( 'Site', 'newspack-intelligence' ),
+		],
+	];
 }
 
 /** Register the client CSV importer under the core Settings menu. */

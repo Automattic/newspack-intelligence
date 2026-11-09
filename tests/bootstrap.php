@@ -97,6 +97,13 @@ if ( ! function_exists( 'sanitize_textarea_field' ) ) {
 	}
 }
 
+// Overrides shared shim: passes the text through `gettext`, as WordPress does.
+if ( ! function_exists( '__' ) ) {
+	function __( string $text, string $domain = 'default' ): string {
+		return (string) apply_filters( 'gettext', $text, $text, $domain );
+	}
+}
+
 // Overrides shared shim: reads _current_user_id, casts to int.
 if ( ! function_exists( 'get_current_user_id' ) ) {
 	function get_current_user_id(): int {
