@@ -667,4 +667,39 @@ final class OntologyCliCommandTest extends TestCase {
 
 		$this->assertSame( '\\Newspack_Intelligence\\CLI\\Ontology_CLI_Command', \WP_CLI::$commands['newspack-intelligence ontology'] ?? null );
 	}
+
+	/**
+	 * Every flag a command's synopsis declares is one token WP-CLI's
+	 * synopsis parser reads, `--name`, `--name=<value>` or either in
+	 * brackets; any other shape it reads as unknown, and then refuses the
+	 * flag when it is given.
+	 */
+	public function test_every_synopsis_flag_is_a_shape_wp_cli_parses(): void {
+		$classes = [
+			\Newspack_Intelligence\CLI\Clients_CLI_Command::class,
+			\Newspack_Intelligence\CLI\Eval_CLI_Command::class,
+			\Newspack_Intelligence\CLI\Items_CLI_Command::class,
+			Ontology_CLI_Command::class,
+			\Newspack_Intelligence\CLI\Restricted_CLI_Command::class,
+		];
+		$flags   = [];
+		foreach ( $classes as $class ) {
+			foreach ( ( new \ReflectionClass( $class ) )->getMethods() as $method ) {
+				preg_match_all( '/^\s*\*\s+(\[?--\S*)$/m', (string) $method->getDocComment(), $found );
+				foreach ( $found[1] as $flag ) {
+					$flags[ $class . '::' . $method->getName() . ' ' . $flag ] = $flag;
+				}
+			}
+		}
+
+		$unparsed = array_keys(
+			array_filter(
+				$flags,
+				static fn ( string $flag ): bool => 1 !== preg_match( '/^(--[a-z][a-z0-9_-]*(=<[^<>\[\]]+>)?|\[--[a-z][a-z0-9_-]*(=<[^<>\[\]]+>)?\])$/', $flag )
+			)
+		);
+
+		$this->assertNotEmpty( $flags );
+		$this->assertSame( [], $unparsed );
+	}
 }

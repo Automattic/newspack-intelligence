@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`wp newspack-intelligence ontology reextract` takes `--kind`.** Its synopsis spelled the flag `[--kind=<kind>[,<kind>]]`, a token WP-CLI's parser reads as unknown, so every run naming `--kind` was refused as `unknown --kind parameter`. It reads `[--kind=<kinds>]`, comma-separated as before, and a test holds every flag the plugin's commands declare to a shape WP-CLI parses.
+
 ## [0.38.0] - 2026-11-09
 
 ### Changed

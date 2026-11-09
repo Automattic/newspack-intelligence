@@ -91,8 +91,8 @@ class Ontology_CLI_Command {
 	 * [--source=<name>]
 	 * : Only the items of this source, as `slack` or `linear`; every source when omitted.
 	 *
-	 * [--kind=<kind>[,<kind>]]
-	 * : Only the items extracted as one of these kinds, as `churned,churn_signal`; every kind when omitted.
+	 * [--kind=<kinds>]
+	 * : Only the items extracted as one of these kinds, comma-separated, as `churned,churn_signal`; every kind when omitted.
 	 *
 	 * [--limit=<n>]
 	 * : The most extraction calls it makes, retries and decision-model calls aside; 200 when omitted.
