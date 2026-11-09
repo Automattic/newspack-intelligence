@@ -211,6 +211,19 @@ final class SourceNodeTest extends TestCase {
 		$this->assertSame( 0, $this->writer->captured[0][ Message::VALUE ]['item_ts'] );
 	}
 
+	/**
+	 * An item cannot have happened after it was read, so one its producer
+	 * dates ahead of its retrieval, by a clock or a zone it got wrong, records
+	 * at its retrieval, and every read buckets it there.
+	 */
+	public function test_an_item_dated_after_its_retrieval_records_at_its_retrieval(): void {
+		$this->fetch_page( $this->fake(), [ [ 'id' => 'ahead-1', 'title' => 'Dated ahead', 'when' => 'Tue, 27 Oct 2026 09:30:00 GMT' ] ] );
+
+		$event = $this->writer->captured[0][ Message::VALUE ];
+		$this->assertGreaterThan( self::RETRIEVED, \strtotime( 'Tue, 27 Oct 2026 09:30:00 GMT' ) );
+		$this->assertSame( [ 1793011234, 1793011234 ], [ $event['item_ts'], $event['retrieved_ts'] ] );
+	}
+
 	/** A TICK answers how many requests the pass opens on, to whoever asked, echoing its ID and KEY. */
 	public function test_tick_answers_the_request_with_how_many_it_fetches(): void {
 		$node = $this->fake( [ 'restricted' ], [ Fake_Source_Node::PAGE . '1', Fake_Source_Node::PAGE . '2', Fake_Source_Node::PAGE . '3' ] );

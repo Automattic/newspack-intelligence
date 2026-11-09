@@ -12,6 +12,7 @@ use Newspack_Nodes\Core;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
 require_once __DIR__ . '/../support/reads-ontology-log.php';
@@ -96,6 +97,60 @@ final class PublisherSignalsTest extends TestCase {
 
 		$this->assertSame( [ [ 'publisher', 'drop', '2026-10-12', null, null, 2, 4.0 ] ], self::signals( $answer ) );
 		$this->assertSame( [ 'feed:marsh-courier-research-1-2', 'feed:marsh-courier-research-1-1' ], \array_column( $answer['signals'][0]['items'], 'item_key' ) );
+	}
+
+	/**
+	 * A drop is judged though no other axis is: a client publishing four a
+	 * week from the oldest baseline week but one, and nothing about it,
+	 * drops to one, and the answer says it was judged; the drop carries its
+	 * own weekly series and its usual range, read as a spike's is, and no
+	 * baseline beside the range's mean.
+	 */
+	public function test_a_drop_alone_is_judged(): void {
+		$this->published( self::TERN, 'research', self::STEADY );
+		$this->published( self::COURIER, 'research', [ 1 => 1, 2 => 4, 3 => 4, 4 => 4, 5 => 4, 6 => 4, 7 => 4, 8 => 4 ] );
+
+		$answer = $this->ci->dispatch( 'signals', [ '--entity=' . self::COURIER ] );
+
+		$this->assertSame( [ [ 'publisher', 'drop', '2026-10-12', null, null, 1, 3.5 ] ], self::signals( $answer ) );
+		$this->assertTrue( $answer['judged'] );
+		$this->assertSame( [ 1, 4, 4, 4, 4, 4, 4, 4 ], \array_column( $answer['signals'][0]['trend'], 'count' ) );
+		$this->assertSame( [ 'mean' => 3.5, 'low' => 1.75, 'high' => 3.5 + 2 * \sqrt( 1.75 ) ], $answer['signals'][0]['usual'] );
+		$this->assertArrayNotHasKey( 'baseline', $answer['signals'][0] );
+	}
+
+	/**
+	 * Every drop and every silence counts at or below its band's low end,
+	 * SIGNAL_DROP of its mean, so the band drawn behind it is the rule that
+	 * fired.
+	 *
+	 * @param string         $signal The signal expected.
+	 * @param array<int,int> $counts Weeks back => the client's items.
+	 */
+	#[DataProvider( 'falls' )]
+	public function test_every_drop_and_silence_counts_at_or_below_its_low( string $signal, array $counts ): void {
+		$this->published( self::TERN, 'research', self::STEADY );
+		$this->published( self::COURIER, 'research', $counts );
+
+		$fell = $this->ci->dispatch( 'signals', [ '--entity=' . self::COURIER ] )['signals'];
+
+		$this->assertSame( [ $signal ], \array_column( $fell, 'signal' ) );
+		$this->assertLessThanOrEqual( $fell[0]['usual']['low'], $fell[0]['count'] );
+		$this->assertSame( Graph_Query::SIGNAL_DROP * $fell[0]['usual']['mean'], $fell[0]['usual']['low'] );
+	}
+
+	/**
+	 * Each fall the rule fires on: its signal and the client's weeks.
+	 *
+	 * @return array<string,array{0:string,1:array<int,int>}>
+	 */
+	public static function falls(): array {
+		return [
+			'half its mean'      => [ 'drop', [ 1 => 2, 2 => 4, 3 => 4, 4 => 4, 5 => 4, 6 => 4, 7 => 4, 8 => 4, 9 => 4 ] ],
+			'a mean at the floor' => [ 'drop', [ 1 => 1, 2 => 3, 3 => 3, 4 => 3, 5 => 3, 6 => 3, 7 => 3, 8 => 3, 9 => 3 ] ],
+			'one empty week'     => [ 'drop', [ 2 => 4, 3 => 4, 4 => 4, 5 => 4, 6 => 4, 7 => 4, 8 => 4, 9 => 4 ] ],
+			'two empty weeks'    => [ 'silent', [ 3 => 4, 4 => 4, 5 => 4, 6 => 4, 7 => 4, 8 => 4, 9 => 4 ] ],
+		];
 	}
 
 	/** A baseline mean of exactly SIGNAL_MIN is the floor: one item against it drops. */
@@ -436,12 +491,12 @@ final class PublisherSignalsTest extends TestCase {
 	}
 
 	/**
-	 * Each signal as its axis, kind, bucket, axis counted, value, count and baseline.
+	 * Each signal as its axis, kind, bucket, axis counted, value, count and usual mean.
 	 *
 	 * @param array<string,mixed> $answer A signals answer.
 	 * @return list<list<mixed>>
 	 */
 	private static function signals( array $answer ): array {
-		return \array_map( static fn ( array $s ): array => [ $s['axis'], $s['signal'], $s['bucket'], $s['by'], $s['value'], $s['count'], $s['baseline'] ], $answer['signals'] );
+		return \array_map( static fn ( array $s ): array => [ $s['axis'], $s['signal'], $s['bucket'], $s['by'], $s['value'], $s['count'], $s['usual']['mean'] ], $answer['signals'] );
 	}
 }

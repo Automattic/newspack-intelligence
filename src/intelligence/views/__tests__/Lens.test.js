@@ -58,18 +58,22 @@ const TRENDS = {
 };
 
 const TREND = [
-	{ bucket: '2026-09-28', count: 11 },
-	{ bucket: '2026-09-21', count: 4 },
-	{ bucket: '2026-09-14', count: 0 },
-	{ bucket: '2026-09-07', count: 2 },
-	{ bucket: '2026-08-31', count: 1 },
-	{ bucket: '2026-08-24', count: 0 },
-	{ bucket: '2026-08-17', count: 3 },
-	{ bucket: '2026-08-10', count: 1 },
+	{ bucket: '2026-09-28', count: 11, in_window: true },
+	{ bucket: '2026-09-21', count: 4, in_window: true },
+	{ bucket: '2026-09-14', count: 0, in_window: true },
+	{ bucket: '2026-09-07', count: 2, in_window: true },
+	{ bucket: '2026-08-31', count: 1, in_window: true },
+	{ bucket: '2026-08-24', count: 0, in_window: true },
+	{ bucket: '2026-08-17', count: 3, in_window: true },
+	{ bucket: '2026-08-10', count: 1, in_window: true },
 ];
 
 const SIGNALS = {
 	trend: TREND,
+	partial: { bucket: '2026-10-05', count: 6 },
+	judged: true,
+	bucket: 'week',
+	baseline_buckets: 8,
 	signals: [
 		{
 			axis: 'about',
@@ -78,7 +82,8 @@ const SIGNALS = {
 			by: 'kind',
 			value: 'praise',
 			count: 11,
-			baseline: 1.6666,
+			usual: { mean: 1.6666, low: 0, high: 4.2 },
+			trend: TREND,
 			items: [
 				{
 					item_key: 'linear:SUP-91',
@@ -250,16 +255,27 @@ describe( 'Lens', () => {
 		);
 	} );
 
-	it( 'reads a quiet lens as steady beside its sparkline', async () => {
-		wire.replies.signals = { signals: [], trend: TREND, available: true };
+	it( 'reads a quiet lens too new to judge as such beside its sparkline', async () => {
+		wire.replies.signals = {
+			signals: [],
+			trend: TREND,
+			partial: { bucket: '2026-10-05', count: 6 },
+			judged: false,
+			bucket: 'week',
+			baseline_buckets: 8,
+			available: true,
+		};
 		render( <Harness canTune={ false } /> );
 		await openSupport();
 		const signals = await screen.findByRole( 'region', {
 			name: 'Signals',
 		} );
-		const line = ( await within( signals ).findByText( 'Steady' ) ).closest(
-			'p'
-		);
+		const line = (
+			await within( signals ).findByText(
+				'Too little history to judge. A change is measured against the 8 weeks before.'
+			)
+		).closest( 'p' );
+		expect( within( signals ).queryByText( /Steady/ ) ).toBeNull();
 		expect( within( line ).getByRole( 'img' ) ).toHaveAccessibleName(
 			/counts 11$/
 		);

@@ -82,18 +82,16 @@ function countsText( counts ) {
 }
 
 /**
- * A client's latest signal, the first the signals read lists, or "Steady"
- * when it lists none; nothing until that read answers.
+ * A client's latest signal, the first the signals read lists; nothing when
+ * it lists none, since the Signals card says whether that was judged, and
+ * nothing until that read answers.
  *
  * @param {Object[]|undefined} signals The signals read's rows.
  * @return {string|undefined} The part.
  */
 function latestSignal( signals ) {
-	if ( undefined === signals ) {
-		return undefined;
-	}
-	return 0 === signals.length
-		? __( 'Steady', 'newspack-intelligence' )
+	return undefined === signals || 0 === signals.length
+		? undefined
 		: sprintf(
 				/* translators: 1: the signal's axis and kind, 2: the first UTC day of its week. */
 				__(

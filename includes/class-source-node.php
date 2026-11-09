@@ -641,6 +641,9 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * projection, by key or as a copy (copy_of()), remembering each but one
 	 * make() refuses, so that one retries; a key past
 	 * Graph_Curation::ITEM_KEY_BYTES is logged and refused once a process.
+	 * An item dated after its retrieval is dated at its retrieval, because
+	 * it cannot have happened after it was read: a clock or a zone the
+	 * producer got wrong would otherwise date it in a bucket that every read leaves out.
 	 *
 	 * @param array<int,array<string,mixed>> $items Normalized items.
 	 */
@@ -661,6 +664,9 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 				$this->print_less_often( 'refused an item whose key runs ', "{$bytes} bytes, past " . Graph_Curation::ITEM_KEY_BYTES . ': ' . Core::terminal_safe( \mb_strcut( $key, 0, self::KEY_SHOWN_BYTES ) ) );
 				$this->remember( $key );
 				continue;
+			}
+			if ( \is_int( $item['item_ts'] ?? null ) && \is_int( $item['retrieved_ts'] ?? null ) && $item['item_ts'] > $item['retrieved_ts'] ) {
+				$item['item_ts'] = $item['retrieved_ts'];
 			}
 			// Unlike a size refusal, a make() refusal is not kept: it retries.
 			if ( $this->write( 'item_recorded', $item, $key ) ) {

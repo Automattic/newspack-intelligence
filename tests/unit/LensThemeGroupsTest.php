@@ -396,7 +396,7 @@ final class LensThemeGroupsTest extends TestCase {
 
 		$this->assertSame(
 			[ [ '2026-10-12', 'theme', 'paywall login loop', 9, 0.0 ] ],
-			\array_map( static fn ( array $s ): array => [ $s['bucket'], $s['by'], $s['value'], $s['count'], $s['baseline'] ], $this->ci->dispatch( 'signals', [ '--lens=surge-desk' ] )['signals'] )
+			\array_map( static fn ( array $s ): array => [ $s['bucket'], $s['by'], $s['value'], $s['count'], $s['usual']['mean'] ], $this->ci->dispatch( 'signals', [ '--lens=surge-desk' ] )['signals'] )
 		);
 	}
 

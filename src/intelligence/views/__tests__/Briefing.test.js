@@ -115,7 +115,8 @@ const SIGNAL = {
 	by: null,
 	value: null,
 	count: 2,
-	baseline: 4,
+	usual: { mean: 4, low: 2.6, high: 5.4 },
+	trend: [],
 	items: [
 		{
 			item_key: 'feed:kestrel-1',
@@ -141,7 +142,7 @@ const SIGNALS = {
 					by: 'kind',
 					value: 'complaint',
 					count: 7,
-					baseline: 1.5,
+					usual: { mean: 1.5, low: 0, high: 3.9 },
 					items: [
 						{
 							item_key: 'unthread:kestrel-ticket-8',

@@ -55,6 +55,9 @@ use Newspack_Nodes\Row_Reader;
  * @phpstan-type Within array{join:string,binds:list<scalar>,fields:array<string,string>,order:string}
  * @phpstan-type Item array{item_key:string,url:string,title:string,source:string,item_ts:int,retrieved_ts:int}
  * @phpstan-type Scope \Closure(array{0:int,1:int}, bool): array{0:string,1:list<scalar|null>,2:string,3:string,4:string,5:list<scalar|null>}
+ * @phpstan-type Series list<array{bucket:string,count:int,in_window:bool}>
+ * @phpstan-type Usual array{mean:float,low:float,high:float}
+ * @phpstan-type Pulse array{trend:Series,partial:array{bucket:string,count:int}|null,judged:bool,bucket:string|null}
  */
 final class Graph_Query {
 
@@ -194,6 +197,14 @@ final class Graph_Query {
 
 	/** The share of its baseline mean at or below which a publisher's week drops. */
 	public const SIGNAL_DROP = 0.5;
+
+	/** A subject's pulse with no window to read it over: nothing drawn and nothing judged. */
+	private const NO_PULSE = [
+		'trend'   => [],
+		'partial' => null,
+		'judged'  => false,
+		'bucket'  => null,
+	];
 
 	/** The days an unbounded range runs between. */
 	private const ALL_DAYS = [ '1970-01-01', '9999-12-31' ];
@@ -1380,26 +1391,21 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The signals of the latest complete bucket, and the trend they stand
-	 * in, both read by `signaled()`.
+	 * The signals of the latest complete bucket, and the pulse they stand
+	 * in (`pulse_of()`), both read by `signaled()`.
 	 *
 	 * @param array<array-key,mixed> $args The bound command args: `lens`, `entity`.
-	 * @return array<string,mixed> `{ signals: [ { axis, signal, bucket, by, value, count, baseline, items } ], trend: [ { bucket, count } ], available }`.
+	 * @return array<string,mixed> `{ signals: [ { axis, signal, bucket, by, value, count, baseline, usual: { mean, low, high }, trend: [ { bucket, count, in_window } ], items } ], trend: [ { bucket, count, in_window } ], partial: { bucket, count }, judged, bucket, baseline_buckets, available }`.
 	 * @throws \InvalidArgumentException As `trends()`.
 	 */
 	public static function signals( array $args ): array {
 		[ $call, $name ] = self::asked( $args );
+		$baseline        = [ 'baseline_buckets' => self::SIGNAL_BASELINE ];
 		return self::available(
-			[
-				'signals' => [],
-				'trend'   => [],
-			],
-			static function ( Row_Reader $r ) use ( $call, $name ): array {
-				[ $signals, $trend ] = self::signaled( $r, self::graph( $r ), $call, $name, 0.0 );
-				return [
-					'signals' => $signals,
-					'trend'   => $trend,
-				];
+			[ 'signals' => [] ] + self::NO_PULSE + $baseline,
+			static function ( Row_Reader $r ) use ( $call, $name, $baseline ): array {
+				[ $signals, $pulse ] = self::signaled( $r, self::graph( $r ), $call, $name, 0.0 );
+				return [ 'signals' => $signals ] + $pulse + $baseline;
 			}
 		);
 	}
@@ -1429,7 +1435,7 @@ final class Graph_Query {
 	 * alike: `spiking()` over `filtered()`, its one subject `''`, muted on
 	 * the kind axis, where each value spikes only when it was counted before
 	 * the window; none unless the latest complete bucket closed after
-	 * `$after`. Beside them, the trend they stand in (`trend_of()`), its
+	 * `$after`. Beside them, the pulse they stand in (`pulse_of()`), its
 	 * totals read in the statement that counts the spikes.
 	 *
 	 * @param Row_Reader  $r     The reader.
@@ -1437,7 +1443,7 @@ final class Graph_Query {
 	 * @param Filter      $call  The call's own filters.
 	 * @param string|null $name  The lens key, null for none.
 	 * @param float       $after The instant, UTC seconds.
-	 * @return array{0:list<array<string,mixed>>,1:list<array{bucket:string,count:int}>} The spikes, and the trend.
+	 * @return array{0:list<array<string,mixed>>,1:Pulse} The spikes, and the pulse.
 	 * @throws \InvalidArgumentException On a lens that was never saved, or an
 	 *                                   entity whose merge chain does not
 	 *                                   resolve.
@@ -1445,8 +1451,8 @@ final class Graph_Query {
 	private static function signaled( Row_Reader $r, array $g, array $call, ?string $name, float $after ): array {
 		if ( null === $name && null !== $call['entity'] ) {
 			$survivor             = self::survivor( $call['entity'], $g );
-			[ $signals, $trends ] = self::entities_read( $r, $g, [ $survivor ], $after );
-			return [ $signals[ $survivor ], $trends[ $survivor ] ];
+			[ $signals, $pulses ] = self::entities_read( $r, $g, [ $survivor ], $after );
+			return [ $signals[ $survivor ], $pulses[ $survivor ] ];
 		}
 		return self::lensed(
 			$r,
@@ -1457,10 +1463,11 @@ final class Graph_Query {
 				[ $by, $span ] = self::axis( null, null, $lens );
 				$starts        = self::window( $r, $span, $after );
 				if ( null === $starts ) {
-					return [ [], [] ];
+					return [ [], self::NO_PULSE ];
 				}
-				[ $spikes, $totals ] = self::spiking( $r, self::filtered( $r, $g, $filter ), $filter['days'] ?? self::all_days(), $starts, $by, $span, true, 'kind' === $by );
-				return [ \array_map( static fn ( array $spike ): array => self::signal( 'about', 'spike', $spike ), $spikes[''] ?? [] ), self::trend_of( $totals[''] ?? [], $starts ) ];
+				$days                = $filter['days'] ?? self::all_days();
+				[ $spikes, $totals ] = self::spiking( $r, self::filtered( $r, $g, $filter ), $days, $starts, $by, $span, true, 'kind' === $by );
+				return [ \array_map( static fn ( array $spike ): array => self::signal( 'about', 'spike', $spike ), $spikes[''] ?? [] ), self::pulse_of( $totals[''] ?? [], $starts, $days, isset( $spikes[''] ), self::bucket_of( null, $lens ) ) ];
 			}
 		);
 	}
@@ -1475,7 +1482,18 @@ final class Graph_Query {
 	 * @return array{0:string,1:string} The axis and its bucket's SQL over `t`.
 	 */
 	private static function axis( ?string $by, ?string $bucket, array $lens ): array {
-		return [ $by ?? $lens['by'] ?? self::DEFAULT_AXIS, self::BUCKETS[ $bucket ?? $lens['bucket'] ?? self::DEFAULT_BUCKET ] ];
+		return [ $by ?? $lens['by'] ?? self::DEFAULT_AXIS, self::BUCKETS[ self::bucket_of( $bucket, $lens ) ] ];
+	}
+
+	/**
+	 * The bucket a trend counts by: the call's, else the lens's, else
+	 * DEFAULT_BUCKET.
+	 *
+	 * @param string|null $bucket The call's bucket.
+	 * @param Lens        $lens   The lens.
+	 */
+	private static function bucket_of( ?string $bucket, array $lens ): string {
+		return $bucket ?? $lens['bucket'] ?? self::DEFAULT_BUCKET;
 	}
 
 	/**
@@ -1625,25 +1643,25 @@ final class Graph_Query {
 	}
 
 	/**
-	 * Each entity's signals, as `signals_of()` answers them, and the trend
+	 * Each entity's signals, as `signals_of()` answers them, and the pulse
 	 * of the items naming it as their subject, per week by kind, `other`
 	 * muted, its totals read
-	 * in the statement that counts the about spikes (`trend_of()`); none of
+	 * in the statement that counts the about spikes (`pulse_of()`); none of
 	 * either unless the latest complete week closed after `$after`.
 	 *
 	 * @param Row_Reader   $r         The reader.
 	 * @param Graph        $g         The graph.
 	 * @param list<string> $survivors The entities, as survivors.
 	 * @param float        $after     The instant, UTC seconds.
-	 * @return array{0:array<string,list<array<string,mixed>>>,1:array<string,list<array{bucket:string,count:int}>>} Each survivor => its signals, the about axis first; and each survivor => its trend.
+	 * @return array{0:array<string,list<array<string,mixed>>>,1:array<string,Pulse>} Each survivor => its signals, the about axis first; and each survivor => its pulse.
 	 */
 	private static function entities_read( Row_Reader $r, array $g, array $survivors, float $after ): array {
 		$signals = \array_fill_keys( $survivors, [] );
-		$trends  = $signals;
+		$pulses  = \array_fill_keys( $survivors, self::NO_PULSE );
 		$span    = self::BUCKETS[ self::DEFAULT_BUCKET ];
 		$starts  = [] === $survivors ? null : self::window( $r, $span, $after );
 		if ( null === $starts ) {
-			return [ $signals, $trends ];
+			return [ $signals, $pulses ];
 		}
 		[ $about, $totals ] = self::spiking( $r, self::linking( $r, $g, $survivors, [ self::SUBJECT ] ), self::all_days(), $starts, self::DEFAULT_AXIS, $span, true, true );
 		[ $bursts ]         = self::spiking( $r, self::linking( $r, $g, $survivors, [ Intel_Event::PUBLISHER ] ), self::all_days(), $starts, self::DEFAULT_AXIS, $span, false, false );
@@ -1654,22 +1672,38 @@ final class Graph_Query {
 				...( $falls[ $survivor ] ?? [] ),
 				...\array_map( static fn ( array $spike ): array => self::signal( 'publisher', 'burst', $spike ), $bursts[ $survivor ] ?? [] ),
 			];
-			$trends[ $survivor ]  = self::trend_of( $totals[ $survivor ] ?? [], $starts );
+			$judged               = isset( $about[ $survivor ] ) || isset( $bursts[ $survivor ] ) || isset( $falls[ $survivor ] );
+			$pulses[ $survivor ]  = self::pulse_of( $totals[ $survivor ] ?? [], $starts, self::all_days(), $judged, self::DEFAULT_BUCKET );
 		}
-		return [ $signals, $trends ];
+		return [ $signals, $pulses ];
 	}
 
 	/**
-	 * The trend a subject's spikes stand in: its stories in each of the
-	 * SIGNAL_TREND latest complete buckets of the window, the latest first,
-	 * 0 where a bucket counts none.
+	 * The pulse a subject's signals stand in: `trend`, its stories over the
+	 * window (`series()`); `partial`, the bucket holding now and its stories
+	 * so far, apart, so it is never a point on the line; `judged`, whether
+	 * any axis the answer carries signals for held the history its rule
+	 * judges by, so a non-empty signals list is always judged; and `bucket`,
+	 * the span it counts by. No range is drawn around the totals, since the
+	 * rules judge each signal's series: each carries its own (`usual_of()`).
 	 *
 	 * @param array<string,int> $totals Each bucket's start => the subject's stories in it (`tally()`).
 	 * @param list<string>      $starts The window's starts, newest first.
-	 * @return list<array{bucket:string,count:int}>
+	 * @param array{int,int}    $days   The first second read and the second after the last.
+	 * @param bool              $judged Whether any of its axes was judged.
+	 * @param string            $bucket The span, one of BUCKETS.
+	 * @return Pulse
 	 */
-	private static function trend_of( array $totals, array $starts ): array {
-		return \array_map( static fn ( string $start ): array => [ 'bucket' => $start, 'count' => $totals[ $start ] ?? 0 ], \array_slice( $starts, 1, self::SIGNAL_TREND ) );
+	private static function pulse_of( array $totals, array $starts, array $days, bool $judged, string $bucket ): array {
+		return [
+			'trend'   => self::series( $totals, $starts, $days ),
+			'partial' => [
+				'bucket' => $starts[0],
+				'count'  => $totals[ $starts[0] ] ?? 0,
+			],
+			'judged'  => $judged,
+			'bucket'  => $bucket,
+		];
 	}
 
 	/**
@@ -1677,7 +1711,9 @@ final class Graph_Query {
 	 * week fell (`fell()`): a `drop`, or `silent` when it is the first of two
 	 * empty weeks, and neither while the output of every client fell that
 	 * week too, since that is collection failing, not the client; that is
-	 * read once, and only when a client fell.
+	 * read once, and only when a client fell. Each carries its weekly series
+	 * and the range `fell()` judged it by (`fall_of()`), so its count sits at
+	 * or below the band's low end.
 	 *
 	 * @param Row_Reader   $r         The reader.
 	 * @param Graph        $g         The graph.
@@ -1701,15 +1737,19 @@ final class Graph_Query {
 		$falls  = [];
 		foreach ( $clients as $client ) {
 			[ $counts, $rows ] = self::weeks( $weekly[ $client ] ?? [], $starts );
+			$usual             = self::fall_of( \array_slice( $counts, 2 ) );
 			$empty             = 0 === $counts[1] && 0 === $counts[2];
-			if ( ! self::fell( $counts ) || ( $empty && 0 === $counts[3] ) ) {
+			if ( ! self::fell( $counts[1], $usual ) || ( $empty && 0 === $counts[3] ) ) {
 				continue;
 			}
-			$outage ??= self::fell( self::weeks( self::counts( $r, $g, [ 'days' => self::weeks_of( $starts ) ] + self::filter_of( [ 'role' => [ self::CLIENT ] ] ), null, $span, [ Intel_Event::PUBLISHER ] ), $starts )[0] );
+			if ( null === $outage ) {
+				$every  = self::weeks( self::counts( $r, $g, [ 'days' => self::weeks_of( $starts ) ] + self::filter_of( [ 'role' => [ self::CLIENT ] ] ), null, $span, [ Intel_Event::PUBLISHER ] ), $starts )[0];
+				$outage = self::fell( $every[1], self::fall_of( \array_slice( $every, 2 ) ) );
+			}
 			if ( $outage ) {
 				continue;
 			}
-			$week             = [ 'bucket' => $starts[1], 'by' => null, 'value' => null, 'count' => $counts[1], 'baseline' => \array_sum( \array_slice( $counts, 2 ) ) / (float) self::SIGNAL_BASELINE, 'items' => $rows[ $starts[1] ]['items'] ?? [] ];
+			$week             = [ 'bucket' => $starts[1], 'by' => null, 'value' => null, 'count' => $counts[1], 'usual' => $usual, 'trend' => self::series( \array_combine( $starts, $counts ), $starts, self::all_days() ), 'items' => $rows[ $starts[1] ]['items'] ?? [] ];
 			$falls[ $client ] = [ self::signal( 'publisher', $empty ? 'silent' : 'drop', $week ) ];
 		}
 		return $falls;
@@ -1720,7 +1760,7 @@ final class Graph_Query {
 	 *
 	 * @param string              $axis   `about` or `publisher`.
 	 * @param string              $signal `spike`, `drop`, `silent` or `burst`.
-	 * @param array<string,mixed> $row    The bucket, what it counts, its count, baseline and items.
+	 * @param array<string,mixed> $row    The bucket, what it counts, its count, usual range, series and items.
 	 * @return array<string,mixed>
 	 */
 	private static function signal( string $axis, string $signal, array $row ): array {
@@ -1914,15 +1954,27 @@ final class Graph_Query {
 	}
 
 	/**
-	 * Whether the latest complete bucket fell: at most SIGNAL_DROP of the
-	 * mean of the SIGNAL_BASELINE buckets before it, a mean of at least
-	 * SIGNAL_MIN.
+	 * Whether a week fell against its range (`fall_of()`): its baseline's
+	 * mean at least SIGNAL_MIN, and its count at or below the range's low
+	 * end, so a week inside the band a reader sees never falls.
 	 *
-	 * @param list<int> $counts Each bucket's count, the one holding now first.
+	 * @param int   $count The week's count.
+	 * @param Usual $usual The range of the weeks before it.
 	 */
-	private static function fell( array $counts ): bool {
-		$sum = \array_sum( \array_slice( $counts, 2 ) );
-		return $sum >= self::SIGNAL_MIN * self::SIGNAL_BASELINE && $counts[1] <= self::SIGNAL_DROP * $sum / self::SIGNAL_BASELINE;
+	private static function fell( int $count, array $usual ): bool {
+		return $usual['mean'] >= self::SIGNAL_MIN && $count <= $usual['low'];
+	}
+
+	/**
+	 * The range a week falls against: the baseline's usual range
+	 * (`usual_of()`), its low end SIGNAL_DROP of the mean.
+	 *
+	 * @param list<int> $baseline The weeks before it.
+	 * @return Usual
+	 */
+	private static function fall_of( array $baseline ): array {
+		$usual = self::usual_of( $baseline );
+		return \array_replace( $usual, [ 'low' => self::SIGNAL_DROP * $usual['mean'] ] );
 	}
 
 	/**
@@ -2030,7 +2082,9 @@ final class Graph_Query {
 
 	/**
 	 * Each subject's spikes over what the scope admits in `$days`, counted
-	 * per value of the axis by the window's buckets alone (`spiked_in()`).
+	 * per value of the axis by the window's buckets alone (`spiked_in()`),
+	 * null for a subject too new to judge and absent for one holding no
+	 * story at all.
 	 * With `$known`, as the about axis counting by kind sets it, a value
 	 * spikes only when the same value was counted before the oldest of them,
 	 * read across the whole retention whatever `$days` keeps: in the same
@@ -2048,7 +2102,7 @@ final class Graph_Query {
 	 * @param string         $span   A BUCKETS expression over `t`.
 	 * @param bool           $muted  Whether the kind axis leaves out MUTE_KIND.
 	 * @param bool           $known  Whether a value spikes only once counted before the window.
-	 * @return array{0:array<string,list<array<string,mixed>>>,1:array<string,array<string,int>>} Each subject with a count => its spikes; and each subject => each bucket's start => its stories.
+	 * @return array{0:array<string,list<array<string,mixed>>|null>,1:array<string,array<string,int>>} Each subject with a story => its spikes, null when not judged; and each subject => each bucket's start => its stories.
 	 */
 	private static function spiking( Row_Reader $r, \Closure $scope, array $days, array $starts, string $by, string $span, bool $muted, bool $known ): array {
 		$cut                   = Intel_Graph_Row_Schema::day( $starts[ self::SIGNAL_BASELINE + 1 ] );
@@ -2058,33 +2112,34 @@ final class Graph_Query {
 			$history = self::tally( $r, $scope, self::all_days(), $by, $span, $cut, $muted, true )[1];
 		}
 		$spikes = [];
-		foreach ( $tallied as $subject => $rows ) {
-			$spikes[ $subject ] = self::spiked_in( $rows, $starts, $by, $history[ $subject ] ?? [], $known );
+		foreach ( \array_keys( $tallied + $history ) as $subject ) {
+			$spikes[ $subject ] = self::spiked_in( $tallied[ $subject ] ?? [], $starts, $days, $by, $history[ $subject ] ?? [], $known );
 		}
 		return [ $spikes, $totals ];
 	}
 
 	/**
-	 * Per value counted, the latest complete bucket's count when it is at
-	 * least SIGNAL_MIN, above the mean of the SIGNAL_BASELINE buckets before
-	 * it and at least that mean plus SIGNAL_SIGMAS standard deviations of
-	 * them (`spiked()`), each citing its row's items, the highest count
-	 * first. With `$known`, a value `$history` does not hold spikes nothing,
-	 * since a first appearance within the window is not a change. Without
-	 * it, a history holding no counted item before the oldest of them spikes
-	 * nothing, since its zeros are not a baseline: an item in the oldest
-	 * bucket answers that, else a `$history` that is not empty.
+	 * Per value counted, the latest complete bucket's count when it spikes
+	 * over the SIGNAL_BASELINE buckets before it (`spiked()`), each citing
+	 * its row's items and carrying its value's usual range (`usual_of()`)
+	 * and its series (`series()`), the highest count first. With `$known`, a value `$history` does not hold spikes nothing,
+	 * since a first appearance within the window is not a change, and an
+	 * empty `$history` judges nothing. Without it, a history holding no
+	 * counted item before the oldest of them judges nothing, since its zeros
+	 * are not a baseline: an item in the oldest bucket answers that, else a
+	 * `$history` that is not empty. A subject not judged answers null.
 	 *
 	 * @param list<array{bucket:mixed,value:mixed,count:int,items:list<array{item_key:mixed,url:mixed,title:mixed}>}> $rows   The trend rows, the newest bucket first.
 	 * @param list<string>                                                                                          $starts The window's starts, newest first.
+	 * @param array{int,int}                                                                                        $days   The first second read and the second after the last.
 	 * @param string                                                                                                $by     The axis.
 	 * @param array<string,true>                                                                                    $history Each value counted before the oldest bucket, or '' alone for a subject's history.
 	 * @param bool                                                                                                  $known   Whether a value spikes only when `$history` holds it.
-	 * @return list<array<string,mixed>>
+	 * @return list<array<string,mixed>>|null
 	 */
-	private static function spiked_in( array $rows, array $starts, string $by, array $history, bool $known ): array {
-		if ( [] === $rows || ( ! $known && [] === $history && Core::as_string( $rows[ \count( $rows ) - 1 ]['bucket'] ) > $starts[ self::SIGNAL_BASELINE + 1 ] ) ) {
-			return [];
+	private static function spiked_in( array $rows, array $starts, array $days, string $by, array $history, bool $known ): ?array {
+		if ( [] === $history && ( $known || [] === $rows || Core::as_string( $rows[ \count( $rows ) - 1 ]['bucket'] ) > $starts[ self::SIGNAL_BASELINE + 1 ] ) ) {
+			return null;
 		}
 		$counts = [];
 		foreach ( $rows as $row ) {
@@ -2093,9 +2148,10 @@ final class Graph_Query {
 		$signals = [];
 		foreach ( $counts as $value => $buckets ) {
 			$latest = $buckets[ $starts[1] ] ?? null;
-			$base   = \array_map( static fn ( string $start ): int => Core::as_int( $buckets[ $start ]['count'] ?? 0 ), \array_slice( $starts, 2 ) );
-			if ( null !== $latest && ( ! $known || isset( $history[ $value ] ) ) && self::spiked( Core::as_int( $latest['count'] ), $base ) ) {
-				$signals[] = [ 'bucket' => $starts[1], 'by' => $by, 'value' => $value, 'count' => $latest['count'], 'baseline' => \array_sum( $base ) / (float) self::SIGNAL_BASELINE, 'items' => $latest['items'] ];
+			$series = \array_map( static fn ( array $row ): int => Core::as_int( $row['count'] ), $buckets );
+			$usual  = self::usual_of( \array_map( static fn ( string $start ): int => $series[ $start ] ?? 0, \array_slice( $starts, 2 ) ) );
+			if ( null !== $latest && ( ! $known || isset( $history[ $value ] ) ) && self::spiked( Core::as_int( $latest['count'] ), $usual ) ) {
+				$signals[] = [ 'bucket' => $starts[1], 'by' => $by, 'value' => $value, 'count' => $latest['count'], 'usual' => $usual, 'trend' => self::series( $series, $starts, $days ), 'items' => $latest['items'] ];
 			}
 		}
 		\usort( $signals, static fn ( array $a, array $b ): int => [ $b['count'], $a['value'] ] <=> [ $a['count'], $b['value'] ] );
@@ -2103,20 +2159,57 @@ final class Graph_Query {
 	}
 
 	/**
-	 * Whether a count spikes over its baseline: at least SIGNAL_MIN, above
-	 * the baseline's mean, so a flat history never spikes, and at least that
-	 * mean plus SIGNAL_SIGMAS population standard deviations, compared in
-	 * whole numbers so the threshold itself counts.
+	 * A series over the SIGNAL_TREND latest complete buckets of the window,
+	 * the latest first, 0 where a bucket counts none, each `in_window` when
+	 * it holds a day of `$days`, since a bucket the read never reached is
+	 * not a zero.
 	 *
-	 * @param int       $count    The count.
-	 * @param list<int> $baseline The counts before it.
+	 * @param array<string,int> $counts Each bucket's start => its count.
+	 * @param list<string>      $starts The window's starts, newest first.
+	 * @param array{int,int}    $days   The first second read and the second after the last.
+	 * @return Series
 	 */
-	private static function spiked( int $count, array $baseline ): bool {
+	private static function series( array $counts, array $starts, array $days ): array {
+		$series = [];
+		for ( $i = 1; $i <= self::SIGNAL_TREND; $i++ ) {
+			$series[] = [
+				'bucket'    => $starts[ $i ],
+				'count'     => $counts[ $starts[ $i ] ] ?? 0,
+				'in_window' => Intel_Graph_Row_Schema::day( $starts[ $i ] ) < $days[1] && Intel_Graph_Row_Schema::day( $starts[ $i - 1 ] ) > $days[0],
+			];
+		}
+		return $series;
+	}
+
+	/**
+	 * Whether a count spikes over its usual range: above the mean, so a flat
+	 * history never spikes, and at or above the range's high end, so the
+	 * band a reader sees is the rule itself.
+	 *
+	 * @param int   $count The count.
+	 * @param Usual $usual The range of the counts before it (`usual_of()`).
+	 */
+	private static function spiked( int $count, array $usual ): bool {
+		return $count > $usual['mean'] && $count >= $usual['high'];
+	}
+
+	/**
+	 * A baseline's usual range: its mean, that mean less SIGNAL_SIGMAS
+	 * population standard deviations, at least 0, and that mean plus them,
+	 * at least SIGNAL_MIN, which is the count a spike reaches.
+	 *
+	 * @param list<int> $baseline The counts.
+	 * @return Usual
+	 */
+	private static function usual_of( array $baseline ): array {
 		$n     = \count( $baseline );
-		$sum   = \array_sum( $baseline );
-		$above = $n * $count - $sum;
-		$var   = $n * \array_sum( \array_map( static fn ( int $x ): int => $x * $x, $baseline ) ) - $sum * $sum;
-		return $count >= self::SIGNAL_MIN && $above > 0 && $above * $above >= self::SIGNAL_SIGMAS * self::SIGNAL_SIGMAS * $var;
+		$mean  = \array_sum( $baseline ) / (float) $n;
+		$width = self::SIGNAL_SIGMAS * \sqrt( \array_sum( \array_map( static fn ( int $count ): float => ( $count - $mean ) ** 2, $baseline ) ) / $n );
+		return [
+			'mean' => $mean,
+			'low'  => \max( 0.0, $mean - $width ),
+			'high' => \max( (float) self::SIGNAL_MIN, $mean + $width ),
+		];
 	}
 
 	/**

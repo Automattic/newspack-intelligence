@@ -325,7 +325,11 @@ final class IntelligenceSignalsTest extends TestCase {
 		$this->assertSame( [], $weekly['signals'] );
 		$this->assertSame( self::trend( [ 2, 0, 4, 0, 0, 0, 0, 0 ] ), $weekly['trend'] );
 		$days = \array_map( static fn ( int $back ): string => \gmdate( 'Y-m-d', self::THIS_WEEK - $back * 86400 ), \range( 0, 7 ) );
-		$this->assertSame( \array_map( static fn ( string $day, int $count ): array => [ 'bucket' => $day, 'count' => $count ], $days, [ 0, 0, 0, 0, 0, 2, 0, 0 ] ), $this->ci->dispatch( 'signals', [ '--lens=channel-days' ] )['trend'] );
+		$daily = $this->ci->dispatch( 'signals', [ '--lens=channel-days' ] );
+		$this->assertSame( \array_map( static fn ( string $day, int $count ): array => [ 'bucket' => $day, 'count' => $count, 'in_window' => true ], $days, [ 0, 0, 0, 0, 0, 2, 0, 0 ] ), $daily['trend'] );
+		$this->assertSame( 'day', $daily['bucket'] );
+		$this->save( 'channel-months', '--source=linear', '--bucket=month' );
+		$this->assertSame( 'month', $this->ci->dispatch( 'signals', [ '--lens=channel-months' ] )['bucket'] );
 	}
 
 	/**
@@ -406,17 +410,220 @@ final class IntelligenceSignalsTest extends TestCase {
 		$this->activate();
 		$this->capture_stderr();
 
-		$this->assertSame( [ 'signals' => [], 'trend' => [], 'available' => false ], Graph_Query::signals( [] ) );
+		$this->assertSame(
+			[
+				'signals'          => [],
+				'trend'            => [],
+				'partial'          => null,
+				'judged'           => false,
+				'bucket'           => null,
+				'baseline_buckets' => 8,
+				'available'        => false,
+			],
+			Graph_Query::signals( [] )
+		);
+	}
+
+	/**
+	 * A 30-day weekly view whose stories all fall inside its days holds no
+	 * story before its oldest baseline week, so it is too new to judge.
+	 */
+	public function test_a_thirty_day_weekly_view_with_no_older_items_is_not_judged(): void {
+		$this->weeks( 'complaint', [ 1 => 4, 2 => 1, 3 => 2 ] );
+		$this->save( 'month-desk', '--days=30' );
+		$this->save( 'month-topics', '--days=30', '--by=topic' );
+
+		foreach ( [ 'month-desk', 'month-topics' ] as $lens ) {
+			$answer = $this->ci->dispatch( 'signals', [ "--lens={$lens}" ] );
+			$this->assertSame( [ false, [] ], [ $answer['judged'], $answer['signals'] ], $lens );
+		}
+	}
+
+	/**
+	 * Ten flat weeks of three are enough history to judge, and nothing
+	 * changed; an entity nothing is about holds no history to judge by.
+	 */
+	public function test_ten_flat_weeks_are_judged_without_a_signal(): void {
+		$this->weeks( 'hire', [ 1 => 3, 2 => 3, 3 => 3, 4 => 3, 5 => 3, 6 => 3, 7 => 3, 8 => 3, 9 => 3, 10 => 3 ] );
+
+		$answer = $this->ci->dispatch( 'signals', [] );
+
+		$this->assertSame( [ true, [], 'week', 8 ], [ $answer['judged'], $answer['signals'], $answer['bucket'], $answer['baseline_buckets'] ] );
+		$this->assertArrayNotHasKey( 'usual', $answer );
+		$this->assertFalse( $this->ci->dispatch( 'signals', [ '--entity=organization:tidewater-ledger' ] )['judged'] );
+	}
+
+	/**
+	 * Off the kind axis a story in the oldest baseline week is history
+	 * enough to judge, and a lens holding none from that week back is not.
+	 */
+	public function test_a_story_in_the_oldest_baseline_week_judges_a_topic_view(): void {
+		$this->seed( self::entity( 'topic:eddies', 'Eddies' ) );
+		$this->seed( ...self::counted( 'feed:eddy-late', 'research', self::THIS_WEEK - 8 * self::WEEK + 86400, 'public', 'feed', [ 'topic:eddies' ] ) );
+		$this->save( 'eddy-desk', '--by=topic' );
+
+		$this->assertFalse( $this->ci->dispatch( 'signals', [ '--lens=eddy-desk' ] )['judged'] );
+		$this->seed( ...self::counted( 'feed:eddy-early', 'research', self::THIS_WEEK - 9 * self::WEEK + 86400, 'public', 'feed', [ 'topic:eddies' ] ) );
+		$this->assertTrue( $this->ci->dispatch( 'signals', [ '--lens=eddy-desk' ] )['judged'] );
+	}
+
+	/**
+	 * A bucket a view's days never reach is out of its window, not a zero:
+	 * a 30-day view, opening on Monday 2026-09-21, reads four whole weeks,
+	 * and a 31-day one, opening a day earlier, reaches into a fifth.
+	 */
+	public function test_buckets_before_the_window_are_out_of_window(): void {
+		$this->weeks( 'complaint', [ 1 => 2, 6 => 5 ] );
+		$this->save( 'month-desk', '--days=30' );
+		$this->save( 'long-month-desk', '--days=31' );
+
+		$this->assertSame( [ true, true, true, true, false, false, false, false ], \array_column( $this->ci->dispatch( 'signals', [ '--lens=month-desk' ] )['trend'], 'in_window' ) );
+		$this->assertSame( [ true, true, true, true, true, false, false, false ], \array_column( $this->ci->dispatch( 'signals', [ '--lens=long-month-desk' ] )['trend'], 'in_window' ) );
+		$this->assertSame( \array_fill( 0, 8, true ), \array_column( $this->ci->dispatch( 'signals', [] )['trend'], 'in_window' ) );
+	}
+
+	/**
+	 * A signal's own series is out of its window where the view's days never
+	 * reach: a 30-day view counting kinds spikes on a kind counted long
+	 * before it, and its series breaks before 2026-09-21.
+	 */
+	public function test_a_signals_series_is_out_of_window_where_the_view_never_reads(): void {
+		$this->weeks( 'complaint', [ 1 => 5, 2 => 1, 20 => 1 ] );
+		$this->save( 'month-desk', '--days=30' );
+
+		$signal = $this->ci->dispatch( 'signals', [ '--lens=month-desk' ] )['signals'][0];
+
+		$this->assertSame( [ 5, 1, 0, 0, 0, 0, 0, 0 ], \array_column( $signal['trend'], 'count' ) );
+		$this->assertSame( [ true, true, true, true, false, false, false, false ], \array_column( $signal['trend'], 'in_window' ) );
+	}
+
+	/**
+	 * A subject whose every story falls before the window holds the history
+	 * to judge by and nothing in the window to signal.
+	 */
+	public function test_stories_only_before_the_window_are_judged_without_a_signal(): void {
+		$this->weeks( 'hire', [ 12 => 2 ] );
+
+		$answer = $this->ci->dispatch( 'signals', [] );
+
+		$this->assertSame( [ true, [] ], [ $answer['judged'], $answer['signals'] ] );
+		$this->assertSame( \array_fill( 0, 8, 0 ), \array_column( $answer['trend'], 'count' ) );
+	}
+
+	/** The current, incomplete week answers apart from the trend: eleven stories so far, not on any point of the line. */
+	public function test_the_current_bucket_answers_apart(): void {
+		$this->weeks( 'launch', [ 0 => 11, 1 => 2, 3 => 1 ] );
+
+		$answer = $this->ci->dispatch( 'signals', [] );
+
+		$this->assertSame( [ 'bucket' => '2026-10-19', 'count' => 11 ], $answer['partial'] );
+		$this->assertNotContains( 11, \array_column( $answer['trend'], 'count' ) );
+		$this->assertSame( [ 'bucket' => '2026-10-19', 'count' => 0 ], $this->ci->dispatch( 'signals', [ '--entity=organization:tidewater-ledger' ] )['partial'] );
+	}
+
+	/**
+	 * A signal's usual range is its own value's series, never the totals: a
+	 * praise baseline of 2, 3, 2, 3, 2, 3, 2, 3 beside a complaint one has
+	 * mean 2.5 and deviation 0.5, so it runs from 1.5 to 3.5, and four
+	 * praise items the latest week spike while the answer carries no range
+	 * of its own; three praise items do not spike.
+	 */
+	public function test_usual_spans_the_spike_threshold(): void {
+		$this->weeks( 'praise', [ 1 => 3, 2 => 2, 3 => 3, 4 => 2, 5 => 3, 6 => 2, 7 => 3, 8 => 2, 9 => 3, 10 => 1 ] );
+		$this->weeks( 'complaint', [ 2 => 1, 4 => 5, 6 => 1, 10 => 1 ] );
+
+		$this->assertSame( [], $this->ci->dispatch( 'signals', [] )['signals'] );
+		$this->seed( ...self::counted( 'feed:praise-1-extra', 'praise', self::THIS_WEEK - self::WEEK + 3 * 86400, 'internal', 'feed', [] ) );
+		$answer = $this->ci->dispatch( 'signals', [] );
+
+		$this->assertSame( [ [ '2026-10-12', 'kind', 'praise', 4, 2.5 ] ], self::signals( $answer ) );
+		$this->assertSame( [ 'mean' => 2.5, 'low' => 1.5, 'high' => 3.5 ], $answer['signals'][0]['usual'] );
+		$this->assertArrayNotHasKey( 'baseline', $answer['signals'][0] );
+		$this->assertSame( [ 4, 2, 3, 2, 3, 2, 3, 2 ], \array_column( $answer['signals'][0]['trend'], 'count' ) );
+		$this->assertSame( [ 4, 3, 3, 7, 3, 3, 3, 2 ], \array_column( $answer['trend'], 'count' ) );
+		$this->assertArrayNotHasKey( 'usual', $answer );
+	}
+
+	/** A signal's usual range never runs below zero stories. */
+	public function test_usual_never_runs_below_zero(): void {
+		$this->weeks( 'hire', [ 1 => 4, 9 => 4, 10 => 1 ] );
+
+		$usual = $this->ci->dispatch( 'signals', [] )['signals'][0]['usual'];
+
+		$this->assertSame( [ 0.5, 0.0 ], [ $usual['mean'], $usual['low'] ] );
+		$this->assertEqualsWithDelta( 0.5 + 2 * \sqrt( 1.75 ), $usual['high'], 1e-9 );
+	}
+
+	/**
+	 * The spike rule and the band are one: over every baseline in the table
+	 * and every count from 0 to 20, a count that spikes is at or above the
+	 * band's high end, a count below it never spikes, and a count at or
+	 * above it spikes once it passes the mean; a flat or empty baseline's
+	 * high end is SIGNAL_MIN.
+	 */
+	public function test_the_spike_rule_reads_the_usual_range(): void {
+		$usual   = new \ReflectionMethod( Graph_Query::class, 'usual_of' );
+		$spiked  = new \ReflectionMethod( Graph_Query::class, 'spiked' );
+		$table   = [ [ 1, 3, 1, 3, 1, 3, 1, 3 ], [ 2, 3, 2, 3, 2, 3, 2, 3 ], [ 3, 3, 3, 3, 3, 3, 3, 3 ], [ 0, 0, 0, 0, 0, 0, 0, 0 ], [ 0, 0, 0, 0, 0, 0, 0, 4 ], [ 5, 9, 2, 0, 7, 1, 1, 6 ], [ 12, 11, 13, 12, 12, 11, 13, 12 ] ];
+		$spikes  = 0;
+		foreach ( $table as $base ) {
+			$range = $usual->invoke( null, $base );
+			for ( $count = 0; $count <= 20; $count++ ) {
+				$fires = $spiked->invoke( null, $count, $range );
+				$this->assertSame( $count >= $range['high'] && $count > $range['mean'], $fires, \implode( ',', $base ) . " at {$count}" );
+				$spikes += (int) $fires;
+			}
+		}
+		$this->assertSame( [ 'mean' => 0.0, 'low' => 0.0, 'high' => 3.0 ], $usual->invoke( null, [ 0, 0, 0, 0, 0, 0, 0, 0 ] ) );
+		$this->assertSame( [ 'mean' => 2.0, 'low' => 0.0, 'high' => 4.0 ], $usual->invoke( null, [ 1, 3, 1, 3, 1, 3, 1, 3 ] ) );
+		$this->assertGreaterThan( 0, $spikes );
+	}
+
+	/**
+	 * The drop rule and its band are one: over every baseline in the table
+	 * and every count from 0 to 20, a week falls exactly when its baseline's
+	 * mean reaches SIGNAL_MIN and its count is at or below the band's low
+	 * end, which is SIGNAL_DROP of the mean, so a week inside the band never
+	 * falls; the high end is the spike range's.
+	 */
+	public function test_the_drop_rule_reads_the_usual_range(): void {
+		$usual = new \ReflectionMethod( Graph_Query::class, 'usual_of' );
+		$fall  = new \ReflectionMethod( Graph_Query::class, 'fall_of' );
+		$fell  = new \ReflectionMethod( Graph_Query::class, 'fell' );
+		$table = [ [ 4, 4, 4, 4, 4, 4, 4, 4 ], [ 3, 3, 3, 3, 3, 3, 3, 3 ], [ 2, 2, 2, 2, 2, 2, 2, 2 ], [ 4, 4, 4, 4, 4, 4, 4, 0 ], [ 9, 1, 7, 3, 8, 2, 6, 4 ], [ 0, 0, 0, 0, 0, 0, 0, 0 ] ];
+		$drops = 0;
+		foreach ( $table as $base ) {
+			$range = $fall->invoke( null, $base );
+			$this->assertSame( [ $usual->invoke( null, $base )['mean'], Graph_Query::SIGNAL_DROP * $range['mean'], $usual->invoke( null, $base )['high'] ], [ $range['mean'], $range['low'], $range['high'] ], \implode( ',', $base ) );
+			for ( $count = 0; $count <= 20; $count++ ) {
+				$falls = $fell->invoke( null, $count, $range );
+				$this->assertSame( $range['mean'] >= Graph_Query::SIGNAL_MIN && $count <= $range['low'], $falls, \implode( ',', $base ) . " at {$count}" );
+				$drops += (int) $falls;
+			}
+		}
+		$this->assertSame( [ 'mean' => 3.5, 'low' => 1.75, 'high' => 3.5 + 2 * \sqrt( 1.75 ) ], $fall->invoke( null, [ 4, 4, 4, 4, 4, 4, 4, 0 ] ) );
+		$this->assertGreaterThan( 0, $drops );
+	}
+
+	/**
+	 * Save a lens and project its event.
+	 *
+	 * @param string $key     The lens key, its name too.
+	 * @param string ...$args Its filters.
+	 */
+	private function save( string $key, string ...$args ): void {
+		$this->ci->dispatch( 'save_lens', [ $key, $key, ...$args ] );
+		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
 	}
 
 	/**
 	 * A weekly trend over the latest complete weeks, the latest first.
 	 *
 	 * @param list<int> $counts Each week's count, the latest first.
-	 * @return list<array{bucket:string,count:int}>
+	 * @return list<array{bucket:string,count:int,in_window:bool}>
 	 */
 	private static function trend( array $counts ): array {
-		return \array_map( static fn ( int $back, int $count ): array => [ 'bucket' => \gmdate( 'Y-m-d', self::THIS_WEEK - $back * self::WEEK ), 'count' => $count ], \range( 1, \count( $counts ) ), $counts );
+		return \array_map( static fn ( int $back, int $count ): array => [ 'bucket' => \gmdate( 'Y-m-d', self::THIS_WEEK - $back * self::WEEK ), 'count' => $count, 'in_window' => true ], \range( 1, \count( $counts ) ), $counts );
 	}
 
 	/**
@@ -478,12 +685,12 @@ final class IntelligenceSignalsTest extends TestCase {
 	}
 
 	/**
-	 * Each signal as its bucket, axis, value, count and baseline.
+	 * Each signal as its bucket, axis, value, count and usual mean.
 	 *
 	 * @param array<string,mixed> $answer A signals answer.
 	 * @return list<list<mixed>>
 	 */
 	private static function signals( array $answer ): array {
-		return \array_map( static fn ( array $s ): array => [ $s['bucket'], $s['by'], $s['value'], $s['count'], $s['baseline'] ], $answer['signals'] );
+		return \array_map( static fn ( array $s ): array => [ $s['bucket'], $s['by'], $s['value'], $s['count'], $s['usual']['mean'] ], $answer['signals'] );
 	}
 }

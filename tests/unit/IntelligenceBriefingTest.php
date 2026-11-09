@@ -558,13 +558,13 @@ final class IntelligenceBriefingTest extends TestCase {
 	}
 
 	/**
-	 * Each signal as its axis, kind, bucket, value, count and baseline.
+	 * Each signal as its axis, kind, bucket, value, count and usual mean.
 	 *
 	 * @param list<array<string,mixed>> $signals Signals.
 	 * @return list<list<mixed>>
 	 */
 	private static function signals( array $signals ): array {
-		return \array_map( static fn ( array $s ): array => [ $s['axis'], $s['signal'], $s['bucket'], $s['value'], $s['count'], $s['baseline'] ], $signals );
+		return \array_map( static fn ( array $s ): array => [ $s['axis'], $s['signal'], $s['bucket'], $s['value'], $s['count'], $s['usual']['mean'] ], $signals );
 	}
 }
 

@@ -58,14 +58,14 @@ const owed = () => new Promise( () => {} );
 const KEY = 'organization:acme-quillsheet';
 
 const TREND = [
-	{ bucket: '2026-10-12', count: 5 },
-	{ bucket: '2026-10-05', count: 7 },
-	{ bucket: '2026-09-28', count: 2 },
-	{ bucket: '2026-09-21', count: 0 },
-	{ bucket: '2026-09-14', count: 4 },
-	{ bucket: '2026-09-07', count: 1 },
-	{ bucket: '2026-08-31', count: 3 },
-	{ bucket: '2026-08-24', count: 6 },
+	{ bucket: '2026-10-12', count: 5, in_window: true },
+	{ bucket: '2026-10-05', count: 7, in_window: true },
+	{ bucket: '2026-09-28', count: 2, in_window: true },
+	{ bucket: '2026-09-21', count: 0, in_window: true },
+	{ bucket: '2026-09-14', count: 4, in_window: true },
+	{ bucket: '2026-09-07', count: 1, in_window: true },
+	{ bucket: '2026-08-31', count: 3, in_window: true },
+	{ bucket: '2026-08-24', count: 6, in_window: true },
 ];
 
 let wire;
@@ -94,7 +94,15 @@ beforeEach( () => {
 		],
 		available: true,
 	};
-	wire.replies.signals = { signals: [], trend: TREND, available: true };
+	wire.replies.signals = {
+		signals: [],
+		trend: TREND,
+		partial: { bucket: '2026-10-19', count: 2 },
+		judged: true,
+		bucket: 'week',
+		baseline_buckets: 8,
+		available: true,
+	};
 	wire.replies.claims = {
 		claims: [
 			{
@@ -544,6 +552,10 @@ describe( 'Entity — reads', () => {
 	it( 'shows its signals under its header, each marked by its axis', async () => {
 		wire.replies.signals = {
 			trend: TREND,
+			partial: { bucket: '2026-10-19', count: 2 },
+			judged: true,
+			bucket: 'week',
+			baseline_buckets: 8,
 			signals: [
 				{
 					axis: 'about',
@@ -552,7 +564,8 @@ describe( 'Entity — reads', () => {
 					by: 'kind',
 					value: 'complaint',
 					count: 6,
-					baseline: 1.125,
+					usual: { mean: 1.125, low: 0, high: 3.72 },
+					trend: TREND,
 					items: [
 						{
 							item_key: 'linear:SUP-140',
@@ -568,7 +581,8 @@ describe( 'Entity — reads', () => {
 					by: null,
 					value: null,
 					count: 2,
-					baseline: 7.375,
+					usual: { mean: 7.375, low: 4.9, high: 9.85 },
+					trend: TREND,
 					items: [
 						{
 							item_key: 'feed:acmequillsheet.example:city-hall',
@@ -612,14 +626,14 @@ describe( 'Entity — reads', () => {
 		expect( wire.sent( 'signals' ) ).toEqual( [ [ `--entity=${ KEY }` ] ] );
 	} );
 
-	it( 'reads an entity with no signal as steady beside its sparkline', async () => {
+	it( 'reads an entity with no signal as no unusual change beside its sparkline', async () => {
 		renderEntity();
 		const signals = await screen.findByRole( 'region', {
 			name: 'Signals',
 		} );
-		const line = ( await within( signals ).findByText( 'Steady' ) ).closest(
-			'p'
-		);
+		const line = (
+			await within( signals ).findByText( 'No unusual change last week.' )
+		).closest( 'p' );
 		expect( within( line ).getByRole( 'img' ) ).toHaveAccessibleName(
 			'Stories in each of the last 8 buckets, oldest first: 6, 3, 1, 4, 0, 2, 7, 5; the latest, from 2026-10-12, counts 5'
 		);
@@ -645,6 +659,10 @@ describe( 'Entity — status', () => {
 	it( 'heads a client with its start, latest signal, churn signals, asks and last item', async () => {
 		wire.replies.signals = {
 			trend: TREND,
+			partial: { bucket: '2026-10-19', count: 2 },
+			judged: true,
+			bucket: 'week',
+			baseline_buckets: 8,
 			signals: [
 				{
 					axis: 'publisher',
@@ -653,7 +671,8 @@ describe( 'Entity — status', () => {
 					by: null,
 					value: null,
 					count: 2,
-					baseline: 4.5,
+					usual: { mean: 4.5, low: 3.2, high: 5.8 },
+					trend: TREND,
 					items: [],
 				},
 			],
@@ -669,7 +688,7 @@ describe( 'Entity — status', () => {
 		expect( wire.sent( 'signals' ) ).toHaveLength( 1 );
 	} );
 
-	it( 'reads a client with no signal as steady, says it has no item yet, and counts one in the singular', async () => {
+	it( 'heads a client with no signal without one, says it has no item yet, and counts one in the singular', async () => {
 		wire.replies.entity = {
 			...ENTITY,
 			status: {
@@ -687,7 +706,7 @@ describe( 'Entity — status', () => {
 		const status = ( await heading() ).nextElementSibling;
 		await waitFor( () =>
 			expect( status ).toHaveTextContent(
-				'Client since 2026-10-09 · Steady · 1 churn report, 1 churn signal, 1 feature request, 0 complaints · No item about it yet'
+				'Client since 2026-10-09 · 1 churn report, 1 churn signal, 1 feature request, 0 complaints · No item about it yet'
 			)
 		);
 	} );

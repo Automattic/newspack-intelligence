@@ -411,7 +411,7 @@ final class WatcherNodeTest extends TestCase {
 		$this->assertStringNotContainsString( 'Harbor Gazette wins state award', $this->mails[1]['message'] );
 	}
 
-	/** A digest names its lens's signals since the last digest, each against its baseline. */
+	/** A digest names its lens's signals since the last digest, each against its usual mean. */
 	public function test_a_digest_names_its_lens_signals(): void {
 		$week = 604800;
 		for ( $back = 1; $back <= 10; $back++ ) {

@@ -111,7 +111,7 @@ final class P2SourceTest extends TestCase {
 			'ID'      => $id,
 			'post'    => [ 'ID' => 4107, 'title' => 'Heron&#8217;s Q4 plan', 'type' => 'post', 'link' => self::API . '88120/posts/4107' ],
 			'content' => $content,
-			'date'    => '2026-10-28T10:30:00+00:00',
+			'date'    => '2026-10-26T10:30:00+00:00',
 			'author'  => [ 'ID' => 3301, 'name' => 'Wren Osprey' ],
 			'URL'     => "https://heronp2.wordpress.com/2026/10/28/q4-plan/#comment-{$id}",
 		];
@@ -155,7 +155,7 @@ final class P2SourceTest extends TestCase {
 						'title'   => 'Heron&#8217;s Q4 plan',
 						'URL'     => 'https://heronp2.wordpress.com/2026/10/28/q4-plan/',
 						'content' => '<p>Plan &amp; <strong>dates</strong></p>',
-						'date'    => '2026-10-28T09:15:00+00:00',
+						'date'    => '2026-10-26T09:15:00+00:00',
 						'author'  => [ 'ID' => 3302, 'name' => 'Dunlin Marsh' ],
 					],
 				]
@@ -170,12 +170,12 @@ final class P2SourceTest extends TestCase {
 		$this->assertSame( 'Heron’s Q4 plan', $post['title'] );
 		$this->assertSame( 'Dunlin Marsh: Plan & dates', $post['body'] );
 		$this->assertSame( 'https://heronp2.wordpress.com/2026/10/28/q4-plan/', $post['url'] );
-		$this->assertSame( \strtotime( '2026-10-28T09:15:00+00:00' ), $post['item_ts'] );
+		$this->assertSame( \strtotime( '2026-10-26T09:15:00+00:00' ), $post['item_ts'] );
 		$comment = $by['p2:88120:4107:c5502'];
 		$this->assertSame( 'Wren Osprey: Looks good > ship', $comment['title'] );
 		$this->assertSame( "Re: Heron’s Q4 plan\nWren Osprey: Looks good > ship", $comment['body'] );
 		$this->assertSame( 'https://heronp2.wordpress.com/2026/10/28/q4-plan/#comment-5502', $comment['url'] );
-		$this->assertSame( \strtotime( '2026-10-28T10:30:00+00:00' ), $comment['item_ts'] );
+		$this->assertSame( \strtotime( '2026-10-26T10:30:00+00:00' ), $comment['item_ts'] );
 	}
 
 	/**
@@ -281,7 +281,7 @@ final class P2SourceTest extends TestCase {
 		$this->complete( self::comments( self::HERON ), (string) \json_encode( [ 'found' => -1, 'comments' => [ self::comment( 8801 ) ] ] ) );
 		$this->complete( self::posts( self::HERON ), self::posts_answer( [] ) );
 		$this->complete( self::comments( self::KESTREL ), self::comments_answer( [] ) );
-		$this->complete( self::posts( self::KESTREL ), self::posts_answer( [ [ 'ID' => 4108, 'title' => 'No site', 'content' => '', 'date' => '2026-10-28T09:15:00+00:00', 'author' => [ 'name' => 'Dunlin Marsh' ] ] ] ) );
+		$this->complete( self::posts( self::KESTREL ), self::posts_answer( [ [ 'ID' => 4108, 'title' => 'No site', 'content' => '', 'date' => '2026-10-26T09:15:00+00:00', 'author' => [ 'name' => 'Dunlin Marsh' ] ] ] ) );
 
 		$this->assertSame( [], $this->recorded() );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'p2: WordPress.com returned no site_ID for ' . self::HERON . ': ' . self::comments( self::HERON ) ) );

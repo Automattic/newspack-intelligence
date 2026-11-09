@@ -55,7 +55,11 @@ beforeEach( () => {
 	wire.replies.trends = { rows: [], available: true };
 	wire.replies.signals = {
 		signals: [],
-		trend: [ { bucket: '2026-10-12', count: 3 } ],
+		trend: [ { bucket: '2026-10-12', count: 3, in_window: true } ],
+		partial: { bucket: '2026-10-19', count: 1 },
+		judged: true,
+		bucket: 'week',
+		baseline_buckets: 8,
 		available: true,
 	};
 	wire.replies.watches = { watches: [], available: true };
@@ -222,7 +226,12 @@ describe( 'IntelligencePage', () => {
 										by: 'kind',
 										value: 'complaint',
 										count: 7,
-										baseline: 1.5,
+										usual: {
+											mean: 1.5,
+											low: 0,
+											high: 3.9,
+										},
+										trend: [],
 										items: [],
 									},
 								],
@@ -657,7 +666,7 @@ describe( 'IntelligencePage', () => {
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Developer shipping' } )
 		);
-		await screen.findByText( 'Steady' );
+		await screen.findByText( 'No unusual change last week.' );
 		await screen.findByText( 'No trend is seen through this lens.' );
 		await screen.findByText( 'Acme Quillsheet wins regional prize' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Watch this' } ) );

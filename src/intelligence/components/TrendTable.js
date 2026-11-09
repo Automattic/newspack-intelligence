@@ -1,5 +1,5 @@
 import { useMemo } from '@wordpress/element';
-import { __, sprintf } from '@wordpress/i18n';
+import { __, _n, sprintf } from '@wordpress/i18n';
 import { VisuallyHidden } from '@wordpress/components';
 import * as d3 from 'd3';
 import AreaTimeChart from '@newspack-nodes/shared/components/AreaTimeChart';
@@ -43,7 +43,7 @@ const storiesFor = () => formatStories;
 const rankColor = ( _value, index ) => chartColor( index );
 
 /**
- * A signal's count against the baseline it is read against, to one decimal.
+ * A signal's count against the mean of its usual range, to one decimal.
  *
  * @param {Object} signal A signal as `signals` answers it.
  * @return {string} The count.
@@ -53,7 +53,7 @@ export const againstBaseline = ( signal ) =>
 		/* translators: 1: the bucket's count, 2: the mean of the buckets before. */
 		__( '%1$d against a baseline of %2$s', 'newspack-intelligence' ),
 		signal.count,
-		String( Math.round( signal.baseline * 10 ) / 10 )
+		String( Math.round( signal.usual.mean * 10 ) / 10 )
 	);
 
 /**
@@ -169,32 +169,129 @@ export default function TrendTable( {
 }
 
 /**
- * A signals answer: its trend as a sparkline beside what the latest
- * bucket says — each signal called out by its axis, kind and value, or
- * "Steady" when nothing signals — then the signals as a table, each counted
- * against its baseline. A trend holding no bucket draws no line.
+ * What a signals answer listing no signal says, by the bucket it counts:
+ * no unusual change when judged, else too little history, measured against
+ * the answer's own count of buckets before.
+ *
+ * @return {Object<string, {quiet: () => string, tooNew: (count: number) => string}>} Each bucket's sentences.
+ */
+const quietWords = () => ( {
+	day: {
+		quiet: () =>
+			__( 'No unusual change last day.', 'newspack-intelligence' ),
+		tooNew: ( count ) =>
+			sprintf(
+				/* translators: %d: how many days before a change is measured against. */
+				_n(
+					'Too little history to judge. A change is measured against the %d day before.',
+					'Too little history to judge. A change is measured against the %d days before.',
+					count,
+					'newspack-intelligence'
+				),
+				count
+			),
+	},
+	week: {
+		quiet: () =>
+			__( 'No unusual change last week.', 'newspack-intelligence' ),
+		tooNew: ( count ) =>
+			sprintf(
+				/* translators: %d: how many weeks before a change is measured against. */
+				_n(
+					'Too little history to judge. A change is measured against the %d week before.',
+					'Too little history to judge. A change is measured against the %d weeks before.',
+					count,
+					'newspack-intelligence'
+				),
+				count
+			),
+	},
+	month: {
+		quiet: () =>
+			__( 'No unusual change last month.', 'newspack-intelligence' ),
+		tooNew: ( count ) =>
+			sprintf(
+				/* translators: %d: how many months before a change is measured against. */
+				_n(
+					'Too little history to judge. A change is measured against the %d month before.',
+					'Too little history to judge. A change is measured against the %d months before.',
+					count,
+					'newspack-intelligence'
+				),
+				count
+			),
+	},
+} );
+
+/**
+ * The sentence a signals answer listing no signal reads.
+ *
+ * @param {Object}  answer                  The answer `signals` gave.
+ * @param {boolean} answer.judged           Whether it was judged.
+ * @param {string}  answer.bucket           The span it counts by: day, week or month.
+ * @param {number}  answer.baseline_buckets How many buckets before a change is measured against.
+ * @return {string} The sentence.
+ */
+const quietSentence = ( answer ) => {
+	const words = quietWords()[ answer.bucket ];
+	return answer.judged
+		? words.quiet()
+		: words.tooNew( answer.baseline_buckets );
+};
+
+/**
+ * A signals answer as a sparkline beside what the latest bucket says, then
+ * the signals as a table, each counted against its usual mean. With a
+ * signal, the line is the first signal's own series, behind it that
+ * series' usual range, which every signal carries; with none, the
+ * line is the totals with no range, since the rules judge only a signal's
+ * own series, beside
+ * whether nothing changed or it was too new to judge (`quietSentence()`).
+ * The line breaks at a bucket outside the read's window, and with several
+ * signals its accessible name says which one it draws. A series holding no
+ * bucket draws no line.
  *
  * @param {Object}                  props
- * @param {Object}                  props.answer   The answer `signals` gave: `signals` and `trend`.
+ * @param {Object}                  props.answer   The answer `signals` gave: `signals`, `trend`, `judged`, `bucket` and `baseline_buckets`.
  * @param {(row: Object) => string} [props.value]  A signal's value as its row shows it.
  * @param {(item: Object) => void}  [props.onSave] Saves a cited item; absent for a reader.
  * @return {import('react').ReactElement} The signals.
  */
 export function SignalTrend( { answer, value, onSave } ) {
-	const { signals, trend } = answer;
+	const { signals } = answer;
+	const [ shown ] = signals;
+	const series = shown ? shown.trend : answer.trend;
+	const usual = shown?.usual;
 	return (
 		<>
 			<p className="newspack-intelligence__pulse">
 				<Sparkline
-					values={ trend.map( ( point ) => point.count ).reverse() }
+					values={ series
+						.map( ( point ) =>
+							point.in_window ? point.count : null
+						)
+						.reverse() }
+					band={ usual ? [ usual.low, usual.high ] : undefined }
 					width={ SPARK_WIDTH }
 					height={ SPARK_HEIGHT }
-					label={ trendWords( trend ) }
+					label={
+						1 < signals.length
+							? sprintf(
+									/* translators: 1: the signal whose series the line draws, 2: the line in words. */
+									__(
+										'The line draws %1$s. %2$s',
+										'newspack-intelligence'
+									),
+									signalValue( shown ),
+									trendWords( series )
+							  )
+							: trendWords( series )
+					}
 				/>
 				<span>
-					{ 0 === signals.length
-						? __( 'Steady', 'newspack-intelligence' )
-						: signals.map( signalValue ).join( ', ' ) }
+					{ shown
+						? signals.map( signalValue ).join( ', ' )
+						: quietSentence( answer ) }
 				</span>
 			</p>
 			{ 0 < signals.length && (
@@ -210,11 +307,13 @@ export function SignalTrend( { answer, value, onSave } ) {
 }
 
 /**
- * A trend in words for a screen reader: every bucket's count, oldest first,
- * then the latest bucket's first day and count; one bucket alone in the
- * singular, and an empty trend as an empty string, because it draws nothing.
+ * A series in words for a screen reader: every bucket's count, oldest
+ * first, a bucket outside the read's window as not read, then the latest
+ * bucket's first day and count, or that it was not read, never a 0 it never
+ * counted; one bucket alone in the singular, read only when it draws, so
+ * in the window, and an empty series as an empty string.
  *
- * @param {Array<{bucket: string, count: number}>} trend The trend `signals` answers, the latest bucket first.
+ * @param {Array<{bucket: string, count: number, in_window: boolean}>} trend The series, the latest bucket first.
  * @return {string} The words.
  */
 function trendWords( trend ) {
@@ -233,20 +332,36 @@ function trendWords( trend ) {
 			latest.count
 		);
 	}
-	return sprintf(
-		/* translators: 1: how many buckets, 2: each bucket's count, oldest first, 3: the first day of the latest bucket, 4: its count. */
-		__(
-			'Stories in each of the last %1$d buckets, oldest first: %2$s; the latest, from %3$s, counts %4$d',
-			'newspack-intelligence'
-		),
-		trend.length,
-		trend
-			.map( ( point ) => point.count )
-			.reverse()
-			.join( ', ' ),
-		latest.bucket,
-		latest.count
-	);
+	const counts = trend
+		.map( ( point ) =>
+			point.in_window
+				? String( point.count )
+				: __( 'not read', 'newspack-intelligence' )
+		)
+		.reverse()
+		.join( ', ' );
+	return latest.in_window
+		? sprintf(
+				/* translators: 1: how many buckets, 2: each bucket's count, oldest first, 3: the first day of the latest bucket, 4: its count. */
+				__(
+					'Stories in each of the last %1$d buckets, oldest first: %2$s; the latest, from %3$s, counts %4$d',
+					'newspack-intelligence'
+				),
+				trend.length,
+				counts,
+				latest.bucket,
+				latest.count
+		  )
+		: sprintf(
+				/* translators: 1: how many buckets, 2: each bucket's count, oldest first, 3: the first day of the latest bucket. */
+				__(
+					'Stories in each of the last %1$d buckets, oldest first: %2$s; the latest, from %3$s, was not read',
+					'newspack-intelligence'
+				),
+				trend.length,
+				counts,
+				latest.bucket
+		  );
 }
 
 /**
