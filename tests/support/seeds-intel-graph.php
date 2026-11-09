@@ -107,10 +107,12 @@ trait Seeds_Intel_Graph {
 	 * @param float        $relevance  Its relevance.
 	 * @param float        $importance Its importance.
 	 * @param string       $theme      Its theme, or '' for none.
+	 * @param string       $subject    The entity whose churn a churn kind reports, its kind subject, or '' for none.
 	 * @return list<array<string,mixed>>
 	 */
-	private static function extraction( string $key, string $summary, string $kind, int $item_ts, array $topics, float $relevance = 5.0, float $importance = 5.0, string $theme = '' ): array {
-		return [ Intel_Event::make( 'extraction_recorded', [ 'item_key' => $key, 'summary' => $summary, 'kind' => $kind, 'relevance' => $relevance, 'importance' => $importance, 'sentiment' => 0.25, 'topics' => $topics, 'retrieved_ts' => $item_ts + 600 ] + ( '' === $theme ? [] : [ 'theme' => $theme ] ), 'machine:extract@9.4.1', 'fixture-9' ) ];
+	private static function extraction( string $key, string $summary, string $kind, int $item_ts, array $topics, float $relevance = 5.0, float $importance = 5.0, string $theme = '', string $subject = '' ): array {
+		$named = \array_filter( [ 'theme' => $theme, 'kind_subject' => $subject ], static fn ( string $value ): bool => '' !== $value );
+		return [ Intel_Event::make( 'extraction_recorded', [ 'item_key' => $key, 'summary' => $summary, 'kind' => $kind, 'relevance' => $relevance, 'importance' => $importance, 'sentiment' => 0.25, 'topics' => $topics, 'retrieved_ts' => $item_ts + 600 ] + $named, 'machine:extract@9.4.1', 'fixture-9' ) ];
 	}
 
 	/**

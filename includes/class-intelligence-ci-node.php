@@ -273,7 +273,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						'capability'  => Capabilities::MANAGE,
 						'description' => 'Ask each live worker to re-resolve every stored item dated in a range of UTC days: { ok, workers }.',
 						'args'        => [ $arg( 'since', 'The first UTC day, Y-m-d.' ), $arg( 'until', 'The last UTC day, Y-m-d.' ) ],
-						'handler'     => static fn ( self $ci, array $args ): array => [ 'ok' => true, 'workers' => Reresolver_Node::ask( $ci, 'RERESOLVE', Core::as_string( $args['since'] ), Core::as_string( $args['until'] ), '' ) ],
+						'handler'     => static fn ( self $ci, array $args ): array => [ 'ok' => true, 'workers' => Reresolver_Node::ask( $ci, 'RERESOLVE', Core::as_string( $args['since'] ), Core::as_string( $args['until'] ), '', [] ) ],
 					],
 				],
 			]

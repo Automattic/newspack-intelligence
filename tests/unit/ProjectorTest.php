@@ -86,7 +86,7 @@ final class ProjectorTest extends TestCase {
 			],
 			self::graph_rows( 'links', 'entity_key' )
 		);
-		$this->assertSame( [ [ 1, self::ITEM, 'Harbor Gazette won the state award.', 'award', 8.0, 6.0, 0.5, null, null, null, 'machine:extract@9.4.1', $day ] ], self::graph_rows( 'extractions' ) );
+		$this->assertSame( [ [ 1, self::ITEM, 'Harbor Gazette won the state award.', 'award', 8.0, 6.0, 0.5, null, null, null, null, '', 'machine:extract@9.4.1', $day ] ], self::graph_rows( 'extractions' ) );
 		$this->assertSame( [], self::graph_rows( 'entities' ), 'a link writes no entity row; readers join to one' );
 		$this->assertSame( [], self::graph_rows( 'entity_states' ) );
 		$this->assertSame( [], self::graph_rows( 'events' ), 'items-stream events are not kept in events' );
@@ -154,6 +154,21 @@ final class ProjectorTest extends TestCase {
 		$this->project( [ $this->purge( self::ITEM ), $this->item(), $this->stand_in() ] );
 
 		$this->assertSame( [ [ 'other', null, null, null ] ], self::graph_rows( 'extractions', '1', 'kind, checked_kind, kind_verdict, checked_ts' ) );
+	}
+
+	/**
+	 * An extraction's kind subject and rank reason ride its row; one
+	 * carrying neither, as one written before extractions named them,
+	 * projects a null kind subject and a rank reason of ''.
+	 */
+	public function test_an_extractions_kind_subject_and_rank_reason_ride_its_row(): void {
+		$this->project( [ $this->item(), [ 'kind_subject' => 'organization:tern-weekly', 'rank_reason' => 'A client is leaving and names price as the reason.' ] + $this->extraction() ] );
+
+		$this->assertSame( [ [ 'organization:tern-weekly', 'A client is leaving and names price as the reason.' ] ], self::graph_rows( 'extractions', '1', 'kind_subject, rank_reason' ) );
+
+		$this->project( [ $this->extraction() ] );
+
+		$this->assertSame( [ [ null, '' ] ], self::graph_rows( 'extractions', '1', 'kind_subject, rank_reason' ) );
 	}
 
 	/** A heuristic stand-in names no theme and leaves a call's theme as it was. */

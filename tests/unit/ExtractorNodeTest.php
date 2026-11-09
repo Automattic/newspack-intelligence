@@ -1738,6 +1738,50 @@ final class ExtractorNodeTest extends TestCase {
 		$this->assertSame( [ 'topics', 'profile', 'audience', 'publisher' ], \array_keys( $this->out->requests[0][ Message::VALUE ]['inputs'] ) );
 	}
 
+	/**
+	 * A call's extraction carries the reply's rank reason, cut to its bound
+	 * on a character boundary; the heuristic stand-in carries none.
+	 */
+	public function test_an_extraction_keeps_its_rank_reason(): void {
+		$this->answer( (string) \json_encode( [ 'summary' => 'Harbor Gazette weighs leaving.', 'kind' => 'churn_signal', 'rank_reason' => ' A client weighs leaving   over price. ' . \str_repeat( 'heron ', 90 ) ] ) );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+		$this->answer( 'throw' );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$extractions = \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'extraction_recorded' === $e['event'] ) );
+		$this->assertSame( [ \substr( 'A client weighs leaving over price. ' . \str_repeat( 'heron ', 90 ), 0, Intel_Event::RANK_REASON_BYTES ), null ], \array_map( static fn ( array $e ): ?string => $e['rank_reason'] ?? null, $extractions ) );
+	}
+
+	/**
+	 * "Mesa Courier merges into The Harbor Gazette" links both as subject,
+	 * and the extraction names Mesa Courier, the one the reply names in any
+	 * case, as the client whose churn it reports.
+	 */
+	public function test_a_merger_names_only_the_leaving_publisher(): void {
+		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier merges into The Harbor Gazette.","kind":"churned","kind_subject":"mesa courier"}' );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ), self::link( self::MESA, 1.0 ) ], [], [ 'title' => 'Mesa Courier merges into The Harbor Gazette' ] ) );
+
+		$this->assertSame( [ 'churned', self::MESA ], [ $this->written()[0]['kind'], $this->written()[0]['kind_subject'] ?? null ] );
+	}
+
+	/**
+	 * A kind subject is kept only when it names an entity the item links,
+	 * and only for a churn kind: one naming an entity the item does not
+	 * link, and one on any other kind, record none.
+	 */
+	public function test_a_kind_subject_the_item_does_not_link_is_dropped(): void {
+		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ), self::entity( self::MESA, 'Mesa Courier' ) );
+		$this->answer( '{"summary":"Mesa Courier is leaving.","kind":"churned","kind_subject":"Mesa Courier"}' );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+		$this->answer( '{"summary":"The Harbor Gazette complains.","kind":"complaint","kind_subject":"The Harbor Gazette"}' );
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ) ], [] ) );
+
+		$extractions = \array_values( \array_filter( $this->written(), static fn ( array $e ): bool => 'extraction_recorded' === $e['event'] ) );
+		$this->assertSame( [ [ 'churned', null ], [ 'complaint', null ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['kind_subject'] ?? null ], $extractions ) );
+	}
+
 	/** The index is held for its TTL, then read again. */
 	public function test_the_topics_reload_after_the_index_ttl(): void {
 		$this->answer( '{"summary":"Harbor Gazette wins.","topics":["Awards"]}' );

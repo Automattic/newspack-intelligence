@@ -467,6 +467,34 @@ final class PromptsTest extends TestCase {
 		}
 	}
 
+	/**
+	 * The reply names whose churn a churn item reports, by name, null for
+	 * any other kind, and says in one sentence why its importance is what
+	 * it is.
+	 */
+	public function test_the_prompt_asks_whose_churn_and_why_it_ranks(): void {
+		$system = Prompts::extract( [ 'title' => 'Heron count' ], [], [], 'Skip kite trivia.', '', '', self::operator() )[0]['content'];
+
+		foreach ( [ '"kind_subject": "name or null"', '"rank_reason": "one sentence"', 'kind_subject is, for a churned or churn_signal item, the name of the one client whose churn or churn signal the item reports, as the item spells it', 'the publication that is leaving, not the one it merges into or moves to', 'null for any other kind', 'rank_reason is one sentence saying why the item\'s importance is what it is, such as "A client is leaving and names price as the reason."' ] as $phrase ) {
+			$this->assertStringContainsString( $phrase, $system );
+		}
+	}
+
+	/**
+	 * A reply's kind subject is its name trimmed, and its rank reason one
+	 * line, cut on a character boundary to RANK_REASON_BYTES; a blank one,
+	 * or one that is not a string, is left out.
+	 */
+	public function test_parse_extract_reads_the_kind_subject_and_the_rank_reason(): void {
+		$parsed = Prompts::parse_extract( (string) \json_encode( [ 'summary' => 'Tern Weekly leaves.', 'kind' => 'churned', 'kind_subject' => '  Tern Weekly ', 'rank_reason' => "  A client is leaving\n and names   price.  " ] ), [] );
+		$long   = Prompts::parse_extract( (string) \json_encode( [ 'summary' => 'Tern Weekly leaves.', 'rank_reason' => \str_repeat( 'heron ', 100 ) ] ), [] );
+		$blank  = Prompts::parse_extract( (string) \json_encode( [ 'summary' => 'Tern Weekly leaves.', 'kind_subject' => ' ', 'rank_reason' => 7 ] ), [] );
+
+		$this->assertSame( [ 'Tern Weekly', 'A client is leaving and names price.' ], [ $parsed['kind_subject'] ?? null, $parsed['rank_reason'] ?? null ] );
+		$this->assertSame( [ 512, \substr( \str_repeat( 'heron ', 100 ), 0, 512 ) ], [ Intel_Event::RANK_REASON_BYTES, $long['rank_reason'] ?? null ] );
+		$this->assertSame( [], \array_intersect_key( $blank ?? [], [ 'kind_subject' => true, 'rank_reason' => true ] ) );
+	}
+
 	/** A review of a checked kind asks what KIND_CHECKS holds for it, as a noul; a review of any other kind does not. */
 	public function test_a_review_of_a_checked_kind_asks_whether_the_item_fits_it(): void {
 		foreach ( Prompts::KIND_CHECKS as $kind => $check ) {

@@ -200,7 +200,9 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * or gated stand-in only fills an item that has no extraction yet (`STAND_IN`), so
 	 * it never replaces a call's extraction, its claims, topics or theme. A
 	 * proposed link's evidence, which one written before proposals carried it
-	 * lacks, projects as '', as an asserted link's always does. An ask writes
+	 * lacks, projects as '', as an asserted link's always does, and an
+	 * extraction carrying no rank reason projects one of '' and a null kind
+	 * subject. An ask writes
 	 * its row with `ignore`, so its answer or failure, a whole-row `set`,
 	 * stands whichever lands first. An exclusion sets its item's one
 	 * `excluded_items` row, its why '' when it names none, and an inclusion
@@ -225,7 +227,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 		$state_set = static fn ( string $state ): array => [ [ 'set', 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ] ];
 		$item       = [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ), static fn ( array $e ): int => Intel_Graph_Row_Schema::item_time( Core::as_int( $e['item_ts'] ), Core::as_int( $e['retrieved_ts'] ) ) ];
 		$checked    = \array_map( static fn ( string $member ): \Closure => static fn ( array $e ): mixed => Core::arr( $e['kind_check'] ?? null )[ $member ] ?? null, \array_keys( Intel_Event::RECORDS['extraction_recorded']['kind_check'] ) );
-		$extraction = [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', ...$checked, 'actor', $day( 'retrieved_ts' ) ];
+		$extraction = [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', ...$checked, static fn ( array $e ): ?string => isset( $e['kind_subject'] ) ? Core::as_string( $e['kind_subject'] ) : null, static fn ( array $e ): string => Core::as_string( $e['rank_reason'] ?? '' ), 'actor', $day( 'retrieved_ts' ) ];
 		$judgment = static fn ( string $state ): array => [ [ 'set', 'judgments', [ 'item_key', 'entity_key', static fn ( array $e ): string => \explode( ':', Core::as_string( $e['actor'] ), 2 )[0], [ $state ], 'actor', 'item_url', 'ts' ] ] ];
 		$lines    = [ 'ignore', 'boilerplate', [ 'source', self::EACH, 'item_key', $day( 'retrieved_ts' ) ], static fn ( array $e ): array => Entity_Index::line_hashes( Core::as_string( $e['body'] ) ) ];
 		$table    = [

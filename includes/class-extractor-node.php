@@ -55,8 +55,9 @@
  * the retry stays owed its extraction when the struct was (`extract`), whose
  * request waits behind new work. The topics offered come from the process's
  * shared `Entity_Index::current()`, the one the Resolver reads; an
- * extraction's theme is written only when its answer names one; and the
- * names
+ * extraction's theme and rank reason are written only when its answer
+ * names them, and a churn kind's kind subject only when it names one entity
+ * the item links; and the names it and the
  * claims resolve through from the one current when the answer lands. Each
  * extraction publishes its status: heuristic, naming the group, a call that
  * answered, or the failure of one that did not.
@@ -582,13 +583,15 @@ class Extractor_Node extends Node {
 	 * kind's floor when its relevance reaches the floor's. A call's
 	 * extraction of an item whose stored kind passed its check keeps that
 	 * kind and that check, so the floor is the kept kind's. It writes the
-	 * extraction, the subjects a call was given, the struct the deduper
-	 * reads and a claim per claim whose subject the item asserts.
+	 * extraction, its rank reason and, for a churn kind, the linked entity
+	 * whose churn it reports (`kind_subject()`), the subjects a call was
+	 * given, the struct the deduper reads and a claim per claim whose
+	 * subject the item asserts.
 	 *
 	 * @param array<string,mixed>                        $item   The item.
 	 * @param array<string,array{0:float,1:bool,2:bool}> $linked Each linked entity => its link's confidence, whether it is asserted, and whether by an identifier.
 	 * @param string                                     $stage  `extract`, or the heuristic stand-in's stage.
-	 * @param array{summary:string,kind:string,theme?:string,kind_check?:array<array-key,mixed>,topics:list<string>,relevance:int,importance:int,sentiment:float,claims:list<array{subject:string,predicate:string,object:string}>} $parsed The extraction.
+	 * @param array{summary:string,kind:string,theme?:string,kind_subject?:string,rank_reason?:string,kind_check?:array<array-key,mixed>,topics:list<string>,relevance:int,importance:int,sentiment:float,claims:list<array{subject:string,predicate:string,object:string}>} $parsed The extraction.
 	 * @param array<array-key,string>                    $topics Each topic name the request offered => its key.
 	 */
 	private function record( array $item, array $linked, string $stage, array $parsed, array $topics ): void {
@@ -612,7 +615,11 @@ class Extractor_Node extends Node {
 			'sentiment'    => $parsed['sentiment'],
 			'topics'       => \array_map( static fn ( string $name ): string => $topics[ $name ], $parsed['topics'] ),
 			'retrieved_ts' => $item['retrieved_ts'],
-		] + \array_intersect_key( $parsed, [ 'theme' => true, 'kind_check' => true ] );
+		] + \array_intersect_key( $parsed, [ 'theme' => true, 'rank_reason' => true, 'kind_check' => true ] );
+		$subject  = self::kind_subject( $index, $parsed, $linked );
+		if ( null !== $subject ) {
+			$fields['kind_subject'] = $subject;
+		}
 		$this->emit( $this->writer, Intel_Event::machine_event( $stage, 'extraction_recorded', $fields ) );
 		if ( $call ) {
 			$given = \array_keys( \array_filter( $linked, static fn ( array $link ): bool => $link[1] ) );
@@ -736,6 +743,24 @@ class Extractor_Node extends Node {
 			}
 		}
 		return \mb_substr( \implode( ' ', $sentences ), 0, Prompts::SUMMARY_CHARS );
+	}
+
+	/**
+	 * The linked entity whose churn a CHURN_KINDS extraction reports: the
+	 * one entity the item links that the reply's kind subject spells whole;
+	 * null for any other kind, and for a name spelling no such entity, or
+	 * more than one.
+	 *
+	 * @param Entity_Index                               $index  The entities.
+	 * @param array{kind:string,kind_subject?:string}    $parsed The extraction.
+	 * @param array<string,array{0:float,1:bool,2:bool}> $linked The item's links, as `extract()` takes them.
+	 */
+	private static function kind_subject( Entity_Index $index, array $parsed, array $linked ): ?string {
+		if ( ! isset( $parsed['kind_subject'] ) || ! \in_array( $parsed['kind'], Intel_Event::CHURN_KINDS, true ) ) {
+			return null;
+		}
+		$named = \array_values( \array_filter( self::entities_named( $index, $parsed['kind_subject'], $linked ), static fn ( string $key ): bool => isset( $linked[ $key ] ) ) );
+		return 1 === \count( $named ) ? $named[0] : null;
 	}
 
 	/**

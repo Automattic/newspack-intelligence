@@ -292,7 +292,7 @@ final class IntelEventTest extends TestCase {
 		$this->assertSame( [ ...\array_slice( Intel_Event::KINDS['link_asserted'], 0, 3 ), [ 'evidence' => 512 ] ], Intel_Event::KINDS['link_proposed'] );
 		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'entity_key', 'type', 'name', 'from_item_key' ], [ 'type' => Intel_Event::TYPES ], [ 'evidence' => 512 ] ], Intel_Event::KINDS['entity_proposed'] );
 		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'entity_key' ], [], [] ], Intel_Event::KINDS['entity_accepted'] );
-		$this->assertSame( [ 'theme' => 80 ], Intel_Event::KINDS['extraction_recorded'][3] );
+		$this->assertSame( [ 'theme' => 80, 'kind_subject' => 320, 'rank_reason' => 512 ], Intel_Event::KINDS['extraction_recorded'][3] );
 		$this->assertSame( [ 'extraction_recorded', 'link_proposed', 'entity_proposed', 'item_excluded' ], \array_keys( \array_filter( \array_map( static fn ( array $row ): array => $row[3], Intel_Event::KINDS ) ) ) );
 		$this->assertSame( [ 'item_moved' => [ 'tiers' => 1 ], 'ask_answered' => [ 'tiers' => 0 ] ], Intel_Event::LISTS, 'each kind declares its list fields and the fewest members each holds' );
 		foreach ( Intel_Event::LISTS as $kind => $fields ) {
@@ -387,15 +387,22 @@ final class IntelEventTest extends TestCase {
 	}
 
 	/**
-	 * An extraction's theme, when present, is a string within its cap.
+	 * An extraction's theme, kind subject and rank reason, each when
+	 * present, is a string within its cap, and never blank.
 	 *
-	 * @return array<string,array{0:mixed,1:string}>
+	 * @return array<string,array{0:string,1:mixed,2:string}>
 	 */
-	public static function bad_themes(): array {
+	public static function bad_bounded_fields(): array {
 		return [
-			'not a string' => [ [ 'bot registrations' ], 'extraction_recorded: theme is not a string' ],
-			'blank'        => [ '', 'extraction_recorded: theme is blank' ],
-			'past its cap' => [ \str_repeat( 'heron ', 14 ), 'extraction_recorded: theme runs past 80 bytes' ],
+			'theme not a string'        => [ 'theme', [ 'bot registrations' ], 'extraction_recorded: theme is not a string' ],
+			'theme blank'               => [ 'theme', '', 'extraction_recorded: theme is blank' ],
+			'theme past its cap'        => [ 'theme', \str_repeat( 'heron ', 14 ), 'extraction_recorded: theme runs past 80 bytes' ],
+			'kind subject not a string' => [ 'kind_subject', 7, 'extraction_recorded: kind_subject is not a string' ],
+			'kind subject blank'        => [ 'kind_subject', ' ', 'extraction_recorded: kind_subject is blank' ],
+			'kind subject past its cap' => [ 'kind_subject', 'organization:' . \str_repeat( 'tern', 80 ), 'extraction_recorded: kind_subject runs past 320 bytes' ],
+			'rank reason not a string'  => [ 'rank_reason', [ 'A client leaves.' ], 'extraction_recorded: rank_reason is not a string' ],
+			'rank reason blank'         => [ 'rank_reason', '', 'extraction_recorded: rank_reason is blank' ],
+			'rank reason past its cap'  => [ 'rank_reason', \str_repeat( 'heron ', 86 ), 'extraction_recorded: rank_reason runs past 512 bytes' ],
 		];
 	}
 
@@ -429,11 +436,11 @@ final class IntelEventTest extends TestCase {
 		$this->assertSame( [ 'restricted', 'internal', 'public' ], $event['tiers'] );
 	}
 
-	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_themes' )]
-	public function test_an_extractions_theme_must_be_a_bounded_string( mixed $theme, string $why ): void {
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_bounded_fields' )]
+	public function test_an_extractions_bounded_fields_must_be_bounded_strings( string $field, mixed $value, string $why ): void {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( $why );
-		Intel_Event::make( 'extraction_recorded', [ 'item_key' => 'feed:wren-6610', 'summary' => 'Wren Ledger cannot send mail.', 'kind' => 'bug', 'relevance' => 7, 'importance' => 5, 'sentiment' => -0.4, 'topics' => [], 'theme' => $theme, 'retrieved_ts' => 1791300000 ], 'machine:extract@9.4.1', '' );
+		Intel_Event::make( 'extraction_recorded', [ 'item_key' => 'feed:wren-6610', 'summary' => 'Wren Ledger cannot send mail.', 'kind' => 'bug', 'relevance' => 7, 'importance' => 5, 'sentiment' => -0.4, 'topics' => [], $field => $value, 'retrieved_ts' => 1791300000 ], 'machine:extract@9.4.1', '' );
 	}
 
 	/** A proposal's evidence is optional: one written before proposals carried it validates. */

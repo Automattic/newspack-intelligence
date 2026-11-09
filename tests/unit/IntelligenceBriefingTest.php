@@ -177,17 +177,18 @@ final class IntelligenceBriefingTest extends TestCase {
 	}
 
 	/**
-	 * The summary counts a client under a kind only where its item names the
-	 * client as its subject: a churn report about the Plover that mentions the
-	 * Sedgewick counts one churned client, though the items are about two.
+	 * The summary counts a client under a churn kind only where its item
+	 * names the client as its kind subject: "The Plover merges into the
+	 * Sedgewick", about both as subject and naming the Plover as leaving,
+	 * counts one churned client, though the item is about two.
 	 */
-	public function test_the_summary_counts_churn_by_subject(): void {
+	public function test_the_summary_counts_churn_by_its_kind_subject(): void {
 		$at = self::back( 1 );
 		$this->seed(
-			self::item( 'linear:plover-exit', 'Plover offboarding', 'linear', 'public', $at ),
-			self::extraction( 'linear:plover-exit', 'The Plover is leaving.', 'churned', $at, [], 5.0, 7.0 ),
+			self::item( 'linear:plover-exit', 'The Plover merges into the Sedgewick', 'linear', 'public', $at ),
+			self::extraction( 'linear:plover-exit', 'The Plover is leaving.', 'churned', $at, [], 5.0, 7.0, '', self::PLOVER ),
 			self::link( 'link_asserted', 'linear:plover-exit', self::PLOVER, 'subject', 'name', 1.0, $at ),
-			self::link( 'link_asserted', 'linear:plover-exit', self::SEDGE, 'mention', 'name', 1.0, $at )
+			self::link( 'link_asserted', 'linear:plover-exit', self::SEDGE, 'subject', 'name', 1.0, $at )
 		);
 
 		$summary = $this->ci->dispatch( 'briefing', [ 'changes' ] )['summary'];
@@ -225,7 +226,7 @@ final class IntelligenceBriefingTest extends TestCase {
 	public function test_a_summary_counts_a_restricted_item_only_for_its_holder(): void {
 		$key = 'hubspot:plover-renewal-lapse';
 		$at  = self::back( 1 );
-		$this->seed( self::item( $key, 'Plover renewal lapses', 'hubspot', 'restricted', $at ), self::extraction( $key, 'A churn.', 'churned', $at, [], 5.0, 8.0 ), self::link( 'link_asserted', $key, self::PLOVER, 'subject', 'name', 1.0, $at ) );
+		$this->seed( self::item( $key, 'Plover renewal lapses', 'hubspot', 'restricted', $at ), self::extraction( $key, 'A churn.', 'churned', $at, [], 5.0, 8.0, '', self::PLOVER ), self::link( 'link_asserted', $key, self::PLOVER, 'subject', 'name', 1.0, $at ) );
 		$this->about( 'p2:sedge-offboard', self::SEDGE, 'subject', 'churned', 7.0, 1 );
 		$since = self::back( 3 );
 
@@ -477,7 +478,9 @@ final class IntelligenceBriefingTest extends TestCase {
 	}
 
 	/**
-	 * Seed an item linked to one entity, extracted with a kind and an importance.
+	 * Seed an item linked to one entity, extracted with a kind and an
+	 * importance, a churn kind about its subject naming it as the kind
+	 * subject.
 	 *
 	 * @param string $key        The item key.
 	 * @param string $entity     The entity it links.
@@ -489,7 +492,8 @@ final class IntelligenceBriefingTest extends TestCase {
 	 */
 	private function about( string $key, string $entity, string $role, string $kind, float $importance, int $days, float $relevance = 5.0 ): void {
 		$at = self::back( $days );
-		$this->seed( self::item( $key, "Item {$key}", \explode( ':', $key )[0], 'public', $at ), self::extraction( $key, "A {$kind}.", $kind, $at, [], $relevance, $importance ), self::link( 'link_asserted', $key, $entity, $role, 'name', 1.0, $at ) );
+		$named = 'subject' === $role && \in_array( $kind, Intel_Event::CHURN_KINDS, true ) ? $entity : '';
+		$this->seed( self::item( $key, "Item {$key}", \explode( ':', $key )[0], 'public', $at ), self::extraction( $key, "A {$kind}.", $kind, $at, [], $relevance, $importance, '', $named ), self::link( 'link_asserted', $key, $entity, $role, 'name', 1.0, $at ) );
 	}
 
 	/**

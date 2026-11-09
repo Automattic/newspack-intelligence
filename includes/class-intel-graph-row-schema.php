@@ -198,6 +198,8 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 					'checked_kind' => 'TEXT',
 					'kind_verdict' => 'TEXT',
 					'checked_ts'   => 'INTEGER',
+					'kind_subject' => 'TEXT',
+					'rank_reason'  => 'TEXT NOT NULL',
 					'actor'        => 'TEXT NOT NULL',
 					'item_day'     => 'INTEGER NOT NULL',
 				],
@@ -681,6 +683,6 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	 * @api Read by the Row_Table that opens the file.
 	 */
 	public static function version(): int {
-		return 10;
+		return 11;
 	}
 }

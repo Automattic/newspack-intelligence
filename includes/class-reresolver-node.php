@@ -25,11 +25,12 @@
  * wildcards escaped, and appends its newest MAX_ITEMS_PER_SIGNAL hits at
  * once, newest first; reaching that cap, it counts the rest and logs how many
  * it skipped. A `RERESOLVE <since>
- * <until> [<source>]` request queues every item dated in those UTC days, an
- * undated one by its retrieval, of the source it names or of every source,
- * sent in the order the projection recorded them, by a cursor on each
- * partition's row id, and publishes a range naming no source as
- * `last_range`; a `REEXTRACT` request queues the same range with each record
+ * <until> [<source>] [--kind=<kind>[,<kind>]]` request queues every item
+ * dated in those UTC days, an undated one by its retrieval, of the source
+ * it names or of every source, and extracted as one of the kinds it names
+ * or as any, sent in the order the projection recorded them, by a cursor on
+ * each partition's row id, and publishes a range naming no source and no
+ * kind as `last_range`; a `REEXTRACT` request queues the same range with each record
  * owed its extraction, so the extractor calls the model whatever the item
  * holds.
  *
@@ -113,6 +114,9 @@ class Reresolver_Node extends Timer_Node {
 		'path'  => [ [ '://', '.' ], [ '/%', '?%', '#%', '' ] ],
 		'inner' => [ [ '' ], [ '%' ] ],
 	];
+
+	/** The word leading a range request's last token when it names the kinds it keeps to. */
+	private const KIND_FLAG = '--kind=';
 
 	/** Bytes of an unreadable checkpoint the drop's log line quotes. */
 	private const DROPPED_EXCERPT = 200;
@@ -390,8 +394,10 @@ class Reresolver_Node extends Timer_Node {
 	 */
 	private function page( string $key, array $work ): void {
 		[ $kind, $bounds ]           = \explode( '|', $key, 2 );
-		[ $since, $until, $source ] = \explode( ' ', $bounds, 3 ) + [ 2 => '' ];
-		$found                       = $this->read( $key, static fn ( Row_Reader $r ): array => self::dated( $r, (int) $since, (int) $until, $source, $work['after'] ) );
+		$words                       = \explode( ' ', $bounds );
+		$kinds                       = \str_starts_with( \end( $words ), self::KIND_FLAG ) ? \explode( ',', \substr( \array_pop( $words ), \strlen( self::KIND_FLAG ) ) ) : [];
+		[ $since, $until, $source ] = $words + [ 2 => '' ];
+		$found                       = $this->read( $key, static fn ( Row_Reader $r ): array => self::dated( $r, (int) $since, (int) $until, self::of_range( $r, $source, $kinds ), $work['after'] ) );
 		if ( null === $found ) {
 			return;
 		}
@@ -405,19 +411,19 @@ class Reresolver_Node extends Timer_Node {
 	}
 
 	/**
-	 * The next page of a range: the items dated in it, of its source when
-	 * it names one, partition by partition in row-id order past the cursor,
-	 * and the cursor after them; none once the last partition is exhausted.
+	 * The next page of a range: the items dated in it that `$of` keeps,
+	 * partition by partition in row-id order past the cursor, and the
+	 * cursor after them; none once the last partition is exhausted.
 	 *
-	 * @param Row_Reader                 $r      The reader.
-	 * @param int                        $since  The range's first second.
-	 * @param int                        $until  The second after its last.
-	 * @param string                     $source The source, or '' for every one.
-	 * @param array{0:int,1:string}|null $after  The row id and partition alias the last page ended at.
+	 * @param Row_Reader                          $r     The reader.
+	 * @param int                                 $since The range's first second.
+	 * @param int                                 $until The second after its last.
+	 * @param array{0:string,1:list<string>}      $kept  The condition keeping the range to its source and kinds, and its binds, as `of_range()` answers them.
+	 * @param array{0:int,1:string}|null          $after The row id and partition alias the last page ended at.
 	 * @return array{0:list<string>,1:array{0:int,1:string}|null} The item keys, and the cursor.
 	 */
-	private static function dated( Row_Reader $r, int $since, int $until, string $source, ?array $after ): array {
-		[ $of, $of_binds ] = self::of_source( $source );
+	private static function dated( Row_Reader $r, int $since, int $until, array $kept, ?array $after ): array {
+		[ $of, $of_binds ] = $kept;
 		$when             = Intel_Graph_Row_Schema::ITEM_TIME;
 		$aliases          = $r->aliases();
 		[ $last, $alias ] = $after ?? [ 0, '' ];
@@ -481,19 +487,23 @@ class Reresolver_Node extends Timer_Node {
 
 	/**
 	 * Answer a range request: queue the day range it names, of the source
-	 * it names or of every source, as the kind RANGES gives it, or answer
-	 * and log why it cannot. A range of every source is published as the
-	 * last range; one of a source covers only some of its days' items.
+	 * it names or of every source, and of the kinds its last word names
+	 * after KIND_FLAG or of every kind, as the kind RANGES gives it, or
+	 * answer and log why it cannot. A range of every source and kind is
+	 * published as the last range; any other covers only some of its days'
+	 * items.
 	 *
-	 * @return array{since:string,until:string,source?:string}|array{refused:string}
+	 * @return array{since:string,until:string,source?:string,kinds?:list<string>}|array{refused:string}
 	 */
 	private function queue_range(): array {
 		$words   = \preg_split( '/\s+/', \trim( $this->asked ) ) ?: [ '' ];
 		$request = \strtoupper( $words[0] );
 		try {
+			$flag  = \str_starts_with( \end( $words ), self::KIND_FLAG ) ? \substr( \array_pop( $words ), \strlen( self::KIND_FLAG ) ) : null;
+			$kinds = null === $flag ? [] : self::kinds_of( \explode( ',', $flag ) );
 			if ( 3 !== \count( $words ) && 4 !== \count( $words ) ) {
 				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
-				throw new \InvalidArgumentException( "usage: {$request} <since Y-m-d> <until Y-m-d> [<source>]" );
+				throw new \InvalidArgumentException( "usage: {$request} <since Y-m-d> <until Y-m-d> [<source>] [" . self::KIND_FLAG . '<kind>[,<kind>]]' );
 			}
 			[ , $since, $until, $source ] = $words + [ 3 => '' ];
 			[ $from, $to ]                = Intel_Graph_Row_Schema::range( $since, $until );
@@ -502,11 +512,11 @@ class Reresolver_Node extends Timer_Node {
 			return [ 'refused' => $e->getMessage() ];
 		}
 		$range = [ 'since' => $since, 'until' => $until ];
-		if ( '' === $source ) {
+		if ( '' === $source && [] === $kinds ) {
 			$this->publish_status( [ 'last_range' => $range ] );
 		}
-		$this->queue_up( self::RANGES[ $request ], \rtrim( "{$from} {$to} {$source}" ) );
-		return $range + ( '' === $source ? [] : [ 'source' => $source ] );
+		$this->queue_up( self::RANGES[ $request ], \rtrim( "{$from} {$to} {$source}" ) . ( [] === $kinds ? '' : ' ' . self::KIND_FLAG . \implode( ',', $kinds ) ) );
+		return $range + ( '' === $source ? [] : [ 'source' => $source ] ) + ( [] === $kinds ? [] : [ 'kinds' => $kinds ] );
 	}
 
 	/**
@@ -569,7 +579,8 @@ class Reresolver_Node extends Timer_Node {
 
 	/**
 	 * Ask each live worker's reresolver to re-resolve, or with REEXTRACT
-	 * re-extract, every item dated in a range of UTC days, of one source or
+	 * re-extract, every item dated in a range of UTC days, of the kinds it
+	 * names or of every kind, of one source or
 	 * of every one: the one request `wp newspack-intelligence ontology
 	 * reresolve` and `ontology reextract` and the `reresolve` command send. A
 	 * range that does not parse, or a source of more than one word, is
@@ -580,48 +591,103 @@ class Reresolver_Node extends Timer_Node {
 	 * @param string                   $since   The first day, Y-m-d.
 	 * @param string                   $until   The last day, Y-m-d.
 	 * @param string                   $source  The source, or '' for every one.
+	 * @param list<string>             $kinds   The item kinds, or none for every kind.
 	 * @return int The workers asked.
 	 * @throws \InvalidArgumentException When the request is not a key of
 	 *                                   RANGES, a day does not parse, the
-	 *                                   range runs backwards or the source
-	 *                                   is not one word.
+	 *                                   range runs backwards, the source
+	 *                                   is not one word or a kind is not
+	 *                                   an item kind.
 	 * @throws \RuntimeException When the topology has no live worker.
 	 */
-	public static function ask( Command_Interpreter_Node $graph, string $request, string $since, string $until, string $source ): int {
+	public static function ask( Command_Interpreter_Node $graph, string $request, string $since, string $until, string $source, array $kinds ): int {
 		Graph_Query::one_of( 'request', $request, \array_keys( self::RANGES ) );
 		Intel_Graph_Row_Schema::range( $since, $until );
-		return Worker_Route::send( $graph, Config::get_base_directory(), [ [ 'reresolver', \rtrim( "{$request} {$since} {$until} " . self::one_word( $source ) ) ] ] );
+		$kinds = self::kinds_of( $kinds );
+		return Worker_Route::send( $graph, Config::get_base_directory(), [ [ 'reresolver', \rtrim( "{$request} {$since} {$until} " . self::one_word( $source ) ) . ( [] === $kinds ? '' : ' ' . self::KIND_FLAG . \implode( ',', $kinds ) ) ] ] );
+	}
+
+	/**
+	 * Item kinds, each once in the order given, each refused unless it is
+	 * one of `Intel_Event::ITEM_KINDS`.
+	 *
+	 * @api The ontology CLI refuses a kind by it before it reads anything.
+	 * @param list<string> $kinds The kinds named.
+	 * @return list<string>
+	 * @throws \InvalidArgumentException Naming the kinds there are.
+	 */
+	public static function kinds_of( array $kinds ): array {
+		return \array_values( \array_unique( \array_map( static fn ( string $kind ): string => Graph_Query::one_of( 'kind', $kind, Intel_Event::ITEM_KINDS ), $kinds ) ) );
 	}
 
 	/**
 	 * How many stored items a range of UTC days dates, an undated one by its
-	 * retrieval, of one source or of every one, across every partition: what
-	 * a range request sends.
+	 * retrieval, of one source or of every one, and extracted as one of the
+	 * kinds or of any, across every partition: what a range request sends.
 	 *
-	 * @param string $since  The first day, Y-m-d.
-	 * @param string $until  The last day, Y-m-d.
-	 * @param string $source The source, or '' for every one.
+	 * @param string       $since  The first day, Y-m-d.
+	 * @param string       $until  The last day, Y-m-d.
+	 * @param string       $source The source, or '' for every one.
+	 * @param list<string> $kinds  The item kinds, or none for every kind.
 	 * @throws \InvalidArgumentException When a day does not parse or the range runs backwards.
 	 * @throws \Newspack_Nodes\Table_Unavailable When the projection will not open.
 	 */
-	public static function count_dated( string $since, string $until, string $source ): int {
-		[ $from, $to ]     = Intel_Graph_Row_Schema::range( $since, $until );
-		[ $of, $of_binds ] = self::of_source( $source );
-		$when              = Intel_Graph_Row_Schema::ITEM_TIME;
+	public static function count_dated( string $since, string $until, string $source, array $kinds ): int {
+		[ $from, $to ] = Intel_Graph_Row_Schema::range( $since, $until );
+		$when          = Intel_Graph_Row_Schema::ITEM_TIME;
 		return Intel_Graph_Row_Schema::read(
-			static fn ( Row_Reader $r ): int => Core::as_int( $r->rows( 'SELECT COUNT(*) FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' ) . " i WHERE {$when} >= ? AND {$when} < ?{$of}", [ $from, $to, ...$of_binds ] )[0][0] ?? 0 )
+			static function ( Row_Reader $r ) use ( $from, $to, $source, $kinds, $when ): int {
+				[ $of, $of_binds ] = self::of_range( $r, $source, $kinds );
+				return Core::as_int( $r->rows( 'SELECT COUNT(*) FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' ) . " i WHERE {$when} >= ? AND {$when} < ?{$of}", [ $from, $to, ...$of_binds ] )[0][0] ?? 0 );
+			}
 		);
 	}
 
 	/**
-	 * The condition, after an `AND`, keeping `items i` to one source, and
-	 * its bind; none for every source.
+	 * The key and title of each item `count_dated()` counts of a tier the
+	 * caller reads (`Intel_Tiers::readable()`), the oldest first, each once,
+	 * so a dry run lists what it would re-extract and no item the caller
+	 * may not see.
 	 *
-	 * @param string $source The source, or ''.
+	 * @param string       $since  The first day, Y-m-d.
+	 * @param string       $until  The last day, Y-m-d.
+	 * @param string       $source The source, or '' for every one.
+	 * @param list<string> $kinds  The item kinds, or none for every kind.
+	 * @return list<array{0:string,1:string}>
+	 * @throws \InvalidArgumentException When a day does not parse or the range runs backwards.
+	 * @throws \Newspack_Nodes\Table_Unavailable When the projection will not open.
+	 */
+	public static function readable_dated( string $since, string $until, string $source, array $kinds ): array {
+		[ $from, $to ] = Intel_Graph_Row_Schema::range( $since, $until );
+		$when          = Intel_Graph_Row_Schema::ITEM_TIME;
+		$tiers         = Intel_Tiers::readable();
+		return Intel_Graph_Row_Schema::read(
+			static function ( Row_Reader $r ) use ( $from, $to, $source, $kinds, $when, $tiers ): array {
+				[ $of, $of_binds ] = self::of_range( $r, $source, $kinds );
+				$rows              = $r->rows( 'SELECT i.item_key, MAX( i.title ) FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' ) . " i WHERE {$when} >= ? AND {$when} < ? AND i.tier IN ( " . Intel_Graph_Row_Schema::marks( $tiers ) . " ){$of} GROUP BY i.item_key ORDER BY MIN( {$when} ), i.item_key", [ $from, $to, ...$tiers, ...$of_binds ] );
+				return \array_map( static fn ( array $row ): array => [ Core::as_string( $row[0] ), Core::as_string( $row[1] ) ], $rows );
+			}
+		);
+	}
+
+	/**
+	 * The condition, after an `AND`, keeping `items i` to one source and to
+	 * the items any partition's extraction gives one of the kinds, and its
+	 * binds; none for every source and every kind.
+	 *
+	 * @param Row_Reader   $r      The reader.
+	 * @param string       $source The source, or ''.
+	 * @param list<string> $kinds  The item kinds, or none.
 	 * @return array{0:string,1:list<string>}
 	 */
-	private static function of_source( string $source ): array {
-		return '' === $source ? [ '', [] ] : [ ' AND i.source = ?', [ $source ] ];
+	private static function of_range( Row_Reader $r, string $source, array $kinds ): array {
+		$of    = '' === $source ? '' : ' AND i.source = ?';
+		$binds = '' === $source ? [] : [ $source ];
+		if ( [] !== $kinds ) {
+			$of .= ' AND i.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . ' WHERE kind IN ( ' . Intel_Graph_Row_Schema::marks( $kinds ) . ' ) )';
+			\array_push( $binds, ...$kinds );
+		}
+		return [ $of, $binds ];
 	}
 
 	/**
@@ -677,8 +743,8 @@ class Reresolver_Node extends Timer_Node {
 			'requests'     => \array_map(
 				static fn ( string $request, string $kind ): array => [
 					'name'        => $request,
-					'description' => 'Re-resolve every item dated in a range of UTC days, of one source when it names one' . ( 'reextract' === $kind ? ', each owed an extraction call' : '' ) . ": {$request} <since Y-m-d> <until Y-m-d> [<source>].",
-					'reply_shape' => '{ since, until, source? } or { refused }',
+					'description' => 'Re-resolve every item dated in a range of UTC days, of one source and of the kinds it names when it names them' . ( 'reextract' === $kind ? ', each owed an extraction call' : '' ) . ": {$request} <since Y-m-d> <until Y-m-d> [<source>] [" . self::KIND_FLAG . '<kind>[,<kind>]].',
+					'reply_shape' => '{ since, until, source?, kinds? } or { refused }',
 					'handler'     => static fn ( self $node ): array => $node->queue_range(),
 				],
 				\array_keys( self::RANGES ),

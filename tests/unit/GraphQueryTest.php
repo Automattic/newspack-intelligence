@@ -38,6 +38,7 @@ final class GraphQueryTest extends TestCase {
 	}
 
 	protected function tearDown(): void {
+		unset( $GLOBALS['_current_user_can'] );
 		Intel_Graph_Row_Schema::$read_rows = null;
 		Topology_Registry::reset();
 		Topology_Analyzer::reset_caches();
@@ -53,19 +54,21 @@ final class GraphQueryTest extends TestCase {
 			[
 				'items'     => [
 					[
-						'item_key'   => 'feed:gazette-award',
-						'title'      => 'Harbor Gazette wins state award',
-						'url'        => 'https://news.example/feed/gazette-award',
-						'source'     => 'feed',
-						'tier'       => 'public',
-						'item_ts'    => self::$oct_06,
-						'summary'    => 'Judges honored the Gazette newsroom.',
-						'excerpt'    => 'The Gazette took first place for investigative work.',
-						'kind'       => 'award',
-						'relevance'  => 8.5,
-						'importance' => 6.25,
-						'kind_check' => null,
-						'entities'   => [ [ 'entity_key' => self::GAZETTE, 'name' => 'Harbor Gazette', 'state' => 'asserted', 'role' => 'subject', 'client' => true ] ],
+						'item_key'    => 'feed:gazette-award',
+						'title'       => 'Harbor Gazette wins state award',
+						'url'         => 'https://news.example/feed/gazette-award',
+						'source'      => 'feed',
+						'tier'        => 'public',
+						'item_ts'     => self::$oct_06,
+						'summary'     => 'Judges honored the Gazette newsroom.',
+						'excerpt'     => 'The Gazette took first place for investigative work.',
+						'kind'        => 'award',
+						'relevance'   => 8.5,
+						'importance'  => 6.25,
+						'rank_reason' => '',
+						'kind_check'  => null,
+						'copies'      => 0,
+						'entities'    => [ [ 'entity_key' => self::GAZETTE, 'name' => 'Harbor Gazette', 'state' => 'asserted', 'role' => 'subject', 'client' => true ] ],
 					],
 				],
 				'total'     => 1,
@@ -276,12 +279,12 @@ final class GraphQueryTest extends TestCase {
 	}
 
 	/**
-	 * A churn report counts against a client only as its item's subject: an
-	 * item extracted churned that names Harbor Ledger as subject and Prairie
-	 * Signal as a mention opens Harbor Ledger's churn and counts nothing for
-	 * Prairie Signal.
+	 * A churn report counts against a client only as its kind subject: an
+	 * item extracted churned naming Harbor Ledger as its kind subject, which
+	 * links Prairie Signal as a mention, opens Harbor Ledger's churn and
+	 * counts nothing for Prairie Signal.
 	 */
-	public function test_churn_open_reads_subject_links_only(): void {
+	public function test_churn_open_reads_the_kind_subject_only(): void {
 		$this->seed_offboarding();
 
 		$harbor  = self::read( 'entity', [ 'key' => self::HARBOR ] )['status'];
@@ -289,6 +292,89 @@ final class GraphQueryTest extends TestCase {
 
 		$this->assertSame( [ true, 3 ], [ $harbor['churn_open'], $harbor['kinds']['churned'] ] );
 		$this->assertSame( [ false, 0 ], [ $prairie['churn_open'], $prairie['kinds']['churned'] ] );
+	}
+
+	/**
+	 * "Harbor Ledger merges into Prairie Signal" links both as subject, and
+	 * its kind subject is Harbor Ledger: only Harbor Ledger's churn opens. A
+	 * churn report naming no kind subject claims no client, while a kind
+	 * that is not a churn kind still counts against its subject.
+	 */
+	public function test_a_merger_names_only_the_leaving_publisher(): void {
+		$this->seed_offboarding();
+		$this->seed(
+			self::item( 'linear:harbor-merger', 'Harbor Ledger merges into Prairie Signal', 'linear', 'internal', self::$oct_20 ),
+			self::extraction( 'linear:harbor-merger', 'A client leaves.', 'churned', self::$oct_20, [], 5.0, 5.0, '', self::HARBOR ),
+			self::link( 'link_asserted', 'linear:harbor-merger', self::HARBOR, 'subject', 'name', 1.0, self::$oct_20 ),
+			self::link( 'link_asserted', 'linear:harbor-merger', self::PRAIRIE, 'subject', 'name', 1.0, self::$oct_20 ),
+			self::item( 'linear:prairie-unsure', 'Prairie Signal weighs its contract', 'linear', 'internal', self::$oct_20 ),
+			self::extraction( 'linear:prairie-unsure', 'A client may leave.', 'churn_signal', self::$oct_20, [] ),
+			self::link( 'link_asserted', 'linear:prairie-unsure', self::PRAIRIE, 'subject', 'name', 1.0, self::$oct_20 ),
+			self::item( 'linear:prairie-wish', 'Prairie Signal asks for a podcast feed', 'linear', 'internal', self::$oct_20 ),
+			self::extraction( 'linear:prairie-wish', 'Prairie Signal asks for audio.', 'feature_request', self::$oct_20, [] ),
+			self::link( 'link_asserted', 'linear:prairie-wish', self::PRAIRIE, 'subject', 'name', 1.0, self::$oct_20 )
+		);
+
+		$harbor  = self::read( 'entity', [ 'key' => self::HARBOR ] )['status'];
+		$prairie = self::read( 'entity', [ 'key' => self::PRAIRIE ] )['status'];
+
+		$this->assertSame( [ true, 4, 'linear:harbor-merger' ], [ $harbor['churn_open'], $harbor['kinds']['churned'], $harbor['churn_items'][0]['item_key'] ] );
+		$this->assertSame( [ false, [ 'churned' => 0, 'churn_signal' => 0, 'feature_request' => 1, 'complaint' => 0 ], [] ], [ $prairie['churn_open'], $prairie['kinds'], $prairie['churn_items'] ] );
+	}
+
+	/**
+	 * A theme row's clients read a churn item's kind subject in place of its
+	 * subject links, in a theme group and a trend row alike; a churn item
+	 * naming no kind subject names no client.
+	 */
+	public function test_a_theme_rows_clients_read_the_kind_subject(): void {
+		$this->seed_offboarding();
+		$this->seed(
+			self::item( 'linear:harbor-merger', 'Harbor Ledger merges into Prairie Signal', 'linear', 'internal', self::$oct_13 ),
+			self::extraction( 'linear:harbor-merger', 'A client leaves.', 'churned', self::$oct_13, [], 5.0, 5.0, 'publication merger', self::HARBOR ),
+			self::link( 'link_asserted', 'linear:harbor-merger', self::HARBOR, 'subject', 'name', 1.0, self::$oct_13 ),
+			self::link( 'link_asserted', 'linear:harbor-merger', self::PRAIRIE, 'subject', 'name', 1.0, self::$oct_13 ),
+			self::item( 'linear:prairie-merger', 'Prairie Signal and a merger', 'linear', 'internal', self::$oct_13 + 60 ),
+			self::extraction( 'linear:prairie-merger', 'A client may leave.', 'churn_signal', self::$oct_13 + 60, [], 5.0, 5.0, 'publication merger' ),
+			self::link( 'link_asserted', 'linear:prairie-merger', self::PRAIRIE, 'subject', 'name', 1.0, self::$oct_13 + 60 )
+		);
+		$harbor = [ [ 'entity_key' => self::HARBOR, 'name' => 'Harbor Ledger' ] ];
+
+		$this->assertSame( $harbor, self::search( [ 'q' => 'Prairie', 'group' => 'theme', 'sort' => null ] )['groups'][0]['clients'] );
+		$this->assertSame( [ [ 'publication merger', $harbor ] ], \array_map( static fn ( array $row ): array => [ $row['value'], $row['clients'] ], self::trends( [ 'by' => 'theme' ] )['rows'] ) );
+	}
+
+	/**
+	 * A listed item answers the reason its extraction gave for its rank, ''
+	 * for one that gave none.
+	 */
+	public function test_a_listed_item_answers_its_rank_reason(): void {
+		$this->seed_world();
+		$this->seed( [ Intel_Event::make( 'extraction_recorded', [ 'item_key' => 'github:ledger-launch', 'summary' => 'The Ledger shipped a newsletter tool.', 'kind' => 'launch', 'relevance' => 7.0, 'importance' => 5.5, 'sentiment' => 0.25, 'topics' => [], 'rank_reason' => 'A client ships a tool its readers asked for.', 'retrieved_ts' => self::$oct_13 + 600 ], 'machine:extract@9.4.1', 'fixture-9' ) ] );
+
+		$this->assertSame( [ 'github:ledger-launch' => 'A client ships a tool its readers asked for.', 'feed:gazette-award' => '', 'linear:joint-grant' => '' ], \array_column( self::search( [] )['items'], 'rank_reason', 'item_key' ) );
+	}
+
+	/**
+	 * A listed item in a cluster of three answers `copies: 2`, the other
+	 * copies the reader may read; a restricted copy counts only for a
+	 * reader holding the tier, and an item outside every cluster answers 0.
+	 */
+	public function test_a_listed_story_answers_its_copies(): void {
+		$copies = [ 'feed:gannet-wire-1', 'feed:gannet-wire-2', 'feed:gannet-wire-3', 'feed:gannet-wire-4' ];
+		$this->seed(
+			self::item( $copies[0], 'Gannet wire one', 'feed', 'public', self::$oct_06 ),
+			self::item( $copies[1], 'Gannet wire two', 'feed', 'internal', self::$oct_06 + 60 ),
+			self::item( $copies[2], 'Gannet wire three', 'feed', 'public', self::$oct_06 + 120 ),
+			self::item( $copies[3], 'Gannet wire four', 'feed', 'restricted', self::$oct_06 + 180 ),
+			self::item( 'feed:gannet-alone', 'Gannet wire alone', 'feed', 'public', self::$oct_06 + 240 ),
+			self::story( $copies[0], $copies, self::$oct_06 )
+		);
+
+		$this->assertSame( [ 'feed:gannet-alone' => 0, $copies[2] => 2, $copies[1] => 2, $copies[0] => 2 ], \array_column( self::search( [ 'q' => 'gannet' ] )['items'], 'copies', 'item_key' ) );
+
+		$GLOBALS['_current_user_can'] = true;
+		$this->assertSame( [ 'feed:gannet-alone' => 0, $copies[3] => 3, $copies[2] => 3, $copies[1] => 3, $copies[0] => 3 ], \array_column( self::search( [ 'q' => 'gannet' ] )['items'], 'copies', 'item_key' ) );
 	}
 
 	/** A client's status names each churn report it rests on, the newest first. */
@@ -1053,14 +1139,14 @@ final class GraphQueryTest extends TestCase {
 				Intel_Event::make( 'role_asserted', [ 'entity_key' => self::PRAIRIE, 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ),
 			],
 			self::item( 'linear:harbor-offboard', 'Harbor Ledger offboarding checklist', 'linear', 'internal', self::$oct_06 ),
-			self::extraction( 'linear:harbor-offboard', 'Harbor Ledger is leaving.', 'churned', self::$oct_06, [] ),
+			self::extraction( 'linear:harbor-offboard', 'Harbor Ledger is leaving.', 'churned', self::$oct_06, [], 5.0, 5.0, '', self::HARBOR ),
 			self::link( 'link_asserted', 'linear:harbor-offboard', self::HARBOR, 'subject', 'name', 1.0, self::$oct_06 ),
 			self::link( 'link_asserted', 'linear:harbor-offboard', self::PRAIRIE, 'mention', 'name', 1.0, self::$oct_06 ),
 			self::item( 'linear:harbor-exit-call', 'Harbor Ledger exit call', 'linear', 'internal', self::$oct_13 ),
-			self::extraction( 'linear:harbor-exit-call', 'Harbor Ledger confirmed it leaves.', 'churned', self::$oct_13, [] ),
+			self::extraction( 'linear:harbor-exit-call', 'Harbor Ledger confirmed it leaves.', 'churned', self::$oct_13, [], 5.0, 5.0, '', self::HARBOR ),
 			self::link( 'link_asserted', 'linear:harbor-exit-call', self::HARBOR, 'subject', 'name', 1.0, self::$oct_13 ),
 			self::item( 'linear:harbor-old-exit', 'Harbor Ledger left once', 'linear', 'internal', $before ),
-			self::extraction( 'linear:harbor-old-exit', 'Harbor Ledger left.', 'churned', $before, [] ),
+			self::extraction( 'linear:harbor-old-exit', 'Harbor Ledger left.', 'churned', $before, [], 5.0, 5.0, '', self::HARBOR ),
 			self::link( 'link_asserted', 'linear:harbor-old-exit', self::HARBOR, 'subject', 'name', 1.0, $before )
 		);
 	}

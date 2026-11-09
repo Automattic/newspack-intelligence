@@ -76,7 +76,9 @@ final class Intel_Event {
 	 * was found in, is optional: one written before proposals carried it has
 	 * none. So is an extraction's `theme`, the problem or event its item is
 	 * an instance of: one naming none, or written before extractions named
-	 * one, has none, and a blank one is refused. A saved item's move names
+	 * one, has none, and a blank one is refused; and so are its
+	 * `kind_subject`, the linked entity whose churn a CHURN_KINDS item
+	 * reports, and its `rank_reason`, the sentence saying why it ranks. A saved item's move names
 	 * the folder it leaves as `from`, the one it enters as `collection_key`
 	 * and the tier of each copy it carries, and a use mark the tier of the
 	 * copy it marks. An exclusion names the URL, title and tier its item had,
@@ -87,7 +89,7 @@ final class Intel_Event {
 	public const KINDS = [
 		'item_recorded'       => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ], [] ],
 		'item_grown'          => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ], [] ],
-		'extraction_recorded' => [ self::ITEMS, [ 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'topics', 'retrieved_ts' ], [ 'kind' => self::ITEM_KINDS ], [ 'theme' => self::THEME_BYTES ] ],
+		'extraction_recorded' => [ self::ITEMS, [ 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'topics', 'retrieved_ts' ], [ 'kind' => self::ITEM_KINDS ], [ 'theme' => self::THEME_BYTES, 'kind_subject' => Graph_Curation::KEY_BYTES, 'rank_reason' => self::RANK_REASON_BYTES ] ],
 		'subjects_extracted'  => [ self::ITEMS, [ 'item_key', 'entity_keys', 'retrieved_ts' ], [], [] ],
 		'link_asserted'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ], [] ],
 		'link_proposed'       => [ self::ITEMS, [ 'item_key', 'entity_key', 'role', 'method', 'confidence', 'retrieved_ts' ], [ 'role' => self::LINK_ROLES, 'method' => self::METHODS ], [ 'evidence' => self::EVIDENCE_BYTES ] ],
@@ -133,6 +135,12 @@ final class Intel_Event {
 	/** The longest theme, in the bytes a packed message writes it in. */
 	public const THEME_BYTES = 80;
 
+	/** The longest reason an item ranks as it does, in the bytes a packed message writes it in. */
+	public const RANK_REASON_BYTES = 512;
+
+	/** The kinds whose extraction names the client whose churn its item reports, its `kind_subject`. */
+	public const CHURN_KINDS = [ 'churned', 'churn_signal' ];
+
 	/** The longest reason an item is excluded for, in the bytes a packed message writes it in. */
 	public const WHY_BYTES = 512;
 
@@ -167,7 +175,7 @@ final class Intel_Event {
 	];
 
 	/** The optional fields refused blank: one with nothing to say is left out. */
-	private const NON_BLANK = [ 'theme' => true, 'why' => true ];
+	private const NON_BLANK = [ 'theme' => true, 'kind_subject' => true, 'rank_reason' => true, 'why' => true ];
 
 	/** The actor classes an actor string may begin with. */
 	private const ACTOR_CLASSES = [ 'user', 'agent', 'machine' ];

@@ -60,12 +60,13 @@ class Ontology_CLI_Command {
 	 * @throws \Newspack_Nodes\Table_Unavailable When --source is given and the projection cannot be read.
 	 */
 	public function reresolve( array $args, array $assoc_args ): void {
-		self::ask_range( 'reresolve', $assoc_args, static fn (): string => '' );
+		self::ask_range( 'reresolve', $assoc_args, [], static fn (): string => '' );
 	}
 
 	/**
 	 * Re-extract every stored item dated in a range of UTC days, an undated one
-	 * by when it was retrieved, of one source when --source names it. Each
+	 * by when it was retrieved, of one source when --source names it, and
+	 * extracted as one of the kinds --kind names when it names them. Each
 	 * live worker's reresolver is asked through its input partition, as
 	 * `reresolve` asks it, and sends each item to the
 	 * resolver owed an extraction, so each worker's extractor calls the model
@@ -75,8 +76,9 @@ class Ontology_CLI_Command {
 	 * first and refuses more than --limit, naming the items and the workers; a
 	 * range that contains no item sends nothing. Each extraction can add one
 	 * decision-model call, its review, which the count leaves out. With
-	 * --dry-run it sends nothing and prints the calls, says so, and prints the
-	 * command that runs them.
+	 * --dry-run it sends nothing and prints the calls, says so, lists each
+	 * item of a tier the caller reads and how many others it counts, and
+	 * prints the command that runs them.
 	 *
 	 * ## OPTIONS
 	 *
@@ -89,6 +91,9 @@ class Ontology_CLI_Command {
 	 * [--source=<name>]
 	 * : Only the items of this source, as `slack` or `linear`; every source when omitted.
 	 *
+	 * [--kind=<kind>[,<kind>]]
+	 * : Only the items extracted as one of these kinds, as `churned,churn_signal`; every kind when omitted.
+	 *
 	 * [--limit=<n>]
 	 * : The most extraction calls it makes, retries and decision-model calls aside; 200 when omitted.
 	 *
@@ -98,6 +103,7 @@ class Ontology_CLI_Command {
 	 * ## EXAMPLES
 	 *
 	 *     wp newspack-intelligence ontology reextract --since=2026-10-01 --until=2026-10-07 --dry-run
+	 *     wp newspack-intelligence ontology reextract --since=2025-11-09 --kind=churned,churn_signal --dry-run
 	 *
 	 * @api WP-CLI dispatches this by reflection; nothing here calls it.
 	 * @param array<int,string>    $args       Positional args.
@@ -107,16 +113,18 @@ class Ontology_CLI_Command {
 	 * @throws \Newspack_Nodes\Table_Unavailable When the projection cannot be read.
 	 */
 	public function reextract( array $args, array $assoc_args ): void {
+		$kinds = isset( $assoc_args['kind'] ) ? \array_map( 'trim', \explode( ',', Core::as_string( $assoc_args['kind'] ) ) ) : [];
 		self::ask_range(
 			'reextract',
 			$assoc_args,
-			static function ( string $since, string $until, string $source ) use ( $assoc_args ): ?string {
+			$kinds,
+			static function ( string $since, string $until, string $source ) use ( $assoc_args, $kinds ): ?string {
 				$limit   = CLI::require_flag_int( $assoc_args, 'limit', self::REEXTRACT_LIMIT, false );
-				$count   = Reresolver_Node::count_dated( $since, $until, $source );
+				$count   = Reresolver_Node::count_dated( $since, $until, $source, $kinds );
 				$workers = \count( Worker_Route::live_workers( Config::get_base_directory() ) );
 				$calls   = $count * $workers;
 				$of      = '' === $source ? '' : "{$source} ";
-				$range   = "dated {$since} to {$until}";
+				$range   = self::kinds_text( $kinds ) . "dated {$since} to {$until}";
 				$retries = 'a failed one retried up to ' . Extractor_Node::MAX_ATTEMPTS . ' times';
 				if ( 0 === $count ) {
 					\WP_CLI::success( "No {$of}item is {$range}; nothing to re-extract." );
@@ -124,7 +132,15 @@ class Ontology_CLI_Command {
 				}
 				if ( isset( $assoc_args['dry-run'] ) ) {
 					\WP_CLI::log( "{$count} {$of}items {$range} would be re-extracted by " . self::workers( $workers, 'live ' ) . ": {$calls} extraction calls, each of which can add one decision-model call, {$retries}." );
-					\WP_CLI::log( "Re-extract them with: wp newspack-intelligence ontology reextract --since={$since} --until={$until}" . ( '' === $source ? '' : " --source={$source}" ) . ( $calls > self::REEXTRACT_LIMIT ? " --limit={$calls}" : '' ) );
+					$listed = Reresolver_Node::readable_dated( $since, $until, $source, $kinds );
+					foreach ( $listed as [ $item_key, $title ] ) {
+						\WP_CLI::log( Core::terminal_safe( "{$item_key}: {$title}" ) );
+					}
+					$unlisted = $count - \count( $listed );
+					if ( 0 < $unlisted ) {
+						\WP_CLI::log( "{$unlisted} " . ( 1 === $unlisted ? 'item' : 'items' ) . ' of a tier you do not read ' . ( 1 === $unlisted ? 'is' : 'are' ) . ' counted and not listed.' );
+					}
+					\WP_CLI::log( "Re-extract them with: wp newspack-intelligence ontology reextract --since={$since} --until={$until}" . ( '' === $source ? '' : " --source={$source}" ) . ( [] === $kinds ? '' : ' --kind=' . \implode( ',', $kinds ) ) . ( $calls > self::REEXTRACT_LIMIT ? " --limit={$calls}" : '' ) );
 					return null;
 				}
 				if ( $calls > $limit ) {
@@ -138,36 +154,49 @@ class Ontology_CLI_Command {
 
 	/**
 	 * Ask each live worker's reresolver for a range of UTC days, of one
-	 * source or of every one, the request the verb names upper-cased, once
-	 * root is refused and `$vet` passes it, and say how many workers it
-	 * asked; a range that does not parse, or a source no stored item is
-	 * recorded under, is refused naming why.
+	 * source or of every one, and of the kinds named or of every kind, the
+	 * request the verb names upper-cased, once root is refused and `$vet`
+	 * passes it, and say how many workers it asked; a range that does not
+	 * parse, a source no stored item is recorded under, or a kind that is
+	 * not an item kind, is refused naming why.
 	 *
 	 * @param string                                        $verb       `reresolve` or `reextract`.
 	 * @param array<string,string>                          $assoc_args Flags: `since`, `until`, today when omitted, and `source`, every one when omitted.
+	 * @param list<string>                                  $kinds      The item kinds, or none for every kind.
 	 * @param \Closure(string,string,string): (string|null) $vet        Given the days and the source, what the success line adds, or null to send nothing.
 	 * @throws \RuntimeException When there is no live worker.
 	 * @throws \Newspack_Nodes\Table_Unavailable When --source is given and the projection cannot be read.
 	 */
-	private static function ask_range( string $verb, array $assoc_args, \Closure $vet ): void {
+	private static function ask_range( string $verb, array $assoc_args, array $kinds, \Closure $vet ): void {
 		if ( self::refused_root( "ontology {$verb}" ) ) {
 			return;
 		}
 		$since = $assoc_args['since'] ?? '';
 		$until = $assoc_args['until'] ?? \gmdate( 'Y-m-d' );
 		try {
+			Reresolver_Node::kinds_of( $kinds );
 			$source = self::source_of( $assoc_args );
 			$tail   = $vet( $since, $until, $source );
 			if ( null === $tail ) {
 				return;
 			}
-			$workers = Reresolver_Node::ask( Bootstrap::mount_request_graph(), \strtoupper( $verb ), $since, $until, $source );
+			$workers = Reresolver_Node::ask( Bootstrap::mount_request_graph(), \strtoupper( $verb ), $since, $until, $source, $kinds );
 		} catch ( \InvalidArgumentException $e ) {
 			\WP_CLI::error( $e->getMessage() );
 			return;
 		}
 		$of = '' === $source ? '' : "{$source} ";
-		\WP_CLI::success( 'Asked ' . self::workers( $workers, '' ) . ' to ' . \substr_replace( $verb, 're-', 0, 2 ) . " the {$of}items dated {$since} to {$until}{$tail}." );
+		\WP_CLI::success( 'Asked ' . self::workers( $workers, '' ) . ' to ' . \substr_replace( $verb, 're-', 0, 2 ) . " the {$of}items " . self::kinds_text( $kinds ) . "dated {$since} to {$until}{$tail}." );
+	}
+
+	/**
+	 * The kinds a range keeps to, in words before its days: `extracted as
+	 * churned or churn_signal `, or '' for every kind.
+	 *
+	 * @param list<string> $kinds The item kinds, or none.
+	 */
+	private static function kinds_text( array $kinds ): string {
+		return [] === $kinds ? '' : 'extracted as ' . \implode( ' or ', $kinds ) . ' ';
 	}
 
 	/**

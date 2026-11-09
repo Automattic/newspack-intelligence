@@ -342,11 +342,57 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame(
 			[
 				'2 items dated 2026-08-03 to 2026-08-03 would be re-extracted by 1 live worker: 2 extraction calls, each of which can add one decision-model call, a failed one retried up to 5 times.',
+				'feed:kestrel-1: feed:kestrel-1',
+				'feed:kestrel-2: feed:kestrel-2',
 				'Re-extract them with: wp newspack-intelligence ontology reextract --since=2026-08-03 --until=2026-08-03',
 			],
 			\WP_CLI::$logs
 		);
 		$this->assertSame( [ [], [], [] ], [ self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ), \WP_CLI::$successes, \WP_CLI::$errors ] );
+	}
+
+	/**
+	 * `--kind` keeps a re-extraction to the items extracted as one of the
+	 * kinds named: its dry run counts and lists only those, listing no
+	 * restricted item to a caller without the tier though it counts it, and
+	 * its run sends the kinds with the range.
+	 */
+	public function test_reextract_limits_to_the_named_kinds(): void {
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p3' );
+		$this->seed_dated( 'feed:kestrel-1', 'feed:kestrel-2', 'feed:kestrel-3' );
+		$this->seed(
+			[ Intel_Event::make( 'item_recorded', [ 'item_key' => 'feed:kestrel-hidden', 'source' => 'feed', 'tier' => 'restricted', 'url' => 'https://news.example/hidden', 'title' => 'Kestrel renewal at risk', 'body' => '', 'item_ts' => 1785758400, 'retrieved_ts' => 1785758400 ], 'machine:source:feed@9.4.1', '9.4.1' ) ],
+			self::extracted( 'feed:kestrel-1', 'churned' ),
+			self::extracted( 'feed:kestrel-2', 'launch' ),
+			self::extracted( 'feed:kestrel-3', 'churn_signal' ),
+			self::extracted( 'feed:kestrel-hidden', 'churned' )
+		);
+
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'kind' => 'churned,churn_signal', 'dry-run' => true ] );
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'kind' => 'churned,churn_signal' ] );
+
+		$this->assertSame(
+			[
+				'3 items extracted as churned or churn_signal dated 2026-08-03 to 2026-08-03 would be re-extracted by 1 live worker: 3 extraction calls, each of which can add one decision-model call, a failed one retried up to 5 times.',
+				'feed:kestrel-1: feed:kestrel-1',
+				'feed:kestrel-3: feed:kestrel-3',
+				'1 item of a tier you do not read is counted and not listed.',
+				'Re-extract them with: wp newspack-intelligence ontology reextract --since=2026-08-03 --until=2026-08-03 --kind=churned,churn_signal',
+			],
+			\WP_CLI::$logs
+		);
+		$this->assertSame( [ 'REEXTRACT 2026-08-03 2026-08-03 --kind=churned,churn_signal' ], \array_column( self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ), Message::VALUE ) );
+		$this->assertSame( [ 'Asked 1 worker to re-extract the items extracted as churned or churn_signal dated 2026-08-03 to 2026-08-03: 3 extraction calls, a failed one retried up to 5 times.' ], \WP_CLI::$successes );
+	}
+
+	/** A kind that is not an item kind is refused before anything is read or sent. */
+	public function test_reextract_refuses_a_kind_it_does_not_know(): void {
+		self::live_worker( Config::get_base_directory(), 'skua-intel.p3' );
+
+		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'until' => '2026-08-03', 'kind' => 'churned,scandal' ] );
+
+		$this->assertSame( [ 'kind must be one of: ' . \implode( ', ', Intel_Event::ITEM_KINDS ) ], \WP_CLI::$errors );
+		$this->assertSame( [], self::worker_input( Config::get_base_directory(), 'skua-intel.p3' ) );
 	}
 
 	/** A dry run past the default limit prints the command with the limit its calls need. */
@@ -357,7 +403,8 @@ final class OntologyCliCommandTest extends TestCase {
 
 		$days = self::days_around( static fn () => ( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'dry-run' => true ] ) );
 
-		$this->assertContains( \WP_CLI::$logs[1], \array_map( static fn ( string $day ): string => "Re-extract them with: wp newspack-intelligence ontology reextract --since=2026-08-03 --until={$day} --limit=202", $days ) );
+		$this->assertCount( 103, \WP_CLI::$logs, 'the count, each item and the command' );
+		$this->assertContains( \WP_CLI::$logs[102], \array_map( static fn ( string $day ): string => "Re-extract them with: wp newspack-intelligence ontology reextract --since=2026-08-03 --until={$day} --limit=202", $days ) );
 	}
 
 	/** A bad range is refused before anything is read or sent. */
@@ -466,6 +513,7 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->assertSame(
 			[
 				'1 linear items dated 2026-08-03 to 2026-08-03 would be re-extracted by 1 live worker: 1 extraction calls, each of which can add one decision-model call, a failed one retried up to 5 times.',
+				'linear:KITE-7: linear:KITE-7',
 				'Re-extract them with: wp newspack-intelligence ontology reextract --since=2026-08-03 --until=2026-08-03 --source=linear',
 			],
 			\WP_CLI::$logs
@@ -479,6 +527,17 @@ final class OntologyCliCommandTest extends TestCase {
 		$this->expectExceptionMessage( 'invalid --limit' );
 
 		( new Ontology_CLI_Command() )->reextract( [], [ 'since' => '2026-08-03', 'limit' => '0' ] );
+	}
+
+	/**
+	 * A call's extraction of an item as one kind.
+	 *
+	 * @param string $item_key The item.
+	 * @param string $kind     Its kind.
+	 * @return list<array<string,mixed>>
+	 */
+	private static function extracted( string $item_key, string $kind ): array {
+		return [ Intel_Event::make( 'extraction_recorded', [ 'item_key' => $item_key, 'summary' => "A {$kind}.", 'kind' => $kind, 'relevance' => 5, 'importance' => 5, 'sentiment' => 0.0, 'topics' => [], 'retrieved_ts' => 1785758400 ], 'machine:extract@9.4.1', '9.4.1' ) ];
 	}
 
 	/**

@@ -348,11 +348,11 @@ final class LensThemeGroupsTest extends TestCase {
 	}
 
 	/**
-	 * A theme row's clients are the open clients its stories name as their
-	 * subject: Prairie Signal, which the story only mentions, is in neither
+	 * A theme row's clients are the open clients its churn stories name as
+	 * leaving: Prairie Signal, which the story only mentions, is in neither
 	 * the group's clients nor the trend row's.
 	 */
-	public function test_a_theme_rows_clients_are_its_subjects(): void {
+	public function test_a_theme_rows_clients_are_its_kind_subjects(): void {
 		$prairie = 'organization:prairie-signal';
 		$at      = self::$oct_01 + 9 * self::DAY;
 		$this->seed(
@@ -596,7 +596,8 @@ final class LensThemeGroupsTest extends TestCase {
 	}
 
 	/**
-	 * One ticket: its record, its extraction and its links.
+	 * One ticket: its record, its extraction and its links, a churn kind
+	 * naming its first subject as the client whose churn it reports.
 	 *
 	 * @param string                           $key        The item key.
 	 * @param string                           $kind       Its kind.
@@ -607,9 +608,10 @@ final class LensThemeGroupsTest extends TestCase {
 	 * @return list<list<array<string,mixed>>>
 	 */
 	private function ticket( string $key, string $kind, int $at, float $importance, string $theme, array $links ): array {
-		$events = [
+		$subjects = \array_column( \array_filter( $links, static fn ( array $link ): bool => 'subject' === $link[1] ), 0 );
+		$events   = [
 			self::item( $key, "Ticket {$key}", \explode( ':', $key )[0], 'internal', $at ),
-			self::extraction( $key, "A {$kind}.", $kind, $at, [], 5.0, $importance, $theme ),
+			self::extraction( $key, "A {$kind}.", $kind, $at, [], 5.0, $importance, $theme, \in_array( $kind, Intel_Event::CHURN_KINDS, true ) ? ( $subjects[0] ?? '' ) : '' ),
 		];
 		foreach ( $links as [ $entity, $role ] ) {
 			$events[] = self::link( 'link_asserted', $key, $entity, $role, 'name', 1.0, $at );

@@ -408,7 +408,7 @@ final class PublisherSignalsTest extends TestCase {
 			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => $kite, 'role' => 'client', 'from_ts' => self::THIS_WEEK ], 'user:41', 'fixture-9' ) ]
 		);
 		$before = self::THIS_WEEK - 3 * self::WEEK;
-		$this->seed( self::item( 'github:kite-left', 'The Kite Herald left', 'github', 'public', $before ), self::extraction( 'github:kite-left', 'It left.', 'churned', $before, [] ), self::link( 'link_asserted', 'github:kite-left', $kite, 'subject', 'name', 1.0, $before ) );
+		$this->seed( self::item( 'github:kite-left', 'The Kite Herald left', 'github', 'public', $before ), self::extraction( 'github:kite-left', 'It left.', 'churned', $before, [], 5.0, 5.0, '', $kite ), self::link( 'link_asserted', 'github:kite-left', $kite, 'subject', 'name', 1.0, $before ) );
 		$this->about( 'churn_signal', [ 3 => 2 ] );
 
 		$this->assertFalse( $this->ci->dispatch( 'entity', [ self::COURIER ] )['status']['churn_open'], 'a churn signal is not a churn report' );
@@ -427,7 +427,7 @@ final class PublisherSignalsTest extends TestCase {
 	 */
 	public function test_a_restricted_churn_report_names_one_only_to_a_holder(): void {
 		$at = self::THIS_WEEK - self::WEEK;
-		$this->seed( self::item( 'github:courier-leaving', 'The Courier is leaving', 'github', 'restricted', $at ), self::extraction( 'github:courier-leaving', 'It is leaving.', 'churned', $at, [] ), self::link( 'link_asserted', 'github:courier-leaving', self::COURIER, 'subject', 'name', 1.0, $at ) );
+		$this->seed( self::item( 'github:courier-leaving', 'The Courier is leaving', 'github', 'restricted', $at ), self::extraction( 'github:courier-leaving', 'It is leaving.', 'churned', $at, [], 5.0, 5.0, '', self::COURIER ), self::link( 'link_asserted', 'github:courier-leaving', self::COURIER, 'subject', 'name', 1.0, $at ) );
 
 		$this->assertFalse( $this->ci->dispatch( 'entity', [ self::COURIER ] )['status']['churn_open'] );
 
@@ -475,7 +475,9 @@ final class PublisherSignalsTest extends TestCase {
 	}
 
 	/**
-	 * Seed items on other sites about the Courier, of one kind, per week back.
+	 * Seed items on other sites about the Courier, of one kind, per week
+	 * back, a churn kind naming the Courier as the client whose churn it
+	 * reports.
 	 *
 	 * @param string         $kind   Their kind.
 	 * @param array<int,int> $counts Weeks back => how many.
@@ -485,7 +487,7 @@ final class PublisherSignalsTest extends TestCase {
 			for ( $n = 1; $n <= $count; $n++ ) {
 				$key = "github:{$kind}-{$back}-{$n}";
 				$at  = self::THIS_WEEK - $back * self::WEEK + 3 * 86400 + $n * 60;
-				$this->seed( self::item( $key, "{$kind} {$n} about the Courier", 'github', 'public', $at ), self::extraction( $key, "A {$kind}.", $kind, $at, [] ), self::link( 'link_asserted', $key, self::COURIER, 'subject', 'name', 1.0, $at ) );
+				$this->seed( self::item( $key, "{$kind} {$n} about the Courier", 'github', 'public', $at ), self::extraction( $key, "A {$kind}.", $kind, $at, [], 5.0, 5.0, '', \in_array( $kind, Intel_Event::CHURN_KINDS, true ) ? self::COURIER : '' ), self::link( 'link_asserted', $key, self::COURIER, 'subject', 'name', 1.0, $at ) );
 			}
 		}
 	}
