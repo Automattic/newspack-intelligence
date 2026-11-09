@@ -528,7 +528,6 @@ export default function Review( {
 	onOpenEntity,
 	onSave,
 } ) {
-	// Before the writes: its unmount flush must run while their nodes stand.
 	const deferred = useDeferredWrite();
 	const [ keysOff, , toggleKeys ] = usePersistedFlag( KEYS_OFF_KEY, false );
 	const keysId = useId();

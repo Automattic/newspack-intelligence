@@ -106,7 +106,8 @@ export function commandArgs( options ) {
  * a landed send hands `refresh` its answer, and a refused one hands `onRefused` the
  * tokens its reply echoes, which say which send it was. The last reply's
  * refusal, the arguments it answered and whether a send is still owed its
- * reply are `useCommandOnce`'s own.
+ * reply are `useCommandOnce`'s own. A send still queued when the hook unmounts
+ * or the page is left goes all the same, because a write declares it.
  *
  * @param {string}                     command          The write verb.
  * @param {Object}                     [opts]           Options.
@@ -137,6 +138,7 @@ export function useIntelWrite(
 		command,
 		scope,
 		subjectOf: NO_SUBJECT,
+		sendsOnRemoval: true,
 		onDone: ( { error: refused, args, result } ) =>
 			refused ? onRefused?.( args ) : refresh?.( result ),
 	} );

@@ -6,11 +6,13 @@
  * pending write at once, each exactly once.
  */
 
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { speak } from '@wordpress/a11y';
-import { Core, reservedNames } from '@newspack-nodes/runtime';
+import { Core, hasSession, reservedNames } from '@newspack-nodes/runtime';
 import { holdRouterCadence } from '@newspack-nodes/shared/test-utils/holdRouterCadence';
+import { intelWire } from '../../__tests__/intelWire';
 import { UNDO_MS, useDeferredWrite } from '../useDeferredWrite';
+import { useIntelWrite } from '../useIntelCommand';
 
 jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
 
@@ -25,6 +27,8 @@ beforeEach( () => {
 
 afterEach( () => {
 	jest.useRealTimers();
+	// A test's pagehide leaves the transport sending as a page being left.
+	window.dispatchEvent( new Event( 'pageshow' ) );
 } );
 
 describe( 'useDeferredWrite', () => {
@@ -159,8 +163,6 @@ describe( 'useDeferredWrite', () => {
 	} );
 
 	it( 'sends every pending write when one send throws, then raises it', () => {
-		const router = holdRouterCadence();
-		const fireCb = jest.spyOn( router, 'fireCb' );
 		const refused = new Error( 'collect refused: quarry-notes' );
 		const first = jest.fn( () => {
 			throw refused;
@@ -193,16 +195,13 @@ describe( 'useDeferredWrite', () => {
 		expect( first ).toHaveBeenCalledTimes( 1 );
 		expect( second ).toHaveBeenCalledTimes( 1 );
 		expect( third ).toHaveBeenCalledTimes( 1 );
-		expect( fireCb ).toHaveBeenCalledTimes( 1 );
 		expect( result.current.hidden ).toEqual( new Set() );
 		act( () => jest.advanceTimersByTime( UNDO_MS * 2 ) );
 		expect( second ).toHaveBeenCalledTimes( 1 );
 		expect( third ).toHaveBeenCalledTimes( 1 );
 	} );
 
-	it( 'raises every failing send together, after the tick', () => {
-		const router = holdRouterCadence();
-		const fireCb = jest.spyOn( router, 'fireCb' );
+	it( 'raises every failing send together, after the last', () => {
 		const first = new Error( 'collect refused: quarry-notes' );
 		const third = new Error( 'reject refused: fernwood-gazette' );
 		const second = jest.fn();
@@ -242,51 +241,96 @@ describe( 'useDeferredWrite', () => {
 			'2 failures: collect refused: quarry-notes | reject refused: fernwood-gazette'
 		);
 		expect( second ).toHaveBeenCalledTimes( 1 );
-		expect( fireCb ).toHaveBeenCalledTimes( 1 );
 	} );
 
-	it( "keeps the send failures when the Router's tick throws too", () => {
-		const router = holdRouterCadence();
-		const ticked = new Error( 'tick failed: _http torn down' );
-		jest.spyOn( router, 'fireCb' ).mockImplementationOnce( () => {
-			throw ticked;
-		} );
-		const sent = new Error( 'collect refused: quarry-notes' );
-		const { result } = renderHook( () => useDeferredWrite() );
-		act( () =>
-			result.current.defer(
-				PRAIRIE,
-				() => {
-					throw sent;
-				},
-				'Rejected Prairie Signal.'
-			)
-		);
-		let raised = null;
-		act( () => {
-			try {
-				result.current.flush();
-			} catch ( error ) {
-				raised = error;
-			}
-		} );
-		expect( raised ).toBeInstanceOf( AggregateError );
-		expect( raised.errors ).toEqual( [ sent, ticked ] );
-	} );
-
-	it( "runs the Router's tick at once when a flush sends, so a parked ask leaves", () => {
+	it( 'runs no Router tick of its own when a flush sends', () => {
 		const router = holdRouterCadence();
 		const fireCb = jest.spyOn( router, 'fireCb' );
 		expect( Core.node( reservedNames.ROUTER ) ).toBe( router );
+		const send = jest.fn();
 		const { result } = renderHook( () => useDeferredWrite() );
-		act( () => result.current.flush() );
-		expect( fireCb ).not.toHaveBeenCalled();
-		const send = jest.fn( () => expect( fireCb ).not.toHaveBeenCalled() );
 		act( () =>
 			result.current.defer( PRAIRIE, send, 'Rejected Prairie Signal.' )
 		);
 		act( () => result.current.flush() );
 		expect( send ).toHaveBeenCalledTimes( 1 );
-		expect( fireCb ).toHaveBeenCalledTimes( 1 );
+		expect( fireCb ).not.toHaveBeenCalled();
+	} );
+} );
+
+/**
+ * The unmount flush sends through the write's own graph whichever hook a
+ * component calls first: the writes' Fetchers send what they hold queued as
+ * they are removed, and the flush runs before any of them is. Leaving the page
+ * removes nothing, so the pagehide flush posts the writes itself.
+ */
+describe( 'useDeferredWrite — on the wire', () => {
+	let wire;
+
+	beforeEach( () => {
+		jest.useRealTimers();
+		holdRouterCadence();
+		window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+		wire = intelWire();
+	} );
+
+	afterEach( () => {
+		delete document.visibilityState;
+	} );
+
+	it( 'sends a pending write on unmount though its write hook is called first', async () => {
+		const { result, unmount } = renderHook( () => ( {
+			reject: useIntelWrite( 'reject_link' ),
+			deferred: useDeferredWrite(),
+		} ) );
+		await waitFor( () => expect( hasSession() ).toBe( true ) );
+		act( () =>
+			result.current.deferred.defer(
+				PRAIRIE,
+				() => result.current.reject.run( { item: 'kestrel-4410' } ),
+				'Rejected Prairie Signal.'
+			)
+		);
+
+		unmount();
+		await act( async () => {} );
+
+		expect( wire.sent( 'reject_link' ) ).toEqual( [
+			[ '--item=kestrel-4410' ],
+		] );
+	} );
+	// @longform The page reads visible, as it still does when `pagehide` fires,
+	// so the keepalive can come only from the pagehide itself; the stopped
+	// Timer is a background tab's, which a tick would never fire.
+	it( 'posts a pending write with keepalive on pagehide, its Timer stopped', async () => {
+		const { result } = renderHook( () => ( {
+			reject: useIntelWrite( 'reject_link' ),
+			deferred: useDeferredWrite(),
+		} ) );
+		await waitFor( () => expect( hasSession() ).toBe( true ) );
+		Object.defineProperty( document, 'visibilityState', {
+			configurable: true,
+			get: () => 'visible',
+		} );
+		Core.node( 'intelligence:reject_link:timer' ).stopTimer();
+		act( () =>
+			result.current.deferred.defer(
+				PRAIRIE,
+				() => result.current.reject.run( { item: 'kakariki-5530' } ),
+				'Rejected Prairie Signal.'
+			)
+		);
+
+		act( () => {
+			window.dispatchEvent( new Event( 'pagehide' ) );
+		} );
+
+		const posts = global.fetch.mock.calls.filter( ( [ url ] ) =>
+			String( url ).endsWith( '/command' )
+		);
+		expect( wire.sent( 'reject_link' ) ).toEqual( [
+			[ '--item=kakariki-5530' ],
+		] );
+		expect( posts.at( -1 )[ 1 ].keepalive ).toBe( true );
 	} );
 } );

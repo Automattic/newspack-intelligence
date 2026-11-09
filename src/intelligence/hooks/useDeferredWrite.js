@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from '@wordpress/element';
+import {
+	useCallback,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from '@wordpress/element';
 import { speak } from '@wordpress/a11y';
-import { Core, raise, reservedNames } from '@newspack-nodes/runtime';
+import { raise, sendQueuedWrites } from '@newspack-nodes/runtime';
 
 /**
  * How long a deferred write waits for an Undo, in milliseconds.
@@ -14,15 +19,16 @@ export const UNDO_MS = 5000;
  * key at once, announces its message politely and sends after `UNDO_MS`;
  * `undo()` cancels the most recent write still pending and answers its key,
  * or null with none pending; `flush()` sends every pending write now, each
- * once, and raises what the sends and the tick threw only after all have run.
- * The hook flushes itself on `pagehide` and on unmount, which is a tab
- * switch, so a reader who leaves loses no judgment.
+ * once, and raises what the sends threw only after all have run. The hook
+ * flushes itself on `pagehide` and on unmount, which is a tab switch, so a
+ * reader who leaves loses no judgment.
  *
- * A flush runs the Router's tick in the same task, so each send it makes
- * leaves before the graph it rides is torn down: a send only parks its ask,
- * and the tick `pollNow()` asks for comes a microtask later, after an
- * unmount's teardown has removed the Fetcher. Call this hook before the
- * writes its sends run, so its unmount flush runs while their nodes stand.
+ * A send only queues its command on the write's Fetcher. On unmount the
+ * Fetcher's own removal sends it, and the flush runs in a layout cleanup,
+ * which React runs before any graph teardown, so the hooks may be called in
+ * any order. On `pagehide` nothing is removed and a hidden tab's Timer may be
+ * stopped, so after the flush `sendQueuedWrites()` posts every queued write
+ * in the same task, with `keepalive`.
  *
  * @return {{hidden: Set<string>, latest: ?{id: number, key: string, message: string}, defer: (key: string, send: () => void, message: string) => void, undo: () => ?string, flush: () => void}}
  *   The keys pending; the write an undo takes, `id` telling apart two
@@ -78,18 +84,27 @@ export function useDeferredWrite() {
 				failures.push( error );
 			}
 		}
-		try {
-			Core.node( reservedNames.ROUTER )?.fireCb();
-		} catch ( error ) {
-			failures.push( error );
-		}
 		raise( failures );
 	}, [ publish ] );
 
-	useEffect( () => {
-		window.addEventListener( 'pagehide', flush );
+	useLayoutEffect( () => {
+		const leave = () => {
+			const failures = [];
+			try {
+				flush();
+			} catch ( error ) {
+				failures.push( error );
+			}
+			try {
+				sendQueuedWrites();
+			} catch ( error ) {
+				failures.push( error );
+			}
+			raise( failures );
+		};
+		window.addEventListener( 'pagehide', leave );
 		return () => {
-			window.removeEventListener( 'pagehide', flush );
+			window.removeEventListener( 'pagehide', leave );
 			flush();
 		};
 	}, [ flush ] );
