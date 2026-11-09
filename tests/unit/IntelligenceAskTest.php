@@ -143,7 +143,7 @@ final class IntelligenceAskTest extends TestCase {
 		foreach ( \array_keys( $this->ci->dispatch( 'ask_result', [ self::KEY ] ) ) as $key ) {
 			$this->assertMatchesRegularExpression( '/\b' . \preg_quote( $key, '/' ) . '\b/', $described['ask_result'], $key );
 		}
-		foreach ( [ Graph_Asks::ASKED, Graph_Asks::ANSWERED, Graph_Asks::FAILED, Graph_Asks::WITHHELD ] as $state ) {
+		foreach ( [ Graph_Asks::ASKED, Graph_Asks::PLANNED, Graph_Asks::READ, Graph_Asks::ANSWERED, Graph_Asks::FAILED, Graph_Asks::WITHHELD ] as $state ) {
 			$this->assertStringContainsString( $state, $described['ask_result'], $state );
 		}
 		$this->assertStringContainsString( (string) Ask_Node::MAX_WAIT_S, $described['ask_result'] );
@@ -155,9 +155,55 @@ final class IntelligenceAskTest extends TestCase {
 		$this->seed( self::asked( self::KEY, self::READER ) );
 
 		$this->assertSame(
-			[ 'ask_key' => self::KEY, 'state' => 'asked', 'reason' => '', 'found' => 0, 'dropped' => 0, 'sentences' => [], 'items' => [], 'searches' => [], 'wait_s' => Ask_Node::MAX_WAIT_S, 'available' => true ],
+			[ 'ask_key' => self::KEY, 'state' => 'asked', 'reason' => '', 'found' => 0, 'dropped' => 0, 'hidden' => 0, 'sentences' => [], 'items' => [], 'searches' => [], 'wait_s' => Ask_Node::MAX_WAIT_S, 'available' => true ],
 			$this->ci->dispatch( 'ask_result', [ self::KEY ] )
 		);
+	}
+
+	/**
+	 * An ask reads planned once its plan is written, with the searches it
+	 * names, then read once its searches are, with how many items they found,
+	 * then answered.
+	 */
+	public function test_each_step_reads_its_state(): void {
+		$searches = [ [ 'words' => 'newsletter', 'days' => 30 ], [ 'kinds' => [ 'feature_request' ], 'days' => 30 ] ];
+		$this->seed( self::asked( self::KEY, self::READER ), [ Intel_Event::machine_event( 'ask', 'ask_planned', [ 'ask_key' => self::KEY, 'owner' => self::READER, 'searches' => $searches ] ) ] );
+		$planned = $this->ci->dispatch( 'ask_result', [ self::KEY ] );
+		$this->seed( [ Intel_Event::machine_event( 'ask', 'ask_read', [ 'ask_key' => self::KEY, 'owner' => self::READER, 'found' => 23 ] ) ] );
+		$read = $this->ci->dispatch( 'ask_result', [ self::KEY ] );
+		$this->seed( self::answered( self::KEY, self::READER, [ [ 'The Gazette won a state award.', [ 1 ] ] ], [ 'feed:gazette-award' ] ) );
+
+		$this->assertSame( [ 'planned', 0, $searches ], [ $planned['state'], $planned['found'], $planned['searches'] ] );
+		$this->assertSame( [ 'read', 23, $searches ], [ $read['state'], $read['found'], $read['searches'] ] );
+		$this->assertSame( 'answered', $this->ci->dispatch( 'ask_result', [ self::KEY ] )['state'] );
+	}
+
+	/** An ask that stopped after its plan reads as failed once it has waited past MAX_WAIT_S, its searches kept. */
+	public function test_a_planned_ask_waiting_past_its_wait_reads_failed(): void {
+		$planned          = Intel_Event::machine_event( 'ask', 'ask_planned', [ 'ask_key' => self::KEY, 'owner' => self::READER, 'searches' => self::SEARCHES ] );
+		$planned['ts']    = (float) ( self::$oct_20 - Ask_Node::MAX_WAIT_S - 20 );
+		$this->seed( self::asked( self::KEY, self::READER, self::$oct_20 - Ask_Node::MAX_WAIT_S - 30 ), [ $planned ] );
+
+		$answer = $this->ci->dispatch( 'ask_result', [ self::KEY ] );
+
+		$this->assertSame( [ 'failed', 'the ask waited past ' . Ask_Node::MAX_WAIT_S . ' seconds; ask again', self::SEARCHES ], [ $answer['state'], $answer['reason'], $answer['searches'] ] );
+	}
+
+	/**
+	 * A sentence whose source the reader can no longer read, as one a
+	 * curator excluded since, is not shown and is counted hidden.
+	 */
+	public function test_a_sentence_whose_source_the_reader_lost_is_counted_hidden(): void {
+		$this->seed(
+			self::asked( self::KEY, self::READER ),
+			self::answered( self::KEY, self::READER, [ [ 'The Ledger launched a newsletter tool.', [ 1 ] ], [ 'The Gazette won a state award.', [ 2 ] ] ], [ 'github:ledger-launch', 'feed:gazette-award' ] ),
+			[ Intel_Event::make( 'item_excluded', [ 'item_key' => 'github:ledger-launch', 'url' => self::url( 'github:ledger-launch' ), 'title' => 'Salem Ledger launches a newsletter tool', 'tier' => 'internal' ], 'user:41', 'fixture-9' ) ]
+		);
+
+		$answer = $this->ci->dispatch( 'ask_result', [ self::KEY ] );
+
+		$this->assertSame( [ [ 'text' => 'The Gazette won a state award.', 'cites' => [ 1 ] ] ], $answer['sentences'] );
+		$this->assertSame( [ 1, 1 ], [ $answer['hidden'], $answer['dropped'] ] );
 	}
 
 	/** A failed ask reads as failed, with its reason. */

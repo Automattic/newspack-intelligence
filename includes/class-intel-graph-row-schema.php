@@ -17,10 +17,12 @@
  * tier's and a move carries no copy; each use mark is an `item_marks` row
  * of the tier of the copy it marks. An item a curator excluded is one
  * kept `excluded_items` row, written by the ontology stream, so it
- * outlives the item's own rows, their expiry and a purge. Each distinct
+ * outlives the item's own rows, their expiry and a purge, and a client's
+ * churn note is one kept `churn_notes` row, as long as it is set. Each distinct
  * line of an item's body is a `boilerplate` row of its own, so how many
  * items of a source carry a line is a count of rows. Each ask is one `asks`
- * row, kept `Ask_Node::KEEP_DAYS` by the day it was last written.
+ * row, kept `Ask_Node::KEEP_DAYS` by the day it was last written, and each
+ * step it took before its outcome one `ask_steps` row, kept as long.
  *
  * @package Newspack_Intelligence
  */
@@ -174,6 +176,7 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 					'retrieved_ts'  => 'INTEGER NOT NULL',
 					'retrieved_day' => 'INTEGER NOT NULL',
 					'item_time'     => 'INTEGER NOT NULL',
+					'actor'         => 'TEXT NOT NULL',
 				],
 				'key'           => [ 'item_key' ],
 				'indexes'       => [
@@ -201,6 +204,7 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 					'kind_subject' => 'TEXT',
 					'rank_reason'  => 'TEXT NOT NULL',
 					'actor'        => 'TEXT NOT NULL',
+					'ts'           => 'REAL NOT NULL',
 					'item_day'     => 'INTEGER NOT NULL',
 				],
 				'key'           => [ 'item_key' ],
@@ -275,6 +279,8 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				'columns' => [
 					'item_key'    => 'TEXT NOT NULL',
 					'cluster_key' => 'TEXT NOT NULL',
+					'actor'       => 'TEXT NOT NULL',
+					'ts'          => 'REAL NOT NULL',
 					'item_day'    => 'INTEGER NOT NULL',
 				],
 				'key'     => [ 'item_key' ],
@@ -431,6 +437,19 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				'key'     => [ 'item_key' ],
 				'keep'    => true,
 			],
+			'churn_notes'   => [
+				'columns' => [
+					'entity_key' => 'TEXT NOT NULL',
+					'text'       => 'TEXT NOT NULL',
+					'owner'      => 'TEXT NOT NULL',
+					'next_step'  => 'TEXT NOT NULL',
+					'day'        => 'TEXT NOT NULL',
+					'actor'      => 'TEXT NOT NULL',
+					'ts'         => 'REAL NOT NULL',
+				],
+				'key'     => [ 'entity_key' ],
+				'keep'    => true,
+			],
 			'collections'   => [
 				'columns' => [
 					'collection_key' => 'TEXT NOT NULL',
@@ -559,6 +578,19 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				'indexes' => [ 'asks_ask_day' => [ 'ask_day' ] ],
 				'retain'  => [ 'ask_day', Ask_Node::KEEP_DAYS, self::DAY_SECONDS ],
 			],
+			'ask_steps'     => [
+				'columns' => [
+					'ask_key'  => 'TEXT NOT NULL',
+					'stage'    => 'INTEGER NOT NULL',
+					'found'    => 'INTEGER NOT NULL',
+					'searches' => 'TEXT NOT NULL',
+					'ts'       => 'REAL NOT NULL',
+					'ask_day'  => 'INTEGER NOT NULL',
+				],
+				'key'     => [ 'ask_key', 'stage' ],
+				'indexes' => [ 'ask_steps_ask_day' => [ 'ask_day' ] ],
+				'retain'  => [ 'ask_day', Ask_Node::KEEP_DAYS, self::DAY_SECONDS ],
+			],
 			'events'        => [
 				'columns' => [
 					'event_id'       => 'TEXT NOT NULL',
@@ -683,6 +715,6 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 	 * @api Read by the Row_Table that opens the file.
 	 */
 	public static function version(): int {
-		return 11;
+		return 12;
 	}
 }

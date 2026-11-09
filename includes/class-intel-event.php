@@ -80,11 +80,14 @@ final class Intel_Event {
 	 * `kind_subject`, the linked entity whose churn a CHURN_KINDS item
 	 * reports, and its `rank_reason`, the sentence saying why it ranks. A saved item's move names
 	 * the folder it leaves as `from`, the one it enters as `collection_key`
-	 * and the tier of each copy it carries, and a use mark the tier of the
-	 * copy it marks. An exclusion names the URL, title and tier its item had,
-	 * so its list outlives the item, and why when a curator says. An ask's
+	 * and the tier of each copy it carries, a removal from a folder the tier
+	 * of each copy it takes out, and a use mark the tier of the copy it marks. An exclusion names the URL, title and tier its item had,
+	 * so its list outlives the item, and why when a curator says. A churn
+	 * note names its client, its text, its owner, its next step and that
+	 * step's day, each '' when unsaid; its text '' clears the note. An ask's
 	 * answer names the items its sentences cite by key, each sentence citing
-	 * them by their place in that list from 1.
+	 * them by their place in that list from 1; its plan names the searches it
+	 * will run, and its read how many items they found, each as the step ends.
 	 */
 	public const KINDS = [
 		'item_recorded'       => [ self::ITEMS, [ 'item_key', 'source', 'tier', 'url', 'title', 'body', 'item_ts', 'retrieved_ts' ], [ 'tier' => self::TIERS ], [] ],
@@ -116,15 +119,19 @@ final class Intel_Event {
 		'item_included'       => [ self::ONTOLOGY, [ 'item_key' ], [], [] ],
 		'item_used'           => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'tier', 'mark', 'day' ], [ 'tier' => self::TIERS, 'mark' => self::MARKS ], [] ],
 		'item_moved'          => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'from', 'tiers' ], [ 'tiers' => self::TIERS ], [] ],
+		'item_uncollected'    => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'tiers' ], [ 'tiers' => self::TIERS ], [] ],
 		'lens_saved'          => [ self::ONTOLOGY, [ 'lens_key', 'name', 'description', 'filters' ], [], [] ],
 		'lens_removed'        => [ self::ONTOLOGY, [ 'lens_key' ], [], [] ],
 		'theme_merged'        => [ self::ONTOLOGY, [ 'from', 'into' ], [], [] ],
+		'churn_note_set'      => [ self::ONTOLOGY, [ 'entity_key', 'text', 'owner', 'next_step', 'day' ], [], [] ],
 		'watch_saved'         => [ self::ONTOLOGY, [ 'watch_key', 'owner', 'name', 'target_kind', 'target_key', 'digest', 'instant', 'inbox' ], [ 'target_kind' => self::WATCH_TARGETS, 'digest' => self::FLAG, 'instant' => self::FLAG, 'inbox' => self::FLAG ], [] ],
 		'watch_removed'       => [ self::ONTOLOGY, [ 'watch_key', 'owner' ], [], [] ],
 		'watch_matched'       => [ self::WATCHES, [ 'watch_key', 'owner', 'item_key', 'at', 'retrieved_ts', 'quiet' ], [ 'quiet' => self::FLAG ], [] ],
 		'watch_seen'          => [ self::WATCHES, [ 'watch_key', 'owner', 'item_key', 'retrieved_ts' ], [], [] ],
 		'watch_delivered'     => [ self::WATCHES, [ 'owner', 'mode', 'watch_key', 'through' ], [ 'mode' => self::DELIVERIES ], [] ],
 		'ask_asked'           => [ self::ASKS, [ 'ask_key', 'owner', 'question' ], [], [] ],
+		'ask_planned'         => [ self::ASKS, [ 'ask_key', 'owner', 'searches' ], [], [] ],
+		'ask_read'            => [ self::ASKS, [ 'ask_key', 'owner', 'found' ], [], [] ],
 		'ask_answered'        => [ self::ASKS, [ 'ask_key', 'owner', 'found', 'dropped', 'sentences', 'items', 'tiers', 'searches' ], [ 'tiers' => self::TIERS ], [] ],
 		'ask_failed'          => [ self::ASKS, [ 'ask_key', 'owner', 'reason', 'searches' ], [], [] ],
 	];
@@ -146,12 +153,13 @@ final class Intel_Event {
 
 	/**
 	 * Each kind holding a list field => each such field => the fewest
-	 * members it holds, each a distinct member of its set: a move carries
-	 * at least one tier, and an answer given no item names none.
+	 * members it holds, each a distinct member of its set: a move and a
+	 * removal carry at least one tier, and an answer given no item names none.
 	 */
 	public const LISTS = [
-		'item_moved'   => [ 'tiers' => 1 ],
-		'ask_answered' => [ 'tiers' => 0 ],
+		'item_moved'       => [ 'tiers' => 1 ],
+		'item_uncollected' => [ 'tiers' => 1 ],
+		'ask_answered'     => [ 'tiers' => 0 ],
 	];
 
 	/** A kind check's verdict: the kind its review checked fits it. */

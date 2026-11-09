@@ -270,7 +270,7 @@ final class GraphQueryTest extends TestCase {
 				'topics'      => [ [ 'topic_key' => 'topic:awards', 'name' => 'Awards' ] ],
 				'counts'      => [ 'items' => 2, 'proposed_links' => 0 ],
 				'published'   => [ 'count' => 0 ],
-				'status'      => [ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 0, 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => self::$oct_06, 'churn_open' => false, 'churn_items' => [] ],
+				'status'      => [ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 0, 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => self::$oct_06, 'churn_open' => false, 'churn_items' => [], 'churn_note' => null ],
 				'available'   => true,
 			],
 			self::read( 'entity', [ 'key' => self::GAZETTE ] )
@@ -389,6 +389,30 @@ final class GraphQueryTest extends TestCase {
 			self::read( 'entity', [ 'key' => self::HARBOR ] )['status']['churn_items']
 		);
 		$this->assertSame( [], self::read( 'entity', [ 'key' => self::PRAIRIE ] )['status']['churn_items'] );
+	}
+
+	/**
+	 * A client's churn note answers on its survivor: a note written on a key
+	 * since merged into Harbor Ledger answers Harbor Ledger's status, the
+	 * newer of the two notes its keys hold, and none on Prairie Signal's.
+	 */
+	public function test_a_merged_keys_churn_note_answers_on_its_survivor(): void {
+		$this->seed_offboarding();
+		$note = static fn ( string $key, string $text, int $at ): array => [ ...Intel_Event::make( 'churn_note_set', [ 'entity_key' => $key, 'text' => $text, 'owner' => 'Dana Reyes', 'next_step' => 'renewal call', 'day' => '2026-11-20' ], 'user:dana-reyes', 'fixture-9' ), 'ts' => (float) $at ];
+		$this->seed(
+			self::entity( 'organization:harbor-ledger-daily', 'Harbor Ledger Daily' ),
+			[
+				$note( self::HARBOR, 'Asked about leaving in March', self::$oct_06 ),
+				$note( 'organization:harbor-ledger-daily', 'Board weighs a cheaper host', self::$oct_13 ),
+			],
+			self::merged( 'organization:harbor-ledger-daily', self::HARBOR )
+		);
+
+		$this->assertSame(
+			[ 'text' => 'Board weighs a cheaper host', 'owner' => 'Dana Reyes', 'next_step' => 'renewal call', 'day' => '2026-11-20', 'by' => 'user:dana-reyes' ],
+			self::read( 'entity', [ 'key' => self::HARBOR ] )['status']['churn_note']
+		);
+		$this->assertNull( self::read( 'entity', [ 'key' => self::PRAIRIE ] )['status']['churn_note'] );
 	}
 
 	/**
@@ -764,6 +788,7 @@ final class GraphQueryTest extends TestCase {
 					[ 'item_key' => 'github:ledger-launch', 'entity_key' => 'organization:tidewater-times', 'name' => 'Tidewater Times', 'type' => 'organization', 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.62, 'evidence' => 'Tidewater Times readers asked for the tool.', 'title' => 'Salem Ledger launches a newsletter tool', 'url' => 'https://news.example/github/ledger-launch' ],
 					[ 'item_key' => 'linear:joint-grant', 'entity_key' => self::LEDGER, 'name' => 'Salem Ledger', 'type' => 'organization', 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.6, 'evidence' => '', 'title' => 'Gazette and Ledger share a grant', 'url' => 'https://news.example/linear/joint-grant' ],
 				],
+				'total'     => 2,
 				'available' => true,
 			],
 			self::read( 'review', [ 'what' => 'links' ] )
@@ -781,10 +806,36 @@ final class GraphQueryTest extends TestCase {
 						],
 					],
 				],
+				'total'     => 1,
 				'available' => true,
 			],
 			self::read( 'review', [ 'what' => 'entities' ] )
 		);
+	}
+
+	/**
+	 * Each queue answers how many it holds beside the page: 41 proposed links
+	 * and 7 proposed entities, each cited by a readable item, answer totals of
+	 * 41 and 7 whatever the page's limit.
+	 */
+	public function test_review_answers_each_queues_total(): void {
+		$events = [ self::entity( self::GAZETTE, 'Harbor Gazette' ) ];
+		for ( $n = 1; $n <= 41; $n++ ) {
+			$events[] = self::item( "feed:dockside-{$n}", "Dockside notice {$n}", 'feed', 'public', self::$oct_06 + $n * 60 );
+			$events[] = self::link( 'link_proposed', "feed:dockside-{$n}", self::GAZETTE, 'mention', 'ner_fuzzy', 0.64, self::$oct_06 + $n * 60 );
+		}
+		for ( $n = 1; $n <= 7; $n++ ) {
+			$events[] = self::proposal( "organization:dock-buyer-{$n}", "Dock Buyer {$n}", "feed:dockside-{$n}" );
+		}
+		$this->seed( ...$events );
+
+		$links    = self::read( 'review', [ 'what' => 'links', 'limit' => 20 ] );
+		$entities = self::read( 'review', [ 'what' => 'entities', 'limit' => 20 ] );
+		$page     = self::read( 'review', [ 'what' => 'entities', 'limit' => 5 ] );
+
+		$this->assertSame( [ 20, 41 ], [ \count( $links['links'] ), $links['total'] ] );
+		$this->assertSame( [ 7, 7 ], [ \count( $entities['entities'] ), $entities['total'] ] );
+		$this->assertSame( [ 5, 7 ], [ \count( $page['entities'] ), $page['total'] ] );
 	}
 
 	/** A proposed link and a proposal written before proposals carried evidence reach the review rows with none. */
@@ -1085,7 +1136,7 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [ 'entities' => [], 'available' => false ], self::read( 'related', [ 'key' => self::GAZETTE, 'limit' => 20 ] ) );
 		$this->assertSame( [ 'claims' => [], 'available' => false ], self::read( 'claims', [ 'key' => self::GAZETTE ] ) );
 		$this->assertSame( [ 'rows' => [], 'available' => false ], self::trends( [ 'by' => 'kind' ] ) );
-		$this->assertSame( [ 'links' => [], 'available' => false ], self::read( 'review', [ 'what' => 'links' ] ) );
+		$this->assertSame( [ 'links' => [], 'total' => 0, 'available' => false ], self::read( 'review', [ 'what' => 'links' ] ) );
 		$this->assertSame( [ 'collections' => [], 'available' => false ], self::read( 'collections', [] ) );
 		$this->assertNotSame( [], self::stderr_lines( $stderr, 'intel-graph' ) );
 	}

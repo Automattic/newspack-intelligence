@@ -94,7 +94,7 @@ final class IntelligenceLensTest extends TestCase {
 		$this->seed( $events );
 		$this->assertSame(
 			[
-				'lenses'    => [ [ 'lens_key' => 'deadline-desk', 'name' => 'Deadline Desk', 'description' => 'Newsroom wins this month.', 'filters' => $filters ] ],
+				'lenses'    => [ [ 'lens_key' => 'deadline-desk', 'name' => 'Deadline Desk', 'description' => 'Newsroom wins this month.', 'filters' => $filters, 'week_items' => 0 ] ],
 				'available' => true,
 			],
 			$this->ci->dispatch( 'lenses', [] )
@@ -350,6 +350,33 @@ final class IntelligenceLensTest extends TestCase {
 		$this->assertSame( [ 'github:ledger-launch', 'linear:joint-grant' ], self::keys( $this->ci->dispatch( 'search', [ '--lens=inside' ] ) ) );
 		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => true, 'sort' => 'importance' ], $this->ci->dispatch( 'search', [ '--lens=sealed' ] ) );
 		$this->assertNotContains( 'churn_signal', \array_column( $this->ci->dispatch( 'trends', [ 'kind', '--lens=inside' ] )['rows'], 'value' ) );
+	}
+
+	/**
+	 * Each lens answers how many items it admits from the last
+	 * NEW_DAYS UTC days, today the last, whatever days it looks back over,
+	 * under its reader's tiers: two launches this week, a launch ten days
+	 * old left out, an award left out by the lens's kind, and a restricted
+	 * launch counted for a holder of the tier alone.
+	 */
+	public function test_lenses_answer_this_weeks_item_count(): void {
+		$launch = static fn ( string $key, string $tier, int $days_ago, string $kind = 'launch' ): array => [
+			...self::item( $key, "Harbor {$kind} {$key}", \explode( ':', $key )[0], $tier, self::$oct_20 - $days_ago * 86400 ),
+			...self::extraction( $key, 'A launch.', $kind, self::$oct_20 - $days_ago * 86400, [] ),
+		];
+		$this->seed(
+			$launch( 'feed:harbor-app-77', 'public', 2 ),
+			$launch( 'linear:harbor-site-78', 'internal', 6 ),
+			$launch( 'feed:harbor-old-79', 'public', 10 ),
+			$launch( 'feed:harbor-prize-80', 'public', 1, 'award' ),
+			$launch( 'unthread:harbor-secret-81', 'restricted', 3 )
+		);
+		$this->save( 'launch-desk', '--kind=launch', '--days=90' );
+
+		$this->assertSame( 7, Graph_Query::NEW_DAYS );
+		$this->assertSame( [ 'launch-desk' => 2 ], \array_column( $this->ci->dispatch( 'lenses', [] )['lenses'], 'week_items', 'lens_key' ) );
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$this->assertSame( [ 'launch-desk' => 3 ], \array_column( $this->ci->dispatch( 'lenses', [] )['lenses'], 'week_items', 'lens_key' ) );
 	}
 
 	/** With no projection to read, the lens list answers unavailable. */

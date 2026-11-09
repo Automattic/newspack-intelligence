@@ -37,7 +37,7 @@ final class IntelligenceCITest extends TestCase {
 
 	private const GAZETTE = 'organization:harbor-gazette';
 
-	private const VERBS = [ 'search', 'entity', 'names', 'timeline', 'related', 'claims', 'trends', 'signals', 'review', 'theme_suggestions', 'collections', 'lenses', 'watches', 'save_watch', 'remove_watch', 'watch_matches', 'mark_seen', 'briefing', 'ask', 'ask_result', 'health' ];
+	private const VERBS = [ 'search', 'entity', 'names', 'timeline', 'related', 'claims', 'trends', 'signals', 'review', 'theme_suggestions', 'collections', 'lenses', 'watches', 'save_watch', 'remove_watch', 'watch_matches', 'mark_seen', 'briefing', 'ask', 'ask_result', 'trace', 'health' ];
 
 	private Intelligence_CI_Node $ci;
 
@@ -74,7 +74,7 @@ final class IntelligenceCITest extends TestCase {
 		$described = \array_column( Intelligence_CI_Node::node_schema()['commands'], 'description', 'name' );
 
 		$this->assertStringContainsString( 'kinds: { churned, churn_signal, feature_request, complaint }', $described['entity'] );
-		$this->assertStringContainsString( 'churn_items: [ { item_key, title, url, source, day } ] } over the items naming it as their subject', $described['entity'] );
+		$this->assertStringContainsString( 'churn_items: [ { item_key, title, url, source, day } ], churn_note: { text, owner, next_step, day, by } } over the items naming it as their subject', $described['entity'] );
 		$this->assertStringContainsString( 'for an entity named with no lens, only the items naming it as their subject', $described['signals'] );
 		$this->assertStringContainsString( 'other never signals on the about axis', $described['signals'] );
 		$this->assertStringContainsString( 'only a value counted before those buckets', $described['signals'] );

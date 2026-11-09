@@ -3,7 +3,10 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Intelligence\Ask_Node;
+use Newspack_Intelligence\Ask_Prompts;
 use Newspack_Intelligence\Intel_Event;
+use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Message;
@@ -294,10 +297,25 @@ final class IntelEventTest extends TestCase {
 		$this->assertSame( [ Intel_Event::ONTOLOGY, [ 'entity_key' ], [], [] ], Intel_Event::KINDS['entity_accepted'] );
 		$this->assertSame( [ 'theme' => 80, 'kind_subject' => 320, 'rank_reason' => 512 ], Intel_Event::KINDS['extraction_recorded'][3] );
 		$this->assertSame( [ 'extraction_recorded', 'link_proposed', 'entity_proposed', 'item_excluded' ], \array_keys( \array_filter( \array_map( static fn ( array $row ): array => $row[3], Intel_Event::KINDS ) ) ) );
-		$this->assertSame( [ 'item_moved' => [ 'tiers' => 1 ], 'ask_answered' => [ 'tiers' => 0 ] ], Intel_Event::LISTS, 'each kind declares its list fields and the fewest members each holds' );
+		$this->assertSame( [ 'item_moved' => [ 'tiers' => 1 ], 'item_uncollected' => [ 'tiers' => 1 ], 'ask_answered' => [ 'tiers' => 0 ] ], Intel_Event::LISTS, 'each kind declares its list fields and the fewest members each holds' );
 		foreach ( Intel_Event::LISTS as $kind => $fields ) {
 			$this->assertSame( [], \array_diff( \array_keys( $fields ), \array_keys( Intel_Event::KINDS[ $kind ][2] ) ), "every list field of {$kind} has a set" );
 		}
+	}
+
+	/**
+	 * An ask's plan and read each fit one line of the asks stream at their
+	 * widest: three searches, each naming every field a plan may, every text
+	 * at its cap in the characters that escape longest, every kind and role.
+	 */
+	public function test_every_ask_step_fits_one_line(): void {
+		$wide   = \str_repeat( "\u{1F600}", \intdiv( Ask_Prompts::PLAN_TEXT_BYTES, 12 ) ) . \str_repeat( 'q', Ask_Prompts::PLAN_TEXT_BYTES % 12 );
+		$search = [ 'words' => $wide, 'lens' => $wide, 'entity' => $wide, 'kinds' => Intel_Event::ITEM_KINDS, 'roles' => Intel_Event::ROLES, 'days' => Intel_Graph_Row_Schema::RETAIN_DAYS ];
+
+		$planned = Intel_Event::make( 'ask_planned', [ 'ask_key' => '2b4d6f8a0c1e3579', 'owner' => 2147483647, 'searches' => \array_fill( 0, Ask_Prompts::MAX_SEARCHES, $search ) ], Intel_Event::machine( 'ask' ), \NEWSPACK_INTELLIGENCE_VERSION );
+		$read    = Intel_Event::make( 'ask_read', [ 'ask_key' => '2b4d6f8a0c1e3579', 'owner' => 2147483647, 'found' => Ask_Node::MAX_ITEMS ], Intel_Event::machine( 'ask' ), \NEWSPACK_INTELLIGENCE_VERSION );
+
+		$this->assertSame( [ Intel_Event::ASKS, Intel_Event::ASKS ], [ Intel_Event::stream_of( $planned['event'] ), Intel_Event::stream_of( $read['event'] ) ] );
 	}
 
 	/**

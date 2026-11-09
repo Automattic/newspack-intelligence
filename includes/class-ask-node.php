@@ -236,8 +236,10 @@ class Ask_Node extends Node {
 
 	/**
 	 * Read the plan's searches as the asker and ask for the answer from what
-	 * they find; a plan or a search refused fails the ask naming why, and
-	 * nothing found is answered at once.
+	 * they find, writing `ask_planned` once the plan validates and `ask_read`
+	 * once the searches are read, so the asker sees each step land; a plan or
+	 * a search refused fails the ask naming why, and nothing found is answered
+	 * at once.
 	 *
 	 * @param string                 $key     The ask.
 	 * @param int                    $owner   The asker.
@@ -252,6 +254,7 @@ class Ask_Node extends Node {
 			$this->fail( $key, $owner, "the plan was refused: {$e->getMessage()}", [] );
 			return;
 		}
+		$this->emit( $this->writer, Intel_Event::machine_event( self::STAGE, 'ask_planned', [ 'ask_key' => $key, 'owner' => $owner, 'searches' => $searches ] ) );
 		try {
 			$read = $this->as_asker( $key, $owner, $searches, static fn (): array => self::read( $searches ) );
 		} catch ( \InvalidArgumentException $e ) {
@@ -262,6 +265,7 @@ class Ask_Node extends Node {
 			return;
 		}
 		[ $keys, $given, $tiers ] = $read;
+		$this->emit( $this->writer, Intel_Event::machine_event( self::STAGE, 'ask_read', [ 'ask_key' => $key, 'owner' => $owner, 'found' => \count( $keys ) ] ) );
 		if ( [] === $keys ) {
 			$this->emit( $this->writer, Intel_Event::machine_event( self::STAGE, 'ask_answered', self::answer_fields( $key, $owner, 0, 0, [], [], [], $searches ) ) );
 			return;

@@ -48,6 +48,9 @@ final class Graph_Curation {
 	/** The bytes a collected title is cut to. */
 	public const TITLE_BYTES = 512;
 
+	/** The longest churn note's text or next step, in written bytes. */
+	public const NOTE_BYTES = 1000;
+
 	/**
 	 * Judge the link a readable item has to an entity, by any role saying
 	 * the item is about it and under any of the entity's keys:
@@ -492,6 +495,41 @@ final class Graph_Curation {
 	}
 
 	/**
+	 * Set a client's churn-risk note on its survivor, replacing any note it
+	 * carries: `churn_note_set`, its text and next step each trimmed and
+	 * bounded at NOTE_BYTES, its owner at NAME_BYTES and its day a Y-m-d
+	 * date, each '' when the call gives none. A text of '' clears the note.
+	 * Refused for an entity the caller cannot see, and for one holding no
+	 * open client role, whose profile shows no status to carry a note.
+	 *
+	 * @param array<array-key,mixed> $args The bound command args: `entity`, `text`, `owner`, `next_step`, `day`.
+	 * @return array<string,mixed> `{ ok, event_id }`.
+	 * @throws \InvalidArgumentException On a value past its cap, a day that is not a date, or an entity that is not an open client the caller sees.
+	 */
+	public static function note_churn( array $args ): array {
+		$key    = self::key( $args, 'entity' );
+		$fields = [
+			'text'      => self::capped( 'text', \trim( Core::as_string( $args['text'] ) ), self::NOTE_BYTES ),
+			'owner'     => self::capped( 'owner', \trim( Core::as_string( $args['owner'] ) ), self::NAME_BYTES ),
+			'next_step' => self::capped( 'next_step', \trim( Core::as_string( $args['next_step'] ) ), self::NOTE_BYTES ),
+			'day'       => \trim( Core::as_string( $args['day'] ) ),
+		];
+		if ( '' !== $fields['day'] ) {
+			Intel_Graph_Row_Schema::day( $fields['day'] );
+		}
+		$client = self::on_graph(
+			static function ( Row_Reader $r, array $g ) use ( $key ): array {
+				$survivor = Graph_Query::seen( $r, $g, $key );
+				if ( ! isset( Graph_Query::open_roles( $r, [ $survivor => Graph_Query::keys_of( $survivor, $g ) ], [ Graph_Query::CLIENT ] )[ $survivor ] ) ) {
+					throw new \InvalidArgumentException( \esc_html( "{$survivor} holds no open " . Graph_Query::CLIENT . ' role' ) );
+				}
+				return [ $survivor ];
+			}
+		)[0];
+		return self::write( 'churn_note_set', [ 'entity_key' => $client ] + $fields );
+	}
+
+	/**
 	 * Include an excluded item again: `item_included`. Refused unless the
 	 * excluded list the caller reads holds it (`Graph_Query::exclusions()`),
 	 * so an exclusion of a tier it does not read is refused exactly as none,
@@ -566,6 +604,29 @@ final class Graph_Curation {
 			}
 		);
 		return self::write( 'item_moved', [ 'collection_key' => $into, 'item_key' => $item_key, 'from' => $collection, 'tiers' => $tiers ] );
+	}
+
+	/**
+	 * Take a saved item out of a folder: `item_uncollected`, naming every
+	 * tier of its copies there the caller reads, so the folder holds none of
+	 * them; a copy of a tier the caller does not read stays, and the item
+	 * stays in every other folder, with its saved copies and marks.
+	 *
+	 * @param array<array-key,mixed> $args The bound command args: `collection`, `item`.
+	 * @return array<string,mixed> `{ ok, event_id }`.
+	 * @throws \InvalidArgumentException As `saved_in()`, or for an excluded item.
+	 */
+	public static function uncollect( array $args ): array {
+		$collection = self::key( $args, 'collection' );
+		$item_key   = self::item_key( $args );
+		$tiers      = Intel_Graph_Row_Schema::read(
+			static function ( Row_Reader $r ) use ( $collection, $item_key ): array {
+				$tiers = self::saved_in( $r, $collection, $item_key );
+				self::unexcluded( $r, $item_key );
+				return $tiers;
+			}
+		);
+		return self::write( 'item_uncollected', [ 'collection_key' => $collection, 'item_key' => $item_key, 'tiers' => $tiers ] );
 	}
 
 	/**

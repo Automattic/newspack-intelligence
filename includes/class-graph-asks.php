@@ -29,6 +29,15 @@ final class Graph_Asks {
 	/** An ask still owed its answer. */
 	public const ASKED = 'asked';
 
+	/** An ask whose plan is written, its searches named. */
+	public const PLANNED = 'planned';
+
+	/** An ask whose searches are read, the items they found counted. */
+	public const READ = 'read';
+
+	/** Each step an ask takes before its outcome => the stage its `ask_steps` row records it at, a later step higher. */
+	public const STAGES = [ self::PLANNED => 1, self::READ => 2 ];
+
 	/** An ask answered. */
 	public const ANSWERED = 'answered';
 
@@ -46,19 +55,21 @@ final class Graph_Asks {
 
 	/**
 	 * The `ask_result` command: the caller's own ask, with the searches it ran
-	 * and how long an ask may wait, `wait_s`. An answer written from an item
+	 * and how long an ask may wait, `wait_s`. One still owed its outcome reads
+	 * as the furthest step it reached, asked, planned or read (`owed()`). An answer written from an item
 	 * of a tier the caller does not read now is withheld whole, since the
 	 * model wrote every sentence from every item it was given; else its
 	 * sentences are kept only while the caller may read every item each
-	 * cites, as one expired or purged since may not be, those items as
-	 * `search` answers them, numbered again in citation order. An ask still
-	 * owed its answer past `Ask_Node::MAX_WAIT_S` reads as failed. A key the
+	 * cites, as one expired, purged or excluded since may not be, those items
+	 * as `search` answers them, numbered again in citation order, and the
+	 * sentences left out so counted as `hidden`. An ask still
+	 * owed its outcome past `Ask_Node::MAX_WAIT_S` reads as failed. A key the
 	 * projection does not hold reads as asked while the projector has not
 	 * read the asks stream to its end, else is refused as `no ask: <key>`,
 	 * whoever else may have asked it.
 	 *
 	 * @param array<array-key,mixed> $args The bound command args: `key`.
-	 * @return array<string,mixed> `{ ask_key, state, reason, found, dropped, sentences, items, searches, wait_s, available }`.
+	 * @return array<string,mixed> `{ ask_key, state, reason, found, dropped, hidden, sentences, items, searches, wait_s, available }`.
 	 * @throws \InvalidArgumentException When the key is not one of the caller's asks.
 	 */
 	public static function result( array $args ): array {
@@ -79,18 +90,23 @@ final class Graph_Asks {
 	 * @throws \InvalidArgumentException As `no ask: <key>`.
 	 */
 	private static function result_of( Row_Reader $r, array $g, string $key, int $owner ): array {
-		$row = $r->rows( 'SELECT state, reason, found, dropped, sentences, items, tiers, searches, ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'asks' ) . ' a WHERE ask_key = ? AND owner = ? ORDER BY ts DESC LIMIT 1', [ $key, $owner ] )[0] ?? null;
+		$steps = Intel_Graph_Row_Schema::all( $r, 'ask_steps' );
+		$row   = $r->rows(
+			"SELECT state, reason, found, dropped, sentences, items, tiers, searches, ts, ( SELECT MAX( stage ) FROM {$steps} s WHERE s.ask_key = a.ask_key ), ( SELECT MAX( found ) FROM {$steps} s WHERE s.ask_key = a.ask_key ),"
+			. " ( SELECT searches FROM {$steps} s WHERE s.ask_key = a.ask_key AND s.stage = ? LIMIT 1 ) FROM " . Intel_Graph_Row_Schema::all( $r, 'asks' ) . ' a WHERE ask_key = ? AND owner = ? ORDER BY ts DESC LIMIT 1',
+			[ self::STAGES[ self::PLANNED ], $key, $owner ]
+		)[0] ?? null;
 		if ( null === $row ) {
 			if ( Projector_Node::behind( Stream_Writer::stream_dir( Intel_Event::ASKS ) ) ) {
 				return self::waiting( $key );
 			}
 			throw new \InvalidArgumentException( \esc_html( "no ask: {$key}" ) );
 		}
-		$searches = Core::arr( \json_decode( Core::as_string( $row[7] ), true ) );
-		$state    = Core::as_string( $row[0] );
-		if ( self::ASKED === $state && Core::$now - Core::as_float( $row[8] ) > Ask_Node::MAX_WAIT_S ) {
-			return [ 'state' => self::FAILED, 'reason' => 'the ask waited past ' . Ask_Node::MAX_WAIT_S . ' seconds; ask again', 'searches' => $searches ] + self::waiting( $key );
+		$state = Core::as_string( $row[0] );
+		if ( self::ASKED === $state ) {
+			return self::owed( $key, $row );
 		}
+		$searches = Core::arr( \json_decode( Core::as_string( $row[7] ), true ) );
 		$tiers = \array_map( Core::as_string( ... ), Core::arr( \json_decode( Core::as_string( $row[6] ), true ) ) );
 		if ( [] !== \array_diff( $tiers, Intel_Tiers::readable() ) ) {
 			return [ 'state' => self::WITHHELD, 'reason' => 'the answer was written from items you can no longer read', 'searches' => $searches ] + self::waiting( $key );
@@ -120,6 +136,7 @@ final class Graph_Asks {
 			'reason'    => Core::as_string( $row[1] ),
 			'found'     => Core::as_int( $row[2] ),
 			'dropped'   => Core::as_int( $row[3] ),
+			'hidden'    => \count( $sentences ) - \count( $kept ),
 			'sentences' => $kept,
 			'items'     => \array_map( static fn ( string $item ): mixed => $readable[ $item ], $items ),
 			'searches'  => $searches,
@@ -166,13 +183,33 @@ final class Graph_Asks {
 	}
 
 	/**
+	 * An ask still owed its outcome: asked, or at the furthest step its
+	 * `ask_steps` rows reached, planned with the searches its plan named, or
+	 * read with how many items they found too; failed once it has waited
+	 * past `Ask_Node::MAX_WAIT_S`, its searches kept.
+	 *
+	 * @param string      $key The ask.
+	 * @param list<mixed> $row Its `asks` row's state through `ts`, then its steps' stage, found and searches.
+	 * @return array<string,mixed>
+	 */
+	private static function owed( string $key, array $row ): array {
+		$stage    = null === $row[9] ? null : Core::as_int( $row[9] );
+		$searches = null === $row[11] ? [] : Core::arr( \json_decode( Core::as_string( $row[11] ), true ) );
+		if ( Core::$now - Core::as_float( $row[8] ) > Ask_Node::MAX_WAIT_S ) {
+			return [ 'state' => self::FAILED, 'reason' => 'the ask waited past ' . Ask_Node::MAX_WAIT_S . ' seconds; ask again', 'searches' => $searches ] + self::waiting( $key );
+		}
+		$state = \array_flip( self::STAGES )[ $stage ] ?? self::ASKED;
+		return \array_replace( self::waiting( $key ), [ 'state' => $state, 'found' => self::READ === $state ? Core::as_int( $row[10] ) : 0, 'searches' => $searches ] );
+	}
+
+	/**
 	 * An ask still owed its answer, with nothing in it.
 	 *
 	 * @param string $key The ask.
 	 * @return array<string,mixed>
 	 */
 	private static function waiting( string $key ): array {
-		return [ 'ask_key' => $key, 'state' => self::ASKED, 'reason' => '', 'found' => 0, 'dropped' => 0, 'sentences' => [], 'items' => [], 'searches' => [], 'wait_s' => Ask_Node::MAX_WAIT_S ];
+		return [ 'ask_key' => $key, 'state' => self::ASKED, 'reason' => '', 'found' => 0, 'dropped' => 0, 'hidden' => 0, 'sentences' => [], 'items' => [], 'searches' => [], 'wait_s' => Ask_Node::MAX_WAIT_S ];
 	}
 
 	/**

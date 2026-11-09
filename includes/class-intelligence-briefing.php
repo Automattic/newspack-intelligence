@@ -51,9 +51,12 @@ final class Intelligence_Briefing {
 	 * Each client and each lens with a signal whose bucket closed inside the
 	 * window, by name, its signals as the signals read answers them: every
 	 * client's in one `Graph_Query::signals_of()`, so the roster's size adds
-	 * no statement, and each lens's through `spikes()`.
+	 * no statement, and each lens's through `spikes()`. A client carrying a
+	 * churn note needs attention whatever it signals, so it is listed too,
+	 * and every client row answers its note, every client's read in one
+	 * `Graph_Query::churn_notes()`.
 	 *
-	 * @return array<string,mixed> `{ clients: [ { entity_key, name, signals } ], lenses: [ { lens_key, name, signals } ], available }`.
+	 * @return array<string,mixed> `{ clients: [ { entity_key, name, signals, churn_note } ], lenses: [ { lens_key, name, signals } ], available }`.
 	 */
 	private static function signals(): array {
 		return Graph_Query::answer(
@@ -65,10 +68,12 @@ final class Intelligence_Briefing {
 				// A bucket closing as the window opens counts.
 				$after   = (float) ( Graph_Query::last_days( self::DAYS )[0] - 1 );
 				$clients = self::holders( $r, $g )[ Graph_Query::CLIENT ];
-				$signals = Graph_Query::signals_of( $r, $g, \array_map( 'strval', \array_keys( $clients ) ), $after );
+				$keys    = \array_map( 'strval', \array_keys( $clients ) );
+				$signals = Graph_Query::signals_of( $r, $g, $keys, $after );
+				$notes   = Graph_Query::churn_notes( $r, \array_combine( $keys, \array_map( static fn ( string $key ): array => Graph_Query::keys_of( $key, $g ), $keys ) ) );
 				$lenses  = static fn ( string $key ): array => Graph_Query::spikes( $r, $g, [ 'lens' => $key ], $after );
 				return [
-					'clients' => self::signaling( $clients, 'entity_key', static fn ( string $key ): array => $signals[ $key ] ),
+					'clients' => self::signaling( $clients, 'entity_key', static fn ( string $key ): array => $signals[ $key ], $notes ),
 					'lenses'  => self::signaling( self::lenses( $r ), 'lens_key', $lenses ),
 				];
 			}
@@ -100,23 +105,27 @@ final class Intelligence_Briefing {
 	}
 
 	/**
-	 * Each subject whose read answers a signal, with its signals.
+	 * Each subject whose read answers a signal, with its signals; given the
+	 * subjects' churn notes, also each subject carrying one, every row then
+	 * answering its `churn_note`, null for none.
 	 *
 	 * @param array<string,string>                        $subjects Each key => its name.
 	 * @param string                                      $field    The field a row names its key under.
 	 * @param \Closure(string): list<array<string,mixed>> $read     A subject's signals.
+	 * @param array<string,array<string,string>>|null     $notes    Each noted subject => its churn note; null for subjects that carry none.
 	 * @return list<array<string,mixed>>
 	 */
-	private static function signaling( array $subjects, string $field, \Closure $read ): array {
+	private static function signaling( array $subjects, string $field, \Closure $read, ?array $notes = null ): array {
 		$rows = [];
 		foreach ( $subjects as $key => $name ) {
 			$signals = $read( $key );
-			if ( [] !== $signals ) {
+			$note    = $notes[ $key ] ?? null;
+			if ( [] !== $signals || null !== $note ) {
 				$rows[] = [
 					$field    => $key,
 					'name'    => $name,
 					'signals' => $signals,
-				];
+				] + ( null === $notes ? [] : [ 'churn_note' => $note ] );
 			}
 		}
 		return $rows;

@@ -180,7 +180,8 @@ stored item. `intel:watches` holds each watch's `watch_matched`,
 8,192 segments), as long as the items they name, so a replay rebuilds every
 match row a retained item still has; the watcher and request-side appends
 both write it. `intel:asks` holds each question an Ask writes as
-`ask_asked` and its outcome, `ask_answered` or `ask_failed`, one line each,
+`ask_asked`, each step it takes, `ask_planned` and `ask_read`, and its
+outcome, `ask_answered` or `ask_failed`, one line each,
 for `Ask_Node::KEEP_DAYS` (7) days (1 MiB segments, both retention rules at
 604,800 seconds): an answer is read while its asker waits on the page or a
 session reads it back, and an answer is not a record the graph keeps, so a
@@ -219,7 +220,11 @@ Row_Table (`Intel_Graph_Row_Schema`), fed by `intel:items:consumer`,
 ask is one `asks` row keyed by its `ask_key`, kept `Ask_Node::KEEP_DAYS` by
 its `ask_day`: an `ask_asked` writes it with `ignore` as `asked`, and an
 `ask_answered` or `ask_failed` sets it whole, its sentences and items as
-JSON, so the outcome stands whichever is projected first.
+JSON, so the outcome stands whichever is projected first. Each step is one
+`ask_steps` row keyed by the ask and its stage (`Graph_Asks::STAGES`,
+`planned` 1 and `read` 2), kept as long by its `ask_day`: an `ask_planned`
+sets its searches, an `ask_read` its found count, so the steps read the
+same in any order and never touch the outcome.
 `projections()` declares, per kind, the row ops it writes and where each column
 comes from — an event field, a literal, a computed closure, or each element of
 a fan-out field — and every value is typed by its column's declared type. Every
@@ -234,7 +239,9 @@ its `filters` as JSON; and for a `watch_removed`, which deletes the one
 `watches` row its `watch_key` keys, a `watch_saved` setting that row whole,
 its three boxes as integers; and for an `item_moved`, which deletes one
 `collected` placement per tier it names from the folder it leaves before
-it writes each one into the folder it enters with `ignore`; and for an
+it writes each one into the folder it enters with `ignore`, and an
+`item_uncollected { collection_key, item_key, tiers }`, which deletes those
+placements from the folder it names and writes none; and for an
 `item_purged`, which deletes the
 rows the items stream has written about its item in each table that stream
 writes (see Purging items). An `item_excluded { item_key, url, title,
@@ -242,7 +249,12 @@ tier, why? }`, an ontology kind, sets the item's one `excluded_items` row
 `( item_key, tier, url, title, why, actor, ts )`, keyed by `item_key`, a
 kept curation table, `why` '' when it names none, and an `item_included {
 item_key }` deletes it, so an exclusion outlives the item's expiry, its
-re-extraction and its purge. An ontology event's `events` row is filed
+re-extraction and its purge. A `churn_note_set { entity_key, text,
+owner, next_step, day }`, an ontology kind, deletes the client's one
+`churn_notes` row `( entity_key, text, owner, next_step, day, actor, ts )`,
+keyed by `entity_key`, a kept curation table, and writes it again unless
+its text is '', so a note replaces the last and an empty one clears it.
+An ontology event's `events` row is filed
 under the item's key when it names no entity, collection, lens, watch or
 `from`. A stand-in, heuristic or gated
 (`Extractor_Node::stands_in()`), is projected by
@@ -261,7 +273,11 @@ and its second on its `extractions` row (`checked_kind`, `kind_verdict`,
 `checked_ts`), each null for one carrying none, the stand-in among them;
 `Intel_Graph_Row_Schema::kind_check_sql()` reads the three back as the
 record. It also writes its `kind_subject`, null for one carrying none, and
-its `rank_reason`, '' for one carrying none, the stand-in among them. A
+its `rank_reason`, '' for one carrying none, the stand-in among them.
+Every record and growth writes its actor on the item's `items` row, every
+extraction its event's `ts` on its `extractions` row, and every
+`cluster_joined` its actor and `ts` on the item's `clusters` row, so each
+step a trace lays out names who took it and when. A
 `theme_merged { from, into }`, an ontology event so it outlives the items
 it touches, sets the `theme_merges` row keyed by `from`, a curation table
 kept whole, and rewrites no item's row: every read of an item's theme reads
@@ -328,7 +344,7 @@ it leads by one range over `start`. A stale start, such as one a
 proposal's name wrote before a person's creation renamed the entity,
 names a norm no current row holds and matches nothing.
 
-**Rebuilding.** `Intel_Graph_Row_Schema::version()`, 11, versions the projection's shape; the substrate discards a file at another version when
+**Rebuilding.** `Intel_Graph_Row_Schema::version()`, 12, versions the projection's shape; the substrate discards a file at another version when
 the Row_Table opens it, and the projector's Consumers resume where they
 stopped, so the graph stays empty until it is rebuilt. A schema change bumps
 the version, and the upgrade runs `wp newspack-intelligence ontology
@@ -1305,10 +1321,11 @@ commands do, because a root-owned segment or IPC file is one the workers
 cannot append to.
 
 **Reads.** `Intelligence_CI` (`intelligence`), mounted on every request
-graph, answers twenty-one read commands, each declaring `read` and its
+graph, answers twenty-two read commands, each declaring `read` and its
 args: `search`, `entity`, `names`, `timeline`, `related`, `claims`, `trends`,
 `signals`, `review`, `collections` and `lenses`, `theme_suggestions`, the
-five watch commands, `briefing`, `ask` and `ask_result` (see Ask) and `health`, below. Each of the first eleven hands its bound args to the
+five watch commands, `briefing`, `ask` and `ask_result` (see Ask), `trace`
+(see Trace) and `health`, below. Each of the first eleven hands its bound args to the
 `Graph_Query` read of the same name, through `Intel_Graph_Row_Schema::read()`
 over every partition's file. A read opens on `Graph_Query::graph()`, which resolves
 the tiers once from `Intel_Tiers::readable()` — `public` and `internal`,
@@ -1363,13 +1380,16 @@ it is an open client (`Graph_Query::open_clients()`, the `oc` CTE a group's
 clients read too), an open client first, then a subject, then by key. `entity` answers `published: { count }`,
 the readable items its own site published, and `timeline --published`
 pages them. For an entity holding an open `client` role, `entity` also
-answers `status: { client_since, kinds, last_item_ts, churn_open, churn_items }` (`Graph_Query::status()`), over the readable items naming it as a subject or a mention (`narrowed()` given `Intel_Event::NAMING_ROLES`): the earliest start of its open `client` rows, read off the role rows the record already holds; `kinds` counting those items extracted as each of `Graph_Query::STATUS_KINDS` (`churned`, `churn_signal`, `feature_request` and `complaint`, in that order) whose kind claims it (`Graph_Query::claimed_by()`): a `churned` or `churn_signal` item its kind subject alone, as its survivor, so "A merges into B", about both as subject, counts against A alone and a churn item naming no kind subject against no one, and any other kind the entity it names as its subject; the time of the newest naming it as their subject, or null; `churn_items`, the `Graph_Query::CITATIONS` (5) newest extracted `churned` (`Graph_Query::CHURNED`) that claim it, dated after `client_since`, newest first, each `{ item_key, title, url, source, day }`, `day` its UTC `Y-m-d`, read once however many partitions hold it; and `churn_open`, whether `churn_items` holds any. Two statements read them. An item whose kind does not claim a client is not counted in any of them. Its window is the whole retention: every readable
+answers `status: { client_since, kinds, last_item_ts, churn_open, churn_items, churn_note }` (`Graph_Query::status()`), over the readable items naming it as a subject or a mention (`narrowed()` given `Intel_Event::NAMING_ROLES`): the earliest start of its open `client` rows, read off the role rows the record already holds; `kinds` counting those items extracted as each of `Graph_Query::STATUS_KINDS` (`churned`, `churn_signal`, `feature_request` and `complaint`, in that order) whose kind claims it (`Graph_Query::claimed_by()`): a `churned` or `churn_signal` item its kind subject alone, as its survivor, so "A merges into B", about both as subject, counts against A alone and a churn item naming no kind subject against no one, and any other kind the entity it names as its subject; the time of the newest naming it as their subject, or null; `churn_items`, the `Graph_Query::CITATIONS` (5) newest extracted `churned` (`Graph_Query::CHURNED`) that claim it, dated after `client_since`, newest first, each `{ item_key, title, url, source, day }`, `day` its UTC `Y-m-d`, read once however many partitions hold it; `churn_open`, whether `churn_items` holds any; and `churn_note`, `{ text, owner, next_step, day, by }`, the newest note any of its keys carries (`Graph_Query::churn_notes()`), `by` the actor who set it, null for none. Three statements read them. An item whose kind does not claim a client is not counted in any of them. Its window is the whole retention: every readable
 item counts, as the timeline pages them, and what its own site published
 does not count in any of them. Any other entity answers `status: null`. The
 status carries no signal: the Entity view reads the latest from its own
 `signals` read. A link's state is the highest-ranked judgment's state
 (`JUDGE_RANK`: a person over an agent), else the machine's state, and a
-`rejected` link counts nowhere. `review links` also leaves out a proposed
+`rejected` link counts nowhere. `review` answers its queue's page and
+`total`, how many rows the queue holds, counted in the statement that reads
+the page, `COUNT(*) OVER ()` for links and a count of the cited proposals
+for entities, which Review's tabs show. `review links` also leaves out a proposed
 link whose entity's survivor is rejected, read as
 `Entity_Index::winning_states()` reads a state, from the highest partition
 holding one, because a `ner_fuzzy` row outlives a re-resolution that did
@@ -1517,12 +1537,16 @@ scope admits, across every partition's rows, so a canonical before or after
 the days asked never moves the story out of them; it is cited by the
 canonical's key, URL and title, and its value is the admitted copy's kind,
 topic or theme, so copies extracted as two kinds count once under each. `lenses` answers `{ lenses: [ { lens_key, name, description,
-filters } ], available }` by name, `filters` always the whole
+filters, week_items } ], available }` by name, `filters` always the whole
 `Graph_Query::unfiltered()` shape — `kinds`, `topics`, `roles`,
 `sources`, `entity`, `days`, `tiers`, `by` and `bucket` — its entity and
 topics only those the caller may see now (`visible()`), so one a judgment
 has since left to restricted items alone is left out for a non-holder.
-Given `lens`, slugged as `save_lens` slugs it, `search` and `trends` read
+`week_items` counts the items the lens admits from the last
+`Graph_Query::NEW_DAYS` (7) UTC days, today the last, as `search` through
+it reads them with those days in place of its own, under the caller's
+tiers narrowed to the lens's (`Graph_Query::new_items()`), which a team
+view's rail shows. Given `lens`, slugged as `save_lens` slugs it, `search` and `trends` read
 through it (`Graph_Query::through()`):
 each list the call names, and `entity`, replaces the lens's value; `since` or
 `until`, or both, replace the lens's `days`, the last that many UTC days
@@ -1536,7 +1560,7 @@ rather than dropping out and widening. A lens that was never saved is refused as
 
 `theme_suggestions` (`Graph_Query::theme_suggestions()`) answers `{
 suggestions: [ { themes: [ { theme, stories }, { theme, stories } ], words,
-shared } ], available }`: of the readable items whose `themes` row, the
+shared } ], total, available }`, `total` every pair it scored: of the readable items whose `themes` row, the
 newest partition's, was retrieved in the last `Graph_Query::GROUP_DAYS`
 (30) days, each theme read as its survivor, the pairs of themes whose items
 share an entity they are about by a `subject` or `mention` link, as a
@@ -1898,13 +1922,15 @@ about more than `MAX_ITEM_CLIENTS` counting none, and each of
 `complaint`) with an item, in that order, each kind's `clients` counting only the open clients its items' kinds claim, a churn kind's its kind subject alone. The statement counting `total`
 counts the summary too, so `changes` reads the window no more often than
 before. `signals`
-answers `{ clients: [ { entity_key, name, signals } ],
+answers `{ clients: [ { entity_key, name, signals, churn_note } ],
 lenses: [ { lens_key, name, signals } ], available }`: every open client,
 by name, in one `signals_of()`, so both axes are read without a statement per client,
+its `churn_note` read for every client in one `churn_notes()`,
 and every lens, by name, through `spikes()` with its lens, each whose
 latest complete bucket closed at or after the window's first instant, so a
 week bucket always shows its latest week and a month bucket only in the
-week its month closed; a subject without a signal is left out. The
+week its month closed; a subject without a signal is left out, but for a
+client carrying a churn note, which needs attention whatever it signals. The
 reader's watches are the `watches` command's, which the Briefing tab reads
 itself.
 
@@ -2039,7 +2065,8 @@ lens or an entity that is not text, blank or past
 one line, a kind or a role that is not a list of the closed vocabulary
 `Graph_Query::LENS_LISTS` gives Search's picker (`Intel_Event::ITEM_KINDS`,
 `Intel_Event::ROLES`), or days that are not a whole number from 1 to
-`RETAIN_DAYS`. Signed in as the asker again, each
+`RETAIN_DAYS`. A plan that validates writes `ask_planned { ask_key,
+owner, searches }` at once. Signed in as the asker again, each
 search becomes the `search` command's own tokens — `words` as `q`, each kind
 as `kind`, each role as `role`, `days` as `since`, the first of that many UTC days ending today
 (`Graph_Query::last_days()`), a lens as `lens`, and a page of
@@ -2053,7 +2080,8 @@ no entity the asker cannot see, so the search narrows to nothing rather
 than widening; a role written as an entity name narrows the same way,
 because the name is not one any entity carries; a search the command refuses, as a lens never saved, fails the
 ask `a search was refused: <why>`. The searches' items interleave, each
-once, at most `MAX_ITEMS`, read to the longest list. Nothing found is
+once, at most `MAX_ITEMS`, read to the longest list, and the read writes
+`ask_read { ask_key, owner, found }`, how many it gives. Nothing found is
 answered at once, `{ found: 0, sentences: [], items: [], tiers: [] }`,
 with no second call. Else the node asks one `ask_answer` call, 1,500
 tokens at temperature 0, its inputs the items numbered from 1, each `{ n,
@@ -2095,15 +2123,19 @@ ask could not be finished`, logged, a cooperative stop propagating
 }` carries a terminal-safe reason cut at 512 bytes and the searches its
 plan ran, none before a plan, and nothing retries. `ask_result <key>`
 answers the caller's own ask as `{ ask_key, state, reason, found, dropped,
-sentences, items, searches, wait_s, available }`, `state` `asked`,
-`answered`, `failed` or `withheld`, and `wait_s` `MAX_WAIT_S`: a key that
+hidden, sentences, items, searches, wait_s, available }`, `state` `asked`,
+`planned`, `read`, `answered`, `failed` or `withheld`, and `wait_s`
+`MAX_WAIT_S`. An ask owed its outcome reads as the furthest step its
+`ask_steps` rows reached (`Graph_Asks::owed()`): `planned` with the
+searches its plan named, `read` with `found` the items they found too. A key that
 is not one of the caller's asks is refused as `no ask: <key>` whoever else
 asked it, so the command never tells the two apart, except that one the
 projection does not hold yet reads as `asked` while a projector's reader
 of the asks stream has not committed its end (`Projector_Node::behind()`),
 so an ask polled before its first flush is owed, not refused. An ask still
-`asked` more than `MAX_WAIT_S` after it was asked reads as `failed`, `the
-ask waited past 900 seconds; ask again`. An answer whose `tiers` hold one
+owed its outcome more than `MAX_WAIT_S` after it was asked reads as
+`failed`, `the ask waited past 900 seconds; ask again`, with the searches
+any plan named. An answer whose `tiers` hold one
 `Intel_Tiers::readable()` does not grant the caller now reads as
 `withheld`, `the answer was written from items you can no longer read`,
 with no sentence, item or count, because the model wrote every sentence
@@ -2112,8 +2144,9 @@ may carry what a restricted one said: a revoked grant withholds every
 answer a restricted item went into. Otherwise it re-reads each cited item
 through `Graph_Query::listed()` under the caller's tiers now, keeps a
 sentence only while the caller may read every item it cites, so an
-expired or purged item hides its sentences, and numbers the kept
-sentences' items again in citation order, each as `search` answers it.
+expired, purged or excluded item hides its sentences, counted as
+`hidden`, and numbers the kept sentences' items again in citation order,
+each as `search` answers it.
 The MCP door offers `intel_ask` and `intel_ask_result` to a read session;
 the door becomes the minting user, so an ask through it is that user's own
 and its answer that user's tiers. The page's `AskBox` heads the Briefing
@@ -2129,6 +2162,28 @@ the answer names, when it stops and says no answer came back within that
 time. It shows the sentences, each followed by its numbers, above the
 cited items as `ItemRow`s in that numbering, or why there is none, and the
 searches the ask ran beneath as plain text, `Searched: …`.
+
+**Trace.** `trace <item>` (`Graph_Trace::trace()`), at `read`, answers how
+one item was read, `{ item_key, title, url, steps, available }`, from the
+rows its events already wrote, in the order the pipeline writes them, each
+step `{ step, at, actor, … }`, `at` a whole UTC second: `recorded { source,
+tier }`, at the item's retrieval, by the actor its `items` row holds; one
+`linked { entity_key, name, role, method, confidence, state, judged }` per
+link, by when it was written, its entity as its survivor, its state the
+highest-ranked judgment's (`Graph_Query::judge_rank()`) unless the link is
+a `publisher` link, which judgments do not govern, `judged` that judgment's `{
+state, actor, at }` or null, and an entity `Graph_Query::visible_of()` hides
+left out, a key whose merge chain does not resolve among them; the newest
+partition's extraction as `extracted`, `gated` (`Extractor_Node::GATED_STAGE`)
+or `heuristic` (`HEURISTIC_STAGE`), by its actor's stage, `{ kind, theme,
+rank_reason }`, its theme as its survivor, null for none; `checked {
+question, kind, verdict }` for an extraction carrying a kind check, at its
+second, its question `fits_kind`; and `clustered { canonical, copies }` from
+the newest partition's `clusters` row, `copies` its cluster's other items
+the caller's `ri` admits, the cluster's key left out, since it is another
+item's. A step the item never took is left out. It reads through `ri`, so
+an item of a tier the caller does not hold, or one a curator excluded, is
+refused as `no item: <key>`, exactly as a missing one.
 
 **Restricted tier.** `Intel_Tiers::CAPABILITY`,
 `newspack_intelligence_restricted`, is a WordPress user capability, granted
@@ -2161,7 +2216,7 @@ dead-letter dir derived from them, are refused (see Streams). Uninstall reaches 
 the substrate possibly inactive, so it and everything it calls use no
 substrate class.
 
-**Curation.** `Intelligence_CI` also answers twenty curation commands, each
+**Curation.** `Intelligence_CI` also answers twenty-two curation commands, each
 declaring `tune`, each writing one ontology event through
 `Stream_Writer::append()` and answering `{ ok, event_id }`; the two
 creations add the key they minted. `Graph_Curation` holds them:
@@ -2170,16 +2225,21 @@ creations add the key they minted. `Graph_Curation` holds them:
 `assert_role`, `end_role`, `tag_topic`, `create_entity` (keyed
 `Intel_Event::entity_key()`), `create_collection` (keyed
 `Intel_Event::collection_key()`, the same slug), `collect` (the item's
-URL, its title and its tier), `mark_used`, `move_item`, `save_lens` (keyed `Intel_Event::lens_key()`,
+URL, its title and its tier), `mark_used`, `move_item`, `uncollect`, `save_lens` (keyed `Intel_Event::lens_key()`,
 the given key slugged, answering it), `remove_lens`, `merge_theme`,
 `exclude_item <item> [--why=<text>]` (the item's URL, its title cut at
 `TITLE_BYTES`, its tier and a `why` bounded at `Intel_Event::WHY_BYTES`
-(512), refused blank) and `include_item <item>`. Every command naming an
+(512), refused blank), `include_item <item>` and `note_churn <entity>
+[--text=] [--owner=] [--next_step=] [--day=]` (a client's churn-risk note
+on its survivor, each field trimmed, the text and next step bounded at
+`Graph_Curation::NOTE_BYTES` (1,000), the owner at `NAME_BYTES` and the
+day a Y-m-d date, each '' when unsaid, a note with no text clearing it,
+refused for an entity holding no open `client` role). Every command naming an
 item key refuses an excluded one as `<item> is excluded from every view`,
 through `Graph_Curation::unexcluded()`, which asks `Graph_Query::kept()`.
 `confirm_link`, `reject_link`, `collect` and `exclude_item` ask after the
 item reads from `ti`, so an item the caller may not read is still `no
-item: <key>`. `mark_used` and `move_item` ask after `saved_in()`, so a copy
+item: <key>`. `mark_used`, `move_item` and `uncollect` ask after `saved_in()`, so a copy
 of a tier the caller does not read is still `not saved`. `include_item`
 refuses `<item> is not excluded` unless `Graph_Query::exclusions()` holds a
 row of the caller's tiers for it. `excluded [--limit]`, also at `tune`, is
@@ -2263,12 +2323,16 @@ item so again replaces the day, and no command takes a mark back. `move_item
 <collection> <item> <into>` writes `item_moved`, naming in `tiers` every
 tier of the item's copies in that folder the caller reads, a list
 `Intel_Event::validate()` refuses unless it holds at least one tier, each
-of `TIERS` and none twice, the one list field `Intel_Event::LISTS`
-declares, for `item_moved` alone, so a move leaves none of the copies the
+of `TIERS` and none twice, a list field `Intel_Event::LISTS` declares,
+so a move leaves none of the copies the
 caller reads behind: a holder's move takes a reader's copy with its own,
 a reader's move leaves a holder's restricted copy where it was, and a
 move whose every tier `into` holds already only empties the folder it
-leaves. Both read the copies through `Graph_Query::saved_tiers()`, the
+leaves. `uncollect <collection> <item>` writes `item_uncollected`, naming
+in `tiers` the same list, so the folder holds none of the copies the
+caller reads, a holder's restricted copy stays where a reader takes the
+item out, and the item stays in every other folder with its saved copies
+and marks. The three read the copies through `Graph_Query::saved_tiers()`, the
 caller's readable tiers at which the folder holds the item, the most
 restricted first, `mark_used` marking that first one, so one saved only at
 a tier the caller does not read is refused as one never saved, and refuse, naming
@@ -2363,8 +2427,8 @@ the `lens` and list args of `intel_search` and `intel_trends` come off the
 schema with no door code, as do `intel_exclude_item`, `intel_include_item`
 and `intel_excluded`, offered to a tune session alone; a variadic arg is a JSON array. So do
 `intel_names`, `intel_signals`, `intel_briefing`, `intel_theme_suggestions`, the five
-watch tools, `intel_ask` and `intel_ask_result`, which a read session is offered, and `intel_merge_theme`,
-`intel_mark_used` and `intel_move_item`, which a session whose role covers
+watch tools, `intel_ask`, `intel_ask_result` and `intel_trace`, which a read session is offered, and `intel_merge_theme`, `intel_note_churn`,
+`intel_mark_used`, `intel_move_item` and `intel_uncollect`, which a session whose role covers
 `tune` is offered;
 the door becomes the session's minting user, so a watch tool answers and
 changes that user's own watches, and a watch saved through it emails that
@@ -3370,7 +3434,7 @@ sibling checkout locally.
 | `includes/` (resolve) | `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node` |
 | `includes/` (clients) | `Client_Importer`, the `Client_Roster` interface, `Graph_Client_Roster`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `LLM_Call_Node`, every model call; the `Asks_Model` trait, its callers' half; `Prompts`, the requests' messages and the parse of their replies; `Operator`, who runs the deployment and what it tracks, which the prompts and the page name; the `Owns_Curl_Frontier` trait, the Curl and Frontier half it shares with `Source_Node` |
-| `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Briefing`, `Intelligence_Health`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
+| `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Briefing`, `Intelligence_Health`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Graph_Trace`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
 | `includes/` (watches) | `Watcher_Node` |
 | `includes/` (ask) | `Ask_Node`, the Ask's worker half; `Graph_Asks`, its `ask` and `ask_result` commands; `Ask_Prompts`, its two prompts and the parse of their replies |
 | `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`, and `items exclude <item> [--why=]`, `items include <item>` and `items excluded [--limit=]`, each running the `intelligence` CI's command through `dispatch()` on the mounted request graph as the MCP door does, exclude and include refusing a run with no `--user`, since an exclusion records who made it, and `excluded` printing one tab-separated, terminal-safe line per item: key, title, URL, who, when (UTC) and why; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed [<file>]`, `ontology reresolve`, `ontology reextract` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; `Eval_CLI_Command` — `wp newspack-intelligence eval <file>`; the `Refuses_Root` trait they share |

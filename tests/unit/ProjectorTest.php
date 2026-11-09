@@ -76,7 +76,7 @@ final class ProjectorTest extends TestCase {
 
 		$day = \intdiv( self::RETRIEVED, 86400 );
 		$this->assertSame(
-			[ [ 1, self::ITEM, 'feed', 'public', 'https://www.HarborGazette.example/2026/10/award/?utm_source=np&b=2&a=1#top', 'harborgazette.example/2026/10/award?a=1&b=2', 'The Harbor Gazette Wins a State Award!', 'harbor gazette wins a state award', 'The Gazette took first place.', 1792900000, self::RETRIEVED, $day, 1792900000 ] ],
+			[ [ 1, self::ITEM, 'feed', 'public', 'https://www.HarborGazette.example/2026/10/award/?utm_source=np&b=2&a=1#top', 'harborgazette.example/2026/10/award?a=1&b=2', 'The Harbor Gazette Wins a State Award!', 'harbor gazette wins a state award', 'The Gazette took first place.', 1792900000, self::RETRIEVED, $day, 1792900000, 'machine:source:feed@9.4.1' ] ],
 			self::graph_rows( 'items' )
 		);
 		$this->assertSame(
@@ -86,7 +86,7 @@ final class ProjectorTest extends TestCase {
 			],
 			self::graph_rows( 'links', 'entity_key' )
 		);
-		$this->assertSame( [ [ 1, self::ITEM, 'Harbor Gazette won the state award.', 'award', 8.0, 6.0, 0.5, null, null, null, null, '', 'machine:extract@9.4.1', $day ] ], self::graph_rows( 'extractions' ) );
+		$this->assertSame( [ [ 1, self::ITEM, 'Harbor Gazette won the state award.', 'award', 8.0, 6.0, 0.5, null, null, null, null, '', 'machine:extract@9.4.1', self::NOW, $day ] ], self::graph_rows( 'extractions' ) );
 		$this->assertSame( [], self::graph_rows( 'entities' ), 'a link writes no entity row; readers join to one' );
 		$this->assertSame( [], self::graph_rows( 'entity_states' ) );
 		$this->assertSame( [], self::graph_rows( 'events' ), 'items-stream events are not kept in events' );
@@ -292,6 +292,27 @@ final class ProjectorTest extends TestCase {
 		);
 
 		$this->assertSame( [ [ 'awards-shortlist', self::ITEM ], [ 'awards-winners', self::ITEM ] ], self::graph_rows( 'collected', 'collection_key', 'collection_key, item_key' ) );
+	}
+
+	/**
+	 * Taking an item out of a folder deletes the placements of the tiers it
+	 * names in that folder alone: the item stays in another folder, a copy of
+	 * a tier it does not name stays where it was, and the saved copies and
+	 * their marks stay for the folders still holding them.
+	 */
+	public function test_an_uncollect_deletes_only_the_tiers_it_names_from_its_folder(): void {
+		$copy = static fn ( string $collection, string $tier ): array => [ 'collection_key' => $collection, 'item_key' => self::ITEM, 'url' => "https://harborgazette.example/{$tier}", 'title' => "Award, {$tier} copy", 'tier' => $tier ];
+		$this->project(
+			[
+				$this->ontology( 'collected', $copy( 'awards-longlist', 'internal' ) ),
+				$this->ontology( 'collected', $copy( 'awards-longlist', 'restricted' ) ),
+				$this->ontology( 'collected', $copy( 'awards-shortlist', 'internal' ) ),
+				$this->ontology( 'item_uncollected', [ 'collection_key' => 'awards-longlist', 'item_key' => self::ITEM, 'tiers' => [ 'internal' ] ] ),
+			]
+		);
+
+		$this->assertSame( [ [ 'awards-longlist', 'restricted' ], [ 'awards-shortlist', 'internal' ] ], self::graph_rows( 'collected', 'collection_key, tier', 'collection_key, tier' ) );
+		$this->assertSame( [ [ 'internal' ], [ 'restricted' ] ], self::graph_rows( 'saved_copies', 'tier', 'tier' ) );
 	}
 
 	/**
@@ -943,7 +964,26 @@ final class ProjectorTest extends TestCase {
 			Intel_Event::make( 'ask_answered', [ 'ask_key' => '6b1d3f5a7c9e2048', 'owner' => 4113, 'found' => 4, 'dropped' => 2, 'sentences' => [ [ 'text' => 'The Gazette won.', 'cites' => [ 1 ] ] ], 'items' => [ self::ITEM ], 'tiers' => [ 'internal' ], 'searches' => [ [ 'kinds' => [ 'award' ], 'days' => 30 ] ] ], 'machine:ask@9.4.1', '' ),
 			Intel_Event::make( 'ask_asked', [ 'ask_key' => '8d2f4a6c1e3b5079', 'owner' => 4113, 'question' => 'Who left?' ], 'user:harbor-desk', '' ),
 			Intel_Event::make( 'ask_failed', [ 'ask_key' => '8d2f4a6c1e3b5079', 'owner' => 4113, 'reason' => 'the model call failed', 'searches' => [] ], 'machine:ask@9.4.1', '' ),
+			Intel_Event::make( 'ask_planned', [ 'ask_key' => '6b1d3f5a7c9e2048', 'owner' => 4113, 'searches' => [ [ 'kinds' => [ 'award' ], 'days' => 30 ] ] ], 'machine:ask@9.4.1', '' ),
+			Intel_Event::make( 'ask_read', [ 'ask_key' => '6b1d3f5a7c9e2048', 'owner' => 4113, 'found' => 4 ], 'machine:ask@9.4.1', '' ),
 		];
+	}
+
+	/**
+	 * Each step an ask takes is one `ask_steps` row, keyed by the ask and its
+	 * stage, so the steps read the same in either order and a replay writes
+	 * the same rows; and they never touch its `asks` row, so an outcome
+	 * projected first stands.
+	 */
+	public function test_an_asks_steps_are_rows_of_their_own_and_never_undo_its_outcome(): void {
+		[ $asked, $answered, , , $planned, $read ] = self::ask_events();
+		$this->project( [ $asked, $answered, $read, $planned, $read ] );
+
+		$this->assertSame(
+			[ [ '6b1d3f5a7c9e2048', 1, 0, '[{"kinds":["award"],"days":30}]' ], [ '6b1d3f5a7c9e2048', 2, 4, '[]' ] ],
+			self::graph_rows( 'ask_steps', 'ask_key, stage', 'ask_key, stage, found, searches' )
+		);
+		$this->assertSame( [ [ 'answered' ] ], self::graph_rows( 'asks', 'ask_key', 'state' ) );
 	}
 
 	/**
@@ -999,6 +1039,8 @@ final class ProjectorTest extends TestCase {
 			$this->ontology( 'lens_saved', [ 'lens_key' => 'old-desk', 'name' => 'Old desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ] ),
 			$this->ontology( 'lens_removed', [ 'lens_key' => 'old-desk' ] ),
 			$this->ontology( 'theme_merged', [ 'from' => 'kiosk offboarding from platform', 'into' => 'kiosk offboarding' ] ),
+			$this->ontology( 'item_uncollected', [ 'collection_key' => 'awards-shortlist', 'item_key' => self::ITEM, 'tiers' => [ 'internal' ] ] ),
+			$this->ontology( 'churn_note_set', [ 'entity_key' => self::GAZETTE, 'text' => 'Weighing a cheaper host', 'owner' => 'Dana Reyes', 'next_step' => 'renewal call', 'day' => '2026-11-20' ] ),
 			$this->ontology( 'item_excluded', [ 'item_key' => self::ITEM, 'url' => 'https://harborgazette.example/a', 'title' => 'Award', 'tier' => 'public', 'why' => 'Shown twice.' ] ),
 			$this->ontology( 'item_excluded', [ 'item_key' => self::PURGED, 'url' => 'https://linear.example/WREN-4410', 'title' => 'Wren ticket', 'tier' => 'internal' ] ),
 			$this->ontology( 'item_included', [ 'item_key' => self::PURGED ] ),

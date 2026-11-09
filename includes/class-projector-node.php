@@ -68,9 +68,16 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	/**
 	 * Each kind's op specs, built once: `[ verb, table, columns, fan-out? ]`.
 	 *
-	 * @var array<string,list<array{0:string,1:string,2:list<mixed>,3?:string|\Closure}>>|null
+	 * @var array<string,list<array{0:string,1:string,2:array<mixed>,3?:string|\Closure}>>|null
 	 */
 	private static ?array $projections = null;
+
+	/**
+	 * The `events` row's op spec, built once.
+	 *
+	 * @var array{0:string,1:string,2:list<mixed>}|null
+	 */
+	private static ?array $event_row = null;
 
 	/** @var array<string,array<int|string,string>> Each table's column types, by position and by name. */
 	private static array $types = [];
@@ -135,7 +142,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 		}
 		++$this->counter;
 		$event = Intel_Event::from_message( $message );
-		foreach ( self::projections()[ self::projected_as( $event ) ] as $spec ) {
+		foreach ( self::specs_of( $event ) as $spec ) {
 			foreach ( self::ops( $event, $spec ) as $op ) {
 				$this->rows[] = $op;
 				foreach ( $op[2] as $value ) {
@@ -155,6 +162,18 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 */
 	protected function fire(): void {
 		$this->flush();
+	}
+
+	/**
+	 * The op specs an event is written by: its projection's, and for an
+	 * ontology kind the `events` row every one of them also writes.
+	 *
+	 * @param array<array-key,mixed> $event A validated event.
+	 * @return list<array{0:string,1:string,2:array<mixed>,3?:string|\Closure}>
+	 */
+	private static function specs_of( array $event ): array {
+		$specs = self::projections()[ self::projected_as( $event ) ];
+		return Intel_Event::ONTOLOGY === Intel_Event::stream_of( Core::as_string( $event['event'] ) ) ? [ ...$specs, self::event_row() ] : $specs;
 	}
 
 	/**
@@ -204,9 +223,15 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * extraction carrying no rank reason projects one of '' and a null kind
 	 * subject. An ask writes
 	 * its row with `ignore`, so its answer or failure, a whole-row `set`,
-	 * stands whichever lands first. An exclusion sets its item's one
+	 * stands whichever lands first; its plan and its read each set an
+	 * `ask_steps` row of their own, keyed by the ask and the step's stage, so
+	 * neither touches the outcome and the steps read the same in any order. An exclusion sets its item's one
 	 * `excluded_items` row, its why '' when it names none, and an inclusion
-	 * deletes it. Every ontology kind also writes its `events` row, under
+	 * deletes it. A removal from a folder deletes the placement of each tier
+	 * it names there, as a move deletes the ones it leaves, and keeps the saved
+	 * copies. A churn note deletes its client's `churn_notes` row and,
+	 * unless its text is '', writes it again, so an empty note clears it.
+	 * Every ontology kind also writes its `events` row, under
 	 * the key it names, an item's when it names nothing else.
 	 *
 	 * @return array<string,list<array{0:string,1:string,2:array<mixed>,3?:string|\Closure}>>
@@ -225,9 +250,9 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			$starts( 'name' ),
 		];
 		$state_set = static fn ( string $state ): array => [ [ 'set', 'entity_states', [ 'entity_key', [ $state ], 'actor', 'ts' ] ] ];
-		$item       = [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ), static fn ( array $e ): int => Intel_Graph_Row_Schema::item_time( Core::as_int( $e['item_ts'] ), Core::as_int( $e['retrieved_ts'] ) ) ];
+		$item       = [ [ null ], 'item_key', 'source', 'tier', 'url', static fn ( array $e ): string => Url_Canon::of( Core::as_string( $e['url'] ) ), 'title', static fn ( array $e ): string => Entity_Index::norm( Core::as_string( $e['title'] ) ), 'body', 'item_ts', 'retrieved_ts', $day( 'retrieved_ts' ), static fn ( array $e ): int => Intel_Graph_Row_Schema::item_time( Core::as_int( $e['item_ts'] ), Core::as_int( $e['retrieved_ts'] ) ), 'actor' ];
 		$checked    = \array_map( static fn ( string $member ): \Closure => static fn ( array $e ): mixed => Core::arr( $e['kind_check'] ?? null )[ $member ] ?? null, \array_keys( Intel_Event::RECORDS['extraction_recorded']['kind_check'] ) );
-		$extraction = [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', ...$checked, static fn ( array $e ): ?string => isset( $e['kind_subject'] ) ? Core::as_string( $e['kind_subject'] ) : null, static fn ( array $e ): string => Core::as_string( $e['rank_reason'] ?? '' ), 'actor', $day( 'retrieved_ts' ) ];
+		$extraction = [ [ null ], 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', ...$checked, static fn ( array $e ): ?string => isset( $e['kind_subject'] ) ? Core::as_string( $e['kind_subject'] ) : null, static fn ( array $e ): string => Core::as_string( $e['rank_reason'] ?? '' ), 'actor', 'ts', $day( 'retrieved_ts' ) ];
 		$judgment = static fn ( string $state ): array => [ [ 'set', 'judgments', [ 'item_key', 'entity_key', static fn ( array $e ): string => \explode( ':', Core::as_string( $e['actor'] ), 2 )[0], [ $state ], 'actor', 'item_url', 'ts' ] ] ];
 		$lines    = [ 'ignore', 'boilerplate', [ 'source', self::EACH, 'item_key', $day( 'retrieved_ts' ) ], static fn ( array $e ): array => Entity_Index::line_hashes( Core::as_string( $e['body'] ) ) ];
 		$table    = [
@@ -249,7 +274,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			'link_proposed'       => $link( 'proposed', static fn ( array $e ): string => Core::as_string( $e['evidence'] ?? '' ) ),
 			'link_retracted'      => [ [ 'delete', 'links', [ 'item_key' => 'item_key', 'entity_key' => 'entity_key', 'role' => 'role' ] ] ],
 			'claim_asserted'      => [ [ 'set', 'claims', [ 'item_key', 'ord', 'subject_key', 'predicate', 'object_key', 'object_text', 'confidence', $day( 'retrieved_ts' ) ] ] ],
-			'cluster_joined'      => [ [ 'set', 'clusters', [ 'item_key', 'cluster_key', $day( 'retrieved_ts' ) ] ] ],
+			'cluster_joined'      => [ [ 'set', 'clusters', [ 'item_key', 'cluster_key', 'actor', 'ts', $day( 'retrieved_ts' ) ] ] ],
 			'cluster_superseded'  => [ [ 'set', 'canonicals', [ 'cluster_key', 'canonical_item_key', 'rank', $day( 'retrieved_ts' ) ] ] ],
 			'item_purged'         => [
 				[ 'delete', 'items', [ 'item_key' => 'item_key' ] ],
@@ -285,20 +310,38 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 				[ 'delete', 'collected', [ 'collection_key' => 'from', 'item_key' => 'item_key', 'tier' => self::EACH ], 'tiers' ],
 				[ 'ignore', 'collected', [ 'collection_key', 'item_key', self::EACH, 'actor', 'ts' ], 'tiers' ],
 			],
+			'item_uncollected'    => [ [ 'delete', 'collected', [ 'collection_key' => 'collection_key', 'item_key' => 'item_key', 'tier' => self::EACH ], 'tiers' ] ],
 			'item_used'           => [ [ 'set', 'item_marks', [ 'item_key', 'tier', 'mark', 'day', 'actor', 'ts' ] ] ],
 			'lens_saved'          => [ [ 'set', 'lenses', [ 'lens_key', 'name', 'description', static fn ( array $e ): string => self::json( $e['filters'] ), 'actor', 'ts' ] ] ],
 			'lens_removed'        => [ [ 'delete', 'lenses', [ 'lens_key' => 'lens_key' ] ] ],
 			'theme_merged'        => [ [ 'set', 'theme_merges', [ 'from', 'into', 'actor', 'ts' ] ] ],
+			'churn_note_set'      => [
+				[ 'delete', 'churn_notes', [ 'entity_key' => 'entity_key' ] ],
+				[ 'set', 'churn_notes', [ 'entity_key', self::EACH, 'owner', 'next_step', 'day', 'actor', 'ts' ], static fn ( array $e ): array => '' === $e['text'] ? [] : [ $e['text'] ] ],
+			],
 			'watch_saved'         => [ [ 'set', 'watches', [ 'watch_key', 'owner', 'name', 'target_kind', 'target_key', 'digest', 'instant', 'inbox', 'actor', 'ts' ] ] ],
 			'watch_removed'       => [ [ 'delete', 'watches', [ 'watch_key' => 'watch_key' ] ] ],
 			'watch_matched'       => [ [ 'set', 'watch_matches', [ 'watch_key', 'owner', 'item_key', 'at', 'ts', 'quiet', $day( 'retrieved_ts' ) ] ] ],
 			'watch_seen'          => [ [ 'set', 'watch_seen', [ 'watch_key', 'owner', 'item_key', 'ts', $day( 'retrieved_ts' ) ] ] ],
 			'watch_delivered'     => [ [ 'set', 'watch_deliveries', [ 'owner', 'mode', 'watch_key', 'through', 'ts' ] ] ],
 			'ask_asked'           => [ [ 'ignore', 'asks', [ 'ask_key', 'owner', [ Graph_Asks::ASKED ], [ '' ], [ 0 ], [ 0 ], [ '[]' ], [ '[]' ], [ '[]' ], [ '[]' ], 'ts', $day( 'ts' ) ] ] ],
+			'ask_planned'         => [ [ 'set', 'ask_steps', [ 'ask_key', [ Graph_Asks::STAGES[ Graph_Asks::PLANNED ] ], [ 0 ], $json( 'searches' ), 'ts', $day( 'ts' ) ] ] ],
+			'ask_read'            => [ [ 'set', 'ask_steps', [ 'ask_key', [ Graph_Asks::STAGES[ Graph_Asks::READ ] ], 'found', [ '[]' ], 'ts', $day( 'ts' ) ] ] ],
 			'ask_answered'        => [ [ 'set', 'asks', [ 'ask_key', 'owner', [ Graph_Asks::ANSWERED ], [ '' ], 'found', 'dropped', $json( 'sentences' ), $json( 'items' ), $json( 'tiers' ), $json( 'searches' ), 'ts', $day( 'ts' ) ] ] ],
 			'ask_failed'          => [ [ 'set', 'asks', [ 'ask_key', 'owner', [ Graph_Asks::FAILED ], 'reason', [ 0 ], [ 0 ], [ '[]' ], [ '[]' ], [ '[]' ], $json( 'searches' ), 'ts', $day( 'ts' ) ] ] ],
 		];
-		$event_row = [
+		$table[ self::STAND_IN ] = [ [ 'ignore', 'extractions', $extraction ] ];
+		return self::$projections = $table;
+	}
+
+	/**
+	 * The op spec of the `events` row every ontology kind writes, under the
+	 * key it names, an item's when it names nothing else.
+	 *
+	 * @return array{0:string,1:string,2:list<mixed>}
+	 */
+	private static function event_row(): array {
+		return self::$event_row ??= [
 			'ignore',
 			'events',
 			[
@@ -311,13 +354,6 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 				'ts',
 			],
 		];
-		foreach ( $table as $kind => $specs ) {
-			if ( Intel_Event::ONTOLOGY === Intel_Event::stream_of( $kind ) ) {
-				$table[ $kind ][] = $event_row;
-			}
-		}
-		$table[ self::STAND_IN ] = [ [ 'ignore', 'extractions', $extraction ] ];
-		return self::$projections = $table;
 	}
 
 	/**

@@ -103,6 +103,21 @@ final class ThemeSuggestionsTest extends TestCase {
 	}
 
 	/**
+	 * The answer counts every pair it found, though it lists the closest
+	 * THEME_SUGGESTIONS: six themes sharing two words and an entity make
+	 * fifteen pairs.
+	 */
+	public function test_the_suggestions_answer_their_total(): void {
+		foreach ( [ 'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta' ] as $n => $name ) {
+			$this->seed( ...$this->ticket( "linear:DRG-{$n}", "dredge permit {$name}", self::$oct_13, [ self::ACME ] ) );
+		}
+
+		$answer = $this->ci->dispatch( 'theme_suggestions', [] );
+
+		$this->assertSame( [ Graph_Query::THEME_SUGGESTIONS, 15 ], [ \count( $answer['suggestions'] ), $answer['total'] ] );
+	}
+
+	/**
 	 * A word more than SUGGESTION_WORD_MAX_THEMES themes hold pairs none of
 	 * them; a rarer word two of them also share still pairs those two.
 	 */
@@ -162,7 +177,7 @@ final class ThemeSuggestionsTest extends TestCase {
 		Intel_Graph_Row_Schema::$read_rows = static fn (): never => throw new \Newspack_Nodes\Table_Unavailable( 'no graph in this test' );
 		$this->capture_stderr();
 
-		$this->assertSame( [ 'suggestions' => [], 'available' => false ], $this->ci->dispatch( 'theme_suggestions', [] ) );
+		$this->assertSame( [ 'suggestions' => [], 'total' => 0, 'available' => false ], $this->ci->dispatch( 'theme_suggestions', [] ) );
 	}
 
 	/**

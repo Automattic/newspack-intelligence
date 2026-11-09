@@ -382,7 +382,7 @@ final class PublisherSignalsTest extends TestCase {
 		$this->about( 'churned', [ 7 => 5 ] );
 
 		$this->assertSame(
-			[ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 5, 'churn_signal' => 4, 'feature_request' => 2, 'complaint' => 3 ], 'last_item_ts' => self::THIS_WEEK - 2 * self::WEEK + 3 * 86400 + 2 * 60, 'churn_open' => true, 'churn_items' => \array_map( static fn ( int $n ): array => [ 'item_key' => "github:churned-7-{$n}", 'title' => "churned {$n} about the Courier", 'url' => self::url( "github:churned-7-{$n}" ), 'source' => 'github', 'day' => \gmdate( 'Y-m-d', self::THIS_WEEK - 7 * self::WEEK + 3 * 86400 ) ], [ 5, 4, 3, 2, 1 ] ) ],
+			[ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 5, 'churn_signal' => 4, 'feature_request' => 2, 'complaint' => 3 ], 'last_item_ts' => self::THIS_WEEK - 2 * self::WEEK + 3 * 86400 + 2 * 60, 'churn_open' => true, 'churn_items' => \array_map( static fn ( int $n ): array => [ 'item_key' => "github:churned-7-{$n}", 'title' => "churned {$n} about the Courier", 'url' => self::url( "github:churned-7-{$n}" ), 'source' => 'github', 'day' => \gmdate( 'Y-m-d', self::THIS_WEEK - 7 * self::WEEK + 3 * 86400 ) ], [ 5, 4, 3, 2, 1 ] ), 'churn_note' => null ],
 			$this->ci->dispatch( 'entity', [ self::COURIER ] )['status']
 		);
 	}
@@ -390,7 +390,7 @@ final class PublisherSignalsTest extends TestCase {
 	/** A client with nothing about it answers its start alone. */
 	public function test_a_quiet_clients_status_answers_its_start_alone(): void {
 		$this->assertSame(
-			[ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 0, 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => null, 'churn_open' => false, 'churn_items' => [] ],
+			[ 'client_since' => self::$jan_01, 'kinds' => [ 'churned' => 0, 'churn_signal' => 0, 'feature_request' => 0, 'complaint' => 0 ], 'last_item_ts' => null, 'churn_open' => false, 'churn_items' => [], 'churn_note' => null ],
 			$this->ci->dispatch( 'entity', [ self::TERN ] )['status']
 		);
 	}

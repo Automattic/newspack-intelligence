@@ -75,7 +75,7 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		$this->assertArrayNotHasKey( 'intel_health', $tools );
 		$this->assertArrayNotHasKey( 'intel_seed_ontology', $tools );
 		$this->assertArrayNotHasKey( 'intel_reresolve', $tools );
-		$this->assertCount( 41, $tools );
+		$this->assertCount( 44, $tools );
 		$this->assertSame( [ 'item' ], $tools['intel_exclude_item']['inputSchema']['required'] );
 		$this->assertSame( [ 'item' ], $tools['intel_include_item']['inputSchema']['required'] );
 		$this->assertSame( [], \array_intersect( [ 'intel_exclude_item', 'intel_include_item', 'intel_excluded' ], \array_keys( $this->listed( ...$this->door( Capabilities::READ ) ) ) ), 'a read session is offered no exclusion' );
@@ -105,7 +105,7 @@ final class IntelligenceMcpDoorTest extends TestCase {
 	public function test_a_read_scope_lists_no_curation_tool(): void {
 		$names = \array_keys( $this->listed( ...$this->door( Capabilities::READ ) ) );
 
-		$this->assertSame( [ 'intel_search', 'intel_entity', 'intel_names', 'intel_timeline', 'intel_related', 'intel_claims', 'intel_trends', 'intel_signals', 'intel_review', 'intel_theme_suggestions', 'intel_collections', 'intel_lenses', 'intel_watches', 'intel_save_watch', 'intel_remove_watch', 'intel_watch_matches', 'intel_mark_seen', 'intel_briefing', 'intel_ask', 'intel_ask_result' ], $names );
+		$this->assertSame( [ 'intel_search', 'intel_entity', 'intel_names', 'intel_timeline', 'intel_related', 'intel_claims', 'intel_trends', 'intel_signals', 'intel_review', 'intel_theme_suggestions', 'intel_collections', 'intel_lenses', 'intel_watches', 'intel_save_watch', 'intel_remove_watch', 'intel_watch_matches', 'intel_mark_seen', 'intel_briefing', 'intel_ask', 'intel_ask_result', 'intel_trace' ], $names );
 		[ $door, $bearer ] = $this->door( Capabilities::READ );
 		$refused           = $this->call( $door, $bearer, 'intel_confirm_link', [ 'item' => 'feed:gazette-award', 'entity' => self::GAZETTE ] );
 		$this->assertSame( 'Unknown tool: intel_confirm_link', $refused['error']['message'] );
@@ -128,6 +128,19 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		$key    = \json_decode( \substr( $text, \strlen( "<site-data>\n" ), -\strlen( "\n</site-data>" ) ), true )['ask_key'];
 		$events = self::events_in( \Newspack_Nodes\Config::get_logs_directory() . '/intel-asks.p0' );
 		$this->assertSame( [ $key, 5129, 'user:kinsey-desk' ], [ $events[0]['ask_key'], $events[0]['owner'], $events[0]['actor'] ] );
+	}
+
+	/**
+	 * A read session is offered `intel_trace`, taking the item, and its
+	 * answer is the item's record as the session's user reads it, fenced.
+	 */
+	public function test_mcp_door_offers_intel_trace_to_a_read_session(): void {
+		$this->seed_world();
+
+		$this->assertSame( [ 'item' ], $this->listed( ...$this->door( Capabilities::READ ) )['intel_trace']['inputSchema']['required'] );
+		$trace = $this->tool_answer( 'intel_trace', [ 'item' => 'github:ledger-launch' ] );
+
+		$this->assertSame( [ 'github:ledger-launch', [ 'recorded', 'linked', 'linked', 'extracted' ] ], [ $trace['item_key'], \array_column( $trace['steps'], 'step' ) ] );
 	}
 
 	/** The seed is an operator's fix on the Intelligence page, so a tune session cannot call it through the door. */

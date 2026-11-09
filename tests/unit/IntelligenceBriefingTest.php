@@ -398,6 +398,32 @@ final class IntelligenceBriefingTest extends TestCase {
 		$this->assertSame( $this->ci->dispatch( 'signals', [ '--entity=' . self::PLOVER ] )['signals'], $answer['clients'][0]['signals'] );
 	}
 
+	/**
+	 * A client carrying a churn note needs attention whatever it signals:
+	 * Harbor Ledger, signaling nothing, is listed with its note, a client
+	 * signaling and noting nothing is left out, and a client carrying a
+	 * signal answers a null note beside it.
+	 */
+	public function test_a_noted_client_needs_attention(): void {
+		$harbor = 'organization:harbor-ledger';
+		$this->published( self::SEDGE, [ 0 => 5, 1 => 5, 2 => 5, 3 => 5, 4 => 5, 5 => 5, 6 => 5, 7 => 5, 8 => 5, 9 => 5 ] );
+		$this->published( self::PLOVER, [ 1 => 2, 2 => 4, 3 => 4, 4 => 4, 5 => 4, 6 => 4, 7 => 4, 8 => 4, 9 => 4 ] );
+		$this->seed(
+			self::entity( $harbor, 'Harbor Ledger' ),
+			self::role( $harbor, 'client' ),
+			[ Intel_Event::make( 'churn_note_set', [ 'entity_key' => $harbor, 'text' => 'Asked for a renewal quote', 'owner' => 'Dana Reyes', 'next_step' => 'renewal call', 'day' => '2026-11-20' ], 'user:dana-reyes', 'fixture-9' ) ]
+		);
+
+		$clients = $this->ci->dispatch( 'briefing', [ 'signals' ] )['clients'];
+
+		$this->assertSame( [ 'Harbor Ledger', 'Plover Quillpost' ], \array_column( $clients, 'name' ) );
+		$this->assertSame(
+			[ 'entity_key' => $harbor, 'name' => 'Harbor Ledger', 'signals' => [], 'churn_note' => [ 'text' => 'Asked for a renewal quote', 'owner' => 'Dana Reyes', 'next_step' => 'renewal call', 'day' => '2026-11-20', 'by' => 'user:dana-reyes' ] ],
+			$clients[0]
+		);
+		$this->assertNull( $clients[1]['churn_note'] );
+	}
+
 	/** A week in which every client's output fell drops no client, as the signals read decides. */
 	public function test_an_outage_week_drops_no_client(): void {
 		$this->published( self::SEDGE, [ 1 => 1, 2 => 5, 3 => 5, 4 => 5, 5 => 5, 6 => 5, 7 => 5, 8 => 5, 9 => 5 ] );

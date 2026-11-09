@@ -5,6 +5,7 @@ namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Ask_Node;
 use Newspack_Intelligence\Ask_Prompts;
+use Newspack_Intelligence\Graph_Asks;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Prompts;
@@ -48,6 +49,9 @@ final class AskNodeTest extends TestCase {
 	private const PRIOR = 4417;
 
 	private const KEY = '5d1e9a7c3b2f4086';
+
+	/** The events an ask writes as it takes each step before its outcome. */
+	private const STEPS = [ 'ask_planned', 'ask_read' ];
 
 	private const QUESTION = 'What have our clients been winning or launching lately?';
 
@@ -198,6 +202,44 @@ final class AskNodeTest extends TestCase {
 		$this->assertSame( [ [ 'text' => 'The Ledger launched a newsletter tool.', 'cites' => [ 1 ] ], [ 'text' => 'Both newsrooms had a strong month.', 'cites' => [ 1, 2 ] ] ], $answered['sentences'] );
 		$this->assertSame( 3, $answered['found'] );
 		$this->assertNotContains( self::TICKET, $answered['items'] );
+	}
+
+	/**
+	 * Each step writes its event as it ends: the plan its searches, the read
+	 * the items it found, and then the answer.
+	 */
+	public function test_each_step_writes_its_event(): void {
+		$this->out->outcomes[ Ask_Prompts::PLAN ]   = [ 'content' => self::PLAN ];
+		$this->out->outcomes[ Ask_Prompts::ANSWER ] = [ 'content' => 'The Ledger launched a newsletter tool [3].' ];
+
+		$this->asked( self::HOLDER );
+
+		$this->assertSame( [ 'ask_planned', 'ask_read', 'ask_answered' ], \array_column( $this->written(), 'event' ) );
+		$this->assertSame(
+			[
+				[ 'event' => 'ask_planned', 'ask_key' => self::KEY, 'owner' => self::HOLDER, 'searches' => [ [ 'kinds' => [ 'award', 'launch', 'churn_signal' ], 'days' => 30 ] ] ],
+				[ 'event' => 'ask_read', 'ask_key' => self::KEY, 'owner' => self::HOLDER, 'found' => 3 ],
+			],
+			$this->steps()
+		);
+	}
+
+	/**
+	 * The answer the asker reads back names the searches the plan ran, as the
+	 * plan named them once validated.
+	 */
+	public function test_the_answer_names_its_searches(): void {
+		$this->out->outcomes[ Ask_Prompts::PLAN ]   = [ 'content' => '{"searches":[{"words":"newsletter","days":30},{"kinds":["feature_request"],"days":30}]}' ];
+		$this->out->outcomes[ Ask_Prompts::ANSWER ] = [ 'content' => 'The Ledger launched a newsletter tool [1].' ];
+
+		$this->asked( self::READER );
+		$this->seed(
+			[ Intel_Event::make( 'ask_asked', [ 'ask_key' => self::KEY, 'owner' => self::READER, 'question' => self::QUESTION ], 'user:tide-reader', 'fixture-9' ) ],
+			\array_map( static fn ( array $message ): array => $message[ Message::VALUE ], $this->out->captured )
+		);
+		$GLOBALS['_current_user_id'] = self::READER;
+
+		$this->assertSame( [ [ 'words' => 'newsletter', 'days' => 30 ], [ 'kinds' => [ 'feature_request' ], 'days' => 30 ] ], Graph_Asks::result( [ 'key' => self::KEY ] )['searches'] );
 	}
 
 	/** Searches that find nothing the asker reads answer that plainly, and make no second call. */
@@ -427,13 +469,13 @@ final class AskNodeTest extends TestCase {
 
 		$this->asked( self::READER );
 
-		$answered = $this->out->captured[0][ Message::VALUE ];
+		$answered = \end( $this->out->captured )[ Message::VALUE ];
 		$this->assertSame( 'ask_answered', $answered['event'], (string) \wp_json_encode( $answered['reason'] ?? null ) );
 		$this->assertGreaterThan( 0, \count( $answered['sentences'] ) );
 		$this->assertLessThan( Ask_Prompts::MAX_SENTENCES, \count( $answered['sentences'] ) );
 		$this->assertSame( 30, \count( $answered['sentences'] ) + $answered['dropped'] );
 		$this->assertSame( [ [ 'kinds' => [ 'award', 'launch', 'churn_signal' ], 'days' => 30 ] ], $answered['searches'], 'the plan stays; sentences go first' );
-		$this->assertLessThanOrEqual( Partition_Node::MAX_LINE_SIZE, Message::packed_size( $this->out->captured[0] ) + 1 );
+		$this->assertLessThanOrEqual( Partition_Node::MAX_LINE_SIZE, Message::packed_size( \end( $this->out->captured ) ) + 1 );
 	}
 
 	/**
@@ -612,7 +654,7 @@ final class AskNodeTest extends TestCase {
 		Core::$now = (float) ( self::$oct_20 + 60 );
 		$held->fill( self::reply( $answer, 'The Gazette won a state award [1].' ) );
 
-		$this->assertSame( [], \array_filter( $this->out->captured, static fn ( array $message ): bool => 'intel:writer' === $message[ Message::TO ] ) );
+		$this->assertSame( [], $this->outcomes() );
 		$this->assertCount( 1, self::stderr_lines( $stderr, 'dropping an ask that waited past ' . Ask_Node::MAX_WAIT_S . ' seconds: ' . self::KEY ) );
 	}
 
@@ -715,15 +757,25 @@ final class AskNodeTest extends TestCase {
 		return $this->out->requests[ $at ][ Message::VALUE ]['carry']['keys'];
 	}
 
-	/** @return list<array<string,mixed>> Each outcome written to intel:writer, less its envelope. */
+	/** @return list<array<string,mixed>> Each outcome written to intel:writer, an answer or a failure, less its envelope. */
 	private function outcomes(): array {
-		$outcomes = [];
-		foreach ( $this->out->captured as $message ) {
-			$this->assertSame( [ Message::TM_STRUCT, 'intel:writer' ], [ $message[ Message::TYPE ], $message[ Message::TO ] ] );
+		return \array_values( \array_filter( $this->written(), static fn ( array $event ): bool => ! \in_array( $event['event'], self::STEPS, true ) ) );
+	}
+
+	/** @return list<array<string,mixed>> Each step written to intel:writer as the ask took it, less its envelope. */
+	private function steps(): array {
+		return \array_values( \array_filter( $this->written(), static fn ( array $event ): bool => \in_array( $event['event'], self::STEPS, true ) ) );
+	}
+
+	/** @return list<array<string,mixed>> Every event written to intel:writer, in order, less its envelope. */
+	private function written(): array {
+		$written = [];
+		foreach ( \array_filter( $this->out->captured, static fn ( array $message ): bool => 'intel:writer' === $message[ Message::TO ] ) as $message ) {
+			$this->assertSame( Message::TM_STRUCT, $message[ Message::TYPE ] );
 			$event = $message[ Message::VALUE ];
 			$this->assertSame( Intel_Event::machine( 'ask' ), $event['actor'] );
-			$outcomes[] = [ 'event' => $event['event'] ] + \array_diff_key( $event, \array_flip( Intel_Event::ENVELOPE ) );
+			$written[] = [ 'event' => $event['event'] ] + \array_diff_key( $event, \array_flip( Intel_Event::ENVELOPE ) );
 		}
-		return $outcomes;
+		return $written;
 	}
 }

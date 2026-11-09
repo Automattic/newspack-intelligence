@@ -76,7 +76,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 	 * `Graph_Watches` and answering the caller's own watches alone;
 	 * `briefing` and `health`, at read, over `Intelligence_Briefing` and
 	 * `Intelligence_Health`; `ask` and `ask_result`, at read, over
-	 * `Graph_Asks`; the curation commands, each at tune over
+	 * `Graph_Asks`; `trace`, at read, over `Graph_Trace`; the curation commands, each at tune over
 	 * `Graph_Curation` and seeing only the entities and items a read caller
 	 * sees, `excluded` beside them, the one read listing the items a curator
 	 * excluded; `seed_ontology`, at tune, over
@@ -109,6 +109,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 		$about = $key( 'The entity key.' );
 		$role  = [ $about, $arg( 'role', 'The role: ' . \implode( ', ', Intel_Event::ROLES ) . '.' ) ];
 		$box   = static fn ( string $name, bool $default, string $what ): array => [ 'name' => $name, 'type' => 'bool', 'default' => $default, 'description' => $what ];
+		$blank = static fn ( string $name, string $what ): array => [ 'name' => $name, 'type' => 'string', 'default' => '', 'description' => $what ];
 		$read  = Capabilities::READ;
 		$tune  = Capabilities::TUNE;
 		return \array_merge(
@@ -135,7 +136,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						],
 						Graph_Query::search( ... )
 					),
-					$command( $read, 'entity', 'One entity as its merge survivor: { entity_key, type, name, state, merged_from, names, identifiers, roles, topics, counts: { items, proposed_links }, published: { count }, status }, name the one it was created with, or, for one created under its own domain, its newest canonical name, counts.items the items about it, published.count those its own site published, and status, for a client alone, { client_since, kinds: { ' . \implode( ', ', Graph_Query::STATUS_KINDS ) . ' }, last_item_ts, churn_open, churn_items: [ { item_key, title, url, source, day } ] } over the items naming it as their subject, churn_items the ' . Graph_Query::CITATIONS . ' newest of them dated after client_since that are extracted churned, the newest first, and churn_open whether there is one, else null.', [ $about ], Graph_Query::entity( ... ) ),
+					$command( $read, 'entity', 'One entity as its merge survivor: { entity_key, type, name, state, merged_from, names, identifiers, roles, topics, counts: { items, proposed_links }, published: { count }, status }, name the one it was created with, or, for one created under its own domain, its newest canonical name, counts.items the items about it, published.count those its own site published, and status, for a client alone, { client_since, kinds: { ' . \implode( ', ', Graph_Query::STATUS_KINDS ) . ' }, last_item_ts, churn_open, churn_items: [ { item_key, title, url, source, day } ], churn_note: { text, owner, next_step, day, by } } over the items naming it as their subject, churn_items the ' . Graph_Query::CITATIONS . ' newest of them dated after client_since that are extracted churned, the newest first, churn_open whether there is one, and churn_note the client\'s churn-risk note, by the actor who set it, null for none; else null.', [ $about ], Graph_Query::entity( ... ) ),
 					$command( $read, 'names', 'At most ' . Graph_Query::NAMES_LIMIT . ' entities holding a name or alias whose first word, or a later one, starts with prefix, as the resolver\'s index reads names, case and punctuation aside, each once as its merge survivor: { entities: [ { entity_key, name } ], available }, those whose whole name the prefix leads first, then by name; a rejected entity, a topic and an entity the caller may not see left out, and available false when the graph would not open.', [ $arg( 'prefix', 'What the name starts with, at least ' . Graph_Query::NAMES_MIN_PREFIX . ' letters or digits.' ) ], Graph_Query::names( ... ) ),
 					$command( $read, 'timeline', 'The items about an entity, or with published those its own site published, newest first: { items, total }, each item as search answers it.', [ $about, $since, $until, $limit( Graph_Query::DEFAULT_LIMIT ), $page, $box( 'published', false, 'Page the items its own site published instead of those about it.' ) ], Graph_Query::timeline( ... ) ),
 					$command( $read, 'related', 'The entities sharing the most items with one: { entities: [ { entity_key, name, type, shared_items, items: [ { item_key, url, title } ] } ] }, five newest shared items cited an entity.', [ $about, $limit( Graph_Query::RELATED_LIMIT ) ], Graph_Query::related( ... ) ),
@@ -162,10 +163,10 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						[ $lens, $text( 'entity', 'Only items linking this entity.' ) ],
 						Graph_Query::signals( ... )
 					),
-					$command( $read, 'review', 'The review queue, each row with its citing items and the sentence each quotes as evidence: { links } or { entities }.', [ $arg( 'what', 'The queue: links or entities.' ), $limit( Graph_Query::DEFAULT_LIMIT ) ], Graph_Query::review( ... ) ),
-					$command( $read, 'theme_suggestions', 'Pairs of themes worth merging: of the readable stories of the last ' . Graph_Query::GROUP_DAYS . ' days, two themes whose stories share an entity they are about and whose names share a word that is not generic, the most alike names first, at most ' . Graph_Query::THEME_SUGGESTIONS . ': { suggestions: [ { themes: [ { theme, stories } ], words, shared } ] }, the theme with more stories first, words those both names hold and shared the entities both themes\' stories are about.', [], static fn (): array => Graph_Query::theme_suggestions() ),
+					$command( $read, 'review', 'The review queue, each row with its citing items and the sentence each quotes as evidence, and how many rows the queue holds beyond the page: { links, total } or { entities, total }.', [ $arg( 'what', 'The queue: links or entities.' ), $limit( Graph_Query::DEFAULT_LIMIT ) ], Graph_Query::review( ... ) ),
+					$command( $read, 'theme_suggestions', 'Pairs of themes worth merging: of the readable stories of the last ' . Graph_Query::GROUP_DAYS . ' days, two themes whose stories share an entity they are about and whose names share a word that is not generic, the most alike names first, at most ' . Graph_Query::THEME_SUGGESTIONS . ': { suggestions: [ { themes: [ { theme, stories } ], words, shared } ], total }, the theme with more stories first, words those both names hold, shared the entities both themes\' stories are about, and total every pair found.', [], static fn (): array => Graph_Query::theme_suggestions() ),
 					$command( $read, 'collections', 'Every collection with its item count, those the caller saved or moved an item into first, the latest first, then by name: { collections: [ { collection_key, name, created_ts, items, recent_ts } ] }; or one with its saved items, those not yet used first, then by save time, the latest first: { collection_key, name, created_ts, items: [ { item_key, url, title, actor, saved_ts, marks: [ { mark, day } ] } ] }.', [ $text( 'key', 'One collection\'s key.' ) ], Graph_Query::collections( ... ) ),
-					$command( $read, 'lenses', 'Every lens, by name: { lenses: [ { lens_key, name, description, filters: { kinds, topics, roles, sources, entity, days, tiers, by, bucket } } ] }.', [], Graph_Query::lenses( ... ) ),
+					$command( $read, 'lenses', 'Every lens, by name: { lenses: [ { lens_key, name, description, filters: { kinds, topics, roles, sources, entity, days, tiers, by, bucket }, week_items } ] }, week_items how many items the lens admits from the last ' . Graph_Query::NEW_DAYS . ' UTC days, today the last, whatever days it looks back over.', [], Graph_Query::lenses( ... ) ),
 					$command( $read, 'watches', 'The caller\'s own watches, by name, each with its unseen matches: { watches: [ { watch_key, name, target: { kind, key }, digest, instant, inbox, unseen } ] }.', [], Graph_Watches::watches( ... ) ),
 					$command(
 						$read,
@@ -197,8 +198,9 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						Intelligence_Briefing::answer( ... )
 					),
 					$command( $read, 'ask', 'Ask a question the graph answers as a worker job, from at most ' . Ask_Node::MAX_ITEMS . ' items the caller may read, every sentence citing them: { ask_key }; read the answer with ask_result.', [ $arg( 'question', 'The question, at most ' . Graph_Asks::QUESTION_BYTES . ' bytes.' ) ], Graph_Asks::ask( ... ) ),
-					$command( $read, 'ask_result', 'One of the caller\'s own asks: { ask_key, state, reason, found, dropped, sentences: [ { text, cites } ], items, searches, wait_s, available }. state is asked while it is owed its answer; answered; failed, with its reason, an ask still owed past wait_s, ' . Ask_Node::MAX_WAIT_S . ' seconds, among them, so poll it no longer than that; or withheld, with its reason, when the answer was written from an item of a tier the caller no longer reads, since every sentence may carry what that item said. found counts the items the answer was written from and dropped the sentences left out; each sentence cites items by their place in items from 1, each item as search answers it, and a sentence citing an item the caller cannot read now, as one expired since, is left out. searches are the searches the ask ran, each { words, lens, entity, kinds, roles, days } as its plan named them, and available is false when the graph would not open.', [ $key( 'The ask key.' ) ], Graph_Asks::result( ... ) ),
-					$command( $read, 'health', 'Pipeline health, one slice a call: collection { state, topology }; sources { sources: [ { name, class, tier, state, reason, credential: { url, group }, last_ok_at, last_error, failing_since, failed, requests } ] }; backlog { reason, held, since, dropped: { first_day, last_day } }; extraction { mode, vault_group, last_ok_at, last_error, failing_since }. An unpublished fact reads as unknown or null.', [ $arg( 'what', 'The slice, one of: ' . \implode( ', ', Intelligence_Health::SLICES ) . '.' ) ], Intelligence_Health::answer( ... ) ),
+					$command( $read, 'ask_result', 'One of the caller\'s own asks: { ask_key, state, reason, found, dropped, hidden, sentences: [ { text, cites } ], items, searches, wait_s, available }. state is asked while it is owed its plan; planned once its plan is written, with the searches it names; read once those searches are read, with found the items they found; answered; failed, with its reason, an ask still owed past wait_s, ' . Ask_Node::MAX_WAIT_S . ' seconds, among them, so poll it no longer than that; or withheld, with its reason, when the answer was written from an item of a tier the caller no longer reads, since every sentence may carry what that item said. found counts the items the answer was written from and dropped the sentences left out because they cited nothing it was given; each sentence cites items by their place in items from 1, each item as search answers it, and a sentence citing an item the caller cannot read now, as one expired or excluded since, is left out and counted in hidden. searches are the searches the ask ran, each { words, lens, entity, kinds, roles, days } as its plan named them, and available is false when the graph would not open.', [ $key( 'The ask key.' ) ], Graph_Asks::result( ... ) ),
+					$command( $read, 'trace', 'How one readable item was read, its own record in the order the pipeline wrote it: { item_key, title, url, steps }, each step { step, at, actor, … }: recorded { source, tier }; each linked { entity_key, name, role, method, confidence, state, judged: { state, actor, at } }, by when it was written, judged null unless a judgment set its state, an entity the caller may not see left out; extracted, gated or heuristic { kind, theme, rank_reason }, gated when the item was about its own publisher\'s journalism and so not sent to the model, heuristic when the model gave no answer; checked { question, kind, verdict }; clustered { canonical, copies }, copies the cluster\'s other items the caller may read. A step the item never took is left out, and an item of a tier the caller does not read, or one excluded, is refused as no item: <key>.', [ $item ], Graph_Trace::trace( ... ) ),
+					$command( $read, 'health','Pipeline health, one slice a call: collection { state, topology }; sources { sources: [ { name, class, tier, state, reason, credential: { url, group }, last_ok_at, last_error, failing_since, failed, requests } ] }; backlog { reason, held, since, dropped: { first_day, last_day } }; extraction { mode, vault_group, last_ok_at, last_error, failing_since }. An unpublished fact reads as unknown or null.', [ $arg( 'what', 'The slice, one of: ' . \implode( ', ', Intelligence_Health::SLICES ) . '.' ) ], Intelligence_Health::answer( ... ) ),
 					$command( $tune, 'confirm_link', 'Confirm a readable item\'s link to an entity: { ok, event_id }.', $link, static fn ( array $args ): array => Graph_Curation::judge_link( 'link_confirmed', $args ) ),
 					$command( $tune, 'reject_link', 'Reject a readable item\'s link to an entity: { ok, event_id }.', $link, static fn ( array $args ): array => Graph_Curation::judge_link( 'link_rejected', $args ) ),
 					$command( $tune, 'accept_entity', 'Accept an entity: { ok, event_id }.', [ $about ], static fn ( array $args ): array => Graph_Curation::judge_entity( 'entity_accepted', $args ) ),
@@ -238,6 +240,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						Graph_Curation::mark_used( ... )
 					),
 					$command( $tune, 'move_item', 'Move an item saved in a collection into another: every copy of it the caller reads, each with its own tier and marks: { ok, event_id }.', [ $arg( 'collection', 'The collection it is in.' ), $item, $arg( 'into', 'The collection it moves into.' ) ], Graph_Curation::move_item( ... ) ),
+					$command( $tune, 'uncollect', 'Take an item saved in a collection out of it: every copy of it there the caller reads, leaving it in every other collection: { ok, event_id }.', [ $arg( 'collection', 'The collection it is in.' ), $item ], Graph_Curation::uncollect( ... ) ),
 					$command(
 						$tune,
 						'save_lens',
@@ -245,7 +248,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 						[
 							$key( 'The lens key, slugged.' ),
 							$arg( 'name', 'Its name, at most ' . Graph_Curation::NAME_BYTES . ' bytes.' ),
-							[ 'name' => 'description', 'type' => 'string', 'default' => '', 'description' => 'What it is for.' ],
+							$blank( 'description', 'What it is for.' ),
 							$text( 'entity', 'An entity every item links.' ),
 							[ 'name' => 'days', 'type' => 'int', 'description' => 'The last days it reads, today included, 1 to ' . Intel_Graph_Row_Schema::RETAIN_DAYS . '.' ],
 							$text( 'by', "What its trends count, one of {$axes}." ),
@@ -259,6 +262,19 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					$command( $tune, 'merge_theme', 'Merge one theme into another, so every read of an item\'s theme reads the survivor; refused when the merge would cycle, when into itself merges away, or when it would show a theme only restricted items carry to every reader: { ok, event_id }.', [ $arg( 'from', 'The theme merged away, at most ' . Intel_Event::THEME_BYTES . ' bytes.' ), $arg( 'into', 'The theme it survives as.' ) ], Graph_Curation::merge_theme( ... ) ),
 					$command( $tune, 'exclude_item', 'Exclude a readable item from every view — search, the briefing, signals, trends, watches and their matches, collections, an entity, an ask and this door — keeping its URL, title, tier, who excluded it, when and why; refused when it is excluded already: { ok, event_id }.', [ $item, $text( 'why', 'Why it is excluded, at most ' . Intel_Event::WHY_BYTES . ' bytes.' ) ], Graph_Curation::exclude_item( ... ) ),
 					$command( $tune, 'include_item', 'Include an excluded item again, so every view reads it: { ok, event_id }.', [ $item ], Graph_Curation::include_item( ... ) ),
+					$command(
+						$tune,
+						'note_churn',
+						'Set a client\'s churn-risk note, with who owns it and the next step, replacing the note it carries; a note with no text clears it. Its profile\'s status and the briefing\'s signals answer it: { ok, event_id }.',
+						[
+							$arg( 'entity', 'The client\'s entity key.' ),
+							$blank( 'text', 'What puts the client at risk, at most ' . Graph_Curation::NOTE_BYTES . ' bytes; none clears the note.' ),
+							$blank( 'owner', 'Who owns the next step, a name of at most ' . Graph_Curation::NAME_BYTES . ' bytes.' ),
+							$blank( 'next_step', 'What happens next, at most ' . Graph_Curation::NOTE_BYTES . ' bytes.' ),
+							$blank( 'day', 'The day the next step is due, Y-m-d.' ),
+						],
+						Graph_Curation::note_churn( ... )
+					),
 					$command( $tune, 'excluded', 'The excluded items of the tiers the caller reads, the latest excluded first, the one read that lists them: { items: [ { item_key, title, url, actor, excluded_ts, why } ], available }, each as it was when excluded and why \'\' unless the curator gave one.', [ $limit( Graph_Query::DEFAULT_LIMIT ) ], Graph_Query::excluded( ... ) ),
 					$command( $tune, 'seed_ontology', 'Write the site\'s seed ontology for the keys the projection lacks, refused while the projector has not read every ontology change: { ok, events, created, present }.', [], static fn (): array => [ 'ok' => true ] + Ontology_Seed::load()->seed() ),
 					[

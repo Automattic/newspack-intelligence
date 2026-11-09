@@ -101,6 +101,9 @@ final class Graph_Query {
 	/** The days a grouped search reads when neither the call nor its lens bounds them. */
 	public const GROUP_DAYS = 30;
 
+	/** The UTC days, today the last, over which a lens counts its new items. */
+	public const NEW_DAYS = 7;
+
 	/** The most pairs of themes `theme_suggestions` answers. */
 	public const THEME_SUGGESTIONS = 10;
 
@@ -420,12 +423,19 @@ final class Graph_Query {
 	 * words the names share, sorted, and how many entities their stories
 	 * share. Pairs rank by how alike the names are (`alike()`), then by the
 	 * entities shared, then by their stories, then by name; THEME_SUGGESTIONS
-	 * are answered. One statement reads every theme's stories and entities.
+	 * are answered, and `total` counts every pair found. One statement reads
+	 * every theme's stories and entities.
 	 *
-	 * @return array<string,mixed> `{ suggestions, available }`.
+	 * @return array<string,mixed> `{ suggestions, total, available }`.
 	 */
 	public static function theme_suggestions(): array {
-		return self::answer( [ 'suggestions' => [] ], static fn ( Row_Reader $r, array $g ): array => [ 'suggestions' => self::suggested( self::theme_entities( $r, $g ) ) ] );
+		return self::answer(
+			[
+				'suggestions' => [],
+				'total'       => 0,
+			],
+			static fn ( Row_Reader $r, array $g ): array => \array_combine( [ 'suggestions', 'total' ], self::suggested( self::theme_entities( $r, $g ) ) )
+		);
 	}
 
 	/**
@@ -469,10 +479,11 @@ final class Graph_Query {
 	 * more than SUGGESTION_WORD_MAX_THEMES themes hold pairs none of them, so
 	 * the pairs grow with the words rather than with the square of the
 	 * themes; each pair is scored once, from the first of its pairing words
-	 * in string order, and the best are kept as they are scored.
+	 * in string order, and the best are kept as they are scored; beside
+	 * them, how many pairs were scored.
 	 *
 	 * @param array<string,array{stories:int,entities:array<string,true>}> $themes Each theme's stories and entities.
-	 * @return list<array{themes:list<array{theme:string,stories:int}>,words:list<string>,shared:int}>
+	 * @return array{0:list<array{themes:list<array{theme:string,stories:int}>,words:list<string>,shared:int}>,1:int}
 	 */
 	private static function suggested( array $themes ): array {
 		$words = [];
@@ -486,6 +497,7 @@ final class Graph_Query {
 		$weight  = \array_map( static fn ( array $holding ): float => \log( 1 + \count( $themes ) / \count( $holding ) ), $words );
 		$pairing = \array_filter( $words, static fn ( array $holding ): bool => \count( $holding ) <= self::SUGGESTION_WORD_MAX_THEMES );
 		$ranked  = [];
+		$total   = 0;
 		foreach ( $pairing as $word => $holding ) {
 			\sort( $holding );
 			foreach ( $holding as $at => $a ) {
@@ -503,6 +515,7 @@ final class Graph_Query {
 					$sides = [ [ 'theme' => $a, 'stories' => $themes[ $a ]['stories'] ], [ 'theme' => $b, 'stories' => $themes[ $b ]['stories'] ] ];
 					\usort( $sides, static fn ( array $x, array $y ): int => [ $y['stories'], $x['theme'] ] <=> [ $x['stories'], $y['theme'] ] );
 					\sort( $both );
+					++$total;
 					$ranked[] = [
 						[ -self::alike( $both, \array_keys( $holds[ $a ] + $holds[ $b ] ), $weight ), -$shared, -( $sides[0]['stories'] + $sides[1]['stories'] ), $a, $b ],
 						[
@@ -517,7 +530,7 @@ final class Graph_Query {
 				}
 			}
 		}
-		return \array_column( self::best( $ranked ), 1 );
+		return [ \array_column( self::best( $ranked ), 1 ), $total ];
 	}
 
 	/**
@@ -718,6 +731,59 @@ final class Graph_Query {
 	}
 
 	/**
+	 * Every lens, by name: its key, name, description and filters, its
+	 * entity and topics only those the caller may see now (`sees()`), and
+	 * `week_items`, how many items it admits from the last NEW_DAYS UTC days
+	 * (`new_items()`).
+	 *
+	 * @return array<string,mixed> `{ lenses: [ { lens_key, name, description, filters, week_items } ], available }`.
+	 */
+	public static function lenses(): array {
+		return self::answer(
+			[ 'lenses' => [] ],
+			static function ( Row_Reader $r, array $g ): array {
+				$lenses = [];
+				foreach ( $r->rows( 'SELECT lens_key, name, description, filters FROM ' . Intel_Graph_Row_Schema::all( $r, 'lenses' ) . ' l ORDER BY name, lens_key', [] ) as [ $key, $name, $description, $filters ] ) {
+					$lens                    = self::lens_of( $filters );
+					$new                     = self::new_items( $r, $g, $lens );
+					$lens['entity']          = null !== $lens['entity'] && self::sees( $r, $g, $lens['entity'] ) ? $lens['entity'] : null;
+					$lens['lists']['topics'] = \array_values( \array_filter( $lens['lists']['topics'], static fn ( string $topic ): bool => self::sees( $r, $g, $topic ) ) );
+					$lenses[]                = [ 'lens_key' => $key, 'name' => $name, 'description' => $description, 'filters' => self::flat( $lens ), 'week_items' => $new ];
+				}
+				return [ 'lenses' => $lenses ];
+			}
+		);
+	}
+
+	/**
+	 * Whether the caller may see a key: its chain resolves and `visible()`
+	 * answers it.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param Graph      $g   The graph the read opened.
+	 * @param string     $key An entity key.
+	 */
+	private static function sees( Row_Reader $r, array $g, string $key ): bool {
+		return '' !== ( $g['survivors'][ $key ] ?? $key ) && null !== self::visible( $r, $g, $key );
+	}
+
+	/**
+	 * How many items a lens admits from the last NEW_DAYS UTC days, today the
+	 * last, as `search` through it reads them with those days in place of its
+	 * own, under its tiers: its filters, and the caller's readable tiers
+	 * narrowed to the lens's.
+	 *
+	 * @param Row_Reader $r    The reader.
+	 * @param Graph      $g    The caller's graph.
+	 * @param Lens       $lens The lens, as saved.
+	 */
+	private static function new_items( Row_Reader $r, array $g, array $lens ): int {
+		$call         = self::filter_of( [] );
+		$call['days'] = self::last_days( self::NEW_DAYS );
+		return Core::as_int( self::items( $r, self::tiered( $r, $g, $lens ), self::over( $lens, $call ), 0, 0 )['total'] );
+	}
+
+	/**
 	 * One page of matching items, the count of all of them, and the entities
 	 * each is about; `$within` joins a set the items must be in, the fields
 	 * it adds after the links, and the order it lists them in, and `$links`
@@ -906,40 +972,6 @@ final class Graph_Query {
 	}
 
 	/**
-	 * Every lens, by name: its key, name, description and filters, its
-	 * entity and topics only those the caller may see now (`sees()`).
-	 *
-	 * @return array<string,mixed> `{ lenses: [ { lens_key, name, description, filters } ], available }`.
-	 */
-	public static function lenses(): array {
-		return self::answer(
-			[ 'lenses' => [] ],
-			static function ( Row_Reader $r, array $g ): array {
-				$lenses = [];
-				foreach ( $r->rows( 'SELECT lens_key, name, description, filters FROM ' . Intel_Graph_Row_Schema::all( $r, 'lenses' ) . ' l ORDER BY name, lens_key', [] ) as [ $key, $name, $description, $filters ] ) {
-					$lens                    = self::lens_of( $filters );
-					$lens['entity']          = null !== $lens['entity'] && self::sees( $r, $g, $lens['entity'] ) ? $lens['entity'] : null;
-					$lens['lists']['topics'] = \array_values( \array_filter( $lens['lists']['topics'], static fn ( string $topic ): bool => self::sees( $r, $g, $topic ) ) );
-					$lenses[]                = [ 'lens_key' => $key, 'name' => $name, 'description' => $description, 'filters' => self::flat( $lens ) ];
-				}
-				return [ 'lenses' => $lenses ];
-			}
-		);
-	}
-
-	/**
-	 * Whether the caller may see a key: its chain resolves and `visible()`
-	 * answers it.
-	 *
-	 * @param Row_Reader $r   The reader.
-	 * @param Graph      $g   The graph the read opened.
-	 * @param string     $key An entity key.
-	 */
-	private static function sees( Row_Reader $r, array $g, string $key ): bool {
-		return '' !== ( $g['survivors'][ $key ] ?? $key ) && null !== self::visible( $r, $g, $key );
-	}
-
-	/**
 	 * A lens's filters with none set, in the shape every lens is saved in.
 	 *
 	 * @return array<string,mixed>
@@ -1037,14 +1069,15 @@ final class Graph_Query {
 	 * extracted as CHURNED claiming it dated after that start, its churn items,
 	 * each as `{ item_key, title, url, source, day }` read once however many
 	 * partitions hold it, which the Entity view names when it offers to end
-	 * the role; null for an entity holding no open client role. Its signals
+	 * the role, and its churn note (`churn_notes()`), null when it carries
+	 * none; null for an entity holding no open client role. Its signals
 	 * are the `signals` read's, which the page already makes.
 	 *
 	 * @param Row_Reader                                            $r        The reader.
 	 * @param Graph                                                 $g        The graph the read opened.
 	 * @param string                                                $survivor The entity.
 	 * @param list<array{role:mixed,from_ts:mixed,to_ts:mixed}> $roles    Every role row of its keys.
-	 * @return array{client_since:int,kinds:array<string,int>,last_item_ts:int|null,churn_open:bool,churn_items:list<array{item_key:mixed,title:mixed,url:mixed,source:mixed,day:mixed}>}|null
+	 * @return array{client_since:int,kinds:array<string,int>,last_item_ts:int|null,churn_open:bool,churn_items:list<array{item_key:mixed,title:mixed,url:mixed,source:mixed,day:mixed}>,churn_note:array{text:string,owner:string,next_step:string,day:string,by:string}|null}|null
 	 */
 	private static function status( Row_Reader $r, array $g, string $survivor, array $roles ): ?array {
 		$open = \array_filter( $roles, static fn ( array $row ): bool => self::CLIENT === $row['role'] && 0 === Core::as_int( $row['to_ts'] ) );
@@ -1075,7 +1108,38 @@ final class Graph_Query {
 			'last_item_ts' => null === $last ? null : Core::as_int( $last ),
 			'churn_open'   => [] !== $churn,
 			'churn_items'  => $churn,
+			'churn_note'   => self::churn_notes( $r, [ $survivor => self::keys_of( $survivor, $g ) ] )[ $survivor ] ?? null,
 		];
+	}
+
+	/**
+	 * Each survivor's churn note, the newest any of its keys carries, as
+	 * `{ text, owner, next_step, day, by }`, `by` the actor who set it, in
+	 * one statement however many survivors it reads; a survivor carrying
+	 * none is absent.
+	 *
+	 * @api Intelligence_Briefing lists each noted client by it.
+	 * @param Row_Reader                 $r         The reader.
+	 * @param array<string,list<string>> $survivors Each survivor => the keys its rows sit under.
+	 * @return array<string,array{text:string,owner:string,next_step:string,day:string,by:string}>
+	 */
+	public static function churn_notes( Row_Reader $r, array $survivors ): array {
+		$owner = self::owners( $survivors );
+		$notes = [];
+		if ( [] === $owner ) {
+			return $notes;
+		}
+		$keys = \array_map( 'strval', \array_keys( $owner ) );
+		foreach ( $r->rows( 'SELECT entity_key, text, owner, next_step, day, actor FROM ' . Intel_Graph_Row_Schema::all( $r, 'churn_notes' ) . ' n WHERE entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) ORDER BY ts DESC', $keys ) as [ $key, $text, $who, $next, $day, $by ] ) {
+			$notes[ $owner[ Core::as_string( $key ) ] ] ??= [
+				'text'      => Core::as_string( $text ),
+				'owner'     => Core::as_string( $who ),
+				'next_step' => Core::as_string( $next ),
+				'day'       => Core::as_string( $day ),
+				'by'        => Core::as_string( $by ),
+			];
+		}
+		return $notes;
 	}
 
 	/**
@@ -1533,8 +1597,7 @@ final class Graph_Query {
 	 */
 	private static function lensed( Row_Reader $r, array $g, array $call, ?string $name, \Closure $read ): mixed {
 		$lens = null === $name ? self::no_lens() : self::lens( $r, $name );
-		$g    = [] === $lens['tiers'] ? $g : self::bound( $r, $g['survivors'], \array_values( \array_intersect( Intel_Tiers::readable(), $lens['tiers'] ) ) );
-		return $read( $r, $g, self::over( $lens, $call ), $lens );
+		return $read( $r, self::tiered( $r, $g, $lens ), self::over( $lens, $call ), $lens );
 	}
 
 	/**
@@ -1571,6 +1634,19 @@ final class Graph_Query {
 	public static function last_days( int $days ): array {
 		$today = \intdiv( Intel_Event::now(), Intel_Graph_Row_Schema::DAY_SECONDS ) * Intel_Graph_Row_Schema::DAY_SECONDS;
 		return [ $today - ( $days - 1 ) * Intel_Graph_Row_Schema::DAY_SECONDS, self::all_days()[1] ];
+	}
+
+	/**
+	 * The caller's graph with `ri` narrowed to a lens's tiers, never widened;
+	 * the graph itself for a lens naming none.
+	 *
+	 * @param Row_Reader $r    The reader.
+	 * @param Graph      $g    The caller's graph.
+	 * @param Lens       $lens The lens.
+	 * @return Graph
+	 */
+	private static function tiered( Row_Reader $r, array $g, array $lens ): array {
+		return [] === $lens['tiers'] ? $g : self::bound( $r, $g['survivors'], \array_values( \array_intersect( Intel_Tiers::readable(), $lens['tiers'] ) ) );
 	}
 
 	/**
@@ -2117,14 +2193,9 @@ final class Graph_Query {
 	 * @return array<string,array<string,list<array{0:string,1:int}>>>
 	 */
 	public static function open_roles( Row_Reader $r, array $survivors, array $roles ): array {
-		$owner = [];
-		foreach ( $survivors as $survivor => $keys ) {
-			foreach ( $keys as $key ) {
-				$owner[ $key ] = $survivor;
-			}
-		}
-		$keys = \array_map( 'strval', \array_keys( $owner ) );
-		$open = [];
+		$owner = self::owners( $survivors );
+		$keys  = \array_map( 'strval', \array_keys( $owner ) );
+		$open  = [];
 		if ( [] === $keys || [] === $roles ) {
 			return $open;
 		}
@@ -2138,6 +2209,22 @@ final class Graph_Query {
 			$open[ $owner[ $key ] ][ Core::as_string( $role ) ][] = [ $key, Core::as_int( $from ) ];
 		}
 		return $open;
+	}
+
+	/**
+	 * Each key => the survivor its rows answer as.
+	 *
+	 * @param array<string,list<string>> $survivors Each survivor => the keys its rows sit under.
+	 * @return array<string,string>
+	 */
+	private static function owners( array $survivors ): array {
+		$owner = [];
+		foreach ( $survivors as $survivor => $keys ) {
+			foreach ( $keys as $key ) {
+				$owner[ $key ] = $survivor;
+			}
+		}
+		return $owner;
 	}
 
 	/**
@@ -2595,28 +2682,33 @@ final class Graph_Query {
 	 * The review queue: proposed links, newest item first, each with its item
 	 * and evidence; or proposed entities that a merge never took, the newest
 	 * proposal first, each with the readable items citing it, by a link or as
-	 * its source, and the sentence each quotes.
+	 * its source, and the sentence each quotes; beside the page, `total`, how
+	 * many the queue holds, which its tab counts.
 	 *
 	 * @param array<array-key,mixed> $args The bound command args: `what`, `limit`.
-	 * @return array<string,mixed> `{ links|entities, available }`.
+	 * @return array<string,mixed> `{ links|entities, total, available }`.
 	 * @throws \InvalidArgumentException On an unknown queue or a bad limit.
 	 */
 	public static function review( array $args ): array {
 		$what = self::one_of( 'what', Core::as_string( $args['what'] ), self::REVIEWS );
 		$limit = self::limit( $args );
 		return self::answer(
-			[ $what => [] ],
-			static fn ( Row_Reader $r, array $g ): array => [ $what => 'links' === $what ? self::proposed_links( $r, $g, $limit ) : self::proposed_entities( $r, $g, $limit ) ]
+			[
+				$what   => [],
+				'total' => 0,
+			],
+			static fn ( Row_Reader $r, array $g ): array => \array_combine( [ $what, 'total' ], 'links' === $what ? self::proposed_links( $r, $g, $limit ) : self::proposed_entities( $r, $g, $limit ) )
 		);
 	}
 
 	/**
-	 * The proposed entities a readable item cites, newest proposal first.
+	 * The proposed entities a readable item cites, newest proposal first,
+	 * and how many there are, read in the same statement.
 	 *
 	 * @param Row_Reader $r     The reader.
 	 * @param Graph      $g     The graph the read opened.
 	 * @param int        $limit The most entities answered.
-	 * @return list<array<string,mixed>>
+	 * @return array{0:list<array<string,mixed>>,1:int}
 	 */
 	private static function proposed_entities( Row_Reader $r, array $g, int $limit ): array {
 		$proposed              = 'SELECT entity_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_states' ) . " p WHERE state = 'proposed'";
@@ -2625,20 +2717,23 @@ final class Graph_Query {
 		$rows                  = $r->rows(
 			"{$g['with']}{$live}, {$cites}, proposed AS ( SELECT s.entity_key, MAX( s.ts ) AS ts FROM " . Intel_Graph_Row_Schema::all( $r, 'entity_states' ) . " s WHERE s.state = 'proposed'"
 			. ' AND s.entity_key NOT IN ( SELECT key FROM mg ) GROUP BY s.entity_key ),'
-			. ' best AS ( SELECT p.entity_key, p.ts FROM proposed p WHERE EXISTS ( SELECT 1 FROM cites c WHERE c.entity_key = p.entity_key ) ORDER BY p.ts DESC, p.entity_key LIMIT ? ),'
+			. ' queued AS ( SELECT p.entity_key, p.ts FROM proposed p WHERE EXISTS ( SELECT 1 FROM cites c WHERE c.entity_key = p.entity_key ) ),'
+			. ' best AS ( SELECT q.entity_key, q.ts FROM queued q ORDER BY q.ts DESC, q.entity_key LIMIT ? ),'
 			. ' quoted AS ( SELECT c.entity_key, c.item_key, MAX( c.title ) AS title, MAX( c.url ) AS url, MAX( c.t ) AS t, MAX( c.evidence ) AS evidence FROM cites c JOIN best ON best.entity_key = c.entity_key GROUP BY c.entity_key, c.item_key ),'
 			. ' cited AS ( SELECT q.*, ROW_NUMBER() OVER ( PARTITION BY q.entity_key ORDER BY q.t DESC, q.item_key DESC ) AS rn FROM quoted q )'
 			. ' SELECT best.entity_key, ' . self::type_of( $r, 'best.entity_key' ) . ', ' . self::name_of( $r, 'best.entity_key' )
-			. ', cited.item_key, cited.url, cited.title, cited.evidence FROM best JOIN cited ON cited.entity_key = best.entity_key WHERE cited.rn <= ? ORDER BY best.ts DESC, best.entity_key, cited.rn',
+			. ', cited.item_key, cited.url, cited.title, cited.evidence, ( SELECT COUNT(*) FROM queued ) FROM best JOIN cited ON cited.entity_key = best.entity_key WHERE cited.rn <= ? ORDER BY best.ts DESC, best.entity_key, cited.rn',
 			[ ...$g['binds'], ...$live_binds, ...$cited, $limit, self::CITATIONS ]
 		);
 		$entities              = [];
-		foreach ( $rows as [ $entity, $type, $name, $item, $url, $title, $evidence ] ) {
+		$total                 = 0;
+		foreach ( $rows as [ $entity, $type, $name, $item, $url, $title, $evidence, $queued ] ) {
+			$total               = Core::as_int( $queued );
 			$entity              = Core::as_string( $entity );
 			$entities[ $entity ] ??= [ 'entity_key' => $entity, 'type' => $type, 'name' => $name, 'items' => [] ];
 			$entities[ $entity ]['items'][] = [ 'item_key' => $item, 'url' => $url, 'title' => $title, 'evidence' => Core::as_string( $evidence ) ];
 		}
-		return \array_values( $entities );
+		return [ \array_values( $entities ), $total ];
 	}
 
 	/**
@@ -2663,25 +2758,28 @@ final class Graph_Query {
 	/**
 	 * The proposed links, newest item first, but those to an entity whose
 	 * survivor is rejected: a `ner_fuzzy` row outlives a re-resolution that
-	 * did not run NER, and there is nothing left to judge of one.
+	 * did not run NER, and there is nothing left to judge of one; and how
+	 * many there are, counted in the same statement.
 	 *
 	 * @param Row_Reader $r     The reader.
 	 * @param Graph      $g     The graph the read opened.
 	 * @param int        $limit The most rows answered.
-	 * @return list<array<string,mixed>>
+	 * @return array{0:list<array<string,mixed>>,1:int}
 	 */
 	private static function proposed_links( Row_Reader $r, array $g, int $limit ): array {
 		[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . " n WHERE state = 'proposed' AND n.role IN ( " . Intel_Graph_Row_Schema::marks( Intel_Event::ABOUT_ROLES ) . ' ) )', Intel_Event::ABOUT_ROLES );
 		$links                 = [];
 		$rows                  = $r->rows(
 			"{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::name_of( $r, 'live.entity_key' ) . ', ' . self::type_of( $r, 'live.entity_key' )
-			. ", live.role, live.method, live.confidence, live.evidence, live.title, live.url FROM live WHERE live.state = 'proposed' AND " . self::unrejected( $r, 'live.entity_key' ) . " ORDER BY live.t DESC, live.item_key, live.entity_key LIMIT ?",
+			. ", live.role, live.method, live.confidence, live.evidence, live.title, live.url, COUNT(*) OVER () FROM live WHERE live.state = 'proposed' AND " . self::unrejected( $r, 'live.entity_key' ) . " ORDER BY live.t DESC, live.item_key, live.entity_key LIMIT ?",
 			[ ...$g['binds'], ...$live_binds, $limit ]
 		);
-		foreach ( $rows as [ $item, $entity, $name, $type, $role, $method, $confidence, $evidence, $title, $url ] ) {
+		$total                 = 0;
+		foreach ( $rows as [ $item, $entity, $name, $type, $role, $method, $confidence, $evidence, $title, $url, $queued ] ) {
 			$links[] = [ 'item_key' => $item, 'entity_key' => $entity, 'name' => $name, 'type' => $type, 'role' => $role, 'method' => $method, 'confidence' => $confidence, 'evidence' => $evidence, 'title' => $title, 'url' => $url ];
+			$total   = Core::as_int( $queued );
 		}
-		return $links;
+		return [ $links, $total ];
 	}
 
 	/**

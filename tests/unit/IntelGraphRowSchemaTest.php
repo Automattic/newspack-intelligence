@@ -40,7 +40,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 			$this->assertNotSame( isset( $spec['retain'] ), isset( $spec['keep'] ), "{$table} is retained or kept, never both" );
 			if ( isset( $spec['retain'] ) ) {
 				[ $day, $window, $unit ] = $spec['retain'];
-				$this->assertSame( [ 'asks' === $table ? \Newspack_Intelligence\Ask_Node::KEEP_DAYS : 730, 86400 ], [ $window, $unit ], $table );
+				$this->assertSame( [ \in_array( $table, [ 'asks', 'ask_steps' ], true ) ? \Newspack_Intelligence\Ask_Node::KEEP_DAYS : 730, 86400 ], [ $window, $unit ], $table );
 				$this->assertContains( [ $day ], $spec['indexes'] ?? [], "{$table} indexes the day it is retained by" );
 			}
 		}
@@ -49,9 +49,23 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'entity_key', 'type', 'name', 'norm', 'created_ts' ], \array_keys( $tables['entities']['columns'] ), 'an entity row carries no id' );
 		$this->assertSame( [ 'entities_norm' => [ 'norm' ] ], $tables['entities']['indexes'] );
 		$this->assertArrayNotHasKey( 'autoincrement', $tables['entities'] );
-		$this->assertSame( 11, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 12, Intel_Graph_Row_Schema::version() );
 		$this->projector_graph();
 		$this->assertSame( [ 'Intel_Graph' ], Core::node( 'intel-graph' )->arguments(), 'the Row_Table accepts the schema' );
+	}
+
+	/**
+	 * An item's record, its extraction and its cluster placement each carry
+	 * who wrote them and when, the steps a trace lays out, at the shape
+	 * version that first holds them.
+	 */
+	public function test_each_step_of_an_items_record_carries_its_actor_and_time(): void {
+		$tables = Intel_Graph_Row_Schema::tables();
+
+		$this->assertSame( 'TEXT NOT NULL', $tables['items']['columns']['actor'] );
+		$this->assertSame( 'REAL NOT NULL', $tables['extractions']['columns']['ts'] );
+		$this->assertSame( [ 'item_key', 'cluster_key', 'actor', 'ts', 'item_day' ], \array_keys( $tables['clusters']['columns'] ) );
+		$this->assertSame( 12, Intel_Graph_Row_Schema::version() );
 	}
 
 	/** A name's word starts are kept rows keyed by the start and the norm it begins in, carrying nothing else. */
@@ -71,7 +85,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'item_key' ], $themes['key'] );
 		$this->assertSame( [ 'themes_item_day' => [ 'item_day' ] ], $themes['indexes'] );
 		$this->assertSame( [ 'item_day', 730, 86400 ], $themes['retain'] );
-		$this->assertSame( 11, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 12, Intel_Graph_Row_Schema::version() );
 	}
 
 	/**
@@ -82,9 +96,9 @@ final class IntelGraphRowSchemaTest extends TestCase {
 	public function test_an_extraction_row_carries_its_kind_check(): void {
 		$columns = Intel_Graph_Row_Schema::tables()['extractions']['columns'];
 
-		$this->assertSame( [ 'id', 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'checked_kind', 'kind_verdict', 'checked_ts', 'kind_subject', 'rank_reason', 'actor', 'item_day' ], \array_keys( $columns ) );
+		$this->assertSame( [ 'id', 'item_key', 'summary', 'kind', 'relevance', 'importance', 'sentiment', 'checked_kind', 'kind_verdict', 'checked_ts', 'kind_subject', 'rank_reason', 'actor', 'ts', 'item_day' ], \array_keys( $columns ) );
 		$this->assertSame( [ 'TEXT', 'TEXT', 'INTEGER', 'TEXT', 'TEXT NOT NULL' ], [ $columns['checked_kind'], $columns['kind_verdict'], $columns['checked_ts'], $columns['kind_subject'], $columns['rank_reason'] ] );
-		$this->assertSame( 11, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 12, Intel_Graph_Row_Schema::version() );
 	}
 
 	/** One fragment reads an extraction row's kind check back as the record its event carried, null for one never checked. */
@@ -165,7 +179,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'kind' ], $tables['extractions']['indexes']['extractions_kind'] );
 		$this->assertSame( 'i.item_time', Intel_Graph_Row_Schema::ITEM_TIME );
 		$this->assertSame( [ 1793000017, 1792000041 ], [ Intel_Graph_Row_Schema::item_time( 0, 1793000017 ), Intel_Graph_Row_Schema::item_time( 1792000041, 1793000017 ) ] );
-		$this->assertSame( 11, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 12, Intel_Graph_Row_Schema::version() );
 	}
 
 	public function test_judgments_and_collected_outlive_their_items(): void {
@@ -201,7 +215,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'source' => 'TEXT NOT NULL', 'line_hash' => 'TEXT NOT NULL', 'item_key' => 'TEXT NOT NULL', 'item_day' => 'INTEGER NOT NULL' ], $boilerplate['columns'] );
 		$this->assertSame( [ 'source', 'line_hash', 'item_key' ], $boilerplate['key'] );
 		$this->assertSame( [ 'item_day', 730, 86400 ], $boilerplate['retain'] );
-		$this->assertSame( 11, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 12, Intel_Graph_Row_Schema::version() );
 
 		$now       = 1793000000;
 		Core::$now = (float) ( $now - 731 * 86400 );
@@ -263,7 +277,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 		$this->assertSame( [ 'item_key' => 'TEXT NOT NULL', 'tier' => 'TEXT NOT NULL', 'url' => 'TEXT NOT NULL', 'title' => 'TEXT NOT NULL', 'why' => 'TEXT NOT NULL', 'actor' => 'TEXT NOT NULL', 'ts' => 'REAL NOT NULL' ], $excluded['columns'] );
 		$this->assertSame( [ 'item_key' ], $excluded['key'] );
 		$this->assertTrue( $excluded['keep'] );
-		$this->assertSame( 11, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 12, Intel_Graph_Row_Schema::version() );
 	}
 
 	/** The reads that open on a proposal's subject or a judged entity reach it by an index. */
@@ -272,7 +286,7 @@ final class IntelGraphRowSchemaTest extends TestCase {
 
 		$this->assertContains( [ 'subject', 'kind' ], $tables['events']['indexes'] ?? [] );
 		$this->assertContains( [ 'entity_key' ], $tables['judgments']['indexes'] ?? [] );
-		$this->assertSame( 11, Intel_Graph_Row_Schema::version() );
+		$this->assertSame( 12, Intel_Graph_Row_Schema::version() );
 	}
 
 	/** With no partition written, a table reads as an empty row set of its declared columns. */

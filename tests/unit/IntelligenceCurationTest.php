@@ -46,6 +46,9 @@ final class IntelligenceCurationTest extends TestCase {
 
 	private const LEDGER = 'organization:salem-ledger';
 
+	/** A client the churn-note tests note. */
+	private const HARBOR = 'organization:harbor-ledger';
+
 	private const LOGIN = 'kinsey-reed';
 
 	private const OFFBOARDING = 'client offboarding';
@@ -72,7 +75,7 @@ final class IntelligenceCurationTest extends TestCase {
 	/** A rejected proposal only a restricted item cites. */
 	private const SHELVED = 'organization:shelved-buyer';
 
-	private const CURATION = [ 'confirm_link', 'reject_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'mark_used', 'move_item', 'save_lens', 'remove_lens', 'merge_theme', 'exclude_item', 'include_item', 'excluded' ];
+	private const CURATION = [ 'confirm_link', 'reject_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'mark_used', 'move_item', 'uncollect', 'save_lens', 'remove_lens', 'merge_theme', 'exclude_item', 'include_item', 'note_churn', 'excluded' ];
 
 	/** Each curation event kind, by the command that writes it. */
 	private const VERB_OF = [
@@ -94,6 +97,8 @@ final class IntelligenceCurationTest extends TestCase {
 		'theme_merged'       => 'merge_theme',
 		'item_excluded'      => 'exclude_item',
 		'item_included'      => 'include_item',
+		'churn_note_set'     => 'note_churn',
+		'item_uncollected'   => 'uncollect',
 	];
 
 	private Intelligence_CI_Node $ci;
@@ -115,6 +120,65 @@ final class IntelligenceCurationTest extends TestCase {
 		Topology_Registry::reset();
 		Topology_Analyzer::reset_caches();
 		parent::tearDown();
+	}
+
+	/**
+	 * A client's second churn note replaces its first, and its status
+	 * answers the second with who wrote it.
+	 */
+	public function test_a_churn_note_replaces_the_last(): void {
+		$this->seed_harbor_ledger();
+
+		$this->ci->dispatch( 'note_churn', [ '--entity=' . self::HARBOR, '--text=Weighing a cheaper host', '--owner=Mara Quill', '--next_step=price review', '--day=2026-11-18' ] );
+		$this->ci->dispatch( 'note_churn', [ '--entity=' . self::HARBOR, '--text=Asked for a renewal quote', '--owner=Dana Reyes', '--next_step=renewal call', '--day=2026-11-20' ] );
+		$this->seed( self::ontology_events() );
+
+		$this->assertSame(
+			[ 'text' => 'Asked for a renewal quote', 'owner' => 'Dana Reyes', 'next_step' => 'renewal call', 'day' => '2026-11-20', 'by' => 'user:' . self::LOGIN ],
+			$this->ci->dispatch( 'entity', [ self::HARBOR ] )['status']['churn_note']
+		);
+	}
+
+	/** A note with no text clears the client's note. */
+	public function test_an_empty_note_clears_it(): void {
+		$this->seed_harbor_ledger();
+
+		$this->ci->dispatch( 'note_churn', [ '--entity=' . self::HARBOR, '--text=Weighing a cheaper host', '--owner=Mara Quill' ] );
+		$this->ci->dispatch( 'note_churn', [ '--entity=' . self::HARBOR, '--text=' ] );
+		$this->seed( self::ontology_events() );
+
+		$this->assertNull( $this->ci->dispatch( 'entity', [ self::HARBOR ] )['status']['churn_note'] );
+	}
+
+	/** A note's text or next step past NOTE_BYTES is refused, and nothing is written. */
+	public function test_a_note_over_its_cap_is_refused(): void {
+		$this->seed_harbor_ledger();
+		$refusal = function ( array $args ): string {
+			try {
+				$this->ci->dispatch( 'note_churn', [ '--entity=' . self::HARBOR, ...$args ] );
+				$this->fail( 'an oversized note was written' );
+			} catch ( \InvalidArgumentException $e ) {
+				return $e->getMessage();
+			}
+		};
+
+		$this->assertSame(
+			[ 'text runs past 1000 bytes', 'next_step runs past 1000 bytes' ],
+			[
+				$refusal( [ '--text=' . \str_repeat( 'n', Graph_Curation::NOTE_BYTES + 1 ) ] ),
+				$refusal( [ '--text=Quiet lately.', '--next_step=' . \str_repeat( 'n', Graph_Curation::NOTE_BYTES + 1 ) ] ),
+			]
+		);
+		$this->assertSame( [], self::ontology_events() );
+	}
+
+	/** The read fixture and Harbor Ledger, a client since 10 February. */
+	private function seed_harbor_ledger(): void {
+		$this->seed_world();
+		$this->seed(
+			self::entity( self::HARBOR, 'Harbor Ledger' ),
+			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => self::HARBOR, 'role' => 'client', 'from_ts' => self::$jan_01 + 40 * 86400 ], 'user:41', 'fixture-9' ) ]
+		);
 	}
 
 	/** Every curation command declares tune; fetch_now mounts a worker's input, so it declares manage. */
@@ -160,6 +224,10 @@ final class IntelligenceCurationTest extends TestCase {
 			'exclude_item'      => [ 'exclude_item', [ 'github:ledger-launch', '--why=Repeats the launch notice.' ], [ 'event' => 'item_excluded', 'item_key' => 'github:ledger-launch', 'url' => 'https://news.example/github/ledger-launch', 'title' => 'Salem Ledger launches a newsletter tool', 'tier' => 'internal', 'why' => 'Repeats the launch notice.' ] ],
 			'exclude a public item' => [ 'exclude_item', [ '--item=feed:gazette-award' ], [ 'event' => 'item_excluded', 'item_key' => 'feed:gazette-award', 'url' => 'https://news.example/feed/gazette-award', 'title' => 'Harbor Gazette wins state award', 'tier' => 'public' ] ],
 			'include_item'      => [ 'include_item', [ self::WIRE ], [ 'event' => 'item_included', 'item_key' => self::WIRE ] ],
+			'note_churn'        => [ 'note_churn', [ '--entity=' . self::GAZETTE, '--text=Asked twice about leaving.', '--owner=Dana Reyes', '--next_step=renewal call', '--day=2026-11-20' ], [ 'event' => 'churn_note_set', 'entity_key' => self::GAZETTE, 'text' => 'Asked twice about leaving.', 'owner' => 'Dana Reyes', 'next_step' => 'renewal call', 'day' => '2026-11-20' ] ],
+			'note a merged key' => [ 'note_churn', [ '--entity=organization:gazette-weekly', '--text=Board weighs a cheaper host.' ], [ 'event' => 'churn_note_set', 'entity_key' => self::GAZETTE, 'text' => 'Board weighs a cheaper host.', 'owner' => '', 'next_step' => '', 'day' => '' ] ],
+			'clear a note'      => [ 'note_churn', [ '--entity=' . self::GAZETTE ], [ 'event' => 'churn_note_set', 'entity_key' => self::GAZETTE, 'text' => '', 'owner' => '', 'next_step' => '', 'day' => '' ] ],
+			'uncollect'         => [ 'uncollect', [ 'col-october', 'linear:joint-grant' ], [ 'event' => 'item_uncollected', 'collection_key' => 'col-october', 'item_key' => 'linear:joint-grant', 'tiers' => [ 'internal' ] ] ],
 		];
 	}
 
@@ -482,6 +550,12 @@ final class IntelligenceCurationTest extends TestCase {
 			'exclude past the why cap'    => [ 'exclude_item', [ 'github:ledger-launch', '--why=' . \str_repeat( 'w', 513 ) ], 'why runs past 512 bytes' ],
 			'include one not excluded'    => [ 'include_item', [ 'github:ledger-launch' ], 'github:ledger-launch is not excluded' ],
 			'include a hidden exclusion'  => [ 'include_item', [ self::HIDDEN_EXCLUSION ], self::HIDDEN_EXCLUSION . ' is not excluded' ],
+			'note a client that is not'   => [ 'note_churn', [ '--entity=' . self::LEDGER, '--text=Quiet lately.' ], 'organization:salem-ledger holds no open client role' ],
+			'note a hidden entity'        => [ 'note_churn', [ '--entity=' . self::HIDDEN, '--text=Quiet lately.' ], 'no entity: ' . self::HIDDEN ],
+			'note a day that is not'      => [ 'note_churn', [ '--entity=' . self::GAZETTE, '--text=Quiet lately.', '--day=20 Nov' ], 'not a Y-m-d date: 20 Nov' ],
+			'note an owner past its cap'  => [ 'note_churn', [ '--entity=' . self::GAZETTE, '--text=Quiet lately.', '--owner=' . $long ], 'owner runs past 256 bytes' ],
+			'uncollect from no folder'    => [ 'uncollect', [ 'col:missing', 'linear:joint-grant' ], 'no collection: col:missing' ],
+			'uncollect one not saved'     => [ 'uncollect', [ 'col:october', 'linear:joint-grant' ], 'linear:joint-grant is not saved in October wins' ],
 		];
 	}
 
@@ -792,6 +866,51 @@ final class IntelligenceCurationTest extends TestCase {
 		$this->assertSame( [ 'col:october' => 1, 'col-october' => 0 ], \array_column( Graph_Query::collections( [] )['collections'], 'items', 'collection_key' ) );
 	}
 
+	/**
+	 * An item saved in two folders leaves the one it is taken out of and
+	 * stays in the other, with its saved title.
+	 */
+	public function test_uncollect_removes_the_item_from_that_folder_only(): void {
+		$this->seed_curation_world();
+		$this->seed( [ self::placed_at( 'col:october', 'linear:joint-grant', 'internal', 'user:41', self::$oct_13 ) ] );
+
+		$this->ci->dispatch( 'uncollect', [ 'col-october', 'linear:joint-grant' ] );
+		$this->seed( self::ontology_events() );
+
+		$this->assertSame( [], Graph_Query::collections( [ 'key' => 'col-october' ] )['items'] );
+		$this->assertSame( [ 'linear:joint-grant' ], \array_column( Graph_Query::collections( [ 'key' => 'col:october' ] )['items'], 'item_key' ) );
+		$this->assertSame( [ [ 'col:october', 'internal' ] ], self::graph_rows( 'collected', 'collection_key', 'collection_key, tier' ) );
+	}
+
+	/**
+	 * Taking an item out of a folder removes only the copies the caller
+	 * reads: a reader is refused an item only a restricted copy holds there,
+	 * as one never saved, and a reader's removal leaves a holder's restricted
+	 * copy where it was.
+	 */
+	public function test_uncollect_refuses_an_item_the_caller_cannot_read(): void {
+		$this->seed_curation_world();
+		$this->seed(
+			[
+				self::placed_at( 'col:october', 'hubspot:deal-9', 'restricted', 'user:41', self::$oct_13 ),
+				self::placed_at( 'col-october', 'linear:joint-grant', 'restricted', 'user:41', self::$oct_13 ),
+			]
+		);
+
+		try {
+			$this->ci->dispatch( 'uncollect', [ 'col:october', 'hubspot:deal-9' ] );
+			$this->fail( 'a reader took out a restricted copy' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( 'hubspot:deal-9 is not saved in October wins', $e->getMessage() );
+		}
+		$this->assertSame( [], self::ontology_events() );
+		$this->ci->dispatch( 'uncollect', [ 'col-october', 'linear:joint-grant' ] );
+		$this->seed( self::ontology_events() );
+
+		$this->assertSame( [ [ 'internal' ] ], \array_map( static fn ( array $e ): array => $e['tiers'], self::ontology_events() ) );
+		$this->assertSame( [ [ 'col-october', 'linear:joint-grant', 'restricted' ], [ 'col:october', 'hubspot:deal-9', 'restricted' ] ], self::graph_rows( 'collected', 'collection_key', 'collection_key, item_key, tier' ) );
+	}
+
 	/** A folder lists the items not yet used first, then each run by save time, the latest first. */
 	public function test_a_folder_lists_unused_items_first_then_by_save_time(): void {
 		$this->seed_curation_world();
@@ -967,6 +1086,7 @@ final class IntelligenceCurationTest extends TestCase {
 			[ Intel_Event::make( 'collection_created', [ 'collection_key' => $key( 'e' ), 'name' => 'Wider' ], 'user:41', 'fixture-9' ) ],
 			[ Intel_Event::make( 'collected', [ 'collection_key' => $key( 'c' ), 'item_key' => $saved, 'url' => 'https://news.example/' . $wide( Graph_Curation::URL_BYTES - 21 ), 'title' => Graph_Curation::cut( \str_repeat( "\u{1F600}", 600 ), Graph_Curation::TITLE_BYTES ), 'tier' => 'public' ], 'user:41', 'fixture-9' ) ],
 			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => $entity, 'role' => 'operator_product', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ) ],
+			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => $key( 'f' ), 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ) ],
 			[ Intel_Event::make( 'item_excluded', [ 'item_key' => $gone, 'url' => 'https://news.example/' . $wide( Graph_Curation::URL_BYTES - 21 ), 'title' => 'Wide', 'tier' => 'public' ], 'user:41', 'fixture-9' ) ],
 			self::link( 'link_asserted', $item, $entity, 'subject', 'name', 1.0, self::$oct_06 ),
 			self::entity( $topic, 'Wide' ),
@@ -974,7 +1094,7 @@ final class IntelligenceCurationTest extends TestCase {
 			self::extraction( 'feed:wide-from', 'Wide.', 'other', self::$oct_06, [], 5.0, 5.0, $wide( Intel_Event::THEME_BYTES ) ),
 			self::item( 'feed:wide-into', 'Wide into', 'feed', 'public', self::$oct_06 ),
 			self::extraction( 'feed:wide-into', 'Wide.', 'other', self::$oct_06, [], 5.0, 5.0, $wide( Intel_Event::THEME_BYTES - 1 ) . 'r' ),
-			...\array_map( static fn ( string $tag ): array => self::entity( $key( $tag ), 'Wide' ), [ 'a', 'b', 'd' ] )
+			...\array_map( static fn ( string $tag ): array => self::entity( $key( $tag ), 'Wide' ), [ 'a', 'b', 'd', 'f' ] )
 		);
 		$calls = [
 			[ 'confirm_link', [ $item, $entity ] ],
@@ -995,6 +1115,8 @@ final class IntelligenceCurationTest extends TestCase {
 			[ 'merge_theme', [ $wide( Intel_Event::THEME_BYTES ), $wide( Intel_Event::THEME_BYTES - 1 ) . 'r' ] ],
 			[ 'exclude_item', [ $item, '--why=' . $wide( Intel_Event::WHY_BYTES ) ] ],
 			[ 'include_item', [ $gone ] ],
+			[ 'uncollect', [ $key( 'c' ), $saved ] ],
+			[ 'note_churn', [ '--entity=' . $key( 'f' ), '--text=' . $wide( Graph_Curation::NOTE_BYTES ), '--owner=' . $name, '--next_step=' . $wide( Graph_Curation::NOTE_BYTES ), '--day=2026-11-20' ] ],
 		];
 		foreach ( $calls as [ $verb, $args ] ) {
 			$this->ci->dispatch( $verb, $args );
