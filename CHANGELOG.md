@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-11-09
+
 ### Added
 
 - **A Slack channel can skip bot posts.** `add_channel <id> --skip-bots`, on `Slack_Source` and `Context_A8C_Slack` alike, records none of the channel's bot posts, a message carrying a `bot_id` or of subtype `bot_message`, in its history or its threads; a bot's thread is still read, so the people replying under it record. A plain `add_channel` records bots as before, adding a channel again replaces its setting, `remove_channel` drops it, and `dump_config()` writes `--skip-bots` on the channel's add line. `Source_Node::checked_list()` takes the flag as an optional declaration, so another checked list can declare one.
