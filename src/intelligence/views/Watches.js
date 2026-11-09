@@ -28,14 +28,24 @@ const KINDS = [ 'lens', 'entity', 'collection' ];
 const DELIVERIES = [ 'digest', 'instant', 'inbox' ];
 
 /**
- * What each target kind is called.
+ * What each target kind is called: as a watch follows it, and as the field
+ * naming the one it follows.
  *
- * @return {Object<string, string>} The words, by kind.
+ * @return {Object<string, {watched: string, field: string}>} The words, by kind.
  */
 const kindWords = () => ( {
-	lens: __( 'Lens', 'newspack-intelligence' ),
-	entity: __( 'Entity', 'newspack-intelligence' ),
-	collection: __( 'Collection', 'newspack-intelligence' ),
+	lens: {
+		watched: __( 'A team view', 'newspack-intelligence' ),
+		field: __( 'Team view', 'newspack-intelligence' ),
+	},
+	entity: {
+		watched: __( 'A client or company', 'newspack-intelligence' ),
+		field: __( 'Client or company', 'newspack-intelligence' ),
+	},
+	collection: {
+		watched: __( 'A folder', 'newspack-intelligence' ),
+		field: __( 'Folder', 'newspack-intelligence' ),
+	},
 } );
 
 /**
@@ -158,14 +168,14 @@ const sameWatch = ( listed, held ) =>
  */
 function inboxText( watch ) {
 	if ( ! watch.inbox ) {
-		return __( 'Inbox off', 'newspack-intelligence' );
+		return __( 'Not listed here; email only', 'newspack-intelligence' );
 	}
 	if ( null === watch.unseen ) {
 		return null;
 	}
 	return sprintf(
 		/* translators: %d: matches not yet seen. */
-		__( '%d unseen', 'newspack-intelligence' ),
+		__( '%d new', 'newspack-intelligence' ),
 		watch.unseen
 	);
 }
@@ -207,8 +217,7 @@ export function WatchRow( { watch, active = false, onOpen } ) {
 			</button>{ ' ' }
 			<span className="newspack-nodes-status is-muted">
 				{ metaLine(
-					kindWords()[ watch.target.kind ],
-					watch.target.key,
+					kindWords()[ watch.target.kind ].watched,
 					inboxText( watch )
 				) }
 			</span>
@@ -273,30 +282,30 @@ function WatchForm( { draft, onDraft, onSave, onCancel } ) {
 				{ ...field( 'name' ) }
 			/>
 			<SelectControl
-				label={ __( 'Follows', 'newspack-intelligence' ) }
+				label={ __( 'Watching', 'newspack-intelligence' ) }
 				options={ KINDS.map( ( kind ) => ( {
-					label: kinds[ kind ],
+					label: kinds[ kind ].watched,
 					value: kind,
 				} ) ) }
 				{ ...field( 'kind' ) }
 			/>
 			{ 'lens' === draft.kind && (
 				<SelectControl
-					label={ kinds.lens }
+					label={ kinds.lens.field }
 					options={ optionsOf( lenses.answer?.lenses, 'lens_key' ) }
 					{ ...field( 'lens' ) }
 				/>
 			) }
 			{ 'entity' === draft.kind && (
 				<TextControl
-					label={ kinds.entity }
+					label={ kinds.entity.field }
 					placeholder="organization:acme-gazette"
 					{ ...field( 'entity' ) }
 				/>
 			) }
 			{ 'collection' === draft.kind && (
 				<SelectControl
-					label={ kinds.collection }
+					label={ kinds.collection.field }
 					options={ optionsOf(
 						collections.answer?.collections,
 						'collection_key'
@@ -397,7 +406,7 @@ function Opened( {
 				rows="items"
 				empty={
 					watch.inbox
-						? __( 'No unseen match.', 'newspack-intelligence' )
+						? __( 'Nothing new.', 'newspack-intelligence' )
 						: __(
 								'The inbox is off for this watch, so its matches are not listed here.',
 								'newspack-intelligence'
@@ -412,9 +421,13 @@ function Opened( {
 								className="button"
 								onClick={ () => markShown( answer.items ) }
 							>
-								{ __(
-									'Mark these seen',
-									'newspack-intelligence'
+								{ sprintf(
+									/* translators: %d: the matches shown. */
+									__(
+										'Mark %d as seen',
+										'newspack-intelligence'
+									),
+									answer.items.length
 								) }
 							</button>
 						</div>

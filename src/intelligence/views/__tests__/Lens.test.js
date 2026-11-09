@@ -17,7 +17,7 @@ import {
 import { Core } from '@newspack-nodes/runtime';
 import { useState } from '@wordpress/element';
 import { intelWire } from '../../__tests__/intelWire';
-import { GROUPS, LENSES, VOCABULARY } from './fixtures';
+import { GROUPS, LENSES, pageData, VOCABULARY } from './fixtures';
 import Lens, { CLOSED_LENS } from '../Lens';
 
 /**
@@ -119,7 +119,7 @@ function Harness( props ) {
 
 beforeEach( () => {
 	Core.reset();
-	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+	window.NewspackNodesData = pageData();
 	wire = intelWire();
 	wire.replies.lenses = LENSES;
 	wire.replies.search = GROUPS;
@@ -131,6 +131,38 @@ const openSupport = async () =>
 	fireEvent.click(
 		await screen.findByRole( 'button', { name: 'Support desk' } )
 	);
+
+/**
+ * The tokens a multi-select of a form holds, in order.
+ *
+ * @param {HTMLElement} form  The form.
+ * @param {string}      label The field's label.
+ * @return {string[]} The tokens.
+ */
+const tokens = ( form, label ) =>
+	[
+		...within( form )
+			.getByLabelText( label )
+			.closest( '.components-form-token-field' )
+			.querySelectorAll(
+				'.components-form-token-field__token-text [aria-hidden="true"]'
+			),
+	].map( ( one ) => one.textContent );
+
+/**
+ * Type each value into a form's multi-select and enter it.
+ *
+ * @param {HTMLElement} form   The form.
+ * @param {string}      label  The field's label.
+ * @param {...string}   values The values.
+ */
+const pick = ( form, label, ...values ) => {
+	const box = within( form ).getByLabelText( label );
+	for ( const value of values ) {
+		fireEvent.change( box, { target: { value } } );
+		fireEvent.keyDown( box, { key: 'Enter' } );
+	}
+};
 
 describe( 'Lens', () => {
 	it( 'stands a line in for its signals while they are owed', async () => {
@@ -164,7 +196,9 @@ describe( 'Lens', () => {
 	it( 'says there is no lens yet', async () => {
 		wire.replies.lenses = { lenses: [], available: true };
 		render( <Harness canTune={ false } /> );
-		expect( await screen.findByText( 'No lens yet.' ) ).toBeInTheDocument();
+		expect(
+			await screen.findByText( 'No team view yet.' )
+		).toBeInTheDocument();
 	} );
 
 	it( 'opens a lens onto its trend chart above its groups', async () => {
@@ -191,12 +225,12 @@ describe( 'Lens', () => {
 			trends.querySelectorAll( '.newspack-nodes-chart' )
 		).toHaveLength( 1 );
 		expect(
-			within( trends ).getByRole( 'button', { name: 'complaint' } )
+			within( trends ).getByRole( 'button', { name: 'Grumble' } )
 		).toBeInTheDocument();
 		expect( within( trends ).getAllByRole( 'table' ) ).toHaveLength( 1 );
 		expect(
 			within( trends ).getByRole( 'row', { name: /2026-09-21/ } )
-		).toHaveTextContent( 'complaint' );
+		).toHaveTextContent( 'Grumble' );
 		expect( within( trends ).queryByRole( 'link' ) ).toBeNull();
 		expect(
 			trends.compareDocumentPosition( items ) &
@@ -219,9 +253,9 @@ describe( 'Lens', () => {
 		const row = await within( signals ).findByRole( 'row', {
 			name: /2026-09-28/,
 		} );
-		expect( within( row ).getByText( 'praise' ) ).toBeInTheDocument();
+		expect( within( row ).getByText( 'Kudos' ) ).toBeInTheDocument();
 		expect(
-			within( row ).getByText( '11 against a baseline of 1.7' )
+			within( row ).getByText( '11, usually about 2' )
 		).toBeInTheDocument();
 		expect(
 			within( row ).getByRole( 'link', {
@@ -248,7 +282,9 @@ describe( 'Lens', () => {
 			name: 'Signals',
 		} );
 		const line = (
-			await within( signals ).findByText( 'about spike: praise' )
+			await within( signals ).findByText(
+				'Kudos: 11 last week, usually about 2.'
+			)
 		).closest( 'p' );
 		expect( within( line ).getByRole( 'img' ) ).toHaveAccessibleName(
 			/oldest first: 1, 3, 0, 1, 2, 0, 4, 11; the latest, from 2026-09-28, counts 11/
@@ -291,7 +327,7 @@ describe( 'Lens', () => {
 			screen.queryByRole( 'button', { name: 'Watch this' } )
 		).toBeNull();
 		await openSupport();
-		await screen.findByText( '11 against a baseline of 1.7' );
+		await screen.findByText( '11, usually about 2' );
 		await screen.findByText( 'From 2026-09-21 to 2026-09-21' );
 		await screen.findByText( 'Acme Quillsheet wins regional prize' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Watch this' } ) );
@@ -307,12 +343,10 @@ describe( 'Lens', () => {
 		render( <Harness canTune={ false } /> );
 		await openSupport();
 		expect(
-			await screen.findByText(
-				'No readable item is seen through this lens.'
-			)
+			await screen.findByText( 'Nothing in this team view.' )
 		).toBeInTheDocument();
 		expect(
-			await screen.findByText( 'No trend is seen through this lens.' )
+			await screen.findByText( 'No trend in this team view.' )
 		).toBeInTheDocument();
 	} );
 
@@ -362,7 +396,7 @@ describe( 'Lens', () => {
 		await openSupport();
 		await screen.findByRole( 'region', { name: 'Trends' } );
 		expect(
-			screen.queryByRole( 'button', { name: 'New lens' } )
+			screen.queryByRole( 'button', { name: 'New view' } )
 		).toBeNull();
 		expect( screen.queryByRole( 'button', { name: /^Edit / } ) ).toBeNull();
 		expect(
@@ -374,39 +408,38 @@ describe( 'Lens', () => {
 		wire.replies.save_lens = { ok: true, event_id: 'ev-l1' };
 		render( <Harness canTune={ true } /> );
 		await screen.findByRole( 'button', { name: 'Support desk' } );
-		fireEvent.click( screen.getByRole( 'button', { name: 'New lens' } ) );
-		const form = screen.getByRole( 'form', { name: 'Save lens' } );
+		fireEvent.click( screen.getByRole( 'button', { name: 'New view' } ) );
+		const form = screen.getByRole( 'form', { name: 'Save team view' } );
 		const type = ( label, value ) =>
 			fireEvent.change( within( form ).getByLabelText( label ), {
 				target: { value },
 			} );
-		type( 'Key', 'board-briefing' );
 		type( 'Name', 'Board briefing' );
 		type( 'Description', 'What the board reads monthly' );
-		type( 'Kinds', 'funding, launch' );
+		pick( form, 'Kind of news', 'funding', 'launch' );
 		type( 'Topics', 'topic:local-news,topic:ai' );
-		type( 'Roles', 'funder' );
-		type( 'Sources', 'feed, github' );
-		type( 'Entity', 'organization:acme-quillsheet' );
-		type( 'Days', '45' );
-		fireEvent.click( within( form ).getByLabelText( 'restricted' ) );
-		fireEvent.click( within( form ).getByLabelText( 'public' ) );
-		type( 'Count by', 'topic' );
-		type( 'Bucket', 'month' );
+		pick( form, 'About', 'competitor' );
+		pick( form, 'Sources', 'feed', 'github' );
+		type( 'Client or company', 'organization:acme-quillsheet' );
+		type( 'Look back, in days', '45' );
+		fireEvent.click( within( form ).getByLabelText( 'Few' ) );
+		fireEvent.click( within( form ).getByLabelText( 'Anyone' ) );
+		type( 'Chart by', 'topic' );
+		type( 'Group by', 'month' );
 		fireEvent.click(
-			within( form ).getByRole( 'button', { name: 'Save lens' } )
+			within( form ).getByRole( 'button', { name: 'Save team view' } )
 		);
 		await waitFor( () =>
 			expect( wire.sent( 'save_lens' ) ).toEqual( [
 				[
-					'--key=board-briefing',
+					'--key=Board briefing',
 					'--name=Board briefing',
 					'--description=What the board reads monthly',
 					'--kind=funding',
 					'--kind=launch',
 					'--topic=topic:local-news',
 					'--topic=topic:ai',
-					'--role=funder',
+					'--role=competitor',
 					'--source=feed',
 					'--source=github',
 					'--tier=public',
@@ -422,7 +455,7 @@ describe( 'Lens', () => {
 			expect( wire.sent( 'lenses' ) ).toHaveLength( 2 )
 		);
 		expect(
-			screen.queryByRole( 'form', { name: 'Save lens' } )
+			screen.queryByRole( 'form', { name: 'Save team view' } )
 		).toBeNull();
 	} );
 
@@ -430,28 +463,30 @@ describe( 'Lens', () => {
 		wire.replies.save_lens = { ok: true, event_id: 'ev-l2' };
 		render( <Harness canTune={ true } /> );
 		await openSupport();
-		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Edit Support desk' } )
-		);
-		const form = screen.getByRole( 'form', { name: 'Save lens' } );
-		expect( within( form ).getByLabelText( 'Kinds' ) ).toHaveValue(
-			'complaint, praise'
-		);
-		expect( within( form ).getByLabelText( 'Days' ) ).toHaveValue( 21 );
-		expect( within( form ).getByLabelText( 'Count by' ) ).toHaveValue(
+		fireEvent.click( screen.getByRole( 'button', { name: 'Edit' } ) );
+		const form = screen.getByRole( 'form', { name: 'Save team view' } );
+		expect( tokens( form, 'Kind of news' ) ).toEqual( [
+			'Grumble',
+			'Kudos',
+		] );
+		expect(
+			within( form ).getByLabelText( 'Look back, in days' )
+		).toHaveValue( 21 );
+		expect( within( form ).getByLabelText( 'Chart by' ) ).toHaveValue(
 			'kind'
 		);
-		expect( within( form ).getByLabelText( 'internal' ) ).toBeChecked();
-		expect( within( form ).getByLabelText( 'public' ) ).not.toBeChecked();
-		fireEvent.change( within( form ).getByLabelText( 'Roles' ), {
-			target: { value: 'client, former_client' },
-		} );
-		fireEvent.click( within( form ).getByLabelText( 'internal' ) );
-		fireEvent.change( within( form ).getByLabelText( 'Bucket' ), {
+		expect(
+			within( form ).getByRole( 'option', { name: 'News type' } )
+		).toBeInTheDocument();
+		expect( within( form ).getByLabelText( 'Staff' ) ).toBeChecked();
+		expect( within( form ).getByLabelText( 'Anyone' ) ).not.toBeChecked();
+		pick( form, 'About', 'former_client' );
+		fireEvent.click( within( form ).getByLabelText( 'Staff' ) );
+		fireEvent.change( within( form ).getByLabelText( 'Group by' ), {
 			target: { value: '' },
 		} );
 		fireEvent.click(
-			within( form ).getByRole( 'button', { name: 'Save lens' } )
+			within( form ).getByRole( 'button', { name: 'Save team view' } )
 		);
 		await waitFor( () =>
 			expect( wire.sent( 'save_lens' ) ).toEqual( [
@@ -475,15 +510,13 @@ describe( 'Lens', () => {
 		wire.replies.save_lens = { ok: true, event_id: 'ev-l4' };
 		render( <Harness canTune={ true } /> );
 		await openSupport();
-		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Edit Support desk' } )
-		);
-		const form = screen.getByRole( 'form', { name: 'Save lens' } );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Edit' } ) );
+		const form = screen.getByRole( 'form', { name: 'Save team view' } );
 		fireEvent.change( within( form ).getByLabelText( 'Name' ), {
 			target: { value: 'Support triage' },
 		} );
 		fireEvent.click(
-			within( form ).getByRole( 'button', { name: 'Save lens' } )
+			within( form ).getByRole( 'button', { name: 'Save team view' } )
 		);
 		await waitFor( () =>
 			expect( wire.sent( 'lenses' ) ).toHaveLength( 2 )
@@ -503,15 +536,13 @@ describe( 'Lens', () => {
 		wire.replies.save_lens = () => new Error( 'no entity: topic:nowhere' );
 		render( <Harness canTune={ true } /> );
 		await openSupport();
-		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Edit Support desk' } )
-		);
-		const form = screen.getByRole( 'form', { name: 'Save lens' } );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Edit' } ) );
+		const form = screen.getByRole( 'form', { name: 'Save team view' } );
 		fireEvent.change( within( form ).getByLabelText( 'Name' ), {
 			target: { value: 'Support triage' },
 		} );
 		fireEvent.click(
-			within( form ).getByRole( 'button', { name: 'Save lens' } )
+			within( form ).getByRole( 'button', { name: 'Save team view' } )
 		);
 		expect(
 			await screen.findByText( 'no entity: topic:nowhere' )
@@ -527,10 +558,10 @@ describe( 'Lens', () => {
 	it( 'cancels an edit without sending it', async () => {
 		render( <Harness canTune={ true } /> );
 		await screen.findByRole( 'button', { name: 'Support desk' } );
-		fireEvent.click( screen.getByRole( 'button', { name: 'New lens' } ) );
+		fireEvent.click( screen.getByRole( 'button', { name: 'New view' } ) );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Cancel' } ) );
 		expect(
-			screen.queryByRole( 'form', { name: 'Save lens' } )
+			screen.queryByRole( 'form', { name: 'Save team view' } )
 		).toBeNull();
 		expect( wire.sent( 'save_lens' ) ).toEqual( [] );
 	} );
@@ -540,13 +571,13 @@ describe( 'Lens', () => {
 			new Error( 'kind must be one of: award, launch, funding' );
 		render( <Harness canTune={ true } /> );
 		await screen.findByRole( 'button', { name: 'Support desk' } );
-		fireEvent.click( screen.getByRole( 'button', { name: 'New lens' } ) );
-		const form = screen.getByRole( 'form', { name: 'Save lens' } );
-		fireEvent.change( within( form ).getByLabelText( 'Key' ), {
-			target: { value: 'odd-kinds' },
+		fireEvent.click( screen.getByRole( 'button', { name: 'New view' } ) );
+		const form = screen.getByRole( 'form', { name: 'Save team view' } );
+		fireEvent.change( within( form ).getByLabelText( 'Name' ), {
+			target: { value: 'Odd kinds' },
 		} );
 		fireEvent.click(
-			within( form ).getByRole( 'button', { name: 'Save lens' } )
+			within( form ).getByRole( 'button', { name: 'Save team view' } )
 		);
 		expect(
 			await screen.findByText(
@@ -554,7 +585,7 @@ describe( 'Lens', () => {
 			)
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'form', { name: 'Save lens' } )
+			screen.getByRole( 'form', { name: 'Save team view' } )
 		).toBeInTheDocument();
 	} );
 
@@ -564,7 +595,7 @@ describe( 'Lens', () => {
 		await openSupport();
 		await screen.findByRole( 'region', { name: 'Trends' } );
 		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Remove Support desk' } )
+			screen.getByRole( 'button', { name: 'Remove view' } )
 		);
 		await waitFor( () =>
 			expect( wire.sent( 'remove_lens' ) ).toEqual( [
@@ -587,7 +618,7 @@ describe( 'Lens', () => {
 		render( <Harness canTune={ true } /> );
 		await openSupport();
 		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Remove Support desk' } )
+			screen.getByRole( 'button', { name: 'Remove view' } )
 		);
 		expect(
 			await screen.findByText( 'no lens: support-desk' )

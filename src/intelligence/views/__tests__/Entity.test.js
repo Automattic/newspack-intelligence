@@ -15,7 +15,7 @@ import {
 } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
-import { ENTITY, ITEM, VOCABULARY } from './fixtures';
+import { ENTITY, ITEM, pageData, VOCABULARY } from './fixtures';
 import { UNDO_MS } from '../../hooks/useDeferredWrite';
 import { useIntelRead } from '../../hooks/useIntelCommand';
 import Entity from '../Entity';
@@ -72,7 +72,7 @@ let wire;
 
 beforeEach( () => {
 	Core.reset();
-	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+	window.NewspackNodesData = pageData();
 	wire = intelWire();
 	wire.replies.entity = ENTITY;
 	wire.replies.timeline = { items: [ ITEM ], total: 1, available: true };
@@ -119,7 +119,7 @@ beforeEach( () => {
 			{
 				subject: 'person:jo-reporter',
 				subject_name: 'Jo Reporter',
-				predicate: 'joined',
+				predicate: 'works_for',
 				object: KEY,
 				object_name: 'Acme Quillsheet',
 				confidence: 0.8,
@@ -184,10 +184,10 @@ describe( 'Entity — reads', () => {
 		renderEntity();
 		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		expect(
-			within( recordCard() ).getByText( /12 items, 3 proposed links/ )
+			within( recordCard() ).getByText( /^12 items$/ )
 		).toBeInTheDocument();
 		expect(
-			within( recordCard() ).queryByText( /alias: The Quillsheet/ )
+			within( recordCard() ).queryByText( /Goes by: The Quillsheet/ )
 		).toBeNull();
 		const record = details();
 		expect(
@@ -197,7 +197,7 @@ describe( 'Entity — reads', () => {
 				window.Node.DOCUMENT_POSITION_FOLLOWING
 		).toBeTruthy();
 		expect(
-			within( record ).getByText( /alias: The Quillsheet/ )
+			within( record ).getByText( /Goes by: The Quillsheet/ )
 		).toBeInTheDocument();
 		expect(
 			within( record ).getByText( /Web address: acmequillsheet\.example/ )
@@ -208,12 +208,28 @@ describe( 'Entity — reads', () => {
 		expect(
 			within( record ).getByText( /Lead 2026-05-28 – 2026-09-09/ )
 		).toBeInTheDocument();
-		expect(
-			within( record ).getByText( /organization:acme-quillsheet-inc/ )
-		).toBeInTheDocument();
+		expect( record ).not.toHaveTextContent( /organization:/ );
 		expect(
 			within( record ).getByRole( 'button', { name: 'Local news' } )
 		).toBeInTheDocument();
+	} );
+
+	it( 'shows a curator the ID and the IDs merged into it, and leaves out a count of none', async () => {
+		wire.replies.entity = {
+			...ENTITY,
+			counts: { items: 0, proposed_links: 3 },
+		};
+		renderEntity( { canTune: true } );
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
+		const record = details();
+		expect(
+			within( record ).getByText( 'ID: organization:acme-quillsheet' )
+		).toBeInTheDocument();
+		expect(
+			within( record ).getByText( /organization:acme-quillsheet-inc/ )
+		).toBeInTheDocument();
+		expect( recordCard() ).not.toHaveTextContent( /\d+ items?\b/ );
+		expect( recordCard() ).not.toHaveTextContent( /proposed/ );
 	} );
 
 	it( 'offers a curator the exclusion on its timeline, and a reader none', async () => {
@@ -272,14 +288,14 @@ describe( 'Entity — reads', () => {
 
 	it( 'reads each claim by name and cites its item by title', async () => {
 		renderEntity();
-		const claims = await screen.findByRole( 'region', { name: 'Claims' } );
+		const claims = await screen.findByRole( 'region', { name: 'Facts' } );
 		const [ won, joined ] =
 			await within( claims ).findAllByRole( 'listitem' );
 		expect( won ).toHaveTextContent(
-			'Acme Quillsheet won Regional Press Award Acme Quillsheet wins regional prize'
+			'Acme Quillsheet took Regional Press Award Acme Quillsheet wins regional prize'
 		);
 		expect( joined ).toHaveTextContent(
-			'Jo Reporter joined Acme Quillsheet Jo Reporter joins the Quillsheet'
+			'Jo Reporter is employed by Acme Quillsheet Jo Reporter joins the Quillsheet'
 		);
 		expect(
 			within( joined ).getByRole( 'link', {
@@ -292,7 +308,7 @@ describe( 'Entity — reads', () => {
 	it( "saves a claim's item to a folder when given a save handler", async () => {
 		const onSave = jest.fn();
 		renderEntity( { onSave } );
-		const claims = await screen.findByRole( 'region', { name: 'Claims' } );
+		const claims = await screen.findByRole( 'region', { name: 'Facts' } );
 		const saves = await within( claims ).findAllByRole( 'button', {
 			name: 'Save to folder',
 		} );
@@ -307,7 +323,7 @@ describe( 'Entity — reads', () => {
 
 	it( "offers a reader no save on a claim's item", async () => {
 		renderEntity();
-		const claims = await screen.findByRole( 'region', { name: 'Claims' } );
+		const claims = await screen.findByRole( 'region', { name: 'Facts' } );
 		await within( claims ).findAllByRole( 'listitem' );
 		expect(
 			within( claims ).queryByRole( 'button', { name: 'Save to folder' } )
@@ -404,7 +420,7 @@ describe( 'Entity — reads', () => {
 				{
 					subject: 'person:kit-sorrel',
 					subject_name: null,
-					predicate: 'founded',
+					predicate: 'launched',
 					object: KEY,
 					object_name: 'Acme Quillsheet',
 					confidence: 0.7,
@@ -416,7 +432,7 @@ describe( 'Entity — reads', () => {
 			available: true,
 		};
 		renderEntity( { onOpenEntity } );
-		const claims = await screen.findByRole( 'region', { name: 'Claims' } );
+		const claims = await screen.findByRole( 'region', { name: 'Facts' } );
 		fireEvent.click(
 			await within( claims ).findByRole( 'button', {
 				name: 'person:kit-sorrel',
@@ -433,7 +449,7 @@ describe( 'Entity — reads', () => {
 
 	it( 'renders a claim’s free-text object as text, not a chip', async () => {
 		renderEntity();
-		const claims = await screen.findByRole( 'region', { name: 'Claims' } );
+		const claims = await screen.findByRole( 'region', { name: 'Facts' } );
 		await within( claims ).findByText( 'Regional Press Award' );
 		expect(
 			within( claims ).queryByRole( 'button', {
@@ -466,11 +482,9 @@ describe( 'Entity — reads', () => {
 			available: true,
 		};
 		renderEntity();
+		expect( await screen.findByText( '1 item' ) ).toBeInTheDocument();
 		expect(
-			await screen.findByText( '1 item, 1 proposed link' )
-		).toBeInTheDocument();
-		expect(
-			await screen.findByText( /person · 1 shared item$/ )
+			await screen.findByText( /Human · 1 shared item$/ )
 		).toBeInTheDocument();
 	} );
 
@@ -516,7 +530,7 @@ describe( 'Entity — reads', () => {
 		);
 		expect( owedLines( container.querySelector( 'section' ) ) ).toBe( 2 );
 		expect( owedLines( card( 'Related' ) ) ).toBe( 3 );
-		expect( owedLines( card( 'Claims' ) ) ).toBe( 3 );
+		expect( owedLines( card( 'Facts' ) ) ).toBe( 3 );
 	} );
 
 	it( 'says which kind of nothing each section holds', async () => {
@@ -549,7 +563,7 @@ describe( 'Entity — reads', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'shows its signals under its header, each marked by its axis', async () => {
+	it( 'shows its signals under its header, each in words', async () => {
 		wire.replies.signals = {
 			trend: TREND,
 			partial: { bucket: '2026-10-19', count: 2 },
@@ -599,10 +613,10 @@ describe( 'Entity — reads', () => {
 			name: 'Signals',
 		} );
 		const drop = await within( signals ).findByRole( 'row', {
-			name: /publisher drop/,
+			name: /Posted little/,
 		} );
 		expect(
-			within( drop ).getByText( '2 against a baseline of 7.4' )
+			within( drop ).getByText( '2, usually about 7' )
 		).toBeInTheDocument();
 		expect(
 			within( drop ).getByRole( 'link', {
@@ -611,7 +625,7 @@ describe( 'Entity — reads', () => {
 		).toHaveAttribute( 'href', 'https://acmequillsheet.example/city-hall' );
 		expect(
 			within( signals ).getByRole( 'row', {
-				name: /about spike: complaint/,
+				name: /Grumble climbed/,
 			} )
 		).toBeInTheDocument();
 		expect(
@@ -635,7 +649,7 @@ describe( 'Entity — reads', () => {
 			await within( signals ).findByText( 'No unusual change last week.' )
 		).closest( 'p' );
 		expect( within( line ).getByRole( 'img' ) ).toHaveAccessibleName(
-			'Stories in each of the last 8 buckets, oldest first: 6, 3, 1, 4, 0, 2, 7, 5; the latest, from 2026-10-12, counts 5'
+			'Items in each of the last 8 periods, oldest first: 6, 3, 1, 4, 0, 2, 7, 5; the latest, from 2026-10-12, counts 5'
 		);
 		expect( within( signals ).queryByRole( 'table' ) ).toBeNull();
 		expect( screen.queryByText( /No signal/ ) ).toBeNull();
@@ -682,7 +696,7 @@ describe( 'Entity — status', () => {
 		const status = ( await heading() ).nextElementSibling;
 		await waitFor( () =>
 			expect( status ).toHaveTextContent(
-				'Client since 2026-09-09 · Latest signal: publisher drop, week of 2026-10-12 · 2 churn reports, 4 churn signals, 2 feature requests, 5 complaints · Last item 2026-09-22'
+				'Client since 2026-09-09 · Latest signal: Posted little, week of 2026-10-12 · 2 churn reports, 4 churn signals, 2 feature requests, 5 complaints · Last item 2026-09-22'
 			)
 		);
 		expect( wire.sent( 'signals' ) ).toHaveLength( 1 );
@@ -769,7 +783,7 @@ describe( 'Entity — churn', () => {
 		const shown = await notice();
 		expect( shown ).toHaveClass( 'is-warning' );
 		expect( shown ).toHaveTextContent(
-			'“Acme Quillsheet offboarding checklist” (linear, 2026-10-06) says this client is leaving Cobalt Desk.'
+			'“Acme Quillsheet offboarding checklist” (Tracker, 2026-10-06) says this client is leaving Cobalt Desk.'
 		);
 		expect(
 			within( shown ).getByRole( 'link', { name: 'Open item' } )
@@ -781,7 +795,7 @@ describe( 'Entity — churn', () => {
 		renderEntity( { canTune: true } );
 		const asked = await openDialog();
 		expect( asked ).toHaveTextContent(
-			'“Acme Quillsheet offboarding checklist”, linear, 2026-10-06'
+			'“Acme Quillsheet offboarding checklist”, Tracker, 2026-10-06'
 		);
 		expect( asked ).toHaveTextContent( 'Main subject of the item.' );
 		await pause();
@@ -1151,7 +1165,7 @@ describe( 'Entity — curation', () => {
 			'Edit',
 			'Add name',
 			'Add identifier',
-			'Assert role',
+			'Add a role',
 			'End Paying member…',
 		] ) {
 			expect( screen.queryByRole( 'button', { name } ) ).toBeNull();
@@ -1167,7 +1181,7 @@ describe( 'Entity — curation', () => {
 					.getAllByRole( 'combobox' )
 					.at( 0 )
 			).getByRole( 'option', { name: label } );
-		expect( option( 'Assert role', 'Rival' ) ).toHaveValue( 'competitor' );
+		expect( option( 'Add a role', 'Rival' ) ).toHaveValue( 'competitor' );
 		expect( option( 'Add identifier', 'Code org' ) ).toHaveValue(
 			'github_org'
 		);
@@ -1178,7 +1192,7 @@ describe( 'Entity — curation', () => {
 		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
 		const toggle = screen.getByRole( 'button', { name: 'Edit' } );
 		expect( toggle ).toHaveAttribute( 'aria-expanded', 'false' );
-		for ( const name of [ 'Add name', 'Add identifier', 'Assert role' ] ) {
+		for ( const name of [ 'Add name', 'Add identifier', 'Add a role' ] ) {
 			expect( screen.queryByRole( 'group', { name } ) ).toBeNull();
 		}
 		expect(
@@ -1190,7 +1204,7 @@ describe( 'Entity — curation', () => {
 		expect( toggle ).toHaveAttribute( 'aria-controls', drawer.id );
 		expect( drawer.id ).not.toBe( '' );
 		expect( recordCard() ).toContainElement( drawer );
-		for ( const name of [ 'Add name', 'Add identifier', 'Assert role' ] ) {
+		for ( const name of [ 'Add name', 'Add identifier', 'Add a role' ] ) {
 			expect(
 				within( drawer ).getByRole( 'group', { name } )
 			).toBeInTheDocument();
@@ -1217,7 +1231,7 @@ describe( 'Entity — curation', () => {
 			screen.queryByRole( 'group', { name: 'Add name' } )
 		).toBeNull();
 		expect(
-			screen.queryByRole( 'group', { name: 'Assert role' } )
+			screen.queryByRole( 'group', { name: 'Add a role' } )
 		).toBeNull();
 		expect( screen.queryByRole( 'button', { name: 'Edit' } ) ).toBeNull();
 	} );
@@ -1300,13 +1314,13 @@ describe( 'Entity — curation', () => {
 		wire.replies.assert_role = { ok: true, event_id: 'ev-role' };
 		renderEntity( { canTune: true } );
 		const form = within( await openDrawer() ).getByRole( 'group', {
-			name: 'Assert role',
+			name: 'Add a role',
 		} );
 		fireEvent.change( within( form ).getByLabelText( 'Role' ), {
 			target: { value: 'competitor' },
 		} );
 		fireEvent.click(
-			within( form ).getByRole( 'button', { name: 'Assert role' } )
+			within( form ).getByRole( 'button', { name: 'Add a role' } )
 		);
 		await waitFor( () =>
 			expect( wire.sent( 'assert_role' ) ).toEqual( [
@@ -1362,10 +1376,10 @@ describe( 'Entity — curation', () => {
 			new Error( `${ KEY } already holds client` );
 		renderEntity( { canTune: true } );
 		const form = within( await openDrawer() ).getByRole( 'group', {
-			name: 'Assert role',
+			name: 'Add a role',
 		} );
 		fireEvent.click(
-			within( form ).getByRole( 'button', { name: 'Assert role' } )
+			within( form ).getByRole( 'button', { name: 'Add a role' } )
 		);
 		expect(
 			await screen.findByText( `${ KEY } already holds client` )

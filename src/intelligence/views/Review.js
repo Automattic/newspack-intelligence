@@ -25,24 +25,30 @@ import Cite, { EntityChip } from '../components/Cite';
 import { SaveButton } from '../components/ItemRow';
 import Refusal from '../components/Refusal';
 import UndoSnackbar from '../components/UndoSnackbar';
-import { metaLine } from '../components/format';
+import { word } from '../components/words';
 
 /**
  * A proposed link in words: what the entity is to the item, how it was
- * found and how sure the finding was, in the words the page localizes. A
- * role or method the words leave out reads as given.
+ * found and how sure the finding was, in the words the page localizes: an
+ * exact match at full confidence, else the percentage.
  *
- * @param {Object} link       The proposed link.
- * @param {Object} vocabulary The localized vocabulary.
+ * @param {Object} link The proposed link.
  * @return {string} The sentence.
  */
-function howFound( link, vocabulary ) {
+function howFound( link ) {
+	const percent = Math.round( Number( link.confidence ) * 100 );
 	return sprintf(
-		/* translators: 1: what the entity is to the item, 2: how it was found, 3: confidence, 0 to 100. */
-		__( '%1$s, found by %2$s (%3$d%%)', 'newspack-intelligence' ),
-		vocabulary.linkRoleWords?.[ link.role ] ?? link.role,
-		vocabulary.methodWords?.[ link.method ] ?? link.method,
-		Math.round( Number( link.confidence ) * 100 )
+		/* translators: 1: what the entity is to the item, 2: how it was found, 3: how sure, as "exact match" or "61% match". */
+		__( '%1$s by %2$s, %3$s', 'newspack-intelligence' ),
+		word( 'linkRoleWords', link.role ),
+		word( 'methodWords', link.method ),
+		100 === percent
+			? __( 'exact match', 'newspack-intelligence' )
+			: sprintf(
+					/* translators: %d: confidence, 0 to 99. */
+					__( '%d%% match', 'newspack-intelligence' ),
+					percent
+			  )
 	);
 }
 
@@ -286,12 +292,12 @@ function Merge( { label, onMerge } ) {
 				aria-expanded={ open }
 				aria-label={ sprintf(
 					/* translators: %s: the entity's name. */
-					__( 'Merge %s…', 'newspack-intelligence' ),
+					__( '%s is the same as…', 'newspack-intelligence' ),
 					label
 				) }
 				onClick={ () => setOpen( ! open ) }
 			>
-				{ __( 'Merge…', 'newspack-intelligence' ) }
+				{ __( 'Same as…', 'newspack-intelligence' ) }
 			</button>
 			{ open && (
 				<form
@@ -490,17 +496,11 @@ function ThemePair( { pair, onMerge } ) {
  *
  * @param {Object}                 props
  * @param {boolean}                props.canTune      Whether to offer judgments.
- * @param {Object}                 props.vocabulary   The localized vocabulary.
  * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void} [props.onSave]     Saves an item; absent for a reader.
  * @return {import('react').ReactElement} The view.
  */
-export default function Review( {
-	canTune,
-	vocabulary,
-	onOpenEntity,
-	onSave,
-} ) {
+export default function Review( { canTune, onOpenEntity, onSave } ) {
 	const deferred = useDeferredWrite();
 	const [ keysOff, , toggleKeys ] = usePersistedFlag( KEYS_OFF_KEY, false );
 	const keysId = useId();
@@ -573,7 +573,7 @@ export default function Review( {
 				onToggle={ toggleKeys }
 			/>
 			<Answer
-				title={ __( 'Proposed links', 'newspack-intelligence' ) }
+				title={ __( 'Suggested matches', 'newspack-intelligence' ) }
 				read={ without(
 					judgedLinks.read,
 					'links',
@@ -582,14 +582,14 @@ export default function Review( {
 				) }
 				rows="links"
 				empty={ __(
-					'No proposed link awaits review.',
+					'No suggested match awaits review.',
 					'newspack-intelligence'
 				) }
 			>
 				{ ( answer ) => (
 					<ReviewList
 						label={ __(
-							'Proposed links',
+							'Suggested matches',
 							'newspack-intelligence'
 						) }
 						{ ...keyProps }
@@ -639,10 +639,7 @@ export default function Review( {
 												reviewKey={ key }
 												entityKey={ link.entity_key }
 												name={ link.name }
-												description={ howFound(
-													link,
-													vocabulary
-												) }
+												description={ howFound( link ) }
 												onOpen={ onOpenEntity }
 												judge={
 													canTune && {
@@ -692,7 +689,7 @@ export default function Review( {
 				) }
 			</Answer>
 			<Answer
-				title={ __( 'Proposed entities', 'newspack-intelligence' ) }
+				title={ __( 'Suggested names', 'newspack-intelligence' ) }
 				read={ without(
 					judgedEntities.read,
 					'entities',
@@ -701,14 +698,14 @@ export default function Review( {
 				) }
 				rows="entities"
 				empty={ __(
-					'No proposed entity awaits review.',
+					'No suggested name awaits review.',
 					'newspack-intelligence'
 				) }
 			>
 				{ ( answer ) => (
 					<ReviewList
 						label={ __(
-							'Proposed entities',
+							'Suggested names',
 							'newspack-intelligence'
 						) }
 						{ ...keyProps }
@@ -771,7 +768,7 @@ export default function Review( {
 											}
 										/>
 										<span className="newspack-nodes-status is-muted">
-											{ metaLine( entity.type, key ) }
+											{ word( 'typeWords', entity.type ) }
 										</span>
 										{ canTune && (
 											<Merge
@@ -809,7 +806,7 @@ export default function Review( {
 				) }
 			</Answer>
 			<Answer
-				title={ __( 'Themes', 'newspack-intelligence' ) }
+				title={ __( 'Similar themes', 'newspack-intelligence' ) }
 				read={ without(
 					judgedThemes.read,
 					'suggestions',

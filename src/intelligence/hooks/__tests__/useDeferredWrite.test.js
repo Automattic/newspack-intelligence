@@ -13,6 +13,7 @@ import { holdRouterCadence } from '@newspack-nodes/shared/test-utils/holdRouterC
 import { intelWire } from '../../__tests__/intelWire';
 import { UNDO_MS, useDeferredWrite } from '../useDeferredWrite';
 import { useIntelWrite } from '../useIntelCommand';
+import { pageData } from '../../views/__tests__/fixtures';
 
 jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
 
@@ -270,7 +271,7 @@ describe( 'useDeferredWrite — on the wire', () => {
 	beforeEach( () => {
 		jest.useRealTimers();
 		holdRouterCadence();
-		window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+		window.NewspackNodesData = pageData();
 		wire = intelWire();
 	} );
 

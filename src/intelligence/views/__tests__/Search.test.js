@@ -18,7 +18,7 @@ import {
 } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
-import { ITEM, LENSES, VOCABULARY } from './fixtures';
+import { ITEM, LENSES, pageData, VOCABULARY } from './fixtures';
 import { useState } from '@wordpress/element';
 import Search, { newSearch } from '../Search';
 import { daysSince } from '../../components/lensDraft';
@@ -27,7 +27,7 @@ let wire;
 
 beforeEach( () => {
 	Core.reset();
-	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+	window.NewspackNodesData = pageData();
 	wire = intelWire();
 } );
 
@@ -151,13 +151,13 @@ describe( 'Search', () => {
 		fireEvent.change( screen.getByLabelText( 'Words' ), {
 			target: { value: 'regional prize' },
 		} );
-		pick( 'Kinds', 'funding', 'launch' );
+		pick( 'Kind of news', 'funding', 'launch' );
 		fireEvent.change( screen.getByLabelText( 'Topics' ), {
 			target: { value: 'topic:local-news' },
 		} );
-		pick( 'Roles', 'competitor' );
+		pick( 'About', 'competitor' );
 		pick( 'Sources', 'github' );
-		fireEvent.change( screen.getByLabelText( 'Entity' ), {
+		fireEvent.change( screen.getByLabelText( 'Client or company' ), {
 			target: { value: 'organization:valley-ledger' },
 		} );
 		fireEvent.change( screen.getByLabelText( 'Since' ), {
@@ -186,8 +186,11 @@ describe( 'Search', () => {
 		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
 		renderSearch();
 		await screen.findByText( /^1 of 1 item$/ );
-		pick( 'Kinds', 'funding', 'gossip', 'award' );
-		expect( tokens( 'Kinds' ) ).toEqual( [ 'funding', 'award' ] );
+		pick( 'Kind of news', 'funding', 'gossip', 'award' );
+		expect( tokens( 'Kind of news' ) ).toEqual( [
+			'Money raised',
+			'Prize',
+		] );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Search' } ) );
 		await waitFor( () =>
 			expect( wire.sent( 'search' ) ).toContainEqual( [
@@ -201,14 +204,14 @@ describe( 'Search', () => {
 		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
 		renderSearch();
 		await screen.findByText( /^1 of 1 item$/ );
-		fireEvent.change( screen.getByLabelText( 'Kinds' ), {
+		fireEvent.change( screen.getByLabelText( 'Kind of news' ), {
 			target: { value: 'gossip,launch,' },
 		} );
-		fireEvent.change( screen.getByLabelText( 'Roles' ), {
+		fireEvent.change( screen.getByLabelText( 'About' ), {
 			target: { value: 'rival,' },
 		} );
-		expect( tokens( 'Kinds' ) ).toEqual( [ 'launch' ] );
-		expect( tokens( 'Roles' ) ).toEqual( [] );
+		expect( tokens( 'Kind of news' ) ).toEqual( [ 'Going live' ] );
+		expect( tokens( 'About' ) ).toEqual( [] );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Search' } ) );
 		await waitFor( () =>
 			expect( wire.sent( 'search' ) ).toContainEqual( [
@@ -218,14 +221,14 @@ describe( 'Search', () => {
 		expect( wire.sent( 'search' ).flat() ).not.toContain( '--kind=gossip' );
 	} );
 
-	it( 'takes a role from its vocabulary alone and a source as typed', async () => {
+	it( 'takes a role and a source from their vocabularies alone', async () => {
 		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
 		renderSearch();
 		await screen.findByText( /^1 of 1 item$/ );
-		pick( 'Roles', 'former_client', 'rival' );
-		pick( 'Sources', 'linear', 'unthread' );
-		expect( tokens( 'Roles' ) ).toEqual( [ 'Lapsed member' ] );
-		expect( tokens( 'Sources' ) ).toEqual( [ 'linear', 'unthread' ] );
+		pick( 'About', 'former_client', 'rival' );
+		pick( 'Sources', 'linear', 'carrier-pigeon', 'unthread' );
+		expect( tokens( 'About' ) ).toEqual( [ 'Lapsed member' ] );
+		expect( tokens( 'Sources' ) ).toEqual( [ 'Tracker', 'Help desk' ] );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Search' } ) );
 		await waitFor( () =>
 			expect( wire.sent( 'search' ) ).toContainEqual( [
@@ -260,7 +263,7 @@ describe( 'Search', () => {
 		} );
 		renderSearch();
 		await screen.findByText( /^1 of 1 item$/ );
-		const entity = screen.getByLabelText( 'Entity' );
+		const entity = screen.getByLabelText( 'Client or company' );
 		fireEvent.change( entity, { target: { value: 'V' } } );
 		expect( wire.sent( 'names' ) ).toEqual( [] );
 		fireEvent.change( entity, { target: { value: 'Valley' } } );
@@ -302,7 +305,7 @@ describe( 'Search', () => {
 		} );
 		renderSearch();
 		await screen.findByText( /^1 of 1 item$/ );
-		const entity = screen.getByLabelText( 'Entity' );
+		const entity = screen.getByLabelText( 'Client or company' );
 		fireEvent.change( entity, { target: { value: 'Quiet H' } } );
 		await waitFor( () => expect( offered( entity ) ).toHaveLength( 2 ) );
 		fireEvent.change( entity, { target: { value: 'Quiet Harbor' } } );
@@ -325,7 +328,7 @@ describe( 'Search', () => {
 			new Error( 'names could not be read for Harb' );
 		renderSearch();
 		await screen.findByText( /^1 of 1 item$/ );
-		const entity = screen.getByLabelText( 'Entity' );
+		const entity = screen.getByLabelText( 'Client or company' );
 		fireEvent.change( entity, { target: { value: 'h.' } } );
 		fireEvent.change( entity, { target: { value: ' -h- ' } } );
 		expect( wire.sent( 'names' ) ).toEqual( [] );
@@ -351,7 +354,7 @@ describe( 'Search', () => {
 		};
 		renderSearch();
 		await screen.findByText( /^1 of 1 item$/ );
-		const entity = screen.getByLabelText( 'Entity' );
+		const entity = screen.getByLabelText( 'Client or company' );
 		fireEvent.change( entity, { target: { value: 'Harb' } } );
 		await waitFor( () =>
 			expect( offered( entity ) ).toEqual( [
@@ -371,24 +374,24 @@ describe( 'Search', () => {
 		fireEvent.change( screen.getByLabelText( 'Words' ), {
 			target: { value: 'paywall' },
 		} );
-		fireEvent.change( screen.getByLabelText( 'Lens' ), {
+		fireEvent.change( screen.getByLabelText( 'Team view' ), {
 			target: { value: 'support-desk' },
 		} );
 		const runs = screen.getByRole( 'group', {
 			name: 'Support desk searches with',
 		} );
 		for ( const shown of [
-			'complaint, praise',
-			'client',
+			'Grumble, Kudos',
+			'Paying member',
 			'organization:acme-quillsheet',
-			'The last 21 days',
-			'internal',
+			'21 days',
+			'Staff',
 		] ) {
 			expect( within( runs ).getByText( shown ) ).toBeInTheDocument();
 		}
 		expect( within( runs ).getAllByText( 'Any' ) ).toHaveLength( 2 );
-		expect( screen.queryByLabelText( 'Kinds' ) ).toBeNull();
-		expect( screen.queryByLabelText( 'Entity' ) ).toBeNull();
+		expect( screen.queryByLabelText( 'Kind of news' ) ).toBeNull();
+		expect( screen.queryByLabelText( 'Client or company' ) ).toBeNull();
 		await waitFor( () =>
 			expect( wire.sent( 'search' ) ).toContainEqual( [
 				'--q=paywall',
@@ -403,22 +406,22 @@ describe( 'Search', () => {
 		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
 		renderSearch();
 		await screen.findByRole( 'option', { name: 'Support desk' } );
-		fireEvent.change( screen.getByLabelText( 'Lens' ), {
+		fireEvent.change( screen.getByLabelText( 'Team view' ), {
 			target: { value: 'support-desk' },
 		} );
 		expect(
 			screen.getByText(
-				'A search reads every tier you may read, so editing drops this lens’s tiers.'
+				'A search reads every tier you may read, so editing drops this team view’s tiers.'
 			)
 		).toBeInTheDocument();
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Edit as my own search' } )
 		);
 		const since = daysSince( 21, Date.now() );
-		expect( screen.getByLabelText( 'Lens' ) ).toHaveValue( '' );
-		expect( tokens( 'Kinds' ) ).toEqual( [ 'complaint', 'praise' ] );
-		expect( tokens( 'Roles' ) ).toEqual( [ 'Paying member' ] );
-		expect( screen.getByLabelText( 'Entity' ) ).toHaveValue(
+		expect( screen.getByLabelText( 'Team view' ) ).toHaveValue( '' );
+		expect( tokens( 'Kind of news' ) ).toEqual( [ 'Grumble', 'Kudos' ] );
+		expect( tokens( 'About' ) ).toEqual( [ 'Paying member' ] );
+		expect( screen.getByLabelText( 'Client or company' ) ).toHaveValue(
 			'organization:acme-quillsheet'
 		);
 		expect( screen.getByLabelText( 'Since' ) ).toHaveValue( since );
@@ -431,7 +434,7 @@ describe( 'Search', () => {
 				`--since=${ since }`,
 			] )
 		);
-		clearTokens( 'Kinds' );
+		clearTokens( 'Kind of news' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Search' } ) );
 		await waitFor( () =>
 			expect( wire.sent( 'search' ) ).toContainEqual( [
@@ -447,14 +450,16 @@ describe( 'Search', () => {
 		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
 		renderSearch();
 		await screen.findByRole( 'option', { name: 'Developer shipping' } );
-		fireEvent.change( screen.getByLabelText( 'Lens' ), {
+		fireEvent.change( screen.getByLabelText( 'Team view' ), {
 			target: { value: 'dev-shipping' },
 		} );
 		const runs = screen.getByRole( 'group', {
 			name: 'Developer shipping searches with',
 		} );
 		expect( within( runs ).getAllByText( 'Any' ) ).toHaveLength( 4 );
-		expect( screen.queryByText( /drops this lens’s tiers/ ) ).toBeNull();
+		expect(
+			screen.queryByText( /drops this team view’s tiers/ )
+		).toBeNull();
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Edit as my own search' } )
 		);
@@ -474,14 +479,14 @@ describe( 'Search', () => {
 		wire.replies.search = { items: [ ITEM ], total: 1, available: true };
 		renderSearch();
 		await screen.findByRole( 'option', { name: 'Support desk' } );
-		pick( 'Kinds', 'award' );
-		fireEvent.change( screen.getByLabelText( 'Lens' ), {
+		pick( 'Kind of news', 'award' );
+		fireEvent.change( screen.getByLabelText( 'Team view' ), {
 			target: { value: 'support-desk' },
 		} );
-		fireEvent.change( screen.getByLabelText( 'Lens' ), {
+		fireEvent.change( screen.getByLabelText( 'Team view' ), {
 			target: { value: '' },
 		} );
-		expect( tokens( 'Kinds' ) ).toEqual( [ 'award' ] );
+		expect( tokens( 'Kind of news' ) ).toEqual( [ 'Prize' ] );
 		await waitFor( () =>
 			expect( wire.sent( 'search' ) ).toContainEqual( [ '--kind=award' ] )
 		);
@@ -555,7 +560,7 @@ describe( 'Search', () => {
 		wire.replies.search = { items: [], total: 0, available: true };
 		renderSearch();
 		expect(
-			await screen.findByText( 'No readable item matches these filters.' )
+			await screen.findByText( 'Nothing matches these filters.' )
 		).toBeInTheDocument();
 	} );
 
@@ -568,7 +573,7 @@ describe( 'Search', () => {
 			)
 		).toBeInTheDocument();
 		expect(
-			screen.queryByText( 'No readable item matches these filters.' )
+			screen.queryByText( 'Nothing matches these filters.' )
 		).toBeNull();
 	} );
 

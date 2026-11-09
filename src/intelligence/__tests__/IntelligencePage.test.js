@@ -29,6 +29,7 @@ import {
 	GROUPS,
 	ITEM,
 	LENSES,
+	pageData,
 	VOCABULARY,
 } from '../views/__tests__/fixtures';
 import IntelligencePage from '../IntelligencePage';
@@ -39,7 +40,7 @@ beforeEach( () => {
 	Core.reset();
 	window.localStorage.clear();
 	window.sessionStorage.clear();
-	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+	window.NewspackNodesData = pageData();
 	wire = intelWire();
 	wire.replies.search = ( args ) =>
 		args.includes( '--group=theme' )
@@ -176,9 +177,7 @@ describe( 'IntelligencePage', () => {
 			available: true,
 		};
 		renderPage();
-		await screen.findByText(
-			'Entity · organization:acme-quillsheet · 5 unseen'
-		);
+		await screen.findByText( 'A client or company · 5 new' );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Quillsheet group' } )
 		);
@@ -200,7 +199,7 @@ describe( 'IntelligencePage', () => {
 		);
 		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
 		const form = screen.getByRole( 'form', { name: 'Save watch' } );
-		expect( within( form ).getByLabelText( 'Follows' ) ).toHaveValue(
+		expect( within( form ).getByLabelText( 'Watching' ) ).toHaveValue(
 			'lens'
 		);
 		await within( form ).findByRole( 'option', {
@@ -257,7 +256,10 @@ describe( 'IntelligencePage', () => {
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Support desk' } )
 		);
-		expect( nav( 'Lenses' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		expect( nav( 'Team views' ) ).toHaveAttribute(
+			'aria-selected',
+			'true'
+		);
 		expect(
 			await screen.findByRole( 'region', { name: 'Support desk' } )
 		).toBeInTheDocument();
@@ -284,8 +286,8 @@ describe( 'IntelligencePage', () => {
 				window.Node.DOCUMENT_POSITION_FOLLOWING
 		).toBeTruthy();
 		const views = [
-			[ 'Review', 'No proposed link awaits review.' ],
-			[ 'Collections', 'No folder yet.' ],
+			[ 'Review', 'No suggested match awaits review.' ],
+			[ 'Folders', 'No folder yet.' ],
 			[ 'Watches', 'No watch yet.' ],
 		];
 		for ( const [ name, shown ] of views ) {
@@ -336,14 +338,14 @@ describe( 'IntelligencePage', () => {
 		] );
 	} );
 
-	it( 'switches to Review and Collections in place', async () => {
+	it( 'switches to Review and Folders in place', async () => {
 		renderPage();
 		fireEvent.click( nav( 'Review' ) );
 		expect(
-			await screen.findByText( 'No proposed link awaits review.' )
+			await screen.findByText( 'No suggested match awaits review.' )
 		).toBeInTheDocument();
 		expect( nav( 'Review' ) ).toHaveAttribute( 'aria-selected', 'true' );
-		fireEvent.click( nav( 'Collections' ) );
+		fireEvent.click( nav( 'Folders' ) );
 		expect(
 			await screen.findByText( 'No folder yet.' )
 		).toBeInTheDocument();
@@ -464,7 +466,7 @@ describe( 'IntelligencePage', () => {
 		);
 		expect(
 			await screen.findByText(
-				'“Acme Quillsheet offboarding checklist” (linear, 2026-10-06) says this client is leaving Quillmere Cooperative.'
+				'“Acme Quillsheet offboarding checklist” (Tracker, 2026-10-06) says this client is leaving Quillmere Cooperative.'
 			)
 		).toBeInTheDocument();
 	} );
@@ -555,7 +557,7 @@ describe( 'IntelligencePage', () => {
 		fireEvent.click( nav( 'Search' ) );
 		const form = screen.getByRole( 'search', { name: 'Filters' } );
 		await within( form ).findByRole( 'option', { name: 'Support desk' } );
-		fireEvent.change( within( form ).getByLabelText( 'Lens' ), {
+		fireEvent.change( within( form ).getByLabelText( 'Team view' ), {
 			target: { value: 'support-desk' },
 		} );
 		await waitFor( () =>
@@ -569,7 +571,7 @@ describe( 'IntelligencePage', () => {
 			} )
 		).toHaveAttribute( 'href', 'https://inkfold-review.example/acme' );
 		expect( screen.queryByRole( 'heading', { level: 4 } ) ).toBeNull();
-		fireEvent.click( nav( 'Lenses' ) );
+		fireEvent.click( nav( 'Team views' ) );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Support desk' } )
 		);
@@ -597,7 +599,7 @@ describe( 'IntelligencePage', () => {
 			available: true,
 		} );
 		renderPage();
-		fireEvent.click( nav( 'Lenses' ) );
+		fireEvent.click( nav( 'Team views' ) );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Support desk' } )
 		);
@@ -607,7 +609,7 @@ describe( 'IntelligencePage', () => {
 			'seen by --lens=support-desk --group=theme --offset=1'
 		);
 		fireEvent.click( nav( 'Review' ) );
-		fireEvent.click( nav( 'Lenses' ) );
+		fireEvent.click( nav( 'Team views' ) );
 		expect(
 			await screen.findByText(
 				'seen by --lens=support-desk --group=theme --offset=1'
@@ -619,7 +621,7 @@ describe( 'IntelligencePage', () => {
 		wire.replies.collections = () =>
 			new Error( 'collections refused for Harbor Ledger' );
 		renderPage( false, true );
-		fireEvent.click( nav( 'Collections' ) );
+		fireEvent.click( nav( 'Folders' ) );
 		expect(
 			await screen.findByText( 'collections refused for Harbor Ledger' )
 		).toHaveClass( 'is-muted' );
@@ -636,7 +638,7 @@ describe( 'IntelligencePage', () => {
 		wire.replies.collections = () =>
 			new Error( 'collections refused for Harbor Ledger' );
 		renderPage( false, false );
-		fireEvent.click( nav( 'Collections' ) );
+		fireEvent.click( nav( 'Folders' ) );
 		expect(
 			(
 				await screen.findByText(
@@ -662,12 +664,12 @@ describe( 'IntelligencePage', () => {
 
 	it( 'opens the watch form on a lens from its Watch this', async () => {
 		renderPage( false );
-		fireEvent.click( nav( 'Lenses' ) );
+		fireEvent.click( nav( 'Team views' ) );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Developer shipping' } )
 		);
 		await screen.findByText( 'No unusual change last week.' );
-		await screen.findByText( 'No trend is seen through this lens.' );
+		await screen.findByText( 'No trend in this team view.' );
 		await screen.findByText( 'Acme Quillsheet wins regional prize' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Watch this' } ) );
 		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
@@ -675,13 +677,13 @@ describe( 'IntelligencePage', () => {
 		expect( within( form ).getByLabelText( 'Name' ) ).toHaveValue(
 			'Developer shipping'
 		);
-		expect( within( form ).getByLabelText( 'Follows' ) ).toHaveValue(
+		expect( within( form ).getByLabelText( 'Watching' ) ).toHaveValue(
 			'lens'
 		);
 		await within( form ).findByRole( 'option', {
 			name: 'Developer shipping',
 		} );
-		expect( within( form ).getByLabelText( 'Lens' ) ).toHaveValue(
+		expect( within( form ).getByLabelText( 'Team view' ) ).toHaveValue(
 			'dev-shipping'
 		);
 		await screen.findByText( 'No watch yet.' );
@@ -755,13 +757,13 @@ describe( 'IntelligencePage', () => {
 						available: true,
 				  };
 		renderPage();
-		fireEvent.click( nav( 'Collections' ) );
+		fireEvent.click( nav( 'Folders' ) );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Q4 client wins' } )
 		);
 		await screen.findByRole( 'region', { name: 'Q4 client wins' } );
 		fireEvent.click( nav( 'Review' ) );
-		fireEvent.click( nav( 'Collections' ) );
+		fireEvent.click( nav( 'Folders' ) );
 		expect(
 			await screen.findByRole( 'region', { name: 'Q4 client wins' } )
 		).toBeInTheDocument();

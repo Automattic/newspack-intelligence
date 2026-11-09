@@ -1,10 +1,6 @@
 import { useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
-import {
-	FormTokenField,
-	SelectControl,
-	TextControl,
-} from '@wordpress/components';
+import { SelectControl, TextControl } from '@wordpress/components';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
 import Answer, { Unread } from '../components/Answer';
@@ -12,15 +8,17 @@ import AskBox from '../components/AskBox';
 import { ItemPage } from '../components/ItemRow';
 import EntityPicker, { useEntityNames } from '../components/EntityPicker';
 import ListField from '../components/ListField';
+import ListPicker from '../components/ListPicker';
 import {
 	daysSince,
 	draftArgs,
 	lensDraft,
 	listOf,
 } from '../components/lensDraft';
+import { word } from '../components/words';
 
-/** The list filters picked as tokens, by option; any other is typed. */
-const PICKED = new Set( [ 'kind', 'role', 'source' ] );
+/** The list filters picked as tokens, by option, each by the map wording it; any other is typed. */
+const PICKED = { kind: 'kindWords', role: 'roleWords', source: 'sourceWords' };
 
 /**
  * What each list filter is called, by option.
@@ -28,11 +26,26 @@ const PICKED = new Set( [ 'kind', 'role', 'source' ] );
  * @return {Object<string, string>} The labels.
  */
 const listLabels = () => ( {
-	kind: __( 'Kinds', 'newspack-intelligence' ),
+	kind: __( 'Kind of news', 'newspack-intelligence' ),
 	topic: __( 'Topics', 'newspack-intelligence' ),
-	role: __( 'Roles', 'newspack-intelligence' ),
+	role: __( 'About', 'newspack-intelligence' ),
 	source: __( 'Sources', 'newspack-intelligence' ),
 } );
+
+/**
+ * A list filter's comma-separated values as shown: each picked one by its
+ * word, a typed one as given.
+ *
+ * @param {string} option The filter.
+ * @param {string} text   Its values, comma-separated.
+ * @return {string} The values shown.
+ */
+const shownList = ( option, text ) =>
+	PICKED[ option ]
+		? listOf( text )
+				.map( ( one ) => word( PICKED[ option ], one ) )
+				.join( ', ' )
+		: text;
 
 /**
  * A search before anything is asked: no filter, on its first page, in the
@@ -73,24 +86,32 @@ function LensRuns( { lens, lists } ) {
 	const labels = listLabels();
 	const days = Number( text.days );
 	const rows = [
-		...lists.map( ( { option } ) => [ labels[ option ], text[ option ] ] ),
-		[ __( 'Entity', 'newspack-intelligence' ), text.entity ],
+		...lists.map( ( { option } ) => [
+			labels[ option ],
+			shownList( option, text[ option ] ),
+		] ),
+		[ __( 'Client or company', 'newspack-intelligence' ), text.entity ],
 		[
-			__( 'Days', 'newspack-intelligence' ),
+			__( 'Look back', 'newspack-intelligence' ),
 			'' === text.days
 				? ''
 				: sprintf(
-						/* translators: %d: how many days the lens reads. */
+						/* translators: %d: how many days the team view reads. */
 						_n(
-							'The last %d day',
-							'The last %d days',
+							'%d day',
+							'%d days',
 							days,
 							'newspack-intelligence'
 						),
 						days
 				  ),
 		],
-		[ __( 'Tiers', 'newspack-intelligence' ), text.tier ],
+		[
+			__( 'Include items that are', 'newspack-intelligence' ),
+			listOf( text.tier )
+				.map( ( tier ) => word( 'tierWords', tier ) )
+				.join( ', ' ),
+		],
 	];
 	return (
 		<div
@@ -117,7 +138,7 @@ function LensRuns( { lens, lists } ) {
 			{ '' !== text.tier && (
 				<p className="newspack-nodes-status is-muted">
 					{ __(
-						'A search reads every tier you may read, so editing drops this lens’s tiers.',
+						'A search reads every tier you may read, so editing drops this team view’s tiers.',
 						'newspack-intelligence'
 					) }
 				</p>
@@ -209,32 +230,6 @@ export default function Search( {
 		onChange: ( value ) => setDraft( { ...draft, [ name ]: value } ),
 		__next40pxDefaultSize: true,
 	} );
-	const picker = ( name, values ) => {
-		const allowed = ( token ) => ! values || values.includes( token );
-		return (
-			<FormTokenField
-				key={ name }
-				label={ labels[ name ] }
-				value={ listOf( draft[ name ] ) }
-				suggestions={ values ?? [] }
-				displayTransform={ ( token ) =>
-					'role' === name ? vocabulary.roleWords[ token ] : token
-				}
-				__experimentalValidateInput={ allowed }
-				__experimentalExpandOnFocus={ !! values }
-				tokenizeOnBlur
-				// A token typed with a comma skips the field's own validation.
-				onChange={ ( picked ) =>
-					setDraft( {
-						...draft,
-						[ name ]: picked.filter( allowed ).join( ', ' ),
-					} )
-				}
-				__next40pxDefaultSize
-			/>
-		);
-	};
-
 	return (
 		<div className="newspack-intelligence__view">
 			<AskBox
@@ -254,10 +249,13 @@ export default function Search( {
 				) }
 			>
 				<SelectControl
-					label={ __( 'Lens', 'newspack-intelligence' ) }
+					label={ __( 'Team view', 'newspack-intelligence' ) }
 					options={ [
 						{
-							label: __( 'No lens', 'newspack-intelligence' ),
+							label: __(
+								'No team view',
+								'newspack-intelligence'
+							),
 							value: '',
 						},
 						...( lenses.answer?.lenses ?? [] ).map( ( one ) => ( {
@@ -277,8 +275,14 @@ export default function Search( {
 				) : (
 					<>
 						{ lists.map( ( { option, values } ) =>
-							PICKED.has( option ) ? (
-								picker( option, values )
+							PICKED[ option ] ? (
+								<ListPicker
+									key={ option }
+									label={ labels[ option ] }
+									map={ PICKED[ option ] }
+									values={ values }
+									{ ...field( option ) }
+								/>
 							) : (
 								<ListField
 									key={ option }
@@ -289,7 +293,10 @@ export default function Search( {
 							)
 						) }
 						<EntityPicker
-							label={ __( 'Entity', 'newspack-intelligence' ) }
+							label={ __(
+								'Client or company',
+								'newspack-intelligence'
+							) }
 							value={ draft.entity }
 							onChange={ field( 'entity' ).onChange }
 							names={ names }
@@ -329,7 +336,7 @@ export default function Search( {
 				read={ read }
 				rows="items"
 				empty={ __(
-					'No readable item matches these filters.',
+					'Nothing matches these filters.',
 					'newspack-intelligence'
 				) }
 			>

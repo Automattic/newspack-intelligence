@@ -8,7 +8,11 @@
 
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import GroupPage from '../GroupPage';
-import { GROUPS } from '../../views/__tests__/fixtures';
+import { GROUPS, pageData } from '../../views/__tests__/fixtures';
+
+beforeEach( () => {
+	window.NewspackNodesData = pageData();
+} );
 
 const page = ( props = {} ) =>
 	render(
@@ -38,12 +42,12 @@ describe( 'GroupPage', () => {
 		page();
 		expect(
 			within( groupOf( 'site blocked from sending email' ) ).getByText(
-				'12 items · complaint · 2026-09-23'
+				'12 items · Grumble · 2026-09-23'
 			)
 		).toBeInTheDocument();
 		expect(
 			within( groupOf( 'bot registrations' ) ).getByText(
-				'3 items · incident · 2026-09-24'
+				'3 items · Outage · 2026-09-24'
 			)
 		).toBeInTheDocument();
 	} );
@@ -147,7 +151,7 @@ describe( 'GroupPage', () => {
 		} );
 		const group = groupOf( 'registration bots' );
 		expect(
-			within( group ).getByText( '1 item · incident · 2026-09-25' )
+			within( group ).getByText( '1 item · Outage · 2026-09-25' )
 		).toBeInTheDocument();
 		fireEvent.click(
 			within( group ).getByRole( 'button', {

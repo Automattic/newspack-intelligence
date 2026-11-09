@@ -11,6 +11,7 @@ import {
 import ItemRow from './ItemRow';
 import Refusal from './Refusal';
 import { Unread } from './Answer';
+import { word } from './words';
 
 /** How often an ask still owed its answer is read again, on the Router's tick. */
 const POLL_MS = 3000;
@@ -38,21 +39,21 @@ function searchText( search ) {
 			),
 		search.lens &&
 			sprintf(
-				/* translators: %s: the lens searched through. */
-				__( 'lens %s', 'newspack-intelligence' ),
+				/* translators: %s: the team view searched through. */
+				__( 'team view %s', 'newspack-intelligence' ),
 				search.lens
 			),
 		search.kinds &&
-			sprintf(
-				/* translators: %s: the kinds searched. */
-				__( 'kinds %s', 'newspack-intelligence' ),
-				search.kinds.join( ', ' )
-			),
+			search.kinds
+				.map( ( kind ) => word( 'kindWords', kind ) )
+				.join( ', ' ),
 		search.roles &&
 			sprintf(
 				/* translators: %s: the roles searched. */
-				__( 'roles %s', 'newspack-intelligence' ),
-				search.roles.join( ', ' )
+				__( 'about %s', 'newspack-intelligence' ),
+				search.roles
+					.map( ( role ) => word( 'roleWords', role ) )
+					.join( ', ' )
 			),
 		search.days &&
 			sprintf(

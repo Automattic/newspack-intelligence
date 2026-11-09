@@ -13,6 +13,7 @@ import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import Briefing from '../../views/Briefing';
 import { MIN_VISIBLE_MS, useLastLook } from '../useLastLook';
+import { pageData } from '../../views/__tests__/fixtures';
 
 const READER = '6143';
 const LAST_LOOK = 'newspack-intelligence:last-look:6143';
@@ -345,7 +346,7 @@ describe( 'the Briefing on the last look', () => {
 	}
 
 	beforeEach( () => {
-		window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+		window.NewspackNodesData = pageData();
 		wire = intelWire();
 		answer( wire );
 	} );
@@ -391,7 +392,7 @@ describe( 'the Briefing on the last look', () => {
 		);
 		render( <Page shown /> );
 		await screen.findByRole( 'region', { name: 'Last seven days' } );
-		await screen.findByText( 'Watch a client or a lens', {
+		await screen.findByText( 'Watch a client or a team view', {
 			exact: false,
 		} );
 		expect(

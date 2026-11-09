@@ -459,10 +459,13 @@ export default function Briefing( {
 				empty={
 					<Invitation
 						text={ __(
-							'No client or lens moved off its baseline in the last seven days.',
+							'No client or team view moved off its baseline in the last seven days.',
 							'newspack-intelligence'
 						) }
-						label={ __( 'Open lenses', 'newspack-intelligence' ) }
+						label={ __(
+							'Open team views',
+							'newspack-intelligence'
+						) }
 						onClick={ () => onOpenLens( null ) }
 					/>
 				}
@@ -514,7 +517,7 @@ export default function Briefing( {
 				empty={
 					<Invitation
 						text={ __(
-							'Watch a client or a lens to see what is new for you here.',
+							'Watch a client or a team view to see what is new for you here.',
 							'newspack-intelligence'
 						) }
 						label={ __( 'New watch', 'newspack-intelligence' ) }

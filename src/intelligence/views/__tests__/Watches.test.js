@@ -17,7 +17,7 @@ import {
 import { Core } from '@newspack-nodes/runtime';
 import { useState } from '@wordpress/element';
 import { intelWire } from '../../__tests__/intelWire';
-import { ITEM, LENSES } from './fixtures';
+import { ITEM, LENSES, pageData } from './fixtures';
 import Watches, { CLOSED_WATCH, newWatch } from '../Watches';
 
 const WATCHES = {
@@ -96,7 +96,7 @@ function Harness( { initialDraft = null, canTune = false } ) {
 
 beforeEach( () => {
 	Core.reset();
-	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+	window.NewspackNodesData = pageData();
 	wire = intelWire();
 	wire.replies.watches = WATCHES;
 	wire.replies.watch_matches = MATCHES;
@@ -128,15 +128,15 @@ describe( 'Watches', () => {
 			} )
 		).closest( 'li' );
 		expect(
-			within( acme ).getByText(
-				'Entity · organization:acme-quillsheet · 7 unseen'
-			)
+			within( acme ).getByText( 'A client or company · 7 new' )
 		).toBeInTheDocument();
 		const support = screen
 			.getByRole( 'button', { name: 'Support spikes' } )
 			.closest( 'li' );
 		expect(
-			within( support ).getByText( 'Lens · support-desk · Inbox off' )
+			within( support ).getByText(
+				'A team view · Not listed here; email only'
+			)
 		).toBeInTheDocument();
 		expect( wire.sent( 'watches' ) ).toEqual( [ [] ] );
 	} );
@@ -218,16 +218,14 @@ describe( 'Watches', () => {
 				'The inbox is off for this watch, so its matches are not listed here.'
 			)
 		).toBeInTheDocument();
-		expect( screen.queryByText( 'No unseen match.' ) ).toBeNull();
+		expect( screen.queryByText( 'Nothing new.' ) ).toBeNull();
 	} );
 
 	it( 'says a watch has no unseen match', async () => {
 		wire.replies.watch_matches = { items: [], total: 0, available: true };
 		render( <Harness /> );
 		await openAcme();
-		expect(
-			await screen.findByText( 'No unseen match.' )
-		).toBeInTheDocument();
+		expect( await screen.findByText( 'Nothing new.' ) ).toBeInTheDocument();
 	} );
 
 	it( 'pages a watch’s matches forward and back', async () => {
@@ -323,7 +321,7 @@ describe( 'Watches', () => {
 		await openAcme();
 		await matchRow( 'Acme Quillsheet wins regional prize' );
 		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Mark these seen' } )
+			screen.getByRole( 'button', { name: 'Mark 2 as seen' } )
 		);
 		expect(
 			screen.queryByText( 'Acme Quillsheet wins regional prize' )
@@ -350,7 +348,7 @@ describe( 'Watches', () => {
 		await openAcme();
 		await matchRow( 'Acme Quillsheet wins regional prize' );
 		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Mark these seen' } )
+			screen.getByRole( 'button', { name: 'Mark 2 as seen' } )
 		);
 		expect(
 			await screen.findByText( 'no watch: acme-complaints' )
@@ -371,13 +369,13 @@ describe( 'Watches', () => {
 		await screen.findByRole( 'button', { name: 'Acme complaints' } );
 		fireEvent.click( screen.getByRole( 'button', { name: 'New watch' } ) );
 		type( 'Name', 'Paywall watch' );
-		type( 'Follows', 'entity' );
-		type( 'Entity', 'organization:other-quillsheet' );
-		type( 'Follows', 'collection' );
+		type( 'Watching', 'entity' );
+		type( 'Client or company', 'organization:other-quillsheet' );
+		type( 'Watching', 'collection' );
 		await within( form() ).findByRole( 'option', {
 			name: 'Paywall complaints',
 		} );
-		type( 'Collection', 'paywall-complaints' );
+		type( 'Folder', 'paywall-complaints' );
 		fireEvent.click(
 			within( form() ).getByLabelText( 'Email me a daily digest' )
 		);
@@ -452,7 +450,7 @@ describe( 'Watches', () => {
 			await screen.findByRole( 'button', { name: 'Shipping watch' } )
 		).closest( 'li' );
 		expect(
-			within( row ).getByText( 'Lens · dev-shipping · 4 unseen' )
+			within( row ).getByText( 'A team view · 4 new' )
 		).toBeInTheDocument();
 		expect( screen.queryByText( 'Saving…' ) ).toBeNull();
 	} );
@@ -484,7 +482,7 @@ describe( 'Watches', () => {
 			screen.getByRole( 'button', { name: 'Edit Acme complaints' } )
 		);
 		type( 'Name', 'Acme watch' );
-		type( 'Entity', 'organization:acme-quillsheet-inc' );
+		type( 'Client or company', 'organization:acme-quillsheet-inc' );
 		saved = true;
 		fireEvent.click(
 			within( form() ).getByRole( 'button', { name: 'Save watch' } )
@@ -493,9 +491,7 @@ describe( 'Watches', () => {
 			await screen.findByRole( 'button', { name: 'Acme watch' } )
 		).closest( 'li' );
 		expect(
-			await within( row ).findByText(
-				'Entity · organization:acme-quillsheet · 3 unseen'
-			)
+			await within( row ).findByText( 'A client or company · 3 new' )
 		).toBeInTheDocument();
 		expect( wire.sent( 'save_watch' ) ).toEqual( [
 			[
@@ -556,9 +552,7 @@ describe( 'Watches', () => {
 			await screen.findByRole( 'button', { name: 'Quillsheet group' } )
 		).closest( 'li' );
 		expect(
-			within( row ).getByText(
-				'Entity · organization:acme-quillsheet · 2 unseen'
-			)
+			within( row ).getByText( 'A client or company · 2 new' )
 		).toBeInTheDocument();
 		expect( screen.queryByText( 'Saving…' ) ).toBeNull();
 	} );
@@ -572,7 +566,9 @@ describe( 'Watches', () => {
 				name: 'Developer shipping',
 			} )
 		).toHaveValue( 'dev-shipping' );
-		expect( within( form() ).getByLabelText( 'Lens' ) ).toHaveValue( '' );
+		expect( within( form() ).getByLabelText( 'Team view' ) ).toHaveValue(
+			''
+		);
 		expect(
 			within( form() ).getByLabelText( 'List new matches on this page' )
 		).toBeChecked();
@@ -616,13 +612,13 @@ describe( 'Watches', () => {
 		expect( within( form() ).getByLabelText( 'Name' ) ).toHaveValue(
 			'Developer shipping'
 		);
-		expect( within( form() ).getByLabelText( 'Follows' ) ).toHaveValue(
+		expect( within( form() ).getByLabelText( 'Watching' ) ).toHaveValue(
 			'lens'
 		);
 		await within( form() ).findByRole( 'option', {
 			name: 'Developer shipping',
 		} );
-		expect( within( form() ).getByLabelText( 'Lens' ) ).toHaveValue(
+		expect( within( form() ).getByLabelText( 'Team view' ) ).toHaveValue(
 			'dev-shipping'
 		);
 	} );
@@ -638,9 +634,9 @@ describe( 'Watches', () => {
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Edit Acme complaints' } )
 		);
-		expect( within( form() ).getByLabelText( 'Entity' ) ).toHaveValue(
-			'organization:acme-quillsheet'
-		);
+		expect(
+			within( form() ).getByLabelText( 'Client or company' )
+		).toHaveValue( 'organization:acme-quillsheet' );
 		expect(
 			within( form() ).getByLabelText( 'Email me a daily digest' )
 		).toBeChecked();

@@ -133,6 +133,54 @@
 
 	&__chips {
 		flex-wrap: wrap;
+		align-items: center;
+
+		// WordPress spaces every admin `li`; a pill may shrink to its row.
+		> li {
+			min-width: 0;
+			max-width: 100%;
+			margin: 0;
+		}
+	}
+
+	// An entity pill takes the shared badge's paint; it may shrink to its row.
+	.newspack-intelligence__pill {
+		display: inline-flex;
+		align-items: center;
+		min-width: 0;
+		max-width: 100%;
+		border: 0;
+		font-family: inherit;
+		cursor: pointer;
+	}
+
+	&__pill-name {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	// The meta line's cells: the source, the day and the kind, spaced apart.
+	&__meta {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: base.$space-xs base.$space-md;
+	}
+
+	&__source {
+		display: inline-flex;
+		align-items: center;
+		gap: base.$space-xs;
+	}
+
+	// The source's initial, a badge the size of the meta line's text.
+	.newspack-intelligence__source-icon {
+		display: inline-grid;
+		place-items: center;
+		width: var(--np-lh-2xs);
+		height: var(--np-lh-2xs);
+		padding: 0;
 	}
 
 	&__item p {
@@ -183,6 +231,23 @@
 		overflow-wrap: anywhere;
 	}
 
+	&__item-title {
+		font-size: var(--np-text-s);
+		line-height: var(--np-lh-s);
+		font-weight: 600;
+	}
+
+	// A list of titles is not a wall of links: Ink at rest, the accent on hover.
+	&__item-title a {
+		color: var(--np-text);
+		text-decoration: none;
+	}
+
+	&__item-title a:hover,
+	&__item-title a:focus {
+		color: var(--cyan, var(--np-primary));
+	}
+
 	// A theme group's heading sits in its row as an item's title does.
 	&__item-head h4 {
 		margin: 0;
@@ -214,6 +279,7 @@
 	// A signals card's sparkline sits beside what its latest bucket says.
 	&__pulse {
 		display: flex;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: base.$space-sm;
 		margin: 0 0 base.$space-sm;
@@ -276,16 +342,17 @@
 		}
 	}
 
-	// One proposal reads as one pill: the chip and its glyphs share edges.
-	// Scoped under the root to outrank the shared button's own radius.
+	// One proposal reads as one control: the chip and its glyphs share edges.
+	// Scoped under the root to outrank the shared button's and pill's radius.
 	.newspack-intelligence__judgment {
 		display: inline-flex;
 
-		> .button.button-small {
+		> :is(.button.button-small, .newspack-intelligence__pill) {
 			border-radius: 0;
 		}
 
-		> .button.button-small + .button.button-small {
+		> :is(.button.button-small, .newspack-intelligence__pill)
+			+ .button.button-small {
 			margin-inline-start: -1px;
 			padding-inline: base.$space-xs;
 		}
@@ -296,12 +363,12 @@
 			z-index: 1;
 		}
 
-		> .button.button-small:first-child {
+		> :is(.button.button-small, .newspack-intelligence__pill):first-child {
 			border-start-start-radius: var(--button-radius, 5px);
 			border-end-start-radius: var(--button-radius, 5px);
 		}
 
-		> .button.button-small:last-child {
+		> :is(.button.button-small, .newspack-intelligence__pill):last-child {
 			border-start-end-radius: var(--button-radius, 5px);
 			border-end-end-radius: var(--button-radius, 5px);
 		}
@@ -360,6 +427,11 @@
 	> p {
 		margin: 0;
 	}
+}
+
+// A row's More actions toggle is a bare glyph that never wraps alone.
+.newspack-intelligence__item-head > .components-dropdown {
+	flex: none;
 }
 
 // A pending judgment's Undo stays in view at the foot of the window.

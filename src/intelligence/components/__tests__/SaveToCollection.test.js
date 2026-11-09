@@ -11,6 +11,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import SaveToCollection from '../SaveToCollection';
+import { pageData } from '../../views/__tests__/fixtures';
 
 // This plugin's "Close" translates; the substrate's would not, in this bundle.
 jest.mock( '@wordpress/i18n', () => ( {
@@ -54,7 +55,7 @@ let wire;
 
 beforeEach( () => {
 	Core.reset();
-	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+	window.NewspackNodesData = pageData();
 	wire = intelWire();
 	wire.replies.collections = LIST;
 } );

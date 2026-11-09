@@ -12,6 +12,11 @@ import { Core } from '@newspack-nodes/runtime';
 import { steppedClock } from '@newspack-nodes/shared/test-utils/steppedClock';
 import { intelWire } from '../../__tests__/intelWire';
 import AskBox from '../AskBox';
+import { pageData } from '../../views/__tests__/fixtures';
+
+beforeEach( () => {
+	window.NewspackNodesData = pageData();
+} );
 
 const KEY = '5d1e9a7c3b2f4086';
 
@@ -104,7 +109,7 @@ let clock;
 
 beforeEach( () => {
 	Core.reset();
-	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+	window.NewspackNodesData = pageData();
 	clock = steppedClock();
 	wire = intelWire();
 	wire.replies.ask = { ask_key: KEY };
@@ -172,7 +177,7 @@ describe( 'AskBox', () => {
 
 		expect(
 			screen.getByText(
-				'Searched: kinds launch, award, roles client, the last 30 days; “quillsheet”, about Acme Quillsheet'
+				'Searched: Going live, Prize, about Paying member, the last 30 days; “quillsheet”, about Acme Quillsheet'
 			)
 		).toBeInTheDocument();
 

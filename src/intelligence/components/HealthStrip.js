@@ -20,7 +20,8 @@ import Refusal from './Refusal';
 import { Unread } from './Answer';
 import Skeleton from './Skeleton';
 import UndoSnackbar from './UndoSnackbar';
-import { metaLine } from './format';
+import { metaLine, pageFormat } from './format';
+import { word, words } from './words';
 
 /** The Vault tab of the substrate's Nodes station, where a credential is added. */
 const VAULT_PAGE = 'admin.php?page=newspack-nodes-station&tab=vault';
@@ -413,7 +414,7 @@ const UNKNOWN = {
 
 /** A worker running, whether busy or idle. */
 const RUNNING = {
-	word: __( 'live', 'newspack-intelligence' ),
+	word: __( 'Running', 'newspack-intelligence' ),
 	tone: 'is-success',
 	text: () => __( 'Running.', 'newspack-intelligence' ),
 };
@@ -431,10 +432,10 @@ const STATES = {
 			tone: 'is-neutral',
 			text: ( { topologies } ) =>
 				topologies.length
-					? __( 'Collection is off.', 'newspack-intelligence' )
+					? __( 'Collecting is off.', 'newspack-intelligence' )
 					: createInterpolateElement(
 							__(
-								'Collection is off; <code>wp nodes activate</code> turns on the topology that composes Intelligence.',
+								'Collecting is off; <code>wp nodes activate</code> turns on the topology that composes Intelligence.',
 								'newspack-intelligence'
 							),
 							{ code: <code /> }
@@ -448,7 +449,7 @@ const STATES = {
 							args: { name },
 						} ) ) }
 						action={ __(
-							'activate collection',
+							'turn collecting on',
 							'newspack-intelligence'
 						) }
 						verb="activate"
@@ -531,7 +532,7 @@ const STATES = {
 	},
 	source: {
 		ok: {
-			word: __( 'ok', 'newspack-intelligence' ),
+			word: __( 'Healthy', 'newspack-intelligence' ),
 			tone: 'is-success',
 			text: ( source ) =>
 				metaLine(
@@ -635,7 +636,7 @@ const STATES = {
 	},
 	backlog: {
 		'': {
-			word: __( 'clear', 'newspack-intelligence' ),
+			word: __( 'Up to date', 'newspack-intelligence' ),
 			tone: 'is-success',
 			text: clearText,
 			idle: ( { held } ) => 0 === held,
@@ -940,7 +941,7 @@ function rowSpecs( { collection, backlog, extraction, sources } ) {
 		collection &&
 			spec(
 				'collection',
-				__( 'Collection', 'newspack-intelligence' ),
+				word( 'healthWords', 'collection' ),
 				'collection',
 				collection.state,
 				collection
@@ -948,7 +949,7 @@ function rowSpecs( { collection, backlog, extraction, sources } ) {
 		backlog &&
 			spec(
 				'backlog',
-				__( 'Waiting to resolve', 'newspack-intelligence' ),
+				word( 'healthWords', 'backlog' ),
 				'backlog',
 				backlogState( backlog, Math.floor( Date.now() / 1000 ) ),
 				backlog
@@ -956,7 +957,7 @@ function rowSpecs( { collection, backlog, extraction, sources } ) {
 		backlog?.dropped &&
 			spec(
 				'dropped',
-				__( 'Dropped', 'newspack-intelligence' ),
+				word( 'healthWords', 'dropped' ),
 				'dropped',
 				'dropped',
 				backlog.dropped
@@ -964,7 +965,7 @@ function rowSpecs( { collection, backlog, extraction, sources } ) {
 		extraction &&
 			spec(
 				'extraction',
-				__( 'Extraction', 'newspack-intelligence' ),
+				word( 'healthWords', 'extraction' ),
 				'extraction',
 				extractionState( extraction ),
 				extraction
@@ -972,7 +973,7 @@ function rowSpecs( { collection, backlog, extraction, sources } ) {
 		queueText( extraction?.queue ) &&
 			spec(
 				'calls',
-				__( 'Model calls', 'newspack-intelligence' ),
+				word( 'healthWords', 'calls' ),
 				'calls',
 				'busy',
 				extraction.queue
@@ -980,7 +981,7 @@ function rowSpecs( { collection, backlog, extraction, sources } ) {
 		...( sources?.sources ?? [] ).map( ( one ) =>
 			spec(
 				`${ SOURCE_ROW }${ one.name }`,
-				one.name,
+				words( 'sourceWords' )[ one.name ] ?? one.name,
 				'source',
 				one.state,
 				one
@@ -1078,27 +1079,6 @@ const listFormat = () =>
 	);
 
 /**
- * An `Intl` format in the page's own language, `document.documentElement`'s
- * `lang`, or the default one when that is empty or not a language tag, the
- * one input the constructor's RangeError refuses here.
- *
- * @template T
- * @param {new ( locale?: string, options?: Object ) => T} Format    The format's constructor.
- * @param {Object}                                         [options] Its options.
- * @return {T} The format.
- */
-function pageFormat( Format, options ) {
-	try {
-		return new Format(
-			document.documentElement.lang || undefined,
-			options
-		);
-	} catch {
-		return new Format( undefined, options );
-	}
-}
-
-/**
  * The strip's one line, the first that holds of: the worst fault; a slice
  * refused; a slice owed; collection off, which outranks the unknown rows its
  * expired snapshots leave; a row whose health is not known but a source that
@@ -1128,7 +1108,7 @@ function healthLine( { faults, rows, reads, collection, sources } ) {
 		return __( 'Reading the pipeline’s health…', 'newspack-intelligence' );
 	}
 	if ( 'inactive' === collection.state ) {
-		return __( 'Collection is off.', 'newspack-intelligence' );
+		return __( 'Collecting is off.', 'newspack-intelligence' );
 	}
 	const unreported = sources.sources
 		.filter( ( one ) => 'unknown' === one.state )

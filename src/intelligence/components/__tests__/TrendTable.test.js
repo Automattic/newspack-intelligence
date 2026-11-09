@@ -1,8 +1,8 @@
 /* eslint-env jest */
 /**
- * A signal's value names its axis and kind in the page's own language, then
- * the value it counts, when it counts one. A trend table shows each row's
- * bucket, value, count and cited items, its bucket a date that does not
+ * A signal says itself in the vocabulary's words, a spike naming what
+ * jumped and any other the value it counts, when it counts one. A trend
+ * table shows each row's bucket, value, count and cited items, a kind by its word, its bucket a date that does not
  * wrap and its Value cell the class that keeps its column as wide as its
  * longest word. A trend chart draws the largest values over the latest
  * buckets as series of the shared time chart, and hands a screen reader
@@ -15,11 +15,12 @@
 
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import { resetLocaleData, setLocaleData } from '@wordpress/i18n';
-import TrendTable, {
-	SignalTrend,
-	TrendChart,
-	signalValue,
-} from '../TrendTable';
+import TrendTable, { Signals, TrendChart, signalValue } from '../TrendTable';
+import { pageData } from '../../views/__tests__/fixtures';
+
+beforeEach( () => {
+	window.NewspackNodesData = pageData();
+} );
 
 const THEMES = [
 	{
@@ -67,33 +68,50 @@ const THEMES = [
 afterEach( () => resetLocaleData( undefined, 'newspack-intelligence' ) );
 
 describe( 'signalValue', () => {
-	it( 'translates the axis and the kind', () => {
+	it( 'says a signal in the vocabulary’s words, a spike naming what jumped', () => {
+		expect(
+			signalValue( { axis: 'publisher', signal: 'drop', value: null } )
+		).toBe( 'Posted little' );
+		expect(
+			signalValue( {
+				axis: 'publisher',
+				signal: 'burst',
+				value: 'partnership',
+			} )
+		).toBe( 'Posted a lot: Teaming up' );
+		expect(
+			signalValue( { axis: 'about', signal: 'spike', value: 'release' } )
+		).toBe( 'Version out climbed' );
+		expect(
+			signalValue( {
+				axis: 'about',
+				signal: 'spike',
+				value: 'fees up $& more',
+			} )
+		).toBe( 'fees up $& more climbed' );
+	} );
+
+	it( 'translates the joining words around a counted value', () => {
 		setLocaleData(
 			{
 				'': { domain: 'newspack-intelligence' },
-				publisher: [ 'éditeur' ],
-				drop: [ 'baisse' ],
-				about: [ 'sujet' ],
-				burst: [ 'rafale' ],
+				'%1$s: %2$s': [ '%1$s — %2$s' ],
 			},
 			'newspack-intelligence'
 		);
 		expect(
-			signalValue( { axis: 'publisher', signal: 'drop', value: null } )
-		).toBe( 'éditeur baisse' );
-		expect(
 			signalValue( {
-				axis: 'about',
+				axis: 'publisher',
 				signal: 'burst',
 				value: 'partnership',
 			} )
-		).toBe( 'sujet rafale: partnership' );
+		).toBe( 'Posted a lot — Teaming up' );
 	} );
 
-	it( 'names an axis or a kind it does not know as the server spelled it', () => {
-		expect(
+	it( 'refuses a signal the vocabulary does not word', () => {
+		expect( () =>
 			signalValue( { axis: 'harbor', signal: 'swell', value: null } )
-		).toBe( 'harbor swell' );
+		).toThrow( 'no signalWords word for "swell"' );
 	} );
 } );
 
@@ -138,7 +156,7 @@ describe( 'TrendTable', () => {
 			/>
 		);
 		expect( valueCell( '2026-10-12' ) ).toHaveTextContent(
-			'about spike: release'
+			'Version out climbed'
 		);
 		expect( valueCell( '2026-10-12' ) ).toHaveClass(
 			'newspack-intelligence__value'
@@ -154,7 +172,7 @@ describe( 'TrendTable', () => {
 			screen
 				.getAllByRole( 'columnheader' )
 				.map( ( header ) => header.textContent )
-		).toEqual( [ 'Bucket', 'Value', 'Count', 'Items' ] );
+		).toEqual( [ 'When', 'What', 'Items', 'Examples' ] );
 		expect( screen.queryByRole( 'button' ) ).toBeNull();
 		const cells = within( rowOf( '2026-09-14' ) ).getAllByRole( 'cell' );
 		expect( cells[ 1 ] ).toHaveTextContent( 'client offboarding' );
@@ -248,11 +266,11 @@ describe( 'TrendChart', () => {
 			container.querySelectorAll( '.newspack-nodes-chart' )
 		).toHaveLength( 1 );
 		expect( legend( container ) ).toEqual( [
-			'complaint',
-			'praise',
-			'incident',
-			'bug',
-			'launch',
+			'Grumble',
+			'Kudos',
+			'Outage',
+			'Defect',
+			'Going live',
 		] );
 		expect(
 			screen.getByRole( 'heading', {
@@ -271,7 +289,7 @@ describe( 'TrendChart', () => {
 		);
 		expect(
 			within( table ).getByRole( 'row', { name: /2026-08-31/ } )
-		).toHaveTextContent( 'release' );
+		).toHaveTextContent( 'Version out' );
 		expect( within( table ).queryByRole( 'link' ) ).toBeNull();
 	} );
 
@@ -286,7 +304,7 @@ describe( 'TrendChart', () => {
 				} ) ) }
 			/>
 		);
-		expect( legend( container ) ).toEqual( [ 'complaint' ] );
+		expect( legend( container ) ).toEqual( [ 'Grumble' ] );
 		expect( markup( container ) ).toMatch( /<path / );
 		expect( markup( container ) ).not.toMatch( /NaN/ );
 	} );
@@ -304,7 +322,7 @@ describe( 'TrendChart', () => {
 				] }
 			/>
 		);
-		expect( legend( container ) ).toEqual( [ 'complaint' ] );
+		expect( legend( container ) ).toEqual( [ 'Grumble' ] );
 		expect( markup( container ) ).toMatch( /<path / );
 		expect( markup( container ) ).not.toMatch( /NaN/ );
 	} );
@@ -316,7 +334,7 @@ describe( 'TrendChart', () => {
 	} );
 } );
 
-describe( 'SignalTrend', () => {
+describe( 'Signals', () => {
 	const trend = [
 		{ bucket: '2026-10-12', count: 9, in_window: true },
 		{ bucket: '2026-10-05', count: 2, in_window: true },
@@ -343,6 +361,7 @@ describe( 'SignalTrend', () => {
 		],
 		items: [],
 	};
+
 	const band = ( container ) =>
 		container.querySelector( '.newspack-nodes-sparkline__band' );
 
@@ -359,7 +378,7 @@ describe( 'SignalTrend', () => {
 			],
 		};
 		render(
-			<SignalTrend
+			<Signals
 				answer={ { ...judged, signals: [ cited ] } }
 				onSave={ onSave }
 			/>
@@ -370,9 +389,21 @@ describe( 'SignalTrend', () => {
 		expect( onSave ).toHaveBeenCalledWith( cited.items[ 0 ] );
 	} );
 
+	it( 'shows each row’s value as the caller names it, counted against its usual mean', () => {
+		render(
+			<Signals
+				answer={ { ...judged, signals: [ spike ] } }
+				value={ signalValue }
+			/>
+		);
+		expect(
+			screen.getByRole( 'row', { name: /2026-10-12/ } )
+		).toHaveTextContent( 'Grumble climbed7, usually about 2' );
+	} );
+
 	it( 'reads a judged answer with no spike as no unusual change over its totals, with no band and no table', () => {
 		const { container } = render(
-			<SignalTrend answer={ { ...judged, signals: [] } } />
+			<Signals answer={ { ...judged, signals: [] } } />
 		);
 		const line = screen
 			.getByText( 'No unusual change last week.' )
@@ -386,11 +417,11 @@ describe( 'SignalTrend', () => {
 	} );
 
 	it.each( [
-		[ 'day', 'No unusual change last day.' ],
+		[ 'day', 'No unusual change yesterday.' ],
 		[ 'week', 'No unusual change last week.' ],
 		[ 'month', 'No unusual change last month.' ],
 	] )( 'names a quiet %s by its bucket', ( bucket, words ) => {
-		render( <SignalTrend answer={ { ...judged, bucket, signals: [] } } /> );
+		render( <Signals answer={ { ...judged, bucket, signals: [] } } /> );
 		expect( screen.getByText( words ) ).toBeInTheDocument();
 	} );
 
@@ -414,7 +445,7 @@ describe( 'SignalTrend', () => {
 		'reads a %s answer too new to judge against its %d buckets, never as steady',
 		( bucket, count, words ) => {
 			render(
-				<SignalTrend
+				<Signals
 					answer={ {
 						...tooNew,
 						bucket,
@@ -432,7 +463,7 @@ describe( 'SignalTrend', () => {
 
 	it( 'draws a signal’s own series with its usual range, not the totals', () => {
 		const { container } = render(
-			<SignalTrend answer={ { ...judged, signals: [ spike ] } } />
+			<Signals answer={ { ...judged, signals: [ spike ] } } />
 		);
 		expect( screen.getByRole( 'img' ) ).toHaveAccessibleName(
 			/oldest first: 1, 7; the latest, from 2026-10-12, counts 7/
@@ -450,18 +481,18 @@ describe( 'SignalTrend', () => {
 			usual: { mean: 6.25, low: 3.5, high: 9 },
 		};
 		const { container } = render(
-			<SignalTrend answer={ { ...judged, signals: [ drop ] } } />
+			<Signals answer={ { ...judged, signals: [ drop ] } } />
 		);
 		expect( screen.getByRole( 'img' ) ).toHaveAccessibleName(
 			/oldest first: 1, 7;/
 		);
 		expect( band( container ) ).not.toBeNull();
 		expect(
-			screen.getByRole( 'row', { name: /2026-10-12/ } )
-		).toHaveTextContent( '7 against a baseline of 6.3' );
+			screen.getByText( 'Posted little: 7 last week, usually about 6.' )
+		).toBeInTheDocument();
 	} );
 
-	it( 'names the signal whose series the line draws when several signal', () => {
+	it( 'names the signal whose series the line draws, the first of several', () => {
 		const second = {
 			...spike,
 			value: 'praise',
@@ -472,22 +503,24 @@ describe( 'SignalTrend', () => {
 			],
 		};
 		const { rerender } = render(
-			<SignalTrend answer={ { ...judged, signals: [ spike, second ] } } />
+			<Signals answer={ { ...judged, signals: [ spike, second ] } } />
 		);
 		expect( screen.getByRole( 'img' ) ).toHaveAccessibleName(
-			'The line draws about spike: complaint. Stories in each of the last 2 buckets, oldest first: 1, 7; the latest, from 2026-10-12, counts 7'
+			'The line draws Grumble. Items in each of the last 2 periods, oldest first: 1, 7; the latest, from 2026-10-12, counts 7'
 		);
-		rerender(
-			<SignalTrend answer={ { ...judged, signals: [ spike ] } } />
-		);
+		expect(
+			screen.getByText( 'Grumble: 7 last week, usually about 2.' )
+		).toBeInTheDocument();
+		expect( screen.queryByText( /^Praise:/ ) ).toBeNull();
+		rerender( <Signals answer={ { ...judged, signals: [ second ] } } /> );
 		expect( screen.getByRole( 'img' ) ).toHaveAccessibleName(
-			'Stories in each of the last 2 buckets, oldest first: 1, 7; the latest, from 2026-10-12, counts 7'
+			'Items in each of the last 2 periods, oldest first: 0, 4; the latest, from 2026-10-12, counts 4'
 		);
 	} );
 
 	it( 'breaks the line at a bucket the read never reached', () => {
 		const { container } = render(
-			<SignalTrend
+			<Signals
 				answer={ {
 					...tooNew,
 					signals: [],
@@ -509,7 +542,7 @@ describe( 'SignalTrend', () => {
 
 	it( 'reads a latest bucket the read never reached as not read, never as 0', () => {
 		render(
-			<SignalTrend
+			<Signals
 				answer={ {
 					...tooNew,
 					signals: [],
@@ -522,23 +555,23 @@ describe( 'SignalTrend', () => {
 		);
 		const name = screen.getByRole( 'img' ).getAttribute( 'aria-label' );
 		expect( name ).toBe(
-			'Stories in each of the last 2 buckets, oldest first: 6, not read; the latest, from 2026-10-12, was not read'
+			'Items in each of the last 2 periods, oldest first: 6, not read; the latest, from 2026-10-12, was not read'
 		);
 		expect( name ).not.toMatch( /counts 0/ );
 	} );
 
-	it( 'calls out each signal beside the sparkline, then lists them', () => {
-		render( <SignalTrend answer={ { ...judged, signals: [ spike ] } } /> );
+	it( 'says the signal in words on its pulse line, the bucket still running apart', () => {
+		render( <Signals answer={ { ...judged, signals: [ spike ] } } /> );
 		const line = screen
-			.getByText( 'about spike: complaint' )
+			.getByText( 'Grumble: 7 last week, usually about 2.' )
 			.closest( 'p' );
 		expect( within( line ).getByRole( 'img' ) ).toBeInTheDocument();
 		expect(
+			within( line ).getByText( '4 so far this week' )
+		).toBeInTheDocument();
+		expect(
 			screen.queryByText( /Steady|No unusual change|Too little/ )
 		).toBeNull();
-		expect(
-			screen.getByRole( 'row', { name: /2026-10-12/ } )
-		).toHaveTextContent( '7 against a baseline of 2' );
 	} );
 
 	it( 'names one bucket in the singular, and draws no line for a lone unread one or for none', () => {
@@ -548,7 +581,7 @@ describe( 'SignalTrend', () => {
 			trend: [ point ],
 		} );
 		const { container, rerender } = render(
-			<SignalTrend
+			<Signals
 				answer={ one( {
 					bucket: '2026-10-19',
 					count: 7,
@@ -557,10 +590,10 @@ describe( 'SignalTrend', () => {
 			/>
 		);
 		expect( screen.getByRole( 'img' ) ).toHaveAccessibleName(
-			'Stories in the last bucket, from 2026-10-19: 7'
+			'Items in the last period, from 2026-10-19: 7'
 		);
 		rerender(
-			<SignalTrend
+			<Signals
 				answer={ one( {
 					bucket: '2026-10-19',
 					count: 0,
@@ -570,21 +603,9 @@ describe( 'SignalTrend', () => {
 		);
 		expect( container.querySelector( 'svg' ) ).toBeNull();
 		rerender(
-			<SignalTrend answer={ { ...tooNew, signals: [], trend: [] } } />
+			<Signals answer={ { ...tooNew, signals: [], trend: [] } } />
 		);
 		expect( container.querySelector( 'svg' ) ).toBeNull();
 		expect( screen.getByText( /Too little history/ ) ).toBeInTheDocument();
-	} );
-
-	it( 'shows each row’s value as the caller names it', () => {
-		render(
-			<SignalTrend
-				answer={ { ...judged, signals: [ spike ] } }
-				value={ signalValue }
-			/>
-		);
-		expect(
-			screen.getByRole( 'row', { name: /2026-10-12/ } )
-		).toHaveTextContent( 'about spike: complaint' );
 	} );
 } );

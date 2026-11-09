@@ -1,8 +1,12 @@
 /* eslint-env jest */
 /**
  * ItemRow renders one item from the graph: its title as a link to its own
- * URL when that URL is http(s), every string as text, each linked entity as a
- * chip opening it, the save control only for a caller who may curate, and
+ * URL when that URL is http(s), every string as text, a meta line of cells
+ * (its source, its day and its kind as a badge, never joined by dots), its
+ * subjects as at most three pills opening them and every other entity it
+ * names behind "+N more", a mention saying so; Save, a bare glyph, only
+ * for a caller who may curate, moving into the row's "More actions"
+ * menu when the page is narrow, beside "Open profile" and "Copy link"; and
  * the exclusion only for a reader holding tune: a text action that holds
  * its write behind an Undo, puts the row back on Undo or a refusal, and
  * sends a pending write when the row leaves the page.
@@ -18,10 +22,16 @@ import {
 } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 import { speak } from '@wordpress/a11y';
+import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
 import { intelWire } from '../../__tests__/intelWire';
 import { UNDO_MS } from '../../hooks/useDeferredWrite';
 import { useIntelRead } from '../../hooks/useIntelCommand';
 import ItemRow, { ItemPage, SaveButton } from '../ItemRow';
+import { pageData } from '../../views/__tests__/fixtures';
+
+beforeEach( () => {
+	window.NewspackNodesData = pageData();
+} );
 
 jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
 
@@ -81,6 +91,30 @@ const linked = ( slug, role, client = false ) => ( {
 	role,
 	client,
 } );
+
+/** Noon UTC on 2027-03-02, the day every meta-line test reads as today. */
+const TODAY = Date.UTC( 2027, 2, 2, 12 ) / 1000;
+
+/**
+ * The pills a row shows, by their text, in order.
+ *
+ * @return {string[]} Each pill's text.
+ */
+const pills = () =>
+	Array.from(
+		document.querySelectorAll( '.newspack-intelligence__pill' ),
+		( pill ) => pill.textContent
+	);
+
+/**
+ * Opens a row's "More actions" menu.
+ *
+ * @return {Promise<HTMLElement>} The menu.
+ */
+const openMenu = async () => {
+	fireEvent.click( screen.getByRole( 'button', { name: 'More actions' } ) );
+	return screen.findByRole( 'menu' );
+};
 
 describe( 'ItemRow excerpt', () => {
 	const EXCERPT =
@@ -149,6 +183,14 @@ describe( 'ItemRow excerpt', () => {
 } );
 
 describe( 'ItemRow', () => {
+	beforeEach( () => {
+		jest.spyOn( Core, 'now' ).mockReturnValue( TODAY );
+	} );
+
+	afterEach( () => {
+		jest.restoreAllMocks();
+	} );
+
 	it( 'links the title to the item URL and renders it as text', () => {
 		render( <ItemRow item={ ITEM } onOpenEntity={ jest.fn() } /> );
 		const link = screen.getByRole( 'link', {
@@ -158,11 +200,43 @@ describe( 'ItemRow', () => {
 		expect( link.querySelector( 'b' ) ).toBeNull();
 	} );
 
-	it( 'renders the source, kind and UTC day', () => {
+	it( 'renders the source, the UTC day and the kind as cells, each by its word, joined by no dot', () => {
 		render( <ItemRow item={ ITEM } onOpenEntity={ jest.fn() } /> );
+		const meta = document.querySelector( '.newspack-intelligence__meta' );
+		expect( meta.textContent ).not.toMatch( /·/ );
 		expect(
-			screen.getByText( /feed · award · 2026-09-22/ )
-		).toBeInTheDocument();
+			within( meta ).getByText( 'Web feed' ).closest( 'span' )
+		).toHaveClass( 'newspack-intelligence__source' );
+		const icon = meta.querySelector(
+			'.newspack-intelligence__source-icon'
+		);
+		expect( icon ).toHaveAttribute( 'aria-hidden', 'true' );
+		expect( icon ).toHaveClass(
+			'newspack-nodes-status-badge',
+			'is-pill',
+			'is-neutral'
+		);
+		expect( within( meta ).getByText( '22 Sep 2026' ) ).toHaveAttribute(
+			'dateTime',
+			'2026-09-22'
+		);
+		expect( icon ).toHaveTextContent( 'W' );
+		expect( within( meta ).getByText( 'Prize' ).className ).toBe(
+			'newspack-nodes-status-badge is-neutral'
+		);
+	} );
+
+	it( 'names a day of this year by its day and month alone', () => {
+		render(
+			<ItemRow
+				item={ { ...ITEM, item_ts: Date.UTC( 2027, 1, 14, 9 ) / 1000 } }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		expect( screen.getByText( '14 Feb' ) ).toHaveAttribute(
+			'dateTime',
+			'2027-02-14'
+		);
 	} );
 
 	it( 'renders a kind check that passed beside the kind, with its day', () => {
@@ -182,9 +256,9 @@ describe( 'ItemRow', () => {
 		);
 		expect(
 			screen.getByText(
-				'feed · release · 2026-09-22 · release passed its kind check on 2026-09-23'
+				'Version out passed its kind check on 23 Sep 2026'
 			)
-		).toHaveClass( 'newspack-nodes-status', 'is-muted' );
+		).toBeInTheDocument();
 	} );
 
 	it( 'renders a kind check that failed, naming the kind it checked', () => {
@@ -204,7 +278,7 @@ describe( 'ItemRow', () => {
 		);
 		expect(
 			screen.getByText(
-				'feed · other · 2026-09-22 · launch failed its kind check on 2026-09-23'
+				'Going live failed its kind check on 23 Sep 2026'
 			)
 		).toBeInTheDocument();
 	} );
@@ -216,9 +290,7 @@ describe( 'ItemRow', () => {
 				onOpenEntity={ jest.fn() }
 			/>
 		);
-		expect(
-			screen.getByText( 'feed · award · 2026-09-22' )
-		).toBeInTheDocument();
+		expect( screen.getByText( 'Prize' ) ).toBeInTheDocument();
 		expect( screen.queryByText( /kind check/ ) ).toBeNull();
 	} );
 
@@ -287,7 +359,9 @@ describe( 'ItemRow', () => {
 					onOpenEntity={ onOpenEntity }
 				/>
 			);
-			const shown = screen.getAllByRole( 'button' ).map( ( chip ) => {
+			const shown = Array.from(
+				document.querySelectorAll( '.newspack-intelligence__pill' )
+			).map( ( chip ) => {
 				fireEvent.click( chip );
 				return [
 					chip.textContent,
@@ -328,7 +402,7 @@ describe( 'ItemRow', () => {
 		] );
 	} );
 
-	it( 'chips its subjects and holds its mentions behind a toggle', () => {
+	it( 'pills its two subjects and holds its nine mentions behind "+9 more"', () => {
 		const subjects = [ 'tern-desk', 'auk-post' ];
 		const mentions = [ 1, 2, 3, 4, 5, 6, 7, 8, 9 ].map(
 			( n ) => `gull-${ n }`
@@ -349,46 +423,97 @@ describe( 'ItemRow', () => {
 				onOpenEntity={ jest.fn() }
 			/>
 		);
-		const chips = () =>
-			screen
-				.getAllByRole( 'button' )
-				.filter( ( chip ) =>
-					chip.closest( '.newspack-intelligence__chips li' )
-				)
-				.map( ( chip ) => chip.textContent );
-		expect( chips() ).toEqual( subjects );
+		expect( pills() ).toEqual( subjects );
 		const more = screen.getByRole( 'button', { name: '+9 more' } );
 		expect( more ).toHaveAttribute( 'aria-expanded', 'false' );
 		expect( more ).toHaveClass( 'is-link' );
 		expect( more ).toHaveClass( 'newspack-intelligence__more' );
 
 		fireEvent.click( more );
-		expect( chips() ).toEqual( [ ...subjects, ...mentions ] );
+		expect( pills() ).toEqual( [
+			...subjects,
+			...mentions.map( ( slug ) => `${ slug }, mentioned` ),
+		] );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Show fewer' } ) );
-		expect( chips() ).toEqual( subjects );
+		expect( pills() ).toEqual( subjects );
 	} );
 
-	it( 'chips a client it mentions, first, and never an entity no naming role links', () => {
+	it( 'leads with three subjects at most, the rest behind "+N more"', () => {
+		const subjects = [ 'tern', 'auk', 'skua', 'gull', 'petrel' ];
+		render(
+			<ItemRow
+				item={ {
+					...ITEM,
+					entities: subjects.map( ( slug ) =>
+						linked( slug, 'subject' )
+					),
+				} }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		expect( pills() ).toEqual( [ 'tern', 'auk', 'skua' ] );
+		fireEvent.click( screen.getByRole( 'button', { name: '+2 more' } ) );
+		expect( pills() ).toEqual( subjects );
+	} );
+
+	it( 'never leads with a client it only mentions, which reads as mentioned behind "+N more"', () => {
+		const onOpenEntity = jest.fn();
 		render(
 			<ItemRow
 				item={ {
 					...ITEM,
 					entities: [
-						linked( 'heron-weekly', 'mention', true ),
+						{
+							...linked( 'harbor-ledger', 'mention', true ),
+							name: 'Harbor Ledger',
+						},
 						linked( 'tern-desk', 'subject' ),
-						linked( 'gull-press', 'mention' ),
 						linked( 'skua-times', 'publisher' ),
+					],
+				} }
+				onOpenEntity={ onOpenEntity }
+			/>
+		);
+		expect( pills() ).toEqual( [ 'tern-desk' ] );
+		fireEvent.click( screen.getByRole( 'button', { name: '+1 more' } ) );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Harbor Ledger, mentioned' } )
+		);
+		expect( onOpenEntity ).toHaveBeenCalledWith(
+			'organization:harbor-ledger'
+		);
+		expect( pills() ).toEqual( [
+			'tern-desk',
+			'Harbor Ledger, mentioned',
+		] );
+	} );
+
+	it( 'truncates a long name inside its pill, its accessible name whole, "+N more" in the same row', () => {
+		const long =
+			'The Lantern Harbor Community Ledger and Evening Tidewatch Co';
+		expect( long ).toHaveLength( 60 );
+		render(
+			<ItemRow
+				item={ {
+					...ITEM,
+					entities: [
+						{ ...linked( 'lantern', 'subject' ), name: long },
+						linked( 'gull-press', 'mention' ),
 					],
 				} }
 				onOpenEntity={ jest.fn() }
 			/>
 		);
-		fireEvent.click( screen.getByRole( 'button', { name: '+1 more' } ) );
+		const pill = screen.getByRole( 'button', { name: long } );
+		expect( pill ).toHaveClass( 'newspack-intelligence__pill' );
+		expect( within( pill ).getByText( long ) ).toHaveClass(
+			'newspack-intelligence__pill-name'
+		);
 		expect(
-			within( screen.getByRole( 'list' ) )
-				.getAllByRole( 'listitem' )
-				.map( ( chip ) => chip.textContent )
-		).toEqual( [ 'heron-weekly', 'tern-desk', 'gull-press' ] );
+			screen
+				.getByRole( 'button', { name: '+1 more' } )
+				.closest( '.newspack-intelligence__chips' )
+		).toBe( pill.closest( '.newspack-intelligence__chips' ) );
 	} );
 
 	it( 'offers no toggle when it mentions nothing past its chips', () => {
@@ -415,6 +540,256 @@ describe( 'ItemRow', () => {
 			screen.getByRole( 'button', { name: /save to folder/i } )
 		);
 		expect( onSave ).toHaveBeenCalledWith( ITEM );
+	} );
+
+	it( 'offers a curator Save as a bare glyph, and a reader no Save at all', async () => {
+		const onSave = jest.fn();
+		const { unmount } = render(
+			<ItemRow item={ ITEM } onOpenEntity={ jest.fn() } />
+		);
+		expect( screen.queryByRole( 'button', { name: /save/i } ) ).toBeNull();
+		await openMenu();
+		expect(
+			screen.queryByRole( 'menuitem', { name: /save/i } )
+		).toBeNull();
+		unmount();
+
+		render(
+			<ItemRow
+				item={ ITEM }
+				onOpenEntity={ jest.fn() }
+				onSave={ onSave }
+			/>
+		);
+		const save = screen.getByRole( 'button', { name: 'Save to folder' } );
+		expect( save ).toHaveTextContent( /^$/ );
+		expect( save ).toHaveClass( 'newspack-intelligence__save' );
+		fireEvent.click( save );
+		expect( onSave ).toHaveBeenCalledWith( ITEM );
+	} );
+
+	describe( 'when narrow', () => {
+		let viewport;
+
+		beforeEach( () => {
+			viewport = installViewport( true );
+		} );
+
+		afterEach( () => {
+			viewport.restore();
+		} );
+
+		it( 'moves Save into More actions for a curator', async () => {
+			const onSave = jest.fn();
+			render(
+				<ItemRow
+					item={ ITEM }
+					onOpenEntity={ jest.fn() }
+					onSave={ onSave }
+				/>
+			);
+			expect(
+				screen.queryByRole( 'button', { name: 'Save to folder' } )
+			).toBeNull();
+			const menu = await openMenu();
+			fireEvent.click(
+				within( menu ).getByRole( 'menuitem', {
+					name: 'Save to folder',
+				} )
+			);
+			expect( onSave ).toHaveBeenCalledWith( ITEM );
+		} );
+
+		it( 'offers a reader no Save in More actions', async () => {
+			render( <ItemRow item={ ITEM } onOpenEntity={ jest.fn() } /> );
+			const menu = await openMenu();
+			expect(
+				within( menu ).queryByRole( 'menuitem', { name: /save/i } )
+			).toBeNull();
+		} );
+	} );
+
+	it( 'opens its first subject’s profile from More actions', async () => {
+		const onOpenEntity = jest.fn();
+		render(
+			<ItemRow
+				item={ {
+					...ITEM,
+					entities: [
+						linked( 'gull-press', 'mention' ),
+						linked( 'tern-desk', 'subject' ),
+						linked( 'auk-post', 'subject' ),
+					],
+				} }
+				onOpenEntity={ onOpenEntity }
+			/>
+		);
+		const menu = await openMenu();
+		fireEvent.click(
+			within( menu ).getByRole( 'menuitem', { name: 'Open profile' } )
+		);
+		expect( onOpenEntity ).toHaveBeenCalledWith( 'organization:tern-desk' );
+	} );
+
+	it( 'opens the profile of the subject its first pill shows, a proposal sharing its name left out', async () => {
+		const onOpenEntity = jest.fn();
+		render(
+			<ItemRow
+				item={ {
+					...ITEM,
+					entities: [
+						{
+							entity_key: 'product:tern-desk',
+							name: 'Tern Desk',
+							state: 'proposed',
+							role: 'subject',
+							client: false,
+						},
+						{
+							entity_key: 'organization:tern-desk',
+							name: 'Tern Desk',
+							state: 'asserted',
+							role: 'subject',
+							client: false,
+						},
+					],
+				} }
+				onOpenEntity={ onOpenEntity }
+			/>
+		);
+		expect( pills() ).toEqual( [ 'Tern Desk' ] );
+		const menu = await openMenu();
+		fireEvent.click(
+			within( menu ).getByRole( 'menuitem', { name: 'Open profile' } )
+		);
+		expect( onOpenEntity ).toHaveBeenCalledWith( 'organization:tern-desk' );
+	} );
+
+	describe( 'Copy link', () => {
+		// The snackbar list measures its layout through scrollTo, which jsdom lacks.
+		const { scrollTo } = window;
+
+		beforeEach( () => {
+			speak.mockClear();
+			window.scrollTo = () => {};
+		} );
+
+		afterEach( () => {
+			delete window.navigator.clipboard;
+			window.scrollTo = scrollTo;
+		} );
+
+		/** How long a copy's snackbar stands, as spec §4 gives it. */
+		const COPIED_MS = 4000;
+
+		const copy = async () => {
+			const menu = await openMenu();
+			fireEvent.click(
+				within( menu ).getByRole( 'menuitem', { name: 'Copy link' } )
+			);
+		};
+
+		it( 'copies the item’s link and says so politely in a snackbar for 4 seconds', async () => {
+			const writeText = jest.fn( () => Promise.resolve() );
+			Object.defineProperty( window.navigator, 'clipboard', {
+				value: { writeText },
+				configurable: true,
+			} );
+			render( <ItemRow item={ ITEM } onOpenEntity={ jest.fn() } /> );
+			// Only timeouts are faked, so the snackbar's own clock is the one moved.
+			jest.useFakeTimers( {
+				doNotFake: [
+					'Date',
+					'hrtime',
+					'nextTick',
+					'performance',
+					'queueMicrotask',
+					'requestAnimationFrame',
+					'cancelAnimationFrame',
+					'requestIdleCallback',
+					'cancelIdleCallback',
+					'setImmediate',
+					'clearImmediate',
+					'setInterval',
+					'clearInterval',
+				],
+			} );
+			try {
+				await copy();
+				expect( writeText ).toHaveBeenCalledWith( ITEM.url );
+				const notice = await screen.findByText( 'Link copied.' );
+				expect(
+					notice.closest( '.components-snackbar-list' )
+				).not.toBeNull();
+				expect( speak ).toHaveBeenCalledWith(
+					'Link copied.',
+					'polite'
+				);
+				expect( speak ).not.toHaveBeenCalledWith(
+					expect.anything(),
+					'assertive'
+				);
+				await act( async () => {
+					jest.advanceTimersByTime( COPIED_MS - 1 );
+				} );
+				expect(
+					screen.getByText( 'Link copied.' )
+				).toBeInTheDocument();
+				await act( async () => {
+					jest.advanceTimersByTime( 1 );
+				} );
+				expect( screen.queryByText( 'Link copied.' ) ).toBeNull();
+			} finally {
+				jest.useRealTimers();
+			}
+		} );
+
+		it( 'says politely when the clipboard refuses the link', async () => {
+			Object.defineProperty( window.navigator, 'clipboard', {
+				value: {
+					writeText: () => Promise.reject( new Error( 'denied' ) ),
+				},
+				configurable: true,
+			} );
+			render( <ItemRow item={ ITEM } onOpenEntity={ jest.fn() } /> );
+			await copy();
+			expect(
+				await screen.findByText( 'The link could not be copied.' )
+			).toBeInTheDocument();
+			expect( speak ).toHaveBeenCalledWith(
+				'The link could not be copied.',
+				'polite'
+			);
+			expect( speak ).not.toHaveBeenCalledWith(
+				expect.anything(),
+				'assertive'
+			);
+		} );
+
+		it( 'says the link could not be copied where the page has no clipboard', async () => {
+			expect( window.navigator.clipboard ).toBeUndefined();
+			render( <ItemRow item={ ITEM } onOpenEntity={ jest.fn() } /> );
+			await copy();
+			expect(
+				await screen.findByText( 'The link could not be copied.' )
+			).toBeInTheDocument();
+		} );
+	} );
+
+	it( 'offers no profile without a subject, no link it would not open, and no menu with neither', () => {
+		render(
+			<ItemRow
+				item={ {
+					...ITEM,
+					url: 'javascript:alert(1)',
+					entities: [ linked( 'gull-press', 'mention' ) ],
+				} }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		expect(
+			screen.queryByRole( 'button', { name: 'More actions' } )
+		).toBeNull();
 	} );
 
 	it( 'heads the row with the controls it is given', () => {
@@ -517,7 +892,7 @@ describe( 'ItemRow exclusion', () => {
 
 	beforeEach( () => {
 		Core.reset();
-		window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+		window.NewspackNodesData = pageData();
 		wire = intelWire();
 		wire.replies.exclude_item = { ok: true, event_id: 'ev-x' };
 	} );

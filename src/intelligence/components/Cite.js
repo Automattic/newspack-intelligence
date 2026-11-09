@@ -22,8 +22,9 @@ export default function Cite( { url, title } ) {
 }
 
 /**
- * One entity an answer names, as the chip opening it: its name, or its key
- * where the graph holds no name.
+ * One entity an answer names, as the pill opening it: the shared status
+ * badge's `is-pill is-info` rather than a button's box, its name, or its key where the graph holds no name, cut
+ * short by its width alone, so its accessible name stays whole.
  *
  * @param {Object}                props
  * @param {string}                props.entityKey     The entity's key.
@@ -36,11 +37,13 @@ export function EntityChip( { entityKey, name, onOpen, description } ) {
 	return (
 		<button
 			type="button"
-			className="button button-small"
+			className="newspack-nodes-status-badge is-pill is-info newspack-intelligence__pill"
 			title={ description }
 			onClick={ () => onOpen( entityKey ) }
 		>
-			{ name || entityKey }
+			<span className="newspack-intelligence__pill-name">
+				{ name || entityKey }
+			</span>
 		</button>
 	);
 }

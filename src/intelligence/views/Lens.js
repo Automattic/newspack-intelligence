@@ -1,5 +1,5 @@
 import { useCallback, useState } from '@wordpress/element';
-import { __, sprintf } from '@wordpress/i18n';
+import { __ } from '@wordpress/i18n';
 import {
 	CheckboxControl,
 	SelectControl,
@@ -15,9 +15,11 @@ import {
 import { useHeld } from '../hooks/useHeld';
 import Answer from '../components/Answer';
 import Skeleton from '../components/Skeleton';
-import { SignalTrend, TrendChart } from '../components/TrendTable';
+import { Signals, TrendChart } from '../components/TrendTable';
 import GroupPage from '../components/GroupPage';
 import ListField from '../components/ListField';
+import ListPicker from '../components/ListPicker';
+import { word } from '../components/words';
 import Refusal from '../components/Refusal';
 import {
 	draftArgs,
@@ -39,21 +41,24 @@ export const CLOSED_LENS = { key: null, starts: [ 0 ] };
 const lensKey = ( lens ) => lens.lens_key;
 
 /**
- * A select's options over a closed list, led by the choice setting none.
+ * A select's options over a closed list, each by its word, led by the
+ * choice setting none.
  *
  * @param {string[]} values The list.
+ * @param {string}   map    The vocabulary map wording it.
  * @return {{label: string, value: string}[]} The options.
  */
-const choicesOf = ( values ) => [
+const choicesOf = ( values, map ) => [
 	{ label: __( 'Not set', 'newspack-intelligence' ), value: '' },
-	...values.map( ( value ) => ( { label: value, value } ) ),
+	...values.map( ( value ) => ( { label: word( map, value ), value } ) ),
 ];
 
 /**
  * The form a curator saves a lens with, a new one or the one opened: its
- * key, name and description, then every filter — open lists
- * comma-separated, tiers checked, the trend axis and bucket picked. A
- * filter left blank is left out, so the lens does not set it.
+ * name and description, then every filter — kinds, roles and sources
+ * picked, topics comma-separated, tiers checked, the trend axis and bucket
+ * picked. A filter left blank is left out, so the lens does not set it. A
+ * new lens is keyed by its name, which the server slugs.
  *
  * @param {Object}                                  props
  * @param {Object<string, string>}                  props.initial    The draft it opens on.
@@ -70,18 +75,15 @@ function LensForm( { initial, vocabulary, onSave, onCancel } ) {
 		__next40pxDefaultSize: true,
 	} );
 	const tiers = listOf( draft.tier );
-	const legend = __( 'Save lens', 'newspack-intelligence' );
+	const legend = __( 'Save team view', 'newspack-intelligence' );
 	return (
 		<form
 			className="newspack-intelligence__filters"
 			aria-label={ legend }
-			{ ...submitProps( () => onSave( draft ) ) }
+			{ ...submitProps( () =>
+				onSave( { ...draft, key: draft.key || draft.name } )
+			) }
 		>
-			<TextControl
-				label={ __( 'Key', 'newspack-intelligence' ) }
-				placeholder="support-desk"
-				{ ...field( 'key' ) }
-			/>
 			<TextControl
 				label={ __( 'Name', 'newspack-intelligence' ) }
 				{ ...field( 'name' ) }
@@ -90,9 +92,10 @@ function LensForm( { initial, vocabulary, onSave, onCancel } ) {
 				label={ __( 'Description', 'newspack-intelligence' ) }
 				{ ...field( 'description' ) }
 			/>
-			<ListField
-				label={ __( 'Kinds', 'newspack-intelligence' ) }
-				choices={ vocabulary.itemKinds }
+			<ListPicker
+				label={ __( 'Kind of news', 'newspack-intelligence' ) }
+				map="kindWords"
+				values={ vocabulary.itemKinds }
 				{ ...field( 'kind' ) }
 			/>
 			<ListField
@@ -100,37 +103,36 @@ function LensForm( { initial, vocabulary, onSave, onCancel } ) {
 				placeholder="topic:local-news"
 				{ ...field( 'topic' ) }
 			/>
-			<ListField
-				label={ __( 'Roles', 'newspack-intelligence' ) }
-				choices={ vocabulary.roles }
+			<ListPicker
+				label={ __( 'About', 'newspack-intelligence' ) }
+				map="roleWords"
+				values={ vocabulary.roles }
 				{ ...field( 'role' ) }
 			/>
-			<ListField
+			<ListPicker
 				label={ __( 'Sources', 'newspack-intelligence' ) }
-				placeholder="github, linear"
+				map="sourceWords"
+				values={ null }
 				{ ...field( 'source' ) }
 			/>
 			<TextControl
-				label={ __( 'Entity', 'newspack-intelligence' ) }
-				placeholder="organization:acme-gazette"
+				label={ __( 'Client or company', 'newspack-intelligence' ) }
 				{ ...field( 'entity' ) }
 			/>
 			<TextControl
 				type="number"
 				min={ 1 }
-				label={ __( 'Days', 'newspack-intelligence' ) }
-				help={ __(
-					'The last this many days.',
-					'newspack-intelligence'
-				) }
+				label={ __( 'Look back, in days', 'newspack-intelligence' ) }
 				{ ...field( 'days' ) }
 			/>
 			<fieldset className="newspack-intelligence__choices">
-				<legend>{ __( 'Tiers', 'newspack-intelligence' ) }</legend>
+				<legend>
+					{ __( 'Include items that are', 'newspack-intelligence' ) }
+				</legend>
 				{ vocabulary.tiers.map( ( tier ) => (
 					<CheckboxControl
 						key={ tier }
-						label={ tier }
+						label={ word( 'tierWords', tier ) }
 						checked={ tiers.includes( tier ) }
 						onChange={ ( on ) =>
 							setDraft( {
@@ -148,13 +150,13 @@ function LensForm( { initial, vocabulary, onSave, onCancel } ) {
 				) ) }
 			</fieldset>
 			<SelectControl
-				label={ __( 'Count by', 'newspack-intelligence' ) }
-				options={ choicesOf( vocabulary.trendAxes ) }
+				label={ __( 'Chart by', 'newspack-intelligence' ) }
+				options={ choicesOf( vocabulary.trendAxes, 'axisWords' ) }
 				{ ...field( 'by' ) }
 			/>
 			<SelectControl
-				label={ __( 'Bucket', 'newspack-intelligence' ) }
-				options={ choicesOf( vocabulary.buckets ) }
+				label={ __( 'Group by', 'newspack-intelligence' ) }
+				options={ choicesOf( vocabulary.buckets, 'spanWords' ) }
 				{ ...field( 'bucket' ) }
 			/>
 			<div className="newspack-intelligence__actions">
@@ -170,10 +172,10 @@ function LensForm( { initial, vocabulary, onSave, onCancel } ) {
 }
 
 /**
- * The lens opened: its signals beside its trend's sparkline, quiet or not
- * (`SignalTrend`), then its trend rows as one compact chart
- * (`TrendChart`), then its theme groups, a page of groups at a time in the
- * order the server ranks them, each read through the lens.
+ * The lens opened: its pulse line, quiet or not (`Signals`), and its
+ * signals, each counted against its usual mean, then its trend rows as one
+ * compact chart (`TrendChart`), then its theme groups, a page of groups at a
+ * time in the order the server ranks them, each read through the lens.
  *
  * @param {Object}                     props
  * @param {Object}                     props.lens         The listed lens opened.
@@ -215,7 +217,7 @@ function Opened( { lens, starts, onStarts, onOpenEntity, onSave, canTune } ) {
 				skeleton={ <Skeleton shape="line" count={ 1 } /> }
 			>
 				{ ( answer ) => (
-					<SignalTrend answer={ answer } onSave={ onSave } />
+					<Signals answer={ answer } onSave={ onSave } />
 				) }
 			</Answer>
 			<Answer
@@ -224,7 +226,7 @@ function Opened( { lens, starts, onStarts, onOpenEntity, onSave, canTune } ) {
 				read={ trends }
 				rows="rows"
 				empty={ __(
-					'No trend is seen through this lens.',
+					'No trend in this team view.',
 					'newspack-intelligence'
 				) }
 			>
@@ -236,7 +238,7 @@ function Opened( { lens, starts, onStarts, onOpenEntity, onSave, canTune } ) {
 				read={ items }
 				rows="groups"
 				empty={ __(
-					'No readable item is seen through this lens.',
+					'Nothing in this team view.',
 					'newspack-intelligence'
 				) }
 			>
@@ -334,7 +336,7 @@ export default function Lens( {
 								className="button button-primary"
 								onClick={ () => setEditing( newLens( lists ) ) }
 							>
-								{ __( 'New lens', 'newspack-intelligence' ) }
+								{ __( 'New view', 'newspack-intelligence' ) }
 							</button>
 						) }
 						{ canTune && lens && (
@@ -346,14 +348,7 @@ export default function Lens( {
 										setEditing( lensDraft( lens, lists ) )
 									}
 								>
-									{ sprintf(
-										/* translators: %s: the lens's name. */
-										__(
-											'Edit %s',
-											'newspack-intelligence'
-										),
-										lens.name
-									) }
+									{ __( 'Edit', 'newspack-intelligence' ) }
 								</button>
 								<button
 									type="button"
@@ -364,13 +359,9 @@ export default function Lens( {
 										)
 									}
 								>
-									{ sprintf(
-										/* translators: %s: the lens's name. */
-										__(
-											'Remove %s',
-											'newspack-intelligence'
-										),
-										lens.name
+									{ __(
+										'Remove view',
+										'newspack-intelligence'
 									) }
 								</button>
 							</>
@@ -395,10 +386,10 @@ export default function Lens( {
 			<Refusal error={ save.refusal } />
 			<Refusal error={ remove.refusal } />
 			<Answer
-				title={ __( 'Lenses', 'newspack-intelligence' ) }
+				title={ __( 'Team views', 'newspack-intelligence' ) }
 				read={ lenses.read }
 				rows="lenses"
-				empty={ __( 'No lens yet.', 'newspack-intelligence' ) }
+				empty={ __( 'No team view yet.', 'newspack-intelligence' ) }
 			>
 				{ ( answer ) => (
 					<ul className="newspack-intelligence__facts">

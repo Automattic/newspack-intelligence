@@ -11,15 +11,116 @@ export const VOCABULARY = {
 	tiers: [ 'public', 'internal', 'restricted' ],
 	trendAxes: [ 'kind', 'topic' ],
 	buckets: [ 'day', 'week', 'month' ],
+	kindWords: {
+		award: 'Prize',
+		launch: 'Going live',
+		release: 'Version out',
+		funding: 'Money raised',
+		hire: 'New hire',
+		departure: 'Someone left',
+		partnership: 'Teaming up',
+		incident: 'Outage',
+		bug: 'Defect',
+		feature_request: 'Wish',
+		complaint: 'Grumble',
+		praise: 'Kudos',
+		churned: 'Walking away',
+		churn_signal: 'Wobbling',
+		research: 'Study',
+		other: 'Anything else',
+	},
 	roleWords: {
 		client: 'Paying member',
 		former_client: 'Lapsed member',
-		competitor: 'Rival',
 		prospect: 'Lead',
+		competitor: 'Rival',
+		partner: 'Ally',
+		funder: 'Backer',
+		industry_body: 'Trade group',
+		operator_product: 'House product',
+	},
+	typeWords: {
+		organization: 'Outfit',
+		person: 'Human',
+		place: 'Locale',
+		product: 'Offering',
+		topic: 'Subject area',
+		event: 'Happening',
+	},
+	stateWords: {
+		accepted: 'Settled',
+		proposed: 'Guessed',
+		rejected: 'Turned down',
+	},
+	nameKindWords: {
+		canonical: 'Proper name',
+		alias: 'Goes by',
+		acronym: 'Initials',
+		locality: 'Hometown',
 	},
 	identifierWords: {
 		domain: 'Web address',
 		github_org: 'Code org',
+		github_repo: 'Code repo',
+		linkedin_company: 'Company page',
+		x_handle: 'Social handle',
+		site_id: 'Site number',
+		linear_team: 'Tracker team',
+	},
+	predicateWords: {
+		works_for: 'is employed by',
+		part_of: 'belongs to',
+		funds: 'pays for',
+		partners_with: 'teams with',
+		competes_with: 'rivals',
+		uses_product: 'runs',
+		won: 'took',
+		launched: 'started',
+		located_in: 'sits in',
+	},
+	sourceWords: {
+		github: 'Code host',
+		feed: 'Web feed',
+		p2: 'Team blog',
+		linear: 'Tracker',
+		slack: 'Chat',
+		unthread: 'Help desk',
+	},
+	signalWords: {
+		spike: '%s climbed',
+		burst: 'Posted a lot',
+		drop: 'Posted little',
+		silent: 'Fell silent',
+	},
+	healthWords: {
+		collection: 'Gathering',
+		backlog: 'Pairing items',
+		dropped: 'Let go',
+		extraction: 'Digests',
+		calls: 'Queued asks',
+	},
+	tierWords: {
+		public: 'Anyone',
+		internal: 'Staff',
+		restricted: 'Few',
+	},
+	spanWords: { day: 'Daily', week: 'Weekly', month: 'Monthly' },
+	axisWords: { kind: 'News type', topic: 'Subject area', theme: 'Thread' },
+	linkRoleWords: {
+		subject: 'Headlined',
+		mention: 'Named in passing',
+		topic: 'Tagged',
+		publisher: 'Put out by',
+	},
+	methodWords: {
+		identifier: 'its handle',
+		name: 'its exact name',
+		alias: 'another name',
+		acronym: 'its initials',
+		domain_stem: 'its web address',
+		ner_fuzzy: 'a lookalike',
+		human: 'a curator',
+		extract: 'the summary',
 	},
 	markWords: {
 		newsletter: 'Digest',
@@ -27,6 +128,21 @@ export const VOCABULARY = {
 		site: 'Homepage',
 	},
 };
+
+/**
+ * What the page is localized with, as the suites install it on `window`: the
+ * substrate's REST base and nonce, the vocabulary, its words replaced by
+ * any `words` given, map by map, and no operator.
+ *
+ * @param {Object} [words] Word maps that replace the fixture maps of their names.
+ * @return {Object} The page data.
+ */
+export const pageData = ( words = {} ) => ( {
+	restUrl: '/wp-json/',
+	nonce: 'NONCE',
+	operatorName: '',
+	vocabulary: { ...VOCABULARY, ...words },
+} );
 
 VOCABULARY.lensLists = [
 	{ field: 'kinds', option: 'kind', values: VOCABULARY.itemKinds },

@@ -27,6 +27,7 @@ import { intelWire } from '../../__tests__/intelWire';
 import { UNDO_MS } from '../../hooks/useDeferredWrite';
 import { useIntelRead } from '../../hooks/useIntelCommand';
 import Review from '../Review';
+import { pageData } from './fixtures';
 
 jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
 
@@ -51,12 +52,6 @@ const SIBLING = {
 	method: 'name',
 	confidence: 1,
 	evidence: 'Valley Ledger editors reproduced it.',
-};
-
-// Words distinct from the page's own, so a description proves it read these.
-const VOCABULARY = {
-	linkRoleWords: { mention: 'Named in passing', subject: 'Headlined' },
-	methodWords: { ner_fuzzy: 'a lookalike', name: 'its exact name' },
 };
 
 const PROPOSED = {
@@ -86,7 +81,7 @@ let wire;
 
 beforeEach( () => {
 	Core.reset();
-	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+	window.NewspackNodesData = pageData();
 	wire = intelWire();
 	wire.replies.review = ( [ what ] ) =>
 		'links' === what
@@ -97,12 +92,7 @@ beforeEach( () => {
 
 function renderReview( props = {} ) {
 	return render(
-		<Review
-			canTune={ false }
-			vocabulary={ VOCABULARY }
-			onOpenEntity={ jest.fn() }
-			{ ...props }
-		/>
+		<Review canTune={ false } onOpenEntity={ jest.fn() } { ...props } />
 	);
 }
 
@@ -183,7 +173,7 @@ describe( 'Review — reads', () => {
 				name: 'Valley Times joins the network',
 			} )
 		).toHaveAttribute( 'href', 'https://valley.example/17' );
-		const links = queue( 'Proposed links' );
+		const links = queue( 'Suggested matches' );
 		expect(
 			within( links ).getAllByRole( 'link', {
 				name: 'Paywall bug reported by Acme',
@@ -192,39 +182,27 @@ describe( 'Review — reads', () => {
 		expect(
 			within( links ).getByRole( 'button', { name: 'Acme Quillsheet' } )
 		).toHaveAccessibleDescription(
-			'Named in passing, found by a lookalike (61%)'
+			'Named in passing by a lookalike, 61% match'
 		);
 		expect(
 			within( links ).getByRole( 'button', { name: 'Valley Ledger' } )
 		).toHaveAccessibleDescription(
-			'Headlined, found by its exact name (100%)'
+			'Headlined by its exact name, exact match'
 		);
 		expect( wire.sent( 'review' ) ).toEqual(
 			expect.arrayContaining( [ [ 'links' ], [ 'entities' ] ] )
 		);
 	} );
 
-	it( 'reads a role or method outside the vocabulary as given', async () => {
-		wire.replies.review = ( [ what ] ) =>
-			'links' === what
-				? {
-						links: [ { ...LINK, role: 'cameo', method: 'hunch' } ],
-						available: true,
-				  }
-				: { entities: [], available: true };
+	it( "shows a proposed entity's type by its word, never its key", async () => {
 		renderReview();
+		const entities = queue( 'Suggested names' );
 		expect(
-			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
-		).toHaveAccessibleDescription( 'cameo, found by hunch (61%)' );
-	} );
-
-	it( "shows a proposed entity's key, which a merge names", async () => {
-		renderReview();
-		expect(
-			await within( queue( 'Proposed entities' ) ).findByText(
-				/organization:valley-times/
-			)
+			await within( entities ).findByText( 'Outfit' )
 		).toBeInTheDocument();
+		expect(
+			within( entities ).queryByText( /organization:valley-times/ )
+		).toBeNull();
 	} );
 
 	it( 'opens a row entity', async () => {
@@ -245,7 +223,7 @@ describe( 'Review — reads', () => {
 				: { entities: [], available: false };
 		renderReview();
 		expect(
-			await screen.findByText( 'No proposed link awaits review.' )
+			await screen.findByText( 'No suggested match awaits review.' )
 		).toBeInTheDocument();
 		expect(
 			await screen.findByText(
@@ -258,7 +236,7 @@ describe( 'Review — reads', () => {
 		const onSave = jest.fn();
 		renderReview( { canTune: true, onSave } );
 		const links = await screen.findByRole( 'region', {
-			name: 'Proposed links',
+			name: 'Suggested matches',
 		} );
 		fireEvent.click(
 			await within( links ).findByRole( 'button', {
@@ -278,7 +256,7 @@ describe( 'Review — reads', () => {
 		renderReview( { canTune: true, onSave } );
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
 		fireEvent.click(
-			within( queue( 'Proposed entities' ) ).getByRole( 'button', {
+			within( queue( 'Suggested names' ) ).getByRole( 'button', {
 				name: 'Save to folder',
 			} )
 		);
@@ -314,7 +292,7 @@ describe( 'Review — judgments', () => {
 		} );
 		fakeUndoClock();
 		fireEvent.click(
-			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+			within( queue( 'Suggested matches' ) ).getByRole( 'button', {
 				name: 'Confirm Acme Quillsheet',
 			} )
 		);
@@ -329,7 +307,7 @@ describe( 'Review — judgments', () => {
 		);
 		await waitFor( () => expect( linksRead() ).toHaveLength( 2 ) );
 		fireEvent.click(
-			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+			within( queue( 'Suggested matches' ) ).getByRole( 'button', {
 				name: 'Reject Valley Ledger',
 			} )
 		);
@@ -344,6 +322,22 @@ describe( 'Review — judgments', () => {
 		);
 	} );
 
+	it( 'joins the entity pill and its two glyphs as one control', async () => {
+		renderReview( { canTune: true } );
+		const chip = await within( queue( 'Suggested matches' ) ).findByRole(
+			'button',
+			{ name: 'Acme Quillsheet' }
+		);
+		const join = chip.closest( '.newspack-intelligence__judgment' );
+		expect(
+			Array.from( join.children, ( segment ) => segment.className )
+		).toEqual( [
+			'newspack-nodes-status-badge is-pill is-info newspack-intelligence__pill',
+			'button button-small',
+			'button button-small',
+		] );
+	} );
+
 	it( 'hides a judged link at once, though the re-read still lists it', async () => {
 		wire.replies.confirm_link = { ok: true, event_id: 'ev-c' };
 		renderReview( { canTune: true } );
@@ -351,7 +345,7 @@ describe( 'Review — judgments', () => {
 			name: 'Paywall bug reported by Acme',
 		} );
 		fakeUndoClock();
-		const links = queue( 'Proposed links' );
+		const links = queue( 'Suggested matches' );
 		fireEvent.click(
 			within( links ).getByRole( 'button', {
 				name: 'Confirm Acme Quillsheet',
@@ -363,12 +357,12 @@ describe( 'Review — judgments', () => {
 		await elapse( UNDO_MS );
 		await waitFor( () => expect( linksRead() ).toHaveLength( 2 ) );
 		expect(
-			within( queue( 'Proposed links' ) ).queryByRole( 'button', {
+			within( queue( 'Suggested matches' ) ).queryByRole( 'button', {
 				name: 'Acme Quillsheet',
 			} )
 		).toBeNull();
 		expect(
-			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+			within( queue( 'Suggested matches' ) ).getByRole( 'button', {
 				name: 'Valley Ledger',
 			} )
 		).toBeInTheDocument();
@@ -382,7 +376,7 @@ describe( 'Review — judgments', () => {
 			name: 'Paywall bug reported by Acme',
 		} );
 		fakeUndoClock();
-		const links = queue( 'Proposed links' );
+		const links = queue( 'Suggested matches' );
 		fireEvent.click(
 			within( links ).getByRole( 'button', {
 				name: 'Confirm Acme Quillsheet',
@@ -403,7 +397,7 @@ describe( 'Review — judgments', () => {
 			] )
 		);
 		expect(
-			within( links ).getByText( 'No proposed link awaits review.' )
+			within( links ).getByText( 'No suggested match awaits review.' )
 		).toBeInTheDocument();
 	} );
 
@@ -416,7 +410,7 @@ describe( 'Review — judgments', () => {
 		} );
 		fakeUndoClock();
 		fireEvent.click(
-			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+			within( queue( 'Suggested matches' ) ).getByRole( 'button', {
 				name: 'Confirm Acme Quillsheet',
 			} )
 		);
@@ -425,7 +419,7 @@ describe( 'Review — judgments', () => {
 			await screen.findByText( /no link: github:example\/plugin/ )
 		).toBeInTheDocument();
 		expect(
-			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+			within( queue( 'Suggested matches' ) ).getByRole( 'button', {
 				name: 'Confirm Acme Quillsheet',
 			} )
 		).toBeInTheDocument();
@@ -439,7 +433,7 @@ describe( 'Review — judgments', () => {
 			name: 'Paywall bug reported by Acme',
 		} );
 		fakeUndoClock();
-		const links = queue( 'Proposed links' );
+		const links = queue( 'Suggested matches' );
 		fireEvent.click(
 			within( links ).getByRole( 'button', {
 				name: 'Confirm Acme Quillsheet',
@@ -462,12 +456,12 @@ describe( 'Review — judgments', () => {
 			Core.node( '_command_interpreter' ).fill( bounce );
 		} );
 		expect(
-			await within( queue( 'Proposed links' ) ).findByRole( 'button', {
+			await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
 				name: 'Acme Quillsheet',
 			} )
 		).toBeInTheDocument();
 		expect(
-			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+			within( queue( 'Suggested matches' ) ).getByRole( 'button', {
 				name: 'Valley Ledger',
 			} )
 		).toBeInTheDocument();
@@ -493,20 +487,20 @@ describe( 'Review — judgments', () => {
 		} );
 		fakeUndoClock();
 		fireEvent.click(
-			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+			within( queue( 'Suggested matches' ) ).getByRole( 'button', {
 				name: 'Confirm Acme Quillsheet',
 			} )
 		);
 		await elapse( UNDO_MS );
 		await waitFor( () => expect( linksRead() ).toHaveLength( 2 ) );
 		fireEvent.click(
-			await within( queue( 'Proposed links' ) ).findByRole( 'button', {
+			await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
 				name: 'Reject Valley Ledger',
 			} )
 		);
 		await elapse( UNDO_MS );
 		expect(
-			await within( queue( 'Proposed links' ) ).findByRole( 'button', {
+			await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
 				name: 'Acme Quillsheet',
 			} )
 		).toBeInTheDocument();
@@ -527,7 +521,7 @@ describe( 'Review — judgments', () => {
 			name: 'Paywall bug reported by Acme',
 		} );
 		fakeUndoClock();
-		const links = queue( 'Proposed links' );
+		const links = queue( 'Suggested matches' );
 		fireEvent.click(
 			within( links ).getByRole( 'button', {
 				name: 'Confirm Acme Quillsheet',
@@ -563,7 +557,7 @@ describe( 'Review — judgments', () => {
 			await screen.findByRole( 'button', { name: 'Valley Times' } );
 			fakeUndoClock();
 			fireEvent.click(
-				within( queue( 'Proposed entities' ) ).getByRole( 'button', {
+				within( queue( 'Suggested names' ) ).getByRole( 'button', {
 					name,
 				} )
 			);
@@ -572,8 +566,8 @@ describe( 'Review — judgments', () => {
 				expect( wire.sent( verb ) ).toEqual( [ tokens ] )
 			);
 			expect(
-				within( queue( 'Proposed entities' ) ).getByText(
-					'No proposed entity awaits review.'
+				within( queue( 'Suggested names' ) ).getByText(
+					'No suggested name awaits review.'
 				)
 			).toBeInTheDocument();
 		}
@@ -583,13 +577,13 @@ describe( 'Review — judgments', () => {
 		wire.replies.merge_entities = () => new Promise( () => {} );
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
-		const entities = queue( 'Proposed entities' );
+		const entities = queue( 'Suggested names' );
 		expect(
 			within( entities ).queryByLabelText( 'Merge into' )
 		).toBeNull();
 		fireEvent.click(
 			within( entities ).getByRole( 'button', {
-				name: 'Merge Valley Times…',
+				name: 'Valley Times is the same as…',
 			} )
 		);
 		fireEvent.change( within( entities ).getByLabelText( 'Merge into' ), {
@@ -618,10 +612,10 @@ describe( 'Review — judgments', () => {
 			);
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
-		const entities = queue( 'Proposed entities' );
+		const entities = queue( 'Suggested names' );
 		fireEvent.click(
 			within( entities ).getByRole( 'button', {
-				name: 'Merge Valley Times…',
+				name: 'Valley Times is the same as…',
 			} )
 		);
 		fireEvent.change( within( entities ).getByLabelText( 'Merge into' ), {
@@ -634,7 +628,7 @@ describe( 'Review — judgments', () => {
 			await screen.findByText( /cannot merge organization:valley-times/ )
 		).toBeInTheDocument();
 		expect(
-			within( queue( 'Proposed entities' ) ).getByRole( 'button', {
+			within( queue( 'Suggested names' ) ).getByRole( 'button', {
 				name: 'Accept Valley Times',
 			} )
 		).toBeInTheDocument();
@@ -649,7 +643,7 @@ describe( 'Review — themes', () => {
 
 	it( 'lists each suggested pair with its stories, shared words and entities, and offers a reader no merge', async () => {
 		renderReview();
-		const themes = queue( 'Themes' );
+		const themes = queue( 'Similar themes' );
 		expect(
 			await within( themes ).findByText( 'kiosk offboarding' )
 		).toBeInTheDocument();
@@ -676,7 +670,7 @@ describe( 'Review — themes', () => {
 	it( 'merges either theme into the other, hiding the pair, then re-reads', async () => {
 		wire.replies.merge_theme = { ok: true, event_id: 'ev-t' };
 		renderReview( { canTune: true } );
-		const themes = queue( 'Themes' );
+		const themes = queue( 'Similar themes' );
 		const merge = await within( themes ).findByRole( 'button', {
 			name: MERGE_INTO_FIRST,
 		} );
@@ -693,7 +687,7 @@ describe( 'Review — themes', () => {
 			] )
 		);
 		expect(
-			within( queue( 'Themes' ) ).queryByRole( 'button', {
+			within( queue( 'Similar themes' ) ).queryByRole( 'button', {
 				name: MERGE_INTO_SECOND,
 			} )
 		).toBeNull();
@@ -705,9 +699,12 @@ describe( 'Review — themes', () => {
 	it( 'merges the first theme into the second', async () => {
 		wire.replies.merge_theme = () => new Promise( () => {} );
 		renderReview( { canTune: true } );
-		const merge = await within( queue( 'Themes' ) ).findByRole( 'button', {
-			name: MERGE_INTO_SECOND,
-		} );
+		const merge = await within( queue( 'Similar themes' ) ).findByRole(
+			'button',
+			{
+				name: MERGE_INTO_SECOND,
+			}
+		);
 		fakeUndoClock();
 		fireEvent.click( merge );
 		await elapse( UNDO_MS );
@@ -727,9 +724,12 @@ describe( 'Review — themes', () => {
 				'kiosk offboarding merges into kiosk exit; merge kiosk offboarding from platform into kiosk exit instead'
 			);
 		renderReview( { canTune: true } );
-		const merge = await within( queue( 'Themes' ) ).findByRole( 'button', {
-			name: MERGE_INTO_FIRST,
-		} );
+		const merge = await within( queue( 'Similar themes' ) ).findByRole(
+			'button',
+			{
+				name: MERGE_INTO_FIRST,
+			}
+		);
 		fakeUndoClock();
 		fireEvent.click( merge );
 		await elapse( UNDO_MS );
@@ -737,7 +737,7 @@ describe( 'Review — themes', () => {
 			await screen.findByText( /into kiosk exit instead/ )
 		).toBeInTheDocument();
 		expect(
-			within( queue( 'Themes' ) ).getByRole( 'button', {
+			within( queue( 'Similar themes' ) ).getByRole( 'button', {
 				name: MERGE_INTO_SECOND,
 			} )
 		).toBeInTheDocument();
@@ -747,7 +747,7 @@ describe( 'Review — themes', () => {
 describe( 'Review — evidence', () => {
 	it( 'quotes the sentence each proposal came from', async () => {
 		renderReview();
-		const links = queue( 'Proposed links' );
+		const links = queue( 'Suggested matches' );
 		expect(
 			await within( links ).findByText(
 				'Acme readers flagged the paywall bug twice.'
@@ -757,7 +757,7 @@ describe( 'Review — evidence', () => {
 			within( links ).getByText( 'Valley Ledger editors reproduced it.' )
 		).toBeInTheDocument();
 		expect(
-			await within( queue( 'Proposed entities' ) ).findByText(
+			await within( queue( 'Suggested names' ) ).findByText(
 				'Valley Times signed on this week.'
 			)
 		).toBeInTheDocument();
@@ -769,7 +769,7 @@ describe( 'Review — evidence', () => {
 				? { links: [ { ...LINK, evidence: '' } ], available: true }
 				: { entities: [], available: true };
 		renderReview();
-		const links = queue( 'Proposed links' );
+		const links = queue( 'Suggested matches' );
 		await within( links ).findByRole( 'button', {
 			name: 'Acme Quillsheet',
 		} );
@@ -792,7 +792,7 @@ describe( 'Review — keyboard', () => {
 	it( 'names each list and describes its keys to a screen reader, each key on its control', async () => {
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
-		for ( const name of [ 'Proposed links', 'Proposed entities' ] ) {
+		for ( const name of [ 'Suggested matches', 'Suggested names' ] ) {
 			expect( list( name ) ).toHaveAccessibleDescription(
 				'Keys: J and K to move, Y yes, N no, M same as…, Z undo.'
 			);
@@ -804,14 +804,16 @@ describe( 'Review — keyboard', () => {
 			screen.getByRole( 'button', { name: 'Reject Acme Quillsheet' } )
 		).toHaveAttribute( 'aria-keyshortcuts', 'n' );
 		expect(
-			screen.getByRole( 'button', { name: 'Merge Valley Times…' } )
+			screen.getByRole( 'button', {
+				name: 'Valley Times is the same as…',
+			} )
 		).toHaveAttribute( 'aria-keyshortcuts', 'm' );
 	} );
 
 	it( 'moves through the judgments with j and k, each focusable', async () => {
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
-		const links = list( 'Proposed links' );
+		const links = list( 'Suggested matches' );
 		links.focus();
 		key( links, 'j' );
 		focusedHolds( 'Acme Quillsheet' );
@@ -830,7 +832,7 @@ describe( 'Review — keyboard', () => {
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
 		fakeUndoClock();
-		const links = list( 'Proposed links' );
+		const links = list( 'Suggested matches' );
 		links.focus();
 		key( links, 'j' );
 		await act( async () => key( document.activeElement, 'y' ) );
@@ -856,8 +858,8 @@ describe( 'Review — keyboard', () => {
 			] )
 		);
 		expect(
-			within( queue( 'Proposed links' ) ).getByText(
-				'No proposed link awaits review.'
+			within( queue( 'Suggested matches' ) ).getByText(
+				'No suggested match awaits review.'
 			)
 		).toBeInTheDocument();
 	} );
@@ -867,7 +869,7 @@ describe( 'Review — keyboard', () => {
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Valley Ledger' } );
 		fakeUndoClock();
-		const links = list( 'Proposed links' );
+		const links = list( 'Suggested matches' );
 		links.focus();
 		key( links, 'k' );
 		key( document.activeElement, 'j' );
@@ -888,12 +890,12 @@ describe( 'Review — keyboard', () => {
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
 		fakeUndoClock();
-		const entities = list( 'Proposed entities' );
+		const entities = list( 'Suggested names' );
 		entities.focus();
 		key( entities, 'j' );
 		focusedHolds( 'Valley Times' );
 		await act( async () => key( document.activeElement, 'm' ) );
-		const into = within( queue( 'Proposed entities' ) ).getByLabelText(
+		const into = within( queue( 'Suggested names' ) ).getByLabelText(
 			'Merge into'
 		);
 		expect( document.activeElement ).toBe( into );
@@ -917,7 +919,7 @@ describe( 'Review — keyboard', () => {
 		wire.replies.confirm_link = () => new Promise( () => {} );
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
-		const links = list( 'Proposed links' );
+		const links = list( 'Suggested matches' );
 		links.focus();
 		key( links, 'j' );
 		fireEvent.keyDown( document.activeElement, {
@@ -933,7 +935,7 @@ describe( 'Review — keyboard', () => {
 	it( 'offers a reader the moves and no judgment', async () => {
 		renderReview();
 		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
-		const links = list( 'Proposed links' );
+		const links = list( 'Suggested matches' );
 		links.focus();
 		key( links, 'j' );
 		key( document.activeElement, 'y' );
@@ -952,7 +954,7 @@ describe( 'Review — undo', () => {
 		within( queue( name ) ).getByRole( 'list', { name } );
 	const key = ( target, k ) => fireEvent.keyDown( target, { key: k } );
 	const harborRow = () =>
-		within( queue( 'Proposed links' ) )
+		within( queue( 'Suggested matches' ) )
 			.queryByRole( 'button', { name: 'Harbor Ledger' } )
 			?.closest( '[data-review-row]' ) ?? null;
 
@@ -972,7 +974,7 @@ describe( 'Review — undo', () => {
 	async function focusHarbor() {
 		await screen.findByRole( 'button', { name: 'Harbor Ledger' } );
 		fakeUndoClock();
-		const links = list( 'Proposed links' );
+		const links = list( 'Suggested matches' );
 		links.focus();
 		key( links, 'j' );
 		expect( document.activeElement ).toBe( harborRow() );
@@ -1063,7 +1065,7 @@ describe( 'Review — undo', () => {
 		).toBeInTheDocument();
 		await act( async () => key( document.activeElement, 'z' ) );
 		expect(
-			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+			within( queue( 'Suggested matches' ) ).getByRole( 'button', {
 				name: 'Valley Ledger',
 			} )
 		).toBeInTheDocument();
@@ -1116,12 +1118,15 @@ describe( 'Review — undo', () => {
 	it( 'holds an accepted entity and a theme merge for the undo window too', async () => {
 		renderReview( { canTune: true } );
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
-		const merge = await within( queue( 'Themes' ) ).findByRole( 'button', {
-			name: 'Merge kiosk offboarding from platform into kiosk offboarding',
-		} );
+		const merge = await within( queue( 'Similar themes' ) ).findByRole(
+			'button',
+			{
+				name: 'Merge kiosk offboarding from platform into kiosk offboarding',
+			}
+		);
 		fakeUndoClock();
 		fireEvent.click(
-			within( queue( 'Proposed entities' ) ).getByRole( 'button', {
+			within( queue( 'Suggested names' ) ).getByRole( 'button', {
 				name: 'Accept Valley Times',
 			} )
 		);
@@ -1135,7 +1140,9 @@ describe( 'Review — undo', () => {
 			)
 		).toBeInTheDocument();
 		expect(
-			within( queue( 'Themes' ) ).getByText( 'No two themes look alike.' )
+			within( queue( 'Similar themes' ) ).getByText(
+				'No two themes look alike.'
+			)
 		).toBeInTheDocument();
 		await elapse( UNDO_MS - 1 );
 		await settle();
@@ -1156,9 +1163,12 @@ describe( 'Review — undo', () => {
 
 	it( 'brings a theme pair back with its focus on an undo', async () => {
 		renderReview( { canTune: true } );
-		const merge = await within( queue( 'Themes' ) ).findByRole( 'button', {
-			name: 'Merge kiosk offboarding from platform into kiosk offboarding',
-		} );
+		const merge = await within( queue( 'Similar themes' ) ).findByRole(
+			'button',
+			{
+				name: 'Merge kiosk offboarding from platform into kiosk offboarding',
+			}
+		);
 		fakeUndoClock();
 		fireEvent.click( merge );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Undo' } ) );
@@ -1186,7 +1196,7 @@ describe( 'Review — the keys legend and switch', () => {
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
 		const legend = screen.getByText( LEGEND );
 		expect( legend.closest( '.components-visually-hidden' ) ).toBeNull();
-		for ( const name of [ 'Proposed links', 'Proposed entities' ] ) {
+		for ( const name of [ 'Suggested matches', 'Suggested names' ] ) {
 			expect( list( name ) ).toHaveAccessibleDescription( LEGEND );
 		}
 	} );
@@ -1206,7 +1216,7 @@ describe( 'Review — the keys legend and switch', () => {
 		expect(
 			screen.getByRole( 'checkbox', { name: SWITCH } )
 		).toBeChecked();
-		const links = list( 'Proposed links' );
+		const links = list( 'Suggested matches' );
 		links.focus();
 		key( links, 'j' );
 		expect( document.activeElement ).toBe( links );
@@ -1239,7 +1249,7 @@ describe( 'Review — what a judgment dirties', () => {
 		} );
 		fakeUndoClock();
 		fireEvent.click(
-			within( queue( 'Proposed links' ) ).getByRole( 'button', {
+			within( queue( 'Suggested matches' ) ).getByRole( 'button', {
 				name: 'Confirm Acme Quillsheet',
 			} )
 		);
@@ -1259,18 +1269,14 @@ describe( 'Review — what a judgment dirties', () => {
 		const view = render(
 			<>
 				<Probe scope="probe:lenses" command="lenses" args={ [] } />
-				<Review
-					canTune={ true }
-					vocabulary={ VOCABULARY }
-					onOpenEntity={ jest.fn() }
-				/>
+				<Review canTune={ true } onOpenEntity={ jest.fn() } />
 			</>
 		);
 		await screen.findByText( 'lenses read' );
 		await screen.findByRole( 'button', { name: 'Valley Times' } );
 		fakeUndoClock();
 		fireEvent.click(
-			within( queue( 'Proposed entities' ) ).getByRole( 'button', {
+			within( queue( 'Suggested names' ) ).getByRole( 'button', {
 				name: 'Accept Valley Times',
 			} )
 		);

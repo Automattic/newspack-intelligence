@@ -4,6 +4,7 @@ import { EntityChip } from './Cite';
 import ItemRow from './ItemRow';
 import Pager from './Pager';
 import { metaLine, utcDay } from './format';
+import { word } from './words';
 
 /**
  * One theme group of a lens: its theme as the heading, its count, kind and
@@ -68,7 +69,7 @@ function GroupRow( { group, onOpenEntity, onSave, canTune } ) {
 						),
 						group.count
 					),
-					group.kind,
+					group.kind && word( 'kindWords', group.kind ),
 					utcDay( group.newest_ts )
 				) }
 			</p>

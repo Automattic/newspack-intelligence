@@ -4,20 +4,17 @@ import { SelectControl, TextControl } from '@wordpress/components';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { CLIENT } from '../hooks/useEndClient';
 import { roleText } from './format';
+import { word } from './words';
 
 /**
- * The options a closed list offers a select, each shown by its label where
- * the list has labels.
+ * The options a closed list offers a select, each shown by its word.
  *
- * @param {string[]}               values  The list.
- * @param {Object<string, string>} [words] Each value's label.
+ * @param {string[]} values The list.
+ * @param {string}   words  The vocabulary map wording it.
  * @return {{label: string, value: string}[]} The options.
  */
 const optionsOf = ( values, words ) =>
-	values.map( ( value ) => ( {
-		label: words ? words[ value ] : value,
-		value,
-	} ) );
+	values.map( ( value ) => ( { label: word( words, value ), value } ) );
 
 /**
  * One curation form: a legend naming it, the fields it collects and the
@@ -52,7 +49,7 @@ function EditForm( { legend, onSubmit, children } ) {
  * @param {Object}                                props
  * @param {string}                                props.legend   Names the form.
  * @param {string[]}                              props.kinds    The kinds it offers.
- * @param {Object<string, string>}                [props.words]  Each kind's label.
+ * @param {string}                                props.words    The vocabulary map wording the kinds.
  * @param {(kind: string, value: string) => void} props.onSubmit Sends the pair.
  * @return {import('react').ReactElement} The form.
  */
@@ -83,21 +80,20 @@ function KindValueForm( { legend, kinds, words, onSubmit } ) {
  *
  * @param {Object}                 props
  * @param {string[]}               props.roles    The roles it offers.
- * @param {Object<string, string>} props.words    Each role's label.
  * @param {(role: string) => void} props.onSubmit Sends the role.
  * @return {import('react').ReactElement} The form.
  */
-function RoleForm( { roles, words, onSubmit } ) {
+function RoleForm( { roles, onSubmit } ) {
 	const [ role, setRole ] = useState( roles[ 0 ] );
 	return (
 		<EditForm
-			legend={ __( 'Assert role', 'newspack-intelligence' ) }
+			legend={ __( 'Add a role', 'newspack-intelligence' ) }
 			onSubmit={ () => onSubmit( role ) }
 		>
 			<SelectControl
 				__next40pxDefaultSize
 				label={ __( 'Role', 'newspack-intelligence' ) }
-				options={ optionsOf( roles, words ) }
+				options={ optionsOf( roles, 'roleWords' ) }
 				value={ role }
 				onChange={ setRole }
 			/>
@@ -108,7 +104,7 @@ function RoleForm( { roles, words, onSubmit } ) {
 /**
  * An entity's curation behind an "Edit" toggle, closed until opened: each
  * role it holds open with the control ending it, then the forms adding a
- * name or an identifier and asserting a role. Each edit goes through the
+ * name or an identifier and adding a role. Each edit goes through the
  * write the view hands it, which re-reads the record once it lands, but
  * the client role, whose control asks first through `onEndClient`.
  *
@@ -161,7 +157,7 @@ export default function EditDrawer( {
 									key={ `${ role.role } ${ role.from_ts }` }
 									className="newspack-intelligence__actions"
 								>
-									{ roleText( role, vocabulary.roleWords ) }
+									{ roleText( role ) }
 									{ CLIENT === role.role ? (
 										<button
 											type="button"
@@ -174,7 +170,7 @@ export default function EditDrawer( {
 													'End %s…',
 													'newspack-intelligence'
 												),
-												vocabulary.roleWords[ CLIENT ]
+												word( 'roleWords', CLIENT )
 											) }
 										</button>
 									) : (
@@ -194,9 +190,7 @@ export default function EditDrawer( {
 													'End %s',
 													'newspack-intelligence'
 												),
-												vocabulary.roleWords[
-													role.role
-												]
+												word( 'roleWords', role.role )
 											) }
 										</button>
 									) }
@@ -208,6 +202,7 @@ export default function EditDrawer( {
 						<KindValueForm
 							legend={ __( 'Add name', 'newspack-intelligence' ) }
 							kinds={ vocabulary.nameKinds }
+							words="nameKindWords"
 							onSubmit={ ( kind, value ) =>
 								addName.run( { key: entityKey, kind, value } )
 							}
@@ -218,7 +213,7 @@ export default function EditDrawer( {
 								'newspack-intelligence'
 							) }
 							kinds={ vocabulary.identifierKinds }
-							words={ vocabulary.identifierWords }
+							words="identifierWords"
 							onSubmit={ ( kind, value ) =>
 								addIdentifier.run( {
 									key: entityKey,
@@ -229,7 +224,6 @@ export default function EditDrawer( {
 						/>
 						<RoleForm
 							roles={ vocabulary.roles }
-							words={ vocabulary.roleWords }
 							onSubmit={ ( role ) =>
 								assertRole.run( { key: entityKey, role } )
 							}

@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from '@wordpress/element';
 import { BaseControl } from '@wordpress/components';
+import { __ } from '@wordpress/i18n';
 import CommitInput from '@newspack-nodes/shared/components/CommitInput';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
 import { Unread } from './Answer';
@@ -104,7 +105,10 @@ export default function EntityPicker( { label, value, onChange, names } ) {
 				value={ value }
 				onChange={ onChange }
 				suggestions={ names.suggestions }
-				placeholder="organization:acme-gazette"
+				placeholder={ __(
+					'Start typing a client or company name',
+					'newspack-intelligence'
+				) }
 			/>
 			<Unread error={ names.error } refresh={ names.refresh } />
 		</BaseControl>

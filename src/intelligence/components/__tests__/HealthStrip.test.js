@@ -20,6 +20,11 @@ import { intelWire } from '../../__tests__/intelWire';
 import { HEALTHY, LAST_OK, okSource } from '../../__tests__/healthFixture';
 import { formatLocalDateTime } from '@newspack-nodes/shared/utils/formatUtils';
 import HealthStrip from '../HealthStrip';
+import { pageData } from '../../views/__tests__/fixtures';
+
+beforeEach( () => {
+	window.NewspackNodesData = pageData();
+} );
 
 /**
  * The line bars standing in for a card's prose while its read is owed.
@@ -75,7 +80,7 @@ let health;
 
 beforeEach( () => {
 	Core.reset();
-	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+	window.NewspackNodesData = pageData();
 	wire = intelWire();
 	health = JSON.parse( JSON.stringify( HEALTHY ) );
 	wire.replies.health = ( [ what ] ) => health[ what ];
@@ -150,7 +155,7 @@ describe( 'HealthStrip', () => {
 		);
 		expect( strip() ).toContainElement( controlled );
 		expect( controlled ).not.toBeVisible();
-		expect( screen.getByText( 'github' ) ).not.toBeVisible();
+		expect( screen.getByText( 'Code host' ) ).not.toBeVisible();
 		for ( const what of Object.keys( HEALTHY ) ) {
 			expect( reads( what ) ).toBe( 1 );
 		}
@@ -172,22 +177,20 @@ describe( 'HealthStrip', () => {
 		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'true' );
 		expect( rows() ).toBeVisible();
 		expect(
-			within( row( 'feed' ) ).getByText(
+			within( row( 'Web feed' ) ).getByText(
 				`Last answered ${ LAST_OK_LOCAL } · 37 of 451 requests failed`
 			)
 		).toBeInTheDocument();
 		expect(
-			within( row( 'Extraction' ) ).getByText(
+			within( row( 'Digests' ) ).getByText(
 				`By the model; last extraction ${ LAST_OK_LOCAL }.`
 			)
 		).toBeInTheDocument();
-		expect( within( row( 'github' ) ).getByText( 'ok' ) ).toHaveClass(
-			'newspack-nodes-status-badge',
-			'is-pill',
-			'is-success'
-		);
+		expect(
+			within( row( 'Code host' ) ).getByText( 'Healthy' )
+		).toHaveClass( 'newspack-nodes-status-badge', 'is-pill', 'is-success' );
 		fireEvent.click( toggle() );
-		expect( screen.getByText( 'feed' ) ).not.toBeVisible();
+		expect( screen.getByText( 'Web feed' ) ).not.toBeVisible();
 	} );
 
 	it( 'counts one failed request in the singular', async () => {
@@ -197,7 +200,7 @@ describe( 'HealthStrip', () => {
 		await lineReads( HEALTHY_LINE );
 		fireEvent.click( toggle() );
 		expect(
-			within( row( 'github' ) ).getByText(
+			within( row( 'Code host' ) ).getByText(
 				`Last answered ${ LAST_OK_LOCAL } · 1 of 1 request failed`
 			)
 		).toBeInTheDocument();
@@ -260,7 +263,7 @@ describe( 'HealthStrip', () => {
 			await screen.findByRole( 'button', { name: 'Seed the ontology' } )
 		);
 		await waitFor( () => expect( reads( 'backlog' ) ).toBe( 2 ) );
-		const waiting = row( 'Waiting to resolve' );
+		const waiting = row( 'Pairing items' );
 		expect(
 			await within( waiting ).findByText(
 				'Seeded. Fix sent; Refresh to check.'
@@ -333,7 +336,7 @@ describe( 'HealthStrip', () => {
 		fireEvent.click( screen.getByRole( 'button', { name: 'Re-resolve' } ) );
 		await waitFor( () =>
 			expect(
-				within( row( 'Waiting to resolve' ) ).getByText( 'clear' )
+				within( row( 'Pairing items' ) ).getByText( 'Up to date' )
 			).toBeInTheDocument()
 		);
 
@@ -343,7 +346,7 @@ describe( 'HealthStrip', () => {
 			await screen.findByRole( 'button', { name: 'Restart' } )
 		);
 		await waitFor( () => expect( reads( 'backlog' ) ).toBe( 4 ) );
-		const waiting = row( 'Waiting to resolve' );
+		const waiting = row( 'Pairing items' );
 		await waitFor( () =>
 			expect( within( waiting ).getByText( STOPPED_LINE ) ).toBeVisible()
 		);
@@ -391,7 +394,7 @@ describe( 'HealthStrip', () => {
 		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
 		fireEvent.click( toggle() );
 		expect(
-			within( row( 'Waiting to resolve' ) ).getByText( 'catching up' )
+			within( row( 'Pairing items' ) ).getByText( 'catching up' )
 		).toHaveClass( 'is-neutral' );
 		expect(
 			screen.queryByRole( 'button', { name: 'Seed the ontology' } )
@@ -471,7 +474,7 @@ describe( 'HealthStrip', () => {
 		};
 		wire.replies.activate = { name: 'intel-workbench', active: true };
 		renderStrip( { canManage: true } );
-		await lineReads( 'Collection is off.' );
+		await lineReads( 'Collecting is off.' );
 		expect( strip() ).not.toHaveClass( 'is-warning' );
 		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
 		expect(
@@ -479,10 +482,10 @@ describe( 'HealthStrip', () => {
 		).toBeNull();
 		fireEvent.click( toggle() );
 		expect(
-			within( row( 'Collection' ) ).getByText( 'inactive' )
+			within( row( 'Gathering' ) ).getByText( 'inactive' )
 		).toHaveClass( 'is-neutral' );
 		expect(
-			within( row( 'Collection' ) )
+			within( row( 'Gathering' ) )
 				.getAllByRole( 'button' )
 				.map( ( button ) => button.textContent )
 		).toEqual( [ 'intel-staging', 'intel-workbench' ] );
@@ -505,10 +508,10 @@ describe( 'HealthStrip', () => {
 			topologies: [ 'intel-staging', 'intel-workbench' ],
 		};
 		renderStrip( { canTune: true } );
-		await lineReads( 'Collection is off.' );
+		await lineReads( 'Collecting is off.' );
 		fireEvent.click( toggle() );
 		expect(
-			screen.getAllByText( 'An administrator can activate collection.' )
+			screen.getAllByText( 'An administrator can turn collecting on.' )
 		).toHaveLength( 1 );
 		expect(
 			screen.queryByRole( 'button', { name: 'intel-staging' } )
@@ -518,17 +521,17 @@ describe( 'HealthStrip', () => {
 	it( 'offers no Activate while the slice names no composition', async () => {
 		health.collection = { state: 'inactive', topologies: [] };
 		renderStrip( { canManage: true } );
-		await lineReads( 'Collection is off.' );
+		await lineReads( 'Collecting is off.' );
 		fireEvent.click( toggle() );
-		const command = within( row( 'Collection' ) ).getByText(
+		const command = within( row( 'Gathering' ) ).getByText(
 			'wp nodes activate'
 		);
 		expect( command.tagName ).toBe( 'CODE' );
 		expect( command.parentElement ).toHaveTextContent(
-			'Collection is off; wp nodes activate turns on the topology that composes Intelligence.'
+			'Collecting is off; wp nodes activate turns on the topology that composes Intelligence.'
 		);
 		expect(
-			within( row( 'Collection' ) ).queryAllByRole( 'button' )
+			within( row( 'Gathering' ) ).queryAllByRole( 'button' )
 		).toEqual( [] );
 	} );
 
@@ -543,7 +546,7 @@ describe( 'HealthStrip', () => {
 		);
 		expect( strip() ).toHaveClass( 'is-warning' );
 		expect(
-			within( row( 'Collection' ) ).getByText( 'no lists file' )
+			within( row( 'Gathering' ) ).getByText( 'no lists file' )
 		).toHaveClass( 'is-error' );
 	} );
 
@@ -589,7 +592,7 @@ describe( 'HealthStrip', () => {
 		await worstFault(
 			'A deploy hold is in place; `wp nodes start` lifts it.'
 		);
-		expect( within( row( 'Collection' ) ).getByText( 'held' ) ).toHaveClass(
+		expect( within( row( 'Gathering' ) ).getByText( 'held' ) ).toHaveClass(
 			'is-warning'
 		);
 	} );
@@ -623,7 +626,7 @@ describe( 'HealthStrip', () => {
 			'No Vault entry for https://api.unthread.io in group unthread-desk.'
 		);
 		expect(
-			within( row( 'unthread' ) ).getByRole( 'link', {
+			within( row( 'Help desk' ) ).getByRole( 'link', {
 				name: 'Add credential',
 			} )
 		).toHaveAttribute( 'href', VAULT );
@@ -694,7 +697,7 @@ describe( 'HealthStrip', () => {
 			screen.getAllByRole( 'button', { name: 'Fetch all sources now' } )
 		).toHaveLength( 1 );
 		fireEvent.click(
-			within( row( 'github' ) ).getByRole( 'button', {
+			within( row( 'Code host' ) ).getByRole( 'button', {
 				name: 'Fetch all sources now',
 			} )
 		);
@@ -832,13 +835,13 @@ describe( 'HealthStrip', () => {
 		expect( strip() ).not.toHaveClass( 'is-warning' );
 		fireEvent.click( toggle() );
 		expect(
-			within( row( 'Model calls' ) ).getByText( calls )
+			within( row( 'Queued asks' ) ).getByText( calls )
 		).toBeInTheDocument();
 		expect(
-			within( row( 'Model calls' ) ).getByText( 'busy' )
+			within( row( 'Queued asks' ) ).getByText( 'busy' )
 		).toHaveClass( 'is-neutral' );
 		expect(
-			within( row( 'Extraction' ) ).getByText(
+			within( row( 'Digests' ) ).getByText(
 				`By the model; last extraction ${ LAST_OK_LOCAL }.`
 			)
 		).toBeInTheDocument();
@@ -875,8 +878,8 @@ describe( 'HealthStrip', () => {
 			const { unmount } = renderStrip();
 			await lineReads( HEALTHY_LINE );
 			fireEvent.click( toggle() );
-			expect( row( 'Extraction' ) ).toBeDefined();
-			expect( row( 'Model calls' ) ).toBeUndefined();
+			expect( row( 'Digests' ) ).toBeDefined();
+			expect( row( 'Queued asks' ) ).toBeUndefined();
 			unmount();
 		}
 	} );
@@ -939,15 +942,15 @@ describe( 'HealthStrip', () => {
 			},
 		} );
 		renderStrip( { canTune: true, canManage: true } );
-		await lineReads( 'Collection is off.' );
+		await lineReads( 'Collecting is off.' );
 		expect( strip() ).not.toHaveClass( 'is-warning' );
 		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
 		fireEvent.click( toggle() );
-		expect( within( row( 'linear' ) ).getByText( 'idle' ) ).toHaveClass(
+		expect( within( row( 'Tracker' ) ).getByText( 'idle' ) ).toHaveClass(
 			'is-neutral'
 		);
 		expect(
-			within( row( 'Waiting to resolve' ) ).getByText( 'held' )
+			within( row( 'Pairing items' ) ).getByText( 'held' )
 		).toHaveClass( 'is-neutral' );
 	} );
 
@@ -958,7 +961,7 @@ describe( 'HealthStrip', () => {
 		};
 		health.sources.sources[ 1 ] = { name: 'feed', state: 'unknown' };
 		renderStrip();
-		await lineReads( 'Collection is off.' );
+		await lineReads( 'Collecting is off.' );
 		expect( strip() ).not.toHaveClass( 'is-warning' );
 		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
 	} );
@@ -968,7 +971,7 @@ describe( 'HealthStrip', () => {
 		renderStrip();
 		await lineReads( 'The pipeline’s health is not fully known.' );
 		fireEvent.click( toggle() );
-		const collection = row( 'Collection' );
+		const collection = row( 'Gathering' );
 		expect( within( collection ).getByText( 'unknown' ) ).toHaveClass(
 			'is-neutral'
 		);
@@ -983,7 +986,7 @@ describe( 'HealthStrip', () => {
 		await lineReads( 'The pipeline’s health is not fully known.' );
 		fireEvent.click( toggle() );
 		expect(
-			within( row( 'Waiting to resolve' ) ).getByText(
+			within( row( 'Pairing items' ) ).getByText(
 				'State not recognised: toString.'
 			)
 		).toBeInTheDocument();
@@ -1002,7 +1005,7 @@ describe( 'HealthStrip', () => {
 			'Extracting with the heuristic only: Vault group ai-proxy holds no entry for the model call.'
 		);
 		expect(
-			within( row( 'Extraction' ) ).getByRole( 'link', {
+			within( row( 'Digests' ) ).getByRole( 'link', {
 				name: 'Open the Vault',
 			} )
 		).toHaveAttribute( 'href', VAULT );
@@ -1022,12 +1025,12 @@ describe( 'HealthStrip', () => {
 			'Extracting with the heuristic only: the model call is not configured; the lists file sets no set_protocol, set_api_url.'
 		);
 		expect(
-			within( row( 'Extraction' ) ).queryByRole( 'link', {
+			within( row( 'Digests' ) ).queryByRole( 'link', {
 				name: 'Open the Vault',
 			} )
 		).toBeNull();
 		expect(
-			within( row( 'Extraction' ) ).getByText(
+			within( row( 'Digests' ) ).getByText(
 				'An administrator can set them on intel:llm in the site’s lists file.'
 			)
 		).toBeInTheDocument();
@@ -1057,9 +1060,9 @@ describe( 'HealthStrip', () => {
 			`HTTP 502 https://models.example/v1/messages · failing since ${ SINCE_LOCAL }`
 		);
 		expect( strip() ).toHaveClass( 'is-warning' );
-		expect(
-			within( row( 'Extraction' ) ).getByText( 'failing' )
-		).toHaveClass( 'is-error' );
+		expect( within( row( 'Digests' ) ).getByText( 'failing' ) ).toHaveClass(
+			'is-error'
+		);
 	} );
 
 	it( 'reads a call extractor that has not answered yet', async () => {
@@ -1068,11 +1071,11 @@ describe( 'HealthStrip', () => {
 		await lineReads( HEALTHY_LINE );
 		fireEvent.click( toggle() );
 		expect(
-			within( row( 'Extraction' ) ).getByText( 'By the model.' )
+			within( row( 'Digests' ) ).getByText( 'By the model.' )
 		).toBeInTheDocument();
-		expect(
-			within( row( 'Extraction' ) ).getByText( 'model' )
-		).toHaveClass( 'is-success' );
+		expect( within( row( 'Digests' ) ).getByText( 'model' ) ).toHaveClass(
+			'is-success'
+		);
 	} );
 
 	it( 'reads an extractor that has not reported as unknown', async () => {
@@ -1081,7 +1084,7 @@ describe( 'HealthStrip', () => {
 		await lineReads( 'The pipeline’s health is not fully known.' );
 		fireEvent.click( toggle() );
 		expect(
-			within( row( 'Extraction' ) ).getByText(
+			within( row( 'Digests' ) ).getByText(
 				'No extraction has reported yet.'
 			)
 		).toBeInTheDocument();
@@ -1093,7 +1096,7 @@ describe( 'HealthStrip', () => {
 		await lineReads( 'The pipeline’s health is not fully known.' );
 		expect( strip() ).not.toHaveClass( 'is-warning' );
 		fireEvent.click( toggle() );
-		const extraction = row( 'Extraction' );
+		const extraction = row( 'Digests' );
 		expect( within( extraction ).getByText( 'unknown' ) ).toHaveClass(
 			'is-neutral'
 		);
@@ -1111,7 +1114,7 @@ describe( 'HealthStrip', () => {
 		await lineReads( 'The pipeline’s health is not fully known.' );
 		fireEvent.click( toggle() );
 		expect(
-			within( row( 'Extraction' ) ).getByText(
+			within( row( 'Digests' ) ).getByText(
 				'No extraction has reported since the cache was cleared; the newest used the model.'
 			)
 		).toBeInTheDocument();
@@ -1131,7 +1134,7 @@ describe( 'HealthStrip', () => {
 		const names = within( rows() )
 			.getAllByRole( 'listitem' )
 			.map( ( item ) => item.querySelector( 'strong' ).textContent );
-		expect( names.slice( 0, 2 ) ).toEqual( [ 'Collection', 'github' ] );
+		expect( names.slice( 0, 2 ) ).toEqual( [ 'Gathering', 'Code host' ] );
 	} );
 
 	it( 'keeps the reader’s choice while the faults stand, and reopens on a new one', async () => {

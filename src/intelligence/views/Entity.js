@@ -25,8 +25,9 @@ import EndClientDialog from '../components/EndClientDialog';
 import Refusal from '../components/Refusal';
 import UndoSnackbar from '../components/UndoSnackbar';
 import { ItemPage, SaveButton } from '../components/ItemRow';
-import { SignalTrend, signalValue } from '../components/TrendTable';
+import { Signals, signalValue } from '../components/TrendTable';
 import { metaLine, roleText, safeHref, utcDay } from '../components/format';
+import { word } from '../components/words';
 
 /**
  * Whether a role row held any time; a closed row ending where it starts is
@@ -56,30 +57,47 @@ const reportKey = ( item ) => item.item_key;
 const entityName = ( entity ) => entity.name || entity.entity_key;
 
 /**
- * The entity's counts: readable items linking it and links awaiting review.
+ * The entity's count of readable items linking it; the view shows it only
+ * when it is not zero, and the links awaiting review are counted on Review.
  *
- * @param {{items: number, proposed_links: number}} counts The counts.
+ * @param {{items: number}} counts The counts.
  * @return {string} The line.
  */
-function countsText( counts ) {
-	return [
-		sprintf(
-			/* translators: %d: readable items linking the entity. */
-			_n( '%d item', '%d items', counts.items, 'newspack-intelligence' ),
-			counts.items
-		),
-		sprintf(
-			/* translators: %d: links awaiting review. */
-			_n(
-				'%d proposed link',
-				'%d proposed links',
-				counts.proposed_links,
-				'newspack-intelligence'
-			),
-			counts.proposed_links
-		),
-	].join( ', ' );
+const countsText = ( counts ) =>
+	sprintf(
+		/* translators: %d: readable items linking the entity. */
+		_n( '%d item', '%d items', counts.items, 'newspack-intelligence' ),
+		counts.items
+	);
+
+/** The roles an organization is shown as, in place of its type. */
+const SHOWN_ROLES = [ 'client', 'former_client' ];
+
+/**
+ * What an entity is, as its meta line says it: an organization holding a
+ * client or former-client role open as that role, else its type's word.
+ *
+ * @param {{type: string, roles?: Object[]}} entity The record.
+ * @return {string} The word.
+ */
+function typeText( entity ) {
+	const held = ( entity.roles ?? [] ).find(
+		( role ) => 0 === role.to_ts && SHOWN_ROLES.includes( role.role )
+	);
+	return 'organization' === entity.type && held
+		? word( 'roleWords', held.role )
+		: word( 'typeWords', entity.type );
 }
+
+/**
+ * An entity's state as its meta line says it: nothing while accepted, else
+ * its word.
+ *
+ * @param {string} state The state.
+ * @return {?string} The word.
+ */
+const stateText = ( state ) =>
+	'accepted' === state ? null : word( 'stateWords', state );
 
 /**
  * A client's latest signal, the first the signals read lists; nothing when
@@ -209,7 +227,7 @@ function ChurnNotice( { reports, operator, onEnd, onNotAbout } ) {
 									'newspack-intelligence'
 								),
 								item.title,
-								item.source,
+								word( 'sourceWords', item.source ),
 								item.day,
 								operator
 							) }
@@ -249,16 +267,17 @@ function ChurnNotice( { reports, operator, onEnd, onNotAbout } ) {
 }
 
 /**
- * What an entity holds: the keys merged into it, its names, identifiers and
- * every role row that held time, and the topics it is tagged with.
+ * What an entity holds: for a curator its ID and the IDs merged into it;
+ * then its names, identifiers and every role row that held time, each by
+ * its kind's word, and the topics it is tagged with.
  *
  * @param {Object}                props
  * @param {Object}                props.entity       The record.
- * @param {Object}                props.vocabulary   The ontology's closed lists, whose labels name each identifier kind and role.
+ * @param {boolean}               props.canTune      Whether the reader curates, who is shown the IDs.
  * @param {(key: string) => void} props.onOpenEntity Opens an entity.
  * @return {import('react').ReactElement} The section.
  */
-function Details( { entity, vocabulary, onOpenEntity } ) {
+function Details( { entity, canTune, onOpenEntity } ) {
 	const title = __( 'Details', 'newspack-intelligence' );
 	return (
 		<Card as="section" aria-label={ title }>
@@ -266,10 +285,19 @@ function Details( { entity, vocabulary, onOpenEntity } ) {
 				<h3>{ title }</h3>
 			</CardHeader>
 			<CardBody>
-				{ 0 < entity.merged_from.length && (
+				{ canTune && (
 					<p>
 						{ sprintf(
-							/* translators: %s: the keys merged into this entity. */
+							/* translators: %s: the entity's ID. */
+							__( 'ID: %s', 'newspack-intelligence' ),
+							entity.entity_key
+						) }
+					</p>
+				) }
+				{ canTune && 0 < entity.merged_from.length && (
+					<p>
+						{ sprintf(
+							/* translators: %s: the IDs merged into this entity. */
 							__( 'Merged from %s', 'newspack-intelligence' ),
 							entity.merged_from.join( ', ' )
 						) }
@@ -278,19 +306,21 @@ function Details( { entity, vocabulary, onOpenEntity } ) {
 				<ul className="newspack-intelligence__facts">
 					{ entity.names.map( ( name ) => (
 						<li key={ `name ${ name.kind } ${ name.value }` }>
-							{ `${ name.kind }: ${ name.value }` }
+							{ `${ word( 'nameKindWords', name.kind ) }: ${
+								name.value
+							}` }
 						</li>
 					) ) }
 					{ entity.identifiers.map( ( id ) => (
 						<li key={ `id ${ id.kind } ${ id.value }` }>
-							{ `${ vocabulary.identifierWords[ id.kind ] }: ${
+							{ `${ word( 'identifierWords', id.kind ) }: ${
 								id.value
 							}` }
 						</li>
 					) ) }
 					{ entity.roles.filter( heldTime ).map( ( role ) => (
 						<li key={ `role ${ role.role } ${ role.from_ts }` }>
-							{ roleText( role, vocabulary.roleWords ) }
+							{ roleText( role ) }
 						</li>
 					) ) }
 				</ul>
@@ -415,7 +445,7 @@ function Published( {
 /**
  * Entity: one entity's record, headed by its name and, for a client, its
  * status line, then its signals on both axes beside its trend's sparkline,
- * quiet or not (`SignalTrend`), its timeline of the items
+ * quiet or not (`Signals`), its timeline of the items
  * about it a page at a time, what it holds (`Details`), then, collapsed,
  * the items its own site published, the entities sharing its items and the
  * claims naming it, each from its own read. Once the record has answered,
@@ -599,12 +629,13 @@ export default function Entity( {
 							) }
 						<p className="newspack-nodes-status is-muted">
 							{ metaLine(
-								entity.type,
-								entity.state,
-								entity.entity_key
+								typeText( entity ),
+								stateText( entity.state )
 							) }
 						</p>
-						<p>{ countsText( entity.counts ) }</p>
+						{ 0 < entity.counts.items && (
+							<p>{ countsText( entity.counts ) }</p>
+						) }
 						{ canTune && (
 							<EditDrawer
 								entityKey={ entityKey }
@@ -639,6 +670,7 @@ export default function Entity( {
 					name={ churn.asking.name }
 					evidence={ evidence.map( ( item ) => ( {
 						...item,
+						source: word( 'sourceWords', item.source ),
 						role: 'subject',
 					} ) ) }
 					onEnd={ () => {
@@ -676,7 +708,7 @@ export default function Entity( {
 				skeleton={ <Skeleton shape="line" count={ 1 } /> }
 			>
 				{ ( answer ) => (
-					<SignalTrend
+					<Signals
 						answer={ answer }
 						value={ signalValue }
 						onSave={ onSave }
@@ -709,7 +741,7 @@ export default function Entity( {
 			{ record.answer?.available && (
 				<Details
 					entity={ record.answer }
-					vocabulary={ vocabulary }
+					canTune={ canTune }
 					onOpenEntity={ onOpenEntity }
 				/>
 			) }
@@ -749,7 +781,7 @@ export default function Entity( {
 									onOpen={ onOpenEntity }
 								/>
 								{ metaLine(
-									other.type,
+									word( 'typeWords', other.type ),
 									sprintf(
 										/* translators: %d: items both entities link. */
 										_n(
@@ -768,13 +800,13 @@ export default function Entity( {
 			</Answer>
 
 			<Answer
-				title={ __( 'Claims', 'newspack-intelligence' ) }
+				title={ __( 'Facts', 'newspack-intelligence' ) }
 				level={ 3 }
 				read={ claims }
 				skeleton={ <Skeleton shape="line" count={ 3 } /> }
 				rows="claims"
 				empty={ __(
-					'No claim names this entity.',
+					'No fact names this entity.',
 					'newspack-intelligence'
 				) }
 			>
@@ -790,7 +822,12 @@ export default function Entity( {
 									name={ claim.subject_name }
 									onOpen={ onOpenEntity }
 								/>{ ' ' }
-								<span>{ claim.predicate }</span>{ ' ' }
+								<span>
+									{ word(
+										'predicateWords',
+										claim.predicate
+									) }
+								</span>{ ' ' }
 								{ null === claim.object_name ? (
 									<span>{ claim.object }</span>
 								) : (

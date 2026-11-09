@@ -17,6 +17,7 @@ import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { useState } from '@wordpress/element';
 import Collections from '../Collections';
+import { pageData } from './fixtures';
 
 const VOCABULARY = {
 	markWords: { newsletter: 'Newsletter', linkedin: 'LinkedIn', site: 'Site' },
@@ -105,7 +106,7 @@ const UNSAID = {
 
 beforeEach( () => {
 	Core.reset();
-	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+	window.NewspackNodesData = pageData();
 	wire = intelWire();
 	wire.replies.collections = ( args ) => ( 0 === args.length ? LIST : ONE );
 	wire.replies.excluded = { items: [ UNSAID, WIRE_COPY ], available: true };

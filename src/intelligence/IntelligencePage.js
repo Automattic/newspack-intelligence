@@ -26,7 +26,7 @@ const linkedWatch = () => getQueryParam( 'watch' ) || null;
 
 /**
  * The Intelligence page: Briefing, the view it opens on, then Search,
- * Entity, Lenses, Review, Collections and Watches, switched in place. The
+ * Entity, Team views, Review, Folders and Watches, switched in place. The
  * Briefing opens an entity, a lens, a watch, the watch form or Search. Each
  * view reads its own commands; the page holds
  * which view shows, the submitted search, the open entity, lens, collection
@@ -123,11 +123,11 @@ export default function IntelligencePage( {
 					},
 			  ]
 			: [] ),
-		{ id: 'lenses', label: __( 'Lenses', 'newspack-intelligence' ) },
+		{ id: 'lenses', label: __( 'Team views', 'newspack-intelligence' ) },
 		{ id: 'review', label: __( 'Review', 'newspack-intelligence' ) },
 		{
 			id: 'collections',
-			label: __( 'Collections', 'newspack-intelligence' ),
+			label: __( 'Folders', 'newspack-intelligence' ),
 		},
 		{ id: 'watches', label: __( 'Watches', 'newspack-intelligence' ) },
 	];
@@ -215,7 +215,6 @@ export default function IntelligencePage( {
 							{ 'review' === view && (
 								<Review
 									canTune={ canTune }
-									vocabulary={ vocabulary }
 									onOpenEntity={ openEntity }
 									onSave={ onSave }
 								/>

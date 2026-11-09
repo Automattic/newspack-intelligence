@@ -1,13 +1,22 @@
-import { Button } from '@wordpress/components';
+import { Button, DropdownMenu, SnackbarList } from '@wordpress/components';
 import { useEffect, useId, useRef, useState } from '@wordpress/element';
-import { archive } from '@wordpress/icons';
+import { archive, moreHorizontal } from '@wordpress/icons';
 import { __, sprintf } from '@wordpress/i18n';
+import { Core } from '@newspack-nodes/runtime';
+import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
 import { useDeferredWrite } from '../hooks/useDeferredWrite';
 import { ITEM_READS, useIntelWrite } from '../hooks/useIntelCommand';
 import Cite, { EntityChip } from './Cite';
 import Pager from './Pager';
 import Refusal from './Refusal';
-import { metaLine, utcDay } from './format';
+import { dayLabel, safeHref, utcDay } from './format';
+import { word } from './words';
+
+/** The most subjects an item's row leads with as pills. */
+const LEAD_PILLS = 3;
+
+/** How long the snackbar saying whether a link was copied stands. */
+const COPIED_MS = 4000;
 
 /**
  * The control saving an item to a folder, for a caller who may curate;
@@ -32,12 +41,13 @@ export function SaveButton( { item, onSave } ) {
 
 /**
  * One item as `search` and `timeline` answer it: its title citing its URL,
- * its source, kind, day and kind check (`kindCheckText()`), its summary, a toggle showing its excerpt (`Excerpt`),
- * its entities as chips (`Chips`), and, for a caller who may curate, the
- * control saving it to a folder and, for one holding tune, the text action
- * excluding it from every view, then any control the view adds. An exclusion
- * puts the row behind its Undo (`Excluding`) until it is sent; a refused one
- * puts the row back with the refusal.
+ * its meta line (`Meta`), its summary, a toggle showing its excerpt
+ * (`Excerpt`), its entities as pills (`Pills`); for a caller who may curate,
+ * Save (`SaveButton`), which moves into the row's menu (`MoreActions`) when
+ * the page is narrow, and for one holding tune the text action excluding it
+ * from every view; then any control the view adds, and the menu. An
+ * exclusion puts the row behind its Undo (`Excluding`) until it is sent; a
+ * refused one puts the row back with the refusal.
  *
  * @param {Object}                    props
  * @param {Object}                    props.item         The item.
@@ -54,6 +64,8 @@ export default function ItemRow( {
 	canTune,
 	children,
 } ) {
+	const narrow = useNarrow();
+	const pills = pillsOf( item.entities ?? [] );
 	const [ excluding, setExcluding ] = useState( false );
 	const [ refusal, setRefusal ] = useState( null );
 	if ( excluding ) {
@@ -72,10 +84,10 @@ export default function ItemRow( {
 		<li className="newspack-intelligence__item">
 			<Refusal error={ refusal } />
 			<div className="newspack-intelligence__item-head">
-				<strong>
+				<strong className="newspack-intelligence__item-title">
 					<Cite url={ item.url } title={ item.title } />
 				</strong>
-				<SaveButton item={ item } onSave={ onSave } />
+				{ ! narrow && <SaveButton item={ item } onSave={ onSave } /> }
 				{ canTune && (
 					<button
 						type="button"
@@ -92,22 +104,135 @@ export default function ItemRow( {
 					</button>
 				) }
 				{ children }
+				<MoreActions
+					item={ item }
+					subject={ pills.lead[ 0 ] }
+					onOpenEntity={ onOpenEntity }
+					onSave={ narrow ? onSave : undefined }
+				/>
 			</div>
-			<p className="newspack-nodes-status is-muted">
-				{ metaLine(
-					item.source,
-					item.kind,
-					utcDay( item.item_ts ),
-					kindCheckText( item.kind_check )
-				) }
-			</p>
+			<Meta item={ item } />
 			{ item.summary && <p>{ item.summary }</p> }
 			<Excerpt item={ item } />
-			<Chips
-				entities={ item.entities ?? [] }
-				onOpenEntity={ onOpenEntity }
-			/>
+			<Pills { ...pills } onOpenEntity={ onOpenEntity } />
 		</li>
+	);
+}
+
+/**
+ * A row's meta line as cells, joined without a mark: the source's initial as its
+ * icon and its word, the item's UTC day (`dayLabel()`), its kind's word as a badge,
+ * and its kind check (`kindCheckText()`); a part the item lacks is left out.
+ *
+ * @param {Object} props
+ * @param {Object} props.item The item.
+ * @return {import('react').ReactElement} The meta line.
+ */
+function Meta( { item } ) {
+	const today = utcDay( Math.floor( Core.now() ) );
+	const day = utcDay( item.item_ts );
+	const source = word( 'sourceWords', item.source );
+	return (
+		<p className="newspack-nodes-status is-muted newspack-intelligence__meta">
+			<span className="newspack-intelligence__source">
+				<span
+					className="newspack-nodes-status-badge is-pill is-neutral newspack-intelligence__source-icon"
+					aria-hidden="true"
+				>
+					{ source.charAt( 0 ) }
+				</span>
+				{ source }
+			</span>
+			{ day && <time dateTime={ day }>{ dayLabel( day, today ) }</time> }
+			{ item.kind && (
+				<span className="newspack-nodes-status-badge is-neutral">
+					{ word( 'kindWords', item.kind ) }
+				</span>
+			) }
+			{ item.kind_check && (
+				<span>{ kindCheckText( item.kind_check, today ) }</span>
+			) }
+		</p>
+	);
+}
+
+/**
+ * Copies a link, answering whether it was copied: a page with no clipboard,
+ * or one that refuses it, answers that it was not.
+ *
+ * @param {string} href The link.
+ * @return {Promise<string>} What to say.
+ */
+const copyLink = ( href ) =>
+	new Promise( ( resolve ) =>
+		resolve( window.navigator.clipboard.writeText( href ) )
+	).then(
+		() => __( 'Link copied.', 'newspack-intelligence' ),
+		() => __( 'The link could not be copied.', 'newspack-intelligence' )
+	);
+
+/**
+ * The row's "More actions" menu: "Open profile" for the subject its first
+ * pill shows, "Copy link" for a URL it would link, whose outcome stands as a
+ * polite snackbar for COPIED_MS, and "Save to folder" when given a save;
+ * none when it holds none of them.
+ *
+ * @param {Object}                 props
+ * @param {Object}                 props.item         The item.
+ * @param {?Object}                [props.subject]    The entity its first pill shows.
+ * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
+ * @param {(item: Object) => void} [props.onSave]     Saves the item, when Save sits in the menu.
+ * @return {?import('react').ReactElement} The menu.
+ */
+function MoreActions( { item, subject, onOpenEntity, onSave } ) {
+	const [ copied, setCopied ] = useState( null );
+	const copies = useRef( 0 );
+	useEffect( () => {
+		if ( ! copied ) {
+			return undefined;
+		}
+		const timer = setTimeout( () => setCopied( null ), COPIED_MS );
+		return () => clearTimeout( timer );
+	}, [ copied ] );
+	const href = safeHref( item.url );
+	const controls = [
+		subject && {
+			title: __( 'Open profile', 'newspack-intelligence' ),
+			onClick: () => onOpenEntity( subject.entity_key ),
+		},
+		href && {
+			title: __( 'Copy link', 'newspack-intelligence' ),
+			onClick: () =>
+				copyLink( href ).then( ( content ) => {
+					copies.current += 1;
+					setCopied( { id: copies.current, content } );
+				} ),
+		},
+		onSave && {
+			title: __( 'Save to folder', 'newspack-intelligence' ),
+			onClick: () => onSave( item ),
+		},
+	].filter( Boolean );
+	if ( 0 === controls.length ) {
+		return null;
+	}
+	return (
+		<>
+			<DropdownMenu
+				icon={ moreHorizontal }
+				label={ __( 'More actions', 'newspack-intelligence' ) }
+				toggleProps={ { size: 'small' } }
+				controls={ controls }
+			/>
+			{ copied && (
+				<div className="newspack-intelligence__undo">
+					<SnackbarList
+						notices={ [ copied ] }
+						onRemove={ () => setCopied( null ) }
+					/>
+				</div>
+			) }
+		</>
 	);
 }
 
@@ -174,15 +299,13 @@ function Excluding( { item, onUndo, onRefused } ) {
 
 /**
  * An item's kind check as its meta line says it: the kind checked, whether
- * it passed or failed, and its UTC day; '' for an item never checked.
+ * it passed or failed, and its UTC day (`dayLabel()`).
  *
- * @param {?{kind: string, verdict: string, ts: number}} check The item's kind check.
+ * @param {{kind: string, verdict: string, ts: number}} check The item's kind check.
+ * @param {string}                                      today Today's UTC day, Y-m-d.
  * @return {string} The text.
  */
-function kindCheckText( check ) {
-	if ( ! check ) {
-		return '';
-	}
+function kindCheckText( check, today ) {
 	const format =
 		'passed' === check.verdict
 			? /* translators: 1: item kind, 2: UTC day. */
@@ -195,71 +318,101 @@ function kindCheckText( check ) {
 					'%1$s failed its kind check on %2$s',
 					'newspack-intelligence'
 			  );
-	return sprintf( format, check.kind, utcDay( check.ts ) );
+	return sprintf(
+		format,
+		word( 'kindWords', check.kind ),
+		dayLabel( utcDay( check.ts ), today )
+	);
 }
 
 /** The link roles naming an entity an item is about, as the server spells them. */
 const NAMING_ROLES = [ 'subject', 'mention' ];
 
 /**
- * Whether an entity leads an item's chips: an open client, or a subject.
+ * The entities an item's row shows as pills (`chips()`): its first
+ * LEAD_PILLS subjects as `lead`, and every other entity it names as `rest`;
+ * none for an entity linked by a role that does not name it.
  *
- * @param {{client: boolean, role: string}} entity The entity.
- * @return {boolean} Whether it leads.
+ * @param {Object[]} entities The item's entities, in the answer's order.
+ * @return {{lead: Object[], rest: Object[]}} The pills.
  */
-const leads = ( entity ) => entity.client || 'subject' === entity.role;
-
-/**
- * An item's entities as chips (`chips()`): each it is about as a client or a
- * subject, then its mentions behind a "+N more" toggle; none for an entity
- * linked by a role that does not name it.
- *
- * @param {Object}                props
- * @param {Object[]}              props.entities     The item's entities, in the answer's order.
- * @param {(key: string) => void} props.onOpenEntity Opens an entity.
- * @return {?import('react').ReactElement} The chips.
- */
-function Chips( { entities, onOpenEntity } ) {
-	const [ open, setOpen ] = useState( false );
+function pillsOf( entities ) {
 	const named = chips( entities ).filter( ( entity ) =>
 		NAMING_ROLES.includes( entity.role )
 	);
-	if ( 0 === named.length ) {
+	const lead = named
+		.filter( ( entity ) => 'subject' === entity.role )
+		.slice( 0, LEAD_PILLS );
+	return {
+		lead,
+		rest: named.filter( ( entity ) => ! lead.includes( entity ) ),
+	};
+}
+
+/**
+ * An item's pills (`EntityChip`, named by `pillName()`): the lead, then the
+ * rest behind a "+N more" toggle in the same row; none for none.
+ *
+ * @param {Object}                props
+ * @param {Object[]}              props.lead         The pills shown at first.
+ * @param {Object[]}              props.rest         The pills behind the toggle.
+ * @param {(key: string) => void} props.onOpenEntity Opens an entity.
+ * @return {?import('react').ReactElement} The pills.
+ */
+function Pills( { lead, rest, onOpenEntity } ) {
+	const [ open, setOpen ] = useState( false );
+	if ( 0 === lead.length + rest.length ) {
 		return null;
 	}
-	const lead = named.filter( leads );
-	const rest = named.filter( ( entity ) => ! leads( entity ) );
 	return (
-		<div className="newspack-intelligence__actions">
-			<ul className="newspack-intelligence__chips">
-				{ ( open ? [ ...lead, ...rest ] : lead ).map( ( entity ) => (
-					<li key={ entity.entity_key }>
-						<EntityChip
-							entityKey={ entity.entity_key }
-							name={ entity.name }
-							onOpen={ onOpenEntity }
-						/>
-					</li>
-				) ) }
-			</ul>
+		<ul className="newspack-intelligence__chips">
+			{ ( open ? [ ...lead, ...rest ] : lead ).map( ( entity ) => (
+				<li key={ entity.entity_key }>
+					<EntityChip
+						entityKey={ entity.entity_key }
+						name={ pillName( entity ) }
+						onOpen={ onOpenEntity }
+					/>
+				</li>
+			) ) }
 			{ 0 < rest.length && (
-				<Button
-					variant="link"
-					className="newspack-intelligence__more"
-					aria-expanded={ open }
-					onClick={ () => setOpen( ! open ) }
-				>
-					{ open
-						? __( 'Show fewer', 'newspack-intelligence' )
-						: sprintf(
-								/* translators: %d: entities the item mentions, hidden. */
-								__( '+%d more', 'newspack-intelligence' ),
-								rest.length
-						  ) }
-				</Button>
+				<li>
+					<Button
+						variant="link"
+						className="newspack-intelligence__more"
+						aria-expanded={ open }
+						onClick={ () => setOpen( ! open ) }
+					>
+						{ open
+							? __( 'Show fewer', 'newspack-intelligence' )
+							: sprintf(
+									/* translators: %d: entities the item names, hidden. */
+									__( '+%d more', 'newspack-intelligence' ),
+									rest.length
+							  ) }
+					</Button>
+				</li>
 			) }
-		</div>
+		</ul>
 	);
+}
+
+/**
+ * An entity's name as its pill shows it: the name, or its key where the
+ * graph holds no name, as "%s, mentioned" for a mention.
+ *
+ * @param {Object} entity The entity.
+ * @return {string} The name.
+ */
+function pillName( entity ) {
+	const name = entity.name || entity.entity_key;
+	return 'mention' === entity.role
+		? sprintf(
+				/* translators: %s: an entity the item mentions. */
+				__( '%s, mentioned', 'newspack-intelligence' ),
+				name
+		  )
+		: name;
 }
 
 /**

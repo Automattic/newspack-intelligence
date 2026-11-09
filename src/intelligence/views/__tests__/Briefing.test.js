@@ -17,7 +17,7 @@ import {
 } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
-import { ITEM } from './fixtures';
+import { ITEM, pageData } from './fixtures';
 import { sinceLabel } from '../../components/format';
 import Briefing from '../Briefing';
 
@@ -187,7 +187,7 @@ let handlers;
 
 beforeEach( () => {
 	Core.reset();
-	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+	window.NewspackNodesData = pageData();
 	wire = intelWire();
 	const full = { changes: CHANGES, signals: SIGNALS };
 	wire.replies.briefing = ( [ what ] ) => full[ what ];
@@ -343,15 +343,15 @@ describe( 'Briefing', () => {
 			level: 3,
 		} );
 		expect(
-			within( signals ).queryByText( '2 against a baseline of 4' )
+			within( signals ).queryByText( '2, usually about 4' )
 		).not.toBeInTheDocument();
 		groups.forEach( ( group ) => expand( group, '1 signal' ) );
-		await within( signals ).findByText( '2 against a baseline of 4' );
+		await within( signals ).findByText( '2, usually about 4' );
 		expect(
-			within( signals ).getByText( 'publisher drop' )
+			within( signals ).getByText( 'Posted little' )
 		).toBeInTheDocument();
 		expect(
-			within( signals ).getByText( 'about spike: complaint' )
+			within( signals ).getByText( 'Grumble climbed' )
 		).toBeInTheDocument();
 		expect(
 			within( signals ).getByRole( 'link', { name: 'Kestrel story one' } )
@@ -399,9 +399,7 @@ describe( 'Briefing', () => {
 			name: 'Your watches',
 		} );
 		expect(
-			await within( watches ).findByText(
-				'Entity · organization:kestrel-quillwork · 3 unseen'
-			)
+			await within( watches ).findByText( 'A client or company · 3 new' )
 		).toBeInTheDocument();
 		fireEvent.click(
 			within( watches ).getByRole( 'button', { name: 'Kestrel account' } )
@@ -533,16 +531,16 @@ describe( 'Briefing', () => {
 		expect( handlers.onSearch ).toHaveBeenCalledTimes( 1 );
 
 		await screen.findByText(
-			'No client or lens moved off its baseline in the last seven days.',
+			'No client or team view moved off its baseline in the last seven days.',
 			{ exact: false }
 		);
 		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Open lenses' } )
+			screen.getByRole( 'button', { name: 'Open team views' } )
 		);
 		expect( handlers.onOpenLens ).toHaveBeenCalledWith( null );
 
 		await screen.findByText(
-			'Watch a client or a lens to see what is new for you here.',
+			'Watch a client or a team view to see what is new for you here.',
 			{ exact: false }
 		);
 		fireEvent.click( screen.getByRole( 'button', { name: 'New watch' } ) );

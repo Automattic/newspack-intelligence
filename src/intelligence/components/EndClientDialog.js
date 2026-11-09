@@ -6,7 +6,7 @@ import { safeHref } from './format';
 
 /**
  * One piece of evidence as the dialog lists it: its title quoted, its source
- * and its day, then, for an item naming the client as its subject, that it
+ * as the caller words it and its day, then, for an item naming the client as its subject, that it
  * does, and a link to the item where its URL is safe to link.
  *
  * @param {Object} props

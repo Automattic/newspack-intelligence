@@ -22,12 +22,13 @@ import {
 } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { commandArgs, useIntelRead, useIntelWrite } from '../useIntelCommand';
+import { pageData } from '../../views/__tests__/fixtures';
 
 let wire;
 
 beforeEach( () => {
 	Core.reset();
-	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
+	window.NewspackNodesData = pageData();
 	wire = intelWire();
 } );
 
