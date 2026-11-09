@@ -71,11 +71,12 @@ function folderOptions( collections ) {
  * The dialog every result saves an item to a folder through: it offers the
  * reader's recent folders first, the latest chosen, sends `collect` with the
  * one chosen, and says where the item went or why it did not. **New folder**
- * opens a name field in place, and **Create and save** sends
- * `create_collection`, then `collect` into the folder once the create lands,
- * and returns to the select with the new folder chosen and the field cleared,
- * the folder held in the list (`useHeld`) until a read lists it; with no
- * folder at all the dialog opens on that field. Its close button
+ * opens a name field in place, and **Create and save** sends one
+ * `create_collection` carrying the item, which makes the folder with the
+ * item in it, and once it lands returns to the select with the new folder
+ * chosen and the field cleared, the folder held in the list (`useHeld`)
+ * until a read lists it; with no folder at all the dialog opens on that
+ * field. Its close button
  * holds focus until the list loads, then the folder select or the name field.
  *
  * @param {Object}     props
@@ -89,11 +90,17 @@ export default function SaveToCollection( { item, onClose } ) {
 	const [ chosen, setChosen ] = useState( '' );
 	const [ asked, setAsked ] = useState( false );
 	const [ name, setName ] = useState( '' );
+	// The folder the last landed create saved into, until the next save.
+	const [ created, setCreated ] = useState( null );
+	// The tokens the create in flight sent, which its hold names.
+	const creating = useRef( [] );
 	const collect = useIntelWrite( 'collect', {
 		dirties: [ ...FOLDER_READS, ...WATCH_READS ],
 	} );
-	const save = ( key ) =>
+	const save = ( key ) => {
+		setCreated( null );
 		collect.run( { collection: key, item: item.item_key } );
+	};
 	const create = useIntelWrite( 'create_collection', {
 		scope: 'save:create_collection',
 		dirties: FOLDER_READS,
@@ -101,6 +108,7 @@ export default function SaveToCollection( { item, onClose } ) {
 			setChosen( key );
 			setAsked( false );
 			setName( '' );
+			setCreated( key );
 			folders.hold(
 				key,
 				{
@@ -110,16 +118,20 @@ export default function SaveToCollection( { item, onClose } ) {
 					items: 1,
 					recent_ts: null,
 				},
-				() => save( key )
+				() => creating.current
 			);
 		},
 	} );
-	// The collection the last landed save named, read off its echoed option.
+	const createAndSave = () => {
+		creating.current = create.run( { name, item: item.item_key } );
+	};
+	// The folder the last landed save named, read off its echoed option.
 	const saved =
-		! collect.refusal &&
-		collect.answeredArgs
-			?.find( ( token ) => token.startsWith( COLLECTION ) )
-			?.slice( COLLECTION.length );
+		created ??
+		( ! collect.refusal &&
+			collect.answeredArgs
+				?.find( ( token ) => token.startsWith( COLLECTION ) )
+				?.slice( COLLECTION.length ) );
 	const collections = folders.read.answer?.collections ?? [];
 	const closeRef = useRef( null );
 	const selectRef = useRef( null );
@@ -144,9 +156,7 @@ export default function SaveToCollection( { item, onClose } ) {
 	return (
 		<Modal
 			onClose={ onClose }
-			onSubmit={ () =>
-				naming ? create.run( { name } ) : save( target )
-			}
+			onSubmit={ () => ( naming ? createAndSave() : save( target ) ) }
 		>
 			<ModalHeader
 				title={ __( 'Save to folder', 'newspack-intelligence' ) }

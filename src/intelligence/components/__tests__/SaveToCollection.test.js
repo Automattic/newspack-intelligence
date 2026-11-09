@@ -3,7 +3,7 @@
  * SaveToCollection is the one dialog any result saves to a folder through:
  * it offers the reader's recent folders first, then the rest, sends
  * `collect` with the chosen one and the item, and creates a folder in place
- * through `create_collection` before saving into it, straight away when
+ * with the item in it through one `create_collection`, straight away when
  * there is no folder to pick.
  */
 
@@ -66,22 +66,14 @@ describe( 'SaveToCollection', () => {
 		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
 		const select = await screen.findByLabelText( 'Folder' );
 		fireEvent.change( select, { target: { value: 'paywall-complaints' } } );
+		fireEvent.change( screen.getByLabelText( 'Folder' ), {
+			target: { value: 'awards-shortlist' },
+		} );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Save' } ) );
-		await waitFor( () =>
-			expect( wire.sent( 'collect' ) ).toEqual( [
-				[
-					'--collection=paywall-complaints',
-					'--item=feed:inkfold-review-17',
-				],
-			] )
-		);
 		expect(
-			await screen.findByText( 'Saved to Paywall complaints.' )
+			await screen.findByText( 'Saved to Awards shortlist.' )
 		).toBeInTheDocument();
-		// The landed save dirties the folder list, which asks again.
-		await waitFor( () =>
-			expect( wire.sent( 'collections' ) ).toEqual( [ [], [] ] )
-		);
+		expect( screen.queryByText( 'Saved to Quarry notes.' ) ).toBeNull();
 	} );
 
 	it( "offers the reader's recent folders first, the latest chosen", async () => {
@@ -188,13 +180,12 @@ describe( 'SaveToCollection', () => {
 		).toBeNull();
 	} );
 
-	it( 'creates the folder, then saves into it once the create lands', async () => {
+	it( 'creates the folder with the item in it in one command', async () => {
 		let land;
 		wire.replies.create_collection = () =>
 			new Promise( ( resolve ) => {
 				land = resolve;
 			} );
-		wire.replies.collect = { ok: true, event_id: 'ev-c' };
 		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
 		await screen.findByLabelText( 'Folder' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
@@ -206,23 +197,54 @@ describe( 'SaveToCollection', () => {
 		);
 		await waitFor( () =>
 			expect( wire.sent( 'create_collection' ) ).toEqual( [
-				[ '--name=Quarry notes' ],
+				[ '--name=Quarry notes', '--item=feed:inkfold-review-17' ],
 			] )
 		);
 		await waitFor( () => expect( land ).toBeDefined() );
-		expect( wire.sent( 'collect' ) ).toEqual( [] );
 		land( { ok: true, event_id: 'ev-n', collection_key: 'quarry-notes' } );
+		expect(
+			await screen.findByText( 'Saved to Quarry notes.' )
+		).toBeInTheDocument();
+		// The landed create dirties the folder list, which asks again.
 		await waitFor( () =>
-			expect( wire.sent( 'collect' ) ).toEqual( [
-				[
-					'--collection=quarry-notes',
-					'--item=feed:inkfold-review-17',
-				],
-			] )
+			expect( wire.sent( 'collections' ) ).toEqual( [ [], [] ] )
+		);
+		expect( wire.sent( 'collect' ) ).toEqual( [] );
+	} );
+
+	it( 'says the folder a create saved into, after an earlier save', async () => {
+		wire.replies.collect = { ok: true, event_id: 'ev-s' };
+		wire.replies.create_collection = {
+			ok: true,
+			event_id: 'ev-q',
+			collection_key: 'quarry-notes',
+		};
+		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		const select = await screen.findByLabelText( 'Folder' );
+		fireEvent.change( select, { target: { value: 'paywall-complaints' } } );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Save' } ) );
+		await screen.findByText( 'Saved to Paywall complaints.' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
+		fireEvent.change( screen.getByLabelText( 'Folder name' ), {
+			target: { value: 'Quarry notes' },
+		} );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Create and save' } )
 		);
 		expect(
 			await screen.findByText( 'Saved to Quarry notes.' )
 		).toBeInTheDocument();
+		expect(
+			screen.queryByText( 'Saved to Paywall complaints.' )
+		).toBeNull();
+		fireEvent.change( screen.getByLabelText( 'Folder' ), {
+			target: { value: 'awards-shortlist' },
+		} );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Save' } ) );
+		expect(
+			await screen.findByText( 'Saved to Awards shortlist.' )
+		).toBeInTheDocument();
+		expect( screen.queryByText( 'Saved to Quarry notes.' ) ).toBeNull();
 	} );
 
 	it( 'leaves the name field once the create lands, on the new folder', async () => {
@@ -231,7 +253,6 @@ describe( 'SaveToCollection', () => {
 			new Promise( ( resolve ) => {
 				land = resolve;
 			} );
-		wire.replies.collect = { ok: true, event_id: 'ev-d' };
 		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
 		await screen.findByLabelText( 'Folder' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
@@ -261,7 +282,7 @@ describe( 'SaveToCollection', () => {
 		// Enter on a focused select submits nothing; only a field's Enter does.
 		await waitFor( () => expect( select ).toHaveFocus() );
 		expect( wire.sent( 'create_collection' ) ).toEqual( [
-			[ '--name=Quarry notes' ],
+			[ '--name=Quarry notes', '--item=feed:inkfold-review-17' ],
 		] );
 		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
 		expect( screen.getByLabelText( 'Folder name' ) ).toHaveValue( '' );
@@ -274,7 +295,6 @@ describe( 'SaveToCollection', () => {
 			new Promise( ( resolve ) => {
 				land = resolve;
 			} );
-		wire.replies.collect = { ok: true, event_id: 'ev-f' };
 		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
 		const field = await screen.findByLabelText( 'Folder name' );
 		fireEvent.change( field, { target: { value: 'Tidewater leads' } } );
@@ -289,17 +309,18 @@ describe( 'SaveToCollection', () => {
 		expect(
 			await screen.findByText( 'Saved to Tidewater leads.' )
 		).toBeInTheDocument();
-		// The new folder's landing and the save's each re-read the list.
+		// The new folder's landing re-reads the list, once.
 		await waitFor( () =>
-			expect( wire.sent( 'collections' ) ).toEqual( [ [], [], [] ] )
+			expect( wire.sent( 'collections' ) ).toEqual( [ [], [] ] )
 		);
 		expect( screen.queryByLabelText( 'Folder name' ) ).toBeNull();
 		expect(
 			screen.queryByText( 'Make your first folder to save this item.' )
 		).toBeNull();
 		expect( wire.sent( 'create_collection' ) ).toEqual( [
-			[ '--name=Tidewater leads' ],
+			[ '--name=Tidewater leads', '--item=feed:inkfold-review-17' ],
 		] );
+		expect( wire.sent( 'collect' ) ).toEqual( [] );
 	} );
 
 	it( 'shows a refused create as the refusal and saves nothing', async () => {
