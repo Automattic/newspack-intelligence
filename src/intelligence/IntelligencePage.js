@@ -2,10 +2,7 @@ import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import DashboardShell from '@newspack-nodes/shared/components/DashboardShell';
 import { getQueryParam } from '@newspack-nodes/shared/utils/queryParams';
-import TabBar, {
-	panelDomId,
-	tabDomId,
-} from '@newspack-nodes/shared/tabs/TabBar';
+import TabBar, { useTabPanelProps } from '@newspack-nodes/shared/tabs/TabBar';
 import Briefing from './views/Briefing';
 import Search, { newSearch } from './views/Search';
 import Entity from './views/Entity';
@@ -67,6 +64,7 @@ export default function IntelligencePage( {
 	const [ view, setView ] = useState( () =>
 		linkedWatch() ? 'watches' : 'briefing'
 	);
+	const panelProps = useTabPanelProps( 'intelligence', view, true );
 	const [ entityKey, setEntityKey ] = useState( null );
 	const [ named, setNamed ] = useState( null );
 	const [ saving, setSaving ] = useState( null );
@@ -135,7 +133,7 @@ export default function IntelligencePage( {
 	return (
 		<DashboardShell
 			storageKey="newspack-nodes:debug:intelligence"
-			subtitle={ __( 'Intelligence', 'newspack-intelligence' ) }
+			title={ __( 'Intelligence', 'newspack-intelligence' ) }
 			overflowY="auto"
 		>
 			{ () => (
@@ -148,11 +146,7 @@ export default function IntelligencePage( {
 						activeId={ view }
 						onPick={ setView }
 					/>
-					<div
-						id={ panelDomId( 'intelligence' ) }
-						role="tabpanel"
-						aria-labelledby={ tabDomId( 'intelligence', view ) }
-					>
+					<div { ...panelProps }>
 						{ 'briefing' === view && (
 							<Briefing
 								since={ lastLook.since }
