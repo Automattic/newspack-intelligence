@@ -20,6 +20,8 @@ use Newspack_Nodes\Row_Reader;
 \defined( 'ABSPATH' ) || exit;
 
 class Feed_Source_Node extends Source_Node {
+	public const SOURCE = 'feed';
+
 	private const ATOM_NS = 'http://www.w3.org/2005/Atom';
 	private const DC_NS   = 'http://purl.org/dc/elements/1.1/';
 
@@ -452,7 +454,7 @@ class Feed_Source_Node extends Source_Node {
 				$when = (string) $item->children( self::DC_NS )->date;
 			}
 			$full  = (string) $item->children( self::CONTENT_NS )->encoded;
-			$out[] = $this->normalize_item( 'feed', self::keyed( $prefix, $id ), self::unsourced( $item ), $link, '' !== \trim( $full ) ? $full : (string) $item->description, $when );
+			$out[] = $this->normalize_item( self::keyed( $prefix, $id ), self::unsourced( $item ), $link, '' !== \trim( $full ) ? $full : (string) $item->description, $when );
 		}
 		return $out;
 	}
@@ -489,7 +491,7 @@ class Feed_Source_Node extends Source_Node {
 			}
 			$summary = (string) $entry->summary;
 			$body    = '' !== $summary ? $summary : (string) $entry->content;
-			$out[]   = $this->normalize_item( 'feed', self::keyed( $prefix, $id ), (string) $entry->title, $link, $body, (string) $entry->updated );
+			$out[]   = $this->normalize_item( self::keyed( $prefix, $id ), (string) $entry->title, $link, $body, (string) $entry->updated );
 		}
 		return $out;
 	}
@@ -704,7 +706,7 @@ class Feed_Source_Node extends Source_Node {
 	 */
 	private static function keyed( string $prefix, string $id ): string {
 		$key = '' === $prefix && null !== self::lane( $id ) ? ":{$id}" : $prefix . $id;
-		return Graph_Curation::written_bytes( "feed:{$key}" ) > Graph_Curation::ITEM_KEY_BYTES ? $prefix . \hash( 'sha256', $id ) : $key;
+		return Graph_Curation::written_bytes( self::SOURCE . ":{$key}" ) > Graph_Curation::ITEM_KEY_BYTES ? $prefix . \hash( 'sha256', $id ) : $key;
 	}
 
 	/**
@@ -714,7 +716,8 @@ class Feed_Source_Node extends Source_Node {
 	 * @param string $item_key An item key.
 	 */
 	public static function lane_of( string $item_key ): ?string {
-		return \str_starts_with( $item_key, 'feed:' ) ? self::lane( \substr( $item_key, \strlen( 'feed:' ) ) ) : null;
+		$prefix = self::SOURCE . ':';
+		return \str_starts_with( $item_key, $prefix ) ? self::lane( \substr( $item_key, \strlen( $prefix ) ) ) : null;
 	}
 
 	/**

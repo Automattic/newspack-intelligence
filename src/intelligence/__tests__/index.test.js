@@ -36,10 +36,16 @@ describe( 'intelligence index', () => {
 				heading: 'Quillmere Cooperative',
 			},
 			vocabulary: { roles: [ 'funder' ] },
+			compositions: {
+				'newspack-intelligence/lens': {
+					context: 'newspack-intelligence/lens',
+					error: 'composition newspack-intelligence/lens: heron',
+				},
+			},
 		};
 	} );
 
-	it( 'mounts the page with the localized flag and vocabulary', () => {
+	it( 'mounts the page with the localized flags, vocabulary and layouts', () => {
 		document.body.innerHTML = '<div id="newspack-intelligence-app"></div>';
 		const { createRoot, render } = loadIndex();
 
@@ -59,6 +65,12 @@ describe( 'intelligence index', () => {
 				heading: 'Quillmere Cooperative',
 			},
 			vocabulary: { roles: [ 'funder' ] },
+			compositions: {
+				'newspack-intelligence/lens': {
+					context: 'newspack-intelligence/lens',
+					error: 'composition newspack-intelligence/lens: heron',
+				},
+			},
 		} );
 	} );
 

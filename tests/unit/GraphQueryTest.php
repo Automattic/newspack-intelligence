@@ -613,6 +613,8 @@ final class GraphQueryTest extends TestCase {
 					[ 'bucket' => '2026-10-05', 'value' => 'award', 'count' => 1, 'items' => self::cited( 'feed:gazette-award' ) ],
 					[ 'bucket' => '2026-09-28', 'value' => 'funding', 'count' => 1, 'items' => self::cited( 'linear:joint-grant' ) ],
 				],
+				'by'        => 'kind',
+				'bucket'    => 'week',
 				'available' => true,
 			],
 			self::trends( [ 'by' => 'kind' ] )
@@ -1152,7 +1154,7 @@ final class GraphQueryTest extends TestCase {
 	/** Before any partition has written a file, every read answers nothing, available. */
 	public function test_an_unwritten_graph_answers_empty(): void {
 		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => true, 'sort' => 'time' ], self::search( [ 'q' => 'award' ] ) );
-		$this->assertSame( [ 'rows' => [], 'available' => true ], self::trends( [ 'by' => 'topic' ] ) );
+		$this->assertSame( [ 'rows' => [], 'by' => 'topic', 'bucket' => 'week', 'available' => true ], self::trends( [ 'by' => 'topic' ] ) );
 	}
 
 	/**
@@ -1210,7 +1212,7 @@ final class GraphQueryTest extends TestCase {
 	 * @return array<string,mixed>
 	 */
 	private static function search( array $args ): array {
-		return Graph_Query::search( $args + [ 'q' => null, 'sort' => 'time', 'entity' => null, 'lens' => null, 'since' => null, 'until' => null, 'limit' => 50, 'offset' => 0, 'kind' => [], 'topic' => [], 'role' => [], 'source' => [] ] );
+		return Graph_Query::search( $args + [ 'q' => null, 'sort' => 'time', 'entity' => null, 'lens' => null, 'since' => null, 'until' => null, 'limit' => 50, 'offset' => 0, 'kind' => [], 'topic' => [], 'role' => [], 'source' => [], 'tier' => [] ] );
 	}
 
 	/**

@@ -49,6 +49,8 @@ final class Intel_Event {
 	public const NAME_KINDS       = [ 'canonical', 'alias', 'acronym', 'locality' ];
 	public const IDENTIFIER_KINDS = [ 'domain', 'github_org', 'github_repo', 'linkedin_company', 'x_handle', 'site_id', 'linear_team' ];
 	public const TIERS            = [ 'public', 'internal', 'restricted' ];
+	/** The sources an item is recorded under, each a Source_Node's SOURCE. */
+	public const SOURCES          = [ 'github', 'feed', 'p2', 'linear', 'slack', 'unthread' ];
 	/** The link roles saying an item's text names its entity; `topic` only tags it. */
 	public const NAMING_ROLES     = [ 'subject', 'mention' ];
 	/** The link roles saying an item is about its entity; `publisher` says the entity's own site published it. */
@@ -79,6 +81,7 @@ final class Intel_Event {
 	 * one, has none, and a blank one is refused; and so are its
 	 * `kind_subject`, the linked entity whose churn a CHURN_KINDS item
 	 * reports, and its `rank_reason`, the sentence saying why it ranks. A
+	 * link a person adds names the role it is added in. A
 	 * folder's creation may carry the item it is created with, its `item`
 	 * record. A saved item's move names
 	 * the folder it leaves as `from`, the one it enters as `collection_key`
@@ -115,6 +118,7 @@ final class Intel_Event {
 		'topic_tagged'        => [ self::ONTOLOGY, [ 'entity_key', 'topic_key' ], [], [] ],
 		'link_confirmed'      => [ self::ONTOLOGY, [ 'item_key', 'entity_key', 'item_url' ], [], [] ],
 		'link_rejected'       => [ self::ONTOLOGY, [ 'item_key', 'entity_key', 'item_url' ], [], [] ],
+		'link_added'          => [ self::ONTOLOGY, [ 'item_key', 'entity_key', 'role', 'item_url' ], [ 'role' => self::NAMING_ROLES ], [] ],
 		'collection_created'  => [ self::ONTOLOGY, [ 'collection_key', 'name' ], [], [] ],
 		'collected'           => [ self::ONTOLOGY, [ 'collection_key', 'item_key', 'url', 'title', 'tier' ], [ 'tier' => self::TIERS ], [] ],
 		'item_excluded'       => [ self::ONTOLOGY, [ 'item_key', 'url', 'title', 'tier' ], [ 'tier' => self::TIERS ], [ 'why' => self::WHY_BYTES ] ],

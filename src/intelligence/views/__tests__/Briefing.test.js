@@ -1,549 +1,314 @@
 /* eslint-env jest */
 /**
- * Briefing reads the two `briefing` slices and the reader's watches, each
- * through its own read: what arrived since the reader last looked, the
- * week's items grouped under the clients they are about, every client's and
- * lens's signals, each group collapsed to its heading and count, and each
- * watch with what it follows and its unseen count. Each that answers
- * nothing invites the reader to act.
+ * Briefing draws the page data's Briefing layout on one surface, each block
+ * by its view, and reads the week once for its `since` and `week` blocks,
+ * through the categories its `week` names. A block whose read fails shows
+ * the read error in its own place while the rest render; a layout that no
+ * longer reads shows the shared read error. A curator finds **Edit layout**
+ * in the Briefing's ⋯ menu; a reader finds no menu.
  */
 
-import {
-	render,
-	screen,
-	fireEvent,
-	waitFor,
-	within,
-} from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
+import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
 import { intelWire } from '../../__tests__/intelWire';
-import { ITEM, pageData } from './fixtures';
+import { BRIEFING_DEFAULTS, ITEM, pageData } from './fixtures';
 import { sinceLabel } from '../../components/format';
 import Briefing from '../Briefing';
 
 /**
- * The line bars standing in for a card's prose while its read is owed.
+ * The shipped default layout's tree, as `compositions get` answers it.
  *
- * @param {HTMLElement} card The card.
- * @return {number} How many.
+ * @param {Object} [over] Block name => attributes laid over its defaults.
+ * @return {Object} The layout.
  */
-const owedLines = ( card ) =>
-	card.querySelectorAll(
-		'[role=status] .newspack-intelligence__skeleton-bar.is-line'
-	).length;
+const defaultLayout = ( over = {} ) => ( {
+	context: 'newspack-intelligence/briefing',
+	source: 'default',
+	blocks: [
+		...readFileSync(
+			path.resolve( __dirname, '../../../../layouts/briefing.html' ),
+			'utf8'
+		).matchAll( /<!-- wp:([a-z-]+\/[a-z-]+) \/-->/g ),
+	].map( ( [ , name ] ) => ( {
+		name,
+		attributes: { ...BRIEFING_DEFAULTS[ name ], ...over[ name ] },
+		inner: [],
+	} ) ),
+	saved_ts: null,
+	actor: null,
+} );
 
 /** A reply that never comes, so its read stays owed. */
 const owed = () => new Promise( () => {} );
 
-const CLIENT = 'organization:kestrel-quillwork';
-
-const CHURN = {
-	...ITEM,
-	item_key: 'linear:kestrel-cancel-4',
-	title: 'Kestrel Quillwork asks to cancel',
-	url: 'https://linear.example/kestrel-cancel-4',
-	kind: 'churn_signal',
-	importance: 9,
-	entities: [
-		{
-			entity_key: CLIENT,
-			name: 'Kestrel Quillwork',
-			state: 'asserted',
-			role: 'subject',
-			client: true,
-		},
-	],
-};
-
-const PRODUCT_BUG = {
-	...ITEM,
-	item_key: 'github:tern-mailer-crash-12',
-	title: 'Tern Mailer crashes on send',
-	url: 'https://github.example/tern-mailer/issues/12',
-	kind: 'incident',
-	importance: 8,
-	entities: [
-		{
-			entity_key: 'product:tern-mailer',
-			name: 'Tern Mailer',
-			state: 'asserted',
-			role: 'subject',
-			client: false,
-		},
-	],
-};
-
-const CHANGES = {
-	groups: [
-		{ entity_key: null, name: null, role: null, items: [ ITEM ] },
-		{
-			entity_key: CLIENT,
-			name: 'Kestrel Quillwork',
-			role: 'client',
-			items: [ CHURN ],
-		},
-		{
-			entity_key: null,
-			name: null,
-			role: 'operator_product',
-			items: [ PRODUCT_BUG ],
-		},
-	],
-	total: 61,
-	summary: {
-		since: 1792000000,
-		items: 23,
-		clients: 9,
-		kinds: [
-			{ kind: 'churned', items: 8, clients: 7 },
-			{ kind: 'incident', items: 4, clients: 1 },
-			{ kind: 'bug', items: 3, clients: 2 },
-			{ kind: 'launch', items: 2, clients: 2 },
-			{ kind: 'complaint', items: 5, clients: 3 },
-		],
-	},
-	available: true,
-};
-
-/** A last look the page holds, before the window's first instant. */
+/** A last look the page holds. */
 const LAST_LOOK = 1791999000;
 
-const SIGNAL = {
-	axis: 'publisher',
-	signal: 'drop',
-	bucket: '2026-10-12',
-	by: null,
-	value: null,
-	count: 2,
-	usual: { mean: 4, low: 2.6, high: 5.4 },
-	trend: [],
-	items: [
-		{
-			item_key: 'feed:kestrel-1',
-			url: 'https://kestrelquillwork.example/one',
-			title: 'Kestrel story one',
-		},
-	],
-};
+/**
+ * The lede's heading for that last look, named from now.
+ *
+ * @return {string} The heading.
+ */
+const sinceHeading = () => `Since ${ sinceLabel( LAST_LOOK, Core.now() ) }`;
 
-const SIGNALS = {
-	clients: [
-		{ entity_key: CLIENT, name: 'Kestrel Quillwork', signals: [ SIGNAL ] },
+const CHANGES = {
+	order: 'importance',
+	items: [ { ...ITEM, categories: [], otherwise: true } ],
+	groups: [
+		{ role: 'otherwise', key: null, name: null, items: [ ITEM.item_key ] },
 	],
-	lenses: [
-		{
-			lens_key: 'support-desk',
-			name: 'Support desk',
-			signals: [
-				{
-					...SIGNAL,
-					axis: 'about',
-					signal: 'spike',
-					by: 'kind',
-					value: 'complaint',
-					count: 7,
-					usual: { mean: 1.5, low: 0, high: 3.9 },
-					items: [
-						{
-							item_key: 'unthread:kestrel-ticket-8',
-							url: 'https://support.example/kestrel-ticket-8',
-							title: 'Kestrel ticket eight',
-						},
-					],
-				},
-			],
-		},
-	],
-	available: true,
-};
-
-const WATCHES = {
-	watches: [
-		{
-			watch_key: '4c2e9a1f7b3d5e60',
-			name: 'Kestrel account',
-			target: { kind: 'entity', key: CLIENT },
-			digest: false,
-			instant: false,
-			inbox: true,
-			unseen: 3,
-		},
-	],
-	available: true,
-};
-
-const NONE = {
-	changes: {
-		groups: [],
-		total: 0,
-		summary: { since: 1793000000, items: 0, clients: 0, kinds: [] },
-		available: true,
+	categories: [],
+	otherwise: 1,
+	total: 61,
+	summary: {
+		since: LAST_LOOK,
+		items: 23,
+		clients: 9,
+		kinds: [ { kind: 'award', items: 2, clients: 2 } ],
 	},
-	signals: { clients: [], lenses: [], available: true },
+	available: true,
 };
+
+const SIGNALS = { clients: [], lenses: [], judged: true, available: true };
+
+const WATCHES = { watches: [], available: true };
 
 let wire;
-let handlers;
+let props;
 
 beforeEach( () => {
 	Core.reset();
 	window.NewspackNodesData = pageData();
 	wire = intelWire();
-	const full = { changes: CHANGES, signals: SIGNALS };
-	wire.replies.briefing = ( [ what ] ) => full[ what ];
+	const answers = { changes: CHANGES, signals: SIGNALS };
+	wire.replies.briefing = ( [ what ] ) => answers[ what ];
 	wire.replies.watches = WATCHES;
-	handlers = {
-		onOpenEntity: jest.fn(),
-		onOpenLens: jest.fn(),
-		onOpenWatch: jest.fn(),
-		onNewWatch: jest.fn(),
-		onSearch: jest.fn(),
-		onSearchFor: jest.fn(),
-		asked: null,
-		onAsked: jest.fn(),
-		since: null,
+	props = {
+		layout: defaultLayout(),
+		since: LAST_LOOK,
 		kept: true,
 		noteVisible: jest.fn(),
+		canTune: false,
+		actions: {
+			onOpenEntity: jest.fn(),
+			onOpenLens: jest.fn(),
+			onOpenWatch: jest.fn(),
+			onNewWatch: jest.fn(),
+			onSearchFor: jest.fn(),
+			onSearch: jest.fn(),
+			canTune: false,
+			asked: null,
+			onAsked: jest.fn(),
+		},
 	};
 } );
 
 afterEach( () => jest.restoreAllMocks() );
 
-const OPERATOR = {
-	name: 'Quillmere Cooperative',
-	heading: 'Quillmere Heading',
-};
-
-const renderBriefing = ( operator = OPERATOR ) =>
-	render( <Briefing operator={ operator } { ...handlers } /> );
-
-/**
- * Open a collapsed group by its toggle, named by its heading and its count.
- *
- * @param {HTMLElement} heading The group's heading.
- * @param {string}      count   The toggle's count.
- */
-const expand = ( heading, count ) => {
-	const toggle = within( heading.closest( 'section' ) ).getByRole( 'button', {
-		name: `${ heading.textContent } ${ count }`,
-	} );
-	expect( toggle ).toHaveAttribute( 'aria-expanded', 'false' );
-	expect(
-		document.getElementById( toggle.getAttribute( 'aria-controls' ) )
-	).toBeInTheDocument();
-	fireEvent.click( toggle );
-	expect( toggle ).toHaveAttribute( 'aria-expanded', 'true' );
-};
+const renderBriefing = () => render( <Briefing { ...props } /> );
 
 describe( 'Briefing', () => {
-	it( 'stands three lines in for its signals while they are owed', async () => {
+	it( 'draws the default layout in order, naming no operator', async () => {
+		const { container } = renderBriefing();
+		await screen.findByRole( 'region', {
+			name: 'This week, most important first',
+		} );
+		const order = [ ...container.querySelectorAll( 'section' ) ].map(
+			( section ) =>
+				section.getAttribute( 'aria-label' ) ??
+				section.querySelector( 'h2' )?.textContent
+		);
+		expect( order ).toEqual( [
+			'Ask',
+			sinceHeading(),
+			'Needs attention',
+			'Your watches',
+			'This week, most important first',
+		] );
+		const walker = document.createTreeWalker(
+			container,
+			window.NodeFilter.SHOW_TEXT
+		);
+		while ( walker.nextNode() ) {
+			expect( walker.currentNode.textContent ).not.toContain(
+				'Newspack'
+			);
+		}
+		expect(
+			container.querySelectorAll( '.newspack-intelligence__surface' )
+		).toHaveLength( 1 );
+	} );
+
+	it( "reads the week once, through its week's categories", async () => {
+		props.layout = defaultLayout( {
+			'newspack-intelligence/week': {
+				categories: [ 'desk-awards', 'partner-desk' ],
+			},
+		} );
+		renderBriefing();
+		await screen.findByRole( 'link', {
+			name: 'Acme Quillsheet wins regional prize',
+		} );
+		expect(
+			wire.sent( 'briefing' ).filter( ( [ what ] ) => 'changes' === what )
+		).toEqual( [
+			[
+				'changes',
+				`--since=${ LAST_LOOK }`,
+				'--lenses=desk-awards,partner-desk',
+			],
+		] );
+	} );
+
+	it( 'shows a failed block’s read error in its place while the rest render', async () => {
 		wire.replies.briefing = ( [ what ] ) =>
-			'signals' === what ? owed() : CHANGES;
+			'signals' === what ? new Error( 'signals refused' ) : CHANGES;
 		renderBriefing();
-		await waitFor( () =>
-			expect(
-				owedLines( screen.getByRole( 'region', { name: 'Signals' } ) )
-			).toBe( 3 )
-		);
-	} );
-
-	it( 'opens with the Ask box, which asks nothing until a question is sent', async () => {
-		renderBriefing();
-		await screen.findByRole( 'button', { name: 'Kestrel account' } );
-		const sections = document.querySelectorAll( 'section' );
-		expect(
-			within( sections[ 0 ] ).getByPlaceholderText(
-				`Ask about clients, the industry or ${ OPERATOR.name }…`
-			)
-		).toBeInTheDocument();
-		expect( wire.sent( 'ask' ) ).toEqual( [] );
-		expect( wire.sent( 'ask_result' ) ).toEqual( [] );
-	} );
-
-	it( "heads the operator's own work by the heading it is localized, a lowercase name as given", async () => {
-		renderBriefing( { name: 'quillmere', heading: 'quillmere' } );
-		const changes = await screen.findByRole( 'region', {
-			name: 'Last seven days',
-		} );
-		await within( changes ).findByRole( 'heading', {
-			level: 3,
-			name: 'quillmere',
+		const attention = await screen.findByRole( 'region', {
+			name: 'Needs attention',
 		} );
 		expect(
-			within( changes ).getByText(
-				'The 3 most important of 61 items about clients, quillmere and the industry in the last seven days.'
-			)
-		).toBeInTheDocument();
-	} );
-
-	it( 'asks each slice through its own read', async () => {
-		renderBriefing();
-		await screen.findByRole( 'button', { name: 'Kestrel account' } );
-		expect( wire.sent( 'briefing' ).sort() ).toEqual( [
-			[ 'changes' ],
-			[ 'signals' ],
-		] );
-		expect( wire.sent( 'watches' ) ).toEqual( [ [] ] );
-	} );
-
-	it( 'heads each group by its role, in the order the answer gives', async () => {
-		renderBriefing();
-		const changes = await screen.findByRole( 'region', {
-			name: 'Last seven days',
-		} );
-		const groups = await within( changes ).findAllByRole( 'heading', {
-			level: 3,
-		} );
-		expect(
-			within( changes ).queryByRole( 'link', {
-				name: 'Kestrel Quillwork asks to cancel',
-			} )
-		).not.toBeInTheDocument();
-		groups.forEach( ( group ) => expand( group, '1 item' ) );
-		await within( changes ).findByRole( 'link', {
-			name: 'Kestrel Quillwork asks to cancel',
-		} );
-		expect( groups.map( ( g ) => g.textContent ) ).toEqual( [
-			'Industry',
-			'Kestrel Quillwork',
-			OPERATOR.heading,
-		] );
-		expect(
-			within( groups[ 2 ].closest( 'section' ) ).getByRole( 'link', {
-				name: 'Tern Mailer crashes on send',
-			} )
-		).toHaveAttribute(
-			'href',
-			'https://github.example/tern-mailer/issues/12'
-		);
-		expect(
-			within( changes ).getByText(
-				`The 3 most important of 61 items about clients, ${ OPERATOR.name } and the industry in the last seven days.`
+			await within( attention ).findByText(
+				'Intelligence could not be read just now. Try again.'
 			)
 		).toBeInTheDocument();
 		expect(
-			within( changes ).getByRole( 'link', {
+			await screen.findByRole( 'link', {
 				name: 'Acme Quillsheet wins regional prize',
 			} )
-		).toHaveAttribute( 'href', 'https://inkfold-review.example/acme' );
-		fireEvent.click(
-			within( groups[ 1 ] ).getByRole( 'button', {
-				name: 'Kestrel Quillwork',
-			} )
-		);
-		expect( handlers.onOpenEntity ).toHaveBeenCalledWith( CLIENT );
-	} );
-
-	it( 'lists each client and lens with its signals', async () => {
-		renderBriefing();
-		const signals = await screen.findByRole( 'region', {
-			name: 'Signals',
-		} );
-		const groups = await within( signals ).findAllByRole( 'heading', {
-			level: 3,
-		} );
-		expect(
-			within( signals ).queryByText( '2, usually about 4' )
-		).not.toBeInTheDocument();
-		groups.forEach( ( group ) => expand( group, '1 signal' ) );
-		await within( signals ).findByText( '2, usually about 4' );
-		expect(
-			within( signals ).getByText( 'Posted little' )
-		).toBeInTheDocument();
-		expect(
-			within( signals ).getByText( 'Grumble climbed' )
-		).toBeInTheDocument();
-		expect(
-			within( signals ).getByRole( 'link', { name: 'Kestrel story one' } )
-		).toBeInTheDocument();
-		fireEvent.click(
-			within( signals ).getByRole( 'button', {
-				name: 'Kestrel Quillwork',
-			} )
-		);
-		expect( handlers.onOpenEntity ).toHaveBeenCalledWith( CLIENT );
-		fireEvent.click(
-			within( signals ).getByRole( 'button', { name: 'Support desk' } )
-		);
-		expect( handlers.onOpenLens ).toHaveBeenCalledWith( 'support-desk' );
-	} );
-
-	it( "saves a signal's cited item to a folder for a curator", async () => {
-		const onSave = jest.fn();
-		render(
-			<Briefing operator={ OPERATOR } { ...handlers } onSave={ onSave } />
-		);
-		const signals = await screen.findByRole( 'region', {
-			name: 'Signals',
-		} );
-		const groups = await within( signals ).findAllByRole( 'heading', {
-			level: 3,
-		} );
-		groups.forEach( ( group ) => expand( group, '1 signal' ) );
-		const story = await within( signals ).findByRole( 'link', {
-			name: 'Kestrel ticket eight',
-		} );
-		fireEvent.click(
-			within( story.closest( 'li' ) ).getByRole( 'button', {
-				name: 'Save to folder',
-			} )
-		);
-		expect( onSave ).toHaveBeenCalledWith(
-			expect.objectContaining( { item_key: 'unthread:kestrel-ticket-8' } )
-		);
-	} );
-
-	it( 'lists the reader’s watches with their unseen counts', async () => {
-		renderBriefing();
-		const watches = await screen.findByRole( 'region', {
-			name: 'Your watches',
-		} );
-		expect(
-			await within( watches ).findByText( 'A client or company · 3 new' )
-		).toBeInTheDocument();
-		fireEvent.click(
-			within( watches ).getByRole( 'button', { name: 'Kestrel account' } )
-		);
-		expect( handlers.onOpenWatch ).toHaveBeenCalledWith(
-			'4c2e9a1f7b3d5e60'
-		);
-	} );
-
-	it( 'opens with what arrived since the reader last looked, named by the instant the answer counts from', async () => {
-		handlers.since = LAST_LOOK;
-		renderBriefing();
-		const since = await screen.findByRole( 'region', {
-			name: `Since ${ sinceLabel(
-				CHANGES.summary.since,
-				Math.floor( Date.now() / 1000 )
-			) }`,
-		} );
-		expect(
-			within( since )
-				.getAllByRole( 'button' )
-				.map( ( line ) => line.textContent )
-		).toEqual( [
-			'23 new items about 9 clients',
-			'7 clients started offboarding',
-			'4 incidents reported',
-			'3 bugs filed',
-			'2 launches',
-		] );
-		expect( wire.sent( 'briefing' ) ).toContainEqual( [
-			'changes',
-			`--since=${ LAST_LOOK }`,
-		] );
-		fireEvent.click(
-			within( since ).getByRole( 'button', {
-				name: '7 clients started offboarding',
-			} )
-		);
-		expect( handlers.onSearchFor ).toHaveBeenCalledWith( {
-			kind: 'churned',
-			since: '2026-10-14',
-		} );
-		fireEvent.click(
-			within( since ).getByRole( 'button', {
-				name: '23 new items about 9 clients',
-			} )
-		);
-		expect( handlers.onSearchFor ).toHaveBeenLastCalledWith( {
-			since: '2026-10-14',
-		} );
-	} );
-
-	it( 'says so when nothing arrived since the reader last looked', async () => {
-		handlers.since = LAST_LOOK;
-		wire.replies.briefing = ( [ what ] ) => NONE[ what ];
-		renderBriefing();
-		const label = sinceLabel(
-			NONE.changes.summary.since,
-			Math.floor( Date.now() / 1000 )
-		);
-		const lede = await screen.findByRole( 'region', {
-			name: `Since ${ label }`,
-		} );
-		expect(
-			within( lede ).getByText( `Nothing new since ${ label }.` )
 		).toBeInTheDocument();
 	} );
 
-	it( 'shows the plain Briefing when the last look is not kept', async () => {
-		handlers.kept = false;
+	it( 'stands two lede lines, three pulse rows and ten item rows in while owed', async () => {
+		wire.replies.briefing = owed;
+		wire.replies.watches = owed;
 		renderBriefing();
-		await screen.findByRole( 'region', { name: 'Last seven days' } );
-		await screen.findByRole( 'button', { name: 'Kestrel account' } );
-		await screen.findAllByRole( 'heading', { level: 3 } );
+		const region = ( name ) => screen.getByRole( 'region', { name } );
+		await screen.findAllByRole( 'status', { name: 'Loading' } );
+		const bars = ( name ) =>
+			region( name ).querySelectorAll(
+				'.newspack-intelligence__skeleton-bar.is-line'
+			).length;
+		expect( bars( sinceHeading() ) ).toBe( 2 );
+		expect( bars( 'Needs attention' ) ).toBe( 3 );
 		expect(
-			screen.queryByText( '23 new items about 9 clients' )
-		).not.toBeInTheDocument();
-		expect( wire.sent( 'briefing' ) ).toContainEqual( [ 'changes' ] );
+			region( 'This week, most important first' ).querySelectorAll(
+				'.newspack-intelligence__item'
+			)
+		).toHaveLength( 10 );
 	} );
 
-	it( 'shows no summary while the graph will not open', async () => {
-		handlers.since = LAST_LOOK;
-		wire.replies.briefing = ( [ what ] ) =>
-			'changes' === what
-				? { ...NONE.changes, available: false }
-				: SIGNALS;
+	it( 'shows the shared read error for a layout that no longer reads', async () => {
+		props.layout = {
+			context: 'newspack-intelligence/briefing',
+			error: 'this layout could not be read',
+		};
 		renderBriefing();
-		await screen.findByText( /so this was not read/ );
 		expect(
-			screen.queryByRole( 'heading', { name: /^Since / } )
-		).not.toBeInTheDocument();
-	} );
-
-	it( 'a reader with no mark sees the heading "This week"', async () => {
-		renderBriefing();
-		const week = await screen.findByRole( 'region', {
-			name: 'This week',
-		} );
-		expect(
-			within( week ).getByRole( 'button', {
-				name: '23 new items about 9 clients',
-			} )
+			await screen.findByText(
+				'Intelligence could not be read just now. Try again.'
+			)
 		).toBeInTheDocument();
-		expect( wire.sent( 'briefing' ) ).toContainEqual( [ 'changes' ] );
+		expect( wire.sent( 'briefing' ) ).toEqual( [] );
 	} );
 
-	it( 'tells the page it is seen while mounted, and not once unmounted', async () => {
+	it( 'offers a curator Edit layout in its ⋯ menu, and a reader no menu', async () => {
 		const { unmount } = renderBriefing();
-		await screen.findAllByRole( 'heading', { level: 3 } );
-		expect( handlers.noteVisible.mock.calls ).toEqual( [ [ true ] ] );
+		await screen.findByRole( 'link', {
+			name: 'Acme Quillsheet wins regional prize',
+		} );
+		expect(
+			screen.queryByRole( 'button', { name: 'Briefing actions' } )
+		).toBeNull();
 		unmount();
-		expect( handlers.noteVisible.mock.calls ).toEqual( [
-			[ true ],
-			[ false ],
-		] );
+		props.canTune = true;
+		renderBriefing();
+		await screen.findByRole( 'link', {
+			name: 'Acme Quillsheet wins regional prize',
+		} );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Briefing actions' } )
+		);
+		expect(
+			await screen.findByRole( 'menuitem', { name: 'Edit layout' } )
+		).toBeInTheDocument();
 	} );
 
-	it( 'invites the reader to act where a slice answers nothing', async () => {
-		wire.replies.briefing = ( [ what ] ) => NONE[ what ];
-		wire.replies.watches = { watches: [], available: true };
-		renderBriefing();
-		await screen.findByText(
-			`Nothing about a client, ${ OPERATOR.name } or the industry arrived in the last seven days.`,
-			{ exact: false }
-		);
-		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Search everything' } )
-		);
-		expect( handlers.onSearch ).toHaveBeenCalledTimes( 1 );
+	it( 'tells the page it is seen while mounted, and not once unmounted', () => {
+		const { unmount } = renderBriefing();
+		expect( props.noteVisible ).toHaveBeenLastCalledWith( true );
+		unmount();
+		expect( props.noteVisible ).toHaveBeenLastCalledWith( false );
+	} );
 
-		await screen.findByText(
-			'No client or team view moved off its baseline in the last seven days.',
-			{ exact: false }
-		);
-		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Open team views' } )
-		);
-		expect( handlers.onOpenLens ).toHaveBeenCalledWith( null );
+	describe.each( [
+		[ 'at 390 px', true ],
+		[ 'at 1,440 px', false ],
+	] )( '%s', ( _, narrow ) => {
+		let viewport;
+		beforeEach( () => {
+			viewport = installViewport( narrow );
+		} );
+		afterEach( () => viewport.restore() );
 
-		await screen.findByText(
-			'Watch a client or a team view to see what is new for you here.',
-			{ exact: false }
-		);
-		fireEvent.click( screen.getByRole( 'button', { name: 'New watch' } ) );
-		expect( handlers.onNewWatch ).toHaveBeenCalledTimes( 1 );
+		it( 'says what it holds when the week is empty', async () => {
+			wire.replies.briefing = ( [ what ] ) =>
+				'signals' === what
+					? SIGNALS
+					: {
+							...CHANGES,
+							items: [],
+							groups: [],
+							otherwise: 0,
+							total: 0,
+							summary: {
+								...CHANGES.summary,
+								items: 0,
+								kinds: [],
+							},
+					  };
+			renderBriefing();
+			expect(
+				await screen.findByText( 'Nothing arrived this week.' )
+			).toBeInTheDocument();
+			expect(
+				screen.getByText( /^Nothing new since / )
+			).toBeInTheDocument();
+			expect(
+				screen.getByText(
+					'No client or team view moved off its usual range last week.'
+				)
+			).toBeInTheDocument();
+		} );
+
+		it( 'stands skeletons in while it loads', async () => {
+			wire.replies.briefing = owed;
+			wire.replies.watches = owed;
+			renderBriefing();
+			expect(
+				await screen.findAllByRole( 'status', { name: 'Loading' } )
+			).toHaveLength( 4 );
+		} );
+
+		it( 'shows the read error in the failed block alone', async () => {
+			wire.replies.watches = new Error( 'watches refused' );
+			renderBriefing();
+			const watches = await screen.findByRole( 'region', {
+				name: 'Your watches',
+			} );
+			expect(
+				await within( watches ).findByText(
+					'Intelligence could not be read just now. Try again.'
+				)
+			).toBeInTheDocument();
+			expect(
+				await screen.findByRole( 'link', {
+					name: 'Acme Quillsheet wins regional prize',
+				} )
+			).toBeInTheDocument();
+		} );
 	} );
 } );

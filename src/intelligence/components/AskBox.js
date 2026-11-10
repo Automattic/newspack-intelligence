@@ -1,20 +1,49 @@
-import { useState } from '@wordpress/element';
+import { useEffect, useRef, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
-import { Card, CardBody, TextControl } from '@wordpress/components';
+import { speak } from '@wordpress/a11y';
+import { Card, CardBody, Spinner, TextControl } from '@wordpress/components';
+import { Icon, check } from '@wordpress/icons';
 import { Core } from '@newspack-nodes/runtime';
 import useRouterTick from '@newspack-nodes/shared/hooks/useRouterTick';
+import { usePersistedFlag } from '@newspack-nodes/shared/hooks/usePersistedState';
 import {
 	commandArgs,
 	useIntelRead,
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
+import Citation from './Citation';
 import ItemRow from './ItemRow';
 import Refusal from './Refusal';
 import { Unread } from './Answer';
+import { pageFormat } from './format';
+import { daysSince } from './lensDraft';
 import { word } from './words';
 
 /** How often an ask still owed its answer is read again, on the Router's tick. */
 const POLL_MS = 3000;
+
+/** How long a source shown from its marker stays washed, in milliseconds. */
+const WASH_MS = 2000;
+
+/** The states an ask reads while it is still owed its outcome. */
+const OWED = [ 'asked', 'planned', 'read' ];
+
+/**
+ * The `ask` block's attributes at their defaults, the approved copy.
+ *
+ * @return {{label: string, placeholder: string, examples: string[]}} The attributes.
+ */
+const askDefaults = () => ( {
+	label: __( 'Ask a question', 'newspack-intelligence' ),
+	placeholder: __(
+		'Ask about anything collected here…',
+		'newspack-intelligence'
+	),
+	examples: [
+		__( 'What changed last week?', 'newspack-intelligence' ),
+		__( 'What are people asking for this month?', 'newspack-intelligence' ),
+	],
+} );
 
 /**
  * One search an ask ran, as the reader reads it: its words, the entity it
@@ -72,159 +101,321 @@ function searchText( search ) {
 }
 
 /**
- * The searches an ask ran, under its answer; nothing for none.
+ * A plan's search as the filters Search opens on: its words, its lens, its
+ * kinds and roles, and its days as the day they start from. The entity it
+ * names is a name, not a key, so it is left to the reader.
  *
- * @param {Object}   props
- * @param {Object[]} props.searches The searches.
- * @return {?import('react').ReactElement} The line.
+ * @param {Object} search A search, as the plan named it.
+ * @return {Object<string, string>} The filters it names.
  */
-function Searched( { searches } ) {
-	return 0 < searches.length ? (
+function searchFilters( search ) {
+	return Object.fromEntries(
+		[
+			[ 'q', search.words ],
+			[ 'kind', search.kinds?.join( ',' ) ],
+			[ 'role', search.roles?.join( ',' ) ],
+			[ 'lens', search.lens ],
+			[ 'since', search.days && daysSince( search.days, Date.now() ) ],
+		].filter( ( [ , value ] ) => value )
+	);
+}
+
+/**
+ * The steps an ask owed its outcome has taken, each ticked as it ends, and
+ * the one under way beside a spinner.
+ *
+ * @param {Object} props
+ * @param {Object} props.answer What `ask_result` answered.
+ * @return {import('react').ReactElement} The line.
+ */
+function Stages( { answer } ) {
+	const done = doneSteps( answer );
+	const active = {
+		asked: __( 'Planning the search', 'newspack-intelligence' ),
+		planned: __( 'Reading the items', 'newspack-intelligence' ),
+		read: __( 'Writing the answer', 'newspack-intelligence' ),
+	}[ answer.state ];
+	return (
+		<ol className="newspack-intelligence__stages">
+			{ done.map( ( text ) => (
+				<li
+					key={ text }
+					className="newspack-intelligence__stage is-done"
+				>
+					<Icon icon={ check } size={ 16 } />
+					{ text }
+				</li>
+			) ) }
+			<li className="newspack-intelligence__stage is-active">
+				<Spinner />
+				{ active }
+			</li>
+		</ol>
+	);
+}
+
+/**
+ * The steps an answer says have ended, in order: the plan, then the read.
+ *
+ * @param {Object} answer What `ask_result` answered.
+ * @return {string[]} Each step's done form.
+ */
+function doneSteps( answer ) {
+	const planned = sprintf(
+		/* translators: %d: how many searches the ask planned. */
+		_n(
+			'Planned %d search',
+			'Planned %d searches',
+			answer.searches.length,
+			'newspack-intelligence'
+		),
+		answer.searches.length
+	);
+	const read = sprintf(
+		/* translators: %d: how many items the ask read. */
+		_n(
+			'Read %d item',
+			'Read %d items',
+			answer.found,
+			'newspack-intelligence'
+		),
+		answer.found
+	);
+	return (
+		{ planned: [ planned ], read: [ planned, read ] }[ answer.state ] ?? []
+	);
+}
+
+/**
+ * What the ask searched and read, and how many sources its answer cites.
+ *
+ * @param {Object} props
+ * @param {Object} props.answer What `ask_result` answered.
+ * @return {import('react').ReactElement} The line.
+ */
+function Searched( { answer } ) {
+	const searches = pageFormat( Intl.ListFormat, {
+		type: 'conjunction',
+	} ).format( answer.searches.map( searchText ) );
+	return (
 		<p className="newspack-nodes-status is-muted">
 			{ sprintf(
-				/* translators: %s: each search the ask ran. */
-				__( 'Searched: %s', 'newspack-intelligence' ),
-				searches.map( searchText ).join( '; ' )
+				/* translators: 1: each search the ask ran, 2: the items it read, 3: the sources its answer cites. */
+				_n(
+					'Searched %1$s. Read %2$d item; this answer cites %3$d.',
+					'Searched %1$s. Read %2$d items; this answer cites %3$d.',
+					answer.found,
+					'newspack-intelligence'
+				),
+				searches,
+				answer.found,
+				answer.items.length
 			) }
 		</p>
-	) : null;
+	);
 }
 
 /**
- * How long an ask may wait, as the reader reads it.
+ * An answered ask: its sentences, each followed by a marker per source it
+ * cites that the list holds, how many sentences were left out or hidden,
+ * the sources, numbered, and what it searched; or which kind of nothing it
+ * is. A marker shows its source in the list, washed for `WASH_MS`.
  *
- * @param {number} seconds The wait.
- * @return {string} The wait.
- */
-function waitText( seconds ) {
-	const minutes = Math.round( seconds / 60 );
-	return 60 <= seconds
-		? sprintf(
-				/* translators: %d: minutes. */
-				_n(
-					'%d minute',
-					'%d minutes',
-					minutes,
-					'newspack-intelligence'
-				),
-				minutes
-		  )
-		: sprintf(
-				/* translators: %d: seconds. */
-				_n(
-					'%d second',
-					'%d seconds',
-					seconds,
-					'newspack-intelligence'
-				),
-				seconds
-		  );
-}
-
-/**
- * An answered ask: its sentences, each followed by the numbers of the items
- * it cites, then those items in that numbering; or why none is shown.
- *
- * @param {Object}                 props
- * @param {Object}                 props.answer       What `ask_result` answered.
- * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
- * @param {(item: Object) => void} [props.onSave]     Saves an item; absent for a reader.
- * @param {boolean}                [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
+ * @param {Object}                    props
+ * @param {Object}                    props.answer       What `ask_result` answered.
+ * @param {string}                    props.question     The question asked.
+ * @param {(filters: Object) => void} props.onSearchFor  Opens Search on filters.
+ * @param {(key: string) => void}     props.onOpenEntity Opens an entity.
+ * @param {(item: Object) => void}    [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                   [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactElement} The answer.
  */
-function Answered( { answer, onOpenEntity, onSave, canTune } ) {
+function Answered( {
+	answer,
+	question,
+	onSearchFor,
+	onOpenEntity,
+	onSave,
+	canTune,
+} ) {
+	const listRef = useRef( null );
+	const show = ( n ) => {
+		const row = listRef.current?.children[ n - 1 ];
+		row?.scrollIntoView?.( { block: 'nearest' } );
+		row?.classList.add( 'is-washed' );
+		setTimeout( () => row?.classList.remove( 'is-washed' ), WASH_MS );
+	};
+	const counted = [
+		0 < answer.dropped &&
+			sprintf(
+				/* translators: %d: how many sentences were left out. */
+				_n(
+					'%d sentence was left out because it cited nothing.',
+					'%d sentences were left out because they cited nothing.',
+					answer.dropped,
+					'newspack-intelligence'
+				),
+				answer.dropped
+			),
+		0 < answer.hidden &&
+			sprintf(
+				/* translators: %d: how many sentences are hidden. */
+				_n(
+					'%d sentence is hidden because you can no longer read its sources.',
+					'%d sentences are hidden because you can no longer read their sources.',
+					answer.hidden,
+					'newspack-intelligence'
+				),
+				answer.hidden
+			),
+	].filter( Boolean );
 	if ( 0 === answer.found ) {
 		return (
 			<p className="newspack-nodes-empty-state is-quiet">
 				{ __(
-					'Nothing you can read matched this question.',
+					'Nothing you can read matches this question. Try other words, or search instead.',
 					'newspack-intelligence'
-				) }
-			</p>
-		);
-	}
-	if ( 0 === answer.sentences.length ) {
-		return (
-			<p className="newspack-nodes-empty-state is-quiet">
-				{ sprintf(
-					/* translators: %d: how many items the answer was written from. */
-					_n(
-						'The answer cited none of the %d item it read, so nothing is shown.',
-						'The answer cited none of the %d items it read, so nothing is shown.',
-						answer.found,
-						'newspack-intelligence'
-					),
-					answer.found
-				) }
+				) }{ ' ' }
+				<button
+					type="button"
+					className="button"
+					onClick={ () => onSearchFor( { q: question } ) }
+				>
+					{ __( 'Search for these words', 'newspack-intelligence' ) }
+				</button>
 			</p>
 		);
 	}
 	return (
 		<>
-			<div className="newspack-intelligence__answer">
-				{ answer.sentences.map( ( sentence, at ) => (
-					<p key={ at }>
-						<span>{ sentence.text }</span>{ ' ' }
-						<span className="newspack-nodes-status is-muted">
-							{ sentence.cites
-								.map( ( n ) => `[${ n }]` )
-								.join( '' ) }
-						</span>
-					</p>
-				) ) }
-			</div>
-			{ 0 < answer.dropped && (
-				<p className="newspack-nodes-status is-muted">
+			{ 0 === answer.sentences.length && 0 === answer.hidden && (
+				<p className="newspack-nodes-empty-state is-quiet">
 					{ sprintf(
-						/* translators: %d: how many sentences were left out. */
+						/* translators: %d: how many items the ask read. */
 						_n(
-							'%d sentence was left out for citing nothing it was given.',
-							'%d sentences were left out for citing nothing they were given.',
-							answer.dropped,
+							'Read %d item, but none of them answers the question.',
+							'Read %d items, but none of them answers the question.',
+							answer.found,
 							'newspack-intelligence'
 						),
-						answer.dropped
-					) }
+						answer.found
+					) }{ ' ' }
+					<button
+						type="button"
+						className="button"
+						onClick={ () =>
+							onSearchFor( searchFilters( answer.searches[ 0 ] ) )
+						}
+					>
+						{ __( 'Show the items', 'newspack-intelligence' ) }
+					</button>
 				</p>
 			) }
-			<ol className="newspack-intelligence__items">
-				{ answer.items.map( ( item ) => (
-					<ItemRow
-						key={ item.item_key }
-						item={ item }
-						onOpenEntity={ onOpenEntity }
-						onSave={ onSave }
-						canTune={ canTune }
-					/>
-				) ) }
-			</ol>
+			{ 0 < answer.sentences.length && (
+				<div className="newspack-intelligence__answer">
+					{ answer.sentences.map( ( sentence, at ) => (
+						<span key={ at }>
+							<span>{ sentence.text }</span>
+							{ sentence.cites
+								.filter(
+									( n ) => 1 <= n && n <= answer.items.length
+								)
+								.map( ( n ) => (
+									<Citation
+										key={ n }
+										n={ n }
+										item={ answer.items[ n - 1 ] }
+										onShow={ show }
+									/>
+								) ) }{ ' ' }
+						</span>
+					) ) }
+				</div>
+			) }
+			{ counted.map( ( text ) => (
+				<p key={ text } className="newspack-nodes-status is-muted">
+					{ text }
+				</p>
+			) ) }
+			<Searched answer={ answer } />
+			{ 0 < answer.items.length && (
+				<section
+					className="newspack-intelligence__sources"
+					aria-label={ __( 'Sources', 'newspack-intelligence' ) }
+				>
+					<h3>{ __( 'Sources', 'newspack-intelligence' ) }</h3>
+					<ol
+						ref={ listRef }
+						className="newspack-intelligence__items"
+					>
+						{ answer.items.map( ( item ) => (
+							<ItemRow
+								key={ item.item_key }
+								item={ item }
+								onOpenEntity={ onOpenEntity }
+								onSave={ onSave }
+								canTune={ canTune }
+							/>
+						) ) }
+					</ol>
+				</section>
+			) }
 		</>
 	);
 }
 
 /**
- * The ask's state: refused, unreadable, owed, given up on, failed,
- * withheld or answered, the searches it ran beneath.
+ * What a failed, withheld or abandoned ask says, as one sentence.
+ *
+ * @param {Object}  answer What `ask_result` answered.
+ * @param {boolean} gaveUp Whether the page stopped waiting for it.
+ * @return {?string} The sentence, or null for an ask that has not failed.
+ */
+function failure( answer, gaveUp ) {
+	if ( gaveUp && OWED.includes( answer.state ) ) {
+		return __(
+			'The answer took too long and was stopped. Ask again.',
+			'newspack-intelligence'
+		);
+	}
+	return [ 'failed', 'withheld' ].includes( answer.state )
+		? sprintf(
+				/* translators: %s: why there is no answer. */
+				__( 'No answer: %s.', 'newspack-intelligence' ),
+				answer.reason
+		  )
+		: null;
+}
+
+/**
+ * The ask's state: refused, unreadable, owed with its steps, given up on,
+ * failed, withheld or answered.
  *
  * @param {Object}                                                                   props
  * @param {{answer: ?Object, error: ?string, loading: boolean, refresh: () => void}} props.read         What `useIntelRead` returned for `ask_result`.
- * @param {boolean}                                                                  props.gaveUp       Whether the page stopped waiting for it.
+ * @param {{question: string, gaveUp: boolean}}                                      props.asked        The ask the page holds.
+ * @param {() => void}                                                               props.onAskAgain   Asks the same question again.
+ * @param {(filters: Object) => void}                                                props.onSearchFor  Opens Search on filters.
  * @param {(key: string) => void}                                                    props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void}                                                   [props.onSave]     Saves an item; absent for a reader.
  * @param {boolean}                                                                  [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactNode} The state.
  */
-function AskState( { read, gaveUp, onOpenEntity, onSave, canTune } ) {
+function AskState( {
+	read,
+	asked,
+	onAskAgain,
+	onSearchFor,
+	onOpenEntity,
+	onSave,
+	canTune,
+} ) {
 	const { answer, error, loading } = read;
 	if ( error ) {
 		return <Unread error={ error } refresh={ read.refresh } />;
 	}
 	if ( loading ) {
-		return (
-			<p className="newspack-nodes-status is-muted" role="status">
-				{ __( 'Working on it…', 'newspack-intelligence' ) }
-			</p>
-		);
+		return <Stages answer={ { state: 'asked', searches: [], found: 0 } } />;
 	}
 	if ( false === answer.available ) {
 		return (
@@ -236,83 +427,127 @@ function AskState( { read, gaveUp, onOpenEntity, onSave, canTune } ) {
 			</p>
 		);
 	}
-	if ( 'asked' === answer.state ) {
-		return gaveUp ? (
+	const failed = failure( answer, asked.gaveUp );
+	if ( failed ) {
+		return (
 			<p className="newspack-nodes-banner is-warning">
-				{ sprintf(
-					/* translators: %s: how long an ask may wait. */
-					__(
-						'No answer came back within %s; ask again.',
-						'newspack-intelligence'
-					),
-					waitText( answer.wait_s )
+				{ failed }{ ' ' }
+				{ ! asked.gaveUp && (
+					<button
+						type="button"
+						className="button"
+						onClick={ onAskAgain }
+					>
+						{ __( 'Ask again', 'newspack-intelligence' ) }
+					</button>
 				) }
-			</p>
-		) : (
-			<p className="newspack-nodes-status is-muted" role="status">
-				{ __( 'Working on it…', 'newspack-intelligence' ) }
 			</p>
 		);
 	}
+	if ( OWED.includes( answer.state ) ) {
+		return <Stages answer={ answer } />;
+	}
 	return (
 		<>
-			{ 'answered' === answer.state ? (
-				<Answered
-					answer={ answer }
-					onOpenEntity={ onOpenEntity }
-					onSave={ onSave }
-					canTune={ canTune }
-				/>
-			) : (
-				<p className="newspack-nodes-banner is-warning">
-					{ sprintf(
-						/* translators: %s: why there is no answer. */
-						__(
-							'No answer: %s. Ask again.',
-							'newspack-intelligence'
-						),
-						answer.reason
-					) }
-				</p>
-			) }
-			<Searched searches={ answer.searches } />
+			<Answered
+				answer={ answer }
+				question={ asked.question }
+				onSearchFor={ onSearchFor }
+				onOpenEntity={ onOpenEntity }
+				onSave={ onSave }
+				canTune={ canTune }
+			/>
+			<p className="newspack-nodes-status is-muted">
+				{ __(
+					'Answers use only the items listed. Open a source before acting on it.',
+					'newspack-intelligence'
+				) }
+			</p>
 		</>
 	);
 }
 
 /**
- * The question field heading the Briefing and Search. A question goes out as
- * `ask`, which answers its key; the answer is read through `ask_result`,
- * again on the Router's tick while it is still owed and the graph opens, so
- * the page holds the one key it asked and nothing pairs a reply with its
- * request. The page holds the ask, `{ key, at, gaveUp }`, `at` the substrate
- * clock's second it landed, so a switch between views keeps it; the box
- * stops asking once the ask has waited the `wait_s` the server answers.
+ * Announces each step an ask ends, politely, and its failure assertively,
+ * once each as the answer reaches it.
  *
- * @param {Object}                                      props
- * @param {{name: string, heading: string}}             props.operator     Who runs the deployment, whom the box offers to ask about by name.
- * @param {?{key: string, at: number, gaveUp: boolean}} props.asked        The ask the page holds, or null.
- * @param {(asked: ?Object) => void}                    props.onAsked      Holds a new one.
- * @param {(key: string) => void}                       props.onOpenEntity Opens an entity.
- * @param {(item: Object) => void}                      [props.onSave]     Saves an item; absent for a reader.
- * @param {boolean}                                     [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
+ * @param {?Object} answer What `ask_result` answered, or null.
+ * @param {boolean} gaveUp Whether the page stopped waiting for it.
+ */
+function useAnnounced( answer, gaveUp ) {
+	const failed = answer ? failure( answer, gaveUp ) : null;
+	const step = answer ? doneSteps( answer ).at( -1 ) : undefined;
+	useEffect( () => {
+		if ( step ) {
+			speak( step, 'polite' );
+		}
+	}, [ step ] );
+	useEffect( () => {
+		if ( failed ) {
+			speak( failed, 'assertive' );
+		}
+	}, [ failed ] );
+}
+
+/**
+ * The `ask` block's component, heading the Briefing and Search: a question
+ * field under its visible label, which sends `ask` with the question alone
+ * and holds the key it answers. The answer is read through `ask_result`,
+ * again on the Router's tick while it is owed and the graph opens, so the
+ * page holds the one key it asked and nothing pairs a reply with its
+ * request. The page holds the ask, `{ key, at, gaveUp, question }`, `at`
+ * the substrate clock's second it landed, so a switch between views keeps it
+ * until **Clear**; the box stops asking once the ask has waited the `wait_s`
+ * the server answers. The block's examples show, each as "Try: %s", until
+ * the reader's first ask in this browser. The block's attributes a caller
+ * leaves out read as their defaults (`askDefaults()`).
+ *
+ * @param {Object}                                                        props
+ * @param {string}                                                        [props.label]       The field's visible label.
+ * @param {string}                                                        [props.placeholder] The field's placeholder.
+ * @param {string[]}                                                      [props.examples]    The questions offered before a first ask.
+ * @param {?{key: string, at: number, gaveUp: boolean, question: string}} props.asked         The ask the page holds, or null.
+ * @param {(asked: ?Object) => void}                                      props.onAsked       Holds a new one.
+ * @param {(filters: Object) => void}                                     props.onSearchFor   Opens Search on filters.
+ * @param {(key: string) => void}                                         props.onOpenEntity  Opens an entity.
+ * @param {(item: Object) => void}                                        [props.onSave]      Saves an item; absent for a reader.
+ * @param {boolean}                                                       [props.canTune]     Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactElement} The box.
  */
-export default function AskBox( {
-	operator,
-	asked,
-	onAsked,
-	onOpenEntity,
-	onSave,
-	canTune,
-} ) {
-	const [ question, setQuestion ] = useState( '' );
+export default function AskBox( props ) {
+	const {
+		label,
+		placeholder,
+		examples,
+		asked,
+		onAsked,
+		onSearchFor,
+		onOpenEntity,
+		onSave,
+		canTune,
+	} = { ...askDefaults(), ...props };
+	const [ question, setQuestion ] = useState( () => asked?.question ?? '' );
+	const fieldRef = useRef( null );
+	const sentRef = useRef( '' );
+	const [ askedOnce, , markAsked ] = usePersistedFlag(
+		`newspack-intelligence:asked-once:${
+			/** @type {{NewspackNodesData: {userId: string}}} */ (
+				/** @type {unknown} */ ( window )
+			).NewspackNodesData.userId
+		}`,
+		false
+	);
 	const ask = useIntelWrite( 'ask', {
 		scope: 'ask-box:ask',
 		// A new ask changes no answer read before it.
 		dirties: [],
 		refresh: ( landed ) =>
-			onAsked( { key: landed.ask_key, at: Core.now(), gaveUp: false } ),
+			onAsked( {
+				key: landed.ask_key,
+				at: Core.now(),
+				gaveUp: false,
+				question: sentRef.current,
+			} ),
 	} );
 	const read = useIntelRead(
 		'ask-box:result',
@@ -320,6 +555,7 @@ export default function AskBox( {
 		null === asked ? null : commandArgs( { key: asked.key } )
 	);
 	const answer = read.answer;
+	useAnnounced( null === asked ? null : answer, Boolean( asked?.gaveUp ) );
 	useRouterTick( {
 		name: 'ask-box:poll',
 		onTick: () => {
@@ -333,9 +569,17 @@ export default function AskBox( {
 		enabled:
 			null !== asked &&
 			! asked.gaveUp &&
-			'asked' === answer?.state &&
+			OWED.includes( answer?.state ) &&
 			false !== answer.available,
 	} );
+	const send = ( text ) => {
+		sentRef.current = text;
+		if ( ! askedOnce ) {
+			markAsked();
+		}
+		onAsked( null );
+		ask.run( { question: text } );
+	};
 	const blank = '' === question.trim();
 
 	return (
@@ -346,24 +590,16 @@ export default function AskBox( {
 					onSubmit={ ( event ) => {
 						event.preventDefault();
 						if ( ! blank ) {
-							onAsked( null );
-							ask.run( { question } );
+							send( question );
 						}
 					} }
 				>
 					<TextControl
+						ref={ fieldRef }
 						__nextHasNoMarginBottom
 						__next40pxDefaultSize
-						hideLabelFromVision
-						label={ __( 'Question', 'newspack-intelligence' ) }
-						placeholder={ sprintf(
-							/* translators: %s: who runs the deployment. */
-							__(
-								'Ask about clients, the industry or %s…',
-								'newspack-intelligence'
-							),
-							operator.name
-						) }
+						label={ label }
+						placeholder={ placeholder }
 						value={ question }
 						onChange={ setQuestion }
 					/>
@@ -375,15 +611,59 @@ export default function AskBox( {
 						{ __( 'Ask', 'newspack-intelligence' ) }
 					</button>
 				</form>
+				{ ! askedOnce && 0 < examples.length && (
+					<p className="newspack-intelligence__examples">
+						{ examples.map( ( example ) => (
+							<button
+								key={ example }
+								type="button"
+								className="button-link"
+								onClick={ () => setQuestion( example ) }
+							>
+								{ sprintf(
+									/* translators: %s: an example question. */
+									__( 'Try: %s', 'newspack-intelligence' ),
+									example
+								) }
+							</button>
+						) ) }
+					</p>
+				) }
 				<Refusal error={ ask.refusal } />
 				{ null !== asked && (
-					<AskState
-						read={ read }
-						gaveUp={ asked.gaveUp }
-						onOpenEntity={ onOpenEntity }
-						onSave={ onSave }
-						canTune={ canTune }
-					/>
+					<>
+						<AskState
+							read={ read }
+							asked={ asked }
+							onAskAgain={ () => send( asked.question ) }
+							onSearchFor={ onSearchFor }
+							onOpenEntity={ onOpenEntity }
+							onSave={ onSave }
+							canTune={ canTune }
+						/>
+						<p className="newspack-intelligence__actions">
+							<button
+								type="button"
+								className="button"
+								onClick={ () => {
+									setQuestion( '' );
+									onAsked( null );
+								} }
+							>
+								{ __( 'Clear', 'newspack-intelligence' ) }
+							</button>
+							<button
+								type="button"
+								className="button"
+								onClick={ () => {
+									setQuestion( '' );
+									fieldRef.current?.focus();
+								} }
+							>
+								{ __( 'Ask another', 'newspack-intelligence' ) }
+							</button>
+						</p>
+					</>
 				) }
 			</CardBody>
 		</Card>

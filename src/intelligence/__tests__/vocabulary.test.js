@@ -17,6 +17,7 @@ jest.mock( '@newspack-nodes/debug-overlay', () => ( {
 import { intelWire } from './intelWire';
 import { HEALTHY } from './healthFixture';
 import {
+	COMPOSITIONS,
 	ENTITY,
 	GROUPS,
 	ITEM,
@@ -44,15 +45,27 @@ const REPLACED = [
 ];
 
 const CHANGES = {
-	groups: [
-		{ entity_key: null, name: null, role: null, items: [ ITEM ] },
+	order: 'importance',
+	items: [
+		{ ...ITEM, categories: [], otherwise: true },
 		{
-			entity_key: null,
-			name: null,
-			role: 'operator_product',
-			items: [ { ...ITEM, item_key: 'github:tern-12', kind: 'bug' } ],
+			...ITEM,
+			item_key: 'github:tern-12',
+			kind: 'bug',
+			categories: [],
+			otherwise: true,
 		},
 	],
+	groups: [
+		{
+			role: 'otherwise',
+			key: null,
+			name: null,
+			items: [ ITEM.item_key, 'github:tern-12' ],
+		},
+	],
+	categories: [],
+	otherwise: 2,
 	total: 2,
 	summary: {
 		since: 1792000000,
@@ -165,7 +178,8 @@ beforeEach( () => {
 		available: true,
 	};
 	wire.replies.review = ( [ what ] ) => ( {
-		[ what ]: REVIEW[ what ] ?? [],
+		[ what ]: REVIEW[ what ],
+		total: REVIEW[ what ].length,
 		available: true,
 	} );
 	wire.replies.theme_suggestions = { suggestions: [], available: true };
@@ -214,6 +228,7 @@ beforeEach( () => {
 						},
 					],
 					lenses: [],
+					judged: true,
 					available: true,
 			  };
 } );
@@ -274,7 +289,7 @@ const tab = ( name ) =>
 		{ name }
 	);
 
-function renderPage() {
+function renderPage( compositions = COMPOSITIONS ) {
 	return render(
 		<IntelligencePage
 			canTune
@@ -285,6 +300,7 @@ function renderPage() {
 				heading: 'The organization',
 			} }
 			vocabulary={ VOCABULARY }
+			compositions={ compositions }
 		/>
 	);
 }
@@ -292,7 +308,9 @@ function renderPage() {
 describe( 'the vocabulary', () => {
 	it( 'names the tabs in a reader’s words', async () => {
 		renderPage();
-		await screen.findByRole( 'button', { name: /^Industry/ } );
+		await screen.findAllByRole( 'link', { name: ITEM.title } );
+		await screen.findByRole( 'tab', { name: 'Review 1' } );
+		await screen.findByRole( 'tab', { name: 'Watches 7' } );
 		expect(
 			within( screen.getByRole( 'tablist', { name: 'Views' } ) )
 				.getAllByRole( 'tab' )
@@ -301,15 +319,15 @@ describe( 'the vocabulary', () => {
 			'Briefing',
 			'Search',
 			'Team views',
-			'Review',
+			'Review 1',
 			'Folders',
-			'Watches',
+			'Watches 7',
 		] );
 	} );
 
 	it( 'shows no key on the Briefing', async () => {
 		renderPage();
-		await screen.findByRole( 'button', { name: /^Industry/ } );
+		await screen.findAllByRole( 'link', { name: ITEM.title } );
 		expandAll();
 		await screen.findAllByRole( 'link', { name: ITEM.title } );
 		expect( unworded() ).toEqual( [] );
@@ -323,7 +341,23 @@ describe( 'the vocabulary', () => {
 	} );
 
 	it( 'shows no key on a profile', async () => {
-		renderPage();
+		const profile = 'newspack-intelligence/entity';
+		renderPage( {
+			...COMPOSITIONS,
+			[ profile ]: {
+				...COMPOSITIONS[ profile ],
+				blocks: [
+					{
+						name: 'newspack-intelligence/entity-facts',
+						attributes: {
+							show: [ 'counts', 'claims', 'details' ],
+							limit: 10,
+						},
+						inner: [],
+					},
+				],
+			},
+		} );
 		fireEvent.click( tab( 'Search' ) );
 		fireEvent.click(
 			(
@@ -339,7 +373,7 @@ describe( 'the vocabulary', () => {
 		renderPage();
 		fireEvent.click( tab( 'Team views' ) );
 		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Support desk' } )
+			await screen.findByRole( 'button', { name: 'Support desk 29 new' } )
 		);
 		await screen.findByText( 'site blocked from sending email' );
 		expandAll();
@@ -349,19 +383,26 @@ describe( 'the vocabulary', () => {
 		expect( unworded() ).toEqual( [] );
 	} );
 
-	it( 'shows no key on Review', async () => {
+	it( 'shows no key on either Review queue of proposals', async () => {
 		renderPage();
-		fireEvent.click( tab( 'Review' ) );
-		await screen.findByText( 'Valley Times' );
+		fireEvent.click(
+			await screen.findByRole( 'tab', { name: 'Review 1' } )
+		);
+		await screen.findByText( ENTITY.name );
+		expect( unworded() ).toEqual( [] );
+		fireEvent.click(
+			screen.getByRole( 'tab', { name: 'Suggested names 1' } )
+		);
+		await screen.findByRole( 'button', { name: 'Valley Times' } );
 		expect( unworded() ).toEqual( [] );
 	} );
 
 	it( 'shows no key on Folders', async () => {
 		renderPage();
 		fireEvent.click( tab( 'Folders' ) );
-		fireEvent.click(
-			await screen.findByRole( 'button', { name: /Q4 client wins/ } )
-		);
+		fireEvent.change( await screen.findByLabelText( 'Show' ), {
+			target: { value: 'all' },
+		} );
 		await screen.findByRole( 'link', { name: ITEM.title } );
 		expect( unworded() ).toEqual( [] );
 	} );

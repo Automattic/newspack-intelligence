@@ -33,6 +33,8 @@ use Newspack_Nodes\Worker_Should_Stop;
 
 class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 
+	public const SOURCE = 'linear';
+
 	/** Issues a team's page asks for, as many as the Linear source's page holds. */
 	private const LIMIT = 30;
 
@@ -96,7 +98,7 @@ class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 				if ( ! \is_string( $identifier ) || '' === $identifier ) {
 					return null;
 				}
-				$item = $this->normalize_item( 'linear', $identifier, $issue['title'] ?? '', $issue['url'] ?? '', $issue['description'] ?? '', $issue['updated_at'] ?? '' );
+				$item = $this->normalize_item( $identifier, $issue['title'] ?? '', $issue['url'] ?? '', $issue['description'] ?? '', $issue['updated_at'] ?? '' );
 				if ( 0 < $this->room && self::cut_short( Core::as_string( $issue['description'] ?? null ) ) && \strtotime( Core::as_string( $issue['updated_at'] ?? null ) ) >= $moved ) {
 					$this->ask( $identifier, [ 'item' => $item ] );
 					return null;
@@ -139,15 +141,15 @@ class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 		$keys  = Intel_Graph_Row_Schema::read(
 			static fn ( Row_Reader $r ): array => \array_column(
 				$r->rows(
-					'SELECT DISTINCT i.item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' ) . " i WHERE i.source = 'linear' AND i.retrieved_day >= ? AND length( i.body ) = ? AND substr( i.body, -3 ) = ? ORDER BY random() LIMIT ?",
-					[ $day, self::CUT_CHARS, self::CUT_TAIL, $limit ]
+					'SELECT DISTINCT i.item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'items' ) . " i WHERE i.source = ? AND i.retrieved_day >= ? AND length( i.body ) = ? AND substr( i.body, -3 ) = ? ORDER BY random() LIMIT ?",
+					[ self::SOURCE, $day, self::CUT_CHARS, self::CUT_TAIL, $limit ]
 				),
 				0
 			),
 			"{$this->name}: no intel-graph to read the issues cut short from; walking none: "
 		);
 		foreach ( $keys ?? [] as $key ) {
-			$this->ask( \substr( Core::as_string( $key ), \strlen( 'linear:' ) ), [] );
+			$this->ask( \substr( Core::as_string( $key ), \strlen( self::SOURCE . ':' ) ), [] );
 		}
 	}
 
@@ -176,7 +178,7 @@ class Context_A8C_Linear_Node extends Context_A8C_Source_Node {
 		if ( ! \is_string( $issue['description'] ?? null ) ) {
 			return $this->as_cut( $this->note() );
 		}
-		$item   = $this->normalize_item( 'linear', $identifier, $issue['title'] ?? '', $issue['url'] ?? '', $issue['description'], $issue['updated_at'] ?? '' );
+		$item   = $this->normalize_item( $identifier, $issue['title'] ?? '', $issue['url'] ?? '', $issue['description'], $issue['updated_at'] ?? '' );
 		$key    = Core::as_string( $item['item_key'] );
 		$stored = self::stored( $key, $this->name );
 		if ( null === $stored ) {

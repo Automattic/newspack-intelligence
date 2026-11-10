@@ -7,8 +7,10 @@
  * a pill and the source's initial take their paint from the shared status
  * badge, so this sheet gives them geometry alone; and the meta line spaces
  * its cells, with no mark between them.
- * Review's joined control, an entity chip then its glyphs, rounds its outer
- * corners and squares the joins whichever segment is the chip.
+ * Review heads a pair of themes on one line that wraps anywhere, and marks
+ * the entity's name in its evidence on the accent's wash. How an item was
+ * read opens a short step under its row, its steps a column ruled down
+ * their start edge.
  */
 
 /* global NEWSPACK_NODES_SRC */
@@ -61,6 +63,34 @@ const PAINT = [
 ];
 
 describe( 'the item row sheet', () => {
+	it( 'lays a removable pill out as its name and its ×, each a bare button inside the badge', () => {
+		expect( declared( `${ ROOT } ${ ROOT }__pill.is-removable` ) ).toEqual(
+			expect.objectContaining( { gap: '4px', cursor: 'default' } )
+		);
+		for ( const part of [ 'open', 'remove' ] ) {
+			const button = declared( `${ ROOT }__pill-${ part }` );
+			expect( button ).toEqual(
+				expect.objectContaining( {
+					padding: '0',
+					border: '0',
+					background: 'none',
+					color: 'inherit',
+					font: 'inherit',
+					cursor: 'pointer',
+				} )
+			);
+		}
+		expect( declared( `${ ROOT }__pill-open` ) ).toEqual(
+			expect.objectContaining( { 'min-width': '0' } )
+		);
+		expect( declared( `${ ROOT }__pill-remove` ) ).toEqual(
+			expect.objectContaining( {
+				display: 'inline-flex',
+				'flex-shrink': '0',
+			} )
+		);
+	} );
+
 	it( 'lets a pill shrink and cuts its name with an ellipsis, painting nothing', () => {
 		const pill = declared( `${ ROOT } ${ ROOT }__pill` );
 		expect( pill ).toEqual(
@@ -143,29 +173,62 @@ describe( 'the item row sheet', () => {
 	} );
 } );
 
-describe( 'the joined judgment control', () => {
-	const JOIN = `${ ROOT } ${ ROOT }__judgment > :is(.button.button-small, ${ ROOT }__pill)`;
-
-	it( 'squares every segment, the entity pill among them', () => {
-		expect( declared( JOIN ) ).toEqual(
-			expect.objectContaining( { 'border-radius': '0' } )
-		);
-	} );
-
-	it( 'rounds the outer corners of the first and last segments, a pill or a glyph', () => {
-		expect( declared( `${ JOIN }:first-child` ) ).toEqual( {
-			'border-start-start-radius': 'var(--button-radius, 5px)',
-			'border-end-start-radius': 'var(--button-radius, 5px)',
-		} );
-		expect( declared( `${ JOIN }:last-child` ) ).toEqual( {
-			'border-start-end-radius': 'var(--button-radius, 5px)',
-			'border-end-end-radius': 'var(--button-radius, 5px)',
+describe( 'Review', () => {
+	it( 'heads a pair of themes on one line of its own, wrapping anywhere', () => {
+		expect( declared( `${ ROOT }__pair` ) ).toEqual( {
+			margin: '0',
+			'overflow-wrap': 'anywhere',
 		} );
 	} );
 
-	it( 'overlaps a glyph onto the segment before it, the pill included', () => {
-		expect( declared( `${ JOIN } + .button.button-small` ) ).toEqual(
-			expect.objectContaining( { 'margin-inline-start': '-1px' } )
+	it( "marks the entity's name in its evidence on the accent's wash", () => {
+		expect( declared( `${ ROOT }__evidence mark` ) ).toEqual( {
+			background: 'var(--cyan-subtle, var(--np-primary-subtle))',
+			color: 'inherit',
+		} );
+	} );
+
+	it( 'pads the keys legend inside its popover, which sits outside the page root', () => {
+		expect( declared( `${ ROOT }__legend` ) ).toEqual( {
+			margin: '0',
+			padding: '8px',
+		} );
+	} );
+
+	it( 'joins no chip to glyphs, its answers being words', () => {
+		expect(
+			declared(
+				`${ ROOT } ${ ROOT }__judgment > :is(.button.button-small, ${ ROOT }__pill)`
+			)
+		).toEqual( {} );
+	} );
+} );
+
+describe( 'how an item was read', () => {
+	it( 'opens its drawer a short step under the row, its heading flush', () => {
+		expect( declared( `${ ROOT }__how-read` ) ).toEqual( {
+			'margin-top': '8px',
+		} );
+		expect( declared( `${ ROOT }__how-read h4` ) ).toEqual( {
+			margin: '0',
+		} );
+	} );
+
+	it( 'rules its steps down their start edge, each a column spaced by the list, not by WordPress', () => {
+		expect( declared( `${ ROOT }__steps` ) ).toEqual(
+			expect.objectContaining( {
+				display: 'flex',
+				'flex-direction': 'column',
+				'list-style': 'none',
+				'border-inline-start':
+					'1px solid var(--paper-shadow, var(--np-border-strong))',
+			} )
 		);
+		expect( declared( `${ ROOT }__steps > li` ) ).toEqual( {
+			display: 'flex',
+			'flex-direction': 'column',
+			margin: '0',
+			'overflow-wrap': 'anywhere',
+		} );
 	} );
 } );

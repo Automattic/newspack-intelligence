@@ -25,6 +25,8 @@ use Newspack_Nodes\Core;
 
 class Context_A8C_Slack_Node extends Context_A8C_Source_Node {
 
+	public const SOURCE = 'slack';
+
 	/** Messages a page asks for, the most `messages` answers. */
 	private const PAGE = 100;
 
@@ -63,7 +65,7 @@ class Context_A8C_Slack_Node extends Context_A8C_Source_Node {
 						]
 					);
 				}
-				return null === $fields ? null : $this->normalize_item( 'slack', ...$fields );
+				return null === $fields ? null : $this->normalize_item( ...$fields );
 			}
 		);
 	}

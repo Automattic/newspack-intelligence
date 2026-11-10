@@ -225,7 +225,10 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * its row with `ignore`, so its answer or failure, a whole-row `set`,
 	 * stands whichever lands first; its plan and its read each set an
 	 * `ask_steps` row of their own, keyed by the ask and the step's stage, so
-	 * neither touches the outcome and the steps read the same in any order. An exclusion sets its item's one
+	 * neither touches the outcome and the steps read the same in any order. A
+	 * link a person adds sets their confirmation, as `link_confirmed` does,
+	 * and its `added_links` row, the role the resolver writes it in, which
+	 * a later addition of the same link replaces. An exclusion sets its item's one
 	 * `excluded_items` row, its why '' when it names none, and an inclusion
 	 * deletes it. A save writes its saved copy and its placement, and a
 	 * folder created with an item writes the save's own specs, each reading
@@ -305,6 +308,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			'topic_tagged'        => [ [ 'set', 'entity_topics', [ 'entity_key', 'topic_key', 'actor' ] ] ],
 			'link_confirmed'      => $judgment( 'confirmed' ),
 			'link_rejected'       => $judgment( 'rejected' ),
+			'link_added'          => [ ...$judgment( 'confirmed' ), [ 'set', 'added_links', [ 'item_key', 'entity_key', 'role', 'actor', 'ts' ] ] ],
 			'item_excluded'       => [ [ 'set', 'excluded_items', [ 'item_key', 'tier', 'url', 'title', static fn ( array $e ): string => Core::as_string( $e['why'] ?? '' ), 'actor', 'ts' ] ] ],
 			'item_included'       => [ [ 'delete', 'excluded_items', [ 'item_key' => 'item_key' ] ] ],
 			'collection_created'  => [ [ 'set', 'collections', [ 'collection_key', 'name', 'actor', 'ts' ] ], ...\array_map( self::placed( ... ), $placement ) ],

@@ -7,17 +7,22 @@ import {
 	useState,
 } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
+import { Notice, Popover, VisuallyHidden } from '@wordpress/components';
 import { answerStatus } from '@newspack-nodes/shared/utils/answerStatus';
 import { formatLocalDateTime } from '@newspack-nodes/shared/utils/formatUtils';
+import { HeaderSlot } from '@newspack-nodes/shared/components/HeaderSlot';
+import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
 import {
 	HEALTH_READS,
 	useIntelRead,
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
 import { unrecordedText, useEndClient } from '../hooks/useEndClient';
+import { useWriteControl } from '../layout/PageContext';
 import EndClientDialog from './EndClientDialog';
 import Refusal from './Refusal';
 import { Unread } from './Answer';
+import Sheet from './Sheet';
 import Skeleton from './Skeleton';
 import UndoSnackbar from './UndoSnackbar';
 import { metaLine, pageFormat } from './format';
@@ -26,8 +31,13 @@ import { word, words } from './words';
 /** The Vault tab of the substrate's Nodes station, where a credential is added. */
 const VAULT_PAGE = 'admin.php?page=newspack-nodes-station&tab=vault';
 
-/** The rows list the toggle opens and closes. */
-const ROWS_ID = 'newspack-intelligence-health-rows';
+/**
+ * The failed share of a source's requests at which it reads as failing,
+ * though it still collects.
+ *
+ * @testonly Tests hold the threshold to its value; the strip reads it itself.
+ */
+export const FAILING_SHARE = 0.1;
 
 /** How long the projector may stay behind the ontology before it is a fault. */
 const BEHIND_FAULT_S = 300;
@@ -35,10 +45,7 @@ const BEHIND_FAULT_S = 300;
 /** The prefix of a source row's key, which its name follows. */
 const SOURCE_ROW = 'source:';
 
-/** Names the health strip's pair of role writes ending a client. */
-const END_CLIENT = 'health:former-client';
-
-/** @typedef {{key: string, label: string, state: string, tone: string, fault: boolean, unknown: boolean, idle: boolean, text: import('react').ReactNode, fix: ?import('react').ReactNode}} HealthRow */
+/** @typedef {{key: string, label: string, table: string, answer: Object, state: string, tone: string, fault: boolean, unknown: boolean, idle: boolean, text: import('react').ReactNode, fix: ?import('react').ReactNode}} HealthRow */
 
 /** @typedef {{word: string, tone: string, fault?: boolean, unknown?: boolean, text: Function, fix?: Function}} HealthState */
 
@@ -127,15 +134,13 @@ function SendFix( { choices, verb, ci, refresh, texts } ) {
 	return (
 		<>
 			{ choices.map( ( choice ) => (
-				<button
+				<FixButton
 					key={ choice.label }
-					type="button"
-					className="button button-small"
 					disabled={ write.pending }
 					onClick={ () => write.run( choice.args ) }
 				>
 					{ choice.label }
-				</button>
+				</FixButton>
 			) ) }
 			{ status.text && (
 				<span
@@ -146,6 +151,28 @@ function SendFix( { choices, verb, ci, refresh, texts } ) {
 				</span>
 			) }
 		</>
+	);
+}
+
+/**
+ * A fix's button, inert while its layout is edited.
+ *
+ * @param {Object}                    props
+ * @param {() => void}                props.onClick    The write.
+ * @param {boolean}                   [props.disabled] Whether a send is owed.
+ * @param {import('react').ReactNode} props.children   Its words.
+ * @return {import('react').ReactElement} The button.
+ */
+function FixButton( { onClick, disabled, children } ) {
+	return (
+		<button
+			type="button"
+			className="button button-small"
+			disabled={ disabled }
+			{ ...useWriteControl( onClick ) }
+		>
+			{ children }
+		</button>
 	);
 }
 
@@ -196,16 +223,10 @@ function FormerClientFix( { client, endClient } ) {
 	const refused = client.entity_key === endClient.asked && endClient.refused;
 	return (
 		<>
-			<button
-				type="button"
-				className="button button-small"
-				aria-disabled={ null !== endClient.owed }
-				onClick={ ( event ) =>
-					endClient.ask( client, event.currentTarget )
-				}
-			>
-				{ __( 'Mark former client', 'newspack-intelligence' ) }
-			</button>
+			<MarkFormerClient
+				owed={ null !== endClient.owed }
+				onAsk={ ( button ) => endClient.ask( client, button ) }
+			/>
 			{ refused && (
 				<span className="newspack-nodes-status is-error" role="status">
 					{ refused }
@@ -214,6 +235,135 @@ function FormerClientFix( { client, endClient } ) {
 		</>
 	);
 }
+
+/**
+ * The button asking to mark a client a former one, held while a pair is
+ * owed and inert while its layout is edited.
+ *
+ * @param {Object}                        props
+ * @param {boolean}                       props.owed  Whether a pair is owed its replies.
+ * @param {(button: HTMLElement) => void} props.onAsk Asks, given the button pressed.
+ * @return {import('react').ReactElement} The button.
+ */
+function MarkFormerClient( { owed, onAsk } ) {
+	const button = useRef( null );
+	return (
+		<button
+			ref={ button }
+			type="button"
+			className="button button-small"
+			aria-disabled={ owed }
+			{ ...useWriteControl( () => onAsk( button.current ) ) }
+		>
+			{ __( 'Mark former client', 'newspack-intelligence' ) }
+		</button>
+	);
+}
+
+/**
+ * How long ago an instant was, in the largest whole unit: "just now",
+ * "2 min ago", "3 h ago" or "4 d ago".
+ *
+ * @param {number} ts Seconds since the epoch.
+ * @return {string} The words.
+ */
+function agoText( ts ) {
+	const seconds = Math.max( 0, Math.floor( Date.now() / 1000 ) - ts );
+	if ( seconds < 60 ) {
+		return __( 'just now', 'newspack-intelligence' );
+	}
+	if ( seconds < 3600 ) {
+		const minutes = Math.floor( seconds / 60 );
+		return sprintf(
+			/* translators: %d: minutes ago. */
+			_n( '%d min ago', '%d min ago', minutes, 'newspack-intelligence' ),
+			minutes
+		);
+	}
+	if ( seconds < 86400 ) {
+		const hours = Math.floor( seconds / 3600 );
+		return sprintf(
+			/* translators: %d: hours ago. */
+			_n( '%d h ago', '%d h ago', hours, 'newspack-intelligence' ),
+			hours
+		);
+	}
+	const days = Math.floor( seconds / 86400 );
+	return sprintf(
+		/* translators: %d: days ago. */
+		_n( '%d d ago', '%d d ago', days, 'newspack-intelligence' ),
+		days
+	);
+}
+
+/**
+ * An instant as how long ago it was, its absolute time in the `title` and
+ * in the words a screen reader reads after it.
+ *
+ * @param {Object} props
+ * @param {number} props.ts Seconds since the epoch.
+ * @return {import('react').ReactElement} The time.
+ */
+function Ago( { ts } ) {
+	const absolute = formatLocalDateTime( ts );
+	return (
+		<>
+			<time
+				dateTime={ new Date( ts * 1000 ).toISOString() }
+				title={ absolute }
+			>
+				{ agoText( ts ) }
+			</time>
+			<VisuallyHidden>{ ` (${ absolute })` }</VisuallyHidden>
+		</>
+	);
+}
+
+/**
+ * A source's last answer and the share of its requests that failed, the
+ * count muted while the share stays under `FAILING_SHARE`.
+ *
+ * @param {{last_ok_at?: ?number, failed?: number, requests?: number}} source The source's row.
+ * @return {import('react').ReactNode} The cause.
+ */
+function answeredText( { last_ok_at: lastOk, failed, requests } ) {
+	const count =
+		failed > 0 ? (
+			<span
+				className={
+					failingShare( { failed, requests } )
+						? undefined
+						: 'newspack-nodes-status is-muted'
+				}
+			>
+				{ sprintf(
+					/* translators: 1: requests that failed, 2: requests the pass sent. */
+					__( '%1$d of %2$d failed', 'newspack-intelligence' ),
+					failed,
+					requests
+				) }
+			</span>
+		) : null;
+	if ( ! lastOk ) {
+		return count;
+	}
+	return (
+		<>
+			<Ago ts={ lastOk } />
+			{ count && ' · ' }
+			{ count }
+		</>
+	);
+}
+
+/**
+ * Whether a source's failed share of its requests reaches `FAILING_SHARE`.
+ *
+ * @param {{failed?: number, requests?: number}} source The source's row.
+ * @return {boolean} Whether it does.
+ */
+const failingShare = ( { failed, requests } ) =>
+	requests > 0 && failed / requests >= FAILING_SHARE;
 
 /**
  * A failing row's cause: its error, when the reader may read it, and since
@@ -407,7 +557,7 @@ function idleText( { credential, reason } ) {
 
 /** A row whose health is not known, the base of every unknown state. */
 const UNKNOWN = {
-	word: __( 'unknown', 'newspack-intelligence' ),
+	word: __( 'Unknown', 'newspack-intelligence' ),
 	tone: 'is-neutral',
 	unknown: true,
 };
@@ -426,9 +576,9 @@ const RUNNING = {
 const STATES = {
 	collection: {
 		live: RUNNING,
-		idle: { ...RUNNING, word: __( 'idle', 'newspack-intelligence' ) },
+		idle: { ...RUNNING, word: __( 'Idle', 'newspack-intelligence' ) },
 		inactive: {
-			word: __( 'inactive', 'newspack-intelligence' ),
+			word: __( 'Off', 'newspack-intelligence' ),
 			tone: 'is-neutral',
 			text: ( { topologies } ) =>
 				topologies.length
@@ -463,7 +613,7 @@ const STATES = {
 				),
 		},
 		unconfigured: {
-			word: __( 'no lists file', 'newspack-intelligence' ),
+			word: __( 'No lists file', 'newspack-intelligence' ),
 			tone: 'is-error',
 			fault: true,
 			text: ( { file } ) =>
@@ -482,7 +632,7 @@ const STATES = {
 					  ),
 		},
 		stale: {
-			word: __( 'stale', 'newspack-intelligence' ),
+			word: __( 'Stale', 'newspack-intelligence' ),
 			tone: 'is-error',
 			fault: true,
 			text: () =>
@@ -510,7 +660,7 @@ const STATES = {
 			),
 		},
 		down: {
-			word: __( 'down', 'newspack-intelligence' ),
+			word: __( 'Down', 'newspack-intelligence' ),
 			tone: 'is-error',
 			fault: true,
 			text: () =>
@@ -520,7 +670,7 @@ const STATES = {
 				),
 		},
 		held: {
-			word: __( 'held', 'newspack-intelligence' ),
+			word: __( 'Held', 'newspack-intelligence' ),
 			tone: 'is-warning',
 			fault: true,
 			text: () =>
@@ -531,38 +681,14 @@ const STATES = {
 		},
 	},
 	source: {
-		ok: {
-			word: __( 'Healthy', 'newspack-intelligence' ),
-			tone: 'is-success',
-			text: ( source ) =>
-				metaLine(
-					source.last_ok_at
-						? sprintf(
-								/* translators: %s: a time in the reader's zone. */
-								__(
-									'Last answered %s',
-									'newspack-intelligence'
-								),
-								formatLocalDateTime( source.last_ok_at )
-						  )
-						: null,
-					source.failed
-						? sprintf(
-								/* translators: 1: requests that failed, 2: requests the pass sent. */
-								_n(
-									'%1$d of %2$d request failed',
-									'%1$d of %2$d requests failed',
-									source.requests,
-									'newspack-intelligence'
-								),
-								source.failed,
-								source.requests
-						  )
-						: null
-				),
+		ok: { ...RUNNING, text: answeredText },
+		partial: {
+			word: __( 'Failing', 'newspack-intelligence' ),
+			tone: 'is-warning',
+			text: answeredText,
 		},
 		failing: {
-			word: __( 'failing', 'newspack-intelligence' ),
+			word: __( 'Failing', 'newspack-intelligence' ),
 			tone: 'is-error',
 			fault: true,
 			text: failingText,
@@ -588,7 +714,7 @@ const STATES = {
 				),
 		},
 		idle: {
-			word: __( 'idle', 'newspack-intelligence' ),
+			word: __( 'Stopped', 'newspack-intelligence' ),
 			tone: 'is-warning',
 			fault: true,
 			text: idleText,
@@ -615,7 +741,7 @@ const STATES = {
 	},
 	dead: {
 		dead: {
-			word: __( 'dead', 'newspack-intelligence' ),
+			word: __( 'Not answering', 'newspack-intelligence' ),
 			tone: 'is-error',
 			fault: true,
 			text: ( { name, domain, since } ) =>
@@ -642,7 +768,7 @@ const STATES = {
 			idle: ( { held } ) => 0 === held,
 		},
 		no_live_entity: {
-			word: __( 'held', 'newspack-intelligence' ),
+			word: __( 'Held', 'newspack-intelligence' ),
 			tone: 'is-warning',
 			fault: true,
 			text: stoppedText,
@@ -664,13 +790,13 @@ const STATES = {
 			),
 		},
 		behind_ontology: {
-			word: __( 'catching up', 'newspack-intelligence' ),
+			word: __( 'Catching up', 'newspack-intelligence' ),
 			tone: 'is-neutral',
 			text: () =>
 				__( 'Catching up on the ontology.', 'newspack-intelligence' ),
 		},
 		behind_long: {
-			word: __( 'behind', 'newspack-intelligence' ),
+			word: __( 'Behind', 'newspack-intelligence' ),
 			tone: 'is-warning',
 			fault: true,
 			text: ( { since } ) =>
@@ -686,7 +812,7 @@ const STATES = {
 	},
 	dropped: {
 		dropped: {
-			word: __( 'dropped', 'newspack-intelligence' ),
+			word: __( 'Skipped', 'newspack-intelligence' ),
 			tone: 'is-warning',
 			fault: true,
 			text: ( { first_day: first, last_day: last } ) =>
@@ -720,14 +846,14 @@ const STATES = {
 	},
 	calls: {
 		busy: {
-			word: __( 'busy', 'newspack-intelligence' ),
+			word: __( 'Busy', 'newspack-intelligence' ),
 			tone: 'is-neutral',
 			text: queueText,
 		},
 	},
 	extraction: {
 		call: {
-			word: __( 'model', 'newspack-intelligence' ),
+			word: __( 'Running', 'newspack-intelligence' ),
 			tone: 'is-success',
 			text: ( { last_ok_at: lastOk } ) =>
 				lastOk
@@ -742,7 +868,7 @@ const STATES = {
 					: __( 'By the model.', 'newspack-intelligence' ),
 		},
 		failing: {
-			word: __( 'failing', 'newspack-intelligence' ),
+			word: __( 'Failing', 'newspack-intelligence' ),
 			tone: 'is-error',
 			fault: true,
 			text: failingText,
@@ -757,7 +883,7 @@ const STATES = {
 			),
 		},
 		heuristic: {
-			word: __( 'heuristic', 'newspack-intelligence' ),
+			word: __( 'Heuristic only', 'newspack-intelligence' ),
 			tone: 'is-warning',
 			fault: true,
 			text: ( { vault_group: vaultGroup, unset } ) => {
@@ -862,6 +988,8 @@ function healthRow( key, label, table, state, answer, ctx ) {
 	return {
 		key,
 		label,
+		table,
+		answer,
 		state: meant.word,
 		tone: meant.tone,
 		fault: true === meant.fault,
@@ -894,6 +1022,16 @@ function healthRow( key, label, table, state, answer, ctx ) {
  */
 const extractionState = ( { mode, failing_since: since } ) =>
 	'call' === mode && since ? 'failing' : mode;
+
+/**
+ * A source's state: its own, or `partial` while it answers with a failed
+ * share at `FAILING_SHARE` or above.
+ *
+ * @param {{state: string, failed?: number, requests?: number}} source The source's row.
+ * @return {string} The state.
+ */
+const sourceState = ( source ) =>
+	'ok' === source.state && failingShare( source ) ? 'partial' : source.state;
 
 /**
  * The backlog's state: its reason, or `behind_long` once the projector has
@@ -983,7 +1121,7 @@ function rowSpecs( { collection, backlog, extraction, sources } ) {
 				`${ SOURCE_ROW }${ one.name }`,
 				words( 'sourceWords' )[ one.name ] ?? one.name,
 				'source',
-				one.state,
+				sourceState( one ),
 				one
 			)
 		),
@@ -1134,38 +1272,42 @@ function healthLine( { faults, rows, reads, collection, sources } ) {
 }
 
 /**
- * The pair of role writes ending a client, mounted for a curator alone, so
+ * The pair of role writes ending a client, mounted for an operator alone, so
  * any other reader mounts no write; it hands `useEndClient()` over the
  * sources slice to `children`, its `ask( client, button )` also taking the
  * button pressed, and doing nothing while a pair is owed its replies, and
  * shows the End client dialog it asks, the client's dead feed its evidence,
  * and the snackbar saying a client it ended is now a former one.
  * Once the dialog confirms and the client's rows leave, focus moves to the
- * row now in the pressed row's place, else the last row, else the strip,
- * as the review queues move it.
+ * row now in the pressed row's place, else the last row, else the panel,
+ * as the review queues move it, while the panel is open.
  *
  * @param {Object}                                              props
+ * @param {string}                                              props.scope    Names the pair's nodes.
  * @param {Object}                                              props.sources  The sources slice's read.
- * @param {{current: ?HTMLElement}}                             props.strip    The strip's section.
- * @param {(endClient: Object) => import('react').ReactElement} props.children Renders the strip.
- * @return {import('react').ReactElement} The strip.
+ * @param {{current: ?HTMLElement}}                             props.panel    The details panel, while it is open.
+ * @param {(endClient: Object) => import('react').ReactElement} props.children Renders the health.
+ * @return {import('react').ReactElement} The health.
  */
-function EndingClients( { sources, strip, children } ) {
-	const endClient = useEndClient( END_CLIENT, sources, 'dead_clients' );
+function EndingClients( { scope, sources, panel, children } ) {
+	const endClient = useEndClient(
+		`${ scope }:former-client`,
+		sources,
+		'dead_clients'
+	);
 	const asked = useRef( null );
 	const pressed = useRef( null );
 	useLayoutEffect( () => {
 		if ( null === pressed.current ) {
 			return;
 		}
-		const list = strip.current.querySelector( 'ul' );
-		const left = list.hidden ? [] : list.querySelectorAll( 'li' );
-		(
-			left[ pressed.current ] ??
-			left[ left.length - 1 ] ??
-			strip.current
-		).focus();
+		const at = pressed.current;
 		pressed.current = null;
+		if ( ! panel.current ) {
+			return;
+		}
+		const left = panel.current.querySelectorAll( 'li' );
+		( left[ at ] ?? left[ left.length - 1 ] ?? panel.current ).focus();
 	} );
 	// A dead feed's fix asks about the feed's whole row.
 	const asking =
@@ -1180,9 +1322,11 @@ function EndingClients( { sources, strip, children } ) {
 					if ( null !== endClient.owed ) {
 						return;
 					}
-					asked.current = [
-						...strip.current.querySelectorAll( 'li' ),
-					].indexOf( button.closest( 'li' ) );
+					asked.current = panel.current
+						? [ ...panel.current.querySelectorAll( 'li' ) ].indexOf(
+								button.closest( 'li' )
+						  )
+						: -1;
 					endClient.ask( client );
 				},
 			} ) }
@@ -1215,71 +1359,81 @@ function EndingClients( { sources, strip, children } ) {
 }
 
 /**
- * The health strip above the Intelligence page's tabs: one line while
- * nothing is wrong, open on a fault with the faults first and its line
- * naming the worst. Each of the four `health` slices is read on mount,
- * again once any fix lands, and on Refresh; nothing polls. A fix shows for
- * a reader holding its role, as a button whose answer shows beside it, and
- * as its text step for anyone else; the server's role gate decides. Each
- * dead client feed offers a curator to mark its client a former client.
- * Collection off is neutral: it neither opens nor colours the strip, and
- * while it is off the other rows do not either; nor does a projector catching
- * up on the ontology for under BEHIND_FAULT_S.
+ * Collection's health, read from the four `health` slices on mount, again
+ * once any fix lands, and on Refresh; nothing polls. An operator's reads run
+ * through `EndingClients`, so a client it ends leaves at once; every other
+ * reader mounts no write. `children` renders what is read.
  *
- * @param {Object}  props
- * @param {boolean} props.canTune   Whether the reader may seed the ontology and end a client.
- * @param {boolean} props.canManage Whether the reader may run the operator fixes.
- * @return {import('react').ReactElement} The strip.
+ * @param {Object}                                        props
+ * @param {string}                                        props.scope    Names the reads, so the strip and a block never share a Fetcher.
+ * @param {boolean}                                       props.operator Whether the reader may run the fixes.
+ * @param {(health: Health) => import('react').ReactNode} props.children Renders it.
+ * @return {import('react').ReactElement} The health.
  */
-export default function HealthStrip( { canTune, canManage } ) {
-	const collection = useIntelRead( 'health:collection', 'health', [
+function HealthReads( { scope, operator, children } ) {
+	const collection = useIntelRead( `${ scope }:collection`, 'health', [
 		'collection',
 	] );
-	const sources = useIntelRead( 'health:sources', 'health', [ 'sources' ] );
-	const backlog = useIntelRead( 'health:backlog', 'health', [ 'backlog' ] );
-	const extraction = useIntelRead( 'health:extraction', 'health', [
+	const sources = useIntelRead( `${ scope }:sources`, 'health', [
+		'sources',
+	] );
+	const backlog = useIntelRead( `${ scope }:backlog`, 'health', [
+		'backlog',
+	] );
+	const extraction = useIntelRead( `${ scope }:extraction`, 'health', [
 		'extraction',
 	] );
 	const reads = { collection, sources, backlog, extraction };
-	const refresh = () =>
-		Object.values( reads ).forEach( ( read ) => read.refresh() );
-	const section = useRef( null );
-	const strip = ( endClient ) => (
-		<Strip
+	const panel = useRef( null );
+	const read = ( endClient ) => (
+		<HealthRows
 			reads={ reads }
-			refresh={ refresh }
-			roles={ { canTune, canManage } }
-			section={ section }
+			operator={ operator }
+			panel={ panel }
 			endClient={ endClient }
-		/>
+		>
+			{ children }
+		</HealthRows>
 	);
-
-	return canTune ? (
-		<EndingClients sources={ sources } strip={ section }>
-			{ strip }
+	return operator ? (
+		<EndingClients scope={ scope } sources={ sources } panel={ panel }>
+			{ read }
 		</EndingClients>
 	) : (
-		strip( null )
+		read( null )
 	);
 }
 
 /**
- * The strip itself, over the four reads, the sources slice read through
- * `endClient` for a curator. Once a fix lands its row stays a fault and shows
- * the fix's answer where the fix was, for as long as a read still answers the
- * state it fixed, since the strip reads again only on a landed fix or on
- * Refresh; a read answering another state, or Refresh, ends the hold. A
- * reader's open or close holds until the set of faults changes.
+ * What a render of the health reads.
  *
- * @param {Object}                                 props
- * @param {Object<string, Object>}                 props.reads     The four reads, by slice.
- * @param {() => void}                             props.refresh   Re-reads every slice.
- * @param {{canTune: boolean, canManage: boolean}} props.roles     The reader's roles.
- * @param {{current: ?HTMLElement}}                props.section   The strip's section.
- * @param {?Object}                                props.endClient `useEndClient()`, null for a reader without tune.
- * @return {import('react').ReactElement} The strip.
+ * @typedef {Object} Health
+ * @property {Object<string, Object>}  reads     The four reads, by slice.
+ * @property {?Object}                 listed    The sources slice, less any client being ended.
+ * @property {Array<HealthRow>}        rows      Every row.
+ * @property {Array<HealthRow>}        faults    The fault rows, worst first.
+ * @property {() => void}              refresh   Re-reads every slice and lets every fix's hold go.
+ * @property {boolean}                 operator  Whether the reader may run the fixes.
+ * @property {{current: ?HTMLElement}} panel     The details panel, while it is open.
+ * @property {?Object}                 endClient `useEndClient()`, null for a reader.
  */
-function Strip( { reads, refresh, roles, section, endClient } ) {
+
+/**
+ * The rows the four reads hold, the sources slice read through `endClient`
+ * for an operator. Once a fix lands its row stays a fault and shows the
+ * fix's answer where the fix was, for as long as a read still answers the
+ * state it fixed, since the strip reads again only on a landed fix or on
+ * Refresh; a read answering another state, or Refresh, ends the hold.
+ *
+ * @param {Object}                                        props
+ * @param {Object<string, Object>}                        props.reads     The four reads, by slice.
+ * @param {boolean}                                       props.operator  Whether the reader may run the fixes.
+ * @param {{current: ?HTMLElement}}                       props.panel     The details panel.
+ * @param {?Object}                                       props.endClient `useEndClient()`, null for a reader.
+ * @param {(health: Health) => import('react').ReactNode} props.children  Renders them.
+ * @return {import('react').ReactNode} The health.
+ */
+function HealthRows( { reads, operator, panel, endClient, children } ) {
 	const { collection, sources, backlog, extraction } = reads;
 	const listed = endClient ? endClient.read.answer : sources.answer;
 	const answers = useMemo(
@@ -1310,24 +1464,54 @@ function Strip( { reads, refresh, roles, section, endClient } ) {
 		} );
 	}, [ answers ] );
 
-	// The reader's choice, beside the faults it was made against.
-	const [ choice, setChoice ] = useState( null );
-	const rows = healthRows( answers, { ...roles, fixed, landed, endClient } );
-	const faults = rows.filter( ( row ) => row.fault );
-	const ordered = [ ...faults, ...rows.filter( ( row ) => ! row.fault ) ];
-	const signature = faults.map( ( row ) => row.key ).join( '|' );
-	const open =
-		choice?.signature === signature ? choice.open : 0 < faults.length;
-	const all = Object.values( reads );
+	const rows = healthRows( answers, {
+		canTune: operator,
+		canManage: operator,
+		fixed,
+		landed,
+		endClient,
+	} );
+	return children( {
+		reads,
+		listed,
+		rows,
+		faults: rows.filter( ( row ) => row.fault ),
+		refresh: () => {
+			setFixed( new Map() );
+			Object.values( reads ).forEach( ( read ) => read.refresh() );
+		},
+		operator,
+		panel,
+		endClient,
+	} );
+}
 
+/**
+ * The details panel: its line, every row with the faults first, each fix
+ * for an operator and its text step for anyone else, and Refresh. With
+ * `detail` "summary" it leaves each source's row out.
+ *
+ * @param {Object}                props
+ * @param {Health}                props.health What is read.
+ * @param {('summary'|'sources')} props.detail Whether it lists each source.
+ * @return {import('react').ReactElement} The panel.
+ */
+function HealthPanel( { health, detail } ) {
+	const { reads, listed, rows, faults, refresh, panel, endClient } = health;
+	const shown = rows.filter(
+		( row ) => 'sources' === detail || ! row.key.startsWith( SOURCE_ROW )
+	);
+	const ordered = [
+		...shown.filter( ( row ) => row.fault ),
+		...shown.filter( ( row ) => ! row.fault ),
+	];
+	const all = Object.values( reads );
 	return (
 		<section
-			ref={ section }
+			ref={ panel }
 			tabIndex={ -1 }
-			className={ `newspack-nodes-banner newspack-intelligence__health${
-				faults.length ? ' is-warning' : ''
-			}` }
-			aria-label={ __( 'Pipeline health', 'newspack-intelligence' ) }
+			className="newspack-intelligence__health"
+			aria-label={ __( 'Collection', 'newspack-intelligence' ) }
 		>
 			<div className="newspack-intelligence__health-line">
 				<span role="status">
@@ -1335,28 +1519,14 @@ function Strip( { reads, refresh, roles, section, endClient } ) {
 						faults,
 						rows,
 						reads: all,
-						collection: collection.answer,
+						collection: reads.collection.answer,
 						sources: listed,
 					} ) }
 				</span>
 				<button
 					type="button"
 					className="button button-small"
-					aria-expanded={ open }
-					aria-controls={ ROWS_ID }
-					onClick={ () => setChoice( { signature, open: ! open } ) }
-				>
-					{ open
-						? __( 'Hide details', 'newspack-intelligence' )
-						: __( 'Show details', 'newspack-intelligence' ) }
-				</button>
-				<button
-					type="button"
-					className="button button-small"
-					onClick={ () => {
-						setFixed( new Map() );
-						refresh();
-					} }
+					onClick={ refresh }
 				>
 					{ __( 'Refresh', 'newspack-intelligence' ) }
 				</button>
@@ -1374,11 +1544,7 @@ function Strip( { reads, refresh, roles, section, endClient } ) {
 					unrecordedText( endClient.unrecorded )
 				}
 			/>
-			<ul
-				id={ ROWS_ID }
-				className="newspack-intelligence__health-rows"
-				hidden={ ! open }
-			>
+			<ul className="newspack-intelligence__health-rows">
 				{ ordered.map( ( row ) => (
 					<li
 						key={ row.key }
@@ -1408,4 +1574,283 @@ function Strip( { reads, refresh, roles, section, endClient } ) {
 			</ul>
 		</section>
 	);
+}
+
+/**
+ * The health a `health` block draws inline, its panel at `detail`, its fixes
+ * for an operator alone.
+ *
+ * @param {Object}                props
+ * @param {boolean}               props.operator Whether the reader may run the fixes.
+ * @param {('summary'|'sources')} props.detail   Whether it lists each source.
+ * @return {import('react').ReactElement} The panel.
+ */
+export function HealthBlock( { operator, detail } ) {
+	return (
+		<HealthReads scope="health-block" operator={ operator }>
+			{ ( health ) => (
+				<HealthPanel health={ health } detail={ detail } />
+			) }
+		</HealthReads>
+	);
+}
+
+/**
+ * Collection's status as the page's header shows it to every reader, and
+ * the fault it shows under the tab bar on every screen. An operator's header
+ * offers **Details**, the panel in a popover, or a bottom sheet when the page
+ * is narrow, and the fault notice names the worst fault with its fix; any
+ * other reader reads a fault as one sentence with no controls. Collection
+ * off is neutral, and while it is off no other row is a fault; nor is a
+ * projector catching up on the ontology for under BEHIND_FAULT_S.
+ *
+ * @param {Object}   props
+ * @param {boolean}  props.canManage Whether the reader may run the operator fixes.
+ * @param {?Element} props.slot      The header's controls slot, as `HeaderSlot` takes it.
+ * @return {import('react').ReactElement} The status and the notice.
+ */
+export default function HealthStrip( { canManage, slot } ) {
+	return (
+		<HealthReads scope="health" operator={ canManage }>
+			{ ( health ) => (
+				<>
+					<HeaderSlot slot={ slot }>
+						<HeaderStatus health={ health } />
+					</HeaderSlot>
+					<FaultNotice health={ health } />
+				</>
+			) }
+		</HealthReads>
+	);
+}
+
+/**
+ * The header's phrase, its tone a dot before it, and for an operator
+ * **Details**, which opens the panel, and **Refresh** when a read failed.
+ * Under 600 px a healthy phrase is its time alone.
+ *
+ * @param {Object} props
+ * @param {Health} props.health What is read.
+ * @return {import('react').ReactElement} The status.
+ */
+function HeaderStatus( { health } ) {
+	const narrow = useNarrow();
+	const [ anchor, setAnchor ] = useState( null );
+	const [ open, setOpen ] = useState( false );
+	const { reads, faults, operator, refresh } = health;
+	const failed = reads.collection.error || reads.sources.error;
+	const { text, tone } = headerPhrase( health, narrow );
+	const close = () => setOpen( false );
+	return (
+		<div className="newspack-intelligence__status">
+			<span
+				className={ `newspack-nodes-status-indicator ${
+					faults.length ? 'is-warning' : tone
+				}` }
+				aria-hidden="true"
+			/>
+			<span className="newspack-intelligence__collecting">{ text }</span>
+			{ operator && failed && (
+				<button
+					type="button"
+					className="button button-small"
+					onClick={ refresh }
+				>
+					{ __( 'Refresh', 'newspack-intelligence' ) }
+				</button>
+			) }
+			{ operator && (
+				<button
+					ref={ setAnchor }
+					type="button"
+					className="button button-small"
+					aria-expanded={ open }
+					onClick={ () => setOpen( ! open ) }
+				>
+					{ __( 'Details', 'newspack-intelligence' ) }
+				</button>
+			) }
+			{ open && narrow && (
+				<Sheet
+					title={ __( 'Collection', 'newspack-intelligence' ) }
+					closeLabel={ __( 'Close', 'newspack-intelligence' ) }
+					onClose={ close }
+				>
+					<HealthPanel health={ health } detail="sources" />
+				</Sheet>
+			) }
+			{ open && ! narrow && anchor && (
+				<Popover
+					anchor={ anchor }
+					placement="bottom-end"
+					className="newspack-intelligence__health-popover"
+					onClose={ () => ! health.endClient?.asking && close() }
+				>
+					<HealthPanel health={ health } detail="sources" />
+				</Popover>
+			) }
+		</div>
+	);
+}
+
+/**
+ * The header's words and tone: checking while the collection or the
+ * sources slice is owed, that it could not be read, that collection is off,
+ * the items waiting to match, else collecting and when a source last
+ * answered; under 600 px that time alone.
+ *
+ * @param {Health}  health What is read.
+ * @param {boolean} narrow Whether the page is narrow.
+ * @return {{text: import('react').ReactNode, tone: string}} The phrase.
+ */
+function headerPhrase( { reads, listed }, narrow ) {
+	const { collection, backlog } = reads;
+	if ( collection.error || reads.sources.error ) {
+		return {
+			text: __(
+				'Collection status could not be read.',
+				'newspack-intelligence'
+			),
+			tone: 'is-warning',
+		};
+	}
+	if ( ! collection.answer || ! listed ) {
+		return {
+			text: __( 'Checking collection…', 'newspack-intelligence' ),
+			tone: 'is-neutral',
+		};
+	}
+	if ( 'inactive' === collection.answer.state ) {
+		return {
+			text: __( 'Collection is off.', 'newspack-intelligence' ),
+			tone: 'is-neutral',
+		};
+	}
+	const held = backlog.answer?.held;
+	if ( '' === backlog.answer?.reason && held > 0 ) {
+		return {
+			text: sprintf(
+				/* translators: %d: items waiting to be matched. */
+				_n(
+					'Collecting; %d item waiting',
+					'Collecting; %d items waiting',
+					held,
+					'newspack-intelligence'
+				),
+				held
+			),
+			tone: 'is-success',
+		};
+	}
+	const latest = Math.max(
+		0,
+		...listed.sources.map( ( one ) => one.last_ok_at ?? 0 )
+	);
+	if ( ! latest ) {
+		return {
+			text: word( 'healthWords', 'collection' ),
+			tone: 'is-success',
+		};
+	}
+	if ( narrow ) {
+		return { text: <Ago ts={ latest } />, tone: 'is-success' };
+	}
+	return {
+		text: createInterpolateElement(
+			__( 'Collecting, updated <ago />', 'newspack-intelligence' ),
+			{ ago: <Ago ts={ latest } /> }
+		),
+		tone: 'is-success',
+	};
+}
+
+/**
+ * The worst fault, pinned under the tab bar: for an operator its row's
+ * label, state, cause and fix; for any other reader, when a collection or a
+ * source row is at fault, one sentence saying when sources stopped updating.
+ *
+ * @param {Object} props
+ * @param {Health} props.health What is read.
+ * @return {?import('react').ReactElement} The notice.
+ */
+function FaultNotice( { health } ) {
+	const { faults, operator, listed } = health;
+	if ( operator ) {
+		const worst = faults[ 0 ];
+		return worst ? (
+			<Notice
+				status={ 'is-error' === worst.tone ? 'error' : 'warning' }
+				isDismissible={ false }
+				className="newspack-intelligence__fault"
+			>
+				<p>
+					<strong>
+						{ worst.label }: { worst.state }
+					</strong>{ ' ' }
+					{ worst.text }
+				</p>
+				{ worst.fix }
+			</Notice>
+		) : null;
+	}
+	const stopped = faults.filter( ( row ) =>
+		[ 'collection', 'source' ].includes( row.table )
+	);
+	if ( ! stopped.length ) {
+		return null;
+	}
+	const at = stoppedAt( stopped, listed?.sources ?? [] );
+	return (
+		<Notice
+			status="warning"
+			isDismissible={ false }
+			className="newspack-intelligence__fault"
+		>
+			<p title={ at ? formatLocalDateTime( at ) : undefined }>
+				{ at
+					? sprintf(
+							/* translators: %s: a time of day in the reader's zone. */
+							__(
+								'Some sources stopped updating at %s, so recent items may be missing.',
+								'newspack-intelligence'
+							),
+							pageFormat(
+								Intl.DateTimeFormat,
+								/** @type {Intl.DateTimeFormatOptions} */ ( {
+									hour: '2-digit',
+									minute: '2-digit',
+									hourCycle: 'h23',
+								} )
+							).format( new Date( at * 1000 ) )
+					  )
+					: __(
+							'Some sources stopped updating, so recent items may be missing.',
+							'newspack-intelligence'
+					  ) }
+			</p>
+		</Notice>
+	);
+}
+
+/**
+ * When the faulted sources stopped updating: the earliest last answer among
+ * them, a collection fault counting the newest any source gave; 0 while
+ * every time is unknown.
+ *
+ * @param {Array<HealthRow>} stopped The collection and source faults.
+ * @param {Array<Object>}    sources Every source's row.
+ * @return {number} Seconds since the epoch, or 0.
+ */
+function stoppedAt( stopped, sources ) {
+	const times = stopped
+		.map( ( row ) =>
+			'source' === row.table
+				? row.answer.last_ok_at ?? 0
+				: Math.max(
+						0,
+						...sources.map( ( one ) => one.last_ok_at ?? 0 )
+				  )
+		)
+		.filter( Boolean );
+	return times.length ? Math.min( ...times ) : 0;
 }

@@ -1,0 +1,110 @@
+/* eslint-env jest */
+/**
+ * A page's layout is edited on the page it lays out, opened by a link
+ * naming the page, and for a team view or a profile the subject it was
+ * opened from; anything else names no edit.
+ */
+
+import {
+	composedPage,
+	editSearch,
+	editTarget,
+	layoutContext,
+	leaveEdit,
+} from '../editMode';
+
+afterEach( () => {
+	window.history.replaceState( {}, '', '/' );
+} );
+
+describe( 'editTarget', () => {
+	it( 'reads the page and the subject the link names', () => {
+		expect(
+			editTarget( '?page=newspack-intelligence&edit=briefing' )
+		).toEqual( { page: 'briefing' } );
+		expect(
+			editTarget(
+				'?page=newspack-intelligence&edit=lens&lens=desk-watch'
+			)
+		).toEqual( { page: 'lens', lens_key: 'desk-watch' } );
+		expect(
+			editTarget(
+				'?edit=entity&entity=organization%3Aharbor-ledger&lens=desk-watch'
+			)
+		).toEqual( {
+			page: 'entity',
+			entity_key: 'organization:harbor-ledger',
+		} );
+	} );
+
+	it( 'names no edit for a page that is not composed, or none', () => {
+		expect( editTarget( '?page=newspack-intelligence&edit=folders' ) ).toBe(
+			null
+		);
+		expect( editTarget( '?page=newspack-intelligence' ) ).toBe( null );
+		expect( editTarget( '' ) ).toBe( null );
+	} );
+
+	it( 'leaves out a subject the page does not take, or a blank one', () => {
+		expect( editTarget( '?edit=briefing&lens=desk-watch' ) ).toEqual( {
+			page: 'briefing',
+		} );
+		expect( editTarget( '?edit=lens&lens=' ) ).toEqual( { page: 'lens' } );
+	} );
+} );
+
+describe( 'editSearch', () => {
+	it( 'adds the edit and its view to every param the page holds, and reads back as given', () => {
+		const search = editSearch(
+			'?page=newspack-intelligence&watch=9f3a51c07be2d468&view=review',
+			{ page: 'lens', lens_key: 'desk-watch' }
+		);
+
+		expect( search ).toBe(
+			'?page=newspack-intelligence&watch=9f3a51c07be2d468&view=lenses&edit=lens&lens=desk-watch'
+		);
+		expect( editTarget( search ) ).toEqual( {
+			page: 'lens',
+			lens_key: 'desk-watch',
+		} );
+		expect(
+			editTarget(
+				editSearch(
+					'?page=newspack-intelligence&edit=lens&lens=desk-watch',
+					{
+						page: 'briefing',
+					}
+				)
+			)
+		).toEqual( { page: 'briefing' } );
+	} );
+} );
+
+describe( 'leaveEdit', () => {
+	it( 'drops the edit and its subject, and keeps every other param', () => {
+		window.history.replaceState(
+			{},
+			'',
+			'/wp-admin/admin.php?page=newspack-intelligence&edit=entity&entity=organization%3Aharbor-ledger'
+		);
+
+		leaveEdit();
+
+		expect( window.location.search ).toBe( '?page=newspack-intelligence' );
+	} );
+} );
+
+describe( 'layoutContext', () => {
+	it( 'names the context a page lays out', () => {
+		expect( layoutContext( 'lens' ) ).toBe( 'newspack-intelligence/lens' );
+	} );
+} );
+
+describe( 'composedPage', () => {
+	it( 'names the page a view lays out, and none for a fixed screen', () => {
+		expect( composedPage( 'briefing' ) ).toBe( 'briefing' );
+		expect( composedPage( 'lenses' ) ).toBe( 'lens' );
+		expect( composedPage( 'entity' ) ).toBe( 'entity' );
+		expect( composedPage( 'review' ) ).toBe( null );
+	} );
+} );

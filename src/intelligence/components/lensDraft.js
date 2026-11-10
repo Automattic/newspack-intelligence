@@ -117,7 +117,8 @@ export function listOf( text ) {
 
 /**
  * A draft as the options it sends: each list option split at its commas,
- * every other value as entered, for `commandArgs()` to name.
+ * every other value as entered, for `commandArgs()` to name, and a new
+ * lens keyed by its name, which the server slugs, so no form shows a key.
  *
  * @param {Object<string, string>} draft The form's text, keyed by option.
  * @param {Array<Object>}          lists The lens's list filters.
@@ -126,10 +127,12 @@ export function listOf( text ) {
 export function draftArgs( draft, lists ) {
 	const listed = new Set( listsOf( lists ).map( ( { option } ) => option ) );
 	return Object.fromEntries(
-		Object.entries( draft ).map( ( [ option, text ] ) => [
-			option,
-			listed.has( option ) ? listOf( text ) : text,
-		] )
+		Object.entries( { ...draft, key: draft.key || draft.name } ).map(
+			( [ option, text ] ) => [
+				option,
+				listed.has( option ) ? listOf( text ) : text,
+			]
+		)
 	);
 }
 

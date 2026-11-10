@@ -26,7 +26,9 @@ jest.mock( '@newspack-nodes/debug-overlay', () => ( {
 
 import { intelWire } from './intelWire';
 import { HEALTHY } from './healthFixture';
+import { registerCompositionEditor } from '@newspack-nodes/shared/composition/editorRegistry';
 import {
+	COMPOSITIONS,
 	ENTITY,
 	GROUPS,
 	ITEM,
@@ -52,7 +54,11 @@ beforeEach( () => {
 	wire.replies.timeline = { items: [], total: 0, available: true };
 	wire.replies.related = { entities: [], available: true };
 	wire.replies.claims = { claims: [], available: true };
-	wire.replies.review = ( [ what ] ) => ( { [ what ]: [], available: true } );
+	wire.replies.review = ( [ what ] ) => ( {
+		[ what ]: [],
+		total: 0,
+		available: true,
+	} );
 	wire.replies.collections = { collections: [], available: true };
 	wire.replies.lenses = LENSES;
 	wire.replies.trends = { rows: [], available: true };
@@ -79,7 +85,18 @@ afterEach( () => {
  */
 const WEEK = {
 	changes: {
-		groups: [ { entity_key: null, name: null, items: [ ITEM ] } ],
+		order: 'importance',
+		items: [ { ...ITEM, categories: [], otherwise: true } ],
+		groups: [
+			{
+				role: 'otherwise',
+				key: null,
+				name: null,
+				items: [ ITEM.item_key ],
+			},
+		],
+		categories: [],
+		otherwise: 1,
 		total: 1,
 		summary: {
 			since: 1792000000,
@@ -89,7 +106,7 @@ const WEEK = {
 		},
 		available: true,
 	},
-	signals: { clients: [], lenses: [], available: true },
+	signals: { clients: [], lenses: [], judged: true, available: true },
 };
 
 const LINKED = {
@@ -107,7 +124,11 @@ const LINKED = {
 	available: true,
 };
 
-function renderPage( canTune = false, canManage = false ) {
+function renderPage(
+	canTune = false,
+	canManage = false,
+	compositions = COMPOSITIONS
+) {
 	return render(
 		<IntelligencePage
 			canTune={ canTune }
@@ -118,21 +139,83 @@ function renderPage( canTune = false, canManage = false ) {
 				heading: 'Quillmere Cooperative',
 			} }
 			vocabulary={ VOCABULARY }
+			compositions={ compositions }
 		/>
 	);
 }
 
-/** Open the Briefing's one group of the week, collapsed to its count. */
-const openWeek = async () =>
-	fireEvent.click(
-		await screen.findByRole( 'button', { name: 'Industry 1 item' } )
-	);
+/** Wait for the Briefing's week, its one item standing open. */
+const openWeek = () => screen.findByRole( 'link', { name: ITEM.title } );
 
+/** What an empty Review queue says. */
+const EMPTY_REVIEW =
+	'Nothing to review. New suggestions arrive as items are read.';
+
+/**
+ * The tab named `name`, with or without the count it carries.
+ *
+ * @param {string} name The tab's name.
+ * @return {HTMLElement} The tab.
+ */
 const nav = ( name ) =>
 	within( screen.getByRole( 'tablist', { name: 'Views' } ) ).getByRole(
 		'tab',
-		{ name }
+		{ name: new RegExp( `^${ name }( \\d+)?$` ) }
 	);
+
+/**
+ * The Briefing's reads with the client Needs attention lists, whose row is a
+ * chip that stays put while a profile stands over it.
+ *
+ * @param {string[]} args The read's tokens.
+ * @return {Object} The answer.
+ */
+const attentionOn = ( [ what ] ) =>
+	'signals' === what
+		? {
+				clients: [
+					{
+						entity_key: 'organization:acme-quillsheet',
+						name: 'Acme Quillsheet',
+						churn_note: null,
+						signals: [
+							{
+								axis: 'about',
+								signal: 'spike',
+								bucket: '2026-11-02',
+								by: 'kind',
+								value: 'complaint',
+								count: 6,
+								usual: { mean: 1.5, low: 0, high: 3.9 },
+								trend: [
+									{
+										bucket: '2026-11-02',
+										count: 6,
+										in_window: true,
+									},
+								],
+								items: [],
+							},
+						],
+					},
+				],
+				lenses: [],
+				judged: true,
+				available: true,
+		  }
+		: WEEK[ what ];
+
+/**
+ * The chip Needs attention opens the client's profile from.
+ *
+ * @return {HTMLElement} The chip.
+ */
+const attentionChip = () =>
+	within(
+		screen
+			.getByRole( 'heading', { name: 'Needs attention' } )
+			.closest( 'section' )
+	).getByRole( 'button', { name: 'Acme Quillsheet' } );
 
 describe( 'IntelligencePage', () => {
 	it( 'opens on the Briefing, its first tab', async () => {
@@ -165,10 +248,12 @@ describe( 'IntelligencePage', () => {
 		expect( nav( 'Search' ) ).toHaveAttribute( 'aria-selected', 'true' );
 		await waitFor( () =>
 			expect( wire.sent( 'search' ) ).toEqual( [
-				[ '--kind=churned', '--since=2026-10-14' ],
+				[ '--kind=churned', '--since=2026-10-14', '--limit=20' ],
 			] )
 		);
-		expect( screen.getByLabelText( 'Since' ) ).toHaveValue( '2026-10-14' );
+		expect(
+			await screen.findByText( '1 item, most important first' )
+		).toBeInTheDocument();
 	} );
 
 	it( 'opens a watch the Briefing lists, on its matches', async () => {
@@ -179,7 +264,7 @@ describe( 'IntelligencePage', () => {
 			available: true,
 		};
 		renderPage();
-		await screen.findByText( 'A client or company · 5 new' );
+		await screen.findByText( '5 new' );
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Quillsheet group' } )
 		);
@@ -189,7 +274,7 @@ describe( 'IntelligencePage', () => {
 		).toBeInTheDocument();
 		await waitFor( () =>
 			expect( wire.sent( 'watch_matches' ) ).toEqual( [
-				[ '--key=9f3a51c07be2d468' ],
+				[ '--key=9f3a51c07be2d468', '--limit=50' ],
 			] )
 		);
 	} );
@@ -197,24 +282,28 @@ describe( 'IntelligencePage', () => {
 	it( 'opens the watch form from the Briefing’s empty watches', async () => {
 		renderPage();
 		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'New watch' } )
+			(
+				await screen.findAllByRole( 'button', { name: 'New watch' } )
+			)[ 0 ]
 		);
 		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
-		const form = screen.getByRole( 'form', { name: 'Save watch' } );
-		expect( within( form ).getByLabelText( 'Watching' ) ).toHaveValue(
-			'lens'
+		const form = screen.getByRole( 'dialog', { name: 'New watch' } );
+		expect(
+			within( form ).getByRole( 'radio', { name: 'A team view' } )
+		).toBeChecked();
+		await waitFor( () =>
+			expect( wire.sent( 'lenses' ).length ).toBeGreaterThan( 0 )
 		);
-		await within( form ).findByRole( 'option', {
-			name: 'Developer shipping',
-		} );
-		await screen.findByText( 'No watch yet.' );
+		await screen.findByText(
+			'You are not watching anything yet. Watch a client, a team view or a folder to collect its new items here.'
+		);
 	} );
 
 	it( 'opens a lens a Briefing signal names, and Search from its invitation', async () => {
-		wire.replies.briefing = ( [ what ] ) =>
-			'signals' === what
+		wire.replies.briefing = ( args ) =>
+			'signals' === args[ 0 ]
 				? {
-						clients: [],
+						...attentionOn( args ),
 						lenses: [
 							{
 								lens_key: 'support-desk',
@@ -227,23 +316,21 @@ describe( 'IntelligencePage', () => {
 										by: 'kind',
 										value: 'complaint',
 										count: 7,
-										usual: {
-											mean: 1.5,
-											low: 0,
-											high: 3.9,
-										},
+										usual: { mean: 1.5, low: 0, high: 3.9 },
 										trend: [],
 										items: [],
 									},
 								],
 							},
 						],
-						available: true,
 				  }
 				: {
 						...WEEK,
 						changes: {
+							...WEEK.changes,
+							items: [],
 							groups: [],
+							otherwise: 0,
 							total: 0,
 							summary: {
 								since: 1792000000,
@@ -253,7 +340,7 @@ describe( 'IntelligencePage', () => {
 							},
 							available: true,
 						},
-				  }[ what ];
+				  }[ args[ 0 ] ];
 		renderPage();
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Support desk' } )
@@ -263,7 +350,10 @@ describe( 'IntelligencePage', () => {
 			'true'
 		);
 		expect(
-			await screen.findByRole( 'region', { name: 'Support desk' } )
+			await screen.findByRole( 'heading', {
+				level: 2,
+				name: 'Support desk',
+			} )
 		).toBeInTheDocument();
 		fireEvent.click( nav( 'Briefing' ) );
 		fireEvent.click(
@@ -277,34 +367,58 @@ describe( 'IntelligencePage', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'mounts the strip above the tab bar on every tab', async () => {
+	it( 'shows collection’s status in the header on every tab, its fault under the tab bar', async () => {
+		wire.replies.health = ( [ what ] ) =>
+			'sources' === what
+				? {
+						...HEALTHY.sources,
+						sources: [
+							{ ...HEALTHY.sources.sources[ 0 ], state: 'idle' },
+						],
+				  }
+				: HEALTHY[ what ];
 		renderPage();
-		const healthy = `Collecting from ${ HEALTHY.sources.sources.length } sources. Nothing waiting.`;
-		await screen.findByText( healthy );
-		const strip = screen.getByRole( 'region', { name: 'Pipeline health' } );
+		const header = () =>
+			document.querySelector( '.topology-header__controls' );
+		await waitFor( () =>
+			expect( header() ).toHaveTextContent( /^Collecting, updated / )
+		);
+		const notice = await screen.findByText(
+			/^Some sources stopped updating at /,
+			{ selector: 'p' }
+		);
 		const tabs = screen.getByRole( 'tablist', { name: 'Views' } );
 		expect(
-			strip.compareDocumentPosition( tabs ) &
+			tabs.compareDocumentPosition( notice ) &
 				window.Node.DOCUMENT_POSITION_FOLLOWING
 		).toBeTruthy();
 		const views = [
-			[ 'Review', 'No suggested match awaits review.' ],
-			[ 'Folders', 'No folder yet.' ],
-			[ 'Watches', 'No watch yet.' ],
+			[ 'Review', EMPTY_REVIEW ],
+			[
+				'Folders',
+				'No folders yet. Create one, then use Save on any item to file it here.',
+			],
+			[
+				'Watches',
+				'You are not watching anything yet. Watch a client, a team view or a folder to collect its new items here.',
+			],
 		];
 		for ( const [ name, shown ] of views ) {
 			fireEvent.click( nav( name ) );
 			await screen.findByText( shown );
+			expect( header() ).toHaveTextContent( /^Collecting, updated / );
 			expect(
-				screen.getByRole( 'region', { name: 'Pipeline health' } )
-			).toHaveTextContent( healthy );
+				screen.getByText( /^Some sources stopped updating at /, {
+					selector: 'p',
+				} )
+			).toBeInTheDocument();
 		}
 		expect(
 			wire.sent( 'health' ).filter( ( [ what ] ) => 'backlog' === what )
 		).toHaveLength( 1 );
 	} );
 
-	it( 'keeps an ask in flight across a switch from the Briefing to Search', async () => {
+	it( 'keeps an answer across a switch to Search and back, asking once', async () => {
 		wire.replies.ask = { ask_key: '4c2e6a8b0d1f3957' };
 		wire.replies.ask_result = {
 			ask_key: '4c2e6a8b0d1f3957',
@@ -312,16 +426,17 @@ describe( 'IntelligencePage', () => {
 			reason: '',
 			found: 1,
 			dropped: 0,
+			hidden: 0,
 			sentences: [ { text: 'Quillsheet won a prize.', cites: [ 1 ] } ],
 			items: [ ITEM ],
-			searches: [],
+			searches: [ { words: 'prize', days: 9 } ],
 			wait_s: 900,
 			available: true,
 		};
 		renderPage();
 		fireEvent.change(
 			await screen.findByPlaceholderText(
-				'Ask about clients, the industry or Quillmere Cooperative…'
+				'Ask about anything collected here…'
 			),
 			{ target: { value: 'Who won a prize?' } }
 		);
@@ -335,22 +450,87 @@ describe( 'IntelligencePage', () => {
 		expect(
 			await screen.findByText( 'Quillsheet won a prize.' )
 		).toBeInTheDocument();
+
+		fireEvent.click( nav( 'Briefing' ) );
+
+		expect(
+			await screen.findByText( 'Quillsheet won a prize.' )
+		).toBeInTheDocument();
+		expect( screen.getByLabelText( 'Ask a question' ) ).toHaveValue(
+			'Who won a prize?'
+		);
 		expect( wire.sent( 'ask' ) ).toEqual( [
 			[ '--question=Who won a prize?' ],
 		] );
+
+		fireEvent.click( screen.getByRole( 'button', { name: 'Clear' } ) );
+		fireEvent.click( nav( 'Search' ) );
+
+		await screen.findByLabelText( 'Search words' );
+		expect( screen.queryByText( 'Quillsheet won a prize.' ) ).toBeNull();
 	} );
 
 	it( 'switches to Review and Folders in place', async () => {
 		renderPage();
 		fireEvent.click( nav( 'Review' ) );
-		expect(
-			await screen.findByText( 'No suggested match awaits review.' )
-		).toBeInTheDocument();
+		expect( await screen.findByText( EMPTY_REVIEW ) ).toBeInTheDocument();
 		expect( nav( 'Review' ) ).toHaveAttribute( 'aria-selected', 'true' );
 		fireEvent.click( nav( 'Folders' ) );
 		expect(
-			await screen.findByText( 'No folder yet.' )
+			await screen.findByText(
+				'No folders yet. Create one, then use Save on any item to file it here.'
+			)
 		).toBeInTheDocument();
+	} );
+
+	it( 'counts the reader’s new matches on the Watches tab', async () => {
+		const watch = ( key, unseen, inbox = true ) => ( {
+			...LINKED.watches[ 0 ],
+			watch_key: key,
+			name: key,
+			inbox,
+			unseen,
+		} );
+		wire.replies.watches = {
+			watches: [
+				watch( 'developers', 134 ),
+				watch( 'prairie-signal', 22 ),
+				watch( 'newsletter-picks', 22 ),
+				watch( 'email-only', 0, false ),
+			],
+			available: true,
+		};
+		renderPage();
+		expect(
+			await within(
+				screen.getByRole( 'tablist', { name: 'Views' } )
+			).findByRole( 'tab', { name: 'Watches 178' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'counts the suggested matches on the Review tab for a curator alone', async () => {
+		wire.replies.review = ( [ what ] ) => ( {
+			[ what ]: [],
+			total: 'links' === what ? 41 : 7,
+			available: true,
+		} );
+		const curator = renderPage( true );
+		expect(
+			await within(
+				screen.getByRole( 'tablist', { name: 'Views' } )
+			).findByRole( 'tab', { name: 'Review 41' } )
+		).toBeInTheDocument();
+		expect( wire.sent( 'review' ) ).toEqual( [ [ 'links' ] ] );
+		curator.unmount();
+		Core.reset();
+		wire = intelWire();
+		wire.replies.health = ( [ what ] ) => HEALTHY[ what ];
+		wire.replies.briefing = ( [ what ] ) => WEEK[ what ];
+		wire.replies.watches = { watches: [], available: true };
+		renderPage();
+		await openWeek();
+		expect( nav( 'Review' ) ).toBeInTheDocument();
+		expect( wire.sent( 'review' ) ).toEqual( [] );
 	} );
 
 	it( 'labels its view panel by the selected tab, and moves with the keys', async () => {
@@ -374,12 +554,49 @@ describe( 'IntelligencePage', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'opens an entity from a result chip and returns to it from the nav', async () => {
+	it( 'opens a profile in the panel of the view that opened it, and Back focuses that chip', async () => {
+		wire.replies.briefing = ( [ what ] ) =>
+			'signals' === what
+				? {
+						clients: [
+							{
+								entity_key: 'organization:acme-quillsheet',
+								name: 'Acme Quillsheet',
+								churn_note: null,
+								signals: [
+									{
+										axis: 'about',
+										signal: 'spike',
+										bucket: '2026-11-02',
+										by: 'kind',
+										value: 'complaint',
+										count: 6,
+										usual: { mean: 1.5, low: 0, high: 3.9 },
+										trend: [
+											{
+												bucket: '2026-11-02',
+												count: 6,
+												in_window: true,
+											},
+										],
+										items: [],
+									},
+								],
+							},
+						],
+						lenses: [],
+						judged: true,
+						available: true,
+				  }
+				: WEEK[ what ];
 		renderPage();
 		await openWeek();
-		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
-		);
+		const tabs = screen
+			.getAllByRole( 'tab' )
+			.map( ( tab ) => tab.textContent );
+		const chip = attentionChip();
+		chip.focus();
+		fireEvent.click( chip );
 		expect(
 			await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } )
 		).toBeInTheDocument();
@@ -388,14 +605,39 @@ describe( 'IntelligencePage', () => {
 				[ 'organization:acme-quillsheet' ],
 			] )
 		);
-		fireEvent.click( nav( 'Review' ) );
-		fireEvent.click( nav( 'Entity: Acme Quillsheet' ) );
 		expect(
-			await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } )
-		).toBeInTheDocument();
+			screen.getAllByRole( 'tab' ).map( ( tab ) => tab.textContent )
+		).toEqual( tabs );
+		expect( nav( 'Briefing' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		expect( screen.queryByRole( 'link', { name: ITEM.title } ) ).toBeNull();
+
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Back to Briefing' } )
+		);
+		expect(
+			screen.queryByRole( 'heading', { name: 'Acme Quillsheet' } )
+		).toBeNull();
+		expect( chip ).toHaveFocus();
+		expect(
+			screen.getByRole( 'link', { name: ITEM.title } )
+		).toBeVisible();
 	} );
 
-	it( 'labels the Entity tab by the key until the record names it', async () => {
+	it( 'closes a profile when a tab is picked', async () => {
+		renderPage();
+		await openWeek();
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
+		);
+		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
+		fireEvent.click( nav( 'Review' ) );
+		await screen.findByText( EMPTY_REVIEW );
+		expect(
+			screen.queryByRole( 'heading', { name: 'Acme Quillsheet' } )
+		).toBeNull();
+	} );
+
+	it( 'says a refused profile is not available, with the way back', async () => {
 		wire.replies.entity = () =>
 			new Error( 'no entity: organization:acme-quillsheet' );
 		renderPage();
@@ -403,48 +645,23 @@ describe( 'IntelligencePage', () => {
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
 		);
-		await screen.findByText(
-			'Intelligence could not be read just now. Try again.'
-		);
-		expect( nav( 'Entity: organization:acme-quillsheet' ) ).toHaveAttribute(
-			'aria-selected',
-			'true'
-		);
-	} );
-
-	it( 'labels the Entity tab by the key again once a curator’s edit leaves the record refused', async () => {
-		let asked = 0;
-		wire.replies.entity = () =>
-			1 === ++asked
-				? ENTITY
-				: new Error( 'no entity: organization:acme-quillsheet' );
-		wire.replies.add_name = { ok: true, event_id: 'ev-merged' };
-		renderPage( true );
-		await openWeek();
+		expect(
+			await screen.findByText(
+				'This profile is not available to you, or it no longer exists.'
+			)
+		).toBeInTheDocument();
 		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
+			screen.getByRole( 'button', { name: 'Back to Briefing' } )
 		);
-		await waitFor( () =>
-			expect( nav( 'Entity: Acme Quillsheet' ) ).toBeInTheDocument()
-		);
-		fireEvent.click( screen.getByRole( 'button', { name: 'Edit' } ) );
-		const form = screen.getByRole( 'group', { name: 'Add name' } );
-		fireEvent.change( within( form ).getByLabelText( 'Value' ), {
-			target: { value: 'Quillsheet' },
-		} );
-		fireEvent.click(
-			within( form ).getByRole( 'button', { name: 'Add name' } )
-		);
-		await screen.findByText(
-			'Intelligence could not be read just now. Try again.'
-		);
-		expect( nav( 'Entity: organization:acme-quillsheet' ) ).toHaveAttribute(
-			'aria-selected',
-			'true'
-		);
+		expect(
+			screen.getByRole( 'link', { name: ITEM.title } )
+		).toBeVisible();
 	} );
 
 	it( 'names the operator in an entity’s churn notice', async () => {
+		const now = jest
+			.spyOn( Core, 'now' )
+			.mockReturnValue( Date.UTC( 2026, 10, 10 ) / 1000 );
 		wire.replies.entity = {
 			...ENTITY,
 			status: {
@@ -459,6 +676,7 @@ describe( 'IntelligencePage', () => {
 						day: '2026-10-06',
 					},
 				],
+				churn_note: null,
 			},
 		};
 		renderPage( true );
@@ -468,12 +686,13 @@ describe( 'IntelligencePage', () => {
 		);
 		expect(
 			await screen.findByText(
-				'“Acme Quillsheet offboarding checklist” (Tracker, 2026-10-06) says this client is leaving Quillmere Cooperative.'
+				'“Acme Quillsheet offboarding checklist” (Tracker, 6 Oct) says this client is leaving Quillmere Cooperative.'
 			)
 		).toBeInTheDocument();
+		now.mockRestore();
 	} );
 
-	it( 'labels the Entity tab by the entity open now, not the one before', async () => {
+	it( 'opens one profile from another, and Back returns to the chip that opened the first', async () => {
 		wire.replies.entity = ( [ key ] ) =>
 			'person:jo-reporter' === key
 				? {
@@ -481,6 +700,7 @@ describe( 'IntelligencePage', () => {
 						entity_key: key,
 						name: 'Jo Reporter',
 						type: 'person',
+						roles: [],
 						status: null,
 				  }
 				: ENTITY;
@@ -496,25 +716,34 @@ describe( 'IntelligencePage', () => {
 			],
 			available: true,
 		};
-		renderPage();
+		wire.replies.briefing = attentionOn;
+		renderPage( false, false, {
+			...COMPOSITIONS,
+			'newspack-intelligence/entity': {
+				...COMPOSITIONS[ 'newspack-intelligence/entity' ],
+				blocks: [
+					{
+						name: 'newspack-intelligence/related',
+						attributes: { heading: 'Shares coverage', limit: 4 },
+						inner: [],
+					},
+				],
+			},
+		} );
 		await openWeek();
-		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
-		);
-		await waitFor( () =>
-			expect( nav( 'Entity: Acme Quillsheet' ) ).toBeInTheDocument()
-		);
+		const chip = attentionChip();
+		chip.focus();
+		fireEvent.click( chip );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Jo Reporter' } )
 		);
-		expect( nav( 'Entity: person:jo-reporter' ) ).toHaveAttribute(
-			'aria-selected',
-			'true'
+		expect(
+			await screen.findByRole( 'heading', { name: 'Jo Reporter' } )
+		).toBeInTheDocument();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Back to Briefing' } )
 		);
-		await screen.findByRole( 'heading', { name: 'Jo Reporter' } );
-		await waitFor( () =>
-			expect( nav( 'Entity: Jo Reporter' ) ).toBeInTheDocument()
-		);
+		expect( chip ).toHaveFocus();
 	} );
 
 	it( 'restores the search filters and page after visiting an entity', async () => {
@@ -530,26 +759,28 @@ describe( 'IntelligencePage', () => {
 		} );
 		renderPage();
 		fireEvent.click( nav( 'Search' ) );
-		await screen.findByText( 'found by nothing' );
-		const form = screen.getByRole( 'search', { name: 'Filters' } );
-		fireEvent.change( within( form ).getByLabelText( 'Words' ), {
+		await screen.findByText( 'found by --limit=20' );
+		fireEvent.change( screen.getByLabelText( 'Search words' ), {
 			target: { value: 'regional prize' },
 		} );
-		fireEvent.click(
-			within( form ).getByRole( 'button', { name: 'Search' } )
-		);
-		await screen.findByText( 'found by --q=regional prize' );
+		await screen.findByText( 'found by --q=regional prize --limit=20' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
-		await screen.findByText( 'found by --q=regional prize --offset=1' );
+		await screen.findByText(
+			'found by --q=regional prize --limit=20 --offset=20'
+		);
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Acme Quillsheet' } )
 		);
 		await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
-		fireEvent.click( nav( 'Search' ) );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Back to Search' } )
+		);
 		expect(
-			await screen.findByText( 'found by --q=regional prize --offset=1' )
+			await screen.findByText(
+				'found by --q=regional prize --limit=20 --offset=20'
+			)
 		).toBeInTheDocument();
-		expect( screen.getByLabelText( 'Words' ) ).toHaveValue(
+		expect( screen.getByLabelText( 'Search words' ) ).toHaveValue(
 			'regional prize'
 		);
 	} );
@@ -557,14 +788,19 @@ describe( 'IntelligencePage', () => {
 	it( 'searches through a lens picked for its items, apart from the lens’s groups', async () => {
 		renderPage();
 		fireEvent.click( nav( 'Search' ) );
-		const form = screen.getByRole( 'search', { name: 'Filters' } );
-		await within( form ).findByRole( 'option', { name: 'Support desk' } );
-		fireEvent.change( within( form ).getByLabelText( 'Team view' ), {
-			target: { value: 'support-desk' },
-		} );
+		await screen.findByText( '1 item, most important first' );
+		fireEvent.click(
+			screen
+				.getAllByRole( 'button' )
+				.find( ( one ) => one.textContent.startsWith( 'Team view' ) )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'option', { name: 'Support desk' } )
+		);
 		await waitFor( () =>
 			expect( wire.sent( 'search' ) ).toContainEqual( [
 				'--lens=support-desk',
+				'--limit=20',
 			] )
 		);
 		expect(
@@ -575,7 +811,7 @@ describe( 'IntelligencePage', () => {
 		expect( screen.queryByRole( 'heading', { level: 4 } ) ).toBeNull();
 		fireEvent.click( nav( 'Team views' ) );
 		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Support desk' } )
+			await screen.findByRole( 'button', { name: 'Support desk 29 new' } )
 		);
 		expect(
 			await screen.findByRole( 'heading', {
@@ -586,36 +822,29 @@ describe( 'IntelligencePage', () => {
 		expect( wire.sent( 'search' ) ).toContainEqual( [
 			'--lens=support-desk',
 			'--group=theme',
+			'--limit=10',
 		] );
 	} );
 
-	it( 'reopens the lens it left, on the page it left', async () => {
-		wire.replies.search = ( args ) => ( {
-			groups: [
-				{
-					...GROUPS.groups[ 0 ],
-					theme: `seen by ${ args.join( ' ' ) || 'nothing' }`,
-				},
-			],
-			total: 30,
-			available: true,
-		} );
+	it( 'reopens the team view it left', async () => {
 		renderPage();
 		fireEvent.click( nav( 'Team views' ) );
 		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Support desk' } )
+			await screen.findByRole( 'button', {
+				name: 'Developer shipping 4 new',
+			} )
 		);
-		await screen.findByText( 'seen by --lens=support-desk --group=theme' );
-		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
-		await screen.findByText(
-			'seen by --lens=support-desk --group=theme --offset=1'
-		);
+		await screen.findByRole( 'heading', {
+			level: 2,
+			name: 'Developer shipping',
+		} );
 		fireEvent.click( nav( 'Review' ) );
 		fireEvent.click( nav( 'Team views' ) );
 		expect(
-			await screen.findByText(
-				'seen by --lens=support-desk --group=theme --offset=1'
-			)
+			await screen.findByRole( 'heading', {
+				level: 2,
+				name: 'Developer shipping',
+			} )
 		).toBeInTheDocument();
 	} );
 
@@ -657,38 +886,45 @@ describe( 'IntelligencePage', () => {
 		renderPage( false );
 		fireEvent.click( nav( 'Watches' ) );
 		expect(
-			await screen.findByText( 'No watch yet.' )
+			await screen.findByText(
+				'You are not watching anything yet. Watch a client, a team view or a folder to collect its new items here.'
+			)
 		).toBeInTheDocument();
 		expect(
-			screen.getByRole( 'button', { name: 'New watch' } )
-		).toBeInTheDocument();
+			screen.getAllByRole( 'button', { name: 'New watch' } ).length
+		).toBeGreaterThan( 0 );
 	} );
 
 	it( 'opens the watch form on a lens from its Watch this', async () => {
 		renderPage( false );
 		fireEvent.click( nav( 'Team views' ) );
 		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Developer shipping' } )
+			await screen.findByRole( 'button', {
+				name: 'Developer shipping 4 new',
+			} )
 		);
+		await screen.findByRole( 'heading', {
+			level: 2,
+			name: 'Developer shipping',
+		} );
 		await screen.findByText( 'No unusual change last week.' );
-		await screen.findByText( 'No trend in this team view.' );
-		await screen.findByText( 'Acme Quillsheet wins regional prize' );
-		fireEvent.click( screen.getByRole( 'button', { name: 'Watch this' } ) );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Watch' } ) );
 		expect( nav( 'Watches' ) ).toHaveAttribute( 'aria-selected', 'true' );
-		const form = screen.getByRole( 'form', { name: 'Save watch' } );
+		const form = screen.getByRole( 'dialog', { name: 'New watch' } );
 		expect( within( form ).getByLabelText( 'Name' ) ).toHaveValue(
 			'Developer shipping'
 		);
-		expect( within( form ).getByLabelText( 'Watching' ) ).toHaveValue(
-			'lens'
+		expect(
+			within( form ).getByRole( 'radio', { name: 'A team view' } )
+		).toBeChecked();
+		await waitFor( () =>
+			expect(
+				within( form ).getByRole( 'combobox', { name: 'Team view' } )
+			).toHaveValue( 'Developer shipping' )
 		);
-		await within( form ).findByRole( 'option', {
-			name: 'Developer shipping',
-		} );
-		expect( within( form ).getByLabelText( 'Team view' ) ).toHaveValue(
-			'dev-shipping'
+		await screen.findByText(
+			'You are not watching anything yet. Watch a client, a team view or a folder to collect its new items here.'
 		);
-		await screen.findByText( 'No watch yet.' );
 	} );
 
 	it( 'opens the watch a link names, on the Watches view', async () => {
@@ -714,7 +950,7 @@ describe( 'IntelligencePage', () => {
 			} )
 		).toBeInTheDocument();
 		expect( wire.sent( 'watch_matches' ) ).toEqual( [
-			[ '--key=9f3a51c07be2d468' ],
+			[ '--key=9f3a51c07be2d468', '--limit=50' ],
 		] );
 		expect( wire.sent( 'search' ) ).toEqual( [] );
 	} );
@@ -735,40 +971,6 @@ describe( 'IntelligencePage', () => {
 			screen.queryByRole( 'region', { name: 'Quillsheet group' } )
 		).toBeNull();
 		expect( wire.sent( 'watch_matches' ) ).toEqual( [] );
-	} );
-
-	it( 'reopens the collection it left', async () => {
-		wire.replies.collections = ( args ) =>
-			0 === args.length
-				? {
-						collections: [
-							{
-								collection_key: 'q4-client-wins',
-								name: 'Q4 client wins',
-								created_ts: 1790035200,
-								items: 1,
-							},
-						],
-						available: true,
-				  }
-				: {
-						collection_key: 'q4-client-wins',
-						name: 'Q4 client wins',
-						created_ts: 1790035200,
-						items: [],
-						available: true,
-				  };
-		renderPage();
-		fireEvent.click( nav( 'Folders' ) );
-		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Q4 client wins' } )
-		);
-		await screen.findByRole( 'region', { name: 'Q4 client wins' } );
-		fireEvent.click( nav( 'Review' ) );
-		fireEvent.click( nav( 'Folders' ) );
-		expect(
-			await screen.findByRole( 'region', { name: 'Q4 client wins' } )
-		).toBeInTheDocument();
 	} );
 
 	it( 'offers a reader no save control and no curation', async () => {
@@ -891,7 +1093,9 @@ describe( 'IntelligencePage', () => {
 			expect( pushSpy ).toHaveBeenCalledTimes( 2 );
 			expect( view() ).toBe( 'collections' );
 			expect( replaceSpy ).not.toHaveBeenCalled();
-			await screen.findByText( 'No folder yet.' );
+			await screen.findByText(
+				'No folders yet. Create one, then use Save on any item to file it here.'
+			);
 		} );
 
 		it( 'restores the tab of the entry Back or Forward lands on', async () => {
@@ -905,7 +1109,7 @@ describe( 'IntelligencePage', () => {
 				'aria-selected',
 				'true'
 			);
-			await screen.findByText( 'No suggested match awaits review.' );
+			await screen.findByText( EMPTY_REVIEW );
 
 			popTo( PAGE );
 			expect( nav( 'Briefing' ) ).toHaveAttribute(
@@ -926,7 +1130,7 @@ describe( 'IntelligencePage', () => {
 			);
 			expect( view() ).toBe( 'review' );
 			expect( pushSpy ).not.toHaveBeenCalled();
-			await screen.findByText( 'No suggested match awaits review.' );
+			await screen.findByText( EMPTY_REVIEW );
 		} );
 
 		it( 'opens the default tab for a view the page does not offer', async () => {
@@ -965,5 +1169,149 @@ describe( 'IntelligencePage', () => {
 		expect( global.__debugOverlayProps.storageKey ).toBe(
 			'newspack-nodes:debug:intelligence'
 		);
+	} );
+
+	describe( 'layouts', () => {
+		const LENS = 'newspack-intelligence/lens';
+		const editor = { done: null };
+
+		/**
+		 * The editor a curator's bundle registers, standing in for it.
+		 *
+		 * @param {Object}   props
+		 * @param {Object}   props.target The page and its subject.
+		 * @param {Function} props.onDone Hands the page its next layout.
+		 * @return {import('react').ReactElement} The stand-in.
+		 */
+		function StandInEditor( { target, onDone } ) {
+			editor.done = onDone;
+			return <p>{ `Editing the layout of ${ target.lens_key }` }</p>;
+		}
+
+		beforeEach( () => {
+			window.__newspackNodesCompositionEditors = undefined;
+			registerCompositionEditor( LENS, StandInEditor );
+		} );
+
+		/** Open the page on a team view's layout edit. */
+		const editLens = () =>
+			window.history.replaceState(
+				{},
+				'',
+				'/wp-admin/admin.php?page=newspack-intelligence&view=lenses&edit=lens&lens=support-desk'
+			);
+
+		it( 'offers Edit layout on a composed page for a curator alone', async () => {
+			const curator = renderPage( true );
+			await openWeek();
+			expect(
+				screen.queryByRole( 'button', { name: 'Page actions' } )
+			).toBeNull();
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Briefing actions' } )
+			);
+			expect(
+				await screen.findByRole( 'menuitem', { name: 'Edit layout' } )
+			).toBeInTheDocument();
+			curator.unmount();
+
+			renderPage();
+			await openWeek();
+			expect(
+				screen.queryByRole( 'button', { name: 'Briefing actions' } )
+			).toBeNull();
+			fireEvent.click( nav( 'Review' ) );
+			await screen.findByText( EMPTY_REVIEW );
+			expect(
+				screen.queryByRole( 'button', { name: 'Page actions' } )
+			).toBeNull();
+		} );
+
+		it( 'puts the editor in the layout region and keeps the tab bar', async () => {
+			editLens();
+			renderPage( true );
+			await screen.findByRole( 'tab', { name: 'Review 0' } );
+
+			expect(
+				screen.getByText( 'Editing the layout of support-desk' )
+			).toBeInTheDocument();
+			expect( nav( 'Team views' ) ).toHaveAttribute(
+				'aria-selected',
+				'true'
+			);
+			expect( screen.queryByText( 'Support desk' ) ).toBeNull();
+		} );
+
+		it( 'ignores a reader’s edit', async () => {
+			editLens();
+			renderPage();
+
+			expect(
+				screen.queryByText( 'Editing the layout of support-desk' )
+			).toBeNull();
+			expect(
+				await screen.findAllByText( 'Support desk' )
+			).not.toHaveLength( 0 );
+		} );
+
+		it( 'renders the tree a save hands back without a reload', async () => {
+			editLens();
+			renderPage( true );
+			await screen.findByRole( 'tab', { name: 'Review 0' } );
+			expect( screen.queryByRole( 'complementary' ) ).toBeNull();
+
+			act( () =>
+				editor.done(
+					{
+						context: LENS,
+						source: 'saved',
+						blocks: [
+							{
+								name: 'newspack-intelligence/aside',
+								attributes: {},
+								inner: [],
+							},
+						],
+						saved_ts: 1912345678.5,
+						actor: 'lakeside-editor',
+					},
+					'save'
+				)
+			);
+
+			expect(
+				screen.queryByText( 'Editing the layout of support-desk' )
+			).toBeNull();
+			expect( await screen.findByRole( 'complementary' ) ).toHaveClass(
+				'newspack-intelligence__aside'
+			);
+			expect(
+				document.querySelector( '.components-snackbar' )
+			).toHaveTextContent( 'Layout saved.' );
+			const query = new URLSearchParams( window.location.search );
+			expect( [ query.get( 'edit' ), query.get( 'lens' ) ] ).toEqual( [
+				null,
+				null,
+			] );
+			expect(
+				await screen.findAllByText( 'Support desk' )
+			).not.toHaveLength( 0 );
+		} );
+
+		it( 'shows a layout that no longer reads as the read error in its place', async () => {
+			renderPage( false, true, {
+				...COMPOSITIONS,
+				'newspack-intelligence/briefing': {
+					context: 'newspack-intelligence/briefing',
+					error: 'composition newspack-intelligence/briefing: newspack-intelligence/retired is not a declared block',
+				},
+			} );
+			expect(
+				await screen.findByText(
+					'composition newspack-intelligence/briefing: newspack-intelligence/retired is not a declared block'
+				)
+			).toBeInTheDocument();
+			expect( wire.sent( 'briefing' ) ).toEqual( [] );
+		} );
 	} );
 } );

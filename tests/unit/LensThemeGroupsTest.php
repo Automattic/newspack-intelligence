@@ -160,14 +160,14 @@ final class LensThemeGroupsTest extends TestCase {
 	public function test_with_no_kinds_groups_rank_by_importance_then_clients_then_recency_then_theme(): void {
 		$at = self::$oct_20 - 4 * self::DAY;
 		$this->seed(
-			self::item( 'news:tie-b', 'Tide report b', 'news', 'internal', $at ),
-			self::extraction( 'news:tie-b', 'A tide.', 'research', $at, [], 5.0, 5.0, 'tide reports' ),
-			self::item( 'news:tie-a', 'Ferry report a', 'news', 'internal', $at ),
-			self::extraction( 'news:tie-a', 'A ferry.', 'research', $at, [], 5.0, 5.0, 'ferry reports' ),
-			self::item( 'news:tie-c', 'Tide report c', 'news', 'internal', $at - self::DAY ),
-			self::extraction( 'news:tie-c', 'A tide prize.', 'award', $at - self::DAY, [], 5.0, 5.0, 'tide reports' )
+			self::item( 'slack:tie-b', 'Tide report b', 'slack', 'internal', $at ),
+			self::extraction( 'slack:tie-b', 'A tide.', 'research', $at, [], 5.0, 5.0, 'tide reports' ),
+			self::item( 'slack:tie-a', 'Ferry report a', 'slack', 'internal', $at ),
+			self::extraction( 'slack:tie-a', 'A ferry.', 'research', $at, [], 5.0, 5.0, 'ferry reports' ),
+			self::item( 'slack:tie-c', 'Tide report c', 'slack', 'internal', $at - self::DAY ),
+			self::extraction( 'slack:tie-c', 'A tide prize.', 'award', $at - self::DAY, [], 5.0, 5.0, 'tide reports' )
 		);
-		$this->save( 'news-desk', '--source=news' );
+		$this->save( 'news-desk', '--source=slack' );
 
 		$news = $this->grouped( '--lens=news-desk' )['groups'];
 		$this->assertSame( [ [ 'ferry reports', 'research' ], [ 'tide reports', 'research' ] ], \array_map( static fn ( array $g ): array => [ $g['theme'], $g['kind'] ], $news ) );
@@ -179,15 +179,15 @@ final class LensThemeGroupsTest extends TestCase {
 		for ( $n = 1; $n <= 7; $n++ ) {
 			$at = self::$oct_01 + $n * self::DAY;
 			$this->seed(
-				self::item( "news:relay-{$n}", "Relay down {$n}", 'news', 'internal', $at ),
-				self::extraction( "news:relay-{$n}", 'The relay is down.', 'incident', $at, [], 5.0, (float) ( $n % 4 ), 'relay outage' )
+				self::item( "slack:relay-{$n}", "Relay down {$n}", 'slack', 'internal', $at ),
+				self::extraction( "slack:relay-{$n}", 'The relay is down.', 'incident', $at, [], 5.0, (float) ( $n % 4 ), 'relay outage' )
 			);
 		}
-		$this->save( 'relay-desk', '--source=news' );
+		$this->save( 'relay-desk', '--source=slack' );
 
 		$relay = $this->grouped( '--lens=relay-desk' )['groups'][0];
 		$this->assertSame( [ 'relay outage', 7 ], [ $relay['theme'], $relay['count'] ] );
-		$this->assertSame( [ 'news:relay-7', 'news:relay-3', 'news:relay-6', 'news:relay-5', 'news:relay-4' ], \array_column( $relay['items'], 'item_key' ) );
+		$this->assertSame( [ 'slack:relay-7', 'slack:relay-3', 'slack:relay-6', 'slack:relay-5', 'slack:relay-4' ], \array_column( $relay['items'], 'item_key' ) );
 	}
 
 	/**
@@ -199,7 +199,7 @@ final class LensThemeGroupsTest extends TestCase {
 		$this->assertSame( [ [ self::SENDER, self::BOTS ], 6 ], [ \array_column( $page['groups'], 'theme' ), $page['total'] ] );
 
 		$this->seed_drift( 25 );
-		$this->save( 'drift-desk', '--source=drift' );
+		$this->save( 'drift-desk', '--source=p2' );
 		$first = $this->grouped( '--lens=drift-desk' );
 		$this->assertSame( [ 20, 25 ], [ \count( $first['groups'] ), $first['total'] ] );
 		$this->assertSame( [ 'groups' => [], 'total' => 25, 'available' => true ], $this->grouped( '--lens=drift-desk', '--offset=30' ) );
@@ -214,11 +214,11 @@ final class LensThemeGroupsTest extends TestCase {
 	public function test_a_groups_kind_and_clients_read_every_copy_of_its_stories(): void {
 		$at = self::$oct_01 + 10 * self::DAY;
 		$this->seed(
-			...$this->ticket( 'news:gift-1', 'praise', $at, 5.0, 'gift links', [ [ self::ACME, 'subject' ] ] ),
-			...$this->ticket( 'news:gift-2', 'complaint', $at + 60, 5.0, '', [ [ self::HARBOR, 'subject' ] ] ),
-			...[ self::story( 'news:gift-1', [ 'news:gift-1', 'news:gift-2' ], $at ) ]
+			...$this->ticket( 'slack:gift-1', 'praise', $at, 5.0, 'gift links', [ [ self::ACME, 'subject' ] ] ),
+			...$this->ticket( 'slack:gift-2', 'complaint', $at + 60, 5.0, '', [ [ self::HARBOR, 'subject' ] ] ),
+			...[ self::story( 'slack:gift-1', [ 'slack:gift-1', 'slack:gift-2' ], $at ) ]
 		);
-		$this->save( 'gift-desk', '--source=news', '--kind=complaint', '--kind=praise' );
+		$this->save( 'gift-desk', '--source=slack', '--kind=complaint', '--kind=praise' );
 
 		$this->assertSame(
 			[ [ 'gift links', 'complaint', 1, [ self::ACME, self::HARBOR ] ] ],
@@ -233,11 +233,11 @@ final class LensThemeGroupsTest extends TestCase {
 	 */
 	public function test_an_unbounded_grouped_read_keeps_the_last_thirty_days(): void {
 		$this->seed(
-			...$this->ticket( 'news:outage-old', 'incident', self::$oct_20 - 40 * self::DAY, 5.0, 'stale outage', [] ),
-			...$this->ticket( 'news:outage-new', 'incident', self::$oct_20 - 2 * self::DAY, 5.0, 'fresh outage', [] )
+			...$this->ticket( 'slack:outage-old', 'incident', self::$oct_20 - 40 * self::DAY, 5.0, 'stale outage', [] ),
+			...$this->ticket( 'slack:outage-new', 'incident', self::$oct_20 - 2 * self::DAY, 5.0, 'fresh outage', [] )
 		);
-		$this->save( 'outage-desk', '--source=news' );
-		$this->save( 'outage-season', '--source=news', '--days=60' );
+		$this->save( 'outage-desk', '--source=slack' );
+		$this->save( 'outage-season', '--source=slack', '--days=60' );
 
 		$themes = fn ( string ...$args ): array => \array_column( $this->grouped( ...$args )['groups'], 'theme' );
 		$this->assertSame( [ 'fresh outage' ], $themes( '--lens=outage-desk' ) );
@@ -252,11 +252,11 @@ final class LensThemeGroupsTest extends TestCase {
 	 */
 	public function test_an_items_theme_reads_from_its_newest_partition(): void {
 		$at = self::$oct_20 - 3 * self::DAY;
-		$this->seed( ...$this->ticket( 'news:split', 'incident', $at, 5.0, 'old theme', [] ) );
-		$this->second_partition( self::extraction( 'news:split', 'An incident.', 'incident', $at, [], 5.0, 5.0, 'new theme' ) );
+		$this->seed( ...$this->ticket( 'slack:split', 'incident', $at, 5.0, 'old theme', [] ) );
+		$this->second_partition( self::extraction( 'slack:split', 'An incident.', 'incident', $at, [], 5.0, 5.0, 'new theme' ) );
 
-		$this->assertSame( [ [ 'new theme', 1 ] ], \array_map( static fn ( array $g ): array => [ $g['theme'], $g['count'] ], $this->grouped( '--source=news' )['groups'] ) );
-		$this->assertSame( [ 'new theme' ], \array_column( $this->ci->dispatch( 'trends', [ 'theme', '--source=news' ] )['rows'], 'value' ) );
+		$this->assertSame( [ [ 'new theme', 1 ] ], \array_map( static fn ( array $g ): array => [ $g['theme'], $g['count'] ], $this->grouped( '--source=slack' )['groups'] ) );
+		$this->assertSame( [ 'new theme' ], \array_column( $this->ci->dispatch( 'trends', [ 'theme', '--source=slack' ] )['rows'], 'value' ) );
 	}
 
 	/** The search command's description names the grouped answer whole, `available` included. */
@@ -315,7 +315,7 @@ final class LensThemeGroupsTest extends TestCase {
 	 */
 	public function test_a_page_of_groups_costs_the_same_statements_however_many(): void {
 		$this->seed_drift( 2 );
-		$this->save( 'drift-desk', '--source=drift' );
+		$this->save( 'drift-desk', '--source=p2' );
 		$two = $this->statements_of( fn () => $this->ci->dispatch( 'search', [ '--lens=drift-desk', '--group=theme' ] ) );
 
 		$this->seed_drift( 25, 3 );
@@ -358,9 +358,9 @@ final class LensThemeGroupsTest extends TestCase {
 		$this->seed(
 			self::entity( $prairie, 'Prairie Signal' ),
 			[ Intel_Event::make( 'role_asserted', [ 'entity_key' => $prairie, 'role' => 'client', 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' ) ],
-			...$this->ticket( 'exits:EX-1', 'churned', $at, 6.0, 'leaving the platform', [ [ self::HARBOR, 'subject' ], [ $prairie, 'mention' ] ] )
+			...$this->ticket( 'unthread:EX-1', 'churned', $at, 6.0, 'leaving the platform', [ [ self::HARBOR, 'subject' ], [ $prairie, 'mention' ] ] )
 		);
-		$this->save( 'exit-desk', '--source=exits', '--by=theme', '--bucket=month' );
+		$this->save( 'exit-desk', '--source=unthread', '--by=theme', '--bucket=month' );
 
 		$this->assertSame( [ [ 'leaving the platform', [ self::HARBOR ] ] ], \array_map( static fn ( array $g ): array => [ $g['theme'], \array_column( $g['clients'], 'entity_key' ) ], $this->grouped( '--lens=exit-desk' )['groups'] ) );
 		$this->assertSame( [ [ 'leaving the platform', [ self::HARBOR ] ] ], \array_map( static fn ( array $row ): array => [ $row['value'], \array_column( $row['clients'], 'entity_key' ) ], $this->ci->dispatch( 'trends', [ '--lens=exit-desk' ] )['rows'] ) );
@@ -386,13 +386,13 @@ final class LensThemeGroupsTest extends TestCase {
 		for ( $n = 1; $n <= 9; $n++ ) {
 			$at = $week + 2 * self::DAY + $n * 60;
 			$this->seed(
-				self::item( "news:surge-{$n}", "Paywall loop {$n}", 'news', 'internal', $at ),
-				self::extraction( "news:surge-{$n}", 'Readers loop.', 'incident', $at, [], 5.0, 5.0, 'paywall login loop' )
+				self::item( "slack:surge-{$n}", "Paywall loop {$n}", 'slack', 'internal', $at ),
+				self::extraction( "slack:surge-{$n}", 'Readers loop.', 'incident', $at, [], 5.0, 5.0, 'paywall login loop' )
 			);
 		}
 		$old = $week - 12 * 604800;
-		$this->seed( self::item( 'news:old', 'An old note', 'news', 'internal', $old ), self::extraction( 'news:old', 'Old.', 'incident', $old, [], 5.0, 5.0, 'old note' ) );
-		$this->save( 'surge-desk', '--source=news', '--by=theme' );
+		$this->seed( self::item( 'slack:old', 'An old note', 'slack', 'internal', $old ), self::extraction( 'slack:old', 'Old.', 'incident', $old, [], 5.0, 5.0, 'old note' ) );
+		$this->save( 'surge-desk', '--source=slack', '--by=theme' );
 
 		$this->assertSame(
 			[ [ '2026-10-12', 'theme', 'paywall login loop', 9, 0.0 ] ],
@@ -432,13 +432,13 @@ final class LensThemeGroupsTest extends TestCase {
 		for ( $n = 1; $n <= 9; $n++ ) {
 			$at = $week + 2 * self::DAY + $n * 60;
 			$this->seed(
-				self::item( "news:surge-{$n}", "Paywall loop {$n}", 'news', 'internal', $at ),
-				self::extraction( "news:surge-{$n}", 'Readers loop.', 'incident', $at, [], 5.0, 5.0, $n <= 5 ? 'paywall login loop' : 'login redirect loop' )
+				self::item( "slack:surge-{$n}", "Paywall loop {$n}", 'slack', 'internal', $at ),
+				self::extraction( "slack:surge-{$n}", 'Readers loop.', 'incident', $at, [], 5.0, 5.0, $n <= 5 ? 'paywall login loop' : 'login redirect loop' )
 			);
 		}
 		$old = $week - 12 * 604800;
-		$this->seed( self::item( 'news:old', 'An old note', 'news', 'internal', $old ), self::extraction( 'news:old', 'Old.', 'incident', $old, [], 5.0, 5.0, 'old note' ) );
-		$this->save( 'surge-desk', '--source=news', '--by=theme' );
+		$this->seed( self::item( 'slack:old', 'An old note', 'slack', 'internal', $old ), self::extraction( 'slack:old', 'Old.', 'incident', $old, [], 5.0, 5.0, 'old note' ) );
+		$this->save( 'surge-desk', '--source=slack', '--by=theme' );
 		$this->ci->dispatch( 'merge_theme', [ 'login redirect loop', 'paywall login loop' ] );
 		$this->seed( [ \array_slice( self::ontology_events(), -1 )[0] ] );
 
@@ -457,13 +457,13 @@ final class LensThemeGroupsTest extends TestCase {
 		for ( $n = 1; $n <= 9; $n++ ) {
 			$at = $week + 2 * self::DAY + $n * 60;
 			$this->seed(
-				self::item( "news:surge-{$n}", "Paywall loop {$n}", 'news', 'internal', $at ),
-				self::extraction( "news:surge-{$n}", 'Readers loop.', 'incident', $at, [], 5.0, 5.0, 'paywall login loop' )
+				self::item( "slack:surge-{$n}", "Paywall loop {$n}", 'slack', 'internal', $at ),
+				self::extraction( "slack:surge-{$n}", 'Readers loop.', 'incident', $at, [], 5.0, 5.0, 'paywall login loop' )
 			);
 		}
 		$old = $week - 12 * 604800;
-		$this->seed( self::item( 'news:old', 'An old note', 'news', 'internal', $old ), self::extraction( 'news:old', 'Old.', 'incident', $old, [] ) );
-		$this->save( 'surge-desk', '--source=news', '--by=theme' );
+		$this->seed( self::item( 'slack:old', 'An old note', 'slack', 'internal', $old ), self::extraction( 'slack:old', 'Old.', 'incident', $old, [] ) );
+		$this->save( 'surge-desk', '--source=slack', '--by=theme' );
 
 		$this->assertSame( [], $this->ci->dispatch( 'signals', [ '--lens=surge-desk' ] )['signals'] );
 	}
@@ -518,11 +518,11 @@ final class LensThemeGroupsTest extends TestCase {
 		}
 		$about = static fn ( array $keys ): array => \array_map( static fn ( string $key ): array => [ $key, 'subject' ], $keys );
 		$this->seed(
-			...$this->ticket( 'sweep:W-1', 'incident', $at( 22 ), 5.0, 'kite sweep', $about( $clients ) ),
-			...$this->ticket( 'sweep:W-2', 'incident', $at( 21 ), 5.0, 'kite sweep', $about( \array_slice( $clients, 0, 2 ) ) ),
-			...$this->ticket( 'sweep:W-3', 'incident', $at( 20 ), 5.0, 'kite outage', $about( \array_slice( $clients, 2 ) ) )
+			...$this->ticket( 'github:W-1', 'incident', $at( 22 ), 5.0, 'kite sweep', $about( $clients ) ),
+			...$this->ticket( 'github:W-2', 'incident', $at( 21 ), 5.0, 'kite sweep', $about( \array_slice( $clients, 0, 2 ) ) ),
+			...$this->ticket( 'github:W-3', 'incident', $at( 20 ), 5.0, 'kite outage', $about( \array_slice( $clients, 2 ) ) )
 		);
-		$this->save( 'sweep-desk', '--source=sweep', '--by=theme', '--bucket=month' );
+		$this->save( 'sweep-desk', '--source=github', '--by=theme', '--bucket=month' );
 	}
 
 	/**
@@ -556,8 +556,8 @@ final class LensThemeGroupsTest extends TestCase {
 		$events = [];
 		for ( $n = $from; $n < $from + $count; $n++ ) {
 			$at       = self::$oct_01 + $n * 3600;
-			$events[] = self::item( "drift:{$n}", "Drift {$n}", 'drift', 'internal', $at )[0];
-			$events[] = self::extraction( "drift:{$n}", 'Drift.', 'other', $at, [], 5.0, 5.0, "drift theme {$n}" )[0];
+			$events[] = self::item( "p2:{$n}", "Drift {$n}", 'p2', 'internal', $at )[0];
+			$events[] = self::extraction( "p2:{$n}", 'Drift.', 'other', $at, [], 5.0, 5.0, "drift theme {$n}" )[0];
 		}
 		$this->seed( $events );
 	}

@@ -41,7 +41,8 @@
  * it did not find again, as stored; whether a call extracted the item
  * before; the record's extraction `attempt`, 0 when it carries none; and
  * whether it was owed an extraction, false when it carries none.
- * Only the links it found itself are written as events. An `item_recorded`
+ * Only the links it found itself, and those a person added, are written as
+ * events. An `item_recorded`
  * for an item the projection already holds is that same re-resolution, with
  * an `attempt` of 0; it runs the NER step unless the item was resolved
  * before, the projection holding an extraction of it from any actor or a
@@ -59,6 +60,10 @@
  * to 30 seconds, replays the `item_recorded` as a settled repeat, which is
  * not forwarded, so the deduper never places the item in a cluster; the
  * repeat path saves the NER and extraction calls every respawn would spend.
+ *
+ * A link a person added (`link_added`) and still confirms is written with
+ * the links it finds, in the role it was added in and by `human`, on every
+ * resolution, so none retracts it.
  *
  * A resolution retracts each stored non-topic link row of the item in this
  * worker's own partition's file, the one its projector deletes in, by its raw
@@ -95,7 +100,7 @@ use Newspack_Nodes\Worker_Should_Stop;
 /**
  * @phpstan-type Row array{entity_key:string, role:string, method:string, survivor:string}
  * @phpstan-type Own_Links array{verdicts: array<string,string>, rows: array<string,Row>}
- * @phpstan-type Judgment array{known: array<string,true>, stored: array<string,array{role:string,method:string,confidence:float,state:string}>, ner: array<string,array{role:string,method:string,confidence:float,state:string}>, verdicts: array<string,string>, rows: array<string,Row>}
+ * @phpstan-type Judgment array{known: array<string,true>, stored: array<string,array{role:string,method:string,confidence:float,state:string}>, ner: array<string,array{role:string,method:string,confidence:float,state:string}>, added: array<string,array{entity_key:string,role:string}>, verdicts: array<string,string>, rows: array<string,Row>}
  * @phpstan-type Reresolve array{event:string, item_key:string, fresh_after:int|float, ner?:bool, extract?:bool, attempt?:int, parked_at?:int|float}
  * @phpstan-type Resolution array{links: list<array{entity_key:string,role:string,method:string,confidence:float,state:string,evidence?:string}>, proposals: list<array{type:string,name:string,evidence:string}>, recognized: bool}
  */
@@ -125,6 +130,7 @@ class Resolver_Node extends Node {
 			'known'    => [],
 			'stored'   => [],
 			'ner'      => [],
+			'added'    => [],
 			'verdicts' => [],
 			'rows'     => [],
 		],
@@ -331,6 +337,7 @@ class Resolver_Node extends Node {
 			$this->ask_model( 'extract_entities', $item, [ 'boilerplate' => $boilerplate ], [ 'max_tokens' => 300, 'temperature' => 0.0 ], \array_diff_key( $value, $item ), $extract );
 			return;
 		}
+		$resolution                      = self::with_added( $resolution, $judgment );
 		$sent                            = self::judged( $resolution, $judgment );
 		$forward                         = $extract || ! $extracted || self::asserts_anew( $sent['links'], $judgment['known'] );
 		$forwarded                       = [
@@ -339,6 +346,33 @@ class Resolver_Node extends Node {
 			'extract'   => $extract,
 		] + $sent;
 		$this->resolved( $item, $resolution, self::retractable( $judgment, $resolution ), $forward ? $forwarded : null );
+	}
+
+	/**
+	 * A resolution with each link a person added and still confirms, in the
+	 * role it was added in, asserted by `human` at full confidence, unless
+	 * it holds that link already: written on every resolution, so none
+	 * retracts it, while a rejection leaves it to be retracted.
+	 *
+	 * @param Resolution $resolution What resolve() answered.
+	 * @param Judgment   $judgment   What settled() read.
+	 * @return Resolution
+	 */
+	private static function with_added( array $resolution, array $judgment ): array {
+		$held = [];
+		foreach ( $resolution['links'] as $link ) {
+			$held[ "{$link['entity_key']}|{$link['role']}" ] = true;
+		}
+		foreach ( $judgment['added'] as $survivor => $added ) {
+			if ( 'confirmed' === ( $judgment['verdicts'][ $survivor ] ?? null ) && ! isset( $held[ "{$added['entity_key']}|{$added['role']}" ] ) ) {
+				$resolution['links'][] = $added + [
+					'method'     => 'human',
+					'confidence' => 1.0,
+					'state'      => 'asserted',
+				];
+			}
+		}
+		return $resolution;
 	}
 
 	/**
@@ -705,8 +739,9 @@ class Resolver_Node extends Node {
 	 * given as asserted; `stored`, each linked survivor's one link across
 	 * every partition, picked subject over mention over publisher, then by
 	 * confidence and key, with its method and state; `ner`, the same pick among the NER
-	 * links alone, so a stronger link of another method hides none; and what
-	 * own_links() reads.
+	 * links alone, so a stronger link of another method hides none; `added`,
+	 * each survivor a person added a link to, as the raw key and the role of
+	 * its latest addition; and what own_links() reads.
 	 *
 	 * @param Row_Reader           $r        The reader.
 	 * @param string               $item_key The item.
@@ -740,10 +775,21 @@ class Resolver_Node extends Node {
 				$ner[ $entity ] ??= $link;
 			}
 		}
+		$added = [];
+		foreach ( $r->rows( 'SELECT entity_key, role FROM ' . Intel_Graph_Row_Schema::all( $r, 'added_links' ) . ' a WHERE item_key = ? ORDER BY ts DESC', [ $item_key ] ) as [ $key, $role ] ) {
+			$entity = $survivor( $key );
+			if ( '' !== $entity ) {
+				$added[ $entity ] ??= [
+					'entity_key' => Core::as_string( $key ),
+					'role'       => Core::as_string( $role ),
+				];
+			}
+		}
 		return [
 			'known'  => $known,
 			'stored' => $stored,
 			'ner'    => $ner,
+			'added'  => $added,
 		] + self::own_links( $r, $item_key, $merged, $own );
 	}
 

@@ -20,6 +20,8 @@ use Newspack_Nodes\Core;
 
 class P2_Source_Node extends Source_Node {
 
+	public const SOURCE = 'p2';
+
 	/** Seconds back from the clock every pass reads. */
 	public const WINDOW_SECONDS = 7 * Intel_Graph_Row_Schema::DAY_SECONDS;
 
@@ -78,7 +80,7 @@ class P2_Source_Node extends Source_Node {
 				if ( $site <= 0 ) {
 					$this->unsited( $host, $url );
 				}
-				return $site > 0 && $id > 0 ? $this->normalize_item( 'p2', ...self::post_fields( $site, $id, Core::str( $post['title'] ?? null ), self::author( $post ), self::text( $post ), $post['URL'] ?? '', $post['date'] ?? '' ) ) : null;
+				return $site > 0 && $id > 0 ? $this->normalize_item( ...self::post_fields( $site, $id, Core::str( $post['title'] ?? null ), self::author( $post ), self::text( $post ), $post['URL'] ?? '', $post['date'] ?? '' ) ) : null;
 			}
 		);
 	}
@@ -112,7 +114,7 @@ class P2_Source_Node extends Source_Node {
 				if ( $post_id <= 0 || $id <= 0 ) {
 					return null;
 				}
-				return $this->normalize_item( 'p2', ...self::comment_fields( $site, $post_id, $id, Core::str( $post['title'] ?? null ), self::author( $comment ), self::text( $comment ), $comment['URL'] ?? '', $comment['date'] ?? '' ) );
+				return $this->normalize_item( ...self::comment_fields( $site, $post_id, $id, Core::str( $post['title'] ?? null ), self::author( $comment ), self::text( $comment ), $comment['URL'] ?? '', $comment['date'] ?? '' ) );
 			}
 		);
 	}

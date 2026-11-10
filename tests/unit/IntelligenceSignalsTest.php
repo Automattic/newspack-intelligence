@@ -692,6 +692,38 @@ final class IntelligenceSignalsTest extends TestCase {
 	}
 
 	/**
+	 * A view filtering by role reads the role rows once: each statement of
+	 * the signals and of a search naming roles builds `rl` from one scan of
+	 * `roles`, and every window item and every earlier link finds its
+	 * entity's roles by entity key, however many roles it names, never by
+	 * scanning `roles` again or probing every role row's links.
+	 */
+	public function test_a_role_filter_reads_the_roles_once_and_finds_them_by_entity_key(): void {
+		$this->about_ledger( 'complaint', 'subject', [ 1 => 5, 20 => 1 ] );
+		$this->seed( [ Intel_Event::make( 'role_asserted', [ 'entity_key' => 'organization:tidewater-ledger', 'role' => 'partner', 'from_ts' => self::THIS_WEEK - 30 * self::WEEK ], 'user:41', 'fixture-9' ) ] );
+		$this->save( 'ledger-partners', '--days=30', '--role=partner', '--role=funder', '--kind=complaint' );
+		$reads = [
+			'signals' => fn () => $this->ci->dispatch( 'signals', [ '--lens=ledger-partners' ] ),
+			'search'  => fn () => $this->ci->dispatch( 'search', [ '--role=partner', '--role=funder', '--sort=time' ] ),
+			'one'     => fn () => $this->ci->dispatch( 'search', [ '--role=partner', '--sort=time' ] ),
+		];
+		$db = new \PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
+		$db->exec( 'ATTACH DATABASE ' . $db->quote( Table_Node::file( 'intel-graph', 0 ) ) . ' AS p0' );
+
+		foreach ( $reads as $name => $read ) {
+			$roled = \array_values( \array_filter( $this->queries_of( $read ), static fn ( string $sql ): bool => \str_contains( $sql, ' rl AS ' ) ) );
+			$this->assertNotSame( [], $roled, $name );
+			foreach ( $roled as $sql ) {
+				$plan = \implode( "\n", \array_column( $db->query( 'EXPLAIN QUERY PLAN ' . $sql )->fetchAll( \PDO::FETCH_ASSOC ), 'detail' ) );
+				$this->assertSame( 1, \preg_match_all( '/ p0\.roles\b/', $plan ), $name );
+				$this->assertMatchesRegularExpression( '/SEARCH rl USING /', $plan, $name );
+				$this->assertDoesNotMatchRegularExpression( '/(SCAN rl|SEARCH rl USING (?![^\n]*entity_key=\?))/', $plan, $name );
+			}
+		}
+		$this->assertSame( [ [ '2026-10-12', 'kind', 'complaint', 5, 0.0 ] ], self::signals( $this->ci->dispatch( 'signals', [ '--lens=ledger-partners' ] ) ) );
+	}
+
+	/**
 	 * No statement a team view's signals, the briefing or a search read
 	 * scans items or extractions: the signals and the briefing search item
 	 * time through `items_item_time`, and the signals and a search by kind

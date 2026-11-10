@@ -1,11 +1,13 @@
 <?php
 /**
- * Ontology_Seed: the entities the graph starts from and a lens per
- * audience, read from the seed file a deployment supplies. A run writes
- * only the keys the projection does not settle, so an entity a curator has
- * since accepted, rejected, merged or renamed is never reset to what the
- * seed says, while a machine's pending proposal of a seed key is replaced by
- * the seed's creation; a lens any event has saved or removed is left alone.
+ * Ontology_Seed: the entities the graph starts from, a lens per audience
+ * and the layout of each composed page, read from the seed file a
+ * deployment supplies. A run writes only the keys the projection does not
+ * settle, so an entity a curator has since accepted, rejected, merged or
+ * renamed is never reset to what the seed says, while a machine's pending
+ * proposal of a seed key is replaced by the seed's creation; a lens any
+ * event has saved or removed is left alone; and a layout is written only to
+ * a page that holds neither a saved layout nor a restore.
  *
  * @package Newspack_Intelligence
  */
@@ -14,6 +16,8 @@ namespace Newspack_Intelligence;
 
 use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\Capabilities;
+use Newspack_Nodes\Composition;
+use Newspack_Nodes\Composition_Store;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Row_Reader;
@@ -61,6 +65,13 @@ final class Ontology_Seed {
 	private array $lenses = [];
 
 	/**
+	 * Context => the markup the seed lays it out with, in the file's order.
+	 *
+	 * @var array<string,string>
+	 */
+	private array $layouts = [];
+
+	/**
 	 * A seed read from its file.
 	 *
 	 * @param string $path The file, named by its basename in every refusal.
@@ -68,7 +79,8 @@ final class Ontology_Seed {
 	private function __construct( private readonly string $path ) {}
 
 	/**
-	 * Write the seed events for the keys the projection does not settle, the
+	 * Write the seed events for the keys the projection does not settle, then
+	 * each layout to a page that holds none (`Composition_Store::seed()`), the
 	 * one seed `wp newspack-intelligence ontology seed` and the
 	 * `seed_ontology` command run. It refuses while the projector has not read
 	 * the ontology stream to its end, whoever wrote what it has not read, so
@@ -86,6 +98,9 @@ final class Ontology_Seed {
 		$present = $this->present();
 		$events  = $this->events( $present );
 		Stream_Writer::append( $events );
+		foreach ( $this->layouts as $context => $markup ) {
+			Composition_Store::seed( $context, $markup );
+		}
 		return [
 			'events'  => \count( $events ),
 			'created' => \count( \array_filter( $events, static fn ( array $event ): bool => \in_array( $event['event'], [ 'entity_created', 'lens_saved' ], true ) ) ),
@@ -136,7 +151,8 @@ final class Ontology_Seed {
 	 * The seed a file holds: the one given, else the site's at `path()`,
 	 * its events minted as it is read, so whatever `Intel_Event` refuses — a
 	 * type, kind or role outside its set, an event past one line — is
-	 * refused here, naming the file and the field.
+	 * refused here, naming the file and the field, as is a layout the
+	 * composition layer refuses for its page (`Composition::validate_shape()`).
 	 *
 	 * @param string|null $path A seed file, or null for the site's seed file.
 	 * @throws Seed_Refused When the file is not found, naming a given file by
@@ -159,7 +175,7 @@ final class Ontology_Seed {
 		$seed = new self( $at );
 		// phpcs:ignore WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- a local seed file, not a remote fetch.
 		$text = (string) \file_get_contents( $at );
-		$file = $seed->fields( '', $seed->decode( $text ), [ 'entities', 'lenses' ], [ 'entities', 'lenses' ] );
+		$file = $seed->fields( '', $seed->decode( $text ), [ 'entities', 'lenses', 'layouts' ], [ 'entities', 'lenses' ] );
 		foreach ( $seed->fields( 'entities', $file['entities'] ) as $type => $entities ) {
 			foreach ( $seed->fields( "entities.{$type}", $entities ) as $slug => $entity ) {
 				$seed->entity( "entities.{$type}.{$slug}", (string) $type, (string) $slug, $entity );
@@ -167,6 +183,9 @@ final class Ontology_Seed {
 		}
 		foreach ( $seed->fields( 'lenses', $file['lenses'] ) as $key => $lens ) {
 			$seed->lens( "lenses.{$key}", (string) $key, $lens );
+		}
+		foreach ( $seed->fields( 'layouts', $file['layouts'] ?? [], Intelligence_Blocks::pages() ) as $page => $markup ) {
+			$seed->layout( "layouts.{$page}", (string) $page, $markup );
 		}
 		return $seed;
 	}
@@ -281,20 +300,6 @@ final class Ontology_Seed {
 	}
 
 	/**
-	 * A string.
-	 *
-	 * @param string $field Where it sits.
-	 * @param mixed  $value The value.
-	 * @throws Seed_Refused Naming the field.
-	 */
-	private function text( string $field, mixed $value ): string {
-		if ( ! \is_string( $value ) ) {
-			$this->refuse( $field, 'not a string' );
-		}
-		return $value;
-	}
-
-	/**
 	 * A list of strings.
 	 *
 	 * @param string $field Where it sits.
@@ -378,6 +383,41 @@ final class Ontology_Seed {
 		} catch ( \InvalidArgumentException $e ) {
 			$this->refuse( $field, $e->getMessage() );
 		}
+	}
+
+	/**
+	 * One page's layout, held to every rule the composition layer applies
+	 * but the page's `check`, which reads lenses this seed may not yet have
+	 * written.
+	 *
+	 * @param string $field Where it sits.
+	 * @param string $page  The page.
+	 * @param mixed  $value Its markup.
+	 * @throws Seed_Refused Naming the field.
+	 */
+	private function layout( string $field, string $page, mixed $value ): void {
+		$context = Intelligence_Blocks::NAMESPACE . "/{$page}";
+		$markup  = $this->text( $field, $value );
+		try {
+			Composition::validate_shape( $context, $markup );
+		} catch ( \RuntimeException $e ) {
+			$this->refuse( $field, $e->getMessage() );
+		}
+		$this->layouts[ $context ] = $markup;
+	}
+
+	/**
+	 * A string.
+	 *
+	 * @param string $field Where it sits.
+	 * @param mixed  $value The value.
+	 * @throws Seed_Refused Naming the field.
+	 */
+	private function text( string $field, mixed $value ): string {
+		if ( ! \is_string( $value ) ) {
+			$this->refuse( $field, 'not a string' );
+		}
+		return $value;
 	}
 
 	/**

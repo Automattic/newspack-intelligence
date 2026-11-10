@@ -142,6 +142,7 @@ export const pageData = ( words = {} ) => ( {
 	nonce: 'NONCE',
 	operatorName: '',
 	vocabulary: { ...VOCABULARY, ...words },
+	compositions: { ...COMPOSITIONS },
 } );
 
 VOCABULARY.lensLists = [
@@ -219,6 +220,7 @@ export const LENSES = {
 				by: 'kind',
 				bucket: 'day',
 			},
+			week_items: 29,
 		},
 		{
 			lens_key: 'dev-shipping',
@@ -235,6 +237,7 @@ export const LENSES = {
 				by: null,
 				bucket: null,
 			},
+			week_items: 4,
 		},
 	],
 	available: true,
@@ -333,3 +336,93 @@ export const GROUPS = {
 	sort: 'importance',
 	available: true,
 };
+
+/** The Briefing blocks' attributes at their declared defaults, in its default order. */
+export const BRIEFING_DEFAULTS = {
+	'newspack-intelligence/ask': {
+		label: 'Ask a question',
+		placeholder: 'Ask about anything collected here…',
+		examples: [
+			'What changed last week?',
+			'What are people asking for this month?',
+		],
+	},
+	'newspack-intelligence/since': {
+		kinds: [
+			'churned',
+			'churn_signal',
+			'incident',
+			'bug',
+			'launch',
+			'funding',
+			'award',
+			'feature_request',
+			'complaint',
+		],
+	},
+	'newspack-intelligence/needs-attention': {
+		heading: 'Needs attention',
+		max: 8,
+		clients: true,
+		lenses: [],
+	},
+	'newspack-intelligence/watches': { heading: 'Your watches', max: 5 },
+	'newspack-intelligence/week': {
+		heading: 'This week, most important first',
+		top: 10,
+		categories: [],
+		otherwise: 'Everything else',
+		by_client: true,
+	},
+};
+
+/** The team view's default layout's blocks, at their shipped attributes. */
+export const LENS_DEFAULTS = {
+	'newspack-intelligence/pulse': { lens: '' },
+	'newspack-intelligence/trend-chart': {
+		heading: 'Last 8 weeks, by %s',
+		by: '',
+		bucket: '',
+		style: 'stack',
+	},
+	'newspack-intelligence/item-list': {
+		heading: 'Stories, ranked by severity, importance and clients',
+		kinds: [],
+		topics: [],
+		roles: [],
+		sources: [],
+		lens: '',
+		group: 'theme',
+		sort: 'importance',
+		layout: 'list',
+		limit: 10,
+		tiers: [],
+		empty: 'Nothing here yet.',
+	},
+};
+
+/** Each page whose default the page data's layouts hold. */
+const DEFAULTS = {
+	briefing: BRIEFING_DEFAULTS,
+	lens: LENS_DEFAULTS,
+};
+
+/** The page data's layouts: the Briefing and a team view at their defaults, the rest blank. */
+export const COMPOSITIONS = Object.fromEntries(
+	[ 'briefing', 'lens', 'entity' ].map( ( page ) => [
+		`newspack-intelligence/${ page }`,
+		{
+			context: `newspack-intelligence/${ page }`,
+			source: 'default',
+			blocks: Object.entries( DEFAULTS[ page ] ?? {} ).map(
+				( [ name, attributes ] ) => ( {
+					name,
+					attributes,
+					inner: [],
+				} )
+			),
+			saved_ts: null,
+			actor: null,
+		},
+	] )
+);

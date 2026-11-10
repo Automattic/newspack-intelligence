@@ -2,6 +2,7 @@
 	"$schema": "https://unpkg.com/knip@6/schema.json",
 	"entry": [
 		"src/*/index.js",
+		"src/intelligence/layout-editor.js",
 		"scripts/*.{js,mjs}"
 	],
 	"project": [
@@ -42,7 +43,9 @@
 		"@wordpress/icons",
 		"d3",
 		"@noble/hashes",
-		"@babel/parser"
+		"@babel/parser",
+		"@wordpress/block-editor",
+		"@wordpress/blocks"
 	],
 	"jest": false,
 	"tags": [

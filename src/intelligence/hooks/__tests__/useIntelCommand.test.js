@@ -431,7 +431,7 @@ describe( 'useIntelWrite', () => {
 		expect( screen.queryByText( /refusal:/ ) ).toBeNull();
 	} );
 
-	it( 'answers each run with the tokens it sent, and a refusal with the tokens refused', async () => {
+	it( 'answers each run with the tokens it sent, and a refusal with the tokens refused and its own error', async () => {
 		wire.replies.accept_entity = () =>
 			new Error( 'no entity: organization:acme-quillsheet' );
 		const onSent = jest.fn();
@@ -442,9 +442,10 @@ describe( 'useIntelWrite', () => {
 			'--key=organization:acme-quillsheet',
 		] );
 		await waitFor( () =>
-			expect( onRefused ).toHaveBeenCalledWith( [
-				'--key=organization:acme-quillsheet',
-			] )
+			expect( onRefused ).toHaveBeenCalledWith(
+				[ '--key=organization:acme-quillsheet' ],
+				'no entity: organization:acme-quillsheet'
+			)
 		);
 	} );
 } );

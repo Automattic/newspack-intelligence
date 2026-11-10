@@ -23,6 +23,8 @@ use Newspack_Nodes\Core;
 
 class Context_A8C_P2_Node extends Context_A8C_Source_Node {
 
+	public const SOURCE = 'p2';
+
 	/** ContextA8C's provider for P2, whose `posts-text` tool the pass calls. */
 	private const PROVIDER = 'wpcom';
 
@@ -104,12 +106,12 @@ class Context_A8C_P2_Node extends Context_A8C_Source_Node {
 		}
 		$title = Core::str( $post['title'] ?? null );
 		return [
-			$this->normalize_item( 'p2', ...P2_Source_Node::post_fields( $blog, $id, $title, self::name_of( $post['author'] ?? null ), Core::str( $post['content_text'] ?? null ), $post['link'] ?? '', $post['date'] ?? '' ) ),
+			$this->normalize_item( ...P2_Source_Node::post_fields( $blog, $id, $title, self::name_of( $post['author'] ?? null ), Core::str( $post['content_text'] ?? null ), $post['link'] ?? '', $post['date'] ?? '' ) ),
 			...self::items(
 				$post['comments'] ?? null,
 				function ( array $comment ) use ( $blog, $id, $title ): ?array {
 					$comment_id = Core::as_int( $comment['id'] ?? null );
-					return $comment_id > 0 ? $this->normalize_item( 'p2', ...P2_Source_Node::comment_fields( $blog, $id, $comment_id, $title, self::name_of( $comment['author'] ?? null ), Core::str( $comment['content_text'] ?? null ), '', $comment['date'] ?? '' ) ) : null;
+					return $comment_id > 0 ? $this->normalize_item( ...P2_Source_Node::comment_fields( $blog, $id, $comment_id, $title, self::name_of( $comment['author'] ?? null ), Core::str( $comment['content_text'] ?? null ), '', $comment['date'] ?? '' ) ) : null;
 				}
 			),
 		];

@@ -335,3 +335,100 @@ describe( 'useDeferredWrite — on the wire', () => {
 		expect( posts.at( -1 )[ 1 ].keepalive ).toBe( true );
 	} );
 } );
+
+describe( 'useDeferredWrite — a group', () => {
+	const FERNWOOD = 'organization:fernwood-gazette';
+
+	/**
+	 * Three rows' writes, each its own send.
+	 *
+	 * @return {Array<{key: string, send: jest.Mock}>} The writes.
+	 */
+	const three = () =>
+		[ PRAIRIE, COASTLINE, FERNWOOD ].map( ( key ) => ( {
+			key,
+			send: jest.fn(),
+		} ) );
+
+	it( 'hides every row at once and sends each once, after one undo window', () => {
+		const writes = three();
+		const { result } = renderHook( () => useDeferredWrite() );
+		act( () =>
+			result.current.deferGroup( writes, 'Rejected 3 suggestions.' )
+		);
+		expect( result.current.hidden ).toEqual(
+			new Set( [ PRAIRIE, COASTLINE, FERNWOOD ] )
+		);
+		expect( speak ).toHaveBeenCalledTimes( 1 );
+		expect( speak ).toHaveBeenCalledWith(
+			'Rejected 3 suggestions.',
+			'polite'
+		);
+		expect( result.current.latest ).toEqual(
+			expect.objectContaining( {
+				key: PRAIRIE,
+				message: 'Rejected 3 suggestions.',
+			} )
+		);
+		act( () => jest.advanceTimersByTime( UNDO_MS - 1 ) );
+		writes.forEach( ( { send } ) => expect( send ).not.toHaveBeenCalled() );
+		act( () => jest.advanceTimersByTime( 1 ) );
+		writes.forEach( ( { send } ) =>
+			expect( send ).toHaveBeenCalledTimes( 1 )
+		);
+		expect( result.current.hidden ).toEqual( new Set() );
+	} );
+
+	it( 'brings every row back with one undo, answering the first, and sends none', () => {
+		const writes = three();
+		const { result } = renderHook( () => useDeferredWrite() );
+		act( () =>
+			result.current.defer(
+				'organization:lakeside-works',
+				jest.fn(),
+				'Confirmed Lakeside Works.'
+			)
+		);
+		act( () =>
+			result.current.deferGroup( writes, 'Rejected 3 suggestions.' )
+		);
+		let undone;
+		act( () => {
+			undone = result.current.undo();
+		} );
+		expect( undone ).toBe( PRAIRIE );
+		expect( result.current.hidden ).toEqual(
+			new Set( [ 'organization:lakeside-works' ] )
+		);
+		act( () => jest.advanceTimersByTime( UNDO_MS * 2 ) );
+		writes.forEach( ( { send } ) => expect( send ).not.toHaveBeenCalled() );
+	} );
+
+	it( 'sends every row on a flush, though one send throws, then raises it', () => {
+		const refused = new Error( 'reject_link refused: coastline-weekly' );
+		const writes = three();
+		writes[ 1 ].send.mockImplementation( () => {
+			throw refused;
+		} );
+		const { result } = renderHook( () => useDeferredWrite() );
+		act( () =>
+			result.current.deferGroup( writes, 'Rejected 3 suggestions.' )
+		);
+		let raised = null;
+		act( () => {
+			try {
+				result.current.flush();
+			} catch ( error ) {
+				raised = error;
+			}
+		} );
+		expect( raised ).toBe( refused );
+		writes.forEach( ( { send } ) =>
+			expect( send ).toHaveBeenCalledTimes( 1 )
+		);
+		act( () => jest.advanceTimersByTime( UNDO_MS * 2 ) );
+		writes.forEach( ( { send } ) =>
+			expect( send ).toHaveBeenCalledTimes( 1 )
+		);
+	} );
+} );

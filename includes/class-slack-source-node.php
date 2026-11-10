@@ -21,6 +21,8 @@ use Newspack_Nodes\Core;
 
 class Slack_Source_Node extends Source_Node {
 
+	public const SOURCE = 'slack';
+
 	/** Seconds back from the clock every pass reads. */
 	public const WINDOW_SECONDS = 2 * Intel_Graph_Row_Schema::DAY_SECONDS;
 
@@ -123,7 +125,7 @@ class Slack_Source_Node extends Source_Node {
 				if ( '' === $thread && self::moved( $message, $moved ) ) {
 					$this->queue( self::page( 'replies', $channel, $oldest, Core::as_string( $message['ts'] ) ), null, null, $note );
 				}
-				return null === $fields ? null : $this->normalize_item( 'slack', ...$fields );
+				return null === $fields ? null : $this->normalize_item( ...$fields );
 			}
 		);
 	}

@@ -125,9 +125,6 @@ final class Graph_Query {
 	/** The link role a read turning an item's kind or theme into a claim about a client rests on. */
 	private const SUBJECT = 'subject';
 
-	/** The role an entity holds while it is the operator's own work. */
-	public const OPERATOR_PRODUCT = 'operator_product';
-
 	/** The item kinds a client's status counts, in the order it answers them. */
 	public const STATUS_KINDS = [ self::CHURNED, 'churn_signal', 'feature_request', 'complaint' ];
 
@@ -178,7 +175,7 @@ final class Graph_Query {
 		'kinds'   => [ 'kind', Intel_Event::ITEM_KINDS, 'An item kind its extraction gave' ],
 		'topics'  => [ 'topic', null, 'A topic the item is tagged with' ],
 		'roles'   => [ 'role', Intel_Event::ROLES, 'A role an entity the item links held at the item\'s time' ],
-		'sources' => [ 'source', null, 'The source that recorded it' ],
+		'sources' => [ 'source', Intel_Event::SOURCES, 'The source that recorded it' ],
 	];
 
 	/** What a trend counts when neither the call nor its lens names it. */
@@ -281,7 +278,8 @@ final class Graph_Query {
 	 * over title, body and summary, `entity` linked by any link, any `topic`
 	 * by a topic link, any `role` held at the item's time by an entity the
 	 * item links, any `kind`, any `source`, and the UTC days `since` to
-	 * `until`, each read through `lens` when the call names one; with
+	 * `until`, each read through `lens` when the call names one, and only
+	 * items of any `tier` named (`tiers_of()`); with
 	 * `group`, the same items as the groups `grouped()` ranks, which take no
 	 * sort, over the last GROUP_DAYS days when neither the call nor the lens
 	 * bounds them. A page holds `limit` items, DEFAULT_LIMIT when it names
@@ -289,23 +287,24 @@ final class Graph_Query {
 	 *
 	 * @param array<array-key,mixed> $args The bound command args.
 	 * @return array<string,mixed> `{ items, total, available, sort }`, or `{ groups, total, available }` with `group`.
-	 * @throws \InvalidArgumentException On a bad page, day, sort or grouping,
-	 *                                   a sort beside a grouping, or a lens
-	 *                                   that was never saved.
+	 * @throws \InvalidArgumentException On a bad page, day, sort, grouping or
+	 *                                   tier, a sort beside a grouping, or a
+	 *                                   lens that was never saved.
 	 */
 	public static function search( array $args ): array {
 		$group = self::given( $args, 'group' );
+		$tiers = self::tiers_of( $args );
 		if ( null === $group ) {
 			[ $limit, $offset ] = self::page( [ 'limit' => $args['limit'] ?? self::DEFAULT_LIMIT ] + $args );
 			$sort               = self::sort_of( $args );
-			return self::through( $args, self::NO_ITEMS, static fn ( Row_Reader $r, array $g, array $filter ): array => self::items( $r, $g, $filter, $limit, $offset, self::SORTS[ $sort ] ) ) + [ 'sort' => $sort ];
+			return self::through( $args, self::NO_ITEMS, static fn ( Row_Reader $r, array $g, array $filter, array $lens ): array => self::items( $r, self::within( $r, $g, $lens, $tiers ), $filter, $limit, $offset, self::SORTS[ $sort ] ) ) + [ 'sort' => $sort ];
 		}
 		self::one_of( 'group', $group, self::GROUPINGS );
 		if ( null !== $args['sort'] ) {
 			throw new \InvalidArgumentException( 'sort does not apply to groups, which rank by severity, then importance, then clients, then recency' );
 		}
 		[ $limit, $offset ] = self::page( [ 'limit' => $args['limit'] ?? self::GROUP_LIMIT ] + $args );
-		return self::through( $args, self::NO_GROUPS, static fn ( Row_Reader $r, array $g, array $filter ): array => self::grouped( $r, $g, [ 'days' => $filter['days'] ?? self::last_days( self::GROUP_DAYS ) ] + $filter, $group, $limit, $offset ) );
+		return self::through( $args, self::NO_GROUPS, static fn ( Row_Reader $r, array $g, array $filter, array $lens ): array => self::grouped( $r, self::within( $r, $g, $lens, $tiers ), [ 'days' => $filter['days'] ?? self::last_days( self::GROUP_DAYS ) ] + $filter, $group, $limit, $offset ) );
 	}
 
 	/**
@@ -391,6 +390,25 @@ final class Graph_Query {
 	}
 
 	/**
+	 * The graph a lensed read opens narrowed to the call's `$tiers` too,
+	 * intersected with the caller's and the lens's, so a call's tiers narrow
+	 * and never widen; the graph itself when the call names none.
+	 *
+	 * @param Row_Reader   $r     The reader.
+	 * @param Graph        $g     The caller's graph, through the lens.
+	 * @param Lens         $lens  The lens.
+	 * @param list<string> $tiers The call's tiers.
+	 * @return Graph
+	 */
+	private static function within( Row_Reader $r, array $g, array $lens, array $tiers ): array {
+		if ( [] === $tiers ) {
+			return $g;
+		}
+		$kept = \array_intersect( Intel_Tiers::readable(), $tiers, [] === $lens['tiers'] ? $tiers : $lens['tiers'] );
+		return self::bound( $r, $g['survivors'], \array_values( $kept ) );
+	}
+
+	/**
 	 * The order a search reads in: the `sort` it names, else `time` for
 	 * words with no lens, else `importance`.
 	 *
@@ -411,6 +429,17 @@ final class Graph_Query {
 	 */
 	public static function sorts(): array {
 		return \array_keys( self::SORTS );
+	}
+
+	/**
+	 * The tiers a call names, each one of `Intel_Event::TIERS`.
+	 *
+	 * @param array<array-key,mixed> $args The bound command args.
+	 * @return list<string>
+	 * @throws \InvalidArgumentException On a tier outside the set.
+	 */
+	private static function tiers_of( array $args ): array {
+		return \array_map( static fn ( string $tier ): string => self::one_of( 'tier', $tier, Intel_Event::TIERS ), self::strings( $args['tier'] ) );
 	}
 
 	/**
@@ -1405,10 +1434,11 @@ final class Graph_Query {
 	 * counted once per story (`stories()`); each row cites its newest items,
 	 * each its key, URL and title, and a theme row first names its open
 	 * clients (`tally()`). The axis and the bucket are the call's,
-	 * else its lens's, else DEFAULT_AXIS and DEFAULT_BUCKET.
+	 * else its lens's, else DEFAULT_AXIS and DEFAULT_BUCKET, and the answer
+	 * names both, so a chart says what it counts and which bucket runs.
 	 *
 	 * @param array<array-key,mixed> $args The bound command args.
-	 * @return array<string,mixed> `{ rows, available }`.
+	 * @return array<string,mixed> `{ rows, by, bucket, available }`.
 	 * @throws \InvalidArgumentException On an unknown axis or bucket, a bad
 	 *                                   day, an unresolvable key, or a lens
 	 *                                   that was never saved.
@@ -1417,7 +1447,18 @@ final class Graph_Query {
 		$by     = self::given( $args, 'by' );
 		$bucket = self::given( $args, 'bucket' );
 		self::check_trend( $by, $bucket );
-		return self::through( $args, [ 'rows' => [] ], static fn ( Row_Reader $r, array $g, array $filter, array $lens ): array => [ 'rows' => self::counts( $r, $g, $filter, ...self::axis( $by, $bucket, $lens ) ) ] );
+		return self::through(
+			$args,
+			[ 'rows' => [] ],
+			static function ( Row_Reader $r, array $g, array $filter, array $lens ) use ( $by, $bucket ): array {
+				$axis = self::axis( $by, $bucket, $lens );
+				return [
+					'rows'   => self::counts( $r, $g, $filter, ...$axis ),
+					'by'     => $axis[0],
+					'bucket' => self::bucket_of( $bucket, $lens ),
+				];
+			}
+		);
 	}
 
 	/**
@@ -1504,8 +1545,24 @@ final class Graph_Query {
 	 * @throws \InvalidArgumentException As `trends()`.
 	 */
 	public static function spikes( Row_Reader $r, array $g, array $args, float $after ): array {
-		[ $call, $name ] = self::asked( $args );
-		return self::signaled( $r, $g, $call, $name, $after )[0];
+		return self::judged_spikes( $r, $g, $args, $after )[0];
+	}
+
+	/**
+	 * `spikes()`, and whether the read judged its subject (`pulse_of()`).
+	 *
+	 * @api Read by Intelligence_Briefing over every lens.
+	 * @param Row_Reader             $r     The reader.
+	 * @param Graph                  $g     The caller's graph.
+	 * @param array<array-key,mixed> $args  `lens` or `entity`.
+	 * @param float                  $after The instant, UTC seconds.
+	 * @return array{0:list<array<string,mixed>>,1:bool} The spikes, and whether it was judged.
+	 * @throws \InvalidArgumentException As `trends()`.
+	 */
+	public static function judged_spikes( Row_Reader $r, array $g, array $args, float $after ): array {
+		[ $call, $name ]    = self::asked( $args );
+		[ $spikes, $pulse ] = self::signaled( $r, $g, $call, $name, $after );
+		return [ $spikes, $pulse['judged'] ];
 	}
 
 	/**
@@ -1596,8 +1653,60 @@ final class Graph_Query {
 	 * @throws \InvalidArgumentException On a lens that was never saved.
 	 */
 	private static function lensed( Row_Reader $r, array $g, array $call, ?string $name, \Closure $read ): mixed {
-		$lens = null === $name ? self::no_lens() : self::lens( $r, $name );
+		$lens = null === $name ? self::no_lens() : self::lens_of( self::saved_lens( $r, $name ) ?? throw new \InvalidArgumentException( \esc_html( "no lens: {$name}" ) ) );
 		return $read( $r, self::tiered( $r, $g, $lens ), self::over( $lens, $call ), $lens );
+	}
+
+	/**
+	 * A lens setting no filter: what a read through none applies.
+	 *
+	 * @return Lens
+	 */
+	private static function no_lens(): array {
+		return [
+			'lists'  => \array_fill_keys( \array_keys( self::LENS_LISTS ), [] ),
+			'entity' => null,
+			'days'   => null,
+			'tiers'  => [],
+			'by'     => null,
+			'bucket' => null,
+		];
+	}
+
+	/**
+	 * The filters a call names and the lens it names, its key slugged as a
+	 * save slugs it.
+	 *
+	 * @param array<array-key,mixed> $args The bound command args.
+	 * @return array{0:Filter,1:?string}
+	 * @throws \InvalidArgumentException On a bad day, or a lens key that sanitizes to nothing.
+	 */
+	private static function asked( array $args ): array {
+		$name = self::given( $args, 'lens' );
+		return [ self::filter_of( $args ), null === $name ? null : Intel_Event::lens_key( $name ) ];
+	}
+
+	/**
+	 * Which of `$keys` a saved lens admits, as `search` through it reads
+	 * them, under the caller's tiers narrowed to the lens's: one statement,
+	 * each filter reading the item's own links (`narrowed()` inline).
+	 *
+	 * @api Intelligence_Briefing files the week's items by it.
+	 * @param Row_Reader   $r    The reader.
+	 * @param Graph        $g    The caller's graph.
+	 * @param string       $lens The lens key.
+	 * @param list<string> $keys The item keys.
+	 * @return list<string> The keys it admits.
+	 * @throws \InvalidArgumentException On a lens that was never saved.
+	 */
+	public static function admitted( Row_Reader $r, array $g, string $lens, array $keys ): array {
+		$saved = self::lens_of( self::saved_lens( $r, $lens ) ?? throw new \InvalidArgumentException( \esc_html( "no lens: {$lens}" ) ) );
+		if ( [] === $keys ) {
+			return [];
+		}
+		[ $with, $where, $lead, $binds ] = self::narrowed( $r, self::tiered( $r, $g, $saved ), self::over( $saved, self::filter_of( [] ) ), false, Intel_Event::ABOUT_ROLES, true );
+		$rows                            = $r->rows( "{$with} SELECT i.item_key FROM ri i WHERE {$where} AND i.item_key IN ( " . Intel_Graph_Row_Schema::marks( $keys ) . ' )', [ ...$lead, ...$binds, ...$keys ] );
+		return \array_map( static fn ( array $row ): string => Core::as_string( $row[0] ), $rows );
 	}
 
 	/**
@@ -1650,16 +1759,16 @@ final class Graph_Query {
 	}
 
 	/**
-	 * A lens's filters, read back as saved.
+	 * A saved lens's `filters` column as stored, or null for a key that was
+	 * never saved, so a caller refuses it as `no lens: <key>`.
 	 *
+	 * @api Graph_Curation, Graph_Watches and Intelligence_Blocks read it too.
 	 * @param Row_Reader $r   The reader.
 	 * @param string     $key The lens key.
-	 * @return Lens
-	 * @throws \InvalidArgumentException When the key does not name a lens.
 	 */
-	private static function lens( Row_Reader $r, string $key ): array {
-		$filters = $r->rows( 'SELECT filters FROM ' . Intel_Graph_Row_Schema::all( $r, 'lenses' ) . ' l WHERE lens_key = ? LIMIT 1', [ $key ] )[0][0] ?? throw new \InvalidArgumentException( \esc_html( "no lens: {$key}" ) );
-		return self::lens_of( $filters );
+	public static function saved_lens( Row_Reader $r, string $key ): ?string {
+		$filters = $r->rows( 'SELECT filters FROM ' . Intel_Graph_Row_Schema::all( $r, 'lenses' ) . ' l WHERE lens_key = ? LIMIT 1', [ $key ] )[0][0] ?? null;
+		return null === $filters ? null : Core::as_string( $filters );
 	}
 
 	/**
@@ -1687,34 +1796,6 @@ final class Graph_Query {
 	}
 
 	/**
-	 * A lens setting no filter: what a read through none applies.
-	 *
-	 * @return Lens
-	 */
-	private static function no_lens(): array {
-		return [
-			'lists'  => \array_fill_keys( \array_keys( self::LENS_LISTS ), [] ),
-			'entity' => null,
-			'days'   => null,
-			'tiers'  => [],
-			'by'     => null,
-			'bucket' => null,
-		];
-	}
-	/**
-	 * The filters a call names and the lens it names, its key slugged as a
-	 * save slugs it.
-	 *
-	 * @param array<array-key,mixed> $args The bound command args.
-	 * @return array{0:Filter,1:?string}
-	 * @throws \InvalidArgumentException On a bad day, or a lens key that sanitizes to nothing.
-	 */
-	private static function asked( array $args ): array {
-		$name = self::given( $args, 'lens' );
-		return [ self::filter_of( $args ), null === $name ? null : Intel_Event::lens_key( $name ) ];
-	}
-
-	/**
 	 * Each entity's signals, named with no lens, every entity read in the
 	 * same statements: the spikes of the items naming it as their subject,
 	 * per kind by week, a
@@ -1722,17 +1803,19 @@ final class Graph_Query {
 	 * before the window; what its own site published, per week against its
 	 * own baseline, a `burst` for each kind spiking by the rule `spiked_in()`
 	 * applies, a kind it never put out before included; and, for a client,
-	 * the `drop` or `silent` `falls()` reads.
+	 * the `drop` or `silent` `falls()` reads. Beside them, whether any
+	 * entity was judged (`pulse_of()`).
 	 *
 	 * @api Read by Intelligence_Briefing over every open client.
 	 * @param Row_Reader   $r         The reader.
 	 * @param Graph        $g         The graph.
 	 * @param list<string> $survivors The entities, as survivors.
 	 * @param float        $after     The instant, UTC seconds.
-	 * @return array<string,list<array<string,mixed>>> Each survivor => its signals, the about axis first.
+	 * @return array{0:array<string,list<array<string,mixed>>>,1:bool} Each survivor => its signals, the about axis first; and whether any was judged.
 	 */
 	public static function signals_of( Row_Reader $r, array $g, array $survivors, float $after ): array {
-		return self::entities_read( $r, $g, $survivors, $after )[0];
+		[ $signals, $pulses ] = self::entities_read( $r, $g, $survivors, $after );
+		return [ $signals, [] !== \array_filter( \array_column( $pulses, 'judged' ) ) ];
 	}
 
 	/**
@@ -1987,7 +2070,7 @@ final class Graph_Query {
 		}
 		if ( [] !== $roles ) {
 			$held = 'rl.role IN ( ' . Intel_Graph_Row_Schema::marks( $roles ) . " ) AND rl.from_ts <= {$time} AND ( 0 = rl.to_ts OR {$time} < rl.to_ts )";
-			$link_filters[] = self::link_filter( $r, $links, $inline, "EXISTS ( SELECT 1 FROM live JOIN rl ON rl.entity_key = live.entity_key WHERE live.item_key = i.item_key AND NOT live.topical AND {$held} )", "{l}.role <> 'topic' AND EXISTS ( SELECT 1 FROM rl WHERE rl.entity_key = {e} AND {$held} )", $roles );
+			$link_filters[] = self::link_filter( $r, $links, $inline, "EXISTS ( SELECT 1 FROM live CROSS JOIN rl ON rl.entity_key = live.entity_key WHERE live.item_key = i.item_key AND NOT live.topical AND {$held} )", "{l}.role <> 'topic' AND EXISTS ( SELECT 1 FROM rl WHERE rl.entity_key = {e} AND {$held} )", $roles );
 		}
 		foreach ( $link_filters as [ $condition, $condition_binds ] ) {
 			$where[] = $condition;
@@ -2012,7 +2095,8 @@ final class Graph_Query {
 			\array_push( $lead, ...$live_binds );
 		}
 		if ( [] !== $roles ) {
-			$with .= ', rl AS ( SELECT COALESCE( mg.value, r.entity_key ) AS entity_key, r.role, r.from_ts, r.to_ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'roles' ) . ' r LEFT JOIN mg ON mg.key = r.entity_key )';
+			// Built once, probed by entity in the order the CROSS JOIN fixes.
+			$with .= ', rl AS MATERIALIZED ( SELECT COALESCE( mg.value, r.entity_key ) AS entity_key, r.role, r.from_ts, r.to_ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'roles' ) . ' r LEFT JOIN mg ON mg.key = r.entity_key )';
 		}
 		return [ $with, \implode( ' AND ', $where ), $lead, $binds ];
 	}

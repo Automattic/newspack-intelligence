@@ -32,6 +32,7 @@ if ( ! \defined( 'NEWSPACK_INTELLIGENCE_URL' ) ) {
 const INTELLIGENCE_MENU_SLUG = 'newspack-intelligence';
 const INTELLIGENCE_MOUNT_ID  = 'newspack-intelligence-app';
 const SETTINGS_MENU_SLUG     = 'newspack-intelligence-settings';
+const LAYOUT_EDITOR_HANDLE   = 'newspack-intelligence-layout-editor';
 
 /**
  * Register the Intelligence page — search, entity, review and collections —
@@ -64,7 +65,11 @@ function register_intelligence_admin_page(): void {
  * browser, the operator the running topology names (`Operator::configured()`),
  * which the page's copy names, as `operatorName` the name it configures, ''
  * for none, and the vocabulary: the closed lists those controls offer and
- * the word each key is shown as (`screen_words()`). The
+ * the word each key is shown as (`screen_words()`), and as `compositions`
+ * the layout each composed page reads (`Composition_Store::page_data()`).
+ * A load naming one of those pages as `edit` loads the layout editor for it
+ * (`enqueue_layout_editor()`), which `Composition::editor()` loads for a
+ * `tune` caller alone. The
  * server's role gate stays the authority; the flag only hides. WordPress
  * refuses the page to a caller its menu capability excludes before this
  * runs. `Admin::enqueue_react_page()` no-ops when
@@ -77,7 +82,7 @@ function enqueue_intelligence_assets( string $hook ): void {
 		return;
 	}
 	$operator = Operator::configured();
-	\Newspack_Nodes\Admin\Admin::enqueue_react_page(
+	$handle   = \Newspack_Nodes\Admin\Admin::enqueue_react_page(
 		[
 			'handle'           => 'newspack-intelligence',
 			'page'             => INTELLIGENCE_MENU_SLUG,
@@ -111,9 +116,39 @@ function enqueue_intelligence_assets( string $hook ): void {
 					),
 					...screen_words( $operator ),
 				],
+				'compositions' => \Newspack_Nodes\Composition_Store::page_data( \array_keys( Intelligence_Blocks::CONTEXTS ) ),
 			],
 		]
 	);
+	// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- names which page's editor to load; the editor's writes are command-gated.
+	$edit = isset( $_GET['edit'] ) && \is_string( $_GET['edit'] ) ? \sanitize_text_field( \wp_unslash( $_GET['edit'] ) ) : '';
+	if ( null !== $handle && \in_array( $edit, Intelligence_Blocks::pages(), true ) ) {
+		enqueue_layout_editor( Intelligence_Blocks::NAMESPACE . "/{$edit}" );
+	}
+}
+
+/**
+ * Register the layout editor's bundle, without enqueueing it, and hand it to
+ * `Composition::editor()`, which loads the canvas, the bundle and the
+ * context's schemas for a `tune` caller and nothing for any other; its
+ * stylesheet joins it once it loads. Nothing loads while the bundle is
+ * unbuilt.
+ *
+ * @param string $context The context the editor lays out.
+ */
+function enqueue_layout_editor( string $context ): void {
+	$dir = __DIR__ . '/build/layout-editor';
+	if ( ! \file_exists( "{$dir}/layout-editor.js" ) ) {
+		return;
+	}
+	$asset   = \Newspack_Nodes\Core::arr( require "{$dir}/layout-editor.asset.php" );
+	$deps    = \array_map( \Newspack_Nodes\Core::as_string( ... ), \array_values( \Newspack_Nodes\Core::arr( $asset['dependencies'] ) ) );
+	$version = \Newspack_Nodes\Core::as_string( $asset['version'] );
+	\wp_register_script( LAYOUT_EDITOR_HANDLE, \plugins_url( 'build/layout-editor/layout-editor.js', __FILE__ ), $deps, $version, true );
+	if ( \Newspack_Nodes\Composition::editor( $context, LAYOUT_EDITOR_HANDLE ) && \file_exists( "{$dir}/layout-editor.css" ) ) {
+		\wp_enqueue_style( LAYOUT_EDITOR_HANDLE, \plugins_url( 'build/layout-editor/layout-editor.css', __FILE__ ), [ 'wp-components', 'wp-block-editor' ], $version );
+		\wp_style_add_data( LAYOUT_EDITOR_HANDLE, 'rtl', 'replace' );
+	}
 }
 
 /**
@@ -404,6 +439,9 @@ function register_cli_commands(): void {
 
 		// Mount the service CI into each request graph.
 		\add_action( 'newspack_nodes/request_graph_ready', __NAMESPACE__ . '\\mount_service_cis' );
+
+		// The blocks and contexts the page's layouts are composed of.
+		\add_filter( \Newspack_Nodes\Composition::FILTER, Intelligence_Blocks::declare( ... ) );
 
 		// The MCP door agents read and curate the graph through.
 		( new Intelligence_Mcp_Door() )->wire();

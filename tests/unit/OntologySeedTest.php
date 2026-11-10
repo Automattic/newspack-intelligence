@@ -4,10 +4,13 @@ declare(strict_types=1);
 namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Graph_Query;
+use Newspack_Intelligence\Intelligence_Blocks;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Ontology_Seed;
 use Newspack_Intelligence\Resolver;
 use Newspack_Intelligence\Seed_Refused;
+use Newspack_Nodes\Composition;
+use Newspack_Nodes\Composition_Store;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Table_Unavailable;
@@ -16,27 +19,104 @@ use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-entity-index.php';
 require_once __DIR__ . '/../support/reads-ontology-log.php';
+require_once __DIR__ . '/../support/declares-intelligence-blocks.php';
 
 /**
  * The seeded ontology: the entities and lenses a seed file names, read from
  * the site's Intelligence data dir beside the runtime base, as events keyed
  * so a second run writes the same set, and only for the keys the projection
- * lacks.
+ * lacks; and the layouts it names, each written only to a page that holds
+ * none.
  */
 final class OntologySeedTest extends TestCase {
 	use Reads_Ontology_Log;
 	use Seeds_Entity_Index;
+	use Declares_Intelligence_Blocks;
+
+	/** A fixture block the Briefing takes, whose heading tells two layouts apart. */
+	private const PROBE = '<!-- wp:newspack-intelligence/probe {"heading":"%s"} /-->';
 
 	protected function setUp(): void {
 		parent::setUp();
 		$this->start_entity_graph();
 		self::place_seed();
 		$this->activate( 'newspack-intelligence-project' );
+		$this->declare_intelligence_blocks();
+		$this->declare_probe( 'newspack-intelligence/briefing' );
 	}
 
 	protected function tearDown(): void {
+		$this->forget_compositions();
 		Topology_Registry::reset();
 		parent::tearDown();
+	}
+
+	/** A seeded layout never replaces one a curator saved, and lays out a page that holds none. */
+	public function test_seed_layouts_never_reset_a_curators(): void {
+		Composition_Store::save( 'newspack-intelligence/briefing', \sprintf( self::PROBE, 'Curated desk' ) );
+		$path = $this->seed_file(
+			[
+				'entities' => [],
+				'lenses'   => [],
+				'layouts'  => [
+					'briefing' => \sprintf( self::PROBE, 'Seeded desk' ),
+					'entity'   => '<!-- wp:newspack-intelligence/aside /-->',
+				],
+			]
+		);
+
+		Ontology_Seed::load( $path )->seed();
+
+		$briefing = Composition_Store::read( 'newspack-intelligence/briefing' );
+		$this->assertSame( 'Curated desk', $briefing['blocks'][0]['attributes']['heading'] );
+		$entity = Composition_Store::read( 'newspack-intelligence/entity' );
+		$this->assertSame( [ 'saved', [ 'newspack-intelligence/aside' ] ], [ $entity['source'], \array_column( $entity['blocks'], 'name' ) ] );
+		$this->assertSame( 'default', Composition_Store::read( 'newspack-intelligence/lens' )['source'], 'a page the seed names no layout for keeps its default' );
+	}
+
+	/**
+	 * A layout the composition layer refuses refuses the whole seed, naming
+	 * its page, before any event or layout is written.
+	 *
+	 * @param mixed  $layouts The seed's `layouts`.
+	 * @param string $refusal What the refusal names, after the file's name.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'bad_layouts' )]
+	public function test_seed_refuses_an_invalid_layout_before_writing_anything( mixed $layouts, string $refusal ): void {
+		$path = $this->seed_file(
+			[
+				'entities' => [ 'topic' => [ 'salt-marsh' => [ 'name' => 'Salt marsh' ] ] ],
+				'lenses'   => [ 'gull-desk' => [ 'name' => 'Gull desk', 'description' => 'Gulls.', 'filters' => [] ] ],
+				'layouts'  => $layouts,
+			]
+		);
+
+		try {
+			Ontology_Seed::load( $path )->seed();
+			$this->fail( 'the seed wrote past a layout it could not lay out' );
+		} catch ( Seed_Refused $e ) {
+			$this->assertSame( "seed.json: {$refusal}", $e->getMessage() );
+		}
+		$this->assertSame( [], self::ontology_events() );
+		foreach ( \array_keys( Intelligence_Blocks::CONTEXTS ) as $context ) {
+			$this->assertFalse( \get_option( Composition_Store::OPTION_PREFIX . $context, false ), $context );
+		}
+	}
+
+	/**
+	 * Layouts a seed may not hold, beside the refusal of each.
+	 *
+	 * @return array<string,array{0:mixed,1:string}>
+	 */
+	public static function bad_layouts(): array {
+		$probe = '<!-- wp:newspack-intelligence/probe {"heading":"Seeded desk"} /-->';
+		return [
+			'html in a layout'     => [ [ 'entity' => '<!-- wp:newspack-intelligence/aside /-->', 'briefing' => "{$probe}<p>Gulls</p>" ], 'layouts.briefing: composition newspack-intelligence/briefing: HTML outside a block; a layout holds no HTML' ],
+			'a block off its page' => [ [ 'lens' => $probe ], 'layouts.lens: composition newspack-intelligence/lens: newspack-intelligence/probe does not stand on newspack-intelligence/lens' ],
+			'a page not composed'  => [ [ 'folders' => $probe ], 'layouts.folders: not a field it takes' ],
+			'markup not a string'  => [ [ 'briefing' => [ $probe ] ], 'layouts.briefing: not a string' ],
+			'not an object'        => [ [ $probe ], 'layouts: not an object' ],
+		];
 	}
 
 	public function test_every_seed_event_validates(): void {
@@ -283,6 +363,21 @@ final class OntologySeedTest extends TestCase {
 		}
 	}
 
+	/**
+	 * The example loads, and its Briefing layout validates against its own
+	 * lenses once they are written: a week filed under its four categories,
+	 * the rest under "Industry news".
+	 */
+	public function test_the_example_seed_loads(): void {
+		$path = \NEWSPACK_INTELLIGENCE_DIR . 'examples/' . Ontology_Seed::FILE;
+		$this->seed( Ontology_Seed::load( $path )->events( [] ) );
+		$markup = \json_decode( (string) \file_get_contents( $path ), true, 512, \JSON_THROW_ON_ERROR )['layouts']['briefing'];
+
+		$week = \array_column( Composition::validate( 'newspack-intelligence/briefing', $markup ), 'attributes', 'name' )['newspack-intelligence/week'];
+
+		$this->assertSame( [ [ 'product-updates', 'publisher-news', 'partner-news', 'publisher-awards' ], 'Industry news' ], [ $week['categories'], $week['otherwise'] ] );
+	}
+
 	/** A seed in a topology dir is not read: only the data dir's is. */
 	public function test_a_seed_in_a_topology_dir_is_not_read(): void {
 		$user = $this->make_temp_dir( 'intel-seed-user-' );
@@ -337,12 +432,13 @@ final class OntologySeedTest extends TestCase {
 			'slug not a slug'     => [ '{"entities":{"topic":{"Salt Marsh":{"name":"Salt marsh"}}},"lenses":{}}', 'entities.topic.Salt Marsh: not a slug; the key it makes is topic:salt-marsh' ],
 			'unknown lens filter' => [ $lens( [ 'audience' => [ 'gulls' ] ] ), 'lenses.gull-desk.filters.audience: not a field it takes' ],
 			'lens role unknown'   => [ $lens( [ 'roles' => [ 'patron' ] ] ), 'lenses.gull-desk.filters: role must be one of: ' . \implode( ', ', Intel_Event::ROLES ) ],
+			'lens source unknown' => [ $lens( [ 'sources' => [ 'gullcast' ] ] ), 'lenses.gull-desk.filters: source must be one of: ' . \implode( ', ', Intel_Event::SOURCES ) ],
 			'lens tier unknown'   => [ $lens( [ 'tiers' => [ 'secret' ] ] ), 'lenses.gull-desk.filters: tier must be one of: public, internal, restricted' ],
 			'lens by unknown'     => [ $lens( [ 'by' => 'colour' ] ), 'lenses.gull-desk.filters: by must be one of: ' . \implode( ', ', Graph_Query::trend_axes() ) ],
 			'lens bucket unknown' => [ $lens( [ 'bucket' => 'fortnight' ] ), 'lenses.gull-desk.filters: bucket must be one of: ' . \implode( ', ', Graph_Query::buckets() ) ],
 			'lens days past'      => [ $lens( [ 'days' => 731 ] ), 'lenses.gull-desk.filters: days must be between 1 and 730' ],
 			'lens days not int'   => [ $lens( [ 'days' => '7' ] ), 'lenses.gull-desk.filters.days: not a whole number' ],
-			'lens free list'      => [ $lens( [ 'sources' => [ '  ' ] ] ), 'lenses.gull-desk.filters: source is blank' ],
+			'lens free list'      => [ $lens( [ 'topics' => [ '  ' ] ] ), 'lenses.gull-desk.filters: topic is blank' ],
 			'lens list not list'  => [ $lens( [ 'sources' => 'github' ] ), 'lenses.gull-desk.filters.sources: not a list of strings' ],
 			'lens entity blank'   => [ $lens( [ 'entity' => ' ' ] ), 'lenses.gull-desk.filters: entity is blank' ],
 			'lens past one line'  => [ $lens_fields( [ 'description' => \str_repeat( 'g', 5000 ) ] ), 'lenses.gull-desk: lens_saved: ' ],

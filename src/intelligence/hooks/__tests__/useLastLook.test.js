@@ -13,7 +13,7 @@ import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import Briefing from '../../views/Briefing';
 import { MIN_VISIBLE_MS, useLastLook } from '../useLastLook';
-import { pageData } from '../../views/__tests__/fixtures';
+import { COMPOSITIONS, pageData } from '../../views/__tests__/fixtures';
 
 const READER = '6143';
 const LAST_LOOK = 'newspack-intelligence:last-look:6143';
@@ -290,7 +290,6 @@ describe( 'the Briefing on the last look', () => {
 	let wire;
 
 	const handlers = {
-		operator: { name: 'Quillmere Cooperative', heading: 'Quillmere' },
 		onSearchFor: () => {},
 		onOpenEntity: () => {},
 		onOpenLens: () => {},
@@ -302,7 +301,11 @@ describe( 'the Briefing on the last look', () => {
 	};
 
 	const CHANGES = {
+		order: 'importance',
+		items: [],
 		groups: [],
+		categories: [],
+		otherwise: 0,
 		total: 0,
 		summary: { since: SEEDED, items: 4, clients: 2, kinds: [] },
 		available: true,
@@ -317,7 +320,7 @@ describe( 'the Briefing on the last look', () => {
 		on.replies.briefing = ( [ what ] ) =>
 			'changes' === what
 				? CHANGES
-				: { clients: [], lenses: [], available: true };
+				: { clients: [], lenses: [], judged: true, available: true };
 		on.replies.watches = { watches: [], available: true };
 	};
 
@@ -333,12 +336,12 @@ describe( 'the Briefing on the last look', () => {
 		const [ asked, onAsked ] = useState( null );
 		return shown ? (
 			<Briefing
-				{ ...handlers }
+				layout={ COMPOSITIONS[ 'newspack-intelligence/briefing' ] }
 				since={ since }
 				kept={ kept }
 				noteVisible={ noteVisible }
-				asked={ asked }
-				onAsked={ onAsked }
+				canTune={ false }
+				actions={ { ...handlers, asked, onAsked } }
 			/>
 		) : (
 			<p>Search</p>
@@ -354,7 +357,7 @@ describe( 'the Briefing on the last look', () => {
 	it( 'a remount reads the first baseline', async () => {
 		window.localStorage.setItem( LAST_LOOK, String( SEEDED ) );
 		const page = render( <Page shown /> );
-		await screen.findByText( '4 new items about 2 clients' );
+		await screen.findByText( '4 new items.' );
 		pass( 15000 );
 		pagehide();
 		expect( window.localStorage.getItem( LAST_LOOK ) ).not.toBe(
@@ -362,14 +365,14 @@ describe( 'the Briefing on the last look', () => {
 		);
 		page.rerender( <Page shown={ false } /> );
 		page.rerender( <Page shown /> );
-		await screen.findByText( '4 new items about 2 clients' );
+		await screen.findByText( '4 new items.' );
 		const beforeReload = wire.sent( 'briefing' );
 		page.unmount();
 		Core.reset();
 		wire = intelWire();
 		answer( wire );
 		render( <Page shown /> );
-		await screen.findByText( '4 new items about 2 clients' );
+		await screen.findByText( '4 new items.' );
 		const changes = [ ...beforeReload, ...wire.sent( 'briefing' ) ].filter(
 			( [ what ] ) => 'changes' === what
 		);
@@ -391,13 +394,13 @@ describe( 'the Briefing on the last look', () => {
 			}
 		);
 		render( <Page shown /> );
-		await screen.findByRole( 'region', { name: 'Last seven days' } );
-		await screen.findByText( 'Watch a client or a team view', {
+		await screen.findByRole( 'region', {
+			name: 'This week, most important first',
+		} );
+		await screen.findByText( 'Watch a client, a team view or a folder', {
 			exact: false,
 		} );
-		expect(
-			screen.queryByText( '4 new items about 2 clients' )
-		).not.toBeInTheDocument();
+		expect( screen.queryByText( '4 new items.' ) ).not.toBeInTheDocument();
 		expect( wire.sent( 'briefing' ) ).toContainEqual( [ 'changes' ] );
 	} );
 } );

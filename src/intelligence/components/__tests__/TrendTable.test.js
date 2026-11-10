@@ -15,7 +15,14 @@
 
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import { resetLocaleData, setLocaleData } from '@wordpress/i18n';
-import TrendTable, { Signals, TrendChart, signalValue } from '../TrendTable';
+import { Core } from '@newspack-nodes/runtime';
+import { chartColor } from '@newspack-nodes/shared/hooks/useTimeChart';
+import TrendTable, {
+	Signals,
+	TrendChart,
+	rankColor,
+	signalValue,
+} from '../TrendTable';
 import { pageData } from '../../views/__tests__/fixtures';
 
 beforeEach( () => {
@@ -212,10 +219,13 @@ describe( 'TrendTable dates', () => {
 } );
 
 describe( 'TrendChart', () => {
+	/** Wednesday 4 November 2026, 15:00 UTC: the week of 2 November runs. */
+	const NOW = Date.UTC( 2026, 10, 4, 15 ) / 1000;
+
 	/**
-	 * Trend rows, newest bucket first, as `trends` answers them: nine weekly
-	 * buckets, so the oldest falls outside the latest eight, and six values,
-	 * so the smallest falls outside the top five.
+	 * Trend rows, newest bucket first, as `trends` answers them: the week
+	 * still running, then nine complete weeks, so the oldest falls outside the
+	 * latest eight, and six values, so the smallest falls outside the top five.
 	 */
 	const WEEKS = [
 		'2026-10-26',
@@ -229,6 +239,8 @@ describe( 'TrendChart', () => {
 		'2026-08-31',
 	];
 	const ROWS = [
+		{ bucket: '2026-11-02', value: 'complaint', count: 4, items: [] },
+		{ bucket: '2026-11-02', value: 'praise', count: 7, items: [] },
 		...WEEKS.slice( 0, 8 ).map( ( bucket ) => ( {
 			bucket,
 			value: 'complaint',
@@ -243,6 +255,15 @@ describe( 'TrendChart', () => {
 		{ bucket: WEEKS[ 5 ], value: 'hire', count: 1, items: [] },
 		{ bucket: WEEKS[ 8 ], value: 'release', count: 40, items: [] },
 	];
+	const ANSWER = { rows: ROWS, by: 'kind', bucket: 'week' };
+	const HEADING = 'Eight weeks of %s';
+
+	beforeEach( () => {
+		jest.spyOn( Core, 'now' ).mockReturnValue( NOW );
+		window.localStorage.clear();
+	} );
+
+	afterEach( () => jest.restoreAllMocks() );
 
 	const legend = ( container ) =>
 		Array.from(
@@ -260,8 +281,18 @@ describe( 'TrendChart', () => {
 			.map( ( svg ) => svg.outerHTML )
 			.join( '' );
 
-	it( 'draws the five largest values over the latest eight buckets as series of one shared time chart', () => {
-		const { container } = render( <TrendChart rows={ ROWS } /> );
+	const chart = ( props ) =>
+		render(
+			<TrendChart
+				answer={ ANSWER }
+				heading={ HEADING }
+				style="stack"
+				{ ...props }
+			/>
+		);
+
+	it( 'draws the five largest values over the eight complete buckets as series of one shared time chart', () => {
+		const { container } = chart();
 		expect(
 			container.querySelectorAll( '.newspack-nodes-chart' )
 		).toHaveLength( 1 );
@@ -272,17 +303,119 @@ describe( 'TrendChart', () => {
 			'Defect',
 			'Going live',
 		] );
-		expect(
-			screen.getByRole( 'heading', {
-				name: 'From 2026-09-07 to 2026-10-26',
-			} )
-		).toBeInTheDocument();
 		expect( markup( container ) ).toMatch( /<path / );
 		expect( markup( container ) ).not.toMatch( /NaN/ );
 	} );
 
+	it( 'titles the chart by its heading, naming the axis it counted in lower case', () => {
+		chart();
+		expect(
+			screen.getByRole( 'heading', { name: 'Eight weeks of news type' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'ticks its weeks by day and short month, level', () => {
+		const { container } = chart();
+		const ticks = [
+			...container.querySelectorAll( 'svg .tick text' ),
+		].filter( ( text ) => /[A-Za-z]/.test( text.textContent ) );
+		expect( ticks.length ).toBeGreaterThan( 0 );
+		for ( const text of ticks ) {
+			expect( text.textContent ).toMatch( /^\d{1,2} [A-Z][a-z]{2}$/ );
+			expect( text.getAttribute( 'transform' ) ).toBeNull();
+		}
+	} );
+
+	it( 'draws the running week apart as one hatched bar of its total, labelled this week', () => {
+		const { container } = chart();
+		const bar = container.querySelector( '.newspack-nodes-chart__partial' );
+		expect( bar ).not.toBeNull();
+		expect( bar.querySelector( 'title' ) ).toHaveTextContent(
+			'this week: 11'
+		);
+		expect(
+			container.querySelector( '.newspack-nodes-chart__partial-label' )
+		).toHaveTextContent( 'this week' );
+	} );
+
+	it( 'names the running day and month by their own span', () => {
+		const { container, rerender } = chart( {
+			answer: {
+				rows: [
+					{ bucket: '2026-11-04', value: 'bug', count: 2, items: [] },
+					{ bucket: '2026-11-03', value: 'bug', count: 5, items: [] },
+				],
+				by: 'kind',
+				bucket: 'day',
+			},
+		} );
+		expect(
+			container.querySelector( '.newspack-nodes-chart__partial title' )
+		).toHaveTextContent( 'today: 2' );
+		rerender(
+			<TrendChart
+				answer={ {
+					rows: [
+						{
+							bucket: '2026-11-01',
+							value: 'bug',
+							count: 9,
+							items: [],
+						},
+						{
+							bucket: '2026-10-01',
+							value: 'bug',
+							count: 5,
+							items: [],
+						},
+					],
+					by: 'kind',
+					bucket: 'month',
+				} }
+				heading={ HEADING }
+				style="stack"
+			/>
+		);
+		expect(
+			container.querySelector( '.newspack-nodes-chart__partial title' )
+		).toHaveTextContent( 'this month: 9' );
+	} );
+
+	it( 'draws lines for the lines style, so no total bar stands beside them', () => {
+		const { container } = chart( { style: 'lines' } );
+		expect(
+			screen.getByRole( 'button', {
+				name: 'Stack Eight weeks of news type',
+			} )
+		).toHaveAttribute( 'aria-pressed', 'false' );
+		expect(
+			container.querySelector( '.newspack-nodes-chart__partial' )
+		).toBeNull();
+	} );
+
+	it( 'names each theme in sentence case', () => {
+		const { container } = chart( {
+			answer: {
+				rows: [
+					{
+						bucket: '2026-10-26',
+						value: 'client offboarding',
+						count: 3,
+						items: [],
+					},
+				],
+				by: 'theme',
+				bucket: 'week',
+			},
+		} );
+		expect( legend( container ) ).toEqual( [ 'Client offboarding' ] );
+		expect(
+			screen.getByRole( 'heading', { name: 'Eight weeks of thread' } )
+		).toBeInTheDocument();
+	} );
+
 	it( 'hands a screen reader every row as a table', () => {
-		render( <TrendChart rows={ ROWS } /> );
+		chart();
 		const table = screen.getByRole( 'table' );
 		expect( within( table ).getAllByRole( 'row' ) ).toHaveLength(
 			ROWS.length + 1
@@ -294,43 +427,63 @@ describe( 'TrendChart', () => {
 	} );
 
 	it( 'draws counts that are all zero without a NaN', () => {
-		const { container } = render(
-			<TrendChart
-				rows={ WEEKS.slice( 0, 3 ).map( ( bucket ) => ( {
+		const { container } = chart( {
+			answer: {
+				...ANSWER,
+				rows: WEEKS.slice( 0, 3 ).map( ( bucket ) => ( {
 					bucket,
 					value: 'complaint',
 					count: 0,
 					items: [],
-				} ) ) }
-			/>
-		);
+				} ) ),
+			},
+		} );
 		expect( legend( container ) ).toEqual( [ 'Grumble' ] );
 		expect( markup( container ) ).toMatch( /<path / );
 		expect( markup( container ) ).not.toMatch( /NaN/ );
 	} );
 
 	it( 'draws one bucket without a NaN', () => {
-		const { container } = render(
-			<TrendChart
-				rows={ [
+		const { container } = chart( {
+			answer: {
+				...ANSWER,
+				rows: [
 					{
 						bucket: WEEKS[ 0 ],
 						value: 'complaint',
 						count: 7,
 						items: [],
 					},
-				] }
-			/>
-		);
+				],
+			},
+		} );
 		expect( legend( container ) ).toEqual( [ 'Grumble' ] );
-		expect( markup( container ) ).toMatch( /<path / );
 		expect( markup( container ) ).not.toMatch( /NaN/ );
 	} );
 
 	it( 'draws nothing for no rows', () => {
-		const { container } = render( <TrendChart rows={ [] } /> );
-		expect( container.querySelector( '.newspack-nodes-chart' ) ).toBeNull();
+		const { container } = chart( { answer: { ...ANSWER, rows: [] } } );
 		expect( container ).toBeEmptyDOMElement();
+	} );
+} );
+
+describe( 'rankColor', () => {
+	const colors = ( count ) =>
+		Array.from( { length: count }, ( _, n ) =>
+			rankColor( count )( `value ${ n }`, n )
+		);
+
+	it( 'takes palette slots 1, 2 and 4 for three series, so no two are the accent', () => {
+		expect( colors( 3 ) ).toEqual( [
+			chartColor( 0 ),
+			chartColor( 1 ),
+			chartColor( 3 ),
+		] );
+		expect( colors( 2 ) ).toEqual( [ chartColor( 0 ), chartColor( 1 ) ] );
+	} );
+
+	it( 'takes the slots in rank for four series or more', () => {
+		expect( colors( 4 ) ).toEqual( [ 0, 1, 2, 3 ].map( chartColor ) );
 	} );
 } );
 
@@ -364,6 +517,26 @@ describe( 'Signals', () => {
 
 	const band = ( container ) =>
 		container.querySelector( '.newspack-nodes-sparkline__band' );
+
+	it( 'draws no sparkline of zeros for a view that counted nothing', () => {
+		const { container } = render(
+			<Signals
+				answer={ {
+					...tooNew,
+					signals: [],
+					trend: trend.map( ( point ) => ( { ...point, count: 0 } ) ),
+					partial: { bucket: '2026-10-19', count: 0 },
+				} }
+			/>
+		);
+		expect(
+			screen.getByText(
+				'Too little history to judge. A change is measured against the 8 weeks before.'
+			)
+		).toBeInTheDocument();
+		expect( screen.queryByRole( 'img' ) ).toBeNull();
+		expect( band( container ) ).toBeNull();
+	} );
 
 	it( "hands its table the save handler, so each signal's items save to a folder", () => {
 		const onSave = jest.fn();

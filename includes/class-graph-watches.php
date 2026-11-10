@@ -149,7 +149,7 @@ final class Graph_Watches {
 			return null === Graph_Query::collection( $r, $given ) ? throw new \InvalidArgumentException( \esc_html( "no collection: {$given}" ) ) : $given;
 		}
 		$lens = Intel_Event::lens_key( $given );
-		if ( [] === $r->rows( 'SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'lenses' ) . ' l WHERE lens_key = ? LIMIT 1', [ $lens ] ) ) {
+		if ( null === Graph_Query::saved_lens( $r, $lens ) ) {
 			throw new \InvalidArgumentException( \esc_html( "no lens: {$lens}" ) );
 		}
 		return $lens;

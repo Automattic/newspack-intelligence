@@ -2,13 +2,14 @@ import { useMemo } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { VisuallyHidden } from '@wordpress/components';
 import * as d3 from 'd3';
+import { Core } from '@newspack-nodes/runtime';
 import AreaTimeChart from '@newspack-nodes/shared/components/AreaTimeChart';
 import { chartColor } from '@newspack-nodes/shared/hooks/useTimeChart';
 import { integerTicks } from '@newspack-nodes/shared/utils/axis-ticks';
 import Cite from './Cite';
 import { SaveButton } from './ItemRow';
 import PulseLine, { spanWords } from './PulseLine';
-import { usualPhrase } from './format';
+import { dayLabel, usualPhrase, utcDay } from './format';
 import { word, words } from './words';
 
 /** The newest buckets a trend chart draws, as many as a signal's history. */
@@ -31,14 +32,21 @@ formatStories.tickValues = integerTicks;
  */
 const storiesFor = () => formatStories;
 
+/** The most series that skip the third palette slot, which is the accent. */
+const FEW_SERIES = 3;
+
+/** Seconds in a UTC day. */
+const DAY_SECONDS = 86400;
+
 /**
- * The colour a value takes from its rank in the chart.
+ * The colour each value takes from its rank in a chart of `count` series:
+ * three or fewer take palette slots 1, 2 and 4, so no two are the accent.
  *
- * @param {string} _value The value; the rank alone decides.
- * @param {number} index  Its rank.
- * @return {string} A CSS colour value.
+ * @param {number} count How many series the chart draws.
+ * @return {(value: string, index: number) => string} A rank's CSS colour value.
  */
-const rankColor = ( _value, index ) => chartColor( index );
+export const rankColor = ( count ) => ( _value, index ) =>
+	chartColor( count <= FEW_SERIES && 2 === index ? 3 : index );
 
 /**
  * A signal's count beside what is usual (`usualPhrase()`).
@@ -62,6 +70,19 @@ export const againstBaseline = ( signal ) =>
  * @return {string} The value shown.
  */
 const valueText = ( value ) => words( 'kindWords' )[ value ] ?? value;
+
+/**
+ * A trend value as a chart names it: a theme in sentence case, any other as
+ * `valueText()` shows it.
+ *
+ * @param {string} value The value.
+ * @param {string} by    The axis it falls on.
+ * @return {string} The value shown.
+ */
+const seriesText = ( value, by ) =>
+	'theme' === by
+		? value.charAt( 0 ).toUpperCase() + value.slice( 1 )
+		: valueText( value );
 
 /**
  * A signal in words (`signalWords`): a spike names the value that jumped,
@@ -208,7 +229,7 @@ export function Signals( { answer, value, onSave } ) {
  * @param {Object} answer The answer `signals` gave: `signals`, `trend`, `partial`, `judged`, `bucket` and `baseline_buckets`.
  * @return {Object} The props.
  */
-function pulseOf( answer ) {
+export function pulseOf( answer ) {
 	const [ shown = null ] = answer.signals;
 	let subject = '';
 	if ( shown ) {
@@ -217,16 +238,29 @@ function pulseOf( answer ) {
 				? signalValue( shown )
 				: valueText( String( shown.value ) );
 	}
+	const trend = shown ? shown.trend : answer.trend;
 	return {
 		signal: shown,
 		subject: subject.charAt( 0 ).toUpperCase() + subject.slice( 1 ),
-		trend: shown ? shown.trend : answer.trend,
+		trend: counted( trend, answer.partial ) ? trend : [],
 		partial: answer.partial,
 		judged: answer.judged,
 		several: 1 < answer.signals.length,
 		words: spanWords( answer.bucket, answer.baseline_buckets ),
 	};
 }
+
+/**
+ * Whether a series counted anything, in its window or in the bucket still
+ * running, since a line of zeros draws nothing worth reading.
+ *
+ * @param {Array<{count: number, in_window: boolean}>} trend   The series.
+ * @param {?{count: number}}                           partial The bucket holding now.
+ * @return {boolean} Whether it counted.
+ */
+const counted = ( trend, partial ) =>
+	0 < ( partial?.count ?? 0 ) ||
+	trend.some( ( point ) => point.in_window && 0 < point.count );
 
 /**
  * A row's key: its axis and kind when a signal, its bucket and its value.
@@ -238,21 +272,61 @@ const rowKey = ( row ) =>
 	[ row.axis, row.signal, row.bucket, row.value ].join( ' ' );
 
 /**
- * Trend rows as the series the shared time chart draws: the CHART_BUCKETS
- * newest buckets, oldest first, each a UTC day, and the CHART_VALUES values
- * counting the most over them, the largest first, then by value, each a
- * count per bucket, 0 where a bucket counts none.
+ * The first UTC day of the bucket holding `now`, Y-m-d, as the server's
+ * BUCKETS spell it: the day, the Monday of the week, or the month's first.
  *
- * @param {Array<Object>} rows The rows `trends` answers, newest bucket first.
- * @return {{buckets: string[], series: Array<{label: string, values: Array<{date: Date, value: number}>}>}} The series.
+ * @param {string} span The span, `day`, `week` or `month`.
+ * @param {number} now  UTC seconds.
+ * @return {string} The day.
  */
-function trendSeries( rows ) {
+function runningBucket( span, now ) {
+	const day = new Date(
+		Math.floor( now / DAY_SECONDS ) * DAY_SECONDS * 1000
+	);
+	if ( 'week' === span ) {
+		day.setUTCDate( day.getUTCDate() - ( ( day.getUTCDay() + 6 ) % 7 ) );
+	} else if ( 'month' === span ) {
+		day.setUTCDate( 1 );
+	}
+	return day.toISOString().slice( 0, 10 );
+}
+
+/**
+ * The words naming the bucket still running, for its bar.
+ *
+ * @param {string} span The span, `day`, `week` or `month`.
+ * @return {string} The label.
+ */
+const runningLabel = ( span ) =>
+	( {
+		day: __( 'today', 'newspack-intelligence' ),
+		week: __( 'this week', 'newspack-intelligence' ),
+		month: __( 'this month', 'newspack-intelligence' ),
+	} )[ span ];
+
+/**
+ * A trends answer as the series the shared time chart draws: the
+ * CHART_BUCKETS newest complete buckets, oldest first, each a UTC day, and
+ * the CHART_VALUES values counting the most over them, the largest first,
+ * then by value, each a count per bucket, 0 where a bucket counts none; and
+ * the bucket still running apart, its total, never a point on the line.
+ *
+ * @param {{rows: Array<Object>, by: string, bucket: string}} answer The answer `trends` gave, its rows newest bucket first.
+ * @param {number}                                            now    UTC seconds.
+ * @return {{series: Array<{label: string, values: Array<{date: Date, value: number}>}>, partial: ?{bucket: string, count: number, label: string}}} The series.
+ */
+function trendSeries( { rows, by, bucket: span }, now ) {
+	const running = runningBucket( span, now );
 	const buckets = [ ...new Set( rows.map( ( row ) => row.bucket ) ) ]
+		.filter( ( bucket ) => bucket !== running )
 		.slice( 0, CHART_BUCKETS )
 		.reverse();
 	const counts = new Map();
+	let soFar = 0;
 	for ( const row of rows ) {
-		if ( buckets.includes( row.bucket ) ) {
+		if ( row.bucket === running ) {
+			soFar += row.count;
+		} else if ( buckets.includes( row.bucket ) ) {
 			const value = String( row.value );
 			counts.set( value, {
 				...counts.get( value ),
@@ -269,46 +343,85 @@ function trendSeries( rows ) {
 		)
 		.slice( 0, CHART_VALUES )
 		.map( ( [ label, per ] ) => ( {
-			label: valueText( label ),
+			label: seriesText( label, by ),
 			values: buckets.map( ( bucket ) => ( {
 				date: new Date( `${ bucket }T00:00:00Z` ),
 				value: per[ bucket ] ?? 0,
 			} ) ),
 		} ) );
-	return { buckets, series };
+	const partial = rows.some( ( row ) => row.bucket === running )
+		? { bucket: running, count: soFar, label: runningLabel( span ) }
+		: null;
+	return { series, partial };
 }
 
 /**
- * Trend rows as one compact time chart, the shared `AreaTimeChart`: a
- * series per value over the newest buckets (`trendSeries()`), titled by the
- * span it covers, its legend picking a value. A screen reader is handed
- * every row as a visually hidden table of its bucket, value and count; no
- * rows draw nothing.
+ * A time tick by its day and short month, "5 Oct", the year only when it is
+ * not this one's; d3 places a tick at a local midnight, so the local date.
  *
- * @param {Object}        props
- * @param {Array<Object>} props.rows The rows `trends` answers, newest bucket first.
+ * @param {Date} at The tick.
+ * @return {string} Its words.
+ */
+const tickDay = ( at ) =>
+	dayLabel(
+		[
+			at.getFullYear(),
+			String( at.getMonth() + 1 ).padStart( 2, '0' ),
+			String( at.getDate() ).padStart( 2, '0' ),
+		].join( '-' ),
+		utcDay( Math.floor( Core.now() ) )
+	);
+
+/**
+ * A trend chart's title: its heading, its `%s` the axis it counts in lower
+ * case, since a curator's heading is a template naming one value.
+ *
+ * @param {string} heading The heading.
+ * @param {string} by      The axis.
+ * @return {string} The title.
+ */
+export const chartTitle = ( heading, by ) => {
+	const axis = word( 'axisWords', by ).toLowerCase();
+	return heading.replace( /%(?:1\$)?s/, () => axis );
+};
+
+/**
+ * A trends answer as one compact time chart, the shared `AreaTimeChart`: a
+ * series per value over the newest complete buckets (`trendSeries()`), the
+ * bucket still running a hatched bar beside them, titled by `heading` with
+ * the axis it counted in its `%s`, stacked or drawn as lines as `style`
+ * says until the reader flips it, its legend picking a value. A screen
+ * reader is handed every row as a visually hidden table of its bucket,
+ * value and count; no rows draw nothing.
+ *
+ * @param {Object}                                            props
+ * @param {{rows: Array<Object>, by: string, bucket: string}} props.answer  The answer `trends` gave.
+ * @param {string}                                            props.heading The title, `%s` the axis.
+ * @param {'stack'|'lines'}                                   props.style   How the series draw at first.
  * @return {?import('react').ReactElement} The chart.
  */
-export function TrendChart( { rows } ) {
-	const { buckets, series } = useMemo( () => trendSeries( rows ), [ rows ] );
-	if ( 0 === rows.length ) {
+export function TrendChart( { answer, heading, style } ) {
+	const { series, partial } = useMemo(
+		() => trendSeries( answer, Core.now() ),
+		[ answer ]
+	);
+	if ( 0 === answer.rows.length ) {
 		return null;
 	}
+	const title = chartTitle( heading, answer.by );
 	return (
 		<>
 			<AreaTimeChart
 				series={ series }
 				yFormatFor={ storiesFor }
-				colorAt={ rankColor }
-				title={ sprintf(
-					/* translators: 1: the oldest bucket drawn, 2: the newest. */
-					__( 'From %1$s to %2$s', 'newspack-intelligence' ),
-					buckets[ 0 ],
-					buckets[ buckets.length - 1 ]
-				) }
+				colorAt={ rankColor( series.length ) }
+				title={ title }
 				height={ CHART_HEIGHT }
 				storageKey="newspack-intelligence:lens-trends"
 				yLabel={ __( 'Items', 'newspack-intelligence' ) }
+				stacked={ 'stack' === style }
+				formatX={ tickDay }
+				partial={ partial ?? undefined }
 			/>
 			<VisuallyHidden>
 				<table>
@@ -319,18 +432,23 @@ export function TrendChart( { rows } ) {
 						<tr>
 							{ headings( null, null )
 								.slice( 0, 3 )
-								.map( ( heading ) => (
-									<th key={ heading } scope="col">
-										{ heading }
+								.map( ( one ) => (
+									<th key={ one } scope="col">
+										{ one }
 									</th>
 								) ) }
 						</tr>
 					</thead>
 					<tbody>
-						{ rows.map( ( row ) => (
+						{ answer.rows.map( ( row ) => (
 							<tr key={ rowKey( row ) }>
 								<td>{ row.bucket }</td>
-								<td>{ valueText( String( row.value ) ) }</td>
+								<td>
+									{ seriesText(
+										String( row.value ),
+										answer.by
+									) }
+								</td>
 								<td>{ row.count }</td>
 							</tr>
 						) ) }

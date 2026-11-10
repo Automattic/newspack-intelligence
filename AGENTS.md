@@ -99,7 +99,11 @@ one minor behind the WordPress 7.1 both containers run. The substrate build-kit 
 `components`, `blocks`, `block-library`, `i18n` and `data` to the `wp.*` globals,
 so npm's copy of those never ships. `@wordpress/icons` is deliberately absent from
 that map: it publishes no runtime global, so an import of it bundles the icons it
-uses. For an externalised package a bump delivers no new code at all — it moves
+uses. `@wordpress/dataviews` (12.0.1, its `wp-7.0` tag) is bundled the same
+way, through its `./wp` entry, which carries its own copy of the components
+it draws and reaches React, `wp.data` and `wp.i18n` through the globals;
+it took the page bundle from 0.6 MB to 3.5 MB minified (0.65 MB gzipped).
+For an externalised package a bump delivers no new code at all — it moves
 the API you compile, lint and type-check against AHEAD of the one the browser is
 handed. A component changed or removed between majors then builds clean, passes
 eslint and jest, and breaks at runtime, with nothing mechanical to catch it. Check
@@ -524,6 +528,13 @@ model for an item a call already extracted with its links settled. `Resolver::re
 whose `orgs` is not a list (none, an error object, a scalar), and a failed
 call, logged `NER call failed: <error>`, or a group lending no credential
 answers none too, so a failure is told from an answer naming nobody.
+Every resolution also writes, beside the links it finds, each link a person
+added (`add_link`, read from `added_links` by survivor, the latest per
+survivor) whose highest-ranked judgment still confirms it, as a
+`link_asserted` in the role it was added in, by `human` at 1.0, unless it
+finds that very key and role itself, so no re-resolution retracts it and
+the extractor is sent it asserted; once a person rejects it, the next
+resolution retracts it.
 A resolution retracts each stored non-topic `links` row of the item in this
 worker's own partition's file, the only one its projector deletes in, by
 its raw entity key and role, that it does not write again, so a link whose
@@ -1231,8 +1242,8 @@ link anew: an `entity_created` or `name_added` its name, an
 `identifier_added` the URL spellings its kind has (`IDENTIFIER_URLS`), an
 `entity_accepted` every name and identifier the projection holds for the
 entity, and a new locality the entity's own names, because a locality settles
-an ambiguous name and links nothing alone; a `link_confirmed` queues its one
-item without a search. A topic queues nothing, and a
+an ambiguous name and links nothing alone; a `link_confirmed` or a
+`link_added` queues its one item without a search. A topic queues nothing, and a
 repeated signal is queued once. Each Router tick appends `item_reresolve`
 records, each naming a stored item, to
 `intel:reresolve`, a Partition
@@ -1478,10 +1489,21 @@ folder already held keeps its own time.
 `search` and `trends` filter alike — `entity`, and the lists
 `Graph_Query::LENS_LISTS` declares once, `kind`, `topic`, `role` and
 `source`, each repeatable and matching any of its values, `role` an entity
-the item links holding it at the item's time — and `search` adds `q`.
+the item links holding it at the item's time — and `search` adds `q`
+and `tier`, repeatable, each one of `Intel_Event::TIERS`, which narrows the
+graph the read opens to those tiers within the caller's and its lens's
+(`Graph_Query::within()`), so it never widens a reader; a team view's
+`item-list` block sends its `tiers` through it.
 `LENS_LISTS` names each list's field, its arg, its vocabulary (null when
 free) and its description, and the call's filters, a lens's, `save_lens`,
 the schema's args and the page's `lensLists` vocabulary all iterate it.
+`source`'s vocabulary is `Intel_Event::SOURCES`, the one list of the
+sources an item is recorded under: the page's `sourceWords` words each of
+them, every `Source_Node` class's `SOURCE` is one of them, and a lens
+naming any other source is refused. A role filter reads `rl`, the role rows under
+their survivors, materialized once, and reaches it from each item's `live`
+links by a `CROSS JOIN`, so each item probes its entities' roles by key
+rather than every role row probing its links.
 `search` reads in the order its `sort` names (`Graph_Query::sorts()`):
 `importance`, the highest importance first, then the most relevant, then
 the newest, an unscored item last, or `time`, the newest first; any other is
@@ -1494,8 +1516,8 @@ default would mask that choice; the MCP door and the page read it off the
 schema. Given `group`, one of `Graph_Query::groupings()`, `theme` alone,
 `search` answers the same items as `{ groups, total, available }`
 (`Graph_Query::grouped()`), a lens or none, and refuses a `sort` beside it,
-since groups rank themselves; the Lens view sends `group=theme`, and
-Search sends none. Where neither the call nor its lens bounds the days, a
+since groups rank themselves; the default team view layout's `item-list`
+sends `group=theme`, and Search sends none. Where neither the call nor its lens bounds the days, a
 grouped read keeps the last `Graph_Query::GROUP_DAYS` (30), so it never
 reads links over the whole retention. Each item counts as its story, as
 `trends` counts it, and a group is the stories whose copies share a theme;
@@ -1529,7 +1551,9 @@ stories under the theme it merged into, as a cluster is, so a stale row in an ol
 makes no second value; counting by theme, each row is `{ bucket,
 value, count, clients, items }`, `clients` named as a group names them,
 and an item with no theme counts under none, and is not history to a
-signal. Its rows list the newest bucket first, then the highest count. A
+signal. Its rows list the newest bucket first, then the highest count,
+and the answer names the axis and the bucket it counted by as `by` and
+`bucket`, so a chart titles its axis and tells the bucket still running. A
 story counts once (`Graph_Query::stories()`): an item the deduper placed in
 a cluster counts as the cluster's canonical, the cluster read from the
 newest partition holding the item's `clusters` row and the canonical from
@@ -1894,27 +1918,39 @@ call, today the last (`Graph_Query::last_days()`), so the page asks each
 through its own Fetcher, and refuses any other `what` (`what must be one
 of: changes, signals`); `SLICES` lists them once, as `health`'s do, each
 answered by the method of its name, and each reads through a read that
-already answers it. `changes` answers `{ groups: [ { entity_key, name,
-role, items } ], total, summary, available }`: `Graph_Query::most_important()`, the
+already answers it. `changes` answers `{ order, items, groups: [ { role,
+key, name, items } ], categories: [ { lens_key, name, count } ],
+otherwise, total, summary, available }`: `order` is `importance`
+(`Intelligence_Briefing::ORDER`), and `items` are
+`Graph_Query::most_important()`, the
 window's `Graph_Query::DEFAULT_LIMIT` (50) readable items holding a live
 `subject` or `mention` link to any entity (`Intel_Event::NAMING_ROLES`),
 so an item only tagged with a topic or only `publisher`-linked never
 appears, by importance, then relevance, then the newest, the unscored last,
-each as `search` answers it, and `total` counting every such item; each
-item sits once, under the first entity holding an open `client` role,
-as its survivor, that it is about, in a group of role `client` carrying
-the client's key and name, unless it is about more than
-`Graph_Query::MAX_ITEM_CLIENTS` (3) of them, when it is filed
-once as an item about no client is, its entities still naming every
-client. `item_clients()`'s `ic` carries `claimed`, whether the item's kind
-claims the client (`Graph_Query::claimed_by()`). The `MAX_ITEM_CLIENTS` cap still counts every client the item is about. One that is not about an open client, or is about that many, but
-is about an entity holding an open `operator_product` role sits in one
-group of that role, and any other, such as one about a former client
-alone, in one group of role null; both carry a null `entity_key` and `name`. One statement reads
-every survivor holding an open `client` or `operator_product` role
-(`Graph_Query::CLIENT`, `Graph_Query::OPERATOR_PRODUCT`) with its role, and
-names only the clients. Groups follow the order of their most important
-item, so the cap ranks the whole window before it groups. `summary` is
+each as `search` answers it plus `categories`, the lenses `--lenses` names
+that admit it, in the order named, and `otherwise`, whether none does;
+`total` counts every such item. `--lenses=<key,…>` names at most
+`Intelligence_Briefing::CATEGORY_MAX` (8) lenses, more refused as `lenses
+names at most 8 lenses` and one never saved as `no lens: <key>`, and
+`signals` refuses any as `lenses apply to changes`; each lens costs one
+statement, `Graph_Query::admitted()`, its filters over the read's item
+keys under the caller's tiers narrowed to its own, each filter reading the
+item's own links. `categories` counts the items each lens admits, and
+`otherwise` those none admits. Each item is filed once, by key: under the
+first entity holding an open `client` role, as its survivor, that it is
+about, in a group of role `client` whose `key` and `name` are the
+client's key and name, unless it is about more than `Graph_Query::MAX_ITEM_CLIENTS` (3)
+of them, when it is filed once as an item about no client is, its entities
+still naming every client; else under the first lens that admits it, role
+`category`, `key` and `name` the lens's key and name; else under role `otherwise`, `key`
+and `name` null. `item_clients()`'s `ic` carries `claimed`, whether the
+item's kind claims the client (`Graph_Query::claimed_by()`). The
+`MAX_ITEM_CLIENTS` cap still counts every client the item is about. One
+statement reads every survivor holding an open `client` role by name. The
+clients' groups come first, each in the order of its most important
+item, then each lens's in the order named, then `otherwise`'s, a group
+holding nothing left out; the cap ranks the whole window before it files.
+`summary` is
 `{ since, items, clients, kinds: [ { kind, items, clients } ] }`, what of
 those items is dated at or after `since` (`--since=<UTC seconds>`, the
 window's first instant at the latest, which is also its default; `signals`
@@ -1927,15 +1963,18 @@ about more than `MAX_ITEM_CLIENTS` counting none, and each of
 counts the summary too, so `changes` reads the window no more often than
 before. `signals`
 answers `{ clients: [ { entity_key, name, signals, churn_note } ],
-lenses: [ { lens_key, name, signals } ], available }`: every open client,
+lenses: [ { lens_key, name, signals } ], judged, available }`: every open client,
 by name, in one `signals_of()`, so both axes are read without a statement per client,
 its `churn_note` read for every client in one `churn_notes()`,
 and every lens, by name, through `spikes()` with its lens, each whose
 latest complete bucket closed at or after the window's first instant, so a
 week bucket always shows its latest week and a month bucket only in the
 week its month closed; a subject without a signal is left out, but for a
-client carrying a churn note, which needs attention whatever it signals. The
-reader's watches are the `watches` command's, which the Briefing tab reads
+client carrying a churn note, which needs attention whatever it signals.
+`judged` is whether any client or lens held the history its rules judge
+by (`signals_of()` and `Graph_Query::judged_spikes()` answer it beside
+their signals), so an empty answer tells a quiet week from too little
+history. The reader's watches are the `watches` command's, which the Briefing tab reads
 itself.
 
 **Watcher.** `watcher` (`make_node Watcher watcher intel:writer`) rides the
@@ -2153,19 +2192,24 @@ expired, purged or excluded item hides its sentences, counted as
 each as `search` answers it.
 The MCP door offers `intel_ask` and `intel_ask_result` to a read session;
 the door becomes the minting user, so an ask through it is that user's own
-and its answer that user's tiers. The page's `AskBox` heads the Briefing
-and Search, "Ask about clients, the industry or <operator>…", the name
-the page is localized as `operator`, and
-`IntelligencePage` holds the ask, `{ key, at, gaveUp }`, so a switch
-between the two keeps it: the box sends `ask` through `useIntelWrite`,
+and its answer that user's tiers. The page's `AskBox`, the `ask` block's
+component, heads the Briefing and Search under its `label`, `placeholder`
+and `examples`, Search's taking the Briefing layout's first `ask` block's,
+and `IntelligencePage` holds the ask, `{ key, at, gaveUp, question }`, so
+a switch between the two keeps it until **Clear**: the box sends `ask`,
+the question alone, through `useIntelWrite`,
 holds the key the answer hands `refresh` with the substrate clock's second
 it landed, reads `ask_result` through `useIntelRead`, and asks it again
 every 3 seconds on the Router's tick (`useRouterTick`) while it reads
-`asked` from a graph that opened, until the ask has waited the `wait_s`
-the answer names, when it stops and says no answer came back within that
-time. It shows the sentences, each followed by its numbers, above the
-cited items as `ItemRow`s in that numbering, or why there is none, and the
-searches the ask ran beneath as plain text, `Searched: …`.
+`asked`, `planned` or `read` from a graph that opened, ticking each step
+on its stage line and announcing it politely, until the ask has waited the
+`wait_s` the answer names, when it stops and says the answer took too
+long. It shows the sentences, each followed by a `Citation` marker per
+cited item the list holds, whose hover or focus previews the item and
+whose click scrolls to it and washes it for 2 seconds, the cited items as
+`ItemRow`s in that numbering, what it searched and read, and a fixed
+footer; or which empty case it is, a failure or a withheld answer by the
+reason the server gives, announced assertively.
 
 **Trace.** `trace <item>` (`Graph_Trace::trace()`), at `read`, answers how
 one item was read, `{ item_key, title, url, steps, available }`, from the
@@ -2220,11 +2264,13 @@ dead-letter dir derived from them, are refused (see Streams). Uninstall reaches 
 the substrate possibly inactive, so it and everything it calls use no
 substrate class.
 
-**Curation.** `Intelligence_CI` also answers twenty-two curation commands, each
+**Curation.** `Intelligence_CI` also answers twenty-three curation commands, each
 declaring `tune`, each writing one ontology event through
 `Stream_Writer::append()` and answering `{ ok, event_id }`; the two
 creations add the key they minted. `Graph_Curation` holds them:
-`confirm_link` and `reject_link` (carrying the item's URL), `accept_entity`,
+`confirm_link` and `reject_link` (carrying the item's URL), `add_link
+<item> <entity> [--role=subject|mention]` (the role, `subject` unless
+named, and the item's URL), `accept_entity`,
 `reject_entity`, `merge_entities`, `add_name`, `add_identifier`,
 `assert_role`, `end_role`, `tag_topic`, `create_entity` (keyed
 `Intel_Event::entity_key()`), `create_collection` (keyed
@@ -2288,7 +2334,18 @@ still rejects one, or creates a public entity over its key on purpose with
 `create_entity`. A judged link must exist: `confirm_link` and `reject_link`
 refuse `no link: <item> <entity>` unless a `links` row of a role in
 `Intel_Event::ABOUT_ROLES` joins the item to one of the entity's keys, so a
-`publisher` link alone is not judged. `tag_topic` refuses a topic whose
+`publisher` link alone is not judged. `add_link` needs no link: its
+`link_added` projects as the caller's confirmation, a `judgments` row as
+`link_confirmed` writes, and an `added_links` row `( item_key, entity_key,
+role, actor, ts )` keyed by the item and the entity, a kept table, and the
+resolver writes the link (see Resolution), so a read shows it once the
+item's next resolution is projected. It refuses a topic (`<key> is a
+topic; only an extraction tags an item with one`), a link whose
+highest-ranked judgment under any of the entity's keys already confirms it
+(`already confirmed: <item> <entity>`), and an item outside the restricted
+tier with an entity a caller without that tier cannot see (`linking <item>
+to <entity> would show <entity> to every reader; it is not cited by any
+item outside the restricted tier`). `tag_topic` refuses a topic whose
 survivor is not of type `topic` (its `entities` type, else its key's). A
 merge into itself or across types — the two survivors' types, read the same
 way — is refused, and so is any merge after which `Entity_Index::walk()` — over the
@@ -2461,7 +2518,11 @@ them, reads "in its Intelligence data dir". The file holds `entities`, type =>
 slug => `{ name, names, identifiers, roles, state }`, `names` and
 `identifiers` each kind => values, `state` `rejected` or absent, and
 `lenses`, key => `{ name, description, filters }`, the filters laid over
-`Graph_Query::unfiltered()`. `load()` mints every event as it reads,
+`Graph_Query::unfiltered()`, and, optional, `layouts`, page (`briefing`,
+`lens` or `entity`) => block markup, each held to every rule
+`Composition::validate_shape()` applies before anything is written, a
+refusal naming `layouts.<page>`; the page's `check` is not run, because it
+reads lenses the seed may not have written yet. `load()` mints every event as it reads,
 so `Intel_Event::make()` judges each type, kind and role and the one-line
 cap; it bounds each name and value as `create_entity` and `add_name` do,
 checks each lens's filters through `Graph_Curation::lens_filters()`, the
@@ -2481,7 +2542,10 @@ each lens, in the file's order — for the keys
 `present()` does not find settled in the projection: an
 entity in `entity_states` in any state but a machine's pending
 `proposed`, a seed lens any `lens_saved` or `lens_removed` in `events`
-names, read by subject and kind, the index `events` keeps.
+names, read by subject and kind, the index `events` keeps; then each
+layout through `Composition_Store::seed()`, which writes only a page that
+holds neither a saved layout nor the tombstone **Restore default** leaves,
+so a curator's layout is never reset.
 A rejected seed entity's names never reach a proposal and never link an
 entity of its type by a match, as a curator's rejection keeps them (see
 Resolution), so the
@@ -3114,7 +3178,8 @@ no such guard of its own, so that check is the guard. The resolver acts on
 `ontology reextract` asks. A plain repeat of `item_recorded` stays `ignore`.
 
 `Source_Node::normalize_item()` mints every item as the `item_recorded` fields
-`{item_key, source, tier, url, title, body, item_ts, retrieved_ts}`: `item_key`
+`{item_key, source, tier, url, title, body, item_ts, retrieved_ts}`, `source`
+the class's `SOURCE`: `item_key`
 namespaced `"{source}:{raw id}"`, the key dedup reads, a client feed's raw id
 led by its domain (`feed:<domain>:<guid>`); `body` cut at
 `MAX_BODY_BYTES` (65,536) on a UTF-8 character boundary; `item_ts` 0 when the
@@ -3248,7 +3313,7 @@ plugin adds:
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until> [<source>]`, `REEXTRACT <since> <until> [<source>]`; publishes `last_range` through `Publishes_Status` |
 | `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no commands |
 | `Ask` | `Ask_Node` | `<writer> <llm>`; each `ask_asked` its Consumer reads, and the model-call node's answers; no commands |
-| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `theme_suggestions`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `ask`, `ask_result`, `health`, each at `read`; `confirm_link`, `reject_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `merge_theme`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
+| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `theme_suggestions`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `ask`, `ask_result`, `health`, each at `read`; `confirm_link`, `reject_link`, `add_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `merge_theme`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
 
 `LLM_Call_Node`'s seven commands are declared setters, replayed by its
 `dump_config()`; `set_api_url` refuses anything but an absolute http(s)
@@ -3350,27 +3415,35 @@ the upload runs as the web user.
 
 ### Dashboard
 
-`src/intelligence/` builds one bundle, `build/intelligence/index.js`, mounted on
-the Intelligence admin page. Every view reads the `intelligence` CI through
+`src/intelligence/` builds two bundles: `build/intelligence/index.js`, mounted
+on the Intelligence admin page, and `build/layout-editor/layout-editor.js`,
+the layout editor (see Layouts). Every view reads the `intelligence` CI through
 its own one-shot commands, and only the `AskBox` polls: it asks
 `ask_result` again on the Router's tick while an ask is owed its answer.
 
 | Module | Export | What it does |
 |--------|--------|--------------|
-| `index.js` | — | Mounts `IntelligencePage` on `#newspack-intelligence-app`, handing it `canTune`, `canManage`, `userId` and `vocabulary` from `NewspackNodesData` |
-| `IntelligencePage.js` | default | Opens on Briefing, its first tab, and switches Briefing, Search, Entity, Team views, Review, Folders and Watches in place; holds the ask both views' `AskBox` shows, the submitted search, the open entity, lens, collection and watch, the watch form's draft and the item being saved, so a view returns as it was left, and a lens's "Watch this" opens the watch form on that lens; labels the Entity tab "Entity: <name>" with what the open entity's heading shows, which `Entity` hands back through `onNamed` paired with its key, so a name answered for an entity opened before never labels the next, else, before the record answers or once it is refused, "Entity: <key>"; the Briefing opens an entity, a lens or the lens list, a watch, the watch form or Search, and a line of its summary opens Search on a fresh query holding that line's filters; a URL carrying `watch=<key>`, as the watcher's email links it, opens the page on Watches with that watch open, or on the list when the reader's watches do not hold it; mounts `HealthStrip` above the tab bar, on every view; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the substrate's shared header subtitled `Intelligence` and the debug overlay |
+| `index.js` | — | Mounts `IntelligencePage` on `#newspack-intelligence-app`, handing it `canTune`, `canManage`, `userId`, `vocabulary` and `compositions` from `NewspackNodesData` |
+| `IntelligencePage.js` | default | Opens on Briefing, its first tab, and switches Briefing, Search, Team views, Review, Folders and Watches in place; holds the ask both views' `AskBox` shows, the submitted search, the open profile, lens and watch, the watch form's draft and the item being saved, so a view returns as it was left, and a lens's "Watch this" opens the watch form on that lens; a profile is not a tab: an entity opened from any chip stands in the panel of the view that opened it, which stays mounted and hidden beneath it, until "Back to <view>" closes it and focuses the chip that opened it, or a tab is picked; the Briefing opens an entity, a lens or the lens list, a watch, the watch form or Search, and a line of its summary opens Search on a fresh query holding that line's filters; a URL carrying `watch=<key>`, as the watcher's email links it, opens the page on Watches with that watch open, or on the list when the reader's watches do not hold it; mounts `HealthStrip` above the tab bar, on every view; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the substrate's shared header subtitled `Intelligence` and the debug overlay |
 | `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite`, `commandArgs` | `commandArgs()` names every value given, a list once per member, leaving out a blank value or an empty list; a read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments, and null arguments asking nothing and withdrawing the ask outstanding; a write sent once per `run()` to the `intelligence` CI or the `ci` it names, its nodes named by the `scope` it is given, else `<ci>:<command>`, so two writes of one verb on a page never share a Fetcher, which answers the tokens it sent, handing `refresh` the landed answer once it lands, so a write that answers a key, as `ask` does, gives it to its caller, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal, answered arguments and `pending` Every read's last answer is remembered in memory, keyed `<verb>:<scope>:<args>`, at most `CACHE_MAX` (64), least recently used first out, never in browser storage, one cache per `Core.registry` so a page load starts empty: a mount paints the remembered answer as `stale` with its `updatedAt` and asks again, and a refused ask forgets it. Every `useIntelWrite` names the reads it changes in `dirties`, one of the exported prefix groups (`FOLDER_READS`, `WATCH_READS`, `HEALTH_READS`, `ITEM_READS`, `ENTITY_READS`, `CLIENT_READS`, `JUDGED_READS`, `LENS_READS`, `THEME_READS`), and a landed write forgets every answer under them and re-asks every mounted read among them, so no write also refreshes a read by hand. |
 | `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_group`, `last_error` and `file`, reads it whole; while collection is off every other row is listed neutral, never a fault, and its Activate fix offers one button per composition the slice's `topologies` names, which leaves out any whose sources cannot collect on this host, labelled with the name and sharing one `activate` write, the row naming `wp nodes activate` as `<code>` when it names none; `unconfigured` is a fault naming the path the lists file belongs at and that an empty file will do, or, for a reader whose answer carries no `file`, that an administrator can create it and an empty one will do; the projector catching up on the ontology is neutral until its hold has stood five minutes (`BEHIND_FAULT_S`), then a fault; with nothing held the backlog row counts the later queue's entries as items waiting to resolve or retry; while the extraction slice's `queue` holds a call, a neutral "AI requests waiting" row (`healthWords.calls`), pill `busy`, counts them, grouped in the page's own language, a class or a part holding none left out ("5,735 calls waiting (5,735 backlog) · 4 in flight", "1 call waiting (1 new)", "2 in flight"), for every reader, and the line follows the backlog row's cause with that row's counts, dropping the cause while the backlog row reads idle (nothing held, `held` 0), so it never says "Nothing waiting." beside queued calls; every time it shows renders in the browser's own zone through the substrate's `formatLocalDateTime()`, while the dropped days stay the UTC days the server names, read as "Items parked from <first_day> to <last_day> were dropped before they resolved.", true of an entry aged out and of one the full queue refused; the line names each source that has not reported yet ("Collecting from 5 of 6 sources; feed has not reported yet."), the names joined in the page's own language (`document.documentElement.lang`, else the browser's), and says the health is not fully known for any other unknown row, a source in a state it does not recognise included; a source idle for want of its credential, Unthread's among them, offers a manager "Add credential", linking the substrate's Vault tab (`admin.php?page=newspack-nodes-station&tab=vault`, the station's `STATION_MENU_SLUG` and the Vault tab's slug); each of the `sources` slice's `dead_clients` is a "Client feed" fault, pill `dead`, reading "<name> (<domain>) has not resolved since <since>.", and offers a curator "Mark former client", which ends the client through `useEndClient` under the `health:former-client` scope over the sources read, every row of that client leaving the strip from the click until a read no longer lists it, focus then moving to the row in the pressed row's place, else the last row, else the strip's section, every other such button `aria-disabled` while a pair is owed its replies, a refused end returning the client's rows with the refusal on the row of the client it refused alone, a refused assert keeping them hidden and showing `unrecordedText()` as an alert on the strip, the strip read again once the pair is answered; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology` and marking a former client, which mounts its pair for a curator alone, `canManage` for the rest), and anyone else reads "An administrator can …" |
-| `views/Briefing.js` | default | The `AskBox`, first, then the two `briefing` slices and `watches`, each its own read and card: "Since you last looked", for a reader the browser holds a last look for under `newspack-intelligence:briefing:last-view:<userId>`, read through the shared `readStorage()`, whose refusal reads as never, so storage that will not be read shows the Briefing alone; `changes` is asked with `--since=<that instant>`, and once it answers from a graph that opened (`available` true) the instant the view opened is kept, so an answer from a graph that would not open shows no summary and keeps the old instant; the summary's lines, at most 5, each a button opening Search on its filters (`onSearchFor`, `since` the UTC day of the summary's `since`): how many new items about how many clients, then each kind it answers, counted in clients for `churned` and `churn_signal` and in items for the rest, a kind counting none left out ("7 clients started offboarding", "3 bugs filed"), or that nothing is new; "Last seven days", each group in the answer's order and headed by its `role`: a `client` group under its `EntityChip`, the `operator_product` group under the localized operator's `heading`, and the group of role null under "Industry", each item an `ItemRow`, and, when the window held more than it shows, how many of how many; "Signals", each client's under its chip and each lens's under the button opening it, through `TrendTable`; every group collapsed to its heading and a button counting its items or signals, which opens it, named by the heading and the count through `aria-labelledby` and controlling the group's rows through `aria-controls`; "Your watches", each a `WatchRow` opening it; a card answering nothing says so and offers the one control that acts on it: Search everything, Open lenses or New watch |
-| `views/Search.js` | default, `newSearch` | The `AskBox`, above `search` with words, the lens's list filters (`vocabulary.lensLists`) — kinds, roles and sources each a `FormTokenField`, a closed list taking only its own values, topics comma-separated through `ListField` — an entity through `EntityPicker` and a day range, a page at a time, in the order the answer's `sort` names, which the reader switches, sending `--sort` from the first page; a lens picked from `lenses` shows every filter it searches with read-only and sends only `--lens`, the words, the order and the page, and "Edit as my own search" copies its filters into those fields — its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says — and drops the lens |
-| `views/Lens.js` | default, `CLOSED_LENS` | `lenses`, listed and opened onto `signals --lens`, then `trends --lens` as one `TrendChart`, then `search --lens --group=theme`'s theme groups through `GroupPage`, a page of groups at a time in the order the server ranks them; signals through `Signals`, its pulse line and then the signals citing their items, each count shown against its `usual.mean`; for every reader, "Watch this", which opens the watch form on the lens; for a curator, `save_lens` for a new lens, keyed by its name, which the server slugs, or the one opened — kinds, roles and sources picked through `ListPicker`, topics comma-separated, tiers as checkboxes over `vocabulary.tiers`, the trend axis and bucket as selects over `trendAxes` and `buckets` led by "Not set", each by its word — and `remove_lens`, each held through `useHeld` until a read of `lenses` reflects it |
-| `views/Entity.js` | default | `entity`, headed, for a record answering a `status`, by the client's status line — client since, the first row of its own `signals` read once answered, left out when it lists none, its churn reports, churn signals, feature requests and complaints, and the day of its last item or "No item about it yet" — then `signals --entity` under its header through `Signals`, both axes, each row's value its axis and kind and the value it counts, its count against its `usual.mean`, then `timeline` of the items about it a page at a time, then, when the record counts any, a collapsed "Published by <name> (N)" section reading `timeline --published` a page at a time only once opened, `related` and `claims`, each claim read as its subject's `EntityChip`, the predicate and its object, a chip when `object_name` is set and the item's spelling as text when it is null, each chip showing the key where the name is null, and cited by its item's title linking its URL; after the timeline, a "Details" section lists the keys merged into it, its names, identifiers, topics and every role row but a closed one that held no time (`to_ts` not 0 and equal to `from_ts`), an import's same-day correction, so an open row a seed asserted from 0 stays; hands `onNamed` the entity's key with what its heading shows, its name else its key, whenever the record answers, and with null once it is refused; once the record answers, for a curator, `EditDrawer` under its counts and, when its `status` answers `churn_open`, "This client has a churn report." and an "End client?" button in its status line, which ends the client through `useEndClient` under the `entity:churn` scope over the record, which lists the entity as a client while its `status` answers, the prompt leaving the status line from the click until a read no longer lists it and focus moving to the entity's heading, a refused end returning it, a refused end asserting nothing, and a refused assert shown beside every edit's refusal through `unrecordedText()`, which stands after the status goes |
+| `views/Briefing.js` | default | The page data's Briefing layout on one surface (`newspack-intelligence__surface`), each block by its View through `PageLayout`, under a header whose ⋯ menu ("Briefing actions") offers a curator **Edit layout** (`editLayoutControl()`); it reads `briefing changes` once, `--since` the last look and `--lenses` the categories of every `week` block, each once in order, and provides that read (`ChangesRead`) to its `since` and `week` blocks; the page's actions reach the blocks through `IntelPageContext`'s `actions`; it tells the page it is seen while mounted |
+| `blocks/ask.js`, `since.js`, `needs-attention.js`, `watches.js`, `week.js`, `changes.js` | `{ View, Controls }`; `ChangesRead`, `changesArgs`, `useChanges` | The Briefing's blocks. `ask` is the `AskBox` under its `label`, `placeholder` and `examples`. `since` is the lede, headed "Since %s" or, on a first visit, "This week": each kind of its `kinds` the summary counts, a churn kind in clients, as a phrase ("6 clients started offboarding", "2 awards were announced") joined by `Intl.ListFormat` in the page's language, each a button opening Search on its kind since the counted day, then ", among %s new items."; "Nothing new since %s." when nothing arrived; hidden where the browser keeps no last look. `needs-attention` lists first every client (when `clients`) carrying a churn-risk note, by its note, then every signal of the clients (when `clients`) and the team views (all, or those `lenses` names) from `briefing signals`, the most recent bucket first, each a `PulseLine` and a button opening its profile or team view, at most `max` until "Show %d more"; empty, it says nothing moved when `judged`, else that there is too little history; each line's latest point fades in over 400 ms on the page's first paint, never under `prefers-reduced-motion`. `watches` lists the first `max` of the reader's watches, each a `WatchRow` with its new count, with **New watch** beside the heading and in its empty sentence. `week` opens its `top` items as one activity `ItemList`, then folds what the top left of each category, of `otherwise` (named by its `otherwise` attribute) and of the clients ("%1$d more clients, %2$d items", grouped by client through `groupBy` when `by_client`), each fold's whole row toggling `aria-expanded`; with categories, "Show" offers All, each category and `otherwise`, each with the server's count, and narrows the week to one; its footer reads "%1$s of %2$s items this week." with "Search them all". `useChanges()` answers the read the Briefing provides, else the block's own, as in the layout editor's preview |
+| `components/ItemList.js` | default | The one DataViews list (`@wordpress/dataviews/wp`, 12.0.1) every item list draws: `items` keyed by `item_key`, `view` and `onChangeView`, `layout` one of `list`, `activity` and `table` or several with the first the default, each item drawn by `render` (ItemRow by default) with `rowProps` in the layout's title place, `fields` adding columns or filters, `actions` passing through with their `isPrimary` and `supportsBulk`, `header` above the list inside DataViews, and any other DataViews prop passing through; an empty list shows `empty` and never DataViews' "No results"; its pager reads "Page %1$d of %2$d" with Previous and Next, drawn only past one page |
+| `components/Section.js`, `LensTokens.js` | default, `Invitation`; default | A block's part of a composed page: a region named and headed by its heading, any control beside it; an empty section's sentence and its one control. `LensTokens` picks saved team views by name in a layout control, holding their keys |
+| `views/Search.js` | default | The `AskBox`, taking the attributes of the Briefing layout's first `ask` block as the page data's `compositions` carries it, else its defaults, its "Search for these words" and "Show the items" opening the view `namedView()` reads from the filters they name; then "Find items", `ItemList` over `search` as `viewToArgs()` reads the page's view, `list` with `table` offered through `DataViews.LayoutSwitcher`: the words in `DataViews.Search`, Team view and Kind of news primary filters and Topics, About, Sources and Dates behind "Add filter", with DataViews' own Reset, and the client or company picked by name through `EntityPicker` into an `is` filter, a name offered searching at once and Enter searching the text typed; when narrow (`useNarrow()`) "Filters (%d)", counting the filters holding a value, opens a `Sheet` holding them all, whose primary "Show %d items" closes it; the count reads the server's total, "most important first" or "newest first" as the answer's `sort` says, beside Sort, Importance or Newest, which reads from the first page; the pager comes from the total; while a page is owed the one before it stays, inert and dimmed by DataViews, with skeleton rows only before the first; no match reads "Nothing matches these filters." with **Remove filters**, a failed read the shared read error above the list; a team view picked shows every filter it searches with read-only, and "Edit as my own search" copies its filters into the view, its days as `since`, the first of the last that many UTC days, its tiers dropped, which the view says, and drops the team view |
+| `views/Lens.js` | default, `CLOSED_LENS` | Team views: `lenses` as a rail, each view with "%d new", its `week_items`, a `SelectControl` labelled "Team view" below 600 px, the first opening until the reader picks one; the chosen view's fixed header, its name and description, **Watch** for every reader, which opens the watch form on it, and for a curator **Edit** and a "Team view actions" ⋯ menu holding **Remove view…** and **Edit layout**; below it `PageLayout` over the `newspack-intelligence/lens` layout, the view and its listing in the page context. One `Modal` saves a new view, keyed by its name, which the server slugs and the form never shows, or edits the one open: "New team view" or "Edit %s", its name, "What it is for", kinds, roles and sources through `ListPicker`, topics comma-separated, the client or company, "Look back" as "%d days", tiers as checkboxes, the axis and the bucket led by "Not set"; a refused save stays open with its refusal. Removing asks "Remove the %s view? Watches that follow it will stop." Each write is held through `useHeld` until a read of `lenses` reflects it |
+| `views/Entity.js` | default | A profile: one `entity` read, which it provides its layout's blocks through `EntityRecord`, under a fixed header no layout can hide — "Back to <view>", the name, the type line ("<client> since <year>", "<former client>, <year> to <year>", else the type's word) and the website, **Watch**, for a curator **Edit** (`EditDrawer`) and ⋯ holding **Edit layout** and, for a client without one, "Add a churn-risk note", then, while `status.churn_open`, the "Possible churn" notice naming each churn item ("“%1$s” (%2$s, %3$s) says this client is leaving %4$s." with the operator's name, else without it) with **Open item**, and for a curator **Not about this client** (`reject_link` after the undo window) and **End client…** (`EndClientDialog`), and the client's churn-risk note (`ChurnNote`) inside it or alone, which a curator edits through `note_churn`; then jump links naming each heading of the layout (`headingsOf()`), each moving focus to it; below it, the page data's `newspack-intelligence/entity` layout through `PageLayout`. A refused `entity` reads "This profile is not available to you, or it no longer exists." with the way back |
+| `blocks/pulse.js`, `entity-facts.js`, `related.js`, `timeline.js`, `record.js` | `{ View, Controls, headings? }`; `EntityRecord`, `entityName`, `useEntityRecord` | A profile's blocks. `pulse` is the `PulseLine` of `signals --entity` on a profile, `--lens` on a team view and the lens it names on the Briefing, nothing without one. `entity-facts` shows its `show` parts: the counts not zero and "Last item %s"; "Facts", `claims` up to `limit`, each in words, cited, without Save; "Details", its names, identifiers, roles and topics, and for a curator "Show the ID" over its key and the keys merged into it. `related` lists `limit` rows, each "%d shared", then "Show all %d". `timeline` is `ItemList` over `timeline` a page of `limit` at a time, then, as `published` says, "Published by %1$s (%2$d)" under a disclosure, nothing, or what the entity published alone. Each block names its headings for the jump links; `useEntityRecord()` answers the record the profile provides, else the block's own read under a scope of its own |
+| `blocks/trend-chart.js`, `item-list.js` | `{ View, Controls, headings? }` | A team view's blocks, the chart also a profile's and the list every page's. `trend-chart` reads `trends` through the page's subject, the view or the entity, naming its `by` and `bucket` when set, and draws `TrendChart` under its `heading`, stacked or as lines as `style` says; owed, a 180 px skeleton, and empty, "Nothing in this view in the last %d days." over the view's days, else "Nothing in this view yet.", each under its heading once the axis is known. `item-list` reads `search` through the page's view, or the `lens` it names, and a profile's entity, its `kinds`, `topics`, `roles` and `sources` each intersected with the page's view's list of that name when both name one, an empty intersection reading nothing and saying its `empty`, its `tiers` sent as `tier` for the server to narrow within the reader's; it draws `GroupPage` for `group` `theme`, else `ItemList` in its `layout`, `limit` a page, sorted by `sort` |
 | `views/Review.js` | default | `review links`, one row per item with a pill per proposed entity and the sentence each link quotes, and `review entities`, a pill per entity, each citing item with the sentence it quotes; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's "Same as…" opens `merge_entities`, its field focused; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back. Each queue's list, named for its queue and described by a visually hidden sentence of its keys, takes focus and the review keys while focus is in it and not in a field, as the substrate's `isTypingTarget()` reads it: `j` and `k` move between the link pills or the entity rows (`data-review-row`, `tabindex="-1"`, so the shared `[tabindex]:focus-visible` ring shows), and `y`, `n` and `m` press the focused row's control whose `aria-keyshortcuts` names the key (✓, ✕, Same as…), a judgment moving focus to the row then in its place, else the last; then "Similar themes", `theme_suggestions`' pairs, each naming both themes, their stories, the entities they share and the words their names share, and for a curator "Merge into" each theme, which sends `merge_theme` from the other and hides the pair through `useHeld` as `merge_entities` does |
-| `views/Collections.js` | default | `collections`, listed and opened; for a curator, `create_collection`, its collection shown saving through `useHeld` until a read lists it by name, and the "Excluded" card listing `excluded` with "Include again", which holds the row out through `useHeld` until a read no longer lists it |
+| `views/Collections.js` | default | The Folders tab: `FolderBoard` at the `folder-board` block's defaults, every folder, opening on "Not yet used"; for a curator, the "Excluded" card listing `excluded` with "Include again", which holds the row out through `useHeld` until a read no longer lists it |
+| `components/FolderBoard.js`, `FolderCard.js` | default, `showOptions`; default | The Folders board: `collections`, then one `collections <key>` read per folder shown, every folder or those `folders` names, each a stock `Card` column headed by its name and its count, "20+" in Warning text past twenty, its items' cards under "Show" (All, Not yet used, "Used in %s" per `markWords` place), opening on `show`. A card cites its item, the day it was saved and each use mark as a badge ("Newsletter, 5 Nov"). For a curator a card drags natively onto any column, the live region saying "Picked up %s.", "Over %s." and "Moved %1$s from %2$s to %3$s.", and its menu moves it in one action ("Move to"), marks it used through a dialog ("Where" a `RadioControl`, "On" a date, today by default), opens its source, or removes it from the folder; each is deferred with Undo through `useDeferredWrite`, then sends `move_item`, `mark_used` or `uncollect`, and the board shows it from the moment it is made until a read reflects it, a move landing focus on the card in its new column and a refusal returning the card with the refusal on it. **New folder** sends `create_collection`, the folder shown saving through `useHeld` until a read lists it by name. When narrow the columns are a "Folder" select showing one at a time. Three skeleton columns of three cards stand in while it loads, one when narrow |
+| `blocks/folder-board.js` | `{ View, Controls }` | The `folder-board` block: `FolderBoard` on its `show` and `folders`, its writes a curator's and none while the layout is edited; its controls pick what it opens on and its folders by name |
 | `views/Watches.js` | default, `CLOSED_WATCH`, `newWatch`, `WatchRow` | `watches`, the caller's own, each a `WatchRow`, the one row the Briefing lists too: the button opening it, its target, and its unseen count, or "Not listed here; email only" for a watch without its inbox, or the words that a save of it is awaiting a read; opened onto `watch_matches --key` a page at a time, or onto the words that its inbox is off, each match with a "Mark seen" (`mark_seen --key --item`) and the page with "Mark <n> as seen", naming each match it shows, a marked match hidden through `useHeld` until a read no longer lists it and a landed mark returning to the first page; for every reader, not gated on `canTune`, the form saving a new watch or the one opened through `save_watch` — its name, the kind it follows and exactly one target (a lens picked from `lenses`, an entity key, or a collection picked from `collections`), and the three deliveries as checkboxes, each sent as `true` or `false` — and `remove_watch`, each held until a read of `watches` lists the watch with the name, target kind and deliveries the save sent, an edit by its own key, the target's key uncompared because the server stores an entity as its survivor |
-| `components/TrendTable.js` | default, `Signals`, `TrendChart`, `againstBaseline`, `signalValue` | The table of signals a lens, an entity and the Briefing render, each row's bucket, a date that does not wrap, value, count and cited items; `Signals`, a lens's or an entity's `signals` answer as its `PulseLine`, its first signal named by the value it counts, capitalized, else by `signalValue`, with that signal's own series and band, or with no signal the totals with no band, and the line's accessible name led by "The line draws <signal>." only when several signal, then, when anything signals, the signals as the table, each count beside what is usual (`usualPhrase()`); `TrendChart`, a lens's trend rows as one compact shared `AreaTimeChart`, a series per value over the 8 newest buckets, each a UTC day, at most 5 values, those counting the most over them first, titled by the span it covers, every row also a visually hidden table of bucket, value and count, and nothing for no rows; a signal's count beside what is usual, and the signal in its `signalWords` word, a spike naming the value that jumped, a kind by its `kindWords` word |
+| `components/TrendTable.js` | default, `Signals`, `TrendChart`, `chartTitle`, `pulseOf`, `rankColor`, `againstBaseline`, `signalValue` | The table of signals a lens, an entity and the Briefing render, each row's bucket, a date that does not wrap, value, count and cited items; `Signals`, a lens's or an entity's `signals` answer as its `PulseLine`, its first signal named by the value it counts, capitalized, else by `signalValue`, with that signal's own series and band, or with no signal the totals with no band, and the line's accessible name led by "The line draws <signal>." only when several signal, then, when anything signals, the signals as the table, each count beside what is usual (`usualPhrase()`); `TrendChart`, a `trends` answer as one compact shared `AreaTimeChart`, a series per value over the 8 newest complete buckets, each a UTC day, at most 5 values, those counting the most over them first, a theme in sentence case, the bucket still running a hatched bar of its total labelled "today", "this week" or "this month", ticked "5 Oct" level, its axis "Items", titled by its heading with the axis it counted in its `%s` (`chartTitle()`), stacked or as lines, coloured by `rankColor`, which gives three series or fewer palette slots 1, 2 and 4 so no two are the accent, every row also a visually hidden table of bucket, value and count, and nothing for no rows; `pulseOf()` draws no line for a series that counted nothing; a signal's count beside what is usual, and the signal in its `signalWords` word, a spike naming the value that jumped, a kind by its `kindWords` word |
 | `components/PulseLine.js` | default, `spanWords` | One pulse line: a sentence, then a 96 by 24 shared `Sparkline`, then the bucket still running. With a signal the sentence is "<subject>: <count> yesterday / last week / last month, <usualPhrase>.", its band the signal's own `usual` range, so a quiet line carries none; else, from `spanWords()` by the answer's span, "No unusual change yesterday / last week / last month." when judged and "Too little history to judge. A change is measured against the %d days / weeks / months before." when not, never "Steady". A bucket outside the read's window is a gap, read as "not read", a latest one too, never "counts 0"; the partial bucket is its own phrase, "%d so far today / this week / this month", never a point on the line |
-| `components/EditDrawer.js` | default | An entity's curation behind an "Edit" toggle carrying `aria-expanded` and `aria-controls`, closed until opened onto a region "Edit <name>": each role it holds open with "End <role>" (`end_role`), then the forms `add_name`, `add_identifier` and `assert_role`, each through the write the Entity view hands it |
+| `components/EditDrawer.js`, `components/ChurnNote.js` | default; default, `noteText` | An entity's curation behind **Edit**, which carries `aria-expanded` and opens a `Sheet` "Edit <name>", 480 px beside the page or 90% high from its foot when narrow, its heading focused and Escape handing focus back to **Edit**: "Names", "Identifiers" and "Roles", each listing what the entity holds above a DataForm Add form in `card` layout, its kinds through `adaptiveSelect`, sent only once `isValid` (`add_name`, `add_identifier`, `assert_role`), each open role with "End <role>" (`end_role`), the client's asking first, then "Merged from: %d earlier records" under a disclosure. `ChurnNote` reads a churn-risk note as "Churn risk: <text>. Owner: <owner>. Next: <step>, by <day>.", each part only when given, with **Edit note** for a curator; Needs attention lists a noted client by it, first |
 | `hooks/useEndClient.js` | `useEndClient` | Ends one client at a time, asked first: `ask( client )`, a client its `{ entity_key, name }`, names it as `asking` for `EndClientDialog`, `cancel()` drops the question, and `end()` closes it and sends `end_role` (`client`) and, only once that lands, `assert_role` (`former_client`), because two role writes sent together race and one is lost; it holds the key through `useHeld` from the click, so the `read` it answers leaves out every row of the caller's list naming that `entity_key` until a read no longer lists it, since the projector records the end only on its next flush; a refused end releases the hold and answers as `refused`, and a refused assert keeps it, because the end landed, and answers as `unrecorded`, the client with the refusal, which stands until the next `end()` so it outlives the client's rows, and which `unrecordedText()` reads as "<name> (<key>) is no longer a client, but former_client was not recorded: <why>"; `asked` names the client the last pair ends and `owed` the same client while that pair is owed its replies, while which `ask()` does nothing; `refresh` runs once the pair is answered, or once either write is refused, never between the two; both writes' nodes are named under the `scope` it is given. The entity page's churn prompt and the health strip's dead client feeds end a client through it |
 | `components/EndClientDialog.js`, `components/UndoSnackbar.js` | `EndClientDialog`, `UndoSnackbar` | Ending a client asks first. `useEndClient` answers `asking`, `ask()`, `cancel()`, `end()` and `ended`. The profile's churn notice, the Edit drawer's client role and the health strip's dead client feed all open `EndClientDialog`, and `UndoSnackbar` shows a pending write's Undo, or a settled message such as "%s is now a former client." |
 | `hooks/useHeld.js` | `useHeld` | A read's rows with each write shown from the moment it is sent: a held key's row taken out until the reads stop listing it, or a held row put in its place until a read lists one `matches` says reflects it; a refusal undoes the hold whose send it echoes, and a bare refusal every hold |
@@ -3380,11 +3453,13 @@ its own one-shot commands, and only the `AskBox` polls: it asks
 | `components/Skeleton.js` | `Skeleton` | What an answer still owed shows: `shape="row"` item rows, `AnswerBody`'s default, or `shape="line"` lines for a prose card, sized by the classes in `intelligence.scss`, never "Loading…". `Answer.js`'s `Unread` is a failed read's one polite sentence with Try again, the refusal's own words beneath it only for an operator, through the `CanManage` context `IntelligencePage` provides from `canManage`; `Refusal` stays the alert for a refused write. |
 | `components/EntityPicker.js` | default, `useEntityNames`, `MIN_PREFIX` | `useEntityNames( text )` asks `names` for the text an entity box holds and answers its suggestions, `keyOf()` and the latest refusal: each entity offered under the name the reader types toward, its key as the label, and a name two of them share under each key. A text holding fewer than `MIN_PREFIX` (2) letters, marks or digits as `Entity_Index::norm()` counts them, or naming an offered entity by its name or key, asks nothing. The component is the shared `CommitInput`, labelled through `BaseControl`, handing every edit on as typed, so a name leading another can be typed past, with the refusal beneath it; Search maps a name to its key through `keyOf()` only when it runs the search |
 | `components/words.js`, `ListPicker.js` | `word`, `words`; default | `word( map, key )`, the word for a key in one of the page vocabulary's word maps, read off `NewspackNodesData.vocabulary`, throwing on a key the map does not word, and `words( map )`, the map; `ListPicker`, a `FormTokenField` over one closed list, each token shown by its word, refusing any other, its value the comma-separated text the lens and search forms hold, which Search and the team view form pick kinds, roles and sources with |
-| `components/AskBox.js` | default | The question field heading the Briefing and Search, "Ask about clients, the industry or <operator>…", the `name` of the localized `operator` the page hands it, over the ask `IntelligencePage` holds, `{ key, at, gaveUp }`: `ask` through `useIntelWrite`, whose `refresh` hands it the key, held with the substrate clock's second it landed, then `ask_result` through `useIntelRead`, asked again every 3 seconds on the Router's tick (`useRouterTick`) while it reads `asked` from a graph that opened, shown as "Working on it…", until the ask has waited the `wait_s` the answer names, when it says no answer came back within that time; an answer's sentences, each followed by the numbers of the items it cites, above those items as `ItemRow`s in an ordered list, how many sentences were left out, and, for an answer with none, whether nothing the reader may read matched or the answer cited none of the items it read; a failure's or a withheld answer's reason; a graph that would not open; the searches the ask ran as `Searched: …`; a refusal; Ask disabled for a blank question |
+| `components/AskBox.js`, `components/Citation.js` | default | The `ask` block's component heading the Briefing and Search: a question field under its visible `label`, its `placeholder` and, until the reader's first ask in this browser, its `examples` as "Try: %s", each attribute left out reading as the block's default, over the ask `IntelligencePage` holds, `{ key, at, gaveUp, question }`: `ask` through `useIntelWrite`, then `ask_result` through `useIntelRead`, asked again every 3 seconds on the Router's tick while it reads `asked`, `planned` or `read`, each step ticked on the stage line and announced politely, until the ask has waited the `wait_s` the answer names; an answer's sentences, each followed by a `Citation` per cited item the list holds, a button "Source %1$d: %2$s" whose hover or focus opens an inline `Popover` preview with **Open source** for an http or https URL alone and **Show in list**, and whose click scrolls to the source and washes it for 2 seconds; the sources as `ItemRow`s; the sentences left out and hidden; "Searched %1$s. Read %2$d items; this answer cites %3$d."; the fixed footer, **Clear** and **Ask another**; nothing matched with **Search for these words**, read but no answer with **Show the items**, failed or withheld by the server's reason with **Ask again**, announced assertively, and waited too long; a graph that would not open; a refusal |
+| `components/Sheet.js` | default | A right-hand drawer, or a bottom sheet with 16 px top corners when narrow, on the shared `Modal`: its heading names it and takes focus, Escape or a click outside closes it, and focus returns to its opener |
+| `views/searchView.js` | `newView`, `namedView`, `viewToArgs` | The DataViews view Search holds: `newView()` the first page of 20 in a list, unfiltered and naming no sort, so the server picks the order; `namedView()` a fresh view on the filters a Briefing line or an ask names (`q`, each list comma-separated, `topic`, `lens`, `entity`, `since` and `until`), a blank one left out and any other refused; `viewToArgs()` the view as the `search` command's tokens: the words as `q`, each filter in the view's order, a list's values repeated, a topic's text split at its commas, the day's `between`, `afterInc` or `beforeInc` as `since` and `until`, the sort's field when it names one, `limit` the page size and the page's `offset`; a field `search` does not take throws |
 | `components/Pager.js` | default | How many of the matches a page shows, as items unless `forms` names the plural forms of another noun, and Previous and Next over a stack of page starts, for Search, the Entity timeline and its published items, a lens's groups and a watch's matches |
 | `components/GroupPage.js` | default | A page of a lens's theme groups in the answer's order under the fixed line "Ranked by severity, importance, clients affected, then recency": a group counting one item as that item's `ItemRow`, any other a row headed by its theme as an `h4`, its count, kind and newest UTC day, an `EntityChip` per client, and a "Show items" button carrying `aria-expanded` and naming the theme, which discloses its items as `ItemRow`s; then its `Pager`, counting groups through `forms`; each row keyed by its theme and first item's key, since a story can stand in two groups |
 | `components/ListField.js`, `lensDraft.js` | `ListField`; `lensDraft`, `newLens`, `draftLens`, `draftArgs`, `listOf`, `daysSince` | A comma-separated field naming the values a closed list allows; a lens read into a form's text and back into the lens and the options `save_lens` and `search` take, its list filters read from `vocabulary.lensLists` and its tiers kept beside them, the one place that knows the lens's shape; and the first UTC day of a lens's rolling window |
-| `components/ItemRow.js`, `Cite.js`, `format.js` | `ItemPage`, `SaveButton`, `EntityChip`, `dayLabel`, `usualPhrase`, `pageFormat` | An item row: its title linking its source, Ink at rest; for a curator `SaveButton`, the bare archive glyph named "Save to folder", which moves into "More actions" when the page is narrow (`useNarrow()`); any control the view passes as its children; and "More actions" (`DropdownMenu`), holding "Open profile" for the subject its first pill shows and "Copy link" for an http or https URL, whose outcome, "Link copied." or "The link could not be copied." (a page with no clipboard included), stands 4 seconds as a polite `SnackbarList` snackbar; then its meta line as cells joined without a mark: the source's initial in a neutral badge pill and its `sourceWords` word, its UTC day through `dayLabel()` ("6 Nov", the year only when it is not this year), its kind's `kindWords` word as a neutral badge, and its kind check; its summary, its excerpt behind "Show more" unless its summary or title holds it; and its entities as pills, leaving out a `proposed` one while another of its name is not proposed and keeping only the first of several proposals of one name, and any whose `role` is neither `subject` nor `mention`: its first three subjects lead, and every other entity it names sits behind "+N more" in the same row, carrying `aria-expanded`, a mention reading "<name>, mentioned". `EntityChip` is the one entity pill, here and in every view: the shared badge's `is-pill is-info`, its name cut by its width alone so its accessible name stays whole. `ItemPage`, a page of rows above its `Pager`, which Search and the Entity timeline and published section render, and which, given `onSort`, says whether the page is ranked by importance or newest first and offers the other; a citation linking only an http or https URL; the UTC day (`utcDay()`), `dayMonth( at, timeZone )`, the one day-and-month naming `dayLabel()` and `sinceLabel()` share, its formats built once a module, `usualPhrase()` ("usually under 1", else "usually about %d"), `pageFormat()`, an `Intl` format in the page's own language, which HealthStrip reads too, `metaLine()`, which joins other views' meta parts and keeps a 0, and `roleText()`, a role row as open since its first day or held between two; for a reader holding tune (`canTune`, passed down from `IntelligencePage` through every view and component hosting a row), "Exclude from every view" is a native `button-link`, the shared text-button role, with `newspack-intelligence__exclude` adding only `flex: none`, which puts the row behind "Excluded." and an Undo button while `useDeferredWrite` holds `exclude_item` for `UNDO_MS`, each pending exclusion mounting its own write under `exclude-item:<useId>`, and a refused exclusion puts the row back with the refusal |
+| `components/ItemRow.js`, `Cite.js`, `format.js` | `ItemPage`, `SaveButton`, `EntityChip`, `dayLabel`, `usualPhrase`, `pageFormat` | An item row: its title linking its source, Ink at rest; for a curator `SaveButton`, the bare archive glyph named "Save to folder", which moves into "More actions" when the page is narrow (`useNarrow()`); any control the view passes as its children; and "More actions" (`DropdownMenu`), holding "Open profile" for the subject its first pill shows, "Copy link" for an http or https URL and, for a reader holding tune, "Is this about…", a dialog picking an entity by name through `EntityPicker` over `names` and its role, `subject` unless the curator picks `mention`, each worded by `linkRoleWords`, whose "Link it" sends `add_link`; what a copy or a link did, "Link copied.", "The link could not be copied." (a page with no clipboard included) or "Linked <name> to this item. It shows here once the item is read again.", stands 4 seconds as a polite `SnackbarList` snackbar, and a refused link stays in the dialog as its alert; then its meta line as cells joined without a mark: the source's initial in a neutral badge pill and its `sourceWords` word, its UTC day through `dayLabel()` ("6 Nov", the year only when it is not this year), its kind's `kindWords` word as a neutral badge, and its kind check; its summary, its excerpt behind "Show more" unless its summary or title holds it; and its entities as pills, leaving out a `proposed` one while another of its name is not proposed and keeping only the first of several proposals of one name, and any whose `role` is neither `subject` nor `mention`: its first three subjects lead, and every other entity it names sits behind "+N more" in the same row, carrying `aria-expanded`, a mention reading "<name>, mentioned". For a reader holding tune each pill holds an ×, named "Remove <name> from this item", which hides the chip at once and holds `reject_link` behind an Undo (`useDeferredWrite`), then keeps the chip out through `useHeld` until a read no longer lists it; Undo or a refusal puts it back, the refusal as the row's alert. `EntityChip` is the one entity pill, here and in every view: the shared badge's `is-pill is-info`, its name cut by its width alone so its accessible name stays whole; given `onRemove`, a span holding two bare buttons, the name opening the entity and the × removing it. `ItemPage`, a page of rows above its `Pager`, which Search and the Entity timeline and published section render, and which, given `onSort`, says whether the page is ranked by importance or newest first and offers the other; a citation linking only an http or https URL; the UTC day (`utcDay()`), `dayMonth( at, timeZone )`, the one day-and-month naming `dayLabel()` and `sinceLabel()` share, its formats built once a module, `usualPhrase()` ("usually under 1", else "usually about %d"), `pageFormat()`, an `Intl` format in the page's own language, which HealthStrip reads too, `metaLine()`, which joins other views' meta parts and keeps a 0, and `roleText()`, a role row as open since its first day or held between two; for a reader holding tune (`canTune`, passed down from `IntelligencePage` through every view and component hosting a row), "Exclude from every view" is a native `button-link`, the shared text-button role, with `newspack-intelligence__exclude` adding only `flex: none`, which puts the row behind "Excluded." and an Undo button while `useDeferredWrite` holds `exclude_item` for `UNDO_MS`, each pending exclusion mounting its own write under `exclude-item:<useId>`, and a refused exclusion puts the row back with the refusal |
 | `styles/intelligence.scss` | — | Geometry, and an item title's Ink at rest and accent on hover and focus, emitted as `build/intelligence/index.css`; every badge and pill takes its paint from the shared status badge, sentence case included, and Review's joined control squares and rounds the entity pill with its glyph buttons |
 
 Each read is a `useCommandOnce` read with `retry`, under the `intelligence`
@@ -3410,9 +3485,8 @@ operator, which the health strip reads to offer the operator fixes.
 `userId` is the reader's `get_current_user_id()` as a string, which keys
 what the Briefing keeps in the browser. `operator` is
 `Operator::configured()->shown()`, `{ name, heading }`: the AskBox's
-placeholder and the Briefing's sentence and empty state name `name`, and
-its `operator_product` group is headed `heading`, never a name the page
-capitalizes itself. The
+placeholder and the profile's churn notice name `name`, never a name the
+page capitalizes itself. The
 vocabulary the selects offer is `Intel_Event`'s own lists, `tiers` among them, the trend axes and buckets as `trendAxes`
 and `buckets` (`Graph_Query::trend_axes()` and `buckets()`), and
 `lensLists`, one `{ field, option, values }` per `Graph_Query::LENS_LISTS`
@@ -3441,6 +3515,51 @@ the shared roles. The build resolves `@newspack-nodes/runtime`,
 substrate's `alias-map.cjs`, from `NEWSPACK_NODES_SRC` in CI and from the
 sibling checkout locally.
 
+**Layouts.** The Briefing, a team view's page and a profile's sections are
+each a layout of Intelligence blocks on the substrate's composition layer.
+`Intelligence_Blocks` declares them on `newspack_nodes/compositions`:
+`BLOCKS`, name => the substrate's block row (`aside`, the one container,
+`multiple: false`, on the lens and entity pages), which each screen adds
+its rows to, and `CONTEXTS`, `newspack-intelligence/briefing`, `/lens` and
+`/entity`, each defaulting to `layouts/<page>.html` and holding at most
+`MAX_BLOCKS` (24). No block reaches `register_block_type()`, so no post,
+site or widget editor offers one. Each context's `check` refuses a block
+naming, in `lens`, `lenses` or `categories`, a lens never saved (`no lens:
+<key>`), or, in `entity` or `topics`, an entity `Graph_Query::visible()`
+hides from a reader without the restricted tier, whatever tiers the caller
+holds, because every reader reads every layout; a block naming no key reads
+nothing. `enqueue_intelligence_assets()` localizes
+`Composition_Store::page_data()` for the three contexts as `compositions`,
+a layout that no longer reads standing as `{ context, error }`, `error`
+the refusal for a `manage` caller and `this layout could not be read` for
+anyone else, since a refusal can name a restricted entity's key, and, when
+`edit` names one of the three pages, registers
+`newspack-intelligence-layout-editor` and hands it to
+`Composition::editor()`, which loads the canvas, the bundle and that
+context's schemas for a `tune` caller alone, so a reader's page loads no
+editor script. In the browser `blocks/index.js` maps each block to its
+`{ View, Controls }` (`BLOCK_VIEWS`), and `layout/PageContext.js`'s
+`IntelPageContext`, `{ page, lens_key, lens, entity_key, since, kept,
+editing, actions }`, `lens` the team view's listing on its page, is what a View reads besides its attributes, `actions` (read
+through `useIntelActions()`, each a no-op where the page offers none) what
+its rows open; `useWriteControl()` makes a
+write control `aria-disabled` and inert while `editing`. `PageLayout`
+renders a page's tree through the substrate's `CompositionView`, the
+Briefing's as the view itself and a team view's or a profile's below its
+fixed header, the aside apart in a column at 1,100 px and up and after the main
+column below that. A curator finds **Edit layout** in the Briefing's
+header menu and in a team view's or a profile's ⋯ menu (`editLayoutControl()`), which reloads the page with `view`, `edit`
+and the team view or profile it was opened from (`layout/editMode.js`); on
+that load `IntelligencePage` puts the substrate's `CompositionEditSlot` in
+the view's place and keeps the tab bar, and the layout the editor hands
+back replaces the page's, a save showing "Layout saved.". The editor
+bundle, `layout-editor.js`, registers the localized blocks against
+`BLOCK_VIEWS` and the substrate's `CompositionEditor` for that context,
+under "Edit the Briefing layout", "Edit the team view layout" or "Edit the
+profile layout", with every block previewing under `editing` the team view
+or profile it was opened from, and "Preview with %s" offering the saved
+team views or an entity picked by name.
+
 ## Layout
 
 | Path | What |
@@ -3451,11 +3570,12 @@ sibling checkout locally.
 | `includes/` (resolve) | `Entity_Index`, `Resolver`, `Resolver_Node`, `Extractor_Node`, `Deduper_Node`, `Reresolver_Node` |
 | `includes/` (clients) | `Client_Importer`, the `Client_Roster` interface, `Graph_Client_Roster`, `CSV_Parser`, `Clients_Settings` |
 | `includes/` (LLM) | `LLM_Call_Node`, every model call; the `Asks_Model` trait, its callers' half; `Prompts`, the requests' messages and the parse of their replies; `Operator`, who runs the deployment and what it tracks, which the prompts and the page name; the `Owns_Curl_Frontier` trait, the Curl and Frontier half it shares with `Source_Node` |
-| `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Briefing`, `Intelligence_Health`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Graph_Trace`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
+| `includes/` (service) | `Intelligence_CI_Node`, `Intelligence_Blocks`, `Intelligence_Briefing`, `Intelligence_Health`, `Intelligence_Mcp_Door`, `Graph_Query`, `Graph_Curation`, `Graph_Watches`, `Graph_Trace`, `Intel_Tiers`, `Restricted_Settings`, `Worker_Route`, `uninstall-cleanup.php` |
 | `includes/` (watches) | `Watcher_Node` |
 | `includes/` (ask) | `Ask_Node`, the Ask's worker half; `Graph_Asks`, its `ask` and `ask_result` commands; `Ask_Prompts`, its two prompts and the parse of their replies |
 | `includes/cli/` | `Clients_CLI_Command` — `wp newspack-intelligence clients import <csv>`; `Items_CLI_Command` — `wp newspack-intelligence items purge`, and `items exclude <item> [--why=]`, `items include <item>` and `items excluded [--limit=]`, each running the `intelligence` CI's command through `dispatch()` on the mounted request graph as the MCP door does, exclude and include refusing a run with no `--user`, since an exclusion records who made it, and `excluded` printing one tab-separated, terminal-safe line per item: key, title, URL, who, when (UTC) and why; `Ontology_CLI_Command` — `wp newspack-intelligence ontology seed [<file>]`, `ontology reresolve`, `ontology reextract` and `ontology reproject`; `Restricted_CLI_Command` — `wp newspack-intelligence restricted grant <login>`, `restricted revoke <login>` and `restricted list`; `Eval_CLI_Command` — `wp newspack-intelligence eval <file>`; the `Refuses_Root` trait they share |
 | `topologies/` | The `.tsl` node-graph topologies |
+| `layouts/` | Each composed page's default layout, `briefing.html`, `lens.html` and `entity.html` |
 | `examples/` | The fictional ontology seed and eval labels, the shapes a deployment starts its own from |
 | `src/intelligence/` | The Intelligence page's React bundle |
 | `tests/` | PHPUnit (`unit/` + `bootstrap.php` + `support/` + `run-coverage.sh`; `integration/` exists but is empty) |

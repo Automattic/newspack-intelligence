@@ -5,10 +5,20 @@
  * the zone the suite pins (Pacific/Auckland), whatever the page's clock.
  * dayLabel names a UTC day by its day and month, adding the year only when
  * it is not today's, always in UTC. usualPhrase says a usual count in
- * whole words.
+ * whole words. evidenceText reads a proposal's evidence as plain text, cut
+ * to the sentence naming the entity, the name apart. reasonText reads an
+ * extraction's rank reason as its own sentence, "No reason recorded." for
+ * none.
  */
 
-import { dayLabel, metaLine, sinceLabel, usualPhrase } from '../format';
+import {
+	dayLabel,
+	evidenceText,
+	metaLine,
+	reasonText,
+	sinceLabel,
+	usualPhrase,
+} from '../format';
 
 /**
  * A local wall time as UTC seconds.
@@ -156,5 +166,69 @@ describe( 'usualPhrase', () => {
 		[ 6.25, 'usually about 6' ],
 	] )( 'says a mean of %s as "%s"', ( mean, words ) => {
 		expect( usualPhrase( mean ) ).toBe( words );
+	} );
+} );
+
+describe( 'evidenceText', () => {
+	const NAME = 'Coastline Weekly';
+	const TITLE = 'Coastline Weekly launches a youth newsroom';
+
+	it( 'strips the Markdown, drops the URLs and cuts to the sentence naming the entity', () => {
+		expect(
+			evidenceText(
+				'## Harbor notes\n\n…grant **closed** on Friday. Then [coastline weekly](https://coastline.example/youth) will _host_ the `new` newsroom, see https://coastline.example/about for more. Readers wrote in…',
+				NAME,
+				TITLE
+			)
+		).toEqual( {
+			before: 'Then ',
+			name: 'coastline weekly',
+			after: ' will host the new newsroom, see for more.',
+		} );
+	} );
+
+	it( 'keeps the text touching the name as it is spelled', () => {
+		expect(
+			evidenceText( "Coastline Weekly's editors met.", NAME, TITLE )
+		).toEqual( {
+			before: '',
+			name: 'Coastline Weekly',
+			after: "'s editors met.",
+		} );
+	} );
+
+	it( 'keeps the whole text as the sentence when it never spells the name', () => {
+		expect(
+			evidenceText( 'Editors met at the *harbor* office.', NAME, TITLE )
+		).toEqual( {
+			before: 'Editors met at the harbor office.',
+			name: '',
+			after: '',
+		} );
+	} );
+
+	it.each( [
+		[ 'the title itself', TITLE ],
+		[ 'the title cut short', '…launches a youth newsroom' ],
+		[ 'nothing', '' ],
+		[ 'only a URL', 'https://coastline.example/youth' ],
+	] )( 'answers null for evidence that is %s', ( _, text ) => {
+		expect( evidenceText( text, NAME, TITLE ) ).toBeNull();
+	} );
+} );
+
+describe( 'reasonText', () => {
+	it( 'keeps a recorded reason as it was written', () => {
+		expect(
+			reasonText( 'A rival press poached the whole sports desk.' )
+		).toBe( 'A rival press poached the whole sports desk.' );
+	} );
+
+	it.each( [
+		[ 'empty', '' ],
+		[ 'null', null ],
+		[ 'missing', undefined ],
+	] )( 'says no reason was recorded for one %s', ( _, reason ) => {
+		expect( reasonText( reason ) ).toBe( 'No reason recorded.' );
 	} );
 } );

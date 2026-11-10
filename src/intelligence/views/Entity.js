@@ -1,13 +1,13 @@
+import { useLayoutEffect, useMemo, useRef, useState } from '@wordpress/element';
+import { __, sprintf } from '@wordpress/i18n';
 import {
-	useEffect,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-} from '@wordpress/element';
-import { __, _n, sprintf } from '@wordpress/i18n';
-import { Card, CardBody, CardHeader, Notice } from '@wordpress/components';
-import { formatCommandArgs } from '@newspack-nodes/runtime';
+	Button,
+	DropdownMenu,
+	Notice,
+	TextControl,
+} from '@wordpress/components';
+import { chevronLeft, moreHorizontal } from '@wordpress/icons';
+import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import {
 	CLIENT_READS,
 	ENTITY_READS,
@@ -17,27 +17,19 @@ import {
 import { unrecordedText, useEndClient } from '../hooks/useEndClient';
 import { useDeferredWrite } from '../hooks/useDeferredWrite';
 import { useHeld } from '../hooks/useHeld';
-import Answer, { AnswerBody } from '../components/Answer';
+import { AnswerBody } from '../components/Answer';
 import Skeleton from '../components/Skeleton';
-import Cite, { EntityChip } from '../components/Cite';
 import EditDrawer from '../components/EditDrawer';
 import EndClientDialog from '../components/EndClientDialog';
+import ChurnNote from '../components/ChurnNote';
 import Refusal from '../components/Refusal';
 import UndoSnackbar from '../components/UndoSnackbar';
-import { ItemPage, SaveButton } from '../components/ItemRow';
-import { Signals, signalValue } from '../components/TrendTable';
-import { metaLine, roleText, safeHref, utcDay } from '../components/format';
+import { entityName, safeHref, shownDay, utcDay } from '../components/format';
 import { word } from '../components/words';
-
-/**
- * Whether a role row held any time; a closed row ending where it starts is
- * an import's same-day correction, not a period the entity held the role.
- * An open row, `to_ts` 0, always holds time, even one a seed asserted from 0.
- *
- * @param {Object} role The role row.
- * @return {boolean} Whether it held time.
- */
-const heldTime = ( role ) => 0 === role.to_ts || role.from_ts !== role.to_ts;
+import { headingsOf } from '../blocks';
+import { EntityRecord } from '../blocks/record';
+import { editLayoutControl } from '../layout/LayoutMenu';
+import PageLayout from '../layout/PageLayout';
 
 /**
  * A churn report's key.
@@ -48,190 +40,171 @@ const heldTime = ( role ) => 0 === role.to_ts || role.from_ts !== role.to_ts;
 const reportKey = ( item ) => item.item_key;
 
 /**
- * What an entity is called where it heads its view and labels its tab: its
- * name, else its key.
+ * The UTC year of a Unix time.
  *
- * @param {{name: ?string, entity_key: string}} entity The record.
- * @return {string} The name.
+ * @param {number} ts Seconds since the epoch.
+ * @return {string} The year.
  */
-const entityName = ( entity ) => entity.name || entity.entity_key;
+const yearOf = ( ts ) => utcDay( ts ).slice( 0, 4 );
 
 /**
- * The entity's count of readable items linking it; the view shows it only
- * when it is not zero, and the links awaiting review are counted on Review.
+ * What an entity is, in words: a client since the year it became one, a
+ * former client over the years it was one, else its type's word.
  *
- * @param {{items: number}} counts The counts.
- * @return {string} The line.
+ * @param {Object} entity The record.
+ * @return {string} The type line.
  */
-const countsText = ( counts ) =>
-	sprintf(
-		/* translators: %d: readable items linking the entity. */
-		_n( '%d item', '%d items', counts.items, 'newspack-intelligence' ),
-		counts.items
+function typeLine( entity ) {
+	if ( entity.status ) {
+		return sprintf(
+			/* translators: 1: the client role's word, 2: the year it began. */
+			__( '%1$s since %2$s', 'newspack-intelligence' ),
+			word( 'roleWords', 'client' ),
+			yearOf( entity.status.client_since )
+		);
+	}
+	const former = entity.roles.some(
+		( role ) => 'former_client' === role.role && 0 === role.to_ts
 	);
-
-/** The roles an organization is shown as, in place of its type. */
-const SHOWN_ROLES = [ 'client', 'former_client' ];
-
-/**
- * What an entity is, as its meta line says it: an organization holding a
- * client or former-client role open as that role, else its type's word.
- *
- * @param {{type: string, roles?: Object[]}} entity The record.
- * @return {string} The word.
- */
-function typeText( entity ) {
-	const held = ( entity.roles ?? [] ).find(
-		( role ) => 0 === role.to_ts && SHOWN_ROLES.includes( role.role )
+	if ( ! former ) {
+		return word( 'typeWords', entity.type );
+	}
+	const held = entity.roles.filter(
+		( role ) =>
+			'client' === role.role &&
+			0 !== role.to_ts &&
+			role.from_ts !== role.to_ts
 	);
-	return 'organization' === entity.type && held
-		? word( 'roleWords', held.role )
-		: word( 'typeWords', entity.type );
-}
-
-/**
- * An entity's state as its meta line says it: nothing while accepted, else
- * its word.
- *
- * @param {string} state The state.
- * @return {?string} The word.
- */
-const stateText = ( state ) =>
-	'accepted' === state ? null : word( 'stateWords', state );
-
-/**
- * A client's latest signal, the first the signals read lists; nothing when
- * it lists none, since the Signals card says whether that was judged, and
- * nothing until that read answers.
- *
- * @param {Object[]|undefined} signals The signals read's rows.
- * @return {string|undefined} The part.
- */
-function latestSignal( signals ) {
-	return undefined === signals || 0 === signals.length
-		? undefined
-		: sprintf(
-				/* translators: 1: the signal's axis and kind, 2: the first UTC day of its week. */
-				__(
-					'Latest signal: %1$s, week of %2$s',
-					'newspack-intelligence'
-				),
-				signalValue( signals[ 0 ] ),
-				signals[ 0 ].bucket
-		  );
-}
-
-/**
- * A client's status line: when it became a client, its latest signal, how
- * many items about it report it churned, are churn signals, feature
- * requests and complaints, and when the newest of them is dated.
- *
- * @param {Object}             status  The record's `status`.
- * @param {Object[]|undefined} signals The signals read's rows.
- * @return {string} The line.
- */
-function statusText( status, signals ) {
-	const {
-		churned,
-		churn_signal: churns,
-		feature_request: asks,
-		complaint: complaints,
-	} = status.kinds;
-	return metaLine(
-		sprintf(
-			/* translators: %s: the first UTC day of its client role. */
-			__( 'Client since %s', 'newspack-intelligence' ),
-			utcDay( status.client_since )
-		),
-		latestSignal( signals ),
-		[
-			sprintf(
-				/* translators: %d: items about it reporting that it has left or is leaving. */
-				_n(
-					'%d churn report',
-					'%d churn reports',
-					churned,
-					'newspack-intelligence'
-				),
-				churned
-			),
-			sprintf(
-				/* translators: %d: items about it that are churn signals. */
-				_n(
-					'%d churn signal',
-					'%d churn signals',
-					churns,
-					'newspack-intelligence'
-				),
-				churns
-			),
-			sprintf(
-				/* translators: %d: items about it that are feature requests. */
-				_n(
-					'%d feature request',
-					'%d feature requests',
-					asks,
-					'newspack-intelligence'
-				),
-				asks
-			),
-			sprintf(
-				/* translators: %d: items about it that are complaints. */
-				_n(
-					'%d complaint',
-					'%d complaints',
-					complaints,
-					'newspack-intelligence'
-				),
-				complaints
-			),
-		].join( ', ' ),
-		null === status.last_item_ts
-			? __( 'No item about it yet', 'newspack-intelligence' )
-			: sprintf(
-					/* translators: %s: the UTC day of the newest item about it. */
-					__( 'Last item %s', 'newspack-intelligence' ),
-					utcDay( status.last_item_ts )
-			  )
+	if ( 0 === held.length ) {
+		return word( 'roleWords', 'former_client' );
+	}
+	return sprintf(
+		/* translators: 1: the former client role's word, 2: the year it became a client, 3: the year it stopped. */
+		__( '%1$s, %2$s to %3$s', 'newspack-intelligence' ),
+		word( 'roleWords', 'former_client' ),
+		yearOf( Math.min( ...held.map( ( role ) => role.from_ts ) ) ),
+		yearOf( Math.max( ...held.map( ( role ) => role.to_ts ) ) )
 	);
 }
 
 /**
- * The churn reports a client's status names, for a curator: each report
- * with a link to its item and the way out, **Not about this client**, and
- * **End client…**, which asks first (`EndClientDialog`).
+ * The form keeping a client's churn-risk note: what puts it at risk, who
+ * owns it, the next step and its day. Saving an empty text clears the note.
  *
  * @param {Object}                 props
- * @param {Object[]}               props.reports    The churn reports shown.
- * @param {string}                 props.operator   Who runs the deployment, whom a client leaves.
- * @param {() => void}             props.onEnd      Asks whether to end the client.
- * @param {(item: Object) => void} props.onNotAbout Says a report is not about the client.
+ * @param {?Object}                props.note     The note it edits, or null.
+ * @param {(note: Object) => void} props.onSave   Sends the note.
+ * @param {() => void}             props.onCancel Closes the form.
+ * @return {import('react').ReactElement} The form.
+ */
+function NoteForm( { note, onSave, onCancel } ) {
+	const [ draft, setDraft ] = useState( () => ( {
+		text: note?.text ?? '',
+		owner: note?.owner ?? '',
+		next_step: note?.next_step ?? '',
+		day: note?.day ?? '',
+	} ) );
+	/**
+	 * One of the note's fields.
+	 *
+	 * @param {string}          name  The field.
+	 * @param {string}          label Its label.
+	 * @param {'text' | 'date'} type  Its input type.
+	 * @return {import('react').ReactElement} The control.
+	 */
+	const field = ( name, label, type ) => (
+		<TextControl
+			__next40pxDefaultSize
+			__nextHasNoMarginBottom
+			type={ type }
+			label={ label }
+			value={ draft[ name ] }
+			onChange={ ( value ) => setDraft( { ...draft, [ name ]: value } ) }
+		/>
+	);
+	const legend = __( 'Churn-risk note', 'newspack-intelligence' );
+	return (
+		<form
+			className="newspack-intelligence__edit"
+			role="group"
+			aria-label={ legend }
+			{ ...submitProps( () => onSave( draft ) ) }
+		>
+			<strong>{ legend }</strong>
+			{ field(
+				'text',
+				__( 'What puts it at risk', 'newspack-intelligence' ),
+				'text'
+			) }
+			{ field( 'owner', __( 'Owner', 'newspack-intelligence' ), 'text' ) }
+			{ field(
+				'next_step',
+				__( 'Next step', 'newspack-intelligence' ),
+				'text'
+			) }
+			{ field( 'day', __( 'By', 'newspack-intelligence' ), 'date' ) }
+			<div className="newspack-intelligence__actions">
+				<Button variant="primary" type="submit">
+					{ __( 'Save note', 'newspack-intelligence' ) }
+				</Button>
+				<Button variant="tertiary" onClick={ onCancel }>
+					{ __( 'Cancel', 'newspack-intelligence' ) }
+				</Button>
+			</div>
+		</form>
+	);
+}
+
+/**
+ * The churn reports a client's status names: each report with a link to its
+ * item and, for a curator, **Not about this client**; then the client's
+ * churn-risk note; then, for a curator, **End client…**, which asks first.
+ *
+ * @param {Object}                    props
+ * @param {Object[]}                  props.reports    The churn reports shown.
+ * @param {string}                    props.operator   Who runs the deployment, whom a client leaves; '' for none.
+ * @param {import('react').ReactNode} props.note       The client's churn-risk note.
+ * @param {?() => void}               props.onEnd      Asks whether to end the client; null for a reader.
+ * @param {?(item: Object) => void}   props.onNotAbout Says a report is not about the client; null for a reader.
  * @return {import('react').ReactElement} The notice.
  */
-function ChurnNotice( { reports, operator, onEnd, onNotAbout } ) {
+function ChurnNotice( { reports, operator, note, onEnd, onNotAbout } ) {
 	return (
 		<Notice status="warning" isDismissible={ false }>
 			<strong>{ __( 'Possible churn', 'newspack-intelligence' ) }</strong>
 			{ reports.map( ( item ) => {
 				const href = safeHref( item.url );
+				const source = word( 'sourceWords', item.source );
+				const day = shownDay( item.day );
 				return (
 					<p
 						key={ item.item_key }
 						className="newspack-intelligence__actions"
 					>
 						<span>
-							{ sprintf(
-								/* translators: 1: the item's title, 2: its source, 3: its UTC day, 4: who runs the deployment. */
-								__(
-									'“%1$s” (%2$s, %3$s) says this client is leaving %4$s.',
-									'newspack-intelligence'
-								),
-								item.title,
-								word( 'sourceWords', item.source ),
-								item.day,
-								operator
-							) }
-						</span>{ ' ' }
+							{ operator
+								? sprintf(
+										/* translators: 1: the item's title, 2: its source, 3: its day, 4: who runs the deployment. */
+										__(
+											'“%1$s” (%2$s, %3$s) says this client is leaving %4$s.',
+											'newspack-intelligence'
+										),
+										item.title,
+										source,
+										day,
+										operator
+								  )
+								: sprintf(
+										/* translators: 1: the item's title, 2: its source, 3: its day. */
+										__(
+											'“%1$s” (%2$s, %3$s) says this client is leaving.',
+											'newspack-intelligence'
+										),
+										item.title,
+										source,
+										day
+								  ) }
+						</span>
 						{ href && (
 							<a
 								href={ href }
@@ -241,230 +214,119 @@ function ChurnNotice( { reports, operator, onEnd, onNotAbout } ) {
 							>
 								{ __( 'Open item', 'newspack-intelligence' ) }
 							</a>
-						) }{ ' ' }
-						<button
-							type="button"
-							className="button button-small"
-							onClick={ () => onNotAbout( item ) }
-						>
-							{ __(
-								'Not about this client',
-								'newspack-intelligence'
-							) }
-						</button>
+						) }
+						{ onNotAbout && (
+							<Button
+								variant="secondary"
+								size="small"
+								onClick={ () => onNotAbout( item ) }
+							>
+								{ __(
+									'Not about this client',
+									'newspack-intelligence'
+								) }
+							</Button>
+						) }
 					</p>
 				);
 			} ) }
-			<button
-				type="button"
-				className="button button-small"
-				onClick={ onEnd }
-			>
-				{ __( 'End client…', 'newspack-intelligence' ) }
-			</button>
+			{ note }
+			{ onEnd && (
+				<Button variant="secondary" size="small" onClick={ onEnd }>
+					{ __( 'End client…', 'newspack-intelligence' ) }
+				</Button>
+			) }
 		</Notice>
 	);
 }
 
 /**
- * What an entity holds: for a curator its ID and the IDs merged into it;
- * then its names, identifiers and every role row that held time, each by
- * its kind's word, and the topics it is tagged with.
+ * Links naming each heading of the layout, each moving focus to its
+ * heading in the layout below.
  *
- * @param {Object}                props
- * @param {Object}                props.entity       The record.
- * @param {boolean}               props.canTune      Whether the reader curates, who is shown the IDs.
- * @param {(key: string) => void} props.onOpenEntity Opens an entity.
- * @return {import('react').ReactElement} The section.
+ * @param {Object}                                 props
+ * @param {string[]}                               props.headings The headings.
+ * @param {import('react').RefObject<HTMLElement>} props.layout   The layout's region.
+ * @return {?import('react').ReactElement} The links.
  */
-function Details( { entity, canTune, onOpenEntity } ) {
-	const title = __( 'Details', 'newspack-intelligence' );
+function JumpLinks( { headings, layout } ) {
+	if ( 0 === headings.length ) {
+		return null;
+	}
+	const jump = ( text ) => {
+		const target = [ ...layout.current.querySelectorAll( 'h2, h3' ) ].find(
+			( one ) => text === one.textContent
+		);
+		if ( target ) {
+			/** @type {HTMLElement} */ ( target ).tabIndex = -1;
+			/** @type {HTMLElement} */ ( target ).focus();
+		}
+	};
 	return (
-		<Card as="section" aria-label={ title }>
-			<CardHeader>
-				<h3>{ title }</h3>
-			</CardHeader>
-			<CardBody>
-				{ canTune && (
-					<p>
-						{ sprintf(
-							/* translators: %s: the entity's ID. */
-							__( 'ID: %s', 'newspack-intelligence' ),
-							entity.entity_key
-						) }
-					</p>
-				) }
-				{ canTune && 0 < entity.merged_from.length && (
-					<p>
-						{ sprintf(
-							/* translators: %s: the IDs merged into this entity. */
-							__( 'Merged from %s', 'newspack-intelligence' ),
-							entity.merged_from.join( ', ' )
-						) }
-					</p>
-				) }
-				<ul className="newspack-intelligence__facts">
-					{ entity.names.map( ( name ) => (
-						<li key={ `name ${ name.kind } ${ name.value }` }>
-							{ `${ word( 'nameKindWords', name.kind ) }: ${
-								name.value
-							}` }
-						</li>
-					) ) }
-					{ entity.identifiers.map( ( id ) => (
-						<li key={ `id ${ id.kind } ${ id.value }` }>
-							{ `${ word( 'identifierWords', id.kind ) }: ${
-								id.value
-							}` }
-						</li>
-					) ) }
-					{ entity.roles.filter( heldTime ).map( ( role ) => (
-						<li key={ `role ${ role.role } ${ role.from_ts }` }>
-							{ roleText( role ) }
-						</li>
-					) ) }
-				</ul>
-				{ 0 < entity.topics.length && (
-					<ul className="newspack-intelligence__chips">
-						{ entity.topics.map( ( topic ) => (
-							<li key={ topic.topic_key }>
-								<EntityChip
-									entityKey={ topic.topic_key }
-									name={ topic.name }
-									onOpen={ onOpenEntity }
-								/>
-							</li>
-						) ) }
-					</ul>
-				) }
-			</CardBody>
-		</Card>
-	);
-}
-
-/**
- * The items an entity's own site published, newest first, a page at a time.
- *
- * @param {Object}                 props
- * @param {string}                 props.entityKey    The entity.
- * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
- * @param {(item: Object) => void} [props.onSave]     Saves an item; absent for a reader.
- * @param {boolean}                [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
- * @return {import('react').ReactElement} The page.
- */
-function PublishedItems( { entityKey, onOpenEntity, onSave, canTune } ) {
-	const [ starts, setStarts ] = useState( [ 0 ] );
-	const offset = starts[ starts.length - 1 ];
-	const read = useIntelRead(
-		'entity:published',
-		'timeline',
-		formatCommandArgs( [ entityKey ], {
-			published: true,
-			...( 0 < offset ? { offset } : {} ),
-		} )
-	);
-	return (
-		<AnswerBody
-			read={ read }
-			rows="items"
-			empty={ __(
-				'No readable item was published by this entity.',
-				'newspack-intelligence'
-			) }
+		<nav
+			className="newspack-intelligence__jumps"
+			aria-label={ __( 'On this profile', 'newspack-intelligence' ) }
 		>
-			{ ( answer ) => (
-				<ItemPage
-					answer={ answer }
-					starts={ starts }
-					onStarts={ setStarts }
-					onOpenEntity={ onOpenEntity }
-					onSave={ onSave }
-					canTune={ canTune }
-				/>
-			) }
-		</AnswerBody>
+			{ headings.map( ( text, n ) => (
+				<Button
+					key={ `${ n } ${ text }` }
+					variant="link"
+					onClick={ () => jump( text ) }
+				>
+					{ text }
+				</Button>
+			) ) }
+		</nav>
 	);
 }
 
 /**
- * What an entity's own site published, as a section of its own, collapsed
- * until opened and read only then.
+ * The way back to the view that opened the profile.
  *
- * @param {Object}                 props
- * @param {string}                 props.entityKey    The entity.
- * @param {string}                 props.name         The entity's name.
- * @param {number}                 props.count        How many items it published.
- * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
- * @param {(item: Object) => void} [props.onSave]     Saves an item; absent for a reader.
- * @param {boolean}                [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
- * @return {import('react').ReactElement} The section.
+ * @param {Object}                              props
+ * @param {{label: string, onBack: () => void}} props.back Names the view and returns to it.
+ * @return {import('react').ReactElement} The link.
  */
-function Published( {
-	entityKey,
-	name,
-	count,
-	onOpenEntity,
-	onSave,
-	canTune,
-} ) {
-	const [ open, setOpen ] = useState( false );
-	const title = sprintf(
-		/* translators: 1: the entity's name, 2: items its own site published. */
-		__( 'Published by %1$s (%2$d)', 'newspack-intelligence' ),
-		name,
-		count
-	);
+function BackLink( { back } ) {
 	return (
-		<Card as="section" aria-label={ title }>
-			<CardHeader>
-				<h3>
-					<button
-						type="button"
-						className="button-link"
-						aria-expanded={ open }
-						onClick={ () => setOpen( ! open ) }
-					>
-						{ title }
-					</button>
-				</h3>
-			</CardHeader>
-			{ open && (
-				<CardBody>
-					<PublishedItems
-						entityKey={ entityKey }
-						onOpenEntity={ onOpenEntity }
-						onSave={ onSave }
-						canTune={ canTune }
-					/>
-				</CardBody>
+		<Button
+			variant="link"
+			icon={ chevronLeft }
+			className="newspack-intelligence__back"
+			onClick={ back.onBack }
+		>
+			{ sprintf(
+				/* translators: %s: the view that opened the profile. */
+				__( 'Back to %s', 'newspack-intelligence' ),
+				back.label
 			) }
-		</Card>
+		</Button>
 	);
 }
 
 /**
- * Entity: one entity's record, headed by its name and, for a client, its
- * status line, then its signals on both axes beside its trend's sparkline,
- * quiet or not (`Signals`), its timeline of the items
- * about it a page at a time, what it holds (`Details`), then, collapsed,
- * the items its own site published, the entities sharing its items and the
- * claims naming it, each from its own read. Once the record has answered,
- * a curator finds its curation in the Edit drawer (`EditDrawer`), and, for
- * a client with a churn report since it began, a notice naming each report
- * (`ChurnNotice`). Ending the client, from the notice or the drawer, asks
- * first (`EndClientDialog`); **Not about this client** rejects a report's
- * link to the client after the undo window. Every edit that lands re-reads
- * the record. The name the record answers is handed to `onNamed` with the
- * entity's key, so the page can label its tab without reading again.
+ * Entity: one entity's profile. Its header is fixed, so no layout can hide
+ * it: the way back, the name, the type line and the entity's website, then
+ * **Watch**, for a curator **Edit**, the Edit drawer (`EditDrawer`), and ⋯
+ * offering **Edit layout** and, for a client, a churn-risk note; then, while
+ * the client's status names a churn report since it began, the churn notice
+ * naming each (`ChurnNotice`) with the client's churn-risk note, else the
+ * note alone; then jump links to the layout's headings. Below the header the
+ * page's profile layout renders, its blocks sharing the header's one
+ * `entity` read (`EntityRecord`). Ending the client, from the notice or the
+ * drawer, asks first (`EndClientDialog`); **Not about this client** rejects a
+ * report's link to the client after the undo window. Every edit that lands
+ * re-reads the record. A refused record reads as a profile not available.
  *
- * @param {Object}                                       props
- * @param {string}                                       props.entityKey    The entity shown.
- * @param {boolean}                                      props.canTune      Whether to offer curation.
- * @param {Object}                                       props.vocabulary   The ontology's closed lists.
- * @param {{name: string, heading: string}}              props.operator     Who runs the deployment, whom the churn notice names.
- * @param {(key: string) => void}                        props.onOpenEntity Opens an entity.
- * @param {(named: {key: string, name: string}) => void} props.onNamed      Takes the name the record answers.
- * @param {(item: Object) => void}                       [props.onSave]     Saves an item; absent for a reader.
+ * @param {Object}                                                props
+ * @param {string}                                                props.entityKey  The entity shown.
+ * @param {boolean}                                               props.canTune    Whether to offer curation.
+ * @param {Object}                                                props.vocabulary The ontology's closed lists.
+ * @param {{name: string, heading: string}}                       props.operator   Who runs the deployment, whom the churn notice names.
+ * @param {Object}                                                props.layout     What the page data answered for the profile's context.
+ * @param {{label: string, onBack: () => void}}                   props.back       Names the view that opened the profile and returns to it.
+ * @param {(target: Object, name: string) => void}                props.onWatch    Opens the watch form on a target.
+ * @param {Partial<import('../layout/PageContext').IntelActions>} props.actions    What the blocks' rows open.
  * @return {import('react').ReactElement} The view.
  */
 export default function Entity( {
@@ -472,34 +334,12 @@ export default function Entity( {
 	canTune,
 	vocabulary,
 	operator,
-	onOpenEntity,
-	onNamed,
-	onSave,
+	layout,
+	back,
+	onWatch,
+	actions,
 } ) {
-	const about = [ entityKey ];
-	const [ starts, setStarts ] = useState( [ 0 ] );
-	const offset = starts[ starts.length - 1 ];
-	const record = useIntelRead( 'entity:record', 'entity', about );
-	const signals = useIntelRead(
-		'entity:signals',
-		'signals',
-		formatCommandArgs( [], { entity: entityKey } )
-	);
-	const timeline = useIntelRead(
-		'entity:timeline',
-		'timeline',
-		formatCommandArgs( about, 0 < offset ? { offset } : {} )
-	);
-	const related = useIntelRead( 'entity:related', 'related', about );
-	const claims = useIntelRead( 'entity:claims', 'claims', about );
-	const named =
-		record.answer && ! record.error ? entityName( record.answer ) : null;
-	useEffect( () => {
-		if ( ! record.loading ) {
-			onNamed( { key: entityKey, name: named } );
-		}
-	}, [ entityKey, record.loading, named, onNamed ] );
-
+	const record = useIntelRead( 'entity:record', 'entity', [ entityKey ] );
 	// The record lists its entity as a client while its status answers.
 	const clients = useMemo(
 		() =>
@@ -519,7 +359,7 @@ export default function Entity( {
 	const listed = useMemo(
 		() =>
 			record.answer && {
-				items: record.answer.status
+				items: record.answer.status?.churn_open
 					? record.answer.status.churn_items
 					: [],
 			},
@@ -559,19 +399,27 @@ export default function Entity( {
 				name
 			)
 		);
-	const addName = useIntelWrite( 'add_name', {
+	const [ noting, setNoting ] = useState( false );
+	const noteChurn = useIntelWrite( 'note_churn', {
 		dirties: CLIENT_READS,
+		refresh: () => setNoting( false ),
 	} );
+	const addName = useIntelWrite( 'add_name', { dirties: CLIENT_READS } );
 	const addIdentifier = useIntelWrite( 'add_identifier', {
 		dirties: CLIENT_READS,
 	} );
 	const assertRole = useIntelWrite( 'assert_role', {
 		dirties: CLIENT_READS,
 	} );
-	const endRole = useIntelWrite( 'end_role', {
-		dirties: CLIENT_READS,
-	} );
-	const refusals = [ addName, addIdentifier, assertRole, endRole, rejectLink ]
+	const endRole = useIntelWrite( 'end_role', { dirties: CLIENT_READS } );
+	const refusals = [
+		addName,
+		addIdentifier,
+		assertRole,
+		endRole,
+		rejectLink,
+		noteChurn,
+	]
 		.map( ( write ) => write.refusal )
 		.concat(
 			churn.refused,
@@ -586,264 +434,239 @@ export default function Entity( {
 			ending.current = false;
 		}
 	} );
+	const region = useRef( null );
+
+	if ( record.error ) {
+		return (
+			<div className="newspack-intelligence__view">
+				<p className="newspack-nodes-empty-state">
+					{ __(
+						'This profile is not available to you, or it no longer exists.',
+						'newspack-intelligence'
+					) }{ ' ' }
+					<BackLink back={ back } />
+				</p>
+			</div>
+		);
+	}
+
+	const ask = ( entity ) => () =>
+		churn.ask( { entity_key: entityKey, name: entityName( entity ) } );
 
 	return (
-		<div className="newspack-intelligence__view">
-			<Answer
-				read={ record }
-				skeleton={ <Skeleton shape="line" count={ 2 } /> }
-			>
-				{ ( entity ) => (
-					<>
-						<h2 ref={ heading } tabIndex={ -1 }>
-							{ entityName( entity ) }
-						</h2>
-						{ entity.status && (
-							<p className="newspack-nodes-status">
-								{ statusText(
-									entity.status,
-									signals.answer?.signals
-								) }
-							</p>
-						) }
-						{ canTune &&
-							0 < evidence.length &&
-							0 < churn.read.answer.clients.length && (
-								<ChurnNotice
-									reports={ evidence }
-									operator={ operator.name }
-									onEnd={ () =>
-										churn.ask( {
-											entity_key: entityKey,
-											name: entityName( entity ),
-										} )
-									}
-									onNotAbout={ ( item ) =>
-										notAbout(
-											item.item_key,
-											[ item ],
-											entityName( entity )
-										)
-									}
-								/>
-							) }
-						<p className="newspack-nodes-status is-muted">
-							{ metaLine(
-								typeText( entity ),
-								stateText( entity.state )
-							) }
-						</p>
-						{ 0 < entity.counts.items && (
-							<p>{ countsText( entity.counts ) }</p>
-						) }
-						{ canTune && (
-							<EditDrawer
-								entityKey={ entityKey }
-								name={ entityName( entity ) }
-								openRoles={ entity.roles.filter(
-									( role ) => 0 === role.to_ts
-								) }
-								vocabulary={ vocabulary }
-								writes={ {
-									addName,
-									addIdentifier,
-									assertRole,
-									endRole,
-								} }
-								onEndClient={ () =>
-									churn.ask( {
-										entity_key: entityKey,
-										name: entityName( entity ),
-									} )
-								}
-							/>
-						) }
-						{ refusals.map( ( refusal, i ) => (
-							<Refusal key={ i } error={ refusal } />
-						) ) }
-					</>
-				) }
-			</Answer>
-
-			{ churn.asking && (
-				<EndClientDialog
-					name={ churn.asking.name }
-					evidence={ evidence.map( ( item ) => ( {
-						...item,
-						source: word( 'sourceWords', item.source ),
-						role: 'subject',
-					} ) ) }
-					onEnd={ () => {
-						ending.current = true;
-						churn.end();
-					} }
-					onNotAbout={
-						0 < evidence.length
-							? () => {
-									churn.cancel();
-									notAbout(
-										entityKey,
-										evidence,
-										churn.asking.name
-									);
-							  }
-							: undefined
-					}
-					onClose={ churn.cancel }
-				/>
-			) }
-			{ deferred.latest ? (
-				<UndoSnackbar
-					latest={ deferred.latest }
-					onUndo={ deferred.undo }
-				/>
-			) : (
-				<UndoSnackbar latest={ churn.ended } />
-			) }
-
-			<Answer
-				title={ __( 'Signals', 'newspack-intelligence' ) }
-				level={ 3 }
-				read={ signals }
-				skeleton={ <Skeleton shape="line" count={ 1 } /> }
-			>
-				{ ( answer ) => (
-					<Signals
-						answer={ answer }
-						value={ signalValue }
-						onSave={ onSave }
-					/>
-				) }
-			</Answer>
-
-			<Answer
-				title={ __( 'Timeline', 'newspack-intelligence' ) }
-				level={ 3 }
-				read={ timeline }
-				rows="items"
-				empty={ __(
-					'No readable item is about this entity.',
-					'newspack-intelligence'
-				) }
-			>
-				{ ( answer ) => (
-					<ItemPage
-						answer={ answer }
-						starts={ starts }
-						onStarts={ setStarts }
-						onOpenEntity={ onOpenEntity }
-						onSave={ onSave }
-						canTune={ canTune }
-					/>
-				) }
-			</Answer>
-
-			{ record.answer?.available && (
-				<Details
-					entity={ record.answer }
-					canTune={ canTune }
-					onOpenEntity={ onOpenEntity }
-				/>
-			) }
-
-			{ record.answer && 0 < record.answer.published.count && (
-				<Published
-					entityKey={ entityKey }
-					name={ entityName( record.answer ) }
-					count={ record.answer.published.count }
-					onOpenEntity={ onOpenEntity }
-					onSave={ onSave }
-					canTune={ canTune }
-				/>
-			) }
-
-			<Answer
-				title={ __( 'Related', 'newspack-intelligence' ) }
-				level={ 3 }
-				read={ related }
-				skeleton={ <Skeleton shape="line" count={ 3 } /> }
-				rows="entities"
-				empty={ __(
-					'No other entity shares an item with this one.',
-					'newspack-intelligence'
-				) }
-			>
-				{ ( answer ) => (
-					<ul className="newspack-intelligence__facts">
-						{ answer.entities.map( ( other ) => (
-							<li
-								key={ other.entity_key }
-								className="newspack-intelligence__actions"
-							>
-								<EntityChip
-									entityKey={ other.entity_key }
-									name={ other.name }
-									onOpen={ onOpenEntity }
-								/>
-								{ metaLine(
-									word( 'typeWords', other.type ),
-									sprintf(
-										/* translators: %d: items both entities link. */
-										_n(
-											'%d shared item',
-											'%d shared items',
-											other.shared_items,
-											'newspack-intelligence'
-										),
-										other.shared_items
-									)
-								) }
-							</li>
-						) ) }
-					</ul>
-				) }
-			</Answer>
-
-			<Answer
-				title={ __( 'Facts', 'newspack-intelligence' ) }
-				level={ 3 }
-				read={ claims }
-				skeleton={ <Skeleton shape="line" count={ 3 } /> }
-				rows="claims"
-				empty={ __(
-					'No fact names this entity.',
-					'newspack-intelligence'
-				) }
-			>
-				{ ( answer ) => (
-					<ul className="newspack-intelligence__facts">
-						{ answer.claims.map( ( claim, i ) => (
-							<li
-								key={ `${ claim.item_key } ${ i }` }
-								className="newspack-intelligence__actions"
-							>
-								<EntityChip
-									entityKey={ claim.subject }
-									name={ claim.subject_name }
-									onOpen={ onOpenEntity }
-								/>{ ' ' }
-								<span>
-									{ word(
-										'predicateWords',
-										claim.predicate
+		<EntityRecord.Provider value={ record }>
+			<div className="newspack-intelligence__view">
+				<header className="newspack-intelligence__profile-head">
+					<BackLink back={ back } />
+					<AnswerBody
+						read={ record }
+						skeleton={ <Skeleton shape="line" count={ 2 } /> }
+					>
+						{ ( entity ) => {
+							const note = entity.status?.churn_note ?? null;
+							const editNote = canTune
+								? () => setNoting( true )
+								: null;
+							const shownNote = note && (
+								<ChurnNote note={ note } onEdit={ editNote } />
+							);
+							const domains = entity.identifiers.filter(
+								( id ) => 'domain' === id.kind
+							);
+							return (
+								<>
+									<div className="newspack-intelligence__profile-title">
+										<h2 ref={ heading } tabIndex={ -1 }>
+											{ entityName( entity ) }
+										</h2>
+										<div className="newspack-intelligence__actions">
+											<Button
+												variant="secondary"
+												onClick={ () =>
+													onWatch(
+														{
+															kind: 'entity',
+															key: entityKey,
+														},
+														entityName( entity )
+													)
+												}
+											>
+												{ __(
+													'Watch',
+													'newspack-intelligence'
+												) }
+											</Button>
+											{ canTune && (
+												<EditDrawer
+													entity={ entity }
+													vocabulary={ vocabulary }
+													writes={ {
+														addName,
+														addIdentifier,
+														assertRole,
+														endRole,
+													} }
+													onEndClient={ ask(
+														entity
+													) }
+												/>
+											) }
+											{ canTune && (
+												<DropdownMenu
+													icon={ moreHorizontal }
+													label={ __(
+														'Profile actions',
+														'newspack-intelligence'
+													) }
+													toggleProps={ {
+														size: 'compact',
+													} }
+													controls={ [
+														editLayoutControl( {
+															page: 'entity',
+															entity_key:
+																entityKey,
+														} ),
+														...( entity.status &&
+														! note
+															? [
+																	{
+																		title: __(
+																			'Add a churn-risk note',
+																			'newspack-intelligence'
+																		),
+																		onClick:
+																			() =>
+																				setNoting(
+																					true
+																				),
+																	},
+															  ]
+															: [] ),
+													] }
+												/>
+											) }
+										</div>
+									</div>
+									<p className="newspack-intelligence__type-line">
+										<span className="newspack-nodes-status-badge is-pill">
+											{ typeLine( entity ) }
+										</span>
+										{ domains.map( ( id ) => (
+											<span key={ id.value }>
+												{ `${ word(
+													'identifierWords',
+													id.kind
+												) } ${ id.value }` }
+											</span>
+										) ) }
+									</p>
+									{ 0 < evidence.length &&
+									0 < churn.read.answer.clients.length ? (
+										<ChurnNotice
+											reports={ evidence }
+											operator={ operator.name }
+											note={ shownNote }
+											onEnd={
+												canTune ? ask( entity ) : null
+											}
+											onNotAbout={
+												canTune
+													? ( item ) =>
+															notAbout(
+																item.item_key,
+																[ item ],
+																entityName(
+																	entity
+																)
+															)
+													: null
+											}
+										/>
+									) : (
+										shownNote
 									) }
-								</span>{ ' ' }
-								{ null === claim.object_name ? (
-									<span>{ claim.object }</span>
-								) : (
-									<EntityChip
-										entityKey={ claim.object }
-										name={ claim.object_name }
-										onOpen={ onOpenEntity }
-									/>
-								) }{ ' ' }
-								<Cite url={ claim.url } title={ claim.title } />{ ' ' }
-								<SaveButton item={ claim } onSave={ onSave } />
-							</li>
-						) ) }
-					</ul>
+									{ noting && (
+										<NoteForm
+											note={ note }
+											onCancel={ () =>
+												setNoting( false )
+											}
+											onSave={ ( draft ) =>
+												noteChurn.run( {
+													entity: entityKey,
+													...draft,
+												} )
+											}
+										/>
+									) }
+									{ refusals.map( ( refusal, i ) => (
+										<Refusal key={ i } error={ refusal } />
+									) ) }
+								</>
+							);
+						} }
+					</AnswerBody>
+					{ ! layout.error && (
+						<JumpLinks
+							headings={ headingsOf( layout.blocks ) }
+							layout={ region }
+						/>
+					) }
+				</header>
+
+				{ churn.asking && (
+					<EndClientDialog
+						name={ churn.asking.name }
+						evidence={ evidence.map( ( item ) => ( {
+							...item,
+							source: word( 'sourceWords', item.source ),
+							day: shownDay( item.day ),
+							role: 'subject',
+						} ) ) }
+						onEnd={ () => {
+							ending.current = true;
+							churn.end();
+						} }
+						onNotAbout={
+							0 < evidence.length
+								? () => {
+										churn.cancel();
+										notAbout(
+											entityKey,
+											evidence,
+											churn.asking.name
+										);
+								  }
+								: undefined
+						}
+						onClose={ churn.cancel }
+					/>
 				) }
-			</Answer>
-		</div>
+				{ deferred.latest ? (
+					<UndoSnackbar
+						latest={ deferred.latest }
+						onUndo={ deferred.undo }
+					/>
+				) : (
+					<UndoSnackbar latest={ churn.ended } />
+				) }
+
+				<div ref={ region }>
+					<PageLayout
+						layout={ layout }
+						page={ {
+							page: 'entity',
+							lens_key: null,
+							entity_key: entityKey,
+							since: null,
+							editing: false,
+							actions,
+						} }
+					/>
+				</div>
+			</div>
+		</EntityRecord.Provider>
 	);
 }

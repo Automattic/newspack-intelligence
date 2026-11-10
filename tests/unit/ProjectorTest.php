@@ -1049,6 +1049,7 @@ final class ProjectorTest extends TestCase {
 			$this->ontology( 'topic_tagged', [ 'entity_key' => self::GAZETTE, 'topic_key' => 'topic:local-news' ] ),
 			$this->ontology( 'link_confirmed', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'item_url' => 'https://harborgazette.example/a' ] ),
 			$this->ontology( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => 'organization:salem-ledger', 'item_url' => 'https://harborgazette.example/a' ], 'agent:41:Claude desktop' ),
+			$this->ontology( 'link_added', [ 'item_key' => self::ITEM, 'entity_key' => 'organization:tidewater-times', 'role' => 'mention', 'item_url' => 'https://harborgazette.example/a' ] ),
 			$this->ontology( 'collection_created', [ 'collection_key' => 'awards-2026', 'name' => 'Awards 2026' ] ),
 			$this->ontology( 'collected', [ 'collection_key' => 'awards-2026', 'item_key' => self::ITEM, 'url' => 'https://harborgazette.example/a', 'title' => 'Award', 'tier' => 'internal' ] ),
 			$this->ontology( 'item_used', [ 'collection_key' => 'awards-2026', 'item_key' => self::ITEM, 'tier' => 'internal', 'mark' => 'site', 'day' => '2026-10-21' ] ),

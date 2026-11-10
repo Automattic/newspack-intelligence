@@ -18,38 +18,21 @@
 		margin: 0 0 base.$space-xl;
 	}
 
-	// The health strip's line leads its two controls; its rows sit below.
-	&__health-line,
-	&__health-row {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: base.$space-sm;
-	}
+	// The fault notice stands between the tab bar and the view.
+	&__fault {
+		margin: 0 0 base.$space-lg;
 
-	&__health-line > [role="status"] {
-		flex: 1 1 auto;
-		min-width: 0;
-	}
-
-	&__health-rows {
-		display: flex;
-		flex-direction: column;
-		gap: base.$space-xs;
-		margin: base.$space-sm 0 0;
-		padding: 0;
-		list-style: none;
-
-		// A closed strip's rows take no room, so the line has no gap under it.
-		&[hidden] {
-			display: none;
+		> .components-notice__content {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: base.$space-sm;
 		}
-	}
 
-	// WordPress spaces every admin `li`; the list's gap does.
-	&__health-row {
-		margin: 0;
-		overflow-wrap: anywhere;
+		p {
+			flex: 1 1 auto;
+			margin: 0;
+		}
 	}
 
 	// The card's header band spaces its heading; the heading adds none.
@@ -77,27 +60,55 @@
 
 	&__items,
 	&__facts,
-	&__chips,
-	&__board {
+	&__chips {
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
 
-	// The folders lay out as a board of cards, each its name over its count.
-	&__board {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+	// The folders stand side by side; a board wider than the page scrolls.
+	&__folder-board {
+		display: flex;
+		align-items: flex-start;
 		gap: base.$space-md;
+		overflow-x: auto;
 	}
 
-	&__folder {
+	&__folder-column {
+		flex: 0 0 280px;
+	}
+
+	&__folder-cards {
 		display: flex;
 		flex-direction: column;
-		align-items: flex-start;
-		gap: base.$space-xs;
-		margin: 0;
+		gap: base.$space-sm;
+	}
+
+	&__folder-card {
 		overflow-wrap: anywhere;
+
+		&[draggable="true"] {
+			cursor: grab;
+		}
+	}
+
+	&__folder-count {
+		font-variant-numeric: tabular-nums;
+	}
+
+	// Search's words, filters and layout; then its count beside its Sort.
+	&__find-bar,
+	&__count-row {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: base.$space-sm;
+	}
+
+	&__count {
+		margin: 0;
+		font-variant-numeric: tabular-nums;
 	}
 
 	&__items {
@@ -119,6 +130,70 @@
 
 	&__answer {
 		margin-block: base.$space-md;
+	}
+
+	// The ask's steps on one line, each a glyph then its words.
+	&__stages {
+		display: flex;
+		flex-wrap: wrap;
+		gap: base.$space-sm base.$space-lg;
+		margin: base.$space-md 0 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	&__stage {
+		display: inline-flex;
+		align-items: center;
+		gap: base.$space-xs;
+
+		.components-spinner {
+			margin: 0;
+		}
+
+		svg {
+			fill: currentcolor;
+		}
+	}
+
+	&__examples {
+		display: flex;
+		flex-wrap: wrap;
+		gap: base.$space-xs base.$space-lg;
+		margin: base.$space-sm 0 0;
+	}
+
+	&__citation {
+		position: relative;
+		margin-inline-start: 2px;
+	}
+
+	&__marker {
+		font-variant-numeric: tabular-nums;
+	}
+
+	// A cited source's preview: its title, meta, summary and two actions.
+	&__preview .components-popover__content {
+		width: min(320px, 90vw);
+		padding: base.$space-md;
+	}
+
+	&__preview-title {
+		margin: 0;
+		font-weight: 600;
+		overflow-wrap: anywhere;
+	}
+
+	&__preview-summary {
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
+	}
+
+	// A source a marker shows takes the accent's wash for two seconds.
+	&__item.is-washed {
+		background: var(--cyan-subtle, var(--np-primary-subtle));
 	}
 
 	&__facts,
@@ -158,6 +233,31 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	// A curator's pill: its name and its × are two bare buttons in the badge.
+	.newspack-intelligence__pill.is-removable {
+		gap: base.$space-xs;
+		cursor: default;
+	}
+
+	&__pill-open,
+	&__pill-remove {
+		padding: 0;
+		border: 0;
+		background: none;
+		color: inherit;
+		font: inherit;
+		cursor: pointer;
+	}
+
+	&__pill-open {
+		min-width: 0;
+	}
+
+	&__pill-remove {
+		display: inline-flex;
+		flex-shrink: 0;
 	}
 
 	// The meta line's cells: the source, the day and the kind, spaced apart.
@@ -213,6 +313,17 @@
 	&__evidence {
 		margin: base.$space-xs 0 0;
 		padding-inline-start: base.$space-sm;
+	}
+
+	&__evidence mark {
+		background: var(--cyan-subtle, var(--np-primary-subtle));
+		color: inherit;
+	}
+
+	// Both themes of a pair share one line, the arrow between them.
+	&__pair {
+		margin: 0;
+		overflow-wrap: anywhere;
 	}
 
 	&__item-head,
@@ -296,6 +407,35 @@
 		padding-inline-start: base.$space-lg;
 	}
 
+	// How an item was read opens inside its row, so a short step under it.
+	&__how-read {
+		margin-top: base.$space-sm;
+	}
+
+	&__how-read h4 {
+		margin: 0;
+	}
+
+	// The record is a sequence: one rule runs down it, each step a column.
+	&__steps {
+		display: flex;
+		flex-direction: column;
+		gap: base.$space-sm;
+		margin: base.$space-sm 0 0;
+		padding: 0;
+		padding-inline-start: base.$space-md;
+		list-style: none;
+		border-inline-start: 1px solid
+			var(--paper-shadow, var(--np-border-strong));
+	}
+
+	&__steps > li {
+		display: flex;
+		flex-direction: column;
+		margin: 0;
+		overflow-wrap: anywhere;
+	}
+
 	// The lens form's tier checkboxes: a fieldset laid out as one field.
 	&__choices {
 		display: flex;
@@ -311,13 +451,6 @@
 			flex-basis: 100%;
 			padding: 0;
 		}
-	}
-
-	&__edits {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-		gap: base.$space-lg;
-		margin-top: base.$space-lg;
 	}
 
 	&__edit {
@@ -342,45 +475,7 @@
 		}
 	}
 
-	// One proposal reads as one control: the chip and its glyphs share edges.
-	// Scoped under the root to outrank the shared button's and pill's radius.
-	.newspack-intelligence__judgment {
-		display: inline-flex;
-
-		> :is(.button.button-small, .newspack-intelligence__pill) {
-			border-radius: 0;
-		}
-
-		> :is(.button.button-small, .newspack-intelligence__pill)
-			+ .button.button-small {
-			margin-inline-start: -1px;
-			padding-inline: base.$space-xs;
-		}
-
-		// A hovered or focused segment rises over the neighbour overlapping it.
-		> .button.button-small:is(:hover, :focus) {
-			position: relative;
-			z-index: 1;
-		}
-
-		> :is(.button.button-small, .newspack-intelligence__pill):first-child {
-			border-start-start-radius: var(--button-radius, 5px);
-			border-end-start-radius: var(--button-radius, 5px);
-		}
-
-		> :is(.button.button-small, .newspack-intelligence__pill):last-child {
-			border-start-end-radius: var(--button-radius, 5px);
-			border-end-end-radius: var(--button-radius, 5px);
-		}
-
-		svg {
-			fill: currentcolor;
-		}
-	}
-
-	&__merge,
-	&__create,
-	&__use {
+	&__create {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: end;
@@ -429,6 +524,29 @@
 	}
 }
 
+// The legend `?` opens sits in a popover, outside the page's root.
+.newspack-intelligence__legend {
+	margin: 0;
+	padding: base.$space-sm;
+}
+
+// A list checked into runs acts from its bulk toolbar, never a row's cell.
+.newspack-intelligence__run-only .dataviews-view-list__item-actions {
+	display: none;
+}
+
+// A checked row's box leads its content, which takes the rest of the row.
+.newspack-intelligence__checkable {
+	display: flex;
+	align-items: flex-start;
+	gap: base.$space-sm;
+
+	> :last-child {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+}
+
 // A row's More actions toggle is a bare glyph that never wraps alone.
 .newspack-intelligence__item-head > .components-dropdown {
 	flex: none;
@@ -453,5 +571,319 @@
 	from {
 		opacity: 0;
 		transform: translate(-50%, base.$space-sm);
+	}
+}
+
+// A composed page's ⋯ menu sits at the end of the line above its view.
+.newspack-intelligence__page-actions {
+	display: flex;
+	justify-content: flex-end;
+}
+
+// A layout's aside follows the main column, and stands beside it when wide.
+.newspack-intelligence__layout {
+	display: flex;
+	flex-direction: column;
+	gap: base.$space-xl;
+	margin-block-start: base.$space-xl;
+
+	@media (min-width: 1100px) {
+		flex-direction: row;
+		align-items: flex-start;
+	}
+}
+
+.newspack-intelligence__layout-main {
+	display: flex;
+	flex: 1 1 0;
+	flex-direction: column;
+	gap: base.$space-xl;
+	min-width: 0;
+}
+
+.newspack-intelligence__aside {
+	display: flex;
+	flex-direction: column;
+	gap: base.$space-xl;
+
+	@media (min-width: 1100px) {
+		flex: 0 0 320px;
+	}
+}
+
+// The profile picker the layout editor previews with.
+.newspack-intelligence__preview-pick {
+	display: flex;
+	flex-direction: column;
+	gap: base.$space-sm;
+	padding: base.$space-sm;
+	min-width: 280px;
+}
+
+// A sheet stands at the window's right edge, or rises from its foot when
+// narrow; it portals to the body, outside the page's root.
+.newspack-nodes-modal__backdrop.newspack-intelligence__sheet-backdrop {
+	align-items: stretch;
+	justify-content: flex-end;
+
+	> .newspack-intelligence__sheet {
+		width: min(480px, 100vw);
+		max-width: none;
+		max-height: none;
+		border-radius: 0;
+	}
+
+	> .newspack-intelligence__sheet.is-bottom {
+		align-self: flex-end;
+		width: 100vw;
+		max-height: 90vh;
+		border-start-start-radius: var(--np-radius-lg);
+		border-start-end-radius: var(--np-radius-lg);
+	}
+}
+
+// Collection's status stands in the shell's header, its dot the shared one.
+.newspack-intelligence__status {
+	display: flex;
+	align-items: center;
+	gap: base.$space-sm;
+	font-variant-numeric: tabular-nums;
+}
+
+// The health panel's line leads its Refresh; its rows sit below. It stands
+// in the page, in a popover or in a sheet, so no rule nests under the root.
+.newspack-intelligence__health-line,
+.newspack-intelligence__health-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: base.$space-sm;
+}
+
+.newspack-intelligence__health-line > [role="status"] {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.newspack-intelligence__health-rows {
+	display: flex;
+	flex-direction: column;
+	gap: base.$space-xs;
+	margin: base.$space-sm 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+// WordPress spaces every admin `li`; the list's gap does.
+.newspack-intelligence__health-row {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.newspack-intelligence__health-popover .components-popover__content {
+	width: min(480px, 90vw);
+	padding: base.$space-md;
+}
+
+// The Briefing's blocks stand on one surface, each a section of it.
+.newspack-intelligence__surface {
+	display: flex;
+	flex-direction: column;
+	gap: base.$space-xl;
+	padding: base.$space-xl;
+	border-radius: var(--np-radius-lg);
+	background: var(--np-surface);
+}
+
+.newspack-intelligence__section-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: base.$space-sm;
+	margin: 0 0 base.$space-sm;
+	padding-block-end: base.$space-sm;
+	border-block-end: 1px solid var(--np-border);
+
+	h2 {
+		margin: 0;
+	}
+}
+
+.newspack-intelligence__attention,
+.newspack-intelligence__watch-rows {
+	display: flex;
+	flex-direction: column;
+	gap: base.$space-sm;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+
+	> li {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: base.$space-sm;
+		margin: 0;
+	}
+}
+
+// A fold's whole row is its toggle; its chevron turns as it opens.
+.newspack-intelligence__fold-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	width: 100%;
+	padding: base.$space-sm 0;
+	border: 0;
+	border-block-end: 1px solid var(--np-border);
+	background: none;
+	color: inherit;
+	font: inherit;
+	font-variant-numeric: tabular-nums;
+	text-align: start;
+	cursor: pointer;
+
+	svg {
+		transition: transform 150ms ease-out;
+	}
+
+	&[aria-expanded="true"] svg {
+		transform: rotate(180deg);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		svg {
+			transition: none;
+		}
+	}
+}
+
+// A pulse line's latest point fades in on the page's first paint.
+.newspack-intelligence__attention
+	.is-fading-in
+	.newspack-nodes-sparkline__latest {
+	animation: newspack-intelligence-fade-in 400ms ease-out;
+}
+
+@keyframes newspack-intelligence-fade-in {
+	from {
+		opacity: 0;
+	}
+}
+
+// A team view's rail beside its page; below 600 px the rail is a select.
+.newspack-intelligence__lens-page {
+	display: grid;
+	grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+	gap: base.$space-xl;
+	align-items: start;
+
+	@media (max-width: 599px) {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+.newspack-intelligence__lens-main {
+	display: flex;
+	flex-direction: column;
+	gap: base.$space-lg;
+	min-width: 0;
+}
+
+.newspack-intelligence__rail ul {
+	display: flex;
+	flex-direction: column;
+	gap: base.$space-xs;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.newspack-intelligence__rail-item {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	padding: base.$space-sm;
+	border: 0;
+	border-inline-start: 2px solid transparent;
+	border-radius: 8px;
+	background: none;
+	color: inherit;
+	font: inherit;
+	font-variant-numeric: tabular-nums;
+	text-align: start;
+	cursor: pointer;
+
+	&[aria-current="true"] {
+		border-inline-start-color: var(--cyan, var(--np-primary));
+		background: var(--cyan-subtle, var(--np-primary-subtle));
+		font-weight: 600;
+	}
+}
+
+// A profile's fixed header: the name beside its actions, then the type line,
+// the churn notice and the jump links, each a row of their own.
+.newspack-intelligence__profile-head {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: base.$space-sm;
+}
+
+.newspack-intelligence__profile-title {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: base.$space-sm;
+	width: 100%;
+
+	h2 {
+		margin: 0;
+	}
+}
+
+.newspack-intelligence__type-line,
+.newspack-intelligence__jumps,
+.newspack-intelligence__counts,
+.newspack-intelligence__churn-note {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: base.$space-md;
+	margin: 0;
+}
+
+.newspack-intelligence__counts {
+	font-variant-numeric: tabular-nums;
+}
+
+// The drawer's sections list what the entity holds above each Add form.
+.newspack-intelligence__drawer-part {
+	display: flex;
+	flex-direction: column;
+	gap: base.$space-sm;
+	margin-block-end: base.$space-lg;
+
+	h3 {
+		margin: 0;
+	}
+}
+
+.newspack-intelligence__values {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: base.$space-xs base.$space-md;
+	margin: 0;
+
+	> div {
+		display: contents;
+	}
+
+	dd {
+		margin: 0;
+		overflow-wrap: anywhere;
 	}
 }

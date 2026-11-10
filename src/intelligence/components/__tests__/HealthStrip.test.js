@@ -19,7 +19,8 @@ import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { HEALTHY, LAST_OK, okSource } from '../../__tests__/healthFixture';
 import { formatLocalDateTime } from '@newspack-nodes/shared/utils/formatUtils';
-import HealthStrip from '../HealthStrip';
+import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
+import HealthStrip, { FAILING_SHARE, HealthBlock } from '../HealthStrip';
 import { pageData } from '../../views/__tests__/fixtures';
 
 beforeEach( () => {
@@ -89,33 +90,12 @@ beforeEach( () => {
 const reads = ( what ) =>
 	wire.sent( 'health' ).filter( ( [ slice ] ) => what === slice ).length;
 
-const strip = () => screen.getByRole( 'region', { name: 'Pipeline health' } );
-
-const toggle = () =>
-	within( strip() ).getByRole( 'button', { name: /details/ } );
+const strip = () => screen.getByRole( 'region', { name: 'Collection' } );
 
 /** The strip's one line: its first status, ahead of every fix's. */
 const line = () => within( strip() ).getAllByRole( 'status' )[ 0 ];
 
 const rows = () => within( strip() ).getByRole( 'list' );
-
-/**
- * Wait for the line to read `text`.
- *
- * @param {string} text The line.
- */
-const lineReads = ( text ) =>
-	waitFor( () => expect( line().textContent ).toBe( text ) );
-
-/**
- * Wait for the line, and one row, to read `text`.
- *
- * @param {string} text The worst fault's text.
- */
-async function worstFault( text ) {
-	await lineReads( text );
-	expect( within( rows() ).getByText( text ) ).toBeInTheDocument();
-}
 
 /**
  * The row whose label is `label`.
@@ -130,32 +110,30 @@ const row = ( label ) =>
 			( item ) => label === item.querySelector( 'strong' ).textContent
 		);
 
-function renderStrip( { canTune = false, canManage = false } = {} ) {
-	return render(
-		<HealthStrip canTune={ canTune } canManage={ canManage } />
-	);
+/**
+ * The details panel every source listed, as a `health` block draws it.
+ *
+ * @param {boolean} [operator] Whether the reader may run the fixes.
+ */
+function renderStrip( operator = false ) {
+	return render( <HealthBlock operator={ operator } detail="sources" /> );
 }
 
 describe( 'HealthStrip', () => {
 	it( 'stands a line in for each slice still owed among its rows', async () => {
 		renderStrip();
-		fireEvent.click( toggle() );
 		expect( owedLines( rows() ) ).toBe( 4 );
-		await lineReads( HEALTHY_LINE );
+		await waitFor( () =>
+			expect( line().textContent ).toBe( HEALTHY_LINE )
+		);
 		expect( owedLines( rows() ) ).toBe( 0 );
 	} );
 
-	it( 'renders collapsed healthy line', async () => {
+	it( 'reads each slice once', async () => {
 		renderStrip();
-		await lineReads( HEALTHY_LINE );
-		expect( strip() ).not.toHaveClass( 'is-warning' );
-		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
-		const controlled = document.getElementById(
-			toggle().getAttribute( 'aria-controls' )
+		await waitFor( () =>
+			expect( line().textContent ).toBe( HEALTHY_LINE )
 		);
-		expect( strip() ).toContainElement( controlled );
-		expect( controlled ).not.toBeVisible();
-		expect( screen.getByText( 'Code host' ) ).not.toBeVisible();
 		for ( const what of Object.keys( HEALTHY ) ) {
 			expect( reads( what ) ).toBe( 1 );
 		}
@@ -164,74 +142,91 @@ describe( 'HealthStrip', () => {
 	it( 'counts one source in the singular', async () => {
 		health.sources.sources = [ okSource( 'github' ) ];
 		renderStrip();
-		await lineReads( 'Collecting from 1 source. Nothing waiting.' );
-		expect( strip() ).not.toHaveClass( 'is-warning' );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 1 source. Nothing waiting.'
+			)
+		);
 	} );
 
-	it( 'shows every row when opened, each state as a pill', async () => {
+	it( 'shows every row, each state as a pill, each source’s last answer as a relative time', async () => {
 		health.sources.sources[ 1 ].failed = 37;
 		health.sources.sources[ 1 ].requests = 451;
 		renderStrip();
-		await lineReads( HEALTHY_LINE );
-		fireEvent.click( toggle() );
-		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'true' );
-		expect( rows() ).toBeVisible();
+		await waitFor( () =>
+			expect( line().textContent ).toBe( HEALTHY_LINE )
+		);
+		expect( row( 'Web feed' ) ).toHaveTextContent(
+			`ago (${ LAST_OK_LOCAL }) · 37 of 451 failed`
+		);
 		expect(
-			within( row( 'Web feed' ) ).getByText(
-				`Last answered ${ LAST_OK_LOCAL } · 37 of 451 requests failed`
-			)
-		).toBeInTheDocument();
+			within( row( 'Web feed' ) ).getByTitle( LAST_OK_LOCAL )
+		).toHaveTextContent( / d ago$/ );
 		expect(
 			within( row( 'Digests' ) ).getByText(
 				`By the model; last extraction ${ LAST_OK_LOCAL }.`
 			)
 		).toBeInTheDocument();
 		expect(
-			within( row( 'Code host' ) ).getByText( 'Healthy' )
+			within( row( 'Code host' ) ).getByText( 'Running' )
 		).toHaveClass( 'newspack-nodes-status-badge', 'is-pill', 'is-success' );
-		fireEvent.click( toggle() );
-		expect( screen.getByText( 'Web feed' ) ).not.toBeVisible();
 	} );
 
 	it( 'counts one failed request in the singular', async () => {
 		health.sources.sources[ 0 ].failed = 1;
 		health.sources.sources[ 0 ].requests = 1;
 		renderStrip();
-		await lineReads( HEALTHY_LINE );
-		fireEvent.click( toggle() );
+		await waitFor( () =>
+			expect( line().textContent ).toBe( HEALTHY_LINE )
+		);
 		expect(
-			within( row( 'Code host' ) ).getByText(
-				`Last answered ${ LAST_OK_LOCAL } · 1 of 1 request failed`
-			)
+			within( row( 'Code host' ) ).getByText( '1 of 1 failed' )
 		).toBeInTheDocument();
 	} );
 
 	it( 'opens on empty ontology with count and since', async () => {
 		health.backlog = STOPPED;
 		renderStrip();
-		await worstFault(
-			`Resolving is stopped: the ontology is empty. 47 items are waiting, since ${ SINCE_LOCAL }.`
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				`Resolving is stopped: the ontology is empty. 47 items are waiting, since ${ SINCE_LOCAL }.`
+			)
 		);
-		expect( strip() ).toHaveClass( 'newspack-nodes-banner', 'is-warning' );
-		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'true' );
+		expect(
+			within( rows() ).getByText(
+				`Resolving is stopped: the ontology is empty. 47 items are waiting, since ${ SINCE_LOCAL }.`
+			)
+		).toBeInTheDocument();
 	} );
 
 	it( 'counts one held item in the singular', async () => {
 		health.backlog = { ...STOPPED, held: 1 };
 		renderStrip();
-		await worstFault(
-			`Resolving is stopped: the ontology is empty. 1 item is waiting, since ${ SINCE_LOCAL }.`
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				`Resolving is stopped: the ontology is empty. 1 item is waiting, since ${ SINCE_LOCAL }.`
+			)
 		);
-		expect( strip() ).toHaveClass( 'is-warning' );
+		expect(
+			within( rows() ).getByText(
+				`Resolving is stopped: the ontology is empty. 1 item is waiting, since ${ SINCE_LOCAL }.`
+			)
+		).toBeInTheDocument();
 	} );
 
 	it( 'counts held items with no start', async () => {
 		health.backlog = { ...STOPPED, held: 6, since: null };
 		renderStrip();
-		await worstFault(
-			'Resolving is stopped: the ontology is empty. 6 items are waiting.'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Resolving is stopped: the ontology is empty. 6 items are waiting.'
+			)
 		);
-		expect( strip() ).toHaveClass( 'is-warning' );
+		expect(
+			within( rows() ).getByText(
+				'Resolving is stopped: the ontology is empty. 6 items are waiting.'
+			)
+		).toBeInTheDocument();
 	} );
 
 	it( 'seed button sends seed_ontology and re-reads backlog', async () => {
@@ -240,11 +235,13 @@ describe( 'HealthStrip', () => {
 			health.backlog = HEALTHY.backlog;
 			return { ok: true, events: 81, created: 79, present: 2 };
 		};
-		renderStrip( { canTune: true } );
+		renderStrip( true );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Seed the ontology' } )
 		);
-		await lineReads( HEALTHY_LINE );
+		await waitFor( () =>
+			expect( line().textContent ).toBe( HEALTHY_LINE )
+		);
 		expect( wire.sent( 'seed_ontology' ) ).toEqual( [ [] ] );
 		expect( reads( 'backlog' ) ).toBe( 2 );
 		expect( reads( 'sources' ) ).toBe( 2 );
@@ -258,7 +255,7 @@ describe( 'HealthStrip', () => {
 			created: 79,
 			present: 2,
 		};
-		renderStrip( { canTune: true } );
+		renderStrip( true );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Seed the ontology' } )
 		);
@@ -269,9 +266,13 @@ describe( 'HealthStrip', () => {
 				'Seeded. Fix sent; Refresh to check.'
 			)
 		).toBeInTheDocument();
-		await worstFault( STOPPED_LINE );
-		expect( strip() ).toHaveClass( 'is-warning' );
-		expect( within( waiting ).getByText( 'held' ) ).toHaveClass(
+		await waitFor( () =>
+			expect( line().textContent ).toBe( STOPPED_LINE )
+		);
+		expect(
+			within( rows() ).getByText( STOPPED_LINE )
+		).toBeInTheDocument();
+		expect( within( waiting ).getByText( 'Held' ) ).toHaveClass(
 			'is-warning'
 		);
 		expect(
@@ -289,7 +290,7 @@ describe( 'HealthStrip', () => {
 						'Recent ontology changes are still being processed; try again in a minute.'
 				  )
 				: { ok: true, events: 81, created: 79, present: 2 };
-		renderStrip( { canTune: true } );
+		renderStrip( true );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Seed the ontology' } )
 		);
@@ -322,7 +323,7 @@ describe( 'HealthStrip', () => {
 			created: 79,
 			present: 2,
 		};
-		renderStrip( { canTune: true, canManage: true } );
+		renderStrip( true );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Seed the ontology' } )
 		);
@@ -360,9 +361,9 @@ describe( 'HealthStrip', () => {
 		).toBeNull();
 	} );
 
-	it( 'reader without TUNE sees seed as text step', async () => {
+	it( 'gives a reader the seed step as text', async () => {
 		health.backlog = STOPPED;
-		renderStrip( { canManage: true } );
+		renderStrip();
 		expect(
 			await screen.findByText( 'An administrator can seed the ontology.' )
 		).toBeInTheDocument();
@@ -374,9 +375,16 @@ describe( 'HealthStrip', () => {
 	it( 'unknown held count reads as unknown, not zero', async () => {
 		health.backlog = { ...STOPPED, held: null, since: null };
 		renderStrip();
-		await worstFault(
-			'Resolving is stopped: the ontology is empty. An unknown number of items are waiting.'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Resolving is stopped: the ontology is empty. An unknown number of items are waiting.'
+			)
 		);
+		expect(
+			within( rows() ).getByText(
+				'Resolving is stopped: the ontology is empty. An unknown number of items are waiting.'
+			)
+		).toBeInTheDocument();
 		expect( screen.queryByText( /\b0 items/ ) ).toBeNull();
 	} );
 
@@ -386,15 +394,14 @@ describe( 'HealthStrip', () => {
 			reason: 'behind_ontology',
 			since: ago( 240 ),
 		};
-		renderStrip( { canTune: true, canManage: true } );
-		await lineReads(
-			'Collecting from 3 sources. Catching up on the ontology.'
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 3 sources. Catching up on the ontology.'
+			)
 		);
-		expect( strip() ).not.toHaveClass( 'is-warning' );
-		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
-		fireEvent.click( toggle() );
 		expect(
-			within( row( 'Pairing items' ) ).getByText( 'catching up' )
+			within( row( 'Pairing items' ) ).getByText( 'Catching up' )
 		).toHaveClass( 'is-neutral' );
 		expect(
 			screen.queryByRole( 'button', { name: 'Seed the ontology' } )
@@ -409,22 +416,31 @@ describe( 'HealthStrip', () => {
 			since: null,
 		};
 		renderStrip();
-		await lineReads(
-			'Collecting from 3 sources. Catching up on the ontology.'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 3 sources. Catching up on the ontology.'
+			)
 		);
-		expect( strip() ).not.toHaveClass( 'is-warning' );
 	} );
 
 	it( 'turns a projector behind for over five minutes into a fault, offering nothing', async () => {
 		const since = ago( 360 );
 		health.backlog = { ...STOPPED, reason: 'behind_ontology', since };
-		renderStrip( { canTune: true, canManage: true } );
-		await worstFault(
-			`Resolving is held: the projector has been behind the ontology since ${ formatLocalDateTime(
-				since
-			) }.`
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				`Resolving is held: the projector has been behind the ontology since ${ formatLocalDateTime(
+					since
+				) }.`
+			)
 		);
-		expect( strip() ).toHaveClass( 'is-warning' );
+		expect(
+			within( rows() ).getByText(
+				`Resolving is held: the projector has been behind the ontology since ${ formatLocalDateTime(
+					since
+				) }.`
+			)
+		).toBeInTheDocument();
 		expect(
 			screen.queryByRole( 'button', { name: 'Seed the ontology' } )
 		).toBeNull();
@@ -436,10 +452,17 @@ describe( 'HealthStrip', () => {
 			dropped: { first_day: '2026-10-27', last_day: '2026-10-28' },
 		};
 		wire.replies.reresolve = { ok: true, workers: 1 };
-		renderStrip( { canManage: true } );
-		await worstFault(
-			'Items parked from 2026-10-27 to 2026-10-28 were dropped before they resolved.'
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Items parked from 2026-10-27 to 2026-10-28 were dropped before they resolved.'
+			)
 		);
+		expect(
+			within( rows() ).getByText(
+				'Items parked from 2026-10-27 to 2026-10-28 were dropped before they resolved.'
+			)
+		).toBeInTheDocument();
 		fireEvent.click( screen.getByRole( 'button', { name: 'Re-resolve' } ) );
 		expect(
 			await screen.findByText(
@@ -451,12 +474,12 @@ describe( 'HealthStrip', () => {
 		] );
 	} );
 
-	it( 'gives a reader without MANAGE the re-resolve step as text', async () => {
+	it( 'gives a reader the re-resolve step as text', async () => {
 		health.backlog = {
 			...HEALTHY.backlog,
 			dropped: { first_day: '2026-10-27', last_day: '2026-10-28' },
 		};
-		renderStrip( { canTune: true } );
+		renderStrip();
 		expect(
 			await screen.findByText(
 				'An administrator can re-resolve those days.'
@@ -467,23 +490,19 @@ describe( 'HealthStrip', () => {
 		).toBeNull();
 	} );
 
-	it( 'inactive is neutral and does not open', async () => {
+	it( 'reads inactive as neutral, offering each composition to activate', async () => {
 		health.collection = {
 			state: 'inactive',
 			topologies: [ 'intel-staging', 'intel-workbench' ],
 		};
 		wire.replies.activate = { name: 'intel-workbench', active: true };
-		renderStrip( { canManage: true } );
-		await lineReads( 'Collecting is off.' );
-		expect( strip() ).not.toHaveClass( 'is-warning' );
-		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
-		expect(
-			screen.queryByRole( 'button', { name: 'intel-workbench' } )
-		).toBeNull();
-		fireEvent.click( toggle() );
-		expect(
-			within( row( 'Gathering' ) ).getByText( 'inactive' )
-		).toHaveClass( 'is-neutral' );
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe( 'Collecting is off.' )
+		);
+		expect( within( row( 'Gathering' ) ).getByText( 'Off' ) ).toHaveClass(
+			'is-neutral'
+		);
 		expect(
 			within( row( 'Gathering' ) )
 				.getAllByRole( 'button' )
@@ -502,14 +521,15 @@ describe( 'HealthStrip', () => {
 		await waitFor( () => expect( reads( 'collection' ) ).toBe( 2 ) );
 	} );
 
-	it( 'gives a reader without MANAGE the activate step as text, once', async () => {
+	it( 'gives a reader the activate step as text, once', async () => {
 		health.collection = {
 			state: 'inactive',
 			topologies: [ 'intel-staging', 'intel-workbench' ],
 		};
-		renderStrip( { canTune: true } );
-		await lineReads( 'Collecting is off.' );
-		fireEvent.click( toggle() );
+		renderStrip();
+		await waitFor( () =>
+			expect( line().textContent ).toBe( 'Collecting is off.' )
+		);
 		expect(
 			screen.getAllByText( 'An administrator can turn collecting on.' )
 		).toHaveLength( 1 );
@@ -520,9 +540,10 @@ describe( 'HealthStrip', () => {
 
 	it( 'offers no Activate while the slice names no composition', async () => {
 		health.collection = { state: 'inactive', topologies: [] };
-		renderStrip( { canManage: true } );
-		await lineReads( 'Collecting is off.' );
-		fireEvent.click( toggle() );
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe( 'Collecting is off.' )
+		);
 		const command = within( row( 'Gathering' ) ).getByText(
 			'wp nodes activate'
 		);
@@ -540,29 +561,42 @@ describe( 'HealthStrip', () => {
 			state: 'unconfigured',
 			file: '/srv/kestrel-nodes/topologies/newspack-intelligence-lists.tsl',
 		};
-		renderStrip( { canManage: true } );
-		await worstFault(
-			'No lists file: create /srv/kestrel-nodes/topologies/newspack-intelligence-lists.tsl, empty if this site has no settings of its own.'
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'No lists file: create /srv/kestrel-nodes/topologies/newspack-intelligence-lists.tsl, empty if this site has no settings of its own.'
+			)
 		);
-		expect( strip() ).toHaveClass( 'is-warning' );
 		expect(
-			within( row( 'Gathering' ) ).getByText( 'no lists file' )
+			within( rows() ).getByText(
+				'No lists file: create /srv/kestrel-nodes/topologies/newspack-intelligence-lists.tsl, empty if this site has no settings of its own.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( row( 'Gathering' ) ).getByText( 'No lists file' )
 		).toHaveClass( 'is-error' );
 	} );
 
 	it( 'tells a reader with no path that an administrator creates the lists file', async () => {
 		health.collection = { state: 'unconfigured' };
-		renderStrip( { canManage: false } );
-		await worstFault(
-			'An administrator can create the lists file; an empty one will do.'
+		renderStrip();
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'An administrator can create the lists file; an empty one will do.'
+			)
 		);
+		expect(
+			within( rows() ).getByText(
+				'An administrator can create the lists file; an empty one will do.'
+			)
+		).toBeInTheDocument();
 		expect( screen.queryByText( /\/topologies\// ) ).toBeNull();
 	} );
 
 	it( 'restart offered only for stale', async () => {
 		health.collection.state = 'stale';
 		wire.replies.restart = { restarted: 1 };
-		const { unmount } = renderStrip( { canManage: true } );
+		const { unmount } = renderStrip( true );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Restart' } )
 		);
@@ -577,10 +611,17 @@ describe( 'HealthStrip', () => {
 
 		Core.reset();
 		health.collection.state = 'down';
-		renderStrip( { canManage: true } );
-		await worstFault(
-			'The fleet revives a down worker within a minute; if it stays down, run `wp nodes doctor`.'
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'The fleet revives a down worker within a minute; if it stays down, run `wp nodes doctor`.'
+			)
 		);
+		expect(
+			within( rows() ).getByText(
+				'The fleet revives a down worker within a minute; if it stays down, run `wp nodes doctor`.'
+			)
+		).toBeInTheDocument();
 		expect(
 			screen.queryByRole( 'button', { name: 'Restart' } )
 		).toBeNull();
@@ -588,18 +629,25 @@ describe( 'HealthStrip', () => {
 
 	it( 'names a deploy hold and how to lift it', async () => {
 		health.collection.state = 'held';
-		renderStrip( { canManage: true } );
-		await worstFault(
-			'A deploy hold is in place; `wp nodes start` lifts it.'
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'A deploy hold is in place; `wp nodes start` lifts it.'
+			)
 		);
-		expect( within( row( 'Gathering' ) ).getByText( 'held' ) ).toHaveClass(
+		expect(
+			within( rows() ).getByText(
+				'A deploy hold is in place; `wp nodes start` lifts it.'
+			)
+		).toBeInTheDocument();
+		expect( within( row( 'Gathering' ) ).getByText( 'Held' ) ).toHaveClass(
 			'is-warning'
 		);
 	} );
 
-	it( 'gives a reader without MANAGE the restart step as text', async () => {
+	it( 'gives a reader the restart step as text', async () => {
 		health.collection.state = 'stale';
-		renderStrip( { canTune: true } );
+		renderStrip();
 		expect(
 			await screen.findByText(
 				'An administrator can restart the worker.'
@@ -621,10 +669,17 @@ describe( 'HealthStrip', () => {
 				group: 'unthread-desk',
 			},
 		} );
-		renderStrip( { canManage: true } );
-		await worstFault(
-			'No Vault entry for https://api.unthread.io in group unthread-desk.'
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'No Vault entry for https://api.unthread.io in group unthread-desk.'
+			)
 		);
+		expect(
+			within( rows() ).getByText(
+				'No Vault entry for https://api.unthread.io in group unthread-desk.'
+			)
+		).toBeInTheDocument();
 		expect(
 			within( row( 'Help desk' ) ).getByRole( 'link', {
 				name: 'Add credential',
@@ -640,7 +695,16 @@ describe( 'HealthStrip', () => {
 			state: 'idle',
 		} );
 		renderStrip();
-		await worstFault( 'This source has no credential to fetch with.' );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'This source has no credential to fetch with.'
+			)
+		);
+		expect(
+			within( rows() ).getByText(
+				'This source has no credential to fetch with.'
+			)
+		).toBeInTheDocument();
 		expect(
 			screen.getByText( 'An administrator can add its credential.' )
 		).toBeInTheDocument();
@@ -656,9 +720,16 @@ describe( 'HealthStrip', () => {
 			reason: 'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host',
 		} );
 		renderStrip();
-		await worstFault(
-			'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host'
+			)
 		);
+		expect(
+			within( rows() ).getByText(
+				'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host'
+			)
+		).toBeInTheDocument();
 		expect(
 			screen.queryByText( 'An administrator can add its credential.' )
 		).toBeNull();
@@ -672,10 +743,17 @@ describe( 'HealthStrip', () => {
 			state: 'idle',
 			reason: 'not signed in to ContextA8C; sign in to ContextA8C on the host',
 		} );
-		renderStrip( { canManage: true } );
-		await worstFault(
-			'not signed in to ContextA8C; sign in to ContextA8C on the host'
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'not signed in to ContextA8C; sign in to ContextA8C on the host'
+			)
 		);
+		expect(
+			within( rows() ).getByText(
+				'not signed in to ContextA8C; sign in to ContextA8C on the host'
+			)
+		).toBeInTheDocument();
 		expect( screen.queryByRole( 'link' ) ).toBeNull();
 	} );
 
@@ -689,10 +767,17 @@ describe( 'HealthStrip', () => {
 			'no RSS or Atom feed at https://search-7713.example/rss'
 		);
 		wire.replies.fetch_now = { ok: true, workers: 1 };
-		renderStrip( { canManage: true } );
-		await worstFault(
-			`GitHub answered an error for https://api.github.com: rate limited · failing since ${ SINCE_LOCAL }`
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				`GitHub answered an error for https://api.github.com: rate limited · failing since ${ SINCE_LOCAL }`
+			)
 		);
+		expect(
+			within( rows() ).getByText(
+				`GitHub answered an error for https://api.github.com: rate limited · failing since ${ SINCE_LOCAL }`
+			)
+		).toBeInTheDocument();
 		expect(
 			screen.getAllByRole( 'button', { name: 'Fetch all sources now' } )
 		).toHaveLength( 1 );
@@ -714,7 +799,14 @@ describe( 'HealthStrip', () => {
 			failing_since: SINCE,
 		};
 		renderStrip();
-		await worstFault( `Failing since ${ SINCE_LOCAL }` );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				`Failing since ${ SINCE_LOCAL }`
+			)
+		);
+		expect(
+			within( rows() ).getByText( `Failing since ${ SINCE_LOCAL }` )
+		).toBeInTheDocument();
 		expect(
 			screen.getByText( 'An administrator can fetch all sources now.' )
 		).toBeInTheDocument();
@@ -723,11 +815,11 @@ describe( 'HealthStrip', () => {
 	it( 'names a source that has not reported yet, and stays neutral', async () => {
 		health.sources.sources[ 2 ] = { name: 'news', state: 'unknown' };
 		renderStrip();
-		await lineReads(
-			'Collecting from 2 of 3 sources; news has not reported yet. Nothing waiting.'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 2 of 3 sources; news has not reported yet. Nothing waiting.'
+			)
 		);
-		expect( strip() ).not.toHaveClass( 'is-warning' );
-		fireEvent.click( toggle() );
 		expect(
 			within( row( 'news' ) ).getByText( 'No pass has reported yet.' )
 		).toBeInTheDocument();
@@ -738,27 +830,32 @@ describe( 'HealthStrip', () => {
 		health.sources.sources[ 2 ] = { name: 'news', state: 'unknown' };
 		health.sources.sources.push( okSource( 'slack' ) );
 		renderStrip();
-		await lineReads(
-			'Collecting from 2 of 4 sources; github and news have not reported yet. Nothing waiting.'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 2 of 4 sources; github and news have not reported yet. Nothing waiting.'
+			)
 		);
-		expect( strip() ).not.toHaveClass( 'is-warning' );
 	} );
 
 	it( 'counts a total of one source in the singular', async () => {
 		health.sources.sources = [ { name: 'github', state: 'unknown' } ];
 		renderStrip();
-		await lineReads(
-			'Collecting from 0 of 1 source; github has not reported yet. Nothing waiting.'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 0 of 1 source; github has not reported yet. Nothing waiting.'
+			)
 		);
-		expect( strip() ).not.toHaveClass( 'is-warning' );
 	} );
 
 	it( 'claims no health for a source in a state it does not recognise', async () => {
 		health.sources.sources[ 0 ] = { name: 'github', state: 'unknown' };
 		health.sources.sources[ 2 ] = { name: 'news', state: 'paused' };
 		renderStrip();
-		await lineReads( 'The pipeline’s health is not fully known.' );
-		expect( strip() ).not.toHaveClass( 'is-warning' );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'The pipeline’s health is not fully known.'
+			)
+		);
 	} );
 
 	it( 'joins the unreported names in the page’s own language', async () => {
@@ -767,10 +864,11 @@ describe( 'HealthStrip', () => {
 		health.sources.sources[ 2 ] = { name: 'news', state: 'unknown' };
 		try {
 			renderStrip();
-			await lineReads(
-				'Collecting from 1 of 3 sources; github und news have not reported yet. Nothing waiting.'
+			await waitFor( () =>
+				expect( line().textContent ).toBe(
+					'Collecting from 1 of 3 sources; github und news have not reported yet. Nothing waiting.'
+				)
 			);
-			expect( strip() ).not.toHaveClass( 'is-warning' );
 		} finally {
 			document.documentElement.lang = '';
 		}
@@ -782,10 +880,11 @@ describe( 'HealthStrip', () => {
 		health.sources.sources[ 2 ] = { name: 'news', state: 'unknown' };
 		try {
 			renderStrip();
-			await lineReads(
-				'Collecting from 1 of 3 sources; github and news have not reported yet. Nothing waiting.'
+			await waitFor( () =>
+				expect( line().textContent ).toBe(
+					'Collecting from 1 of 3 sources; github and news have not reported yet. Nothing waiting.'
+				)
 			);
-			expect( strip() ).not.toHaveClass( 'is-warning' );
 		} finally {
 			document.documentElement.lang = '';
 		}
@@ -795,35 +894,41 @@ describe( 'HealthStrip', () => {
 		health.sources.sources[ 2 ] = { name: 'news', state: 'unknown' };
 		health.extraction = { mode: 'unknown' };
 		renderStrip();
-		await lineReads( 'The pipeline’s health is not fully known.' );
-		expect( strip() ).not.toHaveClass( 'is-warning' );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'The pipeline’s health is not fully known.'
+			)
+		);
 	} );
 
 	it( 'counts the items waiting to resolve or retry while nothing holds', async () => {
 		health.backlog = { ...HEALTHY.backlog, held: 9 };
 		renderStrip();
-		await lineReads(
-			'Collecting from 3 sources. 9 items are waiting to resolve or retry.'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 3 sources. 9 items are waiting to resolve or retry.'
+			)
 		);
-		expect( strip() ).not.toHaveClass( 'is-warning' );
 	} );
 
 	it( 'counts one item waiting to resolve or retry in the singular', async () => {
 		health.backlog = { ...HEALTHY.backlog, held: 1 };
 		renderStrip();
-		await lineReads(
-			'Collecting from 3 sources. 1 item is waiting to resolve or retry.'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 3 sources. 1 item is waiting to resolve or retry.'
+			)
 		);
-		expect( strip() ).not.toHaveClass( 'is-warning' );
 	} );
 
 	it( 'claims nothing waiting only while the queue’s count is known', async () => {
 		health.backlog = { ...HEALTHY.backlog, held: null };
 		renderStrip();
-		await lineReads(
-			'Collecting from 3 sources. Resolving is running; how many items wait to retry is not known.'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 3 sources. Resolving is running; how many items wait to retry is not known.'
+			)
 		);
-		expect( strip() ).not.toHaveClass( 'is-warning' );
 	} );
 
 	it( 'counts the model calls on a row of their own and on the line, never under Extraction', async () => {
@@ -831,14 +936,16 @@ describe( 'HealthStrip', () => {
 		const calls =
 			'5,744 calls waiting (5,741 backlog, 3 new) · 4 in flight';
 		renderStrip();
-		await lineReads( `Collecting from 3 sources. ${ calls }` );
-		expect( strip() ).not.toHaveClass( 'is-warning' );
-		fireEvent.click( toggle() );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				`Collecting from 3 sources. ${ calls }`
+			)
+		);
 		expect(
 			within( row( 'Queued asks' ) ).getByText( calls )
 		).toBeInTheDocument();
 		expect(
-			within( row( 'Queued asks' ) ).getByText( 'busy' )
+			within( row( 'Queued asks' ) ).getByText( 'Busy' )
 		).toHaveClass( 'is-neutral' );
 		expect(
 			within( row( 'Digests' ) ).getByText(
@@ -850,34 +957,40 @@ describe( 'HealthStrip', () => {
 	it( 'counts one model call waiting in the singular, leaving out a class it holds none of', async () => {
 		health.extraction.queue = { new: 1, backlog: 0, in_flight: 1 };
 		renderStrip();
-		await lineReads(
-			'Collecting from 3 sources. 1 call waiting (1 new) · 1 in flight'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 3 sources. 1 call waiting (1 new) · 1 in flight'
+			)
 		);
-		expect( strip() ).not.toHaveClass( 'is-warning' );
 	} );
 
 	it( 'names only the backlog when no new call waits', async () => {
 		health.extraction.queue = { new: 0, backlog: 27, in_flight: 0 };
 		renderStrip();
-		await lineReads(
-			'Collecting from 3 sources. 27 calls waiting (27 backlog)'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 3 sources. 27 calls waiting (27 backlog)'
+			)
 		);
-		expect( strip() ).not.toHaveClass( 'is-warning' );
 	} );
 
 	it( 'counts calls in flight with none waiting', async () => {
 		health.extraction.queue = { new: 0, backlog: 0, in_flight: 2 };
 		renderStrip();
-		await lineReads( 'Collecting from 3 sources. 2 in flight' );
-		expect( strip() ).not.toHaveClass( 'is-warning' );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 3 sources. 2 in flight'
+			)
+		);
 	} );
 
 	it( 'shows no model-call row while the queue holds no call, or its count is not known', async () => {
 		for ( const queue of [ null, { new: 0, backlog: 0, in_flight: 0 } ] ) {
 			health.extraction.queue = queue;
 			const { unmount } = renderStrip();
-			await lineReads( HEALTHY_LINE );
-			fireEvent.click( toggle() );
+			await waitFor( () =>
+				expect( line().textContent ).toBe( HEALTHY_LINE )
+			);
 			expect( row( 'Digests' ) ).toBeDefined();
 			expect( row( 'Queued asks' ) ).toBeUndefined();
 			unmount();
@@ -888,20 +1001,22 @@ describe( 'HealthStrip', () => {
 		health.backlog = { ...HEALTHY.backlog, held: 9 };
 		health.extraction.queue = { new: 0, backlog: 12, in_flight: 2 };
 		renderStrip();
-		await lineReads(
-			'Collecting from 3 sources. 9 items are waiting to resolve or retry. 12 calls waiting (12 backlog) · 2 in flight'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 3 sources. 9 items are waiting to resolve or retry. 12 calls waiting (12 backlog) · 2 in flight'
+			)
 		);
-		expect( strip() ).not.toHaveClass( 'is-warning' );
 	} );
 
 	it( 'keeps the backlog row’s cause beside the calls while it is not idle', async () => {
 		health.backlog = { ...HEALTHY.backlog, held: null };
 		health.extraction.queue = { new: 5, backlog: 0, in_flight: 0 };
 		renderStrip();
-		await lineReads(
-			'Collecting from 3 sources. Resolving is running; how many items wait to retry is not known. 5 calls waiting (5 new)'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Collecting from 3 sources. Resolving is running; how many items wait to retry is not known. 5 calls waiting (5 new)'
+			)
 		);
-		expect( strip() ).not.toHaveClass( 'is-warning' );
 	} );
 
 	it( 'counts the model calls in the page’s own language', async () => {
@@ -909,10 +1024,11 @@ describe( 'HealthStrip', () => {
 		health.extraction.queue = { new: 2, backlog: 1309, in_flight: 3 };
 		try {
 			renderStrip();
-			await lineReads(
-				'Collecting from 3 sources. 1.311 calls waiting (1.309 backlog, 2 new) · 3 in flight'
+			await waitFor( () =>
+				expect( line().textContent ).toBe(
+					'Collecting from 3 sources. 1.311 calls waiting (1.309 backlog, 2 new) · 3 in flight'
+				)
 			);
-			expect( strip() ).not.toHaveClass( 'is-warning' );
 		} finally {
 			document.documentElement.lang = '';
 		}
@@ -941,16 +1057,15 @@ describe( 'HealthStrip', () => {
 				group: 'linear',
 			},
 		} );
-		renderStrip( { canTune: true, canManage: true } );
-		await lineReads( 'Collecting is off.' );
-		expect( strip() ).not.toHaveClass( 'is-warning' );
-		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
-		fireEvent.click( toggle() );
-		expect( within( row( 'Tracker' ) ).getByText( 'idle' ) ).toHaveClass(
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe( 'Collecting is off.' )
+		);
+		expect( within( row( 'Tracker' ) ).getByText( 'Stopped' ) ).toHaveClass(
 			'is-neutral'
 		);
 		expect(
-			within( row( 'Pairing items' ) ).getByText( 'held' )
+			within( row( 'Pairing items' ) ).getByText( 'Held' )
 		).toHaveClass( 'is-neutral' );
 	} );
 
@@ -961,18 +1076,21 @@ describe( 'HealthStrip', () => {
 		};
 		health.sources.sources[ 1 ] = { name: 'feed', state: 'unknown' };
 		renderStrip();
-		await lineReads( 'Collecting is off.' );
-		expect( strip() ).not.toHaveClass( 'is-warning' );
-		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
+		await waitFor( () =>
+			expect( line().textContent ).toBe( 'Collecting is off.' )
+		);
 	} );
 
 	it( 'reads a state it does not recognise as unknown, not blank', async () => {
 		health.collection.state = 'paused';
 		renderStrip();
-		await lineReads( 'The pipeline’s health is not fully known.' );
-		fireEvent.click( toggle() );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'The pipeline’s health is not fully known.'
+			)
+		);
 		const collection = row( 'Gathering' );
-		expect( within( collection ).getByText( 'unknown' ) ).toHaveClass(
+		expect( within( collection ).getByText( 'Unknown' ) ).toHaveClass(
 			'is-neutral'
 		);
 		expect(
@@ -983,8 +1101,11 @@ describe( 'HealthStrip', () => {
 	it( 'reads an inherited key as a state it does not recognise', async () => {
 		health.backlog = { ...HEALTHY.backlog, reason: 'toString' };
 		renderStrip();
-		await lineReads( 'The pipeline’s health is not fully known.' );
-		fireEvent.click( toggle() );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'The pipeline’s health is not fully known.'
+			)
+		);
 		expect(
 			within( row( 'Pairing items' ) ).getByText(
 				'State not recognised: toString.'
@@ -1000,10 +1121,17 @@ describe( 'HealthStrip', () => {
 			last_error: null,
 			failing_since: null,
 		};
-		renderStrip( { canManage: true } );
-		await worstFault(
-			'Extracting with the heuristic only: Vault group ai-proxy holds no entry for the model call.'
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Extracting with the heuristic only: Vault group ai-proxy holds no entry for the model call.'
+			)
 		);
+		expect(
+			within( rows() ).getByText(
+				'Extracting with the heuristic only: Vault group ai-proxy holds no entry for the model call.'
+			)
+		).toBeInTheDocument();
 		expect(
 			within( row( 'Digests' ) ).getByRole( 'link', {
 				name: 'Open the Vault',
@@ -1020,10 +1148,17 @@ describe( 'HealthStrip', () => {
 			last_error: null,
 			failing_since: null,
 		};
-		renderStrip( { canManage: true } );
-		await worstFault(
-			'Extracting with the heuristic only: the model call is not configured; the lists file sets no set_protocol, set_api_url.'
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Extracting with the heuristic only: the model call is not configured; the lists file sets no set_protocol, set_api_url.'
+			)
 		);
+		expect(
+			within( rows() ).getByText(
+				'Extracting with the heuristic only: the model call is not configured; the lists file sets no set_protocol, set_api_url.'
+			)
+		).toBeInTheDocument();
 		expect(
 			within( row( 'Digests' ) ).queryByRole( 'link', {
 				name: 'Open the Vault',
@@ -1039,9 +1174,16 @@ describe( 'HealthStrip', () => {
 	it( 'gives a redacted heuristic extractor plain copy and the text step', async () => {
 		health.extraction = { mode: 'heuristic' };
 		renderStrip();
-		await worstFault(
-			'Extracting with the heuristic only: the model call has no Vault entry.'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'Extracting with the heuristic only: the model call has no Vault entry.'
+			)
 		);
+		expect(
+			within( rows() ).getByText(
+				'Extracting with the heuristic only: the model call has no Vault entry.'
+			)
+		).toBeInTheDocument();
 		expect(
 			screen.getByText( 'An administrator can add its Vault entry.' )
 		).toBeInTheDocument();
@@ -1055,12 +1197,18 @@ describe( 'HealthStrip', () => {
 			last_error: 'HTTP 502 https://models.example/v1/messages',
 			failing_since: SINCE,
 		};
-		renderStrip( { canManage: true } );
-		await worstFault(
-			`HTTP 502 https://models.example/v1/messages · failing since ${ SINCE_LOCAL }`
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				`HTTP 502 https://models.example/v1/messages · failing since ${ SINCE_LOCAL }`
+			)
 		);
-		expect( strip() ).toHaveClass( 'is-warning' );
-		expect( within( row( 'Digests' ) ).getByText( 'failing' ) ).toHaveClass(
+		expect(
+			within( rows() ).getByText(
+				`HTTP 502 https://models.example/v1/messages · failing since ${ SINCE_LOCAL }`
+			)
+		).toBeInTheDocument();
+		expect( within( row( 'Digests' ) ).getByText( 'Failing' ) ).toHaveClass(
 			'is-error'
 		);
 	} );
@@ -1068,12 +1216,13 @@ describe( 'HealthStrip', () => {
 	it( 'reads a call extractor that has not answered yet', async () => {
 		health.extraction = { mode: 'call', last_ok_at: null };
 		renderStrip();
-		await lineReads( HEALTHY_LINE );
-		fireEvent.click( toggle() );
+		await waitFor( () =>
+			expect( line().textContent ).toBe( HEALTHY_LINE )
+		);
 		expect(
 			within( row( 'Digests' ) ).getByText( 'By the model.' )
 		).toBeInTheDocument();
-		expect( within( row( 'Digests' ) ).getByText( 'model' ) ).toHaveClass(
+		expect( within( row( 'Digests' ) ).getByText( 'Running' ) ).toHaveClass(
 			'is-success'
 		);
 	} );
@@ -1081,8 +1230,11 @@ describe( 'HealthStrip', () => {
 	it( 'reads an extractor that has not reported as unknown', async () => {
 		health.extraction = { mode: 'unknown' };
 		renderStrip();
-		await lineReads( 'The pipeline’s health is not fully known.' );
-		fireEvent.click( toggle() );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'The pipeline’s health is not fully known.'
+			)
+		);
 		expect(
 			within( row( 'Digests' ) ).getByText(
 				'No extraction has reported yet.'
@@ -1092,12 +1244,14 @@ describe( 'HealthStrip', () => {
 
 	it( 'reads an unknown extractor whose newest extraction used the heuristic as unknown', async () => {
 		health.extraction = { mode: 'unknown', last_mode: 'heuristic' };
-		renderStrip( { canManage: true } );
-		await lineReads( 'The pipeline’s health is not fully known.' );
-		expect( strip() ).not.toHaveClass( 'is-warning' );
-		fireEvent.click( toggle() );
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'The pipeline’s health is not fully known.'
+			)
+		);
 		const extraction = row( 'Digests' );
-		expect( within( extraction ).getByText( 'unknown' ) ).toHaveClass(
+		expect( within( extraction ).getByText( 'Unknown' ) ).toHaveClass(
 			'is-neutral'
 		);
 		expect(
@@ -1111,8 +1265,11 @@ describe( 'HealthStrip', () => {
 	it( 'reads an unknown extractor whose newest extraction used the model as unknown', async () => {
 		health.extraction = { mode: 'unknown', last_mode: 'call' };
 		renderStrip();
-		await lineReads( 'The pipeline’s health is not fully known.' );
-		fireEvent.click( toggle() );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'The pipeline’s health is not fully known.'
+			)
+		);
 		expect(
 			within( row( 'Digests' ) ).getByText(
 				'No extraction has reported since the cache was cleared; the newest used the model.'
@@ -1128,33 +1285,15 @@ describe( 'HealthStrip', () => {
 		};
 		health.collection.state = 'held';
 		renderStrip();
-		await lineReads(
-			'A deploy hold is in place; `wp nodes start` lifts it.'
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'A deploy hold is in place; `wp nodes start` lifts it.'
+			)
 		);
 		const names = within( rows() )
 			.getAllByRole( 'listitem' )
 			.map( ( item ) => item.querySelector( 'strong' ).textContent );
 		expect( names.slice( 0, 2 ) ).toEqual( [ 'Gathering', 'Code host' ] );
-	} );
-
-	it( 'keeps the reader’s choice while the faults stand, and reopens on a new one', async () => {
-		health.backlog = STOPPED;
-		renderStrip();
-		await lineReads(
-			`Resolving is stopped: the ontology is empty. 47 items are waiting, since ${ SINCE_LOCAL }.`
-		);
-		fireEvent.click( toggle() );
-		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
-
-		fireEvent.click( screen.getByRole( 'button', { name: 'Refresh' } ) );
-		await waitFor( () => expect( reads( 'backlog' ) ).toBe( 2 ) );
-		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
-
-		health.collection.state = 'down';
-		fireEvent.click( screen.getByRole( 'button', { name: 'Refresh' } ) );
-		await waitFor( () =>
-			expect( toggle() ).toHaveAttribute( 'aria-expanded', 'true' )
-		);
 	} );
 
 	describe( 'a dead client feed', () => {
@@ -1203,15 +1342,17 @@ describe( 'HealthStrip', () => {
 
 		it( 'is a fault naming its client, its host and since when', async () => {
 			renderStrip();
-			await worstFault( DEAD );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			expect(
-				within( row( 'Client feed' ) ).getByText( 'dead' )
+				within( row( 'Client feed' ) ).getByText( 'Not answering' )
 			).toHaveClass( 'is-error' );
 		} );
 
 		it( 'asks before it marks a former client, naming the dead feed, and sends nothing until End client', async () => {
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			fireEvent.click( mark() );
 			expect( asked() ).toHaveTextContent(
 				`“${ DOMAIN }”, Client feed, ${ SINCE_LOCAL }`
@@ -1229,8 +1370,9 @@ describe( 'HealthStrip', () => {
 		} );
 
 		it( 'closes its dialog with nothing sent and the client still listed', async () => {
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			fireEvent.click( mark() );
 			fireEvent.click(
 				within( asked() ).getByRole( 'button', { name: 'Close' } )
@@ -1246,8 +1388,9 @@ describe( 'HealthStrip', () => {
 		it( 'marks a former client: end_role, then assert_role former_client, then reads again', async () => {
 			wire.replies.end_role = { ok: true, event_id: 'ev-end-5520' };
 			wire.replies.assert_role = { ok: true, event_id: 'ev-former-5520' };
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			markAndEnd( mark() );
 			await waitFor( () => {
 				expect( wire.sent( 'end_role' ) ).toEqual( [
@@ -1266,8 +1409,9 @@ describe( 'HealthStrip', () => {
 		it( 'hides the client from the click while a read still lists it', async () => {
 			wire.replies.end_role = { ok: true, event_id: 'ev-end-5521' };
 			wire.replies.assert_role = { ok: true, event_id: 'ev-former-5521' };
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			markAndEnd( mark() );
 			expect( within( strip() ).queryByText( /Shoal Crier/ ) ).toBeNull();
 			await waitFor( () => expect( reads( 'sources' ) ).toBe( 2 ) );
@@ -1280,8 +1424,9 @@ describe( 'HealthStrip', () => {
 				dead( KEY, 'Shoal Crier', 'shoal-archive-3310.example' ),
 				dead( OTHER, 'Kittiwake Mail', 'kittiwakemail.example' )
 			);
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			expect( deadRows() ).toHaveLength( 3 );
 			markAndEnd( mark() );
 			expect( deadRows() ).toHaveLength( 1 );
@@ -1291,8 +1436,9 @@ describe( 'HealthStrip', () => {
 		it( 'shows the client again once a read stops listing it and lists it anew', async () => {
 			wire.replies.end_role = { ok: true, event_id: 'ev-end-5522' };
 			wire.replies.assert_role = { ok: true, event_id: 'ev-former-5522' };
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			markAndEnd( mark() );
 			await waitFor( () => expect( reads( 'sources' ) ).toBe( 2 ) );
 			health.sources.dead_clients = [];
@@ -1306,12 +1452,14 @@ describe( 'HealthStrip', () => {
 			fireEvent.click(
 				screen.getByRole( 'button', { name: 'Refresh' } )
 			);
-			await worstFault( DEAD );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 		} );
 
 		it( 'asserts former_client only once the end lands', async () => {
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			markAndEnd( mark() );
 			await waitFor( () =>
 				expect( wire.sent( 'end_role' ) ).toHaveLength( 1 )
@@ -1323,8 +1471,9 @@ describe( 'HealthStrip', () => {
 			health.sources.dead_clients.push(
 				dead( OTHER, 'Kittiwake Mail', 'kittiwakemail.example' )
 			);
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			markAndEnd( markIn( deadRows()[ 0 ] ) );
 			const other = markIn( deadRows()[ 0 ] );
 			expect( other ).toHaveAttribute( 'aria-disabled', 'true' );
@@ -1339,8 +1488,9 @@ describe( 'HealthStrip', () => {
 		it( 'shows a refused end on its row again and asserts nothing', async () => {
 			wire.replies.end_role = () =>
 				new Error( `${ KEY } holds no open client role` );
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			markAndEnd( mark() );
 			expect(
 				await screen.findByText( `${ KEY } holds no open client role` )
@@ -1363,8 +1513,9 @@ describe( 'HealthStrip', () => {
 				health.sources.dead_clients = [];
 				return new Error( `${ KEY } already holds former_client` );
 			};
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			markAndEnd( mark() );
 			const alert = await screen.findByRole( 'alert' );
 			await waitFor( () => expect( reads( 'sources' ) ).toBe( 2 ) );
@@ -1379,8 +1530,9 @@ describe( 'HealthStrip', () => {
 			health.sources.dead_clients.push(
 				dead( OTHER, 'Kittiwake Mail', 'kittiwakemail.example' )
 			);
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			const button = markIn( deadRows()[ 0 ] );
 			button.focus();
 			markAndEnd( button );
@@ -1401,8 +1553,9 @@ describe( 'HealthStrip', () => {
 					'gannetpost.example'
 				)
 			);
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			markAndEnd( markIn( deadRows()[ 0 ] ) );
 			const waiting = markIn( deadRows()[ 1 ] );
 			waiting.focus();
@@ -1412,13 +1565,14 @@ describe( 'HealthStrip', () => {
 			expect( document.activeElement ).toBe( waiting );
 		} );
 
-		it( 'moves focus to the strip when the marked row was its last fault', async () => {
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+		it( 'moves focus to the row now in its place when the marked row was the last fault', async () => {
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			const button = mark();
 			button.focus();
 			markAndEnd( button );
-			expect( document.activeElement ).toBe( strip() );
+			expect( document.activeElement ).toBe( row( 'Gathering' ) );
 		} );
 
 		it( 'shows a refusal on the row of the client it refused alone', async () => {
@@ -1427,8 +1581,9 @@ describe( 'HealthStrip', () => {
 			);
 			wire.replies.end_role = () =>
 				new Error( `${ KEY } holds no open client role` );
-			renderStrip( { canTune: true } );
-			await worstFault( DEAD );
+			renderStrip( true );
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			markAndEnd( markIn( deadRows()[ 0 ] ) );
 			await screen.findByText( `${ KEY } holds no open client role` );
 			const [ shoal, kittiwake ] = deadRows();
@@ -1438,16 +1593,17 @@ describe( 'HealthStrip', () => {
 			expect( kittiwake ).not.toHaveTextContent( 'holds no open' );
 		} );
 
-		it( 'gives a reader without TUNE the step as text, mounting no write', async () => {
-			renderStrip( { canManage: true } );
-			await worstFault( DEAD );
+		it( 'gives a reader the step as text, mounting no write', async () => {
+			renderStrip();
+			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
+			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			expect(
 				within( row( 'Client feed' ) ).getByText(
 					'An administrator can mark it a former client.'
 				)
 			).toBeInTheDocument();
 			expect(
-				Core.node( 'health:former-client:end_role:fetch' )
+				Core.node( 'health-block:former-client:end_role:fetch' )
 			).toBeFalsy();
 		} );
 	} );
@@ -1471,7 +1627,7 @@ describe( 'HealthStrip', () => {
 		unmount();
 
 		Core.reset();
-		renderStrip( { canTune: true, canManage: true } );
+		renderStrip( true );
 		await screen.findByRole( 'button', { name: 'Seed the ontology' } );
 		expect( writes.filter( ( name ) => Core.node( name ) ) ).toEqual(
 			writes
@@ -1480,7 +1636,9 @@ describe( 'HealthStrip', () => {
 
 	it( 'reads every slice again on Refresh', async () => {
 		renderStrip();
-		await lineReads( HEALTHY_LINE );
+		await waitFor( () =>
+			expect( line().textContent ).toBe( HEALTHY_LINE )
+		);
 		fireEvent.click( screen.getByRole( 'button', { name: 'Refresh' } ) );
 		await waitFor( () => {
 			for ( const what of Object.keys( HEALTHY ) ) {
@@ -1501,6 +1659,190 @@ describe( 'HealthStrip', () => {
 		).toBeInTheDocument();
 		expect( screen.queryByText( 'NOT_AVAILABLE' ) ).toBeNull();
 		expect( screen.queryByRole( 'alert' ) ).toBeNull();
-		await lineReads( 'The pipeline’s health could not be read in full.' );
+		await waitFor( () =>
+			expect( line().textContent ).toBe(
+				'The pipeline’s health could not be read in full.'
+			)
+		);
+	} );
+} );
+
+describe( 'the header phrase and the fault notice', () => {
+	/** 2026-10-31 14:02 in Auckland, 01:02 UTC. */
+	const STOPPED_AT = Date.UTC( 2026, 9, 31, 1, 2 ) / 1000;
+
+	/** A GitHub source with no credential, as an operator reads it. */
+	const uncredentialed = () => ( {
+		...okSource( 'github' ),
+		state: 'idle',
+		last_ok_at: STOPPED_AT,
+		credential: {
+			url: 'https://api.github.example',
+			group: 'tracker-keys-4410',
+		},
+	} );
+
+	/**
+	 * The strip, its phrase inline, as a page standing alone renders it.
+	 *
+	 * @param {boolean} canManage Whether the reader is an operator.
+	 */
+	const renderHeader = ( canManage ) =>
+		render( <HealthStrip canManage={ canManage } slot={ undefined } /> );
+
+	const phrase = () =>
+		document.querySelector( '.newspack-intelligence__collecting' );
+
+	it( 'reads healthy as collecting, updated the newest answer’s relative time, the absolute one in its title', async () => {
+		const newest = ago( 150 );
+		health.sources.sources[ 0 ].last_ok_at = ago( 4000 );
+		health.sources.sources[ 1 ].last_ok_at = newest;
+		renderHeader( false );
+		const time = await screen.findByText( '2 min ago' );
+		expect( time ).toHaveAttribute(
+			'title',
+			formatLocalDateTime( newest )
+		);
+		expect( phrase() ).toHaveTextContent(
+			`Collecting, updated 2 min ago (${ formatLocalDateTime( newest ) })`
+		);
+		expect( screen.queryByRole( 'button' ) ).toBeNull();
+	} );
+
+	it( 'reads only the time under 600 px', async () => {
+		const viewport = installViewport( true );
+		try {
+			const newest = ago( 150 );
+			health.sources.sources[ 1 ].last_ok_at = newest;
+			renderHeader( false );
+			await screen.findByText( '2 min ago' );
+			expect( phrase() ).toHaveTextContent(
+				`2 min ago (${ formatLocalDateTime( newest ) })`,
+				{ normalizeWhitespace: true }
+			);
+			expect( phrase().textContent ).not.toMatch( /^Collecting/ );
+		} finally {
+			viewport.restore();
+		}
+	} );
+
+	it( 'names the items waiting while nothing is wrong', async () => {
+		health.backlog.held = 37;
+		renderHeader( false );
+		await waitFor( () =>
+			expect( phrase() ).toHaveTextContent(
+				'Collecting; 37 items waiting'
+			)
+		);
+	} );
+
+	it( 'says collection is off', async () => {
+		health.collection = { state: 'inactive', topologies: [] };
+		renderHeader( false );
+		await waitFor( () =>
+			expect( phrase() ).toHaveTextContent( 'Collection is off.' )
+		);
+	} );
+
+	it( 'reads Checking collection… while owed, then names a failed read with Refresh for an operator', async () => {
+		wire.replies.health = ( [ what ] ) =>
+			'collection' === what
+				? new Error( 'NOT_AVAILABLE' )
+				: health[ what ];
+		renderHeader( true );
+		expect( phrase() ).toHaveTextContent( 'Checking collection…' );
+		await waitFor( () =>
+			expect( phrase() ).toHaveTextContent(
+				'Collection status could not be read.'
+			)
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'Refresh' } ) );
+		await waitFor( () => expect( reads( 'collection' ) ).toBe( 2 ) );
+	} );
+
+	it( 'gives a reader a failed read with no Refresh', async () => {
+		wire.replies.health = ( [ what ] ) =>
+			'collection' === what
+				? new Error( 'NOT_AVAILABLE' )
+				: health[ what ];
+		renderHeader( false );
+		await waitFor( () =>
+			expect( phrase() ).toHaveTextContent(
+				'Collection status could not be read.'
+			)
+		);
+		expect( screen.queryByRole( 'button' ) ).toBeNull();
+	} );
+
+	it( 'shows a reader the fault as one sentence with no controls', async () => {
+		const { credential, ...redacted } = uncredentialed();
+		health.sources.sources[ 0 ] = redacted;
+		expect( credential.group ).toBe( 'tracker-keys-4410' );
+		renderHeader( false );
+		const notice = await screen.findByText(
+			'Some sources stopped updating at 14:02, so recent items may be missing.',
+			{ selector: 'p' }
+		);
+		expect( notice.closest( '.components-notice' ) ).toHaveClass(
+			'is-warning'
+		);
+		expect( screen.queryByRole( 'button' ) ).toBeNull();
+		expect( screen.queryByRole( 'link' ) ).toBeNull();
+	} );
+
+	it( 'shows an operator the worst fault in a notice with its fix, and Details', async () => {
+		health.sources.sources[ 0 ] = uncredentialed();
+		renderHeader( true );
+		const fix = await screen.findByRole( 'link', {
+			name: 'Add credential',
+		} );
+		expect( fix ).toHaveAttribute( 'href', VAULT );
+		expect( fix.closest( '.components-notice' ) ).toHaveTextContent(
+			'No Vault entry for https://api.github.example in group tracker-keys-4410.'
+		);
+		expect(
+			screen.getByRole( 'button', { name: 'Details' } )
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText( /Some sources stopped updating/ )
+		).toBeNull();
+	} );
+
+	it( 'opens the details for an operator, each source with its state', async () => {
+		health.sources.sources[ 1 ].failed = 8;
+		health.sources.sources[ 1 ].requests = 411;
+		health.sources.sources[ 2 ].failed = 50;
+		health.sources.sources[ 2 ].requests = 411;
+		renderHeader( true );
+		await screen.findByText( /Collecting, updated/ );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Details' } ) );
+		await screen.findByRole( 'region', { name: 'Collection' } );
+		const feed = row( 'Web feed' );
+		expect( within( feed ).getByText( 'Running' ) ).toHaveClass(
+			'is-success'
+		);
+		expect( within( feed ).getByText( '8 of 411 failed' ) ).toHaveClass(
+			'is-muted'
+		);
+		const news = row( 'news' );
+		expect( within( news ).getByText( 'Failing' ) ).toHaveClass(
+			'is-warning'
+		);
+		expect(
+			within( news ).getByText( '50 of 411 failed' )
+		).not.toHaveClass( 'is-muted' );
+	} );
+
+	it( 'reads a failed share at FAILING_SHARE as failing', async () => {
+		expect( FAILING_SHARE ).toBe( 0.1 );
+		health.sources.sources[ 1 ].failed = 41;
+		health.sources.sources[ 1 ].requests = 410;
+		renderHeader( true );
+		await screen.findByText( /Collecting, updated/ );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Details' } ) );
+		await screen.findByRole( 'region', { name: 'Collection' } );
+		expect(
+			within( row( 'Web feed' ) ).getByText( 'Failing' )
+		).toHaveClass( 'is-warning' );
 	} );
 } );

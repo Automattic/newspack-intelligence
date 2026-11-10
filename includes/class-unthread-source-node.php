@@ -26,6 +26,8 @@ use Newspack_Nodes\Core;
 
 class Unthread_Source_Node extends Source_Node {
 
+	public const SOURCE = 'unthread';
+
 	/** Seconds back from the clock a pass reads while the interval is unset. */
 	public const WINDOW_SECONDS = 2 * Intel_Graph_Row_Schema::DAY_SECONDS;
 
@@ -171,7 +173,7 @@ class Unthread_Source_Node extends Source_Node {
 				$text   = self::mrkdwn( $message['text'] );
 				$line   = self::first_line( $text );
 				$poster = self::first( Core::arr( $message['user'] ?? null )['name'] ?? null, $message['userId'] ?? null );
-				return $this->normalize_item( 'unthread', "{$id}:{$ts}", '' === $line ? $ticket : "{$ticket} {$line}", '', "{$context}\n{$poster}: {$text}", '@' . (int) $ts );
+				return $this->normalize_item( "{$id}:{$ts}", '' === $line ? $ticket : "{$ticket} {$line}", '', "{$context}\n{$poster}: {$text}", '@' . (int) $ts );
 			}
 		);
 	}

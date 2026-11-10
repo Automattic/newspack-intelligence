@@ -18,6 +18,8 @@ use Newspack_Nodes\Core;
 
 class Github_Source_Node extends Source_Node {
 
+	public const SOURCE = 'github';
+
 	private const API_BASE = 'https://api.github.com/repos/';
 	private const PER_PAGE = 30;
 
@@ -66,7 +68,7 @@ class Github_Source_Node extends Source_Node {
 				}
 				$title = $r['name'] ?? '';
 				$title = ( \is_string( $title ) && '' !== $title ) ? $title : (string) ( \is_scalar( $r['tag_name'] ?? null ) ? $r['tag_name'] : '' );
-				return $this->normalize_item( 'github', "$repo#release-$id", $title, $r['html_url'] ?? '', $r['body'] ?? '', $r['published_at'] ?? '' );
+				return $this->normalize_item( "$repo#release-$id", $title, $r['html_url'] ?? '', $r['body'] ?? '', $r['published_at'] ?? '' );
 			}
 		);
 	}
@@ -85,7 +87,7 @@ class Github_Source_Node extends Source_Node {
 				if ( '' === $number || ! \is_string( $merged_at ) || '' === $merged_at ) {
 					return null;
 				}
-				return $this->normalize_item( 'github', "$repo#pr-$number", $pr['title'] ?? '', $pr['html_url'] ?? '', $pr['body'] ?? '', $merged_at );
+				return $this->normalize_item( "$repo#pr-$number", $pr['title'] ?? '', $pr['html_url'] ?? '', $pr['body'] ?? '', $merged_at );
 			}
 		);
 	}
@@ -102,7 +104,7 @@ class Github_Source_Node extends Source_Node {
 				if ( '' === $number || isset( $issue['pull_request'] ) ) {
 					return null;
 				}
-				return $this->normalize_item( 'github', "$repo#issue-$number", $issue['title'] ?? '', $issue['html_url'] ?? '', $issue['body'] ?? '', $issue['updated_at'] ?? ( $issue['created_at'] ?? '' ) );
+				return $this->normalize_item( "$repo#issue-$number", $issue['title'] ?? '', $issue['html_url'] ?? '', $issue['body'] ?? '', $issue['updated_at'] ?? ( $issue['created_at'] ?? '' ) );
 			}
 		);
 	}

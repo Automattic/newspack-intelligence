@@ -1772,7 +1772,9 @@ final class SourceNodeTest extends TestCase {
  */
 class Fake_Source_Node extends Source_Node {
 
-	public const PAGE = 'https://fake-4471.example/page/';
+	public const SOURCE = 'fake';
+
+	public const PAGE ='https://fake-4471.example/page/';
 
 	/** @var list<string> The urls each pass opens on. */
 	public array $first = [];
@@ -1866,7 +1868,7 @@ class Fake_Source_Node extends Source_Node {
 			$this->queue( Core::as_string( $next ) );
 		}
 		return \array_map(
-			fn ( array $r ): array => $r['raw'] ?? $this->normalize_item( 'fake', $r['id'], $r['title'] ?? '', $r['url'] ?? '', $r['body'] ?? '', $r['when'] ?? '' ),
+			fn ( array $r ): array => $r['raw'] ?? $this->normalize_item( $r['id'], $r['title'] ?? '', $r['url'] ?? '', $r['body'] ?? '', $r['when'] ?? '' ),
 			Core::arr( $page['items'] )
 		);
 	}

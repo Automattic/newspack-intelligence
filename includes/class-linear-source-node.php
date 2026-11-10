@@ -20,6 +20,8 @@ use Newspack_Nodes\Core;
 
 class Linear_Source_Node extends Source_Node {
 
+	public const SOURCE = 'linear';
+
 	private const API_URL = 'https://api.linear.app/graphql';
 
 	private const QUERY = 'query ($teams: [String!]) { issues(first: 30, orderBy: updatedAt, filter: { team: { key: { in: $teams } } }) { nodes { identifier title url description updatedAt } } }';
@@ -61,7 +63,7 @@ class Linear_Source_Node extends Source_Node {
 				if ( ! \is_string( $identifier ) || '' === $identifier ) {
 					return null;
 				}
-				return $this->normalize_item( 'linear', $identifier, $node['title'] ?? '', $node['url'] ?? '', $node['description'] ?? '', $node['updatedAt'] ?? '' );
+				return $this->normalize_item( $identifier, $node['title'] ?? '', $node['url'] ?? '', $node['description'] ?? '', $node['updatedAt'] ?? '' );
 			}
 		);
 	}

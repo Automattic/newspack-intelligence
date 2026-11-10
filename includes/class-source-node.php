@@ -41,6 +41,13 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	/** @use Owns_Curl_Frontier<Request> */
 	use Owns_Curl_Frontier;
 
+	/**
+	 * The source its items are recorded under, one of Intel_Event::SOURCES.
+	 *
+	 * @var string
+	 */
+	public const SOURCE = '';
+
 	/** Requests an API source sends in one pass; the next is dropped, logged. */
 	public const MAX_REQUESTS_PER_PASS = 60;
 
@@ -1048,8 +1055,8 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 
 	/**
 	 * One connector record as the `item_recorded` fields, each coerced here,
-	 * keyed `"$source:$id"`, so `$id` must be stable per item, as dedup keys on
-	 * it.
+	 * recorded under the class's SOURCE and keyed `"<source>:$id"`, so `$id`
+	 * must be stable per item, as dedup keys on it.
 	 *
 	 * @param mixed $title
 	 * @param mixed $url
@@ -1057,11 +1064,11 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * @param mixed $when  Date string (ISO-8601 / RFC-822); '' / unparseable → item_ts 0.
 	 * @return array<string,mixed>
 	 */
-	protected function normalize_item( string $source, string $id, mixed $title, mixed $url, mixed $body, mixed $when ): array {
+	protected function normalize_item( string $id, mixed $title, mixed $url, mixed $body, mixed $when ): array {
 		$ts = \is_string( $when ) ? \strtotime( $when ) : false;
 		return [
-			'item_key'     => "$source:$id",
-			'source'       => $source,
+			'item_key'     => static::SOURCE . ":{$id}",
+			'source'       => static::SOURCE,
 			'tier'         => $this->tier,
 			'url'          => Core::str( $url ),
 			'title'        => Core::str( $title ),

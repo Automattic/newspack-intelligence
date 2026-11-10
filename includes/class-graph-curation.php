@@ -80,6 +80,57 @@ final class Graph_Curation {
 	}
 
 	/**
+	 * Link a readable item to an entity in a role, `subject` or `mention`,
+	 * as the caller's confirmed link, whether or not a machine linked them:
+	 * `link_added`, carrying the role and the item's URL, which the
+	 * projector reads as a confirmation and the resolver writes as the
+	 * item's link. Refused for a topic, which only an extraction tags an
+	 * item with; for a link the highest-ranked judgment under any of the
+	 * entity's keys already confirms; and for an item outside the
+	 * restricted tier and an entity a caller without that tier cannot see,
+	 * since the link would show it to every reader.
+	 *
+	 * @param array<array-key,mixed> $args The bound command args: `item`, `entity`, `role`.
+	 * @return array<string,mixed> `{ ok, event_id }`.
+	 * @throws \InvalidArgumentException On a bad arg, an entity the caller cannot see, an item it cannot read, or a refusal above.
+	 */
+	public static function add_link( array $args ): array {
+		$role              = Graph_Query::one_of( 'role', Core::as_string( $args['role'] ), Intel_Event::NAMING_ROLES );
+		$entity_key        = self::key( $args, 'entity' );
+		$item_key          = self::item_key( $args );
+		[ $entity, $item ] = self::on_graph(
+			static function ( Row_Reader $r, array $g ) use ( $entity_key, $item_key ): array {
+				$entity = Graph_Query::seen( $r, $g, $entity_key );
+				$item   = self::item( $r, $g, $item_key );
+				if ( 'topic' === self::type_of( $r, $entity ) ) {
+					throw new \InvalidArgumentException( \esc_html( "{$entity} is a topic; only an extraction tags an item with one" ) );
+				}
+				if ( self::confirmed( $r, $item_key, Graph_Query::keys_of( $entity, $g ) ) ) {
+					throw new \InvalidArgumentException( \esc_html( "already confirmed: {$item_key} {$entity}" ) );
+				}
+				if ( Intel_Tiers::unrestricted( $item ) && ! self::open( $r, $g, $entity ) ) {
+					throw new \InvalidArgumentException( \esc_html( "linking {$item_key} to {$entity} would show {$entity} to every reader; it is not cited by any item outside the restricted tier" ) );
+				}
+				return [ $entity, $item ];
+			}
+		);
+		return self::write( 'link_added', [ 'item_key' => $item_key, 'entity_key' => $entity, 'role' => $role, 'item_url' => $item['url'] ] );
+	}
+
+	/**
+	 * Whether the highest-ranked judgment of an item's link under any of an
+	 * entity's keys confirms it, the latest among equals.
+	 *
+	 * @param Row_Reader   $r        The reader.
+	 * @param string       $item_key The item key.
+	 * @param list<string> $keys     The entity's keys.
+	 */
+	private static function confirmed( Row_Reader $r, string $item_key, array $keys ): bool {
+		$sql = 'SELECT state FROM ' . Intel_Graph_Row_Schema::all( $r, 'judgments' ) . ' j WHERE item_key = ? AND entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) ORDER BY ' . Graph_Query::judge_rank( 'actor_kind' ) . ' DESC, ts DESC LIMIT 1';
+		return 'confirmed' === ( $r->rows( $sql, [ $item_key, ...$keys ] )[0][0] ?? null );
+	}
+
+	/**
 	 * Judge an entity named by `key`: `entity_accepted` or `entity_rejected`.
 	 * An accept is refused for an entity a caller without restricted access
 	 * cannot see, since accepting it would show it to every reader.
@@ -912,7 +963,7 @@ final class Graph_Curation {
 	 */
 	public static function remove_lens( array $args ): array {
 		$key = self::capped( 'key', Intel_Event::lens_key( Core::as_string( $args['key'] ) ), self::KEY_BYTES );
-		if ( ! Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): bool => [] !== $r->rows( 'SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'lenses' ) . ' l WHERE lens_key = ? LIMIT 1', [ $key ] ) ) ) {
+		if ( null === Intel_Graph_Row_Schema::read( static fn ( Row_Reader $r ): ?string => Graph_Query::saved_lens( $r, $key ) ) ) {
 			throw new \InvalidArgumentException( \esc_html( "no lens: {$key}" ) );
 		}
 		return self::write( 'lens_removed', [ 'lens_key' => $key ] );

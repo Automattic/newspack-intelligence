@@ -4,6 +4,7 @@
  */
 
 import { __, sprintf } from '@wordpress/i18n';
+import { Core } from '@newspack-nodes/runtime';
 import { word } from './words';
 
 /**
@@ -160,6 +161,22 @@ export function dayLabel( day, today ) {
 }
 
 /**
+ * A UTC day, Y-m-d, as the page names it against today: "6 Nov".
+ *
+ * @param {string} day The day.
+ * @return {string} Its name.
+ */
+export const shownDay = ( day ) => dayLabel( day, utcDay( Core.now() ) );
+
+/**
+ * What an entity is called: its name, else its key.
+ *
+ * @param {{name: ?string, entity_key: string}} entity The entity.
+ * @return {string} The name.
+ */
+export const entityName = ( entity ) => entity.name || entity.entity_key;
+
+/**
  * A usual count in words: "usually under 1" for a mean below 1, else
  * "usually about %d", the mean rounded.
  *
@@ -213,4 +230,82 @@ export function roleText( role ) {
 				utcDay( role.from_ts ),
 				utcDay( role.to_ts )
 		  );
+}
+
+/** Markdown's link and image syntax, read for the text a reader sees. */
+const MARKDOWN_LINK = /!?\[([^\]]*)\]\([^)]*\)/g;
+
+/** Markdown's markers for emphasis, code, headings, quotes and list items. */
+const MARKDOWN_MARKS = /[*_`~]+|^[ \t]*(?:#{1,6}|>|[-+]|\d+\.)[ \t]+/gm;
+
+/** A bare URL, which evidence reads without. */
+const BARE_URL = /\b(?:https?:\/\/|www\.)\S+/gi;
+
+/** The ellipsis the server marks a cut with, and the whitespace beside it. */
+const CUT_EDGES = /^[\s…]+|[\s…]+$/g;
+
+/**
+ * Text with each run of whitespace one space, its ends trimmed.
+ *
+ * @param {string} text Any text.
+ * @return {string} The text.
+ */
+const oneLine = ( text ) => text.replace( /\s+/g, ' ' ).trim();
+
+/**
+ * A proposal's evidence as plain text: Markdown stripped, URLs dropped and
+ * the text cut to the sentence spelling `name`, in any case, with the name
+ * as the text spells it held apart for a mark. Evidence spelling no name
+ * keeps all its text as the sentence. The text touching the name keeps its
+ * spacing, so the three parts read back as the sentence. Evidence that is
+ * empty once read, or that the title already shows, whole or cut, answers
+ * null.
+ *
+ * @param {string} text  The evidence the server quoted.
+ * @param {string} name  The entity's name.
+ * @param {string} title The item's title, shown above it.
+ * @return {?{before: string, name: string, after: string}} The sentence.
+ */
+export function evidenceText( text, name, title ) {
+	const plain = text
+		.replace( MARKDOWN_LINK, '$1' )
+		.replace( MARKDOWN_MARKS, '' )
+		.replace( BARE_URL, '' );
+	const core = oneLine( plain ).replace( CUT_EDGES, '' );
+	if ( '' === core || oneLine( title ).includes( core ) ) {
+		return null;
+	}
+	const spelled = new RegExp(
+		name.replace( /[.*+?^${}()|[\]\\]/g, '\\$&' ),
+		'iu'
+	);
+	const sentence = [
+		...pageFormat( Intl.Segmenter, { granularity: 'sentence' } ).segment(
+			plain
+		),
+	]
+		.map( ( one ) => one.segment )
+		.find( ( one ) => spelled.test( one ) );
+	if ( ! sentence ) {
+		return { before: oneLine( plain ), name: '', after: '' };
+	}
+	const at = sentence.search( spelled );
+	const [ found ] = sentence.match( spelled );
+	const spaced = ( part ) => part.replace( /\s+/g, ' ' );
+	return {
+		before: spaced( sentence.slice( 0, at ) ).trimStart(),
+		name: found,
+		after: spaced( sentence.slice( at + found.length ) ).trimEnd(),
+	};
+}
+
+/**
+ * An extraction's rank reason as a sentence of its own, else "No reason
+ * recorded." for an extraction that gave none.
+ *
+ * @param {?string} reason The extraction's rank reason.
+ * @return {string} The sentence.
+ */
+export function reasonText( reason ) {
+	return reason || __( 'No reason recorded.', 'newspack-intelligence' );
 }

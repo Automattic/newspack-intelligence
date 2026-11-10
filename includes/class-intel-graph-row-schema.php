@@ -424,6 +424,17 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				'indexes' => [ 'judgments_entity_key' => [ 'entity_key' ] ],
 				'keep'    => true,
 			],
+			'added_links'   => [
+				'columns' => [
+					'item_key'   => 'TEXT NOT NULL',
+					'entity_key' => 'TEXT NOT NULL',
+					'role'       => 'TEXT NOT NULL',
+					'actor'      => 'TEXT NOT NULL',
+					'ts'         => 'REAL NOT NULL',
+				],
+				'key'     => [ 'item_key', 'entity_key' ],
+				'keep'    => true,
+			],
 			'excluded_items' => [
 				'columns' => [
 					'item_key' => 'TEXT NOT NULL',

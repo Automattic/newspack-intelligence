@@ -133,6 +133,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 							$limit( null, '; else ' . Graph_Query::DEFAULT_LIMIT . ' items, or ' . Graph_Query::GROUP_LIMIT . ' groups' ),
 							$page,
 							...$lists,
+							$any( 'tier', 'A tier the item is recorded at, ' . \implode( ', ', Intel_Event::TIERS ) . ', read only within the caller\'s own and a lens\'s.' ),
 						],
 						Graph_Query::search( ... )
 					),
@@ -144,7 +145,7 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					$command(
 						$read,
 						'trends',
-						"Items counted by {$axes} per bucket, the newest bucket first, a story counted once as its canonical: { rows: [ { bucket, value, count, items: [ { item_key, url, title } ] } ] }, five newest items cited a row; counting by theme, each row also names clients: [ { entity_key, name } ], the open clients its items name as subject, before its items, and an item with no theme counts under none.",
+						"Items counted by {$axes} per bucket, the newest bucket first, a story counted once as its canonical: { rows: [ { bucket, value, count, items: [ { item_key, url, title } ] } ], by, bucket }, by and bucket the axis and the span counted, five newest items cited a row; counting by theme, each row also names clients: [ { entity_key, name } ], the open clients its items name as subject, before its items, and an item with no theme counts under none.",
 						[
 							$axis,
 							$text( 'entity', 'Only items linking this entity.' ),
@@ -190,10 +191,11 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					$command(
 						$read,
 						'briefing',
-						'What changed in the last ' . Intelligence_Briefing::DAYS . ' UTC days, one slice a call: changes { groups: [ { entity_key, name, role, items } ], total, summary }, the ' . Graph_Query::DEFAULT_LIMIT . ' most important items naming any entity as subject or mention, each as search answers it, in three kinds of group: under each open client it is about, role client; when it is about no open client but about an entity holding an open operator_product role, in one group of that role; else in one group of role null, entity_key and name null for both; total counting every such item; summary { since, items, clients, kinds: [ { kind, items, clients } ] }, what of those items is dated at or after since: how many, the open clients they are about, and each of ' . \implode( ', ', Intelligence_Briefing::SUMMARY_KINDS ) . ' with any item, in that order; signals { clients: [ { entity_key, name, signals } ], lenses: [ { lens_key, name, signals } ] }, each client\'s signals on both axes and each lens\'s, as signals answers them, whose bucket closed in those days.',
+						'What changed in the last ' . Intelligence_Briefing::DAYS . ' UTC days, one slice a call: changes { order, items, groups: [ { role, key, name, items } ], categories: [ { lens_key, name, count } ], otherwise, total, summary }, the ' . Graph_Query::DEFAULT_LIMIT . ' most important items naming any entity as subject or mention, in order (importance), each as search answers it with categories, the lenses named that admit it, and otherwise, whether none does; each filed once by key: under the first open client it is about, role client, key and name the client\'s; else under the first lens named admitting it, role category, key and name the lens\'s; else role otherwise, key and name null; categories counting the items each lens admits, otherwise those none admits; total counting every such item; summary { since, items, clients, kinds: [ { kind, items, clients } ] }, what of those items is dated at or after since: how many, the open clients they are about, and each of ' . \implode( ', ', Intelligence_Briefing::SUMMARY_KINDS ) . ' with any item, in that order; signals { clients: [ { entity_key, name, signals, churn_note } ], lenses: [ { lens_key, name, signals } ], judged }, each client\'s signals on both axes and each lens\'s, as signals answers them, whose bucket closed in those days, and judged, whether any client or lens held the history its rules judge by.',
 						[
 							$arg( 'what', 'The slice, one of: ' . \implode( ', ', Intelligence_Briefing::SLICES ) . '.' ),
 							[ 'name' => 'since', 'type' => 'int', 'default' => 0, 'description' => 'For changes, the instant, UTC seconds, its summary counts from; the window\'s first instant at the latest. Refused for signals.' ],
+							[ 'name' => 'lenses', 'type' => 'string', 'default' => '', 'description' => 'For changes, the category lenses it files the week under, keys joined by commas, at most ' . Intelligence_Briefing::CATEGORY_MAX . ', each saved. Refused for signals.' ],
 						],
 						Intelligence_Briefing::answer( ... )
 					),
@@ -203,6 +205,13 @@ class Intelligence_CI_Node extends Service_CI_Node {
 					$command( $read, 'health','Pipeline health, one slice a call: collection { state, topology }; sources { sources: [ { name, class, tier, state, reason, credential: { url, group }, last_ok_at, last_error, failing_since, failed, requests } ] }; backlog { reason, held, since, dropped: { first_day, last_day } }; extraction { mode, vault_group, last_ok_at, last_error, failing_since }. An unpublished fact reads as unknown or null.', [ $arg( 'what', 'The slice, one of: ' . \implode( ', ', Intelligence_Health::SLICES ) . '.' ) ], Intelligence_Health::answer( ... ) ),
 					$command( $tune, 'confirm_link', 'Confirm a readable item\'s link to an entity: { ok, event_id }.', $link, static fn ( array $args ): array => Graph_Curation::judge_link( 'link_confirmed', $args ) ),
 					$command( $tune, 'reject_link', 'Reject a readable item\'s link to an entity: { ok, event_id }.', $link, static fn ( array $args ): array => Graph_Curation::judge_link( 'link_rejected', $args ) ),
+					$command(
+						$tune,
+						'add_link',
+						'Link a readable item to an entity as your confirmed link, whether or not a machine linked them; it reads as linked once the resolver next resolves the item: { ok, event_id }.',
+						[ ...$link, [ 'name' => 'role', 'type' => 'string', 'default' => 'subject', 'description' => 'The role: ' . \implode( ', ', Intel_Event::NAMING_ROLES ) . '.' ] ],
+						Graph_Curation::add_link( ... )
+					),
 					$command( $tune, 'accept_entity', 'Accept an entity: { ok, event_id }.', [ $about ], static fn ( array $args ): array => Graph_Curation::judge_entity( 'entity_accepted', $args ) ),
 					$command( $tune, 'reject_entity', 'Reject an entity: { ok, event_id }.', [ $about ], static fn ( array $args ): array => Graph_Curation::judge_entity( 'entity_rejected', $args ) ),
 					$command( $tune, 'merge_entities', 'Merge one entity into another, refused when the merge would cycle: { ok, event_id }.', [ $arg( 'from', 'The entity merged away.' ), $arg( 'into', 'The entity it survives as.' ) ], Graph_Curation::merge( ... ) ),

@@ -8,8 +8,8 @@
  * identifier the projection holds for the entity). A new locality queues its
  * entity, because a locality settles an ambiguous name and links nothing
  * alone; a topic queues nothing, because a topic is matched by extraction. A
- * `link_confirmed` queues its one item with no search, so the resolver
- * extracts it again with the curator's confirmation in force. A repeated
+ * `link_confirmed` or `link_added` queues its one item with no search, so
+ * the resolver extracts it again with the curator's link in force. A repeated
  * signal is queued once.
  *
  * It ticks with the Router and appends `item_reresolve` records, each naming
@@ -81,7 +81,7 @@ class Reresolver_Node extends Timer_Node {
 	public const RERESOLVE_PAGE = 20;
 
 	/** The ontology kinds that can link stored items anew. */
-	private const SIGNALS = [ 'entity_created', 'entity_accepted', 'name_added', 'identifier_added', 'link_confirmed' ];
+	private const SIGNALS = [ 'entity_created', 'entity_accepted', 'name_added', 'identifier_added', 'link_confirmed', 'link_added' ];
 
 	/** Each range request by the kind of work it queues; a `reextract` range owes each item its extraction. */
 	public const RANGES = [
@@ -217,7 +217,7 @@ class Reresolver_Node extends Timer_Node {
 				default    => [ 'name', Core::as_string( $event['value'] ) ],
 			},
 			'identifier_added' => [ 'identifier', $kind . ':' . Entity_Index::identifier_value( $kind, Core::as_string( $event['value'] ) ) ],
-			'link_confirmed'   => [ 'item', Core::as_string( $event['item_key'] ) ],
+			'link_confirmed', 'link_added' => [ 'item', Core::as_string( $event['item_key'] ) ],
 			default            => [ 'entity', $key ],
 		};
 		if ( ( \in_array( $queued, [ 'name', 'acronym' ], true ) && [] === self::name_phrases( $value ) ) || ( 'identifier' === $queued && [] === self::url_patterns( $value ) ) ) {

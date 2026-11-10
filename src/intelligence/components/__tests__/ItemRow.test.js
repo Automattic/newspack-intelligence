@@ -9,7 +9,11 @@
  * menu when the page is narrow, beside "Open profile" and "Copy link"; and
  * the exclusion only for a reader holding tune: a text action that holds
  * its write behind an Undo, puts the row back on Undo or a refusal, and
- * sends a pending write when the row leaves the page.
+ * sends a pending write when the row leaves the page. Why the item ranks
+ * sits behind a closed "Why this ranks" disclosure, its scores in words
+ * and never numbers; the meta line counts the story's other copies; and
+ * "How this was read" in More actions opens the drawer under the row,
+ * focus returning to the menu's toggle when it closes.
  */
 
 import {
@@ -26,7 +30,7 @@ import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth
 import { intelWire } from '../../__tests__/intelWire';
 import { UNDO_MS } from '../../hooks/useDeferredWrite';
 import { useIntelRead } from '../../hooks/useIntelCommand';
-import ItemRow, { ItemPage, SaveButton } from '../ItemRow';
+import ItemRow, { SaveButton } from '../ItemRow';
 import { pageData } from '../../views/__tests__/fixtures';
 
 beforeEach( () => {
@@ -105,6 +109,37 @@ const pills = () =>
 		document.querySelectorAll( '.newspack-intelligence__pill' ),
 		( pill ) => pill.textContent
 	);
+
+/** Fakes only the undo window's own timer; the wire runs as it does. */
+const fakeUndoClock = () =>
+	jest.useFakeTimers( {
+		doNotFake: [
+			'Date',
+			'hrtime',
+			'nextTick',
+			'performance',
+			'queueMicrotask',
+			'requestAnimationFrame',
+			'cancelAnimationFrame',
+			'requestIdleCallback',
+			'cancelIdleCallback',
+			'setImmediate',
+			'clearImmediate',
+			'setInterval',
+			'clearInterval',
+		],
+	} );
+
+/**
+ * Moves the faked clock on.
+ *
+ * @param {number} ms Milliseconds.
+ * @return {Promise<void>} Settles once React has caught up.
+ */
+const elapse = ( ms ) =>
+	act( async () => {
+		jest.advanceTimersByTime( ms );
+	} );
 
 /**
  * Opens a row's "More actions" menu.
@@ -776,7 +811,7 @@ describe( 'ItemRow', () => {
 		} );
 	} );
 
-	it( 'offers no profile without a subject, no link it would not open, and no menu with neither', () => {
+	it( 'offers no profile without a subject and no link it would not open, leaving how it was read', async () => {
 		render(
 			<ItemRow
 				item={ {
@@ -787,9 +822,12 @@ describe( 'ItemRow', () => {
 				onOpenEntity={ jest.fn() }
 			/>
 		);
+		const menu = await openMenu();
 		expect(
-			screen.queryByRole( 'button', { name: 'More actions' } )
-		).toBeNull();
+			within( menu )
+				.getAllByRole( 'menuitem' )
+				.map( ( entry ) => entry.textContent )
+		).toEqual( [ 'How this was read' ] );
 	} );
 
 	it( 'heads the row with the controls it is given', () => {
@@ -803,49 +841,6 @@ describe( 'ItemRow', () => {
 				.getByRole( 'button', { name: 'Mark seen' } )
 				.closest( '.newspack-intelligence__item-head' )
 		).not.toBeNull();
-	} );
-} );
-
-describe( 'ItemPage', () => {
-	const page = ( sort, onSort ) =>
-		render(
-			<ItemPage
-				answer={ { items: [ ITEM ], total: 1, sort } }
-				starts={ [ 0 ] }
-				onStarts={ jest.fn() }
-				onOpenEntity={ jest.fn() }
-				onSort={ onSort }
-			/>
-		);
-
-	it( 'says a page is ranked by importance and switches it to newest first', () => {
-		const onSort = jest.fn();
-		page( 'importance', onSort );
-		expect(
-			screen.getByText( 'Ranked by importance' )
-		).toBeInTheDocument();
-		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Show newest first' } )
-		);
-		expect( onSort ).toHaveBeenCalledWith( 'time' );
-	} );
-
-	it( 'says a page is newest first and switches it to importance', () => {
-		const onSort = jest.fn();
-		page( 'time', onSort );
-		expect( screen.getByText( 'Newest first' ) ).toBeInTheDocument();
-		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Rank by importance' } )
-		);
-		expect( onSort ).toHaveBeenCalledWith( 'importance' );
-	} );
-
-	it( 'offers no switch to a page that does not sort', () => {
-		page( undefined, undefined );
-		expect( screen.queryByText( 'Ranked by importance' ) ).toBeNull();
-		expect(
-			screen.queryByRole( 'button', { name: 'Show newest first' } )
-		).toBeNull();
 	} );
 } );
 
@@ -900,30 +895,6 @@ describe( 'ItemRow exclusion', () => {
 	afterEach( () => {
 		jest.useRealTimers();
 	} );
-
-	// Only the undo window's own timer is faked; the wire runs as it does.
-	const fakeUndoClock = () =>
-		jest.useFakeTimers( {
-			doNotFake: [
-				'Date',
-				'hrtime',
-				'nextTick',
-				'performance',
-				'queueMicrotask',
-				'requestAnimationFrame',
-				'cancelAnimationFrame',
-				'requestIdleCallback',
-				'cancelIdleCallback',
-				'setImmediate',
-				'clearImmediate',
-				'setInterval',
-				'clearInterval',
-			],
-		} );
-	const elapse = ( ms ) =>
-		act( async () => {
-			jest.advanceTimersByTime( ms );
-		} );
 
 	const renderRow = ( props = {} ) =>
 		render(
@@ -1076,5 +1047,485 @@ describe( 'ItemRow exclusion', () => {
 		expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
 			`${ WIRE_COPY.item_key } is excluded from every view`
 		);
+	} );
+} );
+
+describe( 'ItemRow entity removal', () => {
+	const NAMED = {
+		...ITEM,
+		item_key: 'linear:prairie-renewal-44',
+		title: 'Prairie Signal renewal call',
+		entities: [
+			linked( 'prairie-signal', 'subject', true ),
+			linked( 'coastline-weekly', 'subject' ),
+		],
+	};
+	let wire;
+
+	beforeEach( () => {
+		Core.reset();
+		window.NewspackNodesData = pageData();
+		wire = intelWire();
+		wire.replies.reject_link = { ok: true, event_id: 'ev-r' };
+		speak.mockClear();
+	} );
+
+	afterEach( () => {
+		jest.useRealTimers();
+	} );
+
+	const renderRow = ( props = {} ) =>
+		render(
+			<ItemRow
+				item={ NAMED }
+				onOpenEntity={ jest.fn() }
+				canTune={ true }
+				{ ...props }
+			/>
+		);
+	const remove = ( name ) =>
+		fireEvent.click(
+			screen.getByRole( 'button', {
+				name: `Remove ${ name } from this item`,
+			} )
+		);
+
+	it( 'offers a curator an × inside each chip, and a reader none', () => {
+		const { unmount } = renderRow();
+		for ( const name of [ 'prairie-signal', 'coastline-weekly' ] ) {
+			const chip = screen.getByRole( 'button', { name } );
+			expect( chip.parentElement ).toContainElement(
+				screen.getByRole( 'button', {
+					name: `Remove ${ name } from this item`,
+				} )
+			);
+		}
+		unmount();
+		renderRow( { canTune: false } );
+		expect(
+			screen.queryByRole( 'button', { name: /^Remove / } )
+		).toBeNull();
+		expect(
+			screen.getByRole( 'button', { name: 'prairie-signal' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'takes the chip away at once, offers Undo, and rejects the link once the window closes', async () => {
+		renderRow();
+		fakeUndoClock();
+		remove( 'prairie-signal' );
+
+		expect( pills() ).toEqual( [ 'coastline-weekly' ] );
+		expect( speak ).toHaveBeenCalledWith(
+			'Removed prairie-signal from this item.',
+			'polite'
+		);
+		expect(
+			screen.getByRole( 'button', { name: 'Undo' } )
+		).toBeInTheDocument();
+		expect( document.activeElement ).toBe(
+			screen.getByRole( 'button', { name: 'More actions' } )
+		);
+		await elapse( UNDO_MS - 1 );
+		expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+		await elapse( 1 );
+		await waitFor( () =>
+			expect( wire.sent( 'reject_link' ) ).toEqual( [
+				[
+					'--item=linear:prairie-renewal-44',
+					'--entity=organization:prairie-signal',
+				],
+			] )
+		);
+		expect( pills() ).toEqual( [ 'coastline-weekly' ] );
+	} );
+
+	it( 'puts the chip back on Undo and sends nothing', async () => {
+		renderRow();
+		fakeUndoClock();
+		remove( 'coastline-weekly' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Undo' } ) );
+
+		expect( pills() ).toEqual( [ 'prairie-signal', 'coastline-weekly' ] );
+		await elapse( UNDO_MS );
+		expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+	} );
+
+	it( 'puts the chip back with the refusal when the rejection is refused', async () => {
+		wire.replies.reject_link = new Error(
+			'no link: linear:prairie-renewal-44 organization:prairie-signal'
+		);
+		renderRow();
+		fakeUndoClock();
+		remove( 'prairie-signal' );
+		await elapse( UNDO_MS );
+
+		await waitFor( () =>
+			expect( pills() ).toEqual( [
+				'prairie-signal',
+				'coastline-weekly',
+			] )
+		);
+		expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
+			'no link: linear:prairie-renewal-44 organization:prairie-signal'
+		);
+	} );
+} );
+
+describe( 'ItemRow is this about', () => {
+	let wire;
+
+	beforeEach( () => {
+		Core.reset();
+		window.NewspackNodesData = pageData();
+		wire = intelWire();
+		wire.replies.names = ( args ) => ( {
+			entities:
+				'--prefix=Harbor' === args[ 0 ]
+					? [
+							{
+								entity_key: 'organization:harbor-ledger',
+								name: 'Harbor Ledger',
+							},
+							{
+								entity_key: 'organization:harbor-lights',
+								name: 'Harbor Lights',
+							},
+					  ]
+					: [],
+			available: true,
+		} );
+		wire.replies.add_link = { ok: true, event_id: 'ev-a' };
+		speak.mockClear();
+	} );
+
+	const renderRow = ( props = {} ) =>
+		render(
+			<ItemRow
+				item={ ITEM }
+				onOpenEntity={ jest.fn() }
+				canTune={ true }
+				{ ...props }
+			/>
+		);
+	const ask = async () => {
+		const menu = await openMenu();
+		fireEvent.click(
+			within( menu ).getByRole( 'menuitem', { name: 'Is this about…' } )
+		);
+		return screen.findByRole( 'dialog' );
+	};
+	const pick = async ( dialog, name ) => {
+		const field = within( dialog ).getByLabelText( 'Client or company' );
+		fireEvent.change( field, { target: { value: 'Harbor' } } );
+		await waitFor( () =>
+			expect(
+				field.list?.querySelectorAll( 'option' ) ?? []
+			).toHaveLength( 2 )
+		);
+		fireEvent.change( field, { target: { value: name } } );
+	};
+
+	it( 'offers a curator "Is this about…" in More actions, and a reader none', async () => {
+		const { unmount } = renderRow();
+		expect(
+			within( await openMenu() ).getByRole( 'menuitem', {
+				name: 'Is this about…',
+			} )
+		).toBeInTheDocument();
+		unmount();
+		renderRow( { canTune: false } );
+		expect(
+			within( await openMenu() ).queryByRole( 'menuitem', {
+				name: 'Is this about…',
+			} )
+		).toBeNull();
+	} );
+
+	it( 'links the item to the entity picked by name, as its subject', async () => {
+		renderRow();
+		const dialog = await ask();
+		expect(
+			within( dialog ).getByRole( 'heading', { name: 'Is this about…' } )
+		).toBeInTheDocument();
+		const link = within( dialog ).getByRole( 'button', {
+			name: 'Link it',
+		} );
+		expect( link ).toBeDisabled();
+		await pick( dialog, 'Harbor Lights' );
+		expect(
+			within( dialog ).getByRole( 'radio', { name: 'Headlined' } )
+		).toBeChecked();
+		fireEvent.click( link );
+
+		await waitFor( () =>
+			expect( wire.sent( 'add_link' ) ).toEqual( [
+				[
+					`--item=${ ITEM.item_key }`,
+					'--entity=organization:harbor-lights',
+					'--role=subject',
+				],
+			] )
+		);
+		await waitFor( () =>
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+		);
+		expect( speak ).toHaveBeenCalledWith(
+			'Linked Harbor Lights to this item. It shows here once the item is read again.',
+			'polite'
+		);
+	} );
+
+	it( 'links it as mentioned when the curator says so', async () => {
+		renderRow();
+		const dialog = await ask();
+		await pick( dialog, 'Harbor Ledger' );
+		fireEvent.click(
+			within( dialog ).getByRole( 'radio', { name: 'Named in passing' } )
+		);
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Link it' } )
+		);
+
+		await waitFor( () =>
+			expect( wire.sent( 'add_link' ) ).toEqual( [
+				[
+					`--item=${ ITEM.item_key }`,
+					'--entity=organization:harbor-ledger',
+					'--role=mention',
+				],
+			] )
+		);
+	} );
+
+	it( 'keeps the dialog open with the refusal when the link is refused', async () => {
+		wire.replies.add_link = new Error(
+			`already confirmed: ${ ITEM.item_key } organization:harbor-ledger`
+		);
+		renderRow();
+		const dialog = await ask();
+		await pick( dialog, 'Harbor Ledger' );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Link it' } )
+		);
+
+		expect(
+			await within( dialog ).findByRole( 'alert' )
+		).toHaveTextContent(
+			`already confirmed: ${ ITEM.item_key } organization:harbor-ledger`
+		);
+		expect( screen.getByRole( 'dialog' ) ).toBeInTheDocument();
+	} );
+
+	it( 'closes on Cancel, returning focus to More actions, and sends nothing', async () => {
+		renderRow();
+		const dialog = await ask();
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+
+		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expect( document.activeElement ).toBe(
+			screen.getByRole( 'button', { name: 'More actions' } )
+		);
+		expect( wire.sent( 'add_link' ) ).toEqual( [] );
+	} );
+} );
+
+describe( 'ItemRow ranking', () => {
+	const SCORED = {
+		...ITEM,
+		importance: 8,
+		relevance: 7,
+		rank_reason: 'A rival press poached the paper’s whole sports desk.',
+	};
+
+	const why = () => screen.getByRole( 'button', { name: 'Why this ranks' } );
+
+	const said = () => document.querySelector( '.newspack-intelligence__why' );
+
+	it( 'keeps why it ranks behind a closed disclosure until asked', () => {
+		render( <ItemRow item={ SCORED } onOpenEntity={ jest.fn() } /> );
+		expect( why() ).toHaveAttribute( 'aria-expanded', 'false' );
+		expect( why() ).toHaveClass( 'is-link', 'newspack-intelligence__more' );
+		expect( screen.queryByText( SCORED.rank_reason ) ).toBeNull();
+	} );
+
+	it( 'reads the scores in words beside the reason, never as numbers', () => {
+		render( <ItemRow item={ SCORED } onOpenEntity={ jest.fn() } /> );
+		fireEvent.click( why() );
+		expect( why() ).toHaveAttribute( 'aria-expanded', 'true' );
+		expect( why() ).toHaveAttribute( 'aria-controls', said().id );
+		expect( said() ).toHaveTextContent(
+			'High importance, high relevance. A rival press poached the paper’s whole sports desk.'
+		);
+		expect( said().textContent ).not.toMatch( /\d/ );
+	} );
+
+	it.each( [
+		[ 7, 6, 'High importance, medium relevance' ],
+		[ 4, 3, 'Medium importance, low relevance' ],
+		[ 0, 10, 'Low importance, high relevance' ],
+	] )(
+		'reads importance %d and relevance %d as "%s"',
+		( importance, relevance, words ) => {
+			render(
+				<ItemRow
+					item={ { ...SCORED, importance, relevance } }
+					onOpenEntity={ jest.fn() }
+				/>
+			);
+			fireEvent.click( why() );
+			expect( said() ).toHaveTextContent( `${ words }.` );
+		}
+	);
+
+	it( 'says no reason was recorded for an extraction that gave none', () => {
+		render(
+			<ItemRow
+				item={ { ...SCORED, rank_reason: '' } }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		fireEvent.click( why() );
+		expect( said() ).toHaveTextContent(
+			'High importance, high relevance. No reason recorded.'
+		);
+	} );
+
+	it( 'offers no disclosure for an item never scored', () => {
+		render(
+			<ItemRow
+				item={ {
+					...SCORED,
+					importance: null,
+					relevance: null,
+					rank_reason: null,
+				} }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		expect(
+			screen.queryByRole( 'button', { name: 'Why this ranks' } )
+		).toBeNull();
+	} );
+} );
+
+describe( 'ItemRow copies', () => {
+	const meta = () =>
+		document.querySelector( '.newspack-intelligence__meta' ).textContent;
+
+	it( 'says how many other copies a story stands for in its meta line', () => {
+		render(
+			<ItemRow
+				item={ { ...ITEM, copies: 3 } }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		expect( meta() ).toContain( 'and 3 other copies' );
+	} );
+
+	it( 'says one other copy in the singular', () => {
+		render(
+			<ItemRow
+				item={ { ...ITEM, copies: 1 } }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		expect( meta() ).toContain( 'and 1 other copy' );
+		expect( meta() ).not.toContain( 'copies' );
+	} );
+
+	it( 'says nothing of copies for an item with none', () => {
+		render(
+			<ItemRow
+				item={ { ...ITEM, copies: 0 } }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		expect( meta() ).not.toMatch( /cop(y|ies)/ );
+	} );
+} );
+
+describe( 'ItemRow how this was read', () => {
+	let wire;
+
+	beforeEach( () => {
+		Core.reset();
+		wire = intelWire();
+		wire.replies.trace = {
+			item_key: ITEM.item_key,
+			title: ITEM.title,
+			url: ITEM.url,
+			steps: [
+				{
+					step: 'recorded',
+					at: 1790035500,
+					actor: 'machine:source:feed@9.4.1',
+					source: 'feed',
+					tier: 'public',
+				},
+			],
+			available: true,
+		};
+	} );
+
+	const openHowRead = async () => {
+		const menu = await openMenu();
+		fireEvent.click(
+			within( menu ).getByRole( 'menuitem', {
+				name: 'How this was read',
+			} )
+		);
+		return screen.findByRole( 'region', { name: 'How this was read' } );
+	};
+
+	it( 'opens the drawer from More actions, asking how this item was read', async () => {
+		render( <ItemRow item={ ITEM } onOpenEntity={ jest.fn() } /> );
+		const drawer = await openHowRead();
+		expect(
+			await within( drawer ).findByText(
+				'Recorded from Web feed; marked Anyone'
+			)
+		).toBeInTheDocument();
+		expect( wire.sent( 'trace' ) ).toEqual( [ [ ITEM.item_key ] ] );
+	} );
+
+	it( 'moves focus to the drawer’s heading', async () => {
+		render( <ItemRow item={ ITEM } onOpenEntity={ jest.fn() } /> );
+		const drawer = await openHowRead();
+		await waitFor( () =>
+			expect(
+				within( drawer ).getByRole( 'heading', {
+					name: 'How this was read',
+				} )
+			).toHaveFocus()
+		);
+	} );
+
+	it( 'closes on Close, returning focus to More actions', async () => {
+		render( <ItemRow item={ ITEM } onOpenEntity={ jest.fn() } /> );
+		const drawer = await openHowRead();
+		fireEvent.click(
+			within( drawer ).getByRole( 'button', { name: 'Close' } )
+		);
+		expect(
+			screen.queryByRole( 'region', { name: 'How this was read' } )
+		).toBeNull();
+		expect(
+			screen.getByRole( 'button', { name: 'More actions' } )
+		).toHaveFocus();
+	} );
+
+	it( 'closes on Escape, returning focus to More actions', async () => {
+		render( <ItemRow item={ ITEM } onOpenEntity={ jest.fn() } /> );
+		const drawer = await openHowRead();
+		fireEvent.keyDown( drawer, { key: 'Escape' } );
+		expect(
+			screen.queryByRole( 'region', { name: 'How this was read' } )
+		).toBeNull();
+		expect(
+			screen.getByRole( 'button', { name: 'More actions' } )
+		).toHaveFocus();
 	} );
 } );

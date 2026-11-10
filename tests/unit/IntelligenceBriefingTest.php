@@ -18,8 +18,8 @@ require_once __DIR__ . '/../support/counts-statements.php';
 /**
  * The `briefing` read command: what changed in the last seven UTC days, one
  * slice a call. `changes` ranks the window's items about any entity by
- * importance and groups them by the clients they are about, the rest in the
- * no-client group; `signals` answers every client's signals on both axes and
+ * importance, files each under the client it is about, else the first
+ * category lens admitting it, else `otherwise`; `signals` answers every client's signals on both axes and
  * every lens's, through the one read `signals` answers by, in as many
  * statements for twenty clients as for two.
  *
@@ -97,15 +97,16 @@ final class IntelligenceBriefingTest extends TestCase {
 
 	/**
 	 * The window's items naming any entity as subject or mention, ranked by
-	 * importance and grouped by the open clients each is about, each group in
+	 * importance and filed by the open clients each is about, each group in
 	 * the order of its most important item and its items by importance, then
 	 * the newest; an item about two clients sits once, under the first it
 	 * names, so the page lists each item once, and one that is
-	 * not about a client, only about a former client, in the no-client group. An
+	 * not about a client, only about a former client, in `otherwise`. An
 	 * item its own site published, one only tagged with a topic, one linked
 	 * to nothing, one whose only link a curator rejected and one dated before
-	 * the window are left out. Every group carries its role: `client` for a
-	 * client's group, null for the no-client group.
+	 * the window are left out. Every group carries its role, `client` or
+	 * `otherwise`, and names its items by key; each item is answered once, in
+	 * rank order, as `search` answers it, with the categories admitting it.
 	 */
 	public function test_changes_rank_the_week_and_group_it_by_client(): void {
 		$this->about( 'linear:plover-churn', self::PLOVER, 'subject', 'churn_signal', 9.0, 1 );
@@ -127,17 +128,16 @@ final class IntelligenceBriefingTest extends TestCase {
 
 		$this->assertSame(
 			[
-				[ self::PLOVER, 'Plover Quillpost', [ 'linear:plover-churn', 'unthread:plover-call', 'github:plover-ask', 'slack:joint-migration' ] ],
-				[ self::SEDGE, 'Sedgewick Inkfold', [ 'p2:sedge-bug' ] ],
-				[ null, null, [ 'feed:wren-grant' ] ],
+				[ 'role' => 'client', 'key' => self::PLOVER, 'name' => 'Plover Quillpost', 'items' => [ 'linear:plover-churn', 'unthread:plover-call', 'github:plover-ask', 'slack:joint-migration' ] ],
+				[ 'role' => 'client', 'key' => self::SEDGE, 'name' => 'Sedgewick Inkfold', 'items' => [ 'p2:sedge-bug' ] ],
+				[ 'role' => 'otherwise', 'key' => null, 'name' => null, 'items' => [ 'feed:wren-grant' ] ],
 			],
-			\array_map( static fn ( array $group ): array => [ $group['entity_key'], $group['name'], \array_column( $group['items'], 'item_key' ) ], $answer['groups'] )
+			$answer['groups']
 		);
-		$this->assertSame( \array_fill( 0, 3, [ 'entity_key', 'name', 'role', 'items' ] ), \array_map( 'array_keys', $answer['groups'] ) );
-		$this->assertSame( [ 'client', 'client', null ], \array_column( $answer['groups'], 'role' ) );
+		$this->assertSame( [ 'linear:plover-churn', 'p2:sedge-bug', 'feed:wren-grant', 'unthread:plover-call', 'github:plover-ask', 'slack:joint-migration' ], \array_column( $answer['items'], 'item_key' ) );
 		$this->assertSame( [ 6, true ], [ $answer['total'], $answer['available'] ] );
 		$search = \array_column( $this->ci->dispatch( 'search', [ '--entity=' . self::SEDGE ] )['items'], null, 'item_key' );
-		$this->assertSame( $search['p2:sedge-bug'], $answer['groups'][1]['items'][0] );
+		$this->assertSame( $search['p2:sedge-bug'] + [ 'categories' => [], 'otherwise' => true ], $answer['items'][1] );
 	}
 
 	/**
@@ -255,7 +255,7 @@ final class IntelligenceBriefingTest extends TestCase {
 
 		$answer = $this->ci->dispatch( 'briefing', [ 'changes' ] );
 
-		$this->assertSame( [ [ 'unthread:plover-call' ] ], \array_map( static fn ( array $group ): array => \array_column( $group['items'], 'item_key' ), $answer['groups'] ) );
+		$this->assertSame( [ [ 'unthread:plover-call' ] ], \array_column( $answer['groups'], 'items' ) );
 		$this->assertSame( [ 1, 1 ], [ $answer['total'], $answer['summary']['items'] ] );
 	}
 
@@ -264,51 +264,26 @@ final class IntelligenceBriefingTest extends TestCase {
 		$this->about( 'p2:plover-plugin-bug', self::PLOVER, 'subject', 'complaint', 8.0, 1, 2.0 );
 		$this->about( 'linear:plover-leaving', self::PLOVER, 'subject', 'churn_signal', 8.0, 4, 7.0 );
 
-		$this->assertSame( [ 'linear:plover-leaving', 'p2:plover-plugin-bug' ], \array_column( $this->ci->dispatch( 'briefing', [ 'changes' ] )['groups'][0]['items'], 'item_key' ) );
+		$this->assertSame( [ 'linear:plover-leaving', 'p2:plover-plugin-bug' ], \array_column( $this->ci->dispatch( 'briefing', [ 'changes' ] )['items'], 'item_key' ) );
 	}
 
 	/**
-	 * An item about no open client but about an entity holding an open
-	 * `operator_product` role, under any key merged into it, sits in that
-	 * role's group, in the order of its most important item; one about a
-	 * client too sits under the client alone, and one about a product whose
-	 * role ended sits in the no-client group.
+	 * No group is filed by the operator's product role: an item about a
+	 * holder of it and about no client, with no category named, is filed
+	 * under `otherwise`.
 	 */
-	public function test_changes_group_operator_work_under_its_role(): void {
+	public function test_no_group_is_filed_by_the_product_role(): void {
 		$product = 'product:tern-newsletters';
-		$annex   = 'product:tern-mailer';
-		$retired = 'product:tern-classic';
-		$this->seed(
-			self::entity( $product, 'Tern Newsletters' ),
-			self::entity( $annex, 'Tern Mailer' ),
-			self::entity( $retired, 'Tern Classic' ),
-			self::merged( $annex, $product ),
-			self::role( $product, 'operator_product' ),
-			[ Intel_Event::make( 'role_ended', [ 'entity_key' => $retired, 'role' => 'operator_product', 'from_ts' => self::$jan_01, 'to_ts' => self::back( 30 ) ], 'user:41', 'fixture-9' ) ]
-		);
+		$this->seed( self::entity( $product, 'Tern Newsletters' ), self::role( $product, 'operator_product' ) );
 		$this->about( 'github:tern-crash', $product, 'subject', 'incident', 8.5, 2 );
-		$this->about( 'github:tern-mailer-bug', $annex, 'mention', 'complaint', 6.0, 1 );
-		$this->about( 'linear:plover-tern-ask', self::PLOVER, 'subject', 'feature_request', 7.0, 3 );
-		$this->seed( self::link( 'link_asserted', 'linear:plover-tern-ask', $product, 'mention', 'name', 1.0, self::back( 3 ) ) );
-		$this->about( 'feed:tern-classic-sunset', $retired, 'subject', 'other', 9.0, 2 );
 
-		$groups = $this->ci->dispatch( 'briefing', [ 'changes' ] )['groups'];
-
-		$this->assertSame(
-			[
-				[ 'entity_key' => null, 'name' => null, 'role' => null, 'items' => [ 'feed:tern-classic-sunset' ] ],
-				[ 'entity_key' => null, 'name' => null, 'role' => 'operator_product', 'items' => [ 'github:tern-crash', 'github:tern-mailer-bug' ] ],
-				[ 'entity_key' => self::PLOVER, 'name' => 'Plover Quillpost', 'role' => 'client', 'items' => [ 'linear:plover-tern-ask' ] ],
-			],
-			\array_map( static fn ( array $group ): array => \array_merge( $group, [ 'items' => \array_column( $group['items'], 'item_key' ) ] ), $groups )
-		);
+		$this->assertSame( [ [ 'role' => 'otherwise', 'key' => null, 'name' => null, 'items' => [ 'github:tern-crash' ] ] ], $this->ci->dispatch( 'briefing', [ 'changes' ] )['groups'] );
 	}
 
 	/**
-	 * An item about more than three open clients is filed once: in the
-	 * `operator_product` group when it is about a holder of that role, else
-	 * in the group of role null, its entities still naming every client. An
-	 * item about three sits once, under the first of them it names.
+	 * An item about more than three open clients is filed once, as an item
+	 * about no client is, under `otherwise`, its entities still naming every
+	 * client. An item about three sits once, under the first of them it names.
 	 */
 	public function test_an_item_about_many_clients_is_filed_once(): void {
 		$dunlin  = 'organization:dunlin-dispatch';
@@ -335,17 +310,17 @@ final class IntelligenceBriefingTest extends TestCase {
 			$this->seed( self::link( 'link_asserted', 'slack:trio-migration', $entity, 'mention', 'name', 1.0, self::back( 3 ) ) );
 		}
 
-		$groups = $this->ci->dispatch( 'briefing', [ 'changes' ] )['groups'];
+		$answer = $this->ci->dispatch( 'briefing', [ 'changes' ] );
+		$groups = $answer['groups'];
 
 		$this->assertSame(
 			[
-				[ null, 'operator_product', [ 'p2:election-roundup' ] ],
-				[ null, null, [ 'p2:election-digest' ] ],
 				[ self::PLOVER, 'client', [ 'slack:trio-migration' ] ],
+				[ null, 'otherwise', [ 'p2:election-roundup', 'p2:election-digest' ] ],
 			],
-			\array_map( static fn ( array $group ): array => [ $group['entity_key'], $group['role'], \array_column( $group['items'], 'item_key' ) ], $groups )
+			\array_map( static fn ( array $group ): array => [ $group['key'], $group['role'], $group['items'] ], $groups )
 		);
-		$named = \array_column( $groups[0]['items'][0]['entities'], 'entity_key' );
+		$named = \array_column( $answer['items'][0]['entities'], 'entity_key' );
 		\sort( $named );
 		$this->assertSame( [ $dunlin, $godwit, self::PLOVER, self::SEDGE, $product ], $named );
 	}
@@ -356,7 +331,7 @@ final class IntelligenceBriefingTest extends TestCase {
 		$this->seed( self::item( 'linear:plover-edge', 'Plover edge', 'linear', 'public', self::$oct_20 - 6 * self::DAY - 12 * 3600 + 60 ), self::link( 'link_asserted', 'linear:plover-edge', self::PLOVER, 'subject', 'name', 1.0, self::$oct_20 ) );
 		$this->seed( self::item( 'linear:plover-eve', 'Plover eve', 'linear', 'public', self::$oct_20 - 6 * self::DAY - 12 * 3600 - 60 ), self::link( 'link_asserted', 'linear:plover-eve', self::PLOVER, 'subject', 'name', 1.0, self::$oct_20 ) );
 
-		$this->assertSame( [ 'linear:plover-first-day', 'linear:plover-edge' ], \array_column( $this->ci->dispatch( 'briefing', [ 'changes' ] )['groups'][0]['items'], 'item_key' ) );
+		$this->assertSame( [ 'linear:plover-first-day', 'linear:plover-edge' ], \array_column( $this->ci->dispatch( 'briefing', [ 'changes' ] )['items'], 'item_key' ) );
 	}
 
 	/** The changes answer the CHANGES most important items, and count every one. */
@@ -368,9 +343,107 @@ final class IntelligenceBriefingTest extends TestCase {
 		$answer = $this->ci->dispatch( 'briefing', [ 'changes' ] );
 
 		$this->assertSame( Graph_Query::DEFAULT_LIMIT + 1, $answer['total'] );
-		$keys = \array_column( $answer['groups'][0]['items'], 'item_key' );
+		$keys = $answer['groups'][0]['items'];
 		$this->assertCount( Graph_Query::DEFAULT_LIMIT, $keys );
 		$this->assertSame( [ 'feed:wren-note-0', 'feed:wren-note-49' ], [ $keys[0], $keys[ Graph_Query::DEFAULT_LIMIT - 1 ] ] );
+	}
+
+	/** `changes` answers the order its items rank in. */
+	public function test_changes_answer_their_order(): void {
+		$this->about( 'linear:plover-churn', self::PLOVER, 'subject', 'churn_signal', 9.0, 1 );
+
+		$this->assertSame( 'importance', $this->ci->dispatch( 'briefing', [ 'changes' ] )['order'] );
+	}
+
+	/**
+	 * Given lenses, each item answers the categories admitting it, in the
+	 * order named, and `otherwise` when that list is empty, and each category its
+	 * count: an award about an open client is in "Desk awards", filed under
+	 * the client; an item about a partner is in "Partner desk", filed under
+	 * it; an item neither admits is `otherwise`.
+	 */
+	public function test_changes_file_each_item_under_the_named_lenses(): void {
+		$heron = 'organization:heron-wire';
+		$this->seed(
+			self::entity( $heron, 'Heron Wire' ),
+			self::role( $heron, 'partner' ),
+			self::lens( 'desk-awards', 'Desk awards', [ 'kinds' => [ 'award' ], 'roles' => [ 'client' ] ] ),
+			self::lens( 'partner-desk', 'Partner desk', [ 'roles' => [ 'partner' ] ] )
+		);
+		$this->about( 'feed:plover-prize', self::PLOVER, 'subject', 'award', 7.5, 1 );
+		$this->about( 'feed:heron-launch', $heron, 'subject', 'launch', 8.5, 2 );
+		$this->about( 'feed:wren-grant', self::WREN, 'subject', 'funding', 6.5, 3 );
+
+		$answer = $this->ci->dispatch( 'briefing', [ 'changes', '--lenses=desk-awards,partner-desk' ] );
+
+		$this->assertSame(
+			[
+				'feed:heron-launch' => [ [ 'partner-desk' ], false ],
+				'feed:plover-prize' => [ [ 'desk-awards' ], false ],
+				'feed:wren-grant'   => [ [], true ],
+			],
+			\array_combine( \array_column( $answer['items'], 'item_key' ), \array_map( static fn ( array $item ): array => [ $item['categories'], $item['otherwise'] ], $answer['items'] ) )
+		);
+		$this->assertSame(
+			[
+				[ 'role' => 'client', 'key' => self::PLOVER, 'name' => 'Plover Quillpost', 'items' => [ 'feed:plover-prize' ] ],
+				[ 'role' => 'category', 'key' => 'partner-desk', 'name' => 'Partner desk', 'items' => [ 'feed:heron-launch' ] ],
+				[ 'role' => 'otherwise', 'key' => null, 'name' => null, 'items' => [ 'feed:wren-grant' ] ],
+			],
+			$answer['groups']
+		);
+		$this->assertSame(
+			[
+				[ 'lens_key' => 'desk-awards', 'name' => 'Desk awards', 'count' => 1 ],
+				[ 'lens_key' => 'partner-desk', 'name' => 'Partner desk', 'count' => 1 ],
+			],
+			$answer['categories']
+		);
+		$this->assertSame( 1, $answer['otherwise'] );
+	}
+
+	/** At most CATEGORY_MAX lenses file the week; a ninth is refused. */
+	public function test_changes_refuses_a_ninth_lens(): void {
+		$keys = [];
+		for ( $n = 1; $n <= 9; $n++ ) {
+			$this->seed( self::lens( "desk-{$n}", "Desk {$n}", [ 'kinds' => [ 'award' ] ] ) );
+			$keys[] = "desk-{$n}";
+		}
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'lenses names at most 8 lenses' );
+
+		$this->ci->dispatch( 'briefing', [ 'changes', '--lenses=' . \implode( ',', $keys ) ] );
+	}
+
+	/** A lens never saved is refused by its key. */
+	public function test_changes_refuses_a_lens_never_saved(): void {
+		$this->seed( self::lens( 'desk-awards', 'Desk awards', [ 'kinds' => [ 'award' ] ] ) );
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'no lens: desk-q3' );
+
+		$this->ci->dispatch( 'briefing', [ 'changes', '--lenses=desk-awards,desk-q3' ] );
+	}
+
+	/** Lenses file the changes alone, so `signals` refuses them. */
+	public function test_signals_refuse_lenses(): void {
+		$this->seed( self::lens( 'desk-awards', 'Desk awards', [ 'kinds' => [ 'award' ] ] ) );
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'lenses apply to changes' );
+
+		$this->ci->dispatch( 'briefing', [ 'signals', '--lenses=desk-awards' ] );
+	}
+
+	/**
+	 * `signals` answers `judged`: false until a subject holds the history
+	 * its rules judge by, true once one does, though nothing signals.
+	 */
+	public function test_signals_answer_whether_any_subject_was_judged(): void {
+		$this->assertFalse( $this->ci->dispatch( 'briefing', [ 'signals' ] )['judged'] );
+
+		$this->published( self::SEDGE, [ 0 => 5, 1 => 5, 2 => 5, 3 => 5, 4 => 5, 5 => 5, 6 => 5, 7 => 5, 8 => 5, 9 => 5 ] );
+		$answer = $this->ci->dispatch( 'briefing', [ 'signals' ] );
+
+		$this->assertSame( [ [], [], true ], [ $answer['clients'], $answer['lenses'], $answer['judged'] ] );
 	}
 
 	/**

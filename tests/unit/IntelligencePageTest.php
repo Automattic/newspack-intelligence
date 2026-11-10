@@ -9,25 +9,37 @@ declare(strict_types=1);
 
 namespace Newspack_Intelligence\Tests;
 
+use Newspack_Intelligence\Context_A8C_P2_Node;
 use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
+use Newspack_Intelligence\Intelligence_CI_Node;
 use Newspack_Intelligence\Intelligence_Health;
+use Newspack_Intelligence\Prompts;
 use Newspack_Intelligence\Restricted_Settings;
+use Newspack_Intelligence\Source_Node;
+use Newspack_Intelligence\Unthread_Source_Node;
+use Newspack_Nodes\Admin\Admin;
 use Newspack_Nodes\Bootstrap;
 use Newspack_Nodes\Capabilities;
+use Newspack_Nodes\Composition;
+use Newspack_Nodes\Composition_Store;
 use Newspack_Nodes\Config;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use function Newspack_Intelligence\enqueue_intelligence_assets;
 use function Newspack_Intelligence\register_intelligence_admin_page;
 use const Newspack_Intelligence\INTELLIGENCE_MENU_SLUG;
 use const Newspack_Intelligence\INTELLIGENCE_MOUNT_ID;
+use const Newspack_Intelligence\LAYOUT_EDITOR_HANDLE;
 
 require_once __DIR__ . '/../support/signs-in-users.php';
+require_once __DIR__ . '/../support/declares-intelligence-blocks.php';
 
 final class IntelligencePageTest extends TestCase {
 	use Signs_In_Users;
+	use Declares_Intelligence_Blocks;
 
 	/** The hook suffix WordPress gives the Intelligence page. */
 	private const PAGE_HOOK = 'toplevel_page_newspack-intelligence';
@@ -44,7 +56,9 @@ final class IntelligencePageTest extends TestCase {
 		$GLOBALS['_localized_scripts'] = [];
 		$GLOBALS['_style_data']        = [];
 		$_GET                          = [];
+		( new Admin() )->register_dataviews();
 		\add_filter( 'newspack_nodes/capability_map', static fn ( array $map ): array => [ Capabilities::READ => self::READ_CAP ] + $map );
+		$this->declare_intelligence_blocks();
 	}
 
 	protected function tearDown(): void {
@@ -60,9 +74,110 @@ final class IntelligencePageTest extends TestCase {
 			$_POST
 		);
 		self::forget_users();
+		$this->forget_compositions();
+		\wp_shim_reset_block_editor();
+		unset( $GLOBALS['_registered_scripts'] );
 		Topology_Registry::reset();
 		Topology_Analyzer::reset_caches();
 		parent::tearDown();
+	}
+
+	/**
+	 * A reader's page naming an edit loads no editor and is sent no schema,
+	 * and reads the layout as every reader does; a curator's loads the
+	 * editor for the page it names, its schemas localized on the editor's
+	 * bundle; and the page's own bundle carries no block-editor script.
+	 */
+	public function test_a_readers_page_never_loads_the_editor(): void {
+		$this->declare_probe( 'newspack-intelligence/briefing' );
+		Composition_Store::save( 'newspack-intelligence/briefing', '<!-- wp:newspack-intelligence/probe {"heading":"Heron desk"} /-->' );
+		$_GET = [
+			'page' => INTELLIGENCE_MENU_SLUG,
+			'edit' => 'briefing',
+		];
+
+		Capabilities::$session_scope = Capabilities::READ;
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+
+		$handles = \array_column( $GLOBALS['_enqueued_scripts'], 0 );
+		$this->assertNotContains( 'wp-block-editor', $handles );
+		$this->assertNotContains( LAYOUT_EDITOR_HANDLE, $handles );
+		$this->assertArrayNotHasKey( LAYOUT_EDITOR_HANDLE, $GLOBALS['_localized_scripts'] );
+		$compositions = $this->localized( 'newspack-intelligence' )['compositions'];
+		$this->assertSame( [ 'newspack-intelligence/briefing', 'newspack-intelligence/lens', 'newspack-intelligence/entity' ], \array_keys( $compositions ) );
+		$this->assertSame( [ 'saved', 'Heron desk' ], [ $compositions['newspack-intelligence/briefing']['source'], $compositions['newspack-intelligence/briefing']['blocks'][0]['attributes']['heading'] ] );
+		$this->assertSame( 'default', $compositions['newspack-intelligence/entity']['source'] );
+
+		$GLOBALS['_enqueued_scripts'] = [];
+		Capabilities::$session_scope  = Capabilities::TUNE;
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+
+		$handles = \array_column( $GLOBALS['_enqueued_scripts'], 0 );
+		$this->assertContains( 'wp-block-editor', $handles );
+		$this->assertContains( LAYOUT_EDITOR_HANDLE, $handles );
+		$editor = $GLOBALS['_localized_scripts'][ LAYOUT_EDITOR_HANDLE ];
+		$this->assertSame( Composition::EDITOR_GLOBAL, $editor['object_name'] );
+		$this->assertSame( 'newspack-intelligence/briefing', $editor['data']['context'] );
+		$this->assertSame( \array_keys( Composition::schemas( 'newspack-intelligence/briefing' )['blocks'] ), \array_keys( $editor['data']['blocks'] ) );
+		$this->assertContains( 'newspack-intelligence/probe', \array_keys( $editor['data']['blocks'] ) );
+		$this->assertSame( \plugins_url( 'build/layout-editor/layout-editor.js', \dirname( __DIR__, 2 ) . '/newspack-intelligence.php' ), $GLOBALS['_registered_scripts'][ LAYOUT_EDITOR_HANDLE ]['src'] );
+		$this->assertArrayHasKey( LAYOUT_EDITOR_HANDLE, $GLOBALS['_enqueued_styles'] );
+		$this->assertSame( 'replace', $GLOBALS['_style_data'][ LAYOUT_EDITOR_HANDLE ]['rtl'] );
+
+		$asset = require \dirname( __DIR__, 2 ) . '/build/intelligence/index.asset.php';
+		$this->assertNotContains( 'wp-block-editor', $asset['dependencies'] );
+		$this->assertNotContains( 'wp-blocks', $asset['dependencies'] );
+	}
+
+	/** An edit naming a page that is not composed loads no editor, for a curator either. */
+	public function test_an_edit_of_a_page_not_composed_loads_nothing(): void {
+		Capabilities::$session_scope = Capabilities::TUNE;
+		$_GET                        = [
+			'page' => INTELLIGENCE_MENU_SLUG,
+			'edit' => 'folders',
+		];
+
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+
+		$this->assertNotContains( 'wp-block-editor', \array_column( $GLOBALS['_enqueued_scripts'], 0 ) );
+		$this->assertArrayNotHasKey( LAYOUT_EDITOR_HANDLE, $GLOBALS['_registered_scripts'] ?? [] );
+	}
+
+	/**
+	 * A stored layout that no longer reads stands where the layout would,
+	 * and the page still renders: a reader's page holds the class word, an
+	 * operator's the refusal.
+	 *
+	 * @param string $scope The session scope the page renders under.
+	 * @param string $error What the page holds for the lens layout.
+	 */
+	#[DataProvider( 'unread_layouts' )]
+	public function test_a_layout_that_no_longer_reads_is_sent_as_its_refusal( string $scope, string $error ): void {
+		\update_option( Composition_Store::OPTION_PREFIX . 'newspack-intelligence/lens', [ 'markup' => '<!-- wp:newspack-intelligence/retired /-->', 'actor' => 'heron-ops', 'ts' => 1792000000.5 ] );
+		Capabilities::$session_scope = $scope;
+		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];
+
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+
+		$this->assertSame(
+			[
+				'context' => 'newspack-intelligence/lens',
+				'error'   => $error,
+			],
+			$this->localized( 'newspack-intelligence' )['compositions']['newspack-intelligence/lens']
+		);
+	}
+
+	/**
+	 * Each scope, and what its page holds for a layout that no longer reads.
+	 *
+	 * @return array<string,array{0:string,1:string}>
+	 */
+	public static function unread_layouts(): array {
+		return [
+			'a reader'    => [ Capabilities::READ, 'this layout could not be read' ],
+			'an operator' => [ Capabilities::MANAGE, 'composition newspack-intelligence/lens: newspack-intelligence/retired is not a declared block' ],
+		];
 	}
 
 	public function test_a_reader_gets_the_intelligence_menu_under_the_read_capability(): void {
@@ -173,7 +288,7 @@ final class IntelligencePageTest extends TestCase {
 					[ 'field' => 'kinds', 'option' => 'kind', 'values' => Intel_Event::ITEM_KINDS ],
 					[ 'field' => 'topics', 'option' => 'topic', 'values' => null ],
 					[ 'field' => 'roles', 'option' => 'role', 'values' => Intel_Event::ROLES ],
-					[ 'field' => 'sources', 'option' => 'source', 'values' => null ],
+					[ 'field' => 'sources', 'option' => 'source', 'values' => Intel_Event::SOURCES ],
 				],
 			],
 			\array_filter( $vocabulary, static fn ( string $map ): bool => ! \str_ends_with( $map, 'Words' ), ARRAY_FILTER_USE_KEY )
@@ -241,7 +356,7 @@ final class IntelligencePageTest extends TestCase {
 		$this->assertSame( Graph_Query::buckets(), \array_keys( $vocabulary['spanWords'] ) );
 		$this->assertSame( Graph_Query::trend_axes(), \array_keys( $vocabulary['axisWords'] ) );
 		$this->assertSame( [ 'accepted', 'proposed', 'rejected' ], \array_keys( $vocabulary['stateWords'] ) );
-		$this->assertSame( [ 'github', 'feed', 'p2', 'linear', 'slack', 'unthread' ], \array_keys( $vocabulary['sourceWords'] ) );
+		$this->assertSame( Intel_Event::SOURCES, \array_keys( $vocabulary['sourceWords'] ) );
 		$this->assertSame( [ 'spike', 'burst', 'drop', 'silent' ], \array_keys( $vocabulary['signalWords'] ) );
 		$this->assertSame( [ 'collection', 'backlog', 'dropped', 'extraction', 'calls' ], \array_keys( $vocabulary['healthWords'] ) );
 		foreach ( $vocabulary as $map => $words ) {
@@ -265,6 +380,37 @@ final class IntelligencePageTest extends TestCase {
 		$this->assertSame( 'Internal', $vocabulary['tierWords']['internal'] );
 		$this->assertSame( 'Month', $vocabulary['spanWords']['month'] );
 		$this->assertSame( 'Kind of news', $vocabulary['axisWords']['kind'] );
+	}
+
+	/**
+	 * Every source a Source_Node class records is one of
+	 * `Intel_Event::SOURCES`, every one of them is recorded by some class,
+	 * and each list naming sources reads that one: the page's words, the
+	 * lens list's vocabulary, the schema's source arg and every source a
+	 * decision labels.
+	 */
+	public function test_every_source_a_source_node_records_has_a_word_and_the_lists_agree(): void {
+		$includes = \realpath( \dirname( __DIR__, 2 ) . '/includes' );
+		$recorded = [];
+		foreach ( require \dirname( __DIR__, 2 ) . '/vendor/composer/autoload_classmap.php' as $class => $file ) {
+			if ( \str_starts_with( (string) \realpath( $file ), (string) $includes ) && \is_subclass_of( $class, Source_Node::class ) && ! ( new \ReflectionClass( $class ) )->isAbstract() ) {
+				$recorded[ $class ] = \constant( "{$class}::SOURCE" );
+			}
+		}
+		$this->assertCount( 9, $recorded );
+		$this->assertSame( [], \array_diff( $recorded, Intel_Event::SOURCES ), 'a source with no place in Intel_Event::SOURCES' );
+		$this->assertSame( [], \array_values( \array_diff( Intel_Event::SOURCES, $recorded ) ), 'a source no class records' );
+		$this->assertSame( 'unthread', Unthread_Source_Node::SOURCE );
+		$this->assertSame( 'p2', Context_A8C_P2_Node::SOURCE );
+
+		$this->assertSame( Intel_Event::SOURCES, \array_keys( $this->vocabulary()['sourceWords'] ) );
+		$lists = \array_column( $this->vocabulary()['lensLists'], 'values', 'field' );
+		$this->assertSame( Intel_Event::SOURCES, $lists['sources'] );
+		$this->assertSame( Intel_Event::SOURCES, Graph_Query::LENS_LISTS['sources'][1] );
+		$search = \array_column( \array_column( Intelligence_CI_Node::node_schema()['commands'], 'args', 'name' )['search'], 'description', 'name' );
+		$this->assertStringEndsWith( ': ' . \implode( ', ', Intel_Event::SOURCES ) . '. Repeat it to match any.', $search['source'] );
+		$labels = ( new \ReflectionClassConstant( Prompts::class, 'SOURCE_LABELS' ) )->getValue();
+		$this->assertSame( [], \array_diff( \array_keys( $labels ), Intel_Event::SOURCES ) );
 	}
 
 	/** A deployment that names no operator words the kinds and roles that would name it without a name. */
@@ -393,6 +539,16 @@ final class IntelligencePageTest extends TestCase {
 			'an operator with no name' => [ 'cmd intel:llm:config set_operator', 'missing required argument' ],
 			'a non-http api url'       => [ 'cmd intel:llm:config set_api_url ftp://relay-4417.example', 'ftp://relay-4417.example' ],
 		];
+	}
+
+	public function test_the_page_enqueues_the_dataviews_its_bundle_reads(): void {
+		Capabilities::$session_scope = Capabilities::READ;
+		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];
+
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+
+		$this->assertContains( Admin::DATAVIEWS_HANDLE, \array_column( $GLOBALS['_enqueued_scripts'], 0 ) );
+		$this->assertArrayHasKey( Admin::DATAVIEWS_HANDLE, $GLOBALS['_enqueued_styles'] );
 	}
 
 	public function test_the_bundle_stamps_this_plugins_version_in_the_header(): void {

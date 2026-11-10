@@ -90,6 +90,48 @@
 				"by": "kind",
 				"bucket": "week"
 			}
+		},
+		"product-updates": {
+			"name": "Product updates",
+			"description": "Items about the products the operator runs.",
+			"filters": {
+				"roles": [
+					"operator_product"
+				]
+			}
+		},
+		"publisher-news": {
+			"name": "Publisher news",
+			"description": "Items about the publishers the operator serves.",
+			"filters": {
+				"roles": [
+					"client"
+				]
+			}
+		},
+		"partner-news": {
+			"name": "Partner news",
+			"description": "Items about the operator's partners.",
+			"filters": {
+				"roles": [
+					"partner"
+				]
+			}
+		},
+		"publisher-awards": {
+			"name": "Publisher awards",
+			"description": "Awards the operator's publishers won.",
+			"filters": {
+				"kinds": [
+					"award"
+				],
+				"roles": [
+					"client"
+				]
+			}
 		}
+	},
+	"layouts": {
+		"briefing": "<!-- wp:newspack-intelligence/ask /-->\n<!-- wp:newspack-intelligence/since /-->\n<!-- wp:newspack-intelligence/needs-attention /-->\n<!-- wp:newspack-intelligence/watches /-->\n<!-- wp:newspack-intelligence/week {\"categories\":[\"product-updates\",\"publisher-news\",\"partner-news\",\"publisher-awards\"],\"otherwise\":\"Industry news\"} /-->\n"
 	}
 }

@@ -1,22 +1,45 @@
-import { Button, DropdownMenu, SnackbarList } from '@wordpress/components';
+import {
+	Button,
+	DropdownMenu,
+	RadioControl,
+	SnackbarList,
+} from '@wordpress/components';
 import { useEffect, useId, useRef, useState } from '@wordpress/element';
 import { archive, moreHorizontal } from '@wordpress/icons';
-import { __, sprintf } from '@wordpress/i18n';
+import { __, _n, sprintf } from '@wordpress/i18n';
 import { Core } from '@newspack-nodes/runtime';
+import Modal, { ModalHeader } from '@newspack-nodes/shared/components/Modal';
 import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
+import { primaryButtonClass } from '@newspack-nodes/shared/utils/buttonClass';
 import { useDeferredWrite } from '../hooks/useDeferredWrite';
-import { ITEM_READS, useIntelWrite } from '../hooks/useIntelCommand';
+import { useHeld } from '../hooks/useHeld';
+import {
+	ENTITY_READS,
+	ITEM_READS,
+	useIntelWrite,
+} from '../hooks/useIntelCommand';
 import Cite, { EntityChip } from './Cite';
-import Pager from './Pager';
+import EntityPicker, { useEntityNames } from './EntityPicker';
+import HowRead from './HowRead';
 import Refusal from './Refusal';
-import { dayLabel, safeHref, utcDay } from './format';
+import UndoSnackbar from './UndoSnackbar';
+import { dayLabel, entityName, reasonText, safeHref, utcDay } from './format';
 import { word } from './words';
 
 /** The most subjects an item's row leads with as pills. */
 const LEAD_PILLS = 3;
 
-/** How long the snackbar saying whether a link was copied stands. */
-const COPIED_MS = 4000;
+/** How long a snackbar saying what a menu action did stands. */
+const SAID_MS = 4000;
+
+/** The link roles a curator links an item to an entity in. */
+const LINK_ROLES = [ 'subject', 'mention' ];
+
+/** The least score, of the extraction's 0 to 10, that reads as high. */
+const HIGH_SCORE = 7;
+
+/** The least score that reads as medium; below it reads as low. */
+const MEDIUM_SCORE = 4;
 
 /**
  * The control saving an item to a folder, for a caller who may curate;
@@ -45,9 +68,14 @@ export function SaveButton( { item, onSave } ) {
  * (`Excerpt`), its entities as pills (`Pills`); for a caller who may curate,
  * Save (`SaveButton`), which moves into the row's menu (`MoreActions`) when
  * the page is narrow, and for one holding tune the text action excluding it
- * from every view; then any control the view adds, and the menu. An
- * exclusion puts the row behind its Undo (`Excluding`) until it is sent; a
- * refused one puts the row back with the refusal.
+ * from every view; then any control the view adds, and the menu, whose
+ * "How this was read" opens the drawer (`HowRead`) under the row, focus
+ * returning to the menu's toggle when it closes. Why the item ranks sits
+ * behind a disclosure (`WhyRanks`). An exclusion puts the row behind its
+ * Undo (`Excluding`) until it is sent; a refused one puts the row back with
+ * the refusal. For a reader holding tune, each chip holds an × rejecting
+ * that link (`useChipRemoval()`), and the menu offers "Is this about…"
+ * (`AboutDialog`), linking the item to an entity picked by name.
  *
  * @param {Object}                    props
  * @param {Object}                    props.item         The item.
@@ -65,9 +93,12 @@ export default function ItemRow( {
 	children,
 } ) {
 	const narrow = useNarrow();
-	const pills = pillsOf( item.entities ?? [] );
+	const removal = useChipRemoval( item );
+	const pills = pillsOf( removal.entities );
 	const [ excluding, setExcluding ] = useState( false );
 	const [ refusal, setRefusal ] = useState( null );
+	const [ reading, setReading ] = useState( false );
+	const menu = useId();
 	if ( excluding ) {
 		return (
 			<Excluding
@@ -82,7 +113,7 @@ export default function ItemRow( {
 	}
 	return (
 		<li className="newspack-intelligence__item">
-			<Refusal error={ refusal } />
+			<Refusal error={ refusal ?? removal.refusal } />
 			<div className="newspack-intelligence__item-head">
 				<strong className="newspack-intelligence__item-title">
 					<Cite url={ item.url } title={ item.title } />
@@ -109,20 +140,46 @@ export default function ItemRow( {
 					subject={ pills.lead[ 0 ] }
 					onOpenEntity={ onOpenEntity }
 					onSave={ narrow ? onSave : undefined }
+					onHowRead={ () => setReading( true ) }
+					canLink={ canTune }
+					toggleId={ menu }
 				/>
 			</div>
 			<Meta item={ item } />
 			{ item.summary && <p>{ item.summary }</p> }
 			<Excerpt item={ item } />
-			<Pills { ...pills } onOpenEntity={ onOpenEntity } />
+			<WhyRanks item={ item } />
+			<Pills
+				{ ...pills }
+				onOpenEntity={ onOpenEntity }
+				onRemove={
+					canTune
+						? ( entity ) => {
+								removal.remove( entity );
+								document.getElementById( menu ).focus();
+						  }
+						: undefined
+				}
+			/>
+			<UndoSnackbar latest={ removal.latest } onUndo={ removal.undo } />
+			{ reading && (
+				<HowRead
+					item={ item }
+					onClose={ () => {
+						setReading( false );
+						document.getElementById( menu ).focus();
+					} }
+				/>
+			) }
 		</li>
 	);
 }
 
 /**
  * A row's meta line as cells, joined without a mark: the source's initial as its
- * icon and its word, the item's UTC day (`dayLabel()`), its kind's word as a badge,
- * and its kind check (`kindCheckText()`); a part the item lacks is left out.
+ * icon and its word, the item's UTC day (`dayLabel()`), how many other copies
+ * of its story the reader may read, its kind's word as a badge, and its kind
+ * check (`kindCheckText()`); a part the item lacks is left out.
  *
  * @param {Object} props
  * @param {Object} props.item The item.
@@ -144,6 +201,20 @@ function Meta( { item } ) {
 				{ source }
 			</span>
 			{ day && <time dateTime={ day }>{ dayLabel( day, today ) }</time> }
+			{ 0 < item.copies && (
+				<span>
+					{ sprintf(
+						/* translators: %d: the story's other copies the reader may read. */
+						_n(
+							'and %d other copy',
+							'and %d other copies',
+							item.copies,
+							'newspack-intelligence'
+						),
+						item.copies
+					) }
+				</span>
+			) }
 			{ item.kind && (
 				<span className="newspack-nodes-status-badge is-neutral">
 					{ word( 'kindWords', item.kind ) }
@@ -173,27 +244,48 @@ const copyLink = ( href ) =>
 
 /**
  * The row's "More actions" menu: "Open profile" for the subject its first
- * pill shows, "Copy link" for a URL it would link, whose outcome stands as a
- * polite snackbar for COPIED_MS, and "Save to folder" when given a save;
- * none when it holds none of them.
+ * pill shows, "Copy link" for a URL it would link, "Save to folder" when
+ * given a save, "Is this about…" for a curator, opening `AboutDialog`, and
+ * "How this was read". What a copy or a link did stands as a polite
+ * snackbar for SAID_MS.
  *
  * @param {Object}                 props
  * @param {Object}                 props.item         The item.
  * @param {?Object}                [props.subject]    The entity its first pill shows.
  * @param {(key: string) => void}  props.onOpenEntity Opens an entity.
  * @param {(item: Object) => void} [props.onSave]     Saves the item, when Save sits in the menu.
- * @return {?import('react').ReactElement} The menu.
+ * @param {() => void}             props.onHowRead    Opens how the item was read.
+ * @param {boolean}                [props.canLink]    Whether the reader may link the item to an entity.
+ * @param {string}                 props.toggleId     The menu toggle's id.
+ * @return {import('react').ReactElement} The menu.
  */
-function MoreActions( { item, subject, onOpenEntity, onSave } ) {
-	const [ copied, setCopied ] = useState( null );
-	const copies = useRef( 0 );
+function MoreActions( {
+	item,
+	subject,
+	onOpenEntity,
+	onSave,
+	onHowRead,
+	canLink,
+	toggleId,
+} ) {
+	const [ said, setSaid ] = useState( null );
+	const [ asking, setAsking ] = useState( false );
+	const notices = useRef( 0 );
 	useEffect( () => {
-		if ( ! copied ) {
+		if ( ! said ) {
 			return undefined;
 		}
-		const timer = setTimeout( () => setCopied( null ), COPIED_MS );
+		const timer = setTimeout( () => setSaid( null ), SAID_MS );
 		return () => clearTimeout( timer );
-	}, [ copied ] );
+	}, [ said ] );
+	const say = ( content ) => {
+		notices.current += 1;
+		setSaid( { id: notices.current, content } );
+	};
+	const closeAsking = () => {
+		setAsking( false );
+		document.getElementById( toggleId ).focus();
+	};
 	const href = safeHref( item.url );
 	const controls = [
 		subject && {
@@ -202,38 +294,194 @@ function MoreActions( { item, subject, onOpenEntity, onSave } ) {
 		},
 		href && {
 			title: __( 'Copy link', 'newspack-intelligence' ),
-			onClick: () =>
-				copyLink( href ).then( ( content ) => {
-					copies.current += 1;
-					setCopied( { id: copies.current, content } );
-				} ),
+			onClick: () => copyLink( href ).then( say ),
 		},
 		onSave && {
 			title: __( 'Save to folder', 'newspack-intelligence' ),
 			onClick: () => onSave( item ),
 		},
+		canLink && {
+			title: __( 'Is this about…', 'newspack-intelligence' ),
+			onClick: () => setAsking( true ),
+		},
+		{
+			title: __( 'How this was read', 'newspack-intelligence' ),
+			onClick: onHowRead,
+		},
 	].filter( Boolean );
-	if ( 0 === controls.length ) {
-		return null;
-	}
 	return (
 		<>
 			<DropdownMenu
 				icon={ moreHorizontal }
 				label={ __( 'More actions', 'newspack-intelligence' ) }
-				toggleProps={ { size: 'small' } }
+				toggleProps={ { size: 'small', id: toggleId } }
 				controls={ controls }
 			/>
-			{ copied && (
+			{ asking && (
+				<AboutDialog
+					item={ item }
+					onLinked={ ( name ) => {
+						say(
+							sprintf(
+								/* translators: %s: the entity the item was linked to. */
+								__(
+									'Linked %s to this item. It shows here once the item is read again.',
+									'newspack-intelligence'
+								),
+								name
+							)
+						);
+						closeAsking();
+					} }
+					onClose={ closeAsking }
+				/>
+			) }
+			{ said && (
 				<div className="newspack-intelligence__undo">
 					<SnackbarList
-						notices={ [ copied ] }
-						onRemove={ () => setCopied( null ) }
+						notices={ [ said ] }
+						onRemove={ () => setSaid( null ) }
 					/>
 				</div>
 			) }
 		</>
 	);
+}
+
+/**
+ * "Is this about…": a name picker over `names` (`EntityPicker`) and the role
+ * the item names the entity in, the subject unless the curator says it is
+ * mentioned, worded as the vocabulary words link roles. "Link it" sends
+ * `add_link` once the text names an entity `names` offered; a landed link
+ * hands `onLinked` the entity's name, and a refused one stays in the dialog
+ * as its alert.
+ *
+ * @param {Object}                 props
+ * @param {Object}                 props.item     The item.
+ * @param {(name: string) => void} props.onLinked Runs once the link lands.
+ * @param {() => void}             props.onClose  Closes the dialog.
+ * @return {import('react').ReactElement} The dialog.
+ */
+function AboutDialog( { item, onLinked, onClose } ) {
+	const [ text, setText ] = useState( '' );
+	const [ role, setRole ] = useState( 'subject' );
+	const field = useRef( null );
+	const names = useEntityNames( text );
+	useEffect( () => field.current?.querySelector( 'input' )?.focus(), [] );
+	const key = names.keyOf( text );
+	const picked = names.suggestions.find(
+		( suggestion ) => key === names.keyOf( suggestion.value )
+	);
+	const name =
+		picked && ( key === picked.value ? picked.label : picked.value );
+	const link = useIntelWrite( 'add_link', {
+		scope: `add-link:${ useId().replace( /[^a-z0-9]/gi, '' ) }`,
+		dirties: ENTITY_READS,
+		refresh: () => onLinked( name ),
+	} );
+	const ready = Boolean( picked ) && ! link.pending;
+	const send = () =>
+		ready && link.run( { item: item.item_key, entity: key, role } );
+	return (
+		<Modal onClose={ onClose } onSubmit={ send }>
+			<ModalHeader
+				title={ __( 'Is this about…', 'newspack-intelligence' ) }
+				onClose={ onClose }
+				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
+			/>
+			<div ref={ field }>
+				<EntityPicker
+					label={ __( 'Client or company', 'newspack-intelligence' ) }
+					value={ text }
+					onChange={ setText }
+					names={ names }
+				/>
+			</div>
+			<RadioControl
+				label={ __( 'Named as', 'newspack-intelligence' ) }
+				selected={ role }
+				options={ LINK_ROLES.map( ( value ) => ( {
+					value,
+					label: word( 'linkRoleWords', value ),
+				} ) ) }
+				onChange={ setRole }
+			/>
+			<Refusal error={ link.refusal } />
+			<div className="newspack-nodes-modal__actions">
+				<button type="button" className="button" onClick={ onClose }>
+					{ __( 'Cancel', 'newspack-intelligence' ) }
+				</button>
+				<button
+					type="submit"
+					className={ primaryButtonClass( ! ready ) }
+					disabled={ ! ready }
+				>
+					{ __( 'Link it', 'newspack-intelligence' ) }
+				</button>
+			</div>
+		</Modal>
+	);
+}
+
+/**
+ * An entity's key, as a row's chips are held by.
+ *
+ * @param {Object} entity The entity.
+ * @return {string} Its key.
+ */
+const entityKeyOf = ( entity ) => entity.entity_key;
+
+/**
+ * A row's chips with each a curator removed taken out: `remove()` hides the
+ * chip at once and holds the `reject_link` write behind its Undo
+ * (`useDeferredWrite`), then keeps the chip out (`useHeld`) until a read no
+ * longer lists the entity; Undo, or a refusal, puts it back.
+ *
+ * @param {Object} item The item.
+ * @return {{entities: Object[], remove: (entity: Object) => void, latest: ?Object, undo: () => ?string, refusal: ?string}}
+ *   The entities to chip; the removal; the write an Undo takes, and Undo;
+ *   and the last refusal.
+ */
+function useChipRemoval( item ) {
+	const held = useHeld(
+		{
+			answer: { entities: item.entities ?? [] },
+			error: null,
+			loading: false,
+		},
+		'entities',
+		entityKeyOf
+	);
+	const reject = useIntelWrite( 'reject_link', {
+		scope: `reject-link:${ useId().replace( /[^a-z0-9]/gi, '' ) }`,
+		dirties: ENTITY_READS,
+		onRefused: held.refused,
+	} );
+	const deferred = useDeferredWrite();
+	return {
+		entities: held.read.answer.entities.filter(
+			( entity ) => ! deferred.hidden.has( entity.entity_key )
+		),
+		remove: ( entity ) =>
+			deferred.defer(
+				entity.entity_key,
+				() =>
+					held.hold( entity.entity_key, null, () =>
+						reject.run( {
+							item: item.item_key,
+							entity: entity.entity_key,
+						} )
+					),
+				sprintf(
+					/* translators: %s: the entity taken off the item. */
+					__( 'Removed %s from this item.', 'newspack-intelligence' ),
+					entityName( entity )
+				)
+			),
+		latest: deferred.latest,
+		undo: deferred.undo,
+		refusal: reject.refusal,
+	};
 }
 
 /**
@@ -351,15 +599,17 @@ function pillsOf( entities ) {
 
 /**
  * An item's pills (`EntityChip`, named by `pillName()`): the lead, then the
- * rest behind a "+N more" toggle in the same row; none for none.
+ * rest behind a "+N more" toggle in the same row; none for none. Given
+ * `onRemove`, each pill holds an × removing its entity from the item.
  *
- * @param {Object}                props
- * @param {Object[]}              props.lead         The pills shown at first.
- * @param {Object[]}              props.rest         The pills behind the toggle.
- * @param {(key: string) => void} props.onOpenEntity Opens an entity.
+ * @param {Object}                   props
+ * @param {Object[]}                 props.lead         The pills shown at first.
+ * @param {Object[]}                 props.rest         The pills behind the toggle.
+ * @param {(key: string) => void}    props.onOpenEntity Opens an entity.
+ * @param {(entity: Object) => void} [props.onRemove]   Removes an entity; absent for a reader.
  * @return {?import('react').ReactElement} The pills.
  */
-function Pills( { lead, rest, onOpenEntity } ) {
+function Pills( { lead, rest, onOpenEntity, onRemove } ) {
 	const [ open, setOpen ] = useState( false );
 	if ( 0 === lead.length + rest.length ) {
 		return null;
@@ -372,6 +622,15 @@ function Pills( { lead, rest, onOpenEntity } ) {
 						entityKey={ entity.entity_key }
 						name={ pillName( entity ) }
 						onOpen={ onOpenEntity }
+						onRemove={ onRemove && ( () => onRemove( entity ) ) }
+						removeLabel={ sprintf(
+							/* translators: %s: an entity the item names. */
+							__(
+								'Remove %s from this item',
+								'newspack-intelligence'
+							),
+							entityName( entity )
+						) }
 					/>
 				</li>
 			) ) }
@@ -405,7 +664,7 @@ function Pills( { lead, rest, onOpenEntity } ) {
  * @return {string} The name.
  */
 function pillName( entity ) {
-	const name = entity.name || entity.entity_key;
+	const name = entityName( entity );
 	return 'mention' === entity.role
 		? sprintf(
 				/* translators: %s: an entity the item mentions. */
@@ -446,6 +705,87 @@ function Excerpt( { item } ) {
 }
 
 /**
+ * Each level a score reads at, by the noun it qualifies: importance leads
+ * the line, so its words are capitalized, and relevance follows.
+ *
+ * @return {{importance: Object<string, string>, relevance: Object<string, string>}} The words.
+ */
+const levelWords = () => ( {
+	importance: {
+		high: __( 'High importance', 'newspack-intelligence' ),
+		medium: __( 'Medium importance', 'newspack-intelligence' ),
+		low: __( 'Low importance', 'newspack-intelligence' ),
+	},
+	relevance: {
+		high: __( 'high relevance', 'newspack-intelligence' ),
+		medium: __( 'medium relevance', 'newspack-intelligence' ),
+		low: __( 'low relevance', 'newspack-intelligence' ),
+	},
+} );
+
+/**
+ * The level a score reads at.
+ *
+ * @param {number} score A score from 0 to 10.
+ * @return {'high'|'medium'|'low'} The level.
+ */
+function levelOf( score ) {
+	if ( HIGH_SCORE <= score ) {
+		return 'high';
+	}
+	return MEDIUM_SCORE <= score ? 'medium' : 'low';
+}
+
+/**
+ * Why an item ranks, behind a "Why this ranks" toggle, collapsed at first:
+ * its importance and relevance in words, never as numbers, then the
+ * extraction's reason (`reasonText()`); none for an item a read answers
+ * without both scores, as one never extracted.
+ *
+ * @param {Object} props
+ * @param {Object} props.item The item.
+ * @return {?import('react').ReactElement} The toggle and what it shows.
+ */
+function WhyRanks( { item } ) {
+	const [ open, setOpen ] = useState( false );
+	const shownId = useId();
+	if (
+		'number' !== typeof item.importance ||
+		'number' !== typeof item.relevance
+	) {
+		return null;
+	}
+	const words = levelWords();
+	return (
+		<>
+			<Button
+				variant="link"
+				className="newspack-intelligence__more"
+				aria-expanded={ open }
+				aria-controls={ shownId }
+				onClick={ () => setOpen( ! open ) }
+			>
+				{ __( 'Why this ranks', 'newspack-intelligence' ) }
+			</Button>
+			{ open && (
+				<p
+					id={ shownId }
+					className="newspack-nodes-status is-muted newspack-intelligence__why"
+				>
+					{ sprintf(
+						/* translators: 1: how important the item is, such as "High importance", 2: how relevant, such as "low relevance". */
+						__( '%1$s, %2$s.', 'newspack-intelligence' ),
+						words.importance[ levelOf( item.importance ) ],
+						words.relevance[ levelOf( item.relevance ) ]
+					) }{ ' ' }
+					{ reasonText( item.rank_reason ) }
+				</p>
+			) }
+		</>
+	);
+}
+
+/**
  * Whether an item's summary or title already holds its whole excerpt, case
  * aside.
  *
@@ -469,99 +809,19 @@ function repeats( item ) {
  * @return {Object[]} The entities to chip.
  */
 function chips( entities ) {
-	const label = ( entity ) => entity.name || entity.entity_key;
 	const shown = new Set(
 		entities
 			.filter( ( entity ) => 'proposed' !== entity.state )
-			.map( label )
+			.map( entityName )
 	);
 	return entities.filter( ( entity ) => {
 		if ( 'proposed' !== entity.state ) {
 			return true;
 		}
-		if ( shown.has( label( entity ) ) ) {
+		if ( shown.has( entityName( entity ) ) ) {
 			return false;
 		}
-		shown.add( label( entity ) );
+		shown.add( entityName( entity ) );
 		return true;
 	} );
-}
-
-/**
- * Each order `search` answers in: what a page in it says, the order the
- * switch offers instead, and the switch's label.
- *
- * @return {Object<string, {shown: string, other: string, label: string}>} The orders.
- */
-const sorts = () => ( {
-	importance: {
-		shown: __( 'Ranked by importance', 'newspack-intelligence' ),
-		other: 'time',
-		label: __( 'Show newest first', 'newspack-intelligence' ),
-	},
-	time: {
-		shown: __( 'Newest first', 'newspack-intelligence' ),
-		other: 'importance',
-		label: __( 'Rank by importance', 'newspack-intelligence' ),
-	},
-} );
-
-/**
- * One page of the items a read answered, each an `ItemRow`, then the pager
- * over the page starts its view holds; given `onSort`, the order the answer
- * says it is in, and the switch to the other.
- *
- * @param {Object}                                          props
- * @param {{items: Object[], total: number, sort: ?string}} props.answer       The read's answer.
- * @param {number[]}                                        props.starts       Each page's first row, the current last.
- * @param {(starts: number[]) => void}                      props.onStarts     Replaces the stack.
- * @param {(key: string) => void}                           props.onOpenEntity Opens an entity.
- * @param {(item: Object) => void}                          [props.onSave]     Saves an item; absent for a reader.
- * @param {boolean}                                         [props.canTune]    Whether the reader holds tune, which offers each row's exclusion.
- * @param {(sort: string) => void}                          [props.onSort]     Asks for the other order; absent for a page that does not sort.
- * @return {import('react').ReactElement} The page.
- */
-export function ItemPage( {
-	answer,
-	starts,
-	onStarts,
-	onOpenEntity,
-	onSave,
-	canTune,
-	onSort,
-} ) {
-	const order = onSort && sorts()[ answer.sort ];
-	return (
-		<>
-			{ order && (
-				<p className="newspack-nodes-status is-muted">
-					<span>{ order.shown }</span>{ ' ' }
-					<button
-						type="button"
-						className="button button-small"
-						onClick={ () => onSort( order.other ) }
-					>
-						{ order.label }
-					</button>
-				</p>
-			) }
-			<ul className="newspack-intelligence__items">
-				{ answer.items.map( ( item ) => (
-					<ItemRow
-						key={ item.item_key }
-						item={ item }
-						onOpenEntity={ onOpenEntity }
-						onSave={ onSave }
-						canTune={ canTune }
-					/>
-				) ) }
-			</ul>
-			<Pager
-				starts={ starts }
-				onStarts={ onStarts }
-				shown={ answer.items.length }
-				total={ answer.total }
-			/>
-		</>
-	);
 }

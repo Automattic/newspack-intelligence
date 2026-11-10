@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The Briefing, team views and profiles are block layouts on the substrate's composition layer.** A curator edits one with **Edit layout**, which loads the block editor for `tune` alone; seeds may carry `layouts`, written only to a page that has none. The Briefing is Ask, Since you last looked, Needs attention, Your watches and This week; a profile is `pulse`, `entity-facts`, `related` and `timeline` under a fixed header; a team view is a rail with each view's new count, a header with Watch, Edit and a menu, and the `trend-chart` and `item-list` blocks; the `health` and `folder-board` blocks place the health details and the folders board on any page.
+- **The Ask box shows each step it takes**, what it searched and read, a marker per cited source with a preview, and which empty case an answer is; it takes the `ask` block's label, placeholder and examples.
+- **Curators keep a churn-risk note on a client**, with an owner and a next step; Needs attention lists noted clients first, and readers see the churn notice without its buttons.
+- **`add_link <item> <entity> [--role=subject|mention]`** links a readable item to an entity as the curator's confirmed link, even where no machine linked it; the resolver writes it on every pass until it is rejected. Item rows give curators an × on each entity chip (reject, with Undo) and an "Is this about…" picker.
+- **An item row says why it ranks** behind "Why this ranks", counts its story's other copies in its meta line, and opens "How this was read" from its menu.
+- **Review: check match or name rows into a run and answer them all with one Yes or No, under one Undo.**
+- **The Folders tab is a board**: each folder a column of cards, opening on items not yet used; a card drags to another folder, or its menu moves it, marks it used or removes it, each with Undo.
+- `search --tier` narrows within the reader's tiers and a lens's; `trends` answers `by` and `bucket`.
+
+### Changed
+
+- **Lists run on DataViews** through `ItemList`: Search's Find items (Team view and Kind of news always shown, the rest behind Add filter, the client picked by name, Importance or Newest order, every filter in a sheet when narrow) and Review's queues. A team view now combines with other filters.
+- **Review shows its three queues as counted tabs**, each suggestion with its reason and quoted evidence; Same as… confirms the merge in a dialog; a pair of themes offers Keep either one or Not the same; a curator's Review tab counts the suggested matches.
+- Review and a watch's matches share one single-key implementation and one "Turn off single-key shortcuts" setting.
+- **Collection status sits in the page header**; faults show in a notice under the tabs, one sentence for a reader and the fix plus Details for an operator; a source failing 10% of its requests or more reads "Failing". Watches is a table with confirm-to-stop and undoable seen marks, and its tab counts new matches.
+- **A view filtering by role reads its role rows once**: Leadership's signals take 153 ms instead of 276, Support's 149 instead of 194. `Intel_Event::SOURCES` is the one list of item sources; each Source_Node records under its `SOURCE`, and a lens naming another source is refused.
+- One `Graph_Query::saved_lens()` answers whether a lens was saved, for search, `remove_lens`, `save_watch` and the layout check.
+
+### Fixed
+
+- A run of review judgments, or several folder moves, refused together shows each row's own refusal.
+
+### Security
+
+- A layout that no longer reads no longer shows a restricted entity's key in the page source of a reader without `manage`.
+
 ## [0.39.4] - 2026-11-09
 
 ### Fixed

@@ -71,6 +71,10 @@ const ENTRIES = [
 		entry: 'src/intelligence/index.js',
 		outDir: path.resolve( ROOT, 'build/intelligence' ),
 	},
+	{
+		entry: 'src/intelligence/layout-editor.js',
+		outDir: path.resolve( ROOT, 'build/layout-editor' ),
+	},
 ];
 
 buildDashboards( {

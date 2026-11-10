@@ -142,7 +142,6 @@ final class IntelligenceLensTest extends TestCase {
 	 * @return array<string,array{0:int,1:string,2:list<string>,3:string}>
 	 */
 	public static function refusals(): array {
-		$sprawl = \array_map( static fn ( int $n ): string => "--source={$n}" . \str_repeat( 's', 240 ), \range( 1, 20 ) );
 		return [
 			'a kind outside its set'   => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--kind=rumor' ], 'kind must be one of: ' . \implode( ', ', Intel_Event::ITEM_KINDS ) ],
 			'a role outside its set'   => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--role=ally' ], 'role must be one of: ' . \implode( ', ', Intel_Event::ROLES ) ],
@@ -157,7 +156,7 @@ final class IntelligenceLensTest extends TestCase {
 			'a blank source'           => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--source= ' ], 'source is blank' ],
 			'a blank name'             => [ self::READER, 'save_lens', [ 'odd', ' ' ], 'name is blank' ],
 			'an unsluggable key'       => [ self::READER, 'save_lens', [ '!?!', 'Odd' ], 'lens key !?! sanitizes to nothing' ],
-			'an over-long lens'        => [ self::READER, 'save_lens', [ 'sprawl', 'Sprawl', ...$sprawl ], 'lens_saved: ' ],
+			'an over-long lens'        => [ self::READER, 'save_lens', [ 'sprawl', 'Sprawl', '--description=' . \str_repeat( 's', 5000 ) ], 'lens_saved: ' ],
 			'a missing lens removed'   => [ self::READER, 'remove_lens', [ 'Nowhere Desk' ], 'no lens: nowhere-desk' ],
 			'a topic that is not a topic' => [ self::READER, 'save_lens', [ 'odd', 'Odd', '--topic=topic:awards', '--topic=' . self::GAZETTE ], self::GAZETTE . ' is not a topic' ],
 		];
@@ -254,6 +253,16 @@ final class IntelligenceLensTest extends TestCase {
 		$this->assertSame( [ [ '2026-10-01', 'topic:ai' ], [ '2026-10-01', 'topic:awards' ] ], self::rows( $this->ci->dispatch( 'trends', [ 'topic', '--lens=no-axis', '--bucket=month' ] ) ) );
 	}
 
+	/** Trends answer the axis and the span they counted by: the call's, else the lens's, else the defaults. */
+	public function test_trends_answer_what_they_counted_by(): void {
+		$this->save( 'monthly-topics', '--by=topic', '--bucket=month' );
+		$counted = static fn ( array $answer ): array => [ $answer['by'], $answer['bucket'] ];
+
+		$this->assertSame( [ 'topic', 'month' ], $counted( $this->ci->dispatch( 'trends', [ '--lens=monthly-topics' ] ) ) );
+		$this->assertSame( [ 'theme', 'day' ], $counted( $this->ci->dispatch( 'trends', [ 'theme', '--lens=monthly-topics', '--bucket=day' ] ) ) );
+		$this->assertSame( [ Graph_Query::DEFAULT_AXIS, Graph_Query::DEFAULT_BUCKET ], $counted( $this->ci->dispatch( 'trends', [] ) ) );
+	}
+
 	/**
 	 * A read through a lens that was never saved is refused, the key slugged as
 	 * a save slugs it.
@@ -262,6 +271,18 @@ final class IntelligenceLensTest extends TestCase {
 		$this->expectException( \InvalidArgumentException::class );
 		$this->expectExceptionMessage( 'no lens: ghost-desk' );
 		$this->ci->dispatch( 'search', [ '--lens=Ghost Desk' ] );
+	}
+
+	/** A saved lens answers its stored filters; a key never saved answers null. */
+	public function test_saved_lens_answers_the_stored_filters_or_null(): void {
+		$this->save( 'tide-wins', '--kind=award', '--days=12' );
+
+		$read = Intel_Graph_Row_Schema::read( static fn ( $r ): array => [ Graph_Query::saved_lens( $r, 'tide-wins' ), Graph_Query::saved_lens( $r, 'tide-losses' ) ] );
+
+		$filters = \json_decode( (string) $read[0], true );
+		$this->assertSame( [ 'award' ], $filters['kinds'] );
+		$this->assertSame( 12, $filters['days'] );
+		$this->assertNull( $read[1] );
 	}
 
 	/** Reading through and removing a lens slug its key as saving it does. */
@@ -350,6 +371,26 @@ final class IntelligenceLensTest extends TestCase {
 		$this->assertSame( [ 'github:ledger-launch', 'linear:joint-grant' ], self::keys( $this->ci->dispatch( 'search', [ '--lens=inside' ] ) ) );
 		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => true, 'sort' => 'importance' ], $this->ci->dispatch( 'search', [ '--lens=sealed' ] ) );
 		$this->assertNotContains( 'churn_signal', \array_column( $this->ci->dispatch( 'trends', [ 'kind', '--lens=inside' ] )['rows'], 'value' ) );
+	}
+
+	/**
+	 * A search's own tiers narrow within the caller's and beside a lens's,
+	 * and never widen: a reader asking for restricted items reads none.
+	 */
+	public function test_a_searchs_tiers_narrow_within_the_readers(): void {
+		$this->save( 'inside', '--tier=internal', '--tier=restricted' );
+
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$this->assertSame( [ self::DEAL ], self::keys( $this->ci->dispatch( 'search', [ '--tier=restricted' ] ) ) );
+		$this->assertSame( [ 'feed:gazette-award', self::DEAL ], self::keys( $this->ci->dispatch( 'search', [ '--tier=public', '--tier=restricted' ] ) ) );
+		$this->assertSame( [ self::DEAL ], self::keys( $this->ci->dispatch( 'search', [ '--lens=inside', '--tier=public', '--tier=restricted' ] ) ) );
+
+		$GLOBALS['_current_user_id'] = self::READER;
+		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => true, 'sort' => 'importance' ], $this->ci->dispatch( 'search', [ '--tier=restricted' ] ) );
+		$this->assertSame( [], $this->ci->dispatch( 'search', [ '--lens=inside', '--tier=restricted', '--group=theme' ] )['groups'] );
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'tier must be one of: public, internal, restricted' );
+		$this->ci->dispatch( 'search', [ '--tier=secret' ] );
 	}
 
 	/**

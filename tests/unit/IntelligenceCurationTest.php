@@ -75,12 +75,13 @@ final class IntelligenceCurationTest extends TestCase {
 	/** A rejected proposal only a restricted item cites. */
 	private const SHELVED = 'organization:shelved-buyer';
 
-	private const CURATION = [ 'confirm_link', 'reject_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'mark_used', 'move_item', 'uncollect', 'save_lens', 'remove_lens', 'merge_theme', 'exclude_item', 'include_item', 'note_churn', 'excluded' ];
+	private const CURATION = [ 'confirm_link', 'reject_link', 'add_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'mark_used', 'move_item', 'uncollect', 'save_lens', 'remove_lens', 'merge_theme', 'exclude_item', 'include_item', 'note_churn', 'excluded' ];
 
 	/** Each curation event kind, by the command that writes it. */
 	private const VERB_OF = [
 		'link_confirmed'     => 'confirm_link',
 		'link_rejected'      => 'reject_link',
+		'link_added'         => 'add_link',
 		'entity_accepted'    => 'accept_entity',
 		'entity_rejected'    => 'reject_entity',
 		'entity_merged'      => 'merge_entities',
@@ -198,6 +199,9 @@ final class IntelligenceCurationTest extends TestCase {
 		return [
 			'confirm_link'      => [ 'confirm_link', [ 'linear:joint-grant', self::LEDGER ], [ 'event' => 'link_confirmed', 'item_key' => 'linear:joint-grant', 'entity_key' => self::LEDGER, 'item_url' => 'https://news.example/linear/joint-grant' ] ],
 			'reject_link'       => [ 'reject_link', [ '--item=linear:joint-grant', '--entity=' . self::LEDGER ], [ 'event' => 'link_rejected', 'item_key' => 'linear:joint-grant', 'entity_key' => self::LEDGER, 'item_url' => 'https://news.example/linear/joint-grant' ] ],
+			'add_link'          => [ 'add_link', [ 'github:ledger-launch', self::GAZETTE, '--role=mention' ], [ 'event' => 'link_added', 'item_key' => 'github:ledger-launch', 'entity_key' => self::GAZETTE, 'role' => 'mention', 'item_url' => 'https://news.example/github/ledger-launch' ] ],
+			'add a subject link' => [ 'add_link', [ '--item=feed:gazette-award', '--entity=organization:quiet-partner' ], [ 'event' => 'link_added', 'item_key' => 'feed:gazette-award', 'entity_key' => 'organization:quiet-partner', 'role' => 'subject', 'item_url' => 'https://news.example/feed/gazette-award' ] ],
+			'add a link to a merged key' => [ 'add_link', [ 'github:ledger-launch', 'organization:gazette-weekly', 'mention' ], [ 'event' => 'link_added', 'item_key' => 'github:ledger-launch', 'entity_key' => self::GAZETTE, 'role' => 'mention' ] ],
 			'accept_entity'     => [ 'accept_entity', [ self::LEDGER ], [ 'event' => 'entity_accepted', 'entity_key' => self::LEDGER ] ],
 			'reject_entity'     => [ 'reject_entity', [ self::LEDGER ], [ 'event' => 'entity_rejected', 'entity_key' => self::LEDGER ] ],
 			'merge_entities'    => [ 'merge_entities', [ self::LEDGER, self::GAZETTE ], [ 'event' => 'entity_merged', 'entity_key' => self::LEDGER, 'into_key' => self::GAZETTE ] ],
@@ -513,6 +517,14 @@ final class IntelligenceCurationTest extends TestCase {
 			'name past its cap'           => [ 'add_name', [ self::LEDGER, 'alias', $long ], 'value runs past 256 bytes' ],
 			'item key past its cap'       => [ 'confirm_link', [ \str_repeat( 'k', 513 ), self::LEDGER ], 'item runs past 512 bytes' ],
 			'entity key past its cap'     => [ 'accept_entity', [ \str_repeat( 'k', 321 ) ], 'key runs past 320 bytes' ],
+			'add a link to a topic'       => [ 'add_link', [ 'github:ledger-launch', 'topic:ai' ], 'topic:ai is a topic; only an extraction tags an item with one' ],
+			'add a link to a hidden one'  => [ 'add_link', [ 'github:ledger-launch', self::HIDDEN ], 'no entity: ' . self::HIDDEN ],
+			'add a link to no entity'     => [ 'add_link', [ 'github:ledger-launch', 'organization:nowhere' ], 'no entity: organization:nowhere' ],
+			'add a link to an unread item' => [ 'add_link', [ 'hubspot:deal-9', self::GAZETTE ], 'no item: hubspot:deal-9' ],
+			'add a link to no item'       => [ 'add_link', [ 'feed:never-recorded', self::GAZETTE ], 'no item: feed:never-recorded' ],
+			'add a link to an excluded item' => [ 'add_link', [ self::WIRE, self::LEDGER ], self::WIRE . ' is excluded from every view' ],
+			'add a publisher link'        => [ 'add_link', [ 'github:ledger-launch', self::GAZETTE, '--role=publisher' ], 'role must be one of: subject, mention' ],
+			'add a link with no item'     => [ 'add_link', [ ' ', self::GAZETTE ], 'item is blank' ],
 			'confirm an unlinked item'    => [ 'confirm_link', [ 'github:ledger-launch', self::GAZETTE ], 'no link: github:ledger-launch organization:harbor-gazette' ],
 			'reject an unlinked item'     => [ 'reject_link', [ 'github:ledger-launch', self::GAZETTE ], 'no link: github:ledger-launch organization:harbor-gazette' ],
 			'tag with a non-topic'        => [ 'tag_topic', [ self::LEDGER, self::GAZETTE ], 'organization:harbor-gazette is not a topic' ],
@@ -790,6 +802,77 @@ final class IntelligenceCurationTest extends TestCase {
 		$this->ci->dispatch( 'add_identifier', [ 'organization:gazette-daily', 'domain', 'harborgazette.example' ] );
 
 		$this->assertSame( [ 'harborgazette.example', 'harborgazette.example' ], \array_column( self::ontology_events(), 'value' ) );
+	}
+
+	/**
+	 * An added link projects as a person's confirmation of the item's link
+	 * to the entity's survivor and the role it was added in, which the
+	 * resolver writes as the item's link.
+	 */
+	public function test_an_added_link_projects_a_confirmation_and_its_role(): void {
+		$this->seed_curation_world();
+
+		$this->ci->dispatch( 'add_link', [ 'github:ledger-launch', 'organization:gazette-weekly', '--role=mention' ] );
+		$this->seed( self::ontology_events() );
+
+		$this->assertSame( [ [ 'user', 'confirmed', 'user:' . self::LOGIN, 'https://news.example/github/ledger-launch' ] ], self::graph_rows( 'judgments', '1', 'actor_kind, state, actor, item_url' ) );
+		$this->assertSame( [ [ 'github:ledger-launch', self::GAZETTE, 'mention', 'user:' . self::LOGIN ] ], self::graph_rows( 'added_links', '1', 'item_key, entity_key, role, actor' ) );
+	}
+
+	/**
+	 * A link already confirmed, by a judgment of its stored link or by an
+	 * earlier addition, is refused under any of its entity's keys; one a
+	 * person rejected is added back.
+	 */
+	public function test_a_confirmed_link_is_not_added_again(): void {
+		$this->seed_curation_world();
+		$this->ci->dispatch( 'confirm_link', [ 'feed:gazette-award', self::GAZETTE ] );
+		$this->ci->dispatch( 'add_link', [ 'github:ledger-launch', self::LEDGER, '--role=mention' ] );
+		$this->ci->dispatch( 'reject_link', [ 'linear:joint-grant', self::LEDGER ] );
+		$this->seed( self::ontology_events() );
+		$written = \count( self::ontology_events() );
+
+		foreach ( [ [ 'feed:gazette-award', 'organization:gazette-weekly' ], [ 'github:ledger-launch', self::LEDGER ] ] as [ $item, $entity ] ) {
+			try {
+				$this->ci->dispatch( 'add_link', [ $item, $entity ] );
+				$this->fail( "{$item} was linked to {$entity} again" );
+			} catch ( \InvalidArgumentException $e ) {
+				$survivor = 'organization:gazette-weekly' === $entity ? self::GAZETTE : $entity;
+				$this->assertSame( "already confirmed: {$item} {$survivor}", $e->getMessage() );
+			}
+		}
+		$this->assertCount( $written, self::ontology_events() );
+
+		$this->ci->dispatch( 'add_link', [ 'linear:joint-grant', self::LEDGER ] );
+		$this->assertSame( [ 'event' => 'link_added', 'item_key' => 'linear:joint-grant', 'entity_key' => self::LEDGER, 'role' => 'subject' ], \array_intersect_key( self::ontology_events()[ $written ], \array_flip( [ 'event', 'item_key', 'entity_key', 'role' ] ) ) );
+	}
+
+	/**
+	 * A holder of the restricted tier links a restricted item to an entity
+	 * every reader sees, and a reader then reads neither the item nor its
+	 * link; linking an item every reader reads to an entity only restricted
+	 * items cite is refused, since it would show the entity to every reader.
+	 */
+	public function test_a_restricted_link_stays_with_its_tier(): void {
+		$this->seed_curation_world();
+		self::sign_in( 38, 'quay-analyst', 'manage_options', Intel_Tiers::CAPABILITY );
+
+		try {
+			$this->ci->dispatch( 'add_link', [ 'feed:gazette-award', self::HIDDEN ] );
+			$this->fail( 'a public item was linked to a hidden proposal' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( 'linking feed:gazette-award to ' . self::HIDDEN . ' would show ' . self::HIDDEN . ' to every reader; it is not cited by any item outside the restricted tier', $e->getMessage() );
+		}
+		$this->assertSame( [], self::ontology_events() );
+
+		$this->ci->dispatch( 'add_link', [ 'hubspot:deal-9', self::LEDGER ] );
+		$this->seed( self::ontology_events(), self::link( 'link_asserted', 'hubspot:deal-9', self::LEDGER, 'subject', 'human', 1.0, self::$oct_13 ) );
+		$timeline = fn (): array => \array_column( $this->ci->dispatch( 'timeline', [ self::LEDGER ] )['items'], 'item_key' );
+		$this->assertContains( 'hubspot:deal-9', $timeline() );
+
+		self::sign_in( 37, self::LOGIN, 'manage_options' );
+		$this->assertNotContains( 'hubspot:deal-9', $timeline() );
+		$this->assertSame( [], \array_filter( $this->ci->dispatch( 'search', [ '--entity=' . self::LEDGER ] )['items'], static fn ( array $item ): bool => 'hubspot:deal-9' === $item['item_key'] ) );
 	}
 
 	/** An item outside the readable tiers is refused exactly as a missing one, by every command that reads one. */

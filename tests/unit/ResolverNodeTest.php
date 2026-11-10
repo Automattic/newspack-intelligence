@@ -1102,6 +1102,62 @@ final class ResolverNodeTest extends TestCase {
 	}
 
 	/**
+	 * A link a person added is written as the item's link, in the role it
+	 * was added in and by `human`, on every resolution, so no re-resolution
+	 * retracts it, and the extractor is sent it asserted; once a person
+	 * rejects it, the next resolution retracts it.
+	 */
+	public function test_an_added_link_is_written_until_a_person_rejects_it(): void {
+		$this->seed(
+			self::gazette(),
+			self::entity( self::MESA, 'Mesa Courier' ),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				Intel_Event::make( 'link_added', [ 'item_key' => self::ITEM, 'entity_key' => self::MESA, 'role' => 'mention', 'item_url' => 'https://random.example/x' ], 'user:curator-31', '9.4.1' ),
+				...self::extracted(),
+			]
+		);
+		$shape = static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['role'], $e['method'] ?? null, $e['confidence'] ?? null ];
+		$added = [ 'link_asserted', self::MESA, 'mention', 'human', 1.0 ];
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+		$first = $this->written();
+		$this->assertSame( [ $added ], \array_map( $shape, $first ) );
+		$this->assertSame( [ [ self::MESA, 'mention', 'human', 'asserted' ] ], \array_map( static fn ( array $l ): array => [ $l['entity_key'], $l['role'], $l['method'], $l['state'] ], $this->resolved()['links'] ) );
+
+		$this->seed( $first );
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+		$this->assertSame( [ $added, $added ], \array_map( $shape, $this->written() ) );
+
+		$this->seed( [ Intel_Event::make( 'link_rejected', [ 'item_key' => self::ITEM, 'entity_key' => self::MESA, 'item_url' => 'https://random.example/x' ], 'user:curator-31', '9.4.1' ) ] );
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+		$this->assertSame( [ $added, $added, [ 'link_retracted', self::MESA, 'mention', null, null ] ], \array_map( $shape, $this->written() ) );
+	}
+
+	/**
+	 * A link added as the subject stays beside a mention the resolver finds
+	 * by name, since a `human` link is written by the added row alone.
+	 */
+	public function test_an_added_subject_stays_beside_a_found_mention(): void {
+		$this->seed(
+			self::gazette(),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [ 'title' => 'Harbor news roundup', 'body' => 'The Harbor Gazette reprinted it.' ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				self::stored_link( self::GAZETTE, 'subject', 'human' ),
+				Intel_Event::make( 'link_added', [ 'item_key' => self::ITEM, 'entity_key' => self::GAZETTE, 'role' => 'subject', 'item_url' => 'https://random.example/x' ], 'user:curator-62', '9.4.1' ),
+				...self::extracted( self::GAZETTE ),
+			]
+		);
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+
+		$this->assertSame(
+			[ [ 'link_asserted', self::GAZETTE, 'mention' ], [ 'link_asserted', self::GAZETTE, 'subject' ] ],
+			\array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['role'] ], $this->written() )
+		);
+	}
+
+	/**
 	 * A curator's rejection judges what the item is about, never who
 	 * published it: the extractor is still sent the publisher link.
 	 */

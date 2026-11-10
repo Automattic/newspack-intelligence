@@ -173,6 +173,15 @@ final class ReresolverNodeTest extends TestCase {
 		);
 	}
 
+	/** A link a person added queues its one item, as a confirmation does. */
+	public function test_an_added_link_reresolves_its_item(): void {
+		$this->signal( 'link_added', [ 'item_key' => 'feed:added-23', 'entity_key' => self::GAZETTE, 'role' => 'mention', 'item_url' => 'https://news.example/a' ] );
+
+		$this->sweep_at( self::NOW + Reresolver_Node::SWEEP_INTERVAL_S );
+
+		$this->assertSame( [ 'feed:added-23' ], $this->sent_keys() );
+	}
+
 	/** A signal is swept only once it is SWEEP_INTERVAL_S old, after the projector's flushes. */
 	public function test_the_sweep_waits_for_the_interval(): void {
 		$this->seed( self::items( [ 'feed:wait-1', 'HarbGaz wins', '', 'https://news.example/w', 1793100000 ] ) );

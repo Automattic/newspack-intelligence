@@ -1,24 +1,25 @@
 import { useCallback, useState } from '@wordpress/element';
-import { __ } from '@wordpress/i18n';
+import { __, _n, sprintf } from '@wordpress/i18n';
 import {
 	CheckboxControl,
+	DropdownMenu,
 	SelectControl,
 	TextControl,
 } from '@wordpress/components';
-import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
+import { moreHorizontal } from '@wordpress/icons';
+import Modal, { ModalHeader } from '@newspack-nodes/shared/components/Modal';
+import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
+import { primaryButtonClass } from '@newspack-nodes/shared/utils/buttonClass';
 import {
 	LENS_READS,
-	commandArgs,
 	useIntelRead,
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
-import Answer from '../components/Answer';
-import Skeleton from '../components/Skeleton';
-import { Signals, TrendChart } from '../components/TrendTable';
-import GroupPage from '../components/GroupPage';
+import { AnswerBody } from '../components/Answer';
 import ListField from '../components/ListField';
 import ListPicker from '../components/ListPicker';
+import { Invitation } from '../components/Section';
 import { word } from '../components/words';
 import Refusal from '../components/Refusal';
 import {
@@ -28,9 +29,14 @@ import {
 	listOf,
 	newLens,
 } from '../components/lensDraft';
+import { editLayoutControl } from '../layout/LayoutMenu';
+import PageLayout from '../layout/PageLayout';
 
-/** No lens open, its groups on their first page. */
-export const CLOSED_LENS = { key: null, starts: [ 0 ] };
+/** No view chosen, so the first listed opens. */
+export const CLOSED_LENS = { key: null };
+
+/** The look-back spans the form offers, in days. */
+const LOOK_BACK_DAYS = [ 7, 14, 30, 60, 90, 180, 365 ];
 
 /**
  * A listed lens's key.
@@ -54,20 +60,58 @@ const choicesOf = ( values, map ) => [
 ];
 
 /**
- * The form a curator saves a lens with, a new one or the one opened: its
- * name and description, then every filter — kinds, roles and sources
- * picked, topics comma-separated, tiers checked, the trend axis and bucket
- * picked. A filter left blank is left out, so the lens does not set it. A
- * new lens is keyed by its name, which the server slugs.
+ * The look-back options, "%d days" each, the draft's own among them.
+ *
+ * @param {string} days The draft's days, '' for none.
+ * @return {{label: string, value: string}[]} The options.
+ */
+const lookBackOf = ( days ) => [
+	{ label: __( 'Not set', 'newspack-intelligence' ), value: '' },
+	...[
+		...new Set( [
+			...LOOK_BACK_DAYS,
+			...( days ? [ Number( days ) ] : [] ),
+		] ),
+	]
+		.sort( ( a, b ) => a - b )
+		.map( ( n ) => ( {
+			label: sprintf(
+				/* translators: %d: how many days a view looks back. */
+				_n( '%d day', '%d days', n, 'newspack-intelligence' ),
+				n
+			),
+			value: String( n ),
+		} ) ),
+];
+
+/**
+ * What a view's rail entry says of its week.
+ *
+ * @param {number} count Items the view admits from the last seven days.
+ * @return {string} The count.
+ */
+const newCount = ( count ) =>
+	sprintf(
+		/* translators: %d: items the view admits from the last seven days. */
+		__( '%d new', 'newspack-intelligence' ),
+		count
+	);
+
+/**
+ * The one dialog a curator saves a view with, a new one or the one open:
+ * its name and what it is for, then every filter. A filter left blank is
+ * left out, so the view does not set it; the key derives from the name and
+ * is never shown.
  *
  * @param {Object}                                  props
  * @param {Object<string, string>}                  props.initial    The draft it opens on.
  * @param {Object}                                  props.vocabulary The ontology's closed lists.
+ * @param {?string}                                 props.refusal    Why the last save was refused.
  * @param {(draft: Object<string, string>) => void} props.onSave     Sends the draft.
- * @param {() => void}                              props.onCancel   Closes the form unsent.
- * @return {import('react').ReactElement} The form.
+ * @param {() => void}                              props.onCancel   Closes the dialog unsent.
+ * @return {import('react').ReactElement} The dialog.
  */
-function LensForm( { initial, vocabulary, onSave, onCancel } ) {
+function LensForm( { initial, vocabulary, refusal, onSave, onCancel } ) {
 	const [ draft, setDraft ] = useState( initial );
 	const field = ( name ) => ( {
 		value: draft[ name ],
@@ -75,25 +119,32 @@ function LensForm( { initial, vocabulary, onSave, onCancel } ) {
 		__next40pxDefaultSize: true,
 	} );
 	const tiers = listOf( draft.tier );
-	const legend = __( 'Save team view', 'newspack-intelligence' );
 	return (
-		<form
-			className="newspack-intelligence__filters"
-			aria-label={ legend }
-			{ ...submitProps( () =>
-				onSave( { ...draft, key: draft.key || draft.name } )
-			) }
-		>
+		<Modal onClose={ onCancel } onSubmit={ () => onSave( draft ) }>
+			<ModalHeader
+				title={
+					initial.key
+						? sprintf(
+								/* translators: %s: the view's name. */
+								__( 'Edit %s', 'newspack-intelligence' ),
+								initial.name
+						  )
+						: __( 'New team view', 'newspack-intelligence' )
+				}
+				onClose={ onCancel }
+				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
+			/>
+			<Refusal error={ refusal } />
 			<TextControl
 				label={ __( 'Name', 'newspack-intelligence' ) }
 				{ ...field( 'name' ) }
 			/>
 			<TextControl
-				label={ __( 'Description', 'newspack-intelligence' ) }
+				label={ __( 'What it is for', 'newspack-intelligence' ) }
 				{ ...field( 'description' ) }
 			/>
 			<ListPicker
-				label={ __( 'Kind of news', 'newspack-intelligence' ) }
+				label={ __( 'Kinds of news', 'newspack-intelligence' ) }
 				map="kindWords"
 				values={ vocabulary.itemKinds }
 				{ ...field( 'kind' ) }
@@ -119,11 +170,20 @@ function LensForm( { initial, vocabulary, onSave, onCancel } ) {
 				label={ __( 'Client or company', 'newspack-intelligence' ) }
 				{ ...field( 'entity' ) }
 			/>
-			<TextControl
-				type="number"
-				min={ 1 }
-				label={ __( 'Look back, in days', 'newspack-intelligence' ) }
+			<SelectControl
+				label={ __( 'Look back', 'newspack-intelligence' ) }
+				options={ lookBackOf( draft.days ) }
 				{ ...field( 'days' ) }
+			/>
+			<SelectControl
+				label={ __( 'Chart by', 'newspack-intelligence' ) }
+				options={ choicesOf( vocabulary.trendAxes, 'axisWords' ) }
+				{ ...field( 'by' ) }
+			/>
+			<SelectControl
+				label={ __( 'Group by', 'newspack-intelligence' ) }
+				options={ choicesOf( vocabulary.buckets, 'spanWords' ) }
+				{ ...field( 'bucket' ) }
 			/>
 			<fieldset className="newspack-intelligence__choices">
 				<legend>
@@ -149,133 +209,131 @@ function LensForm( { initial, vocabulary, onSave, onCancel } ) {
 					/>
 				) ) }
 			</fieldset>
-			<SelectControl
-				label={ __( 'Chart by', 'newspack-intelligence' ) }
-				options={ choicesOf( vocabulary.trendAxes, 'axisWords' ) }
-				{ ...field( 'by' ) }
-			/>
-			<SelectControl
-				label={ __( 'Group by', 'newspack-intelligence' ) }
-				options={ choicesOf( vocabulary.buckets, 'spanWords' ) }
-				{ ...field( 'bucket' ) }
-			/>
-			<div className="newspack-intelligence__actions">
-				<button type="submit" className="button button-primary">
-					{ legend }
-				</button>
+			<div className="newspack-nodes-modal__actions">
 				<button type="button" className="button" onClick={ onCancel }>
 					{ __( 'Cancel', 'newspack-intelligence' ) }
 				</button>
+				<button type="submit" className={ primaryButtonClass() }>
+					{ __( 'Save view', 'newspack-intelligence' ) }
+				</button>
 			</div>
-		</form>
+		</Modal>
 	);
 }
 
 /**
- * The lens opened: its pulse line, quiet or not (`Signals`), and its
- * signals, each counted against its usual mean, then its trend rows as one
- * compact chart (`TrendChart`), then its theme groups, a page of groups at a
- * time in the order the server ranks them, each read through the lens.
+ * The dialog asking before a view is removed.
  *
- * @param {Object}                     props
- * @param {Object}                     props.lens         The listed lens opened.
- * @param {number[]}                   props.starts       Each page's first group.
- * @param {(starts: number[]) => void} props.onStarts     Replaces the page starts.
- * @param {(key: string) => void}      props.onOpenEntity Opens an entity.
- * @param {(item: Object) => void}     [props.onSave]     Saves an item; absent for a reader.
- * @param {boolean}                    [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
- * @return {import('react').ReactElement} The lens's reads.
+ * @param {Object}     props
+ * @param {string}     props.name     The view's name.
+ * @param {() => void} props.onRemove Removes it.
+ * @param {() => void} props.onCancel Keeps it.
+ * @return {import('react').ReactElement} The dialog.
  */
-function Opened( { lens, starts, onStarts, onOpenEntity, onSave, canTune } ) {
-	const through = { lens: lens.lens_key };
-	const offset = starts[ starts.length - 1 ];
-	const items = useIntelRead(
-		'lens:items',
-		'search',
-		commandArgs( {
-			...through,
-			group: 'theme',
-			...( 0 < offset ? { offset } : {} ),
-		} )
-	);
-	const trends = useIntelRead(
-		'lens:trends',
-		'trends',
-		commandArgs( through )
-	);
-	const signals = useIntelRead(
-		'lens:signals',
-		'signals',
-		commandArgs( through )
+function RemoveDialog( { name, onRemove, onCancel } ) {
+	const asked = sprintf(
+		/* translators: %s: the view's name. */
+		__(
+			'Remove the %s view? Watches that follow it will stop.',
+			'newspack-intelligence'
+		),
+		name
 	);
 	return (
-		<>
-			<Answer
-				title={ __( 'Signals', 'newspack-intelligence' ) }
-				level={ 3 }
-				read={ signals }
-				skeleton={ <Skeleton shape="line" count={ 1 } /> }
-			>
-				{ ( answer ) => (
-					<Signals answer={ answer } onSave={ onSave } />
-				) }
-			</Answer>
-			<Answer
-				title={ __( 'Trends', 'newspack-intelligence' ) }
-				level={ 3 }
-				read={ trends }
-				rows="rows"
-				empty={ __(
-					'No trend in this team view.',
-					'newspack-intelligence'
-				) }
-			>
-				{ ( answer ) => <TrendChart rows={ answer.rows } /> }
-			</Answer>
-			<Answer
-				title={ lens.name }
-				level={ 3 }
-				read={ items }
-				rows="groups"
-				empty={ __(
-					'Nothing in this team view.',
-					'newspack-intelligence'
-				) }
-			>
-				{ ( answer ) => (
-					<GroupPage
-						answer={ answer }
-						starts={ starts }
-						onStarts={ onStarts }
-						onOpenEntity={ onOpenEntity }
-						onSave={ onSave }
-						canTune={ canTune }
-					/>
-				) }
-			</Answer>
-		</>
+		<Modal ariaLabel={ asked } onClose={ onCancel }>
+			<p>{ asked }</p>
+			<div className="newspack-nodes-modal__actions">
+				<button type="button" className="button" onClick={ onCancel }>
+					{ __( 'Cancel', 'newspack-intelligence' ) }
+				</button>
+				<button
+					type="button"
+					className={ primaryButtonClass( false, 'is-danger' ) }
+					onClick={ onRemove }
+				>
+					{ __( 'Remove view', 'newspack-intelligence' ) }
+				</button>
+			</div>
+		</Modal>
 	);
 }
 
 /**
- * Lenses: every lens, the one opened with its signals, trend chart and theme
- * groups read through it and, for every reader, the control watching it; and for a
- * curator the form saving a new lens or the one opened, and the control
- * removing it. A save shows its lens and a removal
- * takes its lens out from the moment each is sent, until a read of `lenses`
- * reflects it, since the projector records it seconds after it lands; a
- * refusal puts the lens back. One that lands lists again, and a removal
- * also closes the lens. The page holds the lens opened and its page, so it
- * outlives a visit to another view.
+ * The views to pick from: a rail of each with what is new in it this week,
+ * or below 600 px a select.
  *
- * @param {Object}                                             props
- * @param {boolean}                                            props.canTune      Whether to offer curation.
- * @param {Object}                                             props.vocabulary   The ontology's closed lists.
- * @param {{key: ?string, starts: number[]}}                   props.opened       The lens opened and its page starts.
- * @param {(opened: {key: ?string, starts: number[]}) => void} props.onOpen       Opens a lens or a page of it.
- * @param {(key: string) => void}                              props.onOpenEntity Opens an entity.
- * @param {(target: Object, name: string) => void}             props.onWatch      Opens the watch form on a target.
- * @param {(item: Object) => void}                             [props.onSave]     Saves an item; absent for a reader.
+ * @param {Object}                props
+ * @param {Object[]}              props.lenses The views listed.
+ * @param {string}                props.open   The key of the view open.
+ * @param {(key: string) => void} props.onPick Opens a view.
+ * @return {import('react').ReactElement} The rail.
+ */
+function Rail( { lenses, open, onPick } ) {
+	const narrow = useNarrow();
+	if ( narrow ) {
+		return (
+			<SelectControl
+				__next40pxDefaultSize
+				__nextHasNoMarginBottom
+				label={ __( 'Team view', 'newspack-intelligence' ) }
+				value={ open }
+				options={ lenses.map( ( lens ) => ( {
+					label: sprintf(
+						/* translators: 1: the view's name, 2: what is new in it this week. */
+						__( '%1$s, %2$s', 'newspack-intelligence' ),
+						lens.name,
+						newCount( lens.week_items )
+					),
+					value: lens.lens_key,
+				} ) ) }
+				onChange={ onPick }
+			/>
+		);
+	}
+	return (
+		<nav
+			className="newspack-intelligence__rail"
+			aria-label={ __( 'Team views', 'newspack-intelligence' ) }
+		>
+			<ul>
+				{ lenses.map( ( lens ) => (
+					<li key={ lens.lens_key }>
+						<button
+							type="button"
+							className="newspack-intelligence__rail-item"
+							aria-current={ open === lens.lens_key || undefined }
+							onClick={ () => onPick( lens.lens_key ) }
+						>
+							<span>{ lens.name }</span>{ ' ' }
+							<span className="newspack-nodes-status is-muted">
+								{ newCount( lens.week_items ) }
+							</span>
+						</button>
+					</li>
+				) ) }
+			</ul>
+		</nav>
+	);
+}
+
+/**
+ * Team views: every view in a rail, the one open under its fixed header,
+ * which offers every reader **Watch**, and a curator **Edit** and a menu
+ * holding **Remove view…** and **Edit layout**; below it the team view
+ * layout, its blocks reading the view open. One dialog saves a new view or
+ * the one open, and removing one asks first. A save shows its view and a
+ * removal takes its view out from the moment each is sent, until a read of
+ * `lenses` reflects it, since the projector records it seconds after it
+ * lands; a refusal puts the view back. With none chosen, the first opens.
+ *
+ * @param {Object}                                                props
+ * @param {boolean}                                               props.canTune    Whether to offer curation.
+ * @param {Object}                                                props.vocabulary The ontology's closed lists.
+ * @param {{key: ?string}}                                        props.opened     The view chosen.
+ * @param {(opened: {key: ?string}) => void}                      props.onOpen     Chooses a view.
+ * @param {(target: Object, name: string) => void}                props.onWatch    Opens the watch form on a target.
+ * @param {Object}                                                props.layout     What the page data answered for the team view's context.
+ * @param {Partial<import('../layout/PageContext').IntelActions>} props.actions    What the blocks' rows open.
  * @return {import('react').ReactElement} The view.
  */
 export default function Lens( {
@@ -283,12 +341,13 @@ export default function Lens( {
 	vocabulary,
 	opened,
 	onOpen,
-	onOpenEntity,
 	onWatch,
-	onSave,
+	layout,
+	actions,
 } ) {
 	const lists = vocabulary.lensLists;
 	const [ editing, setEditing ] = useState( null );
+	const [ removing, setRemoving ] = useState( null );
 	const list = useIntelRead( 'lens:list', 'lenses', [] );
 	// The server slugs a new key, so a save is reflected by all but its key.
 	const matches = useCallback(
@@ -310,127 +369,176 @@ export default function Lens( {
 		refresh: () => onOpen( CLOSED_LENS ),
 		onRefused: lenses.refused,
 	} );
-	const lens = lenses.read.answer?.lenses.find(
-		( one ) => one.lens_key === opened.key
-	);
+	const newView = () => setEditing( newLens( lists ) );
+	const listed = lenses.read.answer?.lenses ?? [];
+	const lens =
+		listed.find( ( one ) => one.lens_key === opened.key ) ?? listed[ 0 ];
 
 	return (
 		<div className="newspack-intelligence__view">
-			{ editing ? (
+			<div className="newspack-intelligence__section-head">
+				<h2>{ __( 'Team views', 'newspack-intelligence' ) }</h2>
+				{ canTune && (
+					<button
+						type="button"
+						className="button"
+						onClick={ newView }
+					>
+						{ __( 'New view', 'newspack-intelligence' ) }
+					</button>
+				) }
+			</div>
+			<p className="newspack-nodes-status is-muted">
+				{ __(
+					'Saved views for each team, with what moved this week.',
+					'newspack-intelligence'
+				) }
+			</p>
+			<Refusal error={ remove.refusal } />
+			<AnswerBody
+				read={ lenses.read }
+				rows="lenses"
+				empty={
+					canTune ? (
+						<Invitation
+							text={ __(
+								'No team views yet. A view saves a set of filters and charts what moves inside it.',
+								'newspack-intelligence'
+							) }
+							label={ __( 'New view', 'newspack-intelligence' ) }
+							onClick={ newView }
+						/>
+					) : (
+						__(
+							'No team views yet. A view saves a set of filters and charts what moves inside it.',
+							'newspack-intelligence'
+						)
+					)
+				}
+			>
+				{ ( answer ) => (
+					<div className="newspack-intelligence__lens-page">
+						<Rail
+							lenses={ answer.lenses }
+							open={ lens.lens_key }
+							onPick={ ( key ) => onOpen( { key } ) }
+						/>
+						<div className="newspack-intelligence__lens-main">
+							<div className="newspack-intelligence__section-head">
+								<h2>{ lens.name }</h2>
+								<div className="newspack-intelligence__actions">
+									<button
+										type="button"
+										className="button"
+										onClick={ () =>
+											onWatch(
+												{
+													kind: 'lens',
+													key: lens.lens_key,
+												},
+												lens.name
+											)
+										}
+									>
+										{ __(
+											'Watch',
+											'newspack-intelligence'
+										) }
+									</button>
+									{ canTune && (
+										<>
+											<button
+												type="button"
+												className="button"
+												onClick={ () =>
+													setEditing(
+														lensDraft( lens, lists )
+													)
+												}
+											>
+												{ __(
+													'Edit',
+													'newspack-intelligence'
+												) }
+											</button>
+											<DropdownMenu
+												icon={ moreHorizontal }
+												label={ __(
+													'Team view actions',
+													'newspack-intelligence'
+												) }
+												toggleProps={ {
+													size: 'small',
+												} }
+												controls={ [
+													{
+														title: __(
+															'Remove view…',
+															'newspack-intelligence'
+														),
+														onClick: () =>
+															setRemoving( lens ),
+													},
+													editLayoutControl( {
+														page: 'lens',
+														lens_key: lens.lens_key,
+													} ),
+												] }
+											/>
+										</>
+									) }
+								</div>
+							</div>
+							{ lens.description && (
+								<p className="newspack-nodes-status is-muted">
+									{ lens.description }
+								</p>
+							) }
+							<PageLayout
+								key={ JSON.stringify( lens.filters ) }
+								layout={ layout }
+								page={ {
+									page: 'lens',
+									lens_key: lens.lens_key,
+									lens,
+									entity_key: null,
+									since: null,
+									editing: false,
+									actions,
+								} }
+							/>
+						</div>
+					</div>
+				) }
+			</AnswerBody>
+			{ editing && (
 				<LensForm
 					initial={ editing }
 					vocabulary={ vocabulary }
+					refusal={ save.refusal }
 					onSave={ ( draft ) =>
-						lenses.hold( draft.key, draftLens( draft, lists ), () =>
-							save.run( draftArgs( draft, lists ) )
+						lenses.hold(
+							draft.key || draft.name,
+							draftLens(
+								{ ...draft, key: draft.key || draft.name },
+								lists
+							),
+							() => save.run( draftArgs( draft, lists ) )
 						)
 					}
 					onCancel={ () => setEditing( null ) }
 				/>
-			) : (
-				( canTune || lens ) && (
-					<div className="newspack-intelligence__create">
-						{ canTune && (
-							<button
-								type="button"
-								className="button button-primary"
-								onClick={ () => setEditing( newLens( lists ) ) }
-							>
-								{ __( 'New view', 'newspack-intelligence' ) }
-							</button>
-						) }
-						{ canTune && lens && (
-							<>
-								<button
-									type="button"
-									className="button"
-									onClick={ () =>
-										setEditing( lensDraft( lens, lists ) )
-									}
-								>
-									{ __( 'Edit', 'newspack-intelligence' ) }
-								</button>
-								<button
-									type="button"
-									className="button"
-									onClick={ () =>
-										lenses.hold( lens.lens_key, null, () =>
-											remove.run( { key: lens.lens_key } )
-										)
-									}
-								>
-									{ __(
-										'Remove view',
-										'newspack-intelligence'
-									) }
-								</button>
-							</>
-						) }
-						{ lens && (
-							<button
-								type="button"
-								className="button"
-								onClick={ () =>
-									onWatch(
-										{ kind: 'lens', key: lens.lens_key },
-										lens.name
-									)
-								}
-							>
-								{ __( 'Watch this', 'newspack-intelligence' ) }
-							</button>
-						) }
-					</div>
-				)
 			) }
-			<Refusal error={ save.refusal } />
-			<Refusal error={ remove.refusal } />
-			<Answer
-				title={ __( 'Team views', 'newspack-intelligence' ) }
-				read={ lenses.read }
-				rows="lenses"
-				empty={ __( 'No team view yet.', 'newspack-intelligence' ) }
-			>
-				{ ( answer ) => (
-					<ul className="newspack-intelligence__facts">
-						{ answer.lenses.map( ( one ) => (
-							<li
-								key={ one.lens_key }
-								className="newspack-intelligence__actions"
-							>
-								<button
-									type="button"
-									className={
-										opened.key === one.lens_key
-											? 'button button-small is-active'
-											: 'button button-small'
-									}
-									onClick={ () =>
-										onOpen( {
-											...CLOSED_LENS,
-											key: one.lens_key,
-										} )
-									}
-								>
-									{ one.name }
-								</button>
-								<span className="newspack-nodes-status is-muted">
-									{ one.description }
-								</span>
-							</li>
-						) ) }
-					</ul>
-				) }
-			</Answer>
-			{ lens && (
-				<Opened
-					key={ JSON.stringify( lens.filters ) }
-					lens={ lens }
-					starts={ opened.starts }
-					onStarts={ ( starts ) => onOpen( { ...opened, starts } ) }
-					onOpenEntity={ onOpenEntity }
-					onSave={ onSave }
-					canTune={ canTune }
+			{ removing && (
+				<RemoveDialog
+					name={ removing.name }
+					onRemove={ () => {
+						setRemoving( null );
+						lenses.hold( removing.lens_key, null, () =>
+							remove.run( { key: removing.lens_key } )
+						);
+					} }
+					onCancel={ () => setRemoving( null ) }
 				/>
 			) }
 		</div>

@@ -18,8 +18,28 @@ process.env.TZ = 'Pacific/Auckland';
 module.exports = createJestConfig( {
 	aliasBase: path.resolve( __dirname, '../newspack-nodes/src' ),
 	pinReactFrom: path.resolve( __dirname, 'node_modules' ),
+	// Shared composition code meets this plugin's block packages, so a test's
+	// registry and mock are the ones it reads.
 	extraMappers: {
 		'^d3$': path.resolve( __dirname, 'node_modules/d3' ),
+		'^@wordpress/blocks$': path.resolve(
+			__dirname,
+			'node_modules/@wordpress/blocks'
+		),
+		'^@wordpress/block-editor$': path.resolve(
+			__dirname,
+			'node_modules/@wordpress/block-editor'
+		),
+		// The bundle's `./wp` entry is ESM; tests read the same source as CJS.
+		'^@wordpress/dataviews/wp$': path.resolve(
+			__dirname,
+			'node_modules/@wordpress/dataviews/build/index.cjs'
+		),
+		// One copy, as WordPress hands every package one wp.privateApis.
+		'^@wordpress/private-apis$': path.resolve(
+			__dirname,
+			'node_modules/@wordpress/private-apis'
+		),
 	},
 	transformIgnorePatterns: [
 		'node_modules/(?!(@noble/.*|d3|d3-.*|internmap|delaunator|robust-predicates)/)',

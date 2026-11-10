@@ -15,11 +15,31 @@ import { raise, sendQueuedWrites } from '@newspack-nodes/runtime';
 export const UNDO_MS = 5000;
 
 /**
+ * Sends each of a held write's sends, every one though another throws.
+ *
+ * @param {{sends: Array<() => void>}} write The write.
+ * @return {Error[]} What the sends threw.
+ */
+function sendEach( write ) {
+	const failures = [];
+	for ( const send of write.sends ) {
+		try {
+			send();
+		} catch ( error ) {
+			failures.push( error );
+		}
+	}
+	return failures;
+}
+
+/**
  * Writes held for the undo window, each its own timer. `defer()` hides its
  * key at once, announces its message politely and sends after `UNDO_MS`;
- * `undo()` cancels the most recent write still pending and answers its key,
- * or null with none pending; `flush()` sends every pending write now, each
- * once, and raises what the sends threw only after all have run. The hook
+ * `deferGroup()` does the same for several rows' writes under one message,
+ * one timer and one undo; `undo()` cancels the most recent write still
+ * pending and answers its key, a group's first, or null with none pending;
+ * `flush()` sends every pending write now, each once, and raises what the
+ * sends threw only after all have run. The hook
  * flushes itself on `pagehide` and on unmount, which is a tab switch, so a
  * reader who leaves loses no judgment.
  *
@@ -30,9 +50,9 @@ export const UNDO_MS = 5000;
  * stopped, so after the flush `sendQueuedWrites()` posts every queued write
  * in the same task, with `keepalive`.
  *
- * @return {{hidden: Set<string>, latest: ?{id: number, key: string, message: string}, defer: (key: string, send: () => void, message: string) => void, undo: () => ?string, flush: () => void}}
+ * @return {{hidden: Set<string>, latest: ?{id: number, key: string, message: string}, defer: (key: string, send: () => void, message: string) => void, deferGroup: (writes: Array<{key: string, send: () => void}>, message: string) => void, undo: () => ?string, flush: () => void}}
  *   The keys pending; the write an undo takes, `id` telling apart two
- *   writes of one key; and the three controls.
+ *   writes of one key; and the four controls.
  */
 export function useDeferredWrite() {
 	const pending = useRef( [] );
@@ -44,19 +64,28 @@ export function useDeferredWrite() {
 		setShown( writes );
 	}, [] );
 
-	const defer = useCallback(
-		( key, send, message ) => {
+	const deferGroup = useCallback(
+		( writes, message ) => {
 			sequence.current += 1;
-			const write = { id: sequence.current, key, message };
+			const write = {
+				id: sequence.current,
+				keys: writes.map( ( one ) => one.key ),
+				sends: writes.map( ( one ) => one.send ),
+				message,
+			};
 			write.timer = setTimeout( () => {
 				publish( pending.current.filter( ( one ) => one !== write ) );
-				send();
+				raise( sendEach( write ) );
 			}, UNDO_MS );
-			write.send = send;
 			publish( [ ...pending.current, write ] );
 			speak( message, 'polite' );
 		},
 		[ publish ]
+	);
+
+	const defer = useCallback(
+		( key, send, message ) => deferGroup( [ { key, send } ], message ),
+		[ deferGroup ]
 	);
 
 	const undo = useCallback( () => {
@@ -66,7 +95,7 @@ export function useDeferredWrite() {
 		}
 		clearTimeout( write.timer );
 		publish( pending.current.slice( 0, -1 ) );
-		return write.key;
+		return write.keys[ 0 ];
 	}, [ publish ] );
 
 	const flush = useCallback( () => {
@@ -75,16 +104,12 @@ export function useDeferredWrite() {
 			return;
 		}
 		publish( [] );
-		const failures = [];
-		for ( const write of writes ) {
-			clearTimeout( write.timer );
-			try {
-				write.send();
-			} catch ( error ) {
-				failures.push( error );
-			}
-		}
-		raise( failures );
+		raise(
+			writes.flatMap( ( write ) => {
+				clearTimeout( write.timer );
+				return sendEach( write );
+			} )
+		);
 	}, [ publish ] );
 
 	useLayoutEffect( () => {
@@ -111,11 +136,12 @@ export function useDeferredWrite() {
 
 	const last = shown.at( -1 );
 	return {
-		hidden: new Set( shown.map( ( write ) => write.key ) ),
+		hidden: new Set( shown.flatMap( ( write ) => write.keys ) ),
 		latest: last
-			? { id: last.id, key: last.key, message: last.message }
+			? { id: last.id, key: last.keys[ 0 ], message: last.message }
 			: null,
 		defer,
+		deferGroup,
 		undo,
 		flush,
 	};

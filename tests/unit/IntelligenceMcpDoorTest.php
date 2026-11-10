@@ -75,7 +75,7 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		$this->assertArrayNotHasKey( 'intel_health', $tools );
 		$this->assertArrayNotHasKey( 'intel_seed_ontology', $tools );
 		$this->assertArrayNotHasKey( 'intel_reresolve', $tools );
-		$this->assertCount( 44, $tools );
+		$this->assertCount( 45, $tools );
 		$this->assertSame( [ 'item' ], $tools['intel_exclude_item']['inputSchema']['required'] );
 		$this->assertSame( [ 'item' ], $tools['intel_include_item']['inputSchema']['required'] );
 		$this->assertSame( [], \array_intersect( [ 'intel_exclude_item', 'intel_include_item', 'intel_excluded' ], \array_keys( $this->listed( ...$this->door( Capabilities::READ ) ) ) ), 'a read session is offered no exclusion' );
@@ -91,6 +91,8 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		}
 		$this->assertSame( [ 'type' => 'integer' ], \array_intersect_key( $tools['intel_search']['inputSchema']['properties']['limit'], [ 'type' => 1 ] ) );
 		$this->assertSame( [ 'item', 'entity' ], $tools['intel_confirm_link']['inputSchema']['required'] );
+		$this->assertSame( [ 'item', 'entity' ], $tools['intel_add_link']['inputSchema']['required'] );
+		$this->assertSame( [ 'item', 'entity', 'role' ], \array_keys( (array) $tools['intel_add_link']['inputSchema']['properties'] ) );
 		foreach ( [ 'intel_search', 'intel_trends' ] as $lensed ) {
 			$this->assertSame( 'string', $tools[ $lensed ]['inputSchema']['properties']['lens']['type'], $lensed );
 			$this->assertSame( [ 'type' => 'array', 'items' => [ 'type' => 'string' ] ], \array_intersect_key( $tools[ $lensed ]['inputSchema']['properties']['kind'], [ 'type' => 1, 'items' => 1 ] ), $lensed );
