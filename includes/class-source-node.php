@@ -70,9 +70,6 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	/** Bytes of a refused key its line shows. */
 	private const KEY_SHOWN_BYTES = 64;
 
-	/** Bytes of a failure's text its log line keeps, as many as its status keeps. */
-	private const FAULT_BYTES = 500;
-
 	/** Cap on the remembered recorded-key set — bounds memory on a long-lived worker. */
 	private const MAX_SEEN = 2000;
 
@@ -310,7 +307,7 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 			}
 			$value = Core::as_string( $value );
 			if ( 0 !== ( $type & Message::TM_ERROR ) ) {
-				$this->fault = self::fault_line( $value );
+				$this->fault = self::status_text( $value );
 				// Curl's text names the url, so the status takes it bare.
 				$this->print_less_often( 'a fetch failed for ' . Core::terminal_safe( $key ) . ': ', $this->fault );
 				$this->failed( $key, $value );
@@ -912,24 +909,12 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	 * source drops whole; from a begin() queueing nothing, it fails the pass.
 	 *
 	 * @param string $prefix What failed, naming the request's url, terminal-safe.
-	 * @param string $detail Why, made one line here (fault_line()).
+	 * @param string $detail Why, made one line here (status_text()).
 	 */
 	protected function fails( string $prefix, string $detail ): void {
-		$detail = self::fault_line( $detail );
+		$detail = self::status_text( $detail );
 		$this->print_less_often( $prefix, $detail );
 		$this->fault = $prefix . $detail;
-	}
-
-	/**
-	 * A failure's text as one log line: invalid UTF-8 scrubbed, each run of
-	 * whitespace one space, trimmed, terminal-safe, then cut to
-	 * FAULT_BYTES on a character boundary.
-	 *
-	 * @param string $text The failure's text, as a parser, a throw or Curl gave it.
-	 */
-	private static function fault_line( string $text ): string {
-		$line = \trim( (string) \preg_replace( '/\s+/u', ' ', \mb_scrub( $text, 'UTF-8' ) ) );
-		return \mb_strcut( Core::terminal_safe( $line ), 0, self::FAULT_BYTES, 'UTF-8' );
 	}
 
 	/** Emit the base config, each declared setter's line and one add line per list or checked list entry. */

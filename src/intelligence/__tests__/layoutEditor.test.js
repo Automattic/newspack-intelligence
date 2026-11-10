@@ -11,7 +11,13 @@
  * composition commands and the reads run for real over the command double.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from '@testing-library/react';
 import { getBlockTypes, unregisterBlockType } from '@wordpress/blocks';
 import { useContext } from '@wordpress/element';
 import { Core } from '@newspack-nodes/runtime';
@@ -326,6 +332,37 @@ describe( 'mountLayoutEditor', () => {
 				WAIT
 			)
 		).toBeTruthy();
+	} );
+
+	it( 'tells the page whether the layout holds a change not yet saved', async () => {
+		wire.replies.get = { ...SAVED, blocks: [] };
+		mountLayoutEditor(
+			{
+				context: 'newspack-intelligence/briefing',
+				max_blocks: 24,
+				blocks: {},
+			},
+			BLOCK_VIEWS
+		);
+		const told = [];
+		render(
+			<CompositionEditSlot
+				context="newspack-intelligence/briefing"
+				target={ { page: 'briefing' } }
+				since={ 1792000000 }
+				onDone={ () => {} }
+				onDirty={ ( dirty ) => told.push( dirty ) }
+			/>
+		);
+		await waitFor(
+			() => expect( mockProvider.props?.value ).toEqual( [] ),
+			WAIT
+		);
+		expect( told ).toEqual( [ false ] );
+
+		act( () => mockProvider.props.onInput( [] ) );
+
+		expect( told ).toEqual( [ false, true ] );
 	} );
 
 	it( 'heads each page in its own words', async () => {

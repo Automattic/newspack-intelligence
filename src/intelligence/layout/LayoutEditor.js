@@ -127,9 +127,10 @@ function EntityPreview( { entityKey, onChange } ) {
  * @param {import('./editMode').EditTarget}          props.target  The page and the subject it was opened from.
  * @param {?number}                                  props.since   The reader's last look, which the Briefing's blocks read.
  * @param {(answer: ?Object, verb: ?string) => void} props.onDone  Hands the page the layout it renders next.
+ * @param {(dirty: boolean) => void}                 props.onDirty Tells the page whether a change is not yet saved.
  * @return {import('react').ReactElement} The editor.
  */
-function LayoutEditor( { context, schemas, target, since, onDone } ) {
+function LayoutEditor( { context, schemas, target, since, onDone, onDirty } ) {
 	const [ lensKey, setLensKey ] = useState( target.lens_key ?? null );
 	const [ entityKey, setEntityKey ] = useState( target.entity_key ?? null );
 	const lenses = useIntelRead(
@@ -174,6 +175,7 @@ function LayoutEditor( { context, schemas, target, since, onDone } ) {
 				schemas={ schemas }
 				preview={ preview }
 				onDone={ onDone }
+				onDirty={ onDirty }
 			/>
 		</IntelPageContext.Provider>
 	);

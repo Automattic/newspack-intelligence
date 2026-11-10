@@ -1,4 +1,5 @@
 import {
+	useCallback,
 	useEffect,
 	useLayoutEffect,
 	useRef,
@@ -25,7 +26,7 @@ import { useLastLook } from './hooks/useLastLook';
 import { useIntelRead } from './hooks/useIntelCommand';
 import UndoSnackbar from './components/UndoSnackbar';
 import { editTarget, layoutContext, leaveEdit } from './layout/editMode';
-import Confirm from './layout/Confirm';
+import { Confirm } from '@newspack-nodes/shared/components/Modal';
 import './styles/intelligence.scss';
 
 /** The edit slot, which hands every prop past `context` to the editor. */
@@ -83,11 +84,12 @@ const defaultView = () => ( linkedWatch() ? 'watches' : 'briefing' );
  * whose ⋯ menu offers a curator **Edit layout**. A curator's load naming
  * `edit` puts the layout editor in the panel and keeps the tab bar; the
  * layout it hands back, or a restored default, replaces the page's without a
- * reload. While an edit stands, a tab picked or Back and Forward ask
- * "Discard your changes to this layout?" first, the editor standing until
- * answered: **Discard changes** ends the edit and goes, and **Keep editing**
- * stays, returning to the edit's view. Back and Forward otherwise go as a
- * tab picked goes, closing a profile.
+ * reload. A tab picked or Back and Forward end an edit; while the editor
+ * holds a change not yet saved, they ask "Discard your changes to this
+ * layout?" first, the editor standing until answered: **Discard changes**
+ * ends the edit and goes, and **Keep editing** stays, returning to the edit's
+ * view. Back and Forward otherwise go as a tab picked goes, closing a
+ * profile.
  *
  * The shared `DashboardShell` supplies the skin, the positioned page surface,
  * the header naming this page and the debug overlay; the page scrolls in the
@@ -113,6 +115,7 @@ export default function IntelligencePage( {
 	const [ editing, setEditing ] = useState( () =>
 		canTune ? editTarget( window.location.search ) : null
 	);
+	const [ dirty, setDirty ] = useState( false );
 	const [ layouts, setLayouts ] = useState( compositions );
 	const [ laidOut, setLaidOut ] = useState( null );
 	const [ profile, setProfile ] = useState( () =>
@@ -207,25 +210,36 @@ export default function IntelligencePage( {
 		setProfile( null );
 		setView( id );
 	};
-	const go = ( id ) =>
-		editing ? setLeaving( { view: id, popped: false } ) : show( id );
+	const endEdit = useCallback( () => {
+		setEditing( null );
+		leaveEdit();
+	}, [] );
+	const go = ( id ) => {
+		if ( editing && dirty ) {
+			setLeaving( { view: id, popped: false } );
+			return;
+		}
+		if ( editing ) {
+			endEdit();
+		}
+		show( id );
+	};
 	useEffect( () => {
 		if ( view === went.current ) {
 			return;
 		}
-		if ( editing ) {
+		if ( editing && dirty ) {
 			setLeaving( { view, popped: true } );
 			return;
 		}
+		if ( editing ) {
+			endEdit();
+		}
 		went.current = view;
 		setProfile( null );
-	}, [ view, editing ] );
+	}, [ view, editing, dirty, endEdit ] );
 	const relaid = ( answer ) =>
 		setLayouts( ( was ) => ( { ...was, [ answer.context ]: answer } ) );
-	const endEdit = () => {
-		setEditing( null );
-		leaveEdit();
-	};
 	const discard = () => {
 		const { view: to, popped } = leaving;
 		setLeaving( null );
@@ -275,6 +289,7 @@ export default function IntelligencePage( {
 			context={ layoutContext( editing.page ) }
 			target={ editing }
 			since={ lastLook.since }
+			onDirty={ setDirty }
 			onDone={ ( answer, verb ) => {
 				if ( answer ) {
 					relaid( answer );

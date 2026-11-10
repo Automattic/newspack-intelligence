@@ -62,9 +62,7 @@ function SheetBody( { children } ) {
 			field.focus();
 			return;
 		}
-		const heading = body.current.ownerDocument.getElementById( titleId );
-		heading.tabIndex = -1;
-		heading.focus();
+		body.current.ownerDocument.getElementById( titleId ).focus();
 	}, [ titleId ] );
 	return (
 		<div ref={ body } className="newspack-intelligence__sheet-body">

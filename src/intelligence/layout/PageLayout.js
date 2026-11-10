@@ -15,7 +15,7 @@ import { Unread } from '../components/Answer';
 import Refusal from '../components/Refusal';
 import { BLOCK_VIEWS, jumpsOf } from '../blocks';
 import { useIntelWrite } from '../hooks/useIntelCommand';
-import Confirm from './Confirm';
+import { Confirm } from '@newspack-nodes/shared/components/Modal';
 import { IntelPageContext } from './PageContext';
 
 /** The one container, which stands beside the main column. */

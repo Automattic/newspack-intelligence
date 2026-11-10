@@ -14,6 +14,7 @@ import {
 	waitFor,
 	within,
 } from '@testing-library/react';
+import { useEffect } from '@wordpress/element';
 import { Core } from '@newspack-nodes/runtime';
 
 jest.mock( '@newspack-nodes/debug-overlay', () => ( {
@@ -1193,18 +1194,22 @@ describe( 'IntelligencePage', () => {
 
 	describe( 'layouts', () => {
 		const LENS = 'newspack-intelligence/lens';
-		const editor = { done: null };
+		const editor = { done: null, dirty: null };
 
 		/**
-		 * The editor a curator's bundle registers, standing in for it.
+		 * The editor a curator's bundle registers, standing in for it: clean
+		 * as it mounts, as the shared editor tells its page.
 		 *
 		 * @param {Object}   props
-		 * @param {Object}   props.target The page and its subject.
-		 * @param {Function} props.onDone Hands the page its next layout.
+		 * @param {Object}   props.target  The page and its subject.
+		 * @param {Function} props.onDone  Hands the page its next layout.
+		 * @param {Function} props.onDirty Tells the page whether a change stands.
 		 * @return {import('react').ReactElement} The stand-in.
 		 */
-		function StandInEditor( { target, onDone } ) {
+		function StandInEditor( { target, onDone, onDirty } ) {
 			editor.done = onDone;
+			editor.dirty = onDirty;
+			useEffect( () => onDirty( false ), [ onDirty ] );
 			return <p>{ `Editing the layout of ${ target.lens_key }` }</p>;
 		}
 
@@ -1283,10 +1288,14 @@ describe( 'IntelligencePage', () => {
 				).getByRole( 'button', { name: answer } )
 			);
 
-		it( 'asks before a tab change ends an edit, and keeps editing on Keep editing', async () => {
+		/** Change the layout in the stand-in editor. */
+		const change = () => act( () => editor.dirty( true ) );
+
+		it( 'asks before a tab change ends a changed edit, and keeps editing on Keep editing', async () => {
 			editLens();
 			renderPage( true );
 			await screen.findByRole( 'tab', { name: 'Review 0' } );
+			change();
 
 			fireEvent.click( nav( 'Briefing' ) );
 			expect(
@@ -1314,10 +1323,57 @@ describe( 'IntelligencePage', () => {
 			expect( editorText() ).toBeNull();
 		} );
 
-		it( 'asks before Back ends an edit, the editor standing until it is answered', async () => {
+		it( 'leaves an unchanged edit on a tab change without asking', async () => {
 			editLens();
 			renderPage( true );
 			await screen.findByRole( 'tab', { name: 'Review 0' } );
+
+			fireEvent.click( nav( 'Review 0' ) );
+
+			expect(
+				screen.queryByRole( 'dialog', {
+					name: 'Discard your changes to this layout?',
+				} )
+			).toBeNull();
+			expect( editorText() ).toBeNull();
+			expect( await screen.findByText( EMPTY_REVIEW ) ).toBeVisible();
+			expect(
+				new URLSearchParams( window.location.search ).get( 'edit' )
+			).toBeNull();
+		} );
+
+		it( 'leaves an unchanged edit on Back without asking', async () => {
+			editLens();
+			renderPage( true );
+			await screen.findByRole( 'tab', { name: 'Review 0' } );
+
+			window.history.replaceState(
+				{},
+				'',
+				'/wp-admin/admin.php?page=newspack-intelligence&view=review'
+			);
+			act( () => {
+				window.dispatchEvent( new PopStateEvent( 'popstate' ) );
+			} );
+
+			expect(
+				screen.queryByRole( 'dialog', {
+					name: 'Discard your changes to this layout?',
+				} )
+			).toBeNull();
+			expect( editorText() ).toBeNull();
+			expect( await screen.findByText( EMPTY_REVIEW ) ).toBeVisible();
+			expect( nav( 'Review 0' ) ).toHaveAttribute(
+				'aria-selected',
+				'true'
+			);
+		} );
+
+		it( 'asks before Back ends a changed edit, the editor standing until it is answered', async () => {
+			editLens();
+			renderPage( true );
+			await screen.findByRole( 'tab', { name: 'Review 0' } );
+			change();
 
 			window.history.replaceState(
 				{},
