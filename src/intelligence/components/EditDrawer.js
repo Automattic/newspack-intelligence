@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { Button } from '@wordpress/components';
-import { DataForm, useFormValidity } from '@wordpress/dataviews/wp';
+import { DataForm, useFormValidity } from '@wordpress/dataviews';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { CLIENT } from '../hooks/useEndClient';
 import { entityName, roleText } from './format';
@@ -11,7 +11,7 @@ import { word } from './words';
 /**
  * Each Add form lays its fields out in one card with no header of its own.
  *
- * @type {import('@wordpress/dataviews/wp').Form['layout']}
+ * @type {import('@wordpress/dataviews').Form['layout']}
  */
 const CARD = { type: 'card', withHeader: false };
 
@@ -64,7 +64,7 @@ const VALUE = {
  */
 function AddForm( { legend, fields, blank, onSubmit } ) {
 	const [ data, setData ] = useState( blank );
-	/** @type {import('@wordpress/dataviews/wp').Form} */
+	/** @type {import('@wordpress/dataviews').Form} */
 	const form = useMemo(
 		() => ( { layout: CARD, fields: fields.map( ( field ) => field.id ) } ),
 		[ fields ]

@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Requires newspack-nodes 2.151.0.** Item lists draw through the substrate's shared `DataViewsList`, and DataViews loads from the substrate's one `newspack-nodes-dataviews` script instead of a copy in this bundle.
 - **Lists run on DataViews** through `ItemList`: Search's Find items (Team view and Kind of news always shown, the rest behind Add filter, the client picked by name, Importance or Newest order, every filter in a sheet when narrow) and Review's queues. A team view now combines with other filters.
 - **Review shows its three queues as counted tabs**, each suggestion with its reason and quoted evidence; Same as… confirms the merge in a dialog; a pair of themes offers Keep either one or Not the same; a curator's Review tab counts the suggested matches.
 - Review and a watch's matches share one single-key implementation and one "Turn off single-key shortcuts" setting.

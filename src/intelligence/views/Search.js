@@ -1,5 +1,5 @@
 import { Button, SelectControl } from '@wordpress/components';
-import { DataViews } from '@wordpress/dataviews/wp';
+import { DataViews } from '@wordpress/dataviews';
 import { useEffect, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';

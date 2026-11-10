@@ -530,21 +530,10 @@
 	padding: base.$space-sm;
 }
 
-// A list checked into runs acts from its bulk toolbar, never a row's cell.
-.newspack-intelligence__run-only .dataviews-view-list__item-actions {
-	display: none;
-}
-
-// A checked row's box leads its content, which takes the rest of the row.
-.newspack-intelligence__checkable {
-	display: flex;
-	align-items: flex-start;
-	gap: base.$space-sm;
-
-	> :last-child {
-		flex: 1 1 auto;
-		min-width: 0;
-	}
+// A checked item's row takes the rest of the line beside its box.
+.newspack-nodes-dataviews__checkable > :last-child {
+	flex: 1 1 auto;
+	min-width: 0;
 }
 
 // A row's More actions toggle is a bare glyph that never wraps alone.

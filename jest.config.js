@@ -30,8 +30,8 @@ module.exports = createJestConfig( {
 			__dirname,
 			'node_modules/@wordpress/block-editor'
 		),
-		// The bundle's `./wp` entry is ESM; tests read the same source as CJS.
-		'^@wordpress/dataviews/wp$': path.resolve(
+		// One copy, so the shared list and a caller's header share a context.
+		'^@wordpress/dataviews$': path.resolve(
 			__dirname,
 			'node_modules/@wordpress/dataviews/build/index.cjs'
 		),
