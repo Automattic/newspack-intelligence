@@ -530,12 +530,6 @@
 	padding: base.$space-sm;
 }
 
-// A checked item's row takes the rest of the line beside its box.
-.newspack-nodes-dataviews__checkable > :last-child {
-	flex: 1 1 auto;
-	min-width: 0;
-}
-
 // A row's More actions toggle is a bare glyph that never wraps alone.
 .newspack-intelligence__item-head > .components-dropdown {
 	flex: none;
