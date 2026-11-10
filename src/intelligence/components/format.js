@@ -169,6 +169,34 @@ export function dayLabel( day, today ) {
 export const shownDay = ( day ) => dayLabel( day, utcDay( Core.now() ) );
 
 /**
+ * Who took a step, by the kind its actor string leads with: the pipeline
+ * (`machine:`), a person (`user:`) or an agent acting for one (`agent:`).
+ *
+ * @return {Object<string, string>} Each kind's noun.
+ */
+const actorNouns = () => ( {
+	machine: __( 'the pipeline', 'newspack-intelligence' ),
+	user: __( 'a curator', 'newspack-intelligence' ),
+	agent: __( 'an agent', 'newspack-intelligence' ),
+} );
+
+/**
+ * Who an actor string names, in words. An actor of a kind the graph does
+ * not write throws, as `word()` does for a key the vocabulary lacks.
+ *
+ * @param {string} actor The actor string, such as `user:41`.
+ * @return {string} The noun.
+ */
+export function actorNoun( actor ) {
+	const kind = actor.split( ':', 1 )[ 0 ];
+	const nouns = actorNouns();
+	if ( ! Object.prototype.hasOwnProperty.call( nouns, kind ) ) {
+		throw new Error( `no words for the actor "${ actor }"` );
+	}
+	return nouns[ kind ];
+}
+
+/**
  * What an entity is called: its name, else its key.
  *
  * @param {{name: ?string, entity_key: string}} entity The entity.
@@ -194,8 +222,8 @@ export function usualPhrase( mean ) {
 }
 
 /**
- * A row's meta line: its parts joined by " · ", leaving out only the absent
- * ones — null, undefined and '' — so a 0 still shows.
+ * A line's parts as one comma sentence, leaving out only the absent ones —
+ * null, undefined and '' — so a 0 still shows.
  *
  * @param {...*} parts The parts, in order.
  * @return {string} The line.
@@ -205,8 +233,47 @@ export function metaLine( ...parts ) {
 		.filter(
 			( part ) => null !== part && undefined !== part && '' !== part
 		)
-		.join( ' · ' );
+		.join( ', ' );
 }
+
+/**
+ * The named arguments a write's tokens carry, each `--name=value`, by name;
+ * none for a reply that echoed no tokens.
+ *
+ * @param {?string[]} tokens The tokens.
+ * @return {Object<string, string>} Each value by its name.
+ */
+export const argsOf = ( tokens ) =>
+	Object.fromEntries(
+		( tokens ?? [] ).map( ( token ) => {
+			const at = token.indexOf( '=' );
+			return [ token.slice( 2, at ), token.slice( at + 1 ) ];
+		} )
+	);
+
+/**
+ * An item's key.
+ *
+ * @param {{item_key: string}} item The item.
+ * @return {string} Its key.
+ */
+export const itemKey = ( item ) => item.item_key;
+
+/**
+ * An entity's key.
+ *
+ * @param {{entity_key: string}} entity The entity.
+ * @return {string} Its key.
+ */
+export const entityKey = ( entity ) => entity.entity_key;
+
+/**
+ * A folder's key.
+ *
+ * @param {{collection_key: string}} folder The folder.
+ * @return {string} Its key.
+ */
+export const collectionKey = ( folder ) => folder.collection_key;
 
 /**
  * One role row by its word: open from its first day, or held between two.

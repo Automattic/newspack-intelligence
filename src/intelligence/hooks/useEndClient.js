@@ -14,20 +14,13 @@ import { useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { CLIENT_READS, useIntelWrite } from './useIntelCommand';
 import { useHeld } from './useHeld';
+import { entityKey } from '../components/format';
 
 /** The role a client holds while it is one. */
 export const CLIENT = 'client';
 
 /** The role a client that left is given once its client role ends. */
 const FORMER_CLIENT = 'former_client';
-
-/**
- * A listed client's key.
- *
- * @param {{entity_key: string}} row A row naming a client.
- * @return {string} Its key.
- */
-const clientKey = ( row ) => row.entity_key;
 
 /**
  * End one client at a time, asked first. `ask( client )` names the client
@@ -55,7 +48,7 @@ const clientKey = ( row ) => row.entity_key;
  *   the message naming the client the last pair ended whole.
  */
 export function useEndClient( scope, read, rows ) {
-	const held = useHeld( read, rows, clientKey );
+	const held = useHeld( read, rows, entityKey );
 	const [ asking, setAsking ] = useState( null );
 	const [ pair, setPair ] = useState( null );
 	const [ owed, setOwed ] = useState( false );

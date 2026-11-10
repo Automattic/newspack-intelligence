@@ -9,8 +9,12 @@ import {
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { ComboboxControl } from '@wordpress/components';
 import { check, closeSmall } from '@wordpress/icons';
+import DataViewsList from '@newspack-nodes/shared/components/DataViewsList';
 import Modal, { ModalHeader } from '@newspack-nodes/shared/components/Modal';
-import TabBar, { useTabPanelProps } from '@newspack-nodes/shared/tabs/TabBar';
+import TabBar, {
+	tabDomId,
+	useTabPanelProps,
+} from '@newspack-nodes/shared/tabs/TabBar';
 import { primaryButtonClass } from '@newspack-nodes/shared/utils/buttonClass';
 import {
 	ENTITY_READS,
@@ -24,12 +28,18 @@ import { useDeferredWrite } from '../hooks/useDeferredWrite';
 import { AnswerBody, Unread } from '../components/Answer';
 import Cite, { EntityChip } from '../components/Cite';
 import { useEntityNames } from '../components/EntityPicker';
-import ItemList from '../components/ItemList';
 import ListKeys, { LEAVES } from '../components/ListKeys';
 import Refusal from '../components/Refusal';
 import Skeleton from '../components/Skeleton';
 import UndoSnackbar from '../components/UndoSnackbar';
-import { entityName, evidenceText, pageFormat } from '../components/format';
+import {
+	argsOf,
+	entityKey,
+	entityName,
+	evidenceText,
+	itemKey,
+	pageFormat,
+} from '../components/format';
 import { word } from '../components/words';
 
 /** The queues' tab bar's scope on the page, apart from the page's own. */
@@ -89,20 +99,6 @@ function howFound( link ) {
 }
 
 /**
- * The arguments a write's tokens name, by name.
- *
- * @param {string[]} tokens The tokens, each `--name=value`.
- * @return {Object<string, string>} Each value by its name.
- */
-const argsOf = ( tokens ) =>
-	Object.fromEntries(
-		tokens.map( ( token ) => {
-			const at = token.indexOf( '=' );
-			return [ token.slice( 2, at ), token.slice( at + 1 ) ];
-		} )
-	);
-
-/**
  * A proposed link's key: its item and entity.
  *
  * @param {Object} link The link.
@@ -110,14 +106,6 @@ const argsOf = ( tokens ) =>
  */
 const linkKey = ( link ) =>
 	JSON.stringify( [ link.item_key, link.entity_key ] );
-
-/**
- * A proposed entity's key.
- *
- * @param {Object} entity The entity.
- * @return {string} The key.
- */
-const entityKey = ( entity ) => entity.entity_key;
 
 /**
  * Two themes' key, the same whichever is named first.
@@ -443,7 +431,7 @@ function EntityRow( { item: entity, onOpen, judgeOf, refusalOf } ) {
 					sprintf(
 						/* translators: <entity /> is the entity's name; %s: its type. */
 						__(
-							'New name: <entity /> (%s)',
+							'New name: <entity />, a %s',
 							'newspack-intelligence'
 						),
 						word( 'typeWords', entity.type )
@@ -712,7 +700,7 @@ function MergeDialog( { name, from, pending, refusal, onMerge, onClose } ) {
  * answers less what the reader has judged — the proposed links, one row per
  * item asking of each entity proposed for it whether the item is about it;
  * the proposed entities, each with the items citing it; and the pairs of
- * themes `theme_suggestions` reads. Each queue is an `ItemList` in the list
+ * themes `theme_suggestions` reads. Each queue is a `DataViewsList` in the list
  * layout. Each proposal says why it was proposed and quotes the sentence it
  * was found in. A curator's judgment takes its row out at once, so the next
  * can follow, and waits `UNDO_MS` before it is sent, a snackbar offering its
@@ -738,6 +726,8 @@ export default function Review( { canTune, onOpenEntity } ) {
 	const [ apart, setApart ] = useState( () => new Set() );
 	const [ refused, setRefused ] = useState( () => new Map() );
 	const [ merging, setMerging ] = useState( null );
+	// The merge owed its answer; Merge waits for it, so there is one.
+	const sentMerge = useRef( null );
 	const [ notice, setNotice ] = useState( null );
 	const [ checked, setChecked ] = useState( [] );
 	const view = useRef( null );
@@ -814,20 +804,21 @@ export default function Review( { canTune, onOpenEntity } ) {
 		dirties: JUDGED_READS,
 		onRefused: judgedEntities.refused,
 		refresh: () => {
+			const merged = sentMerge.current;
 			restored.current = beside(
 				( shownEntities.answer?.entities ?? [] ).map( entityKey ),
-				new Set( [ merging.key ] )
+				new Set( [ merged.key ] )
 			);
 			setNotice( {
-				id: `merged:${ merging.key }`,
+				id: `merged:${ merged.key }`,
 				message: sprintf(
 					/* translators: 1: the entity merged away, 2: the entity it merges into. */
 					__( 'Merged %1$s into %2$s.', 'newspack-intelligence' ),
-					merging.name,
-					merging.into.name
+					merged.name,
+					merged.into.name
 				),
 			} );
-			setMerging( null );
+			setMerging( ( was ) => ( was?.sent ? null : was ) );
 		},
 	} );
 
@@ -922,6 +913,7 @@ export default function Review( { canTune, onOpenEntity } ) {
 			rows: 'links',
 			keyed: true,
 			items: linkRows,
+			getItemId: itemKey,
 			Row: LinkItem,
 			selectLabel: ( row ) => selectLabel( row.title ),
 			judgeOf:
@@ -1171,6 +1163,11 @@ export default function Review( { canTune, onOpenEntity } ) {
 					onUndo={ undo }
 					legend={ shown.keyed ? legendText() : null }
 					page
+					heading={ () =>
+						view.current.ownerDocument.getElementById(
+							tabDomId( SCOPE, open )
+						)
+					}
 				>
 					{ ( describedBy ) => (
 						<AnswerBody
@@ -1184,7 +1181,7 @@ export default function Review( { canTune, onOpenEntity } ) {
 									label={ shown.name }
 									describedBy={ describedBy }
 								>
-									<ItemList
+									<DataViewsList
 										key={ shown.id }
 										items={ shown.items }
 										getItemId={ shown.getItemId }
@@ -1234,6 +1231,7 @@ export default function Review( { canTune, onOpenEntity } ) {
 							: null
 					}
 					onMerge={ ( into ) => {
+						sentMerge.current = { ...merging, into };
 						setMerging( { ...merging, into, sent: true } );
 						judgedEntities.hold( merging.key, null, () =>
 							mergeEntities.run( {

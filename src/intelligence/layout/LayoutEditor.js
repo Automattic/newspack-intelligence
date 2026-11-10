@@ -2,7 +2,8 @@
  * The layout editor of the one context the server localized: its blocks
  * registered against their views, and the substrate's `CompositionEditor`
  * registered for the page's edit slot, under the page's own heading, with
- * every block reading the page it previews and its writes inert.
+ * every block reading the page it previews; the substrate hands each block's
+ * View `editing`, which leaves its writes inert.
  *
  * The editor half of Intelligence's layouts: only `layout-editor.js`, the
  * bundle `Composition::editor()` loads for a `tune` caller, reaches it.
@@ -147,7 +148,6 @@ function LayoutEditor( { context, schemas, target, since, onDone } ) {
 			lens_key: previewed,
 			entity_key: entityKey,
 			since,
-			editing: true,
 		} ),
 		[ target.page, previewed, entityKey, since ]
 	);

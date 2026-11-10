@@ -20,7 +20,7 @@ import Section from '../components/Section';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import { IntelPageContext, useIntelActions } from '../layout/PageContext';
 import { entityName } from '../components/format';
-import { useEntityRecord } from './record';
+import { aboutEntity, useEntityRecord } from './record';
 
 /**
  * @typedef {Object} TimelineAttributes
@@ -45,14 +45,19 @@ function Items( { entityKey, published, layout, limit, empty } ) {
 	const { onOpenEntity, onSave, canTune } = useIntelActions();
 	const [ page, setPage ] = useState( 1 );
 	const offset = ( page - 1 ) * limit;
-	const read = useIntelRead(
-		published ? 'block:published' : 'block:timeline',
-		'timeline',
-		formatCommandArgs( [ entityKey ], {
-			limit,
-			...( 0 < offset ? { offset } : {} ),
-			...( published ? { published: true } : {} ),
-		} )
+	const read = aboutEntity(
+		entityKey,
+		useIntelRead(
+			published ? 'block:published' : 'block:timeline',
+			'timeline',
+			entityKey
+				? formatCommandArgs( [ entityKey ], {
+						limit,
+						...( 0 < offset ? { offset } : {} ),
+						...( published ? { published: true } : {} ),
+				  } )
+				: null
+		)
 	);
 	return (
 		<AnswerBody read={ read } rows="items" empty={ empty }>

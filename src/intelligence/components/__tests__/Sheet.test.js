@@ -1,7 +1,8 @@
 /* eslint-env jest */
 /**
  * Sheet is a right-hand drawer, or a bottom sheet when the page is narrow,
- * named by its heading: opening it moves focus to that heading, Escape
+ * named by its heading: opening it moves focus to its first field, else to
+ * that heading, Escape
  * closes it, and closing it returns focus to whatever opened it.
  */
 
@@ -57,6 +58,22 @@ describe( 'Sheet', () => {
 		);
 		expect(
 			screen.getByRole( 'heading', { name: 'Desk filters' } )
+		).toHaveFocus();
+	} );
+
+	it( 'moves focus to its first field over its heading', () => {
+		viewport = installViewport( false );
+		render(
+			<Sheet title="Desk filters" closeLabel="Shut" onClose={ jest.fn() }>
+				<button type="button">Show 41 items</button>
+				<select aria-label="Desk">
+					<option>Metro</option>
+				</select>
+				<input aria-label="Words" />
+			</Sheet>
+		);
+		expect(
+			screen.getByRole( 'combobox', { name: 'Desk' } )
 		).toHaveFocus();
 	} );
 

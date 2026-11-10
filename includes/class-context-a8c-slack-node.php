@@ -30,11 +30,8 @@ class Context_A8C_Slack_Node extends Context_A8C_Source_Node {
 	/** Messages a page asks for, the most `messages` answers. */
 	private const PAGE = 100;
 
-	/** @var list<string> Channel ids the `add_channel` commands registered and the `remove_channel` commands left, in call order. */
+	/** @var array<string,bool> Each channel id the `add_channel` commands registered and the `remove_channel` commands left, in call order, => whether it was added with `--skip-bots`, so its bot posts record nothing. */
 	protected array $channels = [];
-
-	/** @var list<string> Channel ids added with `--skip-bots`, whose bot posts record nothing. */
-	protected array $skip_bots = [];
 
 	/**
 	 * A page's messages as items, through the Slack source's mapping, asking
@@ -54,7 +51,7 @@ class Context_A8C_Slack_Node extends Context_A8C_Source_Node {
 		return self::items(
 			$answer['messages'] ?? null,
 			function ( array $message ) use ( $subtool, $channel, $moved ): ?array {
-				$fields = Slack_Source_Node::fields( $channel, $message, self::workspace( $message ), \in_array( $channel, $this->skip_bots, true ) );
+				$fields = Slack_Source_Node::fields( $channel, $message, self::workspace( $message ), $this->channels[ $channel ] ?? false );
 				if ( 'messages' === $subtool && Slack_Source_Node::moved( $message, $moved ) ) {
 					$this->call(
 						'slack',
@@ -122,7 +119,7 @@ class Context_A8C_Slack_Node extends Context_A8C_Source_Node {
 	/** Ask each channel's messages over the window. */
 	protected function calls(): void {
 		$oldest = (string) ( (int) Core::$now - Slack_Source_Node::WINDOW_SECONDS );
-		foreach ( $this->channels as $channel ) {
+		foreach ( \array_keys( $this->channels ) as $channel ) {
 			$this->call(
 				'slack',
 				'messages',

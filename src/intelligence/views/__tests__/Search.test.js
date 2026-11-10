@@ -10,6 +10,7 @@
  */
 
 import {
+	act,
 	render,
 	screen,
 	fireEvent,
@@ -420,35 +421,69 @@ describe( 'Search', () => {
 		);
 	} );
 
-	it( 'pages forward, keeping the page shown dimmed until the next answers', async () => {
-		wire.replies.search = ( args ) => ( {
-			...PAGE,
-			items: [
-				{
-					...ITEM,
-					item_key: `feed:${ args.join( '' ) }`,
-					title: `found by ${ args.join( ' ' ) }`,
-				},
-			],
-		} );
+	it( 'pages forward, the page it leaves gone while the next is owed', async () => {
+		let land;
+		wire.replies.search = ( args ) => {
+			const page = {
+				...PAGE,
+				items: [
+					{
+						...ITEM,
+						item_key: `feed:${ args.join( '' ) }`,
+						title: `found by ${ args.join( ' ' ) }`,
+					},
+				],
+			};
+			return 1 === args.length
+				? page
+				: new Promise( ( resolve ) => {
+						land = () => resolve( page );
+				  } );
+		};
 		renderSearch();
 		await screen.findByText( 'found by --limit=20' );
 
 		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
 
-		const shown = screen.getByText( 'found by --limit=20' );
-		expect( shown.closest( '.dataviews-view-list' ) ).toHaveAttribute(
-			'inert'
+		await waitFor( () =>
+			expect( screen.queryByText( 'found by --limit=20' ) ).toBeNull()
 		);
+		await waitFor( () => expect( land ).toBeDefined() );
+		await act( async () => land() );
 		expect(
 			await screen.findByText( 'found by --limit=20 --offset=20' )
 		).toBeInTheDocument();
-		expect(
-			screen
-				.getByText( 'found by --limit=20 --offset=20' )
-				.closest( '.dataviews-view-list' )
-		).not.toHaveAttribute( 'inert' );
 		expect( screen.getByText( 'Page 2 of 7' ) ).toBeInTheDocument();
+	} );
+
+	it( 'never repaints the items a read showed before it was refused', async () => {
+		wire.replies.search = ( args ) => {
+			if ( 1 === args.length ) {
+				return PAGE;
+			}
+			return args.includes( '--offset=20' )
+				? new Error( 'search could not be read for --offset=20' )
+				: new Promise( () => {} );
+		};
+		renderSearch();
+		await screen.findByText( ITEM.title );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
+		expect(
+			await screen.findByText(
+				'Intelligence could not be read just now. Try again.'
+			)
+		).toBeInTheDocument();
+		fireEvent.change( screen.getByRole( 'searchbox' ), {
+			target: { value: 'harbor' },
+		} );
+		await waitFor( () =>
+			expect(
+				wire
+					.sent( 'search' )
+					.some( ( args ) => args.includes( '--q=harbor' ) )
+			).toBe( true )
+		);
+		expect( screen.queryByText( ITEM.title ) ).toBeNull();
 	} );
 
 	it( 'says nothing matches, and removes every filter and the words', async () => {

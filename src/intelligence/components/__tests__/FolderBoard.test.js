@@ -275,6 +275,25 @@ describe( 'FolderBoard', () => {
 		expect( titles( awards ) ).toEqual( [ UNUSED.title ] );
 	} );
 
+	it( 'forgets a card whose drag was let go outside every column', async () => {
+		renderBoard();
+		const dragged = await card( UNUSED.title );
+		const awards = await column( 'Awards page' );
+		fireEvent.dragStart( dragged, {
+			dataTransfer: { setData: jest.fn(), effectAllowed: '' },
+		} );
+		fireEvent.dragEnd( dragged );
+		speak.mockClear();
+		fireEvent.dragEnter( awards );
+		expect( fireEvent.dragOver( awards ) ).toBe( true );
+		fireEvent.drop( awards );
+		expect( speak ).not.toHaveBeenCalled();
+		expect( titles( awards ) ).toEqual( [] );
+		expect( titles( await column( 'Coastline picks' ) ) ).toEqual( [
+			UNUSED.title,
+		] );
+	} );
+
 	it( 'moves a card from its menu in one action, as a drop does', async () => {
 		wire.replies.move_item = { ok: true, event_id: 'ev-n' };
 		renderBoard();

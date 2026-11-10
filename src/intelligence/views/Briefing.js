@@ -43,6 +43,7 @@ const categoriesOf = ( blocks ) => [
  * @param {(visible: boolean) => void}                   props.noteVisible Tells the page whether it is seen.
  * @param {boolean}                                      props.canTune     Whether the reader may curate, which offers Edit layout.
  * @param {import('../layout/PageContext').IntelActions} props.actions     What the blocks' rows open.
+ * @param {(layout: Object) => void}                     props.onRestored  Takes the default a curator restored.
  * @return {import('react').ReactElement} The view.
  */
 export default function Briefing( {
@@ -52,6 +53,7 @@ export default function Briefing( {
 	noteVisible,
 	canTune,
 	actions,
+	onRestored,
 } ) {
 	useEffect( () => {
 		noteVisible( true );
@@ -86,13 +88,13 @@ export default function Briefing( {
 				<ChangesRead.Provider value={ changes }>
 					<PageLayout
 						layout={ layout }
+						onRestored={ onRestored }
 						page={ {
 							page: 'briefing',
 							lens_key: null,
 							entity_key: null,
 							since,
 							kept,
-							editing: false,
 							actions,
 						} }
 					/>

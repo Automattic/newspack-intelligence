@@ -1,11 +1,12 @@
 /* eslint-env jest */
 /**
- * The `item-list` block reads `search` under the page it stands on: on a
- * team view's page each list it names is narrowed to the view's own list
- * of that name, and an intersection left empty reads nothing and says its
- * `empty` sentence; on a profile it reads the entity; its tiers are sent for
- * the server to narrow within the reader's. It draws the stories grouped by
- * theme, or the items in the layout it names.
+ * The `item-list` block reads `search` under the page it stands on: through
+ * the team view it names, else the one its page shows, each list it names
+ * narrowed to that view's own list of that name, as `lenses` lists the view,
+ * wherever the block stands, and an intersection left empty reads nothing
+ * and says its `empty` sentence; on a profile it reads the entity; its tiers
+ * are sent for the server to narrow within the reader's. It draws the
+ * stories grouped by theme, or the items in the layout it names.
  */
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -21,23 +22,43 @@ const owed = () => new Promise( () => {} );
 const [ SUPPORT ] = LENSES.lenses;
 
 /**
- * A team view's page whose view names `kinds`.
+ * The prairie desk as `lenses` lists it, naming `kinds`.
+ *
+ * @param {string[]} kinds The view's kinds.
+ * @return {Object} The view.
+ */
+const prairieOf = ( kinds ) => ( {
+	...SUPPORT,
+	lens_key: 'prairie-desk',
+	filters: { ...SUPPORT.filters, kinds },
+} );
+
+/**
+ * A team view's page whose view names `kinds`, listed by `lenses`.
  *
  * @param {string[]} kinds The view's kinds.
  * @return {Object} The page.
  */
-const deskOf = ( kinds ) => ( {
-	page: 'lens',
-	lens_key: 'prairie-desk',
-	lens: {
-		...SUPPORT,
+const deskOf = ( kinds ) => {
+	wire.replies.lenses = {
+		lenses: [ prairieOf( kinds ), LENSES.lenses[ 1 ] ],
+		available: true,
+	};
+	return {
+		page: 'lens',
 		lens_key: 'prairie-desk',
-		filters: { ...SUPPORT.filters, kinds },
-	},
+		entity_key: null,
+		since: null,
+	};
+};
+
+/** The Briefing. */
+const BRIEFING = {
+	page: 'briefing',
+	lens_key: null,
 	entity_key: null,
 	since: null,
-	editing: false,
-} );
+};
 
 const ATTRIBUTES = {
 	heading: 'Stories on the desk',
@@ -102,10 +123,70 @@ describe( 'item-list', () => {
 	it( 'reads nothing and says its empty sentence when the view names none of its kinds', async () => {
 		block( { kinds: [ 'bug' ] }, deskOf( [ 'award' ] ) );
 		expect(
-			screen.getByText( 'Nothing on this desk.' )
+			await screen.findByText( 'Nothing on this desk.' )
 		).toBeInTheDocument();
 		expect(
 			screen.getByRole( 'heading', { name: 'Stories on the desk' } )
+		).toBeInTheDocument();
+		await new Promise( ( resolve ) => setTimeout( resolve, 50 ) );
+		expect( wire.sent( 'search' ) ).toEqual( [] );
+	} );
+
+	it( 'narrows to the team view it names on the Briefing too, where no view is the page’s', async () => {
+		wire.replies.lenses = {
+			lenses: [ prairieOf( [ 'award', 'bug' ] ) ],
+			available: true,
+		};
+		block( { kinds: [ 'bug', 'launch' ], lens: 'prairie-desk' }, BRIEFING );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toEqual( [
+				[
+					'--lens=prairie-desk',
+					'--kind=bug',
+					'--sort=time',
+					'--limit=7',
+				],
+			] )
+		);
+	} );
+
+	it( 'reads nothing on another view’s page when the view it names admits none of its kinds', async () => {
+		deskOf( [ 'award' ] );
+		block(
+			{ kinds: [ 'launch' ], lens: 'prairie-desk' },
+			{ ...BRIEFING, page: 'lens', lens_key: 'dev-shipping' }
+		);
+		expect(
+			await screen.findByText( 'Nothing on this desk.' )
+		).toBeInTheDocument();
+		await new Promise( ( resolve ) => setTimeout( resolve, 50 ) );
+		expect( wire.sent( 'search' ) ).toEqual( [] );
+	} );
+
+	it( 'reads nothing on a profile the team view it names is not about', async () => {
+		wire.replies.lenses = {
+			lenses: [ prairieOf( [] ) ],
+			available: true,
+		};
+		block(
+			{ lens: 'prairie-desk' },
+			{
+				...BRIEFING,
+				page: 'entity',
+				entity_key: 'organization:prairie-signal',
+			}
+		);
+		expect(
+			await screen.findByText( 'Nothing on this desk.' )
+		).toBeInTheDocument();
+		await new Promise( ( resolve ) => setTimeout( resolve, 50 ) );
+		expect( wire.sent( 'search' ) ).toEqual( [] );
+	} );
+
+	it( 'sends no entity a profile has not named yet, and reads nothing', async () => {
+		block( {}, { ...BRIEFING, page: 'entity', entity_key: null } );
+		expect(
+			screen.getByText( 'Nothing on this desk.' )
 		).toBeInTheDocument();
 		await new Promise( ( resolve ) => setTimeout( resolve, 50 ) );
 		expect( wire.sent( 'search' ) ).toEqual( [] );
@@ -139,6 +220,24 @@ describe( 'item-list', () => {
 		] );
 	} );
 
+	it( 'pages the theme groups by group, a page of its limit at a time', async () => {
+		wire.replies.search = GROUPS;
+		block( { group: 'theme', limit: 3 }, deskOf( [] ) );
+		expect( await screen.findByText( 'Page 1 of 14' ) ).toBeInTheDocument();
+		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toEqual( [
+				[ '--lens=prairie-desk', '--group=theme', '--limit=3' ],
+				[
+					'--lens=prairie-desk',
+					'--group=theme',
+					'--limit=3',
+					'--offset=3',
+				],
+			] )
+		);
+	} );
+
 	it( 'reads a profile’s entity and opens an entity its rows name', async () => {
 		block(
 			{},
@@ -147,7 +246,6 @@ describe( 'item-list', () => {
 				lens_key: null,
 				entity_key: 'organization:prairie-signal',
 				since: null,
-				editing: false,
 			}
 		);
 		fireEvent.click(
@@ -165,6 +263,29 @@ describe( 'item-list', () => {
 		] );
 	} );
 
+	it( 'stands twice on one page, both drawn from one search', async () => {
+		const page = deskOf( [] );
+		render(
+			<IntelPageContext.Provider
+				value={ { ...page, actions: { onOpenEntity, canTune: false } } }
+			>
+				<itemList.View attributes={ ATTRIBUTES } />
+				<itemList.View attributes={ ATTRIBUTES } />
+			</IntelPageContext.Provider>
+		);
+		await waitFor( () =>
+			expect(
+				screen.getAllByRole( 'link', {
+					name: 'Acme Quillsheet wins regional prize',
+				} )
+			).toHaveLength( 2 )
+		);
+		expect( wire.sent( 'search' ) ).toEqual( [
+			[ '--lens=prairie-desk', '--sort=time', '--limit=7' ],
+		] );
+		expect( wire.sent( 'lenses' ) ).toEqual( [ [] ] );
+	} );
+
 	it( 'says its empty sentence for an answer holding nothing', async () => {
 		wire.replies.search = {
 			items: [],
@@ -178,9 +299,12 @@ describe( 'item-list', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'stands skeleton rows in while owed, under its heading', () => {
+	it( 'stands skeleton rows in while owed, under its heading', async () => {
 		wire.replies.search = owed;
 		block( {}, deskOf( [] ) );
+		await waitFor( () =>
+			expect( wire.sent( 'search' ) ).toHaveLength( 1 )
+		);
 		expect(
 			screen.getByRole( 'status', { name: 'Loading' } )
 		).toBeInTheDocument();

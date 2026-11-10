@@ -4,7 +4,15 @@ import {
 	RadioControl,
 	SnackbarList,
 } from '@wordpress/components';
-import { useEffect, useId, useRef, useState } from '@wordpress/element';
+import {
+	createContext,
+	useContext,
+	useEffect,
+	useId,
+	useMemo,
+	useRef,
+	useState,
+} from '@wordpress/element';
 import { archive, moreHorizontal } from '@wordpress/icons';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { Core } from '@newspack-nodes/runtime';
@@ -23,7 +31,15 @@ import EntityPicker, { useEntityNames } from './EntityPicker';
 import HowRead from './HowRead';
 import Refusal from './Refusal';
 import UndoSnackbar from './UndoSnackbar';
-import { dayLabel, entityName, reasonText, safeHref, utcDay } from './format';
+import {
+	argsOf,
+	dayLabel,
+	entityName,
+	itemKey,
+	reasonText,
+	safeHref,
+	utcDay,
+} from './format';
 import { word } from './words';
 
 /** The most subjects an item's row leads with as pills. */
@@ -32,14 +48,202 @@ const LEAD_PILLS = 3;
 /** How long a snackbar saying what a menu action did stands. */
 const SAID_MS = 4000;
 
-/** The link roles a curator links an item to an entity in. */
-const LINK_ROLES = [ 'subject', 'mention' ];
+/** The link roles naming an entity an item is about, as the server spells them. */
+const NAMING_ROLES = [ 'subject', 'mention' ];
 
 /** The least score, of the extraction's 0 to 10, that reads as high. */
 const HIGH_SCORE = 7;
 
 /** The least score that reads as medium; below it reads as low. */
 const MEDIUM_SCORE = 4;
+
+/** The writes a list's rows share, which `ItemRows` holds. */
+const ListWrites = createContext( null );
+
+/**
+ * A chip's key in its list's undo window: its item and its entity.
+ *
+ * @param {string} item   The item's key.
+ * @param {string} entity The entity's key.
+ * @return {string} The key.
+ */
+const chipKey = ( item, entity ) => JSON.stringify( [ item, entity ] );
+
+/**
+ * An exclusion's key in its list's undo window, apart from every chip's.
+ *
+ * @param {string} item The item's key.
+ * @return {string} The key.
+ */
+const exclusionKey = ( item ) => JSON.stringify( [ item ] );
+
+/**
+ * A held chip's key.
+ *
+ * @param {{key: string}} chip The chip.
+ * @return {string} Its key.
+ */
+const keyOfChip = ( chip ) => chip.key;
+
+/**
+ * The refusal a write's last reply gave the item, read off the item its
+ * tokens echo.
+ *
+ * @param {{refusal: ?string, answeredArgs: ?string[]}} write The write.
+ * @param {Object}                                      item  The item.
+ * @return {?string} The refusal, or null.
+ */
+const refusalFor = ( write, item ) =>
+	write.refusal && item.item_key === argsOf( write.answeredArgs ).item
+		? write.refusal
+		: null;
+
+/**
+ * The rows of one list of items, sharing one `reject_link` write and one
+ * `exclude_item` write, whose refusals echo the item and the entity they
+ * judged, and one undo window: `deferred`, the list's own when the caller
+ * holds one (as a list taking `z` does), else a window of its own with its
+ * snackbar. A chip a curator removes hides at once and its rejection waits
+ * behind Undo, then stays out (`useHeld`) until a read no longer lists the
+ * entity; an excluded row reads "Excluded." the same way until a read no
+ * longer lists the item. Undo, or a refusal, puts either back; a refusal
+ * echoing no tokens shows above the rows.
+ *
+ * @param {Object}                    props
+ * @param {Object[]}                  props.items      The items the rows show.
+ * @param {Object}                    [props.deferred] The list's undo window (`useDeferredWrite`).
+ * @param {import('react').ReactNode} props.children   The rows.
+ * @return {import('react').ReactElement} The rows.
+ */
+export function ItemRows( { items, deferred, children } ) {
+	return deferred ? (
+		<RowWrites items={ items } deferred={ deferred }>
+			{ children }
+		</RowWrites>
+	) : (
+		<OwnUndo items={ items }>{ children }</OwnUndo>
+	);
+}
+
+/**
+ * Rows holding an undo window of their own, and its snackbar.
+ *
+ * @param {Object}                    props
+ * @param {Object[]}                  props.items    The items.
+ * @param {import('react').ReactNode} props.children The rows.
+ * @return {import('react').ReactElement} The rows.
+ */
+function OwnUndo( { items, children } ) {
+	const deferred = useDeferredWrite();
+	return (
+		<>
+			<RowWrites items={ items } deferred={ deferred }>
+				{ children }
+			</RowWrites>
+			<UndoSnackbar latest={ deferred.latest } onUndo={ deferred.undo } />
+		</>
+	);
+}
+
+/**
+ * The list's writes, lent to each row through `ListWrites`.
+ *
+ * @param {Object}                    props
+ * @param {Object[]}                  props.items    The items.
+ * @param {Object}                    props.deferred The undo window.
+ * @param {import('react').ReactNode} props.children The rows.
+ * @return {import('react').ReactElement} The rows.
+ */
+function RowWrites( { items, deferred, children } ) {
+	const scope = useId();
+	const chipRead = useMemo(
+		() => ( {
+			answer: {
+				chips: items.flatMap( ( item ) =>
+					( item.entities ?? [] ).map( ( entity ) => ( {
+						key: chipKey( item.item_key, entity.entity_key ),
+					} ) )
+				),
+			},
+			error: null,
+			loading: false,
+		} ),
+		[ items ]
+	);
+	const itemRead = useMemo(
+		() => ( { answer: { items }, error: null, loading: false } ),
+		[ items ]
+	);
+	const heldChips = useHeld( chipRead, 'chips', keyOfChip );
+	const kept = useHeld( itemRead, 'items', itemKey );
+	const reject = useIntelWrite( 'reject_link', {
+		scope: `reject-link:${ scope }`,
+		dirties: ENTITY_READS,
+		onRefused: heldChips.refused,
+	} );
+	const exclude = useIntelWrite( 'exclude_item', {
+		scope: `exclude-item:${ scope }`,
+		dirties: ITEM_READS,
+		onRefused: kept.refused,
+	} );
+	const shownChips = new Set( heldChips.read.answer.chips.map( keyOfChip ) );
+	const shownItems = new Set( kept.read.answer.items.map( itemKey ) );
+	const bare = [ reject, exclude ].find(
+		( write ) => write.refusal && 0 === write.answeredArgs?.length
+	);
+	const writes = {
+		entitiesOf: ( item ) =>
+			( item.entities ?? [] ).filter( ( entity ) => {
+				const key = chipKey( item.item_key, entity.entity_key );
+				return shownChips.has( key ) && ! deferred.hidden.has( key );
+			} ),
+		removeChip: ( item, entity ) => {
+			const key = chipKey( item.item_key, entity.entity_key );
+			deferred.defer(
+				key,
+				() =>
+					heldChips.hold( key, null, () =>
+						reject.run( {
+							item: item.item_key,
+							entity: entity.entity_key,
+						} )
+					),
+				sprintf(
+					/* translators: %s: the entity taken off the item. */
+					__( 'Removed %s from this item.', 'newspack-intelligence' ),
+					entityName( entity )
+				)
+			);
+		},
+		excluded: ( item ) =>
+			deferred.hidden.has( exclusionKey( item.item_key ) ) ||
+			! shownItems.has( item.item_key ),
+		exclude: ( item ) =>
+			deferred.defer(
+				exclusionKey( item.item_key ),
+				() =>
+					kept.hold( item.item_key, null, () =>
+						exclude.run( { item: item.item_key } )
+					),
+				sprintf(
+					/* translators: %s: the item's title. */
+					__(
+						'Excluded “%s” from every view.',
+						'newspack-intelligence'
+					),
+					item.title
+				)
+			),
+		refusalOf: ( item ) =>
+			refusalFor( exclude, item ) ?? refusalFor( reject, item ),
+	};
+	return (
+		<ListWrites.Provider value={ writes }>
+			<Refusal error={ bare?.refusal ?? null } />
+			{ children }
+		</ListWrites.Provider>
+	);
+}
 
 /**
  * The control saving an item to a folder, for a caller who may curate;
@@ -71,11 +275,12 @@ export function SaveButton( { item, onSave } ) {
  * from every view; then any control the view adds, and the menu, whose
  * "How this was read" opens the drawer (`HowRead`) under the row, focus
  * returning to the menu's toggle when it closes. Why the item ranks sits
- * behind a disclosure (`WhyRanks`). An exclusion puts the row behind its
- * Undo (`Excluding`) until it is sent; a refused one puts the row back with
- * the refusal. For a reader holding tune, each chip holds an × rejecting
- * that link (`useChipRemoval()`), and the menu offers "Is this about…"
- * (`AboutDialog`), linking the item to an entity picked by name.
+ * behind a disclosure (`WhyRanks`). An exclusion reads "Excluded." in the
+ * row's place, behind its list's Undo until it is sent; a refused one puts
+ * the row back with the refusal. For a reader holding tune, each chip holds
+ * an × rejecting that link, and the menu offers "Is this about…"
+ * (`AboutDialog`), linking the item to an entity picked by name. The row
+ * renders inside `ItemRows`, which holds those writes for its whole list.
  *
  * @param {Object}                    props
  * @param {Object}                    props.item         The item.
@@ -92,28 +297,28 @@ export default function ItemRow( {
 	canTune,
 	children,
 } ) {
+	const writes = useContext( ListWrites );
 	const narrow = useNarrow();
-	const removal = useChipRemoval( item );
-	const pills = pillsOf( removal.entities );
-	const [ excluding, setExcluding ] = useState( false );
-	const [ refusal, setRefusal ] = useState( null );
 	const [ reading, setReading ] = useState( false );
 	const menu = useId();
-	if ( excluding ) {
-		return (
-			<Excluding
-				item={ item }
-				onUndo={ () => setExcluding( false ) }
-				onRefused={ ( why ) => {
-					setRefusal( why );
-					setExcluding( false );
-				} }
-			/>
+	if ( null === writes ) {
+		throw new Error(
+			'ItemRow renders inside ItemRows, which holds its list’s writes'
 		);
 	}
+	if ( writes.excluded( item ) ) {
+		return (
+			<li className="newspack-intelligence__item">
+				<p className="newspack-nodes-status is-muted" role="status">
+					{ __( 'Excluded.', 'newspack-intelligence' ) }
+				</p>
+			</li>
+		);
+	}
+	const pills = pillsOf( writes.entitiesOf( item ) );
 	return (
 		<li className="newspack-intelligence__item">
-			<Refusal error={ refusal ?? removal.refusal } />
+			<Refusal error={ writes.refusalOf( item ) } />
 			<div className="newspack-intelligence__item-head">
 				<strong className="newspack-intelligence__item-title">
 					<Cite url={ item.url } title={ item.title } />
@@ -123,10 +328,7 @@ export default function ItemRow( {
 					<button
 						type="button"
 						className="button-link newspack-intelligence__exclude"
-						onClick={ () => {
-							setRefusal( null );
-							setExcluding( true );
-						} }
+						onClick={ () => writes.exclude( item ) }
 					>
 						{ __(
 							'Exclude from every view',
@@ -155,13 +357,12 @@ export default function ItemRow( {
 				onRemove={
 					canTune
 						? ( entity ) => {
-								removal.remove( entity );
+								writes.removeChip( item, entity );
 								document.getElementById( menu ).focus();
 						  }
 						: undefined
 				}
 			/>
-			<UndoSnackbar latest={ removal.latest } onUndo={ removal.undo } />
 			{ reading && (
 				<HowRead
 					item={ item }
@@ -400,7 +601,7 @@ function AboutDialog( { item, onLinked, onClose } ) {
 			<RadioControl
 				label={ __( 'Named as', 'newspack-intelligence' ) }
 				selected={ role }
-				options={ LINK_ROLES.map( ( value ) => ( {
+				options={ NAMING_ROLES.map( ( value ) => ( {
 					value,
 					label: word( 'linkRoleWords', value ),
 				} ) ) }
@@ -420,128 +621,6 @@ function AboutDialog( { item, onLinked, onClose } ) {
 				</button>
 			</div>
 		</Modal>
-	);
-}
-
-/**
- * An entity's key, as a row's chips are held by.
- *
- * @param {Object} entity The entity.
- * @return {string} Its key.
- */
-const entityKeyOf = ( entity ) => entity.entity_key;
-
-/**
- * A row's chips with each a curator removed taken out: `remove()` hides the
- * chip at once and holds the `reject_link` write behind its Undo
- * (`useDeferredWrite`), then keeps the chip out (`useHeld`) until a read no
- * longer lists the entity; Undo, or a refusal, puts it back.
- *
- * @param {Object} item The item.
- * @return {{entities: Object[], remove: (entity: Object) => void, latest: ?Object, undo: () => ?string, refusal: ?string}}
- *   The entities to chip; the removal; the write an Undo takes, and Undo;
- *   and the last refusal.
- */
-function useChipRemoval( item ) {
-	const held = useHeld(
-		{
-			answer: { entities: item.entities ?? [] },
-			error: null,
-			loading: false,
-		},
-		'entities',
-		entityKeyOf
-	);
-	const reject = useIntelWrite( 'reject_link', {
-		scope: `reject-link:${ useId().replace( /[^a-z0-9]/gi, '' ) }`,
-		dirties: ENTITY_READS,
-		onRefused: held.refused,
-	} );
-	const deferred = useDeferredWrite();
-	return {
-		entities: held.read.answer.entities.filter(
-			( entity ) => ! deferred.hidden.has( entity.entity_key )
-		),
-		remove: ( entity ) =>
-			deferred.defer(
-				entity.entity_key,
-				() =>
-					held.hold( entity.entity_key, null, () =>
-						reject.run( {
-							item: item.item_key,
-							entity: entity.entity_key,
-						} )
-					),
-				sprintf(
-					/* translators: %s: the entity taken off the item. */
-					__( 'Removed %s from this item.', 'newspack-intelligence' ),
-					entityName( entity )
-				)
-			),
-		latest: deferred.latest,
-		undo: deferred.undo,
-		refusal: reject.refusal,
-	};
-}
-
-/**
- * A row excluded from every view: "Excluded." and its Undo while
- * `useDeferredWrite` holds the `exclude_item` write, then "Excluded." alone
- * once it is sent. Each mounts its own write under a scope of its own, since
- * two rows may be excluded at once.
- *
- * @param {Object}                props
- * @param {Object}                props.item      The item.
- * @param {() => void}            props.onUndo    Puts the row back.
- * @param {(why: string) => void} props.onRefused Puts the row back with the refusal.
- * @return {import('react').ReactElement} The notice.
- */
-function Excluding( { item, onUndo, onRefused } ) {
-	const scope = `exclude-item:${ useId().replace( /[^a-z0-9]/gi, '' ) }`;
-	const exclude = useIntelWrite( 'exclude_item', {
-		scope,
-		dirties: ITEM_READS,
-	} );
-	const deferred = useDeferredWrite();
-	const asked = useRef( false );
-	useEffect( () => {
-		if ( asked.current ) {
-			return;
-		}
-		asked.current = true;
-		deferred.defer(
-			item.item_key,
-			() => exclude.run( { item: item.item_key } ),
-			sprintf(
-				/* translators: %s: the item's title. */
-				__( 'Excluded “%s” from every view.', 'newspack-intelligence' ),
-				item.title
-			)
-		);
-	}, [ deferred, exclude, item ] );
-	useEffect( () => {
-		if ( exclude.refusal ) {
-			onRefused( exclude.refusal );
-		}
-	}, [ exclude.refusal, onRefused ] );
-	return (
-		<li className="newspack-intelligence__item">
-			<p className="newspack-nodes-status is-muted" role="status">
-				<span>{ __( 'Excluded.', 'newspack-intelligence' ) }</span>{ ' ' }
-				{ deferred.latest && (
-					<button
-						type="button"
-						className="button button-small"
-						onClick={ () => {
-							deferred.undo();
-							onUndo();
-						} }
-					>
-						{ __( 'Undo', 'newspack-intelligence' ) }
-					</button>
-				) }
-			</p>
-		</li>
 	);
 }
 
@@ -572,9 +651,6 @@ function kindCheckText( check, today ) {
 		dayLabel( utcDay( check.ts ), today )
 	);
 }
-
-/** The link roles naming an entity an item is about, as the server spells them. */
-const NAMING_ROLES = [ 'subject', 'mention' ];
 
 /**
  * The entities an item's row shows as pills (`chips()`): its first

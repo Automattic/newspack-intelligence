@@ -295,6 +295,6 @@ final class P2SourceTest extends TestCase {
 
 		$this->assert_add_refuses( $node, 'site', 'sites', [ 'heronp2', 'HeronP2.wordpress.com', 'heronp2.wordpress.com.evil.example', 'heronp2.wordpress.com/', 'https://heronp2.wordpress.com', 'heron_p2.wordpress.com', 'a.b.wordpress.com', "heronp2.wordpress.com\n" ], 'a wordpress.com site' );
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_site', [ self::KESTREL ] ) );
-		$this->assertSame( [ self::KESTREL ], $this->read_private( $node, 'sites' ) );
+		$this->assertSame( [ self::KESTREL => false ], $this->read_private( $node, 'sites' ) );
 	}
 }

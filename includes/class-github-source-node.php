@@ -30,7 +30,7 @@ class Github_Source_Node extends Source_Node {
 		'issues'   => 'issues?state=all&sort=updated&direction=desc&per_page=' . self::PER_PAGE,
 	];
 
-	/** @var list<string> Repos (owner/name) the `add_repo` command registered and `remove_repo` left, in call order. */
+	/** @var array<string,bool> Each repo (owner/name) the `add_repo` command registered and `remove_repo` left, in call order, => false, the add naming no flag. */
 	protected array $repos = [];
 
 	/**
@@ -116,7 +116,7 @@ class Github_Source_Node extends Source_Node {
 
 	/** Queue each repo's three endpoints. */
 	protected function begin(): void {
-		foreach ( $this->repos as $repo ) {
+		foreach ( \array_keys( $this->repos ) as $repo ) {
 			foreach ( self::ENDPOINTS as $query ) {
 				$this->queue( self::API_BASE . "{$repo}/{$query}" );
 			}

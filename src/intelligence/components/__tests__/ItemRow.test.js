@@ -30,7 +30,7 @@ import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth
 import { intelWire } from '../../__tests__/intelWire';
 import { UNDO_MS } from '../../hooks/useDeferredWrite';
 import { useIntelRead } from '../../hooks/useIntelCommand';
-import ItemRow, { SaveButton } from '../ItemRow';
+import ItemRowAlone, { ItemRows, SaveButton } from '../ItemRow';
 import { pageData } from '../../views/__tests__/fixtures';
 
 beforeEach( () => {
@@ -55,6 +55,20 @@ function Probe( { scope, command, args } ) {
 		return <p>{ `${ command } owed` }</p>;
 	}
 	return <p>{ `${ command } ${ stale ? 'remembered' : 'read' }` }</p>;
+}
+
+/**
+ * One row in a list of its own, as every list draws its rows.
+ *
+ * @param {Object} props The row's props.
+ * @return {import('react').ReactElement} The list.
+ */
+function ItemRow( props ) {
+	return (
+		<ItemRows items={ [ props.item ] }>
+			<ItemRowAlone { ...props } />
+		</ItemRows>
+	);
 }
 
 /** A reply that never comes, so a read stays owed. */
@@ -1138,6 +1152,54 @@ describe( 'ItemRow entity removal', () => {
 			] )
 		);
 		expect( pills() ).toEqual( [ 'coastline-weekly' ] );
+	} );
+
+	it( 'holds every row’s removals on one write and one Undo, the latest undone first', async () => {
+		const SECOND = {
+			...NAMED,
+			item_key: 'linear:coastline-renewal-61',
+			title: 'Coastline Weekly renewal call',
+			entities: [ linked( 'harbor-ledger', 'subject' ) ],
+		};
+		render(
+			<ItemRows items={ [ NAMED, SECOND ] }>
+				{ [ NAMED, SECOND ].map( ( item ) => (
+					<ItemRowAlone
+						key={ item.item_key }
+						item={ item }
+						onOpenEntity={ jest.fn() }
+						canTune={ true }
+					/>
+				) ) }
+			</ItemRows>
+		);
+		const writes = [ ...Core.registry.nodes.keys() ].filter( ( name ) =>
+			name.startsWith( 'reject-link:' )
+		);
+		expect( writes.length ).toBeGreaterThan( 0 );
+		fakeUndoClock();
+		remove( 'prairie-signal' );
+		remove( 'harbor-ledger' );
+
+		expect(
+			screen.getAllByRole( 'button', { name: 'Undo' } )
+		).toHaveLength( 1 );
+		expect(
+			[ ...Core.registry.nodes.keys() ].filter( ( name ) =>
+				name.startsWith( 'reject-link:' )
+			)
+		).toEqual( writes );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Undo' } ) );
+		expect( pills() ).toEqual( [ 'coastline-weekly', 'harbor-ledger' ] );
+		await elapse( UNDO_MS );
+		await waitFor( () =>
+			expect( wire.sent( 'reject_link' ) ).toEqual( [
+				[
+					'--item=linear:prairie-renewal-44',
+					'--entity=organization:prairie-signal',
+				],
+			] )
+		);
 	} );
 
 	it( 'puts the chip back on Undo and sends nothing', async () => {

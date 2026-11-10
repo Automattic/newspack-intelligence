@@ -4,12 +4,11 @@
  * curator's alone, and none while the layout is edited.
  */
 
-import { useContext } from '@wordpress/element';
 import { FormTokenField, SelectControl } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import FolderBoard, { showOptions } from '../components/FolderBoard';
 import { useIntelRead } from '../hooks/useIntelCommand';
-import { IntelPageContext, useIntelActions } from '../layout/PageContext';
+import { useIntelActions } from '../layout/PageContext';
 
 /**
  * @typedef {Object} FolderBoardAttributes
@@ -20,11 +19,11 @@ import { IntelPageContext, useIntelActions } from '../layout/PageContext';
 /**
  * @param {Object}                props
  * @param {FolderBoardAttributes} props.attributes Its attributes.
+ * @param {boolean}               props.editing    Whether its layout is being edited.
  * @return {import('react').ReactElement} The block.
  */
-function View( { attributes: { show, folders } } ) {
+function View( { attributes: { show, folders }, editing } ) {
 	const { canTune } = useIntelActions();
-	const { editing } = useContext( IntelPageContext );
 	return (
 		<FolderBoard
 			show={ show }

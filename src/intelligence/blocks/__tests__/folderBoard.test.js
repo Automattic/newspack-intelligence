@@ -85,11 +85,10 @@ const renderBlock = ( attributes, editing = false ) =>
 				lens_key: null,
 				entity_key: null,
 				since: null,
-				editing,
 				actions: { canTune: true },
 			} }
 		>
-			<View attributes={ attributes } />
+			<View attributes={ attributes } editing={ editing } />
 		</IntelPageContext.Provider>
 	);
 

@@ -1121,6 +1121,26 @@ describe( 'IntelligencePage', () => {
 			await openWeek();
 		} );
 
+		it( 'closes a profile when Back lands on another tab, as picking one does', async () => {
+			renderPage();
+			await openWeek();
+			fireEvent.click(
+				await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
+			);
+			await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } );
+
+			popTo( `${ PAGE }&view=review` );
+
+			expect( nav( 'Review' ) ).toHaveAttribute(
+				'aria-selected',
+				'true'
+			);
+			expect(
+				screen.queryByRole( 'heading', { name: 'Acme Quillsheet' } )
+			).toBeNull();
+			expect( await screen.findByText( EMPTY_REVIEW ) ).toBeVisible();
+		} );
+
 		it( 'opens the tab a link names', async () => {
 			window.history.replaceState( {}, '', `${ PAGE }&view=review` );
 			renderPage();
@@ -1204,26 +1224,29 @@ describe( 'IntelligencePage', () => {
 		it( 'offers Edit layout on a composed page for a curator alone', async () => {
 			const curator = renderPage( true );
 			await openWeek();
-			expect(
-				screen.queryByRole( 'button', { name: 'Page actions' } )
-			).toBeNull();
 			fireEvent.click(
 				screen.getByRole( 'button', { name: 'Briefing actions' } )
 			);
 			expect(
 				await screen.findByRole( 'menuitem', { name: 'Edit layout' } )
 			).toBeInTheDocument();
+			fireEvent.click( nav( 'Review' ) );
+			await screen.findByText( EMPTY_REVIEW );
+			expect(
+				screen.queryByRole( 'button', {
+					name: /^(Briefing|Team view|Profile) actions$/,
+				} )
+			).toBeNull();
+			expect(
+				screen.queryByRole( 'menuitem', { name: 'Edit layout' } )
+			).toBeNull();
 			curator.unmount();
+			window.history.replaceState( {}, '', '/' );
 
 			renderPage();
 			await openWeek();
 			expect(
 				screen.queryByRole( 'button', { name: 'Briefing actions' } )
-			).toBeNull();
-			fireEvent.click( nav( 'Review' ) );
-			await screen.findByText( EMPTY_REVIEW );
-			expect(
-				screen.queryByRole( 'button', { name: 'Page actions' } )
 			).toBeNull();
 		} );
 
@@ -1240,6 +1263,119 @@ describe( 'IntelligencePage', () => {
 				'true'
 			);
 			expect( screen.queryByText( 'Support desk' ) ).toBeNull();
+		} );
+
+		/** The editor's text, or null once the edit has ended. */
+		const editorText = () =>
+			screen.queryByText( 'Editing the layout of support-desk' );
+
+		/**
+		 * The question asked before an edit ends, answered.
+		 *
+		 * @param {string} answer The button it is answered with.
+		 */
+		const answerDiscard = ( answer ) =>
+			fireEvent.click(
+				within(
+					screen.getByRole( 'dialog', {
+						name: 'Discard your changes to this layout?',
+					} )
+				).getByRole( 'button', { name: answer } )
+			);
+
+		it( 'asks before a tab change ends an edit, and keeps editing on Keep editing', async () => {
+			editLens();
+			renderPage( true );
+			await screen.findByRole( 'tab', { name: 'Review 0' } );
+
+			fireEvent.click( nav( 'Briefing' ) );
+			expect(
+				screen.getByRole( 'button', { name: 'Keep editing' } )
+			).toHaveFocus();
+			answerDiscard( 'Keep editing' );
+			expect( editorText() ).toBeInTheDocument();
+			expect( nav( 'Team views' ) ).toHaveAttribute(
+				'aria-selected',
+				'true'
+			);
+
+			fireEvent.click( nav( 'Briefing' ) );
+			answerDiscard( 'Discard changes' );
+			expect( editorText() ).toBeNull();
+			await openWeek();
+			expect(
+				new URLSearchParams( window.location.search ).get( 'edit' )
+			).toBeNull();
+
+			fireEvent.click( nav( 'Team views' ) );
+			expect(
+				await screen.findAllByText( 'Support desk' )
+			).not.toHaveLength( 0 );
+			expect( editorText() ).toBeNull();
+		} );
+
+		it( 'asks before Back ends an edit, the editor standing until it is answered', async () => {
+			editLens();
+			renderPage( true );
+			await screen.findByRole( 'tab', { name: 'Review 0' } );
+
+			window.history.replaceState(
+				{},
+				'',
+				'/wp-admin/admin.php?page=newspack-intelligence&view=review'
+			);
+			act( () => {
+				window.dispatchEvent( new PopStateEvent( 'popstate' ) );
+			} );
+			expect( editorText() ).toBeInTheDocument();
+			answerDiscard( 'Keep editing' );
+			expect( editorText() ).toBeInTheDocument();
+			expect( nav( 'Team views' ) ).toHaveAttribute(
+				'aria-selected',
+				'true'
+			);
+
+			window.history.replaceState(
+				{},
+				'',
+				'/wp-admin/admin.php?page=newspack-intelligence&view=review'
+			);
+			act( () => {
+				window.dispatchEvent( new PopStateEvent( 'popstate' ) );
+			} );
+			answerDiscard( 'Discard changes' );
+			expect( editorText() ).toBeNull();
+			expect( await screen.findByText( EMPTY_REVIEW ) ).toBeVisible();
+			expect( nav( 'Review' ) ).toHaveAttribute(
+				'aria-selected',
+				'true'
+			);
+		} );
+
+		it( 'restores a refused layout’s default for a curator, without a reload', async () => {
+			wire.replies.restore =
+				COMPOSITIONS[ 'newspack-intelligence/briefing' ];
+			renderPage( true, false, {
+				...COMPOSITIONS,
+				'newspack-intelligence/briefing': {
+					context: 'newspack-intelligence/briefing',
+					error: 'composition newspack-intelligence/briefing: newspack-intelligence/retired is not a declared block',
+				},
+			} );
+			fireEvent.click(
+				await screen.findByRole( 'button', { name: 'Restore default' } )
+			);
+			fireEvent.click(
+				within(
+					screen.getByRole( 'dialog', {
+						name: 'Restore the default layout?',
+					} )
+				).getByRole( 'button', { name: 'Restore default' } )
+			);
+			expect( await openWeek() ).toBeInTheDocument();
+			expect(
+				screen.queryByText( 'Intelligence could not be read just now.' )
+			).toBeNull();
 		} );
 
 		it( 'ignores a reader’s edit', async () => {

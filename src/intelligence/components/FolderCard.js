@@ -51,7 +51,7 @@ function markText( use, today ) {
 
 /**
  * The dialog marking an item used: "Where" as a radio per place, "On" a
- * date, today by default.
+ * date, today by default, which a mark needs, so it marks nothing cleared.
  *
  * @param {Object}                              props
  * @param {string}                              props.mark    The place picked first.
@@ -62,8 +62,12 @@ function markText( use, today ) {
 function MarkDialog( { mark, onMark, onClose } ) {
 	const [ where, setWhere ] = useState( mark );
 	const [ day, setDay ] = useState( localToday );
+	const dated = '' !== day;
 	return (
-		<Modal onClose={ onClose } onSubmit={ () => onMark( where, day ) }>
+		<Modal
+			onClose={ onClose }
+			onSubmit={ () => dated && onMark( where, day ) }
+		>
 			<ModalHeader
 				title={ __( 'Mark as used', 'newspack-intelligence' ) }
 				onClose={ onClose }
@@ -88,7 +92,11 @@ function MarkDialog( { mark, onMark, onClose } ) {
 				<button type="button" className="button" onClick={ onClose }>
 					{ __( 'Cancel', 'newspack-intelligence' ) }
 				</button>
-				<button type="submit" className="button button-primary">
+				<button
+					type="submit"
+					className="button button-primary"
+					disabled={ ! dated }
+				>
 					{ __( 'Mark as used', 'newspack-intelligence' ) }
 				</button>
 			</div>
@@ -204,15 +212,16 @@ function CardMenu( { item, others, onUse, onMove, onRemove } ) {
  * it or removes it. It takes focus when a move lands it in its column.
  *
  * @param {Object}                              props
- * @param {Object}                              props.item     The saved item, its marks as shown.
- * @param {Object[]}                            props.others   The folders it can move into.
- * @param {boolean}                             props.canTune  Whether it drags and offers its menu.
- * @param {boolean}                             props.focused  Whether a move just landed it here.
- * @param {?string}                             props.refusal  A refused write's words, or null.
- * @param {import('react').DragEventHandler}    props.onPickUp Starts a drag.
- * @param {(into: string) => void}              props.onMove   Moves it.
- * @param {(mark: string, day: string) => void} props.onMark   Marks it used.
- * @param {() => void}                          props.onRemove Removes it from the folder.
+ * @param {Object}                              props.item      The saved item, its marks as shown.
+ * @param {Object[]}                            props.others    The folders it can move into.
+ * @param {boolean}                             props.canTune   Whether it drags and offers its menu.
+ * @param {boolean}                             props.focused   Whether a move just landed it here.
+ * @param {?string}                             props.refusal   A refused write's words, or null.
+ * @param {import('react').DragEventHandler}    props.onPickUp  Starts a drag.
+ * @param {() => void}                          props.onPutDown Ends it, dropped or not.
+ * @param {(into: string) => void}              props.onMove    Moves it.
+ * @param {(mark: string, day: string) => void} props.onMark    Marks it used.
+ * @param {() => void}                          props.onRemove  Removes it from the folder.
  * @return {import('react').ReactElement} The card.
  */
 export default function FolderCard( {
@@ -222,6 +231,7 @@ export default function FolderCard( {
 	focused,
 	refusal,
 	onPickUp,
+	onPutDown,
 	onMove,
 	onMark,
 	onRemove,
@@ -245,6 +255,7 @@ export default function FolderCard( {
 			className="newspack-intelligence__folder-card"
 			draggable={ canTune || undefined }
 			onDragStart={ canTune ? onPickUp : undefined }
+			onDragEnd={ canTune ? onPutDown : undefined }
 		>
 			<CardBody>
 				<strong id={ titleId }>

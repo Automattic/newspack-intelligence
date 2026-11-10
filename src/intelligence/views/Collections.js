@@ -1,4 +1,3 @@
-import { __ } from '@wordpress/i18n';
 import {
 	ITEM_READS,
 	useIntelRead,
@@ -9,19 +8,14 @@ import Answer from '../components/Answer';
 import Cite from '../components/Cite';
 import FolderBoard from '../components/FolderBoard';
 import Refusal from '../components/Refusal';
-import { metaLine, utcDay } from '../components/format';
-
-/**
- * An excluded item's key.
- *
- * @param {Object} item The item.
- * @return {string} Its key.
- */
-const itemKey = ( item ) => item.item_key;
+import { __, sprintf } from '@wordpress/i18n';
+import { Core } from '@newspack-nodes/runtime';
+import { actorNoun, dayLabel, itemKey, utcDay } from '../components/format';
 
 /**
  * The items a curator excluded from every view, the latest first, each with
- * its title citing its URL, who excluded it, its UTC day and why, and the
+ * its title citing its URL, then as cells who excluded it in words, its UTC
+ * day (`dayLabel()`) and why, when it says, and the
  * control including it again, which takes it off the list from the moment
  * it is sent until a read no longer lists it; a refusal puts it back.
  *
@@ -34,6 +28,7 @@ function Excluded() {
 		dirties: ITEM_READS,
 		onRefused: listed.refused,
 	} );
+	const today = utcDay( Math.floor( Core.now() ) );
 	return (
 		<>
 			<Refusal error={ include.refusal } />
@@ -80,12 +75,26 @@ function Excluded() {
 										) }
 									</button>
 								</div>
-								<p className="newspack-nodes-status is-muted">
-									{ metaLine(
-										item.actor,
-										utcDay( item.excluded_ts ),
-										item.why
-									) }
+								<p className="newspack-nodes-status is-muted newspack-intelligence__meta">
+									<span>
+										{ sprintf(
+											/* translators: %s: who excluded it, such as "a curator". */
+											__(
+												'Excluded by %s',
+												'newspack-intelligence'
+											),
+											actorNoun( item.actor )
+										) }
+									</span>
+									<time
+										dateTime={ utcDay( item.excluded_ts ) }
+									>
+										{ dayLabel(
+											utcDay( item.excluded_ts ),
+											today
+										) }
+									</time>
+									{ item.why && <span>{ item.why }</span> }
 								</p>
 							</li>
 						) ) }

@@ -86,6 +86,7 @@ beforeEach( () => {
 	const answers = { changes: CHANGES, signals: SIGNALS };
 	wire.replies.briefing = ( [ what ] ) => answers[ what ];
 	wire.replies.watches = WATCHES;
+	wire.replies.lenses = { lenses: [], available: true };
 	props = {
 		layout: defaultLayout(),
 		since: LAST_LOOK,
@@ -209,9 +210,12 @@ describe( 'Briefing', () => {
 		renderBriefing();
 		expect(
 			await screen.findByText(
-				'Intelligence could not be read just now. Try again.'
+				'Intelligence could not be read just now.'
 			)
 		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', { name: 'Try again' } )
+		).toBeNull();
 		expect( wire.sent( 'briefing' ) ).toEqual( [] );
 	} );
 

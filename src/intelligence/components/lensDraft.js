@@ -103,16 +103,21 @@ export function draftLens( draft, lists ) {
 }
 
 /**
- * The values a list field's text holds, split at its commas.
+ * The values a list field's text holds, split at its commas, each once, as
+ * the server keeps a list.
  *
  * @param {string} text The field's text.
- * @return {string[]} The values, trimmed, blanks left out.
+ * @return {string[]} The values, trimmed, blanks and repeats left out.
  */
 export function listOf( text ) {
-	return text
-		.split( ',' )
-		.map( ( one ) => one.trim() )
-		.filter( Boolean );
+	return [
+		...new Set(
+			text
+				.split( ',' )
+				.map( ( one ) => one.trim() )
+				.filter( Boolean )
+		),
+	];
 }
 
 /**

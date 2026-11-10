@@ -24,20 +24,18 @@ import EndClientDialog from '../components/EndClientDialog';
 import ChurnNote from '../components/ChurnNote';
 import Refusal from '../components/Refusal';
 import UndoSnackbar from '../components/UndoSnackbar';
-import { entityName, safeHref, shownDay, utcDay } from '../components/format';
+import {
+	entityName,
+	itemKey,
+	safeHref,
+	shownDay,
+	utcDay,
+} from '../components/format';
 import { word } from '../components/words';
-import { headingsOf } from '../blocks';
+import { jumpsOf } from '../blocks';
 import { EntityRecord } from '../blocks/record';
 import { editLayoutControl } from '../layout/LayoutMenu';
 import PageLayout from '../layout/PageLayout';
-
-/**
- * A churn report's key.
- *
- * @param {{item_key: string}} item A churn report.
- * @return {string} Its key.
- */
-const reportKey = ( item ) => item.item_key;
 
 /**
  * The UTC year of a Unix time.
@@ -241,11 +239,11 @@ function ChurnNotice( { reports, operator, note, onEnd, onNotAbout } ) {
 }
 
 /**
- * Links naming each heading of the layout, each moving focus to its
- * heading in the layout below.
+ * Links naming each heading of the layout, each moving focus to the heading
+ * its id names in the layout below.
  *
  * @param {Object}                                 props
- * @param {string[]}                               props.headings The headings.
+ * @param {Array<{text: string, id: string}>}      props.headings The headings.
  * @param {import('react').RefObject<HTMLElement>} props.layout   The layout's region.
  * @return {?import('react').ReactElement} The links.
  */
@@ -253,13 +251,11 @@ function JumpLinks( { headings, layout } ) {
 	if ( 0 === headings.length ) {
 		return null;
 	}
-	const jump = ( text ) => {
-		const target = [ ...layout.current.querySelectorAll( 'h2, h3' ) ].find(
-			( one ) => text === one.textContent
-		);
-		if ( target ) {
-			/** @type {HTMLElement} */ ( target ).tabIndex = -1;
-			/** @type {HTMLElement} */ ( target ).focus();
+	const jump = ( id ) => {
+		const target = layout.current.ownerDocument.getElementById( id );
+		if ( target && layout.current.contains( target ) ) {
+			target.tabIndex = -1;
+			target.focus();
 		}
 	};
 	return (
@@ -267,12 +263,8 @@ function JumpLinks( { headings, layout } ) {
 			className="newspack-intelligence__jumps"
 			aria-label={ __( 'On this profile', 'newspack-intelligence' ) }
 		>
-			{ headings.map( ( text, n ) => (
-				<Button
-					key={ `${ n } ${ text }` }
-					variant="link"
-					onClick={ () => jump( text ) }
-				>
+			{ headings.map( ( { text, id } ) => (
+				<Button key={ id } variant="link" onClick={ () => jump( id ) }>
 					{ text }
 				</Button>
 			) ) }
@@ -327,6 +319,7 @@ function BackLink( { back } ) {
  * @param {{label: string, onBack: () => void}}                   props.back       Names the view that opened the profile and returns to it.
  * @param {(target: Object, name: string) => void}                props.onWatch    Opens the watch form on a target.
  * @param {Partial<import('../layout/PageContext').IntelActions>} props.actions    What the blocks' rows open.
+ * @param {(layout: Object) => void}                              props.onRestored Takes the default a curator restored.
  * @return {import('react').ReactElement} The view.
  */
 export default function Entity( {
@@ -338,6 +331,7 @@ export default function Entity( {
 	back,
 	onWatch,
 	actions,
+	onRestored,
 } ) {
 	const record = useIntelRead( 'entity:record', 'entity', [ entityKey ] );
 	// The record lists its entity as a client while its status answers.
@@ -365,11 +359,7 @@ export default function Entity( {
 			},
 		[ record.answer ]
 	);
-	const reports = useHeld(
-		{ ...record, answer: listed },
-		'items',
-		reportKey
-	);
+	const reports = useHeld( { ...record, answer: listed }, 'items', itemKey );
 	const deferred = useDeferredWrite();
 	const rejectLink = useIntelWrite( 'reject_link', {
 		dirties: ENTITY_READS,
@@ -610,7 +600,7 @@ export default function Entity( {
 					</AnswerBody>
 					{ ! layout.error && (
 						<JumpLinks
-							headings={ headingsOf( layout.blocks ) }
+							headings={ jumpsOf( layout.blocks ).headings }
 							layout={ region }
 						/>
 					) }
@@ -656,12 +646,12 @@ export default function Entity( {
 				<div ref={ region }>
 					<PageLayout
 						layout={ layout }
+						onRestored={ onRestored }
 						page={ {
 							page: 'entity',
 							lens_key: null,
 							entity_key: entityKey,
 							since: null,
-							editing: false,
 							actions,
 						} }
 					/>

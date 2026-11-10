@@ -59,8 +59,8 @@ final class Intelligence_Briefing {
 	}
 
 	/**
-	 * Each client and each lens with a signal whose bucket closed inside the
-	 * window, by name, its signals as the signals read answers them: every
+	 * Each client the caller may see and each lens with a signal whose
+	 * bucket closed inside the window, by name, its signals as the signals read answers them: every
 	 * client's in one `Graph_Query::signals_of()`, so the roster's size adds
 	 * no statement, and each lens's through `spikes()`. A client carrying a
 	 * churn note needs attention whatever it signals, so it is listed too,
@@ -158,13 +158,15 @@ final class Intelligence_Briefing {
 	 * `categories`, the named lenses admitting it in the order named
 	 * (`Graph_Query::admitted()`, one statement a lens), and `otherwise`,
 	 * whether none does. Each is filed once, by key: under the first open
-	 * client it is about, unless it is about more than
+	 * client it is about, a churn kind's the one its kind claims
+	 * (`Graph_Query::claimed()`), unless it is about more than
 	 * `Graph_Query::MAX_ITEM_CLIENTS`; else under the first category
 	 * admitting it; else under `otherwise`. The clients' groups come first,
 	 * each in the order of its most important item, then each category's in
 	 * the order named, then `otherwise`; a group holding nothing is left
-	 * out. Each category answers how many items it admits, and `otherwise`
-	 * how many no category does. Its summary counts what of the window is
+	 * out. Each category answers how many of the window's items it admits,
+	 * and `otherwise` how many no category does, as `total` counts every
+	 * one. Its summary counts what of the window is
 	 * dated at or after `since`, the window's first instant at the latest:
 	 * the items, the open clients they are about, and each of SUMMARY_KINDS
 	 * with any item, in that order, with its items and the open clients they
@@ -198,8 +200,9 @@ final class Intelligence_Briefing {
 				$keys     = \array_values( \array_map( static fn ( array $item ): string => Core::as_string( $item['item_key'] ), $items ) );
 				$admitted = [];
 				foreach ( $lenses as $lens ) {
-					$admitted[ $lens ] = \array_flip( Graph_Query::admitted( $r, $g, $lens, $keys ) );
+					$admitted[ $lens ] = \array_flip( Graph_Query::admitted( $r, $g, $lens, self::DAYS ) );
 				}
+				$claimed  = Graph_Query::claimed( $r, $g, $keys );
 				$clients  = self::clients( $r, $g );
 				$names    = self::names_of( $r, $lenses );
 				$filed    = [];
@@ -207,7 +210,8 @@ final class Intelligence_Briefing {
 				foreach ( $items as $item ) {
 					$key        = Core::as_string( $item['item_key'] );
 					$categories = \array_values( \array_filter( $lenses, static fn ( string $lens ): bool => isset( $admitted[ $lens ][ $key ] ) ) );
-					$under      = \array_values( \array_intersect( \array_map( Core::as_string( ... ), \array_column( Core::arr( $item['entities'] ), 'entity_key' ) ), \array_keys( $clients ) ) );
+					$about      = \in_array( $item['kind'], Intel_Event::CHURN_KINDS, true ) ? $claimed[ $key ] ?? [] : \array_map( Core::as_string( ... ), \array_column( Core::arr( $item['entities'] ), 'entity_key' ) );
+					$under      = \array_values( \array_intersect( $about, \array_keys( $clients ) ) );
 					$group      = match ( true ) {
 						[] !== $under && \count( $under ) <= Graph_Query::MAX_ITEM_CLIENTS => [ Graph_Query::CLIENT, $under[0], $clients[ $under[0] ] ],
 						[] !== $categories => [ 'category', $categories[0], $names[ $categories[0] ] ],
@@ -226,7 +230,7 @@ final class Intelligence_Briefing {
 					'items'      => $listed,
 					'groups'     => [ ...\array_values( $filed[ Graph_Query::CLIENT ] ?? [] ), ...\array_values( \array_filter( \array_map( static fn ( string $lens ): ?array => $filed['category'][ $lens ] ?? null, $lenses ) ) ), ...\array_values( $filed['otherwise'] ?? [] ) ],
 					'categories' => $counted,
-					'otherwise'  => \count( \array_keys( \array_column( $listed, 'otherwise' ), true, true ) ),
+					'otherwise'  => Core::as_int( $read['total'] ) - \count( \array_replace( [], ...\array_values( $admitted ) ) ),
 					'total'      => $read['total'],
 					'summary'    => self::summary( $since, Core::arr( $read['summary'] ) ),
 				];
@@ -272,20 +276,21 @@ final class Intelligence_Briefing {
 
 	/**
 	 * Every entity holding an open client role, as its survivor, by name, in
-	 * one statement.
+	 * one statement, that the caller may see (`Graph_Query::visible_of()`).
 	 *
 	 * @param Row_Reader $r The reader.
 	 * @param Graph      $g The graph the read opened.
 	 * @return array<string,string> Each survivor => its name.
 	 */
 	private static function clients( Row_Reader $r, array $g ): array {
-		return self::named(
+		$open = self::named(
 			$r->rows(
 				"{$g['with']} SELECT c.entity_key, " . Graph_Query::name_of( $r, 'c.entity_key' ) . ' FROM ( SELECT DISTINCT COALESCE( mg.value, t.entity_key ) AS entity_key FROM '
 				. Intel_Graph_Row_Schema::all( $r, 'roles' ) . " t LEFT JOIN mg ON mg.key = t.entity_key WHERE t.role = ? AND t.to_ts = 0 ) c WHERE c.entity_key <> '' ORDER BY 2, 1",
 				[ ...$g['binds'], Graph_Query::CLIENT ]
 			)
 		);
+		return \array_intersect_key( $open, Graph_Query::visible_of( $r, $g, \array_map( 'strval', \array_keys( $open ) ) ) );
 	}
 
 	/**

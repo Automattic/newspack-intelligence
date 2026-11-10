@@ -1,9 +1,10 @@
 /**
  * The `item-list` block: the items `search` reads under the page it stands
- * on, through the team view on a team view's page and about the entity on a
- * profile, narrowed by the lists and tiers it names, grouped by theme or in
- * the layout it names. On a team view's page each list it names is
- * intersected with the view's own list of that name, so the block narrows
+ * on, through the team view it names, else the one a team view's page shows,
+ * and about the entity on a profile, narrowed by the lists and tiers it
+ * names, grouped by theme or in the layout it names. Each list it names is
+ * intersected with the view's own list of that name, and a profile's entity
+ * with the view's entity, wherever the block stands, so the block narrows
  * the view and never widens it; an intersection left empty reads nothing.
  */
 
@@ -13,7 +14,7 @@ import {
 	SelectControl,
 	TextControl,
 } from '@wordpress/components';
-import { useContext, useState } from '@wordpress/element';
+import { useContext, useId, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import { AnswerBody } from '../components/Answer';
 import GroupPage from '../components/GroupPage';
@@ -23,6 +24,7 @@ import Skeleton from '../components/Skeleton';
 import { words } from '../components/words';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
 import { IntelPageContext, useIntelActions } from '../layout/PageContext';
+import { useSavedLens } from './lens';
 
 /** The skeleton rows that stand in for a list still owed. */
 const SKELETON_ROWS = 5;
@@ -34,7 +36,7 @@ const SKELETON_ROWS = 5;
  * @property {string[]}                  topics  The topics read.
  * @property {string[]}                  roles   The roles read.
  * @property {string[]}                  sources The sources read.
- * @property {string}                    lens    A team view read through; '' for the view the page shows.
+ * @property {string}                    lens    A team view read through; '' for the view a team view's page shows.
  * @property {''|'theme'}                group   `theme`, or '' for items.
  * @property {'importance'|'time'}       sort    `importance` or `time`.
  * @property {'list'|'activity'|'table'} layout  The layout the items draw in.
@@ -55,11 +57,11 @@ const lensLists = () =>
 
 /**
  * Each list the block names as the option `search` takes, intersected with
- * the page's team view's list of that name when both name one; null when an
+ * the team view's list of that name when both name one; null when an
  * intersection is empty, so nothing is read.
  *
  * @param {ItemListAttributes} attributes The block's attributes.
- * @param {?Object}            lens       The page's team view, or null.
+ * @param {?Object}            lens       The team view read through, or null.
  * @return {?Object<string, string[]>} The options, or null.
  */
 function listsOf( attributes, lens ) {
@@ -81,25 +83,38 @@ function listsOf( attributes, lens ) {
 }
 
 /**
- * The `search` options the block reads, or null for none.
+ * The team view the block reads through: the one it names, else on a team
+ * view's page the one the page shows; '' for none.
  *
  * @param {ItemListAttributes}                        attributes The block's attributes.
  * @param {import('../layout/PageContext').IntelPage} page       The page.
+ * @return {string} The view's key.
+ */
+const lensOf = ( attributes, page ) =>
+	attributes.lens || ( 'lens' === page.page ? page.lens_key ?? '' : '' );
+
+/**
+ * The `search` options the block reads, or null for none: none on a profile
+ * naming no entity yet, or one the team view is not about.
+ *
+ * @param {ItemListAttributes}                        attributes The block's attributes.
+ * @param {import('../layout/PageContext').IntelPage} page       The page.
+ * @param {?Object}                                   lens       The team view read through, as `lenses` lists it, or null.
  * @return {?Object} The options.
  */
-function searchOf( attributes, page ) {
-	const lensKey =
-		attributes.lens || ( 'lens' === page.page ? page.lens_key : '' );
-	const lists = listsOf(
-		attributes,
-		lensKey === page.lens_key ? page.lens : null
-	);
+function searchOf( attributes, page, lens ) {
+	const entity = 'entity' === page.page ? page.entity_key : '';
+	const theirs = lens?.filters.entity ?? null;
+	if ( null === entity || ( entity && theirs && theirs !== entity ) ) {
+		return null;
+	}
+	const lists = listsOf( attributes, lens );
 	if ( null === lists ) {
 		return null;
 	}
 	return {
-		lens: lensKey ?? '',
-		entity: 'entity' === page.page ? page.entity_key : '',
+		lens: lensOf( attributes, page ),
+		entity,
 		...lists,
 		tier: attributes.tiers,
 		...( attributes.group
@@ -110,7 +125,8 @@ function searchOf( attributes, page ) {
 }
 
 /**
- * The block's read, a page at a time, drawn as theme groups or items.
+ * The block's read, a page of `limit` groups or items at a time, drawn as
+ * theme groups or as items in the block's layout.
  *
  * @param {Object}             props
  * @param {Object}             props.options    The `search` options.
@@ -119,12 +135,11 @@ function searchOf( attributes, page ) {
  */
 function Read( { options, attributes } ) {
 	const { onOpenEntity, onSave, canTune } = useIntelActions();
-	const [ starts, setStarts ] = useState( [ 0 ] );
 	const [ page, setPage ] = useState( 1 );
 	const { group, layout, limit, empty } = attributes;
-	const offset = group ? starts[ starts.length - 1 ] : ( page - 1 ) * limit;
+	const offset = ( page - 1 ) * limit;
 	const read = useIntelRead(
-		`item-list:${ JSON.stringify( options ) }`,
+		`item-list:${ useId() }`,
 		'search',
 		commandArgs( { ...options, ...( 0 < offset ? { offset } : {} ) } )
 	);
@@ -135,12 +150,20 @@ function Read( { options, attributes } ) {
 			empty={ empty }
 			skeleton={ <Skeleton count={ SKELETON_ROWS } /> }
 		>
-			{ ( answer ) =>
-				group ? (
+			{ ( answer ) => {
+				const paged = {
+					onChangeView: ( view ) => setPage( view.page ?? 1 ),
+					empty,
+					paginationInfo: {
+						totalItems: answer.total,
+						totalPages: Math.ceil( answer.total / limit ),
+					},
+				};
+				return group ? (
 					<GroupPage
 						answer={ answer }
-						starts={ starts }
-						onStarts={ setStarts }
+						view={ { type: 'list', page, perPage: limit } }
+						{ ...paged }
 						onOpenEntity={ onOpenEntity }
 						onSave={ onSave }
 						canTune={ canTune }
@@ -149,17 +172,12 @@ function Read( { options, attributes } ) {
 					<ItemList
 						items={ answer.items }
 						view={ { type: layout, page, perPage: limit } }
-						onChangeView={ ( view ) => setPage( view.page ?? 1 ) }
 						layout={ layout }
-						empty={ empty }
-						paginationInfo={ {
-							totalItems: answer.total,
-							totalPages: Math.ceil( answer.total / limit ),
-						} }
+						{ ...paged }
 						rowProps={ { onOpenEntity, onSave, canTune } }
 					/>
-				)
-			}
+				);
+			} }
 		</AnswerBody>
 	);
 }
@@ -170,18 +188,26 @@ function Read( { options, attributes } ) {
  * @return {import('react').ReactElement} The block.
  */
 function View( { attributes } ) {
-	const options = searchOf( attributes, useContext( IntelPageContext ) );
-	const body = options ? (
-		<Read
-			key={ JSON.stringify( options ) }
-			options={ options }
-			attributes={ attributes }
-		/>
-	) : (
-		<p className="newspack-nodes-empty-state is-quiet">
-			{ attributes.empty }
-		</p>
-	);
+	const page = useContext( IntelPageContext );
+	const lens = useSavedLens( lensOf( attributes, page ) );
+	const options =
+		undefined === lens ? undefined : searchOf( attributes, page, lens );
+	let body = <Skeleton count={ SKELETON_ROWS } />;
+	if ( options ) {
+		body = (
+			<Read
+				key={ JSON.stringify( options ) }
+				options={ options }
+				attributes={ attributes }
+			/>
+		);
+	} else if ( null === options ) {
+		body = (
+			<p className="newspack-nodes-empty-state is-quiet">
+				{ attributes.empty }
+			</p>
+		);
+	}
 	return attributes.heading ? (
 		<Section heading={ attributes.heading }>{ body }</Section>
 	) : (

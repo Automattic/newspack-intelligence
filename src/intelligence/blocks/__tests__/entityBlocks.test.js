@@ -125,7 +125,6 @@ const renderBlock = ( block, attributes, page = {} ) =>
 				lens_key: null,
 				entity_key: KEY,
 				since: null,
-				editing: false,
 				actions,
 				...page,
 			} }
@@ -430,6 +429,35 @@ describe( 'timeline', () => {
 			await screen.findByText( 'Nothing about Harbor Ledger yet.' )
 		).toBeInTheDocument();
 	} );
+} );
+
+describe( 'a profile that names no entity yet', () => {
+	it.each( [
+		[ 'pulse', pulse, { lens: '' } ],
+		[ 'related', related, { heading: 'Shares coverage', limit: 3 } ],
+		[
+			'timeline',
+			timeline,
+			{
+				heading: 'On the wire',
+				published: 'none',
+				layout: 'list',
+				limit: 4,
+			},
+		],
+		[ 'entity-facts', entityFacts, { show: [ 'claims' ], limit: 4 } ],
+	] )(
+		'%s reads nothing, sending no "null"',
+		async ( _, block, attributes ) => {
+			const view = renderBlock( block, attributes, { entity_key: null } );
+			await new Promise( ( resolve ) => setTimeout( resolve, 50 ) );
+			expect( wire.sent( 'signals' ) ).toEqual( [] );
+			expect( wire.sent( 'related' ) ).toEqual( [] );
+			expect( wire.sent( 'timeline' ) ).toEqual( [] );
+			expect( wire.sent( 'entity' ) ).toEqual( [] );
+			view.unmount();
+		}
+	);
 } );
 
 describe( 'entity-facts with nothing to count', () => {

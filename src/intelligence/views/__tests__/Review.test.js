@@ -317,7 +317,7 @@ describe( 'Review — rows', () => {
 				name: 'Valley Times',
 			} )
 		);
-		expect( row ).toHaveTextContent( /^New name: Valley Times \(Outfit\)/ );
+		expect( row ).toHaveTextContent( /^New name: Valley Times, a Outfit/ );
 		expect(
 			within( entities ).queryByText( /organization:valley-times/ )
 		).toBeNull();
@@ -543,6 +543,18 @@ describe( 'Review — judgments', () => {
 				within( links ).getByRole( 'button', { name: 'Valley Ledger' } )
 			)
 		);
+	} );
+
+	it( 'moves focus to the queue’s tab once its last row is judged', async () => {
+		wire.replies.reject_entity = never;
+		renderReview( { canTune: true } );
+		const names = queue( 'Suggested names' );
+		const no = await within( names ).findByRole( 'button', {
+			name: 'Reject Valley Times',
+		} );
+		no.focus();
+		await act( async () => fireEvent.click( no ) );
+		expect( document.activeElement ).toBe( tab( 'Suggested names' ) );
 	} );
 
 	it( 'takes the next judgment while the last one waits', async () => {
@@ -862,6 +874,32 @@ describe( 'Review — same as…', () => {
 			within( queue( 'Suggested names' ) ).getByRole( 'button', {
 				name: 'Valley Times',
 			} )
+		).toBeInTheDocument();
+	} );
+
+	it( 'announces a merge cancelled while it was owed, once it lands', async () => {
+		let land;
+		wire.replies.merge_entities = () =>
+			new Promise( ( resolve ) => {
+				land = resolve;
+			} );
+		const dialog = await openMerge();
+		await pick( dialog );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Merge' } )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'merge_entities' ) ).toHaveLength( 1 )
+		);
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		await act( async () => land( { ok: true, event_id: 'ev-late' } ) );
+		expect(
+			await screen.findByText(
+				'Merged Valley Times into The Valley Times.'
+			)
 		).toBeInTheDocument();
 	} );
 

@@ -18,7 +18,7 @@ import { Core } from '@newspack-nodes/runtime';
 import CompositionEditSlot from '@newspack-nodes/shared/composition/CompositionEditSlot';
 import { intelWire } from './intelWire';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
-import { IntelPageContext, useWriteControl } from '../layout/PageContext';
+import { IntelPageContext } from '../layout/PageContext';
 import { BLOCK_VIEWS } from '../blocks';
 import { mountLayoutEditor } from '../layout/LayoutEditor';
 
@@ -58,7 +58,7 @@ jest.mock( '@wordpress/block-editor', () => {
 const PROBE = 'newspack-intelligence/probe';
 
 /**
- * A block reading its page's team view, with one write.
+ * A block reading its page's team view.
  *
  * @param {Object} props
  * @param {Object} props.attributes       Its attributes.
@@ -75,9 +75,6 @@ function Probe( { attributes: { label } } ) {
 	return (
 		<section>
 			<p>{ `${ label }: ${ read.answer ? 'read' : 'owed' }` }</p>
-			<button type="button" { ...useWriteControl( () => {} ) }>
-				{ `Watch ${ label }` }
-			</button>
 		</section>
 	);
 }
@@ -99,6 +96,15 @@ const LENS_SCHEMAS = {
 			container: false,
 			multiple: true,
 		},
+		'newspack-intelligence/watches': {
+			title: 'Your watches',
+			attributes: {
+				heading: { type: 'string', default: 'Your watches' },
+				max: { type: 'integer', default: 5 },
+			},
+			container: false,
+			multiple: false,
+		},
 	},
 };
 
@@ -108,6 +114,11 @@ const SAVED = {
 	blocks: [
 		{ name: PROBE, attributes: { label: 'Kestrel' }, inner: [] },
 		{ name: PROBE, attributes: { label: 'Heron' }, inner: [] },
+		{
+			name: 'newspack-intelligence/watches',
+			attributes: { heading: 'Kept close', max: 3 },
+			inner: [],
+		},
 	],
 	saved_ts: 1912345678.5,
 	actor: 'lakeside-editor',
@@ -133,6 +144,7 @@ beforeEach( () => {
 	wire.replies.get = SAVED;
 	wire.replies.lenses = LENSES;
 	wire.replies.signals = { signals: [], available: true };
+	wire.replies.watches = { watches: [], available: true };
 	window.__newspackNodesCompositionEditors = undefined;
 } );
 
@@ -187,7 +199,6 @@ describe( 'mountLayoutEditor', () => {
 			() =>
 				expect( wire.sent( 'signals' ) ).toEqual( [
 					[ '--lens=desk-watch' ],
-					[ '--lens=desk-watch' ],
 				] ),
 			WAIT
 		);
@@ -196,9 +207,13 @@ describe( 'mountLayoutEditor', () => {
 			{ name: 'Preview with Desk Watch' },
 			WAIT
 		);
-		expect(
-			screen.getByRole( 'button', { name: 'Watch Kestrel' } )
-		).toHaveAttribute( 'aria-disabled', 'true' );
+		expect( await screen.findByText( 'Kestrel: read' ) ).toBeTruthy();
+		expect( screen.getByText( 'Heron: read' ) ).toBeTruthy();
+		screen
+			.getAllByRole( 'button', { name: 'New watch' } )
+			.forEach( ( button ) =>
+				expect( button ).toHaveAttribute( 'aria-disabled', 'true' )
+			);
 
 		fireEvent.click( preview );
 		fireEvent.click(
@@ -207,8 +222,7 @@ describe( 'mountLayoutEditor', () => {
 
 		await waitFor(
 			() =>
-				expect( wire.sent( 'signals' ).slice( 2 ) ).toEqual( [
-					[ '--lens=harbor-desk' ],
+				expect( wire.sent( 'signals' ).slice( 1 ) ).toEqual( [
 					[ '--lens=harbor-desk' ],
 				] ),
 			WAIT

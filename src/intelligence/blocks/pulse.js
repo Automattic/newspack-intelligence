@@ -28,7 +28,9 @@ import { IntelPageContext } from '../layout/PageContext';
  */
 function signalsArgs( page, lens ) {
 	if ( 'entity' === page.page ) {
-		return formatCommandArgs( [], { entity: page.entity_key } );
+		return page.entity_key
+			? formatCommandArgs( [], { entity: page.entity_key } )
+			: null;
 	}
 	const key = 'lens' === page.page ? page.lens_key : lens;
 	return key ? formatCommandArgs( [], { lens: key } ) : null;

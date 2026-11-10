@@ -49,7 +49,7 @@ final class CommandArgBindingTest extends TestCase {
 
 		$sibling->dispatch( 'add_repo', [ 'acme/pos-repo' ] );
 		$sibling->dispatch( 'add_repo', [ '--repo=acme/named-repo' ] );
-		$this->assertSame( [ 'acme/pos-repo', 'acme/named-repo' ], $this->prop( $node, 'repos' ) );
+		$this->assertSame( [ 'acme/pos-repo' => false, 'acme/named-repo' => false ], $this->prop( $node, 'repos' ) );
 	}
 
 	public function test_add_team_binds_by_position_and_by_name(): void {

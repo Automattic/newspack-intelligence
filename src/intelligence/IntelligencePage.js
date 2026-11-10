@@ -1,4 +1,9 @@
-import { useLayoutEffect, useRef, useState } from '@wordpress/element';
+import {
+	useEffect,
+	useLayoutEffect,
+	useRef,
+	useState,
+} from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import DashboardShell from '@newspack-nodes/shared/components/DashboardShell';
 import { getQueryParam } from '@newspack-nodes/shared/utils/queryParams';
@@ -19,12 +24,8 @@ import HealthStrip from './components/HealthStrip';
 import { useLastLook } from './hooks/useLastLook';
 import { useIntelRead } from './hooks/useIntelCommand';
 import UndoSnackbar from './components/UndoSnackbar';
-import {
-	composedPage,
-	editTarget,
-	layoutContext,
-	leaveEdit,
-} from './layout/editMode';
+import { editTarget, layoutContext, leaveEdit } from './layout/editMode';
+import Confirm from './layout/Confirm';
 import './styles/intelligence.scss';
 
 /** The edit slot, which hands every prop past `context` to the editor. */
@@ -79,9 +80,14 @@ const defaultView = () => ( linkedWatch() ? 'watches' : 'briefing' );
  * The Briefing is its page's layout, from the page data's `compositions`,
  * with **Edit layout** in its own header's ⋯ menu for a curator; a team view
  * and a profile each render their page's layout below their own header,
- * whose ⋯ menu offers a curator **Edit layout**. A curator's load naming `edit` puts the
- * layout editor in that view's place and keeps the tab bar; the layout it
- * hands back replaces the page's without a reload.
+ * whose ⋯ menu offers a curator **Edit layout**. A curator's load naming
+ * `edit` puts the layout editor in the panel and keeps the tab bar; the
+ * layout it hands back, or a restored default, replaces the page's without a
+ * reload. While an edit stands, a tab picked or Back and Forward ask
+ * "Discard your changes to this layout?" first, the editor standing until
+ * answered: **Discard changes** ends the edit and goes, and **Keep editing**
+ * stays, returning to the edit's view. Back and Forward otherwise go as a
+ * tab picked goes, closing a profile.
  *
  * The shared `DashboardShell` supplies the skin, the positioned page surface,
  * the header naming this page and the debug overlay; the page scrolls in the
@@ -182,6 +188,12 @@ export default function IntelligencePage( {
 		( id ) => ( defaultView() === id ? null : id ),
 		{ push: true }
 	);
+	const [ editView ] = useState( view );
+	const [ leaving, setLeaving ] = useState(
+		/** @type {?{view: string, popped: boolean}} */ ( null )
+	);
+	// The view the page last went to itself; any other is a Back or Forward.
+	const went = useRef( view );
 	const panelProps = useTabPanelProps( 'intelligence', view, true );
 	const viewName =
 		{
@@ -190,9 +202,48 @@ export default function IntelligencePage( {
 		}[ view ] ?? tabs.find( ( tab ) => tab.id === view ).label;
 
 	// A profile replaces the panel of the view that opened it.
-	const go = ( id ) => {
+	const show = ( id ) => {
+		went.current = id;
 		setProfile( null );
 		setView( id );
+	};
+	const go = ( id ) =>
+		editing ? setLeaving( { view: id, popped: false } ) : show( id );
+	useEffect( () => {
+		if ( view === went.current ) {
+			return;
+		}
+		if ( editing ) {
+			setLeaving( { view, popped: true } );
+			return;
+		}
+		went.current = view;
+		setProfile( null );
+	}, [ view, editing ] );
+	const relaid = ( answer ) =>
+		setLayouts( ( was ) => ( { ...was, [ answer.context ]: answer } ) );
+	const endEdit = () => {
+		setEditing( null );
+		leaveEdit();
+	};
+	const discard = () => {
+		const { view: to, popped } = leaving;
+		setLeaving( null );
+		endEdit();
+		if ( popped ) {
+			went.current = to;
+			setProfile( null );
+		} else {
+			show( to );
+		}
+	};
+	const keepEditing = () => {
+		const { popped } = leaving;
+		setLeaving( null );
+		if ( popped ) {
+			went.current = editView;
+			setView( editView );
+		}
 	};
 	const openEntity = ( key ) =>
 		setProfile( ( open ) => ( {
@@ -219,16 +270,14 @@ export default function IntelligencePage( {
 		setWatch( { ...CLOSED_WATCH, key } );
 		go( 'watches' );
 	};
-	const tabPage = composedPage( view );
-	const page = profile ? 'entity' : tabPage;
-	const editSlot = page && page === editing?.page && (
+	const editSlot = editing && (
 		<EditSlot
-			context={ layoutContext( page ) }
+			context={ layoutContext( editing.page ) }
 			target={ editing }
 			since={ lastLook.since }
 			onDone={ ( answer, verb ) => {
 				if ( answer ) {
-					setLayouts( { ...layouts, [ answer.context ]: answer } );
+					relaid( answer );
 				}
 				if ( 'save' === verb ) {
 					setLaidOut( {
@@ -236,8 +285,7 @@ export default function IntelligencePage( {
 						message: __( 'Layout saved.', 'newspack-intelligence' ),
 					} );
 				}
-				setEditing( null );
-				leaveEdit();
+				endEdit();
 			} }
 		/>
 	);
@@ -267,6 +315,7 @@ export default function IntelligencePage( {
 							{ editSlot }
 							{ profile && ! editSlot && (
 								<Entity
+									onRestored={ relaid }
 									key={ profile.key }
 									entityKey={ profile.key }
 									canTune={ canTune }
@@ -290,9 +339,10 @@ export default function IntelligencePage( {
 									} }
 								/>
 							) }
-							<div hidden={ Boolean( profile ) }>
+							<div hidden={ Boolean( profile || editSlot ) }>
 								{ 'briefing' === view && ! editSlot && (
 									<Briefing
+										onRestored={ relaid }
 										layout={
 											layouts[
 												layoutContext( 'briefing' )
@@ -334,6 +384,7 @@ export default function IntelligencePage( {
 								) }
 								{ 'lenses' === view && ! editSlot && (
 									<Lens
+										onRestored={ relaid }
 										canTune={ canTune }
 										vocabulary={ vocabulary }
 										opened={ lens }
@@ -375,6 +426,24 @@ export default function IntelligencePage( {
 							</div>
 						</div>
 						<UndoSnackbar latest={ laidOut } />
+						{ leaving && (
+							<Confirm
+								title={ __(
+									'Discard your changes to this layout?',
+									'newspack-intelligence'
+								) }
+								yes={ __(
+									'Discard changes',
+									'newspack-intelligence'
+								) }
+								no={ __(
+									'Keep editing',
+									'newspack-intelligence'
+								) }
+								onYes={ discard }
+								onNo={ keepEditing }
+							/>
+						) }
 						{ saving && (
 							<SaveToCollection
 								item={ saving }

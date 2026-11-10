@@ -1158,6 +1158,44 @@ final class ResolverNodeTest extends TestCase {
 	}
 
 	/**
+	 * A link added under a key since merged away is written as its
+	 * survivor's: once, beside nothing, where the resolution finds the
+	 * survivor itself in that role, and under the survivor's key where it
+	 * does not.
+	 *
+	 * @return array<string,array{0:string,1:list<list<string>>}>
+	 */
+	public static function merged_additions(): array {
+		return [
+			'found by name' => [ 'Mesa Courier opens a harbor bureau', [ [ 'link_asserted', self::MESA, 'subject', 'name' ] ] ],
+			'not found'     => [ 'A local bake sale', [ [ 'link_asserted', self::MESA, 'subject', 'human' ] ] ],
+		];
+	}
+
+	/**
+	 * @param string             $title   The item's title.
+	 * @param list<list<string>> $written The link events written.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'merged_additions' )]
+	public function test_a_link_added_under_a_merged_key_is_written_as_its_survivor( string $title, array $written ): void {
+		$this->seed(
+			self::gazette(),
+			self::entity( self::MESA, 'Mesa Courier' ),
+			self::entity( 'organization:mesa-courier-weekly', 'Mesa Courier Weekly' ),
+			[
+				Intel_Event::make( 'item_recorded', self::item( [ 'title' => $title ] ), 'machine:source:feed@9.4.1', '9.4.1' ),
+				Intel_Event::make( 'link_added', [ 'item_key' => self::ITEM, 'entity_key' => 'organization:mesa-courier-weekly', 'role' => 'subject', 'item_url' => 'https://random.example/x' ], 'user:curator-31', '9.4.1' ),
+				...self::extracted( self::MESA ),
+			],
+			self::merged( 'organization:mesa-courier-weekly', self::MESA )
+		);
+
+		$this->resolver->fill( self::reresolve( self::ITEM, 0.0 ) );
+
+		$this->assertSame( $written, \array_map( static fn ( array $e ): array => [ $e['event'], $e['entity_key'], $e['role'], $e['method'] ], $this->written() ) );
+	}
+
+	/**
 	 * A curator's rejection judges what the item is about, never who
 	 * published it: the extractor is still sent the publisher link.
 	 */

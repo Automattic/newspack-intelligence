@@ -349,9 +349,9 @@ class Resolver_Node extends Node {
 	}
 
 	/**
-	 * A resolution with each link a person added and still confirms, in the
-	 * role it was added in, asserted by `human` at full confidence, unless
-	 * it holds that link already: written on every resolution, so none
+	 * A resolution with each link a person added and still confirms, under
+	 * its survivor, in the role it was added in, asserted by `human` at full
+	 * confidence, unless it holds that link already: written on every resolution, so none
 	 * retracts it, while a rejection leaves it to be retracted.
 	 *
 	 * @param Resolution $resolution What resolve() answered.
@@ -780,7 +780,7 @@ class Resolver_Node extends Node {
 			$entity = $survivor( $key );
 			if ( '' !== $entity ) {
 				$added[ $entity ] ??= [
-					'entity_key' => Core::as_string( $key ),
+					'entity_key' => $entity,
 					'role'       => Core::as_string( $role ),
 				];
 			}

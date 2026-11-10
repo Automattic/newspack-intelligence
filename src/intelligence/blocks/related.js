@@ -14,7 +14,7 @@ import Skeleton from '../components/Skeleton';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import { IntelPageContext, useIntelActions } from '../layout/PageContext';
 import { entityName } from '../components/format';
-import { useEntityRecord } from './record';
+import { aboutEntity, useEntityRecord } from './record';
 
 /**
  * @typedef {Object} RelatedAttributes
@@ -80,7 +80,10 @@ function Rows( { entities, limit } ) {
 function View( { attributes } ) {
 	const { entity_key: key } = useContext( IntelPageContext );
 	const record = useEntityRecord();
-	const read = useIntelRead( 'block:related', 'related', [ key ] );
+	const read = aboutEntity(
+		key,
+		useIntelRead( 'block:related', 'related', key ? [ key ] : null )
+	);
 	const name =
 		record.answer && ! record.error ? entityName( record.answer ) : key;
 	return (

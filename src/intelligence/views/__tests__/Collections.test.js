@@ -78,6 +78,10 @@ let wire;
 
 const Harness = ( props ) => <Collections { ...props } />;
 
+afterEach( () => {
+	jest.restoreAllMocks();
+} );
+
 beforeEach( () => {
 	Core.reset();
 	window.NewspackNodesData = pageData();
@@ -138,6 +142,9 @@ describe( 'Collections — excluded items', () => {
 	const excluded = () => screen.findByRole( 'region', { name: 'Excluded' } );
 
 	it( 'lists a curator every excluded item, who excluded it, when and why', async () => {
+		jest.spyOn( Core, 'now' ).mockReturnValue(
+			Date.UTC( 2026, 10, 10, 12 ) / 1000
+		);
 		render( <Harness canTune={ true } /> );
 		const section = await excluded();
 
@@ -146,14 +153,23 @@ describe( 'Collections — excluded items', () => {
 				name: WIRE_COPY.title,
 			} )
 		).toHaveAttribute( 'href', WIRE_COPY.url );
+		const meta = [
+			...section.querySelectorAll( '.newspack-intelligence__meta' ),
+		].map( ( line ) =>
+			[ ...line.children ].map( ( cell ) => cell.textContent )
+		);
+		expect( meta ).toEqual( [
+			[ 'Excluded by an agent', '20 Oct' ],
+			[
+				'Excluded by a curator',
+				'19 Oct',
+				'The wire copy of a story we hold.',
+			],
+		] );
 		expect(
-			within( section ).getByText(
-				'user:tern-desk · 2026-10-19 · The wire copy of a story we hold.'
-			)
-		).toBeInTheDocument();
-		expect(
-			within( section ).getByText( 'agent:tern-desk:Claude · 2026-10-20' )
-		).toBeInTheDocument();
+			within( section ).getByText( '19 Oct' ).closest( 'time' )
+		).toHaveAttribute( 'dateTime', '2026-10-19' );
+		expect( section ).not.toHaveTextContent( /tern-desk|·/ );
 		expect( wire.sent( 'excluded' ) ).toEqual( [ [] ] );
 	} );
 

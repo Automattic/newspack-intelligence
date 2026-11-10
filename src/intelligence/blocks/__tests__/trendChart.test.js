@@ -2,8 +2,9 @@
 /**
  * The `trend-chart` block reads `trends` through the page's subject, the
  * team view or the profile's entity, naming the axis, the span and the
- * style its attributes set, and keeps its heading while owed, empty and
- * refused.
+ * style its attributes set, the view's own axis and look back read from
+ * `lenses`; it keeps its heading while owed, empty and refused, and reads
+ * nothing for a page that names no subject yet.
  */
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -21,10 +22,8 @@ const [ SUPPORT ] = LENSES.lenses;
 const DESK = {
 	page: 'lens',
 	lens_key: SUPPORT.lens_key,
-	lens: SUPPORT,
 	entity_key: null,
 	since: null,
-	editing: false,
 };
 
 const ATTRIBUTES = {
@@ -47,6 +46,7 @@ beforeEach( () => {
 	window.localStorage.clear();
 	wire = intelWire();
 	wire.replies.trends = { rows: ROWS, by: 'kind', bucket: 'week' };
+	wire.replies.lenses = LENSES;
 } );
 
 /**
@@ -93,7 +93,6 @@ describe( 'trend-chart', () => {
 			{
 				page: 'entity',
 				lens_key: null,
-				lens: null,
 				entity_key: 'organization:harbor-ledger',
 			}
 		);
@@ -131,18 +130,54 @@ describe( 'trend-chart', () => {
 
 	it( 'says a view looking back over everything holds nothing yet', async () => {
 		wire.replies.trends = { rows: [], by: 'kind', bucket: 'week' };
-		block(
-			{},
-			{
-				lens: {
-					...SUPPORT,
-					filters: { ...SUPPORT.filters, days: null },
-				},
-			}
-		);
+		wire.replies.lenses = {
+			lenses: [
+				{ ...SUPPORT, filters: { ...SUPPORT.filters, days: null } },
+			],
+			available: true,
+		};
+		block();
 		expect(
 			await screen.findByText( 'Nothing in this view yet.' )
 		).toBeInTheDocument();
+	} );
+
+	it( 'reads nothing on a page that names no subject yet, sending no "null"', async () => {
+		const lens = block( {}, { lens_key: null } );
+		const profile = block(
+			{},
+			{ page: 'entity', lens_key: null, entity_key: null }
+		);
+		await new Promise( ( resolve ) => setTimeout( resolve, 50 ) );
+		expect( wire.sent( 'trends' ) ).toEqual( [] );
+		lens.unmount();
+		profile.unmount();
+	} );
+
+	it( 'stands twice on one page under one axis and span, both drawn from one read', async () => {
+		render(
+			<IntelPageContext.Provider value={ DESK }>
+				<trendChart.View attributes={ { ...ATTRIBUTES, by: 'kind' } } />
+				<trendChart.View
+					attributes={ { ...ATTRIBUTES, by: 'kind', style: 'lines' } }
+				/>
+			</IntelPageContext.Provider>
+		);
+		expect(
+			await screen.findByRole( 'button', {
+				name: 'Stack Weeks of news type',
+				pressed: false,
+			} )
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole( 'button', {
+				name: 'Stack Weeks of news type',
+				pressed: true,
+			} )
+		).toBeInTheDocument();
+		expect( wire.sent( 'trends' ) ).toEqual( [
+			[ '--lens=support-desk', '--by=kind' ],
+		] );
 	} );
 
 	it( 'shows the shared read error in its place, under its heading', async () => {

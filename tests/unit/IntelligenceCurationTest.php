@@ -848,6 +848,53 @@ final class IntelligenceCurationTest extends TestCase {
 	}
 
 	/**
+	 * A confirmed mention is added as the item's subject, since the
+	 * addition changes the role it stands in; added as a mention again it
+	 * is refused.
+	 */
+	public function test_a_confirmed_mention_is_added_as_subject(): void {
+		$this->seed_curation_world();
+		$this->ci->dispatch( 'confirm_link', [ 'linear:joint-grant', self::LEDGER ] );
+		$this->seed( self::ontology_events() );
+		$written = \count( self::ontology_events() );
+
+		try {
+			$this->ci->dispatch( 'add_link', [ 'linear:joint-grant', self::LEDGER, '--role=mention' ] );
+			$this->fail( 'a confirmed mention was added as a mention again' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( 'already confirmed: linear:joint-grant ' . self::LEDGER, $e->getMessage() );
+		}
+		$this->ci->dispatch( 'add_link', [ 'linear:joint-grant', self::LEDGER ] );
+
+		$this->assertSame( [ 'link_added', 'subject' ], [ self::ontology_events()[ $written ]['event'], self::ontology_events()[ $written ]['role'] ] );
+	}
+
+	/**
+	 * An agent's addition is refused where a person's judgment of the link
+	 * outranks it: one the person rejected, which the addition could not
+	 * bring back, and one the person added as a mention, whose role the
+	 * addition would overwrite. Nothing is written.
+	 */
+	public function test_an_agent_cannot_add_over_a_persons_judgment(): void {
+		$this->seed_curation_world();
+		$this->ci->dispatch( 'reject_link', [ 'feed:gazette-award', self::GAZETTE ] );
+		$this->ci->dispatch( 'add_link', [ 'linear:joint-grant', self::LEDGER, '--role=mention' ] );
+		$this->seed( self::ontology_events() );
+		$written                     = \count( self::ontology_events() );
+		Capabilities::$session_label = "Kinsey's Claude";
+
+		foreach ( [ [ 'feed:gazette-award', self::GAZETTE ], [ 'linear:joint-grant', self::LEDGER ] ] as [ $item, $entity ] ) {
+			try {
+				$this->ci->dispatch( 'add_link', [ $item, $entity ] );
+				$this->fail( "an agent added {$item} {$entity} over a person's judgment" );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertSame( "a user judged {$item} {$entity}, and an addition by an agent ranks below it", $e->getMessage() );
+			}
+		}
+		$this->assertCount( $written, self::ontology_events() );
+	}
+
+	/**
 	 * A holder of the restricted tier links a restricted item to an entity
 	 * every reader sees, and a reader then reads neither the item nor its
 	 * link; linking an item every reader reads to an entity only restricted

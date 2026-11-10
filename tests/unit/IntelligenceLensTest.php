@@ -16,6 +16,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
 require_once __DIR__ . '/../support/reads-ontology-log.php';
 require_once __DIR__ . '/../support/signs-in-users.php';
+require_once __DIR__ . '/../support/counts-statements.php';
 
 /**
  * Lenses: a named, curated set of read filters, saved and removed as
@@ -27,6 +28,7 @@ final class IntelligenceLensTest extends TestCase {
 	use Seeds_Intel_Graph;
 	use Reads_Ontology_Log;
 	use Signs_In_Users;
+	use Counts_Statements;
 
 	private const GAZETTE = 'organization:harbor-gazette';
 
@@ -418,6 +420,15 @@ final class IntelligenceLensTest extends TestCase {
 		$this->assertSame( [ 'launch-desk' => 2 ], \array_column( $this->ci->dispatch( 'lenses', [] )['lenses'], 'week_items', 'lens_key' ) );
 		$GLOBALS['_current_user_id'] = self::HOLDER;
 		$this->assertSame( [ 'launch-desk' => 3 ], \array_column( $this->ci->dispatch( 'lenses', [] )['lenses'], 'week_items', 'lens_key' ) );
+	}
+
+	/** Each lens's week count costs the one statement that counts it, and reads no page. */
+	public function test_a_lens_week_count_costs_one_statement(): void {
+		$this->save( 'launch-desk', '--kind=launch', '--days=90' );
+		$one = $this->statements_of( fn () => $this->ci->dispatch( 'lenses', [] ) );
+		$this->save( 'award-desk', '--kind=award', '--days=30' );
+
+		$this->assertSame( $one + 1, $this->statements_of( fn () => $this->ci->dispatch( 'lenses', [] ) ) );
 	}
 
 	/** With no projection to read, the lens list answers unavailable. */

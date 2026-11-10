@@ -74,7 +74,10 @@ final class IntelligenceCITest extends TestCase {
 		$described = \array_column( Intelligence_CI_Node::node_schema()['commands'], 'description', 'name' );
 
 		$this->assertStringContainsString( 'kinds: { churned, churn_signal, feature_request, complaint }', $described['entity'] );
-		$this->assertStringContainsString( 'churn_items: [ { item_key, title, url, source, day } ], churn_note: { text, owner, next_step, day, by } } over the items naming it as their subject', $described['entity'] );
+		$this->assertStringContainsString( 'churn_items: [ { item_key, title, url, source, day } ], churn_note: { text, owner, next_step, day, by } } over the items naming it as a subject or a mention, each kind counting the items whose kind claims it, a churn kind\'s the client its kind subject names, last_item_ts the newest naming it as their subject', $described['entity'] );
+		$this->assertStringContainsString( 'under the first open client it is about, a churn kind\'s the client its kind subject names', $described['briefing'] );
+		$this->assertStringContainsString( 'categories counting the items of the window each lens admits, otherwise those none admits, as total counts every such item', $described['briefing'] );
+		$this->assertStringContainsString( 'signals { clients: [ { entity_key, name, signals, churn_note } ], lenses: [ { lens_key, name, signals } ], judged }, each client the caller may see', $described['briefing'] );
 		$this->assertStringContainsString( 'for an entity named with no lens, only the items naming it as their subject', $described['signals'] );
 		$this->assertStringContainsString( 'other never signals on the about axis', $described['signals'] );
 		$this->assertStringContainsString( 'only a value counted before those buckets', $described['signals'] );

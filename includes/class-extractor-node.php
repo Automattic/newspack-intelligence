@@ -600,7 +600,7 @@ class Extractor_Node extends Node {
 		$call     = ! \in_array( $stage, self::STAND_IN_STAGES, true );
 		$passed   = $call ? $this->passed_check( $item_key ) : null;
 		if ( null !== $passed ) {
-			$parsed = [ 'kind' => Core::as_string( $passed['kind'] ), 'kind_check' => $passed ] + $parsed;
+			$parsed = [ 'kind' => Core::as_string( $passed['check']['kind'] ), 'kind_check' => $passed['check'] ] + $parsed;
 		}
 		[ $floor, $needs ] = $this->importance_floors[ $parsed['kind'] ] ?? [ 0, 0 ];
 		if ( $parsed['relevance'] >= $needs ) {
@@ -616,7 +616,7 @@ class Extractor_Node extends Node {
 			'topics'       => \array_map( static fn ( string $name ): string => $topics[ $name ], $parsed['topics'] ),
 			'retrieved_ts' => $item['retrieved_ts'],
 		] + \array_intersect_key( $parsed, [ 'theme' => true, 'rank_reason' => true, 'kind_check' => true ] );
-		$subject  = self::kind_subject( $index, $parsed, $linked );
+		$subject  = null === $passed ? self::kind_subject( $index, $parsed, $linked ) : $passed['subject'];
 		if ( null !== $subject ) {
 			$fields['kind_subject'] = $subject;
 		}
@@ -652,20 +652,22 @@ class Extractor_Node extends Node {
 
 	/**
 	 * The item's stored kind check when it passed for the kind its stored
-	 * extraction holds, read as the answer is recorded, which a call's
-	 * extraction keeps; null for none, or while the projection will not
-	 * open, logged, so the kind is replaced.
+	 * extraction holds, with that extraction's kind subject, read as the
+	 * answer is recorded, both of which a call's extraction keeps; null for
+	 * none, or while the projection will not open, logged, so the kind is
+	 * replaced.
 	 *
 	 * @param string $item_key The item.
-	 * @return array<array-key,mixed>|null
+	 * @return array{check:array<array-key,mixed>,subject:?string}|null
 	 */
 	private function passed_check( string $item_key ): ?array {
 		$stored = Intel_Graph_Row_Schema::read(
-			static fn ( Row_Reader $r ): mixed => $r->rows( 'SELECT ' . Intel_Graph_Row_Schema::kind_check_sql( 'x' ) . ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . ' x WHERE x.item_key = ? AND x.checked_kind = x.kind LIMIT 1', [ $item_key ] )[0][0] ?? null,
+			static fn ( Row_Reader $r ): mixed => $r->rows( 'SELECT ' . Intel_Graph_Row_Schema::kind_check_sql( 'x' ) . ', x.kind_subject FROM ' . Intel_Graph_Row_Schema::all( $r, 'extractions' ) . ' x WHERE x.item_key = ? AND x.checked_kind = x.kind LIMIT 1', [ $item_key ] )[0] ?? null,
 			"{$this->name}: no intel-graph to read the stored kind check from; replacing the kind: "
 		);
-		$check  = null === $stored ? null : \json_decode( Core::as_string( $stored ), true, 2, \JSON_THROW_ON_ERROR );
-		return self::is_passed( $check ) ? Core::arr( $check ) : null;
+		$row    = Core::arr( $stored ?? [ null, null ] );
+		$check  = null === $row[0] ? null : \json_decode( Core::as_string( $row[0] ), true, 2, \JSON_THROW_ON_ERROR );
+		return self::is_passed( $check ) ? [ 'check' => Core::arr( $check ), 'subject' => null === $row[1] ? null : Core::as_string( $row[1] ) ] : null;
 	}
 
 	/**

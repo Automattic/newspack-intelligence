@@ -1,7 +1,8 @@
 /* eslint-env jest */
 /**
- * metaLine joins a row's meta parts, leaving out only the absent ones, so a
- * zero still shows. sinceLabel names an instant by the reader's calendar, in
+ * metaLine joins a line's parts as one comma sentence, never by dots,
+ * leaving out only the absent ones, so a zero still shows. argsOf reads the
+ * named arguments a write's echoed tokens carry, a value keeping its own `=`. sinceLabel names an instant by the reader's calendar, in
  * the zone the suite pins (Pacific/Auckland), whatever the page's clock.
  * dayLabel names a UTC day by its day and month, adding the year only when
  * it is not today's, always in UTC. usualPhrase says a usual count in
@@ -12,6 +13,7 @@
  */
 
 import {
+	argsOf,
 	dayLabel,
 	evidenceText,
 	metaLine,
@@ -33,7 +35,26 @@ describe( 'metaLine', () => {
 	it( 'keeps a zero and drops null, undefined and blank parts', () => {
 		expect(
 			metaLine( 'mention', null, 0, undefined, '', 'ner_fuzzy' )
-		).toBe( 'mention · 0 · ner_fuzzy' );
+		).toBe( 'mention, 0, ner_fuzzy' );
+	} );
+} );
+
+describe( 'argsOf', () => {
+	it( 'reads each named value, one holding its own = and / kept whole', () => {
+		expect(
+			argsOf( [
+				'--item=github:example/plugin#912',
+				'--entity=organization:a=b',
+			] )
+		).toEqual( {
+			item: 'github:example/plugin#912',
+			entity: 'organization:a=b',
+		} );
+	} );
+
+	it( 'reads nothing from a reply that echoed no tokens', () => {
+		expect( argsOf( [] ) ).toEqual( {} );
+		expect( argsOf( null ) ).toEqual( {} );
 	} );
 } );
 

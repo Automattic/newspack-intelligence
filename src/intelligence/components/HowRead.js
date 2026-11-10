@@ -4,39 +4,11 @@ import { Core } from '@newspack-nodes/runtime';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import { AnswerBody } from './Answer';
 import Skeleton from './Skeleton';
-import { dayLabel, reasonText, utcDay } from './format';
+import { actorNoun, dayLabel, reasonText, utcDay } from './format';
 import { word } from './words';
 
 /** The one question a kind check asks, as the trace names it. */
 const KIND_QUESTION = 'fits_kind';
-
-/**
- * Who took a step, by the kind its actor string leads with: the pipeline
- * (`machine:`), a person (`user:`) or an agent acting for one (`agent:`).
- *
- * @return {Object<string, string>} Each kind's noun.
- */
-const actorNouns = () => ( {
-	machine: __( 'the pipeline', 'newspack-intelligence' ),
-	user: __( 'a curator', 'newspack-intelligence' ),
-	agent: __( 'an agent', 'newspack-intelligence' ),
-} );
-
-/**
- * Who an actor string names, in words. An actor of a kind the trace does
- * not write throws, as `word()` does for a key the vocabulary lacks.
- *
- * @param {string} actor The actor string, such as `user:41`.
- * @return {string} The noun.
- */
-function actorNoun( actor ) {
-	const kind = actor.split( ':', 1 )[ 0 ];
-	const nouns = actorNouns();
-	if ( ! Object.prototype.hasOwnProperty.call( nouns, kind ) ) {
-		throw new Error( `no words for the actor "${ actor }"` );
-	}
-	return nouns[ kind ];
-}
 
 /**
  * A link step in words, by the state its judgment or the machine left it
@@ -234,7 +206,7 @@ function lineOf( step ) {
  * @return {import('react').ReactElement} The drawer.
  */
 export default function HowRead( { item, onClose } ) {
-	const read = useIntelRead( `trace:${ item.item_key }`, 'trace', [
+	const read = useIntelRead( `trace:${ useId() }`, 'trace', [
 		item.item_key,
 	] );
 	const headingId = useId();

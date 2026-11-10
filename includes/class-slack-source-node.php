@@ -37,11 +37,8 @@ class Slack_Source_Node extends Source_Node {
 	/** Notices of membership and channel settings, which record nothing. */
 	private const SKIPPED = [ 'channel_join', 'channel_leave', 'channel_topic', 'channel_purpose' ];
 
-	/** @var list<string> Channel ids the `add_channel` commands registered and the `remove_channel` commands left, in call order. */
+	/** @var array<string,bool> Each channel id the `add_channel` commands registered and the `remove_channel` commands left, in call order, => whether it was added with `--skip-bots`, so its bot posts record nothing. */
 	protected array $channels = [];
-
-	/** @var list<string> Channel ids added with `--skip-bots`, whose bot posts record nothing. */
-	protected array $skip_bots = [];
 
 	/** The workspace's url, `https://<team>.slack.com/`, as auth.test answers it; '' until it has. */
 	private string $workspace = '';
@@ -98,7 +95,7 @@ class Slack_Source_Node extends Source_Node {
 	/** Queue each channel's history over the window, noting the workspace, '' while unknown. */
 	private function histories(): void {
 		$oldest = (string) ( (int) Core::$now - self::WINDOW_SECONDS );
-		foreach ( $this->channels as $channel ) {
+		foreach ( \array_keys( $this->channels ) as $channel ) {
 			$this->queue( self::page( 'history', $channel, $oldest ), null, null, [ 'workspace' => $this->workspace ] );
 		}
 	}
@@ -121,7 +118,7 @@ class Slack_Source_Node extends Source_Node {
 		return self::items(
 			$messages,
 			function ( array $message ) use ( $channel, $thread, $oldest, $moved, $note, $workspace ): ?array {
-				$fields = self::fields( $channel, $message, $workspace, \in_array( $channel, $this->skip_bots, true ) );
+				$fields = self::fields( $channel, $message, $workspace, $this->channels[ $channel ] ?? false );
 				if ( '' === $thread && self::moved( $message, $moved ) ) {
 					$this->queue( self::page( 'replies', $channel, $oldest, Core::as_string( $message['ts'] ) ), null, null, $note );
 				}
@@ -234,7 +231,6 @@ class Slack_Source_Node extends Source_Node {
 			'Register a channel to read on TICK by its id: <C… or G…>. Adding it again replaces its --skip-bots.',
 			[
 				'name'        => 'skip-bots',
-				'property'    => 'skip_bots',
 				'description' => 'Record none of the channel\'s bot posts: a message carrying a bot_id, or a bot_message.',
 			]
 		);

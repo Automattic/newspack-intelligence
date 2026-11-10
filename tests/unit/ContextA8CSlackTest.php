@@ -194,7 +194,7 @@ final class ContextA8CSlackTest extends TestCase {
 		$replayed->name( 'slack' );
 		$this->replay_config( $dump, $replayed );
 
-		$this->assertSame( [ 'C0HERON11', 'G0KESTREL7' ], $this->read_private( $replayed, 'channels' ) );
+		$this->assertSame( [ 'C0HERON11' => false, 'G0KESTREL7' => false ], $this->read_private( $replayed, 'channels' ) );
 	}
 
 	/**
@@ -246,7 +246,6 @@ final class ContextA8CSlackTest extends TestCase {
 		$replayed->name( 'slack' );
 		$this->replay_config( $dump, $replayed );
 
-		$this->assertSame( [ 'G0TERN44X', 'C0SANDPIPER3' ], $this->read_private( $replayed, 'channels' ) );
-		$this->assertSame( [ 'C0SANDPIPER3' ], $this->read_private( $replayed, 'skip_bots' ) );
+		$this->assertSame( [ 'G0TERN44X' => false, 'C0SANDPIPER3' => true ], $this->read_private( $replayed, 'channels' ) );
 	}
 }

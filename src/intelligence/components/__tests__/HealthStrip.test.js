@@ -157,7 +157,7 @@ describe( 'HealthStrip', () => {
 			expect( line().textContent ).toBe( HEALTHY_LINE )
 		);
 		expect( row( 'Web feed' ) ).toHaveTextContent(
-			`ago (${ LAST_OK_LOCAL }) · 37 of 451 failed`
+			`ago (${ LAST_OK_LOCAL }), 37 of 451 failed`
 		);
 		expect(
 			within( row( 'Web feed' ) ).getByTitle( LAST_OK_LOCAL )
@@ -770,12 +770,12 @@ describe( 'HealthStrip', () => {
 		renderStrip( true );
 		await waitFor( () =>
 			expect( line().textContent ).toBe(
-				`GitHub answered an error for https://api.github.com: rate limited · failing since ${ SINCE_LOCAL }`
+				`GitHub answered an error for https://api.github.com: rate limited, failing since ${ SINCE_LOCAL }`
 			)
 		);
 		expect(
 			within( rows() ).getByText(
-				`GitHub answered an error for https://api.github.com: rate limited · failing since ${ SINCE_LOCAL }`
+				`GitHub answered an error for https://api.github.com: rate limited, failing since ${ SINCE_LOCAL }`
 			)
 		).toBeInTheDocument();
 		expect(
@@ -933,8 +933,7 @@ describe( 'HealthStrip', () => {
 
 	it( 'counts the model calls on a row of their own and on the line, never under Extraction', async () => {
 		health.extraction.queue = { new: 3, backlog: 5741, in_flight: 4 };
-		const calls =
-			'5,744 calls waiting (5,741 backlog, 3 new) · 4 in flight';
+		const calls = '5,744 calls waiting (5,741 backlog, 3 new), 4 in flight';
 		renderStrip();
 		await waitFor( () =>
 			expect( line().textContent ).toBe(
@@ -959,7 +958,7 @@ describe( 'HealthStrip', () => {
 		renderStrip();
 		await waitFor( () =>
 			expect( line().textContent ).toBe(
-				'Collecting from 3 sources. 1 call waiting (1 new) · 1 in flight'
+				'Collecting from 3 sources. 1 call waiting (1 new), 1 in flight'
 			)
 		);
 	} );
@@ -1003,7 +1002,7 @@ describe( 'HealthStrip', () => {
 		renderStrip();
 		await waitFor( () =>
 			expect( line().textContent ).toBe(
-				'Collecting from 3 sources. 9 items are waiting to resolve or retry. 12 calls waiting (12 backlog) · 2 in flight'
+				'Collecting from 3 sources. 9 items are waiting to resolve or retry. 12 calls waiting (12 backlog), 2 in flight'
 			)
 		);
 	} );
@@ -1026,7 +1025,7 @@ describe( 'HealthStrip', () => {
 			renderStrip();
 			await waitFor( () =>
 				expect( line().textContent ).toBe(
-					'Collecting from 3 sources. 1.311 calls waiting (1.309 backlog, 2 new) · 3 in flight'
+					'Collecting from 3 sources. 1.311 calls waiting (1.309 backlog, 2 new), 3 in flight'
 				)
 			);
 		} finally {
@@ -1200,12 +1199,12 @@ describe( 'HealthStrip', () => {
 		renderStrip( true );
 		await waitFor( () =>
 			expect( line().textContent ).toBe(
-				`HTTP 502 https://models.example/v1/messages · failing since ${ SINCE_LOCAL }`
+				`HTTP 502 https://models.example/v1/messages, failing since ${ SINCE_LOCAL }`
 			)
 		);
 		expect(
 			within( rows() ).getByText(
-				`HTTP 502 https://models.example/v1/messages · failing since ${ SINCE_LOCAL }`
+				`HTTP 502 https://models.example/v1/messages, failing since ${ SINCE_LOCAL }`
 			)
 		).toBeInTheDocument();
 		expect( within( row( 'Digests' ) ).getByText( 'Failing' ) ).toHaveClass(

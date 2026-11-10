@@ -359,7 +359,7 @@ class TopologyDurabilityTest extends TestCase {
 		Topology_Registry::register_user_dir( \dirname( __DIR__ ) . '/fixtures/topologies' );
 		$this->load( 'newspack-intelligence' );
 
-		$this->assertSame( [ 'heron-example/kite-ledger', 'heron-example/quarry-wire' ], $this->read_private( Core::node( 'github' ), 'repos' ) );
+		$this->assertSame( [ 'heron-example/kite-ledger' => false, 'heron-example/quarry-wire' => false ], $this->read_private( Core::node( 'github' ), 'repos' ) );
 		$this->assertSame( [ 'https://heron.example/feed/', 'https://quarry.example/feed?u=7713heron&id=4c3ckite' ], $this->read_private( Core::node( 'feed' ), 'urls' ) );
 		$this->assertSame(
 			[
@@ -369,9 +369,9 @@ class TopologyDurabilityTest extends TestCase {
 			$this->read_private( Core::node( 'news' ), 'urls' )
 		);
 		$this->assertSame( [ 'HERON', 'KITE' ], $this->read_private( Core::node( 'linear' ), 'teams' ) );
-		$this->assertSame( [ 'C0HERON7713', 'G0KITE88104' ], $this->read_private( Core::node( 'slack' ), 'channels' ) );
-		$this->assertSame( [ 'heronexample.wordpress.com' ], $this->read_private( Core::node( 'p2' ), 'sites' ) );
-		$this->assertSame( [ 'kiteexample.wordpress.com' ], $this->read_private( Core::node( 'p2-restricted' ), 'sites' ) );
+		$this->assertSame( [ 'C0HERON7713' => false, 'G0KITE88104' => false ], $this->read_private( Core::node( 'slack' ), 'channels' ) );
+		$this->assertSame( [ 'heronexample.wordpress.com' => false ], $this->read_private( Core::node( 'p2' ), 'sites' ) );
+		$this->assertSame( [ 'kiteexample.wordpress.com' => false ], $this->read_private( Core::node( 'p2-restricted' ), 'sites' ) );
 		$extractor = Core::node( 'extractor' );
 		$this->assertSame( 'the Quarry Ledger kite desk', $this->read_private( $extractor, 'audience' ) );
 		$this->assertSame( [ 'Relevant: what Quarry Ledger readers launch.', 'Not relevant: kite trivia.' ], $this->read_private( $extractor, 'profiles' ) );

@@ -334,6 +334,7 @@ function Rail( { lenses, open, onPick } ) {
  * @param {(target: Object, name: string) => void}                props.onWatch    Opens the watch form on a target.
  * @param {Object}                                                props.layout     What the page data answered for the team view's context.
  * @param {Partial<import('../layout/PageContext').IntelActions>} props.actions    What the blocks' rows open.
+ * @param {(layout: Object) => void}                              props.onRestored Takes the default a curator restored.
  * @return {import('react').ReactElement} The view.
  */
 export default function Lens( {
@@ -344,19 +345,37 @@ export default function Lens( {
 	onWatch,
 	layout,
 	actions,
+	onRestored,
 } ) {
 	const lists = vocabulary.lensLists;
 	const [ editing, setEditing ] = useState( null );
 	const [ removing, setRemoving ] = useState( null );
 	const list = useIntelRead( 'lens:list', 'lenses', [] );
-	// The server slugs a new key, so a save is reflected by all but its key.
-	const matches = useCallback(
-		( listed, held ) => {
-			const { key: k1, ...one } = lensDraft( listed, lists );
-			const { key: k2, ...two } = lensDraft( held, lists );
-			return JSON.stringify( one ) === JSON.stringify( two );
+	/**
+	 * A lens as its form's text, its key aside, since the server slugs a new one.
+	 *
+	 * @param {Object} one A lens.
+	 * @return {string} The text.
+	 */
+	const textOf = useCallback(
+		( one ) => {
+			const { key, ...draft } = lensDraft( one, lists );
+			return JSON.stringify( draft );
 		},
 		[ lists ]
+	);
+	// Reflected once listed as sent, or listed changed since the send.
+	const matches = useCallback(
+		( listed, held ) => {
+			const shown = textOf( listed );
+			if ( shown === textOf( held ) ) {
+				return true;
+			}
+			return null === held.before
+				? listed.name === held.name
+				: listed.lens_key === held.lens_key && shown !== held.before;
+		},
+		[ textOf ]
 	);
 	const lenses = useHeld( list, 'lenses', lensKey, matches );
 	const save = useIntelWrite( 'save_lens', {
@@ -497,13 +516,12 @@ export default function Lens( {
 							<PageLayout
 								key={ JSON.stringify( lens.filters ) }
 								layout={ layout }
+								onRestored={ onRestored }
 								page={ {
 									page: 'lens',
 									lens_key: lens.lens_key,
-									lens,
 									entity_key: null,
 									since: null,
-									editing: false,
 									actions,
 								} }
 							/>
@@ -516,16 +534,22 @@ export default function Lens( {
 					initial={ editing }
 					vocabulary={ vocabulary }
 					refusal={ save.refusal }
-					onSave={ ( draft ) =>
+					onSave={ ( draft ) => {
+						const was = listed.find(
+							( one ) => draft.key && draft.key === one.lens_key
+						);
 						lenses.hold(
 							draft.key || draft.name,
-							draftLens(
-								{ ...draft, key: draft.key || draft.name },
-								lists
-							),
+							{
+								...draftLens(
+									{ ...draft, key: draft.key || draft.name },
+									lists
+								),
+								before: was ? textOf( was ) : null,
+							},
 							() => save.run( draftArgs( draft, lists ) )
-						)
-					}
+						);
+					} }
 					onCancel={ () => setEditing( null ) }
 				/>
 			) }

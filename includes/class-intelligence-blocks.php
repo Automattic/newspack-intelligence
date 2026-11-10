@@ -328,8 +328,8 @@ final class Intelligence_Blocks {
 		'lens'       => 'lens',
 		'lenses'     => 'lens',
 		'categories' => 'lens',
-		'entity'     => 'entity',
 		'topics'     => 'entity',
+		'folders'    => 'collection',
 	];
 
 	/**
@@ -353,10 +353,11 @@ final class Intelligence_Blocks {
 	}
 
 	/**
-	 * Refuse a block naming a lens never saved, or an entity or topic that
-	 * `Graph_Query::visible()` hides from a reader without the restricted
-	 * tier, whatever tiers the caller holds, as `save_lens` refuses one. A
-	 * block naming no key reads nothing.
+	 * Refuse a block naming a lens never saved, a collection never made, or
+	 * an entity or topic a reader without the restricted tier could not see
+	 * (`Graph_Query::sees()`), whatever tiers the caller holds, as
+	 * `save_lens` refuses one, a key whose merge chain is broken among them.
+	 * A block naming no key reads nothing.
 	 *
 	 * @param string              $block      The block's name.
 	 * @param array<string,mixed> $attributes Its validated attributes.
@@ -385,8 +386,8 @@ final class Intelligence_Blocks {
 	}
 
 	/**
-	 * The first key a reader without the restricted tier could not see, as
-	 * `[ attribute, why ]`, or none.
+	 * The first key a reader without the restricted tier could not see, or
+	 * that names nothing, as `[ attribute, why ]`, or none.
 	 *
 	 * @param Row_Reader                        $r     The reader.
 	 * @param Graph                             $g     The caller's graph.
@@ -396,9 +397,11 @@ final class Intelligence_Blocks {
 	private static function unseen( Row_Reader $r, array $g, array $named ): array {
 		$every = Graph_Query::unrestricted( $r, $g );
 		foreach ( $named as [ $attribute, $kind, $key ] ) {
-			$seen = 'lens' === $kind
-				? null !== Graph_Query::saved_lens( $r, $key )
-				: null !== Graph_Query::visible( $r, $every, $key );
+			$seen = match ( $kind ) {
+				'lens'       => null !== Graph_Query::saved_lens( $r, $key ),
+				'collection' => null !== Graph_Query::collection( $r, $key ),
+				default      => Graph_Query::sees( $r, $every, $key ),
+			};
 			if ( ! $seen ) {
 				return [ $attribute, "no {$kind}: {$key}" ];
 			}

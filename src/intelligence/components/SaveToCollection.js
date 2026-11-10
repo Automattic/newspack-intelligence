@@ -11,17 +11,7 @@ import {
 import { useHeld } from '../hooks/useHeld';
 import { AnswerBody } from './Answer';
 import Refusal from './Refusal';
-
-/** The option naming the collection a save sends. */
-const COLLECTION = '--collection=';
-
-/**
- * A listed folder's key.
- *
- * @param {{collection_key: string}} folder The folder.
- * @return {string} Its key.
- */
-const collectionKey = ( folder ) => folder.collection_key;
+import { argsOf, collectionKey } from './format';
 
 /**
  * Whether a listed folder is the one held.
@@ -128,10 +118,7 @@ export default function SaveToCollection( { item, onClose } ) {
 	// The folder the last landed save named, read off its echoed option.
 	const saved =
 		created ??
-		( ! collect.refusal &&
-			collect.answeredArgs
-				?.find( ( token ) => token.startsWith( COLLECTION ) )
-				?.slice( COLLECTION.length ) );
+		( ! collect.refusal && argsOf( collect.answeredArgs ).collection );
 	const collections = folders.read.answer?.collections ?? [];
 	const closeRef = useRef( null );
 	const selectRef = useRef( null );

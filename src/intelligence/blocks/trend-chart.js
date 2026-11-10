@@ -2,11 +2,12 @@
  * The `trend-chart` block: the page's subject, the team view or the
  * profile's entity, counted per bucket over the last weeks, the bucket still
  * running apart, by the axis and span the block names, else those the view
- * sets.
+ * sets, the view read as `lenses` lists it. A page naming no subject yet, as
+ * the editor's preview before one is picked, reads nothing.
  */
 
 import { SelectControl, TextControl } from '@wordpress/components';
-import { useContext } from '@wordpress/element';
+import { useContext, useId } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { AnswerBody } from '../components/Answer';
 import Section from '../components/Section';
@@ -14,6 +15,7 @@ import { TrendChart, chartTitle } from '../components/TrendTable';
 import { words } from '../components/words';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
 import { IntelPageContext } from '../layout/PageContext';
+import { useSavedLens } from './lens';
 
 /** The chart's skeleton height in pixels, the chart's own. */
 const SKELETON_PX = 180;
@@ -27,15 +29,18 @@ const SKELETON_PX = 180;
  */
 
 /**
- * What the chart reads through: the profile's entity, else the team view.
+ * What the chart reads through: the profile's entity, else the team view;
+ * null while the page names neither.
  *
  * @param {import('../layout/PageContext').IntelPage} page The page.
- * @return {Object<string, ?string>} The subject's option.
+ * @return {?Object<string, string>} The subject's option.
  */
-const subjectOf = ( page ) =>
-	'entity' === page.page
-		? { entity: page.entity_key }
-		: { lens: page.lens_key };
+function subjectOf( page ) {
+	if ( 'entity' === page.page ) {
+		return page.entity_key ? { entity: page.entity_key } : null;
+	}
+	return page.lens_key ? { lens: page.lens_key } : null;
+}
 
 /**
  * What an empty chart says: nothing over the days the view looks back, or
@@ -63,10 +68,12 @@ const emptySentence = ( days ) =>
  */
 function View( { attributes: { heading, by, bucket, style } } ) {
 	const page = useContext( IntelPageContext );
+	const lens = useSavedLens( 'lens' === page.page ? page.lens_key : null );
+	const subject = subjectOf( page );
 	const read = useIntelRead(
-		`trend-chart:${ by }:${ bucket }`,
+		`trend-chart:${ useId() }`,
 		'trends',
-		commandArgs( { ...subjectOf( page ), by, bucket } )
+		subject && commandArgs( { ...subject, by, bucket } )
 	);
 	const { answer } = read;
 	if ( ! read.error && 0 < ( answer?.rows?.length ?? 0 ) ) {
@@ -80,27 +87,30 @@ function View( { attributes: { heading, by, bucket, style } } ) {
 			</div>
 		);
 	}
-	const axis = answer?.by || by || page.lens?.filters.by;
-	const body = (
+	const axis = answer?.by || by || lens?.filters.by;
+	const skeleton = (
+		<div
+			role="status"
+			aria-label={ __( 'Loading', 'newspack-intelligence' ) }
+		>
+			<div
+				className="newspack-nodes-skeleton"
+				style={ { height: `${ SKELETON_PX }px` } }
+				aria-hidden="true"
+			/>
+		</div>
+	);
+	const body = subject ? (
 		<AnswerBody
 			read={ read }
 			rows="rows"
-			empty={ emptySentence( page.lens?.filters.days ?? null ) }
-			skeleton={
-				<div
-					role="status"
-					aria-label={ __( 'Loading', 'newspack-intelligence' ) }
-				>
-					<div
-						className="newspack-nodes-skeleton"
-						style={ { height: `${ SKELETON_PX }px` } }
-						aria-hidden="true"
-					/>
-				</div>
-			}
+			empty={ emptySentence( lens?.filters.days ?? null ) }
+			skeleton={ skeleton }
 		>
 			{ () => null }
 		</AnswerBody>
+	) : (
+		skeleton
 	);
 	return axis ? (
 		<Section heading={ chartTitle( heading, axis ) }>{ body }</Section>

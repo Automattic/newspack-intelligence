@@ -54,6 +54,7 @@ beforeEach( () => {
 	window.NewspackNodesData = pageData();
 	calls = {
 		onPickUp: jest.fn(),
+		onPutDown: jest.fn(),
 		onMove: jest.fn(),
 		onMark: jest.fn(),
 		onRemove: jest.fn(),
@@ -148,6 +149,23 @@ describe( 'FolderCard', () => {
 		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 	} );
 
+	it( 'marks nothing on a day cleared, the dialog kept open', () => {
+		renderCard();
+		openMenu();
+		fireEvent.click( screen.getByRole( 'menuitem', { name: 'Digest' } ) );
+		const dialog = screen.getByRole( 'dialog', { name: 'Mark as used' } );
+		fireEvent.change( within( dialog ).getByLabelText( 'On' ), {
+			target: { value: '' },
+		} );
+		const mark = within( dialog ).getByRole( 'button', {
+			name: 'Mark as used',
+		} );
+		expect( mark ).toBeDisabled();
+		fireEvent.submit( dialog );
+		expect( calls.onMark ).not.toHaveBeenCalled();
+		expect( screen.getByRole( 'dialog' ) ).toBeInTheDocument();
+	} );
+
 	it( 'closes the mark dialog on Cancel, marking nothing', () => {
 		renderCard();
 		openMenu();
@@ -174,7 +192,7 @@ describe( 'FolderCard', () => {
 		).toHaveAttribute( 'href', ITEM.url );
 	} );
 
-	it( 'is picked up when dragged', () => {
+	it( 'is picked up when dragged, and put down when the drag ends', () => {
 		renderCard();
 		const card = screen.getByRole( 'article', { name: ITEM.title } );
 		expect( card ).toHaveAttribute( 'draggable', 'true' );
@@ -182,6 +200,9 @@ describe( 'FolderCard', () => {
 			dataTransfer: { setData: jest.fn(), effectAllowed: '' },
 		} );
 		expect( calls.onPickUp ).toHaveBeenCalled();
+		expect( calls.onPutDown ).not.toHaveBeenCalled();
+		fireEvent.dragEnd( card );
+		expect( calls.onPutDown ).toHaveBeenCalledTimes( 1 );
 	} );
 
 	it( 'takes focus when it is the card a move landed', () => {

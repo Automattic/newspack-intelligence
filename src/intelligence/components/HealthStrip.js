@@ -350,7 +350,7 @@ function answeredText( { last_ok_at: lastOk, failed, requests } ) {
 	return (
 		<>
 			<Ago ts={ lastOk } />
-			{ count && ' · ' }
+			{ count && ', ' }
 			{ count }
 		</>
 	);
@@ -463,7 +463,7 @@ function clearText( { held } ) {
 
 /**
  * The model calls the extraction slice's queue counts, every NER and
- * extraction call alike: "N calls waiting (N backlog, N new) · N in flight",
+ * extraction call alike: "N calls waiting (N backlog, N new), N in flight",
  * a class or a part that holds no call left out, and '' while the queue
  * holds none or is not known.
  *

@@ -34,12 +34,12 @@ class Context_A8C_P2_Node extends Context_A8C_Source_Node {
 	/** Comments a post brings, the most `posts-text` answers. */
 	private const COMMENTS_PER_POST = 500;
 
-	/** @var list<string> Sites (`<name>.wordpress.com`) the `add_site` commands registered and the `remove_site` commands left, in call order. */
+	/** @var array<string,bool> Each site (`<name>.wordpress.com`) the `add_site` commands registered and the `remove_site` commands left, in call order, => false, the add naming no flag. */
 	protected array $sites = [];
 
 	/** Ask each site's first page since the window opened. */
 	protected function calls(): void {
-		foreach ( $this->sites as $site ) {
+		foreach ( \array_keys( $this->sites ) as $site ) {
 			$this->page( $site, 1, \gmdate( 'Y-m-d\TH:i:s\Z', (int) Core::$now - P2_Source_Node::WINDOW_SECONDS ) );
 		}
 	}

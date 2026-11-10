@@ -369,8 +369,9 @@ function Count( { answer, view, onChangeView } ) {
  * A team view picked shows every filter it searches with, read-only, and
  * "Edit as my own search" copies them into the view, its days as the day
  * they start from and without its tiers, and drops the team view. While a
- * page is owed the one before it stays, dimmed. The page holds the view, so
- * it outlives a visit to another view.
+ * page is owed, the answer the read remembers for it stands in, dimmed, else
+ * placeholder rows; a refused read shows none. The page holds the view, so it
+ * outlives a visit to another view.
  *
  * Its Ask box is the `ask` block's component, taking the attributes of the
  * Briefing layout's first `ask` block (`briefingAsk()`); it plans its own
@@ -401,15 +402,9 @@ export default function Search( {
 	const lists = vocabulary.lensLists;
 	const narrow = useNarrow();
 	const [ sheet, setSheet ] = useState( false );
-	const [ last, setLast ] = useState( null );
 	const read = useIntelRead( 'search:items', 'search', viewToArgs( view ) );
 	const lenses = useIntelRead( 'search:lenses', 'lenses', [] );
-	useEffect( () => {
-		if ( read.answer ) {
-			setLast( read.answer );
-		}
-	}, [ read.answer ] );
-	const answer = read.error ? null : read.answer ?? last;
+	const answer = read.error ? null : read.answer;
 	const found = true === answer?.available;
 	const lens = lenses.answer?.lenses.find(
 		( one ) => one.lens_key === filterValue( view, 'lens' )

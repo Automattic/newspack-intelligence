@@ -30,7 +30,7 @@ import FolderCard from './FolderCard';
 import Refusal from './Refusal';
 import Skeleton from './Skeleton';
 import UndoSnackbar from './UndoSnackbar';
-import { dayLabel, utcDay } from './format';
+import { collectionKey, dayLabel, utcDay } from './format';
 import { words } from './words';
 
 /** The filter showing every item a folder holds. */
@@ -61,14 +61,6 @@ const SKELETON_COLUMNS = 3;
  * @property {string}                 snack  The snackbar's words while it can be undone.
  * @property {?string}                tokens What it sent, as JSON, or null.
  */
-
-/**
- * A listed folder's key.
- *
- * @param {Object} folder The folder.
- * @return {string} Its key.
- */
-const collectionKey = ( folder ) => folder.collection_key;
 
 /**
  * Whether a listed folder is one created by name.
@@ -671,6 +663,10 @@ export default function FolderBoard( { show: opensOn, folders, canTune } ) {
 					),
 					'polite'
 				);
+			},
+			onPutDown: () => {
+				dragged.current = null;
+				overFolder.current = null;
 			},
 			onMove: ( into ) => writes.move( item, from, into ),
 			onMark: ( place, day ) => writes.mark( item, from, place, day ),

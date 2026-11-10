@@ -10,7 +10,7 @@
  */
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { useState } from '@wordpress/element';
+import { useRef, useState } from '@wordpress/element';
 import ListKeys, { LEAVES } from '../ListKeys';
 
 const LEGEND = 'Keys: J and K to move, A archive, Z undo.';
@@ -23,9 +23,11 @@ const LEGEND = 'Keys: J and K to move, A archive, Z undo.';
  * @param {boolean} [props.page]   Whether the keys work from anywhere.
  * @param {?string} [props.legend] The legend, or null for a list taking none.
  * @param {Object}  props.onUndo   Undoes.
+ * @param {boolean} [props.hidden] Whether the list sits in a hidden view.
  * @return {import('react').ReactElement} The harness.
  */
-function Harness( { page = false, legend = LEGEND, onUndo } ) {
+function Harness( { page = false, legend = LEGEND, onUndo, hidden = false } ) {
+	const heading = useRef( null );
 	const [ rows, setRows ] = useState( [
 		'Harbor Ledger',
 		'Prairie Signal',
@@ -38,36 +40,42 @@ function Harness( { page = false, legend = LEGEND, onUndo } ) {
 			<div role="dialog" aria-label="Pick a folder">
 				<button type="button">Inside a dialog</button>
 			</div>
-			<ListKeys
-				rows="[data-row]"
-				onUndo={ onUndo }
-				legend={ legend }
-				page={ page }
-			>
-				{ ( describedBy ) => (
-					<ul aria-label="Desk" aria-describedby={ describedBy }>
-						{ rows.map( ( name ) => (
-							<li key={ name } data-row="" tabIndex={ -1 }>
-								{ name }
-								<button
-									type="button"
-									aria-keyshortcuts="a"
-									{ ...LEAVES }
-									onClick={ () =>
-										setRows( ( was ) =>
-											was.filter(
-												( one ) => one !== name
+			<div hidden={ hidden }>
+				<h3 ref={ heading } tabIndex={ -1 }>
+					Desk heading
+				</h3>
+				<ListKeys
+					rows="[data-row]"
+					onUndo={ onUndo }
+					legend={ legend }
+					page={ page }
+					heading={ () => heading.current }
+				>
+					{ ( describedBy ) => (
+						<ul aria-label="Desk" aria-describedby={ describedBy }>
+							{ rows.map( ( name ) => (
+								<li key={ name } data-row="" tabIndex={ -1 }>
+									{ name }
+									<button
+										type="button"
+										aria-keyshortcuts="a"
+										{ ...LEAVES }
+										onClick={ () =>
+											setRows( ( was ) =>
+												was.filter(
+													( one ) => one !== name
+												)
 											)
-										)
-									}
-								>
-									{ `Archive ${ name }` }
-								</button>
-							</li>
-						) ) }
-					</ul>
-				) }
-			</ListKeys>
+										}
+									>
+										{ `Archive ${ name }` }
+									</button>
+								</li>
+							) ) }
+						</ul>
+					) }
+				</ListKeys>
+			</div>
 		</>
 	);
 }
@@ -106,6 +114,41 @@ describe( 'ListKeys', () => {
 			)
 		);
 		expect( document.activeElement ).toBe( row( 'Prairie Signal' ) );
+	} );
+
+	it( 'focuses the list’s heading once its last row is taken out', async () => {
+		render( <Harness onUndo={ jest.fn() } legend={ null } /> );
+		for ( const name of [
+			'Harbor Ledger',
+			'Prairie Signal',
+			'Coastline Weekly',
+		] ) {
+			await act( async () =>
+				fireEvent.click(
+					screen.getByRole( 'button', { name: `Archive ${ name }` } )
+				)
+			);
+		}
+		expect( document.activeElement ).toBe(
+			screen.getByRole( 'heading', { name: 'Desk heading' } )
+		);
+	} );
+
+	it( 'takes no key from the page while its view is hidden', () => {
+		const onUndo = jest.fn();
+		const { rerender } = render(
+			<Harness onUndo={ onUndo } page hidden />
+		);
+		key( document.body, 'z' );
+		key( document.body, '?' );
+		key( document.body, 'j' );
+		expect( onUndo ).not.toHaveBeenCalled();
+		expect( document.querySelector( '.components-popover' ) ).toBeNull();
+		expect( document.activeElement ).toBe( document.body );
+
+		rerender( <Harness onUndo={ onUndo } page /> );
+		key( document.body, 'z' );
+		expect( onUndo ).toHaveBeenCalledTimes( 1 );
 	} );
 
 	it( 'takes keys only within the list, unless it takes them from the page', () => {

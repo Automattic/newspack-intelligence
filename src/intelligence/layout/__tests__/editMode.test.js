@@ -5,13 +5,7 @@
  * opened from; anything else names no edit.
  */
 
-import {
-	composedPage,
-	editSearch,
-	editTarget,
-	layoutContext,
-	leaveEdit,
-} from '../editMode';
+import { editSearch, editTarget, layoutContext, leaveEdit } from '../editMode';
 
 afterEach( () => {
 	window.history.replaceState( {}, '', '/' );
@@ -80,6 +74,23 @@ describe( 'editSearch', () => {
 	} );
 } );
 
+describe( 'editSearch for a profile', () => {
+	it( 'keeps the view the profile stands over, which names no tab of its own', () => {
+		const search = editSearch(
+			'?page=newspack-intelligence&view=watches&lens=desk-watch',
+			{ page: 'entity', entity_key: 'organization:harbor-ledger' }
+		);
+
+		expect( search ).toBe(
+			'?page=newspack-intelligence&view=watches&edit=entity&entity=organization%3Aharbor-ledger'
+		);
+		expect( editTarget( search ) ).toEqual( {
+			page: 'entity',
+			entity_key: 'organization:harbor-ledger',
+		} );
+	} );
+} );
+
 describe( 'leaveEdit', () => {
 	it( 'drops the edit and its subject, and keeps every other param', () => {
 		window.history.replaceState(
@@ -97,14 +108,5 @@ describe( 'leaveEdit', () => {
 describe( 'layoutContext', () => {
 	it( 'names the context a page lays out', () => {
 		expect( layoutContext( 'lens' ) ).toBe( 'newspack-intelligence/lens' );
-	} );
-} );
-
-describe( 'composedPage', () => {
-	it( 'names the page a view lays out, and none for a fixed screen', () => {
-		expect( composedPage( 'briefing' ) ).toBe( 'briefing' );
-		expect( composedPage( 'lenses' ) ).toBe( 'lens' );
-		expect( composedPage( 'entity' ) ).toBe( 'entity' );
-		expect( composedPage( 'review' ) ).toBe( null );
 	} );
 } );

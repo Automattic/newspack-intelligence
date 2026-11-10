@@ -48,7 +48,7 @@ function View( { attributes: { heading, max } } ) {
 							'newspack-intelligence'
 						) }
 						label={ label }
-						onClick={ newWatch.onClick }
+						{ ...newWatch }
 					/>
 				}
 			>

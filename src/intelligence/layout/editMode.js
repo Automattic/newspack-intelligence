@@ -12,11 +12,14 @@ const NAMESPACE = 'newspack-intelligence';
 
 /** @typedef {'briefing'|'lens'|'entity'} ComposedPage */
 
-/** Each composed page => the view showing it and the param naming its subject. */
+/**
+ * Each composed page => the tab showing it and the param naming its subject;
+ * a profile is not a tab, so it stands over whichever view opened it.
+ */
 const PAGES = {
 	briefing: { view: 'briefing', subject: null },
 	lens: { view: 'lenses', subject: 'lens' },
-	entity: { view: 'entity', subject: 'entity' },
+	entity: { view: null, subject: 'entity' },
 };
 
 /** Every composed page. */
@@ -45,15 +48,6 @@ const SUBJECTS = Object.values( PAGES )
 export const layoutContext = ( page ) => `${ NAMESPACE }/${ page }`;
 
 /**
- * The composed page a view shows, or null for a fixed screen.
- *
- * @param {string} view A tab id.
- * @return {?ComposedPage} The page.
- */
-export const composedPage = ( view ) =>
-	COMPOSED.find( ( page ) => view === PAGES[ page ].view ) ?? null;
-
-/**
  * The layout a query string edits, or null where it names none.
  *
  * @param {string} search A query string.
@@ -71,7 +65,8 @@ export function editTarget( search ) {
 }
 
 /**
- * A query string editing `target` on its view, every other param kept.
+ * A query string editing `target` on its tab, or for a profile on the view
+ * it stands over, every other param kept.
  *
  * @param {string}     search The page's query string.
  * @param {EditTarget} target The layout to edit.
@@ -81,7 +76,9 @@ export function editSearch( search, target ) {
 	const query = new URLSearchParams( search );
 	SUBJECTS.forEach( ( param ) => query.delete( param ) );
 	const { view, subject } = PAGES[ target.page ];
-	query.set( 'view', view );
+	if ( null !== view ) {
+		query.set( 'view', view );
+	}
 	query.set( 'edit', target.page );
 	if ( null !== subject && target[ `${ subject }_key` ] ) {
 		query.set( subject, target[ `${ subject }_key` ] );

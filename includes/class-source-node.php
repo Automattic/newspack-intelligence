@@ -945,11 +945,8 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 			if ( '' === $property ) {
 				continue;
 			}
-			$flag    = Core::arr( $command['flag'] ?? null );
-			$flagged = [] === $flag ? [] : Core::arr( $this->{Core::as_string( $flag['property'] )} );
-			foreach ( Core::arr( $this->{$property} ) as $entry ) {
-				$entry = Core::as_string( $entry );
-				$out  .= \in_array( $entry, $flagged, true ) ? $this->config_line( $name, $entry, '--' . Core::as_string( $flag['name'] ) ) : $this->config_line( $name, $entry );
+			foreach ( Core::arr( $this->{$property} ) as $entry => $flagged ) {
+				$out .= true === $flagged ? $this->config_line( $name, (string) $entry, '--' . Core::as_string( Core::arr( $command['flag'] )['name'] ) ) : $this->config_line( $name, (string) $entry );
 			}
 		}
 		return $out;
@@ -1169,24 +1166,26 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 	}
 
 	/**
-	 * list_commands()'s `add_<noun>` and `remove_<noun>` over a list whose every
-	 * entry matches $pattern, the add refusing a value that does not, naming it
-	 * as not $kind, and dumped one add line per entry. A $flag adds the bool
-	 * `--<name>` to the add, keeping each entry added with it in its
-	 * `property` list, which an add without it and the remove drop it from.
+	 * list_commands()'s `add_<noun>` and `remove_<noun>` over a map from each
+	 * entry, in the order first added, to whether it carries $flag, every
+	 * entry matching $pattern: the add refusing a value that does not, naming
+	 * it as not $kind, the remove refusing one the map does not hold, both
+	 * reading the value as given, and dumped one add line per entry. A $flag
+	 * adds the bool `--<name>` to the add, which sets the entry's flag, an add
+	 * again replacing it in place; with none every entry maps to false.
 	 *
-	 * @param string                                                  $noun        The commands' suffix, and the one arg they take.
-	 * @param string                                                  $property    The list property, a `list<string>`.
-	 * @param string                                                  $pattern     The regex every entry matches.
-	 * @param string                                                  $kind        What an entry is, as a refusal names it.
-	 * @param string                                                  $description The add command's description.
-	 * @param array{name:string,property:string,description:string}|null $flag        The add's flag, or null for none.
+	 * @param string                                  $noun        The commands' suffix, and the one arg they take.
+	 * @param string                                  $property    The map property, an `array<string,bool>`.
+	 * @param string                                  $pattern     The regex every entry matches.
+	 * @param string                                  $kind        What an entry is, as a refusal names it.
+	 * @param string                                  $description The add command's description.
+	 * @param array{name:string,description:string}|null $flag        The add's flag, or null for none.
 	 * @return list<array<string,mixed>>
 	 */
 	protected static function checked_list( string $noun, string $property, string $pattern, string $kind, string $description, ?array $flag = null ): array {
 		$arg              = [ 'name' => $noun, 'type' => 'string', 'required' => true ];
 		[ $add, $remove ] = self::list_commands( $noun, $property, $arg, $description );
-		unset( $add['list'] );
+		unset( $add['list'], $remove['unlist'] );
 		$add['checked'] = $property;
 		$add['handler'] = static function ( Command_Interpreter_Node $interpreter, array $args ) use ( $noun, $property, $pattern, $kind, $flag ): string {
 			$value = Core::as_string( $args[ $noun ] );
@@ -1194,34 +1193,27 @@ abstract class Source_Node extends Timer_Node implements Shutdown_Sweeper {
 				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- plain-text message for log/CLI consumers; escape at the view, not the runtime.
 				throw new \InvalidArgumentException( "add_{$noun}: '{$value}' is not {$kind}" );
 			}
+			$source             = $interpreter->patron();
+			$entries            = Core::arr( $source->{$property} );
+			$entries[ $value ]  = null !== $flag && true === $args[ $flag['name'] ];
+			$source->{$property} = $entries;
+			return "ok\n";
+		};
+		$remove['handler'] = static function ( Command_Interpreter_Node $interpreter, array $args ) use ( $noun, $property ): string {
+			$value   = Core::as_string( $args[ $noun ] );
 			$source  = $interpreter->patron();
 			$entries = Core::arr( $source->{$property} );
-			if ( ! \in_array( $value, $entries, true ) ) {
-				$source->{$property} = [ ...$entries, $value ];
-			}
-			if ( null !== $flag ) {
-				$flagged                     = Core::without( \array_values( Core::arr( $source->{$flag['property']} ) ), $value );
-				$source->{$flag['property']} = true === $args[ $flag['name'] ] ? [ ...$flagged, $value ] : $flagged;
-			}
-			return "ok\n";
-		};
-		if ( null === $flag ) {
-			return [ $add, $remove ];
-		}
-		$add['args'] = [ $arg, [ 'name' => $flag['name'], 'type' => 'bool', 'default' => false, 'description' => $flag['description'] ] ];
-		$add['flag'] = $flag;
-		unset( $remove['unlist'] );
-		$remove['handler'] = static function ( Command_Interpreter_Node $interpreter, array $args ) use ( $noun, $property, $flag ): string {
-			$value   = \trim( Core::as_string( $args[ $noun ] ) );
-			$source  = $interpreter->patron();
-			$entries = \array_values( Core::arr( $source->{$property} ) );
-			if ( ! \in_array( $value, $entries, true ) ) {
+			if ( ! \array_key_exists( $value, $entries ) ) {
 				throw Command_Args::undeclared( "remove_{$noun}", [ $value ], $noun, 'node' );
 			}
-			$source->{$property}         = Core::without( $entries, $value );
-			$source->{$flag['property']} = Core::without( \array_values( Core::arr( $source->{$flag['property']} ) ), $value );
+			unset( $entries[ $value ] );
+			$source->{$property} = $entries;
 			return "ok\n";
 		};
+		if ( null !== $flag ) {
+			$add['args'] = [ $arg, [ 'name' => $flag['name'], 'type' => 'bool', 'default' => false, 'description' => $flag['description'] ] ];
+			$add['flag'] = $flag;
+		}
 		return [ $add, $remove ];
 	}
 }

@@ -172,6 +172,31 @@ const partsOf = ( step ) => ( {
 } );
 
 describe( 'HowRead', () => {
+	it( 'reads an item whose key holds a slash, two drawers apart', async () => {
+		const github = {
+			...ITEM,
+			item_key: 'github:example/plugin#912',
+			title: 'Plugin release 9.12',
+		};
+		wire.replies.trace = ( [ key ] ) => ( {
+			...traced( [ RECORDED ] ),
+			title: key,
+		} );
+		render(
+			<>
+				<HowRead item={ github } onClose={ jest.fn() } />
+				<HowRead item={ ITEM } onClose={ jest.fn() } />
+			</>
+		);
+		expect( await screen.findAllByRole( 'list' ) ).toHaveLength( 2 );
+		expect( wire.sent( 'trace' ) ).toEqual(
+			expect.arrayContaining( [
+				[ 'github:example/plugin#912' ],
+				[ ITEM.item_key ],
+			] )
+		);
+	} );
+
 	it( 'asks how the item was read', async () => {
 		await renderSteps( [ RECORDED ] );
 		expect( wire.sent( 'trace' ) ).toEqual( [ [ ITEM.item_key ] ] );

@@ -12,6 +12,7 @@ import {
 	TextControl,
 } from '@wordpress/components';
 import { moreHorizontal } from '@wordpress/icons';
+import DataViewsList from '@newspack-nodes/shared/components/DataViewsList';
 import Modal, { ModalHeader } from '@newspack-nodes/shared/components/Modal';
 import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
 import { primaryButtonClass } from '@newspack-nodes/shared/utils/buttonClass';
@@ -28,9 +29,10 @@ import Answer, { AnswerBody, Unread } from '../components/Answer';
 import { useEntityNames } from '../components/EntityPicker';
 import ItemList from '../components/ItemList';
 import ItemRow from '../components/ItemRow';
-import ListKeys from '../components/ListKeys';
+import ListKeys, { LEAVES } from '../components/ListKeys';
 import Refusal from '../components/Refusal';
 import UndoSnackbar from '../components/UndoSnackbar';
+import { argsOf, itemKey } from '../components/format';
 
 /** No watch open, its matches on their first page. */
 export const CLOSED_WATCH = { key: null, page: 1 };
@@ -223,20 +225,13 @@ const sameWatch = ( listed, held ) =>
 	DELIVERIES.every( ( one ) => listed[ one ] === held[ one ] );
 
 /**
- * A listed item's key.
- *
- * @param {Object} item The item.
- * @return {string} Its key.
- */
-const itemKey = ( item ) => item.item_key;
-
-/**
  * Watches: the caller's own watches as a table, a list under 600 px, each
  * with what it follows, how it delivers and how many of its items are new;
  * the one opened, with its new matches; the form saving a new watch or the
  * one opened; and the dialog stopping it, for every reader. A save shows its
  * watch and a stop takes it out from the moment each is sent, until a read
- * of `watches` reflects it; a refusal puts it back. The page holds the watch
+ * of `watches` reflects it; a refusal puts it back. A save says so once it
+ * lands, naming the watch its reply echoes. The page holds the watch
  * opened, its page and the form's draft, so a team view's "Watch this" opens
  * the form here, and the view returns as it was left.
  *
@@ -260,12 +255,16 @@ export default function Watches( {
 	canTune,
 } ) {
 	const [ stopping, setStopping ] = useState( null );
+	// The event the last landed save wrote, which its snackbar is keyed by.
 	const [ saved, setSaved ] = useState( null );
 	const list = useIntelRead( 'watch:list', 'watches', [] );
 	const watches = useHeld( list, 'watches', watchKey, sameWatch );
 	const save = useIntelWrite( 'save_watch', {
 		dirties: WATCH_READS,
-		refresh: () => onDraft( null ),
+		refresh: ( { event_id: event } ) => {
+			setSaved( event );
+			onDraft( null );
+		},
 		onRefused: watches.refused,
 	} );
 	const remove = useIntelWrite( 'remove_watch', {
@@ -334,14 +333,6 @@ export default function Watches( {
 						watches.hold( draft.key, draftWatch( draft ), () =>
 							save.run( watchArgs( draft ) )
 						);
-						setSaved( {
-							id: Date.now(),
-							message: sprintf(
-								/* translators: %s: the watch's name. */
-								__( '%s saved.', 'newspack-intelligence' ),
-								draft.name
-							),
-						} );
 					} }
 					onCancel={ () => onDraft( null ) }
 				/>
@@ -359,7 +350,20 @@ export default function Watches( {
 					onClose={ () => setStopping( null ) }
 				/>
 			) }
-			<UndoSnackbar latest={ saved } />
+			<UndoSnackbar
+				latest={
+					saved && ! save.refusal
+						? {
+								id: saved,
+								message: sprintf(
+									/* translators: %s: the watch's name. */
+									__( '%s saved.', 'newspack-intelligence' ),
+									argsOf( save.answeredArgs ).name
+								),
+						  }
+						: null
+				}
+			/>
 		</div>
 	);
 }
@@ -407,7 +411,7 @@ function WatchList( { watches, opened, onOpen } ) {
 				enableHiding: false,
 		  } ) );
 	return (
-		<ItemList
+		<DataViewsList
 			items={ watches }
 			getItemId={ ( one ) => one.watch_key || `saving:${ one.name }` }
 			view={ {
@@ -578,10 +582,13 @@ function Opened( {
 		);
 	};
 	const total = matches.read.answer?.total ?? 0;
+	const heading = useRef( null );
 	return (
 		<Card as="section" aria-label={ watch.name }>
 			<CardHeader>
-				<h3>{ watch.name }</h3>
+				<h3 ref={ heading } tabIndex={ -1 }>
+					{ watch.name }
+				</h3>
 				<div className="newspack-intelligence__actions">
 					{ 0 < shown.length && (
 						<Button
@@ -656,9 +663,14 @@ function Opened( {
 					}
 				>
 					{ () => (
-						<ListKeys rows={ MATCH_ROWS } onUndo={ deferred.undo }>
+						<ListKeys
+							rows={ MATCH_ROWS }
+							onUndo={ deferred.undo }
+							heading={ () => heading.current }
+						>
 							<ItemList
 								items={ shown }
+								deferred={ deferred }
 								view={ {
 									type: 'list',
 									page,
@@ -715,6 +727,7 @@ function MatchRow( { item, onSeen, onOpenEntity, onSave, canTune } ) {
 			<Button
 				variant="secondary"
 				size="small"
+				{ ...LEAVES }
 				onClick={ () => onSeen( item ) }
 			>
 				{ __( 'Mark seen', 'newspack-intelligence' ) }

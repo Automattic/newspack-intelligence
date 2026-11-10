@@ -164,13 +164,30 @@ describe( 'BLOCK_VIEWS', () => {
 	} );
 } );
 
-describe( 'useWriteControl', () => {
+describe( 'write controls while the layout is edited', () => {
+	const WATCHES = BLOCK_VIEWS[ 'newspack-intelligence/watches' ];
+	const ASK = BLOCK_VIEWS[ 'newspack-intelligence/ask' ];
+
+	beforeEach( () => {
+		window.NewspackNodesData = {
+			restUrl: '/wp-json/',
+			nonce: 'NONCE',
+			userId: '41',
+		};
+		window.localStorage.clear();
+	} );
+
 	/**
-	 * The writer, under a page context editing or not.
+	 * A block's View as the substrate hands it its `editing` prop, under a
+	 * page whose context says nothing of editing.
 	 *
-	 * @param {boolean} editing Whether the layout is being edited.
+	 * @param {Object}   view       The block's view.
+	 * @param {Function} view.View  Its View.
+	 * @param {Object}   attributes Its attributes.
+	 * @param {boolean}  editing    What the substrate hands the View.
+	 * @param {Object}   [actions]  The page's actions.
 	 */
-	const renderWriter = ( editing ) =>
+	const renderView = ( { View }, attributes, editing, actions = {} ) =>
 		render(
 			<IntelPageContext.Provider
 				value={ {
@@ -178,32 +195,125 @@ describe( 'useWriteControl', () => {
 					lens_key: null,
 					entity_key: null,
 					since: 1792000000,
-					editing,
+					actions,
 				} }
 			>
-				<Writer />
+				<View attributes={ attributes } editing={ editing } />
 			</IntelPageContext.Provider>
 		);
 
-	it( 'leaves a write control inert while the layout is edited, sending nothing', async () => {
-		const wire = intelWire();
-		wire.replies.mark_seen = { ok: true, count: 1 };
-		renderWriter( true );
+	it( 'leaves a block’s write control inert when its View is handed editing, opening nothing', async () => {
+		intelWire().replies.watches = { watches: [], available: true };
+		const onNewWatch = jest.fn();
+		renderView( WATCHES, { heading: 'Kept close', max: 3 }, true, {
+			onNewWatch,
+		} );
 
-		const button = screen.getByRole( 'button', { name: 'Mark seen' } );
+		await screen.findByText( /to see its new items here/ );
+		const buttons = screen.getAllByRole( 'button', { name: 'New watch' } );
+		expect( buttons ).toHaveLength( 2 );
+		buttons.forEach( ( button ) => {
+			expect( button ).toHaveAttribute( 'aria-disabled', 'true' );
+			fireEvent.click( button );
+		} );
+
+		expect( onNewWatch ).not.toHaveBeenCalled();
+	} );
+
+	it( 'acts when its View is read', async () => {
+		intelWire().replies.watches = { watches: [], available: true };
+		const onNewWatch = jest.fn();
+		renderView( WATCHES, { heading: 'Kept close', max: 3 }, false, {
+			onNewWatch,
+		} );
+
+		await screen.findByText( /to see its new items here/ );
+		const button = screen.getAllByRole( 'button', {
+			name: 'New watch',
+		} )[ 0 ];
+		expect( button ).not.toHaveAttribute( 'aria-disabled' );
+		fireEvent.click( button );
+
+		expect( onNewWatch ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'sends no ask and marks no first ask from an Ask box while the layout is edited', async () => {
+		const wire = intelWire();
+		wire.replies.ask = { ok: true, ask_key: '5d1e9a7c3b2f4086' };
+		const onAsked = jest.fn();
+		renderView(
+			ASK,
+			{
+				label: 'Put it to the desk',
+				placeholder: 'Ask the desk…',
+				examples: [ 'Who launched?' ],
+			},
+			true,
+			{ onAsked }
+		);
+
+		fireEvent.change( screen.getByLabelText( 'Put it to the desk' ), {
+			target: { value: 'Which members wobbled?' },
+		} );
+		const button = screen.getByRole( 'button', { name: 'Ask' } );
 		expect( button ).toHaveAttribute( 'aria-disabled', 'true' );
 		fireEvent.click( button );
+		fireEvent.submit( button.closest( 'form' ) );
 		await act(
 			() => new Promise( ( resolve ) => setTimeout( resolve, 300 ) )
 		);
 
-		expect( wire.sent( 'mark_seen' ) ).toEqual( [] );
+		expect( wire.sent( 'ask' ) ).toEqual( [] );
+		expect( onAsked ).not.toHaveBeenCalled();
+		expect( window.localStorage.length ).toBe( 0 );
+		expect( screen.getByText( 'Try: Who launched?' ) ).toBeInTheDocument();
 	} );
 
-	it( 'writes when the layout is read', async () => {
+	it( 'asks from an Ask box when its layout is read', async () => {
+		const wire = intelWire();
+		wire.replies.ask = { ok: true, ask_key: '5d1e9a7c3b2f4086' };
+		renderView(
+			ASK,
+			{
+				label: 'Put it to the desk',
+				placeholder: 'Ask the desk…',
+				examples: [],
+			},
+			false
+		);
+
+		fireEvent.change( screen.getByLabelText( 'Put it to the desk' ), {
+			target: { value: 'Which members wobbled?' },
+		} );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Ask' } ) );
+
+		await waitFor( () =>
+			expect( wire.sent( 'ask' ) ).toEqual( [
+				[ '--question=Which members wobbled?' ],
+			] )
+		);
+	} );
+} );
+
+describe( 'useWriteControl', () => {
+	it( 'writes under a page context, which holds no editing flag of its own', async () => {
 		const wire = intelWire();
 		wire.replies.mark_seen = { ok: true, count: 1 };
-		renderWriter( false );
+		render(
+			<IntelPageContext.Provider
+				value={
+					/** @type {Object} */ ( {
+						page: 'briefing',
+						lens_key: null,
+						entity_key: null,
+						since: 1792000000,
+						editing: true,
+					} )
+				}
+			>
+				<Writer />
+			</IntelPageContext.Provider>
+		);
 
 		const button = screen.getByRole( 'button', { name: 'Mark seen' } );
 		expect( button ).not.toHaveAttribute( 'aria-disabled' );

@@ -79,7 +79,7 @@ function open() {
 const section = ( name ) => screen.getByRole( 'region', { name } );
 
 describe( 'EditDrawer', () => {
-	it( 'opens a sheet named for the entity, its heading focused, Edit marked expanded', () => {
+	it( 'opens a sheet named for the entity, its first field focused, Edit marked expanded', () => {
 		renderDrawer();
 		const edit = screen.getByRole( 'button', { name: 'Edit' } );
 		expect( edit ).toHaveAttribute( 'aria-expanded', 'false' );
@@ -91,7 +91,9 @@ describe( 'EditDrawer', () => {
 			'is-side'
 		);
 		expect(
-			screen.getByRole( 'heading', { name: 'Edit Harbor Ledger' } )
+			within(
+				screen.getByRole( 'group', { name: 'Add a name' } )
+			).getByRole( 'combobox', { name: 'Kind' } )
 		).toHaveFocus();
 		expect( edit ).toHaveAttribute( 'aria-expanded', 'true' );
 	} );

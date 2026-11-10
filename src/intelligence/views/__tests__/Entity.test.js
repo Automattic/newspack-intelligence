@@ -24,6 +24,24 @@ import { UNDO_MS } from '../../hooks/useDeferredWrite';
 import { useIntelRead } from '../../hooks/useIntelCommand';
 import Entity from '../Entity';
 
+/** Each address Edit layout would load, in place of the navigation jsdom refuses. */
+const mockLoads = [];
+jest.mock( '../../layout/LayoutMenu', () => {
+	const { editSearch } = jest.requireActual( '../../layout/editMode' );
+	const { editLayoutControl } = jest.requireActual(
+		'../../layout/LayoutMenu'
+	);
+	return {
+		editLayoutControl: ( target ) => ( {
+			...editLayoutControl( target ),
+			onClick: () =>
+				mockLoads.push(
+					editSearch( globalThis.location.search, target )
+				),
+		} ),
+	};
+} );
+
 /**
  * A read whose rendering says whether its answer is owed, remembered or
  * read, so a test sees what the cache holds for it.
@@ -327,6 +345,30 @@ describe( 'Entity — header', () => {
 		).toBeInTheDocument();
 	} );
 
+	it( 'loads the layout editor on this profile, over the view it stands on, from its Edit layout', async () => {
+		mockLoads.length = 0;
+		window.history.replaceState(
+			{},
+			'',
+			'/wp-admin/admin.php?page=newspack-intelligence&view=watches'
+		);
+		renderEntity( { canTune: true } );
+		fireEvent.click(
+			within( await header() ).getByRole( 'button', {
+				name: 'Profile actions',
+			} )
+		);
+		fireEvent.click(
+			await screen.findByRole( 'menuitem', { name: 'Edit layout' } )
+		);
+		expect( mockLoads ).toEqual( [
+			`?page=newspack-intelligence&view=watches&edit=entity&entity=${ encodeURIComponent(
+				KEY
+			) }`,
+		] );
+		window.history.replaceState( {}, '', '/' );
+	} );
+
 	it( 'says a refused profile is not available, with the way back', async () => {
 		wire.replies.entity = () => new Error( `no entity: ${ KEY }` );
 		renderEntity();
@@ -388,6 +430,62 @@ describe( 'Entity — layout', () => {
 		expect(
 			screen.getByRole( 'heading', { name: 'Facts' } )
 		).toHaveFocus();
+	} );
+
+	it( 'jumps to the heading a link names by its place, two blocks sharing a heading apart', async () => {
+		wire.replies.search = {
+			items: [],
+			total: 0,
+			sort: 'time',
+			available: true,
+		};
+		const coverage = ( empty ) => ( {
+			name: 'newspack-intelligence/item-list',
+			attributes: {
+				heading: 'Coverage',
+				kinds: [],
+				topics: [],
+				roles: [],
+				sources: [],
+				lens: '',
+				group: '',
+				sort: 'time',
+				layout: 'list',
+				limit: 5,
+				tiers: [],
+				empty,
+			},
+			inner: [],
+		} );
+		renderEntity( {
+			layout: {
+				...DEFAULT_LAYOUT,
+				blocks: [
+					coverage( 'No coverage in the main column.' ),
+					{
+						name: 'newspack-intelligence/aside',
+						attributes: {},
+						inner: [ coverage( 'No coverage in the aside.' ) ],
+					},
+				],
+			},
+		} );
+		await header();
+		const jumps = screen.getByRole( 'navigation', {
+			name: 'On this profile',
+		} );
+		const [ , second ] = within( jumps ).getAllByRole( 'button', {
+			name: 'Coverage',
+		} );
+		await screen.findByText( 'No coverage in the aside.' );
+
+		fireEvent.click( second );
+
+		const focused = document.activeElement;
+		expect( focused ).toHaveTextContent( 'Coverage' );
+		expect( screen.getByRole( 'complementary' ) ).toContainElement(
+			focused
+		);
 	} );
 
 	it( 'keeps the churn notice when its layout holds no block', async () => {
@@ -810,7 +908,7 @@ describe( 'Entity — curation', () => {
 		expect( screen.queryByRole( 'button', { name: 'Edit' } ) ).toBeNull();
 	} );
 
-	it( 'opens the Edit drawer from the header, focused on its heading, and Escape returns to Edit', async () => {
+	it( 'opens the Edit drawer from the header, focused on its first field, and Escape returns to Edit', async () => {
 		renderEntity( { canTune: true } );
 		const edit = within( await header() ).getByRole( 'button', {
 			name: 'Edit',
@@ -818,7 +916,9 @@ describe( 'Entity — curation', () => {
 		edit.focus();
 		fireEvent.click( edit );
 		expect(
-			screen.getByRole( 'heading', { name: 'Edit Harbor Ledger' } )
+			within(
+				screen.getByRole( 'group', { name: 'Add a name' } )
+			).getByRole( 'combobox', { name: 'Kind' } )
 		).toHaveFocus();
 		const names = screen.getByRole( 'region', { name: 'Names' } );
 		const current = within( names ).getByText( 'The Ledger' );

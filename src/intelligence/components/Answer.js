@@ -89,13 +89,13 @@ function Rows( { answer, rows, empty, children } ) {
 
 /**
  * A read that was refused or failed, or nothing when it was not: one
- * sentence and a way to ask again, and for an operator the refusal's own
- * words beneath, muted. It is a polite status, because nothing the reader
- * did failed; a refused write stays an alert (`Refusal`).
+ * sentence and, where asking again can help, a way to, and for an operator
+ * the refusal's own words beneath, muted. It is a polite status, because
+ * nothing the reader did failed; a refused write stays an alert (`Refusal`).
  *
  * @param {Object}     props
- * @param {?string}    props.error   The refusal.
- * @param {() => void} props.refresh Asks the read again.
+ * @param {?string}    props.error     The refusal.
+ * @param {() => void} [props.refresh] Asks the read again; absent where asking again refuses again.
  * @return {?import('react').ReactElement} The status.
  */
 export function Unread( { error, refresh } ) {
@@ -106,13 +106,26 @@ export function Unread( { error, refresh } ) {
 	return (
 		<div className="newspack-nodes-error-banner" role="status">
 			<p>
-				{ __(
-					'Intelligence could not be read just now. Try again.',
-					'newspack-intelligence'
-				) }{ ' ' }
-				<button type="button" className="button" onClick={ refresh }>
-					{ __( 'Try again', 'newspack-intelligence' ) }
-				</button>
+				{ refresh ? (
+					<>
+						{ __(
+							'Intelligence could not be read just now. Try again.',
+							'newspack-intelligence'
+						) }{ ' ' }
+						<button
+							type="button"
+							className="button"
+							onClick={ refresh }
+						>
+							{ __( 'Try again', 'newspack-intelligence' ) }
+						</button>
+					</>
+				) : (
+					__(
+						'Intelligence could not be read just now.',
+						'newspack-intelligence'
+					)
+				) }
 			</p>
 			{ operator && (
 				<p className="newspack-nodes-status is-muted">{ error }</p>

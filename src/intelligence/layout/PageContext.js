@@ -1,8 +1,9 @@
 /**
  * What a block on a composed page reads besides its attributes: the page,
- * its subject, the reader's last look, whether the layout is being edited,
- * in which case every write control a block holds is inert, so editing a
- * layout writes nothing else, and the page's actions a block's rows open.
+ * its subject, the reader's last look and the page's actions a block's rows
+ * open; and, from the `editing` prop the substrate hands each block's View,
+ * whether its layout is being edited, in which case every write control the
+ * block holds is inert, so editing a layout writes nothing else.
  */
 
 import { createContext, useContext } from '@wordpress/element';
@@ -13,12 +14,11 @@ import { createContext, useContext } from '@wordpress/element';
  * @typedef {Object} IntelPage
  * @property {?('briefing'|'lens'|'entity')} page       The page.
  * @property {?string}                       lens_key   The team view it shows, on a team view's page.
- * @property {?Object}                       [lens]     That view as `lenses` lists it, once read.
  * @property {?string}                       entity_key The entity it profiles, on a profile.
  * @property {?number}                       since      The reader's last look, UTC seconds, on the Briefing.
  * @property {boolean}                       [kept]     Whether the browser keeps the last look; false hides what arrived since.
- * @property {boolean}                       editing    Whether the layout is being edited.
  * @property {Partial<IntelActions>}         [actions]  The page's actions; the editor's preview offers none.
+ * @property {WeakMap<Object, string>}       [jumps]    Each block's jump scope, by its attributes, where a reader reads the layout (`jumpsOf()`).
  */
 
 /**
@@ -60,8 +60,41 @@ export const IntelPageContext = createContext( {
 	lens_key: null,
 	entity_key: null,
 	since: null,
-	editing: false,
 } );
+
+/**
+ * Whether the block a control stands in is being edited, as the substrate
+ * handed its View `editing`; each block's View provides it (`BLOCK_VIEWS`).
+ *
+ * @type {import('react').Context<boolean>}
+ */
+export const Editing = createContext( false );
+
+/**
+ * The jump scope of the block a heading stands in, null outside a layout a
+ * reader reads: what its heading's id leads with, so a profile's jump links
+ * reach each heading by its place rather than by its words.
+ *
+ * @type {import('react').Context<?string>}
+ */
+export const JumpScope = createContext( null );
+
+/**
+ * The id of a heading in the block whose jump scope is `scope`.
+ *
+ * @param {string} scope The block's jump scope.
+ * @param {string} text  The heading.
+ * @return {string} The id.
+ */
+export const jumpId = ( scope, text ) =>
+	`${ scope }-${ encodeURIComponent( text ) }`;
+
+/**
+ * Whether the block this stands in is being edited.
+ *
+ * @return {boolean} Whether it is.
+ */
+export const useEditing = () => useContext( Editing );
 
 /**
  * The page's actions, each doing nothing where the page offers none.
@@ -81,7 +114,7 @@ export function useIntelActions() {
  * @return {{onClick: () => void, 'aria-disabled'?: true}} The control's props.
  */
 export function useWriteControl( onClick ) {
-	return useContext( IntelPageContext ).editing
-		? { 'aria-disabled': true, onClick: () => {} }
+	return useEditing()
+		? { 'aria-disabled': true, onClick: nothing }
 		: { onClick };
 }

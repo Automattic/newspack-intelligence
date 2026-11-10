@@ -2,7 +2,9 @@
  * The `needs-attention` block: every client carrying a churn-risk note, by
  * its note, then every signal of every client and team view the block
  * admits, the most recent first, each a pulse line opening the profile or
- * the team view it is about, at most `max` until the rest are asked for.
+ * the team view it is about, at most `max` until the rest are asked for. A
+ * client's signal is worded by the week, and a team view's by the span the
+ * view counts by, as `lenses` lists it.
  */
 
 import {
@@ -25,8 +27,10 @@ import { signalValue } from '../components/TrendTable';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import { useIntelActions } from '../layout/PageContext';
 
-/** The span every briefing signal is worded in, and its baseline. */
+/** The span a client's signals count by, and one a view names none by. */
 const SPAN = 'week';
+
+/** The buckets before the latest every signal is judged against. */
 const BASELINE = 8;
 
 /** The page processes whose first pulse lines already faded in. */
@@ -62,12 +66,13 @@ function useFirstPaint() {
  * Each noted client the block admits, as a row, then each signal, the most
  * recent first.
  *
- * @param {Object}              answer     The `briefing signals` answer.
- * @param {AttentionAttributes} attributes The block's attributes.
- * @param {Object}              actions    The page's actions.
- * @return {Array<{key: string, name: string, open: () => void, signal?: Object, note?: Object}>} The rows.
+ * @param {Object}                 answer     The `briefing signals` answer.
+ * @param {AttentionAttributes}    attributes The block's attributes.
+ * @param {Object}                 actions    The page's actions.
+ * @param {Object<string, string>} spans      Each team view's span, by key.
+ * @return {Array<{key: string, name: string, open: () => void, span?: string, signal?: Object, note?: Object}>} The rows.
  */
-function rowsOf( answer, { clients, lenses }, actions ) {
+function rowsOf( answer, { clients, lenses }, actions, spans ) {
 	const noted = ( clients ? answer.clients : [] )
 		.filter( ( client ) => client.churn_note )
 		.map( ( client ) => ( {
@@ -82,6 +87,7 @@ function rowsOf( answer, { clients, lenses }, actions ) {
 				key: `${ client.entity_key } ${ n }`,
 				name: client.name,
 				open: () => actions.onOpenEntity( client.entity_key ),
+				span: SPAN,
 				signal,
 			} ) )
 		),
@@ -95,6 +101,7 @@ function rowsOf( answer, { clients, lenses }, actions ) {
 					key: `${ lens.lens_key } ${ n }`,
 					name: lens.name,
 					open: () => actions.onOpenLens( lens.lens_key ),
+					span: spans[ lens.lens_key ] ?? SPAN,
 					signal,
 				} ) )
 			),
@@ -108,16 +115,17 @@ function rowsOf( answer, { clients, lenses }, actions ) {
 }
 
 /**
- * @param {Object}              props
- * @param {Object}              props.answer     The `briefing signals` answer.
- * @param {AttentionAttributes} props.attributes The block's attributes.
+ * @param {Object}                 props
+ * @param {Object}                 props.answer     The `briefing signals` answer.
+ * @param {AttentionAttributes}    props.attributes The block's attributes.
+ * @param {Object<string, string>} props.spans      Each team view's span, by key.
  * @return {import('react').ReactElement} The rows, or why there are none.
  */
-function Rows( { answer, attributes } ) {
+function Rows( { answer, attributes, spans } ) {
 	const actions = useIntelActions();
 	const fades = useFirstPaint();
 	const [ all, setAll ] = useState( false );
-	const rows = rowsOf( answer, attributes, actions );
+	const rows = rowsOf( answer, attributes, actions, spans );
 	if ( 0 === rows.length ) {
 		return (
 			<p className="newspack-nodes-empty-state is-quiet">
@@ -134,7 +142,6 @@ function Rows( { answer, attributes } ) {
 		);
 	}
 	const shown = all ? rows : rows.slice( 0, attributes.max );
-	const words = spanWords( SPAN, BASELINE );
 	return (
 		<>
 			<ul className="newspack-intelligence__attention">
@@ -160,7 +167,7 @@ function Rows( { answer, attributes } ) {
 									partial={ null }
 									judged
 									several={ false }
-									words={ words }
+									words={ spanWords( row.span, BASELINE ) }
 								/>
 							) }
 							<button
@@ -199,14 +206,24 @@ function Rows( { answer, attributes } ) {
  */
 function View( { attributes } ) {
 	const read = useIntelRead( 'briefing:signals', 'briefing', [ 'signals' ] );
+	const lenses = useIntelRead( 'briefing:attention-lenses', 'lenses', [] );
+	const spans = Object.fromEntries(
+		( lenses.answer?.lenses ?? [] )
+			.filter( ( lens ) => lens.filters.bucket )
+			.map( ( lens ) => [ lens.lens_key, lens.filters.bucket ] )
+	);
 	return (
 		<Section heading={ attributes.heading }>
 			<AnswerBody
-				read={ read }
+				read={ lenses.loading ? { ...read, loading: true } : read }
 				skeleton={ <Skeleton shape="line" count={ 3 } /> }
 			>
 				{ ( answer ) => (
-					<Rows answer={ answer } attributes={ attributes } />
+					<Rows
+						answer={ answer }
+						attributes={ attributes }
+						spans={ spans }
+					/>
 				) }
 			</AnswerBody>
 		</Section>

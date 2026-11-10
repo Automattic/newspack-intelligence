@@ -325,6 +325,34 @@ final class IntelligenceBriefingTest extends TestCase {
 		$this->assertSame( [ $dunlin, $godwit, self::PLOVER, self::SEDGE, $product ], $named );
 	}
 
+	/**
+	 * A churn item is filed under the client its kind subject names, the
+	 * one leaving: "The Sedgewick merges into the Plover", about both as
+	 * subject, sits under the Sedgewick though the Plover is named first. A
+	 * churn item naming no kind subject claims no client, so it is filed as
+	 * an item about no client is.
+	 */
+	public function test_a_churn_item_is_filed_under_its_kind_subject(): void {
+		$at = self::back( 1 );
+		$this->seed(
+			self::item( 'linear:sedge-exit', 'The Sedgewick merges into the Plover', 'linear', 'public', $at ),
+			self::extraction( 'linear:sedge-exit', 'The Sedgewick is leaving.', 'churned', $at, [], 5.0, 7.0, '', self::SEDGE ),
+			self::link( 'link_asserted', 'linear:sedge-exit', self::PLOVER, 'subject', 'name', 1.0, $at ),
+			self::link( 'link_asserted', 'linear:sedge-exit', self::SEDGE, 'subject', 'name', 1.0, $at ),
+			self::item( 'linear:plover-murmur', 'A murmur about the Plover', 'linear', 'public', $at ),
+			self::extraction( 'linear:plover-murmur', 'Someone may leave.', 'churn_signal', $at, [], 5.0, 6.0 ),
+			self::link( 'link_asserted', 'linear:plover-murmur', self::PLOVER, 'subject', 'name', 1.0, $at )
+		);
+
+		$this->assertSame(
+			[
+				[ 'client', self::SEDGE, [ 'linear:sedge-exit' ] ],
+				[ 'otherwise', null, [ 'linear:plover-murmur' ] ],
+			],
+			\array_map( static fn ( array $group ): array => [ $group['role'], $group['key'], $group['items'] ], $this->ci->dispatch( 'briefing', [ 'changes' ] )['groups'] )
+		);
+	}
+
 	/** The window opens at the first of the last seven UTC days, today the last. */
 	public function test_changes_open_at_the_windows_first_day(): void {
 		$this->about( 'linear:plover-first-day', self::PLOVER, 'subject', 'complaint', 6.0, 0 );
@@ -400,6 +428,24 @@ final class IntelligenceBriefingTest extends TestCase {
 			$answer['categories']
 		);
 		$this->assertSame( 1, $answer['otherwise'] );
+	}
+
+	/**
+	 * Each category counts every item of the window it admits, and
+	 * `otherwise` every item none admits, as `total` counts the window, not
+	 * only the items listed: an award ranked past the listed fifty counts.
+	 */
+	public function test_categories_count_the_whole_window(): void {
+		$this->seed( self::lens( 'desk-awards', 'Desk awards', [ 'kinds' => [ 'award' ] ] ) );
+		for ( $n = 0; $n <= Graph_Query::DEFAULT_LIMIT + 1; $n++ ) {
+			$kind = 0 === $n || Graph_Query::DEFAULT_LIMIT + 1 === $n ? 'award' : 'other';
+			$this->about( "feed:wren-note-{$n}", self::WREN, 'subject', $kind, 9.0 - $n / 10, 2 );
+		}
+
+		$answer = $this->ci->dispatch( 'briefing', [ 'changes', '--lenses=desk-awards' ] );
+
+		$this->assertCount( Graph_Query::DEFAULT_LIMIT, $answer['items'] );
+		$this->assertSame( [ Graph_Query::DEFAULT_LIMIT + 2, 2, Graph_Query::DEFAULT_LIMIT ], [ $answer['total'], $answer['categories'][0]['count'], $answer['otherwise'] ] );
 	}
 
 	/** At most CATEGORY_MAX lenses file the week; a ninth is refused. */
@@ -495,6 +541,30 @@ final class IntelligenceBriefingTest extends TestCase {
 			$clients[0]
 		);
 		$this->assertNull( $clients[1]['churn_note'] );
+	}
+
+	/**
+	 * A client the reader cannot see, a proposal only a restricted item
+	 * cites, is not listed with its churn note to a reader; a holder of the
+	 * restricted tier sees it.
+	 */
+	public function test_a_noted_client_the_reader_cannot_see_is_not_listed(): void {
+		$petrel = 'organization:petrel-gazette';
+		$at     = self::back( 2 );
+		$this->seed(
+			self::item( 'hubspot:petrel-renewal', 'Petrel Gazette renewal', 'hubspot', 'restricted', $at ),
+			self::proposal( $petrel, 'Petrel Gazette', 'hubspot:petrel-renewal' ),
+			self::link( 'link_proposed', 'hubspot:petrel-renewal', $petrel, 'subject', 'name', 0.6, $at ),
+			self::role( $petrel, 'client' ),
+			[ Intel_Event::make( 'churn_note_set', [ 'entity_key' => $petrel, 'text' => 'Weighing a rival quote', 'owner' => 'Ines Okafor', 'next_step' => 'pricing call', 'day' => '2026-11-24' ], 'user:ines-okafor', 'fixture-9' ) ]
+		);
+
+		$this->assertSame( [], $this->ci->dispatch( 'briefing', [ 'signals' ] )['clients'] );
+
+		self::add_user( self::HOLDER, 'plover-analyst', 'manage_options', 'newspack_intelligence_restricted' );
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+
+		$this->assertSame( [ $petrel ], \array_column( $this->ci->dispatch( 'briefing', [ 'signals' ] )['clients'], 'entity_key' ) );
 	}
 
 	/** A week in which every client's output fell drops no client, as the signals read decides. */

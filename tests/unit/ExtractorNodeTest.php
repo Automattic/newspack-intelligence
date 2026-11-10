@@ -1144,19 +1144,48 @@ final class ExtractorNodeTest extends TestCase {
 	}
 
 	/**
-	 * The fixture item's record and a call's extraction of it, of `$kind`,
-	 * carrying `$check` when one is given.
+	 * A re-extraction keeping a churn kind that passed its check keeps the
+	 * client its stored extraction named too, whatever the reply names:
+	 * nothing, or another linked entity.
 	 *
-	 * @param string                   $kind  The stored kind.
-	 * @param array<string,mixed>|null $check The stored kind check.
-	 * @param array<string,mixed>      $over  Item fields to set.
+	 * @return array<string,array{0:string}>
+	 */
+	public static function churn_replies(): array {
+		return [
+			'reply names none'    => [ '{"summary":"Mesa Courier publishes a readership study.","kind":"research"}' ],
+			'reply names another' => [ '{"summary":"The Harbor Gazette weighs leaving.","kind":"churn_signal","kind_subject":"The Harbor Gazette"}' ],
+		];
+	}
+
+	/**
+	 * @param string $reply The re-extraction's reply.
+	 */
+	#[\PHPUnit\Framework\Attributes\DataProvider( 'churn_replies' )]
+	public function test_a_kept_churn_kind_keeps_its_stored_kind_subject( string $reply ): void {
+		$check = [ 'kind' => 'churned', 'verdict' => Intel_Event::PASSED, 'ts' => 1794060000 ];
+		$this->seed( self::entity( self::GAZETTE, 'The Harbor Gazette' ), self::entity( self::MESA, 'Mesa Courier' ), self::stored( 'churned', $check, subject: self::MESA ) );
+		$this->answer( $reply );
+
+		$this->extractor->fill( self::resolved( [ self::link( self::GAZETTE, 1.0 ), self::link( self::MESA, 1.0 ) ], [], extracted: true, extract: true ) );
+
+		$this->assertSame( [ [ 'churned', self::MESA ] ], \array_map( static fn ( array $e ): array => [ $e['kind'], $e['kind_subject'] ?? null ], $this->extractions() ) );
+	}
+
+	/**
+	 * The fixture item's record and a call's extraction of it, of `$kind`,
+	 * carrying `$check` and `$subject` when each is given.
+	 *
+	 * @param string                   $kind    The stored kind.
+	 * @param array<string,mixed>|null $check   The stored kind check.
+	 * @param array<string,mixed>      $over    Item fields to set.
+	 * @param string|null              $subject The stored kind subject.
 	 * @return list<array<string,mixed>>
 	 */
-	private static function stored( string $kind, ?array $check, array $over = [] ): array {
+	private static function stored( string $kind, ?array $check, array $over = [], ?string $subject = null ): array {
 		$item = \array_merge( self::item(), $over );
 		return [
 			Intel_Event::make( 'item_recorded', $item, 'machine:source:feed@9.4.1', '' ),
-			Intel_Event::make( 'extraction_recorded', [ 'item_key' => $item['item_key'], 'summary' => 'Mesa Courier, earlier.', 'kind' => $kind, 'relevance' => 4, 'importance' => 3, 'sentiment' => 0.0, 'topics' => [], 'retrieved_ts' => $item['retrieved_ts'] ] + ( null === $check ? [] : [ 'kind_check' => $check ] ), 'machine:extract@9.4.1', '' ),
+			Intel_Event::make( 'extraction_recorded', [ 'item_key' => $item['item_key'], 'summary' => 'Mesa Courier, earlier.', 'kind' => $kind, 'relevance' => 4, 'importance' => 3, 'sentiment' => 0.0, 'topics' => [], 'retrieved_ts' => $item['retrieved_ts'] ] + ( null === $check ? [] : [ 'kind_check' => $check ] ) + ( null === $subject ? [] : [ 'kind_subject' => $subject ] ), 'machine:extract@9.4.1', '' ),
 		];
 	}
 

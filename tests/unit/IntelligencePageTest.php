@@ -145,8 +145,8 @@ final class IntelligencePageTest extends TestCase {
 
 	/**
 	 * A stored layout that no longer reads stands where the layout would,
-	 * and the page still renders: a reader's page holds the class word, an
-	 * operator's the refusal.
+	 * and the page still renders for a signed-in user: a reader's page holds
+	 * the class word, an operator's the refusal.
 	 *
 	 * @param string $scope The session scope the page renders under.
 	 * @param string $error What the page holds for the lens layout.
@@ -154,6 +154,7 @@ final class IntelligencePageTest extends TestCase {
 	#[DataProvider( 'unread_layouts' )]
 	public function test_a_layout_that_no_longer_reads_is_sent_as_its_refusal( string $scope, string $error ): void {
 		\update_option( Composition_Store::OPTION_PREFIX . 'newspack-intelligence/lens', [ 'markup' => '<!-- wp:newspack-intelligence/retired /-->', 'actor' => 'heron-ops', 'ts' => 1792000000.5 ] );
+		self::sign_in( 8402, 'heron-ops', 'manage_options' );
 		Capabilities::$session_scope = $scope;
 		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];
 
@@ -263,7 +264,7 @@ final class IntelligencePageTest extends TestCase {
 
 		$data = $this->localized( 'newspack-intelligence' );
 		$this->assertSame( '', $data['canTune'], 'a reader is sent the empty string' );
-		$this->assertSame( \plugins_url( 'build/intelligence/index.js', \dirname( __DIR__, 2 ) . '/newspack-intelligence.php' ), $GLOBALS['_enqueued_scripts'][0][1] );
+		$this->assertSame( \plugins_url( 'build/intelligence/index.js', \dirname( __DIR__, 2 ) . '/newspack-intelligence.php' ), \array_column( $GLOBALS['_enqueued_scripts'], 1, 0 )['newspack-intelligence'] ?? null );
 	}
 
 	public function test_a_tuner_gets_curation_and_the_vocabulary(): void {

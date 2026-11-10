@@ -7,7 +7,13 @@
  * category, by `otherwise` and by client.
  */
 
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { ITEM, pageData } from '../../views/__tests__/fixtures';
@@ -89,6 +95,7 @@ beforeEach( () => {
 	window.NewspackNodesData = pageData();
 	document.documentElement.lang = 'en-GB';
 	wire = intelWire();
+	wire.replies.lenses = { lenses: [], available: true };
 	actions = {
 		onOpenEntity: jest.fn(),
 		onOpenLens: jest.fn(),
@@ -124,7 +131,6 @@ const renderBlock = ( block, attributes, lastLook = LAST_LOOK ) =>
 				entity_key: null,
 				since: lastLook,
 				kept: true,
-				editing: false,
 				actions,
 			} }
 		>
@@ -364,6 +370,55 @@ describe( 'needs-attention', () => {
 		expect( actions.onOpenEntity ).toHaveBeenCalledWith(
 			'organization:prairie-signal'
 		);
+	} );
+
+	it( 'words a team view’s signal in the span the view counts by, and a client’s by the week', async () => {
+		wire.replies.briefing = FIVE;
+		wire.replies.lenses = {
+			lenses: [
+				{
+					lens_key: 'desk-awards',
+					name: 'Desk awards',
+					description: '',
+					filters: {
+						kinds: [],
+						topics: [],
+						roles: [],
+						sources: [],
+						entity: null,
+						days: null,
+						tiers: [],
+						by: null,
+						bucket: 'day',
+					},
+					week_items: 3,
+				},
+			],
+			available: true,
+		};
+		renderBlock( needsAttention, {
+			heading: 'Desk alerts',
+			max: 20,
+			clients: true,
+			lenses: [],
+		} );
+		const block = await screen.findByRole( 'region', {
+			name: 'Desk alerts',
+		} );
+		await waitFor( () =>
+			expect(
+				within( block )
+					.getAllByRole( 'listitem' )
+					.filter( ( row ) => /Desk awards/.test( row.textContent ) )
+					.every( ( row ) => /yesterday/.test( row.textContent ) )
+			).toBe( true )
+		);
+		within( block )
+			.getAllByRole( 'listitem' )
+			.filter( ( row ) => /Prairie Signal/.test( row.textContent ) )
+			.forEach( ( row ) =>
+				expect( row ).toHaveTextContent( /last week/ )
+			);
 	} );
 
 	it( 'leaves out the clients, and every lens it does not name', async () => {

@@ -202,6 +202,6 @@ final class ContextA8CP2Test extends TestCase {
 		$replayed->name( 'p2' );
 		$this->replay_config( $dump, $replayed );
 
-		$this->assertSame( [ self::HERON ], $this->read_private( $replayed, 'sites' ) );
+		$this->assertSame( [ self::HERON => false ], $this->read_private( $replayed, 'sites' ) );
 	}
 }

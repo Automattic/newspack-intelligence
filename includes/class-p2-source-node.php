@@ -36,7 +36,7 @@ class P2_Source_Node extends Source_Node {
 		'comments' => 'comments/?after=%s&number=' . self::PER_PAGE . '&fields=ID,post,content,date,author,URL',
 	];
 
-	/** @var list<string> Sites (`<name>.wordpress.com`) the `add_site` commands registered and the `remove_site` commands left, in call order. */
+	/** @var array<string,bool> Each site (`<name>.wordpress.com`) the `add_site` commands registered and the `remove_site` commands left, in call order, => false, the add naming no flag. */
 	protected array $sites = [];
 
 	/**
@@ -197,7 +197,7 @@ class P2_Source_Node extends Source_Node {
 	/** Queue each site's posts, then its comments, since the window opened. */
 	protected function begin(): void {
 		$after = \gmdate( 'Y-m-d\TH:i:s\Z', (int) Core::$now - self::WINDOW_SECONDS );
-		foreach ( $this->sites as $site ) {
+		foreach ( \array_keys( $this->sites ) as $site ) {
 			foreach ( self::ENDPOINTS as $query ) {
 				$this->queue( self::API . "{$site}/" . \sprintf( $query, $after ) );
 			}

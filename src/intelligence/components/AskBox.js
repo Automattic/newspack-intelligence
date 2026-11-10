@@ -12,12 +12,13 @@ import {
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
 import Citation from './Citation';
-import ItemRow from './ItemRow';
+import ItemRow, { ItemRows } from './ItemRow';
 import Refusal from './Refusal';
 import { Unread } from './Answer';
 import { pageFormat } from './format';
 import { daysSince } from './lensDraft';
 import { word } from './words';
+import { useEditing } from '../layout/PageContext';
 
 /** How often an ask still owed its answer is read again, on the Router's tick. */
 const POLL_MS = 3000;
@@ -344,20 +345,22 @@ function Answered( {
 					aria-label={ __( 'Sources', 'newspack-intelligence' ) }
 				>
 					<h3>{ __( 'Sources', 'newspack-intelligence' ) }</h3>
-					<ol
-						ref={ listRef }
-						className="newspack-intelligence__items"
-					>
-						{ answer.items.map( ( item ) => (
-							<ItemRow
-								key={ item.item_key }
-								item={ item }
-								onOpenEntity={ onOpenEntity }
-								onSave={ onSave }
-								canTune={ canTune }
-							/>
-						) ) }
-					</ol>
+					<ItemRows items={ answer.items }>
+						<ol
+							ref={ listRef }
+							className="newspack-intelligence__items"
+						>
+							{ answer.items.map( ( item ) => (
+								<ItemRow
+									key={ item.item_key }
+									item={ item }
+									onOpenEntity={ onOpenEntity }
+									onSave={ onSave }
+									canTune={ canTune }
+								/>
+							) ) }
+						</ol>
+					</ItemRows>
 				</section>
 			) }
 		</>
@@ -500,7 +503,8 @@ function useAnnounced( answer, gaveUp ) {
  * until **Clear**; the box stops asking once the ask has waited the `wait_s`
  * the server answers. The block's examples show, each as "Try: %s", until
  * the reader's first ask in this browser. The block's attributes a caller
- * leaves out read as their defaults (`askDefaults()`).
+ * leaves out read as their defaults (`askDefaults()`). While its layout is
+ * edited it asks nothing and marks no first ask, its **Ask** inert.
  *
  * @param {Object}                                                        props
  * @param {string}                                                        [props.label]       The field's visible label.
@@ -572,7 +576,11 @@ export default function AskBox( props ) {
 			OWED.includes( answer?.state ) &&
 			false !== answer.available,
 	} );
+	const editing = useEditing();
 	const send = ( text ) => {
+		if ( editing ) {
+			return;
+		}
 		sentRef.current = text;
 		if ( ! askedOnce ) {
 			markAsked();
@@ -607,6 +615,7 @@ export default function AskBox( props ) {
 						type="submit"
 						className="button button-primary"
 						disabled={ blank || ask.pending }
+						aria-disabled={ editing || undefined }
 					>
 						{ __( 'Ask', 'newspack-intelligence' ) }
 					</button>

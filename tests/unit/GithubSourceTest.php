@@ -164,7 +164,7 @@ final class GithubSourceTest extends TestCase {
 
 		$this->assert_add_refuses( $node, 'repo', 'repos', [ '   ', 'acme', 'acme/heron/extra', 'acme/heron repo', 'acme/heron?per_page=99', '/heron-repo', "acme/heron-repo\n" ], 'a GitHub owner/name' );
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_repo', [ 'Acme_9/heron.repo-2' ] ) );
-		$this->assertSame( [ 'Acme_9/heron.repo-2' ], $this->read_private( $node, 'repos' ) );
+		$this->assertSame( [ 'Acme_9/heron.repo-2' => false ], $this->read_private( $node, 'repos' ) );
 	}
 
 	/** A repeated add_repo keeps one entry. */
@@ -175,7 +175,7 @@ final class GithubSourceTest extends TestCase {
 		$node->interpreter()->dispatch( 'add_repo', [ 'acme/heron-repo' ] );
 		$node->interpreter()->dispatch( 'add_repo', [ 'acme/heron-repo' ] );
 
-		$this->assertSame( [ 'acme/heron-repo' ], $this->read_private( $node, 'repos' ) );
+		$this->assertSame( [ 'acme/heron-repo' => false ], $this->read_private( $node, 'repos' ) );
 	}
 
 	/** A body that is not a JSON list, a JSON object of issue-shaped rows among them, records nothing, logged. */
@@ -197,7 +197,7 @@ final class GithubSourceTest extends TestCase {
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_repo', [ 'owner/repo-a' ] ) );
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_repo', [ 'owner/repo-b' ] ) );
 
-		$this->assertSame( [ 'owner/repo-a', 'owner/repo-b' ], $this->read_private( $node, 'repos' ) );
+		$this->assertSame( [ 'owner/repo-a' => false, 'owner/repo-b' => false ], $this->read_private( $node, 'repos' ) );
 	}
 
 	public function test_repos_round_trip_through_the_dump(): void {
@@ -211,7 +211,7 @@ final class GithubSourceTest extends TestCase {
 		$replayed->name( 'github-replayed' );
 		$this->replay_config( $dump, $replayed );
 
-		$this->assertSame( [ 'owner/repo-a', 'owner/repo-b' ], $this->read_private( $replayed, 'repos' ) );
+		$this->assertSame( [ 'owner/repo-a' => false, 'owner/repo-b' => false ], $this->read_private( $replayed, 'repos' ) );
 	}
 
 	public function test_node_schema_declares_github_source_contract(): void {
@@ -245,7 +245,22 @@ final class GithubSourceTest extends TestCase {
 		} catch ( \InvalidArgumentException $e ) {
 			$this->assertSame( "remove_repo 'acme/ghost-repo' names a repo this node does not declare", $e->getMessage() );
 		}
-		$this->assertSame( [ 'acme/kite-repo' ], $this->read_private( $node, 'repos' ) );
+		$this->assertSame( [ 'acme/kite-repo' => false ], $this->read_private( $node, 'repos' ) );
+	}
+
+	/** A removal names its repo exactly as the add took it, so one padded with spaces is refused naming it. */
+	public function test_remove_repo_reads_its_repo_as_the_add_does(): void {
+		$node = new Github_Source_Node();
+		$node->name( 'github' );
+		$node->interpreter()->dispatch( 'add_repo', [ 'acme/kite-repo' ] );
+
+		try {
+			$node->interpreter()->dispatch( 'remove_repo', [ ' acme/kite-repo ' ] );
+			$this->fail( 'a padded repo was removed' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( "remove_repo ' acme/kite-repo ' names a repo this node does not declare", $e->getMessage() );
+		}
+		$this->assertSame( [ 'acme/kite-repo' => false ], $this->read_private( $node, 'repos' ) );
 	}
 
 	public function test_a_removed_repo_leaves_the_dump_and_its_replay(): void {
@@ -262,6 +277,6 @@ final class GithubSourceTest extends TestCase {
 		$replayed = new Github_Source_Node();
 		$replayed->name( 'github' );
 		$this->replay_config( $dump, $replayed );
-		$this->assertSame( [ 'acme/kite-repo' ], $this->read_private( $replayed, 'repos' ) );
+		$this->assertSame( [ 'acme/kite-repo' => false ], $this->read_private( $replayed, 'repos' ) );
 	}
 }

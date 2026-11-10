@@ -22,6 +22,24 @@ import { intelWire } from '../../__tests__/intelWire';
 import { COMPOSITIONS, GROUPS, LENSES, pageData, VOCABULARY } from './fixtures';
 import Lens, { CLOSED_LENS } from '../Lens';
 
+/** Each address Edit layout would load, in place of the navigation jsdom refuses. */
+const mockLoads = [];
+jest.mock( '../../layout/LayoutMenu', () => {
+	const { editSearch } = jest.requireActual( '../../layout/editMode' );
+	const { editLayoutControl } = jest.requireActual(
+		'../../layout/LayoutMenu'
+	);
+	return {
+		editLayoutControl: ( target ) => ( {
+			...editLayoutControl( target ),
+			onClick: () =>
+				mockLoads.push(
+					editSearch( globalThis.location.search, target )
+				),
+		} ),
+	};
+} );
+
 /** A reply that never comes, so its read stays owed. */
 const owed = () => new Promise( () => {} );
 
@@ -245,6 +263,26 @@ describe( 'Lens', () => {
 		).toEqual( [ 'Remove view…', 'Edit layout' ] );
 	} );
 
+	it( 'loads the layout editor on the team view open from its Edit layout', async () => {
+		props.canTune = true;
+		mockLoads.length = 0;
+		window.history.replaceState(
+			{},
+			'',
+			'/wp-admin/admin.php?page=newspack-intelligence&view=lenses'
+		);
+		render( <Harness /> );
+		fireEvent.click( await railButton( 'Developer shipping' ) );
+		const menu = await openMenu();
+		fireEvent.click(
+			within( menu ).getByRole( 'menuitem', { name: 'Edit layout' } )
+		);
+		expect( mockLoads ).toEqual( [
+			'?page=newspack-intelligence&view=lenses&edit=lens&lens=dev-shipping',
+		] );
+		window.history.replaceState( {}, '', '/' );
+	} );
+
 	it( 'saves a new view from one dialog, its key derived from the name and never shown', async () => {
 		props.canTune = true;
 		wire.replies.save_lens = { ok: true, event_id: 'ev-l1' };
@@ -320,6 +358,99 @@ describe( 'Lens', () => {
 		);
 	} );
 
+	it( 'gives a saved view back to the read once it lists the view as the server stored it', async () => {
+		props.canTune = true;
+		const [ support, shipping ] = LENSES.lenses;
+		let saved = false;
+		wire.replies.save_lens = () => {
+			saved = true;
+			return { ok: true, event_id: 'ev-l4', lens_key: 'support-desk' };
+		};
+		wire.replies.lenses = () => ( {
+			lenses: saved
+				? [
+						{
+							...support,
+							name: 'Prairie support',
+							filters: {
+								...support.filters,
+								topics: [ 'topic:tides' ],
+							},
+							week_items: 17,
+						},
+						shipping,
+				  ]
+				: LENSES.lenses,
+			available: true,
+		} );
+		render( <Harness /> );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Edit' } )
+		);
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Edit Support desk',
+		} );
+		fireEvent.change( within( dialog ).getByLabelText( 'Name' ), {
+			target: { value: 'Prairie support' },
+		} );
+		fireEvent.change( within( dialog ).getByLabelText( 'Topics' ), {
+			target: { value: 'topic:tides, topic:tides' },
+		} );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Save view' } )
+		);
+
+		expect(
+			await screen.findByRole( 'button', {
+				name: 'Prairie support 17 new',
+			} )
+		).toBeInTheDocument();
+	} );
+
+	it( 'sends a value its list repeats once, and gives way to the view it already stored', async () => {
+		props.canTune = true;
+		const [ support, shipping ] = LENSES.lenses;
+		const tided = {
+			...support,
+			filters: { ...support.filters, topics: [ 'topic:tides' ] },
+		};
+		let saved = false;
+		wire.replies.save_lens = () => {
+			saved = true;
+			return { ok: true, event_id: 'ev-l5', lens_key: 'support-desk' };
+		};
+		wire.replies.lenses = () => ( {
+			lenses: [ { ...tided, week_items: saved ? 18 : 29 }, shipping ],
+			available: true,
+		} );
+		render( <Harness /> );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Edit' } )
+		);
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Edit Support desk',
+		} );
+		fireEvent.change( within( dialog ).getByLabelText( 'Topics' ), {
+			target: { value: 'topic:tides, topic:tides' },
+		} );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Save view' } )
+		);
+
+		await waitFor( () =>
+			expect(
+				wire
+					.sent( 'save_lens' )[ 0 ]
+					.filter( ( token ) => token.startsWith( '--topic=' ) )
+			).toEqual( [ '--topic=topic:tides' ] )
+		);
+		expect(
+			await screen.findByRole( 'button', {
+				name: 'Support desk 18 new',
+			} )
+		).toBeInTheDocument();
+	} );
+
 	it( 'keeps the dialog and shows a refused save', async () => {
 		props.canTune = true;
 		wire.replies.save_lens = () =>
@@ -392,9 +523,12 @@ describe( 'Lens', () => {
 		);
 		expect(
 			await screen.findByText(
-				'Intelligence could not be read just now. Try again.'
+				'Intelligence could not be read just now.'
 			)
 		).toBeInTheDocument();
+		expect(
+			screen.queryByRole( 'button', { name: 'Try again' } )
+		).toBeNull();
 	} );
 
 	describe.each( [

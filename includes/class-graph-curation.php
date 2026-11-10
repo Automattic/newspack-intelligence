@@ -85,8 +85,11 @@ final class Graph_Curation {
 	 * `link_added`, carrying the role and the item's URL, which the
 	 * projector reads as a confirmation and the resolver writes as the
 	 * item's link. Refused for a topic, which only an extraction tags an
-	 * item with; for a link the highest-ranked judgment under any of the
-	 * entity's keys already confirms; and for an item outside the
+	 * item with; for a link whose highest-ranked judgment under any of the
+	 * entity's keys outranks the caller's, which the addition could neither
+	 * confirm nor change the role of; for a link that judgment confirms
+	 * that already stands in the role or a stronger one, so a confirmed
+	 * mention is still added as subject; and for an item outside the
 	 * restricted tier and an entity a caller without that tier cannot see,
 	 * since the link would show it to every reader.
 	 *
@@ -98,14 +101,20 @@ final class Graph_Curation {
 		$role              = Graph_Query::one_of( 'role', Core::as_string( $args['role'] ), Intel_Event::NAMING_ROLES );
 		$entity_key        = self::key( $args, 'entity' );
 		$item_key          = self::item_key( $args );
+		$caller            = \explode( ':', Intel_Event::caller(), 2 )[0];
 		[ $entity, $item ] = self::on_graph(
-			static function ( Row_Reader $r, array $g ) use ( $entity_key, $item_key ): array {
+			static function ( Row_Reader $r, array $g ) use ( $entity_key, $item_key, $role, $caller ): array {
 				$entity = Graph_Query::seen( $r, $g, $entity_key );
 				$item   = self::item( $r, $g, $item_key );
 				if ( 'topic' === self::type_of( $r, $entity ) ) {
 					throw new \InvalidArgumentException( \esc_html( "{$entity} is a topic; only an extraction tags an item with one" ) );
 				}
-				if ( self::confirmed( $r, $item_key, Graph_Query::keys_of( $entity, $g ) ) ) {
+				$keys = Graph_Query::keys_of( $entity, $g );
+				[ $state, $judge, $outranks ] = self::verdict( $r, $item_key, $keys, $caller ) ?? [ null, null, false ];
+				if ( $outranks ) {
+					throw new \InvalidArgumentException( \esc_html( "a {$judge} judged {$item_key} {$entity}, and an addition by an {$caller} ranks below it" ) );
+				}
+				if ( 'confirmed' === $state && self::stands( $r, $item_key, $keys, $role ) ) {
 					throw new \InvalidArgumentException( \esc_html( "already confirmed: {$item_key} {$entity}" ) );
 				}
 				if ( Intel_Tiers::unrestricted( $item ) && ! self::open( $r, $g, $entity ) ) {
@@ -118,16 +127,38 @@ final class Graph_Curation {
 	}
 
 	/**
-	 * Whether the highest-ranked judgment of an item's link under any of an
-	 * entity's keys confirms it, the latest among equals.
+	 * Whether an item's link under any of an entity's keys stands in a role
+	 * or a stronger one, `subject` over `mention`: a stored link or an
+	 * addition.
 	 *
 	 * @param Row_Reader   $r        The reader.
 	 * @param string       $item_key The item key.
 	 * @param list<string> $keys     The entity's keys.
+	 * @param string       $role     One of NAMING_ROLES.
 	 */
-	private static function confirmed( Row_Reader $r, string $item_key, array $keys ): bool {
-		$sql = 'SELECT state FROM ' . Intel_Graph_Row_Schema::all( $r, 'judgments' ) . ' j WHERE item_key = ? AND entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) ORDER BY ' . Graph_Query::judge_rank( 'actor_kind' ) . ' DESC, ts DESC LIMIT 1';
-		return 'confirmed' === ( $r->rows( $sql, [ $item_key, ...$keys ] )[0][0] ?? null );
+	private static function stands( Row_Reader $r, string $item_key, array $keys, string $role ): bool {
+		$roles = \array_slice( Intel_Event::NAMING_ROLES, 0, (int) \array_search( $role, Intel_Event::NAMING_ROLES, true ) + 1 );
+		$among = 'item_key = ? AND entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' ) AND role IN ( ' . Intel_Graph_Row_Schema::marks( $roles ) . ' )';
+		$binds = [ $item_key, ...$keys, ...$roles ];
+		return [] !== $r->rows( 'SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . " l WHERE {$among} UNION ALL SELECT 1 FROM " . Intel_Graph_Row_Schema::all( $r, 'added_links' ) . " a WHERE {$among} LIMIT 1", [ ...$binds, ...$binds ] );
+	}
+
+	/**
+	 * The highest-ranked judgment of an item's link under any of an
+	 * entity's keys, the latest among equals: its state, its actor kind and
+	 * whether that kind outranks the caller's; null for none.
+	 *
+	 * @param Row_Reader   $r        The reader.
+	 * @param string       $item_key The item key.
+	 * @param list<string> $keys     The entity's keys.
+	 * @param string       $caller   The caller's actor kind.
+	 * @return array{0:string,1:string,2:bool}|null
+	 */
+	private static function verdict( Row_Reader $r, string $item_key, array $keys, string $caller ): ?array {
+		$rank = Graph_Query::judge_rank( 'actor_kind' );
+		$sql  = "SELECT state, actor_kind, {$rank} > " . Graph_Query::judge_rank( '?' ) . ' FROM ' . Intel_Graph_Row_Schema::all( $r, 'judgments' ) . ' j WHERE item_key = ? AND entity_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . " ) ORDER BY {$rank} DESC, ts DESC LIMIT 1";
+		$row  = $r->rows( $sql, [ $caller, $item_key, ...$keys ] )[0] ?? null;
+		return null === $row ? null : [ Core::as_string( $row[0] ), Core::as_string( $row[1] ), 1 === Core::as_int( $row[2] ) ];
 	}
 
 	/**

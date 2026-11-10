@@ -36,7 +36,7 @@ final class IntelligenceBlocksTest extends TestCase {
 
 	private const HOLDER = 7311;
 
-	/** A fixture block reading the three keyed attributes the check reads. */
+	/** A fixture block reading the keyed attributes the check reads. */
 	private const PROBE = 'newspack-intelligence/probe';
 
 	protected function setUp(): void {
@@ -152,16 +152,38 @@ final class IntelligenceBlocksTest extends TestCase {
 		self::sign_in( self::HOLDER, 'tide-analyst', 'manage_options', 'newspack_intelligence_restricted' );
 		$this->assertSame( 'Quiet Buyer', Graph_Query::entity( [ 'key' => self::QUIET ] )['name'], 'the holder sees the entity itself' );
 
-		Intelligence_Blocks::check( self::PROBE, [ 'entity' => 'organization:harbor-gazette', 'topics' => [ 'topic:awards' ] ], 'newspack-intelligence/entity' );
-		foreach ( [ [ 'entity' => self::QUIET ], [ 'topics' => [ 'topic:awards', self::QUIET ] ] ] as $attributes ) {
-			$field = \array_key_first( $attributes );
-			try {
-				Intelligence_Blocks::check( self::PROBE, $attributes, 'newspack-intelligence/entity' );
-				$this->fail( "a layout's {$field} named an entity only restricted items cite" );
-			} catch ( \RuntimeException $refused ) {
-				$this->assertSame( self::PROBE . " {$field}: no entity: " . self::QUIET, $refused->getMessage() );
-			}
+		Intelligence_Blocks::check( self::PROBE, [ 'topics' => [ 'organization:harbor-gazette', 'topic:awards' ] ], 'newspack-intelligence/entity' );
+		try {
+			Intelligence_Blocks::check( self::PROBE, [ 'topics' => [ 'topic:awards', self::QUIET ] ], 'newspack-intelligence/entity' );
+			$this->fail( "a layout's topics named an entity only restricted items cite" );
+		} catch ( \RuntimeException $refused ) {
+			$this->assertSame( self::PROBE . ' topics: no entity: ' . self::QUIET, $refused->getMessage() );
 		}
+	}
+
+	/**
+	 * A key whose merge chain cycles is refused as a hidden one is, as a
+	 * `\RuntimeException` naming only the key the layout gave, so the page
+	 * reads it as a refused layout.
+	 */
+	public function test_check_refuses_a_key_whose_merge_chain_is_broken(): void {
+		$this->start_intel_graph();
+		$this->seed_desk();
+		$this->seed( self::entity( 'topic:tidal-loop', 'Tidal loop' ), self::entity( 'topic:tidal-ring', 'Tidal ring' ), self::merged( 'topic:tidal-loop', 'topic:tidal-ring' ), self::merged( 'topic:tidal-ring', 'topic:tidal-loop' ) );
+
+		try {
+			Intelligence_Blocks::check( self::PROBE, [ 'topics' => [ 'topic:awards', 'topic:tidal-loop' ] ], 'newspack-intelligence/entity' );
+			$this->fail( 'a layout named a key whose merge chain cycles' );
+		} catch ( \RuntimeException $refused ) {
+			$this->assertSame( self::PROBE . ' topics: no entity: topic:tidal-loop', $refused->getMessage() );
+		}
+	}
+
+	/** Every attribute the check reads is one a declared block carries. */
+	public function test_the_check_reads_only_declared_attributes(): void {
+		$declared = \array_merge( ...\array_values( \array_map( static fn ( array $block ): array => \array_keys( $block['attributes'] ), Intelligence_Blocks::BLOCKS ) ) );
+
+		$this->assertSame( [], \array_values( \array_diff( \array_keys( ( new \ReflectionClassConstant( Intelligence_Blocks::class, 'KEYED' ) )->getValue() ), $declared ) ) );
 	}
 
 	/**
@@ -176,11 +198,11 @@ final class IntelligenceBlocksTest extends TestCase {
 		\add_filter(
 			Composition::FILTER,
 			static function ( array $map ): array {
-				$map['newspack-intelligence']['blocks'][ self::PROBE ]['attributes']['entity'] = [ 'type' => 'string', 'default' => '' ];
+				$map['newspack-intelligence']['blocks'][ self::PROBE ]['attributes']['topics'] = [ 'type' => 'array', 'items' => [ 'type' => 'string' ], 'default' => [] ];
 				return $map;
 			}
 		);
-		\update_option( Composition_Store::OPTION_PREFIX . 'newspack-intelligence/entity', [ 'markup' => '<!-- wp:newspack-intelligence/probe {"entity":"' . self::QUIET . '"} /-->', 'actor' => 'tide-ops', 'ts' => 1792000300.25 ] );
+		\update_option( Composition_Store::OPTION_PREFIX . 'newspack-intelligence/entity', [ 'markup' => '<!-- wp:newspack-intelligence/probe {"topics":["' . self::QUIET . '"]} /-->', 'actor' => 'tide-ops', 'ts' => 1792000300.25 ] );
 
 		self::sign_in( 7312, 'tide-reader', 'newspack_intelligence_restricted' );
 		$read = Composition_Store::page_data( [ 'newspack-intelligence/entity' ] );
@@ -189,7 +211,7 @@ final class IntelligenceBlocksTest extends TestCase {
 
 		self::sign_in( self::HOLDER, 'tide-analyst', 'manage_options', 'newspack_intelligence_restricted' );
 		$this->assertSame(
-			self::PROBE . ' entity: no entity: ' . self::QUIET,
+			self::PROBE . ' topics: no entity: ' . self::QUIET,
 			Composition_Store::page_data( [ 'newspack-intelligence/entity' ] )['newspack-intelligence/entity']['error']
 		);
 	}
@@ -458,9 +480,21 @@ final class IntelligenceBlocksTest extends TestCase {
 
 	/** A board naming a place and a folder validates with both. */
 	public function test_a_folder_board_naming_a_place_and_a_folder_validates(): void {
+		$this->start_intel_graph();
+		$this->seed( [ Intel_Event::make( 'collection_created', [ 'collection_key' => 'coastline-picks', 'name' => 'Coastline picks' ], 'user:41', 'fixture-9' ) ] );
 		$tree = Composition::validate( 'newspack-intelligence/entity', '<!-- wp:newspack-intelligence/folder-board {"show":"linkedin","folders":["coastline-picks"]} /-->' );
 
 		$this->assertSame( [ 'show' => 'linkedin', 'folders' => [ 'coastline-picks' ] ], $tree[0]['attributes'] );
+	}
+
+	/** A board naming a folder never made is refused naming it. */
+	public function test_a_folder_board_naming_a_folder_never_made_is_refused(): void {
+		$this->start_intel_graph();
+		$this->seed( [ Intel_Event::make( 'collection_created', [ 'collection_key' => 'coastline-picks', 'name' => 'Coastline picks' ], 'user:41', 'fixture-9' ) ] );
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'newspack-intelligence/folder-board folders: no collection: harbor-clips' );
+
+		Composition::validate( 'newspack-intelligence/briefing', '<!-- wp:newspack-intelligence/folder-board {"folders":["coastline-picks","harbor-clips"]} /-->' );
 	}
 
 	/**

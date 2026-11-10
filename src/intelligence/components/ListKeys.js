@@ -41,22 +41,24 @@ const inDialog = ( element ) =>
  * previous of its rows, else its first; a letter presses the focused row's
  * control whose `aria-keyshortcuts` names it; `z` undoes the latest pending
  * write; and `?` shows the legend in a popover, which Escape hides. The keys
- * work while focus is inside the list, or anywhere on the page given `page`.
- * A key typed in a field or in a dialog, or with a modifier, is left alone.
+ * work while focus is inside the list, or anywhere on the page given `page`
+ * while the list sits in a shown view. A key typed in a field or in a dialog,
+ * or with a modifier, is left alone.
  * Above the list stand the legend and the switch turning the keys off, which
  * this browser remembers; on a narrow screen, that the keys need a keyboard.
  * A list whose legend is null takes no key and shows neither.
  *
  * A click on a control carrying `LEAVES` takes its row out, keys or none, so
  * once the list renders without it focus moves to the row in its place, else
- * the last.
+ * the last, else the list's heading.
  *
- * @param {Object}     props
- * @param {string}     props.rows     Selects each row's focusable element inside the list.
- * @param {() => void} props.onUndo   Undoes the latest pending write.
- * @param {?string}    [props.legend] The keys in words, or null for a list taking none.
- * @param {boolean}    [props.page]   Whether the keys work from anywhere on the page.
- * @param {DrawnList}  props.children The list, or a function drawing it described by the legend's id.
+ * @param {Object}             props
+ * @param {string}             props.rows      Selects each row's focusable element inside the list.
+ * @param {() => void}         props.onUndo    Undoes the latest pending write.
+ * @param {?string}            [props.legend]  The keys in words, or null for a list taking none.
+ * @param {boolean}            [props.page]    Whether the keys work from anywhere on the page.
+ * @param {() => ?HTMLElement} [props.heading] The list's heading, which takes focus once the last row leaves.
+ * @param {DrawnList}          props.children  The list, or a function drawing it described by the legend's id.
  * @return {import('react').ReactElement} The legend and the list.
  */
 export default function ListKeys( {
@@ -64,6 +66,7 @@ export default function ListKeys( {
 	onUndo,
 	legend = __( 'Keys: J and K to move, Z undo.', 'newspack-intelligence' ),
 	page = false,
+	heading,
 	children,
 } ) {
 	const narrow = useNarrow();
@@ -81,12 +84,13 @@ export default function ListKeys( {
 		const at = judged.current;
 		judged.current = null;
 		const left = list.current.querySelectorAll( rows );
-		( left[ at ] ?? left[ left.length - 1 ] )?.focus();
+		( left[ at ] ?? left[ left.length - 1 ] ?? heading?.() )?.focus();
 	} );
 
 	const onKeyDown = ( event ) => {
 		const { key, target } = event;
 		if (
+			null !== list.current.closest( '[hidden]' ) ||
 			event.altKey ||
 			event.ctrlKey ||
 			event.metaKey ||

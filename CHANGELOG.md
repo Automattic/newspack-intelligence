@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A churn item keeps its client.** A re-extraction that keeps a churn kind its check passed keeps the stored kind subject with it, and the Briefing files a churn report under the client it names, not the first client in the item.
+- **The Briefing's category and otherwise counts span the week**, as its total does, not only the 50 items listed.
+- **`add_link` follows the judgment ranks.** It is refused where a higher-ranked judgment rejects the link, and a confirmed mention can be added as subject. A link added under a merged key is written under its survivor.
+- **"How this was read" opens for any item**, a key holding `/` included.
+- **One write and one Undo per item list**, so `z` reaches a removed chip and Undo bars never stack. An answer's sources render again.
+- **Composed pages:** block writes and the Ask box are inert while a layout is edited; a tab change or Back asks before discarding an edit, and Back closes a profile; a layout that no longer reads offers a curator **Restore default**; a block naming a team view reads through its filters wherever it stands; identical reads are sent once a page; jump links target headings by id; a lens holds no longer after the server stores it.
+- Review keys are idle while Review is hidden; a merge cancelled mid-send still lands quietly; a cancelled drag disarms the Folders board; Search never repaints items after a refusal; the Excluded list is worded; an empty Mark-as-used day is refused; a watch says "saved" once the save lands; focus follows the spec in dialogs and emptied lists.
+- A folder-board naming a collection that was never made is refused; a team view's week count reads no empty page; a checked list's remove matches its add.
+
+### Changed
+
+- Theme groups page through the shared list's pager.
+
+### Security
+
+- **The Briefing's signals list only clients the caller may see.** A client only restricted items mention, carrying a churn note, no longer shows a reader its key, name or note.
+- A layout naming a key whose merge chain is broken is refused without exposing the key.
+
 ## [0.40.0] - 2026-11-10
 
 ### Added

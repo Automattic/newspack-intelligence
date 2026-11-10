@@ -428,7 +428,7 @@ final class SlackSourceTest extends TestCase {
 
 		$this->assert_add_refuses( $node, 'channel', 'channels', [ '#newspack-product', 'c0heron11', 'C0HERON1', 'D0HERON11', 'C0HERON11&cursor=x', ' C0HERON11', "C0HERON11\n" ], 'a Slack channel id' );
 		$this->assertSame( "ok\n", $node->interpreter()->dispatch( 'add_channel', [ 'G0KESTREL7' ] ) );
-		$this->assertSame( [ 'G0KESTREL7' ], $this->read_private( $node, 'channels' ) );
+		$this->assertSame( [ 'G0KESTREL7' => false ], $this->read_private( $node, 'channels' ) );
 	}
 
 	/** The channels round-trip through the dump, a removed one left out. */
@@ -443,7 +443,7 @@ final class SlackSourceTest extends TestCase {
 		$this->replay_config( $dump, $replayed );
 
 		$this->assertStringContainsString( 'command_node slack:config add_channel C0HERON11', $dump );
-		$this->assertSame( [ 'C0HERON11', 'C0PLOVER22' ], $this->read_private( $replayed, 'channels' ) );
+		$this->assertSame( [ 'C0HERON11' => false, 'C0PLOVER22' => false ], $this->read_private( $replayed, 'channels' ) );
 	}
 
 	/**
@@ -508,19 +508,31 @@ final class SlackSourceTest extends TestCase {
 	public function test_re_adding_a_channel_replaces_its_skip_bots(): void {
 		$node = $this->slack( 'G0TERN44X' );
 		$node->interpreter()->dispatch( 'add_channel', [ 'C0SANDPIPER3', '--skip-bots' ] );
-		$this->assertSame( [ 'C0SANDPIPER3' ], $this->read_private( $node, 'skip_bots' ) );
+		$this->assertSame( [ 'G0TERN44X' => false, 'C0SANDPIPER3' => true ], $this->read_private( $node, 'channels' ) );
 
 		$node->interpreter()->dispatch( 'add_channel', [ 'C0SANDPIPER3' ] );
-		$this->assertSame( [], $this->read_private( $node, 'skip_bots' ) );
+		$this->assertSame( [ 'G0TERN44X' => false, 'C0SANDPIPER3' => false ], $this->read_private( $node, 'channels' ) );
 
 		$node->interpreter()->dispatch( 'add_channel', [ 'C0SANDPIPER3', '--skip-bots' ] );
 		$node->interpreter()->dispatch( 'add_channel', [ 'G0TERN44X', '--skip-bots' ] );
-		$this->assertSame( [ 'G0TERN44X', 'C0SANDPIPER3' ], $this->read_private( $node, 'channels' ) );
-		$this->assertSame( [ 'C0SANDPIPER3', 'G0TERN44X' ], $this->read_private( $node, 'skip_bots' ) );
+		$this->assertSame( [ 'G0TERN44X' => true, 'C0SANDPIPER3' => true ], $this->read_private( $node, 'channels' ) );
 
 		$node->interpreter()->dispatch( 'remove_channel', [ 'C0SANDPIPER3' ] );
-		$this->assertSame( [ 'G0TERN44X' ], $this->read_private( $node, 'channels' ) );
-		$this->assertSame( [ 'G0TERN44X' ], $this->read_private( $node, 'skip_bots' ) );
+		$this->assertSame( [ 'G0TERN44X' => true ], $this->read_private( $node, 'channels' ) );
+	}
+
+	/** A flagged list's removal names its channel exactly as the add took it, so one padded with spaces is refused naming it. */
+	public function test_remove_channel_reads_its_channel_as_the_add_does(): void {
+		$node = $this->slack();
+		$node->interpreter()->dispatch( 'add_channel', [ 'C0SANDPIPER3', '--skip-bots' ] );
+
+		try {
+			$node->interpreter()->dispatch( 'remove_channel', [ ' C0SANDPIPER3 ' ] );
+			$this->fail( 'a padded channel was removed' );
+		} catch ( \InvalidArgumentException $e ) {
+			$this->assertSame( "remove_channel ' C0SANDPIPER3 ' names a channel this node does not declare", $e->getMessage() );
+		}
+		$this->assertSame( [ 'C0SANDPIPER3' => true ], $this->read_private( $node, 'channels' ) );
 	}
 
 	/** A channel's skip-bots setting round-trips through the dump, in the channels' order. */
@@ -535,7 +547,6 @@ final class SlackSourceTest extends TestCase {
 		$this->replay_config( $dump, $replayed );
 
 		$this->assertStringContainsString( "command_node slack:config add_channel G0TERN44X\ncommand_node slack:config add_channel C0SANDPIPER3 --skip-bots\n", $dump );
-		$this->assertSame( [ 'G0TERN44X', 'C0SANDPIPER3' ], $this->read_private( $replayed, 'channels' ) );
-		$this->assertSame( [ 'C0SANDPIPER3' ], $this->read_private( $replayed, 'skip_bots' ) );
+		$this->assertSame( [ 'G0TERN44X' => false, 'C0SANDPIPER3' => true ], $this->read_private( $replayed, 'channels' ) );
 	}
 }

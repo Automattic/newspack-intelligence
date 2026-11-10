@@ -297,14 +297,14 @@ final class Graph_Query {
 		if ( null === $group ) {
 			[ $limit, $offset ] = self::page( [ 'limit' => $args['limit'] ?? self::DEFAULT_LIMIT ] + $args );
 			$sort               = self::sort_of( $args );
-			return self::through( $args, self::NO_ITEMS, static fn ( Row_Reader $r, array $g, array $filter, array $lens ): array => self::items( $r, self::within( $r, $g, $lens, $tiers ), $filter, $limit, $offset, self::SORTS[ $sort ] ) ) + [ 'sort' => $sort ];
+			return self::through( $args, self::NO_ITEMS, static fn ( Row_Reader $r, array $g, array $filter, array $lens ): array => self::items( $r, self::tiered( $r, $g, $lens['tiers'], $tiers ), $filter, $limit, $offset, self::SORTS[ $sort ] ) ) + [ 'sort' => $sort ];
 		}
 		self::one_of( 'group', $group, self::GROUPINGS );
 		if ( null !== $args['sort'] ) {
 			throw new \InvalidArgumentException( 'sort does not apply to groups, which rank by severity, then importance, then clients, then recency' );
 		}
 		[ $limit, $offset ] = self::page( [ 'limit' => $args['limit'] ?? self::GROUP_LIMIT ] + $args );
-		return self::through( $args, self::NO_GROUPS, static fn ( Row_Reader $r, array $g, array $filter, array $lens ): array => self::grouped( $r, self::within( $r, $g, $lens, $tiers ), [ 'days' => $filter['days'] ?? self::last_days( self::GROUP_DAYS ) ] + $filter, $group, $limit, $offset ) );
+		return self::through( $args, self::NO_GROUPS, static fn ( Row_Reader $r, array $g, array $filter, array $lens ): array => self::grouped( $r, self::tiered( $r, $g, $lens['tiers'], $tiers ), [ 'days' => $filter['days'] ?? self::last_days( self::GROUP_DAYS ) ] + $filter, $group, $limit, $offset ) );
 	}
 
 	/**
@@ -387,25 +387,6 @@ final class Graph_Query {
 			'groups' => \array_values( $groups ),
 			'total'  => Core::as_int( $rows[0][0] ?? 0 ),
 		];
-	}
-
-	/**
-	 * The graph a lensed read opens narrowed to the call's `$tiers` too,
-	 * intersected with the caller's and the lens's, so a call's tiers narrow
-	 * and never widen; the graph itself when the call names none.
-	 *
-	 * @param Row_Reader   $r     The reader.
-	 * @param Graph        $g     The caller's graph, through the lens.
-	 * @param Lens         $lens  The lens.
-	 * @param list<string> $tiers The call's tiers.
-	 * @return Graph
-	 */
-	private static function within( Row_Reader $r, array $g, array $lens, array $tiers ): array {
-		if ( [] === $tiers ) {
-			return $g;
-		}
-		$kept = \array_intersect( Intel_Tiers::readable(), $tiers, [] === $lens['tiers'] ? $tiers : $lens['tiers'] );
-		return self::bound( $r, $g['survivors'], \array_values( $kept ) );
 	}
 
 	/**
@@ -788,11 +769,12 @@ final class Graph_Query {
 	 * Whether the caller may see a key: its chain resolves and `visible()`
 	 * answers it.
 	 *
+	 * @api Intelligence_Blocks checks a layout's keys by it.
 	 * @param Row_Reader $r   The reader.
 	 * @param Graph      $g   The graph the read opened.
 	 * @param string     $key An entity key.
 	 */
-	private static function sees( Row_Reader $r, array $g, string $key ): bool {
+	public static function sees( Row_Reader $r, array $g, string $key ): bool {
 		return '' !== ( $g['survivors'][ $key ] ?? $key ) && null !== self::visible( $r, $g, $key );
 	}
 
@@ -809,12 +791,12 @@ final class Graph_Query {
 	private static function new_items( Row_Reader $r, array $g, array $lens ): int {
 		$call         = self::filter_of( [] );
 		$call['days'] = self::last_days( self::NEW_DAYS );
-		return Core::as_int( self::items( $r, self::tiered( $r, $g, $lens ), self::over( $lens, $call ), 0, 0 )['total'] );
+		return Core::as_int( self::items( $r, self::tiered( $r, $g, $lens['tiers'] ), self::over( $lens, $call ), 0, 0 )['total'] );
 	}
 
 	/**
-	 * One page of matching items, the count of all of them, and the entities
-	 * each is about; `$within` joins a set the items must be in, the fields
+	 * One page of matching items, none read for a page of 0, the count of
+	 * all of them, and the entities each is about; `$within` joins a set the items must be in, the fields
 	 * it adds after the links, and the order it lists them in, and `$links`
 	 * are the link roles the filters read.
 	 *
@@ -835,7 +817,7 @@ final class Graph_Query {
 		[ $total, $summary ]             = null === $since
 			? [ Core::as_int( $r->rows( "{$with} SELECT COUNT(*) FROM ri i {$within['join']} WHERE {$where}", $binds )[0][0] ?? 0 ), null ]
 			: self::summed( $r, $with, $within['join'], $where, $binds, $since );
-		$page                            = $r->rows(
+		$page                            = 0 === $limit ? [] : $r->rows(
 			"{$with} SELECT " . \implode( ', ', $columns ) . " FROM ri i {$within['join']} LEFT JOIN " . Intel_Graph_Row_Schema::all( $r, 'extractions' )
 			. " x ON x.item_key = i.item_key WHERE {$where} ORDER BY {$within['order']} LIMIT ? OFFSET ?",
 			[ ...$binds, $limit, $offset ]
@@ -1654,7 +1636,7 @@ final class Graph_Query {
 	 */
 	private static function lensed( Row_Reader $r, array $g, array $call, ?string $name, \Closure $read ): mixed {
 		$lens = null === $name ? self::no_lens() : self::lens_of( self::saved_lens( $r, $name ) ?? throw new \InvalidArgumentException( \esc_html( "no lens: {$name}" ) ) );
-		return $read( $r, self::tiered( $r, $g, $lens ), self::over( $lens, $call ), $lens );
+		return $read( $r, self::tiered( $r, $g, $lens['tiers'] ), self::over( $lens, $call ), $lens );
 	}
 
 	/**
@@ -1687,25 +1669,25 @@ final class Graph_Query {
 	}
 
 	/**
-	 * Which of `$keys` a saved lens admits, as `search` through it reads
-	 * them, under the caller's tiers narrowed to the lens's: one statement,
-	 * each filter reading the item's own links (`narrowed()` inline).
+	 * Which of the items `most_important()` reads over the last `$days` UTC
+	 * days a saved lens admits, as `search` through it reads them, under the
+	 * caller's tiers narrowed to the lens's: one statement, each filter
+	 * reading the item's own links (`narrowed()` inline).
 	 *
-	 * @api Intelligence_Briefing files the week's items by it.
-	 * @param Row_Reader   $r    The reader.
-	 * @param Graph        $g    The caller's graph.
-	 * @param string       $lens The lens key.
-	 * @param list<string> $keys The item keys.
+	 * @api Intelligence_Briefing files and counts the week's items by it.
+	 * @param Row_Reader $r    The reader.
+	 * @param Graph      $g    The caller's graph.
+	 * @param string     $lens The lens key.
+	 * @param int        $days How many days, today the last.
 	 * @return list<string> The keys it admits.
 	 * @throws \InvalidArgumentException On a lens that was never saved.
 	 */
-	public static function admitted( Row_Reader $r, array $g, string $lens, array $keys ): array {
-		$saved = self::lens_of( self::saved_lens( $r, $lens ) ?? throw new \InvalidArgumentException( \esc_html( "no lens: {$lens}" ) ) );
-		if ( [] === $keys ) {
-			return [];
-		}
-		[ $with, $where, $lead, $binds ] = self::narrowed( $r, self::tiered( $r, $g, $saved ), self::over( $saved, self::filter_of( [] ) ), false, Intel_Event::ABOUT_ROLES, true );
-		$rows                            = $r->rows( "{$with} SELECT i.item_key FROM ri i WHERE {$where} AND i.item_key IN ( " . Intel_Graph_Row_Schema::marks( $keys ) . ' )', [ ...$lead, ...$binds, ...$keys ] );
+	public static function admitted( Row_Reader $r, array $g, string $lens, int $days ): array {
+		$saved                           = self::lens_of( self::saved_lens( $r, $lens ) ?? throw new \InvalidArgumentException( \esc_html( "no lens: {$lens}" ) ) );
+		$time                            = Intel_Graph_Row_Schema::ITEM_TIME;
+		[ $with, $where, $lead, $binds ] = self::narrowed( $r, self::tiered( $r, $g, $saved['tiers'] ), self::over( $saved, self::filter_of( [] ) ), false, Intel_Event::ABOUT_ROLES, true );
+		[ $naming, $naming_binds ]       = self::link_filter( $r, Intel_Event::NAMING_ROLES, true, '', '1', [] );
+		$rows                            = $r->rows( "{$with} SELECT i.item_key FROM ri i WHERE {$where} AND {$time} >= ? AND {$time} < ? AND {$naming}", [ ...$lead, ...$binds, ...self::last_days( $days ), ...$naming_binds ] );
 		return \array_map( static fn ( array $row ): string => Core::as_string( $row[0] ), $rows );
 	}
 
@@ -1746,16 +1728,18 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The caller's graph with `ri` narrowed to a lens's tiers, never widened;
-	 * the graph itself for a lens naming none.
+	 * The caller's graph with `ri` narrowed to the tiers every set given
+	 * names, an empty set narrowing nothing, so it never widens; the graph
+	 * itself when every set is empty.
 	 *
-	 * @param Row_Reader $r    The reader.
-	 * @param Graph      $g    The caller's graph.
-	 * @param Lens       $lens The lens.
+	 * @param Row_Reader   $r     The reader.
+	 * @param Graph        $g     The caller's graph.
+	 * @param list<string> $tiers Each set of tiers: a lens's, a call's.
 	 * @return Graph
 	 */
-	private static function tiered( Row_Reader $r, array $g, array $lens ): array {
-		return [] === $lens['tiers'] ? $g : self::bound( $r, $g['survivors'], \array_values( \array_intersect( Intel_Tiers::readable(), $lens['tiers'] ) ) );
+	private static function tiered( Row_Reader $r, array $g, array ...$tiers ): array {
+		$sets = \array_values( \array_filter( $tiers, static fn ( array $set ): bool => [] !== $set ) );
+		return [] === $sets ? $g : self::bound( $r, $g['survivors'], \array_values( \array_intersect( Intel_Tiers::readable(), ...$sets ) ) );
 	}
 
 	/**
@@ -1793,6 +1777,29 @@ final class Graph_Query {
 			'by'     => $text( $saved['by'] ),
 			'bucket' => $text( $saved['bucket'] ),
 		];
+	}
+
+	/**
+	 * Each of the items given with the open clients its kind claims, as the
+	 * summary of `most_important()` counts them (`item_clients()`), in one
+	 * statement; an item claiming none is left out.
+	 *
+	 * @api Intelligence_Briefing files a churn report under its kind subject by it.
+	 * @param Row_Reader   $r    The reader.
+	 * @param Graph        $g    The graph the read opened.
+	 * @param list<string> $keys The item keys.
+	 * @return array<string,list<string>> Each item claiming a client => those clients.
+	 */
+	public static function claimed( Row_Reader $r, array $g, array $keys ): array {
+		$claimed = [];
+		if ( [] === $keys ) {
+			return $claimed;
+		}
+		[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( ' . Intel_Graph_Row_Schema::marks( $keys ) . ' )', $keys, Intel_Event::NAMING_ROLES );
+		foreach ( $r->rows( "{$g['with']}{$live}, " . self::item_clients( $r ) . ' SELECT item_key, entity_key FROM ic WHERE claimed ORDER BY item_key, entity_key', [ ...$g['binds'], ...$live_binds ] ) as [ $item, $entity ] ) {
+			$claimed[ Core::as_string( $item ) ][] = Core::as_string( $entity );
+		}
+		return $claimed;
 	}
 
 	/**

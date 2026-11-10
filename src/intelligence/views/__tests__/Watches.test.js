@@ -591,6 +591,78 @@ describe( 'Watches', () => {
 			).toBe( '1' );
 		} );
 
+		it( 'undoes a chip removal in a match with z, on one Undo', async () => {
+			wire.replies.watch_matches = {
+				items: harborNotes( 3 ).map( ( item, n ) => ( {
+					...item,
+					entities: [
+						{
+							entity_key: `organization:kestrel-${ n }`,
+							name: `Kestrel Desk ${ n }`,
+							state: 'asserted',
+							role: 'subject',
+							client: false,
+						},
+					],
+				} ) ),
+				total: 3,
+				available: true,
+			};
+			render( <Harness canTune /> );
+			await openAcme();
+			await screen.findByText( 'Harbor Ledger note 3' );
+			fakeUndoClock();
+			fireEvent.click(
+				screen.getByRole( 'button', {
+					name: 'Remove Kestrel Desk 1 from this item',
+				} )
+			);
+			expect(
+				screen.queryByRole( 'button', { name: 'Kestrel Desk 1' } )
+			).toBeNull();
+			const [ first ] = items();
+			act( () => first.focus() );
+			fireEvent.keyDown( first, { key: 'z' } );
+			expect(
+				screen.getByRole( 'button', { name: 'Kestrel Desk 1' } )
+			).toBeInTheDocument();
+			await elapse( UNDO_MS * 2 );
+			expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+		} );
+
+		it( 'hands focus to the next match on Mark seen, and to the watch once none is left', async () => {
+			render( <Harness /> );
+			await openAcme();
+			await screen.findByText( 'Harbor Ledger note 3' );
+			fakeUndoClock();
+			await act( async () =>
+				fireEvent.click(
+					within(
+						await matchRow( 'Harbor Ledger note 2' )
+					).getByRole( 'button', { name: 'Mark seen' } )
+				)
+			);
+			expect( document.activeElement ).toBe( items()[ 1 ] );
+			expect( items()[ 1 ] ).toHaveAccessibleName(
+				/^Harbor Ledger note 3/
+			);
+			for ( const title of [
+				'Harbor Ledger note 3',
+				'Harbor Ledger note 1',
+			] ) {
+				await act( async () =>
+					fireEvent.click(
+						within( await matchRow( title ) ).getByRole( 'button', {
+							name: 'Mark seen',
+						} )
+					)
+				);
+			}
+			expect( document.activeElement ).toBe(
+				screen.getByRole( 'heading', { name: 'Acme complaints' } )
+			);
+		} );
+
 		it( 'undoes the latest mark with z', async () => {
 			render( <Harness /> );
 			await openAcme();
@@ -901,6 +973,7 @@ describe( 'Watches', () => {
 		expect(
 			screen.queryByRole( 'button', { name: 'Nothing followed' } )
 		).toBeNull();
+		expect( screen.queryByText( 'Nothing followed saved.' ) ).toBeNull();
 	} );
 
 	it( 'moves focus to the Name field as the form opens', async () => {

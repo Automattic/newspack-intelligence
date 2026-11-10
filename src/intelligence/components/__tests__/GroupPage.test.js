@@ -3,34 +3,63 @@
  * GroupPage renders a lens's ranked theme groups in the answer's order, each
  * headed by its theme with its count, kind, newest day and client chips, its
  * items behind a disclosure button; a group of one is that item's row; and
- * it pages by group.
+ * it pages by group through the shared DataViews list's pager.
  */
 
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, within } from '@testing-library/react';
+import { Core } from '@newspack-nodes/runtime';
 import GroupPage from '../GroupPage';
 import { GROUPS, pageData } from '../../views/__tests__/fixtures';
 
 beforeEach( () => {
 	window.NewspackNodesData = pageData();
+	jest.spyOn( Core, 'now' ).mockReturnValue(
+		Date.UTC( 2027, 1, 3, 12 ) / 1000
+	);
 } );
 
-const page = ( props = {} ) =>
+afterEach( () => {
+	jest.restoreAllMocks();
+} );
+
+/**
+ * Render the page, settled past the list's first layout.
+ *
+ * @param {Object} props Props over the defaults.
+ * @return {Promise<void>} Settles once the list has laid out.
+ */
+const page = async ( props = {} ) => {
 	render(
 		<GroupPage
 			answer={ GROUPS }
-			starts={ [ 0 ] }
-			onStarts={ jest.fn() }
+			view={ { type: 'list', page: 1, perPage: 4 } }
+			onChangeView={ jest.fn() }
+			paginationInfo={ { totalItems: 41, totalPages: 11 } }
+			empty="No stories."
 			onOpenEntity={ jest.fn() }
 			{ ...props }
 		/>
 	);
+	await act( async () => {} );
+};
 
 const groupOf = ( theme ) =>
 	screen.getByRole( 'heading', { level: 4, name: theme } ).closest( 'li' );
 
+/**
+ * A group's meta line, cell by cell.
+ *
+ * @param {HTMLElement} group The group's row.
+ * @return {string[]} Each cell's text.
+ */
+const cellsOf = ( group ) =>
+	[ ...group.querySelector( '.newspack-intelligence__meta' ).children ].map(
+		( cell ) => cell.textContent
+	);
+
 describe( 'GroupPage', () => {
-	it( 'heads each group with its theme, in the order the answer gives', () => {
-		page();
+	it( 'heads each group with its theme, in the order the answer gives', async () => {
+		await page();
 		expect(
 			screen
 				.getAllByRole( 'heading', { level: 4 } )
@@ -38,23 +67,25 @@ describe( 'GroupPage', () => {
 		).toEqual( [ 'site blocked from sending email', 'bot registrations' ] );
 	} );
 
-	it( 'shows a group’s count, kind and newest day', () => {
-		page();
+	it( 'shows a group’s count, kind and newest day as cells, never dotted', async () => {
+		await page();
 		expect(
-			within( groupOf( 'site blocked from sending email' ) ).getByText(
-				'12 items · Grumble · 2026-09-23'
-			)
-		).toBeInTheDocument();
+			cellsOf( groupOf( 'site blocked from sending email' ) )
+		).toEqual( [ '12 items', 'Grumble', '23 Sep 2026' ] );
+		expect( cellsOf( groupOf( 'bot registrations' ) ) ).toEqual( [
+			'3 items',
+			'Outage',
+			'24 Sep 2026',
+		] );
 		expect(
-			within( groupOf( 'bot registrations' ) ).getByText(
-				'3 items · Outage · 2026-09-24'
-			)
-		).toBeInTheDocument();
+			groupOf( 'bot registrations' ).querySelector( 'time' )
+		).toHaveAttribute( 'dateTime', '2026-09-24' );
+		expect( document.body ).not.toHaveTextContent( '·' );
 	} );
 
-	it( 'opens each client of a group from its chip', () => {
+	it( 'opens each client of a group from its chip', async () => {
 		const onOpenEntity = jest.fn();
-		page( { onOpenEntity } );
+		await page( { onOpenEntity } );
 		const group = groupOf( 'site blocked from sending email' );
 		fireEvent.click(
 			within( group ).getByRole( 'button', { name: 'Harbor Ledger' } )
@@ -67,9 +98,9 @@ describe( 'GroupPage', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'expands a group onto its item rows and collapses it again', () => {
+	it( 'expands a group onto its item rows and collapses it again', async () => {
 		const onSave = jest.fn();
-		page( { onSave } );
+		await page( { onSave } );
 		const toggle = screen.getByRole( 'button', {
 			name: 'Show items: site blocked from sending email',
 		} );
@@ -115,8 +146,8 @@ describe( 'GroupPage', () => {
 		).toBeNull();
 	} );
 
-	it( 'renders a group of one as that item’s row, themed or not', () => {
-		page();
+	it( 'renders a group of one as that item’s row, themed or not', async () => {
+		await page();
 		expect(
 			screen.queryByRole( 'heading', { name: 'storage extension' } )
 		).toBeNull();
@@ -135,8 +166,8 @@ describe( 'GroupPage', () => {
 		).toHaveLength( 2 );
 	} );
 
-	it( 'heads a group that answers no items and no clients, disclosing none', () => {
-		page( {
+	it( 'heads a group that answers no items and no clients, disclosing none', async () => {
+		await page( {
 			answer: {
 				groups: [
 					{
@@ -150,9 +181,11 @@ describe( 'GroupPage', () => {
 			},
 		} );
 		const group = groupOf( 'registration bots' );
-		expect(
-			within( group ).getByText( '1 item · Outage · 2026-09-25' )
-		).toBeInTheDocument();
+		expect( cellsOf( group ) ).toEqual( [
+			'1 item',
+			'Outage',
+			'25 Sep 2026',
+		] );
 		fireEvent.click(
 			within( group ).getByRole( 'button', {
 				name: 'Show items: registration bots',
@@ -166,9 +199,9 @@ describe( 'GroupPage', () => {
 		).toEqual( [ 'Hide items' ] );
 	} );
 
-	it( 'renders two one-story groups sharing a story as two keyed rows', () => {
+	it( 'renders two one-story groups sharing a story as two keyed rows', async () => {
 		const story = GROUPS.groups[ 2 ].items[ 0 ];
-		page( {
+		await page( {
 			answer: {
 				groups: [
 					{ ...GROUPS.groups[ 2 ], items: [ story ] },
@@ -192,8 +225,8 @@ describe( 'GroupPage', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'says the fixed order the groups are ranked in, and offers no switch', () => {
-		page();
+	it( 'says the fixed order the groups are ranked in, and offers no switch', async () => {
+		await page();
 		expect(
 			screen.getByText(
 				'Ranked by severity, importance, clients affected, then recency'
@@ -204,11 +237,20 @@ describe( 'GroupPage', () => {
 		).toBeNull();
 	} );
 
-	it( 'pages by group, starting the next page past the groups shown', () => {
-		const onStarts = jest.fn();
-		page( { starts: [ 0, 4 ], onStarts } );
-		expect( screen.getByText( '4 of 41 groups' ) ).toBeInTheDocument();
+	it( 'pages by group through the shared list’s pager', async () => {
+		const onChangeView = jest.fn();
+		await page( {
+			view: { type: 'list', page: 3, perPage: 4 },
+			onChangeView,
+		} );
+		expect( screen.getByText( 'Page 3 of 11' ) ).toBeInTheDocument();
 		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
-		expect( onStarts ).toHaveBeenCalledWith( [ 0, 4, 8 ] );
+		expect( onChangeView ).toHaveBeenLastCalledWith(
+			expect.objectContaining( { page: 4, perPage: 4 } )
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'Previous' } ) );
+		expect( onChangeView ).toHaveBeenLastCalledWith(
+			expect.objectContaining( { page: 2 } )
+		);
 	} );
 } );
