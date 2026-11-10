@@ -34,7 +34,7 @@ coverage_php "$(dirname "$SCRIPT_DIR")"
 find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'newspack-intelligence-test-*' -mmin +120 -exec rm -rf {} +
 
 # Run PHPUnit with coverage
-"${COVERAGE_PHP[@]}" "$PHPUNIT" --configuration phpunit.xml \
+"${COVERAGE_PHP[@]}" -d memory_limit=2G "$PHPUNIT" --configuration phpunit.xml \
     --coverage-clover "${OUT}"/newspack-intelligence-coverage/clover.xml \
     --coverage-html "${OUT}"/newspack-intelligence-coverage \
 	--enforce-time-limit \
