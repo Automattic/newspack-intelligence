@@ -5,7 +5,13 @@
  * operator alone.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { HEALTHY, okSource } from '../../__tests__/healthFixture';
@@ -13,7 +19,7 @@ import { pageData } from '../../views/__tests__/fixtures';
 import { CanManage } from '../../components/Answer';
 import { BLOCK_VIEWS } from '..';
 
-const { View } = BLOCK_VIEWS[ 'newspack-intelligence/health' ];
+const { View, Controls } = BLOCK_VIEWS[ 'newspack-intelligence/health' ];
 
 /** An idle source a reader reads without its credential. */
 const IDLE = { ...okSource( 'feed' ), state: 'idle' };
@@ -104,5 +110,21 @@ describe( 'the health block', () => {
 		expect(
 			await screen.findByRole( 'button', { name: 'Seed the ontology' } )
 		).toBeInTheDocument();
+	} );
+
+	it( 'sets what it shows from its control', () => {
+		const setAttributes = jest.fn();
+		render(
+			<Controls
+				attributes={ { detail: 'summary' } }
+				setAttributes={ setAttributes }
+			/>
+		);
+		const show = screen.getByLabelText( 'Show' );
+		expect( [ ...show.options ].map( ( one ) => one.textContent ) ).toEqual(
+			[ 'A summary', 'Every source' ]
+		);
+		fireEvent.change( show, { target: { value: 'sources' } } );
+		expect( setAttributes ).toHaveBeenCalledWith( { detail: 'sources' } );
 	} );
 } );

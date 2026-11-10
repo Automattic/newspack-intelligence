@@ -431,3 +431,142 @@ describe( 'timeline', () => {
 		).toBeInTheDocument();
 	} );
 } );
+
+describe( 'entity-facts with nothing to count', () => {
+	it( 'renders no counts for an entity holding no item, its details still shown', async () => {
+		wire.replies.entity = {
+			...RECORD,
+			roles: [],
+			status: null,
+			counts: { items: 0, proposed_links: 0 },
+		};
+		renderBlock( entityFacts, { show: [ 'counts', 'details' ], limit: 4 } );
+		expect(
+			await screen.findByRole( 'heading', { name: 'Details' } )
+		).toBeInTheDocument();
+		expect(
+			document.querySelector( '.newspack-intelligence__counts' )
+		).toBe( null );
+	} );
+} );
+
+describe( 'Controls', () => {
+	it( "write the pulse's team view by its name", async () => {
+		wire.replies.lenses = {
+			lenses: [
+				{ lens_key: 'prairie-desk', name: 'Prairie desk' },
+				{ lens_key: 'harbor-desk', name: 'Harbor desk' },
+			],
+			available: true,
+		};
+		const setAttributes = jest.fn();
+		const controls = ( lens ) => (
+			<pulse.Controls
+				attributes={ { lens } }
+				setAttributes={ setAttributes }
+			/>
+		);
+		const { rerender } = render( controls( 'prairie-desk' ) );
+		expect( await screen.findByText( 'Prairie desk' ) ).toBeInTheDocument();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Remove item' } )
+		);
+		expect( setAttributes ).toHaveBeenLastCalledWith( { lens: '' } );
+		rerender( controls( '' ) );
+		const field = screen.getByLabelText( 'Team view (on the Briefing)' );
+		fireEvent.change( field, { target: { value: 'Harbor desk' } } );
+		fireEvent.keyDown( field, { key: 'Enter' } );
+		expect( setAttributes ).toHaveBeenLastCalledWith( {
+			lens: 'harbor-desk',
+		} );
+	} );
+
+	it( 'write the parts the facts show, in their order, and how many', () => {
+		const setAttributes = jest.fn();
+		render(
+			<entityFacts.Controls
+				attributes={ { show: [ 'details' ], limit: 4 } }
+				setAttributes={ setAttributes }
+			/>
+		);
+		fireEvent.click( screen.getByLabelText( 'Counts' ) );
+		expect( setAttributes ).toHaveBeenLastCalledWith( {
+			show: [ 'counts', 'details' ],
+		} );
+		fireEvent.click( screen.getByLabelText( 'Details' ) );
+		expect( setAttributes ).toHaveBeenLastCalledWith( { show: [] } );
+		fireEvent.change(
+			screen.getByRole( 'spinbutton', { name: 'Facts shown' } ),
+			{ target: { value: '17' } }
+		);
+		expect( setAttributes ).toHaveBeenLastCalledWith( { limit: 17 } );
+	} );
+
+	it( 'name the headings the facts show in a profile’s jump links', () => {
+		expect(
+			entityFacts.headings( { show: [ 'counts', 'details' ], limit: 4 } )
+		).toEqual( [ 'Details' ] );
+		expect(
+			entityFacts.headings( { show: [ 'counts' ], limit: 4 } )
+		).toEqual( [] );
+	} );
+
+	it( "write related's heading and rows", () => {
+		const setAttributes = jest.fn();
+		render(
+			<related.Controls
+				attributes={ { heading: 'Neighbors', limit: 5 } }
+				setAttributes={ setAttributes }
+			/>
+		);
+		fireEvent.change( screen.getByLabelText( 'Heading' ), {
+			target: { value: 'Shares items with' },
+		} );
+		expect( setAttributes ).toHaveBeenLastCalledWith( {
+			heading: 'Shares items with',
+		} );
+		fireEvent.change(
+			screen.getByRole( 'spinbutton', { name: 'Rows shown' } ),
+			{ target: { value: '13' } }
+		);
+		expect( setAttributes ).toHaveBeenLastCalledWith( { limit: 13 } );
+	} );
+
+	it( "write the timeline's heading, what it published, layout and page", () => {
+		const setAttributes = jest.fn();
+		render(
+			<timeline.Controls
+				attributes={ {
+					heading: 'Lately',
+					published: 'disclosure',
+					layout: 'activity',
+					limit: 9,
+				} }
+				setAttributes={ setAttributes }
+			/>
+		);
+		fireEvent.change( screen.getByLabelText( 'Heading' ), {
+			target: { value: 'On the record' },
+		} );
+		expect( setAttributes ).toHaveBeenLastCalledWith( {
+			heading: 'On the record',
+		} );
+		const published = screen.getByLabelText( 'What it published' );
+		expect(
+			[ ...published.options ].map( ( one ) => one.textContent )
+		).toEqual( [ 'Under a disclosure', 'Left out', 'Shown alone' ] );
+		fireEvent.change( published, { target: { value: 'only' } } );
+		expect( setAttributes ).toHaveBeenLastCalledWith( {
+			published: 'only',
+		} );
+		fireEvent.change( screen.getByLabelText( 'Layout' ), {
+			target: { value: 'list' },
+		} );
+		expect( setAttributes ).toHaveBeenLastCalledWith( { layout: 'list' } );
+		fireEvent.change(
+			screen.getByRole( 'spinbutton', { name: 'Items a page' } ),
+			{ target: { value: '21' } }
+		);
+		expect( setAttributes ).toHaveBeenLastCalledWith( { limit: 21 } );
+	} );
+} );

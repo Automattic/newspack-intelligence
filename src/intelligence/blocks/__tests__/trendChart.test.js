@@ -6,7 +6,7 @@
  * refused.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { LENSES, pageData } from '../../views/__tests__/fixtures';
@@ -156,5 +156,50 @@ describe( 'trend-chart', () => {
 		expect(
 			screen.getByRole( 'heading', { name: 'Weeks of subject area' } )
 		).toBeInTheDocument();
+	} );
+
+	it( 'writes its heading, axis, span and style from its controls', () => {
+		const setAttributes = jest.fn();
+		render(
+			<trendChart.Controls
+				attributes={ ATTRIBUTES }
+				setAttributes={ setAttributes }
+			/>
+		);
+		const optionsOf = ( label ) =>
+			[ ...screen.getByLabelText( label ).options ].map(
+				( one ) => one.textContent
+			);
+		expect( optionsOf( 'Chart by' ) ).toEqual( [
+			'As the view sets it',
+			'News type',
+			'Subject area',
+			'Thread',
+		] );
+		expect( optionsOf( 'Group by' ) ).toEqual( [
+			'As the view sets it',
+			'Daily',
+			'Weekly',
+			'Monthly',
+		] );
+
+		fireEvent.change( screen.getByLabelText( 'Heading' ), {
+			target: { value: 'Months of %s' },
+		} );
+		expect( setAttributes ).toHaveBeenLastCalledWith( {
+			heading: 'Months of %s',
+		} );
+		fireEvent.change( screen.getByLabelText( 'Chart by' ), {
+			target: { value: 'theme' },
+		} );
+		expect( setAttributes ).toHaveBeenLastCalledWith( { by: 'theme' } );
+		fireEvent.change( screen.getByLabelText( 'Group by' ), {
+			target: { value: 'month' },
+		} );
+		expect( setAttributes ).toHaveBeenLastCalledWith( { bucket: 'month' } );
+		fireEvent.change( screen.getByLabelText( 'Draw as' ), {
+			target: { value: 'lines' },
+		} );
+		expect( setAttributes ).toHaveBeenLastCalledWith( { style: 'lines' } );
 	} );
 } );

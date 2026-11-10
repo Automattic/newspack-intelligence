@@ -345,3 +345,50 @@ describe( 'mountLayoutEditor', () => {
 		);
 	} );
 } );
+
+describe( 'the layout-editor bundle', () => {
+	it( 'mounts the editor of the context the server localized, its blocks alone', async () => {
+		wire.replies.get = {
+			...SAVED,
+			context: 'newspack-intelligence/briefing',
+			blocks: [],
+		};
+		window.NewspackNodesComposition = {
+			context: 'newspack-intelligence/briefing',
+			max_blocks: 24,
+			blocks: {
+				'newspack-intelligence/health': {
+					title: 'Collection status',
+					attributes: {
+						detail: { type: 'string', default: 'sources' },
+					},
+					container: false,
+					multiple: false,
+				},
+			},
+		};
+
+		require( '../layout-editor' );
+
+		expect(
+			getBlockTypes().map( ( { name, title } ) => [ name, title ] )
+		).toEqual( [
+			[ 'newspack-intelligence/health', 'Collection status' ],
+		] );
+		render(
+			<CompositionEditSlot
+				context="newspack-intelligence/briefing"
+				target={ { page: 'briefing' } }
+				since={ 1792000000 }
+				onDone={ () => {} }
+			/>
+		);
+		expect(
+			screen.getByRole( 'heading', { name: 'Edit the Briefing layout' } )
+		).toBeTruthy();
+		await waitFor(
+			() => expect( mockProvider.props?.value ).toEqual( [] ),
+			WAIT
+		);
+	} );
+} );

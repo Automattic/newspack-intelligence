@@ -6,7 +6,7 @@
  * count matching choosing the form.
  */
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { _n } from '@wordpress/i18n';
 import Pager from '../Pager';
 
@@ -76,5 +76,35 @@ describe( 'Pager', () => {
 			/>
 		);
 		expect( screen.queryByRole( 'button', { name: 'Next' } ) ).toBeNull();
+	} );
+
+	it( 'pushes the start past this page on Next and pops it on Previous', () => {
+		const onStarts = jest.fn();
+		render(
+			<Pager
+				starts={ [ 0, 37 ] }
+				onStarts={ onStarts }
+				shown={ 37 }
+				total={ 119 }
+			/>
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
+		expect( onStarts ).toHaveBeenLastCalledWith( [ 0, 37, 74 ] );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Previous' } ) );
+		expect( onStarts ).toHaveBeenLastCalledWith( [ 0 ] );
+	} );
+
+	it( 'offers no Previous on the first page', () => {
+		render(
+			<Pager
+				starts={ [ 0 ] }
+				onStarts={ () => {} }
+				shown={ 37 }
+				total={ 119 }
+			/>
+		);
+		expect(
+			screen.queryByRole( 'button', { name: 'Previous' } )
+		).toBeNull();
 	} );
 } );

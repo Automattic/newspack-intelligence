@@ -198,4 +198,73 @@ describe( 'item-list', () => {
 			)
 		).toBeInTheDocument();
 	} );
+
+	it( "names its heading in a profile's jump links, and nothing without one", () => {
+		expect( itemList.headings( ATTRIBUTES ) ).toEqual( [
+			'Stories on the desk',
+		] );
+		expect( itemList.headings( { ...ATTRIBUTES, heading: '' } ) ).toEqual(
+			[]
+		);
+	} );
+
+	it( 'writes each setting from its controls, a list by its words', () => {
+		const setAttributes = jest.fn();
+		render(
+			<itemList.Controls
+				attributes={ { ...ATTRIBUTES, kinds: [ 'award' ] } }
+				setAttributes={ setAttributes }
+			/>
+		);
+		const pick = ( label, said ) => {
+			const field = screen.getByLabelText( label );
+			fireEvent.change( field, { target: { value: said } } );
+			fireEvent.keyDown( field, { key: 'Enter' } );
+		};
+
+		pick( 'Kinds of news', 'Going live' );
+		expect( setAttributes ).toHaveBeenLastCalledWith( {
+			kinds: [ 'award', 'launch' ],
+		} );
+		pick( 'Kinds of news', 'Heron sightings' );
+		expect( setAttributes ).toHaveBeenCalledTimes( 1 );
+		pick( 'About', 'Lead' );
+		expect( setAttributes ).toHaveBeenLastCalledWith( {
+			roles: [ 'prospect' ],
+		} );
+		pick( 'Sources', 'Team blog' );
+		expect( setAttributes ).toHaveBeenLastCalledWith( {
+			sources: [ 'p2' ],
+		} );
+		pick( 'Include items that are', 'Staff' );
+		expect( setAttributes ).toHaveBeenLastCalledWith( {
+			tiers: [ 'internal' ],
+		} );
+
+		const choose = ( label, value ) =>
+			fireEvent.change( screen.getByLabelText( label ), {
+				target: { value },
+			} );
+		choose( 'Heading', 'On the prairie desk' );
+		expect( setAttributes ).toHaveBeenLastCalledWith( {
+			heading: 'On the prairie desk',
+		} );
+		choose( 'Show', 'theme' );
+		expect( setAttributes ).toHaveBeenLastCalledWith( { group: 'theme' } );
+		choose( 'Order', 'importance' );
+		expect( setAttributes ).toHaveBeenLastCalledWith( {
+			sort: 'importance',
+		} );
+		choose( 'Layout', 'table' );
+		expect( setAttributes ).toHaveBeenLastCalledWith( { layout: 'table' } );
+		fireEvent.change(
+			screen.getByRole( 'spinbutton', { name: 'Items shown' } ),
+			{ target: { value: '23' } }
+		);
+		expect( setAttributes ).toHaveBeenLastCalledWith( { limit: 23 } );
+		choose( 'When empty, say', 'The desk is quiet.' );
+		expect( setAttributes ).toHaveBeenLastCalledWith( {
+			empty: 'The desk is quiet.',
+		} );
+	} );
 } );
