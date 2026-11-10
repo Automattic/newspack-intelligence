@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-11-09
+
 ### Added
 
 - **The Briefing, team views and profiles are block layouts on the substrate's composition layer.** A curator edits one with **Edit layout**, which loads the block editor for `tune` alone; seeds may carry `layouts`, written only to a page that has none. The Briefing is Ask, Since you last looked, Needs attention, Your watches and This week; a profile is `pulse`, `entity-facts`, `related` and `timeline` under a fixed header; a team view is a rail with each view's new count, a header with Watch, Edit and a menu, and the `trend-chart` and `item-list` blocks; the `health` and `folder-board` blocks place the health details and the folders board on any page.
