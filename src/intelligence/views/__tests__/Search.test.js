@@ -640,7 +640,12 @@ describe( 'Search', () => {
 				screen.getByRole( 'button', { name: 'Show 128 items' } )
 			);
 
-			expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+			await waitFor( () =>
+				expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+			);
+			expect(
+				await screen.findByText( '128 items, most important first' )
+			).toBeTruthy();
 		} );
 	} );
 
