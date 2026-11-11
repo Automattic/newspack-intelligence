@@ -234,7 +234,8 @@ beforeEach( () => {
 } );
 
 /**
- * Every text the page shows, trimmed, with every placeholder.
+ * Every text the page shows, trimmed, with every placeholder, outside the
+ * substrate's shared header, whose wordmark names the platform.
  *
  * @return {string[]} The texts.
  */
@@ -246,7 +247,8 @@ function shown() {
 	const texts = [];
 	while ( walker.nextNode() ) {
 		const text = walker.currentNode.nodeValue.trim();
-		if ( text && ! walker.currentNode.parentElement.closest( 'style' ) ) {
+		const at = walker.currentNode.parentElement;
+		if ( text && ! at.closest( 'style, .topology-header' ) ) {
 			texts.push( text );
 		}
 	}
