@@ -93,7 +93,7 @@ final class Graph_Trace {
 		$row = $r->rows(
 			"{$g['with']}, " . self::mine( $r ) . ' SELECT mine.actor, mine.ts, ( SELECT canonical_item_key FROM ( '
 			. Intel_Graph_Row_Schema::newest( $r, 'canonicals', 'cluster_key', 'cluster_key, canonical_item_key', 'cluster_key = ( SELECT cluster_key FROM mine )' ) . ' ) ), ( SELECT COUNT(*) FROM ( '
-			. Graph_Query::copies_of( $r, 'mine.item_key' ) . ' ) ) FROM mine',
+			. Graph_Query::copies_of( $r, '( SELECT item_key FROM mine )' ) . ' ) ) FROM mine',
 			[ ...$g['binds'], $key ]
 		)[0] ?? null;
 		if ( null === $row ) {
@@ -229,8 +229,8 @@ final class Graph_Trace {
 		}
 		$time = Intel_Graph_Row_Schema::ITEM_TIME;
 		$rows = $r->rows(
-			"{$g['with']}, " . self::mine( $r ) . " SELECT i.item_key, MAX( i.url ), MAX( i.title ), MAX( i.source ), date( MIN( {$time} ), 'unixepoch' ) FROM mine, ri i WHERE i.item_key IN ( "
-			. Graph_Query::copies_of( $r, 'mine.item_key' ) . " ) GROUP BY i.item_key ORDER BY MIN( {$time} ) DESC, i.item_key",
+			"{$g['with']}, " . self::mine( $r ) . " SELECT i.item_key, MAX( i.url ), MAX( i.title ), MAX( i.source ), date( MIN( {$time} ), 'unixepoch' ) FROM ri i WHERE i.item_key IN ( "
+			. Graph_Query::copies_of( $r, '( SELECT item_key FROM mine )' ) . " ) GROUP BY i.item_key ORDER BY MIN( {$time} ) DESC, i.item_key",
 			[ ...$g['binds'], $key ]
 		);
 		return [

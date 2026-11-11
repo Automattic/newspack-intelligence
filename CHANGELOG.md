@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A page's repeated reads (team views, watches, folders, the review queue, health) come from one live read, and a view never shows an old answer as fresh.
 - Two layouts mounted on one page give their headings distinct ids; a trend chart with no subject says that none is picked.
-- Excluding an item refreshes an open copies list and an open "How this was read", and a theme merge refreshes the trace. An item's copies count and its copies list read one rule.
+- Excluding an item refreshes an open copies list and an open "How this was read", and a theme merge refreshes the trace. An item's copies count and its copies list read one rule, and `copies` reads the item's cluster once instead of once per readable item.
 - **A churn item keeps its client.** A re-extraction that keeps a churn kind its check passed keeps the stored kind subject with it, and the Briefing files a churn report under the client it names, not the first client in the item.
 - **The Briefing's category and otherwise counts span the week**, as its total does, not only the 50 items listed.
 - **`add_link` follows the judgment ranks.** It is refused where a higher-ranked judgment rejects the link, and a confirmed mention can be added as subject. A link added under a merged key is written under its survivor.

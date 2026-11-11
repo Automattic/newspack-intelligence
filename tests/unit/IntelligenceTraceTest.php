@@ -8,12 +8,14 @@ use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Intelligence\Intel_Tiers;
 use Newspack_Intelligence\Intelligence_CI_Node;
 use Newspack_Nodes\Capabilities;
+use Newspack_Nodes\Table_Node;
 use Newspack_Nodes\Topology_Analyzer;
 use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
 require_once __DIR__ . '/../support/signs-in-users.php';
+require_once __DIR__ . '/../support/counts-statements.php';
 
 /**
  * The `trace` read: one item's own decision record, laid out in the order
@@ -21,6 +23,7 @@ require_once __DIR__ . '/../support/signs-in-users.php';
  * reader's tiers and exclusions.
  */
 final class IntelligenceTraceTest extends TestCase {
+	use Counts_Statements;
 	use Seeds_Intel_Graph;
 	use Signs_In_Users;
 
@@ -185,6 +188,34 @@ final class IntelligenceTraceTest extends TestCase {
 		$this->assertSame( [ self::LATE, self::COPY, self::RESTRICTED ], $listed() );
 		$this->assertSame( 3, $counted() );
 		$this->assertSame( 3, $traced() );
+	}
+
+	/**
+	 * `copies` and the trace's `clustered` step read the item's placement
+	 * once: neither statement places a subquery over `clusters` beneath a
+	 * correlated one, which would re-run the newest-placement window for
+	 * every readable item.
+	 */
+	public function test_the_copies_reads_place_the_item_once(): void {
+		$this->seed_copies();
+
+		foreach ( [ 'copies', 'trace' ] as $command ) {
+			$read = \array_values( \array_filter( $this->queries_of( fn () => $this->ci->dispatch( $command, [ self::ITEM ] ) ), static fn ( string $sql ): bool => \str_contains( $sql, 'mine AS' ) ) );
+			$this->assertCount( 1, $read, $command );
+			$db = new \PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
+			$db->exec( 'ATTACH DATABASE ' . $db->quote( Table_Node::file( 'intel-graph', 0 ) ) . ' AS p0' );
+			$plan    = $db->query( 'EXPLAIN QUERY PLAN ' . $read[0] )->fetchAll( \PDO::FETCH_ASSOC );
+			$parents = \array_column( $plan, 'parent', 'id' );
+			$details = \array_column( $plan, 'detail', 'id' );
+			foreach ( $details as $id => $detail ) {
+				if ( ! \str_contains( $detail, 'clusters' ) ) {
+					continue;
+				}
+				for ( $at = $parents[ $id ]; isset( $details[ $at ] ); $at = $parents[ $at ] ) {
+					$this->assertStringNotContainsString( 'CORRELATED', $details[ $at ], "{$command}: {$detail}\n" . \implode( "\n", $details ) );
+				}
+			}
+		}
 	}
 
 	/** An item outside every cluster has no copies. */
