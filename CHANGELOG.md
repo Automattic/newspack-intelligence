@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The New watch form spaces its fields, and its Delivery heading is lettered like the labels around it, as the team view's tier heading is.
 - The single-key shortcuts toggle stays at the end of its line when the shortcuts are off.
 - "Show more" and "Why this ranks" sit a space apart.
+- Review answers each row with a check and a cross joined in one pill again, in place of the **No** and **Yes, it is** buttons. The Y and N keys, and what each says to a screen reader, are unchanged.
 
 ## [0.41.1] - 2026-11-11
 

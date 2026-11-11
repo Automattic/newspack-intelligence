@@ -8,7 +8,7 @@ import {
 } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { ComboboxControl } from '@wordpress/components';
-import { check, closeSmall } from '@wordpress/icons';
+import { Icon, check, closeSmall } from '@wordpress/icons';
 import DataViewsList from '@newspack-nodes/shared/components/DataViewsList';
 import Modal, { ModalHeader } from '@newspack-nodes/shared/components/Modal';
 import TabBar, {
@@ -265,47 +265,49 @@ function Evidence( { text, name, title } ) {
 }
 
 /**
- * A curator's answer to one row: No, then the affirming answer as the
- * primary button, each named for a screen reader by what it does to the
- * entity and pressed by its key, after any control `children` add.
+ * A curator's answer to one row: a check that affirms and a cross that
+ * rejects, joined in one pill, each named for a screen reader by what it
+ * does to the entity and pressed by its key, after any control `children`
+ * add.
  *
  * @param {Object}                    props
  * @param {string}                    props.label      The entity's name.
- * @param {string}                    props.yes        The affirming answer's words.
- * @param {string}                    props.yesLabel   What it does, for a screen reader.
+ * @param {string}                    props.yesLabel   What the check does, for a screen reader.
  * @param {() => void}                props.onYes      Affirms.
  * @param {() => void}                props.onNo       Rejects.
  * @param {import('react').ReactNode} [props.children] Controls ahead of the two.
  * @return {import('react').ReactElement} The answers.
  */
-function Answers( { label, yes, yesLabel, onYes, onNo, children } ) {
+function Answers( { label, yesLabel, onYes, onNo, children } ) {
 	return (
 		<div className="newspack-intelligence__judgments">
 			{ children }
-			<button
-				type="button"
-				className="button"
-				aria-keyshortcuts="n"
-				aria-label={ sprintf(
-					/* translators: %s: the entity's name. */
-					__( 'Reject %s', 'newspack-intelligence' ),
-					label
-				) }
-				{ ...LEAVES }
-				onClick={ onNo }
-			>
-				{ __( 'No', 'newspack-intelligence' ) }
-			</button>
-			<button
-				type="button"
-				className={ primaryButtonClass() }
-				aria-keyshortcuts="y"
-				aria-label={ yesLabel }
-				{ ...LEAVES }
-				onClick={ onYes }
-			>
-				{ yes }
-			</button>
+			<span className="newspack-intelligence__judgment">
+				<button
+					type="button"
+					className="button button-small"
+					aria-keyshortcuts="y"
+					aria-label={ yesLabel }
+					{ ...LEAVES }
+					onClick={ onYes }
+				>
+					<Icon icon={ check } size={ 18 } />
+				</button>
+				<button
+					type="button"
+					className="button button-small"
+					aria-keyshortcuts="n"
+					aria-label={ sprintf(
+						/* translators: %s: the entity's name. */
+						__( 'Reject %s', 'newspack-intelligence' ),
+						label
+					) }
+					{ ...LEAVES }
+					onClick={ onNo }
+				>
+					<Icon icon={ closeSmall } size={ 18 } />
+				</button>
+			</span>
 		</div>
 	);
 }
@@ -357,7 +359,6 @@ function LinkRow( { link, onOpen, judge, refusal } ) {
 			{ judge && (
 				<Answers
 					label={ label }
-					yes={ __( 'Yes, it is', 'newspack-intelligence' ) }
 					yesLabel={ sprintf(
 						/* translators: %s: the entity's name. */
 						__( 'Confirm %s', 'newspack-intelligence' ),
@@ -463,7 +464,6 @@ function EntityRow( { item: entity, onOpen, judgeOf, refusalOf } ) {
 			{ judge && (
 				<Answers
 					label={ label }
-					yes={ __( 'Add it', 'newspack-intelligence' ) }
 					yesLabel={ sprintf(
 						/* translators: %s: the entity's name. */
 						__( 'Accept %s', 'newspack-intelligence' ),

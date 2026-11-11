@@ -445,7 +445,7 @@ describe( 'Review — judgments', () => {
 	const linksRead = () =>
 		wire.sent( 'review' ).filter( ( [ w ] ) => 'links' === w );
 
-	it( 'answers in words, Yes the primary, each key on its control', async () => {
+	it( 'answers with a check and a cross joined in one pill, each key on its glyph', async () => {
 		renderReview( { canTune: true } );
 		const links = queue( 'Suggested matches' );
 		const yes = await within( links ).findByRole( 'button', {
@@ -454,18 +454,23 @@ describe( 'Review — judgments', () => {
 		const no = within( links ).getByRole( 'button', {
 			name: 'Reject Acme Quillsheet',
 		} );
-		expect( yes ).toHaveTextContent( /^Yes, it is$/ );
-		expect( yes ).toHaveClass( 'button-primary' );
+		for ( const glyph of [ yes, no ] ) {
+			expect( glyph ).toHaveTextContent( /^$/ );
+			expect( glyph.querySelector( 'svg' ) ).not.toBeNull();
+			expect( glyph ).toHaveClass( 'button-small' );
+			expect( glyph.parentElement ).toHaveClass(
+				'newspack-intelligence__judgment'
+			);
+		}
+		expect( yes.nextElementSibling ).toBe( no );
 		expect( yes ).toHaveAttribute( 'aria-keyshortcuts', 'y' );
-		expect( no ).toHaveTextContent( /^No$/ );
-		expect( no ).not.toHaveClass( 'button-primary' );
 		expect( no ).toHaveAttribute( 'aria-keyshortcuts', 'n' );
 		const entities = queue( 'Suggested names' );
 		const add = await within( entities ).findByRole( 'button', {
 			name: 'Accept Valley Times',
 		} );
-		expect( add ).toHaveTextContent( /^Add it$/ );
-		expect( add ).toHaveClass( 'button-primary' );
+		expect( add ).toHaveTextContent( /^$/ );
+		expect( add.querySelector( 'svg' ) ).not.toBeNull();
 		expect(
 			within( entities ).getByRole( 'button', {
 				name: 'Valley Times is the same as…',

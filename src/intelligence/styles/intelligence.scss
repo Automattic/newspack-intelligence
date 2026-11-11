@@ -480,6 +480,41 @@
 		}
 	}
 
+	// A row's check and cross read as one pill, sharing an edge. Scoped under
+	// the root to outrank the shared button's radius.
+	.newspack-intelligence__judgment {
+		display: inline-flex;
+
+		> .button.button-small {
+			border-radius: 0;
+			padding-inline: base.$space-xs;
+
+			svg {
+				fill: currentcolor;
+			}
+		}
+
+		> .button.button-small + .button.button-small {
+			margin-inline-start: -1px;
+		}
+
+		// A hovered or focused half rises over the edge it shares.
+		> .button.button-small:is(:hover, :focus) {
+			position: relative;
+			z-index: 1;
+		}
+
+		> .button.button-small:first-child {
+			border-start-start-radius: var(--button-radius, 5px);
+			border-end-start-radius: var(--button-radius, 5px);
+		}
+
+		> .button.button-small:last-child {
+			border-start-end-radius: var(--button-radius, 5px);
+			border-end-end-radius: var(--button-radius, 5px);
+		}
+	}
+
 	&__create {
 		display: flex;
 		flex-wrap: wrap;
