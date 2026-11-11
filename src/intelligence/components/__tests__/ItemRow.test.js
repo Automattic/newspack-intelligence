@@ -715,17 +715,12 @@ describe( 'ItemRow', () => {
 	} );
 
 	describe( 'Copy link', () => {
-		// The snackbar list measures its layout through scrollTo, which jsdom lacks.
-		const { scrollTo } = window;
-
 		beforeEach( () => {
 			speak.mockClear();
-			window.scrollTo = () => {};
 		} );
 
 		afterEach( () => {
 			delete window.navigator.clipboard;
-			window.scrollTo = scrollTo;
 		} );
 
 		/** How long a copy's snackbar stands, as spec §4 gives it. */

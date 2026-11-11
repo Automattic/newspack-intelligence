@@ -22,6 +22,12 @@ if ( 'undefined' !== typeof window && ! window.matchMedia ) {
 	} );
 }
 
+// jsdom has no scrollTo, which framer-motion calls when it measures a
+// Modal's or Popover's keyframes on a later animation frame.
+if ( 'undefined' !== typeof window ) {
+	window.scrollTo = () => {};
+}
+
 /* eslint-env jest */
 // jest-dom custom matchers (toBeInTheDocument, etc.) for the React dashboard tests.
 import '@testing-library/jest-dom';
