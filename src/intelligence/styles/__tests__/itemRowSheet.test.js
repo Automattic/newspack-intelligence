@@ -97,6 +97,14 @@ describe( 'the item row sheet', () => {
 		);
 	} );
 
+	it( 'keeps "Show more" and "Why this ranks" inline, past DataViews\u2019 block title link', () => {
+		const more = declared(
+			'.newspack-nodes-ui.newspack-nodes-ui.newspack-nodes-ui .newspack-intelligence__more.components-button.is-link'
+		);
+		expect( more.display ).toBe( 'inline-flex' );
+		expect( more.width ).toBe( 'auto' );
+	} );
+
 	it( 'lets a pill shrink and cuts its name with an ellipsis, painting nothing', () => {
 		const pill = declared( `${ ROOT } ${ ROOT }__pill` );
 		expect( pill ).toEqual(

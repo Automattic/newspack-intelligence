@@ -562,6 +562,9 @@
 // An excerpt's "Show more" reads as a quiet word, never an underlined link.
 .newspack-nodes-ui.newspack-nodes-ui.newspack-nodes-ui
 	.newspack-intelligence__more.components-button.is-link {
+	// DataViews makes a link inside a title field a full-width block.
+	display: inline-flex;
+	width: auto;
 	text-decoration: none;
 
 	// "Show more" and "Why this ranks" share a line, a space apart.

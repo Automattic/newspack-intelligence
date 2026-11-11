@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Review answers each row with a check and a cross joined in one pill again, in place of the **No** and **Yes, it is** buttons. The Y and N keys, and what each says to a screen reader, are unchanged.
 - Search's filter chips sit on the search field's line, the field is wider, and the Layout switch ends the line clear of the sheet's edge, so its border is whole.
 - A pill's × reads in the pill's colour; it painted black.
+- "Show more" and "Why this ranks" share one line again, and a focused one rings itself alone; DataViews made each a full-width block.
 - The team view dialog spaces its fields, as the other forms do.
+- Review pages its Suggested matches and Suggested names 50 rows at a time, so every row in a queue can be reached; it showed only the first 50. `review` takes `--offset`, and the MCP door's `intel_review` with it, while `total` still counts the whole queue.
 
 ## [0.41.1] - 2026-11-11
 
