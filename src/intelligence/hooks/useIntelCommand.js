@@ -65,6 +65,8 @@ export const ITEM_READS = [
 	'theme_suggestions:',
 	'ask_result:',
 	'excluded:',
+	'copies:',
+	'trace:',
 	...FOLDER_READS,
 	...WATCH_READS,
 ];
@@ -88,13 +90,14 @@ export const LENS_READS = [
 	...WATCH_READS,
 ];
 
-/** Every read a theme's merge regroups. */
+/** Every read a theme's merge regroups, and the trace naming a survivor. */
 export const THEME_READS = [
 	'theme_suggestions:',
 	'search:',
 	'trends:',
 	'signals:',
 	'briefing:',
+	'trace:',
 ];
 
 /**

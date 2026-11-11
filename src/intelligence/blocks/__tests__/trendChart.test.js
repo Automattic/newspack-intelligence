@@ -153,11 +153,11 @@ describe( 'trend-chart', () => {
 		[ 'team view', { lens_key: null } ],
 		[ 'profile', { page: 'entity', lens_key: null, entity_key: null } ],
 	] )(
-		'says its empty sentence on a %s that names no subject yet, reading nothing',
+		'says no subject is picked on a %s that names none yet, reading nothing',
 		async ( _, page ) => {
 			block( {}, page );
 			expect(
-				screen.getByText( 'Nothing in this view yet.' )
+				screen.getByText( 'No team view or subject is picked yet.' )
 			).toBeInTheDocument();
 			expect( screen.queryByRole( 'status' ) ).toBeNull();
 			await act(

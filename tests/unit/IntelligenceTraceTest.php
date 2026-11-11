@@ -166,6 +166,27 @@ final class IntelligenceTraceTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A listed item's `copies` count, its trace's `clustered` count and the
+	 * `copies` list name one set: the cluster's other items the caller reads
+	 * through `ri`, for a reader and for a holder of the restricted tier.
+	 */
+	public function test_the_copies_count_the_trace_and_the_list_name_one_set(): void {
+		$this->seed_copies();
+		$listed  = fn (): array => \array_column( $this->ci->dispatch( 'copies', [ self::ITEM ] )['copies'], 'item_key' );
+		$counted = fn (): int => \array_column( $this->ci->dispatch( 'search', [ '--q=renewal' ] )['items'], 'copies', 'item_key' )[ self::ITEM ];
+		$traced  = fn (): int => \array_column( $this->ci->dispatch( 'trace', [ self::ITEM ] )['steps'], 'copies', 'step' )['clustered'];
+
+		$this->assertSame( [ self::LATE, self::COPY ], $listed() );
+		$this->assertSame( 2, $counted() );
+		$this->assertSame( 2, $traced() );
+
+		self::sign_in( 6153, 'quay-holder', 'manage_options', Intel_Tiers::CAPABILITY );
+		$this->assertSame( [ self::LATE, self::COPY, self::RESTRICTED ], $listed() );
+		$this->assertSame( 3, $counted() );
+		$this->assertSame( 3, $traced() );
+	}
+
 	/** An item outside every cluster has no copies. */
 	public function test_an_item_in_no_cluster_has_no_copies(): void {
 		$this->seed( self::recorded( 'feed:harbor-alone-5', 'feed', 'public' ) );

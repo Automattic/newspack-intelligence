@@ -993,6 +993,44 @@ describe( 'Review — themes', () => {
 		).toBeInTheDocument();
 	} );
 
+	it( 'drops a remembered How this was read once a theme merge lands, since it reads each theme as its survivor', async () => {
+		const traceProbe = () => (
+			<Probe
+				scope="probe:trace"
+				command="trace"
+				args={ [ 'feed:kiosk-exit-61' ] }
+			/>
+		);
+		wire.replies.trace = {
+			item_key: 'feed:kiosk-exit-61',
+			steps: [],
+			available: true,
+		};
+		const seeded = render( traceProbe() );
+		await screen.findByText( 'trace read' );
+		seeded.unmount();
+		wire.replies.merge_theme = { ok: true, event_id: 'ev-t' };
+		const view = renderReview( { canTune: true } );
+		const keep = await within( queue( 'Similar themes' ) ).findByRole(
+			'button',
+			{ name: KEEP_FIRST }
+		);
+		fakeUndoClock();
+		fireEvent.click( keep );
+		await elapse( UNDO_MS );
+		await waitFor( () =>
+			expect( wire.sent( 'merge_theme' ) ).toHaveLength( 1 )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'theme_suggestions' ) ).toHaveLength( 2 )
+		);
+		view.unmount();
+		jest.useRealTimers();
+		wire.replies.trace = never;
+		render( traceProbe() );
+		expect( screen.getByText( 'trace owed' ) ).toBeInTheDocument();
+	} );
+
 	it( 'says when no theme pair is suggested', async () => {
 		wire.replies.theme_suggestions = {
 			suggestions: [],

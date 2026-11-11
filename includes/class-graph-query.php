@@ -964,22 +964,34 @@ final class Graph_Query {
 	/**
 	 * Each field a listed item answers, by the column it is read from, its
 	 * kind check as `Intel_Graph_Row_Schema::kind_check_sql()` reads it,
-	 * then its copies: the other items of `ri` its cluster holds, each item
-	 * placed by the newest partition's `clusters` row, 0 for an item outside
-	 * every cluster, so a copy the caller may not read never counts.
+	 * then how many `copies_of()` it has, 0 for an item outside every
+	 * cluster.
 	 *
 	 * @param Row_Reader $r The reader.
 	 * @return array<string,string>
 	 */
 	private static function item_columns( Row_Reader $r ): array {
-		$clusters = Intel_Graph_Row_Schema::all( $r, 'clusters', true );
-		$mine     = "SELECT o.cluster_key FROM {$clusters} o WHERE o.item_key = i.item_key ORDER BY o.partition_ordinal DESC LIMIT 1";
 		return self::ITEM_COLUMNS + [
 			'kind_check' => Intel_Graph_Row_Schema::kind_check_sql( 'x' ),
-			'copies'     => "( SELECT COUNT(*) FROM ( SELECT m.item_key, m.cluster_key, ROW_NUMBER() OVER ( PARTITION BY m.item_key ORDER BY m.partition_ordinal DESC ) AS pick FROM {$clusters} m"
-				. " WHERE m.item_key IN ( SELECT c.item_key FROM {$clusters} c WHERE c.cluster_key = ( {$mine} ) ) ) cp"
-				. " WHERE cp.pick = 1 AND cp.cluster_key = ( {$mine} ) AND cp.item_key <> i.item_key AND EXISTS ( SELECT 1 FROM ri s WHERE s.item_key = cp.item_key ) )",
+			'copies'     => '( SELECT COUNT(*) FROM ( ' . self::copies_of( $r, 'i.item_key' ) . ' ) )',
 		];
+	}
+
+	/**
+	 * The keys of an item's copies, the cluster's other items `ri` holds,
+	 * each item placed by the newest partition's `clusters` row, so a copy
+	 * the caller may not read is never among them, and an item outside
+	 * every cluster has none. The listed count, the trace's count and the
+	 * `copies` list all read this one fragment.
+	 *
+	 * @param Row_Reader $r    The reader.
+	 * @param string     $item The column naming the item, read three times.
+	 */
+	public static function copies_of( Row_Reader $r, string $item ): string {
+		$clusters = Intel_Graph_Row_Schema::all( $r, 'clusters', true );
+		$cluster  = "( SELECT o.cluster_key FROM {$clusters} o WHERE o.item_key = {$item} ORDER BY o.partition_ordinal DESC LIMIT 1 )";
+		return 'SELECT cp.item_key FROM ( ' . Intel_Graph_Row_Schema::newest( $r, 'clusters', 'item_key', 'item_key, cluster_key', "item_key IN ( SELECT c.item_key FROM {$clusters} c WHERE c.cluster_key = {$cluster} )" )
+			. " ) cp WHERE cp.cluster_key = {$cluster} AND cp.item_key <> {$item} AND cp.item_key IN ( SELECT item_key FROM ri )";
 	}
 
 	/**

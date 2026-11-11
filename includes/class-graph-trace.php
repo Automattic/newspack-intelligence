@@ -93,8 +93,8 @@ final class Graph_Trace {
 		$row = $r->rows(
 			"{$g['with']}, " . self::mine( $r ) . ' SELECT mine.actor, mine.ts, ( SELECT canonical_item_key FROM ( '
 			. Intel_Graph_Row_Schema::newest( $r, 'canonicals', 'cluster_key', 'cluster_key, canonical_item_key', 'cluster_key = ( SELECT cluster_key FROM mine )' ) . ' ) ), ( SELECT COUNT(*) FROM ( '
-			. self::others( $r ) . ' ) ) FROM mine',
-			[ ...$g['binds'], $key, $key ]
+			. Graph_Query::copies_of( $r, 'mine.item_key' ) . ' ) ) FROM mine',
+			[ ...$g['binds'], $key ]
 		)[0] ?? null;
 		if ( null === $row ) {
 			return [];
@@ -229,9 +229,9 @@ final class Graph_Trace {
 		}
 		$time = Intel_Graph_Row_Schema::ITEM_TIME;
 		$rows = $r->rows(
-			"{$g['with']}, " . self::mine( $r ) . " SELECT i.item_key, MAX( i.url ), MAX( i.title ), MAX( i.source ), date( MIN( {$time} ), 'unixepoch' ) FROM ri i WHERE i.item_key IN ( "
-			. self::others( $r ) . " ) GROUP BY i.item_key ORDER BY MIN( {$time} ) DESC, i.item_key",
-			[ ...$g['binds'], $key, $key ]
+			"{$g['with']}, " . self::mine( $r ) . " SELECT i.item_key, MAX( i.url ), MAX( i.title ), MAX( i.source ), date( MIN( {$time} ), 'unixepoch' ) FROM mine, ri i WHERE i.item_key IN ( "
+			. Graph_Query::copies_of( $r, 'mine.item_key' ) . " ) GROUP BY i.item_key ORDER BY MIN( {$time} ) DESC, i.item_key",
+			[ ...$g['binds'], $key ]
 		);
 		return [
 			'item_key' => $key,
@@ -249,24 +249,12 @@ final class Graph_Trace {
 	}
 
 	/**
-	 * The keys of the cluster's other items `ri` holds, each placed by the
-	 * newest partition's `clusters` row, over `mine`, the item's key bound
-	 * again.
-	 *
-	 * @param Row_Reader $r The reader.
-	 */
-	private static function others( Row_Reader $r ): string {
-		return 'SELECT cp.item_key FROM ( ' . Intel_Graph_Row_Schema::newest( $r, 'clusters', 'item_key', 'item_key, cluster_key', 'item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'clusters' ) . ' m WHERE cluster_key = ( SELECT cluster_key FROM mine ) )' )
-			. ' ) cp WHERE cp.cluster_key = ( SELECT cluster_key FROM mine ) AND cp.item_key <> ? AND cp.item_key IN ( SELECT item_key FROM ri )';
-	}
-
-	/**
 	 * The `mine` clause: the item's placement, the newest partition's, its
 	 * key bound first.
 	 *
 	 * @param Row_Reader $r The reader.
 	 */
 	private static function mine( Row_Reader $r ): string {
-		return 'mine AS ( SELECT cluster_key, actor, ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'clusters', true ) . ' c WHERE item_key = ? ORDER BY partition_ordinal DESC LIMIT 1 )';
+		return 'mine AS ( SELECT item_key, cluster_key, actor, ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'clusters', true ) . ' c WHERE item_key = ? ORDER BY partition_ordinal DESC LIMIT 1 )';
 	}
 }

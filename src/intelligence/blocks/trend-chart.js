@@ -3,8 +3,8 @@
  * profile's entity, counted per bucket over the last weeks, the bucket still
  * running apart, by the axis and span the block names, else those the view
  * sets, the view read as `lenses` lists it. A page naming no subject yet, as
- * the editor's preview before one is picked, reads nothing and says its
- * empty sentence.
+ * the editor's preview before one is picked, reads nothing and says that no
+ * team view or subject is picked.
  */
 
 import { SelectControl, TextControl } from '@wordpress/components';
@@ -112,7 +112,12 @@ function View( { attributes: { heading, by, bucket, style } } ) {
 			{ () => null }
 		</AnswerBody>
 	) : (
-		<p className="newspack-nodes-empty-state is-quiet">{ empty }</p>
+		<p className="newspack-nodes-empty-state is-quiet">
+			{ __(
+				'No team view or subject is picked yet.',
+				'newspack-intelligence'
+			) }
+		</p>
 	);
 	return axis ? (
 		<Section heading={ chartTitle( heading, axis ) }>{ body }</Section>

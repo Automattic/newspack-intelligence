@@ -1033,6 +1033,106 @@ describe( 'ItemRow exclusion', () => {
 		expect( screen.getByText( 'briefing owed' ) ).toBeInTheDocument();
 	} );
 
+	it( 'asks an open copies list again once an exclusion of one of its copies lands, and drops it', async () => {
+		const STORY = { ...ITEM, item_key: 'feed:tern-wire-story-30' };
+		const copy = {
+			item_key: WIRE_COPY.item_key,
+			url: WIRE_COPY.url,
+			title: WIRE_COPY.title,
+			source: 'feed',
+			day: '2027-02-27',
+		};
+		let excluded = false;
+		wire.replies.copies = () => ( {
+			item_key: STORY.item_key,
+			copies: excluded ? [] : [ copy ],
+			available: true,
+		} );
+		wire.replies.exclude_item = () => {
+			excluded = true;
+			return { ok: true, event_id: 'ev-x' };
+		};
+		render(
+			<>
+				<ItemRow
+					item={ { ...STORY, copies: 1 } }
+					onOpenEntity={ jest.fn() }
+				/>
+				<ItemRow
+					item={ WIRE_COPY }
+					onOpenEntity={ jest.fn() }
+					canTune={ true }
+				/>
+			</>
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'and 1 other copy' } )
+		);
+		const list = await screen.findByRole( 'list', {
+			name: 'Other copies',
+		} );
+		expect(
+			within( list ).getByRole( 'link', { name: WIRE_COPY.title } )
+		).toBeInTheDocument();
+		fakeUndoClock();
+		exclude();
+		await elapse( UNDO_MS );
+		jest.useRealTimers();
+
+		expect(
+			await screen.findByText(
+				'None of its other copies can be read now.'
+			)
+		).toBeInTheDocument();
+		expect( wire.sent( 'copies' ) ).toEqual( [
+			[ STORY.item_key ],
+			[ STORY.item_key ],
+		] );
+	} );
+
+	it( 'asks an open How this was read again once an exclusion lands', async () => {
+		wire.replies.trace = {
+			item_key: ITEM.item_key,
+			title: ITEM.title,
+			url: ITEM.url,
+			steps: [],
+			available: true,
+		};
+		render(
+			<>
+				<ItemRow item={ ITEM } onOpenEntity={ jest.fn() } />
+				<ItemRow
+					item={ WIRE_COPY }
+					onOpenEntity={ jest.fn() }
+					canTune={ true }
+				/>
+			</>
+		);
+		const [ more ] = screen.getAllByRole( 'button', {
+			name: 'More actions',
+		} );
+		fireEvent.click( more );
+		fireEvent.click(
+			within( await screen.findByRole( 'menu' ) ).getByRole( 'menuitem', {
+				name: 'How this was read',
+			} )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'trace' ) ).toEqual( [ [ ITEM.item_key ] ] )
+		);
+		fakeUndoClock();
+		exclude();
+		await elapse( UNDO_MS );
+		jest.useRealTimers();
+
+		await waitFor( () =>
+			expect( wire.sent( 'trace' ) ).toEqual( [
+				[ ITEM.item_key ],
+				[ ITEM.item_key ],
+			] )
+		);
+	} );
+
 	it( 'puts the row back on Undo and sends nothing', async () => {
 		renderRow();
 		fakeUndoClock();
