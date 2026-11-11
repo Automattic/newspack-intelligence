@@ -247,6 +247,9 @@ describe( 'Watches', () => {
 			expect.arrayContaining( [ 'Name', 'Watching', 'Delivery', 'New' ] )
 		);
 		expect( headers ).not.toContain( 'Item' );
+		for ( const header of screen.getAllByRole( 'columnheader' ) ) {
+			expect( within( header ).queryByRole( 'button' ) ).toBeNull();
+		}
 		expect( wire.sent( 'watches' ) ).toEqual( [ [] ] );
 	} );
 

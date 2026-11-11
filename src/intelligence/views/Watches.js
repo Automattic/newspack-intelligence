@@ -417,6 +417,8 @@ function WatchList( { watches, opened, onOpen } ) {
 			getItemId={ ( one ) => one.watch_key || `saving:${ one.name }` }
 			view={ {
 				type: layout,
+				// Its columns stay put, so a header offers no menu.
+				layout: { enableMoving: false },
 				page: 1,
 				perPage: Math.max( watches.length, 1 ),
 				fields: fields.map( ( field ) => field.id ),
@@ -774,7 +776,7 @@ function WatchForm( { draft, onDraft, refusal, onSave, onCancel } ) {
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
 			/>
 			<form
-				className="newspack-intelligence__watch-form"
+				className="newspack-intelligence__edit"
 				{ ...submitProps( onSave ) }
 			>
 				<TextControl

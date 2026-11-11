@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The Watches table's column headers are plain text. They offered "Move left" and "Move right", which moved nothing.
+- The New watch form spaces its fields, and its Delivery heading is lettered like the labels around it, as the team view's tier heading is.
+- The single-key shortcuts toggle stays at the end of its line when the shortcuts are off.
+- "Show more" and "Why this ranks" sit a space apart.
+
 ## [0.41.1] - 2026-11-11
 
 ### Fixed

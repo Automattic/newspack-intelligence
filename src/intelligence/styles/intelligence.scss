@@ -447,9 +447,14 @@
 		padding: 0;
 		border: 0;
 
+		// Lettered as WordPress letters the labels of the controls around it.
 		> legend {
 			flex-basis: 100%;
 			padding: 0;
+			font-size: 11px;
+			font-weight: 500;
+			line-height: 1.4;
+			text-transform: uppercase;
 		}
 	}
 
@@ -503,6 +508,11 @@
 .newspack-nodes-ui.newspack-nodes-ui.newspack-nodes-ui
 	.newspack-intelligence__more.components-button.is-link {
 	text-decoration: none;
+
+	// "Show more" and "Why this ranks" share a line, a space apart.
+	+ .newspack-intelligence__more {
+		margin-inline-start: base.$space-md;
+	}
 }
 
 // Exclude takes the shared text-button role; here it only keeps one line.
@@ -521,6 +531,11 @@
 
 	> p {
 		margin: 0;
+	}
+
+	// The toggle keeps the end of the line when the legend is gone.
+	> .components-toggle-control {
+		margin-inline-start: auto;
 	}
 }
 
