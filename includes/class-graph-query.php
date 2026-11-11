@@ -991,7 +991,7 @@ final class Graph_Query {
 		$clusters = Intel_Graph_Row_Schema::all( $r, 'clusters', true );
 		$cluster  = "( SELECT o.cluster_key FROM {$clusters} o WHERE o.item_key = {$item} ORDER BY o.partition_ordinal DESC LIMIT 1 )";
 		return 'SELECT cp.item_key FROM ( ' . Intel_Graph_Row_Schema::newest( $r, 'clusters', 'item_key', 'item_key, cluster_key', "item_key IN ( SELECT c.item_key FROM {$clusters} c WHERE c.cluster_key = {$cluster} )" )
-			. " ) cp WHERE cp.cluster_key = {$cluster} AND cp.item_key <> {$item} AND cp.item_key IN ( SELECT item_key FROM ri )";
+			. " ) cp WHERE cp.cluster_key = {$cluster} AND cp.item_key <> {$item} AND EXISTS ( SELECT 1 FROM ri s WHERE s.item_key = cp.item_key )";
 	}
 
 	/**
