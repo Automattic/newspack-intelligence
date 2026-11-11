@@ -219,6 +219,17 @@ const attentionChip = () =>
 	).getByRole( 'button', { name: 'Acme Quillsheet' } );
 
 describe( 'IntelligencePage', () => {
+	it( 'sets its tab bar flush under the header, as the Station does, its views padded below', async () => {
+		renderPage();
+		const tabs = await screen.findByRole( 'tablist', { name: 'Views' } );
+		expect( tabs.closest( '.newspack-intelligence__page' ) ).toBeNull();
+		expect(
+			document.querySelector(
+				'.newspack-intelligence > .newspack-intelligence__page'
+			)
+		).not.toBeNull();
+	} );
+
 	it( 'opens on the Briefing, its first tab', async () => {
 		renderPage();
 		await openWeek();

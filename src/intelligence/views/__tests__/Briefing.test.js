@@ -165,6 +165,15 @@ describe( 'Briefing', () => {
 		] );
 	} );
 
+	it( 'stands its blocks on the shared card, on the panel rung above the page', async () => {
+		renderBriefing();
+		await screen.findAllByRole( 'heading' );
+		const surface = document.querySelector(
+			'.newspack-intelligence__surface'
+		);
+		expect( surface ).toHaveClass( 'newspack-nodes-card' );
+	} );
+
 	it( 'shows a failed block’s read error in its place while the rest render', async () => {
 		wire.replies.briefing = ( [ what ] ) =>
 			'signals' === what ? new Error( 'signals refused' ) : CHANGES;

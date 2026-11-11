@@ -8,14 +8,10 @@
 @use "@newspack-nodes/shared/styles/tokens" as base;
 
 .newspack-intelligence {
-	padding: base.$space-lg base.$space-xl;
-
-	// The shared tab bar's paint arrives with the ui sheet; its row is ours.
-	.nodes-tab-host__tabbar {
-		display: flex;
-		flex-wrap: wrap;
-		gap: base.$space-xs;
-		margin: 0 0 base.$space-xl;
+	// The tab bar sits flush under the header, as the Station's does; the
+	// views below it take the page's padding.
+	&__page {
+		padding: base.$space-lg base.$space-xl;
 	}
 
 	// The fault notice stands between the tab bar and the view.
@@ -741,14 +737,12 @@
 	padding: base.$space-md;
 }
 
-// The Briefing's blocks stand on one surface, each a section of it.
+// The Briefing's blocks stand on one shared card, each a section of it.
 .newspack-intelligence__surface {
 	display: flex;
 	flex-direction: column;
 	gap: base.$space-xl;
 	padding: base.$space-xl;
-	border-radius: var(--np-radius-lg);
-	background: var(--paper, var(--np-surface));
 }
 
 .newspack-intelligence__section-head {

@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A pill's × reads in the pill's colour; it painted black.
 - "Show more" and "Why this ranks" share one line again, and a focused one rings itself alone; DataViews made each a full-width block.
 - The team view dialog spaces its fields, as the other forms do.
+- The tab bar sits flush under the header, as the Station's does, and the views below it keep the page's padding.
+- The Briefing stands on the shared card, a step lighter than the page, so nothing inside it reads darker than the surface around it.
 - Review pages its Suggested matches and Suggested names 50 rows at a time, so every row in a queue can be reached; it showed only the first 50. `review` takes `--offset`, and the MCP door's `intel_review` with it, while `total` still counts the whole queue.
 
 ## [0.41.1] - 2026-11-11

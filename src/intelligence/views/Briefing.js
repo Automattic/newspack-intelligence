@@ -84,7 +84,7 @@ export default function Briefing( {
 					/>
 				</div>
 			) }
-			<div className="newspack-intelligence__surface">
+			<div className="newspack-intelligence__surface newspack-nodes-card">
 				<ChangesRead.Provider value={ changes }>
 					<PageLayout
 						layout={ layout }

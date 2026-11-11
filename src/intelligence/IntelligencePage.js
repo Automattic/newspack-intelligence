@@ -324,154 +324,167 @@ export default function IntelligencePage( {
 								activeId={ view }
 								onPick={ go }
 							/>
-							<HealthStrip
-								canManage={ canManage }
-								slot={ slot }
-							/>
-							<div { ...panelProps }>
-								{ editSlot }
-								{ profile && ! editSlot && (
-									<Entity
-										onRestored={ relaid }
-										key={ profile.key }
-										entityKey={ profile.key }
-										canTune={ canTune }
-										vocabulary={ vocabulary }
-										operator={ operator }
-										layout={
-											layouts[ layoutContext( 'entity' ) ]
-										}
-										back={ {
-											label: viewName,
-											onBack: closeProfile,
-										} }
-										onWatch={ openWatchForm }
-										actions={ {
-											onSearchFor: searchFor,
-											onOpenEntity: openEntity,
-											onOpenLens: openLens,
-											onOpenWatch: openWatch,
-											onSave,
-											canTune,
-										} }
+							<div className="newspack-intelligence__page">
+								<HealthStrip
+									canManage={ canManage }
+									slot={ slot }
+								/>
+								<div { ...panelProps }>
+									{ editSlot }
+									{ profile && ! editSlot && (
+										<Entity
+											onRestored={ relaid }
+											key={ profile.key }
+											entityKey={ profile.key }
+											canTune={ canTune }
+											vocabulary={ vocabulary }
+											operator={ operator }
+											layout={
+												layouts[
+													layoutContext( 'entity' )
+												]
+											}
+											back={ {
+												label: viewName,
+												onBack: closeProfile,
+											} }
+											onWatch={ openWatchForm }
+											actions={ {
+												onSearchFor: searchFor,
+												onOpenEntity: openEntity,
+												onOpenLens: openLens,
+												onOpenWatch: openWatch,
+												onSave,
+												canTune,
+											} }
+										/>
+									) }
+									<div
+										hidden={ Boolean(
+											profile || editSlot
+										) }
+									>
+										{ 'briefing' === view && ! editSlot && (
+											<Briefing
+												onRestored={ relaid }
+												layout={
+													layouts[
+														layoutContext(
+															'briefing'
+														)
+													]
+												}
+												since={ lastLook.since }
+												kept={ lastLook.kept }
+												noteVisible={
+													lastLook.noteVisible
+												}
+												canTune={ canTune }
+												actions={ {
+													onSearchFor: searchFor,
+													onOpenEntity: openEntity,
+													onOpenLens: openLens,
+													onOpenWatch: openWatch,
+													onNewWatch: () =>
+														openWatchForm(
+															{
+																kind: 'lens',
+																key: '',
+															},
+															''
+														),
+													onSearch: () =>
+														go( 'search' ),
+													onSave,
+													canTune,
+													asked,
+													onAsked: setAsked,
+												} }
+											/>
+										) }
+										{ 'search' === view && (
+											<Search
+												view={ search }
+												onChangeView={ setSearch }
+												vocabulary={ vocabulary }
+												onOpenEntity={ openEntity }
+												onSave={ onSave }
+												canTune={ canTune }
+												asked={ asked }
+												onAsked={ setAsked }
+											/>
+										) }
+										{ 'lenses' === view && ! editSlot && (
+											<Lens
+												onRestored={ relaid }
+												canTune={ canTune }
+												vocabulary={ vocabulary }
+												opened={ lens }
+												onOpen={ setLens }
+												onWatch={ openWatchForm }
+												layout={
+													layouts[
+														layoutContext( 'lens' )
+													]
+												}
+												actions={ {
+													onSearchFor: searchFor,
+													onOpenEntity: openEntity,
+													onOpenLens: openLens,
+													onOpenWatch: openWatch,
+													onSave,
+													canTune,
+												} }
+											/>
+										) }
+										{ 'review' === view && (
+											<Review
+												canTune={ canTune }
+												onOpenEntity={ openEntity }
+											/>
+										) }
+										{ 'collections' === view && (
+											<Collections canTune={ canTune } />
+										) }
+										{ 'watches' === view && (
+											<Watches
+												opened={ watch }
+												onOpen={ setWatch }
+												draft={ watchDraft }
+												onDraft={ setWatchDraft }
+												onOpenEntity={ openEntity }
+												onSave={ onSave }
+												canTune={ canTune }
+											/>
+										) }
+									</div>
+								</div>
+								<UndoSnackbar latest={ laidOut } />
+								{ leaving && (
+									<Confirm
+										title={ __(
+											'Discard your changes to this layout?',
+											'newspack-intelligence'
+										) }
+										yes={ __(
+											'Discard changes',
+											'newspack-intelligence'
+										) }
+										no={ __(
+											'Keep editing',
+											'newspack-intelligence'
+										) }
+										onYes={ discard }
+										onNo={ keepEditing }
 									/>
 								) }
-								<div hidden={ Boolean( profile || editSlot ) }>
-									{ 'briefing' === view && ! editSlot && (
-										<Briefing
-											onRestored={ relaid }
-											layout={
-												layouts[
-													layoutContext( 'briefing' )
-												]
-											}
-											since={ lastLook.since }
-											kept={ lastLook.kept }
-											noteVisible={ lastLook.noteVisible }
-											canTune={ canTune }
-											actions={ {
-												onSearchFor: searchFor,
-												onOpenEntity: openEntity,
-												onOpenLens: openLens,
-												onOpenWatch: openWatch,
-												onNewWatch: () =>
-													openWatchForm(
-														{
-															kind: 'lens',
-															key: '',
-														},
-														''
-													),
-												onSearch: () => go( 'search' ),
-												onSave,
-												canTune,
-												asked,
-												onAsked: setAsked,
-											} }
-										/>
-									) }
-									{ 'search' === view && (
-										<Search
-											view={ search }
-											onChangeView={ setSearch }
-											vocabulary={ vocabulary }
-											onOpenEntity={ openEntity }
-											onSave={ onSave }
-											canTune={ canTune }
-											asked={ asked }
-											onAsked={ setAsked }
-										/>
-									) }
-									{ 'lenses' === view && ! editSlot && (
-										<Lens
-											onRestored={ relaid }
-											canTune={ canTune }
-											vocabulary={ vocabulary }
-											opened={ lens }
-											onOpen={ setLens }
-											onWatch={ openWatchForm }
-											layout={
-												layouts[
-													layoutContext( 'lens' )
-												]
-											}
-											actions={ {
-												onSearchFor: searchFor,
-												onOpenEntity: openEntity,
-												onOpenLens: openLens,
-												onOpenWatch: openWatch,
-												onSave,
-												canTune,
-											} }
-										/>
-									) }
-									{ 'review' === view && (
-										<Review
-											canTune={ canTune }
-											onOpenEntity={ openEntity }
-										/>
-									) }
-									{ 'collections' === view && (
-										<Collections canTune={ canTune } />
-									) }
-									{ 'watches' === view && (
-										<Watches
-											opened={ watch }
-											onOpen={ setWatch }
-											draft={ watchDraft }
-											onDraft={ setWatchDraft }
-											onOpenEntity={ openEntity }
-											onSave={ onSave }
-											canTune={ canTune }
-										/>
-									) }
-								</div>
+								{ saving && (
+									<SaveToCollection
+										item={ saving }
+										onClose={ () => setSaving( null ) }
+									/>
+								) }
 							</div>
-							<UndoSnackbar latest={ laidOut } />
-							{ leaving && (
-								<Confirm
-									title={ __(
-										'Discard your changes to this layout?',
-										'newspack-intelligence'
-									) }
-									yes={ __(
-										'Discard changes',
-										'newspack-intelligence'
-									) }
-									no={ __(
-										'Keep editing',
-										'newspack-intelligence'
-									) }
-									onYes={ discard }
-									onNo={ keepEditing }
-								/>
-							) }
-							{ saving && (
-								<SaveToCollection
-									item={ saving }
-									onClose={ () => setSaving( null ) }
-								/>
-							) }
 						</div>
 					</PageReads.Provider>
 				</CanManage.Provider>

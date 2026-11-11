@@ -105,6 +105,20 @@ describe( 'the item row sheet', () => {
 		expect( more.width ).toBe( 'auto' );
 	} );
 
+	it( 'pads the views below the tab bar, never the tab bar', () => {
+		expect( declared( '.newspack-intelligence' ).padding ).toBeUndefined();
+		expect(
+			declared( '.newspack-intelligence__page' ).padding
+		).toBeDefined();
+	} );
+
+	it( 'leaves the Briefing surface its geometry; the shared card paints it', () => {
+		const surface = declared( '.newspack-intelligence__surface' );
+		expect( surface.gap ).toBeDefined();
+		expect( surface.background ).toBeUndefined();
+		expect( surface[ 'border-radius' ] ).toBeUndefined();
+	} );
+
 	it( 'lets a pill shrink and cuts its name with an ellipsis, painting nothing', () => {
 		const pill = declared( `${ ROOT } ${ ROOT }__pill` );
 		expect( pill ).toEqual(
