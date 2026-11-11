@@ -310,7 +310,7 @@ export default function IntelligencePage( {
 	return (
 		<DashboardShell
 			storageKey="newspack-nodes:debug:intelligence"
-			title={ __( 'Intelligence', 'newspack-intelligence' ) }
+			subtitle={ __( 'Intelligence', 'newspack-intelligence' ) }
 			overflowY="auto"
 		>
 			{ ( slot ) => (

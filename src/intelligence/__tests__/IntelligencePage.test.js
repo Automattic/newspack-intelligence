@@ -1041,14 +1041,12 @@ describe( 'IntelligencePage', () => {
 		expect(
 			container.querySelector( '.newspack-nodes-page-surface' )
 		).not.toBeNull();
-		expect( screen.getByRole( 'heading', { level: 1 } ).textContent ).toBe(
-			'Intelligence'
-		);
-		expect( container.querySelector( '.topology-subtitle' ) ).toBeNull();
-		const header =
-			container.querySelector( '.topology-header' ).textContent;
-		expect( header ).not.toMatch( /\d+\.\d+\.\d+/ );
-		expect( header ).not.toContain( window.location.hostname );
+		expect(
+			container.querySelector( '.topology-subtitle' ).textContent
+		).toContain( 'Intelligence' );
+		expect(
+			container.querySelector( '.topology-header' ).textContent
+		).toContain( 'NEWSPACK::NODES' );
 		expect(
 			container.querySelector(
 				'.newspack-nodes-page-content .newspack-intelligence'

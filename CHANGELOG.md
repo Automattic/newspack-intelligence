@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The page wears the substrate's standard header**, as the Nodes station and the event logger do: the `NEWSPACK::NODES` wordmark with "Intelligence" as its subtitle, beside the version and the host, in place of a page title of its own.
 - **Requires newspack-nodes 2.152.0**, for the shared `Confirm` dialog, `CompositionEditor`'s `onDirty` and `status_text()`'s one-line scrub.
 - Leaving a layout edit that holds no unsaved change, by a tab or Back, no longer asks to discard it.
 - Theme groups page through the shared list's pager.
