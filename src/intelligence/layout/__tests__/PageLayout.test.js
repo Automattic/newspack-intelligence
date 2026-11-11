@@ -20,6 +20,7 @@ import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { pageData } from '../../views/__tests__/fixtures';
 import { CanManage } from '../../components/Answer';
+import { renderOnPage } from '../../__tests__/pageReads';
 import PageLayout from '../PageLayout';
 
 const PAGE = {
@@ -70,6 +71,37 @@ const renderLayout = ( layout, canManage = false ) =>
 	);
 
 describe( 'PageLayout', () => {
+	it( 'gives each layout on a page headings of its own, a hidden one beside a profile', () => {
+		const followed = {
+			blocks: [
+				{
+					name: 'newspack-intelligence/watches',
+					attributes: { heading: 'Harbor Ledger watches', max: 3 },
+					inner: [],
+				},
+			],
+		};
+		renderOnPage(
+			<>
+				<div hidden>
+					<PageLayout layout={ followed } page={ PAGE } />
+				</div>
+				<PageLayout
+					layout={ followed }
+					page={ { ...PAGE, page: 'entity' } }
+				/>
+			</>
+		);
+		const ids = screen
+			.getAllByRole( 'heading', {
+				name: 'Harbor Ledger watches',
+				hidden: true,
+			} )
+			.map( ( heading ) => heading.id );
+		expect( ids ).toHaveLength( 2 );
+		expect( new Set( ids ).size ).toBe( 2 );
+	} );
+
 	it( 'shows a block that cannot render as the read error in its place, its neighbours drawn', () => {
 		const { container } = renderLayout( LAYOUT );
 		const main = container.querySelector(

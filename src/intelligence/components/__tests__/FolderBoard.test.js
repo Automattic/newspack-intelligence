@@ -11,11 +11,11 @@ import {
 	act,
 	cleanup,
 	fireEvent,
-	render,
 	screen,
 	waitFor,
 	within,
 } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { speak } from '@wordpress/a11y';
 import { Core } from '@newspack-nodes/runtime';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
@@ -130,7 +130,9 @@ const elapse = ( ms ) =>
 	} );
 
 const renderBoard = ( props = {} ) =>
-	render( <FolderBoard show="unused" folders={ [] } canTune { ...props } /> );
+	renderOnPage(
+		<FolderBoard show="unused" folders={ [] } canTune { ...props } />
+	);
 
 const column = ( name ) => screen.findByRole( 'region', { name } );
 

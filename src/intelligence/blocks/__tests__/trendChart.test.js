@@ -7,7 +7,14 @@
  * nothing for a page that names no subject yet.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+	act,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { LENSES, pageData } from '../../views/__tests__/fixtures';
@@ -57,7 +64,7 @@ beforeEach( () => {
  * @return {Object} The render.
  */
 const block = ( attributes = {}, page = {} ) =>
-	render(
+	renderOnPage(
 		<IntelPageContext.Provider value={ { ...DESK, ...page } }>
 			<trendChart.View attributes={ { ...ATTRIBUTES, ...attributes } } />
 		</IntelPageContext.Provider>
@@ -142,20 +149,26 @@ describe( 'trend-chart', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'reads nothing on a page that names no subject yet, sending no "null"', async () => {
-		const lens = block( {}, { lens_key: null } );
-		const profile = block(
-			{},
-			{ page: 'entity', lens_key: null, entity_key: null }
-		);
-		await new Promise( ( resolve ) => setTimeout( resolve, 50 ) );
-		expect( wire.sent( 'trends' ) ).toEqual( [] );
-		lens.unmount();
-		profile.unmount();
-	} );
+	it.each( [
+		[ 'team view', { lens_key: null } ],
+		[ 'profile', { page: 'entity', lens_key: null, entity_key: null } ],
+	] )(
+		'says its empty sentence on a %s that names no subject yet, reading nothing',
+		async ( _, page ) => {
+			block( {}, page );
+			expect(
+				screen.getByText( 'Nothing in this view yet.' )
+			).toBeInTheDocument();
+			expect( screen.queryByRole( 'status' ) ).toBeNull();
+			await act(
+				() => new Promise( ( resolve ) => setTimeout( resolve, 50 ) )
+			);
+			expect( wire.sent( 'trends' ) ).toEqual( [] );
+		}
+	);
 
-	it( 'stands twice on one page under one axis and span, both drawn from one read', async () => {
-		render(
+	it( 'stands twice on one page, both reading its one team view list', async () => {
+		renderOnPage(
 			<IntelPageContext.Provider value={ DESK }>
 				<trendChart.View attributes={ { ...ATTRIBUTES, by: 'kind' } } />
 				<trendChart.View
@@ -175,9 +188,7 @@ describe( 'trend-chart', () => {
 				pressed: true,
 			} )
 		).toBeInTheDocument();
-		expect( wire.sent( 'trends' ) ).toEqual( [
-			[ '--lens=support-desk', '--by=kind' ],
-		] );
+		expect( wire.sent( 'lenses' ) ).toEqual( [ [] ] );
 	} );
 
 	it( 'shows the shared read error in its place, under its heading', async () => {

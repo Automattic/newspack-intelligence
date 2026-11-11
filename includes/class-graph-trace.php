@@ -1,14 +1,15 @@
 <?php
 /**
- * Graph_Trace: the `trace` read, how one item was read. It lays out the
+ * Graph_Trace: the `trace` read, how one item was read, and the `copies`
+ * read, the other items its cluster holds. The trace lays out the
  * rows the pipeline's events already wrote about the item, in the order the
  * pipeline writes them: its record, each link with its method and state and
  * the judgment that set it, its extraction or the stand-in written in its
  * place, its kind check and its cluster, each step with its actor and the
- * second it was written. It reads under the caller's `ri`, so an item of a
+ * second it was written. Both read under the caller's `ri`, so an item of a
  * tier the caller does not hold, or one a curator excluded, is refused as
- * missing, and a linked entity `Graph_Query::visible_of()` hides is left
- * out.
+ * missing and never listed as a copy, and a linked entity
+ * `Graph_Query::visible_of()` hides is left out.
  *
  * @package Newspack_Intelligence
  */
@@ -89,12 +90,10 @@ final class Graph_Trace {
 	 * @return list<array<string,mixed>>
 	 */
 	private static function cluster( Row_Reader $r, array $g, string $key ): array {
-		$clusters = Intel_Graph_Row_Schema::all( $r, 'clusters' );
-		$row      = $r->rows(
-			"{$g['with']}, mine AS ( SELECT cluster_key, actor, ts FROM " . Intel_Graph_Row_Schema::all( $r, 'clusters', true ) . ' c WHERE item_key = ? ORDER BY partition_ordinal DESC LIMIT 1 ) SELECT mine.actor, mine.ts, ( SELECT canonical_item_key FROM ( '
+		$row = $r->rows(
+			"{$g['with']}, " . self::mine( $r ) . ' SELECT mine.actor, mine.ts, ( SELECT canonical_item_key FROM ( '
 			. Intel_Graph_Row_Schema::newest( $r, 'canonicals', 'cluster_key', 'cluster_key, canonical_item_key', 'cluster_key = ( SELECT cluster_key FROM mine )' ) . ' ) ), ( SELECT COUNT(*) FROM ( '
-			. Intel_Graph_Row_Schema::newest( $r, 'clusters', 'item_key', 'item_key, cluster_key', "item_key IN ( SELECT item_key FROM {$clusters} m WHERE cluster_key = ( SELECT cluster_key FROM mine ) )" )
-			. ' ) cp WHERE cp.cluster_key = ( SELECT cluster_key FROM mine ) AND cp.item_key <> ? AND cp.item_key IN ( SELECT item_key FROM ri ) ) FROM mine',
+			. self::others( $r ) . ' ) ) FROM mine',
 			[ ...$g['binds'], $key, $key ]
 		)[0] ?? null;
 		if ( null === $row ) {
@@ -198,5 +197,76 @@ final class Graph_Trace {
 			];
 		}
 		return $links;
+	}
+
+	/**
+	 * The `copies` command: the other items of one readable item's cluster
+	 * the caller reads, `{ item_key, copies, available }`, each copy `{
+	 * item_key, url, title, source, day }`, `day` its UTC `Y-m-d`, the newest
+	 * first, then by key; none for an item outside every cluster.
+	 *
+	 * @param array<array-key,mixed> $args The bound command args: `item`.
+	 * @return array<string,mixed>
+	 * @throws \InvalidArgumentException As `no item: <key>` for an item the caller's `ri` does not hold, or on a bad key.
+	 */
+	public static function copies( array $args ): array {
+		$key = Graph_Curation::bounded( 'item', Core::as_string( $args['item'] ), Graph_Curation::ITEM_KEY_BYTES );
+		return Graph_Query::answer( [ 'item_key' => $key, 'copies' => [] ], static fn ( Row_Reader $r, array $g ): array => self::copied( $r, $g, $key ) );
+	}
+
+	/**
+	 * One item's copies, read on an open graph.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param Graph      $g   The caller's graph.
+	 * @param string     $key The item.
+	 * @return array<string,mixed>
+	 * @throws \InvalidArgumentException As `no item: <key>`.
+	 */
+	private static function copied( Row_Reader $r, array $g, string $key ): array {
+		if ( [] === $r->rows( "{$g['with']} SELECT 1 FROM ri WHERE item_key = ? LIMIT 1", [ ...$g['binds'], $key ] ) ) {
+			throw new \InvalidArgumentException( \esc_html( "no item: {$key}" ) );
+		}
+		$time = Intel_Graph_Row_Schema::ITEM_TIME;
+		$rows = $r->rows(
+			"{$g['with']}, " . self::mine( $r ) . " SELECT i.item_key, MAX( i.url ), MAX( i.title ), MAX( i.source ), date( MIN( {$time} ), 'unixepoch' ) FROM ri i WHERE i.item_key IN ( "
+			. self::others( $r ) . " ) GROUP BY i.item_key ORDER BY MIN( {$time} ) DESC, i.item_key",
+			[ ...$g['binds'], $key, $key ]
+		);
+		return [
+			'item_key' => $key,
+			'copies'   => \array_map(
+				static fn ( array $row ): array => [
+					'item_key' => Core::as_string( $row[0] ),
+					'url'      => Core::as_string( $row[1] ),
+					'title'    => Core::as_string( $row[2] ),
+					'source'   => Core::as_string( $row[3] ),
+					'day'      => Core::as_string( $row[4] ),
+				],
+				$rows
+			),
+		];
+	}
+
+	/**
+	 * The keys of the cluster's other items `ri` holds, each placed by the
+	 * newest partition's `clusters` row, over `mine`, the item's key bound
+	 * again.
+	 *
+	 * @param Row_Reader $r The reader.
+	 */
+	private static function others( Row_Reader $r ): string {
+		return 'SELECT cp.item_key FROM ( ' . Intel_Graph_Row_Schema::newest( $r, 'clusters', 'item_key', 'item_key, cluster_key', 'item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'clusters' ) . ' m WHERE cluster_key = ( SELECT cluster_key FROM mine ) )' )
+			. ' ) cp WHERE cp.cluster_key = ( SELECT cluster_key FROM mine ) AND cp.item_key <> ? AND cp.item_key IN ( SELECT item_key FROM ri )';
+	}
+
+	/**
+	 * The `mine` clause: the item's placement, the newest partition's, its
+	 * key bound first.
+	 *
+	 * @param Row_Reader $r The reader.
+	 */
+	private static function mine( Row_Reader $r ): string {
+		return 'mine AS ( SELECT cluster_key, actor, ts FROM ' . Intel_Graph_Row_Schema::all( $r, 'clusters', true ) . ' c WHERE item_key = ? ORDER BY partition_ordinal DESC LIMIT 1 )';
 	}
 }

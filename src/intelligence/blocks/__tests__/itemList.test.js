@@ -9,7 +9,8 @@
  * stories grouped by theme, or the items in the layout it names.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { GROUPS, ITEM, LENSES, pageData } from '../../views/__tests__/fixtures';
@@ -99,7 +100,7 @@ beforeEach( () => {
  * @return {Object} The render.
  */
 const block = ( attributes, page ) =>
-	render(
+	renderOnPage(
 		<IntelPageContext.Provider
 			value={ { ...page, actions: { onOpenEntity, canTune: false } } }
 		>
@@ -263,9 +264,9 @@ describe( 'item-list', () => {
 		] );
 	} );
 
-	it( 'stands twice on one page, both drawn from one search', async () => {
+	it( 'stands twice on one page, both reading its one team view list', async () => {
 		const page = deskOf( [] );
-		render(
+		renderOnPage(
 			<IntelPageContext.Provider
 				value={ { ...page, actions: { onOpenEntity, canTune: false } } }
 			>
@@ -280,9 +281,6 @@ describe( 'item-list', () => {
 				} )
 			).toHaveLength( 2 )
 		);
-		expect( wire.sent( 'search' ) ).toEqual( [
-			[ '--lens=prairie-desk', '--sort=time', '--limit=7' ],
-		] );
 		expect( wire.sent( 'lenses' ) ).toEqual( [ [] ] );
 	} );
 
@@ -334,7 +332,7 @@ describe( 'item-list', () => {
 
 	it( 'writes each setting from its controls, a list by its words', () => {
 		const setAttributes = jest.fn();
-		render(
+		renderOnPage(
 			<itemList.Controls
 				attributes={ { ...ATTRIBUTES, kinds: [ 'award' ] } }
 				setAttributes={ setAttributes }

@@ -1,4 +1,10 @@
-import { useLayoutEffect, useMemo, useRef, useState } from '@wordpress/element';
+import {
+	useId,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import {
 	Button,
@@ -425,6 +431,7 @@ export default function Entity( {
 		}
 	} );
 	const region = useRef( null );
+	const jumpPrefix = useId();
 
 	if ( record.error ) {
 		return (
@@ -600,7 +607,9 @@ export default function Entity( {
 					</AnswerBody>
 					{ ! layout.error && (
 						<JumpLinks
-							headings={ jumpsOf( layout.blocks ).headings }
+							headings={
+								jumpsOf( layout.blocks, jumpPrefix ).headings
+							}
 							layout={ region }
 						/>
 					) }
@@ -647,6 +656,7 @@ export default function Entity( {
 					<PageLayout
 						layout={ layout }
 						onRestored={ onRestored }
+						jumpPrefix={ jumpPrefix }
 						page={ {
 							page: 'entity',
 							lens_key: null,

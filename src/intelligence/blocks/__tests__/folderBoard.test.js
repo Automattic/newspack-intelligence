@@ -5,7 +5,8 @@
  * card menus a curator's alone and inert while its layout is edited.
  */
 
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { pageData } from '../../views/__tests__/fixtures';
@@ -78,7 +79,7 @@ beforeEach( () => {
  * @param {boolean} editing    Whether its layout is being edited.
  */
 const renderBlock = ( attributes, editing = false ) =>
-	render(
+	renderOnPage(
 		<IntelPageContext.Provider
 			value={ {
 				page: 'briefing',
@@ -135,7 +136,7 @@ describe( 'the folder-board block', () => {
 
 	it( 'picks its folders by name, holding their keys', async () => {
 		const setAttributes = jest.fn();
-		render(
+		renderOnPage(
 			<Controls
 				attributes={ { show: 'all', folders: [ 'coastline-picks' ] } }
 				setAttributes={ setAttributes }
@@ -154,7 +155,7 @@ describe( 'the folder-board block', () => {
 
 	it( 'sets what the board opens on from its controls', async () => {
 		const setAttributes = jest.fn();
-		render(
+		renderOnPage(
 			<Controls
 				attributes={ { show: 'unused', folders: [ 'awards-page' ] } }
 				setAttributes={ setAttributes }

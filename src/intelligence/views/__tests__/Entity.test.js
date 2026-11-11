@@ -10,12 +10,12 @@
 
 import {
 	act,
-	render,
 	screen,
 	fireEvent,
 	waitFor,
 	within,
 } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
 import { intelWire } from '../../__tests__/intelWire';
@@ -230,7 +230,7 @@ afterEach( () => {
 
 function renderEntity( over = {} ) {
 	const canTune = over.canTune ?? false;
-	return render(
+	return renderOnPage(
 		<Entity
 			entityKey={ KEY }
 			canTune={ canTune }
@@ -630,7 +630,7 @@ describe( 'Entity — churn', () => {
 				) ) }
 			</>
 		);
-		const seeded = render( probes() );
+		const seeded = renderOnPage( probes() );
 		await screen.findByText( 'briefing read' );
 		await screen.findByText( 'entity read' );
 		seeded.unmount();
@@ -646,7 +646,7 @@ describe( 'Entity — churn', () => {
 		view.unmount();
 		wire.replies.briefing = never;
 		wire.replies.entity = never;
-		render( probes() );
+		renderOnPage( probes() );
 		expect( screen.getByText( 'briefing owed' ) ).toBeInTheDocument();
 		expect( screen.getByText( 'entity owed' ) ).toBeInTheDocument();
 	} );

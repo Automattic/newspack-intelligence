@@ -8,13 +8,8 @@
  * showing the key; removing one asks first.
  */
 
-import {
-	fireEvent,
-	render,
-	screen,
-	waitFor,
-	within,
-} from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { useState } from '@wordpress/element';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
@@ -123,7 +118,7 @@ const openMenu = async () => {
 
 describe( 'Lens', () => {
 	it( 'lists every view in the rail with what is new this week, the first open', async () => {
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		const rail = await screen.findByRole( 'navigation', {
 			name: 'Team views',
 		} );
@@ -146,7 +141,7 @@ describe( 'Lens', () => {
 	} );
 
 	it( 'renders the pulse line, the chart and the theme groups under the fixed header, in that order', async () => {
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		const header = await screen.findByRole( 'heading', {
 			level: 2,
 			name: 'Support desk',
@@ -179,7 +174,7 @@ describe( 'Lens', () => {
 	} );
 
 	it( 'opens the view the rail names', async () => {
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		fireEvent.click( await railButton( 'Developer shipping' ) );
 		expect(
 			await screen.findByRole( 'heading', {
@@ -212,7 +207,7 @@ describe( 'Lens', () => {
 		};
 		wire.replies.trends = { ...TRENDS, rows: [] };
 		wire.replies.search = { groups: [], total: 0, available: true };
-		const { container } = render( <Harness /> );
+		const { container } = renderOnPage( <Harness /> );
 		expect(
 			await screen.findByText(
 				'Nothing in this view in the last 30 days.'
@@ -230,7 +225,7 @@ describe( 'Lens', () => {
 	} );
 
 	it( 'offers every reader a watch on the view open', async () => {
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Watch' } )
 		);
@@ -241,7 +236,7 @@ describe( 'Lens', () => {
 	} );
 
 	it( 'offers a reader no curation', async () => {
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await railButton( 'Support desk' );
 		expect(
 			screen.queryByRole( 'button', { name: 'New view' } )
@@ -254,7 +249,7 @@ describe( 'Lens', () => {
 
 	it( 'holds Remove view… and Edit layout in a curator’s menu', async () => {
 		props.canTune = true;
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		const menu = await openMenu();
 		expect(
 			within( menu )
@@ -271,7 +266,7 @@ describe( 'Lens', () => {
 			'',
 			'/wp-admin/admin.php?page=newspack-intelligence&view=lenses'
 		);
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		fireEvent.click( await railButton( 'Developer shipping' ) );
 		const menu = await openMenu();
 		fireEvent.click(
@@ -286,7 +281,7 @@ describe( 'Lens', () => {
 	it( 'saves a new view from one dialog, its key derived from the name and never shown', async () => {
 		props.canTune = true;
 		wire.replies.save_lens = { ok: true, event_id: 'ev-l1' };
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'New view' } )
 		);
@@ -330,7 +325,7 @@ describe( 'Lens', () => {
 	it( 'edits the view open in the same dialog, from its own filters', async () => {
 		props.canTune = true;
 		wire.replies.save_lens = { ok: true, event_id: 'ev-l2' };
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Edit' } )
 		);
@@ -383,7 +378,7 @@ describe( 'Lens', () => {
 				: LENSES.lenses,
 			available: true,
 		} );
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Edit' } )
 		);
@@ -423,7 +418,7 @@ describe( 'Lens', () => {
 			lenses: [ { ...tided, week_items: saved ? 18 : 29 }, shipping ],
 			available: true,
 		} );
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Edit' } )
 		);
@@ -455,7 +450,7 @@ describe( 'Lens', () => {
 		props.canTune = true;
 		wire.replies.save_lens = () =>
 			new Error( 'kind must be one of: award, launch' );
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'New view' } )
 		);
@@ -476,7 +471,7 @@ describe( 'Lens', () => {
 
 	it( 'cancels the dialog without sending', async () => {
 		props.canTune = true;
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'New view' } )
 		);
@@ -491,7 +486,7 @@ describe( 'Lens', () => {
 	it( 'asks before removing the view open, then removes it', async () => {
 		props.canTune = true;
 		wire.replies.remove_lens = { ok: true, event_id: 'ev-l3' };
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		const menu = await openMenu();
 		fireEvent.click(
 			within( menu ).getByRole( 'menuitem', { name: 'Remove view…' } )
@@ -516,7 +511,7 @@ describe( 'Lens', () => {
 	} );
 
 	it( 'shows the read error in the layout’s place when the layout does not read', async () => {
-		render(
+		renderOnPage(
 			<Harness
 				layout={ { context: LAYOUT.context, error: 'no block' } }
 			/>
@@ -544,7 +539,7 @@ describe( 'Lens', () => {
 		it( 'says there is no view yet, offering a curator a new one', async () => {
 			props.canTune = true;
 			wire.replies.lenses = { lenses: [], available: true };
-			render( <Harness /> );
+			renderOnPage( <Harness /> );
 			expect(
 				await screen.findByText(
 					/^No team views yet\. A view saves a set of filters and charts what moves inside it\./
@@ -557,7 +552,7 @@ describe( 'Lens', () => {
 
 		it( 'stands a skeleton in while the views are owed', () => {
 			wire.replies.lenses = owed;
-			render( <Harness /> );
+			renderOnPage( <Harness /> );
 			expect(
 				screen.getByRole( 'status', { name: 'Loading' } )
 			).toBeInTheDocument();
@@ -565,7 +560,7 @@ describe( 'Lens', () => {
 
 		it( 'shows the read error when the views are refused', async () => {
 			wire.replies.lenses = () => new Error( 'lenses refused' );
-			render( <Harness /> );
+			renderOnPage( <Harness /> );
 			expect(
 				await screen.findByText(
 					'Intelligence could not be read just now. Try again.'
@@ -582,7 +577,7 @@ describe( 'Lens', () => {
 		afterEach( () => viewport.restore() );
 
 		it( 'picks the view from a select in the rail’s place', async () => {
-			render( <Harness /> );
+			renderOnPage( <Harness /> );
 			const select = await screen.findByLabelText( 'Team view' );
 			expect(
 				within( select ).getByRole( 'option', {

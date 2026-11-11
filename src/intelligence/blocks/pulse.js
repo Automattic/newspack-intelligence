@@ -66,7 +66,6 @@ function View( { attributes } ) {
 function Controls( { attributes, setAttributes } ) {
 	return (
 		<LensTokens
-			scope="layout:pulse-lens"
 			label={ __(
 				'Team view (on the Briefing)',
 				'newspack-intelligence'

@@ -6,13 +6,8 @@
  * block's write controls go inert while its layout is edited.
  */
 
-import {
-	act,
-	fireEvent,
-	render,
-	screen,
-	waitFor,
-} from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { getBlockTypes, unregisterBlockType } from '@wordpress/blocks';
 import { Core } from '@newspack-nodes/runtime';
 import CompositionView from '@newspack-nodes/shared/composition/CompositionView';
@@ -132,7 +127,7 @@ describe( 'BLOCK_VIEWS', () => {
 	} );
 
 	it( "renders the aside's children in the aside region, apart from the main column", () => {
-		render(
+		renderOnPage(
 			<CompositionView
 				views={ VIEWS }
 				renderError={ ( error ) => <p>{ error.message }</p> }
@@ -188,7 +183,7 @@ describe( 'write controls while the layout is edited', () => {
 	 * @param {Object}   [actions]  The page's actions.
 	 */
 	const renderView = ( { View }, attributes, editing, actions = {} ) =>
-		render(
+		renderOnPage(
 			<IntelPageContext.Provider
 				value={ {
 					page: 'briefing',
@@ -299,7 +294,7 @@ describe( 'useWriteControl', () => {
 	it( 'writes under a page context, which holds no editing flag of its own', async () => {
 		const wire = intelWire();
 		wire.replies.mark_seen = { ok: true, count: 1 };
-		render(
+		renderOnPage(
 			<IntelPageContext.Provider
 				value={
 					/** @type {Object} */ ( {

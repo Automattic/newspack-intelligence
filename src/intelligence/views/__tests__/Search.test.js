@@ -11,12 +11,12 @@
 
 import {
 	act,
-	render,
 	screen,
 	fireEvent,
 	waitFor,
 	within,
 } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
 import { useState } from '@wordpress/element';
@@ -69,7 +69,7 @@ function Harness( { start = newView(), ...props } ) {
 }
 
 function renderSearch( props = {} ) {
-	return render( <Harness { ...props } /> );
+	return renderOnPage( <Harness { ...props } /> );
 }
 
 /**

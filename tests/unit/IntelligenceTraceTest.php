@@ -5,6 +5,7 @@ namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
+use Newspack_Intelligence\Intel_Tiers;
 use Newspack_Intelligence\Intelligence_CI_Node;
 use Newspack_Nodes\Capabilities;
 use Newspack_Nodes\Topology_Analyzer;
@@ -30,6 +31,14 @@ final class IntelligenceTraceTest extends TestCase {
 	private const HARBOR = 'organization:harbor-ledger';
 
 	private const PRAIRIE = 'organization:prairie-signal';
+
+	private const LATE = 'feed:harbor-renewal-late-420';
+
+	private const RESTRICTED = 'hubspot:harbor-renewal-deal-421';
+
+	private const GONE = 'feed:harbor-renewal-gone-422';
+
+	private const MOVED = 'feed:harbor-renewal-moved-423';
 
 	/** 2026-10-13 12:10 UTC, when the item was retrieved. */
 	private const RETRIEVED = 1791893400;
@@ -119,6 +128,86 @@ final class IntelligenceTraceTest extends TestCase {
 		}
 	}
 
+	public function test_copies_is_a_read(): void {
+		$this->assertSame( Capabilities::READ, \array_column( Intelligence_CI_Node::node_schema()['commands'], 'capability', 'name' )['copies'] );
+	}
+
+	/**
+	 * `copies` lists the other items of the item's cluster the reader reads
+	 * through `ri`, each with its source and its UTC day, the newest first:
+	 * a restricted copy is never listed for a reader without the tier, nor a
+	 * copy a curator excluded, nor an item the newest partition moved to
+	 * another cluster.
+	 */
+	public function test_copies_lists_the_clusters_other_copies_a_reader_reads(): void {
+		$this->seed_copies();
+
+		$this->assertSame(
+			[
+				'item_key'  => self::ITEM,
+				'copies'    => [
+					[ 'item_key' => self::LATE, 'url' => self::url( self::LATE ), 'title' => 'A later copy', 'source' => 'feed', 'day' => '2026-10-14' ],
+					[ 'item_key' => self::COPY, 'url' => self::url( self::COPY ), 'title' => 'A copy', 'source' => 'feed', 'day' => '2026-10-13' ],
+				],
+				'available' => true,
+			],
+			$this->ci->dispatch( 'copies', [ self::ITEM ] )
+		);
+	}
+
+	/** A holder of the restricted tier is listed the restricted copy too, a tie in time by key. */
+	public function test_copies_lists_a_restricted_copy_to_its_holder(): void {
+		$this->seed_copies();
+		self::sign_in( 6153, 'quay-holder', 'manage_options', Intel_Tiers::CAPABILITY );
+
+		$this->assertSame(
+			[ self::LATE, self::COPY, self::RESTRICTED ],
+			\array_column( $this->ci->dispatch( 'copies', [ self::ITEM ] )['copies'], 'item_key' )
+		);
+	}
+
+	/** An item outside every cluster has no copies. */
+	public function test_an_item_in_no_cluster_has_no_copies(): void {
+		$this->seed( self::recorded( 'feed:harbor-alone-5', 'feed', 'public' ) );
+
+		$this->assertSame( [], $this->ci->dispatch( 'copies', [ 'feed:harbor-alone-5' ] )['copies'] );
+	}
+
+	/**
+	 * `copies` names no cluster of an item the reader cannot read: a
+	 * restricted item and an excluded one are refused as missing.
+	 */
+	public function test_copies_refuses_an_item_outside_the_readers_tiers(): void {
+		$this->seed_copies();
+
+		foreach ( [ self::RESTRICTED, self::GONE ] as $key ) {
+			try {
+				$this->ci->dispatch( 'copies', [ $key ] );
+				$this->fail( "{$key} answered its copies" );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertSame( "no item: {$key}", $e->getMessage() );
+			}
+		}
+	}
+
+	/**
+	 * The renewal cluster: the item, a public copy, a later public copy, a
+	 * restricted copy, an excluded copy, and a copy the newest partition
+	 * moved into a cluster of its own.
+	 */
+	private function seed_copies(): void {
+		$this->seed_record();
+		self::write_restricted_item( self::RESTRICTED, 'A restricted copy' );
+		$this->seed(
+			self::recorded( self::LATE, 'feed', 'public', 'A later copy', self::RETRIEVED + 86400 ),
+			self::recorded( self::GONE, 'feed', 'public', 'An excluded copy' ),
+			self::recorded( self::MOVED, 'feed', 'public', 'A moved copy' ),
+			self::story( self::ITEM, [ self::COPY, self::ITEM, self::LATE, self::RESTRICTED, self::GONE, self::MOVED ], self::RETRIEVED - 600 ),
+			[ Intel_Event::make( 'item_excluded', [ 'item_key' => self::GONE, 'url' => self::url( self::GONE ), 'title' => 'An excluded copy', 'tier' => 'public' ], 'user:41', 'fixture-9' ) ]
+		);
+		$this->second_partition( self::story( self::MOVED, [ self::MOVED ], self::RETRIEVED - 600 ) );
+	}
+
 	/**
 	 * The renewal item and its record: recorded by its source, linked to
 	 * Harbor Ledger by its identifier and confirmed by a curator, to Prairie
@@ -163,10 +252,11 @@ final class IntelligenceTraceTest extends TestCase {
 	 * @param string $source Its source.
 	 * @param string $tier   Its tier.
 	 * @param string $title  Its title.
+	 * @param int    $when   Its item time.
 	 * @return list<array<string,mixed>>
 	 */
-	private static function recorded( string $key, string $source, string $tier, string $title = 'A copy' ): array {
-		return [ self::at( Intel_Event::make( 'item_recorded', [ 'item_key' => $key, 'source' => $source, 'tier' => $tier, 'url' => self::url( $key ), 'title' => $title, 'body' => 'The renewal is under review.', 'item_ts' => self::RETRIEVED - 600, 'retrieved_ts' => self::RETRIEVED ], "machine:source:{$source}@9.4.1", 'fixture-9' ), self::RETRIEVED + 5 ) ];
+	private static function recorded( string $key, string $source, string $tier, string $title = 'A copy', int $when = self::RETRIEVED - 600 ): array {
+		return [ self::at( Intel_Event::make( 'item_recorded', [ 'item_key' => $key, 'source' => $source, 'tier' => $tier, 'url' => self::url( $key ), 'title' => $title, 'body' => 'The renewal is under review.', 'item_ts' => $when, 'retrieved_ts' => self::RETRIEVED ], "machine:source:{$source}@9.4.1", 'fixture-9' ), self::RETRIEVED + 5 ) ];
 	}
 
 	/**

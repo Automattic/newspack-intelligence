@@ -14,6 +14,7 @@ import {
 	waitFor,
 	within,
 } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { ITEM, pageData } from '../../views/__tests__/fixtures';
@@ -123,7 +124,7 @@ afterEach( () => {
  * @return {Object} What `render` returned.
  */
 const renderBlock = ( block, attributes, lastLook = LAST_LOOK ) =>
-	render(
+	renderOnPage(
 		<IntelPageContext.Provider
 			value={ {
 				page: 'briefing',
@@ -886,7 +887,7 @@ describe( 'Controls', () => {
 	it( "write the week's and Needs attention's settings, team views by name", async () => {
 		wire.replies.lenses = LENSES;
 		const set = jest.fn();
-		render(
+		renderOnPage(
 			<>
 				<week.Controls
 					attributes={ {

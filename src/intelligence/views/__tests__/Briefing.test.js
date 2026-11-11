@@ -10,7 +10,8 @@
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
 import { intelWire } from '../../__tests__/intelWire';
@@ -109,7 +110,7 @@ beforeEach( () => {
 
 afterEach( () => jest.restoreAllMocks() );
 
-const renderBriefing = () => render( <Briefing { ...props } /> );
+const renderBriefing = () => renderOnPage( <Briefing { ...props } /> );
 
 describe( 'Briefing', () => {
 	it( 'draws the default layout in order, naming no operator', async () => {

@@ -7,7 +7,8 @@
  * there is no folder to pick.
  */
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import SaveToCollection from '../SaveToCollection';
@@ -63,7 +64,9 @@ beforeEach( () => {
 describe( 'SaveToCollection', () => {
 	it( 'saves the item into the chosen folder and says so', async () => {
 		wire.replies.collect = { ok: true, event_id: 'ev-s' };
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		const select = await screen.findByLabelText( 'Folder' );
 		fireEvent.change( select, { target: { value: 'paywall-complaints' } } );
 		fireEvent.change( screen.getByLabelText( 'Folder' ), {
@@ -77,7 +80,9 @@ describe( 'SaveToCollection', () => {
 	} );
 
 	it( "offers the reader's recent folders first, the latest chosen", async () => {
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		const select = await screen.findByLabelText( 'Folder' );
 		expect(
 			[ ...select.querySelectorAll( 'optgroup' ) ].map( ( group ) => [
@@ -104,7 +109,9 @@ describe( 'SaveToCollection', () => {
 				recent_ts: null,
 			} ) ),
 		};
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		const select = await screen.findByLabelText( 'Folder' );
 		expect( select.querySelectorAll( 'optgroup' ) ).toHaveLength( 0 );
 		expect(
@@ -119,7 +126,7 @@ describe( 'SaveToCollection', () => {
 	} );
 
 	it( 'names the item it saves, as text', async () => {
-		render(
+		renderOnPage(
 			<SaveToCollection
 				item={ { ...ITEM, title: '<img src=x onerror=alert(1)>' } }
 				onClose={ jest.fn() }
@@ -135,7 +142,9 @@ describe( 'SaveToCollection', () => {
 	it( 'shows a refused save as the refusal', async () => {
 		wire.replies.collect = () =>
 			new Error( 'no item: feed:inkfold-review-17' );
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		await screen.findByLabelText( 'Folder' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Save' } ) );
 		expect(
@@ -145,7 +154,9 @@ describe( 'SaveToCollection', () => {
 
 	it( 'opens straight to naming the first folder when there is none', async () => {
 		wire.replies.collections = { collections: [], available: true };
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		expect(
 			await screen.findByText(
 				'Make your first folder to save this item.'
@@ -167,7 +178,9 @@ describe( 'SaveToCollection', () => {
 	} );
 
 	it( 'opens the folder name in place from New folder', async () => {
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		await screen.findByLabelText( 'Folder' );
 		expect( screen.queryByLabelText( 'Folder name' ) ).toBeNull();
 		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
@@ -186,7 +199,9 @@ describe( 'SaveToCollection', () => {
 			new Promise( ( resolve ) => {
 				land = resolve;
 			} );
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		await screen.findByLabelText( 'Folder' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
 		fireEvent.change( screen.getByLabelText( 'Folder name' ), {
@@ -219,7 +234,9 @@ describe( 'SaveToCollection', () => {
 			event_id: 'ev-q',
 			collection_key: 'quarry-notes',
 		};
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		const select = await screen.findByLabelText( 'Folder' );
 		fireEvent.change( select, { target: { value: 'paywall-complaints' } } );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Save' } ) );
@@ -253,7 +270,9 @@ describe( 'SaveToCollection', () => {
 			new Promise( ( resolve ) => {
 				land = resolve;
 			} );
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		await screen.findByLabelText( 'Folder' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
 		const field = screen.getByLabelText( 'Folder name' );
@@ -295,7 +314,9 @@ describe( 'SaveToCollection', () => {
 			new Promise( ( resolve ) => {
 				land = resolve;
 			} );
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		const field = await screen.findByLabelText( 'Folder name' );
 		fireEvent.change( field, { target: { value: 'Tidewater leads' } } );
 		fireEvent.submit( field );
@@ -327,7 +348,9 @@ describe( 'SaveToCollection', () => {
 		wire.replies.collections = { collections: [], available: true };
 		wire.replies.create_collection = () =>
 			new Error( 'collection quarry-notes is taken' );
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		fireEvent.change( await screen.findByLabelText( 'Folder name' ), {
 			target: { value: 'Quarry notes' },
 		} );
@@ -341,7 +364,9 @@ describe( 'SaveToCollection', () => {
 	} );
 
 	it( 'heads the dialog with its title beside a labelled icon close', async () => {
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		const title = screen.getByText( 'Save to folder' );
 		const close = screen.getByRole( 'button', { name: 'Fermer' } );
 		expect( close.parentElement ).toBe( title.parentElement );
@@ -356,7 +381,9 @@ describe( 'SaveToCollection', () => {
 
 	it( 'says the collections could not be read', async () => {
 		wire.replies.collections = { collections: [], available: false };
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		expect(
 			await screen.findByText(
 				'The intelligence store did not open, so this was not read. An administrator can check the status above.'
@@ -370,7 +397,9 @@ describe( 'SaveToCollection', () => {
 			new Promise( ( resolve ) => {
 				answer = resolve;
 			} );
-		render( <SaveToCollection item={ ITEM } onClose={ jest.fn() } /> );
+		renderOnPage(
+			<SaveToCollection item={ ITEM } onClose={ jest.fn() } />
+		);
 		expect(
 			screen.getByRole( 'button', { name: 'Fermer' } )
 		).toHaveFocus();
@@ -382,7 +411,7 @@ describe( 'SaveToCollection', () => {
 
 	it( 'closes from its close button', async () => {
 		const onClose = jest.fn();
-		render( <SaveToCollection item={ ITEM } onClose={ onClose } /> );
+		renderOnPage( <SaveToCollection item={ ITEM } onClose={ onClose } /> );
 		await screen.findByLabelText( 'Folder' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Fermer' } ) );
 		expect( onClose ).toHaveBeenCalled();

@@ -5,6 +5,7 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { useIntelRead } from '../hooks/useIntelCommand';
+import { usePageRead } from '../hooks/usePageRead';
 import { Unread } from '../components/Answer';
 import AskBox from '../components/AskBox';
 import EntityPicker, { useEntityNames } from '../components/EntityPicker';
@@ -403,7 +404,7 @@ export default function Search( {
 	const narrow = useNarrow();
 	const [ sheet, setSheet ] = useState( false );
 	const read = useIntelRead( 'search:items', 'search', viewToArgs( view ) );
-	const lenses = useIntelRead( 'search:lenses', 'lenses', [] );
+	const lenses = usePageRead( 'lenses' );
 	const answer = read.error ? null : read.answer;
 	const found = true === answer?.available;
 	const lens = lenses.answer?.lenses.find(

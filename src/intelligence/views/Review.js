@@ -24,6 +24,7 @@ import {
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
+import { usePageRead } from '../hooks/usePageRead';
 import { useDeferredWrite } from '../hooks/useDeferredWrite';
 import { AnswerBody, Unread } from '../components/Answer';
 import Cite, { EntityChip } from '../components/Cite';
@@ -747,7 +748,7 @@ export default function Review( { canTune, onOpenEntity } ) {
 		restored.current = undoWrite();
 	}, [ undoWrite ] );
 
-	const links = useIntelRead( 'review:links', 'review', [ 'links' ] );
+	const links = usePageRead( 'review' );
 	const entities = useIntelRead( 'review:entities', 'review', [
 		'entities',
 	] );

@@ -7,7 +7,7 @@
 import { FormTokenField, SelectControl } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import FolderBoard, { showOptions } from '../components/FolderBoard';
-import { useIntelRead } from '../hooks/useIntelCommand';
+import { usePageRead } from '../hooks/usePageRead';
 import { useIntelActions } from '../layout/PageContext';
 
 /**
@@ -42,9 +42,7 @@ function View( { attributes: { show, folders }, editing } ) {
  * @return {import('react').ReactElement} The field.
  */
 function FolderTokens( { value, onChange } ) {
-	const listed =
-		useIntelRead( 'layout:folder-board', 'collections', [] ).answer
-			?.collections ?? [];
+	const listed = usePageRead( 'folders' ).answer?.collections ?? [];
 	const nameOf = Object.fromEntries(
 		listed.map( ( one ) => [ one.collection_key, one.name ] )
 	);

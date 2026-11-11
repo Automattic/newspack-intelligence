@@ -112,7 +112,7 @@ final class Graph_Curation {
 				$keys = Graph_Query::keys_of( $entity, $g );
 				[ $state, $judge, $outranks ] = self::verdict( $r, $item_key, $keys, $caller ) ?? [ null, null, false ];
 				if ( $outranks ) {
-					throw new \InvalidArgumentException( \esc_html( "a {$judge} judged {$item_key} {$entity}, and an addition by an {$caller} ranks below it" ) );
+					throw new \InvalidArgumentException( \esc_html( "a judgment of {$item_key} {$entity} by the {$judge} outranks an addition by the {$caller}" ) );
 				}
 				if ( 'confirmed' === $state && self::stands( $r, $item_key, $keys, $role ) ) {
 					throw new \InvalidArgumentException( \esc_html( "already confirmed: {$item_key} {$entity}" ) );

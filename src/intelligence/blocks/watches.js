@@ -9,7 +9,7 @@ import { AnswerBody } from '../components/Answer';
 import Section, { Invitation } from '../components/Section';
 import Skeleton from '../components/Skeleton';
 import WatchRow from '../components/WatchRow';
-import { useIntelRead } from '../hooks/useIntelCommand';
+import { usePageRead } from '../hooks/usePageRead';
 import { useIntelActions, useWriteControl } from '../layout/PageContext';
 
 /**
@@ -26,7 +26,7 @@ import { useIntelActions, useWriteControl } from '../layout/PageContext';
 function View( { attributes: { heading, max } } ) {
 	const { onOpenWatch, onNewWatch } = useIntelActions();
 	const newWatch = useWriteControl( onNewWatch );
-	const read = useIntelRead( 'briefing:watches', 'watches', [] );
+	const read = usePageRead( 'watches' );
 	const label = __( 'New watch', 'newspack-intelligence' );
 	return (
 		<Section

@@ -5,10 +5,10 @@ import Modal, { ModalHeader } from '@newspack-nodes/shared/components/Modal';
 import {
 	FOLDER_READS,
 	WATCH_READS,
-	useIntelRead,
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
+import { usePageRead } from '../hooks/usePageRead';
 import { AnswerBody } from './Answer';
 import Refusal from './Refusal';
 import { argsOf, collectionKey } from './format';
@@ -75,7 +75,7 @@ function folderOptions( collections ) {
  * @return {import('react').ReactElement} The dialog.
  */
 export default function SaveToCollection( { item, onClose } ) {
-	const list = useIntelRead( 'save:collections', 'collections', [] );
+	const list = usePageRead( 'folders' );
 	const folders = useHeld( list, 'collections', collectionKey, sameKey );
 	const [ chosen, setChosen ] = useState( '' );
 	const [ asked, setAsked ] = useState( false );

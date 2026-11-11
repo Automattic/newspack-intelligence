@@ -24,6 +24,7 @@ import {
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
+import { usePageRead } from '../hooks/usePageRead';
 import { useDeferredWrite } from '../hooks/useDeferredWrite';
 import Answer, { AnswerBody, Unread } from '../components/Answer';
 import { useEntityNames } from '../components/EntityPicker';
@@ -257,7 +258,7 @@ export default function Watches( {
 	const [ stopping, setStopping ] = useState( null );
 	// The event the last landed save wrote, which its snackbar is keyed by.
 	const [ saved, setSaved ] = useState( null );
-	const list = useIntelRead( 'watch:list', 'watches', [] );
+	const list = usePageRead( 'watches' );
 	const watches = useHeld( list, 'watches', watchKey, sameWatch );
 	const save = useIntelWrite( 'save_watch', {
 		dirties: WATCH_READS,
@@ -850,17 +851,12 @@ function WatchForm( { draft, onDraft, refusal, onSave, onCancel } ) {
  */
 function TargetField( { kind, label, value, onChange } ) {
 	const [ text, setText ] = useState( '' );
-	const lenses = useIntelRead(
-		'watch:lenses',
-		'lenses',
-		'lens' === kind ? [] : null
-	);
-	const collections = useIntelRead(
-		'watch:collections',
-		'collections',
-		'collection' === kind ? [] : null
-	);
+	const lenses = usePageRead( 'lenses' );
+	const collections = usePageRead( 'folders' );
 	const names = useEntityNames( 'entity' === kind ? text : '' );
+	const listed = { lens: lenses, collection: collections, entity: names }[
+		kind
+	];
 
 	const offered = {
 		lens: ( lenses.answer?.lenses ?? [] ).map( ( one ) => ( {
@@ -898,12 +894,7 @@ function TargetField( { kind, label, value, onChange } ) {
 				onFilterValueChange={ setText }
 				onChange={ ( key ) => onChange( key ?? '' ) }
 			/>
-			<Unread error={ lenses.error } refresh={ lenses.refresh } />
-			<Unread
-				error={ collections.error }
-				refresh={ collections.refresh }
-			/>
-			<Unread error={ names.error } refresh={ names.refresh } />
+			<Unread error={ listed.error } refresh={ listed.refresh } />
 		</>
 	);
 }

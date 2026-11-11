@@ -9,12 +9,12 @@
 
 import {
 	act,
-	render,
 	screen,
 	fireEvent,
 	waitFor,
 	within,
 } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { HEALTHY, LAST_OK, okSource } from '../../__tests__/healthFixture';
@@ -116,7 +116,9 @@ const row = ( label ) =>
  * @param {boolean} [operator] Whether the reader may run the fixes.
  */
 function renderStrip( operator = false ) {
-	return render( <HealthBlock operator={ operator } detail="sources" /> );
+	return renderOnPage(
+		<HealthBlock operator={ operator } detail="sources" />
+	);
 }
 
 describe( 'HealthStrip', () => {
@@ -1687,7 +1689,9 @@ describe( 'the header phrase and the fault notice', () => {
 	 * @param {boolean} canManage Whether the reader is an operator.
 	 */
 	const renderHeader = ( canManage ) =>
-		render( <HealthStrip canManage={ canManage } slot={ undefined } /> );
+		renderOnPage(
+			<HealthStrip canManage={ canManage } slot={ undefined } />
+		);
 
 	const phrase = () =>
 		document.querySelector( '.newspack-intelligence__collecting' );

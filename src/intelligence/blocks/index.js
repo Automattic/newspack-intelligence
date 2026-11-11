@@ -89,21 +89,23 @@ export const BLOCK_VIEWS = Object.fromEntries(
 );
 
 /**
- * A layout's jump scopes and headings, numbered depth first, so the scopes a
- * page's blocks render under and the links naming their headings agree.
+ * A layout's jump scopes and headings, numbered depth first under the
+ * layout's own prefix, so the scopes a page's blocks render under and the
+ * links naming their headings agree, and two layouts on a page never share one.
  *
  * @param {import('@newspack-nodes/shared/composition/CompositionView').CompositionNode[]} blocks The layout's blocks.
+ * @param {string}                                                                         prefix The layout's own, one `useId()`.
  * @return {{scopes: WeakMap<Object, string>, headings: Array<{text: string, id: string}>}}
  *   Each block's scope, by its attributes, and every heading in the order
  *   it stands, each a container's children in its place.
  */
-export function jumpsOf( blocks ) {
+export function jumpsOf( blocks, prefix ) {
 	const scopes = new WeakMap();
 	const headings = [];
 	let count = 0;
 	const walk = ( nodes ) =>
 		nodes.forEach( ( node ) => {
-			const scope = `newspack-intelligence-jump-${ count++ }`;
+			const scope = `${ prefix }jump-${ count++ }`;
 			scopes.set( node.attributes, scope );
 			( VIEWS[ node.name ]?.headings?.( node.attributes ) ?? [] ).forEach(
 				( text ) => headings.push( { text, id: jumpId( scope, text ) } )

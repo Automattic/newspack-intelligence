@@ -10,12 +10,9 @@ import { moreHorizontal } from '@wordpress/icons';
 import Modal, { ModalHeader } from '@newspack-nodes/shared/components/Modal';
 import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
 import { primaryButtonClass } from '@newspack-nodes/shared/utils/buttonClass';
-import {
-	LENS_READS,
-	useIntelRead,
-	useIntelWrite,
-} from '../hooks/useIntelCommand';
+import { LENS_READS, useIntelWrite } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
+import { usePageRead } from '../hooks/usePageRead';
 import { AnswerBody } from '../components/Answer';
 import ListField from '../components/ListField';
 import ListPicker from '../components/ListPicker';
@@ -350,7 +347,7 @@ export default function Lens( {
 	const lists = vocabulary.lensLists;
 	const [ editing, setEditing ] = useState( null );
 	const [ removing, setRemoving ] = useState( null );
-	const list = useIntelRead( 'lens:list', 'lenses', [] );
+	const list = usePageRead( 'lenses' );
 	/**
 	 * A lens as its form's text, its key aside, since the server slugs a new one.
 	 *

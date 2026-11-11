@@ -24,6 +24,7 @@ import {
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
+import { usePageRead } from '../hooks/usePageRead';
 import { useDeferredWrite } from '../hooks/useDeferredWrite';
 import { AnswerBody } from './Answer';
 import FolderCard from './FolderCard';
@@ -587,7 +588,7 @@ export default function FolderBoard( { show: opensOn, folders, canTune } ) {
 	const [ show, setShow ] = useState( opensOn );
 	useEffect( () => setShow( opensOn ), [ opensOn ] );
 	const [ chosen, setChosen ] = useState( '' );
-	const list = useIntelRead( 'collections:list', 'collections', [] );
+	const list = usePageRead( 'folders' );
 	const listed = useHeld( list, 'collections', collectionKey, sameName );
 	const create = useIntelWrite( 'create_collection', {
 		dirties: FOLDER_READS,

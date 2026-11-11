@@ -394,57 +394,7 @@ describe( 'useIntelRead from memory', () => {
 	} );
 } );
 
-describe( 'useIntelRead shared across scopes', () => {
-	/**
-	 * Two reads of one question under scopes of their own.
-	 *
-	 * @param {Object}  props
-	 * @param {boolean} [props.both] Whether the second stands beside the first.
-	 * @return {import('react').ReactElement} The reads.
-	 */
-	function Pair( { both = true } ) {
-		return (
-			<>
-				<section aria-label="head">
-					<Lister
-						scope="probe:head"
-						command="mooring"
-						args={ [ 'harbor-ledger' ] }
-					/>
-				</section>
-				{ both && (
-					<section aria-label="block">
-						<Lister
-							scope="probe:block"
-							command="mooring"
-							args={ [ 'harbor-ledger' ] }
-						/>
-					</section>
-				) }
-			</>
-		);
-	}
-
-	const region = ( name ) => screen.getByRole( 'region', { name } );
-
-	it( 'sends one question once, and both reads show its answer', async () => {
-		wire.replies.mooring = { items: [ 'Harbor Ledger berth 7' ] };
-		render( <Pair /> );
-
-		await waitFor( () =>
-			expect( region( 'block' ) ).toHaveTextContent(
-				'freshHarbor Ledger berth 7'
-			)
-		);
-		expect( region( 'head' ) ).toHaveTextContent(
-			'freshHarbor Ledger berth 7'
-		);
-		await act(
-			() => new Promise( ( resolve ) => setTimeout( resolve, 300 ) )
-		);
-		expect( wire.sent( 'mooring' ) ).toEqual( [ [ 'harbor-ledger' ] ] );
-	} );
-
+describe( 'useIntelRead across scopes', () => {
 	it( 'paints a question one scope answered under another, marked stale', async () => {
 		wire.replies.mooring = { items: [ 'Harbor Ledger berth 7' ] };
 		const first = render(
@@ -469,78 +419,6 @@ describe( 'useIntelRead shared across scopes', () => {
 		expect(
 			screen.getByText( 'Harbor Ledger berth 7' )
 		).toBeInTheDocument();
-	} );
-
-	it( 'shares an answer already in hand with a read mounting beside it, asking nothing more', async () => {
-		wire.replies.mooring = { items: [ 'Harbor Ledger berth 7' ] };
-		const view = render( <Pair both={ false } /> );
-		await waitFor( () =>
-			expect( region( 'head' ) ).toHaveTextContent(
-				'freshHarbor Ledger berth 7'
-			)
-		);
-
-		view.rerender( <Pair /> );
-
-		expect( region( 'block' ) ).toHaveTextContent(
-			'freshHarbor Ledger berth 7'
-		);
-		await act(
-			() => new Promise( ( resolve ) => setTimeout( resolve, 300 ) )
-		);
-		expect( wire.sent( 'mooring' ) ).toEqual( [ [ 'harbor-ledger' ] ] );
-	} );
-
-	it( 'shows the refusal in both reads', async () => {
-		wire.replies.mooring = () => new Error( 'no entity: harbor-ledger' );
-		render( <Pair /> );
-
-		await waitFor( () =>
-			expect( region( 'block' ) ).toHaveTextContent(
-				'refused: no entity: harbor-ledger'
-			)
-		);
-		expect( region( 'head' ) ).toHaveTextContent(
-			'refused: no entity: harbor-ledger'
-		);
-	} );
-
-	it( 'asks for itself once the read it shared with is gone', async () => {
-		const first = held();
-		wire.replies.mooring = first.reply;
-		const view = render(
-			<>
-				<Pair both={ false } />
-				<section aria-label="block">
-					<Lister
-						scope="probe:block"
-						command="mooring"
-						args={ [ 'harbor-ledger' ] }
-					/>
-				</section>
-			</>
-		);
-		await waitFor( () =>
-			expect( wire.sent( 'mooring' ) ).toHaveLength( 1 )
-		);
-
-		wire.replies.mooring = { items: [ 'Harbor Ledger berth 9' ] };
-		view.rerender(
-			<section aria-label="block">
-				<Lister
-					scope="probe:block"
-					command="mooring"
-					args={ [ 'harbor-ledger' ] }
-				/>
-			</section>
-		);
-
-		await waitFor( () =>
-			expect( region( 'block' ) ).toHaveTextContent(
-				'freshHarbor Ledger berth 9'
-			)
-		);
-		expect( wire.sent( 'mooring' ) ).toHaveLength( 2 );
 	} );
 } );
 

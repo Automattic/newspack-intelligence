@@ -1509,6 +1509,118 @@ describe( 'ItemRow copies', () => {
 	} );
 } );
 
+describe( 'ItemRow other copies', () => {
+	let wire;
+
+	const COPIES = {
+		item_key: ITEM.item_key,
+		copies: [
+			{
+				item_key: 'feed:harbor-copy-77',
+				url: 'https://harbor-ledger.example/copy-77',
+				title: 'Harbor Ledger renews, a wire copy',
+				source: 'feed',
+				day: '2025-10-14',
+			},
+			{
+				item_key: 'linear:harbor-copy-78',
+				url: 'https://linear.example/HL-78',
+				title: 'Harbor Ledger renewal ticket',
+				source: 'linear',
+				day: '2025-10-12',
+			},
+		],
+		available: true,
+	};
+
+	beforeEach( () => {
+		Core.reset();
+		window.NewspackNodesData = pageData();
+		wire = intelWire();
+		wire.replies.copies = COPIES;
+	} );
+
+	const toggle = () =>
+		screen.getByRole( 'button', { name: 'and 2 other copies' } );
+
+	it( 'reads nothing until the copies are opened', async () => {
+		render(
+			<ItemRow
+				item={ { ...ITEM, copies: 2 } }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'false' );
+		await act(
+			() => new Promise( ( resolve ) => setTimeout( resolve, 50 ) )
+		);
+		expect( wire.sent( 'copies' ) ).toEqual( [] );
+	} );
+
+	it( 'opens the copies from the meta line, each with its source and day', async () => {
+		render(
+			<ItemRow
+				item={ { ...ITEM, copies: 2 } }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		fireEvent.click( toggle() );
+		expect( toggle() ).toHaveAttribute( 'aria-expanded', 'true' );
+		const list = await screen.findByRole( 'list', {
+			name: 'Other copies',
+		} );
+		const rows = within( list ).getAllByRole( 'listitem' );
+		expect( rows ).toHaveLength( 2 );
+		expect(
+			within( rows[ 0 ] ).getByRole( 'link', {
+				name: 'Harbor Ledger renews, a wire copy',
+			} )
+		).toHaveAttribute( 'href', 'https://harbor-ledger.example/copy-77' );
+		expect( rows[ 0 ] ).toHaveTextContent( 'Web feed' );
+		expect( rows[ 0 ] ).toHaveTextContent( '14 Oct 2025' );
+		expect( rows[ 1 ] ).toHaveTextContent( 'Tracker' );
+		expect( rows[ 1 ] ).toHaveTextContent( '12 Oct 2025' );
+		expect( wire.sent( 'copies' ) ).toEqual( [ [ ITEM.item_key ] ] );
+
+		fireEvent.click( toggle() );
+		expect(
+			screen.queryByRole( 'list', { name: 'Other copies' } )
+		).toBeNull();
+	} );
+
+	it( 'says a refused read in place of the copies', async () => {
+		wire.replies.copies = () => new Error( 'no item: harbor-copy' );
+		render(
+			<ItemRow
+				item={ { ...ITEM, copies: 2 } }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		fireEvent.click( toggle() );
+		expect(
+			await screen.findByText(
+				'Intelligence could not be read just now. Try again.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'says when no copy reads now, as one excluded since', async () => {
+		wire.replies.copies = { ...COPIES, copies: [] };
+		render(
+			<ItemRow
+				item={ { ...ITEM, copies: 2 } }
+				onOpenEntity={ jest.fn() }
+			/>
+		);
+		fireEvent.click( toggle() );
+		expect(
+			await screen.findByText(
+				'None of its other copies can be read now.'
+			)
+		).toBeInTheDocument();
+	} );
+} );
+
 describe( 'ItemRow how this was read', () => {
 	let wire;
 

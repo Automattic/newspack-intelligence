@@ -1,12 +1,10 @@
 /**
  * The saved team view a block reads through, as `lenses` lists it, wherever
  * the block stands: on its own page, another view's, the Briefing, a profile
- * or the layout editor's preview. Every block's read is one question, which
- * `useIntelRead` asks once for the page.
+ * or the layout editor's preview, through the page's one `lenses` read.
  */
 
-import { useId } from '@wordpress/element';
-import { useIntelRead } from '../hooks/useIntelCommand';
+import { usePageRead } from '../hooks/usePageRead';
 
 /**
  * The saved view `key` names: undefined while `lenses` is owed, null for a
@@ -17,11 +15,7 @@ import { useIntelRead } from '../hooks/useIntelCommand';
  * @return {?Object|undefined} The view.
  */
 export function useSavedLens( key ) {
-	const read = useIntelRead(
-		`block:lenses:${ useId() }`,
-		'lenses',
-		key ? [] : null
-	);
+	const read = usePageRead( 'lenses' );
 	if ( ! key ) {
 		return null;
 	}

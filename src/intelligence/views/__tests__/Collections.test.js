@@ -6,13 +6,8 @@
  * listed and included again.
  */
 
-import {
-	render,
-	screen,
-	fireEvent,
-	waitFor,
-	within,
-} from '@testing-library/react';
+import { screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import Collections from '../Collections';
@@ -104,7 +99,7 @@ beforeEach( () => {
 
 describe( 'Collections', () => {
 	it( 'draws the board on every folder, opening on the items not yet used', async () => {
-		render( <Harness canTune={ false } /> );
+		renderOnPage( <Harness canTune={ false } /> );
 		const notes = await screen.findByRole( 'region', {
 			name: 'Harbor Ledger notes',
 		} );
@@ -121,14 +116,14 @@ describe( 'Collections', () => {
 	} );
 
 	it( 'offers a curator the card menu and a reader none', async () => {
-		const { unmount } = render( <Harness canTune={ true } /> );
+		const { unmount } = renderOnPage( <Harness canTune={ true } /> );
 		expect(
 			await screen.findByRole( 'button', {
 				name: `Actions for ${ UNUSED.title }`,
 			} )
 		).toBeInTheDocument();
 		unmount();
-		render( <Harness canTune={ false } /> );
+		renderOnPage( <Harness canTune={ false } /> );
 		await screen.findByRole( 'link', { name: UNUSED.title } );
 		expect(
 			screen.queryByRole( 'button', {
@@ -145,7 +140,7 @@ describe( 'Collections — excluded items', () => {
 		jest.spyOn( Core, 'now' ).mockReturnValue(
 			Date.UTC( 2026, 10, 10, 12 ) / 1000
 		);
-		render( <Harness canTune={ true } /> );
+		renderOnPage( <Harness canTune={ true } /> );
 		const section = await excluded();
 
 		expect(
@@ -175,7 +170,7 @@ describe( 'Collections — excluded items', () => {
 
 	it( 'says when nothing is excluded', async () => {
 		wire.replies.excluded = { items: [], available: true };
-		render( <Harness canTune={ true } /> );
+		renderOnPage( <Harness canTune={ true } /> );
 		expect(
 			await within( await excluded() ).findByText(
 				'No item is excluded from every view.'
@@ -185,7 +180,7 @@ describe( 'Collections — excluded items', () => {
 
 	it( 'includes an item again, takes it off the list and reads it again', async () => {
 		wire.replies.include_item = { ok: true, event_id: 'ev-i' };
-		render( <Harness canTune={ true } /> );
+		renderOnPage( <Harness canTune={ true } /> );
 		const section = await excluded();
 		const row = (
 			await within( section ).findByRole( 'link', {
@@ -215,7 +210,7 @@ describe( 'Collections — excluded items', () => {
 	it( 'puts a refused inclusion back with the refusal', async () => {
 		wire.replies.include_item = () =>
 			new Error( `${ WIRE_COPY.item_key } is not excluded` );
-		render( <Harness canTune={ true } /> );
+		renderOnPage( <Harness canTune={ true } /> );
 		const section = await excluded();
 		const row = (
 			await within( section ).findByRole( 'link', {
@@ -237,7 +232,7 @@ describe( 'Collections — excluded items', () => {
 	} );
 
 	it( 'shows a reader no excluded list and asks for none', async () => {
-		render( <Harness canTune={ false } /> );
+		renderOnPage( <Harness canTune={ false } /> );
 		await screen.findByRole( 'region', { name: 'Harbor Ledger notes' } );
 		expect(
 			screen.queryByRole( 'region', { name: 'Excluded' } )

@@ -25,6 +25,7 @@ import Section from '../components/Section';
 import Skeleton from '../components/Skeleton';
 import { signalValue } from '../components/TrendTable';
 import { useIntelRead } from '../hooks/useIntelCommand';
+import { usePageRead } from '../hooks/usePageRead';
 import { useIntelActions } from '../layout/PageContext';
 
 /** The span a client's signals count by, and one a view names none by. */
@@ -206,7 +207,7 @@ function Rows( { answer, attributes, spans } ) {
  */
 function View( { attributes } ) {
 	const read = useIntelRead( 'briefing:signals', 'briefing', [ 'signals' ] );
-	const lenses = useIntelRead( 'briefing:attention-lenses', 'lenses', [] );
+	const lenses = usePageRead( 'lenses' );
 	const spans = Object.fromEntries(
 		( lenses.answer?.lenses ?? [] )
 			.filter( ( lens ) => lens.filters.bucket )
@@ -262,7 +263,6 @@ function Controls( { attributes, setAttributes } ) {
 				onChange={ ( clients ) => setAttributes( { clients } ) }
 			/>
 			<LensTokens
-				scope="layout:attention-lenses"
 				label={ __(
 					'Team views (none lists every one)',
 					'newspack-intelligence'

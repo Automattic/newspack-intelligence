@@ -17,16 +17,16 @@
  *
  * Every answer is remembered in memory, keyed by verb and arguments, so a read
  * mounting again paints its last answer at once, marked stale, while it asks
- * afresh, and reads of one question under two scopes share it: a read whose
- * question another mounted read's Fetcher is already asking sends nothing and
- * shows that answer when it lands. A refusal forgets the answer it would have
- * replaced, so an item a reader may no longer see never paints after the
- * server has said so. The memory lives in the page alone and is never written
- * to browser storage, because an answer carries items under the reader's
- * tiers; a page load starts empty.
+ * afresh. Reads that repeat on a page share one read through a provider
+ * rather than through the memory: `usePageRead()` for the page's own, and
+ * `ChangesRead` and `EntityRecord` for a view's. A refusal forgets the answer
+ * it would have replaced, so an item a reader may no longer see never paints
+ * after the server has said so. The memory lives in the page alone and is
+ * never written to browser storage, because an answer carries items under
+ * the reader's tiers; a page load starts empty.
  */
 
-import { useCallback, useEffect, useRef, useState } from '@wordpress/element';
+import { useCallback, useEffect, useRef } from '@wordpress/element';
 import { Core, formatCommandArgs } from '@newspack-nodes/runtime';
 import { useCommandOnce } from '@newspack-nodes/shared/hooks/useCommandOnce';
 
@@ -101,18 +101,15 @@ export const THEME_READS = [
  * Each page process's remembered answers, by the node registry `Core` boots
  * with, so a page load, or a `Core.reset()`, starts with none.
  *
- * @type {WeakMap<Object, Map<string, {answer: Object, at: number, landing: number}>>}
+ * @type {WeakMap<Object, Map<string, {answer: Object, at: number}>>}
  */
 const memories = new WeakMap();
 
-/** How many answers have landed, which orders an answer against an ask. */
-let landings = 0;
-
 /**
- * This page's remembered answers, `{ answer, at, landing }` by cache key,
- * oldest use first.
+ * This page's remembered answers, `{ answer, at }` by cache key, oldest use
+ * first.
  *
- * @return {Map<string, {answer: Object, at: number, landing: number}>} The answers.
+ * @return {Map<string, {answer: Object, at: number}>} The answers.
  */
 function answers() {
 	if ( ! memories.has( Core.registry ) ) {
@@ -122,30 +119,11 @@ function answers() {
 }
 
 /**
- * One mounted read: the cache key of what it asks, its Fetcher, the re-ask a
- * write's dirtying runs, and the wake that has it look again for its answer.
+ * Each mounted read's re-ask, handed the test of whether a write dirtied it.
  *
- * @typedef {Object} Reader
- * @property {string}                                      entry      Its cache key.
- * @property {string}                                      fetcher    Its Fetcher's node name.
- * @property {(dirtied: (key: string) => boolean) => void} revalidate Asks again when a write dirtied it.
- * @property {() => void}                                  wake       Has it look again.
+ * @type {Set<(dirtied: (key: string) => boolean) => void>}
  */
-
-/** @type {Set<Reader>} */
-const readers = new Set();
-
-/**
- * Wake every mounted read of `entry` but `self`.
- *
- * @param {string}  entry The cache key.
- * @param {?Reader} self  The read waking them.
- */
-function wakeReaders( entry, self ) {
-	readers.forEach(
-		( reader ) => reader !== self && entry === reader.entry && reader.wake()
-	);
-}
+const revalidators = new Set();
 
 /**
  * The key an answer is remembered under, its verb first, so a write dirties
@@ -182,8 +160,7 @@ function touch( key ) {
 function remember( key, answer ) {
 	const memory = answers();
 	memory.delete( key );
-	landings += 1;
-	memory.set( key, { answer, at: Core.now(), landing: landings } );
+	memory.set( key, { answer, at: Core.now() } );
 	if ( CACHE_MAX < memory.size ) {
 		memory.delete( memory.keys().next().value );
 	}
@@ -204,15 +181,13 @@ function dirty( prefixes ) {
 			memory.delete( key );
 		}
 	}
-	readers.forEach( ( reader ) => reader.revalidate( dirtied ) );
+	revalidators.forEach( ( revalidate ) => revalidate( dirtied ) );
 }
 
 /**
  * Ask one read command, again whenever `args` changes. Null `args` asks
  * nothing and withdraws the ask outstanding, so its late answer never shows.
- * Until the answer to `args` lands, a remembered one paints, marked stale. A
- * read whose question another mounted read is already asking shares that
- * ask, and asks for itself once the other no longer does.
+ * Until the answer to `args` lands, a remembered one paints, marked stale.
  *
  * @param {string}    scope   Names this read's nodes, a subject naming what
  *                            the slice shows, so two reads on a page never
@@ -229,13 +204,6 @@ export function useIntelRead( scope, command, args ) {
 	const key = JSON.stringify( args );
 	const keyRef = useRef( key );
 	keyRef.current = key;
-	// The landings counted when this read last asked; a later one answers it.
-	const asked = useRef( { key: null, landing: 0 } );
-	if ( key !== asked.current.key ) {
-		asked.current = { key, landing: landings };
-	}
-	const [ woken, wake ] = useState( 0 );
-	const reader = useRef( /** @type {?Reader} */ ( null ) );
 	const { run, abandon, result, error, answeredArgs } = useCommandOnce( {
 		group: GROUP,
 		ci: CI,
@@ -258,45 +226,8 @@ export function useIntelRead( scope, command, args ) {
 			} else {
 				remember( entry, landed );
 			}
-			wakeReaders( entry, reader.current );
 		},
 	} );
-
-	/**
-	 * Ask `question`, unless another mounted read of it is asking it, or,
-	 * short of `again`, holds its answer already.
-	 *
-	 * @param {string[]} question The argument tokens.
-	 * @param {boolean}  [again]  Ask even where a mounted read holds the answer.
-	 */
-	const ask = useCallback(
-		( question, again = false ) => {
-			const entry = cacheKey( command, question );
-			const others = [ ...readers ].filter(
-				( one ) => one !== reader.current && entry === one.entry
-			);
-			asked.current = {
-				key: JSON.stringify( question ),
-				landing: landings,
-			};
-			if (
-				others.some( ( one ) =>
-					Core.node( one.fetcher )?.asks( null, question )
-				)
-			) {
-				return;
-			}
-			const landed = answers().get( entry );
-			if ( ! again && landed && 0 < others.length ) {
-				// Asked just before the answer the mounted read holds landed.
-				asked.current.landing = landed.landing - 1;
-				wake( ( n ) => n + 1 );
-				return;
-			}
-			run( question );
-		},
-		[ command, run ]
-	);
 
 	useEffect( () => {
 		const question = JSON.parse( key );
@@ -305,65 +236,37 @@ export function useIntelRead( scope, command, args ) {
 			return undefined;
 		}
 		const entry = cacheKey( command, question );
-		const self = {
-			entry,
-			fetcher: `${ scope }:fetch`,
-			revalidate: ( dirtied ) =>
-				dirtied( entry ) && ask( question, true ),
-			wake: () => wake( ( n ) => n + 1 ),
-		};
-		reader.current = self;
-		readers.add( self );
 		touch( entry );
-		ask( question );
+		run( question );
+		const revalidate = ( dirtied ) => dirtied( entry ) && run( question );
+		revalidators.add( revalidate );
 		return () => {
-			readers.delete( self );
-			reader.current = null;
-			wakeReaders( entry, self );
+			revalidators.delete( revalidate );
 		};
-	}, [ key, command, scope, ask, abandon ] );
-
-	// Woken and still owed its answer, a read asks unless another shares.
-	useEffect( () => {
-		const question = JSON.parse( keyRef.current );
-		if ( 0 === woken || null === question ) {
-			return;
-		}
-		const landed = answers().get( cacheKey( command, question ) );
-		if ( ! landed || landed.landing <= asked.current.landing ) {
-			ask( question );
-		}
-	}, [ woken, command, ask ] );
+	}, [ key, command, run, abandon ] );
 
 	const refresh = useCallback( () => {
 		const question = JSON.parse( key );
 		if ( null !== question ) {
-			ask( question, true );
+			run( question );
 		}
-	}, [ key, ask ] );
+	}, [ key, run ] );
 
-	const remembered =
-		null === args ? undefined : answers().get( cacheKey( command, args ) );
-	// An answer landed after this read asked, by its own Fetcher or another's.
-	const fresh = Boolean(
-		remembered && remembered.landing > asked.current.landing
-	);
 	// A bare refusal, such as a Router's NOT_AVAILABLE, answers this ask.
-	const own =
+	const current =
 		null !== answeredArgs &&
 		( JSON.stringify( answeredArgs ) === key ||
 			( null !== error && 0 === answeredArgs.length ) );
-	const current = fresh || own;
-	let answer = remembered?.answer ?? null;
-	if ( ! fresh && own ) {
-		answer = result;
-	}
+	const remembered =
+		current || null === args
+			? undefined
+			: answers().get( cacheKey( command, args ) );
 	return {
-		answer,
-		error: ! fresh && own ? error : null,
+		answer: current ? result : remembered?.answer ?? null,
+		error: current ? error : null,
 		loading: null !== args && ! current && ! remembered,
-		stale: ! current && Boolean( remembered ),
-		updatedAt: current ? null : remembered?.at ?? null,
+		stale: Boolean( remembered ),
+		updatedAt: remembered?.at ?? null,
 		refresh,
 	};
 }

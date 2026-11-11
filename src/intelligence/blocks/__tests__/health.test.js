@@ -6,12 +6,13 @@
  */
 
 import {
-	fireEvent,
 	render,
+	fireEvent,
 	screen,
 	waitFor,
 	within,
 } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { HEALTHY, okSource } from '../../__tests__/healthFixture';
@@ -42,7 +43,7 @@ beforeEach( () => {
  * @param {boolean} canManage Whether the reader is an operator.
  */
 const renderBlock = ( detail, canManage ) =>
-	render(
+	renderOnPage(
 		<CanManage.Provider value={ canManage }>
 			<View attributes={ { detail } } />
 		</CanManage.Provider>

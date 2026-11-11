@@ -24,12 +24,15 @@ import { useHeld } from '../hooks/useHeld';
 import {
 	ENTITY_READS,
 	ITEM_READS,
+	useIntelRead,
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
+import { AnswerBody } from './Answer';
 import Cite, { EntityChip } from './Cite';
 import EntityPicker, { useEntityNames } from './EntityPicker';
 import HowRead from './HowRead';
 import Refusal from './Refusal';
+import Skeleton from './Skeleton';
 import UndoSnackbar from './UndoSnackbar';
 import {
 	argsOf,
@@ -379,52 +382,121 @@ export default function ItemRow( {
 /**
  * A row's meta line as cells, joined without a mark: the source's initial as its
  * icon and its word, the item's UTC day (`dayLabel()`), how many other copies
- * of its story the reader may read, its kind's word as a badge, and its kind
- * check (`kindCheckText()`); a part the item lacks is left out.
+ * of its story the reader may read, a toggle opening them below the line
+ * (`Copies`), its kind's word as a badge, and its kind check
+ * (`kindCheckText()`); a part the item lacks is left out.
  *
  * @param {Object} props
  * @param {Object} props.item The item.
  * @return {import('react').ReactElement} The meta line.
  */
 function Meta( { item } ) {
+	const [ open, setOpen ] = useState( false );
+	const copiesId = useId();
 	const today = utcDay( Math.floor( Core.now() ) );
 	const day = utcDay( item.item_ts );
 	const source = word( 'sourceWords', item.source );
 	return (
-		<p className="newspack-nodes-status is-muted newspack-intelligence__meta">
-			<span className="newspack-intelligence__source">
-				<span
-					className="newspack-nodes-status-badge is-pill is-neutral newspack-intelligence__source-icon"
-					aria-hidden="true"
-				>
-					{ source.charAt( 0 ) }
+		<>
+			<p className="newspack-nodes-status is-muted newspack-intelligence__meta">
+				<span className="newspack-intelligence__source">
+					<span
+						className="newspack-nodes-status-badge is-pill is-neutral newspack-intelligence__source-icon"
+						aria-hidden="true"
+					>
+						{ source.charAt( 0 ) }
+					</span>
+					{ source }
 				</span>
-				{ source }
-			</span>
-			{ day && <time dateTime={ day }>{ dayLabel( day, today ) }</time> }
-			{ 0 < item.copies && (
-				<span>
-					{ sprintf(
-						/* translators: %d: the story's other copies the reader may read. */
-						_n(
-							'and %d other copy',
-							'and %d other copies',
-							item.copies,
+				{ day && (
+					<time dateTime={ day }>{ dayLabel( day, today ) }</time>
+				) }
+				{ 0 < item.copies && (
+					<Button
+						variant="link"
+						className="newspack-intelligence__more"
+						aria-expanded={ open }
+						aria-controls={ copiesId }
+						onClick={ () => setOpen( ! open ) }
+					>
+						{ sprintf(
+							/* translators: %d: the story's other copies the reader may read. */
+							_n(
+								'and %d other copy',
+								'and %d other copies',
+								item.copies,
+								'newspack-intelligence'
+							),
+							item.copies
+						) }
+					</Button>
+				) }
+				{ item.kind && (
+					<span className="newspack-nodes-status-badge is-neutral">
+						{ word( 'kindWords', item.kind ) }
+					</span>
+				) }
+				{ item.kind_check && (
+					<span>{ kindCheckText( item.kind_check, today ) }</span>
+				) }
+			</p>
+			{ open && <Copies item={ item } id={ copiesId } today={ today } /> }
+		</>
+	);
+}
+
+/**
+ * The other copies of an item's story the reader may read (`copies`), each
+ * its title linking where it is safe, its source's word and its UTC day.
+ *
+ * @param {Object} props
+ * @param {Object} props.item  The item.
+ * @param {string} props.id    The list's id, which its toggle controls.
+ * @param {string} props.today Today's UTC day, Y-m-d.
+ * @return {import('react').ReactElement} The copies.
+ */
+function Copies( { item, id, today } ) {
+	const read = useIntelRead( `copies:${ useId() }`, 'copies', [
+		item.item_key,
+	] );
+	return (
+		<div id={ id }>
+			<AnswerBody
+				read={ read }
+				rows="copies"
+				empty={ __(
+					'None of its other copies can be read now.',
+					'newspack-intelligence'
+				) }
+				skeleton={ <Skeleton shape="line" count={ item.copies } /> }
+			>
+				{ ( { copies } ) => (
+					<ul
+						aria-label={ __(
+							'Other copies',
 							'newspack-intelligence'
-						),
-						item.copies
-					) }
-				</span>
-			) }
-			{ item.kind && (
-				<span className="newspack-nodes-status-badge is-neutral">
-					{ word( 'kindWords', item.kind ) }
-				</span>
-			) }
-			{ item.kind_check && (
-				<span>{ kindCheckText( item.kind_check, today ) }</span>
-			) }
-		</p>
+						) }
+					>
+						{ copies.map( ( copy ) => (
+							<li key={ copy.item_key }>
+								<Cite url={ copy.url } title={ copy.title } />{ ' ' }
+								<span className="newspack-nodes-status is-muted">
+									{ sprintf(
+										/* translators: 1: the copy's source, 2: its day, such as "14 Oct". */
+										__(
+											'%1$s, %2$s',
+											'newspack-intelligence'
+										),
+										word( 'sourceWords', copy.source ),
+										dayLabel( copy.day, today )
+									) }
+								</span>
+							</li>
+						) ) }
+					</ul>
+				) }
+			</AnswerBody>
+		</div>
 	);
 }
 

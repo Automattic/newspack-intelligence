@@ -888,7 +888,7 @@ final class IntelligenceCurationTest extends TestCase {
 				$this->ci->dispatch( 'add_link', [ $item, $entity ] );
 				$this->fail( "an agent added {$item} {$entity} over a person's judgment" );
 			} catch ( \InvalidArgumentException $e ) {
-				$this->assertSame( "a user judged {$item} {$entity}, and an addition by an agent ranks below it", $e->getMessage() );
+				$this->assertSame( "a judgment of {$item} {$entity} by the user outranks an addition by the agent", $e->getMessage() );
 			}
 		}
 		$this->assertCount( $written, self::ontology_events() );

@@ -12,12 +12,9 @@ import { answerStatus } from '@newspack-nodes/shared/utils/answerStatus';
 import { formatLocalDateTime } from '@newspack-nodes/shared/utils/formatUtils';
 import { HeaderSlot } from '@newspack-nodes/shared/components/HeaderSlot';
 import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
-import {
-	HEALTH_READS,
-	useIntelRead,
-	useIntelWrite,
-} from '../hooks/useIntelCommand';
+import { HEALTH_READS, useIntelWrite } from '../hooks/useIntelCommand';
 import { unrecordedText, useEndClient } from '../hooks/useEndClient';
+import { usePageRead } from '../hooks/usePageRead';
 import { useWriteControl } from '../layout/PageContext';
 import EndClientDialog from './EndClientDialog';
 import Refusal from './Refusal';
@@ -1359,30 +1356,22 @@ function EndingClients( { scope, sources, panel, children } ) {
 }
 
 /**
- * Collection's health, read from the four `health` slices on mount, again
- * once any fix lands, and on Refresh; nothing polls. An operator's reads run
+ * Collection's health, the page's four `health` reads, which the page asks
+ * on load, again once any fix lands, and on Refresh; nothing polls. An operator's reads run
  * through `EndingClients`, so a client it ends leaves at once; every other
  * reader mounts no write. `children` renders what is read.
  *
  * @param {Object}                                        props
- * @param {string}                                        props.scope    Names the reads, so the strip and a block never share a Fetcher.
+ * @param {string}                                        props.scope    Names its writes, so the strip and a block never share a Fetcher.
  * @param {boolean}                                       props.operator Whether the reader may run the fixes.
  * @param {(health: Health) => import('react').ReactNode} props.children Renders it.
  * @return {import('react').ReactElement} The health.
  */
 function HealthReads( { scope, operator, children } ) {
-	const collection = useIntelRead( `${ scope }:collection`, 'health', [
-		'collection',
-	] );
-	const sources = useIntelRead( `${ scope }:sources`, 'health', [
-		'sources',
-	] );
-	const backlog = useIntelRead( `${ scope }:backlog`, 'health', [
-		'backlog',
-	] );
-	const extraction = useIntelRead( `${ scope }:extraction`, 'health', [
-		'extraction',
-	] );
+	const collection = usePageRead( 'collection' );
+	const sources = usePageRead( 'sources' );
+	const backlog = usePageRead( 'backlog' );
+	const extraction = usePageRead( 'extraction' );
 	const reads = { collection, sources, backlog, extraction };
 	const panel = useRef( null );
 	const read = ( endClient ) => (

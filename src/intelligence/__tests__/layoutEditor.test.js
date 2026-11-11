@@ -11,13 +11,9 @@
  * composition commands and the reads run for real over the command double.
  */
 
-import {
-	act,
-	fireEvent,
-	render,
-	screen,
-	waitFor,
-} from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { renderOnPage } from './pageReads';
+import { PageReads } from '../hooks/usePageRead';
 import { getBlockTypes, unregisterBlockType } from '@wordpress/blocks';
 import { useContext } from '@wordpress/element';
 import { Core } from '@newspack-nodes/runtime';
@@ -62,6 +58,18 @@ jest.mock( '@wordpress/block-editor', () => {
 } );
 
 const PROBE = 'newspack-intelligence/probe';
+
+/**
+ * The edit slot as the page mounts it, handed the page's shared reads.
+ *
+ * @param {Object} props What the slot hands the editor.
+ * @return {import('react').ReactElement} The slot.
+ */
+function PageEditSlot( props ) {
+	return (
+		<CompositionEditSlot { ...props } reads={ useContext( PageReads ) } />
+	);
+}
 
 /**
  * A block reading its page's team view.
@@ -189,8 +197,8 @@ describe( 'mountLayoutEditor', () => {
 			...BLOCK_VIEWS,
 			[ PROBE ]: { View: Probe },
 		} );
-		render(
-			<CompositionEditSlot
+		renderOnPage(
+			<PageEditSlot
 				context="newspack-intelligence/lens"
 				target={ { page: 'lens', lens_key: 'desk-watch' } }
 				since={ null }
@@ -204,6 +212,7 @@ describe( 'mountLayoutEditor', () => {
 		await waitFor(
 			() =>
 				expect( wire.sent( 'signals' ) ).toEqual( [
+					[ '--lens=desk-watch' ],
 					[ '--lens=desk-watch' ],
 				] ),
 			WAIT
@@ -228,7 +237,8 @@ describe( 'mountLayoutEditor', () => {
 
 		await waitFor(
 			() =>
-				expect( wire.sent( 'signals' ).slice( 1 ) ).toEqual( [
+				expect( wire.sent( 'signals' ).slice( 2 ) ).toEqual( [
+					[ '--lens=harbor-desk' ],
 					[ '--lens=harbor-desk' ],
 				] ),
 			WAIT
@@ -283,8 +293,8 @@ describe( 'mountLayoutEditor', () => {
 			},
 			{ [ ENTITY_PROBE ]: { View: EntityProbe } }
 		);
-		render(
-			<CompositionEditSlot
+		renderOnPage(
+			<PageEditSlot
 				context="newspack-intelligence/entity"
 				target={ {
 					page: 'entity',
@@ -345,8 +355,8 @@ describe( 'mountLayoutEditor', () => {
 			BLOCK_VIEWS
 		);
 		const told = [];
-		render(
-			<CompositionEditSlot
+		renderOnPage(
+			<PageEditSlot
 				context="newspack-intelligence/briefing"
 				target={ { page: 'briefing' } }
 				since={ 1792000000 }
@@ -375,8 +385,8 @@ describe( 'mountLayoutEditor', () => {
 			},
 			BLOCK_VIEWS
 		);
-		render(
-			<CompositionEditSlot
+		renderOnPage(
+			<PageEditSlot
 				context="newspack-intelligence/briefing"
 				target={ { page: 'briefing' } }
 				since={ 1792000000 }
@@ -426,8 +436,8 @@ describe( 'the layout-editor bundle', () => {
 		).toEqual( [
 			[ 'newspack-intelligence/health', 'Collection status' ],
 		] );
-		render(
-			<CompositionEditSlot
+		renderOnPage(
+			<PageEditSlot
 				context="newspack-intelligence/briefing"
 				target={ { page: 'briefing' } }
 				since={ 1792000000 }

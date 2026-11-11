@@ -3,19 +3,18 @@
  */
 
 import { FormTokenField } from '@wordpress/components';
-import { useIntelRead } from '../hooks/useIntelCommand';
+import { usePageRead } from '../hooks/usePageRead';
 
 /**
  * @param {Object}                   props
- * @param {string}                   props.scope    Names its `lenses` read.
  * @param {string}                   props.label    The field's label.
  * @param {string[]}                 props.value    The keys picked.
  * @param {number}                   [props.max]    The most it holds.
  * @param {(keys: string[]) => void} props.onChange Takes the keys picked.
  * @return {import('react').ReactElement} The field.
  */
-export default function LensTokens( { scope, label, value, max, onChange } ) {
-	const lenses = useIntelRead( scope, 'lenses', [] ).answer?.lenses ?? [];
+export default function LensTokens( { label, value, max, onChange } ) {
+	const lenses = usePageRead( 'lenses' ).answer?.lenses ?? [];
 	const nameOf = Object.fromEntries(
 		lenses.map( ( lens ) => [ lens.lens_key, lens.name ] )
 	);

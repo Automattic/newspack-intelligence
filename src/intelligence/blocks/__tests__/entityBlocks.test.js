@@ -14,10 +14,13 @@ import {
 	waitFor,
 	within,
 } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { ITEM, pageData } from '../../views/__tests__/fixtures';
 import { IntelPageContext } from '../../layout/PageContext';
+import { useIntelRead } from '../../hooks/useIntelCommand';
+import { aboutEntity, EntityRecord, useEntityRecord } from '../record';
 import pulse from '../pulse';
 import entityFacts from '../entity-facts';
 import related from '../related';
@@ -117,21 +120,44 @@ afterEach( () => {
  * @param {Object} [page]     The page, over a profile of the client.
  * @return {Object} What `render` returned.
  */
-const renderBlock = ( block, attributes, page = {} ) =>
-	render(
-		<IntelPageContext.Provider
-			value={ {
-				page: 'entity',
-				lens_key: null,
-				entity_key: KEY,
-				since: null,
-				actions,
-				...page,
-			} }
-		>
-			<block.View attributes={ attributes } />
+/**
+ * A profile's one `entity` read, provided as the Entity view provides it.
+ *
+ * @param {Object}                    props
+ * @param {?string}                   props.entityKey The profile's entity.
+ * @param {import('react').ReactNode} props.children  Its blocks.
+ * @return {import('react').ReactElement} The profile.
+ */
+function Profile( { entityKey, children } ) {
+	const record = useIntelRead(
+		'entity:record',
+		'entity',
+		entityKey ? [ entityKey ] : null
+	);
+	return (
+		<EntityRecord.Provider value={ aboutEntity( entityKey, record ) }>
+			{ children }
+		</EntityRecord.Provider>
+	);
+}
+
+const renderBlock = ( block, attributes, page = {} ) => {
+	const shown = {
+		page: 'entity',
+		lens_key: null,
+		entity_key: KEY,
+		since: null,
+		actions,
+		...page,
+	};
+	return renderOnPage(
+		<IntelPageContext.Provider value={ shown }>
+			<Profile entityKey={ shown.entity_key }>
+				<block.View attributes={ attributes } />
+			</Profile>
 		</IntelPageContext.Provider>
 	);
+};
 
 describe( 'pulse', () => {
 	const SIGNALS = {
@@ -494,7 +520,7 @@ describe( 'Controls', () => {
 				setAttributes={ setAttributes }
 			/>
 		);
-		const { rerender } = render( controls( 'prairie-desk' ) );
+		const { rerender } = renderOnPage( controls( 'prairie-desk' ) );
 		expect( await screen.findByText( 'Prairie desk' ) ).toBeInTheDocument();
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Remove item' } )
@@ -511,7 +537,7 @@ describe( 'Controls', () => {
 
 	it( 'write the parts the facts show, in their order, and how many', () => {
 		const setAttributes = jest.fn();
-		render(
+		renderOnPage(
 			<entityFacts.Controls
 				attributes={ { show: [ 'details' ], limit: 4 } }
 				setAttributes={ setAttributes }
@@ -541,7 +567,7 @@ describe( 'Controls', () => {
 
 	it( "write related's heading and rows", () => {
 		const setAttributes = jest.fn();
-		render(
+		renderOnPage(
 			<related.Controls
 				attributes={ { heading: 'Neighbors', limit: 5 } }
 				setAttributes={ setAttributes }
@@ -562,7 +588,7 @@ describe( 'Controls', () => {
 
 	it( "write the timeline's heading, what it published, layout and page", () => {
 		const setAttributes = jest.fn();
-		render(
+		renderOnPage(
 			<timeline.Controls
 				attributes={ {
 					heading: 'Lately',
@@ -596,5 +622,20 @@ describe( 'Controls', () => {
 			{ target: { value: '21' } }
 		);
 		expect( setAttributes ).toHaveBeenLastCalledWith( { limit: 21 } );
+	} );
+} );
+
+describe( 'useEntityRecord', () => {
+	/** A block reading the profile's record. */
+	function Named() {
+		return <p>{ useEntityRecord().answer?.name ?? 'owed' }</p>;
+	}
+
+	it( 'refuses a record no profile provides', () => {
+		jest.spyOn( console, 'error' ).mockImplementation( () => {} );
+		expect( () => render( <Named /> ) ).toThrow(
+			'useEntityRecord(): no profile provides its record'
+		);
+		console.error.mockRestore();
 	} );
 } );

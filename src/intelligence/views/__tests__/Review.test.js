@@ -17,6 +17,7 @@ import {
 	waitFor,
 	within,
 } from '@testing-library/react';
+import { renderOnPage as onPage } from '../../__tests__/pageReads';
 import {
 	Core,
 	newMessage,
@@ -108,8 +109,16 @@ beforeEach( () => {
 	};
 } );
 
+/**
+ * Render `ui` on a page reading the review queue, as an open Review does.
+ *
+ * @param {import('react').ReactElement} ui What to render.
+ * @return {import('@testing-library/react').RenderResult} The render.
+ */
+const renderOnPage = ( ui ) => onPage( ui, { review: true } );
+
 function renderReview( props = {} ) {
-	return render(
+	return renderOnPage(
 		<Review canTune={ false } onOpenEntity={ jest.fn() } { ...props } />
 	);
 }
@@ -1307,8 +1316,8 @@ describe( 'Review — the keys from anywhere on the page', () => {
 		wire.replies.reject_link = { ok: true, event_id: 'ev-r' };
 	} );
 
-	function renderOnPage() {
-		return render(
+	function renderAmidControls() {
+		return renderOnPage(
 			<>
 				<button type="button">Briefing</button>
 				<input aria-label="Search the graph" />
@@ -1321,7 +1330,7 @@ describe( 'Review — the keys from anywhere on the page', () => {
 	}
 
 	it( 'focuses the first row with j or k pressed outside every row', async () => {
-		renderOnPage();
+		renderAmidControls();
 		await screen.findByRole( 'button', { name: 'Valley Ledger' } );
 		key( document.body, 'k' );
 		expect( document.activeElement ).toBe( row( 'Acme Quillsheet' ) );
@@ -1334,7 +1343,7 @@ describe( 'Review — the keys from anywhere on the page', () => {
 	} );
 
 	it( 'undoes with z pressed outside every row', async () => {
-		renderOnPage();
+		renderAmidControls();
 		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
 		fakeUndoClock();
 		rejectAcme();
@@ -1348,7 +1357,7 @@ describe( 'Review — the keys from anywhere on the page', () => {
 	} );
 
 	it( 'leaves a key alone in a text field and in a dialog', async () => {
-		renderOnPage();
+		renderAmidControls();
 		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
 		fakeUndoClock();
 		rejectAcme();
@@ -1366,7 +1375,7 @@ describe( 'Review — the keys from anywhere on the page', () => {
 	} );
 
 	it( 'captures no key anywhere while the keys are off', async () => {
-		renderOnPage();
+		renderAmidControls();
 		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
 		fireEvent.click(
 			screen.getByRole( 'checkbox', {
@@ -1384,7 +1393,7 @@ describe( 'Review — the keys from anywhere on the page', () => {
 
 	it( 'takes no key on the themes queue, which names none', async () => {
 		wire.replies.merge_theme = never;
-		renderOnPage();
+		renderAmidControls();
 		const keep = await within( queue( 'Similar themes' ) ).findByRole(
 			'button',
 			{ name: 'Keep "kiosk offboarding"' }
@@ -1406,7 +1415,7 @@ describe( 'Review — the keys from anywhere on the page', () => {
 	it( 'removes its page listener when it unmounts', async () => {
 		const added = jest.spyOn( document, 'addEventListener' );
 		const removed = jest.spyOn( document, 'removeEventListener' );
-		const { unmount } = renderOnPage();
+		const { unmount } = renderAmidControls();
 		await screen.findByRole( 'button', { name: 'Acme Quillsheet' } );
 		const listeners = added.mock.calls
 			.filter( ( [ type ] ) => 'keydown' === type )
@@ -1844,17 +1853,17 @@ describe( 'Review — what a judgment dirties', () => {
 		expect( screen.getByText( 'health remembered' ) ).toBeInTheDocument();
 	} );
 
-	it( 'drops the health strip and re-reads a mounted lens list once an accept lands', async () => {
+	it( 'has the page read its health and its lens list again once an accept lands', async () => {
 		wire.replies.accept_entity = { ok: true, event_id: 'ev-harbor-a' };
 		wire.replies.lenses = { lenses: [], available: true };
-		await rememberHealth();
-		const view = render(
-			<>
-				<Probe scope="probe:lenses" command="lenses" args={ [] } />
-				<Review canTune={ true } onOpenEntity={ jest.fn() } />
-			</>
+		wire.replies.health = { sources: [], dead_clients: [] };
+		const sourcesRead = () =>
+			wire.sent( 'health' ).filter( ( [ what ] ) => 'sources' === what );
+		renderReview( { canTune: true } );
+		await waitFor( () =>
+			expect( wire.sent( 'lenses' ) ).toHaveLength( 1 )
 		);
-		await screen.findByText( 'lenses read' );
+		expect( sourcesRead() ).toHaveLength( 1 );
 		const control = await within( queue( 'Suggested names' ) ).findByRole(
 			'button',
 			{
@@ -1870,11 +1879,7 @@ describe( 'Review — what a judgment dirties', () => {
 		await waitFor( () =>
 			expect( wire.sent( 'lenses' ) ).toHaveLength( 2 )
 		);
-		view.unmount();
-		jest.useRealTimers();
-		wire.replies.health = never;
-		render( healthProbe() );
-		expect( screen.getByText( 'health owed' ) ).toBeInTheDocument();
+		expect( sourcesRead() ).toHaveLength( 2 );
 	} );
 } );
 

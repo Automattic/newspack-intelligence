@@ -1336,11 +1336,11 @@ commands do, because a root-owned segment or IPC file is one the workers
 cannot append to.
 
 **Reads.** `Intelligence_CI` (`intelligence`), mounted on every request
-graph, answers twenty-two read commands, each declaring `read` and its
+graph, answers twenty-three read commands, each declaring `read` and its
 args: `search`, `entity`, `names`, `timeline`, `related`, `claims`, `trends`,
 `signals`, `review`, `collections` and `lenses`, `theme_suggestions`, the
 five watch commands, `briefing`, `ask` and `ask_result` (see Ask), `trace`
-(see Trace) and `health`, below. Each of the first eleven hands its bound args to the
+and `copies` (see Trace) and `health`, below. Each of the first eleven hands its bound args to the
 `Graph_Query` read of the same name, through `Intel_Graph_Row_Schema::read()`
 over every partition's file. A read opens on `Graph_Query::graph()`, which resolves
 the tiers once from `Intel_Tiers::readable()` — `public` and `internal`,
@@ -1493,8 +1493,9 @@ folder already held keeps its own time.
 the item links holding it at the item's time — and `search` adds `q`
 and `tier`, repeatable, each one of `Intel_Event::TIERS`, which narrows the
 graph the read opens to those tiers within the caller's and its lens's
-(`Graph_Query::within()`), so it never widens a reader; a team view's
-`item-list` block sends its `tiers` through it.
+(`Graph_Query::tiered()`, variadic over each set it narrows by), so it
+never widens a reader; a team view's `item-list` block sends its `tiers`
+through it.
 `LENS_LISTS` names each list's field, its arg, its vocabulary (null when
 free) and its description, and the call's filters, a lens's, `save_lens`,
 the schema's args and the page's `lensLists` vocabulary all iterate it.
@@ -2237,6 +2238,18 @@ item's. A step the item never took is left out. It reads through `ri`, so
 an item of a tier the caller does not hold, or one a curator excluded, is
 refused as `no item: <key>`, exactly as a missing one.
 
+`copies <item>` (`Graph_Trace::copies()`), at `read`, lists those copies,
+`{ item_key, copies: [ { item_key, url, title, source, day } ], available
+}`, `day` the copy's UTC `Y-m-d` by its item time, the newest first, then
+by key, none for an item outside every cluster. The cluster is the newest
+partition's placement of the item, and each copy is placed by its own
+newest row, the count `clustered` gives and the list read through the same
+two clauses (`mine()`, `others()`); a copy only passes through `ri`, so a
+restricted copy lists for a holder of the tier alone and an excluded one
+never, and an item the caller cannot read is refused as `no item: <key>`,
+so its cluster is never named. An item row's "and %d other copies" opens
+it.
+
 **Restricted tier.** `Intel_Tiers::CAPABILITY`,
 `newspack_intelligence_restricted`, is a WordPress user capability, granted
 per user and per site, and the one spelling every reader uses. `readable()`
@@ -2346,8 +2359,8 @@ resolver writes the link (see Resolution), so a read shows it once the
 item's next resolution is projected. It refuses a topic (`<key> is a
 topic; only an extraction tags an item with one`), a link whose
 highest-ranked judgment under any of the entity's keys outranks the
-caller's (`a user judged <item> <entity>, and an addition by an agent
-ranks below it`), since the addition could neither confirm the link nor
+caller's (`a judgment of <item> <entity> by the user outranks an
+addition by the agent`), since the addition could neither confirm the link nor
 change the role a person gave it, a link that judgment confirms that
 already stands, as a `links` or an `added_links` row, in the role asked or
 a stronger one (`already confirmed: <item> <entity>`), so a confirmed
@@ -2500,7 +2513,7 @@ the `lens` and list args of `intel_search` and `intel_trends` come off the
 schema with no door code, as do `intel_exclude_item`, `intel_include_item`
 and `intel_excluded`, offered to a tune session alone; a variadic arg is a JSON array. So do
 `intel_names`, `intel_signals`, `intel_briefing`, `intel_theme_suggestions`, the five
-watch tools, `intel_ask`, `intel_ask_result` and `intel_trace`, which a read session is offered, and `intel_merge_theme`, `intel_note_churn`,
+watch tools, `intel_ask`, `intel_ask_result`, `intel_trace` and `intel_copies`, which a read session is offered, and `intel_merge_theme`, `intel_note_churn`,
 `intel_mark_used`, `intel_move_item` and `intel_uncollect`, which a session whose role covers
 `tune` is offered;
 the door becomes the session's minting user, so a watch tool answers and
@@ -3436,7 +3449,8 @@ its own one-shot commands, and only the `AskBox` polls: it asks
 |--------|--------|--------------|
 | `index.js` | — | Mounts `IntelligencePage` on `#newspack-intelligence-app`, handing it `canTune`, `canManage`, `userId`, `vocabulary` and `compositions` from `NewspackNodesData` |
 | `IntelligencePage.js` | default | Opens on Briefing, its first tab, and switches Briefing, Search, Team views, Review, Folders and Watches in place; holds the ask both views' `AskBox` shows, the submitted search, the open profile, lens and watch, the watch form's draft and the item being saved, so a view returns as it was left, and a lens's "Watch this" opens the watch form on that lens; a profile is not a tab: an entity opened from any chip stands in the panel of the view that opened it, which stays mounted and hidden beneath it, until "Back to <view>" closes it and focuses the chip that opened it, or a tab is picked; the Briefing opens an entity, a lens or the lens list, a watch, the watch form or Search, and a line of its summary opens Search on a fresh query holding that line's filters; a URL carrying `watch=<key>`, as the watcher's email links it, opens the page on Watches with that watch open, or on the list when the reader's watches do not hold it; mounts `HealthStrip` above the tab bar, on every view; renders inside the shared `DashboardShell`, which supplies the skin, the page surface, the substrate's shared header subtitled `Intelligence` and the debug overlay |
-| `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite`, `commandArgs` | `commandArgs()` names every value given, a list once per member, leaving out a blank value or an empty list; a read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments, and null arguments asking nothing and withdrawing the ask outstanding; a write sent once per `run()` to the `intelligence` CI or the `ci` it names, its nodes named by the `scope` it is given, else `<ci>:<command>`, so two writes of one verb on a page never share a Fetcher, which answers the tokens it sent, handing `refresh` the landed answer once it lands, so a write that answers a key, as `ask` does, gives it to its caller, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal, answered arguments and `pending` Every read's last answer is remembered in memory, keyed `<verb>:<scope>:<args>`, at most `CACHE_MAX` (64), least recently used first out, never in browser storage, one cache per `Core.registry` so a page load starts empty: a mount paints the remembered answer as `stale` with its `updatedAt` and asks again, and a refused ask forgets it. Every `useIntelWrite` names the reads it changes in `dirties`, one of the exported prefix groups (`FOLDER_READS`, `WATCH_READS`, `HEALTH_READS`, `ITEM_READS`, `ENTITY_READS`, `CLIENT_READS`, `JUDGED_READS`, `LENS_READS`, `THEME_READS`), and a landed write forgets every answer under them and re-asks every mounted read among them, so no write also refreshes a read by hand. |
+| `hooks/useIntelCommand.js` | `useIntelRead`, `useIntelWrite`, `commandArgs` | `commandArgs()` names every value given, a list once per member, leaving out a blank value or an empty list; a read asked whenever its arguments change, showing only the answer to the question it asks now, or a refusal that echoes no arguments, and null arguments asking nothing and withdrawing the ask outstanding; a write sent once per `run()` to the `intelligence` CI or the `ci` it names, its nodes named by the `scope` it is given, else `<ci>:<command>`, so two writes of one verb on a page never share a Fetcher, which answers the tokens it sent, handing `refresh` the landed answer once it lands, so a write that answers a key, as `ask` does, gives it to its caller, handing a refused send's echoed tokens to `onRefused`, and handing back `useCommandOnce`'s own refusal, answered arguments and `pending` Every read's last answer is remembered in memory, keyed `<verb>:<args>`, at most `CACHE_MAX` (64), least recently used first out, never in browser storage, one cache per `Core.registry` so a page load starts empty: a mount paints the remembered answer as `stale` with its `updatedAt` and asks again, and a refused ask forgets it. Every `useIntelWrite` names the reads it changes in `dirties`, one of the exported prefix groups (`FOLDER_READS`, `WATCH_READS`, `HEALTH_READS`, `ITEM_READS`, `ENTITY_READS`, `CLIENT_READS`, `JUDGED_READS`, `LENS_READS`, `THEME_READS`), and a landed write forgets every answer under them and re-asks every mounted read among them, so no write also refreshes a read by hand. |
+| `hooks/usePageRead.js` | `PageReads`, `usePageReads`, `usePageRead` | The page's shared reads, each read once under a `page:` scope: `lenses`, `watches`, `folders` (`collections`), `review` (`review links`, only while asked) and the four `health` slices; `usePageRead( name )` answers the one the nearest `PageReads` provides and throws without one |
 | `components/HealthStrip.js` | default | The four `health` slices, read on mount, after a fix lands and on Refresh, laid out as one `.newspack-nodes-banner` of rows; every row's pill, tone, cause and fix come from one table of states (`STATES`), and a state it does not hold reads as a neutral unknown row; each row renders from state, times and counts, so a reader below manage, whose answer omits `credential`, `vault_group`, `last_error` and `file`, reads it whole; while collection is off every other row is listed neutral, never a fault, and its Activate fix offers one button per composition the slice's `topologies` names, which leaves out any whose sources cannot collect on this host, labelled with the name and sharing one `activate` write, the row naming `wp nodes activate` as `<code>` when it names none; `unconfigured` is a fault naming the path the lists file belongs at and that an empty file will do, or, for a reader whose answer carries no `file`, that an administrator can create it and an empty one will do; the projector catching up on the ontology is neutral until its hold has stood five minutes (`BEHIND_FAULT_S`), then a fault; with nothing held the backlog row counts the later queue's entries as items waiting to resolve or retry; while the extraction slice's `queue` holds a call, a neutral "AI requests waiting" row (`healthWords.calls`), pill `busy`, counts them, grouped in the page's own language, a class or a part holding none left out ("5,735 calls waiting (5,735 backlog) · 4 in flight", "1 call waiting (1 new)", "2 in flight"), for every reader, and the line follows the backlog row's cause with that row's counts, dropping the cause while the backlog row reads idle (nothing held, `held` 0), so it never says "Nothing waiting." beside queued calls; every time it shows renders in the browser's own zone through the substrate's `formatLocalDateTime()`, while the dropped days stay the UTC days the server names, read as "Items parked from <first_day> to <last_day> were dropped before they resolved.", true of an entry aged out and of one the full queue refused; the line names each source that has not reported yet ("Collecting from 5 of 6 sources; feed has not reported yet."), the names joined in the page's own language (`document.documentElement.lang`, else the browser's), and says the health is not fully known for any other unknown row, a source in a state it does not recognise included; a source idle for want of its credential, Unthread's among them, offers a manager "Add credential", linking the substrate's Vault tab (`admin.php?page=newspack-nodes-station&tab=vault`, the station's `STATION_MENU_SLUG` and the Vault tab's slug); each of the `sources` slice's `dead_clients` is a "Client feed" fault, pill `dead`, reading "<name> (<domain>) has not resolved since <since>.", and offers a curator "Mark former client", which ends the client through `useEndClient` under the `health:former-client` scope over the sources read, every row of that client leaving the strip from the click until a read no longer lists it, focus then moving to the row in the pressed row's place, else the last row, else the strip's section, every other such button `aria-disabled` while a pair is owed its replies, a refused end returning the client's rows with the refusal on the row of the client it refused alone, a refused assert keeping them hidden and showing `unrecordedText()` as an alert on the strip, the strip read again once the pair is answered; a fix mounts its write only for a reader holding its role (`canTune` for `seed_ontology` and marking a former client, which mounts its pair for a curator alone, `canManage` for the rest), and anyone else reads "An administrator can …" |
 | `views/Briefing.js` | default | The page data's Briefing layout on one surface (`newspack-intelligence__surface`), each block by its View through `PageLayout`, under a header whose ⋯ menu ("Briefing actions") offers a curator **Edit layout** (`editLayoutControl()`); it reads `briefing changes` once, `--since` the last look and `--lenses` the categories of every `week` block, each once in order, and provides that read (`ChangesRead`) to its `since` and `week` blocks; the page's actions reach the blocks through `IntelPageContext`'s `actions`; it tells the page it is seen while mounted |
 | `blocks/ask.js`, `since.js`, `needs-attention.js`, `watches.js`, `week.js`, `changes.js` | `{ View, Controls }`; `ChangesRead`, `changesArgs`, `useChanges` | The Briefing's blocks. `ask` is the `AskBox` under its `label`, `placeholder` and `examples`. `since` is the lede, headed "Since %s" or, on a first visit, "This week": each kind of its `kinds` the summary counts, a churn kind in clients, as a phrase ("6 clients started offboarding", "2 awards were announced") joined by `Intl.ListFormat` in the page's language, each a button opening Search on its kind since the counted day, then ", among %s new items."; "Nothing new since %s." when nothing arrived; hidden where the browser keeps no last look. `needs-attention` lists first every client (when `clients`) carrying a churn-risk note, by its note, then every signal of the clients (when `clients`) and the team views (all, or those `lenses` names) from `briefing signals`, the most recent bucket first, each a `PulseLine` and a button opening its profile or team view, at most `max` until "Show %d more"; empty, it says nothing moved when `judged`, else that there is too little history; each line's latest point fades in over 400 ms on the page's first paint, never under `prefers-reduced-motion`. `watches` lists the first `max` of the reader's watches, each a `WatchRow` with its new count, with **New watch** beside the heading and in its empty sentence. `week` opens its `top` items as one activity `ItemList`, then folds what the top left of each category, of `otherwise` (named by its `otherwise` attribute) and of the clients ("%1$d more clients, %2$d items", grouped by client through `groupBy` when `by_client`), each fold's whole row toggling `aria-expanded`; with categories, "Show" offers All, each category and `otherwise`, each with the server's count, and narrows the week to one; its footer reads "%1$s of %2$s items this week." with "Search them all". `useChanges()` answers the read the Briefing provides, else the block's own, as in the layout editor's preview |
@@ -3551,13 +3565,23 @@ context's schemas for a `tune` caller alone, so a reader's page loads no
 editor script. In the browser `blocks/index.js` maps each block to its
 `{ View, Controls }` (`BLOCK_VIEWS`), each View providing the `editing`
 prop the substrate hands it (`Editing`) and its block's jump scope
-(`JumpScope`) to what it holds, and `layout/PageContext.js`'s
+(`JumpScope`), numbered under the layout's own `useId()` prefix
+(`jumpsOf()`) so two layouts on one page never share an id, to what it
+holds, and `layout/PageContext.js`'s
 `IntelPageContext`, `{ page, lens_key, entity_key, since, kept, actions,
 jumps }`, is what a View reads besides its attributes, `actions` (read
 through `useIntelActions()`, each a no-op where the page offers none) what
 its rows open; a block reading through a team view reads it as `lenses`
-lists it (`useSavedLens()`) wherever it stands, and every read of one verb
-and arguments is asked once for the page (`useIntelRead`);
+lists it (`useSavedLens()`) wherever it stands. The reads that repeat
+across a page are each read once and provided: the page's `lenses`,
+`watches`, folder list, review queue and four `health` slices
+(`hooks/usePageRead.js`, `PageReads`), which `IntelligencePage` reads for
+every view beneath it, a view hidden under a profile among them, and hands
+the layout editor as `reads`, since the editor bundle carries its own
+copy of the context; a profile's `entity` record (`EntityRecord`); and the
+Briefing's `changes` (`ChangesRead`). A consumer outside a provider of
+`PageReads` or `EntityRecord` throws. Two blocks of one block type whose
+attributes name the same question each send their own read;
 `useWriteControl()` makes a write control `aria-disabled` and inert while
 its block's View is handed `editing`, the Ask box's **Ask** among them.
 `PageLayout` renders a page's tree through the substrate's
@@ -3580,8 +3604,9 @@ bundle, `layout-editor.js`, registers the localized blocks against
 `BLOCK_VIEWS` and the substrate's `CompositionEditor` for that context,
 under "Edit the Briefing layout", "Edit the team view layout" or "Edit the
 profile layout", with every block previewing under `editing` the team view
-or profile it was opened from, and "Preview with %s" offering the saved
-team views or an entity picked by name.
+or profile it was opened from, through the page's shared reads and, on a
+profile, one `entity` read it provides as `EntityRecord`, and "Preview
+with %s" offering the saved team views or an entity picked by name.
 
 ## Layout
 

@@ -7,7 +7,8 @@
  * the baseline it holds, so a tab switch and a reload ask the same instant.
  */
 
-import { act, render, screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { useEffect, useState } from '@wordpress/element';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
@@ -91,7 +92,7 @@ function Holder( { shown, reader = READER } ) {
 describe( 'useLastLook', () => {
 	it( 'copies the last look into the session as the baseline', () => {
 		window.localStorage.setItem( LAST_LOOK, String( SEEDED ) );
-		render( <Holder shown={ false } /> );
+		renderOnPage( <Holder shown={ false } /> );
 		expect( look.since ).toBe( SEEDED );
 		expect( look.kept ).toBe( true );
 		expect( window.sessionStorage.getItem( BASELINE ) ).toBe(
@@ -102,26 +103,26 @@ describe( 'useLastLook', () => {
 	it( 'keeps the session’s baseline over a newer last look', () => {
 		window.sessionStorage.setItem( BASELINE, String( SEEDED ) );
 		window.localStorage.setItem( LAST_LOOK, '1762299999' );
-		render( <Holder shown={ false } /> );
+		renderOnPage( <Holder shown={ false } /> );
 		expect( look.since ).toBe( SEEDED );
 	} );
 
 	it( 'keeps a first visit first for the whole session', () => {
 		jest.spyOn( Date, 'now' ).mockReturnValue( WALL_MS );
-		const first = render( <Holder shown /> );
+		const first = renderOnPage( <Holder shown /> );
 		expect( look.since ).toBeNull();
 		pass( MIN_VISIBLE_MS );
 		pagehide();
 		expect( window.localStorage.getItem( LAST_LOOK ) ).toBe( '1762300000' );
 		first.unmount();
-		render( <Holder shown /> );
+		renderOnPage( <Holder shown /> );
 		expect( look.since ).toBeNull();
 		expect( look.kept ).toBe( true );
 	} );
 
 	it( 'pagehide after ten seconds visible writes the mark', () => {
 		jest.spyOn( Date, 'now' ).mockReturnValue( WALL_MS );
-		render( <Holder shown /> );
+		renderOnPage( <Holder shown /> );
 		pass( MIN_VISIBLE_MS );
 		pagehide();
 		expect( window.localStorage.getItem( LAST_LOOK ) ).toBe( '1762300000' );
@@ -129,7 +130,7 @@ describe( 'useLastLook', () => {
 
 	it( 'pagehide after three seconds writes nothing', () => {
 		window.localStorage.setItem( LAST_LOOK, String( SEEDED ) );
-		render( <Holder shown /> );
+		renderOnPage( <Holder shown /> );
 		pass( 3000 );
 		pagehide();
 		expect( window.localStorage.getItem( LAST_LOOK ) ).toBe(
@@ -139,7 +140,7 @@ describe( 'useLastLook', () => {
 
 	it( 'writes the mark when the document is hidden', () => {
 		jest.spyOn( Date, 'now' ).mockReturnValue( WALL_MS );
-		render( <Holder shown /> );
+		renderOnPage( <Holder shown /> );
 		pass( 12000 );
 		setVisibility( 'hidden' );
 		expect( window.localStorage.getItem( LAST_LOOK ) ).toBe( '1762300000' );
@@ -147,7 +148,7 @@ describe( 'useLastLook', () => {
 
 	it( 'counts only time the document is visible, across a return from the back-forward cache', () => {
 		window.localStorage.setItem( LAST_LOOK, String( SEEDED ) );
-		render( <Holder shown /> );
+		renderOnPage( <Holder shown /> );
 		pass( 6000 );
 		setVisibility( 'hidden' );
 		pass( 60000 );
@@ -172,7 +173,7 @@ describe( 'useLastLook', () => {
 		jest.spyOn( document, 'visibilityState', 'get' ).mockReturnValue(
 			'hidden'
 		);
-		render( <Holder shown /> );
+		renderOnPage( <Holder shown /> );
 		pass( 20000 );
 		pagehide();
 		expect( window.localStorage.getItem( LAST_LOOK ) ).toBe(
@@ -182,7 +183,7 @@ describe( 'useLastLook', () => {
 
 	it( 'counts only time the Briefing shows', () => {
 		window.localStorage.setItem( LAST_LOOK, String( SEEDED ) );
-		const page = render( <Holder shown={ false } /> );
+		const page = renderOnPage( <Holder shown={ false } /> );
 		pass( 30000 );
 		page.rerender( <Holder shown /> );
 		pass( 4000 );
@@ -194,7 +195,7 @@ describe( 'useLastLook', () => {
 
 	it( 'marks when the Briefing was last seen, not when the page hides', () => {
 		const wall = jest.spyOn( Date, 'now' ).mockReturnValue( WALL_MS );
-		const page = render( <Holder shown /> );
+		const page = renderOnPage( <Holder shown /> );
 		pass( 11000 );
 		page.rerender( <Holder shown={ false } /> );
 		wall.mockReturnValue( WALL_MS + 3600000 );
@@ -205,7 +206,7 @@ describe( 'useLastLook', () => {
 
 	it( 'reads and writes only the reader’s own last look', () => {
 		window.localStorage.setItem( LAST_LOOK, String( SEEDED ) );
-		render( <Holder shown reader="9999" /> );
+		renderOnPage( <Holder shown reader="9999" /> );
 		expect( look.since ).toBeNull();
 		pass( MIN_VISIBLE_MS );
 		pagehide();
@@ -222,7 +223,7 @@ describe( 'useLastLook', () => {
 	it( 'counts time seen on an earlier page of the session', () => {
 		jest.spyOn( Date, 'now' ).mockReturnValue( WALL_MS );
 		window.sessionStorage.setItem( SEEN_MS, '6000' );
-		render( <Holder shown /> );
+		renderOnPage( <Holder shown /> );
 		pass( 5000 );
 		pagehide();
 		expect( window.localStorage.getItem( LAST_LOOK ) ).toBe( '1762300000' );
@@ -231,7 +232,7 @@ describe( 'useLastLook', () => {
 
 	it( 'writes nothing for six seconds alone', () => {
 		window.localStorage.setItem( LAST_LOOK, String( SEEDED ) );
-		render( <Holder shown /> );
+		renderOnPage( <Holder shown /> );
 		pass( 6000 );
 		pagehide();
 		expect( window.localStorage.getItem( LAST_LOOK ) ).toBe(
@@ -243,7 +244,7 @@ describe( 'useLastLook', () => {
 	it( 'writes nothing for a page that never showed the Briefing', () => {
 		window.localStorage.setItem( LAST_LOOK, String( SEEDED ) );
 		window.sessionStorage.setItem( SEEN_MS, '13000' );
-		render( <Holder shown={ false } /> );
+		renderOnPage( <Holder shown={ false } /> );
 		pass( 5000 );
 		pagehide();
 		expect( window.localStorage.getItem( LAST_LOOK ) ).toBe(
@@ -262,7 +263,7 @@ describe( 'useLastLook', () => {
 				return write.call( this, key, value );
 			}
 		);
-		render( <Holder shown={ false } /> );
+		renderOnPage( <Holder shown={ false } /> );
 		expect( look.since ).toBeNull();
 		expect( look.kept ).toBe( false );
 	} );
@@ -278,7 +279,7 @@ describe( 'useLastLook', () => {
 				throw new Error( 'site data blocked' );
 			}
 		);
-		render( <Holder shown /> );
+		renderOnPage( <Holder shown /> );
 		expect( look.since ).toBeNull();
 		expect( look.kept ).toBe( false );
 		pass( MIN_VISIBLE_MS );
@@ -356,7 +357,7 @@ describe( 'the Briefing on the last look', () => {
 
 	it( 'a remount reads the first baseline', async () => {
 		window.localStorage.setItem( LAST_LOOK, String( SEEDED ) );
-		const page = render( <Page shown /> );
+		const page = renderOnPage( <Page shown /> );
 		await screen.findByText( '4 new items.' );
 		pass( 15000 );
 		pagehide();
@@ -371,7 +372,7 @@ describe( 'the Briefing on the last look', () => {
 		Core.reset();
 		wire = intelWire();
 		answer( wire );
-		render( <Page shown /> );
+		renderOnPage( <Page shown /> );
 		await screen.findByText( '4 new items.' );
 		const changes = [ ...beforeReload, ...wire.sent( 'briefing' ) ].filter(
 			( [ what ] ) => 'changes' === what
@@ -393,7 +394,7 @@ describe( 'the Briefing on the last look', () => {
 				throw new Error( 'site data blocked' );
 			}
 		);
-		render( <Page shown /> );
+		renderOnPage( <Page shown /> );
 		await screen.findByRole( 'region', {
 			name: 'This week, most important first',
 		} );

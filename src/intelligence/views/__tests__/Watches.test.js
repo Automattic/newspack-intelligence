@@ -10,12 +10,12 @@
 import {
 	act,
 	cleanup,
-	render,
 	screen,
 	fireEvent,
 	waitFor,
 	within,
 } from '@testing-library/react';
+import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { useState } from '@wordpress/element';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
@@ -231,7 +231,7 @@ async function pick( label, text, option ) {
 
 describe( 'Watches', () => {
 	it( 'lists the caller’s watches as a table: what each watches, how it delivers and how many are new', async () => {
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		const acme = await watchRow( 'Acme complaints' );
 		expect( acme ).toHaveTextContent( 'Client or company' );
 		expect( acme ).toHaveTextContent( 'Here, daily email' );
@@ -252,7 +252,7 @@ describe( 'Watches', () => {
 
 	it( 'lists each watch with its new count when narrow', async () => {
 		viewport.setNarrow( true );
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await screen.findByRole( 'button', { name: /^Acme complaints/ } );
 		expect( screen.queryByRole( 'table' ) ).toBeNull();
 		expect( screen.getByText( '7 new' ) ).toBeInTheDocument();
@@ -260,7 +260,7 @@ describe( 'Watches', () => {
 
 	it( 'invites a first watch when there is none', async () => {
 		wire.replies.watches = { watches: [], available: true };
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		expect(
 			await screen.findByText(
 				'You are not watching anything yet. Watch a client, a team view or a folder to collect its new items here.'
@@ -273,7 +273,7 @@ describe( 'Watches', () => {
 
 	it( 'stands three skeleton rows in while the watches are owed', () => {
 		wire.replies.watches = () => new Promise( () => {} );
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		expect(
 			within( screen.getByRole( 'region', { name: 'Watches' } ) )
 				.getByRole( 'status', { name: 'Loading' } )
@@ -283,7 +283,7 @@ describe( 'Watches', () => {
 
 	it( 'says a refused read of watches was not read, its words kept from a reader', async () => {
 		wire.replies.watches = () => new Error( 'not signed in' );
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		expect(
 			await screen.findByText(
 				'Intelligence could not be read just now. Try again.'
@@ -293,7 +293,7 @@ describe( 'Watches', () => {
 	} );
 
 	it( 'opens a watch onto its new matches, linking only a safe URL', async () => {
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await openAcme();
 		const region = await opened();
 		expect(
@@ -315,7 +315,7 @@ describe( 'Watches', () => {
 	} );
 
 	it( "offers a curator the exclusion on a watch's matches", async () => {
-		render( <Harness canTune /> );
+		renderOnPage( <Harness canTune /> );
 		await openAcme();
 		const region = await opened();
 		expect(
@@ -328,7 +328,7 @@ describe( 'Watches', () => {
 	} );
 
 	it( "offers a reader no exclusion on a watch's matches", async () => {
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await openAcme();
 		const region = await opened();
 		await within( region ).findByRole( 'link', {
@@ -343,7 +343,7 @@ describe( 'Watches', () => {
 
 	it( 'says a watch whose inbox is off is not listed here', async () => {
 		wire.replies.watch_matches = { items: [], total: 0, available: true };
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Support spikes' } )
 		);
@@ -356,7 +356,7 @@ describe( 'Watches', () => {
 
 	it( 'says a watch has nothing new', async () => {
 		wire.replies.watch_matches = { items: [], total: 0, available: true };
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await openAcme();
 		expect(
 			await screen.findByText(
@@ -379,7 +379,7 @@ describe( 'Watches', () => {
 			total: 120,
 			available: true,
 		} );
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await openAcme();
 		await screen.findByText( 'a at --key=acme-complaints --limit=50' );
 		expect( screen.getByText( 'Page 1 of 3' ) ).toBeInTheDocument();
@@ -403,7 +403,7 @@ describe( 'Watches', () => {
 			available: true,
 		};
 		wire.replies.mark_seen = { ok: true, count: 50 };
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await openAcme();
 		await screen.findByText( 'Harbor Ledger note 50' );
 		fakeUndoClock();
@@ -436,7 +436,7 @@ describe( 'Watches', () => {
 
 	it( 'puts the rows back on Undo and sends nothing', async () => {
 		wire.replies.mark_seen = { ok: true, count: 2 };
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await openAcme();
 		await matchRow( 'Acme Quillsheet wins regional prize' );
 		fakeUndoClock();
@@ -456,7 +456,7 @@ describe( 'Watches', () => {
 
 	it( 'marks one match seen after the undo window, keeping it hidden until a re-read stops listing it', async () => {
 		wire.replies.mark_seen = { ok: true, count: 1 };
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await openAcme();
 		const row = await matchRow( 'Acme Quillsheet wins regional prize' );
 		fakeUndoClock();
@@ -495,7 +495,7 @@ describe( 'Watches', () => {
 			total: 120,
 			available: true,
 		} );
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await openAcme();
 		await screen.findByText( 'a at --key=acme-complaints --limit=50' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
@@ -518,7 +518,7 @@ describe( 'Watches', () => {
 
 	it( 'puts every match back when marking them seen is refused', async () => {
 		wire.replies.mark_seen = () => new Error( 'no watch: acme-complaints' );
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await openAcme();
 		await matchRow( 'Acme Quillsheet wins regional prize' );
 		fakeUndoClock();
@@ -550,7 +550,7 @@ describe( 'Watches', () => {
 		} );
 
 		it( 'moves focus with j and k only while the list has focus, and shows the legend', async () => {
-			render( <Harness /> );
+			renderOnPage( <Harness /> );
 			await openAcme();
 			await screen.findByText( 'Harbor Ledger note 3' );
 			expect(
@@ -569,7 +569,7 @@ describe( 'Watches', () => {
 		} );
 
 		it( 'takes no key once the reader turns them off', async () => {
-			render( <Harness /> );
+			renderOnPage( <Harness /> );
 			await openAcme();
 			await screen.findByText( 'Harbor Ledger note 3' );
 			fireEvent.click(
@@ -608,7 +608,7 @@ describe( 'Watches', () => {
 				total: 3,
 				available: true,
 			};
-			render( <Harness canTune /> );
+			renderOnPage( <Harness canTune /> );
 			await openAcme();
 			await screen.findByText( 'Harbor Ledger note 3' );
 			fakeUndoClock();
@@ -631,7 +631,7 @@ describe( 'Watches', () => {
 		} );
 
 		it( 'hands focus to the next match on Mark seen, and to the watch once none is left', async () => {
-			render( <Harness /> );
+			renderOnPage( <Harness /> );
 			await openAcme();
 			await screen.findByText( 'Harbor Ledger note 3' );
 			fakeUndoClock();
@@ -664,7 +664,7 @@ describe( 'Watches', () => {
 		} );
 
 		it( 'undoes the latest mark with z', async () => {
-			render( <Harness /> );
+			renderOnPage( <Harness /> );
 			await openAcme();
 			const row = await matchRow( 'Harbor Ledger note 2' );
 			fakeUndoClock();
@@ -689,7 +689,7 @@ describe( 'Watches', () => {
 			event_id: 'ev-w1',
 			watch_key: 'paywall-watch',
 		};
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await screen.findByRole( 'button', { name: 'Acme complaints' } );
 		fireEvent.click(
 			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
@@ -754,7 +754,7 @@ describe( 'Watches', () => {
 			],
 			available: true,
 		};
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await screen.findByRole( 'button', { name: 'Acme complaints' } );
 		fireEvent.click(
 			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
@@ -806,7 +806,7 @@ describe( 'Watches', () => {
 				  ]
 				: WATCHES.watches,
 		} );
-		render(
+		renderOnPage(
 			<Harness
 				initialDraft={ newWatch(
 					{ kind: 'lens', key: 'dev-shipping' },
@@ -848,7 +848,7 @@ describe( 'Watches', () => {
 						],
 				  }
 				: WATCHES;
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await openAcme();
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'Edit' } )
@@ -877,7 +877,7 @@ describe( 'Watches', () => {
 	} );
 
 	it( 'offers every team view to follow, by name, and the deliveries a new watch starts with', async () => {
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await screen.findByRole( 'button', { name: 'Acme complaints' } );
 		fireEvent.click(
 			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
@@ -899,7 +899,7 @@ describe( 'Watches', () => {
 			new Error( 'lenses refused for Harbor Ledger' );
 		wire.replies.collections = () =>
 			new Error( 'folders refused for Harbor Ledger' );
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await screen.findByRole( 'button', { name: 'Acme complaints' } );
 		fireEvent.click(
 			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
@@ -929,7 +929,7 @@ describe( 'Watches', () => {
 	} );
 
 	it( 'opens the form on a target it is handed', async () => {
-		render(
+		renderOnPage(
 			<Harness
 				initialDraft={ newWatch(
 					{ kind: 'lens', key: 'dev-shipping' },
@@ -955,7 +955,7 @@ describe( 'Watches', () => {
 			new Error(
 				'a watch follows exactly one of lens, entity or collection'
 			);
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await screen.findByRole( 'button', { name: 'Acme complaints' } );
 		fireEvent.click(
 			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
@@ -977,7 +977,7 @@ describe( 'Watches', () => {
 	} );
 
 	it( 'moves focus to the Name field as the form opens', async () => {
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await screen.findByRole( 'button', { name: 'Acme complaints' } );
 		fireEvent.click(
 			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
@@ -990,7 +990,7 @@ describe( 'Watches', () => {
 	} );
 
 	it( 'cancels the form unsent', async () => {
-		render( <Harness /> );
+		renderOnPage( <Harness /> );
 		await screen.findByRole( 'button', { name: 'Acme complaints' } );
 		fireEvent.click(
 			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
@@ -1020,7 +1020,7 @@ describe( 'Watches', () => {
 
 		it( 'sends nothing until the dialog confirms it', async () => {
 			wire.replies.remove_watch = { ok: true, event_id: 'ev-w3' };
-			render( <Harness /> );
+			renderOnPage( <Harness /> );
 			await askToStop();
 			const dialog = screen.getByRole( 'dialog', {
 				name: 'Stop watching Acme complaints?',
@@ -1044,7 +1044,7 @@ describe( 'Watches', () => {
 
 		it( 'stops the watch once confirmed, closes it and lists again', async () => {
 			wire.replies.remove_watch = { ok: true, event_id: 'ev-w3' };
-			render( <Harness /> );
+			renderOnPage( <Harness /> );
 			await askToStop();
 			fireEvent.click(
 				within( screen.getByRole( 'dialog' ) ).getByRole( 'button', {
@@ -1070,7 +1070,7 @@ describe( 'Watches', () => {
 		it( 'puts a watch back when stopping it is refused', async () => {
 			wire.replies.remove_watch = () =>
 				new Error( 'no watch: acme-complaints' );
-			render( <Harness /> );
+			renderOnPage( <Harness /> );
 			await askToStop();
 			fireEvent.click(
 				within( screen.getByRole( 'dialog' ) ).getByRole( 'button', {

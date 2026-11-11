@@ -344,7 +344,6 @@ function Controls( { attributes, setAttributes } ) {
 				onChange={ ( top ) => setAttributes( { top } ) }
 			/>
 			<LensTokens
-				scope="layout:week-categories"
 				label={ __( 'Categories', 'newspack-intelligence' ) }
 				value={ attributes.categories }
 				max={ CATEGORY_MAX }
