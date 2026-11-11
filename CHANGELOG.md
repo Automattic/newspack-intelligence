@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The Briefing's panel and its dividers take the skin's colours, so a dark skin no longer shows a light panel inside a dark page.
+- The Ask button sits level with the question field instead of centring against the field and its label.
+
 ## [0.41.0] - 2026-11-10
 
 ### Added

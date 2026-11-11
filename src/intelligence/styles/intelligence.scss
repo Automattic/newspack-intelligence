@@ -117,11 +117,12 @@
 		gap: base.$space-lg;
 	}
 
-	// The question takes the row; the Ask button sits at its end.
+	// The question takes the row; the Ask button sits at its end, level with
+	// the field below the label.
 	&__ask {
 		display: flex;
 		gap: base.$space-md;
-		align-items: center;
+		align-items: end;
 
 		> :first-child {
 			flex: 1;
@@ -674,7 +675,7 @@
 	gap: base.$space-xl;
 	padding: base.$space-xl;
 	border-radius: var(--np-radius-lg);
-	background: var(--np-surface);
+	background: var(--paper, var(--np-surface));
 }
 
 .newspack-intelligence__section-head {
@@ -685,7 +686,7 @@
 	gap: base.$space-sm;
 	margin: 0 0 base.$space-sm;
 	padding-block-end: base.$space-sm;
-	border-block-end: 1px solid var(--np-border);
+	border-block-end: 1px solid var(--paper-shadow, var(--np-border));
 
 	h2 {
 		margin: 0;
@@ -719,7 +720,7 @@
 	width: 100%;
 	padding: base.$space-sm 0;
 	border: 0;
-	border-block-end: 1px solid var(--np-border);
+	border-block-end: 1px solid var(--paper-shadow, var(--np-border));
 	background: none;
 	color: inherit;
 	font: inherit;
