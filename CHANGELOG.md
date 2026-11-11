@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - The Briefing's panel and its dividers take the skin's colours, so a dark skin no longer shows a light panel inside a dark page.
 - The Ask button sits level with the question field instead of centring against the field and its label.
+- An operator's Intelligence page no longer crashes with "node name collision: intelligence:fetch_now:tee". The header's fault notice rendered its fix a second time to build its spoken message, and the notice, the Details panel and a Briefing health block each drew the same fix under one name. The notice now speaks the fault's label, its state and its cause when the cause is plain text, and each place a fix is drawn sends it under its own scope. A cause holding markup, such as the `wp nodes activate` step, is no longer spoken.
 
 ## [0.41.0] - 2026-11-10
 

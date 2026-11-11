@@ -794,6 +794,80 @@ describe( 'HealthStrip', () => {
 		expect( wire.sent( 'fetch_now' ) ).toEqual( [ [] ] );
 	} );
 
+	it( 'mounts the header notice’s fix once, speaking the fault as text', async () => {
+		health.sources.sources[ 2 ] = failingSource(
+			'news',
+			'no RSS or Atom feed at https://search-4417.example/rss'
+		);
+		wire.replies.fetch_now = { ok: true, workers: 3 };
+		renderOnPage( <HealthStrip canManage={ true } slot={ undefined } /> );
+		const notice = await waitFor( () => {
+			const found = document.querySelector(
+				'.newspack-intelligence__fault'
+			);
+			expect( found ).not.toBeNull();
+			return found;
+		} );
+		fireEvent.click(
+			within( notice ).getByRole( 'button', {
+				name: 'Fetch all sources now',
+			} )
+		);
+		expect(
+			await within( notice ).findByText(
+				'Fetching. Fix sent; Refresh to check.'
+			)
+		).toBeInTheDocument();
+		expect( wire.sent( 'fetch_now' ) ).toEqual( [ [] ] );
+	} );
+
+	it( 'mounts the notice’s fix and the Details panel’s apart, each sending its own', async () => {
+		health.sources.sources[ 2 ] = failingSource(
+			'news',
+			'no RSS or Atom feed at https://search-6620.example/rss'
+		);
+		wire.replies.fetch_now = { ok: true, workers: 4 };
+		renderOnPage( <HealthStrip canManage={ true } slot={ undefined } /> );
+		const notice = await waitFor( () => {
+			const found = document.querySelector(
+				'.newspack-intelligence__fault'
+			);
+			expect( found ).not.toBeNull();
+			return found;
+		} );
+		fireEvent.click( screen.getByRole( 'button', { name: 'Details' } ) );
+		const fetch = { name: 'Fetch all sources now' };
+		fireEvent.click( within( rows() ).getByRole( 'button', fetch ) );
+		fireEvent.click( within( notice ).getByRole( 'button', fetch ) );
+		await waitFor( () =>
+			expect( wire.sent( 'fetch_now' ) ).toEqual( [ [], [] ] )
+		);
+	} );
+
+	it( 'mounts the header strip and a health block on one page, each sending its own fetch', async () => {
+		health.sources.sources[ 1 ] = failingSource(
+			'linear',
+			'Linear answered an error for https://api.linear.app: 503'
+		);
+		wire.replies.fetch_now = { ok: true, workers: 2 };
+		renderOnPage(
+			<>
+				<HealthStrip canManage={ true } slot={ undefined } />
+				<HealthBlock operator={ true } detail="sources" />
+			</>
+		);
+		const fetch = { name: 'Fetch all sources now' };
+		const block = await within( rows() ).findByRole( 'button', fetch );
+		const notice = document.querySelector(
+			'.newspack-intelligence__fault'
+		);
+		fireEvent.click( block );
+		fireEvent.click( within( notice ).getByRole( 'button', fetch ) );
+		await waitFor( () =>
+			expect( wire.sent( 'fetch_now' ) ).toEqual( [ [], [] ] )
+		);
+	} );
+
 	it( 'gives a reader without MANAGE a redacted failing source and the fetch step', async () => {
 		health.sources.sources[ 0 ] = {
 			...okSource( 'github' ),
@@ -1611,10 +1685,10 @@ describe( 'HealthStrip', () => {
 
 	it( 'mounts a write only for a fix the reader may send', async () => {
 		const writes = [
-			'intelligence:seed_ontology',
-			'intelligence:reresolve',
-			'intelligence:fetch_now',
-			'workers:restart',
+			'health-block:seed_ontology',
+			'health-block:reresolve',
+			'health-block:fetch_now',
+			'health-block:restart',
 		].map( ( scope ) => `${ scope }:fetch` );
 		health.collection.state = 'stale';
 		health.backlog = {

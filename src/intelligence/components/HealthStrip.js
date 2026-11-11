@@ -42,7 +42,7 @@ const BEHIND_FAULT_S = 300;
 /** The prefix of a source row's key, which its name follows. */
 const SOURCE_ROW = 'source:';
 
-/** @typedef {{key: string, label: string, table: string, answer: Object, state: string, tone: string, fault: boolean, unknown: boolean, idle: boolean, text: import('react').ReactNode, fix: ?import('react').ReactNode}} HealthRow */
+/** @typedef {{key: string, label: string, table: string, answer: Object, state: string, tone: string, fault: boolean, unknown: boolean, idle: boolean, text: import('react').ReactNode, fix: (scope: string) => ?import('react').ReactNode}} HealthRow */
 
 /** @typedef {{word: string, tone: string, fault?: boolean, unknown?: boolean, text: Function, fix?: Function}} HealthState */
 
@@ -76,6 +76,7 @@ function Step( { action } ) {
  * @param {string}                     props.action    The text step's action.
  * @param {string}                     props.verb      The write verb.
  * @param {string}                     [props.ci]      The CI it lives on.
+ * @param {string}                     props.scope     The health's own scope, which names the write.
  * @param {(ok: string) => void}       props.refresh   Holds its row once it lands; its write re-reads the strip.
  * @param {Object<string, string>}     [props.args]    Its named args.
  * @param {Array<FixChoice>}           [props.choices] One button each, in place of `label` and `args`.
@@ -113,13 +114,15 @@ function Fix( {
  * @param {Array<FixChoice>}           props.choices The buttons.
  * @param {string}                     props.verb    The write verb.
  * @param {string}                     [props.ci]    The CI it lives on.
+ * @param {string}                     props.scope   The health's own scope; the strip and a block each send under theirs.
  * @param {(ok: string) => void}       props.refresh Holds its row once it lands; its write re-reads the strip.
  * @param {{busy: string, ok: string}} props.texts   Its answer's words.
  * @return {import('react').ReactElement} The buttons and their answer.
  */
-function SendFix( { choices, verb, ci, refresh, texts } ) {
+function SendFix( { choices, verb, ci, scope, refresh, texts } ) {
 	const write = useIntelWrite( verb, {
 		ci,
+		scope: `${ scope }:${ verb }`,
 		dirties: HEALTH_READS,
 		refresh: () => refresh( texts.ok ),
 	} );
@@ -602,6 +605,7 @@ const STATES = {
 						verb="activate"
 						ci="topologies"
 						refresh={ ctx.refresh }
+						scope={ ctx.scope }
 						texts={ {
 							busy: __( 'Activating…', 'newspack-intelligence' ),
 							ok: __( 'Activated.', 'newspack-intelligence' ),
@@ -648,6 +652,7 @@ const STATES = {
 					verb="restart"
 					ci="workers"
 					refresh={ ctx.refresh }
+					scope={ ctx.scope }
 					args={ { types: topology } }
 					texts={ {
 						busy: __( 'Restarting…', 'newspack-intelligence' ),
@@ -703,6 +708,7 @@ const STATES = {
 						) }
 						verb="fetch_now"
 						refresh={ ctx.refresh }
+						scope={ ctx.scope }
 						texts={ {
 							busy: __( 'Asking…', 'newspack-intelligence' ),
 							ok: __( 'Fetching.', 'newspack-intelligence' ),
@@ -779,6 +785,7 @@ const STATES = {
 					) }
 					verb="seed_ontology"
 					refresh={ ctx.refresh }
+					scope={ ctx.scope }
 					texts={ {
 						busy: __( 'Seeding…', 'newspack-intelligence' ),
 						ok: __( 'Seeded.', 'newspack-intelligence' ),
@@ -832,6 +839,7 @@ const STATES = {
 					) }
 					verb="reresolve"
 					refresh={ ctx.refresh }
+					scope={ ctx.scope }
 					args={ { since, until } }
 					texts={ {
 						busy: __( 'Asking…', 'newspack-intelligence' ),
@@ -993,7 +1001,7 @@ function healthRow( key, label, table, state, answer, ctx ) {
 		unknown: true === meant.unknown,
 		idle: true === meant.idle?.( answer ),
 		text: meant.text( answer, ctx ),
-		fix:
+		fix: ( scope ) =>
 			hold?.state === state ? (
 				<span className="newspack-nodes-status is-muted" role="status">
 					{ sprintf(
@@ -1006,7 +1014,7 @@ function healthRow( key, label, table, state, answer, ctx ) {
 					) }
 				</span>
 			) : (
-				meant.fix?.( answer, { ...ctx, refresh } ) || null
+				meant.fix?.( answer, { ...ctx, refresh, scope } ) || null
 			),
 	};
 }
@@ -1376,6 +1384,7 @@ function HealthReads( { scope, operator, children } ) {
 	const panel = useRef( null );
 	const read = ( endClient ) => (
 		<HealthRows
+			scope={ scope }
 			reads={ reads }
 			operator={ operator }
 			panel={ panel }
@@ -1397,6 +1406,7 @@ function HealthReads( { scope, operator, children } ) {
  * What a render of the health reads.
  *
  * @typedef {Object} Health
+ * @property {string}                  scope     Names the fixes' writes; the notice draws its own under `<scope>:notice`.
  * @property {Object<string, Object>}  reads     The four reads, by slice.
  * @property {?Object}                 listed    The sources slice, less any client being ended.
  * @property {Array<HealthRow>}        rows      Every row.
@@ -1415,6 +1425,7 @@ function HealthReads( { scope, operator, children } ) {
  * Refresh; a read answering another state, or Refresh, ends the hold.
  *
  * @param {Object}                                        props
+ * @param {string}                                        props.scope     Names the fixes' writes, passed on in `Health`.
  * @param {Object<string, Object>}                        props.reads     The four reads, by slice.
  * @param {boolean}                                       props.operator  Whether the reader may run the fixes.
  * @param {{current: ?HTMLElement}}                       props.panel     The details panel.
@@ -1422,7 +1433,7 @@ function HealthReads( { scope, operator, children } ) {
  * @param {(health: Health) => import('react').ReactNode} props.children  Renders them.
  * @return {import('react').ReactNode} The health.
  */
-function HealthRows( { reads, operator, panel, endClient, children } ) {
+function HealthRows( { scope, reads, operator, panel, endClient, children } ) {
 	const { collection, sources, backlog, extraction } = reads;
 	const listed = endClient ? endClient.read.answer : sources.answer;
 	const answers = useMemo(
@@ -1461,6 +1472,7 @@ function HealthRows( { reads, operator, panel, endClient, children } ) {
 		endClient,
 	} );
 	return children( {
+		scope,
 		reads,
 		listed,
 		rows,
@@ -1486,7 +1498,8 @@ function HealthRows( { reads, operator, panel, endClient, children } ) {
  * @return {import('react').ReactElement} The panel.
  */
 function HealthPanel( { health, detail } ) {
-	const { reads, listed, rows, faults, refresh, panel, endClient } = health;
+	const { scope, reads, listed, rows, faults, refresh, panel, endClient } =
+		health;
 	const shown = rows.filter(
 		( row ) => 'sources' === detail || ! row.key.startsWith( SOURCE_ROW )
 	);
@@ -1547,7 +1560,7 @@ function HealthPanel( { health, detail } ) {
 							{ row.state }
 						</span>
 						<span>{ row.text }</span>
-						{ row.fix }
+						{ row.fix( scope ) }
 					</li>
 				) ) }
 				{ Object.entries( reads )
@@ -1766,19 +1779,23 @@ function FaultNotice( { health } ) {
 	const { faults, operator, listed } = health;
 	if ( operator ) {
 		const worst = faults[ 0 ];
+		const said = worst && `${ worst.label }: ${ worst.state }`;
+		// A Notice given no string renders its children again to speak them.
 		return worst ? (
 			<Notice
 				status={ 'is-error' === worst.tone ? 'error' : 'warning' }
 				isDismissible={ false }
 				className="newspack-intelligence__fault"
+				spokenMessage={
+					'string' === typeof worst.text
+						? `${ said } ${ worst.text }`
+						: said
+				}
 			>
 				<p>
-					<strong>
-						{ worst.label }: { worst.state }
-					</strong>{ ' ' }
-					{ worst.text }
+					<strong>{ said }</strong> { worst.text }
 				</p>
-				{ worst.fix }
+				{ worst.fix( `${ health.scope }:notice` ) }
 			</Notice>
 		) : null;
 	}
