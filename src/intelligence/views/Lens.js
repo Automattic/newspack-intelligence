@@ -117,7 +117,11 @@ function LensForm( { initial, vocabulary, refusal, onSave, onCancel } ) {
 	} );
 	const tiers = listOf( draft.tier );
 	return (
-		<Modal onClose={ onCancel } onSubmit={ () => onSave( draft ) }>
+		<Modal
+			className="newspack-intelligence__edit"
+			onClose={ onCancel }
+			onSubmit={ () => onSave( draft ) }
+		>
 			<ModalHeader
 				title={
 					initial.key

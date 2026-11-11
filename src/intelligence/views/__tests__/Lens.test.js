@@ -322,6 +322,21 @@ describe( 'Lens', () => {
 		);
 	} );
 
+	it( 'stacks the edit dialog\u2019s fields as the other forms stack theirs', async () => {
+		props.canTune = true;
+		renderOnPage( <Harness /> );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Edit' } )
+		);
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Edit Support desk',
+		} );
+		expect( dialog ).toHaveClass( 'newspack-intelligence__edit' );
+		expect(
+			await within( dialog ).findByRole( 'option', { name: '21 days' } )
+		).toBeInTheDocument();
+	} );
+
 	it( 'edits the view open in the same dialog, from its own filters', async () => {
 		props.canTune = true;
 		wire.replies.save_lens = { ok: true, event_id: 'ev-l2' };

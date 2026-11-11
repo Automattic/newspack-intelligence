@@ -336,6 +336,24 @@ describe( 'Search', () => {
 		).toEqual( [ 'About', 'Dates', 'Sources', 'Topics' ] );
 	} );
 
+	it( 'sets the filter chips on the search field\u2019s line, before the layout switch', async () => {
+		wire.replies.search = PAGE;
+		wire.replies.lenses = LENSES;
+		renderSearch();
+		await screen.findByText( '128 items, most important first' );
+
+		const bar = document.querySelector(
+			'.newspack-intelligence__find-bar'
+		);
+		expect(
+			within( bar ).getByRole( 'searchbox', { name: 'Search words' } )
+		).toBeDefined();
+		expect(
+			within( bar ).getByRole( 'button', { name: 'Add filter' } )
+		).toBeDefined();
+		expect( bar.textContent ).toContain( 'Kind of news' );
+	} );
+
 	it( 'sends the kinds picked as repeated --kind args, each named by its word', async () => {
 		wire.replies.search = PAGE;
 		renderSearch();

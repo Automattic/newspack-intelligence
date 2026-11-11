@@ -430,10 +430,11 @@ export default function Search( {
 	};
 	const removeFilters = () =>
 		onChangeView( { ...view, search: '', filters: [], page: 1 } );
+	const entity = <EntityFilter view={ view } onChangeView={ onChangeView } />;
 	const filters = (
 		<>
 			<DataViews.Filters />
-			<EntityFilter view={ view } onChangeView={ onChangeView } />
+			{ entity }
 		</>
 	);
 
@@ -511,9 +512,10 @@ export default function Search( {
 										) }
 									</Button>
 								) }
+								{ ! narrow && <DataViews.Filters /> }
 								<DataViews.LayoutSwitcher />
 							</div>
-							{ ! narrow && filters }
+							{ ! narrow && entity }
 							{ narrow && sheet && (
 								<Sheet
 									title={ __(

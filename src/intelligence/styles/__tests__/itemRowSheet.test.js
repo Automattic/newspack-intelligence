@@ -91,6 +91,12 @@ describe( 'the item row sheet', () => {
 		);
 	} );
 
+	it( 'draws a pill\u2019s \u00d7 icon in the pill\u2019s own colour', () => {
+		expect( declared( '.newspack-intelligence__pill-remove svg' ) ).toEqual(
+			{ fill: 'currentcolor' }
+		);
+	} );
+
 	it( 'lets a pill shrink and cuts its name with an ellipsis, painting nothing', () => {
 		const pill = declared( `${ ROOT } ${ ROOT }__pill` );
 		expect( pill ).toEqual(
