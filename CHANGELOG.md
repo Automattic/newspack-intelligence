@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-11-11
+
 ### Added
 
 - **`copies <item>`**, the readable copies of an item's story, each with its source and day, and the item row's "and %d other copies" opens them. The MCP door offers it as `intel_copies`.
