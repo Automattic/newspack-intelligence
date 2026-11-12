@@ -407,6 +407,17 @@ describe( 'Entity — header', () => {
 } );
 
 describe( 'Entity — layout', () => {
+	// jsdom lays nothing out, so it has no scrollIntoView for a jump.
+	const { scrollIntoView } = window.Element.prototype;
+
+	beforeEach( () => {
+		window.Element.prototype.scrollIntoView = jest.fn();
+	} );
+
+	afterEach( () => {
+		window.Element.prototype.scrollIntoView = scrollIntoView;
+	} );
+
 	it( 'lays out the pulse, the counts and the activity, then Related and Facts aside, sharing one entity read', async () => {
 		renderEntity( { canTune: true } );
 		await header();
@@ -430,7 +441,7 @@ describe( 'Entity — layout', () => {
 		expect( wire.sent( 'entity' ) ).toEqual( [ [ KEY ] ] );
 	} );
 
-	it( 'names each heading of its layout in jump links that move focus to it', async () => {
+	it( 'names each heading of its layout in jump links that move focus to it and bring it to the top', async () => {
 		renderEntity();
 		await header();
 		const jumps = screen.getByRole( 'navigation', {
@@ -442,13 +453,15 @@ describe( 'Entity — layout', () => {
 				.map( ( one ) => one.textContent )
 		).toEqual( [ 'Activity', 'Related', 'Facts', 'Details' ] );
 
-		await screen.findByRole( 'heading', { name: 'Facts' } );
+		const facts = await screen.findByRole( 'heading', { name: 'Facts' } );
 		fireEvent.click(
 			within( jumps ).getByRole( 'button', { name: 'Facts' } )
 		);
-		expect(
-			screen.getByRole( 'heading', { name: 'Facts' } )
-		).toHaveFocus();
+		expect( facts ).toHaveFocus();
+		const { scrollIntoView: scrolled } = window.Element.prototype;
+		expect( scrolled ).toHaveBeenCalledTimes( 1 );
+		expect( scrolled.mock.contexts[ 0 ] ).toBe( facts );
+		expect( scrolled ).toHaveBeenCalledWith( { block: 'start' } );
 	} );
 
 	it( 'jumps to the heading a link names by its place, two blocks sharing a heading apart', async () => {

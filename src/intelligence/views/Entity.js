@@ -262,7 +262,8 @@ function JumpLinks( { headings, layout } ) {
 		const target = layout.current.ownerDocument.getElementById( id );
 		if ( target && layout.current.contains( target ) ) {
 			target.tabIndex = -1;
-			target.focus();
+			target.focus( { preventScroll: true } );
+			target.scrollIntoView( { block: 'start' } );
 		}
 	};
 	return (

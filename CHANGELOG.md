@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A profile's jump links (Activity, Related, Facts, Details) scroll the heading they name to the top of the page. They only moved focus, and a heading already on screen neither scrolled nor showed focus, so the links seemed to do nothing.
+
 ## [0.43.1] - 2026-11-12
 
 ### Fixed
