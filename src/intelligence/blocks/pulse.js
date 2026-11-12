@@ -4,7 +4,7 @@
  */
 
 import { formatCommandArgs } from '@newspack-nodes/runtime';
-import { useContext } from '@wordpress/element';
+import { useContext, useId } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import { AnswerBody } from '../components/Answer';
 import LensTokens from '../components/LensTokens';
@@ -43,7 +43,7 @@ function signalsArgs( page, lens ) {
  */
 function View( { attributes } ) {
 	const args = signalsArgs( useContext( IntelPageContext ), attributes.lens );
-	const read = useIntelRead( 'block:pulse', 'signals', args );
+	const read = useIntelRead( `block:pulse:${ useId() }`, 'signals', args );
 	if ( null === args ) {
 		return null;
 	}

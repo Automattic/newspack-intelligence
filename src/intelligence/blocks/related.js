@@ -5,7 +5,7 @@
  */
 
 import { RangeControl, TextControl } from '@wordpress/components';
-import { useContext, useState } from '@wordpress/element';
+import { useContext, useId, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { AnswerBody } from '../components/Answer';
 import { EntityChip } from '../components/Cite';
@@ -82,7 +82,11 @@ function View( { attributes } ) {
 	const record = useEntityRecord();
 	const read = aboutEntity(
 		key,
-		useIntelRead( 'block:related', 'related', key ? [ key ] : null )
+		useIntelRead(
+			`block:related:${ useId() }`,
+			'related',
+			key ? [ key ] : null
+		)
 	);
 	const name =
 		record.answer && ! record.error ? entityName( record.answer ) : key;

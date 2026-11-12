@@ -208,6 +208,47 @@ describe( 'pulse', () => {
 		);
 		expect( container ).toBeEmptyDOMElement();
 	} );
+
+	it( 'reads a team view’s and a profile’s at once, as a profile opened over a team view stands', async () => {
+		wire.replies.signals = SIGNALS;
+		const page = ( shown ) => ( {
+			page: 'entity',
+			lens_key: null,
+			entity_key: KEY,
+			since: null,
+			actions,
+			...shown,
+		} );
+		renderOnPage(
+			<>
+				<IntelPageContext.Provider
+					value={ page( {
+						page: 'lens',
+						lens_key: 'desk-8841',
+						entity_key: null,
+					} ) }
+				>
+					<pulse.View attributes={ { lens: '' } } />
+				</IntelPageContext.Provider>
+				<IntelPageContext.Provider value={ page( {} ) }>
+					<Profile entityKey={ KEY }>
+						<pulse.View attributes={ { lens: '' } } />
+					</Profile>
+				</IntelPageContext.Provider>
+			</>
+		);
+		await waitFor( () =>
+			expect(
+				screen.getAllByText( 'No unusual change last week.' )
+			).toHaveLength( 2 )
+		);
+		expect( wire.sent( 'signals' ) ).toEqual(
+			expect.arrayContaining( [
+				[ '--lens=desk-8841' ],
+				[ `--entity=${ KEY }` ],
+			] )
+		);
+	} );
 } );
 
 describe( 'entity-facts', () => {
@@ -305,6 +346,32 @@ describe( 'related', () => {
 			entities: [ 1, 2, 3, 4, 5 ].map( other ),
 			available: true,
 		};
+	} );
+
+	it( 'stands beside another related block, as a profile under its editor’s preview does', async () => {
+		renderBlock(
+			{
+				View: ( { attributes } ) => (
+					<>
+						<related.View attributes={ attributes } />
+						<related.View attributes={ attributes } />
+					</>
+				),
+			},
+			{ heading: 'Shares coverage 2290', limit: 2 }
+		);
+		await waitFor( () =>
+			expect(
+				screen.getAllByRole( 'heading', {
+					name: 'Shares coverage 2290',
+				} )
+			).toHaveLength( 2 )
+		);
+		await waitFor( () =>
+			expect(
+				screen.getAllByRole( 'button', { name: 'Prairie Signal 1' } )
+			).toHaveLength( 2 )
+		);
 	} );
 
 	it( 'shows its limit of rows and "Show all %d" for the rest', async () => {

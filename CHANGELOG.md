@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A profile opened over a team view, or the Briefing naming a team view, reads its pulse line instead of "Intelligence could not be read just now" and `node name collision: block:pulse:tee already registered`. The view below stays mounted, so its pulse block and the profile's stood at once under one read scope; each pulse and related block now reads under a scope of its own.
+
 ## [0.43.2] - 2026-11-12
 
 ### Removed
