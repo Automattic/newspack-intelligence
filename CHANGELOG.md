@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-11-11
+
 ### Fixed
 - **Needs newspack-nodes 2.153.0.** The views take the substrate's `newspack-nodes-page-inset` and the shared refused-field and type-scale styles first shipped in 2.153.0; below it the plugin goes dormant behind an admin notice.
 - The graph legend's text is 12px, the substrate's `--np-text-2xs`, and a test fails on any smaller size in the page's stylesheet.
