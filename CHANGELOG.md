@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.43.1] - 2026-11-12
+
 ### Fixed
 
 - The Briefing, a team view and a profile open their layout one gap under the header, as every other section is spaced; the layout added a margin of its own over the page's gap, leaving an empty band about 60px tall.
