@@ -9,7 +9,7 @@ import { Unread } from '../components/Answer';
 import AskBox from '../components/AskBox';
 import EntityPicker from '../components/EntityPicker';
 import ItemList from '../components/ItemList';
-import Section, { Invitation } from '../components/Section';
+import Section, { Header, Invitation } from '../components/Section';
 import Sheet from '../components/Sheet';
 import Skeleton from '../components/Skeleton';
 import { daysSince, lensDraft, listOf } from '../components/lensDraft';
@@ -52,40 +52,6 @@ const shownList = ( option, text ) =>
 				.map( ( one ) => word( PICKED[ option ], one ) )
 				.join( ', ' )
 		: text;
-
-/** The Briefing's layout context, whose first `ask` block Search's box takes. */
-const BRIEFING = 'newspack-intelligence/briefing';
-
-/** The `ask` block's name. */
-const ASK = 'newspack-intelligence/ask';
-
-/**
- * The first `ask` block of a layout's tree, depth first, or null.
- *
- * @param {Array<{name: string, attributes: Object, inner: Array}>} nodes The tree.
- * @return {?Object} The block.
- */
-const firstAsk = ( nodes ) =>
-	nodes.reduce(
-		( found, node ) =>
-			found ?? ( ASK === node.name ? node : firstAsk( node.inner ) ),
-		null
-	);
-
-/**
- * The attributes of the Briefing layout's first `ask` block, as the page
- * data carries the layout; null for a layout holding none, or one that could
- * not be read, which leaves the box at the block's defaults.
- *
- * @return {?{label: string, placeholder: string, examples: string[]}} The attributes.
- */
-function briefingAsk() {
-	const layout =
-		/** @type {{NewspackNodesData: {compositions: Object<string, {blocks?: Array<Object>}>}}} */ (
-			/** @type {unknown} */ ( window )
-		).NewspackNodesData.compositions[ BRIEFING ];
-	return ( layout.blocks && firstAsk( layout.blocks ) )?.attributes ?? null;
-}
 
 /**
  * The value a view's filter on `field` holds, or undefined.
@@ -361,23 +327,28 @@ function Count( { answer, view, onChangeView } ) {
  * placeholder rows; a refused read shows none. The page holds the view, so it
  * outlives a visit to another view.
  *
- * Its Ask box is the `ask` block's component, taking the attributes of the
- * Briefing layout's first `ask` block (`briefingAsk()`); it plans its own
- * searches and never reads the view, and its "Search for these words" and
- * "Show the items" open these results on the filters they name.
+ * It stands under the shared header, its Ask box a plain part of the page
+ * under it and "Find items" its first section. The Ask box is the `ask`
+ * block's component at the block's declared defaults, which the page data
+ * carries, whatever any layout holds; it
+ * plans its own searches and never reads the view, and its "Search for
+ * these words" and "Show the items" open these results on the filters they
+ * name.
  *
- * @param {Object}                   props
- * @param {Object}                   props.view         The DataViews view searched.
- * @param {(view: Object) => void}   props.onChangeView Replaces the view.
- * @param {Object}                   props.vocabulary   The ontology's closed lists.
- * @param {(key: string) => void}    props.onOpenEntity Opens an entity.
- * @param {(item: Object) => void}   [props.onSave]     Saves an item; absent for a reader.
- * @param {boolean}                  [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
- * @param {?Object}                  props.asked        The ask the page holds, which its AskBox shows.
- * @param {(asked: ?Object) => void} props.onAsked      Holds a new one.
+ * @param {Object}                                                   props
+ * @param {{label: string, placeholder: string, examples: string[]}} props.ask          The ask block's declared defaults, its Ask box's copy.
+ * @param {Object}                                                   props.view         The DataViews view searched.
+ * @param {(view: Object) => void}                                   props.onChangeView Replaces the view.
+ * @param {Object}                                                   props.vocabulary   The ontology's closed lists.
+ * @param {(key: string) => void}                                    props.onOpenEntity Opens an entity.
+ * @param {(item: Object) => void}                                   [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                                                  [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
+ * @param {?Object}                                                  props.asked        The ask the page holds, which its AskBox shows.
+ * @param {(asked: ?Object) => void}                                 props.onAsked      Holds a new one.
  * @return {import('react').ReactElement} The view.
  */
 export default function Search( {
+	ask,
 	view,
 	onChangeView,
 	vocabulary,
@@ -427,8 +398,15 @@ export default function Search( {
 
 	return (
 		<div className="newspack-intelligence__view">
+			<Header
+				title={ __( 'Search', 'newspack-intelligence' ) }
+				description={ __(
+					'Ask a question the graph answers, or find items by their words and filters.',
+					'newspack-intelligence'
+				) }
+			/>
 			<AskBox
-				{ ...briefingAsk() }
+				{ ...ask }
 				asked={ asked }
 				onAsked={ onAsked }
 				onSearchFor={ ( named ) =>

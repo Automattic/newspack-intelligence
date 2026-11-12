@@ -29,6 +29,7 @@ import { intelWire } from './intelWire';
 import { HEALTHY } from './healthFixture';
 import { registerCompositionEditor } from '@newspack-nodes/shared/composition/editorRegistry';
 import {
+	ASK_DEFAULTS,
 	COMPOSITIONS,
 	ENTITY,
 	GROUPS,
@@ -141,6 +142,7 @@ function renderPage(
 			} }
 			vocabulary={ VOCABULARY }
 			compositions={ compositions }
+			askDefaults={ ASK_DEFAULTS }
 		/>
 	);
 }
@@ -445,7 +447,7 @@ describe( 'IntelligencePage', () => {
 		).toHaveLength( 1 );
 	} );
 
-	it( 'keeps an answer across a switch to Search and back, asking once', async () => {
+	it( 'keeps Search’s answer across a switch to the Briefing and back, asking once', async () => {
 		wire.replies.ask = { ask_key: '4c2e6a8b0d1f3957' };
 		wire.replies.ask_result = {
 			ask_key: '4c2e6a8b0d1f3957',
@@ -461,10 +463,13 @@ describe( 'IntelligencePage', () => {
 			available: true,
 		};
 		renderPage();
+		await openWeek();
+		expect(
+			screen.queryByPlaceholderText( ASK_DEFAULTS.placeholder )
+		).toBeNull();
+		fireEvent.click( nav( 'Search' ) );
 		fireEvent.change(
-			await screen.findByPlaceholderText(
-				'Ask about anything collected here…'
-			),
+			await screen.findByPlaceholderText( ASK_DEFAULTS.placeholder ),
 			{ target: { value: 'Who won a prize?' } }
 		);
 		fireEvent.click( screen.getByRole( 'button', { name: 'Ask' } ) );
@@ -472,18 +477,16 @@ describe( 'IntelligencePage', () => {
 			await screen.findByText( 'Quillsheet won a prize.' )
 		).toBeInTheDocument();
 
+		fireEvent.click( nav( 'Briefing' ) );
+		await openWeek();
+		expect( screen.queryByText( 'Quillsheet won a prize.' ) ).toBeNull();
+
 		fireEvent.click( nav( 'Search' ) );
 
 		expect(
 			await screen.findByText( 'Quillsheet won a prize.' )
 		).toBeInTheDocument();
-
-		fireEvent.click( nav( 'Briefing' ) );
-
-		expect(
-			await screen.findByText( 'Quillsheet won a prize.' )
-		).toBeInTheDocument();
-		expect( screen.getByLabelText( 'Ask a question' ) ).toHaveValue(
+		expect( screen.getByLabelText( ASK_DEFAULTS.label ) ).toHaveValue(
 			'Who won a prize?'
 		);
 		expect( wire.sent( 'ask' ) ).toEqual( [
@@ -495,6 +498,37 @@ describe( 'IntelligencePage', () => {
 
 		await screen.findByLabelText( 'Search words' );
 		expect( screen.queryByText( 'Quillsheet won a prize.' ) ).toBeNull();
+	} );
+
+	it( 'opens every tab on the one shared header, titled as its tab and saying what it is for, its first heading', async () => {
+		renderPage( true );
+		const titles = [
+			[ 'Briefing', 'Briefing' ],
+			[ 'Search', 'Search' ],
+			[ 'Team views', 'Team views' ],
+			[ 'Review', 'Review' ],
+			[ 'Folders', 'Folders' ],
+			[ 'Watches', 'Watches' ],
+		];
+		for ( const [ tab, title ] of titles ) {
+			fireEvent.click( nav( tab ) );
+			const panel = document.getElementById(
+				'nodes-tab-host-panel-intelligence'
+			);
+			const heading = await within( panel ).findByRole( 'heading', {
+				level: 2,
+				name: title,
+			} );
+			expect( within( panel ).getAllByRole( 'heading' )[ 0 ] ).toBe(
+				heading
+			);
+			const row = heading.closest(
+				'.newspack-intelligence__section-head.newspack-nodes-section-heading'
+			);
+			expect(
+				row.querySelector( 'p.newspack-nodes-status.is-muted' )
+			).not.toBeNull();
+		}
 	} );
 
 	it( 'switches to Review and Folders in place', async () => {

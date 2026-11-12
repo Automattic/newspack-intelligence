@@ -4,16 +4,18 @@ import {
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
-import Answer from '../components/Answer';
+import { AnswerBody } from '../components/Answer';
 import Cite from '../components/Cite';
 import FolderBoard from '../components/FolderBoard';
 import Refusal from '../components/Refusal';
+import Section from '../components/Section';
 import { __, sprintf } from '@wordpress/i18n';
 import { Core } from '@newspack-nodes/runtime';
 import { actorNoun, dayLabel, itemKey, utcDay } from '../components/format';
 
 /**
- * The items a curator excluded from every view, the latest first, each with
+ * The items a curator excluded from every view, a section of the Folders
+ * page like the board above it, the latest first, each with
  * its title citing its URL, then as cells who excluded it in words, its UTC
  * day (`dayLabel()`) and why, when it says, and the
  * control including it again, which takes it off the list from the moment
@@ -30,10 +32,9 @@ function Excluded() {
 	} );
 	const today = utcDay( Math.floor( Core.now() ) );
 	return (
-		<>
+		<Section heading={ __( 'Excluded', 'newspack-intelligence' ) }>
 			<Refusal error={ include.refusal } />
-			<Answer
-				title={ __( 'Excluded', 'newspack-intelligence' ) }
+			<AnswerBody
 				read={ listed.read }
 				rows="items"
 				empty={ __(
@@ -100,16 +101,16 @@ function Excluded() {
 						) ) }
 					</ul>
 				) }
-			</Answer>
-		</>
+			</AnswerBody>
+		</Section>
 	);
 }
 
 /**
  * The Folders tab: the Folders board at the `folder-board` block's defaults,
- * every folder, opening on the items not yet used; and for a curator the
- * items excluded from every view (`Excluded`), the one place they are listed
- * and included again.
+ * whose header heads the tab, every folder, opening on the items not yet
+ * used; and for a curator the items excluded from every view (`Excluded`),
+ * the one place they are listed and included again.
  *
  * @param {Object}  props
  * @param {boolean} props.canTune Whether to offer the writes.

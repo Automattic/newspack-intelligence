@@ -1,8 +1,9 @@
 /* eslint-env jest */
 /**
- * Search is the Ask box above "Find items", one DataViews list over the
- * `search` command: the words in DataViews' search, Team view and Kind
- * always shown and every other filter behind "Add filter", the client or
+ * Search stands under the shared header, its Ask box a plain part of the
+ * page above "Find items", one DataViews list over the `search` command:
+ * the words in DataViews' search, Team view and Kind always shown and
+ * every other filter behind "Add filter", the client or
  * company picked by name into an `is` filter, the server's total as the
  * count and the pager, Importance or Newest as the order, and when narrow
  * every filter in a sheet. Each view it holds is asked as `viewToArgs`
@@ -21,7 +22,7 @@ import { Core } from '@newspack-nodes/runtime';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
 import { useState } from '@wordpress/element';
 import { intelWire } from '../../__tests__/intelWire';
-import { ITEM, LENSES, pageData, VOCABULARY } from './fixtures';
+import { ASK_DEFAULTS, ITEM, LENSES, pageData, VOCABULARY } from './fixtures';
 import Search from '../Search';
 import { namedView, newView } from '../searchView';
 import { daysSince } from '../../components/lensDraft';
@@ -29,7 +30,7 @@ import { daysSince } from '../../components/lensDraft';
 let wire;
 let viewport;
 
-/** The Briefing's layout context, whose first ask block Search's box takes. */
+/** The Briefing's layout context, whose stored layout Search's box never reads. */
 const BRIEFING = 'newspack-intelligence/briefing';
 
 /** A page of 128 items, most important first, distinct from every default. */
@@ -59,6 +60,7 @@ function Harness( { start = newView(), ...props } ) {
 		<Search
 			view={ view }
 			onChangeView={ setView }
+			ask={ ASK_DEFAULTS }
 			asked={ asked }
 			onAsked={ setAsked }
 			vocabulary={ VOCABULARY }
@@ -117,58 +119,49 @@ afterAll( () => {
 } );
 
 describe( 'Search', () => {
-	it( 'opens with the Ask box above the filters, at the defaults when the Briefing holds no ask block', async () => {
+	it( 'opens under the shared header, its Ask box a plain part of the page above "Find items", the first section heading', async () => {
 		wire.replies.search = PAGE;
-		renderSearch();
+		const { container } = renderSearch();
 		const box = await screen.findByPlaceholderText(
-			'Ask about anything collected here…'
+			ASK_DEFAULTS.placeholder
 		);
-		expect( document.querySelectorAll( 'section' )[ 0 ] ).toContainElement(
-			box
+		const header = screen
+			.getByRole( 'heading', { level: 2, name: 'Search' } )
+			.closest( '.newspack-intelligence__section-head' );
+		expect( header ).toHaveTextContent(
+			'Ask a question the graph answers, or find items by their words and filters.'
 		);
-		expect( screen.getByLabelText( 'Ask a question' ) ).toBe( box );
+		expect( screen.getByLabelText( ASK_DEFAULTS.label ) ).toBe( box );
+		expect( box.closest( '.components-card' ) ).toBeNull();
+		expect( container.querySelector( '.components-card' ) ).toBeNull();
 		expect(
 			screen.getByRole( 'button', {
-				name: 'Try: What changed last week?',
+				name: `Try: ${ ASK_DEFAULTS.examples[ 0 ] }`,
 			} )
 		).toBeInTheDocument();
+		const [ title, first ] = screen.getAllByRole( 'heading', {
+			level: 2,
+		} );
+		expect( title ).toHaveTextContent( 'Search' );
+		expect( first ).toHaveTextContent( 'Find items' );
 		expect(
-			screen.getByRole( 'heading', { name: 'Find items' } )
-		).toBeInTheDocument();
+			box.compareDocumentPosition( first ) &
+				window.Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
 		expect( wire.sent( 'ask' ) ).toEqual( [] );
 	} );
 
-	it( "takes the Briefing layout's first ask block, and asks only the question, never Search's filters", async () => {
+	it( "asks under the page data's ask defaults whatever a stored Briefing layout holds, and asks only the question, never Search's filters", async () => {
 		window.NewspackNodesData.compositions[ BRIEFING ] = {
 			context: BRIEFING,
 			source: 'saved',
 			blocks: [
 				{
-					name: 'newspack-intelligence/since',
-					attributes: { kinds: [ 'award' ] },
-					inner: [],
-				},
-				{
-					name: 'newspack-intelligence/aside',
-					attributes: {},
-					inner: [
-						{
-							name: 'newspack-intelligence/ask',
-							attributes: {
-								label: 'Put it to the desk',
-								placeholder: 'Ask the desk…',
-								examples: [ 'Who launched?' ],
-							},
-							inner: [],
-						},
-					],
-				},
-				{
 					name: 'newspack-intelligence/ask',
 					attributes: {
-						label: 'A second box',
-						placeholder: 'Never shown',
-						examples: [],
+						label: 'Put it to the desk',
+						placeholder: 'Ask the desk…',
+						examples: [ 'Who launched?' ],
 					},
 					inner: [],
 				},
@@ -192,13 +185,24 @@ describe( 'Search', () => {
 			wait_s: 900,
 			available: true,
 		};
-		renderSearch( { start: namedView( { q: 'sponsor', kind: 'bug' } ) } );
+		renderSearch( {
+			start: namedView( { q: 'sponsor', kind: 'bug' } ),
+			ask: {
+				label: 'Put it to the harbor',
+				placeholder: 'Ask the harbor…',
+				examples: [ 'Who docked at dawn?' ],
+			},
+		} );
 
-		const box = screen.getByLabelText( 'Put it to the desk' );
-		expect( box ).toHaveAttribute( 'placeholder', 'Ask the desk…' );
+		const box = screen.getByLabelText( 'Put it to the harbor' );
+		expect( box ).toHaveAttribute( 'placeholder', 'Ask the harbor…' );
 		expect(
-			screen.getByRole( 'button', { name: 'Try: Who launched?' } )
+			screen.getByRole( 'button', { name: 'Try: Who docked at dawn?' } )
 		).toBeInTheDocument();
+		expect( screen.queryByLabelText( 'Put it to the desk' ) ).toBeNull();
+		expect(
+			screen.queryByRole( 'button', { name: 'Try: Who launched?' } )
+		).toBeNull();
 		fireEvent.change( box, {
 			target: { value: 'Who asked for digests?' },
 		} );
@@ -209,21 +213,6 @@ describe( 'Search', () => {
 				[ '--question=Who asked for digests?' ],
 			] )
 		);
-	} );
-
-	it( 'keeps the defaults when the Briefing layout could not be read', async () => {
-		window.NewspackNodesData.compositions[ BRIEFING ] = {
-			context: BRIEFING,
-			error: 'the stored layout no longer validates',
-		};
-		wire.replies.search = PAGE;
-		renderSearch();
-
-		expect( screen.getByLabelText( 'Ask a question' ) ).toHaveAttribute(
-			'placeholder',
-			'Ask about anything collected here…'
-		);
-		await screen.findByText( '128 items, most important first' );
 	} );
 
 	it( 'opens its own results on the words an empty ask offers to search', async () => {
@@ -243,7 +232,7 @@ describe( 'Search', () => {
 			available: true,
 		};
 		renderSearch();
-		fireEvent.change( screen.getByLabelText( 'Ask a question' ), {
+		fireEvent.change( screen.getByLabelText( ASK_DEFAULTS.label ), {
 			target: { value: 'lighthouse grants' },
 		} );
 		fireEvent.click( screen.getByRole( 'button', { name: 'Ask' } ) );
@@ -661,6 +650,291 @@ describe( 'Search', () => {
 		expect(
 			screen.queryByRole( 'button', { name: /save to folder/i } )
 		).toBeNull();
+	} );
+
+	describe( 'as a table', () => {
+		/** A second item, each column value apart from the first item's value. */
+		const HERON = {
+			...ITEM,
+			item_key: 'linear:SUP-9041',
+			title: 'Heron Ledger newsletter sends stall for a week',
+			url: 'https://linear.example/SUP-9041',
+			source: 'linear',
+			kind: 'launch',
+			importance: 9,
+			item_ts: 1790380800,
+			entities: [
+				{
+					entity_key: 'organization:heron-ledger',
+					name: 'Heron Ledger',
+					state: 'asserted',
+					role: 'mention',
+					client: true,
+				},
+				{
+					entity_key: 'organization:otter-press',
+					name: 'Otter Press',
+					state: 'asserted',
+					role: 'subject',
+					client: false,
+				},
+			],
+		};
+		const TABLE = { ...PAGE, items: [ ITEM, HERON ] };
+		const tableView = { ...newView(), type: 'table' };
+		const rowOf = ( title ) =>
+			screen.getByRole( 'link', { name: title } ).closest( 'tr' );
+		const cells = ( title ) =>
+			Array.from( rowOf( title ).querySelectorAll( 'td' ) );
+
+		it( 'draws one row per item under six columns', async () => {
+			wire.replies.search = TABLE;
+			renderSearch( { start: tableView } );
+			await screen.findByRole( 'link', { name: HERON.title } );
+			const heads = screen
+				.getAllByRole( 'columnheader' )
+				.map( ( one ) => one.textContent.trim() )
+				.filter( Boolean );
+			expect( heads ).toEqual( [
+				'Title',
+				'Kind',
+				'Source',
+				'Date',
+				'Clients',
+				'Importance',
+			] );
+			expect( screen.getAllByRole( 'row' ) ).toHaveLength( 3 );
+			const [ title, kind, source, date, clients, importance ] = cells(
+				HERON.title
+			);
+			expect( within( title ).getByRole( 'link' ) ).toHaveAttribute(
+				'href',
+				HERON.url
+			);
+			expect( kind ).toHaveTextContent( 'Going live' );
+			expect( source ).toHaveTextContent( 'Tracker' );
+			expect( date.querySelector( 'time' ) ).toHaveAttribute(
+				'dateTime',
+				'2026-09-26'
+			);
+			expect( date ).toHaveTextContent( /^26 Sep/ );
+			expect(
+				within( clients ).getByRole( 'button', {
+					name: 'Heron Ledger, mentioned',
+				} )
+			).toBeInTheDocument();
+			expect( clients ).not.toHaveTextContent( 'Otter Press' );
+			expect( importance ).toHaveTextContent( 'High importance' );
+			const first = cells( ITEM.title );
+			expect( first[ 1 ] ).toHaveTextContent( 'Prize' );
+			expect( first[ 2 ] ).toHaveTextContent( 'Web feed' );
+			expect( first[ 5 ] ).toHaveTextContent( 'Medium importance' );
+		} );
+
+		it( 'keeps the summary, the excerpt and why it ranks to the list', async () => {
+			wire.replies.search = TABLE;
+			renderSearch( { start: tableView } );
+			await screen.findByRole( 'link', { name: HERON.title } );
+			expect( screen.queryAllByText( ITEM.summary ) ).toEqual( [] );
+			expect(
+				screen.queryByRole( 'button', { name: 'Why this ranks' } )
+			).toBeNull();
+		} );
+
+		it( 'offers no sort in its headers, the Sort select the one order', async () => {
+			wire.replies.search = TABLE;
+			renderSearch( { start: tableView } );
+			await screen.findByRole( 'link', { name: HERON.title } );
+			for ( const header of screen.getAllByRole( 'columnheader' ) ) {
+				expect( within( header ).queryAllByRole( 'button' ) ).toEqual(
+					[]
+				);
+			}
+			expect(
+				screen.queryByRole( 'menuitemradio', {
+					name: 'Sort ascending',
+				} )
+			).toBeNull();
+			fireEvent.change( screen.getByLabelText( 'Sort' ), {
+				target: { value: 'time' },
+			} );
+			await waitFor( () =>
+				expect( wire.sent( 'search' ).at( -1 ) ).toEqual( [
+					'--sort=time',
+					'--limit=20',
+				] )
+			);
+		} );
+
+		/**
+		 * The named row's own "More actions" menu, opened.
+		 *
+		 * @param {string} title The row's title.
+		 * @return {Promise<HTMLElement>} The menu.
+		 */
+		const openRowMenu = async ( title ) => {
+			fireEvent.click(
+				within( rowOf( title ) ).getByRole( 'button', {
+					name: 'More actions',
+				} )
+			);
+			return screen.findByRole( 'menu' );
+		};
+		const entries = ( menu ) =>
+			within( menu )
+				.getAllByRole( 'menuitem' )
+				.map( ( one ) => one.textContent );
+
+		it( 'offers every action the card offers in each row’s menu', async () => {
+			wire.replies.search = TABLE;
+			renderSearch( {
+				start: tableView,
+				onSave: jest.fn(),
+				canTune: true,
+			} );
+			await screen.findByRole( 'link', { name: HERON.title } );
+			expect( entries( await openRowMenu( HERON.title ) ) ).toEqual( [
+				'Open profile',
+				'Copy link',
+				'Save to folder',
+				'Exclude from every view',
+				'Is this about…',
+				'How this was read',
+			] );
+		} );
+
+		it( 'offers a reader the menu without the curator’s actions', async () => {
+			wire.replies.search = TABLE;
+			renderSearch( { start: tableView } );
+			await screen.findByRole( 'link', { name: HERON.title } );
+			expect( entries( await openRowMenu( HERON.title ) ) ).toEqual( [
+				'Open profile',
+				'Copy link',
+				'How this was read',
+			] );
+		} );
+
+		it( 'saves an item to a folder from its row menu', async () => {
+			wire.replies.search = TABLE;
+			const onSave = jest.fn();
+			renderSearch( { start: tableView, onSave } );
+			await screen.findByRole( 'link', { name: HERON.title } );
+			fireEvent.click(
+				within( await openRowMenu( HERON.title ) ).getByRole(
+					'menuitem',
+					{ name: 'Save to folder' }
+				)
+			);
+			expect( onSave ).toHaveBeenCalledWith( HERON );
+		} );
+
+		it( 'excludes an item from its row menu, for a reader holding tune', async () => {
+			wire.replies.search = TABLE;
+			wire.replies.exclude_item = { ok: true, event_id: 'ev-t' };
+			renderSearch( { start: tableView, canTune: true } );
+			await screen.findByRole( 'link', { name: HERON.title } );
+			fireEvent.click(
+				within( await openRowMenu( HERON.title ) ).getByRole(
+					'menuitem',
+					{ name: 'Exclude from every view' }
+				)
+			);
+			expect(
+				await screen.findByText( 'Excluded.' )
+			).toBeInTheDocument();
+			expect(
+				screen.queryByRole( 'link', { name: HERON.title } )
+			).toBeNull();
+			expect(
+				screen.getByRole( 'link', { name: ITEM.title } )
+			).toBeInTheDocument();
+		} );
+
+		it( 'opens how an item was read, and asks what it is about, from its row menu', async () => {
+			wire.replies.search = TABLE;
+			renderSearch( { start: tableView, canTune: true } );
+			await screen.findByRole( 'link', { name: HERON.title } );
+			fireEvent.click(
+				within( await openRowMenu( HERON.title ) ).getByRole(
+					'menuitem',
+					{ name: 'How this was read' }
+				)
+			);
+			expect(
+				within( rowOf( HERON.title ) ).getByRole( 'region', {
+					name: 'How this was read',
+				} )
+			).toBeInTheDocument();
+			fireEvent.click(
+				within( await openRowMenu( HERON.title ) ).getByRole(
+					'menuitem',
+					{ name: 'Is this about…' }
+				)
+			);
+			expect(
+				within( await screen.findByRole( 'dialog' ) ).getByRole(
+					'combobox',
+					{ name: 'Client or company' }
+				)
+			).toBeInTheDocument();
+		} );
+
+		it( 'takes a client off an item from its Clients cell, for a reader holding tune', async () => {
+			wire.replies.search = TABLE;
+			renderSearch( { start: tableView, canTune: true } );
+			await screen.findByRole( 'link', { name: HERON.title } );
+			const [ , , , , clients ] = cells( HERON.title );
+			fireEvent.click(
+				within( clients ).getByRole( 'button', {
+					name: 'Remove Heron Ledger from this item',
+				} )
+			);
+			expect( clients ).not.toHaveTextContent( 'Heron Ledger' );
+			expect( document.activeElement ).toBe(
+				within( rowOf( HERON.title ) ).getByRole( 'button', {
+					name: 'More actions',
+				} )
+			);
+		} );
+
+		it( 'offers a reader no remove on a client', async () => {
+			wire.replies.search = TABLE;
+			renderSearch( { start: tableView } );
+			await screen.findByRole( 'link', { name: HERON.title } );
+			expect(
+				within( cells( HERON.title )[ 4 ] ).queryByRole( 'button', {
+					name: /^Remove /,
+				} )
+			).toBeNull();
+		} );
+
+		it( 'counts an item’s other copies under its title, and opens them', async () => {
+			wire.replies.search = {
+				...TABLE,
+				items: [ { ...HERON, copies: 3 }, ITEM ],
+			};
+			renderSearch( { start: tableView } );
+			await screen.findByRole( 'link', { name: HERON.title } );
+			const [ title ] = cells( HERON.title );
+			const toggle = within( title ).getByRole( 'button', {
+				name: 'and 3 other copies',
+			} );
+			fireEvent.click( toggle );
+			expect( toggle ).toHaveAttribute( 'aria-expanded', 'true' );
+			await waitFor( () =>
+				expect( wire.sent( 'copies' ) ).toEqual( [
+					[ HERON.item_key ],
+				] )
+			);
+		} );
+
+		it( 'draws the cards again in the list layout, under no columns', async () => {
+			wire.replies.search = TABLE;
+			renderSearch();
+			await screen.findByRole( 'link', { name: HERON.title } );
+			expect( screen.getAllByText( ITEM.summary ) ).toHaveLength( 2 );
+			expect( screen.queryAllByRole( 'columnheader' ) ).toEqual( [] );
+		} );
 	} );
 
 	describe( 'narrow', () => {

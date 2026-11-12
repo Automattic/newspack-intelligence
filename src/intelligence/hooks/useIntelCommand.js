@@ -366,3 +366,20 @@ export function useIntelWrite(
 	);
 	return { run, refusal: error, answeredArgs, pending };
 }
+
+/**
+ * The refusal a write's last reply gave the send whose tokens are `sent`,
+ * or null: none sent, another send answered, or a send still owed its
+ * reply, so a dialog never shows what an earlier send drew.
+ *
+ * @param {{refusal: ?string, answeredArgs: ?string[], pending: boolean}} write The write.
+ * @param {?string[]}                                                     sent  The tokens its own last `run()` answered, or null.
+ * @return {?string} The refusal, or null.
+ */
+export const refusalOfSend = ( write, sent ) =>
+	null !== sent &&
+	! write.pending &&
+	Boolean( write.refusal ) &&
+	JSON.stringify( write.answeredArgs ) === JSON.stringify( sent )
+		? write.refusal
+		: null;

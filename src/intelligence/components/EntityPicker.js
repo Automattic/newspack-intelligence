@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from '@wordpress/element';
+import { useId, useMemo, useRef, useState } from '@wordpress/element';
 import { ComboboxControl } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
@@ -38,7 +38,7 @@ const significant = ( text ) =>
 export function useEntityNames( text ) {
 	const prefix = text.trim();
 	const names = useIntelRead(
-		'search:names',
+		`names:${ useId() }`,
 		'names',
 		significant( prefix ) < MIN_PREFIX ? null : commandArgs( { prefix } )
 	);

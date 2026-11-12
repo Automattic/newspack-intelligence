@@ -241,40 +241,50 @@ final class IntelligenceBlocksTest extends TestCase {
 	}
 
 	/**
-	 * The Briefing's five blocks, each at the defaults of its row: the Ask
-	 * box on every page, the rest on the Briefing alone.
+	 * The Briefing's four blocks, each at the defaults of its row, on the
+	 * Briefing alone; the Ask box stands on a team view and a profile, and
+	 * not on the Briefing.
 	 */
 	public function test_the_briefing_blocks_are_declared(): void {
 		$briefing = Composition::schemas( 'newspack-intelligence/briefing' )['blocks'];
 		$defaults = static fn ( string $block ): array => \array_map( static fn ( array $schema ): mixed => $schema['default'], $briefing[ "newspack-intelligence/{$block}" ]['attributes'] );
 
-		$this->assertSame(
-			[
-				'label'       => 'Ask a question',
-				'placeholder' => 'Ask about anything collected here…',
-				'examples'    => [ 'What changed last week?', 'What are people asking for this month?' ],
-			],
-			$defaults( 'ask' )
-		);
+		$this->assertArrayNotHasKey( 'newspack-intelligence/ask', $briefing );
 		$this->assertSame( [ 'kinds' => Intelligence_Briefing::SUMMARY_KINDS ], $defaults( 'since' ) );
 		$this->assertSame( [ 'heading' => 'Needs attention', 'max' => 8, 'clients' => true, 'lenses' => [] ], $defaults( 'needs-attention' ) );
 		$this->assertSame( [ 'heading' => 'Your watches', 'max' => 5 ], $defaults( 'watches' ) );
 		$this->assertSame( [ 'heading' => 'This week, most important first', 'top' => 10, 'categories' => [], 'otherwise' => 'Everything else', 'by_client' => true ], $defaults( 'week' ) );
 		foreach ( [ 'lens', 'entity' ] as $page ) {
 			$blocks = Composition::schemas( "newspack-intelligence/{$page}" )['blocks'];
-			$this->assertArrayHasKey( 'newspack-intelligence/ask', $blocks, $page );
+			$this->assertSame(
+				[
+					'label'       => 'Ask a question',
+					'placeholder' => 'Ask about anything collected here…',
+					'examples'    => [ 'What changed last week?', 'What are people asking for this month?' ],
+				],
+				\array_map( static fn ( array $schema ): mixed => $schema['default'], $blocks['newspack-intelligence/ask']['attributes'] ),
+				$page
+			);
 			foreach ( [ 'since', 'needs-attention', 'watches', 'week' ] as $block ) {
 				$this->assertArrayNotHasKey( "newspack-intelligence/{$block}", $blocks, "{$page} {$block}" );
 			}
 		}
 	}
 
-	/** The default Briefing lays out the Ask box, the lede, Needs attention, the watches and the week, in that order. */
+	/** A Briefing layout holding the Ask box is refused, naming the block and the context. */
+	public function test_a_briefing_holding_the_ask_box_is_refused(): void {
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'newspack-intelligence/ask does not stand on newspack-intelligence/briefing' );
+
+		Composition::validate( 'newspack-intelligence/briefing', "<!-- wp:newspack-intelligence/since /-->\n<!-- wp:newspack-intelligence/ask {\"label\":\"Ask the harbor desk\"} /-->" );
+	}
+
+	/** The default Briefing lays out the lede, Needs attention, the watches and the week, in that order. */
 	public function test_the_default_briefing_layout_validates(): void {
 		$tree = Composition::validate( 'newspack-intelligence/briefing', Composition::default_markup( 'newspack-intelligence/briefing' ) );
 
 		$this->assertSame(
-			[ 'newspack-intelligence/ask', 'newspack-intelligence/since', 'newspack-intelligence/needs-attention', 'newspack-intelligence/watches', 'newspack-intelligence/week' ],
+			[ 'newspack-intelligence/since', 'newspack-intelligence/needs-attention', 'newspack-intelligence/watches', 'newspack-intelligence/week' ],
 			\array_column( $tree, 'name' )
 		);
 	}

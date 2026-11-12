@@ -254,13 +254,15 @@ function judgedAs( name, words, container = document.body ) {
 }
 
 describe( 'Review — queues', () => {
-	it( 'says what the queues are for and counts each tab by its total', async () => {
+	it( 'says what the queues are for under the shared header and counts each tab by its total', async () => {
 		renderReview();
 		expect(
-			screen.getByText(
-				'The extractor suggests which client or company each item is about. Confirm the right ones and reject the rest.'
-			)
-		).toBeInTheDocument();
+			screen
+				.getByRole( 'heading', { level: 2, name: 'Review' } )
+				.closest( '.newspack-intelligence__section-head' )
+		).toHaveTextContent(
+			'The extractor suggests which client or company each item is about. Confirm the right ones and reject the rest.'
+		);
 		expect(
 			await screen.findByRole( 'tab', { name: 'Suggested matches 41' } )
 		).toBeInTheDocument();

@@ -112,6 +112,7 @@ const defaultView = () => ( linkedWatch() ? 'watches' : 'briefing' );
  * @param {Object}  props.operator     Who runs the deployment, `{ name, heading }`, whom the copy names.
  * @param {Object}  props.vocabulary   The ontology's closed lists.
  * @param {Object}  props.compositions Context => the layout its page reads, or its refusal.
+ * @param {Object}  props.askDefaults  The ask block's declared defaults, Search's Ask box copy.
  * @return {import('react').ReactElement} The page.
  */
 export default function IntelligencePage( {
@@ -121,6 +122,7 @@ export default function IntelligencePage( {
 	operator,
 	vocabulary,
 	compositions,
+	askDefaults,
 } ) {
 	const [ editing, setEditing ] = useState( () =>
 		canTune ? editTarget( window.location.search ) : null
@@ -398,13 +400,12 @@ export default function IntelligencePage( {
 														go( 'search' ),
 													onSave,
 													canTune,
-													asked,
-													onAsked: setAsked,
 												} }
 											/>
 										) }
 										{ 'search' === view && (
 											<Search
+												ask={ askDefaults }
 												view={ search }
 												onChangeView={ setSearch }
 												vocabulary={ vocabulary }

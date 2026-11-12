@@ -16,6 +16,7 @@ import {
 	render,
 	screen,
 	waitFor,
+	within,
 } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 import { useState } from '@wordpress/element';
@@ -127,6 +128,40 @@ const highlighted = ( name ) =>
 	);
 
 describe( 'EntityPicker', () => {
+	it( 'stands beside another picker on one page, each reading its own names', async () => {
+		render(
+			<>
+				<EntityPicker
+					label="Client or company"
+					value=""
+					onChange={ () => {} }
+				/>
+				<EntityPicker
+					label="Linked entity 6620"
+					value=""
+					onChange={ () => {} }
+				/>
+			</>
+		);
+		const other = screen.getByRole( 'combobox', {
+			name: 'Linked entity 6620',
+		} );
+		act( () => other.focus() );
+		fireEvent.change( other, { target: { value: 'Quill' } } );
+		expect(
+			await screen.findByRole( 'option', { name: 'Quill Press' } )
+		).toBeInTheDocument();
+		act( () => box().focus() );
+		fireEvent.keyDown( box(), { key: 'ArrowDown', code: 'ArrowDown' } );
+		expect( box() ).toHaveAttribute( 'aria-expanded', 'true' );
+		const firstList = document.getElementById(
+			box().getAttribute( 'aria-owns' ) ??
+				box().getAttribute( 'aria-controls' )
+		);
+		expect( firstList ).not.toBeNull();
+		expect( within( firstList ).queryAllByRole( 'option' ) ).toEqual( [] );
+	} );
+
 	it( 'shows every entity the read answers as a visible option, one whose name does not spell the text too', async () => {
 		render( <Owner onChange={ jest.fn() } /> );
 		type( 'TNQ' );

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { speak } from '@wordpress/a11y';
-import { Card, CardBody, Spinner, TextControl } from '@wordpress/components';
+import { Spinner, TextControl } from '@wordpress/components';
 import { Icon, check } from '@wordpress/icons';
 import { Core } from '@newspack-nodes/runtime';
 import useRouterTick from '@newspack-nodes/shared/hooks/useRouterTick';
@@ -28,23 +28,6 @@ const WASH_MS = 2000;
 
 /** The states an ask reads while it is still owed its outcome. */
 const OWED = [ 'asked', 'planned', 'read' ];
-
-/**
- * The `ask` block's attributes at their defaults, the approved copy.
- *
- * @return {{label: string, placeholder: string, examples: string[]}} The attributes.
- */
-const askDefaults = () => ( {
-	label: __( 'Ask a question', 'newspack-intelligence' ),
-	placeholder: __(
-		'Ask about anything collected here…',
-		'newspack-intelligence'
-	),
-	examples: [
-		__( 'What changed last week?', 'newspack-intelligence' ),
-		__( 'What are people asking for this month?', 'newspack-intelligence' ),
-	],
-} );
 
 /**
  * One search an ask ran, as the reader reads it: its words, the entity it
@@ -493,7 +476,8 @@ function useAnnounced( answer, gaveUp ) {
 }
 
 /**
- * The `ask` block's component, heading the Briefing and Search: a question
+ * The `ask` block's component, on Search and on any team view or profile
+ * whose layout holds the block, a plain part of the page: a question
  * field under its visible label, which sends `ask` with the question alone
  * and holds the key it answers. The answer is read through `ask_result`,
  * again on the Router's tick while it is owed and the graph opens, so the
@@ -502,34 +486,32 @@ function useAnnounced( answer, gaveUp ) {
  * the substrate clock's second it landed, so a switch between views keeps it
  * until **Clear**; the box stops asking once the ask has waited the `wait_s`
  * the server answers. The block's examples show, each as "Try: %s", until
- * the reader's first ask in this browser. The block's attributes a caller
- * leaves out read as their defaults (`askDefaults()`). While its layout is
+ * the reader's first ask in this browser. While its layout is
  * edited it asks nothing and marks no first ask, its **Ask** inert.
  *
  * @param {Object}                                                        props
- * @param {string}                                                        [props.label]       The field's visible label.
- * @param {string}                                                        [props.placeholder] The field's placeholder.
- * @param {string[]}                                                      [props.examples]    The questions offered before a first ask.
- * @param {?{key: string, at: number, gaveUp: boolean, question: string}} props.asked         The ask the page holds, or null.
- * @param {(asked: ?Object) => void}                                      props.onAsked       Holds a new one.
- * @param {(filters: Object) => void}                                     props.onSearchFor   Opens Search on filters.
- * @param {(key: string) => void}                                         props.onOpenEntity  Opens an entity.
- * @param {(item: Object) => void}                                        [props.onSave]      Saves an item; absent for a reader.
- * @param {boolean}                                                       [props.canTune]     Whether the reader holds tune, which offers each item's exclusion.
+ * @param {string}                                                        props.label        The field's visible label.
+ * @param {string}                                                        props.placeholder  The field's placeholder.
+ * @param {string[]}                                                      props.examples     The questions offered before a first ask.
+ * @param {?{key: string, at: number, gaveUp: boolean, question: string}} props.asked        The ask the page holds, or null.
+ * @param {(asked: ?Object) => void}                                      props.onAsked      Holds a new one.
+ * @param {(filters: Object) => void}                                     props.onSearchFor  Opens Search on filters.
+ * @param {(key: string) => void}                                         props.onOpenEntity Opens an entity.
+ * @param {(item: Object) => void}                                        [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                                                       [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
  * @return {import('react').ReactElement} The box.
  */
-export default function AskBox( props ) {
-	const {
-		label,
-		placeholder,
-		examples,
-		asked,
-		onAsked,
-		onSearchFor,
-		onOpenEntity,
-		onSave,
-		canTune,
-	} = { ...askDefaults(), ...props };
+export default function AskBox( {
+	label,
+	placeholder,
+	examples,
+	asked,
+	onAsked,
+	onSearchFor,
+	onOpenEntity,
+	onSave,
+	canTune,
+} ) {
 	const [ question, setQuestion ] = useState( () => asked?.question ?? '' );
 	const fieldRef = useRef( null );
 	const sentRef = useRef( '' );
@@ -591,90 +573,88 @@ export default function AskBox( props ) {
 	const blank = '' === question.trim();
 
 	return (
-		<Card as="section" aria-label={ __( 'Ask', 'newspack-intelligence' ) }>
-			<CardBody>
-				<form
-					className="newspack-intelligence__ask"
-					onSubmit={ ( event ) => {
-						event.preventDefault();
-						if ( ! blank ) {
-							send( question );
-						}
-					} }
+		<section aria-label={ __( 'Ask', 'newspack-intelligence' ) }>
+			<form
+				className="newspack-intelligence__ask"
+				onSubmit={ ( event ) => {
+					event.preventDefault();
+					if ( ! blank ) {
+						send( question );
+					}
+				} }
+			>
+				<TextControl
+					ref={ fieldRef }
+					__nextHasNoMarginBottom
+					__next40pxDefaultSize
+					label={ label }
+					placeholder={ placeholder }
+					value={ question }
+					onChange={ setQuestion }
+				/>
+				<button
+					type="submit"
+					className="button button-primary"
+					disabled={ blank || ask.pending }
+					aria-disabled={ editing || undefined }
 				>
-					<TextControl
-						ref={ fieldRef }
-						__nextHasNoMarginBottom
-						__next40pxDefaultSize
-						label={ label }
-						placeholder={ placeholder }
-						value={ question }
-						onChange={ setQuestion }
+					{ __( 'Ask', 'newspack-intelligence' ) }
+				</button>
+			</form>
+			{ ! askedOnce && 0 < examples.length && (
+				<p className="newspack-intelligence__examples">
+					{ examples.map( ( example ) => (
+						<button
+							key={ example }
+							type="button"
+							className="button-link"
+							onClick={ () => setQuestion( example ) }
+						>
+							{ sprintf(
+								/* translators: %s: an example question. */
+								__( 'Try: %s', 'newspack-intelligence' ),
+								example
+							) }
+						</button>
+					) ) }
+				</p>
+			) }
+			<Refusal error={ ask.refusal } />
+			{ null !== asked && (
+				<>
+					<AskState
+						read={ read }
+						asked={ asked }
+						onAskAgain={ () => send( asked.question ) }
+						onSearchFor={ onSearchFor }
+						onOpenEntity={ onOpenEntity }
+						onSave={ onSave }
+						canTune={ canTune }
 					/>
-					<button
-						type="submit"
-						className="button button-primary"
-						disabled={ blank || ask.pending }
-						aria-disabled={ editing || undefined }
-					>
-						{ __( 'Ask', 'newspack-intelligence' ) }
-					</button>
-				</form>
-				{ ! askedOnce && 0 < examples.length && (
-					<p className="newspack-intelligence__examples">
-						{ examples.map( ( example ) => (
-							<button
-								key={ example }
-								type="button"
-								className="button-link"
-								onClick={ () => setQuestion( example ) }
-							>
-								{ sprintf(
-									/* translators: %s: an example question. */
-									__( 'Try: %s', 'newspack-intelligence' ),
-									example
-								) }
-							</button>
-						) ) }
+					<p className="newspack-intelligence__actions">
+						<button
+							type="button"
+							className="button"
+							onClick={ () => {
+								setQuestion( '' );
+								onAsked( null );
+							} }
+						>
+							{ __( 'Clear', 'newspack-intelligence' ) }
+						</button>
+						<button
+							type="button"
+							className="button"
+							onClick={ () => {
+								setQuestion( '' );
+								fieldRef.current?.focus();
+							} }
+						>
+							{ __( 'Ask another', 'newspack-intelligence' ) }
+						</button>
 					</p>
-				) }
-				<Refusal error={ ask.refusal } />
-				{ null !== asked && (
-					<>
-						<AskState
-							read={ read }
-							asked={ asked }
-							onAskAgain={ () => send( asked.question ) }
-							onSearchFor={ onSearchFor }
-							onOpenEntity={ onOpenEntity }
-							onSave={ onSave }
-							canTune={ canTune }
-						/>
-						<p className="newspack-intelligence__actions">
-							<button
-								type="button"
-								className="button"
-								onClick={ () => {
-									setQuestion( '' );
-									onAsked( null );
-								} }
-							>
-								{ __( 'Clear', 'newspack-intelligence' ) }
-							</button>
-							<button
-								type="button"
-								className="button"
-								onClick={ () => {
-									setQuestion( '' );
-									fieldRef.current?.focus();
-								} }
-							>
-								{ __( 'Ask another', 'newspack-intelligence' ) }
-							</button>
-						</p>
-					</>
-				) }
-			</CardBody>
-		</Card>
+				</>
+			) }
+		</section>
 	);
 }

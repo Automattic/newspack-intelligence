@@ -297,6 +297,26 @@ final class IntelligencePageTest extends TestCase {
 		$this->assertSame( [ 'wp-components', 'newspack-nodes-graph' ], $GLOBALS['_enqueued_styles']['newspack-intelligence']['deps'] );
 	}
 
+	/**
+	 * The page carries the ask block's declared defaults, the one copy of
+	 * Search's Ask box copy, and the fixture the browser's tests read holds
+	 * the same, so a changed default fails here until they follow.
+	 */
+	public function test_the_page_carries_the_ask_blocks_declared_defaults(): void {
+		Capabilities::$session_scope = Capabilities::READ;
+		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];
+
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+
+		$sent     = $this->localized( 'newspack-intelligence' )['askDefaults'];
+		$declared = \array_map( static fn ( array $schema ): mixed => $schema['default'], Composition::schemas( 'newspack-intelligence/lens' )['blocks']['newspack-intelligence/ask']['attributes'] );
+		$this->assertSame( $declared, $sent );
+		$this->assertSame(
+			\json_decode( (string) \file_get_contents( \dirname( __DIR__ ) . '/fixtures/ask-defaults.json' ), true, 512, \JSON_THROW_ON_ERROR ),
+			$sent
+		);
+	}
+
 	/** The page learns whether its reader holds manage, as `canTune` says tune: the string 1 or the empty string. */
 	public function test_page_localizes_can_manage(): void {
 		$_GET = [ 'page' => INTELLIGENCE_MENU_SLUG ];

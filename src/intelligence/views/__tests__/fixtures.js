@@ -337,16 +337,11 @@ export const GROUPS = {
 	available: true,
 };
 
+/** The ask block's declared defaults, as the page data carries them. */
+export { default as ASK_DEFAULTS } from '../../../../tests/fixtures/ask-defaults.json';
+
 /** The Briefing blocks' attributes at their declared defaults, in its default order. */
 export const BRIEFING_DEFAULTS = {
-	'newspack-intelligence/ask': {
-		label: 'Ask a question',
-		placeholder: 'Ask about anything collected here…',
-		examples: [
-			'What changed last week?',
-			'What are people asking for this month?',
-		],
-	},
 	'newspack-intelligence/since': {
 		kinds: [
 			'churned',

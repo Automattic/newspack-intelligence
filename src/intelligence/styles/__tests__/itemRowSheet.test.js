@@ -112,11 +112,30 @@ describe( 'the item row sheet', () => {
 		).toBeUndefined();
 	} );
 
-	it( 'leaves the Briefing surface its geometry; the shared card paints it', () => {
-		const surface = declared( '.newspack-intelligence__surface' );
-		expect( surface.gap ).toBeDefined();
-		expect( surface.background ).toBeUndefined();
-		expect( surface[ 'border-radius' ] ).toBeUndefined();
+	it( 'leaves the rule under a header to the shared heading role, and paints no heading', () => {
+		const ruled = [];
+		const painted = [];
+		sheet.walkDecls( ( decl ) => {
+			const { selector } = decl.parent;
+			if (
+				/^border(-block-end)?$/.test( decl.prop ) &&
+				/head|title/.test( selector ) &&
+				'0' !== decl.value
+			) {
+				ruled.push( selector );
+			}
+			if (
+				/(^|[\s,(>])h[1-6]\b|heading/.test( selector ) &&
+				/^(color|background|border|font|text-transform|letter-spacing)/.test(
+					decl.prop
+				)
+			) {
+				painted.push( `${ selector } ${ decl.prop }` );
+			}
+		} );
+		expect( ruled ).toEqual( [] );
+		expect( painted ).toEqual( [] );
+		expect( declared( '.newspack-intelligence__surface' ) ).toEqual( {} );
 	} );
 
 	it( 'lets a pill shrink and cuts its name with an ellipsis, painting nothing', () => {

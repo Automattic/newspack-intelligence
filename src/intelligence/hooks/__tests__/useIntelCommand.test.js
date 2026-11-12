@@ -21,7 +21,12 @@ import {
 	TM_ERROR,
 } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
-import { commandArgs, useIntelRead, useIntelWrite } from '../useIntelCommand';
+import {
+	commandArgs,
+	refusalOfSend,
+	useIntelRead,
+	useIntelWrite,
+} from '../useIntelCommand';
 import { pageData } from '../../views/__tests__/fixtures';
 
 let wire;
@@ -535,5 +540,29 @@ describe( 'commandArgs', () => {
 				by: 'theme',
 			} )
 		).toEqual( [ '--by=theme' ] );
+	} );
+} );
+
+describe( 'refusalOfSend', () => {
+	const SENT = [ '--name=Heron cove' ];
+	const refused = {
+		refusal: 'Heron cove is taken',
+		answeredArgs: [ '--name=Heron cove' ],
+		pending: false,
+	};
+
+	it( 'answers the refusal its own send drew', () => {
+		expect( refusalOfSend( refused, SENT ) ).toBe( 'Heron cove is taken' );
+	} );
+
+	it( 'answers none for another send, no send, or a send still owed', () => {
+		expect( refusalOfSend( refused, [ '--name=Gull reef' ] ) ).toBeNull();
+		expect( refusalOfSend( refused, null ) ).toBeNull();
+		expect(
+			refusalOfSend( { ...refused, pending: true }, SENT )
+		).toBeNull();
+		expect(
+			refusalOfSend( { ...refused, refusal: null }, SENT )
+		).toBeNull();
 	} );
 } );

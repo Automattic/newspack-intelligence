@@ -1,4 +1,4 @@
-import { useCallback, useState } from '@wordpress/element';
+import { useCallback, useEffect, useRef, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import {
 	CheckboxControl,
@@ -10,13 +10,18 @@ import { moreHorizontal } from '@wordpress/icons';
 import Modal, { ModalHeader } from '@newspack-nodes/shared/components/Modal';
 import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
 import { primaryButtonClass } from '@newspack-nodes/shared/utils/buttonClass';
-import { LENS_READS, useIntelWrite } from '../hooks/useIntelCommand';
+import {
+	LENS_READS,
+	refusalOfSend,
+	useIntelWrite,
+} from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
 import { usePageRead } from '../hooks/usePageRead';
+import { useReturnFocus } from '../hooks/useReturnFocus';
 import { AnswerBody } from '../components/Answer';
 import ListField from '../components/ListField';
 import ListPicker from '../components/ListPicker';
-import { Invitation } from '../components/Section';
+import { Header, Invitation } from '../components/Section';
 import { word } from '../components/words';
 import Refusal from '../components/Refusal';
 import {
@@ -390,30 +395,40 @@ export default function Lens( {
 		onRefused: lenses.refused,
 	} );
 	const newView = () => setEditing( newLens( lists ) );
+	// The tokens the open dialog's last save answered; a closed one forgets.
+	const [ sent, setSent ] = useState( null );
+	useEffect( () => {
+		if ( null === editing ) {
+			setSent( null );
+		}
+	}, [ editing ] );
+	const newViewButton = useRef( null );
+	useReturnFocus( null !== editing, newViewButton );
 	const listed = lenses.read.answer?.lenses ?? [];
 	const lens =
 		listed.find( ( one ) => one.lens_key === opened.key ) ?? listed[ 0 ];
 
 	return (
 		<div className="newspack-intelligence__view">
-			<div className="newspack-intelligence__section-head">
-				<h2>{ __( 'Team views', 'newspack-intelligence' ) }</h2>
-				{ canTune && (
-					<button
-						type="button"
-						className="button"
-						onClick={ newView }
-					>
-						{ __( 'New view', 'newspack-intelligence' ) }
-					</button>
-				) }
-			</div>
-			<p className="newspack-nodes-status is-muted">
-				{ __(
+			<Header
+				title={ __( 'Team views', 'newspack-intelligence' ) }
+				description={ __(
 					'Saved views for each team, with what moved this week.',
 					'newspack-intelligence'
 				) }
-			</p>
+				actions={
+					canTune && (
+						<button
+							type="button"
+							className="button"
+							ref={ newViewButton }
+							onClick={ newView }
+						>
+							{ __( 'New view', 'newspack-intelligence' ) }
+						</button>
+					)
+				}
+			/>
 			<Refusal error={ remove.refusal } />
 			<AnswerBody
 				read={ lenses.read }
@@ -444,76 +459,80 @@ export default function Lens( {
 							onPick={ ( key ) => onOpen( { key } ) }
 						/>
 						<div className="newspack-intelligence__lens-main">
-							<div className="newspack-intelligence__section-head">
-								<h2>{ lens.name }</h2>
-								<div className="newspack-intelligence__actions">
-									<button
-										type="button"
-										className="button"
-										onClick={ () =>
-											onWatch(
-												{
-													kind: 'lens',
-													key: lens.lens_key,
-												},
-												lens.name
-											)
-										}
-									>
-										{ __(
-											'Watch',
-											'newspack-intelligence'
-										) }
-									</button>
-									{ canTune && (
-										<>
-											<button
-												type="button"
-												className="button"
-												onClick={ () =>
-													setEditing(
-														lensDraft( lens, lists )
-													)
-												}
-											>
-												{ __(
-													'Edit',
-													'newspack-intelligence'
-												) }
-											</button>
-											<DropdownMenu
-												icon={ moreHorizontal }
-												label={ __(
-													'Team view actions',
-													'newspack-intelligence'
-												) }
-												toggleProps={ {
-													size: 'small',
-												} }
-												controls={ [
+							<Header
+								title={ lens.name }
+								description={ lens.description }
+								actions={
+									<>
+										<button
+											type="button"
+											className="button"
+											onClick={ () =>
+												onWatch(
 													{
-														title: __(
-															'Remove view…',
-															'newspack-intelligence'
-														),
-														onClick: () =>
-															setRemoving( lens ),
+														kind: 'lens',
+														key: lens.lens_key,
 													},
-													editLayoutControl( {
-														page: 'lens',
-														lens_key: lens.lens_key,
-													} ),
-												] }
-											/>
-										</>
-									) }
-								</div>
-							</div>
-							{ lens.description && (
-								<p className="newspack-nodes-status is-muted">
-									{ lens.description }
-								</p>
-							) }
+													lens.name
+												)
+											}
+										>
+											{ __(
+												'Watch',
+												'newspack-intelligence'
+											) }
+										</button>
+										{ canTune && (
+											<>
+												<button
+													type="button"
+													className="button"
+													onClick={ () =>
+														setEditing(
+															lensDraft(
+																lens,
+																lists
+															)
+														)
+													}
+												>
+													{ __(
+														'Edit',
+														'newspack-intelligence'
+													) }
+												</button>
+												<DropdownMenu
+													icon={ moreHorizontal }
+													label={ __(
+														'Team view actions',
+														'newspack-intelligence'
+													) }
+													toggleProps={ {
+														size: 'small',
+													} }
+													controls={ [
+														{
+															title: __(
+																'Remove view…',
+																'newspack-intelligence'
+															),
+															onClick: () =>
+																setRemoving(
+																	lens
+																),
+														},
+														editLayoutControl( {
+															page: 'lens',
+															lens_key:
+																lens.lens_key,
+														} ),
+													] }
+												/>
+											</>
+										) }
+									</>
+								}
+							/>
 							<PageLayout
 								key={ JSON.stringify( lens.filters ) }
 								layout={ layout }
@@ -534,7 +553,7 @@ export default function Lens( {
 				<LensForm
 					initial={ editing }
 					vocabulary={ vocabulary }
-					refusal={ save.refusal }
+					refusal={ refusalOfSend( save, sent ) }
 					onSave={ ( draft ) => {
 						const was = listed.find(
 							( one ) => draft.key && draft.key === one.lens_key
@@ -548,7 +567,13 @@ export default function Lens( {
 								),
 								before: was ? textOf( was ) : null,
 							},
-							() => save.run( draftArgs( draft, lists ) )
+							() => {
+								const tokens = save.run(
+									draftArgs( draft, lists )
+								);
+								setSent( tokens );
+								return tokens;
+							}
 						);
 					} }
 					onCancel={ () => setEditing( null ) }

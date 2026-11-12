@@ -29,6 +29,7 @@ import EditDrawer from '../components/EditDrawer';
 import EndClientDialog from '../components/EndClientDialog';
 import ChurnNote from '../components/ChurnNote';
 import Refusal from '../components/Refusal';
+import { Header } from '../components/Section';
 import UndoSnackbar from '../components/UndoSnackbar';
 import {
 	entityName,
@@ -304,9 +305,10 @@ function BackLink( { back } ) {
 
 /**
  * Entity: one entity's profile. Its header is fixed, so no layout can hide
- * it: the way back, the name, the type line and the entity's website, then
- * **Watch**, for a curator **Edit**, the Edit drawer (`EditDrawer`), and ⋯
- * offering **Edit layout** and, for a client, a churn-risk note; then, while
+ * it: the way back; the shared `Header`, the name with **Watch**, for a
+ * curator **Edit**, the Edit drawer (`EditDrawer`), and ⋯ offering **Edit
+ * layout** and, for a client, a churn-risk note at its end; the type line
+ * and the entity's website; then, while
  * the client's status names a churn report since it began, the churn notice
  * naming each (`ChurnNotice`) with the client's churn-risk note, else the
  * note alone; then jump links to the layout's headings. Below the header the
@@ -472,80 +474,84 @@ export default function Entity( {
 							);
 							return (
 								<>
-									<div className="newspack-intelligence__profile-title">
-										<h2 ref={ heading } tabIndex={ -1 }>
-											{ entityName( entity ) }
-										</h2>
-										<div className="newspack-intelligence__actions">
-											<Button
-												variant="secondary"
-												onClick={ () =>
-													onWatch(
-														{
-															kind: 'entity',
-															key: entityKey,
-														},
-														entityName( entity )
-													)
-												}
-											>
-												{ __(
-													'Watch',
-													'newspack-intelligence'
-												) }
-											</Button>
-											{ canTune && (
-												<EditDrawer
-													entity={ entity }
-													vocabulary={ vocabulary }
-													writes={ {
-														addName,
-														addIdentifier,
-														assertRole,
-														endRole,
-													} }
-													onEndClient={ ask(
-														entity
-													) }
-												/>
-											) }
-											{ canTune && (
-												<DropdownMenu
-													icon={ moreHorizontal }
-													label={ __(
-														'Profile actions',
+									<Header
+										ref={ heading }
+										title={ entityName( entity ) }
+										actions={
+											<>
+												<button
+													type="button"
+													className="button"
+													onClick={ () =>
+														onWatch(
+															{
+																kind: 'entity',
+																key: entityKey,
+															},
+															entityName( entity )
+														)
+													}
+												>
+													{ __(
+														'Watch',
 														'newspack-intelligence'
 													) }
-													toggleProps={ {
-														size: 'compact',
-													} }
-													controls={ [
-														editLayoutControl( {
-															page: 'entity',
-															entity_key:
-																entityKey,
-														} ),
-														...( entity.status &&
-														! note
-															? [
-																	{
-																		title: __(
-																			'Add a churn-risk note',
-																			'newspack-intelligence'
-																		),
-																		onClick:
-																			() =>
-																				setNoting(
-																					true
-																				),
-																	},
-															  ]
-															: [] ),
-													] }
-												/>
-											) }
-										</div>
-									</div>
+												</button>
+												{ canTune && (
+													<EditDrawer
+														entity={ entity }
+														vocabulary={
+															vocabulary
+														}
+														writes={ {
+															addName,
+															addIdentifier,
+															assertRole,
+															endRole,
+														} }
+														onEndClient={ ask(
+															entity
+														) }
+													/>
+												) }
+												{ canTune && (
+													<DropdownMenu
+														icon={ moreHorizontal }
+														label={ __(
+															'Profile actions',
+															'newspack-intelligence'
+														) }
+														toggleProps={ {
+															size: 'compact',
+														} }
+														controls={ [
+															editLayoutControl( {
+																page: 'entity',
+																entity_key:
+																	entityKey,
+															} ),
+															...( entity.status &&
+															! note
+																? [
+																		{
+																			title: __(
+																				'Add a churn-risk note',
+																				'newspack-intelligence'
+																			),
+																			onClick:
+																				() =>
+																					setNoting(
+																						true
+																					),
+																		},
+																  ]
+																: [] ),
+														] }
+													/>
+												) }
+											</>
+										}
+									/>
 									<p className="newspack-intelligence__type-line">
 										<span className="newspack-nodes-status-badge is-pill">
 											{ typeLine( entity ) }

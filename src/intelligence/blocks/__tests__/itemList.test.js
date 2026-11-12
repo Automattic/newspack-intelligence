@@ -208,6 +208,40 @@ describe( 'item-list', () => {
 		);
 	} );
 
+	it( 'draws its items as a table of six columns in the table layout, sorting from no header', async () => {
+		block( { layout: 'table' }, deskOf( [] ) );
+		const link = await screen.findByRole( 'link', {
+			name: 'Acme Quillsheet wins regional prize',
+		} );
+		const heads = screen
+			.getAllByRole( 'columnheader' )
+			.map( ( one ) => one.textContent.trim() )
+			.filter( Boolean );
+		expect( heads ).toEqual( [
+			'Title',
+			'Kind',
+			'Source',
+			'Date',
+			'Clients',
+			'Importance',
+		] );
+		const cells = Array.from(
+			link.closest( 'tr' ).querySelectorAll( 'td' ),
+			( cell ) => cell.textContent
+		);
+		expect( cells.slice( 1 ) ).toEqual( [
+			'Prize',
+			'WWeb feed',
+			expect.stringMatching( /^22 Sep/ ),
+			'Acme Quillsheet',
+			'Medium importance',
+		] );
+		for ( const header of screen.getAllByRole( 'columnheader' ) ) {
+			expect( header.querySelector( 'button' ) ).toBeNull();
+		}
+		expect( screen.queryByText( ITEM.summary ) ).toBeNull();
+	} );
+
 	it( 'groups the stories by theme in the order the server ranks them', async () => {
 		wire.replies.search = GROUPS;
 		block( { group: 'theme', limit: 12 }, deskOf( [] ) );

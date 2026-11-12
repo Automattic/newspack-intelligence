@@ -255,6 +255,25 @@ const header = async () =>
 	);
 
 describe( 'Entity — header', () => {
+	it( 'names the profile in the shared header, Watch and the curator’s menu at its end', async () => {
+		renderEntity( { canTune: true } );
+		const title = await screen.findByRole( 'heading', {
+			level: 2,
+			name: 'Harbor Ledger',
+		} );
+		const row = title.closest(
+			'.newspack-intelligence__section-head.newspack-nodes-section-heading'
+		);
+		expect( row ).not.toBeNull();
+		expect(
+			within( row ).getByRole( 'button', { name: 'Watch' } )
+		).toHaveClass( 'button' );
+		expect(
+			within( row ).getByRole( 'button', { name: 'Profile actions' } )
+		).toBeInTheDocument();
+		expect( title ).toHaveAttribute( 'tabindex', '-1' );
+	} );
+
 	it( 'reads the client’s start year, and holds no key, state or proposed links', async () => {
 		renderEntity( { canTune: true } );
 		const head = await header();

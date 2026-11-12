@@ -1,8 +1,10 @@
 /**
- * The Intelligence page's geometry. Appearance — cards, banners, empty
- * states, status text, tabs, buttons and fields — comes from the shared
- * `newspack-nodes-ui` roles the dashboard shell opts into, so nothing here
- * paints.
+ * The Intelligence page's geometry. Cards, banners, empty states, status
+ * text, tabs, buttons, fields and the rule under every header take their
+ * paint from the shared `newspack-nodes-ui` roles the dashboard shell opts
+ * into; the paint here is what no role carries: the bare pill, glyph and
+ * fold buttons, a title link's ink, the accent's wash on a source, a quoted
+ * name and the team view picked, and the rule down a record's steps.
  */
 
 @use "@newspack-nodes/shared/styles/tokens" as base;
@@ -527,11 +529,13 @@
 		}
 	}
 
-	&__create {
+	// A list's filters on one line, each field's foot level with the rest.
+	&__controls {
 		display: flex;
 		flex-wrap: wrap;
 		align-items: end;
 		gap: base.$space-sm;
+		margin-block-end: base.$space-md;
 	}
 }
 
@@ -620,12 +624,6 @@
 		opacity: 0;
 		transform: translate(-50%, base.$space-sm);
 	}
-}
-
-// A composed page's ⋯ menu sits at the end of the line above its view.
-.newspack-intelligence__page-actions {
-	display: flex;
-	justify-content: flex-end;
 }
 
 // A layout's aside follows the main column, and stands beside it when wide.
@@ -730,14 +728,6 @@
 	padding: base.$space-md;
 }
 
-// The Briefing's blocks stand on one shared card, each a section of it.
-.newspack-intelligence__surface {
-	display: flex;
-	flex-direction: column;
-	gap: base.$space-xl;
-	padding: base.$space-xl;
-}
-
 .newspack-intelligence__section-head {
 	display: flex;
 	flex-wrap: wrap;
@@ -745,11 +735,14 @@
 	justify-content: space-between;
 	gap: base.$space-sm;
 	margin: 0 0 base.$space-sm;
-	padding-block-end: base.$space-sm;
-	border-block-end: 1px solid var(--paper-shadow, var(--np-border));
 
 	h2 {
 		margin: 0;
+	}
+
+	// A header's description sits a short step under its title.
+	p {
+		margin: base.$space-xs 0 0;
 	}
 }
 
@@ -875,17 +868,9 @@
 	gap: base.$space-sm;
 }
 
-.newspack-intelligence__profile-title {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	justify-content: space-between;
-	gap: base.$space-sm;
-	width: 100%;
-
-	h2 {
-		margin: 0;
-	}
+// The profile's header row runs the column's width, its rule beneath it.
+.newspack-intelligence__profile-head > .newspack-intelligence__section-head {
+	align-self: stretch;
 }
 
 .newspack-intelligence__type-line,

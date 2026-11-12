@@ -1,4 +1,3 @@
-import { Card, CardBody, CardHeader } from '@wordpress/components';
 import { createContext, useContext } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { Core } from '@newspack-nodes/runtime';
@@ -131,37 +130,5 @@ export function Unread( { error, refresh } ) {
 				<p className="newspack-nodes-status is-muted">{ error }</p>
 			) }
 		</div>
-	);
-}
-
-/**
- * One read as a card: a section, named by `title` and headed by it in the
- * card's header band when given, around the read's state inset in the card's
- * body, `AnswerBody` taking every other prop. The stock card is the one the
- * shared `newspack-nodes-ui` sheet paints, as on every Event Logger dashboard.
- *
- * @param {Object}                                        props
- * @param {string}                                        [props.title]    Names and heads the section.
- * @param {number}                                        [props.level]    The heading's level.
- * @param {Object}                                        props.read       What `useIntelRead` returned.
- * @param {string|string[]}                               [props.rows]     The answer's row lists.
- * @param {import('react').ReactNode}                     [props.empty]    What an answer with no rows says.
- * @param {import('react').ReactNode}                     [props.skeleton] What stands in while it is owed.
- * @param {(answer: Object) => import('react').ReactNode} props.children   Renders the rows.
- * @return {import('react').ReactElement} The card.
- */
-export default function Answer( { title, level = 2, ...body } ) {
-	const Heading = /** @type {'h2' | 'h3' | 'h4'} */ ( `h${ level }` );
-	return (
-		<Card as="section" aria-label={ title }>
-			{ title && (
-				<CardHeader>
-					<Heading>{ title }</Heading>
-				</CardHeader>
-			) }
-			<CardBody>
-				<AnswerBody { ...body } />
-			</CardBody>
-		</Card>
 	);
 }

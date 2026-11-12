@@ -1,11 +1,11 @@
 /* eslint-env jest */
 /**
- * Briefing draws the page data's Briefing layout on one surface, each block
- * by its view, and reads the week once for its `since` and `week` blocks,
- * through the categories its `week` names. A block whose read fails shows
+ * Briefing draws the page data's Briefing layout under the shared header,
+ * each block by its view on the page itself, and reads the week once for
+ * its `since` and `week` blocks, through the categories its `week` names. A block whose read fails shows
  * the read error in its own place while the rest render; a layout that no
  * longer reads shows the shared read error. A curator finds **Edit layout**
- * in the Briefing's ⋯ menu; a reader finds no menu.
+ * in the ⋯ menu at the end of the Briefing's header; a reader finds no menu.
  */
 
 import { readFileSync } from 'node:fs';
@@ -124,7 +124,6 @@ describe( 'Briefing', () => {
 				section.querySelector( 'h2' )?.textContent
 		);
 		expect( order ).toEqual( [
-			'Ask',
 			sinceHeading(),
 			'Needs attention',
 			'Your watches',
@@ -139,9 +138,6 @@ describe( 'Briefing', () => {
 				'Newspack'
 			);
 		}
-		expect(
-			container.querySelectorAll( '.newspack-intelligence__surface' )
-		).toHaveLength( 1 );
 	} );
 
 	it( "reads the week once, through its week's categories", async () => {
@@ -165,13 +161,20 @@ describe( 'Briefing', () => {
 		] );
 	} );
 
-	it( 'stands its blocks on the shared card, on the panel rung above the page', async () => {
-		renderBriefing();
-		await screen.findAllByRole( 'heading' );
-		const surface = document.querySelector(
-			'.newspack-intelligence__surface'
+	it( 'stands under the shared header, its blocks on the page with no card around them', async () => {
+		const { container } = renderBriefing();
+		await screen.findByRole( 'region', { name: 'Needs attention' } );
+		expect(
+			screen
+				.getByRole( 'heading', { level: 2, name: 'Briefing' } )
+				.closest( '.newspack-intelligence__section-head' )
+		).toHaveTextContent(
+			'What changed since you last looked, and what needs attention.'
 		);
-		expect( surface ).toHaveClass( 'newspack-nodes-card' );
+		expect( container.querySelector( '.newspack-nodes-card' ) ).toBeNull();
+		expect(
+			container.querySelector( '.newspack-intelligence__surface' )
+		).toBeNull();
 	} );
 
 	it( 'shows a failed block’s read error in its place while the rest render', async () => {
@@ -243,9 +246,11 @@ describe( 'Briefing', () => {
 		await screen.findByRole( 'link', {
 			name: 'Acme Quillsheet wins regional prize',
 		} );
-		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Briefing actions' } )
-		);
+		const menu = screen.getByRole( 'button', { name: 'Briefing actions' } );
+		expect(
+			menu.closest( '.newspack-intelligence__section-head' )
+		).toHaveTextContent( 'Briefing' );
+		fireEvent.click( menu );
 		expect(
 			await screen.findByRole( 'menuitem', { name: 'Edit layout' } )
 		).toBeInTheDocument();

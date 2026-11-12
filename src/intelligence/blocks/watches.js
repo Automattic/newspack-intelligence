@@ -31,7 +31,7 @@ function View( { attributes: { heading, max } } ) {
 	return (
 		<Section
 			heading={ heading }
-			controls={
+			actions={
 				<button type="button" className="button-link" { ...newWatch }>
 					{ label }
 				</button>

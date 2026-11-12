@@ -132,6 +132,6 @@
 		}
 	},
 	"layouts": {
-		"briefing": "<!-- wp:newspack-intelligence/ask /-->\n<!-- wp:newspack-intelligence/since /-->\n<!-- wp:newspack-intelligence/needs-attention /-->\n<!-- wp:newspack-intelligence/watches /-->\n<!-- wp:newspack-intelligence/week {\"categories\":[\"product-updates\",\"publisher-news\",\"partner-news\",\"publisher-awards\"],\"otherwise\":\"Industry news\"} /-->\n"
+		"briefing": "<!-- wp:newspack-intelligence/since /-->\n<!-- wp:newspack-intelligence/needs-attention /-->\n<!-- wp:newspack-intelligence/watches /-->\n<!-- wp:newspack-intelligence/week {\"categories\":[\"product-updates\",\"publisher-news\",\"partner-news\",\"publisher-awards\"],\"otherwise\":\"Industry news\"} /-->\n"
 	}
 }

@@ -16,19 +16,23 @@ import {
 } from '@wordpress/components';
 import { Core } from '@newspack-nodes/runtime';
 import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
-import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
+import Modal, { ModalHeader } from '@newspack-nodes/shared/components/Modal';
+import { primaryButtonClass } from '@newspack-nodes/shared/utils/buttonClass';
 import {
 	FOLDER_READS,
 	WATCH_READS,
+	refusalOfSend,
 	useIntelRead,
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
 import { usePageRead } from '../hooks/usePageRead';
 import { useDeferredWrite } from '../hooks/useDeferredWrite';
+import { useReturnFocus } from '../hooks/useReturnFocus';
 import { AnswerBody } from './Answer';
 import FolderCard from './FolderCard';
 import Refusal from './Refusal';
+import Section, { Invitation } from './Section';
 import Skeleton from './Skeleton';
 import UndoSnackbar from './UndoSnackbar';
 import { collectionKey, dayLabel, utcDay } from './format';
@@ -42,6 +46,17 @@ const UNUSED = 'unused';
 
 /** The most items a folder holds before its count warns. */
 const CROWDED = 20;
+
+/**
+ * What a board holding no folder says.
+ *
+ * @return {string} The words.
+ */
+const noFolders = () =>
+	__(
+		'No folders yet. Create one, then use Save on any item to file it here.',
+		'newspack-intelligence'
+	);
 
 /** The skeleton columns a wide board stands in while it loads. */
 const SKELETON_COLUMNS = 3;
@@ -188,53 +203,58 @@ function reflected( write, listed ) {
 }
 
 /**
- * The control creating a folder: **New folder**, which opens "Folder name"
- * and **Create folder** in its place.
+ * The dialog naming a new folder: "Folder name", any refusal of the last
+ * name sent, then **Cancel** and **Create folder**, which sends a name that
+ * is not blank and leaves the dialog standing until the board closes it.
  *
  * @param {Object}                 props
+ * @param {?string}                props.refusal  Why the last name was refused.
  * @param {(name: string) => void} props.onCreate Sends the name.
- * @return {import('react').ReactElement} The control.
+ * @param {() => void}             props.onClose  Closes the dialog unsent.
+ * @return {import('react').ReactElement} The dialog.
  */
-function NewFolder( { onCreate } ) {
-	const [ open, setOpen ] = useState( false );
+function NewFolder( { refusal, onCreate, onClose } ) {
 	const [ name, setName ] = useState( '' );
-	if ( ! open ) {
-		return (
-			<button
-				type="button"
-				className="button"
-				onClick={ () => setOpen( true ) }
-			>
-				{ __( 'New folder', 'newspack-intelligence' ) }
-			</button>
-		);
-	}
+	const nameField = useRef( null );
+	useEffect( () => nameField.current.focus(), [] );
+	const blank = '' === name.trim();
 	return (
-		<form
-			className="newspack-intelligence__create"
-			{ ...submitProps( () => {
-				onCreate( name );
-				setName( '' );
-				setOpen( false );
-			} ) }
+		<Modal
+			className="newspack-intelligence__edit"
+			onClose={ onClose }
+			onSubmit={ () => {
+				if ( ! blank ) {
+					onCreate( name.trim() );
+				}
+			} }
 		>
+			<ModalHeader
+				title={ __( 'New folder', 'newspack-intelligence' ) }
+				onClose={ onClose }
+				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
+			/>
+			<Refusal error={ refusal } />
 			<TextControl
+				ref={ nameField }
 				__next40pxDefaultSize
+				__nextHasNoMarginBottom
 				label={ __( 'Folder name', 'newspack-intelligence' ) }
 				value={ name }
 				onChange={ setName }
 			/>
-			<button type="submit" className="button button-primary">
-				{ __( 'Create folder', 'newspack-intelligence' ) }
-			</button>
-			<button
-				type="button"
-				className="button"
-				onClick={ () => setOpen( false ) }
-			>
-				{ __( 'Cancel', 'newspack-intelligence' ) }
-			</button>
-		</form>
+			<div className="newspack-nodes-modal__actions">
+				<button type="button" className="button" onClick={ onClose }>
+					{ __( 'Cancel', 'newspack-intelligence' ) }
+				</button>
+				<button
+					type="submit"
+					className={ primaryButtonClass( blank ) }
+					disabled={ blank }
+				>
+					{ __( 'Create folder', 'newspack-intelligence' ) }
+				</button>
+			</div>
+		</Modal>
 	);
 }
 
@@ -569,14 +589,16 @@ function useBoardWrites( nameOf ) {
 }
 
 /**
- * The Folders board: a column per folder, every one or those `folders`
- * names, each of its saved items a card, the filter "Show" opening on
- * `show`. For a curator a card drags into another column, announced in the
- * live region, and its menu moves it in one action, marks it used or
- * removes it; each is deferred with Undo, and a move lands focus on the card
- * in its new column. A folder over twenty items warns and still takes
- * items. When narrow the columns are a select showing one at a time.
- * **New folder** creates one, shown saving until a read lists it.
+ * The Folders board, under the shared header: a column per folder, every
+ * one or those `folders` names, each of its saved items a card, the filter
+ * "Show" standing over them and opening on `show`. For a curator a card
+ * drags into another column, announced in the live region, and its menu
+ * moves it in one action, marks it used or removes it; each is deferred
+ * with Undo, and a move lands focus on the card in its new column. A folder
+ * over twenty items warns and still takes items. When narrow the columns
+ * are a select showing one at a time. **New folder**, at the header's end
+ * and in the empty board's words, opens a dialog naming one, shown saving
+ * until a read lists it.
  *
  * @param {Object}   props
  * @param {string}   props.show    The filter it opens on: "all", "unused" or a place.
@@ -585,15 +607,20 @@ function useBoardWrites( nameOf ) {
  * @return {import('react').ReactElement} The board.
  */
 export default function FolderBoard( { show: opensOn, folders, canTune } ) {
-	const headingId = useId();
 	const narrow = useNarrow();
 	const [ show, setShow ] = useState( opensOn );
 	useEffect( () => setShow( opensOn ), [ opensOn ] );
 	const [ chosen, setChosen ] = useState( '' );
 	const list = usePageRead( 'folders' );
 	const listed = useHeld( list, 'collections', collectionKey, sameName );
+	const [ naming, setNaming ] = useState( false );
+	// The tokens this dialog's last send answered, null until it sends.
+	const [ sent, setSent ] = useState( null );
+	const newFolder = useRef( null );
+	useReturnFocus( naming, newFolder );
 	const create = useIntelWrite( 'create_collection', {
 		dirties: FOLDER_READS,
+		refresh: () => setNaming( false ),
 		onRefused: listed.refused,
 	} );
 	const every = listed.read.answer?.collections ?? [];
@@ -607,7 +634,11 @@ export default function FolderBoard( { show: opensOn, folders, canTune } ) {
 		listed.hold(
 			name,
 			{ collection_key: null, name, created_ts: null, items: 0 },
-			() => create.run( { name } )
+			() => {
+				const tokens = create.run( { name } );
+				setSent( tokens );
+				return tokens;
+			}
 		);
 	const board = {
 		writes: writes.writes,
@@ -689,37 +720,48 @@ export default function FolderBoard( { show: opensOn, folders, canTune } ) {
 			<SavingColumn key={ folder.name } name={ folder.name } />
 		);
 
+	const startNew = () => {
+		setSent( null );
+		setNaming( true );
+	};
 	return (
-		<section
+		<Section
 			className="newspack-intelligence__folders"
-			aria-labelledby={ headingId }
+			heading={ __( 'Folders', 'newspack-intelligence' ) }
+			description={ __(
+				'Items saved from any view, filed by folder and marked where each was used.',
+				'newspack-intelligence'
+			) }
+			actions={
+				canTune && (
+					<button
+						type="button"
+						className="button"
+						ref={ newFolder }
+						onClick={ startNew }
+					>
+						{ __( 'New folder', 'newspack-intelligence' ) }
+					</button>
+				)
+			}
 		>
-			<div className="newspack-intelligence__section-head">
-				<h2 id={ headingId }>
-					{ __( 'Folders', 'newspack-intelligence' ) }
-				</h2>
-				<SelectControl
-					__next40pxDefaultSize
-					__nextHasNoMarginBottom
-					label={ __( 'Show', 'newspack-intelligence' ) }
-					value={ show }
-					onChange={ setShow }
-					options={ showOptions() }
-				/>
-			</div>
-			<Refusal error={ create.refusal } />
 			<AnswerBody
 				read={ listed.read }
 				rows="collections"
 				skeleton={ <SkeletonBoard narrow={ narrow } /> }
 				empty={
-					<>
-						{ __(
-							'No folders yet. Create one, then use Save on any item to file it here.',
-							'newspack-intelligence'
-						) }{ ' ' }
-						{ canTune && <NewFolder onCreate={ onCreate } /> }
-					</>
+					canTune ? (
+						<Invitation
+							text={ noFolders() }
+							label={ __(
+								'New folder',
+								'newspack-intelligence'
+							) }
+							onClick={ startNew }
+						/>
+					) : (
+						noFolders()
+					)
 				}
 			>
 				{ () => {
@@ -733,51 +775,64 @@ export default function FolderBoard( { show: opensOn, folders, canTune } ) {
 						keyed.find(
 							( one ) => one.collection_key === chosen
 						) ?? keyed[ 0 ];
-					return narrow ? (
+					return (
 						<>
-							<SelectControl
-								__next40pxDefaultSize
-								__nextHasNoMarginBottom
-								label={ __(
-									'Folder',
-									'newspack-intelligence'
-								) }
-								value={ open?.collection_key ?? '' }
-								onChange={ setChosen }
-								options={ keyed.map( ( one ) => ( {
-									label: sprintf(
-										/* translators: 1: a folder's name, 2: the items it holds. */
-										__(
-											'%1$s (%2$d)',
+							<div className="newspack-intelligence__controls">
+								<SelectControl
+									__next40pxDefaultSize
+									__nextHasNoMarginBottom
+									label={ __(
+										'Show',
+										'newspack-intelligence'
+									) }
+									value={ show }
+									onChange={ setShow }
+									options={ showOptions() }
+								/>
+								{ narrow && (
+									<SelectControl
+										__next40pxDefaultSize
+										__nextHasNoMarginBottom
+										label={ __(
+											'Folder',
 											'newspack-intelligence'
-										),
-										one.name,
-										one.items
-									),
-									value: one.collection_key,
-								} ) ) }
-							/>
-							{ open && column( open ) }
-							{ canTune && <NewFolder onCreate={ onCreate } /> }
-						</>
-					) : (
-						<div className="newspack-intelligence__folder-board">
-							{ shownFolders.map( column ) }
-							{ canTune && (
-								<Card
-									size="small"
-									className="newspack-intelligence__folder-column is-new"
-								>
-									<CardBody>
-										<NewFolder onCreate={ onCreate } />
-									</CardBody>
-								</Card>
+										) }
+										value={ open?.collection_key ?? '' }
+										onChange={ setChosen }
+										options={ keyed.map( ( one ) => ( {
+											label: sprintf(
+												/* translators: 1: a folder's name, 2: the items it holds. */
+												__(
+													'%1$s (%2$d)',
+													'newspack-intelligence'
+												),
+												one.name,
+												one.items
+											),
+											value: one.collection_key,
+										} ) ) }
+									/>
+								) }
+							</div>
+							{ narrow ? (
+								open && column( open )
+							) : (
+								<div className="newspack-intelligence__folder-board">
+									{ shownFolders.map( column ) }
+								</div>
 							) }
-						</div>
+						</>
 					);
 				} }
 			</AnswerBody>
+			{ naming && (
+				<NewFolder
+					refusal={ refusalOfSend( create, sent ) }
+					onCreate={ onCreate }
+					onClose={ () => setNaming( false ) }
+				/>
+			) }
 			<UndoSnackbar { ...writes.snackbar } />
-		</section>
+		</Section>
 	);
 }

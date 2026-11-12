@@ -253,7 +253,7 @@ function View( { attributes } ) {
 	return (
 		<Section
 			heading={ attributes.heading }
-			controls={
+			actions={
 				0 < attributes.categories.length &&
 				answer?.categories && (
 					<Show

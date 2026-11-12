@@ -1,9 +1,10 @@
 /* eslint-env jest */
 /**
  * Collections is the Folders tab: the Folders board at the `folder-board`
- * block's defaults, opening on the items not yet used in every folder, and
- * for a curator the items excluded from every view, the one place they are
- * listed and included again.
+ * block's defaults, under the tab's header, opening on the items not yet
+ * used in every folder, and for a curator the items excluded from every
+ * view, a section of the page, the one place they are listed and included
+ * again.
  */
 
 import { screen, fireEvent, waitFor, within } from '@testing-library/react';
@@ -135,6 +136,22 @@ describe( 'Collections', () => {
 
 describe( 'Collections — excluded items', () => {
 	const excluded = () => screen.findByRole( 'region', { name: 'Excluded' } );
+
+	it( 'stands the excluded items in a section of the page under the shared header, no card around them', async () => {
+		renderOnPage( <Harness canTune={ true } /> );
+		const section = await excluded();
+		expect(
+			within( section )
+				.getByRole( 'heading', { level: 2, name: 'Excluded' } )
+				.closest( '.newspack-intelligence__section-head' )
+		).not.toBeNull();
+		expect(
+			screen
+				.getByRole( 'heading', { level: 2, name: 'Folders' } )
+				.closest( '.newspack-intelligence__section-head' )
+		).not.toBeNull();
+		expect( section.closest( '.components-card' ) ).toBeNull();
+	} );
 
 	it( 'lists a curator every excluded item, who excluded it, when and why', async () => {
 		jest.spyOn( Core, 'now' ).mockReturnValue(

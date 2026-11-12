@@ -5,6 +5,8 @@
  * menu moves it in one action; either is announced, deferred with Undo, and
  * lands focus on the card in its new column. A mark and a removal defer the
  * same way, and a refused write returns the card with the refusal on it.
+ * The board stands under the shared header, whose New folder opens a
+ * dialog, and its Show filter stands over the folders it filters.
  */
 
 import {
@@ -494,7 +496,24 @@ describe( 'FolderBoard', () => {
 		);
 	} );
 
-	it( 'creates a folder from New folder, saving until a read lists it', async () => {
+	it( 'heads the board with the shared header, New folder at its end, the Show filter over the folders', async () => {
+		renderBoard();
+		const picks = await column( 'Coastline picks' );
+		const header = screen
+			.getByRole( 'heading', { level: 2, name: 'Folders' } )
+			.closest( '.newspack-intelligence__section-head' );
+		expect(
+			within( header ).getByRole( 'button', { name: 'New folder' } )
+		).toBeInTheDocument();
+		const show = screen.getByLabelText( 'Show' );
+		expect( header ).not.toContainElement( show );
+		expect(
+			show.compareDocumentPosition( picks ) &
+				window.Node.DOCUMENT_POSITION_FOLLOWING
+		).toBeTruthy();
+	} );
+
+	it( 'creates a folder from New folder’s dialog, saving until a read lists it', async () => {
 		wire.replies.create_collection = {
 			ok: true,
 			event_id: 'ev-c',
@@ -503,20 +522,139 @@ describe( 'FolderBoard', () => {
 		renderBoard();
 		await column( 'Coastline picks' );
 		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
-		fireEvent.change( screen.getByLabelText( 'Folder name' ), {
+		const dialog = screen.getByRole( 'dialog', { name: 'New folder' } );
+		fireEvent.change( within( dialog ).getByLabelText( 'Folder name' ), {
 			target: { value: 'Tidewater leads' },
 		} );
 		fireEvent.click(
-			screen.getByRole( 'button', { name: 'Create folder' } )
+			within( dialog ).getByRole( 'button', { name: 'Create folder' } )
 		);
 		await waitFor( () =>
 			expect( wire.sent( 'create_collection' ) ).toEqual( [
 				[ '--name=Tidewater leads' ],
 			] )
 		);
+		await waitFor( () =>
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+		);
 		expect(
 			within( await column( 'Tidewater leads' ) ).getByText( 'Saving…' )
 		).toBeInTheDocument();
+	} );
+
+	it( 'keeps New folder’s dialog open on a refused name, the refusal inside it', async () => {
+		wire.replies.create_collection = () =>
+			new Error( 'a folder named Coastline picks already exists' );
+		renderBoard();
+		await column( 'Coastline picks' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
+		const dialog = screen.getByRole( 'dialog', { name: 'New folder' } );
+		fireEvent.change( within( dialog ).getByLabelText( 'Folder name' ), {
+			target: { value: 'Coastline picks' },
+		} );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Create folder' } )
+		);
+		expect(
+			await within( dialog ).findByText(
+				'a folder named Coastline picks already exists'
+			)
+		).toBeInTheDocument();
+		expect( screen.getByRole( 'dialog', { name: 'New folder' } ) ).toBe(
+			dialog
+		);
+		expect( within( dialog ).getByLabelText( 'Folder name' ) ).toHaveValue(
+			'Coastline picks'
+		);
+	} );
+
+	it( 'opens New folder’s dialog again with no refusal its last send drew', async () => {
+		wire.replies.create_collection = () =>
+			new Error( 'a folder named Tidewater already exists' );
+		renderBoard();
+		await column( 'Coastline picks' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
+		let dialog = screen.getByRole( 'dialog', { name: 'New folder' } );
+		fireEvent.change( within( dialog ).getByLabelText( 'Folder name' ), {
+			target: { value: 'Tidewater' },
+		} );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Create folder' } )
+		);
+		await within( dialog ).findByText(
+			'a folder named Tidewater already exists'
+		);
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
+		dialog = screen.getByRole( 'dialog', { name: 'New folder' } );
+		expect(
+			within( dialog ).queryByText(
+				'a folder named Tidewater already exists'
+			)
+		).toBeNull();
+	} );
+
+	it( 'takes the last refusal away while a new name is owed its answer', async () => {
+		wire.replies.create_collection = () =>
+			new Error( 'a folder named Tidewater already exists' );
+		renderBoard();
+		await column( 'Coastline picks' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
+		const dialog = screen.getByRole( 'dialog', { name: 'New folder' } );
+		const field = within( dialog ).getByLabelText( 'Folder name' );
+		const create = within( dialog ).getByRole( 'button', {
+			name: 'Create folder',
+		} );
+		fireEvent.change( field, { target: { value: 'Tidewater' } } );
+		fireEvent.click( create );
+		await within( dialog ).findByText(
+			'a folder named Tidewater already exists'
+		);
+		wire.replies.create_collection = () => new Promise( () => {} );
+		fireEvent.change( field, { target: { value: 'Tidewater sound' } } );
+		fireEvent.click( create );
+		await waitFor( () =>
+			expect( wire.sent( 'create_collection' ) ).toHaveLength( 2 )
+		);
+		expect(
+			within( dialog ).queryByText(
+				'a folder named Tidewater already exists'
+			)
+		).toBeNull();
+	} );
+
+	it( 'sends no blank folder name', async () => {
+		renderBoard();
+		await column( 'Coastline picks' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
+		const dialog = screen.getByRole( 'dialog', { name: 'New folder' } );
+		fireEvent.change( within( dialog ).getByLabelText( 'Folder name' ), {
+			target: { value: '   ' },
+		} );
+		const create = within( dialog ).getByRole( 'button', {
+			name: 'Create folder',
+		} );
+		expect( create ).toBeDisabled();
+		fireEvent.submit( create.closest( 'form' ) );
+		expect( screen.getByRole( 'dialog' ) ).toBe( dialog );
+		expect( wire.sent( 'create_collection' ) ).toEqual( [] );
+	} );
+
+	it( 'closes New folder’s dialog on Cancel, creating nothing', async () => {
+		renderBoard();
+		await column( 'Coastline picks' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
+		const dialog = screen.getByRole( 'dialog', { name: 'New folder' } );
+		fireEvent.change( within( dialog ).getByLabelText( 'Folder name' ), {
+			target: { value: 'Brackwater leads' },
+		} );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expect( wire.sent( 'create_collection' ) ).toEqual( [] );
 	} );
 
 	it( 'offers a reader neither a card menu nor New folder', async () => {
@@ -566,17 +704,59 @@ describe( 'FolderBoard', () => {
 	] )( 'at %d px', ( width, narrow ) => {
 		beforeEach( () => viewport.setNarrow( narrow ) );
 
-		it( 'says there are no folders yet and offers New folder', async () => {
+		it( 'returns focus to the header’s New folder once a folder made from the empty state lands', async () => {
+			wire.replies.collections = { collections: [], available: true };
+			wire.replies.create_collection = {
+				ok: true,
+				event_id: 'ev-c',
+				collection_key: 'saltmarsh-leads',
+			};
+			renderBoard();
+			const empty = (
+				await screen.findByText( /^No folders yet\./ )
+			).closest( '.newspack-nodes-empty-state' );
+			const opener = within( empty ).getByRole( 'button', {
+				name: 'New folder',
+			} );
+			act( () => opener.focus() );
+			fireEvent.click( opener );
+			const dialog = screen.getByRole( 'dialog', { name: 'New folder' } );
+			fireEvent.change(
+				within( dialog ).getByLabelText( 'Folder name' ),
+				{ target: { value: 'Saltmarsh leads' } }
+			);
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', {
+					name: 'Create folder',
+				} )
+			);
+			await waitFor( () =>
+				expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+			);
+			expect( document.activeElement ).toBe(
+				within(
+					screen
+						.getByRole( 'heading', { name: 'Folders' } )
+						.closest( '.newspack-intelligence__section-head' )
+				).getByRole( 'button', { name: 'New folder' } )
+			);
+		} );
+
+		it( 'says there are no folders yet in the shared empty state, offering New folder there and in the header', async () => {
 			wire.replies.collections = { collections: [], available: true };
 			renderBoard();
-			expect(
+			const empty = (
 				await screen.findByText(
-					'No folders yet. Create one, then use Save on any item to file it here.'
+					/^No folders yet\. Create one, then use Save on any item to file it here\./
 				)
+			).closest( '.newspack-nodes-empty-state' );
+			expect(
+				within( empty ).getByRole( 'button', { name: 'New folder' } )
 			).toBeInTheDocument();
 			expect(
 				screen.getAllByRole( 'button', { name: 'New folder' } )
-			).toHaveLength( 1 );
+			).toHaveLength( 2 );
+			expect( screen.queryByLabelText( 'Show' ) ).toBeNull();
 		} );
 
 		it( 'stands in skeleton columns of three cards while loading', () => {

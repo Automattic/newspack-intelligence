@@ -9,8 +9,16 @@ document.addEventListener( 'DOMContentLoaded', () => {
 		return;
 	}
 	// wp_localize_script() sends each flag as a string: '1' or ''.
-	const { canTune, canManage, userId, operator, vocabulary, compositions } =
-		/** @type {{NewspackNodesData: {canTune: string, canManage: string, userId: string, operator: {name: string, heading: string}, vocabulary: Object, compositions: Object}}} */ (
+	const {
+		canTune,
+		canManage,
+		userId,
+		operator,
+		vocabulary,
+		compositions,
+		askDefaults,
+	} =
+		/** @type {{NewspackNodesData: {canTune: string, canManage: string, userId: string, operator: {name: string, heading: string}, vocabulary: Object, compositions: Object, askDefaults: {label: string, placeholder: string, examples: string[]}}}} */ (
 			/** @type {unknown} */ ( window )
 		).NewspackNodesData;
 	createRoot( el ).render(
@@ -21,6 +29,7 @@ document.addEventListener( 'DOMContentLoaded', () => {
 			operator={ operator }
 			vocabulary={ vocabulary }
 			compositions={ compositions }
+			askDefaults={ askDefaults }
 		/>
 	);
 } );

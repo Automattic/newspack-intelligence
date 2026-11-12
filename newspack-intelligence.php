@@ -65,8 +65,9 @@ function register_intelligence_admin_page(): void {
  * browser, the operator the running topology names (`Operator::configured()`),
  * which the page's copy names, as `operatorName` the name it configures, ''
  * for none, and the vocabulary: the closed lists those controls offer and
- * the word each key is shown as (`screen_words()`), and as `compositions`
- * the layout each composed page reads (`Composition_Store::page_data()`).
+ * the word each key is shown as (`screen_words()`), as `compositions`
+ * the layout each composed page reads (`Composition_Store::page_data()`),
+ * and as `askDefaults` the ask block's declared defaults, Search's Ask box.
  * A load naming one of those pages as `edit` loads the layout editor for it
  * (`enqueue_layout_editor()`), which `Composition::editor()` loads for a
  * `tune` caller alone. The
@@ -117,6 +118,7 @@ function enqueue_intelligence_assets( string $hook ): void {
 					...screen_words( $operator ),
 				],
 				'compositions' => \Newspack_Nodes\Composition_Store::page_data( \array_keys( Intelligence_Blocks::CONTEXTS ) ),
+				'askDefaults'  => Intelligence_Blocks::defaults( 'newspack-intelligence/ask' ),
 			],
 		]
 	);

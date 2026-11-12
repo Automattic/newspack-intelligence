@@ -15,6 +15,7 @@
 
 namespace Newspack_Intelligence;
 
+use Newspack_Nodes\Composition;
 use Newspack_Nodes\Core;
 use Newspack_Nodes\Row_Reader;
 
@@ -129,7 +130,7 @@ final class Intelligence_Blocks {
 		],
 		'newspack-intelligence/ask' => [
 			'title'      => 'Ask a question',
-			'contexts'   => [ 'newspack-intelligence/briefing', 'newspack-intelligence/lens', 'newspack-intelligence/entity' ],
+			'contexts'   => [ 'newspack-intelligence/lens', 'newspack-intelligence/entity' ],
 			'attributes' => [
 				'label'       => self::LABEL + [ 'default' => 'Ask a question' ],
 				'placeholder' => self::LABEL + [ 'default' => 'Ask about anything collected here…' ],
@@ -407,6 +408,17 @@ final class Intelligence_Blocks {
 			}
 		}
 		return [];
+	}
+
+	/**
+	 * A block's attributes at their declared defaults, as the composition
+	 * layer holds its declaration.
+	 *
+	 * @param string $block The block's name.
+	 * @return array<string,mixed>
+	 */
+	public static function defaults( string $block ): array {
+		return \array_map( static fn ( array $schema ): mixed => $schema['default'], Composition::declarations()['blocks'][ $block ]['attributes'] );
 	}
 
 	/**

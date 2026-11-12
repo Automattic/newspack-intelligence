@@ -17,6 +17,7 @@ jest.mock( '@newspack-nodes/debug-overlay', () => ( {
 import { intelWire } from './intelWire';
 import { HEALTHY } from './healthFixture';
 import {
+	ASK_DEFAULTS,
 	COMPOSITIONS,
 	ENTITY,
 	GROUPS,
@@ -304,6 +305,7 @@ function renderPage( compositions = COMPOSITIONS ) {
 			} }
 			vocabulary={ VOCABULARY }
 			compositions={ compositions }
+			askDefaults={ ASK_DEFAULTS }
 		/>
 	);
 }

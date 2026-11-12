@@ -2,9 +2,6 @@ import { useEffect, useRef, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import {
 	Button,
-	Card,
-	CardBody,
-	CardHeader,
 	CheckboxControl,
 	ComboboxControl,
 	DropdownMenu,
@@ -21,17 +18,20 @@ import {
 	WATCH_READS,
 	commandArgs,
 	useIntelRead,
+	refusalOfSend,
 	useIntelWrite,
 } from '../hooks/useIntelCommand';
 import { useHeld } from '../hooks/useHeld';
 import { usePageRead } from '../hooks/usePageRead';
 import { useDeferredWrite } from '../hooks/useDeferredWrite';
-import Answer, { AnswerBody, Unread } from '../components/Answer';
+import { useReturnFocus } from '../hooks/useReturnFocus';
+import { AnswerBody, Unread } from '../components/Answer';
 import EntityPicker from '../components/EntityPicker';
 import ItemList from '../components/ItemList';
 import ItemRow from '../components/ItemRow';
 import ListKeys, { LEAVES } from '../components/ListKeys';
 import Refusal from '../components/Refusal';
+import Section, { Header, Invitation } from '../components/Section';
 import UndoSnackbar from '../components/UndoSnackbar';
 import { argsOf, itemKey } from '../components/format';
 
@@ -226,9 +226,10 @@ const sameWatch = ( listed, held ) =>
 	DELIVERIES.every( ( one ) => listed[ one ] === held[ one ] );
 
 /**
- * Watches: the caller's own watches as a table, a list under 600 px, each
- * with what it follows, how it delivers and how many of its items are new;
- * the one opened, with its new matches; the form saving a new watch or the
+ * Watches: under the shared header, whose end holds **New watch**, the
+ * caller's own watches as a table, a list under 600 px, each with what it
+ * follows, how it delivers and how many of its items are new; the one
+ * opened, a section of the page with its new matches; the form saving a new watch or the
  * one opened; and the dialog stopping it, for every reader. A save shows its
  * watch and a stop takes it out from the moment each is sent, until a read
  * of `watches` reflects it; a refusal puts it back. A save says so once it
@@ -276,29 +277,48 @@ export default function Watches( {
 		( one ) => one.watch_key === opened.key
 	);
 	const startNew = () => onDraft( newWatch( { kind: 'lens', key: '' }, '' ) );
+	// The tokens the open form's last save answered; a closed one forgets.
+	const [ sent, setSent ] = useState( null );
+	useEffect( () => {
+		if ( null === draft ) {
+			setSent( null );
+		}
+	}, [ draft ] );
+	const newWatchButton = useRef( null );
+	useReturnFocus( null !== draft, newWatchButton );
 
 	return (
 		<div className="newspack-intelligence__view">
-			<div className="newspack-intelligence__create">
-				<Button variant="primary" onClick={ startNew }>
-					{ __( 'New watch', 'newspack-intelligence' ) }
-				</Button>
-			</div>
-			<Refusal error={ remove.refusal } />
-			<Answer
+			<Header
 				title={ __( 'Watches', 'newspack-intelligence' ) }
+				description={ __(
+					'Clients, team views and folders you follow, with what is new in each.',
+					'newspack-intelligence'
+				) }
+				actions={
+					<button
+						type="button"
+						className="button"
+						ref={ newWatchButton }
+						onClick={ startNew }
+					>
+						{ __( 'New watch', 'newspack-intelligence' ) }
+					</button>
+				}
+			/>
+			<Refusal error={ remove.refusal } />
+			<AnswerBody
 				read={ watches.read }
 				rows="watches"
 				empty={
-					<>
-						{ __(
+					<Invitation
+						text={ __(
 							'You are not watching anything yet. Watch a client, a team view or a folder to collect its new items here.',
 							'newspack-intelligence'
-						) }{ ' ' }
-						<Button variant="secondary" onClick={ startNew }>
-							{ __( 'New watch', 'newspack-intelligence' ) }
-						</Button>
-					</>
+						) }
+						label={ __( 'New watch', 'newspack-intelligence' ) }
+						onClick={ startNew }
+					/>
 				}
 			>
 				{ ( answer ) => (
@@ -308,7 +328,7 @@ export default function Watches( {
 						onOpen={ ( key ) => onOpen( { key, page: 1 } ) }
 					/>
 				) }
-			</Answer>
+			</AnswerBody>
 			{ watch && (
 				<Opened
 					key={ watch.watch_key }
@@ -329,11 +349,13 @@ export default function Watches( {
 				<WatchForm
 					draft={ draft }
 					onDraft={ onDraft }
-					refusal={ save.refusal }
+					refusal={ refusalOfSend( save, sent ) }
 					onSave={ () => {
-						watches.hold( draft.key, draftWatch( draft ), () =>
-							save.run( watchArgs( draft ) )
-						);
+						watches.hold( draft.key, draftWatch( draft ), () => {
+							const tokens = save.run( watchArgs( draft ) );
+							setSent( tokens );
+							return tokens;
+						} );
 					} }
 					onCancel={ () => onDraft( null ) }
 				/>
@@ -587,15 +609,15 @@ function Opened( {
 	const total = matches.read.answer?.total ?? 0;
 	const heading = useRef( null );
 	return (
-		<Card as="section" aria-label={ watch.name }>
-			<CardHeader>
-				<h3 ref={ heading } tabIndex={ -1 }>
-					{ watch.name }
-				</h3>
-				<div className="newspack-intelligence__actions">
+		<Section
+			ref={ heading }
+			heading={ watch.name }
+			actions={
+				<>
 					{ 0 < shown.length && (
-						<Button
-							variant="secondary"
+						<button
+							type="button"
+							className="button"
 							onClick={ () => mark( shown ) }
 						>
 							{ sprintf(
@@ -606,11 +628,11 @@ function Opened( {
 								),
 								shown.length
 							) }
-						</Button>
+						</button>
 					) }
-					<Button variant="secondary" onClick={ onEdit }>
+					<button type="button" className="button" onClick={ onEdit }>
 						{ __( 'Edit', 'newspack-intelligence' ) }
-					</Button>
+					</button>
 					<DropdownMenu
 						icon={ moreHorizontal }
 						label={ sprintf(
@@ -632,79 +654,75 @@ function Opened( {
 							},
 						] }
 					/>
-				</div>
-			</CardHeader>
-			<CardBody>
-				<Refusal error={ markSeen.refusal } />
-				{ watch.inbox && 0 < total && (
-					<p className="newspack-nodes-status is-muted">
-						{ sprintf(
-							/* translators: %d: the watch's new matches. */
-							_n(
-								'%d new item since you last marked them seen.',
-								'%d new items since you last marked them seen.',
-								total,
-								'newspack-intelligence'
-							),
-							total
-						) }
-					</p>
-				) }
-				<AnswerBody
-					read={ matches.read }
-					rows="items"
-					empty={
-						watch.inbox
-							? __(
-									'Nothing new. Items appear here as they arrive.',
-									'newspack-intelligence'
-							  )
-							: __(
-									'Not listed here; email only',
-									'newspack-intelligence'
-							  )
-					}
-				>
-					{ () => (
-						<ListKeys
-							rows={ MATCH_ROWS }
-							onUndo={ deferred.undo }
-							heading={ () => heading.current }
-						>
-							<ItemList
-								items={ shown }
-								deferred={ deferred }
-								view={ {
-									type: 'list',
-									page,
-									perPage: MATCH_PAGE,
-								} }
-								onChangeView={ ( next ) => onPage( next.page ) }
-								empty={ __(
-									'Nothing new. Items appear here as they arrive.',
-									'newspack-intelligence'
-								) }
-								paginationInfo={ {
-									totalItems: total,
-									totalPages: Math.ceil( total / MATCH_PAGE ),
-								} }
-								render={ MatchRow }
-								rowProps={ {
-									onSeen: ( item ) => mark( [ item ] ),
-									onOpenEntity,
-									onSave,
-									canTune,
-								} }
-							/>
-						</ListKeys>
+				</>
+			}
+		>
+			<Refusal error={ markSeen.refusal } />
+			{ watch.inbox && 0 < total && (
+				<p className="newspack-nodes-status is-muted">
+					{ sprintf(
+						/* translators: %d: the watch's new matches. */
+						_n(
+							'%d new item since you last marked them seen.',
+							'%d new items since you last marked them seen.',
+							total,
+							'newspack-intelligence'
+						),
+						total
 					) }
-				</AnswerBody>
-				<UndoSnackbar
-					latest={ deferred.latest }
-					onUndo={ deferred.undo }
-				/>
-			</CardBody>
-		</Card>
+				</p>
+			) }
+			<AnswerBody
+				read={ matches.read }
+				rows="items"
+				empty={
+					watch.inbox
+						? __(
+								'Nothing new. Items appear here as they arrive.',
+								'newspack-intelligence'
+						  )
+						: __(
+								'Not listed here; email only',
+								'newspack-intelligence'
+						  )
+				}
+			>
+				{ () => (
+					<ListKeys
+						rows={ MATCH_ROWS }
+						onUndo={ deferred.undo }
+						heading={ () => heading.current }
+					>
+						<ItemList
+							items={ shown }
+							deferred={ deferred }
+							view={ {
+								type: 'list',
+								page,
+								perPage: MATCH_PAGE,
+							} }
+							onChangeView={ ( next ) => onPage( next.page ) }
+							empty={ __(
+								'Nothing new. Items appear here as they arrive.',
+								'newspack-intelligence'
+							) }
+							paginationInfo={ {
+								totalItems: total,
+								totalPages: Math.ceil( total / MATCH_PAGE ),
+							} }
+							render={ MatchRow }
+							rowProps={ {
+								onSeen: ( item ) => mark( [ item ] ),
+								onOpenEntity,
+								onSave,
+								canTune,
+							} }
+						/>
+					</ListKeys>
+				) }
+			</AnswerBody>
+			<UndoSnackbar latest={ deferred.latest } onUndo={ deferred.undo } />
+		</Section>
 	);
 }
 

@@ -31,6 +31,7 @@ import Cite, { EntityChip } from '../components/Cite';
 import EntityPicker from '../components/EntityPicker';
 import ListKeys, { LEAVES } from '../components/ListKeys';
 import Refusal from '../components/Refusal';
+import { Header } from '../components/Section';
 import Skeleton from '../components/Skeleton';
 import UndoSnackbar from '../components/UndoSnackbar';
 import {
@@ -733,7 +734,8 @@ function MergeDialog( { name, from, pending, refusal, onMerge, onClose } ) {
 }
 
 /**
- * Review: three queues behind tabs, each counted by the `total` its read
+ * Review: under the shared header, which says what the queues are for,
+ * three queues behind tabs, each counted by the `total` its read
  * answers — the proposed links, one row per item asking of each entity
  * proposed for it whether the item is about it; the proposed entities,
  * each with the items citing it; and the pairs of themes
@@ -1368,12 +1370,13 @@ export default function Review( { canTune, onOpenEntity } ) {
 
 	return (
 		<div ref={ view } className="newspack-intelligence__view">
-			<p className="newspack-intelligence__intro">
-				{ __(
+			<Header
+				title={ __( 'Review', 'newspack-intelligence' ) }
+				description={ __(
 					'The extractor suggests which client or company each item is about. Confirm the right ones and reject the rest.',
 					'newspack-intelligence'
 				) }
-			</p>
+			/>
 			<Refusal
 				error={
 					0 < elsewhere.length && (

@@ -8,7 +8,13 @@
  * showing the key; removing one asks first.
  */
 
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import {
+	act,
+	fireEvent,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { useState } from '@wordpress/element';
@@ -116,7 +122,36 @@ const openMenu = async () => {
 	return screen.findByRole( 'menu' );
 };
 
+/**
+ * The shared header a heading stands in.
+ *
+ * @param {string} name The heading.
+ * @return {HTMLElement} The header.
+ */
+const headerOf = ( name ) =>
+	screen
+		.getByRole( 'heading', { level: 2, name } )
+		.closest( '.newspack-intelligence__section-head' );
+
 describe( 'Lens', () => {
+	it( 'stands under the shared header, New view at its end for a curator, and heads the open view the same way', async () => {
+		props.canTune = true;
+		renderOnPage( <Harness /> );
+		await screen.findByRole( 'heading', { name: 'Support desk' } );
+		const page = headerOf( 'Team views' );
+		expect( page ).toHaveTextContent(
+			'Saved views for each team, with what moved this week.'
+		);
+		expect(
+			within( page ).getByRole( 'button', { name: 'New view' } )
+		).toBeInTheDocument();
+		const open = headerOf( 'Support desk' );
+		expect( open ).toHaveTextContent( 'What clients complain about' );
+		expect(
+			within( open ).getByRole( 'button', { name: 'Team view actions' } )
+		).toBeInTheDocument();
+	} );
+
 	it( 'lists every view in the rail with what is new this week, the first open', async () => {
 		renderOnPage( <Harness /> );
 		const rail = await screen.findByRole( 'navigation', {
@@ -484,6 +519,32 @@ describe( 'Lens', () => {
 		).toBeInTheDocument();
 	} );
 
+	it( 'opens the dialog again with no refusal its last save drew', async () => {
+		props.canTune = true;
+		wire.replies.save_lens = () =>
+			new Error( 'kind must be one of: award, launch' );
+		renderOnPage( <Harness /> );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'New view' } )
+		);
+		let dialog = screen.getByRole( 'dialog', { name: 'New team view' } );
+		fireEvent.change( within( dialog ).getByLabelText( 'Name' ), {
+			target: { value: 'Odd kinds' },
+		} );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Save view' } )
+		);
+		await screen.findByText( 'kind must be one of: award, launch' );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'New view' } ) );
+		dialog = screen.getByRole( 'dialog', { name: 'New team view' } );
+		expect(
+			within( dialog ).queryByText( 'kind must be one of: award, launch' )
+		).toBeNull();
+	} );
+
 	it( 'cancels the dialog without sending', async () => {
 		props.canTune = true;
 		renderOnPage( <Harness /> );
@@ -563,6 +624,38 @@ describe( 'Lens', () => {
 			expect(
 				screen.getAllByRole( 'button', { name: 'New view' } ).length
 			).toBeGreaterThan( 0 );
+		} );
+
+		it( 'returns focus to the header’s New view once a view made from the empty state lands', async () => {
+			props.canTune = true;
+			wire.replies.lenses = { lenses: [], available: true };
+			wire.replies.save_lens = { ok: true, event_id: 'ev-l7' };
+			renderOnPage( <Harness /> );
+			const empty = (
+				await screen.findByText( /^No team views yet\./ )
+			).closest( '.newspack-nodes-empty-state' );
+			const opener = within( empty ).getByRole( 'button', {
+				name: 'New view',
+			} );
+			act( () => opener.focus() );
+			fireEvent.click( opener );
+			const dialog = screen.getByRole( 'dialog', {
+				name: 'New team view',
+			} );
+			fireEvent.change( within( dialog ).getByLabelText( 'Name' ), {
+				target: { value: 'Osprey desk' },
+			} );
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Save view' } )
+			);
+			await waitFor( () =>
+				expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+			);
+			expect( document.activeElement ).toBe(
+				within( headerOf( 'Team views' ) ).getByRole( 'button', {
+					name: 'New view',
+				} )
+			);
 		} );
 
 		it( 'stands a skeleton in while the views are owed', () => {

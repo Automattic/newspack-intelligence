@@ -1,6 +1,7 @@
 /* eslint-env jest */
 /**
- * Watches lists the caller's watches as a table, or a list when narrow;
+ * Watches lists the caller's watches as a table, or a list when narrow,
+ * under the shared header whose end holds New watch;
  * opens one onto its new matches a page at a time, marking one or a page
  * of them seen behind an undo window, its matches walked with j and k; and
  * saves, edits and stops a watch through a form naming exactly one target
@@ -230,6 +231,33 @@ async function pick( label, text, option ) {
 }
 
 describe( 'Watches', () => {
+	it( 'stands under the shared header, New watch at its end, the watches and the one open each a part of the page, no card around them', async () => {
+		const { container } = renderOnPage( <Harness /> );
+		await watchRow( 'Acme complaints' );
+		const header = screen
+			.getByRole( 'heading', { level: 2, name: 'Watches' } )
+			.closest( '.newspack-intelligence__section-head' );
+		expect(
+			within( header ).getByRole( 'button', { name: 'New watch' } )
+		).toBeInTheDocument();
+		expect(
+			screen.getAllByRole( 'heading', { name: 'Watches' } )
+		).toHaveLength( 1 );
+		expect( header ).toHaveTextContent(
+			'Clients, team views and folders you follow, with what is new in each.'
+		);
+		await openAcme();
+		const open = await opened();
+		expect(
+			within( open )
+				.getByRole( 'heading', { level: 2, name: 'Acme complaints' } )
+				.closest( '.newspack-intelligence__section-head' )
+		).toContainElement(
+			within( open ).getByRole( 'button', { name: 'Edit' } )
+		);
+		expect( container.querySelector( '.components-card' ) ).toBeNull();
+	} );
+
 	it( 'lists the caller’s watches as a table: what each watches, how it delivers and how many are new', async () => {
 		renderOnPage( <Harness /> );
 		const acme = await watchRow( 'Acme complaints' );
@@ -278,7 +306,7 @@ describe( 'Watches', () => {
 		wire.replies.watches = () => new Promise( () => {} );
 		renderOnPage( <Harness /> );
 		expect(
-			within( screen.getByRole( 'region', { name: 'Watches' } ) )
+			screen
 				.getByRole( 'status', { name: 'Loading' } )
 				.querySelectorAll( 'li' )
 		).toHaveLength( 3 );
@@ -742,6 +770,39 @@ describe( 'Watches', () => {
 		).toHaveTextContent( 'Paywall watch saved.' );
 	} );
 
+	it( 'returns focus to the header’s New watch once a watch made from the empty state lands', async () => {
+		wire.replies.watches = { watches: [], available: true };
+		wire.replies.save_watch = {
+			ok: true,
+			event_id: 'ev-w9',
+			watch_key: 'tern-watch',
+		};
+		renderOnPage( <Harness /> );
+		const empty = (
+			await screen.findByText( /^You are not watching anything yet\./ )
+		).closest( '.newspack-nodes-empty-state' );
+		const opener = within( empty ).getByRole( 'button', {
+			name: 'New watch',
+		} );
+		act( () => opener.focus() );
+		fireEvent.click( opener );
+		type( 'Name', 'Tern watch' );
+		await pick( 'Team view', 'Sup', 'Support desk' );
+		fireEvent.click(
+			within( form() ).getByRole( 'button', { name: 'Save watch' } )
+		);
+		await waitFor( () =>
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+		);
+		expect( document.activeElement ).toBe(
+			within(
+				screen
+					.getByRole( 'heading', { name: 'Watches' } )
+					.closest( '.newspack-intelligence__section-head' )
+			).getByRole( 'button', { name: 'New watch' } )
+		);
+	} );
+
 	it( 'closes the form on Escape pressed in the client picker once its list is closed', async () => {
 		renderOnPage( <Harness /> );
 		await screen.findByRole( 'button', { name: 'Acme complaints' } );
@@ -1049,6 +1110,36 @@ describe( 'Watches', () => {
 			screen.queryByRole( 'button', { name: 'Nothing followed' } )
 		).toBeNull();
 		expect( screen.queryByText( 'Nothing followed saved.' ) ).toBeNull();
+	} );
+
+	it( 'opens the form again with no refusal its last save drew', async () => {
+		wire.replies.save_watch = () =>
+			new Error(
+				'you have 25 watches, and one reader may keep 25 at most'
+			);
+		renderOnPage( <Harness /> );
+		await screen.findByRole( 'button', { name: 'Acme complaints' } );
+		fireEvent.click(
+			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
+		);
+		type( 'Name', 'Kittiwake watch' );
+		fireEvent.click(
+			within( form() ).getByRole( 'button', { name: 'Save watch' } )
+		);
+		await screen.findByText(
+			'you have 25 watches, and one reader may keep 25 at most'
+		);
+		fireEvent.click(
+			within( form() ).getByRole( 'button', { name: 'Cancel' } )
+		);
+		fireEvent.click(
+			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
+		);
+		expect(
+			within( form() ).queryByText(
+				'you have 25 watches, and one reader may keep 25 at most'
+			)
+		).toBeNull();
 	} );
 
 	it( 'moves focus to the Name field as the form opens', async () => {
