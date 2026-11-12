@@ -1,10 +1,4 @@
-import {
-	useId,
-	useLayoutEffect,
-	useMemo,
-	useRef,
-	useState,
-} from '@wordpress/element';
+import { useLayoutEffect, useMemo, useRef, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import {
 	Button,
@@ -39,7 +33,6 @@ import {
 	utcDay,
 } from '../components/format';
 import { word } from '../components/words';
-import { jumpsOf } from '../blocks';
 import { EntityRecord } from '../blocks/record';
 import { editLayoutControl } from '../layout/LayoutMenu';
 import PageLayout from '../layout/PageLayout';
@@ -246,41 +239,6 @@ function ChurnNotice( { reports, operator, note, onEnd, onNotAbout } ) {
 }
 
 /**
- * Links naming each heading of the layout, each moving focus to the heading
- * its id names in the layout below.
- *
- * @param {Object}                                 props
- * @param {Array<{text: string, id: string}>}      props.headings The headings.
- * @param {import('react').RefObject<HTMLElement>} props.layout   The layout's region.
- * @return {?import('react').ReactElement} The links.
- */
-function JumpLinks( { headings, layout } ) {
-	if ( 0 === headings.length ) {
-		return null;
-	}
-	const jump = ( id ) => {
-		const target = layout.current.ownerDocument.getElementById( id );
-		if ( target && layout.current.contains( target ) ) {
-			target.tabIndex = -1;
-			target.focus( { preventScroll: true } );
-			target.scrollIntoView( { block: 'start' } );
-		}
-	};
-	return (
-		<nav
-			className="newspack-intelligence__jumps"
-			aria-label={ __( 'On this profile', 'newspack-intelligence' ) }
-		>
-			{ headings.map( ( { text, id } ) => (
-				<Button key={ id } variant="link" onClick={ () => jump( id ) }>
-					{ text }
-				</Button>
-			) ) }
-		</nav>
-	);
-}
-
-/**
  * The way back to the view that opened the profile.
  *
  * @param {Object}                              props
@@ -312,7 +270,7 @@ function BackLink( { back } ) {
  * and the entity's website; then, while
  * the client's status names a churn report since it began, the churn notice
  * naming each (`ChurnNotice`) with the client's churn-risk note, else the
- * note alone; then jump links to the layout's headings. Below the header the
+ * note alone. Below the header the
  * page's profile layout renders, its blocks sharing the header's one
  * `entity` read (`EntityRecord`). Ending the client, from the notice or the
  * drawer, asks first (`EndClientDialog`); **Not about this client** rejects a
@@ -433,8 +391,6 @@ export default function Entity( {
 			ending.current = false;
 		}
 	} );
-	const region = useRef( null );
-	const jumpPrefix = useId();
 
 	if ( record.error ) {
 		return (
@@ -612,14 +568,6 @@ export default function Entity( {
 							);
 						} }
 					</AnswerBody>
-					{ ! layout.error && (
-						<JumpLinks
-							headings={
-								jumpsOf( layout.blocks, jumpPrefix ).headings
-							}
-							layout={ region }
-						/>
-					) }
 				</header>
 
 				{ churn.asking && (
@@ -659,20 +607,17 @@ export default function Entity( {
 					<UndoSnackbar latest={ churn.ended } />
 				) }
 
-				<div ref={ region }>
-					<PageLayout
-						layout={ layout }
-						onRestored={ onRestored }
-						jumpPrefix={ jumpPrefix }
-						page={ {
-							page: 'entity',
-							lens_key: null,
-							entity_key: entityKey,
-							since: null,
-							actions,
-						} }
-					/>
-				</div>
+				<PageLayout
+					layout={ layout }
+					onRestored={ onRestored }
+					page={ {
+						page: 'entity',
+						lens_key: null,
+						entity_key: entityKey,
+						since: null,
+						actions,
+					} }
+				/>
 			</div>
 		</EntityRecord.Provider>
 	);

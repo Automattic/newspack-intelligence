@@ -216,13 +216,6 @@ function View( { attributes } ) {
 }
 
 /**
- * @param {ItemListAttributes} attributes Its attributes.
- * @return {string[]} The heading a profile's jump links name.
- */
-const headings = ( attributes ) =>
-	attributes.heading ? [ attributes.heading ] : [];
-
-/**
  * A token field over a closed list, by its words.
  *
  * @param {Object}                   props
@@ -382,4 +375,4 @@ function Controls( { attributes, setAttributes } ) {
 	);
 }
 
-export default { View, Controls, headings };
+export default { View, Controls };

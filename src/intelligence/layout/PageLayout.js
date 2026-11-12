@@ -8,12 +8,12 @@
  * The reader half of Intelligence's layouts: it imports no block library.
  */
 
-import { useId, useState } from '@wordpress/element';
+import { useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import CompositionView from '@newspack-nodes/shared/composition/CompositionView';
 import { Unread } from '../components/Answer';
 import Refusal from '../components/Refusal';
-import { BLOCK_VIEWS, jumpsOf } from '../blocks';
+import { BLOCK_VIEWS } from '../blocks';
 import { useIntelWrite } from '../hooks/useIntelCommand';
 import { Confirm } from '@newspack-nodes/shared/components/Modal';
 import { IntelPageContext } from './PageContext';
@@ -92,14 +92,12 @@ function Restore( { context, onRestored } ) {
 
 /**
  * @param {Object}                            props
- * @param {Object}                            props.layout       What the page data or a save answered for the page's context.
- * @param {import('./PageContext').IntelPage} props.page         The page the blocks stand on.
- * @param {(layout: Object) => void}          props.onRestored   Takes the default a curator's restore answers.
- * @param {string}                            [props.jumpPrefix] The prefix its jump scopes lead with, where the page links to its headings; else one of its own.
+ * @param {Object}                            props.layout     What the page data or a save answered for the page's context.
+ * @param {import('./PageContext').IntelPage} props.page       The page the blocks stand on.
+ * @param {(layout: Object) => void}          props.onRestored Takes the default a curator's restore answers.
  * @return {?import('react').ReactElement} The layout, or nothing for an empty one.
  */
-export default function PageLayout( { layout, page, onRestored, jumpPrefix } ) {
-	const own = useId();
+export default function PageLayout( { layout, page, onRestored } ) {
 	if ( layout.error ) {
 		return (
 			<>
@@ -119,12 +117,7 @@ export default function PageLayout( { layout, page, onRestored, jumpPrefix } ) {
 	const main = layout.blocks.filter( ( node ) => ASIDE !== node.name );
 	const aside = layout.blocks.filter( ( node ) => ASIDE === node.name );
 	return (
-		<IntelPageContext.Provider
-			value={ {
-				...page,
-				jumps: jumpsOf( layout.blocks, jumpPrefix ?? own ).scopes,
-			} }
-		>
+		<IntelPageContext.Provider value={ page }>
 			<div className="newspack-intelligence__layout">
 				<div className="newspack-intelligence__layout-main">
 					<CompositionView

@@ -556,15 +556,6 @@ describe( 'Controls', () => {
 		expect( setAttributes ).toHaveBeenLastCalledWith( { limit: 17 } );
 	} );
 
-	it( 'name the headings the facts show in a profile’s jump links', () => {
-		expect(
-			entityFacts.headings( { show: [ 'counts', 'details' ], limit: 4 } )
-		).toEqual( [ 'Details' ] );
-		expect(
-			entityFacts.headings( { show: [ 'counts' ], limit: 4 } )
-		).toEqual( [] );
-	} );
-
 	it( "write related's heading and rows", () => {
 		const setAttributes = jest.fn();
 		renderOnPage(

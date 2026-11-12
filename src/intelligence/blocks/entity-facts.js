@@ -294,20 +294,6 @@ function View( { attributes } ) {
 }
 
 /**
- * The headings the block shows, which a profile's jump links name.
- *
- * @param {FactsAttributes} attributes Its attributes.
- * @return {string[]} The headings.
- */
-const headings = ( attributes ) =>
-	[
-		attributes.show.includes( 'claims' ) &&
-			__( 'Facts', 'newspack-intelligence' ),
-		attributes.show.includes( 'details' ) &&
-			__( 'Details', 'newspack-intelligence' ),
-	].filter( Boolean );
-
-/**
  * @param {Object}                                   props
  * @param {FactsAttributes}                          props.attributes    Its attributes.
  * @param {(next: Partial<FactsAttributes>) => void} props.setAttributes Writes them.
@@ -351,4 +337,4 @@ function Controls( { attributes, setAttributes } ) {
 	);
 }
 
-export default { View, Controls, headings };
+export default { View, Controls };

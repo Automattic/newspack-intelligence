@@ -859,8 +859,8 @@
 	}
 }
 
-// A profile's fixed header: the name beside its actions, then the type line,
-// the churn notice and the jump links, each a row of their own.
+// A profile's fixed header: the name beside its actions, then the type line
+// and the churn notice, each a row of their own.
 .newspack-intelligence__profile-head {
 	display: flex;
 	flex-direction: column;
@@ -874,7 +874,6 @@
 }
 
 .newspack-intelligence__type-line,
-.newspack-intelligence__jumps,
 .newspack-intelligence__counts,
 .newspack-intelligence__churn-note {
 	display: flex;

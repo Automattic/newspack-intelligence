@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **A profile's jump links.** The row of links under a profile's header (Activity, Related, Facts, Details) is gone, with the jump scopes that gave each heading an id by its place; a block's heading takes an id of its own.
+
 ### Fixed
 
 - A source that has never been given its credential, such as Slack before its bot token is in the Vault, reads "Not set up" in the health strip, neutral beside an operator's "Add credential", rather than "Stopped": it no longer turns the header's dot yellow, takes over the header's line, or counts among the sources collecting. A source that collected and then lost its credential still reads "Stopped" as a fault, since the `health sources` slice now answers its `last_ok_at` beside the missing credential.
-- A profile's jump links (Activity, Related, Facts, Details) scroll the heading they name to the top of the page. They only moved focus, and a heading already on screen neither scrolled nor showed focus, so the links seemed to do nothing.
 
 ## [0.43.1] - 2026-11-12
 

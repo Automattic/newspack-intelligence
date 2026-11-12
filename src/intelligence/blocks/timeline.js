@@ -170,12 +170,6 @@ function View( { attributes } ) {
 }
 
 /**
- * @param {TimelineAttributes} attributes Its attributes.
- * @return {string[]} The heading a profile's jump links name.
- */
-const headings = ( attributes ) => [ attributes.heading ];
-
-/**
  * @param {Object}                                      props
  * @param {TimelineAttributes}                          props.attributes    Its attributes.
  * @param {(next: Partial<TimelineAttributes>) => void} props.setAttributes Writes them.
@@ -245,4 +239,4 @@ function Controls( { attributes, setAttributes } ) {
 	);
 }
 
-export default { View, Controls, headings };
+export default { View, Controls };

@@ -1,8 +1,8 @@
 /* eslint-env jest */
 /**
  * Entity is a profile: a fixed header — the back link, the name, the type
- * line, Watch, Edit and ⋯, the churn notice with the client's churn-risk
- * note, and jump links to the layout's headings — over the page's profile
+ * line, Watch, Edit and ⋯, and the churn notice with the client's
+ * churn-risk note — over the page's profile
  * layout, whose blocks share the header's one `entity` read. A curator ends
  * a client through its dialog, says a report is not about it with Undo, and
  * keeps its churn-risk note.
@@ -407,17 +407,6 @@ describe( 'Entity — header', () => {
 } );
 
 describe( 'Entity — layout', () => {
-	// jsdom lays nothing out, so it has no scrollIntoView for a jump.
-	const { scrollIntoView } = window.Element.prototype;
-
-	beforeEach( () => {
-		window.Element.prototype.scrollIntoView = jest.fn();
-	} );
-
-	afterEach( () => {
-		window.Element.prototype.scrollIntoView = scrollIntoView;
-	} );
-
 	it( 'lays out the pulse, the counts and the activity, then Related and Facts aside, sharing one entity read', async () => {
 		renderEntity( { canTune: true } );
 		await header();
@@ -441,83 +430,11 @@ describe( 'Entity — layout', () => {
 		expect( wire.sent( 'entity' ) ).toEqual( [ [ KEY ] ] );
 	} );
 
-	it( 'names each heading of its layout in jump links that move focus to it and bring it to the top', async () => {
+	it( 'offers no jump links to its headings', async () => {
 		renderEntity();
 		await header();
-		const jumps = screen.getByRole( 'navigation', {
-			name: 'On this profile',
-		} );
-		expect(
-			within( jumps )
-				.getAllByRole( 'button' )
-				.map( ( one ) => one.textContent )
-		).toEqual( [ 'Activity', 'Related', 'Facts', 'Details' ] );
-
-		const facts = await screen.findByRole( 'heading', { name: 'Facts' } );
-		fireEvent.click(
-			within( jumps ).getByRole( 'button', { name: 'Facts' } )
-		);
-		expect( facts ).toHaveFocus();
-		const { scrollIntoView: scrolled } = window.Element.prototype;
-		expect( scrolled ).toHaveBeenCalledTimes( 1 );
-		expect( scrolled.mock.contexts[ 0 ] ).toBe( facts );
-		expect( scrolled ).toHaveBeenCalledWith( { block: 'start' } );
-	} );
-
-	it( 'jumps to the heading a link names by its place, two blocks sharing a heading apart', async () => {
-		wire.replies.search = {
-			items: [],
-			total: 0,
-			sort: 'time',
-			available: true,
-		};
-		const coverage = ( empty ) => ( {
-			name: 'newspack-intelligence/item-list',
-			attributes: {
-				heading: 'Coverage',
-				kinds: [],
-				topics: [],
-				roles: [],
-				sources: [],
-				lens: '',
-				group: '',
-				sort: 'time',
-				layout: 'list',
-				limit: 5,
-				tiers: [],
-				empty,
-			},
-			inner: [],
-		} );
-		renderEntity( {
-			layout: {
-				...DEFAULT_LAYOUT,
-				blocks: [
-					coverage( 'No coverage in the main column.' ),
-					{
-						name: 'newspack-intelligence/aside',
-						attributes: {},
-						inner: [ coverage( 'No coverage in the aside.' ) ],
-					},
-				],
-			},
-		} );
-		await header();
-		const jumps = screen.getByRole( 'navigation', {
-			name: 'On this profile',
-		} );
-		const [ , second ] = within( jumps ).getAllByRole( 'button', {
-			name: 'Coverage',
-		} );
-		await screen.findByText( 'No coverage in the aside.' );
-
-		fireEvent.click( second );
-
-		const focused = document.activeElement;
-		expect( focused ).toHaveTextContent( 'Coverage' );
-		expect( screen.getByRole( 'complementary' ) ).toContainElement(
-			focused
-		);
+		await screen.findByRole( 'heading', { name: 'Facts' } );
+		expect( screen.queryByRole( 'navigation' ) ).toBeNull();
 	} );
 
 	it( 'keeps the churn notice when its layout holds no block', async () => {

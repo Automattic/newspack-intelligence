@@ -1,13 +1,10 @@
 /**
  * The one header every Intelligence tab and section stands under, and one
  * block's part of a composed page's one surface: a region named and headed
- * by its heading, with any control the block keeps beside it. In a layout a
- * reader reads, the heading's id leads with its block's jump scope, so a
- * profile's jump link reaches it by its place.
+ * by its heading, with any control the block keeps beside it.
  */
 
-import { forwardRef, useContext, useId } from '@wordpress/element';
-import { JumpScope, jumpId } from '../layout/PageContext';
+import { forwardRef, useId } from '@wordpress/element';
 
 /**
  * A row in the shared section-heading role, which rules it: a title, a
@@ -63,9 +60,7 @@ function SectionOf(
 	{ heading, description, actions, className = '', children },
 	ref
 ) {
-	const own = useId();
-	const scope = useContext( JumpScope );
-	const id = null === scope ? own : jumpId( scope, heading );
+	const id = useId();
 	return (
 		<section
 			className={ `newspack-intelligence__section ${ className }`.trim() }

@@ -18,7 +18,6 @@ import { createContext, useContext } from '@wordpress/element';
  * @property {?number}                       since      The reader's last look, UTC seconds, on the Briefing.
  * @property {boolean}                       [kept]     Whether the browser keeps the last look; false hides what arrived since.
  * @property {Partial<IntelActions>}         [actions]  The page's actions; the editor's preview offers none.
- * @property {WeakMap<Object, string>}       [jumps]    Each block's jump scope, by its attributes, where a reader reads the layout (`jumpsOf()`).
  */
 
 /**
@@ -69,25 +68,6 @@ export const IntelPageContext = createContext( {
  * @type {import('react').Context<boolean>}
  */
 export const Editing = createContext( false );
-
-/**
- * The jump scope of the block a heading stands in, null outside a layout a
- * reader reads: what its heading's id leads with, so a profile's jump links
- * reach each heading by its place rather than by its words.
- *
- * @type {import('react').Context<?string>}
- */
-export const JumpScope = createContext( null );
-
-/**
- * The id of a heading in the block whose jump scope is `scope`.
- *
- * @param {string} scope The block's jump scope.
- * @param {string} text  The heading.
- * @return {string} The id.
- */
-export const jumpId = ( scope, text ) =>
-	`${ scope }-${ encodeURIComponent( text ) }`;
 
 /**
  * Whether the block this stands in is being edited.

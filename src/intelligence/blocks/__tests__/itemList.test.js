@@ -355,15 +355,6 @@ describe( 'item-list', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( "names its heading in a profile's jump links, and nothing without one", () => {
-		expect( itemList.headings( ATTRIBUTES ) ).toEqual( [
-			'Stories on the desk',
-		] );
-		expect( itemList.headings( { ...ATTRIBUTES, heading: '' } ) ).toEqual(
-			[]
-		);
-	} );
-
 	it( 'writes each setting from its controls, a list by its words', () => {
 		const setAttributes = jest.fn();
 		renderOnPage(

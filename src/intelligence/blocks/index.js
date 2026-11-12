@@ -3,16 +3,10 @@
  * page renders and, where it has settings, the Controls the editor's
  * inspector holds. Each name is a row of `Intelligence_Blocks::BLOCKS`. Each
  * View provides the `editing` prop the substrate hands it to every write
- * control inside it (`useWriteControl`), and its jump scope to its headings.
+ * control inside it (`useWriteControl`).
  */
 
-import { useContext } from '@wordpress/element';
-import {
-	Editing,
-	IntelPageContext,
-	JumpScope,
-	jumpId,
-} from '../layout/PageContext';
+import { Editing } from '../layout/PageContext';
 import aside from './aside';
 import health from './health';
 import ask from './ask';
@@ -29,14 +23,13 @@ import itemList from './item-list';
 import folderBoard from './folder-board';
 
 /**
- * A block's view, and the headings it shows for a profile's jump links.
+ * A block's view.
  *
- * @typedef {import('@newspack-nodes/shared/composition/CompositionView').CompositionBlockView & {headings?: (attributes: Object) => string[]}} IntelBlockView
+ * @typedef {import('@newspack-nodes/shared/composition/CompositionView').CompositionBlockView} IntelBlockView
  */
 
 /**
- * A block's view whose View provides its `editing` prop and its jump scope
- * to what it holds.
+ * A block's view whose View provides its `editing` prop to what it holds.
  *
  * @param {IntelBlockView} view The block's view.
  * @return {IntelBlockView} The view.
@@ -47,18 +40,11 @@ function provided( view ) {
 	 * @param {{attributes: Object, editing: boolean, children?: import('react').ReactNode}} props The View's props.
 	 * @return {import('react').ReactNode} The block.
 	 */
-	const Provided = ( props ) => {
-		const scope =
-			useContext( IntelPageContext ).jumps?.get( props.attributes ) ??
-			null;
-		return (
-			<Editing.Provider value={ props.editing }>
-				<JumpScope.Provider value={ scope }>
-					<View { ...props } />
-				</JumpScope.Provider>
-			</Editing.Provider>
-		);
-	};
+	const Provided = ( props ) => (
+		<Editing.Provider value={ props.editing }>
+			<View { ...props } />
+		</Editing.Provider>
+	);
 	return { ...view, View: Provided };
 }
 
@@ -87,31 +73,3 @@ export const BLOCK_VIEWS = Object.fromEntries(
 		provided( view ),
 	] )
 );
-
-/**
- * A layout's jump scopes and headings, numbered depth first under the
- * layout's own prefix, so the scopes a page's blocks render under and the
- * links naming their headings agree, and two layouts on a page never share one.
- *
- * @param {import('@newspack-nodes/shared/composition/CompositionView').CompositionNode[]} blocks The layout's blocks.
- * @param {string}                                                                         prefix The layout's own, one `useId()`.
- * @return {{scopes: WeakMap<Object, string>, headings: Array<{text: string, id: string}>}}
- *   Each block's scope, by its attributes, and every heading in the order
- *   it stands, each a container's children in its place.
- */
-export function jumpsOf( blocks, prefix ) {
-	const scopes = new WeakMap();
-	const headings = [];
-	let count = 0;
-	const walk = ( nodes ) =>
-		nodes.forEach( ( node ) => {
-			const scope = `${ prefix }jump-${ count++ }`;
-			scopes.set( node.attributes, scope );
-			( VIEWS[ node.name ]?.headings?.( node.attributes ) ?? [] ).forEach(
-				( text ) => headings.push( { text, id: jumpId( scope, text ) } )
-			);
-			walk( node.inner );
-		} );
-	walk( blocks );
-	return { scopes, headings };
-}
