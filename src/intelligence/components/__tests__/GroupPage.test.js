@@ -44,7 +44,9 @@ const page = async ( props = {} ) => {
 };
 
 const groupOf = ( theme ) =>
-	screen.getByRole( 'heading', { level: 4, name: theme } ).closest( 'li' );
+	screen
+		.getByRole( 'heading', { level: 4, name: theme } )
+		.closest( '.newspack-intelligence__item' );
 
 /**
  * A group's meta line, cell by cell.
@@ -116,6 +118,13 @@ describe( 'GroupPage', () => {
 			'Hide items: site blocked from sending email'
 		);
 		const group = groupOf( 'site blocked from sending email' );
+		expect( group.tagName ).toBe( 'DIV' );
+		const disclosed = group.querySelector(
+			':scope > ul.newspack-intelligence__items'
+		);
+		expect(
+			[ ...disclosed.children ].map( ( one ) => one.tagName )
+		).toEqual( [ 'LI', 'LI' ] );
 		expect(
 			within( group ).getByRole( 'link', {
 				name: 'Acme mail bounces at the sender',

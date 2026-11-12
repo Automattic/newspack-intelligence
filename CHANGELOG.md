@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The Briefing, a team view and a profile open their layout one gap under the header, as every other section is spaced; the layout added a margin of its own over the page's gap, leaving an empty band about 60px tall.
+- An item row in a DataViews layout, as the Briefing's "This week, most important first" draws it, is a plain row rather than a list item standing outside any list, so it shows the layout's dot alone and no list bullet, and a screen reader no longer announces it as a list item. A theme group's row is a plain row too; a group's disclosed items and the Ask box's sources stay list items in their lists.
+
 ## [0.43.0] - 2026-11-12
 
 ### Added

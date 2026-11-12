@@ -57,7 +57,7 @@
 	&__chips {
 		margin: 0;
 		padding: 0;
-		list-style: none;
+		list-style-type: none;
 	}
 
 	// The folders stand side by side; a board wider than the page scrolls.
@@ -626,12 +626,12 @@
 	}
 }
 
-// A layout's aside follows the main column, and stands beside it when wide.
+// A layout's aside follows the main column, and stands beside it when wide;
+// the view it stands in spaces it from the header above.
 .newspack-intelligence__layout {
 	display: flex;
 	flex-direction: column;
 	gap: base.$space-xl;
-	margin-block-start: base.$space-xl;
 
 	@media (min-width: 1100px) {
 		flex-direction: row;

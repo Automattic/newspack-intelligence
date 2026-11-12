@@ -26,7 +26,7 @@ function GroupRow( { group, onOpenEntity, onSave, canTune } ) {
 	const items = group.items ?? [];
 	const newest = utcDay( group.newest_ts );
 	return (
-		<li className="newspack-intelligence__item">
+		<div className="newspack-intelligence__item">
 			<div className="newspack-intelligence__item-head">
 				<h4>{ group.theme }</h4>
 				<button
@@ -101,6 +101,7 @@ function GroupRow( { group, onOpenEntity, onSave, canTune } ) {
 				<ul className="newspack-intelligence__items">
 					{ items.map( ( item ) => (
 						<ItemRow
+							as="li"
 							key={ item.item_key }
 							item={ item }
 							onOpenEntity={ onOpenEntity }
@@ -110,7 +111,7 @@ function GroupRow( { group, onOpenEntity, onSave, canTune } ) {
 					) ) }
 				</ul>
 			) }
-		</li>
+		</div>
 	);
 }
 

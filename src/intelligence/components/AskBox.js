@@ -335,6 +335,7 @@ function Answered( {
 						>
 							{ answer.items.map( ( item ) => (
 								<ItemRow
+									as="li"
 									key={ item.item_key }
 									item={ item }
 									onOpenEntity={ onOpenEntity }

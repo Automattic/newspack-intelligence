@@ -63,6 +63,39 @@ describe( 'ItemList', () => {
 		).toHaveAttribute( 'href', ITEM.url );
 	} );
 
+	it.each( [ 'list', 'activity' ] )(
+		'draws each ItemRow in the %s layout as a row, and no list item outside a list',
+		async ( type ) => {
+			const { container } = render(
+				<ItemList
+					items={ [ ITEM, SECOND ] }
+					view={ view( { type } ) }
+					layout={ type }
+					onChangeView={ () => {} }
+					empty="Nothing filed here."
+					paginationInfo={ { totalItems: 2, totalPages: 1 } }
+					rowProps={ { onOpenEntity: () => {} } }
+				/>
+			);
+			await screen.findByRole( 'link', {
+				name: /Prairie Signal opens a second bureau/,
+			} );
+			const rows = container.querySelectorAll(
+				'.newspack-intelligence__item'
+			);
+			expect( rows ).toHaveLength( 2 );
+			rows.forEach( ( row ) => expect( row.tagName ).toBe( 'DIV' ) );
+			// A chip list inside a row is a real list; no item stands outside one.
+			container
+				.querySelectorAll( 'li' )
+				.forEach( ( one ) =>
+					expect( [ 'UL', 'OL' ] ).toContain(
+						one.parentElement.tagName
+					)
+				);
+		}
+	);
+
 	it( 'is the substrate list', async () => {
 		const { container } = render(
 			<ItemList

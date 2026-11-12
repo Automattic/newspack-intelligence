@@ -300,7 +300,8 @@ export function SaveButton( { item, onSave } ) {
  * the row back with the refusal. For a reader holding tune, each chip holds
  * an × rejecting that link, and the menu offers "Is this about…"
  * (`AboutDialog`), linking the item to an entity picked by name. The row
- * renders inside `ItemRows`, which holds those writes for its whole list.
+ * renders inside `ItemRows`, which holds those writes for its whole list,
+ * as a `div` where DataViews draws it, or as `as` names inside a list.
  *
  * @param {Object}                    props
  * @param {Object}                    props.item         The item.
@@ -308,6 +309,7 @@ export function SaveButton( { item, onSave } ) {
  * @param {(item: Object) => void}    [props.onSave]     Saves the item; absent for a reader.
  * @param {boolean}                   [props.canTune]    Whether the reader holds tune, which offers the exclusion.
  * @param {import('react').ReactNode} [props.children]   The view's own controls for the item.
+ * @param {'div'|'li'}                [props.as]         Its element: `li` inside a `ul` or an `ol`.
  * @return {import('react').ReactElement} The row.
  */
 export default function ItemRow( {
@@ -316,6 +318,7 @@ export default function ItemRow( {
 	onSave,
 	canTune,
 	children,
+	as: Row = 'div',
 } ) {
 	const writes = useListWrites();
 	const narrow = useNarrow();
@@ -326,16 +329,16 @@ export default function ItemRow( {
 	} );
 	if ( writes.excluded( item ) ) {
 		return (
-			<li className="newspack-intelligence__item">
+			<Row className="newspack-intelligence__item">
 				<p className="newspack-nodes-status is-muted" role="status">
 					{ __( 'Excluded.', 'newspack-intelligence' ) }
 				</p>
-			</li>
+			</Row>
 		);
 	}
 	const pills = pillsOf( writes.entitiesOf( item ) );
 	return (
-		<li className="newspack-intelligence__item">
+		<Row className="newspack-intelligence__item">
 			<Refusal error={ writes.refusalOf( item ) } />
 			<div className="newspack-intelligence__item-head">
 				<strong className="newspack-intelligence__item-title">
@@ -367,7 +370,7 @@ export default function ItemRow( {
 				onRemove={ removerOf( writes, item, canTune ) }
 			/>
 			{ drawer }
-		</li>
+		</Row>
 	);
 }
 

@@ -187,7 +187,9 @@ const form = () => screen.getByRole( 'dialog' );
  * @return {Promise<HTMLElement>} Its row.
  */
 const matchRow = async ( title ) =>
-	( await screen.findByText( title ) ).closest( 'li' );
+	( await screen.findByText( title ) ).closest(
+		'.newspack-intelligence__item'
+	);
 
 /**
  * The table row naming `name` as the page holds it now.
@@ -321,6 +323,18 @@ describe( 'Watches', () => {
 			)
 		).toBeInTheDocument();
 		expect( screen.queryByText( 'not signed in' ) ).toBeNull();
+	} );
+
+	it( 'draws each match as a row, and no list item outside a list', async () => {
+		renderOnPage( <Harness /> );
+		await openAcme();
+		const row = await matchRow( 'Acme Quillsheet wins regional prize' );
+		expect( row.tagName ).toBe( 'DIV' );
+		( await opened() )
+			.querySelectorAll( 'li' )
+			.forEach( ( one ) =>
+				expect( [ 'UL', 'OL' ] ).toContain( one.parentElement.tagName )
+			);
 	} );
 
 	it( 'opens a watch onto its new matches, linking only a safe URL', async () => {
