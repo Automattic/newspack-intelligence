@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Needs newspack-nodes 2.153.0.** The views take the substrate's `newspack-nodes-page-inset` and the shared refused-field and type-scale styles first shipped in 2.153.0; below it the plugin goes dormant behind an admin notice.
 - The graph legend's text is 12px, the substrate's `--np-text-2xs`, and a test fails on any smaller size in the page's stylesheet.
 - The Search words box keeps focus when its results arrive, through the substrate's `DataViewsList`.
 - The views are inset 16px 20px, the substrate's shared page inset, instead of 16px 24px, and the DataViews skin rules come from the substrate's shared sheet rather than this page's bundle.
