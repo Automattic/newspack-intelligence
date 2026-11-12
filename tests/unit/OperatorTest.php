@@ -64,15 +64,6 @@ final class OperatorTest extends TestCase {
 		$this->assertSame( 'a defect in ' . self::NAME . '\'s code, tracking ' . self::TRACKS, ( new Operator( self::NAME, self::TRACKS ) )->spelled( 'a defect in {operator}\'s code, tracking {tracks}' ) );
 	}
 
-	/**
-	 * What the page shows: a configured name as given, its heading the same,
-	 * and the generic one translated, its heading capitalized.
-	 */
-	public function test_the_page_shows_a_named_operator_as_given_and_the_default_translated(): void {
-		$this->assertSame( [ 'name' => 'quillmere', 'heading' => 'quillmere' ], ( new Operator( 'quillmere', '' ) )->shown() );
-		$this->assertSame( [ 'name' => 'the organization', 'heading' => 'The organization' ], ( new Operator( '', '' ) )->shown() );
-	}
-
 	/** The running topology's LLM_Call node names the operator the page and the prompts read. */
 	public function test_the_running_topology_names_the_operator(): void {
 		$this->run_topology( "cmd intel:llm:config set_operator \"" . self::NAME . "\"\ncmd intel:llm:config set_tracks \"" . self::TRACKS . "\"\n" );

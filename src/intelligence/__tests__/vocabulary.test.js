@@ -299,10 +299,6 @@ function renderPage( compositions = COMPOSITIONS ) {
 			canTune
 			canManage
 			userId="6143"
-			operator={ {
-				name: 'the organization',
-				heading: 'The organization',
-			} }
 			vocabulary={ VOCABULARY }
 			compositions={ compositions }
 			askDefaults={ ASK_DEFAULTS }

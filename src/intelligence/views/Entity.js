@@ -1,11 +1,6 @@
-import { useLayoutEffect, useMemo, useRef, useState } from '@wordpress/element';
+import { useMemo, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
-import {
-	Button,
-	DropdownMenu,
-	Notice,
-	TextControl,
-} from '@wordpress/components';
+import { Button, DropdownMenu, TextControl } from '@wordpress/components';
 import { chevronLeft, moreHorizontal } from '@wordpress/icons';
 import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import {
@@ -25,13 +20,7 @@ import ChurnNote from '../components/ChurnNote';
 import Refusal from '../components/Refusal';
 import { Header } from '../components/Section';
 import UndoSnackbar from '../components/UndoSnackbar';
-import {
-	entityName,
-	itemKey,
-	safeHref,
-	shownDay,
-	utcDay,
-} from '../components/format';
+import { entityName, itemKey, shownDay, utcDay } from '../components/format';
 import { word } from '../components/words';
 import { EntityRecord } from '../blocks/record';
 import { editLayoutControl } from '../layout/LayoutMenu';
@@ -154,91 +143,6 @@ function NoteForm( { note, onSave, onCancel } ) {
 }
 
 /**
- * The churn reports a client's status names: each report with a link to its
- * item and, for a curator, **Not about this client**; then the client's
- * churn-risk note; then, for a curator, **End client…**, which asks first.
- *
- * @param {Object}                    props
- * @param {Object[]}                  props.reports    The churn reports shown.
- * @param {string}                    props.operator   Who runs the deployment, whom a client leaves; '' for none.
- * @param {import('react').ReactNode} props.note       The client's churn-risk note.
- * @param {?() => void}               props.onEnd      Asks whether to end the client; null for a reader.
- * @param {?(item: Object) => void}   props.onNotAbout Says a report is not about the client; null for a reader.
- * @return {import('react').ReactElement} The notice.
- */
-function ChurnNotice( { reports, operator, note, onEnd, onNotAbout } ) {
-	return (
-		<Notice status="warning" isDismissible={ false }>
-			<strong>{ __( 'Possible churn', 'newspack-intelligence' ) }</strong>
-			{ reports.map( ( item ) => {
-				const href = safeHref( item.url );
-				const source = word( 'sourceWords', item.source );
-				const day = shownDay( item.day );
-				return (
-					<p
-						key={ item.item_key }
-						className="newspack-intelligence__actions"
-					>
-						<span>
-							{ operator
-								? sprintf(
-										/* translators: 1: the item's title, 2: its source, 3: its day, 4: who runs the deployment. */
-										__(
-											'“%1$s” (%2$s, %3$s) says this client is leaving %4$s.',
-											'newspack-intelligence'
-										),
-										item.title,
-										source,
-										day,
-										operator
-								  )
-								: sprintf(
-										/* translators: 1: the item's title, 2: its source, 3: its day. */
-										__(
-											'“%1$s” (%2$s, %3$s) says this client is leaving.',
-											'newspack-intelligence'
-										),
-										item.title,
-										source,
-										day
-								  ) }
-						</span>
-						{ href && (
-							<a
-								href={ href }
-								className="button button-small"
-								target="_blank"
-								rel="noopener noreferrer"
-							>
-								{ __( 'Open item', 'newspack-intelligence' ) }
-							</a>
-						) }
-						{ onNotAbout && (
-							<Button
-								variant="secondary"
-								size="small"
-								onClick={ () => onNotAbout( item ) }
-							>
-								{ __(
-									'Not about this client',
-									'newspack-intelligence'
-								) }
-							</Button>
-						) }
-					</p>
-				);
-			} ) }
-			{ note }
-			{ onEnd && (
-				<Button variant="secondary" size="small" onClick={ onEnd }>
-					{ __( 'End client…', 'newspack-intelligence' ) }
-				</Button>
-			) }
-		</Notice>
-	);
-}
-
-/**
  * The way back to the view that opened the profile.
  *
  * @param {Object}                              props
@@ -267,21 +171,18 @@ function BackLink( { back } ) {
  * it: the way back; the shared `Header`, the name with **Watch**, for a
  * curator **Edit**, the Edit drawer (`EditDrawer`), and ⋯ offering **Edit
  * layout** and, for a client, a churn-risk note at its end; the type line
- * and the entity's website; then, while
- * the client's status names a churn report since it began, the churn notice
- * naming each (`ChurnNotice`) with the client's churn-risk note, else the
- * note alone. Below the header the
- * page's profile layout renders, its blocks sharing the header's one
- * `entity` read (`EntityRecord`). Ending the client, from the notice or the
- * drawer, asks first (`EndClientDialog`); **Not about this client** rejects a
- * report's link to the client after the undo window. Every edit that lands
+ * and the entity's website; then the client's churn-risk note. Below the
+ * header the page's profile layout renders, its blocks sharing the header's
+ * one `entity` read (`EntityRecord`). Ending the client from the drawer asks
+ * first (`EndClientDialog`), listing the churn reports the client's status
+ * names; **Not about this client** rejects a report's link to the client
+ * after the undo window. Every edit that lands
  * re-reads the record. A refused record reads as a profile not available.
  *
  * @param {Object}                                                props
  * @param {string}                                                props.entityKey  The entity shown.
  * @param {boolean}                                               props.canTune    Whether to offer curation.
  * @param {Object}                                                props.vocabulary The ontology's closed lists.
- * @param {{name: string, heading: string}}                       props.operator   Who runs the deployment, whom the churn notice names.
  * @param {Object}                                                props.layout     What the page data answered for the profile's context.
  * @param {{label: string, onBack: () => void}}                   props.back       Names the view that opened the profile and returns to it.
  * @param {(target: Object, name: string) => void}                props.onWatch    Opens the watch form on a target.
@@ -293,7 +194,6 @@ export default function Entity( {
 	entityKey,
 	canTune,
 	vocabulary,
-	operator,
 	layout,
 	back,
 	onWatch,
@@ -382,15 +282,6 @@ export default function Entity( {
 			churn.refused,
 			churn.unrecorded && unrecordedText( churn.unrecorded )
 		);
-	// The heading takes focus once the churn notice the reader ended leaves.
-	const heading = useRef( null );
-	const ending = useRef( false );
-	useLayoutEffect( () => {
-		if ( ending.current && heading.current ) {
-			heading.current.focus();
-			ending.current = false;
-		}
-	} );
 
 	if ( record.error ) {
 		return (
@@ -432,7 +323,6 @@ export default function Entity( {
 							return (
 								<>
 									<Header
-										ref={ heading }
 										title={ entityName( entity ) }
 										actions={
 											<>
@@ -522,31 +412,7 @@ export default function Entity( {
 											</span>
 										) ) }
 									</p>
-									{ 0 < evidence.length &&
-									0 < churn.read.answer.clients.length ? (
-										<ChurnNotice
-											reports={ evidence }
-											operator={ operator.name }
-											note={ shownNote }
-											onEnd={
-												canTune ? ask( entity ) : null
-											}
-											onNotAbout={
-												canTune
-													? ( item ) =>
-															notAbout(
-																item.item_key,
-																[ item ],
-																entityName(
-																	entity
-																)
-															)
-													: null
-											}
-										/>
-									) : (
-										shownNote
-									) }
+									{ shownNote }
 									{ noting && (
 										<NoteForm
 											note={ note }
@@ -579,10 +445,7 @@ export default function Entity( {
 							day: shownDay( item.day ),
 							role: 'subject',
 						} ) ) }
-						onEnd={ () => {
-							ending.current = true;
-							churn.end();
-						} }
+						onEnd={ churn.end }
 						onNotAbout={
 							0 < evidence.length
 								? () => {

@@ -173,8 +173,6 @@ const DEFAULT_LAYOUT = {
 	actor: null,
 };
 
-const EMPTY_LAYOUT = { ...DEFAULT_LAYOUT, source: 'saved', blocks: [] };
-
 let wire;
 let viewport;
 let props;
@@ -235,7 +233,6 @@ function renderEntity( over = {} ) {
 			entityKey={ KEY }
 			canTune={ canTune }
 			vocabulary={ VOCABULARY }
-			operator={ { name: '', heading: '' } }
 			layout={ DEFAULT_LAYOUT }
 			back={ { label: 'Briefing', onBack: props.onBack } }
 			onWatch={ props.onWatch }
@@ -271,7 +268,6 @@ describe( 'Entity — header', () => {
 		expect(
 			within( row ).getByRole( 'button', { name: 'Profile actions' } )
 		).toBeInTheDocument();
-		expect( title ).toHaveAttribute( 'tabindex', '-1' );
 	} );
 
 	it( 'reads the client’s start year, and holds no key, state or proposed links', async () => {
@@ -436,33 +432,25 @@ describe( 'Entity — layout', () => {
 		await screen.findByRole( 'heading', { name: 'Facts' } );
 		expect( screen.queryByRole( 'navigation' ) ).toBeNull();
 	} );
-
-	it( 'keeps the churn notice when its layout holds no block', async () => {
-		wire.replies.entity = CHURNING;
-		renderEntity( { layout: EMPTY_LAYOUT } );
-		expect(
-			await screen.findByText( 'Possible churn' )
-		).toBeInTheDocument();
-		expect(
-			screen.queryByRole( 'navigation', { name: 'On this profile' } )
-		).toBeNull();
-	} );
 } );
 
 describe( 'Entity — churn', () => {
-	const notice = async () =>
-		( await screen.findByText( 'Possible churn' ) ).closest(
-			'.components-notice'
-		);
 	const dialog = () =>
 		screen.getByRole( 'dialog', {
 			name: 'End Harbor Ledger as a client?',
 		} );
+	const endDialog = () =>
+		screen.queryByRole( 'dialog', {
+			name: 'End Harbor Ledger as a client?',
+		} );
 	const openDialog = async () => {
 		fireEvent.click(
-			within( await notice() ).getByRole( 'button', {
-				name: 'End client…',
-			} )
+			within( await header() ).getByRole( 'button', { name: 'Edit' } )
+		);
+		fireEvent.click(
+			within(
+				await screen.findByRole( 'region', { name: 'Roles' } )
+			).getByRole( 'button', { name: 'End Client…' } )
 		);
 		return dialog();
 	};
@@ -477,53 +465,15 @@ describe( 'Entity — churn', () => {
 	const pause = () =>
 		act( () => new Promise( ( resolve ) => setTimeout( resolve, 300 ) ) );
 
-	it( 'names each churn report, leaving the operator out when there is none', async () => {
+	it( 'shows no churn notice, even while the client’s status names reports', async () => {
 		wire.replies.entity = CHURNING;
-		renderEntity( { canTune: true } );
-		const shown = await notice();
-		expect( shown ).toHaveClass( 'is-warning' );
-		expect( shown ).toHaveTextContent(
-			'“Harbor Ledger offboarding checklist” (Linear, 6 Nov) says this client is leaving.'
-		);
-		expect(
-			within( shown ).getByRole( 'link', { name: 'Open item' } )
-		).toHaveAttribute( 'href', REPORT.url );
-		expect(
-			within( shown ).getByRole( 'button', {
-				name: 'Not about this client',
-			} )
-		).toBeInTheDocument();
-	} );
-
-	it( 'names the operator the client is leaving when one is set', async () => {
-		wire.replies.entity = CHURNING;
-		renderEntity( {
-			canTune: true,
-			operator: { name: 'Lakeside Works', heading: 'Lakeside Works' },
-		} );
-		expect( await notice() ).toHaveTextContent(
-			'“Harbor Ledger offboarding checklist” (Linear, 6 Nov) says this client is leaving Lakeside Works.'
-		);
-	} );
-
-	it( 'shows a reader the notice with Open item alone', async () => {
-		wire.replies.entity = CHURNING;
-		renderEntity();
-		const shown = await notice();
-		expect(
-			within( shown ).getByRole( 'link', { name: 'Open item' } )
-		).toBeInTheDocument();
-		expect( within( shown ).queryByRole( 'button' ) ).toBeNull();
-	} );
-
-	it( 'renders no notice without churn_open', async () => {
-		wire.replies.entity = {
-			...RECORD,
-			status: { ...RECORD.status, churn_items: [ REPORT ] },
-		};
 		renderEntity( { canTune: true } );
 		await header();
+		await screen.findByRole( 'heading', { name: 'Facts' } );
 		expect( screen.queryByText( 'Possible churn' ) ).toBeNull();
+		expect(
+			screen.queryByText( /says this client is leaving/ )
+		).toBeNull();
 	} );
 
 	it( 'sends nothing when End client… is pressed', async () => {
@@ -544,7 +494,7 @@ describe( 'Entity — churn', () => {
 		wire.replies.assert_role = { ok: true, event_id: 'ev-former' };
 		renderEntity( { canTune: true } );
 		await endFromDialog();
-		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expect( endDialog() ).toBeNull();
 		await pause();
 		expect( wire.sent( 'end_role' ) ).toEqual( [
 			[ `--key=${ KEY }`, '--role=client' ],
@@ -610,30 +560,7 @@ describe( 'Entity — churn', () => {
 			await screen.findByText( `${ KEY } holds no open client role` )
 		).toBeInTheDocument();
 		expect( wire.sent( 'assert_role' ) ).toEqual( [] );
-		expect( await notice() ).toBeInTheDocument();
 		expect( snackbar() ).toBeNull();
-	} );
-
-	it( 'hides the notice from the end while a read still lists the client', async () => {
-		wire.replies.entity = CHURNING;
-		wire.replies.end_role = { ok: true, event_id: 'ev-end-6630' };
-		wire.replies.assert_role = { ok: true, event_id: 'ev-former-6630' };
-		renderEntity( { canTune: true } );
-		await endFromDialog();
-		expect( screen.queryByText( 'Possible churn' ) ).toBeNull();
-		await waitFor( () =>
-			expect( wire.sent( 'entity' ).length ).toBeGreaterThan( 1 )
-		);
-		expect( screen.queryByText( 'Possible churn' ) ).toBeNull();
-	} );
-
-	it( 'moves focus to the heading when the notice leaves', async () => {
-		wire.replies.entity = CHURNING;
-		renderEntity( { canTune: true } );
-		await endFromDialog();
-		expect( document.activeElement ).toBe(
-			screen.getByRole( 'heading', { name: 'Harbor Ledger' } )
-		);
 	} );
 
 	describe( 'not about this client', () => {
@@ -679,8 +606,7 @@ describe( 'Entity — churn', () => {
 					name: 'Not about this client',
 				} )
 			);
-			expect( screen.queryByRole( 'dialog' ) ).toBeNull();
-			expect( screen.queryByText( 'Possible churn' ) ).toBeNull();
+			expect( endDialog() ).toBeNull();
 			expect(
 				snackbar().querySelector( '.components-snackbar__content' )
 					.firstChild
@@ -693,18 +619,17 @@ describe( 'Entity — churn', () => {
 			expect( wire.sent( 'end_role' ) ).toEqual( [] );
 		} );
 
-		it( 'puts the report back on Undo and sends nothing', async () => {
+		it( 'sends nothing once Undo takes it back', async () => {
 			wire.replies.entity = CHURNING;
 			renderEntity( { canTune: true } );
-			const shown = await notice();
+			const asked = await openDialog();
 			fakeUndoClock();
 			fireEvent.click(
-				within( shown ).getByRole( 'button', {
+				within( asked ).getByRole( 'button', {
 					name: 'Not about this client',
 				} )
 			);
 			fireEvent.click( screen.getByRole( 'button', { name: 'Undo' } ) );
-			expect( screen.getByText( 'Possible churn' ) ).toBeInTheDocument();
 			await elapse( UNDO_MS );
 			expect( wire.sent( 'reject_link' ) ).toEqual( [] );
 		} );
@@ -727,16 +652,14 @@ describe( 'Entity — churn-risk note', () => {
 		).toBeNull();
 	} );
 
-	it( 'shows the note inside the churn notice when one stands', async () => {
+	it( 'shows the note alone while the client’s status names churn reports', async () => {
 		wire.replies.entity = {
 			...CHURNING,
 			status: { ...CHURNING.status, churn_note: NOTE },
 		};
 		renderEntity();
-		const shown = ( await screen.findByText( 'Possible churn' ) ).closest(
-			'.components-notice'
-		);
-		expect( within( shown ).getByText( SAID ) ).toBeInTheDocument();
+		expect( await screen.findByText( SAID ) ).toBeInTheDocument();
+		expect( screen.queryByText( 'Possible churn' ) ).toBeNull();
 	} );
 
 	it( 'lets a curator edit the note, sending note_churn and reading the profile again', async () => {

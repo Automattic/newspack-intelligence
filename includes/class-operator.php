@@ -74,21 +74,4 @@ final class Operator {
 	public function spelled( string $template ): string {
 		return \strtr( $template, [ '{operator}' => $this->name ] + ( \str_contains( $template, '{tracks}' ) ? [ '{tracks}' => $this->tracks ] : [] ) );
 	}
-
-	/**
-	 * What the Intelligence page shows: a configured name as given, its
-	 * heading the same, and the generic one translated, its heading
-	 * capitalized.
-	 *
-	 * @return array{name:string,heading:string}
-	 */
-	public function shown(): array {
-		return $this->named ? [
-			'name'    => $this->name,
-			'heading' => $this->name,
-		] : [
-			'name'    => \__( 'the organization', 'newspack-intelligence' ),
-			'heading' => \__( 'The organization', 'newspack-intelligence' ),
-		];
-	}
 }

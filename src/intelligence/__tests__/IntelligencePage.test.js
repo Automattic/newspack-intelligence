@@ -136,10 +136,6 @@ function renderPage(
 			canTune={ canTune }
 			canManage={ canManage }
 			userId="6143"
-			operator={ {
-				name: 'Quillmere Cooperative',
-				heading: 'Quillmere Cooperative',
-			} }
 			vocabulary={ VOCABULARY }
 			compositions={ compositions }
 			askDefaults={ ASK_DEFAULTS }
@@ -768,40 +764,6 @@ describe( 'IntelligencePage', () => {
 		expect(
 			screen.getByRole( 'link', { name: ITEM.title } )
 		).toBeVisible();
-	} );
-
-	it( 'names the operator in an entity’s churn notice', async () => {
-		const now = jest
-			.spyOn( Core, 'now' )
-			.mockReturnValue( Date.UTC( 2026, 10, 10 ) / 1000 );
-		wire.replies.entity = {
-			...ENTITY,
-			status: {
-				...ENTITY.status,
-				churn_open: true,
-				churn_items: [
-					{
-						item_key: 'linear:acme-offboard',
-						title: 'Acme Quillsheet offboarding checklist',
-						url: 'https://tracker.example/acme-offboard',
-						source: 'linear',
-						day: '2026-10-06',
-					},
-				],
-				churn_note: null,
-			},
-		};
-		renderPage( true );
-		await openWeek();
-		fireEvent.click(
-			await screen.findByRole( 'button', { name: 'Acme Quillsheet' } )
-		);
-		expect(
-			await screen.findByText(
-				'“Acme Quillsheet offboarding checklist” (Tracker, 6 Oct) says this client is leaving Quillmere Cooperative.'
-			)
-		).toBeInTheDocument();
-		now.mockRestore();
 	} );
 
 	it( 'opens one profile from another, and Back returns to the chip that opened the first', async () => {

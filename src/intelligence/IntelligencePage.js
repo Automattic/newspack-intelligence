@@ -109,7 +109,6 @@ const defaultView = () => ( linkedWatch() ? 'watches' : 'briefing' );
  * @param {boolean} props.canTune      Whether the caller may curate.
  * @param {boolean} props.canManage    Whether the caller is an operator.
  * @param {string}  props.userId       The reader, whose last look the page holds for the session.
- * @param {Object}  props.operator     Who runs the deployment, `{ name, heading }`, whom the copy names.
  * @param {Object}  props.vocabulary   The ontology's closed lists.
  * @param {Object}  props.compositions Context => the layout its page reads, or its refusal.
  * @param {Object}  props.askDefaults  The ask block's declared defaults, Search's Ask box copy.
@@ -119,7 +118,6 @@ export default function IntelligencePage( {
 	canTune,
 	canManage,
 	userId,
-	operator,
 	vocabulary,
 	compositions,
 	askDefaults,
@@ -341,7 +339,6 @@ export default function IntelligencePage( {
 											entityKey={ profile.key }
 											canTune={ canTune }
 											vocabulary={ vocabulary }
-											operator={ operator }
 											layout={
 												layouts[
 													layoutContext( 'entity' )

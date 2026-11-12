@@ -1,7 +1,7 @@
 /* eslint-env jest */
 /**
  * The bundle entry mounts IntelligencePage on its admin page's mount point,
- * handing it the curation and operator flags, the reader's user id and the
+ * handing it the curation and manage flags, the reader's user id and the
  * vocabulary PHP localized. `wp_localize_script()` casts a top-level scalar to a string, so
  * each flag arrives as `'1'` for a reader holding its role and `''` for
  * anyone else.
@@ -31,10 +31,6 @@ describe( 'intelligence index', () => {
 			canTune: '1',
 			canManage: '1',
 			userId: '6143',
-			operator: {
-				name: 'Quillmere Cooperative',
-				heading: 'Quillmere Cooperative',
-			},
 			vocabulary: { roles: [ 'funder' ] },
 			compositions: {
 				'newspack-intelligence/lens': {
@@ -60,10 +56,6 @@ describe( 'intelligence index', () => {
 			canTune: true,
 			canManage: true,
 			userId: '6143',
-			operator: {
-				name: 'Quillmere Cooperative',
-				heading: 'Quillmere Cooperative',
-			},
 			vocabulary: { roles: [ 'funder' ] },
 			compositions: {
 				'newspack-intelligence/lens': {

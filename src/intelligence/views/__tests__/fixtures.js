@@ -132,7 +132,7 @@ export const VOCABULARY = {
 /**
  * What the page is localized with, as the suites install it on `window`: the
  * substrate's REST base and nonce, the vocabulary, its words replaced by
- * any `words` given, map by map, and no operator.
+ * any `words` given, map by map.
  *
  * @param {Object} [words] Word maps that replace the fixture maps of their names.
  * @return {Object} The page data.
@@ -140,7 +140,6 @@ export const VOCABULARY = {
 export const pageData = ( words = {} ) => ( {
 	restUrl: '/wp-json/',
 	nonce: 'NONCE',
-	operatorName: '',
 	vocabulary: { ...VOCABULARY, ...words },
 	compositions: { ...COMPOSITIONS },
 } );

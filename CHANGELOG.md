@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **A client profile's "Possible churn" notice.** The churn labels have no track record yet, so a profile no longer warns that a client may be leaving; the client's churn-risk note shows on its own. Ending a client from the Edit drawer still lists the churn reports, with **Not about this client**. The page data's `operator` and `operatorName`, which only the notice read, and `Operator::shown()` go with it.
 - **A profile's jump links.** The row of links under a profile's header (Activity, Related, Facts, Details) is gone, with the jump scopes that gave each heading an id by its place; a block's heading takes an id of its own.
 
 ### Fixed

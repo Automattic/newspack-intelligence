@@ -438,7 +438,6 @@ final class IntelligencePageTest extends TestCase {
 	public function test_unnamed_operator_words(): void {
 		$vocabulary = $this->vocabulary();
 
-		$this->assertSame( '', $this->localized( 'newspack-intelligence' )['operatorName'] );
 		$this->assertSame( 'Leaving', $vocabulary['kindWords']['churned'] );
 		$this->assertSame( 'Own product', $vocabulary['roleWords']['operator_product'] );
 	}
@@ -449,7 +448,6 @@ final class IntelligencePageTest extends TestCase {
 
 		$vocabulary = $this->vocabulary();
 
-		$this->assertSame( 'Lakeside Works', $this->localized( 'newspack-intelligence' )['operatorName'] );
 		$this->assertSame( 'Leaving Lakeside Works', $vocabulary['kindWords']['churned'] );
 		$this->assertSame( 'Lakeside Works product', $vocabulary['roleWords']['operator_product'] );
 	}
@@ -497,12 +495,12 @@ final class IntelligencePageTest extends TestCase {
 		Bootstrap::forget_node_tables();
 	}
 
-	/** The page names the operator the running topology's LLM_Call node names, else generic wording. */
-	public function test_page_localizes_the_operator(): void {
+	/** The page's words name the operator the running topology's LLM_Call node names, else read generic. */
+	public function test_page_words_the_operator(): void {
 		Capabilities::$session_scope = Capabilities::READ;
 		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];
 		enqueue_intelligence_assets( self::PAGE_HOOK );
-		$this->assertSame( [ 'name' => 'the organization', 'heading' => 'The organization' ], $this->localized( 'newspack-intelligence' )['operator'], 'no topology runs' );
+		$this->assertSame( 'Own product', $this->localized( 'newspack-intelligence' )['vocabulary']['roleWords']['operator_product'], 'no topology runs' );
 
 		$dir = $this->make_temp_dir( 'intel-page-topologies-' );
 		\file_put_contents( "{$dir}/heron-page.tsl", "make_node Intel_Event_Writer intel:writer intel:items intel:ontology intel:watches intel:asks\nmake_node LLM_Call intel:llm ai-relay-4417\ncmd intel:llm:config set_operator \"Quillmere Cooperative\"\nsecure\n" );
@@ -513,9 +511,7 @@ final class IntelligencePageTest extends TestCase {
 		Bootstrap::forget_node_tables();
 		enqueue_intelligence_assets( self::PAGE_HOOK );
 
-		$data = $this->localized( 'newspack-intelligence' );
-		$this->assertSame( [ 'name' => 'Quillmere Cooperative', 'heading' => 'Quillmere Cooperative' ], $data['operator'] );
-		$this->assertSame( 'Quillmere Cooperative product', $data['vocabulary']['roleWords']['operator_product'] );
+		$this->assertSame( 'Quillmere Cooperative product', $this->localized( 'newspack-intelligence' )['vocabulary']['roleWords']['operator_product'] );
 	}
 
 	/**
@@ -540,7 +536,7 @@ final class IntelligencePageTest extends TestCase {
 
 		enqueue_intelligence_assets( self::PAGE_HOOK );
 
-		$this->assertSame( [ 'name' => 'the organization', 'heading' => 'The organization' ], $this->localized( 'newspack-intelligence' )['operator'] );
+		$this->assertSame( 'Own product', $this->localized( 'newspack-intelligence' )['vocabulary']['roleWords']['operator_product'] );
 		try {
 			Intelligence_Health::answer( [ 'what' => 'extraction' ] );
 			$this->fail( 'the health strip answered past a line that will not read' );

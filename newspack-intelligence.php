@@ -62,10 +62,9 @@ function register_intelligence_admin_page(): void {
  * Enqueue the Intelligence bundle on its own admin page, telling it the
  * plugin version the shared header stamps, whether to render curation
  * controls, the reader's user id, which keys what the page keeps in the
- * browser, the operator the running topology names (`Operator::configured()`),
- * which the page's copy names, as `operatorName` the name it configures, ''
- * for none, and the vocabulary: the closed lists those controls offer and
- * the word each key is shown as (`screen_words()`), as `compositions`
+ * browser, and the vocabulary: the closed lists those controls offer and
+ * the word each key is shown as (`screen_words()`), worded for the operator
+ * the running topology names (`Operator::configured()`), as `compositions`
  * the layout each composed page reads (`Composition_Store::page_data()`),
  * and as `askDefaults` the ask block's declared defaults, Search's Ask box.
  * A load naming one of those pages as `edit` loads the layout editor for it
@@ -96,8 +95,6 @@ function enqueue_intelligence_assets( string $hook ): void {
 				'canTune'      => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::TUNE ) ? '1' : '',
 				'canManage'    => \Newspack_Nodes\Capabilities::can( \Newspack_Nodes\Capabilities::MANAGE ) ? '1' : '',
 				'userId'       => (string) \get_current_user_id(),
-				'operator'     => $operator->shown(),
-				'operatorName' => $operator->named ? $operator->name : '',
 				'vocabulary'   => [
 					'roles'           => Intel_Event::ROLES,
 					'nameKinds'       => Intel_Event::NAME_KINDS,
