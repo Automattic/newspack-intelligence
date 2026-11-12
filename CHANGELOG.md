@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An item's entity pills stand 4px below its "Show more" and "Why this ranks", so the first pill no longer paints over the bottom of the focus ring on the link above it.
 - A source that has never been given its credential, such as Slack before its bot token is in the Vault, reads "Not set up" in the health strip, neutral beside an operator's "Add credential", rather than "Stopped": it no longer turns the header's dot yellow, takes over the header's line, or counts among the sources collecting. A source that collected and then lost its credential still reads "Stopped" as a fault, since the `health sources` slice now answers its `last_ok_at` beside the missing credential.
 
 ## [0.43.1] - 2026-11-12

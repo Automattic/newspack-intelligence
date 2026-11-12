@@ -567,6 +567,11 @@
 	+ .newspack-intelligence__more {
 		margin-inline-start: base.$space-md;
 	}
+
+	// The pills below stand clear of the focus ring, or one paints over it.
+	~ .newspack-intelligence__chips {
+		margin-block-start: base.$space-xs;
+	}
 }
 
 // Exclude takes the shared text-button role; here it only keeps one line.
