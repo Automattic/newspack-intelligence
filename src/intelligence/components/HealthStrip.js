@@ -555,6 +555,33 @@ function idleText( { credential, reason } ) {
 	);
 }
 
+/**
+ * Whether an idle source waits on a credential rather than a reason it names.
+ *
+ * @param {Object}  source              The source's row.
+ * @param {?Object} [source.credential] The entry it lacks.
+ * @param {?string} [source.reason]     Why it cannot fetch.
+ * @return {boolean} Whether it does.
+ */
+const wantsCredential = ( { credential, reason } ) =>
+	Boolean( credential || ! reason );
+
+/**
+ * The Vault link an idle source waiting on a credential offers.
+ *
+ * @param {Object} source The source's row.
+ * @param {Object} ctx    The roles the fix reads.
+ * @return {?import('react').ReactElement|false} The fix.
+ */
+const credentialFix = ( source, ctx ) =>
+	wantsCredential( source ) && (
+		<VaultFix
+			can={ ctx.canManage }
+			label={ __( 'Add credential', 'newspack-intelligence' ) }
+			action={ __( 'add its credential', 'newspack-intelligence' ) }
+		/>
+	);
+
 /** A row whose health is not known, the base of every unknown state. */
 const UNKNOWN = {
 	word: __( 'Unknown', 'newspack-intelligence' ),
@@ -721,20 +748,13 @@ const STATES = {
 			tone: 'is-warning',
 			fault: true,
 			text: idleText,
-			fix: ( { credential, reason }, ctx ) =>
-				( credential || ! reason ) && (
-					<VaultFix
-						can={ ctx.canManage }
-						label={ __(
-							'Add credential',
-							'newspack-intelligence'
-						) }
-						action={ __(
-							'add its credential',
-							'newspack-intelligence'
-						) }
-					/>
-				),
+			fix: credentialFix,
+		},
+		unset: {
+			word: __( 'Not set up', 'newspack-intelligence' ),
+			tone: 'is-neutral',
+			text: idleText,
+			fix: credentialFix,
 		},
 		unknown: {
 			...UNKNOWN,
@@ -1029,14 +1049,23 @@ const extractionState = ( { mode, failing_since: since } ) =>
 	'call' === mode && since ? 'failing' : mode;
 
 /**
- * A source's state: its own, or `partial` while it answers with a failed
- * share at `FAILING_SHARE` or above.
+ * A source's state: its own; `partial` while it answers with a failed share
+ * at `FAILING_SHARE` or above; or `unset` while it waits on a credential it
+ * has never collected with.
  *
- * @param {{state: string, failed?: number, requests?: number}} source The source's row.
+ * @param {{state: string, failed?: number, requests?: number, last_ok_at?: ?number, credential?: ?Object, reason?: ?string}} source The source's row.
  * @return {string} The state.
  */
-const sourceState = ( source ) =>
-	'ok' === source.state && failingShare( source ) ? 'partial' : source.state;
+function sourceState( source ) {
+	if ( 'ok' === source.state && failingShare( source ) ) {
+		return 'partial';
+	}
+	return 'idle' === source.state &&
+		! source.last_ok_at &&
+		wantsCredential( source )
+		? 'unset'
+		: source.state;
+}
 
 /**
  * The backlog's state: its reason, or `behind_long` once the projector has
@@ -1268,7 +1297,11 @@ function healthLine( { faults, rows, reads, collection, sources } ) {
 	const waiting = rows.find( ( row ) => 'backlog' === row.key );
 	const calls = rows.find( ( row ) => 'calls' === row.key );
 	return [
-		collectingText( sources.sources.length, unreported ),
+		collectingText(
+			sources.sources.filter( ( one ) => 'unset' !== sourceState( one ) )
+				.length,
+			unreported
+		),
 		waiting.idle && calls ? '' : waiting.text,
 		calls?.text,
 	]

@@ -252,7 +252,8 @@ final class IntelligenceHealthTest extends TestCase {
 	/**
 	 * With no entry of its group on the origin it fetches, a credentialed
 	 * source is idle and names the url and group it needs; the Vault wins
-	 * over a snapshot that still says ok.
+	 * over a snapshot that still says ok, whose last answer it keeps, so a
+	 * source that lost its credential reads apart from one never given one.
 	 */
 	public function test_source_without_vault_entry_is_idle_with_credential(): void {
 		$this->collect( 'make_node Linear_Source kestrel-linear internal linear-t7' );
@@ -266,11 +267,19 @@ final class IntelligenceHealthTest extends TestCase {
 					'class'      => 'Linear_Source',
 					'tier'       => 'internal',
 					'state'      => 'idle',
+					'last_ok_at' => 1792490111,
 					'credential' => [ 'url' => 'https://api.linear.app/graphql', 'group' => 'linear-t7' ],
 				],
 			],
 			$this->ci->dispatch( 'health', [ 'sources' ] )['sources']
 		);
+	}
+
+	/** A credentialed source that never published a snapshot has no last answer. */
+	public function test_source_never_given_a_credential_has_no_last_answer(): void {
+		$this->collect( 'make_node Linear_Source plover-linear internal linear-q2' );
+
+		$this->assertNull( $this->ci->dispatch( 'health', [ 'sources' ] )['sources'][0]['last_ok_at'] );
 	}
 
 	/** A source needing no credential, or one its group lends, answers its published snapshot. */
@@ -619,7 +628,7 @@ final class IntelligenceHealthTest extends TestCase {
 
 		$this->assertSame(
 			[
-				[ 'name' => 'kestrel-linear', 'class' => 'Linear_Source', 'tier' => 'internal', 'state' => 'idle' ],
+				[ 'name' => 'kestrel-linear', 'class' => 'Linear_Source', 'tier' => 'internal', 'state' => 'idle', 'last_ok_at' => null ],
 				[ 'name' => 'grebe-feed', 'class' => 'Feed_Source', 'tier' => 'public', 'state' => 'failing', 'last_ok_at' => 1792470021, 'failing_since' => 1792481234, 'failed' => 3, 'requests' => 5 ],
 				[ 'name' => 'cormorant-linear', 'class' => 'Context_A8C_Linear', 'tier' => 'internal', 'state' => 'idle', 'reason' => 'not signed in to ContextA8C: the refresh was refused (HTTP 400); sign in to ContextA8C again on the host' ],
 			],

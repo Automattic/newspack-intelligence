@@ -660,12 +660,64 @@ describe( 'HealthStrip', () => {
 		).toBeNull();
 	} );
 
+	it( 'lists a source never given a credential as not set up, neither a fault nor counted as collecting', async () => {
+		const collecting = health.sources.sources.length;
+		health.sources.sources.push( {
+			name: 'slack',
+			class: 'Slack_Source',
+			tier: 'internal',
+			state: 'idle',
+			last_ok_at: null,
+			credential: {
+				url: 'https://slack.example/api/',
+				group: 'chat-keys-5521',
+			},
+		} );
+		renderStrip( true );
+		await waitFor( () =>
+			expect( line().textContent ).toMatch(
+				new RegExp( `^Collecting from ${ collecting } sources\\.` )
+			)
+		);
+		expect( within( row( 'Chat' ) ).getByText( 'Not set up' ) ).toHaveClass(
+			'is-neutral'
+		);
+		expect(
+			within( row( 'Chat' ) ).getByText(
+				'No Vault entry for https://slack.example/api/ in group chat-keys-5521.'
+			)
+		).toBeInTheDocument();
+		expect(
+			within( row( 'Chat' ) ).getByRole( 'link', {
+				name: 'Add credential',
+			} )
+		).toHaveAttribute( 'href', VAULT );
+	} );
+
+	it( 'lists a redacted source never given a credential as not set up', async () => {
+		health.sources.sources.push( {
+			name: 'slack',
+			class: 'Slack_Source',
+			tier: 'internal',
+			state: 'idle',
+			last_ok_at: null,
+		} );
+		renderStrip();
+		await waitFor( () =>
+			expect(
+				within( row( 'Chat' ) ).getByText( 'Not set up' )
+			).toHaveClass( 'is-neutral' )
+		);
+		expect( line().textContent ).not.toMatch( /credential/ );
+	} );
+
 	it( 'offers Add credential on an idle source, linking the Vault tab', async () => {
 		health.sources.sources.push( {
 			name: 'unthread',
 			class: 'Unthread_Source',
 			tier: 'restricted',
 			state: 'idle',
+			last_ok_at: SINCE,
 			credential: {
 				url: 'https://api.unthread.io',
 				group: 'unthread-desk',
@@ -695,6 +747,7 @@ describe( 'HealthStrip', () => {
 			class: 'Linear_Source',
 			tier: 'internal',
 			state: 'idle',
+			last_ok_at: SINCE,
 		} );
 		renderStrip();
 		await waitFor( () =>
@@ -1127,6 +1180,7 @@ describe( 'HealthStrip', () => {
 			class: 'Linear_Source',
 			tier: 'internal',
 			state: 'idle',
+			last_ok_at: SINCE,
 			credential: {
 				url: 'https://api.linear.app/graphql',
 				group: 'linear',

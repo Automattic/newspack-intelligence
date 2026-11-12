@@ -210,7 +210,8 @@ final class Intelligence_Health {
 				continue;
 			}
 			$name   = Core::as_string( $node['name'] );
-			$status = self::idle( $class, Core::as_string( Worker_Route::line( $class, $node )['vault_group'] ?? '' ), $lent ) ?? Source_Node::read_status( $name, self::PARTITION ) ?? [ 'state' => 'unknown' ];
+			$snapshot = Source_Node::read_status( $name, self::PARTITION );
+			$status   = self::idle( $class, Core::as_string( Worker_Route::line( $class, $node )['vault_group'] ?? '' ), $lent, $snapshot ) ?? $snapshot ?? [ 'state' => 'unknown' ];
 			foreach ( Core::arr( $status['dead_clients'] ?? null ) as $domain => $since ) {
 				$dead[ (string) $domain ] = \min( Core::as_int( $since ), $dead[ (string) $domain ] ?? \PHP_INT_MAX );
 			}
@@ -272,21 +273,25 @@ final class Intelligence_Health {
 
 	/**
 	 * A credentialed source's idle row when its group lends nothing on the
-	 * url it fetches; null when it needs no credential or one is lent. The
-	 * Vault is asked once per group and url, its answer kept in `$lent`.
+	 * url it fetches, keeping its snapshot's last answer, null when it never
+	 * answered; null when it needs no credential or one is lent. The Vault is
+	 * asked once per group and url, its answer kept in `$lent`.
 	 *
-	 * @param class-string<Source_Node>           $class The source's class.
-	 * @param string                              $group Its vault group, '' for none.
-	 * @param array<string,array<string,bool>>    $lent  Whether each group lends on each url, as asked so far.
-	 * @return array{state:string,credential:array{url:string,group:string}}|null
+	 * @param class-string<Source_Node>           $class    The source's class.
+	 * @param string                              $group    Its vault group, '' for none.
+	 * @param array<string,array<string,bool>>    $lent     Whether each group lends on each url, as asked so far.
+	 * @param array<array-key,mixed>|null         $snapshot What the source last published, null for nothing.
+	 * @return array{state:string,last_ok_at:?int,credential:array{url:string,group:string}}|null
 	 */
-	private static function idle( string $class, string $group, array &$lent ): ?array {
+	private static function idle( string $class, string $group, array &$lent, ?array $snapshot ): ?array {
 		$url = $class::credential_url();
 		if ( '' === $url || ( $lent[ $group ][ $url ] ??= Curl_Node::lends_credential( $group, $url ) ) ) {
 			return null;
 		}
+		$last = $snapshot['last_ok_at'] ?? null;
 		return [
 			'state'      => 'idle',
+			'last_ok_at' => null === $last ? null : Core::as_int( $last ),
 			'credential' => [
 				'url'   => $url,
 				'group' => $group,
