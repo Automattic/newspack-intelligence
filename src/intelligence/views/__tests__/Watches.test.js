@@ -742,6 +742,27 @@ describe( 'Watches', () => {
 		).toHaveTextContent( 'Paywall watch saved.' );
 	} );
 
+	it( 'closes the form on Escape pressed in the client picker once its list is closed', async () => {
+		renderOnPage( <Harness /> );
+		await screen.findByRole( 'button', { name: 'Acme complaints' } );
+		fireEvent.click(
+			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
+		);
+		fireEvent.click(
+			within( form() ).getByRole( 'radio', {
+				name: 'A client or company',
+			} )
+		);
+		const box = within( form() ).getByRole( 'combobox', {
+			name: 'Client or company',
+		} );
+
+		fireEvent.keyDown( box, { key: 'Escape', code: 'Escape' } );
+
+		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expect( wire.sent( 'save_watch' ) ).toEqual( [] );
+	} );
+
 	it( 'follows a client or company picked by name', async () => {
 		wire.replies.save_watch = {
 			ok: true,
@@ -777,6 +798,57 @@ describe( 'Watches', () => {
 				[
 					'--name=Prairie watch',
 					'--entity=organization:prairie-signal',
+					'--digest=false',
+					'--instant=false',
+					'--inbox=true',
+				],
+			] )
+		);
+	} );
+
+	it( 'follows the one of two clients sharing a name picked by its key', async () => {
+		wire.replies.save_watch = {
+			ok: true,
+			event_id: 'ev-w8',
+			watch_key: 'signal-watch',
+		};
+		wire.replies.names = {
+			entities: [
+				{
+					entity_key: 'organization:prairie-signal-north',
+					name: 'Prairie Signal',
+				},
+				{
+					entity_key: 'organization:prairie-signal-south',
+					name: 'Prairie Signal',
+				},
+			],
+			available: true,
+		};
+		renderOnPage( <Harness /> );
+		await screen.findByRole( 'button', { name: 'Acme complaints' } );
+		fireEvent.click(
+			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
+		);
+		type( 'Name', 'Southern signal' );
+		fireEvent.click(
+			within( form() ).getByRole( 'radio', {
+				name: 'A client or company',
+			} )
+		);
+		await pick(
+			'Client or company',
+			'Prairie',
+			'Prairie Signal (organization:prairie-signal-south)'
+		);
+		fireEvent.click(
+			within( form() ).getByRole( 'button', { name: 'Save watch' } )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'save_watch' ) ).toEqual( [
+				[
+					'--name=Southern signal',
+					'--entity=organization:prairie-signal-south',
 					'--digest=false',
 					'--instant=false',
 					'--inbox=true',

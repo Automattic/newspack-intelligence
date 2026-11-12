@@ -36,6 +36,22 @@ import { pageData } from './fixtures';
 
 jest.mock( '@wordpress/a11y', () => ( { speak: jest.fn() } ) );
 
+// The last props each list took, so a test moves its view as DataViews may.
+const mockList = { props: null, renders: 0 };
+jest.mock( '@newspack-nodes/shared/components/DataViewsList', () => {
+	const { default: List } = jest.requireActual(
+		'@newspack-nodes/shared/components/DataViewsList'
+	);
+	return {
+		__esModule: true,
+		default: ( props ) => {
+			mockList.props = props;
+			mockList.renders += 1;
+			return require( 'react' ).createElement( List, props );
+		},
+	};
+} );
+
 const LINK = {
 	item_key: 'github:example/plugin#912',
 	entity_key: 'organization:acme-quillsheet',
@@ -48,6 +64,7 @@ const LINK = {
 		'Readers of **Acme Quillsheet** flagged the [paywall](https://github.example/912) bug twice.',
 	title: 'Paywall bug reported by Acme',
 	url: 'https://github.example/example/plugin/912',
+	item_links: 2,
 };
 
 const SIBLING = {
@@ -110,12 +127,12 @@ beforeEach( () => {
 } );
 
 /**
- * Render `ui` on a page reading the review queue, as an open Review does.
+ * Render `ui` on a page, which asks no review count while Review is open.
  *
  * @param {import('react').ReactElement} ui What to render.
  * @return {import('@testing-library/react').RenderResult} The render.
  */
-const renderOnPage = ( ui ) => onPage( ui, { review: true } );
+const renderOnPage = ( ui ) => onPage( ui );
 
 function renderReview( props = {} ) {
 	return renderOnPage(
@@ -212,6 +229,30 @@ const rememberHealth = async () => {
  */
 const rowOf = ( element ) => element.closest( '[data-review-row]' );
 
+/**
+ * Hold that the row naming an entity stands judged: greyed, out of the
+ * review keys' reach, its answers gone and its verdict in words.
+ *
+ * @param {string}      name        The entity's name, as its chip reads.
+ * @param {string}      words       The verdict.
+ * @param {HTMLElement} [container] Where the row stands.
+ * @return {HTMLElement} The row.
+ */
+function judgedAs( name, words, container = document.body ) {
+	const row = within( container )
+		.getByRole( 'button', { name } )
+		.closest( '[data-review-key]' );
+	expect( row ).toHaveClass( 'is-muted' );
+	expect( row ).not.toHaveAttribute( 'data-review-row' );
+	expect( row ).toHaveTextContent( words );
+	expect(
+		within( row ).queryAllByRole( 'button', {
+			name: /^(Confirm|Reject|Accept) /,
+		} )
+	).toEqual( [] );
+	return row;
+}
+
 describe( 'Review — queues', () => {
 	it( 'says what the queues are for and counts each tab by its total', async () => {
 		renderReview();
@@ -230,7 +271,10 @@ describe( 'Review — queues', () => {
 			await screen.findByRole( 'tab', { name: 'Similar themes 12' } )
 		).toBeInTheDocument();
 		expect( wire.sent( 'review' ) ).toEqual(
-			expect.arrayContaining( [ [ 'links' ], [ 'entities' ] ] )
+			expect.arrayContaining( [
+				[ 'links', '--limit=50' ],
+				[ 'entities', '--limit=50' ],
+			] )
 		);
 		expect( wire.sent( 'theme_suggestions' ) ).toEqual( [ [] ] );
 	} );
@@ -253,7 +297,7 @@ describe( 'Review — queues', () => {
 		).toBeNull();
 	} );
 
-	it( 'counts a judged row out of its tab at once', async () => {
+	it( 'counts each tab by the total its read answers, judged rows still in it until a read drops them', async () => {
 		wire.replies.reject_link = never;
 		renderReview( { canTune: true } );
 		fireEvent.click(
@@ -261,9 +305,14 @@ describe( 'Review — queues', () => {
 				name: 'Reject Acme Quillsheet',
 			} )
 		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Reject Valley Ledger' } )
+		);
 		expect(
-			screen.getByRole( 'tab', { name: 'Suggested matches 40' } )
+			screen.getByRole( 'tab', { name: 'Suggested matches 41' } )
 		).toBeInTheDocument();
+		judgedAs( 'Acme Quillsheet', 'Rejected.' );
+		judgedAs( 'Valley Ledger', 'Rejected.' );
 	} );
 
 	it( 'says each queue is empty, or that the graph is unavailable', async () => {
@@ -316,6 +365,88 @@ describe( 'Review — rows', () => {
 				)
 			).getByText( 'Headlined by its exact name, exact match.' )
 		).toHaveClass( 'is-muted' );
+	} );
+
+	it( 'says how many of an item’s matches wait beyond those the queue lists, judged ones still listed', async () => {
+		wire.replies.reject_link = never;
+		wire.replies.review = ( [ what ] ) =>
+			'links' === what
+				? {
+						links: [
+							{ ...LINK, item_links: 7 },
+							{ ...SIBLING, item_links: 7 },
+						],
+						total: TOTALS.links,
+						available: true,
+				  }
+				: { entities: [], total: 0, available: true };
+		renderReview( { canTune: true } );
+		const links = queue( 'Suggested matches' );
+		expect(
+			await within( links ).findByText(
+				'5 more matches wait beyond these.'
+			)
+		).toHaveClass( 'is-muted' );
+		fireEvent.click(
+			within( links ).getByRole( 'button', {
+				name: `Reject ${ LINK.name }`,
+			} )
+		);
+		expect(
+			within( links ).getByText( '5 more matches wait beyond these.' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'keeps a fully judged item, its judged links and how many more wait, until a read drops it', async () => {
+		wire.replies.reject_link = never;
+		wire.replies.review = ( [ what ] ) =>
+			'links' === what
+				? {
+						links: [
+							{ ...LINK, item_links: 7 },
+							{ ...SIBLING, item_links: 7 },
+						],
+						total: TOTALS.links,
+						available: true,
+				  }
+				: { entities: [], total: 0, available: true };
+		renderReview( { canTune: true } );
+		const links = queue( 'Suggested matches' );
+		for ( const link of [ LINK, SIBLING ] ) {
+			fireEvent.click(
+				await within( links ).findByRole( 'button', {
+					name: `Reject ${ link.name }`,
+				} )
+			);
+		}
+		expect(
+			screen.getByRole( 'tab', { name: 'Suggested matches 41' } )
+		).toBeInTheDocument();
+		expect(
+			within( links ).getByRole( 'link', { name: LINK.title } )
+		).toBeInTheDocument();
+		expect(
+			within( links ).getByText( '5 more matches wait beyond these.' )
+		).toBeInTheDocument();
+	} );
+
+	it( 'says nothing waits beyond an item whose matches are all listed', async () => {
+		wire.replies.review = ( [ what ] ) => ( {
+			[ what ]:
+				'links' === what
+					? [
+							{ ...LINK, item_links: 2 },
+							{ ...SIBLING, item_links: 2 },
+					  ]
+					: [],
+			total: 1,
+			available: true,
+		} );
+		renderReview();
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		expect( screen.queryByText( /more match/ ) ).toBeNull();
 	} );
 
 	it( "names a proposed entity with its type's word, never its key", async () => {
@@ -425,7 +556,7 @@ describe( 'Review — evidence', () => {
 		wire.replies.review = ( [ what ] ) =>
 			'links' === what
 				? {
-						links: [ { ...LINK, evidence } ],
+						links: [ { ...LINK, evidence, item_links: 1 } ],
 						total: 1,
 						available: true,
 				  }
@@ -443,7 +574,11 @@ describe( 'Review — evidence', () => {
 
 describe( 'Review — judgments', () => {
 	const linksRead = () =>
-		wire.sent( 'review' ).filter( ( [ w ] ) => 'links' === w );
+		wire
+			.sent( 'review' )
+			.filter(
+				( [ w, size ] ) => 'links' === w && '--limit=50' === size
+			);
 
 	it( 'answers with a check and a cross joined in one pill, each key on its glyph', async () => {
 		renderReview( { canTune: true } );
@@ -517,7 +652,7 @@ describe( 'Review — judgments', () => {
 		);
 	} );
 
-	it( 'hides a judged link at once, though the re-read still lists it', async () => {
+	it( 'keeps a judged link in place, greyed with its verdict and Undo on the row while it waits, then without Undo while the re-read still lists it', async () => {
 		wire.replies.confirm_link = { ok: true, event_id: 'ev-c' };
 		renderReview( { canTune: true } );
 		const links = queue( 'Suggested matches' );
@@ -526,21 +661,125 @@ describe( 'Review — judgments', () => {
 		} );
 		fakeUndoClock();
 		fireEvent.click( control );
+		const row = judgedAs( 'Acme Quillsheet', 'Confirmed.', links );
 		expect(
-			within( links ).queryByRole( 'button', { name: 'Acme Quillsheet' } )
-		).toBeNull();
+			within( row ).getByRole( 'button', {
+				name: 'Undo: Confirmed Acme Quillsheet.',
+			} )
+		).toBeInTheDocument();
 		await elapse( UNDO_MS );
 		await waitFor( () => expect( linksRead() ).toHaveLength( 2 ) );
 		expect(
-			within( queue( 'Suggested matches' ) ).queryByRole( 'button', {
-				name: 'Acme Quillsheet',
-			} )
+			within(
+				judgedAs( 'Acme Quillsheet', 'Confirmed.', links )
+			).queryByRole( 'button', { name: /^Undo/ } )
 		).toBeNull();
 		expect(
-			within( queue( 'Suggested matches' ) ).getByRole( 'button', {
-				name: 'Valley Ledger',
+			rowOf(
+				within( links ).getByRole( 'button', { name: 'Valley Ledger' } )
+			)
+		).not.toBeNull();
+	} );
+
+	it( 'takes a judged link out once a read no longer lists it', async () => {
+		let confirmed = false;
+		wire.replies.confirm_link = () => {
+			confirmed = true;
+			return { ok: true, event_id: 'ev-gone' };
+		};
+		const answer = wire.replies.review;
+		wire.replies.review = ( tokens ) =>
+			'links' === tokens[ 0 ] && confirmed
+				? { links: [ SIBLING ], total: 40, available: true }
+				: answer( tokens );
+		renderReview( { canTune: true } );
+		const links = queue( 'Suggested matches' );
+		const control = await within( links ).findByRole( 'button', {
+			name: 'Confirm Acme Quillsheet',
+		} );
+		fakeUndoClock();
+		fireEvent.click( control );
+		await elapse( UNDO_MS );
+		await waitFor( () =>
+			expect(
+				within( links ).queryByRole( 'button', {
+					name: 'Acme Quillsheet',
+				} )
+			).toBeNull()
+		);
+		expect(
+			screen.getByRole( 'tab', { name: 'Suggested matches 40' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'shows an undone judgment’s row owed a judgment once its write would have gone', async () => {
+		wire.replies.reject_link = never;
+		renderReview( { canTune: true } );
+		const links = queue( 'Suggested matches' );
+		fakeUndoClock();
+		fireEvent.click(
+			await within( links ).findByRole( 'button', {
+				name: 'Reject Acme Quillsheet',
+			} )
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'Undo' } ) );
+		fireEvent.click(
+			within( links ).getByRole( 'button', {
+				name: 'Reject Valley Ledger',
+			} )
+		);
+		await elapse( UNDO_MS );
+		expect(
+			within( links ).getByRole( 'button', {
+				name: 'Reject Acme Quillsheet',
 			} )
 		).toBeInTheDocument();
+		expect( wire.sent( 'reject_link' ) ).toEqual( [
+			[
+				`--item=${ SIBLING.item_key }`,
+				`--entity=${ SIBLING.entity_key }`,
+			],
+		] );
+	} );
+
+	it( 'takes z after a judgment’s write went as nothing to undo, the row still judged', async () => {
+		wire.replies.reject_link = never;
+		renderReview( { canTune: true } );
+		const links = queue( 'Suggested matches' );
+		const reject = await within( links ).findByRole( 'button', {
+			name: 'Reject Acme Quillsheet',
+		} );
+		fakeUndoClock();
+		fireEvent.click( reject );
+		await elapse( UNDO_MS );
+		fireEvent.keyDown( document.body, { key: 'z' } );
+		await settle();
+		judgedAs( 'Acme Quillsheet', 'Rejected.', links );
+		expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 );
+	} );
+
+	it( 'undoes a judgment from its row, its answers back', async () => {
+		wire.replies.reject_link = never;
+		renderReview( { canTune: true } );
+		const links = queue( 'Suggested matches' );
+		fakeUndoClock();
+		fireEvent.click(
+			await within( links ).findByRole( 'button', {
+				name: 'Reject Acme Quillsheet',
+			} )
+		);
+		fireEvent.click(
+			within( links ).getByRole( 'button', {
+				name: 'Undo: Rejected Acme Quillsheet.',
+			} )
+		);
+		expect(
+			within( links ).getByRole( 'button', {
+				name: 'Reject Acme Quillsheet',
+			} )
+		).toBeInTheDocument();
+		await elapse( UNDO_MS );
+		expect( wire.sent( 'reject_link' ) ).toEqual( [] );
 	} );
 
 	it( 'moves focus to the row in the place of one judged by a click', async () => {
@@ -595,11 +834,8 @@ describe( 'Review — judgments', () => {
 				],
 			] )
 		);
-		expect(
-			within( links ).getByText(
-				'Nothing to review. New suggestions arrive as items are read.'
-			)
-		).toBeInTheDocument();
+		judgedAs( 'Acme Quillsheet', 'Confirmed.', links );
+		judgedAs( 'Valley Ledger', 'Rejected.', links );
 	} );
 
 	it( 'returns a refused judgment to its row with the refusal under it, focused', async () => {
@@ -677,17 +913,204 @@ describe( 'Review — judgments', () => {
 		} );
 		expect(
 			await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
-				name: 'Acme Quillsheet',
+				name: 'Confirm Acme Quillsheet',
 			} )
 		).toBeInTheDocument();
 		expect(
 			within( queue( 'Suggested matches' ) ).getByRole( 'button', {
-				name: 'Valley Ledger',
+				name: 'Reject Valley Ledger',
 			} )
 		).toBeInTheDocument();
-		expect( screen.getByRole( 'alert' ) ).toHaveTextContent(
-			'NOT_AVAILABLE'
+		const alerts = screen.getAllByRole( 'alert' );
+		expect( alerts ).toHaveLength( 2 );
+		alerts.forEach( ( alert ) =>
+			expect( alert ).toHaveTextContent( 'NOT_AVAILABLE' )
 		);
+	} );
+
+	it( 'keeps a row whose write landed judged on a refusal that does not name its send', async () => {
+		let landed = false;
+		wire.replies.confirm_link = () => {
+			landed = true;
+			return { ok: true, event_id: 'ev-landed' };
+		};
+		wire.replies.reject_link = never;
+		renderReview( { canTune: true } );
+		const links = queue( 'Suggested matches' );
+		const control = await within( links ).findByRole( 'button', {
+			name: 'Confirm Acme Quillsheet',
+		} );
+		fakeUndoClock();
+		fireEvent.click( control );
+		await elapse( 2000 );
+		fireEvent.click(
+			within( links ).getByRole( 'button', {
+				name: 'Reject Valley Ledger',
+			} )
+		);
+		await elapse( UNDO_MS - 2000 );
+		await waitFor( () => expect( landed ).toBe( true ) );
+		await settle();
+		await settle();
+		await elapse( 2000 );
+		jest.useRealTimers();
+		await waitFor( () =>
+			expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 )
+		);
+		expect( wire.sent( 'confirm_link' ) ).toHaveLength( 1 );
+		const bounce = newMessage();
+		bounce[ TYPE ] = TM_ERROR;
+		bounce[ TO ] = 'intelligence:reject_link:in';
+		bounce[ VALUE ] = 'NOT_AVAILABLE\n';
+		await act( async () => {
+			Core.node( '_command_interpreter' ).fill( bounce );
+		} );
+		const back = await within( queue( 'Suggested matches' ) ).findByRole(
+			'button',
+			{ name: 'Reject Valley Ledger' }
+		);
+		expect( rowOf( back ) ).toHaveTextContent( 'NOT_AVAILABLE' );
+		judgedAs(
+			'Acme Quillsheet',
+			'Confirmed.',
+			queue( 'Suggested matches' )
+		);
+	} );
+
+	it( 'keeps a row still in its undo window judged on a refusal that does not name its send', async () => {
+		wire.replies.confirm_link = never;
+		wire.replies.reject_link = never;
+		renderReview( { canTune: true } );
+		const links = queue( 'Suggested matches' );
+		const confirm = await within( links ).findByRole( 'button', {
+			name: 'Confirm Acme Quillsheet',
+		} );
+		fakeUndoClock();
+		fireEvent.click( confirm );
+		await elapse( UNDO_MS );
+		fireEvent.click(
+			within( links ).getByRole( 'button', {
+				name: 'Reject Valley Ledger',
+			} )
+		);
+		const bounce = newMessage();
+		bounce[ TYPE ] = TM_ERROR;
+		bounce[ TO ] = 'intelligence:confirm_link:in';
+		bounce[ VALUE ] = 'NOT_AVAILABLE\n';
+		await act( async () => {
+			Core.node( '_command_interpreter' ).fill( bounce );
+		} );
+		expect(
+			within( links ).getByRole( 'button', {
+				name: 'Confirm Acme Quillsheet',
+			} )
+		).toBeInTheDocument();
+		judgedAs( 'Valley Ledger', 'Rejected.', links );
+	} );
+
+	it( 'forgets a judgment its read dropped while it waited, on the first read after it is sent, so its row returns answerable', async () => {
+		const COASTLINE = {
+			...PROPOSED,
+			entity_key: 'organization:coastline-weekly',
+			name: 'Coastline Weekly',
+		};
+		let listed = [ LINK, SIBLING ];
+		wire.replies.review = ( [ what ] ) =>
+			'links' === what
+				? { links: listed, total: listed.length, available: true }
+				: {
+						entities: [ PROPOSED, COASTLINE ],
+						total: 2,
+						available: true,
+				  };
+		wire.replies.confirm_link = () => {
+			listed = [ LINK ];
+			return { ok: true, event_id: 'ev-dropped' };
+		};
+		wire.replies.reject_link = never;
+		wire.replies.accept_entity = ( tokens ) => {
+			listed = tokens.includes( `--key=${ COASTLINE.entity_key }` )
+				? [ LINK, SIBLING ]
+				: [ LINK ];
+			return { ok: true, event_id: 'ev-name' };
+		};
+		renderReview( { canTune: true } );
+		await within( queue( 'Suggested names' ) ).findByRole( 'button', {
+			name: 'Accept Valley Times',
+		} );
+		const links = queue( 'Suggested matches' );
+		const confirm = await within( links ).findByRole( 'button', {
+			name: 'Confirm Acme Quillsheet',
+		} );
+		fakeUndoClock();
+		fireEvent.click( confirm );
+		await elapse( UNDO_MS - 1000 );
+		fireEvent.click(
+			within( links ).getByRole( 'button', {
+				name: 'Reject Valley Ledger',
+			} )
+		);
+		await elapse( 1000 );
+		await settle();
+		await elapse( UNDO_MS );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 );
+		jest.useRealTimers();
+		const names = queue( 'Suggested names' );
+		const accepts = [
+			'Accept Valley Times',
+			'Accept Coastline Weekly',
+		].map( ( name ) => within( names ).getByRole( 'button', { name } ) );
+		fakeUndoClock();
+		for ( const accept of accepts ) {
+			fireEvent.click( accept );
+			await elapse( UNDO_MS );
+			await settle();
+		}
+		jest.useRealTimers();
+		expect(
+			await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+				name: 'Reject Valley Ledger',
+			} )
+		).toBeInTheDocument();
+	} );
+
+	it( 'brings back only its own queue’s judged rows on a refusal that does not name its send', async () => {
+		wire.replies.confirm_link = never;
+		wire.replies.accept_entity = never;
+		renderReview( { canTune: true } );
+		await within( queue( 'Suggested names' ) ).findByRole( 'button', {
+			name: 'Accept Valley Times',
+		} );
+		const confirm = await within( queue( 'Suggested matches' ) ).findByRole(
+			'button',
+			{ name: 'Confirm Acme Quillsheet' }
+		);
+		fakeUndoClock();
+		fireEvent.click( confirm );
+		fireEvent.click(
+			within( queue( 'Suggested names' ) ).getByRole( 'button', {
+				name: 'Accept Valley Times',
+			} )
+		);
+		await elapse( UNDO_MS );
+		await settle();
+		jest.useRealTimers();
+		expect( wire.sent( 'accept_entity' ) ).toHaveLength( 1 );
+		const bounce = newMessage();
+		bounce[ TYPE ] = TM_ERROR;
+		bounce[ TO ] = 'intelligence:confirm_link:in';
+		bounce[ VALUE ] = 'NOT_AVAILABLE\n';
+		await act( async () => {
+			Core.node( '_command_interpreter' ).fill( bounce );
+		} );
+		await settle();
+		judgedAs( PROPOSED.name, 'Accepted.', queue( 'Suggested names' ) );
+		expect(
+			await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+				name: 'Confirm Acme Quillsheet',
+			} )
+		).toBeInTheDocument();
 	} );
 
 	it( 'shows a judged link again once a read has dropped it and a later one lists it', async () => {
@@ -723,12 +1146,12 @@ describe( 'Review — judgments', () => {
 		await elapse( UNDO_MS );
 		expect(
 			await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
-				name: 'Acme Quillsheet',
+				name: 'Confirm Acme Quillsheet',
 			} )
 		).toBeInTheDocument();
 	} );
 
-	it( 'judges a link whose item key is a whole feed URL, hiding it', async () => {
+	it( 'judges a link whose item key is a whole feed URL', async () => {
 		const itemKey = `feed:https://news.example.org/2026/10/${ 'slug-'.repeat(
 			30
 		) }`;
@@ -736,7 +1159,9 @@ describe( 'Review — judgments', () => {
 		wire.replies.review = ( [ what ] ) =>
 			'links' === what
 				? {
-						links: [ { ...LINK, item_key: itemKey } ],
+						links: [
+							{ ...LINK, item_key: itemKey, item_links: 1 },
+						],
 						total: 1,
 						available: true,
 				  }
@@ -755,9 +1180,7 @@ describe( 'Review — judgments', () => {
 				[ `--item=${ itemKey }`, `--entity=${ LINK.entity_key }` ],
 			] )
 		);
-		expect(
-			within( links ).queryByRole( 'button', { name: 'Acme Quillsheet' } )
-		).toBeNull();
+		judgedAs( 'Acme Quillsheet', 'Confirmed.', links );
 	} );
 
 	it.each( [
@@ -765,15 +1188,17 @@ describe( 'Review — judgments', () => {
 			'accept_entity',
 			'Accept Valley Times',
 			[ `--key=${ PROPOSED.entity_key }` ],
+			'Accepted.',
 		],
 		[
 			'reject_entity',
 			'Reject Valley Times',
 			[ `--key=${ PROPOSED.entity_key }` ],
+			'Rejected.',
 		],
 	] )(
-		'sends %s for a proposed entity and hides it',
-		async ( verb, name, tokens ) => {
+		'sends %s for a proposed entity and shows its verdict',
+		async ( verb, name, tokens, words ) => {
 			wire.replies[ verb ] = { ok: true, event_id: 'ev-e' };
 			renderReview( { canTune: true } );
 			const control = await within(
@@ -785,11 +1210,7 @@ describe( 'Review — judgments', () => {
 			await waitFor( () =>
 				expect( wire.sent( verb ) ).toEqual( [ tokens ] )
 			);
-			expect(
-				within( queue( 'Suggested names' ) ).getByText(
-					'Nothing to review. New suggestions arrive as items are read.'
-				)
-			).toBeInTheDocument();
+			judgedAs( PROPOSED.name, words, queue( 'Suggested names' ) );
 		}
 	);
 } );
@@ -868,11 +1289,158 @@ describe( 'Review — same as…', () => {
 		expect( merged.closest( '.components-snackbar' ) ).not.toBeNull();
 		expect( screen.queryByRole( 'button', { name: 'Undo' } ) ).toBeNull();
 		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
-		expect(
-			within( queue( 'Suggested names' ) ).queryByRole( 'button', {
-				name: 'Valley Times',
+		judgedAs(
+			'Valley Times',
+			'Merged into The Valley Times.',
+			queue( 'Suggested names' )
+		);
+	} );
+
+	it( 'moves focus after a merge of a middle name to the name after it', async () => {
+		const COASTLINE = {
+			...PROPOSED,
+			entity_key: 'organization:coastline-weekly',
+			name: 'Coastline Weekly',
+		};
+		const FERNWOOD = {
+			...PROPOSED,
+			entity_key: 'organization:fernwood-daily',
+			name: 'Fernwood Daily',
+		};
+		wire.replies.review = ( [ what ] ) =>
+			'links' === what
+				? { links: [], total: 0, available: true }
+				: {
+						entities: [ COASTLINE, PROPOSED, FERNWOOD ],
+						total: 3,
+						available: true,
+				  };
+		wire.replies.merge_entities = { ok: true, event_id: 'ev-m3' };
+		renderReview( { canTune: true } );
+		fireEvent.click(
+			await within( queue( 'Suggested names' ) ).findByRole( 'button', {
+				name: 'Valley Times is the same as…',
 			} )
-		).toBeNull();
+		);
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Merge Valley Times into…',
+		} );
+		await pick( dialog );
+		act( () => document.activeElement.blur() );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Merge' } )
+		);
+		await screen.findByText( 'Merged Valley Times into The Valley Times.' );
+		expect( document.activeElement ).toBe(
+			rowOf(
+				screen.getByRole( 'button', {
+					name: `Reject ${ FERNWOOD.name }`,
+				} )
+			)
+		);
+	} );
+
+	it( 'moves focus, as a merge owed its answer closes, to the name after it as the merge was sent, though a read has since dropped it', async () => {
+		const COASTLINE = {
+			...PROPOSED,
+			entity_key: 'organization:coastline-weekly',
+			name: 'Coastline Weekly',
+		};
+		const FERNWOOD = {
+			...PROPOSED,
+			entity_key: 'organization:fernwood-daily',
+			name: 'Fernwood Daily',
+		};
+		let dropped = false;
+		wire.replies.review = ( [ what ] ) =>
+			'links' === what
+				? { links: [ LINK, SIBLING ], total: 2, available: true }
+				: {
+						entities: dropped
+							? [ COASTLINE, FERNWOOD ]
+							: [ COASTLINE, PROPOSED, FERNWOOD ],
+						total: 3,
+						available: true,
+				  };
+		wire.replies.confirm_link = () => {
+			dropped = true;
+			return { ok: true, event_id: 'ev-dropped' };
+		};
+		wire.replies.merge_entities = never;
+		renderReview( { canTune: true } );
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: 'Confirm Acme Quillsheet',
+		} );
+		fireEvent.click(
+			await within( queue( 'Suggested names' ) ).findByRole( 'button', {
+				name: 'Valley Times is the same as…',
+			} )
+		);
+		const dialog = screen.getByRole( 'dialog', {
+			name: 'Merge Valley Times into…',
+		} );
+		await pick( dialog );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Merge' } )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'merge_entities' ) ).toHaveLength( 1 )
+		);
+		fakeUndoClock();
+		fireEvent.click(
+			within( queue( 'Suggested matches' ) ).getByRole( 'button', {
+				name: 'Confirm Acme Quillsheet',
+			} )
+		);
+		await elapse( UNDO_MS );
+		jest.useRealTimers();
+		await waitFor(
+			() =>
+				expect(
+					wire
+						.sent( 'review' )
+						.filter( ( [ , size ] ) => '--limit=50' === size )
+				).toHaveLength( 4 ),
+			{ timeout: 3000 }
+		);
+		const names = queue( 'Suggested names' );
+		await waitFor( () =>
+			expect(
+				within( names ).queryByText( 'Valley Times', {
+					selector: '.newspack-intelligence__pill-name',
+				} )
+			).toBeNull()
+		);
+		await waitFor( () =>
+			expect(
+				within( names ).getByRole( 'button', {
+					name: `Reject ${ FERNWOOD.name }`,
+				} )
+			).toBeInTheDocument()
+		);
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+		expect( document.activeElement ).toBe(
+			rowOf(
+				screen.getByRole( 'button', {
+					name: `Reject ${ FERNWOOD.name }`,
+				} )
+			)
+		);
+	} );
+
+	it( 'closes on Escape pressed in the picker once its list is closed', async () => {
+		const dialog = await openMerge();
+		const into = within( dialog ).getByRole( 'combobox', {
+			name: 'Merge into',
+		} );
+		act( () => into.blur() );
+
+		fireEvent.keyDown( into, { key: 'Escape', code: 'Escape' } );
+
+		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expect( wire.sent( 'merge_entities' ) ).toEqual( [] );
 	} );
 
 	it( 'merges nothing on Cancel', async () => {
@@ -915,6 +1483,73 @@ describe( 'Review — same as…', () => {
 				'Merged Valley Times into The Valley Times.'
 			)
 		).toBeInTheDocument();
+	} );
+
+	it( 'names the record picked by its name when two share it', async () => {
+		const TWIN = {
+			entity_key: 'organization:the-valley-times-east',
+			name: 'The Valley Times',
+		};
+		wire.replies.names = {
+			entities: [ PROPOSED, INTO, TWIN ],
+			available: true,
+		};
+		wire.replies.merge_entities = { ok: true, event_id: 'ev-m2' };
+		const dialog = await openMerge();
+		const into = within( dialog ).getByRole( 'combobox', {
+			name: 'Merge into',
+		} );
+		fireEvent.change( into, { target: { value: 'Valley' } } );
+		fireEvent.click(
+			await within( dialog ).findByRole( 'option', {
+				name: `The Valley Times (${ TWIN.entity_key })`,
+			} )
+		);
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Merge' } )
+		);
+
+		await waitFor( () =>
+			expect( wire.sent( 'merge_entities' ) ).toEqual( [
+				[
+					`--from=${ PROPOSED.entity_key }`,
+					`--into=${ TWIN.entity_key }`,
+				],
+			] )
+		);
+		expect(
+			await screen.findByText(
+				'Merged Valley Times into The Valley Times.'
+			)
+		).toBeInTheDocument();
+	} );
+
+	it( 'takes neither a key no offered record carries nor the merging entity’s own name', async () => {
+		const dialog = await openMerge();
+		const into = within( dialog ).getByRole( 'combobox', {
+			name: 'Merge into',
+		} );
+		act( () => into.focus() );
+		fireEvent.change( into, { target: { value: 'Valley' } } );
+		await within( dialog ).findByRole( 'option', {
+			name: 'The Valley Times',
+		} );
+
+		for ( const typed of [ 'organization:valley-annex', 'Valley Times' ] ) {
+			fireEvent.change( into, { target: { value: typed } } );
+			await within( dialog ).findByRole( 'option', {
+				name: 'The Valley Times',
+			} );
+			expect(
+				within( dialog ).queryByRole( 'option', {
+					name: 'Valley Times',
+				} )
+			).toBeNull();
+		}
+
+		expect(
+			within( dialog ).getByRole( 'button', { name: 'Merge' } )
+		).toBeDisabled();
 	} );
 
 	it( 'keeps Merge off until a record is picked', async () => {
@@ -1050,7 +1685,7 @@ describe( 'Review — themes', () => {
 		).toBeInTheDocument();
 	} );
 
-	it( 'keeps the first theme by merging the second into it, hiding the pair, then re-reads', async () => {
+	it( 'keeps the first theme by merging the second into it, the pair showing its verdict, then re-reads', async () => {
 		wire.replies.merge_theme = { ok: true, event_id: 'ev-t' };
 		renderReview( { canTune: true } );
 		const keep = await within( queue( 'Similar themes' ) ).findByRole(
@@ -1060,7 +1695,7 @@ describe( 'Review — themes', () => {
 		fakeUndoClock();
 		fireEvent.click( keep );
 		expect(
-			screen.getByRole( 'tab', { name: 'Similar themes 11' } )
+			screen.getByRole( 'tab', { name: 'Similar themes 12' } )
 		).toBeInTheDocument();
 		await elapse( UNDO_MS );
 		await waitFor( () =>
@@ -1071,10 +1706,13 @@ describe( 'Review — themes', () => {
 				],
 			] )
 		);
+		const pair = within( queue( 'Similar themes' ) )
+			.getByText( 'kiosk offboarding from platform' )
+			.closest( '[data-review-key]' );
+		expect( pair ).toHaveClass( 'is-muted' );
+		expect( pair ).toHaveTextContent( 'Kept "kiosk offboarding".' );
 		expect(
-			within( queue( 'Similar themes' ) ).queryByRole( 'button', {
-				name: KEEP_SECOND,
-			} )
+			within( pair ).queryByRole( 'button', { name: KEEP_SECOND } )
 		).toBeNull();
 		await waitFor( () =>
 			expect( wire.sent( 'theme_suggestions' ) ).toHaveLength( 2 )
@@ -1223,11 +1861,8 @@ describe( 'Review — keyboard', () => {
 				],
 			] )
 		);
-		expect(
-			within( queue( 'Suggested matches' ) ).getByText(
-				'Nothing to review. New suggestions arrive as items are read.'
-			)
-		).toBeInTheDocument();
+		judgedAs( 'Acme Quillsheet', 'Confirmed.' );
+		judgedAs( 'Valley Ledger', 'Rejected.' );
 	} );
 
 	it( 'focuses the row above once the last row is judged', async () => {
@@ -1650,7 +2285,10 @@ describe( 'Review — undo', () => {
 		wire.replies.review = ( [ what ] ) =>
 			'links' === what
 				? {
-						links: [ HARBOR, SIBLING, prairie ],
+						links: [ HARBOR, SIBLING, prairie ].map( ( link ) => ( {
+							...link,
+							item_links: 3,
+						} ) ),
 						total: 3,
 						available: true,
 				  }
@@ -1714,7 +2352,7 @@ describe( 'Review — undo', () => {
 		expect( wire.sent( 'confirm_link' ) ).toHaveLength( 1 );
 	} );
 
-	it( 'holds an accepted entity and a kept theme for the undo window too, across tabs', async () => {
+	it( 'sends an accepted entity as its tab gives way to another, a kept theme then waiting out its own window', async () => {
 		renderReview( { canTune: true } );
 		const control = await within( queue( 'Suggested names' ) ).findByRole(
 			'button',
@@ -1727,11 +2365,16 @@ describe( 'Review — undo', () => {
 		expect(
 			screen.getByText( 'Accepted Valley Times.' )
 		).toBeInTheDocument();
+		expect( wire.sent( 'accept_entity' ) ).toEqual( [] );
 		fireEvent.click(
 			await within( queue( 'Similar themes' ) ).findByRole( 'button', {
 				name: 'Keep "kiosk offboarding"',
 			} )
 		);
+		await settle();
+		expect( wire.sent( 'accept_entity' ) ).toEqual( [
+			[ `--key=${ PROPOSED.entity_key }` ],
+		] );
 		expect(
 			screen.getByText(
 				'Merged kiosk offboarding from platform into kiosk offboarding.'
@@ -1739,19 +2382,35 @@ describe( 'Review — undo', () => {
 		).toBeInTheDocument();
 		await elapse( UNDO_MS - 1 );
 		await settle();
-		expect( wire.sent( 'accept_entity' ) ).toEqual( [] );
 		expect( wire.sent( 'merge_theme' ) ).toEqual( [] );
 		await elapse( 1 );
 		await settle();
-		expect( wire.sent( 'accept_entity' ) ).toEqual( [
-			[ `--key=${ PROPOSED.entity_key }` ],
-		] );
 		expect( wire.sent( 'merge_theme' ) ).toEqual( [
 			[
 				'--from=kiosk offboarding from platform',
 				'--into=kiosk offboarding',
 			],
 		] );
+	} );
+
+	it( 'sends a judgment as its tab gives way to another, z there undoing nothing', async () => {
+		renderReview( { canTune: true } );
+		fireEvent.click(
+			await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+				name: 'Reject Harbor Ledger',
+			} )
+		);
+		await within( queue( 'Suggested names' ) ).findByRole( 'button', {
+			name: 'Accept Valley Times',
+		} );
+		await waitFor( () =>
+			expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 )
+		);
+		fireEvent.keyDown( document.body, { key: 'z' } );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 );
+		judgedAs( 'Harbor Ledger', 'Rejected.', queue( 'Suggested matches' ) );
+		await settle();
 	} );
 
 	it( 'brings a theme pair back with its focus on an undo', async () => {
@@ -1873,7 +2532,11 @@ describe( 'Review — the keys legend and switch', () => {
 
 describe( 'Review — what a judgment dirties', () => {
 	const linksRead = () =>
-		wire.sent( 'review' ).filter( ( [ w ] ) => 'links' === w );
+		wire
+			.sent( 'review' )
+			.filter(
+				( [ w, size ] ) => 'links' === w && '--limit=50' === size
+			);
 
 	it( 'leaves the health strip remembered once a link judgment lands', async () => {
 		wire.replies.confirm_link = { ok: true, event_id: 'ev-harbor-c' };
@@ -1935,6 +2598,7 @@ describe( 'Review — a checked run', () => {
 		title: 'Harbor Ledger renews its plan',
 		url: 'https://linear.example/LW-44',
 		evidence: '',
+		item_links: 1,
 	};
 	const PRAIRIE_ITEM = {
 		...SIBLING,
@@ -1944,13 +2608,14 @@ describe( 'Review — a checked run', () => {
 		title: 'Prairie Signal hires an editor',
 		url: 'https://prairie.example/9',
 		evidence: '',
+		item_links: 1,
 	};
 	const COASTLINE = {
 		...PROPOSED,
 		entity_key: 'organization:coastline-weekly',
 		name: 'Coastline Weekly',
 	};
-	const RUN = [ LINK, HARBOR_ITEM, PRAIRIE_ITEM ];
+	const RUN = [ { ...LINK, item_links: 1 }, HARBOR_ITEM, PRAIRIE_ITEM ];
 	const tokensOf = ( link ) => [
 		`--item=${ link.item_key }`,
 		`--entity=${ link.entity_key }`,
@@ -2029,9 +2694,9 @@ describe( 'Review — a checked run', () => {
 		wire.replies.reject_link = { ok: true, event_id: 'ev-run' };
 		renderReview( { canTune: true } );
 		await judgeRun( 'No' );
-		RUN.forEach( ( link ) => expect( shownRow( link.name ) ).toBeNull() );
+		RUN.forEach( ( link ) => judgedAs( link.name, 'Rejected.' ) );
 		expect(
-			screen.getByRole( 'tab', { name: 'Suggested matches 38' } )
+			screen.getByRole( 'tab', { name: 'Suggested matches 41' } )
 		).toBeInTheDocument();
 		expect( speak ).toHaveBeenCalledTimes( 1 );
 		expect( speak ).toHaveBeenCalledWith( 'Rejected 3 matches.', 'polite' );
@@ -2080,8 +2745,8 @@ describe( 'Review — a checked run', () => {
 		const row = rowOf( shownRow( 'Confirm Harbor Ledger' ) );
 		expect( row ).toContainElement( refusal );
 		expect( document.activeElement ).toBe( row );
-		expect( shownRow( LINK.name ) ).toBeNull();
-		expect( shownRow( PRAIRIE_ITEM.name ) ).toBeNull();
+		judgedAs( LINK.name, 'Confirmed.' );
+		judgedAs( PRAIRIE_ITEM.name, 'Confirmed.' );
 	} );
 
 	it( 'returns every row a run refuses, each with its own refusal', async () => {
@@ -2182,6 +2847,33 @@ describe( 'Review — a checked run', () => {
 		}
 	} );
 
+	it( 'offers no answer for a checked item whose every match is judged', async () => {
+		wire.replies.reject_link = never;
+		wire.replies.review = ( [ what ] ) =>
+			'links' === what
+				? {
+						links: [ LINK, SIBLING ],
+						total: TOTALS.links,
+						available: true,
+				  }
+				: { entities: [], total: 0, available: true };
+		renderReview( { canTune: true } );
+		for ( const link of [ LINK, SIBLING ] ) {
+			fireEvent.click(
+				await within( queue( 'Suggested matches' ) ).findByRole(
+					'button',
+					{ name: `Reject ${ link.name }` }
+				)
+			);
+		}
+		check( LINK.title );
+		expect( screen.getByText( '1 Item selected' ) ).toBeInTheDocument();
+		expect( screen.queryByRole( 'button', { name: 'No' } ) ).toBeNull();
+		expect(
+			screen.queryByRole( 'button', { name: 'Yes, it is' } )
+		).toBeNull();
+	} );
+
 	it( 'offers no run on the themes queue', async () => {
 		renderReview( { canTune: true } );
 		await within( queue( 'Similar themes' ) ).findByRole( 'button', {
@@ -2190,5 +2882,911 @@ describe( 'Review — a checked run', () => {
 		expect(
 			screen.queryByRole( 'checkbox', { name: /^Select/ } )
 		).toBeNull();
+	} );
+} );
+
+describe( 'Review — pages', () => {
+	const PAGE_TWO = {
+		...LINK,
+		item_key: 'linear:LW-208',
+		entity_key: 'organization:pinecrest-courier',
+		name: 'Pinecrest Courier',
+		title: 'Pinecrest Courier asks about renewal',
+		url: 'https://linear.example/LW-208',
+		evidence: '',
+		item_links: 1,
+	};
+	const BESIDE = {
+		...LINK,
+		item_key: 'linear:LW-311',
+		entity_key: 'organization:brackwater-post',
+		name: 'Brackwater Post',
+		title: 'Brackwater Post moves its newsletter',
+		url: 'https://linear.example/LW-311',
+		evidence: '',
+		item_links: 1,
+	};
+	const SLID = {
+		...LINK,
+		item_key: 'linear:LW-299',
+		entity_key: 'organization:gullwing-gazette',
+		name: 'Gullwing Gazette',
+		title: 'Gullwing Gazette asks for a new section',
+		url: 'https://linear.example/LW-299',
+		evidence: '',
+		item_links: 1,
+	};
+	const LATER_TOO = {
+		...LINK,
+		item_key: 'linear:LW-207',
+		entity_key: 'organization:eelgrass-echo',
+		name: 'Eelgrass Echo',
+		title: 'Eelgrass Echo pauses its print edition',
+		url: 'https://linear.example/LW-207',
+		evidence: '',
+		item_links: 1,
+	};
+	const NAMED_LATER = {
+		...PROPOSED,
+		entity_key: 'organization:saltmarsh-daily',
+		name: 'Saltmarsh Daily',
+	};
+	const NAMED_TOO = {
+		...PROPOSED,
+		entity_key: 'organization:tidepool-times',
+		name: 'Tidepool Times',
+	};
+	const LONG = { links: 137, entities: 64 };
+	const CURSORS = {
+		links: [ null, 'after-LW-311', 'after-LW-208' ],
+		entities: [ null, 'after-valley-times' ],
+	};
+
+	/**
+	 * The cursor a read's tokens name, null for the first page.
+	 *
+	 * @param {string[]} tokens The read's tokens.
+	 * @return {?string} The cursor.
+	 */
+	const afterIn = ( tokens ) =>
+		tokens
+			.find( ( token ) => token.startsWith( '--after=' ) )
+			?.slice( '--after='.length ) ?? null;
+
+	// jsdom lays nothing out, so it has no scrollIntoView for a checked row.
+	const { scrollIntoView } = window.Element.prototype;
+
+	afterEach( () => {
+		window.Element.prototype.scrollIntoView = scrollIntoView;
+	} );
+
+	beforeEach( () => {
+		wire.replies.review = ( tokens ) => {
+			const later = null !== afterIn( tokens );
+			if ( 'links' === tokens[ 0 ] ) {
+				return {
+					links: later
+						? [ PAGE_TWO, LATER_TOO ]
+						: [ LINK, SIBLING, BESIDE ],
+					total: LONG.links,
+					next: later ? CURSORS.links[ 2 ] : CURSORS.links[ 1 ],
+					available: true,
+				};
+			}
+			return {
+				entities: later ? [ NAMED_LATER, NAMED_TOO ] : [ PROPOSED ],
+				total: LONG.entities,
+				next: later ? null : CURSORS.entities[ 1 ],
+				available: true,
+			};
+		};
+	} );
+
+	const shown = ( name ) => screen.queryByRole( 'button', { name } );
+	const next = () =>
+		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
+	const previous = () =>
+		fireEvent.click( screen.getByRole( 'button', { name: 'Previous' } ) );
+	const linkReads = () =>
+		wire
+			.sent( 'review' )
+			.filter(
+				( [ what, size ] ) => 'links' === what && '--limit=50' === size
+			);
+	const linkReadsAfter = ( cursor ) =>
+		linkReads().filter( ( tokens ) => cursor === afterIn( tokens ) );
+
+	it( 'sends a judgment as the page turns, z on the next page undoing nothing', async () => {
+		wire.replies.reject_link = { ok: true, event_id: 'ev-turned' };
+		renderReview( { canTune: true } );
+		fireEvent.click(
+			await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+				name: `Reject ${ SIBLING.name }`,
+			} )
+		);
+		expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+		next();
+		await screen.findByRole( 'button', { name: PAGE_TWO.name } );
+		await waitFor( () =>
+			expect( wire.sent( 'reject_link' ) ).toEqual( [
+				[
+					`--item=${ SIBLING.item_key }`,
+					`--entity=${ SIBLING.entity_key }`,
+				],
+			] )
+		);
+		fireEvent.keyDown( document.body, { key: 'z' } );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 );
+		previous();
+		await screen.findByRole( 'button', { name: LINK.name } );
+		judgedAs( SIBLING.name, 'Rejected.' );
+	} );
+
+	it( 'sends a judgment made on the page held while the next is owed once the next shows', async () => {
+		wire.replies.reject_link = { ok: true, event_id: 'ev-held' };
+		const answer = wire.replies.review;
+		let release;
+		const owed = new Promise( ( resolve ) => ( release = resolve ) );
+		wire.replies.review = ( tokens ) =>
+			CURSORS.links[ 1 ] === afterIn( tokens )
+				? owed.then( () => answer( tokens ) )
+				: answer( tokens );
+		renderReview( { canTune: true } );
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: `Reject ${ SIBLING.name }`,
+		} );
+		next();
+		await waitFor( () =>
+			expect( linkReadsAfter( CURSORS.links[ 1 ] ) ).toHaveLength( 1 )
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: `Reject ${ SIBLING.name }` } )
+		);
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+		await act( async () => release() );
+		await screen.findByRole( 'button', { name: PAGE_TWO.name } );
+		await waitFor( () =>
+			expect( wire.sent( 'reject_link' ) ).toHaveLength( 1 )
+		);
+	} );
+
+	it( 'shows a refusal landing after the page turned at the top, naming its row, until that row is judged again', async () => {
+		wire.replies.reject_link = ( tokens ) =>
+			tokens.includes( `--item=${ SIBLING.item_key }` )
+				? new Error( 'no link: the ledger' )
+				: { ok: true, event_id: 'ev-page-two' };
+		renderReview( { canTune: true } );
+		fireEvent.click(
+			await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+				name: `Reject ${ SIBLING.name }`,
+			} )
+		);
+		next();
+		await screen.findByRole( 'button', { name: PAGE_TWO.name } );
+		const notice = await screen.findByText( /no link: the ledger/ );
+		expect( notice.closest( '[role="alert"]' ) ).toHaveTextContent(
+			SIBLING.name
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: `Reject ${ PAGE_TWO.name }` } )
+		);
+		await settle();
+		expect( screen.getByText( /no link: the ledger/ ) ).toBeInTheDocument();
+		previous();
+		const reject = await screen.findByRole( 'button', {
+			name: `Reject ${ SIBLING.name }`,
+		} );
+		expect( rowOf( reject ) ).toHaveTextContent( 'no link: the ledger' );
+		expect( screen.getAllByText( /no link: the ledger/ ) ).toHaveLength(
+			1
+		);
+		fireEvent.click( reject );
+		expect( screen.queryByText( /no link: the ledger/ ) ).toBeNull();
+	} );
+
+	it( 'answers a send that throws as the page turns as that row’s refusal, Review still showing', async () => {
+		renderReview( { canTune: true } );
+		const reject = await within( queue( 'Suggested matches' ) ).findByRole(
+			'button',
+			{ name: `Reject ${ SIBLING.name }` }
+		);
+		jest.spyOn(
+			Core.node( 'intelligence:reject_link:fetch' ),
+			'send'
+		).mockImplementation( () => {
+			throw new Error( 'the wire is down' );
+		} );
+		fireEvent.click( reject );
+		next();
+		await screen.findByRole( 'button', { name: PAGE_TWO.name } );
+		expect(
+			( await screen.findByText( /the wire is down/ ) ).closest(
+				'[role="alert"]'
+			)
+		).toHaveTextContent( SIBLING.name );
+		previous();
+		const back = await screen.findByRole( 'button', {
+			name: `Reject ${ SIBLING.name }`,
+		} );
+		expect( rowOf( back ) ).toHaveTextContent( 'the wire is down' );
+	} );
+
+	it( 'undoes with z a judgment on the page shown, sending nothing', async () => {
+		renderReview( { canTune: true } );
+		const reject = await within( queue( 'Suggested matches' ) ).findByRole(
+			'button',
+			{ name: `Reject ${ SIBLING.name }` }
+		);
+		expect( screen.getByText( 'Page 1 of 3' ) ).toBeInTheDocument();
+		fakeUndoClock();
+		fireEvent.click( reject );
+		judgedAs( SIBLING.name, 'Rejected.' );
+		await act( async () =>
+			fireEvent.keyDown( document.body, { key: 'z' } )
+		);
+		const back = screen.getByRole( 'button', {
+			name: `Reject ${ SIBLING.name }`,
+		} );
+		expect( document.activeElement ).toBe( rowOf( back ) );
+		expect( speak ).toHaveBeenLastCalledWith( 'Undone.', 'polite' );
+		await elapse( UNDO_MS * 2 );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+	} );
+
+	it( 'renders a page turn whose read forgets no judgment no more than the turn itself asks', async () => {
+		renderReview();
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		await settle();
+		mockList.renders = 0;
+		next();
+		await screen.findByRole( 'button', { name: PAGE_TWO.name } );
+		await settle();
+		expect( mockList.renders ).toBe( 3 );
+	} );
+
+	it( 'pages the matches by their total, page 2 reading after the cursor page 1 answered, the tab still the total', async () => {
+		renderReview();
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		expect( screen.getByText( 'Page 1 of 3' ) ).toBeInTheDocument();
+		next();
+		await screen.findByRole( 'button', { name: PAGE_TWO.name } );
+		expect( shown( LINK.name ) ).toBeNull();
+		expect( screen.getByText( 'Page 2 of 3' ) ).toBeInTheDocument();
+		expect( wire.sent( 'review' ) ).toEqual(
+			expect.arrayContaining( [
+				[ 'links', '--limit=50', '--after=after-LW-311' ],
+			] )
+		);
+		expect(
+			screen.getByRole( 'tab', { name: 'Suggested matches 137' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'sends one read for its first page of matches, naming its size', async () => {
+		renderReview();
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		expect(
+			wire.sent( 'review' ).filter( ( [ what ] ) => 'links' === what )
+		).toEqual( [ [ 'links', '--limit=50' ] ] );
+	} );
+
+	it( 'pages the names by their total, each page naming its size and the cursor it follows', async () => {
+		renderReview();
+		await within( queue( 'Suggested names' ) ).findByRole( 'button', {
+			name: PROPOSED.name,
+		} );
+		expect( screen.getByText( 'Page 1 of 2' ) ).toBeInTheDocument();
+		next();
+		await screen.findByRole( 'button', { name: NAMED_LATER.name } );
+		expect( shown( PROPOSED.name ) ).toBeNull();
+		expect( wire.sent( 'review' ) ).toEqual(
+			expect.arrayContaining( [
+				[ 'entities', '--limit=50' ],
+				[ 'entities', '--limit=50', '--after=after-valley-times' ],
+			] )
+		);
+		expect(
+			screen.getByRole( 'tab', { name: 'Suggested names 64' } )
+		).toBeInTheDocument();
+	} );
+
+	it( 'reads page 2 after the last item page 1 shows, so an item sliding up into page 1 once its neighbour is judged is never skipped', async () => {
+		let judged = false;
+		wire.replies.reject_link = () => {
+			judged = true;
+			return { ok: true, event_id: 'ev-slid' };
+		};
+		const answer = wire.replies.review;
+		wire.replies.review = ( tokens ) =>
+			'links' === tokens[ 0 ] && null === afterIn( tokens ) && judged
+				? {
+						links: [ BESIDE, SLID ],
+						total: LONG.links - 1,
+						next: 'after-LW-299',
+						available: true,
+				  }
+				: answer( tokens );
+		renderReview( { canTune: true } );
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		fakeUndoClock();
+		fireEvent.click(
+			screen.getByRole( 'button', { name: `Reject ${ LINK.name }` } )
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: `Reject ${ SIBLING.name }` } )
+		);
+		await elapse( UNDO_MS );
+		expect(
+			await screen.findByRole( 'button', { name: SLID.name } )
+		).toBeInTheDocument();
+		next();
+		await waitFor( () =>
+			expect( linkReadsAfter( 'after-LW-299' ) ).toHaveLength( 1 )
+		);
+		expect( linkReadsAfter( 'after-LW-311' ) ).toEqual( [] );
+	} );
+
+	it( 'keeps each queue’s place across a switch of queue, reading neither again', async () => {
+		renderReview();
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		next();
+		await screen.findByRole( 'button', { name: PAGE_TWO.name } );
+		await within( queue( 'Suggested names' ) ).findByRole( 'button', {
+			name: PROPOSED.name,
+		} );
+		next();
+		await screen.findByRole( 'button', { name: NAMED_LATER.name } );
+		const sent = wire.sent( 'review' ).length;
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: PAGE_TWO.name,
+		} );
+		expect( screen.getByText( 'Page 2 of 3' ) ).toBeInTheDocument();
+		await within( queue( 'Suggested names' ) ).findByRole( 'button', {
+			name: NAMED_LATER.name,
+		} );
+		expect( screen.getByText( 'Page 2 of 2' ) ).toBeInTheDocument();
+		expect( wire.sent( 'review' ) ).toHaveLength( sent );
+	} );
+
+	it( 'returns to the page before when a later page answers no rows', async () => {
+		const answer = wire.replies.review;
+		wire.replies.review = ( tokens ) =>
+			CURSORS.links[ 2 ] === afterIn( tokens )
+				? { links: [], total: 40, next: null, available: true }
+				: answer( tokens );
+		renderReview();
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		next();
+		await screen.findByRole( 'button', { name: PAGE_TWO.name } );
+		next();
+		await waitFor( () =>
+			expect( linkReadsAfter( CURSORS.links[ 2 ] ) ).toHaveLength( 1 )
+		);
+		expect( await screen.findByText( 'Page 2 of 3' ) ).toBeInTheDocument();
+		expect( shown( PAGE_TWO.name ) ).not.toBeNull();
+	} );
+
+	it( 'keeps the tab at the last total, the page it shows and its pager while a page is owed, a further Next asking nothing', async () => {
+		const answer = wire.replies.review;
+		wire.replies.review = ( tokens ) =>
+			null !== afterIn( tokens ) ? never() : answer( tokens );
+		renderReview();
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		next();
+		await waitFor( () =>
+			expect( linkReadsAfter( CURSORS.links[ 1 ] ) ).toHaveLength( 1 )
+		);
+		expect(
+			screen.getByRole( 'tab', { name: 'Suggested matches 137' } )
+		).toBeInTheDocument();
+		expect( screen.getByText( 'Page 1 of 3' ) ).toBeInTheDocument();
+		expect( shown( LINK.name ) ).not.toBeNull();
+		next();
+		await settle();
+		expect( linkReads() ).toHaveLength( 2 );
+	} );
+
+	it( 'keeps focus on Next across a turn of the page', async () => {
+		const answer = wire.replies.review;
+		let release;
+		const owed = new Promise( ( resolve ) => ( release = resolve ) );
+		wire.replies.review = ( tokens ) =>
+			CURSORS.links[ 1 ] === afterIn( tokens )
+				? owed.then( () => answer( tokens ) )
+				: answer( tokens );
+		renderReview();
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		const button = screen.getByRole( 'button', { name: 'Next' } );
+		act( () => button.focus() );
+		fireEvent.click( button );
+		await waitFor( () =>
+			expect( linkReadsAfter( CURSORS.links[ 1 ] ) ).toHaveLength( 1 )
+		);
+		expect( document.activeElement ).toBe( button );
+		await act( async () => release() );
+		await screen.findByRole( 'button', { name: PAGE_TWO.name } );
+		expect( screen.getByText( 'Page 2 of 3' ) ).toBeInTheDocument();
+		expect( document.activeElement ).toBe( button );
+	} );
+
+	it( 'keeps the names tab at its total and its page while a later page is owed', async () => {
+		const answer = wire.replies.review;
+		wire.replies.review = ( tokens ) =>
+			'entities' === tokens[ 0 ] && null !== afterIn( tokens )
+				? never()
+				: answer( tokens );
+		renderReview();
+		await within( queue( 'Suggested names' ) ).findByRole( 'button', {
+			name: PROPOSED.name,
+		} );
+		next();
+		await waitFor( () =>
+			expect( wire.sent( 'review' ) ).toContainEqual( [
+				'entities',
+				'--limit=50',
+				'--after=after-valley-times',
+			] )
+		);
+		expect(
+			screen.getByRole( 'tab', { name: 'Suggested names 64' } )
+		).toBeInTheDocument();
+		expect( screen.getByText( 'Page 1 of 2' ) ).toBeInTheDocument();
+	} );
+
+	it( 'offers Previous beside a later page that could not be read', async () => {
+		const answer = wire.replies.review;
+		wire.replies.review = ( tokens ) =>
+			null !== afterIn( tokens )
+				? new Error( 'review refused' )
+				: answer( tokens );
+		renderReview();
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		next();
+		expect(
+			await screen.findByText( /Intelligence could not be read just now/ )
+		).toBeInTheDocument();
+		previous();
+		expect(
+			await screen.findByRole( 'button', { name: LINK.name } )
+		).toBeInTheDocument();
+		expect( screen.getByText( 'Page 1 of 3' ) ).toBeInTheDocument();
+	} );
+
+	it( 'reads the page of matches it shows again after a judgment there', async () => {
+		wire.replies.reject_link = { ok: true, event_id: 'ev-page-two' };
+		renderReview( { canTune: true } );
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		next();
+		const control = await screen.findByRole( 'button', {
+			name: `Reject ${ PAGE_TWO.name }`,
+		} );
+		fakeUndoClock();
+		fireEvent.click( control );
+		await elapse( UNDO_MS );
+		await waitFor( () =>
+			expect( linkReadsAfter( CURSORS.links[ 1 ] ) ).toHaveLength( 2 )
+		);
+		expect( linkReadsAfter( null ) ).toHaveLength( 1 );
+	} );
+
+	it( 'stays on a middle page whose every row is judged, showing the rows its read brings up', async () => {
+		const REFILL = {
+			...LINK,
+			item_key: 'linear:LW-206',
+			entity_key: 'organization:shingle-sentinel',
+			name: 'Shingle Sentinel',
+			title: 'Shingle Sentinel asks about archives',
+			url: 'https://linear.example/LW-206',
+			evidence: '',
+			item_links: 1,
+		};
+		let judged = 0;
+		wire.replies.reject_link = () => {
+			judged += 1;
+			return { ok: true, event_id: 'ev-middle' };
+		};
+		const answer = wire.replies.review;
+		wire.replies.review = ( tokens ) =>
+			CURSORS.links[ 1 ] === afterIn( tokens ) && 2 === judged
+				? {
+						links: [ REFILL ],
+						total: LONG.links - 2,
+						next: CURSORS.links[ 2 ],
+						available: true,
+				  }
+				: answer( tokens );
+		renderReview( { canTune: true } );
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		next();
+		await screen.findByRole( 'button', { name: PAGE_TWO.name } );
+		fakeUndoClock();
+		for ( const link of [ PAGE_TWO, LATER_TOO ] ) {
+			fireEvent.click(
+				screen.getByRole( 'button', { name: `Reject ${ link.name }` } )
+			);
+		}
+		await elapse( UNDO_MS );
+		expect(
+			await screen.findByRole( 'button', { name: REFILL.name } )
+		).toBeInTheDocument();
+		expect( screen.getByText( 'Page 2 of 3' ) ).toBeInTheDocument();
+	} );
+
+	it( 'keeps a judgment from page 2 that slides onto page 1, though page 2 read after a new cursor no longer lists it', async () => {
+		const RENEWED = 'after-LW-208-renewed';
+		let slid = false;
+		wire.replies.reject_link = ( tokens ) => {
+			slid ||= tokens.includes( `--item=${ BESIDE.item_key }` );
+			return { ok: true, event_id: 'ev-slide' };
+		};
+		const answer = wire.replies.review;
+		wire.replies.review = ( tokens ) => {
+			const at = afterIn( tokens );
+			if ( 'links' === tokens[ 0 ] && slid && null === at ) {
+				return {
+					links: [ LINK, SIBLING, PAGE_TWO ],
+					total: LONG.links,
+					next: RENEWED,
+					available: true,
+				};
+			}
+			if ( 'links' === tokens[ 0 ] && RENEWED === at ) {
+				return {
+					links: [ LATER_TOO ],
+					total: LONG.links,
+					next: CURSORS.links[ 2 ],
+					available: true,
+				};
+			}
+			return answer( tokens );
+		};
+		renderReview( { canTune: true } );
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		next();
+		const reject = await screen.findByRole( 'button', {
+			name: `Reject ${ PAGE_TWO.name }`,
+		} );
+		fakeUndoClock();
+		fireEvent.click( reject );
+		await elapse( UNDO_MS );
+		await waitFor( () =>
+			expect( linkReadsAfter( CURSORS.links[ 1 ] ) ).toHaveLength( 2 )
+		);
+		previous();
+		fireEvent.click(
+			await screen.findByRole( 'button', {
+				name: `Reject ${ BESIDE.name }`,
+			} )
+		);
+		await elapse( UNDO_MS );
+		await waitFor( () =>
+			expect(
+				screen.getByRole( 'button', { name: PAGE_TWO.name } )
+			).toBeInTheDocument()
+		);
+		next();
+		await waitFor( () =>
+			expect( linkReadsAfter( RENEWED ) ).toHaveLength( 1 )
+		);
+		await screen.findByRole( 'button', { name: LATER_TOO.name } );
+		const firstPage = linkReadsAfter( null ).length;
+		previous();
+		await waitFor( () =>
+			expect( linkReadsAfter( null ) ).toHaveLength( firstPage + 1 )
+		);
+		await waitFor( () =>
+			expect(
+				screen.getByRole( 'button', { name: PAGE_TWO.name } )
+			).toBeInTheDocument()
+		);
+		await settle();
+		judgedAs( PAGE_TWO.name, 'Rejected.' );
+	} );
+
+	it( 'forgets a judgment sent on a page no read reaches once page 1 answers a new cursor, a later page listing it as owed a judgment', async () => {
+		const RENEWED = 'after-LW-207-renewed';
+		let rejected = false;
+		wire.replies.reject_link = () => {
+			rejected = true;
+			return { ok: true, event_id: 'ev-dead-page' };
+		};
+		const answer = wire.replies.review;
+		wire.replies.review = ( tokens ) => {
+			const at = afterIn( tokens );
+			if ( 'links' === tokens[ 0 ] && rejected && null === at ) {
+				return {
+					links: [ LINK, SIBLING ],
+					total: LONG.links,
+					next: RENEWED,
+					available: true,
+				};
+			}
+			if ( 'links' === tokens[ 0 ] && RENEWED === at ) {
+				return {
+					links: [ BESIDE, PAGE_TWO ],
+					total: LONG.links,
+					next: CURSORS.links[ 2 ],
+					available: true,
+				};
+			}
+			return answer( tokens );
+		};
+		renderReview( { canTune: true } );
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		next();
+		const reject = await screen.findByRole( 'button', {
+			name: `Reject ${ PAGE_TWO.name }`,
+		} );
+		fakeUndoClock();
+		fireEvent.click( reject );
+		await elapse( UNDO_MS );
+		await waitFor( () =>
+			expect( linkReadsAfter( CURSORS.links[ 1 ] ) ).toHaveLength( 2 )
+		);
+		judgedAs( PAGE_TWO.name, 'Rejected.' );
+		jest.useRealTimers();
+		previous();
+		await screen.findByRole( 'button', { name: SIBLING.name } );
+		expect( shown( BESIDE.name ) ).toBeNull();
+		next();
+		await waitFor( () =>
+			expect( linkReadsAfter( RENEWED ) ).toHaveLength( 1 )
+		);
+		expect(
+			await screen.findByRole( 'button', {
+				name: `Reject ${ PAGE_TWO.name }`,
+			} )
+		).toBeInTheDocument();
+	} );
+
+	it( 'keeps a judgment sent on a page showing its verdict across a turn of the page', async () => {
+		wire.replies.reject_link = { ok: true, event_id: 'ev-paged' };
+		renderReview( { canTune: true } );
+		const control = await within( queue( 'Suggested matches' ) ).findByRole(
+			'button',
+			{ name: `Reject ${ BESIDE.name }` }
+		);
+		fakeUndoClock();
+		fireEvent.click( control );
+		await elapse( UNDO_MS );
+		await waitFor( () =>
+			expect( linkReadsAfter( null ) ).toHaveLength( 2 )
+		);
+		judgedAs( BESIDE.name, 'Rejected.' );
+		next();
+		await screen.findByRole( 'button', { name: PAGE_TWO.name } );
+		previous();
+		await waitFor( () =>
+			expect( linkReadsAfter( null ) ).toHaveLength( 3 )
+		);
+		await settle();
+		judgedAs( BESIDE.name, 'Rejected.' );
+	} );
+
+	describe( 'on the last page', () => {
+		const ITEM_THREE = {
+			...LINK,
+			item_key: 'linear:LW-417',
+			entity_key: 'organization:fogbank-review',
+			name: 'Fogbank Review',
+			title: 'Fogbank Review leaves the network',
+			url: 'https://linear.example/LW-417',
+			evidence: '',
+			item_links: 1,
+		};
+		let judged;
+
+		beforeEach( () => {
+			judged = false;
+			const answer = wire.replies.review;
+			wire.replies.review = ( tokens ) => {
+				if ( 'links' !== tokens[ 0 ] ) {
+					return answer( tokens );
+				}
+				if ( CURSORS.links[ 2 ] === afterIn( tokens ) ) {
+					return {
+						links: judged ? [] : [ ITEM_THREE ],
+						total: judged ? 100 : 101,
+						next: null,
+						available: true,
+					};
+				}
+				return { ...answer( tokens ), total: judged ? 100 : 101 };
+			};
+			wire.replies.reject_link = () => {
+				judged = true;
+				return { ok: true, event_id: 'ev-last' };
+			};
+		} );
+
+		const toPageThree = async () => {
+			await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+				name: LINK.name,
+			} );
+			next();
+			await screen.findByRole( 'button', { name: PAGE_TWO.name } );
+			next();
+			return screen.findByRole( 'button', {
+				name: `Reject ${ ITEM_THREE.name }`,
+			} );
+		};
+
+		it( 'goes to the page before once its last item is judged', async () => {
+			renderReview( { canTune: true } );
+			const control = await toPageThree();
+			fakeUndoClock();
+			fireEvent.click( control );
+			await elapse( UNDO_MS );
+			expect(
+				await screen.findByText( 'Page 2 of 3' )
+			).toBeInTheDocument();
+			expect( shown( PAGE_TWO.name ) ).not.toBeNull();
+		} );
+
+		it( 'stays on the page while its judgment can be undone, and Undo brings the row back focused', async () => {
+			renderReview( { canTune: true } );
+			const control = await toPageThree();
+			fakeUndoClock();
+			fireEvent.click( control );
+			await settle();
+			fireEvent.click( screen.getByRole( 'button', { name: 'Undo' } ) );
+			const row = rowOf(
+				await screen.findByRole( 'button', {
+					name: `Reject ${ ITEM_THREE.name }`,
+				} )
+			);
+			expect( document.activeElement ).toBe( row );
+			expect( screen.getByText( 'Page 3 of 3' ) ).toBeInTheDocument();
+			expect( wire.sent( 'reject_link' ) ).toEqual( [] );
+		} );
+	} );
+
+	it( 'asks nothing of the first page of names while a later one shows', async () => {
+		wire.replies.accept_entity = { ok: true, event_id: 'ev-name' };
+		const nameReads = ( cursor ) =>
+			wire
+				.sent( 'review' )
+				.filter(
+					( tokens ) =>
+						'entities' === tokens[ 0 ] &&
+						cursor === afterIn( tokens )
+				);
+		renderReview( { canTune: true } );
+		await within( queue( 'Suggested names' ) ).findByRole( 'button', {
+			name: PROPOSED.name,
+		} );
+		next();
+		const control = await screen.findByRole( 'button', {
+			name: `Accept ${ NAMED_LATER.name }`,
+		} );
+		fakeUndoClock();
+		fireEvent.click( control );
+		await elapse( UNDO_MS );
+		await waitFor( () =>
+			expect( nameReads( CURSORS.entities[ 1 ] ) ).toHaveLength( 2 )
+		);
+		expect( nameReads( null ) ).toHaveLength( 1 );
+	} );
+
+	it( 'keeps the checked run and the page while judging a row changes the list', async () => {
+		window.Element.prototype.scrollIntoView = jest.fn();
+		wire.replies.reject_link = never;
+		renderReview( { canTune: true } );
+		await within( queue( 'Suggested matches' ) ).findByRole( 'button', {
+			name: LINK.name,
+		} );
+		next();
+		await screen.findByRole( 'button', { name: PAGE_TWO.name } );
+		previous();
+		fireEvent.click(
+			await screen.findByRole( 'checkbox', {
+				name: `Select ${ BESIDE.title }`,
+			} )
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: `Reject ${ LINK.name }` } )
+		);
+		fireEvent.click(
+			screen.getByRole( 'button', { name: `Reject ${ SIBLING.name }` } )
+		);
+		expect( screen.getByText( '1 Item selected' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'Page 1 of 3' ) ).toBeInTheDocument();
+	} );
+
+	it( 'keeps the checked run on a change of view that moves no page', async () => {
+		window.Element.prototype.scrollIntoView = jest.fn();
+		renderReview( { canTune: true } );
+		fireEvent.click(
+			await within( queue( 'Suggested matches' ) ).findByRole(
+				'checkbox',
+				{ name: `Select ${ LINK.title }` }
+			)
+		);
+		act( () =>
+			mockList.props.onChangeView( {
+				...mockList.props.view,
+				layout: { density: 'compact' },
+			} )
+		);
+		expect( screen.getByText( '1 Item selected' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'Page 1 of 3' ) ).toBeInTheDocument();
+	} );
+
+	it( 'keeps the checked run on a move to a page it cannot turn to', async () => {
+		window.Element.prototype.scrollIntoView = jest.fn();
+		renderReview( { canTune: true } );
+		fireEvent.click(
+			await within( queue( 'Suggested matches' ) ).findByRole(
+				'checkbox',
+				{ name: `Select ${ LINK.title }` }
+			)
+		);
+		act( () =>
+			mockList.props.onChangeView( { ...mockList.props.view, page: 3 } )
+		);
+		expect( screen.getByText( '1 Item selected' ) ).toBeInTheDocument();
+		expect( screen.getByText( 'Page 1 of 3' ) ).toBeInTheDocument();
+		expect( linkReadsAfter( CURSORS.links[ 1 ] ) ).toEqual( [] );
+	} );
+
+	it( 'lets the checked run go on a change of page', async () => {
+		window.Element.prototype.scrollIntoView = jest.fn();
+		wire.replies.reject_link = { ok: true, event_id: 'ev-paged' };
+		renderReview( { canTune: true } );
+		fireEvent.click(
+			await within( queue( 'Suggested matches' ) ).findByRole(
+				'checkbox',
+				{ name: `Select ${ LINK.title }` }
+			)
+		);
+		expect( screen.getByText( '1 Item selected' ) ).toBeInTheDocument();
+		next();
+		fireEvent.click(
+			await screen.findByRole( 'checkbox', {
+				name: `Select ${ PAGE_TWO.title }`,
+			} )
+		);
+		expect( screen.getByText( '1 Item selected' ) ).toBeInTheDocument();
+		fakeUndoClock();
+		await act( async () =>
+			fireEvent.click( screen.getByRole( 'button', { name: 'No' } ) )
+		);
+		await elapse( UNDO_MS );
+		await settle();
+		expect( wire.sent( 'reject_link' ) ).toEqual( [
+			[
+				`--item=${ PAGE_TWO.item_key }`,
+				`--entity=${ PAGE_TWO.entity_key }`,
+			],
+		] );
 	} );
 } );

@@ -1,7 +1,6 @@
-import { useEffect, useId, useState } from '@wordpress/element';
-import { BaseControl } from '@wordpress/components';
+import { useMemo, useRef, useState } from '@wordpress/element';
+import { ComboboxControl } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
-import CommitInput from '@newspack-nodes/shared/components/CommitInput';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
 import { Unread } from './Answer';
 
@@ -24,93 +23,141 @@ const significant = ( text ) =>
 		.replace( / /g, '' ).length;
 
 /**
- * The entities `names` answers for the text an entity box holds. Each is
- * offered under the name the reader types toward, its key as its label, and
- * a name two of them share under each key. The last answer stands until a
- * new one lands. A text holding fewer than MIN_PREFIX letters, marks or
- * digits asks nothing and clears it, and a text naming an offered entity,
- * by its name or its key, asks nothing.
+ * The entities `names` answers for the text an entity box holds, each as an
+ * option keyed by its entity, labelled by its name, and a name two of them
+ * share labelled with each key beside it. Only an answer to this text is
+ * offered, a remembered one until the fresh one lands, and none while it is
+ * owed. A text holding fewer than MIN_PREFIX letters, marks or digits asks
+ * nothing.
  *
  * @param {string} text The text the box holds.
- * @return {{suggestions: Array<{value: string, label: string}>, keyOf: (text: string) => string, error: ?string, refresh: () => void}}
- *   The suggestions; `keyOf()`, the key an offered name stands for, any
- *   other text as given; the refusal of the latest ask; and `refresh()`,
- *   which asks it again.
+ * @return {{options: Array<{value: string, label: string, name: string}>, error: ?string, refresh: () => void}}
+ *   The options, the same array while the answer is; the refusal of the
+ *   latest ask; and `refresh()`, which asks it again.
  */
 export function useEntityNames( text ) {
-	const [ entities, setEntities ] = useState( [] );
 	const prefix = text.trim();
-	const short = significant( prefix ) < MIN_PREFIX;
-	const shared = ( name ) =>
-		entities.filter( ( one ) => one.name === name ).length > 1;
-	const suggestions = entities.map( ( { entity_key: key, name } ) =>
-		shared( name )
-			? { value: key, label: name }
-			: { value: name, label: key }
-	);
-	const keys = Object.fromEntries(
-		entities.map( ( { entity_key: key, name } ) => [
-			shared( name ) ? key : name,
-			key,
-		] )
-	);
-	const named =
-		undefined !== keys[ prefix ] ||
-		Object.values( keys ).includes( prefix );
 	const names = useIntelRead(
 		'search:names',
 		'names',
-		short || named ? null : commandArgs( { prefix } )
+		significant( prefix ) < MIN_PREFIX ? null : commandArgs( { prefix } )
 	);
-	const answered = names.answer?.entities;
-	useEffect( () => {
-		if ( answered ) {
-			setEntities( answered );
-		}
-	}, [ answered ] );
-	useEffect( () => {
-		if ( short ) {
-			setEntities( [] );
-		}
-	}, [ short ] );
-	return {
-		suggestions,
-		keyOf: ( typed ) => keys[ typed.trim() ] ?? typed,
-		error: names.error,
-		refresh: names.refresh,
-	};
+	const entities = names.answer?.entities;
+	const options = useMemo( () => optionsOf( entities ?? [] ), [ entities ] );
+	return { options, error: names.error, refresh: names.refresh };
 }
 
 /**
- * An entity box: the shared `CommitInput` holding the text typed, every edit
- * handed on as typed, suggesting what `useEntityNames()` offers, with the
- * refusal of its latest ask beneath it. The text stays as given, so a name
- * that leads another can be typed past; its owner reads the key a name
- * stands for through `keyOf()` when it runs the search.
+ * An answer's options, a name two entities share labelled with each key.
  *
- * @param {Object}                            props
- * @param {string}                            props.label    The field's label.
- * @param {string}                            props.value    The text the box holds.
- * @param {(value: string) => void}           props.onChange Takes each edit.
- * @param {ReturnType<typeof useEntityNames>} props.names    What `names` offers for `value`.
- * @return {import('react').ReactElement} The field, its suggestions and its refusal.
+ * @param {Array<{entity_key: string, name: string}>} entities The answer.
+ * @return {Array<{value: string, label: string, name: string}>} The options.
  */
-export default function EntityPicker( { label, value, onChange, names } ) {
-	const id = useId();
+function optionsOf( entities ) {
+	const counts = new Map();
+	entities.forEach( ( { name } ) =>
+		counts.set( name, ( counts.get( name ) ?? 0 ) + 1 )
+	);
+	return entities.map( ( { entity_key: key, name } ) => ( {
+		value: key,
+		label: counts.get( name ) > 1 ? `${ name } (${ key })` : name,
+		name,
+	} ) );
+}
+
+/** Joins the typed text to a key; uncased, so it lowercases nothing near it. */
+const JOIN = '\uE000';
+
+/**
+ * An entity box: the stock ComboboxControl picking one of the options
+ * `useEntityNames()` offers for the text typed, with the refusal of its
+ * latest ask beneath it. Every option the read answers is listed. A click,
+ * or the arrow keys and Enter, hands the owner the key picked and its name
+ * at once; typed text alone picks nothing, and Reset hands on '' and null.
+ * Escape in a box whose list is closed goes to `onEscape`. The box shows the
+ * name of what it last picked while the owner holds that key, and any other
+ * key as itself.
+ *
+ * @param {Object}                               props
+ * @param {string}                               props.label      The field's label.
+ * @param {string}                               props.value      The key the owner holds, '' for none.
+ * @param {(key: string, name: ?string) => void} props.onChange   Takes each pick.
+ * @param {string}                               [props.exclude]  A key never offered.
+ * @param {() => void}                           [props.onEscape] Takes Escape while the list is closed.
+ * @return {import('react').ReactElement} The field and its refusal.
+ */
+export default function EntityPicker( {
+	label,
+	value,
+	onChange,
+	exclude = '',
+	onEscape,
+} ) {
+	const [ text, setText ] = useState( '' );
+	const [ held, setHeld ] = useState( null );
+	const field = useRef( null );
+	const names = useEntityNames( text );
+	const options = useMemo( () => {
+		const current = held?.value === value ? held : { value, shown: value };
+		// The held one keeps its name, which the closed box shows.
+		const listed = names.options
+			.filter( ( one ) => exclude !== one.value && value !== one.value )
+			.map( ( one ) => ( {
+				...one,
+				shown: one.label,
+				// Leading with the text, the stock filter lists every one.
+				label: `${ text }${ JOIN }${ one.value }`,
+			} ) );
+		return value
+			? [ { ...current, label: current.shown }, ...listed ]
+			: listed;
+	}, [ names.options, exclude, value, held, text ] );
+
 	return (
-		<BaseControl id={ id } label={ label }>
-			<CommitInput
-				id={ id }
-				className="components-text-control__input is-next-40px-default-size"
-				value={ value }
-				onChange={ onChange }
-				suggestions={ names.suggestions }
-				placeholder={ __(
-					'Start typing a client or company name',
-					'newspack-intelligence'
-				) }
-			/>
+		<>
+			{ /* eslint-disable-next-line jsx-a11y/no-static-element-interactions -- the combobox inside takes the keys; this only listens. */ }
+			<div
+				ref={ field }
+				onKeyDownCapture={ ( event ) => {
+					const composing =
+						event.nativeEvent.isComposing || 229 === event.keyCode;
+					const input = field.current.querySelector( 'input' );
+					if (
+						'Escape' === event.key &&
+						! composing &&
+						'false' === input.getAttribute( 'aria-expanded' )
+					) {
+						onEscape?.();
+					}
+				} }
+			>
+				<ComboboxControl
+					__next40pxDefaultSize
+					__nextHasNoMarginBottom
+					label={ label }
+					value={ value || null }
+					options={ options }
+					onFilterValueChange={ setText }
+					__experimentalRenderItem={ ( { item } ) => item.shown }
+					onChange={ ( key ) => {
+						const option = options.find(
+							( one ) => key === one.value
+						);
+						setText( '' );
+						// Stock Enter re-picks a dropped highlight.
+						if ( key && ! option ) {
+							return;
+						}
+						setHeld( option ?? null );
+						onChange( key ?? '', option?.name ?? null );
+					} }
+					placeholder={ __(
+						'Start typing a client or company name',
+						'newspack-intelligence'
+					) }
+				/>
+			</div>
 			<Unread error={ names.error } refresh={ names.refresh } />
-		</BaseControl>
+		</>
 	);
 }

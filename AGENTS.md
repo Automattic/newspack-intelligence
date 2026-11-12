@@ -86,9 +86,10 @@ dormant below it. Against a substrate between a too-low floor and the real one
 the handshake passes, the plugin activates, and it then fatals on the missing
 method — the one outcome the gate exists to prevent. `CHANGELOG.md` records why
 each floor was raised.
-`scripts/check-substrate-floor.sh` derives the floor the plugin's PHP calls need
-from PHPStan's declaring-class resolution and compares it to the declared one. It
-reads PHP calls and not bundles, so when only a bundled dashboard reaches a
+`scripts/check-substrate-floor.sh` derives the floor the plugin's PHP needs, from
+every substrate method, constant, static property, class, interface and trait
+it reaches, through PHPStan's type resolution, and compares it to the declared
+one. It reads PHP and not bundles, so when only a bundled dashboard reaches a
 substrate API, the maintainer raises the floor by hand. `scripts/lint-docs.sh` fails the push when the
 number in this file and the number in the loader disagree. Change both together.
 
@@ -1401,11 +1402,60 @@ does not count in any of them. Any other entity answers `status: null`. The
 status carries no signal: the Entity view reads the latest from its own
 `signals` read. A link's state is the highest-ranked judgment's state
 (`JUDGE_RANK`: a person over an agent), else the machine's state, and a
-`rejected` link counts nowhere. `review` answers its queue's page and
-`total`, how many rows the queue holds, counted in the statement that reads
-the page, `COUNT(*) OVER ()` for links and a count of the cited proposals
-for entities, which Review's tabs show. `review links` also leaves out a proposed
-link whose entity's survivor is rejected, read as
+`rejected` link counts nowhere. `review` answers its queue's page, the
+rows after the cursor `after` names, and `total`, how many items or
+entities the whole queue holds, counted in the statement that pages them by
+one count row left-joined to the page, so an empty page still carries it,
+and `next`, the cursor after the page's last row, null on the queue's
+last page. A cursor is opaque: `Graph_Query::cursor()` mints it from the
+queue's name and the row's place in its order, time then key, and
+`Graph_Query::place()` alone reads it back, refusing one minted for the
+other queue or not at all (`after is not a cursor for the <what> queue`).
+Since a page holds the rows after a place rather than after a count, a
+judgment on one page never moves the next, and Review's Previous returns to
+the cursor the page came from, a stack the view holds. `review links`
+pages and counts items, newest first by the item's time, in one statement:
+it keeps one row per item and entity, its link that is not a topic tag
+where one stands, else its topic tag, queued only while that link is
+proposed, so a topic tag beside a link the machine asserted asks nothing;
+ranks the items after the cursor with `DENSE_RANK()`; and answers each of
+the page's items with its first `Graph_Query::REVIEW_LINKS` (5) entities
+by key, each row's `item_links` counting every entity the item proposes,
+so a page of `Graph_Query::MAX_LIMIT` (200) items answers at most 1,000
+links. The item ranked one past the page says a `next` follows, and
+`total` is counted in the same statement, so the page, its count and its
+cursor read one moment of the projection. The read scans every `links` row
+the projection keeps, its 730 days, to find the items holding a proposed
+link, and windows over every link of those items: a link's `state` is the
+state the machine wrote, which a judgment never rewrites, so no index on
+`links` tells an open proposal from a judged one, and the read's cost
+grows with that history rather than with the open queue. `review entities`
+pages and counts the cited proposals in one statement too, newest first by
+the microsecond of the latest proposal. Review's tabs show each queue's
+`total` as the server answers it, the themes tab less the pairs set apart
+with "Not the same". The Review badge shows the `total` of a one-row read
+of the match queue, which a curator's page asks while another view shows;
+on Review itself the tab carries no number and the page asks nothing. A
+judged row stays in place, greyed and showing its verdict, until its write
+has gone and no page its queue still reaches lists it, which forgets the
+judgment, so a row listed again later is owed one again. A queue reaches
+its first page and, from each page it has read, the page after the `next`
+that page last answered, so a judgment on a page the cursors have moved
+past goes with the next read, whichever page it reads. A page or a queue
+shown in another's place sends every judgment still in the undo window at
+once, so Undo and `z` only ever take back rows on the page shown, and say
+so. A refused write, or a send that throws, returns its row to its answers
+with the refusal under it, and a refusal naming no row returns only the
+queue's rows sent and not yet landed, a landed reply naming its row by the
+tokens it echoes; every refusal off the page shown is listed, its row
+named, above the queues, and a refusal goes only once its row is judged
+again. An item whose every match is judged takes no bulk
+answer, and an item row says how many of its links wait beyond the five it
+shows. The pager offers Previous and Next alone; while a page is owed it
+stays as the page shown left it, its freshness included, and Next turns
+nothing until that page lands, so focus stays on it. A move the pager
+cannot make leaves the checked run as it was. `review links` also leaves
+out a proposed link whose entity's survivor is rejected, read as
 `Entity_Index::winning_states()` reads a state, from the highest partition
 holding one, because a `ner_fuzzy` row outlives a re-resolution that did
 not run NER and nothing is left to judge of it; each listed item's

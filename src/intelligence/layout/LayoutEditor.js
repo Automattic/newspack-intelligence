@@ -16,7 +16,7 @@ import { __, sprintf } from '@wordpress/i18n';
 import CompositionEditor from '@newspack-nodes/shared/composition/CompositionEditor';
 import { registerCompositionBlocks } from '@newspack-nodes/shared/composition/registerCompositionBlocks';
 import { registerCompositionEditor } from '@newspack-nodes/shared/composition/editorRegistry';
-import EntityPicker, { useEntityNames } from '../components/EntityPicker';
+import EntityPicker from '../components/EntityPicker';
 import { aboutEntity, EntityRecord } from '../blocks/record';
 import { GROUP, useIntelRead } from '../hooks/useIntelCommand';
 import { PageReads } from '../hooks/usePageRead';
@@ -65,7 +65,8 @@ function LensPreview( { lenses, shown, onChange } ) {
 }
 
 /**
- * The entity the blocks preview with, picked by name.
+ * The entity the blocks preview with, picked by name: a pick previews it at
+ * once and closes the picker, and Escape closes it once the list has.
  *
  * @param {Object}                props
  * @param {?string}               props.name     The entity previewed, by its name, null before one is picked.
@@ -73,8 +74,6 @@ function LensPreview( { lenses, shown, onChange } ) {
  * @return {import('react').ReactElement} The picker.
  */
 function EntityPreview( { name, onChange } ) {
-	const [ text, setText ] = useState( '' );
-	const names = useEntityNames( text );
 	return (
 		<Dropdown
 			renderToggle={ ( { isOpen, onToggle } ) => (
@@ -92,24 +91,19 @@ function EntityPreview( { name, onChange } ) {
 				</Button>
 			) }
 			renderContent={ ( { onClose } ) => (
-				<form
-					className="newspack-intelligence__preview-pick"
-					onSubmit={ ( event ) => {
-						event.preventDefault();
-						onChange( names.keyOf( text ) );
-						onClose();
-					} }
-				>
+				<div className="newspack-intelligence__preview-pick">
 					<EntityPicker
 						label={ __( 'Preview with', 'newspack-intelligence' ) }
-						value={ text }
-						onChange={ setText }
-						names={ names }
+						value=""
+						onEscape={ onClose }
+						onChange={ ( key ) => {
+							if ( key ) {
+								onChange( key );
+								onClose();
+							}
+						} }
 					/>
-					<Button variant="primary" type="submit">
-						{ __( 'Preview', 'newspack-intelligence' ) }
-					</Button>
-				</form>
+				</div>
 			) }
 		/>
 	);

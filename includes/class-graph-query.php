@@ -79,6 +79,9 @@ final class Graph_Query {
 	/** Items a trend row, a related entity, a proposal or a group cites, the newest. */
 	public const CITATIONS = 5;
 
+	/** The proposed links `review links` answers of one item, the first by entity key. */
+	public const REVIEW_LINKS = 5;
+
 	/** Each judging actor kind's rank; a person outranks an agent. */
 	private const JUDGE_RANK = [
 		'user'  => 2,
@@ -2782,61 +2785,81 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The review queue: proposed links, newest item first, each with its item
-	 * and evidence; or proposed entities that a merge never took, the newest
-	 * proposal first, each with the readable items citing it, by a link or as
-	 * its source, and the sentence each quotes; beside the page, `total`, how
-	 * many the queue holds, which its tab counts.
+	 * The review queue: a page of items holding proposed links, newest item
+	 * first, each with at most `REVIEW_LINKS` of its proposed links and their
+	 * evidence; or a page of proposed entities that a merge never took, the
+	 * newest proposal first, each with the readable items citing it, by a
+	 * link or as its source, and the sentence each quotes. Each page holds
+	 * the rows after the cursor `after` names, so a judgment on one page
+	 * never moves the next. Beside the page, `total`, how many items or
+	 * entities the whole queue holds, which its tab counts, and `next`, the
+	 * cursor after the page's last row, null on the queue's last page.
 	 *
-	 * @param array<array-key,mixed> $args The bound command args: `what`, `limit`.
-	 * @return array<string,mixed> `{ links|entities, total, available }`.
-	 * @throws \InvalidArgumentException On an unknown queue or a bad limit.
+	 * @param array<array-key,mixed> $args The bound command args: `what`, `limit`, `after`.
+	 * @return array<string,mixed> `{ links|entities, total, next, available }`.
+	 * @throws \InvalidArgumentException On an unknown queue, a bad limit or a cursor it did not mint.
 	 */
 	public static function review( array $args ): array {
-		$what = self::one_of( 'what', Core::as_string( $args['what'] ), self::REVIEWS );
+		$what  = self::one_of( 'what', Core::as_string( $args['what'] ), self::REVIEWS );
 		$limit = self::limit( $args );
+		$after = null === $args['after'] ? null : self::place( $what, Core::as_string( $args['after'] ) );
 		return self::answer(
 			[
 				$what   => [],
 				'total' => 0,
+				'next'  => null,
 			],
-			static fn ( Row_Reader $r, array $g ): array => \array_combine( [ $what, 'total' ], 'links' === $what ? self::proposed_links( $r, $g, $limit ) : self::proposed_entities( $r, $g, $limit ) )
+			static fn ( Row_Reader $r, array $g ): array => \array_combine( [ $what, 'total', 'next' ], 'links' === $what ? self::proposed_links( $r, $g, $limit, $after ) : self::proposed_entities( $r, $g, $limit, $after ) )
 		);
 	}
 
 	/**
 	 * The proposed entities a readable item cites, newest proposal first,
-	 * and how many there are, read in the same statement.
+	 * after a place, the newest by its microsecond; how many there are, read
+	 * in the same statement; and the cursor after the page's last, when one
+	 * follows it.
 	 *
-	 * @param Row_Reader $r     The reader.
-	 * @param Graph      $g     The graph the read opened.
-	 * @param int        $limit The most entities answered.
-	 * @return array{0:list<array<string,mixed>>,1:int}
+	 * @param Row_Reader                 $r     The reader.
+	 * @param Graph                      $g     The graph the read opened.
+	 * @param int                        $limit The most entities answered.
+	 * @param array{0:int,1:string}|null $after The place the page follows, or null.
+	 * @return array{0:list<array<string,mixed>>,1:int,2:?string}
 	 */
-	private static function proposed_entities( Row_Reader $r, array $g, int $limit ): array {
+	private static function proposed_entities( Row_Reader $r, array $g, int $limit, ?array $after ): array {
 		$proposed              = 'SELECT entity_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'entity_states' ) . " p WHERE state = 'proposed'";
 		[ $live, $live_binds ] = self::live( $r, "( {t}.entity_key IN ( {$proposed} ) OR {t}.entity_key IN ( SELECT key FROM mg ) )", [] );
 		[ $cites, $cited ]     = self::cites( $r, "ev.subject IN ( {$proposed} )", [] );
+		[ $later, $places ]    = self::after( $after, 'q.at', 'q.entity_key' );
 		$rows                  = $r->rows(
-			"{$g['with']}{$live}, {$cites}, proposed AS ( SELECT s.entity_key, MAX( s.ts ) AS ts FROM " . Intel_Graph_Row_Schema::all( $r, 'entity_states' ) . " s WHERE s.state = 'proposed'"
+			"{$g['with']}{$live}, {$cites}, proposed AS ( SELECT s.entity_key, CAST( ROUND( MAX( s.ts ) * 1000000 ) AS INTEGER ) AS at FROM " . Intel_Graph_Row_Schema::all( $r, 'entity_states' ) . " s WHERE s.state = 'proposed'"
 			. ' AND s.entity_key NOT IN ( SELECT key FROM mg ) GROUP BY s.entity_key ),'
-			. ' queued AS ( SELECT p.entity_key, p.ts FROM proposed p WHERE EXISTS ( SELECT 1 FROM cites c WHERE c.entity_key = p.entity_key ) ),'
-			. ' best AS ( SELECT q.entity_key, q.ts FROM queued q ORDER BY q.ts DESC, q.entity_key LIMIT ? ),'
+			. ' queued AS ( SELECT p.entity_key, p.at FROM proposed p WHERE EXISTS ( SELECT 1 FROM cites c WHERE c.entity_key = p.entity_key ) ),'
+			. " fetched AS ( SELECT q.entity_key, q.at FROM queued q WHERE {$later} ORDER BY q.at DESC, q.entity_key LIMIT ? ),"
+			. ' best AS ( SELECT * FROM fetched ORDER BY at DESC, entity_key LIMIT ? ),'
 			. ' quoted AS ( SELECT c.entity_key, c.item_key, MAX( c.title ) AS title, MAX( c.url ) AS url, MAX( c.t ) AS t, MAX( c.evidence ) AS evidence FROM cites c JOIN best ON best.entity_key = c.entity_key GROUP BY c.entity_key, c.item_key ),'
-			. ' cited AS ( SELECT q.*, ROW_NUMBER() OVER ( PARTITION BY q.entity_key ORDER BY q.t DESC, q.item_key DESC ) AS rn FROM quoted q )'
-			. ' SELECT best.entity_key, ' . self::type_of( $r, 'best.entity_key' ) . ', ' . self::name_of( $r, 'best.entity_key' )
-			. ', cited.item_key, cited.url, cited.title, cited.evidence, ( SELECT COUNT(*) FROM queued ) FROM best JOIN cited ON cited.entity_key = best.entity_key WHERE cited.rn <= ? ORDER BY best.ts DESC, best.entity_key, cited.rn',
-			[ ...$g['binds'], ...$live_binds, ...$cited, $limit, self::CITATIONS ]
+			. ' cited AS ( SELECT q.*, ROW_NUMBER() OVER ( PARTITION BY q.entity_key ORDER BY q.t DESC, q.item_key DESC ) AS rn FROM quoted q ),'
+			. ' paged AS ( SELECT best.entity_key, best.at, cited.item_key, cited.url, cited.title, cited.evidence, cited.rn FROM best JOIN cited ON cited.entity_key = best.entity_key WHERE cited.rn <= ? )'
+			. ' SELECT paged.entity_key, paged.at, ' . self::type_of( $r, 'paged.entity_key' ) . ', ' . self::name_of( $r, 'paged.entity_key' )
+			. ', paged.item_key, paged.url, paged.title, paged.evidence, counted.n, counted.fetched FROM ( SELECT ( SELECT COUNT(*) FROM queued ) AS n, ( SELECT COUNT(*) FROM fetched ) AS fetched ) counted'
+			. ' LEFT JOIN paged ON 1 = 1 ORDER BY paged.at DESC, paged.entity_key, paged.rn',
+			[ ...$g['binds'], ...$live_binds, ...$cited, ...$places, $limit + 1, $limit, self::CITATIONS ]
 		);
 		$entities              = [];
 		$total                 = 0;
-		foreach ( $rows as [ $entity, $type, $name, $item, $url, $title, $evidence, $queued ] ) {
-			$total               = Core::as_int( $queued );
+		$more                  = false;
+		$last                  = null;
+		foreach ( $rows as [ $entity, $at, $type, $name, $item, $url, $title, $evidence, $queued, $fetched ] ) {
+			$total = Core::as_int( $queued );
+			$more  = Core::as_int( $fetched ) > $limit;
+			if ( null === $entity ) {
+				continue;
+			}
 			$entity              = Core::as_string( $entity );
+			$last                = [ Core::as_int( $at ), $entity ];
 			$entities[ $entity ] ??= [ 'entity_key' => $entity, 'type' => $type, 'name' => $name, 'items' => [] ];
 			$entities[ $entity ]['items'][] = [ 'item_key' => $item, 'url' => $url, 'title' => $title, 'evidence' => Core::as_string( $evidence ) ];
 		}
-		return [ \array_values( $entities ), $total ];
+		return [ \array_values( $entities ), $total, $more && null !== $last ? self::cursor( 'entities', ...$last ) : null ];
 	}
 
 	/**
@@ -2859,41 +2882,66 @@ final class Graph_Query {
 	}
 
 	/**
-	 * The proposed links, newest item first, but those to an entity whose
-	 * survivor is rejected: a `ner_fuzzy` row outlives a re-resolution that
-	 * did not run NER, and there is nothing left to judge of one; and how
-	 * many there are, counted in the same statement.
+	 * The proposed links of a page of items after a place, newest item
+	 * first, read in one statement with the queue's count: one row per item
+	 * and entity, its link that is not a topic tag where one stands, else
+	 * its topic tag, queued only while that link is proposed, so a topic tag
+	 * beside a link the machine asserted asks nothing and one standing alone
+	 * asks whether the item is about its entity; the item's first
+	 * `REVIEW_LINKS` entities by key, each row counting as
+	 * `item_links` every entity the item proposes, but those whose survivor
+	 * is rejected: a `ner_fuzzy` row outlives a re-resolution that did not
+	 * run NER, and there is nothing left to judge of one. Beside them, how
+	 * many items hold one, and the cursor after the page's last item when
+	 * the item ranked one past the page follows it.
 	 *
-	 * @param Row_Reader $r     The reader.
-	 * @param Graph      $g     The graph the read opened.
-	 * @param int        $limit The most rows answered.
-	 * @return array{0:list<array<string,mixed>>,1:int}
+	 * @param Row_Reader                 $r     The reader.
+	 * @param Graph                      $g     The graph the read opened.
+	 * @param int                        $limit The most items answered.
+	 * @param array{0:int,1:string}|null $after The place the page follows, or null.
+	 * @return array{0:list<array<string,mixed>>,1:int,2:?string}
 	 */
-	private static function proposed_links( Row_Reader $r, array $g, int $limit ): array {
+	private static function proposed_links( Row_Reader $r, array $g, int $limit, ?array $after ): array {
 		[ $live, $live_binds ] = self::live( $r, '{t}.item_key IN ( SELECT item_key FROM ' . Intel_Graph_Row_Schema::all( $r, 'links' ) . " n WHERE state = 'proposed' AND n.role IN ( " . Intel_Graph_Row_Schema::marks( Intel_Event::ABOUT_ROLES ) . ' ) )', Intel_Event::ABOUT_ROLES );
+		[ $later, $places ]    = self::after( $after, 'q.t', 'q.item_key' );
 		$links                 = [];
-		$rows                  = $r->rows(
-			"{$g['with']}{$live} SELECT live.item_key, live.entity_key, " . self::name_of( $r, 'live.entity_key' ) . ', ' . self::type_of( $r, 'live.entity_key' )
-			. ", live.role, live.method, live.confidence, live.evidence, live.title, live.url, COUNT(*) OVER () FROM live WHERE live.state = 'proposed' AND " . self::unrejected( $r, 'live.entity_key' ) . " ORDER BY live.t DESC, live.item_key, live.entity_key LIMIT ?",
-			[ ...$g['binds'], ...$live_binds, $limit ]
-		);
 		$total                 = 0;
-		foreach ( $rows as [ $item, $entity, $name, $type, $role, $method, $confidence, $evidence, $title, $url, $queued ] ) {
-			$links[] = [ 'item_key' => $item, 'entity_key' => $entity, 'name' => $name, 'type' => $type, 'role' => $role, 'method' => $method, 'confidence' => $confidence, 'evidence' => $evidence, 'title' => $title, 'url' => $url ];
-			$total   = Core::as_int( $queued );
+		$last                  = null;
+		$more                  = false;
+		foreach ( $r->rows(
+			"{$g['with']}{$live}, one AS ( SELECT live.*, ROW_NUMBER() OVER ( PARTITION BY live.item_key, live.entity_key ORDER BY live.topical ) AS pick FROM live ),"
+			. " queued AS ( SELECT * FROM one WHERE pick = 1 AND one.state = 'proposed' AND " . self::unrejected( $r, 'one.entity_key' ) . ' ),'
+			. ' ranked AS ( SELECT q.*, DENSE_RANK() OVER ( ORDER BY q.t DESC, q.item_key ) AS place, ROW_NUMBER() OVER ( PARTITION BY q.item_key ORDER BY q.entity_key ) AS rn,'
+			. " COUNT(*) OVER ( PARTITION BY q.item_key ) AS n FROM queued q WHERE {$later} )"
+			. ' SELECT q.place, q.item_key, q.t, q.entity_key, ' . self::name_of( $r, 'q.entity_key' ) . ', ' . self::type_of( $r, 'q.entity_key' )
+			. ', q.role, q.method, q.confidence, q.evidence, q.title, q.url, q.n, counted.n FROM ( SELECT COUNT( DISTINCT item_key ) AS n FROM queued ) counted'
+			. ' LEFT JOIN ranked q ON q.place <= ? AND q.rn <= ? ORDER BY q.place, q.entity_key',
+			[ ...$g['binds'], ...$live_binds, ...$places, $limit + 1, self::REVIEW_LINKS ]
+		) as [ $place, $item, $t, $entity, $name, $type, $role, $method, $confidence, $evidence, $title, $url, $item_links, $items ] ) {
+			$total = Core::as_int( $items );
+			if ( null === $place ) {
+				continue;
+			}
+			if ( Core::as_int( $place ) > $limit ) {
+				$more = true;
+				continue;
+			}
+			$last    = [ Core::as_int( $t ), Core::as_string( $item ) ];
+			$links[] = [ 'item_key' => $item, 'entity_key' => $entity, 'name' => $name, 'type' => $type, 'role' => $role, 'method' => $method, 'confidence' => $confidence, 'evidence' => $evidence, 'title' => $title, 'url' => $url, 'item_links' => Core::as_int( $item_links ) ];
 		}
-		return [ $links, $total ];
+		return [ $links, $total, $more && null !== $last ? self::cursor( 'links', ...$last ) : null ];
 	}
 
 	/**
-	 * A condition holding where a survivor key's state, as
-	 * `Entity_Index::winning_states()` reads one, is not `rejected`.
+	 * The cursor naming a row of a review queue by its place in the queue's
+	 * order, its time and its key, which `place()` alone reads back.
 	 *
-	 * @param Row_Reader $r   The reader.
-	 * @param string     $key The SQL expression naming a survivor key.
+	 * @param string $what The queue: links or entities.
+	 * @param int    $time The item's time, or the latest proposal's time in microseconds.
+	 * @param string $key  The row's item or entity key.
 	 */
-	private static function unrejected( Row_Reader $r, string $key ): string {
-		return "{$key} NOT IN ( SELECT s.entity_key FROM " . Entity_Index::winning_states( $r ) . " s WHERE s.state = 'rejected' )";
+	private static function cursor( string $what, int $time, string $key ): string {
+		return \rtrim( \strtr( \base64_encode( (string) \wp_json_encode( [ $what, $time, $key ] ) ), '+/', '-_' ), '=' );
 	}
 
 	/**
@@ -2920,6 +2968,31 @@ final class Graph_Query {
 	public static function name_of( Row_Reader $r, string $key ): string {
 		return 'COALESCE( ( SELECT nm.value FROM ' . Intel_Graph_Row_Schema::all( $r, 'names', true ) . " nm WHERE nm.entity_key = {$key} AND nm.kind = 'canonical' ORDER BY nm.partition_ordinal DESC, nm.id DESC LIMIT 1 ),"
 			. ' ( SELECT en.name FROM ' . Intel_Graph_Row_Schema::all( $r, 'entities' ) . " en WHERE en.entity_key = {$key} LIMIT 1 ) )";
+	}
+
+	/**
+	 * A condition holding where a survivor key's state, as
+	 * `Entity_Index::winning_states()` reads one, is not `rejected`.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param string     $key The SQL expression naming a survivor key.
+	 */
+	private static function unrejected( Row_Reader $r, string $key ): string {
+		return "{$key} NOT IN ( SELECT s.entity_key FROM " . Entity_Index::winning_states( $r ) . " s WHERE s.state = 'rejected' )";
+	}
+
+	/**
+	 * A condition holding for the rows after a place in a review queue's
+	 * order, the newest first and then by key, over a time column and a key
+	 * column; with no place, a condition holding for every row.
+	 *
+	 * @param array{0:int,1:string}|null $after The place, or null.
+	 * @param string                     $time  The time column.
+	 * @param string                     $key   The key column.
+	 * @return Sql The condition and its binds.
+	 */
+	private static function after( ?array $after, string $time, string $key ): array {
+		return null === $after ? [ '1 = 1', [] ] : [ "( {$time} < ? OR ( {$time} = ? AND {$key} > ? ) )", [ $after[0], $after[0], $after[1] ] ];
 	}
 
 	/**
@@ -3000,6 +3073,23 @@ final class Graph_Query {
 	 */
 	public static function graph( Row_Reader $r ): array {
 		return self::bound( $r, Entity_Index::survivors( $r ), Intel_Tiers::readable() );
+	}
+
+	/**
+	 * The place a cursor `cursor()` minted for the queue names.
+	 *
+	 * @param string $what  The queue: links or entities.
+	 * @param string $token The cursor.
+	 * @return array{0:int,1:string} The row's time and key.
+	 * @throws \InvalidArgumentException On a cursor it did not mint for the queue.
+	 */
+	private static function place( string $what, string $token ): array {
+		$json  = \base64_decode( \strtr( $token, '-_', '+/' ), true );
+		$place = false === $json ? null : \json_decode( $json, true );
+		if ( ! \is_array( $place ) || ! \array_is_list( $place ) || 3 !== \count( $place ) || $what !== $place[0] || ! \is_int( $place[1] ) || ! \is_string( $place[2] ) ) {
+			throw new \InvalidArgumentException( "after is not a cursor for the {$what} queue" );
+		}
+		return [ $place[1], $place[2] ];
 	}
 
 	/**

@@ -208,7 +208,7 @@ describe( 'usePageRead', () => {
 		);
 	} );
 
-	it( 'reads the review queue only while the page asks it', async () => {
+	it( 'reads the review queue’s total, one row of it, only while the page asks it', async () => {
 		wire.replies.review = { links: [], total: 4 };
 		const page = renderOnPage( <LensNames label="view" /> );
 		await settle();
@@ -216,7 +216,9 @@ describe( 'usePageRead', () => {
 		page.unmount();
 		renderOnPage( <LensNames label="view" />, { review: true } );
 		await waitFor( () =>
-			expect( wire.sent( 'review' ) ).toEqual( [ [ 'links' ] ] )
+			expect( wire.sent( 'review' ) ).toEqual( [
+				[ 'links', '--limit=1' ],
+			] )
 		);
 	} );
 

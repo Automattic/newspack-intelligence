@@ -150,6 +150,17 @@ const WAIT = { timeout: 4000 };
 
 let wire;
 
+// jsdom lays nothing out, so it has no scrollIntoView for the entity picker.
+const { scrollIntoView } = window.Element.prototype;
+
+beforeAll( () => {
+	window.Element.prototype.scrollIntoView = jest.fn();
+} );
+
+afterAll( () => {
+	window.Element.prototype.scrollIntoView = scrollIntoView;
+} );
+
 beforeEach( () => {
 	Core.reset();
 	mockProvider.props = null;
@@ -248,7 +259,13 @@ describe( 'mountLayoutEditor', () => {
 		).toBeTruthy();
 	} );
 
-	it( 'previews the profile it was opened from, and another picked by name', async () => {
+	/**
+	 * The profile editor previewing Harbor Ledger, its picker opened, where
+	 * `names` offers Lakeside Works.
+	 *
+	 * @return {Promise<HTMLElement>} The picker's box.
+	 */
+	async function openEntityPreview() {
 		const ENTITY_PROBE = 'newspack-intelligence/entity-probe';
 		/** A block reading its page's entity. */
 		function EntityProbe() {
@@ -315,17 +332,20 @@ describe( 'mountLayoutEditor', () => {
 				WAIT
 			)
 		);
-		fireEvent.change( screen.getByLabelText( 'Preview with' ), {
-			target: { value: 'Lakeside Works' },
-		} );
-		await waitFor(
-			() =>
-				expect(
-					document.querySelector( 'option[value="Lakeside Works"]' )
-				).not.toBeNull(),
-			WAIT
+		return screen.getByRole( 'combobox', { name: 'Preview with' } );
+	}
+
+	it( 'previews the profile it was opened from, and another picked by name at once', async () => {
+		const box = await openEntityPreview();
+		act( () => box.focus() );
+		fireEvent.change( box, { target: { value: 'Lakeside' } } );
+		fireEvent.click(
+			await screen.findByRole(
+				'option',
+				{ name: 'Lakeside Works' },
+				WAIT
+			)
 		);
-		fireEvent.click( screen.getByRole( 'button', { name: 'Preview' } ) );
 
 		await waitFor(
 			() =>
@@ -342,6 +362,23 @@ describe( 'mountLayoutEditor', () => {
 				WAIT
 			)
 		).toBeTruthy();
+	} );
+
+	it( 'closes the picker on Escape once its list is closed, the list first', async () => {
+		const box = await openEntityPreview();
+		act( () => box.focus() );
+		fireEvent.change( box, { target: { value: 'Lakeside' } } );
+		await screen.findByRole( 'option', { name: 'Lakeside Works' }, WAIT );
+
+		fireEvent.keyDown( box, { key: 'Escape', code: 'Escape' } );
+		expect( screen.queryByRole( 'listbox' ) ).toBeNull();
+		expect( box ).toBeInTheDocument();
+
+		fireEvent.keyDown( box, { key: 'Escape', code: 'Escape' } );
+		await waitFor( () => expect( box ).not.toBeInTheDocument(), WAIT );
+		expect( wire.sent( 'related' ) ).toEqual( [
+			[ 'organization:harbor-ledger' ],
+		] );
 	} );
 
 	it( 'tells the page whether the layout holds a change not yet saved', async () => {

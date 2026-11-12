@@ -540,13 +540,15 @@ function useBoardWrites( nameOf ) {
 	};
 
 	const undo = () => {
-		const id = deferred.undo();
-		setWrites( ( was ) => was.filter( ( one ) => one.id !== id ) );
+		const undone = deferred.undo() ?? [];
+		setWrites( ( was ) =>
+			was.filter( ( one ) => ! undone.includes( one.id ) )
+		);
 	};
 
 	const pending =
 		deferred.latest &&
-		writes.find( ( one ) => one.id === deferred.latest.key );
+		writes.find( ( one ) => one.id === deferred.latest.keys[ 0 ] );
 	const refusalOf = ( key ) =>
 		refused.find( ( [ item ] ) => item === key )?.[ 1 ] ?? null;
 	return {

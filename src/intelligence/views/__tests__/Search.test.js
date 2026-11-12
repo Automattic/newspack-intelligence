@@ -73,17 +73,17 @@ function renderSearch( props = {} ) {
 }
 
 /**
- * What an input's suggestion list offers, each its value and its label.
+ * Type into the entity box as a reader does: focused first, then the text.
  *
- * @param {HTMLElement} input The input.
- * @return {string[][]} Each offer.
+ * @param {string} text What is typed.
+ * @return {HTMLElement} The box.
  */
-const offered = ( input ) =>
-	[
-		...( document
-			.getElementById( input.getAttribute( 'list' ) )
-			?.querySelectorAll( 'option' ) ?? [] ),
-	].map( ( one ) => [ one.value, one.label ] );
+const typeEntity = ( text ) => {
+	const box = screen.getByRole( 'combobox', { name: 'Client or company' } );
+	act( () => box.focus() );
+	fireEvent.change( box, { target: { value: text } } );
+	return box;
+};
 
 /**
  * The filter chip DataViews draws for a filter, by the text it leads with.
@@ -103,12 +103,17 @@ const chip = ( name ) =>
 /** jsdom's `CSS`, which carries no `supports()` for DataViews' menus. */
 const jsdomCss = window.CSS;
 
+// jsdom lays nothing out, so it has no scrollIntoView for the entity picker.
+const { scrollIntoView } = window.Element.prototype;
+
 beforeAll( () => {
 	window.CSS = { ...jsdomCss, supports: () => false };
+	window.Element.prototype.scrollIntoView = jest.fn();
 } );
 
 afterAll( () => {
 	window.CSS = jsdomCss;
+	window.Element.prototype.scrollIntoView = scrollIntoView;
 } );
 
 describe( 'Search', () => {
@@ -374,7 +379,7 @@ describe( 'Search', () => {
 		);
 	} );
 
-	it( 'suggests the entities whose names the entity typed leads, and searches the one picked', async () => {
+	it( 'lists the entities whose names the entity typed leads, and searches the one picked at once', async () => {
 		wire.replies.search = PAGE;
 		wire.replies.names = ( args ) => ( {
 			entities:
@@ -394,16 +399,15 @@ describe( 'Search', () => {
 		} );
 		renderSearch();
 		await screen.findByText( '128 items, most important first' );
-		const entity = screen.getByLabelText( 'Client or company' );
-		fireEvent.change( entity, { target: { value: 'Valley' } } );
-		await waitFor( () =>
-			expect( offered( entity ) ).toEqual( [
-				[ 'Valley Ledger', 'organization:valley-ledger' ],
-				[ 'Valley Times', 'organization:valley-times' ],
-			] )
-		);
+		const entity = typeEntity( 'Valley' );
+		expect(
+			await screen.findByRole( 'option', { name: 'Valley Times' } )
+		).toBeVisible();
+		const searched = wire.sent( 'search' ).length;
 
-		fireEvent.change( entity, { target: { value: 'Valley Ledger' } } );
+		fireEvent.click(
+			screen.getByRole( 'option', { name: 'Valley Ledger' } )
+		);
 
 		await waitFor( () =>
 			expect( wire.sent( 'search' ).at( -1 ) ).toEqual( [
@@ -411,32 +415,61 @@ describe( 'Search', () => {
 				'--limit=20',
 			] )
 		);
-		expect( entity ).toHaveValue( 'organization:valley-ledger' );
+		expect( wire.sent( 'search' ) ).toHaveLength( searched + 1 );
+		expect( entity ).toHaveValue( 'Valley Ledger' );
 	} );
 
-	it( 'searches an entity key typed and entered, and drops the entity when emptied', async () => {
+	it( 'searches nothing for typed text, nor on Enter when no entity answers it', async () => {
 		wire.replies.search = PAGE;
 		wire.replies.names = { entities: [], available: true };
 		renderSearch();
 		await screen.findByText( '128 items, most important first' );
-		const entity = screen.getByLabelText( 'Client or company' );
+		const searched = wire.sent( 'search' ).length;
 
-		fireEvent.change( entity, {
-			target: { value: 'organization:coastline-weekly' },
-		} );
-		fireEvent.submit( entity.closest( 'form' ) );
+		const entity = typeEntity( 'organization:coastline-weekly' );
 		await waitFor( () =>
-			expect( wire.sent( 'search' ).at( -1 ) ).toEqual( [
-				'--entity=organization:coastline-weekly',
-				'--limit=20',
+			expect( wire.sent( 'names' ) ).toContainEqual( [
+				'--prefix=organization:coastline-weekly',
 			] )
 		);
+		await act( async () => {} );
+		fireEvent.keyDown( entity, { key: 'Enter', code: 'Enter' } );
+		await act( async () => {} );
 
-		fireEvent.change( entity, { target: { value: '' } } );
-		fireEvent.submit( entity.closest( 'form' ) );
+		expect( wire.sent( 'search' ) ).toHaveLength( searched );
+	} );
+
+	it( 'drops the entity when the box is reset, and empties the box when the filter goes', async () => {
+		wire.replies.search = PAGE;
+		renderSearch( {
+			start: {
+				...newView(),
+				filters: [
+					{
+						field: 'entity',
+						operator: 'is',
+						value: 'organization:coastline-weekly',
+					},
+				],
+			},
+		} );
+		await screen.findByText( '128 items, most important first' );
+		const entity = screen.getByRole( 'combobox', {
+			name: 'Client or company',
+		} );
+		expect( entity ).toHaveValue( 'organization:coastline-weekly' );
+
+		fireEvent.click(
+			within(
+				entity.closest( '.components-combobox-control' )
+			).getByRole( 'button', { name: 'Reset' } )
+		);
+
 		await waitFor( () =>
 			expect( wire.sent( 'search' ).at( -1 ) ).toEqual( [ '--limit=20' ] )
 		);
+		act( () => entity.blur() );
+		expect( entity ).toHaveValue( '' );
 	} );
 
 	it( 'pages forward, the page it leaves gone while the next is owed', async () => {

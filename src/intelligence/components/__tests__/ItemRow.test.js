@@ -1373,15 +1373,26 @@ describe( 'ItemRow is this about', () => {
 		return screen.findByRole( 'dialog' );
 	};
 	const pick = async ( dialog, name ) => {
-		const field = within( dialog ).getByLabelText( 'Client or company' );
+		const field = within( dialog ).getByRole( 'combobox', {
+			name: 'Client or company',
+		} );
+		act( () => field.focus() );
 		fireEvent.change( field, { target: { value: 'Harbor' } } );
-		await waitFor( () =>
-			expect(
-				field.list?.querySelectorAll( 'option' ) ?? []
-			).toHaveLength( 2 )
+		fireEvent.click(
+			await within( dialog ).findByRole( 'option', { name } )
 		);
-		fireEvent.change( field, { target: { value: name } } );
 	};
+
+	// jsdom lays nothing out, so it has no scrollIntoView for the picker.
+	const { scrollIntoView } = window.Element.prototype;
+
+	beforeAll( () => {
+		window.Element.prototype.scrollIntoView = jest.fn();
+	} );
+
+	afterAll( () => {
+		window.Element.prototype.scrollIntoView = scrollIntoView;
+	} );
 
 	it( 'offers a curator "Is this about…" in More actions, and a reader none', async () => {
 		const { unmount } = renderRow();
@@ -1455,6 +1466,32 @@ describe( 'ItemRow is this about', () => {
 		);
 	} );
 
+	it( 'takes no typed text that no offered entity stands for, Link it held back', async () => {
+		renderRow();
+		const dialog = await ask();
+		const field = within( dialog ).getByRole( 'combobox', {
+			name: 'Client or company',
+		} );
+		act( () => field.focus() );
+		fireEvent.change( field, {
+			target: { value: 'organization:harbor-annex' },
+		} );
+		await waitFor( () =>
+			expect( wire.sent( 'names' ) ).toContainEqual( [
+				'--prefix=organization:harbor-annex',
+			] )
+		);
+		await act( async () => {} );
+
+		fireEvent.keyDown( field, { key: 'Enter', code: 'Enter' } );
+
+		expect( field ).toHaveValue( 'organization:harbor-annex' );
+		expect(
+			within( dialog ).getByRole( 'button', { name: 'Link it' } )
+		).toBeDisabled();
+		expect( wire.sent( 'add_link' ) ).toEqual( [] );
+	} );
+
 	it( 'keeps the dialog open with the refusal when the link is refused', async () => {
 		wire.replies.add_link = new Error(
 			`already confirmed: ${ ITEM.item_key } organization:harbor-ledger`
@@ -1472,6 +1509,20 @@ describe( 'ItemRow is this about', () => {
 			`already confirmed: ${ ITEM.item_key } organization:harbor-ledger`
 		);
 		expect( screen.getByRole( 'dialog' ) ).toBeInTheDocument();
+	} );
+
+	it( 'closes on Escape pressed in the picker once its list is closed', async () => {
+		renderRow();
+		const dialog = await ask();
+		const field = within( dialog ).getByRole( 'combobox', {
+			name: 'Client or company',
+		} );
+		act( () => field.blur() );
+
+		fireEvent.keyDown( field, { key: 'Escape', code: 'Escape' } );
+
+		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expect( wire.sent( 'add_link' ) ).toEqual( [] );
 	} );
 
 	it( 'closes on Cancel, returning focus to More actions, and sends nothing', async () => {

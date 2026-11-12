@@ -29,7 +29,7 @@ import {
 } from '../hooks/useIntelCommand';
 import { AnswerBody } from './Answer';
 import Cite, { EntityChip } from './Cite';
-import EntityPicker, { useEntityNames } from './EntityPicker';
+import EntityPicker from './EntityPicker';
 import HowRead from './HowRead';
 import Refusal from './Refusal';
 import Skeleton from './Skeleton';
@@ -625,7 +625,7 @@ function MoreActions( {
  * "Is this about…": a name picker over `names` (`EntityPicker`) and the role
  * the item names the entity in, the subject unless the curator says it is
  * mentioned, worded as the vocabulary words link roles. "Link it" sends
- * `add_link` once the text names an entity `names` offered; a landed link
+ * `add_link` once an entity `names` offered is picked; a landed link
  * hands `onLinked` the entity's name, and a refused one stays in the dialog
  * as its alert.
  *
@@ -636,23 +636,17 @@ function MoreActions( {
  * @return {import('react').ReactElement} The dialog.
  */
 function AboutDialog( { item, onLinked, onClose } ) {
-	const [ text, setText ] = useState( '' );
+	const [ picked, setPicked ] = useState( { key: '', name: null } );
 	const [ role, setRole ] = useState( 'subject' );
 	const field = useRef( null );
-	const names = useEntityNames( text );
 	useEffect( () => field.current?.querySelector( 'input' )?.focus(), [] );
-	const key = names.keyOf( text );
-	const picked = names.suggestions.find(
-		( suggestion ) => key === names.keyOf( suggestion.value )
-	);
-	const name =
-		picked && ( key === picked.value ? picked.label : picked.value );
+	const { key, name } = picked;
 	const link = useIntelWrite( 'add_link', {
 		scope: `add-link:${ useId().replace( /[^a-z0-9]/gi, '' ) }`,
 		dirties: ENTITY_READS,
 		refresh: () => onLinked( name ),
 	} );
-	const ready = Boolean( picked ) && ! link.pending;
+	const ready = Boolean( name ) && ! link.pending;
 	const send = () =>
 		ready && link.run( { item: item.item_key, entity: key, role } );
 	return (
@@ -665,9 +659,10 @@ function AboutDialog( { item, onLinked, onClose } ) {
 			<div ref={ field }>
 				<EntityPicker
 					label={ __( 'Client or company', 'newspack-intelligence' ) }
-					value={ text }
-					onChange={ setText }
-					names={ names }
+					value={ key }
+					onChange={ ( next, named ) =>
+						setPicked( { key: next, name: named } )
+					}
 				/>
 			</div>
 			<RadioControl

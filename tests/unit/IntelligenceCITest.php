@@ -191,6 +191,38 @@ final class IntelligenceCITest extends TestCase {
 		$this->assertSame( [], $this->ci->dispatch( 'collections', [] )['collections'] );
 	}
 
+	/** `review` binds `after` and pages after the cursor it names, and refuses one it did not mint. */
+	public function test_review_binds_a_cursor(): void {
+		$this->seed_world();
+		$this->seed( self::link( 'link_proposed', 'github:ledger-launch', 'organization:harbor-gazette', 'mention', 'ner_fuzzy', 0.62, self::$oct_13 ) );
+		$first = $this->ci->dispatch( 'review', [ 'links', '--limit=1' ] );
+
+		$second = $this->ci->dispatch( 'review', [ 'links', '--limit=1', '--after=' . $first['next'] ] );
+
+		$this->assertSame( [ [ 'linear:joint-grant' ], 2, null ], [ \array_column( $second['links'], 'item_key' ), $second['total'], $second['next'] ] );
+		$this->expectException( \InvalidArgumentException::class );
+		$this->expectExceptionMessage( 'after is not a cursor for the entities queue' );
+		$this->ci->dispatch( 'review', [ 'entities', '--after=' . $first['next'] ] );
+	}
+
+	/**
+	 * `review` says what its cursor names, the last item or entity a page
+	 * showed, and how many links of one item it answers, since the MCP door
+	 * reads both from the schema; it takes no offset.
+	 */
+	public function test_review_describes_its_cursor(): void {
+		$review = \array_column( Intelligence_CI_Node::node_schema()['commands'], null, 'name' )['review'];
+		$args   = \array_column( $review['args'], 'description', 'name' );
+
+		$this->assertSame( 'The next answer a page gave, an opaque cursor naming its last item for links, its last entity for entities; the page holds those after it in the queue\'s order, so judging one page never moves the next.', $args['after'] );
+		$this->assertArrayNotHasKey( 'offset', $args );
+		$this->assertStringContainsString( 'each row is one item and one entity it proposes', $review['description'] );
+		$this->assertStringContainsString( 'at most ' . Graph_Query::REVIEW_LINKS . ' of its proposed entities', $review['description'] );
+		$this->assertStringContainsString( 'item_links counting every entity the item proposes', $review['description'] );
+		$this->assertStringNotContainsString( 'each row is one proposed link', $review['description'] );
+		$this->assertStringContainsString( 'next', $review['description'] );
+	}
+
 	/** A blank optional arg is a value, read as given: it matches nothing. */
 	public function test_a_blank_optional_arg_is_a_value(): void {
 		$this->seed_world();

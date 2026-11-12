@@ -298,28 +298,29 @@ export function commandArgs( options ) {
  * One curation command, sent once per `run( args )` with every arg named
  * through `commandArgs()`, so a curator's value that begins `--name=` binds
  * as the value it is rather than as an option. `run()` answers the tokens it sent;
- * a landed send hands `refresh` its answer, and a refused one hands `onRefused` the
- * tokens its reply echoes, which say which send it was, and its own refusal,
- * which a later reply in the same batch cannot overwrite. A landed send first
+ * a landed send hands `refresh` its answer and the tokens its reply echoes,
+ * and a refused one hands `onRefused` those tokens, which say which send it
+ * was, and its own refusal, which a later reply in the same batch cannot
+ * overwrite. A landed send first
  * forgets every remembered answer under the prefixes it `dirties`, and every
  * mounted read so keyed asks again. The last reply's
  * refusal, the arguments it answered and whether a send is still owed its
  * reply are `useCommandOnce`'s own. A send still queued when the hook unmounts
  * or the page is left goes all the same, because a write declares it.
  *
- * @param {string}                                    command          The write verb.
- * @param {Object}                                    [opts]           Options.
- * @param {string}                                    [opts.ci]        The CI the command lives on.
- * @param {string}                                    [opts.scope]     Names this write's nodes, a
- *                                                                     subject naming what it is
- *                                                                     for, so two writes of one verb
- *                                                                     on a page never share a Fetcher;
- *                                                                     `<ci>:<command>` when omitted.
- * @param {(answer: Object) => void}                  [opts.refresh]   Runs once a send lands, given its answer.
- * @param {string[]}                                  [opts.dirties]   Cache-key prefixes a landed send
- *                                                                     forgets and re-reads, such as
- *                                                                     `collections:`.
- * @param {(tokens: string[], error: string) => void} [opts.onRefused] Runs once a send is refused.
+ * @param {string}                                     command          The write verb.
+ * @param {Object}                                     [opts]           Options.
+ * @param {string}                                     [opts.ci]        The CI the command lives on.
+ * @param {string}                                     [opts.scope]     Names this write's nodes, a
+ *                                                                      subject naming what it is
+ *                                                                      for, so two writes of one verb
+ *                                                                      on a page never share a Fetcher;
+ *                                                                      `<ci>:<command>` when omitted.
+ * @param {(answer: Object, tokens: string[]) => void} [opts.refresh]   Runs once a send lands, given its answer and the tokens it echoes.
+ * @param {string[]}                                   [opts.dirties]   Cache-key prefixes a landed send
+ *                                                                      forgets and re-reads, such as
+ *                                                                      `collections:`.
+ * @param {(tokens: string[], error: string) => void}  [opts.onRefused] Runs once a send is refused.
  * @return {{run: (args: Object<string, string|Array<string>>) => string[], refusal: ?string, answeredArgs: ?string[], pending: boolean}}
  *   `run()`, the last refusal, the arguments the last reply answered, and
  *   whether a send is still owed its reply.
@@ -352,7 +353,7 @@ export function useIntelWrite(
 				return;
 			}
 			dirty( dirties );
-			refresh?.( result );
+			refresh?.( result, args );
 		},
 	} );
 	const run = useCallback(

@@ -1,14 +1,13 @@
 import { Button, SelectControl } from '@wordpress/components';
 import { DataViews } from '@wordpress/dataviews';
-import { useEffect, useState } from '@wordpress/element';
+import { useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
-import { submitProps } from '@newspack-nodes/shared/utils/submitProps';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import { usePageRead } from '../hooks/usePageRead';
 import { Unread } from '../components/Answer';
 import AskBox from '../components/AskBox';
-import EntityPicker, { useEntityNames } from '../components/EntityPicker';
+import EntityPicker from '../components/EntityPicker';
 import ItemList from '../components/ItemList';
 import Section, { Invitation } from '../components/Section';
 import Sheet from '../components/Sheet';
@@ -261,9 +260,9 @@ function LensRuns( { lens, lists } ) {
 }
 
 /**
- * The client or company, picked by name: a name offered, picked, searches
- * its key at once, and Enter searches the text as typed, a key or nothing.
- * The box follows the view, so a filter removed elsewhere empties it.
+ * The client or company, picked by name: a name picked searches its key at
+ * once, and typed text alone searches nothing. The box shows the view's
+ * entity, so a filter removed elsewhere empties it.
  *
  * @param {Object}                 props
  * @param {Object}                 props.view         The view.
@@ -271,26 +270,14 @@ function LensRuns( { lens, lists } ) {
  * @return {import('react').ReactElement} The field.
  */
 function EntityFilter( { view, onChangeView } ) {
-	const value = filterValue( view, 'entity' ) ?? '';
-	const [ text, setText ] = useState( value );
-	useEffect( () => setText( value ), [ value ] );
-	const names = useEntityNames( text );
-	const apply = ( typed ) =>
-		onChangeView( withIs( view, 'entity', names.keyOf( typed ).trim() ) );
 	return (
-		<form { ...submitProps( () => apply( text ) ) }>
-			<EntityPicker
-				label={ __( 'Client or company', 'newspack-intelligence' ) }
-				value={ text }
-				onChange={ ( next ) => {
-					setText( next );
-					if ( names.suggestions.some( ( s ) => s.value === next ) ) {
-						apply( next );
-					}
-				} }
-				names={ names }
-			/>
-		</form>
+		<EntityPicker
+			label={ __( 'Client or company', 'newspack-intelligence' ) }
+			value={ filterValue( view, 'entity' ) ?? '' }
+			onChange={ ( key ) =>
+				onChangeView( withIs( view, 'entity', key ) )
+			}
+		/>
 	);
 }
 

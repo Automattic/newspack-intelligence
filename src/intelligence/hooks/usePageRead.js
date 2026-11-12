@@ -18,7 +18,7 @@ const READS = {
 	lenses: { command: 'lenses', args: [] },
 	watches: { command: 'watches', args: [] },
 	folders: { command: 'collections', args: [] },
-	review: { command: 'review', args: [ 'links' ] },
+	review: { command: 'review', args: [ 'links', '--limit=1' ] },
 	collection: { command: 'health', args: [ 'collection' ] },
 	sources: { command: 'health', args: [ 'sources' ] },
 	backlog: { command: 'health', args: [ 'backlog' ] },
@@ -47,8 +47,8 @@ function useShared( name, asked = true ) {
 
 /**
  * The page's shared reads, for `PageReads` to provide. The review queue is
- * read only while the page asks it, for a curator's count or the open
- * Review view.
+ * read only while the page asks it, for a curator's count off the Review
+ * view, one row of it, since the count is its `total` alone.
  *
  * @param {Object}  options
  * @param {boolean} options.review Whether the page reads the review queue.

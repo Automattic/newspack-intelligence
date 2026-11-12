@@ -101,6 +101,7 @@ const REVIEW = {
 			evidence: 'Acme readers flagged the paywall bug twice.',
 			title: 'Paywall bug reported by Acme',
 			url: 'https://github.example/example/plugin/912',
+			item_links: 1,
 		},
 	],
 	entities: [

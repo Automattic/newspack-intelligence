@@ -48,7 +48,7 @@ function Restore( { context, onRestored } ) {
 	const restore = useIntelWrite( 'restore', {
 		ci: 'compositions',
 		scope: 'layout:restore',
-		refresh: onRestored,
+		refresh: ( answer ) => onRestored( answer ),
 	} );
 	return (
 		<>

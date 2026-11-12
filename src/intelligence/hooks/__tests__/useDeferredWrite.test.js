@@ -83,7 +83,7 @@ describe( 'useDeferredWrite', () => {
 		);
 		expect( result.current.latest ).toEqual(
 			expect.objectContaining( {
-				key: COASTLINE,
+				keys: [ COASTLINE ],
 				message: 'Confirmed Coastline Weekly.',
 			} )
 		);
@@ -107,11 +107,9 @@ describe( 'useDeferredWrite', () => {
 		act( () => {
 			undone = result.current.undo();
 		} );
-		expect( undone ).toBe( COASTLINE );
+		expect( undone ).toEqual( [ COASTLINE ] );
 		expect( result.current.hidden ).toEqual( new Set( [ PRAIRIE ] ) );
-		expect( result.current.latest ).toEqual(
-			expect.objectContaining( { key: PRAIRIE } )
-		);
+		expect( result.current.latest.keys ).toEqual( [ PRAIRIE ] );
 		act( () => jest.advanceTimersByTime( UNDO_MS ) );
 		expect( first ).toHaveBeenCalledTimes( 1 );
 		expect( second ).not.toHaveBeenCalled();
@@ -366,10 +364,11 @@ describe( 'useDeferredWrite — a group', () => {
 		);
 		expect( result.current.latest ).toEqual(
 			expect.objectContaining( {
-				key: PRAIRIE,
+				keys: [ PRAIRIE, COASTLINE, FERNWOOD ],
 				message: 'Rejected 3 suggestions.',
 			} )
 		);
+		expect( result.current.latest ).not.toHaveProperty( 'key' );
 		act( () => jest.advanceTimersByTime( UNDO_MS - 1 ) );
 		writes.forEach( ( { send } ) => expect( send ).not.toHaveBeenCalled() );
 		act( () => jest.advanceTimersByTime( 1 ) );
@@ -379,7 +378,7 @@ describe( 'useDeferredWrite — a group', () => {
 		expect( result.current.hidden ).toEqual( new Set() );
 	} );
 
-	it( 'brings every row back with one undo, answering the first, and sends none', () => {
+	it( 'brings every row back with one undo, answering their keys, and sends none', () => {
 		const writes = three();
 		const { result } = renderHook( () => useDeferredWrite() );
 		act( () =>
@@ -396,7 +395,7 @@ describe( 'useDeferredWrite — a group', () => {
 		act( () => {
 			undone = result.current.undo();
 		} );
-		expect( undone ).toBe( PRAIRIE );
+		expect( undone ).toEqual( [ PRAIRIE, COASTLINE, FERNWOOD ] );
 		expect( result.current.hidden ).toEqual(
 			new Set( [ 'organization:lakeside-works' ] )
 		);

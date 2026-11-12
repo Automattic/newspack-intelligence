@@ -27,7 +27,7 @@ import { useHeld } from '../hooks/useHeld';
 import { usePageRead } from '../hooks/usePageRead';
 import { useDeferredWrite } from '../hooks/useDeferredWrite';
 import Answer, { AnswerBody, Unread } from '../components/Answer';
-import { useEntityNames } from '../components/EntityPicker';
+import EntityPicker from '../components/EntityPicker';
 import ItemList from '../components/ItemList';
 import ItemRow from '../components/ItemRow';
 import ListKeys, { LEAVES } from '../components/ListKeys';
@@ -796,13 +796,21 @@ function WatchForm( { draft, onDraft, refusal, onSave, onCancel } ) {
 					} ) ) }
 					onChange={ set( 'kind' ) }
 				/>
-				<TargetField
-					key={ draft.kind }
-					kind={ draft.kind }
-					label={ kinds[ draft.kind ].field }
-					value={ draft[ draft.kind ] }
-					onChange={ set( draft.kind ) }
-				/>
+				{ 'entity' === draft.kind ? (
+					<EntityPicker
+						label={ kinds.entity.field }
+						value={ draft.entity }
+						onChange={ set( 'entity' ) }
+					/>
+				) : (
+					<TargetField
+						key={ draft.kind }
+						kind={ draft.kind }
+						label={ kinds[ draft.kind ].field }
+						value={ draft[ draft.kind ] }
+						onChange={ set( draft.kind ) }
+					/>
+				) }
 				<fieldset className="newspack-intelligence__choices">
 					<legend>
 						{ __( 'Delivery', 'newspack-intelligence' ) }
@@ -839,46 +847,29 @@ function WatchForm( { draft, onDraft, refusal, onSave, onCancel } ) {
 }
 
 /**
- * The one target a watch follows, picked by name: a team view or a folder
- * from the lists `lenses` and `collections` answer, or a client or company
- * from what `names` offers for the text typed. A key that every list leaves
- * out, as an edited watch's entity before a name is typed, stands as itself.
+ * The team view or folder a watch follows, picked by name from the list
+ * `lenses` or `collections` answers. A key the list leaves out, as an
+ * edited watch's target, stands as itself.
  *
  * @param {Object}                props
- * @param {string}                props.kind     `lens`, `entity` or `collection`.
+ * @param {string}                props.kind     `lens` or `collection`.
  * @param {string}                props.label    The field's label.
  * @param {string}                props.value    The target's key.
  * @param {(key: string) => void} props.onChange Takes the key picked.
  * @return {import('react').ReactElement} The field.
  */
 function TargetField( { kind, label, value, onChange } ) {
-	const [ text, setText ] = useState( '' );
-	const lenses = usePageRead( 'lenses' );
-	const collections = usePageRead( 'folders' );
-	const names = useEntityNames( 'entity' === kind ? text : '' );
-	const listed = { lens: lenses, collection: collections, entity: names }[
-		kind
-	];
-
-	const offered = {
-		lens: ( lenses.answer?.lenses ?? [] ).map( ( one ) => ( {
-			value: one.lens_key,
-			label: one.name,
-		} ) ),
-		collection: ( collections.answer?.collections ?? [] ).map(
-			( one ) => ( { value: one.collection_key, label: one.name } )
-		),
-		entity: names.suggestions.map( ( suggestion ) => {
-			const key = names.keyOf( suggestion.value );
-			return {
-				value: key,
-				label:
-					key === suggestion.value
-						? suggestion.label
-						: suggestion.value,
-			};
-		} ),
-	}[ kind ];
+	const lens = 'lens' === kind;
+	const listed = usePageRead( lens ? 'lenses' : 'folders' );
+	const offered = lens
+		? ( listed.answer?.lenses ?? [] ).map( ( one ) => ( {
+				value: one.lens_key,
+				label: one.name,
+		  } ) )
+		: ( listed.answer?.collections ?? [] ).map( ( one ) => ( {
+				value: one.collection_key,
+				label: one.name,
+		  } ) );
 	const options = [
 		...( value && ! offered.some( ( one ) => value === one.value )
 			? [ { value, label: value } ]
@@ -893,7 +884,6 @@ function TargetField( { kind, label, value, onChange } ) {
 				label={ label }
 				value={ value || null }
 				options={ options }
-				onFilterValueChange={ setText }
 				onChange={ ( key ) => onChange( key ?? '' ) }
 			/>
 			<Unread error={ listed.error } refresh={ listed.refresh } />

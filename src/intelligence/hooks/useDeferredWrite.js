@@ -37,7 +37,7 @@ function sendEach( write ) {
  * key at once, announces its message politely and sends after `UNDO_MS`;
  * `deferGroup()` does the same for several rows' writes under one message,
  * one timer and one undo; `undo()` cancels the most recent write still
- * pending and answers its key, a group's first, or null with none pending;
+ * pending and answers its keys, or null with none pending;
  * `flush()` sends every pending write now, each once, and raises what the
  * sends threw only after all have run. The hook
  * flushes itself on `pagehide` and on unmount, which is a tab switch, so a
@@ -50,9 +50,10 @@ function sendEach( write ) {
  * stopped, so after the flush `sendQueuedWrites()` posts every queued write
  * in the same task, with `keepalive`.
  *
- * @return {{hidden: Set<string>, latest: ?{id: number, key: string, message: string}, defer: (key: string, send: () => void, message: string) => void, deferGroup: (writes: Array<{key: string, send: () => void}>, message: string) => void, undo: () => ?string, flush: () => void}}
+ * @return {{hidden: Set<string>, latest: ?{id: number, keys: string[], message: string}, defer: (key: string, send: () => void, message: string) => void, deferGroup: (writes: Array<{key: string, send: () => void}>, message: string) => void, undo: () => ?string[], flush: () => void}}
  *   The keys pending; the write an undo takes, `id` telling apart two
- *   writes of one key; and the four controls.
+ *   writes of one key, and `keys` every key it holds; and the four
+ *   controls.
  */
 export function useDeferredWrite() {
 	const pending = useRef( [] );
@@ -95,7 +96,7 @@ export function useDeferredWrite() {
 		}
 		clearTimeout( write.timer );
 		publish( pending.current.slice( 0, -1 ) );
-		return write.keys[ 0 ];
+		return write.keys;
 	}, [ publish ] );
 
 	const flush = useCallback( () => {
@@ -138,7 +139,7 @@ export function useDeferredWrite() {
 	return {
 		hidden: new Set( shown.flatMap( ( write ) => write.keys ) ),
 		latest: last
-			? { id: last.id, key: last.keys[ 0 ], message: last.message }
+			? { id: last.id, keys: last.keys, message: last.message }
 			: null,
 		defer,
 		deferGroup,

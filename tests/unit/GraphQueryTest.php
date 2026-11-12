@@ -12,6 +12,7 @@ use Newspack_Nodes\Topology_Registry;
 use Newspack_Nodes\Tests\TestCase;
 
 require_once __DIR__ . '/../support/seeds-intel-graph.php';
+require_once __DIR__ . '/../support/counts-statements.php';
 
 /**
  * Graph_Query answers each read command from the projection: items with their
@@ -21,6 +22,7 @@ require_once __DIR__ . '/../support/seeds-intel-graph.php';
  * answer never carries an item body.
  */
 final class GraphQueryTest extends TestCase {
+	use Counts_Statements;
 	use Seeds_Intel_Graph;
 
 	private const GAZETTE = 'organization:harbor-gazette';
@@ -787,10 +789,11 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame(
 			[
 				'links'     => [
-					[ 'item_key' => 'github:ledger-launch', 'entity_key' => 'organization:tidewater-times', 'name' => 'Tidewater Times', 'type' => 'organization', 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.62, 'evidence' => 'Tidewater Times readers asked for the tool.', 'title' => 'Salem Ledger launches a newsletter tool', 'url' => 'https://news.example/github/ledger-launch' ],
-					[ 'item_key' => 'linear:joint-grant', 'entity_key' => self::LEDGER, 'name' => 'Salem Ledger', 'type' => 'organization', 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.6, 'evidence' => '', 'title' => 'Gazette and Ledger share a grant', 'url' => 'https://news.example/linear/joint-grant' ],
+					[ 'item_key' => 'github:ledger-launch', 'entity_key' => 'organization:tidewater-times', 'name' => 'Tidewater Times', 'type' => 'organization', 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.62, 'evidence' => 'Tidewater Times readers asked for the tool.', 'title' => 'Salem Ledger launches a newsletter tool', 'url' => 'https://news.example/github/ledger-launch', 'item_links' => 1 ],
+					[ 'item_key' => 'linear:joint-grant', 'entity_key' => self::LEDGER, 'name' => 'Salem Ledger', 'type' => 'organization', 'role' => 'mention', 'method' => 'ner_fuzzy', 'confidence' => 0.6, 'evidence' => '', 'title' => 'Gazette and Ledger share a grant', 'url' => 'https://news.example/linear/joint-grant', 'item_links' => 1 ],
 				],
 				'total'     => 2,
+				'next'      => null,
 				'available' => true,
 			],
 			self::read( 'review', [ 'what' => 'links' ] )
@@ -809,6 +812,7 @@ final class GraphQueryTest extends TestCase {
 					],
 				],
 				'total'     => 1,
+				'next'      => null,
 				'available' => true,
 			],
 			self::read( 'review', [ 'what' => 'entities' ] )
@@ -838,6 +842,257 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [ 20, 41 ], [ \count( $links['links'] ), $links['total'] ] );
 		$this->assertSame( [ 7, 7 ], [ \count( $entities['entities'] ), $entities['total'] ] );
 		$this->assertSame( [ 5, 7 ], [ \count( $page['entities'] ), $page['total'] ] );
+	}
+
+	/**
+	 * A later page of either queue answers the rows after the one its cursor
+	 * names, in the queue's own order, and the same total: 41 items, the 20
+	 * newest each holding two proposed links, paged 20 after the first page
+	 * answer the 21st item to the 40th, each with its one link; and 7
+	 * entities paged 5 after the first five the last two, and no cursor past
+	 * them.
+	 */
+	public function test_review_pages_each_queue_after_its_cursor(): void {
+		$events = [ self::entity( self::GAZETTE, 'Harbor Gazette' ), self::entity( self::LEDGER, 'Salem Ledger' ) ];
+		for ( $n = 1; $n <= 41; $n++ ) {
+			$events[] = self::item( "feed:dockside-{$n}", "Dockside notice {$n}", 'feed', 'public', self::$oct_06 + $n * 60 );
+			$events[] = self::link( 'link_proposed', "feed:dockside-{$n}", self::GAZETTE, 'mention', 'ner_fuzzy', 0.64, self::$oct_06 + $n * 60 );
+			if ( 22 <= $n ) {
+				$events[] = self::link( 'link_proposed', "feed:dockside-{$n}", self::LEDGER, 'mention', 'ner_fuzzy', 0.61, self::$oct_06 + $n * 60 );
+			}
+		}
+		for ( $n = 1; $n <= 7; $n++ ) {
+			$events[] = self::proposal( "organization:dock-buyer-{$n}", "Dock Buyer {$n}", "feed:dockside-{$n}" );
+		}
+		$this->seed( ...$events );
+		$links    = \array_values( \array_unique( \array_column( self::read( 'review', [ 'what' => 'links', 'limit' => 41 ] )['links'], 'item_key' ) ) );
+		$entities = \array_column( self::read( 'review', [ 'what' => 'entities', 'limit' => 7 ] )['entities'], 'entity_key' );
+
+		$first    = self::read( 'review', [ 'what' => 'links', 'limit' => 20 ] );
+		$second   = self::read( 'review', [ 'what' => 'links', 'limit' => 20, 'after' => $first['next'] ] );
+		$names    = self::read( 'review', [ 'what' => 'entities', 'limit' => 5 ] );
+		$last     = self::read( 'review', [ 'what' => 'entities', 'limit' => 5, 'after' => $names['next'] ] );
+
+		$this->assertSame( [ \array_slice( $links, 20, 20 ), 41 ], [ \array_column( $second['links'], 'item_key' ), $second['total'] ] );
+		$this->assertSame( [ \array_slice( $entities, 5 ), 7, null ], [ \array_column( $last['entities'], 'entity_key' ), $last['total'], $last['next'] ] );
+		$this->assertSame( 'feed:dockside-21', $second['links'][0]['item_key'] );
+		$this->assertIsString( $second['next'] );
+	}
+
+	/**
+	 * A judgment on one page never moves the next: four items holding two
+	 * proposed links each, paged two at a time, answer the third and fourth
+	 * after the first page's cursor even once a curator has rejected every
+	 * link of the first item, where a page counted by offset would start at
+	 * the fourth.
+	 */
+	public function test_review_pages_after_a_judged_page_without_skipping(): void {
+		$events = [ self::entity( self::GAZETTE, 'Harbor Gazette' ), self::entity( self::LEDGER, 'Salem Ledger' ) ];
+		for ( $n = 1; $n <= 4; $n++ ) {
+			$events[] = self::item( "feed:slipway-{$n}", "Slipway notice {$n}", 'feed', 'public', self::$oct_06 + $n * 60 );
+			foreach ( [ self::GAZETTE, self::LEDGER ] as $key ) {
+				$events[] = self::link( 'link_proposed', "feed:slipway-{$n}", $key, 'mention', 'ner_fuzzy', 0.64, self::$oct_06 + $n * 60 );
+			}
+		}
+		$this->seed( ...$events );
+		$first = self::read( 'review', [ 'what' => 'links', 'limit' => 2 ] );
+		$this->seed(
+			self::judged( 'link_rejected', 'feed:slipway-4', self::GAZETTE, 'user:41' ),
+			self::judged( 'link_rejected', 'feed:slipway-4', self::LEDGER, 'user:41' )
+		);
+
+		$second = self::read( 'review', [ 'what' => 'links', 'limit' => 2, 'after' => $first['next'] ] );
+
+		$this->assertSame( [ 'feed:slipway-4', 'feed:slipway-3' ], \array_values( \array_unique( \array_column( $first['links'], 'item_key' ) ) ) );
+		$this->assertSame( [ [ 'feed:slipway-2', 'feed:slipway-1' ], 3, null ], [ \array_values( \array_unique( \array_column( $second['links'], 'item_key' ) ) ), $second['total'], $second['next'] ] );
+	}
+
+	/**
+	 * An item and entity queue on the link that is not a topic tag when one
+	 * stands, and on the topic tag alone otherwise: a proposed topic tag
+	 * beside a subject link the machine asserted asks nothing, while a topic
+	 * tag alone, proposed, asks whether the item is about its entity.
+	 */
+	public function test_review_queues_a_topic_tag_only_when_it_stands_alone(): void {
+		$this->seed(
+			self::entity( self::GAZETTE, 'Harbor Gazette' ),
+			self::entity( self::LEDGER, 'Salem Ledger' ),
+			self::item( 'feed:breakwater-2', 'Breakwater notice two', 'feed', 'public', self::$oct_06 + 60 ),
+			self::link( 'link_asserted', 'feed:breakwater-2', self::GAZETTE, 'subject', 'name', 1.0, self::$oct_06 + 60 ),
+			self::link( 'link_proposed', 'feed:breakwater-2', self::GAZETTE, 'topic', 'ner_fuzzy', 0.66, self::$oct_06 + 60 ),
+			self::link( 'link_proposed', 'feed:breakwater-2', self::LEDGER, 'topic', 'ner_fuzzy', 0.62, self::$oct_06 + 60 )
+		);
+
+		$this->assertSame(
+			[ [ self::LEDGER, 'topic', 1 ] ],
+			\array_map( static fn ( array $l ): array => [ $l['entity_key'], $l['role'], $l['item_links'] ], self::read( 'review', [ 'what' => 'links' ] )['links'] )
+		);
+	}
+
+	/**
+	 * A page after the last row of either queue answers no rows and no
+	 * cursor, and still counts the whole queue.
+	 */
+	public function test_review_counts_the_whole_queue_beside_an_empty_page(): void {
+		$events = [ self::entity( self::GAZETTE, 'Harbor Gazette' ) ];
+		for ( $n = 1; $n <= 41; $n++ ) {
+			$events[] = self::item( "feed:quayside-{$n}", "Quayside notice {$n}", 'feed', 'public', self::$oct_06 + $n * 60 );
+			$events[] = self::link( 'link_proposed', "feed:quayside-{$n}", self::GAZETTE, 'mention', 'ner_fuzzy', 0.64, self::$oct_06 + $n * 60 );
+		}
+		for ( $n = 1; $n <= 7; $n++ ) {
+			$events[] = self::proposal( "organization:quay-buyer-{$n}", "Quay Buyer {$n}", "feed:quayside-{$n}" );
+		}
+		$this->seed( ...$events );
+		$first    = self::read( 'review', [ 'what' => 'links', 'limit' => 40 ] );
+		$last     = self::read( 'review', [ 'what' => 'links', 'limit' => 1, 'after' => $first['next'] ] );
+		$entities = self::read( 'review', [ 'what' => 'entities', 'limit' => 7 ] );
+		$this->seed( self::judged( 'link_rejected', 'feed:quayside-1', self::GAZETTE, 'user:41' ) );
+
+		$this->assertSame( [ 1, null ], [ \count( $last['links'] ), $last['next'] ] );
+		$this->assertSame( [ [], 40, null ], \array_values( \array_intersect_key( self::read( 'review', [ 'what' => 'links', 'limit' => 20, 'after' => $first['next'] ] ), [ 'links' => 1, 'total' => 1, 'next' => 1 ] ) ) );
+		$this->assertSame( [ 7, null ], [ $entities['total'], $entities['next'] ] );
+	}
+
+	/**
+	 * The links queue pages by item, each item whole: three items holding
+	 * three, two and one proposed links, paged two items at a time, answer
+	 * the first two items' five links, then the third's one, and count 3.
+	 */
+	public function test_review_pages_links_by_item_each_whole(): void {
+		$names  = [ 'organization:kelp-courier' => 'Kelp Courier', 'organization:brine-gazette' => 'Brine Gazette', 'organization:shoal-weekly' => 'Shoal Weekly' ];
+		$events = [];
+		foreach ( $names as $key => $name ) {
+			$events[] = self::entity( $key, $name );
+		}
+		$held = [
+			'feed:tide-3' => [ 3, \array_keys( $names ) ],
+			'feed:tide-2' => [ 2, \array_slice( \array_keys( $names ), 0, 2 ) ],
+			'feed:tide-1' => [ 1, [ 'organization:shoal-weekly' ] ],
+		];
+		foreach ( $held as $item => [ $n, $keys ] ) {
+			$events[] = self::item( $item, "Tide notice {$n}", 'feed', 'public', self::$oct_06 + $n * 3600 );
+			foreach ( $keys as $key ) {
+				$events[] = self::link( 'link_proposed', $item, $key, 'mention', 'ner_fuzzy', 0.63, self::$oct_06 + $n * 3600 );
+			}
+		}
+		$this->seed( ...$events );
+
+		$first  = self::read( 'review', [ 'what' => 'links', 'limit' => 2 ] );
+		$second = self::read( 'review', [ 'what' => 'links', 'limit' => 2, 'after' => $first['next'] ] );
+
+		$this->assertSame( [ 'feed:tide-3', 'feed:tide-3', 'feed:tide-3', 'feed:tide-2', 'feed:tide-2' ], \array_column( $first['links'], 'item_key' ) );
+		$this->assertSame( [ [ 'feed:tide-1' ], 3 ], [ \array_column( $second['links'], 'item_key' ), $second['total'] ] );
+		$this->assertSame( 3, $first['total'] );
+	}
+
+	/**
+	 * An item answers at most `REVIEW_LINKS` of its proposed links, the first
+	 * by entity key, each counting every one the item holds: an item holding
+	 * seven answers five, each saying seven, and one holding two answers both,
+	 * each saying two.
+	 */
+	public function test_review_caps_the_links_of_an_item_and_counts_them_all(): void {
+		$events = [];
+		$keys   = [];
+		for ( $n = 1; $n <= 7; $n++ ) {
+			$keys[]   = "organization:pier-paper-{$n}";
+			$events[] = self::entity( "organization:pier-paper-{$n}", "Pier Paper {$n}" );
+		}
+		$events[] = self::item( 'feed:pier-crowded', 'Pier notice crowded', 'feed', 'public', self::$oct_06 + 7200 );
+		$events[] = self::item( 'feed:pier-pair', 'Pier notice pair', 'feed', 'public', self::$oct_06 + 3600 );
+		foreach ( $keys as $key ) {
+			$events[] = self::link( 'link_proposed', 'feed:pier-crowded', $key, 'mention', 'ner_fuzzy', 0.62, self::$oct_06 + 7200 );
+		}
+		foreach ( \array_slice( $keys, 0, 2 ) as $key ) {
+			$events[] = self::link( 'link_proposed', 'feed:pier-pair', $key, 'mention', 'ner_fuzzy', 0.62, self::$oct_06 + 3600 );
+		}
+		$this->seed( ...$events );
+
+		$links = self::read( 'review', [ 'what' => 'links' ] )['links'];
+
+		$this->assertSame( 5, Graph_Query::REVIEW_LINKS );
+		$this->assertSame(
+			[
+				...\array_map( static fn ( string $key ): array => [ 'feed:pier-crowded', $key, 7 ], \array_slice( $keys, 0, 5 ) ),
+				...\array_map( static fn ( string $key ): array => [ 'feed:pier-pair', $key, 2 ], \array_slice( $keys, 0, 2 ) ),
+			],
+			\array_map( static fn ( array $l ): array => [ $l['item_key'], $l['entity_key'], $l['item_links'] ], $links )
+		);
+	}
+
+	/**
+	 * `review links` reads a page, its count and its cursor in one statement,
+	 * the same one a page past the end sends, which reads each queued item's
+	 * links by its key.
+	 */
+	public function test_review_reads_a_page_of_links_in_one_statement(): void {
+		$events = [ self::entity( self::GAZETTE, 'Harbor Gazette' ) ];
+		for ( $n = 1; $n <= 6; $n++ ) {
+			$events[] = self::item( "feed:wharf-{$n}", "Wharf notice {$n}", 'feed', 'public', self::$oct_06 + $n * 60 );
+			$events[] = self::link( 'link_proposed', "feed:wharf-{$n}", self::GAZETTE, 'mention', 'ner_fuzzy', 0.64, self::$oct_06 + $n * 60 );
+		}
+		$this->seed( ...$events );
+
+		$after   = self::read( 'review', [ 'what' => 'links', 'limit' => 1 ] )['next'];
+		$end     = self::read( 'review', [ 'what' => 'links', 'limit' => 5 ] )['next'];
+		$this->seed( self::judged( 'link_rejected', 'feed:wharf-1', self::GAZETTE, 'user:41' ) );
+		$queries = $this->queries_of( static fn (): array => self::read( 'review', [ 'what' => 'links', 'limit' => 2, 'after' => $after ] ) );
+		$empty   = $this->queries_of( static fn (): array => self::read( 'review', [ 'what' => 'links', 'limit' => 2, 'after' => $end ] ) );
+
+		$this->assertCount( \count( $empty ), $queries );
+		$db = new \PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
+		$db->exec( 'ATTACH DATABASE ' . $db->quote( Table_Node::file( 'intel-graph', 0 ) ) . ' AS p0' );
+		$plan = \implode( "\n", \array_column( $db->query( 'EXPLAIN QUERY PLAN ' . \end( $queries ) )->fetchAll( \PDO::FETCH_ASSOC ), 'detail' ) );
+		$this->assertMatchesRegularExpression( '/SEARCH p0\.links USING INDEX sqlite_autoindex_links_1 \(item_key=\?\)/', $plan );
+		$this->assertSame( [ 'feed:wharf-5', 'feed:wharf-4' ], \array_column( self::read( 'review', [ 'what' => 'links', 'limit' => 2, 'after' => $after ] )['links'], 'item_key' ) );
+	}
+
+	/**
+	 * A cursor that is not one this read minted for the queue is refused:
+	 * text that does not decode, a cursor of the other queue, and one whose
+	 * time is not a number.
+	 */
+	public function test_review_refuses_a_cursor_it_did_not_mint(): void {
+		$events = [];
+		for ( $n = 1; $n <= 2; $n++ ) {
+			$events[] = self::item( "feed:jetty-{$n}", "Jetty notice {$n}", 'feed', 'public', self::$oct_06 + $n * 60 );
+			$events[] = self::proposal( "organization:jetty-buyer-{$n}", "Jetty Buyer {$n}", "feed:jetty-{$n}" );
+		}
+		$this->seed( ...$events );
+		$names  = self::read( 'review', [ 'what' => 'entities', 'limit' => 1 ] )['next'];
+		$forged = \rtrim( \strtr( \base64_encode( (string) \wp_json_encode( [ 'links', 'noon', 'feed:wharf-1' ] ) ), '+/', '-_' ), '=' );
+		$this->assertIsString( $names );
+		foreach ( [ 'page-two', $names, $forged ] as $after ) {
+			try {
+				self::read( 'review', [ 'what' => 'links', 'after' => $after ] );
+				$this->fail( "review answers the cursor {$after}" );
+			} catch ( \InvalidArgumentException $e ) {
+				$this->assertSame( 'after is not a cursor for the links queue', $e->getMessage() );
+			}
+		}
+	}
+
+	/**
+	 * An item answers one row per entity it proposes, though the entity is
+	 * both its subject and a topic it is tagged with, and counts entities:
+	 * an item proposing a subject and a topic link to one entity and a
+	 * mention of another answers the subject row and the mention, each
+	 * saying two.
+	 */
+	public function test_review_answers_one_row_per_entity_of_an_item(): void {
+		$this->seed(
+			self::entity( self::GAZETTE, 'Harbor Gazette' ),
+			self::entity( self::LEDGER, 'Salem Ledger' ),
+			self::item( 'feed:breakwater-1', 'Breakwater notice', 'feed', 'public', self::$oct_06 ),
+			self::link( 'link_proposed', 'feed:breakwater-1', self::GAZETTE, 'subject', 'ner_fuzzy', 0.64, self::$oct_06 ),
+			self::link( 'link_proposed', 'feed:breakwater-1', self::GAZETTE, 'topic', 'ner_fuzzy', 0.71, self::$oct_06 ),
+			self::link( 'link_proposed', 'feed:breakwater-1', self::LEDGER, 'mention', 'ner_fuzzy', 0.61, self::$oct_06 )
+		);
+
+		$this->assertSame(
+			[ [ self::GAZETTE, 'subject', 2 ], [ self::LEDGER, 'mention', 2 ] ],
+			\array_map( static fn ( array $l ): array => [ $l['entity_key'], $l['role'], $l['item_links'] ], self::read( 'review', [ 'what' => 'links' ] )['links'] )
+		);
 	}
 
 	/** A proposed link and a proposal written before proposals carried evidence reach the review rows with none. */
@@ -1138,7 +1393,7 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [ 'entities' => [], 'available' => false ], self::read( 'related', [ 'key' => self::GAZETTE, 'limit' => 20 ] ) );
 		$this->assertSame( [ 'claims' => [], 'available' => false ], self::read( 'claims', [ 'key' => self::GAZETTE ] ) );
 		$this->assertSame( [ 'rows' => [], 'available' => false ], self::trends( [ 'by' => 'kind' ] ) );
-		$this->assertSame( [ 'links' => [], 'total' => 0, 'available' => false ], self::read( 'review', [ 'what' => 'links' ] ) );
+		$this->assertSame( [ 'links' => [], 'total' => 0, 'next' => null, 'available' => false ], self::read( 'review', [ 'what' => 'links' ] ) );
 		$this->assertSame( [ 'collections' => [], 'available' => false ], self::read( 'collections', [] ) );
 		$this->assertNotSame( [], self::stderr_lines( $stderr, 'intel-graph' ) );
 	}
@@ -1170,7 +1425,7 @@ final class GraphQueryTest extends TestCase {
 			'timeline'    => [ 'published' => false, 'limit' => 50, 'offset' => 0 ],
 			'related'     => [ 'limit' => 20 ],
 			'claims'      => [ 'predicate' => null, 'limit' => 50 ],
-			'review'      => [ 'limit' => 50 ],
+			'review'      => [ 'limit' => 50, 'after' => null ],
 			'collections' => [ 'key' => null ],
 		];
 		return Graph_Query::$verb( $args + $defaults[ $verb ] );

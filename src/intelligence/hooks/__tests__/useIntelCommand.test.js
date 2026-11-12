@@ -423,16 +423,19 @@ describe( 'useIntelRead across scopes', () => {
 } );
 
 describe( 'useIntelWrite', () => {
-	it( 'sends its command once per run and refreshes with its answer once it lands', async () => {
+	it( 'sends its command once per run and refreshes with its answer and its tokens once it lands', async () => {
 		wire.replies.accept_entity = { ok: true, event_id: 'ev-41' };
 		const refresh = jest.fn();
 		render( <Writer refresh={ refresh } /> );
 		fireEvent.click( screen.getByRole( 'button', { name: 'accept' } ) );
 		await waitFor( () => expect( refresh ).toHaveBeenCalledTimes( 1 ) );
-		expect( refresh ).toHaveBeenCalledWith( {
-			ok: true,
-			event_id: 'ev-41',
-		} );
+		expect( refresh ).toHaveBeenCalledWith(
+			{
+				ok: true,
+				event_id: 'ev-41',
+			},
+			[ '--key=organization:acme-quillsheet' ]
+		);
 		expect( wire.sent( 'accept_entity' ) ).toEqual( [
 			[ '--key=organization:acme-quillsheet' ],
 		] );

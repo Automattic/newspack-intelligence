@@ -81,12 +81,12 @@ const defaultView = () => ( linkedWatch() ? 'watches' : 'briefing' );
  * watches do not hold opens nothing, leaving the list. Collection's status
  * stands in the shell's header and its fault under the tabs on every view,
  * offering the operator its details and fixes for `canManage`, which the
- * page also provides to every answer through `CanManage`. A
- * curator's Review tab counts the suggested matches awaiting review, and
- * the Watches tab every reader's new matches across their watches. Each
- * switch of view pushes `?view=<tab id>`, so Back and Forward step through
- * the views and a link opens on one; a view the page does not offer opens
- * the default.
+ * page also provides to every answer through `CanManage`. A curator's
+ * Review tab counts the items whose suggested matches await review while
+ * another view shows, and the Watches tab every reader's new matches
+ * across their watches. Each switch of view pushes `?view=<tab id>`, so
+ * Back and Forward step through the views and a link opens on one; a view
+ * the page does not offer opens the default.
  *
  * The Briefing is its page's layout, from the page data's `compositions`,
  * with **Edit layout** in its own header's ⋯ menu for a curator; a team view
@@ -159,7 +159,7 @@ export default function IntelligencePage( {
 		( id ) => ( defaultView() === id ? null : id ),
 		{ push: true }
 	);
-	const reads = usePageReads( { review: canTune || 'review' === view } );
+	const reads = usePageReads( { review: canTune && 'review' !== view } );
 	const matches = canTune ? reads.review.answer?.total : undefined;
 	const unseen = reads.watches.answer?.watches.reduce(
 		( sum, one ) => sum + one.unseen,
@@ -174,7 +174,7 @@ export default function IntelligencePage( {
 			undefined === matches
 				? __( 'Review', 'newspack-intelligence' )
 				: sprintf(
-						/* translators: %d: how many suggested matches await review. */
+						/* translators: %d: how many items have suggested matches awaiting review. */
 						__( 'Review %d', 'newspack-intelligence' ),
 						matches
 				  ),
@@ -312,6 +312,7 @@ export default function IntelligencePage( {
 			storageKey="newspack-nodes:debug:intelligence"
 			subtitle={ __( 'Intelligence', 'newspack-intelligence' ) }
 			overflowY="auto"
+			fullBleed
 		>
 			{ ( slot ) => (
 				<CanManage.Provider value={ canManage }>
@@ -324,7 +325,7 @@ export default function IntelligencePage( {
 								activeId={ view }
 								onPick={ go }
 							/>
-							<div className="newspack-intelligence__page">
+							<div className="newspack-intelligence__page newspack-nodes-page-inset">
 								<HealthStrip
 									canManage={ canManage }
 									slot={ slot }

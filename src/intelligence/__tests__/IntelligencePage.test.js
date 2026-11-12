@@ -230,6 +230,21 @@ describe( 'IntelligencePage', () => {
 		).not.toBeNull();
 	} );
 
+	it( 'insets its views by the shared page inset, and the shell not at all', async () => {
+		renderPage();
+		await screen.findByRole( 'tablist', { name: 'Views' } );
+		expect(
+			document
+				.querySelector( '.newspack-intelligence__page' )
+				.classList.contains( 'newspack-nodes-page-inset' )
+		).toBe( true );
+		expect(
+			document
+				.querySelector( '.newspack-nodes-page-content' )
+				.classList.contains( 'newspack-nodes-page-inset' )
+		).toBe( false );
+	} );
+
 	it( 'opens on the Briefing, its first tab', async () => {
 		renderPage();
 		await openWeek();
@@ -532,17 +547,68 @@ describe( 'IntelligencePage', () => {
 				screen.getByRole( 'tablist', { name: 'Views' } )
 			).findByRole( 'tab', { name: 'Review 41' } )
 		).toBeInTheDocument();
-		expect( wire.sent( 'review' ) ).toEqual( [ [ 'links' ] ] );
+		expect( wire.sent( 'review' ) ).toEqual( [ [ 'links', '--limit=1' ] ] );
 		curator.unmount();
 		Core.reset();
 		wire = intelWire();
 		wire.replies.health = ( [ what ] ) => HEALTHY[ what ];
 		wire.replies.briefing = ( [ what ] ) => WEEK[ what ];
 		wire.replies.watches = { watches: [], available: true };
+		wire.replies.review = ( [ what ] ) => ( {
+			[ what ]: [],
+			total: 0,
+			available: true,
+		} );
 		renderPage();
 		await openWeek();
 		expect( nav( 'Review' ) ).toBeInTheDocument();
 		expect( wire.sent( 'review' ) ).toEqual( [] );
+		fireEvent.click( nav( 'Review' ) );
+		await waitFor( () =>
+			expect( wire.sent( 'review' ) ).toContainEqual( [
+				'links',
+				'--limit=50',
+			] )
+		);
+		expect( wire.sent( 'review' ) ).not.toContainEqual( [
+			'links',
+			'--limit=1',
+		] );
+	} );
+
+	it( 'shows no Review count while Review is open, asking no one-row read, and reads it afresh on leaving', async () => {
+		let total = 41;
+		wire.replies.review = ( [ what, size ] ) => ( {
+			[ what ]: [],
+			total: '--limit=1' === size ? total : 39,
+			available: true,
+		} );
+		const oneRow = () =>
+			wire
+				.sent( 'review' )
+				.filter( ( [ , size ] ) => '--limit=1' === size );
+		const views = () => screen.getByRole( 'tablist', { name: 'Views' } );
+		renderPage( true );
+		expect(
+			await within( views() ).findByRole( 'tab', { name: 'Review 41' } )
+		).toBeInTheDocument();
+		fireEvent.click( nav( 'Review' ) );
+		await waitFor( () =>
+			expect( wire.sent( 'review' ) ).toContainEqual( [
+				'links',
+				'--limit=50',
+			] )
+		);
+		expect(
+			within( views() ).getByRole( 'tab', { name: 'Review' } )
+		).toBeInTheDocument();
+		expect( oneRow() ).toHaveLength( 1 );
+		total = 38;
+		fireEvent.click( nav( 'Briefing' ) );
+		expect(
+			await within( views() ).findByRole( 'tab', { name: 'Review 38' } )
+		).toBeInTheDocument();
+		expect( oneRow() ).toHaveLength( 2 );
 	} );
 
 	it( 'labels its view panel by the selected tab, and moves with the keys', async () => {
@@ -1372,7 +1438,7 @@ describe( 'IntelligencePage', () => {
 			).toBeNull();
 			expect( editorText() ).toBeNull();
 			expect( await screen.findByText( EMPTY_REVIEW ) ).toBeVisible();
-			expect( nav( 'Review 0' ) ).toHaveAttribute(
+			expect( nav( 'Review' ) ).toHaveAttribute(
 				'aria-selected',
 				'true'
 			);
