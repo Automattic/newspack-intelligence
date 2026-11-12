@@ -303,27 +303,9 @@ final class Graph_Curation {
 		if ( $from === $into ) {
 			throw new \InvalidArgumentException( \esc_html( "cannot merge theme {$from} into itself" ) );
 		}
-		[ $merges, $carried ] = self::on_graph(
-			static function ( Row_Reader $r, array $g ): array {
-				$carried = [];
-				foreach ( $r->rows( "{$g['with']} SELECT DISTINCT t.theme, ti.tier IN ( " . Intel_Graph_Row_Schema::marks( Intel_Tiers::UNRESTRICTED ) . ' ) FROM ( ' . Intel_Graph_Row_Schema::newest( $r, 'themes', 'item_key', 'item_key, theme', '1' ) . ' ) t JOIN ti ON ti.item_key = t.item_key', [ ...$g['binds'], ...Intel_Tiers::UNRESTRICTED ] ) as [ $theme, $open ] ) {
-					$theme             = Core::as_string( $theme );
-					$carried[ $theme ] = ( $carried[ $theme ] ?? false ) || (bool) $open;
-				}
-				return [ Graph_Query::theme_merges( $r ), $carried ];
-			}
-		);
-		$before = Entity_Index::walk( $merges )[0];
-		$seen   = [];
-		foreach ( \array_keys( $carried ) as $theme ) {
-			$seen[ $theme ]                               = true;
-			$seen[ $before[ $theme ] ?? $theme ] = true;
-		}
-		foreach ( [ $from, $into ] as $theme ) {
-			if ( ! isset( $seen[ $theme ] ) ) {
-				throw new \InvalidArgumentException( \esc_html( "no theme: {$theme}" ) );
-			}
-		}
+		[ $merges, $carried ] = self::theme_reads();
+		$before               = Entity_Index::walk( $merges )[0];
+		$seen                 = self::require_themes( [ $from, $into ], $before, $carried );
 		$after  = Entity_Index::walk( [ $from => $into ] + $merges )[0];
 		$broken = [];
 		foreach ( $after as $theme => $survivor ) {
@@ -347,6 +329,81 @@ final class Graph_Curation {
 			throw new \InvalidArgumentException( \esc_html( "merging {$from} into {$into} would show {$into} to every reader; it is not the theme of any item outside the restricted tier" ) );
 		}
 		return self::write( 'theme_merged', [ 'from' => $from, 'into' => $into ] );
+	}
+
+	/**
+	 * Keep two themes apart, so the theme suggestions never pair them again,
+	 * nor the themes they merge into: `themes_kept_apart`, its two themes in
+	 * string order, so a pair is one row whichever way it is named. Refused
+	 * for a theme kept apart from itself, for two that already merge into one
+	 * theme, and for one the caller cannot see, as `merge_theme` refuses it.
+	 *
+	 * @param array<array-key,mixed> $args The bound command args: `theme`, `other`.
+	 * @return array<string,mixed>
+	 * @throws \InvalidArgumentException On a blank theme or one past `Intel_Event::THEME_BYTES`, or a pair refused as above.
+	 */
+	public static function keep_themes_apart( array $args ): array {
+		$theme = self::bounded( 'theme', Core::as_string( $args['theme'] ), Intel_Event::THEME_BYTES );
+		$other = self::bounded( 'other', Core::as_string( $args['other'] ), Intel_Event::THEME_BYTES );
+		if ( $theme === $other ) {
+			throw new \InvalidArgumentException( \esc_html( "cannot keep theme {$theme} apart from itself" ) );
+		}
+		[ $merges, $carried ] = self::theme_reads();
+		$before               = Entity_Index::walk( $merges )[0];
+		self::require_themes( [ $theme, $other ], $before, $carried );
+		$survivor = $before[ $theme ] ?? $theme;
+		if ( $survivor === ( $before[ $other ] ?? $other ) ) {
+			throw new \InvalidArgumentException( \esc_html( "cannot keep {$theme} apart from {$other}; both read as {$survivor}" ) );
+		}
+		$pair = [ $theme, $other ];
+		\sort( $pair, \SORT_STRING );
+		return self::write( 'themes_kept_apart', [ 'theme' => $pair[0], 'other' => $pair[1] ] );
+	}
+
+	/**
+	 * The themes the caller can see, each the theme of an item the caller
+	 * may read, as written or as its survivor, refusing any of `$themes`
+	 * that is not among them.
+	 *
+	 * @param list<string>          $themes  The themes a command names.
+	 * @param array<string,string>  $before  Each merged theme's survivor.
+	 * @param array<string,bool>    $carried Each theme a readable item carries.
+	 * @return array<string,true>
+	 * @throws \InvalidArgumentException Naming the first the caller cannot see.
+	 */
+	private static function require_themes( array $themes, array $before, array $carried ): array {
+		$seen = [];
+		foreach ( \array_keys( $carried ) as $theme ) {
+			$seen[ $theme ]                      = true;
+			$seen[ $before[ $theme ] ?? $theme ] = true;
+		}
+		foreach ( $themes as $theme ) {
+			if ( ! isset( $seen[ $theme ] ) ) {
+				throw new \InvalidArgumentException( \esc_html( "no theme: {$theme}" ) );
+			}
+		}
+		return $seen;
+	}
+
+	/**
+	 * The projection's theme merges, and each theme of an item the caller
+	 * may read, an excluded one among them, since an inclusion undoes an
+	 * exclusion, with whether any item outside the restricted tier carries
+	 * it, each item's theme the newest partition's.
+	 *
+	 * @return array{0:array<string,string>,1:array<string,bool>}
+	 */
+	private static function theme_reads(): array {
+		return self::on_graph(
+			static function ( Row_Reader $r, array $g ): array {
+				$carried = [];
+				foreach ( $r->rows( "{$g['with']} SELECT DISTINCT t.theme, ti.tier IN ( " . Intel_Graph_Row_Schema::marks( Intel_Tiers::UNRESTRICTED ) . ' ) FROM ( ' . Intel_Graph_Row_Schema::newest( $r, 'themes', 'item_key', 'item_key, theme', '1' ) . ' ) t JOIN ti ON ti.item_key = t.item_key', [ ...$g['binds'], ...Intel_Tiers::UNRESTRICTED ] ) as [ $theme, $open ] ) {
+					$theme             = Core::as_string( $theme );
+					$carried[ $theme ] = ( $carried[ $theme ] ?? false ) || (bool) $open;
+				}
+				return [ Graph_Query::theme_merges( $r ), $carried ];
+			}
+		);
 	}
 
 	/**

@@ -447,8 +447,33 @@ final class Graph_Query {
 				'suggestions' => [],
 				'total'       => 0,
 			],
-			static fn ( Row_Reader $r, array $g ): array => \array_combine( [ 'suggestions', 'total' ], self::suggested( self::theme_entities( $r, $g ) ) )
+			static function ( Row_Reader $r, array $g ): array {
+				$survivors = self::theme_survivor_map( $r );
+				return \array_combine( [ 'suggestions', 'total' ], self::suggested( self::theme_entities( $r, $g, $survivors ), self::themes_apart( $r, $survivors ) ) );
+			}
 		);
+	}
+
+	/**
+	 * The pairs of themes a curator kept apart, each read as its survivor of
+	 * the theme merges, as the suggestions read it, keyed `<theme>\0<other>`
+	 * in string order; a pair whose two themes merged into one is left out.
+	 *
+	 * @param Row_Reader           $r         The reader.
+	 * @param array<string,string> $survivors Each merged theme's survivor, by `theme_survivor_map()`.
+	 * @return array<string,true>
+	 */
+	private static function themes_apart( Row_Reader $r, array $survivors ): array {
+		$apart = [];
+		foreach ( $r->rows( 'SELECT theme, other_theme FROM ' . Intel_Graph_Row_Schema::all( $r, 'themes_apart' ), [] ) as [ $theme, $other ] ) {
+			$pair = [ $survivors[ Core::as_string( $theme ) ] ?? Core::as_string( $theme ), $survivors[ Core::as_string( $other ) ] ?? Core::as_string( $other ) ];
+			if ( $pair[0] === $pair[1] ) {
+				continue;
+			}
+			\sort( $pair, \SORT_STRING );
+			$apart[ "{$pair[0]}\0{$pair[1]}" ] = true;
+		}
+		return $apart;
 	}
 
 	/**
@@ -456,13 +481,14 @@ final class Graph_Query {
 	 * survivor, with how many stories carry it and the entities those
 	 * stories are about by a subject or a mention.
 	 *
-	 * @param Row_Reader $r The reader.
-	 * @param Graph      $g The graph the read opened.
+	 * @param Row_Reader           $r         The reader.
+	 * @param Graph                $g         The graph the read opened.
+	 * @param array<string,string> $survivors Each merged theme's survivor, by `theme_survivor_map()`.
 	 * @return array<string,array{stories:int,entities:array<string,true>}>
 	 */
-	private static function theme_entities( Row_Reader $r, array $g ): array {
+	private static function theme_entities( Row_Reader $r, array $g, array $survivors ): array {
 		$rank        = self::judge_rank( 'j.actor_kind' );
-		[ $tm, $map ] = self::theme_survivors( $r );
+		[ $tm, $map ] = self::survivor_clause( $survivors );
 		$rows        = $r->rows(
 			"{$g['with']}, {$tm},"
 			. ' w AS ( ' . Intel_Graph_Row_Schema::newest( $r, 'themes', 'item_key', 'item_key, theme', 'item_day >= ?' ) . ' ),'
@@ -493,12 +519,14 @@ final class Graph_Query {
 	 * the pairs grow with the words rather than with the square of the
 	 * themes; each pair is scored once, from the first of its pairing words
 	 * in string order, and the best are kept as they are scored; beside
-	 * them, how many pairs were scored.
+	 * them, how many pairs were scored. A pair kept apart is neither scored
+	 * nor counted.
 	 *
 	 * @param array<string,array{stories:int,entities:array<string,true>}> $themes Each theme's stories and entities.
+	 * @param array<string,true>                                          $apart  The pairs kept apart, by `themes_apart()`'s key.
 	 * @return array{0:list<array{themes:list<array{theme:string,stories:int}>,words:list<string>,shared:int}>,1:int}
 	 */
-	private static function suggested( array $themes ): array {
+	private static function suggested( array $themes, array $apart ): array {
 		$words = [];
 		$holds = [];
 		foreach ( \array_keys( $themes ) as $theme ) {
@@ -518,7 +546,7 @@ final class Graph_Query {
 					$both     = \array_keys( \array_intersect_key( $holds[ $a ], $holds[ $b ] ) );
 					$eligible = \array_values( \array_filter( $both, static fn ( string $shared ): bool => isset( $pairing[ $shared ] ) ) );
 					\sort( $eligible, \SORT_STRING );
-					if ( $word !== $eligible[0] ) {
+					if ( $word !== $eligible[0] || isset( $apart[ "{$a}\0{$b}" ] ) ) {
 						continue;
 					}
 					$shared = \count( \array_intersect_key( $themes[ $a ]['entities'], $themes[ $b ]['entities'] ) );
@@ -2688,11 +2716,24 @@ final class Graph_Query {
 	 * @return array{0:string,1:string}
 	 */
 	public static function theme_survivors( Row_Reader $r ): array {
+		return self::survivor_clause( self::theme_survivor_map( $r ) );
+	}
+
+	/**
+	 * Each merged theme's survivor as `Entity_Index::walk()` reads
+	 * `theme_merges()`; a theme whose chain cycles or runs past
+	 * `Entity_Index::MAX_MERGE_HOPS` is left out, so it reads as itself, and
+	 * its chain is logged once. One statement reads the merges.
+	 *
+	 * @param Row_Reader $r The reader.
+	 * @return array<string,string>
+	 */
+	private static function theme_survivor_map( Row_Reader $r ): array {
 		[ $survivors, $broken ] = Entity_Index::walk( self::theme_merges( $r ) );
 		if ( [] !== $broken ) {
 			Core::print_less_often( 'leaving theme merges that do not resolve unapplied: ', \implode( '; ', \array_keys( $broken ) ) );
 		}
-		return [ 'tm AS MATERIALIZED ( SELECT key AS theme, value AS survivor FROM json_each( ? ) )', (string) \wp_json_encode( (object) \array_filter( $survivors, static fn ( string $survivor ): bool => '' !== $survivor ), \JSON_THROW_ON_ERROR ) ];
+		return \array_filter( $survivors, static fn ( string $survivor ): bool => '' !== $survivor );
 	}
 
 	/**
@@ -2710,6 +2751,17 @@ final class Graph_Query {
 		}
 		\ksort( $merges );
 		return $merges;
+	}
+
+	/**
+	 * A survivor map as `theme_survivors()` answers it: the clause
+	 * `tm ( theme, survivor )` and its JSON bind.
+	 *
+	 * @param array<string,string> $survivors Each merged theme's survivor.
+	 * @return array{0:string,1:string}
+	 */
+	private static function survivor_clause( array $survivors ): array {
+		return [ 'tm AS MATERIALIZED ( SELECT key AS theme, value AS survivor FROM json_each( ? ) )', (string) \wp_json_encode( (object) $survivors, \JSON_THROW_ON_ERROR ) ];
 	}
 
 	/**

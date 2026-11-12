@@ -357,6 +357,16 @@ final class Intel_Graph_Row_Schema implements \Newspack_Nodes\Row_Schema {
 				'key'     => [ 'theme' ],
 				'keep'    => true,
 			],
+			'themes_apart'  => [
+				'columns' => [
+					'theme'       => 'TEXT NOT NULL',
+					'other_theme' => 'TEXT NOT NULL',
+					'actor'       => 'TEXT NOT NULL',
+					'ts'          => 'REAL NOT NULL',
+				],
+				'key'     => [ 'theme', 'other_theme' ],
+				'keep'    => true,
+			],
 			'names'         => [
 				'columns'       => [
 					'id'         => 'INTEGER',

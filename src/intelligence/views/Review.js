@@ -134,7 +134,12 @@ const JUDGED_BY = {
 	links: ( { item, entity } ) =>
 		item ? linkKey( { item_key: item, entity_key: entity } ) : null,
 	entities: ( { key } ) => key ?? null,
-	themes: ( { from, into } ) => ( from ? themesKey( [ from, into ] ) : null ),
+	themes: ( { from, into, theme, other } ) => {
+		if ( from ) {
+			return themesKey( [ from, into ] );
+		}
+		return theme ? themesKey( [ theme, other ] ) : null;
+	},
 };
 
 /**
@@ -756,7 +761,8 @@ function MergeDialog( { name, from, pending, refusal, onMerge, onClose } ) {
  * judges every entity it asks about that is not yet judged. Same as…
  * merges an entity into one the curator picks, confirmed in a dialog
  * because a merge cannot be taken back, and sent on Merge. Not the same
- * hides a pair of themes for this reader and records nothing. A later
+ * keeps a pair of themes apart for every reader after the undo window, so
+ * the suggestions never pair them again. A later
  * page whose read answers no rows and names no next page gives way to the
  * one before it, and one that could not be read still offers Previous. On
  * the match and name queues the review keys work from anywhere on the
@@ -771,7 +777,6 @@ export default function Review( { canTune, onOpenEntity } ) {
 	const deferred = useDeferredWrite();
 	const [ open, setOpen ] = useState( 'links' );
 	const panel = useTabPanelProps( SCOPE, open, true );
-	const [ apart, setApart ] = useState( () => new Set() );
 	const [ merging, setMerging ] = useState( null );
 	// The merge owed its answer; Merge waits for it, so there is one.
 	const sentMerge = useRef( null );
@@ -922,15 +927,11 @@ export default function Review( { canTune, onOpenEntity } ) {
 			refresh: landedIn( 'themes' ),
 			onRefused: refusedIn( 'themes' ),
 		} ),
-	};
-	const shownThemes = {
-		...themes,
-		answer: themes.answer && {
-			...themes.answer,
-			suggestions: themes.answer.suggestions.filter(
-				( pair ) => ! apart.has( pairKey( pair ) )
-			),
-		},
+		keep_themes_apart: useIntelWrite( 'keep_themes_apart', {
+			dirties: [ 'theme_suggestions:' ],
+			refresh: landedIn( 'themes' ),
+			onRefused: refusedIn( 'themes' ),
+		} ),
 	};
 
 	const entityRows = entities.answer?.entities ?? [];
@@ -980,7 +981,7 @@ export default function Review( { canTune, onOpenEntity } ) {
 			return entity ? entityName( entity ) : key;
 		},
 		themes: ( key ) => {
-			const pair = shownThemes.answer?.suggestions.find(
+			const pair = themes.answer?.suggestions.find(
 				( one ) => key === pairKey( one )
 			);
 			return pair
@@ -1300,15 +1301,11 @@ export default function Review( { canTune, onOpenEntity } ) {
 		{
 			id: 'themes',
 			name: __( 'Similar themes', 'newspack-intelligence' ),
-			count: themes.answer
-				? themes.answer.total -
-				  ( themes.answer.suggestions.length -
-						shownThemes.answer.suggestions.length )
-				: null,
-			read: shownThemes,
+			count: themes.answer ? themes.answer.total : null,
+			read: themes,
 			paged: false,
 			rows: 'suggestions',
-			items: shownThemes.answer?.suggestions ?? [],
+			items: themes.answer?.suggestions ?? [],
 			getItemId: pairKey,
 			Row: ThemePair,
 			judgeOf:
@@ -1336,7 +1333,24 @@ export default function Review( { canTune, onOpenEntity } ) {
 								)
 							),
 						onApart: () =>
-							setApart( ( was ) => new Set( was ).add( key ) ),
+							judge( 'themes' )(
+								key,
+								() =>
+									writes.keep_themes_apart.run( {
+										theme: pair.themes[ 0 ].theme,
+										other: pair.themes[ 1 ].theme,
+									} ),
+								sprintf(
+									/* translators: 1: one theme, 2: the theme it is kept apart from. */
+									__(
+										'Kept %1$s and %2$s apart.',
+										'newspack-intelligence'
+									),
+									pair.themes[ 0 ].theme,
+									pair.themes[ 1 ].theme
+								),
+								__( 'Not the same.', 'newspack-intelligence' )
+							),
 					};
 				} ),
 			actions: [],

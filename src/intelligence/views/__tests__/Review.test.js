@@ -1673,6 +1673,86 @@ describe( 'Review — themes', () => {
 		expect( screen.getByText( 'trace owed' ) ).toBeInTheDocument();
 	} );
 
+	it( 'keeps a remembered How this was read once a pair kept apart lands, since keeping apart reads no theme', async () => {
+		const traceProbe = () => (
+			<Probe
+				scope="probe:trace"
+				command="trace"
+				args={ [ 'feed:kiosk-exit-73' ] }
+			/>
+		);
+		wire.replies.trace = {
+			item_key: 'feed:kiosk-exit-73',
+			steps: [],
+			available: true,
+		};
+		const seeded = render( traceProbe() );
+		await screen.findByText( 'trace read' );
+		seeded.unmount();
+		wire.replies.keep_themes_apart = { ok: true, event_id: 'ev-apart' };
+		const view = renderReview( { canTune: true } );
+		const apart = await within( queue( 'Similar themes' ) ).findByRole(
+			'button',
+			{ name: 'Not the same' }
+		);
+		fakeUndoClock();
+		fireEvent.click( apart );
+		await elapse( UNDO_MS );
+		await waitFor( () =>
+			expect( wire.sent( 'theme_suggestions' ) ).toHaveLength( 2 )
+		);
+		view.unmount();
+		jest.useRealTimers();
+		wire.replies.trace = never;
+		render( traceProbe() );
+		expect( screen.getByText( 'trace remembered' ) ).toBeInTheDocument();
+	} );
+
+	it( 'returns a refused keep-apart to its own pair alone, a merge sent beside it untouched', async () => {
+		const HARBOR = {
+			themes: [
+				{ theme: 'harbor grant renewals', stories: 5 },
+				{ theme: 'harbor grants', stories: 1 },
+			],
+			words: [ 'grant', 'harbor' ],
+			shared: 1,
+		};
+		wire.replies.theme_suggestions = {
+			suggestions: [ PAIR, HARBOR ],
+			total: 2,
+			available: true,
+		};
+		wire.replies.merge_theme = { ok: true, event_id: 'ev-harbor' };
+		wire.replies.keep_themes_apart = () =>
+			new Error( 'no theme: kiosk offboarding from platform' );
+		renderReview( { canTune: true } );
+		const themes = queue( 'Similar themes' );
+		const [ apart ] = await within( themes ).findAllByRole( 'button', {
+			name: 'Not the same',
+		} );
+		const merge = within( themes ).getByRole( 'button', {
+			name: 'Keep "harbor grant renewals"',
+		} );
+		const harbor = rowOf( merge );
+		fakeUndoClock();
+		fireEvent.click( apart );
+		fireEvent.click( merge );
+		await elapse( UNDO_MS );
+		const refusal = await screen.findByText(
+			'no theme: kiosk offboarding from platform'
+		);
+		expect(
+			rowOf(
+				within( themes ).getAllByRole( 'button', {
+					name: 'Not the same',
+				} )[ 0 ]
+			)
+		).toContainElement( refusal );
+		expect( harbor ).not.toHaveTextContent(
+			'no theme: kiosk offboarding from platform'
+		);
+	} );
+
 	it( 'says when no theme pair is suggested', async () => {
 		wire.replies.theme_suggestions = {
 			suggestions: [],
@@ -1741,26 +1821,28 @@ describe( 'Review — themes', () => {
 		);
 	} );
 
-	it( 'hides a pair called not the same for this reader alone, sending nothing', async () => {
+	it( 'keeps a pair called not the same apart for every reader once its undo window closes', async () => {
+		wire.replies.keep_themes_apart = never;
 		renderReview( { canTune: true } );
 		const themes = queue( 'Similar themes' );
-		fireEvent.click(
-			await within( themes ).findByRole( 'button', {
-				name: 'Not the same',
-			} )
-		);
-		expect(
-			within( themes ).queryByRole( 'button', { name: KEEP_FIRST } )
-		).toBeNull();
-		expect(
-			screen.getByRole( 'tab', { name: 'Similar themes 11' } )
-		).toBeInTheDocument();
-		await act( async () => {
-			window.dispatchEvent( new Event( 'pagehide' ) );
+		const apart = await within( themes ).findByRole( 'button', {
+			name: 'Not the same',
 		} );
-		await settle();
+		const pair = rowOf( apart );
+		fakeUndoClock();
+		fireEvent.click( apart );
+		expect( pair ).toHaveTextContent( 'Not the same.' );
+		expect( wire.sent( 'keep_themes_apart' ) ).toEqual( [] );
+		await elapse( UNDO_MS );
+		await waitFor( () =>
+			expect( wire.sent( 'keep_themes_apart' ) ).toEqual( [
+				[
+					'--theme=kiosk offboarding',
+					'--other=kiosk offboarding from platform',
+				],
+			] )
+		);
 		expect( wire.sent( 'merge_theme' ) ).toEqual( [] );
-		expect( screen.queryByRole( 'button', { name: 'Undo' } ) ).toBeNull();
 	} );
 
 	it( 'returns a refused merge to its pair with the refusal under it', async () => {

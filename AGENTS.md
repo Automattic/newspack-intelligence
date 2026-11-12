@@ -292,8 +292,11 @@ them with `Entity_Index::walk()`, the walker `merge_theme` judges a merge
 by and the entity map is built with, and binds the survivors as JSON in
 the clause `tm ( theme, survivor )`, so a theme merged into another reads
 as its survivor; a theme whose chain cycles or runs past
-`Entity_Index::MAX_MERGE_HOPS` reads as itself, its chain logged once. An
-`item_recorded` or an `item_grown` also writes, with `ignore`, one
+`Entity_Index::MAX_MERGE_HOPS` reads as itself, its chain logged once. A
+`themes_kept_apart { theme, other }`, an ontology event, sets the
+`themes_apart` row keyed by both themes in string order, a curation table
+kept whole, which the theme suggestions read through the same survivors.
+An `item_recorded` or an `item_grown` also writes, with `ignore`, one
 `boilerplate` row `( source, line_hash, item_key, item_day )` per distinct
 body line `Entity_Index::line_hashes()` counts: the body split at each line
 break, `<br>` and closing block tag, each line read as `plain()` reads it
@@ -318,7 +321,7 @@ retrieval `floor( retrieved_ts / 86400 )`, which every item-scoped event
 carries — a supersession its canonical's — so an item and every row about it
 expire together however late a re-resolution writes them; `watch_matches`
 and `watch_seen`, keyed by watch and item, are dated the same way, so a
-match expires with its item. The ontology and curation tables, `theme_merges`, `watches`
+match expires with its item. The ontology and curation tables, `theme_merges`, `themes_apart`, `watches`
 and `watch_deliveries` declare `keep`. Each tier's saved copy of an item
 is one `saved_copies` row, `( item_key, tier, url, title )` keyed by the
 item and the tier, and its place in a folder one `collected` row, `(
@@ -1430,8 +1433,7 @@ state the machine wrote, which a judgment never rewrites, so no index on
 grows with that history rather than with the open queue. `review entities`
 pages and counts the cited proposals in one statement too, newest first by
 the microsecond of the latest proposal. Review's tabs show each queue's
-`total` as the server answers it, the themes tab less the pairs set apart
-with "Not the same". The Review badge shows the `total` of a one-row read
+`total` as the server answers it. The Review badge shows the `total` of a one-row read
 of the match queue, which a curator's page asks while another view shows;
 on Review itself the tab carries no number and the page asks nothing. A
 judged row stays in place, greyed and showing its verdict, until its write
@@ -1638,7 +1640,9 @@ rather than dropping out and widening. A lens that was never saved is refused as
 
 `theme_suggestions` (`Graph_Query::theme_suggestions()`) answers `{
 suggestions: [ { themes: [ { theme, stories }, { theme, stories } ], words,
-shared } ], total, available }`, `total` every pair it scored: of the readable items whose `themes` row, the
+shared } ], total, available }`, `total` every pair it scored, a pair kept
+apart (`keep_themes_apart`, read as the survivors of both themes) neither
+scored nor counted: of the readable items whose `themes` row, the
 newest partition's, was retrieved in the last `Graph_Query::GROUP_DAYS`
 (30) days, each theme read as its survivor, the pairs of themes whose items
 share an entity they are about by a `subject` or `mention` link, as a
@@ -2345,7 +2349,7 @@ named, and the item's URL), `accept_entity`,
 `Intel_Event::entity_key()`), `create_collection` (keyed
 `Intel_Event::collection_key()`, the same slug), `collect` (the item's
 URL, its title and its tier), `mark_used`, `move_item`, `uncollect`, `save_lens` (keyed `Intel_Event::lens_key()`,
-the given key slugged, answering it), `remove_lens`, `merge_theme`,
+the given key slugged, answering it), `remove_lens`, `merge_theme`, `keep_themes_apart`,
 `exclude_item <item> [--why=<text>]` (the item's URL, its title cut at
 `TITLE_BYTES`, its tier and a `why` bounded at `Intel_Event::WHY_BYTES`
 (512), refused blank), `include_item <item>` and `note_churn <entity>
@@ -2526,6 +2530,16 @@ unrestricted item for the first time, an item an older partition alone
 gives it not counting (`merging <from> into <into> would show <into> to
 every reader; it is not the theme of any item outside the restricted
 tier`). A theme merged away merges again, its row replaced.
+`keep_themes_apart <theme> <other>` writes `themes_kept_apart`, the two
+themes in string order, so the theme suggestions never pair them, nor the
+themes they merge into. It bounds each theme as `merge_theme` does, reads
+the projection once, through the same read, and refuses a theme kept apart
+from itself (`cannot keep theme <theme> apart from itself`), two that
+already merge into one theme (`cannot keep <theme> apart from <other>;
+both read as <survivor>`) and one the caller cannot see (`no theme:
+<theme>`), as `merge_theme` refuses it. The suggestions read each kept
+pair through the one survivor map they read their themes by, a theme on
+a chain that does not resolve as itself.
 `fetch_now` TICKs every source in each live worker — each node of a
 `Source_Node` subclass Intelligence's topology declares, read through
 `Topology_Analyzer::nodes_of_type()` — through `Worker_Route` and
@@ -2565,7 +2579,7 @@ the `lens` and list args of `intel_search` and `intel_trends` come off the
 schema with no door code, as do `intel_exclude_item`, `intel_include_item`
 and `intel_excluded`, offered to a tune session alone; a variadic arg is a JSON array. So do
 `intel_names`, `intel_signals`, `intel_briefing`, `intel_theme_suggestions`, the five
-watch tools, `intel_ask`, `intel_ask_result`, `intel_trace` and `intel_copies`, which a read session is offered, and `intel_merge_theme`, `intel_note_churn`,
+watch tools, `intel_ask`, `intel_ask_result`, `intel_trace` and `intel_copies`, which a read session is offered, and `intel_merge_theme`, `intel_keep_themes_apart`, `intel_note_churn`,
 `intel_mark_used`, `intel_move_item` and `intel_uncollect`, which a session whose role covers
 `tune` is offered;
 the door becomes the session's minting user, so a watch tool answers and
@@ -3389,7 +3403,7 @@ plugin adds:
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until> [<source>]`, `REEXTRACT <since> <until> [<source>]`; publishes `last_range` through `Publishes_Status` |
 | `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no commands |
 | `Ask` | `Ask_Node` | `<writer> <llm>`; each `ask_asked` its Consumer reads, and the model-call node's answers; no commands |
-| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `theme_suggestions`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `ask`, `ask_result`, `health`, each at `read`; `confirm_link`, `reject_link`, `add_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `merge_theme`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
+| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `theme_suggestions`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `ask`, `ask_result`, `health`, each at `read`; `confirm_link`, `reject_link`, `add_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `merge_theme`, `keep_themes_apart`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
 
 `LLM_Call_Node`'s seven commands are declared setters, replayed by its
 `dump_config()`; `set_api_url` refuses anything but an absolute http(s)
@@ -3513,7 +3527,7 @@ its own one-shot commands, and only the `AskBox` polls: it asks
 | `views/Entity.js` | default | A profile: one `entity` read, which it provides its layout's blocks through `EntityRecord`, under a fixed header no layout can hide — "Back to <view>", the shared `Header` naming it, its actions at the end of the line, the type line ("<client> since <year>", "<former client>, <year> to <year>", else the type's word) and the website, **Watch**, for a curator **Edit** (`EditDrawer`) and ⋯ holding **Edit layout** and, for a client without one, "Add a churn-risk note", then the client's churn-risk note (`ChurnNote`), which a curator edits through `note_churn`; while `status.churn_open`, ending the client from the Edit drawer lists each churn item in `EndClientDialog`, with **Not about this client** (`reject_link` after the undo window); below it, the page data's `newspack-intelligence/entity` layout through `PageLayout`. A refused `entity` reads "This profile is not available to you, or it no longer exists." with the way back |
 | `blocks/pulse.js`, `entity-facts.js`, `related.js`, `timeline.js`, `record.js` | `{ View, Controls }`; `EntityRecord`, `entityName`, `useEntityRecord` | A profile's blocks. `pulse` is the `PulseLine` of `signals --entity` on a profile, `--lens` on a team view and the lens it names on the Briefing, nothing without one. `entity-facts` shows its `show` parts: the counts not zero and "Last item %s"; "Facts", `claims` up to `limit`, each in words, cited, without Save; "Details", its names, identifiers, roles and topics, and for a curator "Show the ID" over its key and the keys merged into it. `related` lists `limit` rows, each "%d shared", then "Show all %d". `timeline` is `ItemList` over `timeline` a page of `limit` at a time, then, as `published` says, "Published by %1$s (%2$d)" under a disclosure, nothing, or what the entity published alone. `useEntityRecord()` answers the record the profile provides, else the block's own read under a scope of its own; a read about the page's entity stays owed and asks nothing while the page names none (`aboutEntity()`), as the editor's preview does before an entity is picked |
 | `blocks/trend-chart.js`, `item-list.js` | `{ View, Controls, headings? }` | A team view's blocks, the chart also a profile's and the list every page's. `trend-chart` reads `trends` through the page's subject, the view or the entity, naming its `by` and `bucket` when set, and draws `TrendChart` under its `heading`, stacked or as lines as `style` says; owed, a 180 px skeleton, and empty, "Nothing in this view in the last %d days." over the view's days, else "Nothing in this view yet.", each under its heading once the axis is known, and on a page naming no view or entity yet it reads nothing and says "No team view or subject is picked yet." `item-list` reads `search` through the page's view, or the `lens` it names, and a profile's entity, its `kinds`, `topics`, `roles` and `sources` each intersected with the page's view's list of that name when both name one, an empty intersection reading nothing and saying its `empty`, its `tiers` sent as `tier` for the server to narrow within the reader's; it draws `GroupPage` for `group` `theme`, else `ItemList` in its `layout`, `limit` groups or items a page, sorted by `sort`, both paged by DataViews' `page` through the shared list's pager |
-| `views/Review.js` | default | Under the shared `Header` "Review", whose description says what the queues are for: `review links`, one row per item with a pill per proposed entity and the sentence each link quotes, and `review entities`, a pill per entity, each citing item with the sentence it quotes; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's "Same as…" opens `merge_entities`, its field focused; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back. Each queue's list, named for its queue and described by a visually hidden sentence of its keys, takes focus and the review keys while focus is in it and not in a field, as the substrate's `isTypingTarget()` reads it: `j` and `k` move between the link pills or the entity rows (`data-review-row`, `tabindex="-1"`, so the shared `[tabindex]:focus-visible` ring shows), and `y`, `n` and `m` press the focused row's control whose `aria-keyshortcuts` names the key (✓, ✕, Same as…), a judgment moving focus to the row then in its place, else the last; then "Similar themes", `theme_suggestions`' pairs, each naming both themes, their stories, the entities they share and the words their names share, and for a curator "Merge into" each theme, which sends `merge_theme` from the other and hides the pair through `useHeld` as `merge_entities` does |
+| `views/Review.js` | default | Under the shared `Header` "Review", whose description says what the queues are for: `review links`, one row per item with a pill per proposed entity and the sentence each link quotes, and `review entities`, a pill per entity, each citing item with the sentence it quotes; for a curator, each pill's ✓ and ✕ send `confirm_link` and `reject_link`, or `accept_entity` and `reject_entity`, and an entity's "Same as…" opens `merge_entities`, its field focused; a judgment hides its pill or row through `useHeld` as it is sent, until a read no longer lists it, and a refusal puts it back. Each queue's list, named for its queue and described by a visually hidden sentence of its keys, takes focus and the review keys while focus is in it and not in a field, as the substrate's `isTypingTarget()` reads it: `j` and `k` move between the link pills or the entity rows (`data-review-row`, `tabindex="-1"`, so the shared `[tabindex]:focus-visible` ring shows), and `y`, `n` and `m` press the focused row's control whose `aria-keyshortcuts` names the key (✓, ✕, Same as…), a judgment moving focus to the row then in its place, else the last; then "Similar themes", `theme_suggestions`' pairs, each naming both themes, their stories, the entities they share and the words their names share, and for a curator "Merge into" each theme, which sends `merge_theme` from the other and hides the pair through `useHeld` as `merge_entities` does, and "Not the same", which sends `keep_themes_apart` once its undo window closes |
 | `views/Collections.js` | default | The Folders tab: `FolderBoard` at the `folder-board` block's defaults, whose `Header` heads the tab, every folder, opening on "Not yet used"; for a curator, the "Excluded" `Section` of the page listing `excluded` with "Include again", which holds the row out through `useHeld` until a read no longer lists it |
 | `components/FolderBoard.js`, `FolderCard.js` | default, `showOptions`; default | The Folders board, under the shared `Header` "Folders": `collections`, then one `collections <key>` read per folder shown, every folder or those `folders` names, each a stock `Card` column headed by its name and its count, "20+" in Warning text past twenty, its items' cards under "Show" (All, Not yet used, "Used in %s" per `markWords` place), which stands over the columns, opening on `show`. A card cites its item, the day it was saved and each use mark as a badge ("Newsletter, 5 Nov"). For a curator a card drags natively onto any column, the live region saying "Picked up %s.", "Over %s." and "Moved %1$s from %2$s to %3$s.", and its menu moves it in one action ("Move to"), marks it used through a dialog ("Where" a `RadioControl`, "On" a date, today by default), opens its source, or removes it from the folder; each is deferred with Undo through `useDeferredWrite`, then sends `move_item`, `mark_used` or `uncollect`, and the board shows it from the moment it is made until a read reflects it, a move landing focus on the card in its new column and a refusal returning the card with the refusal on it. **New folder**, at the header's end for a curator and in the empty board's `newspack-nodes-empty-state`, opens a `Modal` naming it ("Folder name", **Cancel**, **Create folder**, inert while the name is blank), which sends `create_collection` and stands until it lands, a refusal shown inside it, the folder shown saving through `useHeld` until a read lists it by name. When narrow the columns are a "Folder" select beside "Show", showing one at a time. Three skeleton columns of three cards stand in while it loads, one when narrow |
 | `blocks/folder-board.js` | `{ View, Controls }` | The `folder-board` block: `FolderBoard` on its `show` and `folders`, its writes a curator's and none while the layout is edited; its controls pick what it opens on and its folders by name |

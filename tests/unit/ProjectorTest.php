@@ -1060,6 +1060,7 @@ final class ProjectorTest extends TestCase {
 			$this->ontology( 'lens_saved', [ 'lens_key' => 'old-desk', 'name' => 'Old desk', 'description' => '', 'filters' => Graph_Query::unfiltered() ] ),
 			$this->ontology( 'lens_removed', [ 'lens_key' => 'old-desk' ] ),
 			$this->ontology( 'theme_merged', [ 'from' => 'kiosk offboarding from platform', 'into' => 'kiosk offboarding' ] ),
+			$this->ontology( 'themes_kept_apart', [ 'theme' => 'kiosk offboarding', 'other' => 'kiosk styling' ] ),
 			$this->ontology( 'item_uncollected', [ 'collection_key' => 'awards-shortlist', 'item_key' => self::ITEM, 'tiers' => [ 'internal' ] ] ),
 			$this->ontology( 'churn_note_set', [ 'entity_key' => self::GAZETTE, 'text' => 'Weighing a cheaper host', 'owner' => 'Dana Reyes', 'next_step' => 'renewal call', 'day' => '2026-11-20' ] ),
 			$this->ontology( 'item_excluded', [ 'item_key' => self::ITEM, 'url' => 'https://harborgazette.example/a', 'title' => 'Award', 'tier' => 'public', 'why' => 'Shown twice.' ] ),

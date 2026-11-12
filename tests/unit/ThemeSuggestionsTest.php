@@ -88,6 +88,46 @@ final class ThemeSuggestionsTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A pair a curator kept apart is neither suggested nor counted, read
+	 * through merges: kept apart under a name merged away, it holds for the
+	 * survivor, and the next pair takes its place.
+	 */
+	public function test_a_pair_kept_apart_is_not_suggested(): void {
+		$this->seed_offboarding();
+		$this->seed( [ Intel_Event::make( 'themes_kept_apart', [ 'theme' => 'offboarding of clients', 'other' => self::PLATFORM ], 'user:41', 'fixture-9' ) ] );
+
+		$answer = $this->ci->dispatch( 'theme_suggestions', [] );
+
+		$this->assertSame(
+			[
+				[ [ [ self::OFFBOARDING, 3 ], [ self::STYLING, 1 ] ], [ 'client' ], 1 ],
+				[ [ [ self::OFFBOARDING, 3 ], [ self::AUTOMATION, 1 ] ], [ 'offboarding' ], 1 ],
+				[ [ [ self::PLATFORM, 1 ], [ self::STYLING, 1 ] ], [ 'client' ], 1 ],
+			],
+			self::pairs( $answer )
+		);
+		$this->assertSame( 3, $answer['total'] );
+	}
+
+	/**
+	 * A pair kept apart holds for a theme whose merge chain does not
+	 * resolve, which the suggestions read as itself.
+	 */
+	public function test_a_pair_kept_apart_holds_for_a_theme_on_a_broken_chain(): void {
+		$this->seed_offboarding();
+		$this->seed(
+			[ Intel_Event::make( 'theme_merged', [ 'from' => self::PLATFORM, 'into' => 'platform exit loop' ], 'user:41', 'fixture-9' ) ],
+			[ Intel_Event::make( 'theme_merged', [ 'from' => 'platform exit loop', 'into' => self::PLATFORM ], 'user:41', 'fixture-9' ) ],
+			[ Intel_Event::make( 'themes_kept_apart', [ 'theme' => self::OFFBOARDING, 'other' => self::PLATFORM ], 'user:41', 'fixture-9' ) ]
+		);
+
+		$this->assertNotContains(
+			[ [ self::OFFBOARDING, 3 ], [ self::PLATFORM, 1 ] ],
+			\array_column( self::pairs( $this->ci->dispatch( 'theme_suggestions', [] ) ), 0 )
+		);
+	}
+
 	/** At most THEME_SUGGESTIONS pairs are answered, the closest names first. */
 	public function test_at_most_ten_pairs_are_suggested(): void {
 		$names = [ 'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta' ];
