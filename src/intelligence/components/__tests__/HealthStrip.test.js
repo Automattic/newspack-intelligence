@@ -522,6 +522,29 @@ describe( 'HealthStrip', () => {
 		await waitFor( () => expect( reads( 'collection' ) ).toBe( 2 ) );
 	} );
 
+	it( 'restarts a worker gone stale once the activation it was offered lands', async () => {
+		health.collection = {
+			state: 'inactive',
+			topologies: [ 'intel-workbench' ],
+		};
+		wire.replies.activate = { name: 'intel-workbench', active: true };
+		wire.replies.restart = { restarted: 1 };
+		renderStrip( true );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'intel-workbench' } )
+		);
+		health.collection = { state: 'stale', topology: 'intel-workbench' };
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'Restart' } )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'restart' ) ).toEqual( [
+				[ '--types=intel-workbench' ],
+			] )
+		);
+		expect( wire.sentTo( 'restart' ) ).toEqual( [ 'workers' ] );
+	} );
+
 	it( 'gives a reader the activate step as text, once', async () => {
 		health.collection = {
 			state: 'inactive',

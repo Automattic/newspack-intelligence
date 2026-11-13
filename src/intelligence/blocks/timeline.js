@@ -144,6 +144,7 @@ function View( { attributes } ) {
 	return (
 		<Section heading={ heading }>
 			<Items
+				key={ 'only' === published ? 'published' : 'timeline' }
 				entityKey={ key }
 				published={ 'only' === published }
 				layout={ layout }

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The page's command hooks are newspack-nodes' `useCommandRead` and `useCommandWrite`.** `useIntelRead` and `useIntelWrite` bind them to the `intelligence` group and CI, and `commandArgs` and `refusalOfSend` come from the same module; reads, writes, the 64-answer memory and what a write dirties behave as before. The bundle needs a newspack-nodes that ships the two hooks to build.
+
+### Fixed
+
+- **Restart works on a Gathering row that turned stale after an activation.** The row's fix moved from Activate to Restart without a fresh write behind it, so Restart sent nothing; each fix now mounts its own.
+- **A timeline block set to show only what its entity published reads that list.** Changing the block's "What it published" setting to only that, with the block on screen, left it reading its first list; it now reads afresh.
+
 ## [0.44.0] - 2026-11-13
 
 ### Added

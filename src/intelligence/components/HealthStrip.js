@@ -92,7 +92,12 @@ function Fix( {
 	...send
 } ) {
 	return can ? (
-		<SendFix choices={ choices } { ...send } />
+		// A new state may name a new write, which needs nodes of its own.
+		<SendFix
+			key={ `${ send.ci ?? '' }:${ send.verb }:${ send.scope }` }
+			choices={ choices }
+			{ ...send }
+		/>
 	) : (
 		<Step action={ action } />
 	);

@@ -141,7 +141,7 @@ function Profile( { entityKey, children } ) {
 	);
 }
 
-const renderBlock = ( block, attributes, page = {} ) => {
+const onPage = ( block, attributes, page = {} ) => {
 	const shown = {
 		page: 'entity',
 		lens_key: null,
@@ -150,7 +150,7 @@ const renderBlock = ( block, attributes, page = {} ) => {
 		actions,
 		...page,
 	};
-	return renderOnPage(
+	return (
 		<ComposedPage.Provider value={ shown }>
 			<Profile entityKey={ shown.entity_key }>
 				<block.View attributes={ attributes } />
@@ -158,6 +158,9 @@ const renderBlock = ( block, attributes, page = {} ) => {
 		</ComposedPage.Provider>
 	);
 };
+
+const renderBlock = ( block, attributes, page = {} ) =>
+	renderOnPage( onPage( block, attributes, page ) );
 
 describe( 'pulse', () => {
 	const SIGNALS = {
@@ -491,6 +494,28 @@ describe( 'timeline', () => {
 			expect( wire.sent( 'entity' ) ).toEqual( [ [ KEY ] ] )
 		);
 		expect( screen.queryByText( /Published by/ ) ).toBeNull();
+	} );
+
+	it( 'reads what the entity published once the block is set to show only that', async () => {
+		const activity = {
+			heading: 'Activity',
+			published: 'none',
+			layout: 'activity',
+			limit: 7,
+		};
+		const { rerender } = renderBlock( timeline, activity );
+		await screen.findByRole( 'link', { name: 'Harbor Ledger story 1' } );
+		rerender( onPage( timeline, { ...activity, published: 'only' } ) );
+		expect(
+			await screen.findByRole( 'link', {
+				name: 'Harbor Ledger story 90',
+			} )
+		).toBeInTheDocument();
+		expect( wire.sent( 'timeline' ) ).toContainEqual( [
+			KEY,
+			'--limit=7',
+			'--published',
+		] );
 	} );
 
 	it( 'shows only what the entity published when it says so', async () => {
