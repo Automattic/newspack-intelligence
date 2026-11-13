@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-11-13
+
 ### Added
 
 - **"Not the same" is kept for everyone.** A curator's "Not the same" on a pair of similar themes now records `themes_kept_apart` after its undo window, through the new `keep_themes_apart` command (and its `intel_keep_themes_apart` tool), so the theme suggestions never pair those themes again, nor the themes they merge into, for any reader; the pair no longer counts in the queue's total. It used to hide the pair in that reader's page alone, so a pair set apart came back on the next visit and held the suggestions' ten places against every other.
