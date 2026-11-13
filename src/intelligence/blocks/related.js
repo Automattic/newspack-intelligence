@@ -5,14 +5,14 @@
  */
 
 import { RangeControl, TextControl } from '@wordpress/components';
-import { useContext, useId, useState } from '@wordpress/element';
+import { useId, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { AnswerBody } from '../components/Answer';
 import { EntityChip } from '../components/Cite';
-import Section from '../components/Section';
-import Skeleton from '../components/Skeleton';
+import Section from '@newspack-nodes/shared/components/Section';
+import Skeleton from '@newspack-nodes/shared/components/Skeleton';
 import { useIntelRead } from '../hooks/useIntelCommand';
-import { IntelPageContext, useIntelActions } from '../layout/PageContext';
+import { useIntelActions, useIntelPage } from '../layout/PageContext';
 import { entityName } from '../components/format';
 import { aboutEntity, useEntityRecord } from './record';
 
@@ -78,7 +78,7 @@ function Rows( { entities, limit } ) {
  * @return {import('react').ReactElement} The block.
  */
 function View( { attributes } ) {
-	const { entity_key: key } = useContext( IntelPageContext );
+	const { entity_key: key } = useIntelPage();
 	const record = useEntityRecord();
 	const read = aboutEntity(
 		key,

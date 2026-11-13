@@ -2,19 +2,20 @@
 /**
  * Every Intelligence block is a View, with its Controls where it has
  * settings, registered in the browser against the schemas the server
- * localizes; the aside holds its children in a column of their own; and a
- * block's write controls go inert while its layout is edited.
+ * localizes; and a block's write controls go inert while its layout is
+ * edited, as the substrate's frame hands each View its `editing` prop.
  */
 
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderOnPage } from '../../__tests__/pageReads';
 import { getBlockTypes, unregisterBlockType } from '@wordpress/blocks';
 import { Core } from '@newspack-nodes/runtime';
-import CompositionView from '@newspack-nodes/shared/composition/CompositionView';
 import { registerCompositionBlocks } from '@newspack-nodes/shared/composition/registerCompositionBlocks';
 import { intelWire } from '../../__tests__/intelWire';
-import { useIntelWrite } from '../../hooks/useIntelCommand';
-import { IntelPageContext, useWriteControl } from '../../layout/PageContext';
+import {
+	ComposedPage,
+	providedViews,
+} from '@newspack-nodes/shared/composition/page';
 import { BLOCK_VIEWS } from '..';
 
 // The editor's half, which a View never reaches, needs WordPress's one
@@ -27,12 +28,6 @@ jest.mock( '@wordpress/block-editor', () => ( {
 
 /** The schemas `Composition::schemas( 'newspack-intelligence/entity' )` localizes. */
 const ENTITY_SCHEMAS = {
-	'newspack-intelligence/aside': {
-		title: 'Aside',
-		attributes: {},
-		container: true,
-		multiple: false,
-	},
 	'newspack-intelligence/health': {
 		title: 'Collection status',
 		attributes: {
@@ -45,35 +40,6 @@ const ENTITY_SCHEMAS = {
 		container: false,
 		multiple: false,
 	},
-};
-
-/**
- * A block whose View names itself.
- *
- * @param {Object} props
- * @param {Object} props.attributes       Its attributes.
- * @param {string} props.attributes.label What it names.
- * @return {import('react').ReactElement} The block.
- */
-const Named = ( { attributes: { label } } ) => <p>{ label }</p>;
-
-/** A block that writes: one Save, as a screen's block holds one. */
-function Writer() {
-	const { run } = useIntelWrite( 'mark_seen', { scope: 'probe:mark_seen' } );
-	return (
-		<button
-			type="button"
-			{ ...useWriteControl( () => run( { key: '9f3a51c07be2d468' } ) ) }
-		>
-			Mark seen
-		</button>
-	);
-}
-
-const VIEWS = {
-	...BLOCK_VIEWS,
-	'newspack-intelligence/probe-named': { View: Named },
-	'newspack-intelligence/probe-writer': { View: Writer },
 };
 
 beforeEach( () => {
@@ -89,7 +55,6 @@ afterEach( () => {
 describe( 'BLOCK_VIEWS', () => {
 	it( 'gives every block a View', () => {
 		expect( Object.keys( BLOCK_VIEWS ) ).toEqual( [
-			'newspack-intelligence/aside',
 			'newspack-intelligence/health',
 			'newspack-intelligence/ask',
 			'newspack-intelligence/since',
@@ -119,49 +84,18 @@ describe( 'BLOCK_VIEWS', () => {
 			registerCompositionBlocks( ENTITY_SCHEMAS, entityViews )
 		).not.toThrow();
 
-		const aside = getBlockTypes().find(
-			( { name } ) => 'newspack-intelligence/aside' === name
+		const health = getBlockTypes().find(
+			( { name } ) => 'newspack-intelligence/health' === name
 		);
-		expect( aside.title ).toBe( 'Aside' );
-		expect( aside.supports.multiple ).toBe( false );
-	} );
-
-	it( "renders the aside's children in the aside region, apart from the main column", () => {
-		renderOnPage(
-			<CompositionView
-				views={ VIEWS }
-				renderError={ ( error ) => <p>{ error.message }</p> }
-				blocks={ [
-					{
-						name: 'newspack-intelligence/probe-named',
-						attributes: { label: 'Kestrel pulse' },
-						inner: [],
-					},
-					{
-						name: 'newspack-intelligence/aside',
-						attributes: {},
-						inner: [
-							{
-								name: 'newspack-intelligence/probe-named',
-								attributes: { label: 'Related to Kestrel' },
-								inner: [],
-							},
-						],
-					},
-				] }
-			/>
-		);
-
-		const aside = screen.getByRole( 'complementary' );
-		expect( aside ).toHaveClass( 'newspack-intelligence__aside' );
-		expect( aside ).toHaveTextContent( 'Related to Kestrel' );
-		expect( aside ).not.toHaveTextContent( 'Kestrel pulse' );
+		expect( health.title ).toBe( 'Collection status' );
+		expect( health.supports.multiple ).toBe( false );
 	} );
 } );
 
 describe( 'write controls while the layout is edited', () => {
-	const WATCHES = BLOCK_VIEWS[ 'newspack-intelligence/watches' ];
-	const ASK = BLOCK_VIEWS[ 'newspack-intelligence/ask' ];
+	const PROVIDED = providedViews( BLOCK_VIEWS );
+	const WATCHES = PROVIDED[ 'newspack-intelligence/watches' ];
+	const ASK = PROVIDED[ 'newspack-intelligence/ask' ];
 
 	beforeEach( () => {
 		window.NewspackNodesData = {
@@ -173,8 +107,8 @@ describe( 'write controls while the layout is edited', () => {
 	} );
 
 	/**
-	 * A block's View as the substrate hands it its `editing` prop, under a
-	 * page whose context says nothing of editing.
+	 * A block's View, provided as the frame provides it, handed its
+	 * `editing` prop, under a page whose context says nothing of editing.
 	 *
 	 * @param {Object}   view       The block's view.
 	 * @param {Function} view.View  Its View.
@@ -184,7 +118,7 @@ describe( 'write controls while the layout is edited', () => {
 	 */
 	const renderView = ( { View }, attributes, editing, actions = {} ) =>
 		renderOnPage(
-			<IntelPageContext.Provider
+			<ComposedPage.Provider
 				value={ {
 					page: 'briefing',
 					lens_key: null,
@@ -194,7 +128,7 @@ describe( 'write controls while the layout is edited', () => {
 				} }
 			>
 				<View attributes={ attributes } editing={ editing } />
-			</IntelPageContext.Provider>
+			</ComposedPage.Provider>
 		);
 
 	it( 'leaves a block’s write control inert when its View is handed editing, opening nothing', async () => {
@@ -285,38 +219,6 @@ describe( 'write controls while the layout is edited', () => {
 		await waitFor( () =>
 			expect( wire.sent( 'ask' ) ).toEqual( [
 				[ '--question=Which members wobbled?' ],
-			] )
-		);
-	} );
-} );
-
-describe( 'useWriteControl', () => {
-	it( 'writes under a page context, which holds no editing flag of its own', async () => {
-		const wire = intelWire();
-		wire.replies.mark_seen = { ok: true, count: 1 };
-		renderOnPage(
-			<IntelPageContext.Provider
-				value={
-					/** @type {Object} */ ( {
-						page: 'briefing',
-						lens_key: null,
-						entity_key: null,
-						since: 1792000000,
-						editing: true,
-					} )
-				}
-			>
-				<Writer />
-			</IntelPageContext.Provider>
-		);
-
-		const button = screen.getByRole( 'button', { name: 'Mark seen' } );
-		expect( button ).not.toHaveAttribute( 'aria-disabled' );
-		fireEvent.click( button );
-
-		await waitFor( () =>
-			expect( wire.sent( 'mark_seen' ) ).toEqual( [
-				[ '--key=9f3a51c07be2d468' ],
 			] )
 		);
 	} );

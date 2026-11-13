@@ -32,7 +32,7 @@ import Cite, { EntityChip } from './Cite';
 import EntityPicker from './EntityPicker';
 import HowRead from './HowRead';
 import Refusal from './Refusal';
-import Skeleton from './Skeleton';
+import Skeleton from '@newspack-nodes/shared/components/Skeleton';
 import UndoSnackbar from './UndoSnackbar';
 import {
 	argsOf,

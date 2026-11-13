@@ -390,7 +390,7 @@ describe( 'HowRead', () => {
 		);
 		expect(
 			await screen.findByText(
-				'Intelligence could not be read just now. Try again.'
+				'This could not be read just now. Try again.'
 			)
 		).toBeInTheDocument();
 		expect(

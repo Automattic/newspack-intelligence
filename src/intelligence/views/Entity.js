@@ -13,18 +13,19 @@ import { unrecordedText, useEndClient } from '../hooks/useEndClient';
 import { useDeferredWrite } from '../hooks/useDeferredWrite';
 import { useHeld } from '../hooks/useHeld';
 import { AnswerBody } from '../components/Answer';
-import Skeleton from '../components/Skeleton';
+import Skeleton from '@newspack-nodes/shared/components/Skeleton';
 import EditDrawer from '../components/EditDrawer';
 import EndClientDialog from '../components/EndClientDialog';
 import ChurnNote from '../components/ChurnNote';
 import Refusal from '../components/Refusal';
-import { Header } from '../components/Section';
+import { SectionHeader } from '@newspack-nodes/shared/components/Section';
 import UndoSnackbar from '../components/UndoSnackbar';
 import { entityName, itemKey, shownDay, utcDay } from '../components/format';
 import { word } from '../components/words';
 import { EntityRecord } from '../blocks/record';
-import { editLayoutControl } from '../layout/LayoutMenu';
-import PageLayout from '../layout/PageLayout';
+import { editLayoutControl } from '@newspack-nodes/shared/composition/page';
+import { PAGES } from '../layout/editMode';
+import IntelligenceLayout from '../layout/IntelligenceLayout';
 
 /**
  * The UTC year of a Unix time.
@@ -168,7 +169,7 @@ function BackLink( { back } ) {
 
 /**
  * Entity: one entity's profile. Its header is fixed, so no layout can hide
- * it: the way back; the shared `Header`, the name with **Watch**, for a
+ * it: the way back; the shared `SectionHeader`, the name with **Watch**, for a
  * curator **Edit**, the Edit drawer (`EditDrawer`), and ⋯ offering **Edit
  * layout** and, for a client, a churn-risk note at its end; the type line
  * and the entity's website; then the client's churn-risk note. Below the
@@ -322,7 +323,7 @@ export default function Entity( {
 							);
 							return (
 								<>
-									<Header
+									<SectionHeader
 										title={ entityName( entity ) }
 										actions={
 											<>
@@ -372,11 +373,14 @@ export default function Entity( {
 															size: 'compact',
 														} }
 														controls={ [
-															editLayoutControl( {
-																page: 'entity',
-																entity_key:
-																	entityKey,
-															} ),
+															editLayoutControl(
+																{
+																	page: 'entity',
+																	entity_key:
+																		entityKey,
+																},
+																PAGES
+															),
 															...( entity.status &&
 															! note
 																? [
@@ -470,7 +474,7 @@ export default function Entity( {
 					<UndoSnackbar latest={ churn.ended } />
 				) }
 
-				<PageLayout
+				<IntelligenceLayout
 					layout={ layout }
 					onRestored={ onRestored }
 					page={ {

@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **"Not the same" is kept for everyone.** A curator's "Not the same" on a pair of similar themes now records `themes_kept_apart` after its undo window, through the new `keep_themes_apart` command (and its `intel_keep_themes_apart` tool), so the theme suggestions never pair those themes again, nor the themes they merge into, for any reader; the pair no longer counts in the queue's total. It used to hide the pair in that reader's page alone, so a pair set apart came back on the next visit and held the suggestions' ten places against every other.
 
+### Changed
+
+- **Intelligence's composed pages stand on newspack-nodes' page frame, which needs newspack-nodes 2.156.0.** The Briefing, a team view's page and a profile lay out through the substrate's `ComposedLayout`, and the layout editor mounts through its `mountComposedEditor`; the page context, the editing flag, the edit-mode links, the section header, the invitation, the skeleton and the read error are the substrate's. The layout editor loads through `Composition::enqueue_editor()`. A read error now reads "This could not be read just now." in place of "Intelligence could not be read just now."
+- **The aside is the substrate's `newspack-nodes/aside`, which a team view's page and a profile admit.** The Briefing admits no aside, as before, and the default profile layout names the new one.
+
+### Removed
+
+- **`newspack-intelligence/aside`.** No alias stands in for it, and no stored layout is migrated: a stored layout naming it is refused, and the page shows the read error in its place until a curator presses **Restore default**.
+
 ## [0.43.3] - 2026-11-12
 
 ### Fixed

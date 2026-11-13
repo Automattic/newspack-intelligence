@@ -1,17 +1,21 @@
 import { Button, SelectControl } from '@wordpress/components';
 import { DataViews } from '@wordpress/dataviews';
-import { useState } from '@wordpress/element';
+import { useContext, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import { usePageRead } from '../hooks/usePageRead';
-import { Unread } from '../components/Answer';
+import { CanManage } from '../components/Answer';
+import Unread from '@newspack-nodes/shared/components/Unread';
 import AskBox from '../components/AskBox';
 import EntityPicker from '../components/EntityPicker';
 import ItemList from '../components/ItemList';
-import Section, { Header, Invitation } from '../components/Section';
+import Section, {
+	SectionHeader,
+} from '@newspack-nodes/shared/components/Section';
+import Invitation from '@newspack-nodes/shared/components/Invitation';
 import Sheet from '../components/Sheet';
-import Skeleton from '../components/Skeleton';
+import Skeleton from '@newspack-nodes/shared/components/Skeleton';
 import { daysSince, lensDraft, listOf } from '../components/lensDraft';
 import { pageFormat } from '../components/format';
 import { word, words } from '../components/words';
@@ -358,6 +362,7 @@ export default function Search( {
 	asked,
 	onAsked,
 } ) {
+	const operator = useContext( CanManage );
 	const lists = vocabulary.lensLists;
 	const narrow = useNarrow();
 	const [ sheet, setSheet ] = useState( false );
@@ -398,7 +403,7 @@ export default function Search( {
 
 	return (
 		<div className="newspack-intelligence__view">
-			<Header
+			<SectionHeader
 				title={ __( 'Search', 'newspack-intelligence' ) }
 				description={ __(
 					'Ask a question the graph answers, or find items by their words and filters.',
@@ -526,10 +531,12 @@ export default function Search( {
 								</>
 							) }
 							<Unread
+								operator={ operator }
 								error={ lenses.error }
 								refresh={ lenses.refresh }
 							/>
 							<Unread
+								operator={ operator }
 								error={ read.error }
 								refresh={ read.refresh }
 							/>

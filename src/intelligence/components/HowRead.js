@@ -3,7 +3,7 @@ import { __, _n, sprintf } from '@wordpress/i18n';
 import { Core } from '@newspack-nodes/runtime';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import { AnswerBody } from './Answer';
-import Skeleton from './Skeleton';
+import Skeleton from '@newspack-nodes/shared/components/Skeleton';
 import { actorNoun, dayLabel, reasonText, utcDay } from './format';
 import { word } from './words';
 

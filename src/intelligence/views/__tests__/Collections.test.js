@@ -143,12 +143,12 @@ describe( 'Collections — excluded items', () => {
 		expect(
 			within( section )
 				.getByRole( 'heading', { level: 2, name: 'Excluded' } )
-				.closest( '.newspack-intelligence__section-head' )
+				.closest( '.newspack-nodes-composed-section-head' )
 		).not.toBeNull();
 		expect(
 			screen
 				.getByRole( 'heading', { level: 2, name: 'Folders' } )
-				.closest( '.newspack-intelligence__section-head' )
+				.closest( '.newspack-nodes-composed-section-head' )
 		).not.toBeNull();
 		expect( section.closest( '.components-card' ) ).toBeNull();
 	} );

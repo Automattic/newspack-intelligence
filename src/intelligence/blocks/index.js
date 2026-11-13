@@ -1,13 +1,11 @@
 /**
  * Every block Intelligence's layouts are composed of, by name: the View a
  * page renders and, where it has settings, the Controls the editor's
- * inspector holds. Each name is a row of `Intelligence_Blocks::BLOCKS`. Each
- * View provides the `editing` prop the substrate hands it to every write
- * control inside it (`useWriteControl`).
+ * inspector holds. Each name is a row of `Intelligence_Blocks::BLOCKS`; the
+ * substrate's frame hands each View's `editing` prop to every write control
+ * inside it (`useWriteControl`), and supplies the aside.
  */
 
-import { Editing } from '../layout/PageContext';
-import aside from './aside';
 import health from './health';
 import ask from './ask';
 import since from './since';
@@ -28,29 +26,8 @@ import folderBoard from './folder-board';
  * @typedef {import('@newspack-nodes/shared/composition/CompositionView').CompositionBlockView} IntelBlockView
  */
 
-/**
- * A block's view whose View provides its `editing` prop to what it holds.
- *
- * @param {IntelBlockView} view The block's view.
- * @return {IntelBlockView} The view.
- */
-function provided( view ) {
-	const { View } = view;
-	/**
-	 * @param {{attributes: Object, editing: boolean, children?: import('react').ReactNode}} props The View's props.
-	 * @return {import('react').ReactNode} The block.
-	 */
-	const Provided = ( props ) => (
-		<Editing.Provider value={ props.editing }>
-			<View { ...props } />
-		</Editing.Provider>
-	);
-	return { ...view, View: Provided };
-}
-
 /** @type {Object<string,IntelBlockView>} */
-const VIEWS = {
-	'newspack-intelligence/aside': aside,
+export const BLOCK_VIEWS = {
 	'newspack-intelligence/health': health,
 	'newspack-intelligence/ask': ask,
 	'newspack-intelligence/since': since,
@@ -65,11 +42,3 @@ const VIEWS = {
 	'newspack-intelligence/item-list': itemList,
 	'newspack-intelligence/folder-board': folderBoard,
 };
-
-/** @type {Object<string,IntelBlockView>} */
-export const BLOCK_VIEWS = Object.fromEntries(
-	Object.entries( VIEWS ).map( ( [ name, view ] ) => [
-		name,
-		provided( view ),
-	] )
-);

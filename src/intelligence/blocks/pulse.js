@@ -4,15 +4,15 @@
  */
 
 import { formatCommandArgs } from '@newspack-nodes/runtime';
-import { useContext, useId } from '@wordpress/element';
+import { useId } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import { AnswerBody } from '../components/Answer';
 import LensTokens from '../components/LensTokens';
 import PulseLine from '../components/PulseLine';
-import Skeleton from '../components/Skeleton';
+import Skeleton from '@newspack-nodes/shared/components/Skeleton';
 import { pulseOf } from '../components/TrendTable';
 import { useIntelRead } from '../hooks/useIntelCommand';
-import { IntelPageContext } from '../layout/PageContext';
+import { useIntelPage } from '../layout/PageContext';
 
 /**
  * @typedef {Object} PulseAttributes
@@ -42,7 +42,7 @@ function signalsArgs( page, lens ) {
  * @return {?import('react').ReactElement} The block.
  */
 function View( { attributes } ) {
-	const args = signalsArgs( useContext( IntelPageContext ), attributes.lens );
+	const args = signalsArgs( useIntelPage(), attributes.lens );
 	const read = useIntelRead( `block:pulse:${ useId() }`, 'signals', args );
 	if ( null === args ) {
 		return null;

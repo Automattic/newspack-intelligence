@@ -25,7 +25,8 @@ import HealthStrip from './components/HealthStrip';
 import { useLastLook } from './hooks/useLastLook';
 import { PageReads, usePageReads } from './hooks/usePageRead';
 import UndoSnackbar from './components/UndoSnackbar';
-import { editTarget, layoutContext, leaveEdit } from './layout/editMode';
+import { editTarget, leaveEdit } from '@newspack-nodes/shared/composition/page';
+import { layoutContext, PAGES } from './layout/editMode';
 import { Confirm } from '@newspack-nodes/shared/components/Modal';
 import './styles/intelligence.scss';
 
@@ -123,7 +124,7 @@ export default function IntelligencePage( {
 	askDefaults,
 } ) {
 	const [ editing, setEditing ] = useState( () =>
-		canTune ? editTarget( window.location.search ) : null
+		canTune ? editTarget( window.location.search, PAGES ) : null
 	);
 	const [ dirty, setDirty ] = useState( false );
 	const [ layouts, setLayouts ] = useState( compositions );
@@ -209,7 +210,7 @@ export default function IntelligencePage( {
 	};
 	const endEdit = useCallback( () => {
 		setEditing( null );
-		leaveEdit();
+		leaveEdit( PAGES );
 	}, [] );
 	const go = ( id ) => {
 		if ( editing && dirty ) {

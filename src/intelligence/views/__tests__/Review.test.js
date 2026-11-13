@@ -259,7 +259,7 @@ describe( 'Review — queues', () => {
 		expect(
 			screen
 				.getByRole( 'heading', { level: 2, name: 'Review' } )
-				.closest( '.newspack-intelligence__section-head' )
+				.closest( '.newspack-nodes-composed-section-head' )
 		).toHaveTextContent(
 			'The extractor suggests which client or company each item is about. Confirm the right ones and reject the rest.'
 		);
@@ -2214,7 +2214,9 @@ describe.each( [
 			name: 'Loading',
 		} );
 		expect(
-			loading.querySelectorAll( '.newspack-intelligence__item' )
+			loading.querySelectorAll(
+				'.newspack-nodes-composed-skeleton-rows > li'
+			)
 		).toHaveLength( 5 );
 	} );
 
@@ -2237,7 +2239,7 @@ describe.each( [
 		renderReview();
 		expect(
 			await within( panel() ).findByText(
-				/Intelligence could not be read just now/
+				/This could not be read just now/
 			)
 		).toBeInTheDocument();
 		expect(
@@ -3448,7 +3450,7 @@ describe( 'Review — pages', () => {
 		} );
 		next();
 		expect(
-			await screen.findByText( /Intelligence could not be read just now/ )
+			await screen.findByText( /This could not be read just now/ )
 		).toBeInTheDocument();
 		previous();
 		expect(

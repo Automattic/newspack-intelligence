@@ -14,16 +14,16 @@ import {
 	SelectControl,
 	TextControl,
 } from '@wordpress/components';
-import { useContext, useId, useState } from '@wordpress/element';
+import { useId, useState } from '@wordpress/element';
 import { __ } from '@wordpress/i18n';
 import { AnswerBody } from '../components/Answer';
 import GroupPage from '../components/GroupPage';
 import ItemList from '../components/ItemList';
-import Section from '../components/Section';
-import Skeleton from '../components/Skeleton';
+import Section from '@newspack-nodes/shared/components/Section';
+import Skeleton from '@newspack-nodes/shared/components/Skeleton';
 import { words } from '../components/words';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
-import { IntelPageContext, useIntelActions } from '../layout/PageContext';
+import { useIntelActions, useIntelPage } from '../layout/PageContext';
 import { useSavedLens } from './lens';
 
 /** The skeleton rows that stand in for a list still owed. */
@@ -188,7 +188,7 @@ function Read( { options, attributes } ) {
  * @return {import('react').ReactElement} The block.
  */
 function View( { attributes } ) {
-	const page = useContext( IntelPageContext );
+	const page = useIntelPage();
 	const lens = useSavedLens( lensOf( attributes, page ) );
 	const options =
 		undefined === lens ? undefined : searchOf( attributes, page, lens );

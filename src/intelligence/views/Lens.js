@@ -21,7 +21,8 @@ import { useReturnFocus } from '../hooks/useReturnFocus';
 import { AnswerBody } from '../components/Answer';
 import ListField from '../components/ListField';
 import ListPicker from '../components/ListPicker';
-import { Header, Invitation } from '../components/Section';
+import { SectionHeader } from '@newspack-nodes/shared/components/Section';
+import Invitation from '@newspack-nodes/shared/components/Invitation';
 import { word } from '../components/words';
 import Refusal from '../components/Refusal';
 import {
@@ -31,8 +32,9 @@ import {
 	listOf,
 	newLens,
 } from '../components/lensDraft';
-import { editLayoutControl } from '../layout/LayoutMenu';
-import PageLayout from '../layout/PageLayout';
+import { editLayoutControl } from '@newspack-nodes/shared/composition/page';
+import { PAGES } from '../layout/editMode';
+import IntelligenceLayout from '../layout/IntelligenceLayout';
 
 /** No view chosen, so the first listed opens. */
 export const CLOSED_LENS = { key: null };
@@ -410,7 +412,7 @@ export default function Lens( {
 
 	return (
 		<div className="newspack-intelligence__view">
-			<Header
+			<SectionHeader
 				title={ __( 'Team views', 'newspack-intelligence' ) }
 				description={ __(
 					'Saved views for each team, with what moved this week.',
@@ -459,7 +461,7 @@ export default function Lens( {
 							onPick={ ( key ) => onOpen( { key } ) }
 						/>
 						<div className="newspack-intelligence__lens-main">
-							<Header
+							<SectionHeader
 								title={ lens.name }
 								description={ lens.description }
 								actions={
@@ -521,11 +523,14 @@ export default function Lens( {
 																	lens
 																),
 														},
-														editLayoutControl( {
-															page: 'lens',
-															lens_key:
-																lens.lens_key,
-														} ),
+														editLayoutControl(
+															{
+																page: 'lens',
+																lens_key:
+																	lens.lens_key,
+															},
+															PAGES
+														),
 													] }
 												/>
 											</>
@@ -533,7 +538,7 @@ export default function Lens( {
 									</>
 								}
 							/>
-							<PageLayout
+							<IntelligenceLayout
 								key={ JSON.stringify( lens.filters ) }
 								layout={ layout }
 								onRestored={ onRestored }

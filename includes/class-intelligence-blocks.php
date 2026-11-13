@@ -39,13 +39,6 @@ final class Intelligence_Blocks {
 	 * adds the rows its blocks need.
 	 */
 	public const BLOCKS = [
-		'newspack-intelligence/aside' => [
-			'title'      => 'Aside',
-			'contexts'   => [ 'newspack-intelligence/lens', 'newspack-intelligence/entity' ],
-			'attributes' => [],
-			'container'  => true,
-			'multiple'   => false,
-		],
 		'newspack-intelligence/pulse' => [
 			'title'      => 'Pulse line',
 			'contexts'   => [ 'newspack-intelligence/briefing', 'newspack-intelligence/lens', 'newspack-intelligence/entity' ],
@@ -308,7 +301,7 @@ final class Intelligence_Blocks {
 		'default'     => [],
 	];
 
-	/** Context => its default layout and its block cap. */
+	/** Context => its default layout, its block cap and the shared blocks it admits. */
 	public const CONTEXTS = [
 		'newspack-intelligence/briefing' => [
 			'default'    => __DIR__ . '/../layouts/briefing.html',
@@ -317,10 +310,12 @@ final class Intelligence_Blocks {
 		'newspack-intelligence/lens'     => [
 			'default'    => __DIR__ . '/../layouts/lens.html',
 			'max_blocks' => self::MAX_BLOCKS,
+			'admits'     => [ Composition::ASIDE ],
 		],
 		'newspack-intelligence/entity'   => [
 			'default'    => __DIR__ . '/../layouts/entity.html',
 			'max_blocks' => self::MAX_BLOCKS,
+			'admits'     => [ Composition::ASIDE ],
 		],
 	];
 
@@ -411,14 +406,13 @@ final class Intelligence_Blocks {
 	}
 
 	/**
-	 * A block's attributes at their declared defaults, as the composition
-	 * layer holds its declaration.
+	 * Each composed page => the context it lays out, the map
+	 * `Composition::enqueue_editor()` reads.
 	 *
-	 * @param string $block The block's name.
-	 * @return array<string,mixed>
+	 * @return array<string,string>
 	 */
-	public static function defaults( string $block ): array {
-		return \array_map( static fn ( array $schema ): mixed => $schema['default'], Composition::declarations()['blocks'][ $block ]['attributes'] );
+	public static function page_contexts(): array {
+		return \array_combine( self::pages(), \array_keys( self::CONTEXTS ) );
 	}
 
 	/**
@@ -429,5 +423,16 @@ final class Intelligence_Blocks {
 	 */
 	public static function pages(): array {
 		return \array_map( static fn ( string $context ): string => \substr( $context, \strlen( self::NAMESPACE ) + 1 ), \array_keys( self::CONTEXTS ) );
+	}
+
+	/**
+	 * A block's attributes at their declared defaults, as the composition
+	 * layer holds its declaration.
+	 *
+	 * @param string $block The block's name.
+	 * @return array<string,mixed>
+	 */
+	public static function defaults( string $block ): array {
+		return \array_map( static fn ( array $schema ): mixed => $schema['default'], Composition::declarations()['blocks'][ $block ]['attributes'] );
 	}
 }

@@ -15,12 +15,12 @@ import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
 import { HEALTH_READS, useIntelWrite } from '../hooks/useIntelCommand';
 import { unrecordedText, useEndClient } from '../hooks/useEndClient';
 import { usePageRead } from '../hooks/usePageRead';
-import { useWriteControl } from '../layout/PageContext';
+import { useWriteControl } from '@newspack-nodes/shared/composition/page';
 import EndClientDialog from './EndClientDialog';
 import Refusal from './Refusal';
-import { Unread } from './Answer';
+import Unread from '@newspack-nodes/shared/components/Unread';
 import Sheet from './Sheet';
-import Skeleton from './Skeleton';
+import Skeleton from '@newspack-nodes/shared/components/Skeleton';
 import UndoSnackbar from './UndoSnackbar';
 import { metaLine, pageFormat } from './format';
 import { word, words } from './words';
@@ -1531,8 +1531,17 @@ function HealthRows( { scope, reads, operator, panel, endClient, children } ) {
  * @return {import('react').ReactElement} The panel.
  */
 function HealthPanel( { health, detail } ) {
-	const { scope, reads, listed, rows, faults, refresh, panel, endClient } =
-		health;
+	const {
+		scope,
+		reads,
+		listed,
+		rows,
+		faults,
+		refresh,
+		panel,
+		endClient,
+		operator,
+	} = health;
 	const shown = rows.filter(
 		( row ) => 'sources' === detail || ! row.key.startsWith( SOURCE_ROW )
 	);
@@ -1568,6 +1577,7 @@ function HealthPanel( { health, detail } ) {
 			</div>
 			{ all.map( ( read, i ) => (
 				<Unread
+					operator={ operator }
 					key={ i }
 					error={ read.error }
 					refresh={ read.refresh }

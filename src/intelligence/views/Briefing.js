@@ -4,9 +4,10 @@ import { __ } from '@wordpress/i18n';
 import { moreHorizontal } from '@wordpress/icons';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import { ChangesRead, changesArgs } from '../blocks/changes';
-import { Header } from '../components/Section';
-import { editLayoutControl } from '../layout/LayoutMenu';
-import PageLayout from '../layout/PageLayout';
+import { SectionHeader } from '@newspack-nodes/shared/components/Section';
+import { editLayoutControl } from '@newspack-nodes/shared/composition/page';
+import { PAGES } from '../layout/editMode';
+import IntelligenceLayout from '../layout/IntelligenceLayout';
 
 /** The blocks that read the week. */
 const READS_WEEK = [
@@ -70,7 +71,7 @@ export default function Briefing( {
 	);
 	return (
 		<div className="newspack-intelligence__view">
-			<Header
+			<SectionHeader
 				title={ __( 'Briefing', 'newspack-intelligence' ) }
 				description={ __(
 					'What changed since you last looked, and what needs attention.',
@@ -86,14 +87,17 @@ export default function Briefing( {
 							) }
 							toggleProps={ { size: 'small' } }
 							controls={ [
-								editLayoutControl( { page: 'briefing' } ),
+								editLayoutControl(
+									{ page: 'briefing' },
+									PAGES
+								),
 							] }
 						/>
 					)
 				}
 			/>
 			<ChangesRead.Provider value={ changes }>
-				<PageLayout
+				<IntelligenceLayout
 					layout={ layout }
 					onRestored={ onRestored }
 					page={ {

@@ -7,7 +7,7 @@
 
 import { createContext, useContext } from '@wordpress/element';
 import { useIntelRead } from '../hooks/useIntelCommand';
-import { IntelPageContext } from '../layout/PageContext';
+import { useIntelPage } from '../layout/PageContext';
 
 /** @type {import('react').Context<?ReturnType<typeof useIntelRead>>} */
 export const ChangesRead = createContext( null );
@@ -34,7 +34,7 @@ export const changesArgs = ( since, lenses ) => [
  */
 export function useChanges( scope, lenses ) {
 	const shared = useContext( ChangesRead );
-	const { since } = useContext( IntelPageContext );
+	const { since } = useIntelPage();
 	const own = useIntelRead(
 		scope,
 		'briefing',

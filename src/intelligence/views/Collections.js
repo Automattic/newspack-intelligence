@@ -8,7 +8,7 @@ import { AnswerBody } from '../components/Answer';
 import Cite from '../components/Cite';
 import FolderBoard from '../components/FolderBoard';
 import Refusal from '../components/Refusal';
-import Section from '../components/Section';
+import Section from '@newspack-nodes/shared/components/Section';
 import { __, sprintf } from '@wordpress/i18n';
 import { Core } from '@newspack-nodes/runtime';
 import { actorNoun, dayLabel, itemKey, utcDay } from '../components/format';

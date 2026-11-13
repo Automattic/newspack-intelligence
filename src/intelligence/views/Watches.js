@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from '@wordpress/element';
+import { useContext, useEffect, useRef, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import {
 	Button,
@@ -25,13 +25,17 @@ import { useHeld } from '../hooks/useHeld';
 import { usePageRead } from '../hooks/usePageRead';
 import { useDeferredWrite } from '../hooks/useDeferredWrite';
 import { useReturnFocus } from '../hooks/useReturnFocus';
-import { AnswerBody, Unread } from '../components/Answer';
+import { AnswerBody, CanManage } from '../components/Answer';
+import Unread from '@newspack-nodes/shared/components/Unread';
 import EntityPicker from '../components/EntityPicker';
 import ItemList from '../components/ItemList';
 import ItemRow from '../components/ItemRow';
 import ListKeys, { LEAVES } from '../components/ListKeys';
 import Refusal from '../components/Refusal';
-import Section, { Header, Invitation } from '../components/Section';
+import Section, {
+	SectionHeader,
+} from '@newspack-nodes/shared/components/Section';
+import Invitation from '@newspack-nodes/shared/components/Invitation';
 import UndoSnackbar from '../components/UndoSnackbar';
 import { argsOf, itemKey } from '../components/format';
 
@@ -289,7 +293,7 @@ export default function Watches( {
 
 	return (
 		<div className="newspack-intelligence__view">
-			<Header
+			<SectionHeader
 				title={ __( 'Watches', 'newspack-intelligence' ) }
 				description={ __(
 					'Clients, team views and folders you follow, with what is new in each.',
@@ -877,6 +881,7 @@ function WatchForm( { draft, onDraft, refusal, onSave, onCancel } ) {
  * @return {import('react').ReactElement} The field.
  */
 function TargetField( { kind, label, value, onChange } ) {
+	const operator = useContext( CanManage );
 	const lens = 'lens' === kind;
 	const listed = usePageRead( lens ? 'lenses' : 'folders' );
 	const offered = lens
@@ -904,7 +909,11 @@ function TargetField( { kind, label, value, onChange } ) {
 				options={ options }
 				onChange={ ( key ) => onChange( key ?? '' ) }
 			/>
-			<Unread error={ listed.error } refresh={ listed.refresh } />
+			<Unread
+				operator={ operator }
+				error={ listed.error }
+				refresh={ listed.refresh }
+			/>
 		</>
 	);
 }

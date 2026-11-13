@@ -238,7 +238,7 @@ describe( 'Watches', () => {
 		await watchRow( 'Acme complaints' );
 		const header = screen
 			.getByRole( 'heading', { level: 2, name: 'Watches' } )
-			.closest( '.newspack-intelligence__section-head' );
+			.closest( '.newspack-nodes-composed-section-head' );
 		expect(
 			within( header ).getByRole( 'button', { name: 'New watch' } )
 		).toBeInTheDocument();
@@ -253,7 +253,7 @@ describe( 'Watches', () => {
 		expect(
 			within( open )
 				.getByRole( 'heading', { level: 2, name: 'Acme complaints' } )
-				.closest( '.newspack-intelligence__section-head' )
+				.closest( '.newspack-nodes-composed-section-head' )
 		).toContainElement(
 			within( open ).getByRole( 'button', { name: 'Edit' } )
 		);
@@ -319,7 +319,7 @@ describe( 'Watches', () => {
 		renderOnPage( <Harness /> );
 		expect(
 			await screen.findByText(
-				'Intelligence could not be read just now. Try again.'
+				'This could not be read just now. Try again.'
 			)
 		).toBeInTheDocument();
 		expect( screen.queryByText( 'not signed in' ) ).toBeNull();
@@ -812,7 +812,7 @@ describe( 'Watches', () => {
 			within(
 				screen
 					.getByRole( 'heading', { name: 'Watches' } )
-					.closest( '.newspack-intelligence__section-head' )
+					.closest( '.newspack-nodes-composed-section-head' )
 			).getByRole( 'button', { name: 'New watch' } )
 		);
 	} );
@@ -1056,7 +1056,7 @@ describe( 'Watches', () => {
 		);
 		expect(
 			await within( form() ).findByText(
-				'Intelligence could not be read just now. Try again.'
+				'This could not be read just now. Try again.'
 			)
 		).toBeInTheDocument();
 		fireEvent.click(
@@ -1067,7 +1067,7 @@ describe( 'Watches', () => {
 		);
 		expect(
 			await within( form() ).findByText(
-				'Intelligence could not be read just now. Try again.'
+				'This could not be read just now. Try again.'
 			)
 		).toBeInTheDocument();
 		expect(

@@ -68,8 +68,7 @@ function register_intelligence_admin_page(): void {
  * the layout each composed page reads (`Composition_Store::page_data()`),
  * and as `askDefaults` the ask block's declared defaults, Search's Ask box.
  * A load naming one of those pages as `edit` loads the layout editor for it
- * (`enqueue_layout_editor()`), which `Composition::editor()` loads for a
- * `tune` caller alone. The
+ * (`Composition::enqueue_editor()`), for a `tune` caller alone. The
  * server's role gate stays the authority; the flag only hides. WordPress
  * refuses the page to a caller its menu capability excludes before this
  * runs. `Admin::enqueue_react_page()` no-ops when
@@ -119,34 +118,8 @@ function enqueue_intelligence_assets( string $hook ): void {
 			],
 		]
 	);
-	// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- names which page's editor to load; the editor's writes are command-gated.
-	$edit = isset( $_GET['edit'] ) && \is_string( $_GET['edit'] ) ? \sanitize_text_field( \wp_unslash( $_GET['edit'] ) ) : '';
-	if ( null !== $handle && \in_array( $edit, Intelligence_Blocks::pages(), true ) ) {
-		enqueue_layout_editor( Intelligence_Blocks::NAMESPACE . "/{$edit}" );
-	}
-}
-
-/**
- * Register the layout editor's bundle, without enqueueing it, and hand it to
- * `Composition::editor()`, which loads the canvas, the bundle and the
- * context's schemas for a `tune` caller and nothing for any other; its
- * stylesheet joins it once it loads. Nothing loads while the bundle is
- * unbuilt.
- *
- * @param string $context The context the editor lays out.
- */
-function enqueue_layout_editor( string $context ): void {
-	$dir = __DIR__ . '/build/layout-editor';
-	if ( ! \file_exists( "{$dir}/layout-editor.js" ) ) {
-		return;
-	}
-	$asset   = \Newspack_Nodes\Core::arr( require "{$dir}/layout-editor.asset.php" );
-	$deps    = \array_map( \Newspack_Nodes\Core::as_string( ... ), \array_values( \Newspack_Nodes\Core::arr( $asset['dependencies'] ) ) );
-	$version = \Newspack_Nodes\Core::as_string( $asset['version'] );
-	\wp_register_script( LAYOUT_EDITOR_HANDLE, \plugins_url( 'build/layout-editor/layout-editor.js', __FILE__ ), $deps, $version, true );
-	if ( \Newspack_Nodes\Composition::editor( $context, LAYOUT_EDITOR_HANDLE ) && \file_exists( "{$dir}/layout-editor.css" ) ) {
-		\wp_enqueue_style( LAYOUT_EDITOR_HANDLE, \plugins_url( 'build/layout-editor/layout-editor.css', __FILE__ ), [ 'wp-components', 'wp-block-editor' ], $version );
-		\wp_style_add_data( LAYOUT_EDITOR_HANDLE, 'rtl', 'replace' );
+	if ( null !== $handle ) {
+		\Newspack_Nodes\Composition::enqueue_editor( Intelligence_Blocks::page_contexts(), LAYOUT_EDITOR_HANDLE, __DIR__ . '/build/layout-editor', \plugins_url( 'build/layout-editor', __FILE__ ) );
 	}
 }
 

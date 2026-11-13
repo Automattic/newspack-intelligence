@@ -25,17 +25,21 @@ import Lens, { CLOSED_LENS } from '../Lens';
 
 /** Each address Edit layout would load, in place of the navigation jsdom refuses. */
 const mockLoads = [];
-jest.mock( '../../layout/LayoutMenu', () => {
-	const { editSearch } = jest.requireActual( '../../layout/editMode' );
-	const { editLayoutControl } = jest.requireActual(
-		'../../layout/LayoutMenu'
+jest.mock( '@newspack-nodes/shared/composition/page', () => {
+	const actual = jest.requireActual(
+		'@newspack-nodes/shared/composition/page'
 	);
 	return {
-		editLayoutControl: ( target ) => ( {
-			...editLayoutControl( target ),
+		...actual,
+		editLayoutControl: ( target, pages ) => ( {
+			...actual.editLayoutControl( target, pages ),
 			onClick: () =>
 				mockLoads.push(
-					editSearch( globalThis.location.search, target )
+					actual.editSearch(
+						globalThis.location.search,
+						target,
+						pages
+					)
 				),
 		} ),
 	};
@@ -131,7 +135,7 @@ const openMenu = async () => {
 const headerOf = ( name ) =>
 	screen
 		.getByRole( 'heading', { level: 2, name } )
-		.closest( '.newspack-intelligence__section-head' );
+		.closest( '.newspack-nodes-composed-section-head' );
 
 describe( 'Lens', () => {
 	it( 'stands under the shared header, New view at its end for a curator, and heads the open view the same way', async () => {
@@ -593,9 +597,7 @@ describe( 'Lens', () => {
 			/>
 		);
 		expect(
-			await screen.findByText(
-				'Intelligence could not be read just now.'
-			)
+			await screen.findByText( 'This could not be read just now.' )
 		).toBeInTheDocument();
 		expect(
 			screen.queryByRole( 'button', { name: 'Try again' } )
@@ -671,7 +673,7 @@ describe( 'Lens', () => {
 			renderOnPage( <Harness /> );
 			expect(
 				await screen.findByText(
-					'Intelligence could not be read just now. Try again.'
+					'This could not be read just now. Try again.'
 				)
 			).toBeInTheDocument();
 		} );

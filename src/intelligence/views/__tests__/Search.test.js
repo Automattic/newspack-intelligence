@@ -127,7 +127,7 @@ describe( 'Search', () => {
 		);
 		const header = screen
 			.getByRole( 'heading', { level: 2, name: 'Search' } )
-			.closest( '.newspack-intelligence__section-head' );
+			.closest( '.newspack-nodes-composed-section-head' );
 		expect( header ).toHaveTextContent(
 			'Ask a question the graph answers, or find items by their words and filters.'
 		);
@@ -510,7 +510,7 @@ describe( 'Search', () => {
 		fireEvent.click( screen.getByRole( 'button', { name: 'Next' } ) );
 		expect(
 			await screen.findByText(
-				'Intelligence could not be read just now. Try again.'
+				'This could not be read just now. Try again.'
 			)
 		).toBeInTheDocument();
 		fireEvent.change( screen.getByRole( 'searchbox' ), {
@@ -617,7 +617,7 @@ describe( 'Search', () => {
 		renderSearch();
 		expect(
 			await screen.findByText(
-				'Intelligence could not be read just now. Try again.'
+				'This could not be read just now. Try again.'
 			)
 		).toBeInTheDocument();
 		expect( screen.queryByText( 'unknown command: lenses' ) ).toBeNull();
@@ -1052,7 +1052,7 @@ describe( 'Search', () => {
 			renderSearch();
 			expect(
 				await screen.findByText(
-					'Intelligence could not be read just now. Try again.'
+					'This could not be read just now. Try again.'
 				)
 			).toBeInTheDocument();
 			expect(

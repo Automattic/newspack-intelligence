@@ -1,15 +1,14 @@
 /**
  * What a block on a composed page reads besides its attributes: the page,
  * its subject, the reader's last look and the page's actions a block's rows
- * open; and, from the `editing` prop the substrate hands each block's View,
- * whether its layout is being edited, in which case every write control the
- * block holds is inert, so editing a layout writes nothing else.
+ * open. The page stands in the substrate's `ComposedPage`, read through
+ * `usePage()`.
  */
 
-import { createContext, useContext } from '@wordpress/element';
+import { usePage } from '@newspack-nodes/shared/composition/page';
 
 /**
- * The page a block stands on.
+ * The page a block stands on, as the substrate's frame carries it.
  *
  * @typedef {Object} IntelPage
  * @property {?('briefing'|'lens'|'entity')} page       The page.
@@ -18,6 +17,10 @@ import { createContext, useContext } from '@wordpress/element';
  * @property {?number}                       since      The reader's last look, UTC seconds, on the Briefing.
  * @property {boolean}                       [kept]     Whether the browser keeps the last look; false hides what arrived since.
  * @property {Partial<IntelActions>}         [actions]  The page's actions; the editor's preview offers none.
+ * @property {string}                        group      The surface the page's commands are sent for.
+ * @property {boolean}                       canTune    Whether the reader may curate the layout.
+ * @property {(layout: Object) => void}      onRestored Takes the default a curator's restore answers.
+ * @property {boolean}                       [operator] Whether the reader may read why a layout was refused.
  */
 
 /**
@@ -53,28 +56,12 @@ const NO_ACTIONS = {
 	onAsked: nothing,
 };
 
-/** @type {import('react').Context<IntelPage>} */
-export const IntelPageContext = createContext( {
-	page: null,
-	lens_key: null,
-	entity_key: null,
-	since: null,
-} );
-
 /**
- * Whether the block a control stands in is being edited, as the substrate
- * handed its View `editing`; each block's View provides it (`BLOCK_VIEWS`).
+ * The page a block stands on.
  *
- * @type {import('react').Context<boolean>}
+ * @return {IntelPage} The page.
  */
-export const Editing = createContext( false );
-
-/**
- * Whether the block this stands in is being edited.
- *
- * @return {boolean} Whether it is.
- */
-export const useEditing = () => useContext( Editing );
+export const useIntelPage = () => /** @type {IntelPage} */ ( usePage() );
 
 /**
  * The page's actions, each doing nothing where the page offers none.
@@ -82,19 +69,5 @@ export const useEditing = () => useContext( Editing );
  * @return {IntelActions} The actions.
  */
 export function useIntelActions() {
-	return { ...NO_ACTIONS, ...useContext( IntelPageContext ).actions };
-}
-
-/**
- * A write control's props: `onClick` while the layout is read, and while it
- * is edited `aria-disabled` with a click that does nothing, so the control
- * keeps its place and focus.
- *
- * @param {() => void} onClick The write.
- * @return {{onClick: () => void, 'aria-disabled'?: true}} The control's props.
- */
-export function useWriteControl( onClick ) {
-	return useEditing()
-		? { 'aria-disabled': true, onClick: nothing }
-		: { onClick };
+	return { ...NO_ACTIONS, ...useIntelPage().actions };
 }

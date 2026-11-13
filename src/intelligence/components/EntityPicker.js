@@ -1,8 +1,15 @@
-import { useId, useMemo, useRef, useState } from '@wordpress/element';
+import {
+	useContext,
+	useId,
+	useMemo,
+	useRef,
+	useState,
+} from '@wordpress/element';
 import { ComboboxControl } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
-import { Unread } from './Answer';
+import Unread from '@newspack-nodes/shared/components/Unread';
+import { CanManage } from './Answer';
 
 /** The fewest letters, marks or digits a prefix `names` is asked about holds. */
 export const MIN_PREFIX = 2;
@@ -93,6 +100,7 @@ export default function EntityPicker( {
 	exclude = '',
 	onEscape,
 } ) {
+	const operator = useContext( CanManage );
 	const [ text, setText ] = useState( '' );
 	const [ held, setHeld ] = useState( null );
 	const field = useRef( null );
@@ -157,7 +165,11 @@ export default function EntityPicker( {
 					) }
 				/>
 			</div>
-			<Unread error={ names.error } refresh={ names.refresh } />
+			<Unread
+				operator={ operator }
+				error={ names.error }
+				refresh={ names.refresh }
+			/>
 		</>
 	);
 }

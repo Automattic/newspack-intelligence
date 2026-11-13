@@ -5,15 +5,15 @@
  */
 
 import { CheckboxControl } from '@wordpress/components';
-import { createInterpolateElement, useContext } from '@wordpress/element';
+import { createInterpolateElement } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { Core } from '@newspack-nodes/runtime';
 import { AnswerBody } from '../components/Answer';
-import Skeleton from '../components/Skeleton';
-import Section from '../components/Section';
+import Skeleton from '@newspack-nodes/shared/components/Skeleton';
+import Section from '@newspack-nodes/shared/components/Section';
 import { pageFormat, sinceLabel, utcDay } from '../components/format';
 import { word } from '../components/words';
-import { IntelPageContext, useIntelActions } from '../layout/PageContext';
+import { useIntelActions, useIntelPage } from '../layout/PageContext';
 import { useChanges } from './changes';
 
 /** The kinds whose phrase counts the clients their items are about. */
@@ -180,7 +180,7 @@ function Lede( { summary, kinds, label, onSearchFor } ) {
  * @return {?import('react').ReactElement} The lede, or nothing where the browser keeps no last look.
  */
 function View( { attributes: { kinds } } ) {
-	const { since, kept } = useContext( IntelPageContext );
+	const { since, kept } = useIntelPage();
 	const { onSearchFor } = useIntelActions();
 	const read = useChanges( 'briefing:since', [] );
 	if ( false === kept ) {

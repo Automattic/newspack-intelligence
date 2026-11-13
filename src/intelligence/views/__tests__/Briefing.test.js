@@ -167,7 +167,7 @@ describe( 'Briefing', () => {
 		expect(
 			screen
 				.getByRole( 'heading', { level: 2, name: 'Briefing' } )
-				.closest( '.newspack-intelligence__section-head' )
+				.closest( '.newspack-nodes-composed-section-head' )
 		).toHaveTextContent(
 			'What changed since you last looked, and what needs attention.'
 		);
@@ -186,7 +186,7 @@ describe( 'Briefing', () => {
 		} );
 		expect(
 			await within( attention ).findByText(
-				'Intelligence could not be read just now. Try again.'
+				'This could not be read just now. Try again.'
 			)
 		).toBeInTheDocument();
 		expect(
@@ -203,14 +203,13 @@ describe( 'Briefing', () => {
 		const region = ( name ) => screen.getByRole( 'region', { name } );
 		await screen.findAllByRole( 'status', { name: 'Loading' } );
 		const bars = ( name ) =>
-			region( name ).querySelectorAll(
-				'.newspack-intelligence__skeleton-bar.is-line'
-			).length;
+			region( name ).querySelectorAll( '.newspack-nodes-skeleton--line' )
+				.length;
 		expect( bars( sinceHeading() ) ).toBe( 2 );
 		expect( bars( 'Needs attention' ) ).toBe( 3 );
 		expect(
 			region( 'This week, most important first' ).querySelectorAll(
-				'.newspack-intelligence__item'
+				'.newspack-nodes-composed-skeleton-rows > li'
 			)
 		).toHaveLength( 10 );
 	} );
@@ -222,9 +221,7 @@ describe( 'Briefing', () => {
 		};
 		renderBriefing();
 		expect(
-			await screen.findByText(
-				'Intelligence could not be read just now.'
-			)
+			await screen.findByText( 'This could not be read just now.' )
 		).toBeInTheDocument();
 		expect(
 			screen.queryByRole( 'button', { name: 'Try again' } )
@@ -248,7 +245,7 @@ describe( 'Briefing', () => {
 		} );
 		const menu = screen.getByRole( 'button', { name: 'Briefing actions' } );
 		expect(
-			menu.closest( '.newspack-intelligence__section-head' )
+			menu.closest( '.newspack-nodes-composed-section-head' )
 		).toHaveTextContent( 'Briefing' );
 		fireEvent.click( menu );
 		expect(
@@ -320,7 +317,7 @@ describe( 'Briefing', () => {
 			} );
 			expect(
 				await within( watches ).findByText(
-					'Intelligence could not be read just now. Try again.'
+					'This could not be read just now. Try again.'
 				)
 			).toBeInTheDocument();
 			expect(

@@ -8,14 +8,14 @@
  */
 
 import { SelectControl, TextControl } from '@wordpress/components';
-import { useContext, useId } from '@wordpress/element';
+import { useId } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { AnswerBody } from '../components/Answer';
-import Section from '../components/Section';
+import Section from '@newspack-nodes/shared/components/Section';
 import { TrendChart, chartTitle } from '../components/TrendTable';
 import { words } from '../components/words';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
-import { IntelPageContext } from '../layout/PageContext';
+import { useIntelPage } from '../layout/PageContext';
 import { useSavedLens } from './lens';
 
 /** The chart's skeleton height in pixels, the chart's own. */
@@ -68,7 +68,7 @@ const emptySentence = ( days ) =>
  * @return {import('react').ReactElement} The block.
  */
 function View( { attributes: { heading, by, bucket, style } } ) {
-	const page = useContext( IntelPageContext );
+	const page = useIntelPage();
 	const lens = useSavedLens( 'lens' === page.page ? page.lens_key : null );
 	const subject = subjectOf( page );
 	const read = useIntelRead(

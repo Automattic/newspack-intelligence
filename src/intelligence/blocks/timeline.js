@@ -10,15 +10,15 @@ import {
 	SelectControl,
 	TextControl,
 } from '@wordpress/components';
-import { useContext, useId, useState } from '@wordpress/element';
+import { useId, useState } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { chevronDown } from '@wordpress/icons';
 import { formatCommandArgs } from '@newspack-nodes/runtime';
 import { AnswerBody } from '../components/Answer';
 import ItemList from '../components/ItemList';
-import Section from '../components/Section';
+import Section from '@newspack-nodes/shared/components/Section';
 import { useIntelRead } from '../hooks/useIntelCommand';
-import { IntelPageContext, useIntelActions } from '../layout/PageContext';
+import { useIntelActions, useIntelPage } from '../layout/PageContext';
 import { entityName } from '../components/format';
 import { aboutEntity, useEntityRecord } from './record';
 
@@ -137,7 +137,7 @@ function Published( { entityKey, name, count, layout, limit } ) {
  * @return {import('react').ReactElement} The block.
  */
 function View( { attributes } ) {
-	const { entity_key: key } = useContext( IntelPageContext );
+	const { entity_key: key } = useIntelPage();
 	const record = useEntityRecord().answer;
 	const { heading, published, layout, limit } = attributes;
 	const name = record?.available ? entityName( record ) : key;

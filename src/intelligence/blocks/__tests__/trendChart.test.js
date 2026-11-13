@@ -18,7 +18,7 @@ import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { LENSES, pageData } from '../../views/__tests__/fixtures';
-import { IntelPageContext } from '../../layout/PageContext';
+import { ComposedPage } from '@newspack-nodes/shared/composition/page';
 import trendChart from '../trend-chart';
 
 /** A reply that never comes, so its read stays owed. */
@@ -65,9 +65,9 @@ beforeEach( () => {
  */
 const block = ( attributes = {}, page = {} ) =>
 	renderOnPage(
-		<IntelPageContext.Provider value={ { ...DESK, ...page } }>
+		<ComposedPage.Provider value={ { ...DESK, ...page } }>
 			<trendChart.View attributes={ { ...ATTRIBUTES, ...attributes } } />
-		</IntelPageContext.Provider>
+		</ComposedPage.Provider>
 	);
 
 describe( 'trend-chart', () => {
@@ -169,12 +169,12 @@ describe( 'trend-chart', () => {
 
 	it( 'stands twice on one page, both reading its one team view list', async () => {
 		renderOnPage(
-			<IntelPageContext.Provider value={ DESK }>
+			<ComposedPage.Provider value={ DESK }>
 				<trendChart.View attributes={ { ...ATTRIBUTES, by: 'kind' } } />
 				<trendChart.View
 					attributes={ { ...ATTRIBUTES, by: 'kind', style: 'lines' } }
 				/>
-			</IntelPageContext.Provider>
+			</ComposedPage.Provider>
 		);
 		expect(
 			await screen.findByRole( 'button', {
@@ -196,7 +196,7 @@ describe( 'trend-chart', () => {
 		block( { by: 'topic' } );
 		expect(
 			await screen.findByText(
-				'Intelligence could not be read just now. Try again.'
+				'This could not be read just now. Try again.'
 			)
 		).toBeInTheDocument();
 		expect(

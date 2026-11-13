@@ -20,7 +20,7 @@ import { Core } from '@newspack-nodes/runtime';
 import CompositionEditSlot from '@newspack-nodes/shared/composition/CompositionEditSlot';
 import { intelWire } from './intelWire';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
-import { IntelPageContext } from '../layout/PageContext';
+import { useIntelPage } from '../layout/PageContext';
 import { BLOCK_VIEWS } from '../blocks';
 import { mountLayoutEditor } from '../layout/LayoutEditor';
 
@@ -80,7 +80,7 @@ function PageEditSlot( props ) {
  * @return {import('react').ReactElement} The block.
  */
 function Probe( { attributes: { label } } ) {
-	const { lens_key: lens } = useContext( IntelPageContext );
+	const { lens_key: lens } = useIntelPage();
 	const read = useIntelRead(
 		`probe:${ label }`,
 		'signals',
@@ -98,7 +98,7 @@ const LENS_SCHEMAS = {
 	context: 'newspack-intelligence/lens',
 	max_blocks: 24,
 	blocks: {
-		'newspack-intelligence/aside': {
+		'newspack-nodes/aside': {
 			title: 'Aside',
 			attributes: {},
 			container: true,
@@ -175,7 +175,11 @@ beforeEach( () => {
 
 afterEach( () => {
 	getBlockTypes()
-		.filter( ( { name } ) => name.startsWith( 'newspack-intelligence/' ) )
+		.filter( ( { name } ) =>
+			[ 'newspack-intelligence/', 'newspack-nodes/' ].some( ( prefix ) =>
+				name.startsWith( prefix )
+			)
+		)
 		.forEach( ( { name } ) => unregisterBlockType( name ) );
 } );
 
@@ -185,15 +189,15 @@ describe( 'mountLayoutEditor', () => {
 			{
 				...LENS_SCHEMAS,
 				blocks: {
-					'newspack-intelligence/aside':
-						LENS_SCHEMAS.blocks[ 'newspack-intelligence/aside' ],
+					'newspack-nodes/aside':
+						LENS_SCHEMAS.blocks[ 'newspack-nodes/aside' ],
 				},
 			},
 			BLOCK_VIEWS
 		);
 
 		expect( getBlockTypes().map( ( { name } ) => name ) ).toEqual( [
-			'newspack-intelligence/aside',
+			'newspack-nodes/aside',
 		] );
 	} );
 
@@ -269,7 +273,7 @@ describe( 'mountLayoutEditor', () => {
 		const ENTITY_PROBE = 'newspack-intelligence/entity-probe';
 		/** A block reading its page's entity. */
 		function EntityProbe() {
-			const { entity_key: key } = useContext( IntelPageContext );
+			const { entity_key: key } = useIntelPage();
 			useIntelRead( 'probe:entity', 'related', key ? [ key ] : null );
 			return null;
 		}

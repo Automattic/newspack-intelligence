@@ -8,14 +8,14 @@
 
 import { render, screen, fireEvent } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
-import { AnswerBody, CanManage, Unread } from '../Answer';
+import Skeleton from '@newspack-nodes/shared/components/Skeleton';
+import { AnswerBody, CanManage } from '../Answer';
 import { sinceLabel } from '../format';
-import Skeleton from '../Skeleton';
 
 const UNAVAILABLE =
 	'The intelligence store did not open, so this was not read. An administrator can check the status above.';
 
-const UNREAD = 'Intelligence could not be read just now. Try again.';
+const UNREAD = 'This could not be read just now. Try again.';
 
 const props = { rows: 'leads', empty: 'No lead holds this.' };
 
@@ -33,7 +33,9 @@ describe( 'AnswerBody', () => {
 		);
 		const status = screen.getByRole( 'status', { name: 'Loading' } );
 		expect(
-			status.querySelectorAll( '.newspack-intelligence__item' )
+			status.querySelectorAll(
+				'.newspack-nodes-composed-skeleton-rows > li'
+			)
 		).toHaveLength( 3 );
 		expect( screen.queryByText( /Loading/ ) ).toBeNull();
 	} );
@@ -98,13 +100,6 @@ describe( 'AnswerBody', () => {
 			expect( screen.getByText( 'limit must be positive' ) ).toHaveClass(
 				'is-muted'
 			);
-		} );
-
-		it( 'renders nothing without an error, as a refusal does', () => {
-			const { container } = render(
-				<Unread error={ null } refresh={ jest.fn() } />
-			);
-			expect( container ).toBeEmptyDOMElement();
 		} );
 
 		it( 'reads the operator from the page alone, never the localized global', () => {

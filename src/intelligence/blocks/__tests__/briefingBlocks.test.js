@@ -18,7 +18,7 @@ import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { ITEM, pageData } from '../../views/__tests__/fixtures';
-import { IntelPageContext } from '../../layout/PageContext';
+import { ComposedPage } from '@newspack-nodes/shared/composition/page';
 import ask from '../ask';
 import since from '../since';
 import needsAttention from '../needs-attention';
@@ -125,7 +125,7 @@ afterEach( () => {
  */
 const renderBlock = ( block, attributes, lastLook = LAST_LOOK ) =>
 	renderOnPage(
-		<IntelPageContext.Provider
+		<ComposedPage.Provider
 			value={ {
 				page: 'briefing',
 				lens_key: null,
@@ -136,7 +136,7 @@ const renderBlock = ( block, attributes, lastLook = LAST_LOOK ) =>
 			} }
 		>
 			<block.View attributes={ attributes } />
-		</IntelPageContext.Provider>
+		</ComposedPage.Provider>
 	);
 
 describe( 'ask', () => {
@@ -255,7 +255,9 @@ describe( 'since', () => {
 		const { container } = renderBlock( since, { kinds: ALL } );
 		await screen.findByRole( 'status', { name: 'Loading' } );
 		expect(
-			container.querySelectorAll( '.newspack-intelligence__skeleton-bar' )
+			container.querySelectorAll(
+				'[role=status] .newspack-nodes-skeleton'
+			)
 		).toHaveLength( 2 );
 	} );
 } );
@@ -497,7 +499,9 @@ describe( 'needs-attention', () => {
 		} );
 		await screen.findByRole( 'status', { name: 'Loading' } );
 		expect(
-			container.querySelectorAll( '.newspack-intelligence__skeleton-bar' )
+			container.querySelectorAll(
+				'[role=status] .newspack-nodes-skeleton'
+			)
 		).toHaveLength( 3 );
 	} );
 
@@ -792,7 +796,9 @@ describe( 'week', () => {
 		} );
 		await screen.findByRole( 'status', { name: 'Loading' } );
 		expect(
-			container.querySelectorAll( '.newspack-intelligence__item' )
+			container.querySelectorAll(
+				'.newspack-nodes-composed-skeleton-rows > li'
+			)
 		).toHaveLength( 10 );
 	} );
 } );

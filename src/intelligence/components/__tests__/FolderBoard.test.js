@@ -501,7 +501,7 @@ describe( 'FolderBoard', () => {
 		const picks = await column( 'Coastline picks' );
 		const header = screen
 			.getByRole( 'heading', { level: 2, name: 'Folders' } )
-			.closest( '.newspack-intelligence__section-head' );
+			.closest( '.newspack-nodes-composed-section-head' );
 		expect(
 			within( header ).getByRole( 'button', { name: 'New folder' } )
 		).toBeInTheDocument();
@@ -737,7 +737,7 @@ describe( 'FolderBoard', () => {
 				within(
 					screen
 						.getByRole( 'heading', { name: 'Folders' } )
-						.closest( '.newspack-intelligence__section-head' )
+						.closest( '.newspack-nodes-composed-section-head' )
 				).getByRole( 'button', { name: 'New folder' } )
 			);
 		} );
@@ -767,7 +767,9 @@ describe( 'FolderBoard', () => {
 			} );
 			expect( loading ).toHaveLength( narrow ? 1 : 3 );
 			expect(
-				loading[ 0 ].querySelectorAll( '.newspack-intelligence__item' )
+				loading[ 0 ].querySelectorAll(
+					'.newspack-nodes-composed-skeleton-rows > li'
+				)
 			).toHaveLength( 3 );
 		} );
 
@@ -776,7 +778,7 @@ describe( 'FolderBoard', () => {
 			renderBoard();
 			expect(
 				await screen.findByText(
-					'Intelligence could not be read just now. Try again.'
+					'This could not be read just now. Try again.'
 				)
 			).toBeInTheDocument();
 		} );

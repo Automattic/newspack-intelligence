@@ -14,7 +14,7 @@ import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { GROUPS, ITEM, LENSES, pageData } from '../../views/__tests__/fixtures';
-import { IntelPageContext } from '../../layout/PageContext';
+import { ComposedPage } from '@newspack-nodes/shared/composition/page';
 import itemList from '../item-list';
 
 /** A reply that never comes, so its read stays owed. */
@@ -101,11 +101,11 @@ beforeEach( () => {
  */
 const block = ( attributes, page ) =>
 	renderOnPage(
-		<IntelPageContext.Provider
+		<ComposedPage.Provider
 			value={ { ...page, actions: { onOpenEntity, canTune: false } } }
 		>
 			<itemList.View attributes={ { ...ATTRIBUTES, ...attributes } } />
-		</IntelPageContext.Provider>
+		</ComposedPage.Provider>
 	);
 
 describe( 'item-list', () => {
@@ -301,12 +301,12 @@ describe( 'item-list', () => {
 	it( 'stands twice on one page, both reading its one team view list', async () => {
 		const page = deskOf( [] );
 		renderOnPage(
-			<IntelPageContext.Provider
+			<ComposedPage.Provider
 				value={ { ...page, actions: { onOpenEntity, canTune: false } } }
 			>
 				<itemList.View attributes={ ATTRIBUTES } />
 				<itemList.View attributes={ ATTRIBUTES } />
-			</IntelPageContext.Provider>
+			</ComposedPage.Provider>
 		);
 		await waitFor( () =>
 			expect(
@@ -350,7 +350,7 @@ describe( 'item-list', () => {
 		block( {}, deskOf( [] ) );
 		expect(
 			await screen.findByText(
-				'Intelligence could not be read just now. Try again.'
+				'This could not be read just now. Try again.'
 			)
 		).toBeInTheDocument();
 	} );

@@ -519,7 +519,7 @@ describe( 'IntelligencePage', () => {
 				heading
 			);
 			const row = heading.closest(
-				'.newspack-intelligence__section-head.newspack-nodes-section-heading'
+				'.newspack-nodes-composed-section-head.newspack-nodes-section-heading'
 			);
 			expect(
 				row.querySelector( 'p.newspack-nodes-status.is-muted' )
@@ -932,9 +932,7 @@ describe( 'IntelligencePage', () => {
 		).toHaveClass( 'is-muted' );
 		expect(
 			screen
-				.getByText(
-					'Intelligence could not be read just now. Try again.'
-				)
+				.getByText( 'This could not be read just now. Try again.' )
 				.closest( '[role=status]' )
 		).not.toBeNull();
 	} );
@@ -947,7 +945,7 @@ describe( 'IntelligencePage', () => {
 		expect(
 			(
 				await screen.findByText(
-					'Intelligence could not be read just now. Try again.'
+					'This could not be read just now. Try again.'
 				)
 			).closest( '[role=status]' )
 		).not.toBeNull();
@@ -1501,8 +1499,33 @@ describe( 'IntelligencePage', () => {
 			);
 			expect( await openWeek() ).toBeInTheDocument();
 			expect(
-				screen.queryByText( 'Intelligence could not be read just now.' )
+				screen.queryByText( 'This could not be read just now.' )
 			).toBeNull();
+		} );
+
+		it( 'shows a curator a Briefing naming the retired aside as the read error, with Restore default', async () => {
+			renderPage( true, false, {
+				...COMPOSITIONS,
+				'newspack-intelligence/briefing': {
+					context: 'newspack-intelligence/briefing',
+					error: 'composition newspack-intelligence/briefing: newspack-intelligence/aside is not a declared block',
+				},
+			} );
+
+			expect(
+				await screen.findByRole( 'button', { name: 'Restore default' } )
+			).toBeInTheDocument();
+			expect(
+				screen.getByText( 'This could not be read just now.' )
+			).toBeInTheDocument();
+			expect(
+				screen.getByText(
+					'This layout names a block or a setting this version does not have.',
+					{ exact: false }
+				)
+			).toBeInTheDocument();
+			expect( screen.queryByRole( 'complementary' ) ).toBeNull();
+			expect( wire.sent( 'briefing' ) ).toEqual( [] );
 		} );
 
 		it( 'ignores a reader’s edit', async () => {
@@ -1530,7 +1553,7 @@ describe( 'IntelligencePage', () => {
 						source: 'saved',
 						blocks: [
 							{
-								name: 'newspack-intelligence/aside',
+								name: 'newspack-nodes/aside',
 								attributes: {},
 								inner: [],
 							},
@@ -1546,7 +1569,7 @@ describe( 'IntelligencePage', () => {
 				screen.queryByText( 'Editing the layout of support-desk' )
 			).toBeNull();
 			expect( await screen.findByRole( 'complementary' ) ).toHaveClass(
-				'newspack-intelligence__aside'
+				'newspack-nodes-composed-aside'
 			);
 			expect(
 				document.querySelector( '.components-snackbar' )

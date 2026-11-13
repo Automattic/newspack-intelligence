@@ -31,8 +31,8 @@ import Cite, { EntityChip } from '../components/Cite';
 import EntityPicker from '../components/EntityPicker';
 import ListKeys, { LEAVES } from '../components/ListKeys';
 import Refusal from '../components/Refusal';
-import { Header } from '../components/Section';
-import Skeleton from '../components/Skeleton';
+import { SectionHeader } from '@newspack-nodes/shared/components/Section';
+import Skeleton from '@newspack-nodes/shared/components/Skeleton';
 import UndoSnackbar from '../components/UndoSnackbar';
 import {
 	argsOf,
@@ -1384,7 +1384,7 @@ export default function Review( { canTune, onOpenEntity } ) {
 
 	return (
 		<div ref={ view } className="newspack-intelligence__view">
-			<Header
+			<SectionHeader
 				title={ __( 'Review', 'newspack-intelligence' ) }
 				description={ __(
 					'The extractor suggests which client or company each item is about. Confirm the right ones and reject the rest.',

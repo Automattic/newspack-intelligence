@@ -26,17 +26,21 @@ import Entity from '../Entity';
 
 /** Each address Edit layout would load, in place of the navigation jsdom refuses. */
 const mockLoads = [];
-jest.mock( '../../layout/LayoutMenu', () => {
-	const { editSearch } = jest.requireActual( '../../layout/editMode' );
-	const { editLayoutControl } = jest.requireActual(
-		'../../layout/LayoutMenu'
+jest.mock( '@newspack-nodes/shared/composition/page', () => {
+	const actual = jest.requireActual(
+		'@newspack-nodes/shared/composition/page'
 	);
 	return {
-		editLayoutControl: ( target ) => ( {
-			...editLayoutControl( target ),
+		...actual,
+		editLayoutControl: ( target, pages ) => ( {
+			...actual.editLayoutControl( target, pages ),
 			onClick: () =>
 				mockLoads.push(
-					editSearch( globalThis.location.search, target )
+					actual.editSearch(
+						globalThis.location.search,
+						target,
+						pages
+					)
 				),
 		} ),
 	};
@@ -153,7 +157,7 @@ const DEFAULT_LAYOUT = {
 			inner: [],
 		},
 		{
-			name: 'newspack-intelligence/aside',
+			name: 'newspack-nodes/aside',
 			attributes: {},
 			inner: [
 				{
@@ -259,7 +263,7 @@ describe( 'Entity — header', () => {
 			name: 'Harbor Ledger',
 		} );
 		const row = title.closest(
-			'.newspack-intelligence__section-head.newspack-nodes-section-heading'
+			'.newspack-nodes-composed-section-head.newspack-nodes-section-heading'
 		);
 		expect( row ).not.toBeNull();
 		expect(

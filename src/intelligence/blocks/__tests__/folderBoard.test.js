@@ -10,7 +10,7 @@ import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { pageData } from '../../views/__tests__/fixtures';
-import { IntelPageContext } from '../../layout/PageContext';
+import { ComposedPage } from '@newspack-nodes/shared/composition/page';
 import { BLOCK_VIEWS } from '..';
 
 const { View, Controls } = BLOCK_VIEWS[ 'newspack-intelligence/folder-board' ];
@@ -80,7 +80,7 @@ beforeEach( () => {
  */
 const renderBlock = ( attributes, editing = false ) =>
 	renderOnPage(
-		<IntelPageContext.Provider
+		<ComposedPage.Provider
 			value={ {
 				page: 'briefing',
 				lens_key: null,
@@ -90,7 +90,7 @@ const renderBlock = ( attributes, editing = false ) =>
 			} }
 		>
 			<View attributes={ attributes } editing={ editing } />
-		</IntelPageContext.Provider>
+		</ComposedPage.Provider>
 	);
 
 describe( 'the folder-board block', () => {

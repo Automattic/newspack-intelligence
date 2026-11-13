@@ -1745,7 +1745,7 @@ describe( 'ItemRow other copies', () => {
 		fireEvent.click( toggle() );
 		expect(
 			await screen.findByText(
-				'Intelligence could not be read just now. Try again.'
+				'This could not be read just now. Try again.'
 			)
 		).toBeInTheDocument();
 	} );

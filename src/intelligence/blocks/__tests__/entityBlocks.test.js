@@ -18,7 +18,7 @@ import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { intelWire } from '../../__tests__/intelWire';
 import { ITEM, pageData } from '../../views/__tests__/fixtures';
-import { IntelPageContext } from '../../layout/PageContext';
+import { ComposedPage } from '@newspack-nodes/shared/composition/page';
 import { useIntelRead } from '../../hooks/useIntelCommand';
 import { aboutEntity, EntityRecord, useEntityRecord } from '../record';
 import pulse from '../pulse';
@@ -151,11 +151,11 @@ const renderBlock = ( block, attributes, page = {} ) => {
 		...page,
 	};
 	return renderOnPage(
-		<IntelPageContext.Provider value={ shown }>
+		<ComposedPage.Provider value={ shown }>
 			<Profile entityKey={ shown.entity_key }>
 				<block.View attributes={ attributes } />
 			</Profile>
-		</IntelPageContext.Provider>
+		</ComposedPage.Provider>
 	);
 };
 
@@ -221,7 +221,7 @@ describe( 'pulse', () => {
 		} );
 		renderOnPage(
 			<>
-				<IntelPageContext.Provider
+				<ComposedPage.Provider
 					value={ page( {
 						page: 'lens',
 						lens_key: 'desk-8841',
@@ -229,12 +229,12 @@ describe( 'pulse', () => {
 					} ) }
 				>
 					<pulse.View attributes={ { lens: '' } } />
-				</IntelPageContext.Provider>
-				<IntelPageContext.Provider value={ page( {} ) }>
+				</ComposedPage.Provider>
+				<ComposedPage.Provider value={ page( {} ) }>
 					<Profile entityKey={ KEY }>
 						<pulse.View attributes={ { lens: '' } } />
 					</Profile>
-				</IntelPageContext.Provider>
+				</ComposedPage.Provider>
 			</>
 		);
 		await waitFor( () =>

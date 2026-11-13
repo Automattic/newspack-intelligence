@@ -1,6 +1,6 @@
 /* eslint-env jest */
 /**
- * Every tab stands under the one shared `Header` and lays its content on
+ * Every tab stands under the one shared `SectionHeader` and lays its content on
  * the page itself: no tab writes a heading, a section head or a card of its
  * own, so none can set a border or a heading's appearance apart from the
  * rest.
@@ -22,7 +22,7 @@ const TABS = [
 /** What a tab must leave to the shared header and the page, by pattern. */
 const OWN = {
 	'heading of its own': /<h[1-6][\s>]/,
-	'section head of its own': /newspack-intelligence__section-head/,
+	'section head of its own': /newspack-nodes-composed-section-head/,
 	card: /<Card[\s>]|newspack-nodes-card|<Answer[\s>]/,
 };
 

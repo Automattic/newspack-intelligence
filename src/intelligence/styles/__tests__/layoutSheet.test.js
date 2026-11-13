@@ -52,8 +52,8 @@ beforeEach( () => {
 	document.body.innerHTML = `
 		<div class="newspack-intelligence">
 			<div class="newspack-intelligence__view">
-				<div class="newspack-intelligence__section-head">Briefing</div>
-				<div class="newspack-intelligence__layout">
+				<div class="newspack-nodes-composed-section-head">Briefing</div>
+				<div class="newspack-nodes-composed-layout">
 					<ol class="newspack-intelligence__items">
 						<li class="newspack-intelligence__item">Heron cove reopens</li>
 					</ol>
@@ -65,7 +65,7 @@ beforeEach( () => {
 describe( 'a composed page’s layout', () => {
 	it( 'adds no margin above itself, leaving the gap to its parent', () => {
 		const layout = document.querySelector(
-			'.newspack-intelligence__layout'
+			'.newspack-nodes-composed-layout'
 		);
 		expect( winning( layout, 'margin-top', SHEETS ) ).toBeUndefined();
 	} );

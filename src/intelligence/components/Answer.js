@@ -1,7 +1,8 @@
 import { createContext, useContext } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { Core } from '@newspack-nodes/runtime';
-import Skeleton from './Skeleton';
+import Skeleton from '@newspack-nodes/shared/components/Skeleton';
+import Unread from '@newspack-nodes/shared/components/Unread';
 import { sinceLabel } from './format';
 
 /**
@@ -32,8 +33,11 @@ export const CanManage = createContext( false );
  */
 export function AnswerBody( { read, rows, empty, skeleton, children } ) {
 	const { answer, error, loading, stale, updatedAt, refresh } = read;
+	const operator = useContext( CanManage );
 	if ( error ) {
-		return <Unread error={ error } refresh={ refresh } />;
+		return (
+			<Unread operator={ operator } error={ error } refresh={ refresh } />
+		);
 	}
 	if ( loading ) {
 		return skeleton ?? <Skeleton />;
@@ -84,51 +88,4 @@ function Rows( { answer, rows, empty, children } ) {
 		return <p className="newspack-nodes-empty-state is-quiet">{ empty }</p>;
 	}
 	return children( answer );
-}
-
-/**
- * A read that was refused or failed, or nothing when it was not: one
- * sentence and, where asking again can help, a way to, and for an operator
- * the refusal's own words beneath, muted. It is a polite status, because
- * nothing the reader did failed; a refused write stays an alert (`Refusal`).
- *
- * @param {Object}     props
- * @param {?string}    props.error     The refusal.
- * @param {() => void} [props.refresh] Asks the read again; absent where asking again refuses again.
- * @return {?import('react').ReactElement} The status.
- */
-export function Unread( { error, refresh } ) {
-	const operator = useContext( CanManage );
-	if ( ! error ) {
-		return null;
-	}
-	return (
-		<div className="newspack-nodes-error-banner" role="status">
-			<p>
-				{ refresh ? (
-					<>
-						{ __(
-							'Intelligence could not be read just now. Try again.',
-							'newspack-intelligence'
-						) }{ ' ' }
-						<button
-							type="button"
-							className="button"
-							onClick={ refresh }
-						>
-							{ __( 'Try again', 'newspack-intelligence' ) }
-						</button>
-					</>
-				) : (
-					__(
-						'Intelligence could not be read just now.',
-						'newspack-intelligence'
-					)
-				) }
-			</p>
-			{ operator && (
-				<p className="newspack-nodes-status is-muted">{ error }</p>
-			) }
-		</div>
-	);
 }

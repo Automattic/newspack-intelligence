@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from '@wordpress/element';
+import { useContext, useEffect, useRef, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import { speak } from '@wordpress/a11y';
 import { Spinner, TextControl } from '@wordpress/components';
@@ -14,11 +14,12 @@ import {
 import Citation from './Citation';
 import ItemRow, { ItemRows } from './ItemRow';
 import Refusal from './Refusal';
-import { Unread } from './Answer';
+import Unread from '@newspack-nodes/shared/components/Unread';
+import { CanManage } from './Answer';
 import { pageFormat } from './format';
 import { daysSince } from './lensDraft';
 import { word } from './words';
-import { useEditing } from '../layout/PageContext';
+import { useEditing } from '@newspack-nodes/shared/composition/page';
 
 /** How often an ask still owed its answer is read again, on the Router's tick. */
 const POLL_MS = 3000;
@@ -397,9 +398,16 @@ function AskState( {
 	onSave,
 	canTune,
 } ) {
+	const operator = useContext( CanManage );
 	const { answer, error, loading } = read;
 	if ( error ) {
-		return <Unread error={ error } refresh={ read.refresh } />;
+		return (
+			<Unread
+				operator={ operator }
+				error={ error }
+				refresh={ read.refresh }
+			/>
+		);
 	}
 	if ( loading ) {
 		return <Stages answer={ { state: 'asked', searches: [], found: 0 } } />;

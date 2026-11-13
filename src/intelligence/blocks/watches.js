@@ -6,11 +6,13 @@
 import { RangeControl, TextControl } from '@wordpress/components';
 import { __ } from '@wordpress/i18n';
 import { AnswerBody } from '../components/Answer';
-import Section, { Invitation } from '../components/Section';
-import Skeleton from '../components/Skeleton';
+import Section from '@newspack-nodes/shared/components/Section';
+import Invitation from '@newspack-nodes/shared/components/Invitation';
+import Skeleton from '@newspack-nodes/shared/components/Skeleton';
 import WatchRow from '../components/WatchRow';
 import { usePageRead } from '../hooks/usePageRead';
-import { useIntelActions, useWriteControl } from '../layout/PageContext';
+import { useWriteControl } from '@newspack-nodes/shared/composition/page';
+import { useIntelActions } from '../layout/PageContext';
 
 /**
  * @typedef {Object} WatchesAttributes

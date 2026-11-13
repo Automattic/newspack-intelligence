@@ -34,9 +34,8 @@ beforeEach( () => {
  * @return {number} How many.
  */
 const owedLines = ( card ) =>
-	card.querySelectorAll(
-		'[role=status] .newspack-intelligence__skeleton-bar.is-line'
-	).length;
+	card.querySelectorAll( '[role=status] .newspack-nodes-skeleton--line' )
+		.length;
 
 /** 2026-10-30 14:05 UTC, the next day in Auckland. */
 const SINCE = Date.UTC( 2026, 9, 30, 14, 5 ) / 1000;
@@ -1783,7 +1782,7 @@ describe( 'HealthStrip', () => {
 		expect( line().textContent ).toBe( 'Reading the pipeline’s health…' );
 		expect(
 			await screen.findByText(
-				'Intelligence could not be read just now. Try again.'
+				'This could not be read just now. Try again.'
 			)
 		).toBeInTheDocument();
 		expect( screen.queryByText( 'NOT_AVAILABLE' ) ).toBeNull();

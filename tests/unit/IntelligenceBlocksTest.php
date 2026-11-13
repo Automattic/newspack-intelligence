@@ -54,21 +54,60 @@ final class IntelligenceBlocksTest extends TestCase {
 		parent::tearDown();
 	}
 
-	/** The loader declares the three contexts; only the lens and the entity take the aside. */
+	/** The loader declares the three contexts beside the substrate's aside. */
 	public function test_the_declarations_pass_the_substrate(): void {
 		$this->forget_compositions();
-		$GLOBALS['_wp_actions'][ Composition::FILTER ] = [];
+		$GLOBALS['_wp_actions'][ Composition::FILTER ] = [ Composition::declare_aside( ... ) ];
 		$this->plugin_loader()();
 
-		$entity = Composition::schemas( 'newspack-intelligence/entity' );
-		$this->assertArrayHasKey( 'newspack-intelligence/aside', $entity['blocks'] );
-		$this->assertSame( [ 'title' => 'Aside', 'attributes' => [], 'container' => true, 'multiple' => false ], $entity['blocks']['newspack-intelligence/aside'] );
-		$this->assertSame( 24, $entity['max_blocks'] );
-		$this->assertArrayHasKey( 'newspack-intelligence/aside', Composition::schemas( 'newspack-intelligence/lens' )['blocks'] );
-		$this->assertArrayNotHasKey( 'newspack-intelligence/aside', Composition::schemas( 'newspack-intelligence/briefing' )['blocks'] );
+		$this->assertSame( 24, Composition::schemas( 'newspack-intelligence/entity' )['max_blocks'] );
 		foreach ( [ 'briefing', 'lens', 'entity' ] as $page ) {
 			$this->assertSame( \dirname( __DIR__, 2 ) . "/layouts/{$page}.html", \realpath( Composition::context_of( "newspack-intelligence/{$page}" )['default'] ) );
 		}
+	}
+
+	/** A team view's page and a profile admit the substrate's aside, and Intelligence declares no aside of its own. */
+	public function test_the_team_view_and_profile_admit_the_substrate_aside(): void {
+		foreach ( [ 'newspack-intelligence/lens', 'newspack-intelligence/entity' ] as $context ) {
+			$this->assertSame( [ Composition::ASIDE ], Composition::context_of( $context )['admits'], $context );
+			$this->assertSame( [ 'title' => 'Aside', 'attributes' => [], 'container' => true, 'multiple' => false ], Composition::schemas( $context )['blocks'][ Composition::ASIDE ], $context );
+		}
+		$this->assertArrayNotHasKey( 'newspack-intelligence/aside', Intelligence_Blocks::BLOCKS );
+	}
+
+	/** The Briefing admits no aside, so a layout naming one is refused. */
+	public function test_the_briefing_refuses_the_substrate_aside(): void {
+		$this->assertSame( [], Composition::context_of( 'newspack-intelligence/briefing' )['admits'] );
+		$this->assertArrayNotHasKey( Composition::ASIDE, Composition::schemas( 'newspack-intelligence/briefing' )['blocks'] );
+
+		$this->expectExceptionMessage( 'composition newspack-intelligence/briefing: newspack-nodes/aside does not stand on newspack-intelligence/briefing' );
+		Composition::validate( 'newspack-intelligence/briefing', "<!-- wp:newspack-nodes/aside -->\n<!-- wp:newspack-intelligence/watches {\"max\":4} /-->\n<!-- /wp:newspack-nodes/aside -->" );
+	}
+
+	/** Each composed page maps to the context it lays out, in the contexts' order. */
+	public function test_each_page_names_its_context(): void {
+		$this->assertSame(
+			[
+				'briefing' => 'newspack-intelligence/briefing',
+				'lens'     => 'newspack-intelligence/lens',
+				'entity'   => 'newspack-intelligence/entity',
+			],
+			Intelligence_Blocks::page_contexts()
+		);
+	}
+
+	/** A stored layout naming the retired aside is refused, never migrated. */
+	public function test_a_stored_layout_naming_the_old_aside_is_refused(): void {
+		\update_option( Composition_Store::OPTION_PREFIX . 'newspack-intelligence/entity', [ 'markup' => "<!-- wp:newspack-intelligence/aside -->\n<!-- wp:newspack-intelligence/related {\"limit\":7} /-->\n<!-- /wp:newspack-intelligence/aside -->", 'actor' => 'egret-ops', 'ts' => 1792000411.5 ] );
+		self::sign_in( self::HOLDER, 'egret-analyst', 'manage_options' );
+
+		$this->assertSame(
+			[
+				'context' => 'newspack-intelligence/entity',
+				'error'   => 'composition newspack-intelligence/entity: newspack-intelligence/aside is not a declared block',
+			],
+			Composition_Store::page_data( [ 'newspack-intelligence/entity' ] )['newspack-intelligence/entity']
+		);
 	}
 
 	/** No Intelligence block reaches the server's block registry, so no post, site or widget editor offers one. */
@@ -221,7 +260,7 @@ final class IntelligenceBlocksTest extends TestCase {
 		Intel_Graph_Row_Schema::$read_rows = static fn (): never => throw new \LogicException( 'the check read the projection' );
 
 		Intelligence_Blocks::check( self::PROBE, [ 'lens' => '', 'categories' => [], 'heading' => 'Desk' ], 'newspack-intelligence/briefing' );
-		Intelligence_Blocks::check( 'newspack-intelligence/aside', [], 'newspack-intelligence/entity' );
+		Intelligence_Blocks::check( Composition::ASIDE, [], 'newspack-intelligence/entity' );
 		$this->addToAssertionCount( 1 );
 	}
 
@@ -346,7 +385,7 @@ final class IntelligenceBlocksTest extends TestCase {
 		$tree = Composition::validate( 'newspack-intelligence/entity', Composition::default_markup( 'newspack-intelligence/entity' ) );
 
 		$this->assertSame(
-			[ 'newspack-intelligence/pulse', 'newspack-intelligence/entity-facts', 'newspack-intelligence/timeline', 'newspack-intelligence/aside' ],
+			[ 'newspack-intelligence/pulse', 'newspack-intelligence/entity-facts', 'newspack-intelligence/timeline', Composition::ASIDE ],
 			\array_column( $tree, 'name' )
 		);
 		$this->assertSame( [ 'counts' ], $tree[1]['attributes']['show'] );
