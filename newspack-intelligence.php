@@ -369,7 +369,7 @@ function register_cli_commands(): void {
 		// floor set too low does not degrade: it activates, then fatals on a
 		// missing method.
 		if ( ! \method_exists( '\\Newspack_Nodes\\Bootstrap', 'version_at_least' )
-			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.154.0', 'Newspack Intelligence' ) ) {
+			|| ! \Newspack_Nodes\Bootstrap::version_at_least( '2.156.0', 'Newspack Intelligence' ) ) {
 			return;
 		}
 		// Composer classmap autoload; dump-autoload -o after adding a node.
