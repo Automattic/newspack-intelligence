@@ -323,6 +323,7 @@ class Projector_Node extends Timer_Node implements Shutdown_Sweeper {
 			'lens_removed'        => [ [ 'delete', 'lenses', [ 'lens_key' => 'lens_key' ] ] ],
 			'theme_merged'        => [ [ 'set', 'theme_merges', [ 'from', 'into', 'actor', 'ts' ] ] ],
 			'themes_kept_apart'   => [ [ 'set', 'themes_apart', [ 'theme', 'other', 'actor', 'ts' ] ] ],
+			'themes_rejoined'     => [ [ 'delete', 'themes_apart', [ 'theme' => 'theme', 'other_theme' => 'other' ] ] ],
 			'churn_note_set'      => [
 				[ 'delete', 'churn_notes', [ 'entity_key' => 'entity_key' ] ],
 				[ 'set', 'churn_notes', [ 'entity_key', self::EACH, 'owner', 'next_step', 'day', 'actor', 'ts' ], static fn ( array $e ): array => '' === $e['text'] ? [] : [ $e['text'] ] ],

@@ -110,6 +110,20 @@ final class ThemeSuggestionsTest extends TestCase {
 		$this->assertSame( 3, $answer['total'] );
 	}
 
+	/** A pair rejoined after it was kept apart is suggested again. */
+	public function test_a_pair_rejoined_is_suggested_again(): void {
+		$this->seed_offboarding();
+		$this->seed(
+			[ Intel_Event::make( 'themes_kept_apart', [ 'theme' => self::OFFBOARDING, 'other' => self::PLATFORM ], 'user:41', 'fixture-9' ) ],
+			[ Intel_Event::make( 'themes_rejoined', [ 'theme' => self::OFFBOARDING, 'other' => self::PLATFORM ], 'user:41', 'fixture-9' ) ]
+		);
+
+		$this->assertContains(
+			[ [ self::OFFBOARDING, 3 ], [ self::PLATFORM, 1 ] ],
+			\array_column( self::pairs( $this->ci->dispatch( 'theme_suggestions', [] ) ), 0 )
+		);
+	}
+
 	/**
 	 * A pair kept apart holds for a theme whose merge chain does not
 	 * resolve, which the suggestions read as itself.

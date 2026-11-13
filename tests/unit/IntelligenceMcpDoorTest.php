@@ -75,7 +75,7 @@ final class IntelligenceMcpDoorTest extends TestCase {
 		$this->assertArrayNotHasKey( 'intel_health', $tools );
 		$this->assertArrayNotHasKey( 'intel_seed_ontology', $tools );
 		$this->assertArrayNotHasKey( 'intel_reresolve', $tools );
-		$this->assertCount( 47, $tools );
+		$this->assertCount( 48, $tools );
 		$this->assertSame( [ 'item' ], $tools['intel_exclude_item']['inputSchema']['required'] );
 		$this->assertSame( [ 'item' ], $tools['intel_include_item']['inputSchema']['required'] );
 		$this->assertSame( [], \array_intersect( [ 'intel_exclude_item', 'intel_include_item', 'intel_excluded' ], \array_keys( $this->listed( ...$this->door( Capabilities::READ ) ) ) ), 'a read session is offered no exclusion' );

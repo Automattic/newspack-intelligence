@@ -130,6 +130,7 @@ final class Intel_Event {
 		'lens_removed'        => [ self::ONTOLOGY, [ 'lens_key' ], [], [] ],
 		'theme_merged'        => [ self::ONTOLOGY, [ 'from', 'into' ], [], [] ],
 		'themes_kept_apart'   => [ self::ONTOLOGY, [ 'theme', 'other' ], [], [] ],
+		'themes_rejoined'     => [ self::ONTOLOGY, [ 'theme', 'other' ], [], [] ],
 		'churn_note_set'      => [ self::ONTOLOGY, [ 'entity_key', 'text', 'owner', 'next_step', 'day' ], [], [] ],
 		'watch_saved'         => [ self::ONTOLOGY, [ 'watch_key', 'owner', 'name', 'target_kind', 'target_key', 'digest', 'instant', 'inbox' ], [ 'target_kind' => self::WATCH_TARGETS, 'digest' => self::FLAG, 'instant' => self::FLAG, 'inbox' => self::FLAG ], [] ],
 		'watch_removed'       => [ self::ONTOLOGY, [ 'watch_key', 'owner' ], [], [] ],

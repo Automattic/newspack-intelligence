@@ -75,7 +75,7 @@ final class IntelligenceCurationTest extends TestCase {
 	/** A rejected proposal only a restricted item cites. */
 	private const SHELVED = 'organization:shelved-buyer';
 
-	private const CURATION = [ 'confirm_link', 'reject_link', 'add_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'mark_used', 'move_item', 'uncollect', 'save_lens', 'remove_lens', 'merge_theme', 'keep_themes_apart', 'exclude_item', 'include_item', 'note_churn', 'excluded' ];
+	private const CURATION = [ 'confirm_link', 'reject_link', 'add_link', 'accept_entity', 'reject_entity', 'merge_entities', 'add_name', 'add_identifier', 'assert_role', 'end_role', 'tag_topic', 'create_entity', 'create_collection', 'collect', 'mark_used', 'move_item', 'uncollect', 'save_lens', 'remove_lens', 'merge_theme', 'keep_themes_apart', 'rejoin_themes', 'exclude_item', 'include_item', 'note_churn', 'excluded' ];
 
 	/** Each curation event kind, by the command that writes it. */
 	private const VERB_OF = [
@@ -97,6 +97,7 @@ final class IntelligenceCurationTest extends TestCase {
 		'item_moved'         => 'move_item',
 		'theme_merged'       => 'merge_theme',
 		'themes_kept_apart'  => 'keep_themes_apart',
+		'themes_rejoined'    => 'rejoin_themes',
 		'item_excluded'      => 'exclude_item',
 		'item_included'      => 'include_item',
 		'churn_note_set'     => 'note_churn',
@@ -228,6 +229,7 @@ final class IntelligenceCurationTest extends TestCase {
 			'merge_theme'       => [ 'merge_theme', [ self::PLATFORM, self::OFFBOARDING ], [ 'event' => 'theme_merged', 'from' => self::PLATFORM, 'into' => self::OFFBOARDING ] ],
 			'merge a theme anew' => [ 'merge_theme', [ self::AUTOMATION, self::PLATFORM ], [ 'event' => 'theme_merged', 'from' => self::AUTOMATION, 'into' => self::PLATFORM ] ],
 			'keep_themes_apart' => [ 'keep_themes_apart', [ self::PLATFORM, self::OFFBOARDING ], [ 'event' => 'themes_kept_apart', 'theme' => self::OFFBOARDING, 'other' => self::PLATFORM ] ],
+			'rejoin_themes'     => [ 'rejoin_themes', [ 'theme chain 0', self::OFFBOARDING ], [ 'event' => 'themes_rejoined', 'theme' => self::OFFBOARDING, 'other' => 'theme chain 0' ] ],
 			'exclude_item'      => [ 'exclude_item', [ 'github:ledger-launch', '--why=Repeats the launch notice.' ], [ 'event' => 'item_excluded', 'item_key' => 'github:ledger-launch', 'url' => 'https://news.example/github/ledger-launch', 'title' => 'Salem Ledger launches a newsletter tool', 'tier' => 'internal', 'why' => 'Repeats the launch notice.' ] ],
 			'exclude a public item' => [ 'exclude_item', [ '--item=feed:gazette-award' ], [ 'event' => 'item_excluded', 'item_key' => 'feed:gazette-award', 'url' => 'https://news.example/feed/gazette-award', 'title' => 'Harbor Gazette wins state award', 'tier' => 'public' ] ],
 			'include_item'      => [ 'include_item', [ self::WIRE ], [ 'event' => 'item_included', 'item_key' => self::WIRE ] ],
@@ -566,6 +568,10 @@ final class IntelligenceCurationTest extends TestCase {
 			'keep a hidden theme apart'   => [ 'keep_themes_apart', [ self::SETTLEMENT, self::OFFBOARDING ], 'no theme: board settlement talks' ],
 			'keep an unused theme apart'  => [ 'keep_themes_apart', [ self::PLATFORM, 'client exit' ], 'no theme: client exit' ],
 			'keep merged themes apart'    => [ 'keep_themes_apart', [ self::AUTOMATION, self::OFFBOARDING ], 'cannot keep offboarding automation apart from client offboarding; both read as client offboarding' ],
+			'rejoin a blank theme'        => [ 'rejoin_themes', [ ' ', self::OFFBOARDING ], 'theme is blank' ],
+			'rejoin a theme with itself'  => [ 'rejoin_themes', [ self::OFFBOARDING, self::OFFBOARDING ], 'cannot rejoin theme client offboarding with itself' ],
+			'rejoin a hidden theme'       => [ 'rejoin_themes', [ self::SETTLEMENT, self::OFFBOARDING ], 'no theme: board settlement talks' ],
+			'rejoin a pair not kept apart' => [ 'rejoin_themes', [ self::PLATFORM, self::OFFBOARDING ], 'client offboarding and client offboarding from platform are not kept apart' ],
 			'merge into a cycling theme'  => [ 'merge_theme', [ 'theme loop a', 'theme loop b' ], 'theme loop b is on a merge chain that cycles or runs past 10 hops; merge theme loop a into a theme whose chain resolves instead' ],
 			'exclude one excluded'        => [ 'exclude_item', [ self::WIRE ], self::WIRE . ' is excluded from every view' ],
 			'confirm an excluded item'    => [ 'confirm_link', [ self::WIRE, self::GAZETTE ], self::WIRE . ' is excluded from every view' ],
@@ -1262,6 +1268,7 @@ final class IntelligenceCurationTest extends TestCase {
 			self::extraction( 'feed:wide-from', 'Wide.', 'other', self::$oct_06, [], 5.0, 5.0, $wide( Intel_Event::THEME_BYTES ) ),
 			self::item( 'feed:wide-into', 'Wide into', 'feed', 'public', self::$oct_06 ),
 			self::extraction( 'feed:wide-into', 'Wide.', 'other', self::$oct_06, [], 5.0, 5.0, $wide( Intel_Event::THEME_BYTES - 1 ) . 'r' ),
+			[ Intel_Event::make( 'themes_kept_apart', [ 'theme' => $wide( Intel_Event::THEME_BYTES ), 'other' => $wide( Intel_Event::THEME_BYTES - 1 ) . 'r' ], 'user:41', 'fixture-9' ) ],
 			...\array_map( static fn ( string $tag ): array => self::entity( $key( $tag ), 'Wide' ), [ 'a', 'b', 'd', 'f' ] )
 		);
 		$calls = [
@@ -1283,6 +1290,7 @@ final class IntelligenceCurationTest extends TestCase {
 			[ 'move_item', [ $key( 'c' ), $saved, $key( 'e' ) ] ],
 			[ 'merge_theme', [ $wide( Intel_Event::THEME_BYTES ), $wide( Intel_Event::THEME_BYTES - 1 ) . 'r' ] ],
 			[ 'keep_themes_apart', [ $wide( Intel_Event::THEME_BYTES ), $wide( Intel_Event::THEME_BYTES - 1 ) . 'r' ] ],
+			[ 'rejoin_themes', [ $wide( Intel_Event::THEME_BYTES ), $wide( Intel_Event::THEME_BYTES - 1 ) . 'r' ] ],
 			[ 'exclude_item', [ $item, '--why=' . $wide( Intel_Event::WHY_BYTES ) ] ],
 			[ 'include_item', [ $gone ] ],
 			[ 'uncollect', [ $key( 'c' ), $saved ] ],
@@ -1406,6 +1414,7 @@ final class IntelligenceCurationTest extends TestCase {
 			$themed( 'feed:loop-7', 'public', 'theme loop a' ),
 			$themed( 'feed:loop-8', 'public', 'theme loop b' ),
 			[ Intel_Event::make( 'theme_merged', [ 'from' => self::AUTOMATION, 'into' => self::OFFBOARDING ], 'user:41', 'fixture-9' ) ],
+			[ Intel_Event::make( 'themes_kept_apart', [ 'theme' => self::OFFBOARDING, 'other' => 'theme chain 0' ], 'user:41', 'fixture-9' ) ],
 			[ Intel_Event::make( 'theme_merged', [ 'from' => 'theme loop a', 'into' => 'theme loop b' ], 'user:41', 'fixture-9' ) ],
 			[ Intel_Event::make( 'theme_merged', [ 'from' => 'theme loop b', 'into' => 'theme loop a' ], 'user:41', 'fixture-9' ) ],
 			...$chain

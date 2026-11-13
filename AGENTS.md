@@ -295,7 +295,8 @@ as its survivor; a theme whose chain cycles or runs past
 `Entity_Index::MAX_MERGE_HOPS` reads as itself, its chain logged once. A
 `themes_kept_apart { theme, other }`, an ontology event, sets the
 `themes_apart` row keyed by both themes in string order, a curation table
-kept whole, which the theme suggestions read through the same survivors.
+kept whole, which the theme suggestions read through the same survivors;
+a `themes_rejoined { theme, other }` deletes that row.
 An `item_recorded` or an `item_grown` also writes, with `ignore`, one
 `boilerplate` row `( source, line_hash, item_key, item_day )` per distinct
 body line `Entity_Index::line_hashes()` counts: the body split at each line
@@ -2349,7 +2350,7 @@ named, and the item's URL), `accept_entity`,
 `Intel_Event::entity_key()`), `create_collection` (keyed
 `Intel_Event::collection_key()`, the same slug), `collect` (the item's
 URL, its title and its tier), `mark_used`, `move_item`, `uncollect`, `save_lens` (keyed `Intel_Event::lens_key()`,
-the given key slugged, answering it), `remove_lens`, `merge_theme`, `keep_themes_apart`,
+the given key slugged, answering it), `remove_lens`, `merge_theme`, `keep_themes_apart`, `rejoin_themes`,
 `exclude_item <item> [--why=<text>]` (the item's URL, its title cut at
 `TITLE_BYTES`, its tier and a `why` bounded at `Intel_Event::WHY_BYTES`
 (512), refused blank), `include_item <item>` and `note_churn <entity>
@@ -2537,7 +2538,12 @@ the projection once, through the same read, and refuses a theme kept apart
 from itself (`cannot keep theme <theme> apart from itself`), two that
 already merge into one theme (`cannot keep <theme> apart from <other>;
 both read as <survivor>`) and one the caller cannot see (`no theme:
-<theme>`), as `merge_theme` refuses it. The suggestions read each kept
+<theme>`), as `merge_theme` refuses it. `rejoin_themes <theme> <other>`
+writes `themes_rejoined`, the two themes in string order, so the
+suggestions may pair them again; it reads the projection once, through
+the same read, and refuses a theme rejoined with itself (`cannot rejoin
+theme <theme> with itself`), one the caller cannot see, and a pair that
+is not kept apart in any partition (`<theme> and <other> are not kept apart`). The suggestions read each kept
 pair through the one survivor map they read their themes by, a theme on
 a chain that does not resolve as itself.
 `fetch_now` TICKs every source in each live worker — each node of a
@@ -2579,7 +2585,7 @@ the `lens` and list args of `intel_search` and `intel_trends` come off the
 schema with no door code, as do `intel_exclude_item`, `intel_include_item`
 and `intel_excluded`, offered to a tune session alone; a variadic arg is a JSON array. So do
 `intel_names`, `intel_signals`, `intel_briefing`, `intel_theme_suggestions`, the five
-watch tools, `intel_ask`, `intel_ask_result`, `intel_trace` and `intel_copies`, which a read session is offered, and `intel_merge_theme`, `intel_keep_themes_apart`, `intel_note_churn`,
+watch tools, `intel_ask`, `intel_ask_result`, `intel_trace` and `intel_copies`, which a read session is offered, and `intel_merge_theme`, `intel_keep_themes_apart`, `intel_rejoin_themes`, `intel_note_churn`,
 `intel_mark_used`, `intel_move_item` and `intel_uncollect`, which a session whose role covers
 `tune` is offered;
 the door becomes the session's minting user, so a watch tool answers and
@@ -3403,7 +3409,7 @@ plugin adds:
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until> [<source>]`, `REEXTRACT <since> <until> [<source>]`; publishes `last_range` through `Publishes_Status` |
 | `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no commands |
 | `Ask` | `Ask_Node` | `<writer> <llm>`; each `ask_asked` its Consumer reads, and the model-call node's answers; no commands |
-| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `theme_suggestions`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `ask`, `ask_result`, `health`, each at `read`; `confirm_link`, `reject_link`, `add_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `merge_theme`, `keep_themes_apart`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
+| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `theme_suggestions`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `ask`, `ask_result`, `health`, each at `read`; `confirm_link`, `reject_link`, `add_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `merge_theme`, `keep_themes_apart`, `rejoin_themes`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
 
 `LLM_Call_Node`'s seven commands are declared setters, replayed by its
 `dump_config()`; `set_api_url` refuses anything but an absolute http(s)

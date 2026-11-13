@@ -361,6 +361,33 @@ final class Graph_Curation {
 	}
 
 	/**
+	 * Rejoin two themes a curator kept apart, so the theme suggestions may
+	 * pair them again: `themes_rejoined`, its two themes in string order, as
+	 * `keep_themes_apart` wrote them. Refused for a theme rejoined with itself,
+	 * one the caller cannot see, as `merge_theme` refuses it, and a pair that
+	 * is not kept apart.
+	 *
+	 * @param array<array-key,mixed> $args The bound command args: `theme`, `other`.
+	 * @return array<string,mixed>
+	 * @throws \InvalidArgumentException On a blank theme or one past `Intel_Event::THEME_BYTES`, or a pair refused as above.
+	 */
+	public static function rejoin_themes( array $args ): array {
+		$theme = self::bounded( 'theme', Core::as_string( $args['theme'] ), Intel_Event::THEME_BYTES );
+		$other = self::bounded( 'other', Core::as_string( $args['other'] ), Intel_Event::THEME_BYTES );
+		if ( $theme === $other ) {
+			throw new \InvalidArgumentException( \esc_html( "cannot rejoin theme {$theme} with itself" ) );
+		}
+		$pair = [ $theme, $other ];
+		\sort( $pair, \SORT_STRING );
+		[ $merges, $carried, $kept ] = self::theme_reads( $pair );
+		self::require_themes( $pair, Entity_Index::walk( $merges )[0], $carried );
+		if ( ! $kept ) {
+			throw new \InvalidArgumentException( \esc_html( "{$pair[0]} and {$pair[1]} are not kept apart" ) );
+		}
+		return self::write( 'themes_rejoined', [ 'theme' => $pair[0], 'other' => $pair[1] ] );
+	}
+
+	/**
 	 * The themes the caller can see, each the theme of an item the caller
 	 * may read, as written or as its survivor, refusing any of `$themes`
 	 * that is not among them.
@@ -389,19 +416,22 @@ final class Graph_Curation {
 	 * The projection's theme merges, and each theme of an item the caller
 	 * may read, an excluded one among them, since an inclusion undoes an
 	 * exclusion, with whether any item outside the restricted tier carries
-	 * it, each item's theme the newest partition's.
+	 * it, each item's theme the newest partition's; and, given a pair in
+	 * string order, whether any partition keeps that pair apart.
 	 *
-	 * @return array{0:array<string,string>,1:array<string,bool>}
+	 * @param list<string> $pair Two themes in string order, or none.
+	 * @return array{0:array<string,string>,1:array<string,bool>,2:bool}
 	 */
-	private static function theme_reads(): array {
+	private static function theme_reads( array $pair = [] ): array {
 		return self::on_graph(
-			static function ( Row_Reader $r, array $g ): array {
+			static function ( Row_Reader $r, array $g ) use ( $pair ): array {
 				$carried = [];
 				foreach ( $r->rows( "{$g['with']} SELECT DISTINCT t.theme, ti.tier IN ( " . Intel_Graph_Row_Schema::marks( Intel_Tiers::UNRESTRICTED ) . ' ) FROM ( ' . Intel_Graph_Row_Schema::newest( $r, 'themes', 'item_key', 'item_key, theme', '1' ) . ' ) t JOIN ti ON ti.item_key = t.item_key', [ ...$g['binds'], ...Intel_Tiers::UNRESTRICTED ] ) as [ $theme, $open ] ) {
 					$theme             = Core::as_string( $theme );
 					$carried[ $theme ] = ( $carried[ $theme ] ?? false ) || (bool) $open;
 				}
-				return [ Graph_Query::theme_merges( $r ), $carried ];
+				$kept = [] !== $pair && [] !== $r->rows( 'SELECT 1 FROM ' . Intel_Graph_Row_Schema::all( $r, 'themes_apart' ) . ' WHERE theme = ? AND other_theme = ? LIMIT 1', $pair );
+				return [ Graph_Query::theme_merges( $r ), $carried, $kept ];
 			}
 		);
 	}
