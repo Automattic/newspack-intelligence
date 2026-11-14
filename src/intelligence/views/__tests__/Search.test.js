@@ -1006,6 +1006,8 @@ describe( 'Search', () => {
 
 			expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 			expect( opener ).toHaveFocus();
+			// The sheet's store notifies on a timer; let it land inside act.
+			await act( () => new Promise( ( done ) => setTimeout( done, 0 ) ) );
 		} );
 
 		it( 'closes the sheet on its primary button', async () => {
