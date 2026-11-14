@@ -33,9 +33,10 @@ final class Intelligence_Blocks {
 
 	/**
 	 * The most blocks one layout holds, core's columns, headings and prose
-	 * counted with the rest: room for 24 of Intelligence's blocks, each under
-	 * a heading and a line of prose in columns, while each block sends at
-	 * most one read of its own.
+	 * counted with the rest: room for 14 of Intelligence's blocks in seven
+	 * rows of two columns, each under a heading and a line of prose, nine
+	 * blocks a row and 63 in all, while each block sends at most one read of
+	 * its own.
 	 */
 	public const MAX_BLOCKS = 64;
 
