@@ -31,8 +31,13 @@ final class Intelligence_Blocks {
 	/** The namespace every block and context sits under. */
 	public const NAMESPACE = 'newspack-intelligence';
 
-	/** The most blocks one layout holds. */
-	public const MAX_BLOCKS = 24;
+	/**
+	 * The most blocks one layout holds, core's columns, headings and prose
+	 * counted with the rest: room for 24 of Intelligence's blocks, each under
+	 * a heading and a line of prose in columns, while each block sends at
+	 * most one read of its own.
+	 */
+	public const MAX_BLOCKS = 64;
 
 	/**
 	 * Block name => its declaration, in `Composition`'s shape. Each screen
@@ -301,7 +306,7 @@ final class Intelligence_Blocks {
 		'default'     => [],
 	];
 
-	/** Context => its default layout, its block cap and the shared blocks it admits. */
+	/** Context => its default layout and its block cap. */
 	public const CONTEXTS = [
 		'newspack-intelligence/briefing' => [
 			'default'    => __DIR__ . '/../layouts/briefing.html',
@@ -310,12 +315,10 @@ final class Intelligence_Blocks {
 		'newspack-intelligence/lens'     => [
 			'default'    => __DIR__ . '/../layouts/lens.html',
 			'max_blocks' => self::MAX_BLOCKS,
-			'admits'     => [ Composition::ASIDE ],
 		],
 		'newspack-intelligence/entity'   => [
 			'default'    => __DIR__ . '/../layouts/entity.html',
 			'max_blocks' => self::MAX_BLOCKS,
-			'admits'     => [ Composition::ASIDE ],
 		],
 	];
 

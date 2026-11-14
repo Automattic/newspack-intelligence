@@ -137,38 +137,53 @@ const DEFAULT_LAYOUT = {
 	source: 'default',
 	blocks: [
 		{
-			name: 'newspack-intelligence/pulse',
-			attributes: { lens: '' },
-			inner: [],
-		},
-		{
-			name: 'newspack-intelligence/entity-facts',
-			attributes: { show: [ 'counts' ], limit: 10 },
-			inner: [],
-		},
-		{
-			name: 'newspack-intelligence/timeline',
-			attributes: {
-				heading: 'Activity',
-				published: 'disclosure',
-				layout: 'activity',
-				limit: 20,
-			},
-			inner: [],
-		},
-		{
-			name: 'newspack-nodes/aside',
+			name: 'core/columns',
 			attributes: {},
 			inner: [
 				{
-					name: 'newspack-intelligence/related',
-					attributes: { heading: 'Related', limit: 5 },
-					inner: [],
+					name: 'core/column',
+					attributes: { width: '66.66%' },
+					inner: [
+						{
+							name: 'newspack-intelligence/pulse',
+							attributes: { lens: '' },
+							inner: [],
+						},
+						{
+							name: 'newspack-intelligence/entity-facts',
+							attributes: { show: [ 'counts' ], limit: 10 },
+							inner: [],
+						},
+						{
+							name: 'newspack-intelligence/timeline',
+							attributes: {
+								heading: 'Activity',
+								published: 'disclosure',
+								layout: 'activity',
+								limit: 20,
+							},
+							inner: [],
+						},
+					],
 				},
 				{
-					name: 'newspack-intelligence/entity-facts',
-					attributes: { show: [ 'claims', 'details' ], limit: 10 },
-					inner: [],
+					name: 'core/column',
+					attributes: { width: '33.33%' },
+					inner: [
+						{
+							name: 'newspack-intelligence/related',
+							attributes: { heading: 'Related', limit: 5 },
+							inner: [],
+						},
+						{
+							name: 'newspack-intelligence/entity-facts',
+							attributes: {
+								show: [ 'claims', 'details' ],
+								limit: 10,
+							},
+							inner: [],
+						},
+					],
 				},
 			],
 		},
@@ -407,7 +422,7 @@ describe( 'Entity — header', () => {
 } );
 
 describe( 'Entity — layout', () => {
-	it( 'lays out the pulse, the counts and the activity, then Related and Facts aside, sharing one entity read', async () => {
+	it( 'lays out the pulse, the counts and the activity in a wide column, then Related and Facts in a narrow one, sharing one entity read', async () => {
 		renderEntity( { canTune: true } );
 		await header();
 		const pulse = await screen.findByText( 'No unusual change last week.' );
@@ -423,10 +438,16 @@ describe( 'Entity — layout', () => {
 		expect( following( counts, activity ) ).toBeTruthy();
 		expect( following( activity, related ) ).toBeTruthy();
 		expect( following( related, facts ) ).toBeTruthy();
-		const aside = screen.getByRole( 'complementary' );
-		expect( aside ).toContainElement( related );
-		expect( aside ).toContainElement( facts );
-		expect( aside ).not.toContainElement( activity );
+		const [ wide, narrow ] =
+			document.querySelectorAll( '.wp-block-column' );
+		expect( [ wide.style.flexBasis, narrow.style.flexBasis ] ).toEqual( [
+			'66.66%',
+			'33.33%',
+		] );
+		expect( wide ).toContainElement( activity );
+		expect( narrow ).toContainElement( related );
+		expect( narrow ).toContainElement( facts );
+		expect( narrow ).not.toContainElement( activity );
 		expect( wire.sent( 'entity' ) ).toEqual( [ [ KEY ] ] );
 	} );
 

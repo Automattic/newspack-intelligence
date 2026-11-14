@@ -60,7 +60,7 @@ final class OntologySeedTest extends TestCase {
 				'lenses'   => [],
 				'layouts'  => [
 					'briefing' => \sprintf( self::PROBE, 'Seeded desk' ),
-					'entity'   => '<!-- wp:newspack-nodes/aside /-->',
+					'entity'   => '<!-- wp:separator /-->',
 				],
 			]
 		);
@@ -70,7 +70,7 @@ final class OntologySeedTest extends TestCase {
 		$briefing = Composition_Store::read( 'newspack-intelligence/briefing' );
 		$this->assertSame( 'Curated desk', $briefing['blocks'][0]['attributes']['heading'] );
 		$entity = Composition_Store::read( 'newspack-intelligence/entity' );
-		$this->assertSame( [ 'saved', [ 'newspack-nodes/aside' ] ], [ $entity['source'], \array_column( $entity['blocks'], 'name' ) ] );
+		$this->assertSame( [ 'saved', [ 'core/separator' ] ], [ $entity['source'], \array_column( $entity['blocks'], 'name' ) ] );
 		$this->assertSame( 'default', Composition_Store::read( 'newspack-intelligence/lens' )['source'], 'a page the seed names no layout for keeps its default' );
 	}
 
@@ -111,7 +111,7 @@ final class OntologySeedTest extends TestCase {
 	public static function bad_layouts(): array {
 		$probe = '<!-- wp:newspack-intelligence/probe {"heading":"Seeded desk"} /-->';
 		return [
-			'html in a layout'     => [ [ 'entity' => '<!-- wp:newspack-nodes/aside /-->', 'briefing' => "{$probe}<p>Gulls</p>" ], 'layouts.briefing: composition newspack-intelligence/briefing: HTML outside a block; a layout holds no HTML' ],
+			'html in a layout'     => [ [ 'entity' => '<!-- wp:separator /-->', 'briefing' => "{$probe}<p>Gulls</p>" ], 'layouts.briefing: composition newspack-intelligence/briefing: HTML outside a block; a layout holds no HTML' ],
 			'a block off its page' => [ [ 'lens' => $probe ], 'layouts.lens: composition newspack-intelligence/lens: newspack-intelligence/probe does not stand on newspack-intelligence/lens' ],
 			'a page not composed'  => [ [ 'folders' => $probe ], 'layouts.folders: not a field it takes' ],
 			'markup not a string'  => [ [ 'briefing' => [ $probe ] ], 'layouts.briefing: not a string' ],

@@ -3,7 +3,7 @@
  * page renders and, where it has settings, the Controls the editor's
  * inspector holds. Each name is a row of `Intelligence_Blocks::BLOCKS`; the
  * substrate's frame hands each View's `editing` prop to every write control
- * inside it (`useWriteControl`), and supplies the aside.
+ * inside it (`useWriteControl`), and renders core's layout blocks itself.
  */
 
 import health from './health';

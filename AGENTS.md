@@ -3613,11 +3613,13 @@ laid out by its page frame. `Intelligence_Blocks` declares them on
 `newspack_nodes/compositions`: `BLOCKS`, name => the substrate's block row,
 which each screen adds its rows to, and `CONTEXTS`,
 `newspack-intelligence/briefing`, `/lens` and `/entity`, each defaulting to
-`layouts/<page>.html` and holding at most `MAX_BLOCKS` (24); the lens and
-entity pages admit the substrate's one container, `newspack-nodes/aside`
-(`Composition::ASIDE`), and the Briefing admits none. A stored layout
-naming the retired `newspack-intelligence/aside` is refused, not migrated,
-until a curator restores the default. No block
+`layouts/<page>.html` and holding at most `MAX_BLOCKS` (64), core's
+columns, headings and prose counted with the rest; every page lays its
+blocks out in the core blocks every context admits, the profile's default
+in a 66.66% and a 33.33% `core/column`, and admits no shared block. A
+stored layout naming either retired aside, `newspack-intelligence/aside` or
+`newspack-nodes/aside`, is refused, not migrated, until a curator restores
+the default. No block
 reaches `register_block_type()`, so no post, site or widget editor offers
 one. Each context's `check` refuses a block naming, in `lens`, `lenses` or
 `categories`, a lens never saved (`no lens: <key>`), in `folders` a
@@ -3636,7 +3638,7 @@ the canvas, the bundle and the context `edit` names for a `tune` caller
 alone, so a reader's page loads no editor script. In the browser
 `blocks/index.js` maps each block to its `{ View, Controls }`
 (`BLOCK_VIEWS`); the substrate's frame hands each View's `editing` prop to
-what it holds and supplies the aside's view. The page a View reads besides
+what it holds and renders core's blocks itself. The page a View reads besides
 its attributes stands in the substrate's `ComposedPage`, read through
 `layout/PageContext.js`'s `useIntelPage()`: `{ page, lens_key, entity_key,
 since, kept, actions }` beside the frame's `group` (`GROUP`), `canTune` and
@@ -3661,8 +3663,8 @@ its `Invitation`. `layout/IntelligenceLayout.js` renders a page's tree
 through the substrate's `ComposedLayout`, handed `BLOCK_VIEWS` and the
 page, which names the reader an operator from `CanManage`, the Briefing's
 as the view itself and a team view's or a profile's below its fixed
-header, the aside apart in a column at 1,100 px and up and after the main
-column below that; a block that cannot render shows the substrate's
+header, core's columns side by side from 782 px and stacked below that; a
+block that cannot render shows the substrate's
 `Unread` in its place, its reason for an operator alone. A stored layout
 that no longer reads shows the shared read error with no Try again, its
 refusal beneath for an operator, and for a curator **Restore default**, which the substrate asks
@@ -3678,7 +3680,7 @@ first, and the layout the editor hands back, or a restored default,
 replaces the layout the page holds, a save showing "Layout saved.". The
 editor bundle, `layout-editor.js`, mounts through the substrate's
 `mountComposedEditor()` (`layout/LayoutEditor.js`): the localized blocks
-against `BLOCK_VIEWS` and the aside, under "Edit the Briefing layout",
+against `BLOCK_VIEWS`, core's left to core, under "Edit the Briefing layout",
 "Edit the team view layout" or "Edit the profile layout", with every block
 previewing under `editing` the team view or profile it was opened from,
 through the page's shared reads and, on a profile, one `entity` read it

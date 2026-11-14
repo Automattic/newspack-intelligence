@@ -14,7 +14,11 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderOnPage } from './pageReads';
 import { PageReads } from '../hooks/usePageRead';
-import { getBlockTypes, unregisterBlockType } from '@wordpress/blocks';
+import {
+	createBlock,
+	getBlockTypes,
+	unregisterBlockType,
+} from '@wordpress/blocks';
 import { useContext } from '@wordpress/element';
 import { Core } from '@newspack-nodes/runtime';
 import CompositionEditSlot from '@newspack-nodes/shared/composition/CompositionEditSlot';
@@ -23,6 +27,7 @@ import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
 import { useIntelPage } from '../layout/PageContext';
 import { BLOCK_VIEWS } from '../blocks';
 import { mountLayoutEditor } from '../layout/LayoutEditor';
+import { fakeWordPress } from '@newspack-nodes/shared/test-utils/fakeWordPress';
 
 const mockProvider = { props: null };
 
@@ -96,13 +101,16 @@ function Probe( { attributes: { label } } ) {
 /** What `Composition::schemas( 'newspack-intelligence/lens' )` localizes. */
 const LENS_SCHEMAS = {
 	context: 'newspack-intelligence/lens',
-	max_blocks: 24,
+	max_blocks: 64,
+	inline: [ 'strong', 'em', 'a' ],
 	blocks: {
-		'newspack-nodes/aside': {
-			title: 'Aside',
+		'core/paragraph': {
+			title: 'Paragraph',
 			attributes: {},
-			container: true,
-			multiple: false,
+			container: false,
+			multiple: true,
+			core: true,
+			text: 'p',
 		},
 		[ PROBE ]: {
 			title: 'Probe',
@@ -162,6 +170,7 @@ afterAll( () => {
 } );
 
 beforeEach( () => {
+	window.wp = fakeWordPress();
 	Core.reset();
 	mockProvider.props = null;
 	window.NewspackNodesData = { restUrl: '/wp-json/', nonce: 'NONCE' };
@@ -184,20 +193,21 @@ afterEach( () => {
 } );
 
 describe( 'mountLayoutEditor', () => {
-	it( 'registers the localized blocks alone, each against its view', () => {
+	it( 'registers the localized blocks alone, each against its view, leaving core’s to core', () => {
 		mountLayoutEditor(
 			{
 				...LENS_SCHEMAS,
 				blocks: {
-					'newspack-nodes/aside':
-						LENS_SCHEMAS.blocks[ 'newspack-nodes/aside' ],
+					'newspack-intelligence/watches':
+						LENS_SCHEMAS.blocks[ 'newspack-intelligence/watches' ],
+					'core/paragraph': LENS_SCHEMAS.blocks[ 'core/paragraph' ],
 				},
 			},
 			BLOCK_VIEWS
 		);
 
 		expect( getBlockTypes().map( ( { name } ) => name ) ).toEqual( [
-			'newspack-nodes/aside',
+			'newspack-intelligence/watches',
 		] );
 	} );
 
@@ -391,7 +401,11 @@ describe( 'mountLayoutEditor', () => {
 			{
 				context: 'newspack-intelligence/briefing',
 				max_blocks: 24,
-				blocks: {},
+				blocks: {
+					'newspack-intelligence/watches':
+						LENS_SCHEMAS.blocks[ 'newspack-intelligence/watches' ],
+				},
+				inline: [ 'strong' ],
 			},
 			BLOCK_VIEWS
 		);
@@ -411,7 +425,14 @@ describe( 'mountLayoutEditor', () => {
 		);
 		expect( told ).toEqual( [ false ] );
 
-		act( () => mockProvider.props.onInput( [] ) );
+		act( () =>
+			mockProvider.props.onInput( [
+				createBlock( 'newspack-intelligence/watches', {
+					heading: 'Kept 7956',
+					max: 3,
+				} ),
+			] )
+		);
 
 		expect( told ).toEqual( [ false, true ] );
 	} );

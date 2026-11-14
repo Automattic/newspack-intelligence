@@ -1,7 +1,7 @@
 /* eslint-env jest */
 /**
  * An Intelligence page's layout on the substrate's frame: each block by its
- * view, the aside apart; a block that cannot render shows the shared read
+ * view, core's beside them; a block that cannot render shows the shared read
  * error in its own place, the blocks beside it still drawn, its reason for
  * an operator alone, and its Try again reads the page again.
  */
@@ -25,7 +25,11 @@ const LAYOUT = {
 			attributes: {},
 			inner: [],
 		},
-		{ name: 'newspack-nodes/aside', attributes: {}, inner: [] },
+		{
+			name: 'core/paragraph',
+			attributes: { content: 'Harbor note 7960' },
+			inner: [],
+		},
 	],
 };
 
@@ -77,15 +81,17 @@ describe( 'IntelligenceLayout', () => {
 
 	it( 'shows a block that cannot render as the read error in its place, its neighbours drawn', () => {
 		const { container } = renderLayout( LAYOUT );
-		const main = container.querySelector(
-			'.newspack-nodes-composed-layout-main'
+		const layout = container.querySelector(
+			'.newspack-nodes-composed-layout'
 		);
 		expect(
-			within( main ).getByText(
+			within( layout ).getByText(
 				'This could not be read just now. Try again.'
 			)
 		).toBeInTheDocument();
-		expect( screen.getByRole( 'complementary' ) ).toBeInTheDocument();
+		expect(
+			within( layout ).getByText( 'Harbor note 7960' )
+		).toBeInTheDocument();
 		expect(
 			screen.queryByText( 'newspack-intelligence/heron-gone has no view' )
 		).toBeNull();

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A profile lays out in core's columns, and every page takes core's layout blocks.** The default profile stands its pulse, counts and activity in a 66.66% `core/column` and Related and Facts in a 33.33% one, in place of the substrate's retired aside, and a curator can lay any page out in columns, groups, headings, paragraphs, lists, separators and spacers. A layout holds at most 64 blocks, core's counted with the rest, up from 24. A stored layout naming `newspack-nodes/aside` no longer reads, and the page offers a curator **Restore default**. The bundle needs a newspack-nodes without the aside to run.
+
 - **The page's command hooks are newspack-nodes' `useCommandRead` and `useCommandWrite`.** `useIntelRead` and `useIntelWrite` bind them to the `intelligence` group and CI, and `commandArgs` and `refusalOfSend` come from the same module; reads, writes, the 64-answer memory and what a write dirties behave as before. The bundle needs a newspack-nodes that ships the two hooks to build.
 
 ### Fixed

@@ -1524,7 +1524,6 @@ describe( 'IntelligencePage', () => {
 					{ exact: false }
 				)
 			).toBeInTheDocument();
-			expect( screen.queryByRole( 'complementary' ) ).toBeNull();
 			expect( wire.sent( 'briefing' ) ).toEqual( [] );
 		} );
 
@@ -1544,7 +1543,9 @@ describe( 'IntelligencePage', () => {
 			editLens();
 			renderPage( true );
 			await screen.findByRole( 'tab', { name: 'Review 0' } );
-			expect( screen.queryByRole( 'complementary' ) ).toBeNull();
+			expect(
+				screen.queryByRole( 'heading', { name: 'Desk 7961' } )
+			).toBeNull();
 
 			act( () =>
 				editor.done(
@@ -1553,8 +1554,8 @@ describe( 'IntelligencePage', () => {
 						source: 'saved',
 						blocks: [
 							{
-								name: 'newspack-nodes/aside',
-								attributes: {},
+								name: 'core/heading',
+								attributes: { level: 2, content: 'Desk 7961' },
 								inner: [],
 							},
 						],
@@ -1568,9 +1569,9 @@ describe( 'IntelligencePage', () => {
 			expect(
 				screen.queryByText( 'Editing the layout of support-desk' )
 			).toBeNull();
-			expect( await screen.findByRole( 'complementary' ) ).toHaveClass(
-				'newspack-nodes-composed-aside'
-			);
+			expect(
+				await screen.findByRole( 'heading', { name: 'Desk 7961' } )
+			).toHaveClass( 'wp-block-heading' );
 			expect(
 				document.querySelector( '.components-snackbar' )
 			).toHaveTextContent( 'Layout saved.' );

@@ -202,8 +202,8 @@ function PreviewWith() {
 }
 
 /**
- * Mount the localized context's editor: its blocks against their views and
- * the substrate's aside, under the page's heading and its page.
+ * Mount the localized context's editor: its blocks against their views,
+ * core's left to core, under the page's heading and its page.
  *
  * @param {import('@newspack-nodes/shared/composition/page/mountComposedEditor').LocalizedComposition}       localized What `Composition::editor()` localized.
  * @param {Object<string,import('@newspack-nodes/shared/composition/CompositionView').CompositionBlockView>} views     Every block's view.
