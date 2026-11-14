@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A refused composition declaration set no longer fatals the Intelligence page.** The page's setup reports the refusal once, worded by `Core::caller_message()`, and sends `askDefaults` as `{ error }`, which Search renders in place of the Ask box; the layouts already answer in place.
 - **Restart works on a Gathering row that turned stale after an activation.** The row's fix moved from Activate to Restart without a fresh write behind it, so Restart sent nothing; each fix now mounts its own.
 - **A timeline block set to show only what its entity published reads that list.** Changing the block's "What it published" setting to only that, with the block on screen, left it reading its first list; it now reads afresh.
 

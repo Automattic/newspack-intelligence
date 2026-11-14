@@ -334,21 +334,22 @@ function Count( { answer, view, onChangeView } ) {
  * It stands under the shared header, its Ask box a plain part of the page
  * under it and "Find items" its first section. The Ask box is the `ask`
  * block's component at the block's declared defaults, which the page data
- * carries, whatever any layout holds; it
+ * carries, whatever any layout holds, and the refusal of a declaration set
+ * Composition refuses in its place; it
  * plans its own searches and never reads the view, and its "Search for
  * these words" and "Show the items" open these results on the filters they
  * name.
  *
- * @param {Object}                                                   props
- * @param {{label: string, placeholder: string, examples: string[]}} props.ask          The ask block's declared defaults, its Ask box's copy.
- * @param {Object}                                                   props.view         The DataViews view searched.
- * @param {(view: Object) => void}                                   props.onChangeView Replaces the view.
- * @param {Object}                                                   props.vocabulary   The ontology's closed lists.
- * @param {(key: string) => void}                                    props.onOpenEntity Opens an entity.
- * @param {(item: Object) => void}                                   [props.onSave]     Saves an item; absent for a reader.
- * @param {boolean}                                                  [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
- * @param {?Object}                                                  props.asked        The ask the page holds, which its AskBox shows.
- * @param {(asked: ?Object) => void}                                 props.onAsked      Holds a new one.
+ * @param {Object}                                                                   props
+ * @param {{label: string, placeholder: string, examples: string[]}|{error: string}} props.ask          The ask block's declared defaults, its Ask box's copy, or the refusal of the declaration set that stands where the box would.
+ * @param {Object}                                                                   props.view         The DataViews view searched.
+ * @param {(view: Object) => void}                                                   props.onChangeView Replaces the view.
+ * @param {Object}                                                                   props.vocabulary   The ontology's closed lists.
+ * @param {(key: string) => void}                                                    props.onOpenEntity Opens an entity.
+ * @param {(item: Object) => void}                                                   [props.onSave]     Saves an item; absent for a reader.
+ * @param {boolean}                                                                  [props.canTune]    Whether the reader holds tune, which offers each item's exclusion.
+ * @param {?Object}                                                                  props.asked        The ask the page holds, which its AskBox shows.
+ * @param {(asked: ?Object) => void}                                                 props.onAsked      Holds a new one.
  * @return {import('react').ReactElement} The view.
  */
 export default function Search( {
@@ -410,17 +411,24 @@ export default function Search( {
 					'newspack-intelligence'
 				) }
 			/>
-			<AskBox
-				{ ...ask }
-				asked={ asked }
-				onAsked={ onAsked }
-				onSearchFor={ ( named ) =>
-					onChangeView( { ...namedView( named ), type: view.type } )
-				}
-				onOpenEntity={ onOpenEntity }
-				onSave={ onSave }
-				canTune={ canTune }
-			/>
+			{ 'error' in ask ? (
+				<Unread error={ ask.error } />
+			) : (
+				<AskBox
+					{ ...ask }
+					asked={ asked }
+					onAsked={ onAsked }
+					onSearchFor={ ( named ) =>
+						onChangeView( {
+							...namedView( named ),
+							type: view.type,
+						} )
+					}
+					onOpenEntity={ onOpenEntity }
+					onSave={ onSave }
+					canTune={ canTune }
+				/>
+			) }
 			<Section heading={ __( 'Find items', 'newspack-intelligence' ) }>
 				<ItemList
 					items={ found ? answer.items : [] }

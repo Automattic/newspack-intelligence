@@ -151,6 +151,26 @@ describe( 'Search', () => {
 		expect( wire.sent( 'ask' ) ).toEqual( [] );
 	} );
 
+	it( 'shows a refused declaration where the Ask box stands, and still finds items', async () => {
+		renderSearch( {
+			ask: { error: 'composition declaration wren-7712: refused' },
+		} );
+
+		expect(
+			await screen.findByRole( 'heading', { name: 'Find items' } )
+		).toBeTruthy();
+		expect(
+			screen
+				.getAllByRole( 'status' )
+				.some( ( one ) =>
+					one.textContent.includes(
+						'This could not be read just now.'
+					)
+				)
+		).toBe( true );
+		expect( screen.queryByRole( 'textbox', { name: /ask/i } ) ).toBeNull();
+	} );
+
 	it( "asks under the page data's ask defaults whatever a stored Briefing layout holds, and asks only the question, never Search's filters", async () => {
 		window.NewspackNodesData.compositions[ BRIEFING ] = {
 			context: BRIEFING,

@@ -114,12 +114,33 @@ function enqueue_intelligence_assets( string $hook ): void {
 					...screen_words( $operator ),
 				],
 				'compositions' => \Newspack_Nodes\Composition_Store::page_data( \array_keys( Intelligence_Blocks::CONTEXTS ) ),
-				'askDefaults'  => Intelligence_Blocks::defaults( 'newspack-intelligence/ask' ),
+				'askDefaults'  => ask_defaults(),
 			],
 		]
 	);
 	if ( null !== $handle ) {
 		\Newspack_Nodes\Composition::enqueue_editor( Intelligence_Blocks::page_contexts(), LAYOUT_EDITOR_HANDLE, __DIR__ . '/build/layout-editor', \plugins_url( 'build/layout-editor', __FILE__ ) );
+	}
+}
+
+/**
+ * The ask block's declared defaults, or `{ error }` in their place when
+ * Composition refuses the declaration set, so the page renders the
+ * refusal where the Ask box would stand instead of throwing out of the
+ * enqueue. The refusal is reported to stderr and worded by
+ * `Core::caller_message()`.
+ *
+ * @return array<string,mixed>
+ * @throws \InvalidArgumentException Through `Capabilities::cap_for()`, on a broken capability map.
+ */
+function ask_defaults(): array {
+	try {
+		return Intelligence_Blocks::defaults( 'newspack-intelligence/ask' );
+	} catch ( \Newspack_Nodes\Worker_Should_Stop $stop ) {
+		throw $stop;
+	} catch ( \Throwable $refused ) {
+		\Newspack_Nodes\Worker_Should_Stop::report( 'intelligence', [ 'askDefaults' => $refused ] );
+		return [ 'error' => \Newspack_Nodes\Core::caller_message( $refused, 'ask block' ) ];
 	}
 }
 

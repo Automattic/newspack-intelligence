@@ -317,6 +317,37 @@ final class IntelligencePageTest extends TestCase {
 		);
 	}
 
+	/**
+	 * A declaration set Composition refuses fails no page: the layouts and
+	 * the Ask box each answer the refusal in place, and it reaches stderr.
+	 */
+	public function test_a_refused_declaration_set_reads_in_place_and_throws_nothing(): void {
+		\add_filter(
+			Composition::FILTER,
+			static function ( array $map ): array {
+				$map['wren-7712']['blocks']['heron-4410/stray'] = [
+					'title'      => 'Stray',
+					'contexts'   => [ 'wren-7712/board' ],
+					'attributes' => [],
+				];
+				return $map;
+			}
+		);
+		self::sign_in( 8402, 'heron-ops', 'manage_options' );
+		Capabilities::$session_scope = Capabilities::MANAGE;
+		$_GET                        = [ 'page' => INTELLIGENCE_MENU_SLUG ];
+		$stderr                      = $this->capture_stderr();
+
+		enqueue_intelligence_assets( self::PAGE_HOOK );
+
+		$data = $this->localized( 'newspack-intelligence' );
+		$lens = $data['compositions']['newspack-intelligence/lens'];
+		$this->assertTrue( $lens['declaration'] );
+		$this->assertStringContainsString( 'wren-7712 declares no', $lens['error'] );
+		$this->assertSame( [ 'error' => $lens['error'] ], $data['askDefaults'] );
+		$this->assertNotSame( [], self::stderr_lines( $stderr, 'wren-7712 declares no' ) );
+	}
+
 	/** The page learns whether its reader holds manage, as `canTune` says tune: the string 1 or the empty string. */
 	public function test_page_localizes_can_manage(): void {
 		$_GET = [ 'page' => INTELLIGENCE_MENU_SLUG ];
