@@ -14,10 +14,11 @@ import {
 	ToggleControl,
 } from '@wordpress/components';
 import { useState } from '@wordpress/element';
-import { __, sprintf } from '@wordpress/i18n';
+import { __ } from '@wordpress/i18n';
 import { chevronRight } from '@wordpress/icons';
 import { Core } from '@newspack-nodes/runtime';
 import { AnswerBody } from '../components/Answer';
+import CappedList from '../components/CappedList';
 import { noteText } from '../components/ChurnNote';
 import LensTokens from '../components/LensTokens';
 import PulseLine, { spanWords } from '../components/PulseLine';
@@ -125,7 +126,6 @@ function rowsOf( answer, { clients, lenses }, actions, spans ) {
 function Rows( { answer, attributes, spans } ) {
 	const actions = useIntelActions();
 	const fades = useFirstPaint();
-	const [ all, setAll ] = useState( false );
 	const rows = rowsOf( answer, attributes, actions, spans );
 	if ( 0 === rows.length ) {
 		return (
@@ -142,61 +142,49 @@ function Rows( { answer, attributes, spans } ) {
 			</p>
 		);
 	}
-	const shown = all ? rows : rows.slice( 0, attributes.max );
 	return (
-		<>
-			<ul className="newspack-intelligence__attention">
-				{ shown.map( ( row ) => {
-					const subject = row.signal ? signalValue( row.signal ) : '';
-					return (
-						<li
-							key={ row.key }
-							className={ fades ? 'is-fading-in' : undefined }
+		<CappedList
+			rows={ rows }
+			limit={ attributes.max }
+			className="newspack-intelligence__attention"
+		>
+			{ ( row ) => {
+				const subject = row.signal ? signalValue( row.signal ) : '';
+				return (
+					<li
+						key={ row.key }
+						className={ fades ? 'is-fading-in' : undefined }
+					>
+						{ row.note ? (
+							<p className="newspack-intelligence__churn-note">
+								{ noteText( row.note ) }
+							</p>
+						) : (
+							<PulseLine
+								signal={ row.signal }
+								subject={
+									subject.charAt( 0 ).toUpperCase() +
+									subject.slice( 1 )
+								}
+								trend={ row.signal.trend }
+								partial={ null }
+								judged
+								several={ false }
+								words={ spanWords( row.span, BASELINE ) }
+							/>
+						) }
+						<button
+							type="button"
+							className="button-link"
+							onClick={ row.open }
 						>
-							{ row.note ? (
-								<p className="newspack-intelligence__churn-note">
-									{ noteText( row.note ) }
-								</p>
-							) : (
-								<PulseLine
-									signal={ row.signal }
-									subject={
-										subject.charAt( 0 ).toUpperCase() +
-										subject.slice( 1 )
-									}
-									trend={ row.signal.trend }
-									partial={ null }
-									judged
-									several={ false }
-									words={ spanWords( row.span, BASELINE ) }
-								/>
-							) }
-							<button
-								type="button"
-								className="button-link"
-								onClick={ row.open }
-							>
-								{ row.name }
-								<Icon icon={ chevronRight } size={ 16 } />
-							</button>
-						</li>
-					);
-				} ) }
-			</ul>
-			{ shown.length < rows.length && (
-				<button
-					type="button"
-					className="button-link"
-					onClick={ () => setAll( true ) }
-				>
-					{ sprintf(
-						/* translators: %d: rows not yet shown. */
-						__( 'Show %d more', 'newspack-intelligence' ),
-						rows.length - shown.length
-					) }
-				</button>
-			) }
-		</>
+							{ row.name }
+							<Icon icon={ chevronRight } size={ 16 } />
+						</button>
+					</li>
+				);
+			} }
+		</CappedList>
 	);
 }
 

@@ -5,9 +5,10 @@
  */
 
 import { RangeControl, TextControl } from '@wordpress/components';
-import { useId, useState } from '@wordpress/element';
+import { useId } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { AnswerBody } from '../components/Answer';
+import CappedList from '../components/CappedList';
 import { EntityChip } from '../components/Cite';
 import Section from '@newspack-nodes/shared/components/Section';
 import Skeleton from '@newspack-nodes/shared/components/Skeleton';
@@ -19,7 +20,7 @@ import { aboutEntity, useEntityRecord } from './record';
 /**
  * @typedef {Object} RelatedAttributes
  * @property {string} heading The heading.
- * @property {number} limit   The rows shown before "Show all %d".
+ * @property {number} limit   The rows shown before "Show %d more".
  */
 
 /**
@@ -30,45 +31,28 @@ import { aboutEntity, useEntityRecord } from './record';
  */
 function Rows( { entities, limit } ) {
 	const { onOpenEntity } = useIntelActions();
-	const [ all, setAll ] = useState( false );
-	const shown = all ? entities : entities.slice( 0, limit );
 	return (
-		<>
-			<ul className="newspack-intelligence__facts">
-				{ shown.map( ( other ) => (
-					<li
-						key={ other.entity_key }
-						className="newspack-intelligence__actions"
-					>
-						<EntityChip
-							entityKey={ other.entity_key }
-							name={ other.name }
-							onOpen={ onOpenEntity }
-						/>
-						<span className="newspack-intelligence__count">
-							{ sprintf(
-								/* translators: %d: items both entities link. */
-								__( '%d shared', 'newspack-intelligence' ),
-								other.shared_items
-							) }
-						</span>
-					</li>
-				) ) }
-			</ul>
-			{ shown.length < entities.length && (
-				<button
-					type="button"
-					className="button-link"
-					onClick={ () => setAll( true ) }
+		<CappedList rows={ entities } limit={ limit }>
+			{ ( other ) => (
+				<li
+					key={ other.entity_key }
+					className="newspack-intelligence__actions"
 				>
-					{ sprintf(
-						/* translators: %d: every related entity. */
-						__( 'Show all %d', 'newspack-intelligence' ),
-						entities.length
-					) }
-				</button>
+					<EntityChip
+						entityKey={ other.entity_key }
+						name={ other.name }
+						onOpen={ onOpenEntity }
+					/>
+					<span className="newspack-intelligence__count">
+						{ sprintf(
+							/* translators: %d: items both entities link. */
+							__( '%d shared', 'newspack-intelligence' ),
+							other.shared_items
+						) }
+					</span>
+				</li>
 			) }
-		</>
+		</CappedList>
 	);
 }
 

@@ -1,7 +1,7 @@
 /**
  * The `trend-chart` block: the page's subject, the team view or the
  * profile's entity, counted per bucket over the last weeks, the bucket still
- * running apart, by the axis and span the block names, else those the view
+ * running hatched, by the axis and span the block names, else those the view
  * sets, the view read as `lenses` lists it. A page naming no subject yet, as
  * the editor's preview before one is picked, reads nothing and says that no
  * team view or subject is picked.

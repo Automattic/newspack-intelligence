@@ -13,10 +13,24 @@
  * and draws the usual range behind the line.
  */
 
+jest.mock( '@newspack-nodes/shared/hooks/useTimeChart', () => {
+	const actual = jest.requireActual(
+		'@newspack-nodes/shared/hooks/useTimeChart'
+	);
+	return {
+		__esModule: true,
+		...actual,
+		setupTooltip: jest.fn( actual.setupTooltip ),
+	};
+} );
+
 import { render, screen, within, fireEvent } from '@testing-library/react';
 import { resetLocaleData, setLocaleData } from '@wordpress/i18n';
 import { Core } from '@newspack-nodes/runtime';
-import { chartColor } from '@newspack-nodes/shared/hooks/useTimeChart';
+import {
+	chartColor,
+	setupTooltip,
+} from '@newspack-nodes/shared/hooks/useTimeChart';
 import TrendTable, {
 	Signals,
 	TrendChart,
@@ -326,19 +340,145 @@ describe( 'TrendChart', () => {
 		}
 	} );
 
-	it( 'draws the running week apart as one hatched bar of its total, labelled this week', () => {
-		const { container } = chart();
+	it( 'hands the running week apart from the complete weeks, each value’s count its tooltip lists', () => {
+		setupTooltip.mockClear();
+		chart();
+		const { dates, formatEntry } = setupTooltip.mock.calls.at( -1 )[ 1 ];
+		const last = dates.length - 1;
+		expect( dates[ last ] ).toEqual( new Date( '2026-11-02T00:00:00Z' ) );
+		expect( dates[ last - 1 ] ).toEqual(
+			new Date( '2026-10-26T00:00:00Z' )
+		);
+		expect( dates ).toHaveLength( 9 );
+		expect(
+			formatEntry( last ).map( ( { label, value } ) => [ label, value ] )
+		).toEqual( [
+			[ 'Kudos', '7' ],
+			[ 'Grumble', '4' ],
+		] );
+	} );
+
+	it( 'hatches the running week’s stack, titled with every value’s total, labelled this week', () => {
+		const { container } = chart( {
+			answer: {
+				...ANSWER,
+				rows: [
+					...ROWS,
+					{
+						bucket: '2026-11-02',
+						value: 'release',
+						count: 2,
+						items: [],
+					},
+				],
+			},
+		} );
 		const bar = container.querySelector( '.newspack-nodes-chart__partial' );
 		expect( bar ).not.toBeNull();
 		expect( bar.querySelector( 'title' ) ).toHaveTextContent(
-			'this week: 11'
+			'this week: 13'
+		);
+		expect(
+			container.querySelectorAll(
+				'.newspack-nodes-chart__partial-segment'
+			)
+		).toHaveLength( 2 );
+		// The bands end at the last complete week, before the bar.
+		const bandEnds = [ ...container.querySelectorAll( 'svg path' ) ]
+			.filter( ( path ) => path.style.fill )
+			.map( ( path ) =>
+				Math.max(
+					...[
+						...path.getAttribute( 'd' ).matchAll( /(-?[\d.]+),/g ),
+					].map( ( m ) => Number( m[ 1 ] ) )
+				)
+			);
+		expect( bandEnds.length ).toBeGreaterThan( 0 );
+		expect( Math.max( ...bandEnds ) ).toBeLessThan(
+			Number( bar.getAttribute( 'x' ) )
 		);
 		expect(
 			container.querySelector( '.newspack-nodes-chart__partial-label' )
 		).toHaveTextContent( 'this week' );
 	} );
 
-	it( 'names the running day and month by their own span', () => {
+	it( 'titles each tooltip by its week, the running one so far', () => {
+		setupTooltip.mockClear();
+		chart();
+		const { dates, formatHeader } = setupTooltip.mock.calls.at( -1 )[ 1 ];
+		const last = dates.length - 1;
+		expect( formatHeader( dates[ last - 1 ] ) ).toBe( 'Week of 26 Oct' );
+		expect( formatHeader( dates[ last ] ) ).toBe( 'Week of 2 Nov, so far' );
+	} );
+
+	it( 'counts the running week by theme as its series are keyed, its total every theme’s', () => {
+		const themes = [
+			'client offboarding from platform',
+			'philanthropic funding for local newsrooms',
+		];
+		const others = [
+			'support weekly update',
+			'ai forum partnership',
+			'annual city guide launch',
+		];
+		setupTooltip.mockClear();
+		const { container } = chart( {
+			answer: {
+				rows: [
+					{
+						bucket: '2026-11-02',
+						value: themes[ 0 ],
+						count: 3,
+						items: [],
+					},
+					{
+						bucket: '2026-11-02',
+						value: others[ 0 ],
+						count: 2,
+						items: [],
+					},
+					{
+						bucket: '2026-11-02',
+						value: themes[ 1 ],
+						count: 1,
+						items: [],
+					},
+					...others.slice( 1 ).map( ( value ) => ( {
+						bucket: '2026-11-02',
+						value,
+						count: 1,
+						items: [],
+					} ) ),
+					...WEEKS.slice( 0, 6 ).flatMap( ( bucket, n ) =>
+						themes.map( ( value, t ) => ( {
+							bucket,
+							value,
+							count: 13 - n - t,
+							items: [],
+						} ) )
+					),
+				],
+				by: 'theme',
+				bucket: 'week',
+			},
+		} );
+		expect( legend( container ) ).toEqual( [
+			'Client offboarding from platform',
+			'Philanthropic funding for local newsrooms',
+		] );
+		const { dates, formatEntry } = setupTooltip.mock.calls.at( -1 )[ 1 ];
+		expect(
+			formatEntry( dates.length - 1 ).map( ( e ) => [ e.label, e.value ] )
+		).toEqual( [
+			[ 'Client offboarding from platform', '3' ],
+			[ 'Philanthropic funding for local newsrooms', '1' ],
+		] );
+		expect(
+			container.querySelector( '.newspack-nodes-chart__partial title' )
+		).toHaveTextContent( 'this week: 8' );
+	} );
+
+	it( 'names the running day and month by their own span, in the bar and the tooltip', () => {
 		const { container, rerender } = chart( {
 			answer: {
 				rows: [
@@ -352,6 +492,10 @@ describe( 'TrendChart', () => {
 		expect(
 			container.querySelector( '.newspack-nodes-chart__partial title' )
 		).toHaveTextContent( 'today: 2' );
+		const header = () => setupTooltip.mock.calls.at( -1 )[ 1 ].formatHeader;
+		const at = ( day ) => new Date( `${ day }T00:00:00Z` );
+		expect( header()( at( '2026-11-04' ) ) ).toBe( '4 Nov, so far' );
+		expect( header()( at( '2026-11-03' ) ) ).toBe( '3 Nov' );
 		rerender(
 			<TrendChart
 				answer={ {
@@ -379,9 +523,13 @@ describe( 'TrendChart', () => {
 		expect(
 			container.querySelector( '.newspack-nodes-chart__partial title' )
 		).toHaveTextContent( 'this month: 9' );
+		expect( header()( at( '2026-11-01' ) ) ).toBe(
+			'Month of 1 Nov, so far'
+		);
+		expect( header()( at( '2026-10-01' ) ) ).toBe( 'Month of 1 Oct' );
 	} );
 
-	it( 'draws lines for the lines style, so no total bar stands beside them', () => {
+	it( 'draws lines for the lines style, the running week each value’s hatched segment from the axis', () => {
 		const { container } = chart( { style: 'lines' } );
 		expect(
 			screen.getByRole( 'button', {
@@ -389,8 +537,13 @@ describe( 'TrendChart', () => {
 			} )
 		).toHaveAttribute( 'aria-pressed', 'false' );
 		expect(
+			container.querySelectorAll(
+				'.newspack-nodes-chart__partial-segment'
+			)
+		).toHaveLength( 2 );
+		expect(
 			container.querySelector( '.newspack-nodes-chart__partial' )
-		).toBeNull();
+		).not.toBeNull();
 	} );
 
 	it( 'names each theme in sentence case', () => {
@@ -512,6 +665,7 @@ describe( 'Signals', () => {
 			{ bucket: '2026-10-12', count: 7, in_window: true },
 			{ bucket: '2026-10-05', count: 1, in_window: true },
 		],
+		partial: { bucket: '2026-10-19', count: 2 },
 		items: [],
 	};
 
@@ -733,15 +887,16 @@ describe( 'Signals', () => {
 		expect( name ).not.toMatch( /counts 0/ );
 	} );
 
-	it( 'says the signal in words on its pulse line, the bucket still running apart', () => {
+	it( 'says the signal in words on its pulse line, its own value so far apart', () => {
 		render( <Signals answer={ { ...judged, signals: [ spike ] } } /> );
 		const line = screen
 			.getByText( 'Grumble: 7 last week, usually about 2.' )
 			.closest( 'p' );
 		expect( within( line ).getByRole( 'img' ) ).toBeInTheDocument();
 		expect(
-			within( line ).getByText( '4 so far this week' )
+			within( line ).getByText( '2 so far this week' )
 		).toBeInTheDocument();
+		expect( within( line ).queryByText( '4 so far this week' ) ).toBeNull();
 		expect(
 			screen.queryByText( /Steady|No unusual change|Too little/ )
 		).toBeNull();

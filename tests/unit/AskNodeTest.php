@@ -623,6 +623,63 @@ final class AskNodeTest extends TestCase {
 	}
 
 	/**
+	 * Each plan that copies the prompt's shape whole, every field it does not
+	 * need left blank, null or an empty list, as a topic question with no
+	 * entity answers.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public static function blank_field_plans(): array {
+		return [
+			'a blank entity and lens' => [ '{"searches":[{"words":"newsletter","entity":"","lens":" "}]}' ],
+			'null fields'             => [ '{"searches":[{"words":"newsletter","entity":null,"days":null}]}' ],
+			'empty lists'             => [ '{"searches":[{"words":"newsletter","kinds":[],"roles":[]}]}' ],
+		];
+	}
+
+	/**
+	 * A topic the graph holds no entity for still answers: a field the plan
+	 * leaves blank, null or empty counts as not named, so the search reads
+	 * by its words and records only the fields it named.
+	 *
+	 * @param string $plan What the plan call answered.
+	 */
+	#[DataProvider( 'blank_field_plans' )]
+	public function test_a_field_left_blank_is_not_named( string $plan ): void {
+		$this->out->outcomes[ Ask_Prompts::PLAN ]   = [ 'content' => $plan ];
+		$this->out->outcomes[ Ask_Prompts::ANSWER ] = [ 'content' => 'The Ledger launched a newsletter tool [1].' ];
+
+		$this->asked( self::READER, self::KEY, null, 'What is going on with newsletters?' );
+
+		$this->assertSame( [ 'github:ledger-launch' ], $this->given_keys( 1 ) );
+		$this->assertSame( [ [ 'words' => 'newsletter' ] ], $this->outcomes()[0]['searches'] );
+	}
+
+	/** A search whose every field is blank names nothing, and is refused as one naming nothing. */
+	public function test_a_search_left_wholly_blank_names_nothing(): void {
+		$this->out->outcomes[ Ask_Prompts::PLAN ] = [ 'content' => '{"searches":[{"words":"","entity":"","kinds":[]}]}' ];
+
+		$this->asked( self::READER );
+
+		$this->assertSame( [ [ 'event' => 'ask_failed', 'ask_key' => self::KEY, 'owner' => self::READER, 'reason' => 'the plan was refused: a search names at least one of words, lens, entity, kinds, roles and days', 'searches' => [] ] ], $this->outcomes() );
+	}
+
+	/**
+	 * The plan prompt shows a search naming only the fields it needs, says to
+	 * leave every other out, and reads a topic with no named entity as words.
+	 */
+	public function test_the_plan_prompt_reads_a_topic_as_words(): void {
+		$this->out->outcomes[ Ask_Prompts::PLAN ] = [ 'content' => '{"searches":[{"words":"lighthouse"}]}' ];
+
+		$this->asked( self::READER );
+
+		$system = $this->out->asked()[0][0]['content'];
+		$this->assertStringContainsString( '{"searches": [{"words": "...", "days": 30}]}', $system );
+		$this->assertStringContainsString( 'leaving every other field out rather than blank', $system );
+		$this->assertStringContainsString( 'A topic, an industry or a subject the question names is words, never an entity', $system );
+	}
+
+	/**
 	 * A plan that lands after its ask has waited past MAX_WAIT_S is dropped,
 	 * logged, with no answer call and no write, so the row stays asked and
 	 * reads failed: an ask taken in at second 870 never turns answered.

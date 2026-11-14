@@ -99,6 +99,16 @@ final class PublisherSignalsTest extends TestCase {
 		$this->assertSame( [ 'feed:marsh-courier-research-1-2', 'feed:marsh-courier-research-1-1' ], \array_column( $answer['signals'][0]['items'], 'item_key' ) );
 	}
 
+	/** A drop answers its client's own output so far in the current week: three items the courier published since Monday. */
+	public function test_a_drop_answers_its_own_week_so_far(): void {
+		$this->published( self::TERN, 'research', self::STEADY );
+		$this->published( self::COURIER, 'research', [ 0 => 3, 1 => 2, 2 => 4, 3 => 4, 4 => 4, 5 => 4, 6 => 4, 7 => 4, 8 => 4, 9 => 4 ] );
+
+		$answer = $this->ci->dispatch( 'signals', [ '--entity=' . self::COURIER ] );
+
+		$this->assertSame( [ 'bucket' => '2026-10-19', 'count' => 3 ], $answer['signals'][0]['partial'] );
+	}
+
 	/**
 	 * A drop is judged though no other axis is: a client publishing four a
 	 * week from the oldest baseline week but one, and nothing about it,

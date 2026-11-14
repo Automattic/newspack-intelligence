@@ -524,6 +524,27 @@ final class IntelligenceSignalsTest extends TestCase {
 	}
 
 	/**
+	 * Each signal answers its own value's stories so far in the current
+	 * bucket, as the answer's partial answers every value's: a complaint
+	 * spike's five beside a praise spike's two, of seven in all.
+	 */
+	public function test_a_signal_answers_its_own_bucket_so_far(): void {
+		$this->weeks( 'complaint', [ 0 => 5, 1 => 6, 2 => 1, 3 => 3, 4 => 1, 5 => 3, 6 => 1, 7 => 3, 8 => 1, 9 => 3, 10 => 1 ] );
+		$this->weeks( 'praise', [ 0 => 2, 1 => 4, 2 => 1, 3 => 3, 4 => 1, 5 => 3, 6 => 1, 7 => 3, 8 => 1, 9 => 3, 10 => 1 ] );
+
+		$answer = $this->ci->dispatch( 'signals', [] );
+
+		$this->assertSame( [ 'bucket' => '2026-10-19', 'count' => 7 ], $answer['partial'] );
+		$this->assertSame(
+			[
+				'complaint' => [ 'bucket' => '2026-10-19', 'count' => 5 ],
+				'praise'    => [ 'bucket' => '2026-10-19', 'count' => 2 ],
+			],
+			\array_column( $answer['signals'], 'partial', 'value' )
+		);
+	}
+
+	/**
 	 * A signal's usual range is its own value's series, never the totals: a
 	 * praise baseline of 2, 3, 2, 3, 2, 3, 2, 3 beside a complaint one has
 	 * mean 2.5 and deviation 0.5, so it runs from 1.5 to 3.5, and four

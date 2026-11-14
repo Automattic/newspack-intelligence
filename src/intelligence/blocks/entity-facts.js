@@ -8,8 +8,8 @@
 import { CheckboxControl, RangeControl } from '@wordpress/components';
 import { useId } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
-import { formatCommandArgs } from '@newspack-nodes/runtime';
 import { AnswerBody } from '../components/Answer';
+import CappedList from '../components/CappedList';
 import Cite, { EntityChip } from '../components/Cite';
 import Section from '@newspack-nodes/shared/components/Section';
 import Skeleton from '@newspack-nodes/shared/components/Skeleton';
@@ -25,7 +25,7 @@ const PARTS = [ 'counts', 'claims', 'details' ];
 /**
  * @typedef {Object} FactsAttributes
  * @property {string[]} show  The parts shown.
- * @property {number}   limit The most claims shown.
+ * @property {number}   limit The claims shown before "Show %d more".
  */
 
 /**
@@ -135,16 +135,14 @@ function Counts( { entity } ) {
  *
  * @param {Object} props
  * @param {Object} props.entity The record.
- * @param {number} props.limit  The most claims shown.
+ * @param {number} props.limit  The claims shown before the rest are asked for.
  * @return {import('react').ReactElement} The facts.
  */
 function Claims( { entity, limit } ) {
 	const { onOpenEntity } = useIntelActions();
-	const read = useIntelRead(
-		`block:claims:${ useId() }`,
-		'claims',
-		formatCommandArgs( [ entity.entity_key ], { limit } )
-	);
+	const read = useIntelRead( `block:claims:${ useId() }`, 'claims', [
+		entity.entity_key,
+	] );
 	const chip = ( key, name ) =>
 		key === entity.entity_key ? null : (
 			<EntityChip
@@ -165,8 +163,8 @@ function Claims( { entity, limit } ) {
 				) }
 			>
 				{ ( answer ) => (
-					<ul className="newspack-intelligence__facts">
-						{ answer.claims.map( ( claim, i ) => (
+					<CappedList rows={ answer.claims } limit={ limit }>
+						{ ( claim, i ) => (
 							<li
 								key={ `${ claim.item_key } ${ i }` }
 								className="newspack-intelligence__actions"
@@ -185,8 +183,8 @@ function Claims( { entity, limit } ) {
 								) }
 								<Cite url={ claim.url } title={ claim.title } />
 							</li>
-						) ) }
-					</ul>
+						) }
+					</CappedList>
 				) }
 			</AnswerBody>
 		</Section>

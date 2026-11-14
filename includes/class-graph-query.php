@@ -1283,6 +1283,22 @@ final class Graph_Query {
 	}
 
 	/**
+	 * The survivor a key answers as, when the caller may see that entity:
+	 * one a person accepted, or a proposed or rejected one a readable item
+	 * cites, by a link or as the item it was proposed from. Null for any
+	 * other key.
+	 *
+	 * @param Row_Reader $r   The reader.
+	 * @param Graph      $g   The graph the read opened.
+	 * @param string     $key An entity key.
+	 * @throws \InvalidArgumentException When its merge chain does not resolve.
+	 */
+	public static function visible( Row_Reader $r, array $g, string $key ): ?string {
+		$survivor = self::survivor( $key, $g );
+		return isset( self::visible_of( $r, $g, [ $survivor ] )[ $survivor ] ) ? $survivor : null;
+	}
+
+	/**
 	 * The entities sharing the most readable items with one, each with how
 	 * many it shares and the newest it shares as citations, each its key,
 	 * URL and title.
@@ -1325,9 +1341,9 @@ final class Graph_Query {
 	 * resting on a readable item that links its subject by a live link, so
 	 * the caller sees every subject, and answering its item's URL and title
 	 * and its subject's name (`name_of()`). An object answers its key and
-	 * its name only when `visible()` lets the caller see it, else the item's
-	 * spelling of it and a null name; a claim holding neither for the caller
-	 * is left out.
+	 * its name only when `visible_of()`, asked once for every object the
+	 * claims name, lets the caller see it, else the item's spelling of it and
+	 * a null name; a claim holding neither for the caller is left out.
 	 *
 	 * @param array<array-key,mixed> $args The bound command args: `key`, `predicate`, `limit`.
 	 * @return array<string,mixed> `{ claims: [ { subject, subject_name, predicate, object, object_name, confidence, item_key, url, title } ], available }`.
@@ -1354,17 +1370,23 @@ final class Graph_Query {
 					. " WHERE ( cl.subject = ? OR cl.object_key = ? ){$only} ORDER BY live.t DESC, cl.item_key, cl.ord LIMIT ?",
 					[ ...$g['binds'], ...$live_binds, ...$keys, ...$keys, $survivor, $survivor, ...( null === $predicate ? [] : [ $predicate ] ), $limit ]
 				);
-				$claims                = [];
-				$sees                  = [];
+				$objects   = \array_diff( \array_unique( \array_map( static fn ( array $row ): string => Core::as_string( $row[3] ), $rows ) ), [ '' ] );
+				$survivors = \array_combine( $objects, \array_map( static fn ( string $key ): string => self::survivor( $key, $g ), $objects ) );
+				$visible   = self::visible_of( $r, $g, \array_values( \array_unique( $survivors ) ) );
+				$claims    = [];
+				$named     = [];
 				foreach ( $rows as [ $subject, $subject_name, $said, $object_key, $object_text, $confidence, $item, $url, $title ] ) {
-					$key          = Core::as_string( $object_key );
-					$sees[ $key ] ??= '' !== $key && null !== self::visible( $r, $g, $key );
-					$object       = $sees[ $key ] ? $key : Core::as_string( $object_text );
+					$key  = Core::as_string( $object_key );
+					$sees = isset( $survivors[ $key ], $visible[ $survivors[ $key ] ] );
+					if ( $sees ) {
+						$named[ $key ] = true;
+					}
+					$object = $sees ? $key : Core::as_string( $object_text );
 					if ( '' !== $object ) {
-						$claims[] = [ 'subject' => $subject, 'subject_name' => $subject_name ?? $subject, 'predicate' => $said, 'object' => $object, 'object_name' => $sees[ $key ] ? $key : null, 'confidence' => $confidence, 'item_key' => $item, 'url' => $url, 'title' => $title ];
+						$claims[] = [ 'subject' => $subject, 'subject_name' => $subject_name ?? $subject, 'predicate' => $said, 'object' => $object, 'object_name' => $sees ? $key : null, 'confidence' => $confidence, 'item_key' => $item, 'url' => $url, 'title' => $title ];
 					}
 				}
-				$names = self::names_of( $r, \array_map( 'strval', \array_keys( \array_filter( $sees ) ) ) );
+				$names = self::names_of( $r, \array_map( 'strval', \array_keys( $named ) ) );
 				return [ 'claims' => \array_map( static fn ( array $claim ): array => null === $claim['object_name'] ? $claim : \array_replace( $claim, [ 'object_name' => $names[ $claim['object'] ] ?? $claim['object'] ] ), $claims ) ];
 			}
 		);
@@ -1389,22 +1411,6 @@ final class Graph_Query {
 			}
 		}
 		return $names;
-	}
-
-	/**
-	 * The survivor a key answers as, when the caller may see that entity:
-	 * one a person accepted, or a proposed or rejected one a readable item
-	 * cites, by a link or as the item it was proposed from. Null for any
-	 * other key.
-	 *
-	 * @param Row_Reader $r   The reader.
-	 * @param Graph      $g   The graph the read opened.
-	 * @param string     $key An entity key.
-	 * @throws \InvalidArgumentException When its merge chain does not resolve.
-	 */
-	public static function visible( Row_Reader $r, array $g, string $key ): ?string {
-		$survivor = self::survivor( $key, $g );
-		return isset( self::visible_of( $r, $g, [ $survivor ] )[ $survivor ] ) ? $survivor : null;
 	}
 
 	/**
@@ -1542,7 +1548,7 @@ final class Graph_Query {
 	 * in (`pulse_of()`), both read by `signaled()`.
 	 *
 	 * @param array<array-key,mixed> $args The bound command args: `lens`, `entity`.
-	 * @return array<string,mixed> `{ signals: [ { axis, signal, bucket, by, value, count, baseline, usual: { mean, low, high }, trend: [ { bucket, count, in_window } ], items } ], trend: [ { bucket, count, in_window } ], partial: { bucket, count }, judged, bucket, baseline_buckets, available }`.
+	 * @return array<string,mixed> `{ signals: [ { axis, signal, bucket, by, value, count, usual: { mean, low, high }, trend: [ { bucket, count, in_window } ], partial: { bucket, count }, items } ], trend: [ { bucket, count, in_window } ], partial: { bucket, count }, judged, bucket, baseline_buckets, available }`.
 	 * @throws \InvalidArgumentException As `trends()`.
 	 */
 	public static function signals( array $args ): array {
@@ -1923,10 +1929,7 @@ final class Graph_Query {
 	private static function pulse_of( array $totals, array $starts, array $days, bool $judged, string $bucket ): array {
 		return [
 			'trend'   => self::series( $totals, $starts, $days ),
-			'partial' => [
-				'bucket' => $starts[0],
-				'count'  => $totals[ $starts[0] ] ?? 0,
-			],
+			'partial' => self::so_far( $totals, $starts ),
 			'judged'  => $judged,
 			'bucket'  => $bucket,
 		];
@@ -1975,7 +1978,8 @@ final class Graph_Query {
 			if ( $outage ) {
 				continue;
 			}
-			$week             = [ 'bucket' => $starts[1], 'by' => null, 'value' => null, 'count' => $counts[1], 'usual' => $usual, 'trend' => self::series( \array_combine( $starts, $counts ), $starts, self::all_days() ), 'items' => $rows[ $starts[1] ]['items'] ?? [] ];
+			$weekly_counts    = \array_combine( $starts, $counts );
+			$week             = [ 'bucket' => $starts[1], 'by' => null, 'value' => null, 'count' => $counts[1], 'usual' => $usual, 'trend' => self::series( $weekly_counts, $starts, self::all_days() ), 'partial' => self::so_far( $weekly_counts, $starts ), 'items' => $rows[ $starts[1] ]['items'] ?? [] ];
 			$falls[ $client ] = [ self::signal( 'publisher', $empty ? 'silent' : 'drop', $week ) ];
 		}
 		return $falls;
@@ -2433,11 +2437,27 @@ final class Graph_Query {
 			$series = \array_map( static fn ( array $row ): int => Core::as_int( $row['count'] ), $buckets );
 			$usual  = self::usual_of( \array_map( static fn ( string $start ): int => $series[ $start ] ?? 0, \array_slice( $starts, 2 ) ) );
 			if ( null !== $latest && ( ! $known || isset( $history[ $value ] ) ) && self::spiked( Core::as_int( $latest['count'] ), $usual ) ) {
-				$signals[] = [ 'bucket' => $starts[1], 'by' => $by, 'value' => $value, 'count' => $latest['count'], 'usual' => $usual, 'trend' => self::series( $series, $starts, $days ), 'items' => $latest['items'] ];
+				$signals[] = [ 'bucket' => $starts[1], 'by' => $by, 'value' => $value, 'count' => $latest['count'], 'usual' => $usual, 'trend' => self::series( $series, $starts, $days ), 'partial' => self::so_far( $series, $starts ), 'items' => $latest['items'] ];
 			}
 		}
 		\usort( $signals, static fn ( array $a, array $b ): int => [ $b['count'], $a['value'] ] <=> [ $a['count'], $b['value'] ] );
 		return $signals;
+	}
+
+	/**
+	 * The bucket holding now and its count so far, apart from the series, so
+	 * it is never a point on the line: what a pulse line beside one signal's
+	 * series names as so far.
+	 *
+	 * @param array<string,int> $counts Each bucket's start => its count.
+	 * @param list<string>      $starts The window's starts, newest first.
+	 * @return array{bucket:string,count:int}
+	 */
+	private static function so_far( array $counts, array $starts ): array {
+		return [
+			'bucket' => $starts[0],
+			'count'  => $counts[ $starts[0] ] ?? 0,
+		];
 	}
 
 	/**

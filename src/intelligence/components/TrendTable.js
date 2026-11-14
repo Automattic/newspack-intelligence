@@ -9,7 +9,7 @@ import { integerTicks } from '@newspack-nodes/shared/utils/axis-ticks';
 import Cite from './Cite';
 import { SaveButton } from './ItemRow';
 import PulseLine, { spanWords } from './PulseLine';
-import { dayLabel, usualPhrase, utcDay } from './format';
+import { dayLabel, shownDay, usualPhrase, utcDay } from './format';
 import { word, words } from './words';
 
 /** The newest buckets a trend chart draws, as many as a signal's history. */
@@ -223,8 +223,9 @@ export function Signals( { answer, value, onSave } ) {
 /**
  * A signals answer as a pulse line's props: its first signal, named by the
  * value it counts (`valueText()`), capitalized, else by the signal itself (`signalValue()`),
- * with that signal's own series and usual range; with none, its totals and
- * no range, since the rules judge only a signal's own series.
+ * with that signal's own series, its own bucket so far and usual range; with
+ * none, its totals and no range, since the rules judge only a signal's own
+ * series.
  *
  * @param {Object} answer The answer `signals` gave: `signals`, `trend`, `partial`, `judged`, `bucket` and `baseline_buckets`.
  * @return {Object} The props.
@@ -238,12 +239,12 @@ export function pulseOf( answer ) {
 				? signalValue( shown )
 				: valueText( String( shown.value ) );
 	}
-	const trend = shown ? shown.trend : answer.trend;
+	const { trend, partial } = shown ?? answer;
 	return {
 		signal: shown,
 		subject: subject.charAt( 0 ).toUpperCase() + subject.slice( 1 ),
-		trend: counted( trend, answer.partial ) ? trend : [],
-		partial: answer.partial,
+		trend: counted( trend, partial ) ? trend : [],
+		partial,
 		judged: answer.judged,
 		several: 1 < answer.signals.length,
 		words: spanWords( answer.bucket, answer.baseline_buckets ),
@@ -305,15 +306,44 @@ const runningLabel = ( span ) =>
 	} )[ span ];
 
 /**
+ * A slot's words in the chart's tooltip, by the span it counts: its UTC
+ * day, "Week of %s" or "Month of %s", the bucket still running so far.
+ *
+ * @param {string} span    The span, `day`, `week` or `month`.
+ * @param {string} running The running bucket's UTC day, Y-m-d.
+ * @return {(at: Date) => string} The words for a slot's date.
+ */
+const slotWords = ( span, running ) => ( at ) => {
+	const bucket = at.toISOString().slice( 0, 10 );
+	const day = shownDay( bucket );
+	let named = day;
+	if ( 'week' === span ) {
+		/* translators: %s: the day the week starts, as "9 Nov". */
+		named = sprintf( __( 'Week of %s', 'newspack-intelligence' ), day );
+	} else if ( 'month' === span ) {
+		/* translators: %s: the day the month starts, as "1 Nov". */
+		named = sprintf( __( 'Month of %s', 'newspack-intelligence' ), day );
+	}
+	return bucket === running
+		? sprintf(
+				/* translators: %s: the bucket still running, as "Week of 9 Nov". */
+				__( '%s, so far', 'newspack-intelligence' ),
+				named
+		  )
+		: named;
+};
+
+/**
  * A trends answer as the series the shared time chart draws: the
  * CHART_BUCKETS newest complete buckets, oldest first, each a UTC day, and
  * the CHART_VALUES values counting the most over them, the largest first,
  * then by value, each a count per bucket, 0 where a bucket counts none; and
- * the bucket still running apart, its total, never a point on the line.
+ * the bucket still running apart, never a point on the line, its total
+ * every value's and each value's count keyed by its series' label.
  *
  * @param {{rows: Array<Object>, by: string, bucket: string}} answer The answer `trends` gave, its rows newest bucket first.
  * @param {number}                                            now    UTC seconds.
- * @return {{series: Array<{label: string, values: Array<{date: Date, value: number}>}>, partial: ?{bucket: string, count: number, label: string}}} The series.
+ * @return {{series: Array<{label: string, values: Array<{date: Date, value: number}>}>, partial: ?{bucket: string, count: number, counts: Object<string, number>, label: string}}} The series.
  */
 function trendSeries( { rows, by, bucket: span }, now ) {
 	const running = runningBucket( span, now );
@@ -322,10 +352,11 @@ function trendSeries( { rows, by, bucket: span }, now ) {
 		.slice( 0, CHART_BUCKETS )
 		.reverse();
 	const counts = new Map();
-	let soFar = 0;
+	/** @type {Object<string, number>} */
+	const soFar = {};
 	for ( const row of rows ) {
 		if ( row.bucket === running ) {
-			soFar += row.count;
+			soFar[ seriesText( String( row.value ), by ) ] = row.count;
 		} else if ( buckets.includes( row.bucket ) ) {
 			const value = String( row.value );
 			counts.set( value, {
@@ -350,7 +381,12 @@ function trendSeries( { rows, by, bucket: span }, now ) {
 			} ) ),
 		} ) );
 	const partial = rows.some( ( row ) => row.bucket === running )
-		? { bucket: running, count: soFar, label: runningLabel( span ) }
+		? {
+				bucket: running,
+				count: total( soFar ),
+				counts: soFar,
+				label: runningLabel( span ),
+		  }
 		: null;
 	return { series, partial };
 }
@@ -388,7 +424,8 @@ export const chartTitle = ( heading, by ) => {
 /**
  * A trends answer as one compact time chart, the shared `AreaTimeChart`: a
  * series per value over the newest complete buckets (`trendSeries()`), the
- * bucket still running a hatched bar beside them, titled by `heading` with
+ * bucket still running a hatched stack of its values beside them, its
+ * values in the tooltip, titled by `heading` with
  * the axis it counted in its `%s`, stacked or drawn as lines as `style`
  * says until the reader flips it, its legend picking a value. A screen
  * reader is handed every row as a visually hidden table of its bucket,
@@ -403,6 +440,14 @@ export const chartTitle = ( heading, by ) => {
 export function TrendChart( { answer, heading, style } ) {
 	const { series, partial } = useMemo(
 		() => trendSeries( answer, Core.now() ),
+		[ answer ]
+	);
+	const formatSlot = useMemo(
+		() =>
+			slotWords(
+				answer.bucket,
+				runningBucket( answer.bucket, Core.now() )
+			),
 		[ answer ]
 	);
 	if ( 0 === answer.rows.length ) {
@@ -422,6 +467,7 @@ export function TrendChart( { answer, heading, style } ) {
 				stacked={ 'stack' === style }
 				formatX={ tickDay }
 				partial={ partial ?? undefined }
+				formatSlot={ formatSlot }
 			/>
 			<VisuallyHidden>
 				<table>

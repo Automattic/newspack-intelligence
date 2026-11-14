@@ -347,10 +347,16 @@ describe( 'needs-attention', () => {
 		const rows = await within( block ).findAllByRole( 'listitem' );
 		expect( rows ).toHaveLength( 3 );
 		expect( rows[ 0 ] ).toHaveTextContent( 'Desk awards' );
+		expect( within( block ).getByRole( 'list' ) ).toHaveClass(
+			'newspack-intelligence__attention'
+		);
 		fireEvent.click(
 			within( block ).getByRole( 'button', { name: 'Show 2 more' } )
 		);
 		expect( within( block ).getAllByRole( 'listitem' ) ).toHaveLength( 5 );
+		expect(
+			within( block ).queryByRole( 'button', { name: /more$/ } )
+		).toBeNull();
 	} );
 
 	it( 'opens the team view or the profile a row is about', async () => {

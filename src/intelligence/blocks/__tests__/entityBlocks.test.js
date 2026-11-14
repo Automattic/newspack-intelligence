@@ -298,13 +298,34 @@ describe( 'entity-facts', () => {
 		expect(
 			within( facts ).queryByRole( 'button', { name: /Save/ } )
 		).toBeNull();
-		expect( wire.sent( 'claims' ) ).toEqual( [ [ KEY, '--limit=10' ] ] );
+		expect( wire.sent( 'claims' ) ).toEqual( [ [ KEY ] ] );
 	} );
 
-	it( 'asks for no more claims than its limit', async () => {
+	it( 'shows its limit of facts and "Show %d more" for the rest the read holds', async () => {
+		const [ claim ] = wire.replies.claims.claims;
+		wire.replies.claims = {
+			claims: [ 41, 42, 43, 44 ].map( ( n ) => ( {
+				...claim,
+				object: `Fact object ${ n }`,
+				object_name: null,
+				item_key: `feed:harbor-ledger-${ n }`,
+			} ) ),
+			available: true,
+		};
 		renderBlock( entityFacts, { show: [ 'claims' ], limit: 3 } );
-		await screen.findByText( 'runs' );
-		expect( wire.sent( 'claims' ) ).toEqual( [ [ KEY, '--limit=3' ] ] );
+		const facts = (
+			await screen.findByRole( 'heading', { name: 'Facts' } )
+		).closest( 'section' );
+		await within( facts ).findByText( 'Fact object 41' );
+		expect( within( facts ).getAllByRole( 'listitem' ) ).toHaveLength( 3 );
+		expect( within( facts ).queryByText( 'Fact object 44' ) ).toBeNull();
+		fireEvent.click(
+			within( facts ).getByRole( 'button', { name: 'Show 1 more' } )
+		);
+		expect( within( facts ).getAllByRole( 'listitem' ) ).toHaveLength( 4 );
+		expect(
+			within( facts ).queryByRole( 'button', { name: /more$/ } )
+		).toBeNull();
 	} );
 
 	it( 'lists the details, and the ID under a disclosure for a curator alone', async () => {
@@ -377,7 +398,7 @@ describe( 'related', () => {
 		);
 	} );
 
-	it( 'shows its limit of rows and "Show all %d" for the rest', async () => {
+	it( 'shows its limit of rows and "Show %d more" for the rest the read holds', async () => {
 		renderBlock( related, { heading: 'Shares coverage', limit: 3 } );
 		const section = (
 			await screen.findByRole( 'heading', { name: 'Shares coverage' } )
@@ -390,13 +411,13 @@ describe( 'related', () => {
 		);
 		expect( within( section ).getByText( '9 shared' ) ).toBeInTheDocument();
 		fireEvent.click(
-			within( section ).getByRole( 'button', { name: 'Show all 5' } )
+			within( section ).getByRole( 'button', { name: 'Show 2 more' } )
 		);
 		expect( within( section ).getAllByRole( 'listitem' ) ).toHaveLength(
 			5
 		);
 		expect(
-			within( section ).queryByRole( 'button', { name: /Show all/ } )
+			within( section ).queryByRole( 'button', { name: /more$/ } )
 		).toBeNull();
 	} );
 

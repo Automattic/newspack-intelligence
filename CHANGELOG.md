@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Builds against newspack-nodes' unreleased `AreaTimeChart`.** The trend chart hands it a `partial` carrying `counts` and a `formatSlot`, which the bundle's inlined copy of the shared chart must read; release newspack-nodes first and move the CI pin to it, or a bundle built against the older chart draws the running week as the single hatched total it drew before and titles every tooltip with a clock time.
+- **A profile's Facts show their first `limit` and "Show %d more" for the rest, as Related does.** The block reads the claims at the command's own limit, 50, rather than at its own. Related, Facts and Needs attention share one capped list, and each labels its button by the rows the read holds and does not show yet, "Show %d more", where Related said "Show all %d" of a read the server had cut at 20.
+- **The trend chart draws the bucket still running as a hatched stack, and its tooltip reads it.** This week, today or this month stands after the last complete bucket as a segment per drawn value in its colour under the hatching, stacked or, in lines, each from the axis, following a legend pick, and hovering it lists each value's count. Its total is still every value's, as the pulse line above it counts. It was one hatched bar of that total, shown only while stacked with every value drawn, and the tooltip never read it.
+
+### Fixed
+
+- **A question about a topic the graph has no entity for answers rather than failing "the plan was refused: entity is blank".** A planned search's field left null, blank or an empty list now counts as not named, so a plan copying the prompt's shape whole with its unneeded fields blank reads by its words. The plan prompt's shape shows only `words` and `days`, asks for every other field left out rather than blank, and reads a topic, an industry or a subject the question names as words, never as an entity. A search left wholly blank is still refused as one naming nothing.
+- **A pulse line naming a signal says that signal's own count so far.** Each signal `signals` answers carries its own `partial`, its value's stories in the bucket holding now, and the pulse line drawing that signal's series names it; it named the view's total, so "Client offboarding from platform: 13 last week … 27 so far this week" read 27 where client offboarding had 3 and the view 27 across every theme.
+- **The trend chart's tooltip names its bucket.** It reads "Week of 26 Oct", "Week of 9 Nov, so far" for the bucket still running, or a day or "Month of 1 Nov" by the view's span, where it read a clock time.
+- **A profile's Facts ask which of their objects the reader may see in two statements, however many objects they name.** `claims` asked once per distinct object, up to about a hundred statements a profile at the default limit of 50.
+
 ## [0.45.0] - 2026-11-14
 
 ### Changed

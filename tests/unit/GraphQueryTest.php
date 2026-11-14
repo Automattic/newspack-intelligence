@@ -605,6 +605,31 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [ $subject, $subject, $object, $object ], [ $claim['subject'], $claim['subject_name'], $claim['object'], $claim['object_name'] ] );
 	}
 
+	/**
+	 * However many distinct objects a profile's claims name, the read asks
+	 * which of them the caller may see in the same statements as for one.
+	 */
+	public function test_claims_read_their_objects_visibility_in_statements_that_do_not_grow(): void {
+		$objects = [ 'organization:egret-fund-north', 'organization:egret-fund-south', 'organization:egret-fund-east', 'organization:egret-fund-west' ];
+		$this->seed_world();
+		foreach ( $objects as $object ) {
+			$this->seed( [ Intel_Event::make( 'entity_accepted', [ 'entity_key' => $object ], 'user:41', 'fixture-9' ) ] );
+		}
+		$this->seed( self::claim( 'feed:gazette-award', 0, self::GAZETTE, 'funds', $objects[0], 'the north fund', self::$oct_06 ) );
+		$one = $this->statements_of( static fn (): array => self::read( 'claims', [ 'key' => self::GAZETTE ] ) );
+		foreach ( \array_slice( $objects, 1 ) as $ord => $object ) {
+			$this->seed( self::claim( 'feed:gazette-award', $ord + 1, self::GAZETTE, 'funds', $object, 'an egret fund', self::$oct_06 ) );
+		}
+		$this->seed( self::claim( 'linear:joint-grant', 0, self::GAZETTE, 'partners_with', self::LEDGER, 'Salem Ledger', self::$oct_01 ) );
+
+		$four = $this->statements_of( static fn (): array => self::read( 'claims', [ 'key' => self::GAZETTE ] ) );
+		$read = self::read( 'claims', [ 'key' => self::GAZETTE ] )['claims'];
+
+		$this->assertSame( $one, $four );
+		$this->assertEqualsCanonicalizing( [ ...$objects, self::LEDGER ], \array_column( $read, 'object' ) );
+		$this->assertNotContains( null, \array_column( $read, 'object_name' ) );
+	}
+
 	public function test_trends_count_kinds_and_topics_per_bucket(): void {
 		$this->seed_world();
 
