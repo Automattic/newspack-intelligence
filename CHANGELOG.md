@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-11-14
+
 ### Changed
 
-- **Builds against newspack-nodes' unreleased `AreaTimeChart`.** The trend chart hands it a `partial` carrying `counts` and a `formatSlot`, which the bundle's inlined copy of the shared chart must read; release newspack-nodes first and move the CI pin to it, or a bundle built against the older chart draws the running week as the single hatched total it drew before and titles every tooltip with a clock time.
+- **Builds against newspack-nodes 2.159.0's `AreaTimeChart`.** The trend chart hands it a `partial` carrying `counts` and a `formatSlot`, which the bundle's inlined copy of the shared chart reads; a bundle built against an older chart would draw the running week as one hatched total and title every tooltip with a clock time.
 - **A profile's Facts show their first `limit` and "Show %d more" for the rest, as Related does.** The block reads the claims at the command's own limit, 50, rather than at its own. Related, Facts and Needs attention share one capped list, and each labels its button by the rows the read holds and does not show yet, "Show %d more", where Related said "Show all %d" of a read the server had cut at 20.
 - **The trend chart draws the bucket still running as a hatched stack, and its tooltip reads it.** This week, today or this month stands after the last complete bucket as a segment per drawn value in its colour under the hatching, stacked or, in lines, each from the axis, following a legend pick, and hovering it lists each value's count. Its total is still every value's, as the pulse line above it counts. It was one hatched bar of that total, shown only while stacked with every value drawn, and the tooltip never read it.
 
