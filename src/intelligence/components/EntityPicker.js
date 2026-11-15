@@ -80,7 +80,8 @@ const JOIN = '\uE000';
  * `useEntityNames()` offers for the text typed, with the refusal of its
  * latest ask beneath it. Every option the read answers is listed. A click,
  * or the arrow keys and Enter, hands the owner the key picked and its name
- * at once; typed text alone picks nothing, and Reset hands on '' and null.
+ * at once; typed text alone picks nothing. Reset, deleting the text typed
+ * over a pick, or Backspace or Delete in an empty box hands on '' and null.
  * Escape in a box whose list is closed goes to `onEscape`. The box shows the
  * name of what it last picked while the owner holds that key, and any other
  * key as itself.
@@ -105,6 +106,10 @@ export default function EntityPicker( {
 	const [ held, setHeld ] = useState( null );
 	const field = useRef( null );
 	const names = useEntityNames( text );
+	const clear = () => {
+		setHeld( null );
+		onChange( '', null );
+	};
 	const options = useMemo( () => {
 		const current = held?.value === value ? held : { value, shown: value };
 		// The held one keeps its name, which the closed box shows.
@@ -136,6 +141,27 @@ export default function EntityPicker( {
 						'false' === input.getAttribute( 'aria-expanded' )
 					) {
 						onEscape?.();
+					}
+					if (
+						( 'Backspace' === event.key ||
+							'Delete' === event.key ) &&
+						! composing &&
+						value &&
+						event.target === input &&
+						'' === input.value
+					) {
+						clear();
+					}
+				} }
+				// Stock clears the box on focus without an input event.
+				onChangeCapture={ ( event ) => {
+					const input = field.current.querySelector( 'input' );
+					if (
+						value &&
+						event.target === input &&
+						'' === input.value
+					) {
+						clear();
 					}
 				} }
 			>

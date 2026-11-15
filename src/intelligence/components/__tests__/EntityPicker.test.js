@@ -428,6 +428,58 @@ describe( 'EntityPicker', () => {
 		expect( onChange ).toHaveBeenCalledWith( '', null );
 	} );
 
+	it( 'hands on an empty key when the text typed over a pick is deleted', () => {
+		const onChange = jest.fn();
+		render(
+			<Owner start="organization:quill-annex" onChange={ onChange } />
+		);
+		type( 'Qu' );
+
+		fireEvent.change( box(), { target: { value: '' } } );
+
+		expect( onChange ).toHaveBeenCalledTimes( 1 );
+		expect( onChange ).toHaveBeenCalledWith( '', null );
+		expect( screen.queryByRole( 'button', { name: 'Reset' } ) ).toBeNull();
+	} );
+
+	it.each( [ 'Backspace', 'Delete' ] )(
+		'hands on an empty key on %s in an empty box holding a pick',
+		( name ) => {
+			const onChange = jest.fn();
+			render(
+				<Owner start="organization:quill-annex" onChange={ onChange } />
+			);
+			act( () => box().focus() );
+
+			key( name );
+
+			expect( onChange ).toHaveBeenCalledTimes( 1 );
+			expect( onChange ).toHaveBeenCalledWith( '', null );
+		}
+	);
+
+	it( 'keeps its pick when focus alone empties the box', () => {
+		const onChange = jest.fn();
+		render(
+			<Owner start="organization:quill-annex" onChange={ onChange } />
+		);
+
+		act( () => box().focus() );
+		key( 'ArrowLeft' );
+
+		expect( onChange ).not.toHaveBeenCalled();
+	} );
+
+	it( 'hands on nothing for Backspace in an empty box holding no pick', () => {
+		const onChange = jest.fn();
+		render( <Owner onChange={ onChange } /> );
+		act( () => box().focus() );
+
+		key( 'Backspace' );
+
+		expect( onChange ).not.toHaveBeenCalled();
+	} );
+
 	it( 'shows a key its owner is handed from elsewhere', () => {
 		const { rerender } = render(
 			<EntityPicker
