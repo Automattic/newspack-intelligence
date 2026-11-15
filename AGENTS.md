@@ -19,13 +19,16 @@ agent asks, and the graph answers.
 - **`/code-review` before every commit** (main Claude only; subagents never commit).
 - Conventional commits; update `CHANGELOG.md` `[Unreleased]` on every behavior change.
 - Never hand-edit version headers — use `./scripts/bump-version.sh`, which also
-  rewrites the substrate pin in `.github/workflows/release.yml` and refuses to
-  bump when that substrate version carries no local tag.
+  rewrites the substrate pin in `.github/workflows/release.yml` to `ref:
+  <commit> # v<version>`, the commit that version's tag names, and refuses to
+  bump when that version carries no local tag, origin does not carry the same
+  tag, or its commit is not on the substrate's `origin/main`.
 - Shared React lives in `newspack-nodes/src/shared` only, consumed via the
   `@newspack-nodes/shared` build alias — never a per-plugin `src/shared/` copy.
 
-**Release the substrate first.** CI builds this bundle against the pinned
-`ref:` in `release.yml`, while a local build resolves the same aliases to the
+**Release the substrate first.** CI builds this bundle against the commit
+the `ref:` in `release.yml` pins, in a job holding a read-only token, and
+publishes it from a separate job that checks out and runs nothing, while a local build resolves the same aliases to the
 working tree. When the two disagree the build still succeeds and ships older
 shared code, so a green Release workflow proves nothing about which substrate
 got bundled. Verify by downloading the published zip and diffing its `build/`
