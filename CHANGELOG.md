@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.46.1] - 2026-11-15
+
 ### Fixed
 
 - **Clearing a client or company box unselects it.** Deleting the text typed over a pick, or pressing Backspace or Delete in the empty box, drops the pick as the Reset button does. Before, the box kept the pick until Reset was clicked. Focusing the box still keeps it.
