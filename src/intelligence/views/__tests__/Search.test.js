@@ -546,17 +546,25 @@ describe( 'Search', () => {
 		expect( screen.queryByText( ITEM.title ) ).toBeNull();
 	} );
 
-	it( 'says nothing matches, and removes every filter and the words', async () => {
+	it( 'says nothing matches, and removes every filter and the words, the entity box emptied', async () => {
 		wire.replies.search = ( args ) =>
 			1 === args.length
 				? PAGE
 				: { items: [], total: 0, sort: 'time', available: true };
 		renderSearch( {
-			start: namedView( { q: 'lighthouse', kind: 'award' } ),
+			start: namedView( {
+				q: 'lighthouse',
+				kind: 'award',
+				entity: 'organization:coastline-weekly',
+			} ),
 		} );
 		expect(
 			await screen.findByText( 'Nothing matches these filters.' )
 		).toBeInTheDocument();
+		const entity = screen.getByRole( 'combobox', {
+			name: 'Client or company',
+		} );
+		expect( entity ).toHaveValue( 'organization:coastline-weekly' );
 
 		fireEvent.click(
 			screen.getByRole( 'button', { name: 'Remove filters' } )
@@ -568,6 +576,7 @@ describe( 'Search', () => {
 		expect(
 			await screen.findByText( '128 items, most important first' )
 		).toBeInTheDocument();
+		expect( entity ).toHaveValue( '' );
 	} );
 
 	it( 'says the graph is unavailable rather than that nothing matched', async () => {

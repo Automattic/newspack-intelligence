@@ -411,6 +411,42 @@ describe( 'TrendChart', () => {
 		expect( formatHeader( dates[ last ] ) ).toBe( 'Week of 2 Nov, so far' );
 	} );
 
+	it( 'slots the eight complete weeks before the running one, an empty week counting 0', () => {
+		setupTooltip.mockClear();
+		chart( {
+			answer: {
+				...ANSWER,
+				rows: [
+					{
+						bucket: '2026-10-26',
+						value: 'complaint',
+						count: 3,
+						items: [],
+					},
+					{
+						bucket: '2026-10-12',
+						value: 'complaint',
+						count: 5,
+						items: [],
+					},
+				],
+			},
+		} );
+		const { dates, formatEntry } = setupTooltip.mock.calls.at( -1 )[ 1 ];
+		expect(
+			dates.map( ( at ) => at.toISOString().slice( 0, 10 ) )
+		).toEqual( [ ...WEEKS.slice( 0, 8 ) ].reverse() );
+		const counted = ( day ) =>
+			formatEntry(
+				dates.findIndex(
+					( at ) => at.toISOString().slice( 0, 10 ) === day
+				)
+			).map( ( { label, value } ) => [ label, value ] );
+		expect( counted( '2026-10-26' ) ).toEqual( [ [ 'Grumble', '3' ] ] );
+		expect( counted( '2026-10-19' ) ).toEqual( [] );
+		expect( counted( '2026-10-12' ) ).toEqual( [ [ 'Grumble', '5' ] ] );
+	} );
+
 	it( 'counts the running week by theme as its series are keyed, its total every theme’s', () => {
 		const themes = [
 			'client offboarding from platform',

@@ -411,6 +411,37 @@ final class AskNodeTest extends TestCase {
 		$this->assertStringContainsString( 'You answer for someone on the organization\'s team.', $this->out->asked()[1][0]['content'] );
 	}
 
+	/**
+	 * Answers whose sentences hold a title or a capital initial ending in a
+	 * period, with the sentences each should keep whole.
+	 *
+	 * @return array<string,array{string,list<array{text:string,cites:list<int>}>}>
+	 */
+	public static function abbreviated_answers(): array {
+		return [
+			'a title and a place'  => [
+				'Dr. Smith announced the launch [1]. The St. Louis American won [2].',
+				[ [ 'text' => 'Dr. Smith announced the launch.', 'cites' => [ 1 ] ], [ 'text' => 'The St. Louis American won.', 'cites' => [ 2 ] ] ],
+			],
+			'a capital initial'    => [
+				'J. Doe joined the board of Ledger Inc. in March [1]. Mrs. Ortiz retired [2].',
+				[ [ 'text' => 'J. Doe joined the board of Ledger Inc. in March.', 'cites' => [ 1 ] ], [ 'text' => 'Mrs. Ortiz retired.', 'cites' => [ 2 ] ] ],
+			],
+		];
+	}
+
+	/**
+	 * A period after a common title or a capital initial ends no sentence,
+	 * so a cited sentence holding one is kept whole and nothing is dropped.
+	 *
+	 * @param string                                          $raw  The answer.
+	 * @param list<array{text:string,cites:list<int>}> $kept The sentences kept.
+	 */
+	#[DataProvider( 'abbreviated_answers' )]
+	public function test_an_abbreviation_does_not_end_a_sentence( string $raw, array $kept ): void {
+		$this->assertSame( [ 'sentences' => $kept, 'dropped' => 0 ], Ask_Prompts::parse_answer( $raw, 2 ) );
+	}
+
 	/** An answer keeps its first MAX_SENTENCES cited sentences and counts the rest dropped. */
 	public function test_an_answer_keeps_at_most_its_sentence_cap(): void {
 		$this->out->outcomes[ Ask_Prompts::PLAN ]   = [ 'content' => self::PLAN ];

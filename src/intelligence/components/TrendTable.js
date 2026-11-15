@@ -335,7 +335,9 @@ const slotWords = ( span, running ) => ( at ) => {
 
 /**
  * A trends answer as the series the shared time chart draws: the
- * CHART_BUCKETS newest complete buckets, oldest first, each a UTC day, and
+ * CHART_BUCKETS complete buckets before the running one, oldest first, each
+ * a UTC day, counted back one bucket start at a time as the server's
+ * `bucket_starts()` counts them, so an empty bucket keeps its slot; and
  * the CHART_VALUES values counting the most over them, the largest first,
  * then by value, each a count per bucket, 0 where a bucket counts none; and
  * the bucket still running apart, never a point on the line, its total
@@ -347,10 +349,12 @@ const slotWords = ( span, running ) => ( at ) => {
  */
 function trendSeries( { rows, by, bucket: span }, now ) {
 	const running = runningBucket( span, now );
-	const buckets = [ ...new Set( rows.map( ( row ) => row.bucket ) ) ]
-		.filter( ( bucket ) => bucket !== running )
-		.slice( 0, CHART_BUCKETS )
-		.reverse();
+	const buckets = [ running ];
+	while ( buckets.length <= CHART_BUCKETS ) {
+		const start = Date.parse( `${ buckets[ 0 ] }T00:00:00Z` ) / 1000;
+		buckets.unshift( runningBucket( span, start - 1 ) );
+	}
+	buckets.pop();
 	const counts = new Map();
 	/** @type {Object<string, number>} */
 	const soFar = {};

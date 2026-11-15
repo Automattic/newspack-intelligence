@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Clearing a client or company box unselects it.** Deleting the text typed over a pick, or pressing Backspace or Delete in the empty box, drops the pick as the Reset button does. Before, the box kept the pick until Reset was clicked. Focusing the box still keeps it.
+- **An answer keeps a cited sentence holding a title or an initial whole.** A period after a lone capital initial or a common title (`Mr.`, `Mrs.`, `Ms.`, `Dr.`, `St.`, `Jr.`, `Sr.`, `Inc.`, `Co.`, `Ltd.`, `vs.`) ends no sentence, so "Dr. Smith announced the launch [1]." is kept as one sentence. It split at "Dr.", dropped "Dr." as a sentence citing nothing, and counted it in the answer's `dropped`.
+- **The trend chart draws the eight complete buckets before the running one, a bucket that counted nothing at 0.** It took its slots from the buckets the rows named, and `trends` sends no row for an empty bucket, so the line joined across an empty week and eight slots could reach back past the eight weeks its "Last 8 weeks" heading names.
 
 ## [0.46.0] - 2026-11-14
 

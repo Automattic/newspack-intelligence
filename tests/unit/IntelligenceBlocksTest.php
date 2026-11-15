@@ -531,6 +531,32 @@ final class IntelligenceBlocksTest extends TestCase {
 		];
 	}
 
+	/**
+	 * Each layout the item list draws validates on a team view, and the list
+	 * keeps the one it was given.
+	 *
+	 * @param string $layout The layout.
+	 */
+	#[DataProvider( 'item_list_layouts' )]
+	public function test_each_item_list_layout_validates( string $layout ): void {
+		$tree = Composition::validate( 'newspack-intelligence/lens', "<!-- wp:newspack-intelligence/item-list {\"layout\":\"{$layout}\"} /-->" );
+
+		$this->assertSame( $layout, $tree[0]['attributes']['layout'] );
+	}
+
+	/**
+	 * The item list's layouts: its list, its activity feed and its table.
+	 *
+	 * @return array<string,array{0:string}>
+	 */
+	public static function item_list_layouts(): array {
+		return [
+			'the list'     => [ 'list' ],
+			'the activity' => [ 'activity' ],
+			'the table'    => [ 'table' ],
+		];
+	}
+
 	/** Every page may place the Folders board, opening on the items not yet used in every folder. */
 	public function test_the_folder_board_is_declared_on_every_page(): void {
 		foreach ( \array_keys( Intelligence_Blocks::CONTEXTS ) as $context ) {

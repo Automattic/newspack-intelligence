@@ -63,6 +63,15 @@ final class Ask_Prompts {
 	private const CITATION = '/\[\s*(\d+(?:\s*,\s*\d+)*)\s*\]/u';
 
 	/**
+	 * Where an answer's line breaks into sentences: after a `.`, `!` or `?`
+	 * not followed by citations, unless the period ends a lone capital
+	 * initial or a common title, and after citations a capital or a digit
+	 * follows. Each title is its own lookbehind branch, so every branch is
+	 * of fixed length.
+	 */
+	private const SENTENCE_BREAK = '/(?<=[.!?])(?<!(?<![\p{L}\p{N}])\p{Lu}\.)(?<!\bMr\.|\bMrs\.|\bMs\.|\bDr\.|\bSt\.|\bJr\.|\bSr\.|\bInc\.|\bCo\.|\bLtd\.|\bvs\.)\s+(?!\[)|(?<=\])\s+(?=[\p{Lu}\p{N}])/u';
+
+	/**
 	 * The plan's messages: the question, and the lenses a search may read
 	 * through, each fenced as untrusted data, today's UTC day framing `days`,
 	 * and the kinds defined naming the operator.
@@ -232,8 +241,9 @@ final class Ask_Prompts {
 	 * read out of its text into `cites`, each once, in the order written,
 	 * the first MAX_SENTENCES of them; every other is counted dropped.
 	 * A sentence is split at a line break, at the end of one that is not
-	 * followed by its citations, and after citations that a capital or a
-	 * digit follows; a list marker leading a line is dropped.
+	 * followed by its citations, but never after a lone capital initial or
+	 * a common title such as `Dr.`, and after citations that a capital or
+	 * a digit follows; a list marker leading a line is dropped.
 	 *
 	 * @param string $raw   The answer call's reply.
 	 * @param int    $given How many items it was given.
@@ -244,7 +254,7 @@ final class Ask_Prompts {
 		$dropped   = 0;
 		foreach ( \preg_split( '/\R+/u', \trim( $raw ) ) ?: [] as $line ) {
 			$line = (string) \preg_replace( '/^\s*(?:[-*•]|\d+[.)])\s+/u', '', $line );
-			foreach ( \preg_split( '/(?<=[.!?])\s+(?!\[)|(?<=\])\s+(?=[\p{Lu}\p{N}])/u', $line ) ?: [] as $piece ) {
+			foreach ( \preg_split( self::SENTENCE_BREAK, $line ) ?: [] as $piece ) {
 				$piece = \trim( $piece );
 				if ( '' === $piece ) {
 					continue;
