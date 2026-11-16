@@ -127,6 +127,16 @@ const highlighted = ( name ) =>
 		screen.getByRole( 'option', { name } ).id
 	);
 
+/**
+ * Wait until the Quill list has opened and the stock control has highlighted
+ * its first option, which it does in an effect a render after the options
+ * show; a key pressed before then starts without a highlight.
+ */
+const quillOpened = async () => {
+	await screen.findByRole( 'option', { name: 'Quill Review' } );
+	await waitFor( () => highlighted( 'Quill Press' ) );
+};
+
 describe( 'EntityPicker', () => {
 	it( 'stands beside another picker on one page, each reading its own names', async () => {
 		render(
@@ -189,7 +199,7 @@ describe( 'EntityPicker', () => {
 		const onChange = jest.fn();
 		render( <Owner onChange={ onChange } /> );
 		type( 'Quill' );
-		await screen.findByRole( 'option', { name: 'Quill Review' } );
+		await quillOpened();
 
 		key( 'ArrowDown' );
 		highlighted( 'Quill Review' );
@@ -208,9 +218,8 @@ describe( 'EntityPicker', () => {
 		const onChange = jest.fn();
 		render( <Owner onChange={ onChange } /> );
 		type( 'Quill' );
-		await screen.findByRole( 'option', { name: 'Quill Review' } );
+		await quillOpened();
 
-		highlighted( 'Quill Press' );
 		key( 'Enter' );
 
 		expect( onChange ).toHaveBeenCalledWith(
@@ -222,7 +231,7 @@ describe( 'EntityPicker', () => {
 	it( 'keeps the highlight where the arrow keys left it across a render', async () => {
 		render( <Owner onChange={ jest.fn() } /> );
 		type( 'Quill' );
-		await screen.findByRole( 'option', { name: 'Quill Review' } );
+		await quillOpened();
 		key( 'ArrowDown' );
 
 		fireEvent.click(
