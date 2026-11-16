@@ -1491,13 +1491,11 @@ export default function Review( { canTune, onOpenEntity } ) {
 												refusalOf,
 											} }
 											actions={ shown.actions }
-											selection={ checked }
-											onChangeSelection={ setChecked }
-											selectLabel={
-												0 < shown.actions.length
-													? shown.selectLabel
-													: undefined
-											}
+											{ ...( 0 < shown.actions.length && {
+												selection: checked,
+												onChangeSelection: setChecked,
+												selectLabel: shown.selectLabel,
+											} ) }
 										/>
 									</ReviewList>
 								) }

@@ -523,6 +523,36 @@ describe( 'Review — rows', () => {
 			} )
 		).toEqual( [] );
 	} );
+
+	describe( 'a queue offering no actions', () => {
+		beforeAll( () => {
+			// jsdom has no scrollIntoView, which DataViews calls on a picked row.
+			window.HTMLElement.prototype.scrollIntoView = () => {};
+		} );
+		afterAll( () => {
+			delete window.HTMLElement.prototype.scrollIntoView;
+		} );
+
+		it( 'selects no row of a queue offering no actions when a row is clicked', async () => {
+			renderReview();
+			for ( const [ name, shown ] of [
+				[ 'Suggested matches', 'Acme Quillsheet' ],
+				[ 'Similar themes', 'kiosk offboarding' ],
+			] ) {
+				const panel = queue( name );
+				await within( panel ).findAllByText( shown );
+				const rows = panel.querySelectorAll(
+					'.dataviews-view-list__item'
+				);
+				expect( rows.length ).toBeGreaterThan( 0 );
+				fireEvent.click( rows[ rows.length - 1 ] );
+				expect( panel.querySelector( '.is-selected' ) ).toBeNull();
+				expect(
+					panel.querySelector( '[aria-pressed="true"]' )
+				).toBeNull();
+			}
+		} );
+	} );
 } );
 
 describe( 'Review — evidence', () => {

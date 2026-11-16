@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An item list's rows no longer light up.** A click, Enter or Space on a row selects nothing, and a hovered or focused row takes no wash; a row focused from the keyboard wears one ring in the skin's ink, and arrow keys still move between rows. A Review queue offering no actions, Similar themes, and Suggested matches or names for a reader without tune, no longer selects and washes the row a click lands on: it passes the selection only when it offers actions. This rides the substrate's `DataViewsList` change.
+- The Review fix needs the newspack-nodes release that carries the `DataViewsList` change, so intelligence's next bump moves its substrate pin to it.
+
 ### Changed
 
 - The release workflow builds with read-only permissions and publishes from a separate job; the newspack-nodes checkout is pinned by commit.
