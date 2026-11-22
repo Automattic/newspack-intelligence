@@ -28,7 +28,7 @@ import { useReturnFocus } from '../hooks/useReturnFocus';
 import { AnswerBody, CanManage } from '../components/Answer';
 import Unread from '@newspack-nodes/shared/components/Unread';
 import EntityPicker from '../components/EntityPicker';
-import PickerEscape from '../components/PickerEscape';
+import PickerEscape from '@newspack-nodes/shared/components/PickerEscape';
 import ItemList from '../components/ItemList';
 import ItemRow from '../components/ItemRow';
 import ListKeys, { LEAVES } from '../components/ListKeys';

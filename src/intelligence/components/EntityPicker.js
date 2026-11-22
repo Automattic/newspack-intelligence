@@ -10,7 +10,9 @@ import { __ } from '@wordpress/i18n';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
 import Unread from '@newspack-nodes/shared/components/Unread';
 import { CanManage } from './Answer';
-import PickerEscape, { composing } from './PickerEscape';
+import PickerEscape, {
+	composing,
+} from '@newspack-nodes/shared/components/PickerEscape';
 
 /** The fewest letters, marks or digits a prefix `names` is asked about holds. */
 export const MIN_PREFIX = 2;

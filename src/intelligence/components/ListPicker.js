@@ -1,6 +1,6 @@
 import { FormTokenField } from '@wordpress/components';
 import { listOf } from './lensDraft';
-import PickerEscape from './PickerEscape';
+import PickerEscape from '@newspack-nodes/shared/components/PickerEscape';
 import { words } from './words';
 
 /**
