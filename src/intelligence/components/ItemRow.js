@@ -798,7 +798,6 @@ function AboutDialog( { item, onLinked, onClose } ) {
 		<Modal onClose={ onClose } onSubmit={ send } handleRef={ handle }>
 			<ModalHeader
 				title={ __( 'Is this about…', 'newspack-intelligence' ) }
-				onClose={ onClose }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
 				compact
 			/>

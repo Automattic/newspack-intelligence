@@ -75,7 +75,6 @@ function MarkDialog( { mark, onMark, onClose } ) {
 		>
 			<ModalHeader
 				title={ __( 'Mark as used', 'newspack-intelligence' ) }
-				onClose={ onClose }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
 				compact
 			/>

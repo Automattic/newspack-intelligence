@@ -803,7 +803,6 @@ function WatchForm( { draft, onDraft, refusal, onSave, onCancel, handleRef } ) {
 		<Modal onClose={ onCancel } handleRef={ handleRef }>
 			<ModalHeader
 				title={ title }
-				onClose={ onCancel }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
 			/>
 			<form
@@ -949,7 +948,6 @@ function StopDialog( { name, onStop, onClose } ) {
 					__( 'Stop watching %s?', 'newspack-intelligence' ),
 					name
 				) }
-				onClose={ onClose }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
 				compact
 			/>

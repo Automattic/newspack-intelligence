@@ -152,7 +152,6 @@ function LensForm( {
 						  )
 						: __( 'New team view', 'newspack-intelligence' )
 				}
-				onClose={ onCancel }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
 			/>
 			<Refusal error={ refusal } />

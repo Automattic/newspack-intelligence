@@ -41,11 +41,7 @@ export default function Sheet( {
 			}` }
 			backdropClassName="newspack-intelligence__sheet-backdrop"
 		>
-			<ModalHeader
-				title={ title }
-				onClose={ onClose }
-				closeLabel={ closeLabel }
-			/>
+			<ModalHeader title={ title } closeLabel={ closeLabel } />
 			<SheetBody>{ children }</SheetBody>
 		</Modal>
 	);

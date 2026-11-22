@@ -81,7 +81,6 @@ export default function EndClientDialog( {
 					__( 'End %s as a client?', 'newspack-intelligence' ),
 					name
 				) }
-				onClose={ onClose }
 				closeRef={ closeRef }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
 				compact

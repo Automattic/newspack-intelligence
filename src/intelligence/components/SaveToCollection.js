@@ -147,7 +147,6 @@ export default function SaveToCollection( { item, onClose } ) {
 		>
 			<ModalHeader
 				title={ __( 'Save to folder', 'newspack-intelligence' ) }
-				onClose={ onClose }
 				closeRef={ closeRef }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
 				compact

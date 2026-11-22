@@ -234,7 +234,6 @@ function NewFolder( { refusal, onCreate, onClose, handleRef } ) {
 		>
 			<ModalHeader
 				title={ __( 'New folder', 'newspack-intelligence' ) }
-				onClose={ onClose }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
 			/>
 			<Refusal error={ refusal } />

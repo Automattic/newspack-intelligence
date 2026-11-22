@@ -713,7 +713,6 @@ function MergeDialog( {
 					__( 'Merge %s into…', 'newspack-intelligence' ),
 					name
 				) }
-				onClose={ onClose }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
 				compact
 			/>
