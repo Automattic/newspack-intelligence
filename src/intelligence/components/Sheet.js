@@ -1,6 +1,4 @@
-import { useEffect, useRef } from '@wordpress/element';
 import Modal, { ModalHeader } from '@newspack-nodes/shared/components/Modal';
-import { TABBABLE } from '@newspack-nodes/shared/hooks/useFocusTrap';
 import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
 
 /**
@@ -32,36 +30,16 @@ export default function Sheet( {
 		<Modal
 			onClose={ onClose }
 			handleRef={ handleRef }
+			initialFocus="field"
 			className={ `newspack-intelligence__sheet ${
 				narrow ? 'is-bottom' : 'is-side'
 			}` }
 			backdropClassName="newspack-intelligence__sheet-backdrop"
 		>
 			<ModalHeader title={ title } closeLabel={ closeLabel } />
-			<SheetBody>{ children }</SheetBody>
+			<div className="newspack-intelligence__sheet-body">
+				{ children }
+			</div>
 		</Modal>
-	);
-}
-
-/**
- * A sheet's body, focusing its first field Tab can reach as it opens. Without
- * one, the shell focuses the title it names the sheet by.
- *
- * @param {Object}                    props
- * @param {import('react').ReactNode} props.children What it holds.
- * @return {import('react').ReactElement} The body.
- */
-function SheetBody( { children } ) {
-	const body = useRef( null );
-	useEffect( () => {
-		const field = /** @type {HTMLElement[]} */ (
-			Array.from( body.current.querySelectorAll( TABBABLE ) )
-		).find( ( el ) => el.matches( 'input, select, textarea' ) );
-		field?.focus();
-	}, [] );
-	return (
-		<div ref={ body } className="newspack-intelligence__sheet-body">
-			{ children }
-		</div>
 	);
 }

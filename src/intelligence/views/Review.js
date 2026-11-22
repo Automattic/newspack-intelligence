@@ -701,12 +701,10 @@ function MergeDialog( {
 } ) {
 	const close = () => handleRef.current.close();
 	const [ into, setInto ] = useState( { key: '', name: null } );
-	const field = useRef( null );
-	useEffect( () => field.current?.querySelector( 'input' )?.focus(), [] );
 	const ready = Boolean( into.name ) && ! pending;
 
 	return (
-		<Modal onClose={ onClose } handleRef={ handleRef }>
+		<Modal onClose={ onClose } handleRef={ handleRef } initialFocus="field">
 			<ModalHeader
 				title={ sprintf(
 					/* translators: %s: the entity's name. */
@@ -716,17 +714,13 @@ function MergeDialog( {
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
 				compact
 			/>
-			<div ref={ field }>
-				<EntityPicker
-					label={ __( 'Merge into', 'newspack-intelligence' ) }
-					value={ into.key }
-					exclude={ from }
-					onChange={ ( key, picked ) =>
-						setInto( { key, name: picked } )
-					}
-					onEscape={ close }
-				/>
-			</div>
+			<EntityPicker
+				label={ __( 'Merge into', 'newspack-intelligence' ) }
+				value={ into.key }
+				exclude={ from }
+				onChange={ ( key, picked ) => setInto( { key, name: picked } ) }
+				onEscape={ close }
+			/>
 			<p>
 				{ __(
 					'Its names and items move to the record you pick. This cannot be undone.',

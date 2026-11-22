@@ -218,14 +218,13 @@ function reflected( write, listed ) {
  */
 function NewFolder( { refusal, onCreate, onClose, handleRef } ) {
 	const [ name, setName ] = useState( '' );
-	const nameField = useRef( null );
-	useEffect( () => nameField.current.focus(), [] );
 	const blank = '' === name.trim();
 	return (
 		<Modal
 			className="newspack-intelligence__edit"
 			onClose={ onClose }
 			handleRef={ handleRef }
+			initialFocus="field"
 			onSubmit={ () => {
 				if ( ! blank ) {
 					onCreate( name.trim() );
@@ -238,7 +237,6 @@ function NewFolder( { refusal, onCreate, onClose, handleRef } ) {
 			/>
 			<Refusal error={ refusal } />
 			<TextControl
-				ref={ nameField }
 				__next40pxDefaultSize
 				__nextHasNoMarginBottom
 				label={ __( 'Folder name', 'newspack-intelligence' ) }

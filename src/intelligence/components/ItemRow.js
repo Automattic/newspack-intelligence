@@ -772,12 +772,10 @@ function MoreActions( {
 function AboutDialog( { item, onLinked, onClose } ) {
 	const [ picked, setPicked ] = useState( { key: '', name: null } );
 	const [ role, setRole ] = useState( 'subject' );
-	const field = useRef( null );
 	const handle = useRef( null );
 	const close = () => handle.current.close();
 	// The name of the entity sent, which a later pick does not rename.
 	const sentName = useRef( null );
-	useEffect( () => field.current?.querySelector( 'input' )?.focus(), [] );
 	const { key, name } = picked;
 	const link = useIntelWrite( 'add_link', {
 		scope: `add-link:${ useId().replace( /[^a-z0-9]/gi, '' ) }`,
@@ -795,22 +793,25 @@ function AboutDialog( { item, onLinked, onClose } ) {
 		}
 	};
 	return (
-		<Modal onClose={ onClose } onSubmit={ send } handleRef={ handle }>
+		<Modal
+			onClose={ onClose }
+			onSubmit={ send }
+			handleRef={ handle }
+			initialFocus="field"
+		>
 			<ModalHeader
 				title={ __( 'Is this about…', 'newspack-intelligence' ) }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
 				compact
 			/>
-			<div ref={ field }>
-				<EntityPicker
-					label={ __( 'Client or company', 'newspack-intelligence' ) }
-					value={ key }
-					onChange={ ( next, named ) =>
-						setPicked( { key: next, name: named } )
-					}
-					onEscape={ close }
-				/>
-			</div>
+			<EntityPicker
+				label={ __( 'Client or company', 'newspack-intelligence' ) }
+				value={ key }
+				onChange={ ( next, named ) =>
+					setPicked( { key: next, name: named } )
+				}
+				onEscape={ close }
+			/>
 			<RadioControl
 				label={ __( 'Named as', 'newspack-intelligence' ) }
 				selected={ role }

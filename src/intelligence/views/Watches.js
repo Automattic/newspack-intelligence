@@ -786,8 +786,6 @@ function MatchRow( { item, onSeen, onOpenEntity, onSave, canTune } ) {
  */
 function WatchForm( { draft, onDraft, refusal, onSave, onCancel, handleRef } ) {
 	const close = () => handleRef.current.close();
-	const nameField = useRef( null );
-	useEffect( () => nameField.current.focus(), [] );
 	const kinds = kindWords();
 	const deliveries = deliveryWords();
 	const set = ( name ) => ( value ) =>
@@ -800,7 +798,11 @@ function WatchForm( { draft, onDraft, refusal, onSave, onCancel, handleRef } ) {
 		  )
 		: __( 'New watch', 'newspack-intelligence' );
 	return (
-		<Modal onClose={ onCancel } handleRef={ handleRef }>
+		<Modal
+			onClose={ onCancel }
+			handleRef={ handleRef }
+			initialFocus="field"
+		>
 			<ModalHeader
 				title={ title }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
@@ -810,7 +812,6 @@ function WatchForm( { draft, onDraft, refusal, onSave, onCancel, handleRef } ) {
 				{ ...submitProps( onSave ) }
 			>
 				<TextControl
-					ref={ nameField }
 					__next40pxDefaultSize
 					__nextHasNoMarginBottom
 					label={ __( 'Name', 'newspack-intelligence' ) }

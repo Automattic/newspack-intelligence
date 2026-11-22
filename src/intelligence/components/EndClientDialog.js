@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from '@wordpress/element';
+import { useId, useRef } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import Modal, { ModalHeader } from '@newspack-nodes/shared/components/Modal';
 import { primaryButtonClass } from '@newspack-nodes/shared/utils/buttonClass';
@@ -72,9 +72,12 @@ export default function EndClientDialog( {
 	const closeRef = useRef( null );
 	const handle = useRef( null );
 	const evidenceId = useId();
-	useEffect( () => closeRef.current?.focus(), [] );
 	return (
-		<Modal onClose={ onClose } handleRef={ handle }>
+		<Modal
+			onClose={ onClose }
+			handleRef={ handle }
+			initialFocus={ closeRef }
+		>
 			<ModalHeader
 				title={ sprintf(
 					/* translators: %s: the client's name. */
