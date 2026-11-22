@@ -18,6 +18,11 @@ import {
 import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
+import {
+	answerConfirm,
+	throughExit,
+} from '@newspack-nodes/shared/test-utils/answerConfirm';
+import { MODAL_EXIT_MS } from '@newspack-nodes/shared/hooks/useModalExit';
 import { intelWire } from '../../__tests__/intelWire';
 import { ITEM, pageData, VOCABULARY } from './fixtures';
 import { UNDO_MS } from '../../hooks/useDeferredWrite';
@@ -480,7 +485,7 @@ describe( 'Entity — churn', () => {
 		return dialog();
 	};
 	const endFromDialog = async () =>
-		fireEvent.click(
+		answerConfirm(
 			within( await openDialog() ).getByRole( 'button', {
 				name: 'End client',
 			} )
@@ -631,6 +636,7 @@ describe( 'Entity — churn', () => {
 					name: 'Not about this client',
 				} )
 			);
+			await elapse( MODAL_EXIT_MS );
 			expect( endDialog() ).toBeNull();
 			expect(
 				snackbar().querySelector( '.components-snackbar__content' )
@@ -654,6 +660,7 @@ describe( 'Entity — churn', () => {
 					name: 'Not about this client',
 				} )
 			);
+			await elapse( MODAL_EXIT_MS );
 			fireEvent.click( screen.getByRole( 'button', { name: 'Undo' } ) );
 			await elapse( UNDO_MS );
 			expect( wire.sent( 'reject_link' ) ).toEqual( [] );
@@ -825,7 +832,7 @@ describe( 'Entity — curation', () => {
 			) & window.Node.DOCUMENT_POSITION_FOLLOWING
 		).toBeTruthy();
 
-		fireEvent.keyDown( document, { key: 'Escape' } );
+		throughExit( () => fireEvent.keyDown( document, { key: 'Escape' } ) );
 		expect( edit ).toHaveFocus();
 	} );
 

@@ -19,6 +19,11 @@ import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { useState } from '@wordpress/element';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
+import { expectExitThenGone } from '@newspack-nodes/shared/test-utils/expectExitThenGone';
+import {
+	fakeExitClock,
+	throughExit,
+} from '@newspack-nodes/shared/test-utils/answerConfirm';
 import { intelWire } from '../../__tests__/intelWire';
 import { COMPOSITIONS, GROUPS, LENSES, pageData, VOCABULARY } from './fixtures';
 import Lens, { CLOSED_LENS } from '../Lens';
@@ -86,6 +91,8 @@ function Harness( over ) {
 		<Lens { ...props } opened={ opened } onOpen={ setOpened } { ...over } />
 	);
 }
+
+afterEach( () => jest.useRealTimers() );
 
 beforeEach( () => {
 	Core.reset();
@@ -356,6 +363,11 @@ describe( 'Lens', () => {
 		);
 		await waitFor( () =>
 			expect(
+				dialog.closest( '.newspack-nodes-modal__backdrop' )
+			).toHaveClass( 'is-closing' )
+		);
+		await waitFor( () =>
+			expect(
 				screen.queryByRole( 'dialog', { name: 'New team view' } )
 			).toBeNull()
 		);
@@ -539,8 +551,10 @@ describe( 'Lens', () => {
 			within( dialog ).getByRole( 'button', { name: 'Save view' } )
 		);
 		await screen.findByText( 'kind must be one of: award, launch' );
-		fireEvent.click(
-			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		throughExit( () =>
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+			)
 		);
 		fireEvent.click( screen.getByRole( 'button', { name: 'New view' } ) );
 		dialog = screen.getByRole( 'dialog', { name: 'New team view' } );
@@ -549,19 +563,95 @@ describe( 'Lens', () => {
 		).toBeNull();
 	} );
 
+	it( 'keeps a new dialog open when a save cancelled before it lands', async () => {
+		props.canTune = true;
+		let land;
+		wire.replies.save_lens = () =>
+			new Promise( ( resolve ) => {
+				land = resolve;
+			} );
+		renderOnPage( <Harness /> );
+		fireEvent.click(
+			await screen.findByRole( 'button', { name: 'New view' } )
+		);
+		let dialog = screen.getByRole( 'dialog', { name: 'New team view' } );
+		fireEvent.change( within( dialog ).getByLabelText( 'Name' ), {
+			target: { value: 'Desk Watch' },
+		} );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Save view' } )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'save_lens' ) ).toHaveLength( 1 )
+		);
+		throughExit( () =>
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+			)
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'New view' } ) );
+		dialog = screen.getByRole( 'dialog', { name: 'New team view' } );
+		fireEvent.change( within( dialog ).getByLabelText( 'Name' ), {
+			target: { value: 'Tide Watch' },
+		} );
+
+		await act( async () => land( { ok: true, event_id: 'ev-late' } ) );
+		await act( () => new Promise( ( done ) => setTimeout( done, 300 ) ) );
+
+		expect( screen.getByRole( 'dialog', { name: 'New team view' } ) ).toBe(
+			dialog
+		);
+		expect( within( dialog ).getByLabelText( 'Name' ) ).toHaveValue(
+			'Tide Watch'
+		);
+	} );
+
 	it( 'cancels the dialog without sending', async () => {
 		props.canTune = true;
 		renderOnPage( <Harness /> );
 		fireEvent.click(
 			await screen.findByRole( 'button', { name: 'New view' } )
 		);
+		fakeExitClock();
 		fireEvent.click( screen.getByRole( 'button', { name: 'Cancel' } ) );
-		expect(
-			screen.queryByRole( 'dialog', { name: 'New team view' } )
-		).toBeNull();
+		expectExitThenGone();
+		jest.useRealTimers();
 		expect( wire.sent( 'save_lens' ) ).toEqual( [] );
 		await screen.findByText( 'No unusual change last week.' );
 	} );
+
+	it.each( [ 'Kinds of news', 'About', 'Sources' ] )(
+		'closes the dialog on Escape pressed in %s once its list is closed',
+		async ( label ) => {
+			props.canTune = true;
+			renderOnPage( <Harness /> );
+			fireEvent.click(
+				await screen.findByRole( 'button', { name: 'New view' } )
+			);
+			const dialog = screen.getByRole( 'dialog', {
+				name: 'New team view',
+			} );
+			const field = within( dialog ).getByRole( 'combobox', {
+				name: label,
+			} );
+			act( () => field.focus() );
+			expect( field ).toHaveAttribute( 'aria-expanded', 'true' );
+
+			fakeExitClock();
+			fireEvent.keyDown( field, { key: 'Escape', code: 'Escape' } );
+			expect( field ).toHaveAttribute( 'aria-expanded', 'false' );
+			expect(
+				dialog.closest( '.newspack-nodes-modal__backdrop' )
+			).not.toHaveClass( 'is-closing' );
+
+			fireEvent.keyDown( field, { key: 'Escape', code: 'Escape' } );
+
+			expectExitThenGone();
+			jest.useRealTimers();
+			expect( wire.sent( 'save_lens' ) ).toEqual( [] );
+			await screen.findByText( 'No unusual change last week.' );
+		}
+	);
 
 	it( 'asks before removing the view open, then removes it', async () => {
 		props.canTune = true;
@@ -575,9 +665,15 @@ describe( 'Lens', () => {
 			name: 'Remove the Support desk view? Watches that follow it will stop.',
 		} );
 		expect( wire.sent( 'remove_lens' ) ).toEqual( [] );
+		fakeExitClock();
 		fireEvent.click(
 			within( dialog ).getByRole( 'button', { name: 'Remove view' } )
 		);
+		expect(
+			screen.getByRole( 'button', { name: /^Support desk/ } )
+		).toBeInTheDocument();
+		expectExitThenGone();
+		jest.useRealTimers();
 		await waitFor( () =>
 			expect( wire.sent( 'remove_lens' ) ).toEqual( [
 				[ '--key=support-desk' ],

@@ -9,6 +9,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { useState } from '@wordpress/element';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
+import { throughExit } from '@newspack-nodes/shared/test-utils/answerConfirm';
 import Sheet from '../Sheet';
 
 let viewport;
@@ -96,13 +97,15 @@ describe( 'Sheet', () => {
 
 		opener.focus();
 		fireEvent.click( opener );
-		fireEvent.keyDown( document, { key: 'Escape' } );
+		throughExit( () => fireEvent.keyDown( document, { key: 'Escape' } ) );
 
 		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 		expect( opener ).toHaveFocus();
 
 		fireEvent.click( opener );
-		fireEvent.click( screen.getByRole( 'button', { name: 'Shut' } ) );
+		throughExit( () =>
+			fireEvent.click( screen.getByRole( 'button', { name: 'Shut' } ) )
+		);
 
 		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 		expect( opener ).toHaveFocus();

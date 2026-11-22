@@ -10,6 +10,7 @@ import { __ } from '@wordpress/i18n';
 import { commandArgs, useIntelRead } from '../hooks/useIntelCommand';
 import Unread from '@newspack-nodes/shared/components/Unread';
 import { CanManage } from './Answer';
+import PickerEscape, { composing } from './PickerEscape';
 
 /** The fewest letters, marks or digits a prefix `names` is asked about holds. */
 export const MIN_PREFIX = 2;
@@ -132,20 +133,11 @@ export default function EntityPicker( {
 			<div
 				ref={ field }
 				onKeyDownCapture={ ( event ) => {
-					const composing =
-						event.nativeEvent.isComposing || 229 === event.keyCode;
 					const input = field.current.querySelector( 'input' );
-					if (
-						'Escape' === event.key &&
-						! composing &&
-						'false' === input.getAttribute( 'aria-expanded' )
-					) {
-						onEscape?.();
-					}
 					if (
 						( 'Backspace' === event.key ||
 							'Delete' === event.key ) &&
-						! composing &&
+						! composing( event ) &&
 						value &&
 						event.target === input &&
 						'' === input.value
@@ -165,31 +157,33 @@ export default function EntityPicker( {
 					}
 				} }
 			>
-				<ComboboxControl
-					__next40pxDefaultSize
-					__nextHasNoMarginBottom
-					label={ label }
-					value={ value || null }
-					options={ options }
-					onFilterValueChange={ setText }
-					__experimentalRenderItem={ ( { item } ) => item.shown }
-					onChange={ ( key ) => {
-						const option = options.find(
-							( one ) => key === one.value
-						);
-						setText( '' );
-						// Stock Enter re-picks a dropped highlight.
-						if ( key && ! option ) {
-							return;
-						}
-						setHeld( option ?? null );
-						onChange( key ?? '', option?.name ?? null );
-					} }
-					placeholder={ __(
-						'Start typing a client or company name',
-						'newspack-intelligence'
-					) }
-				/>
+				<PickerEscape onEscape={ onEscape }>
+					<ComboboxControl
+						__next40pxDefaultSize
+						__nextHasNoMarginBottom
+						label={ label }
+						value={ value || null }
+						options={ options }
+						onFilterValueChange={ setText }
+						__experimentalRenderItem={ ( { item } ) => item.shown }
+						onChange={ ( key ) => {
+							const option = options.find(
+								( one ) => key === one.value
+							);
+							setText( '' );
+							// Stock Enter re-picks a dropped highlight.
+							if ( key && ! option ) {
+								return;
+							}
+							setHeld( option ?? null );
+							onChange( key ?? '', option?.name ?? null );
+						} }
+						placeholder={ __(
+							'Start typing a client or company name',
+							'newspack-intelligence'
+						) }
+					/>
+				</PickerEscape>
 			</div>
 			<Unread
 				operator={ operator }

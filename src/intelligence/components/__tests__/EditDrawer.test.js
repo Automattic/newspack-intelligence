@@ -9,6 +9,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
+import { throughExit } from '@newspack-nodes/shared/test-utils/answerConfirm';
 import { pageData, VOCABULARY } from '../../views/__tests__/fixtures';
 import EditDrawer from '../EditDrawer';
 
@@ -102,7 +103,7 @@ describe( 'EditDrawer', () => {
 		renderDrawer();
 		open();
 
-		fireEvent.keyDown( document, { key: 'Escape' } );
+		throughExit( () => fireEvent.keyDown( document, { key: 'Escape' } ) );
 
 		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 		const edit = screen.getByRole( 'button', { name: 'Edit' } );

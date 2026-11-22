@@ -5,7 +5,8 @@
  * It writes nothing itself; its buttons hand the choice back.
  */
 
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, within } from '@testing-library/react';
+import { MODAL_EXIT_MS } from '@newspack-nodes/shared/hooks/useModalExit';
 import EndClientDialog from '../EndClientDialog';
 
 const OFFBOARD = {
@@ -59,23 +60,34 @@ describe( 'EndClientDialog', () => {
 		).toHaveAttribute( 'href', OFFBOARD.url );
 	} );
 
-	it( 'hands each choice back and writes nothing itself', () => {
-		const { onEnd, onNotAbout, onClose } = renderDialog();
-		fireEvent.click(
-			within( dialog() ).getByRole( 'button', {
-				name: 'Not about this client',
-			} )
-		);
-		expect( onNotAbout ).toHaveBeenCalledTimes( 1 );
-		fireEvent.click(
-			within( dialog() ).getByRole( 'button', { name: 'End client' } )
-		);
-		expect( onEnd ).toHaveBeenCalledTimes( 1 );
-		fireEvent.click(
-			within( dialog() ).getByRole( 'button', { name: 'Close' } )
-		);
-		expect( onClose ).toHaveBeenCalledTimes( 1 );
-	} );
+	it.each( [
+		[ 'Not about this client', 'onNotAbout' ],
+		[ 'End client', 'onEnd' ],
+		[ 'Close', 'onClose' ],
+	] )(
+		'plays the exit, then hands back %s alone, writing nothing itself',
+		( button, answered ) => {
+			jest.useFakeTimers();
+			try {
+				const handlers = renderDialog();
+				fireEvent.click(
+					within( dialog() ).getByRole( 'button', { name: button } )
+				);
+				expect( handlers[ answered ] ).not.toHaveBeenCalled();
+				expect(
+					dialog().closest( '.newspack-nodes-modal__backdrop' )
+				).toHaveClass( 'is-closing' );
+				act( () => jest.advanceTimersByTime( MODAL_EXIT_MS ) );
+				Object.entries( handlers ).forEach( ( [ name, handler ] ) =>
+					expect( handler ).toHaveBeenCalledTimes(
+						name === answered ? 1 : 0
+					)
+				);
+			} finally {
+				jest.useRealTimers();
+			}
+		}
+	);
 
 	it( 'marks End client destructive', () => {
 		renderDialog();

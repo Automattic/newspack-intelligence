@@ -676,25 +676,37 @@ function ThemePair( { item: pair, judgeOf, verdictOf, refusalOf } ) {
  * The merge "Same as…" confirms: an `EntityPicker` offering every entity
  * but the one merging, the consequence, and Merge and Cancel. Merge waits
  * for an offered entity picked and for the last send's answer; a refusal
- * shows here. The field takes focus as the dialog opens.
+ * shows here. The field takes focus as the dialog opens. Cancel, and Escape
+ * in the picker once its list is closed, close it through `handleRef`, as
+ * Review does once the merge lands, each playing the dialog's exit.
  *
- * @param {Object}                                      props
- * @param {string}                                      props.name    The merging entity's name.
- * @param {string}                                      props.from    Its key.
- * @param {boolean}                                     props.pending Whether a merge is owed its answer.
- * @param {?string}                                     props.refusal The refusal of the merge sent.
- * @param {(into: {key: string, name: string}) => void} props.onMerge Sends the merge.
- * @param {() => void}                                  props.onClose Closes the dialog.
+ * @param {Object}                                                                    props
+ * @param {string}                                                                    props.name      The merging entity's name.
+ * @param {string}                                                                    props.from      Its key.
+ * @param {boolean}                                                                   props.pending   Whether a merge is owed its answer.
+ * @param {?string}                                                                   props.refusal   The refusal of the merge sent.
+ * @param {(into: {key: string, name: string}) => void}                               props.onMerge   Sends the merge.
+ * @param {() => void}                                                                props.onClose   Closes the dialog.
+ * @param {{current: ?import('@newspack-nodes/shared/hooks/useDialog').DialogHandle}} props.handleRef Takes the dialog's animated close.
  * @return {import('react').ReactElement} The dialog.
  */
-function MergeDialog( { name, from, pending, refusal, onMerge, onClose } ) {
+function MergeDialog( {
+	name,
+	from,
+	pending,
+	refusal,
+	onMerge,
+	onClose,
+	handleRef,
+} ) {
+	const close = () => handleRef.current.close();
 	const [ into, setInto ] = useState( { key: '', name: null } );
 	const field = useRef( null );
 	useEffect( () => field.current?.querySelector( 'input' )?.focus(), [] );
 	const ready = Boolean( into.name ) && ! pending;
 
 	return (
-		<Modal onClose={ onClose }>
+		<Modal onClose={ onClose } handleRef={ handleRef }>
 			<ModalHeader
 				title={ sprintf(
 					/* translators: %s: the entity's name. */
@@ -703,6 +715,7 @@ function MergeDialog( { name, from, pending, refusal, onMerge, onClose } ) {
 				) }
 				onClose={ onClose }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
+				compact
 			/>
 			<div ref={ field }>
 				<EntityPicker
@@ -712,6 +725,7 @@ function MergeDialog( { name, from, pending, refusal, onMerge, onClose } ) {
 					onChange={ ( key, picked ) =>
 						setInto( { key, name: picked } )
 					}
+					onEscape={ close }
 				/>
 			</div>
 			<p>
@@ -722,7 +736,7 @@ function MergeDialog( { name, from, pending, refusal, onMerge, onClose } ) {
 			</p>
 			<Refusal error={ refusal } />
 			<div className="newspack-nodes-modal__actions">
-				<button type="button" className="button" onClick={ onClose }>
+				<button type="button" className="button" onClick={ close }>
 					{ __( 'Cancel', 'newspack-intelligence' ) }
 				</button>
 				<button
@@ -778,6 +792,7 @@ export default function Review( { canTune, onOpenEntity } ) {
 	const [ open, setOpen ] = useState( 'links' );
 	const panel = useTabPanelProps( SCOPE, open, true );
 	const [ merging, setMerging ] = useState( null );
+	const mergeDialog = useRef( null );
 	// The merge owed its answer; Merge waits for it, so there is one.
 	const sentMerge = useRef( null );
 	const [ notice, setNotice ] = useState( null );
@@ -955,7 +970,9 @@ export default function Review( { canTune, onOpenEntity } ) {
 					merged.into.name
 				),
 			} );
-			setMerging( ( was ) => ( was?.sent ? null : was ) );
+			if ( argsOf( tokens ).from === merging?.key ) {
+				mergeDialog.current?.close();
+			}
 		},
 	} );
 
@@ -1563,6 +1580,7 @@ export default function Review( { canTune, onOpenEntity } ) {
 						}
 						setMerging( null );
 					} }
+					handleRef={ mergeDialog }
 				/>
 			) }
 			<UndoSnackbar

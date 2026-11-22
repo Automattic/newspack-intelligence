@@ -49,7 +49,8 @@ function Evidence( { one } ) {
  * end the client's role today and record it as a former client, naming the
  * evidence the question rests on. It writes nothing itself. **End client**
  * hands back the end, and **Not about this client**, offered only with an
- * `onNotAbout`, hands back that the evidence is not about this client.
+ * `onNotAbout`, hands back that the evidence is not about this client,
+ * each once the dialog's exit has played.
  * Focus moves to the close button as it opens, never to the destructive
  * button, and the shared modal hands it back to the opener on close.
  *
@@ -69,10 +70,11 @@ export default function EndClientDialog( {
 	onClose,
 } ) {
 	const closeRef = useRef( null );
+	const handle = useRef( null );
 	const evidenceId = useId();
 	useEffect( () => closeRef.current?.focus(), [] );
 	return (
-		<Modal onClose={ onClose }>
+		<Modal onClose={ onClose } handleRef={ handle }>
 			<ModalHeader
 				title={ sprintf(
 					/* translators: %s: the client's name. */
@@ -82,6 +84,7 @@ export default function EndClientDialog( {
 				onClose={ onClose }
 				closeRef={ closeRef }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
+				compact
 			/>
 			<p>
 				{ sprintf(
@@ -116,7 +119,7 @@ export default function EndClientDialog( {
 					<button
 						type="button"
 						className="button"
-						onClick={ onNotAbout }
+						onClick={ () => handle.current.closeWith( onNotAbout ) }
 					>
 						{ __(
 							'Not about this client',
@@ -127,7 +130,7 @@ export default function EndClientDialog( {
 				<button
 					type="button"
 					className={ primaryButtonClass( false, 'is-danger' ) }
-					onClick={ onEnd }
+					onClick={ () => handle.current.closeWith( onEnd ) }
 				>
 					{ __( 'End client', 'newspack-intelligence' ) }
 				</button>

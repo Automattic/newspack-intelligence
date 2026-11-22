@@ -25,6 +25,7 @@ import { SectionHeader } from '@newspack-nodes/shared/components/Section';
 import Invitation from '@newspack-nodes/shared/components/Invitation';
 import { word } from '../components/words';
 import Refusal from '../components/Refusal';
+import { isSend } from '../components/format';
 import {
 	draftArgs,
 	draftLens,
@@ -105,17 +106,28 @@ const newCount = ( count ) =>
  * The one dialog a curator saves a view with, a new one or the one open:
  * its name and what it is for, then every filter. A filter left blank is
  * left out, so the view does not set it; the key derives from the name and
- * is never shown.
+ * is never shown. Cancel, and Escape in a list picker once its list is
+ * closed, close it through `handleRef`, as Lens does once the save lands,
+ * each playing the dialog's exit.
  *
- * @param {Object}                                  props
- * @param {Object<string, string>}                  props.initial    The draft it opens on.
- * @param {Object}                                  props.vocabulary The ontology's closed lists.
- * @param {?string}                                 props.refusal    Why the last save was refused.
- * @param {(draft: Object<string, string>) => void} props.onSave     Sends the draft.
- * @param {() => void}                              props.onCancel   Closes the dialog unsent.
+ * @param {Object}                                                                    props
+ * @param {Object<string, string>}                                                    props.initial    The draft it opens on.
+ * @param {Object}                                                                    props.vocabulary The ontology's closed lists.
+ * @param {?string}                                                                   props.refusal    Why the last save was refused.
+ * @param {(draft: Object<string, string>) => void}                                   props.onSave     Sends the draft.
+ * @param {() => void}                                                                props.onCancel   Closes the dialog unsent.
+ * @param {{current: ?import('@newspack-nodes/shared/hooks/useDialog').DialogHandle}} props.handleRef  Takes the dialog's animated close.
  * @return {import('react').ReactElement} The dialog.
  */
-function LensForm( { initial, vocabulary, refusal, onSave, onCancel } ) {
+function LensForm( {
+	initial,
+	vocabulary,
+	refusal,
+	onSave,
+	onCancel,
+	handleRef,
+} ) {
+	const close = () => handleRef.current.close();
 	const [ draft, setDraft ] = useState( initial );
 	const field = ( name ) => ( {
 		value: draft[ name ],
@@ -127,6 +139,7 @@ function LensForm( { initial, vocabulary, refusal, onSave, onCancel } ) {
 		<Modal
 			className="newspack-intelligence__edit"
 			onClose={ onCancel }
+			handleRef={ handleRef }
 			onSubmit={ () => onSave( draft ) }
 		>
 			<ModalHeader
@@ -152,6 +165,7 @@ function LensForm( { initial, vocabulary, refusal, onSave, onCancel } ) {
 				{ ...field( 'description' ) }
 			/>
 			<ListPicker
+				onEscape={ close }
 				label={ __( 'Kinds of news', 'newspack-intelligence' ) }
 				map="kindWords"
 				values={ vocabulary.itemKinds }
@@ -163,12 +177,14 @@ function LensForm( { initial, vocabulary, refusal, onSave, onCancel } ) {
 				{ ...field( 'topic' ) }
 			/>
 			<ListPicker
+				onEscape={ close }
 				label={ __( 'About', 'newspack-intelligence' ) }
 				map="roleWords"
 				values={ vocabulary.roles }
 				{ ...field( 'role' ) }
 			/>
 			<ListPicker
+				onEscape={ close }
 				label={ __( 'Sources', 'newspack-intelligence' ) }
 				map="sourceWords"
 				values={ null }
@@ -218,7 +234,7 @@ function LensForm( { initial, vocabulary, refusal, onSave, onCancel } ) {
 				) ) }
 			</fieldset>
 			<div className="newspack-nodes-modal__actions">
-				<button type="button" className="button" onClick={ onCancel }>
+				<button type="button" className="button" onClick={ close }>
 					{ __( 'Cancel', 'newspack-intelligence' ) }
 				</button>
 				<button type="submit" className={ primaryButtonClass() }>
@@ -230,7 +246,8 @@ function LensForm( { initial, vocabulary, refusal, onSave, onCancel } ) {
 }
 
 /**
- * The dialog asking before a view is removed.
+ * The dialog asking before a view is removed. Remove view and Cancel each
+ * play the dialog's exit first.
  *
  * @param {Object}     props
  * @param {string}     props.name     The view's name.
@@ -239,6 +256,7 @@ function LensForm( { initial, vocabulary, refusal, onSave, onCancel } ) {
  * @return {import('react').ReactElement} The dialog.
  */
 function RemoveDialog( { name, onRemove, onCancel } ) {
+	const handle = useRef( null );
 	const asked = sprintf(
 		/* translators: %s: the view's name. */
 		__(
@@ -248,16 +266,20 @@ function RemoveDialog( { name, onRemove, onCancel } ) {
 		name
 	);
 	return (
-		<Modal ariaLabel={ asked } onClose={ onCancel }>
+		<Modal ariaLabel={ asked } onClose={ onCancel } handleRef={ handle }>
 			<p>{ asked }</p>
 			<div className="newspack-nodes-modal__actions">
-				<button type="button" className="button" onClick={ onCancel }>
+				<button
+					type="button"
+					className="button"
+					onClick={ () => handle.current.close() }
+				>
 					{ __( 'Cancel', 'newspack-intelligence' ) }
 				</button>
 				<button
 					type="button"
 					className={ primaryButtonClass( false, 'is-danger' ) }
-					onClick={ onRemove }
+					onClick={ () => handle.current.closeWith( onRemove ) }
 				>
 					{ __( 'Remove view', 'newspack-intelligence' ) }
 				</button>
@@ -386,9 +408,11 @@ export default function Lens( {
 		[ textOf ]
 	);
 	const lenses = useHeld( list, 'lenses', lensKey, matches );
+	const lensForm = useRef( null );
 	const save = useIntelWrite( 'save_lens', {
 		dirties: LENS_READS,
-		refresh: () => setEditing( null ),
+		refresh: ( answer, tokens ) =>
+			isSend( tokens, sent ) && lensForm.current?.close(),
 		onRefused: lenses.refused,
 	} );
 	const remove = useIntelWrite( 'remove_lens', {
@@ -582,6 +606,7 @@ export default function Lens( {
 						);
 					} }
 					onCancel={ () => setEditing( null ) }
+					handleRef={ lensForm }
 				/>
 			) }
 			{ removing && (

@@ -27,6 +27,8 @@ import {
 import { Core } from '@newspack-nodes/runtime';
 import { speak } from '@wordpress/a11y';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
+import { expectExitThenGone } from '@newspack-nodes/shared/test-utils/expectExitThenGone';
+import { fakeExitClock } from '@newspack-nodes/shared/test-utils/answerConfirm';
 import { intelWire } from '../../__tests__/intelWire';
 import { UNDO_MS } from '../../hooks/useDeferredWrite';
 import { useIntelRead } from '../../hooks/useIntelCommand';
@@ -1356,6 +1358,8 @@ describe( 'ItemRow is this about', () => {
 		speak.mockClear();
 	} );
 
+	afterEach( () => jest.useRealTimers() );
+
 	const renderRow = ( props = {} ) =>
 		render(
 			<ItemRow
@@ -1436,6 +1440,11 @@ describe( 'ItemRow is this about', () => {
 			] )
 		);
 		await waitFor( () =>
+			expect(
+				dialog.closest( '.newspack-nodes-modal__backdrop' )
+			).toHaveClass( 'is-closing' )
+		);
+		await waitFor( () =>
 			expect( screen.queryByRole( 'dialog' ) ).toBeNull()
 		);
 		expect( speak ).toHaveBeenCalledWith(
@@ -1464,6 +1473,89 @@ describe( 'ItemRow is this about', () => {
 				],
 			] )
 		);
+	} );
+
+	it( 'still says a link landing during Cancel’s exit was made, and closes once', async () => {
+		let land;
+		wire.replies.add_link = () =>
+			new Promise( ( resolve ) => {
+				land = resolve;
+			} );
+		renderRow();
+		const dialog = await ask();
+		await pick( dialog, 'Harbor Ledger' );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Link it' } )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'add_link' ) ).toHaveLength( 1 )
+		);
+		const toggle = screen.getByRole( 'button', { name: 'More actions' } );
+		const focus = jest.spyOn( toggle, 'focus' );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+		await act( async () => land( { ok: true, event_id: 'ev-late' } ) );
+		expect(
+			dialog.closest( '.newspack-nodes-modal__backdrop' )
+		).toHaveClass( 'is-closing' );
+
+		expect( speak ).toHaveBeenCalledWith(
+			'Linked Harbor Ledger to this item. It shows here once the item is read again.',
+			'polite'
+		);
+		await waitFor( () =>
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+		);
+		expect( focus ).toHaveBeenCalledTimes( 1 );
+	} );
+
+	it( 'names the entity it sent when another is picked before the link lands', async () => {
+		let land;
+		wire.replies.add_link = () =>
+			new Promise( ( resolve ) => {
+				land = resolve;
+			} );
+		renderRow();
+		const dialog = await ask();
+		await pick( dialog, 'Harbor Ledger' );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Link it' } )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'add_link' ) ).toHaveLength( 1 )
+		);
+		await pick( dialog, 'Harbor Lights' );
+
+		await act( async () => land( { ok: true, event_id: 'ev-sent' } ) );
+
+		expect( speak ).toHaveBeenCalledWith(
+			'Linked Harbor Ledger to this item. It shows here once the item is read again.',
+			'polite'
+		);
+		expect( speak ).not.toHaveBeenCalledWith(
+			'Linked Harbor Lights to this item. It shows here once the item is read again.',
+			'polite'
+		);
+		await waitFor( () =>
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+		);
+	} );
+
+	it( 'unmounts during the exit a landed link plays, its toggle gone with it', async () => {
+		const { unmount } = renderRow();
+		const dialog = await ask();
+		await pick( dialog, 'Harbor Ledger' );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Link it' } )
+		);
+		await waitFor( () =>
+			expect(
+				dialog.closest( '.newspack-nodes-modal__backdrop' )
+			).toHaveClass( 'is-closing' )
+		);
+
+		expect( () => unmount() ).not.toThrow();
 	} );
 
 	it( 'takes no typed text that no offered entity stands for, Link it held back', async () => {
@@ -1517,22 +1609,28 @@ describe( 'ItemRow is this about', () => {
 		const field = within( dialog ).getByRole( 'combobox', {
 			name: 'Client or company',
 		} );
-		act( () => field.blur() );
+		fakeExitClock();
+		fireEvent.keyDown( field, { key: 'Escape', code: 'Escape' } );
+		expect( field ).toHaveAttribute( 'aria-expanded', 'false' );
+		expect(
+			dialog.closest( '.newspack-nodes-modal__backdrop' )
+		).not.toHaveClass( 'is-closing' );
 
 		fireEvent.keyDown( field, { key: 'Escape', code: 'Escape' } );
 
-		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expectExitThenGone();
 		expect( wire.sent( 'add_link' ) ).toEqual( [] );
 	} );
 
 	it( 'closes on Cancel, returning focus to More actions, and sends nothing', async () => {
 		renderRow();
 		const dialog = await ask();
+		fakeExitClock();
 		fireEvent.click(
 			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
 		);
 
-		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expectExitThenGone();
 		expect( document.activeElement ).toBe(
 			screen.getByRole( 'button', { name: 'More actions' } )
 		);

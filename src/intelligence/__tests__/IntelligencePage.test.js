@@ -27,6 +27,10 @@ jest.mock( '@newspack-nodes/debug-overlay', () => ( {
 
 import { intelWire } from './intelWire';
 import { HEALTHY } from './healthFixture';
+import {
+	answerConfirm,
+	throughExit,
+} from '@newspack-nodes/shared/test-utils/answerConfirm';
 import { registerCompositionEditor } from '@newspack-nodes/shared/composition/editorRegistry';
 import {
 	ASK_DEFAULTS,
@@ -1094,7 +1098,9 @@ describe( 'IntelligencePage', () => {
 		expect(
 			await screen.findByRole( 'dialog', { name: 'Save to folder' } )
 		).toBeInTheDocument();
-		fireEvent.click( screen.getByRole( 'button', { name: 'Close' } ) );
+		throughExit( () =>
+			fireEvent.click( screen.getByRole( 'button', { name: 'Close' } ) )
+		);
 		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 	} );
 
@@ -1349,7 +1355,7 @@ describe( 'IntelligencePage', () => {
 		 * @param {string} answer The button it is answered with.
 		 */
 		const answerDiscard = ( answer ) =>
-			fireEvent.click(
+			answerConfirm(
 				within(
 					screen.getByRole( 'dialog', {
 						name: 'Discard your changes to this layout?',

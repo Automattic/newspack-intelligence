@@ -252,6 +252,17 @@ export const argsOf = ( tokens ) =>
 	);
 
 /**
+ * Whether a landed write's echoed tokens are the send `sent` names, so a
+ * reply to a send an earlier dialog made never acts on the one open now.
+ *
+ * @param {?string[]} tokens The tokens the reply echoes.
+ * @param {?string[]} sent   The tokens the open dialog's last send carried, null for none.
+ * @return {boolean} Whether they are one send.
+ */
+export const isSend = ( tokens, sent ) =>
+	null !== sent && JSON.stringify( tokens ) === JSON.stringify( sent );
+
+/**
  * An item's key.
  *
  * @param {{item_key: string}} item The item.

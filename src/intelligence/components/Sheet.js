@@ -14,20 +14,28 @@ const FIELDS = 'input, select, textarea';
  * so Escape and a click outside close it and Tab stays inside; its heading
  * names it. Opening it moves focus to its first field, else to its heading,
  * the title the shell names it by; closing hands focus back to what opened
- * it.
+ * it. A control inside closes it through `handleRef`, playing its exit.
  *
- * @param {Object}                    props
- * @param {string}                    props.title      The heading, and its name.
- * @param {() => void}                props.onClose    Closes it.
- * @param {string}                    props.closeLabel The close button's name.
- * @param {import('react').ReactNode} props.children   What it holds.
+ * @param {Object}                                                                    props
+ * @param {string}                                                                    props.title       The heading, and its name.
+ * @param {() => void}                                                                props.onClose     Closes it.
+ * @param {string}                                                                    props.closeLabel  The close button's name.
+ * @param {{current: ?import('@newspack-nodes/shared/hooks/useDialog').DialogHandle}} [props.handleRef] Takes the sheet's animated close.
+ * @param {import('react').ReactNode}                                                 props.children    What it holds.
  * @return {import('react').ReactElement} The sheet.
  */
-export default function Sheet( { title, onClose, closeLabel, children } ) {
+export default function Sheet( {
+	title,
+	onClose,
+	closeLabel,
+	handleRef,
+	children,
+} ) {
 	const narrow = useNarrow();
 	return (
 		<Modal
 			onClose={ onClose }
+			handleRef={ handleRef }
 			className={ `newspack-intelligence__sheet ${
 				narrow ? 'is-bottom' : 'is-side'
 			}` }

@@ -28,6 +28,7 @@ import { useReturnFocus } from '../hooks/useReturnFocus';
 import { AnswerBody, CanManage } from '../components/Answer';
 import Unread from '@newspack-nodes/shared/components/Unread';
 import EntityPicker from '../components/EntityPicker';
+import PickerEscape from '../components/PickerEscape';
 import ItemList from '../components/ItemList';
 import ItemRow from '../components/ItemRow';
 import ListKeys, { LEAVES } from '../components/ListKeys';
@@ -37,7 +38,7 @@ import Section, {
 } from '@newspack-nodes/shared/components/Section';
 import Invitation from '@newspack-nodes/shared/components/Invitation';
 import UndoSnackbar from '../components/UndoSnackbar';
-import { argsOf, itemKey } from '../components/format';
+import { argsOf, isSend, itemKey } from '../components/format';
 
 /** No watch open, its matches on their first page. */
 export const CLOSED_WATCH = { key: null, page: 1 };
@@ -265,11 +266,14 @@ export default function Watches( {
 	const [ saved, setSaved ] = useState( null );
 	const list = usePageRead( 'watches' );
 	const watches = useHeld( list, 'watches', watchKey, sameWatch );
+	const watchForm = useRef( null );
 	const save = useIntelWrite( 'save_watch', {
 		dirties: WATCH_READS,
-		refresh: ( { event_id: event } ) => {
+		refresh: ( { event_id: event }, tokens ) => {
 			setSaved( event );
-			onDraft( null );
+			if ( isSend( tokens, sent ) ) {
+				watchForm.current?.close();
+			}
 		},
 		onRefused: watches.refused,
 	} );
@@ -362,6 +366,7 @@ export default function Watches( {
 						} );
 					} }
 					onCancel={ () => onDraft( null ) }
+					handleRef={ watchForm }
 				/>
 			) }
 			{ stopping && (
@@ -766,17 +771,21 @@ function MatchRow( { item, onSeen, onOpenEntity, onSave, canTune } ) {
  * dialog whose Name takes focus as it opens: its name, the kind it follows
  * and that one target, picked by name
  * from the team views, the folders or the clients and companies `names`
- * offers, and its three deliveries.
+ * offers, and its three deliveries. Cancel, and Escape in the target's
+ * picker once its list is closed, close it through `handleRef`, as Watches
+ * does once the save lands, each playing the dialog's exit.
  *
- * @param {Object}                  props
- * @param {Object}                  props.draft    The draft shown.
- * @param {(draft: Object) => void} props.onDraft  Replaces the draft.
- * @param {?string}                 props.refusal  The last save's refusal.
- * @param {() => void}              props.onSave   Sends the draft.
- * @param {() => void}              props.onCancel Closes the form unsent.
+ * @param {Object}                                                                    props
+ * @param {Object}                                                                    props.draft     The draft shown.
+ * @param {(draft: Object) => void}                                                   props.onDraft   Replaces the draft.
+ * @param {?string}                                                                   props.refusal   The last save's refusal.
+ * @param {() => void}                                                                props.onSave    Sends the draft.
+ * @param {() => void}                                                                props.onCancel  Closes the form unsent.
+ * @param {{current: ?import('@newspack-nodes/shared/hooks/useDialog').DialogHandle}} props.handleRef Takes the dialog's animated close.
  * @return {import('react').ReactElement} The form.
  */
-function WatchForm( { draft, onDraft, refusal, onSave, onCancel } ) {
+function WatchForm( { draft, onDraft, refusal, onSave, onCancel, handleRef } ) {
+	const close = () => handleRef.current.close();
 	const nameField = useRef( null );
 	useEffect( () => nameField.current.focus(), [] );
 	const kinds = kindWords();
@@ -791,7 +800,7 @@ function WatchForm( { draft, onDraft, refusal, onSave, onCancel } ) {
 		  )
 		: __( 'New watch', 'newspack-intelligence' );
 	return (
-		<Modal onClose={ onCancel }>
+		<Modal onClose={ onCancel } handleRef={ handleRef }>
 			<ModalHeader
 				title={ title }
 				onClose={ onCancel }
@@ -823,6 +832,7 @@ function WatchForm( { draft, onDraft, refusal, onSave, onCancel } ) {
 						label={ kinds.entity.field }
 						value={ draft.entity }
 						onChange={ set( 'entity' ) }
+						onEscape={ close }
 					/>
 				) : (
 					<TargetField
@@ -831,6 +841,7 @@ function WatchForm( { draft, onDraft, refusal, onSave, onCancel } ) {
 						label={ kinds[ draft.kind ].field }
 						value={ draft[ draft.kind ] }
 						onChange={ set( draft.kind ) }
+						onEscape={ close }
 					/>
 				) }
 				<fieldset className="newspack-intelligence__choices">
@@ -849,11 +860,7 @@ function WatchForm( { draft, onDraft, refusal, onSave, onCancel } ) {
 				</fieldset>
 				<Refusal error={ refusal } />
 				<div className="newspack-nodes-modal__actions">
-					<button
-						type="button"
-						className="button"
-						onClick={ onCancel }
-					>
+					<button type="button" className="button" onClick={ close }>
 						{ __( 'Cancel', 'newspack-intelligence' ) }
 					</button>
 					<button
@@ -871,16 +878,18 @@ function WatchForm( { draft, onDraft, refusal, onSave, onCancel } ) {
 /**
  * The team view or folder a watch follows, picked by name from the list
  * `lenses` or `collections` answers. A key the list leaves out, as an
- * edited watch's target, stands as itself.
+ * edited watch's target, stands as itself. Escape while its list is closed
+ * goes to `onEscape`.
  *
  * @param {Object}                props
  * @param {string}                props.kind     `lens` or `collection`.
  * @param {string}                props.label    The field's label.
  * @param {string}                props.value    The target's key.
  * @param {(key: string) => void} props.onChange Takes the key picked.
+ * @param {() => void}            props.onEscape Takes Escape while the list is closed.
  * @return {import('react').ReactElement} The field.
  */
-function TargetField( { kind, label, value, onChange } ) {
+function TargetField( { kind, label, value, onChange, onEscape } ) {
 	const operator = useContext( CanManage );
 	const lens = 'lens' === kind;
 	const listed = usePageRead( lens ? 'lenses' : 'folders' );
@@ -901,14 +910,16 @@ function TargetField( { kind, label, value, onChange } ) {
 	];
 	return (
 		<>
-			<ComboboxControl
-				__next40pxDefaultSize
-				__nextHasNoMarginBottom
-				label={ label }
-				value={ value || null }
-				options={ options }
-				onChange={ ( key ) => onChange( key ?? '' ) }
-			/>
+			<PickerEscape onEscape={ onEscape }>
+				<ComboboxControl
+					__next40pxDefaultSize
+					__nextHasNoMarginBottom
+					label={ label }
+					value={ value || null }
+					options={ options }
+					onChange={ ( key ) => onChange( key ?? '' ) }
+				/>
+			</PickerEscape>
 			<Unread
 				operator={ operator }
 				error={ listed.error }
@@ -920,7 +931,7 @@ function TargetField( { kind, label, value, onChange } ) {
 
 /**
  * The dialog asking before a watch stops: what it costs, and **Stop
- * watching**, which alone sends.
+ * watching**, which alone sends, once the dialog's exit has played.
  *
  * @param {Object}     props
  * @param {string}     props.name    The watch's name.
@@ -929,8 +940,9 @@ function TargetField( { kind, label, value, onChange } ) {
  * @return {import('react').ReactElement} The dialog.
  */
 function StopDialog( { name, onStop, onClose } ) {
+	const handle = useRef( null );
 	return (
-		<Modal onClose={ onClose }>
+		<Modal onClose={ onClose } handleRef={ handle }>
 			<ModalHeader
 				title={ sprintf(
 					/* translators: %s: the watch's name. */
@@ -939,6 +951,7 @@ function StopDialog( { name, onStop, onClose } ) {
 				) }
 				onClose={ onClose }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
+				compact
 			/>
 			<p>
 				{ __(
@@ -947,13 +960,17 @@ function StopDialog( { name, onStop, onClose } ) {
 				) }
 			</p>
 			<div className="newspack-nodes-modal__actions">
-				<button type="button" className="button" onClick={ onClose }>
+				<button
+					type="button"
+					className="button"
+					onClick={ () => handle.current.close() }
+				>
 					{ __( 'Cancel', 'newspack-intelligence' ) }
 				</button>
 				<button
 					type="button"
 					className={ primaryButtonClass( false, 'is-danger' ) }
-					onClick={ onStop }
+					onClick={ () => handle.current.closeWith( onStop ) }
 				>
 					{ __( 'Stop watching', 'newspack-intelligence' ) }
 				</button>

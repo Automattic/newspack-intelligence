@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Needs newspack-nodes 2.164.0.** Every dialog draws through the substrate's one shell, which plays a 240 ms exit on every close and takes an Escape only when nothing inside the dialog took it first. Below the floor the plugin goes dormant behind an admin notice naming both versions.
+- **The confirm and prompt dialogs wear the compact header:** End client, Mark as used, Save to folder, Is this about…, Merge … into… and Stop watching.
+- **Every close plays the dialog's exit.** Cancel; the answers End client, Not about this client, Stop watching, Remove view and Mark as used, each of which runs once the exit has played; the close after a new folder, a team view, a watch, a link or a merge lands, whose effects run as it lands; and the filter sheet's Show button.
+
+### Fixed
+
+- **Escape in a picker closes its dialog once the picker's list is closed**: the name pickers in Is this about…, Merge … into… and a watch's client field, a watch's team view and folder fields, a team view's Kinds of news, About and Sources, and the client picker in Search's filter sheet. The stock combobox and token field take every Escape, so the dialog hears it from the picker instead.
+- **A link or a merge that lands while Cancel's exit plays still says so**, and the dialog closes once. The link's message names the entity it sent, not one picked after.
+- **A save that lands after its dialog was cancelled leaves the dialog open now alone.** A new folder, a team view or a watch closes its dialog only when the reply is to that dialog's own send, and a merge only the dialog for the entity it merged.
+- A row unmounted while its Is this about… dialog plays its exit no longer throws handing focus back to a menu toggle that has gone with it.
+
 ## [0.46.3] - 2026-11-17
 
 ### Changed

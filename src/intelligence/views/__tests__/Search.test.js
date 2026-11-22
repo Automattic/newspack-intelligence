@@ -20,6 +20,11 @@ import {
 import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
+import {
+	fakeExitClock,
+	throughExit,
+} from '@newspack-nodes/shared/test-utils/answerConfirm';
+import { expectExitThenGone } from '@newspack-nodes/shared/test-utils/expectExitThenGone';
 import { useState } from '@wordpress/element';
 import { intelWire } from '../../__tests__/intelWire';
 import { ASK_DEFAULTS, ITEM, LENSES, pageData, VOCABULARY } from './fixtures';
@@ -50,6 +55,7 @@ beforeEach( () => {
 } );
 
 afterEach( () => {
+	jest.useRealTimers();
 	viewport.restore();
 } );
 
@@ -1011,7 +1017,9 @@ describe( 'Search', () => {
 				} )
 			).toHaveClass( 'is-primary' );
 
-			fireEvent.keyDown( document, { key: 'Escape' } );
+			throughExit( () =>
+				fireEvent.keyDown( document, { key: 'Escape' } )
+			);
 
 			expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 			expect( opener ).toHaveFocus();
@@ -1019,7 +1027,32 @@ describe( 'Search', () => {
 			await act( () => new Promise( ( done ) => setTimeout( done, 0 ) ) );
 		} );
 
-		it( 'closes the sheet on its primary button', async () => {
+		it( 'closes the sheet on Escape in its client picker once its list is closed', async () => {
+			wire.replies.search = PAGE;
+			renderSearch();
+			await screen.findByText( '128 items, most important first' );
+			fireEvent.click(
+				screen.getByRole( 'button', { name: 'Filters (0)' } )
+			);
+			const sheet = screen.getByRole( 'dialog' );
+			const box = within( sheet ).getByRole( 'combobox', {
+				name: 'Client or company',
+			} );
+			expect( box ).toHaveFocus();
+
+			fakeExitClock();
+			fireEvent.keyDown( box, { key: 'Escape', code: 'Escape' } );
+			expect( box ).toHaveAttribute( 'aria-expanded', 'false' );
+			expect(
+				sheet.closest( '.newspack-nodes-modal__backdrop' )
+			).not.toHaveClass( 'is-closing' );
+
+			fireEvent.keyDown( box, { key: 'Escape', code: 'Escape' } );
+
+			expectExitThenGone();
+		} );
+
+		it( 'closes the sheet on its primary button, its exit played', async () => {
 			wire.replies.search = PAGE;
 			renderSearch();
 			await screen.findByText( '128 items, most important first' );
@@ -1027,10 +1060,14 @@ describe( 'Search', () => {
 				screen.getByRole( 'button', { name: 'Filters (0)' } )
 			);
 
+			const sheet = screen.getByRole( 'dialog' );
 			fireEvent.click(
 				screen.getByRole( 'button', { name: 'Show 128 items' } )
 			);
 
+			expect(
+				sheet.closest( '.newspack-nodes-modal__backdrop' )
+			).toHaveClass( 'is-closing' );
 			await waitFor( () =>
 				expect( screen.queryByRole( 'dialog' ) ).toBeNull()
 			);

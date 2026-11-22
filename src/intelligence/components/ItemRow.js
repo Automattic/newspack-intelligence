@@ -685,7 +685,8 @@ function MoreActions( {
 	};
 	const closeAsking = () => {
 		setAsking( false );
-		document.getElementById( toggleId ).focus();
+		// A row unmounted during the dialog's exit takes its toggle with it.
+		document.getElementById( toggleId )?.focus();
 	};
 	const href = safeHref( item.url );
 	const controls = [
@@ -725,7 +726,7 @@ function MoreActions( {
 			{ asking && (
 				<AboutDialog
 					item={ item }
-					onLinked={ ( name ) => {
+					onLinked={ ( name ) =>
 						say(
 							sprintf(
 								/* translators: %s: the entity the item was linked to. */
@@ -735,9 +736,8 @@ function MoreActions( {
 								),
 								name
 							)
-						);
-						closeAsking();
-					} }
+						)
+					}
 					onClose={ closeAsking }
 				/>
 			) }
@@ -757,9 +757,11 @@ function MoreActions( {
  * "Is this about…": a name picker over `names` (`EntityPicker`) and the role
  * the item names the entity in, the subject unless the curator says it is
  * mentioned, worded as the vocabulary words link roles. "Link it" sends
- * `add_link` once an entity `names` offered is picked; a landed link
- * hands `onLinked` the entity's name, and a refused one stays in the dialog
- * as its alert.
+ * `add_link` once an entity `names` offered is picked; a landed link hands
+ * `onLinked` the name of the entity it sent at once and then closes the
+ * dialog, playing its exit, and a refused one stays in the dialog as its
+ * alert. Cancel, and Escape in the picker once its list is closed, play the
+ * exit and then close it.
  *
  * @param {Object}                 props
  * @param {Object}                 props.item     The item.
@@ -771,22 +773,34 @@ function AboutDialog( { item, onLinked, onClose } ) {
 	const [ picked, setPicked ] = useState( { key: '', name: null } );
 	const [ role, setRole ] = useState( 'subject' );
 	const field = useRef( null );
+	const handle = useRef( null );
+	const close = () => handle.current.close();
+	// The name of the entity sent, which a later pick does not rename.
+	const sentName = useRef( null );
 	useEffect( () => field.current?.querySelector( 'input' )?.focus(), [] );
 	const { key, name } = picked;
 	const link = useIntelWrite( 'add_link', {
 		scope: `add-link:${ useId().replace( /[^a-z0-9]/gi, '' ) }`,
 		dirties: ENTITY_READS,
-		refresh: () => onLinked( name ),
+		refresh: () => {
+			onLinked( sentName.current );
+			handle.current?.close();
+		},
 	} );
 	const ready = Boolean( name ) && ! link.pending;
-	const send = () =>
-		ready && link.run( { item: item.item_key, entity: key, role } );
+	const send = () => {
+		if ( ready ) {
+			sentName.current = name;
+			link.run( { item: item.item_key, entity: key, role } );
+		}
+	};
 	return (
-		<Modal onClose={ onClose } onSubmit={ send }>
+		<Modal onClose={ onClose } onSubmit={ send } handleRef={ handle }>
 			<ModalHeader
 				title={ __( 'Is this about…', 'newspack-intelligence' ) }
 				onClose={ onClose }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
+				compact
 			/>
 			<div ref={ field }>
 				<EntityPicker
@@ -795,6 +809,7 @@ function AboutDialog( { item, onLinked, onClose } ) {
 					onChange={ ( next, named ) =>
 						setPicked( { key: next, name: named } )
 					}
+					onEscape={ close }
 				/>
 			</div>
 			<RadioControl
@@ -808,7 +823,7 @@ function AboutDialog( { item, onLinked, onClose } ) {
 			/>
 			<Refusal error={ link.refusal } />
 			<div className="newspack-nodes-modal__actions">
-				<button type="button" className="button" onClick={ onClose }>
+				<button type="button" className="button" onClick={ close }>
 					{ __( 'Cancel', 'newspack-intelligence' ) }
 				</button>
 				<button

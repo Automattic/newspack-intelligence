@@ -150,6 +150,7 @@ export default function SaveToCollection( { item, onClose } ) {
 				onClose={ onClose }
 				closeRef={ closeRef }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
+				compact
 			/>
 			<p>{ item.title || item.item_key }</p>
 			{ naming ? (

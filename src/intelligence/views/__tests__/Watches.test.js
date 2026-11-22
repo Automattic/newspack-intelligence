@@ -20,6 +20,11 @@ import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
 import { useState } from '@wordpress/element';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
+import { expectExitThenGone } from '@newspack-nodes/shared/test-utils/expectExitThenGone';
+import {
+	fakeExitClock,
+	throughExit,
+} from '@newspack-nodes/shared/test-utils/answerConfirm';
 import { intelWire } from '../../__tests__/intelWire';
 import { UNDO_MS } from '../../hooks/useDeferredWrite';
 import { ITEM, LENSES, pageData } from './fixtures';
@@ -759,8 +764,9 @@ describe( 'Watches', () => {
 		fireEvent.click(
 			within( form() ).getByLabelText( 'List new items here' )
 		);
+		const dialog = form();
 		fireEvent.click(
-			within( form() ).getByRole( 'button', { name: 'Save watch' } )
+			within( dialog ).getByRole( 'button', { name: 'Save watch' } )
 		);
 		await waitFor( () =>
 			expect( wire.sent( 'save_watch' ) ).toEqual( [
@@ -774,9 +780,16 @@ describe( 'Watches', () => {
 			] )
 		);
 		await waitFor( () =>
+			expect(
+				dialog.closest( '.newspack-nodes-modal__backdrop' )
+			).toHaveClass( 'is-closing' )
+		);
+		await waitFor( () =>
 			expect( wire.sent( 'watches' ) ).toHaveLength( 2 )
 		);
-		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		await waitFor( () =>
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+		);
 		expect( screen.getByText( 'Paywall watch' ) ).toBeInTheDocument();
 		expect( screen.getByText( 'Saving…' ) ).toBeInTheDocument();
 		expect(
@@ -831,12 +844,41 @@ describe( 'Watches', () => {
 		const box = within( form() ).getByRole( 'combobox', {
 			name: 'Client or company',
 		} );
+		expect( box ).toHaveAttribute( 'aria-expanded', 'false' );
 
+		fakeExitClock();
 		fireEvent.keyDown( box, { key: 'Escape', code: 'Escape' } );
 
-		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expectExitThenGone();
 		expect( wire.sent( 'save_watch' ) ).toEqual( [] );
 	} );
+
+	it.each( [
+		[ 'A team view', 'Team view' ],
+		[ 'A folder', 'Folder' ],
+	] )(
+		'closes the form on Escape pressed in the %s field once its list is closed',
+		async ( kind, label ) => {
+			renderOnPage( <Harness /> );
+			await screen.findByRole( 'button', { name: 'Acme complaints' } );
+			fireEvent.click(
+				screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
+			);
+			fireEvent.click(
+				within( form() ).getByRole( 'radio', { name: kind } )
+			);
+			const box = within( form() ).getByRole( 'combobox', {
+				name: label,
+			} );
+			expect( box ).toHaveAttribute( 'aria-expanded', 'false' );
+
+			fakeExitClock();
+			fireEvent.keyDown( box, { key: 'Escape', code: 'Escape' } );
+
+			expectExitThenGone();
+			expect( wire.sent( 'save_watch' ) ).toEqual( [] );
+		}
+	);
 
 	it( 'follows a client or company picked by name', async () => {
 		wire.replies.save_watch = {
@@ -1143,8 +1185,10 @@ describe( 'Watches', () => {
 		await screen.findByText(
 			'you have 25 watches, and one reader may keep 25 at most'
 		);
-		fireEvent.click(
-			within( form() ).getByRole( 'button', { name: 'Cancel' } )
+		throughExit( () =>
+			fireEvent.click(
+				within( form() ).getByRole( 'button', { name: 'Cancel' } )
+			)
 		);
 		fireEvent.click(
 			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
@@ -1154,6 +1198,46 @@ describe( 'Watches', () => {
 				'you have 25 watches, and one reader may keep 25 at most'
 			)
 		).toBeNull();
+	} );
+
+	it( 'keeps a new form open when a save cancelled before it lands', async () => {
+		let land;
+		wire.replies.save_watch = () =>
+			new Promise( ( resolve ) => {
+				land = resolve;
+			} );
+		renderOnPage( <Harness /> );
+		await screen.findByRole( 'button', { name: 'Acme complaints' } );
+		fireEvent.click(
+			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
+		);
+		type( 'Name', 'Kittiwake watch' );
+		fireEvent.click(
+			within( form() ).getByRole( 'button', { name: 'Save watch' } )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'save_watch' ) ).toHaveLength( 1 )
+		);
+		throughExit( () =>
+			fireEvent.click(
+				within( form() ).getByRole( 'button', { name: 'Cancel' } )
+			)
+		);
+		fireEvent.click(
+			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
+		);
+		const next = form();
+		type( 'Name', 'Shearwater watch' );
+
+		await act( async () =>
+			land( { ok: true, event_id: 'ev-late', watch_key: 'kittiwake' } )
+		);
+		await act( () => new Promise( ( done ) => setTimeout( done, 300 ) ) );
+
+		expect( form() ).toBe( next );
+		expect( within( next ).getByLabelText( 'Name' ) ).toHaveValue(
+			'Shearwater watch'
+		);
 	} );
 
 	it( 'moves focus to the Name field as the form opens', async () => {
@@ -1175,10 +1259,11 @@ describe( 'Watches', () => {
 		fireEvent.click(
 			screen.getAllByRole( 'button', { name: 'New watch' } )[ 0 ]
 		);
+		fakeExitClock();
 		fireEvent.click(
 			within( form() ).getByRole( 'button', { name: 'Cancel' } )
 		);
-		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expectExitThenGone();
 		expect( wire.sent( 'save_watch' ) ).toEqual( [] );
 	} );
 
@@ -1212,10 +1297,11 @@ describe( 'Watches', () => {
 				() => new Promise( ( resolve ) => setTimeout( resolve, 300 ) )
 			);
 			expect( wire.sent( 'remove_watch' ) ).toEqual( [] );
+			fakeExitClock();
 			fireEvent.click(
 				within( dialog ).getByRole( 'button', { name: 'Cancel' } )
 			);
-			expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+			expectExitThenGone();
 			expect( wire.sent( 'remove_watch' ) ).toEqual( [] );
 			expect(
 				screen.getByRole( 'button', { name: 'Acme complaints' } )
@@ -1226,11 +1312,17 @@ describe( 'Watches', () => {
 			wire.replies.remove_watch = { ok: true, event_id: 'ev-w3' };
 			renderOnPage( <Harness /> );
 			await askToStop();
+			fakeExitClock();
 			fireEvent.click(
 				within( screen.getByRole( 'dialog' ) ).getByRole( 'button', {
 					name: 'Stop watching',
 				} )
 			);
+			expect(
+				screen.getByRole( 'button', { name: 'Acme complaints' } )
+			).toBeInTheDocument();
+			expectExitThenGone();
+			jest.useRealTimers();
 			expect(
 				screen.queryByRole( 'button', { name: 'Acme complaints' } )
 			).toBeNull();

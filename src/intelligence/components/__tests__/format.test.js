@@ -16,6 +16,7 @@ import {
 	argsOf,
 	dayLabel,
 	evidenceText,
+	isSend,
 	metaLine,
 	reasonText,
 	sinceLabel,
@@ -36,6 +37,19 @@ describe( 'metaLine', () => {
 		expect(
 			metaLine( 'mention', null, 0, undefined, '', 'ner_fuzzy' )
 		).toBe( 'mention, 0, ner_fuzzy' );
+	} );
+} );
+
+describe( 'isSend', () => {
+	it( 'holds a reply to the send whose tokens it echoes, and to no other', () => {
+		const sent = [ '--name=Tide Watch', '--days=60' ];
+		expect( isSend( [ '--name=Tide Watch', '--days=60' ], sent ) ).toBe(
+			true
+		);
+		expect( isSend( [ '--name=Desk Watch', '--days=60' ], sent ) ).toBe(
+			false
+		);
+		expect( isSend( [ '--name=Tide Watch' ], null ) ).toBe( false );
 	} );
 } );
 

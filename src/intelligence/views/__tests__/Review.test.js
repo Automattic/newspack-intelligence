@@ -28,6 +28,12 @@ import {
 } from '@newspack-nodes/runtime';
 import { speak } from '@wordpress/a11y';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
+import { expectExitThenGone } from '@newspack-nodes/shared/test-utils/expectExitThenGone';
+import {
+	fakeExitClock,
+	throughExit,
+} from '@newspack-nodes/shared/test-utils/answerConfirm';
+import { MODAL_EXIT_MS } from '@newspack-nodes/shared/hooks/useModalExit';
 import { intelWire } from '../../__tests__/intelWire';
 import { UNDO_MS } from '../../hooks/useDeferredWrite';
 import { useIntelRead } from '../../hooks/useIntelCommand';
@@ -1320,7 +1326,12 @@ describe( 'Review — same as…', () => {
 		);
 		expect( merged.closest( '.components-snackbar' ) ).not.toBeNull();
 		expect( screen.queryByRole( 'button', { name: 'Undo' } ) ).toBeNull();
-		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expect(
+			dialog.closest( '.newspack-nodes-modal__backdrop' )
+		).toHaveClass( 'is-closing' );
+		await waitFor( () =>
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+		);
 		judgedAs(
 			'Valley Times',
 			'Merged into The Valley Times.',
@@ -1450,8 +1461,10 @@ describe( 'Review — same as…', () => {
 				} )
 			).toBeInTheDocument()
 		);
-		fireEvent.click(
-			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		throughExit( () =>
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+			)
 		);
 		expect( document.activeElement ).toBe(
 			rowOf(
@@ -1467,22 +1480,28 @@ describe( 'Review — same as…', () => {
 		const into = within( dialog ).getByRole( 'combobox', {
 			name: 'Merge into',
 		} );
-		act( () => into.blur() );
+		fakeExitClock();
+		fireEvent.keyDown( into, { key: 'Escape', code: 'Escape' } );
+		expect( into ).toHaveAttribute( 'aria-expanded', 'false' );
+		expect(
+			dialog.closest( '.newspack-nodes-modal__backdrop' )
+		).not.toHaveClass( 'is-closing' );
 
 		fireEvent.keyDown( into, { key: 'Escape', code: 'Escape' } );
 
-		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expectExitThenGone();
 		expect( wire.sent( 'merge_entities' ) ).toEqual( [] );
 	} );
 
 	it( 'merges nothing on Cancel', async () => {
 		const dialog = await openMerge();
 		await pick( dialog );
+		await settle();
+		fakeExitClock();
 		fireEvent.click(
 			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
 		);
-		await settle();
-		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expectExitThenGone();
 		expect( wire.sent( 'merge_entities' ) ).toEqual( [] );
 		expect(
 			within( queue( 'Suggested names' ) ).getByRole( 'button', {
@@ -1505,8 +1524,10 @@ describe( 'Review — same as…', () => {
 		await waitFor( () =>
 			expect( wire.sent( 'merge_entities' ) ).toHaveLength( 1 )
 		);
-		fireEvent.click(
-			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		throughExit( () =>
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+			)
 		);
 		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 		await act( async () => land( { ok: true, event_id: 'ev-late' } ) );
@@ -1515,6 +1536,85 @@ describe( 'Review — same as…', () => {
 				'Merged Valley Times into The Valley Times.'
 			)
 		).toBeInTheDocument();
+	} );
+
+	it( 'announces a merge landing during Cancel’s exit, and closes once', async () => {
+		let land;
+		wire.replies.merge_entities = () =>
+			new Promise( ( resolve ) => {
+				land = resolve;
+			} );
+		const dialog = await openMerge();
+		await pick( dialog );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Merge' } )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'merge_entities' ) ).toHaveLength( 1 )
+		);
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		);
+		await act( async () => land( { ok: true, event_id: 'ev-during' } ) );
+		expect(
+			dialog.closest( '.newspack-nodes-modal__backdrop' )
+		).toHaveClass( 'is-closing' );
+
+		expect(
+			await screen.findByText(
+				'Merged Valley Times into The Valley Times.'
+			)
+		).toBeInTheDocument();
+		await waitFor( () =>
+			expect( screen.queryByRole( 'dialog' ) ).toBeNull()
+		);
+	} );
+
+	it( 'leaves another entity’s merge dialog open when a cancelled merge lands', async () => {
+		const FERNWOOD = {
+			...PROPOSED,
+			entity_key: 'organization:fernwood-daily',
+			name: 'Fernwood Daily',
+		};
+		wire.replies.review = ( [ what ] ) =>
+			'links' === what
+				? { links: [], total: 0, available: true }
+				: {
+						entities: [ PROPOSED, FERNWOOD ],
+						total: 2,
+						available: true,
+				  };
+		let land;
+		wire.replies.merge_entities = () =>
+			new Promise( ( resolve ) => {
+				land = resolve;
+			} );
+		const dialog = await openMerge();
+		await pick( dialog );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Merge' } )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'merge_entities' ) ).toHaveLength( 1 )
+		);
+		throughExit( () =>
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+			)
+		);
+		fireEvent.click(
+			within( queue( 'Suggested names' ) ).getByRole( 'button', {
+				name: 'Fernwood Daily is the same as…',
+			} )
+		);
+		const next = screen.getByRole( 'dialog', {
+			name: 'Merge Fernwood Daily into…',
+		} );
+
+		await act( async () => land( { ok: true, event_id: 'ev-other' } ) );
+		await act( () => new Promise( ( done ) => setTimeout( done, 300 ) ) );
+
+		expect( screen.getByRole( 'dialog' ) ).toBe( next );
 	} );
 
 	it( 'names the record picked by its name when two share it', async () => {
@@ -2029,6 +2129,7 @@ describe( 'Review — keyboard', () => {
 		fireEvent.click(
 			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
 		);
+		await elapse( MODAL_EXIT_MS );
 		rowOf(
 			within( queue( 'Suggested names' ) ).getByRole( 'button', {
 				name: 'Valley Times',

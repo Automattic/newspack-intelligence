@@ -10,6 +10,7 @@
 import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderOnPage } from '../../__tests__/pageReads';
 import { Core } from '@newspack-nodes/runtime';
+import { throughExit } from '@newspack-nodes/shared/test-utils/answerConfirm';
 import { intelWire } from '../../__tests__/intelWire';
 import SaveToCollection from '../SaveToCollection';
 import { pageData } from '../../views/__tests__/fixtures';
@@ -409,11 +410,13 @@ describe( 'SaveToCollection', () => {
 		await waitFor( () => expect( select ).toHaveFocus() );
 	} );
 
-	it( 'closes from its close button', async () => {
+	it( 'closes from its close button once its exit has played', async () => {
 		const onClose = jest.fn();
 		renderOnPage( <SaveToCollection item={ ITEM } onClose={ onClose } /> );
 		await screen.findByLabelText( 'Folder' );
-		fireEvent.click( screen.getByRole( 'button', { name: 'Fermer' } ) );
-		expect( onClose ).toHaveBeenCalled();
+		throughExit( () =>
+			fireEvent.click( screen.getByRole( 'button', { name: 'Fermer' } ) )
+		);
+		expect( onClose ).toHaveBeenCalledTimes( 1 );
 	} );
 } );

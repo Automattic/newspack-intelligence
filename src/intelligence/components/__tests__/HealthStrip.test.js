@@ -20,6 +20,10 @@ import { intelWire } from '../../__tests__/intelWire';
 import { HEALTHY, LAST_OK, okSource } from '../../__tests__/healthFixture';
 import { formatLocalDateTime } from '@newspack-nodes/shared/utils/formatUtils';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
+import {
+	answerConfirm,
+	throughExit,
+} from '@newspack-nodes/shared/test-utils/answerConfirm';
 import HealthStrip, { FAILING_SHARE, HealthBlock } from '../HealthStrip';
 import { pageData } from '../../views/__tests__/fixtures';
 
@@ -1472,7 +1476,7 @@ describe( 'HealthStrip', () => {
 		// Mark a client, then confirm the end in the dialog it opens.
 		const markAndEnd = ( button ) => {
 			fireEvent.click( button );
-			fireEvent.click(
+			answerConfirm(
 				within( screen.getByRole( 'dialog' ) ).getByRole( 'button', {
 					name: 'End client',
 				} )
@@ -1525,8 +1529,10 @@ describe( 'HealthStrip', () => {
 			await waitFor( () => expect( line().textContent ).toBe( DEAD ) );
 			expect( within( rows() ).getByText( DEAD ) ).toBeInTheDocument();
 			fireEvent.click( mark() );
-			fireEvent.click(
-				within( asked() ).getByRole( 'button', { name: 'Close' } )
+			throughExit( () =>
+				fireEvent.click(
+					within( asked() ).getByRole( 'button', { name: 'Close' } )
+				)
 			);
 			expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 			await act(

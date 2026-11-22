@@ -52,6 +52,7 @@ function markText( use, today ) {
 /**
  * The dialog marking an item used: "Where" as a radio per place, "On" a
  * date, today by default, which a mark needs, so it marks nothing cleared.
+ * The mark and Cancel each play the dialog's exit first.
  *
  * @param {Object}                              props
  * @param {string}                              props.mark    The place picked first.
@@ -63,15 +64,20 @@ function MarkDialog( { mark, onMark, onClose } ) {
 	const [ where, setWhere ] = useState( mark );
 	const [ day, setDay ] = useState( localToday );
 	const dated = '' !== day;
+	const handle = useRef( null );
 	return (
 		<Modal
 			onClose={ onClose }
-			onSubmit={ () => dated && onMark( where, day ) }
+			handleRef={ handle }
+			onSubmit={ () =>
+				dated && handle.current.closeWith( () => onMark( where, day ) )
+			}
 		>
 			<ModalHeader
 				title={ __( 'Mark as used', 'newspack-intelligence' ) }
 				onClose={ onClose }
 				closeLabel={ __( 'Close', 'newspack-intelligence' ) }
+				compact
 			/>
 			<RadioControl
 				label={ __( 'Where', 'newspack-intelligence' ) }
@@ -89,7 +95,11 @@ function MarkDialog( { mark, onMark, onClose } ) {
 				onChange={ setDay }
 			/>
 			<div className="newspack-nodes-modal__actions">
-				<button type="button" className="button" onClick={ onClose }>
+				<button
+					type="button"
+					className="button"
+					onClick={ () => handle.current.close() }
+				>
 					{ __( 'Cancel', 'newspack-intelligence' ) }
 				</button>
 				<button

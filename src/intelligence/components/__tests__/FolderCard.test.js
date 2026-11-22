@@ -8,6 +8,7 @@
 
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import FolderCard from '../FolderCard';
+import { expectExitThenGone } from '@newspack-nodes/shared/test-utils/expectExitThenGone';
 import { pageData } from '../../views/__tests__/fixtures';
 
 const YEAR = new Date().getUTCFullYear();
@@ -49,6 +50,8 @@ function localToday() {
 }
 
 let calls;
+
+afterEach( () => jest.useRealTimers() );
 
 beforeEach( () => {
 	window.NewspackNodesData = pageData();
@@ -139,14 +142,16 @@ describe( 'FolderCard', () => {
 		fireEvent.change( within( dialog ).getByLabelText( 'On' ), {
 			target: { value: `${ YEAR }-10-23` },
 		} );
+		jest.useFakeTimers();
 		fireEvent.click(
 			within( dialog ).getByRole( 'button', { name: 'Mark as used' } )
 		);
+		expect( calls.onMark ).not.toHaveBeenCalled();
+		expectExitThenGone();
 		expect( calls.onMark ).toHaveBeenCalledWith(
 			'site',
 			`${ YEAR }-10-23`
 		);
-		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
 	} );
 
 	it( 'marks nothing on a day cleared, the dialog kept open', () => {
@@ -170,8 +175,9 @@ describe( 'FolderCard', () => {
 		renderCard();
 		openMenu();
 		fireEvent.click( screen.getByRole( 'menuitem', { name: 'Digest' } ) );
+		jest.useFakeTimers();
 		fireEvent.click( screen.getByRole( 'button', { name: 'Cancel' } ) );
-		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expectExitThenGone();
 		expect( calls.onMark ).not.toHaveBeenCalled();
 	} );
 

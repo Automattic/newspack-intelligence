@@ -22,6 +22,9 @@ import { speak } from '@wordpress/a11y';
 import { Core } from '@newspack-nodes/runtime';
 import { installViewport } from '@newspack-nodes/shared/test-utils/viewportWidth';
 import { intelWire } from '../../__tests__/intelWire';
+import { MODAL_EXIT_MS } from '@newspack-nodes/shared/hooks/useModalExit';
+import { expectExitThenGone } from '@newspack-nodes/shared/test-utils/expectExitThenGone';
+import { throughExit } from '@newspack-nodes/shared/test-utils/answerConfirm';
 import { UNDO_MS } from '../../hooks/useDeferredWrite';
 import { pageData } from '../../views/__tests__/fixtures';
 import FolderBoard from '../FolderBoard';
@@ -472,6 +475,7 @@ describe( 'FolderBoard', () => {
 		fireEvent.click(
 			within( dialog ).getByRole( 'button', { name: 'Mark as used' } )
 		);
+		await elapse( MODAL_EXIT_MS );
 		expect(
 			within( await card( UNUSED.title ) ).getByText(
 				'LinkedIn post, 23 Oct'
@@ -535,6 +539,11 @@ describe( 'FolderBoard', () => {
 			] )
 		);
 		await waitFor( () =>
+			expect(
+				dialog.closest( '.newspack-nodes-modal__backdrop' )
+			).toHaveClass( 'is-closing' )
+		);
+		await waitFor( () =>
 			expect( screen.queryByRole( 'dialog' ) ).toBeNull()
 		);
 		expect(
@@ -584,8 +593,10 @@ describe( 'FolderBoard', () => {
 		await within( dialog ).findByText(
 			'a folder named Tidewater already exists'
 		);
-		fireEvent.click(
-			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+		throughExit( () =>
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+			)
 		);
 		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
 		dialog = screen.getByRole( 'dialog', { name: 'New folder' } );
@@ -625,6 +636,53 @@ describe( 'FolderBoard', () => {
 		).toBeNull();
 	} );
 
+	it( 'keeps a new dialog open when a create cancelled before it lands', async () => {
+		let land;
+		wire.replies.create_collection = () =>
+			new Promise( ( resolve ) => {
+				land = resolve;
+			} );
+		renderBoard();
+		await column( 'Coastline picks' );
+		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
+		let dialog = screen.getByRole( 'dialog', { name: 'New folder' } );
+		fireEvent.change( within( dialog ).getByLabelText( 'Folder name' ), {
+			target: { value: 'Tidewater leads' },
+		} );
+		fireEvent.click(
+			within( dialog ).getByRole( 'button', { name: 'Create folder' } )
+		);
+		await waitFor( () =>
+			expect( wire.sent( 'create_collection' ) ).toHaveLength( 1 )
+		);
+		throughExit( () =>
+			fireEvent.click(
+				within( dialog ).getByRole( 'button', { name: 'Cancel' } )
+			)
+		);
+		fireEvent.click( screen.getByRole( 'button', { name: 'New folder' } ) );
+		dialog = screen.getByRole( 'dialog', { name: 'New folder' } );
+		fireEvent.change( within( dialog ).getByLabelText( 'Folder name' ), {
+			target: { value: 'Brackwater leads' },
+		} );
+
+		await act( async () =>
+			land( {
+				ok: true,
+				event_id: 'ev-late',
+				collection_key: 'tidewater-leads',
+			} )
+		);
+		await act( () => new Promise( ( done ) => setTimeout( done, 300 ) ) );
+
+		expect( screen.getByRole( 'dialog', { name: 'New folder' } ) ).toBe(
+			dialog
+		);
+		expect( within( dialog ).getByLabelText( 'Folder name' ) ).toHaveValue(
+			'Brackwater leads'
+		);
+	} );
+
 	it( 'sends no blank folder name', async () => {
 		renderBoard();
 		await column( 'Coastline picks' );
@@ -650,10 +708,11 @@ describe( 'FolderBoard', () => {
 		fireEvent.change( within( dialog ).getByLabelText( 'Folder name' ), {
 			target: { value: 'Brackwater leads' },
 		} );
+		fakeUndoClock();
 		fireEvent.click(
 			within( dialog ).getByRole( 'button', { name: 'Cancel' } )
 		);
-		expect( screen.queryByRole( 'dialog' ) ).toBeNull();
+		expectExitThenGone();
 		expect( wire.sent( 'create_collection' ) ).toEqual( [] );
 	} );
 

@@ -1,6 +1,6 @@
 import { Button, SelectControl } from '@wordpress/components';
 import { DataViews } from '@wordpress/dataviews';
-import { useContext, useState } from '@wordpress/element';
+import { useContext, useRef, useState } from '@wordpress/element';
 import { __, _n, sprintf } from '@wordpress/i18n';
 import useNarrow from '@newspack-nodes/shared/hooks/useNarrow';
 import { useIntelRead } from '../hooks/useIntelCommand';
@@ -232,14 +232,16 @@ function LensRuns( { lens, lists } ) {
 /**
  * The client or company, picked by name: a name picked searches its key at
  * once, and typed text alone searches nothing. The box shows the view's
- * entity, so a filter removed elsewhere empties it.
+ * entity, so a filter removed elsewhere empties it. Escape while its list is
+ * closed goes to `onEscape`.
  *
  * @param {Object}                 props
  * @param {Object}                 props.view         The view.
  * @param {(view: Object) => void} props.onChangeView Moves the view.
+ * @param {() => void}             props.onEscape     Takes Escape while the list is closed.
  * @return {import('react').ReactElement} The field.
  */
-function EntityFilter( { view, onChangeView } ) {
+function EntityFilter( { view, onChangeView, onEscape } ) {
 	return (
 		<EntityPicker
 			label={ __( 'Client or company', 'newspack-intelligence' ) }
@@ -247,6 +249,7 @@ function EntityFilter( { view, onChangeView } ) {
 			onChange={ ( key ) =>
 				onChangeView( withIs( view, 'entity', key ) )
 			}
+			onEscape={ onEscape }
 		/>
 	);
 }
@@ -367,6 +370,7 @@ export default function Search( {
 	const lists = vocabulary.lensLists;
 	const narrow = useNarrow();
 	const [ sheet, setSheet ] = useState( false );
+	const filterSheet = useRef( null );
 	const read = useIntelRead( 'search:items', 'search', viewToArgs( view ) );
 	const lenses = usePageRead( 'lenses' );
 	const answer = read.error ? null : read.answer;
@@ -394,7 +398,14 @@ export default function Search( {
 	};
 	const removeFilters = () =>
 		onChangeView( { ...view, search: '', filters: [], page: 1 } );
-	const entity = <EntityFilter view={ view } onChangeView={ onChangeView } />;
+	// Inside the narrow filter sheet, Escape closes the sheet; wide, nothing.
+	const entity = (
+		<EntityFilter
+			view={ view }
+			onChangeView={ onChangeView }
+			onEscape={ () => filterSheet.current?.close() }
+		/>
+	);
 	const filters = (
 		<>
 			<DataViews.Filters />
@@ -505,11 +516,14 @@ export default function Search( {
 										'newspack-intelligence'
 									) }
 									onClose={ () => setSheet( false ) }
+									handleRef={ filterSheet }
 								>
 									{ filters }
 									<Button
 										variant="primary"
-										onClick={ () => setSheet( false ) }
+										onClick={ () =>
+											filterSheet.current.close()
+										}
 									>
 										{ sprintf(
 											/* translators: %d: how many items match. */

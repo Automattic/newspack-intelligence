@@ -36,7 +36,7 @@ import Section from '@newspack-nodes/shared/components/Section';
 import Invitation from '@newspack-nodes/shared/components/Invitation';
 import Skeleton from '@newspack-nodes/shared/components/Skeleton';
 import UndoSnackbar from './UndoSnackbar';
-import { collectionKey, dayLabel, utcDay } from './format';
+import { collectionKey, dayLabel, isSend, utcDay } from './format';
 import { words } from './words';
 
 /** The filter showing every item a folder holds. */
@@ -206,15 +206,17 @@ function reflected( write, listed ) {
 /**
  * The dialog naming a new folder: "Folder name", any refusal of the last
  * name sent, then **Cancel** and **Create folder**, which sends a name that
- * is not blank and leaves the dialog standing until the board closes it.
+ * is not blank and leaves the dialog standing until the board closes it
+ * through `handleRef`, as Cancel does, each playing the dialog's exit.
  *
- * @param {Object}                 props
- * @param {?string}                props.refusal  Why the last name was refused.
- * @param {(name: string) => void} props.onCreate Sends the name.
- * @param {() => void}             props.onClose  Closes the dialog unsent.
+ * @param {Object}                                                                    props
+ * @param {?string}                                                                   props.refusal   Why the last name was refused.
+ * @param {(name: string) => void}                                                    props.onCreate  Sends the name.
+ * @param {() => void}                                                                props.onClose   Closes the dialog unsent.
+ * @param {{current: ?import('@newspack-nodes/shared/hooks/useDialog').DialogHandle}} props.handleRef Takes the dialog's animated close.
  * @return {import('react').ReactElement} The dialog.
  */
-function NewFolder( { refusal, onCreate, onClose } ) {
+function NewFolder( { refusal, onCreate, onClose, handleRef } ) {
 	const [ name, setName ] = useState( '' );
 	const nameField = useRef( null );
 	useEffect( () => nameField.current.focus(), [] );
@@ -223,6 +225,7 @@ function NewFolder( { refusal, onCreate, onClose } ) {
 		<Modal
 			className="newspack-intelligence__edit"
 			onClose={ onClose }
+			handleRef={ handleRef }
 			onSubmit={ () => {
 				if ( ! blank ) {
 					onCreate( name.trim() );
@@ -244,7 +247,11 @@ function NewFolder( { refusal, onCreate, onClose } ) {
 				onChange={ setName }
 			/>
 			<div className="newspack-nodes-modal__actions">
-				<button type="button" className="button" onClick={ onClose }>
+				<button
+					type="button"
+					className="button"
+					onClick={ () => handleRef.current.close() }
+				>
 					{ __( 'Cancel', 'newspack-intelligence' ) }
 				</button>
 				<button
@@ -618,10 +625,12 @@ export default function FolderBoard( { show: opensOn, folders, canTune } ) {
 	// The tokens this dialog's last send answered, null until it sends.
 	const [ sent, setSent ] = useState( null );
 	const newFolder = useRef( null );
+	const nameDialog = useRef( null );
 	useReturnFocus( naming, newFolder );
 	const create = useIntelWrite( 'create_collection', {
 		dirties: FOLDER_READS,
-		refresh: () => setNaming( false ),
+		refresh: ( answer, tokens ) =>
+			isSend( tokens, sent ) && nameDialog.current?.close(),
 		onRefused: listed.refused,
 	} );
 	const every = listed.read.answer?.collections ?? [];
@@ -831,6 +840,7 @@ export default function FolderBoard( { show: opensOn, folders, canTune } ) {
 					refusal={ refusalOfSend( create, sent ) }
 					onCreate={ onCreate }
 					onClose={ () => setNaming( false ) }
+					handleRef={ nameDialog }
 				/>
 			) }
 			<UndoSnackbar { ...writes.snackbar } />
