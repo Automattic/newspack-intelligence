@@ -17,8 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Escape in a picker closes its dialog once the picker's list is closed**: the name pickers in Is this about…, Merge … into… and a watch's client field, a watch's team view and folder fields, a team view's Kinds of news, About and Sources, and the client picker in Search's filter sheet. The stock combobox and token field take every Escape, so the dialog hears it from the picker instead.
 - **A link or a merge that lands while Cancel's exit plays still says so**, and the dialog closes once. The link's message names the entity it sent, not one picked after.
-- **A save that lands after its dialog was cancelled leaves the dialog open now alone.** A new folder, a team view or a watch closes its dialog only when the reply is to that dialog's own send, and a merge only the dialog for the entity it merged.
+- **A save that lands after its dialog was cancelled leaves alone whatever dialog is open by then.** A new folder, a team view or a watch closes its dialog only when the reply is to that dialog's own send, and a merge only the dialog for the entity it merged.
 - A row unmounted while its Is this about… dialog plays its exit no longer throws handing focus back to a menu toggle that has gone with it.
+- **A sheet's first focus skips a hidden or disabled field.** The filter sheet, the edit drawer and the health sheet focus the first field Tab can reach, by the substrate's own tabbable rule, and leave the title to the shell when there is none.
 
 ## [0.46.3] - 2026-11-17
 

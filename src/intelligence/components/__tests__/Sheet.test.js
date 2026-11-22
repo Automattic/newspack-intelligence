@@ -1,9 +1,9 @@
 /* eslint-env jest */
 /**
  * Sheet is a right-hand drawer, or a bottom sheet when the page is narrow,
- * named by its heading: opening it moves focus to its first field, else to
- * that heading, Escape
- * closes it, and closing it returns focus to whatever opened it.
+ * named by its heading: opening it moves focus to its first field Tab can
+ * reach, else to that heading, Escape closes it, and closing it returns focus
+ * to whatever opened it.
  */
 
 import { render, screen, fireEvent } from '@testing-library/react';
@@ -75,6 +75,20 @@ describe( 'Sheet', () => {
 		);
 		expect(
 			screen.getByRole( 'combobox', { name: 'Desk' } )
+		).toHaveFocus();
+	} );
+
+	it( 'passes over a hidden and a disabled field to the first it can focus', () => {
+		viewport = installViewport( false );
+		render(
+			<Sheet title="Desk filters" closeLabel="Shut" onClose={ jest.fn() }>
+				<input type="hidden" name="desk-nonce" value="heron-58" />
+				<input aria-label="Locked desk" disabled />
+				<input aria-label="Desk words" />
+			</Sheet>
+		);
+		expect(
+			screen.getByRole( 'textbox', { name: 'Desk words' } )
 		).toHaveFocus();
 	} );
 

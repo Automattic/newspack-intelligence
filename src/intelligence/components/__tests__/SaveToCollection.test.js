@@ -371,7 +371,7 @@ describe( 'SaveToCollection', () => {
 		const title = screen.getByText( 'Save to folder' );
 		const close = screen.getByRole( 'button', { name: 'Fermer' } );
 		expect( close.parentElement ).toBe( title.parentElement );
-		expect( title.parentElement.tagName ).toBe( 'HEADER' );
+		expect( title.parentElement.tagName ).toBe( 'DIV' );
 		expect( close.textContent ).toBe( '' );
 		expect( close.querySelector( 'svg' ) ).not.toBeNull();
 		const dialog = screen.getByRole( 'dialog', { name: 'Save to folder' } );

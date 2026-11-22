@@ -5,7 +5,7 @@
  * and Stop watching.
  */
 
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from '@wordpress/element';
 import { Core } from '@newspack-nodes/runtime';
 import { renderOnPage } from './pageReads';
@@ -205,7 +205,7 @@ describe( 'compact dialog headers', () => {
 		async ( _, open ) => {
 			const dialog = await open();
 			expect(
-				within( dialog ).getByRole( 'banner', { hidden: true } )
+				dialog.querySelector( ':scope > .newspack-nodes-modal__header' )
 			).toHaveClass(
 				'newspack-nodes-modal__header',
 				'newspack-nodes-modal__header--compact'
