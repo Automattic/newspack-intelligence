@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-11-22
+
 ### Changed
 
 - **Needs newspack-nodes 2.164.0.** Every dialog draws through the substrate's one shell, which plays a 240 ms exit on every close and takes an Escape only when nothing inside the dialog took it first. Below the floor the plugin goes dormant behind an admin notice naming both versions.
