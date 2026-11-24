@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.1] - 2026-11-24
+
 ### Fixed
 
 - **The wheel zooms the Graph tab's canvas, and a swipe pans it, wherever the pointer rests on it**, as on the console's canvases. It waited for focus, to leave the wheel to a page that has nothing to scroll, so it did nothing.
