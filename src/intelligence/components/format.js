@@ -3,7 +3,7 @@
  * wrote: an item's URL becomes an href only when it is http or https.
  */
 
-import { __, sprintf } from '@wordpress/i18n';
+import { __, _n, sprintf } from '@wordpress/i18n';
 import { Core } from '@newspack-nodes/runtime';
 import { word } from './words';
 
@@ -220,6 +220,19 @@ export function usualPhrase( mean ) {
 				Math.round( mean )
 		  );
 }
+
+/**
+ * A count of items in words: "1 item", "%d items".
+ *
+ * @param {number} count How many.
+ * @return {string} The phrase.
+ */
+export const itemsPhrase = ( count ) =>
+	sprintf(
+		/* translators: %d: how many items. */
+		_n( '%d item', '%d items', count, 'newspack-intelligence' ),
+		count
+	);
 
 /**
  * A line's parts as one comma sentence, leaving out only the absent ones —

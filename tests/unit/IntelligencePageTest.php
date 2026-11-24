@@ -104,7 +104,7 @@ final class IntelligencePageTest extends TestCase {
 		$this->assertNotContains( LAYOUT_EDITOR_HANDLE, $handles );
 		$this->assertArrayNotHasKey( LAYOUT_EDITOR_HANDLE, $GLOBALS['_localized_scripts'] );
 		$compositions = $this->localized( 'newspack-intelligence' )['compositions'];
-		$this->assertSame( [ 'newspack-intelligence/briefing', 'newspack-intelligence/lens', 'newspack-intelligence/entity' ], \array_keys( $compositions ) );
+		$this->assertSame( [ 'newspack-intelligence/briefing', 'newspack-intelligence/lens', 'newspack-intelligence/entity', 'newspack-intelligence/graph' ], \array_keys( $compositions ) );
 		$this->assertSame( [ 'saved', 'Heron desk' ], [ $compositions['newspack-intelligence/briefing']['source'], $compositions['newspack-intelligence/briefing']['blocks'][0]['attributes']['heading'] ] );
 		$this->assertSame( 'default', $compositions['newspack-intelligence/entity']['source'] );
 

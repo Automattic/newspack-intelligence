@@ -6,7 +6,7 @@
  * the zone the suite pins (Pacific/Auckland), whatever the page's clock.
  * dayLabel names a UTC day by its day and month, adding the year only when
  * it is not today's, always in UTC. usualPhrase says a usual count in
- * whole words. evidenceText reads a proposal's evidence as plain text, cut
+ * whole words, and itemsPhrase a count of items. evidenceText reads a proposal's evidence as plain text, cut
  * to the sentence naming the entity, the name apart. reasonText reads an
  * extraction's rank reason as its own sentence, "No reason recorded." for
  * none.
@@ -17,6 +17,7 @@ import {
 	dayLabel,
 	evidenceText,
 	isSend,
+	itemsPhrase,
 	metaLine,
 	reasonText,
 	sinceLabel,
@@ -201,6 +202,16 @@ describe( 'usualPhrase', () => {
 		[ 6.25, 'usually about 6' ],
 	] )( 'says a mean of %s as "%s"', ( mean, words ) => {
 		expect( usualPhrase( mean ) ).toBe( words );
+	} );
+} );
+
+describe( 'itemsPhrase', () => {
+	it.each( [
+		[ 0, '0 items' ],
+		[ 1, '1 item' ],
+		[ 37, '37 items' ],
+	] )( 'counts %d items as "%s"', ( count, words ) => {
+		expect( itemsPhrase( count ) ).toBe( words );
 	} );
 } );
 

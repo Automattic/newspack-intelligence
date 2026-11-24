@@ -68,6 +68,7 @@ describe( 'BLOCK_VIEWS', () => {
 			'newspack-intelligence/trend-chart',
 			'newspack-intelligence/item-list',
 			'newspack-intelligence/folder-board',
+			'newspack-intelligence/graph',
 		] );
 		Object.values( BLOCK_VIEWS ).forEach( ( { View } ) =>
 			expect( typeof View ).toBe( 'function' )

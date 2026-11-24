@@ -19,6 +19,7 @@ import timeline from './timeline';
 import trendChart from './trend-chart';
 import itemList from './item-list';
 import folderBoard from './folder-board';
+import graph from './graph';
 
 /**
  * A block's view.
@@ -41,4 +42,5 @@ export const BLOCK_VIEWS = {
 	'newspack-intelligence/trend-chart': trendChart,
 	'newspack-intelligence/item-list': itemList,
 	'newspack-intelligence/folder-board': folderBoard,
+	'newspack-intelligence/graph': graph,
 };

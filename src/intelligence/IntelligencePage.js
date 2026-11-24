@@ -18,6 +18,7 @@ import Entity from './views/Entity';
 import Review from './views/Review';
 import Collections from './views/Collections';
 import Lens, { CLOSED_LENS } from './views/Lens';
+import Graph from './views/Graph';
 import Watches, { CLOSED_WATCH, newWatch } from './views/Watches';
 import SaveToCollection from './components/SaveToCollection';
 import { CanManage } from './components/Answer';
@@ -48,6 +49,7 @@ const VIEWS = [
 	'briefing',
 	'search',
 	'lenses',
+	'graph',
 	'review',
 	'collections',
 	'watches',
@@ -63,7 +65,7 @@ const defaultView = () => ( linkedWatch() ? 'watches' : 'briefing' );
 
 /**
  * The Intelligence page: Briefing, the view it opens on, then Search,
- * Team views, Review, Folders and Watches, switched in place. The
+ * Team views, Graph, Review, Folders and Watches, switched in place. The
  * Briefing opens an entity, a lens, a watch, the watch form or Search. Each
  * view reads its own commands; the page holds
  * which view shows, Search's DataViews view, the open entity, lens and
@@ -89,18 +91,18 @@ const defaultView = () => ( linkedWatch() ? 'watches' : 'briefing' );
  * Back and Forward step through the views and a link opens on one; a view
  * the page does not offer opens the default.
  *
- * The Briefing is its page's layout, from the page data's `compositions`,
- * with **Edit layout** in its own header's ⋯ menu for a curator; a team view
- * and a profile each render their page's layout below their own header,
- * whose ⋯ menu offers a curator **Edit layout**. A curator's load naming
- * `edit` puts the layout editor in the panel and keeps the tab bar; the
- * layout it hands back, or a restored default, replaces the page's without a
- * reload. A tab picked or Back and Forward end an edit; while the editor
- * holds a change not yet saved, they ask "Discard your changes to this
- * layout?" first, the editor standing until answered: **Discard changes**
- * ends the edit and goes, and **Keep editing** stays, returning to the edit's
- * view. Back and Forward otherwise go as a tab picked goes, closing a
- * profile.
+ * The Briefing and the Graph are each their page's layout, from the page
+ * data's `compositions`, with **Edit layout** in their own header's ⋯ menu
+ * for a curator; a team view and a profile each render their page's layout
+ * below their own header, whose ⋯ menu offers a curator **Edit layout**. A
+ * curator's load naming `edit` puts the layout editor in the panel and keeps
+ * the tab bar; the layout it hands back, or a restored default, replaces the
+ * page's without a reload. A tab picked or Back and Forward end an edit;
+ * while the editor holds a change not yet saved, they ask "Discard your
+ * changes to this layout?" first, the editor standing until answered:
+ * **Discard changes** ends the edit and goes, and **Keep editing** stays,
+ * returning to the edit's view. Back and Forward otherwise go as a tab picked
+ * goes, closing a profile.
  *
  * The shared `DashboardShell` supplies the skin, the positioned page surface,
  * the header naming this page and the debug overlay; the page scrolls in the
@@ -171,6 +173,7 @@ export default function IntelligencePage( {
 		briefing: __( 'Briefing', 'newspack-intelligence' ),
 		search: __( 'Search', 'newspack-intelligence' ),
 		lenses: __( 'Team views', 'newspack-intelligence' ),
+		graph: __( 'Graph', 'newspack-intelligence' ),
 		review:
 			undefined === matches
 				? __( 'Review', 'newspack-intelligence' )
@@ -307,6 +310,14 @@ export default function IntelligencePage( {
 		setSearch( { ...namedView( filters ), type: search.type } );
 		go( 'search' );
 	};
+	const actions = {
+		onSearchFor: searchFor,
+		onOpenEntity: openEntity,
+		onOpenLens: openLens,
+		onOpenWatch: openWatch,
+		onSave,
+		canTune,
+	};
 
 	return (
 		<DashboardShell
@@ -350,14 +361,7 @@ export default function IntelligencePage( {
 												onBack: closeProfile,
 											} }
 											onWatch={ openWatchForm }
-											actions={ {
-												onSearchFor: searchFor,
-												onOpenEntity: openEntity,
-												onOpenLens: openLens,
-												onOpenWatch: openWatch,
-												onSave,
-												canTune,
-											} }
+											actions={ actions }
 										/>
 									) }
 									<div
@@ -382,10 +386,7 @@ export default function IntelligencePage( {
 												}
 												canTune={ canTune }
 												actions={ {
-													onSearchFor: searchFor,
-													onOpenEntity: openEntity,
-													onOpenLens: openLens,
-													onOpenWatch: openWatch,
+													...actions,
 													onNewWatch: () =>
 														openWatchForm(
 															{
@@ -396,8 +397,6 @@ export default function IntelligencePage( {
 														),
 													onSearch: () =>
 														go( 'search' ),
-													onSave,
-													canTune,
 												} }
 											/>
 										) }
@@ -427,14 +426,19 @@ export default function IntelligencePage( {
 														layoutContext( 'lens' )
 													]
 												}
-												actions={ {
-													onSearchFor: searchFor,
-													onOpenEntity: openEntity,
-													onOpenLens: openLens,
-													onOpenWatch: openWatch,
-													onSave,
-													canTune,
-												} }
+												actions={ actions }
+											/>
+										) }
+										{ 'graph' === view && ! editSlot && (
+											<Graph
+												onRestored={ relaid }
+												layout={
+													layouts[
+														layoutContext( 'graph' )
+													]
+												}
+												canTune={ canTune }
+												actions={ actions }
 											/>
 										) }
 										{ 'review' === view && (

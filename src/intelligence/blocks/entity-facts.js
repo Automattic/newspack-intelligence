@@ -13,7 +13,7 @@ import CappedList from '../components/CappedList';
 import Cite, { EntityChip } from '../components/Cite';
 import Section from '@newspack-nodes/shared/components/Section';
 import Skeleton from '@newspack-nodes/shared/components/Skeleton';
-import { roleText, shownDay, utcDay } from '../components/format';
+import { itemsPhrase, roleText, shownDay, utcDay } from '../components/format';
 import { word } from '../components/words';
 import { useIntelRead } from '../hooks/useIntelCommand';
 import { useIntelActions } from '../layout/PageContext';
@@ -70,18 +70,7 @@ function countsOf( entity ) {
 	const { status } = entity;
 	if ( ! status ) {
 		return 0 < entity.counts.items
-			? [
-					sprintf(
-						/* translators: %d: readable items about the entity. */
-						_n(
-							'%d item',
-							'%d items',
-							entity.counts.items,
-							'newspack-intelligence'
-						),
-						entity.counts.items
-					),
-			  ]
+			? [ itemsPhrase( entity.counts.items ) ]
 			: [];
 	}
 	const counts = COUNTED.filter(

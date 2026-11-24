@@ -437,11 +437,15 @@ describe( 'mountLayoutEditor', () => {
 		expect( told ).toEqual( [ false, true ] );
 	} );
 
-	it( 'heads each page in its own words', async () => {
+	it.each( [
+		[ 'briefing', 'Edit the Briefing layout' ],
+		[ 'graph', 'Edit the graph layout' ],
+	] )( 'heads the %s in its own words', async ( page, heading ) => {
+		const context = `newspack-intelligence/${ page }`;
 		wire.replies.get = { ...SAVED, blocks: [] };
 		mountLayoutEditor(
 			{
-				context: 'newspack-intelligence/briefing',
+				context,
 				max_blocks: 24,
 				blocks: {},
 			},
@@ -449,8 +453,8 @@ describe( 'mountLayoutEditor', () => {
 		);
 		renderOnPage(
 			<PageEditSlot
-				context="newspack-intelligence/briefing"
-				target={ { page: 'briefing' } }
+				context={ context }
+				target={ { page } }
 				since={ 1792000000 }
 				onDone={ () => {} }
 			/>
@@ -460,9 +464,7 @@ describe( 'mountLayoutEditor', () => {
 			() => expect( mockProvider.props?.value ).toEqual( [] ),
 			WAIT
 		);
-		expect(
-			screen.getByRole( 'heading', { name: 'Edit the Briefing layout' } )
-		).toBeTruthy();
+		expect( screen.getByRole( 'heading', { name: heading } ) ).toBeTruthy();
 		expect( screen.queryByRole( 'button', { name: /Preview with/ } ) ).toBe(
 			null
 		);

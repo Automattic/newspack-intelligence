@@ -111,6 +111,21 @@ describe( 'editSearch for a profile', () => {
 	} );
 } );
 
+describe( 'the graph page', () => {
+	it( 'edits on its own tab, naming no subject', () => {
+		const search = editSearch(
+			'?page=newspack-intelligence&view=briefing&lens=desk-watch',
+			{ page: 'graph' },
+			PAGES
+		);
+
+		expect( search ).toBe(
+			'?page=newspack-intelligence&view=graph&edit=graph'
+		);
+		expect( editTarget( search ) ).toEqual( { page: 'graph' } );
+	} );
+} );
+
 describe( 'leaveEdit', () => {
 	it( 'drops the edit and its subject, and keeps every other param', () => {
 		window.history.replaceState(

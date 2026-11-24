@@ -20,7 +20,7 @@ require_once __DIR__ . '/../support/signs-in-users.php';
 require_once __DIR__ . '/../support/declares-intelligence-blocks.php';
 
 /**
- * Intelligence's blocks and the three contexts they compose, declared on
+ * Intelligence's blocks and the four contexts they compose, declared on
  * the substrate's composition layer: registered in the browser alone, each
  * context reading its default from `layouts/`, and every layout refused
  * when it names a lens never saved, or an entity or topic a reader without
@@ -54,14 +54,14 @@ final class IntelligenceBlocksTest extends TestCase {
 		parent::tearDown();
 	}
 
-	/** The loader declares the three contexts beside the substrate's shared blocks. */
+	/** The loader declares the four contexts beside the substrate's shared blocks. */
 	public function test_the_declarations_pass_the_substrate(): void {
 		$this->forget_compositions();
 		$GLOBALS['_wp_actions'][ Composition::FILTER ] = [ Composition::declare_substrate_blocks( ... ) ];
 		$this->plugin_loader()();
 
 		$this->assertSame( 64, Composition::schemas( 'newspack-intelligence/entity' )['max_blocks'] );
-		foreach ( [ 'briefing', 'lens', 'entity' ] as $page ) {
+		foreach ( [ 'briefing', 'lens', 'entity', 'graph' ] as $page ) {
 			$this->assertSame( \dirname( __DIR__, 2 ) . "/layouts/{$page}.html", \realpath( Composition::context_of( "newspack-intelligence/{$page}" )['default'] ) );
 		}
 	}
@@ -83,6 +83,7 @@ final class IntelligenceBlocksTest extends TestCase {
 				'briefing' => 'newspack-intelligence/briefing',
 				'lens'     => 'newspack-intelligence/lens',
 				'entity'   => 'newspack-intelligence/entity',
+				'graph'    => 'newspack-intelligence/graph',
 			],
 			Intelligence_Blocks::page_contexts()
 		);
@@ -554,6 +555,66 @@ final class IntelligenceBlocksTest extends TestCase {
 			'the list'     => [ 'list' ],
 			'the activity' => [ 'activity' ],
 			'the table'    => [ 'table' ],
+		];
+	}
+
+	/** The graph block stands once, on the graph's page alone, its lines standing for 5 shared items at first. */
+	public function test_the_graph_block_is_declared_on_its_page_alone(): void {
+		$graph = Composition::schemas( 'newspack-intelligence/graph' )['blocks']['newspack-intelligence/graph'];
+
+		$this->assertSame( [ 'shared' => 5 ], \array_map( static fn ( array $schema ): mixed => $schema['default'], $graph['attributes'] ) );
+		$this->assertFalse( $graph['multiple'] );
+		foreach ( [ 'briefing', 'lens', 'entity' ] as $page ) {
+			$this->assertArrayNotHasKey( 'newspack-intelligence/graph', Composition::schemas( "newspack-intelligence/{$page}" )['blocks'], $page );
+		}
+	}
+
+	/** The graph page also offers the blocks every page does, and no other. */
+	public function test_the_graph_page_offers_the_blocks_every_page_does(): void {
+		$own = \array_filter( \array_keys( Composition::schemas( 'newspack-intelligence/graph' )['blocks'] ), static fn ( string $name ): bool => \str_starts_with( $name, 'newspack-intelligence/' ) );
+
+		$this->assertEqualsCanonicalizing(
+			[ 'newspack-intelligence/graph', 'newspack-intelligence/health', 'newspack-intelligence/item-list', 'newspack-intelligence/folder-board' ],
+			$own
+		);
+	}
+
+	/** The graph page's default layout is the one block. */
+	public function test_the_default_graph_layout_validates(): void {
+		$tree = Composition::validate( 'newspack-intelligence/graph', Composition::default_markup( 'newspack-intelligence/graph' ) );
+
+		$this->assertSame( [ [ 'newspack-intelligence/graph', [ 'shared' => 5 ] ] ], \array_map( null, \array_column( $tree, 'name' ), \array_column( $tree, 'attributes' ) ) );
+	}
+
+	/** Each end of the slider's range is admitted. */
+	public function test_a_graph_block_keeps_either_end_of_its_range(): void {
+		foreach ( [ 1, 50 ] as $shared ) {
+			$this->assertSame( $shared, Composition::validate( 'newspack-intelligence/graph', "<!-- wp:newspack-intelligence/graph {\"shared\":{$shared}} /-->" )[0]['attributes']['shared'] );
+		}
+	}
+
+	/**
+	 * A least shared outside the slider's range is refused.
+	 *
+	 * @param int $shared The least shared.
+	 */
+	#[DataProvider( 'graph_out_of_bounds' )]
+	public function test_a_graph_block_out_of_its_bounds_is_refused( int $shared ): void {
+		$this->expectException( \RuntimeException::class );
+		$this->expectExceptionMessage( 'newspack-intelligence/graph attribute shared' );
+
+		Composition::validate( 'newspack-intelligence/graph', "<!-- wp:newspack-intelligence/graph {\"shared\":{$shared}} /-->" );
+	}
+
+	/**
+	 * A least shared past either end of the slider.
+	 *
+	 * @return array<string,array{0:int}>
+	 */
+	public static function graph_out_of_bounds(): array {
+		return [
+			'none shared' => [ 0 ],
+			'past 50'     => [ 51 ],
 		];
 	}
 

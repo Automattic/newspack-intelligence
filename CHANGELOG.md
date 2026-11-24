@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **A `graph` command reads the whole entity graph.** It answers every accepted entity the items a caller may read name as a subject or a mention, with its open roles and how many items name it, and how many items each pair of them shares, the most shared first, at most 20,000 pairs, saying when it cut. `topics` reads topic links too. It is a `read` command, under the tiers, exclusions, judgments and merges every read keeps, and the MCP door does not offer it.
+- **A Graph tab draws every entity on the shared force graph.** Each entity is a node colored by its type, in a hull of its first open role, else of its type, and a line joins each pair sharing at least as many items as the slider says, 1 to 50 and 5 at first, wider the more they share. **Topics** reads topic links too. A press selects an entity and lights what its lines reach; Enter or a double press opens its profile. A search finds a name, and the list beside the canvas does all of this without a pointer. The canvas takes a wheel only while it has focus, so the page scrolls over it, and a pinch always zooms. The tab is a composed page of one block, `newspack-intelligence/graph`, which a curator may lay out beside the collection status, item lists and folders.
 
 ## [0.47.1] - 2026-11-22
 

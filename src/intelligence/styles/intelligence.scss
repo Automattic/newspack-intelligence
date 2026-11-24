@@ -7,6 +7,8 @@
  * name and the team view picked, and the rule down a record's steps.
  */
 
+@use "sass:list";
+@use "@newspack-nodes/shared/styles/button-roles" as role;
 @use "@newspack-nodes/shared/styles/tokens" as base;
 
 // The tab bar sits flush under the header, as the Station's does, so the
@@ -237,6 +239,11 @@
 		border: 0;
 		font-family: inherit;
 		cursor: pointer;
+	}
+
+	// A pressed pill reads as any active toggle.
+	.newspack-intelligence__pill.is-active {
+		@include role.toggle-active;
 	}
 
 	&__pill-name {
@@ -514,6 +521,80 @@
 		align-items: end;
 		gap: base.$space-sm;
 		margin-block-end: base.$space-md;
+
+		// A slider has no width of its own.
+		> .components-range-control {
+			flex: 0 1 24rem;
+		}
+	}
+}
+
+// What stands above the graph's canvas on its tab, the page's foot included.
+$graph-chrome: 340px;
+
+// The canvas fills the window under its header, its list beside it, or under
+// it when narrow.
+.newspack-intelligence__graph {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(200px, 280px);
+	grid-template-rows: max(420px, calc(100vh - #{$graph-chrome}));
+	gap: base.$space-lg;
+
+	@media (max-width: 599px) {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+// The padding keeps a focus ring clear of the scrolling edge.
+.newspack-intelligence__graph-list {
+	display: flex;
+	flex-direction: column;
+	gap: base.$space-sm;
+	padding: 3px;
+	overflow-y: auto;
+}
+
+// In the order of typeWords; of 3, 6 and 7, slot 7 is farthest from the rest.
+$type-slots: 1, 2, 4, 5, 8, 7;
+
+// The force graph's paint: each type's color, lines faint enough at rest to
+// read the names over them, and what a selection lights.
+.newspack-intelligence__graph-canvas {
+	$graph: ".newspack-nodes-force-graph";
+
+	@each $slot in $type-slots {
+		#{$graph}__node.is-type-#{list.index($type-slots, $slot)}
+			#{$graph}__shape {
+			$color: var(--chart-#{$slot}, var(--np-chart-#{$slot}));
+
+			fill: color-mix(
+				in srgb,
+				#{$color} 14%,
+				var(--paper-2, var(--np-surface-subtle))
+			);
+			stroke: $color;
+		}
+	}
+
+	#{$graph}__node.is-selected #{$graph}__shape {
+		stroke: var(--ink, var(--np-text));
+	}
+
+	#{$graph}__node.is-dimmed {
+		opacity: 0.25;
+	}
+
+	#{$graph}__link {
+		opacity: 0.35;
+	}
+
+	#{$graph}__link.is-lit {
+		stroke: var(--cyan, var(--np-primary));
+		opacity: 1;
+	}
+
+	#{$graph}__link.is-dimmed {
+		opacity: 0.1;
 	}
 }
 

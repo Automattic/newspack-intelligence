@@ -1,10 +1,10 @@
 import { useMemo, useState } from '@wordpress/element';
-import { __, _n, sprintf } from '@wordpress/i18n';
+import { __, sprintf } from '@wordpress/i18n';
 import { Core } from '@newspack-nodes/runtime';
 import DataViewsList from '@newspack-nodes/shared/components/DataViewsList';
 import { EntityChip } from './Cite';
 import ItemRow, { ItemRows } from './ItemRow';
-import { dayLabel, utcDay } from './format';
+import { dayLabel, itemsPhrase, utcDay } from './format';
 import { word } from './words';
 
 /**
@@ -60,18 +60,7 @@ function GroupRow( { group, onOpenEntity, onSave, canTune } ) {
 				</button>
 			</div>
 			<p className="newspack-nodes-status is-muted newspack-intelligence__meta">
-				<span>
-					{ sprintf(
-						/* translators: %d: the items the group holds. */
-						_n(
-							'%d item',
-							'%d items',
-							group.count,
-							'newspack-intelligence'
-						),
-						group.count
-					) }
-				</span>
+				<span>{ itemsPhrase( group.count ) }</span>
 				{ group.kind && (
 					<span>{ word( 'kindWords', group.kind ) }</span>
 				) }

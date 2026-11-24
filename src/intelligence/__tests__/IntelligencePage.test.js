@@ -1,7 +1,7 @@
 /* eslint-env jest */
 /* global PopStateEvent */
 /**
- * IntelligencePage opens on the Briefing, switches among its seven views in
+ * IntelligencePage opens on the Briefing, switches among its views in
  * place, opens an entity from any chip, saves an item through one dialog only for a curator, and
  * carries the substrate debug overlay under its own storage key.
  */
@@ -75,6 +75,20 @@ beforeEach( () => {
 		judged: true,
 		bucket: 'week',
 		baseline_buckets: 8,
+		available: true,
+	};
+	wire.replies.graph = {
+		entities: [
+			{
+				key: 'organization:acme-quillsheet',
+				name: 'Acme Quillsheet',
+				type: 'organization',
+				roles: [ 'client' ],
+				items: 12,
+			},
+		],
+		pairs: [],
+		truncated: false,
 		available: true,
 	};
 	wire.replies.watches = { watches: [], available: true };
@@ -506,6 +520,7 @@ describe( 'IntelligencePage', () => {
 			[ 'Briefing', 'Briefing' ],
 			[ 'Search', 'Search' ],
 			[ 'Team views', 'Team views' ],
+			[ 'Graph', 'Graph' ],
 			[ 'Review', 'Review' ],
 			[ 'Folders', 'Folders' ],
 			[ 'Watches', 'Watches' ],
@@ -733,6 +748,48 @@ describe( 'IntelligencePage', () => {
 		expect(
 			screen.getByRole( 'link', { name: ITEM.title } )
 		).toBeVisible();
+	} );
+
+	it( 'draws the graph’s layout on its tab, and keeps it under a profile opened from it', async () => {
+		renderPage();
+		fireEvent.click( nav( 'Graph' ) );
+		const chip = await screen.findByRole( 'button', {
+			name: 'Acme Quillsheet',
+		} );
+		expect( wire.sent( 'graph' ) ).toEqual( [ [] ] );
+		const canvas = screen.getByRole( 'application', {
+			name: 'Entity graph',
+		} );
+		expect(
+			screen.getByRole( 'spinbutton', { name: 'Items shared, at least' } )
+		).toHaveValue( 5 );
+		fireEvent.click( chip );
+		chip.focus();
+		fireEvent.click( chip );
+		expect(
+			await screen.findByRole( 'heading', { name: 'Acme Quillsheet' } )
+		).toBeInTheDocument();
+		expect( canvas ).not.toBeVisible();
+
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Back to Graph' } )
+		);
+		expect( canvas ).toBeVisible();
+		expect( chip ).toHaveFocus();
+		expect( wire.sent( 'graph' ) ).toEqual( [ [] ] );
+	} );
+
+	it( 'puts the graph layout’s editor in its place', async () => {
+		window.history.replaceState(
+			{},
+			'',
+			'/wp-admin/admin.php?page=newspack-intelligence&view=graph&edit=graph'
+		);
+		renderPage( true );
+		await screen.findByRole( 'tab', { name: 'Review 0' } );
+		expect( nav( 'Graph' ) ).toHaveAttribute( 'aria-selected', 'true' );
+		expect( screen.queryByRole( 'application' ) ).toBeNull();
+		expect( wire.sent( 'graph' ) ).toEqual( [] );
 	} );
 
 	it( 'closes a profile when a tab is picked', async () => {
@@ -1483,31 +1540,47 @@ describe( 'IntelligencePage', () => {
 			);
 		} );
 
-		it( 'restores a refused layout’s default for a curator, without a reload', async () => {
-			wire.replies.restore =
-				COMPOSITIONS[ 'newspack-intelligence/briefing' ];
-			renderPage( true, false, {
-				...COMPOSITIONS,
-				'newspack-intelligence/briefing': {
-					context: 'newspack-intelligence/briefing',
-					error: 'composition newspack-intelligence/briefing: newspack-intelligence/retired is not a declared block',
-				},
-			} );
-			fireEvent.click(
-				await screen.findByRole( 'button', { name: 'Restore default' } )
-			);
-			fireEvent.click(
-				within(
-					screen.getByRole( 'dialog', {
-						name: 'Restore the default layout?',
+		it.each( [
+			[ 'Briefing', 'briefing', openWeek ],
+			[
+				'Graph',
+				'graph',
+				() =>
+					screen.findByRole( 'application', {
+						name: 'Entity graph',
+					} ),
+			],
+		] )(
+			'restores a refused %s layout’s default for a curator, without a reload',
+			async ( tab, page, laidOut ) => {
+				const context = `newspack-intelligence/${ page }`;
+				wire.replies.restore = COMPOSITIONS[ context ];
+				renderPage( true, false, {
+					...COMPOSITIONS,
+					[ context ]: {
+						context,
+						error: `composition ${ context }: newspack-intelligence/retired is not a declared block`,
+					},
+				} );
+				fireEvent.click( nav( tab ) );
+				fireEvent.click(
+					await screen.findByRole( 'button', {
+						name: 'Restore default',
 					} )
-				).getByRole( 'button', { name: 'Restore default' } )
-			);
-			expect( await openWeek() ).toBeInTheDocument();
-			expect(
-				screen.queryByText( 'This could not be read just now.' )
-			).toBeNull();
-		} );
+				);
+				fireEvent.click(
+					within(
+						screen.getByRole( 'dialog', {
+							name: 'Restore the default layout?',
+						} )
+					).getByRole( 'button', { name: 'Restore default' } )
+				);
+				expect( await laidOut() ).toBeInTheDocument();
+				expect(
+					screen.queryByText( 'This could not be read just now.' )
+				).toBeNull();
+			}
+		);
 
 		it( 'shows a curator a Briefing naming the retired aside as the read error, with Restore default', async () => {
 			renderPage( true, false, {

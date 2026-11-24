@@ -14,6 +14,7 @@ const TABS = [
 	'Briefing.js',
 	'Search.js',
 	'Lens.js',
+	'Graph.js',
 	'Review.js',
 	'Collections.js',
 	'Watches.js',

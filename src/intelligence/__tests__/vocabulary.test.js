@@ -6,7 +6,13 @@
  * vocabulary replaced.
  */
 
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from '@testing-library/react';
 import { Core } from '@newspack-nodes/runtime';
 
 jest.mock( '@newspack-nodes/debug-overlay', () => ( {
@@ -26,6 +32,7 @@ import {
 	VOCABULARY,
 	pageData,
 } from '../views/__tests__/fixtures';
+import { installSvgBox } from '@newspack-nodes/shared/test-utils/svgBox';
 import IntelligencePage from '../IntelligencePage';
 
 /** Every key a word map words, and every value of a closed list. */
@@ -135,6 +142,28 @@ const FOLDERS = {
 	available: true,
 };
 
+const GRAPH = {
+	entities: [
+		{
+			key: ENTITY.entity_key,
+			name: ENTITY.name,
+			type: 'organization',
+			roles: [ 'competitor', 'former_client' ],
+			items: 12,
+		},
+		{
+			key: 'person:ida-marsh',
+			name: 'Ida Marsh',
+			type: 'person',
+			roles: [],
+			items: 7,
+		},
+	],
+	pairs: [ [ 0, 1, 6 ] ],
+	truncated: true,
+	available: true,
+};
+
 const WATCHES = {
 	watches: [
 		{
@@ -215,6 +244,7 @@ beforeEach( () => {
 		baseline_buckets: 8,
 		available: true,
 	};
+	wire.replies.graph = GRAPH;
 	wire.replies.watches = WATCHES;
 	wire.replies.watch_matches = { items: [ ITEM ], total: 1, available: true };
 	wire.replies.health = ( [ what ] ) => HEALTHY[ what ];
@@ -320,6 +350,7 @@ describe( 'the vocabulary', () => {
 			'Briefing',
 			'Search',
 			'Team views',
+			'Graph',
 			'Review 1',
 			'Folders',
 			'Watches 7',
@@ -382,6 +413,21 @@ describe( 'the vocabulary', () => {
 			name: 'Acme mail bounces at the sender',
 		} );
 		expect( unworded() ).toEqual( [] );
+	} );
+
+	it( 'shows no key on the graph', async () => {
+		const box = installSvgBox( 913, 617 );
+		renderPage();
+		fireEvent.click( tab( 'Graph' ) );
+		await waitFor( () => {
+			expect( screen.getByText( 'Rival' ) ).toBeInTheDocument();
+			expect( screen.getByText( 'Human' ) ).toBeInTheDocument();
+		} );
+		expect( shown() ).toContain(
+			`${ ENTITY.name }\nOutfit, Rival, Lapsed member, 12 items`
+		);
+		expect( unworded() ).toEqual( [] );
+		box.restore();
 	} );
 
 	it( 'shows no key on either Review queue of proposals', async () => {

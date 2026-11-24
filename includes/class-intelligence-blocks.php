@@ -1,11 +1,11 @@
 <?php
 /**
  * Intelligence_Blocks: the blocks Intelligence's pages are composed of and
- * the three contexts they compose, declared on the substrate's composition
+ * the four contexts they compose, declared on the substrate's composition
  * layer.
  *
- * The Briefing, every team view's page and every profile's sections are
- * each a layout of these blocks, which the browser registers alone, so no
+ * The Briefing, every team view's page, every profile's sections and the
+ * Graph are each a layout of these blocks, which the browser registers alone, so no
  * post, site or widget editor ever offers one. Every reader reads every
  * layout, so a layout may name only what a reader without the restricted
  * tier could see.
@@ -117,7 +117,7 @@ final class Intelligence_Blocks {
 		],
 		'newspack-intelligence/health' => [
 			'title'      => 'Collection status',
-			'contexts'   => [ 'newspack-intelligence/briefing', 'newspack-intelligence/lens', 'newspack-intelligence/entity' ],
+			'contexts'   => [ 'newspack-intelligence/briefing', 'newspack-intelligence/lens', 'newspack-intelligence/entity', 'newspack-intelligence/graph' ],
 			'attributes' => [
 				'detail' => [
 					'type'    => 'string',
@@ -235,7 +235,7 @@ final class Intelligence_Blocks {
 		],
 		'newspack-intelligence/item-list' => [
 			'title'      => 'Item list',
-			'contexts'   => [ 'newspack-intelligence/briefing', 'newspack-intelligence/lens', 'newspack-intelligence/entity' ],
+			'contexts'   => [ 'newspack-intelligence/briefing', 'newspack-intelligence/lens', 'newspack-intelligence/entity', 'newspack-intelligence/graph' ],
 			'attributes' => [
 				'heading' => self::LABEL + [ 'default' => '' ],
 				'kinds'   => [ 'items' => [ 'type' => 'string', 'enum' => Intel_Event::ITEM_KINDS ] ] + self::UNIQUE,
@@ -273,7 +273,7 @@ final class Intelligence_Blocks {
 		],
 		'newspack-intelligence/folder-board' => [
 			'title'      => 'Folders',
-			'contexts'   => [ 'newspack-intelligence/briefing', 'newspack-intelligence/lens', 'newspack-intelligence/entity' ],
+			'contexts'   => [ 'newspack-intelligence/briefing', 'newspack-intelligence/lens', 'newspack-intelligence/entity', 'newspack-intelligence/graph' ],
 			'attributes' => [
 				'show'    => [
 					'type'    => 'string',
@@ -281,6 +281,19 @@ final class Intelligence_Blocks {
 					'default' => 'unused',
 				],
 				'folders' => [ 'items' => [ 'type' => 'string' ] ] + self::UNIQUE,
+			],
+			'multiple'   => false,
+		],
+		'newspack-intelligence/graph' => [
+			'title'      => 'Entity graph',
+			'contexts'   => [ 'newspack-intelligence/graph' ],
+			'attributes' => [
+				'shared' => [
+					'type'    => 'integer',
+					'minimum' => 1,
+					'maximum' => 50,
+					'default' => 5,
+				],
 			],
 			'multiple'   => false,
 		],
@@ -319,6 +332,10 @@ final class Intelligence_Blocks {
 		],
 		'newspack-intelligence/entity'   => [
 			'default'    => __DIR__ . '/../layouts/entity.html',
+			'max_blocks' => self::MAX_BLOCKS,
+		],
+		'newspack-intelligence/graph'    => [
+			'default'    => __DIR__ . '/../layouts/graph.html',
 			'max_blocks' => self::MAX_BLOCKS,
 		],
 	];

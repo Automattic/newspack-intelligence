@@ -31,6 +31,7 @@ const HEADINGS = {
 	briefing: () => __( 'Edit the Briefing layout', 'newspack-intelligence' ),
 	lens: () => __( 'Edit the team view layout', 'newspack-intelligence' ),
 	entity: () => __( 'Edit the profile layout', 'newspack-intelligence' ),
+	graph: () => __( 'Edit the graph layout', 'newspack-intelligence' ),
 };
 
 /**
@@ -195,7 +196,7 @@ function EditorPage( { slot: { target, since, reads }, children } ) {
 /**
  * The picker the editor's page holds, where the editor places it.
  *
- * @return {?import('react').ReactElement} The picker, or none on the Briefing.
+ * @return {?import('react').ReactElement} The picker, or none on the Briefing and the graph.
  */
 function PreviewWith() {
 	return useContext( Previewing );

@@ -17,6 +17,7 @@ export const PAGES = {
 	briefing: { view: 'briefing', subject: null },
 	lens: { view: 'lenses', subject: 'lens' },
 	entity: { view: null, subject: 'entity' },
+	graph: { view: 'graph', subject: null },
 };
 
 /**

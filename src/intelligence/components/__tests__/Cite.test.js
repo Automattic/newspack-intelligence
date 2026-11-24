@@ -3,7 +3,8 @@
  * An entity chip is the one pill every view opens an entity from: full-round
  * rather than a button's box, its name inside the part its width cuts short,
  * so its accessible name stays whole, its key where the graph holds no name,
- * and its description as its tooltip. Given a removal, the pill holds a
+ * and its description as its tooltip. Given a pressed state, it is a toggle
+ * wearing the active style while pressed. Given a removal, the pill holds a
  * second button, an × named for what it removes, beside the one opening it.
  */
 
@@ -83,6 +84,39 @@ describe( 'EntityChip', () => {
 		expect( onOpen ).not.toHaveBeenCalled();
 		fireEvent.click( open );
 		expect( onOpen ).toHaveBeenCalledWith( 'organization:prairie-signal' );
+	} );
+
+	it.each( [
+		[ true, 'true' ],
+		[ false, 'false' ],
+	] )( 'says whether it is pressed, %s', ( pressed, said ) => {
+		render(
+			<EntityChip
+				entityKey="organization:prairie-signal"
+				name="Prairie Signal"
+				onOpen={ jest.fn() }
+				pressed={ pressed }
+			/>
+		);
+		const chip = screen.getByRole( 'button' );
+		expect( chip ).toHaveAttribute( 'aria-pressed', said );
+		expect( chip.classList.contains( 'is-active' ) ).toBe( pressed );
+		expect( chip ).toHaveClass( 'is-info', 'newspack-intelligence__pill' );
+	} );
+
+	it( 'is not a toggle without a pressed state', () => {
+		render(
+			<EntityChip
+				entityKey="organization:prairie-signal"
+				name="Prairie Signal"
+				onOpen={ jest.fn() }
+			/>
+		);
+		const chip = screen.getByRole( 'button' );
+		expect( chip ).not.toHaveAttribute( 'aria-pressed' );
+		expect( chip.className ).toBe(
+			'newspack-nodes-status-badge is-pill is-info newspack-intelligence__pill'
+		);
 	} );
 
 	it( 'offers no × without a removal', () => {

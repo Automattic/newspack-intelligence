@@ -1,7 +1,8 @@
 /* eslint-env jest */
 /**
  * A capped list shows its first `limit` rows under the class it is given,
- * else the facts list's, and offers "Show %d more" for the rest it holds.
+ * else the facts list's, and offers "Show %d more" for the rest it holds. A
+ * caller may keep a row past the limit, and may hold whether all are shown.
  */
 
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -40,5 +41,28 @@ describe( 'CappedList', () => {
 		);
 		expect( screen.getAllByRole( 'listitem' ) ).toHaveLength( 6 );
 		expect( screen.queryByRole( 'button' ) ).toBeNull();
+	} );
+
+	it( 'leaves to its caller whether it shows them all, when told', () => {
+		const onAll = jest.fn();
+		const { unmount } = list( { all: false, onAll } );
+		fireEvent.click(
+			screen.getByRole( 'button', { name: 'Show 2 more' } )
+		);
+		expect( onAll ).toHaveBeenCalledTimes( 1 );
+		expect( screen.getAllByRole( 'listitem' ) ).toHaveLength( 4 );
+		unmount();
+		list( { all: true, onAll } );
+		expect( screen.getAllByRole( 'listitem' ) ).toHaveLength( 6 );
+	} );
+
+	it( 'keeps a row past its limit in its place, and counts it as shown', () => {
+		list( { keep: ( row ) => 'dunlin' === row } );
+		expect(
+			screen.getAllByRole( 'listitem' ).map( ( one ) => one.textContent )
+		).toEqual( [ 'kestrel', 'heron', 'plover', 'avocet', 'dunlin' ] );
+		expect(
+			screen.getByRole( 'button', { name: 'Show 1 more' } )
+		).toBeInTheDocument();
 	} );
 } );

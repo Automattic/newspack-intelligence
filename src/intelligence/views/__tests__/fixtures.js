@@ -395,15 +395,19 @@ export const LENS_DEFAULTS = {
 	},
 };
 
+/** The graph page's default layout's one block, at its shipped attributes. */
+const GRAPH_DEFAULTS = { 'newspack-intelligence/graph': { shared: 5 } };
+
 /** Each page whose default the page data's layouts hold. */
 const DEFAULTS = {
 	briefing: BRIEFING_DEFAULTS,
 	lens: LENS_DEFAULTS,
+	graph: GRAPH_DEFAULTS,
 };
 
-/** The page data's layouts: the Briefing and a team view at their defaults, the rest blank. */
+/** The page data's layouts: the Briefing, a team view and the graph at their defaults, the rest blank. */
 export const COMPOSITIONS = Object.fromEntries(
-	[ 'briefing', 'lens', 'entity' ].map( ( page ) => [
+	[ 'briefing', 'lens', 'entity', 'graph' ].map( ( page ) => [
 		`newspack-intelligence/${ page }`,
 		{
 			context: `newspack-intelligence/${ page }`,

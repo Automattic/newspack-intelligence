@@ -44,6 +44,7 @@ export const ITEM_READS = [
 	'signals:',
 	'trends:',
 	'related:',
+	'graph:',
 	'claims:',
 	'review:',
 	'entity:',

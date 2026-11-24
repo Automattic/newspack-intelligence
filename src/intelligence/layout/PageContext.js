@@ -11,16 +11,16 @@ import { usePage } from '@newspack-nodes/shared/composition/page';
  * The page a block stands on, as the substrate's frame carries it.
  *
  * @typedef {Object} IntelPage
- * @property {?('briefing'|'lens'|'entity')} page       The page.
- * @property {?string}                       lens_key   The team view it shows, on a team view's page.
- * @property {?string}                       entity_key The entity it profiles, on a profile.
- * @property {?number}                       since      The reader's last look, UTC seconds, on the Briefing.
- * @property {boolean}                       [kept]     Whether the browser keeps the last look; false hides what arrived since.
- * @property {Partial<IntelActions>}         [actions]  The page's actions; the editor's preview offers none.
- * @property {string}                        group      The surface the page's commands are sent for.
- * @property {boolean}                       canTune    Whether the reader may curate the layout.
- * @property {(layout: Object) => void}      onRestored Takes the default a curator's restore answers.
- * @property {boolean}                       [operator] Whether the reader may read why a layout was refused.
+ * @property {?('briefing'|'lens'|'entity'|'graph')} page       The page.
+ * @property {?string}                               lens_key   The team view it shows, on a team view's page.
+ * @property {?string}                               entity_key The entity it profiles, on a profile.
+ * @property {?number}                               since      The reader's last look, UTC seconds, on the Briefing.
+ * @property {boolean}                               [kept]     Whether the browser keeps the last look; false hides what arrived since.
+ * @property {Partial<IntelActions>}                 [actions]  The page's actions; the editor's preview offers none.
+ * @property {string}                                group      The surface the page's commands are sent for.
+ * @property {boolean}                               canTune    Whether the reader may curate the layout.
+ * @property {(layout: Object) => void}              onRestored Takes the default a curator's restore answers.
+ * @property {boolean}                               [operator] Whether the reader may read why a layout was refused.
  */
 
 /**
