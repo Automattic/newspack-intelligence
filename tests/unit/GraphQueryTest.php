@@ -572,6 +572,204 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [ 'topic:awards' ], \array_column( self::read( 'related', [ 'key' => self::GAZETTE, 'limit' => 1 ] )['entities'], 'entity_key' ) );
 	}
 
+	/**
+	 * The graph answers each accepted entity a readable item names, the one
+	 * with the most items first, and each pair sharing one, the most shared
+	 * first and then by key, as places in the entities; an entity sharing
+	 * nothing is answered too.
+	 */
+	public function test_the_graph_answers_every_accepted_entity_and_the_items_each_pair_shares(): void {
+		$this->seed_graph();
+
+		$this->assertSame(
+			[
+				'entities'  => [
+					[ 'key' => self::GAZETTE, 'name' => 'Harbor Gazette', 'type' => 'organization', 'roles' => [], 'items' => 13 ],
+					[ 'key' => self::HARBOR, 'name' => 'Harbor Ledger', 'type' => 'organization', 'roles' => [], 'items' => 10 ],
+					[ 'key' => self::LEDGER, 'name' => 'Salem Ledger', 'type' => 'organization', 'roles' => [], 'items' => 6 ],
+					[ 'key' => 'product:tern-relay', 'name' => 'Tern Relay', 'type' => 'product', 'roles' => [], 'items' => 2 ],
+				],
+				'pairs'     => [ [ 0, 1, 7 ], [ 0, 2, 3 ], [ 1, 2, 3 ] ],
+				'truncated' => false,
+				'available' => true,
+			],
+			self::read( 'graph_of', [] )
+		);
+	}
+
+	/** A proposed and a rejected entity, a rejected judgment, an excluded item and an item above the caller's tier add neither an entity, a count nor a pair. */
+	public function test_the_graph_counts_accepted_entities_and_live_links_on_readable_items_alone(): void {
+		$this->seed_graph();
+		$before = self::read( 'graph_of', [] );
+		$this->seed(
+			self::proposed( 'organization:hidden-buyer', 'Hidden Buyer' ),
+			self::entity( 'organization:spurned-wire', 'Spurned Wire' ),
+			self::rejected( 'organization:spurned-wire' ),
+			self::entity( 'organization:quiet-partner', 'Quiet Partner' ),
+			self::entity( 'organization:shelved-post', 'Shelved Post' ),
+			self::entity( 'organization:misread-mail', 'Misread Mail' ),
+			self::naming( 'misread', 1, self::$oct_13, 'internal', self::GAZETTE ),
+			self::link( 'link_asserted', 'feed:misread-0', 'organization:misread-mail', 'subject', 'name', 1.0, self::$oct_13 ),
+			self::link( 'link_asserted', 'feed:misread-0', self::LEDGER, 'mention', 'name', 1.0, self::$oct_13 ),
+			self::judged( 'link_rejected', 'feed:misread-0', 'organization:misread-mail', 'user:41' ),
+			self::judged( 'link_rejected', 'feed:misread-0', self::LEDGER, 'user:41' ),
+			self::naming( 'shelved', 4, self::$oct_13, 'internal', self::GAZETTE, self::LEDGER, 'organization:shelved-post' ),
+			self::naming( 'deal', 5, self::$oct_13, 'restricted', self::GAZETTE, self::LEDGER, 'organization:quiet-partner' )
+		);
+		foreach ( [ 0, 1, 2 ] as $n ) {
+			$this->seed(
+				self::link( 'link_asserted', "feed:trio-{$n}", 'organization:hidden-buyer', 'mention', 'name', 1.0, self::$oct_06 ),
+				self::link( 'link_asserted', "feed:trio-{$n}", 'organization:spurned-wire', 'mention', 'name', 1.0, self::$oct_06 )
+			);
+		}
+		foreach ( [ 0, 1, 2, 3 ] as $n ) {
+			$this->seed( [ Intel_Event::make( 'item_excluded', [ 'item_key' => "feed:shelved-{$n}", 'url' => self::url( "feed:shelved-{$n}" ), 'title' => 'Shelved', 'tier' => 'internal' ], 'user:41', 'fixture-9' ) ] );
+		}
+
+		$after = self::read( 'graph_of', [] );
+
+		$this->assertSame( [ 14, 10, 6, 2 ], \array_column( $after['entities'], 'items' ) );
+		$this->assertSame( \array_column( $before['entities'], 'key' ), \array_column( $after['entities'], 'key' ) );
+		$this->assertSame( $before['pairs'], $after['pairs'] );
+	}
+
+	/** A merged entity's links count as its survivor's, an item naming both ends once, and the two never pair. */
+	public function test_the_graph_reads_a_merged_entity_as_its_survivor(): void {
+		$this->seed(
+			self::entity( self::GAZETTE, 'Harbor Gazette' ),
+			self::entity( self::LEDGER, 'Salem Ledger' ),
+			self::entity( 'organization:old-ledger', 'Old Salem Ledger' ),
+			self::naming( 'now', 3, self::$oct_13, 'public', self::GAZETTE, self::LEDGER ),
+			self::naming( 'then', 4, self::$oct_06, 'public', self::GAZETTE, 'organization:old-ledger' ),
+			self::naming( 'both', 2, self::$oct_01, 'public', self::LEDGER, 'organization:old-ledger' ),
+			self::merged( 'organization:old-ledger', self::LEDGER )
+		);
+
+		$answer = self::read( 'graph_of', [] );
+
+		$this->assertSame( [ self::LEDGER => 9, self::GAZETTE => 7 ], \array_column( $answer['entities'], 'items', 'key' ) );
+		$this->assertSame( [ [ 1, 0, 7 ] ], $answer['pairs'] );
+	}
+
+	/** A merged entity is accepted as its survivor is: a proposal merged into an accepted one counts, and an accepted one merged into a rejected one does not. */
+	public function test_the_graph_reads_a_merged_entitys_state_off_its_survivor(): void {
+		$this->seed_graph();
+		$this->seed(
+			self::proposed( 'product:tern-relay-pro', 'Tern Relay Pro' ),
+			self::naming( 'relay', 3, self::$oct_06, 'public', 'product:tern-relay-pro', self::GAZETTE ),
+			self::merged( 'product:tern-relay-pro', 'product:tern-relay' ),
+			self::entity( 'organization:spurned-wire', 'Spurned Wire' ),
+			self::entity( 'organization:spurned-post', 'Spurned Post' ),
+			self::naming( 'spurned', 4, self::$oct_06, 'public', 'organization:spurned-post', self::GAZETTE ),
+			self::rejected( 'organization:spurned-wire' ),
+			self::merged( 'organization:spurned-post', 'organization:spurned-wire' )
+		);
+
+		$answer = self::read( 'graph_of', [] );
+
+		$this->assertSame( [ self::GAZETTE => 20, self::HARBOR => 10, self::LEDGER => 6, 'product:tern-relay' => 5 ], \array_column( $answer['entities'], 'items', 'key' ) );
+		$this->assertSame( [ [ 0, 1, 7 ], [ 0, 2, 3 ], [ 0, 3, 3 ], [ 1, 2, 3 ] ], $answer['pairs'] );
+	}
+
+	/**
+	 * A topic link counts only with topics, an item linking a topic as its
+	 * topic and as a mention counts once, and a publisher link counts in
+	 * neither form.
+	 */
+	public function test_the_graph_reads_topic_links_only_with_topics(): void {
+		$this->seed_graph();
+		$events = [ self::entity( 'topic:ai', 'Artificial Intelligence' ) ];
+		foreach ( [ 0, 1, 2 ] as $n ) {
+			$events[] = self::extraction( "feed:trio-{$n}", 'A tool.', 'launch', self::$oct_06, [ 'topic:ai' ] );
+		}
+		$events[] = self::link( 'link_asserted', 'feed:trio-1', 'topic:ai', 'mention', 'name', 1.0, self::$oct_06 );
+		$events[] = self::link( 'link_asserted', 'feed:tern-1', self::GAZETTE, 'publisher', 'identifier', 1.0, self::$oct_13 );
+		$this->seed( ...$events );
+		$of = static fn ( string $key, array $answer ): array => [
+			\array_column( $answer['entities'], 'items', 'key' )[ $key ] ?? 0,
+			\array_values( \array_filter( $answer['pairs'], static fn ( array $pair ): bool => \in_array( $key, [ $answer['entities'][ $pair[0] ]['key'], $answer['entities'][ $pair[1] ]['key'] ], true ) ) ),
+		];
+		$named  = self::read( 'graph_of', [] );
+		$topics = self::read( 'graph_of', [ 'topics' => true ] );
+
+		$this->assertSame( [ 1, [ [ 0, 4, 1 ], [ 1, 4, 1 ], [ 2, 4, 1 ] ] ], $of( 'topic:ai', $named ) );
+		$this->assertSame( [ 3, [ [ 0, 3, 3 ], [ 1, 3, 3 ], [ 2, 3, 3 ] ] ], $of( 'topic:ai', $topics ) );
+		foreach ( [ $named, $topics ] as $answer ) {
+			$this->assertSame( 13, $of( self::GAZETTE, $answer )[0] );
+			$this->assertSame( [ 2, [] ], $of( 'product:tern-relay', $answer ) );
+		}
+	}
+
+	/** An entity's roles are the open ones of its keys, in the order the roles are declared, former client last. */
+	public function test_the_graph_lists_open_roles_with_former_client_last(): void {
+		$role = static fn ( string $key, string $role ): array => Intel_Event::make( 'role_asserted', [ 'entity_key' => $key, 'role' => $role, 'from_ts' => self::$jan_01 ], 'user:41', 'fixture-9' );
+		$this->seed_graph();
+		$this->seed(
+			self::entity( 'organization:old-gazette', 'Old Gazette' ),
+			[
+				$role( self::GAZETTE, 'former_client' ),
+				$role( self::GAZETTE, 'funder' ),
+				$role( 'organization:old-gazette', 'competitor' ),
+				$role( self::GAZETTE, 'prospect' ),
+				Intel_Event::make( 'role_ended', [ 'entity_key' => self::GAZETTE, 'role' => 'prospect', 'from_ts' => self::$jan_01, 'to_ts' => self::$oct_01 ], 'user:41', 'fixture-9' ),
+			],
+			self::merged( 'organization:old-gazette', self::GAZETTE )
+		);
+
+		$this->assertSame(
+			[ self::GAZETTE => [ 'competitor', 'funder', 'former_client' ], self::HARBOR => [], self::LEDGER => [], 'product:tern-relay' => [] ],
+			\array_column( self::read( 'graph_of', [] )['entities'], 'roles', 'key' )
+		);
+	}
+
+	/** The most shared pairs up to the limit, and whether one past it was cut; every entity still answers. */
+	public function test_the_graph_cuts_its_pairs_at_the_limit_and_says_so(): void {
+		$this->assertSame( 20000, Graph_Query::GRAPH_PAIRS );
+		$this->assertSame( Graph_Query::GRAPH_PAIRS, Graph_Query::$graph_pairs );
+		$this->seed_graph();
+		$this->seed( self::naming( 'ferry', 1, self::$oct_13, 'public', self::HARBOR, 'product:tern-relay' ) );
+
+		try {
+			Graph_Query::$graph_pairs = 2;
+			$cut                      = self::read( 'graph_of', [] );
+			Graph_Query::$graph_pairs = 4;
+			$whole                    = self::read( 'graph_of', [] );
+		} finally {
+			Graph_Query::$graph_pairs = Graph_Query::GRAPH_PAIRS;
+		}
+
+		$this->assertSame( [ [ [ 0, 1, 7 ], [ 0, 2, 3 ] ], true, 4 ], [ $cut['pairs'], $cut['truncated'], \count( $cut['entities'] ) ] );
+		$this->assertSame( [ 4, false ], [ \count( $whole['pairs'] ), $whole['truncated'] ] );
+	}
+
+	/** The entities and their pairs are read in one statement, so no pair names an entity the read does not hold. */
+	public function test_the_graph_reads_its_entities_and_pairs_in_one_statement(): void {
+		$this->seed_graph();
+
+		$linking = \array_filter( $this->queries_of( static fn () => self::read( 'graph_of', [] ) ), static fn ( string $sql ): bool => \str_contains( $sql, '.links' ) );
+
+		$this->assertCount( 1, $linking );
+	}
+
+	/** The accepted entities are a list the links are tested against, never an outer loop walking every link once an entity. */
+	public function test_the_graph_tests_each_link_against_the_accepted_entities(): void {
+		$this->seed_graph();
+		$queries = $this->queries_of( static fn () => self::read( 'graph_of', [] ) );
+		$linking = \array_values( \array_filter( $queries, static fn ( string $sql ): bool => \str_contains( $sql, '.links' ) ) );
+
+		$db = new \PDO( 'sqlite::memory:', null, null, [ \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION ] );
+		$db->exec( 'ATTACH DATABASE ' . $db->quote( Table_Node::file( 'intel-graph', 0 ) ) . ' AS p0' );
+		$plan   = \array_column( $db->query( 'EXPLAIN QUERY PLAN ' . $linking[0] )->fetchAll( \PDO::FETCH_ASSOC ), null, 'id' );
+		$states = \array_values( \array_filter( $plan, static fn ( array $step ): bool => \str_contains( $step['detail'], 'p0.entity_states' ) ) );
+		$this->assertCount( 1, $states );
+		$within = [];
+		for ( $at = $states[0]['parent']; isset( $plan[ $at ] ); $at = $plan[ $at ]['parent'] ) {
+			$within[] = \explode( ' ', $plan[ $at ]['detail'] )[0];
+		}
+
+		$this->assertContains( 'LIST', $within, \implode( "\n", \array_column( $plan, 'detail' ) ) );
+	}
+
 	public function test_claims_answer_each_claim_with_its_item(): void {
 		$this->seed_world();
 		$this->seed(
@@ -1416,6 +1614,7 @@ final class GraphQueryTest extends TestCase {
 		$this->assertSame( [ 'items' => [], 'total' => 0, 'available' => false ], self::read( 'timeline', [ 'key' => self::GAZETTE, 'limit' => 50, 'offset' => 0 ] ) );
 		$this->assertFalse( self::read( 'entity', [ 'key' => self::GAZETTE ] )['available'] );
 		$this->assertSame( [ 'entities' => [], 'available' => false ], self::read( 'related', [ 'key' => self::GAZETTE, 'limit' => 20 ] ) );
+		$this->assertSame( [ 'entities' => [], 'pairs' => [], 'truncated' => false, 'available' => false ], self::read( 'graph_of', [] ) );
 		$this->assertSame( [ 'claims' => [], 'available' => false ], self::read( 'claims', [ 'key' => self::GAZETTE ] ) );
 		$this->assertSame( [ 'rows' => [], 'available' => false ], self::trends( [ 'by' => 'kind' ] ) );
 		$this->assertSame( [ 'links' => [], 'total' => 0, 'next' => null, 'available' => false ], self::read( 'review', [ 'what' => 'links' ] ) );
@@ -1449,11 +1648,56 @@ final class GraphQueryTest extends TestCase {
 			'entity'      => [],
 			'timeline'    => [ 'published' => false, 'limit' => 50, 'offset' => 0 ],
 			'related'     => [ 'limit' => 20 ],
+			'graph_of'    => [ 'topics' => false ],
 			'claims'      => [ 'predicate' => null, 'limit' => 50 ],
 			'review'      => [ 'limit' => 50, 'after' => null ],
 			'collections' => [ 'key' => null ],
 		];
 		return Graph_Query::$verb( $args + $defaults[ $verb ] );
+	}
+
+	/**
+	 * Four accepted entities over twenty-one items: four name the Gazette and
+	 * Harbor Ledger, three those two and Salem Ledger, six the Gazette alone,
+	 * three Harbor Ledger alone, three Salem Ledger alone and two Tern Relay
+	 * alone.
+	 */
+	private function seed_graph(): void {
+		$this->seed(
+			self::entity( self::GAZETTE, 'Harbor Gazette' ),
+			self::entity( self::HARBOR, 'Harbor Ledger' ),
+			self::entity( self::LEDGER, 'Salem Ledger' ),
+			self::entity( 'product:tern-relay', 'Tern Relay' ),
+			self::naming( 'duo', 4, self::$oct_01, 'public', self::GAZETTE, self::HARBOR ),
+			self::naming( 'trio', 3, self::$oct_06, 'internal', self::GAZETTE, self::HARBOR, self::LEDGER ),
+			self::naming( 'gazette', 6, self::$oct_13, 'public', self::GAZETTE ),
+			self::naming( 'harbor', 3, self::$oct_13, 'public', self::HARBOR ),
+			self::naming( 'ledger', 3, self::$oct_13, 'public', self::LEDGER ),
+			self::naming( 'tern', 2, self::$oct_13, 'public', 'product:tern-relay' )
+		);
+	}
+
+	/**
+	 * Items `feed:<stem>-<n>`, each linking every entity: the first as its
+	 * subject, the rest as mentions.
+	 *
+	 * @param string $stem   What the item keys open with.
+	 * @param int    $items  How many items.
+	 * @param int    $at     Their date.
+	 * @param string $tier   Their tier.
+	 * @param string ...$keys The entity keys.
+	 * @return list<array<string,mixed>>
+	 */
+	private static function naming( string $stem, int $items, int $at, string $tier, string ...$keys ): array {
+		$events = [];
+		for ( $n = 0; $n < $items; $n++ ) {
+			$item = "feed:{$stem}-{$n}";
+			\array_push( $events, ...self::item( $item, "Item {$stem} {$n}", 'feed', $tier, $at + $n ) );
+			foreach ( $keys as $place => $key ) {
+				\array_push( $events, ...self::link( 'link_asserted', $item, $key, 0 === $place ? 'subject' : 'mention', 'name', 1.0, $at ) );
+			}
+		}
+		return $events;
 	}
 
 	/**

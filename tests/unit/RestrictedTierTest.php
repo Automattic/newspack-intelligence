@@ -132,6 +132,25 @@ final class RestrictedTierTest extends TestCase {
 		$this->assertSame( [ 'feed:gazette-award', 'linear:joint-grant' ], \array_column( $this->ci->dispatch( 'timeline', [ self::GAZETTE ] )['items'], 'item_key' ) );
 	}
 
+	/** The graph counts the restricted item, and an accepted entity only it names, for a holder alone. */
+	public function test_the_graph_reads_a_restricted_item_for_a_holder_alone(): void {
+		$this->seed_restricted_world();
+		$this->seed(
+			self::entity( 'organization:quiet-partner', 'Quiet Partner' ),
+			self::link( 'link_asserted', self::DEAL, 'organization:quiet-partner', 'mention', 'name', 1.0, self::$oct_13 )
+		);
+
+		$GLOBALS['_current_user_id'] = self::HOLDER;
+		$all                         = $this->ci->dispatch( 'graph', [] );
+		$this->assertSame( [ self::GAZETTE => 3, 'organization:salem-ledger' => 2, 'organization:quiet-partner' => 1 ], \array_column( $all['entities'], 'items', 'key' ) );
+		$this->assertSame( [ [ 0, 2, 1 ], [ 0, 1, 1 ] ], $all['pairs'] );
+
+		$GLOBALS['_current_user_id'] = self::READER;
+		$all                         = $this->ci->dispatch( 'graph', [] );
+		$this->assertSame( [ self::GAZETTE => 2, 'organization:salem-ledger' => 2 ], \array_column( $all['entities'], 'items', 'key' ) );
+		$this->assertSame( [ [ 0, 1, 1 ] ], $all['pairs'] );
+	}
+
 	/**
 	 * `names` answers each entity holding a name led by the prefix, or a word
 	 * of one, as its survivor and by name, those whose whole name leads first;

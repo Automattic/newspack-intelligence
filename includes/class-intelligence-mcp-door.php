@@ -45,10 +45,11 @@ class Intelligence_Mcp_Door extends Mcp_Door {
 	private const NODE = 'intelligence';
 
 	/**
-	 * The commands that are not offered by any tool: the page's health read and
+	 * The commands that are not offered by any tool: the whole-graph read, which
+	 * would fill an agent's context in one reply, the page's health read and
 	 * its operator fixes.
 	 */
-	private const NOT_TOOLS = [ 'fetch_now', 'health', 'seed_ontology', 'reresolve' ];
+	private const NOT_TOOLS = [ 'fetch_now', 'graph', 'health', 'seed_ontology', 'reresolve' ];
 
 	/** What closes a tool's summary, by its command's role; any other role adds nothing. */
 	private const SUMMARY_TAILS = [

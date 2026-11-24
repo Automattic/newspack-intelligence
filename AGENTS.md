@@ -1342,12 +1342,12 @@ commands do, because a root-owned segment or IPC file is one the workers
 cannot append to.
 
 **Reads.** `Intelligence_CI` (`intelligence`), mounted on every request
-graph, answers twenty-three read commands, each declaring `read` and its
-args: `search`, `entity`, `names`, `timeline`, `related`, `claims`, `trends`,
+graph, answers twenty-four read commands, each declaring `read` and its
+args: `search`, `entity`, `names`, `timeline`, `related`, `graph`, `claims`, `trends`,
 `signals`, `review`, `collections` and `lenses`, `theme_suggestions`, the
 five watch commands, `briefing`, `ask` and `ask_result` (see Ask), `trace`
-and `copies` (see Trace) and `health`, below. Each of the first eleven hands its bound args to the
-`Graph_Query` read of the same name, through `Intel_Graph_Row_Schema::read()`
+and `copies` (see Trace) and `health`, below. Each of the first twelve hands its bound args to the
+`Graph_Query` read of the same name, `graph` to `graph_of()`, through `Intel_Graph_Row_Schema::read()`
 over every partition's file. A read opens on `Graph_Query::graph()`, which resolves
 the tiers once from `Intel_Tiers::readable()` — `public` and `internal`,
 and `restricted` for a caller holding the restricted tier (below) — and
@@ -1393,7 +1393,7 @@ saying an item is about its entity,
 `Intel_Event::ABOUT_ROLES`, unless a read names others: `visible()` and a
 claim's subject rest on any link, and an entity's publishing reads its
 `publisher` links alone, at the machine's state, since a judgment governs
-an about-link alone, so `search`, a lens, `timeline`, `related`,
+an about-link alone, so `search`, a lens, `timeline`, `related`, `graph`,
 `trends`, the about signals, `review`, an entity's `counts` and each
 listed item's entities leave `publisher` out, and an entity's publisher
 signals read it alone. Each listed item's entity answers `{ entity_key,
@@ -1469,7 +1469,7 @@ link to it. Each read hands `live()` the links it rests
 on — an entity's keys, a page's items, the items a claim or a proposal
 names — and windows only those; `search` and `trends` naming a role, or
 `trends` counting topics, without an entity or topic window the links of the
-readable items inside their days. Summaries, kinds and scores come from
+readable items inside their days, and `graph` windows every link. Summaries, kinds and scores come from
 `extractions`.
 A listed item also answers `rank_reason`, the sentence its extraction gave
 for its rank, '' for one that gave none and null for an item never
@@ -1507,7 +1507,17 @@ read answering through `ITEM_COLUMNS` carries it, `search`, a theme group, a
 timeline and watch matches, under the tiers `ri` admits; `limit` is
 capped at `Graph_Query::MAX_LIMIT` (200); trend rows, related entities and
 proposed entities cite their five newest items, the first two as `items: [
-{ item_key, url, title } ]`, and items their URLs. A claim answers `{
+{ item_key, url, title } ]`, and items their URLs. `graph` answers the whole graph,
+every accepted entity (`Entity_Index::winning_states()`) a readable item names
+as a subject or a mention, with `topics` as a topic too, whether or not it
+shares one, and how many items each pair of them shares: `{ entities: [ {
+key, name, type, roles, items } ], pairs: [ [ a, b, shared ] ], truncated }`,
+`a` and `b` places in `entities`, which lists the most named first; `roles`
+the open ones in `Intel_Event::ROLES` order, `former_client` last; and the
+pairs the most shared first, at most `Graph_Query::GRAPH_PAIRS` (20,000),
+`truncated` saying one was cut. One statement reads both, so a pair never
+names an entity the answer does not hold, and SQLite counts, sorts and cuts
+the pairs. A claim answers `{
 subject, subject_name, predicate, object, object_name, confidence,
 item_key, url, title }`: its subject's name, else its key; beside an
 object's key its name, else the key; null beside the item's spelling, so
@@ -2578,7 +2588,7 @@ workers }`.
 on the substrate's `Mcp_Door` (substrate ADR-38), serving
 `POST /wp-json/newspack-intelligence/v1/mcp`. Its tools are read off
 `Intelligence_CI_Node`'s schema, one `intel_<verb>` per command but
-`fetch_now`, `health`, `seed_ontology` and `reresolve`, which it leaves
+`fetch_now`, `graph`, `health`, `seed_ontology` and `reresolve`, which it leaves
 out by name (`NOT_TOOLS`), each offering every declared arg
 under the command's own description. Its glossary says what a `publisher`
 link means and which reads leave it out. The door owns the session check, the
@@ -3421,7 +3431,7 @@ plugin adds:
 | `Reresolver` | `Reresolver_Node` | `<stream>`; `RERESOLVE <since> <until> [<source>]`, `REEXTRACT <since> <until> [<source>]`; publishes `last_range` through `Publishes_Status` |
 | `Watcher` | `Watcher_Node` | `<writer>`; the Router's tick, every `WATCH_INTERVAL_S`; no commands |
 | `Ask` | `Ask_Node` | `<writer> <llm>`; each `ask_asked` its Consumer reads, and the model-call node's answers; no commands |
-| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `claims`, `trends`, `signals`, `review`, `theme_suggestions`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `ask`, `ask_result`, `health`, each at `read`; `confirm_link`, `reject_link`, `add_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `merge_theme`, `keep_themes_apart`, `rejoin_themes`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
+| `Intelligence_CI` | `Intelligence_CI_Node` | `search`, `entity`, `timeline`, `related`, `graph`, `claims`, `trends`, `signals`, `review`, `theme_suggestions`, `collections`, `lenses`, `watches`, `save_watch`, `remove_watch`, `watch_matches`, `mark_seen`, `briefing`, `ask`, `ask_result`, `health`, each at `read`; `confirm_link`, `reject_link`, `add_link`, `accept_entity`, `reject_entity`, `merge_entities`, `add_name`, `add_identifier`, `assert_role`, `end_role`, `tag_topic`, `create_entity`, `create_collection`, `collect`, `save_lens`, `remove_lens`, `merge_theme`, `keep_themes_apart`, `rejoin_themes`, `seed_ontology`, each at `tune`; `fetch_now`, `reresolve`, each at `manage` |
 
 `LLM_Call_Node`'s seven commands are declared setters, replayed by its
 `dump_config()`; `set_api_url` refuses anything but an absolute http(s)

@@ -29,7 +29,7 @@ recording each new item a watched lens, entity or collection gains and
 emailing it, or a daily digest of it, when the watch asks.
 
 `Intelligence_CI` answers the graph's read commands (search, entity, names, timeline,
-related, claims, trends, signals, review, collections, lenses), each reader's
+related, graph, claims, trends, signals, review, collections, lenses), each reader's
 own watches (watches, save_watch, remove_watch, watch_matches, mark_seen) and
 its curation commands, which the
 Intelligence page sends; the same commands reach agents through the plugin's MCP

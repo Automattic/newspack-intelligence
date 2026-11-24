@@ -17,7 +17,8 @@
  * and survivor, a topic link apart from the rest, subject over mention; its
  * state is the highest-ranked judgment's (`JUDGE_RANK`), else the machine's,
  * and a `rejected` link counts nowhere. Each read hands `live()` the links
- * it can rest on and windows only those; `trends` with no entity reads all.
+ * it can rest on and windows only those; `trends` with no entity and
+ * `graph_of()` read all.
  * A read counts the links saying an item is about its entity
  * (`Intel_Event::ABOUT_ROLES`) unless it names other roles: an entity's
  * publishing reads its `publisher` links, a client's status and the clients
@@ -79,6 +80,9 @@ final class Graph_Query {
 	/** Items a trend row, a related entity, a proposal or a group cites, the newest. */
 	public const CITATIONS = 5;
 
+	/** The most pairs `graph` answers, the most shared. */
+	public const GRAPH_PAIRS = 20000;
+
 	/** The proposed links `review links` answers of one item, the first by entity key. */
 	public const REVIEW_LINKS = 5;
 
@@ -121,6 +125,9 @@ final class Graph_Query {
 
 	/** The role an entity holds while it is a client. */
 	public const CLIENT = 'client';
+
+	/** The role an entity holds once it was a client. */
+	private const FORMER_CLIENT = 'former_client';
 
 	/** The item kind reporting that a client has left or is leaving. */
 	public const CHURNED = 'churned';
@@ -252,6 +259,14 @@ final class Graph_Query {
 
 	/** The line logged when the projection will not open. */
 	private const UNAVAILABLE = 'intelligence: no intel-graph to read; answering none: ';
+
+	/**
+	 * Pair-limit seam: the limit `graph_of()` cuts its pairs at. Tests lower
+	 * it to reach the cut without seeding GRAPH_PAIRS pairs.
+	 *
+	 * @var int
+	 */
+	public static int $graph_pairs = self::GRAPH_PAIRS;
 
 	/**
 	 * An entity's items, newest first, as `search` answers them: those about
@@ -1332,6 +1347,67 @@ final class Graph_Query {
 					$entities[ $entity ]['items'][] = [ 'item_key' => $item, 'url' => $url, 'title' => $title ];
 				}
 				return [ 'entities' => \array_values( $entities ) ];
+			}
+		);
+	}
+
+	/**
+	 * The whole graph: every accepted entity a readable item names, whether
+	 * or not it shares one, with its open roles and how many readable items
+	 * name it, the most named first and then by key; and every pair of them
+	 * sharing an item, as their places among the entities and how many they
+	 * share, the most shared first and then by key, at most GRAPH_PAIRS,
+	 * `truncated` saying one was cut. An item names an entity by a link of
+	 * NAMING_ROLES, or with `topics` of ABOUT_ROLES, read by the rules
+	 * `related()` reads through; the state is `Entity_Index`'s
+	 * (`winning_states()`). One statement reads the entities and the pairs,
+	 * so a pair never names an entity it does not answer. It windows every
+	 * link the projection keeps and counts every pair an item names before
+	 * it cuts them, which SQLite holds; PHP holds the rows answered.
+	 *
+	 * @param array<array-key,mixed> $args The bound command args: `topics`.
+	 * @return array<string,mixed> `{ entities: [ { key, name, type, roles, items } ], pairs: [ [ a, b, shared ] ], truncated, available }`.
+	 */
+	public static function graph_of( array $args ): array {
+		$links = true === $args['topics'] ? Intel_Event::ABOUT_ROLES : Intel_Event::NAMING_ROLES;
+		return self::answer(
+			[
+				'entities'  => [],
+				'pairs'     => [],
+				'truncated' => false,
+			],
+			static function ( Row_Reader $r, array $g ) use ( $links ): array {
+				[ $live, $live_binds ] = self::live( $r, '1 = 1', [], $links );
+				$rows                  = $r->rows(
+					"{$g['with']}{$live}, named AS MATERIALIZED ( SELECT DISTINCT live.item_key, live.entity_key FROM live WHERE live.entity_key IN ( SELECT s.entity_key FROM " . Entity_Index::winning_states( $r ) . " s WHERE s.state = 'accepted' ) ),"
+					. ' pairs AS ( SELECT a.entity_key AS a, b.entity_key AS b, COUNT(*) AS n FROM named a JOIN named b ON b.item_key = a.item_key AND a.entity_key < b.entity_key GROUP BY 1, 2 ORDER BY n DESC, 1, 2 LIMIT ? )'
+					. ' SELECT 0 AS paired, entity_key AS a, NULL AS b, COUNT(*) AS n, ' . self::name_of( $r, 'named.entity_key' ) . ', ' . self::type_of( $r, 'named.entity_key' ) . ' FROM named GROUP BY entity_key'
+					. ' UNION ALL SELECT 1, a, b, n, NULL, NULL FROM pairs ORDER BY paired, n DESC, a, b',
+					[ ...$g['binds'], ...$live_binds, self::$graph_pairs + 1 ]
+				);
+				$entities              = [];
+				$places                = [];
+				$pairs                 = [];
+				foreach ( $rows as [ $paired, $a, $b, $n, $name, $type ] ) {
+					$a = Core::as_string( $a );
+					if ( 1 === $paired ) {
+						$pairs[] = [ $places[ $a ], $places[ Core::as_string( $b ) ], Core::as_int( $n ) ];
+						continue;
+					}
+					$places[ $a ] = \count( $entities );
+					$entities[]   = [ 'key' => $a, 'name' => $name, 'type' => $type, 'roles' => [], 'items' => Core::as_int( $n ) ];
+				}
+				$ranked = [ ...\array_diff( Intel_Event::ROLES, [ self::FORMER_CLIENT ] ), self::FORMER_CLIENT ];
+				$keys   = \array_column( $entities, 'key' );
+				$open   = self::open_roles( $r, \array_combine( $keys, \array_map( static fn ( string $key ): array => self::keys_of( $key, $g ), $keys ) ), $ranked );
+				foreach ( $open as $key => $roles ) {
+					$entities[ $places[ $key ] ]['roles'] = \array_values( \array_intersect( $ranked, \array_keys( $roles ) ) );
+				}
+				return [
+					'entities'  => $entities,
+					'pairs'     => \array_slice( $pairs, 0, self::$graph_pairs ),
+					'truncated' => \count( $pairs ) > self::$graph_pairs,
+				];
 			}
 		);
 	}

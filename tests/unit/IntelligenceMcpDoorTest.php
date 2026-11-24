@@ -63,15 +63,16 @@ final class IntelligenceMcpDoorTest extends TestCase {
 	/**
 	 * Every read and curation command is a tool named after it, whose args are
 	 * the command's own, described as the command describes them; a manage command,
-	 * the health read and the seed are not tools.
+	 * the whole-graph read, the health read and the seed are not tools.
 	 */
 	public function test_every_tool_names_a_declared_command(): void {
 		$tools    = $this->listed( ...$this->door( Capabilities::TUNE ) );
 		$declared = Command_Interpreter_Node::declared_commands( Intelligence_CI_Node::class );
-		$offered  = \array_filter( $declared, static fn ( array $command, string $name ): bool => Capabilities::MANAGE !== $command['capability'] && ! \in_array( $name, [ 'health', 'seed_ontology' ], true ), \ARRAY_FILTER_USE_BOTH );
+		$offered  = \array_filter( $declared, static fn ( array $command, string $name ): bool => Capabilities::MANAGE !== $command['capability'] && ! \in_array( $name, [ 'graph', 'health', 'seed_ontology' ], true ), \ARRAY_FILTER_USE_BOTH );
 
 		$this->assertSame( \array_map( static fn ( string $verb ): string => "intel_{$verb}", \array_keys( $offered ) ), \array_keys( $tools ) );
 		$this->assertArrayNotHasKey( 'intel_fetch_now', $tools );
+		$this->assertArrayNotHasKey( 'intel_graph', $tools );
 		$this->assertArrayNotHasKey( 'intel_health', $tools );
 		$this->assertArrayNotHasKey( 'intel_seed_ontology', $tools );
 		$this->assertArrayNotHasKey( 'intel_reresolve', $tools );
