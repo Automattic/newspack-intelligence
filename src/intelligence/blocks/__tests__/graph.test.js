@@ -3,8 +3,8 @@
  * The `graph` block reads `graph` once and draws every entity on the shared
  * force graph: its slider filters the lines it already holds, Topics asks
  * again, a selection lights what it reaches, and the list beside the canvas
- * selects and opens what a press on it does. The canvas takes a wheel only
- * while it has focus, and a pinch always.
+ * selects and opens what a press on it does. The canvas takes every wheel over
+ * it.
  *
  * The force graph is the real one in a box jsdom lacks, wrapped to show what
  * it was handed, and each chip is wrapped to count what it draws.
@@ -211,15 +211,13 @@ const press = ( el ) => {
 /**
  * Turn a wheel over the canvas.
  *
- * @param {Object} [init] The event's fields.
  * @return {boolean} Whether the canvas took it from the page.
  */
-const wheel = ( init = {} ) => {
+const wheel = () => {
 	const turned = new window.WheelEvent( 'wheel', {
 		bubbles: true,
 		cancelable: true,
 		deltaY: 100,
-		...init,
 	} );
 	act( () => {
 		canvas().dispatchEvent( turned );
@@ -534,22 +532,11 @@ describe( 'the canvas', () => {
 		expect( actions.onOpenEntity.mock.calls ).toEqual( [ [ PRAIRIE ] ] );
 	} );
 
-	it( 'leaves a wheel to the page until it has focus', async () => {
+	it( 'takes a wheel over it without focus', async () => {
 		await open();
-		expect( wheel() ).toBe( false );
-		act( () => canvas().focus() );
+		expect( canvas() ).not.toHaveFocus();
 		expect( wheel() ).toBe( true );
-		act( () => canvas().blur() );
-		expect( wheel() ).toBe( false );
 	} );
-
-	it.each( [ [ 'ctrlKey' ], [ 'metaKey' ] ] )(
-		'takes a pinch by %s without focus',
-		async ( held ) => {
-			await open();
-			expect( wheel( { [ held ]: true } ) ).toBe( true );
-		}
-	);
 } );
 
 describe( 'the list', () => {

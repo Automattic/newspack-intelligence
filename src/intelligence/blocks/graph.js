@@ -73,9 +73,7 @@ function SharedControl( { value, onChange } ) {
 }
 
 /**
- * The canvas. The page scrolls beneath it, so it takes a wheel only while it
- * has focus, as a press gives it; a pinch, which arrives as a wheel with a
- * modifier, always reaches it.
+ * The canvas.
  *
  * @param {Object}                 props
  * @param {GraphAnswer}            props.answer    What `graph` answered.
@@ -96,14 +94,6 @@ function Canvas( { answer, minShared, selected, onSelect } ) {
 		[ graph, selected ]
 	);
 
-	const holdWheel = ( e ) => {
-		const focused = e.currentTarget.contains(
-			e.currentTarget.ownerDocument.activeElement
-		);
-		if ( ! ( focused || e.ctrlKey || e.metaKey ) ) {
-			e.stopPropagation();
-		}
-	};
 	const openPressed = ( e ) => {
 		const key = e.target.closest( '[data-id]' )?.dataset.id;
 		if ( key ) {
@@ -117,10 +107,9 @@ function Canvas( { answer, minShared, selected, onSelect } ) {
 	};
 
 	return (
-		// eslint-disable-next-line jsx-a11y/no-static-element-interactions -- keys, wheels and presses reach it from the canvas inside.
+		// eslint-disable-next-line jsx-a11y/no-static-element-interactions -- keys and presses reach it from the canvas inside.
 		<div
 			className="newspack-intelligence__graph-canvas"
-			onWheelCapture={ holdWheel }
 			onDoubleClick={ openPressed }
 			onKeyDown={ openSelected }
 		>
