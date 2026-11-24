@@ -5,6 +5,7 @@ namespace Newspack_Intelligence\Tests;
 
 use Newspack_Intelligence\Client_Importer;
 use Newspack_Intelligence\Graph_Client_Roster;
+use Newspack_Intelligence\Graph_Query;
 use Newspack_Intelligence\Intel_Event;
 use Newspack_Intelligence\Intel_Graph_Row_Schema;
 use Newspack_Nodes\Row_Table_Node;
@@ -262,6 +263,7 @@ final class GraphClientRosterTest extends TestCase {
 
 	/** A churn closes the open client role and opens a former_client one; a return reverses it. */
 	public function test_churn_and_return_are_role_events(): void {
+		$this->assertSame( 'former_client', Graph_Query::FORMER_CLIENT );
 		$this->seed( self::client( '770022', 'tidewater.example', self::AUG_20 ) );
 		$key = 'organization:site-770022';
 

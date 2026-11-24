@@ -221,7 +221,7 @@ describe( 'the graph’s paint', () => {
 				expect( opacity( 'is-dimmed' ) ).toBe( 0.1 );
 			} );
 
-			it( 'paints a pressed chip as an active button, and an unpressed one as its badge', () => {
+			it( 'paints the selected chip as an active button, and any other as its badge', () => {
 				const paintOf = ( names ) =>
 					[ 'background-color', 'color' ].map( ( longhand ) =>
 						skinned(

@@ -722,24 +722,30 @@ final class GraphQueryTest extends TestCase {
 		);
 	}
 
-	/** The most shared pairs up to the limit, and whether one past it was cut; every entity still answers. */
+	/**
+	 * The graph answers 20,000 pairs and no more, the most shared first, and
+	 * says whether one past them was cut; every entity still answers. One
+	 * item naming 200 entities makes 19,900 pairs, another naming 100 of
+	 * those beside a last entity makes the other 100, and one naming a pair
+	 * of the last makes one more.
+	 */
 	public function test_the_graph_cuts_its_pairs_at_the_limit_and_says_so(): void {
-		$this->assertSame( 20000, Graph_Query::GRAPH_PAIRS );
-		$this->assertSame( Graph_Query::GRAPH_PAIRS, Graph_Query::$graph_pairs );
-		$this->seed_graph();
-		$this->seed( self::naming( 'ferry', 1, self::$oct_13, 'public', self::HARBOR, 'product:tern-relay' ) );
+		$keys = \array_map( static fn ( int $n ): string => \sprintf( 'place:cove-%03d', $n ), \range( 0, 200 ) );
+		$this->seed(
+			...\array_map( static fn ( string $key ): array => self::entity( $key, "Name of {$key}" ), $keys ),
+			...[
+				self::naming( 'survey', 1, self::$oct_06, 'public', ...\array_slice( $keys, 0, 200 ) ),
+				self::naming( 'chart', 1, self::$oct_06, 'public', ...\array_slice( $keys, 100 ) ),
+			]
+		);
 
-		try {
-			Graph_Query::$graph_pairs = 2;
-			$cut                      = self::read( 'graph_of', [] );
-			Graph_Query::$graph_pairs = 4;
-			$whole                    = self::read( 'graph_of', [] );
-		} finally {
-			Graph_Query::$graph_pairs = Graph_Query::GRAPH_PAIRS;
-		}
+		$whole = self::read( 'graph_of', [] );
+		$this->seed( self::naming( 'ferry', 1, self::$oct_13, 'public', $keys[0], $keys[200] ) );
+		$cut = self::read( 'graph_of', [] );
 
-		$this->assertSame( [ [ [ 0, 1, 7 ], [ 0, 2, 3 ] ], true, 4 ], [ $cut['pairs'], $cut['truncated'], \count( $cut['entities'] ) ] );
-		$this->assertSame( [ 4, false ], [ \count( $whole['pairs'] ), $whole['truncated'] ] );
+		$this->assertSame( [ 20000, false, 201 ], [ \count( $whole['pairs'] ), $whole['truncated'], \count( $whole['entities'] ) ] );
+		$this->assertSame( [ 20000, true, 201 ], [ \count( $cut['pairs'] ), $cut['truncated'], \count( $cut['entities'] ) ] );
+		$this->assertSame( [ 4950, 15050 ], \array_values( \array_count_values( \array_column( $cut['pairs'], 2 ) ) ) );
 	}
 
 	/** The entities and their pairs are read in one statement, so no pair names an entity the read does not hold. */

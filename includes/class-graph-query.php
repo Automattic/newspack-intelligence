@@ -127,7 +127,7 @@ final class Graph_Query {
 	public const CLIENT = 'client';
 
 	/** The role an entity holds once it was a client. */
-	private const FORMER_CLIENT = 'former_client';
+	public const FORMER_CLIENT = 'former_client';
 
 	/** The item kind reporting that a client has left or is leaving. */
 	public const CHURNED = 'churned';
@@ -259,14 +259,6 @@ final class Graph_Query {
 
 	/** The line logged when the projection will not open. */
 	private const UNAVAILABLE = 'intelligence: no intel-graph to read; answering none: ';
-
-	/**
-	 * Pair-limit seam: the limit `graph_of()` cuts its pairs at. Tests lower
-	 * it to reach the cut without seeding GRAPH_PAIRS pairs.
-	 *
-	 * @var int
-	 */
-	public static int $graph_pairs = self::GRAPH_PAIRS;
 
 	/**
 	 * An entity's items, newest first, as `search` answers them: those about
@@ -1383,7 +1375,7 @@ final class Graph_Query {
 					. ' pairs AS ( SELECT a.entity_key AS a, b.entity_key AS b, COUNT(*) AS n FROM named a JOIN named b ON b.item_key = a.item_key AND a.entity_key < b.entity_key GROUP BY 1, 2 ORDER BY n DESC, 1, 2 LIMIT ? )'
 					. ' SELECT 0 AS paired, entity_key AS a, NULL AS b, COUNT(*) AS n, ' . self::name_of( $r, 'named.entity_key' ) . ', ' . self::type_of( $r, 'named.entity_key' ) . ' FROM named GROUP BY entity_key'
 					. ' UNION ALL SELECT 1, a, b, n, NULL, NULL FROM pairs ORDER BY paired, n DESC, a, b',
-					[ ...$g['binds'], ...$live_binds, self::$graph_pairs + 1 ]
+					[ ...$g['binds'], ...$live_binds, self::GRAPH_PAIRS + 1 ]
 				);
 				$entities              = [];
 				$places                = [];
@@ -1405,8 +1397,8 @@ final class Graph_Query {
 				}
 				return [
 					'entities'  => $entities,
-					'pairs'     => \array_slice( $pairs, 0, self::$graph_pairs ),
-					'truncated' => \count( $pairs ) > self::$graph_pairs,
+					'pairs'     => \array_slice( $pairs, 0, self::GRAPH_PAIRS ),
+					'truncated' => \count( $pairs ) > self::GRAPH_PAIRS,
 				];
 			}
 		);

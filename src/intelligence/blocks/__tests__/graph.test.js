@@ -570,12 +570,10 @@ describe( 'the list', () => {
 		expect( chip( 'Ida Marsh' ) ).toHaveAccessibleDescription(
 			'Selected. Press again to open its profile.'
 		);
-		expect( chip( 'Ida Marsh' ) ).toHaveAttribute( 'aria-pressed', 'true' );
+		expect( chip( 'Ida Marsh' ) ).toHaveAttribute( 'aria-current', 'true' );
+		expect( chip( 'Ida Marsh' ) ).not.toHaveAttribute( 'aria-pressed' );
 		expect( chip( 'Gull Summit' ) ).not.toHaveAccessibleDescription();
-		expect( chip( 'Gull Summit' ) ).toHaveAttribute(
-			'aria-pressed',
-			'false'
-		);
+		expect( chip( 'Gull Summit' ) ).not.toHaveAttribute( 'aria-current' );
 		expect( actions.onOpenEntity ).not.toHaveBeenCalled();
 		fireEvent.click( chip( 'Ida Marsh' ) );
 		expect( actions.onOpenEntity.mock.calls ).toEqual( [ [ IDA ] ] );
@@ -585,13 +583,12 @@ describe( 'the list', () => {
 		await open();
 		press( node( PRAIRIE ) );
 		expect( chip( 'Prairie Signal' ) ).toHaveAttribute(
-			'aria-pressed',
+			'aria-current',
 			'true'
 		);
 		press( canvas() );
-		expect( chip( 'Prairie Signal' ) ).toHaveAttribute(
-			'aria-pressed',
-			'false'
+		expect( chip( 'Prairie Signal' ) ).not.toHaveAttribute(
+			'aria-current'
 		);
 	} );
 
@@ -604,7 +601,7 @@ describe( 'the list', () => {
 		press( node( 'place:cove-28' ) );
 		expect( chips() ).toHaveLength( 31 );
 		expect( chips()[ 30 ] ).toBe( 'Cove 28' );
-		expect( chip( 'Cove 28' ) ).toHaveAttribute( 'aria-pressed', 'true' );
+		expect( chip( 'Cove 28' ) ).toHaveAttribute( 'aria-current', 'true' );
 	} );
 
 	it( 'lists the names holding the text searched for, whatever its case', async () => {

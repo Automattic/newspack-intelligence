@@ -88,23 +88,24 @@ describe( 'EntityChip', () => {
 
 	it.each( [
 		[ true, 'true' ],
-		[ false, 'false' ],
-	] )( 'says whether it is pressed, %s', ( pressed, said ) => {
+		[ false, null ],
+	] )( 'says whether it is the selected one, %s', ( selected, said ) => {
 		render(
 			<EntityChip
 				entityKey="organization:prairie-signal"
 				name="Prairie Signal"
 				onOpen={ jest.fn() }
-				pressed={ pressed }
+				selected={ selected }
 			/>
 		);
 		const chip = screen.getByRole( 'button' );
-		expect( chip ).toHaveAttribute( 'aria-pressed', said );
-		expect( chip.classList.contains( 'is-active' ) ).toBe( pressed );
+		expect( chip.getAttribute( 'aria-current' ) ).toBe( said );
+		expect( chip ).not.toHaveAttribute( 'aria-pressed' );
+		expect( chip.classList.contains( 'is-active' ) ).toBe( selected );
 		expect( chip ).toHaveClass( 'is-info', 'newspack-intelligence__pill' );
 	} );
 
-	it( 'is not a toggle without a pressed state', () => {
+	it( 'is plain without a selection', () => {
 		render(
 			<EntityChip
 				entityKey="organization:prairie-signal"
@@ -113,7 +114,7 @@ describe( 'EntityChip', () => {
 			/>
 		);
 		const chip = screen.getByRole( 'button' );
-		expect( chip ).not.toHaveAttribute( 'aria-pressed' );
+		expect( chip ).not.toHaveAttribute( 'aria-current' );
 		expect( chip.className ).toBe(
 			'newspack-nodes-status-badge is-pill is-info newspack-intelligence__pill'
 		);

@@ -241,7 +241,7 @@
 		cursor: pointer;
 	}
 
-	// A pressed pill reads as any active toggle.
+	// The selected pill reads as any active control.
 	.newspack-intelligence__pill.is-active {
 		@include role.toggle-active;
 	}

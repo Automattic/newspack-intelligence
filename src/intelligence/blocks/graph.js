@@ -167,7 +167,7 @@ function CanvasSkeleton() {
 
 /**
  * Every entity the canvas draws, those whose name holds the text searched
- * for, as chips, the selected one pressed and shown however far down it
+ * for, as chips, the selected one marked and shown however far down it
  * stands. Enter in a search selects the first. A move of the slider leaves
  * every chip alone.
  *
@@ -221,7 +221,7 @@ const EntityList = memo( function EntityList( {
 								entityKey={ key }
 								name={ name }
 								onOpen={ pick }
-								pressed={ key === selected }
+								selected={ key === selected }
 								description={
 									key === selected
 										? __(

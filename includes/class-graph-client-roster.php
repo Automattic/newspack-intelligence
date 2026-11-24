@@ -37,7 +37,7 @@ use Newspack_Nodes\Row_Reader;
 final class Graph_Client_Roster implements Client_Roster {
 
 	/** The roles a client holds, open while its `to_ts` is 0. */
-	private const ROLES = [ 'client', 'former_client' ];
+	private const ROLES = [ Graph_Query::CLIENT, Graph_Query::FORMER_CLIENT ];
 
 	/** A CSV `Created`: a day, then any time of it, which the role drops. */
 	private const CREATED = '/^(\d{4}-\d{2}-\d{2})(?:[ T](?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?)?$/';
@@ -106,7 +106,7 @@ final class Graph_Client_Roster implements Client_Roster {
 	 */
 	public function statuses(): array {
 		$this->load();
-		$statuses = \array_map( fn ( string $key ): string => isset( $this->open[ $key ]['client'] ) ? 'active' : ( isset( $this->held[ $key ] ) ? 'held' : 'churned' ), $this->sites );
+		$statuses = \array_map( fn ( string $key ): string => isset( $this->open[ $key ][ Graph_Query::CLIENT ] ) ? 'active' : ( isset( $this->held[ $key ] ) ? 'held' : 'churned' ), $this->sites );
 		return \array_map( static fn (): string => 'refused', $this->refused ) + $statuses;
 	}
 
@@ -139,7 +139,7 @@ final class Graph_Client_Roster implements Client_Roster {
 		$this->sites[ $id ] = $key;
 		$this->mint( $id, 'identifier_added', [ 'entity_key' => $key, 'kind' => 'site_id', 'value' => $id ] );
 		$this->update_site_fields( $id, $row, $today );
-		if ( ! isset( $this->open[ $key ]['client'] ) && ! isset( $this->held[ $key ] ) ) {
+		if ( ! isset( $this->open[ $key ][ Graph_Query::CLIENT ] ) && ! isset( $this->held[ $key ] ) ) {
 			$this->set_active( $id, $today );
 		}
 	}
@@ -155,9 +155,9 @@ final class Graph_Client_Roster implements Client_Roster {
 		$this->load();
 		$id  = self::id( $site_id );
 		$key = $this->sites[ $id ];
-		$this->close( $id, $key, 'former_client', $today );
+		$this->close( $id, $key, Graph_Query::FORMER_CLIENT, $today );
 		// settle() mints the row once the client's start is known.
-		$this->open[ $key ]['client'] ??= [];
+		$this->open[ $key ][ Graph_Query::CLIENT ] ??= [];
 	}
 
 	/**
@@ -247,13 +247,13 @@ final class Graph_Client_Roster implements Client_Roster {
 		$this->load();
 		$id  = self::id( $site_id );
 		$key = $this->sites[ $id ];
-		if ( isset( $this->present[ $key ] ) || ! isset( $this->open[ $key ]['client'] ) ) {
+		if ( isset( $this->present[ $key ] ) || ! isset( $this->open[ $key ][ Graph_Query::CLIENT ] ) ) {
 			return;
 		}
-		$this->close( $id, $key, 'client', $today );
-		$from                                  = Intel_Graph_Row_Schema::day( $today );
-		$this->open[ $key ]['former_client'] = [ [ $key, $from ] ];
-		$this->mint( $id, 'role_asserted', [ 'entity_key' => $key, 'role' => 'former_client', 'from_ts' => $from ] );
+		$this->close( $id, $key, Graph_Query::CLIENT, $today );
+		$from = Intel_Graph_Row_Schema::day( $today );
+		$this->open[ $key ][ Graph_Query::FORMER_CLIENT ] = [ [ $key, $from ] ];
+		$this->mint( $id, 'role_asserted', [ 'entity_key' => $key, 'role' => Graph_Query::FORMER_CLIENT, 'from_ts' => $from ] );
 	}
 
 	/**
@@ -367,7 +367,7 @@ final class Graph_Client_Roster implements Client_Roster {
 				$open[ $survivor ][ Core::as_string( $role ) ][] = [ $key, $from ];
 			} elseif ( $to > $from ) {
 				$returned[ $survivor ] = \max( $returned[ $survivor ] ?? 0, $to );
-				if ( 'client' === $role ) {
+				if ( Graph_Query::CLIENT === $role ) {
 					$ended[ $survivor ] = true;
 				}
 			}
@@ -415,13 +415,13 @@ final class Graph_Client_Roster implements Client_Roster {
 	private function settle(): void {
 		foreach ( \array_diff_key( $this->since, $this->held ) as $key => [ , $id ] ) {
 			$start = $this->start( $key );
-			$rows  = $this->open[ $key ]['client'] ?? [];
+			$rows  = $this->open[ $key ][ Graph_Query::CLIENT ] ?? [];
 			$stale = \array_filter( $rows, static fn ( array $row ): bool => $start !== $row[1] );
 			foreach ( $stale as [ $held, $from ] ) {
-				$this->mint( $id, 'role_ended', [ 'entity_key' => $held, 'role' => 'client', 'from_ts' => $from, 'to_ts' => $from ] );
+				$this->mint( $id, 'role_ended', [ 'entity_key' => $held, 'role' => Graph_Query::CLIENT, 'from_ts' => $from, 'to_ts' => $from ] );
 			}
 			if ( \count( $stale ) === \count( $rows ) ) {
-				$this->mint( $id, 'role_asserted', [ 'entity_key' => $key, 'role' => 'client', 'from_ts' => $start ] );
+				$this->mint( $id, 'role_asserted', [ 'entity_key' => $key, 'role' => Graph_Query::CLIENT, 'from_ts' => $start ] );
 			}
 		}
 	}
