@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-11-24
+
 ### Added
 
 - **A `graph` command reads the whole entity graph.** It answers every accepted entity the items a caller may read name as a subject or a mention, with its open roles and how many items name it, and how many items each pair of them shares, the most shared first, at most 20,000 pairs, saying when it cut. `topics` reads topic links too. It is a `read` command, under the tiers, exclusions, judgments and merges every read keeps, and the MCP door does not offer it.
